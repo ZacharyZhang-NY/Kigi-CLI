@@ -3,17 +3,19 @@ name = "kigi-bin"
 version.workspace = true
 edition.workspace = true
 license = "Apache-2.0"
-authors = ["xAI"]
 default-run = "kigi"
 
-# Composition-root binary for the Grok Build TUI. The artifact is still named
-# `kigi-tui`. This package exists so the binary can link both the pager
-# library and the optional `kigi-pager-minimal` render mode: `minimal`
-# depends on `kigi-tui`, so the pager library cannot depend back on it
-# (cargo cycle). The binary installs the minimal-mode IoC hooks at startup.
+# Composition-root binary for the Kigi TUI. This package exists so the binary
+# can link both the pager library and the optional `kigi-pager-minimal` render
+# mode: `minimal` depends on `kigi-tui`, so the pager library cannot depend
+# back on it (cargo cycle). The binary installs the minimal-mode IoC hooks at
+# startup.
 [[bin]]
 name = "kigi"
 path = "src/main.rs"
+
+[lints]
+workspace = true
 
 [dependencies]
 # The pager library (all application logic + the public API main.rs drives).

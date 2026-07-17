@@ -360,6 +360,13 @@ incremental = false
 [profile.bench]
 debug = true
 
+[workspace.lints.rust]
+# macOS ld cannot encode >16MB of __eh_frame in the compact unwind table and
+# says so when linking the (large) debug binary. Every profile builds with
+# panic = "abort", so Rust never unwinds and the "exception handling
+# performance" caveat does not apply — the message is noise here.
+linker_messages = "allow"
+
 [workspace.lints.clippy]
 # prost 0.14 renders proto doc-comment bullet lists in a way that trips this
 # lint on generated code. Kept in sync with bazel/lint/linters.bzl.
