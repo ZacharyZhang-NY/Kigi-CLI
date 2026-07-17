@@ -22,28 +22,24 @@ impl AuthStatus {
     /// Banner status: env key → session → BYOK → deployment → none.
     ///
     /// Differs from sampling (`resolve_credentials`: BYOK → session → env) so a
-    /// logged-in user sees the login host. BYOK uses
-    /// [`crate::agent::auth_method::should_advertise_xai_api_key`] so
-    /// `disable_api_key_auth` is honored.
+    /// logged-in user sees the login host.
     pub fn resolve(agent_config: &AgentConfig) -> Self {
         if crate::agent::auth_method::has_xai_api_key_env() {
             return Self::ApiKey;
         }
         if agent_config.create_auth_manager().current().is_some() {
-            let origin = &agent_config.grok_com_config.grok_ws_origin;
+            let origin = kigi_env::oauth_host();
             let host = origin
                 .strip_prefix("https://")
                 .or_else(|| origin.strip_prefix("http://"))
-                .unwrap_or(origin);
+                .unwrap_or(&origin);
             return Self::LoggedIn(host.to_owned());
         }
         let models = crate::agent::config::resolve_model_list(agent_config, None);
-        if crate::agent::auth_method::should_advertise_xai_api_key(
-            agent_config.grok_com_config.api_key_auth_disabled(),
-            models.values(),
-        ) && let Some(name) = models
-            .iter()
-            .find_map(|(name, entry)| entry.has_own_credentials().then(|| name.clone()))
+        if crate::agent::auth_method::should_advertise_xai_api_key(models.values())
+            && let Some(name) = models
+                .iter()
+                .find_map(|(name, entry)| entry.has_own_credentials().then(|| name.clone()))
         {
             return Self::ModelCredentials(name);
         }
@@ -94,7 +90,7 @@ mod tests {
     use super::*;
     use crate::agent::auth_method::{LEGACY_XAI_API_KEY_ENV_VAR, XAI_API_KEY_ENV_VAR};
     use crate::agent::config::Config;
-    use crate::auth::{AuthMode, GrokAuth};
+    use crate::auth::{AuthMode, KimiAuth};
     use kigi_test_support::EnvGuard;
     use serial_test::serial;
 
@@ -155,17 +151,17 @@ mod tests {
     #[serial]
     fn resolve_oauth_session() {
         let (_dir, _g) = isolate_auth_sources();
-        let token = GrokAuth {
+        let token = KimiAuth {
             key: "session-token".into(),
-            auth_mode: AuthMode::WebLogin,
-            ..GrokAuth::test_default()
+            auth_mode: AuthMode::OAuth,
+            ..KimiAuth::test_default()
         };
         let json = serde_json::to_string(&token).unwrap();
         let _auth = EnvGuard::set("KIGI_AUTH", &json);
 
         assert_eq!(
             AuthStatus::resolve(&Config::default()),
-            AuthStatus::LoggedIn("grok.com".to_owned())
+            AuthStatus::LoggedIn("auth.kimi.com".to_owned())
         );
     }
 
@@ -247,10 +243,10 @@ mod tests {
     #[serial]
     fn resolve_priority_session_over_byok_and_deployment() {
         let (_dir, _g) = isolate_auth_sources();
-        let token = GrokAuth {
+        let token = KimiAuth {
             key: "session-token".into(),
-            auth_mode: AuthMode::WebLogin,
-            ..GrokAuth::test_default()
+            auth_mode: AuthMode::OAuth,
+            ..KimiAuth::test_default()
         };
         let json = serde_json::to_string(&token).unwrap();
         let _auth = EnvGuard::set("KIGI_AUTH", &json);
@@ -259,7 +255,7 @@ mod tests {
         let cfg = config_from_toml(&byok_and_deployment_toml(dm));
         assert_eq!(
             AuthStatus::resolve(&cfg),
-            AuthStatus::LoggedIn("grok.com".to_owned())
+            AuthStatus::LoggedIn("auth.kimi.com".to_owned())
         );
     }
 
@@ -273,45 +269,6 @@ mod tests {
             AuthStatus::resolve(&cfg),
             AuthStatus::ModelCredentials(dm.to_owned())
         );
-    }
-
-    #[test]
-    #[serial]
-    fn resolve_disable_api_key_auth_suppresses_byok_banner() {
-        let (_dir, _g) = isolate_auth_sources();
-        let dm = crate::models::default_model();
-        let cfg = config_from_toml(&format!(
-            r#"
-            [grok_com_config]
-            disable_api_key_auth = true
-
-            [model."{dm}"]
-            model = "{dm}"
-            api_key = "sk-byok"
-            "#
-        ));
-        assert_eq!(AuthStatus::resolve(&cfg), AuthStatus::NotAuthenticated);
-    }
-
-    #[test]
-    #[serial]
-    fn resolve_disable_api_key_auth_falls_through_to_deployment() {
-        let (_dir, _g) = isolate_auth_sources();
-        let dm = crate::models::default_model();
-        let cfg = config_from_toml(&format!(
-            r#"
-            [grok_com_config]
-            disable_api_key_auth = true
-
-            [endpoints]
-            deployment_key = "deploy-key"
-
-            [model."{dm}"]
-            model = "{dm}"
-            api_key = "sk-byok"
-            "#
-        ));
-        assert_eq!(AuthStatus::resolve(&cfg), AuthStatus::DeploymentKey);
     }
 
     #[test]

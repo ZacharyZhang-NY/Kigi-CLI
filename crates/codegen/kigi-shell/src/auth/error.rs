@@ -3,29 +3,20 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum AuthError {
-    #[error("Not logged in. Run `grok login`.")]
+    #[error("Not logged in. Run `kigi login`.")]
     NotLoggedIn,
 
     /// Token expired and no refresh authority available.
-    #[error("Token expired. Run `grok login` to re-authenticate.")]
+    #[error("Token expired. Run `kigi login` to re-authenticate.")]
     TokenExpiredNoRefresh,
 
     /// Server rejected the token (401) with no recovery path.
-    #[error("Authentication rejected by server. Run `grok login` to re-authenticate.")]
+    #[error("Authentication rejected by server. Run `kigi login` to re-authenticate.")]
     ServerRejectedNoRecovery,
 
     /// All recovery strategies exhausted.
     #[error("Auth recovery exhausted; re-authentication required.")]
     RecoveryExhausted,
-
-    /// A session's team principal violates the `force_login_team_uuid` pin.
-    /// `message` states which team is required vs. returned.
-    #[error("{message} Run `grok login` to sign in with the required team.")]
-    PinnedTeamMismatch { message: String },
-
-    /// Cached API-key session rejected because API-key auth is disabled.
-    #[error("API-key auth is disabled by your administrator. Run `grok login` to authenticate.")]
-    ApiKeyAuthDisabled,
 
     /// Outcome of a refresh-authority attempt. Recoverability (and, for
     /// permanent failures, the reason) lives in [`RefreshTokenError`].
@@ -38,7 +29,7 @@ pub enum AuthError {
 /// caller must make, so a future third state should break consumers loudly.
 #[derive(Debug, Error)]
 pub enum RefreshTokenError {
-    /// The credential is dead; the user must re-authenticate.
+    /// The credential was rejected; the tombstone cooldown gates re-attempts.
     #[error(transparent)]
     Permanent(#[from] RefreshTokenFailedError),
     /// Network / 5xx / unknown blip; safe to retry later. Carries the cause.
@@ -48,12 +39,10 @@ pub enum RefreshTokenError {
 
 /// A retryable refresh failure, wrapping its cause. No public `From`:
 /// construct only via [`AuthError::transient`] /
-/// [`AuthError::transient_source`], so a stray `?` on some error can't silently
-/// classify a permanent failure as retryable (mirrors the dedicated
-/// [`RefreshTokenFailedError`] on the permanent arm). Display frames the cause
-/// as an auth-refresh failure so internal messages (lock timeout, sleep defer)
-/// don't surface bare; the permanent arm derives its copy from
-/// [`RefreshTokenFailedReason::user_message`] and is not prefixed.
+/// [`AuthError::transient_source`], so a stray `?` on some error can't
+/// silently classify a permanent failure as retryable. Display frames the
+/// cause as an auth-refresh failure so internal messages (lock timeout,
+/// sleep defer) don't surface bare.
 #[derive(Debug, Error)]
 #[error("auth refresh failed: {0}")]
 pub struct RefreshTransientError(#[source] Box<dyn std::error::Error + Send + Sync>);
@@ -74,45 +63,31 @@ impl From<RefreshTokenFailedReason> for RefreshTokenFailedError {
     }
 }
 
-/// Why a token refresh terminally failed, grounded in the OAuth2 error codes
-/// our IdP actually emits.
+/// Why a token refresh terminally failed. Both reasons carry the same
+/// tombstone semantics (PRD F1): a 300s cooldown scoped to the rejected
+/// refresh token, auto-cleared when the persisted refresh token differs
+/// (another process rotated) or a fresh login lands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RefreshTokenFailedReason {
-    /// `invalid_grant` — the refresh token is no longer valid (expired, reused,
-    /// or revoked; the IdP does not distinguish these).
+    /// The OAuth host answered 401/403 — the refresh token is no longer
+    /// valid (expired, reused, or revoked).
     RefreshTokenRejected,
-    /// `invalid_client` — the client/app credential was rejected.
-    ClientRejected,
-    /// Escalation from repeated transient failures (OIDC) or a single
-    /// external-binary failure. Never a raw IdP code: an unrecognized terminal
-    /// code is classified transient, not `Other` (see `classify_terminal`).
+    /// Non-retryable terminal failure that isn't an explicit rejection
+    /// (malformed payload, unexpected 4xx).
     Other,
 }
 
 impl RefreshTokenFailedReason {
-    /// Sticky until the credential changes (never ages out): a revoked refresh
-    /// token never self-heals, whereas client rotation / transient escalation
-    /// recover, so those age out past the TTL.
-    pub(crate) fn is_sticky(self) -> bool {
-        match self {
-            Self::RefreshTokenRejected => true,
-            Self::ClientRejected | Self::Other => false,
-        }
-    }
-
-    /// User-facing copy for a terminal refresh failure; the raw IdP code stays
-    /// in logs.
+    /// User-facing copy for a terminal refresh failure; the raw wire detail
+    /// stays in logs.
     pub(crate) fn user_message(self) -> &'static str {
         match self {
             Self::RefreshTokenRejected => {
-                "Your session has expired. Run `grok login` to sign in again."
-            }
-            Self::ClientRejected => {
-                "Authentication is temporarily unavailable. Run `grok login` if this persists."
+                "Your session has expired. Run `kigi login` to sign in again."
             }
             Self::Other => {
-                "Authentication could not be refreshed. Run `grok login` to sign in again."
+                "Authentication could not be refreshed. Run `kigi login` to sign in again."
             }
         }
     }

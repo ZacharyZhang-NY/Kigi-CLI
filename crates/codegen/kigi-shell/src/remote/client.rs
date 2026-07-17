@@ -1,5 +1,5 @@
 //! HTTP client for backend CRUD operations.
-use crate::auth::{GrokAuth, GrokComConfig};
+use crate::auth::{KimiAuth, KimiCodeConfig};
 use crate::session::export::{ExportedMessage, ExportedMetadata, ExportedSession};
 use indexmap::IndexMap;
 use prod_mc_cli_chat_proxy_types::SubagentBundle;
@@ -16,13 +16,12 @@ pub fn share_url(permission_id: &str) -> String {
 }
 fn add_cli_chat_proxy_headers_blocking(
     builder: reqwest::blocking::RequestBuilder,
-    auth: &GrokAuth,
+    auth: &KimiAuth,
     alpha_test_key: Option<&str>,
     url: &str,
 ) -> reqwest::blocking::RequestBuilder {
     let mut builder = builder
         .header("Authorization", format!("Bearer {}", auth.key))
-        .header("X-XAI-Token-Auth", GrokComConfig::default().token_header)
         .header("x-userid", &auth.user_id)
         .header("x-grok-client-version", kigi_version::VERSION);
     if let Some(email) = &auth.email {
@@ -56,7 +55,7 @@ async fn add_bundle_fetch_headers(
         Some(am) => am.auth().await.ok(),
         None => None,
     };
-    let mut credentials = crate::util::grok_auth_credentials::GrokAuthCredentials::new(
+    let mut credentials = crate::util::kigi_auth_credentials::KigiAuthCredentials::new(
         resolved_auth.as_ref().map(|auth| auth.key.clone()),
     );
     credentials.deployment_key = deployment_key.map(str::to_owned);
@@ -313,7 +312,7 @@ impl BackendClient {
         }
     }
     /// Attach a live `AuthManager` so every request resolves a fresh token
-    /// instead of requiring the caller to pass `&GrokAuth`.
+    /// instead of requiring the caller to pass `&KimiAuth`.
     pub fn with_auth_manager(mut self, manager: std::sync::Arc<crate::auth::AuthManager>) -> Self {
         let credentials: std::sync::Arc<dyn kigi_auth::AuthCredentialProvider> =
             std::sync::Arc::new(
@@ -328,7 +327,7 @@ impl BackendClient {
         self
     }
     /// Resolve auth from the attached `AuthManager`.
-    async fn resolve_auth(&self) -> Result<GrokAuth, BackendError> {
+    async fn resolve_auth(&self) -> Result<KimiAuth, BackendError> {
         let manager = self
             .auth_manager
             .as_ref()
@@ -392,9 +391,7 @@ impl BackendClient {
         .await?;
         Ok(())
     }
-    /// Build auth + identity headers.
-    /// Must include X-XAI-Token-Auth so nginx auth subrequest routes to authenticate_xai_grok_cli_token.
-    /// See: crates/codegen/kigi-shell/src/agent/app.rs:run_headless
+    /// Build auth + identity headers (plain bearer; no token-auth marker).
     async fn auth_header_map(&self) -> Result<reqwest::header::HeaderMap, BackendError> {
         use reqwest::header::{HeaderMap, HeaderValue};
         let auth = self.resolve_auth().await?;
@@ -403,10 +400,6 @@ impl BackendClient {
             HeaderValue::from_str(value)
                 .map_err(|e| BackendError::Auth(format!("invalid {name} header: {e}")))
         };
-        headers.insert(
-            "X-XAI-Token-Auth",
-            required(&GrokComConfig::default().token_header, "X-XAI-Token-Auth")?,
-        );
         headers.insert("x-userid", required(&auth.user_id, "x-userid")?);
         if let Some(email) = &auth.email
             && let Ok(v) = HeaderValue::from_str(email)
@@ -556,7 +549,7 @@ impl BackendClient {
 /// network). 4xx and parse errors are not retried.
 pub fn fetch_settings_blocking(
     cli_chat_proxy_base_url: &str,
-    auth: &GrokAuth,
+    auth: &KimiAuth,
     alpha_test_key: Option<&str>,
 ) -> Option<crate::util::config::RemoteSettings> {
     let client = crate::http::shared_blocking_client();
@@ -713,7 +706,7 @@ pub struct FetchModelsResult {
 }
 pub(crate) fn fetch_models_blocking(
     endpoints: &crate::agent::config::EndpointsConfig,
-    auth: Option<&GrokAuth>,
+    auth: Option<&KimiAuth>,
     fetch_auth: crate::agent::models::ModelFetchAuth,
 ) -> Result<FetchModelsResult, BackendError> {
     let client = crate::http::shared_blocking_client();
@@ -1279,37 +1272,23 @@ mod tests {
         let handle = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         (format!("{base}/v1"), seen_headers, handle)
     }
-    fn test_auth() -> GrokAuth {
-        GrokAuth {
+    fn test_auth() -> KimiAuth {
+        KimiAuth {
             key: "token".to_string(),
-            auth_mode: crate::auth::AuthMode::Oidc,
+            auth_mode: crate::auth::AuthMode::OAuth,
             create_time: chrono::Utc::now(),
             user_id: "user-1".to_string(),
             email: Some("test@example.com".to_string()),
-            first_name: None,
-            last_name: None,
-            profile_image_asset_id: None,
-            principal_type: None,
-            principal_id: None,
-            team_id: None,
-            team_name: None,
-            team_role: None,
-            organization_id: None,
-            organization_name: None,
-            organization_role: None,
-            user_blocked_reason: None,
-            team_blocked_reasons: vec![],
-            coding_data_retention_opt_out: false,
-            has_grok_code_access: None,
             refresh_token: None,
             expires_at: Some(chrono::Utc::now() + chrono::Duration::hours(1)),
-            oidc_issuer: None,
-            oidc_client_id: None,
+            expires_in: Some(3600),
+            scope: None,
+            token_type: None,
         }
     }
     fn test_auth_manager() -> Arc<crate::auth::AuthManager> {
         let dir = tempfile::tempdir().unwrap();
-        let mgr = crate::auth::AuthManager::new(dir.path(), crate::auth::GrokComConfig::default());
+        let mgr = crate::auth::AuthManager::new(dir.path(), crate::auth::KimiCodeConfig::default());
         mgr.hot_swap(test_auth());
         std::mem::forget(dir);
         Arc::new(mgr)
@@ -1336,7 +1315,7 @@ mod tests {
         let headers = seen_headers.lock().unwrap();
         let headers = headers.last().unwrap();
         assert_eq!(headers.authorization.as_deref(), Some("Bearer token"));
-        assert_eq!(headers.token_auth.as_deref(), Some("xai-grok-cli"));
+        assert_eq!(headers.token_auth, None, "no token-auth marker header");
         assert_eq!(headers.user_id.as_deref(), Some("user-1"));
         assert_eq!(headers.email.as_deref(), Some("test@example.com"));
         assert_eq!(headers.alpha_test_key, None);

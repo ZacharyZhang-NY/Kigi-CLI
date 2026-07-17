@@ -77,7 +77,7 @@ impl WorkspacesClient {
 
     pub async fn list_workspaces(&self, q: &WsQuery) -> Result<ListWorkspacesPage, WsError> {
         let auth = self.auth.auth().await.map_err(|_| WsError::NoOauth)?;
-        if !auth.is_xai_auth() {
+        if !auth.is_session_auth() {
             return Err(WsError::NoOauth);
         }
 
@@ -98,10 +98,6 @@ impl WorkspacesClient {
             .get(&url)
             .query(&query)
             .header("Authorization", format!("Bearer {}", auth.key))
-            .header(
-                "X-XAI-Token-Auth",
-                self.auth.grok_com_config().token_header.clone(),
-            )
             .header("x-userid", &auth.user_id)
             .header("x-grok-client-version", kigi_version::VERSION)
             .header(

@@ -492,7 +492,7 @@ async fn workspace_start(
         );
     }
     ensure_authenticated(
-        &agent_config.grok_com_config,
+        &agent_config.kimi_code_config,
         false,
         Some("No cached credentials found. Run `grok login` first."),
     )
@@ -1682,18 +1682,13 @@ async fn async_main() -> Result<()> {
                 )
                 .await;
             }
-            Command::Login {
-                legacy: _,
-                oauth,
-                device_auth,
-                devbox,
-            } => {
+            Command::Login => {
                 init_tracing_simple("cli");
                 let config = kigi_shell::config::load_effective_config_disk_only()
                     .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
                 let config = AgentConfig::new_from_toml_cfg(&config)
                     .map_err(|e| anyhow::anyhow!("Failed to create agent config: {e}"))?;
-                kigi_shell::auth::run_cli_login(&config, oauth, device_auth, devbox).await?;
+                kigi_shell::auth::run_cli_login(&config).await?;
                 println!();
                 kigi_shell::instrumentation::finalize_and_exit(0);
             }

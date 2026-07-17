@@ -484,37 +484,23 @@ mod tests {
             .insert("review".to_string(), "# Review skill\n".to_string());
         bundle
     }
-    fn test_auth() -> crate::auth::GrokAuth {
-        crate::auth::GrokAuth {
+    fn test_auth() -> crate::auth::KimiAuth {
+        crate::auth::KimiAuth {
             key: "token".to_string(),
-            auth_mode: crate::auth::AuthMode::Oidc,
+            auth_mode: crate::auth::AuthMode::OAuth,
             create_time: chrono::Utc::now(),
             user_id: "user-1".to_string(),
             email: Some("test@example.com".to_string()),
-            first_name: None,
-            last_name: None,
-            profile_image_asset_id: None,
-            principal_type: None,
-            principal_id: None,
-            team_id: None,
-            team_name: None,
-            team_role: None,
-            organization_id: None,
-            organization_name: None,
-            organization_role: None,
-            user_blocked_reason: None,
-            team_blocked_reasons: vec![],
-            coding_data_retention_opt_out: false,
-            has_grok_code_access: None,
             refresh_token: None,
             expires_at: Some(chrono::Utc::now() + chrono::Duration::hours(1)),
-            oidc_issuer: None,
-            oidc_client_id: None,
+            expires_in: Some(3600),
+            scope: None,
+            token_type: None,
         }
     }
     fn test_auth_manager() -> Arc<crate::auth::AuthManager> {
         let dir = tempfile::tempdir().unwrap();
-        let mgr = crate::auth::AuthManager::new(dir.path(), crate::auth::GrokComConfig::default());
+        let mgr = crate::auth::AuthManager::new(dir.path(), crate::auth::KimiCodeConfig::default());
         mgr.hot_swap(test_auth());
         std::mem::forget(dir);
         Arc::new(mgr)

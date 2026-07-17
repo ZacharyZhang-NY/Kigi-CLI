@@ -48,7 +48,7 @@ impl UpdateConfig {
     pub fn from_environment() -> Self {
         Self {
             proxy_base_url: kigi_env::coding_api_base_url(),
-            auth_scope: kigi_shell::auth::GrokComConfig::default().auth_scope(),
+            auth_scope: kigi_shell::auth::KimiCodeConfig::default().auth_scope(),
             deployment_key: None,
             alpha_test_key: None,
             channel: "stable".to_string(),

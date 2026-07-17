@@ -21,7 +21,6 @@ pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
         "x.ai/auth/get_url" => handle_get_url(agent).await,
         "x.ai/auth/logout" => handle_logout(agent, args).await,
         "x.ai/auth/info" => handle_info(agent),
-        "x.ai/auth/check_subscription" => handle_check_subscription(agent).await,
         _ => Err(acp::Error::method_not_found()),
     }
 }
@@ -111,7 +110,7 @@ async fn handle_get_url(agent: &MvpAgent) -> ExtResult {
     to_raw_response(&serde_json::json!({
         "auth_url": auth_url,
         // `external_provider` kept for older clients; `mode` is authoritative.
-        "external_provider": mode.is_some_and(|m| m.is_external_provider()),
+        "external_provider": false,
         "mode": mode.map(|m| m.as_wire_str()),
     }))
 }
@@ -141,43 +140,16 @@ async fn handle_logout(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     }))
 }
 
-/// Single-shot subscription re-check (retry button on paywall screen).
-///
-/// Calls `retry_subscription_check()`, then returns the updated auth
-/// response with gate info so the pager can refresh the gate state.
-async fn handle_check_subscription(agent: &MvpAgent) -> ExtResult {
-    agent.retry_subscription_check().await;
-    let response = agent.auth_response_with_meta();
-    to_raw_response(&serde_json::json!({
-        "authenticated": response.meta.is_some(),
-        "meta": response.meta,
-    }))
-}
-
-/// Returns current auth method ID, user profile fields, and team/principal
-/// metadata.
+/// Returns current auth method ID and the account fields the Kimi flow
+/// exposes (email/user id are empty until a later feature surfaces them).
 fn handle_info(agent: &MvpAgent) -> ExtResult {
     #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]
     struct AuthInfoResponse {
         method_id: Option<String>,
         email: Option<String>,
-        first_name: Option<String>,
-        last_name: Option<String>,
-        /// `grok-asset://` URL resolved by the Electron protocol handler,
-        /// or a full `http(s)://` URL passed through unchanged.
-        profile_image_url: Option<String>,
-        team_id: Option<String>,
-        team_name: Option<String>,
-        team_role: Option<String>,
-        organization_id: Option<String>,
-        organization_name: Option<String>,
-        organization_role: Option<String>,
-        principal_type: Option<String>,
-        principal_id: Option<String>,
-        user_blocked_reason: Option<String>,
-        team_blocked_reasons: Vec<String>,
-        coding_data_retention_opt_out: bool,
+        user_id: Option<String>,
+        auth_mode: Option<String>,
     }
 
     let method_id = agent
@@ -186,40 +158,13 @@ fn handle_info(agent: &MvpAgent) -> ExtResult {
         .as_ref()
         .map(|m| m.0.to_string());
     let auth = agent.auth_manager.current();
-    let raw_asset_id = auth.as_ref().and_then(|a| a.profile_image_asset_id.clone());
-
-    // Return a grok-asset:// URL that the Electron renderer resolves at
-    // display time via a custom protocol handler. The handler proxies
-    // through cli-chat-proxy's /asset endpoint; Electron's HTTP cache
-    // handles reuse. No disk-cache or network call needed here.
-    let profile_image_url = match raw_asset_id.as_deref().filter(|k| !k.is_empty()) {
-        Some(key) if key.starts_with("http://") || key.starts_with("https://") => {
-            Some(key.to_owned())
-        }
-        Some(key) => Some(format!("grok-asset:///{key}")),
-        None => None,
-    };
     to_raw_response(&AuthInfoResponse {
         method_id,
         email: auth.as_ref().and_then(|a| a.email.clone()),
-        first_name: auth.as_ref().and_then(|a| a.first_name.clone()),
-        last_name: auth.as_ref().and_then(|a| a.last_name.clone()),
-        profile_image_url,
-        team_id: auth.as_ref().and_then(|a| a.team_id.clone()),
-        team_name: auth.as_ref().and_then(|a| a.team_name.clone()),
-        team_role: auth.as_ref().and_then(|a| a.team_role.clone()),
-        organization_id: auth.as_ref().and_then(|a| a.organization_id.clone()),
-        organization_name: auth.as_ref().and_then(|a| a.organization_name.clone()),
-        organization_role: auth.as_ref().and_then(|a| a.organization_role.clone()),
-        principal_type: auth.as_ref().and_then(|a| a.principal_type.clone()),
-        principal_id: auth.as_ref().and_then(|a| a.principal_id.clone()),
-        user_blocked_reason: auth.as_ref().and_then(|a| a.user_blocked_reason.clone()),
-        team_blocked_reasons: auth
+        user_id: auth
             .as_ref()
-            .map(|a| a.team_blocked_reasons.clone())
-            .unwrap_or_default(),
-        coding_data_retention_opt_out: auth
-            .as_ref()
-            .is_some_and(|a| a.coding_data_retention_opt_out),
+            .map(|a| a.user_id.clone())
+            .filter(|id| !id.is_empty()),
+        auth_mode: auth.as_ref().map(|a| format!("{:?}", a.auth_mode)),
     })
 }

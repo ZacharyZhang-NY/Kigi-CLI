@@ -17,7 +17,6 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use crate::auth::ForceLoginTeam;
 use kigi_tools::types::config_source::ConfigSource;
 use kigi_tools::util::truncate::estimate_tokens;
 
@@ -63,7 +62,6 @@ pub struct InspectReport {
     pub project_trusted: bool,
     pub project_instructions: Vec<InstructionFile>,
     pub permissions: PermissionsReport,
-    pub login_policy: LoginPolicyReport,
     pub hooks: Vec<HookEntry>,
     pub skills: Vec<SkillEntry>,
     pub agents: Vec<AgentEntry>,
@@ -137,20 +135,6 @@ pub struct EnforcedPolicy {
 pub struct SkippedRule {
     pub rule: String,
     pub reason: String,
-}
-
-/// Enterprise login-hardening policy resolved from `[grok_com_config]`
-/// (TOML + env). Surfaced so admins can verify the deployment loaded it.
-/// The team pin is admin policy, not a secret, so it is shown verbatim.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LoginPolicyReport {
-    /// Raw `disable_api_key_auth` knob (env `KIGI_DISABLE_API_KEY_AUTH`).
-    pub disable_api_key_auth: Option<bool>,
-    /// Configured team pin: single string, list, or null when unset.
-    pub force_login_team_uuid: Option<ForceLoginTeam>,
-    /// Resolved verdict — true when either knob forces first-party login.
-    pub api_key_auth_disabled: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -395,7 +379,6 @@ async fn build_report(cwd: &Path) -> InspectReport {
         project_trusted,
         project_instructions: instructions,
         permissions,
-        login_policy: login_policy_report(parsed_config.as_ref()),
         hooks,
         skills,
         agents,
@@ -612,20 +595,6 @@ async fn list_permissions(cwd: &Path) -> PermissionsReport {
         managed_settings_exists,
         managed_settings_active,
         enforced,
-    }
-}
-
-/// Resolves the enterprise login-hardening knobs from the merged config
-/// (`[grok_com_config]`, the `[auth]` alias, and env overrides) so admins can
-/// confirm the deployment's auth policy actually loaded.
-fn login_policy_report(config: Option<&crate::agent::config::Config>) -> LoginPolicyReport {
-    let grok_com_config = config
-        .map(|c| c.grok_com_config.clone())
-        .unwrap_or_default();
-    LoginPolicyReport {
-        api_key_auth_disabled: grok_com_config.api_key_auth_disabled(),
-        disable_api_key_auth: grok_com_config.disable_api_key_auth,
-        force_login_team_uuid: grok_com_config.force_login_team_uuid,
     }
 }
 
@@ -1174,19 +1143,6 @@ fn print_columns<T>(
     }
 }
 
-/// Render the team pin for the human view: single value, comma-joined list,
-/// or an explicit empty-list marker (which fails closed at login).
-fn format_force_login_team(team: &Option<ForceLoginTeam>) -> String {
-    match team {
-        None => "(none)".to_string(),
-        Some(ForceLoginTeam::Single(s)) => s.clone(),
-        Some(ForceLoginTeam::AnyOf(list)) if list.is_empty() => {
-            "(empty -- fail closed)".to_string()
-        }
-        Some(ForceLoginTeam::AnyOf(list)) => list.join(", "),
-    }
-}
-
 /// Human label for an enforced setting. Uses product vocabulary, not the
 /// internal field names (no `ui.yolo` / `--yolo` / `permission_mode`).
 fn enforced_label(p: &EnforcedPolicy) -> String {
@@ -1341,24 +1297,6 @@ fn print_human(r: &InspectReport) {
             println!("    {TREE} {}", url);
         }
     }
-
-    println!();
-    println!("  Login Policy");
-    println!(
-        "  {TREE} disable_api_key_auth: {}",
-        match r.login_policy.disable_api_key_auth {
-            Some(v) => v.to_string(),
-            None => "(unset)".to_string(),
-        }
-    );
-    println!(
-        "  {TREE} force_login_team_uuid: {}",
-        format_force_login_team(&r.login_policy.force_login_team_uuid)
-    );
-    println!(
-        "  {TREE} api_key_auth_disabled: {}",
-        r.login_policy.api_key_auth_disabled
-    );
 
     print_columns(
         "Skills",

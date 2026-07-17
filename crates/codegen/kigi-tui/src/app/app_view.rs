@@ -403,16 +403,10 @@ pub(crate) const TIER_RESTRICTED_COMMANDS: &[&str] = &["usage", "imagine", "imag
 /// "x_basic"). Everything else — paid tiers and unknown future names —
 /// is unrestricted (fail-open).
 ///
-/// The string classification is shared with the shell's capability
-/// (toolset) gate via [`kigi_shell::tier::is_restricted_tier_name`] so
-/// the two can't drift. The pager's *cosmetic* slash-command gate treats an
-/// absent tier (`None`) as restricted (it recovers live on the next settings
-/// update); the shell's capability gate treats absence as unrestricted.
-fn is_restricted_tier(tier: Option<&str>) -> bool {
-    match tier {
-        None => true,
-        Some(t) => kigi_shell::tier::is_restricted_tier_name(t),
-    }
+/// Tier gating was an xAI concept; the Kimi Code subscription has no
+/// client-visible tier, so nothing is ever restricted.
+fn is_restricted_tier(_tier: Option<&str>) -> bool {
+    false
 }
 /// True for API-key labels from shell/CCP: `"ApiKey"`, `"API Key"`, `"api_key"`.
 pub(crate) fn is_api_key_label(s: &str) -> bool {
@@ -961,26 +955,18 @@ impl AppView {
             label: rs.gate_label.clone(),
         })
     }
-    /// Apply typed auth metadata from the shell.
+    /// Apply typed auth metadata from the shell. The Kimi auth model carries
+    /// no team/tier/gate info; those fields only ever come from remote
+    /// settings now.
     pub fn apply_auth_meta(&mut self, meta: &kigi_shell::auth::AuthMeta) {
         self.pending_gate_verification = None;
         let was_gated = self.gate.is_some();
-        self.team_id = meta.team_id.clone();
-        self.team_name = meta.team_name.clone();
-        self.is_zdr = meta.is_zdr;
-        self.team_role = meta.team_role.clone();
-        self.coding_data_retention_opt_out = meta.coding_data_retention_opt_out;
-        self.gate = meta.gate.clone();
-        if was_gated && self.gate.is_none() {
+        self.gate = None;
+        if was_gated {
             self.paywall_check_started = None;
         }
-        self.subscription_tier = meta.subscription_tier.clone();
-        self.is_api_key_auth = meta.auth_mode.as_deref().is_some_and(is_api_key_label)
-            || meta
-                .subscription_tier
-                .as_deref()
-                .is_some_and(is_api_key_label);
-        self.usage_visible = meta.team_name.is_none() && !self.is_api_key_auth;
+        self.is_api_key_auth = meta.auth_mode.as_deref().is_some_and(is_api_key_label);
+        self.usage_visible = !self.is_api_key_auth;
         self.apply_tier_restrictions();
         if let Some(show) = meta.show_resolved_model {
             self.show_resolved_model = show;
@@ -5588,19 +5574,6 @@ pub(crate) mod tests {
         assert_eq!(counts.get("t_seen"), Some(&2));
     }
     #[test]
-    fn apply_auth_meta_hides_usage_for_team_users() {
-        let mut app = test_app();
-        assert!(app.usage_visible);
-        let meta = kigi_shell::auth::AuthMeta {
-            team_id: Some("team-uuid".into()),
-            team_name: Some("Acme Corp".into()),
-            ..Default::default()
-        };
-        app.apply_auth_meta(&meta);
-        assert!(!app.usage_visible);
-        assert_eq!(app.team_id.as_deref(), Some("team-uuid"));
-    }
-    #[test]
     fn apply_auth_meta_shows_usage_for_personal_users() {
         let mut app = test_app();
         app.usage_visible = false;
@@ -5616,41 +5589,6 @@ pub(crate) mod tests {
         app.apply_auth_meta(&kigi_shell::auth::AuthMeta::default());
         assert!(!app.is_api_key_auth);
         assert!(app.usage_visible);
-    }
-    #[test]
-    fn apply_auth_meta_api_key_skips_tier_gate() {
-        let mut app = test_app();
-        advertise_media_tools(&mut app);
-        app.apply_auth_meta(&kigi_shell::auth::AuthMeta {
-            auth_mode: Some("ApiKey".into()),
-            subscription_tier: Some("API Key".into()),
-            ..Default::default()
-        });
-        assert!(app.is_api_key_auth);
-        assert!(!app.usage_visible);
-        assert!(app.tier_restricted_commands.is_empty());
-        assert_tier_restricted_commands_present(&app);
-        let mut app = test_app();
-        app.apply_auth_meta(&kigi_shell::auth::AuthMeta {
-            subscription_tier: Some("api_key".into()),
-            ..Default::default()
-        });
-        assert!(app.is_api_key_auth);
-        assert!(app.tier_restricted_commands.is_empty());
-        app.apply_auth_meta(&kigi_shell::auth::AuthMeta {
-            auth_mode: Some("Oidc".into()),
-            subscription_tier: Some("Free".into()),
-            ..Default::default()
-        });
-        assert!(!app.is_api_key_auth);
-        assert!(app.usage_visible);
-        assert!(!app.tier_restricted_commands.is_empty());
-    }
-    fn expected_tier_restricted_commands() -> Vec<String> {
-        TIER_RESTRICTED_COMMANDS
-            .iter()
-            .map(|n| (*n).to_string())
-            .collect()
     }
     /// Make every tier-restricted command visible on the welcome prompt so the
     /// present/absent assertions exercise the deny list, not incidental
@@ -5668,16 +5606,6 @@ pub(crate) mod tests {
                     .collect(),
             );
     }
-    fn assert_tier_restricted_commands_absent(app: &AppView) {
-        let reg = app.welcome_prompt.slash_controller.registry();
-        for name in TIER_RESTRICTED_COMMANDS {
-            assert!(
-                reg.get(name).is_none(),
-                "/{name} must be denied on a restricted tier"
-            );
-        }
-        assert!(reg.get("cost").is_none(), "/cost alias must be denied");
-    }
     fn assert_tier_restricted_commands_present(app: &AppView) {
         let reg = app.welcome_prompt.slash_controller.registry();
         for name in TIER_RESTRICTED_COMMANDS {
@@ -5688,103 +5616,31 @@ pub(crate) mod tests {
         }
     }
     #[test]
-    fn apply_auth_meta_restricts_usage_for_free_tier() {
+    fn apply_auth_meta_never_restricts_tiers() {
         let mut app = test_app();
         advertise_media_tools(&mut app);
         app.apply_auth_meta(&kigi_shell::auth::AuthMeta::default());
-        assert_eq!(
-            app.tier_restricted_commands,
-            expected_tier_restricted_commands()
-        );
-        assert_tier_restricted_commands_absent(&app);
-        assert!(app.usage_visible);
-    }
-    #[test]
-    fn apply_auth_meta_restricts_usage_for_x_basic_tier() {
-        let mut app = test_app();
-        advertise_media_tools(&mut app);
-        let meta = kigi_shell::auth::AuthMeta {
-            subscription_tier: Some("X Basic".into()),
-            ..Default::default()
-        };
-        app.apply_auth_meta(&meta);
-        assert_eq!(
-            app.tier_restricted_commands,
-            expected_tier_restricted_commands()
-        );
-        assert_tier_restricted_commands_absent(&app);
-    }
-    #[test]
-    fn apply_auth_meta_lifts_restrictions_for_paid_tiers_and_teams() {
-        let mut app = test_app();
-        advertise_media_tools(&mut app);
-        let meta = kigi_shell::auth::AuthMeta {
-            subscription_tier: Some("SuperGrok".into()),
-            ..Default::default()
-        };
-        app.apply_auth_meta(&meta);
         assert!(app.tier_restricted_commands.is_empty());
         assert_tier_restricted_commands_present(&app);
-        let mut app = test_app();
-        advertise_media_tools(&mut app);
-        app.apply_auth_meta(&kigi_shell::auth::AuthMeta::default());
-        assert!(!app.tier_restricted_commands.is_empty());
-        app.subscription_tier = Some("SuperGrok".into());
-        app.apply_tier_restrictions();
-        assert!(app.tier_restricted_commands.is_empty());
-        assert_tier_restricted_commands_present(&app);
-        let mut app = test_app();
-        let meta = kigi_shell::auth::AuthMeta {
-            team_id: Some("team-uuid".into()),
-            team_name: Some("Acme Corp".into()),
-            ..Default::default()
-        };
-        app.apply_auth_meta(&meta);
-        assert!(app.tier_restricted_commands.is_empty());
     }
     #[test]
-    fn is_restricted_tier_classification() {
-        assert!(is_restricted_tier(None));
-        assert!(is_restricted_tier(Some("")));
-        assert!(is_restricted_tier(Some("Free")));
-        assert!(is_restricted_tier(Some("X Basic")));
-        assert!(is_restricted_tier(Some("x_basic")));
-        assert!(!is_restricted_tier(Some("SuperGrok")));
-        assert!(!is_restricted_tier(Some("SuperGrok Heavy")));
-        assert!(!is_restricted_tier(Some("X Premium")));
-        assert!(!is_restricted_tier(Some("X Premium+")));
+    fn is_restricted_tier_never_restricts() {
+        assert!(!is_restricted_tier(None));
+        assert!(!is_restricted_tier(Some("Free")));
         assert!(!is_restricted_tier(Some("SomeFutureTier")));
     }
     #[test]
-    fn apply_auth_meta_clears_gate_on_subscription() {
+    fn apply_auth_meta_clears_gate_on_login() {
         let mut app = test_app();
         app.gate = Some(kigi_shell::auth::GateInfo {
-            message: "Subscribe to use Grok Build".into(),
-            url: Some("https://grok.com/supergrok?referrer=grok-build".into()),
-            label: None,
-        });
-        assert!(app.is_access_blocked());
-        let meta = kigi_shell::auth::AuthMeta::default();
-        app.apply_auth_meta(&meta);
-        assert!(app.gate.is_none());
-        assert!(app.has_access());
-    }
-    #[test]
-    fn apply_auth_meta_gate_unchanged_when_still_gated() {
-        let mut app = test_app();
-        let gate = kigi_shell::auth::GateInfo {
             message: "Subscribe".into(),
             url: None,
             label: None,
-        };
-        app.gate = Some(gate.clone());
-        let meta = kigi_shell::auth::AuthMeta {
-            gate: Some(gate),
-            ..Default::default()
-        };
-        app.apply_auth_meta(&meta);
-        assert!(app.gate.is_some());
+        });
         assert!(app.is_access_blocked());
+        app.apply_auth_meta(&kigi_shell::auth::AuthMeta::default());
+        assert!(app.gate.is_none());
+        assert!(app.has_access());
     }
     #[test]
     fn welcome_ctrl_q_requires_confirmation() {

@@ -350,16 +350,16 @@ pub async fn run(
     let startup_start = std::time::Instant::now();
     let raw_config = kigi_shell::config::load_effective_config()
         .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
-    let grok_com_config = match kigi_shell::agent::config::Config::new_from_toml_cfg(&raw_config) {
-        Ok(c) => c.grok_com_config,
+    let kimi_code_config = match kigi_shell::agent::config::Config::new_from_toml_cfg(&raw_config) {
+        Ok(c) => c.kimi_code_config,
         Err(e) => {
             tracing::warn!(
                 error = % e, "failed to parse config for auth refresh, using defaults"
             );
-            kigi_shell::auth::GrokComConfig::default()
+            kigi_shell::auth::KimiCodeConfig::default()
         }
     };
-    let refreshed_auth = kigi_shell::auth::try_ensure_fresh_auth(&grok_com_config).await;
+    let refreshed_auth = kigi_shell::auth::try_ensure_fresh_auth(&kimi_code_config).await;
     let early_prefetch = kigi_shell::agent::models::start_early_prefetch_with_auth(refreshed_auth);
     kigi_shell::agent::mvp_agent::warm_async_http_client();
     tokio::task::spawn_blocking(|| {});

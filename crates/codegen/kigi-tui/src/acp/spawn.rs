@@ -40,9 +40,9 @@ pub async fn spawn_grok_shell(
 ) -> Result<SpawnedAgent> {
     let auth_manager = std::sync::Arc::new(AuthManager::new(
         &kigi_home(),
-        agent_config.grok_com_config.clone(),
+        agent_config.kimi_code_config.clone(),
     ));
-    auth_manager.configure_refresher(agent_config.grok_com_config.auth_provider_command.clone());
+    auth_manager.configure_refresher();
     // Pause token refreshes across system sleep so an OIDC refresh can't
     // straddle a suspend (which can revoke the refresh token and force
     // re-login). No-op where the OS listener is unavailable.

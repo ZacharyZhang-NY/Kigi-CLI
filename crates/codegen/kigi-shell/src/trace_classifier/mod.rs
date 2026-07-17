@@ -1073,18 +1073,10 @@ pub async fn resolve_api_key(explicit: Option<&str>, kigi_home: &Path) -> Result
 /// * `Err(_)` — refresh attempt failed in a way the operator needs to
 ///   see (network error, refresh_token rejected by the IdP, etc.).
 async fn non_interactive_auth_key(kigi_home: &Path) -> Result<Option<String>> {
-    use crate::auth::{AuthError, AuthManager, GrokComConfig};
+    use crate::auth::{AuthError, AuthManager, KimiCodeConfig};
 
-    // Production's `try_ensure_fresh_auth` clones the whole config to
-    // pass into `AuthManager::new` AND clones `auth_provider_command`
-    // again for `configure_refresher`. We extract the single field we
-    // need first, then move the rest of `config` into `AuthManager`
-    // — one `Option<String>` clone instead of one full struct clone
-    // plus one Option clone.
-    let config = GrokComConfig::default();
-    let auth_provider_command = config.auth_provider_command.clone();
-    let manager = std::sync::Arc::new(AuthManager::new(kigi_home, config));
-    manager.configure_refresher(auth_provider_command);
+    let manager = std::sync::Arc::new(AuthManager::new(kigi_home, KimiCodeConfig::default()));
+    manager.configure_refresher();
     match manager.auth().await {
         Ok(auth) => {
             let trimmed = auth.key.trim();
@@ -2147,7 +2139,7 @@ mod tests {
     /// path entirely — useful for "plain key, no refresh wanted"
     /// fixtures.
     fn write_auth_json(kigi_home: &Path, key: &str) {
-        let scope = crate::auth::GrokComConfig::default().auth_scope();
+        let scope = crate::auth::KimiCodeConfig::default().auth_scope();
         let body = serde_json::json!({
             scope: {
                 "key": key,
@@ -2172,11 +2164,11 @@ mod tests {
     /// returns it via the fast path; the refresher chain is NOT
     /// invoked, so no network call fires.
     fn write_fresh_oidc_auth_json(kigi_home: &Path, key: &str) {
-        let scope = crate::auth::GrokComConfig::default().auth_scope();
+        let scope = crate::auth::KimiCodeConfig::default().auth_scope();
         let body = serde_json::json!({
             scope: {
                 "key": key,
-                "auth_mode": "oidc",
+                "auth_mode": "oauth",
                 "create_time": now_offset(0),
                 "expires_at": now_offset(3600),
                 "refresh_token": "test-refresh-token",
@@ -2192,11 +2184,11 @@ mod tests {
     /// refresh chain has nothing to refresh against, so the auth
     /// call fails non-interactively.
     fn write_expired_oidc_auth_json_no_refresh(kigi_home: &Path, key: &str) {
-        let scope = crate::auth::GrokComConfig::default().auth_scope();
+        let scope = crate::auth::KimiCodeConfig::default().auth_scope();
         let body = serde_json::json!({
             scope: {
                 "key": key,
-                "auth_mode": "oidc",
+                "auth_mode": "oauth",
                 "create_time": now_offset(-7200),
                 "expires_at": now_offset(-3600),
                 "user_id": "test-user",

@@ -79,7 +79,7 @@ fn resolve_config(cfg: &AgentConfig, auth_manager: &AuthManager) -> AgentConfig 
     // thread the result into `cfg.remote_settings` skip this entirely.
     if cfg.remote_settings.is_none()
         && let Some(handle) =
-            crate::agent::models::start_early_prefetch(Some(cfg.grok_com_config.clone()))
+            crate::agent::models::start_early_prefetch(Some(cfg.kimi_code_config.clone()))
     {
         match handle.join() {
             Ok(result) => {
@@ -103,9 +103,9 @@ fn resolve_config(cfg: &AgentConfig, auth_manager: &AuthManager) -> AgentConfig 
     {
         cfg.storage_mode = StorageMode::resolve(None, cfg.remote_settings.as_ref());
     }
-    // Writeback talks to the code backend; requires grok.com auth.
+    // Writeback talks to the code backend; requires a Kimi Code session.
     if cfg.storage_mode == StorageMode::Writeback
-        && !auth_manager.current().is_some_and(|a| a.is_xai_auth())
+        && !auth_manager.current().is_some_and(|a| a.is_session_auth())
     {
         tracing::info!("Writeback is disabled: requires auth with grok.com");
         cfg.storage_mode = StorageMode::Local;

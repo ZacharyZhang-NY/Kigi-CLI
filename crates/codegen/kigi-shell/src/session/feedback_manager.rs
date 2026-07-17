@@ -981,23 +981,23 @@ mod tests {
     async fn test_is_auth_permanently_failed_reads_auth_manager() {
         use crate::agent::feedback_client::FeedbackClient;
         use crate::auth::error::RefreshTokenFailedReason;
-        use crate::auth::{AuthManager, GrokAuth, GrokComConfig};
+        use crate::auth::{AuthManager, KimiAuth, KimiCodeConfig};
         use std::sync::Arc;
 
         let dir = tempfile::tempdir().unwrap();
-        let am = Arc::new(AuthManager::new(dir.path(), GrokComConfig::default()));
+        let am = Arc::new(AuthManager::new(dir.path(), KimiCodeConfig::default()));
         let client = FeedbackClient::new("http://example/v1", None).with_auth_manager(am.clone());
 
         assert!(!client.is_auth_permanently_failed());
 
-        // The verdict is scoped to the live credential's key.
-        am.hot_swap(GrokAuth {
+        // The tombstone is scoped to the live credential's refresh token.
+        am.hot_swap(KimiAuth {
             key: "tok".into(),
-            ..GrokAuth::test_default()
+            refresh_token: Some("rt".into()),
+            expires_at: Some(chrono::Utc::now() - chrono::Duration::hours(1)),
+            ..KimiAuth::test_default()
         });
-        // Use a non-sticky reason: only recoverable verdicts age out (a sticky
-        // `RefreshTokenRejected` never expires), and this exercises the TTL path.
-        am.record_permanent_failure("tok".to_string(), RefreshTokenFailedReason::Other.into());
+        am.record_permanent_failure("rt".to_string(), RefreshTokenFailedReason::Other.into());
         assert!(client.is_auth_permanently_failed());
 
         am.force_permanent_failure_aged_out();
@@ -1018,7 +1018,7 @@ mod tests {
     #[tokio::test]
     async fn test_has_token_refresher_requires_refresher_attached() {
         use crate::agent::feedback_client::FeedbackClient;
-        use crate::auth::{AuthManager, GrokComConfig};
+        use crate::auth::{AuthManager, KimiCodeConfig};
         use std::sync::Arc;
 
         struct NoOpRefresher;
@@ -1035,7 +1035,7 @@ mod tests {
         }
 
         let dir = tempfile::tempdir().unwrap();
-        let am = Arc::new(AuthManager::new(dir.path(), GrokComConfig::default()));
+        let am = Arc::new(AuthManager::new(dir.path(), KimiCodeConfig::default()));
 
         let bare = FeedbackClient::new("http://example/v1", None);
         assert!(!bare.has_token_refresher());

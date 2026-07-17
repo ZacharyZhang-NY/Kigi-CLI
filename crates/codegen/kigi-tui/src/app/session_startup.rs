@@ -418,9 +418,9 @@ pub(crate) fn pre_acp_auth_manager(
 ) -> std::sync::Arc<kigi_shell::auth::AuthManager> {
     let auth = std::sync::Arc::new(kigi_shell::auth::AuthManager::new(
         &kigi_shell::util::kigi_home::kigi_home(),
-        agent_config.grok_com_config.clone(),
+        agent_config.kimi_code_config.clone(),
     ));
-    auth.configure_refresher(agent_config.grok_com_config.auth_provider_command.clone());
+    auth.configure_refresher();
     auth
 }
 /// Preflight: preferred id must be a UUID and not a persisted session under `cwd`.
@@ -621,7 +621,7 @@ async fn resolve_existing_session(
     use kigi_shell::util::kigi_home::kigi_home;
     let deployment_key = agent_config.endpoints.deployment_key.clone();
     ensure_authenticated_or_noninteractive(
-        &agent_config.grok_com_config,
+        &agent_config.kimi_code_config,
         deployment_key.is_some(),
         None,
     )
@@ -629,7 +629,7 @@ async fn resolve_existing_session(
     .map_err(|e| anyhow::anyhow!("Failed to authenticate for session restore: {}", e))?;
     let auth_manager = std::sync::Arc::new(AuthManager::new(
         &kigi_home(),
-        agent_config.grok_com_config.clone(),
+        agent_config.kimi_code_config.clone(),
     ));
     let registry_client =
         SessionRegistryClient::new(agent_config.endpoints.proxy_url(), String::new())

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::auth::{AuthManager, GrokAuth};
+use crate::auth::{AuthManager, KimiAuth};
 
 const KIGI_WEB_URL: &str = "https://grok.com";
 
@@ -108,9 +108,9 @@ impl ConversationsClient {
         }
     }
 
-    async fn require_xai_auth(&self) -> Result<GrokAuth, ConvError> {
+    async fn require_xai_auth(&self) -> Result<KimiAuth, ConvError> {
         let auth = self.auth.auth().await.map_err(|_| ConvError::NoOauth)?;
-        if !auth.is_xai_auth() {
+        if !auth.is_session_auth() {
             return Err(ConvError::NoOauth);
         }
         Ok(auth)
@@ -119,14 +119,10 @@ impl ConversationsClient {
     fn apply_auth_headers(
         &self,
         builder: reqwest::RequestBuilder,
-        auth: &GrokAuth,
+        auth: &KimiAuth,
     ) -> reqwest::RequestBuilder {
         let mut builder = builder
             .header("Authorization", format!("Bearer {}", auth.key))
-            .header(
-                "X-XAI-Token-Auth",
-                self.auth.grok_com_config().token_header.clone(),
-            )
             .header("x-userid", &auth.user_id)
             .header("x-grok-client-version", kigi_version::VERSION)
             .header(

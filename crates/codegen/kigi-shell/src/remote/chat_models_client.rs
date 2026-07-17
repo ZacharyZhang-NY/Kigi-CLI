@@ -121,10 +121,6 @@ impl ChatModelsClient {
             .post(&url)
             .json(&body)
             .header("Authorization", format!("Bearer {}", auth.key))
-            .header(
-                "X-XAI-Token-Auth",
-                self.auth.grok_com_config().token_header.clone(),
-            )
             .header("x-userid", &auth.user_id)
             .header("x-grok-client-version", kigi_version::VERSION)
             .header(

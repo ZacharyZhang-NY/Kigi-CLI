@@ -320,14 +320,14 @@ pub struct FeedbackClient {
     http: reqwest::Client,
     client: reqwest_middleware::ClientWithMiddleware,
     base_url: String,
-    credentials: crate::util::grok_auth_credentials::GrokAuthCredentials,
+    credentials: crate::util::kigi_auth_credentials::KigiAuthCredentials,
     session_id: Option<String>,
 }
 
 impl FeedbackClient {
     pub fn new(base_url: impl Into<String>, user_token: Option<String>) -> Self {
         let http = crate::http::shared_client();
-        let credentials = crate::util::grok_auth_credentials::GrokAuthCredentials::new(user_token);
+        let credentials = crate::util::kigi_auth_credentials::KigiAuthCredentials::new(user_token);
         let client = Self::build_middleware_client(&http, &credentials);
         Self {
             http,
@@ -361,7 +361,7 @@ impl FeedbackClient {
         base_url: impl Into<String>,
         user_token: Option<String>,
     ) -> Self {
-        let credentials = crate::util::grok_auth_credentials::GrokAuthCredentials::new(user_token);
+        let credentials = crate::util::kigi_auth_credentials::KigiAuthCredentials::new(user_token);
         let client = Self::build_middleware_client(&http, &credentials);
         Self {
             http,
@@ -398,7 +398,7 @@ impl FeedbackClient {
 
     fn build_middleware_client(
         http: &reqwest::Client,
-        credentials: &crate::util::grok_auth_credentials::GrokAuthCredentials,
+        credentials: &crate::util::kigi_auth_credentials::KigiAuthCredentials,
     ) -> reqwest_middleware::ClientWithMiddleware {
         let provider = Self::make_auth_provider(credentials);
         // max_retries=0: the middleware stamps the auth header but does NOT
@@ -415,7 +415,7 @@ impl FeedbackClient {
     }
 
     fn make_auth_provider(
-        credentials: &crate::util::grok_auth_credentials::GrokAuthCredentials,
+        credentials: &crate::util::kigi_auth_credentials::KigiAuthCredentials,
     ) -> Arc<dyn kigi_auth::AuthCredentialProvider> {
         if let Some(am) = credentials.auth_manager() {
             Arc::new(
@@ -1118,7 +1118,7 @@ mod forbidden_tests {
 #[cfg(test)]
 mod auth_refresh_tests {
     use super::*;
-    use crate::auth::{AuthManager, AuthMode, GrokAuth, GrokComConfig};
+    use crate::auth::{AuthManager, AuthMode, KimiAuth, KimiCodeConfig};
     use axum::{Router, routing::get};
     use chrono::{Duration, Utc};
     use std::net::SocketAddr;
@@ -1156,14 +1156,14 @@ mod auth_refresh_tests {
         let (addr, _server) = start_server(router).await;
 
         let dir = tempfile::tempdir().unwrap();
-        let am = Arc::new(AuthManager::new(dir.path(), GrokComConfig::default()));
-        am.hot_swap(GrokAuth {
+        let am = Arc::new(AuthManager::new(dir.path(), KimiCodeConfig::default()));
+        am.hot_swap(KimiAuth {
             key: "fresh-from-auth-manager".into(),
             auth_mode: AuthMode::ApiKey,
             create_time: Utc::now(),
             user_id: "user-42".into(),
             expires_at: Some(Utc::now() + Duration::hours(1)),
-            ..GrokAuth::test_default()
+            ..KimiAuth::test_default()
         });
 
         let client = FeedbackClient::new(
@@ -1208,14 +1208,14 @@ mod auth_refresh_tests {
         let (addr, _server) = start_server(router).await;
 
         let dir = tempfile::tempdir().unwrap();
-        let am = Arc::new(AuthManager::new(dir.path(), GrokComConfig::default()));
-        let fresh = GrokAuth {
+        let am = Arc::new(AuthManager::new(dir.path(), KimiCodeConfig::default()));
+        let fresh = KimiAuth {
             key: "fresh-from-auth-manager".into(),
             auth_mode: AuthMode::ApiKey,
             create_time: Utc::now(),
             user_id: "user-42".into(),
             expires_at: Some(Utc::now() + Duration::hours(1)),
-            ..GrokAuth::test_default()
+            ..KimiAuth::test_default()
         };
         am.hot_swap(fresh);
 
@@ -1247,16 +1247,14 @@ mod auth_refresh_tests {
             _reason: crate::auth::refresh::RefreshReason,
         ) -> crate::auth::refresh::RefreshOutcome {
             self.calls.fetch_add(1, Ordering::SeqCst);
-            crate::auth::refresh::RefreshOutcome::Success(Box::new(GrokAuth {
+            crate::auth::refresh::RefreshOutcome::Success(Box::new(KimiAuth {
                 key: "fresh-from-refresher".into(),
-                auth_mode: AuthMode::Oidc,
+                auth_mode: AuthMode::OAuth,
                 create_time: Utc::now(),
                 user_id: "user-42".into(),
                 refresh_token: Some("rt-fresh".into()),
                 expires_at: Some(Utc::now() + Duration::hours(1)),
-                oidc_issuer: Some("https://issuer.example".into()),
-                oidc_client_id: Some("test-client".into()),
-                ..GrokAuth::test_default()
+                ..KimiAuth::test_default()
             }))
         }
     }
@@ -1266,34 +1264,30 @@ mod auth_refresh_tests {
     #[tokio::test]
     async fn try_refresh_credentials_picks_up_disk_rotation_without_hitting_idp() {
         let dir = tempfile::tempdir().unwrap();
-        let cfg = GrokComConfig::default();
+        let cfg = KimiCodeConfig::default();
         let scope = cfg.auth_scope();
         let am = Arc::new(AuthManager::new(dir.path(), cfg));
 
         // In-memory: stale token (the one the server rejected).
-        am.hot_swap(GrokAuth {
+        am.hot_swap(KimiAuth {
             key: "stale-rejected".into(),
-            auth_mode: AuthMode::Oidc,
+            auth_mode: AuthMode::OAuth,
             create_time: Utc::now() - Duration::hours(2),
             user_id: "user-42".into(),
             refresh_token: Some("rt-stale".into()),
             expires_at: Some(Utc::now() + Duration::hours(1)),
-            oidc_issuer: Some("https://issuer.example".into()),
-            oidc_client_id: Some("test-client".into()),
-            ..GrokAuth::test_default()
+            ..KimiAuth::test_default()
         });
 
         // Disk: a sibling already rotated to a fresh token.
-        let disk_auth = GrokAuth {
+        let disk_auth = KimiAuth {
             key: "fresh-from-sibling-on-disk".into(),
-            auth_mode: AuthMode::Oidc,
+            auth_mode: AuthMode::OAuth,
             create_time: Utc::now(),
             user_id: "user-42".into(),
             refresh_token: Some("rt-fresh".into()),
             expires_at: Some(Utc::now() + Duration::hours(1)),
-            oidc_issuer: Some("https://issuer.example".into()),
-            oidc_client_id: Some("test-client".into()),
-            ..GrokAuth::test_default()
+            ..KimiAuth::test_default()
         };
         let mut store = std::collections::BTreeMap::new();
         store.insert(scope, disk_auth);
@@ -1329,15 +1323,15 @@ mod auth_refresh_tests {
     #[tokio::test]
     async fn try_refresh_credentials_returns_false_on_terminal_failure() {
         let dir = tempfile::tempdir().unwrap();
-        let am = Arc::new(AuthManager::new(dir.path(), GrokComConfig::default()));
+        let am = Arc::new(AuthManager::new(dir.path(), KimiCodeConfig::default()));
 
         // LegacySession: no refresh_token, no recovery possible.
-        am.hot_swap(GrokAuth {
+        am.hot_swap(KimiAuth {
             key: "legacy-rejected".into(),
-            auth_mode: AuthMode::WebLogin,
+            auth_mode: AuthMode::OAuth,
             create_time: Utc::now() - Duration::days(60),
             user_id: "user-42".into(),
-            ..GrokAuth::test_default()
+            ..KimiAuth::test_default()
         });
 
         let client = FeedbackClient::new("http://example/v1", Some("legacy-rejected".into()))

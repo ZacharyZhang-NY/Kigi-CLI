@@ -19,15 +19,10 @@ pub struct CredentialSnapshot {
     /// identity (`StaticAuthCredentialProvider`). Read by the OTel layer to
     /// populate the `user.id` resource attribute.
     pub user_id: Option<String>,
-    /// Team identifier from OAuth. `None` for personal accounts or when
-    /// no auth is configured.
-    pub team_id: Option<String>,
     /// `uuidv5(NAMESPACE_OID, deployment_key)`, set only for deployment-key auth.
     pub deployment_id: Option<String>,
     /// `uuidv5(NAMESPACE_OID, api_key)`, set only for `AuthMode::ApiKey`.
     pub api_key_id: Option<String>,
-    /// Org id from the OIDC `organizationId` claim; `None` for personal / deployment-key auth.
-    pub organization_id: Option<String>,
 }
 
 /// Source of truth for outbound auth on data-collector requests.
@@ -49,13 +44,6 @@ pub trait AuthCredentialProvider: HttpAuth + Send + Sync + 'static {
     /// token was obtained -- caller should retry the failed request once.
     /// Returns `false` if no refresher is configured or refresh failed.
     async fn refresh_after_unauthorized(&self) -> bool;
-
-    /// Whether `X-XAI-Token-Auth` should be sent with the bearer token.
-    /// `false` for deployment keys (bare Bearer), `true` for user/OAuth tokens.
-    /// See `GrokAuthCredentials::apply()` for the wire format contract.
-    fn needs_token_auth_header(&self) -> bool {
-        true
-    }
 
     /// Whether the provider holds a credential worth a real outbound attempt —
     /// an unexpired token (in memory or on disk), or a static key. Default

@@ -45,13 +45,6 @@ async fn handle_share_session(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtRe
         );
     }
 
-    // Only block for ZDR teams (hard data-retention policy), not for
-    // coding-data-retention opt-out — sharing is user-initiated.
-    if auth.is_zdr_team() {
-        return Err(acp::Error::invalid_params()
-            .data("Session sharing is disabled for your team's data retention policy"));
-    }
-
     // Find session info by searching through summaries
     let summaries = list_summaries(None).await.map_err(|e| {
         acp::Error::internal_error().data(format!("Failed to list sessions: {}", e))
@@ -94,7 +87,7 @@ async fn handle_share_session(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtRe
 
 fn require_xai_auth_for_share(
     auth_manager: &crate::auth::AuthManager,
-) -> Result<crate::auth::GrokAuth, acp::Error> {
+) -> Result<crate::auth::KimiAuth, acp::Error> {
     super::auth_gate::require_xai_auth(
         auth_manager,
         "Authentication required to share session",
@@ -105,8 +98,8 @@ fn require_xai_auth_for_share(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::auth::GrokComConfig;
-    use crate::auth::{AuthMode, GrokAuth};
+    use crate::auth::KimiCodeConfig;
+    use crate::auth::{AuthMode, KimiAuth};
     use chrono::{Duration, Utc};
     use std::sync::Arc;
     use tempfile::tempdir;
@@ -117,7 +110,7 @@ mod tests {
         let dir = tempdir().expect("tempdir for share auth test");
         let mgr = Arc::new(crate::auth::AuthManager::new(
             dir.path(),
-            GrokComConfig::default(),
+            KimiCodeConfig::default(),
         ));
 
         let expires_at = Utc::now() + ttl;
@@ -126,9 +119,8 @@ mod tests {
         // Only OIDC tokens against https://auth.x.ai (or the local-dev equivalent)
         // return true from is_xai_auth(). This is required for the share tests to
         // exercise the happy path through require_xai_auth_for_share.
-        let auth = GrokAuth {
-            auth_mode: AuthMode::Oidc,
-            oidc_issuer: Some("https://auth.x.ai".to_string()),
+        let auth = KimiAuth {
+            auth_mode: AuthMode::OAuth,
             key: "test-key".into(),
             expires_at: Some(expires_at),
             create_time: Utc::now() - Duration::hours(1),
@@ -168,7 +160,7 @@ mod tests {
         let dir = tempdir().expect("tempdir");
         let mgr = Arc::new(crate::auth::AuthManager::new(
             dir.path(),
-            GrokComConfig::default(),
+            KimiCodeConfig::default(),
         ));
         assert!(require_xai_auth_for_share(&mgr).is_err());
     }
@@ -178,12 +170,12 @@ mod tests {
         let dir = tempdir().expect("tempdir");
         let mgr = Arc::new(crate::auth::AuthManager::new(
             dir.path(),
-            GrokComConfig::default(),
+            KimiCodeConfig::default(),
         ));
 
         // API key is the simplest non-xAI credential (External and enterprise OIDC
         // are also rejected the same way).
-        let non_xai = GrokAuth {
+        let non_xai = KimiAuth {
             auth_mode: AuthMode::ApiKey,
             key: "xai-test-key".into(),
             create_time: Utc::now(),

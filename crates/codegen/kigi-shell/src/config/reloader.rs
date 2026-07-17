@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
-use crate::auth::{GrokAuth, read_auth_json};
+use crate::auth::{KimiAuth, read_auth_json};
 
 use super::watcher::ConfigChangeEvent;
 
@@ -15,7 +15,7 @@ use super::watcher::ConfigChangeEvent;
 #[derive(Debug)]
 pub enum ConfigUpdate {
     /// New auth credentials from disk.
-    Auth(Box<GrokAuth>),
+    Auth(Box<KimiAuth>),
     /// Auth scope was removed (user logged out).
     AuthCleared,
     /// A **broadcast** MCP reload — applies to every active session
@@ -535,14 +535,14 @@ fn extract_ui_fields(config: &toml::Value) -> (Option<String>, bool, Option<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::auth::GrokAuth;
+    use crate::auth::KimiAuth;
     use std::collections::BTreeMap;
 
-    fn make_auth(key: &str) -> GrokAuth {
-        GrokAuth {
+    fn make_auth(key: &str) -> KimiAuth {
+        KimiAuth {
             key: key.to_string(),
             email: Some("test@test.com".to_string()),
-            ..GrokAuth::test_default()
+            ..KimiAuth::test_default()
         }
     }
 
@@ -604,7 +604,7 @@ mod tests {
         reloader.reload_auth().unwrap();
         let update = rx.try_recv().expect("should send Auth update");
         assert!(
-            matches!(update, ConfigUpdate::Auth(a) if a.key == "new-key"), // a is Box<GrokAuth>, Deref coercion
+            matches!(update, ConfigUpdate::Auth(a) if a.key == "new-key"), // a is Box<KimiAuth>, Deref coercion
             "should contain new key"
         );
     }

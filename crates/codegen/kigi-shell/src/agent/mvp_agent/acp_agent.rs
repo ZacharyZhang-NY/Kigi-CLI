@@ -48,31 +48,6 @@ impl acp::Agent for MvpAgent {
                 );
             });
         kigi_workspace::trust::migrate_legacy_hook_trust();
-        if let Some(auth) = self.auth_manager.current() {
-            let user_id = auth.user_id.trim();
-            let needs_user_info = user_id.is_empty()
-                || user_id.eq_ignore_ascii_case("unknown");
-            kigi_log::unified_log::info(
-                "auth init user_info check",
-                None,
-                Some(
-                    serde_json::json!(
-                        { "user_id" : user_id, "needs_user_info" : needs_user_info,
-                        "key_prefix" : crate ::auth::token_suffix(& auth.key),
-                        "rt_prefix" : auth.refresh_token.as_deref().map(crate
-                        ::auth::token_suffix), }
-                    ),
-                ),
-            );
-            if needs_user_info && let Err(e) = self.auth_manager.update(auth).await {
-                tracing::warn!(
-                    "Failed to refresh user info from proxy during new_session: {}", e
-                );
-            }
-        }
-        if !self.tier_allowed.get() && let Some(auth) = self.auth_manager.current() {
-            self.enforce_grok_code_access(&auth).await;
-        }
         self.maybe_sync_bundle_in_background(false);
         let mut client_type = arguments
             .meta
@@ -186,8 +161,7 @@ impl acp::Agent for MvpAgent {
                 ),
             ),
         );
-        if !self.cfg.borrow().grok_com_config.api_key_auth_disabled()
-            && auth_method::read_xai_api_key_env().is_err()
+        if auth_method::read_xai_api_key_env().is_err()
             && let Some(api_key) = crate::auth::read_api_key(
                 &crate::util::kigi_home::kigi_home(),
             )
@@ -200,33 +174,8 @@ impl acp::Agent for MvpAgent {
                 None,
             );
         }
-        let disable_api_key_auth = self
-            .cfg
-            .borrow()
-            .grok_com_config
-            .api_key_auth_disabled();
-        {
-            let cfg = self.cfg.borrow();
-            let gc = &cfg.grok_com_config;
-            if disable_api_key_auth || gc.force_login_team_uuid.is_some() {
-                kigi_log::unified_log::info(
-                    "auth: enterprise login policy active",
-                    None,
-                    Some(
-                        serde_json::json!(
-                            { "force_login_team_uuid" : gc.force_login_team_uuid.as_ref()
-                            .map(| t | format!("{t:?}")), "disable_api_key_auth_knob" :
-                            gc.disable_api_key_auth, "api_key_auth_disabled" :
-                            disable_api_key_auth, }
-                        ),
-                    ),
-                );
-            }
-        }
-        let has_external_api_key = auth_method::should_advertise_xai_api_key(
-            disable_api_key_auth,
-            self.models_manager.models().values(),
-        );
+        let has_external_api_key =
+            auth_method::should_advertise_xai_api_key(self.models_manager.models().values());
         let init_has_current = self.auth_manager.current().is_some();
         let init_is_expired = self.auth_manager.is_expired();
         kigi_log::unified_log::info(
@@ -267,58 +216,11 @@ impl acp::Agent for MvpAgent {
                 );
             }
         }
-        let (
-            login_label,
-            has_auth_provider,
-            has_enterprise_oidc,
-            enterprise_oidc_issuer,
-        ) = {
-            let cfg = self.cfg.borrow();
-            let issuer = cfg.grok_com_config.oidc.as_ref().map(|o| o.issuer.clone());
-            (
-                cfg.grok_com_config.auth_provider_label.clone(),
-                cfg.grok_com_config.auth_provider_command.is_some(),
-                cfg.grok_com_config.oidc.is_some(),
-                issuer,
-            )
-        };
-        if has_enterprise_oidc {
-            let issuer = enterprise_oidc_issuer
-                .as_deref()
-                .expect(
-                    "enterprise_oidc_issuer must be Some when has_enterprise_oidc is true",
-                );
-            tracing::info!(
-                issuer = % issuer, "auth: advertising enterprise OIDC auth method",
-            );
-            kigi_log::unified_log::info(
-                "auth: advertising enterprise OIDC auth method",
-                None,
-                Some(serde_json::json!({ "issuer" : issuer })),
-            );
-        } else {
-            tracing::info!(
-                label = ? login_label, has_auth_provider,
-                "auth: advertising grok.com auth method",
-            );
-        }
-        let preferred_method = self.cfg.borrow().grok_com_config.preferred_method;
-        let has_external_api_key = match preferred_method {
-            Some(crate::auth::PreferredAuthMethod::Oidc) => false,
-            _ => has_external_api_key,
-        };
-        let has_cached_token = match preferred_method {
-            Some(crate::auth::PreferredAuthMethod::ApiKey) => false,
-            _ => has_cached_token,
-        };
+        tracing::info!("auth: advertising Kimi Code device login auth method");
         let built = auth_method::build_auth_methods(auth_method::AuthMethodsBuildInputs {
             has_external_api_key,
             has_cached_token,
-            has_enterprise_oidc,
-            enterprise_oidc_issuer: enterprise_oidc_issuer.as_deref(),
-            login_label: login_label.as_deref(),
-            has_auth_provider_command: has_auth_provider,
-            preferred_method,
+            login_label: None,
         });
         let auth_methods = built.methods;
         kigi_log::unified_log::info(
@@ -329,9 +231,8 @@ impl acp::Agent for MvpAgent {
                     { "kigi_home" : crate ::util::kigi_home::kigi_home().display()
                     .to_string(), "HOME" : std::env::var("HOME").unwrap_or_else(| _ |
                     "(unset)".into()), "has_external_api_key" : has_external_api_key,
-                    "disable_api_key_auth" : disable_api_key_auth, "has_cached_token" :
-                    has_cached_token, "has_enterprise_oidc" : has_enterprise_oidc,
-                    "init_has_current" : init_has_current, "init_is_expired" :
+                    "has_cached_token" :
+                    has_cached_token, "init_has_current" : init_has_current, "init_is_expired" :
                     init_is_expired, "auth_mode" : self.auth_manager.current().map(| a |
                     format!("{:?}", a.auth_mode)), "methods" : auth_methods.iter().map(|
                     m | m.id().0.as_ref()).collect::< Vec < _ >> (),
@@ -438,39 +339,8 @@ impl acp::Agent for MvpAgent {
             None,
             Some(serde_json::json!({ "method" : arguments.method_id.0.as_ref() })),
         );
-        if let Some(preferred) = self.cfg.borrow().grok_com_config.preferred_method {
-            let kind = auth_method::AuthMethodKind::from_id(&arguments.method_id);
-            let allowed = match preferred {
-                crate::auth::PreferredAuthMethod::ApiKey => kind.is_api_key(),
-                crate::auth::PreferredAuthMethod::Oidc => kind.is_session_based(),
-            };
-            if !allowed {
-                let msg = match preferred {
-                    crate::auth::PreferredAuthMethod::ApiKey => {
-                        auth_method::PREFERRED_API_KEY_UNAVAILABLE
-                    }
-                    crate::auth::PreferredAuthMethod::Oidc => {
-                        "preferred_method=oidc; API-key auth is not allowed."
-                    }
-                };
-                emit_login_span(
-                    false,
-                    arguments.method_id.0.as_ref(),
-                    None,
-                    Some("preferred_method_mismatch"),
-                );
-                return Err(acp::Error::auth_required().data(msg));
-            }
-        }
         match arguments.method_id.0.as_ref() {
             auth_method::XAI_API_KEY_METHOD_ID => {
-                if self.cfg.borrow().grok_com_config.api_key_auth_disabled() {
-                    emit_login_span(false, "api_key", None, Some("disabled_by_admin"));
-                    return Err(
-                        acp::Error::auth_required()
-                            .data("API-key auth is disabled by your administrator."),
-                    );
-                }
                 let mut sampling_config = self.sampling_config.borrow_mut();
                 if sampling_config.api_key.is_none() {
                     if let Ok(api_key) = auth_method::read_xai_api_key_env() {
@@ -516,82 +386,23 @@ impl acp::Agent for MvpAgent {
                     return self
                         .authenticate(
                             acp::AuthenticateRequest::new(
-                                    acp::AuthMethodId::new(auth_method::OIDC_METHOD_ID),
+                                    acp::AuthMethodId::new(auth_method::KIGI_COM_METHOD_ID),
                                 )
                                 .meta(arguments.meta),
                         )
                         .await;
                 }
-                let current_auth = self.auth_manager.current();
-                let has_current = current_auth.is_some();
+                let has_current = self.auth_manager.current().is_some();
                 let is_expired = self.auth_manager.is_expired();
-                let is_devbox = crate::auth::devbox_login::is_devbox_environment();
-                let is_legacy = current_auth
-                    .as_ref()
-                    .is_some_and(|a| a.auth_mode == crate::auth::AuthMode::WebLogin);
                 kigi_log::unified_log::info(
                     "auth cached_token check",
                     None,
                     Some(
                         serde_json::json!(
-                            { "has_current" : has_current, "is_expired" : is_expired,
-                            "is_devbox" : is_devbox, "is_legacy" : is_legacy, }
+                            { "has_current" : has_current, "is_expired" : is_expired, }
                         ),
                     ),
                 );
-                let pin_blocks_oidc_mint = matches!(
-                    self.cfg.borrow().grok_com_config.preferred_method, Some(crate
-                    ::auth::PreferredAuthMethod::ApiKey)
-                );
-                if is_devbox && is_legacy && !pin_blocks_oidc_mint {
-                    kigi_log::unified_log::info(
-                        "auth cached_token: devbox legacy migration starting",
-                        None,
-                        None,
-                    );
-                    match crate::auth::devbox_login::mint_devbox_auth(&self.auth_manager)
-                        .await
-                    {
-                        Ok(new_auth) => {
-                            match self
-                                .auth_manager
-                                .save_without_enrichment(new_auth)
-                                .await
-                            {
-                                Ok(_) => {
-                                    if let Err(e) = self
-                                        .auth_manager
-                                        .remove_scope(crate::auth::LEGACY_AUTH_SCOPE)
-                                    {
-                                        tracing::warn!(
-                                            error = ? e,
-                                            "auth: failed to remove legacy scope (non-fatal)"
-                                        );
-                                    }
-                                    kigi_log::unified_log::info(
-                                        "auth cached_token: devbox legacy migration succeeded",
-                                        None,
-                                        None,
-                                    );
-                                }
-                                Err(e) => {
-                                    kigi_log::unified_log::warn(
-                                        "auth cached_token: devbox migration save failed",
-                                        None,
-                                        Some(serde_json::json!({ "error" : e.to_string() })),
-                                    );
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            kigi_log::unified_log::warn(
-                                "auth cached_token: devbox mint failed, will reject legacy token",
-                                None,
-                                Some(serde_json::json!({ "error" : format!("{e}") })),
-                            );
-                        }
-                    }
-                }
                 let Some(auth) = self.auth_manager.current() else {
                     let message = if self.auth_manager.is_expired() {
                         "Session expired, re-authentication required"
@@ -610,34 +421,8 @@ impl acp::Agent for MvpAgent {
                         .authenticate_after_cached_token_unavailable(arguments)
                         .await;
                 };
-                if auth.auth_mode == crate::auth::AuthMode::WebLogin {
-                    tracing::info!("auth: rejecting legacy WebLogin token");
-                    kigi_log::unified_log::warn(
-                        "auth cached_token legacy rejected",
-                        None,
-                        Some(
-                            serde_json::json!(
-                                { "auth_mode" : format!("{:?}", auth.auth_mode) }
-                            ),
-                        ),
-                    );
-                    self.auth_manager.clear_in_memory();
-                    if let Err(e) = self
-                        .auth_manager
-                        .remove_scope(crate::auth::LEGACY_AUTH_SCOPE)
-                    {
-                        tracing::warn!(
-                            error = ? e,
-                            "auth: failed to remove legacy scope during WebLogin rejection (non-fatal)"
-                        );
-                    }
-                    return self
-                        .authenticate_after_cached_token_unavailable(arguments)
-                        .await;
-                }
                 self.refresh_remote_settings(&auth).await;
                 self.emit_settings_update_notification();
-                self.enforce_grok_code_access(&auth).await;
                 self.maybe_sync_bundle_in_background(false);
                 {
                     let mut sampling_config = self.sampling_config.borrow_mut();
@@ -660,13 +445,12 @@ impl acp::Agent for MvpAgent {
                 self.maybe_fetch_post_auth_settings().await;
                 Ok(self.auth_response_with_meta())
             }
-            auth_method::KIGI_COM_METHOD_ID | auth_method::OIDC_METHOD_ID => {
-                let grok_ctx = self.auth_manager.grok_com_config();
+            auth_method::KIGI_COM_METHOD_ID => {
+                let kimi_ctx = self.auth_manager.kimi_code_config().clone();
                 let auth_meta = AuthRequestMeta::from_json(arguments.meta.as_ref());
                 tracing::info!(
                     method = arguments.method_id.0.as_ref(), headless = auth_meta
-                    .headless, reauth = auth_meta.reauth, use_oauth = auth_meta
-                    .use_oauth, "auth: inline auth flow",
+                    .headless, reauth = auth_meta.reauth, "auth: inline auth flow",
                 );
                 kigi_log::unified_log::info(
                     "auth: inline auth flow",
@@ -674,31 +458,13 @@ impl acp::Agent for MvpAgent {
                     Some(
                         serde_json::json!(
                             { "method" : arguments.method_id.0.as_ref(), "headless" :
-                            auth_meta.headless, "reauth" : auth_meta.reauth, "use_oauth"
-                            : auth_meta.use_oauth, }
+                            auth_meta.headless, "reauth" : auth_meta.reauth, }
                         ),
                     ),
                 );
                 if auth_meta.reauth {
                     let _ = self.auth_manager.clear();
                 }
-                let cli_oauth = auth_meta.use_oauth.then_some(true);
-                let use_oidc = self.cfg.borrow().resolve_grok_oauth(cli_oauth);
-                tracing::debug!(
-                    resolved = use_oidc.value, source = ? use_oidc.source,
-                    "auth: method resolved"
-                );
-                kigi_log::unified_log::debug(
-                    "auth: method resolved",
-                    None,
-                    Some(
-                        serde_json::json!(
-                            { "use_oidc" : use_oidc.value, "source" : format!("{:?}",
-                            use_oidc.source), }
-                        ),
-                    ),
-                );
-                let login_override = auth_meta.login_override();
                 let (auth, _did_auth) = if !auth_meta.headless {
                     let (url_tx, url_rx) = tokio::sync::oneshot::channel();
                     let (code_tx, code_rx) = tokio::sync::mpsc::channel(1);
@@ -706,14 +472,13 @@ impl acp::Agent for MvpAgent {
                     *self.auth_url_rx.borrow_mut() = Some(url_rx);
                     let result = crate::auth::run_auth_flow_with_stderr_bridge(
                             &self.auth_manager,
-                            grok_ctx,
+                            &kimi_ctx,
                             crate::auth::AuthChannels {
                                 url_tx: Some(url_tx),
                                 code_rx,
                             },
                             auth_meta.reauth,
                             auth_meta.force_interactive,
-                            login_override,
                         )
                         .await;
                     *self.auth_code_tx.borrow_mut() = None;
@@ -722,12 +487,9 @@ impl acp::Agent for MvpAgent {
                 } else {
                     crate::auth::run_auth_flow(
                                 &self.auth_manager,
-                                grok_ctx,
+                                &kimi_ctx,
                                 auth_meta.reauth,
                                 None,
-                                None,
-                                None,
-                                login_override,
                             )
                             .await
                 }
@@ -757,11 +519,7 @@ impl acp::Agent for MvpAgent {
                 self.auth_manager.hot_swap(auth.clone());
                 self.refresh_remote_settings(&auth).await;
                 self.emit_settings_update_notification();
-                self.enforce_grok_code_access(&auth).await;
                 self.maybe_sync_bundle_in_background(false);
-                tokio::task::spawn_local(
-                    crate::managed_config::post_login_sync(Some(auth.clone())),
-                );
                 self.set_auth_method(arguments.method_id.clone());
                 self.models_manager.on_auth_changed().await;
                 if crate::agent::chat_modes::process_chat_mode_enabled() {
@@ -959,10 +717,7 @@ impl acp::Agent for MvpAgent {
                 .session_registry_client()
                 .map(|client| crate::session::persistence::RegistryGeneratedTitleSync {
                     client,
-                    suppress_for_zdr: self
-                        .auth_manager
-                        .current_or_expired()
-                        .is_some_and(|a| a.is_zdr_team()),
+                    suppress_for_zdr: false,
                 });
             crate::session::persistence::new(
                     &session_info,
@@ -1239,10 +994,7 @@ impl acp::Agent for MvpAgent {
             .session_registry_client()
             .map(|client| crate::session::persistence::RegistryGeneratedTitleSync {
                 client,
-                suppress_for_zdr: self
-                    .auth_manager
-                    .current_or_expired()
-                    .is_some_and(|a| a.is_zdr_team()),
+                suppress_for_zdr: false,
             });
         let (persistence_info, persistence) = crate::session::persistence::load_light(
                 &session_info,
@@ -2576,9 +2328,6 @@ impl acp::Agent for MvpAgent {
                 crate::extensions::billing::handle(self, &args).await
             }
             "x.ai/share_session" => crate::extensions::share::handle(self, &args).await,
-            "x.ai/privacy/setCodingDataRetention" => {
-                crate::extensions::privacy::handle(self, &args).await
-            }
             "x.ai/rollout/survey" => {
                 crate::extensions::rollout::handle(self, &args).await
             }

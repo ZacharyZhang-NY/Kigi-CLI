@@ -40,11 +40,11 @@ pub async fn run(args: SessionsArgs, agent_config: &AgentConfig) -> Result<()> {
     // for these setups), any cached credential will be used. Otherwise we still
     // proceed so the SessionRegistryClient can use the deployment_key when
     // talking to the custom proxy.
-    let auth = try_ensure_fresh_auth(&agent_config.grok_com_config).await;
+    let auth = try_ensure_fresh_auth(&agent_config.kimi_code_config).await;
 
     let auth_manager = std::sync::Arc::new(AuthManager::new(
         &kigi_home(),
-        agent_config.grok_com_config.clone(),
+        agent_config.kimi_code_config.clone(),
     ));
 
     let client = kigi_shell::agent::session_registry_client::SessionRegistryClient::new(
@@ -169,7 +169,7 @@ pub async fn run(args: SessionsArgs, agent_config: &AgentConfig) -> Result<()> {
             // backend delete is idempotent (a `404` is treated as success),
             // so this is safe for local-only sessions with no remote copy.
             // ZDR teams never upload, so there is nothing remote to delete.
-            let needs_remote = auth.as_ref().is_some_and(|a| !a.is_zdr_team());
+            let needs_remote = auth.is_some();
 
             // Pass `cwd = None` so the session is found by id regardless of
             // which workspace it was created in; the local delete still uses

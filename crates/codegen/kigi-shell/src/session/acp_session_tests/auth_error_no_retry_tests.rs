@@ -1,6 +1,6 @@
 use super::support::*;
 use super::*;
-use crate::auth::{AuthManager, AuthMode, GrokAuth, GrokComConfig};
+use crate::auth::{AuthManager, AuthMode, KimiAuth, KimiCodeConfig};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc;
@@ -17,12 +17,12 @@ impl crate::auth::refresh::TokenRefresher for AlwaysSucceedRefresher {
         _reason: crate::auth::refresh::RefreshReason,
     ) -> crate::auth::refresh::RefreshOutcome {
         self.called.store(true, Ordering::SeqCst);
-        crate::auth::refresh::RefreshOutcome::Success(Box::new(GrokAuth {
+        crate::auth::refresh::RefreshOutcome::Success(Box::new(KimiAuth {
             key: "refreshed-test-token".to_string(),
-            auth_mode: AuthMode::Oidc,
+            auth_mode: AuthMode::OAuth,
             refresh_token: Some("rt-new".into()),
             expires_at: Some(chrono::Utc::now() + chrono::Duration::hours(1)),
-            ..GrokAuth::test_default()
+            ..KimiAuth::test_default()
         }))
     }
 }
@@ -34,13 +34,13 @@ fn auth_manager_with_refresher(
     refresher: Arc<dyn crate::auth::refresh::TokenRefresher>,
 ) -> (tempfile::TempDir, Arc<AuthManager>) {
     let dir = tempfile::tempdir().expect("tempdir");
-    let am = Arc::new(AuthManager::new(dir.path(), GrokComConfig::default()));
-    am.hot_swap(GrokAuth {
+    let am = Arc::new(AuthManager::new(dir.path(), KimiCodeConfig::default()));
+    am.hot_swap(KimiAuth {
         key: "initial-test-key".into(),
-        auth_mode: AuthMode::Oidc,
+        auth_mode: AuthMode::OAuth,
         refresh_token: Some("rt".into()),
         expires_at: Some(chrono::Utc::now() - chrono::Duration::hours(1)),
-        ..GrokAuth::test_default()
+        ..KimiAuth::test_default()
     });
     am.set_refresher(refresher);
     (dir, am)
@@ -121,13 +121,13 @@ async fn make_actor_with_method_and_credentials(
 /// cache hit). The tempdir must outlive the manager (auth.json path).
 fn auth_manager_with_valid_token(key: &str) -> (tempfile::TempDir, Arc<AuthManager>) {
     let dir = tempfile::tempdir().expect("tempdir");
-    let am = Arc::new(AuthManager::new(dir.path(), GrokComConfig::default()));
-    am.hot_swap(GrokAuth {
+    let am = Arc::new(AuthManager::new(dir.path(), KimiCodeConfig::default()));
+    am.hot_swap(KimiAuth {
         key: key.into(),
-        auth_mode: AuthMode::Oidc,
+        auth_mode: AuthMode::OAuth,
         refresh_token: Some("rt".into()),
         expires_at: Some(chrono::Utc::now() + chrono::Duration::hours(1)),
-        ..GrokAuth::test_default()
+        ..KimiAuth::test_default()
     });
     (dir, am)
 }
@@ -305,12 +305,12 @@ async fn proactive_refresh_makes_per_turn_refresh_a_cache_hit() {
                         _: crate::auth::refresh::RefreshReason,
                     ) -> crate::auth::refresh::RefreshOutcome {
                         self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                        crate::auth::refresh::RefreshOutcome::Success(Box::new(GrokAuth {
+                        crate::auth::refresh::RefreshOutcome::Success(Box::new(KimiAuth {
                             key: "proactive-fresh".into(),
-                            auth_mode: AuthMode::Oidc,
+                            auth_mode: AuthMode::OAuth,
                             refresh_token: Some("rt-new".into()),
                             expires_at: Some(chrono::Utc::now() + chrono::Duration::hours(1)),
-                            ..GrokAuth::test_default()
+                            ..KimiAuth::test_default()
                         }))
                     }
                 }
@@ -318,14 +318,12 @@ async fn proactive_refresh_makes_per_turn_refresh_a_cache_hit() {
             });
 
             let (_dir, am) = auth_manager_with_refresher(refresher);
-            let cancel = tokio_util::sync::CancellationToken::new();
-            am.start_proactive_refresh(cancel.clone());
-
-            // Wait for proactive task to fire.
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            // Drive one loop-body iteration directly (the production loop
+            // ticks on a fixed 60s cadence, far too slow for a unit test).
+            am.proactive_tick(false).await;
             assert!(
                 call_count.load(Ordering::SeqCst) >= 1,
-                "proactive task must have fired"
+                "proactive tick must have refreshed"
             );
             let count_after_proactive = call_count.load(Ordering::SeqCst);
 
@@ -350,8 +348,6 @@ async fn proactive_refresh_makes_per_turn_refresh_a_cache_hit() {
                 Some("proactive-fresh"),
                 "per-turn refresh must pick up the proactively-refreshed token"
             );
-
-            cancel.cancel();
         })
         .await;
 }
@@ -368,49 +364,6 @@ fn model_not_found_error() -> kigi_sampler::SamplingErrorInfo {
             doom_loop_triggers: None,
             doom_loop_aborted_at_chunk: None,
         }
-}
-
-/// 404 model-not-found with a legacy WebLogin token appends a
-/// "Legacy auth detected" hint to the error message.
-#[tokio::test(flavor = "current_thread")]
-async fn legacy_auth_hint_on_404_model_not_found() {
-    let local = tokio::task::LocalSet::new();
-    local
-        .run_until(async {
-            let dir = tempfile::tempdir().expect("tempdir");
-            let am = Arc::new(AuthManager::new(dir.path(), GrokComConfig::default()));
-            am.hot_swap(GrokAuth {
-                key: "legacy-token".into(),
-                auth_mode: AuthMode::WebLogin,
-                ..GrokAuth::test_default()
-            });
-
-            let (actor, _rx) = make_actor_with_auth_manager(Some(am)).await;
-            let result = actor.handle_sampling_failure(model_not_found_error()).await;
-            let err = match result {
-                Err(e) => e,
-                Ok(_) => panic!("expected Err from handle_sampling_failure"),
-            };
-            let data = err.data.unwrap();
-            let msg = data.as_str().unwrap();
-            assert!(
-                msg.contains("deprecated authentication method"),
-                "404 with WebLogin must include deprecation message, got: {msg}"
-            );
-            assert!(
-                msg.contains("grok logout"),
-                "hint must mention `grok logout`, got: {msg}"
-            );
-            assert!(
-                msg.contains("grok login"),
-                "hint must mention `grok login`, got: {msg}"
-            );
-            assert!(
-                msg.contains("Version:"),
-                "must show client version, got: {msg}"
-            );
-        })
-        .await;
 }
 
 /// Build a 401-shaped error that bypasses step 4b's auth recovery.
@@ -437,47 +390,6 @@ fn unauthorized_401_error() -> kigi_sampler::SamplingErrorInfo {
         }
 }
 
-/// 401 Unauthorized with a legacy WebLogin token appends a
-/// "Legacy auth detected" hint to the error message.
-#[tokio::test(flavor = "current_thread")]
-async fn legacy_auth_hint_on_401_unauthorized() {
-    let local = tokio::task::LocalSet::new();
-    local
-        .run_until(async {
-            let dir = tempfile::tempdir().expect("tempdir");
-            let am = Arc::new(AuthManager::new(dir.path(), GrokComConfig::default()));
-            am.hot_swap(GrokAuth {
-                key: "legacy-token".into(),
-                auth_mode: AuthMode::WebLogin,
-                ..GrokAuth::test_default()
-            });
-
-            let (actor, _rx) = make_actor_with_auth_manager(Some(am)).await;
-            let result = actor
-                .handle_sampling_failure(unauthorized_401_error())
-                .await;
-            let err = match result {
-                Err(e) => e,
-                Ok(_) => panic!("expected Err from handle_sampling_failure"),
-            };
-            let data = err.data.unwrap();
-            let msg = data.as_str().unwrap();
-            assert!(
-                msg.contains("deprecated authentication method"),
-                "401 with WebLogin must include deprecation message, got: {msg}"
-            );
-            assert!(
-                msg.contains("grok logout"),
-                "hint must mention `grok logout`, got: {msg}"
-            );
-            assert!(
-                msg.contains("grok login"),
-                "hint must mention `grok login`, got: {msg}"
-            );
-        })
-        .await;
-}
-
 /// 401 with OIDC auth must NOT append the legacy hint.
 #[tokio::test(flavor = "current_thread")]
 async fn no_legacy_hint_on_401_for_oidc_auth() {
@@ -485,13 +397,13 @@ async fn no_legacy_hint_on_401_for_oidc_auth() {
     local
         .run_until(async {
             let dir = tempfile::tempdir().expect("tempdir");
-            let am = Arc::new(AuthManager::new(dir.path(), GrokComConfig::default()));
-            am.hot_swap(GrokAuth {
+            let am = Arc::new(AuthManager::new(dir.path(), KimiCodeConfig::default()));
+            am.hot_swap(KimiAuth {
                 key: "oidc-token".into(),
-                auth_mode: AuthMode::Oidc,
+                auth_mode: AuthMode::OAuth,
                 refresh_token: Some("rt".into()),
                 expires_at: Some(chrono::Utc::now() + chrono::Duration::hours(1)),
-                ..GrokAuth::test_default()
+                ..KimiAuth::test_default()
             });
 
             let (actor, _rx) = make_actor_with_auth_manager(Some(am)).await;
@@ -513,7 +425,7 @@ async fn no_legacy_hint_on_401_for_oidc_auth() {
                 "OIDC auth must NOT trigger WebLogin deprecation on 401, got: {msg}"
             );
             assert!(
-                msg.contains("Auth:      Oidc"),
+                msg.contains("Auth:      OAuth"),
                 "OIDC 401 must show auth mode in enriched message, got: {msg}"
             );
         })
@@ -527,13 +439,13 @@ async fn no_legacy_hint_for_oidc_auth() {
     local
         .run_until(async {
             let dir = tempfile::tempdir().expect("tempdir");
-            let am = Arc::new(AuthManager::new(dir.path(), GrokComConfig::default()));
-            am.hot_swap(GrokAuth {
+            let am = Arc::new(AuthManager::new(dir.path(), KimiCodeConfig::default()));
+            am.hot_swap(KimiAuth {
                 key: "oidc-token".into(),
-                auth_mode: AuthMode::Oidc,
+                auth_mode: AuthMode::OAuth,
                 refresh_token: Some("rt".into()),
                 expires_at: Some(chrono::Utc::now() + chrono::Duration::hours(1)),
-                ..GrokAuth::test_default()
+                ..KimiAuth::test_default()
             });
 
             let (actor, _rx) = make_actor_with_auth_manager(Some(am)).await;
@@ -553,7 +465,7 @@ async fn no_legacy_hint_for_oidc_auth() {
                 "OIDC auth must NOT trigger WebLogin deprecation, got: {msg}"
             );
             assert!(
-                msg.contains("Auth:      Oidc"),
+                msg.contains("Auth:      OAuth"),
                 "OIDC 404 must show auth mode in enriched message, got: {msg}"
             );
             assert!(
@@ -627,9 +539,9 @@ async fn sampler_401_session_method_with_stale_api_key_auth_type_still_recovers(
         .await;
 }
 
-/// Same regression via the `oidc` method id (the other session-based variant).
+/// Same regression via the interactive-login method id (the other session-based variant).
 #[tokio::test(flavor = "current_thread")]
-async fn sampler_401_oidc_method_with_stale_api_key_auth_type_still_recovers() {
+async fn sampler_401_login_method_with_stale_api_key_auth_type_still_recovers() {
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async {
@@ -641,7 +553,7 @@ async fn sampler_401_oidc_method_with_stale_api_key_auth_type_still_recovers() {
             let (_dir, am) = auth_manager_with_refresher(refresher);
             let (actor, _rx) = make_actor_with_method_and_credentials(
                 Some(am),
-                "oidc",
+                "grok.com",
                 kigi_chat_state::AuthType::ApiKey,
                 "stale-session-jwt".to_string(),
             )
@@ -651,7 +563,7 @@ async fn sampler_401_oidc_method_with_stale_api_key_auth_type_still_recovers() {
 
             assert!(
                 matches!(result, Ok(SamplerFailureRecovery::RefreshAuthAndResubmit)),
-                "oidc method must recover even when auth_type transiently reads ApiKey"
+                "interactive-login method must recover even when auth_type transiently reads ApiKey"
             );
             assert!(
                 called.load(Ordering::SeqCst),
@@ -779,7 +691,9 @@ async fn session_born_on_api_key_recovers_after_oidc_login_without_restart() {
             // the shared handle this running actor already holds (no re-spawn).
             actor
                 .auth_method_id
-                .store(Some(std::sync::Arc::new(acp::AuthMethodId::new("oidc"))));
+                .store(Some(std::sync::Arc::new(acp::AuthMethodId::new(
+                    "cached_token",
+                ))));
 
             // The gate is recomputed each turn from the shared handle, so the
             // flip alone activates the live resolver on the very next turn --

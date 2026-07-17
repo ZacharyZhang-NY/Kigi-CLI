@@ -38,8 +38,7 @@ pub enum AuthScheme {
 /// composing chat-state's `kigi_sampling_types::SamplingConfig`
 /// with `Credentials` (api key, client version).
 ///
-/// URL-derived request headers (e.g. `X-XAI-Token-Auth` for the
-/// cli-chat-proxy) are
+/// URL-derived request headers are
 /// folded into [`Self::extra_headers`] by
 /// `agent::config::inject_url_derived_headers` before the
 /// `SamplerConfig` is handed to the actor. Auth is selected separately

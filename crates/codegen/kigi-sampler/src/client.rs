@@ -2191,8 +2191,10 @@ mod tests {
         let mut cfg = minimal_config();
         cfg.extra_headers
             .insert("x-test-header".to_string(), "test-value".to_string());
-        cfg.extra_headers
-            .insert("x-XAI-token-auth".to_string(), "xai-grok-cli".to_string());
+        cfg.extra_headers.insert(
+            "x-custom-auth-marker".to_string(),
+            "marker-value".to_string(),
+        );
         let _client = SamplingClient::new(cfg).expect("client with extra headers should construct");
     }
 

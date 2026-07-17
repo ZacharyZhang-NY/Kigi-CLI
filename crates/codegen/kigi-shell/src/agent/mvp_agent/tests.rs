@@ -1,159 +1,4 @@
 use super::*;
-/// Build an unsigned JWT with a `tier` claim (header.payload.sig base64url).
-fn jwt_with_tier(tier: u64) -> String {
-    use base64::Engine;
-    let enc = base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    let header = enc.encode(br#"{"alg":"none"}"#);
-    let payload = enc.encode(format!(r#"{{"tier":{tier}}}"#).as_bytes());
-    format!("{header}.{payload}.sig")
-}
-#[test]
-fn jwt_tier_claim_maps_free_and_paid() {
-    assert_eq!(jwt_tier_claim(&jwt_with_tier(0)).as_deref(), Some("free"));
-    assert_eq!(
-        jwt_tier_claim(&jwt_with_tier(1)).as_deref(),
-        Some("supergrok")
-    );
-    assert_eq!(
-        jwt_tier_claim(&jwt_with_tier(2)).as_deref(),
-        Some("x_basic")
-    );
-    assert_eq!(
-        jwt_tier_claim(&jwt_with_tier(3)).as_deref(),
-        Some("x_premium")
-    );
-    assert_eq!(
-        jwt_tier_claim(&jwt_with_tier(4)).as_deref(),
-        Some("x_premium_plus")
-    );
-    assert_eq!(
-        jwt_tier_claim(&jwt_with_tier(5)).as_deref(),
-        Some("supergrok_heavy")
-    );
-    assert_eq!(
-        jwt_tier_claim(&jwt_with_tier(6)).as_deref(),
-        Some("supergrok_lite")
-    );
-    assert_eq!(jwt_tier_claim(&jwt_with_tier(99)).as_deref(), Some("99"));
-}
-fn auth_with_mode(mode: crate::auth::AuthMode, key: &str) -> crate::auth::GrokAuth {
-    crate::auth::GrokAuth {
-        key: key.into(),
-        auth_mode: mode,
-        create_time: chrono::Utc::now(),
-        user_id: "u".into(),
-        email: None,
-        first_name: None,
-        last_name: None,
-        profile_image_asset_id: None,
-        principal_type: None,
-        principal_id: None,
-        team_id: None,
-        team_name: None,
-        team_role: None,
-        organization_id: None,
-        organization_name: None,
-        organization_role: None,
-        user_blocked_reason: None,
-        team_blocked_reasons: vec![],
-        coding_data_retention_opt_out: false,
-        has_grok_code_access: None,
-        refresh_token: None,
-        expires_at: None,
-        oidc_issuer: None,
-        oidc_client_id: None,
-    }
-}
-#[test]
-fn resolve_subscription_tier_prefers_display_then_api_key_then_jwt() {
-    assert_eq!(
-        resolve_subscription_tier_for_telemetry(Some("Free".into()), None).as_deref(),
-        Some("Free")
-    );
-    let api = auth_with_mode(crate::auth::AuthMode::ApiKey, "xai-not-a-jwt");
-    assert_eq!(
-        resolve_subscription_tier_for_telemetry(Some("  ".into()), Some(&api)).as_deref(),
-        Some("api_key")
-    );
-    assert_eq!(
-        resolve_subscription_tier_for_telemetry(None, Some(&api)).as_deref(),
-        Some("api_key")
-    );
-    let oauth = auth_with_mode(crate::auth::AuthMode::Oidc, &jwt_with_tier(0));
-    assert_eq!(
-        resolve_subscription_tier_for_telemetry(None, Some(&oauth)).as_deref(),
-        Some("free")
-    );
-    assert_ne!(
-        resolve_subscription_tier_for_telemetry(None, Some(&api)).as_deref(),
-        Some("free")
-    );
-}
-/// JWT claim ↔ `/user` tier mapping used to gate post-unblock catalog refresh
-/// (a stale older paid claim must not skip retry).
-#[test]
-fn jwt_claim_matches_user_subscription_tier_known_pairs() {
-    let cases = [
-        ("supergrok", "GrokPro"),
-        ("x_basic", "XBasic"),
-        ("x_premium", "XPremium"),
-        ("x_premium_plus", "XPremiumPlus"),
-        ("supergrok_heavy", "SuperGrokPro"),
-        ("supergrok_lite", "SuperGrokLite"),
-    ];
-    for (claim, user_tier) in cases {
-        assert!(
-            jwt_claim_matches_user_subscription_tier(claim, user_tier),
-            "{claim} should match {user_tier}"
-        );
-    }
-}
-#[test]
-fn jwt_claim_matches_user_subscription_tier_rejects_stale_and_unknown() {
-    assert!(!jwt_claim_matches_user_subscription_tier(
-        "x_basic",
-        "SuperGrokPro"
-    ));
-    assert!(!jwt_claim_matches_user_subscription_tier(
-        "supergrok",
-        "SuperGrokPro"
-    ));
-    assert!(!jwt_claim_matches_user_subscription_tier("free", "GrokPro"));
-    assert!(!jwt_claim_matches_user_subscription_tier("", "XPremium"));
-    assert!(!jwt_claim_matches_user_subscription_tier(
-        "supergrok_heavy",
-        "EnterpriseMystery"
-    ));
-}
-/// Single-flight flag must clear on Drop even if the retry task panics /
-/// aborts mid-backoff (guards against the flag stuck true forever).
-#[test]
-fn post_unblock_jwt_retry_in_flight_guard_clears_on_drop() {
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    let flag = Arc::new(AtomicBool::new(true));
-    {
-        let _guard = PostUnblockJwtRetryInFlightGuard { flag: flag.clone() };
-        assert!(flag.load(Ordering::Acquire));
-    }
-    assert!(
-        !flag.load(Ordering::Acquire),
-        "Drop must release post_unblock_jwt_retry_in_flight"
-    );
-    let flag = Arc::new(AtomicBool::new(true));
-    let flag_for_catch = flag.clone();
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _guard = PostUnblockJwtRetryInFlightGuard {
-            flag: flag_for_catch,
-        };
-        panic!("simulate retry task panic");
-    }));
-    assert!(result.is_err());
-    assert!(
-        !flag.load(Ordering::Acquire),
-        "Drop must release flag on panic unwind"
-    );
-}
 mod hunk_tracking_mode {
     use super::super::{plan_hunk_tracking, resolve_hunk_tracking_mode};
     use kigi_hunk_tracker::TrackingMode;
@@ -353,42 +198,6 @@ fn trace_turn_to_i32_saturates_at_max() {
     let boundary: u64 = i32::MAX as u64;
     let result = i32::try_from(boundary).unwrap_or(i32::MAX);
     assert_eq!(result, i32::MAX);
-}
-/// When remote settings are absent (`None`), default to blocked.
-#[test]
-fn settings_allow_access_none_settings_is_blocked() {
-    assert!(!settings_allow_access(None));
-}
-/// When `allow_access` is `Some(true)`, user is allowed.
-#[test]
-fn settings_allow_access_true_is_allowed() {
-    let rs = crate::util::config::RemoteSettings {
-        allow_access: Some(true),
-        ..Default::default()
-    };
-    assert!(settings_allow_access(Some(&rs)));
-}
-/// When `allow_access` is `Some(false)` (remote settings default / rule
-/// disabled), user stays blocked — even if they hold a qualifying
-/// subscription. This is the regression guard for the bug where
-/// `retry_subscription_check` unconditionally lifted the gate.
-#[test]
-fn settings_allow_access_false_is_blocked() {
-    let rs = crate::util::config::RemoteSettings {
-        allow_access: Some(false),
-        ..Default::default()
-    };
-    assert!(!settings_allow_access(Some(&rs)));
-}
-/// When `/settings` returned successfully but the field is absent
-/// (`None`), default to blocked (conservative).
-#[test]
-fn settings_allow_access_field_absent_is_blocked() {
-    let rs = crate::util::config::RemoteSettings {
-        allow_access: None,
-        ..Default::default()
-    };
-    assert!(!settings_allow_access(Some(&rs)));
 }
 /// After allocating a turn number, `session_turn_numbers` holds the next
 /// value (current + 1). This is the value that must be persisted via
@@ -1333,10 +1142,10 @@ async fn ext_method_routes_auth_cleared_and_refreshes_resident_sessions() {
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async {
-            let agent = build_agent_with_auth(crate::auth::GrokAuth {
+            let agent = build_agent_with_auth(crate::auth::KimiAuth {
                 key: "eligible".into(),
-                auth_mode: crate::auth::AuthMode::WebLogin,
-                ..crate::auth::GrokAuth::test_default()
+                auth_mode: crate::auth::AuthMode::OAuth,
+                ..crate::auth::KimiAuth::test_default()
             });
             use acp::Agent as _;
             agent.managed_mcp_cache.lock().await.enable_gateway_tools();
@@ -1363,22 +1172,22 @@ async fn ext_method_routes_auth_cleared_and_refreshes_resident_sessions() {
 /// Build a minimal MvpAgent suitable for testing extension methods.
 fn build_minimal_agent_for_tests() -> MvpAgent {
     use crate::agent::config::Config as AgentConfig;
-    use crate::auth::{AuthManager, GrokComConfig};
+    use crate::auth::{AuthManager, KimiCodeConfig};
     let temp_dir = tempfile::tempdir().unwrap();
     let auth_manager =
-        std::sync::Arc::new(AuthManager::new(temp_dir.path(), GrokComConfig::default()));
+        std::sync::Arc::new(AuthManager::new(temp_dir.path(), KimiCodeConfig::default()));
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
     let gateway = GatewaySender::new(tx);
     let cfg = AgentConfig::default();
     MvpAgent::new(gateway, &cfg, auth_manager, None).expect("valid test config")
 }
 /// Build a minimal MvpAgent with pre-loaded auth for gate tests.
-fn build_agent_with_auth(auth: crate::auth::GrokAuth) -> MvpAgent {
+fn build_agent_with_auth(auth: crate::auth::KimiAuth) -> MvpAgent {
     use crate::agent::config::Config as AgentConfig;
-    use crate::auth::{AuthManager, GrokComConfig};
+    use crate::auth::{AuthManager, KimiCodeConfig};
     let temp_dir = tempfile::tempdir().unwrap();
     let auth_manager =
-        std::sync::Arc::new(AuthManager::new(temp_dir.path(), GrokComConfig::default()));
+        std::sync::Arc::new(AuthManager::new(temp_dir.path(), KimiCodeConfig::default()));
     auth_manager.hot_swap(auth);
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
     let gateway = GatewaySender::new(tx);
@@ -1395,7 +1204,7 @@ fn build_agent_with_auth(auth: crate::auth::GrokAuth) -> MvpAgent {
 #[serial_test::serial]
 async fn ensure_plugin_registry_lazily_populates_snapshot() {
     use crate::agent::config::Config as AgentConfig;
-    use crate::auth::{AuthManager, GrokComConfig};
+    use crate::auth::{AuthManager, KimiCodeConfig};
     use kigi_test_support::EnvGuard;
     let kigi_home = tempfile::tempdir().unwrap();
     let _env = EnvGuard::set("KIGI_SHARE_DIR", kigi_home.path());
@@ -1412,7 +1221,7 @@ async fn ensure_plugin_registry_lazily_populates_snapshot() {
     .unwrap();
     let auth_home = tempfile::tempdir().unwrap();
     let auth_manager =
-        std::sync::Arc::new(AuthManager::new(auth_home.path(), GrokComConfig::default()));
+        std::sync::Arc::new(AuthManager::new(auth_home.path(), KimiCodeConfig::default()));
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
     let gateway = GatewaySender::new(tx);
     let mut cfg = AgentConfig::default();
@@ -1599,10 +1408,10 @@ fn drain_roster_changed(
 async fn push_roster_activity_delta_broadcasts_overridden_activity() {
     use crate::agent::config::Config as AgentConfig;
     use crate::agent::roster::RosterActivity;
-    use crate::auth::{AuthManager, GrokComConfig};
+    use crate::auth::{AuthManager, KimiCodeConfig};
     let temp_dir = tempfile::tempdir().unwrap();
     let auth_manager =
-        std::sync::Arc::new(AuthManager::new(temp_dir.path(), GrokComConfig::default()));
+        std::sync::Arc::new(AuthManager::new(temp_dir.path(), KimiCodeConfig::default()));
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let gateway = GatewaySender::new(tx);
     let cfg = AgentConfig::default();
@@ -2043,7 +1852,6 @@ async fn auth_type_session_based_no_current_returns_session_token() {
     for method_id in [
         crate::agent::auth_method::CACHED_TOKEN_AUTH_METHOD_ID,
         crate::agent::auth_method::KIGI_COM_METHOD_ID,
-        crate::agent::auth_method::OIDC_METHOD_ID,
     ] {
         let agent = build_minimal_agent_for_tests();
         agent.set_auth_method(acp::AuthMethodId::new(method_id));
@@ -2084,12 +1892,12 @@ async fn auth_type_xai_api_key_no_current_returns_api_key() {
 /// common case during a healthy session.
 #[tokio::test(flavor = "current_thread")]
 async fn auth_type_session_based_with_current_returns_session_token() {
-    use crate::auth::GrokAuth;
+    use crate::auth::KimiAuth;
     let agent = build_minimal_agent_for_tests();
     agent.set_auth_method(acp::AuthMethodId::new(
-        crate::agent::auth_method::OIDC_METHOD_ID,
+        crate::agent::auth_method::KIGI_COM_METHOD_ID,
     ));
-    agent.auth_manager.hot_swap(GrokAuth::test_default());
+    agent.auth_manager.hot_swap(KimiAuth::test_default());
     assert!(agent.auth_manager.current().is_some());
     assert_eq!(agent.auth_type(), kigi_chat_state::AuthType::SessionToken,);
 }
@@ -2112,26 +1920,12 @@ async fn auth_type_no_method_id_no_current_returns_api_key() {
 /// here matches pre-fix behavior and keeps logging stable.
 #[tokio::test(flavor = "current_thread")]
 async fn auth_type_no_method_id_with_current_returns_session_token() {
-    use crate::auth::GrokAuth;
+    use crate::auth::KimiAuth;
     let agent = build_minimal_agent_for_tests();
-    agent.auth_manager.hot_swap(GrokAuth::test_default());
+    agent.auth_manager.hot_swap(KimiAuth::test_default());
     assert!(agent.auth_method_id.load().is_none());
     assert!(agent.auth_manager.current().is_some());
     assert_eq!(agent.auth_type(), kigi_chat_state::AuthType::SessionToken,);
-}
-/// Minimal agent whose `grok_com_config` engages the api-key kill switch
-/// (`disable_api_key_auth = true`), mirroring a forced-IdP deployment.
-fn build_agent_with_api_key_auth_disabled() -> MvpAgent {
-    use crate::agent::config::Config as AgentConfig;
-    use crate::auth::{AuthManager, GrokComConfig};
-    let temp_dir = tempfile::tempdir().unwrap();
-    let auth_manager =
-        std::sync::Arc::new(AuthManager::new(temp_dir.path(), GrokComConfig::default()));
-    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-    let gateway = GatewaySender::new(tx);
-    let mut cfg = AgentConfig::default();
-    cfg.grok_com_config.disable_api_key_auth = Some(true);
-    MvpAgent::new(gateway, &cfg, auth_manager, None).expect("valid test config")
 }
 /// Deployment-key / managed-config user: `XAI_API_KEY` resolves and the kill
 /// switch is off, so a dead `cached_token` MUST fall through to `xai.api_key`
@@ -2145,34 +1939,10 @@ async fn cached_token_fallthrough_prefers_api_key_for_deployment_key() {
     let _key = EnvGuard::set(XAI_API_KEY_ENV_VAR, "test-deployment-key");
     let agent = build_minimal_agent_for_tests();
     assert_eq!(
-        agent
-            .cached_token_fallthrough_method_id()
-            .as_ref()
-            .map(|id| id.0.as_ref()),
-        Some(XAI_API_KEY_METHOD_ID),
+        agent.cached_token_fallthrough_method_id().0.as_ref(),
+        XAI_API_KEY_METHOD_ID,
         "deployment-key user (XAI_API_KEY set, no kill switch) must fall \
          through to xai.api_key on a dead cached_token -- not interactive login",
-    );
-}
-/// Forced-IdP deployment: even with `XAI_API_KEY` present, the admin kill
-/// switch keeps the fallthrough on interactive `grok.com` (api-key auth is
-/// neither advertised nor an eligible fallthrough).
-#[tokio::test(flavor = "current_thread")]
-#[serial_test::serial]
-async fn cached_token_fallthrough_respects_kill_switch() {
-    use crate::agent::auth_method::{KIGI_COM_METHOD_ID, XAI_API_KEY_ENV_VAR};
-    use kigi_test_support::EnvGuard;
-    let _lockdown = EnvGuard::unset("KIGI_DISABLE_API_KEY_AUTH");
-    let _key = EnvGuard::set(XAI_API_KEY_ENV_VAR, "test-deployment-key");
-    let agent = build_agent_with_api_key_auth_disabled();
-    assert_eq!(
-        agent
-            .cached_token_fallthrough_method_id()
-            .as_ref()
-            .map(|id| id.0.as_ref()),
-        Some(KIGI_COM_METHOD_ID),
-        "disable_api_key_auth must keep the cached_token fallthrough on \
-         interactive grok.com so XAI_API_KEY can't bypass forced IdP login",
     );
 }
 /// No advertiseable credentials at all (no env key, no kill switch): the user
@@ -2189,74 +1959,10 @@ async fn cached_token_fallthrough_falls_to_grok_com_without_credentials() {
     let _legacy = EnvGuard::unset(LEGACY_XAI_API_KEY_ENV_VAR);
     let agent = build_minimal_agent_for_tests();
     assert_eq!(
-        agent
-            .cached_token_fallthrough_method_id()
-            .as_ref()
-            .map(|id| id.0.as_ref()),
-        Some(KIGI_COM_METHOD_ID),
+        agent.cached_token_fallthrough_method_id().0.as_ref(),
+        KIGI_COM_METHOD_ID,
         "no API-key creds and no kill switch -> interactive grok.com login",
     );
-}
-/// Verifies the 4-state matrix of `(disable_zdr_incompatible_tools, zdr_video_output_s3)`:
-///
-/// | ZDR flag | S3 config | Result                                      |
-/// |----------|-----------|---------------------------------------------|
-/// | false    | None      | Enabled, no S3 (normal non-ZDR mode)        |
-/// | true     | None      | Disabled (ZDR with no escape hatch)         |
-/// | false    | Some      | Enabled, S3 **not** threaded (non-ZDR)      |
-/// | true     | Some      | Enabled, S3 threaded (ZDR with upload path) |
-#[tokio::test(flavor = "current_thread")]
-async fn prepare_video_gen_config_disabled_when_zdr_flag_set() {
-    use kigi_tools::implementations::grok_build::video_gen::{
-        S3AccessCredentials, VideoGenConfig, ZdrVideoOutputS3Config,
-    };
-    fn zdr_s3() -> ZdrVideoOutputS3Config {
-        ZdrVideoOutputS3Config {
-            bucket: "team-videos".into(),
-            endpoint: "https://s3.example.com".into(),
-            region: "us-east-1".into(),
-            key_prefix: "grok-videos/".into(),
-            expires_secs: 900,
-            read_write: S3AccessCredentials {
-                access_key_id: "AKIA...".into(),
-                secret_access_key: "secret".into(),
-            },
-            read_only: None,
-        }
-    }
-    let agent = build_minimal_agent_for_tests();
-    agent.sampling_config.borrow_mut().api_key = Some("test-key".to_string());
-    assert!(matches!(
-        agent.prepare_video_gen_config(),
-        VideoGenConfig::Enabled { .. }
-    ));
-    agent.cfg.borrow_mut().disable_zdr_incompatible_tools = true;
-    assert!(matches!(
-        agent.prepare_video_gen_config(),
-        VideoGenConfig::Disabled
-    ));
-    agent.cfg.borrow_mut().zdr_video_output_s3 = Some(zdr_s3());
-    agent.cfg.borrow_mut().disable_zdr_incompatible_tools = false;
-    let VideoGenConfig::Enabled {
-        zdr_video_output_s3: s3_when_non_zdr,
-        ..
-    } = agent.prepare_video_gen_config()
-    else {
-        panic!("expected Enabled");
-    };
-    assert!(
-        s3_when_non_zdr.is_none(),
-        "S3 config must not be threaded when ZDR flag is off"
-    );
-    agent.cfg.borrow_mut().disable_zdr_incompatible_tools = true;
-    let VideoGenConfig::Enabled {
-        zdr_video_output_s3,
-        ..
-    } = agent.prepare_video_gen_config()
-    else {
-        panic!("expected Enabled");
-    };
-    assert!(zdr_video_output_s3.as_ref().is_some_and(|c| c.is_valid()));
 }
 /// The imagine tier gate fails **open**: with no resolved auth we can't confirm
 /// a restricted personal tier, so the tools stay advertised and un-flagged (the
@@ -2276,73 +1982,6 @@ async fn prepare_image_gen_config_fails_open_without_auth() {
     assert!(
         !tier_restricted,
         "no resolved auth ⇒ fail open (tools not tier-restricted)"
-    );
-}
-#[tokio::test]
-async fn data_collection_enabled_for_normal_user() {
-    let agent = build_agent_with_auth(crate::auth::GrokAuth::test_default());
-    assert!(
-        !agent.is_data_collection_disabled(),
-        "normal user must have data collection enabled"
-    );
-}
-#[tokio::test]
-async fn data_collection_disabled_for_zdr_team() {
-    let agent = build_agent_with_auth(crate::auth::GrokAuth {
-        team_blocked_reasons: vec!["BLOCKED_REASON_NO_LOGS".into()],
-        ..crate::auth::GrokAuth::test_default()
-    });
-    assert!(
-        agent.is_data_collection_disabled(),
-        "ZDR team must have data collection disabled"
-    );
-}
-#[tokio::test]
-async fn data_collection_disabled_for_zdr_moderated_team() {
-    let agent = build_agent_with_auth(crate::auth::GrokAuth {
-        team_blocked_reasons: vec!["BLOCKED_REASON_NO_LOGS_MODERATED".into()],
-        ..crate::auth::GrokAuth::test_default()
-    });
-    assert!(
-        agent.is_data_collection_disabled(),
-        "ZDR-moderated team must have data collection disabled"
-    );
-}
-#[tokio::test]
-async fn data_collection_disabled_for_opted_out_team() {
-    let agent = build_agent_with_auth(crate::auth::GrokAuth {
-        coding_data_retention_opt_out: true,
-        ..crate::auth::GrokAuth::test_default()
-    });
-    assert!(
-        agent.is_data_collection_disabled(),
-        "opted-out team must have data collection disabled"
-    );
-}
-#[tokio::test]
-async fn data_collection_disabled_for_zdr_plus_opt_out() {
-    let agent = build_agent_with_auth(crate::auth::GrokAuth {
-        team_blocked_reasons: vec!["BLOCKED_REASON_NO_LOGS".into()],
-        coding_data_retention_opt_out: true,
-        ..crate::auth::GrokAuth::test_default()
-    });
-    assert!(
-        agent.is_data_collection_disabled(),
-        "ZDR + opt-out must have data collection disabled"
-    );
-}
-#[tokio::test]
-async fn data_collection_enabled_for_non_zdr_team_with_unrelated_blocks() {
-    let agent = build_agent_with_auth(crate::auth::GrokAuth {
-        team_blocked_reasons: vec![
-            "BLOCKED_REASON_BILLING".into(),
-            "BLOCKED_REASON_SUSPENDED".into(),
-        ],
-        ..crate::auth::GrokAuth::test_default()
-    });
-    assert!(
-        !agent.is_data_collection_disabled(),
-        "non-ZDR blocked reasons must not disable data collection"
     );
 }
 /// `parse_session_kind` routes `session/load` to the gateway Chat path vs. the
@@ -3098,10 +2737,10 @@ fn build_agent_with_gateway_rx() -> (
     tokio::sync::mpsc::UnboundedReceiver<kigi_acp_lib::AcpClientMessage>,
 ) {
     use crate::agent::config::Config as AgentConfig;
-    use crate::auth::{AuthManager, GrokComConfig};
+    use crate::auth::{AuthManager, KimiCodeConfig};
     let temp_dir = tempfile::tempdir().unwrap();
     let auth_manager =
-        std::sync::Arc::new(AuthManager::new(temp_dir.path(), GrokComConfig::default()));
+        std::sync::Arc::new(AuthManager::new(temp_dir.path(), KimiCodeConfig::default()));
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let gateway = GatewaySender::new(tx);
     let cfg = AgentConfig::default();
@@ -3648,14 +3287,14 @@ mod soft_default_settings_emit {
     #[tokio::test]
     async fn emit_settings_update_carries_permission_mode_from_cfg() {
         use crate::agent::config::Config as AgentConfig;
-        use crate::auth::{AuthManager, GrokComConfig};
+        use crate::auth::{AuthManager, KimiCodeConfig};
         let local = tokio::task::LocalSet::new();
         local
             .run_until(async {
                 let temp_dir = tempfile::tempdir().unwrap();
                 let auth_manager = std::sync::Arc::new(AuthManager::new(
                     temp_dir.path(),
-                    GrokComConfig::default(),
+                    KimiCodeConfig::default(),
                 ));
                 let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
                 let gateway = GatewaySender::new(tx);

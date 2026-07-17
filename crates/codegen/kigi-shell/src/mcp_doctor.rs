@@ -7,7 +7,7 @@ use std::sync::Arc;
 use kigi_tools::types::config_source::ConfigSource;
 use serde::Serialize;
 
-use crate::auth::GrokComConfig;
+use crate::auth::KimiCodeConfig;
 use crate::session::managed_mcp;
 use crate::session::mcp_servers;
 
@@ -272,13 +272,13 @@ fn managed_found(
 /// Discover managed `grok_com_*` servers if the user has xAI auth on disk.
 async fn try_discover_managed_servers() -> (ConfigSourceStatus, Vec<DiscoveredServer>) {
     let kigi_home = kigi_tools::util::kigi_home::kigi_home();
-    let grok_com_config = GrokComConfig::default();
-    let auth_manager = Arc::new(crate::auth::AuthManager::new(&kigi_home, grok_com_config));
+    let kimi_code_config = KimiCodeConfig::default();
+    let auth_manager = Arc::new(crate::auth::AuthManager::new(&kigi_home, kimi_code_config));
 
     let Some(snapshot) = auth_manager.current_or_expired() else {
         return managed_skipped("not logged in");
     };
-    if !snapshot.is_managed_mcp_eligible() {
+    if !snapshot.is_session_auth() {
         return managed_skipped(format!("{:?} auth (not xAI OIDC)", snapshot.auth_mode));
     }
 

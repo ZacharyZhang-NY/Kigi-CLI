@@ -1,5 +1,5 @@
 use crate::auth::AuthManager;
-use crate::util::grok_auth_credentials::GrokAuthCredentials;
+use crate::util::kigi_auth_credentials::KigiAuthCredentials;
 use kigi_auth::{
     AuthCredentialProvider, CredentialSnapshot, HttpAuth, StaticAuthCredentialProvider,
 };
@@ -7,7 +7,7 @@ use reqwest::RequestBuilder;
 use std::sync::Arc;
 /// `api_key.id` for the active credential: hash the stable API key, never the
 /// OIDC bearer (which rotates). `None` for non-API-key auth.
-fn api_key_id_for(auth: Option<&crate::auth::GrokAuth>) -> Option<String> {
+fn api_key_id_for(auth: Option<&crate::auth::KimiAuth>) -> Option<String> {
     auth.filter(|a| matches!(a.auth_mode, crate::auth::AuthMode::ApiKey))
         .map(|a| crate::agent::config::deployment_id_from_key(&a.key))
 }
@@ -15,7 +15,7 @@ fn api_key_id_for(auth: Option<&crate::auth::GrokAuth>) -> Option<String> {
 /// delegates to `AuthManager::unauthorized_recovery`.
 pub struct ShellAuthCredentialProvider {
     auth_manager: Arc<AuthManager>,
-    static_credentials: GrokAuthCredentials,
+    static_credentials: KigiAuthCredentials,
 }
 impl ShellAuthCredentialProvider {
     pub(crate) fn new(
@@ -23,7 +23,7 @@ impl ShellAuthCredentialProvider {
         deployment_key: Option<String>,
         alpha_test_key: Option<String>,
     ) -> Self {
-        let mut static_credentials = GrokAuthCredentials::new(None);
+        let mut static_credentials = KigiAuthCredentials::new(None);
         static_credentials.deployment_key = deployment_key;
         static_credentials.alpha_test_key = alpha_test_key;
         Self {
@@ -61,18 +61,19 @@ impl AuthCredentialProvider for ShellAuthCredentialProvider {
             };
         }
         let auth = self.auth_manager.current_or_expired();
-        let user_id = auth.as_ref().map(|a| a.user_id.clone());
-        let team_id = auth.as_ref().and_then(|a| a.team_id.clone());
-        let organization_id = auth.as_ref().and_then(|a| a.organization_id.clone());
+        // The Kimi token response carries no account info; `user_id` stays
+        // empty until a later feature surfaces it.
+        let user_id = auth
+            .as_ref()
+            .map(|a| a.user_id.clone())
+            .filter(|id| !id.is_empty());
         let api_key_id = api_key_id_for(auth.as_ref());
         let token = auth.map(|a| a.key);
         CredentialSnapshot {
             token,
             user_id,
-            team_id,
             deployment_id: None,
             api_key_id,
-            organization_id,
         }
     }
     async fn refresh_after_unauthorized(&self) -> bool {
@@ -81,15 +82,12 @@ impl AuthCredentialProvider for ShellAuthCredentialProvider {
         }
         self.auth_manager.try_recover_unauthorized().await
     }
-    fn needs_token_auth_header(&self) -> bool {
-        self.static_credentials.deployment_key.is_none()
-    }
 }
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::auth::GrokAuth;
-    use crate::auth::GrokComConfig;
+    use crate::auth::KimiAuth;
+    use crate::auth::KimiCodeConfig;
     use crate::auth::manager::AuthManager;
     use chrono::{Duration as ChronoDuration, Utc};
     use kigi_auth::AuthCredentialProvider;
@@ -128,19 +126,19 @@ mod tests {
             }
         }
     }
-    fn make_auth(key: &str, expires_in: ChronoDuration) -> GrokAuth {
-        GrokAuth {
+    fn make_auth(key: &str, expires_in: ChronoDuration) -> KimiAuth {
+        KimiAuth {
             key: key.to_string(),
             user_id: "test-user".to_string(),
             create_time: Utc::now(),
             expires_at: Some(Utc::now() + expires_in),
-            ..GrokAuth::test_default()
+            ..KimiAuth::test_default()
         }
     }
     /// Build an `AuthManager` rooted at `dir`. Caller keeps `dir` alive for
     /// the duration of the test so the `TempDir` `Drop` actually cleans up.
-    fn make_manager(dir: &tempfile::TempDir, initial: Option<GrokAuth>) -> Arc<AuthManager> {
-        let mgr = AuthManager::new(dir.path(), GrokComConfig::default());
+    fn make_manager(dir: &tempfile::TempDir, initial: Option<KimiAuth>) -> Arc<AuthManager> {
+        let mgr = AuthManager::new(dir.path(), KimiCodeConfig::default());
         if let Some(auth) = initial {
             mgr.hot_swap(auth);
         }
@@ -210,16 +208,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mgr = Arc::new(AuthManager::new(
             dir.path(),
-            crate::auth::GrokComConfig::default(),
+            crate::auth::KimiCodeConfig::default(),
         ));
-        mgr.hot_swap(GrokAuth {
+        mgr.hot_swap(KimiAuth {
             key: "stale".into(),
-            auth_mode: crate::auth::AuthMode::Oidc,
+            auth_mode: crate::auth::AuthMode::OAuth,
             create_time: chrono::Utc::now() - ChronoDuration::hours(2),
             user_id: "u".into(),
             refresh_token: Some("rt-stale".into()),
             expires_at: Some(chrono::Utc::now() - ChronoDuration::hours(1)),
-            ..GrokAuth::test_default()
+            ..KimiAuth::test_default()
         });
         struct OkRefresher {
             calls: Arc<std::sync::atomic::AtomicU32>,
@@ -231,14 +229,14 @@ mod tests {
                 _r: crate::auth::manager::RefreshReason,
             ) -> crate::auth::refresh::RefreshOutcome {
                 self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                crate::auth::refresh::RefreshOutcome::Success(Box::new(GrokAuth {
+                crate::auth::refresh::RefreshOutcome::Success(Box::new(KimiAuth {
                     key: "fresh".into(),
-                    auth_mode: crate::auth::AuthMode::Oidc,
+                    auth_mode: crate::auth::AuthMode::OAuth,
                     create_time: chrono::Utc::now(),
                     user_id: "u".into(),
                     refresh_token: Some("rt-new".into()),
                     expires_at: Some(chrono::Utc::now() + ChronoDuration::hours(1)),
-                    ..GrokAuth::test_default()
+                    ..KimiAuth::test_default()
                 }))
             }
         }
@@ -282,11 +280,11 @@ mod tests {
             Some(deployment_id_from_key("xai-token-EX").as_str())
         );
         assert!(dep.api_key_id.is_none());
-        let api_auth = GrokAuth {
+        let api_auth = KimiAuth {
             key: "sk-apikey-xyz".into(),
             auth_mode: crate::auth::AuthMode::ApiKey,
             expires_at: Some(Utc::now() + ChronoDuration::hours(1)),
-            ..GrokAuth::test_default()
+            ..KimiAuth::test_default()
         };
         let api = ShellAuthCredentialProvider::new(make_manager(&dir, Some(api_auth)), None, None)
             .snapshot();

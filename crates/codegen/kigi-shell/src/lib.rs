@@ -34,7 +34,6 @@ pub mod session;
 pub mod terminal;
 #[cfg(test)]
 pub(crate) mod test_support;
-pub mod tier;
 pub mod tools;
 pub mod trace_classifier;
 pub mod util;

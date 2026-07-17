@@ -1915,11 +1915,8 @@ fn init_remote_sync(
                     "Writeback storage mode requires authentication. Run 'grok login' first.",
                 )
             })?;
-            if let Some(auth) = auth_manager.current_or_expired() {
-                if auth.is_zdr_team() {
-                    tracing::debug!("ZDR team: skipping remote sync");
-                    return Ok(None);
-                }
+            if auth_manager.current_or_expired().is_some() {
+                // ZDR was an xAI team concept; nothing gates remote sync here.
             } else {
                 tracing::warn!(
                     "writeback: no auth loaded yet, ZDR check skipped (backend enforces server-side)"

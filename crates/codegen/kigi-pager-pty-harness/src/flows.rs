@@ -82,7 +82,7 @@ pub fn seed_fake_oauth(content: &ContentController, user: &str) {
             r#"{{
   "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {{
     "key": "pty-test-oauth-token",
-    "auth_mode": "oidc",
+    "auth_mode": "oauth",
     "create_time": "2026-01-01T00:00:00Z",
     "user_id": "{user}",
     "email": "{user}@test.invalid",

@@ -19,7 +19,8 @@
         ));
         assert!(!app.is_api_key_auth);
         assert!(app.usage_visible);
-        assert!(!app.tier_restricted_commands.is_empty());
+        // Tier gating no longer exists; nothing gets re-restricted.
+        assert!(app.tier_restricted_commands.is_empty());
 
         // A paid tier after API Key clears the api-key flag and tier limits.
         let mut app = make_app_with_agent("sess-paid-tier");

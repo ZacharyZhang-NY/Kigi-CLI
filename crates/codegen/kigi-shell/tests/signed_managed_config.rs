@@ -12,8 +12,8 @@
 mod common;
 
 use common::{
-    MANAGED, REQUIREMENTS_FAIL_CLOSED, forged_team_body, install_test_key, reset, signed_team_body,
-    spawn_mock, team_identity, test_home, write_config, write_team_auth,
+    MANAGED, REQUIREMENTS_FAIL_CLOSED, dk_identity, forged_dk_body, install_test_key, reset,
+    signed_dk_body, spawn_mock, test_home, write_dk_config,
 };
 use kigi_config::signed_policy;
 use serial_test::serial;
@@ -27,20 +27,19 @@ async fn rejected_signature_persists_nothing_and_records_no_marker() {
     reset(&home);
     let (kp, _pubkey) = install_test_key();
 
-    // Prior trusted state: team-b's files + marker (as if synced earlier).
+    // Prior trusted state: an earlier principal's files + marker.
     std::fs::write(home.join("managed_config.toml"), "[cli]\nprior = true\n").unwrap();
     std::fs::write(home.join("requirements.toml"), "[features]\n").unwrap();
     kigi_shell::config::mark_managed_config_synced(kigi_shell::config::SyncMarker {
-        principal: Some("team-b"),
+        principal: Some("dep-old"),
         had_managed_config: true,
         had_requirements: true,
         key_fingerprint: None,
         fail_closed: false,
     });
 
-    let url = spawn_mock(forged_team_body(&kp, "team-007"));
-    write_config(&home, &url);
-    write_team_auth(&home, "team-007");
+    let url = spawn_mock(forged_dk_body(&kp, "dep-42"));
+    write_dk_config(&home, &url, "dep-key-1");
 
     let wrote = kigi_shell::managed_config::sync()
         .await
@@ -61,7 +60,7 @@ async fn rejected_signature_persists_nothing_and_records_no_marker() {
     let v: serde_json::Value = serde_json::from_str(&marker).unwrap();
     assert_eq!(
         v["principal"].as_str(),
-        Some("team-b"),
+        Some("dep-old"),
         "the marker must not be rewritten for a rejected fetch: {marker}"
     );
 }
@@ -75,14 +74,13 @@ async fn verified_envelope_persists_policy_and_sidecar() {
     reset(&home);
     let (kp, pubkey) = install_test_key();
 
-    let url = spawn_mock(signed_team_body(
+    let url = spawn_mock(signed_dk_body(
         &kp,
-        "team-007",
+        "dep-42",
         Some(MANAGED),
         Some(REQUIREMENTS_FAIL_CLOSED),
     ));
-    write_config(&home, &url);
-    write_team_auth(&home, "team-007");
+    write_dk_config(&home, &url, "dep-key-1");
 
     let wrote = kigi_shell::managed_config::sync()
         .await
@@ -114,7 +112,7 @@ async fn verified_envelope_persists_policy_and_sidecar() {
     assert!(payload.fail_closed, "the signed opt-in is carried");
 
     assert!(
-        !kigi_shell::config::is_managed_config_hard_stale_for(&team_identity("team-007")),
+        !kigi_shell::config::is_managed_config_hard_stale_for(&dk_identity()),
         "a covered cache is not hard-stale"
     );
     assert!(
@@ -133,14 +131,13 @@ async fn deleted_sidecar_under_fail_closed_marker_refuses_at_gate() {
     reset(&home);
     let (kp, _pubkey) = install_test_key();
 
-    let url = spawn_mock(signed_team_body(
+    let url = spawn_mock(signed_dk_body(
         &kp,
-        "team-007",
+        "dep-42",
         Some(MANAGED),
         Some(REQUIREMENTS_FAIL_CLOSED),
     ));
-    write_config(&home, &url);
-    write_team_auth(&home, "team-007");
+    write_dk_config(&home, &url, "dep-key-1");
     kigi_shell::managed_config::sync()
         .await
         .expect("initial sync should succeed");
@@ -152,11 +149,11 @@ async fn deleted_sidecar_under_fail_closed_marker_refuses_at_gate() {
     std::fs::remove_file(home.join("managed_config.sig.json")).unwrap();
 
     assert!(
-        kigi_shell::config::is_managed_config_hard_stale_for(&team_identity("team-007")),
+        kigi_shell::config::is_managed_config_hard_stale_for(&dk_identity()),
         "a stripped sidecar must trigger the session-start refetch"
     );
     assert!(
-        kigi_shell::config::is_managed_config_stale_for(&team_identity("team-007")),
+        kigi_shell::config::is_managed_config_stale_for(&dk_identity()),
         "the TIMER staleness sibling must fire too (background tick self-heal), even though the marker is timer-fresh"
     );
     let gate = kigi_shell::managed_config::managed_policy_gate();
@@ -169,114 +166,4 @@ async fn deleted_sidecar_under_fail_closed_marker_refuses_at_gate() {
             .contains("Managed policy is required for this account"),
         "the refusal is the managed-policy gate message"
     );
-}
-
-/// The keyed availability fix: after a fail_closed team-A install (signed sidecar + marker), an
-/// OFFLINE switch to team B previously read Compromised (the authentic sidecar is bound to A) and
-/// refused a legitimate switch. The gate's identity-change purge must shed team A's artifacts
-/// INCLUDING the sidecar, PERMIT team B, and leave the cache hard-stale so the next online start
-/// fetches team B's own policy.
-#[tokio::test]
-#[serial]
-async fn offline_team_switch_purges_sidecar_and_permits_new_team() {
-    let home = test_home().clone();
-    reset(&home);
-    let (kp, _pubkey) = install_test_key();
-
-    let url = spawn_mock(signed_team_body(
-        &kp,
-        "team-a",
-        Some(MANAGED),
-        Some(REQUIREMENTS_FAIL_CLOSED),
-    ));
-    write_config(&home, &url);
-    write_team_auth(&home, "team-a");
-    kigi_shell::managed_config::sync()
-        .await
-        .expect("team A keyed sync should succeed");
-    assert!(
-        home.join("managed_config.sig.json").exists(),
-        "the keyed sync persists a sidecar"
-    );
-    assert!(
-        kigi_shell::managed_config::managed_policy_gate().is_ok(),
-        "team A's verified fail_closed policy must start"
-    );
-
-    // Switch the signed-in team to B; the gate is sync, so no fetch can rebind first.
-    write_team_auth(&home, "team-b");
-
-    // The bug this fixes: without the purge, team B evaluates against team A's
-    // foreign-bound sidecar → Compromised → a legitimate switch refused startup.
-    assert!(
-        kigi_shell::config::managed_policy_compromised_for(&team_identity("team-b")),
-        "pre-purge, the foreign-bound sidecar must read compromised for team B"
-    );
-
-    assert!(
-        kigi_shell::managed_config::managed_policy_gate().is_ok(),
-        "the gate must purge team A and permit the legitimate offline switch to team B"
-    );
-    for f in [
-        "requirements.toml",
-        "managed_config.toml",
-        "managed_config_cache.json",
-        "managed_config.sig.json",
-    ] {
-        assert!(
-            !home.join(f).exists(),
-            "{f} must be purged on the identity change"
-        );
-    }
-    assert!(
-        kigi_shell::config::is_managed_config_hard_stale_for(&team_identity("team-b")),
-        "the purged cache must read hard-stale so the next online start fetches team B's policy"
-    );
-}
-
-/// A blank `team_id` in `auth.json` (a parse blip) over an authentic team-A-bound fail_closed
-/// sidecar: the blank→None filter resolves the identity to None, the marker principal backstops
-/// the signed binding (team-a vs team-a → Trusted), so the KEYED gate PERMITS — instead of
-/// binding to "" and refusing as Compromised — and nothing is purged.
-#[tokio::test]
-#[serial]
-async fn keyed_blank_team_id_is_not_refused_and_does_not_purge() {
-    let home = test_home().clone();
-    reset(&home);
-    let (kp, _pubkey) = install_test_key();
-
-    let url = spawn_mock(signed_team_body(
-        &kp,
-        "team-a",
-        Some(MANAGED),
-        Some(REQUIREMENTS_FAIL_CLOSED),
-    ));
-    write_config(&home, &url);
-    write_team_auth(&home, "team-a");
-    kigi_shell::managed_config::sync()
-        .await
-        .expect("team A keyed sync should succeed");
-    assert!(
-        kigi_shell::managed_config::managed_policy_gate().is_ok(),
-        "team A's verified fail_closed policy must start"
-    );
-
-    // auth.json now carries a team principal with a BLANK team_id.
-    write_team_auth(&home, "");
-
-    assert!(
-        kigi_shell::managed_config::managed_policy_gate().is_ok(),
-        "a blank team_id must read as unknown, not a foreign binding that reads compromised"
-    );
-    for f in [
-        "requirements.toml",
-        "managed_config.toml",
-        "managed_config_cache.json",
-        "managed_config.sig.json",
-    ] {
-        assert!(
-            home.join(f).exists(),
-            "{f} must be retained on a blank team_id (a parse blip is not an identity change)"
-        );
-    }
 }

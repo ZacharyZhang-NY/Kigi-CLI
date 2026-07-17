@@ -2644,7 +2644,7 @@ fn test_auth_manager_for_models() -> std::sync::Arc<crate::auth::AuthManager> {
     let tmp = tempfile::tempdir().expect("tempdir");
     let mgr = std::sync::Arc::new(crate::auth::AuthManager::new(
         tmp.path(),
-        crate::auth::GrokComConfig::default(),
+        crate::auth::KimiCodeConfig::default(),
     ));
     std::mem::forget(tmp);
     mgr

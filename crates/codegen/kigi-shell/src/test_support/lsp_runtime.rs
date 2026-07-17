@@ -125,7 +125,7 @@ pub(crate) fn ctx_with_toggle(toggle: HashMap<String, bool>) -> SubagentSpawnCon
         workspace_ops: kigi_workspace::WorkspaceOps::for_test(),
         auth_manager: Arc::new(crate::auth::AuthManager::new(
             std::path::Path::new("/tmp/nonexistent-grok-test"),
-            crate::auth::GrokComConfig::default(),
+            crate::auth::KimiCodeConfig::default(),
         )),
         attribution_callback: None,
         parent_agent_name: None,

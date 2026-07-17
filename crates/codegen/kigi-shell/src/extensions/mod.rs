@@ -17,7 +17,6 @@ pub mod memory;
 pub mod notification;
 pub mod plugins;
 pub mod pr;
-pub mod privacy;
 pub mod prompt_history;
 pub mod prompt_meta;
 pub mod recap;

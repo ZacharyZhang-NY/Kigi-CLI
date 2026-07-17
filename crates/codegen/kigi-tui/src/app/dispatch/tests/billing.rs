@@ -61,50 +61,6 @@ fn dispatch_billing(
 }
 
 #[test]
-fn credit_limit_retry_preserves_image_submission_state() {
-    let mut app = test_app_with_agent();
-    let mut image = crate::prompt_images::from_clipboard_data(&crate::clipboard::ImageData {
-        data: vec![1, 2, 3],
-        mime_type: "image/png".into(),
-    });
-    image.display_number = 1;
-    let prompt = crate::app::agent::InFlightPrompt {
-        text: "retry [Image #1]".into(),
-        images: vec![image],
-        scrollback_entry: crate::scrollback::EntryId::new(0),
-        chip_elements: vec![crate::app::agent::ChipElement {
-            range: 6..16,
-            kind: crate::views::prompt_widget::KIND_IMAGE,
-            display: None,
-        }],
-    };
-    app.agents
-        .get_mut(&AgentId(0))
-        .unwrap()
-        .credit_limit_stashed_prompt = Some(prompt);
-
-    let effects = dispatch(
-        Action::TaskComplete(TaskResult::CreditLimitRecheckComplete {
-            agent_id: AgentId(0),
-            meta: Some(serde_json::json!({"subscription_tier": "Upgraded"})),
-        }),
-        &mut app,
-    );
-    assert!(
-        effects
-            .iter()
-            .any(|effect| matches!(effect, Effect::SendPromptBlocks { .. }))
-    );
-    let in_flight = app.agents[&AgentId(0)]
-        .session
-        .in_flight_prompt
-        .as_ref()
-        .unwrap();
-    assert_eq!(in_flight.images.len(), 1);
-    assert_eq!(in_flight.chip_elements.len(), 1);
-}
-
-#[test]
 fn is_max_tier_positive_match() {
     assert!(is_max_tier(Some("supergrok_heavy")));
     assert!(is_max_tier(Some("SuperGrok Heavy")));

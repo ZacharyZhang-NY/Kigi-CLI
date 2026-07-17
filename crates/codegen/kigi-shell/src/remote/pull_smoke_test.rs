@@ -4,17 +4,17 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::auth::GrokAuth;
+    use crate::auth::KimiAuth;
     use crate::remote::client::BackendClient;
     use crate::session::storage::{JsonlStorageAdapter, StorageAdapter};
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
-    fn load_prod_auth() -> Option<GrokAuth> {
+    fn load_prod_auth() -> Option<KimiAuth> {
         let path = crate::util::kigi_home::kigi_home().join("auth.json");
         let contents = std::fs::read_to_string(&path).ok()?;
-        let store: BTreeMap<String, GrokAuth> = serde_json::from_str(&contents).ok()?;
-        let scope = crate::auth::GrokComConfig::default().auth_scope();
+        let store: BTreeMap<String, KimiAuth> = serde_json::from_str(&contents).ok()?;
+        let scope = crate::auth::KimiCodeConfig::default().auth_scope();
         crate::auth::lookup_auth(&store, &scope)
     }
 
@@ -33,7 +33,7 @@ mod tests {
         let auth = load_prod_auth().expect("No auth.json — run `grok login`");
         let am = Arc::new(crate::auth::AuthManager::new(
             &crate::util::kigi_home::kigi_home(),
-            crate::auth::GrokComConfig::default(),
+            crate::auth::KimiCodeConfig::default(),
         ));
         am.hot_swap(auth);
         let client = BackendClient::new().with_auth_manager(am.clone());

@@ -156,7 +156,7 @@ pub(crate) struct SubagentSpawnContext {
         reason = "unused in production; remove expect when wired or delete the item"
     )]
     pub storage_mode: crate::config::StorageMode,
-    pub auth: Option<crate::auth::GrokAuth>,
+    pub auth: Option<crate::auth::KimiAuth>,
     pub parent_cwd: PathBuf,
     pub parent_session_id: String,
     pub yolo_mode: bool,

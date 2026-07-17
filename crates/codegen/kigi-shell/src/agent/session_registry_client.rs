@@ -141,7 +141,7 @@ pub struct SessionRegistryClient {
     raw_client: reqwest::Client,
     client: reqwest_middleware::ClientWithMiddleware,
     base_url: String,
-    credentials: crate::util::grok_auth_credentials::GrokAuthCredentials,
+    credentials: crate::util::kigi_auth_credentials::KigiAuthCredentials,
     session_id: Option<String>,
 }
 
@@ -152,7 +152,7 @@ impl SessionRegistryClient {
             raw_client: http_client.clone(),
             client: reqwest_middleware::ClientBuilder::new(http_client).build(),
             base_url: base_url.into(),
-            credentials: crate::util::grok_auth_credentials::GrokAuthCredentials::new(Some(
+            credentials: crate::util::kigi_auth_credentials::KigiAuthCredentials::new(Some(
                 user_token.into(),
             )),
             session_id: None,
@@ -549,7 +549,7 @@ mod tests {
     /// Verify per-request auth resolve picks up rotated tokens.
     #[tokio::test]
     async fn session_registry_client_uses_active_auth_for_each_request() {
-        use crate::auth::{AuthManager, AuthMode, GrokAuth, GrokComConfig};
+        use crate::auth::{AuthManager, AuthMode, KimiAuth, KimiCodeConfig};
         use axum::{Router, response::IntoResponse, routing::post};
         use chrono::{Duration, Utc};
         use std::net::SocketAddr;
@@ -575,14 +575,14 @@ mod tests {
         tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
 
         let dir = tempfile::tempdir().unwrap();
-        let am = Arc::new(AuthManager::new(dir.path(), GrokComConfig::default()));
-        am.hot_swap(GrokAuth {
+        let am = Arc::new(AuthManager::new(dir.path(), KimiCodeConfig::default()));
+        am.hot_swap(KimiAuth {
             key: "fresh-from-auth-manager".into(),
             auth_mode: AuthMode::ApiKey,
             create_time: Utc::now(),
             user_id: "user-42".into(),
             expires_at: Some(Utc::now() + Duration::hours(1)),
-            ..GrokAuth::test_default()
+            ..KimiAuth::test_default()
         });
 
         let client = SessionRegistryClient::new(format!("http://{addr}"), "STALE-build-time-token")

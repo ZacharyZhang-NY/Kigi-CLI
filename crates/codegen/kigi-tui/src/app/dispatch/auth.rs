@@ -45,15 +45,9 @@ pub(super) fn ensure_login_method(app: &mut AppView) {
     // No interactive method: leave login_method_id unset (fail-closed).
 }
 
-/// Error when no interactive login method is available (empty auth_methods,
-/// e.g. `preferred_method=api_key` with no credentials). Prefer the shell's
-/// pin-unavailable copy when the list is empty.
-fn no_login_method_error(app: &AppView) -> String {
-    if app.auth_methods.is_empty() {
-        kigi_shell::agent::auth_method::PREFERRED_API_KEY_UNAVAILABLE.to_string()
-    } else {
-        "No login method available".to_string()
-    }
+/// Error when no interactive login method is available (empty auth_methods).
+fn no_login_method_error(_app: &AppView) -> String {
+    "No login method available".to_string()
 }
 
 /// Log out, then start a new login flow in a single sequential task.

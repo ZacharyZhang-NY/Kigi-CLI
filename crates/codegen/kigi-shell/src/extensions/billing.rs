@@ -213,10 +213,6 @@ async fn handle_get_billing(agent: &MvpAgent) -> ExtResult {
     let credits_resp = crate::http::shared_client()
         .get(&credits_url)
         .header("Authorization", format!("Bearer {}", auth.key))
-        .header(
-            "X-XAI-Token-Auth",
-            crate::auth::GrokComConfig::default().token_header,
-        )
         .header("x-userid", &auth.user_id)
         .header("x-grok-client-version", kigi_version::VERSION)
         .header(
@@ -304,10 +300,6 @@ async fn handle_get_auto_topup_rule(agent: &MvpAgent) -> ExtResult {
     let response = crate::http::shared_client()
         .get(&url)
         .header("Authorization", format!("Bearer {}", auth.key))
-        .header(
-            "X-XAI-Token-Auth",
-            crate::auth::GrokComConfig::default().token_header,
-        )
         .header("x-userid", &auth.user_id)
         .header("x-grok-client-version", kigi_version::VERSION)
         .header(

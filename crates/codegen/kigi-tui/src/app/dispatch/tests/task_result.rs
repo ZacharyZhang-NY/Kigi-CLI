@@ -1646,30 +1646,6 @@ fn verify_check_with_meta_resolves_pending_gate() {
     assert!(app.pending_gate_verification.is_none());
 }
 
-/// The live check confirmed the block (meta WITH a gate): the paywall
-/// shows with the authoritative gate.
-#[test]
-fn verify_check_with_gated_meta_shows_gate() {
-    let mut app = test_app();
-    let _effs = app.impose_gate(test_gate());
-
-    let meta = serde_json::to_value(kigi_shell::auth::AuthMeta {
-        gate: Some(test_gate()),
-        ..Default::default()
-    })
-    .unwrap();
-    dispatch_task_result(
-        TaskResult::CheckSubscriptionComplete {
-            verify: Some(app.gate_verify_gen),
-            meta: Some(meta),
-        },
-        &mut app,
-    );
-
-    assert!(!app.has_access(), "verified gate must show");
-    assert!(app.pending_gate_verification.is_none());
-}
-
 /// The verification's own check failed (meta None) while its stale gate
 /// was deferred: err on blocking — the deferred gate is promoted.
 #[test]
@@ -1854,59 +1830,6 @@ fn gate_verify_timeout_stale_generation_is_ignored() {
     assert!(
         app.pending_gate_verification.is_some(),
         "the newer verification must stay in flight"
-    );
-}
-
-/// A verified gate landing via `CheckSubscriptionComplete` (gated meta while
-/// ungated) must arm the 5s paywall auto-check chain — verify-before-paywall
-/// paths never went through the login-path chain start.
-#[test]
-fn verified_gate_via_check_complete_starts_paywall_chain() {
-    let mut app = test_app();
-    let _effs = app.impose_gate(test_gate());
-
-    let meta = serde_json::to_value(kigi_shell::auth::AuthMeta {
-        gate: Some(test_gate()),
-        ..Default::default()
-    })
-    .unwrap();
-    let effects = dispatch_task_result(
-        TaskResult::CheckSubscriptionComplete {
-            verify: None,
-            meta: Some(meta),
-        },
-        &mut app,
-    );
-
-    assert!(!app.has_access());
-    assert!(
-        app.paywall_check_started.is_some(),
-        "verified gate must arm the paywall auto-check chain"
-    );
-    assert!(
-        effects
-            .iter()
-            .any(|e| matches!(e, Effect::SchedulePaywallCheck)),
-        "verified gate must schedule the 5s chain; got: {effects:?}"
-    );
-
-    // Steady-state paywall-poller responses (already gated) must NOT fan
-    // out extra timers.
-    let meta = serde_json::to_value(kigi_shell::auth::AuthMeta {
-        gate: Some(test_gate()),
-        ..Default::default()
-    })
-    .unwrap();
-    let effects = dispatch_task_result(
-        TaskResult::CheckSubscriptionComplete {
-            verify: None,
-            meta: Some(meta),
-        },
-        &mut app,
-    );
-    assert!(
-        effects.is_empty(),
-        "already-gated check responses must not schedule more timers; got: {effects:?}"
     );
 }
 

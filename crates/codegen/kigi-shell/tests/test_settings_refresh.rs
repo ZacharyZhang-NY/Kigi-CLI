@@ -122,7 +122,7 @@ async fn test_fetch_settings_blocking_round_trip() {
             .expect("start mock server");
 
         // Without settings configured: returns None (404 from mock)
-        let auth = kigi_shell::auth::GrokAuth {
+        let auth = kigi_shell::auth::KimiAuth {
             key: "test-key".into(),
             ..Default::default()
         };

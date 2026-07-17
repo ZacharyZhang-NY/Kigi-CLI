@@ -36,8 +36,6 @@ mod reverse_agent_type_mismatch_cursor_to_default;
 mod same_agent_type_switch_no_modal;
 #[path = "pty_e2e/show_thinking_blocks_toggle_hides_existing_pty.rs"]
 mod show_thinking_blocks_toggle_hides_existing_pty;
-#[path = "pty_e2e/subscription_watch_and_gate_verify_pty.rs"]
-mod subscription_watch_and_gate_verify_pty;
 #[path = "pty_e2e/undo_tip_resets_each_new_session.rs"]
 mod undo_tip_resets_each_new_session;
 #[path = "pty_e2e/undo_tip_seen_count_never_persisted.rs"]

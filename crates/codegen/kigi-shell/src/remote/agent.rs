@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use crate::auth::{AuthManager, GrokComConfig};
+use crate::auth::{AuthManager, KimiCodeConfig};
 use anyhow::{Context, Result, bail};
 use serde::de::DeserializeOwned;
 
@@ -64,7 +64,6 @@ impl SandboxClient {
             .context("failed to resolve sandbox auth")?;
         let mut builder = builder
             .header("Authorization", format!("Bearer {}", auth.key))
-            .header("X-XAI-Token-Auth", GrokComConfig::default().token_header)
             .header("x-userid", &auth.user_id)
             .header("x-grok-client-version", kigi_version::VERSION);
 

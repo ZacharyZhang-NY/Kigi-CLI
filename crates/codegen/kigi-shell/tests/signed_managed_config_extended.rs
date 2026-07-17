@@ -11,9 +11,8 @@ mod common;
 #[cfg(unix)]
 use common::skip_as_root;
 use common::{
-    MANAGED, REQUIREMENTS_FAIL_CLOSED, TEST_EXPIRES_AT, TEST_KEY_ID, forged_team_body,
-    install_test_key, reset, sign_envelope, signed_team_body, spawn_mock, team_identity, test_home,
-    write_config, write_dk_config, write_team_auth,
+    MANAGED, REQUIREMENTS_FAIL_CLOSED, TEST_EXPIRES_AT, TEST_KEY_ID, dk_identity, forged_dk_body,
+    install_test_key, reset, sign_envelope, signed_dk_body, spawn_mock, test_home, write_dk_config,
 };
 use kigi_config::signed_policy::{self, SignedPayload};
 use serial_test::serial;
@@ -21,14 +20,13 @@ use serial_test::serial;
 /// The healthy fail-closed starting state the tamper/heal scenarios mutate;
 /// the mock keeps serving the same body, so a healing sync can refetch it.
 async fn sync_fail_closed_policy(home: &std::path::Path, kp: &ring::signature::Ed25519KeyPair) {
-    let url = spawn_mock(signed_team_body(
+    let url = spawn_mock(signed_dk_body(
         kp,
-        "team-007",
+        "dep-42",
         Some(MANAGED),
         Some(REQUIREMENTS_FAIL_CLOSED),
     ));
-    write_config(home, &url);
-    write_team_auth(home, "team-007");
+    write_dk_config(home, &url, "dep-key-1");
     kigi_shell::managed_config::sync()
         .await
         .expect("initial sync should succeed");
@@ -94,9 +92,8 @@ async fn rejected_signature_surfaces_as_setup_and_login_failure() {
     reset(&home);
     let (kp, _pubkey) = install_test_key();
 
-    let url = spawn_mock(forged_team_body(&kp, "team-007"));
-    write_config(&home, &url);
-    write_team_auth(&home, "team-007");
+    let url = spawn_mock(forged_dk_body(&kp, "dep-42"));
+    write_dk_config(&home, &url, "dep-key-1");
 
     let outcome = kigi_shell::managed_config::run_setup().await;
     assert!(
@@ -130,8 +127,8 @@ async fn withdrawn_requirements_is_deleted_and_covered_by_the_new_sidecar() {
     sync_fail_closed_policy(&home, &kp).await;
     assert!(home.join("requirements.toml").exists());
 
-    let url_partial = spawn_mock(signed_team_body(&kp, "team-007", Some(MANAGED), None));
-    write_config(&home, &url_partial);
+    let url_partial = spawn_mock(signed_dk_body(&kp, "dep-42", Some(MANAGED), None));
+    write_dk_config(&home, &url_partial, "dep-key-1");
     let wrote = kigi_shell::managed_config::sync()
         .await
         .expect("withdrawing sync should succeed");
@@ -156,7 +153,7 @@ async fn withdrawn_requirements_is_deleted_and_covered_by_the_new_sidecar() {
         "the new sidecar covers the absence"
     );
     assert!(
-        !kigi_shell::config::is_managed_config_hard_stale_for(&team_identity("team-007")),
+        !kigi_shell::config::is_managed_config_hard_stale_for(&dk_identity()),
         "the converged, covered cache is not hard-stale"
     );
     assert!(kigi_shell::managed_config::managed_policy_gate().is_ok());
@@ -192,7 +189,7 @@ async fn directory_squat_reads_compromised_and_online_sync_heals() {
         "the refusal is the managed-policy gate message"
     );
     assert!(
-        kigi_shell::config::is_managed_config_hard_stale_for(&team_identity("team-007")),
+        kigi_shell::config::is_managed_config_hard_stale_for(&dk_identity()),
         "the squat must trigger the refetch"
     );
 
@@ -239,7 +236,7 @@ async fn sidecar_read_blip_allows_session_and_triggers_refetch() {
         "a transient sidecar read blip must not refuse the session"
     );
     assert!(
-        kigi_shell::config::is_managed_config_hard_stale_for(&team_identity("team-007")),
+        kigi_shell::config::is_managed_config_hard_stale_for(&dk_identity()),
         "the blip must trigger the refetch so the self-heal runs"
     );
     // Restore so the tempdir (and later tests) stay clean.
@@ -276,7 +273,7 @@ async fn sidecar_directory_squat_refuses_then_online_sync_heals() {
         "the refusal is the managed-policy gate message"
     );
     assert!(
-        kigi_shell::config::is_managed_config_hard_stale_for(&team_identity("team-007")),
+        kigi_shell::config::is_managed_config_hard_stale_for(&dk_identity()),
         "the squat must trigger the refetch"
     );
 

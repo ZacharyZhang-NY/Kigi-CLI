@@ -132,13 +132,13 @@ async fn test_e2e_idle_resume_refreshes_model_metadata() {
                     let dir = tempfile::tempdir().unwrap();
                     let mgr = std::sync::Arc::new(crate::auth::AuthManager::new(
                         dir.path(),
-                        crate::auth::GrokComConfig::default(),
+                        crate::auth::KimiCodeConfig::default(),
                     ));
-                    mgr.hot_swap(crate::auth::GrokAuth {
-                        auth_mode: crate::auth::AuthMode::Oidc,
+                    mgr.hot_swap(crate::auth::KimiAuth {
+                        auth_mode: crate::auth::AuthMode::OAuth,
                         refresh_token: Some("rt".into()),
                         expires_at: Some(chrono::Utc::now() + chrono::Duration::hours(1)),
-                        ..crate::auth::GrokAuth::test_default()
+                        ..crate::auth::KimiAuth::test_default()
                     });
                     std::mem::forget(dir);
                     Some(mgr)

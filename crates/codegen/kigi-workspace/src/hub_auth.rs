@@ -300,7 +300,7 @@ mod tests {
             "scope": {
                 "key": "eyJhbGciOiJFUzI1NiJ9.tok",
                 "user_id": "u1",
-                "auth_mode": "oidc",
+                "auth_mode": "oauth",
                 "create_time": "2026-01-01T00:00:00Z",
                 "email": "test@x.ai",
                 "first_name": "Test",

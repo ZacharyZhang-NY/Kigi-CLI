@@ -326,7 +326,7 @@ pub async fn connect_via_leader(
     // agent's disk-rotated token under the file lock (`try_adopt_disk_token`).
     let auth_manager = std::sync::Arc::new(kigi_shell::auth::AuthManager::new(
         &kigi_shell::util::kigi_home::kigi_home(),
-        agent_config.grok_com_config.clone(),
+        agent_config.kimi_code_config.clone(),
     ));
 
     Ok(AcpConnection {
@@ -897,11 +897,7 @@ mod tests {
             // Realistic enterprise user: no cached session token, default `grok.com`
             // login (no enterprise OIDC).
             has_cached_token: false,
-            has_enterprise_oidc: false,
-            enterprise_oidc_issuer: None,
             login_label: None,
-            has_auth_provider_command: false,
-            preferred_method: None,
         });
 
         let (needs, label, method_id, mode) = startup_auth_metadata(&built.methods);

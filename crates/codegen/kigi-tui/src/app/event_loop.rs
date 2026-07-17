@@ -683,11 +683,8 @@ pub(crate) async fn run(
     // welcome/auth UI right away.
     let mut post_render_effects = if needs_interactive_login {
         if connection.auth_methods.is_empty() {
-            // preferred_method pin unavailable — no advertised method to start.
             app.auth_state = super::app_view::AuthState::Pending {
-                error: Some(
-                    kigi_shell::agent::auth_method::PREFERRED_API_KEY_UNAVAILABLE.to_string(),
-                ),
+                error: Some("No login method available".to_string()),
             };
             vec![]
         } else {

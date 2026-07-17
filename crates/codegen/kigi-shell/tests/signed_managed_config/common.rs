@@ -93,17 +93,8 @@ pub fn spawn_mock(body: String) -> String {
     format!("http://{addr}/deployment/config")
 }
 
-pub fn write_config(home: &std::path::Path, managed_config_url: &str) {
-    std::fs::write(
-        home.join("config.toml"),
-        format!("[endpoints]\nmanaged_config_url = \"{managed_config_url}\"\n"),
-    )
-    .unwrap();
-}
-
-/// [`write_config`] plus a `deployment_key` (dead-code-allowed: compiled into
-/// both binaries, called by one).
-#[allow(dead_code)]
+/// Endpoint config with a `deployment_key` (the only principal that can own
+/// managed config now).
 pub fn write_dk_config(home: &std::path::Path, managed_config_url: &str, deployment_key: &str) {
     std::fs::write(
         home.join("config.toml"),
@@ -112,22 +103,6 @@ pub fn write_dk_config(home: &std::path::Path, managed_config_url: &str, deploym
         ),
     )
     .unwrap();
-}
-
-pub fn write_team_auth(home: &std::path::Path, team_id: &str) {
-    let scope = kigi_shell::auth::GrokComConfig::default().auth_scope();
-    let auth = serde_json::json!({
-        scope: {
-            "key": "team-session-token",
-            "auth_mode": "oidc",
-            "create_time": "2026-01-01T00:00:00Z",
-            "expires_at": "2099-01-01T00:00:00Z",
-            "user_id": "user-1",
-            "principal_type": "Team",
-            "team_id": team_id,
-        }
-    });
-    std::fs::write(home.join("auth.json"), auth.to_string()).unwrap();
 }
 
 /// A fresh Ed25519 keypair plus its raw public key, installed as the sole trusted
@@ -163,18 +138,18 @@ pub fn sign_envelope(
     })
 }
 
-/// A team deployment-config response signed by `kp` under [`TEST_KEY_ID`]. The
+/// A deployment-key config response signed by `kp` under [`TEST_KEY_ID`]. The
 /// body's legacy fields mirror the payload exactly (the client rejects a divergence).
-pub fn signed_team_body(
+pub fn signed_dk_body(
     kp: &ring::signature::Ed25519KeyPair,
-    team_id: &str,
+    deployment_id: &str,
     managed: Option<&str>,
     requirements: Option<&str>,
 ) -> String {
     let payload = SignedPayload {
         version: prod_mc_cli_chat_proxy_types::SIGNED_PAYLOAD_VERSION,
-        deployment_id: None,
-        team_id: Some(team_id.to_owned()),
+        deployment_id: Some(deployment_id.to_owned()),
+        team_id: None,
         managed_config: managed.map(str::to_owned),
         requirements: requirements.map(str::to_owned),
         fail_closed: requirements.is_some_and(kigi_config::fail_closed_flag_from_str),
@@ -182,8 +157,8 @@ pub fn signed_team_body(
         key_id: TEST_KEY_ID.into(),
     };
     serde_json::json!({
-        "deployment_id": serde_json::Value::Null,
-        "team_id": team_id,
+        "deployment_id": deployment_id,
+        "team_id": serde_json::Value::Null,
         "managed_config": managed,
         "requirements": requirements,
         "signatures": [sign_envelope(kp, &payload)],
@@ -191,19 +166,20 @@ pub fn signed_team_body(
     .to_string()
 }
 
-/// A [`signed_team_body`] (managed config only) with the signature corrupted —
+/// A [`signed_dk_body`] (managed config only) with the signature corrupted —
 /// valid base64, wrong bytes — so the verifier must reject the envelope.
-pub fn forged_team_body(kp: &ring::signature::Ed25519KeyPair, team_id: &str) -> String {
+pub fn forged_dk_body(kp: &ring::signature::Ed25519KeyPair, deployment_id: &str) -> String {
     let mut body: serde_json::Value =
-        serde_json::from_str(&signed_team_body(kp, team_id, Some(MANAGED), None)).unwrap();
+        serde_json::from_str(&signed_dk_body(kp, deployment_id, Some(MANAGED), None)).unwrap();
     body["signatures"][0]["signature"] = base64::engine::general_purpose::STANDARD
         .encode([0u8; 64])
         .into();
     body.to_string()
 }
 
-pub fn team_identity(id: &str) -> kigi_shell::config::ServingIdentity {
-    kigi_shell::config::ServingIdentity::Team(id.to_owned())
+/// The live serving identity (the configured deployment key's fingerprint).
+pub fn dk_identity() -> kigi_shell::config::ServingIdentity {
+    kigi_shell::managed_config::current_serving_identity()
 }
 
 /// True when `path` reads despite `chmod 000` (root / DAC bypass): chmod-based

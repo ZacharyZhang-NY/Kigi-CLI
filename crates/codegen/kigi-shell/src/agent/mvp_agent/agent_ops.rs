@@ -28,10 +28,9 @@ impl MvpAgent {
         let session_key = self.auth_manager.current_or_expired().map(|a| a.key.clone());
         let models = self.models_manager.models();
         let endpoints = self.models_manager.endpoints();
-        let (disable_api_key_auth, alpha_test_key, client_version) = {
+        let (alpha_test_key, client_version) = {
             let cfg = self.cfg.borrow();
             (
-                cfg.grok_com_config.api_key_auth_disabled(),
                 cfg.endpoints.alpha_test_key.clone(),
                 cfg.client_version.clone(),
             )
@@ -41,7 +40,6 @@ impl MvpAgent {
             &models,
             &endpoints,
             session_key.as_deref(),
-            disable_api_key_auth,
             alpha_test_key,
             client_version,
         ) {
@@ -64,7 +62,7 @@ impl MvpAgent {
     }
     fn has_proxy_credentials(&self) -> bool {
         self.cfg.borrow().endpoints.deployment_key.is_some()
-            || self.auth_manager.current_or_expired().is_some_and(|a| a.is_xai_auth())
+            || self.auth_manager.current_or_expired().is_some_and(|a| a.is_session_auth())
     }
     /// `true` for session-based ACP auth methods.
     fn is_session_based_auth(&self) -> bool {
@@ -79,7 +77,7 @@ impl MvpAgent {
         self.auth_method_id.store(Some(std::sync::Arc::new(id)));
     }
     /// Return auth for sync config construction.
-    pub(super) fn current_or_buffered_auth(&self) -> Option<crate::auth::GrokAuth> {
+    pub(super) fn current_or_buffered_auth(&self) -> Option<crate::auth::KimiAuth> {
         self.auth_manager
             .current()
             .or_else(|| {
@@ -101,7 +99,7 @@ impl MvpAgent {
     fn has_managed_mcp_auth(&self) -> bool {
         self.auth_manager
             .current_or_expired()
-            .is_some_and(|a| a.is_managed_mcp_eligible())
+            .is_some_and(|a| a.is_session_auth())
     }
     /// Requires feature flag AND xAI authentication (OIDC or legacy WebLogin).
     pub(super) fn can_fetch_managed_mcps(&self) -> bool {
@@ -195,7 +193,7 @@ impl MvpAgent {
                 .or_else(|| auth_manager.current_or_expired().map(|a| a.key));
             if !auth_manager
                 .current_or_expired()
-                .is_some_and(|a| a.is_managed_mcp_eligible())
+                .is_some_and(|a| a.is_session_auth())
             {
                 cache.lock().await.disable_gateway_tools();
                 for tx in session_txs {
@@ -401,7 +399,7 @@ impl MvpAgent {
         let user_token = self
             .auth_manager
             .current_or_expired()
-            .filter(|a| a.is_xai_auth())
+            .filter(|a| a.is_session_auth())
             .map(|a| a.key.clone());
         let cfg = self.cfg.borrow();
         let base_url = cfg.endpoints.resolve_feedback_base_url();
@@ -434,7 +432,7 @@ impl MvpAgent {
             return None;
         }
         let auth = self.auth_manager.current_or_expired()?;
-        if !auth.is_xai_auth() {
+        if !auth.is_session_auth() {
             return None;
         }
         let key = auth.key.clone();
@@ -498,12 +496,6 @@ impl MvpAgent {
             ..crate::session::slash_commands::CommandAvailability::default()
         }
     }
-    /// `true` when data collection should be suppressed (team ZDR or
-    /// coding-data-retention opt-out). Delegates to
-    /// [`AuthManager::is_data_collection_disabled`].
-    pub(crate) fn is_data_collection_disabled(&self) -> bool {
-        self.auth_manager.is_data_collection_disabled()
-    }
     /// Current client type as set by the most recent `initialize()` call.
     pub(crate) fn client_type(&self) -> ClientType {
         *self.client_type.borrow()
@@ -513,8 +505,8 @@ impl MvpAgent {
     pub(crate) fn session_turn_number(&self, sid: &acp::SessionId) -> Option<u64> {
         self.session_turn_numbers.borrow().get(sid).copied()
     }
-    /// Return the current GrokAuth credentials, if authenticated and not expired.
-    pub(crate) fn current_auth(&self) -> Option<crate::auth::GrokAuth> {
+    /// Return the current KimiAuth credentials, if authenticated and not expired.
+    pub(crate) fn current_auth(&self) -> Option<crate::auth::KimiAuth> {
         self.auth_manager.current()
     }
     /// Shared plugin registry handle used by extensions for snapshot/reload.
@@ -613,55 +605,21 @@ impl MvpAgent {
         }
     }
     /// When `cached_token` cannot proceed, prefer non-interactive `xai.api_key`
-    /// iff `should_advertise_xai_api_key`; otherwise `grok.com`. Returns `None`
-    /// when `preferred_method` is pinned (fail-closed — no cross-method fallthrough).
-    pub(super) fn cached_token_fallthrough_method_id(
-        &self,
-    ) -> Option<acp::AuthMethodId> {
-        let preferred = self.cfg.borrow().grok_com_config.preferred_method;
+    /// iff `should_advertise_xai_api_key`; otherwise the interactive device
+    /// login.
+    pub(super) fn cached_token_fallthrough_method_id(&self) -> acp::AuthMethodId {
         let id = auth_method::method_id_after_cached_token_unavailable(
-            auth_method::should_advertise_xai_api_key(
-                self.cfg.borrow().grok_com_config.api_key_auth_disabled(),
-                self.models_manager.models().values(),
-            ),
-            preferred,
-        )?;
-        Some(acp::AuthMethodId::new(id))
+            auth_method::should_advertise_xai_api_key(self.models_manager.models().values()),
+        );
+        acp::AuthMethodId::new(id)
     }
-    /// Shared exit for missing/expired/legacy `cached_token`: fall through with
-    /// `use_oauth` only when the target is interactive `grok.com`. When
-    /// `preferred_method` is pinned, fail instead of falling through.
+    /// Shared exit for missing/expired `cached_token`.
     pub(super) async fn authenticate_after_cached_token_unavailable(
         &self,
         arguments: acp::AuthenticateRequest,
     ) -> Result<AuthenticateResponse, acp::Error> {
-        let Some(method_id) = self.cached_token_fallthrough_method_id() else {
-            let preferred = self.cfg.borrow().grok_com_config.preferred_method;
-            let msg = match preferred {
-                Some(crate::auth::PreferredAuthMethod::ApiKey) => {
-                    auth_method::PREFERRED_API_KEY_UNAVAILABLE
-                }
-                _ => auth_method::PREFERRED_OIDC_UNAVAILABLE,
-            };
-            tracing::info!(
-                % msg, "cached_token unavailable; preferred_method forbids fallthrough"
-            );
-            kigi_log::unified_log::warn(
-                "auth cached_token fallthrough blocked by preferred_method",
-                None,
-                Some(
-                    serde_json::json!(
-                        { "preferred_method" : preferred.map(| p | format!("{p:?}")), }
-                    ),
-                ),
-            );
-            return Err(acp::Error::auth_required().data(msg));
-        };
-        let meta = if method_id.0.as_ref() == auth_method::KIGI_COM_METHOD_ID {
-            serde_json::json!({ "use_oauth" : true }).as_object().cloned()
-        } else {
-            arguments.meta
-        };
+        let method_id = self.cached_token_fallthrough_method_id();
+        let meta = arguments.meta;
         tracing::info!(fallback = % method_id.0, "cached_token fallthrough");
         kigi_log::unified_log::warn(
             "auth cached_token fallthrough",
@@ -693,7 +651,7 @@ impl MvpAgent {
     /// Agent-level fields materialised at startup (`worktree_type`,
     /// `restore_code`) are NOT re-resolved here; that requires a
     /// broader refactor of the init path.
-    pub(super) async fn refresh_remote_settings(&self, auth: &crate::auth::GrokAuth) {
+    pub(super) async fn refresh_remote_settings(&self, auth: &crate::auth::KimiAuth) {
         if !crate::util::config::resolve_remote_fetch_enabled() {
             tracing::debug!("post-auth settings refresh skipped: remote_fetch disabled");
             return;
@@ -722,7 +680,7 @@ impl MvpAgent {
     /// In-flight sessions are unaffected — they snapshot config at creation.
     pub(super) async fn refresh_settings_and_reapply(
         &self,
-        auth: &crate::auth::GrokAuth,
+        auth: &crate::auth::KimiAuth,
     ) {
         self.refresh_remote_settings(auth).await;
         let cwd = std::env::current_dir().ok();
@@ -746,7 +704,7 @@ impl MvpAgent {
     /// Callers own their miss logging.
     pub(super) async fn fetch_remote_settings(
         &self,
-        auth: crate::auth::GrokAuth,
+        auth: crate::auth::KimiAuth,
     ) -> Option<crate::util::config::RemoteSettings> {
         if !crate::util::config::resolve_remote_fetch_enabled() {
             tracing::debug!("settings fetch skipped: remote_fetch disabled");
@@ -828,27 +786,14 @@ impl MvpAgent {
         model: &ModelEntry,
         origin_client: Option<crate::http::OriginClientInfo>,
     ) -> SamplingConfig {
-        let preferred = self.cfg.borrow().grok_com_config.preferred_method;
-        let session = match preferred {
-            Some(crate::auth::PreferredAuthMethod::ApiKey) => None,
-            _ if self.is_session_based_auth() => self.auth_manager.current_or_expired(),
-            _ => None,
+        let session = if self.is_session_based_auth() {
+            self.auth_manager.current_or_expired()
+        } else {
+            None
         };
         let has_session_key = session.is_some();
         let mut credentials = resolve_credentials(
             model,
-            session.as_ref().map(|a| a.key.as_str()),
-        );
-        if matches!(preferred, Some(crate ::auth::PreferredAuthMethod::Oidc))
-            && !model.has_own_credentials()
-            && credentials.auth_type == kigi_chat_state::AuthType::ApiKey
-        {
-            credentials.api_key = None;
-            credentials.auth_type = kigi_chat_state::AuthType::SessionToken;
-        }
-        crate::agent::config::enforce_disable_api_key_auth(
-            &mut credentials,
-            self.cfg.borrow().grok_com_config.api_key_auth_disabled(),
             session.as_ref().map(|a| a.key.as_str()),
         );
         if !has_session_key && credentials.auth_type == kigi_chat_state::AuthType::ApiKey
@@ -893,7 +838,7 @@ impl MvpAgent {
         let user_id = self
             .auth_manager
             .current_or_expired()
-            .filter(|a| a.is_xai_auth())
+            .filter(|a| a.is_session_auth())
             .map(|a| a.user_id);
         let mut config = crate::agent::config::sampling_config_for_model(
             model,
@@ -945,39 +890,6 @@ impl MvpAgent {
         );
         (id.clone(), new_config)
     }
-    /// Whether the current session is a personal grok.com account on a gated
-    /// tier (free / X Basic). The Imagine tools stay advertised to the model but
-    /// are flagged tier-restricted so they short-circuit at call time with the
-    /// SuperGrok upsell prose (see `ImageGenConfig`/`VideoGenConfig`'s
-    /// `tier_restricted`).
-    ///
-    /// Fails **open** (returns `false`) whenever we can't positively confirm a
-    /// restricted personal tier — no auth yet, BYOK / API-key sessions, team
-    /// accounts, and an unknown/absent tier all pass. The server
-    /// authoritatively zero-limits Imagine for free & X Basic (429), so this
-    /// client gate is a UX optimization (a clean in-chat upsell instead of a
-    /// doomed request), never the security boundary — under-restricting is safe,
-    /// over-restricting would wrongly disable a paid feature.
-    ///
-    /// Mirrors the pager's cosmetic slash-command gate
-    /// ([`crate::tier::is_restricted_tier_name`]); the only difference is the
-    /// absent-tier policy (the pager hides on `None`, we fail open on `None`).
-    fn is_tier_restricted_capability(&self) -> bool {
-        let Some(auth) = self.auth_manager.current() else {
-            return false;
-        };
-        if !auth.is_xai_auth() || auth.team_id.is_some() {
-            return false;
-        }
-        let tier = self
-            .cfg
-            .borrow()
-            .remote_settings
-            .as_ref()
-            .and_then(|rs| rs.subscription_tier_display.clone())
-            .or_else(|| jwt_tier_claim(&auth.key));
-        tier.as_deref().is_some_and(crate::tier::is_restricted_tier_name)
-    }
     /// Build image generation config.
     ///
     /// Both BYOK and session (OAuth) users go direct to `xai_api_base_url`.
@@ -992,7 +904,6 @@ impl MvpAgent {
         let Some(ref api_key) = sampling_config.api_key else {
             return ImageGenConfig::Disabled;
         };
-        let tier_restricted = self.is_tier_restricted_capability();
         let cfg = self.cfg.borrow();
         let base_url = cfg.endpoints.xai_api_base_url.clone();
         let version = cfg
@@ -1015,7 +926,7 @@ impl MvpAgent {
             image_gen_enabled: cfg.resolve_image_gen().value,
             image_edit_enabled: cfg.resolve_image_edit().value,
             model_override: cfg.resolve_image_gen_model_override(),
-            tier_restricted,
+            tier_restricted: false,
         }
     }
     /// Build deploy-service config. The tool talks directly to the deployer service.
@@ -1033,7 +944,6 @@ impl MvpAgent {
         let Some(api_key) = self.sampling_config.borrow().api_key.clone() else {
             return VideoGenConfig::Disabled;
         };
-        let tier_restricted = self.is_tier_restricted_capability();
         let cfg = self.cfg.borrow();
         let zdr_video_output_s3 = cfg
             .disable_zdr_incompatible_tools
@@ -1063,7 +973,7 @@ impl MvpAgent {
             base_url,
             extra_headers: headers,
             zdr_video_output_s3: zdr_video_output_s3.map(Box::new),
-            tier_restricted,
+            tier_restricted: false,
         }
     }
     pub(super) fn prepare_web_search_sampling_config(&self) -> Option<SamplingConfig> {
@@ -1076,7 +986,6 @@ impl MvpAgent {
             &model_id,
             &models,
             session.as_ref().map(|a| a.key.as_str()),
-            self.cfg.borrow().grok_com_config.api_key_auth_disabled(),
             alpha_test_key.clone(),
             client_version,
             &self.cfg.borrow().endpoints,
@@ -1224,7 +1133,6 @@ impl MvpAgent {
             interactive_trust_prompted: Rc::new(
                 RefCell::new(std::collections::HashSet::new()),
             ),
-            tier_allowed: std::cell::Cell::new(true),
             storage_mode,
             default_yolo_mode,
             default_auto_mode,
@@ -1252,9 +1160,6 @@ impl MvpAgent {
             subagent_coordinator: RefCell::new(subagent_coordinator),
             monitor_event_buffer: kigi_tools::implementations::grok_build::task::types::MonitorEventBuffer::default(),
             bundle_sync_in_flight: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            post_unblock_jwt_retry_in_flight: Arc::new(
-                std::sync::atomic::AtomicBool::new(false),
-            ),
             workspace_ops: RefCell::new(None),
             require_gateway_sessions: Rc::new(
                 RefCell::new(std::collections::HashSet::new()),
@@ -1268,11 +1173,7 @@ impl MvpAgent {
             #[cfg(test)]
             supervisor_spawn_count: std::cell::Cell::new(0),
         };
-        instance
-            .auth_manager
-            .configure_refresher(
-                instance.cfg.borrow().grok_com_config.auth_provider_command.clone(),
-            );
+        instance.auth_manager.configure_refresher();
         instance
     }
     /// Handle `x.ai/internal/evict_sessions` — the leader server tells us a
@@ -2189,7 +2090,7 @@ impl MvpAgent {
             }
             None => (kigi_hunk_tracker::HunkTrackerHandle::noop(), None),
         };
-        let has_xai_auth = self.auth_manager.current().is_some_and(|a| a.is_xai_auth());
+        let has_xai_auth = self.auth_manager.current().is_some_and(|a| a.is_session_auth());
         let loc_tracking_enabled = hunk_tracking_enabled && has_xai_auth
             && (self
                 .cfg

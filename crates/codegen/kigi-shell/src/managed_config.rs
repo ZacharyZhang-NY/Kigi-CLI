@@ -3,7 +3,7 @@
 
 mod response;
 
-use crate::auth::GrokAuth;
+use crate::auth::KimiAuth;
 pub use response::ManagedConfigError;
 use response::{ApplyOutcome, ManagedConfigResponse, ManagedConfigSource, verify_signed_envelope};
 
@@ -76,35 +76,10 @@ fn remove_managed_path(path: &std::path::Path) -> std::io::Result<bool> {
     }
 }
 
-/// A team principal is eligible to fetch only if non-expired (an expired token
-/// would just 401).
-fn eligible_team_principal(auth: GrokAuth) -> Option<GrokAuth> {
-    (auth.is_team_principal() && !crate::auth::is_expired(&auth)).then_some(auth)
-}
-
-/// The eligible team principal in `auth.json`, or `None`. Single-team: managed
-/// config is a grok.com feature with one grok.com auth.
-fn read_active_team_auth() -> Option<GrokAuth> {
-    let home = crate::util::kigi_home::kigi_home();
-    let store = crate::auth::read_auth_json(&home.join("auth.json")).ok()?;
-    let team = store.values().find(|a| a.is_team_principal())?.clone();
-    eligible_team_principal(team)
-}
-
+/// Team principals were an xAI concept; the Kimi Code auth model has none,
+/// so no team credential can ever serve managed config.
 pub(crate) fn has_active_team_auth() -> bool {
-    read_active_team_auth().is_some()
-}
-
-/// Whether any team principal is signed in, **ignoring expiry** (a cold-start
-/// expired token is not a logout). `Err` = `auth.json` unreadable: callers must
-/// NOT treat that as a logout — it would wipe enforced policy on a read blip.
-fn team_principal_signed_in() -> std::io::Result<bool> {
-    let home = crate::util::kigi_home::kigi_home();
-    match crate::auth::read_auth_json(&home.join("auth.json")) {
-        Ok(store) => Ok(store.values().any(|a| a.is_team_principal())),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(e) => Err(e),
-    }
+    false
 }
 
 /// Clear the synced files when no principal could own them: no deployment key
@@ -114,14 +89,6 @@ fn team_principal_signed_in() -> std::io::Result<bool> {
 pub fn clear_orphan() {
     if resolve_deployment_key().is_some() {
         return;
-    }
-    match team_principal_signed_in() {
-        Ok(true) => return,
-        Ok(false) => {}
-        Err(e) => {
-            tracing::warn!(error = %e, "auth.json unreadable; keeping managed config until it recovers");
-            return;
-        }
     }
     let home = crate::util::kigi_home::kigi_home();
     let Some(_lock) = try_lock_managed_config(&home) else {
@@ -427,7 +394,7 @@ pub fn is_fetch_enabled() -> bool {
 /// Fetch managed config + requirements and write to `~/.kigi/`, trying the
 /// deployment key first, then a signed-in team. `Ok(false)` when neither applies.
 pub async fn sync() -> Result<bool, ManagedConfigError> {
-    Ok(sync_with_budget(SyncBudget::Standard, None).await?.wrote)
+    Ok(sync_with_budget(SyncBudget::Standard).await?.wrote)
 }
 
 struct SyncOutcome {
@@ -479,25 +446,16 @@ impl SyncOutcome {
 
 /// Runs a sync under `budget`'s deadline, returning `None` when the deadline
 /// elapses first.
-async fn sync_bounded(
-    budget: SyncBudget,
-    team_override: Option<GrokAuth>,
-) -> Option<Result<SyncOutcome, ManagedConfigError>> {
-    let sync = sync_with_budget(budget, team_override);
+async fn sync_bounded(budget: SyncBudget) -> Option<Result<SyncOutcome, ManagedConfigError>> {
+    let sync = sync_with_budget(budget);
     match budget.deadline() {
         Some(deadline) => tokio::time::timeout(deadline, sync).await.ok(),
         None => Some(sync.await),
     }
 }
 
-/// `team_override` pins a specific team principal (the just-authenticated one,
-/// post-login) instead of re-deriving the team from `auth.json`; `None` uses
-/// [`read_active_team_auth`] (the current eligible team).
-async fn sync_with_budget(
-    budget: SyncBudget,
-    team_override: Option<GrokAuth>,
-) -> Result<SyncOutcome, ManagedConfigError> {
-    let outcome = sync_inner(budget, team_override).await?;
+async fn sync_with_budget(budget: SyncBudget) -> Result<SyncOutcome, ManagedConfigError> {
+    let outcome = sync_inner(budget).await?;
     // Mark only when a principal was consulted AND the fetch wasn't signature-rejected —
     // a rejected fetch persisted nothing, so marking would claim an unwritten body. Lock
     // contention still marks (the holder persists the same config).
@@ -519,73 +477,31 @@ enum FetchedConfig {
         key: String,
         body: ManagedConfigResponse,
     },
-    Team {
-        auth: Box<GrokAuth>,
-        body: ManagedConfigResponse,
-    },
-    /// No deployment key configured and no eligible team signed in.
+    /// No deployment key configured.
     NoPrincipal,
 }
 
 /// Fetches the configuration for the current principal without touching disk:
 /// the deployment key first, then a signed-in team. The installing sync and the
 /// read-only `grok setup --json` both build on this.
-async fn fetch_for_principal(
-    budget: SyncBudget,
-    team_override: Option<GrokAuth>,
-) -> Result<FetchedConfig, ManagedConfigError> {
+async fn fetch_for_principal(budget: SyncBudget) -> Result<FetchedConfig, ManagedConfigError> {
     let max_attempts = budget.max_attempts();
-    // Resolve from the merged config (managed_config_url > cli_chat_proxy_base_url,
-    // including the enterprise single-endpoint derivation) so endpoint overrides
-    // are honored and the bearer isn't sent to the public default.
+    // Resolve from the merged config (managed_config_url override) so endpoint
+    // overrides are honored and the bearer isn't sent to the public default.
     let url =
         crate::agent::config::EndpointsConfig::from_effective_config().resolve_managed_config_url();
 
-    let team_auth = team_override.or_else(read_active_team_auth);
-
     if let Some(dk) = resolve_deployment_key() {
         let source = ManagedConfigSource::DeploymentKey;
-        match fetch_managed_config(&url, &dk, source, max_attempts).await {
-            // A rejected dk (stale env/config) must not starve a valid team
-            // sign-in: fall through. Network/5xx do NOT — same unreachable
-            // server, double the latency for nothing.
-            Err(ManagedConfigError::DeploymentKeyRejected) if team_auth.is_some() => {
-                tracing::warn!("deployment key rejected; falling back to the team session token");
-            }
-            Err(e) => return Err(e),
-            // Fall through to the team only when the dk has no config row: an apply
-            // converges disk to the served set, and the empty dk body must not delete
-            // the team's files. Gate on row existence, not content (which can serve empty).
-            Ok(body) if !body.config_exists() && team_auth.is_some() => {
-                tracing::debug!("deployment key has no config; trying the team principal");
-            }
-            Ok(body) => return Ok(FetchedConfig::DeploymentKey { key: dk, body }),
-        }
-    }
-
-    // The proxy resolves the team from the principal and returns its config.
-    if let Some(auth) = team_auth {
-        let body = fetch_managed_config(
-            &url,
-            &auth.key,
-            ManagedConfigSource::TeamOauth,
-            max_attempts,
-        )
-        .await?;
-        return Ok(FetchedConfig::Team {
-            auth: Box::new(auth),
-            body,
-        });
+        let body = fetch_managed_config(&url, &dk, source, max_attempts).await?;
+        return Ok(FetchedConfig::DeploymentKey { key: dk, body });
     }
 
     Ok(FetchedConfig::NoPrincipal)
 }
 
-async fn sync_inner(
-    budget: SyncBudget,
-    team_override: Option<GrokAuth>,
-) -> Result<SyncOutcome, ManagedConfigError> {
-    match fetch_for_principal(budget, team_override).await? {
+async fn sync_inner(budget: SyncBudget) -> Result<SyncOutcome, ManagedConfigError> {
+    match fetch_for_principal(budget).await? {
         FetchedConfig::DeploymentKey { key, body } => {
             let source = ManagedConfigSource::DeploymentKey;
             let fingerprint = deployment_key_fingerprint(&key);
@@ -607,18 +523,6 @@ async fn sync_inner(
                 source,
                 principal,
                 Some(fingerprint),
-                &outcome,
-            ))
-        }
-        FetchedConfig::Team { auth, body } => {
-            let source = ManagedConfigSource::TeamOauth;
-            let outcome = apply_fetched(&body, source, auth.team_id.as_deref(), None)?;
-            // Team identity is bound via principal (team id), not a key fingerprint.
-            Ok(SyncOutcome::from_fetch(
-                &body,
-                source,
-                auth.team_id.clone(),
-                None,
                 &outcome,
             ))
         }
@@ -720,7 +624,9 @@ fn evict_prior_managed_config(home: &std::path::Path) {
 fn credential_present(source: ManagedConfigSource) -> bool {
     match source {
         ManagedConfigSource::DeploymentKey => resolve_deployment_key().is_some(),
-        ManagedConfigSource::TeamOauth => team_principal_signed_in().unwrap_or(true),
+        // Team principals no longer exist; a cached team-sourced config has
+        // no live credential behind it.
+        ManagedConfigSource::TeamOauth => false,
     }
 }
 
@@ -744,20 +650,15 @@ pub enum ManagedConfigSync {
 /// waiting for the background tick. `authenticated` pins the just-logged-in
 /// principal (`None` = on-disk team). Latency-bounded by [`SyncBudget::Login`];
 /// failures are logged, not propagated (the background loop retries).
-pub async fn post_login_sync(authenticated: Option<GrokAuth>) -> ManagedConfigSync {
+pub async fn post_login_sync(_authenticated: Option<KimiAuth>) -> ManagedConfigSync {
     clear_orphan();
     if !is_fetch_enabled() {
         return ManagedConfigSync::Skipped;
     }
-    // The just-authenticated team, else the on-disk one — reused for the gate
-    // and the sync (one auth.json read). With no team, only sync if due anyway.
-    let team = authenticated
-        .and_then(eligible_team_principal)
-        .or_else(read_active_team_auth);
-    if team.is_none() && !crate::config::is_managed_config_stale_for(&current_serving_identity()) {
+    if !crate::config::is_managed_config_stale_for(&current_serving_identity()) {
         return ManagedConfigSync::Skipped;
     }
-    match sync_bounded(SyncBudget::Login, team).await {
+    match sync_bounded(SyncBudget::Login).await {
         // Nothing was persisted for a rejected envelope — that's a failure to
         // report, not "no change" (the gate may refuse the next session).
         Some(Ok(SyncOutcome {
@@ -791,14 +692,14 @@ pub async fn post_login_sync(authenticated: Option<GrokAuth>) -> ManagedConfigSy
 
 /// Whether a credential exists that `grok setup` could install config for.
 pub fn has_principal() -> bool {
-    resolve_deployment_key().is_some() || read_active_team_auth().is_some()
+    resolve_deployment_key().is_some()
 }
 
 /// Whether a managed identity owns this machine, IGNORING token expiry (unlike [`has_principal`]) so an
 /// expired/backdated `auth.json` can't disarm the gate. Unreadable → present (fail-safe; the gate ANDs this
 /// with [`crate::config::managed_policy_compromised_for`], which a personal user never satisfies).
 fn managed_principal_present() -> bool {
-    resolve_deployment_key().is_some() || team_principal_signed_in().unwrap_or(true)
+    resolve_deployment_key().is_some()
 }
 
 /// The serving identity for an optional team id: a configured deployment key always
@@ -820,22 +721,12 @@ fn serving_identity_from(team_id: Option<String>) -> crate::config::ServingIdent
 /// The identity to check the cache against for whoever serves now: a configured deployment key wins
 /// (else the active team, else none).
 pub fn current_serving_identity() -> crate::config::ServingIdentity {
-    serving_identity_from(read_active_team_auth().and_then(|a| a.team_id))
+    serving_identity_from(None)
 }
 
-/// The client's team_id, IGNORING token expiry (the binding must survive the cold-start
-/// expired window). Must NOT special-case a configured deployment key — that would
-/// disable envelope binding for a real team user. Used at fetch time to bind the envelope.
+/// Team principals no longer exist in the Kimi Code auth model.
 pub fn active_team_id_any_expiry() -> Option<String> {
-    let home = crate::util::kigi_home::kigi_home();
-    let store = crate::auth::read_auth_json(&home.join("auth.json")).ok()?;
-    store
-        .values()
-        .find(|a| a.is_team_principal())
-        .and_then(|a| a.team_id.clone())
-        // A blank team_id (malformed auth.json) is unknown, not a distinct identity: it must not
-        // feed the gate's identity checks, the tenant-switch purge, or the envelope binding.
-        .filter(|id| !id.trim().is_empty())
+    None
 }
 
 /// Like [`current_serving_identity`] but IGNORING token expiry, for the enforcement gate:
@@ -854,36 +745,16 @@ pub async fn ensure_managed_policy_present(
     if !is_fetch_enabled() {
         return;
     }
-    // Cheap disk-only gates before any network token refresh, so the boot path doesn't pay
-    // an `auth()` in the common cases. A personal user (no deploy key, and no team in
-    // `auth.json` even ignoring expiry) skips entirely; a usable identity whose cache isn't
-    // hard-stale also skips. Only an expired-but-refreshable team token (identity reads
-    // `None` before the refresh) or a hard-stale cache falls through to `auth()` below.
-    // `auth.json` unreadable (`Err`) is NOT treated as "no principal" — that would skip
-    // enforcement on a transient read blip.
-    if resolve_deployment_key().is_none() && matches!(team_principal_signed_in(), Ok(false)) {
-        return;
-    }
-    let identity = current_serving_identity();
-    if !matches!(identity, crate::config::ServingIdentity::None)
-        && !crate::config::is_managed_config_hard_stale_for(&identity)
-    {
-        return;
-    }
-    // Refresh before the heal so an expired-but-refreshable team token isn't dropped by
-    // the expiry filter. Bounded; deploy-key machines have no OAuth (auth() → None).
-    let team = tokio::time::timeout(SESSION_START_AUTH_DEADLINE, auth_manager.auth())
-        .await
-        .ok()
-        .and_then(Result::ok)
-        .filter(GrokAuth::is_team_principal);
-    if !has_principal() {
+    // Cheap disk-only gates: only a configured deployment key can own managed
+    // policy now (team principals no longer exist).
+    let _ = auth_manager;
+    if resolve_deployment_key().is_none() {
         return;
     }
     if !crate::config::is_managed_config_hard_stale_for(&current_serving_identity()) {
         return;
     }
-    match sync_bounded(SyncBudget::SessionStart, team).await {
+    match sync_bounded(SyncBudget::SessionStart).await {
         Some(Ok(_)) => {}
         Some(Err(e)) => tracing::warn!("session-start managed policy refresh failed: {e}"),
         None => tracing::warn!("session-start managed policy refresh timed out"),
@@ -987,9 +858,8 @@ pub struct SetupReport {
 /// Fetches the report behind `grok setup --json` without writing anything:
 /// no artifacts, no signature sidecar, no sync marker.
 pub async fn fetch_setup_report() -> Result<SetupReport, ManagedConfigError> {
-    let (source, body) = match fetch_for_principal(SyncBudget::Standard, None).await? {
+    let (source, body) = match fetch_for_principal(SyncBudget::Standard).await? {
         FetchedConfig::DeploymentKey { body, .. } => (Some("deploymentKey"), body),
-        FetchedConfig::Team { body, .. } => (Some("teamOauth"), body),
         FetchedConfig::NoPrincipal => (None, ManagedConfigResponse::default()),
     };
     // Match the installer's trust decision: a payload `grok setup` would refuse
@@ -1015,7 +885,7 @@ pub async fn fetch_setup_report() -> Result<SetupReport, ManagedConfigError> {
 /// Run the `grok setup` sync for the current principal. The caller must check
 /// [`has_principal`] first and render the no-principal guidance.
 pub async fn run_setup() -> SetupOutcome {
-    match sync_with_budget(SyncBudget::Standard, None).await {
+    match sync_with_budget(SyncBudget::Standard).await {
         // A rejected envelope persisted nothing — reporting Installed would mask a
         // fetch the gate is about to refuse.
         Ok(SyncOutcome {

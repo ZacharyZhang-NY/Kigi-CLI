@@ -565,13 +565,12 @@ mod tests {
     fn xai_auth_manager(dir: &std::path::Path) -> std::sync::Arc<crate::auth::AuthManager> {
         let am = std::sync::Arc::new(crate::auth::AuthManager::new(
             dir,
-            crate::auth::GrokComConfig::default(),
+            crate::auth::KimiCodeConfig::default(),
         ));
-        am.hot_swap(crate::auth::GrokAuth {
-            auth_mode: crate::auth::AuthMode::Oidc,
-            oidc_issuer: Some(crate::auth::xai_oauth2_issuer().to_owned()),
+        am.hot_swap(crate::auth::KimiAuth {
+            auth_mode: crate::auth::AuthMode::OAuth,
             expires_at: Some(chrono::Utc::now() + chrono::Duration::hours(1)),
-            ..crate::auth::GrokAuth::test_default()
+            ..crate::auth::KimiAuth::test_default()
         });
         am
     }
@@ -648,9 +647,8 @@ mod tests {
         let home = tempfile::tempdir().expect("tempdir");
         let auth = std::sync::Arc::new(crate::auth::AuthManager::new(
             home.path(),
-            crate::auth::GrokComConfig::default(),
+            crate::auth::KimiCodeConfig::default(),
         ));
-        auth.set_devbox_env_for_test(false);
         let client = ConversationsClient::new(auth);
         let mut req = ListReq::default();
         force_kind_chat(&mut req);

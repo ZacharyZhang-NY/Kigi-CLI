@@ -210,24 +210,14 @@ impl AuthProvider for LeaderAuthProvider {
         AuthCredential::bearer(token)
     }
     /// Owner identity from the leader's `AuthManager`, surfaced on the auth
-    /// provider instead of a separate auth.json
-    /// read. Mirrors the in-process path (`mvp_agent`): prefer `GrokAuth.team_id`
-    /// (what shell telemetry/snapshot use) mapped onto a `"Team"` principal so
-    /// team attribution is derived; otherwise pass principal fields through.
-    /// `None` when no credential is available (identity resolution never blocks).
+    /// provider instead of a separate auth.json read. The Kimi credential
+    /// carries no principal metadata; only the (possibly empty) user id.
     fn identity(&self) -> Option<AuthIdentity> {
         let a = self.auth_manager.current_or_expired()?;
-        Some(match a.team_id.filter(|t| !t.is_empty()) {
-            Some(team) => AuthIdentity {
-                user_id: a.user_id,
-                principal_type: Some("Team".to_string()),
-                principal_id: Some(team),
-            },
-            None => AuthIdentity {
-                user_id: a.user_id,
-                principal_type: a.principal_type,
-                principal_id: a.principal_id,
-            },
+        Some(AuthIdentity {
+            user_id: a.user_id,
+            principal_type: None,
+            principal_id: None,
         })
     }
 }

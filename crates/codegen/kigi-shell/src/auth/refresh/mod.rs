@@ -1,42 +1,38 @@
-mod external_refresher;
-mod oidc_refresher;
+mod kimi_refresher;
 
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
 use crate::auth::manager::AuthManager;
 pub(crate) use crate::auth::manager::RefreshReason;
-use crate::auth::model::GrokAuth;
+use crate::auth::model::KimiAuth;
 
-use external_refresher::ExternalBinaryRefresher;
-pub(crate) use oidc_refresher::OidcRefresher;
+pub(crate) use kimi_refresher::KimiRefresher;
 
 /// Read-only view of `AuthManager` for refreshers. Enforces the
 /// no-mutation contract on *credential* state at the type level: refreshers
 /// hold `Arc<dyn AuthSnapshot>` and physically cannot call `update()`,
 /// `clear()`, `hot_swap()`, or `refresh_chain()`.
 pub(crate) trait AuthSnapshot: Send + Sync {
-    /// Read the current in-memory bearer outside the early-invalidation buffer.
-    fn current(&self) -> Option<GrokAuth>;
+    /// Read the current in-memory bearer outside the refresh threshold.
+    fn current(&self) -> Option<KimiAuth>;
     /// Read the expired in-memory bearer (for its `refresh_token`).
-    fn expired_auth(&self) -> Option<GrokAuth>;
-    /// Re-read auth.json from disk for the configured scope. Read-only w.r.t.
-    /// credentials, but may advance disk-observation state and emit transition
-    /// telemetry (not credential mutation).
-    fn read_disk_auth(&self) -> Option<GrokAuth>;
+    fn expired_auth(&self) -> Option<KimiAuth>;
+    /// Re-read the persisted credential (keyring → file) for the configured
+    /// scope. Read-only w.r.t. credentials, but may advance disk-observation
+    /// state and emit transition telemetry (not credential mutation).
+    fn read_disk_auth(&self) -> Option<KimiAuth>;
     /// Whether the in-memory bearer is expired.
     fn is_expired(&self) -> bool;
 }
 
 impl AuthSnapshot for AuthManager {
-    fn current(&self) -> Option<GrokAuth> {
+    fn current(&self) -> Option<KimiAuth> {
         self.current()
     }
-    fn expired_auth(&self) -> Option<GrokAuth> {
+    fn expired_auth(&self) -> Option<KimiAuth> {
         self.expired_auth()
     }
-    fn read_disk_auth(&self) -> Option<GrokAuth> {
+    fn read_disk_auth(&self) -> Option<KimiAuth> {
         self.read_disk_auth()
     }
     fn is_expired(&self) -> bool {
@@ -44,31 +40,18 @@ impl AuthSnapshot for AuthManager {
     }
 }
 
-/// Capability to run the operator's external auth binary. Split out of
-/// [`AuthSnapshot`] so OIDC refreshers (read-only) physically cannot reach it
-/// (interface segregation); only [`ExternalBinaryRefresher`] depends on it.
-pub(crate) trait ExternalCommandRunner: Send + Sync {
-    /// Run the external auth binary and return the parsed output.
-    fn run_external_command(&self, command: &str) -> Option<GrokAuth>;
-}
-
-impl ExternalCommandRunner for AuthManager {
-    fn run_external_command(&self, command: &str) -> Option<GrokAuth> {
-        self.run_external_refresh_command(command)
-    }
-}
-
-/// The credential a refresh would send to the IdP: disk refresh-token first,
-/// then the expired in-mem bearer, then current (only on `ServerRejected`).
-/// Single source of truth shared by [`OidcRefresher::refresh`] (the attempt) and
-/// `AuthManager::attempted_verdict_key` (the verdict scope), so the two can't
-/// drift. The caller supplies the disk read: the verdict path passes a
-/// side-effect-free read, the refresher the observing one.
+/// The credential a refresh would send to the OAuth host: persisted
+/// refresh-token first, then the expired in-mem bearer, then current (only on
+/// `ServerRejected`). Single source of truth shared by
+/// [`KimiRefresher::refresh`] (the attempt) and
+/// `AuthManager::attempted_tombstone_key` (the tombstone scope), so the two
+/// can't drift. The caller supplies the persisted read: the tombstone path
+/// passes a side-effect-free read, the refresher the observing one.
 pub(crate) fn resolve_refresh_credential(
     snap: &dyn AuthSnapshot,
-    disk_auth: Option<GrokAuth>,
+    disk_auth: Option<KimiAuth>,
     reason: RefreshReason,
-) -> Option<GrokAuth> {
+) -> Option<KimiAuth> {
     disk_auth
         .filter(|a| a.refresh_token.is_some())
         .or_else(|| snap.expired_auth())
@@ -84,18 +67,16 @@ pub(crate) fn resolve_refresh_credential(
 #[must_use = "RefreshOutcome encodes a state transition; route it through refresh_chain"]
 pub(crate) enum RefreshOutcome {
     /// Authority returned a fresh token. Caller persists via `update()`.
-    Success(Box<GrokAuth>),
-    /// Terminal failure (e.g. invalid_grant), or a transient escalated to
-    /// `Other` after repeated blips. Caller records a verdict scoped to the
-    /// rejected credential and retains it (`RefreshTokenRejected` is sticky,
-    /// the rest age out past the TTL).
+    Success(Box<KimiAuth>),
+    /// Terminal failure (401/403 from the OAuth host). Caller records a
+    /// tombstone scoped to the rejected refresh token; the 300s cooldown (or
+    /// a rotated persisted refresh token) clears it.
     PermanentFailure {
         error: crate::auth::error::RefreshTokenFailedError,
-        /// Key of the credential the refresher actually sent to the IdP, so
-        /// `refresh_chain` scopes the verdict to it. `None` when the authority
-        /// has no token key (external binary flow); the caller falls back to
-        /// its own resolution.
-        tried_key: Option<String>,
+        /// The refresh-token value the refresher actually sent, so
+        /// `refresh_chain` scopes the tombstone to it. `None` when the
+        /// attempt never reached the wire.
+        rejected_refresh_token: Option<String>,
     },
     /// Transient / unknown failure. Caller may retry later. Message-only: the
     /// underlying cause is logged structurally at the refresher, then flattened
@@ -105,19 +86,19 @@ pub(crate) enum RefreshOutcome {
 
 impl RefreshOutcome {
     /// A fresh credential from the authority (hides the `Box`).
-    pub(crate) fn success(auth: GrokAuth) -> Self {
+    pub(crate) fn success(auth: KimiAuth) -> Self {
         Self::Success(Box::new(auth))
     }
 
-    /// Terminal failure for an already-classified reason against the credential
-    /// `tried_key` (the one actually sent to the IdP).
+    /// Terminal failure for an already-classified reason against the
+    /// refresh token actually sent to the OAuth host.
     pub(crate) fn permanent(
         reason: crate::auth::error::RefreshTokenFailedReason,
-        tried_key: Option<String>,
+        rejected_refresh_token: Option<String>,
     ) -> Self {
         Self::PermanentFailure {
             error: reason.into(),
-            tried_key,
+            rejected_refresh_token,
         }
     }
 
@@ -139,67 +120,8 @@ pub(crate) trait TokenRefresher: Send + Sync {
     async fn refresh(&self, reason: RefreshReason) -> RefreshOutcome;
 }
 
-pub(crate) fn build_refresher(
-    auth_manager: Arc<AuthManager>,
-    auth_provider_command: Option<String>,
-) -> Arc<dyn TokenRefresher> {
-    match auth_provider_command {
-        Some(cmd) => {
-            let runner: Arc<dyn ExternalCommandRunner> = auth_manager;
-            Arc::new(ExternalBinaryRefresher::new(runner, cmd))
-        }
-        None => {
-            let snapshot: Arc<dyn AuthSnapshot> = auth_manager;
-            Arc::new(OidcRefresher::new(snapshot))
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::auth::{AuthMode, GrokAuth, GrokComConfig};
-    use chrono::{Duration, Utc};
-
-    /// auth_token_ttl makes is_token_expired use create_time + ttl for
-    /// External tokens without expires_at, instead of the 30-day fallback.
-    #[test]
-    fn token_ttl_expires_external_token_by_create_time() {
-        let dir = tempfile::tempdir().unwrap();
-        let cfg = GrokComConfig {
-            auth_token_ttl: Some(3600), // 1 hour
-            ..GrokComConfig::default()
-        };
-        let mgr = AuthManager::new(dir.path(), cfg);
-
-        // Token created 2 hours ago, no expires_at. With auth_token_ttl=3600,
-        // is_token_expired should return true (age 2h > ttl 1h).
-        let old_token = GrokAuth {
-            key: "old-external-token".into(),
-            auth_mode: AuthMode::External,
-            create_time: Utc::now() - Duration::hours(2),
-            expires_at: None,
-            ..GrokAuth::test_default()
-        };
-        mgr.hot_swap(old_token);
-        assert!(
-            mgr.current().is_none(),
-            "expired external token via auth_token_ttl"
-        );
-        assert!(mgr.is_expired());
-
-        // Fresh token created just now — should be valid.
-        let new_token = GrokAuth {
-            key: "new-external-token".into(),
-            auth_mode: AuthMode::External,
-            create_time: Utc::now(),
-            expires_at: None,
-            ..GrokAuth::test_default()
-        };
-        mgr.hot_swap(new_token);
-        assert!(
-            mgr.current().is_some(),
-            "fresh external token should be valid"
-        );
-    }
+/// Build the production refresher against `kigi_env::oauth_host()`.
+pub(crate) fn build_refresher(auth_manager: Arc<AuthManager>) -> Arc<dyn TokenRefresher> {
+    let snapshot: Arc<dyn AuthSnapshot> = auth_manager;
+    Arc::new(KimiRefresher::new(snapshot, kigi_env::oauth_host()))
 }

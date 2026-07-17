@@ -172,12 +172,19 @@ kigi-tool-types = { workspace = true }
 libc = { workspace = true }
 nix = { workspace = true }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# System-keyring credential storage for the Kimi Code OAuth session (PRD F1).
+keyring = { workspace = true, features = ["apple-native"] }
+
 [target.'cfg(windows)'.dependencies]
 siphasher = { workspace = true }
 windows = { workspace = true }
+# System-keyring credential storage for the Kimi Code OAuth session (PRD F1).
+keyring = { workspace = true, features = ["windows-native"] }
 
 [dev-dependencies]
 criterion = { workspace = true }
+wiremock = { workspace = true }
 filetime = { workspace = true }
 tempfile = { workspace = true }
 kigi-memory = { workspace = true, features = [] }

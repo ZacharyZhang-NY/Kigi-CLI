@@ -20,7 +20,7 @@ use crate::agent::config::{Config as AgentConfig, ModelEntry};
 use crate::agent::init::{bootstrap, exit_on_config_error};
 use crate::agent::models::{ModelFetchAuth, prefetch_models_blocking};
 use crate::agent::mvp_agent::MvpAgent;
-use crate::auth::{AuthManager, AuthMode, GrokAuth, run_auth_flow};
+use crate::auth::{AuthManager, AuthMode, KimiAuth, run_auth_flow};
 use crate::util::kigi_home;
 use dirs;
 
@@ -399,76 +399,6 @@ pub async fn run_stdio_agent(
     result
 }
 
-async fn migrate_devbox_auth_if_legacy(
-    auth: Option<GrokAuth>,
-    agent_config: &AgentConfig,
-) -> Option<GrokAuth> {
-    let auth = auth?;
-    if !crate::auth::devbox_login::is_devbox_environment() || auth.auth_mode != AuthMode::WebLogin {
-        return Some(auth);
-    }
-
-    info!("Devbox legacy auth detected, attempting migration to OIDC");
-    kigi_log::unified_log::info(
-        "devbox legacy auth migration: starting",
-        None,
-        Some(serde_json::json!({
-            "user_id": auth.user_id,
-            "auth_mode": format!("{:?}", auth.auth_mode),
-        })),
-    );
-
-    // save + remove_scope are two non-atomic writes to auth.json (no lock). Safe
-    // at startup: no concurrent writer yet, and `lookup_auth` prefers the primary
-    // scope if a reader sees the intermediate state.
-    let migration_auth_manager = agent_config.create_auth_manager();
-
-    let new_auth = match crate::auth::devbox_login::mint_devbox_auth(&migration_auth_manager).await
-    {
-        Ok(new_auth) => new_auth,
-        Err(e) => {
-            tracing::warn!(error = ?e, "devbox legacy auth migration: devbox login helper call failed, continuing with legacy auth");
-            kigi_log::unified_log::error(
-                "devbox legacy auth migration: mint failed",
-                None,
-                Some(serde_json::json!({ "error": e.to_string() })),
-            );
-            return Some(auth);
-        }
-    };
-    match migration_auth_manager
-        .save_without_enrichment(new_auth)
-        .await
-    {
-        Ok(saved_auth) => {
-            if let Err(e) = migration_auth_manager.remove_scope(crate::auth::LEGACY_AUTH_SCOPE) {
-                tracing::warn!(error = ?e, "Failed to remove legacy auth scope entry (non-fatal)");
-            }
-            kigi_log::unified_log::info(
-                "devbox legacy auth migration: succeeded",
-                None,
-                Some(serde_json::json!({
-                    "user_id": saved_auth.user_id,
-                    "has_refresh_token": saved_auth.refresh_token.is_some(),
-                    "expires_at": saved_auth.expires_at.map(|e| e.to_rfc3339()),
-                    "auth_mode": format!("{:?}", saved_auth.auth_mode),
-                })),
-            );
-            info!(user_id = %saved_auth.user_id, "Devbox legacy auth migrated to OIDC successfully");
-            Some(saved_auth)
-        }
-        Err(e) => {
-            tracing::warn!(error = ?e, "devbox legacy auth migration: failed to save new auth, continuing with legacy");
-            kigi_log::unified_log::error(
-                "devbox legacy auth migration: save failed",
-                None,
-                Some(serde_json::json!({ "error": e.to_string() })),
-            );
-            Some(auth)
-        }
-    }
-}
-
 /// Run the agent in leader mode, accepting IPC connections from multiple clients.
 ///
 /// Startup sequence:
@@ -681,14 +611,11 @@ pub async fn run_leader(
     // The IPC server is already accepting connections. Clients that send ACP
     // messages during this window receive a `leader_starting` error and can retry.
 
-    let ctx = &agent_config.grok_com_config;
+    let ctx = &agent_config.kimi_code_config;
     // Never interactive: a detached leader has no TTY (forcing OAuth here hung BYOK).
-    let auth: Option<GrokAuth> = crate::auth::try_ensure_session_noninteractive(ctx).await;
+    let auth: Option<KimiAuth> = crate::auth::try_ensure_session_noninteractive(ctx).await;
 
-    // ── Phase 6b: Legacy devbox auth migration ─────────────────────────────
-    let auth: Option<GrokAuth> = migrate_devbox_auth_if_legacy(auth, &agent_config).await;
-
-    let auth_for_prefetch: Option<GrokAuth> = auth.clone();
+    let auth_for_prefetch: Option<KimiAuth> = auth.clone();
     let endpoints_for_prefetch = agent_config.endpoints.clone();
     let fetch_auth_for_prefetch = ModelFetchAuth::resolve(&endpoints_for_prefetch, auth.is_some());
     // The shared pair helper owns the remote_fetch gate for both halves, so a
@@ -894,7 +821,7 @@ pub async fn run_leader(
             if let Some(home) = dirs::home_dir() {
                 watch_paths.push(home.join(".claude.json"));
             }
-            let auth_scope = agent_config.grok_com_config.auth_scope();
+            let auth_scope = agent_config.kimi_code_config.auth_scope();
             // Gated on user_kigi_home() so a cwd-relative .kigi/auth.json is never
             // read as the user auth store when no home resolves.
             let initial_auth_key_hash = kigi_config::user_kigi_home()

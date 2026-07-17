@@ -3521,7 +3521,7 @@ pub(crate) fn execute(
                                     &kigi_home.join("auth.json"),
                                 )
                                 .ok()?;
-                            let scope = kigi_shell::auth::GrokComConfig::default()
+                            let scope = kigi_shell::auth::KimiCodeConfig::default()
                                 .auth_scope();
                             let auth = kigi_shell::auth::lookup_auth(
                                 &store,

@@ -454,32 +454,21 @@ pub(super) fn handle_credit_limit_recheck_complete(
     agent_id: AgentId,
     meta: Option<serde_json::Value>,
 ) -> Vec<Effect> {
-    let old_tier = app.subscription_tier.clone();
     if let Some(meta_val) = meta
         && let Ok(auth_meta) = serde_json::from_value::<kigi_shell::auth::AuthMeta>(meta_val)
     {
         app.apply_auth_meta(&auth_meta);
     }
-    let tier_changed = app.subscription_tier != old_tier && app.subscription_tier.is_some();
 
     let Some(agent) = app.agents.get_mut(&agent_id) else {
         return vec![];
     };
 
     // If the user already submitted another prompt while the
-    // recheck was in flight, don't retry the stashed one — they've
-    // moved on. The tier update (above) still takes effect.
+    // recheck was in flight, don't show the upsell — they've moved on.
     let user_moved_on = !agent.session.state.is_idle() || !agent.session.pending_prompts.is_empty();
 
-    if tier_changed && !user_moved_on {
-        if let Some(prompt) = agent.credit_limit_stashed_prompt.take() {
-            let tier_name = app.subscription_tier.as_deref().unwrap_or("a higher tier");
-            agent.scrollback.push_block(RenderBlock::system(format!(
-                "Subscription upgraded to {tier_name}. Retrying\u{2026}"
-            )));
-            agent.session.enqueue_in_flight_prompt_front(prompt);
-        }
-    } else if !user_moved_on {
+    if !user_moved_on {
         let balance = agent
             .credit_balance
             .as_ref()

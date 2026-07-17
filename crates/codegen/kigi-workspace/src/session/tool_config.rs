@@ -500,13 +500,6 @@ fn build_proxy_headers(base_url: &str) -> indexmap::IndexMap<String, String> {
         format!("kigi-workspace/{version}"),
     );
     headers.insert("x-grok-client-version".to_string(), version.to_string());
-    if base_url.contains("cli-chat-proxy") || base_url.contains("chat-proxy") {
-        headers.insert("X-XAI-Token-Auth".to_string(), "xai-grok-cli".to_string());
-        headers.insert(
-            "x-authenticateresponse".to_string(),
-            "authenticate-response".to_string(),
-        );
-    }
     headers
 }
 /// Build web fetch config. Enabled with default params unless

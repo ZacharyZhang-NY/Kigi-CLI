@@ -328,7 +328,7 @@ impl SessionActor {
                 .auth_manager
                 .as_ref()
                 .and_then(|am| am.current_or_expired())
-                .filter(|a| a.is_xai_auth())
+                .filter(|a| a.is_session_auth())
                 .map(|a| a.user_id),
             origin_client: self.origin_client.clone(),
             attribution_callback: self.attribution_callback.clone(),
@@ -476,17 +476,11 @@ impl SessionActor {
             .and_then(|am| am.current_or_expired().map(|a| a.key.clone()));
         let models = self.models_manager.models();
         let endpoints = self.models_manager.endpoints();
-        let disable_api_key_auth = self
-            .auth_manager
-            .as_ref()
-            .map(|am| am.grok_com_config().api_key_auth_disabled())
-            .unwrap_or(false);
         crate::agent::config::resolve_aux_model_sampling_config(
             slug,
             &models,
             &endpoints,
             session_key.as_deref(),
-            disable_api_key_auth,
             creds.alpha_test_key.clone(),
             creds.client_version.clone(),
         )
@@ -678,32 +672,6 @@ impl SessionActor {
                 )),
             );
         }
-        if auth_recovery_eligible
-            && crate::auth::devbox_login::is_devbox_environment()
-            && let Some(ref am) = self.auth_manager
-        {
-            match am.try_devbox_recovery().await {
-                Ok(auth) => {
-                    tracing::info!(
-                        session_id = % self.session_info.id.0, user_id = % auth.user_id,
-                        "auth recovery: sampler 401, devbox re-mint, retrying"
-                    );
-                    self.prepare_sampler_for_turn().await;
-                    return Ok(SamplerFailureRecovery::RefreshAuthAndResubmit);
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        session_id = % self.session_info.id.0, error = % e,
-                        "auth recovery: sampler 401, devbox re-mint failed"
-                    );
-                    kigi_log::unified_log::warn(
-                        "auth recovery: sampler 401, devbox re-mint failed",
-                        Some(self.session_info.id.0.as_ref()),
-                        Some(serde_json::json!({ "error" : format!("{e}") })),
-                    );
-                }
-            }
-        }
         if auth_recovery_eligible && let Some(ref am) = self.auth_manager {
             if am.try_recover_unauthorized().await {
                 tracing::info!(
@@ -762,24 +730,6 @@ impl SessionActor {
             .unwrap_or(crate::auth::AuthMode::ApiKey);
         let auth_mode_str = format!("{auth_mode:?}");
         let client_version = kigi_version::VERSION;
-        if auth_mode == crate::auth::AuthMode::WebLogin {
-            let msg = format!(
-                "{detailed_message}\n\n\
-                 You are using a deprecated authentication method (WebLogin).\n\
-                 This auth method is no longer supported and will cause errors.\n\n\
-                 To fix: run `grok logout` then `grok login` to re-authenticate with OAuth2.\n\n\
-                 Version: {client_version}"
-            );
-            self.log_terminal_failure("legacy_auth", error.status_code, &msg);
-            self.send_xai_notification(XaiSessionUpdate::RetryState(
-                crate::extensions::notification::RetryState::Failed {
-                    error_type: "legacy_auth".to_string(),
-                    message: msg.clone(),
-                },
-            ))
-            .await;
-            return Err(acp::Error::internal_error().data(msg));
-        }
         let is_model_404 =
             error.status_code == Some(404) && detailed_message.contains("does not exist");
         let is_auth_401 =
@@ -932,8 +882,10 @@ impl SessionActor {
                 None,
             );
         }
-        use crate::auth::{is_jwt_expired_or_near, parse_jwt_expiration};
-        const REFRESH_THRESHOLD: chrono::Duration = chrono::Duration::minutes(5);
+        // BYOK path: pick up an externally rotated per-model key from
+        // config.toml. Kimi bearers are opaque (no client-side expiry
+        // probing); a changed on-disk key is adopted, an unchanged one is a
+        // no-op.
         let creds = self.chat_state_handle.get_credentials().await;
         let current_key = creds.api_key;
         let current_model_id = self
@@ -943,41 +895,14 @@ impl SessionActor {
             .map(|c| c.model)
             .unwrap_or_default();
         let Some(ref key) = current_key else { return };
-        if !is_jwt_expired_or_near(key, REFRESH_THRESHOLD) {
-            if let Some(exp) = parse_jwt_expiration(key) {
-                let remaining_secs = (exp - chrono::Utc::now()).num_seconds();
-                tracing::debug!(
-                    model = % current_model_id, remaining_secs,
-                    "JWT token valid, no refresh needed"
-                );
-            } else {
-                tracing::debug!(
-                    model = % current_model_id, key_len = key.len(),
-                    "Token is not a JWT, expiry-based refresh not applicable"
-                );
-            }
-            return;
-        }
-        let remaining_secs =
-            parse_jwt_expiration(key).map_or(0, |exp| (exp - chrono::Utc::now()).num_seconds());
-        tracing::info!(
-            model = % current_model_id, remaining_secs,
-            "JWT near expiry, refreshing from config.toml"
-        );
         let Some(new_key) = self.reload_api_key_from_config(&current_model_id) else {
             return;
         };
         if key == &new_key {
-            tracing::warn!(
-                model = % current_model_id,
-                "Config.toml returned same token (not yet rotated by external process?)"
-            );
             return;
         }
-        let new_remaining_secs = parse_jwt_expiration(&new_key)
-            .map_or(0, |exp| (exp - chrono::Utc::now()).num_seconds());
         tracing::info!(
-            model = % current_model_id, new_remaining_secs, key_len = new_key.len(),
+            model = % current_model_id, key_len = new_key.len(),
             "Refreshed API token from config.toml"
         );
         let mut creds = self.chat_state_handle.get_credentials().await;

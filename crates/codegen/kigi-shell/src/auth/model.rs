@@ -1,108 +1,75 @@
+//! Kimi Code auth data model: the persisted token set + expiry policy.
+
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use super::is_xai_oauth2_issuer;
-
+/// Fallback TTL for credentials without a server-provided expiry
+/// (plain API keys).
 pub(crate) const TOKEN_TTL: Duration = Duration::days(30);
-const DEFAULT_EARLY_INVALIDATION_SECS: u64 = 300; // 5 minutes
 
-/// Legacy auth.json scope key. Fallback for old devbox auth files.
-pub(super) const LEGACY_SCOPE: &str = "https://accounts.x.ai/sign-in";
+/// Minimum refresh threshold (PRD F1): refresh when the remaining lifetime
+/// drops below `max(300, expires_in × 0.5)` seconds.
+const DEFAULT_EARLY_INVALIDATION_SECS: u64 = 300;
 
-/// auth.json scope key for plain API key auth (desktop login, `grok login --api-key`).
-pub const API_KEY_SCOPE: &str = "xai::api_key";
+/// Fraction of `expires_in` that drives the dynamic refresh threshold.
+const REFRESH_THRESHOLD_RATIO: f64 = 0.5;
 
-const BLOCKED_REASON_NO_LOGS: &str = "BLOCKED_REASON_NO_LOGS";
-const BLOCKED_REASON_NO_LOGS_MODERATED: &str = "BLOCKED_REASON_NO_LOGS_MODERATED";
+/// auth.json scope key for plain API key auth (`kigi login --api-key`, F2).
+pub const API_KEY_SCOPE: &str = "kigi::api_key";
 
-/// Token provenance (debugging/auth.json only -- no code branches on this).
+/// How this credential was obtained.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum AuthMode {
-    /// Deprecated. Kept for deserializing old auth.json files.
-    #[serde(alias = "grok")]
-    WebLogin,
-    /// OIDC or OAuth2 interactive login via customer IdP
-    #[serde(alias = "oidc")]
-    Oidc,
-    /// External auth provider binary
-    External,
-    /// Plain API key (e.g. from grok-desktop login or `grok login --api-key`)
+    /// Kimi Code subscription OAuth (device-code flow).
+    #[serde(rename = "oauth")]
+    OAuth,
+    /// Plain API key.
     ApiKey,
 }
 
-/// Wire value of `principal_type` for team OAuth principals (capitalized by
-/// the auth service). Single source for every comparison site.
-pub(crate) const TEAM_PRINCIPAL_TYPE: &str = "Team";
-
+/// The Kimi Code credential: the OAuth token set (or a bare API key) plus
+/// local bookkeeping. The Kimi token response carries no user info; `user_id`
+/// / `email` stay empty until a later feature surfaces account info.
 #[derive(Clone, Serialize, Deserialize)]
-pub struct GrokAuth {
+pub struct KimiAuth {
+    /// The bearer sent on API calls (`Authorization: Bearer {key}`):
+    /// the OAuth access token, or the API key in `ApiKey` mode.
     pub key: String,
     pub auth_mode: AuthMode,
     pub create_time: DateTime<Utc>,
-    pub user_id: String,
-    pub email: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub first_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub profile_image_asset_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub principal_type: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub principal_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub team_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub team_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub team_role: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub organization_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub organization_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub organization_role: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub user_blocked_reason: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub team_blocked_reasons: Vec<String>,
+    /// Account id — the Kimi token response has none; empty until a later
+    /// feature surfaces it.
     #[serde(default)]
-    pub coding_data_retention_opt_out: bool,
-
-    /// Deprecated. Kept for deserializing existing auth.json files.
+    pub user_id: String,
+    /// Account email — the Kimi token response has none; `None` until a
+    /// later feature surfaces it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub has_grok_code_access: Option<bool>,
-
-    /// Refresh token (OIDC/OAuth2 or external provider).
+    pub email: Option<String>,
+    /// OAuth refresh token; `None` for API keys.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refresh_token: Option<String>,
-
-    /// Server-provided expiration (from OIDC `expires_in`).
-    /// When present, takes precedence over the hardcoded `TOKEN_TTL`.
+    /// `create_time + expires_in`, computed when the token was minted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<DateTime<Utc>>,
-
-    /// Issuer URL that issued this token. For OIDC credentials it drives
-    /// refresh via discovery; for external-provider credentials it is the
-    /// provider's `issuer` claim. In both modes an x.ai issuer marks the
-    /// credential first-party (`is_xai_auth`).
+    /// Server-reported token lifetime in seconds; drives the dynamic
+    /// refresh threshold `max(300, expires_in × 0.5)`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub oidc_issuer: Option<String>,
-
-    /// OIDC client_id used to obtain this token (needed for refresh).
+    pub expires_in: Option<i64>,
+    /// OAuth scope string as returned by the token endpoint.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub oidc_client_id: Option<String>,
+    pub scope: Option<String>,
+    /// Token type as returned by the token endpoint (e.g. "bearer").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_type: Option<String>,
 }
 
-impl std::fmt::Debug for GrokAuth {
+impl std::fmt::Debug for KimiAuth {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("GrokAuth")
+        f.debug_struct("KimiAuth")
             .field("key", &token_suffix(&self.key))
             .field("auth_mode", &self.auth_mode)
-            .field("user_id", &self.user_id)
             .field("expires_at", &self.expires_at)
             .field(
                 "refresh_token",
@@ -112,128 +79,44 @@ impl std::fmt::Debug for GrokAuth {
     }
 }
 
-impl GrokAuth {
+impl KimiAuth {
     /// Seconds since this credential was minted. Negative when the local
-    /// clock stepped back past `create_time` (NTP correction, VM restore, or
-    /// a sibling machine's clock via an adopted auth.json) — `create_time`
-    /// is always stamped from the minting machine's local clock.
+    /// clock stepped back past `create_time` (NTP correction, VM restore).
     pub(crate) fn mint_age_seconds(&self) -> i64 {
         Utc::now()
             .signed_duration_since(self.create_time)
             .num_seconds()
     }
 
-    /// `true` when the token comes from a first-party xAI account —
-    /// either an OIDC login against https://auth.x.ai (or the local-dev
-    /// equivalent), or an external auth provider that declared an xAI
-    /// issuer for its token.
-    ///
-    /// The issuer is a client-side hint, not a trust assertion: everything
-    /// it unlocks still authenticates the actual token server-side, and it
-    /// never influences endpoints.
-    pub fn is_xai_auth(&self) -> bool {
-        match self.auth_mode {
-            AuthMode::Oidc | AuthMode::External => self
-                .oidc_issuer
-                .as_deref()
-                .is_some_and(is_xai_oauth2_issuer),
-            AuthMode::ApiKey | AuthMode::WebLogin => false,
-        }
-    }
-
-    /// `true` when this auth can access grok.com managed MCP connectors.
-    pub fn is_managed_mcp_eligible(&self) -> bool {
-        self.is_xai_auth() || self.auth_mode == AuthMode::WebLogin
-    }
-
-    /// Whether this credential can access `supported_in_api: false` models.
-    ///
-    /// Session logins (WebLogin, OIDC — including enterprise issuers) always
-    /// qualify; external-provider credentials qualify only when first-party
-    /// (`is_xai_auth`), matching the built-in devbox login they replace.
-    /// Plain API keys never do.
+    /// `true` for a refreshable subscription session (vs a bare API key).
     pub fn is_session_auth(&self) -> bool {
-        match self.auth_mode {
-            AuthMode::WebLogin | AuthMode::Oidc => true,
-            AuthMode::External => self.is_xai_auth(),
-            AuthMode::ApiKey => false,
-        }
-    }
-
-    pub fn is_team_principal(&self) -> bool {
-        self.principal_type.as_deref() == Some(TEAM_PRINCIPAL_TYPE) && self.team_id.is_some()
-    }
-
-    /// `true` when the team has Zero Data Retention (ZDR) enabled.
-    pub fn is_zdr_team(&self) -> bool {
-        self.team_blocked_reasons
-            .iter()
-            .any(|r| r == BLOCKED_REASON_NO_LOGS || r == BLOCKED_REASON_NO_LOGS_MODERATED)
-    }
-
-    /// `true` when the team has ZDR or the user opted out of coding data
-    /// retention. Use this for trace-upload and research-data gates.
-    /// Product analytics (`telemetry_enabled`) and user-facing sync
-    /// features should use `is_zdr_team()` directly.
-    pub fn is_data_collection_disabled(&self) -> bool {
-        self.is_zdr_team() || self.coding_data_retention_opt_out
-    }
-
-    /// Carry `/user`-derived fields from a previous auth so refresh rebuilds don't drop them.
-    pub(crate) fn carry_user_profile_from(&mut self, prev: &GrokAuth) {
-        self.user_id = prev.user_id.clone();
-        self.email = prev.email.clone();
-        self.principal_type = prev.principal_type.clone();
-        self.principal_id = prev.principal_id.clone();
-        self.team_id = prev.team_id.clone();
-        self.team_name = prev.team_name.clone();
-        self.team_role = prev.team_role.clone();
-        self.organization_id = prev.organization_id.clone();
-        self.organization_name = prev.organization_name.clone();
-        self.organization_role = prev.organization_role.clone();
-        self.user_blocked_reason = prev.user_blocked_reason.clone();
-        self.team_blocked_reasons = prev.team_blocked_reasons.clone();
-        self.coding_data_retention_opt_out = prev.coding_data_retention_opt_out;
+        self.auth_mode == AuthMode::OAuth
     }
 }
 
-impl Default for GrokAuth {
+impl Default for KimiAuth {
     fn default() -> Self {
         Self {
             key: String::new(),
-            auth_mode: AuthMode::Oidc,
+            auth_mode: AuthMode::OAuth,
             create_time: Utc::now(),
             user_id: String::new(),
             email: None,
-            first_name: None,
-            last_name: None,
-            profile_image_asset_id: None,
-            principal_type: None,
-            principal_id: None,
-            team_id: None,
-            team_name: None,
-            team_role: None,
-            organization_id: None,
-            organization_name: None,
-            organization_role: None,
-            user_blocked_reason: None,
-            team_blocked_reasons: vec![],
-            coding_data_retention_opt_out: false,
-            has_grok_code_access: None,
             refresh_token: None,
             expires_at: None,
-            oidc_issuer: None,
-            oidc_client_id: None,
+            expires_in: None,
+            scope: None,
+            token_type: None,
         }
     }
 }
 
 #[cfg(test)]
-impl GrokAuth {
-    /// Returns a `GrokAuth` with sensible defaults for tests. Override fields
-    /// with struct update syntax:
+impl KimiAuth {
+    /// A `KimiAuth` with sensible defaults for tests. Override fields with
+    /// struct update syntax:
     /// ```ignore
-    /// GrokAuth { key: "my-key".into(), ..GrokAuth::test_default() }
+    /// KimiAuth { key: "my-key".into(), ..KimiAuth::test_default() }
     /// ```
     pub fn test_default() -> Self {
         Self {
@@ -244,82 +127,24 @@ impl GrokAuth {
     }
 }
 
-pub(crate) type AuthStore = BTreeMap<String, GrokAuth>;
+pub(crate) type AuthStore = BTreeMap<String, KimiAuth>;
 
-/// User information from the cli-chat-proxy `GET /v1/user` endpoint.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct UserInfo {
-    pub(crate) user_id: String,
-    #[serde(default)]
-    pub(super) email: Option<String>,
-    #[serde(default)]
-    pub(super) first_name: Option<String>,
-    #[serde(default)]
-    pub(super) last_name: Option<String>,
-    #[serde(default)]
-    pub(super) profile_image_asset_id: Option<String>,
-    #[serde(default)]
-    pub(super) principal_type: Option<String>,
-    #[serde(default)]
-    pub(super) principal_id: Option<String>,
-    #[serde(default)]
-    pub(super) team_id: Option<String>,
-    #[serde(default)]
-    pub(super) team_name: Option<String>,
-    #[serde(default)]
-    pub(super) team_role: Option<String>,
-    #[serde(default)]
-    pub(super) organization_id: Option<String>,
-    #[serde(default)]
-    pub(super) organization_name: Option<String>,
-    #[serde(default)]
-    pub(super) organization_role: Option<String>,
-    #[serde(default)]
-    pub(super) user_blocked_reason: Option<String>,
-    #[serde(default)]
-    pub(super) team_blocked_reasons: Option<Vec<String>>,
-    #[serde(default)]
-    pub(super) coding_data_retention_opt_out: Option<bool>,
-    /// Live subscription tier from the backend (only present when
-    /// `?include=subscription` is passed to `/user`).
-    #[serde(default)]
-    pub(crate) subscription_tier: Option<String>,
-}
-
-/// Last 12 chars of a token string, safe for diagnostic logging.
-/// Uses the tail because JWT access tokens all share the same base64
-/// header prefix (`eyJ0eXAiOiJh…`); the tail (signature bytes) is
-/// unique per token and makes `key_changed` / `is_stale_snapshot`
-/// diagnostics meaningful.
+/// Last 12 chars of a token string, safe for diagnostic logging. Uses the
+/// tail because token prefixes are shared across a family; the tail is
+/// unique per token and makes `key_changed` diagnostics meaningful.
 pub(crate) fn token_suffix(t: &str) -> &str {
     let len = t.len();
     if len > 12 { &t[len - 12..] } else { t }
 }
 
 /// Look up auth from the store by scope key.
-///
-/// Legacy `WebLogin` tokens (from the pre-OIDC `grok login --legacy`
-/// flow) are skipped — they are validated via a per-request DB lookup
-/// server-side which fails at high volume.  Skipping them here forces
-/// affected users to re-authenticate via OIDC on next launch.
-pub fn lookup_auth(map: &AuthStore, scope: &str) -> Option<GrokAuth> {
-    let auth = map.get(scope).cloned().or_else(|| {
-        if scope == LEGACY_SCOPE {
-            None
-        } else {
-            map.get(LEGACY_SCOPE).cloned()
-        }
-    })?;
-    if auth.auth_mode == AuthMode::WebLogin {
-        tracing::info!("auth: ignoring legacy WebLogin token — re-authentication required");
-        return None;
-    }
-    Some(auth)
+pub fn lookup_auth(map: &AuthStore, scope: &str) -> Option<KimiAuth> {
+    map.get(scope).cloned()
 }
 
-/// Early-invalidation buffer. Override with `KIGI_AUTH_EARLY_INVALIDATION_SECS`
-/// for testing (e.g. `=5` to shrink the buffer to 5 seconds).
+/// Minimum refresh-threshold component. Override with
+/// `KIGI_AUTH_EARLY_INVALIDATION_SECS` for testing (e.g. `=5` to shrink the
+/// buffer to 5 seconds).
 pub(super) fn early_invalidation() -> Duration {
     std::env::var("KIGI_AUTH_EARLY_INVALIDATION_SECS")
         .ok()
@@ -328,14 +153,30 @@ pub(super) fn early_invalidation() -> Duration {
         .unwrap_or_else(|| Duration::seconds(DEFAULT_EARLY_INVALIDATION_SECS as i64))
 }
 
-pub(crate) fn is_expired(auth: &GrokAuth) -> bool {
-    is_expired_with_buffer(auth, early_invalidation())
+/// Dynamic refresh threshold (PRD F1): `max(min_threshold, expires_in × 0.5)`
+/// where `min_threshold` defaults to 300s. Credentials without a positive
+/// `expires_in` use the minimum alone.
+pub(crate) fn refresh_threshold(auth: &KimiAuth) -> Duration {
+    let min = early_invalidation();
+    match auth.expires_in {
+        Some(expires_in) if expires_in > 0 => {
+            let ratio = Duration::seconds((expires_in as f64 * REFRESH_THRESHOLD_RATIO) as i64);
+            std::cmp::max(min, ratio)
+        }
+        _ => min,
+    }
+}
+
+/// Whether the credential is inside its refresh threshold (i.e. should be
+/// treated as expiring-soon for refresh scheduling).
+pub(crate) fn is_expired(auth: &KimiAuth) -> bool {
+    is_expired_with_buffer(auth, refresh_threshold(auth))
 }
 
 /// Like [`is_expired`] but with an explicit pre-expiry buffer. Pass
 /// `Duration::zero()` for actual (hard) expiry — the instant the token would
-/// really be rejected on the wire, with no early-invalidation margin.
-pub(crate) fn is_expired_with_buffer(auth: &GrokAuth, buffer: Duration) -> bool {
+/// really be rejected on the wire.
+pub(crate) fn is_expired_with_buffer(auth: &KimiAuth, buffer: Duration) -> bool {
     if let Some(expires_at) = auth.expires_at {
         Utc::now() >= (expires_at - buffer)
     } else {
@@ -348,142 +189,108 @@ pub(crate) fn is_expired_with_buffer(auth: &GrokAuth, buffer: Duration) -> bool 
 mod tests {
     use super::*;
 
-    fn make_auth(mode: AuthMode) -> GrokAuth {
-        GrokAuth {
-            key: "k".into(),
-            auth_mode: mode,
-            create_time: Utc::now(),
-            user_id: "u".into(),
-            email: None,
-            first_name: None,
-            last_name: None,
-            profile_image_asset_id: None,
-            principal_type: None,
-            principal_id: None,
-            team_id: None,
-            team_name: None,
-            team_role: None,
-            organization_id: None,
-            organization_name: None,
-            organization_role: None,
-            user_blocked_reason: None,
-            team_blocked_reasons: vec![],
-            coding_data_retention_opt_out: false,
-            has_grok_code_access: None,
-            refresh_token: None,
-            expires_at: None,
-            oidc_issuer: None,
-            oidc_client_id: None,
+    fn auth_with_lifetime(expires_in: i64, remaining_secs: i64) -> KimiAuth {
+        KimiAuth {
+            expires_in: Some(expires_in),
+            expires_at: Some(Utc::now() + Duration::seconds(remaining_secs)),
+            refresh_token: Some("rt".into()),
+            ..KimiAuth::test_default()
         }
     }
 
+    /// PRD threshold math: `max(300, expires_in × 0.5)`.
     #[test]
-    fn is_xai_auth_matrix() {
-        use crate::auth::XAI_OAUTH2_ISSUER;
-        let with_issuer = |mode: AuthMode, issuer: Option<&str>| GrokAuth {
-            oidc_issuer: issuer.map(str::to_owned),
-            ..make_auth(mode)
+    fn refresh_threshold_is_max_of_min_and_half_life() {
+        // Short-lived token: the 300s floor wins (600 × 0.5 = 300 → tie; 400 × 0.5 = 200 < 300).
+        let short = auth_with_lifetime(400, 400);
+        assert_eq!(refresh_threshold(&short).num_seconds(), 300);
+        // Long-lived token: half the lifetime wins (7200 × 0.5 = 3600).
+        let long = auth_with_lifetime(7200, 7200);
+        assert_eq!(refresh_threshold(&long).num_seconds(), 3600);
+        // No expires_in: the floor alone.
+        let bare = KimiAuth::test_default();
+        assert_eq!(refresh_threshold(&bare).num_seconds(), 300);
+        // Non-positive expires_in must not produce a negative threshold.
+        let broken = KimiAuth {
+            expires_in: Some(-5),
+            ..KimiAuth::test_default()
         };
+        assert_eq!(refresh_threshold(&broken).num_seconds(), 300);
+    }
 
-        // Only Oidc/External qualify, and only with an x.ai issuer.
-        assert!(with_issuer(AuthMode::Oidc, Some(XAI_OAUTH2_ISSUER)).is_xai_auth());
-        assert!(with_issuer(AuthMode::External, Some(XAI_OAUTH2_ISSUER)).is_xai_auth());
-        assert!(!with_issuer(AuthMode::Oidc, None).is_xai_auth());
-        assert!(!with_issuer(AuthMode::External, None).is_xai_auth());
-        assert!(!with_issuer(AuthMode::Oidc, Some("https://idp.acme.example")).is_xai_auth());
-        assert!(!with_issuer(AuthMode::External, Some("https://idp.acme.example")).is_xai_auth());
+    /// A token past its dynamic threshold counts as expiring-soon while a
+    /// token comfortably before it does not.
+    #[test]
+    fn is_expired_uses_dynamic_threshold() {
+        // 7200s lifetime → threshold 3600s. 3000s remaining < 3600 → expiring.
+        assert!(is_expired(&auth_with_lifetime(7200, 3000)));
+        // 5000s remaining > 3600 → fresh.
+        assert!(!is_expired(&auth_with_lifetime(7200, 5000)));
+        // Hard expiry ignores the buffer entirely.
+        assert!(!is_expired_with_buffer(
+            &auth_with_lifetime(7200, 3000),
+            Duration::zero()
+        ));
+        assert!(is_expired_with_buffer(
+            &auth_with_lifetime(7200, -1),
+            Duration::zero()
+        ));
+    }
 
-        // ApiKey / WebLogin stay false even with an x.ai issuer set.
-        assert!(!with_issuer(AuthMode::ApiKey, Some(XAI_OAUTH2_ISSUER)).is_xai_auth());
-        assert!(!with_issuer(AuthMode::WebLogin, Some(XAI_OAUTH2_ISSUER)).is_xai_auth());
+    /// Credentials without `expires_at` (API keys) age out via the 30-day TTL.
+    #[test]
+    fn no_expiry_falls_back_to_token_ttl() {
+        let fresh = KimiAuth::test_default();
+        assert!(!is_expired(&fresh));
+        let old = KimiAuth {
+            create_time: Utc::now() - Duration::days(31),
+            ..KimiAuth::test_default()
+        };
+        assert!(is_expired(&old));
     }
 
     #[test]
-    fn is_session_auth_requires_first_party_for_external() {
-        use crate::auth::XAI_OAUTH2_ISSUER;
-        let with_issuer = |mode: AuthMode, issuer: Option<&str>| GrokAuth {
-            oidc_issuer: issuer.map(str::to_owned),
-            ..make_auth(mode)
+    fn lookup_auth_finds_scope_entry() {
+        let mut map = AuthStore::new();
+        map.insert("oauth/kimi-code".into(), KimiAuth::test_default());
+        assert!(lookup_auth(&map, "oauth/kimi-code").is_some());
+        assert!(lookup_auth(&map, "other").is_none());
+    }
+
+    #[test]
+    fn debug_redacts_tokens() {
+        let auth = KimiAuth {
+            key: "super-secret-access-token".into(),
+            refresh_token: Some("super-secret-refresh-token".into()),
+            ..KimiAuth::test_default()
         };
+        let debug = format!("{auth:?}");
+        assert!(!debug.contains("super-secret-access-token"));
+        assert!(!debug.contains("super-secret-refresh-token"));
+    }
 
-        // Session logins qualify regardless of issuer (incl. enterprise OIDC).
-        assert!(with_issuer(AuthMode::WebLogin, None).is_session_auth());
-        assert!(with_issuer(AuthMode::Oidc, None).is_session_auth());
-        assert!(with_issuer(AuthMode::Oidc, Some("https://idp.acme.example")).is_session_auth());
-
-        // External qualifies only when first-party (devbox-login parity).
-        assert!(with_issuer(AuthMode::External, Some(XAI_OAUTH2_ISSUER)).is_session_auth());
-        assert!(!with_issuer(AuthMode::External, None).is_session_auth());
+    #[test]
+    fn serde_roundtrip_preserves_token_set() {
+        let auth = KimiAuth {
+            key: "at".into(),
+            refresh_token: Some("rt".into()),
+            expires_at: Some(Utc::now()),
+            expires_in: Some(3600),
+            scope: Some("kimi-code".into()),
+            token_type: Some("bearer".into()),
+            ..KimiAuth::test_default()
+        };
+        let json = serde_json::to_string(&auth).unwrap();
         assert!(
-            !with_issuer(AuthMode::External, Some("https://idp.acme.example")).is_session_auth()
+            json.contains("\"oauth\""),
+            "wire spelling is \"oauth\": {json}"
         );
-
-        // Plain API keys never do.
-        assert!(!with_issuer(AuthMode::ApiKey, Some(XAI_OAUTH2_ISSUER)).is_session_auth());
-    }
-
-    #[test]
-    fn lookup_auth_skips_weblogin_on_primary_scope() {
-        let mut map = AuthStore::new();
-        map.insert("scope".into(), make_auth(AuthMode::WebLogin));
-        assert!(lookup_auth(&map, "scope").is_none());
-    }
-
-    #[test]
-    fn lookup_auth_skips_weblogin_on_legacy_fallback() {
-        let mut map = AuthStore::new();
-        map.insert(LEGACY_SCOPE.into(), make_auth(AuthMode::WebLogin));
-        assert!(lookup_auth(&map, "other-scope").is_none());
-    }
-
-    #[test]
-    fn lookup_auth_returns_oidc_token() {
-        let mut map = AuthStore::new();
-        map.insert("scope".into(), make_auth(AuthMode::Oidc));
-        assert!(lookup_auth(&map, "scope").is_some());
-    }
-
-    #[test]
-    fn lookup_auth_returns_api_key_token() {
-        let mut map = AuthStore::new();
-        map.insert("scope".into(), make_auth(AuthMode::ApiKey));
-        assert!(lookup_auth(&map, "scope").is_some());
-    }
-
-    /// subscriptionTier present → deserializes to Some.
-    #[test]
-    fn user_info_subscription_tier_present() {
-        let json = r#"{
-            "userId": "u1",
-            "subscriptionTier": "SuperGrokPro"
-        }"#;
-        let info: UserInfo = serde_json::from_str(json).unwrap();
-        assert_eq!(info.subscription_tier.as_deref(), Some("SuperGrokPro"));
-    }
-
-    /// subscriptionTier absent → deserializes to None (backwards compat).
-    #[test]
-    fn user_info_subscription_tier_absent() {
-        let json = r#"{"userId": "u1"}"#;
-        let info: UserInfo = serde_json::from_str(json).unwrap();
-        assert!(info.subscription_tier.is_none());
-    }
-
-    /// subscriptionTier null → deserializes to None.
-    #[test]
-    fn user_info_subscription_tier_null() {
-        let json = r#"{"userId": "u1", "subscriptionTier": null}"#;
-        let info: UserInfo = serde_json::from_str(json).unwrap();
-        assert!(info.subscription_tier.is_none());
-    }
-
-    /// subscriptionTier empty string → deserializes to Some("").
-    /// The paywall poller treats this as "no subscription" (line 230:
-    /// `Some(tier) if !tier.is_empty()`) and keeps polling.
-    #[test]
-    fn user_info_subscription_tier_empty_string() {
-        let json = r#"{"userId": "u1", "subscriptionTier": ""}"#;
-        let info: UserInfo = serde_json::from_str(json).unwrap();
-        assert_eq!(info.subscription_tier.as_deref(), Some(""));
+        let back: KimiAuth = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.key, "at");
+        assert_eq!(back.refresh_token.as_deref(), Some("rt"));
+        assert_eq!(back.expires_in, Some(3600));
+        assert_eq!(back.scope.as_deref(), Some("kimi-code"));
+        assert_eq!(back.token_type.as_deref(), Some("bearer"));
+        assert_eq!(back.auth_mode, AuthMode::OAuth);
     }
 }

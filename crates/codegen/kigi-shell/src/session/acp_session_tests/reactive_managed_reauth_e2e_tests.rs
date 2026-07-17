@@ -156,12 +156,12 @@ async fn actor_with_proxy(
     let home = tempfile::tempdir().expect("tempdir");
     let auth_manager = Arc::new(crate::auth::AuthManager::new(
         home.path(),
-        crate::auth::GrokComConfig::default(),
+        crate::auth::KimiCodeConfig::default(),
     ));
     // Valid (1h) token in-memory only — `auth()` fast-paths it without network.
-    auth_manager.hot_swap(crate::auth::GrokAuth {
+    auth_manager.hot_swap(crate::auth::KimiAuth {
         expires_at: Some(Utc::now() + chrono::Duration::hours(1)),
-        ..crate::auth::GrokAuth::test_default()
+        ..crate::auth::KimiAuth::test_default()
     });
 
     let cfg = crate::agent::config::Config {

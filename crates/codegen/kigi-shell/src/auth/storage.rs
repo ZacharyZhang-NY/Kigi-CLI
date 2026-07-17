@@ -2,7 +2,184 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-use super::model::{API_KEY_SCOPE, AuthMode, AuthStore, GrokAuth, lookup_auth};
+use super::model::{API_KEY_SCOPE, AuthMode, AuthStore, KimiAuth, lookup_auth};
+
+// ── System-keyring storage for the Kimi Code OAuth session ─────────────
+//
+// PRD F1: the OAuth token set lives in the system keyring (service `kigi`,
+// entry `oauth/kimi-code`); when the keyring is unavailable we fall back to
+// the file mechanism below (`auth.json`, owner-only, atomic writes). The
+// official Kimi client's keyring entries (service `kimi-code`) and `~/.kimi`
+// files are never touched.
+
+/// Keyring service name — deliberately distinct from the official client's
+/// `kimi-code` service.
+#[cfg(any(target_os = "macos", windows))]
+pub(crate) const KEYRING_SERVICE: &str = "kigi";
+
+/// Outcome of a keyring read for the session scope.
+#[derive(Debug)]
+pub(crate) enum KeyringRead {
+    /// Backend reachable and the entry exists.
+    Found(Box<KimiAuth>),
+    /// Backend reachable, no entry stored.
+    Missing,
+    /// Keyring disabled, unsupported on this platform, or the backend
+    /// errored — callers fall back to the file store.
+    Unavailable,
+}
+
+/// Whether keyring storage participates for the session credential.
+///
+/// Disabled when:
+/// - the platform has no supported backend (non-macOS/Windows builds),
+/// - `KIGI_DISABLE_KEYRING` is set to a truthy value,
+/// - a non-default credential location is in use (`KIGI_SHARE_DIR` /
+///   `KIGI_AUTH_PATH`): the keyring entry belongs to the default user
+///   install; alternate profiles (and tests) stay file-scoped, and
+/// - in unit-test builds, unless a test explicitly opted into the mock
+///   keyring via [`enable_mock_keyring_for_test`].
+pub(crate) fn keyring_enabled() -> bool {
+    #[cfg(test)]
+    {
+        // Thread-local so keyring-specific tests (which opt in via
+        // `enable_mock_keyring_for_test`) can't leak the toggle into
+        // concurrently running persistence tests on other threads.
+        TEST_KEYRING_ENABLED.with(|flag| flag.get())
+    }
+    #[cfg(not(test))]
+    {
+        #[cfg(not(any(target_os = "macos", windows)))]
+        {
+            false
+        }
+        #[cfg(any(target_os = "macos", windows))]
+        {
+            let disabled = std::env::var("KIGI_DISABLE_KEYRING")
+                .is_ok_and(|v| !matches!(v.trim(), "" | "0" | "false" | "off" | "no"));
+            !disabled
+                && std::env::var_os("KIGI_SHARE_DIR").is_none()
+                && std::env::var_os("KIGI_AUTH_PATH").is_none()
+        }
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_KEYRING_ENABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Route keyring calls through an in-memory mock store for this process,
+/// enable [`keyring_enabled`] on this thread, and clear any entry left by an
+/// earlier test. Tests using this must serialize on the `kigi_keyring` key:
+/// the mock entry is shared process-wide.
+#[cfg(all(test, any(target_os = "macos", windows)))]
+pub(crate) fn enable_mock_keyring_for_test() {
+    keyring::set_default_credential_builder(keyring::mock::default_credential_builder());
+    TEST_KEYRING_ENABLED.with(|flag| flag.set(true));
+    if let Err(e) = keyring_delete_session() {
+        panic!("mock keyring cleanup failed: {e}");
+    }
+}
+
+/// Disable the test keyring again (paired with
+/// [`enable_mock_keyring_for_test`] in an RAII guard or test teardown).
+#[cfg(test)]
+pub(crate) fn disable_mock_keyring_for_test() {
+    TEST_KEYRING_ENABLED.with(|flag| flag.set(false));
+}
+
+/// The process-wide keyring entry handle. Cached so every reader/writer talks
+/// to the same credential object: real backends read live state from the OS
+/// store on each call, and the test mock keeps its state on the entry itself.
+#[cfg(any(target_os = "macos", windows))]
+fn keyring_entry() -> Result<&'static keyring::Entry, keyring::Error> {
+    static ENTRY: std::sync::OnceLock<Result<keyring::Entry, keyring::Error>> =
+        std::sync::OnceLock::new();
+    match ENTRY.get_or_init(|| {
+        keyring::Entry::new(KEYRING_SERVICE, crate::auth::config::KIMI_CODE_OAUTH_SCOPE)
+    }) {
+        Ok(entry) => Ok(entry),
+        // `keyring::Error` is not `Clone`; surface a stable equivalent.
+        Err(e) => {
+            tracing::warn!(error = %e, "auth: keyring entry construction failed");
+            Err(keyring::Error::Invalid(
+                "keyring entry".into(),
+                e.to_string(),
+            ))
+        }
+    }
+}
+
+/// Read the session credential from the system keyring.
+#[cfg(any(target_os = "macos", windows))]
+pub(crate) fn keyring_read_session() -> KeyringRead {
+    if !keyring_enabled() {
+        return KeyringRead::Unavailable;
+    }
+    let entry = match keyring_entry() {
+        Ok(entry) => entry,
+        Err(e) => {
+            tracing::warn!(error = %e, "auth: keyring entry unavailable, falling back to file");
+            return KeyringRead::Unavailable;
+        }
+    };
+    match entry.get_password() {
+        Ok(raw) => match serde_json::from_str::<KimiAuth>(&raw) {
+            Ok(auth) => KeyringRead::Found(Box::new(auth)),
+            Err(e) => {
+                tracing::warn!(error = %e, "auth: keyring entry is not valid JSON, ignoring");
+                KeyringRead::Missing
+            }
+        },
+        Err(keyring::Error::NoEntry) => KeyringRead::Missing,
+        Err(e) => {
+            tracing::warn!(error = %e, "auth: keyring read failed, falling back to file");
+            KeyringRead::Unavailable
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+pub(crate) fn keyring_read_session() -> KeyringRead {
+    KeyringRead::Unavailable
+}
+
+/// Write the session credential to the system keyring.
+#[cfg(any(target_os = "macos", windows))]
+pub(crate) fn keyring_write_session(auth: &KimiAuth) -> anyhow::Result<()> {
+    anyhow::ensure!(keyring_enabled(), "keyring storage disabled");
+    let payload = serde_json::to_string(auth)?;
+    keyring_entry()?.set_password(&payload)?;
+    tracing::info!("auth: session credential written to system keyring");
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+pub(crate) fn keyring_write_session(_auth: &KimiAuth) -> anyhow::Result<()> {
+    anyhow::bail!("keyring storage is not supported on this platform")
+}
+
+/// Delete the session credential from the system keyring (Ok when absent).
+#[cfg(any(target_os = "macos", windows))]
+pub(crate) fn keyring_delete_session() -> anyhow::Result<()> {
+    if !keyring_enabled() {
+        return Ok(());
+    }
+    match keyring_entry()?.delete_credential() {
+        Ok(()) => {
+            tracing::info!("auth: session credential removed from system keyring");
+            Ok(())
+        }
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.into()),
+    }
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+pub(crate) fn keyring_delete_session() -> anyhow::Result<()> {
+    Ok(())
+}
 
 /// RAII guard for an exclusive advisory lock on `auth.json.lock`.
 /// The lock is released when the inner `File` is dropped (closing the FD).
@@ -325,25 +502,23 @@ fn restore_prior_bytes(auth_file: &Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 /// Read a single auth token from `auth.json` by scope key.
-/// Falls back to the legacy `https://accounts.x.ai/sign-in` scope key
-/// when the requested scope is not found (devbox auth.json migration).
 pub fn read_token_by_scope(kigi_home: &Path, scope: &str) -> anyhow::Result<String> {
     let path = kigi_home.join("auth.json");
     let store =
-        read_auth_json(&path).map_err(|_| anyhow::anyhow!("Not logged in. Run `grok login`."))?;
+        read_auth_json(&path).map_err(|_| anyhow::anyhow!("Not logged in. Run `kigi login`."))?;
     lookup_auth(&store, scope).map(|a| a.key).ok_or_else(|| {
-        anyhow::anyhow!("Your auth token is invalid. Run `grok login` to re-authenticate.")
+        anyhow::anyhow!("Your auth token is invalid. Run `kigi login` to re-authenticate.")
     })
 }
 
-/// Read the API key from the `xai::api_key` scope in auth.json.
+/// Read the API key from the `kigi::api_key` scope in auth.json.
 pub fn read_api_key(kigi_home: &Path) -> Option<String> {
     let path = kigi_home.join("auth.json");
     let map = read_auth_json(&path).ok()?;
     map.get(API_KEY_SCOPE).map(|a| a.key.clone())
 }
 
-/// Store a plain API key in auth.json under the `xai::api_key` scope.
+/// Store a plain API key in auth.json under the `kigi::api_key` scope.
 ///
 /// Uses the corrupt-recovery reader so a malformed auth.json (e.g. from a
 /// previous crash) can be healed when the user sets an API key.
@@ -352,7 +527,7 @@ pub fn store_api_key(kigi_home: &Path, api_key: &str) -> std::io::Result<()> {
     let mut map = read_auth_json_or_empty_recovering_corrupt(&path)?;
     map.insert(
         API_KEY_SCOPE.to_owned(),
-        GrokAuth {
+        KimiAuth {
             key: api_key.to_owned(),
             auth_mode: AuthMode::ApiKey,
             ..Default::default()
@@ -361,7 +536,7 @@ pub fn store_api_key(kigi_home: &Path, api_key: &str) -> std::io::Result<()> {
     write_auth_json(&path, &map)
 }
 
-/// Remove the `xai::api_key` scope from auth.json.
+/// Remove the `kigi::api_key` scope from auth.json.
 pub fn clear_api_key(kigi_home: &Path) -> std::io::Result<()> {
     let path = kigi_home.join("auth.json");
     if let Ok(mut map) = read_auth_json(&path) {
@@ -383,7 +558,7 @@ mod write_fallback_tests {
         let mut map = AuthStore::new();
         map.insert(
             API_KEY_SCOPE.to_owned(),
-            GrokAuth {
+            KimiAuth {
                 key: "secret-key".to_owned(),
                 auth_mode: AuthMode::ApiKey,
                 ..Default::default()
@@ -481,7 +656,7 @@ mod write_fallback_tests {
         let mut replacement = AuthStore::new();
         replacement.insert(
             API_KEY_SCOPE.to_owned(),
-            GrokAuth {
+            KimiAuth {
                 key: "replacement-key".to_owned(),
                 auth_mode: AuthMode::ApiKey,
                 ..Default::default()
@@ -508,5 +683,76 @@ mod write_fallback_tests {
         let _ = write_auth_json_in_place_with(&path, &sample_store(), fake_truncate_then_fail);
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600, "restored file must stay 0o600");
+    }
+}
+
+#[cfg(all(test, any(target_os = "macos", windows)))]
+mod keyring_tests {
+    use super::*;
+    use chrono::Utc;
+
+    /// RAII teardown so a panicking test doesn't leave the process-global
+    /// test-keyring toggle enabled for later tests.
+    struct MockKeyringGuard;
+    impl MockKeyringGuard {
+        fn enable() -> Self {
+            enable_mock_keyring_for_test();
+            Self
+        }
+    }
+    impl Drop for MockKeyringGuard {
+        fn drop(&mut self) {
+            disable_mock_keyring_for_test();
+        }
+    }
+
+    fn session_auth(key: &str, rt: &str) -> KimiAuth {
+        KimiAuth {
+            key: key.into(),
+            refresh_token: Some(rt.into()),
+            expires_at: Some(Utc::now() + chrono::Duration::seconds(3600)),
+            expires_in: Some(3600),
+            scope: Some("kimi-code".into()),
+            token_type: Some("bearer".into()),
+            ..KimiAuth::test_default()
+        }
+    }
+
+    #[test]
+    #[serial_test::serial(kigi_keyring)]
+    fn keyring_session_roundtrip() {
+        let _guard = MockKeyringGuard::enable();
+        // Fresh mock store: nothing there yet.
+        assert!(matches!(keyring_read_session(), KeyringRead::Missing));
+
+        keyring_write_session(&session_auth("at-1", "rt-1")).unwrap();
+        let KeyringRead::Found(read) = keyring_read_session() else {
+            panic!("expected Found after write");
+        };
+        assert_eq!(read.key, "at-1");
+        assert_eq!(read.refresh_token.as_deref(), Some("rt-1"));
+        assert_eq!(read.expires_in, Some(3600));
+
+        // Overwrite rotates in place.
+        keyring_write_session(&session_auth("at-2", "rt-2")).unwrap();
+        let KeyringRead::Found(read) = keyring_read_session() else {
+            panic!("expected Found after rotate");
+        };
+        assert_eq!(read.key, "at-2");
+
+        // Delete is idempotent.
+        keyring_delete_session().unwrap();
+        assert!(matches!(keyring_read_session(), KeyringRead::Missing));
+        keyring_delete_session().unwrap();
+    }
+
+    #[test]
+    #[serial_test::serial(kigi_keyring)]
+    fn keyring_disabled_reads_unavailable() {
+        disable_mock_keyring_for_test();
+        assert!(matches!(keyring_read_session(), KeyringRead::Unavailable));
+        assert!(keyring_write_session(&session_auth("a", "r")).is_err());
+        // Delete when disabled is a no-op success (logout stays best-effort).
+        keyring_delete_session().unwrap();
     }
 }

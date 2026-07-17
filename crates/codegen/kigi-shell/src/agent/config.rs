@@ -1,5 +1,5 @@
 use crate::agent::auth_method::ModelByok;
-use crate::auth::{AuthManager, GrokComConfig, OidcAuthConfig};
+use crate::auth::{AuthManager, KimiCodeConfig};
 use crate::remote::DEFAULT_CONTEXT_WINDOW;
 use crate::{config::StorageMode, sampling::ApiBackend, tools::config::ShellToolsetConfig};
 use agent_client_protocol as acp;
@@ -1108,7 +1108,7 @@ pub struct Config {
     /// Warnings from `[model.*]` parsing; surfaced by `grok inspect`.
     #[serde(skip)]
     pub model_override_warnings: Vec<super::config_model_override_parse::ModelOverrideWarning>,
-    pub grok_com_config: GrokComConfig,
+    pub kimi_code_config: KimiCodeConfig,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shortcuts: Option<toml::Value>,
     /// Written by the client via `config_toml_edit`; absorbed so it isn't
@@ -1178,9 +1178,9 @@ pub struct Config {
     #[serde(default, skip_serializing)]
     pub managed_mcps: crate::config::ManagedMcpsConfig,
     /// `[auth]` alias — consumed by `expand_auth_alias` before serde.
-    /// Typed as `GrokComConfig` (same schema) so sub-field typos are caught.
+    /// Typed as `KimiCodeConfig` (same schema) so sub-field typos are caught.
     #[serde(default, skip_serializing)]
-    pub auth: Option<GrokComConfig>,
+    pub auth: Option<KimiCodeConfig>,
     /// `[desktop]` section — owned by grok-desktop (Electron app), opaque to the CLI agent.
     #[serde(default, skip_serializing)]
     pub desktop: Option<toml::Value>,
@@ -1525,7 +1525,7 @@ impl Default for Config {
             auto_mode: AutoModeConfig::default(),
             config_models: IndexMap::new(),
             model_override_warnings: Vec::new(),
-            grok_com_config: GrokComConfig::default(),
+            kimi_code_config: KimiCodeConfig::default(),
             shortcuts: None,
             hints: None,
             ui: UiConfig::default(),
@@ -1620,13 +1620,12 @@ impl Config {
         }
         Ok(())
     }
-    /// Build an `AuthManager` with the configured proxy URL applied.
+    /// Build an `AuthManager` for this configuration.
     pub fn create_auth_manager(&self) -> AuthManager {
         AuthManager::new(
             &crate::util::kigi_home::kigi_home(),
-            self.grok_com_config.clone(),
+            self.kimi_code_config.clone(),
         )
-        .with_proxy_base_url(&self.endpoints.proxy_url())
     }
     /// Deserialize the merged `base` document, also returning the ignored key
     /// paths whose top-level key appears in `user_config`. Paths outside it
@@ -1679,12 +1678,6 @@ impl Config {
         }
         config.config_models = config_models;
         config.model_override_warnings = model_override_warnings;
-        if config.grok_com_config.oidc.is_none() {
-            config.grok_com_config.oidc = OidcAuthConfig::from_env();
-        }
-        if config.grok_com_config.oidc.is_none() && config.grok_com_config.oauth2.is_none() {
-            config.grok_com_config.oauth2 = crate::auth::OAuth2ProviderConfig::from_env();
-        }
         if config.client_version.is_none() {
             config.client_version = Self::default().client_version;
         }
@@ -1818,16 +1811,16 @@ impl Config {
         self.resolve_runtime_fields(&ctx);
         crate::util::config::set_remote_campaigns_from_settings(self.remote_settings.as_ref());
     }
-    /// If the TOML contains `[auth]`, copy its contents under `[grok_com_config]`.
-    /// `[grok_com_config]` takes precedence if both are present (explicit wins).
+    /// If the TOML contains `[auth]`, copy its contents under `[kimi_code_config]`.
+    /// `[kimi_code_config]` takes precedence if both are present (explicit wins).
     ///
-    /// This lets customers write the shorter `[auth.oidc]` instead of `[grok_com_config.oidc]`.
+    /// This lets customers write the shorter `[auth.oidc]` instead of `[kimi_code_config.oidc]`.
     fn expand_auth_alias(raw_config: &toml::Value) -> toml::Value {
         let mut config = raw_config.clone();
         if let toml::Value::Table(ref mut table) = config
             && let Some(auth) = table.remove("auth")
         {
-            if let Some(gcc) = table.get_mut("grok_com_config") {
+            if let Some(gcc) = table.get_mut("kimi_code_config") {
                 if let (toml::Value::Table(gcc_table), toml::Value::Table(auth_table)) =
                     (gcc, &auth)
                 {
@@ -1836,7 +1829,7 @@ impl Config {
                     }
                 }
             } else {
-                table.insert("grok_com_config".to_owned(), auth);
+                table.insert("kimi_code_config".to_owned(), auth);
             }
         }
         config
@@ -2317,18 +2310,6 @@ impl Config {
         BoolFlag::env("KIGI_CANCEL_REWIND")
             .config(self.features.cancel_rewind)
             .feature_flag(ff)
-            .default(true)
-            .resolve()
-    }
-    /// Resolve whether to use grok's default OAuth2 (xAI auth.x.ai).
-    ///
-    /// Enterprise OIDC (`oidc` in config.toml) always wins — this only gates
-    /// the default xAI OAuth2 fallback when no enterprise OIDC is configured.
-    ///
-    /// Priority: `--oauth` > KIGI_OAUTH_ENABLED env > default (true = OAuth).
-    pub fn resolve_grok_oauth(&self, cli_oidc: Option<bool>) -> Resolved<bool> {
-        BoolFlag::env("KIGI_OAUTH_ENABLED")
-            .cli(cli_oidc)
             .default(true)
             .resolve()
     }
@@ -3918,42 +3899,6 @@ pub fn resolve_credentials(model: &ModelEntry, session_key: Option<&str>) -> Res
         auth_scheme,
     }
 }
-/// `disable_api_key_auth` at the credential seam: swap a first-party xAI API
-/// key for the IdP session (absent => request fails => forces login). BYOK
-/// (non-xAI `base_url`) is untouched; no-op when the switch is off.
-pub fn enforce_disable_api_key_auth(
-    creds: &mut ResolvedCredentials,
-    disable_api_key_auth: bool,
-    session_key: Option<&str>,
-) {
-    if disable_api_key_auth
-        && creds.auth_type == kigi_chat_state::AuthType::ApiKey
-        && crate::util::is_first_party_xai_url(&creds.base_url)
-    {
-        creds.auth_type = kigi_chat_state::AuthType::SessionToken;
-        creds.api_key = session_key.map(str::to_owned);
-        kigi_log::unified_log::debug(
-            "auth: kill switch blocked a first-party API key at the credential seam",
-            None,
-            Some(serde_json::json!(
-                { "replaced_with_session" : session_key.is_some(), "base_url" : creds
-                .base_url, }
-            )),
-        );
-    }
-}
-/// Resolve credentials for an auxiliary sampling path (web search, image
-/// description) with the first-party API-key kill switch applied, so these
-/// paths honor `disable_api_key_auth` exactly like the main chat path.
-fn resolve_credentials_enforced(
-    entry: &ModelEntry,
-    session_key: Option<&str>,
-    disable_api_key_auth: bool,
-) -> ResolvedCredentials {
-    let mut credentials = resolve_credentials(entry, session_key);
-    enforce_disable_api_key_auth(&mut credentials, disable_api_key_auth, session_key);
-    credentials
-}
 
 /// Try to resolve credentials for a model by loading the effective config.
 /// Returns `None` (with a warning) if config loading, parsing, or model
@@ -3971,12 +3916,7 @@ pub fn try_resolve_model_credentials(
         .ok()?;
     let models = resolve_model_list(&cfg, None);
     let entry = find_model_by_id(&models, model_id)?;
-    let mut credentials = resolve_credentials(entry, session_key);
-    enforce_disable_api_key_auth(
-        &mut credentials,
-        cfg.grok_com_config.api_key_auth_disabled(),
-        session_key,
-    );
+    let credentials = resolve_credentials(entry, session_key);
     Some(credentials)
 }
 /// Per-model auth facts (BYOK status + auth scheme) from one effective-config
@@ -4045,13 +3985,12 @@ pub fn resolve_aux_model_sampling_config(
     models: &IndexMap<String, ModelEntry>,
     endpoints: &EndpointsConfig,
     session_key: Option<&str>,
-    disable_api_key_auth: bool,
     alpha_test_key: Option<String>,
     client_version: Option<String>,
 ) -> Option<SamplerConfig> {
     let catalog_entry = find_model_by_id(models, model_id).cloned();
     if let Some(entry) = &catalog_entry {
-        let credentials = resolve_credentials_enforced(entry, session_key, disable_api_key_auth);
+        let credentials = resolve_credentials(entry, session_key);
         let sampler = sampling_config_for_model(
             entry,
             credentials,
@@ -4108,7 +4047,7 @@ pub fn resolve_aux_model_sampling_config(
             env_key: None,
             api_base_url: None,
         };
-        let credentials = resolve_credentials_enforced(&entry, session_key, disable_api_key_auth);
+        let credentials = resolve_credentials(&entry, session_key);
         let sampler = sampling_config_for_model(
             &entry,
             credentials,
@@ -4240,11 +4179,7 @@ pub fn sampling_config_for_model(
 /// URL-derived header logic at the shell boundary so callers downstream see a
 /// single homogenous header bag.
 ///
-/// * cli-chat-proxy bases get `X-XAI-Token-Auth` and
-///   `x-authenticateresponse` headers (mirrors the inline match in the legacy
-///   `sampling::Client::new` on `is_cli_chat_proxy_url`).
-/// * With the optional non-production feature, matching first-party hosts may
-///   get an extra access header from the corresponding key argument.
+/// * First-party bases get the client-mode header.
 ///
 /// Existing entries are never overwritten so callers can pre-set a value.
 pub fn inject_url_derived_headers(
@@ -4253,12 +4188,6 @@ pub fn inject_url_derived_headers(
     base_url: &str,
 ) {
     if crate::util::is_cli_chat_proxy_url(base_url) {
-        headers
-            .entry("X-XAI-Token-Auth".to_string())
-            .or_insert_with(|| "xai-grok-cli".to_string());
-        headers
-            .entry("x-authenticateresponse".to_string())
-            .or_insert_with(|| "authenticate-response".to_string());
         headers
             .entry(crate::http::CLIENT_MODE_HEADER.to_string())
             .or_insert_with(|| crate::http::process_client_mode().to_string());
@@ -4289,7 +4218,6 @@ pub fn resolve_model_to_sampling_config(
 fn resolve_hidden_default_web_search_sampling_config(
     model_id: &str,
     session_key: Option<&str>,
-    disable_api_key_auth: bool,
     alpha_test_key: Option<String>,
     client_version: Option<String>,
     endpoints: &EndpointsConfig,
@@ -4331,7 +4259,7 @@ fn resolve_hidden_default_web_search_sampling_config(
         env_key: None,
         api_base_url: None,
     };
-    let credentials = resolve_credentials_enforced(&entry, session_key, disable_api_key_auth);
+    let credentials = resolve_credentials(&entry, session_key);
     sampling_config_for_model(
         &entry,
         credentials,
@@ -4345,13 +4273,12 @@ pub fn resolve_web_search_sampling_config(
     model_id: &str,
     models: &IndexMap<String, ModelEntry>,
     session_key: Option<&str>,
-    disable_api_key_auth: bool,
     alpha_test_key: Option<String>,
     client_version: Option<String>,
     endpoints: &EndpointsConfig,
 ) -> Option<SamplerConfig> {
     let resolved = if let Some(entry) = find_model_by_id(models, model_id).cloned() {
-        let credentials = resolve_credentials_enforced(&entry, session_key, disable_api_key_auth);
+        let credentials = resolve_credentials(&entry, session_key);
         Some(sampling_config_for_model(
             &entry,
             credentials,
@@ -4364,7 +4291,6 @@ pub fn resolve_web_search_sampling_config(
         Some(resolve_hidden_default_web_search_sampling_config(
             model_id,
             session_key,
-            disable_api_key_auth,
             alpha_test_key,
             client_version,
             endpoints,
@@ -4643,28 +4569,21 @@ reasoning_effort = "low"
         }
     }
     #[test]
-    fn inject_url_derived_headers_adds_proxy_headers_for_cli_chat_proxy_url() {
+    fn inject_url_derived_headers_adds_client_mode_for_first_party_url() {
         let mut headers = IndexMap::new();
         inject_url_derived_headers(
             &mut headers,
             None,
             kigi_env::PRODUCTION_ENDPOINTS.coding_api_base_url,
         );
-        assert_eq!(
-            headers.get("X-XAI-Token-Auth").map(String::as_str),
-            Some("xai-grok-cli")
-        );
-        assert_eq!(
-            headers.get("x-authenticateresponse").map(String::as_str),
-            Some("authenticate-response")
-        );
+        assert!(headers.get(crate::http::CLIENT_MODE_HEADER).is_some());
+        assert!(headers.get("X-XAI-Token-Auth").is_none());
     }
     #[test]
-    fn inject_url_derived_headers_skips_proxy_headers_for_external_url() {
+    fn inject_url_derived_headers_skips_headers_for_external_url() {
         let mut headers = IndexMap::new();
-        inject_url_derived_headers(&mut headers, None, "https://api.x.ai/v1");
-        assert!(headers.get("X-XAI-Token-Auth").is_none());
-        assert!(headers.get("x-authenticateresponse").is_none());
+        inject_url_derived_headers(&mut headers, None, "https://api.example.com/v1");
+        assert!(headers.get(crate::http::CLIENT_MODE_HEADER).is_none());
     }
     #[test]
     fn inject_url_derived_headers_preserves_caller_extra_headers() {
@@ -4678,24 +4597,6 @@ reasoning_effort = "low"
         assert_eq!(
             headers.get("x-custom-byok").map(String::as_str),
             Some("value")
-        );
-        assert_eq!(
-            headers.get("X-XAI-Token-Auth").map(String::as_str),
-            Some("xai-grok-cli")
-        );
-    }
-    #[test]
-    fn inject_url_derived_headers_does_not_overwrite_existing_entries() {
-        let mut headers = IndexMap::new();
-        headers.insert("X-XAI-Token-Auth".to_string(), "caller-set".to_string());
-        inject_url_derived_headers(
-            &mut headers,
-            None,
-            kigi_env::PRODUCTION_ENDPOINTS.coding_api_base_url,
-        );
-        assert_eq!(
-            headers.get("X-XAI-Token-Auth").map(String::as_str),
-            Some("caller-set"),
         );
     }
     #[test]
@@ -4834,7 +4735,6 @@ reasoning_effort = "low"
             crate::models::default_web_search_model(),
             &IndexMap::new(),
             Some("session-token"),
-            false,
             None,
             None,
             &endpoints,
@@ -4891,49 +4791,12 @@ reasoning_effort = "low"
                 None,
             ),
         );
-        let resolved = resolve_aux_model_sampling_config(
-            "grok-build",
-            &catalog,
-            &endpoints,
-            None,
-            false,
-            None,
-            None,
-        )
-        .expect("override entry has an API key, so resolution succeeds");
+        let resolved =
+            resolve_aux_model_sampling_config("grok-build", &catalog, &endpoints, None, None, None)
+                .expect("override entry has an API key, so resolution succeeds");
         assert_eq!(resolved.model, "v9m-rl-learnability-tp8");
         assert_eq!(resolved.base_url, "https://vendor.example/v1");
         assert_eq!(resolved.api_key.as_deref(), Some("vendor-key"));
-    }
-    #[test]
-    fn web_search_disable_api_key_auth_swaps_first_party_key_for_session() {
-        let endpoints = EndpointsConfig::default();
-        let mut models = IndexMap::new();
-        models.insert(
-            "ws-model".to_string(),
-            test_model_entry(
-                "ws-model",
-                "https://api.x.ai/v1",
-                Some("first-party-key"),
-                None,
-                None,
-            ),
-        );
-        let resolved = resolve_web_search_sampling_config(
-            "ws-model",
-            &models,
-            Some("session-token"),
-            true,
-            None,
-            None,
-            &endpoints,
-        )
-        .expect("web search model should resolve");
-        assert_eq!(
-            resolved.api_key.as_deref(),
-            Some("session-token"),
-            "first-party API key must be swapped for the session token when disabled"
-        );
     }
     #[test]
     fn parses_model_api_key() {
@@ -5351,12 +5214,9 @@ reasoning_effort = "low"
             config.base_url,
             kigi_env::PRODUCTION_ENDPOINTS.coding_api_base_url
         );
-        assert_eq!(
-            config
-                .extra_headers
-                .get("X-XAI-Token-Auth")
-                .map(String::as_str),
-            Some("xai-grok-cli")
+        assert!(
+            config.extra_headers.get("X-XAI-Token-Auth").is_none(),
+            "the xAI token-auth marker header must be gone"
         );
     }
     /// Regression: without a session key, `resolve_credentials` falls through
@@ -5375,75 +5235,6 @@ reasoning_effort = "low"
             auth_type: kigi_chat_state::AuthType::ApiKey,
             auth_scheme: Default::default(),
         }
-    }
-    /// `disable_api_key_auth` kill switch (Claude `forceLoginMethod` parity).
-    #[test]
-    fn enforce_disable_api_key_auth_blocks_first_party_only() {
-        use kigi_chat_state::AuthType;
-        let mut creds = api_key_creds("https://api.x.ai/v1");
-        enforce_disable_api_key_auth(&mut creds, false, Some("session-jwt"));
-        assert_eq!(creds.auth_type, AuthType::ApiKey);
-        assert_eq!(creds.api_key.as_deref(), Some("xai-secret"));
-        let mut creds = api_key_creds("https://api.x.ai/v1");
-        enforce_disable_api_key_auth(&mut creds, true, Some("session-jwt"));
-        assert_eq!(creds.auth_type, AuthType::SessionToken);
-        assert_eq!(creds.api_key.as_deref(), Some("session-jwt"));
-        let mut creds = api_key_creds("https://api.x.ai/v1");
-        enforce_disable_api_key_auth(&mut creds, true, None);
-        assert_eq!(creds.auth_type, AuthType::SessionToken);
-        assert_eq!(creds.api_key, None);
-        let mut creds = api_key_creds("https://api.example.com/v1");
-        enforce_disable_api_key_auth(&mut creds, true, Some("session-jwt"));
-        assert_eq!(creds.auth_type, AuthType::ApiKey);
-        assert_eq!(creds.api_key.as_deref(), Some("xai-secret"));
-        let mut creds = ResolvedCredentials {
-            auth_type: AuthType::SessionToken,
-            ..api_key_creds("https://api.x.ai/v1")
-        };
-        enforce_disable_api_key_auth(&mut creds, true, Some("session-jwt"));
-        assert_eq!(creds.auth_type, AuthType::SessionToken);
-    }
-    /// Regression for the OVERRIDE_MODEL kill-switch bypass: a first-party model
-    /// with its own api_key resolves to `ApiKey` (priority 1, beating the
-    /// session), and the kill switch — now applied inside
-    /// `try_resolve_model_credentials` — swaps it for the session token. BYOK
-    /// (non-x.ai) own keys are preserved. (`try_resolve_model_credentials`
-    /// loads global config, so this exercises its resolve + enforce core.)
-    #[test]
-    fn try_resolve_model_credentials_swaps_first_party_own_key_under_kill_switch() {
-        use kigi_chat_state::AuthType;
-        let entry = test_model_entry(
-            "m",
-            "https://api.x.ai/v1",
-            Some("xai-model-key"),
-            None,
-            None,
-        );
-        let mut creds = resolve_credentials(&entry, Some("session-jwt"));
-        assert_eq!(
-            creds.auth_type,
-            AuthType::ApiKey,
-            "own key wins over session"
-        );
-        assert_eq!(creds.api_key.as_deref(), Some("xai-model-key"));
-        enforce_disable_api_key_auth(&mut creds, true, Some("session-jwt"));
-        assert_eq!(
-            creds.auth_type,
-            AuthType::SessionToken,
-            "swapped under switch"
-        );
-        assert_eq!(creds.api_key.as_deref(), Some("session-jwt"));
-        let byok = test_model_entry(
-            "b",
-            "https://api.example.com/v1",
-            Some("sk-byok"),
-            None,
-            None,
-        );
-        let mut byok_creds = resolve_credentials(&byok, Some("session-jwt"));
-        enforce_disable_api_key_auth(&mut byok_creds, true, Some("session-jwt"));
-        assert_eq!(byok_creds.auth_type, AuthType::ApiKey);
-        assert_eq!(byok_creds.api_key.as_deref(), Some("sk-byok"));
     }
     #[test]
     fn x_api_key_auth_scheme_flows_from_config_to_sampler() {
@@ -6631,124 +6422,16 @@ reasoning_effort = "low"
         let info = ModelInfo::from_config(&entry);
         assert_eq!(info.inference_idle_timeout_secs, Some(120));
     }
+    /// The `[auth]` alias and the explicit `[kimi_code_config]` table both
+    /// deserialize (the auth block currently carries no per-deployment
+    /// options; the alias machinery is retained for future knobs).
     #[test]
-    fn auth_alias_maps_to_grok_com_config() {
-        let raw: toml::Value = toml::from_str(
-            r#"
-            [auth.oidc]
-            issuer = "https://example.okta.com"
-            client_id = "test-id"
-            "#,
-        )
-        .unwrap();
-        let cfg = Config::new_from_toml_cfg(&raw).expect("config should parse");
-        let oidc = cfg.grok_com_config.oidc.expect("oidc should be set");
-        assert_eq!(oidc.issuer, "https://example.okta.com");
-        assert_eq!(oidc.client_id, "test-id");
-    }
-    #[test]
-    fn grok_com_config_still_works() {
-        let raw: toml::Value = toml::from_str(
-            r#"
-            [grok_com_config.oidc]
-            issuer = "https://example.okta.com"
-            client_id = "test-id"
-            "#,
-        )
-        .unwrap();
-        let cfg = Config::new_from_toml_cfg(&raw).expect("config should parse");
-        let oidc = cfg.grok_com_config.oidc.expect("oidc should be set");
-        assert_eq!(oidc.issuer, "https://example.okta.com");
-    }
-    /// `disable_api_key_auth` plumbs through the `[auth]` alias, and absent
-    /// means None (opt-in knob, zero impact by default).
-    #[test]
-    fn disable_api_key_auth_parses_from_auth_alias() {
-        let absent = Config::new_from_toml_cfg(&toml::from_str("").unwrap()).unwrap();
-        assert_eq!(absent.grok_com_config.disable_api_key_auth, None);
-        let raw: toml::Value = toml::from_str(
-            r#"
-            [auth]
-            disable_api_key_auth = true
-            "#,
-        )
-        .unwrap();
-        let cfg = Config::new_from_toml_cfg(&raw).expect("config should parse");
-        assert_eq!(cfg.grok_com_config.disable_api_key_auth, Some(true));
-    }
-    /// `force_login_team_uuid` parses a string (pin), array (any-of), or `[]`
-    /// (fail closed); absent => None.
-    #[test]
-    fn force_login_team_uuid_parses_string_and_array() {
-        use crate::auth::ForceLoginTeam;
-        let absent = Config::new_from_toml_cfg(&toml::from_str("").unwrap()).unwrap();
-        assert_eq!(absent.grok_com_config.force_login_team_uuid, None);
-        let raw: toml::Value = toml::from_str(
-            r#"
-            [auth]
-            force_login_team_uuid = "team-abc"
-            "#,
-        )
-        .unwrap();
-        let cfg = Config::new_from_toml_cfg(&raw).expect("config should parse");
-        assert_eq!(
-            cfg.grok_com_config.force_login_team_uuid,
-            Some(ForceLoginTeam::Single("team-abc".into())),
-        );
-        let raw: toml::Value = toml::from_str(
-            r#"
-            [grok_com_config]
-            force_login_team_uuid = ["team-a", "team-b"]
-            "#,
-        )
-        .unwrap();
-        let cfg = Config::new_from_toml_cfg(&raw).expect("config should parse");
-        assert_eq!(
-            cfg.grok_com_config.force_login_team_uuid,
-            Some(ForceLoginTeam::AnyOf(vec![
-                "team-a".into(),
-                "team-b".into()
-            ])),
-        );
-        let raw: toml::Value = toml::from_str(
-            r#"
-            [auth]
-            force_login_team_uuid = []
-            "#,
-        )
-        .unwrap();
-        let cfg = Config::new_from_toml_cfg(&raw).expect("config should parse");
-        assert_eq!(
-            cfg.grok_com_config.force_login_team_uuid,
-            Some(ForceLoginTeam::AnyOf(vec![])),
-        );
-    }
-    /// Pinning a team via `force_login_team_uuid` implies API-key auth is
-    /// disabled even without an explicit `disable_api_key_auth` (team
-    /// membership can't be verified from a bare API key, so it needs IdP login).
-    #[test]
-    fn force_login_team_uuid_implies_api_key_auth_disabled() {
-        use crate::auth::{ForceLoginTeam, GrokComConfig};
-        let base = GrokComConfig {
-            disable_api_key_auth: None,
-            force_login_team_uuid: None,
-            ..GrokComConfig::default()
-        };
-        assert!(!base.api_key_auth_disabled());
-        assert!(
-            GrokComConfig {
-                disable_api_key_auth: Some(true),
-                ..base.clone()
-            }
-            .api_key_auth_disabled()
-        );
-        assert!(
-            GrokComConfig {
-                force_login_team_uuid: Some(ForceLoginTeam::Single("team-x".into())),
-                ..base
-            }
-            .api_key_auth_disabled()
-        );
+    fn auth_alias_and_kimi_code_config_tables_parse() {
+        for body in ["[auth]\n", "[kimi_code_config]\n"] {
+            let raw: toml::Value = toml::from_str(body).unwrap();
+            let cfg = Config::new_from_toml_cfg(&raw).expect("config should parse");
+            assert_eq!(cfg.kimi_code_config.auth_scope(), "oauth/kimi-code");
+        }
     }
     fn resolve_models_from_toml(
         toml_str: &str,
@@ -8662,11 +8345,7 @@ agent_type = "cursor"
             persistent_shell = true
             [shortcuts]
             ctrl_k = "search"
-            [grok_com_config]
-            token_header = "test"
-            [auth.oidc]
-            issuer = "https://sso.corp.com"
-            client_id = "abc123"
+            [kimi_code_config]
             [storage]
             cleanup_ttl_days = 7
             [permission]
