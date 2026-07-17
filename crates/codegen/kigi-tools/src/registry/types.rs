@@ -1034,7 +1034,10 @@ impl ToolRegistryBuilder {
         if let crate::implementations::grok_build::web_fetch::WebFetchConfig::Enabled { params } =
             &ctx.web_fetch_config
         {
-            match crate::implementations::grok_build::web_fetch::WebFetchClient::new(params) {
+            match crate::implementations::grok_build::web_fetch::WebFetchClient::new(
+                params,
+                ctx.api_key_provider.clone(),
+            ) {
                 Ok(client) => {
                     resources.insert(client);
                 }

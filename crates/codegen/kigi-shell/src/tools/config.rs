@@ -1,5 +1,3 @@
-use crate::models;
-use kigi_sampler::SamplerConfig;
 use kigi_tools::implementations::grok_build;
 use kigi_tools::registry::types::ToolConfig;
 use serde::{Deserialize, Serialize};
@@ -153,15 +151,13 @@ impl WebFetchToolConfig {
 
 /// Top-level toolset configuration for the shell layer.
 ///
-/// This is the *shell-side* config that holds sampling-level settings
-/// (e.g., web search API key from the sampling client). It is distinct
+/// This is the *shell-side* config for per-tool settings. It is distinct
 /// from `kigi_tools::registry::types::ToolsetConfig` which holds
 /// tool-implementation-level config (bash limits, web search mode).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ShellToolsetConfig {
     pub bash: BashToolConfig,
-    pub web_search: SamplerConfig,
     /// Web fetch tool parameters (`[toolset.web_fetch]`).
     #[serde(default)]
     pub web_fetch: WebFetchToolConfig,
@@ -176,85 +172,7 @@ pub struct ShellToolsetConfig {
     pub hashline: HashlineSchemeConfig,
 }
 
-impl Default for ShellToolsetConfig {
-    fn default() -> Self {
-        Self::new(None, None)
-    }
-}
-
-/// Web-search-specific sampling overrides applied on top of a base `SamplerConfig`.
-pub(crate) fn web_search_sampling_config(base: SamplerConfig) -> SamplerConfig {
-    let model = if base.model.is_empty() {
-        models::default_web_search_model().to_string()
-    } else {
-        base.model.clone()
-    };
-    SamplerConfig {
-        model,
-        max_completion_tokens: Some(8192),
-        temperature: Some(0.1),
-        top_p: Some(0.95),
-        force_http1: false,
-        max_retries: None,
-        ..base
-    }
-}
-
 impl ShellToolsetConfig {
-    /// Optionally layers sampling credentials onto the web search config.
-    pub fn new(base: Option<Self>, sampling_config: Option<SamplerConfig>) -> Self {
-        let default_base = SamplerConfig {
-            api_key: None,
-            base_url: kigi_env::coding_api_base_url(),
-            model: String::new(),
-            max_completion_tokens: None,
-            temperature: None,
-            top_p: None,
-            api_backend: Default::default(),
-            auth_scheme: Default::default(),
-            extra_headers: indexmap::IndexMap::new(),
-            context_window: 256_000,
-            reasoning_effort: None,
-            force_http1: false,
-            max_retries: None,
-            stream_tool_calls: false,
-            idle_timeout_secs: None,
-            origin_client: None,
-            // Default base for the in-process web-search tool config.
-            // Real `SamplerConfig`s (e.g. from `sampling_config_for_model`)
-            // overwrite this entire struct via the `..base` pattern in
-            // `web_search_sampling_config`, so leaving the callback
-            // `None` here is fine -- it is only the placeholder for the
-            // "no base provided" path. The live attribution
-            // wiring lives at the production SamplerConfig sites in
-            // agent/config.rs and acp_session.rs.
-            attribution_callback: None,
-            bearer_resolver: None,
-            supports_backend_search: false,
-            compactions_remaining: None,
-            compaction_at_tokens: None,
-            doom_loop_recovery: None,
-            header_injector: None,
-        };
-        let mut toolset = base.unwrap_or_else(|| Self {
-            bash: BashToolConfig::default(),
-            web_search: web_search_sampling_config(default_base),
-            web_fetch: WebFetchToolConfig::default(),
-            ask_user_question: AskUserQuestionToolConfig::default(),
-            file_toolset: FileToolset::default(),
-            hashline: HashlineSchemeConfig::default(),
-        });
-        if let Some(sc) = sampling_config {
-            toolset.web_search = web_search_sampling_config(sc);
-        }
-        toolset
-    }
-
-    /// Returns true if web search is enabled based on config.
-    pub fn web_search_enabled(&self) -> bool {
-        self.web_search.api_key.is_some()
-    }
-
     /// Resolve the effective file toolset. Local config takes precedence;
     /// remote `/v1/settings` is used as fallback when local is the default.
     pub fn resolve_file_toolset(

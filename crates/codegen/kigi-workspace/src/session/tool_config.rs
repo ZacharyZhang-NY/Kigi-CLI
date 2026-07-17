@@ -428,11 +428,9 @@ impl SessionContextFactory for WorkspaceSessionContextFactory {
                                 tier_restricted: false,
                             },
                             WebSearchConfig::Enabled {
+                                search_url: format!("{}/search", url.trim_end_matches('/')),
                                 api_key: token,
-                                base_url: url.clone(),
-                                model: default_web_search_model(),
                                 extra_headers: headers,
-                                alpha_test_key: None,
                             },
                             AppBuilderDeployerConfig::default(),
                         )
@@ -514,9 +512,6 @@ fn build_web_fetch_config() -> kigi_tools::implementations::grok_build::web_fetc
         params.proxy_endpoint = Some(proxy);
     }
     WebFetchConfig::Enabled { params }
-}
-fn default_web_search_model() -> String {
-    std::env::var("KIGI_WEB_SEARCH_MODEL").unwrap_or_else(|_| "grok-4.20-multi-agent".to_string())
 }
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support {

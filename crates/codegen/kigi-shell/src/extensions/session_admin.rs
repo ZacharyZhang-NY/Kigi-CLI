@@ -449,7 +449,6 @@ fn handle_reload_models(agent: &MvpAgent) -> ExtResult {
     {
         let agent_config = agent.cfg.borrow();
         let overrides = crate::config::ModelOverrideConfig::resolve(
-            agent_config.web_search_model_override.as_deref(),
             agent_config.session_summary_model_override.as_deref(),
             &disk_config,
             agent_config.remote_settings.as_ref(),
@@ -458,7 +457,6 @@ fn handle_reload_models(agent: &MvpAgent) -> ExtResult {
         let mut agent_config = agent.cfg.borrow_mut();
         agent_config.models = toml_config.models.clone();
         agent_config.config_models = toml_config.config_models.clone();
-        agent_config.web_search_model = overrides.web_search;
         agent_config.session_summary_model = overrides.session_summary;
         agent_config.image_description_model = overrides.image_description;
         agent_config.prompt_suggest_model_pin = overrides.prompt_suggestion;

@@ -1284,7 +1284,6 @@ auto_update = true                     # check for updates on launch
 
 [models]
 default = "grok-build"           # model used for new sessions
-web_search = "grok-4.20-multi-agent"   # model used by the web_search tool
 
 [ui]
 max_thoughts_width = 120               # max column width for reasoning display
@@ -1738,23 +1737,6 @@ api_key = "sk-custom"
 1. Your config (`[model.*]`) — highest priority
 2. Prefetched models from remote `/v1/models`
 3. Hardcoded defaults — lowest priority
-
-**Web search model:** Set `[models] web_search`, `KIGI_WEB_SEARCH_MODEL`, or `--web-search-model` to point the `web_search` tool at a different model. The target endpoint must support the Responses API and web search.
-
-> **Overriding with a custom model:** Setting `[models] web_search` alone is not
-> enough if the model isn't already in the catalog (built-in defaults or
-> `grok models` output). You also need a `[model.*]` entry so Grok knows
-> how to reach it. Without both, web search is silently disabled.
->
-> ```toml
-> [models]
-> web_search = "my-custom-model"       # 1. tell web search which model to use
->
-> [model.my-custom-model]              # 2. tell Grok how to reach it
-> model = "my-custom-model"
-> api_backend = "responses"            # required — web search uses the Responses API
-> # base_url, api_key, env_key optional — defaults to cli-chat-proxy
-> ```
 
 ### Examples
 

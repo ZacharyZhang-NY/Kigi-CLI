@@ -24,3 +24,22 @@ pub(crate) async fn resolve_bearer(provider: Option<&SharedApiKeyProvider>) -> O
         None => None,
     }
 }
+
+/// Test fixtures shared by tool-client tests.
+#[cfg(test)]
+pub(crate) mod test_support {
+    use super::*;
+
+    struct FixedProvider(String);
+    impl ApiKeyProvider for FixedProvider {
+        fn current_api_key(&self) -> Option<String> {
+            Some(self.0.clone())
+        }
+    }
+
+    /// A provider that always yields `token` — stands in for the OAuth
+    /// refresh chain in client tests.
+    pub(crate) fn fixed_provider(token: &str) -> SharedApiKeyProvider {
+        Arc::new(FixedProvider(token.to_owned()))
+    }
+}

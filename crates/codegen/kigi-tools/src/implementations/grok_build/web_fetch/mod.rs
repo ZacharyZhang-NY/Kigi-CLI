@@ -184,6 +184,7 @@ impl kigi_tool_runtime::Tool for WebFetchTool {
         let output = client
             .fetch(
                 &input.url,
+                ctx.call_id.as_str(),
                 session_folder.as_deref(),
                 read_tool_name.as_deref(),
                 execute_tool_name.as_deref(),

@@ -1730,9 +1730,9 @@ pub(in crate::app::dispatch) fn clear_fork_secondary_model(app: &mut AppView) ->
     }]
 }
 
-// `web_search_model`, `session_summary_model`, and
-// `default_reasoning_effort` setters were removed alongside their
-// registry entries. Mirror fields and TOML schema stay for compat.
+// `session_summary_model` and `default_reasoning_effort` setters were
+// removed alongside their registry entries. Mirror fields and TOML
+// schema stay for compat.
 
 // ---------------------------------------------------------------------------
 // max_thoughts_width — Int-valued setting. Registry surface is `i64`;

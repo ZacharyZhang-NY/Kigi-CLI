@@ -594,7 +594,8 @@ mod tests {
         use kigi_tools::types::ToolInput;
         let input = ToolInput::WebSearch(WebSearchInput {
             query: "rust lang".into(),
-            allowed_domains: None,
+            limit: None,
+            include_content: None,
         });
         let access = AccessKind::from(&input);
         assert!(

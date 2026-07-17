@@ -2169,11 +2169,9 @@ mod tests {
         )
         .from_definition(definition)
         .with_web_search_config(WebSearchConfig::Enabled {
+            search_url: "https://api.kimi.example/coding/v1/search".into(),
             api_key: "test-key".into(),
-            base_url: "https://api.x.ai/v1".into(),
-            model: "test-web-search-model".into(),
             extra_headers: Default::default(),
-            alpha_test_key: None,
         })
         .with_web_fetch_config(WebFetchConfig::Enabled {
             params: Default::default(),
@@ -2295,11 +2293,9 @@ mod tests {
         use kigi_tools::notification::ToolNotificationHandle;
         let web_search_config = if web_search_enabled {
             WebSearchConfig::Enabled {
+                search_url: "https://api.kimi.example/coding/v1/search".into(),
                 api_key: "test-key".into(),
-                base_url: "https://api.x.ai/v1".into(),
-                model: "test-web-search-model".into(),
                 extra_headers: Default::default(),
-                alpha_test_key: None,
             }
         } else {
             WebSearchConfig::Disabled

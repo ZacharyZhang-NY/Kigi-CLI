@@ -18,6 +18,9 @@ pub enum WebFetchError {
     #[error("invalid URL: {0}")]
     InvalidUrl(#[from] url::ParseError),
 
+    #[error("fetch service unavailable: {0}")]
+    ServiceUnavailable(String),
+
     #[error("SSRF blocked: {host} resolves to private/internal IP {ip}{}", ssrf_recovery_hint(.host))]
     SsrfBlocked { host: String, ip: IpAddr },
 

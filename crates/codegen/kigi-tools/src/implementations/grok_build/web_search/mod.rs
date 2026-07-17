@@ -1,8 +1,9 @@
 //! `web_search` tool — new architecture (`Tool` trait).
 //!
-//! Calls the Responses API with web search capability. Reads the
-//! pre-constructed `WebSearchClient` from Resources (inserted by
-//! `with_backend()` when the config is `Enabled`).
+//! Calls the Kimi search service (PRD F5; kimi-cli `tools/web/search.py`
+//! parity). Reads the pre-constructed `WebSearchClient` from Resources
+//! (inserted by `with_backend()` when the config is `Enabled`, i.e. only
+//! on Kimi Code OAuth sessions).
 
 use crate::implementations::web_search::client::WebSearchClient;
 use crate::types::output::WebSearchOutput;
@@ -15,11 +16,26 @@ use crate::types::tool::{ToolKind, ToolNamespace};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct WebSearchInput {
-    #[schemars(description = "The search query to perform.")]
+    #[schemars(description = "The query text to search for.")]
     pub query: String,
-    #[schemars(description = "Optional list of domains to restrict search to.")]
-    pub allowed_domains: Option<Vec<String>>,
+    #[schemars(
+        description = "The number of results to return (1-20). Typically you do \
+                              not need to set this value. When the results do not contain \
+                              what you need, you probably want to give a more concrete \
+                              query."
+    )]
+    pub limit: Option<u8>,
+    #[schemars(
+        description = "Whether to include the content of the web pages in the \
+                              results. It can consume a large amount of tokens when set. \
+                              Avoid enabling this together with a large limit."
+    )]
+    pub include_content: Option<bool>,
 }
+
+/// kimi-cli search.py `Params.limit` default / bounds (default=5, ge=1, le=20).
+const DEFAULT_LIMIT: u8 = 5;
+const MAX_LIMIT: u8 = 20;
 
 // ───────────────────────────────────────────────────────────────────────────
 // Tool implementation
@@ -87,21 +103,21 @@ impl kigi_tool_runtime::Tool for WebSearchTool {
             client = res.require::<WebSearchClient>()?.clone();
         }
 
+        let limit = input.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
         let (content, citations) = client
-            .search(&input.query, input.allowed_domains.clone())
-            .await
-            .map_err(|e| {
-                kigi_tool_runtime::ToolError::execution(
-                    kigi_tool_protocol::ToolId::new("web_search").expect("valid"),
-                    e.to_string(),
-                )
-            })?;
+            .search(
+                &input.query,
+                limit,
+                input.include_content.unwrap_or(false),
+                ctx.call_id.as_str(),
+            )
+            .await?;
 
         Ok(WebSearchOutput {
             query: input.query.clone(),
             content,
             citations,
-            allowed_domains: input.allowed_domains.clone(),
+            allowed_domains: None,
             pre_formatted: None,
         })
     }
@@ -136,7 +152,8 @@ mod tests {
             test_ctx_with_call_id(resources.into_shared(), "test-call"),
             WebSearchInput {
                 query: "test".into(),
-                allowed_domains: None,
+                limit: None,
+                include_content: None,
             },
         )
         .await;

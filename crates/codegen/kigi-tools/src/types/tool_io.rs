@@ -187,7 +187,8 @@ mod tests {
         assert_eq!(kill.unwrap().task_id, "t1");
         let ws: Result<WebSearchInput, _> = ToolInput::WebSearch(WebSearchInput {
             query: "q".into(),
-            allowed_domains: None,
+            limit: None,
+            include_content: None,
         })
         .try_into();
         assert_eq!(ws.unwrap().query, "q");

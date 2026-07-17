@@ -159,7 +159,6 @@ pub async fn connect(cancel: &CancellationToken, flags: ConnectFlags) -> Result<
         cwd: None,
         is_headless: false,
         cli_subagents: Some(flags.subagents),
-        cli_web_search_model: None,
         cli_session_summary_model: None,
         cli_experimental_memory: flags.experimental_memory,
         cli_no_memory: flags.no_memory,

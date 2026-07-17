@@ -834,20 +834,29 @@ impl MvpAgent {
             tier_restricted: false,
         }
     }
-    pub(super) fn prepare_web_search_sampling_config(&self) -> Option<SamplingConfig> {
-        let model_id = self.cfg.borrow().web_search_model.clone();
-        let models = self.models_manager.models();
-        let session = self.current_or_buffered_auth();
-        let alpha_test_key = self.cfg.borrow().endpoints.alpha_test_key.clone();
-        let client_version = self.cfg.borrow().client_version.clone();
-        let mut cfg = config::resolve_web_search_sampling_config(
-            &model_id,
-            &models,
-            session.as_ref().map(|a| a.key.as_str()),
-            alpha_test_key.clone(),
-            &self.cfg.borrow().endpoints,
-        )?;
-        Some(cfg)
+    /// Web search config (PRD F5). The Kimi search service exists only on
+    /// the Kimi Code subscription channel (`POST {coding_base}/search`,
+    /// kimi-cli `auth/platforms.py`), so this is `Enabled` only for OAuth
+    /// sessions — API-key-only sessions get `Disabled` and the tool is
+    /// absent. The live token is refreshed per request via the session
+    /// api-key provider; the config key is just the bootstrap value.
+    pub(super) fn prepare_web_search_config(
+        &self,
+    ) -> kigi_tools::implementations::WebSearchConfig {
+        use kigi_tools::implementations::WebSearchConfig;
+        if self.cfg.borrow().disable_web_search {
+            return WebSearchConfig::Disabled;
+        }
+        let Some(auth) = self.current_or_buffered_auth().filter(|a| a.is_session_auth()) else {
+            tracing::info!("web_search disabled: no Kimi Code OAuth session");
+            return WebSearchConfig::Disabled;
+        };
+        let base = self.cfg.borrow().endpoints.proxy_url();
+        WebSearchConfig::Enabled {
+            search_url: format!("{}/search", base.trim_end_matches('/')),
+            api_key: auth.key,
+            extra_headers: indexmap::IndexMap::new(),
+        }
     }
     /// Returns `Err` with a user-facing message on invalid config; the caller at
     /// the process boundary prints it and exits.
@@ -867,11 +876,14 @@ impl MvpAgent {
     /// Prepare the web fetch configuration based on feature flags.
     ///
     /// Enabled gate: `disable_web_search` kill-switch > `KIGI_WEB_FETCH` env >
-    /// remote settings `web_fetch_enabled` > default (false).
+    /// remote settings `web_fetch_enabled` > default ON (kimi-cli parity:
+    /// `FetchURL` is always offered).
     ///
     /// Params resolution (TOML > env > remote settings > default):
     /// - `proxy_endpoint`: `[toolset.web_fetch] proxy_endpoint` > `KIGI_WEB_FETCH_PROXY` > remote settings > None
     /// - `allowed_domains`: `[toolset.web_fetch] allowed_domains` > remote settings > built-in defaults
+    /// - `service_url`: TOML/env dev override > `{coding_base}/fetch` on
+    ///   OAuth sessions (PRD F5) > None (local pipeline only)
     pub(super) fn prepare_web_fetch_config(
         &self,
     ) -> kigi_tools::implementations::grok_build::web_fetch::WebFetchConfig {
@@ -886,7 +898,7 @@ impl MvpAgent {
             return WebFetchConfig::Disabled;
         }
         let context_window = Some(self.sampling_config.borrow().context_window);
-        let params = cfg
+        let mut params = cfg
             .toolset
             .web_fetch
             .resolve_params(
@@ -897,6 +909,20 @@ impl MvpAgent {
         if params.allowed_domains.as_ref().is_some_and(Vec::is_empty) {
             tracing::info!("web_fetch disabled: allowed_domains is explicitly empty");
             return WebFetchConfig::Disabled;
+        }
+        // PRD F5: the Kimi fetch service exists only on the OAuth channel.
+        // TOML/env may pin their own service_url (dev override); otherwise
+        // OAuth sessions get `{coding_base}/fetch` and API-key sessions
+        // stay local-only.
+        if params.service_url.is_none()
+            && self
+                .current_or_buffered_auth()
+                .is_some_and(|a| a.is_session_auth())
+        {
+            params.service_url = Some(format!(
+                "{}/fetch",
+                cfg.endpoints.proxy_url().trim_end_matches('/')
+            ));
         }
         WebFetchConfig::Enabled { params }
     }
@@ -2231,7 +2257,7 @@ impl MvpAgent {
             .find(|entry| entry.info.model == sampling_config.model)
             .and_then(|entry| entry.info.max_retries);
         let origin_client = self.origin_client_info_from_meta(init.meta.as_ref());
-        let web_search_sampling_config = self.prepare_web_search_sampling_config();
+        let web_search_config = self.prepare_web_search_config();
         let image_gen_config = self.prepare_image_gen_config();
         let video_gen_config = self.prepare_video_gen_config();
         let app_builder_deployer_config = self.prepare_app_builder_deployer_config();
@@ -2454,7 +2480,7 @@ impl MvpAgent {
                     origin_client.as_ref().map(|o| o.product.clone()),
                     inference_idle_timeout_secs,
                     model_max_retries,
-                    web_search_sampling_config,
+                    web_search_config,
                     web_fetch_config,
                     image_gen_config,
                     video_gen_config,

@@ -30,6 +30,8 @@ pub struct WebFetchClient {
     image_writer: SessionFileWriter,
     video_writer: SessionFileWriter,
     overflow: OverflowHandler,
+    /// Live-token source for the Kimi fetch service (OAuth refresh).
+    api_key_provider: Option<crate::types::SharedApiKeyProvider>,
 }
 
 struct ProcessedText {
@@ -42,7 +44,10 @@ struct ProcessedText {
 }
 
 impl WebFetchClient {
-    pub fn new(params: &WebFetchParams) -> Result<Self, WebFetchError> {
+    pub fn new(
+        params: &WebFetchParams,
+        api_key_provider: Option<crate::types::SharedApiKeyProvider>,
+    ) -> Result<Self, WebFetchError> {
         let converter = Arc::new(
             htmd::HtmlToMarkdown::builder()
                 .skip_tags(vec![
@@ -64,7 +69,65 @@ impl WebFetchClient {
             image_writer: SessionFileWriter::new("images", "jpg"),
             video_writer: SessionFileWriter::new("videos", "mp4"),
             overflow: OverflowHandler::new(),
+            api_key_provider,
         })
+    }
+
+    /// Fetch through the Kimi fetch service (kimi-cli `_fetch_with_service`):
+    /// `POST {service_url}` with `{"url": ...}`, `Accept: text/markdown`,
+    /// OAuth bearer, and `X-Msh-Tool-Call-Id`. The 200 body IS the extracted
+    /// markdown; it still runs through the overflow budget so a huge page
+    /// cannot flood the context.
+    async fn fetch_via_service(
+        &self,
+        service_url: &str,
+        url_str: &str,
+        tool_call_id: &str,
+        session_folder: Option<&Path>,
+        tools: RecoveryTools<'_>,
+    ) -> Result<WebFetchOutput, WebFetchError> {
+        let Some(bearer) =
+            crate::types::api_key_provider::resolve_bearer(self.api_key_provider.as_ref()).await
+        else {
+            return Err(WebFetchError::ServiceUnavailable(
+                "no live bearer token for the fetch service".to_string(),
+            ));
+        };
+        let http = self.http.get_or_rebuild()?;
+        let response = http
+            .post(service_url)
+            .header("Authorization", format!("Bearer {bearer}"))
+            .header("Accept", "text/markdown")
+            .header("X-Msh-Tool-Call-Id", tool_call_id)
+            .json(&serde_json::json!({ "url": url_str }))
+            .send()
+            .await
+            .map_err(|e| WebFetchError::ServiceUnavailable(e.to_string()))?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(WebFetchError::ServiceUnavailable(format!(
+                "fetch service returned {status}"
+            )));
+        }
+        let body = response
+            .text()
+            .await
+            .map_err(|e| WebFetchError::ServiceUnavailable(e.to_string()))?;
+        let processed = self
+            .process_text_content(body.as_bytes(), "text/markdown", session_folder, tools)
+            .await;
+        Ok(WebFetchOutput::Content(WebFetchContent {
+            url: url_str.to_string(),
+            content: processed.content,
+            content_type: processed.content_type,
+            status_code: status.as_u16(),
+            bytes: processed.bytes,
+            source_artifact: processed
+                .artifact_path
+                .map(|path| WebFetchSourceArtifact { path }),
+            inline_fallback: processed.inline_fallback,
+            output_location: None,
+        }))
     }
 
     /// Fetch a URL and return its content as markdown.
@@ -76,6 +139,7 @@ impl WebFetchClient {
     pub async fn fetch(
         &self,
         raw_url: &str,
+        tool_call_id: &str,
         session_folder: Option<&Path>,
         read_tool_name: Option<&str>,
         execute_tool_name: Option<&str>,
@@ -91,6 +155,33 @@ impl WebFetchClient {
             if let Some(cached) = cache.get(&url_str) {
                 tracing::debug!("web_fetch cache hit for {url_str}");
                 return Ok(cached.clone());
+            }
+        }
+
+        // Kimi fetch service first (OAuth sessions); local pipeline is the
+        // fallback on any service failure (kimi-cli fetch.py `__call__`).
+        if let Some(service_url) = self.params.service_url.clone() {
+            match self
+                .fetch_via_service(
+                    &service_url,
+                    &url_str,
+                    tool_call_id,
+                    session_folder,
+                    RecoveryTools {
+                        read: read_tool_name,
+                        execute: execute_tool_name,
+                    },
+                )
+                .await
+            {
+                Ok(output) => {
+                    let mut cache = self.cache.write();
+                    cache.insert_text(url_str, output.clone(), false);
+                    return Ok(output);
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, url = %url_str, "Kimi fetch service failed; falling back to local fetch");
+                }
             }
         }
 
@@ -817,6 +908,96 @@ fn strip_base64_data_uris(content: String) -> String {
 mod tests {
     use super::*;
 
+    /// Kimi fetch service happy path (kimi-cli `_fetch_with_service`):
+    /// the POST carries the OAuth bearer + call id + Accept: text/markdown,
+    /// and the 200 body IS the page markdown.
+    #[tokio::test]
+    async fn service_fetch_posts_kimi_contract_and_returns_markdown() {
+        use wiremock::matchers::{body_json, header, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/fetch"))
+            .and(header("accept", "text/markdown"))
+            .and(header("authorization", "Bearer live-token"))
+            .and(header("x-msh-tool-call-id", "call-7"))
+            .and(body_json(
+                serde_json::json!({ "url": "https://docs.rs/serde" }),
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_string("# Serde\n\nExtracted."))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let params = WebFetchParams {
+            service_url: Some(format!("{}/fetch", server.uri())),
+            ..WebFetchParams::default()
+        };
+        let provider = crate::types::api_key_provider::test_support::fixed_provider("live-token");
+        let client = WebFetchClient::new(&params, Some(provider)).unwrap();
+        let output = client
+            .fetch_via_service(
+                &params.service_url.clone().unwrap(),
+                "https://docs.rs/serde",
+                "call-7",
+                None,
+                RecoveryTools {
+                    read: None,
+                    execute: None,
+                },
+            )
+            .await
+            .unwrap();
+        match output {
+            WebFetchOutput::Content(content) => {
+                assert_eq!(content.url, "https://docs.rs/serde");
+                assert!(content.content.contains("# Serde"));
+                assert_eq!(content.status_code, 200);
+            }
+            other => panic!("expected Content, got {other:?}"),
+        }
+    }
+
+    /// A failing service must yield an error the caller can fall back on —
+    /// never a fabricated success.
+    #[tokio::test]
+    async fn service_fetch_errors_on_non_200_and_missing_token() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/fetch"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&server)
+            .await;
+        let url = format!("{}/fetch", server.uri());
+        let tools = || RecoveryTools {
+            read: None,
+            execute: None,
+        };
+
+        // 503 from the service → ServiceUnavailable.
+        let provider = crate::types::api_key_provider::test_support::fixed_provider("t");
+        let params = WebFetchParams {
+            service_url: Some(url.clone()),
+            ..WebFetchParams::default()
+        };
+        let client = WebFetchClient::new(&params, Some(provider)).unwrap();
+        let err = client
+            .fetch_via_service(&url, "https://docs.rs/x", "c", None, tools())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, WebFetchError::ServiceUnavailable(_)), "{err}");
+
+        // No bearer available → ServiceUnavailable without any HTTP call.
+        let client = WebFetchClient::new(&params, None).unwrap();
+        let err = client
+            .fetch_via_service(&url, "https://docs.rs/x", "c", None, tools())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, WebFetchError::ServiceUnavailable(_)), "{err}");
+    }
+
     fn test_converter() -> htmd::HtmlToMarkdown {
         htmd::HtmlToMarkdown::builder()
             .skip_tags(vec![
@@ -828,10 +1009,13 @@ mod tests {
     #[tokio::test]
     async fn oversized_html_persists_exact_pre_truncation_markdown() {
         let tmp = tempfile::tempdir().unwrap();
-        let client = WebFetchClient::new(&WebFetchParams {
-            context_window_tokens: Some(100),
-            ..WebFetchParams::default()
-        })
+        let client = WebFetchClient::new(
+            &WebFetchParams {
+                context_window_tokens: Some(100),
+                ..WebFetchParams::default()
+            },
+            None,
+        )
         .unwrap();
         let tail = "TAIL-MUST-REMAIN-RECOVERABLE";
         let html = format!(
@@ -1291,7 +1475,7 @@ mod tests {
         );
 
         // Client builds successfully with the proxy endpoint set.
-        let client = WebFetchClient::new(&params);
+        let client = WebFetchClient::new(&params, None);
         assert!(client.is_ok());
     }
 

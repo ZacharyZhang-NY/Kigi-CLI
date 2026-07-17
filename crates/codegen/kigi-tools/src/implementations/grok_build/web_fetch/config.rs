@@ -9,7 +9,8 @@ use crate::register_resource;
 // Safety-boundary constants. Not configurable.
 pub const MAX_URL_LENGTH: usize = 2_000;
 pub const MAX_REDIRECTS: usize = 10;
-pub const USER_AGENT_STRING: &str = "Mozilla/5.0 (compatible; grok-agent/1.0; +https://x.ai)";
+pub const USER_AGENT_STRING: &str =
+    "Mozilla/5.0 (compatible; kigi-agent/1.0; +https://github.com/ZacharyZhang-NY/Kigi-CLI)";
 
 /// Runtime-configurable parameters for the `web_fetch` tool.
 ///
@@ -40,6 +41,12 @@ pub struct WebFetchParams {
     /// routed through this URL.
     #[serde(default)]
     pub proxy_endpoint: Option<String>,
+    /// Kimi fetch service endpoint (`POST {coding_base}/fetch`, PRD F5).
+    /// Set by the shell for Kimi Code OAuth sessions; when present, the
+    /// tool tries the service first and falls back to the local pipeline
+    /// on any failure (kimi-cli `tools/web/fetch.py FetchURL.__call__`).
+    #[serde(default)]
+    pub service_url: Option<String>,
 }
 
 register_resource!("grok_build", "WebFetch", WebFetchParams);

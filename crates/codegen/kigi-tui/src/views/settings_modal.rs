@@ -5668,9 +5668,8 @@ mod tests {
                 "plan_mode",
                 // SHELL-owned default_model (Models category).
                 "default_model",
-                // Models category. `default_reasoning_effort`,
-                // `web_search_model`, and `session_summary_model` are
-                // not exposed in the modal.
+                // Models category. `default_reasoning_effort` and
+                // `session_summary_model` are not exposed in the modal.
                 "fork_secondary_model",
                 // `auto_compact_threshold_percent` (Session category) is
                 // not exposed in the modal.
