@@ -531,6 +531,7 @@ mod tests {
                 description: Some("Deep reasoning".to_string()),
                 default: true,
             }],
+            capabilities: vec![kigi_models::ModelCapability::Thinking],
             supports_backend_search: Some(false),
             compactions_remaining: Some(CompactionsRemaining::Fixed(1)),
             compaction_at_tokens: Some(CompactionAtTokens::Fixed(100_000)),

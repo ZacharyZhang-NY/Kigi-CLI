@@ -6132,6 +6132,7 @@ dependencies = [
 name = "kigi-models"
 version = "0.1.0"
 dependencies = [
+ "kigi-env",
  "serde",
  "serde_json",
 ]

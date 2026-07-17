@@ -1,18 +1,46 @@
 {
-  "default": "grok-build",
-  "web_search": "grok-4.20-multi-agent",
-  "image_description": "grok-build",
-  "session_summary": "grok-build",
+  "default": "kimi-for-coding",
   "models": [
     {
-      "model": "grok-build",
-      "name": "Grok Build",
-      "description": "Best for advanced coding tasks",
-      "context_window": 500000,
-      "temperature": 0.7,
-      "top_p": 0.95,
-      "api_backend": "responses",
+      "id": "kimi-code/kimi-for-coding",
+      "model": "kimi-for-coding",
+      "name": "Kimi for Coding",
+      "description": "Kimi Code subscription coding model (offline fallback entry)",
+      "context_window": 262144,
+      "capabilities": ["thinking", "image_in", "video_in"],
       "supported_in_api": false
+    },
+    {
+      "id": "moonshot-cn/kimi-k2-turbo-preview",
+      "model": "kimi-k2-turbo-preview",
+      "name": "Kimi K2 Turbo (moonshot.cn)",
+      "description": "Moonshot open platform model (offline fallback entry)",
+      "context_window": 262144,
+      "capabilities": ["thinking", "image_in", "video_in"]
+    },
+    {
+      "id": "moonshot-cn/kimi-k2-thinking-turbo",
+      "model": "kimi-k2-thinking-turbo",
+      "name": "Kimi K2 Thinking Turbo (moonshot.cn)",
+      "description": "Moonshot open platform model (offline fallback entry)",
+      "context_window": 262144,
+      "capabilities": ["thinking", "always_thinking", "image_in", "video_in"]
+    },
+    {
+      "id": "moonshot-ai/kimi-k2-turbo-preview",
+      "model": "kimi-k2-turbo-preview",
+      "name": "Kimi K2 Turbo (moonshot.ai)",
+      "description": "Moonshot open platform model (offline fallback entry)",
+      "context_window": 262144,
+      "capabilities": ["thinking", "image_in", "video_in"]
+    },
+    {
+      "id": "moonshot-ai/kimi-k2-thinking-turbo",
+      "model": "kimi-k2-thinking-turbo",
+      "name": "Kimi K2 Thinking Turbo (moonshot.ai)",
+      "description": "Moonshot open platform model (offline fallback entry)",
+      "context_window": 262144,
+      "capabilities": ["thinking", "always_thinking", "image_in", "video_in"]
     }
   ]
 }

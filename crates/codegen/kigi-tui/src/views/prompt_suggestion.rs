@@ -26,11 +26,13 @@ pub const PROMPT_SUGGESTIONS_ENV: &str = "KIGI_PROMPT_SUGGESTIONS";
 /// `KIGI_PROMPT_SUGGESTIONS_MODEL=<model-id>`.
 pub const PROMPT_SUGGESTIONS_MODEL_ENV: &str = "KIGI_PROMPT_SUGGESTIONS_MODEL";
 
-/// Preferred model for suggestion calls when the server catalog offers it
-/// (cheap + fast). The session model is never used: when this is absent
-/// from the catalog the request carries no model hint and the shell
-/// resolves (or skips) it — see [`resolve_model`].
-pub const PREFERRED_SUGGESTION_MODEL: &str = "grok-build-0.1";
+/// Preferred model for suggestion calls when the server catalog offers it.
+/// The session model is never used: when this is absent from the catalog the
+/// request carries no model hint and the shell resolves (or skips) it — see
+/// [`resolve_model`].
+pub fn preferred_suggestion_model() -> &'static str {
+    kigi_shell::models::default_model()
+}
 
 /// Controller for the predicted-next-prompt ghost text.
 #[derive(Debug, Default)]
@@ -165,11 +167,11 @@ pub fn resolve_model(models: &crate::acp::model_state::ModelState) -> Option<Str
         return Some(model);
     }
     let preferred =
-        agent_client_protocol::ModelId::new(std::sync::Arc::from(PREFERRED_SUGGESTION_MODEL));
+        agent_client_protocol::ModelId::new(std::sync::Arc::from(preferred_suggestion_model()));
     models
         .available
         .contains_key(&preferred)
-        .then(|| PREFERRED_SUGGESTION_MODEL.to_owned())
+        .then(|| preferred_suggestion_model().to_owned())
 }
 
 #[cfg(test)]

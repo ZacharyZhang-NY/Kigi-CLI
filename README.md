@@ -32,6 +32,46 @@ stores is touched.
 Authentication and inference against Kimi Code (milestone M1), the
 compatibility surface (M2), and release distribution (M3) are in progress.
 
+## Providers and API keys
+
+Kigi talks to a fixed three-platform registry:
+
+| Platform id   | Base URL                        | Auth                        |
+| ------------- | ------------------------------- | --------------------------- |
+| `kimi-code`   | `https://api.kimi.com/coding/v1` | Kimi Code subscription OAuth (`kigi login`) |
+| `moonshot-cn` | `https://api.moonshot.cn/v1`    | Moonshot open-platform API key |
+| `moonshot-ai` | `https://api.moonshot.ai/v1`    | Moonshot open-platform API key |
+
+Moonshot API keys come from the environment or `~/.kigi/config.toml`
+(environment wins; values are never logged):
+
+```sh
+export KIGI_MOONSHOT_API_KEY=sk-...     # applies to both open platforms
+export KIGI_MOONSHOT_CN_API_KEY=sk-...  # platform-scoped, beats the generic name
+export KIGI_MOONSHOT_AI_API_KEY=sk-...
+```
+
+```toml
+# ~/.kigi/config.toml
+[platforms.moonshot-cn]
+api_key = "sk-..."
+
+[platforms.moonshot-ai]
+api_key = "sk-..."
+```
+
+On login and on startup Kigi syncs each configured platform's model list
+from `GET {base}/models` and shows the merged catalog in the model picker
+(catalog keys are `{platform_id}/{model_id}`). If the sync fails, the last
+cached catalog is used; with no cache, a small built-in fallback list
+applies. Model selection resolves as
+`--model` CLI flag > `KIGI_DEFAULT_MODEL` > `[models] default` in
+config.toml > server-delivered list > built-in fallback.
+
+`KIGI_CODE_BASE_URL` re-points the subscription platform (useful for
+testing); `KIGI_MOONSHOT_CN_BASE_URL` / `KIGI_MOONSHOT_AI_BASE_URL` are the
+equivalent dev/test overrides for the open platforms.
+
 ## Building from source
 
 ```sh

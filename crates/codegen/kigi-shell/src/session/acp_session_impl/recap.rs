@@ -507,7 +507,7 @@ impl SessionActor {
 
         let model = match model_override {
             Some(m) => m.to_owned(),
-            None => "grok-build".to_owned(),
+            None => crate::models::default_model().to_owned(),
         };
 
         let request = ConversationRequest {
@@ -569,10 +569,10 @@ impl SessionActor {
     /// (`KIGI_PROMPT_SUGGESTIONS_MODEL`) > `[models] prompt_suggestion`
     /// (config.toml) > remote `prompt_suggestion_model` (remote settings) >
     /// (config.toml) > remote `prompt_suggestion_model` (remote settings) >
-    /// [`prompt_suggest::DEFAULT_SUGGEST_MODEL`] (`grok-build-0.1`). Every
+    /// [`prompt_suggest::default_suggest_model`]. Every
     /// tier except env is catalog-guarded against this shell's own model
     /// catalog — when the effective model is not sampleable here (e.g.
-    /// `grok-build-0.1` for OAuth users) the request is **skipped
+    /// a model the catalog does not offer) the request is **skipped
     /// entirely** instead of fired doomed. The session model is never used:
     /// a per-turn background call must stay on the small model.
     /// Temperature, max_output_tokens, and

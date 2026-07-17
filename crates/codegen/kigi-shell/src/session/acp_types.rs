@@ -521,7 +521,8 @@ pub struct SessionInfoData {
 
 /// Whether this model slug supports showing checkpoint identity (resolved model ID, fingerprint).
 pub fn is_coding_model_slug(model: &str) -> bool {
-    matches!(model, "grok-build" | "grok-4.5")
+    model == kigi_models::PlatformId::KimiCode.managed_model_key(crate::models::default_model())
+        || model == crate::models::default_model()
 }
 
 /// Display gate for the model fingerprint: server/catalog opt-in OR the built-in coding-slug default.
@@ -626,9 +627,13 @@ mod tests {
     fn should_show_model_fingerprint_truth_table() {
         // Catalog opt-in shows the fingerprint even for a non-coding slug.
         assert!(should_show_model_fingerprint(true, "non-coding"));
-        // Coding slugs always show, even without the catalog flag.
-        assert!(should_show_model_fingerprint(false, "grok-build"));
-        assert!(should_show_model_fingerprint(false, "grok-4.5"));
+        // The default coding model always shows, by slug or managed key,
+        // even without the catalog flag.
+        assert!(should_show_model_fingerprint(false, "kimi-for-coding"));
+        assert!(should_show_model_fingerprint(
+            false,
+            "kimi-code/kimi-for-coding"
+        ));
         // Non-coding slug without the flag stays hidden.
         assert!(!should_show_model_fingerprint(false, "some-other"));
     }

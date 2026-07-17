@@ -1368,12 +1368,20 @@ impl acp::Agent for MvpAgent {
             .take(10).collect::< Vec < _ >> (),
             "load_session: restoring persisted model (debug)"
         );
-        let is_grok_build = persisted_model.0.starts_with("grok-build");
-        let same_family_fallback = if is_grok_build {
-            available.keys().find(|id| id.0.starts_with("grok-build")).cloned()
-        } else {
-            available.keys().find(|id| !id.0.starts_with("grok-build")).cloned()
-        };
+        // "Same family" = same platform: catalog keys are
+        // `{platform_id}/{model_id}` (PRD F4), so prefer a replacement from
+        // the platform the persisted model belonged to (its credentials are
+        // known-good) before falling back across platforms.
+        let persisted_platform =
+            kigi_models::parse_managed_model_key(persisted_model.0.as_ref()).map(|(p, _)| p);
+        let same_family_fallback = available
+            .keys()
+            .find(|id| {
+                kigi_models::parse_managed_model_key(id.0.as_ref()).map(|(p, _)| p)
+                    == persisted_platform
+            })
+            .cloned()
+            .or_else(|| available.keys().next().cloned());
         let selectable_catalog_key = selectable_catalog_key_for_persisted(
             &models,
             &available,

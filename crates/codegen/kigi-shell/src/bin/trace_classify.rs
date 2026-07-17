@@ -6,7 +6,7 @@
 //!   cargo run --bin trace_classify -- \
 //!       --trace /path/to/trace-<id>-all-turns.json \
 //!       [--output out.jsonl] \
-//!       [--model grok-4.5] \
+//!       [--model kimi-for-coding] \
 //!       [--api-base-url https://api.x.ai/v1] \
 //!       [--api-key <key> | $XAI_API_KEY | <kigi-home>/auth.json] \
 //!       [--min-confidence 0.7] \
@@ -44,7 +44,7 @@ struct Cli {
 
     /// Model the classifier sampler calls. Must be a model the API key
     /// has access to.
-    #[arg(long, default_value = "grok-4.5")]
+    #[arg(long, default_value = "kimi-for-coding")]
     model: String,
 
     /// Sampler base URL.

@@ -1805,7 +1805,7 @@ fn format_session_info_hides_model_hash_for_noncoding_without_flag() {
 }
 #[test]
 fn format_session_info_shows_model_hash_for_coding_slug_without_flag() {
-    let mut info = make_session_info("grok-build", None, 1000, 10000);
+    let mut info = make_session_info("kimi-for-coding", None, 1000, 10000);
     info.data.model_fingerprint = Some("abc123".into());
     info.data.show_model_fingerprint = false;
     let text = format_session_info(&info, None, false);

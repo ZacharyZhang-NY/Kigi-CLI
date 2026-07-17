@@ -18,40 +18,32 @@ use kigi_sampling_types::{ReasoningEffort, ReasoningEffortOption};
 
 // ── Auth method for model fetching ──────────────────────────────────────────
 
-/// Credential for `/v1/models` fetching.
+/// How the model catalog is fetched (PRD F4). The old xAI tier-gated proxy
+/// fetch is gone; there are exactly two shapes now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ModelFetchAuth {
-    Session,
-    ApiKey,
-    Deployment,
+    /// Fixed platform registry: `kimi-code` via the F1 OAuth bearer plus the
+    /// Moonshot open platforms via configured API keys.
+    Platforms,
+    /// `KIGI_MODELS_BASE_URL` / `models_list_url` BYOK escape hatch: a single
+    /// OpenAI-compatible listing.
     CustomEndpoint,
 }
 
 impl ModelFetchAuth {
-    /// custom_endpoint > session > deployment > API key.
-    ///
-    /// A `deployment_key` outranks an ambient `XAI_API_KEY` so a stray env key
-    /// can't redirect model fetching from the deployment's entitlement-gated
-    /// proxy to a raw `/v1/models` endpoint that lists the full model registry.
-    pub(crate) fn resolve(endpoints: &config::EndpointsConfig, has_cached_session: bool) -> Self {
+    /// Custom endpoint when configured, else the platform registry.
+    pub(crate) fn resolve(endpoints: &config::EndpointsConfig) -> Self {
         if endpoints.has_custom_endpoint() {
             Self::CustomEndpoint
-        } else if has_cached_session {
-            Self::Session
-        } else if endpoints.deployment_key.is_some() {
-            Self::Deployment
-        } else if crate::agent::auth_method::has_xai_api_key_env() {
-            Self::ApiKey
         } else {
-            Self::Session
+            Self::Platforms
         }
     }
 
     fn cache_auth_method(&self) -> CacheAuthMethod {
         match self {
-            Self::CustomEndpoint | Self::ApiKey => CacheAuthMethod::ApiKey,
-            Self::Session => CacheAuthMethod::Session,
-            Self::Deployment => CacheAuthMethod::Deployment,
+            Self::CustomEndpoint => CacheAuthMethod::ApiKey,
+            Self::Platforms => CacheAuthMethod::Platforms,
         }
     }
 }
@@ -59,9 +51,77 @@ impl ModelFetchAuth {
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq, Clone, Debug)]
 #[serde(rename_all = "snake_case")]
 enum CacheAuthMethod {
-    Session,
     ApiKey,
-    Deployment,
+    Platforms,
+}
+
+/// Resolved open-platform API keys (PRD F2): platform-scoped env >
+/// generic `KIGI_MOONSHOT_API_KEY` env > `[platforms.*]` config.
+///
+/// SECURITY: values are secrets — the manual `Debug` impl prints presence
+/// only, and nothing here may be logged or persisted.
+#[derive(Clone, Default)]
+pub(crate) struct PlatformApiKeys {
+    moonshot_cn: Option<String>,
+    moonshot_ai: Option<String>,
+}
+
+impl std::fmt::Debug for PlatformApiKeys {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PlatformApiKeys")
+            .field("moonshot_cn", &self.moonshot_cn.is_some())
+            .field("moonshot_ai", &self.moonshot_ai.is_some())
+            .finish()
+    }
+}
+
+impl PlatformApiKeys {
+    pub(crate) fn resolve(platforms: &config::PlatformsConfig) -> Self {
+        Self {
+            moonshot_cn: config::resolve_platform_api_key(
+                kigi_models::PlatformId::MoonshotCn,
+                platforms,
+            ),
+            moonshot_ai: config::resolve_platform_api_key(
+                kigi_models::PlatformId::MoonshotAi,
+                platforms,
+            ),
+        }
+    }
+
+    /// Resolve from the effective on-disk config (startup paths that have no
+    /// parsed `Config` yet).
+    pub(crate) fn resolve_from_effective_config() -> Self {
+        let platforms = crate::config::load_effective_config()
+            .ok()
+            .and_then(|raw| raw.get("platforms").cloned())
+            .and_then(|v| v.try_into::<config::PlatformsConfig>().ok())
+            .unwrap_or_default();
+        Self::resolve(&platforms)
+    }
+
+    pub(crate) fn key_for(&self, platform: kigi_models::PlatformId) -> Option<&str> {
+        match platform {
+            kigi_models::PlatformId::KimiCode => None,
+            kigi_models::PlatformId::MoonshotCn => self.moonshot_cn.as_deref(),
+            kigi_models::PlatformId::MoonshotAi => self.moonshot_ai.as_deref(),
+        }
+    }
+
+    /// Any open-platform key configured? Drives "should we prefetch without a
+    /// session" and the F2 acceptance path (moonshot key only, no login).
+    pub(crate) fn any(&self) -> bool {
+        self.moonshot_cn.is_some() || self.moonshot_ai.is_some()
+    }
+
+    /// Test-only constructor (fields are private to this module).
+    #[cfg(test)]
+    pub(crate) fn test_keys(cn: Option<&str>, ai: Option<&str>) -> Self {
+        Self {
+            moonshot_cn: cn.map(str::to_owned),
+            moonshot_ai: ai.map(str::to_owned),
+        }
+    }
 }
 
 pub(crate) fn task_model_error_for_catalog(
@@ -170,8 +230,7 @@ impl ModelsManager {
         auth_manager: Arc<AuthManager>,
         cfg: config::Config,
     ) -> Self {
-        let has_session = auth_manager.current_or_expired().is_some();
-        let fetch_auth = ModelFetchAuth::resolve(&cfg.endpoints, has_session);
+        let fetch_auth = ModelFetchAuth::resolve(&cfg.endpoints);
         let current_reasoning_effort = cfg.models.default_reasoning_effort;
         Self {
             inner: Arc::new(Inner {
@@ -224,13 +283,19 @@ impl ModelsManager {
         let is_session_auth = auth_manager
             .current_or_expired()
             .is_some_and(|a| a.is_session_auth());
-        let fetch_auth = ModelFetchAuth::resolve(&cfg.endpoints, has_session);
+        let fetch_auth = ModelFetchAuth::resolve(&cfg.endpoints);
         let prefetched_models = prefetched_models.or_else(|| {
             let cache = ModelsCacheManager::new();
+            let platform_keys = PlatformApiKeys::resolve(&cfg.platforms);
             cache
                 .load_fresh(
                     &fetch_auth.cache_auth_method(),
-                    &crate::remote::models_list_url(&cfg.endpoints, fetch_auth),
+                    &crate::remote::models_fetch_origin(
+                        &cfg.endpoints,
+                        fetch_auth,
+                        has_session,
+                        &platform_keys,
+                    ),
                 )
                 .map(|c| c.models)
         });
@@ -298,9 +363,7 @@ impl ModelsManager {
             )
         };
         let new_preferred = new_config.models.default.clone();
-        let has_session = self.inner.auth_manager.current_or_expired().is_some();
-        *self.inner.fetch_auth.write() =
-            ModelFetchAuth::resolve(&new_config.endpoints, has_session);
+        *self.inner.fetch_auth.write() = ModelFetchAuth::resolve(&new_config.endpoints);
         *self.inner.cfg.write() = new_config.clone();
         // Recompute the prompt-block flag so a corrective reload unblocks.
         if has_real_catalog {
@@ -434,6 +497,23 @@ impl ModelsManager {
     #[cfg(test)]
     pub(crate) fn insert_test_entry(&self, id: impl Into<String>, entry: ModelEntry) {
         self.inner.models.write().insert(id.into(), entry);
+    }
+
+    /// Kimi capability set for `model_id` from the live catalog (PRD F4).
+    /// Empty when the model is unknown or declared no capabilities.
+    pub fn model_capabilities(&self, model_id: &str) -> Vec<kigi_models::ModelCapability> {
+        let models = self.inner.models.read();
+        resolve_catalog_key(&models, &acp::ModelId::new(model_id))
+            .and_then(|key| models.get(key.0.as_ref()))
+            .map(|e| e.info().capabilities.clone())
+            .unwrap_or_default()
+    }
+
+    /// PRD F4: thinking defaults ON iff the model's capabilities include
+    /// `thinking` or `always_thinking`. This is the F3 seam for the sampler's
+    /// thinking toggle; unknown models default OFF.
+    pub fn model_default_thinking(&self, model_id: &str) -> bool {
+        kigi_models::default_thinking_enabled(&self.model_capabilities(model_id))
     }
 
     pub fn current_reasoning_effort(&self) -> Option<ReasoningEffort> {
@@ -592,11 +672,13 @@ impl ModelsManager {
     pub async fn on_auth_changed(&self) {
         let config = self.inner.cfg.read().clone();
         self.inner.cache.invalidate();
-        let has_session = self.inner.auth_manager.current_or_expired().is_some();
-        let fetch_auth = ModelFetchAuth::resolve(&config.endpoints, has_session);
+        let fetch_auth = ModelFetchAuth::resolve(&config.endpoints);
         *self.inner.fetch_auth.write() = fetch_auth;
+        // With no session, no open-platform key, and no custom endpoint there
+        // is nothing to fetch from: wipe the previous identity's catalog.
         if self.inner.auth_manager.current_or_expired().is_none()
-            && fetch_auth == ModelFetchAuth::Session
+            && fetch_auth == ModelFetchAuth::Platforms
+            && !PlatformApiKeys::resolve(&config.platforms).any()
         {
             self.clear();
             return;
@@ -964,9 +1046,14 @@ impl ModelsManager {
     /// Disk-cache origin key for this manager's current endpoints/auth shape
     /// (see [`ModelsCache::origin`]).
     fn cache_origin(&self) -> String {
-        let endpoints = self.inner.cfg.read().endpoints.clone();
+        let (endpoints, platforms) = {
+            let cfg = self.inner.cfg.read();
+            (cfg.endpoints.clone(), cfg.platforms.clone())
+        };
         let fetch_auth = *self.inner.fetch_auth.read();
-        crate::remote::models_list_url(&endpoints, fetch_auth)
+        let has_oauth = self.inner.auth_manager.current_or_expired().is_some();
+        let platform_keys = PlatformApiKeys::resolve(&platforms);
+        crate::remote::models_fetch_origin(&endpoints, fetch_auth, has_oauth, &platform_keys)
     }
 
     fn try_load_cache(&self) -> bool {
@@ -993,20 +1080,52 @@ impl ModelsManager {
             return;
         }
         let cfg = self.inner.cfg.read().clone();
-        let endpoints = cfg.endpoints.clone();
-        let fetch_auth = *self.inner.fetch_auth.read();
-        let auth_manager = self.inner.auth_manager.clone();
         let mgr = self.clone();
 
         tokio::task::spawn(async move {
-            let auth = auth_manager.auth().await.ok();
-            let new_prefetched = fetch_models_async(endpoints, auth, fetch_auth).await;
+            let new_prefetched = mgr.fetch_catalog_with_oauth_retry(&cfg).await;
             if !mgr.apply_refresh_result(&cfg, new_prefetched, new_etag) {
                 return;
             }
             tracing::info!("models manager refreshed");
             mgr.notify_models_updated();
         });
+    }
+
+    /// Fetch the catalog; on an OAuth-platform 401, force a token refresh via
+    /// the 401-recovery state machine and retry ONCE with the rotated bearer
+    /// (port of kimi-cli `refresh_managed_models`' 401 retry).
+    async fn fetch_catalog_with_oauth_retry(
+        &self,
+        cfg: &config::Config,
+    ) -> Option<IndexMap<String, ModelEntry>> {
+        let endpoints = cfg.endpoints.clone();
+        let fetch_auth = *self.inner.fetch_auth.read();
+        let platform_keys = PlatformApiKeys::resolve(&cfg.platforms);
+        let auth = self.inner.auth_manager.auth().await.ok();
+        let outcome =
+            fetch_models_async(endpoints.clone(), auth, fetch_auth, platform_keys.clone()).await;
+        if outcome.models.is_some() {
+            return outcome.models;
+        }
+        if !outcome.oauth_unauthorized {
+            return None;
+        }
+        kigi_log::unified_log::warn(
+            "model catalog: OAuth platform returned 401; forcing token refresh and retrying once",
+            None,
+            None,
+        );
+        if !self.inner.auth_manager.try_recover_unauthorized().await {
+            tracing::warn!("model catalog: token refresh after 401 failed; giving up");
+            return None;
+        }
+        let auth = self.inner.auth_manager.auth().await.ok();
+        let retry = fetch_models_async(endpoints, auth, fetch_auth, platform_keys).await;
+        if retry.oauth_unauthorized {
+            tracing::warn!("model catalog: still unauthorized after token refresh");
+        }
+        retry.models
     }
 
     /// Fetch models, rebuild state, and notify clients.
@@ -1061,8 +1180,7 @@ impl ModelsManager {
             tracing::info!("model catalog refresh skipped: remote_fetch disabled");
             return;
         }
-        let auth = self.inner.auth_manager.auth().await.ok();
-        let has_auth = auth.is_some();
+        let has_auth = self.inner.auth_manager.current_or_expired().is_some();
         let fetch_auth = *self.inner.fetch_auth.read();
         let cfg = self.inner.cfg.read().clone();
         kigi_log::unified_log::info(
@@ -1073,7 +1191,7 @@ impl ModelsManager {
                 "fetch_auth": format!("{fetch_auth:?}"),
             })),
         );
-        let new_prefetched = fetch_models_async(cfg.endpoints.clone(), auth, fetch_auth).await;
+        let new_prefetched = self.fetch_catalog_with_oauth_retry(&cfg).await;
         let success = self.apply_refresh_result(&cfg, new_prefetched, None);
         if success {
             kigi_log::unified_log::info(
@@ -1245,8 +1363,14 @@ struct ModelsCacheManager {
 
 impl ModelsCacheManager {
     fn new() -> Self {
+        // `KIGI_MODELS_CACHE_DIR` re-homes the cache file; primarily a seam
+        // for tests (the unit-test process shares one `kigi_home()` OnceLock)
+        // and for e2e runs that must not touch the real profile.
+        let dir = std::env::var("KIGI_MODELS_CACHE_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| crate::util::kigi_home::kigi_home());
         Self {
-            path: crate::util::kigi_home::kigi_home().join(MODELS_CACHE_FILE),
+            path: dir.join(MODELS_CACHE_FILE),
             ttl: CACHE_TTL,
         }
     }
@@ -1258,6 +1382,40 @@ impl ModelsCacheManager {
         expected_auth: &CacheAuthMethod,
         expected_origin: &str,
     ) -> Option<CacheResult> {
+        let cache = self.load_matching(expected_auth, expected_origin)?;
+        if !cache.is_fresh(self.ttl) {
+            tracing::debug!("models cache is stale");
+            return None;
+        }
+        tracing::debug!(count = cache.models.len(), "loaded models from disk cache");
+        Some(CacheResult {
+            models: cache.models,
+            etag: cache.etag,
+        })
+    }
+
+    /// Last-resort cache read after a FAILED sync (PRD F4: "sync failure →
+    /// use last cache"): same version/auth/origin guards as [`Self::load_fresh`]
+    /// but ignores the TTL — a stale catalog from the same fetch plan beats
+    /// the bundled offline table.
+    fn load_ignoring_ttl(
+        &self,
+        expected_auth: &CacheAuthMethod,
+        expected_origin: &str,
+    ) -> Option<CacheResult> {
+        let cache = self.load_matching(expected_auth, expected_origin)?;
+        Some(CacheResult {
+            models: cache.models,
+            etag: cache.etag,
+        })
+    }
+
+    /// Shared read + version/auth/origin guards (no TTL check).
+    fn load_matching(
+        &self,
+        expected_auth: &CacheAuthMethod,
+        expected_origin: &str,
+    ) -> Option<ModelsCache> {
         let data = std::fs::read(&self.path).ok()?;
         let cache: ModelsCache = serde_json::from_slice(&data).ok()?;
         if cache.grok_version.as_deref() != Some(kigi_version::VERSION) {
@@ -1276,15 +1434,7 @@ impl ModelsCacheManager {
             );
             return None;
         }
-        if !cache.is_fresh(self.ttl) {
-            tracing::debug!("models cache is stale");
-            return None;
-        }
-        tracing::debug!(count = cache.models.len(), "loaded models from disk cache");
-        Some(CacheResult {
-            models: cache.models,
-            etag: cache.etag,
-        })
+        Some(cache)
     }
 
     /// Sync; see `load_fresh` note.
@@ -1372,13 +1522,10 @@ impl ModelsCacheManager {
 /// Build the prefetched model map from a flat list of entries.
 ///
 /// Each entry is keyed by its `id` field (falling back to the `model` slug
-/// when `id` is absent). This lets A/B experiments that share the same
-/// routing slug (e.g. "Auto" and "Grok Build" both route to `grok-build`)
-/// coexist in the catalog without collision.
-fn build_prefetched_map(
-    models: Vec<config::ModelEntryConfig>,
-    api_base_url_override: Option<String>,
-) -> IndexMap<String, ModelEntry> {
+/// when `id` is absent). Platform-registry entries carry
+/// `{platform_id}/{model_id}` ids (PRD F4 managed keys), so the same bare
+/// model id can coexist for several platforms without collision.
+fn build_prefetched_map(models: Vec<config::ModelEntryConfig>) -> IndexMap<String, ModelEntry> {
     let mut map: IndexMap<String, ModelEntry> = IndexMap::with_capacity(models.len());
     for m in models {
         let key = m.id.clone().unwrap_or_else(|| m.model.clone());
@@ -1386,12 +1533,29 @@ fn build_prefetched_map(
         let entry = ModelEntry {
             info,
             api_key: None,
-            env_key: None,
-            api_base_url: m.api_base_url.clone().or(api_base_url_override.clone()),
+            // Env-var NAMES only (open-platform key lookup); never values.
+            env_key: m.env_key.clone(),
+            api_base_url: m.api_base_url.clone(),
         };
         map.insert(key, entry);
     }
     map
+}
+
+/// Outcome of a gated catalog fetch. `oauth_unauthorized` survives total
+/// failure so the async layer can force a token refresh and retry.
+pub(crate) struct ModelsFetchOutcome {
+    pub models: Option<IndexMap<String, ModelEntry>>,
+    pub oauth_unauthorized: bool,
+}
+
+impl ModelsFetchOutcome {
+    fn failed(oauth_unauthorized: bool) -> Self {
+        Self {
+            models: None,
+            oauth_unauthorized,
+        }
+    }
 }
 
 /// Fetch remote models. Checks disk cache first; persists after fetch.
@@ -1399,13 +1563,16 @@ pub(crate) fn prefetch_models_blocking(
     endpoints: &config::EndpointsConfig,
     auth: Option<&KimiAuth>,
     fetch_auth: ModelFetchAuth,
+    platform_keys: &PlatformApiKeys,
 ) -> Option<IndexMap<String, ModelEntry>> {
     prefetch_models_blocking_gated(
         endpoints,
         auth,
         fetch_auth,
+        platform_keys,
         crate::util::config::resolve_remote_fetch_enabled(),
     )
+    .models
 }
 
 /// Blocking models + `/v1/settings` prefetch pair, shared by the early
@@ -1416,13 +1583,21 @@ pub(crate) fn prefetch_models_and_settings_blocking(
     endpoints: &config::EndpointsConfig,
     auth: Option<&KimiAuth>,
     fetch_auth: ModelFetchAuth,
+    platform_keys: &PlatformApiKeys,
 ) -> (
     Option<IndexMap<String, ModelEntry>>,
     Option<crate::util::config::RemoteSettings>,
 ) {
     let remote_fetch_enabled = crate::util::config::resolve_remote_fetch_enabled();
-    let models = prefetch_models_blocking_gated(endpoints, auth, fetch_auth, remote_fetch_enabled);
-    // Settings need a grok.com session; skip for BYOK.
+    let models = prefetch_models_blocking_gated(
+        endpoints,
+        auth,
+        fetch_auth,
+        platform_keys,
+        remote_fetch_enabled,
+    )
+    .models;
+    // Settings need a subscription session; skip for API-key-only setups.
     let settings = match auth {
         Some(auth) if remote_fetch_enabled => {
             let _timer = crate::instrumentation_timer!("startup.early_settings_fetch");
@@ -1443,14 +1618,24 @@ fn prefetch_models_blocking_gated(
     endpoints: &config::EndpointsConfig,
     auth: Option<&KimiAuth>,
     fetch_auth: ModelFetchAuth,
+    platform_keys: &PlatformApiKeys,
     remote_fetch_enabled: bool,
-) -> Option<IndexMap<String, ModelEntry>> {
+) -> ModelsFetchOutcome {
     let cache_auth = fetch_auth.cache_auth_method();
-    // Same URL the fetch below will hit — the cache is only valid for it.
-    let cache_origin = crate::remote::models_list_url(endpoints, fetch_auth);
+    // Same fetch plan the network path below executes — the cache is only
+    // valid for it.
+    let cache_origin =
+        crate::remote::models_fetch_origin(endpoints, fetch_auth, auth.is_some(), platform_keys);
     let cache = ModelsCacheManager::new();
     if let Some(cached) = cache.load_fresh(&cache_auth, &cache_origin) {
-        return Some(cached.models);
+        tracing::info!(
+            count = cached.models.len(),
+            "model sync: serving fresh disk cache"
+        );
+        return ModelsFetchOutcome {
+            models: Some(cached.models),
+            oauth_unauthorized: false,
+        };
     }
 
     // Every catalog fetch in the product funnels through here, so this single
@@ -1458,35 +1643,64 @@ fn prefetch_models_blocking_gated(
     // (leader, headless, stdio, server). Cache above is local and stays usable.
     if !remote_fetch_enabled {
         tracing::info!("models fetch skipped: remote_fetch disabled");
-        return None;
+        return ModelsFetchOutcome::failed(false);
     }
 
     let _timer = crate::instrumentation_timer!("startup.fetch_models_blocking");
-    match fetch_models_blocking(endpoints, auth, fetch_auth) {
-        Ok(FetchModelsResult { models, etag }) if !models.is_empty() => {
-            let api_base_url_override = match fetch_auth {
-                ModelFetchAuth::ApiKey => Some(endpoints.xai_api_base_url.clone()),
-                _ => None,
-            };
-            let map = build_prefetched_map(models, api_base_url_override);
+    match fetch_models_blocking(endpoints, auth, fetch_auth, platform_keys) {
+        Ok(FetchModelsResult {
+            models,
+            etag,
+            oauth_unauthorized,
+        }) if !models.is_empty() => {
+            let map = build_prefetched_map(models);
 
             // NOTE: inheriting context_window / agent_type / api_backend
             // from hardcoded defaults is handled centrally in
             // `resolve_model_list` (config.rs), not here. Don't re-add it.
 
-            tracing::info!(count = map.len(), etag = ?etag, "Prefetched models");
+            tracing::info!(count = map.len(), etag = ?etag, "model sync: fetched catalog");
             cache.persist(&map, etag.as_deref(), cache_auth, &cache_origin);
-            Some(map)
+            ModelsFetchOutcome {
+                models: Some(map),
+                oauth_unauthorized,
+            }
         }
-        Ok(FetchModelsResult { .. }) => {
-            tracing::warn!("Models endpoint returned empty list");
-            None
+        Ok(FetchModelsResult {
+            oauth_unauthorized, ..
+        }) => {
+            tracing::warn!(oauth_unauthorized, "model sync: no models fetched");
+            stale_cache_or_failure(&cache, &cache_auth, &cache_origin, oauth_unauthorized)
         }
         Err(e) => {
-            tracing::warn!("Failed to fetch models: {:?}", e);
-            None
+            tracing::warn!("model sync failed: {e:?}");
+            stale_cache_or_failure(&cache, &cache_auth, &cache_origin, false)
         }
     }
+}
+
+/// PRD F4 failure ladder: sync failed → last (possibly stale) cache for the
+/// same fetch plan; no usable cache → the caller falls back to the bundled
+/// offline table. `oauth_unauthorized` is preserved either way so the async
+/// 401 refresh-retry still fires (a stale cache must not mask a dead token).
+fn stale_cache_or_failure(
+    cache: &ModelsCacheManager,
+    cache_auth: &CacheAuthMethod,
+    cache_origin: &str,
+    oauth_unauthorized: bool,
+) -> ModelsFetchOutcome {
+    if let Some(cached) = cache.load_ignoring_ttl(cache_auth, cache_origin) {
+        tracing::warn!(
+            count = cached.models.len(),
+            "model sync failed; serving last cached catalog (may be stale)"
+        );
+        return ModelsFetchOutcome {
+            models: Some(cached.models),
+            oauth_unauthorized,
+        };
+    }
+    tracing::warn!("model sync failed and no usable cache; falling back to bundled catalog");
+    ModelsFetchOutcome::failed(oauth_unauthorized)
 }
 
 /// Startup prefetch result: models + remote settings.
@@ -1502,6 +1716,7 @@ struct PrefetchEnv {
     auth: Option<KimiAuth>,
     endpoints: config::EndpointsConfig,
     model_fetch_auth: ModelFetchAuth,
+    platform_keys: PlatformApiKeys,
 }
 
 fn resolve_prefetch_env_with_auth(auth: Option<KimiAuth>) -> Option<PrefetchEnv> {
@@ -1516,6 +1731,7 @@ fn resolve_prefetch_env_with_auth(auth: Option<KimiAuth>) -> Option<PrefetchEnv>
     resolve_prefetch_env_from_parts(
         auth,
         endpoints,
+        PlatformApiKeys::resolve_from_effective_config(),
         crate::util::config::resolve_remote_fetch_enabled(),
     )
 }
@@ -1525,12 +1741,16 @@ fn resolve_prefetch_env_with_auth(auth: Option<KimiAuth>) -> Option<PrefetchEnv>
 ///
 /// `remote_fetch_enabled = false` wins over every credential shape AND over
 /// `has_custom_endpoint()` (which otherwise forces the prefetch to run): the
-/// explicit off switch must hold even when a stray login, `XAI_API_KEY`, or
-/// `deployment_key` would re-arm the prefetch — and with it the `/v1/settings`
-/// fetch and the deployment-config sync on the prefetch thread.
+/// explicit off switch must hold even when a stray login, a platform API key,
+/// or a `deployment_key` would re-arm the prefetch — and with it the
+/// `/v1/settings` fetch and the deployment-config sync on the prefetch thread.
+///
+/// PRD F2 acceptance: a moonshot API key alone (no subscription login) must
+/// arm the prefetch so the catalog syncs on startup.
 fn resolve_prefetch_env_from_parts(
     auth: Option<KimiAuth>,
     endpoints: config::EndpointsConfig,
+    platform_keys: PlatformApiKeys,
     remote_fetch_enabled: bool,
 ) -> Option<PrefetchEnv> {
     if !remote_fetch_enabled {
@@ -1538,12 +1758,9 @@ fn resolve_prefetch_env_from_parts(
         return None;
     }
 
-    let model_fetch_auth = ModelFetchAuth::resolve(&endpoints, auth.is_some());
+    let model_fetch_auth = ModelFetchAuth::resolve(&endpoints);
 
-    if auth.is_none()
-        && !endpoints.has_custom_endpoint()
-        && model_fetch_auth == ModelFetchAuth::Session
-    {
+    if auth.is_none() && !endpoints.has_custom_endpoint() && !platform_keys.any() {
         return None;
     }
 
@@ -1551,6 +1768,7 @@ fn resolve_prefetch_env_from_parts(
         auth,
         endpoints,
         model_fetch_auth,
+        platform_keys,
     })
 }
 
@@ -1591,6 +1809,7 @@ fn spawn_prefetch_thread(env: PrefetchEnv) -> EarlyPrefetchHandle {
             &env.endpoints,
             env.auth.as_ref(),
             env.model_fetch_auth,
+            &env.platform_keys,
         );
         if (env.endpoints.deployment_key.is_some() || crate::managed_config::has_active_team_auth())
             && crate::config::is_managed_config_stale_for(
@@ -1968,17 +2187,28 @@ pub(crate) fn validate_selectable(
     Ok(())
 }
 
-/// Async wrapper around `prefetch_models_blocking`.
+/// Async wrapper around the gated blocking fetch. Keeps the
+/// `oauth_unauthorized` signal so callers can drive the 401 refresh-retry.
 pub(crate) async fn fetch_models_async(
     endpoints: config::EndpointsConfig,
     auth: Option<KimiAuth>,
     fetch_auth: ModelFetchAuth,
-) -> Option<IndexMap<String, ModelEntry>> {
+    platform_keys: PlatformApiKeys,
+) -> ModelsFetchOutcome {
     tokio::task::spawn_blocking(move || {
-        prefetch_models_blocking(&endpoints, auth.as_ref(), fetch_auth)
+        prefetch_models_blocking_gated(
+            &endpoints,
+            auth.as_ref(),
+            fetch_auth,
+            &platform_keys,
+            crate::util::config::resolve_remote_fetch_enabled(),
+        )
     })
     .await
-    .unwrap_or(None)
+    .unwrap_or_else(|e| {
+        tracing::warn!("model fetch task panicked/cancelled: {e}");
+        ModelsFetchOutcome::failed(false)
+    })
 }
 
 #[cfg(test)]
@@ -2891,10 +3121,10 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let cache = test_cache_manager(tmp.path());
         let current = mgr.inner.fetch_auth.read().cache_auth_method();
-        let other = if current == CacheAuthMethod::Session {
+        let other = if current == CacheAuthMethod::Platforms {
             CacheAuthMethod::ApiKey
         } else {
-            CacheAuthMethod::Session
+            CacheAuthMethod::Platforms
         };
         cache.persist(
             &make_prefetched(&["grok-other-auth"]),
@@ -3112,113 +3342,119 @@ mod tests {
         );
     }
 
-    // ── ModelFetchAuth::resolve priority tests ──────────────────────
+    // ── ModelFetchAuth::resolve + PlatformApiKeys tests ─────────────
 
     use kigi_test_support::EnvGuard;
     use serial_test::serial;
 
+    fn keys(cn: Option<&str>, ai: Option<&str>) -> PlatformApiKeys {
+        PlatformApiKeys {
+            moonshot_cn: cn.map(str::to_owned),
+            moonshot_ai: ai.map(str::to_owned),
+        }
+    }
+
     #[test]
-    #[serial]
-    fn resolve_custom_endpoint_always_wins() {
-        let _key = EnvGuard::set("XAI_API_KEY", "test-key");
+    fn resolve_custom_endpoint_wins_over_platforms() {
         let endpoints = config::EndpointsConfig {
             models_base_url: Some("https://custom.example.com".to_owned()),
             ..config::EndpointsConfig::default()
         };
         assert_eq!(
-            ModelFetchAuth::resolve(&endpoints, true),
+            ModelFetchAuth::resolve(&endpoints),
             ModelFetchAuth::CustomEndpoint,
         );
         assert_eq!(
-            ModelFetchAuth::resolve(&endpoints, false),
-            ModelFetchAuth::CustomEndpoint,
+            ModelFetchAuth::resolve(&config::EndpointsConfig::default()),
+            ModelFetchAuth::Platforms,
         );
     }
 
+    /// Platform API keys resolve env > config, platform-scoped > generic, and
+    /// values never come from unknown `[platforms.*]` tables.
     #[test]
     #[serial]
-    fn resolve_cached_session_wins_over_api_key() {
-        let _key = EnvGuard::set("XAI_API_KEY", "test-key");
-        let endpoints = config::EndpointsConfig::default();
-        assert_eq!(
-            ModelFetchAuth::resolve(&endpoints, true),
-            ModelFetchAuth::Session,
-            "cached session should take priority over API key",
+    fn platform_api_keys_env_beats_config_and_generic_fallback_applies() {
+        let mut platforms = config::PlatformsConfig::default();
+        platforms.entries.insert(
+            "moonshot-cn".into(),
+            config::PlatformCredentialConfig {
+                api_key: Some("cfg-cn".into()),
+            },
         );
-    }
-
-    #[test]
-    #[serial]
-    fn resolve_api_key_used_when_no_session() {
-        let _key = EnvGuard::set("XAI_API_KEY", "test-key");
-        let endpoints = config::EndpointsConfig::default();
-        assert_eq!(
-            ModelFetchAuth::resolve(&endpoints, false),
-            ModelFetchAuth::ApiKey,
-            "API key should be used when no cached session exists",
+        platforms.entries.insert(
+            "moonshot-ai".into(),
+            config::PlatformCredentialConfig {
+                api_key: Some("cfg-ai".into()),
+            },
         );
-    }
 
-    #[test]
-    #[serial]
-    fn resolve_falls_back_to_session_when_nothing_set() {
-        let _unset = EnvGuard::unset("XAI_API_KEY");
-        let _unset_legacy = EnvGuard::unset("KIGI_CODE_XAI_API_KEY");
-        let endpoints = config::EndpointsConfig::default();
-        assert_eq!(
-            ModelFetchAuth::resolve(&endpoints, false),
-            ModelFetchAuth::Session,
-            "should fall back to Session when nothing else is configured",
-        );
-    }
-
-    #[test]
-    #[serial]
-    fn resolve_deployment_key_when_no_session_or_api_key() {
-        let _unset = EnvGuard::unset("XAI_API_KEY");
-        let _unset_legacy = EnvGuard::unset("KIGI_CODE_XAI_API_KEY");
-        let endpoints = config::EndpointsConfig {
-            deployment_key: Some("deploy-key".to_owned()),
-            ..config::EndpointsConfig::default()
+        // Injected env: scoped name set for cn only, generic set for both.
+        let getenv = |name: &str| match name {
+            "KIGI_MOONSHOT_CN_API_KEY" => Some("env-cn".to_string()),
+            "KIGI_MOONSHOT_API_KEY" => Some("env-generic".to_string()),
+            _ => None,
         };
         assert_eq!(
-            ModelFetchAuth::resolve(&endpoints, false),
-            ModelFetchAuth::Deployment,
+            config::resolve_platform_api_key_with(
+                kigi_models::PlatformId::MoonshotCn,
+                &platforms,
+                getenv,
+            )
+            .as_deref(),
+            Some("env-cn"),
+            "platform-scoped env must win over generic env and config",
+        );
+        assert_eq!(
+            config::resolve_platform_api_key_with(
+                kigi_models::PlatformId::MoonshotAi,
+                &platforms,
+                getenv,
+            )
+            .as_deref(),
+            Some("env-generic"),
+            "generic env must win over config when scoped env is unset",
+        );
+        // No env at all → config file key.
+        assert_eq!(
+            config::resolve_platform_api_key_with(
+                kigi_models::PlatformId::MoonshotAi,
+                &platforms,
+                |_| None,
+            )
+            .as_deref(),
+            Some("cfg-ai"),
+        );
+        // The OAuth platform never resolves an API key.
+        assert_eq!(
+            config::resolve_platform_api_key_with(
+                kigi_models::PlatformId::KimiCode,
+                &platforms,
+                getenv,
+            ),
+            None,
         );
     }
 
-    /// `deployment_key` outranks a stray `XAI_API_KEY`, but session wins over both.
+    /// The `Debug` impl for [`PlatformApiKeys`] must print presence only.
     #[test]
-    #[serial]
-    fn resolve_deployment_key_outranks_ambient_api_key() {
-        let _key = EnvGuard::set("XAI_API_KEY", "stray-env-key");
-        let endpoints = config::EndpointsConfig {
-            deployment_key: Some("deploy-key".to_owned()),
-            ..config::EndpointsConfig::default()
-        };
-        assert_eq!(
-            ModelFetchAuth::resolve(&endpoints, false),
-            ModelFetchAuth::Deployment,
-            "managed deployment_key should outrank an ambient XAI_API_KEY",
+    fn platform_api_keys_debug_never_leaks_values() {
+        let dbg = format!("{:?}", keys(Some("sk-super-secret"), None));
+        assert!(
+            !dbg.contains("sk-super-secret"),
+            "debug leaked a key: {dbg}"
         );
-        assert_eq!(
-            ModelFetchAuth::resolve(&endpoints, true),
-            ModelFetchAuth::Session,
-            "an active session should still win over a managed deployment",
-        );
+        assert!(dbg.contains("true") && dbg.contains("false"));
     }
 
     // ── remote_fetch gate: resolve_prefetch_env_from_parts ───────────
 
     /// remote_fetch=false must return `None` against every re-arming shape at
-    /// once — session auth, ambient `XAI_API_KEY`, `deployment_key`, AND a
-    /// custom models endpoint (which normally forces the prefetch to run).
+    /// once — session auth, a moonshot platform key, AND a custom models
+    /// endpoint (which normally forces the prefetch to run).
     #[test]
-    #[serial]
     fn prefetch_env_none_when_remote_fetch_disabled_despite_credentials() {
-        let _key = EnvGuard::set("XAI_API_KEY", "stray-env-key");
         let endpoints = config::EndpointsConfig {
-            deployment_key: Some("deploy-key".to_owned()),
             models_base_url: Some("https://custom.example.com".to_owned()),
             ..config::EndpointsConfig::default()
         };
@@ -3226,32 +3462,42 @@ mod tests {
             resolve_prefetch_env_from_parts(
                 Some(KimiAuth::test_default()),
                 endpoints.clone(),
+                keys(Some("sk-cn"), None),
                 false,
             )
             .is_none(),
             "session auth must not re-arm the prefetch when remote_fetch is off",
         );
         assert!(
-            resolve_prefetch_env_from_parts(None, endpoints, false).is_none(),
-            "API key / deployment key / custom endpoint must not re-arm it either",
+            resolve_prefetch_env_from_parts(None, endpoints, keys(Some("sk-cn"), None), false)
+                .is_none(),
+            "platform key / custom endpoint must not re-arm it either",
         );
     }
 
-    /// Inverse sanity: with remote_fetch enabled the same credential shapes DO
-    /// arm the prefetch, and the credential-less default still doesn't.
+    /// Inverse sanity: with remote_fetch enabled a moonshot key alone (the F2
+    /// acceptance shape: no subscription login) DOES arm the prefetch, and the
+    /// credential-less default still doesn't.
     #[test]
-    #[serial]
     fn prefetch_env_resolves_when_remote_fetch_enabled() {
-        let _unset = EnvGuard::unset("XAI_API_KEY");
-        let _unset_legacy = EnvGuard::unset("KIGI_CODE_XAI_API_KEY");
-        let endpoints = config::EndpointsConfig {
-            deployment_key: Some("deploy-key".to_owned()),
-            ..config::EndpointsConfig::default()
-        };
-        assert!(resolve_prefetch_env_from_parts(None, endpoints, true).is_some());
+        let env = resolve_prefetch_env_from_parts(
+            None,
+            config::EndpointsConfig::default(),
+            keys(None, Some("sk-ai")),
+            true,
+        );
         assert!(
-            resolve_prefetch_env_from_parts(None, config::EndpointsConfig::default(), true)
-                .is_none(),
+            env.is_some(),
+            "a moonshot API key alone must arm the startup model sync (PRD F2)",
+        );
+        assert!(
+            resolve_prefetch_env_from_parts(
+                None,
+                config::EndpointsConfig::default(),
+                PlatformApiKeys::default(),
+                true,
+            )
+            .is_none(),
             "no credentials and no custom endpoint must stay a no-prefetch launch",
         );
     }
@@ -3383,6 +3629,7 @@ mod tests {
             reasoning_effort: None,
             supports_reasoning_effort: false,
             reasoning_efforts: Vec::new(),
+            capabilities: Vec::new(),
             supports_backend_search: false,
             compactions_remaining: None,
             compaction_at_tokens: None,
@@ -3405,7 +3652,7 @@ mod tests {
                 Some("Grok Fast"),
             ),
         ];
-        let map = build_prefetched_map(entries, None);
+        let map = build_prefetched_map(entries);
 
         assert_eq!(map.len(), 3, "all three entries should survive");
         assert!(map.contains_key("auto"));
@@ -3425,7 +3672,7 @@ mod tests {
             make_entry_config("model-a", Some("Model A")),
             make_entry_config("model-b", Some("Model B")),
         ];
-        let map = build_prefetched_map(entries, None);
+        let map = build_prefetched_map(entries);
 
         assert_eq!(map.len(), 2);
         assert!(map.contains_key("model-a"));
@@ -3439,7 +3686,7 @@ mod tests {
             make_entry_config_with_id(Some("grok-build"), "grok-build", Some("First")),
             make_entry_config_with_id(Some("grok-build"), "grok-build", Some("Second")),
         ];
-        let map = build_prefetched_map(entries, None);
+        let map = build_prefetched_map(entries);
 
         assert_eq!(map.len(), 1, "duplicate id: second overwrites first");
         assert_eq!(map["grok-build"].info.name.as_deref(), Some("Second"));
@@ -3472,7 +3719,7 @@ mod tests {
             "grok-build",
             Some("Grok Build"),
         )];
-        let map = build_prefetched_map(entries, None);
+        let map = build_prefetched_map(entries);
 
         assert_eq!(map.len(), 1);
         assert!(map.contains_key("grok-build"));
@@ -3596,5 +3843,396 @@ mod tests {
                 (id.clone(), acp::ModelInfo::new(id, (*k).to_string()))
             })
             .collect()
+    }
+
+    // ── PRD F2/F4 wiremock suite ─────────────────────────────────────
+
+    use wiremock::matchers::{header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn f4_listing() -> serde_json::Value {
+        serde_json::json!({
+            "data": [
+                {
+                    "id": "kimi-for-coding",
+                    "context_length": 262144,
+                    "supports_reasoning": true,
+                    "supports_image_in": true,
+                    "supports_video_in": false,
+                    "display_name": "k2.6-code-preview"
+                },
+                { "id": "kimi-latest", "context_length": 131072 }
+            ]
+        })
+    }
+
+    fn proxied_endpoints(server_uri: &str) -> config::EndpointsConfig {
+        config::EndpointsConfig {
+            cli_chat_proxy_base_url: Some(server_uri.to_string()),
+            models_base_url: None,
+            models_list_url: None,
+            ..config::EndpointsConfig::default()
+        }
+    }
+
+    /// Happy path: `GET {base}/models` with the OAuth bearer, F4 wire shape
+    /// → managed `{platform_id}/{model_id}` keys, display_name → name,
+    /// context_length → context_window, derived capabilities, etag captured,
+    /// and NO credential material on the raw entries (cache safety).
+    #[tokio::test]
+    async fn wiremock_platforms_fetch_happy_path_maps_f4_contract() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/models"))
+            .and(header("Authorization", "Bearer oauth-token"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("etag", "\"e1\"")
+                    .set_body_json(f4_listing()),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let endpoints = proxied_endpoints(&server.uri());
+        let auth = KimiAuth {
+            key: "oauth-token".into(),
+            ..KimiAuth::test_default()
+        };
+        let result = tokio::task::spawn_blocking(move || {
+            crate::remote::fetch_models_blocking(
+                &endpoints,
+                Some(&auth),
+                ModelFetchAuth::Platforms,
+                &PlatformApiKeys::default(),
+            )
+        })
+        .await
+        .unwrap()
+        .expect("fetch should succeed");
+
+        assert!(!result.oauth_unauthorized);
+        assert_eq!(result.etag.as_deref(), Some("\"e1\""));
+        let map = build_prefetched_map(result.models);
+        assert_eq!(
+            map.keys().collect::<Vec<_>>(),
+            vec!["kimi-code/kimi-for-coding", "kimi-code/kimi-latest"],
+            "entries must be keyed {{platform_id}}/{{model_id}} in server order"
+        );
+        let entry = map.get("kimi-code/kimi-for-coding").unwrap();
+        assert_eq!(entry.info.model, "kimi-for-coding");
+        assert_eq!(entry.info.name.as_deref(), Some("k2.6-code-preview"));
+        assert_eq!(entry.info.context_window.get(), 262_144);
+        assert_eq!(
+            entry.info.capabilities,
+            vec![
+                kigi_models::ModelCapability::Thinking,
+                kigi_models::ModelCapability::ImageIn
+            ],
+            "capabilities must derive from the wire flags"
+        );
+        assert!(
+            !entry.info.supported_in_api,
+            "subscription models are OAuth-only"
+        );
+        assert!(
+            entry.api_key.is_none() && entry.env_key.is_none(),
+            "no credential material on OAuth-platform entries"
+        );
+        // Missing display_name falls back to the id; missing flags default off.
+        let second = map.get("kimi-code/kimi-latest").unwrap();
+        assert_eq!(second.info.name.as_deref(), Some("kimi-latest"));
+        assert!(second.info.capabilities.is_empty());
+        assert_eq!(second.info.context_window.get(), 131_072);
+    }
+
+    /// Moonshot open-platform fetch: `kimi-k` prefix filter applied, entries
+    /// carry env-var NAMES (never key values), and route at the platform base.
+    #[tokio::test]
+    #[serial]
+    async fn wiremock_moonshot_fetch_filters_prefix_and_stamps_env_key_names() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/models"))
+            .and(header("Authorization", "Bearer sk-cn-secret"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [
+                    { "id": "kimi-k2-turbo-preview", "context_length": 262144 },
+                    { "id": "moonshot-v1-8k", "context_length": 8192 }
+                ]
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let _base = EnvGuard::set(kigi_models::MOONSHOT_CN_BASE_URL_ENV, server.uri());
+
+        let endpoints = config::EndpointsConfig::default();
+        let keys = PlatformApiKeys::test_keys(Some("sk-cn-secret"), None);
+        let result = tokio::task::spawn_blocking(move || {
+            crate::remote::fetch_models_blocking(&endpoints, None, ModelFetchAuth::Platforms, &keys)
+        })
+        .await
+        .unwrap()
+        .expect("moonshot-only fetch should succeed without any OAuth session");
+
+        let map = build_prefetched_map(result.models);
+        assert_eq!(
+            map.keys().collect::<Vec<_>>(),
+            vec!["moonshot-cn/kimi-k2-turbo-preview"],
+            "non-kimi-k ids must be filtered out"
+        );
+        let entry = map.get("moonshot-cn/kimi-k2-turbo-preview").unwrap();
+        assert_eq!(entry.info.base_url, server.uri());
+        assert!(
+            entry.api_key.is_none(),
+            "fetched entries must never embed key values (they are persisted to disk)"
+        );
+        assert_eq!(
+            entry.env_key.as_ref().map(|k| k.names()),
+            Some(vec!["KIGI_MOONSHOT_CN_API_KEY", "KIGI_MOONSHOT_API_KEY"]),
+            "entries carry the env-key NAMES for request-time resolution"
+        );
+        // kimi-k2 prefix rule.
+        assert_eq!(
+            entry.info.capabilities,
+            vec![
+                kigi_models::ModelCapability::Thinking,
+                kigi_models::ModelCapability::ImageIn,
+                kigi_models::ModelCapability::VideoIn
+            ]
+        );
+        assert!(entry.info.supported_in_api);
+    }
+
+    /// Port of kimi-cli `refresh_managed_models`' 401 handling: an OAuth 401
+    /// forces one token refresh and one retry with the rotated bearer.
+    #[tokio::test]
+    #[serial]
+    async fn wiremock_oauth_401_forces_refresh_and_retries_once() {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_test_writer()
+            .try_init();
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/models"))
+            .and(header("Authorization", "Bearer stale-token"))
+            .respond_with(ResponseTemplate::new(401))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/models"))
+            .and(header("Authorization", "Bearer fresh-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(f4_listing()))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let cache_dir = tempfile::TempDir::new().unwrap();
+        let _cache = EnvGuard::set("KIGI_MODELS_CACHE_DIR", cache_dir.path().to_str().unwrap());
+
+        struct SwapRefresher;
+        #[async_trait::async_trait]
+        impl crate::auth::refresh::TokenRefresher for SwapRefresher {
+            async fn refresh(
+                &self,
+                _r: crate::auth::manager::RefreshReason,
+            ) -> crate::auth::refresh::RefreshOutcome {
+                crate::auth::refresh::RefreshOutcome::Success(Box::new(KimiAuth {
+                    key: "fresh-token".into(),
+                    refresh_token: Some("rt-2".into()),
+                    expires_at: Some(chrono::Utc::now() + chrono::Duration::hours(1)),
+                    ..KimiAuth::test_default()
+                }))
+            }
+        }
+
+        let auth_dir = tempfile::TempDir::new().unwrap();
+        let auth_manager = Arc::new(AuthManager::new(auth_dir.path(), KimiCodeConfig::default()));
+        auth_manager.hot_swap(KimiAuth {
+            key: "stale-token".into(),
+            refresh_token: Some("rt-1".into()),
+            // Minted long ago: the recovery state machine skips the refresh
+            // for freshly-minted tokens (refresh-storm grace).
+            create_time: chrono::Utc::now() - chrono::Duration::hours(2),
+            expires_at: Some(chrono::Utc::now() + chrono::Duration::hours(1)),
+            ..KimiAuth::test_default()
+        });
+        auth_manager.set_refresher(Arc::new(SwapRefresher));
+
+        let mut cfg = config::Config::default();
+        cfg.endpoints.cli_chat_proxy_base_url = Some(server.uri());
+        let mgr = ModelsManager::new(
+            None,
+            IndexMap::new(),
+            acp::ModelId::new("default"),
+            auth_manager.clone(),
+            cfg.clone(),
+        );
+
+        let models = mgr
+            .fetch_catalog_with_oauth_retry(&cfg)
+            .await
+            .expect("401 must trigger refresh + one retry with the rotated bearer");
+        assert!(models.contains_key("kimi-code/kimi-for-coding"));
+        assert_eq!(
+            auth_manager.current().expect("refreshed").key,
+            "fresh-token",
+            "the 401 recovery must have rotated the bearer"
+        );
+        assert_eq!(
+            server.received_requests().await.unwrap().len(),
+            2,
+            "exactly one retry after the refresh"
+        );
+    }
+
+    /// PRD F4 failure ladder: sync failure → last cache (even stale, same
+    /// fetch plan only); no cache → the bundled offline table; and a FRESH
+    /// cache short-circuits the network entirely.
+    #[test]
+    #[serial]
+    fn sync_failure_uses_last_cache_then_bundled_table() {
+        let cache_dir = tempfile::TempDir::new().unwrap();
+        let _cache = EnvGuard::set("KIGI_MODELS_CACHE_DIR", cache_dir.path().to_str().unwrap());
+        // Unroutable server: every fetch fails fast with connection refused.
+        let endpoints = proxied_endpoints("http://127.0.0.1:9");
+        let keys = PlatformApiKeys::default();
+        let auth = KimiAuth {
+            key: "tok".into(),
+            ..KimiAuth::test_default()
+        };
+
+        // 1. No cache at all → fetch failure → no models: callers resolve the
+        //    bundled offline table.
+        let outcome = prefetch_models_blocking_gated(
+            &endpoints,
+            Some(&auth),
+            ModelFetchAuth::Platforms,
+            &keys,
+            true,
+        );
+        assert!(outcome.models.is_none(), "no cache and no network → None");
+        let bundled = resolve_model_catalog(&config::Config::default(), None);
+        assert!(bundled.contains_key("kimi-code/kimi-for-coding"));
+        assert!(bundled.contains_key("moonshot-cn/kimi-k2-thinking-turbo"));
+        assert!(bundled.contains_key("moonshot-ai/kimi-k2-turbo-preview"));
+
+        // 2. A STALE cache for the same fetch plan is served on sync failure.
+        let origin =
+            crate::remote::models_fetch_origin(&endpoints, ModelFetchAuth::Platforms, true, &keys);
+        let cache = ModelsCacheManager::new();
+        let stale = ModelsCache {
+            fetched_at: Utc::now() - ChronoDuration::seconds(86_400),
+            grok_version: Some(kigi_version::VERSION.to_string()),
+            auth_method: Some(CacheAuthMethod::Platforms),
+            origin: Some(origin),
+            etag: None,
+            models: make_prefetched(&["kimi-code/cached-model"]),
+        };
+        cache.atomic_write(&stale);
+        let outcome = prefetch_models_blocking_gated(
+            &endpoints,
+            Some(&auth),
+            ModelFetchAuth::Platforms,
+            &keys,
+            true,
+        );
+        let models = outcome
+            .models
+            .expect("stale cache must beat the bundled table on sync failure");
+        assert!(models.contains_key("kimi-code/cached-model"));
+
+        // 3. A FRESH cache short-circuits the network (offline continuity).
+        let fresh = ModelsCache {
+            fetched_at: Utc::now(),
+            ..stale
+        };
+        cache.atomic_write(&fresh);
+        let outcome = prefetch_models_blocking_gated(
+            &endpoints,
+            Some(&auth),
+            ModelFetchAuth::Platforms,
+            &keys,
+            true,
+        );
+        assert!(
+            outcome
+                .models
+                .expect("fresh cache must serve without network")
+                .contains_key("kimi-code/cached-model")
+        );
+    }
+
+    /// PRD F4 default-thinking seam: capabilities from the catalog drive the
+    /// thinking default (thinking/always_thinking → on; else off).
+    #[test]
+    fn model_default_thinking_follows_capabilities() {
+        let mgr = test_manager();
+        let mut thinking = ModelEntry {
+            info: config::ModelInfo::fallback("kimi-thinking-x"),
+            api_key: None,
+            env_key: None,
+            api_base_url: None,
+        };
+        thinking.info.capabilities = vec![kigi_models::ModelCapability::AlwaysThinking];
+        mgr.insert_test_entry("kimi-code/kimi-thinking-x", thinking);
+        let mut plain = ModelEntry {
+            info: config::ModelInfo::fallback("kimi-plain-x"),
+            api_key: None,
+            env_key: None,
+            api_base_url: None,
+        };
+        plain.info.capabilities = vec![kigi_models::ModelCapability::ImageIn];
+        mgr.insert_test_entry("kimi-code/kimi-plain-x", plain);
+
+        assert!(mgr.model_default_thinking("kimi-code/kimi-thinking-x"));
+        // Routing-slug lookup resolves to the catalog key too.
+        assert!(mgr.model_default_thinking("kimi-thinking-x"));
+        assert!(!mgr.model_default_thinking("kimi-code/kimi-plain-x"));
+        assert!(!mgr.model_default_thinking("unknown-model"));
+    }
+
+    /// A cache written for a DIFFERENT fetch plan (different platform set)
+    /// must not be served — not even as the stale last resort.
+    #[test]
+    #[serial]
+    fn stale_cache_from_other_fetch_plan_is_not_served() {
+        let cache_dir = tempfile::TempDir::new().unwrap();
+        let _cache = EnvGuard::set("KIGI_MODELS_CACHE_DIR", cache_dir.path().to_str().unwrap());
+        let endpoints = proxied_endpoints("http://127.0.0.1:9");
+        // Cache written when a moonshot key was ALSO configured...
+        let with_key_origin = crate::remote::models_fetch_origin(
+            &endpoints,
+            ModelFetchAuth::Platforms,
+            true,
+            &PlatformApiKeys::test_keys(Some("sk"), None),
+        );
+        let cache = ModelsCacheManager::new();
+        cache.atomic_write(&ModelsCache {
+            fetched_at: Utc::now() - ChronoDuration::seconds(86_400),
+            grok_version: Some(kigi_version::VERSION.to_string()),
+            auth_method: Some(CacheAuthMethod::Platforms),
+            origin: Some(with_key_origin),
+            etag: None,
+            models: make_prefetched(&["moonshot-cn/poisoned"]),
+        });
+        // ... must be a miss for an OAuth-only plan.
+        let auth = KimiAuth {
+            key: "tok".into(),
+            ..KimiAuth::test_default()
+        };
+        let outcome = prefetch_models_blocking_gated(
+            &endpoints,
+            Some(&auth),
+            ModelFetchAuth::Platforms,
+            &PlatformApiKeys::default(),
+            true,
+        );
+        assert!(
+            outcome.models.is_none(),
+            "an origin-mismatched cache must never be adopted"
+        );
     }
 }

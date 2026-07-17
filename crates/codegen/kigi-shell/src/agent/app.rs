@@ -173,11 +173,12 @@ pub(crate) async fn run_auto_update_checker(
 async fn prefetch_models(agent_config: &AgentConfig) -> Option<IndexMap<String, ModelEntry>> {
     let auth = agent_config.create_auth_manager().current();
     let endpoints = agent_config.endpoints.clone();
-    let fetch_auth = ModelFetchAuth::resolve(&endpoints, auth.is_some());
+    let fetch_auth = ModelFetchAuth::resolve(&endpoints);
+    let platform_keys = crate::agent::models::PlatformApiKeys::resolve(&agent_config.platforms);
 
-    if auth.is_some() || endpoints.has_custom_endpoint() || fetch_auth != ModelFetchAuth::Session {
+    if auth.is_some() || endpoints.has_custom_endpoint() || platform_keys.any() {
         tokio::task::spawn_blocking(move || {
-            prefetch_models_blocking(&endpoints, auth.as_ref(), fetch_auth)
+            prefetch_models_blocking(&endpoints, auth.as_ref(), fetch_auth, &platform_keys)
         })
         .await
         .ok()
@@ -617,7 +618,9 @@ pub async fn run_leader(
 
     let auth_for_prefetch: Option<KimiAuth> = auth.clone();
     let endpoints_for_prefetch = agent_config.endpoints.clone();
-    let fetch_auth_for_prefetch = ModelFetchAuth::resolve(&endpoints_for_prefetch, auth.is_some());
+    let fetch_auth_for_prefetch = ModelFetchAuth::resolve(&endpoints_for_prefetch);
+    let platform_keys_for_prefetch =
+        crate::agent::models::PlatformApiKeys::resolve(&agent_config.platforms);
     // The shared pair helper owns the remote_fetch gate for both halves, so a
     // disabled knob cannot block leader readiness on settings retries.
     let (prefetched_models, remote_settings) = tokio::task::spawn_blocking(move || {
@@ -625,6 +628,7 @@ pub async fn run_leader(
             &endpoints_for_prefetch,
             auth_for_prefetch.as_ref(),
             fetch_auth_for_prefetch,
+            &platform_keys_for_prefetch,
         )
     })
     .await

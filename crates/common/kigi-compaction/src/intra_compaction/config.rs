@@ -205,7 +205,7 @@ pub struct IntraCompactionConfig {
 /// Override order: agent field (non-blank) → service YAML (inter) /
 /// agent config → this constant. See crate-level docs on
 /// [`crate::DEFAULT_COMPACTION_MODEL_NAME`].
-pub const DEFAULT_COMPACTION_MODEL_NAME: &str = "grok-4.20";
+pub const DEFAULT_COMPACTION_MODEL_NAME: &str = "kimi-for-coding";
 
 impl IntraCompactionConfig {
     /// Agent field; blank/`None` → [`DEFAULT_COMPACTION_MODEL_NAME`].

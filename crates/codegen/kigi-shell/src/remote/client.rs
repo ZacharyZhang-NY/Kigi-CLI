@@ -655,97 +655,115 @@ pub(crate) const DEFAULT_CONTEXT_WINDOW: u64 = 256_000;
 struct ModelsResponse {
     data: Vec<serde_json::Value>,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum EndpointAuth {
-    ApiKey,
-    Session,
-}
-struct ListModelsEndpoint {
-    url: String,
-    auth: EndpointAuth,
-}
-/// The `/v1/models` URL [`fetch_models_blocking`] hits for this
-/// endpoints/auth shape. Doubles as the models disk-cache origin key: cached
-/// entries embed absolute `base_url`s from the backend that served them, so a
-/// catalog fetched from one backend (env override, another deployment, a
-/// test's mock server) must be a cache miss for any other backend.
-pub(crate) fn models_list_url(
+/// The models-fetch origin key for this endpoints/auth shape. Used as the
+/// models disk-cache origin: cached entries embed absolute `base_url`s from
+/// the backend(s) that served them, so a catalog fetched against one fetch
+/// plan (env override, different set of platform credentials, a test's mock
+/// server) must be a cache miss for any other. Encodes URLs and enabled
+/// platform NAMES only — never credential values.
+pub(crate) fn models_fetch_origin(
     endpoints: &crate::agent::config::EndpointsConfig,
     fetch_auth: crate::agent::models::ModelFetchAuth,
+    has_oauth: bool,
+    platform_keys: &crate::agent::models::PlatformApiKeys,
 ) -> String {
-    ListModelsEndpoint::from_endpoints(endpoints, fetch_auth).url
-}
-impl ListModelsEndpoint {
-    fn from_endpoints(
-        endpoints: &crate::agent::config::EndpointsConfig,
-        fetch_auth: crate::agent::models::ModelFetchAuth,
-    ) -> Self {
-        if endpoints.has_custom_endpoint() {
-            Self {
-                url: endpoints.resolve_models_list_url(),
-                auth: EndpointAuth::ApiKey,
-            }
-        } else if fetch_auth == crate::agent::models::ModelFetchAuth::ApiKey {
-            Self {
-                url: format!("{}/models", endpoints.xai_api_base_url),
-                auth: EndpointAuth::ApiKey,
-            }
-        } else {
-            Self {
-                url: endpoints.resolve_models_list_url(),
-                auth: EndpointAuth::Session,
-            }
+    match fetch_auth {
+        crate::agent::models::ModelFetchAuth::CustomEndpoint => endpoints.resolve_models_list_url(),
+        crate::agent::models::ModelFetchAuth::Platforms => {
+            let parts: Vec<String> = enabled_platforms(has_oauth, platform_keys)
+                .into_iter()
+                .map(|p| format!("{}={}", p.as_str(), platform_models_url(p, endpoints)))
+                .collect();
+            format!("platforms[{}]", parts.join(";"))
         }
     }
 }
-/// Fetch models from an OpenAI-compatible `/v1/models` endpoint.
-/// Fetch result: model entries + optional etag from response.
+/// The platforms with usable credentials, in registry order (kimi-code first
+/// so "default model = first list item" favors the subscription).
+fn enabled_platforms(
+    has_oauth: bool,
+    platform_keys: &crate::agent::models::PlatformApiKeys,
+) -> Vec<kigi_models::PlatformId> {
+    kigi_models::PlatformId::ALL
+        .into_iter()
+        .filter(|p| {
+            if p.uses_oauth() {
+                has_oauth
+            } else {
+                platform_keys.key_for(*p).is_some()
+            }
+        })
+        .collect()
+}
+/// `{base}/models` for one platform. The subscription platform resolves its
+/// base through the endpoints config (`cli_chat_proxy_base_url` override,
+/// else `KIGI_CODE_BASE_URL` / production default via kigi-env); the open
+/// platforms use their fixed bases.
+fn platform_models_url(
+    platform: kigi_models::PlatformId,
+    endpoints: &crate::agent::config::EndpointsConfig,
+) -> String {
+    let base = if platform.uses_oauth() {
+        endpoints.proxy_url()
+    } else {
+        platform.base_url()
+    };
+    format!("{}/models", base.trim_end_matches('/'))
+}
+/// Fetch result: model entries + optional etag from the subscription platform.
 pub struct FetchModelsResult {
     pub models: Vec<crate::agent::config::ModelEntryConfig>,
     pub etag: Option<String>,
+    /// The OAuth platform answered 401. The async layer forces a token
+    /// refresh and retries once (port of kimi-cli `refresh_managed_models`).
+    pub oauth_unauthorized: bool,
 }
+/// Fetch the model catalog (PRD F4).
+///
+/// - Custom endpoint mode (`KIGI_MODELS_BASE_URL` / `models_list_url`): a
+///   single OpenAI-compatible listing fetched with the BYOK key or session
+///   bearer, parsed leniently ([`parse_remote_model_value`]).
+/// - Otherwise, the fixed platform registry: `GET {base}/models` with
+///   `Authorization: Bearer <oauth-token or api-key>` per enabled platform,
+///   parsed per the F4 wire contract with capability derivation and the
+///   `kimi-k` prefix filter for the open platforms.
+///
+/// Succeeds when at least one platform delivers; per-platform failures are
+/// logged (status codes only, never credentials).
 pub(crate) fn fetch_models_blocking(
     endpoints: &crate::agent::config::EndpointsConfig,
     auth: Option<&KimiAuth>,
     fetch_auth: crate::agent::models::ModelFetchAuth,
+    platform_keys: &crate::agent::models::PlatformApiKeys,
 ) -> Result<FetchModelsResult, BackendError> {
-    let client = crate::http::shared_blocking_client();
-    let source = ListModelsEndpoint::from_endpoints(endpoints, fetch_auth);
-    let inference_base_url = endpoints.resolve_inference_base_url();
-    tracing::info!("Fetching models from {}", source.url);
-    let mut request = client.get(&source.url);
-    match source.auth {
-        EndpointAuth::ApiKey => {
-            let api_key = crate::agent::auth_method::read_xai_api_key_env()
-                .or_else(|_| {
-                    auth.map(|a| a.key.clone())
-                        .ok_or(std::env::VarError::NotPresent)
-                })
-                .map_err(|_| {
-                    BackendError::Auth(
-                        "No API key for custom models endpoint. Set XAI_API_KEY.".into(),
-                    )
-                })?;
-            request = request.header("Authorization", format!("Bearer {}", api_key));
+    match fetch_auth {
+        crate::agent::models::ModelFetchAuth::CustomEndpoint => {
+            fetch_custom_endpoint_models_blocking(endpoints, auth)
         }
-        EndpointAuth::Session => {
-            let auth = auth.ok_or_else(|| {
-                BackendError::Auth("No auth credentials for cli-chat-proxy".into())
-            })?;
-            request = request
-                .header("Authorization", format!("Bearer {}", auth.key))
-                .header("X-XAI-Token-Auth", "xai-grok-cli")
-                .header("x-userid", &auth.user_id)
-                .header("x-grok-client-version", kigi_version::VERSION)
-                .header(
-                    crate::http::CLIENT_MODE_HEADER,
-                    crate::http::process_client_mode(),
-                );
-            if let Some(email) = &auth.email {
-                request = request.header("x-email", email);
-            }
+        crate::agent::models::ModelFetchAuth::Platforms => {
+            fetch_platform_models_blocking(endpoints, auth, platform_keys)
         }
     }
+}
+fn fetch_custom_endpoint_models_blocking(
+    endpoints: &crate::agent::config::EndpointsConfig,
+    auth: Option<&KimiAuth>,
+) -> Result<FetchModelsResult, BackendError> {
+    let client = crate::http::shared_blocking_client();
+    let url = endpoints.resolve_models_list_url();
+    let inference_base_url = endpoints.resolve_inference_base_url();
+    tracing::info!("Fetching models from custom endpoint {}", url);
+    let api_key = crate::agent::auth_method::read_xai_api_key_env()
+        .or_else(|_| {
+            auth.map(|a| a.key.clone())
+                .ok_or(std::env::VarError::NotPresent)
+        })
+        .map_err(|_| {
+            BackendError::Auth("No API key for custom models endpoint. Set XAI_API_KEY.".into())
+        })?;
+    let request = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", api_key));
     let response = request.send()?;
     if !response.status().is_success() {
         let status = response.status().as_u16();
@@ -759,11 +777,7 @@ pub(crate) fn fetch_models_blocking(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
     let models_response: ModelsResponse = response.json()?;
-    tracing::info!(
-        "Fetched {} models from {}",
-        models_response.data.len(),
-        source.url
-    );
+    tracing::info!("Fetched {} models from {}", models_response.data.len(), url);
     let mut models = Vec::with_capacity(models_response.data.len());
     for (idx, value) in models_response.data.into_iter().enumerate() {
         match parse_remote_model_value(&value, &inference_base_url) {
@@ -776,7 +790,201 @@ pub(crate) fn fetch_models_blocking(
             }
         }
     }
-    Ok(FetchModelsResult { models, etag })
+    Ok(FetchModelsResult {
+        models,
+        etag,
+        oauth_unauthorized: false,
+    })
+}
+/// Registry fetch across all platforms with usable credentials.
+fn fetch_platform_models_blocking(
+    endpoints: &crate::agent::config::EndpointsConfig,
+    auth: Option<&KimiAuth>,
+    platform_keys: &crate::agent::models::PlatformApiKeys,
+) -> Result<FetchModelsResult, BackendError> {
+    let enabled = enabled_platforms(auth.is_some(), platform_keys);
+    if enabled.is_empty() {
+        return Err(BackendError::Auth(
+            "No platform credentials: log in with `kigi login` or configure a moonshot API key \
+             (KIGI_MOONSHOT_API_KEY or [platforms.*] in ~/.kigi/config.toml)."
+                .into(),
+        ));
+    }
+
+    let mut models = Vec::new();
+    let mut etag = None;
+    let mut oauth_unauthorized = false;
+    let mut successes = 0usize;
+    let mut last_error: Option<BackendError> = None;
+    for platform in &enabled {
+        let bearer = if platform.uses_oauth() {
+            auth.map(|a| a.key.clone())
+                .expect("enabled_platforms gated on auth presence")
+        } else {
+            platform_keys
+                .key_for(*platform)
+                .expect("enabled_platforms gated on key presence")
+                .to_owned()
+        };
+        match fetch_one_platform_models(*platform, endpoints, &bearer) {
+            Ok((platform_models, platform_etag)) => {
+                tracing::info!(
+                    platform = platform.as_str(),
+                    count = platform_models.len(),
+                    "platform models fetch succeeded"
+                );
+                successes += 1;
+                if platform.uses_oauth() {
+                    etag = platform_etag;
+                }
+                models.extend(platform_models);
+            }
+            Err(e) => {
+                if platform.uses_oauth()
+                    && matches!(&e, BackendError::RequestFailed { status: 401, .. })
+                {
+                    oauth_unauthorized = true;
+                }
+                tracing::warn!(
+                    platform = platform.as_str(),
+                    error = %e,
+                    "platform models fetch failed"
+                );
+                last_error = Some(e);
+            }
+        }
+    }
+
+    if successes == 0 {
+        // All enabled platforms failed. When the failure includes an OAuth
+        // 401, return `Ok` with the flag set (and no models) so the async
+        // layer can force a token refresh and retry — an `Err` would drop
+        // the signal. Non-401 failures propagate as the last error.
+        if oauth_unauthorized {
+            return Ok(FetchModelsResult {
+                models: Vec::new(),
+                etag: None,
+                oauth_unauthorized: true,
+            });
+        }
+        return Err(last_error.unwrap_or_else(|| {
+            BackendError::Auth("no platform models fetch was attempted".into())
+        }));
+    }
+    Ok(FetchModelsResult {
+        models,
+        etag,
+        oauth_unauthorized,
+    })
+}
+/// `GET {base}/models` for one platform (PRD F4 wire contract):
+/// `Authorization: Bearer <token>` → `{data:[{id, context_length,
+/// supports_reasoning, supports_image_in, supports_video_in, display_name?}]}`.
+/// Applies the platform's `kimi-k` prefix filter and capability derivation,
+/// and keys each entry `{platform_id}/{model_id}`.
+fn fetch_one_platform_models(
+    platform: kigi_models::PlatformId,
+    endpoints: &crate::agent::config::EndpointsConfig,
+    bearer: &str,
+) -> Result<(Vec<crate::agent::config::ModelEntryConfig>, Option<String>), BackendError> {
+    let client = crate::http::shared_blocking_client();
+    let url = platform_models_url(platform, endpoints);
+    tracing::info!(platform = platform.as_str(), url = %url, "fetching platform models");
+    let response = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", bearer))
+        .send()?;
+    if !response.status().is_success() {
+        let status = response.status().as_u16();
+        let body = response.text().unwrap_or_default();
+        return Err(BackendError::RequestFailed { status, body });
+    }
+    let etag = response
+        .headers()
+        .get("etag")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    let listing: kigi_models::WireModelsResponse = response.json()?;
+    let total = listing.data.len();
+    let filtered = kigi_models::filter_allowed_models(platform, listing.data);
+    if filtered.len() != total {
+        tracing::info!(
+            platform = platform.as_str(),
+            total,
+            kept = filtered.len(),
+            "applied platform model-prefix filter"
+        );
+    }
+    let base_url = if platform.uses_oauth() {
+        endpoints.proxy_url()
+    } else {
+        platform.base_url()
+    };
+    let models = filtered
+        .into_iter()
+        .map(|wire| platform_wire_model_to_entry(platform, wire, &base_url))
+        .collect();
+    Ok((models, etag))
+}
+/// Map one F4 wire model to a catalog entry config.
+///
+/// SECURITY: the entry carries only env-var NAMES (`env_key`) for the open
+/// platforms — never key values — because raw fetched entries are persisted
+/// to the models disk cache. Config-file keys are stamped in-memory later by
+/// `resolve_model_list`'s platform-credentials layer.
+fn platform_wire_model_to_entry(
+    platform: kigi_models::PlatformId,
+    wire: kigi_models::WireModel,
+    base_url: &str,
+) -> crate::agent::config::ModelEntryConfig {
+    let capabilities = wire.capabilities();
+    let context_window = std::num::NonZeroU64::new(wire.context_length).unwrap_or_else(|| {
+        tracing::debug!(
+            model = %wire.id,
+            default = DEFAULT_CONTEXT_WINDOW,
+            "platform model missing context_length; using default"
+        );
+        std::num::NonZeroU64::new(DEFAULT_CONTEXT_WINDOW).expect("non-zero")
+    });
+    let env_key = (!platform.uses_oauth())
+        .then(|| crate::agent::config::EnvKeys::new(platform.api_key_env_names().iter().copied()));
+    crate::agent::config::ModelEntryConfig {
+        id: Some(platform.managed_model_key(&wire.id)),
+        name: Some(wire.display_name.clone().unwrap_or_else(|| wire.id.clone())),
+        model: wire.id,
+        base_url: base_url.to_owned(),
+        description: None,
+        max_completion_tokens: None,
+        temperature: None,
+        top_p: None,
+        api_key: None,
+        env_key,
+        api_backend: Default::default(),
+        auth_scheme: None,
+        reasoning_effort: None,
+        supports_reasoning_effort: false,
+        reasoning_efforts: Vec::new(),
+        capabilities,
+        extra_headers: IndexMap::new(),
+        context_window,
+        auto_compact_threshold_percent: None,
+        system_prompt_label: None,
+        api_base_url: None,
+        use_concise: false,
+        agent_type: crate::agent::config::default_agent_type(),
+        inference_idle_timeout_secs: None,
+        max_retries: None,
+        hidden: false,
+        // Subscription models require the OAuth session; open-platform
+        // models are usable by API-key users.
+        supported_in_api: !platform.uses_oauth(),
+        supports_backend_search: false,
+        compactions_remaining: None,
+        compaction_at_tokens: None,
+        show_model_fingerprint: false,
+        stream_tool_calls: None,
+        laziness_detector: Default::default(),
+    }
 }
 /// Parse a single model entry from the /models-v2 response.
 /// Used by both initial model fetch and session-resume metadata refresh.
@@ -881,6 +1089,12 @@ pub fn parse_remote_model_value(
             .or_else(|| meta.and_then(|m| m.get("reasoningEfforts")))
             .and_then(|v| v.as_array())
             .map(|arr| kigi_sampling_types::parse_reasoning_effort_options(arr))
+            .unwrap_or_default(),
+        capabilities: obj
+            .get("capabilities")
+            .and_then(|v| {
+                serde_json::from_value::<Vec<kigi_models::ModelCapability>>(v.clone()).ok()
+            })
             .unwrap_or_default(),
         supports_backend_search: obj
             .get("supportsBackendSearch")
@@ -1749,43 +1963,81 @@ mod tests {
             "https://registry.acme.com/api/list-models"
         );
     }
-    /// INVARIANT: the `/models` fetch URL + auth scheme match the auth mode —
-    /// Session/Deployment → cli-chat-proxy (Session auth), never the inference host;
-    /// ApiKey → `xai_api_base_url` (ApiKey, public default when unset); a custom
-    /// models endpoint → that URL verbatim.
+    /// INVARIANT: each platform's `/models` URL matches its registry base —
+    /// kimi-code → the subscription proxy (config override respected, else the
+    /// kigi-env default), moonshot platforms → their fixed bases — and the
+    /// cache-origin key encodes the enabled fetch plan without any secrets.
     #[test]
     #[serial_test::serial]
-    fn models_fetch_endpoint_matches_auth_mode() {
+    fn platform_models_urls_and_fetch_origin() {
         use crate::agent::config::EndpointsConfig;
-        use crate::agent::models::ModelFetchAuth;
+        use crate::agent::models::{ModelFetchAuth, PlatformApiKeys};
         for k in [
             "KIGI_CLI_CHAT_PROXY_BASE_URL",
-            "KIGI_XAI_API_BASE_URL",
+            "KIGI_CODE_BASE_URL",
             "KIGI_MODELS_LIST_URL",
         ] {
             unsafe { std::env::remove_var(k) };
         }
-        let cfg = EndpointsConfig::from_config_value(
+        let cfg = EndpointsConfig::from_config_value(&toml::Value::Table(Default::default()));
+        assert_eq!(
+            platform_models_url(kigi_models::PlatformId::KimiCode, &cfg),
+            "https://api.kimi.com/coding/v1/models"
+        );
+        assert_eq!(
+            platform_models_url(kigi_models::PlatformId::MoonshotCn, &cfg),
+            "https://api.moonshot.cn/v1/models"
+        );
+        assert_eq!(
+            platform_models_url(kigi_models::PlatformId::MoonshotAi, &cfg),
+            "https://api.moonshot.ai/v1/models"
+        );
+        // Proxy override re-points the subscription platform only.
+        let proxied = EndpointsConfig::from_config_value(
             &toml::from_str(
                 r#"[endpoints]
-                xai_api_base_url = "https://inference.acme-corp.example/xai/v1""#,
+                cli_chat_proxy_base_url = "https://proxy.acme.example/v1""#,
             )
             .unwrap(),
         );
-        let session = ListModelsEndpoint::from_endpoints(&cfg, ModelFetchAuth::Session);
-        assert_eq!(session.url, "https://api.kimi.com/coding/v1/models");
-        assert_eq!(session.auth, EndpointAuth::Session);
-        let deployment = ListModelsEndpoint::from_endpoints(&cfg, ModelFetchAuth::Deployment);
-        assert_eq!(deployment.url, "https://api.kimi.com/coding/v1/models");
-        assert_eq!(deployment.auth, EndpointAuth::Session);
-        let api = ListModelsEndpoint::from_endpoints(&cfg, ModelFetchAuth::ApiKey);
-        assert_eq!(api.url, "https://inference.acme-corp.example/xai/v1/models");
-        assert_eq!(api.auth, EndpointAuth::ApiKey);
-        let default = EndpointsConfig::from_config_value(&toml::Value::Table(Default::default()));
         assert_eq!(
-            ListModelsEndpoint::from_endpoints(&default, ModelFetchAuth::ApiKey).url,
-            "https://api.x.ai/v1/models"
+            platform_models_url(kigi_models::PlatformId::KimiCode, &proxied),
+            "https://proxy.acme.example/v1/models"
         );
+        assert_eq!(
+            platform_models_url(kigi_models::PlatformId::MoonshotCn, &proxied),
+            "https://api.moonshot.cn/v1/models"
+        );
+
+        // Origin key: OAuth-only plan lists kimi-code only; adding a moonshot
+        // key changes the plan (→ cache miss); the key VALUE never appears.
+        let oauth_only = models_fetch_origin(
+            &cfg,
+            ModelFetchAuth::Platforms,
+            true,
+            &PlatformApiKeys::default(),
+        );
+        assert_eq!(
+            oauth_only,
+            "platforms[kimi-code=https://api.kimi.com/coding/v1/models]"
+        );
+        let with_cn = models_fetch_origin(
+            &cfg,
+            ModelFetchAuth::Platforms,
+            true,
+            &crate::agent::models::PlatformApiKeys::test_keys(Some("sk-secret-cn"), None),
+        );
+        assert_ne!(
+            oauth_only, with_cn,
+            "enabling a platform must change the origin"
+        );
+        assert!(with_cn.contains("moonshot-cn=https://api.moonshot.cn/v1/models"));
+        assert!(
+            !with_cn.contains("sk-secret-cn"),
+            "origin key must never embed credential values"
+        );
+
+        // Custom endpoint mode → the explicit list URL verbatim.
         let custom = EndpointsConfig::from_config_value(
             &toml::from_str(
                 r#"[endpoints]
@@ -1793,9 +2045,15 @@ mod tests {
             )
             .unwrap(),
         );
-        let ep = ListModelsEndpoint::from_endpoints(&custom, ModelFetchAuth::Session);
-        assert_eq!(ep.url, "https://models.acme.com/v1/models");
-        assert_eq!(ep.auth, EndpointAuth::ApiKey);
+        assert_eq!(
+            models_fetch_origin(
+                &custom,
+                ModelFetchAuth::CustomEndpoint,
+                false,
+                &PlatformApiKeys::default(),
+            ),
+            "https://models.acme.com/v1/models"
+        );
     }
     /// REGRESSION: `grok setup` must send the deployment key to
     /// the proxy, never the inference endpoint.

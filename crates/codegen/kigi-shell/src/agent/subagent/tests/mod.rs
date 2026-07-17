@@ -3076,6 +3076,7 @@ fn test_model_entry(model_id: &str) -> crate::agent::config::ModelEntry {
             reasoning_effort: None,
             supports_reasoning_effort: false,
             reasoning_efforts: Vec::new(),
+            capabilities: Vec::new(),
             supports_backend_search: false,
             compactions_remaining: None,
             compaction_at_tokens: None,

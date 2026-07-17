@@ -1675,6 +1675,7 @@ fn find_model_by_id_prefers_key_then_falls_back_to_slug() {
             reasoning_effort: None,
             supports_reasoning_effort: false,
             reasoning_efforts: Vec::new(),
+            capabilities: Vec::new(),
             supports_backend_search: false,
             compactions_remaining: None,
             compaction_at_tokens: None,

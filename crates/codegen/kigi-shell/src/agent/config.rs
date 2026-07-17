@@ -854,7 +854,7 @@ pub struct ModelsConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_description: Option<String>,
     /// Model pin for next-prompt suggestions (tab-autocomplete ghost text).
-    /// Unset = remote pin, then the client hint / built-in `grok-build-0.1`
+    /// Unset = remote pin, then the client hint / built-in bundled-model
     /// default with the catalog guard; see `ModelOverrideConfig::resolve`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_suggestion: Option<String>,
@@ -900,6 +900,98 @@ pub struct ModelsConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream_tool_calls: Option<bool>,
 }
+/// `[platforms.<id>]` section from config.toml (PRD F2): API keys for the
+/// fixed platform registry ([`kigi_models::PlatformId`]).
+///
+/// ```toml
+/// [platforms.moonshot-cn]
+/// api_key = "sk-..."
+///
+/// [platforms.moonshot-ai]
+/// api_key = "sk-..."
+/// ```
+///
+/// Env vars win over the config file:
+/// `KIGI_MOONSHOT_CN_API_KEY` / `KIGI_MOONSHOT_AI_API_KEY` (platform-scoped)
+/// then `KIGI_MOONSHOT_API_KEY` (both open platforms). The subscription
+/// platform (`kimi-code`) authenticates via OAuth and takes no API key.
+///
+/// SECURITY: key values are never logged and never re-serialized
+/// (`Config.platforms` is `skip_serializing`); only presence booleans may
+/// appear in diagnostics.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct PlatformsConfig {
+    #[serde(flatten)]
+    pub entries: IndexMap<String, PlatformCredentialConfig>,
+}
+
+impl PlatformsConfig {
+    /// The config-file API key for `platform`, blank-as-unset. Unknown
+    /// platform ids in `[platforms.*]` are warned about at load
+    /// ([`Self::warn_unknown_platforms`]) and never resolve.
+    pub fn config_api_key(&self, platform: kigi_models::PlatformId) -> Option<String> {
+        self.entries
+            .get(platform.as_str())
+            .and_then(|e| e.api_key.as_deref())
+            .filter(|k| !k.trim().is_empty())
+            .map(str::to_owned)
+    }
+
+    /// Warn (once per load) about `[platforms.<id>]` tables that don't name a
+    /// registry platform, so a typo like `moonshot_cn` fails loudly instead of
+    /// silently never matching. Key values are not logged.
+    pub fn warn_unknown_platforms(&self) {
+        for id in self.entries.keys() {
+            if kigi_models::PlatformId::parse(id).is_none() {
+                tracing::warn!(
+                    platform = %id,
+                    known = ?kigi_models::PlatformId::ALL
+                        .iter()
+                        .map(|p| p.as_str())
+                        .collect::<Vec<_>>(),
+                    "[platforms.{id}] does not match any registry platform; its api_key is ignored"
+                );
+            }
+        }
+    }
+}
+
+/// One `[platforms.<id>]` table.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PlatformCredentialConfig {
+    /// API key for this platform. NEVER logged; never re-serialized.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
+}
+
+/// Resolve the API key for an open-platform registry entry:
+/// platform-scoped env > generic `KIGI_MOONSHOT_API_KEY` env > config file.
+/// `None` for the OAuth platform and when nothing is configured.
+/// The returned value must never be logged.
+pub(crate) fn resolve_platform_api_key(
+    platform: kigi_models::PlatformId,
+    platforms: &PlatformsConfig,
+) -> Option<String> {
+    resolve_platform_api_key_with(platform, platforms, |name| std::env::var(name).ok())
+}
+
+/// Testable core of [`resolve_platform_api_key`] with an injected getenv.
+pub(crate) fn resolve_platform_api_key_with(
+    platform: kigi_models::PlatformId,
+    platforms: &PlatformsConfig,
+    mut getenv: impl FnMut(&str) -> Option<String>,
+) -> Option<String> {
+    for name in platform.api_key_env_names() {
+        if let Some(value) = getenv(name)
+            && !value.trim().is_empty()
+        {
+            return Some(value);
+        }
+    }
+    platforms.config_api_key(platform)
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HarnessConfig {
@@ -998,7 +1090,7 @@ impl SandboxSettingsConfig {
 /// [suggestions]
 /// enabled = true
 /// ai_enabled = true
-/// ai_model = "grok-build"
+/// ai_model = "kimi-for-coding"
 /// debounce_ms = 50
 /// ```
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -1042,7 +1134,7 @@ impl SuggestionsConfig {
             None,
         )
         .map(|r| r.value)
-        .unwrap_or_else(|| "grok-build".to_owned())
+        .unwrap_or_else(|| crate::models::default_model().to_owned())
     }
 }
 /// `[storage]` section from config.toml.
@@ -1152,6 +1244,11 @@ pub struct Config {
     pub cli: CliConfig,
     #[serde(default, skip_serializing)]
     pub models: ModelsConfig,
+    /// `[platforms.<id>]` — per-platform credentials for the fixed Kimi
+    /// platform registry (PRD F2). `skip_serializing` so API keys are never
+    /// re-emitted by any Config serialization.
+    #[serde(default, skip_serializing)]
+    pub platforms: PlatformsConfig,
     #[serde(default, skip_serializing)]
     pub harness: HarnessConfig,
     #[serde(default, skip_serializing)]
@@ -1356,7 +1453,7 @@ pub struct Config {
     /// (`default_session_summary_model`) when unset; see `ModelOverrideConfig::resolve`.
     #[serde(skip)]
     pub session_summary_model: Option<String>,
-    /// Image describe model (`grok-build` default via `ModelOverrideConfig::resolve`).
+    /// Image describe model (bundled default via `ModelOverrideConfig::resolve`).
     #[serde(skip)]
     pub image_description_model: Option<String>,
     /// Next-prompt suggestion model pin (`env > [models] prompt_suggestion >
@@ -1541,6 +1638,7 @@ impl Default for Config {
             paths: PathsConfig::default(),
             cli: CliConfig::default(),
             models: ModelsConfig::default(),
+            platforms: PlatformsConfig::default(),
             harness: HarnessConfig::default(),
             remote: RemoteConfig::default(),
             hub: HubConfig::default(),
@@ -1678,6 +1776,7 @@ impl Config {
         }
         config.config_models = config_models;
         config.model_override_warnings = model_override_warnings;
+        config.platforms.warn_unknown_platforms();
         if config.client_version.is_none() {
             config.client_version = Self::default().client_version;
         }
@@ -2795,10 +2894,60 @@ pub fn resolve_model_list(
     }
     apply_global_extra_headers(&mut resolved, &cfg.models);
     apply_global_scalar_defaults(&mut resolved, &cfg.models);
+    apply_platform_credentials(&mut resolved, &cfg.platforms);
     for entry in resolved.values_mut() {
         entry.info.derive_reasoning_effort_fields();
     }
     resolved
+}
+/// Layer 8 of [`resolve_model_list`]: wire the fixed platform registry's
+/// credentials into open-platform entries (PRD F2). Entries are recognized by
+/// their `{platform_id}/{model_id}` catalog id.
+///
+/// - `env_key` defaults to the platform's `KIGI_MOONSHOT_*` env names so an
+///   env-provided key resolves at request time.
+/// - a `[platforms.<id>].api_key` from config.toml is stamped only when no
+///   env name currently resolves, preserving env > config precedence
+///   (`first_own_credential` checks `api_key` before `env_key`).
+///
+/// A per-model `[model.*]` `api_key`/`env_key` always wins (stamped earlier;
+/// this layer never overwrites). In-memory only: the models disk cache
+/// persists the *pre-resolution* fetched entries, so config-file keys never
+/// reach disk. Key values are never logged.
+fn apply_platform_credentials(
+    resolved: &mut IndexMap<String, ModelEntry>,
+    platforms: &PlatformsConfig,
+) {
+    for (key, entry) in resolved.iter_mut() {
+        let id = entry.info.id.as_deref().unwrap_or(key.as_str());
+        let Some((platform, _)) = kigi_models::parse_managed_model_key(id) else {
+            continue;
+        };
+        if platform.uses_oauth() {
+            continue;
+        }
+        if entry.env_key.is_none() {
+            entry.env_key = Some(EnvKeys::new(platform.api_key_env_names().iter().copied()));
+        }
+        let env_resolves = entry
+            .env_key
+            .as_ref()
+            .is_some_and(|k| k.resolve_value().is_some());
+        if entry.api_key.is_none()
+            && !env_resolves
+            && let Some(config_key) = platforms.config_api_key(platform)
+        {
+            tracing::debug!(
+                model_key = %key, platform = platform.as_str(),
+                "stamped [platforms] config api_key onto open-platform entry"
+            );
+            entry.api_key = Some(config_key);
+        }
+        // A credentialed open-platform entry is usable by API-key users.
+        if entry.has_own_credentials() {
+            entry.info.supported_in_api = true;
+        }
+    }
 }
 /// Layer 6 of [`resolve_model_list`]: fold the global `[models].extra_headers`
 /// into every model as a base. The presence check is case-insensitive because
@@ -2909,6 +3058,9 @@ struct DefaultModelJson {
     supports_reasoning_effort: bool,
     #[serde(default)]
     reasoning_efforts: Vec<ReasoningEffortOption>,
+    /// Kimi capability set (PRD F4), sourced per entry (see kigi-models docs).
+    #[serde(default)]
+    capabilities: Vec<kigi_models::ModelCapability>,
     /// When false, only OAuth users see this in the picker.
     #[serde(default = "default_true")]
     supported_in_api: bool,
@@ -2943,14 +3095,28 @@ fn default_models(endpoints: &EndpointsConfig) -> IndexMap<String, ModelEntryCon
                 m.id
             );
             let key = m.id.clone().unwrap_or_else(|| m.model.clone());
+            // Bundled entries are keyed `{platform_id}/{model_id}` (PRD F4);
+            // each routes to its platform's base URL. The subscription
+            // platform honors the endpoint overrides; the open platforms get
+            // their env-key names so a moonshot key is usable offline.
+            let platform = kigi_models::parse_managed_model_key(&key).map(|(p, _)| p);
+            let base_url = match platform {
+                Some(kigi_models::PlatformId::KimiCode) | None => {
+                    endpoints.resolve_inference_base_url()
+                }
+                Some(open) => open.base_url(),
+            };
+            let env_key = platform
+                .filter(|p| !p.uses_oauth())
+                .map(|p| EnvKeys::new(p.api_key_env_names().iter().copied()));
             let context_window = m
                 .context_window
                 .unwrap_or_else(|| NonZeroU64::new(200_000).expect("200000 is non-zero"));
             let config = ModelEntryConfig {
                 id: m.id,
                 model: m.model,
-                base_url: endpoints.resolve_inference_base_url(),
-                api_base_url: Some(endpoints.xai_api_base_url.clone()),
+                base_url,
+                api_base_url: None,
                 name: m.name,
                 description: m.description,
                 context_window,
@@ -2965,7 +3131,7 @@ fn default_models(endpoints: &EndpointsConfig) -> IndexMap<String, ModelEntryCon
                 inference_idle_timeout_secs: m.inference_idle_timeout_secs,
                 max_retries: None,
                 api_key: None,
-                env_key: None,
+                env_key,
                 extra_headers: IndexMap::new(),
                 use_concise: false,
                 hidden: m.hidden,
@@ -2973,6 +3139,7 @@ fn default_models(endpoints: &EndpointsConfig) -> IndexMap<String, ModelEntryCon
                 reasoning_effort: m.reasoning_effort,
                 supports_reasoning_effort: m.supports_reasoning_effort,
                 reasoning_efforts: m.reasoning_efforts,
+                capabilities: m.capabilities,
                 supports_backend_search: m.supports_backend_search,
                 compactions_remaining: m.compactions_remaining,
                 compaction_at_tokens: m.compaction_at_tokens,
@@ -3028,6 +3195,9 @@ pub struct ModelEntryConfig {
     /// above are derived from this list when it is non-empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reasoning_efforts: Vec<ReasoningEffortOption>,
+    /// Kimi capability set (PRD F4); see [`ModelInfo::capabilities`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub capabilities: Vec<kigi_models::ModelCapability>,
     /// Extra headers to send with requests to this model's endpoint.
     /// Useful for BYOK (Bring Your Own Key) scenarios.
     /// Example: { "x-anthropic-api-key" = "sk-ant-..." }
@@ -3152,6 +3322,9 @@ pub struct ConfigModelOverride {
     pub reasoning_effort: Option<ReasoningEffort>,
     pub supports_reasoning_effort: Option<bool>,
     pub reasoning_efforts: Vec<ReasoningEffortOption>,
+    /// Kimi capability override; merges only when non-empty (cannot express
+    /// "override to empty", same as `reasoning_efforts`).
+    pub capabilities: Vec<kigi_models::ModelCapability>,
     pub supports_backend_search: Option<bool>,
     /// Aliases must be registered in `config_model_override_parse::ALIASES`;
     /// serde rejects a table that contains both spellings otherwise.
@@ -3232,6 +3405,9 @@ impl ConfigModelOverride {
         }
         if !self.reasoning_efforts.is_empty() {
             entry.info.reasoning_efforts = self.reasoning_efforts.clone();
+        }
+        if !self.capabilities.is_empty() {
+            entry.info.capabilities = self.capabilities.clone();
         }
         if let Some(v) = self.supports_backend_search {
             entry.info.supports_backend_search = v;
@@ -3318,6 +3494,11 @@ pub struct ModelInfo {
     /// Per-model reasoning-effort menu (source of truth); legacy fields derived from it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reasoning_efforts: Vec<ReasoningEffortOption>,
+    /// Kimi capability set derived from the `/models` listing (PRD F4);
+    /// see [`kigi_models::derive_capabilities`]. Empty when the source
+    /// (bundled JSON, `[model.*]`, remote) declared none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub capabilities: Vec<kigi_models::ModelCapability>,
     pub supports_backend_search: bool,
     /// Per-model config for the `x-compactions-remaining` header; `None` disables it.
     pub compactions_remaining: Option<CompactionsRemaining>,
@@ -3362,6 +3543,7 @@ impl ModelInfo {
             reasoning_effort: None,
             supports_reasoning_effort: false,
             reasoning_efforts: Vec::new(),
+            capabilities: Vec::new(),
             supports_backend_search: false,
             compactions_remaining: None,
             compaction_at_tokens: None,
@@ -3397,6 +3579,7 @@ impl ModelInfo {
             reasoning_effort: entry.reasoning_effort,
             supports_reasoning_effort: entry.supports_reasoning_effort,
             reasoning_efforts: entry.reasoning_efforts.clone(),
+            capabilities: entry.capabilities.clone(),
             supports_backend_search: entry.supports_backend_search,
             compactions_remaining: entry.compactions_remaining,
             compaction_at_tokens: entry.compaction_at_tokens,
@@ -4036,6 +4219,7 @@ pub fn resolve_aux_model_sampling_config(
                 reasoning_effort: None,
                 supports_reasoning_effort: false,
                 reasoning_efforts: Vec::new(),
+                capabilities: Vec::new(),
                 supports_backend_search: false,
                 compactions_remaining: None,
                 compaction_at_tokens: None,
@@ -4248,6 +4432,7 @@ fn resolve_hidden_default_web_search_sampling_config(
             reasoning_effort: None,
             supports_reasoning_effort: false,
             reasoning_efforts: Vec::new(),
+            capabilities: Vec::new(),
             supports_backend_search: false,
             compactions_remaining: None,
             compaction_at_tokens: None,
@@ -4415,6 +4600,9 @@ mod tests {
     use super::*;
     use kigi_test_support::EnvGuard;
     use serial_test::serial;
+    /// Catalog key of the bundled fallback default (`default_models.json`):
+    /// `{platform_id}/{model_id}` for `crate::models::default_model()`.
+    const BUNDLED_DEFAULT_KEY: &str = "kimi-code/kimi-for-coding";
     #[test]
     fn main_cli_tools_override_preserves_profile_injection_policy() {
         let overrides = CliAgentOverrides {
@@ -4850,6 +5038,7 @@ reasoning_effort = "low"
                 reasoning_effort: None,
                 supports_reasoning_effort: false,
                 reasoning_efforts: Vec::new(),
+                capabilities: Vec::new(),
                 supports_backend_search: false,
                 compactions_remaining: None,
                 compaction_at_tokens: None,
@@ -5802,6 +5991,7 @@ reasoning_effort = "low"
             reasoning_effort: None,
             supports_reasoning_effort: false,
             reasoning_efforts: Vec::new(),
+            capabilities: Vec::new(),
             supports_backend_search: false,
             compactions_remaining: None,
             compaction_at_tokens: None,
@@ -5961,6 +6151,7 @@ reasoning_effort = "low"
             reasoning_effort: None,
             supports_reasoning_effort: false,
             reasoning_efforts: Vec::new(),
+            capabilities: Vec::new(),
             supports_backend_search: false,
             compactions_remaining: None,
             compaction_at_tokens: None,
@@ -6412,6 +6603,7 @@ reasoning_effort = "low"
             reasoning_effort: None,
             supports_reasoning_effort: false,
             reasoning_efforts: Vec::new(),
+            capabilities: Vec::new(),
             supports_backend_search: false,
             compactions_remaining: None,
             compaction_at_tokens: None,
@@ -6592,30 +6784,39 @@ reasoning_effort = "low"
     fn e2e_default_model_with_session_routes_to_proxy() {
         let (_, models) = resolve_models_from_toml("", None);
         let model = models
-            .get(crate::models::default_model())
+            .get(BUNDLED_DEFAULT_KEY)
             .expect("default model should exist");
         let sampling = resolve_sampling(model, Some("session-token-123"));
         assert_eq!(sampling.api_key.as_deref(), Some("session-token-123"));
         assert_eq!(
             sampling.base_url, "https://api.kimi.com/coding/v1",
-            "session auth should route to the subscription endpoint, not api.x.ai"
+            "session auth should route to the subscription endpoint"
+        );
+        assert_eq!(
+            sampling.model, "kimi-for-coding",
+            "wire slug, not catalog key"
         );
     }
+    /// F2 acceptance seam: with ONLY a moonshot API key configured (no
+    /// subscription login), the bundled open-platform entry resolves usable
+    /// credentials routed at the moonshot base — nothing platform-specific is
+    /// left for the sampler (F3).
     #[test]
     #[serial]
-    fn e2e_default_model_with_external_api_key_routes_to_api_xai() {
+    fn e2e_moonshot_env_key_routes_to_moonshot_base() {
         let (_, models) = resolve_models_from_toml("", None);
         let model = models
-            .get(crate::models::default_model())
-            .expect("default model should exist");
-        unsafe { std::env::set_var("XAI_API_KEY", "xai-external-key") };
+            .get("moonshot-ai/kimi-k2-turbo-preview")
+            .expect("bundled moonshot fallback entry should exist");
+        unsafe { std::env::set_var("KIGI_MOONSHOT_API_KEY", "sk-moonshot-generic") };
         let sampling = resolve_sampling(model, None);
-        assert_eq!(sampling.api_key.as_deref(), Some("xai-external-key"));
+        assert_eq!(sampling.api_key.as_deref(), Some("sk-moonshot-generic"));
         assert_eq!(
-            sampling.base_url, "https://api.x.ai/v1",
-            "external API key should route to api.x.ai via api_base_url"
+            sampling.base_url, "https://api.moonshot.ai/v1",
+            "moonshot key must route to the open-platform base"
         );
-        unsafe { std::env::remove_var("XAI_API_KEY") };
+        assert_eq!(sampling.model, "kimi-k2-turbo-preview");
+        unsafe { std::env::remove_var("KIGI_MOONSHOT_API_KEY") };
     }
     #[test]
     fn e2e_user_config_overrides_prefetched_model() {
@@ -6711,7 +6912,7 @@ reasoning_effort = "low"
         let (_, models) = resolve_models_from_toml(
             &format!(
                 r#"
-            [model.acme-grok]
+            [model.acme-kimi]
             model = "{dm}"
             base_url = "https://inference.example.com/v1"
             context_window = 200000
@@ -6720,13 +6921,16 @@ reasoning_effort = "low"
             ),
             None,
         );
-        assert!(models.contains_key(dm), "default entry should still exist");
         assert!(
-            models.contains_key("acme-grok"),
+            models.contains_key(BUNDLED_DEFAULT_KEY),
+            "default entry should still exist"
+        );
+        assert!(
+            models.contains_key("acme-kimi"),
             "user entry with different key should also exist"
         );
-        let default = models.get(dm).unwrap();
-        let user = models.get("acme-grok").unwrap();
+        let default = models.get(BUNDLED_DEFAULT_KEY).unwrap();
+        let user = models.get("acme-kimi").unwrap();
         assert_eq!(default.info.model, user.info.model, "same model field");
         assert_ne!(
             default.info.base_url, user.info.base_url,
@@ -6770,7 +6974,7 @@ reasoning_effort = "low"
         let cfg = Config::default();
         let resolved = resolve_model_list(&cfg, None);
         assert!(
-            resolved.contains_key(crate::models::default_model()),
+            resolved.contains_key(BUNDLED_DEFAULT_KEY),
             "default model should be present when using default endpoint"
         );
     }
@@ -6814,30 +7018,24 @@ reasoning_effort = "low"
     }
     #[test]
     fn e2e_enterprise_endpoints_plus_partial_model_override() {
-        let dm = crate::models::default_model();
         let (_, models) = resolve_models_from_toml(
             &format!(
                 r#"
             [endpoints]
             cli_chat_proxy_base_url = "https://enterprise-proxy.acme.com/v1"
-            xai_api_base_url = "https://enterprise-api.acme.com/v1"
 
-            [model."{dm}"]
+            [model."{BUNDLED_DEFAULT_KEY}"]
             api_key = "acme-api-key"
             "#,
             ),
             None,
         );
-        let model = models.get(dm).expect("model should exist");
+        let model = models.get(BUNDLED_DEFAULT_KEY).expect("model should exist");
         assert_eq!(
             model.info.base_url, "https://enterprise-proxy.acme.com/v1",
             "base_url must inherit from [endpoints], not stale default"
         );
         assert_eq!(model.api_key.as_deref(), Some("acme-api-key"));
-        assert_eq!(
-            model.api_base_url.as_deref(),
-            Some("https://enterprise-api.acme.com/v1"),
-        );
         let sampling = resolve_sampling(model, Some("session-token"));
         assert_eq!(
             sampling.api_key.as_deref(),
@@ -6855,22 +7053,20 @@ reasoning_effort = "low"
             r#"
             [endpoints]
             cli_chat_proxy_base_url = "https://enterprise-proxy.acme.com/v1"
-            xai_api_base_url = "https://enterprise-api.acme.com/v1"
             "#,
             None,
         );
-        let model = models
-            .get(crate::models::default_model())
-            .expect("model should exist");
+        let model = models.get(BUNDLED_DEFAULT_KEY).expect("model should exist");
         assert_eq!(
             model.info.base_url, "https://enterprise-proxy.acme.com/v1",
             "default model should use enterprise cli_chat_proxy_base_url"
         );
-        assert_eq!(
-            model.api_base_url.as_deref(),
-            Some("https://enterprise-api.acme.com/v1"),
-            "default model should use enterprise xai_api_base_url"
-        );
+        // The open-platform fallback entries keep their fixed moonshot bases;
+        // only the subscription entry follows the proxy override.
+        let moonshot = models
+            .get("moonshot-cn/kimi-k2-turbo-preview")
+            .expect("bundled moonshot entry should exist");
+        assert_eq!(moonshot.info.base_url, "https://api.moonshot.cn/v1");
     }
     /// Unset every env var that `EndpointsConfig::default()` reads for endpoints,
     /// so the cli-chat-proxy resolver tests below are deterministic regardless of
@@ -9496,6 +9692,7 @@ default = "grok-4.5"
                 reasoning_effort: None,
                 supports_reasoning_effort: false,
                 reasoning_efforts: Vec::new(),
+                capabilities: Vec::new(),
                 supports_backend_search: false,
                 compactions_remaining: None,
                 compaction_at_tokens: None,
@@ -9512,7 +9709,6 @@ default = "grok-4.5"
     }
     #[test]
     fn global_extra_headers_apply_to_model_without_override() {
-        let dm = crate::models::default_model();
         let (_, models) = resolve_models_from_toml(
             r#"
             [models]
@@ -9520,7 +9716,9 @@ default = "grok-4.5"
             "#,
             None,
         );
-        let model = models.get(dm).expect("default model should exist");
+        let model = models
+            .get(BUNDLED_DEFAULT_KEY)
+            .expect("default model should exist");
         assert_eq!(
             model
                 .info
@@ -9771,11 +9969,11 @@ default = "grok-4.5"
     fn resolve_model_list_inherits_context_window_from_default_when_prefetched_has_fallback() {
         let cfg = Config::default();
         let default_cw = DEFAULT_CONTEXT_WINDOW;
-        let entry = prefetch_model_entry("grok-build", default_cw, ApiBackend::default());
+        let entry = prefetch_model_entry(BUNDLED_DEFAULT_KEY, default_cw, ApiBackend::default());
         let mut prefetched = IndexMap::new();
-        prefetched.insert("grok-build".to_owned(), entry);
+        prefetched.insert(BUNDLED_DEFAULT_KEY.to_owned(), entry);
         let resolved = resolve_model_list(&cfg, Some(prefetched));
-        let entry = resolved.get("grok-build").expect("model must exist");
+        let entry = resolved.get(BUNDLED_DEFAULT_KEY).expect("model must exist");
         assert_ne!(
             entry.info.context_window.get(),
             default_cw,
@@ -9786,11 +9984,11 @@ default = "grok-4.5"
     fn resolve_model_list_does_not_override_explicitly_set_context_window() {
         let cfg = Config::default();
         let explicit_cw = 65_536;
-        let entry = prefetch_model_entry("grok-build", explicit_cw, ApiBackend::default());
+        let entry = prefetch_model_entry(BUNDLED_DEFAULT_KEY, explicit_cw, ApiBackend::default());
         let mut prefetched = IndexMap::new();
-        prefetched.insert("grok-build".to_owned(), entry);
+        prefetched.insert(BUNDLED_DEFAULT_KEY.to_owned(), entry);
         let resolved = resolve_model_list(&cfg, Some(prefetched));
-        let entry = resolved.get("grok-build").expect("model must exist");
+        let entry = resolved.get(BUNDLED_DEFAULT_KEY).expect("model must exist");
         assert_eq!(
             entry.info.context_window.get(),
             explicit_cw,
@@ -9847,21 +10045,21 @@ default = "grok-4.5"
         let cfg = Config::default();
         let mut defs = default_model_entries(&EndpointsConfig::default());
         let mut p = IndexMap::new();
-        if let Some(e) = defs.shift_remove("grok-build") {
-            p.insert("grok-build".to_string(), e);
+        if let Some(e) = defs.shift_remove(BUNDLED_DEFAULT_KEY) {
+            p.insert(BUNDLED_DEFAULT_KEY.to_string(), e);
         }
         let resolved = resolve_model_list(&cfg, Some(p));
-        assert!(resolved.contains_key("grok-build"));
+        assert!(resolved.contains_key(BUNDLED_DEFAULT_KEY));
         let no_p = resolve_model_list(&cfg, None);
-        assert!(no_p.contains_key("grok-build"));
+        assert!(no_p.contains_key(BUNDLED_DEFAULT_KEY));
     }
     #[test]
     fn resolve_model_list_prefetch_visibility_matches_auth_and_server_list() {
         let cfg = Config::default();
         let mut defs = default_model_entries(&EndpointsConfig::default());
         let mut p = IndexMap::new();
-        if let Some(e) = defs.shift_remove("grok-build") {
-            p.insert("grok-build".to_string(), e);
+        if let Some(e) = defs.shift_remove(BUNDLED_DEFAULT_KEY) {
+            p.insert(BUNDLED_DEFAULT_KEY.to_string(), e);
         }
         let resolved = resolve_model_list(&cfg, Some(p));
         let sess: Vec<_> = resolved
@@ -9873,7 +10071,10 @@ default = "grok-4.5"
             .filter(|e| e.visible_for_auth(false))
             .collect();
         assert_eq!(sess.len(), 1);
-        assert!(api.is_empty());
+        assert!(
+            api.is_empty(),
+            "the subscription entry (supported_in_api=false) must stay hidden from API-key users"
+        );
     }
     #[test]
     fn resolve_model_list_keeps_prefetch_only_entries_and_prunes_defaults() {
@@ -9883,17 +10084,17 @@ default = "grok-4.5"
         p.insert("secret-xyz".to_string(), e);
         let resolved = resolve_model_list(&cfg, Some(p));
         assert!(resolved.contains_key("secret-xyz"));
-        assert!(!resolved.contains_key("grok-build"));
+        assert!(!resolved.contains_key(BUNDLED_DEFAULT_KEY));
     }
     #[test]
     fn resolve_model_list_prefetch_replaces_bundled_entirely() {
         let cfg = Config::default();
         let mut p = IndexMap::new();
-        let e = prefetch_model_entry("grok-4.5", 500_000, ApiBackend::Responses);
-        p.insert("grok-4.5".to_string(), e);
+        let e = prefetch_model_entry("kimi-fresh", 500_000, ApiBackend::Responses);
+        p.insert("kimi-fresh".to_string(), e);
         let resolved = resolve_model_list(&cfg, Some(p));
-        assert!(resolved.contains_key("grok-4.5"));
-        assert!(!resolved.contains_key("grok-build"));
+        assert!(resolved.contains_key("kimi-fresh"));
+        assert!(!resolved.contains_key(BUNDLED_DEFAULT_KEY));
     }
     #[test]
     fn resolve_model_list_empty_prefetch_yields_empty_base() {
@@ -9901,15 +10102,16 @@ default = "grok-4.5"
         let resolved = resolve_model_list(&cfg, Some(IndexMap::new()));
         assert!(resolved.is_empty());
     }
-    /// Regression: enterprise managed config aliases grok-build to their own
-    /// endpoint with env_key. The bundled grok-build has supported_in_api=false.
-    /// The config overlay must be visible to API-key users (env_key = BYOK).
+    /// Regression: enterprise managed config aliases the bundled subscription
+    /// entry to their own endpoint with env_key. The bundled entry has
+    /// supported_in_api=false. The config overlay must be visible to API-key
+    /// users (env_key = BYOK).
     #[test]
     fn byok_config_overlay_visible_to_api_key_users() {
         let raw: toml::Value = toml::from_str(
             r#"
-            [model.grok-build]
-            model = "grok-4.5"
+            [model."kimi-code/kimi-for-coding"]
+            model = "kimi-for-coding"
             base_url = "https://inference.company.com/v1"
             env_key = "COMPANY_TOKEN"
             "#,
@@ -9917,7 +10119,9 @@ default = "grok-4.5"
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw).expect("config should parse");
         let resolved = resolve_model_list(&cfg, None);
-        let entry = resolved.get("grok-build").expect("grok-build must exist");
+        let entry = resolved
+            .get(BUNDLED_DEFAULT_KEY)
+            .expect("bundled default must exist");
         assert!(
             entry.visible_for_auth(false),
             "BYOK config entry must be visible to API-key users — \
@@ -9930,17 +10134,81 @@ default = "grok-4.5"
     fn plain_config_overlay_preserves_bundled_visibility() {
         let raw: toml::Value = toml::from_str(
             r#"
-            [model.grok-build]
+            [model."kimi-code/kimi-for-coding"]
             context_window = 300000
             "#,
         )
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw).expect("config should parse");
         let resolved = resolve_model_list(&cfg, None);
-        let entry = resolved.get("grok-build").expect("grok-build must exist");
+        let entry = resolved
+            .get(BUNDLED_DEFAULT_KEY)
+            .expect("bundled default must exist");
         assert!(
             !entry.visible_for_auth(false),
             "non-BYOK config overlay must preserve bundled supported_in_api=false"
+        );
+    }
+    /// PRD F2: a `[platforms.<id>].api_key` from config.toml is stamped onto
+    /// that platform's catalog entries (in-memory only), making them usable
+    /// and API-key-visible — and only onto that platform.
+    #[test]
+    #[serial]
+    fn platforms_config_key_stamps_matching_open_platform_entries() {
+        let _cn = EnvGuard::unset(kigi_models::MOONSHOT_CN_API_KEY_ENV);
+        let _ai = EnvGuard::unset(kigi_models::MOONSHOT_AI_API_KEY_ENV);
+        let _gen = EnvGuard::unset(kigi_models::MOONSHOT_API_KEY_ENV);
+        let raw: toml::Value = toml::from_str(
+            r#"
+            [platforms.moonshot-cn]
+            api_key = "sk-from-config"
+            "#,
+        )
+        .unwrap();
+        let cfg = Config::new_from_toml_cfg(&raw).expect("config should parse");
+        let resolved = resolve_model_list(&cfg, None);
+
+        let cn = resolved
+            .get("moonshot-cn/kimi-k2-turbo-preview")
+            .expect("bundled moonshot-cn entry");
+        assert_eq!(cn.api_key.as_deref(), Some("sk-from-config"));
+        assert!(
+            cn.has_own_credentials(),
+            "config key must make the entry sampleable (F2 acceptance)"
+        );
+        assert!(
+            cn.visible_for_auth(false),
+            "credentialed open-platform entry must be visible to API-key users"
+        );
+
+        let ai = resolved
+            .get("moonshot-ai/kimi-k2-turbo-preview")
+            .expect("bundled moonshot-ai entry");
+        assert!(
+            ai.api_key.is_none(),
+            "the cn key must not leak onto the ai platform"
+        );
+
+        let code = resolved
+            .get("kimi-code/kimi-for-coding")
+            .expect("bundled subscription entry");
+        assert!(
+            code.api_key.is_none() && code.env_key.is_none(),
+            "the OAuth platform takes no API key"
+        );
+    }
+    /// F2 acceptance: with ONLY a moonshot key (env), the api-key auth method
+    /// is advertised (no login screen) because the catalog has a credentialed
+    /// entry.
+    #[test]
+    #[serial]
+    fn moonshot_env_key_advertises_api_key_auth_method() {
+        let _gen = EnvGuard::set(kigi_models::MOONSHOT_API_KEY_ENV, "sk-only-moonshot");
+        let cfg = Config::default();
+        let models = resolve_model_list(&cfg, None);
+        assert!(
+            crate::agent::auth_method::should_advertise_xai_api_key(models.values()),
+            "a moonshot env key alone must advertise the API-key auth method"
         );
     }
     #[test]

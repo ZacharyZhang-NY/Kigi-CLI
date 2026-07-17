@@ -537,7 +537,7 @@ pub struct ModelOverrideConfig {
     pub web_search: String,
     /// `None` = current model.
     pub session_summary: Option<String>,
-    /// Compiled default (`grok-build`) when unset locally, remotely, and via env.
+    /// Compiled default (`kigi_models::default_model()`) when unset locally, remotely, and via env.
     pub image_description: Option<String>,
     /// Next-prompt suggestion model pin. Unlike the other overrides this does
     /// NOT fill a compiled default — see [`PromptSuggestModelPin`].
@@ -561,10 +561,9 @@ impl Default for ModelOverrideConfig {
 /// Unlike the other auxiliary overrides this does not collapse to a plain
 /// model string: the consumer (`handle_suggest_prompt`) must distinguish
 /// an explicit pin from "unpinned" (where the client hint and the built-in
-/// `grok-build-0.1` default apply), and whether the pin came from the env
+/// default apply), and whether the pin came from the env
 /// escape hatch. Every effective model except an env pin is catalog-guarded —
-/// when the model is not in the shell's catalog (e.g. `grok-build-0.1` for
-/// OAuth users, whose catalogs exclude it) the per-turn suggestion request is
+/// when the model is not in the shell's catalog the per-turn suggestion request is
 /// skipped entirely rather than fired doomed. The env pin is deliberately
 /// exempt so `KIGI_PROMPT_SUGGESTIONS_MODEL` keeps working for models a
 /// catalog does not list (mirrors the pager, which forwards the env value
@@ -596,7 +595,7 @@ fn non_empty_model_override(value: Option<&str>) -> Option<String> {
 impl ModelOverrideConfig {
     /// CLI flag > env var > config.toml > remote settings > compiled default.
     /// `image_description` and `session_summary` always resolve to `Some(_)`
-    /// (default `grok-build`), never the session model.
+    /// (the bundled default model), never the session model.
     /// `prompt_suggestion` resolves to a [`PromptSuggestModelPin`] instead of
     /// a model string (no CLI flag; the default and the catalog guard live at
     /// the consumer, `handle_suggest_prompt`).

@@ -5,7 +5,7 @@
 //! the empty prompt input; Tab accepts it. Modelled on common coding-agent
 //! prompt suggestion features, but instead of replaying the full conversation prefix
 //! it sends a *compact text-only transcript* — the call always routes to a
-//! small dedicated model (configurable, [`DEFAULT_SUGGEST_MODEL`] by
+//! dedicated model (configurable, [`default_suggest_model`] by
 //! default, never the session model — see [`effective_suggest_model`]),
 //! where the parent session's prompt cache would not apply anyway, so a
 //! small request wins on both cost and latency.
@@ -20,20 +20,20 @@ use crate::session::helpers::chat::floor_char_boundary;
 
 /// Model used for suggestion calls when nothing pins one (no env /
 /// `[models] prompt_suggestion` / remote setting / client hint — see
-/// [`effective_suggest_model`]). Suggestion requests must stay on a small,
-/// fast model: falling back to the session model would multiply the per-turn
-/// cost of the feature and add reasoning-model latency for a throwaway
-/// prediction.
-pub(crate) const DEFAULT_SUGGEST_MODEL: &str = "grok-build-0.1";
+/// [`effective_suggest_model`]). The Kimi catalog has no dedicated small
+/// suggestion model, so this is the bundled default coding model; the
+/// catalog guard still controls whether the request fires at all.
+pub(crate) fn default_suggest_model() -> &'static str {
+    crate::models::default_model()
+}
 
 /// Resolve the model for one suggestion request, or `None` to skip the
 /// request entirely (controlled disable).
 ///
 /// Precedence: env pin > config.toml/remote pin > client hint (the request's
-/// `model` param) > [`DEFAULT_SUGGEST_MODEL`]. Every tier except the env pin
-/// is catalog-guarded via `in_catalog`: [`DEFAULT_SUGGEST_MODEL`]
-/// (`grok-build-0.1`) is API-key-only and excluded from OAuth catalogs, so
-/// firing it (or any unavailable pin) would send a doomed per-turn request
+/// `model` param) > [`default_suggest_model`]. Every tier except the env pin
+/// is catalog-guarded via `in_catalog`: firing an unavailable pin or default
+/// would send a doomed per-turn request
 /// that can never render ghost text. Skipping keeps the per-turn cost at
 /// zero; deliberately NOT a session-model fallback — a per-turn background
 /// call must stay on a small cheap model. The env pin bypasses the guard so
@@ -48,7 +48,7 @@ pub(crate) fn effective_suggest_model(
     let (model, catalog_guarded) = match pin {
         PromptSuggestModelPin::Env(m) => (m.as_str(), false),
         PromptSuggestModelPin::Pinned(m) => (m.as_str(), true),
-        PromptSuggestModelPin::Unpinned => (client_hint.unwrap_or(DEFAULT_SUGGEST_MODEL), true),
+        PromptSuggestModelPin::Unpinned => (client_hint.unwrap_or(default_suggest_model()), true),
     };
     if catalog_guarded && !in_catalog(model) {
         return None;
@@ -324,9 +324,9 @@ mod tests {
         // No pin, no hint: the built-in default fires only when this shell's
         // catalog can sample it.
         assert_eq!(
-            effective_suggest_model(&Pin::Unpinned, None, |m| m == DEFAULT_SUGGEST_MODEL)
+            effective_suggest_model(&Pin::Unpinned, None, |m| m == default_suggest_model())
                 .as_deref(),
-            Some(DEFAULT_SUGGEST_MODEL)
+            Some(default_suggest_model())
         );
         // OAuth catalogs exclude grok-build-0.1 → skip the request entirely,
         // never a doomed call (and never the session model).
@@ -349,9 +349,9 @@ mod tests {
         );
         // Blank hints are ignored: the default tier applies.
         assert_eq!(
-            effective_suggest_model(&Pin::Unpinned, Some("  "), |m| m == DEFAULT_SUGGEST_MODEL)
+            effective_suggest_model(&Pin::Unpinned, Some("  "), |m| m == default_suggest_model())
                 .as_deref(),
-            Some(DEFAULT_SUGGEST_MODEL)
+            Some(default_suggest_model())
         );
     }
 

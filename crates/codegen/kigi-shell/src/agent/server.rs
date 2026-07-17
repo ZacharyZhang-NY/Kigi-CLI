@@ -166,13 +166,19 @@ async fn handle_connection(ws: WebSocket, state: Arc<ServerState>, peer_addr: So
                 .spawn(move || {
                     // Prefetch models before creating the runtime (blocking is OK here)
                     let auth = agent_config.create_auth_manager().current();
-                    let fetch_auth =
-                        ModelFetchAuth::resolve(&agent_config.endpoints, auth.is_some());
+                    let fetch_auth = ModelFetchAuth::resolve(&agent_config.endpoints);
+                    let platform_keys =
+                        crate::agent::models::PlatformApiKeys::resolve(&agent_config.platforms);
                     let prefetched_models = if auth.is_some()
                         || agent_config.endpoints.has_custom_endpoint()
-                        || fetch_auth != ModelFetchAuth::Session
+                        || platform_keys.any()
                     {
-                        prefetch_models_blocking(&agent_config.endpoints, auth.as_ref(), fetch_auth)
+                        prefetch_models_blocking(
+                            &agent_config.endpoints,
+                            auth.as_ref(),
+                            fetch_auth,
+                            &platform_keys,
+                        )
                     } else {
                         None
                     };
