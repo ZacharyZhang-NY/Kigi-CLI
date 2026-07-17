@@ -74,7 +74,7 @@ impl SettingCategory {
 pub struct EnumChoice {
     /// Canonical persisted value (e.g. `"groknight"`).
     pub canonical: &'static str,
-    /// Display label shown in the chooser (e.g. `"Grok Night"`).
+    /// Display label shown in the chooser (e.g. `"Kigi Night"`).
     pub display: &'static str,
     /// Sub-text shown in the chooser sheet (e.g. `"Dark + magenta accent"`).
     pub description: &'static str,

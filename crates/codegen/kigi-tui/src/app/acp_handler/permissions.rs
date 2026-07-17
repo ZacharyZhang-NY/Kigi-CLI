@@ -74,7 +74,7 @@ pub(super) fn handle_permission_request(
     {
         app.notification_service.notify(NotificationEvent {
             kind: NotificationEventKind::ApprovalRequired,
-            title: "Grok".into(),
+            title: "Kigi".into(),
             body: NotificationEventKind::ApprovalRequired.as_str().into(),
             session_id: Some(perm.request.session_id.0.to_string()),
         });

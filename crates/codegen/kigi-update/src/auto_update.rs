@@ -2206,8 +2206,8 @@ pub async fn run_update(
         {
             tracing::warn!("Failed to persist auto_update=false for pinned install: {e}");
         }
-        eprintln!("  ✓ grok v{} installed successfully!", version);
-        eprintln!("  Please restart Grok.");
+        eprintln!("  ✓ kigi v{} installed successfully!", version);
+        eprintln!("  Please restart Kigi.");
         return Ok(Some(version.to_string()));
     }
 
@@ -2324,7 +2324,7 @@ pub async fn run_update(
     eprintln!("  ✓ grok v{} installed successfully!", target_version);
 
     if !force && std::env::var_os("KIGI_AUTO_UPDATE").is_none() {
-        eprintln!("  Please restart Grok.");
+        eprintln!("  Please restart Kigi.");
     }
     Ok(Some(target_version.to_string()))
 }

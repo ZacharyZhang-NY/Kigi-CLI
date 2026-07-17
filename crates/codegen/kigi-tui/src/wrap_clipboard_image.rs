@@ -19,7 +19,7 @@ use base64::Engine as _;
 use kigi_pager_render::clipboard::{ImageData, osc52_sink_active};
 
 /// OSC body after `ESC ]` for a host image request.
-pub const REQUEST_BODY: &[u8] = b"999;GrokWrapClipboardImage?";
+pub const REQUEST_BODY: &[u8] = b"999;KigiWrapClipboardImage?";
 
 /// Full request sequence written to stderr by the remote pager (`ESC ]` body `BEL`).
 pub fn request_osc_bytes() -> Vec<u8> {
