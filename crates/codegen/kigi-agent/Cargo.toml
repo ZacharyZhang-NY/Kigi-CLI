@@ -1,0 +1,42 @@
+[package]
+license = "Apache-2.0"
+name = "kigi-agent"
+version.workspace = true
+edition.workspace = true
+description = "Agent builder, definition parsing, and system prompt assembly"
+
+[dependencies]
+dunce = { workspace = true }
+kigi-hooks = { path = "../kigi-hooks" }
+kigi-sampling-types = { path = "../kigi-sampling-types" }
+kigi-tools = { path = "../kigi-tools" }
+kigi-token-estimation = { workspace = true }
+minijinja = { version = "2", features = ["custom_syntax"] }
+git2 = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros", "sync"] }
+tracing = { workspace = true }
+chrono = { workspace = true }
+ignore = { workspace = true }
+dirs = "6"
+kigi-config = { workspace = true }
+sha2 = { workspace = true }
+strum = { workspace = true }
+thiserror = { workspace = true }
+zeroize = "1"
+kigi-tool-types.workspace = true
+
+[features]
+default = []
+default-bazel = []
+
+[dev-dependencies]
+tempfile = { workspace = true }
+serde_json = { workspace = true }
+serial_test = { workspace = true }
+
+[lints]
+workspace = true

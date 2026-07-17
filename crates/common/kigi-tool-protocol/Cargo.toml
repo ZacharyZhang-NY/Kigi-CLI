@@ -1,0 +1,16 @@
+[package]
+license = "Apache-2.0"
+name = "kigi-tool-protocol"
+version.workspace = true
+edition.workspace = true
+description = "Wire-protocol types for the xAI Computer Hub"
+
+[dependencies]
+kigi-tool-types = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true, features = ["v7"] }
+
+[lints]
+workspace = true

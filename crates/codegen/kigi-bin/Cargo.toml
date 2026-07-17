@@ -1,0 +1,97 @@
+[package]
+name = "kigi-bin"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+authors = ["xAI"]
+default-run = "kigi"
+
+# Composition-root binary for the Grok Build TUI. The artifact is still named
+# `kigi-tui`. This package exists so the binary can link both the pager
+# library and the optional `kigi-pager-minimal` render mode: `minimal`
+# depends on `kigi-tui`, so the pager library cannot depend back on it
+# (cargo cycle). The binary installs the minimal-mode IoC hooks at startup.
+[[bin]]
+name = "kigi"
+path = "src/main.rs"
+
+[dependencies]
+# The pager library (all application logic + the public API main.rs drives).
+kigi-tui = { path = "../kigi-tui" }
+# Optional scrollback-native render mode, wired in via the fn-pointer seam.
+kigi-pager-minimal = { path = "../kigi-pager-minimal" }
+
+# Agent runtime + leader/stdio/headless entry points.
+kigi-shell = { workspace = true }
+kigi-update = { path = "../kigi-update" }
+kigi-version = { workspace = true }
+kigi-log = { workspace = true }
+kigi-workspace = { workspace = true }
+kigi-crash-handler = { path = "../kigi-crash-handler" }
+kigi-acp-lib = { workspace = true }
+
+# Async runtime + misc.
+tokio = { workspace = true, features = [
+    "sync",
+    "rt",
+    "macros",
+    "rt-multi-thread",
+    "signal",
+    "io-util",
+    "io-std",
+] }
+tokio-util = { workspace = true, features = ["compat"] }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde_json = { workspace = true }
+dunce = { workspace = true }
+semver = { workspace = true }
+kigi-tty-utils = { workspace = true }
+kigi-config = { workspace = true }
+kigi-sandbox = { path = "../kigi-sandbox", default-features = false }
+rustls = { version = "0.23", default-features = false, features = [
+    "ring",
+    "logging",
+    "std",
+    "tls12",
+] }
+
+# Binary hardening: compile-time string + control-flow obfuscation.
+obfstr = { workspace = true }
+cryptify = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+# Default allocator on Unix; gated by the `jemalloc` feature (see main.rs
+# `#[global_allocator]`, cfg(all(feature = "jemalloc", unix))).
+# `stats` is binary-scoped only (not workspace-wide) so this CLI jemalloc
+# link gets --enable-stats for stats.allocated / stats.resident mallctl.
+tikv-jemallocator = { workspace = true, optional = true, features = ["stats"] }
+# Raw mallctl for the memory-cliff arena purge hook (see
+# `purge_jemalloc_retained_pages` + the `install_release_hook` call in
+# main.rs). Same version family as the
+# allocator; adds no new build units beyond what tikv-jemallocator pulls in.
+tikv-jemalloc-sys = { workspace = true, optional = true }
+# Heap-profile / stats mallctl helpers (prof.active, prof.dump, epoch, stats.*).
+tikv-jemalloc-ctl = { workspace = true, optional = true, features = ["stats", "use_std"] }
+
+[dev-dependencies]
+serial_test = { workspace = true }
+# `PagerArgs::try_parse_from` in the CLI-parsing unit tests (needs the
+# `clap::Parser` trait in scope).
+clap = { workspace = true, features = ["derive"] }
+
+[features]
+default = [
+    "jemalloc",
+    "sandbox-enforce",
+    ]
+default-bazel = [
+    "jemalloc",
+    "sandbox-enforce",
+    ]
+jemalloc = ["dep:tikv-jemallocator", "dep:tikv-jemalloc-sys", "dep:tikv-jemalloc-ctl"]
+# Forward the sandbox-enforcement feature to the library.
+sandbox-enforce = ["kigi-tui/sandbox-enforce"]
+release-dist = ["kigi-tui/release-dist"]

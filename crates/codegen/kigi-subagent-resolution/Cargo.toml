@@ -1,0 +1,25 @@
+[package]
+license = "Apache-2.0"
+name = "kigi-subagent-resolution"
+version.workspace = true
+edition.workspace = true
+description = "Subagent configuration resolution: merges persona, role, and spawn-time overrides into a resolved spec"
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+kigi-sampling-types = { path = "../kigi-sampling-types" }
+kigi-tools = { path = "../kigi-tools" }
+kigi-tool-types.workspace = true
+# TODO(phase2): add these when resolve_subagent_spec() composition is implemented:
+# kigi-agent = { path = "../kigi-agent" }  # AgentDefinition lookup
+# kigi-fast-worktree = { path = "../kigi-fast-worktree" }  # worktree creation
+
+[dev-dependencies]
+tempfile = { workspace = true }
+toml = { workspace = true }
+
+[lints]
+workspace = true

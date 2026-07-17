@@ -1,0 +1,26 @@
+[package]
+license = "Apache-2.0"
+name = "kigi-hunk-tracker"
+version.workspace = true
+edition.workspace = true
+description = "Track file hunks (diffs) with agent/external attribution"
+
+[dependencies]
+# External
+chrono = { workspace = true, features = ["serde"] }
+dunce = { workspace = true }
+rustc-hash = { workspace = true }
+gix = { workspace = true, features = ["status", "index", "parallel"] }
+serde = { workspace = true, features = ["derive", "rc"] }
+kigi-gix-status = { workspace = true }
+serde_json = { workspace = true }
+similar = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+kigi-test-utils = { workspace = true }

@@ -1,0 +1,12 @@
+[package]
+license = "Apache-2.0"
+name = "kigi-interjection-core"
+version.workspace = true
+edition.workspace = true
+description = "Shared mid-turn interjection buffer and formatting for the client and server agent loops"
+
+[dependencies]
+serde = { workspace = true }
+
+[lints]
+workspace = true

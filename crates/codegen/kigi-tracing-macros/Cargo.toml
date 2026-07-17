@@ -1,0 +1,11 @@
+[package]
+license = "Apache-2.0"
+name = "kigi-tracing-macros"
+version.workspace = true
+edition.workspace = true
+description = "Tracing-based utility macros for timestamped logging and timing"
+
+[dependencies]
+
+[lints]
+workspace = true

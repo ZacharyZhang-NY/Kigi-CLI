@@ -1,0 +1,32 @@
+[package]
+license = "Apache-2.0"
+name = "kigi-shell-session-support"
+version.workspace = true
+edition.workspace = true
+description = "Session-support modules for the grok shell crate family: managed MCP credential/catalog caching and file-access tracking."
+
+[dependencies]
+agent-client-protocol = { workspace = true }
+chrono = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync", "rt", "time", "macros"] }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+kigi-file-utils = { path = "../kigi-file-utils", optional = true }
+kigi-http = { workspace = true }
+kigi-shell-base = { workspace = true }
+kigi-version = { workspace = true }
+kigi-workspace = { workspace = true }
+
+[features]
+default-bazel = []
+
+[dev-dependencies]
+axum = { workspace = true }
+tokio = { workspace = true, features = ["net", "rt-multi-thread"] }
+
+[lints]
+workspace = true

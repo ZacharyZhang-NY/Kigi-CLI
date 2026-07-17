@@ -1,0 +1,13 @@
+[package]
+license = "Apache-2.0"
+name = "kigi-models"
+version.workspace = true
+edition.workspace = true
+description = "Default model IDs for the grok CLI, loaded from the embedded default_models.json."
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

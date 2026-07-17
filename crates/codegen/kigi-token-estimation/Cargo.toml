@@ -1,0 +1,11 @@
+[package]
+license = "Apache-2.0"
+name = "kigi-token-estimation"
+version.workspace = true
+edition.workspace = true
+description = "Pure shared token-estimation primitives."
+
+[dependencies]
+
+[lints]
+workspace = true

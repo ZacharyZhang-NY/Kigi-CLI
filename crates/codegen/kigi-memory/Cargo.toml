@@ -1,0 +1,48 @@
+[package]
+license = "Apache-2.0"
+name = "kigi-memory"
+version.workspace = true
+edition.workspace = true
+
+[features]
+
+[dependencies]
+anyhow = { workspace = true }
+arc-swap = { workspace = true }
+async-trait = { workspace = true }
+blake3 = { workspace = true }
+chrono = { workspace = true }
+dunce = { workspace = true }
+flate2 = { workspace = true }
+git2 = { workspace = true }
+notify = { workspace = true }
+reqwest = { workspace = true }
+reqwest-middleware = { workspace = true }
+# rusqlite 0.37 + bundled = self-contained SQLite (>= 3.50.2) with FTS5.
+rusqlite = { version = "0.37", features = ["bundled"] }
+serde_json = { workspace = true }
+# sqlite-vec: vec0 virtual table for KNN vector search.
+sqlite-vec = "=0.1.7-alpha.2"
+tar = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time"] }
+tracing = { workspace = true }
+kigi-auth = { workspace = true }
+kigi-config-types = { workspace = true }
+kigi-http = { workspace = true }
+kigi-log = { workspace = true }
+kigi-tools = { workspace = true }
+kigi-version = { workspace = true }
+kigi-sqlite-journal = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true }
+
+[dev-dependencies]
+filetime = { workspace = true }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

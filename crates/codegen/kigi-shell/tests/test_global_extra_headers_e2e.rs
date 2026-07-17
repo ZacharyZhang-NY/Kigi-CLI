@@ -1,0 +1,83 @@
+//! End-to-end test for the global `[models]` defaults.
+//!
+//! Runs the built grok binary against the mock inference server with a
+//! caller-owned `$KIGI_SHARE_DIR` whose `config.toml` sets every global `[models]`
+//! default. Asserts the turn succeeds with all of them set and that the
+//! wire-observable one — `extra_headers` — reaches the `/v1/chat/completions`
+//! request header, for a model with no per-model `[model.<id>]` override.
+//!
+//! The scalar defaults (temperature, top_p, max_completion_tokens, max_retries,
+//! inference_idle_timeout_secs, stream_tool_calls) are exercised here to prove
+//! they parse and the turn still completes; their resolution onto the model is
+//! covered directly by `config.rs` unit tests. The headless turn does not
+//! surface sampling params in the chat-completions body, so they are not
+//! wire-asserted here.
+//!
+//! `#[ignore]` (needs a built binary). Run locally (auto-builds the pager):
+//! ```bash
+//! cargo test -p kigi-shell --test test_global_extra_headers_e2e -- --ignored
+//! ```
+
+use kigi_test_support::*;
+
+/// Every global `[models]` default is accepted, and the wire-observable
+/// `extra_headers` reaches the inference request with no per-model block in play.
+#[tokio::test]
+#[ignore] // requires pre-built binary; run with --ignored
+async fn global_models_config_reaches_inference_request() {
+    let server = MockInferenceServer::start()
+        .await
+        .expect("start mock server");
+    let workdir = git_workdir();
+    let home = tempfile::TempDir::new().unwrap();
+
+    let kigi_home = home.path().join(".kigi");
+    std::fs::create_dir_all(&kigi_home).expect("create .kigi home");
+    std::fs::write(
+        kigi_home.join("config.toml"),
+        r#"[models]
+extra_headers = { "X-Request-Tags" = "team=example,env=prod" }
+temperature = 0.5
+top_p = 0.25
+max_completion_tokens = 4096
+max_retries = 7
+inference_idle_timeout_secs = 600
+stream_tool_calls = true
+"#,
+    )
+    .expect("write config.toml");
+
+    let mut cmd = tokio::process::Command::new(grok_binary());
+    cmd.args(["-p", "say hi", "--yolo", "--output-format", "json"])
+        .arg("--cwd")
+        .arg(workdir.path())
+        .current_dir(workdir.path())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    kigi_test_support::env::test_env_cmd_tokio(&mut cmd, &server.url(), home.path());
+    cmd.env("KIGI_SHARE_DIR", kigi_home);
+    // Don't attach to a developer's ambient leader; spawn fresh against the mock.
+    cmd.env_remove("KIGI_LEADER_SOCKET");
+
+    let result = run_headless_with_cmd(cmd).await;
+    assert_headless_success(&result, "global models config e2e", Some(&server));
+
+    let requests = server.requests();
+    let chat = requests
+        .iter()
+        .find(|e| e.method == "POST" && e.path.contains("chat/completions"))
+        .unwrap_or_else(|| {
+            panic!(
+                "no POST /v1/chat/completions request logged; requests:\n{}",
+                server.request_log_summary()
+            )
+        });
+    assert_eq!(
+        chat.header("x-request-tags"),
+        Some("team=example,env=prod"),
+        "global [models].extra_headers must reach the request header; requests:\n{}",
+        server.request_log_summary()
+    );
+}

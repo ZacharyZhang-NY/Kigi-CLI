@@ -1,0 +1,21 @@
+Kigi — unofficial Kimi Code CLI community build
+Copyright 2026 the Kigi contributors
+
+This product is based on Grok Build (https://github.com/xai-org/grok-build),
+Copyright 2025-2026 X.AI Corp., licensed under the Apache License, Version 2.0.
+
+Modifications relative to the upstream work (Apache License 2.0 §4(b) notice):
+- All `xai-*`/`xai-grok-*` crates renamed into the `kigi-*` namespace; the
+  binary is `kigi`, the config directory is `~/.kigi`, and environment
+  variables use the `KIGI_*` prefix.
+- xAI/Grok service integrations removed or replaced: telemetry (Mixpanel,
+  OpenTelemetry export, Sentry, trace upload), voice input, announcements,
+  plugin marketplace, remote relay/gateway services, and the xAI OAuth and
+  subscription-proxy endpoints.
+- Endpoints re-targeted at the Kimi Code subscription API
+  (api.kimi.com/coding/v1), the Moonshot open platform (api.moonshot.cn/v1,
+  api.moonshot.ai/v1), and GitHub Releases for self-update.
+
+This product includes code ported from openai/codex and sst/opencode; see
+crates/codegen/kigi-tools/THIRD_PARTY_NOTICES.md for the license terms and
+the per-file change notices.

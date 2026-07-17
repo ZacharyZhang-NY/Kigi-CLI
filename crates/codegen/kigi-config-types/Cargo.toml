@@ -1,0 +1,22 @@
+[package]
+license = "Apache-2.0"
+name = "kigi-config-types"
+version.workspace = true
+edition.workspace = true
+description = "Leaf configuration value types for the grok CLI, extracted from kigi-shell for dependency inversion."
+
+[dependencies]
+agent-client-protocol = { workspace = true }
+indexmap = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+strum = { workspace = true }
+tracing = { workspace = true }
+kigi-config = { workspace = true }
+kigi-mcp = { workspace = true }
+
+[features]
+default-bazel = []
+
+[lints]
+workspace = true

@@ -1,0 +1,32 @@
+[package]
+license = "Apache-2.0"
+name = "kigi-fsnotify"
+version.workspace = true
+edition.workspace = true
+description = "Local-filesystem event source: single causal stream of semantic FsEvents"
+
+[dependencies]
+dunce = { workspace = true }
+notify = "8"
+notify-debouncer-full = "0.5"
+ignore = { workspace = true }
+globset = "0.4"
+tokio = { workspace = true, features = ["sync", "time", "rt"] }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+git2 = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+serial_test = "3"
+criterion = { workspace = true }
+kigi-tracing-macros = { path = "../kigi-tracing-macros" }
+
+[[bench]]
+name = "startup"
+harness = false
+
+[lints]
+workspace = true

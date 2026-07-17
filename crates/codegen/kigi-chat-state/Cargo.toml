@@ -1,0 +1,28 @@
+[package]
+license = "Apache-2.0"
+name = "kigi-chat-state"
+version.workspace = true
+edition.workspace = true
+description = "Actor-based chat state management for xAI agents"
+
+[features]
+default-bazel = []
+
+[dependencies]
+indexmap = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+strum = { workspace = true }
+tokio = { workspace = true, features = ["sync", "rt", "macros"] }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+kigi-compaction = { path = "../../common/kigi-compaction" }
+kigi-sampling-types = { path = "../kigi-sampling-types" }
+kigi-token-estimation = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full"] }
+
+[lints]
+workspace = true

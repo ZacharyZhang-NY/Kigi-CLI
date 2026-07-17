@@ -1,0 +1,54 @@
+# cargo-deny configuration. CI gate: `cargo deny check advisories` must be
+# error-free (PRD §7-2).
+
+[advisories]
+version = 2
+yanked = "deny"
+ignore = [
+    # rsa: Marvin timing sidechannel. Reached only through jsonwebtoken's
+    # RS256 *signature verification* in the enterprise-OIDC login path
+    # (public-key operation; Marvin concerns private-key decryption). The
+    # entire OIDC stack is replaced by the Kimi device flow in M1.
+    { id = "RUSTSEC-2023-0071", reason = "verification-only use; auth stack replaced in M1" },
+    # quick-xml 0.39 (two advisories): pinned by wayland-scanner 0.31.10
+    # (latest), a build-time proc-macro parsing vendored Wayland protocol
+    # XML — no attacker-controlled input reaches it.
+    { id = "RUSTSEC-2026-0194", reason = "build-time parse of vendored XML via wayland-scanner" },
+    { id = "RUSTSEC-2026-0206", reason = "build-time parse of vendored XML via wayland-scanner" },
+    # Unmaintained transitive dependencies with no upstream fix available.
+    { id = "RUSTSEC-2025-0052", reason = "async-std via dark-light 2 (latest); theme detection" },
+    { id = "RUSTSEC-2025-0012", reason = "backoff via async-openai (latest)" },
+    { id = "RUSTSEC-2024-0384", reason = "instant via backoff via async-openai (latest)" },
+    { id = "RUSTSEC-2025-0141", reason = "bincode 1 via syntect (latest); local cache format" },
+    { id = "RUSTSEC-2024-0436", reason = "paste via ratatui 0.29 (workspace-pinned TUI stack)" },
+    { id = "RUSTSEC-2025-0057", reason = "fxhash via bm25 (latest); local search scoring" },
+    { id = "RUSTSEC-2026-0192", reason = "rustybuzz via pdf_oxide/resvg (latest); local rendering" },
+    { id = "RUSTSEC-2026-0195", reason = "ttf-parser via fontdb/resvg (latest); local font parsing" },
+    { id = "RUSTSEC-2024-0320", reason = "yaml-rust via syntect (latest); parses bundled syntax defs" },
+]
+
+[licenses]
+version = 2
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
+    "OpenSSL",
+    "Unicode-3.0",
+    "Zlib",
+]
+
+[bans]
+multiple-versions = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-git = ["https://github.com/helix-editor/nucleo"]

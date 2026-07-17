@@ -1,0 +1,43 @@
+[package]
+license = "Apache-2.0"
+name = "kigi-config"
+version.workspace = true
+edition.workspace = true
+description = "Shared config loading for Grok — kigi_home, effective config (requirements > user > managed), TOML merge"
+
+[dependencies]
+base64 = { workspace = true }
+blake3 = { workspace = true }
+dunce = { workspace = true }
+# Shared signed deployment-config envelope contract with the cli-chat-proxy signer.
+prod-mc-cli-chat-proxy-types = { path = "../../../prod/mc/cli-chat-proxy-types" }
+ring = { workspace = true }
+semver = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+shellexpand = "3.1"
+thiserror = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+urlencoding = { workspace = true }
+which = { workspace = true }
+kigi-tty-utils = { workspace = true }
+kigi-version = { workspace = true }
+
+# core-foundation: read macOS MDM managed preferences (`ai.x.kigi`) for the
+# admin-deployed requirements layer.
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[features]
+# Exposes `signed_policy::test_seam` (embedded-trust-key override) to
+# dependent crates' test builds. Enable from a dependent's [dev-dependencies]
+# entry only — never in production: with the feature off, the trusted key set
+# is exactly the compiled-in constant.
+test-support = []
+
+[lints]
+workspace = true

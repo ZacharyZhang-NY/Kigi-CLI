@@ -1,0 +1,44 @@
+[package]
+license = "Apache-2.0"
+name = "kigi-file-utils"
+version.workspace = true
+edition.workspace = true
+description = "Local data collection: per-turn event tracking"
+authors = ["xAI"]
+
+[dependencies]
+anyhow = { workspace = true }
+aws-sdk-s3 = { version = "1", default-features = false, features = [
+    "rt-tokio",
+] }
+aws-config = { version = "1", default-features = false, features = [
+    "rt-tokio",
+    "sso",
+    "credentials-process",
+] }
+aws-smithy-http-client = { version = "1", features = ["rustls-ring"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+strum = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+dirs = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sync", "time", "io-util", "fs"] }
+sha2 = { workspace = true, features = ["force-soft"] }
+opentelemetry = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+
+
+[features]
+default-bazel = []
+
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sync", "net", "time"] }
+opentelemetry_sdk = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[lints]
+workspace = true

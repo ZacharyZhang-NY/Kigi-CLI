@@ -1,0 +1,30 @@
+[package]
+license = "Apache-2.0"
+name = "kigi-computer-hub-mcp-adapter"
+version.workspace = true
+edition.workspace = true
+description = "Bridge between MCP servers and the xAI Computer Hub, registering MCP-discovered tools as native hub tools."
+
+[features]
+metrics = ["dep:prometheus"]
+
+[dependencies]
+async-trait = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+tracing = { workspace = true }
+prometheus = { workspace = true, optional = true }
+
+kigi-tool-protocol = { workspace = true }
+kigi-tool-runtime = { workspace = true }
+kigi-tool-types = { workspace = true }
+kigi-computer-hub-sdk = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
+futures = { workspace = true }
+
+[lints]
+workspace = true

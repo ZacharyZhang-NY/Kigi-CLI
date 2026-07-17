@@ -1,0 +1,15 @@
+[package]
+edition.workspace = true
+license = "Apache-2.0"
+name = "kigi-prompt-queue"
+version.workspace = true
+description = "Shared prompt-queue wire types for kigi-shell and kigi-tui"
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true
