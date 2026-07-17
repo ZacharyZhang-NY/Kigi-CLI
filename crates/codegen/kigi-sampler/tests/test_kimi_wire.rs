@@ -382,9 +382,12 @@ async fn request_carries_bearer_kigi_ua_and_kimi_dialect_body() {
     assert_eq!(body["stream"], json!(true));
     assert_eq!(body["stream_options"], json!({ "include_usage": true }));
 
-    // -- Thinking mapping (kimi.py:214-223): effort → thinking, no
-    //    reasoning_effort on the wire.
-    assert_eq!(body["thinking"], json!({ "type": "enabled" }));
+    // -- Thinking mapping (kimi.py:214-223 + live think_efforts wire):
+    //    effort → thinking {type, effort}, no reasoning_effort on the wire.
+    assert_eq!(
+        body["thinking"],
+        json!({ "type": "enabled", "effort": "high" })
+    );
     assert_eq!(body.get("reasoning_effort"), None);
 
     // -- Message adaptations.

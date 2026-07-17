@@ -303,12 +303,49 @@ fn fetch_one_platform_models(
 /// platforms — never key values — because raw fetched entries are persisted
 /// to the models disk cache. Config-file keys are stamped in-memory later by
 /// `resolve_model_list`'s platform-credentials layer.
+/// Map a live `think_efforts` block to catalog effort options. The wire
+/// token stays the option id/label (`"max"` → label `"Max"`) so the UI
+/// mirrors the server's vocabulary, while the canonical value maps through
+/// the [`kigi_sampling_types::ReasoningEffort`] parser (`"max"` → `Xhigh`).
+/// Unknown tokens are dropped with a warning rather than inventing a level.
+fn think_efforts_to_options(
+    think: &kigi_models::WireThinkEfforts,
+) -> Vec<kigi_sampling_types::ReasoningEffortOption> {
+    think
+        .valid_efforts
+        .iter()
+        .filter_map(|token| {
+            let value = match token.parse::<kigi_sampling_types::ReasoningEffort>() {
+                Ok(v) => v,
+                Err(error) => {
+                    tracing::warn!(%token, %error, "unknown think_efforts token; dropping");
+                    return None;
+                }
+            };
+            let mut label: String = token.clone();
+            if let Some(first) = label.get_mut(0..1) {
+                first.make_ascii_uppercase();
+            }
+            Some(kigi_sampling_types::ReasoningEffortOption {
+                id: token.clone(),
+                value,
+                label,
+                description: None,
+                default: think.default_effort.as_deref() == Some(token.as_str()),
+            })
+        })
+        .collect()
+}
+
 fn platform_wire_model_to_entry(
     platform: kigi_models::PlatformId,
     wire: kigi_models::WireModel,
     base_url: &str,
 ) -> crate::agent::config::ModelEntryConfig {
     let capabilities = wire.capabilities();
+    // Selectable thinking levels (live wire `think_efforts`, e.g. K3's
+    // low/high/max). `support: false` or absence both mean "no levels".
+    let think_efforts = wire.think_efforts.as_ref().filter(|t| t.support);
     let context_window = std::num::NonZeroU64::new(wire.context_length).unwrap_or_else(|| {
         tracing::debug!(
             model = %wire.id,
@@ -332,9 +369,13 @@ fn platform_wire_model_to_entry(
         env_key,
         api_backend: Default::default(),
         auth_scheme: None,
-        reasoning_effort: None,
-        supports_reasoning_effort: false,
-        reasoning_efforts: Vec::new(),
+        reasoning_effort: think_efforts
+            .and_then(|t| t.default_effort.as_deref())
+            .and_then(|s| s.parse().ok()),
+        supports_reasoning_effort: think_efforts.is_some(),
+        reasoning_efforts: think_efforts
+            .map(think_efforts_to_options)
+            .unwrap_or_default(),
         capabilities,
         extra_headers: IndexMap::new(),
         context_window,
@@ -633,6 +674,80 @@ mod tests {
         let result = parse_remote_model_value(&value, "https://default.url").unwrap();
         assert_eq!(result.model, "actual-model-id");
         assert_eq!(result.name.as_deref(), Some("Display Name"));
+    }
+    /// Live-wire regression: the K3 `/models` entry (api.kimi.com, 2026-07)
+    /// must land in the catalog with selectable low/high/max efforts and a
+    /// max default — this is what feeds `/model <m> [effort]` and `/effort`.
+    #[test]
+    fn platform_entry_maps_live_k3_think_efforts() {
+        use kigi_sampling_types::ReasoningEffort;
+        let wire: kigi_models::WireModel = serde_json::from_value(serde_json::json!({
+            "id": "k3",
+            "display_name": "K3",
+            "context_length": 1_048_576,
+            "supports_reasoning": true,
+            "supports_image_in": true,
+            "supports_video_in": true,
+            "supports_thinking_type": "only",
+            "think_efforts": {
+                "support": true,
+                "valid_efforts": ["low", "high", "max"],
+                "default_effort": "max"
+            }
+        }))
+        .unwrap();
+        let entry = platform_wire_model_to_entry(
+            kigi_models::PlatformId::KimiCode,
+            wire,
+            "https://api.kimi.com/coding/v1",
+        );
+        assert!(entry.supports_reasoning_effort);
+        assert_eq!(entry.reasoning_effort, Some(ReasoningEffort::Xhigh));
+        let ids: Vec<&str> = entry
+            .reasoning_efforts
+            .iter()
+            .map(|o| o.id.as_str())
+            .collect();
+        assert_eq!(
+            ids,
+            ["low", "high", "max"],
+            "wire tokens stay the option ids"
+        );
+        assert_eq!(
+            entry
+                .reasoning_efforts
+                .iter()
+                .map(|o| o.value)
+                .collect::<Vec<_>>(),
+            [
+                ReasoningEffort::Low,
+                ReasoningEffort::High,
+                ReasoningEffort::Xhigh
+            ],
+        );
+        let max = entry
+            .reasoning_efforts
+            .iter()
+            .find(|o| o.id == "max")
+            .unwrap();
+        assert!(max.default, "max is the server default for K3");
+        assert_eq!(max.label, "Max");
+        // K2.7-style entries (no think_efforts) stay effort-less.
+        let plain: kigi_models::WireModel = serde_json::from_value(serde_json::json!({
+            "id": "kimi-for-coding",
+            "context_length": 262_144,
+            "supports_reasoning": true,
+            "supports_thinking_type": "only"
+        }))
+        .unwrap();
+        let entry = platform_wire_model_to_entry(
+            kigi_models::PlatformId::KimiCode,
+            plain,
+            "https://api.kimi.com/coding/v1",
+        );
+        assert!(!entry.supports_reasoning_effort);
+        assert!(entry.reasoning_efforts.is_empty());
+        assert!(entry.reasoning_effort.is_none());
     }
     #[test]
     fn parse_reads_reasoning_effort_fields() {

@@ -187,6 +187,28 @@ pub struct WireModel {
     pub supports_video_in: bool,
     #[serde(default)]
     pub display_name: Option<String>,
+    /// `"only"` marks always-thinking models (thinking cannot be disabled).
+    /// Verified against the live `api.kimi.com/coding/v1/models` response.
+    #[serde(default)]
+    pub supports_thinking_type: Option<String>,
+    /// Selectable thinking-effort levels, present only on models that offer
+    /// them (e.g. K3). Verified against the live `/models` response.
+    #[serde(default)]
+    pub think_efforts: Option<WireThinkEfforts>,
+}
+
+/// The `think_efforts` object of a `/models` entry. Live wire shape
+/// (api.kimi.com, 2026-07):
+/// `{"support": true, "valid_efforts": ["low", "high", "max"],
+///   "default_effort": "max"}`.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct WireThinkEfforts {
+    #[serde(default)]
+    pub support: bool,
+    #[serde(default)]
+    pub valid_efforts: Vec<String>,
+    #[serde(default)]
+    pub default_effort: Option<String>,
 }
 
 /// `GET {base}/models` response envelope.
@@ -203,14 +225,26 @@ impl WireModel {
     /// - `supports_image_in` → image_in; `supports_video_in` → video_in
     /// - id starts with `kimi-k2` → thinking + image_in + video_in
     ///
+    /// On top of that, the live wire's `supports_thinking_type: "only"`
+    /// marks a model whose thinking cannot be disabled → always_thinking.
+    ///
     /// Returned sorted + deduplicated ([`ModelCapability`]'s `Ord`).
     pub fn capabilities(&self) -> Vec<ModelCapability> {
-        derive_capabilities(
+        let mut caps = derive_capabilities(
             &self.id,
             self.supports_reasoning,
             self.supports_image_in,
             self.supports_video_in,
-        )
+        );
+        if self.supports_thinking_type.as_deref() == Some("only") {
+            for cap in [ModelCapability::Thinking, ModelCapability::AlwaysThinking] {
+                if !caps.contains(&cap) {
+                    caps.push(cap);
+                }
+            }
+            caps.sort();
+        }
+        caps
     }
 }
 
@@ -352,6 +386,63 @@ pub fn default_session_summary_model() -> &'static str {
 mod tests {
     use super::*;
 
+    /// Mirror of the live `api.kimi.com/coding/v1/models` K3 entry
+    /// (fetched 2026-07-17): `supports_thinking_type: "only"` plus a
+    /// `think_efforts` block with low/high/max and a max default.
+    #[test]
+    fn wire_model_parses_live_k3_think_efforts() {
+        let json = serde_json::json!({
+            "id": "k3",
+            "created": 1_761_264_000,
+            "object": "model",
+            "display_name": "K3",
+            "type": "model",
+            "context_length": 1_048_576,
+            "supports_reasoning": true,
+            "supports_image_in": true,
+            "supports_video_in": true,
+            "supports_thinking_type": "only",
+            "think_efforts": {
+                "support": true,
+                "valid_efforts": ["low", "high", "max"],
+                "default_effort": "max"
+            }
+        });
+        let wire: WireModel = serde_json::from_value(json).unwrap();
+        let efforts = wire.think_efforts.as_ref().unwrap();
+        assert!(efforts.support);
+        assert_eq!(efforts.valid_efforts, ["low", "high", "max"]);
+        assert_eq!(efforts.default_effort.as_deref(), Some("max"));
+        // "only" thinking type forces always_thinking on top of the
+        // supports_reasoning-derived thinking capability.
+        let caps = wire.capabilities();
+        assert!(caps.contains(&ModelCapability::Thinking));
+        assert!(caps.contains(&ModelCapability::AlwaysThinking));
+    }
+
+    /// The K2.7 entries carry `supports_thinking_type: "only"` but no
+    /// `think_efforts` — always-thinking without selectable levels.
+    #[test]
+    fn wire_model_without_think_efforts_still_always_thinking() {
+        let json = serde_json::json!({
+            "id": "kimi-for-coding",
+            "context_length": 262_144,
+            "supports_reasoning": true,
+            "supports_image_in": true,
+            "supports_video_in": true,
+            "supports_thinking_type": "only"
+        });
+        let wire: WireModel = serde_json::from_value(json).unwrap();
+        assert!(wire.think_efforts.is_none());
+        let caps = wire.capabilities();
+        assert!(caps.contains(&ModelCapability::AlwaysThinking));
+        // Sorted + deduplicated invariant holds after the "only" injection.
+        let mut sorted = caps.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(caps, sorted);
+    }
+
     #[test]
     fn platform_ids_round_trip() {
         for p in PlatformId::ALL {
@@ -463,6 +554,8 @@ mod tests {
                 supports_image_in: false,
                 supports_video_in: false,
                 display_name: None,
+                supports_thinking_type: None,
+                think_efforts: None,
             },
             WireModel {
                 id: "moonshot-v1-8k".into(),
@@ -471,6 +564,8 @@ mod tests {
                 supports_image_in: false,
                 supports_video_in: false,
                 display_name: None,
+                supports_thinking_type: None,
+                think_efforts: None,
             },
         ];
         let filtered = filter_allowed_models(PlatformId::MoonshotCn, listing.clone());

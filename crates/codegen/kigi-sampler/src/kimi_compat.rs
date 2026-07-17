@@ -32,12 +32,21 @@ pub(crate) fn adapt_chat_completions_body(body: &mut Value) {
 /// Map the OpenAI-style `reasoning_effort` knob onto Kimi's `thinking`
 /// request field and drop `reasoning_effort` from the wire.
 ///
-/// kimi-cli controls thinking exclusively through the request body's
+/// kimi-cli 1.49.0 controls thinking through the request body's
 /// `thinking: {"type": "enabled" | "disabled"}` field
 /// (packages/kosong/src/kosong/chat_provider/kimi.py:214-223 `with_thinking`:
 /// `"enabled" if effort != "off" else "disabled"`; wired by
 /// src/kimi_cli/llm.py:475-481). When no effort is configured, nothing is
 /// sent and the server default applies (llm.py:482 "leave as-is").
+///
+/// Models with selectable levels (the `/models` `think_efforts` block, e.g.
+/// K3's low/high/max) additionally take the level as `thinking.effort` —
+/// verified against the live api.kimi.com: `{"type": "enabled", "effort":
+/// "low"}` is accepted, values outside `valid_efforts` are a 400. The
+/// catalog gates efforts to that per-model list, so this layer only renames
+/// the one canonical-vs-wire divergence (`xhigh` → `max`) and passes the
+/// level through verbatim — inventing or clamping a level here would hide a
+/// real contract violation.
 fn adapt_thinking(body: &mut Value) {
     let Some(obj) = body.as_object_mut() else {
         return;
@@ -45,11 +54,22 @@ fn adapt_thinking(body: &mut Value) {
     let Some(effort) = obj.remove("reasoning_effort") else {
         return;
     };
-    let enabled = effort.as_str() != Some("none");
-    obj.insert(
-        "thinking".to_owned(),
-        serde_json::json!({ "type": if enabled { "enabled" } else { "disabled" } }),
+    let effort = effort.as_str().map(str::to_owned);
+    let enabled = effort.as_deref() != Some("none");
+    let mut thinking = serde_json::Map::new();
+    thinking.insert(
+        "type".to_owned(),
+        Value::String(if enabled { "enabled" } else { "disabled" }.to_owned()),
     );
+    if enabled && let Some(level) = effort {
+        let wire_level = if level == "xhigh" {
+            "max".to_owned()
+        } else {
+            level
+        };
+        thinking.insert("effort".to_owned(), Value::String(wire_level));
+    }
+    obj.insert("thinking".to_owned(), Value::Object(thinking));
 }
 
 /// Message-level adaptations:
@@ -262,12 +282,27 @@ mod tests {
 
     #[test]
     fn reasoning_effort_maps_to_kimi_thinking_field() {
+        // Level rides along as thinking.effort (live wire: 200 with
+        // {"type": "enabled", "effort": "low"}).
         let mut body = json!({ "model": "kimi-for-coding", "reasoning_effort": "high" });
         adapt_chat_completions_body(&mut body);
         assert_eq!(body.get("reasoning_effort"), None);
-        assert_eq!(body["thinking"], json!({ "type": "enabled" }));
+        assert_eq!(
+            body["thinking"],
+            json!({ "type": "enabled", "effort": "high" })
+        );
 
-        // kimi.py:218: "off" (our ReasoningEffort::None) → disabled.
+        // Canonical `xhigh` is spelled `max` on the Kimi wire (the K3
+        // valid_efforts vocabulary is low/high/max).
+        let mut body = json!({ "model": "k3", "reasoning_effort": "xhigh" });
+        adapt_chat_completions_body(&mut body);
+        assert_eq!(
+            body["thinking"],
+            json!({ "type": "enabled", "effort": "max" })
+        );
+
+        // kimi.py:218: "off" (our ReasoningEffort::None) → disabled, and no
+        // effort key (a disabled+effort combination would be contradictory).
         let mut body = json!({ "reasoning_effort": "none" });
         adapt_chat_completions_body(&mut body);
         assert_eq!(body["thinking"], json!({ "type": "disabled" }));
