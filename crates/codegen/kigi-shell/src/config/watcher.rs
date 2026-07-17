@@ -112,7 +112,7 @@ pub enum ConfigChangeEvent {
 /// comparison) skips the update when nothing actually changed, so the
 /// redundant read is harmless. This avoids a class of bugs where an
 /// optimistic suppression window accidentally swallows writes from external
-/// processes (e.g. `grok login` in another terminal).
+/// processes (e.g. `kigi login` in another terminal).
 ///
 /// Adds two **non-recursive** watches per `cwd` argument:
 /// `<cwd>/` (catches `.mcp.json` and `.claude.json` at the project root) and

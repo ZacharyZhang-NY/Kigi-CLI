@@ -980,7 +980,7 @@ pub enum RetryState {
 /// again. Drives the actionable re-auth banner.
 ///
 /// `legacy_auth` is intentionally excluded: those failures carry their own
-/// detailed migration guidance (`grok logout` / `grok login`) in the
+/// detailed migration guidance (`kigi logout` / `kigi login`) in the
 /// message, so we surface that verbatim instead of the generic prompt.
 pub fn is_reauthable_failure(error_type: Option<&str>, message: &str) -> bool {
     if error_type == Some("legacy_auth") {

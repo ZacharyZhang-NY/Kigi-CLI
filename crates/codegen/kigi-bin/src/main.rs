@@ -120,7 +120,7 @@ async fn run_setup_command(json: bool) {
     if !managed_config::has_principal() {
         eprintln!("No deployment key or team sign-in found.");
         eprintln!();
-        eprintln!("To install managed configuration, sign in with a team using `grok login`,");
+        eprintln!("To install managed configuration, sign in with a team using `kigi login`,");
         eprintln!("or set a deployment key:");
         eprintln!();
         if cfg!(unix) {
@@ -436,7 +436,7 @@ async fn workspace_start(args: WorkspaceStartArgs, restart: bool) -> Result<()> 
     ensure_authenticated(
         &agent_config.kimi_code_config,
         false,
-        Some("No cached credentials found. Run `grok login` first."),
+        Some("No cached credentials found. Run `kigi login` first."),
     )
     .await?;
     let capabilities = ClientCapabilities {
@@ -956,7 +956,6 @@ async fn run_agent_command(
         cwd: None,
         is_headless: !is_leader,
         cli_subagents: None,
-        cli_web_search_model: None,
         cli_session_summary_model: None,
         cli_experimental_memory: false,
         cli_no_memory: false,

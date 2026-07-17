@@ -83,7 +83,7 @@ fn default_auth_path() -> anyhow::Result<PathBuf> {
 fn read_auth_entry(path: &Path) -> anyhow::Result<(String, AuthEntry)> {
     if !path.exists() {
         anyhow::bail!(
-            "No auth credentials found at {}. Run `grok login` first.",
+            "No auth credentials found at {}. Run `kigi login` first.",
             path.display()
         );
     }
@@ -98,7 +98,7 @@ fn read_auth_entry(path: &Path) -> anyhow::Result<(String, AuthEntry)> {
         .find(|(_, e)| e.refresh_token.is_some() && e.oidc_issuer.is_some())
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "no OIDC auth entry found in {}. Run `grok login` first.",
+                "no OIDC auth entry found in {}. Run `kigi login` first.",
                 path.display()
             )
         })

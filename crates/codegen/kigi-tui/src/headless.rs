@@ -505,14 +505,12 @@ fn auto_respond_to_permissions(
 /// "Not signed in" error message, tailored to the session type.
 fn auth_required_message(interactive: bool) -> String {
     if interactive {
-        "Not signed in. Run `grok login` to authenticate \
-         (or `grok login --device-code` if no browser is available)."
-            .to_string()
+        "Not signed in. Run `kigi login` to authenticate with Kimi Code.".to_string()
     } else {
-        "Not signed in. To authenticate without a browser, run:\n  \
-         grok login --device-code\n\n\
-         Alternatively, set the XAI_API_KEY environment variable \
-         or run `grok login` on a machine with a browser."
+        "Not signed in. Run `kigi login` to authenticate with Kimi Code \
+         (the device flow prints a URL you can open on any machine).\n\
+         Alternatively, set a Moonshot open-platform API key via \
+         KIGI_MOONSHOT_API_KEY."
             .to_string()
     }
 }
@@ -870,7 +868,6 @@ pub async fn run_single_turn(
         cwd: Some(&cwd),
         is_headless: true,
         cli_subagents: None,
-        cli_web_search_model: None,
         cli_session_summary_model: None,
         cli_experimental_memory: false,
         cli_no_memory: false,
