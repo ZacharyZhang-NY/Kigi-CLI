@@ -112,6 +112,37 @@ const PERMANENT_FAILURE_TTL: StdDuration = StdDuration::from_secs(300);
 /// `attempted_tombstone_key`, when a tombstone is stored), never co-held. Never hold
 /// a `parking_lot` guard across `.await`. Refreshers return [`RefreshOutcome`]
 /// for `refresh_chain` to apply.
+/// Whether a manager rooted at `path` may use the OS keyring for `scope`.
+///
+/// The keyring entry (`service kigi / oauth/kimi-code`) is global per OS
+/// user, so exactly one auth.json location can own it: the default install
+/// path. Everything else (tempdir tests, `KIGI_SHARE_DIR` profiles,
+/// `KIGI_AUTH_PATH` overrides) is file-scoped. The dynamic
+/// [`keyring_enabled`] gate (env kill-switch, cfg(test) mock toggle) layers
+/// on top at each call site.
+fn keyring_path_scoped_for(path: &Path, scope: &str) -> bool {
+    #[cfg(test)]
+    if TEST_FORCE_KEYRING_PATH_SCOPE.with(|flag| flag.get()) {
+        return scope == KIMI_CODE_OAUTH_SCOPE;
+    }
+    scope == KIMI_CODE_OAUTH_SCOPE && path == kigi_config::default_kigi_home().join("auth.json")
+}
+
+// Test seam: pretend managers on this thread are rooted at the default
+// install so keyring behavior can be exercised against the mock keyring
+// from a tempdir. Thread-local for the same reason as the mock-keyring
+// toggle: no leakage into concurrently running persistence tests.
+#[cfg(test)]
+thread_local! {
+    static TEST_FORCE_KEYRING_PATH_SCOPE: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+pub(crate) fn set_test_force_keyring_path_scope(on: bool) {
+    TEST_FORCE_KEYRING_PATH_SCOPE.with(|flag| flag.set(on));
+}
+
 pub struct AuthManager {
     /// In-memory bearer. Mutate via [`Self::with_inner_write`] or
     /// [`Self::refresh_chain`]; the closure helpers' sync return type
@@ -119,6 +150,15 @@ pub struct AuthManager {
     inner: Arc<RwLock<Option<KimiAuth>>>,
     path: PathBuf,
     scope: String,
+    /// Whether THIS manager may touch the OS keyring. The keyring entry is
+    /// global per user, so it can only mirror the credential of the default
+    /// install (`~/.kigi/auth.json`). Managers rooted anywhere else —
+    /// integration-test tempdirs, alternate profiles, `KIGI_AUTH_PATH` —
+    /// must never read, write, or DELETE it: before this guard, every
+    /// `cargo test` run wiped the developer's real login via
+    /// `remove_scope`'s keyring delete. [`keyring_enabled`] (env
+    /// kill-switch / cfg(test) mock toggle) still gates dynamically on top.
+    keyring_path_scoped: bool,
     kimi_code_config: KimiCodeConfig,
     refresher: RwLock<Option<Arc<dyn TokenRefresher>>>,
     /// Idempotency guard for `configure_refresher` so double-calls
@@ -273,7 +313,8 @@ impl AuthManager {
             .unwrap_or_else(|_| kigi_home.join("auth.json"));
 
         // Keyring first (PRD F1): the session credential's primary store.
-        if scope == KIMI_CODE_OAUTH_SCOPE
+        if keyring_path_scoped_for(&path, &scope)
+            && keyring_enabled()
             && let KeyringRead::Found(auth) = keyring_read_session()
         {
             kigi_log::unified_log::info(
@@ -356,6 +397,7 @@ impl AuthManager {
     ) -> Self {
         Self {
             inner: Arc::new(RwLock::new(inner)),
+            keyring_path_scoped: keyring_path_scoped_for(&path, &scope),
             path,
             scope,
             kimi_code_config,
@@ -402,8 +444,11 @@ impl AuthManager {
     fn remove_scope_impl(&self, scope: &str) -> std::io::Result<()> {
         // Session credentials also live in the system keyring (primary
         // store); drop that copy first so a file-side failure can't leave
-        // the token behind.
+        // the token behind. Gated on `keyring_scoped`: only the default
+        // install owns the (global) keyring entry — a tempdir-rooted
+        // manager deleting it would log the real user out.
         if scope == KIMI_CODE_OAUTH_SCOPE
+            && self.keyring_path_scoped
             && let Err(e) = keyring_delete_session()
         {
             tracing::warn!(error = %e, "auth: failed to remove session credential from keyring");
@@ -637,7 +682,7 @@ impl AuthManager {
         let update_started = std::time::Instant::now();
 
         // Keyring first (PRD F1): the session credential's primary store.
-        if self.scope == KIMI_CODE_OAUTH_SCOPE && keyring_enabled() {
+        if self.keyring_path_scoped && keyring_enabled() {
             match keyring_write_session(&auth) {
                 Ok(()) => {
                     let elapsed_ms = update_started.elapsed().as_millis() as u64;

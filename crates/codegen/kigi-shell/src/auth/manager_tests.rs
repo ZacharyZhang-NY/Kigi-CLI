@@ -328,15 +328,28 @@ mod keyring_integration {
         disable_mock_keyring_for_test, enable_mock_keyring_for_test, keyring_read_session,
     };
 
+    /// Tempdir manager pretending to be the default install (thread-local
+    /// test seam) so keyring behavior — including constructor-time keyring
+    /// reads — is exercisable against the mock keyring.
+    fn mgr_keyring_scoped() -> (tempfile::TempDir, Arc<AuthManager>) {
+        // The path scope is captured at construction, so force it first.
+        crate::auth::manager::set_test_force_keyring_path_scope(true);
+        let dir = tempfile::tempdir().unwrap();
+        let m = Arc::new(AuthManager::new(dir.path(), KimiCodeConfig::default()));
+        (dir, m)
+    }
+
     struct MockKeyringGuard;
     impl MockKeyringGuard {
         fn enable() -> Self {
             enable_mock_keyring_for_test();
+            crate::auth::manager::set_test_force_keyring_path_scope(true);
             Self
         }
     }
     impl Drop for MockKeyringGuard {
         fn drop(&mut self) {
+            crate::auth::manager::set_test_force_keyring_path_scope(false);
             disable_mock_keyring_for_test();
         }
     }
@@ -347,7 +360,7 @@ mod keyring_integration {
     #[serial_test::serial(kigi_keyring)]
     async fn update_prefers_keyring_and_logout_clears_it() {
         let _guard = MockKeyringGuard::enable();
-        let (dir, m) = mgr();
+        let (dir, m) = mgr_keyring_scoped();
         m.update(session("at-kr", "rt-kr", 3600, 3600))
             .await
             .unwrap();
@@ -375,12 +388,52 @@ mod keyring_integration {
         ));
     }
 
+    /// Regression for the 2026-07-17 credential wipe: a manager rooted
+    /// OUTSIDE the default install (a tempdir — exactly what integration
+    /// tests construct) must never write to or DELETE the global keyring
+    /// entry. Before the path-scope guard, every `cargo test` run wiped the
+    /// developer's real login via `remove_scope`'s keyring delete.
+    #[tokio::test]
+    #[serial_test::serial(kigi_keyring)]
+    async fn tempdir_manager_never_touches_global_keyring() {
+        let _guard = MockKeyringGuard::enable();
+        // Seed the "real user's" credential via a default-scoped manager.
+        let (_scoped_dir, scoped) = mgr_keyring_scoped();
+        scoped
+            .update(session("at-real", "rt-real", 3600, 3600))
+            .await
+            .unwrap();
+
+        // A tempdir manager WITHOUT the path scope — the integration-test
+        // shape. The mock keyring stays enabled: only the path scope
+        // distinguishes it from the real install.
+        crate::auth::manager::set_test_force_keyring_path_scope(false);
+        let (dir, foreign) = mgr();
+        foreign
+            .update(session("at-foreign", "rt-foreign", 3600, 3600))
+            .await
+            .unwrap();
+        assert!(
+            dir.path().join("auth.json").exists(),
+            "foreign manager must write to its own file, not the keyring"
+        );
+
+        // Its logout must not destroy the global entry.
+        foreign.clear().unwrap();
+        match keyring_read_session() {
+            crate::auth::storage::KeyringRead::Found(auth) => {
+                assert_eq!(auth.key, "at-real", "real credential must survive");
+            }
+            other => panic!("global keyring entry destroyed by a tempdir manager: {other:?}"),
+        }
+    }
+
     /// A stale file copy left from fallback days is stripped on the next
     /// keyring write, and the keyring copy wins on reads.
     #[tokio::test]
     #[serial_test::serial(kigi_keyring)]
     async fn keyring_write_strips_stale_file_copy() {
-        let (dir, m) = mgr();
+        let (dir, m) = mgr_keyring_scoped();
         // Keyring disabled: first write lands in the file.
         m.update(session("at-file", "rt-file", 3600, 3600))
             .await
