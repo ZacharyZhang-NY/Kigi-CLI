@@ -1,7 +1,6 @@
 pub mod auth;
 pub(crate) mod auth_gate;
 pub mod billing;
-pub mod bundle;
 pub mod chat_conversation_history;
 pub mod code_nav;
 pub mod debug;
@@ -28,7 +27,6 @@ pub mod search;
 pub mod session_admin;
 pub mod session_search;
 pub mod session_updates;
-pub mod share;
 pub mod skills;
 pub mod suggest;
 pub mod task;

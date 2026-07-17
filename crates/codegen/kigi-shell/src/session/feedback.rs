@@ -10,9 +10,7 @@ use super::signals::SessionSignals;
 use crate::util::probabilistic_sample;
 
 // Re-export shared feedback API wire types to avoid duplication
-pub use prod_mc_cli_chat_proxy_types::feedback_types::{
-    FeedbackHeuristicsConfig, FeedbackMode, TierConfig,
-};
+pub use crate::session::feedback_types::{FeedbackHeuristicsConfig, FeedbackMode, TierConfig};
 
 /// Feedback request tier with associated probability and criteria.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -288,7 +286,7 @@ impl FeedbackHeuristics {
 
     /// Create a heuristics evaluator from a remote feedback-heuristics config.
     pub fn from_config(config: &FeedbackHeuristicsConfig) -> Self {
-        use prod_mc_cli_chat_proxy_types::feedback_types::parse_feedback_mode_str;
+        use crate::session::feedback_types::parse_feedback_mode_str;
 
         Self {
             enabled: config.enabled,
@@ -343,7 +341,7 @@ impl FeedbackHeuristics {
     /// Update the heuristics configuration from a loaded config.
     /// Preserves the triggered_tiers state and request tracking.
     pub fn update_config(&mut self, config: &FeedbackHeuristicsConfig) {
-        use prod_mc_cli_chat_proxy_types::feedback_types::parse_feedback_mode_str;
+        use crate::session::feedback_types::parse_feedback_mode_str;
 
         self.enabled = config.enabled;
 

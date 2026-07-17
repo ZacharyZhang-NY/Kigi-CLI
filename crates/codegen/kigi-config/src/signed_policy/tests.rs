@@ -956,3 +956,28 @@ fn rotation_selects_the_trusted_key_by_signed_key_id() {
         Err(SigError::SignatureMismatch)
     );
 }
+
+/// The version field round-trips, and a pre-versioned payload (no `version`
+/// key) defaults to 0 — old sidecars keep parsing.
+#[test]
+fn signed_payload_version_round_trips_and_defaults() {
+    let versioned = SignedPayload {
+        version: SIGNED_PAYLOAD_VERSION,
+        deployment_id: None,
+        team_id: Some("team-007".into()),
+        managed_config: None,
+        requirements: None,
+        fail_closed: false,
+        expires_at: 4_000_000_000,
+        key_id: "v1".into(),
+    };
+    let json = serde_json::to_string(&versioned).unwrap();
+    assert_eq!(
+        serde_json::from_str::<SignedPayload>(&json).unwrap(),
+        versioned
+    );
+
+    let legacy: SignedPayload =
+        serde_json::from_str(r#"{"expires_at": 1, "key_id": "v1"}"#).unwrap();
+    assert_eq!(legacy.version, 0, "pre-versioned payloads default to 0");
+}

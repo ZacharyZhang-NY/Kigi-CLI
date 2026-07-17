@@ -755,11 +755,6 @@ fn action_for_enum_commit(key: SettingKey, choice: &'static str) -> Option<Actio
             )),
             _ => None,
         },
-        "coding_data_sharing" => match choice {
-            "opt-in" => Some(Action::SetCodingDataSharing { opted_in: true }),
-            "opt-out" => Some(Action::SetCodingDataSharing { opted_in: false }),
-            _ => None,
-        },
         "plan_mode" => match choice {
             "on" => Some(Action::SetPlanMode(crate::app::actions::PlanModeKind::On)),
             "off" => Some(Action::SetPlanMode(crate::app::actions::PlanModeKind::Off)),
@@ -5566,9 +5561,9 @@ mod tests {
     /// The default registry contains Appearance settings
     /// (3 bools + 3 enums + 1 int = 7 entries), the Editor entry
     /// `multiline_mode`, the Agent entries `permission_mode` and
-    /// `plan_mode`, the Privacy entry `coding_data_sharing`, the
-    /// Models entry `default_model`, and the Advanced entries
-    /// `show_tips` and `auto_update`. `default_reasoning_effort` and
+    /// `plan_mode`, the Models entry `default_model`, and the
+    /// Advanced entries `show_tips` and `auto_update`.
+    /// `default_reasoning_effort` and
     /// `auto_compact_threshold_percent` are not exposed in the modal.
     #[test]
     fn rows_contain_categories_and_settings_through_pr_14() {
@@ -5591,7 +5586,6 @@ mod tests {
                 &SettingCategory::Mouse,
                 &SettingCategory::Editor,
                 &SettingCategory::Agent,
-                &SettingCategory::Privacy,
                 &SettingCategory::Models,
                 // The Session category has no registered settings, so its
                 // header is not emitted.
@@ -5672,8 +5666,6 @@ mod tests {
                 "toolset.ask_user_question.timeout_enabled",
                 // PAGER-owned plan_mode (Agent category).
                 "plan_mode",
-                // SHELL-owned coding_data_sharing (Privacy category).
-                "coding_data_sharing",
                 // SHELL-owned default_model (Models category).
                 "default_model",
                 // Models category. `default_reasoning_effort`,
@@ -8095,7 +8087,7 @@ mod tests {
     fn picker_visual_smoke_debug() {
         let entries = vec![SettingMeta {
             key: "wrap_enum",
-            category: SettingCategory::Privacy,
+            category: SettingCategory::Advanced,
             owner: SettingOwner::Shared,
             label: "Coding data sharing",
             description: "Controls whether SpaceXAI may retain and train on coding data.",
@@ -8157,7 +8149,7 @@ mod tests {
     fn picker_long_description_wraps_to_multiple_lines() {
         let entries = vec![SettingMeta {
             key: "wrap_enum",
-            category: SettingCategory::Privacy,
+            category: SettingCategory::Advanced,
             owner: SettingOwner::Shared,
             label: "Coding data sharing",
             description: "Controls whether SpaceXAI may retain and train on coding data.",
@@ -8442,7 +8434,7 @@ mod tests {
         // Reuse the wrap fixture: long descriptions on both choices.
         let entries = vec![SettingMeta {
             key: "wrap_enum",
-            category: SettingCategory::Privacy,
+            category: SettingCategory::Advanced,
             owner: SettingOwner::Shared,
             label: "Coding data sharing",
             description: "Controls whether SpaceXAI may retain coding data.",
@@ -9501,7 +9493,7 @@ mod tests {
     fn synthetic_enum_chevron_meta() -> SettingMeta {
         SettingMeta {
             key: "test-enum-with-chevron",
-            category: SettingCategory::Privacy,
+            category: SettingCategory::Advanced,
             owner: SettingOwner::Shared,
             label: "Coding data sharing",
             description: "Enum row that opens a picker — chevron suffix applies.",
@@ -9665,9 +9657,9 @@ mod tests {
     /// Two-line rows expand `state.row_rects` to span BOTH lines so
     /// mouse clicks on either line trigger the same default action.
     ///
-    /// `coding_data_sharing`: label 19 + value "Opt out" 7 + chevron
-    /// 2 + chrome 4 = 32 cells one-line. We render at width=28 so
-    /// the row drops to two lines.
+    /// `default_selected_permission`: label 27 + value "Always allow
+    /// on all sessions" 28 + chevron 2 + chrome 4 = 61 cells
+    /// one-line. We render at width=40 so the row drops to two lines.
     #[test]
     fn two_line_row_hit_rect_spans_both_lines() {
         let mut s = make_state();
@@ -9675,15 +9667,15 @@ mod tests {
             .rows
             .iter()
             .position(
-                |r| matches!(r, RowEntry::Setting { key, .. } if *key == "coding_data_sharing"),
+                |r| matches!(r, RowEntry::Setting { key, .. } if *key == "default_selected_permission"),
             )
-            .expect("coding_data_sharing must be registered");
-        // Render at a narrow width so coding_data_sharing forces a
-        // two-line layout.
+            .expect("default_selected_permission must be registered");
+        // Render at a narrow width so default_selected_permission
+        // forces a two-line layout.
         let area = Rect {
             x: 0,
             y: 0,
-            width: 28,
+            width: 40,
             height: 60,
         };
         let mut buf = Buffer::empty(area);
@@ -9700,7 +9692,7 @@ mod tests {
 
         // Synthesize a click on line 2 of the row. The mouse handler
         // should fire the default action (open the enum picker for
-        // coding_data_sharing).
+        // default_selected_permission).
         s.list_area = area;
         let click_y = rect.y + 1;
         // Click somewhere in the middle of line 2.
@@ -9736,22 +9728,22 @@ mod tests {
     #[test]
     fn two_line_row_with_expansion_renders_three_segments() {
         let mut s = make_state();
-        // Coding data sharing's label + value (with chevron) won't
-        // fit on a 28-col line, forcing two-line layout.
+        // Default selected permission's label + value (with chevron)
+        // won't fit on a 40-col line, forcing two-line layout.
         let row_idx = s
             .rows
             .iter()
             .position(
-                |r| matches!(r, RowEntry::Setting { key, .. } if *key == "coding_data_sharing"),
+                |r| matches!(r, RowEntry::Setting { key, .. } if *key == "default_selected_permission"),
             )
-            .expect("coding_data_sharing must be registered");
+            .expect("default_selected_permission must be registered");
         s.selected = row_idx;
-        s.expanded_keys.insert("coding_data_sharing");
+        s.expanded_keys.insert("default_selected_permission");
 
         let area = Rect {
             x: 0,
             y: 0,
-            width: 28,
+            width: 40,
             height: 60,
         };
         let mut buf = Buffer::empty(area);
@@ -9767,18 +9759,16 @@ mod tests {
         // The row label is on line 1.
         let label_line = buf_row_text(&buf, rect.y, area.x, area.width);
         assert!(
-            label_line.contains("Coding data sharing"),
+            label_line.contains("Default selected permission"),
             "line 1 must contain the row label: {label_line:?}"
         );
-        // The value (display: "Opt out" or similar) is on line 2.
+        // The value is on line 2. It comes from the canonical →
+        // display mapping: `UiConfig::default()` resolves to the
+        // `always_allow_all_sessions` canonical, whose registered
+        // display is "Always allow on all sessions".
         let value_line = buf_row_text(&buf, rect.y + 1, area.x, area.width);
-        // Value comes from displaying the canonical → display mapping,
-        // which uses the synthetic enum's "Third Option" canonical of
-        // "opt-out". The display fallback returns the canonical when
-        // the lookup misses — registry has the real `CodingDataSharing`
-        // choices, so display should be "Opt out".
         assert!(
-            value_line.contains("Opt") || value_line.contains("opt") || value_line.contains("out"),
+            value_line.contains("Always allow"),
             "line 2 must contain the value text: {value_line:?}"
         );
         // The expanded description renders on line 3 and below.

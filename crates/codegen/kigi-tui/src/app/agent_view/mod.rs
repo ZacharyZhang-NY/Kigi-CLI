@@ -727,10 +727,6 @@ pub struct AgentView {
     /// Stashed normal prompt state while editing a queued prompt.
     /// Restored when editing ends.
     pub stashed_prompt: Option<StashedPrompt>,
-    /// Complete prompt stashed from a credit-limit-blocked turn. Used by
-    /// `CreditLimitRecheckComplete` to retry the prompt after a tier
-    /// upgrade instead of showing a stale upsell.
-    pub credit_limit_stashed_prompt: Option<crate::app::agent::InFlightPrompt>,
     /// Complete prompt stashed from a turn that failed because the login
     /// expired (401 / re-auth). Used by the `AuthComplete` handler to
     /// auto-resubmit the prompt after a successful mid-session re-auth so
@@ -754,10 +750,6 @@ pub struct AgentView {
     /// Unlike `chat_kind`, stays `false` for a `/chat` one-shot session in
     /// a Build process, whose picker still lists local sessions.
     pub app_chat_mode: bool,
-    /// Mocked credit balance for the status bar indicator.
-    pub credit_balance: Option<crate::views::credit_bar::CreditBalance>,
-    /// Auto top-up rule paired with `credit_balance` for the prompt warning.
-    pub auto_topup: Option<crate::views::credit_bar::AutoTopupInfo>,
     /// Current goal orchestration state. Set by `GoalUpdated` session
     /// notifications, cleared when a new session starts.
     pub goal_state: Option<super::agent::GoalDisplayState>,
@@ -947,7 +939,6 @@ pub struct AgentView {
     pub hovered_prompt: bool,
     pub hit_badge: HitArea,
     pub hit_context: HitArea,
-    pub hit_credits: HitArea,
     pub hit_todo_close: HitArea,
     pub hit_bg_close: HitArea,
     pub hit_subagent_close: HitArea,
@@ -1235,8 +1226,6 @@ pub struct AgentView {
     /// Hit area for the [✗] close button in the subagent frame title bar.
     pub hit_subagent_frame_close: HitArea,
     /// Whether the `/share` slash command is available (mirrors
-    /// `AppView::sharing_enabled`). Used to gate palette entries.
-    pub sharing_enabled: bool,
     /// Input flight recorder — rolling buffer of recent key events.
     /// Dumped to file via Esc→d combo for debugging.
     pub(crate) input_log: crate::input_log::InputRingBuffer,
@@ -1511,23 +1500,6 @@ fn translate_local_submit(
                 worktree,
                 persist_mode,
             })
-        }
-        LocalQuestionKind::CreditLimitUpsell => {
-            let q = qv.questions.first();
-            let url = q
-                .and_then(|q| q.options.get(*idx))
-                .and_then(|o| o.id.as_deref())
-                .unwrap_or(super::dispatch::UPSELL_URL_PAYG);
-            InputOutcome::Action(Action::OpenUrl(url.to_string()))
-        }
-        LocalQuestionKind::FreeUsageUpsell => {
-            let url = qv
-                .questions
-                .first()
-                .and_then(|q| q.options.get(*idx))
-                .and_then(|o| o.id.as_deref())
-                .unwrap_or(super::dispatch::UPSELL_URL_UPGRADE);
-            InputOutcome::Action(Action::OpenUrl(url.to_string()))
         }
         LocalQuestionKind::AgentTypeMismatch { model_id, effort } => {
             let start_new = *idx == 0;
@@ -2217,8 +2189,6 @@ pub(super) mod test_fixtures {
             restore_degree: None,
             rate_limited: false,
             model_incompatible: false,
-            credit_limit_blocked: false,
-            free_usage_blocked: false,
             available_commands: Vec::new(),
             available_commands_generation: 0,
             available_tools: None,
@@ -2278,8 +2248,6 @@ pub(super) mod test_fixtures {
                 restore_degree: None,
                 rate_limited: false,
                 model_incompatible: false,
-                credit_limit_blocked: false,
-                free_usage_blocked: false,
                 available_commands: Vec::new(),
                 available_commands_generation: 0,
                 available_tools: None,
@@ -3010,8 +2978,6 @@ pub(crate) fn test_agent_view(session_id: Option<&str>, cwd: std::path::PathBuf)
             restore_degree: None,
             rate_limited: false,
             model_incompatible: false,
-            credit_limit_blocked: false,
-            free_usage_blocked: false,
             available_commands: Vec::new(),
             available_commands_generation: 0,
             available_tools: None,

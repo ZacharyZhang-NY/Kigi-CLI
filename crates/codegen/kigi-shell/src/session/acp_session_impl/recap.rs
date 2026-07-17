@@ -3,7 +3,7 @@
 
 use super::*;
 
-use crate::remote::DEFAULT_CONTEXT_WINDOW;
+use crate::agent::models_fetch::DEFAULT_CONTEXT_WINDOW;
 
 impl SessionActor {
     /// Handle a /btw side question — single-turn model call using the

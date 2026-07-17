@@ -100,9 +100,6 @@ pub struct WelcomeRenderResult {
     /// Hit-test rect for the "show full URL" fallback link.
     pub auth_fallback_rect: Option<Rect>,
     /// Hit-test rect for the "[Refresh]" button on the paywall tier line.
-    pub refresh_rect: Option<Rect>,
-    /// Hit-test rect for the gate URL link (click to open in browser).
-    pub gate_url_rect: Option<Rect>,
     /// Whether a "Changelog" menu action was rendered (above Quit), so the
     /// input handler can map the extra menu row to the release-notes action
     /// once markdown is available.
@@ -334,12 +331,12 @@ impl WelcomeLayout {
 }
 
 /// Controls what the version badge renders.
-pub(super) enum VersionBadgeMode<'a> {
-    /// Full badge: team | tier | api_key | **Grok Build** VERSION+channel **Beta** (right-aligned).
-    Full { subscription_tier: Option<&'a str> },
-    /// Hero footer: team | api_key | Grok Build Beta [channel] (right-aligned, gray).
+pub(super) enum VersionBadgeMode {
+    /// Full badge: team | tier | api_key | **Kigi** VERSION+channel (right-aligned).
+    Full,
+    /// Hero footer: team | api_key | Kigi [channel] (right-aligned, gray).
     HeroFooter,
-    /// Hero inline: **Grok Build Beta**  VERSION (left-aligned).
+    /// Hero inline: **Kigi**  VERSION (left-aligned).
     HeroInline,
 }
 
@@ -350,7 +347,7 @@ pub(super) fn render_version_badge(
     team_name: Option<&str>,
     h_margin: u16,
     is_api_key_auth: bool,
-    mode: VersionBadgeMode<'_>,
+    mode: VersionBadgeMode,
 ) {
     let version_area = Rect {
         width: version_rect.width.saturating_sub(h_margin),
@@ -362,25 +359,14 @@ pub(super) fn render_version_badge(
     );
     let mut spans = Vec::new();
 
-    let (show_team, show_tier, show_api_key, align) = match &mode {
-        VersionBadgeMode::Full { .. } => (true, true, true, Alignment::Right),
-        VersionBadgeMode::HeroFooter => (true, false, true, Alignment::Right),
-        VersionBadgeMode::HeroInline => (false, false, false, Alignment::Left),
+    let (show_team, show_api_key, align) = match &mode {
+        VersionBadgeMode::Full => (true, true, Alignment::Right),
+        VersionBadgeMode::HeroFooter => (true, true, Alignment::Right),
+        VersionBadgeMode::HeroInline => (false, false, Alignment::Left),
     };
 
     if show_team && let Some(team) = team_name {
         spans.push(Span::styled(team, Style::default().fg(theme.gray)));
-        spans.push(sep.clone());
-    }
-    if show_tier
-        && let VersionBadgeMode::Full {
-            subscription_tier: Some(tier),
-        } = &mode
-    {
-        spans.push(Span::styled(
-            format!("Tier: {tier}"),
-            Style::default().fg(theme.gray),
-        ));
         spans.push(sep.clone());
     }
     if show_api_key && is_api_key_auth {
@@ -393,9 +379,9 @@ pub(super) fn render_version_badge(
 
     let channel = kigi_update::channel_label();
     match &mode {
-        VersionBadgeMode::Full { .. } => {
+        VersionBadgeMode::Full => {
             spans.push(Span::styled(
-                "Grok Build  ",
+                "Kigi  ",
                 Style::default()
                     .fg(theme.text_primary)
                     .add_modifier(Modifier::BOLD),
@@ -404,16 +390,10 @@ pub(super) fn render_version_badge(
                 format!("{}{}", kigi_version::VERSION, channel),
                 Style::default().fg(theme.gray),
             ));
-            spans.push(Span::styled(
-                " Beta",
-                Style::default()
-                    .fg(theme.text_primary)
-                    .add_modifier(Modifier::BOLD),
-            ));
         }
         VersionBadgeMode::HeroFooter => {
             let channel_display = if channel.is_empty() {
-                "Beta"
+                "Kigi"
             } else {
                 channel.trim()
             };
@@ -424,7 +404,7 @@ pub(super) fn render_version_badge(
         }
         VersionBadgeMode::HeroInline => {
             spans.push(Span::styled(
-                "Grok Build Beta  ",
+                "Kigi  ",
                 Style::default()
                     .fg(theme.text_primary)
                     .add_modifier(Modifier::BOLD),
@@ -520,9 +500,7 @@ fn render_prompt_and_version(
             team_name,
             h_margin,
             is_api_key_auth,
-            VersionBadgeMode::Full {
-                subscription_tier: None,
-            },
+            VersionBadgeMode::Full,
         );
     } else {
         render_version_badge(
@@ -554,11 +532,8 @@ pub struct WelcomeRenderParams<'a> {
     pub model_name: &'a str,
     pub flags: &'a [PromptFlag<'a>],
     pub selected: Option<usize>,
-    pub team_name: Option<&'a str>,
-    pub has_access: bool,
     pub has_claude_import: bool,
     pub mouse_pos: Option<(u16, u16)>,
-    pub is_zdr_blocked: bool,
     pub session_picker: Option<&'a [SessionPickerEntry]>,
     pub session_picker_loading: bool,
     pub compact: bool,
@@ -575,8 +550,6 @@ pub struct WelcomeRenderParams<'a> {
     /// [`crate::views::session_picker::effective_filter_query`]).
     pub session_picker_entries_query: Option<&'a str>,
     pub welcome_tick: u64,
-    pub gate: Option<&'a kigi_shell::auth::GateInfo>,
-    pub subscription_tier: Option<&'a str>,
     pub session_picker_grouped: bool,
     /// Source filter (local/remote/all) for the session picker.
     pub session_picker_source_filter: crate::views::session_picker::SourceFilter,
@@ -586,12 +559,6 @@ pub struct WelcomeRenderParams<'a> {
     /// Live working directory (tracks `Effect::SetWorkingDir`), used to pin
     /// the current repo's session group to the top of the picker.
     pub cwd: &'a std::path::Path,
-    /// App-level credit balance for showing the usage warning on the welcome screen.
-    pub credit_balance: Option<&'a crate::views::credit_bar::CreditBalance>,
-    /// Auto top-up rule paired with `credit_balance` for the welcome warning.
-    pub auto_topup: Option<&'a crate::views::credit_bar::AutoTopupInfo>,
-    /// Whether /usage is visible (false for team users — suppresses the warning).
-    pub usage_visible: bool,
     /// Cached changelog bullets for the welcome screen (up to 3).
     pub changelog_bullets: &'a [String],
     /// Whether full release notes markdown is available (controls the CTA hint).
@@ -635,7 +602,7 @@ pub fn render_welcome(
 
     let mut result = match params.auth_state {
         AuthState::Pending { error } => {
-            let label = params.login_label.unwrap_or("grok.com");
+            let label = params.login_label.unwrap_or("kimi.com");
             let login_text = format!("Login with {}", label);
             let menu = [("l", login_text.as_str()), ("q", "Quit")];
             let msg = error.as_deref().map(|e| (e, theme.accent_error));
@@ -643,8 +610,6 @@ pub fn render_welcome(
                 model_name: params.model_name,
                 flags: params.flags,
                 multiline: false,
-                usage_warning: None,
-                usage_warning_critical: false,
             };
             let (menu_rects, post_flush_escapes) = render_welcome_blocked(
                 content_area,
@@ -665,8 +630,6 @@ pub fn render_welcome(
                 import_banner_rect: None,
                 auth_url_rect: None,
                 auth_fallback_rect: None,
-                refresh_rect: None,
-                gate_url_rect: None,
                 changelog_action_present: false,
                 changelog_cta_rect: None,
             }
@@ -693,49 +656,15 @@ pub fn render_welcome(
                 import_banner_rect: None,
                 auth_url_rect: url_rect,
                 auth_fallback_rect: fallback_rect,
-                refresh_rect: None,
-                gate_url_rect: None,
-                changelog_action_present: false,
-                changelog_cta_rect: None,
-            }
-        }
-        AuthState::Done if params.is_zdr_blocked => {
-            let menu = [("l", "Switch account"), ("q", "Quit")];
-            let (menu_rects, post_flush_escapes) = render_welcome_blocked(
-                content_area,
-                buf,
-                Some((
-                    "Grok Build is not yet available for this account.",
-                    theme.gray_bright,
-                )),
-                &menu,
-                params.selected,
-                None,
-                h_margin,
-                params.compact,
-            );
-            WelcomeRenderResult {
-                cursor_pos: None,
-                post_flush_escapes,
-                menu_rects,
-                prompt_rect: None,
-                session_picker_hit_areas: None,
-                import_banner_rect: None,
-                auth_url_rect: None,
-                auth_fallback_rect: None,
-                refresh_rect: None,
-                gate_url_rect: None,
                 changelog_action_present: false,
                 changelog_cta_rect: None,
             }
         }
         // Folder-trust question: shown after auth, before any session is
         // created, when the cwd has untrusted repo-local config. Mirrors the
-        // Pending login screen. Skipped under ZDR/access gates (the ZDR arm
-        // above and the !has_access arm below) since those already block
-        // sessions. The `if let` destructure makes the `Pending`-only render
-        // structurally exhaustive (no `unreachable!`).
-        AuthState::Done if params.has_access => {
+        // Pending login screen. The `if let` destructure makes the
+        // `Pending`-only render structurally exhaustive (no `unreachable!`).
+        AuthState::Done => {
             if let TrustState::Pending { workspace } = params.trust_state {
                 render_welcome_trust(
                     content_area,
@@ -758,15 +687,6 @@ pub fn render_welcome(
                 )
             }
         }
-        AuthState::Done => render_welcome_done(
-            content_area,
-            buf,
-            &theme,
-            params,
-            prompt,
-            session_picker_state,
-            h_margin,
-        ),
     };
     if result.post_flush_escapes.is_none() {
         result.post_flush_escapes = crate::terminal::overlay::clear().map(Into::into);
@@ -851,16 +771,14 @@ fn render_welcome_blocked(
         None,
         h_margin,
         false,
-        VersionBadgeMode::Full {
-            subscription_tier: None,
-        },
+        VersionBadgeMode::Full,
     );
     (menu_rects, post_flush_escapes)
 }
 
 /// Render the folder-trust question. Mirrors [`render_welcome_blocked`]'s
 /// stacked layout (logo + message + menu + version badge), but the message is a
-/// multi-line block showing the workspace path and the warning that Grok Build
+/// multi-line block showing the workspace path and the warning that Kigi
 /// may run or modify contents in this directory (a security risk). The y/N
 /// answer is handled by the welcome input interceptor, so this only paints;
 /// `menu_rects` are returned for parity with the other welcome arms.
@@ -889,7 +807,7 @@ fn render_welcome_trust(
         // Two lines so the warning never clips at narrow / compact widths
         // (a single ~78-char line would truncate "...posing security risks").
         Line::from(Span::styled(
-            "Grok Build may run or modify contents in this directory,",
+            "Kigi may run or modify contents in this directory,",
             Style::default().fg(theme.gray),
         ))
         .alignment(Alignment::Center),
@@ -926,9 +844,7 @@ fn render_welcome_trust(
         None,
         h_margin,
         false,
-        VersionBadgeMode::Full {
-            subscription_tier: None,
-        },
+        VersionBadgeMode::Full,
     );
 
     // Only `menu_rects` are meaningful here; the rest are absent (no prompt,
@@ -1527,16 +1443,7 @@ fn render_welcome_done(
     // normal welcome layout.
     let welcome_compact = show_picker;
 
-    let cta = p
-        .gate
-        .and_then(|g| g.label.as_deref())
-        .unwrap_or("Upgrade Subscription");
     let in_vscode_family = welcome_in_vscode_family();
-    let (key_g, key_l, key_q) = (
-        "ctrl+g",
-        "ctrl+l",
-        if in_vscode_family { "ctrl+d" } else { "ctrl+q" },
-    );
 
     // Heights that don't depend on the menu — computed first so the menu
     // builder can probe the layout to decide whether to add a Changelog row.
@@ -1561,21 +1468,17 @@ fn render_welcome_done(
     } else {
         0
     };
-    let changelog_height = if p.has_access && !show_picker && !p.changelog_bullets.is_empty() {
+    let changelog_height = if !show_picker && !p.changelog_bullets.is_empty() {
         2 + p.changelog_bullets.len() as u16
     } else {
         0
     };
     // Changelog is reachable via this menu row (ctrl+l). Show from the first
     // frame so the menu doesn't shift while the CDN fetch completes.
-    let show_changelog_action = p.has_access && !show_picker;
+    let show_changelog_action = !show_picker;
 
-    let gate_menu;
     let owned_menu;
-    let menu_items: &[(&str, &str)] = if !p.has_access {
-        gate_menu = [(key_g, cta), (key_l, "Logout"), (key_q, "Quit")];
-        &gate_menu
-    } else {
+    let menu_items: &[(&str, &str)] = {
         let (key_w, key_s, key_q, key_i_with_x) = (
             "ctrl+w",
             "ctrl+s",
@@ -1723,115 +1626,7 @@ fn render_welcome_done(
 
     // Skip the prompt input when picker is visible to save space;
     // shortcuts are rendered inside the picker content area.
-    let mut refresh_hit_rect: Option<Rect> = None;
-    let mut gate_url_hit_rect: Option<Rect> = None;
     let (cursor_pos, post_flush_escapes) = if show_picker {
-        (None, None)
-    } else if !p.has_access {
-        // Show CTA message and version instead of the prompt.
-        let [_, centered, _] = Layout::horizontal([
-            Constraint::Min(0),
-            Constraint::Length(content_area.width),
-            Constraint::Min(0),
-        ])
-        .flex(Flex::Center)
-        .areas(layout.prompt);
-        // Show the user's current tier + clickable refresh button above the gate message.
-        let tier_label = p.subscription_tier.unwrap_or("Free");
-        let tier_prefix = format!("Tier: {tier_label}  ");
-        let refresh_text = "[Refresh]";
-        let total_width = tier_prefix.len() + refresh_text.len();
-        let tier_line = Line::from(vec![
-            Span::styled("Tier: ", Style::default().fg(theme.gray)),
-            Span::styled(
-                tier_label,
-                Style::default()
-                    .fg(theme.gray_bright)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled("  ", Style::default()),
-            Span::styled(
-                refresh_text,
-                Style::default()
-                    .fg(theme.accent_user)
-                    .add_modifier(Modifier::UNDERLINED),
-            ),
-        ])
-        .alignment(Alignment::Center);
-        let tier_area = Rect {
-            height: 1,
-            ..centered
-        };
-        Paragraph::new(tier_line).render(tier_area, buf);
-
-        // Compute the click rect for "[Refresh]" within the centered line.
-        let line_start_x = tier_area.x + tier_area.width.saturating_sub(total_width as u16) / 2;
-        refresh_hit_rect = Some(Rect {
-            x: line_start_x + tier_prefix.len() as u16,
-            y: tier_area.y,
-            width: refresh_text.len() as u16,
-            height: 1,
-        });
-
-        let gate_text = p
-            .gate
-            .map(|g| g.message.as_str())
-            .unwrap_or("SuperGrok subscription required");
-        let msg = Line::from(Span::styled(
-            gate_text,
-            Style::default().fg(theme.gray_bright),
-        ))
-        .alignment(Alignment::Center);
-        Paragraph::new(msg).render(
-            Rect {
-                y: centered.y + 1,
-                height: 1,
-                ..centered
-            },
-            buf,
-        );
-
-        if centered.height > 2 {
-            let url_area = Rect {
-                y: centered.y + 2,
-                height: 1,
-                ..centered
-            };
-            let gate_link = p
-                .gate
-                .and_then(|g| g.url.as_deref())
-                .unwrap_or("https://grok.com/supergrok?referrer=grok-build");
-            let url = Line::from(Span::styled(
-                gate_link,
-                Style::default()
-                    .fg(theme.accent_user)
-                    .add_modifier(Modifier::UNDERLINED),
-            ))
-            .alignment(Alignment::Center);
-            Paragraph::new(url).render(url_area, buf);
-
-            // Compute click rect for the gate URL text (centered within url_area).
-            let link_width = gate_link.len() as u16;
-            let link_x = url_area.x + url_area.width.saturating_sub(link_width) / 2;
-            gate_url_hit_rect = Some(Rect {
-                x: link_x,
-                y: url_area.y,
-                width: link_width.min(url_area.width),
-                height: 1,
-            });
-        }
-
-        render_version_badge(
-            layout.version,
-            buf,
-            theme,
-            p.team_name,
-            h_margin,
-            p.is_api_key_auth,
-            VersionBadgeMode::Full {
-                subscription_tier: p.subscription_tier,
-            },
-        );
         (None, None)
     } else {
         // When a background update is available, show the update
@@ -1913,19 +1708,10 @@ fn render_welcome_done(
                 .render(tip_inset, buf);
         }
 
-        let warning = p.credit_balance.and_then(|bal| {
-            crate::views::credit_bar::usage_warning(bal, p.auto_topup, p.usage_visible)
-        });
-        let (usage_warning_text, usage_warning_critical) = match warning {
-            Some((text, critical)) => (Some(text), critical),
-            None => (None, false),
-        };
         let usage_info = PromptInfo {
             model_name: p.model_name,
             flags: p.flags,
             multiline: false,
-            usage_warning: usage_warning_text.as_deref(),
-            usage_warning_critical,
         };
 
         render_prompt_and_version(
@@ -1942,7 +1728,7 @@ fn render_welcome_done(
             } else {
                 p.tip
             },
-            p.team_name,
+            None,
             h_margin,
             p.compact,
             p.pending_hint,
@@ -1955,7 +1741,7 @@ fn render_welcome_done(
         cursor_pos,
         post_flush_escapes,
         menu_rects,
-        prompt_rect: if show_picker || !p.has_access {
+        prompt_rect: if show_picker {
             None
         } else {
             Some(layout.prompt)
@@ -1964,8 +1750,6 @@ fn render_welcome_done(
         import_banner_rect,
         auth_url_rect: None,
         auth_fallback_rect: None,
-        refresh_rect: refresh_hit_rect,
-        gate_url_rect: gate_url_hit_rect,
         changelog_action_present: show_changelog_action,
         changelog_cta_rect,
     }
@@ -2377,11 +2161,8 @@ mod tests {
             model_name: "test",
             flags: &[],
             selected: None,
-            team_name: None,
-            has_access: true,
             has_claude_import: false,
             mouse_pos: None,
-            is_zdr_blocked: false,
             session_picker,
             session_picker_loading: false,
             compact: false,
@@ -2394,15 +2175,10 @@ mod tests {
             session_picker_content_loading: false,
             session_picker_entries_query: None,
             welcome_tick: 0,
-            gate: None,
-            subscription_tier: None,
             session_picker_grouped: false,
             session_picker_source_filter: crate::views::session_picker::SourceFilter::All,
             chat_mode: false,
             cwd: std::path::Path::new("/repo"),
-            credit_balance: None,
-            auto_topup: None,
-            usage_visible: true,
             changelog_bullets: &[],
             changelog_has_full_notes: false,
         }
@@ -3156,24 +2932,33 @@ mod tests {
 
     #[test]
     fn extract_user_code_parses_verification_url() {
+        // The live Kimi device flow returns this exact URL shape.
         assert_eq!(
-            extract_user_code("https://accounts.x.ai/oauth2/device?user_code=ABCD-EFGH"),
+            extract_user_code("https://www.kimi.com/code/authorize_device?user_code=ABCD-EFGH"),
             Some("ABCD-EFGH"),
         );
         // Trailing params after the code are ignored.
         assert_eq!(
-            extract_user_code("https://x.ai/oauth2/device?user_code=WXYZ-1234&foo=bar"),
+            extract_user_code(
+                "https://www.kimi.com/code/authorize_device?user_code=WXYZ-1234&foo=bar"
+            ),
             Some("WXYZ-1234"),
         );
         // A param whose name merely ends in `user_code` must not be matched.
         assert_eq!(
-            extract_user_code("https://x.ai/d?foo_user_code=BAD&user_code=GOOD"),
+            extract_user_code("https://example.com/d?foo_user_code=BAD&user_code=GOOD"),
             Some("GOOD"),
         );
         // No code param, empty code, and unexpected characters all yield None.
-        assert_eq!(extract_user_code("https://x.ai/oauth2/device"), None);
-        assert_eq!(extract_user_code("https://x.ai/d?user_code="), None);
-        assert_eq!(extract_user_code("https://x.ai/d?user_code=AB%20CD"), None);
+        assert_eq!(
+            extract_user_code("https://www.kimi.com/code/authorize_device"),
+            None
+        );
+        assert_eq!(extract_user_code("https://example.com/d?user_code="), None);
+        assert_eq!(
+            extract_user_code("https://example.com/d?user_code=AB%20CD"),
+            None
+        );
     }
 
     #[test]
@@ -3181,7 +2966,7 @@ mod tests {
         let area = Rect::new(0, 0, 80, 40);
         let mut buf = Buffer::empty(area);
         let theme = Theme::current();
-        let url = "https://accounts.x.ai/oauth2/device?user_code=ABCD-EFGH";
+        let url = "https://www.kimi.com/code/authorize_device?user_code=ABCD-EFGH";
 
         let (copy_rect, fallback_rect) = render_welcome_authenticating(
             area,
@@ -3235,7 +3020,7 @@ mod tests {
         let area = Rect::new(0, 0, 80, 40);
         let mut buf = Buffer::empty(area);
         let theme = Theme::current();
-        let url = "https://accounts.x.ai/oauth2/device?user_code=WXYZ-1234";
+        let url = "https://www.kimi.com/code/authorize_device?user_code=WXYZ-1234";
 
         render_welcome_authenticating(
             area,
@@ -3261,7 +3046,7 @@ mod tests {
         let area = Rect::new(0, 0, 80, 40);
         let mut buf = Buffer::empty(area);
         let theme = Theme::current();
-        let url = "https://accounts.x.ai/oauth2/device?user_code=WXYZ-1234";
+        let url = "https://www.kimi.com/code/authorize_device?user_code=WXYZ-1234";
 
         render_welcome_authenticating(
             area,
@@ -3298,7 +3083,7 @@ mod tests {
         let theme = Theme::current();
         // 40-col terminal; URL longer than one row must wrap at the exact
         // screen edge with no leading spaces so copy-paste stays intact.
-        let url = "https://accounts.x.ai/oauth2/device?user_code=WXYZ-1234&extra=0123456789";
+        let url = "https://www.kimi.com/code/authorize_device?user_code=WXYZ-1234&extra=0123456789";
 
         render_welcome_authenticating(
             area,
@@ -3337,7 +3122,7 @@ mod tests {
         let area = Rect::new(0, 0, 80, 40);
         let mut buf = Buffer::empty(area);
         let theme = Theme::current();
-        let url = "https://accounts.x.ai/oauth2/authorize?client_id=grok";
+        let url = "https://example.com/oauth2/authorize?client_id=kigi";
 
         let (copy_rect, fallback_rect) = render_welcome_authenticating(
             area,

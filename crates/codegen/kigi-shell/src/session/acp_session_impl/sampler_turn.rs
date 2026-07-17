@@ -49,7 +49,7 @@ impl SessionTokenAuthGate {
             is_session_based: auth_method_id
                 .is_some_and(crate::agent::auth_method::is_session_based_method),
             model_byok,
-            endpoint_is_first_party: crate::util::is_first_party_xai_url(base_url),
+            endpoint_is_first_party: crate::util::is_first_party_url(base_url),
         }
     }
     fn active(self) -> bool {
@@ -314,22 +314,11 @@ impl SessionActor {
             auth_scheme,
             extra_headers,
             context_window: cfg.context_window.get(),
-            client_version: creds.client_version,
             reasoning_effort: cfg.reasoning_effort,
             force_http1: false,
             max_retries: Some(self.max_retries),
             stream_tool_calls: cfg.stream_tool_calls.unwrap_or(false),
             idle_timeout_secs: None,
-            client_identifier: self.client_identifier.clone(),
-            deployment_id: crate::managed_config::resolve_deployment_id(
-                crate::managed_config::resolve_deployment_key().as_deref(),
-            ),
-            user_id: self
-                .auth_manager
-                .as_ref()
-                .and_then(|am| am.current_or_expired())
-                .filter(|a| a.is_session_auth())
-                .map(|a| a.user_id),
             origin_client: self.origin_client.clone(),
             attribution_callback: self.attribution_callback.clone(),
             bearer_resolver: if use_bearer_resolver {
@@ -482,7 +471,6 @@ impl SessionActor {
             &endpoints,
             session_key.as_deref(),
             creds.alpha_test_key.clone(),
-            creds.client_version.clone(),
         )
     }
     /// Resolve a dedicated sampler for the Auto-mode classifier model `slug`,
@@ -499,7 +487,6 @@ impl SessionActor {
         crate::agent::config::stamp_session_local_sampler_fields(
             &mut cfg,
             &active_session_config,
-            self.client_identifier.clone(),
             Some(self.max_retries),
         );
         let model = cfg.model.clone();

@@ -4,7 +4,6 @@ use serde::Serialize;
 
 use super::envelope::{FacetMap, FacetValue, SessionKind};
 use super::row::UnifiedRow;
-use crate::remote::Conversation;
 use crate::session::merge::MergedSession;
 
 pub const KIND_FACET_KEY: &str = "kind";
@@ -42,25 +41,6 @@ impl NormalizedItem {
             source_workspace_dir: m.source_workspace_dir.clone(),
             workspace_ids: Vec::new(),
             starred: false,
-        }
-    }
-
-    pub fn from_conversation(c: &Conversation) -> Self {
-        Self {
-            kind: SessionKind::Chat,
-            cwd: String::new(),
-            repo_name: None,
-            branch: None,
-            worktree_label: None,
-            git_root_dir: None,
-            source_workspace_dir: None,
-            workspace_ids: c
-                .workspaces
-                .iter()
-                .map(|w| w.workspace_id.clone())
-                .filter(|id| !id.is_empty())
-                .collect(),
-            starred: c.starred,
         }
     }
 }
@@ -393,7 +373,7 @@ pub struct FacetSummaryValue {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::unified_list::{conversation_to_row, merged_session_to_row};
+    use crate::session::unified_list::merged_session_to_row;
 
     fn local_row(session_id: &str, repo: Option<&str>, branch: Option<&str>) -> UnifiedRow {
         let m = MergedSession {
@@ -417,74 +397,6 @@ mod tests {
             session_kind: None,
         };
         merged_session_to_row(m, &build_facet_registry())
-    }
-
-    fn conv_row(conversation_id: &str, workspaces: &[&str]) -> UnifiedRow {
-        let c = Conversation {
-            conversation_id: conversation_id.into(),
-            title: "t".into(),
-            modify_time: Some("2026-06-01T00:00:00Z".into()),
-            workspaces: workspaces
-                .iter()
-                .map(|w| crate::remote::conversations_client::Workspace {
-                    workspace_id: (*w).into(),
-                })
-                .collect(),
-            ..Conversation::default()
-        };
-        conversation_to_row(c, &build_facet_registry())
-    }
-
-    fn conv_row_starred(conversation_id: &str, starred: bool) -> UnifiedRow {
-        let c = Conversation {
-            conversation_id: conversation_id.into(),
-            title: "t".into(),
-            modify_time: Some("2026-06-01T00:00:00Z".into()),
-            starred,
-            ..Conversation::default()
-        };
-        conversation_to_row(c, &build_facet_registry())
-    }
-
-    #[test]
-    fn project_facet_only_on_conversations() {
-        let reg = build_facet_registry();
-        let conv = NormalizedItem::from_conversation(&Conversation {
-            conversation_id: "c1".into(),
-            workspaces: vec![crate::remote::conversations_client::Workspace {
-                workspace_id: "ws_9f3a".into(),
-            }],
-            ..Conversation::default()
-        });
-        let facets = reg.extract_all(&conv);
-        assert!(matches!(
-            facets.get(WORKSPACE_FACET_KEY),
-            Some(FacetValue::Many(v)) if v == &[serde_json::json!("ws_9f3a")]
-        ));
-        let local = NormalizedItem::from_merged(&MergedSession {
-            session_id: "s".into(),
-            summary: String::new(),
-            first_prompt: None,
-            updated_at: String::new(),
-            created_at: String::new(),
-            cwd: "/x".into(),
-            hostname: None,
-            source: "local".into(),
-            model_id: None,
-            num_messages: 0,
-            last_active_at: None,
-            branch: Some("main".into()),
-            repo_name: Some("xai".into()),
-            worktree_label: None,
-            git_root_dir: None,
-            git_remotes: Vec::new(),
-            source_workspace_dir: None,
-            session_kind: None,
-        });
-        let lf = reg.extract_all(&local);
-        assert!(!lf.contains_key(WORKSPACE_FACET_KEY));
-        assert!(matches!(lf.get(REPO_FACET_KEY), Some(FacetValue::One(_))));
-        assert!(matches!(lf.get(BRANCH_FACET_KEY), Some(FacetValue::One(_))));
     }
 
     #[test]
@@ -513,121 +425,6 @@ mod tests {
         assert!(q.workspace_id.is_none());
     }
 
-    #[test]
-    fn project_filter_is_partition_aware_keeps_local_rows() {
-        let reg = build_facet_registry();
-        let rows = vec![
-            local_row("local-1", Some("xai"), Some("main")),
-            conv_row("conv-match", &["ws_9f3a"]),
-            conv_row("conv-other", &["ws_zzz"]),
-        ];
-        let mut filters = BTreeMap::new();
-        filters.insert(
-            WORKSPACE_FACET_KEY.to_owned(),
-            vec![serde_json::json!("ws_9f3a")],
-        );
-        let kept = reg.apply_in_memory_filters(&filters, rows);
-        let ids: Vec<&str> = kept.iter().map(|r| r.legacy.session_id.as_str()).collect();
-        assert!(ids.contains(&"local-1"));
-        assert!(ids.contains(&"conv-match"));
-        assert!(!ids.contains(&"conv-other"));
-    }
-
-    #[test]
-    fn repo_filter_is_partition_aware_keeps_conversation_rows() {
-        let reg = build_facet_registry();
-        let rows = vec![
-            local_row("local-xai", Some("xai"), Some("main")),
-            local_row("local-other", Some("other"), Some("main")),
-            conv_row("conv-1", &["ws_9f3a"]),
-        ];
-        let mut filters = BTreeMap::new();
-        filters.insert(REPO_FACET_KEY.to_owned(), vec![serde_json::json!("xai")]);
-        let kept = reg.apply_in_memory_filters(&filters, rows);
-        let ids: Vec<&str> = kept.iter().map(|r| r.legacy.session_id.as_str()).collect();
-        assert!(ids.contains(&"local-xai"));
-        assert!(!ids.contains(&"local-other"));
-        assert!(ids.contains(&"conv-1"));
-    }
-
-    #[test]
-    fn pushdown_and_in_memory_project_filter_agree() {
-        let reg = build_facet_registry();
-        let convs = vec![conv_row("a", &["ws_1"]), conv_row("b", &["ws_2"])];
-        let mut filters = BTreeMap::new();
-        filters.insert(
-            WORKSPACE_FACET_KEY.to_owned(),
-            vec![serde_json::json!("ws_1")],
-        );
-        let in_memory = reg.apply_in_memory_filters(&filters, convs);
-        let ids: Vec<&str> = in_memory
-            .iter()
-            .map(|r| r.legacy.session_id.as_str())
-            .collect();
-        assert_eq!(ids, ["a"]);
-        let mut q = SourceQuery::default();
-        reg.apply_pushdown(&filters, &mut q);
-        assert_eq!(q.workspace_id.as_deref(), Some("ws_1"));
-    }
-
-    #[test]
-    fn starred_facet_present_only_for_starred_conversations() {
-        let reg = build_facet_registry();
-        let starred = NormalizedItem::from_conversation(&Conversation {
-            conversation_id: "c1".into(),
-            starred: true,
-            ..Conversation::default()
-        });
-        assert!(matches!(
-            reg.extract_all(&starred).get(STARRED_FACET_KEY),
-            Some(FacetValue::One(serde_json::Value::Bool(true)))
-        ));
-        let plain = NormalizedItem::from_conversation(&Conversation {
-            conversation_id: "c2".into(),
-            starred: false,
-            ..Conversation::default()
-        });
-        assert!(!reg.extract_all(&plain).contains_key(STARRED_FACET_KEY));
-        let local = NormalizedItem::from_merged(&MergedSession {
-            session_id: "s".into(),
-            summary: String::new(),
-            first_prompt: None,
-            updated_at: String::new(),
-            created_at: String::new(),
-            cwd: "/x".into(),
-            hostname: None,
-            source: "local".into(),
-            model_id: None,
-            num_messages: 0,
-            last_active_at: None,
-            branch: None,
-            repo_name: None,
-            worktree_label: None,
-            git_root_dir: None,
-            git_remotes: Vec::new(),
-            source_workspace_dir: None,
-            session_kind: None,
-        });
-        assert!(!reg.extract_all(&local).contains_key(STARRED_FACET_KEY));
-    }
-
-    #[test]
-    fn starred_filter_is_partition_aware_keeps_local_rows() {
-        let reg = build_facet_registry();
-        let rows = vec![
-            local_row("local-1", Some("xai"), Some("main")),
-            conv_row_starred("conv-starred", true),
-            conv_row_starred("conv-plain", false),
-        ];
-        let mut filters = BTreeMap::new();
-        filters.insert(STARRED_FACET_KEY.to_owned(), vec![serde_json::json!(true)]);
-        let kept = reg.apply_in_memory_filters(&filters, rows);
-        let ids: Vec<&str> = kept.iter().map(|r| r.legacy.session_id.as_str()).collect();
-        assert!(ids.contains(&"local-1"));
-        assert!(ids.contains(&"conv-starred"));
-        assert!(!ids.contains(&"conv-plain"));
-    }
-
     fn local_row_with_git(
         session_id: &str,
         git_root: Option<&str>,
@@ -654,49 +451,6 @@ mod tests {
             session_kind: None,
         };
         merged_session_to_row(m, &build_facet_registry())
-    }
-
-    #[test]
-    fn git_path_facets_present_only_for_local_rows() {
-        let reg = build_facet_registry();
-        let local = NormalizedItem::from_merged(&MergedSession {
-            session_id: "s".into(),
-            summary: String::new(),
-            first_prompt: None,
-            updated_at: String::new(),
-            created_at: String::new(),
-            cwd: "/x".into(),
-            hostname: None,
-            source: "local".into(),
-            model_id: None,
-            num_messages: 0,
-            last_active_at: None,
-            branch: None,
-            repo_name: None,
-            worktree_label: None,
-            git_root_dir: Some("/Users/me/xai".into()),
-            git_remotes: Vec::new(),
-            source_workspace_dir: Some("/Users/me/xai-main".into()),
-            session_kind: Some("worktree".into()),
-        });
-        let f = reg.extract_all(&local);
-        assert!(matches!(
-            f.get(GIT_ROOT_FACET_KEY),
-            Some(FacetValue::One(serde_json::Value::String(s))) if s == "/Users/me/xai"
-        ));
-        assert!(matches!(
-            f.get(SOURCE_WORKSPACE_FACET_KEY),
-            Some(FacetValue::One(serde_json::Value::String(s))) if s == "/Users/me/xai-main"
-        ));
-
-        // Conversations carry no local git enrichment.
-        let conv = NormalizedItem::from_conversation(&Conversation {
-            conversation_id: "c1".into(),
-            ..Conversation::default()
-        });
-        let cf = reg.extract_all(&conv);
-        assert!(!cf.contains_key(GIT_ROOT_FACET_KEY));
-        assert!(!cf.contains_key(SOURCE_WORKSPACE_FACET_KEY));
     }
 
     #[test]

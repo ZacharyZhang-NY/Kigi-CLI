@@ -56,19 +56,19 @@ fn matches_trusted_base_url(candidate: &str, trusted_base: &str) -> bool {
 /// True for subscription coding-API URLs (the compiled production endpoint;
 /// deliberately NOT the env-overridable [`kigi_env::coding_api_base_url`] so a
 /// runtime override can't widen this trust set).
-pub fn is_cli_chat_proxy_url(url: &str) -> bool {
+pub fn is_production_coding_api_url(url: &str) -> bool {
     matches_trusted_base_url(url, kigi_env::PRODUCTION_ENDPOINTS.coding_api_base_url)
 }
 /// True for URLs the idle model-metadata refresh may re-fetch from: the
 /// *effective* subscription coding endpoint (the `KIGI_CODE_BASE_URL`
 /// override when set, else the compiled production endpoint), plus loopback
-/// hosts (local dev proxies and test mocks). Unlike [`is_cli_chat_proxy_url`]
+/// hosts (local dev proxies and test mocks). Unlike [`is_production_coding_api_url`]
 /// this honours the env override and loopback, so use it only to gate traffic
 /// that already flows to the session's configured base URL (the refresh
 /// re-fetches from the same host the session samples against); it must never
 /// widen a security trust set.
 pub fn is_effective_coding_endpoint_url(url: &str) -> bool {
-    if is_cli_chat_proxy_url(url) {
+    if is_production_coding_api_url(url) {
         return true;
     }
     if matches_trusted_base_url(url, &kigi_env::coding_api_base_url()) {
@@ -83,18 +83,11 @@ pub fn is_effective_coding_endpoint_url(url: &str) -> bool {
             None => false,
         })
 }
-/// True for first-party xAI endpoints (`*.x.ai`, cli-chat-proxy, and optional
-/// non-production first-party hosts when that feature is enabled).
-/// `disable_api_key_auth` refuses keys only for these; other hosts are BYOK and
-/// exempt. Safe against invalid URLs and suffix attacks (`evil-x.ai.example`).
-pub fn is_first_party_xai_url(url: &str) -> bool {
-    if is_cli_chat_proxy_url(url) {
-        return true;
-    }
-    reqwest::Url::parse(url)
-        .ok()
-        .and_then(|u| u.host_str().map(|h| h.to_owned()))
-        .is_some_and(|host| host == "x.ai" || host.ends_with(".x.ai"))
+/// True for first-party endpoints: the Kimi subscription coding API. The
+/// session-token 401-refresh gate only refreshes against these; other hosts
+/// are BYOK and exempt. Safe against invalid URLs and suffix attacks.
+pub fn is_first_party_url(url: &str) -> bool {
+    is_production_coding_api_url(url)
 }
 /// Truncate a string to at most `max_chars` characters.
 /// Slices at char boundaries so multi-byte UTF-8 never panics.
@@ -229,18 +222,18 @@ pub fn is_grok_process(pid: u32) -> bool {
 mod tests {
     use super::*;
     #[test]
-    fn test_is_cli_chat_proxy_url_accepts_proxy_subpath() {
-        assert!(is_cli_chat_proxy_url(
+    fn test_is_production_coding_api_url_accepts_proxy_subpath() {
+        assert!(is_production_coding_api_url(
             "https://api.kimi.com/coding/v1/chat/completions"
         ));
     }
     #[test]
-    fn test_is_cli_chat_proxy_url_rejects_public_api() {
-        assert!(!is_cli_chat_proxy_url("https://api.x.ai/v1"));
+    fn test_is_production_coding_api_url_rejects_public_api() {
+        assert!(!is_production_coding_api_url("https://api.x.ai/v1"));
     }
     #[test]
-    fn test_is_cli_chat_proxy_url_rejects_spoofed_hostname() {
-        assert!(!is_cli_chat_proxy_url(
+    fn test_is_production_coding_api_url_rejects_spoofed_hostname() {
+        assert!(!is_production_coding_api_url(
             "https://api.kimi.com.evil.example/coding/v1"
         ));
     }
@@ -261,31 +254,22 @@ mod tests {
         ));
     }
     #[test]
-    fn test_is_cli_chat_proxy_url_rejects_v11_prefix_confusion() {
-        assert!(!is_cli_chat_proxy_url(
+    fn test_is_production_coding_api_url_rejects_v11_prefix_confusion() {
+        assert!(!is_production_coding_api_url(
             "https://api.kimi.com/coding/v11/chat/completions"
         ));
     }
     #[test]
-    fn test_is_first_party_xai_url() {
-        assert!(is_first_party_xai_url("https://api.x.ai/v1"));
-        assert!(is_first_party_xai_url(
-            "https://api.x.ai/v1/chat/completions"
-        ));
-        assert!(is_first_party_xai_url("https://x.ai"));
-        assert!(is_first_party_xai_url(
+    fn test_is_first_party_url() {
+        assert!(is_first_party_url(
             "https://api.kimi.com/coding/v1/chat/completions"
         ));
-        assert!(!is_first_party_xai_url("https://api.openai.com/v1"));
-        assert!(!is_first_party_xai_url("https://api.anthropic.com/v1"));
-        assert!(!is_first_party_xai_url(
-            "https://generativelanguage.googleapis.com"
-        ));
-        assert!(!is_first_party_xai_url("https://api.x.ai.evil.example/v1"));
-        assert!(!is_first_party_xai_url("https://evil-x.ai.attacker.com/v1"));
-        assert!(!is_first_party_xai_url("https://prefixx.ai/v1"));
-        assert!(!is_first_party_xai_url("not-a-url"));
-        assert!(!is_first_party_xai_url(""));
+        assert!(!is_first_party_url("https://api.x.ai/v1"));
+        assert!(!is_first_party_url("https://api.openai.com/v1"));
+        assert!(!is_first_party_url("https://api.anthropic.com/v1"));
+        assert!(!is_first_party_url("https://api.kimi.com.evil.example/v1"));
+        assert!(!is_first_party_url("not-a-url"));
+        assert!(!is_first_party_url(""));
     }
     #[test]
     fn test_truncate() {

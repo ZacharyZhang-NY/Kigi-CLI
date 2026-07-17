@@ -838,7 +838,6 @@ pub async fn run_single_turn(
 ) -> Result<()> {
     // Stamp proxy requests as headless before the agent spawns and issues
     // its first request (auth enrichment, model list, etc.).
-    kigi_shell::http::set_process_client_mode_headless();
 
     let cwd = match options.cwd {
         None => std::env::current_dir()?,
@@ -1318,13 +1317,7 @@ pub async fn run_single_turn(
         }
         Some(Err(err)) => {
             let msg = if i32::from(err.code) == RATE_LIMITED_ERROR_CODE {
-                // The -32003 data is the flattened server message; a
-                // free-usage 429 carries the well-known code inline there.
-                if crate::app::acp_error_is_free_usage_exhausted(&err) {
-                    crate::app::FREE_USAGE_USER_MESSAGE.to_string()
-                } else {
-                    rate_limited_user_message(is_api_key_auth).to_string()
-                }
+                rate_limited_user_message(is_api_key_auth).to_string()
             } else {
                 err.to_string()
             };

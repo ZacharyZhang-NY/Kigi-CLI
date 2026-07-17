@@ -520,8 +520,6 @@ fn paint_peek_config_badge(
         model_name: &model_label,
         flags: &flags,
         multiline,
-        usage_warning: None,
-        usage_warning_critical: false,
     };
     // Bottom border row, inside the corners — the same content rect the
     // chat prompt and dispatch box use for their info line.
@@ -1111,7 +1109,6 @@ pub fn extract_last_response_type(agent: &AgentView) -> String {
             RenderBlock::BgTask(_) => return "Task".to_string(),
             RenderBlock::Btw(_) => return "Btw".to_string(),
             RenderBlock::ContextInfo(_) => return "Context".to_string(),
-            RenderBlock::CreditLimit(_) => return "Credit limit".to_string(),
             // The user's latest input marks the turn boundary — there's
             // no agent response after it yet.
             RenderBlock::UserPrompt(_) => break,
@@ -1310,7 +1307,6 @@ fn block_short_text(block: &crate::scrollback::block::RenderBlock) -> Option<Str
         RenderBlock::Subagent(_) => Some("(subagent)".to_string()),
         RenderBlock::Btw(_) => Some("(btw)".to_string()),
         RenderBlock::ContextInfo(_) => Some("(context info)".to_string()),
-        RenderBlock::CreditLimit(_) => Some("(credit limit)".to_string()),
         RenderBlock::Stub(_) => None,
     }
 }

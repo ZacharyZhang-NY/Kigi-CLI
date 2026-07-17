@@ -3171,8 +3171,7 @@ pub async fn connect_local_workspace(
             workspace_home.display()
         ))
     })?;
-    let api_base_url = std::env::var("KIGI_CLI_CHAT_PROXY_BASE_URL")
-        .unwrap_or_else(|_| kigi_env::coding_api_base_url());
+    let api_base_url = kigi_env::coding_api_base_url();
     let mut factory = WorkspaceSessionContextFactory::with_auth(auth.clone(), api_base_url.clone());
     if crate::session::tool_config::tool_state_enabled() {
         factory = factory.with_tool_state_home(workspace_home.clone());

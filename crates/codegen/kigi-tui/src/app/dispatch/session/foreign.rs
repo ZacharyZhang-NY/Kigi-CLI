@@ -1,7 +1,6 @@
 use crate::app::actions::Effect;
 use crate::app::app_view::{AppView, SessionPickerEntry};
 use crate::app::dispatch::ctx::get_active_agent_mut;
-use crate::app::effects::ConversationsPartial;
 use crate::views::modal::ActiveModal;
 use crate::views::picker::PickerState;
 use crate::views::session_picker::{
@@ -61,7 +60,6 @@ impl PickerSurface<'_> {
         query: Option<String>,
         chat_mode: bool,
         empty_notice: String,
-        partial_notice: Option<&'static str>,
     ) -> Option<String> {
         let anchor = self.capture_selection();
         let is_search = query.is_some();
@@ -88,11 +86,7 @@ impl PickerSurface<'_> {
             }
         } else {
             self.lanes.pending_notice = None;
-            if chat_mode {
-                partial_notice.map(str::to_owned)
-            } else {
-                None
-            }
+            None
         };
         self.restore_selection(anchor);
         notice
@@ -188,7 +182,6 @@ pub(in crate::app::dispatch) fn dispatch_fetch_session_list(app: &mut AppView) -
 pub(in crate::app::dispatch) fn handle_session_list_loaded(
     app: &mut AppView,
     sessions: Vec<SessionPickerEntry>,
-    partial: Option<ConversationsPartial>,
     seq: u64,
     query: Option<String>,
 ) -> Vec<Effect> {
@@ -196,18 +189,7 @@ pub(in crate::app::dispatch) fn handle_session_list_loaded(
         return vec![];
     }
     app.session_picker_detail_generation += 1;
-    if let Some(partial) = partial {
-        crate::unified_log::warn(
-            "session.list.partial",
-            None,
-            Some(serde_json::json!({ "reason": format!("{partial:?}") })),
-        );
-    }
-    let empty_notice = partial.map_or_else(
-        || "No sessions found for this directory".to_owned(),
-        |partial| partial.picker_notice().to_owned(),
-    );
-    let partial_notice = partial.map(ConversationsPartial::picker_notice);
+    let empty_notice = "No sessions found for this directory".to_owned();
     let chat_mode = app.chat_mode;
     let mut sessions = Some(sessions);
     let mut notice = None;
@@ -242,7 +224,6 @@ pub(in crate::app::dispatch) fn handle_session_list_loaded(
                 query.clone(),
                 chat_mode,
                 empty_notice.clone(),
-                partial_notice,
             );
         }
     }
@@ -260,7 +241,7 @@ pub(in crate::app::dispatch) fn handle_session_list_loaded(
             grouped: app.session_picker_grouped,
             current_repo,
         }
-        .native_loaded(sessions, query, chat_mode, empty_notice, partial_notice);
+        .native_loaded(sessions, query, chat_mode, empty_notice);
     }
     if let Some(notice) = notice {
         app.show_toast(&notice);

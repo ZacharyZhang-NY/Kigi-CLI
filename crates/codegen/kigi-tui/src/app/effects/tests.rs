@@ -1,6 +1,5 @@
 #![cfg_attr(rustfmt, rustfmt::skip)]
 use super::*;
-use kigi_shell::extensions::billing::{BillingConfig, Cent, UsagePeriod};
 /// The invalid-params server detail survives `attach_prompt_usage`
 /// wrapping `error.data` as `{message, promptUsage}`.
 #[test]
@@ -23,7 +22,7 @@ fn format_acp_error_rate_limit_is_auth_aware() {
         RATE_LIMITED_USER_MESSAGE_OAUTH,
     };
     let err = acp::Error::new(RATE_LIMITED_ERROR_CODE, "Rate limited").data("slow down");
-    assert_eq!(format_acp_error(& err, false), RATE_LIMITED_USER_MESSAGE_OAUTH);
+    assert_eq!(format_acp_error(&err, false), RATE_LIMITED_USER_MESSAGE_OAUTH.as_str());
     assert_eq!(format_acp_error(& err, true), RATE_LIMITED_USER_MESSAGE_API_KEY);
 }
 /// Non-empty token ranges ride the wire block meta as `skillTokenRanges`
@@ -137,43 +136,6 @@ fn picker_still_drops_build_row_with_empty_summary() {
     let entries = parse_session_picker_entries(&payload);
     assert!(entries.is_empty(), "empty-summary Build rows stay dropped");
 }
-#[test]
-fn session_list_partial_parses_reasons() {
-    let payload = |reason: &str| {
-        serde_json::json!(
-            { "sessions" : [], "_meta" : { "x.ai/partial" : { "conversations" : true,
-            "reason" : reason } } }
-        )
-    };
-    assert_eq!(
-        parse_session_list_partial(& payload("no_oauth")),
-        Some(ConversationsPartial::NoOauth)
-    );
-    assert_eq!(
-        parse_session_list_partial(& payload("timeout")),
-        Some(ConversationsPartial::Timeout)
-    );
-    assert_eq!(
-        parse_session_list_partial(& payload("error")), Some(ConversationsPartial::Error)
-    );
-    assert_eq!(
-        parse_session_list_partial(& payload("something_new")),
-        Some(ConversationsPartial::Error)
-    );
-}
-#[test]
-fn session_list_partial_absent_for_healthy_or_meta_less_responses() {
-    let healthy = serde_json::json!(
-        { "sessions" : [], "_meta" : { "x.ai/partial" : { "conversations" : false } } }
-    );
-    assert_eq!(parse_session_list_partial(& healthy), None);
-    let legacy = serde_json::json!({ "sessions" : [] });
-    assert_eq!(parse_session_list_partial(& legacy), None);
-}
-/// The agent serializes `ExtMethodResult<KillTaskResponse>`: the outcome
-/// lives at `result.outcome`. Probing the top level (the pre-fix code)
-/// was why the tasks-pane ✗ never removed stale (`not_found`) rows after
-/// a session resume.
 #[test]
 fn parse_kill_outcome_reads_result_envelope() {
     use kigi_tools::types::KillOutcome;
@@ -315,250 +277,61 @@ fn interject_params_carry_content_when_blocks_present() {
     assert_eq!(content.len(), 1);
     assert_eq!(content[0] ["text"], "look at [Image #1]");
 }
-/// A billing config with every field unset, for use as a base in
-/// `credit_balance_from_config` tests via struct-update syntax.
-fn empty_billing_config() -> BillingConfig {
-    BillingConfig {
-        credit_usage_percent: None,
-        current_period: None,
-        monthly_limit: None,
-        used: None,
-        on_demand_cap: None,
-        on_demand_used: None,
-        prepaid_balance: None,
-        is_unified_billing_user: None,
-        billing_period_start: None,
-        billing_period_end: None,
-        history: vec![],
-    }
-}
+/// `x.ai/billing` ext result (a serialized shell `UsageResponse`) parses
+/// into typed rows; unknown labels/reset hints survive the round trip.
 #[test]
-fn credit_balance_prefers_credit_usage_percent_over_limit_used() {
-    let c = BillingConfig {
-        credit_usage_percent: Some(42.0),
-        monthly_limit: Some(Cent { val: 10_000 }),
-        used: Some(Cent { val: 9_000 }),
-        ..empty_billing_config()
-    };
-    assert_eq!(credit_balance_from_config(c).usage_pct, 42.0);
+fn parse_usage_response_reads_rows_from_fixture() {
+    let fixture = serde_json::json!({
+        "rows": [
+            {
+                "label": "Weekly limit",
+                "used": 250,
+                "limit": 1000,
+                "resetHint": "resets in 2d 1h"
+            },
+            { "label": "5h limit", "used": 20, "limit": 50 }
+        ]
+    });
+    let rows = parse_usage_response(&fixture).expect("fixture must parse");
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].label, "Weekly limit");
+    assert_eq!(rows[0].used, 250);
+    assert_eq!(rows[0].limit, 1000);
+    assert_eq!(rows[0].reset_hint.as_deref(), Some("resets in 2d 1h"));
+    assert_eq!(rows[1].label, "5h limit");
+    assert!(rows[1].reset_hint.is_none());
 }
+/// Round-trip through the shell's own serializer: what the billing
+/// extension emits must parse back to the same typed rows.
 #[test]
-fn credit_balance_forwards_is_unified_billing_user() {
-    let c = BillingConfig {
-        is_unified_billing_user: Some(true),
-        ..empty_billing_config()
-    };
-    assert_eq!(credit_balance_from_config(c).is_unified_billing_user, Some(true));
-    assert_eq!(
-        credit_balance_from_config(empty_billing_config()).is_unified_billing_user, None
-    );
+fn parse_usage_response_round_trips_shell_serialization() {
+    use kigi_shell::extensions::billing::{UsageResponse, UsageRow};
+    let wire = serde_json::to_value(&UsageResponse {
+        rows: vec![UsageRow {
+            label: "RPM".into(),
+            used: 12,
+            limit: 60,
+            reset_hint: None,
+        }],
+    })
+    .expect("serialize");
+    let rows = parse_usage_response(&wire).expect("round trip");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].label, "RPM");
+    assert_eq!(rows[0].used, 12);
+    assert_eq!(rows[0].limit, 60);
 }
+/// Empty rows parse to an empty list (→ "No usage data available." in the
+/// dispatch layer); a malformed body is an error, not an empty quota list.
 #[test]
-fn credit_balance_falls_back_to_limit_used_when_percent_absent() {
-    let c = BillingConfig {
-        monthly_limit: Some(Cent { val: 10_000 }),
-        used: Some(Cent { val: 2_500 }),
-        ..empty_billing_config()
-    };
-    assert_eq!(credit_balance_from_config(c).usage_pct, 25.0);
-}
-/// Match production: RFC 3339 → user's local wall-clock (no zone label).
-fn expected_period_end_display(rfc3339: &str) -> String {
-    chrono::DateTime::parse_from_rfc3339(rfc3339)
-        .expect("test fixture is valid RFC 3339")
-        .with_timezone(&chrono::Local)
-        .format("%B %-d, %H:%M")
-        .to_string()
-}
-#[test]
-fn credit_balance_prefers_current_period_end_over_billing_period_end() {
-    let end = "2026-06-08T20:00:00Z";
-    let c = BillingConfig {
-        credit_usage_percent: Some(10.0),
-        current_period: Some(UsagePeriod {
-            period_type: Some("USAGE_PERIOD_TYPE_WEEKLY".into()),
-            start: Some("2026-06-01T00:00:00Z".into()),
-            end: Some(end.into()),
-        }),
-        billing_period_end: Some("2026-07-01T20:00:00Z".into()),
-        ..empty_billing_config()
-    };
-    assert_eq!(
-        credit_balance_from_config(c).period_end_display.as_deref(),
-        Some(expected_period_end_display(end).as_str())
-    );
-}
-#[test]
-fn credit_balance_period_end_uses_local_timezone() {
-    let winter = "2026-01-15T20:00:00Z";
-    let summer = "2026-07-15T20:00:00Z";
-    let winter_cfg = BillingConfig {
-        billing_period_end: Some(winter.into()),
-        ..empty_billing_config()
-    };
-    let summer_cfg = BillingConfig {
-        billing_period_end: Some(summer.into()),
-        ..empty_billing_config()
-    };
-    assert_eq!(
-        credit_balance_from_config(winter_cfg).period_end_display.as_deref(),
-        Some(expected_period_end_display(winter).as_str())
-    );
-    assert_eq!(
-        credit_balance_from_config(summer_cfg).period_end_display.as_deref(),
-        Some(expected_period_end_display(summer).as_str())
-    );
-    assert_ne!(expected_period_end_display(winter), expected_period_end_display(summer));
-}
-#[test]
-fn credit_balance_falls_back_to_billing_period_end() {
-    let end = "2026-07-01T20:00:00Z";
-    let c = BillingConfig {
-        billing_period_end: Some(end.into()),
-        ..empty_billing_config()
-    };
-    assert_eq!(
-        credit_balance_from_config(c).period_end_display.as_deref(),
-        Some(expected_period_end_display(end).as_str())
-    );
-}
-#[test]
-fn credit_balance_period_end_falls_back_when_current_period_has_no_end() {
-    let end = "2026-07-01T20:00:00Z";
-    let c = BillingConfig {
-        current_period: Some(UsagePeriod {
-            period_type: None,
-            start: Some("2026-06-01T00:00:00Z".into()),
-            end: None,
-        }),
-        billing_period_end: Some(end.into()),
-        ..empty_billing_config()
-    };
-    assert_eq!(
-        credit_balance_from_config(c).period_end_display.as_deref(),
-        Some(expected_period_end_display(end).as_str())
-    );
-}
-#[test]
-fn credit_balance_period_end_none_when_unavailable() {
+fn parse_usage_response_empty_and_malformed() {
     assert!(
-        credit_balance_from_config(empty_billing_config()).period_end_display.is_none()
+        parse_usage_response(&serde_json::json!({ "rows": [] }))
+            .expect("empty rows parse")
+            .is_empty()
     );
-}
-#[test]
-fn credit_balance_clamps_new_percent_above_100() {
-    let c = BillingConfig {
-        credit_usage_percent: Some(150.0),
-        ..empty_billing_config()
-    };
-    assert_eq!(credit_balance_from_config(c).usage_pct, 100.0);
-}
-#[test]
-fn credit_balance_clamps_legacy_used_above_limit() {
-    let c = BillingConfig {
-        monthly_limit: Some(Cent { val: 1_000 }),
-        used: Some(Cent { val: 2_500 }),
-        ..empty_billing_config()
-    };
-    assert_eq!(credit_balance_from_config(c).usage_pct, 100.0);
-}
-#[test]
-fn credit_balance_effective_equals_usage_when_no_on_demand() {
-    let c = BillingConfig {
-        credit_usage_percent: Some(40.0),
-        ..empty_billing_config()
-    };
-    let bal = credit_balance_from_config(c);
-    assert!(! bal.pay_as_you_go);
-    assert_eq!(bal.on_demand_cap_cents, None);
-    assert_eq!(bal.effective_usage_pct, 40.0);
-}
-#[test]
-fn credit_balance_effective_uses_on_demand_ratio_when_included_exhausted() {
-    let c = BillingConfig {
-        credit_usage_percent: Some(100.0),
-        on_demand_cap: Some(Cent { val: 5_000 }),
-        on_demand_used: Some(Cent { val: 1_000 }),
-        ..empty_billing_config()
-    };
-    let bal = credit_balance_from_config(c);
-    assert!(bal.pay_as_you_go);
-    assert_eq!(bal.usage_pct, 100.0);
-    assert_eq!(bal.effective_usage_pct, 20.0);
-    assert_eq!(bal.on_demand_cap_cents, Some(5_000));
-    assert_eq!(bal.on_demand_used_cents, Some(1_000));
-}
-#[test]
-fn parse_auto_topup_present_rule_resolves() {
-    let v = serde_json::json!(
-        { "rule" : { "enabled" : true, "topupAmount" : { "val" : 2000 },
-        "maxAmountPerMonth" : { "val" : 10000 } } }
-    );
-    match parse_auto_topup_response(&v) {
-        crate::views::credit_bar::AutoTopupFetch::Resolved(at) => {
-            assert!(at.enabled);
-            assert_eq!(at.topup_amount_cents, Some(2000));
-            assert_eq!(at.max_amount_cents, Some(10000));
-        }
-        other => panic!("expected Resolved, got {other:?}"),
-    }
-}
-#[test]
-fn parse_auto_topup_empty_body_resolves_to_disabled() {
-    for v in [serde_json::json!({}), serde_json::json!({ "rule" : null })] {
-        match parse_auto_topup_response(&v) {
-            crate::views::credit_bar::AutoTopupFetch::Resolved(at) => {
-                assert!(! at.enabled);
-            }
-            other => panic!("expected Resolved(disabled), got {other:?}"),
-        }
-    }
-}
-#[test]
-fn parse_auto_topup_rule_without_enabled_is_disabled() {
-    let v = serde_json::json!({ "rule" : { "topupAmount" : { "val" : 500 } } });
-    match parse_auto_topup_response(&v) {
-        crate::views::credit_bar::AutoTopupFetch::Resolved(at) => {
-            assert!(! at.enabled);
-            assert_eq!(at.topup_amount_cents, Some(500));
-        }
-        other => panic!("expected Resolved(disabled), got {other:?}"),
-    }
-}
-#[test]
-fn parse_auto_topup_malformed_body_is_unchanged() {
-    for v in [serde_json::json!(null), serde_json::json!(42)] {
-        match parse_auto_topup_response(&v) {
-            crate::views::credit_bar::AutoTopupFetch::Unchanged => {}
-            other => panic!("expected Unchanged, got {other:?}"),
-        }
-    }
-}
-#[test]
-fn credit_balance_effective_tracks_included_for_new_shape_under_100() {
-    let c = BillingConfig {
-        credit_usage_percent: Some(95.0),
-        on_demand_cap: Some(Cent { val: 5_000 }),
-        on_demand_used: Some(Cent { val: 0 }),
-        ..empty_billing_config()
-    };
-    let bal = credit_balance_from_config(c);
-    assert!(bal.pay_as_you_go);
-    assert_eq!(bal.effective_usage_pct, 95.0);
-}
-#[test]
-fn credit_balance_effective_blends_budget_for_legacy_shape_under_100() {
-    let c = BillingConfig {
-        monthly_limit: Some(Cent { val: 10_000 }),
-        used: Some(Cent { val: 5_000 }),
-        on_demand_cap: Some(Cent { val: 10_000 }),
-        on_demand_used: Some(Cent { val: 0 }),
-        ..empty_billing_config()
-    };
-    let bal = credit_balance_from_config(c);
-    assert!(bal.pay_as_you_go);
-    assert_eq!(bal.usage_pct, 50.0);
-    assert_eq!(bal.effective_usage_pct, 25.0);
+    assert!(parse_usage_response(&serde_json::json!({ "bogus": 1 })).is_err());
+    assert!(parse_usage_response(&serde_json::json!(null)).is_err());
 }
 #[test]
 fn parse_worktree_restore_payload_full() {

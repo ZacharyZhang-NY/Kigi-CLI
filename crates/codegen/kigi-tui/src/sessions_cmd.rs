@@ -1,7 +1,5 @@
 use anyhow::Result;
 use clap::Subcommand;
-use kigi_shell::agent::config::Config as AgentConfig;
-use kigi_shell::auth::{AuthManager, try_ensure_fresh_auth};
 use kigi_shell::session::merge::MergedSession;
 use kigi_shell::util::kigi_home::kigi_home;
 #[derive(Debug, clap::Args, Clone)]
@@ -33,41 +31,17 @@ enum SessionsCommand {
     },
 }
 
-pub async fn run(args: SessionsArgs, agent_config: &AgentConfig) -> Result<()> {
-    // Best-effort only. Do not force an interactive public login for enterprise
-    // deployments that only configure a deployment_key + custom xai_api_base_url.
-    // If the user has previously run the interactive `grok` TUI (which succeeds
-    // for these setups), any cached credential will be used. Otherwise we still
-    // proceed so the SessionRegistryClient can use the deployment_key when
-    // talking to the custom proxy.
-    let auth = try_ensure_fresh_auth(&agent_config.kimi_code_config).await;
-
-    let auth_manager = std::sync::Arc::new(AuthManager::new(
-        &kigi_home(),
-        agent_config.kimi_code_config.clone(),
-    ));
-
-    let client = kigi_shell::agent::session_registry_client::SessionRegistryClient::new(
-        agent_config.endpoints.proxy_url(),
-        String::new(),
-    )
-    .with_deployment_key(agent_config.endpoints.deployment_key.clone())
-    .with_alpha_test_key(agent_config.endpoints.alpha_test_key.clone())
-    .with_auth(auth_manager.clone());
-
+pub async fn run(args: SessionsArgs) -> Result<()> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
 
     match args.command {
         SessionsCommand::List { limit } => {
             let sessions =
-                kigi_shell::session::merge::fetch_merged(Some(&client), cwd.to_str(), None, limit)
-                    .await;
+                kigi_shell::session::merge::fetch_merged(None, cwd.to_str(), None, limit).await;
             print_sessions_grouped(&sessions);
         }
         SessionsCommand::Search { query, limit } => {
-            use kigi_shell::session::merge::REMOTE_TIMEOUT;
             use kigi_shell::session::storage::search::{SessionSearchRequest, execute_search};
-            use std::collections::HashSet;
 
             let req = SessionSearchRequest {
                 query,
@@ -78,28 +52,7 @@ pub async fn run(args: SessionsArgs, agent_config: &AgentConfig) -> Result<()> {
             };
             let root = kigi_home();
 
-            let remote_limit = (limit * 3).max(100) as i64;
-            let (local_resp, remote_results) = tokio::join!(execute_search(&root, &req), async {
-                tokio::time::timeout(
-                    REMOTE_TIMEOUT,
-                    client.search(Some(&req.query), remote_limit),
-                )
-                .await
-                .unwrap_or_else(|_| {
-                    eprintln!(
-                        "warning: remote session search timed out, showing local results only"
-                    );
-                    Ok(Vec::new())
-                })
-                .unwrap_or_else(|e| {
-                    eprintln!("warning: remote session search failed: {e}");
-                    Vec::new()
-                })
-            });
-
-            let resp = local_resp?;
-            let local_ids: HashSet<&str> =
-                resp.results.iter().map(|r| r.session_id.as_str()).collect();
+            let resp = execute_search(&root, &req).await?;
 
             for hit in &resp.results {
                 let title = if hit.title.is_empty() {
@@ -124,63 +77,14 @@ pub async fn run(args: SessionsArgs, agent_config: &AgentConfig) -> Result<()> {
                 );
             }
 
-            let remaining = limit.saturating_sub(resp.results.len());
-            let mut remote_shown = 0usize;
-            for r in &remote_results {
-                if remote_shown >= remaining {
-                    break;
-                }
-                if local_ids.contains(r.session_id.as_str()) {
-                    continue;
-                }
-                let title = if r.summary.is_empty() {
-                    "(untitled)"
-                } else {
-                    &r.summary
-                };
-                let time = chrono::DateTime::parse_from_rfc3339(&r.updated_at)
-                    .map(|dt| {
-                        dt.with_timezone(&chrono::Local)
-                            .format("%b %d, %l:%M%P")
-                            .to_string()
-                    })
-                    .unwrap_or_default();
-                let snippet: String = r
-                    .first_prompt
-                    .as_deref()
-                    .unwrap_or("")
-                    .chars()
-                    .take(80)
-                    .collect();
-                println!(
-                    "{} (remote)  {}\n  {}\n  {}",
-                    r.session_id, time, title, snippet
-                );
-                remote_shown += 1;
-            }
-
-            println!("\nTotal: {}", resp.results.len() + remote_shown);
+            println!("\nTotal: {}", resp.results.len());
         }
         SessionsCommand::Delete { id } => {
-            // Always attempt the remote delete when authenticated and not
-            // ZDR — `list` / `search` likewise query remote unconditionally
-            // rather than gating on storage mode (which the CLI cannot
-            // resolve here: it builds config without remote settings). The
-            // backend delete is idempotent (a `404` is treated as success),
-            // so this is safe for local-only sessions with no remote copy.
-            // ZDR teams never upload, so there is nothing remote to delete.
-            let needs_remote = auth.is_some();
-
             // Pass `cwd = None` so the session is found by id regardless of
             // which workspace it was created in; the local delete still uses
             // the resolved per-session cwd.
-            let deletion = kigi_shell::session::persistence::delete_session_history(
-                &id,
-                None,
-                needs_remote,
-                auth_manager.clone(),
-            )
-            .await?;
+            let deletion =
+                kigi_shell::session::persistence::delete_session_history(&id, None).await?;
 
             if deletion.any_removed() {
                 println!("Deleted session {id}");

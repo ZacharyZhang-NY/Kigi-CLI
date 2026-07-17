@@ -9,7 +9,6 @@ mod helpers;
 use super::actions;
 #[allow(unused_imports)]
 use super::{agent, dispatch};
-pub use helpers::ConversationsPartial;
 pub(super) use helpers::parse_session_load_running_prompt_id;
 pub(crate) use helpers::{
     EffectMeta, RestoreProgressMsg, SessionFlags, persist_permission_mode_and_notify,
@@ -77,31 +76,6 @@ pub(crate) fn execute(
                 .spawn(async move {
                     send_logout(&tx).await;
                     TaskResult::LogoutComplete
-                });
-        }
-        Effect::CheckSubscription { verify } => {
-            let tx = acp_tx.clone();
-            tasks.spawn(async move { send_check_subscription(&tx, verify).await });
-        }
-        Effect::CreditLimitRecheck { agent_id } => {
-            let tx = acp_tx.clone();
-            tasks.spawn(async move { send_credit_limit_recheck(&tx, agent_id).await });
-        }
-        Effect::SchedulePaywallCheck => {
-            tasks
-                .spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                    TaskResult::PaywallCheckTick
-                });
-        }
-        Effect::ScheduleGateVerifyTimeout { generation } => {
-            tasks
-                .spawn(async move {
-                    tokio::time::sleep(crate::app::subscription::GATE_VERIFY_TIMEOUT)
-                        .await;
-                    TaskResult::GateVerifyTimeout {
-                        generation,
-                    }
                 });
         }
         Effect::SwitchAccount { request_seq, method_id, use_oauth } => {
@@ -717,10 +691,8 @@ pub(crate) fn execute(
                             }
                             let payload = wrapper.get("result").unwrap_or(&wrapper);
                             let sessions = parse_session_picker_entries(payload);
-                            let partial = parse_session_list_partial(payload);
                             TaskResult::SessionListLoaded {
                                 sessions,
-                                partial,
                                 seq,
                                 query,
                             }
@@ -2414,66 +2386,6 @@ pub(crate) fn execute(
                     }
                 });
         }
-        Effect::ShareSession { agent_id, session_id } => {
-            use kigi_shell::session::{ShareSessionRequest, ShareSessionResponse};
-            let tx = acp_tx.clone();
-            tasks
-                .spawn(async move {
-                    let request = acp::ExtRequest::new(
-                        "x.ai/share_session",
-                        serde_json::value::to_raw_value(
-                                &ShareSessionRequest {
-                                    session_id: session_id.0.to_string(),
-                                },
-                            )
-                            .expect("serialize share session params")
-                            .into(),
-                    );
-                    match acp_send(request, &tx).await {
-                        Ok(resp) => {
-                            let wrapper: serde_json::Value = serde_json::from_str(
-                                    resp.0.get(),
-                                )
-                                .unwrap_or_default();
-                            if let Some(err) = wrapper.get("error") {
-                                let msg = err
-                                    .as_str()
-                                    .map(String::from)
-                                    .unwrap_or_else(|| "unknown error".to_string());
-                                return TaskResult::ShareSessionFailed {
-                                    agent_id,
-                                    error: msg,
-                                };
-                            }
-                            let inner = wrapper.get("result").unwrap_or(&wrapper);
-                            match serde_json::from_value::<
-                                ShareSessionResponse,
-                            >(inner.clone()) {
-                                Ok(share_resp) => {
-                                    TaskResult::ShareSessionComplete {
-                                        agent_id,
-                                        share_url: share_resp.share_url,
-                                    }
-                                }
-                                Err(_) => {
-                                    TaskResult::ShareSessionFailed {
-                                        agent_id,
-                                        error: "couldn't share session".to_string(),
-                                    }
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            TaskResult::ShareSessionFailed {
-                                agent_id,
-                                error: sanitize_user_error(
-                                    &format!("couldn't share session: {e}"),
-                                ),
-                            }
-                        }
-                    }
-                });
-        }
         Effect::FetchSessionAgentName { agent_id, session_id } => {
             let tx = acp_tx.clone();
             tasks
@@ -2633,68 +2545,6 @@ pub(crate) fn execute(
                                 error: sanitize_user_error(
                                     &format!("couldn't delete session: {e}"),
                                 ),
-                            }
-                        }
-                    }
-                });
-        }
-        Effect::SetCodingDataSharing { agent_id, opted_in, rollback_to_opted_in } => {
-            let tx = acp_tx.clone();
-            tasks
-                .spawn(async move {
-                    let request = acp::ExtRequest::new(
-                        "x.ai/privacy/setCodingDataRetention",
-                        serde_json::value::to_raw_value(
-                                &serde_json::json!(
-                                    { "codingDataRetentionOptOut" : ! opted_in }
-                                ),
-                            )
-                            .expect("serialize params")
-                            .into(),
-                    );
-                    match acp_send(request, &tx).await {
-                        Ok(resp) => {
-                            let wrapper: serde_json::Value = match serde_json::from_str(
-                                resp.0.get(),
-                            ) {
-                                Ok(v) => v,
-                                Err(e) => {
-                                    return TaskResult::CodingDataSharingFailed {
-                                        agent_id,
-                                        error: format!("malformed response: {e}"),
-                                        rollback_to_opted_in,
-                                    };
-                                }
-                            };
-                            if let Some(err) = wrapper
-                                .get("error")
-                                .filter(|v| !v.is_null())
-                            {
-                                let msg = err
-                                    .as_str()
-                                    .map(String::from)
-                                    .unwrap_or_else(|| err.to_string());
-                                return TaskResult::CodingDataSharingFailed {
-                                    agent_id,
-                                    error: msg,
-                                    rollback_to_opted_in,
-                                };
-                            }
-                            let confirmed_opted_in = wrapper
-                                .get("codingDataRetentionOptOut")
-                                .and_then(|v| v.as_bool())
-                                .map(|opt_out| !opt_out)
-                                .unwrap_or(opted_in);
-                            TaskResult::CodingDataSharingUpdated {
-                                agent_id,
-                                opted_in: confirmed_opted_in,
-                            }
-                        }
-                        Err(e) => {
-                            TaskResult::CodingDataSharingFailed {
-                                agent_id,
-                                error: format!("{e}"),
-                                rollback_to_opted_in,
                             }
                         }
                     }
@@ -3453,150 +3303,30 @@ pub(crate) fn execute(
                     }
                 });
         }
-        Effect::FetchBilling { agent_id, silent } => {
+        Effect::FetchUsage { agent_id } => {
             let tx = acp_tx.clone();
             tasks
                 .spawn(async move {
-                    use kigi_shell::extensions::billing::BillingConfigResponse;
                     let req = acp::ExtRequest::new(
                         "x.ai/billing",
                         serde_json::value::to_raw_value(&serde_json::json!({}))
-                            .expect("serialize billing params")
+                            .expect("serialize usage params")
                             .into(),
                     );
-                    let parsed = match acp_send(req, &tx).await {
+                    let result = match acp_send(req, &tx).await {
                         Ok(resp) => {
                             let wrapper: serde_json::Value = serde_json::from_str(
                                     resp.0.get(),
                                 )
                                 .unwrap_or_default();
-                            let result = wrapper.get("result").unwrap_or(&wrapper);
-                            serde_json::from_value::<
-                                BillingConfigResponse,
-                            >(result.clone())
+                            let payload = wrapper.get("result").unwrap_or(&wrapper);
+                            parse_usage_response(payload)
                         }
-                        Err(e) => {
-                            return TaskResult::BillingError {
-                                agent_id,
-                                error: sanitize_user_error(&format!("{e}")),
-                                silent,
-                            };
-                        }
+                        Err(e) => Err(sanitize_user_error(&format!("{e}"))),
                     };
-                    let billing = match parsed {
-                        Ok(billing) => billing,
-                        Err(e) => {
-                            return TaskResult::BillingError {
-                                agent_id,
-                                error: format!("Parse error: {e}"),
-                                silent,
-                            };
-                        }
-                    };
-                    let subscription_tier = billing.subscription_tier;
-                    let balance = billing.config.map(credit_balance_from_config);
-                    let autotopup = if has_prepaid_credits(balance.as_ref()) {
-                        fetch_auto_topup_info(&tx).await
-                    } else {
-                        crate::views::credit_bar::AutoTopupFetch::Cleared
-                    };
-                    TaskResult::BillingFetched {
+                    TaskResult::UsageFetched {
                         agent_id,
-                        balance,
-                        silent,
-                        subscription_tier,
-                        autotopup,
-                    }
-                });
-        }
-        Effect::RefreshGate => {
-            tasks
-                .spawn(async move {
-                    let settings = tokio::task::spawn_blocking(|| {
-                            if !kigi_shell::util::config::resolve_remote_fetch_enabled() {
-                                return None;
-                            }
-                            let kigi_home = kigi_shell::util::kigi_home::kigi_home();
-                            let store = kigi_shell::auth::read_auth_json(
-                                    &kigi_home.join("auth.json"),
-                                )
-                                .ok()?;
-                            let scope = kigi_shell::auth::KimiCodeConfig::default()
-                                .auth_scope();
-                            let auth = kigi_shell::auth::lookup_auth(
-                                &store,
-                                &scope,
-                            )?;
-                            let proxy_base = std::env::var(
-                                    "KIGI_CLI_CHAT_PROXY_BASE_URL",
-                                )
-                                .unwrap_or_else(|_| kigi_env::coding_api_base_url());
-                            kigi_shell::remote::fetch_settings_blocking(
-                                &proxy_base,
-                                &auth,
-                                None,
-                            )
-                        })
-                        .await
-                        .ok()
-                        .flatten();
-                    TaskResult::GateRefreshed {
-                        settings,
-                    }
-                });
-        }
-        Effect::FetchAppBilling => {
-            let tx = acp_tx.clone();
-            tasks
-                .spawn(async move {
-                    use kigi_shell::extensions::billing::BillingConfigResponse;
-                    let req = acp::ExtRequest::new(
-                        "x.ai/billing",
-                        serde_json::value::to_raw_value(&serde_json::json!({}))
-                            .expect("serialize billing params")
-                            .into(),
-                    );
-                    match acp_send(req, &tx).await {
-                        Ok(resp) => {
-                            let wrapper: serde_json::Value = serde_json::from_str(
-                                    resp.0.get(),
-                                )
-                                .unwrap_or_default();
-                            let result = wrapper.get("result").unwrap_or(&wrapper);
-                            match serde_json::from_value::<
-                                BillingConfigResponse,
-                            >(result.clone()) {
-                                Ok(billing) => {
-                                    let balance = billing
-                                        .config
-                                        .map(|c| crate::views::credit_bar::CreditBalance {
-                                            period_end_display: None,
-                                            ..credit_balance_from_config(c)
-                                        });
-                                    let autotopup = if has_prepaid_credits(balance.as_ref()) {
-                                        fetch_auto_topup_info(&tx).await
-                                    } else {
-                                        crate::views::credit_bar::AutoTopupFetch::Cleared
-                                    };
-                                    TaskResult::AppBillingFetched {
-                                        balance,
-                                        autotopup,
-                                    }
-                                }
-                                Err(_) => {
-                                    TaskResult::AppBillingFetched {
-                                        balance: None,
-                                        autotopup: crate::views::credit_bar::AutoTopupFetch::Unchanged,
-                                    }
-                                }
-                            }
-                        }
-                        Err(_) => {
-                            TaskResult::AppBillingFetched {
-                                balance: None,
-                                autotopup: crate::views::credit_bar::AutoTopupFetch::Unchanged,
-                            }
-                        }
+                        result,
                     }
                 });
         }

@@ -342,8 +342,6 @@ pub(super) fn handle_session_notification(notif: &acp::ExtNotification, app: &mu
                 restore_degree: None,
                 rate_limited: false,
                 model_incompatible: false,
-                credit_limit_blocked: false,
-                free_usage_blocked: false,
                 bg_tasks: std::collections::BTreeMap::new(),
                 bg_tool_call_to_task: std::collections::HashMap::new(),
                 scheduled_tasks: std::collections::HashMap::new(),
@@ -363,7 +361,6 @@ pub(super) fn handle_session_notification(notif: &acp::ExtNotification, app: &mu
             child_view.set_input_mode(InputMode::Vim);
             child_view.is_subagent_view = true;
             child_view.active_pane = crate::views::agent::ActivePane::Scrollback;
-            child_view.set_sharing_enabled(agent.sharing_enabled);
             let usage_visible = agent
                 .prompt
                 .slash_controller
@@ -1087,18 +1084,6 @@ pub(super) fn handle_child_session_notification(
 /// Apply a compaction or retry event to a session's activity state and scrollback.
 ///
 /// Shared between the root agent and child (subagent) notification paths.
-/// Test-only shim so dispatch-level tests can replay real notification
-/// sequences (e.g. `RetryState::Retrying` → `Exhausted`) through the
-/// production handler — the Retrying arm clears the `in_flight_prompt`
-/// rewind stash, which a fixture setting fields directly would miss.
-#[cfg(test)]
-pub(crate) fn apply_session_event_for_test(
-    update: &XaiSessionUpdate,
-    session: &mut AgentSession,
-    scrollback: &mut crate::scrollback::state::ScrollbackState,
-) -> bool {
-    apply_session_event(update, session, scrollback, false)
-}
 pub(super) fn apply_session_event(
     update: &XaiSessionUpdate,
     session: &mut AgentSession,
@@ -1215,7 +1200,6 @@ pub(super) fn apply_retry_state(
     scrollback: &mut crate::scrollback::state::ScrollbackState,
     is_api_key_auth: bool,
 ) {
-    let mut is_credit_limit = false;
     let mut is_reauth = false;
     use kigi_shell::extensions::notification::RetryState;
     match retry {
@@ -1238,14 +1222,7 @@ pub(super) fn apply_retry_state(
             session.set_retry_activity(None);
             session.rate_limited = *rate_limited;
 
-            is_credit_limit = super::super::dispatch::is_credit_limit_error(None, reason);
-            let is_free_usage =
-                *rate_limited && super::super::dispatch::is_free_usage_exhausted_error(reason);
-            if is_credit_limit {
-                session.credit_limit_blocked = true;
-            } else if is_free_usage {
-                session.free_usage_blocked = true;
-            } else if !*rate_limited && is_reauthable_failure(None, reason) {
+            if !*rate_limited && is_reauthable_failure(None, reason) {
                 is_reauth = true;
                 scrollback.push_block(RenderBlock::session_event(SessionEvent::ReAuthRequired));
             } else {
@@ -1268,10 +1245,7 @@ pub(super) fn apply_retry_state(
             if error_type == "encrypted_content_mismatch" {
                 session.model_incompatible = true;
             }
-            is_credit_limit = super::super::dispatch::is_credit_limit_error(None, message);
-            if is_credit_limit {
-                session.credit_limit_blocked = true;
-            } else if is_reauthable_failure(Some(error_type.as_str()), message) {
+            if is_reauthable_failure(Some(error_type.as_str()), message) {
                 is_reauth = true;
                 scrollback.push_block(RenderBlock::session_event(SessionEvent::ReAuthRequired));
             } else if error_type == "context_length" {
@@ -1287,8 +1261,7 @@ pub(super) fn apply_retry_state(
             }
         }
     }
-    if is_credit_limit {
-    } else if !is_reauth {
+    if !is_reauth {
         session.in_flight_prompt = None;
     }
 }

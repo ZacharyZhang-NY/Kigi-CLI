@@ -12,6 +12,7 @@ pub mod two_pass;
 pub use self::acp_session::*;
 pub use self::acp_types::*;
 pub use self::commands::*;
+pub use self::feedback_types::{ClientType, FeedbackTerminalInfo, RatingType};
 pub use self::fork::{ForkSessionRequest, ForkSessionResponse, fork_session};
 pub use self::handle::*;
 pub use self::persistence::{
@@ -19,12 +20,8 @@ pub use self::persistence::{
     resolve_local_session_any_cwd, session_exists_by_id, session_exists_for_cwd,
 };
 pub use self::result::{Empty, ExtMethodResult};
-pub use self::share::{ShareSessionRequest, ShareSessionResponse};
 pub use kigi_fsnotify::{
     FsConfig, FsEvent, FsEventKind, FsEventSource, FsNotifyError, GitMetaKind,
-};
-pub use prod_mc_cli_chat_proxy_types::feedback_types::{
-    ClientType, FeedbackTerminalInfo, RatingType,
 };
 /// `false` twin: this template is not compiled into this build, so no
 /// template matches. Keeps ungated call sites compiling in both
@@ -273,18 +270,6 @@ pub struct ClientFsConfig {
     pub mode: ClientFsMode,
 }
 /// Share session request/response types
-pub mod share {
-    /// Request to share a session via URL
-    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-    pub struct ShareSessionRequest {
-        pub session_id: String,
-    }
-    /// Response containing the shareable URL
-    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-    pub struct ShareSessionResponse {
-        pub share_url: String,
-    }
-}
 /// Proxy config for the session registry client.
 /// Shared between `acp_session` (slash commands) and `persistence` (title generation).
 #[derive(Clone)]
@@ -303,6 +288,7 @@ pub(crate) mod events;
 pub mod export;
 pub mod feedback;
 pub mod feedback_manager;
+pub mod feedback_types;
 pub mod file_system;
 pub mod fork;
 pub(crate) mod fs_watch;

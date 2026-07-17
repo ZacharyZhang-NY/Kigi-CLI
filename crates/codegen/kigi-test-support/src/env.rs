@@ -164,7 +164,7 @@ pub fn test_env_cmd_tokio(
         // prompt (the windows-x86_64 lifecycle "prompt timed out" failure).
         // Mirrors `leader.rs` and the pty-harness `env_for_pager`.
         .env("KIGI_SHARE_DIR", home.join(".kigi"))
-        .env("KIGI_CLI_CHAT_PROXY_BASE_URL", mock_url)
+        .env("KIGI_CODE_BASE_URL", mock_url)
         .env("KIGI_XAI_API_BASE_URL", mock_url)
         .env("XAI_API_KEY", "test-key-for-ci")
         .env("KIGI_TELEMETRY_ENABLED", "false")

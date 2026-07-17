@@ -67,8 +67,7 @@ fn resolve_auto_permission_mode_layers(
 }
 
 /// Resolve whether the **auto** permission mode feature (`PermissionMode::Auto`,
-/// the LLM/heuristic classifier) is enabled. Full chain mirroring
-/// [`resolve_zdr_access_enabled`](super::resolve_zdr_access_enabled):
+/// the LLM/heuristic classifier) is enabled. Full precedence chain:
 ///
 /// requirements > env (`KIGI_AUTO_PERMISSION_MODE`) > `[auto_mode] enabled` in
 /// `config.toml` > managed > remote settings (`auto_mode.enabled`, coerced

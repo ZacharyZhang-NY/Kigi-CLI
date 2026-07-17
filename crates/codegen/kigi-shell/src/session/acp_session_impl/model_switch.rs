@@ -1,5 +1,5 @@
 use super::*;
-use crate::remote::DEFAULT_CONTEXT_WINDOW;
+use crate::agent::models_fetch::DEFAULT_CONTEXT_WINDOW;
 use kigi_chat_state::conversation_util::replace_or_insert_system_head;
 impl SessionActor {
     pub(super) async fn handle_set_session_model(
@@ -72,7 +72,6 @@ impl SessionActor {
                     existing.auth_type,
                 ),
                 alpha_test_key: existing.alpha_test_key,
-                client_version: sampling_config.client_version.clone(),
             });
         self.model_auth_facts.replace(None);
         self.signals_handle()

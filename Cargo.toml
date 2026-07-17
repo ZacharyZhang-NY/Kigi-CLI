@@ -75,7 +75,6 @@ members = [
     "crates/common/kigi-tool-runtime",
     "crates/common/kigi-tool-types",
     "crates/common/kigi-tracing",
-    "prod/mc/cli-chat-proxy-types",
     "third_party/dagre_rust",
     "third_party/graphlib_rust",
     "third_party/mermaid-to-svg",
@@ -337,17 +336,6 @@ strip = false
 debug = 1
 split-debuginfo = "off"
 
-# Production profile for latency-sensitive x-product services (VF, home-mixer).
-# Thin LTO gives ~90% of full LTO benefit at significantly faster link time.
-# Keeps symbols + line tables for prod debuggability (perf, flamegraph, stack traces).
-[profile.x-prod]
-inherits = "release"
-lto = "thin"
-strip = false
-codegen-units = 1
-debug = "line-tables-only"
-panic = "unwind"
-
 # Desktop release profile. Functionally identical to release-dist — kept as a
 # named alias so the desktop workflow can reference it without coupling to the
 # CLI pipeline's profile name. Alpha and stable share a single release-dist
@@ -365,7 +353,9 @@ codegen-units = 128
 debug = "line-tables-only"
 opt-level = 0
 lto = false
-incremental = true
+# Incremental caches balloon to tens of GB across this workspace's 60+ crates
+# under iterative full-workspace builds; rebuild cost is the cheaper trade.
+incremental = false
 
 [profile.bench]
 debug = true

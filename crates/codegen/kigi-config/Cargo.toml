@@ -9,8 +9,6 @@ description = "Shared config loading for Grok — kigi_home, effective config (r
 base64 = { workspace = true }
 blake3 = { workspace = true }
 dunce = { workspace = true }
-# Shared signed deployment-config envelope contract with the cli-chat-proxy signer.
-prod-mc-cli-chat-proxy-types = { path = "../../../prod/mc/cli-chat-proxy-types" }
 ring = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }

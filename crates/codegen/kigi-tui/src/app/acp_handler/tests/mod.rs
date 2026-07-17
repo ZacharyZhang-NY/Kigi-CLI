@@ -33,8 +33,6 @@ pub(super) fn make_session(session_id: Option<&str>) -> AgentSession {
         restore_degree: None,
         rate_limited: false,
         model_incompatible: false,
-        credit_limit_blocked: false,
-        free_usage_blocked: false,
         available_commands: Vec::new(),
         available_commands_generation: 0,
         available_tools: None,
@@ -255,17 +253,6 @@ pub(super) fn follow_ups_ext_with_prompt(
     acp::ExtNotification::new(
         "x.ai/follow_ups",
         std::sync::Arc::from(serde_json::value::to_raw_value(&params).unwrap()),
-    )
-}
-pub(super) fn tier_settings_update(tier: &str) -> acp::ExtNotification {
-    acp::ExtNotification::new(
-        "x.ai/settings/update",
-        std::sync::Arc::from(
-            serde_json::value::to_raw_value(
-                    &serde_json::json!({ "subscription_tier_display" : tier }),
-                )
-                .unwrap(),
-        ),
     )
 }
 pub(super) fn group_tool_verbs_settings_update(

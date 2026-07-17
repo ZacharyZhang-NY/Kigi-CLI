@@ -271,7 +271,6 @@ pub(crate) async fn create_test_actor_ex(
         client_identifier: None,
         origin_client: None,
         feedback_manager: Arc::new(FeedbackManager::local_only("test-session")),
-        sync_loop_cancel: None,
         agent: std::cell::RefCell::new(test_agent_default().await),
         last_reported_branch: std::sync::Arc::new(parking_lot::Mutex::new(None)),
         git_head_enabled: false,

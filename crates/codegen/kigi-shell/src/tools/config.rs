@@ -205,7 +205,7 @@ impl ShellToolsetConfig {
     pub fn new(base: Option<Self>, sampling_config: Option<SamplerConfig>) -> Self {
         let default_base = SamplerConfig {
             api_key: None,
-            base_url: "https://api.x.ai/v1".to_string(),
+            base_url: kigi_env::coding_api_base_url(),
             model: String::new(),
             max_completion_tokens: None,
             temperature: None,
@@ -214,15 +214,11 @@ impl ShellToolsetConfig {
             auth_scheme: Default::default(),
             extra_headers: indexmap::IndexMap::new(),
             context_window: 256_000,
-            client_version: None,
             reasoning_effort: None,
             force_http1: false,
             max_retries: None,
             stream_tool_calls: false,
             idle_timeout_secs: None,
-            client_identifier: None,
-            deployment_id: None,
-            user_id: None,
             origin_client: None,
             // Default base for the in-process web-search tool config.
             // Real `SamplerConfig`s (e.g. from `sampling_config_for_model`)

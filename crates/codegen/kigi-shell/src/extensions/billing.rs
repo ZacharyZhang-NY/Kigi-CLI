@@ -1,8 +1,11 @@
-//! `x.ai/billing` extension handler.
+//! `x.ai/billing` extension handler — Kimi Code usage/quota.
 //!
-//! Fetches the authenticated user's Grok Build billing configuration
-//! (credit limit, usage, on-demand cap, billing period, history) from
-//! the backend. Used by the pager/desktop to display credits and usage.
+//! Port of kimi-cli's `/usage` command (kimi-cli `src/kimi_cli/ui/shell/usage.py`):
+//! `GET {coding_api_base_url}/usages` with the OAuth Bearer token, parsed into
+//! display rows (`{usage: {...}, limits: [{detail, window, ...}]}` payload
+//! shape). The TUI renders the rows as label + remaining-quota bar +
+//! reset hint. The xAI credits/auto-topup surface this file used to serve is
+//! gone with the xAI proxy.
 
 use agent_client_protocol as acp;
 use serde::{Deserialize, Serialize};
@@ -10,593 +13,396 @@ use serde::{Deserialize, Serialize};
 use super::{ExtResult, to_raw_response};
 use crate::agent::MvpAgent;
 
-/// Billing period cycle identifier.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BillingCycle {
-    pub year: i32,
-    pub month: i32,
-}
-
-/// Cent value from the billing API (USD cents).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Cent {
-    /// proto3 JSON omits zero-valued scalars, so a `$0` Cent arrives as `{}`;
-    /// default to 0 rather than failing the whole parse.
-    #[serde(default)]
-    pub val: i64,
-}
-
-/// A usage period (weekly or monthly) from the newer credits config.
+/// One usage row: a named quota with `used`/`limit` and an optional
+/// human-readable reset hint (e.g. "resets in 2h 5m").
 ///
-/// `start`/`end` are RFC 3339 timestamps. `period_type` is the proto enum name
-/// (e.g. `USAGE_PERIOD_TYPE_WEEKLY`); kept so callers can distinguish weekly
-/// vs monthly cycles.
+/// `Deserialize` because the TUI parses this back out of the
+/// `x.ai/billing` ext response.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageRow {
+    pub label: String,
+    pub used: i64,
+    pub limit: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reset_hint: Option<String>,
+}
+
+/// Response for `x.ai/billing`: the parsed usage rows, in display order
+/// (summary row first when the payload carries one).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct UsagePeriod {
-    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
-    pub period_type: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub start: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub end: Option<String>,
+pub struct UsageResponse {
+    pub rows: Vec<UsageRow>,
 }
 
-/// Usage summary for one past billing period.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BillingPeriodUsage {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub billing_cycle: Option<BillingCycle>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub included_used: Option<Cent>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub on_demand_used: Option<Cent>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub total_used: Option<Cent>,
-}
-
-/// Current billing configuration for Grok Build coding credits.
-///
-/// Carries both the newer credits-config fields (`credit_usage_percent`,
-/// `current_period`) and the deprecated `GrokBuildBillingConfig` fields
-/// (`monthly_limit`, `used`, `billing_period_*`). Consumers should prefer the
-/// new fields and fall back to the deprecated ones, so the same struct works
-/// against both the new `GetGrokCreditsConfig` and the legacy
-/// `GetGrokBuildBillingConfig` backend responses.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BillingConfig {
-    /// Included credit usage as a percentage of the allowance (0.0–100.0).
-    /// Preferred over deriving from `monthly_limit`/`used`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub credit_usage_percent: Option<f64>,
-    /// Current usage period (weekly or monthly). Preferred over
-    /// `billing_period_start`/`billing_period_end`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub current_period: Option<UsagePeriod>,
-    /// Deprecated: included monthly credit budget. Use `credit_usage_percent`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub monthly_limit: Option<Cent>,
-    /// Deprecated: credits used this period. Use `credit_usage_percent`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub used: Option<Cent>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub on_demand_cap: Option<Cent>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub on_demand_used: Option<Cent>,
-    /// Remaining prepaid (purchased) credit balance, positive — the "bought
-    /// credits" the user has topped up. Populated from the credits config
-    /// (`GetGrokCreditsConfig.prepaid_balance`); absent in the legacy billing
-    /// shape.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub prepaid_balance: Option<Cent>,
-    /// Whether this user is on unified usage billing (shared weekly/monthly
-    /// pool). From `GrokCreditsConfig.is_unified_billing_user`, which billing
-    /// sets from remote settings `unified_consumer_billing_enabled`. `None` when
-    /// absent (legacy `GetGrokBuildBillingConfig` shape or older servers).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub is_unified_billing_user: Option<bool>,
-    /// Deprecated: use `current_period.start`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub billing_period_start: Option<String>,
-    /// Deprecated: use `current_period.end`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub billing_period_end: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub history: Vec<BillingPeriodUsage>,
-}
-
-/// Top-level response (primarily from `GET /rest/grok/credits` + auto-topup-rule).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BillingConfigResponse {
-    pub config: Option<BillingConfig>,
-    /// Whether on-demand credit usage is enabled. When `false`, the pager
-    /// should hide on-demand controls. Populated from `RemoteSettings`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub on_demand_enabled: Option<bool>,
-    /// User-friendly subscription tier name (e.g. "SuperGrok Heavy").
-    /// Populated from `RemoteSettings` so the pager can update its cached
-    /// tier on every billing fetch without an extra request.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub subscription_tier: Option<String>,
-}
-
-/// Auto top-up configuration (from GetAutoTopupRule).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AutoTopupRule {
-    /// proto3 JSON omits `false`, so a disabled rule arrives without this field;
-    /// default to `false` rather than failing the parse (which would otherwise
-    /// keep a stale cached rule in the pager).
-    #[serde(default)]
-    pub enabled: bool,
-    pub min_before_hitting_sl: Option<Cent>,
-    pub topup_amount: Option<Cent>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_amount_per_month: Option<Cent>,
-}
-
-/// Wrapper for the auto top-up rule response.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetAutoTopupRuleResponse {
-    #[serde(default)]
-    pub rule: Option<AutoTopupRule>,
+/// Error from the usages fetch, mapped to the same user-facing messages
+/// kimi-cli shows (usage.py error handling).
+#[derive(Debug, thiserror::Error)]
+pub enum UsageError {
+    #[error("Authorization failed. Please check your credentials.")]
+    Unauthorized,
+    #[error("Usage endpoint not available. Try Kimi for Coding.")]
+    NotFound,
+    #[error("Failed to fetch usage (HTTP {status}).")]
+    Http { status: u16 },
+    #[error("Failed to fetch usage: {0}")]
+    Network(#[from] reqwest::Error),
+    #[error("Failed to parse usage response: {0}")]
+    Parse(#[from] serde_json::Error),
 }
 
 #[tracing::instrument(skip_all, fields(method = %args.method))]
 pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
         "x.ai/billing" => {
-            tracing::info!("handling billing config request");
-            handle_get_billing(agent).await
-        }
-        "x.ai/auto-topup-rule" => {
-            tracing::info!("handling auto top-up rule request");
-            handle_get_auto_topup_rule(agent).await
+            tracing::info!("handling usage request");
+            handle_get_usage(agent).await
         }
         _ => Err(acp::Error::method_not_found()),
     }
 }
 
-/// Structured context for unified-log entries from a successful billing fetch.
-///
-/// Keeps history to a count + the most recent period so `~/.kigi/logs/unified.jsonl`
-/// stays useful without dumping unbounded period arrays.
-fn billing_unified_log_ctx(billing: &BillingConfigResponse) -> serde_json::Value {
-    let history_len = billing
-        .config
-        .as_ref()
-        .map(|c| c.history.len())
-        .unwrap_or(0);
-    let latest_history = billing
-        .config
-        .as_ref()
-        .and_then(|c| c.history.last())
-        .and_then(|p| serde_json::to_value(p).ok());
-
-    let mut config_value = billing
-        .config
-        .as_ref()
-        .and_then(|c| serde_json::to_value(c).ok())
-        .unwrap_or(serde_json::Value::Null);
-    if let Some(obj) = config_value.as_object_mut() {
-        // Drop full history array; surface length + latest entry instead.
-        obj.remove("history");
-        obj.insert("historyLen".into(), serde_json::json!(history_len));
-        if let Some(latest) = latest_history {
-            obj.insert("latestHistory".into(), latest);
-        }
-    }
-
-    serde_json::json!({
-        "config": config_value,
-        "onDemandEnabled": billing.on_demand_enabled,
-        "subscriptionTier": billing.subscription_tier,
-    })
-}
-
-async fn handle_get_billing(agent: &MvpAgent) -> ExtResult {
+async fn handle_get_usage(agent: &MvpAgent) -> ExtResult {
     let auth = super::auth_gate::require_xai_auth(
         &agent.auth_manager,
-        "Authentication required to fetch billing data",
-        "Billing data requires auth with grok.com. Run `grok login` to authenticate.",
+        "Authentication required to fetch usage data",
+        "Usage data requires a Kimi Code subscription session. Run `kigi login` to authenticate.",
     )?;
 
-    let proxy_base = agent.cli_chat_proxy_base_url();
-    let base = proxy_base.trim_end_matches('/');
-
-    // Credits balance / usage (new billing system) via the CLI proxy, which
-    // forwards to the backend `GetGrokCreditsConfig`.
-    let credits_url = format!("{}/billing?format=credits", base);
-    let credits_resp = crate::http::shared_client()
-        .get(&credits_url)
-        .header("Authorization", format!("Bearer {}", auth.key))
-        .header("x-userid", &auth.user_id)
-        .header("x-grok-client-version", kigi_version::VERSION)
-        .header(
-            crate::http::CLIENT_MODE_HEADER,
-            crate::http::process_client_mode(),
-        )
-        .timeout(std::time::Duration::from_secs(15))
-        .send()
+    let base = agent.cfg.borrow().endpoints.proxy_url();
+    let usage = fetch_usage(&crate::http::shared_client(), &base, &auth.key)
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "billing: upstream request failed");
+            tracing::warn!(error = %e, "usage fetch failed");
             kigi_log::unified_log::warn(
-                "billing: upstream request failed",
+                "usage: fetch failed",
                 None,
                 Some(serde_json::json!({ "error": e.to_string() })),
             );
-            acp::Error::internal_error().data(format!("Failed to fetch billing data: {e}"))
+            acp::Error::internal_error().data(e.to_string())
         })?;
 
-    if !credits_resp.status().is_success() {
-        let status = credits_resp.status().as_u16();
-        let body = credits_resp.text().await.unwrap_or_default();
-        tracing::warn!(status, url = %credits_url, "billing: upstream error");
-
-        let detail = serde_json::from_str::<serde_json::Value>(&body)
-            .ok()
-            .and_then(|v| v.get("error").and_then(|e| e.as_str()).map(String::from))
-            .unwrap_or_else(|| format!("HTTP {status}"));
-
-        kigi_log::unified_log::warn(
-            "billing: upstream error",
-            None,
-            Some(serde_json::json!({
-                "status": status,
-                "detail": detail,
-            })),
-        );
-
-        return Err(acp::Error::internal_error().data(format!("Billing service error: {detail}")));
-    }
-
-    let mut billing: BillingConfigResponse = credits_resp.json().await.map_err(|e| {
-        tracing::error!(error = %e, "billing: failed to parse response");
-        kigi_log::unified_log::warn(
-            "billing: failed to parse response",
-            None,
-            Some(serde_json::json!({ "error": e.to_string() })),
-        );
-        acp::Error::internal_error().data(format!("Failed to parse billing data: {e}"))
-    })?;
-
-    // Enrich with fields from remote settings.
-    let rs = agent.cfg.borrow().remote_settings.clone();
-    billing.on_demand_enabled = rs.as_ref().and_then(|rs| rs.on_demand_enabled);
-    billing.subscription_tier = rs.as_ref().and_then(|rs| {
-        rs.subscription_tier_display
-            .clone()
-            .or_else(|| rs.subscription_tier.clone())
-    });
-
-    // Every prompt / /usage / poll path hits `x.ai/billing`; log the fetched
-    // credits snapshot so support can correlate limit UX with real balances.
     kigi_log::unified_log::info(
-        "billing: fetched credits config",
+        "usage: fetched quota rows",
         None,
-        Some(billing_unified_log_ctx(&billing)),
+        serde_json::to_value(&usage).ok(),
     );
 
-    to_raw_response(&billing)
+    to_raw_response(&usage)
 }
 
-async fn handle_get_auto_topup_rule(agent: &MvpAgent) -> ExtResult {
-    let auth = super::auth_gate::require_xai_auth(
-        &agent.auth_manager,
-        "Authentication required to fetch auto top-up rule",
-        "Auto top-up data requires auth with grok.com. Run `grok login` to authenticate.",
-    )?;
-
-    let proxy_base = agent.cli_chat_proxy_base_url();
-    let base = proxy_base.trim_end_matches('/');
-
-    // Auto top-up rule via the CLI proxy, which forwards to the backend
-    // `GetAutoTopupRule`.
-    let url = format!("{}/auto-topup-rule", base);
-    let response = crate::http::shared_client()
+/// `GET {base}/usages` with a Bearer token, parsed per kimi-cli usage.py.
+pub(crate) async fn fetch_usage(
+    http: &reqwest::Client,
+    base_url: &str,
+    token: &str,
+) -> Result<UsageResponse, UsageError> {
+    let url = format!("{}/usages", base_url.trim_end_matches('/'));
+    let response = http
         .get(&url)
-        .header("Authorization", format!("Bearer {}", auth.key))
-        .header("x-userid", &auth.user_id)
-        .header("x-grok-client-version", kigi_version::VERSION)
-        .header(
-            crate::http::CLIENT_MODE_HEADER,
-            crate::http::process_client_mode(),
-        )
-        .timeout(std::time::Duration::from_secs(10))
+        .bearer_auth(token)
+        .timeout(std::time::Duration::from_secs(15))
         .send()
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "auto-topup: upstream request failed");
-            acp::Error::internal_error().data(format!("Failed to fetch auto top-up rule: {e}"))
-        })?;
+        .await?;
+    match response.status().as_u16() {
+        200..=299 => {}
+        401 => return Err(UsageError::Unauthorized),
+        404 => return Err(UsageError::NotFound),
+        status => return Err(UsageError::Http { status }),
+    }
+    let payload: serde_json::Value = serde_json::from_str(&response.text().await?)?;
+    Ok(parse_usage_payload(&payload))
+}
 
-    if !response.status().is_success() {
-        let status = response.status().as_u16();
-        let body = response.text().await.unwrap_or_default();
-        tracing::warn!(status, url = %url, "auto-topup: upstream error");
+/// Port of usage.py `_parse_usage_payload`: `usage` (summary) + `limits[]`.
+fn parse_usage_payload(payload: &serde_json::Value) -> UsageResponse {
+    let mut rows = Vec::new();
 
-        let detail = serde_json::from_str::<serde_json::Value>(&body)
-            .ok()
-            .and_then(|v| v.get("error").and_then(|e| e.as_str()).map(String::from))
-            .unwrap_or_else(|| format!("HTTP {status}"));
-
-        return Err(
-            acp::Error::internal_error().data(format!("Auto top-up service error: {detail}"))
-        );
+    if let Some(usage) = payload.get("usage").filter(|v| v.is_object())
+        && let Some(row) = to_usage_row(usage, "Weekly limit")
+    {
+        rows.push(row);
     }
 
-    // Return the upstream response body verbatim (as a JSON value) so /usage
-    // can print the exact data from this request unformatted.
-    let body_text = response.text().await.unwrap_or_default();
-    let value: serde_json::Value =
-        serde_json::from_str(&body_text).unwrap_or(serde_json::json!({"raw": body_text}));
-    to_raw_response(&value)
+    if let Some(limits) = payload.get("limits").and_then(|v| v.as_array()) {
+        for (idx, item) in limits.iter().enumerate() {
+            if !item.is_object() {
+                continue;
+            }
+            let detail = match item.get("detail") {
+                Some(d) if d.is_object() => d,
+                _ => item,
+            };
+            let empty = serde_json::json!({});
+            let window = match item.get("window") {
+                Some(w) if w.is_object() => w,
+                _ => &empty,
+            };
+            let label = limit_label(item, detail, window, idx);
+            if let Some(row) = to_usage_row(detail, &label) {
+                rows.push(row);
+            }
+        }
+    }
+
+    UsageResponse { rows }
+}
+
+/// Port of usage.py `_to_usage_row`: `used`/`limit`, with
+/// `used = limit - remaining` fallback; row dropped when both absent.
+fn to_usage_row(data: &serde_json::Value, default_label: &str) -> Option<UsageRow> {
+    let limit = to_int(data.get("limit"));
+    let used = to_int(data.get("used")).or_else(|| match (to_int(data.get("remaining")), limit) {
+        (Some(remaining), Some(limit)) => Some(limit - remaining),
+        _ => None,
+    });
+    if used.is_none() && limit.is_none() {
+        return None;
+    }
+    let label = data
+        .get("name")
+        .and_then(non_empty_str)
+        .or_else(|| data.get("title").and_then(non_empty_str))
+        .map(str::to_owned)
+        .unwrap_or_else(|| default_label.to_owned());
+    Some(UsageRow {
+        label,
+        used: used.unwrap_or(0),
+        limit: limit.unwrap_or(0),
+        reset_hint: reset_hint(data),
+    })
+}
+
+/// Port of usage.py `_limit_label`: name/title/scope, else the window
+/// duration ("5h limit"), else "Limit #N".
+fn limit_label(
+    item: &serde_json::Value,
+    detail: &serde_json::Value,
+    window: &serde_json::Value,
+    idx: usize,
+) -> String {
+    for key in ["name", "title", "scope"] {
+        if let Some(val) = item
+            .get(key)
+            .and_then(non_empty_str)
+            .or_else(|| detail.get(key).and_then(non_empty_str))
+        {
+            return val.to_owned();
+        }
+    }
+
+    let duration = to_int(window.get("duration"))
+        .or_else(|| to_int(item.get("duration")))
+        .or_else(|| to_int(detail.get("duration")));
+    let time_unit = window
+        .get("timeUnit")
+        .and_then(non_empty_str)
+        .or_else(|| item.get("timeUnit").and_then(non_empty_str))
+        .or_else(|| detail.get("timeUnit").and_then(non_empty_str))
+        .unwrap_or("");
+    if let Some(duration) = duration.filter(|&d| d != 0) {
+        if time_unit.contains("MINUTE") {
+            if duration >= 60 && duration % 60 == 0 {
+                return format!("{}h limit", duration / 60);
+            }
+            return format!("{duration}m limit");
+        }
+        if time_unit.contains("HOUR") {
+            return format!("{duration}h limit");
+        }
+        if time_unit.contains("DAY") {
+            return format!("{duration}d limit");
+        }
+        return format!("{duration}s limit");
+    }
+
+    format!("Limit #{}", idx + 1)
+}
+
+/// Port of usage.py `_reset_hint`: absolute reset keys first, then
+/// seconds-until keys.
+fn reset_hint(data: &serde_json::Value) -> Option<String> {
+    for key in ["reset_at", "resetAt", "reset_time", "resetTime"] {
+        if let Some(val) = data.get(key).and_then(non_empty_str) {
+            return Some(format_reset_time(val));
+        }
+    }
+    for key in ["reset_in", "resetIn", "ttl", "window"] {
+        if let Some(seconds) = to_int(data.get(key)).filter(|&s| s != 0) {
+            return Some(format!(
+                "resets in {}",
+                format_duration(seconds.max(0) as u64)
+            ));
+        }
+    }
+    None
+}
+
+/// Port of usage.py `_format_reset_time`: ISO timestamp → "resets in …" /
+/// "reset" (already past) / "resets at <raw>" when unparseable.
+fn format_reset_time(val: &str) -> String {
+    match chrono::DateTime::parse_from_rfc3339(val) {
+        Ok(dt) => {
+            let delta = dt.with_timezone(&chrono::Utc) - chrono::Utc::now();
+            let seconds = delta.num_seconds();
+            if seconds <= 0 {
+                "reset".to_owned()
+            } else {
+                format!("resets in {}", format_duration(seconds as u64))
+            }
+        }
+        Err(_) => format!("resets at {val}"),
+    }
+}
+
+/// Port of kimi-cli `utils/datetime.py` `format_duration`: short units,
+/// seconds shown only for sub-minute durations.
+fn format_duration(seconds: u64) -> String {
+    let days = seconds / 86_400;
+    let hours = (seconds % 86_400) / 3_600;
+    let minutes = (seconds % 3_600) / 60;
+    let secs = seconds % 60;
+    let mut parts = Vec::new();
+    if days > 0 {
+        parts.push(format!("{days}d"));
+    }
+    if hours > 0 {
+        parts.push(format!("{hours}h"));
+    }
+    if minutes > 0 {
+        parts.push(format!("{minutes}m"));
+    }
+    if secs > 0 && parts.is_empty() {
+        parts.push(format!("{secs}s"));
+    }
+    if parts.is_empty() {
+        "0s".to_owned()
+    } else {
+        parts.join(" ")
+    }
+}
+
+fn non_empty_str(v: &serde_json::Value) -> Option<&str> {
+    v.as_str().filter(|s| !s.is_empty())
+}
+
+/// Port of usage.py `_to_int`: ints and int-shaped floats/strings; anything
+/// else is `None`.
+fn to_int(value: Option<&serde_json::Value>) -> Option<i64> {
+    let value = value?;
+    if let Some(i) = value.as_i64() {
+        return Some(i);
+    }
+    if let Some(f) = value.as_f64() {
+        return Some(f as i64);
+    }
+    value.as_str()?.trim().parse::<i64>().ok()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wiremock::matchers::{bearer_token, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    #[test]
-    fn auto_topup_disabled_rule_omits_enabled_field() {
-        // proto3 JSON omits `false` / `0`, so a disabled rule arrives without
-        // `enabled` (and zero Cents as `{}`). It must still deserialize (as
-        // disabled) rather than erroring — otherwise the pager keeps a stale
-        // cached rule.
-        let json = serde_json::json!({
-            "rule": { "topupAmount": {"val": 500}, "minBeforeHittingSl": {} }
-        });
-        let resp: GetAutoTopupRuleResponse = serde_json::from_value(json).unwrap();
-        let rule = resp.rule.expect("rule present");
-        assert!(!rule.enabled);
-        assert_eq!(rule.topup_amount.unwrap().val, 500);
-        assert_eq!(rule.min_before_hitting_sl.unwrap().val, 0);
-    }
-
-    #[test]
-    fn billing_config_response_deserializes_from_backend_json() {
-        let json = serde_json::json!({
-            "config": {
-                "monthlyLimit": {"val": 2000},
-                "used": {"val": 1234},
-                "onDemandCap": {"val": 500},
-                "billingPeriodStart": "2025-04-01T00:00:00Z",
-                "billingPeriodEnd": "2025-05-01T00:00:00Z",
-                "history": [
+    /// Happy path: GET /usages with Bearer, kimi payload shape → rows with
+    /// summary first, remaining-derived `used`, and window-derived labels.
+    #[tokio::test]
+    async fn fetch_usage_parses_kimi_payload() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/usages"))
+            .and(bearer_token("tok-42"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "usage": { "limit": 1000, "used": 250, "reset_at": "2099-01-01T00:00:00Z" },
+                "limits": [
                     {
-                        "billingCycle": {"year": 2025, "month": 3},
-                        "includedUsed": {"val": 1800},
-                        "onDemandUsed": {"val": 0},
-                        "totalUsed": {"val": 1800}
-                    }
+                        "window": { "duration": 300, "timeUnit": "TIME_UNIT_MINUTE" },
+                        "detail": { "limit": 50, "remaining": 30, "resetIn": 1800 }
+                    },
+                    { "name": "RPM", "limit": 60, "used": 12 }
                 ]
-            }
-        });
-        let resp: BillingConfigResponse = serde_json::from_value(json).unwrap();
-        let config = resp.config.unwrap();
-        assert_eq!(config.monthly_limit.unwrap().val, 2000);
-        assert_eq!(config.used.unwrap().val, 1234);
-        assert_eq!(config.on_demand_cap.unwrap().val, 500);
-        assert_eq!(
-            config.billing_period_start.as_deref(),
-            Some("2025-04-01T00:00:00Z")
-        );
-        assert_eq!(config.history.len(), 1);
-        let period = &config.history[0];
-        let cycle = period.billing_cycle.as_ref().unwrap();
-        assert_eq!(cycle.year, 2025);
-        assert_eq!(cycle.month, 3);
-        assert_eq!(period.included_used.as_ref().unwrap().val, 1800);
-        assert_eq!(period.total_used.as_ref().unwrap().val, 1800);
-    }
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
 
-    #[test]
-    fn billing_unified_log_ctx_includes_credits_and_collapses_history() {
-        let resp = BillingConfigResponse {
-            config: Some(BillingConfig {
-                credit_usage_percent: Some(42.5),
-                current_period: Some(UsagePeriod {
-                    period_type: Some("USAGE_PERIOD_TYPE_WEEKLY".into()),
-                    start: Some("2025-04-01T00:00:00Z".into()),
-                    end: Some("2025-04-08T00:00:00Z".into()),
-                }),
-                monthly_limit: Some(Cent { val: 2000 }),
-                used: Some(Cent { val: 850 }),
-                on_demand_cap: Some(Cent { val: 500 }),
-                on_demand_used: Some(Cent { val: 0 }),
-                prepaid_balance: Some(Cent { val: 100 }),
-                is_unified_billing_user: Some(true),
-                billing_period_start: None,
-                billing_period_end: None,
-                history: vec![
-                    BillingPeriodUsage {
-                        billing_cycle: Some(BillingCycle {
-                            year: 2025,
-                            month: 2,
-                        }),
-                        included_used: Some(Cent { val: 1000 }),
-                        on_demand_used: Some(Cent { val: 0 }),
-                        total_used: Some(Cent { val: 1000 }),
-                    },
-                    BillingPeriodUsage {
-                        billing_cycle: Some(BillingCycle {
-                            year: 2025,
-                            month: 3,
-                        }),
-                        included_used: Some(Cent { val: 1800 }),
-                        on_demand_used: Some(Cent { val: 0 }),
-                        total_used: Some(Cent { val: 1800 }),
-                    },
-                ],
-            }),
-            on_demand_enabled: Some(true),
-            subscription_tier: Some("SuperGrok".into()),
-        };
-        let ctx = billing_unified_log_ctx(&resp);
-        assert_eq!(ctx["onDemandEnabled"], true);
-        assert_eq!(ctx["subscriptionTier"], "SuperGrok");
-        let config = ctx["config"].as_object().expect("config object");
+        let usage = fetch_usage(&reqwest::Client::new(), &server.uri(), "tok-42")
+            .await
+            .expect("usage fetch should succeed");
+
+        assert_eq!(usage.rows.len(), 3);
+        assert_eq!(usage.rows[0].label, "Weekly limit");
+        assert_eq!(usage.rows[0].used, 250);
+        assert_eq!(usage.rows[0].limit, 1000);
         assert!(
-            config.get("history").is_none(),
-            "full history must be collapsed"
+            usage.rows[0]
+                .reset_hint
+                .as_deref()
+                .is_some_and(|h| h.starts_with("resets in")),
+            "absolute reset_at renders a relative hint: {:?}",
+            usage.rows[0].reset_hint
         );
-        assert_eq!(config["historyLen"], 2);
-        assert_eq!(
-            config["latestHistory"]["billingCycle"]["month"], 3,
-            "latest history period retained"
-        );
-        assert_eq!(config["creditUsagePercent"], 42.5);
-        assert_eq!(config["prepaidBalance"]["val"], 100);
+        // 300 minutes → "5h limit"; used derived from remaining (50-30=20).
+        assert_eq!(usage.rows[1].label, "5h limit");
+        assert_eq!(usage.rows[1].used, 20);
+        assert_eq!(usage.rows[1].limit, 50);
+        assert_eq!(usage.rows[1].reset_hint.as_deref(), Some("resets in 30m"));
+        // Item-level fields when there is no `detail` object.
+        assert_eq!(usage.rows[2].label, "RPM");
+        assert_eq!(usage.rows[2].used, 12);
+        assert_eq!(usage.rows[2].limit, 60);
+    }
+
+    /// Auth failure: 401 maps to the typed `Unauthorized` error (kimi-cli's
+    /// "Authorization failed" path).
+    #[tokio::test]
+    async fn fetch_usage_maps_401_to_unauthorized() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/usages"))
+            .respond_with(ResponseTemplate::new(401))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let err = fetch_usage(&reqwest::Client::new(), &server.uri(), "bad")
+            .await
+            .expect_err("401 must fail");
+        assert!(matches!(err, UsageError::Unauthorized));
+    }
+
+    /// 404 maps to the "endpoint not available" error (kimi-cli parity).
+    #[tokio::test]
+    async fn fetch_usage_maps_404_to_not_found() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/usages"))
+            .respond_with(ResponseTemplate::new(404))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let err = fetch_usage(&reqwest::Client::new(), &server.uri(), "tok")
+            .await
+            .expect_err("404 must fail");
+        assert!(matches!(err, UsageError::NotFound));
+    }
+
+    /// Empty payload parses to zero rows (TUI shows "No usage data").
+    #[test]
+    fn parse_usage_payload_empty_object_yields_no_rows() {
+        let usage = parse_usage_payload(&serde_json::json!({}));
+        assert!(usage.rows.is_empty());
     }
 
     #[test]
-    fn billing_config_response_roundtrips_through_json() {
-        let config = BillingConfig {
-            credit_usage_percent: None,
-            current_period: None,
-            monthly_limit: Some(Cent { val: 5000 }),
-            used: Some(Cent { val: 123 }),
-            on_demand_cap: Some(Cent { val: 0 }),
-            on_demand_used: Some(Cent { val: 50 }),
-            prepaid_balance: Some(Cent { val: 750 }),
-            is_unified_billing_user: None,
-            billing_period_start: Some("2025-04-01T00:00:00Z".to_string()),
-            billing_period_end: Some("2025-05-01T00:00:00Z".to_string()),
-            history: vec![BillingPeriodUsage {
-                billing_cycle: Some(BillingCycle {
-                    year: 2025,
-                    month: 3,
-                }),
-                included_used: Some(Cent { val: 4500 }),
-                on_demand_used: Some(Cent { val: 100 }),
-                total_used: Some(Cent { val: 4600 }),
-            }],
-        };
-        let resp = BillingConfigResponse {
-            config: Some(config),
-            on_demand_enabled: None,
-            subscription_tier: None,
-        };
-        let json = serde_json::to_value(&resp).unwrap();
-        let roundtripped: BillingConfigResponse = serde_json::from_value(json).unwrap();
-        let rt_config = roundtripped.config.unwrap();
-        assert_eq!(rt_config.monthly_limit.unwrap().val, 5000);
-        assert_eq!(rt_config.used.unwrap().val, 123);
-        assert_eq!(rt_config.prepaid_balance.unwrap().val, 750);
-        assert_eq!(rt_config.history.len(), 1);
-    }
-
-    #[test]
-    fn billing_config_response_handles_null_config() {
-        let json = serde_json::json!({"config": null});
-        let resp: BillingConfigResponse = serde_json::from_value(json).unwrap();
-        assert!(resp.config.is_none());
-    }
-
-    #[test]
-    fn billing_config_response_handles_empty_history() {
-        let json = serde_json::json!({
-            "config": {
-                "monthlyLimit": {"val": 1000},
-                "used": {"val": 0}
-            }
-        });
-        let resp: BillingConfigResponse = serde_json::from_value(json).unwrap();
-        let config = resp.config.unwrap();
-        assert_eq!(config.monthly_limit.unwrap().val, 1000);
-        assert!(config.history.is_empty());
-    }
-
-    #[test]
-    fn billing_config_serializes_camel_case() {
-        let config = BillingConfig {
-            credit_usage_percent: None,
-            current_period: None,
-            monthly_limit: Some(Cent { val: 100 }),
-            used: None,
-            on_demand_cap: None,
-            on_demand_used: None,
-            prepaid_balance: None,
-            is_unified_billing_user: None,
-            billing_period_start: None,
-            billing_period_end: None,
-            history: vec![],
-        };
-        let json = serde_json::to_value(&config).unwrap();
-        assert!(json.get("monthlyLimit").is_some());
-        // Fields with None are skipped
-        assert!(json.get("creditUsagePercent").is_none());
-        assert!(json.get("currentPeriod").is_none());
-        assert!(json.get("used").is_none());
-        assert!(json.get("onDemandCap").is_none());
-        assert!(json.get("onDemandUsed").is_none());
-        assert!(json.get("prepaidBalance").is_none());
-        assert!(json.get("billingPeriodStart").is_none());
-        // Empty history is skipped
-        assert!(json.get("history").is_none());
-    }
-
-    #[test]
-    fn billing_config_deserializes_credits_config_shape() {
-        // Newer `GetGrokCreditsConfig` response: percentage-based usage,
-        // a typed current period, and history keyed by `period`.
-        let json = serde_json::json!({
-            "config": {
-                "creditUsagePercent": 42.5,
-                "currentPeriod": {
-                    "type": "USAGE_PERIOD_TYPE_WEEKLY",
-                    "start": "2026-06-01T00:00:00Z",
-                    "end": "2026-06-08T00:00:00Z"
-                },
-                "onDemandCap": {"val": 5000},
-                "onDemandUsed": {"val": 300},
-                "prepaidBalance": {"val": 1250},
-                "isUnifiedBillingUser": true,
-                "productUsage": [
-                    {"product": "PRODUCT_GROK_BUILD", "usagePercent": 61.2}
-                ],
-                "history": [
-                    {
-                        "period": {
-                            "type": "USAGE_PERIOD_TYPE_WEEKLY",
-                            "start": "2026-05-25T00:00:00Z",
-                            "end": "2026-06-01T00:00:00Z"
-                        },
-                        "onDemandUsed": {"val": 120}
-                    }
-                ]
-            }
-        });
-        let resp: BillingConfigResponse = serde_json::from_value(json).unwrap();
-        let config = resp.config.unwrap();
-        assert_eq!(config.credit_usage_percent, Some(42.5));
-        let period = config.current_period.as_ref().unwrap();
-        assert_eq!(
-            period.period_type.as_deref(),
-            Some("USAGE_PERIOD_TYPE_WEEKLY")
-        );
-        assert_eq!(period.end.as_deref(), Some("2026-06-08T00:00:00Z"));
-        // Deprecated fields are absent in the credits shape.
-        assert!(config.monthly_limit.is_none());
-        assert!(config.billing_period_end.is_none());
-        assert_eq!(config.on_demand_cap.unwrap().val, 5000);
-        assert_eq!(config.on_demand_used.unwrap().val, 300);
-        // Bought (prepaid) credit balance is parsed from the credits config.
-        assert_eq!(config.prepaid_balance.unwrap().val, 1250);
-        assert_eq!(config.is_unified_billing_user, Some(true));
-        // productUsage is still unused by the CLI billing surface.
-        assert_eq!(config.history.len(), 1);
-        assert_eq!(config.history[0].on_demand_used.as_ref().unwrap().val, 120);
-    }
-
-    #[test]
-    fn cent_serializes_as_val_field() {
-        let c = Cent { val: 4299 };
-        let json = serde_json::to_value(&c).unwrap();
-        assert_eq!(json, serde_json::json!({"val": 4299}));
+    fn format_duration_matches_kimi_semantics() {
+        assert_eq!(format_duration(0), "0s");
+        assert_eq!(format_duration(45), "45s");
+        assert_eq!(format_duration(90), "1m");
+        assert_eq!(format_duration(3_661), "1h 1m");
+        assert_eq!(format_duration(90_000), "1d 1h");
     }
 }

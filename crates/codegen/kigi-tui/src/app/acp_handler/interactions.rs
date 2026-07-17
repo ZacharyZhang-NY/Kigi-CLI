@@ -80,8 +80,6 @@ pub(crate) fn handle_ask_user_question(
             let cmd = match kind {
                 LocalQuestionKind::Fork { .. } => "/fork",
                 LocalQuestionKind::NewSession => "/new",
-                LocalQuestionKind::CreditLimitUpsell => "credit-limit upsell",
-                LocalQuestionKind::FreeUsageUpsell => "SuperGrok upsell",
                 LocalQuestionKind::AgentTypeMismatch { .. } => "model switch",
                 LocalQuestionKind::ProjectSelect { .. } => "project select",
             };

@@ -60,7 +60,7 @@ pub fn render_blocks_to_markdown<'a>(blocks: impl IntoIterator<Item = &'a Render
                 last_was_agent = false;
             }
             // Skip all non-conversation chrome: Thinking, System, SessionEvent, BgTask,
-            // Subagent, Btw, CreditLimit, Stub, etc. Thinking blocks are
+            // Subagent, Btw, Stub, etc. Thinking blocks are
             // treated as intra-Assistant glue (no new header).
             _ => {}
         }

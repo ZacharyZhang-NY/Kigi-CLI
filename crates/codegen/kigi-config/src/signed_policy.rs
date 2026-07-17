@@ -8,7 +8,64 @@
 //! Inert until a public key is provisioned: with no embedded keys the cache
 //! marker stays the (best-effort) authority.
 use base64::Engine;
-pub use prod_mc_cli_chat_proxy_types::{SignatureEnvelope, SignedPayload, now_unix};
+use serde::{Deserialize, Serialize};
+
+/// The payload format version the server currently signs. Bump when the payload
+/// gains semantics (e.g. an anti-replay counter or a key-fingerprint binding) so
+/// verifiers can distinguish generations; `0` means a pre-versioned payload.
+pub const SIGNED_PAYLOAD_VERSION: u32 = 1;
+
+/// The exact bytes the server signs: the served policy, the principal it is
+/// bound to, and an expiry. Serialized once on the server and shipped verbatim
+/// as `signed_payload`, so the client verifies the received bytes directly
+/// instead of re-canonicalizing (no cross-language serialization drift).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SignedPayload {
+    /// Payload format version ([`SIGNED_PAYLOAD_VERSION`]); `default` 0 so
+    /// pre-versioned sidecars parse and verify unchanged.
+    #[serde(default)]
+    pub version: u32,
+    #[serde(default)]
+    pub deployment_id: Option<String>,
+    #[serde(default)]
+    pub team_id: Option<String>,
+    #[serde(default)]
+    pub managed_config: Option<String>,
+    #[serde(default)]
+    pub requirements: Option<String>,
+    /// Strict (fail-closed) opt-in, carried in the SIGNED bytes so a local actor can't
+    /// flip enforcement. `default` false so an older/unsigned payload stays lenient.
+    #[serde(default)]
+    pub fail_closed: bool,
+    /// Unix seconds after which the signature is no longer trusted.
+    pub expires_at: u64,
+    /// Identifies the signing key, so a rotation can be distinguished.
+    pub key_id: String,
+}
+
+/// One signed envelope carried alongside the legacy policy fields in the
+/// deployment-config response (additive: old clients ignore it). Also the
+/// shape the client persists as its on-disk signature sidecar.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignatureEnvelope {
+    /// The exact JSON string that was signed (a serialized [`SignedPayload`]).
+    pub signed_payload: String,
+    /// Base64 (standard) Ed25519 signature over `signed_payload`'s UTF-8 bytes.
+    pub signature: String,
+    /// Untrusted (outside the signed bytes): a hint for picking among multiple
+    /// envelopes, never for selecting the verifying key — only the signed
+    /// payload's `key_id` is authoritative.
+    #[serde(default)]
+    pub key_id: String,
+}
+
+/// Unix seconds now (saturating to 0 on a pre-epoch clock).
+pub fn now_unix() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
 /// Compiled-in trusted Ed25519 public keys, `(key_id, raw 32 bytes)`; more than one
 /// entry only during a rotation. Empty ships dark (see [`verification_active`]).
 /// Compile-time, not an env flag: the local attacker controls their env.

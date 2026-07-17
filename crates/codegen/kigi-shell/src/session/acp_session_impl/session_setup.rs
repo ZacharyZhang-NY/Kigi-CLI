@@ -323,10 +323,10 @@ impl SessionActor {
     /// Check if the session has been idle and proactively refresh model metadata.
     ///
     /// Called at the start of each turn. If idle > `IDLE_REFRESH_THRESHOLD_SECS`,
-    /// fetches `/models-v2` from cli-chat-proxy and updates the cached
+    /// fetches `/models` from cli-chat-proxy and updates the cached
     /// context_window / max_completion_tokens if remote settings changed them.
     ///
-    /// Skipped for BYOK users (no remote settings, no `/models-v2`).
+    /// Skipped for BYOK users (no remote settings, no `/models`).
     pub(super) async fn maybe_refresh_model_metadata_on_resume(&self) {
         if !self.is_session_based_auth() {
             return;
@@ -353,7 +353,7 @@ impl SessionActor {
         tracing::info!(
             idle_secs,
             threshold_secs = Self::IDLE_REFRESH_THRESHOLD_SECS,
-            "Session resumed after idle — refreshing model metadata from cli-chat-proxy"
+            "Session resumed after idle — refreshing model metadata"
         );
         let creds = self.chat_state_handle.get_credentials().await;
         let Some(ref am) = self.auth_manager else {
@@ -370,27 +370,21 @@ impl SessionActor {
         );
         let middleware_client =
             crate::http::with_auth_retry(crate::http::shared_client(), provider);
-        let url = format!("{}/models-v2", base_url);
+        let url = format!("{}/models", base_url);
         let parse_models_response =
             |json: serde_json::Value| -> Option<(std::num::NonZeroU64, Option<u32>)> {
                 let data = json.get("data")?.as_array()?;
                 for entry in data {
-                    let parsed = crate::remote::client::parse_remote_model_value(entry, base_url)?;
+                    let parsed =
+                        crate::agent::models_fetch::parse_remote_model_value(entry, base_url)?;
                     if parsed.model == *current_model {
                         return Some((parsed.context_window, parsed.max_completion_tokens));
                     }
                 }
                 None
             };
-        #[allow(unused_mut)]
-        let mut request = middleware_client
+        let request = middleware_client
             .get(&url)
-            .header("X-XAI-Token-Auth", "xai-grok-cli")
-            .header("x-grok-client-version", kigi_version::VERSION)
-            .header(
-                crate::http::CLIENT_MODE_HEADER,
-                crate::http::process_client_mode(),
-            )
             .timeout(std::time::Duration::from_secs(5));
         let response = match request.send().await {
             Ok(r) => r,

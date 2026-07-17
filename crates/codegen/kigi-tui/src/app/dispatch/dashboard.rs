@@ -48,7 +48,7 @@ pub(super) fn ensure_dashboard_state(app: &mut AppView) {
     state.adopt_slash_mru(app.slash_mru.clone());
     state.set_screen_mode(app.screen_mode);
     state.set_recap_visible(app.session_recap_available);
-    state.set_restricted_commands(&app.tier_restricted_commands);
+    state.set_restricted_commands(&[]);
     app.dashboard = Some(state);
 }
 
@@ -144,7 +144,7 @@ pub(super) fn dispatch_open_dashboard(app: &mut AppView) -> Vec<Effect> {
         // Subsequent reopen — just gc dead ids; in-memory state stays.
         d.gc_stale_refs(&dashboard_alive_fn(&app.agents));
         d.set_recap_visible(app.session_recap_available);
-        d.set_restricted_commands(&app.tier_restricted_commands);
+        d.set_restricted_commands(&[]);
     }
     // Refresh each local agent's git context (branch / worktree / label)
     // from disk so the row subtitles show the LATEST branch and worktree
@@ -1207,7 +1207,6 @@ pub(super) fn dispatch_dashboard_dispatch_slash(app: &mut AppView, text: String)
         return vec![];
     }
 
-    let coding_data_sharing_opt_out_from_app = app.coding_data_retention_opt_out;
     let show_tips_from_app = app.show_tips;
     let auto_update_from_app = app.auto_update;
     let respect_manual_folds_from_app = app.appearance.scrollback.scroll.respect_manual_folds;
@@ -1230,23 +1229,6 @@ pub(super) fn dispatch_dashboard_dispatch_slash(app: &mut AppView, text: String)
             return vec![];
         };
         let reg = dashboard.dispatch.slash_controller.registry();
-
-        // Tier-restricted commands stay visible for discoverability but must
-        // not execute — and must not fall through to the unknown-command
-        // path below (which would spawn a session with the raw slash text as
-        // its first prompt). The dashboard has no question-modal surface, so
-        // upsell via the feedback toast.
-        if reg.is_restricted(invocation.token) {
-            let token = invocation.token.to_string();
-            if let Some(d) = app.dashboard.as_mut() {
-                d.dispatch.set_text("");
-                d.set_error_toast(&format!(
-                    "/{token} requires SuperGrok — upgrade at {}",
-                    super::billing::UPSELL_URL_UPGRADE
-                ));
-            }
-            return vec![];
-        }
 
         let Some(command) = reg.get(invocation.token).cloned() else {
             // Unknown command. Fall back to the regular dispatch
@@ -1295,7 +1277,6 @@ pub(super) fn dispatch_dashboard_dispatch_slash(app: &mut AppView, text: String)
                     .iter()
                     .map(|(id, info)| (info.name.clone(), id.clone()))
                     .collect(),
-                coding_data_sharing_opt_out: coding_data_sharing_opt_out_from_app,
                 plan_mode_active: false,
                 show_tips: show_tips_from_app,
                 auto_update: auto_update_from_app,

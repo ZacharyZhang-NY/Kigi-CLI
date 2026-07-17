@@ -1267,7 +1267,7 @@ impl ConfigTestHarness {
             home,
             workdir: git_workdir(),
             env: vec![
-                ("KIGI_CLI_CHAT_PROXY_BASE_URL".into(), server.url()),
+                ("KIGI_CODE_BASE_URL".into(), server.url()),
                 ("KIGI_TELEMETRY_ENABLED".into(), "false".into()),
                 ("KIGI_FEEDBACK_ENABLED".into(), "false".into()),
                 ("KIGI_TRACE_UPLOAD".into(), "false".into()),

@@ -271,19 +271,10 @@ async fn handle_session_list(
     // (never union) so every list surface is conversations-only.
     let req = unified_list::parse_list_req(args.params.get())
         .map_err(|e| acp::Error::invalid_params().data(format!("invalid params: {e}")))?;
-    tracing::debug!(
-        chat_mode_forced_kind = crate::agent::chat_modes::process_chat_mode_enabled(),
-        "session/list"
-    );
+    tracing::debug!("session/list");
 
     let registry_client = agent.session_registry_client();
-    let conversations_client = agent.conversations_client();
-    let result = unified_list::build_unified_list(
-        registry_client.as_ref(),
-        conversations_client.as_ref(),
-        req,
-    )
-    .await;
+    let result = unified_list::build_unified_list(registry_client.as_ref(), req).await;
 
     ExtMethodResult::success(unified_list::ext_list_response(result))
         .to_ext_response()

@@ -373,16 +373,13 @@ async fn apply_retry_decision(
         RetryDecision::Fatal(fatal_err) => {
             // Emit only on true budget exhaustion (hit the retry / rate-limit
             // cap), mirroring `classify_error`'s Fatal conditions — NOT on a
-            // server `x-should-retry: false` or a non-retryable error, which
-            // are also Fatal but are not "exhausted".
+            // non-retryable error, which is also Fatal but not "exhausted".
             let next_attempt = *retry_count + 1;
-            let server_said_stop = matches!(err.should_retry_header(), Some(false));
-            let budget_exhausted = !server_said_stop
-                && if err.is_rate_limited() {
-                    next_attempt >= max_retries.min(rate_limit_threshold)
-                } else {
-                    err.is_retryable() && next_attempt >= max_retries
-                };
+            let budget_exhausted = if err.is_rate_limited() {
+                next_attempt >= max_retries.min(rate_limit_threshold)
+            } else {
+                err.is_retryable() && next_attempt >= max_retries
+            };
             if budget_exhausted {
                 let exhausted_span = tracing::info_span!(
                     "http.retries_exhausted",
@@ -609,7 +606,6 @@ fn synthesize_from_info(info: &SamplingErrorInfo) -> SamplingError {
                 message: info.message.clone(),
                 model_metadata: info.model_metadata.clone(),
                 retry_after_secs: info.retry_after_secs,
-                should_retry: None,
             }
         }
         SamplingErrorKind::EmptyResponse => {

@@ -621,10 +621,8 @@ pub async fn run_leader(
     let fetch_auth_for_prefetch = ModelFetchAuth::resolve(&endpoints_for_prefetch);
     let platform_keys_for_prefetch =
         crate::agent::models::PlatformApiKeys::resolve(&agent_config.platforms);
-    // The shared pair helper owns the remote_fetch gate for both halves, so a
-    // disabled knob cannot block leader readiness on settings retries.
-    let (prefetched_models, remote_settings) = tokio::task::spawn_blocking(move || {
-        crate::agent::models::prefetch_models_and_settings_blocking(
+    let prefetched_models = tokio::task::spawn_blocking(move || {
+        crate::agent::models::prefetch_models_blocking(
             &endpoints_for_prefetch,
             auth_for_prefetch.as_ref(),
             fetch_auth_for_prefetch,
@@ -632,20 +630,7 @@ pub async fn run_leader(
         )
     })
     .await
-    .unwrap_or((None, None));
-
-    // Process-wide image normalize cache: off by default, toggled here from
-    // `RemoteSettings.image_normalize_cache_enabled` once at startup.
-    let image_normalize_cache_enabled = remote_settings
-        .as_ref()
-        .and_then(|r| r.image_normalize_cache_enabled)
-        .unwrap_or(false);
-    crate::session::normalize_cache::NormalizeCache::global()
-        .set_enabled(image_normalize_cache_enabled);
-    tracing::debug!(
-        enabled = image_normalize_cache_enabled,
-        "image normalize cache toggle resolved from remote settings"
-    );
+    .unwrap_or(None);
 
     // ── Phase 7: Signal readiness ─────────────────────────────────────────────
     //
@@ -657,9 +642,7 @@ pub async fn run_leader(
     // ── Phase 8: LocalSet — agent, bridges, config watcher ───────────────────
 
     let local_set = tokio::task::LocalSet::new();
-    let remote_settings_for_reloader = remote_settings.clone();
     let mut agent_config_for_spawn = agent_config.clone();
-    agent_config_for_spawn.remote_settings = remote_settings;
     crate::util::config::sync_campaign_fields(&mut agent_config_for_spawn);
     let agent_to_ipc_tx_clone = agent_to_ipc_tx.clone();
     let cancel_clone = cancel.clone();
@@ -891,7 +874,7 @@ pub async fn run_leader(
                     initial_auth_key_hash,
                     initial_config,
                     auth_scope,
-                    remote_settings_for_reloader,
+                    None,
                     config_update_tx,
                     agent_config.cli_experimental_memory,
                     agent_config.cli_no_memory,

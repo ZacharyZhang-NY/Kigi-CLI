@@ -15,7 +15,7 @@ async fn managed_policy_gate_refusal_reaches_real_terminal() {
         "[endpoints]\n\
          deployment_key = \"KEY-AAA\"\n\
          managed_config_url = \"http://127.0.0.1:1/deployment/config\"\n\
-         cli_chat_proxy_base_url = \"http://127.0.0.1:1\"\n",
+         coding_api_base_url = \"http://127.0.0.1:1\"\n",
     )
     .expect("write config.toml");
     std::fs::write(

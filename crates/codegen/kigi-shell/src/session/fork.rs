@@ -3,9 +3,7 @@
 //! Forks a saved session to a new working directory with a new session ID.
 //! This creates new session files but does not start the session.
 
-use crate::remote::BackendClient;
-const FORK_LOG: &str = "xai_fork";
-use crate::session::export::ExportedMetadata;
+const FORK_LOG: &str = "kigi_fork";
 use crate::session::info::Info;
 use crate::session::storage::{CopySessionOptions, JsonlStorageAdapter};
 use crate::util::kigi_home::kigi_home;
@@ -62,11 +60,7 @@ fn generate_fork_session_id(_source_id: &str) -> String {
 }
 
 /// Fork a saved session to a new working directory.
-pub async fn fork_session(
-    request: ForkSessionRequest,
-    agent_id: &str,
-    auth_manager: Option<std::sync::Arc<crate::auth::AuthManager>>,
-) -> io::Result<ForkSessionResponse> {
+pub async fn fork_session(request: ForkSessionRequest) -> io::Result<ForkSessionResponse> {
     let t0 = std::time::Instant::now();
 
     let root_dir = kigi_home();
@@ -114,32 +108,6 @@ pub async fn fork_session(
 
     let copy_ms = t0.elapsed().as_millis() as u64;
 
-    // Writeback session to backend (fire-and-forget).
-    // This is telemetry-grade: the local fork works without it. All fork
-    // state lives locally (session files on disk), and the caller does not
-    // depend on synchronous backend registration. The backend eventually
-    // learns about the session when the background task completes.
-    // Spawning removes the network round-trip (~200-400ms) from the
-    // critical path.
-    if let Some(am) = auth_manager {
-        let sid = new_session_id.clone();
-        let cwd = request.new_cwd.clone();
-        let parent = request.source_session_id.clone();
-        let model = request.new_model_id.clone();
-        let aid = agent_id.to_string();
-        tokio::spawn(async move {
-            if let Err(e) =
-                sync_forked_session_to_backend(&sid, &cwd, parent, model, &aid, am).await
-            {
-                tracing::warn!(
-                    session_id = %sid,
-                    error = %e,
-                    "Failed to register forked session with backend (background)"
-                );
-            }
-        });
-    }
-
     let total_ms = t0.elapsed().as_millis() as u64;
     tracing::info!(
         target: FORK_LOG,
@@ -149,7 +117,7 @@ pub async fn fork_session(
         total_ms,
         chat_copied = result.chat_messages_copied,
         updates_copied = result.updates_copied,
-        "FORK_COPY: session data copied (backend sync spawned in background)"
+        "FORK_COPY: session data copied"
     );
 
     Ok(ForkSessionResponse {
@@ -161,43 +129,6 @@ pub async fn fork_session(
         parent_session_id: request.source_session_id,
         new_model_id: request.new_model_id,
     })
-}
-
-/// Sync a forked session to the backend (for writeback mode).
-async fn sync_forked_session_to_backend(
-    session_id: &str,
-    cwd: &str,
-    parent_session_id: String,
-    model_id: Option<String>,
-    agent_id: &str,
-    auth_manager: std::sync::Arc<crate::auth::AuthManager>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let client = BackendClient::new().with_auth_manager(auth_manager);
-    let metadata = ExportedMetadata {
-        title: None, // Will be generated later when session runs
-        cwd: cwd.to_string(),
-        model_id,
-        created_at: Some(chrono::Utc::now().to_rfc3339()),
-        updated_at: Some(chrono::Utc::now().to_rfc3339()),
-        total_messages: Some(0),
-        parent_session_id: Some(parent_session_id),
-        session_kind: None,
-        subagent_type: None,
-        subagent_persona: None,
-        subagent_role: None,
-        fork_context_source: None,
-        subagent_depth: None,
-    };
-
-    client
-        .upsert_session(session_id, &metadata, agent_id)
-        .await?;
-    tracing::info!(
-        session_id = %session_id,
-        "Forked session registered with backend"
-    );
-
-    Ok(())
 }
 
 #[cfg(test)]

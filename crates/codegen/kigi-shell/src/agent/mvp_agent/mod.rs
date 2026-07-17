@@ -406,17 +406,11 @@ struct SettingsUpdateNotification {
     sharing_enabled: Option<bool>,
     session_picker_grouped: Option<bool>,
     tips: Option<Vec<String>>,
-    gate_message: Option<String>,
-    gate_url: Option<String>,
-    gate_label: Option<String>,
-    allow_access: Option<bool>,
-    subscription_tier_display: Option<String>,
     auto_permission_mode_enabled: Option<bool>,
     /// Soft-default permission mode for the pager (post-auth / `/new` refresh).
     permission_mode: Option<String>,
     group_tool_verbs: Option<bool>,
     collapsed_edit_blocks: Option<bool>,
-    subscription_watch_interval_secs: Option<u64>,
 }
 /// Reason why a client is not eligible to use codebase indexing.
 ///
@@ -509,9 +503,6 @@ pub struct MvpAgent {
     pub(crate) sampling_config: RefCell<SamplingConfig>,
     pub(crate) auth_manager: Arc<AuthManager>,
     pub(crate) models_manager: crate::agent::models::ModelsManager,
-    /// grok.com chat-product catalog (`/rest/modes`) for chat sessions; distinct
-    /// from `models_manager` (the build `/v1/models` catalog).
-    pub(crate) chat_modes: crate::agent::chat_modes::ChatModesManager,
     /// Forwards pasted codes from `handle_auth_submit_code` to the auth flow.
     pub(crate) auth_code_tx: RefCell<Option<tokio::sync::mpsc::Sender<String>>>,
     /// Receives the auth URL from the auth flow; read by `handle_auth_get_url`.
@@ -672,20 +663,6 @@ pub struct MvpAgent {
     /// this flag keeps that to a single discovery walk.
     plugin_registry_initialized: std::cell::Cell<bool>,
     persona_io_summaries: Vec<String>,
-    /// Single-flight guard for the proactive bundle sync background task.
-    ///
-    /// `maybe_sync_bundle_in_background` is invoked from each post-auth path
-    /// (initialize, cached-token reauth, oidc) and a rapid reconnect can fire
-    /// all three within the TTL window, giving us multiple concurrent
-    /// `tokio::task::spawn_local` tasks racing to extract the tar archive,
-    /// rewrite `manifest.json`, and prune stale files. The non-atomic
-    /// per-file write/prune semantics in `bundle::extract_bundle_archive`
-    /// make that race observable as a partially-written cache.
-    ///
-    /// We use an `Arc<AtomicBool>` so the spawned task can clear the flag
-    /// on completion without re-borrowing `&self`. `Send` is required
-    /// because the inner `sync_bundle_to_root` now uses `spawn_blocking`.
-    bundle_sync_in_flight: Arc<std::sync::atomic::AtomicBool>,
     /// Local workspace ops, built lazily via [`Self::ensure_local_workspace_ops`].
     /// The agent never opens Computer Hub as a harness/client; remote cloud
     /// sandboxes are gateway-owned (`gateway_bridge` / `computer_sessions`).
@@ -943,50 +920,6 @@ impl AuthRequestMeta {
             })
             .unwrap_or_default()
     }
-}
-/// Inject standard proxy headers into an `extra_headers` map.
-///
-/// Every authenticated request to cli-chat-proxy (web search, image gen, and
-/// any future tools that go through the proxy) must carry these headers.
-/// Centralising them here means new tool code paths only need one call instead
-/// of remembering which headers the proxy expects.
-///
-/// Headers injected:
-///  - `x-grok-client-version` -- required by the proxy's version-gate check.
-///    Uses `client_version` when provided, otherwise falls back to cli-chat-proxy
-///    compile-time `CARGO_PKG_VERSION`.
-///  - `X-XAI-Token-Auth` / `x-authenticateresponse` -- required by the
-///    cli-chat-proxy auth middleware when the `base_url` is a known proxy URL.
-///  - optional extra access header -- only set when the corresponding key is
-///    `Some` *and* the `base_url` points at a matching non-production host
-///    (requires the optional non-production feature).
-///
-/// Existing entries are never overwritten so callers can pre-set a value.
-fn inject_proxy_headers(
-    headers: &mut indexmap::IndexMap<String, String>,
-    client_version: Option<&str>,
-    alpha_test_key: Option<&str>,
-    base_url: &str,
-) {
-    headers
-        .entry("x-grok-client-version".to_string())
-        .or_insert_with(|| {
-            client_version
-                .map(String::from)
-                .unwrap_or_else(|| kigi_version::VERSION.to_string())
-        });
-    if crate::util::is_cli_chat_proxy_url(base_url) {
-        headers
-            .entry("X-XAI-Token-Auth".to_string())
-            .or_insert_with(|| "xai-grok-cli".to_string());
-        headers
-            .entry("x-authenticateresponse".to_string())
-            .or_insert_with(|| "authenticate-response".to_string());
-        headers
-            .entry(crate::http::CLIENT_MODE_HEADER.to_string())
-            .or_insert_with(|| crate::http::process_client_mode().to_string());
-    }
-    let _ = (alpha_test_key, base_url);
 }
 fn resolve_inference_idle_timeout_secs(
     models: &indexmap::IndexMap<String, crate::agent::config::ModelEntry>,
@@ -1580,47 +1513,6 @@ impl MvpAgent {
             });
         AuthenticateResponse::new().meta(meta)
     }
-    /// Fetch remote settings after authentication when early prefetch had none.
-    /// Notifies the pager so soft-default permission_mode applies post-login.
-    pub(super) async fn maybe_fetch_post_auth_settings(&self) {
-        if self.cfg.borrow().remote_settings.is_some() {
-            return;
-        }
-        let Some(auth) = self.auth_manager.current() else {
-            return;
-        };
-        let is_session_auth = auth.is_session_auth();
-        let Some(settings) = self.fetch_remote_settings(auth).await else {
-            return;
-        };
-        tracing::info!("post-auth remote_settings fetch succeeded");
-        {
-            let mut cfg = self.cfg.borrow_mut();
-            cfg.remote_settings = Some(settings);
-            crate::agent::config::apply_remote_settings_side_effects(
-                cfg.remote_settings.as_ref(),
-            );
-            if cfg.storage_mode == StorageMode::Local
-                && cfg.mode != crate::agent::config::AgentMode::Generic
-            {
-                cfg.storage_mode = StorageMode::resolve(
-                    None,
-                    cfg.remote_settings.as_ref(),
-                );
-                if cfg.storage_mode == StorageMode::Writeback && !is_session_auth {
-                    cfg.storage_mode = StorageMode::Local;
-                }
-            }
-            if let Some(v) = cfg
-                .remote_settings
-                .as_ref()
-                .and_then(|s| s.path_not_found_hints)
-            {
-                cfg.path_not_found_hints = v;
-            }
-        }
-        self.emit_settings_update_notification();
-    }
     /// Fire-and-forget `x.ai/settings/update` from the current remote snapshot.
     pub(super) fn emit_settings_update_notification(&self) {
         let payload = {
@@ -1631,20 +1523,12 @@ impl MvpAgent {
                 sharing_enabled: rs.and_then(|s| s.sharing_enabled),
                 session_picker_grouped: rs.and_then(|s| s.session_picker_grouped),
                 tips: rs.and_then(|s| s.tips.clone()),
-                gate_message: rs.and_then(|s| s.gate_message.clone()),
-                gate_url: rs.and_then(|s| s.gate_url.clone()),
-                gate_label: rs.and_then(|s| s.gate_label.clone()),
-                allow_access: rs.and_then(|s| s.allow_access),
-                subscription_tier_display: rs
-                    .and_then(|s| s.subscription_tier_display.clone()),
                 auto_permission_mode_enabled: crate::util::config::remote_auto_mode_enabled(
                     rs,
                 ),
                 permission_mode: rs.and_then(|s| s.permission_mode.clone()),
                 group_tool_verbs: rs.and_then(|s| s.group_tool_verbs),
                 collapsed_edit_blocks: rs.and_then(|s| s.collapsed_edit_blocks),
-                subscription_watch_interval_secs: rs
-                    .and_then(|s| s.subscription_watch_interval_secs),
             }
         };
         if let Ok(params) = serde_json::value::to_raw_value(&payload) {
@@ -1718,78 +1602,6 @@ impl MvpAgent {
                     registry,
                 });
         }
-    }
-    /// Spawn a best-effort bundle sync. Re-fires on every call site (init,
-    /// cached_token, grok.com/oidc); the cheap pre-checks below absorb repeats
-    /// so reconnects are cheap.
-    ///
-    /// Pre-spawn gating order (cheapest first, all synchronous):
-    /// 1. Auth gate — avoid spawning a no-op task on every init.
-    /// 2. Freshness check — skip the sender snapshot + spawn entirely on
-    ///    cache hits, which is the steady-state on every reconnect.
-    /// 3. Single-flight guard — if a previous sync is still in flight (e.g.,
-    ///    initialize + cached_token + oidc fired in quick succession before
-    ///    the first sync's tar extract finished), drop this call to avoid
-    ///    racing concurrent extracts that would interleave per-file writes
-    ///    against `~/.kigi/bundled/` and the manifest.
-    pub(crate) fn maybe_sync_bundle_in_background(&self, force: bool) {
-        use crate::extensions::bundle::{
-            BUNDLE_SYNC_TTL, bundle_cache_is_fresh, has_bundle_credentials,
-            maybe_sync_bundle_to_root,
-        };
-        use std::sync::atomic::Ordering;
-        let am = self.auth_manager.clone();
-        let deployment_key = self.deployment_key();
-        if !has_bundle_credentials(Some(&am), deployment_key.as_deref()) {
-            return;
-        }
-        let root = crate::bundle::bundled_root();
-        if !force && bundle_cache_is_fresh(&root, BUNDLE_SYNC_TTL) {
-            tracing::debug!("proactive bundle sync skipped pre-spawn: cache is fresh");
-            return;
-        }
-        let in_flight = self.bundle_sync_in_flight.clone();
-        if in_flight
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_err()
-        {
-            tracing::debug!(
-                "proactive bundle sync skipped: another sync is already in flight"
-            );
-            return;
-        }
-        let proxy_base_url = self.cli_chat_proxy_base_url();
-        let alpha_test_key = self.alpha_test_key();
-        let senders: Vec<
-            tokio::sync::mpsc::UnboundedSender<crate::session::SessionCommand>,
-        > = self.sessions.borrow().values().map(|h| h.cmd_tx.clone()).collect();
-        tokio::task::spawn_local(async move {
-            let result = maybe_sync_bundle_to_root(
-                    &root,
-                    &proxy_base_url,
-                    Some(&am),
-                    deployment_key.as_deref(),
-                    alpha_test_key.as_deref(),
-                    force,
-                    BUNDLE_SYNC_TTL,
-                )
-                .await;
-            in_flight.store(false, Ordering::Release);
-            match result {
-                Ok(Some(res)) => {
-                    tracing::info!(
-                        version = % res.version, personas = res.personas_count, roles =
-                        res.roles_count, agents = res.agents_count, skills = res
-                        .skills_count, "proactive bundle sync complete"
-                    );
-                    Self::broadcast_refresh_skill_baseline(senders);
-                }
-                Ok(None) => {}
-                Err(err) => {
-                    tracing::warn!(error = % err, "proactive bundle sync failed");
-                }
-            }
-        });
     }
 }
 /// Parse `_meta.agentProfile` as a JSON object or string name.

@@ -3,7 +3,7 @@ license = "Apache-2.0"
 name = "kigi-sampler"
 version.workspace = true
 edition.workspace = true
-description = "Actor-based sampling/inference layer for xAI grok (HTTP streaming + retry, no shell coupling)"
+description = "Actor-based sampling/inference layer for the Kimi APIs (HTTP streaming + retry, no shell coupling)"
 
 [dependencies]
 # Internal

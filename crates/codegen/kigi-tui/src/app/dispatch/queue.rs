@@ -876,13 +876,9 @@ mod tests {
             kind: crate::app::agent::QueueEntryKind::Prompt,
         };
 
-        // Turn ends → should NOT drain "second" (user is editing it), only FetchBilling.
+        // Turn ends → should NOT drain "second" (user is editing it).
         let effects = dispatch(end_turn(), &mut app);
-        assert_eq!(effects.len(), 1);
-        assert!(matches!(
-            &effects[0],
-            Effect::FetchBilling { silent: true, .. }
-        ));
+        assert!(effects.is_empty(), "drain should be blocked: {effects:?}");
         assert!(app.agents[&id].session.state.is_idle());
         // "second" should still be in the queue.
         assert_eq!(app.agents[&id].session.queue_len(), 2);
@@ -908,14 +904,10 @@ mod tests {
             kind: crate::app::agent::QueueEntryKind::Prompt,
         };
 
-        // Turn ends → should drain "second" (front, not being edited) + FetchBilling.
+        // Turn ends → should drain "second" (front, not being edited).
         let effects = dispatch(end_turn(), &mut app);
-        assert_eq!(effects.len(), 2);
+        assert_eq!(effects.len(), 1);
         assert!(matches!(&effects[0], Effect::SendPrompt { text, .. } if text == "second"));
-        assert!(matches!(
-            &effects[1],
-            Effect::FetchBilling { silent: true, .. }
-        ));
         // "third" should still be in queue.
         assert_eq!(app.agents[&id].session.queue_len(), 1);
         assert_eq!(app.agents[&id].session.pending_prompts[0].text, "third");
@@ -1809,13 +1801,9 @@ mod tests {
             kind: crate::app::agent::QueueEntryKind::Prompt,
         };
 
-        // End turn for p2 → should NOT drain p3 (being edited), only FetchBilling.
+        // End turn for p2 → should NOT drain p3 (being edited).
         let effects = dispatch(end_turn(), &mut app);
-        assert_eq!(effects.len(), 1);
-        assert!(
-            matches!(&effects[0], Effect::FetchBilling { silent: true, .. }),
-            "drain should be blocked, only billing refresh"
-        );
+        assert!(effects.is_empty(), "drain should be blocked: {effects:?}");
         assert_eq!(app.agents[&id].session.queue_len(), 2); // p3, p4
 
         // Simulate user saving edited text.

@@ -176,7 +176,7 @@ pub fn process_user_agent_string() -> String {
 
     UserAgent {
         origin,
-        agent_product: "grok-shell",
+        agent_product: "kigi",
         agent_version,
         platform: PlatformInfo::current(),
     }
@@ -186,7 +186,7 @@ pub fn process_user_agent_string() -> String {
 pub fn session_user_agent_string(origin: &OriginClientInfo) -> String {
     UserAgent {
         origin: origin.clone(),
-        agent_product: "grok-shell",
+        agent_product: "kigi",
         agent_version: agent_version(),
         platform: PlatformInfo::current(),
     }
@@ -234,29 +234,9 @@ pub fn client_type_from_origin(origin: Option<&OriginClientInfo>) -> ClientType 
     ClientType::from_client_identifier(origin.map(|o| o.product.as_str()))
 }
 
-/// Process-level client identifier (`KIGI_CLIENT_NAME` env var, default `"grok-shell"`).
+/// Process-level client identifier (`KIGI_CLIENT_NAME` env var, default `"kigi"`).
 pub fn process_client_identifier() -> String {
-    std::env::var("KIGI_CLIENT_NAME").unwrap_or_else(|_| "grok-shell".to_string())
-}
-
-/// Header telling cli-chat-proxy whether this process is a single-prompt
-/// (`grok -p`) run or an interactive session; feeds the `client_mode`
-/// metric label.
-pub const CLIENT_MODE_HEADER: &str = "x-grok-client-mode";
-
-/// One-way latch: set to `"headless"` at startup by the non-TUI entry points
-/// (`run_single_turn` for `grok -p`, `run_headless_inner` for
-/// `grok agent [headless]`), `"interactive"` otherwise.
-static CLIENT_MODE: OnceLock<&'static str> = OnceLock::new();
-
-/// Mark this process as headless (single-prompt). No-op if already set.
-pub fn set_process_client_mode_headless() {
-    let _ = CLIENT_MODE.set("headless");
-}
-
-/// The mode sent in [`CLIENT_MODE_HEADER`]; defaults to `"interactive"`.
-pub fn process_client_mode() -> &'static str {
-    CLIENT_MODE.get().copied().unwrap_or("interactive")
+    std::env::var("KIGI_CLIENT_NAME").unwrap_or_else(|_| "kigi".to_string())
 }
 
 pub fn user_agent_string_for(origin: &OriginClientInfo) -> String {
@@ -568,14 +548,14 @@ mod tests {
             product: "grok-desktop".to_string(),
             version: Some("1.2.3".to_string()),
         });
-        assert!(with_version.starts_with("grok-desktop/1.2.3 grok-shell/"));
+        assert!(with_version.starts_with("grok-desktop/1.2.3 kigi/"));
         assert!(with_version.contains(" ("));
 
         let without_version = session_user_agent_string(&OriginClientInfo {
             product: "grok-web".to_string(),
             version: None,
         });
-        assert!(without_version.starts_with("grok-web grok-shell/"));
+        assert!(without_version.starts_with("grok-web kigi/"));
         assert!(!without_version.starts_with("grok-web/"));
     }
 
@@ -583,10 +563,10 @@ mod tests {
     fn user_agent_render_collapses_duplicate_origin_and_agent_identity() {
         let ua = UserAgent {
             origin: OriginClientInfo {
-                product: "grok-shell".to_string(),
+                product: "kigi".to_string(),
                 version: Some("0.1.171".to_string()),
             },
-            agent_product: "grok-shell",
+            agent_product: "kigi",
             agent_version: "0.1.171".to_string(),
             platform: PlatformInfo {
                 os: "macos".to_string(),
@@ -594,6 +574,6 @@ mod tests {
             },
         };
 
-        assert_eq!(ua.render(), "grok-shell/0.1.171 (macos; aarch64)");
+        assert_eq!(ua.render(), "kigi/0.1.171 (macos; aarch64)");
     }
 }

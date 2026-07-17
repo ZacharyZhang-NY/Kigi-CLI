@@ -20,9 +20,10 @@ pub use flow::{
     run_auth_flow_with_stderr_bridge, run_cli_login, run_cli_logout, try_ensure_fresh_auth,
 };
 mod meta;
+pub use device::device_headers;
 pub use error::{AuthError, RefreshTokenError, RefreshTokenFailedReason};
 pub use manager::{AuthManager, shared_api_key_provider};
-pub use meta::{AuthMeta, GateInfo};
+pub use meta::AuthMeta;
 pub use model::{AuthMode, KimiAuth, lookup_auth};
 pub(crate) use model::{TOKEN_TTL, is_expired, token_suffix};
 pub use storage::{

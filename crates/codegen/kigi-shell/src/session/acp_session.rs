@@ -679,8 +679,6 @@ pub(crate) struct SessionActor {
     pub(crate) origin_client: Option<crate::http::OriginClientInfo>,
     /// Feedback manager for signal tracking and feedback request heuristics
     pub(crate) feedback_manager: Arc<FeedbackManager>,
-    /// Cancellation token for the feedback sync loop (None if no feedback client)
-    pub(crate) sync_loop_cancel: Option<tokio_util::sync::CancellationToken>,
     /// The fully-built Agent: owns the ToolBridge, system prompt, policies,
     /// and the AgentDefinition. Replaces the old `tool_bridge` + `agent_definition` fields.
     /// Wrapped in `RefCell` for mid-session mutation (skill refresh, prompt regen).

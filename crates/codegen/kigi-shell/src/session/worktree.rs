@@ -387,7 +387,7 @@ async fn resume_local_session_in_worktree(
         source_workspace_dir: Some(resolved_source_cwd.to_owned()),
         ..Default::default()
     };
-    let fork_resp = match fork_session(fork_req, agent_id, auth_manager).await {
+    let fork_resp = match fork_session(fork_req).await {
         Ok(r) => r,
         Err(e) => {
             cleanup_worktree_on_failure(resolved_source_cwd, &wt_resp.worktree_path).await;

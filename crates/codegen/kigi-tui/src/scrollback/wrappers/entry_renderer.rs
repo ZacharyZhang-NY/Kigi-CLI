@@ -526,7 +526,7 @@ impl<'a> EntryRenderer<'a> {
     ///
     /// EXACT for blocks whose searchable text mirrors their selectable rendered
     /// lines (plain source blocks, markdown/thinking bodies); a best-effort
-    /// estimate for field-joined source (Subagent/BgTask/CreditLimit), kept on
+    /// estimate for field-joined source (Subagent/BgTask/etc.), kept on
     /// screen by the caller's entry-height clamp. Past the last logical line,
     /// clamps to the final content row.
     pub fn rendered_row_of_logical_line(&self, width: u16, logical_line: usize) -> u16 {

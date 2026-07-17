@@ -147,7 +147,7 @@ pub fn signed_dk_body(
     requirements: Option<&str>,
 ) -> String {
     let payload = SignedPayload {
-        version: prod_mc_cli_chat_proxy_types::SIGNED_PAYLOAD_VERSION,
+        version: kigi_config::signed_policy::SIGNED_PAYLOAD_VERSION,
         deployment_id: Some(deployment_id.to_owned()),
         team_id: None,
         managed_config: managed.map(str::to_owned),

@@ -723,27 +723,14 @@ fn dispatch_fork_stashes_directive_in_pending_first_prompt() {
 }
 
 #[test]
-fn dispatch_fork_inherits_appearance_sharing_and_plugin_visibility() {
+fn dispatch_fork_inherits_appearance_and_plugin_visibility() {
     let mut app = fork_test_app();
     // Tweak app-level state so we can verify the sweep applied it.
     app.appearance.prompt.compact = true;
-    app.sharing_enabled = false;
     app.usage_visible = false;
     app.appearance.disable_plugins = true;
-    // Cached billing state must be inherited so the credits warning is
-    // correct from the first frame (not just after a billing fetch).
-    app.credit_balance = Some(crate::views::credit_bar::CreditBalance {
-        prepaid_balance_cents: Some(1500),
-        ..test_bal(50.0)
-    });
-    app.auto_topup = Some(crate::views::credit_bar::AutoTopupInfo {
-        enabled: true,
-        topup_amount_cents: Some(2000),
-        max_amount_cents: None,
-    });
     dispatch(Action::Fork(fork_args(Some(false), None)), &mut app);
     let new_agent = app.agents.get(&AgentId(1)).unwrap();
-    assert!(!new_agent.sharing_enabled);
     assert!(
         new_agent
             .prompt
@@ -752,14 +739,6 @@ fn dispatch_fork_inherits_appearance_sharing_and_plugin_visibility() {
             .get("usage")
             .is_none()
     );
-    assert_eq!(
-        new_agent
-            .credit_balance
-            .as_ref()
-            .and_then(|b| b.prepaid_balance_cents),
-        Some(1500)
-    );
-    assert!(new_agent.auto_topup.as_ref().is_some_and(|at| at.enabled));
 }
 
 #[test]

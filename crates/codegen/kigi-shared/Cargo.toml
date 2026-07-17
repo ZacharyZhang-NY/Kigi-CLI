@@ -11,7 +11,6 @@ dirs = "6"
 dunce = { workspace = true }
 image = { workspace = true, features = ["png", "jpeg", "gif", "webp"] }
 parking_lot = { workspace = true }
-prod-mc-cli-chat-proxy-types = { path = "../../../prod/mc/cli-chat-proxy-types" }
 regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true, features = ["preserve_order"] }

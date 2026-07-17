@@ -5,8 +5,6 @@ use std::sync::Arc;
 
 use crate::config::StorageMode;
 
-use crate::remote::RemoteSync;
-
 use crate::sampling::Client as OaiCompatClient;
 use crate::sampling::ConversationItem;
 use crate::session::export::ExportedMetadata;
@@ -105,7 +103,7 @@ pub struct UserFeedbackEntry {
     pub dismissed: bool,
     /// The full submission payload (omitted when dismissed)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub submission: Option<prod_mc_cli_chat_proxy_types::feedback_types::FeedbackSubmission>,
+    pub submission: Option<crate::session::feedback_types::FeedbackSubmission>,
 }
 
 /// Helper for `#[serde(skip_serializing_if)]` on bool fields.
@@ -116,14 +114,13 @@ pub(crate) fn is_false(v: &bool) -> bool {
 #[cfg(test)]
 mod feedback_tests {
     use super::*;
-    use prod_mc_cli_chat_proxy_types::feedback_types::{
+    use crate::session::feedback_types::{
         ClientType, FeedbackSubmission, FeedbackType, RatingType,
     };
 
     fn make_submission(thumbs_up: bool) -> FeedbackSubmission {
         FeedbackSubmission {
             session_id: "session-abc".into(),
-            user_id: None,
             client_type: ClientType::Tui,
             feedback_type: if thumbs_up {
                 FeedbackType::Rating
@@ -139,22 +136,13 @@ mod feedback_tests {
                 Some("could be better".into())
             },
             feedback_categories: vec![],
-            message_id: None,
             model_id: Some("grok-3-fast".into()),
             resolved_model_id: Some("grok-4.5".into()),
             model_fingerprint: None,
             context_type: None,
-            feature_name: None,
-            tool_name: None,
-            experiment_id: None,
-            comparison_id: None,
-            preferred_model_id: None,
-            preference_strength: None,
-            preference_reasons: vec![],
             request_id: None,
             client_version: None,
             shell_version: None,
-            extension_host: None,
             metadata: None,
             last_user_message: None,
             last_assistant_message: None,
@@ -165,7 +153,6 @@ mod feedback_tests {
             context_tokens_used: None,
             context_window_tokens: None,
             terminal_info: None,
-            unified_log_url: None,
         }
     }
 
@@ -1392,7 +1379,6 @@ struct SessionPersistence {
     /// Pending ACP notification for merging consecutive text chunks
     pending_notification: Option<acp::SessionNotification>,
     rx: mpsc::UnboundedReceiver<PersistenceMsg>,
-    remote_sync: Option<RemoteSync>,
     /// Session title generation lifecycle.
     summary: crate::session::summary::SummaryGenerator,
     registry_title_sync: Option<RegistryGeneratedTitleSync>,
@@ -1497,20 +1483,12 @@ impl SessionPersistence {
         }
     }
 
-    /// Flush any pending merged ACP notification to disk and remote sync.
+    /// Flush any pending merged ACP notification to disk.
     async fn flush_pending(&mut self) {
         // Write any pending merged ACP notification
         if let Some(notification) = self.pending_notification.take() {
-            self.write_update(&SessionUpdate::Acp(Box::new(notification.clone())))
+            self.write_update(&SessionUpdate::Acp(Box::new(notification)))
                 .await;
-            // HTTP-based remote sync (Writeback mode)
-            if let Some(sync) = &self.remote_sync {
-                sync.queue(notification);
-            }
-        }
-        // Flush HTTP sync
-        if let Some(sync) = &self.remote_sync {
-            sync.flush();
         }
     }
 
@@ -1549,12 +1527,8 @@ impl SessionPersistence {
                         SessionUpdate::Acp(notification) => {
                             // ACP notifications use merging to coalesce consecutive text chunks
                             if let Some(to_write) = self.maybe_merge_notification(&notification) {
-                                self.write_update(&SessionUpdate::Acp(Box::new(to_write.clone())))
+                                self.write_update(&SessionUpdate::Acp(Box::new(to_write)))
                                     .await;
-                                // HTTP-based remote sync (Writeback mode)
-                                if let Some(sync) = &self.remote_sync {
-                                    sync.queue(to_write);
-                                }
                             }
                         }
                         SessionUpdate::Xai(_) => {
@@ -1601,9 +1575,6 @@ impl SessionPersistence {
                         .await
                     {
                         tracing::warn!(?e, "failed to update current model");
-                    }
-                    if let Some(sync) = &self.remote_sync {
-                        sync.set_model_id(model_id.0.to_string());
                     }
                 }
                 PersistenceMsg::PlanState(state) => {
@@ -1660,9 +1631,6 @@ impl SessionPersistence {
                                 &self.info,
                                 &title,
                             );
-                            if let Some(sync) = &self.remote_sync {
-                                sync.set_title(title.clone());
-                            }
                             if let Some(reg) = self.registry_title_sync.as_ref()
                                 && !reg.suppress_for_zdr
                             {
@@ -1901,69 +1869,6 @@ fn collect_session_files_recursive(base: &Path, dir: &Path, files: &mut Vec<Copi
     }
 }
 
-fn init_remote_sync(
-    summary: &Summary,
-    storage_mode: StorageMode,
-    auth_manager: Option<Arc<crate::auth::AuthManager>>,
-) -> io::Result<Option<RemoteSync>> {
-    match storage_mode {
-        StorageMode::Local => Ok(None),
-        StorageMode::Writeback => {
-            let auth_manager = auth_manager.ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    "Writeback storage mode requires authentication. Run 'grok login' first.",
-                )
-            })?;
-            if auth_manager.current_or_expired().is_some() {
-                // ZDR was an xAI team concept; nothing gates remote sync here.
-            } else {
-                tracing::warn!(
-                    "writeback: no auth loaded yet, ZDR check skipped (backend enforces server-side)"
-                );
-            }
-            tracing::info!("Writeback mode enabled, syncing to backend");
-            let client =
-                crate::remote::BackendClient::new().with_auth_manager(auth_manager.clone());
-            let metadata = ExportedMetadata::from_summary(summary);
-            Ok(Some(RemoteSync::new(
-                summary.info.id.to_string(),
-                metadata,
-                client,
-            )))
-        }
-    }
-}
-
-/// Pull a session from the backend if not found locally. Returns the pulled
-/// session's [`Info`] (cwd may differ from caller's on different machines),
-/// or `None` if not found or on error.
-async fn try_pull_from_remote(info: &Info, client: &crate::remote::BackendClient) -> Option<Info> {
-    // BackendClient resolves auth internally via its auth_manager.
-    client.auth_manager.as_ref()?;
-
-    tracing::info!(session_id = %info.id, "Session not found locally, trying backend");
-
-    match crate::remote::pull_session_to_local(&info.id.0, client).await {
-        Ok(crate::remote::PullResult::Hydrated(pulled_info)) => {
-            tracing::info!(
-                session_id = %info.id,
-                pulled_cwd = %pulled_info.cwd,
-                "Pulled session from backend"
-            );
-            Some(pulled_info)
-        }
-        Ok(crate::remote::PullResult::NotFound) => {
-            tracing::debug!(session_id = %info.id, "Session not found on backend either");
-            None
-        }
-        Err(e) => {
-            tracing::warn!(session_id = %info.id, error = %e, "Backend pull failed");
-            None
-        }
-    }
-}
-
 /// Map a persistence `io::Error` into an `acp::Error` with a human-friendly
 /// `message` and a stable `data.code` for log aggregation.
 pub(crate) fn io_error_to_acp(e: &io::Error) -> acp::Error {
@@ -2066,7 +1971,6 @@ pub(crate) async fn new(
 
     let info_clone = info.clone();
     let storage: Arc<dyn StorageAdapter> = Arc::from(storage);
-    let remote_sync = init_remote_sync(&summary, storage_mode, auth_manager)?;
     let handle = PersistenceHandle {
         tx: tx.clone(),
         noop: false,
@@ -2078,7 +1982,6 @@ pub(crate) async fn new(
             storage: storage.clone(),
             pending_notification: None,
             rx,
-            remote_sync: remote_sync.clone(),
             summary: crate::session::summary::SummaryGenerator::new(
                 crate::session::summary::SummaryConfig {
                     sampling_client,
@@ -2147,7 +2050,6 @@ pub async fn new_with_explicit_dir(
             storage: storage.clone(),
             pending_notification: None,
             rx,
-            remote_sync: None,
             summary: crate::session::summary::SummaryGenerator::new(
                 crate::session::summary::SummaryConfig {
                     sampling_client,
@@ -2195,101 +2097,12 @@ pub struct PersistedInfoLight {
     pub goal_mode_state: Option<crate::session::goal_tracker::GoalOrchestration>,
 }
 
-/// On NotFound, try pulling from backend. Returns pulled info or the original error.
-async fn pull_on_miss(
-    info: &Info,
-    client: &crate::remote::BackendClient,
-    err: io::Error,
-) -> io::Result<Info> {
-    if err.kind() != io::ErrorKind::NotFound {
-        return Err(err);
-    }
-    try_pull_from_remote(info, client).await.ok_or(err)
-}
-
-#[expect(dead_code, reason = "wired when session restore flow calls load")]
-pub(crate) async fn load(
-    info: &Info,
-    sampling_client: OaiCompatClient,
-    storage_mode: StorageMode,
-    auth_manager: Option<Arc<crate::auth::AuthManager>>,
-    backend: Option<&crate::remote::BackendClient>,
-    gateway: Option<GatewaySender>,
-    session_summary_model: String,
-    registry_title_sync: Option<RegistryGeneratedTitleSync>,
-) -> io::Result<(PersistedInfo, PersistenceHandle)> {
-    let root_dir = kigi_home();
-    let storage: Box<dyn StorageAdapter> = Box::new(JsonlStorageAdapter::with_root(root_dir));
-
-    let (persisted, loaded_info) = match storage.load_session(info).await {
-        Ok(p) => (p, info.clone()),
-        Err(e) => match backend {
-            Some(client) => {
-                let pulled = pull_on_miss(info, client, e).await?;
-                let p = storage.load_session(&pulled).await?;
-                (p, pulled)
-            }
-            None => return Err(e),
-        },
-    };
-    // Touch on load too: resuming must reset the worktree's gc expiry clock.
-    touch_worktree_for_session(&loaded_info).await;
-
-    let persisted_info = PersistedInfo {
-        summary: persisted.summary,
-        chat_history: persisted.chat_history,
-        updates: persisted.updates,
-        plan_state: persisted.plan_state,
-        rewind_points: persisted.rewind_points,
-        signals: persisted.signals,
-    };
-
-    let (tx, rx) = mpsc::unbounded_channel::<PersistenceMsg>();
-
-    let storage: Arc<dyn StorageAdapter> = Arc::from(storage);
-    let remote_sync = init_remote_sync(&persisted_info.summary, storage_mode, auth_manager)?;
-
-    let has_title = !persisted_info.summary.display_title().is_empty();
-    let handle = PersistenceHandle {
-        tx: tx.clone(),
-        noop: false,
-    };
-    tokio::task::spawn(async move {
-        let mut summary_gen = crate::session::summary::SummaryGenerator::new(
-            crate::session::summary::SummaryConfig {
-                sampling_client,
-                model: session_summary_model,
-                persistence_tx: tx,
-            },
-        );
-        if has_title {
-            summary_gen.mark_done();
-        }
-        let persistence = SessionPersistence {
-            info: loaded_info,
-            storage: storage.clone(),
-            pending_notification: None,
-            rx,
-            remote_sync: remote_sync.clone(),
-            summary: summary_gen,
-            registry_title_sync,
-            gateway,
-        };
-        persistence.run().await;
-    });
-
-    Ok((persisted_info, handle))
-}
-
-/// Like `load`, but doesn't load updates into memory.
+/// Loads a session for streaming updates without reading them into memory.
 /// Instead, provides the path to the updates file for streaming reads.
 /// Use this for memory-efficient session loading when replaying updates.
 pub(crate) async fn load_light(
     info: &Info,
     sampling_client: OaiCompatClient,
-    storage_mode: StorageMode,
-    auth_manager: Option<Arc<crate::auth::AuthManager>>,
-    backend: Option<&crate::remote::BackendClient>,
     gateway: Option<GatewaySender>,
     session_summary_model: String,
     registry_title_sync: Option<RegistryGeneratedTitleSync>,
@@ -2298,16 +2111,9 @@ pub(crate) async fn load_light(
     let storage: Box<dyn StorageAdapter> =
         Box::new(JsonlStorageAdapter::with_root(root_dir.clone()));
 
-    let (persisted, loaded_info) = match storage.load_session_without_updates(info).await {
-        Ok(p) => (p, info.clone()),
-        Err(e) => match backend {
-            Some(client) => {
-                let pulled = pull_on_miss(info, client, e).await?;
-                let p = storage.load_session_without_updates(&pulled).await?;
-                (p, pulled)
-            }
-            None => return Err(e),
-        },
+    let (persisted, loaded_info) = {
+        let p = storage.load_session_without_updates(info).await?;
+        (p, info.clone())
     };
     // Touch on load too: resuming must reset the worktree's gc expiry clock.
     touch_worktree_for_session(&loaded_info).await;
@@ -2330,7 +2136,6 @@ pub(crate) async fn load_light(
     let (tx, rx) = mpsc::unbounded_channel::<PersistenceMsg>();
 
     let storage: Arc<dyn StorageAdapter> = Arc::from(storage);
-    let remote_sync = init_remote_sync(&persisted_info.summary, storage_mode, auth_manager)?;
 
     let has_title = !persisted_info.summary.display_title().is_empty();
     let handle = PersistenceHandle {
@@ -2353,7 +2158,6 @@ pub(crate) async fn load_light(
             storage: storage.clone(),
             pending_notification: None,
             rx,
-            remote_sync: remote_sync.clone(),
             summary: summary_gen,
             registry_title_sync,
             gateway,
@@ -2373,100 +2177,58 @@ pub async fn list_summaries(cwd: Option<&str>) -> io::Result<Vec<Summary>> {
 }
 
 /// Failure modes of [`delete_session_history`].
-///
-/// Kept distinct so callers can surface a precise message: a remote
-/// failure is reported separately from a local-disk failure because the
-/// remote delete runs first and aborts the whole operation (see the doc
-/// on [`delete_session_history`]).
 #[derive(Debug, thiserror::Error)]
 pub enum DeleteSessionError {
     /// Listing local summaries (to resolve the on-disk session dir) failed.
     #[error("failed to list sessions: {0}")]
     List(#[source] io::Error),
-    /// The remote (writeback) copy could not be deleted; local bits were
-    /// left untouched so the operation can be retried.
-    #[error("failed to delete remote session data: {0}")]
-    Remote(#[source] crate::remote::client::BackendError),
     /// The local on-disk session directory could not be removed.
     #[error("failed to delete session: {0}")]
     Local(#[source] io::Error),
 }
 
-/// Where a session copy was actually removed by [`delete_session_history`].
+/// Whether a session copy was removed by [`delete_session_history`].
 ///
-/// Both fields are `false` when nothing existed to delete (still a
+/// `local_removed` is `false` when nothing existed to delete (still a
 /// success). Callers use [`Self::any_removed`] to decide between a
-/// "deleted" and a "not found" message without conflating a remote-only
-/// delete with a no-op.
+/// "deleted" and a "not found" message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SessionDeletion {
     /// A local on-disk session directory was found and removed.
     pub local_removed: bool,
-    /// A remote (writeback) copy was found and removed. `false` when
-    /// `needs_remote` was not set, or the remote copy was already absent
-    /// (the backend returned `404`).
-    pub remote_removed: bool,
 }
 
 impl SessionDeletion {
-    /// `true` when a copy was removed from at least one location.
+    /// `true` when the local session directory was removed.
     pub fn any_removed(self) -> bool {
-        self.local_removed || self.remote_removed
+        self.local_removed
     }
 }
 
-/// Permanently delete a session's history: the remote (writeback) copy
-/// when `needs_remote`, the local on-disk session directory, and the
-/// FTS search-index entry.
+/// Permanently delete a session's history: the local on-disk session
+/// directory and the FTS search-index entry.
 ///
-/// Idempotent: a session that is missing locally (e.g. remote-only)
-/// still succeeds, and a remote `404` (copy already gone) is treated as
-/// success rather than an error. When `needs_remote` is set the remote
-/// delete runs *first* and is authoritative — only on its success (or a
-/// `404`) are the local bits removed. This ordering prevents a partial
-/// delete where the local copy is nuked but the remote copy lingers and
-/// re-appears on the next session list.
+/// Idempotent: a session that is missing locally still succeeds.
 ///
-/// Returns a [`SessionDeletion`] recording which copies (local / remote)
-/// were actually removed; both fields `false` means nothing existed
-/// (still `Ok`).
+/// Returns a [`SessionDeletion`] recording whether a local copy was
+/// removed; `false` means nothing existed (still `Ok`).
 pub async fn delete_session_history(
     session_id: &str,
     cwd: Option<&str>,
-    needs_remote: bool,
-    auth_manager: Arc<crate::auth::AuthManager>,
 ) -> Result<SessionDeletion, DeleteSessionError> {
     let sid = acp::SessionId::new(Arc::from(session_id));
 
-    // Resolve the local session info, scoping to cwd if provided. A
-    // remote-only session won't be found here — that's fine, the remote
-    // delete (if applicable) still runs.
+    // Resolve the local session info, scoping to cwd if provided.
     let summaries = list_summaries(cwd)
         .await
         .map_err(DeleteSessionError::List)?;
-    let local_info = summaries
+    let Some(info) = summaries
         .iter()
         .find(|s| s.info.id == sid)
-        .map(|s| s.info.clone());
-
-    // Remote delete first (authoritative for cloud history). A genuine
-    // failure aborts before any local mutation so the row does not
-    // reappear; a `404` means the copy is already gone, so deletion stays
-    // idempotent and falls through to local cleanup.
-    let remote_removed = if needs_remote {
-        let result = crate::remote::client::BackendClient::new()
-            .with_auth_manager(auth_manager)
-            .delete_session_data(session_id)
-            .await;
-        classify_remote_delete(result)?
-    } else {
-        false
-    };
-
-    let Some(info) = local_info else {
+        .map(|s| s.info.clone())
+    else {
         return Ok(SessionDeletion {
             local_removed: false,
-            remote_removed,
         });
     };
 
@@ -2481,84 +2243,21 @@ pub async fn delete_session_history(
 
     Ok(SessionDeletion {
         local_removed: true,
-        remote_removed,
     })
-}
-
-/// Classify a remote `delete_session_data` result, reporting whether a
-/// remote copy was actually removed: a `2xx` means a copy was deleted
-/// (`Ok(true)`), a `404` means it was already gone so deletion stays
-/// idempotent (`Ok(false)`), and any other backend error aborts the
-/// delete (`Err`) so local bits are left untouched and it can be retried.
-fn classify_remote_delete(
-    result: Result<(), crate::remote::client::BackendError>,
-) -> Result<bool, DeleteSessionError> {
-    use crate::remote::client::BackendError;
-    match result {
-        Ok(()) => Ok(true),
-        Err(BackendError::RequestFailed { status: 404, .. }) => Ok(false),
-        Err(e) => Err(DeleteSessionError::Remote(e)),
-    }
 }
 
 #[cfg(test)]
 mod delete_session_history_tests {
-    use super::{DeleteSessionError, SessionDeletion, classify_remote_delete};
-    use crate::remote::client::BackendError;
+    use super::SessionDeletion;
 
     #[test]
-    fn remote_ok_reports_removed() {
-        assert!(
-            classify_remote_delete(Ok(())).unwrap(),
-            "a 2xx delete must report that a remote copy was removed"
-        );
-    }
-
-    #[test]
-    fn remote_404_is_treated_as_already_deleted() {
-        let removed = classify_remote_delete(Err(BackendError::RequestFailed {
-            status: 404,
-            body: "not found".into(),
-        }))
-        .expect("a 404 means the remote copy is gone — deletion must stay idempotent");
-        assert!(
-            !removed,
-            "a 404 must report that nothing was removed remotely"
-        );
-    }
-
-    #[test]
-    fn remote_non_404_request_failure_aborts() {
-        let res = classify_remote_delete(Err(BackendError::RequestFailed {
-            status: 500,
-            body: "boom".into(),
-        }));
-        assert!(matches!(res, Err(DeleteSessionError::Remote(_))));
-    }
-
-    #[test]
-    fn remote_auth_failure_aborts() {
-        let res = classify_remote_delete(Err(BackendError::Auth("denied".into())));
-        assert!(matches!(res, Err(DeleteSessionError::Remote(_))));
-    }
-
-    #[test]
-    fn any_removed_reflects_either_location() {
+    fn any_removed_reflects_local_removal() {
         assert!(!SessionDeletion::default().any_removed());
         assert!(
             SessionDeletion {
                 local_removed: true,
-                remote_removed: false,
             }
             .any_removed()
-        );
-        assert!(
-            SessionDeletion {
-                local_removed: false,
-                remote_removed: true,
-            }
-            .any_removed(),
-            "a remote-only delete must count as removed"
         );
     }
 }

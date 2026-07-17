@@ -743,7 +743,6 @@ mod classify_tests {
                 message: "test".into(),
                 model_metadata: None,
                 retry_after_secs: None,
-                should_retry: None,
             }))
         };
         assert!(det(StatusCode::BAD_REQUEST));
@@ -836,7 +835,6 @@ mod classify_tests {
                 .into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         })));
     }
     #[test]
@@ -866,7 +864,6 @@ mod classify_tests {
             message: "bad payload".into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         }) else {
             panic!("expected Deterministic for 400");
         };
@@ -878,7 +875,6 @@ mod classify_tests {
             message: "upstream blip".into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         }) else {
             panic!("expected Transient for 500");
         };
@@ -1595,15 +1591,11 @@ mod reasoning_compaction_regression_tests {
             auth_scheme: Default::default(),
             extra_headers: Default::default(),
             context_window: 256_000,
-            client_version: None,
             force_http1: false,
             max_retries: None,
             stream_tool_calls: false,
             idle_timeout_secs: None,
-            client_identifier: None,
             reasoning_effort: None,
-            deployment_id: None,
-            user_id: None,
             origin_client: None,
             attribution_callback: None,
             bearer_resolver: None,

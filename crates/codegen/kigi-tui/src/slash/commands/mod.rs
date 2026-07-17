@@ -41,7 +41,6 @@ pub mod new;
 pub mod personas;
 pub mod plan;
 pub mod plugin;
-pub mod privacy;
 pub mod queue;
 pub mod recap;
 pub mod release_notes;
@@ -53,7 +52,6 @@ pub mod screen_mode_switch;
 pub mod scroll_debug;
 pub mod session_info;
 pub mod settings_cmd;
-pub mod share;
 pub mod tasks;
 pub mod terminal_setup;
 pub mod theme;
@@ -98,7 +96,6 @@ pub fn builtin_commands() -> Vec<Arc<dyn SlashCommand>> {
         Arc::new(plugin::HooksCommand),
         Arc::new(plugin::PluginsCommand),
         Arc::new(plugin::SkillsCommand),
-        Arc::new(share::ShareCommand),
         Arc::new(session_info::SessionInfoCommand),
         Arc::new(rename::RenameCommand),
         Arc::new(dashboard::DashboardCommand),
@@ -120,7 +117,6 @@ pub fn builtin_commands() -> Vec<Arc<dyn SlashCommand>> {
         Arc::new(timeline::TimelineCommand),
         Arc::new(toggle_mouse_reporting::ToggleMouseReportingCommand),
         Arc::new(settings_cmd::SettingsCommand),
-        Arc::new(privacy::PrivacyCommand),
         Arc::new(rewind::RewindCommand),
         Arc::new(jump::JumpCommand),
         Arc::new(login::LoginCommand),
@@ -455,83 +451,24 @@ mod tests {
         usage::UsageCommand.run(&mut ctx, args)
     }
     #[test]
-    fn usage_no_args_returns_show_usage() {
+    fn usage_returns_show_usage() {
         assert!(matches!(
             run_usage(""),
             CommandResult::Action(Action::ShowUsage)
         ));
     }
     #[test]
-    fn usage_show_returns_show_usage() {
+    fn usage_ignores_stray_args() {
         assert!(matches!(
-            run_usage("show"),
+            run_usage("  anything  "),
             CommandResult::Action(Action::ShowUsage)
         ));
-    }
-    #[test]
-    fn usage_manage_returns_open_url() {
-        match run_usage("manage") {
-            CommandResult::Action(Action::OpenUrl(url)) => {
-                assert_eq!(url, "https://grok.com/?_s=usage");
-            }
-            other => panic!("expected Action(OpenUrl), got {other:?}"),
-        }
-    }
-    #[test]
-    fn usage_invalid_arg_returns_error() {
-        match run_usage("delete") {
-            CommandResult::Error(msg) => {
-                assert!(msg.contains("delete"), "got: {msg}");
-            }
-            other => panic!("expected Error, got {other:?}"),
-        }
-    }
-    #[test]
-    fn usage_whitespace_only_treated_as_no_args() {
-        assert!(matches!(
-            run_usage("   "),
-            CommandResult::Action(Action::ShowUsage)
-        ));
-    }
-    #[test]
-    fn usage_show_with_leading_whitespace() {
-        assert!(matches!(
-            run_usage("  show  "),
-            CommandResult::Action(Action::ShowUsage)
-        ));
-    }
-    #[test]
-    fn usage_manage_with_leading_whitespace() {
-        match run_usage("  manage  ") {
-            CommandResult::Action(Action::OpenUrl(url)) => {
-                assert_eq!(url, "https://grok.com/?_s=usage");
-            }
-            other => panic!("expected Action(OpenUrl), got {other:?}"),
-        }
-    }
-    #[test]
-    fn usage_suggest_args_returns_show_and_manage() {
-        let models = ModelState::default();
-        let ctx = crate::slash::command::AppCtx {
-            models: &models,
-            cwd: std::path::Path::new("."),
-            screen_mode: crate::app::ScreenMode::Fullscreen,
-        };
-        let items = usage::UsageCommand
-            .suggest_args(&ctx, "")
-            .expect("should have suggestions");
-        assert_eq!(items.len(), 2);
-        assert_eq!(items[0].display, "show");
-        assert_eq!(items[0].insert_text, "show");
-        assert_eq!(items[1].display, "manage");
-        assert_eq!(items[1].insert_text, "manage");
     }
     #[test]
     fn usage_metadata() {
         let cmd = usage::UsageCommand;
         assert_eq!(cmd.name(), "usage");
-        assert!(cmd.takes_args());
-        assert_eq!(cmd.arg_placeholder(), Some("show | manage"));
+        assert!(!cmd.takes_args());
         assert!(!cmd.description().is_empty());
         assert!(!cmd.usage().is_empty());
     }

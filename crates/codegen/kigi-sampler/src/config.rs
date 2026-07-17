@@ -71,12 +71,12 @@ pub struct SamplerConfig {
     // Reasoning effort
     pub reasoning_effort: Option<ReasoningEffort>,
 
-    // Client identity
+    /// Client identity for the User-Agent header (`kigi/{version}` plus an
+    /// optional origin product). The old xAI proxy's identity headers
+    /// (`x-grok-client-identifier` / `-client-version` / `-deployment-id` /
+    /// `-user-id`) are gone — User-Agent and `extra_headers` are the only
+    /// identity signals on the wire.
     pub origin_client: Option<OriginClientInfo>,
-    pub client_identifier: Option<String>,
-    pub deployment_id: Option<String>,
-    pub user_id: Option<String>,
-    pub client_version: Option<String>,
 
     /// Optional hook invoked at every UNAUTHORIZED (401) response
     /// site. The sampler passes the bearer that was actually sent on
@@ -146,10 +146,6 @@ impl Default for SamplerConfig {
             idle_timeout_secs: None,
             reasoning_effort: None,
             origin_client: None,
-            client_identifier: None,
-            deployment_id: None,
-            user_id: None,
-            client_version: None,
             attribution_callback: None,
             bearer_resolver: None,
             supports_backend_search: false,

@@ -1,16 +1,20 @@
-//! HTTP client for the xAI sampling APIs.
+//! HTTP client for the sampling APIs.
 //!
 //! Owns the `reqwest::Client`, default request headers, and per-method
 //! defaults. Talks to three backend shapes:
 //!
-//! * Chat Completions (`/chat/completions`)
-//! * Responses API (`/responses`)
-//! * Anthropic Messages API (`/messages`)
+//! * Chat Completions (`/chat/completions`) — the Kimi dialect; both
+//!   product channels (subscription OAuth, Moonshot API key) ride it.
+//!   Kimi-specific request deviations are absorbed by [`crate::kimi_compat`].
+//! * Responses API (`/responses`) — kept for custom providers.
+//! * Anthropic Messages API (`/messages`) — kept for custom providers.
 //!
-//! All trace-upload and URL-based header injection is intentionally
-//! *not* here. The session is responsible for putting any per-request
-//! headers (proxy auth, OTel context, etc.)
-//! into [`SamplerConfig::extra_headers`] before constructing the client.
+//! Auth on the wire is a plain `Authorization: Bearer {token}` (or
+//! `x-api-key` for Anthropic-scheme custom providers). All URL-based
+//! header injection is intentionally *not* here. The session is
+//! responsible for putting any per-request headers (device identity,
+//! OTel context, etc.) into [`SamplerConfig::extra_headers`] before
+//! constructing the client.
 
 use eventsource_stream::Eventsource;
 use futures_util::StreamExt;
@@ -33,45 +37,9 @@ use crate::config::{AuthScheme, OriginClientInfo, SamplerConfig};
 // Re-export ApiBackend from the shared types crate for downstream callers.
 pub use kigi_sampling_types::ApiBackend;
 
-/// Process-level fallback for the `x-grok-client-identifier` header.
-const DEFAULT_CLIENT_IDENTIFIER: &str = "grok-shell";
-
-/// Product identifier baked into User-Agent strings.
-const AGENT_PRODUCT: &str = "grok-shell";
+/// Product identifier baked into User-Agent strings (PRD F3: `kigi/{version}`).
+const AGENT_PRODUCT: &str = "kigi";
 const ANTHROPIC_DEFAULT_MAX_TOKENS: u32 = 128_000;
-
-/// Per-request `x-grok-*` headers. Optional fields are skipped when empty/`None`.
-struct GrokRequestHeaders<'a> {
-    conv_id: &'a str,
-    req_id: &'a str,
-    model_id: &'a str,
-    session_id: &'a str,
-    turn_idx: Option<&'a str>,
-    agent_id: &'a str,
-    deployment_id: Option<&'a str>,
-    user_id: Option<&'a str>,
-}
-
-impl GrokRequestHeaders<'_> {
-    fn apply(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        let mut b = builder
-            .header("x-grok-conv-id", self.conv_id)
-            .header("x-grok-req-id", self.req_id)
-            .header("x-grok-model-override", self.model_id)
-            .header("x-grok-session-id", self.session_id)
-            .header("x-grok-agent-id", self.agent_id);
-        if let Some(idx) = self.turn_idx {
-            b = b.header("x-grok-turn-idx", idx);
-        }
-        if let Some(id) = self.deployment_id.filter(|s| !s.is_empty()) {
-            b = b.header("x-grok-deployment-id", id);
-        }
-        if let Some(id) = self.user_id.filter(|s| !s.is_empty()) {
-            b = b.header("x-grok-user-id", id);
-        }
-        b
-    }
-}
 
 /// Parse the `Retry-After` response header as delta-seconds.
 /// Our inference backends only emit integer seconds (never HTTP-date),
@@ -209,21 +177,6 @@ fn extract_retry_after(headers: &reqwest::header::HeaderMap) -> Option<u64> {
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<u64>().ok())
         .map(|s| s.min(120))
-}
-
-fn extract_should_retry(headers: &reqwest::header::HeaderMap) -> Option<bool> {
-    headers
-        .get("x-should-retry")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| {
-            if s.eq_ignore_ascii_case("true") {
-                Some(true)
-            } else if s.eq_ignore_ascii_case("false") {
-                Some(false)
-            } else {
-                None // unknown value — treat as absent
-            }
-        })
 }
 
 fn extract_model_metadata(headers: &reqwest::header::HeaderMap) -> Option<ResponseModelMetadata> {
@@ -444,45 +397,11 @@ impl SamplingClient {
             headers.insert(header_name, header_value);
         }
 
-        // Add x-grok-client-version header for version gating at the proxy.
-        if let Some(client_version) = config.client_version.as_ref()
-            && let Ok(header_value) = HeaderValue::from_str(client_version)
-        {
-            headers.insert(
-                HeaderName::from_static("x-grok-client-version"),
-                header_value,
-            );
-        }
-
-        if let Some(deployment_id) = config.deployment_id.as_ref()
-            && let Ok(header_value) = HeaderValue::from_str(deployment_id)
-        {
-            headers.insert(
-                HeaderName::from_static("x-grok-deployment-id"),
-                header_value,
-            );
-        }
-
-        if let Some(user_id) = config.user_id.as_ref()
-            && let Ok(header_value) = HeaderValue::from_str(user_id)
-        {
-            headers.insert(HeaderName::from_static("x-grok-user-id"), header_value);
-        }
-
-        {
-            let client_id = config
-                .client_identifier
-                .clone()
-                .unwrap_or_else(|| DEFAULT_CLIENT_IDENTIFIER.to_string());
-            if let Ok(header_value) = HeaderValue::from_str(&client_id) {
-                headers.insert(
-                    HeaderName::from_static("x-grok-client-identifier"),
-                    header_value,
-                );
-            }
-        }
-
         // Always set User-Agent: per-session origin if available, else fallback.
+        // This and `extra_headers` are the only client-identity signals on the
+        // wire — the old xAI proxy's `x-grok-*` marker headers are gone
+        // (PRD F3: auth is a plain bearer; kimi-cli sends only User-Agent
+        // plus the OAuth device headers, src/kimi_cli/llm.py:317-323).
         {
             let ua_string = match config.origin_client.as_ref() {
                 Some(origin) => user_agent_string_for(origin),
@@ -689,13 +608,7 @@ impl SamplingClient {
     }
 
     /// Build request headers string for error messages (redacting sensitive values).
-    fn format_request_headers(
-        &self,
-        x_grok_conv_id: &str,
-        x_grok_req_id: &str,
-        model_id: &str,
-        include_accept: bool,
-    ) -> Vec<String> {
+    fn format_request_headers(&self, include_accept: bool) -> Vec<String> {
         let mut req_headers: Vec<String> = self
             .default_headers
             .iter()
@@ -704,9 +617,6 @@ impl SamplingClient {
             })
             .collect();
 
-        req_headers.push(Self::format_header("x-grok-conv-id", x_grok_conv_id));
-        req_headers.push(Self::format_header("x-grok-req-id", x_grok_req_id));
-        req_headers.push(Self::format_header("x-grok-model-override", model_id));
         if include_accept {
             req_headers.push(Self::format_header("accept", "text/event-stream"));
         }
@@ -799,7 +709,6 @@ impl SamplingClient {
         let status = response.status();
         let model_metadata = extract_model_metadata(response.headers());
         let retry_after_secs = extract_retry_after(response.headers());
-        let should_retry = extract_should_retry(response.headers());
         let bytes = response.bytes().await?;
 
         if !status.is_success() {
@@ -816,7 +725,6 @@ impl SamplingClient {
                 message,
                 model_metadata,
                 retry_after_secs,
-                should_retry,
             });
         }
 
@@ -841,8 +749,6 @@ impl SamplingClient {
         request: ChatCompletionRequest,
     ) -> Result<ChatCompletionResponse> {
         let payload = self.apply_defaults(request)?;
-        let x_grok_conv_id = &payload.x_grok_conv_id.clone().unwrap_or_default();
-        let x_grok_req_id = &payload.x_grok_req_id.clone().unwrap_or_default();
         let model_id = payload.model.clone().unwrap_or_default();
 
         tracing::debug!(
@@ -851,19 +757,18 @@ impl SamplingClient {
             "Sending chat completion request"
         );
 
-        let grok_headers = GrokRequestHeaders {
-            conv_id: x_grok_conv_id,
-            req_id: x_grok_req_id,
-            model_id: &model_id,
-            session_id: payload.x_grok_session_id.as_deref().unwrap_or_default(),
-            turn_idx: payload.x_grok_turn_idx.as_deref(),
-            agent_id: payload.x_grok_agent_id.as_deref().unwrap_or_default(),
-            deployment_id: payload.x_grok_deployment_id.as_deref(),
-            user_id: payload.x_grok_user_id.as_deref(),
-        };
-        let http_request = grok_headers
-            .apply(self.post(self.endpoint("chat/completions")))
-            .json(&payload);
+        // Serialize, then run the Kimi dialect adaptations (single
+        // adaptation point for every request-side deviation; see
+        // `crate::kimi_compat`).
+        let mut request_body = serde_json::to_value(&payload).map_err(|e| {
+            tracing::error!("Failed to serialize chat/completions request: {}", e);
+            SamplingError::Serialization(e)
+        })?;
+        crate::kimi_compat::adapt_chat_completions_body(&mut request_body);
+
+        let http_request = self
+            .post(self.endpoint("chat/completions"))
+            .json(&request_body);
 
         let response = http_request.send().await.map_err(|e| {
             // Log at debug level; errors are surfaced to the caller.
@@ -894,13 +799,14 @@ impl SamplingClient {
         Option<ResponseModelMetadata>,
     )> {
         let payload = self.apply_defaults(request)?;
-        let x_grok_conv_id = &payload.x_grok_conv_id.clone().unwrap_or_default();
-        let x_grok_req_id = &payload.x_grok_req_id.clone().unwrap_or_default();
         let model_id = payload.model.clone().unwrap_or_default();
 
-        // Wrap the request with streaming fields and serialize once.
-        // Previously this path serialized twice: first to serde_json::Value
-        // (to inject `stream` and `stream_options`), then to HTTP body bytes.
+        // Wrap the request with the streaming fields the Kimi API expects
+        // (`stream: true` + `stream_options.include_usage: true`, exactly
+        // what kimi-cli sends —
+        // packages/kosong/src/kosong/chat_provider/kimi.py:174-181), then
+        // serialize and run the Kimi dialect adaptations (single adaptation
+        // point for every request-side deviation; see `crate::kimi_compat`).
         let streaming_request = StreamingChatRequest {
             inner: &payload,
             stream: true,
@@ -908,21 +814,16 @@ impl SamplingClient {
                 include_usage: true,
             },
         };
+        let mut request_body = serde_json::to_value(&streaming_request).map_err(|e| {
+            tracing::error!("Failed to serialize chat/completions request: {}", e);
+            SamplingError::Serialization(e)
+        })?;
+        crate::kimi_compat::adapt_chat_completions_body(&mut request_body);
 
-        let grok_headers = GrokRequestHeaders {
-            conv_id: x_grok_conv_id,
-            req_id: x_grok_req_id,
-            model_id: &model_id,
-            session_id: payload.x_grok_session_id.as_deref().unwrap_or_default(),
-            turn_idx: payload.x_grok_turn_idx.as_deref(),
-            agent_id: payload.x_grok_agent_id.as_deref().unwrap_or_default(),
-            deployment_id: payload.x_grok_deployment_id.as_deref(),
-            user_id: payload.x_grok_user_id.as_deref(),
-        };
-        let http_request = grok_headers
-            .apply(self.post(self.endpoint("chat/completions")))
+        let http_request = self
+            .post(self.endpoint("chat/completions"))
             .header(ACCEPT, HeaderValue::from_static("text/event-stream"))
-            .json(&streaming_request);
+            .json(&request_body);
 
         let built_request = http_request.build().map_err(|e| {
             tracing::error!("Failed to build HTTP request: {}", e);
@@ -948,7 +849,6 @@ impl SamplingClient {
         span.record("success", status.is_success());
         let model_metadata = extract_model_metadata(response.headers());
         let retry_after_secs = extract_retry_after(response.headers());
-        let should_retry = extract_should_retry(response.headers());
         if !status.is_success() {
             if status == reqwest::StatusCode::UNAUTHORIZED {
                 span.record("error", "unauthorized (401)");
@@ -962,8 +862,7 @@ impl SamplingClient {
                 )));
             }
 
-            let req_headers =
-                self.format_request_headers(x_grok_conv_id, x_grok_req_id, &model_id, true);
+            let req_headers = self.format_request_headers(true);
             let resp_headers = Self::format_response_headers(&response);
             let bytes = response.bytes().await?;
             let server_message = parse_error_bytes(bytes.as_ref());
@@ -988,7 +887,6 @@ impl SamplingClient {
                 message,
                 model_metadata,
                 retry_after_secs,
-                should_retry,
             });
         }
 
@@ -1111,8 +1009,6 @@ impl SamplingClient {
     ) -> Result<rs::Response> {
         self.apply_response_defaults(&mut request)?;
 
-        let x_grok_conv_id = request.x_grok_conv_id.as_deref().unwrap_or_default();
-        let x_grok_req_id = request.x_grok_req_id.as_deref().unwrap_or_default();
         let model_id = request.inner.model.clone().unwrap_or_default();
 
         // The trace field is process-local: it is consumed by upstream
@@ -1123,16 +1019,6 @@ impl SamplingClient {
         tracing::debug!("create_response: {:?}", &request);
         tracing::debug!("endpoint: {:?}", self.endpoint("responses"));
 
-        let grok_headers = GrokRequestHeaders {
-            conv_id: x_grok_conv_id,
-            req_id: x_grok_req_id,
-            model_id: &model_id,
-            session_id: request.x_grok_session_id.as_deref().unwrap_or_default(),
-            turn_idx: request.x_grok_turn_idx.as_deref(),
-            agent_id: request.x_grok_agent_id.as_deref().unwrap_or_default(),
-            deployment_id: request.x_grok_deployment_id.as_deref(),
-            user_id: request.x_grok_user_id.as_deref(),
-        };
         let mut request_body = serde_json::to_value(&request.inner).map_err(|e| {
             tracing::error!("Failed to serialize responses request: {}", e);
             SamplingError::Serialization(e)
@@ -1142,9 +1028,7 @@ impl SamplingClient {
         // it in post-serialize. This is the last surviving piece of the
         // old raw_output machinery.
         kigi_sampling_types::patch_reasoning_text_types(&mut request_body);
-        let http_request = grok_headers
-            .apply(self.post(self.endpoint("responses")))
-            .json(&request_body);
+        let http_request = self.post(self.endpoint("responses")).json(&request_body);
 
         let response = http_request.send().await.map_err(|e| {
             tracing::debug!("HTTP request failed: {}", e);
@@ -1154,7 +1038,6 @@ impl SamplingClient {
         let status = response.status();
         let model_metadata = extract_model_metadata(response.headers());
         let retry_after_secs = extract_retry_after(response.headers());
-        let should_retry = extract_should_retry(response.headers());
         let bytes = response.bytes().await?;
 
         if !status.is_success() {
@@ -1167,8 +1050,7 @@ impl SamplingClient {
                 )));
             }
 
-            let req_headers =
-                self.format_request_headers(x_grok_conv_id, x_grok_req_id, &model_id, false);
+            let req_headers = self.format_request_headers(false);
             let server_message = parse_error_bytes(bytes.as_ref());
 
             let message = self.build_api_error_message(
@@ -1189,7 +1071,6 @@ impl SamplingClient {
                 message,
                 model_metadata,
                 retry_after_secs,
-                should_retry,
             });
         }
 
@@ -1245,8 +1126,6 @@ impl SamplingClient {
         // Enable streaming
         request.inner.stream = Some(true);
 
-        let x_grok_conv_id = request.x_grok_conv_id.as_deref().unwrap_or_default();
-        let x_grok_req_id = request.x_grok_req_id.as_deref().unwrap_or_default();
         let model_id = request.inner.model.clone().unwrap_or_default();
 
         // Drop process-local trace data (see note in `create_response`).
@@ -1258,16 +1137,6 @@ impl SamplingClient {
             "Sending responses API stream request"
         );
 
-        let grok_headers = GrokRequestHeaders {
-            conv_id: x_grok_conv_id,
-            req_id: x_grok_req_id,
-            model_id: &model_id,
-            session_id: request.x_grok_session_id.as_deref().unwrap_or_default(),
-            turn_idx: request.x_grok_turn_idx.as_deref(),
-            agent_id: request.x_grok_agent_id.as_deref().unwrap_or_default(),
-            deployment_id: request.x_grok_deployment_id.as_deref(),
-            user_id: request.x_grok_user_id.as_deref(),
-        };
         let extra_raw_tools = std::mem::take(&mut request.extra_raw_tools);
         let mut request_body = serde_json::to_value(&request.inner).map_err(|e| {
             tracing::error!("Failed to serialize responses request: {}", e);
@@ -1293,8 +1162,8 @@ impl SamplingClient {
             .defaults
             .doom_loop_recovery
             .map(crate::doom_loop::DoomLoopSignalCollector::new);
-        let mut http_request = grok_headers
-            .apply(self.post(self.endpoint("responses")))
+        let mut http_request = self
+            .post(self.endpoint("responses"))
             .header(ACCEPT, HeaderValue::from_static("text/event-stream"));
         if doom_loop.is_some() {
             // Presence opts in; the server ignores the value.
@@ -1336,9 +1205,7 @@ impl SamplingClient {
             }
             let model_metadata = extract_model_metadata(response.headers());
             let retry_after_secs = extract_retry_after(response.headers());
-            let should_retry = extract_should_retry(response.headers());
-            let req_headers =
-                self.format_request_headers(x_grok_conv_id, x_grok_req_id, &model_id, true);
+            let req_headers = self.format_request_headers(true);
             let resp_headers = Self::format_response_headers(&response);
             let bytes = response.bytes().await?;
             let server_message = parse_error_bytes(bytes.as_ref());
@@ -1363,7 +1230,6 @@ impl SamplingClient {
                 message,
                 model_metadata,
                 retry_after_secs,
-                should_retry,
             });
         }
 
@@ -1480,8 +1346,6 @@ impl SamplingClient {
     ) -> Result<messages::MessagesResponse> {
         self.apply_message_defaults(&mut request)?;
 
-        let x_grok_conv_id = request.x_grok_conv_id.as_deref().unwrap_or_default();
-        let x_grok_req_id = request.x_grok_req_id.as_deref().unwrap_or_default();
         let model_id = request.inner.model.clone();
 
         // Drop process-local trace data.
@@ -1490,19 +1354,7 @@ impl SamplingClient {
         tracing::debug!("create_message: {:?}", &request.inner);
         tracing::debug!("endpoint: {:?}", self.endpoint("messages"));
 
-        let grok_headers = GrokRequestHeaders {
-            conv_id: x_grok_conv_id,
-            req_id: x_grok_req_id,
-            model_id: &model_id,
-            session_id: request.x_grok_session_id.as_deref().unwrap_or_default(),
-            turn_idx: request.x_grok_turn_idx.as_deref(),
-            agent_id: request.x_grok_agent_id.as_deref().unwrap_or_default(),
-            deployment_id: request.x_grok_deployment_id.as_deref(),
-            user_id: request.x_grok_user_id.as_deref(),
-        };
-        let http_request = grok_headers
-            .apply(self.post(self.endpoint("messages")))
-            .json(&request.inner);
+        let http_request = self.post(self.endpoint("messages")).json(&request.inner);
 
         let response = http_request.send().await.map_err(|e| {
             tracing::debug!("HTTP request failed: {}", e);
@@ -1512,7 +1364,6 @@ impl SamplingClient {
         let status = response.status();
         let model_metadata = extract_model_metadata(response.headers());
         let retry_after_secs = extract_retry_after(response.headers());
-        let should_retry = extract_should_retry(response.headers());
         let bytes = response.bytes().await?;
 
         if !status.is_success() {
@@ -1525,8 +1376,7 @@ impl SamplingClient {
                 )));
             }
 
-            let req_headers =
-                self.format_request_headers(x_grok_conv_id, x_grok_req_id, &model_id, false);
+            let req_headers = self.format_request_headers(false);
             let server_message = parse_error_bytes(bytes.as_ref());
 
             let message = self.build_api_error_message(
@@ -1547,7 +1397,6 @@ impl SamplingClient {
                 message,
                 model_metadata,
                 retry_after_secs,
-                should_retry,
             });
         }
 
@@ -1593,8 +1442,6 @@ impl SamplingClient {
         // Enable streaming
         request.inner.stream = Some(true);
 
-        let x_grok_conv_id = request.x_grok_conv_id.as_deref().unwrap_or_default();
-        let x_grok_req_id = request.x_grok_req_id.as_deref().unwrap_or_default();
         let model_id = request.inner.model.clone();
 
         // Drop process-local trace data.
@@ -1606,18 +1453,8 @@ impl SamplingClient {
             "Sending Messages API stream request"
         );
 
-        let grok_headers = GrokRequestHeaders {
-            conv_id: x_grok_conv_id,
-            req_id: x_grok_req_id,
-            model_id: &model_id,
-            session_id: request.x_grok_session_id.as_deref().unwrap_or_default(),
-            turn_idx: request.x_grok_turn_idx.as_deref(),
-            agent_id: request.x_grok_agent_id.as_deref().unwrap_or_default(),
-            deployment_id: request.x_grok_deployment_id.as_deref(),
-            user_id: request.x_grok_user_id.as_deref(),
-        };
-        let http_request = grok_headers
-            .apply(self.post(self.endpoint("messages")))
+        let http_request = self
+            .post(self.endpoint("messages"))
             .header(ACCEPT, HeaderValue::from_static("text/event-stream"))
             .json(&request.inner);
 
@@ -1655,9 +1492,7 @@ impl SamplingClient {
             }
             let model_metadata = extract_model_metadata(response.headers());
             let retry_after_secs = extract_retry_after(response.headers());
-            let should_retry = extract_should_retry(response.headers());
-            let req_headers =
-                self.format_request_headers(x_grok_conv_id, x_grok_req_id, &model_id, true);
+            let req_headers = self.format_request_headers(true);
             let resp_headers = Self::format_response_headers(&response);
             let bytes = response.bytes().await?;
             let server_message = parse_error_bytes(bytes.as_ref());
@@ -1682,7 +1517,6 @@ impl SamplingClient {
                 message,
                 model_metadata,
                 retry_after_secs,
-                should_retry,
             });
         }
 
@@ -2002,7 +1836,6 @@ impl SamplingClient {
                 message: info.message,
                 model_metadata: info.model_metadata,
                 retry_after_secs: info.retry_after_secs,
-                should_retry: None,
             })
     }
 }
@@ -2031,10 +1864,6 @@ mod tests {
             idle_timeout_secs: None,
             reasoning_effort: None,
             origin_client: None,
-            client_identifier: None,
-            deployment_id: None,
-            user_id: None,
-            client_version: None,
             attribution_callback: None,
             bearer_resolver: None,
             supports_backend_search: false,
@@ -2147,40 +1976,6 @@ mod tests {
     }
 
     #[test]
-    fn extract_should_retry_true() {
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert("x-should-retry", "true".parse().unwrap());
-        assert_eq!(extract_should_retry(&headers), Some(true));
-    }
-
-    #[test]
-    fn extract_should_retry_true_case_insensitive() {
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert("x-should-retry", "TRUE".parse().unwrap());
-        assert_eq!(extract_should_retry(&headers), Some(true));
-    }
-
-    #[test]
-    fn extract_should_retry_false() {
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert("x-should-retry", "false".parse().unwrap());
-        assert_eq!(extract_should_retry(&headers), Some(false));
-    }
-
-    #[test]
-    fn extract_should_retry_unknown_value_is_none() {
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert("x-should-retry", "banana".parse().unwrap());
-        assert_eq!(extract_should_retry(&headers), None);
-    }
-
-    #[test]
-    fn extract_should_retry_absent_is_none() {
-        let headers = reqwest::header::HeaderMap::new();
-        assert_eq!(extract_should_retry(&headers), None);
-    }
-
-    #[test]
     fn new_with_minimal_config_succeeds() {
         let client = SamplingClient::new(minimal_config()).expect("client should construct");
         assert_eq!(client.api_backend(), ApiBackend::ChatCompletions);
@@ -2286,8 +2081,8 @@ mod tests {
             version: None,
         };
         let ua = user_agent_string_for(&origin);
-        // No slash between product and the grok-shell agent product.
-        assert!(ua.starts_with("my-client grok-shell/"));
+        // No slash between product and the kigi agent product.
+        assert!(ua.starts_with("my-client kigi/"));
     }
 
     #[test]

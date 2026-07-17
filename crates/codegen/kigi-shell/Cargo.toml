@@ -147,7 +147,6 @@ kigi-auth = { workspace = true, features = ["middleware"] }
 kigi-log = { workspace = true }
 kigi-http = { workspace = true }
 kigi-models = { workspace = true }
-prod-mc-cli-chat-proxy-types = { path = "../../../prod/mc/cli-chat-proxy-types" }
 flate2 = { workspace = true }
 fs2 = { workspace = true }
 zstd = { workspace = true }

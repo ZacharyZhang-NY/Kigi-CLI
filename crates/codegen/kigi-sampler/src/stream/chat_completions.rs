@@ -128,7 +128,16 @@ pub fn stream_chat_completions<'a>(
                 first_chunk_seen = true;
             }
 
-            if let Some(u) = chunk.usage.clone() {
+            // Kimi/Moonshot deviation: usage may ride inside a choice instead
+            // of (or in addition to) the chunk's top-level `usage`. Same
+            // fallback as kimi-cli's `extract_usage_from_chunk`
+            // (packages/kosong/src/kosong/chat_provider/kimi.py:522-533):
+            // top-level wins, else the first choice carrying one.
+            let chunk_usage = chunk
+                .usage
+                .clone()
+                .or_else(|| chunk.choices.iter().find_map(|c| c.usage.clone()));
+            if let Some(u) = chunk_usage {
                 // Wire cost is cumulative for the response, so last-write-wins.
                 // Never clobber a known cost with missing/unreported.
                 let chunk_cost = kigi_sampling_types::reported_cost_ticks(u.cost_in_usd_ticks);
@@ -247,10 +256,27 @@ pub fn stream_chat_completions<'a>(
         // ── Build the final response ─────────────────────────────────
         let tool_calls: Vec<ToolCall> = tool_call_acc
             .into_values()
-            .map(|(id, name, arguments)| ToolCall {
-                id: std::sync::Arc::<str>::from(id),
-                name,
-                arguments: std::sync::Arc::<str>::from(arguments),
+            .map(|(id, name, arguments)| {
+                // Kimi/Moonshot deviation: tool-call deltas may omit `id`.
+                // Synthesize one so the tool-result round-trip stays keyed,
+                // exactly like kimi-cli (`id=tool_call.id or str(uuid.uuid4())`,
+                // packages/kosong/src/kosong/chat_provider/kimi.py:505).
+                let id = if id.is_empty() {
+                    let synthesized = uuid::Uuid::new_v4().to_string();
+                    tracing::debug!(
+                        tool_name = %name,
+                        synthesized_id = %synthesized,
+                        "tool-call delta carried no id; synthesized one"
+                    );
+                    synthesized
+                } else {
+                    id
+                };
+                ToolCall {
+                    id: std::sync::Arc::<str>::from(id),
+                    name,
+                    arguments: std::sync::Arc::<str>::from(arguments),
+                }
             })
             .collect();
 
@@ -329,6 +355,7 @@ mod tests {
                     index: i as u32,
                     delta,
                     finish_reason: None,
+                    usage: None,
                 })
                 .collect(),
             usage: None,
@@ -664,6 +691,7 @@ mod tests {
             prompt_tokens: 100,
             completion_tokens: 50,
             total_tokens: 150,
+            cached_tokens: None,
             prompt_tokens_details: None,
             completion_tokens_details: None,
             cost_in_usd_ticks: None,
@@ -704,6 +732,7 @@ mod tests {
                 prompt_tokens: 10,
                 completion_tokens: 5,
                 total_tokens: 15,
+                cached_tokens: None,
                 prompt_tokens_details: None,
                 completion_tokens_details: None,
                 cost_in_usd_ticks: wire,
@@ -737,6 +766,7 @@ mod tests {
             prompt_tokens: 10,
             completion_tokens: 5,
             total_tokens: 15,
+            cached_tokens: None,
             prompt_tokens_details: None,
             completion_tokens_details: None,
             cost_in_usd_ticks: Some(99),
@@ -746,6 +776,7 @@ mod tests {
             prompt_tokens: 12,
             completion_tokens: 6,
             total_tokens: 18,
+            cached_tokens: None,
             prompt_tokens_details: None,
             completion_tokens_details: None,
             cost_in_usd_ticks: Some(0),

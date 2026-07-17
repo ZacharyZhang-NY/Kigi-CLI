@@ -3,7 +3,7 @@
 //! the MCP auto-restart wiring (`SessionRestartActions`).
 #![allow(clippy::items_after_test_module)]
 use super::*;
-use crate::remote::DEFAULT_CONTEXT_WINDOW;
+use crate::agent::models_fetch::DEFAULT_CONTEXT_WINDOW;
 /// Partition CLI `--allow` rules under the pin: blanket catch-all allows
 /// (`Allow(Any)` `*` / `**`, plus bare/match-all Bash/MCP/WebFetch grants — see
 /// `resolution::is_catchall_allow`) substitute for the blocked `--yolo`, so drop them when
@@ -123,10 +123,7 @@ pub(crate) async fn spawn_session_actor(
     codebase_indexes: std::sync::Arc<parking_lot::Mutex<CodebaseIndexManager>>,
     code_nav_enabled: bool,
     fs_watch_caps: fs_watch::FsWatchCapabilities,
-    feedback_proxy_url: Option<String>,
-    feedback_user_token: Option<String>,
-    feedback_alpha_test_key: Option<String>,
-    deployment_key: Option<String>,
+    feedback_base_url: Option<String>,
     client_terminal_capable: bool,
     client_fs_capable: bool,
     gateway_enabled: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -141,7 +138,6 @@ pub(crate) async fn spawn_session_actor(
     persisted_goal_mode: Option<crate::session::goal_tracker::GoalOrchestration>,
     persisted_announcement_state: Option<crate::session::announcement_state::AnnouncementState>,
     memory_config: Option<crate::config::MemoryConfig>,
-    loc_tracking_enabled: bool,
     feedback_flags: crate::session::feedback_manager::FeedbackFlags,
     managed_mcp_handle: crate::session::managed_mcp::ManagedMcpStateHandle,
     managed_mcp_expires_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -879,36 +875,30 @@ pub(crate) async fn spawn_session_actor(
     }
     persist_chat_history_jsonl_sync(&session_info, &conversation);
     chat_state_handle.replace_conversation(conversation);
-    let feedback_client = feedback_proxy_url.map(|base_url| {
-        let mut client =
-            crate::agent::feedback_client::FeedbackClient::new(base_url, feedback_user_token)
-                .with_alpha_test_key(feedback_alpha_test_key)
-                .with_deployment_key(deployment_key);
-        if let Some(am) = auth_manager.as_ref() {
-            client = client.with_auth_manager(am.clone());
-        }
-        client
-    });
+    let feedback_client = match (feedback_base_url, auth_manager.as_ref()) {
+        (Some(base_url), Some(am)) => Some(
+            crate::agent::feedback_client::FeedbackClient::new(base_url, am.clone())
+                .with_session_id(session_info.id.0.to_string()),
+        ),
+        _ => None,
+    };
     let has_feedback_client = feedback_client.is_some();
     tracing::info!(
         session_id = % session_info.id.0, has_feedback_client = has_feedback_client,
         "Creating feedback manager"
     );
     let feedback_client_type = match client_type {
-        ClientType::GrokTUI => prod_mc_cli_chat_proxy_types::feedback_types::ClientType::Tui,
-        ClientType::GrokWeb => prod_mc_cli_chat_proxy_types::feedback_types::ClientType::Web,
-        ClientType::Nebula => prod_mc_cli_chat_proxy_types::feedback_types::ClientType::Nebula,
-        ClientType::Extension => {
-            prod_mc_cli_chat_proxy_types::feedback_types::ClientType::Extension
-        }
-        ClientType::Generic => prod_mc_cli_chat_proxy_types::feedback_types::ClientType::Agent,
-        ClientType::Desktop => prod_mc_cli_chat_proxy_types::feedback_types::ClientType::Desktop,
-        ClientType::GrokPager => prod_mc_cli_chat_proxy_types::feedback_types::ClientType::Tui,
+        ClientType::GrokTUI => crate::session::feedback_types::ClientType::Tui,
+        ClientType::GrokWeb => crate::session::feedback_types::ClientType::Web,
+        ClientType::Nebula => crate::session::feedback_types::ClientType::Nebula,
+        ClientType::Extension => crate::session::feedback_types::ClientType::Extension,
+        ClientType::Generic => crate::session::feedback_types::ClientType::Agent,
+        ClientType::Desktop => crate::session::feedback_types::ClientType::Desktop,
+        ClientType::GrokPager => crate::session::feedback_types::ClientType::Tui,
     };
     let feedback_config = FeedbackManagerConfig {
         feedback_enabled: feedback_flags.enabled,
         client_type: feedback_client_type,
-        loc_tracking_enabled,
         ..Default::default()
     };
     let feedback_manager = Arc::new(FeedbackManager::new(
@@ -930,11 +920,6 @@ pub(crate) async fn spawn_session_actor(
     }
     signals_handle.set_primary_model(&primary_model_id);
     signals_handle.set_tracing_config(inference_idle_timeout_secs);
-    let sync_loop_cancel = if has_feedback_client {
-        Some(tokio_util::sync::CancellationToken::new())
-    } else {
-        None
-    };
     let force_compact = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let resolved_workspace_root = kigi_workspace::session::git::find_git_root_from_path(
         std::path::Path::new(&session_info.cwd),
@@ -1141,7 +1126,6 @@ pub(crate) async fn spawn_session_actor(
         client_identifier: session_client_identifier.clone(),
         origin_client: origin_client.clone(),
         feedback_manager: feedback_manager.clone(),
-        sync_loop_cancel: sync_loop_cancel.clone(),
         agent: std::cell::RefCell::new(agent),
         last_reported_branch: Arc::new(Mutex::new(None)),
         git_head_enabled: fs_watch_caps.git_head,
@@ -1375,18 +1359,6 @@ pub(crate) async fn spawn_session_actor(
             }
         });
     }
-    if let Some(cancel) = sync_loop_cancel {
-        tracing::info!(session_id = % session_info.id.0, "Spawning feedback sync loop");
-        let fm = feedback_manager.clone();
-        tokio::spawn(async move {
-            fm.run_sync_loop(cancel).await;
-        });
-    } else {
-        tracing::debug!(
-            session_id = % session_info.id.0,
-            "No feedback client available, skipping sync loop"
-        );
-    }
     {
         use agent_client_protocol::Client as _;
         use kigi_tools::implementations::grok_build::ask_user_question::{
@@ -1600,10 +1572,7 @@ pub(crate) async fn spawn_session_on_thread(
     codebase_indexes: std::sync::Arc<parking_lot::Mutex<CodebaseIndexManager>>,
     code_nav_enabled: bool,
     fs_watch_caps: fs_watch::FsWatchCapabilities,
-    feedback_proxy_url: Option<String>,
-    feedback_user_token: Option<String>,
-    feedback_alpha_test_key: Option<String>,
-    deployment_key: Option<String>,
+    feedback_base_url: Option<String>,
     client_terminal_capable: bool,
     client_fs_capable: bool,
     gateway_enabled: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -1618,7 +1587,6 @@ pub(crate) async fn spawn_session_on_thread(
     persisted_goal_mode: Option<crate::session::goal_tracker::GoalOrchestration>,
     persisted_announcement_state: Option<crate::session::announcement_state::AnnouncementState>,
     memory_config: Option<crate::config::MemoryConfig>,
-    loc_tracking_enabled: bool,
     feedback_flags: crate::session::feedback_manager::FeedbackFlags,
     managed_mcp_handle: crate::session::managed_mcp::ManagedMcpStateHandle,
     managed_mcp_expires_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -1751,10 +1719,7 @@ pub(crate) async fn spawn_session_on_thread(
                     codebase_indexes,
                     code_nav_enabled,
                     fs_watch_caps,
-                    feedback_proxy_url,
-                    feedback_user_token,
-                    feedback_alpha_test_key,
-                    deployment_key,
+                    feedback_base_url,
                     client_terminal_capable,
                     client_fs_capable,
                     gateway_enabled,
@@ -1769,7 +1734,6 @@ pub(crate) async fn spawn_session_on_thread(
                     persisted_goal_mode,
                     persisted_announcement_state,
                     memory_config,
-                    loc_tracking_enabled,
                     feedback_flags,
                     managed_mcp_handle,
                     managed_mcp_expires_at,

@@ -134,7 +134,7 @@ pub(super) fn build_todo_gate_reminder(pending: &[&str], unbacked_in_progress: &
 /// (which is disabled). Extracted from `spawn_session_actor` so the
 /// precedence rules are unit-testable. Named `resolve_*` to match the
 /// sibling precedence helpers in `crate::util::config`
-/// (`resolve_zdr_access_enabled`, `resolve_restore_code`, …).
+/// (`resolve_restore_code`, …).
 pub(crate) fn resolve_reminder_policy(
     remote: Option<&crate::util::config::RemoteSettings>,
     todo_gate: bool,

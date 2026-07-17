@@ -1,4 +1,4 @@
-//! kigi-sampler - Actor-based sampling layer for xAI grok.
+//! kigi-sampler - Actor-based sampling layer for the Kimi inference APIs.
 //!
 //! This crate extracts the HTTP streaming + retry logic out of
 //! `kigi-shell`'s session actor into a standalone, reusable
@@ -24,6 +24,7 @@ pub mod config;
 pub mod doom_loop;
 pub mod events;
 pub mod handle;
+mod kimi_compat;
 pub mod metrics;
 pub mod retry;
 pub mod sampling_log;

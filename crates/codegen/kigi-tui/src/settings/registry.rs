@@ -38,7 +38,6 @@ pub enum SettingCategory {
     Mouse,
     Editor,
     Agent,
-    Privacy,
     Models,
     Session,
     Advanced,
@@ -51,7 +50,6 @@ impl SettingCategory {
         Self::Mouse,
         Self::Editor,
         Self::Agent,
-        Self::Privacy,
         Self::Models,
         Self::Session,
         Self::Advanced,
@@ -64,7 +62,6 @@ impl SettingCategory {
             Self::Mouse => "Mouse",
             Self::Editor => "Editor & Input",
             Self::Agent => "Agent & Approval",
-            Self::Privacy => "Privacy",
             Self::Models => "Models",
             Self::Session => "Session",
             Self::Advanced => "Advanced",
@@ -247,10 +244,6 @@ pub struct PagerLocalSnapshot {
     /// Cloned into the snapshot so the modal's validator/resolver is
     /// self-contained (the modal outlives the borrow on `app.agents`).
     pub available_models: Vec<(String, acp::ModelId)>,
-    /// Whether the user has opted OUT of coding data sharing.
-    /// Lives in auth metadata (no `UiConfig` field). Inverted mapping:
-    /// `opt_out == false` → canonical "opt-in".
-    pub coding_data_sharing_opt_out: bool,
     /// Whether plan mode is active. Uses effective state
     /// (`pending.unwrap_or(active)`) so rapid toggles don't double-send.
     /// Refreshed on all mutation paths including ACP `CurrentModeUpdate`.
@@ -285,7 +278,6 @@ impl Default for PagerLocalSnapshot {
             auto_mode: false,
             current_model_name: None,
             available_models: Vec::new(),
-            coding_data_sharing_opt_out: false,
             plan_mode_active: false,
             show_tips: None,
             auto_update: None,
@@ -602,12 +594,6 @@ pub fn current_value_for(
         )),
         // max_thoughts_width: `u16` widened to `i64`.
         "max_thoughts_width" => Some(SettingValue::Int(ui.max_thoughts_width as i64)),
-        // coding_data_sharing: inverts the `_opt_out` bool.
-        "coding_data_sharing" => Some(SettingValue::Enum(if pager.coding_data_sharing_opt_out {
-            "opt-out"
-        } else {
-            "opt-in"
-        })),
         // plan_mode: canonical via `PlanModeKind::from_bool().as_canonical()`.
         "plan_mode" => Some(SettingValue::Enum(
             crate::app::actions::PlanModeKind::from_bool(pager.plan_mode_active).as_canonical(),
@@ -814,17 +800,6 @@ mod tests {
                     assert_eq!(
                         *default, ui.max_thoughts_width as i64,
                         "max_thoughts_width default drifts from UiConfig::default()",
-                    );
-                }
-                // coding_data_sharing: no UiConfig field; default pinned
-                // against auth metadata (opt_out=false → "opt-in").
-                ("coding_data_sharing", SettingKind::Enum { default, .. }) => {
-                    let expected = "opt-in";
-                    assert_eq!(
-                        *default, expected,
-                        "coding_data_sharing registry default must be 'opt-in' — \
-                         the on-disk source of truth is `AuthEntry::coding_data_retention_opt_out: \
-                         bool` (defaults to `false`, i.e. user has NOT opted out)",
                     );
                 }
                 // CLI batch: fields live on CliConfig, not UiConfig.

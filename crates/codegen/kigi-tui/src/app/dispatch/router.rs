@@ -3,7 +3,6 @@ use super::auth::{
     dispatch_cancel_login, dispatch_login, dispatch_logout, dispatch_submit_auth_code,
     dispatch_switch_account,
 };
-use super::billing::dispatch_open_supergrok_url;
 use super::ctx::{
     active_agent_session_id, get_active_agent_mut, navigate_clearing_selection,
     sync_sleep_inhibitor, with_active_agent, with_scrollback,
@@ -93,10 +92,9 @@ use super::settings::ui::{
     dispatch_toggle_vim_mode,
 };
 use super::status::{
-    dispatch_copy_session_id, dispatch_open_gboom, dispatch_share_session,
-    dispatch_show_context_info, dispatch_show_privacy_info, dispatch_show_queue,
+    dispatch_copy_session_id, dispatch_open_gboom, dispatch_show_context_info, dispatch_show_queue,
     dispatch_show_release_notes, dispatch_show_session_info, dispatch_show_tasks,
-    dispatch_show_usage, set_coding_data_sharing,
+    dispatch_show_usage,
 };
 use super::task_result::{dispatch_task_result, unregister_all_active_sessions};
 use super::transcript::{
@@ -551,23 +549,7 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
             if group_toggled {
                 return vec![];
             }
-            let mut credit_card: Option<String> = None;
-            with_scrollback(app, |s| {
-                if let Some(idx) = s.selected()
-                    && let Some(entry) = s.entry(idx)
-                    && let crate::scrollback::block::RenderBlock::CreditLimit(ref blk) = entry.block
-                {
-                    credit_card = Some(blk.url.clone());
-                }
-            });
-            if let Some(url) = credit_card {
-                crate::app::link_opener::open_url_if_safe(
-                    &url,
-                    crate::terminal::hyperlinks::SchemeFilter::Standard,
-                );
-            } else {
-                dispatch_open_block_viewer(app);
-            }
+            dispatch_open_block_viewer(app);
             vec![]
         }
         Action::OpenExtensionsModal { tab } => {
@@ -789,7 +771,6 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
             vec![Effect::FetchCatalogEntry { kind, name }]
         }
         Action::CycleMode => dispatch_cycle_mode(app),
-        Action::ShareSession => dispatch_share_session(app),
         Action::ShowSessionInfo => dispatch_show_session_info(app),
         Action::ShowReleaseNotes { title, content } => {
             dispatch_show_release_notes(app, title, content)
@@ -809,8 +790,6 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
         Action::SaveRememberNoteFromModal => dispatch_save_remember_note_from_modal(app),
         Action::SendBtw(question) => dispatch_send_btw(app, question),
         Action::SendRecap { auto } => dispatch_send_recap(app, auto),
-        Action::ShowPrivacyInfo => dispatch_show_privacy_info(app),
-        Action::SetCodingDataSharing { opted_in } => set_coding_data_sharing(app, opted_in),
         Action::ToggleYolo => dispatch_toggle_yolo(app),
         Action::ToggleMultiline => dispatch_toggle_multiline(app),
         Action::ToggleCompactMode => dispatch_toggle_compact_mode(app),
@@ -873,8 +852,6 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
         Action::PermissionCancel => dispatch_permission_cancel(app),
         Action::Logout => dispatch_logout(app),
         Action::SwitchAccount => dispatch_switch_account(app),
-        Action::CheckSubscription => vec![Effect::CheckSubscription { verify: None }],
-        Action::OpenSupergrokUrl => dispatch_open_supergrok_url(app),
         Action::OpenUrl(url) => {
             use crate::terminal::hyperlinks::SchemeFilter;
             if url.starts_with("file://") {
@@ -894,7 +871,7 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
         }
         Action::OpenManagedConnectors => {
             use crate::terminal::hyperlinks::SchemeFilter;
-            let url = crate::views::mcps_modal::managed_connectors_url(app.team_id.as_deref());
+            let url = crate::views::mcps_modal::managed_connectors_url(None);
             crate::app::link_opener::open_url_if_safe(&url, SchemeFilter::Standard);
             vec![]
         }

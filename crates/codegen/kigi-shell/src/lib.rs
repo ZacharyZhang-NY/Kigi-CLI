@@ -28,7 +28,6 @@ pub mod managed_config;
 pub mod mcp_doctor;
 pub use kigi_models as models;
 pub mod plugin;
-pub mod remote;
 pub mod sampling;
 pub mod session;
 pub mod terminal;

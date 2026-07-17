@@ -166,7 +166,7 @@ async fn actor_with_proxy(
 
     let cfg = crate::agent::config::Config {
         endpoints: crate::agent::config::EndpointsConfig {
-            cli_chat_proxy_base_url: Some(proxy_base.to_string()),
+            coding_api_base_url: Some(proxy_base.to_string()),
             ..Default::default()
         },
         ..Default::default()

@@ -691,7 +691,6 @@ impl SessionActor {
             crate::agent::config::finalize_image_describe_sampler_config(
                 resolved_describe,
                 &active_session_config,
-                self.client_identifier.clone(),
                 Some(self.max_retries),
             );
         let client = kigi_sampler::SamplingClient::new(sampler_config).map_err(|e| {

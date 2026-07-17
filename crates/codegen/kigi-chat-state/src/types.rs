@@ -123,8 +123,6 @@ pub struct Credentials {
     pub auth_type: AuthType,
     /// Optional extra auth material forwarded with requests when present.
     pub alpha_test_key: Option<String>,
-    /// Client version string.
-    pub client_version: Option<String>,
 }
 
 /// The messages captured during a single conversation turn.

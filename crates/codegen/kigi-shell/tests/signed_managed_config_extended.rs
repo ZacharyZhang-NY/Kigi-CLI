@@ -38,7 +38,7 @@ async fn sync_fail_closed_policy(home: &std::path::Path, kp: &ring::signature::E
 /// provisioned key with no config row.
 fn signed_dk_empty_body(kp: &ring::signature::Ed25519KeyPair, deployment_id: &str) -> String {
     let payload = SignedPayload {
-        version: prod_mc_cli_chat_proxy_types::SIGNED_PAYLOAD_VERSION,
+        version: kigi_config::signed_policy::SIGNED_PAYLOAD_VERSION,
         deployment_id: Some(deployment_id.to_owned()),
         team_id: None,
         managed_config: None,

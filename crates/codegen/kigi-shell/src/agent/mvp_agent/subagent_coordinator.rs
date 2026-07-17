@@ -402,7 +402,7 @@ impl MvpAgent {
             client_hooks: Default::default(),
             sampling_config: self.sampling_config.borrow().clone(),
             managed_mcp_proxy_base_url: parent_managed_mcp_proxy_base_url
-                .unwrap_or_else(|| self.cli_chat_proxy_base_url()),
+                .unwrap_or_else(|| self.coding_api_base_url()),
             alpha_test_key: self.alpha_test_key(),
             auth_method_id: self
                 .auth_method_id

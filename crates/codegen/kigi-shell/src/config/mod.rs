@@ -1094,11 +1094,11 @@ fn apply_requirements_inner(
         config.endpoints.xai_api_base_url = val.to_owned();
         push("endpoints.xai_api_base_url", val.to_owned());
     }
-    if let Some(val) = req_str(req, "endpoints", "cli_chat_proxy_base_url")
-        && config.endpoints.cli_chat_proxy_base_url.as_deref() != Some(val)
+    if let Some(val) = req_str(req, "endpoints", "coding_api_base_url")
+        && config.endpoints.coding_api_base_url.as_deref() != Some(val)
     {
-        config.endpoints.cli_chat_proxy_base_url = Some(val.to_owned());
-        push("endpoints.cli_chat_proxy_base_url", val.to_owned());
+        config.endpoints.coding_api_base_url = Some(val.to_owned());
+        push("endpoints.coding_api_base_url", val.to_owned());
     }
     enforce_str!(
         "endpoints",

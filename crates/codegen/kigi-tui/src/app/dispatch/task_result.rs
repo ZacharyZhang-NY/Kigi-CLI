@@ -2,11 +2,6 @@
 use super::auth::{
     ensure_login_method, handle_auth_complete, handle_auth_url_ready, handle_mcp_auth_trigger_done,
 };
-use super::billing::{
-    PAYWALL_AUTO_CHECK_TIMEOUT, apply_auto_topup, handle_billing_fetched,
-    handle_check_subscription_complete, handle_credit_limit_recheck_complete,
-    handle_gate_refreshed, handle_gate_verify_timeout,
-};
 use super::ctx::{find_agent_by_session_id, get_active_agent_mut};
 use super::notes::{handle_btw_response, handle_memory_note_saved};
 use super::prompt::{
@@ -34,10 +29,7 @@ use super::session::load::{
     handle_session_search_debounce_expired, remove_session_from_pickers,
 };
 use super::settings::ui::apply_setting_rollback;
-use super::status::{
-    handle_coding_data_sharing_failed, handle_coding_data_sharing_updated,
-    handle_context_info_complete, scrub_error_for_toast,
-};
+use super::status::{handle_context_info_complete, handle_usage_fetched, scrub_error_for_toast};
 use super::transcript::{
     handle_hooks_list_loaded, handle_mcp_toggle_done, handle_plugins_list_loaded,
     handle_skills_toggle_done,
@@ -224,33 +216,9 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
         TaskResult::ForkSessionFailed { agent_id, error } => {
             handle_fork_session_failed(app, agent_id, error)
         }
-        TaskResult::BillingFetched {
-            agent_id,
-            balance,
-            silent,
-            subscription_tier,
-            autotopup,
-        } => handle_billing_fetched(app, agent_id, balance, silent, subscription_tier, autotopup),
-        TaskResult::BillingError {
-            agent_id,
-            error,
-            silent,
-        } => {
-            if !silent && let Some(agent) = app.agents.get_mut(&agent_id) {
-                agent.scrollback.push_block(RenderBlock::System(
-                    crate::scrollback::blocks::SystemMessageBlock::new(format!(
-                        "Billing error: {error}"
-                    )),
-                ));
-            }
-            vec![]
+        TaskResult::UsageFetched { agent_id, result } => {
+            handle_usage_fetched(app, agent_id, result)
         }
-        TaskResult::AppBillingFetched { balance, autotopup } => {
-            app.credit_balance = balance;
-            apply_auto_topup(&mut app.auto_topup, &autotopup);
-            vec![]
-        }
-        TaskResult::GateRefreshed { settings } => handle_gate_refreshed(app, settings),
         TaskResult::SessionLoaded {
             agent_id,
             session_id,
@@ -287,10 +255,9 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
         } => handle_session_load_failed(app, agent_id, session_id, error),
         TaskResult::SessionListLoaded {
             sessions,
-            partial,
             seq,
             query,
-        } => handle_session_list_loaded(app, sessions, partial, seq, query),
+        } => handle_session_list_loaded(app, sessions, seq, query),
         TaskResult::ForeignSessionsScanned { entries, seq } => {
             handle_foreign_sessions_scanned(app, entries, seq)
         }
@@ -606,29 +573,6 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
         TaskResult::SkillsToggleDone { agent_id, result } => {
             handle_skills_toggle_done(app, agent_id, result)
         }
-        TaskResult::ShareSessionComplete {
-            agent_id,
-            share_url,
-        } => {
-            if let Some(agent) = app.agents.get_mut(&agent_id) {
-                agent
-                    .scrollback
-                    .push_block(crate::scrollback::block::RenderBlock::system(format!(
-                        "Session shared: {share_url}"
-                    )));
-            }
-            vec![]
-        }
-        TaskResult::ShareSessionFailed { agent_id, error } => {
-            if let Some(agent) = app.agents.get_mut(&agent_id) {
-                agent
-                    .scrollback
-                    .push_block(crate::scrollback::block::RenderBlock::system(format!(
-                        "Couldn't share session: {error}"
-                    )));
-            }
-            vec![]
-        }
         TaskResult::SessionAgentNameResolved {
             agent_id,
             agent_name,
@@ -668,14 +612,6 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
             }
             vec![]
         }
-        TaskResult::CodingDataSharingUpdated { agent_id, opted_in } => {
-            handle_coding_data_sharing_updated(app, agent_id, opted_in)
-        }
-        TaskResult::CodingDataSharingFailed {
-            agent_id,
-            error,
-            rollback_to_opted_in,
-        } => handle_coding_data_sharing_failed(app, agent_id, error, rollback_to_opted_in),
         TaskResult::RenameSessionComplete { agent_id, title } => {
             if let Some(agent) = app.agents.get_mut(&agent_id) {
                 let safe = crate::views::session_title::sanitize_display_text(&title);
@@ -873,32 +809,8 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
             app.auth_clipboard_copied = false;
             vec![]
         }
-        TaskResult::PaywallCheckTick => {
-            let timed_out = app
-                .paywall_check_started
-                .is_some_and(|t| t.elapsed() >= PAYWALL_AUTO_CHECK_TIMEOUT);
-            if !app.has_access() && !timed_out {
-                vec![
-                    Effect::CheckSubscription { verify: None },
-                    Effect::SchedulePaywallCheck,
-                ]
-            } else {
-                vec![]
-            }
-        }
-        TaskResult::CheckSubscriptionComplete { verify, meta } => {
-            handle_check_subscription_complete(app, verify, meta)
-        }
-        TaskResult::GateVerifyTimeout { generation } => handle_gate_verify_timeout(app, generation),
-        TaskResult::CreditLimitRecheckComplete { agent_id, meta } => {
-            handle_credit_limit_recheck_complete(app, agent_id, meta)
-        }
         TaskResult::LogoutComplete => {
             app.auth_state = AuthState::Pending { error: None };
-            app.access_gate_shown_logged = false;
-            app.gate = None;
-            app.pending_gate_verification = None;
-            app.last_subscription_check_at = None;
             app.login_method_id = None;
             ensure_login_method(app);
             app.auth_clipboard_copied = false;

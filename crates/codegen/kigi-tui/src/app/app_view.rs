@@ -386,28 +386,6 @@ fn parse_esc_ttl(raw: Option<String>) -> Duration {
         .map(|ms| Duration::from_millis(ms.min(ESC_DOUBLE_PRESS_TEST_MS)))
         .unwrap_or(PendingAction::ESC_DOUBLE_PRESS_TTL)
 }
-/// Slash commands unavailable on the free and X Basic subscription tiers.
-///
-/// To restrict another command for these tiers, add its canonical name
-/// (no leading `/`) here — matching covers aliases automatically via
-/// [`crate::slash::registry::CommandRegistry::set_restricted_commands`].
-///
-/// Current set:
-/// - `usage` — coding credit / billing UI (alias: `/cost`)
-/// - `imagine` — image generation entry point
-/// - `imagine-video` — video generation entry point
-pub(crate) const TIER_RESTRICTED_COMMANDS: &[&str] = &["usage", "imagine", "imagine-video"];
-/// Whether a subscription-tier display name is a tier with restricted
-/// commands: the free tier (no subscription ⇒ `None`, or an explicit
-/// "Free") and X Basic (CCP display name "X Basic"; JWT claim fallback
-/// "x_basic"). Everything else — paid tiers and unknown future names —
-/// is unrestricted (fail-open).
-///
-/// Tier gating was an xAI concept; the Kimi Code subscription has no
-/// client-visible tier, so nothing is ever restricted.
-fn is_restricted_tier(_tier: Option<&str>) -> bool {
-    false
-}
 /// True for API-key labels from shell/CCP: `"ApiKey"`, `"API Key"`, `"api_key"`.
 pub(crate) fn is_api_key_label(s: &str) -> bool {
     s.trim().to_ascii_lowercase().replace([' ', '_', '-'], "") == "apikey"
@@ -519,19 +497,9 @@ pub struct AppView {
     pub tip: Option<String>,
     /// Whether to show the resolved model ID in /session-info output.
     pub show_resolved_model: bool,
-    /// Whether the `/share` slash command is available. Gated by
-    /// `RemoteSettings.sharing_enabled`; defaults to `false` when remote
-    /// settings are unavailable or the field is absent.
-    pub sharing_enabled: bool,
     /// Whether the `/usage` slash command is available. Hidden for team
     /// (`team_name.is_some()`) and API-key auth.
     pub usage_visible: bool,
-    /// Slash commands denied for the current subscription tier
-    /// ([`TIER_RESTRICTED_COMMANDS`] when the user is on the free / X Basic
-    /// tier, empty otherwise). Recomputed by [`Self::apply_tier_restrictions`]
-    /// and fanned out to every slash registry (welcome prompt, agents,
-    /// dashboard); deny wins over all other visibility gates.
-    pub tier_restricted_commands: Vec<String>,
     /// Whether the pager is connected via a leader (leader mode). The Agent
     /// Dashboard entry points (`/dashboard`, `Ctrl+\`, `grok dashboard`, the
     /// startup hook) are only meaningful when a leader is coordinating a
@@ -539,13 +507,6 @@ pub struct AppView {
     /// `event_loop::run` from `connection.leader_status_rx.is_some()`;
     /// defaults to `false` (non-leader, dashboard hidden).
     pub leader_mode: bool,
-    /// App-level credit balance used to show the usage warning on the
-    /// welcome screen before any agent session exists.
-    pub credit_balance: Option<crate::views::credit_bar::CreditBalance>,
-    /// App-level auto top-up rule paired with `credit_balance` for the warning.
-    pub auto_topup: Option<crate::views::credit_bar::AutoTopupInfo>,
-    /// Periodic billing poll requested (credits >= 99%).
-    pub billing_poll_wanted: bool,
     /// Leader-mode session roster (FleetView dashboard). Populated from
     /// `x.ai/sessions/list` polls and `x.ai/sessions/changed` broadcasts.
     /// Empty in non-leader mode, which naturally gates roster rendering.
@@ -667,9 +628,7 @@ pub struct AppView {
     /// Hit-test rect for the "show full URL" fallback link.
     pub welcome_auth_fallback_rect: Option<ratatui::layout::Rect>,
     /// Hit-test rect for the "[Refresh]" button on the paywall tier line.
-    pub welcome_refresh_rect: Option<ratatui::layout::Rect>,
     /// Hit-test rect for the gate URL link on the paywall CTA.
-    pub welcome_gate_url_rect: Option<ratatui::layout::Rect>,
     /// Hit-test rect for the clickable changelog info block (opens release notes).
     pub welcome_changelog_cta_rect: Option<ratatui::layout::Rect>,
     /// Show the raw auth URL with mouse capture disabled for manual copy.
@@ -833,16 +792,6 @@ pub struct AppView {
     pub auth_use_oauth: bool,
     /// Whether the last clipboard copy during auth succeeded.
     pub auth_clipboard_copied: bool,
-    /// Team principal UUID from auth (`None` for personal sessions).
-    pub team_id: Option<String>,
-    /// Team name from auth (displayed in the shortcuts bar).
-    pub team_name: Option<String>,
-    /// Whether the user's team has enterprise Zero Data Retention enabled.
-    pub is_zdr: bool,
-    /// Team role (e.g. "Admin", "Member", "Read Only") for access-control checks.
-    pub team_role: Option<String>,
-    /// Whether the user has opted out of coding data retention.
-    pub coding_data_retention_opt_out: bool,
     /// Persisted `[cli].show_tips` mirror. `None` = no override (default `true`).
     pub show_tips: Option<bool>,
     /// Persisted `[cli].auto_update` mirror. `None` = no override (default `true`).
@@ -851,31 +800,6 @@ pub struct AppView {
     /// from the effective TOML merge like `show_tips`. `None` = unset in TOML
     /// (default `true`); toggles write the user layer.
     pub ask_user_question_timeout_enabled: Option<bool>,
-    /// Whether ZDR users are allowed to use the product.
-    /// Server-controlled via RemoteSettings (remote settings). Default `false` (blocked) during beta.
-    pub zdr_access_enabled: bool,
-    /// When set, `/usage` shows a link to this URL instead of fetching billing
-    /// data from the backend. Server-controlled via RemoteSettings (remote settings
-    /// `grok_build_usage_redirect_url`, targeted at personal-team users).
-    /// `None` (default) fetches usage from the backend.
-    pub usage_billing_redirect_url: Option<String>,
-    pub access_gate_shown_logged: bool,
-    /// Access gate from `grok_build_access_gate`. `Some` = blocked.
-    pub gate: Option<kigi_shell::auth::GateInfo>,
-    /// User-friendly subscription tier name (e.g. "SuperGrok", "Free").
-    pub subscription_tier: Option<String>,
-    /// When the pager started auto-checking subscriptions (for 10-min timeout).
-    pub paywall_check_started: Option<std::time::Instant>,
-    /// Debounce stamp for watch/focus subscription checks (see
-    /// [`super::subscription`]).
-    pub last_subscription_check_at: Option<std::time::Instant>,
-    /// Server override (seconds) for the subscription-watch cadence.
-    pub subscription_watch_interval_secs: Option<u64>,
-    /// A stale-source gate held out of `gate` while a live check verifies
-    /// it (see [`super::subscription`]).
-    pub pending_gate_verification: Option<kigi_shell::auth::GateInfo>,
-    /// Generation stamp of the current gate verification.
-    pub gate_verify_gen: u64,
     /// Whether a leader reconnect is in progress (blocks prompt submission).
     pub reconnect_pending: bool,
     /// Structured startup warnings collected from the terminal diagnostics
@@ -923,17 +847,6 @@ pub struct AppView {
     pub(crate) keyboard_normalizer: KeyboardNormalizer,
 }
 impl AppView {
-    pub fn is_zdr_blocked(&self) -> bool {
-        self.is_zdr && !self.zdr_access_enabled
-    }
-    /// User is not gated (no gate from remote settings or subscription fallback).
-    pub fn has_access(&self) -> bool {
-        self.gate.is_none()
-    }
-    /// True when the user should not see the prompt (gate, subscription, or ZDR).
-    pub fn is_access_blocked(&self) -> bool {
-        !self.has_access() || self.is_zdr_blocked()
-    }
     /// Whether deferred session-startup actions may run: both auth AND folder
     /// trust must be resolved. Mirrors the auth gate at the session-creating
     /// startup sites; trust is gated AFTER auth so a pending trust question
@@ -941,33 +854,12 @@ impl AppView {
     pub fn session_startup_allowed(&self) -> bool {
         matches!(self.auth_state, AuthState::Done) && matches!(self.trust_state, TrustState::Done)
     }
-    /// Extract `GateInfo` from `RemoteSettings`.
-    pub fn gate_from_settings(
-        rs: &kigi_shell::util::config::RemoteSettings,
-    ) -> Option<kigi_shell::auth::GateInfo> {
-        let msg = rs.gate_message.as_ref()?;
-        if msg.is_empty() {
-            return None;
-        }
-        Some(kigi_shell::auth::GateInfo {
-            message: msg.clone(),
-            url: rs.gate_url.clone(),
-            label: rs.gate_label.clone(),
-        })
-    }
-    /// Apply typed auth metadata from the shell. The Kimi auth model carries
-    /// no team/tier/gate info; those fields only ever come from remote
-    /// settings now.
+    /// Apply typed auth metadata from the shell: auth mode (drives the
+    /// API-key badge and `/usage` visibility) and the resolved-model display
+    /// preference. The Kimi auth model carries no team/tier/gate info.
     pub fn apply_auth_meta(&mut self, meta: &kigi_shell::auth::AuthMeta) {
-        self.pending_gate_verification = None;
-        let was_gated = self.gate.is_some();
-        self.gate = None;
-        if was_gated {
-            self.paywall_check_started = None;
-        }
         self.is_api_key_auth = meta.auth_mode.as_deref().is_some_and(is_api_key_label);
         self.usage_visible = !self.is_api_key_auth;
-        self.apply_tier_restrictions();
         if let Some(show) = meta.show_resolved_model {
             self.show_resolved_model = show;
         }
@@ -1038,8 +930,6 @@ impl AppView {
             welcome_on_auth_url: false,
             welcome_on_changelog_cta: false,
             welcome_auth_fallback_rect: None,
-            welcome_refresh_rect: None,
-            welcome_gate_url_rect: None,
             welcome_changelog_cta_rect: None,
             auth_show_raw_url: false,
             auth_mouse_disabled: false,
@@ -1098,24 +988,9 @@ impl AppView {
             deferred_startup: Default::default(),
             auth_use_oauth: false,
             auth_clipboard_copied: false,
-            team_id: None,
-            team_name: None,
-            is_zdr: false,
-            team_role: None,
-            coding_data_retention_opt_out: false,
             show_tips: None,
             auto_update: None,
             ask_user_question_timeout_enabled: None,
-            zdr_access_enabled: false,
-            usage_billing_redirect_url: None,
-            access_gate_shown_logged: false,
-            gate: None,
-            subscription_tier: None,
-            paywall_check_started: None,
-            last_subscription_check_at: None,
-            subscription_watch_interval_secs: None,
-            pending_gate_verification: None,
-            gate_verify_gen: 0,
             reconnect_pending: false,
             startup_warnings: Vec::new(),
             is_api_key_auth: false,
@@ -1129,13 +1004,8 @@ impl AppView {
             welcome_doc_viewer: None,
             screen_mode: ScreenMode::Inline,
             show_resolved_model: true,
-            sharing_enabled: false,
             usage_visible: true,
-            tier_restricted_commands: Vec::new(),
             leader_mode: false,
-            credit_balance: None,
-            auto_topup: None,
-            billing_poll_wanted: false,
             leader_roster: Vec::new(),
             dashboard_local_sessions: Vec::new(),
             dashboard_sessions_loading: false,
@@ -1177,35 +1047,6 @@ impl AppView {
         if let Some(dashboard) = self.dashboard.as_mut() {
             dashboard.set_auto_mode_available(available);
         }
-    }
-    /// Recompute the tier-restricted slash commands from the current auth
-    /// state and sync the deny list into every slash surface (welcome
-    /// prompt, all agents, dashboard) so restricted commands hide/show in
-    /// lockstep.
-    ///
-    /// Called from [`Self::apply_auth_meta`] (startup / login) and from the
-    /// `x.ai/settings/update` handler when the subscription tier changes, so
-    /// a mid-session upgrade lifts the restrictions without a restart.
-    pub fn apply_tier_restrictions(&mut self) {
-        let restricted = self.team_name.is_none()
-            && !self.is_api_key_auth
-            && is_restricted_tier(self.subscription_tier.as_deref());
-        let names: Vec<String> = if restricted {
-            TIER_RESTRICTED_COMMANDS
-                .iter()
-                .map(|n| (*n).to_string())
-                .collect()
-        } else {
-            Vec::new()
-        };
-        for agent in self.agents.values_mut() {
-            agent.set_restricted_commands(&names);
-        }
-        self.welcome_prompt.set_restricted_commands(&names);
-        if let Some(dashboard) = self.dashboard.as_mut() {
-            dashboard.set_restricted_commands(&names);
-        }
-        self.tier_restricted_commands = names;
     }
     /// Session ID of the active agent, if one exists and has an established session.
     pub fn active_session_id(&self) -> Option<&str> {
@@ -1667,8 +1508,6 @@ impl AppView {
             );
             if is_mouse_action {}
         }
-        let zdr_blocked = self.is_zdr_blocked();
-        let has_access = self.has_access();
         let has_foreign_resume = self.foreign_resume_hint().is_some();
         let outcome = match self.active_view {
             ActiveView::Welcome => handle_welcome_input(
@@ -1684,27 +1523,20 @@ impl AppView {
                     new_worktree_dialog: &mut self.new_worktree_dialog,
                     menu_index: &mut self.welcome_menu_index,
                     menu_rects: &self.welcome_menu_rects,
-                    menu_count: if zdr_blocked {
-                        2
-                    } else {
-                        3 + if self.has_claude_import { 1 } else { 0 }
-                            + if self.welcome_show_changelog_action {
-                                1
-                            } else {
-                                0
-                            }
-                    },
+                    menu_count: 3
+                        + if self.has_claude_import { 1 } else { 0 }
+                        + if self.welcome_show_changelog_action {
+                            1
+                        } else {
+                            0
+                        },
                     prompt_rect: self.welcome_prompt_rect.as_ref(),
                     import_banner_rect: self.welcome_import_banner_rect.as_ref(),
                     auth_url_rect: self.welcome_auth_url_rect.as_ref(),
                     auth_fallback_rect: self.welcome_auth_fallback_rect.as_ref(),
-                    refresh_rect: self.welcome_refresh_rect.as_ref(),
-                    gate_url_rect: self.welcome_gate_url_rect.as_ref(),
                     changelog_cta_rect: self.welcome_changelog_cta_rect.as_ref(),
                     on_changelog_cta: &mut self.welcome_on_changelog_cta,
                     show_raw_url: &mut self.auth_show_raw_url,
-                    has_access,
-                    is_zdr_blocked: zdr_blocked,
                     sp_entries: &mut self.session_picker_entries,
                     sp_state: &mut self.session_picker_state,
                     sp_content_results: &self.session_picker_content_results,
@@ -2228,15 +2060,11 @@ struct WelcomeInputCtx<'a> {
     import_banner_rect: Option<&'a ratatui::layout::Rect>,
     auth_url_rect: Option<&'a ratatui::layout::Rect>,
     auth_fallback_rect: Option<&'a ratatui::layout::Rect>,
-    refresh_rect: Option<&'a ratatui::layout::Rect>,
-    gate_url_rect: Option<&'a ratatui::layout::Rect>,
     /// Hit-test rect for the clickable changelog info block (opens release notes).
     changelog_cta_rect: Option<&'a ratatui::layout::Rect>,
     /// Sticky hover flag for the changelog block (redraw on enter/leave).
     on_changelog_cta: &'a mut bool,
     show_raw_url: &'a mut bool,
-    has_access: bool,
-    is_zdr_blocked: bool,
     sp_entries: &'a mut Option<Vec<SessionPickerEntry>>,
     sp_state: &'a mut crate::views::picker::PickerState,
     sp_content_results: &'a Option<Vec<kigi_shell::extensions::session_search::SearchSessionHit>>,
@@ -2360,8 +2188,6 @@ fn handle_welcome_input(ev: &Event, ctx: &mut WelcomeInputCtx<'_>) -> InputOutco
         return InputOutcome::Unchanged;
     }
     if matches!(ctx.auth_state, AuthState::Done)
-        && ctx.has_access
-        && !ctx.is_zdr_blocked
         && matches!(ctx.trust_state, TrustState::Pending { .. })
     {
         if let Event::Key(key) = ev {
@@ -2603,22 +2429,6 @@ fn handle_welcome_input(ev: &Event, ctx: &mut WelcomeInputCtx<'_>) -> InputOutco
         if key.kind == KeyEventKind::Release {
             return InputOutcome::Unchanged;
         }
-        if ctx.is_zdr_blocked && matches!(ctx.auth_state, AuthState::Done) {
-            return handle_menu_shortcuts(
-                key,
-                ctx.menu_index,
-                &['l', 'q'],
-                dispatch_zdr_menu_action,
-            );
-        }
-        if !ctx.has_access && matches!(ctx.auth_state, AuthState::Done) {
-            return handle_menu_shortcuts(
-                key,
-                ctx.menu_index,
-                &['g', 'l', 'q'],
-                dispatch_access_gate_menu_action,
-            );
-        }
         if matches!(ctx.auth_state, AuthState::Done)
             && key!(Enter).matches(key)
             && key.modifiers.is_empty()
@@ -2760,9 +2570,6 @@ fn handle_welcome_input(ev: &Event, ctx: &mut WelcomeInputCtx<'_>) -> InputOutco
     if let Event::Paste(text) = ev {
         match ctx.auth_state {
             AuthState::Done => {
-                if !ctx.has_access || ctx.is_zdr_blocked {
-                    return InputOutcome::Unchanged;
-                }
                 return InputOutcome::ActionThenForward(Action::NewSession);
             }
             AuthState::Authenticating {
@@ -2792,12 +2599,6 @@ fn handle_welcome_input(ev: &Event, ctx: &mut WelcomeInputCtx<'_>) -> InputOutco
                         if matches!(ctx.auth_state, AuthState::Pending { .. }) {
                             return dispatch_pending_menu_action(i);
                         }
-                        if ctx.is_zdr_blocked {
-                            return dispatch_zdr_menu_action(i);
-                        }
-                        if !ctx.has_access {
-                            return dispatch_access_gate_menu_action(i);
-                        }
                         if ctx.has_claude_import
                             && i == 0
                             && mouse.column >= rect.x + rect.width.saturating_sub(4)
@@ -2812,16 +2613,6 @@ fn handle_welcome_input(ev: &Event, ctx: &mut WelcomeInputCtx<'_>) -> InputOutco
                             ctx.changelog_markdown.as_deref(),
                         );
                     }
-                }
-                if let Some(rect) = ctx.refresh_rect
-                    && rect.contains(ratatui::layout::Position::new(mouse.column, mouse.row))
-                {
-                    return InputOutcome::Action(Action::CheckSubscription);
-                }
-                if let Some(rect) = ctx.gate_url_rect
-                    && rect.contains(ratatui::layout::Position::new(mouse.column, mouse.row))
-                {
-                    return InputOutcome::Action(Action::OpenSupergrokUrl);
                 }
                 if let Some(rect) = ctx.changelog_cta_rect
                     && rect.contains(ratatui::layout::Position::new(mouse.column, mouse.row))
@@ -2901,32 +2692,6 @@ fn handle_welcome_input(ev: &Event, ctx: &mut WelcomeInputCtx<'_>) -> InputOutco
     InputOutcome::Unchanged
 }
 /// Handle Up/Down arrow key cycling through a menu of `count` items.
-fn is_quit_signal(key: &crossterm::event::KeyEvent) -> bool {
-    key!('c', CONTROL).matches(key) || key!('d', CONTROL).matches(key)
-}
-/// `shortcuts[i]` triggers `menu_dispatch(i)`.
-fn handle_menu_shortcuts(
-    key: &crossterm::event::KeyEvent,
-    menu_index: &mut Option<usize>,
-    shortcuts: &[char],
-    menu_dispatch: fn(usize) -> InputOutcome,
-) -> InputOutcome {
-    if is_quit_signal(key) {
-        return InputOutcome::Action(Action::Quit);
-    }
-    for (i, &ch) in shortcuts.iter().enumerate() {
-        if key.code == KeyCode::Char(ch) {
-            return menu_dispatch(i);
-        }
-    }
-    if key!(Enter).matches(key) {
-        return menu_dispatch(menu_index.unwrap_or(0));
-    }
-    if let Some(outcome) = handle_menu_nav(key, menu_index, shortcuts.len()) {
-        return outcome;
-    }
-    InputOutcome::Unchanged
-}
 fn handle_menu_nav(
     key: &crossterm::event::KeyEvent,
     index: &mut Option<usize>,
@@ -2956,25 +2721,6 @@ fn dispatch_pending_menu_action(index: usize) -> InputOutcome {
     match index {
         0 => InputOutcome::Action(Action::Login),
         1 => InputOutcome::Action(Action::Quit),
-        _ => InputOutcome::Unchanged,
-    }
-}
-/// Dispatch an action for a welcome menu item when ZDR-blocked.
-/// Menu layout: 0 = Switch account, 1 = Quit.
-fn dispatch_zdr_menu_action(index: usize) -> InputOutcome {
-    match index {
-        0 => InputOutcome::Action(Action::SwitchAccount),
-        1 => InputOutcome::Action(Action::Quit),
-        _ => InputOutcome::Unchanged,
-    }
-}
-/// Menu actions when user is access-gated: 0 = Subscribe CTA, 1 = Logout, 2 = Quit.
-/// "Refresh" (ctrl-r) is handled as a direct key shortcut, not a menu item.
-fn dispatch_access_gate_menu_action(index: usize) -> InputOutcome {
-    match index {
-        0 => InputOutcome::Action(Action::OpenSupergrokUrl),
-        1 => InputOutcome::Action(Action::Logout),
-        2 => InputOutcome::Action(Action::Quit),
         _ => InputOutcome::Unchanged,
     }
 }
@@ -3242,8 +2988,6 @@ impl AppView {
                 layout_cfg.eff_outer_vpad(compact),
             )
         };
-        let zdr_blocked_for_draw = self.is_zdr_blocked();
-        let has_access = self.has_access();
         let scroll_debug_panel = self.scroll_debug_panel();
         let dev_fps_rows = self.dev_fps_rows();
         let fps_overlay = self.fps_hud.overlay(dev_fps_rows);
@@ -3337,11 +3081,8 @@ impl AppView {
                             model_name: &model_name,
                             flags: &flags_vec,
                             selected: self.welcome_menu_index,
-                            team_name: self.team_name.as_deref(),
-                            has_access,
                             has_claude_import: self.has_claude_import,
                             mouse_pos: self.last_mouse_pos,
-                            is_zdr_blocked: zdr_blocked_for_draw,
                             session_picker: self.session_picker_entries.as_deref(),
                             session_picker_loading: self.session_picker_entries.is_none()
                                 && (self.session_picker_loading
@@ -3359,14 +3100,9 @@ impl AppView {
                                 .session_picker_entries_query
                                 .as_deref(),
                             welcome_tick: self.welcome_tick,
-                            gate: self.gate.as_ref(),
-                            subscription_tier: self.subscription_tier.as_deref(),
                             session_picker_grouped: self.session_picker_grouped,
                             session_picker_source_filter: self.session_picker_source_filter,
                             chat_mode: self.chat_mode,
-                            credit_balance: self.credit_balance.as_ref(),
-                            auto_topup: self.auto_topup.as_ref(),
-                            usage_visible: self.usage_visible,
                             is_api_key_auth: self.is_api_key_auth,
                             changelog_bullets: &self.changelog_bullets,
                             changelog_has_full_notes: self.changelog_markdown.is_some(),
@@ -3384,8 +3120,6 @@ impl AppView {
                         self.welcome_import_banner_rect = result.import_banner_rect;
                         self.welcome_auth_url_rect = result.auth_url_rect;
                         self.welcome_auth_fallback_rect = result.auth_fallback_rect;
-                        self.welcome_refresh_rect = result.refresh_rect;
-                        self.welcome_gate_url_rect = result.gate_url_rect;
                         self.welcome_changelog_cta_rect = result.changelog_cta_rect;
                         self.session_picker_state.hit_areas = result.session_picker_hit_areas;
                         if let Some(modal) = self.import_claude_modal.as_mut() {
@@ -3426,9 +3160,6 @@ impl AppView {
                                 compact,
                                 &theme,
                             );
-                        }
-                        if !has_access && !self.access_gate_shown_logged {
-                            self.access_gate_shown_logged = true;
                         }
                         if let Some(fps) = &fps_overlay {
                             fps.render(full_area, f.buffer_mut());
@@ -4474,24 +4205,9 @@ pub(crate) mod tests {
             deferred_startup: Default::default(),
             auth_use_oauth: false,
             auth_clipboard_copied: false,
-            team_id: None,
-            team_name: None,
-            is_zdr: false,
-            team_role: None,
-            coding_data_retention_opt_out: false,
             show_tips: None,
             auto_update: None,
             ask_user_question_timeout_enabled: None,
-            zdr_access_enabled: false,
-            usage_billing_redirect_url: None,
-            access_gate_shown_logged: false,
-            gate: None,
-            subscription_tier: None,
-            paywall_check_started: None,
-            last_subscription_check_at: None,
-            subscription_watch_interval_secs: None,
-            pending_gate_verification: None,
-            gate_verify_gen: 0,
             bundle_state: BundleState::default(),
             scroll_debug_hud: crate::views::scroll_debug_hud::ScrollDebugHud::new(),
             fps_hud: crate::views::fps_hud::FpsHud::new(),
@@ -4513,8 +4229,6 @@ pub(crate) mod tests {
             welcome_on_auth_url: false,
             welcome_on_changelog_cta: false,
             welcome_auth_fallback_rect: None,
-            welcome_refresh_rect: None,
-            welcome_gate_url_rect: None,
             welcome_changelog_cta_rect: None,
             auth_show_raw_url: false,
             auth_mouse_disabled: false,
@@ -4555,13 +4269,8 @@ pub(crate) mod tests {
             minimal_state: crate::minimal_api::MinimalState::default(),
             reconnect_pending: false,
             show_resolved_model: true,
-            sharing_enabled: false,
             usage_visible: true,
-            tier_restricted_commands: Vec::new(),
             leader_mode: true,
-            credit_balance: None,
-            auto_topup: None,
-            billing_poll_wanted: false,
             leader_roster: Vec::new(),
             dashboard_local_sessions: Vec::new(),
             dashboard_sessions_loading: false,
@@ -4600,8 +4309,6 @@ pub(crate) mod tests {
                 restore_degree: None,
                 rate_limited: false,
                 model_incompatible: false,
-                credit_limit_blocked: false,
-                free_usage_blocked: false,
                 available_commands: Vec::new(),
                 available_commands_generation: 0,
                 available_tools: None,
@@ -4791,8 +4498,6 @@ pub(crate) mod tests {
             restore_degree: None,
             rate_limited: false,
             model_incompatible: false,
-            credit_limit_blocked: false,
-            free_usage_blocked: false,
             available_commands: Vec::new(),
             available_commands_generation: 0,
             available_tools: None,
@@ -5589,58 +5294,6 @@ pub(crate) mod tests {
         app.apply_auth_meta(&kigi_shell::auth::AuthMeta::default());
         assert!(!app.is_api_key_auth);
         assert!(app.usage_visible);
-    }
-    /// Make every tier-restricted command visible on the welcome prompt so the
-    /// present/absent assertions exercise the deny list, not incidental
-    /// fail-closed hiding:
-    /// - `/imagine`, `/imagine-video` are `required_tools()`-gated, so advertise
-    ///   their tools (otherwise the registry fail-closes them).
-    fn advertise_media_tools(app: &mut AppView) {
-        app.welcome_prompt
-            .slash_controller
-            .registry_mut()
-            .set_available_tools(
-                ["image_gen", "image_to_video"]
-                    .into_iter()
-                    .map(str::to_string)
-                    .collect(),
-            );
-    }
-    fn assert_tier_restricted_commands_present(app: &AppView) {
-        let reg = app.welcome_prompt.slash_controller.registry();
-        for name in TIER_RESTRICTED_COMMANDS {
-            assert!(
-                reg.get(name).is_some(),
-                "/{name} must be available when not tier-restricted (tools advertised)"
-            );
-        }
-    }
-    #[test]
-    fn apply_auth_meta_never_restricts_tiers() {
-        let mut app = test_app();
-        advertise_media_tools(&mut app);
-        app.apply_auth_meta(&kigi_shell::auth::AuthMeta::default());
-        assert!(app.tier_restricted_commands.is_empty());
-        assert_tier_restricted_commands_present(&app);
-    }
-    #[test]
-    fn is_restricted_tier_never_restricts() {
-        assert!(!is_restricted_tier(None));
-        assert!(!is_restricted_tier(Some("Free")));
-        assert!(!is_restricted_tier(Some("SomeFutureTier")));
-    }
-    #[test]
-    fn apply_auth_meta_clears_gate_on_login() {
-        let mut app = test_app();
-        app.gate = Some(kigi_shell::auth::GateInfo {
-            message: "Subscribe".into(),
-            url: None,
-            label: None,
-        });
-        assert!(app.is_access_blocked());
-        app.apply_auth_meta(&kigi_shell::auth::AuthMeta::default());
-        assert!(app.gate.is_none());
-        assert!(app.has_access());
     }
     #[test]
     fn welcome_ctrl_q_requires_confirmation() {

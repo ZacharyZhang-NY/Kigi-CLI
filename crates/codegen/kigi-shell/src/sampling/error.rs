@@ -17,26 +17,36 @@ use agent_client_protocol as acp;
 /// see this code and show a user-friendly upgrade message instead.
 pub const RATE_LIMITED_ERROR_CODE: i32 = -32003;
 
-/// OAuth / session rate-limit copy (personal plan upgrade path).
-pub const RATE_LIMITED_USER_MESSAGE_OAUTH: &str =
-    "You\u{2019}ve hit the rate limit for your plan. Upgrade your account or try again later.";
+/// Subscription (OAuth) rate-limit copy. PRD Q3: the official Kimi CLI and
+/// Kigi draw on the SAME subscription quota, so the message says so — a user
+/// who also runs `kimi` should understand why the limit arrived early.
+/// Deliberately promises no reset duration; the quota window is server-side.
+pub static RATE_LIMITED_USER_MESSAGE_OAUTH: std::sync::LazyLock<String> =
+    std::sync::LazyLock::new(|| {
+        format!(
+            "You\u{2019}ve hit the usage limit of your Kimi subscription. Note that Kigi and the \
+             official Kimi CLI share the same subscription quota. Upgrade your plan at {} or try \
+             again later.",
+            kigi_env::upgrade_page_url()
+        )
+    });
 
-/// API key / team rate-limit copy. Personal grok.com upgrades do not raise API
-/// team limits; admins purchase credits or a higher spend-based tier.
-/// See https://docs.x.ai/developers/rate-limits#rate-limit-tiers
-pub const RATE_LIMITED_USER_MESSAGE_API_KEY: &str = "You\u{2019}ve hit your team\u{2019}s API rate limit. Ask a team admin to purchase more credits for higher limits, or try again later. See https://docs.x.ai/developers/rate-limits#rate-limit-tiers";
+/// Moonshot API-key rate-limit copy. Platform keys are tier-limited (RPM/TPM);
+/// raising the tier happens in the Moonshot Open Platform console, not via a
+/// Kimi subscription.
+pub const RATE_LIMITED_USER_MESSAGE_API_KEY: &str = "You\u{2019}ve hit the rate limit for your Moonshot API key. Check your tier\u{2019}s limits in the Moonshot Open Platform console (platform.moonshot.ai or platform.moonshot.cn), or try again later.";
 
 /// Pick rate-limit copy from the *active* auth method.
 ///
 /// Pass the real `is_api_key_auth` flag (pager `AppView`, `AuthMethodKind::is_api_key`
-/// for the selected method). Do **not** decide from `has_xai_api_key_env()` alone:
+/// for the selected method). Do **not** decide from the key env var alone:
 /// when both an env key and a cached OAuth session exist, auth prefers the
 /// cached session over the API key.
 pub fn rate_limited_user_message(is_api_key_auth: bool) -> &'static str {
     if is_api_key_auth {
         RATE_LIMITED_USER_MESSAGE_API_KEY
     } else {
-        RATE_LIMITED_USER_MESSAGE_OAUTH
+        RATE_LIMITED_USER_MESSAGE_OAUTH.as_str()
     }
 }
 
@@ -318,20 +328,20 @@ mod tests {
     fn rate_limited_user_message_oauth_vs_api_key() {
         assert_eq!(
             rate_limited_user_message(false),
-            RATE_LIMITED_USER_MESSAGE_OAUTH
+            RATE_LIMITED_USER_MESSAGE_OAUTH.as_str()
         );
         assert_eq!(
             rate_limited_user_message(true),
             RATE_LIMITED_USER_MESSAGE_API_KEY
         );
-        assert!(RATE_LIMITED_USER_MESSAGE_OAUTH.contains("Upgrade your account"));
-        assert!(RATE_LIMITED_USER_MESSAGE_API_KEY.contains("team"));
-        assert!(RATE_LIMITED_USER_MESSAGE_API_KEY.contains("credits"));
-        assert!(
-            RATE_LIMITED_USER_MESSAGE_API_KEY
-                .contains("https://docs.x.ai/developers/rate-limits#rate-limit-tiers")
-        );
-        assert!(!RATE_LIMITED_USER_MESSAGE_API_KEY.contains("Upgrade your account"));
+        // PRD Q3: the subscription copy must state the shared quota with the
+        // official Kimi CLI and point at the upgrade page.
+        assert!(RATE_LIMITED_USER_MESSAGE_OAUTH.contains("official Kimi CLI"));
+        assert!(RATE_LIMITED_USER_MESSAGE_OAUTH.contains("same subscription quota"));
+        assert!(RATE_LIMITED_USER_MESSAGE_OAUTH.contains(kigi_env::upgrade_page_url()));
+        // API-key copy points at the Moonshot platform, not the subscription.
+        assert!(RATE_LIMITED_USER_MESSAGE_API_KEY.contains("Moonshot"));
+        assert!(!RATE_LIMITED_USER_MESSAGE_API_KEY.contains("subscription quota"));
     }
 
     #[test]
@@ -341,7 +351,6 @@ mod tests {
             message: "Rate limit exceeded".into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         };
         let acp_err = map_sampling_err_to_acp(err);
         assert_eq!(acp_err.code, acp::ErrorCode::from(RATE_LIMITED_ERROR_CODE));
@@ -359,7 +368,6 @@ mod tests {
             message: "Rate limit exceeded".into(),
             model_metadata: None,
             retry_after_secs: Some(60),
-            should_retry: None,
         };
         assert_eq!(err.retry_after(), Some(60));
         let acp_err = map_sampling_err_to_acp(err);
@@ -374,14 +382,12 @@ mod tests {
             message: "limited".into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         };
         let server_err = SamplingError::Api {
             status: StatusCode::INTERNAL_SERVER_ERROR,
             message: "oops".into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         };
         let rate_acp = map_sampling_err_to_acp(rate_err);
         let server_acp = map_sampling_err_to_acp(server_err);
@@ -398,7 +404,6 @@ mod tests {
             message: "bad token".into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         };
         let acp_err = map_sampling_err_to_acp(err);
         assert_eq!(acp_err.code, acp::Error::auth_required().code);
@@ -420,7 +425,6 @@ mod tests {
                     .into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         };
         let acp_err = map_sampling_err_to_acp(err);
         assert_ne!(
@@ -476,7 +480,6 @@ mod tests {
                 message: "The model 'grok-build' requires a Grok subscription.".into(),
                 model_metadata: None,
                 retry_after_secs: None,
-                should_retry: None,
             };
             let acp_err = map_sampling_err_to_acp(err);
             let data = acp_err.data.unwrap();
@@ -501,7 +504,6 @@ mod tests {
                 message: "The model 'grok-build' requires a Grok subscription.".into(),
                 model_metadata: None,
                 retry_after_secs: None,
-                should_retry: None,
             };
             let acp_err = map_sampling_err_to_acp(err);
             let data = acp_err.data.unwrap();
@@ -522,7 +524,6 @@ mod tests {
                 message: "Content violates usage guidelines.".into(),
                 model_metadata: None,
                 retry_after_secs: None,
-                should_retry: None,
             };
             let acp_err = map_sampling_err_to_acp(err);
             let data = acp_err.data.unwrap();

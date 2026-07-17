@@ -48,7 +48,6 @@ impl acp::Agent for MvpAgent {
                 );
             });
         kigi_workspace::trust::migrate_legacy_hook_trust();
-        self.maybe_sync_bundle_in_background(false);
         let mut client_type = arguments
             .meta
             .as_ref()
@@ -278,11 +277,7 @@ impl acp::Agent for MvpAgent {
         }
         self.spawn_initialize_launch_mcp_setup(fetch_managed_mcps);
         self.spawn_managed_gateway_tool_catalog_fetch();
-        let init_model_state = if crate::agent::chat_modes::process_chat_mode_enabled() {
-            self.chat_modes.model_state().await
-        } else {
-            self.model_state(None)
-        };
+        let init_model_state = self.model_state(None);
         Ok(
             acp::InitializeResponse::new(acp::ProtocolVersion::V1)
                 .agent_capabilities(
@@ -374,9 +369,6 @@ impl acp::Agent for MvpAgent {
                     }
                 }
                 self.set_auth_method(arguments.method_id.clone());
-                if crate::agent::chat_modes::process_chat_mode_enabled() {
-                    self.chat_modes.warm_in_background();
-                }
                 emit_login_span(true, "api_key", None, None);
                 Ok(Default::default())
             }
@@ -421,10 +413,8 @@ impl acp::Agent for MvpAgent {
                         .authenticate_after_cached_token_unavailable(arguments)
                         .await;
                 };
-                self.refresh_remote_settings(&auth).await;
                 self.emit_settings_update_notification();
-                self.maybe_sync_bundle_in_background(false);
-                {
+                        {
                     let mut sampling_config = self.sampling_config.borrow_mut();
                     sampling_config.api_key = Some(auth.key);
                     tracing::debug!(
@@ -437,12 +427,8 @@ impl acp::Agent for MvpAgent {
                     );
                 }
                 self.set_auth_method(arguments.method_id.clone());
-                if crate::agent::chat_modes::process_chat_mode_enabled() {
-                    self.chat_modes.warm_in_background();
-                }
                 let uid = self.auth_manager.current().map(|a| a.user_id);
                 emit_login_span(true, "cached_token", uid.as_deref(), None);
-                self.maybe_fetch_post_auth_settings().await;
                 Ok(self.auth_response_with_meta())
             }
             auth_method::KIGI_COM_METHOD_ID => {
@@ -517,21 +503,15 @@ impl acp::Agent for MvpAgent {
                     );
                 }
                 self.auth_manager.hot_swap(auth.clone());
-                self.refresh_remote_settings(&auth).await;
                 self.emit_settings_update_notification();
-                self.maybe_sync_bundle_in_background(false);
-                self.set_auth_method(arguments.method_id.clone());
+                        self.set_auth_method(arguments.method_id.clone());
                 self.models_manager.on_auth_changed().await;
-                if crate::agent::chat_modes::process_chat_mode_enabled() {
-                    self.chat_modes.warm_in_background();
-                }
                 emit_login_span(
                     true,
                     arguments.method_id.0.as_ref(),
                     Some(auth.user_id.as_str()),
                     None,
                 );
-                self.maybe_fetch_post_auth_settings().await;
                 Ok(self.auth_response_with_meta())
             }
             _ => {
@@ -559,9 +539,7 @@ impl acp::Agent for MvpAgent {
                     .data("initialize must be called before new_session")
             })?;
         self.seed_client_config_auth_if_available();
-        if let Ok(auth) = self.auth_manager.auth().await {
-            self.refresh_settings_and_reapply(&auth).await;
-        }
+        self.refresh_settings_and_reapply().await;
         let cwd = AbsPathBuf::new(arguments.cwd.clone())
             .map_err(|e| acp::Error::invalid_params().data(e.to_string()))?;
         let remote_settings = self.cfg.borrow().remote_settings.clone();
@@ -858,8 +836,10 @@ impl acp::Agent for MvpAgent {
             Some(serde_json::json!({ "cwd" : cwd.as_str() })),
         );
         let models = if is_chat_kind {
+            // The grok.com chat-mode model picker was removed with the xAI
+            // proxy; a chat-kind session has no managed catalog to offer.
             chat_new_session_model_state(
-                self.chat_modes.model_state().await,
+                acp::SessionModelState::new(acp::ModelId::from(String::new()), Vec::new()),
                 session_initial_model
                     .filter(|_| matches!(bridge_attach, BridgeAttach::Spawned)),
             )
@@ -982,14 +962,6 @@ impl acp::Agent for MvpAgent {
             .build_summary_client(&load_session_sampling)?;
         let mut persistence_timer = crate::instrumentation_timer!("session.load_light");
         persistence_timer.with_field("session_id", session_id.0.as_ref());
-        let backend = if self.build_registry_config().is_some() {
-            Some(
-                crate::remote::BackendClient::new()
-                    .with_auth_manager(self.auth_manager.clone()),
-            )
-        } else {
-            None
-        };
         let registry_title_sync = self
             .session_registry_client()
             .map(|client| crate::session::persistence::RegistryGeneratedTitleSync {
@@ -999,9 +971,6 @@ impl acp::Agent for MvpAgent {
         let (persistence_info, persistence) = crate::session::persistence::load_light(
                 &session_info,
                 summary_client,
-                self.storage_mode,
-                Some(self.auth_manager.clone()),
-                backend.as_ref(),
                 Some(self.gateway.clone()),
                 summary_model,
                 registry_title_sync,
@@ -2095,9 +2064,6 @@ impl acp::Agent for MvpAgent {
             | "x.ai/sessions/list" => {
                 crate::agent::handlers::session::handle(self, &args).await
             }
-            "x.ai/workspaces/list" => {
-                crate::agent::handlers::workspaces::handle(self, &args).await
-            }
             "x.ai/session/updates" => {
                 crate::extensions::session_updates::handle(&args, &self.gateway).await
             }
@@ -2122,6 +2088,7 @@ impl acp::Agent for MvpAgent {
                 crate::extensions::session_admin::handle(self, &args).await
             }
             "x.ai/session/repair" => crate::extensions::repair::handle(self, &args).await,
+            "x.ai/billing" => crate::extensions::billing::handle(self, &args).await,
             "x.ai/memory/flush" | "x.ai/memory/rewrite" => {
                 crate::extensions::memory::handle(self, &args).await
             }
@@ -2136,206 +2103,6 @@ impl acp::Agent for MvpAgent {
                 crate::extensions::feedback::handle(self, &args).await
             }
             "x.ai/recap" => crate::extensions::recap::handle(self, &args).await,
-            "x.ai/cloud/terminate" => {
-                crate::extensions::auth_gate::require_xai_auth(
-                    &self.auth_manager,
-                    "Authentication required",
-                    "Run `grok login` to authenticate.",
-                )?;
-                let params: serde_json::Value = serde_json::from_str(args.params.get())
-                    .map_err(|e| acp::Error::invalid_params().data(e.to_string()))?;
-                let sandbox_id = params
-                    .get("sandbox_id")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| {
-                        acp::Error::invalid_params().data("missing sandbox_id")
-                    })?;
-                let sandbox_client = crate::remote::SandboxClient::new(
-                    self.cli_chat_proxy_base_url(),
-                    self.auth_manager.clone(),
-                );
-                sandbox_client
-                    .terminate_session(
-                        sandbox_id,
-                        &crate::remote::SandboxTerminateRequest {
-                            environment_id: None,
-                        },
-                    )
-                    .await
-                    .map_err(|e| {
-                        acp::Error::internal_error()
-                            .data(format!("Failed to terminate sandbox: {e}"))
-                    })?;
-                crate::extensions::to_raw_response(&serde_json::json!({ "ok" : true }))
-            }
-            "x.ai/cloud/env/list" => {
-                crate::extensions::auth_gate::require_xai_auth(
-                    &self.auth_manager,
-                    "Authentication required",
-                    "Run `grok login` to authenticate.",
-                )?;
-                let sandbox_client = crate::remote::SandboxClient::new(
-                    self.cli_chat_proxy_base_url(),
-                    self.auth_manager.clone(),
-                );
-                let resp = sandbox_client
-                    .list_environments(
-                        &crate::remote::SandboxListEnvironmentsRequest::default(),
-                    )
-                    .await
-                    .map_err(|e| {
-                        acp::Error::internal_error()
-                            .data(format!("Failed to list environments: {e}"))
-                    })?;
-                crate::extensions::to_raw_response(
-                    &serde_json::json!({ "environments" : resp.environments, }),
-                )
-            }
-            "x.ai/cloud/env/create" => {
-                crate::extensions::auth_gate::require_xai_auth(
-                    &self.auth_manager,
-                    "Authentication required",
-                    "Run `grok login` to authenticate.",
-                )?;
-                let params: serde_json::Value = serde_json::from_str(args.params.get())
-                    .map_err(|e| acp::Error::invalid_params().data(e.to_string()))?;
-                let sandbox_client = crate::remote::SandboxClient::new(
-                    self.cli_chat_proxy_base_url(),
-                    self.auth_manager.clone(),
-                );
-                let resp = sandbox_client
-                    .create_environment(
-                        &crate::remote::SandboxCreateEnvironmentRequest {
-                            name: params
-                                .get("name")
-                                .and_then(|v| v.as_str())
-                                .map(String::from),
-                            description: params
-                                .get("description")
-                                .and_then(|v| v.as_str())
-                                .map(String::from),
-                            repository: params
-                                .get("repository")
-                                .and_then(|v| v.as_str())
-                                .map(String::from),
-                            default_branch: params
-                                .get("default_branch")
-                                .and_then(|v| v.as_str())
-                                .map(String::from),
-                            container_image: params
-                                .get("container_image")
-                                .and_then(|v| v.as_str())
-                                .map(String::from),
-                            setup_script: params
-                                .get("setup_script")
-                                .and_then(|v| v.as_str())
-                                .map(String::from),
-                            workspace_directory: Some("/workspace".to_string()),
-                            internet_enabled: Some(true),
-                            domain_allowlist_preset: Some("common".to_string()),
-                            allowed_http_methods: Some("all".to_string()),
-                            ..Default::default()
-                        },
-                    )
-                    .await
-                    .map_err(|e| {
-                        acp::Error::internal_error()
-                            .data(format!("Failed to create environment: {e}"))
-                    })?;
-                crate::extensions::to_raw_response(
-                    &serde_json::json!({ "environment" : resp.environment, }),
-                )
-            }
-            "x.ai/cloud/env/update" => {
-                crate::extensions::auth_gate::require_xai_auth(
-                    &self.auth_manager,
-                    "Authentication required",
-                    "Run `grok login` to authenticate.",
-                )?;
-                let params: serde_json::Value = serde_json::from_str(args.params.get())
-                    .map_err(|e| acp::Error::invalid_params().data(e.to_string()))?;
-                let environment_id = params
-                    .get("environment_id")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| {
-                        acp::Error::invalid_params().data("missing environment_id")
-                    })?;
-                let sandbox_client = crate::remote::SandboxClient::new(
-                    self.cli_chat_proxy_base_url(),
-                    self.auth_manager.clone(),
-                );
-                let resp = sandbox_client
-                    .update_environment(
-                        environment_id,
-                        &crate::remote::SandboxUpdateEnvironmentRequest {
-                            name: params
-                                .get("name")
-                                .and_then(|v| v.as_str())
-                                .map(String::from),
-                            description: params
-                                .get("description")
-                                .and_then(|v| v.as_str())
-                                .map(String::from),
-                            repository: params
-                                .get("repository")
-                                .and_then(|v| v.as_str())
-                                .map(String::from),
-                            default_branch: params
-                                .get("default_branch")
-                                .and_then(|v| v.as_str())
-                                .map(String::from),
-                            container_image: params
-                                .get("container_image")
-                                .and_then(|v| v.as_str())
-                                .map(String::from),
-                            setup_script: params
-                                .get("setup_script")
-                                .and_then(|v| v.as_str())
-                                .map(String::from),
-                            ..Default::default()
-                        },
-                    )
-                    .await
-                    .map_err(|e| {
-                        acp::Error::internal_error()
-                            .data(format!("Failed to update environment: {e}"))
-                    })?;
-                crate::extensions::to_raw_response(
-                    &serde_json::json!({ "environment" : resp.environment, }),
-                )
-            }
-            "x.ai/cloud/env/delete" => {
-                crate::extensions::auth_gate::require_xai_auth(
-                    &self.auth_manager,
-                    "Authentication required",
-                    "Run `grok login` to authenticate.",
-                )?;
-                let params: serde_json::Value = serde_json::from_str(args.params.get())
-                    .map_err(|e| acp::Error::invalid_params().data(e.to_string()))?;
-                let environment_id = params
-                    .get("environment_id")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| {
-                        acp::Error::invalid_params().data("missing environment_id")
-                    })?;
-                let sandbox_client = crate::remote::SandboxClient::new(
-                    self.cli_chat_proxy_base_url(),
-                    self.auth_manager.clone(),
-                );
-                sandbox_client
-                    .delete_environment(environment_id)
-                    .await
-                    .map_err(|e| {
-                        acp::Error::internal_error()
-                            .data(format!("Failed to delete environment: {e}"))
-                    })?;
-                crate::extensions::to_raw_response(&serde_json::json!({ "ok" : true }))
-            }
-            "x.ai/billing" => crate::extensions::billing::handle(self, &args).await,
-            "x.ai/auto-topup-rule" => {
-                crate::extensions::billing::handle(self, &args).await
-            }
-            "x.ai/share_session" => crate::extensions::share::handle(self, &args).await,
             "x.ai/rollout/survey" => {
                 crate::extensions::rollout::handle(self, &args).await
             }
@@ -2394,9 +2161,6 @@ impl acp::Agent for MvpAgent {
             }
             s if s.starts_with("x.ai/search/") => {
                 crate::extensions::search::handle(self, &args).await
-            }
-            s if s.starts_with("x.ai/bundle/") => {
-                crate::extensions::bundle::handle(self, &args).await
             }
             s if s.starts_with("x.ai/code/") => {
                 let ops = self.resolve_workspace_ops()?;

@@ -274,7 +274,7 @@ pub(super) fn handle_auth_complete(
 
         app.auth_state = AuthState::Done;
         app.auth_show_raw_url = false;
-        app.welcome_prompt_focused = !app.is_access_blocked();
+        app.welcome_prompt_focused = true;
         app.auth_code_input.clear();
 
         // Mid-session re-auth (`/login` or a 401 prompt): restore the
@@ -312,9 +312,6 @@ pub(super) fn handle_auth_complete(
                 }
             }
             let mut effects = dispatch(Action::RequestBundleStatus, app);
-            if app.usage_visible {
-                effects.push(Effect::FetchAppBilling);
-            }
             effects.extend(retry_effects);
             return effects;
         }
@@ -322,26 +319,8 @@ pub(super) fn handle_auth_complete(
         // status only; shell auto-syncs post-auth
         let mut effects = dispatch(Action::RequestBundleStatus, app);
 
-        // Start auto-checking subscription if gated.
-        // Check immediately (don't wait 5s) then schedule the timer.
-        if !app.has_access() {
-            app.paywall_check_started = Some(std::time::Instant::now());
-            effects.push(Effect::CheckSubscription { verify: None });
-            effects.push(Effect::SchedulePaywallCheck);
-        }
-        // Fetch billing so the welcome screen can show a credit warning.
-        if app.usage_visible {
-            effects.push(Effect::FetchAppBilling);
-        }
         // Fetch changelog (mirrors startup path for interactive login).
         effects.push(Effect::FetchChangelog);
-
-        // ZDR-blocked users stay on the welcome screen — discard any
-        // deferred startup (they cannot start a session).
-        if app.is_zdr_blocked() {
-            clear_startup_actions(app);
-            return effects;
-        }
 
         // Replay deferred session startup once BOTH gates are open. Auth
         // is now Done, so `session_startup_allowed()` here means "is trust

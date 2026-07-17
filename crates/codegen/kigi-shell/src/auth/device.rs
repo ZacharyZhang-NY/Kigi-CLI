@@ -29,12 +29,14 @@ pub(crate) fn ascii_header_value(value: &str) -> String {
     }
 }
 
-/// The three device-identity headers sent on every OAuth call.
+/// The three device-identity headers sent on every OAuth call and, via
+/// `agent::config::inject_url_derived_headers`, on every first-party
+/// inference request (mirroring kimi-cli src/kimi_cli/llm.py:317-323).
 ///
 /// Errors when the persistent device id cannot be created (e.g. read-only
 /// `~/.kigi`): the OAuth endpoints require `X-Msh-Device-Id`, so login cannot
-/// proceed without it.
-pub(crate) fn device_headers() -> anyhow::Result<[(&'static str, String); 3]> {
+/// proceed without it. Inference callers treat the error as skip-with-warning.
+pub fn device_headers() -> anyhow::Result<[(&'static str, String); 3]> {
     Ok([
         ("X-Msh-Device-Name", ascii_header_value(&device_name())),
         ("X-Msh-Device-Model", ascii_header_value(device_model())),

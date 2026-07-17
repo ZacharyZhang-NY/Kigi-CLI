@@ -141,7 +141,7 @@ pub(super) fn render_auth(buf: &mut Buffer, area: Rect, theme: &Theme, hint: &Mi
                 area,
                 y,
                 bottom,
-                Line::from(Span::styled("Sign in to Grok", bold)),
+                Line::from(Span::styled("Sign in to Kimi", bold)),
             );
             y = put_line(buf, area, y, bottom, Line::default());
             match url {
@@ -242,12 +242,13 @@ mod tests {
 
     #[test]
     fn device_user_code_parses_verification_url() {
+        // The live Kimi device flow returns this exact URL shape.
         assert_eq!(
-            device_user_code("https://accounts.x.ai/oauth2/device?user_code=ABCD-EFGH"),
+            device_user_code("https://www.kimi.com/code/authorize_device?user_code=ABCD-EFGH"),
             Some("ABCD-EFGH")
         );
         assert_eq!(
-            device_user_code("https://accounts.x.ai/oauth2/device"),
+            device_user_code("https://www.kimi.com/code/authorize_device"),
             None
         );
         assert_eq!(device_user_code("https://x/device?other=1"), None);
@@ -261,14 +262,14 @@ mod tests {
         let st = AuthState::Authenticating {
             request_seq: 1,
             handle: None,
-            auth_url: Some("https://accounts.x.ai/device?user_code=ABCD-EFGH".into()),
+            auth_url: Some("https://www.kimi.com/code/authorize_device?user_code=ABCD-EFGH".into()),
             mode: AuthMode::Device,
         };
         match minimal_auth_hint(&st) {
             MinimalAuthHint::SigningIn { url, code } => {
                 assert_eq!(
                     url.as_deref(),
-                    Some("https://accounts.x.ai/device?user_code=ABCD-EFGH")
+                    Some("https://www.kimi.com/code/authorize_device?user_code=ABCD-EFGH")
                 );
                 assert_eq!(code.as_deref(), Some("ABCD-EFGH"));
             }
@@ -308,7 +309,7 @@ mod tests {
         let area = Rect::new(0, 0, 80, 12);
         let mut buf = Buffer::empty(area);
         let hint = MinimalAuthHint::SigningIn {
-            url: Some("https://accounts.x.ai/device?user_code=ABCD-EFGH".into()),
+            url: Some("https://www.kimi.com/code/authorize_device?user_code=ABCD-EFGH".into()),
             code: Some("ABCD-EFGH".into()),
         };
         render_auth(&mut buf, area, &theme, &hint);
@@ -320,8 +321,11 @@ mod tests {
                 }
             }
         }
-        assert!(text.contains("Sign in to Grok"), "header: {text:?}");
-        assert!(text.contains("accounts.x.ai/device"), "url: {text:?}");
+        assert!(text.contains("Sign in to Kimi"), "header: {text:?}");
+        assert!(
+            text.contains("www.kimi.com/code/authorize_device"),
+            "url: {text:?}"
+        );
         assert!(text.contains("ABCD-EFGH"), "device code: {text:?}");
         assert!(
             text.contains("Waiting for approval"),

@@ -34,7 +34,6 @@ impl AppView {
             && self.agents.is_empty()
             && self.next_agent_id == 0
             && !self.chat_mode
-            && !self.is_zdr_blocked()
             && self.pending_update_version.is_none()
     }
 

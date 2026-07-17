@@ -299,7 +299,6 @@ pub fn stream_responses<'a>(
                         message: error_message,
                         model_metadata: None,
                         retry_after_secs: None,
-                        should_retry: None,
                     };
                     yield SamplingEvent::Failed {
                         request_id: request_id.clone(),
@@ -316,7 +315,6 @@ pub fn stream_responses<'a>(
                         message: error_message,
                         model_metadata: None,
                         retry_after_secs: None,
-                        should_retry: None,
                     };
                     yield SamplingEvent::Failed {
                         request_id: request_id.clone(),
@@ -419,7 +417,6 @@ pub fn stream_responses<'a>(
                         .to_string(),
                     model_metadata: None,
                     retry_after_secs: None,
-                    should_retry: None,
                 };
                 yield SamplingEvent::Failed {
                     request_id: request_id.clone(),

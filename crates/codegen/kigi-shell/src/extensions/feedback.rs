@@ -1,12 +1,15 @@
 //! `x.ai/feedback`, `x.ai/feedback/dismiss`, `x.ai/btw`, and `x.ai/review/*`
 //! extension handlers.
 //!
-//! - `feedback`/`feedback/dismiss`: persist user ratings/text locally and
-//!   forward to cli-chat-proxy.
+//! - `feedback`/`feedback/dismiss`: persist user ratings/text locally; text
+//!   feedback from subscription (OAuth) sessions is forwarded to the Kimi
+//!   Code feedback endpoint (`POST {base}/feedback`, kimi-cli slash.py
+//!   parity). Without a subscription session the record stays local and the
+//!   response points at the GitHub issue tracker.
 //! - `btw`: dispatch a side question to the active session via
 //!   `SessionCommand::SideQuestion` and return the answer.
 //! - `review/comment` and `review/comment/delete`: record inline code review
-//!   events to cloud storage.
+//!   events locally.
 
 use std::sync::Arc;
 
@@ -15,6 +18,7 @@ use tokio::sync::oneshot;
 
 use super::{ExtResult, parse_params};
 use crate::agent::MvpAgent;
+use crate::agent::feedback_client::FEEDBACK_ISSUES_URL;
 use crate::session::persistence::{LocalFeedbackEntry, UserFeedbackEntry};
 use crate::session::{
     ClientFeedbackInput, CommentDeleteRequest, CommentDeleteResponse, CommentRequest,
@@ -34,7 +38,7 @@ pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
         }
         m if m.starts_with("x.ai/review") => {
             tracing::info!("handling review comment");
-            handle_review(agent, args).await
+            handle_review(args).await
         }
         _ => Err(acp::Error::method_not_found()),
     }
@@ -97,8 +101,7 @@ async fn handle_feedback(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult 
                         let simple: crate::session::FeedbackRequest = parse_params(args)?;
                         ClientFeedbackInput {
                             session_id: simple.session_id,
-                            client_type:
-                                prod_mc_cli_chat_proxy_types::feedback_types::ClientType::Tui,
+                            client_type: crate::session::feedback_types::ClientType::Tui,
                             rating_type: None,
                             rating_value: None,
                             feedback_text: Some(simple.feedback_text),
@@ -151,7 +154,7 @@ async fn handle_feedback(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult 
                 submission.merge_metadata(user_meta);
             }
 
-            // Enrich with session context for Slack notifications (best-effort).
+            // Enrich with session context (persisted alongside the record).
             if let Some(ref session_handle) = session_handle {
                 let (tx, rx) = tokio::sync::oneshot::channel();
                 let _ = session_handle
@@ -174,7 +177,7 @@ async fn handle_feedback(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult 
             if let (Some(session_handle), Some(rating_value)) =
                 (&session_handle, feedback_input.rating_value)
             {
-                use prod_mc_cli_chat_proxy_types::feedback_types::RatingType;
+                use crate::session::feedback_types::RatingType;
                 let (is_positive, is_negative) = match feedback_input.rating_type {
                     // Thumbs: -1 = down, 0 = neutral, 1 = up
                     Some(RatingType::Thumbs) | None => (rating_value > 0, rating_value < 0),
@@ -208,8 +211,8 @@ async fn handle_feedback(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult 
 
             let client = agent.feedback_client();
             if client.is_none() {
-                tracing::warn!(
-                    "no feedback client available (missing proxy credentials); feedback saved locally only"
+                tracing::info!(
+                    "no subscription session; feedback saved locally — submit at {FEEDBACK_ISSUES_URL}"
                 );
             }
             let outcome = crate::session::feedback_manager::submit_feedback_workflow(
@@ -222,15 +225,17 @@ async fn handle_feedback(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult 
 
             match &outcome {
                 crate::session::feedback_manager::SubmitOutcome::Submitted => {
-                    tracing::info!("feedback submitted to proxy successfully");
+                    tracing::info!("feedback submitted to the Kimi Code endpoint");
                 }
                 crate::session::feedback_manager::SubmitOutcome::LocalOnly => {
-                    tracing::warn!("feedback saved locally only (no proxy client)");
+                    tracing::info!("feedback saved locally only");
                 }
                 crate::session::feedback_manager::SubmitOutcome::Failed(e) => {
-                    tracing::error!(error = %e, "feedback submission to proxy failed");
-                    return Err(acp::Error::internal_error()
-                        .data(format!("Feedback submission failed: {e}")));
+                    tracing::error!(error = %e, "feedback submission failed");
+                    return Err(acp::Error::internal_error().data(format!(
+                        "Feedback submission failed: {e}. \
+                         Please submit feedback at {FEEDBACK_ISSUES_URL}"
+                    )));
                 }
             }
 
@@ -281,36 +286,14 @@ async fn handle_feedback(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult 
                 }
             }
 
-            let request_id = dismiss_input.request_id.clone();
-            let client = agent
-                .feedback_client()
-                .ok_or_else(|| acp::Error::internal_error().data("No credentials for feedback"))?;
-            let feedback_base_url = agent.cfg.borrow().endpoints.resolve_feedback_base_url();
-            match client.dismiss_request(&request_id).await {
-                Ok(response) => {
-                    tracing::info!(
-                        request_id = %response.request_id,
-                        status = %response.status,
-                        feedback_url = %feedback_base_url,
-                        "Feedback request dismissed"
-                    );
-                    let value = serde_json::to_value(&response)
-                        .map(|value| serde_json::value::to_raw_value(&value).map(Arc::from))
-                        .expect("to work")
-                        .expect("to work");
-                    Ok(acp::ExtResponse::new(value))
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        error = %e,
-                        request_id = %request_id,
-                        feedback_url = %feedback_base_url,
-                        "Failed to dismiss feedback request"
-                    );
-                    Err(acp::Error::internal_error()
-                        .data(format!("Failed to dismiss feedback request: {e}")))
-                }
-            }
+            let value = serde_json::to_value(serde_json::json!({
+                "requestId": dismiss_input.request_id,
+                "status": "dismissed",
+            }))
+            .map(|value| serde_json::value::to_raw_value(&value).map(Arc::from))
+            .expect("to work")
+            .expect("to work");
+            Ok(acp::ExtResponse::new(value))
         }
         _ => Err(acp::Error::method_not_found()),
     }
@@ -319,9 +302,9 @@ async fn handle_feedback(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult 
 /// Record inline code review events.
 ///
 /// Methods:
-/// - `x.ai/review/comment`: record a new inline code comment to cloud storage
+/// - `x.ai/review/comment`: record a new inline code comment
 /// - `x.ai/review/comment/delete`: record a tombstone event for a deleted comment
-async fn handle_review(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
+async fn handle_review(args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
         "x.ai/review/comment" => {
             let request: CommentRequest = parse_params(args)?;

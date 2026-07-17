@@ -359,11 +359,11 @@ mod tests {
                 "client_id={KIMI_CODE_CLIENT_ID}"
             )))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "user_code": "ABCD-1234",
+                "user_code": "WXYZ-6789",
                 "device_code": "dev-code-1",
-                "verification_uri": "https://auth.kimi.com/device",
-                "verification_uri_complete": "https://auth.kimi.com/device?code=ABCD-1234",
-                "expires_in": 600,
+                "verification_uri": "https://www.kimi.com/code/authorize_device",
+                "verification_uri_complete": "https://www.kimi.com/code/authorize_device?user_code=WXYZ-6789",
+                "expires_in": 1800,
                 "interval": 7,
             })))
             .expect(1)
@@ -371,13 +371,13 @@ mod tests {
             .await;
 
         let auth = request_device_authorization(&server.uri()).await.unwrap();
-        assert_eq!(auth.user_code, "ABCD-1234");
+        assert_eq!(auth.user_code, "WXYZ-6789");
         assert_eq!(auth.device_code, "dev-code-1");
         assert_eq!(auth.interval, 7);
-        assert_eq!(auth.expires_in, Some(600));
+        assert_eq!(auth.expires_in, Some(1800));
         assert_eq!(
             auth.verification_uri_complete,
-            "https://auth.kimi.com/device?code=ABCD-1234"
+            "https://www.kimi.com/code/authorize_device?user_code=WXYZ-6789"
         );
     }
 
@@ -392,7 +392,7 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "user_code": "AAAA",
                 "device_code": "d",
-                "verification_uri_complete": "https://auth.kimi.com/device?code=AAAA",
+                "verification_uri_complete": "https://www.kimi.com/code/authorize_device?user_code=AAAA",
                 "interval": 5,
             })))
             .expect(1)
@@ -409,7 +409,7 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "user_code": "AAAA",
                 "device_code": "d",
-                "verification_uri_complete": "https://auth.kimi.com/device?code=AAAA",
+                "verification_uri_complete": "https://www.kimi.com/code/authorize_device?user_code=AAAA",
             })))
             .mount(&server)
             .await;

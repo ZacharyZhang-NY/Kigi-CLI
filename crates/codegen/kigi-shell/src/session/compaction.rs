@@ -7,7 +7,7 @@
 //! lives alongside the primary one in `acp_session.rs`.
 use super::SessionActor;
 use super::is_project_instructions;
-use crate::remote::DEFAULT_CONTEXT_WINDOW;
+use crate::agent::models_fetch::DEFAULT_CONTEXT_WINDOW;
 use crate::session::compaction_config::{
     AsyncCompactionCache, SUPPRESS_NONE, SUPPRESS_STICKY, SUPPRESS_TURN, SUPPRESS_UNTIL_SUCCESS,
 };
@@ -2242,7 +2242,6 @@ mod inline_auto_compact_flow_tests {
             client_identifier: None,
             origin_client: None,
             feedback_manager: Arc::new(FeedbackManager::local_only("test-session")),
-            sync_loop_cancel: None,
             agent: std::cell::RefCell::new(test_agent_default().await),
             last_reported_branch: std::sync::Arc::new(parking_lot::Mutex::new(None)),
             git_head_enabled: false,

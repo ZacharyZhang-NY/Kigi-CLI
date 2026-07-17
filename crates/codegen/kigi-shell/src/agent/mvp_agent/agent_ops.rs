@@ -28,23 +28,15 @@ impl MvpAgent {
         let session_key = self.auth_manager.current_or_expired().map(|a| a.key.clone());
         let models = self.models_manager.models();
         let endpoints = self.models_manager.endpoints();
-        let (alpha_test_key, client_version) = {
-            let cfg = self.cfg.borrow();
-            (
-                cfg.endpoints.alpha_test_key.clone(),
-                cfg.client_version.clone(),
-            )
-        };
+        let alpha_test_key = self.cfg.borrow().endpoints.alpha_test_key.clone();
         let config = match crate::agent::config::resolve_aux_model_sampling_config(
             &slug,
             &models,
             &endpoints,
             session_key.as_deref(),
             alpha_test_key,
-            client_version,
         ) {
             Some(mut cfg) => {
-                cfg.client_identifier = primary.client_identifier.clone();
                 cfg.attribution_callback = primary.attribution_callback.clone();
                 cfg.bearer_resolver = primary.bearer_resolver.clone();
                 cfg.max_retries = primary.max_retries;
@@ -59,10 +51,6 @@ impl MvpAgent {
         let model = config.model.clone();
         let client = OaiCompatClient::new(config).map_err(map_sampling_err_to_acp)?;
         Ok((client, model))
-    }
-    fn has_proxy_credentials(&self) -> bool {
-        self.cfg.borrow().endpoints.deployment_key.is_some()
-            || self.auth_manager.current_or_expired().is_some_and(|a| a.is_session_auth())
     }
     /// `true` for session-based ACP auth methods.
     fn is_session_based_auth(&self) -> bool {
@@ -384,39 +372,23 @@ impl MvpAgent {
             );
         }
     }
-    /// Extract feedback credentials when proxy credentials are available.
-    ///
-    /// Returns `(base_url, user_token, optional_extra_access_key, deployment_key)`.
-    /// Used by both [`feedback_client`] and session spawning to avoid
-    /// duplicating the credential assembly logic.
-    #[allow(clippy::type_complexity)]
-    fn feedback_credentials(
-        &self,
-    ) -> Option<(String, Option<String>, Option<String>, Option<String>)> {
-        if !self.has_proxy_credentials() {
-            return None;
-        }
-        let user_token = self
+    /// Feedback endpoint base when this is a subscription (OAuth) session —
+    /// the Kimi Code feedback endpoint only takes the OAuth Bearer, so
+    /// API-key-only setups get `None` (they are pointed at the issue
+    /// tracker instead; kimi-cli slash.py parity).
+    fn feedback_base_url(&self) -> Option<String> {
+        let has_session = self
             .auth_manager
             .current_or_expired()
-            .filter(|a| a.is_session_auth())
-            .map(|a| a.key.clone());
-        let cfg = self.cfg.borrow();
-        let base_url = cfg.endpoints.resolve_feedback_base_url();
-        let alpha_test_key = cfg.endpoints.alpha_test_key.clone();
-        let deployment_key = cfg.endpoints.deployment_key.clone();
-        Some((base_url, user_token, alpha_test_key, deployment_key))
+            .is_some_and(|a| a.is_session_auth());
+        has_session.then(|| self.cfg.borrow().endpoints.resolve_feedback_base_url())
     }
-    /// Build a `FeedbackClient` with resolved feedback URL and credentials.
+    /// Build a `FeedbackClient` for subscription sessions.
     pub(crate) fn feedback_client(&self) -> Option<FeedbackClient> {
-        let (base_url, user_token, alpha_test_key, deployment_key) = self
-            .feedback_credentials()?;
-        Some(
-            FeedbackClient::new(base_url, user_token)
-                .with_alpha_test_key(alpha_test_key)
-                .with_deployment_key(deployment_key)
-                .with_auth_manager(self.auth_manager.clone()),
-        )
+        Some(FeedbackClient::new(
+            self.feedback_base_url()?,
+            self.auth_manager.clone(),
+        ))
     }
     /// Build a `RegistryConfig` if the feature is enabled (for passing to persistence actor).
     pub(super) fn build_registry_config(
@@ -459,17 +431,6 @@ impl MvpAgent {
                 .with_alpha_test_key(cfg.alpha_test_key)
                 .with_auth(self.auth_manager.clone()),
         )
-    }
-    pub(crate) fn conversations_client(
-        &self,
-    ) -> Option<crate::remote::ConversationsClient> {
-        if !crate::session::unified_list::conversations_lane_active() {
-            return None;
-        }
-        Some(crate::remote::ConversationsClient::new(self.auth_manager.clone()))
-    }
-    pub(crate) fn workspaces_client(&self) -> crate::remote::WorkspacesClient {
-        crate::remote::WorkspacesClient::new(self.auth_manager.clone())
     }
     /// Pre-session command availability snapshot.
     ///
@@ -515,13 +476,9 @@ impl MvpAgent {
     ) -> &kigi_agent::plugins::SharedPluginRegistryHandle {
         &self.plugin_registry_handle
     }
-    /// `true` when the agent runs in writeback storage mode.
-    pub(crate) fn is_writeback_storage(&self) -> bool {
-        matches!(self.storage_mode, StorageMode::Writeback)
-    }
     /// Resolved cli-chat-proxy base for session features (via
     /// `proxy_url`). Not for the deployment-config fetch.
-    pub(crate) fn cli_chat_proxy_base_url(&self) -> String {
+    pub(crate) fn coding_api_base_url(&self) -> String {
         self.cfg.borrow().endpoints.proxy_url()
     }
     pub(crate) fn alpha_test_key(&self) -> Option<String> {
@@ -635,54 +592,14 @@ impl MvpAgent {
     pub(crate) fn deployment_key(&self) -> Option<String> {
         self.cfg.borrow().endpoints.deployment_key.clone()
     }
-    /// Re-fetch remote settings and re-init the telemetry client.
-    ///
-    /// Called unconditionally from both auth handlers so that:
-    /// - First install / expired OIDC token: settings are fetched for
-    ///   the first time (the early prefetch had no auth to use).
-    /// - Reauth / account switch: settings are refreshed to reflect
-    ///   the new user's remote settings targeting attributes.
-    ///
-    /// This only refreshes `cfg.remote_settings` and re-inits the
-    /// telemetry client (the only global static). Other settings
-    /// derived from `remote_settings` (`web_fetch_enabled`, etc.) are
-    /// resolved lazily per-turn from `cfg` and pick up the new values
-    /// automatically.
-    /// Agent-level fields materialised at startup (`worktree_type`,
-    /// `restore_code`) are NOT re-resolved here; that requires a
-    /// broader refactor of the init path.
-    pub(super) async fn refresh_remote_settings(&self, auth: &crate::auth::KimiAuth) {
-        if !crate::util::config::resolve_remote_fetch_enabled() {
-            tracing::debug!("post-auth settings refresh skipped: remote_fetch disabled");
-            return;
-        }
-        let Some(settings) = self.fetch_remote_settings(auth.clone()).await else {
-            tracing::warn!("post-auth settings refresh failed (HTTP or parse error)");
-            return;
-        };
-        tracing::info!("post-auth settings refreshed");
-        {
-            let mut cfg = self.cfg.borrow_mut();
-            cfg.remote_settings = Some(settings);
-            crate::util::config::sync_campaign_fields(&mut cfg);
-            crate::agent::config::apply_remote_settings_side_effects(
-                cfg.remote_settings.as_ref(),
-            );
-        }
-    }
-    /// Refresh remote settings settings and re-resolve eagerly-resolved config fields.
+    /// Re-resolve eagerly-resolved config fields from the local config.
     ///
     /// Called on `/new` session creation so feature flags reflect the latest
-    /// remote settings state without requiring a TUI restart. Extends
-    /// [`refresh_remote_settings`] by also re-running [`resolve_runtime_fields`]
-    /// with the fresh settings.
+    /// on-disk config without requiring a TUI restart. (Formerly this also
+    /// re-fetched the xAI proxy's remote settings; that endpoint is gone.)
     ///
     /// In-flight sessions are unaffected — they snapshot config at creation.
-    pub(super) async fn refresh_settings_and_reapply(
-        &self,
-        auth: &crate::auth::KimiAuth,
-    ) {
-        self.refresh_remote_settings(auth).await;
+    pub(super) async fn refresh_settings_and_reapply(&self) {
         let cwd = std::env::current_dir().ok();
         {
             let mut cfg = self.cfg.borrow_mut();
@@ -697,36 +614,6 @@ impl MvpAgent {
             cfg.re_resolve_runtime_fields(&raw_config, cwd.as_deref());
         }
         self.emit_settings_update_notification();
-    }
-    /// Shared fetch half of every settings refresh: endpoint fields from a
-    /// scoped `cfg` borrow, `fetch_settings_blocking` off-executor (it already
-    /// retries transient errors internally), failures normalized to `None`.
-    /// Callers own their miss logging.
-    pub(super) async fn fetch_remote_settings(
-        &self,
-        auth: crate::auth::KimiAuth,
-    ) -> Option<crate::util::config::RemoteSettings> {
-        if !crate::util::config::resolve_remote_fetch_enabled() {
-            tracing::debug!("settings fetch skipped: remote_fetch disabled");
-            return None;
-        }
-        let (base_url, alpha_test_key) = {
-            let cfg = self.cfg.borrow();
-            (cfg.endpoints.proxy_url(), cfg.endpoints.alpha_test_key.clone())
-        };
-        match tokio::task::spawn_blocking(move || crate::remote::fetch_settings_blocking(
-                &base_url,
-                &auth,
-                alpha_test_key.as_deref(),
-            ))
-            .await
-        {
-            Ok(settings) => settings,
-            Err(e) => {
-                tracing::warn!(error = % e, "settings fetch task panicked");
-                None
-            }
-        }
     }
     pub(super) async fn send_model_auto_switched(
         &self,
@@ -828,26 +715,9 @@ impl MvpAgent {
                 ),
             );
         }
-        let cfg = self.cfg.borrow();
-        let alpha_test_key = cfg.endpoints.alpha_test_key.clone();
-        let client_version = cfg.client_version.clone();
-        let deployment_id = crate::managed_config::resolve_deployment_id(
-            cfg.endpoints.deployment_key.as_deref(),
-        );
-        drop(cfg);
-        let user_id = self
-            .auth_manager
-            .current_or_expired()
-            .filter(|a| a.is_session_auth())
-            .map(|a| a.user_id);
-        let mut config = crate::agent::config::sampling_config_for_model(
-            model,
-            credentials,
-            alpha_test_key,
-            client_version,
-            deployment_id,
-            user_id,
-        );
+        let alpha_test_key = self.cfg.borrow().endpoints.alpha_test_key.clone();
+        let mut config =
+            crate::agent::config::sampling_config_for_model(model, credentials, alpha_test_key);
         config.origin_client = origin_client;
         config
     }
@@ -912,13 +782,7 @@ impl MvpAgent {
             .unwrap_or_else(|| kigi_version::VERSION.to_string());
         let alpha_test_key = cfg.endpoints.alpha_test_key.clone();
         let mut headers = indexmap::IndexMap::new();
-        headers.insert("user-agent".to_string(), format!("xai-grok-build/{version}"));
-        inject_proxy_headers(
-            &mut headers,
-            cfg.client_version.as_deref(),
-            alpha_test_key.as_deref(),
-            &base_url,
-        );
+        headers.insert("user-agent".to_string(), format!("kigi/{version}"));
         ImageGenConfig::Enabled {
             api_key: api_key.clone(),
             base_url,
@@ -961,13 +825,7 @@ impl MvpAgent {
             .unwrap_or_else(|| kigi_version::VERSION.to_string());
         let alpha_test_key = cfg.endpoints.alpha_test_key.clone();
         let mut headers = indexmap::IndexMap::new();
-        headers.insert("user-agent".to_string(), format!("xai-grok-build/{version}"));
-        inject_proxy_headers(
-            &mut headers,
-            cfg.client_version.as_deref(),
-            alpha_test_key.as_deref(),
-            &base_url,
-        );
+        headers.insert("user-agent".to_string(), format!("kigi/{version}"));
         VideoGenConfig::Enabled {
             api_key,
             base_url,
@@ -987,15 +845,8 @@ impl MvpAgent {
             &models,
             session.as_ref().map(|a| a.key.as_str()),
             alpha_test_key.clone(),
-            client_version,
             &self.cfg.borrow().endpoints,
         )?;
-        inject_proxy_headers(
-            &mut cfg.extra_headers,
-            cfg.client_version.as_deref(),
-            alpha_test_key.as_deref(),
-            &cfg.base_url,
-        );
         Some(cfg)
     }
     /// Returns `Err` with a user-facing message on invalid config; the caller at
@@ -1112,15 +963,6 @@ impl MvpAgent {
                 .map(|(name, p)| p.render_io_summary(name))
                 .collect(),
             models_manager,
-            chat_modes: {
-                let chat_modes = crate::agent::chat_modes::ChatModesManager::new(
-                    auth_manager.clone(),
-                );
-                if crate::agent::chat_modes::process_chat_mode_enabled() {
-                    chat_modes.warm_in_background();
-                }
-                chat_modes
-            },
             cfg: RefCell::new(cfg.clone()),
             auth_method_id: crate::agent::auth_method::new_shared_auth_method_id(None),
             sampling_config: RefCell::new(sampling_config),
@@ -1159,7 +1001,6 @@ impl MvpAgent {
             subagent_event_rx: RefCell::new(Some(subagent_event_rx)),
             subagent_coordinator: RefCell::new(subagent_coordinator),
             monitor_event_buffer: kigi_tools::implementations::grok_build::task::types::MonitorEventBuffer::default(),
-            bundle_sync_in_flight: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             workspace_ops: RefCell::new(None),
             require_gateway_sessions: Rc::new(
                 RefCell::new(std::collections::HashSet::new()),
@@ -2221,19 +2062,9 @@ impl MvpAgent {
         let auto_update = self.cfg.borrow().cli.auto_update;
         let client_type = *self.client_type.borrow();
         let buffering_settings = self.buffering_settings.borrow().clone();
-        let (
-            feedback_proxy_url,
-            feedback_user_token,
-            feedback_alpha_test_key,
-            deployment_key,
-        ) = if let Some((url, token, alpha, deploy)) = self.feedback_credentials() {
-            (Some(url), token, alpha, deploy)
-        } else {
-            (None, None, None, None)
-        };
+        let feedback_base_url = self.feedback_base_url();
         tracing::info!(
-            session_id = % session_info.id.0, feedback_url = ? feedback_proxy_url,
-            authenticated = feedback_user_token.is_some(),
+            session_id = % session_info.id.0, feedback_url = ? feedback_base_url,
             "Initializing feedback manager for session"
         );
         let skills = self.cfg.borrow().skills.clone();
@@ -2489,7 +2320,6 @@ impl MvpAgent {
                     self.auth_type(),
                 ),
                 alpha_test_key: self.alpha_test_key(),
-                client_version: sampling_config.client_version.clone(),
             };
             let attribution_callback: Option<
                 kigi_sampler::SharedAttributionCallback,
@@ -2599,10 +2429,7 @@ impl MvpAgent {
                     self.codebase_indexes.clone(),
                     client_code_nav_enabled,
                     fs_watch_caps,
-                    feedback_proxy_url,
-                    feedback_user_token,
-                    feedback_alpha_test_key,
-                    deployment_key,
+                    feedback_base_url,
                     client_terminal,
                     client_fs_read && client_fs_write,
                     gateway_enabled,
@@ -2617,7 +2444,6 @@ impl MvpAgent {
                     persisted_goal_mode,
                     persisted_announcement_state,
                     self.memory_config.clone(),
-                    loc_tracking_enabled,
                     feedback_flags,
                     self.managed_mcp_cache.clone(),
                     managed_mcp_expires_at,

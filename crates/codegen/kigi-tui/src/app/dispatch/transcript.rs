@@ -372,8 +372,7 @@ pub(super) fn dispatch_open_extensions_modal(
 
     // Mutual exclusivity: close agents modal when opening extensions.
     agent.agents_modal = None;
-    let mut modal = ExtensionsModalState::new(tab);
-    modal.session_team_id = app.team_id.clone();
+    let modal = ExtensionsModalState::new(tab);
     agent.extensions_modal = Some(modal);
 
     let Some(session_id) = agent.session.session_id.clone() else {

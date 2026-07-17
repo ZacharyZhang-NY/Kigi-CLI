@@ -635,8 +635,7 @@ impl AgentView {
                 entries: _, state, ..
             } => {
                 // Build filtered entries for count and non-selectable indices.
-                let filtered =
-                    crate::views::modal::filter_palette_entries(&state.query, self.sharing_enabled);
+                let filtered = crate::views::modal::filter_palette_entries(&state.query);
                 let non_sel: Vec<bool> = filtered
                     .iter()
                     .map(|e| matches!(e.command, PaletteCommand::SectionHeader(_)))
@@ -840,14 +839,10 @@ impl AgentView {
                     }
                     PickerOutcome::Changed => {
                         // Re-filter entries based on updated query.
-                        let sharing_enabled = self.sharing_enabled;
                         if let Some(ActiveModal::CommandPalette { entries, state, .. }) =
                             self.active_modal.as_mut()
                         {
-                            *entries = crate::views::modal::filter_palette_entries(
-                                &state.query,
-                                sharing_enabled,
-                            );
+                            *entries = crate::views::modal::filter_palette_entries(&state.query);
                             state.selected = state.selected.min(entries.len().saturating_sub(1));
                         }
                         InputOutcome::Changed
@@ -1623,7 +1618,7 @@ impl AgentView {
             } = active_modal
             {
                 // Command palette: ModalWindow chrome + picker content.
-                let filtered = modal::filter_palette_entries(&state.query, self.sharing_enabled);
+                let filtered = modal::filter_palette_entries(&state.query);
                 let non_sel: Vec<bool> = filtered
                     .iter()
                     .map(|e| matches!(e.command, modal::PaletteCommand::SectionHeader(_)))
@@ -2614,7 +2609,7 @@ mod command_palette_vim_input_tests {
     // INPUT mode (`input_active`) over the full palette entries.
     fn open_command_palette(agent: &mut AgentView) {
         agent.active_modal = Some(ActiveModal::CommandPalette {
-            entries: crate::views::modal::default_palette_entries(agent.sharing_enabled),
+            entries: crate::views::modal::default_palette_entries(),
             state: PickerState::input_active(),
             window: crate::views::modal_window::ModalWindowState::new(),
         });

@@ -79,8 +79,6 @@ mod tests {
             model_name: "test",
             flags: &[],
             multiline: false,
-            usage_warning: None,
-            usage_warning_critical: false,
         };
 
         let (_, post_flush) = render_prompt(

@@ -1270,37 +1270,6 @@ fn dashboard_slash_model_stages_pending_model() {
     );
 }
 
-/// A tier-restricted command typed into the dashboard dispatch input must
-/// upsell via the feedback toast — not execute, and (crucially) not fall
-/// through the unknown-command path, which would spawn a session whose
-/// first prompt is the raw slash text.
-#[serial_test::serial(KIGI_AGENT_DASHBOARD)]
-#[test]
-fn dashboard_slash_restricted_command_upsells_via_toast() {
-    let mut app = test_app();
-    app.tier_restricted_commands = vec!["imagine".to_string()];
-    open_dashboard(&mut app);
-
-    let effects = dispatch_dashboard_dispatch_slash(&mut app, "/imagine a sunset".into());
-
-    assert!(effects.is_empty(), "restricted command must not dispatch");
-    assert!(
-        app.agents.is_empty(),
-        "no session may be spawned for the raw slash text"
-    );
-    let toast = app
-        .dashboard
-        .as_ref()
-        .unwrap()
-        .error_toast
-        .as_deref()
-        .expect("restricted command must set the upsell toast");
-    assert!(
-        toast.contains("/imagine") && toast.contains("SuperGrok"),
-        "toast must carry the upsell: {toast}"
-    );
-}
-
 /// A slash command that fails (`CommandResult::Error`) surfaces on
 /// the dashboard with the `✗` error prefix — command error strings
 /// carry no glyph of their own, and the feedback badge paints the

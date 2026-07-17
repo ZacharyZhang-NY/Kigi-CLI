@@ -2,41 +2,6 @@
     use super::*;
 
     #[test]
-    fn settings_non_api_key_tier_clears_stale_api_key_flag() {
-        let mut app = make_app_with_agent("sess-stale-key");
-        assert!(handle_ext_notification(
-            &tier_settings_update("API Key"),
-            &mut app
-        ));
-        assert!(app.is_api_key_auth);
-        assert!(!app.usage_visible);
-        assert!(app.tier_restricted_commands.is_empty());
-
-        // Later personal Free stamp must not keep the API-key bypass.
-        assert!(handle_ext_notification(
-            &tier_settings_update("Free"),
-            &mut app
-        ));
-        assert!(!app.is_api_key_auth);
-        assert!(app.usage_visible);
-        // Tier gating no longer exists; nothing gets re-restricted.
-        assert!(app.tier_restricted_commands.is_empty());
-
-        // A paid tier after API Key clears the api-key flag and tier limits.
-        let mut app = make_app_with_agent("sess-paid-tier");
-        assert!(handle_ext_notification(
-            &tier_settings_update("API Key"),
-            &mut app
-        ));
-        assert!(handle_ext_notification(
-            &tier_settings_update("SuperGrok"),
-            &mut app
-        ));
-        assert!(!app.is_api_key_auth);
-        assert!(app.tier_restricted_commands.is_empty());
-    }
-
-    #[test]
     fn settings_update_clearing_group_tool_verbs_reverts_to_default() {
         // Expected values come from the same chain the handler resolves, so the
         // test holds regardless of host config/env (a local `[ui]` or env

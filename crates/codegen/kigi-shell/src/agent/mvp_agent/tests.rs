@@ -1822,18 +1822,6 @@ fn orphaned_tasks_filters_rewind_dead_branches() {
     );
 }
 #[test]
-fn allow_access_from_remote_settings() {
-    let json = serde_json::json!({ "allow_access" : true });
-    let rs: crate::util::config::RemoteSettings = serde_json::from_value(json).unwrap();
-    assert_eq!(rs.allow_access, Some(true));
-    let json = serde_json::json!({ "allow_access" : false });
-    let rs: crate::util::config::RemoteSettings = serde_json::from_value(json).unwrap();
-    assert_eq!(rs.allow_access, Some(false));
-    let json = serde_json::json!({});
-    let rs: crate::util::config::RemoteSettings = serde_json::from_value(json).unwrap();
-    assert_eq!(rs.allow_access, None);
-}
-#[test]
 fn on_demand_enabled_from_remote_settings() {
     let json = serde_json::json!({ "on_demand_enabled" : false });
     let rs: crate::util::config::RemoteSettings = serde_json::from_value(json).unwrap();

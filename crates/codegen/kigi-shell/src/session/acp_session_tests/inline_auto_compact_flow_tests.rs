@@ -152,7 +152,6 @@ async fn create_test_actor(
         client_identifier: None,
         origin_client: None,
         feedback_manager: Arc::new(FeedbackManager::local_only("test-session")),
-        sync_loop_cancel: None,
         agent: std::cell::RefCell::new(test_agent_default().await),
         last_reported_branch: std::sync::Arc::new(parking_lot::Mutex::new(None)),
         git_head_enabled: false,
@@ -591,7 +590,6 @@ async fn create_test_actor_with_memory(
         client_identifier: None,
         origin_client: None,
         feedback_manager: Arc::new(FeedbackManager::local_only("test-memory")),
-        sync_loop_cancel: None,
         agent: std::cell::RefCell::new(test_agent_default().await),
         last_reported_branch: std::sync::Arc::new(parking_lot::Mutex::new(None)),
         git_head_enabled: false,
@@ -1168,7 +1166,7 @@ async fn test_compact_on_error_no_trigger_when_tokens_within_new_window() {
 /// End-to-end test for `maybe_refresh_model_metadata_on_resume`.
 ///
 /// Simulates a session idle for >10 minutes, then verifies the function
-/// fetches `/models-v2`, parses the response, and updates `context_window`
+/// fetches `/models`, parses the response, and updates `context_window`
 /// and `max_completion_tokens` in the sampling config.
 #[tokio::test(flavor = "current_thread")]
 async fn test_e2e_idle_resume_refreshes_model_metadata() {
@@ -1177,7 +1175,7 @@ async fn test_e2e_idle_resume_refreshes_model_metadata() {
     local
         .run_until(async {
             let app = axum::Router::new().route(
-                "/v1/models-v2",
+                "/v1/models",
                 get(|| async {
                     axum::Json(serde_json::json!(
                         { "data" : [{ "model" : "test-model", "name" : "Test Model",
@@ -1241,7 +1239,6 @@ async fn test_e2e_idle_resume_refreshes_model_metadata() {
                 api_key: Some("test-key".to_string()),
                 auth_type: Default::default(),
                 alpha_test_key: None,
-                client_version: None,
             });
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             let actor = SessionActor {
@@ -1346,7 +1343,6 @@ async fn test_e2e_idle_resume_refreshes_model_metadata() {
                 client_identifier: None,
                 origin_client: None,
                 feedback_manager: Arc::new(FeedbackManager::local_only("test-session")),
-                sync_loop_cancel: None,
                 agent: std::cell::RefCell::new(test_agent_default().await),
                 last_reported_branch: std::sync::Arc::new(parking_lot::Mutex::new(None)),
                 git_head_enabled: false,
@@ -1448,12 +1444,12 @@ async fn test_e2e_idle_resume_refreshes_model_metadata() {
             assert_eq!(
                 cfg_after.context_window,
                 std::num::NonZeroU64::new(300_000).unwrap(),
-                "context_window should be updated to 300K from /models-v2"
+                "context_window should be updated to 300K from /models"
             );
             assert_eq!(
                 cfg_after.max_completion_tokens,
                 Some(16384),
-                "max_completion_tokens should be updated to 16384 from /models-v2"
+                "max_completion_tokens should be updated to 16384 from /models"
             );
         })
         .await;

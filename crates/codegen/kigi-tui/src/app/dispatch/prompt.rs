@@ -1,7 +1,6 @@
 //! Prompt and bash-command submission dispatchers and reload-window helpers.
 
 use super::auth::{scrollback_has_recent_context_too_large, scrollback_has_recent_reauth_prompt};
-use super::billing::is_credit_limit_error;
 use super::ctx::with_active_agent;
 use super::interject;
 use super::permissions::drain_permission_queue;
@@ -292,7 +291,6 @@ pub(super) fn dispatch_send_prompt_inner(
         return vec![];
     };
     // Capture app-level fields before the mut-borrow on `agent`.
-    let coding_data_sharing_opt_out_from_app = app.coding_data_retention_opt_out;
     let show_tips_from_app = app.show_tips;
     let auto_update_from_app = app.auto_update;
     let respect_manual_folds_from_app = app.appearance.scrollback.scroll.respect_manual_folds;
@@ -324,37 +322,6 @@ pub(super) fn dispatch_send_prompt_inner(
 
     let mut effects = Vec::new();
 
-    // ── Tier-restricted command upsell ─────────────────────────────
-    // Restricted commands (`/usage`, `/imagine`, …) are hidden from the
-    // registry's `get()`, so a typed invocation would otherwise fall
-    // through the unknown-command path below and leak to the model as a
-    // raw prompt. Upsell instead; genuinely unknown commands still pass
-    // through (shell/ACP commands depend on that).
-    if !literal
-        && trimmed.starts_with('/')
-        && let Some(invocation) = crate::slash::parse_invocation(trimmed)
-        && agent
-            .prompt
-            .slash_controller
-            .registry()
-            .is_restricted(invocation.token)
-    {
-        // Only consume the composer when the upsell can actually open: with
-        // another question modal already up, `open_supergrok_upsell` would
-        // no-op and wiping the composer here would silently drop the typed
-        // text. Keep it instead so the user can resubmit after closing the
-        // modal — and never fall through to passthrough for restricted
-        // commands.
-        if agent.question_view.is_none() {
-            if consume_input {
-                agent.prompt.set_text("");
-            }
-            let opened = super::billing::open_restricted_command_upsell(agent);
-            debug_assert!(opened, "no modal was open, so the upsell must open");
-        }
-        return vec![];
-    }
-
     // ── Registry-based slash command execution ─────────────────────
     // If the text starts with `/`, run it through the slash registry.
     // The registry resolves builtins, ACP-advertised commands, and
@@ -384,7 +351,6 @@ pub(super) fn dispatch_send_prompt_inner(
                         .iter()
                         .map(|(id, info)| (info.name.clone(), id.clone()))
                         .collect(),
-                    coding_data_sharing_opt_out: coding_data_sharing_opt_out_from_app,
                     // Prefer optimistic pending over confirmed active.
                     plan_mode_active: agent.plan_mode_pending.unwrap_or(agent.plan_mode_active),
                     show_tips: show_tips_from_app,
@@ -1004,29 +970,11 @@ pub(super) fn handle_prompt_response(
                 None => expected_send_now.is_some(),
             };
         let rate_limited = agent.session.rate_limited;
-        // Fallback mirroring the credit-limit race guard below: if the retry
-        // notification lost the race with (or never reached) this
-        // PromptResponse, detect the free-usage code from the prompt error
-        // itself — the flattened 429 body embeds it.
-        let free_usage_blocked = agent.session.free_usage_blocked
-            || result
-                .as_ref()
-                .err()
-                .is_some_and(|e| super::billing::is_free_usage_exhausted_error(e));
         let model_incompatible = agent.session.model_incompatible;
         // Context overflow: the RetryState handler already pushed the actionable
         // block, so the generic TurnFailed + error toast are redundant. Derived
         // from the scrollback (mirrors reauth), not a session flag.
         let context_overflow = scrollback_has_recent_context_too_large(&agent.scrollback);
-        // Fallback: if the retry notification didn't set the flag,
-        // detect credit-limit denials (legacy 403 or pool 402) from
-        // the PromptResponse error + HTTP status. Covers races where
-        // the retry notification arrives after the PromptResponse.
-        let credit_limit_blocked = agent.session.credit_limit_blocked
-            || result
-                .as_ref()
-                .err()
-                .is_some_and(|e| is_credit_limit_error(http_status, e));
         // A 401/auth failure already surfaced an actionable
         // `ReAuthRequired` prompt via the RetryState handler (which
         // runs before this PromptResponse). Suppress the redundant
@@ -1055,12 +1003,7 @@ pub(super) fn handle_prompt_response(
             );
         }
 
-        // Stash the complete in-flight prompt before finish_turn clears it.
-        // Used by CreditLimitRecheckComplete to retry after a tier upgrade.
-        if credit_limit_blocked {
-            agent.credit_limit_stashed_prompt = agent.session.in_flight_prompt.clone();
-        }
-        // Likewise, stash the prompt from a turn that failed on an
+        // Stash the prompt from a turn that failed on an
         // expired login (401 / re-auth). The AuthComplete handler
         // auto-resubmits it after a successful mid-session re-auth.
         // A non-rewindable turn (None) must not clobber an earlier stash.
@@ -1110,17 +1053,11 @@ pub(super) fn handle_prompt_response(
                 elapsed: Some(elapsed.unwrap_or_default()),
             }),
             (Err(_), _)
-                if rate_limited
-                    || free_usage_blocked
-                    || model_incompatible
-                    || credit_limit_blocked
-                    || reauth_prompted
-                    || context_overflow =>
+                if rate_limited || model_incompatible || reauth_prompted || context_overflow =>
             {
                 // Skip TurnFailed when a dedicated prompt/modal shows instead
-                // (rate limit, free-usage paywall, model incompatibility,
-                // credit 403, 401 re-auth, or a terminal context-window
-                // overflow).
+                // (rate limit, model incompatibility, 401 re-auth, or a
+                // terminal context-window overflow).
                 None
             }
             (Err(err), _) => Some(SessionEvent::TurnFailed {
@@ -1147,9 +1084,7 @@ pub(super) fn handle_prompt_response(
             }
             (Err(err), _)
                 if !rate_limited
-                    && !free_usage_blocked
                     && !model_incompatible
-                    && !credit_limit_blocked
                     && !reauth_prompted
                     && !context_overflow =>
             {
@@ -1256,7 +1191,7 @@ pub(super) fn handle_prompt_response(
 
         // Predicted-next-prompt (tab autocomplete): wipe any stale suggestion
         // at every turn boundary. This must run before the reconnect /
-        // credit-limit early returns below, which skip the fetch gate
+        // paywall early returns below, which skip the fetch gate
         // entirely — a prior ghost would otherwise survive those paths.
         agent.prompt.prompt_suggestion.clear();
 
@@ -1265,60 +1200,6 @@ pub(super) fn handle_prompt_response(
         // `maybe_drain_queue` keeps the idle-only and editing-front
         // guards so we do not send from under the user.
         if app.reconnect_pending {
-            if let Some(p) = pending_adoption {
-                agent.discard_pending_adoption_updates(&p.prompt_id);
-            }
-            return vec![];
-        }
-
-        // Credit-limit (403 legacy / 402 pool): strip stale error
-        // blocks, then do a one-shot subscription re-check. If the
-        // tier changed (user upgraded mid-session), the stashed
-        // prompt is retried automatically; otherwise the upsell
-        // is shown.
-        if credit_limit_blocked {
-            // Strip stale "Retry failed" / "Turn failed" error blocks
-            // that were pushed before the credit-limit was detected.
-            // Walk backwards from the end and remove matching events.
-            let mut to_remove = Vec::new();
-            for idx in (0..agent.scrollback.len()).rev() {
-                match agent.scrollback.entry(idx).map(|e| &e.block) {
-                    Some(crate::scrollback::block::RenderBlock::SessionEvent(ev))
-                        if matches!(
-                            &ev.event,
-                            SessionEvent::RetryFailed { .. } | SessionEvent::TurnFailed { .. }
-                        ) =>
-                    {
-                        to_remove.push(idx);
-                    }
-                    // Stop at the first non-error block.
-                    Some(
-                        crate::scrollback::block::RenderBlock::SessionEvent(_)
-                        | crate::scrollback::block::RenderBlock::System(_),
-                    ) => continue,
-                    _ => break,
-                }
-            }
-            for idx in to_remove {
-                agent.scrollback.remove_from(idx);
-            }
-
-            // Defer the upsell until the subscription re-check
-            // completes. Queue drain + billing fetch happen in the
-            // CreditLimitRecheckComplete handler.
-            if let Some(p) = pending_adoption {
-                agent.discard_pending_adoption_updates(&p.prompt_id);
-            }
-            return vec![Effect::CreditLimitRecheck { agent_id }];
-        }
-
-        // Free-usage paywall (429 + subscription:free-usage-exhausted): the
-        // RetryState handler set the flag and suppressed the generic
-        // rate-limit block; show the upsell modal. Driver-only by
-        // construction — viewers never receive a PromptResponse. No queue
-        // drain: queued prompts would fail on the same exhausted quota.
-        if free_usage_blocked {
-            super::billing::open_free_usage_upsell(agent);
             if let Some(p) = pending_adoption {
                 agent.discard_pending_adoption_updates(&p.prompt_id);
             }
@@ -1372,10 +1253,6 @@ pub(super) fn handle_prompt_response(
             });
         }
 
-        effects.push(Effect::FetchBilling {
-            agent_id,
-            silent: true,
-        });
         return effects;
     }
     vec![]

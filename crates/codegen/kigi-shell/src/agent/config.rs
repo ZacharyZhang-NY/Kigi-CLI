@@ -1,6 +1,6 @@
 use crate::agent::auth_method::ModelByok;
+use crate::agent::models_fetch::DEFAULT_CONTEXT_WINDOW;
 use crate::auth::{AuthManager, KimiCodeConfig};
-use crate::remote::DEFAULT_CONTEXT_WINDOW;
 use crate::{config::StorageMode, sampling::ApiBackend, tools::config::ShellToolsetConfig};
 use agent_client_protocol as acp;
 use indexmap::IndexMap;
@@ -141,7 +141,7 @@ pub struct EndpointsConfig {
     /// `Some` = explicitly configured. Tracking explicitness (vs comparing to the
     /// default value) lets an org pin the proxy to the default on purpose.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cli_chat_proxy_base_url: Option<String>,
+    pub coding_api_base_url: Option<String>,
     /// Base URL for the public xAI API.
     pub xai_api_base_url: String,
     /// Optional extra access-header value (applied only with the optional
@@ -271,11 +271,11 @@ impl EndpointsConfig {
         resolved
     }
     /// The subscription proxy base URL through which all auxiliary services (and
-    /// OAuth/session inference) resolve: explicit `cli_chat_proxy_base_url`, else
+    /// OAuth/session inference) resolve: explicit `coding_api_base_url`, else
     /// [`kigi_env::coding_api_base_url`]. NEVER falls back to `xai_api_base_url` —
     /// that is the inference endpoint (API-key auth) only.
     pub fn proxy_url(&self) -> String {
-        blank_as_unset(&self.cli_chat_proxy_base_url).unwrap_or_else(kigi_env::coding_api_base_url)
+        blank_as_unset(&self.coding_api_base_url).unwrap_or_else(kigi_env::coding_api_base_url)
     }
     pub fn resolve_inference_base_url(&self) -> String {
         self.models_base_url
@@ -406,7 +406,7 @@ impl EndpointsConfig {
 impl Default for EndpointsConfig {
     fn default() -> Self {
         Self {
-            cli_chat_proxy_base_url: std::env::var("KIGI_CLI_CHAT_PROXY_BASE_URL").ok(),
+            coding_api_base_url: std::env::var("KIGI_CODE_BASE_URL").ok(),
             xai_api_base_url: std::env::var("KIGI_XAI_API_BASE_URL")
                 .unwrap_or_else(|_| XAI_API_BASE_URL_DEFAULT.to_owned()),
             alpha_test_key: None,
@@ -4169,19 +4169,11 @@ pub fn resolve_aux_model_sampling_config(
     endpoints: &EndpointsConfig,
     session_key: Option<&str>,
     alpha_test_key: Option<String>,
-    client_version: Option<String>,
 ) -> Option<SamplerConfig> {
     let catalog_entry = find_model_by_id(models, model_id).cloned();
     if let Some(entry) = &catalog_entry {
         let credentials = resolve_credentials(entry, session_key);
-        let sampler = sampling_config_for_model(
-            entry,
-            credentials,
-            alpha_test_key.clone(),
-            client_version.clone(),
-            None,
-            None,
-        );
+        let sampler = sampling_config_for_model(entry, credentials, alpha_test_key.clone());
         if sampler.api_key.is_some() {
             return Some(sampler);
         }
@@ -4232,14 +4224,7 @@ pub fn resolve_aux_model_sampling_config(
             api_base_url: None,
         };
         let credentials = resolve_credentials(&entry, session_key);
-        let sampler = sampling_config_for_model(
-            &entry,
-            credentials,
-            alpha_test_key,
-            client_version,
-            None,
-            None,
-        );
+        let sampler = sampling_config_for_model(&entry, credentials, alpha_test_key);
         return Some(sampler);
     }
     tracing::warn!(
@@ -4252,21 +4237,19 @@ pub fn resolve_aux_model_sampling_config(
 /// Shared so the aux resolve happy path and the
 /// `None` fallback cannot diverge between those entry points.
 ///
-/// On aux resolve `Some`, stamp session-local fields (client id, attribution, bearer,
+/// On aux resolve `Some`, stamp session-local fields (attribution, bearer,
 /// retries) onto the helper config. On `None`, fall back to the active session model and
 /// full config (not forcing `image_description_model` onto the agent endpoint, which 404s
-/// on BYOK / non-proxy routes for internal slugs like `grok-build`).
-/// Stamp the session-local fields (client id, attribution, bearer resolver,
-/// retries) from the active session onto a routed aux `SamplerConfig` so a
+/// on BYOK / non-proxy routes for internal slugs).
+/// Stamp the session-local fields (attribution, bearer resolver, retries)
+/// from the active session onto a routed aux `SamplerConfig` so a
 /// helper model keeps the session's auth/attribution. Shared by image-describe
 /// and the auto-mode classifier so the two can't drift.
 pub fn stamp_session_local_sampler_fields(
     cfg: &mut SamplerConfig,
     active_session_config: &SamplerConfig,
-    client_identifier: Option<String>,
     max_retries: Option<u32>,
 ) {
-    cfg.client_identifier = client_identifier;
     cfg.attribution_callback = active_session_config.attribution_callback.clone();
     cfg.bearer_resolver = active_session_config.bearer_resolver.clone();
     cfg.max_retries = max_retries;
@@ -4274,7 +4257,6 @@ pub fn stamp_session_local_sampler_fields(
 pub fn finalize_image_describe_sampler_config(
     resolved_aux: Option<SamplerConfig>,
     active_session_config: &SamplerConfig,
-    client_identifier: Option<String>,
     max_retries: Option<u32>,
 ) -> (String, SamplerConfig) {
     match resolved_aux {
@@ -4282,7 +4264,6 @@ pub fn finalize_image_describe_sampler_config(
             stamp_session_local_sampler_fields(
                 &mut describe_cfg,
                 active_session_config,
-                client_identifier,
                 max_retries,
             );
             let model = describe_cfg.model.clone();
@@ -4310,9 +4291,6 @@ pub fn sampling_config_for_model(
     model: &ModelEntry,
     credentials: ResolvedCredentials,
     alpha_test_key: Option<String>,
-    client_version: Option<String>,
-    deployment_id: Option<String>,
-    user_id: Option<String>,
 ) -> SamplerConfig {
     let info = model.info();
     let model_name = info.model.clone();
@@ -4337,15 +4315,11 @@ pub fn sampling_config_for_model(
         auth_scheme: credentials.auth_scheme,
         extra_headers,
         context_window: info.context_window.get(),
-        client_version,
         reasoning_effort: info.reasoning_effort,
         force_http1: false,
         max_retries: info.max_retries,
         stream_tool_calls: info.stream_tool_calls.unwrap_or(false),
         idle_timeout_secs: None,
-        client_identifier: None,
-        deployment_id,
-        user_id,
         origin_client: None,
         attribution_callback: None,
         bearer_resolver: None,
@@ -4359,11 +4333,19 @@ pub fn sampling_config_for_model(
 /// Fold URL-derived headers into `extra_headers`.
 ///
 /// The sampler crate is intentionally URL-agnostic: it does not inspect
-/// `base_url` to decide which auth or staging headers to add. Replicate the
+/// `base_url` to decide which auth or identity headers to add. Replicate the
 /// URL-derived header logic at the shell boundary so callers downstream see a
 /// single homogenous header bag.
 ///
-/// * First-party bases get the client-mode header.
+/// * First-party (Kimi subscription) bases get the `X-Msh-Device-*` identity
+///   headers, mirroring the official client, which sends its OAuth device
+///   headers on every inference request (kimi-cli src/kimi_cli/llm.py:317-323
+///   `_kimi_default_headers` merges `oauth.common_headers()`). Third-party /
+///   Moonshot-open-platform bases get none — only the bearer and User-Agent.
+///
+/// A device-id failure only skips the headers (with a warning): inference
+/// must not hard-fail because `~/.kigi/device_id` is unwritable — unlike
+/// OAuth login, where the id is mandatory.
 ///
 /// Existing entries are never overwritten so callers can pre-set a value.
 pub fn inject_url_derived_headers(
@@ -4371,10 +4353,20 @@ pub fn inject_url_derived_headers(
     alpha_test_key: Option<&str>,
     base_url: &str,
 ) {
-    if crate::util::is_cli_chat_proxy_url(base_url) {
-        headers
-            .entry(crate::http::CLIENT_MODE_HEADER.to_string())
-            .or_insert_with(|| crate::http::process_client_mode().to_string());
+    if crate::util::is_production_coding_api_url(base_url) {
+        match crate::auth::device_headers() {
+            Ok(device_headers) => {
+                for (name, value) in device_headers {
+                    headers.entry(name.to_string()).or_insert(value);
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "device identity headers unavailable; sending inference request without them"
+                );
+            }
+        }
     }
     let _ = (alpha_test_key, base_url);
 }
@@ -4383,7 +4375,6 @@ pub fn resolve_model_to_sampling_config(
     models: &IndexMap<String, ModelEntry>,
     session_key: Option<&str>,
     alpha_test_key: Option<String>,
-    client_version: Option<String>,
     fallback_entry: Option<ModelEntry>,
 ) -> Option<SamplerConfig> {
     let entry = find_model_by_id(models, model_id)
@@ -4394,16 +4385,12 @@ pub fn resolve_model_to_sampling_config(
         &entry,
         credentials,
         alpha_test_key,
-        client_version,
-        None,
-        None,
     ))
 }
 fn resolve_hidden_default_web_search_sampling_config(
     model_id: &str,
     session_key: Option<&str>,
     alpha_test_key: Option<String>,
-    client_version: Option<String>,
     endpoints: &EndpointsConfig,
 ) -> SamplerConfig {
     let entry = ModelEntry {
@@ -4445,21 +4432,13 @@ fn resolve_hidden_default_web_search_sampling_config(
         api_base_url: None,
     };
     let credentials = resolve_credentials(&entry, session_key);
-    sampling_config_for_model(
-        &entry,
-        credentials,
-        alpha_test_key,
-        client_version,
-        None,
-        None,
-    )
+    sampling_config_for_model(&entry, credentials, alpha_test_key)
 }
 pub fn resolve_web_search_sampling_config(
     model_id: &str,
     models: &IndexMap<String, ModelEntry>,
     session_key: Option<&str>,
     alpha_test_key: Option<String>,
-    client_version: Option<String>,
     endpoints: &EndpointsConfig,
 ) -> Option<SamplerConfig> {
     let resolved = if let Some(entry) = find_model_by_id(models, model_id).cloned() {
@@ -4468,16 +4447,12 @@ pub fn resolve_web_search_sampling_config(
             &entry,
             credentials,
             alpha_test_key,
-            client_version,
-            None,
-            None,
         ))
     } else if model_id == crate::models::default_web_search_model() {
         Some(resolve_hidden_default_web_search_sampling_config(
             model_id,
             session_key,
             alpha_test_key,
-            client_version,
             endpoints,
         ))
     } else {
@@ -4757,21 +4732,23 @@ reasoning_effort = "low"
         }
     }
     #[test]
-    fn inject_url_derived_headers_adds_client_mode_for_first_party_url() {
+    fn inject_url_derived_headers_adds_device_identity_for_first_party_url() {
         let mut headers = IndexMap::new();
         inject_url_derived_headers(
             &mut headers,
             None,
             kigi_env::PRODUCTION_ENDPOINTS.coding_api_base_url,
         );
-        assert!(headers.get(crate::http::CLIENT_MODE_HEADER).is_some());
+        assert!(headers.get("X-Msh-Device-Id").is_some());
+        assert!(headers.get("X-Msh-Device-Name").is_some());
         assert!(headers.get("X-XAI-Token-Auth").is_none());
     }
     #[test]
     fn inject_url_derived_headers_skips_headers_for_external_url() {
         let mut headers = IndexMap::new();
         inject_url_derived_headers(&mut headers, None, "https://api.example.com/v1");
-        assert!(headers.get(crate::http::CLIENT_MODE_HEADER).is_none());
+        assert!(headers.get("X-Msh-Device-Id").is_none());
+        assert!(headers.get("X-Msh-Device-Name").is_none());
     }
     #[test]
     fn inject_url_derived_headers_preserves_caller_extra_headers() {
@@ -4924,7 +4901,6 @@ reasoning_effort = "low"
             &IndexMap::new(),
             Some("session-token"),
             None,
-            None,
             &endpoints,
         )
         .expect("hidden default web search model should resolve");
@@ -4943,7 +4919,7 @@ reasoning_effort = "low"
             model: "composer-session-model".into(),
             ..Default::default()
         };
-        let (model, cfg) = finalize_image_describe_sampler_config(None, &active, None, Some(3));
+        let (model, cfg) = finalize_image_describe_sampler_config(None, &active, Some(3));
         assert_eq!(model, "composer-session-model");
         assert_eq!(cfg.model, "composer-session-model");
         assert_ne!(cfg.model, "grok-build");
@@ -4958,11 +4934,9 @@ reasoning_effort = "low"
             model: "grok-build".into(),
             ..Default::default()
         };
-        let (model, cfg) =
-            finalize_image_describe_sampler_config(Some(aux), &active, Some("cli".into()), Some(7));
+        let (model, cfg) = finalize_image_describe_sampler_config(Some(aux), &active, Some(7));
         assert_eq!(model, "grok-build");
         assert_eq!(cfg.model, "grok-build");
-        assert_eq!(cfg.client_identifier.as_deref(), Some("cli"));
         assert_eq!(cfg.max_retries, Some(7));
     }
     #[test]
@@ -4980,7 +4954,7 @@ reasoning_effort = "low"
             ),
         );
         let resolved =
-            resolve_aux_model_sampling_config("grok-build", &catalog, &endpoints, None, None, None)
+            resolve_aux_model_sampling_config("grok-build", &catalog, &endpoints, None, None)
                 .expect("override entry has an API key, so resolution succeeds");
         assert_eq!(resolved.model, "v9m-rl-learnability-tp8");
         assert_eq!(resolved.base_url, "https://vendor.example/v1");
@@ -5085,14 +5059,8 @@ reasoning_effort = "low"
             None,
             None,
         );
-        let sampling_config = sampling_config_for_model(
-            &model,
-            resolve_credentials(&model, None),
-            None,
-            None,
-            None,
-            None,
-        );
+        let sampling_config =
+            sampling_config_for_model(&model, resolve_credentials(&model, None), None);
         assert_eq!(
             sampling_config.api_key,
             Some("model-specific-key".to_string())
@@ -5110,9 +5078,6 @@ reasoning_effort = "low"
                 auth_type: kigi_chat_state::AuthType::ApiKey,
                 auth_scheme: AuthScheme::Bearer,
             },
-            None,
-            None,
-            None,
             None,
         );
         assert_eq!(sampling_config.api_key, Some("fallback-key".to_string()));
@@ -5388,14 +5353,8 @@ reasoning_effort = "low"
             None,
         );
         model.info.api_backend = ApiBackend::Messages;
-        let config = sampling_config_for_model(
-            &model,
-            resolve_credentials(&model, Some("tok")),
-            None,
-            None,
-            None,
-            None,
-        );
+        let config =
+            sampling_config_for_model(&model, resolve_credentials(&model, Some("tok")), None);
         assert_eq!(config.api_backend, ApiBackend::Messages);
         assert_eq!(config.auth_scheme, AuthScheme::Bearer);
         assert_eq!(config.api_key, Some("tok".to_string()));
@@ -5440,7 +5399,7 @@ reasoning_effort = "low"
         assert_eq!(creds.auth_scheme, AuthScheme::XApiKey);
         assert_eq!(creds.auth_type, kigi_chat_state::AuthType::ApiKey);
         assert_eq!(creds.api_key, Some("sk-ant-test-key".to_string()));
-        let config = sampling_config_for_model(&model, creds, None, None, None, None);
+        let config = sampling_config_for_model(&model, creds, None);
         assert_eq!(config.auth_scheme, AuthScheme::XApiKey);
         assert_eq!(config.api_backend, ApiBackend::Messages);
         let client = kigi_sampler::SamplingClient::new(config).expect("client should build");
@@ -5459,7 +5418,7 @@ reasoning_effort = "low"
         assert_eq!(model.info.auth_scheme, AuthScheme::Bearer);
         let creds = resolve_credentials(&model, None);
         assert_eq!(creds.auth_scheme, AuthScheme::Bearer);
-        let config = sampling_config_for_model(&model, creds, None, None, None, None);
+        let config = sampling_config_for_model(&model, creds, None);
         assert_eq!(config.auth_scheme, AuthScheme::Bearer);
         let client = kigi_sampler::SamplingClient::new(config).expect("client should build");
         let info = client.auth_info();
@@ -5771,25 +5730,11 @@ reasoning_effort = "low"
     #[test]
     fn sampling_config_context_window_from_entry_or_default() {
         let model = test_model_entry("any-model", "https://api.x.ai/v1", None, None, None);
-        let config = sampling_config_for_model(
-            &model,
-            resolve_credentials(&model, None),
-            None,
-            None,
-            None,
-            None,
-        );
+        let config = sampling_config_for_model(&model, resolve_credentials(&model, None), None);
         assert_eq!(config.context_window, 200_000);
         let mut model = test_model_entry("any-model", "https://api.x.ai/v1", None, None, None);
         model.info.context_window = NonZeroU64::new(256_000).unwrap();
-        let config = sampling_config_for_model(
-            &model,
-            resolve_credentials(&model, None),
-            None,
-            None,
-            None,
-            None,
-        );
+        let config = sampling_config_for_model(&model, resolve_credentials(&model, None), None);
         assert_eq!(config.context_window, 256_000);
     }
     #[test]
@@ -5917,14 +5862,8 @@ reasoning_effort = "low"
         let mut model =
             test_model_entry("test-model", "https://api.example.com/v1", None, None, None);
         model.info.api_backend = ApiBackend::Responses;
-        let sampling_config = sampling_config_for_model(
-            &model,
-            resolve_credentials(&model, None),
-            None,
-            None,
-            None,
-            None,
-        );
+        let sampling_config =
+            sampling_config_for_model(&model, resolve_credentials(&model, None), None);
         assert_eq!(sampling_config.api_backend, ApiBackend::Responses);
     }
     #[test]
@@ -6636,7 +6575,7 @@ reasoning_effort = "low"
     }
     fn resolve_sampling(model: &ModelEntry, session_key: Option<&str>) -> SamplerConfig {
         let credentials = resolve_credentials(model, session_key);
-        sampling_config_for_model(model, credentials, None, None, None, None)
+        sampling_config_for_model(model, credentials, None)
     }
     #[test]
     #[serial]
@@ -7022,7 +6961,7 @@ reasoning_effort = "low"
             &format!(
                 r#"
             [endpoints]
-            cli_chat_proxy_base_url = "https://enterprise-proxy.acme.com/v1"
+            coding_api_base_url = "https://enterprise-proxy.acme.com/v1"
 
             [model."{BUNDLED_DEFAULT_KEY}"]
             api_key = "acme-api-key"
@@ -7052,14 +6991,14 @@ reasoning_effort = "low"
         let (_, models) = resolve_models_from_toml(
             r#"
             [endpoints]
-            cli_chat_proxy_base_url = "https://enterprise-proxy.acme.com/v1"
+            coding_api_base_url = "https://enterprise-proxy.acme.com/v1"
             "#,
             None,
         );
         let model = models.get(BUNDLED_DEFAULT_KEY).expect("model should exist");
         assert_eq!(
             model.info.base_url, "https://enterprise-proxy.acme.com/v1",
-            "default model should use enterprise cli_chat_proxy_base_url"
+            "default model should use enterprise coding_api_base_url"
         );
         // The open-platform fallback entries keep their fixed moonshot bases;
         // only the subscription entry follows the proxy override.
@@ -7073,7 +7012,7 @@ reasoning_effort = "low"
     /// the ambient environment. Gated behind `#[serial]`.
     fn unset_endpoint_env_vars() {
         for k in [
-            "KIGI_CLI_CHAT_PROXY_BASE_URL",
+            "KIGI_CODE_BASE_URL",
             kigi_env::CODE_BASE_URL_ENV,
             "KIGI_XAI_API_BASE_URL",
             "KIGI_FEEDBACK_BASE_URL",
@@ -7101,7 +7040,7 @@ reasoning_effort = "low"
         let inference = "https://inference.acme-corp.example/xai/v1";
         let cfg = EndpointsConfig {
             xai_api_base_url: inference.to_string(),
-            cli_chat_proxy_base_url: None,
+            coding_api_base_url: None,
             ..Default::default()
         };
         let proxy = kigi_env::PRODUCTION_ENDPOINTS.coding_api_base_url;
@@ -7119,7 +7058,7 @@ reasoning_effort = "low"
         );
         assert_eq!(cfg.xai_api_base_url, inference);
         let overridden = EndpointsConfig {
-            cli_chat_proxy_base_url: Some("https://proxy.enterprise.example/v1".to_string()),
+            coding_api_base_url: Some("https://proxy.enterprise.example/v1".to_string()),
             managed_config_url: Some(
                 "https://control.enterprise.example/deployment/config".to_string(),
             ),
@@ -7159,7 +7098,7 @@ reasoning_effort = "low"
             .unwrap(),
         )
         .expect("config should parse");
-        assert!(cfg.endpoints.cli_chat_proxy_base_url.is_none());
+        assert!(cfg.endpoints.coding_api_base_url.is_none());
         assert_eq!(
             cfg.endpoints.resolve_managed_config_url(),
             format!(
@@ -7181,7 +7120,7 @@ reasoning_effort = "low"
             &format!(
                 r#"
             [endpoints]
-            cli_chat_proxy_base_url = "https://enterprise-proxy.acme.com/v1"
+            coding_api_base_url = "https://enterprise-proxy.acme.com/v1"
 
             [model."{dm}"]
             base_url = "https://my-special-proxy.example.com/v1"
@@ -8656,7 +8595,7 @@ agent_type = "cursor"
     fn otlp_traces_endpoint_precedence() {
         let proxy = "https://inference.acme.com/v1".to_string();
         let derived = EndpointsConfig {
-            cli_chat_proxy_base_url: Some(proxy.clone()),
+            coding_api_base_url: Some(proxy.clone()),
             ..Default::default()
         };
         assert_eq!(
@@ -8664,7 +8603,7 @@ agent_type = "cursor"
             "https://inference.acme.com/v1/traces"
         );
         let base = EndpointsConfig {
-            cli_chat_proxy_base_url: Some(proxy.clone()),
+            coding_api_base_url: Some(proxy.clone()),
             otel_exporter_otlp_endpoint: Some("https://otel.acme.com".to_string()),
             ..Default::default()
         };
@@ -8673,7 +8612,7 @@ agent_type = "cursor"
             "https://otel.acme.com/v1/traces"
         );
         let full = EndpointsConfig {
-            cli_chat_proxy_base_url: Some(proxy),
+            coding_api_base_url: Some(proxy),
             otel_exporter_otlp_endpoint: Some("https://ignored.example".to_string()),
             otel_exporter_otlp_traces_endpoint: Some("https://otel.acme.com/v1/traces".to_string()),
             ..Default::default()
@@ -8702,7 +8641,7 @@ agent_type = "cursor"
     /// explicitly unset so ambient env (via `Default`) can't leak in.
     fn internal_otlp_test_config() -> EndpointsConfig {
         EndpointsConfig {
-            cli_chat_proxy_base_url: Some("https://proxy.example/v1".to_string()),
+            coding_api_base_url: Some("https://proxy.example/v1".to_string()),
             otel_exporter_otlp_endpoint: None,
             otel_exporter_otlp_traces_endpoint: None,
             otel_exporter_otlp_headers: None,

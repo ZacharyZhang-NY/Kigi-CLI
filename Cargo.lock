@@ -5785,7 +5785,6 @@ dependencies = [
  "dunce",
  "kigi-tty-utils",
  "kigi-version",
- "prod-mc-cli-chat-proxy-types",
  "ring",
  "semver",
  "serde",
@@ -6385,7 +6384,6 @@ dependencies = [
  "libc",
  "objc2 0.6.4",
  "parking_lot",
- "prod-mc-cli-chat-proxy-types",
  "regex",
  "serde",
  "serde_json",
@@ -6490,7 +6488,6 @@ dependencies = [
  "parking_lot",
  "portable-pty",
  "process-wrap",
- "prod-mc-cli-chat-proxy-types",
  "prost",
  "rand 0.9.5",
  "regex",
@@ -9045,16 +9042,6 @@ checksum = "239df02d8349b06fc07398a3a1697b06418223b1c7725085e801e7c0fc6a12ec"
 dependencies = [
  "bitflags 2.13.1",
  "hex",
-]
-
-[[package]]
-name = "prod-mc-cli-chat-proxy-types"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "serde",
- "serde_json",
- "toml",
 ]
 
 [[package]]

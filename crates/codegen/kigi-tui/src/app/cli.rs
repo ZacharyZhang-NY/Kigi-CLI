@@ -38,9 +38,6 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Share a session and print the share URL
-    #[command(hide = true)]
-    Share(crate::share_cmd::ShareArgs),
     /// Run any command with local clipboard support (OSC 52 → system clipboard).
     #[cfg_attr(not(any(unix, windows)), command(hide = true))]
     #[command(long_about = "\
@@ -268,8 +265,8 @@ pub struct AgentArgs {
     #[arg(long, conflicts_with = "leader")]
     pub no_leader: bool,
     /// Override the CLI chat proxy base URL.
-    #[arg(long = "cli-chat-proxy-base-url")]
-    pub cli_chat_proxy_base_url: Option<String>,
+    #[arg(long = "coding-api-base-url")]
+    pub coding_api_base_url: Option<String>,
     /// Override the public xAI API base URL.
     #[arg(long = "xai-api-base-url")]
     pub xai_api_base_url: Option<String>,

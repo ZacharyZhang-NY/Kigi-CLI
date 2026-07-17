@@ -666,10 +666,15 @@ impl TokenUsage {
 
 impl From<Usage> for TokenUsage {
     fn from(u: Usage) -> Self {
-        let cached_prompt_tokens = u
-            .prompt_tokens_details
-            .as_ref()
-            .map_or(0, |d| d.cached_tokens);
+        // Kimi/Moonshot deviation: prefer the top-level `cached_tokens` field
+        // when present, falling back to the OpenAI-standard
+        // `prompt_tokens_details.cached_tokens`. Same precedence as kimi-cli
+        // (packages/kosong/src/kosong/chat_provider/kimi.py:427-437).
+        let cached_prompt_tokens = u.cached_tokens.unwrap_or_else(|| {
+            u.prompt_tokens_details
+                .as_ref()
+                .map_or(0, |d| d.cached_tokens)
+        });
         Self {
             prompt_tokens: u.prompt_tokens,
             completion_tokens: u.completion_tokens,

@@ -35,7 +35,7 @@ use kigi_shell::leader::{
 use kigi_shell::leader::{ControlPayload, LeaderClient, connect_or_spawn, default_socket_path};
 use kigi_tui::app::{
     AgentCmd, Command, LeaderMgmtArgs, LeaderMgmtCommand, LeaderTargetArgs, PagerArgs,
-    join_early_prefetch, resolve_use_leader,
+    resolve_use_leader,
 };
 use kigi_tui::app::{WorkspaceMgmtArgs, WorkspaceMgmtCommand, WorkspaceStartArgs};
 use kigi_tui::client_identity::PAGER_CLIENT_VERSION;
@@ -45,8 +45,8 @@ use std::net::SocketAddr;
 use tokio_util::sync::CancellationToken;
 /// Apply global endpoint CLI args to an existing config.
 fn apply_agent_endpoint_args(agent_args: &kigi_tui::app::AgentArgs, config: &mut AgentConfig) {
-    if let Some(v) = &agent_args.cli_chat_proxy_base_url {
-        config.endpoints.cli_chat_proxy_base_url = Some(v.clone());
+    if let Some(v) = &agent_args.coding_api_base_url {
+        config.endpoints.coding_api_base_url = Some(v.clone());
     }
     if let Some(v) = &agent_args.xai_api_base_url {
         config.endpoints.xai_api_base_url = v.clone();
@@ -324,43 +324,20 @@ fn ensure_control_caps(reg: &LeaderRegistration) -> Result<&LeaderCapabilities> 
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("Leader does not advertise capabilities (legacy version)"))
 }
-/// Env override for the `grok workspace` gate: any truthy value enables the
-/// command locally, a falsy one disables it — bypassing the remote settings flag.
+/// Env override for the `kigi workspace` gate: any truthy value enables the
+/// command locally, a falsy one disables it. This is the only gate now that
+/// the server-side feature flag (xAI remote settings) is gone.
 const WORKSPACE_COMMAND_ENV: &str = "KIGI_WORKSPACE_COMMAND";
-/// Resolution of the `grok workspace` gate. `Unknown` is kept separate from
-/// `Disabled` so we don't tell the user the flag is off when the settings were
-/// simply never read (both fail closed, but `Unknown` earns an honest message).
-#[derive(Debug, PartialEq, Eq)]
-enum WorkspaceGate {
-    Enabled,
-    Disabled,
-    Unknown,
-}
 /// The `KIGI_WORKSPACE_COMMAND` override, if set (`Some(true)`/`Some(false)`);
-/// `None` defers to the remote settings flag.
+/// `None` means unset (the command stays disabled by default).
 fn workspace_command_env_override() -> Option<bool> {
     std::env::var(WORKSPACE_COMMAND_ENV)
         .ok()
         .map(|v| env_flag_enabled(&v))
 }
-/// Resolve the gate. Precedence: env override > remote `Some(true)` >
-/// loaded-but-off (`Disabled`) > settings-not-loaded (`Unknown`).
-fn workspace_command_gate(
-    env_override: Option<bool>,
-    remote_settings: Option<&kigi_shell::util::config::RemoteSettings>,
-) -> WorkspaceGate {
-    if let Some(enabled) = env_override {
-        return if enabled {
-            WorkspaceGate::Enabled
-        } else {
-            WorkspaceGate::Disabled
-        };
-    }
-    match remote_settings {
-        Some(rs) if rs.workspace_command_enabled.unwrap_or(false) => WorkspaceGate::Enabled,
-        Some(_) => WorkspaceGate::Disabled,
-        None => WorkspaceGate::Unknown,
-    }
+/// Resolve the gate: enabled exactly when the env override says so.
+fn workspace_command_gate(env_override: Option<bool>) -> bool {
+    env_override.unwrap_or(false)
 }
 /// Truthy parse for grok on/off env vars: everything enables except the common
 /// falsy spellings (`0`, `false`, `off`, `no`, empty).
@@ -370,40 +347,16 @@ fn env_flag_enabled(value: &str) -> bool {
         "" | "0" | "false" | "off" | "no"
     )
 }
-/// Blocking fetch of remote settings via the startup prefetch path.
-fn fetch_remote_settings() -> Option<kigi_shell::util::config::RemoteSettings> {
-    join_early_prefetch(kigi_shell::agent::models::start_early_prefetch(None))
-}
 async fn run_workspace_mgmt(args: WorkspaceMgmtArgs) -> Result<()> {
-    let env_override = workspace_command_env_override();
-    let remote_settings = if env_override.is_none() {
-        fetch_remote_settings()
-    } else {
-        None
-    };
-    match workspace_command_gate(env_override, remote_settings.as_ref()) {
-        WorkspaceGate::Enabled => {}
-        WorkspaceGate::Disabled => {
-            anyhow::bail!(
-                "`grok workspace` is not enabled for this account \
-             (gated by a server-side feature flag that is currently off)."
-            )
-        }
-        WorkspaceGate::Unknown => {
-            anyhow::bail!(
-                "Could not load your settings for `grok workspace`. Check your \
-             network connection (run `grok login` if you are signed out), then \
-             try again."
-            )
-        }
+    if !workspace_command_gate(workspace_command_env_override()) {
+        anyhow::bail!(
+            "`kigi workspace` is experimental and disabled by default. \
+             Set {WORKSPACE_COMMAND_ENV}=1 to enable it."
+        )
     }
     match args.command {
-        WorkspaceMgmtCommand::Start(a) => {
-            workspace_start(a, false, remote_settings.or_else(fetch_remote_settings)).await
-        }
-        WorkspaceMgmtCommand::Restart(a) => {
-            workspace_start(a, true, remote_settings.or_else(fetch_remote_settings)).await
-        }
+        WorkspaceMgmtCommand::Start(a) => workspace_start(a, false).await,
+        WorkspaceMgmtCommand::Restart(a) => workspace_start(a, true).await,
         WorkspaceMgmtCommand::Pause { target, json } => {
             workspace_control(&target, json, ControlCommand::WorkspacePause).await
         }
@@ -467,24 +420,13 @@ async fn workspace_control(
     client.cancel();
     Ok(())
 }
-async fn workspace_start(
-    args: WorkspaceStartArgs,
-    restart: bool,
-    remote_settings: Option<kigi_shell::util::config::RemoteSettings>,
-) -> Result<()> {
+async fn workspace_start(args: WorkspaceStartArgs, restart: bool) -> Result<()> {
     use kigi_shell::auth::ensure_authenticated;
-    kigi_shell::util::config::set_remote_campaigns_from_settings(remote_settings.as_ref());
     let raw_config = kigi_shell::config::load_effective_config()
         .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
     let agent_config = AgentConfig::new_from_toml_cfg(&raw_config)
         .map_err(|e| anyhow::anyhow!("Failed to create agent config: {e}"))?;
-    let (use_leader, _) = resolve_use_leader(
-        args.leader,
-        args.no_leader,
-        &raw_config,
-        remote_settings.as_ref(),
-        true,
-    );
+    let (use_leader, _) = resolve_use_leader(args.leader, args.no_leader, &raw_config, true);
     if !use_leader {
         anyhow::bail!(
             "`grok workspace` requires leader mode (the workspace is shared via the leader).\n\
@@ -949,7 +891,9 @@ async fn run_agent_command(
             }
         }
     }
-    let early_prefetch = kigi_shell::agent::models::start_early_prefetch(None);
+    // Fire-and-forget model-catalog warmup (nothing joins the handle now that
+    // the xAI settings fetch it used to carry is gone).
+    drop(kigi_shell::agent::models::start_early_prefetch(None));
     kigi_shell::agent::mvp_agent::warm_async_http_client();
     tokio::task::spawn_blocking(|| {});
     let is_stdio = matches!(agent_args.mode, AgentCmd::Stdio);
@@ -972,8 +916,6 @@ async fn run_agent_command(
             .ok();
         }
     }
-    let remote_settings = join_early_prefetch(early_prefetch);
-    kigi_shell::util::config::set_remote_campaigns_from_settings(remote_settings.as_ref());
     let raw_config = kigi_shell::config::load_effective_config()
         .map_err(|e| anyhow::anyhow!("Failed to load config: {}", e))?;
     let mut agent_config = AgentConfig::new_from_toml_cfg(&raw_config)
@@ -1008,10 +950,9 @@ async fn run_agent_command(
         agent_config.plugins.cli_plugin_dirs = agent_args.canonical_plugin_dirs();
     }
     apply_agent_endpoint_args(&agent_args, &mut agent_config);
-    agent_config.remote_settings = remote_settings.clone();
     agent_config.resolve_runtime_fields(&kigi_shell::agent::config::RuntimeResolutionContext {
         raw_config: &raw_config,
-        remote_settings: remote_settings.as_ref(),
+        remote_settings: None,
         cwd: None,
         is_headless: !is_leader,
         cli_subagents: None,
@@ -1030,7 +971,6 @@ async fn run_agent_command(
         agent_args.leader,
         agent_args.no_leader,
         &raw_config,
-        remote_settings.as_ref(),
         leader_eligible,
     );
     tracing::info!(use_leader, ?policy_disable_reason, "leader mode resolved");
@@ -1492,9 +1432,10 @@ async fn async_main() -> Result<()> {
         unsafe { std::env::set_var("KIGI_COMPACTION_DETAIL", detail) };
     }
     if args.chat() {
-        unsafe {
-            std::env::set_var(kigi_shell::agent::chat_modes::KIGI_CHAT_MODE_ENV, "1");
-        }
+        anyhow::bail!(
+            "--chat is no longer supported: the grok.com chat frontend it drove was \
+             removed along with the xAI backend."
+        );
     }
     if let Some(ref socket) = args.leader_socket {
         unsafe { std::env::set_var(kigi_shell::leader::LEADER_SOCKET_ENV, socket) };
@@ -1632,19 +1573,7 @@ async fn async_main() -> Result<()> {
             }
             Command::Sessions(sessions_args) => {
                 init_tracing_simple("cli");
-                let config = kigi_shell::config::load_effective_config_disk_only()
-                    .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
-                let agent_config = AgentConfig::new_from_toml_cfg(&config)
-                    .map_err(|e| anyhow::anyhow!("Failed to create agent config: {e}"))?;
-                return kigi_tui::sessions_cmd::run(sessions_args, &agent_config).await;
-            }
-            Command::Share(ref share_args) => {
-                init_tracing_simple("cli");
-                let config = kigi_shell::config::load_effective_config_disk_only()
-                    .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
-                let agent_config = AgentConfig::new_from_toml_cfg(&config)
-                    .map_err(|e| anyhow::anyhow!("Failed to create agent config: {e}"))?;
-                return kigi_tui::share_cmd::run(share_args, &agent_config).await;
+                return kigi_tui::sessions_cmd::run(sessions_args).await;
             }
             Command::Export(export_args) => {
                 init_tracing_simple("cli");
@@ -2130,37 +2059,9 @@ mod tests {
     }
     #[test]
     fn workspace_command_gate_resolution() {
-        use kigi_shell::util::config::RemoteSettings;
-        let on = RemoteSettings {
-            workspace_command_enabled: Some(true),
-            ..RemoteSettings::default()
-        };
-        let off = RemoteSettings::default();
-        assert_eq!(
-            workspace_command_gate(None, Some(&on)),
-            WorkspaceGate::Enabled
-        );
-        assert_eq!(
-            workspace_command_gate(None, Some(&off)),
-            WorkspaceGate::Disabled
-        );
-        assert_eq!(workspace_command_gate(None, None), WorkspaceGate::Unknown);
-        assert_eq!(
-            workspace_command_gate(Some(true), Some(&off)),
-            WorkspaceGate::Enabled
-        );
-        assert_eq!(
-            workspace_command_gate(Some(true), None),
-            WorkspaceGate::Enabled
-        );
-        assert_eq!(
-            workspace_command_gate(Some(false), Some(&on)),
-            WorkspaceGate::Disabled
-        );
-        assert_eq!(
-            workspace_command_gate(Some(false), None),
-            WorkspaceGate::Disabled
-        );
+        assert!(workspace_command_gate(Some(true)));
+        assert!(!workspace_command_gate(Some(false)));
+        assert!(!workspace_command_gate(None), "unset env defaults to off");
     }
     #[serial_test::serial(KIGI_WORKSPACE_COMMAND)]
     #[test]

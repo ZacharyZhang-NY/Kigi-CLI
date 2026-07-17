@@ -150,6 +150,11 @@ async fn complete_device_code_login(
 /// caller can decide how to notify the user (eprintln on CLI, nothing on TUI
 /// where the URL is already rendered in the widget).
 async fn open_browser_detached(url: &str) -> bool {
+    // Unit tests drive the full login flow against mock servers — their
+    // fixture URLs must never reach a real browser.
+    if cfg!(test) {
+        return false;
+    }
     let url = url.to_owned();
     match tokio::task::spawn_blocking(move || webbrowser::open(&url)).await {
         Ok(Ok(())) => true,
@@ -171,13 +176,16 @@ mod tests {
     use wiremock::matchers::{body_string_contains, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
+    /// Fixture mirroring the live `device_authorization` payload (verified
+    /// against auth.kimi.com): verification URLs are passed through verbatim
+    /// by the login flow, so they use the real shape.
     fn device_auth_json(code: &str) -> serde_json::Value {
         serde_json::json!({
-            "user_code": "ABCD-1234",
+            "user_code": "WXYZ-6789",
             "device_code": code,
-            "verification_uri": "https://auth.kimi.com/device",
-            "verification_uri_complete": "https://auth.kimi.com/device?code=ABCD-1234",
-            "expires_in": 600,
+            "verification_uri": "https://www.kimi.com/code/authorize_device",
+            "verification_uri_complete": "https://www.kimi.com/code/authorize_device?user_code=WXYZ-6789",
+            "expires_in": 1800,
             "interval": 0, // floored to 1s by the poll loop
         })
     }

@@ -205,8 +205,7 @@ pub(super) async fn run_session(
                    .emit_buffered(notification). await; }
                    if let Some(tx) = respond_to { let _ =
                    tx.send(()); } } } } } maybe_completion = completion_rx.recv() => { let
-                   Some((prompt_id, result)) = maybe_completion else { if let Some(cancel) = &
-                   session.sync_loop_cancel { cancel.cancel(); } cleanup_session_scratch(&
+                   Some((prompt_id, result)) = maybe_completion else { cleanup_session_scratch(&
                    session); return; }; if let Some(notification) = replay_buffer.flush() {
                    session.emit_buffered(notification). await; } let (turn_succeeded,
                    infra_pause_message) = SessionActor::post_turn_goal_degradation_plan(&
@@ -265,8 +264,7 @@ pub(super) async fn run_session(
                    { let
                    model_id = session.current_model_id(). await; if let Some(signals) = session
                    .signals_handle().snapshot(). await {
-        } } if let
-                   Some(cancel) = & session.sync_loop_cancel { cancel.cancel(); } session
+        } } session
                    .feedback_manager.shutdown(). await; if ! session
                    .startup_hints.is_subagent { session.persist_background_task_manifest().
                    await; } cleanup_session_scratch(& session); return; }; match cmd {
@@ -327,8 +325,7 @@ pub(super) async fn run_session(
                    ::agent::config::try_resolve_model_credentials(model_name.as_str(), existing
                    .api_key.as_deref()) { session.chat_state_handle
                    .update_credentials(kigi_chat_state::Credentials { api_key : r.api_key,
-                   auth_type : r.auth_type, alpha_test_key : existing.alpha_test_key,
-                   client_version : existing.client_version, }); } session.model_auth_facts
+                   auth_type : r.auth_type, alpha_test_key : existing.alpha_test_key, }); } session.model_auth_facts
                    .replace(None); } } SessionCommand::GetCurrentModel { responds_to } => { let
                    model = session.chat_state_handle.get_sampling_config(). await .map(| c | c
                    .model).unwrap_or_default(); let _ = responds_to.send(model); }
@@ -697,7 +694,7 @@ pub(super) async fn run_session(
                    await; session.send_hook_execution("session_start", None, None, & results).
                    await; } } SessionCommand::GetFeedbackContext { turn_number, responds_to } =>
                    { let s = session.clone(); tokio::task::spawn_local(async move { use
-                   prod_mc_cli_chat_proxy_types::feedback_types::FeedbackToolOutcome; let
+                   crate::session::feedback_types::FeedbackToolOutcome; let
                    turn_idx = turn_number.and_then(| n | usize::try_from(n).ok()); let
                    (last_user_message, last_assistant_message) = match turn_idx { Some(n) => {
                    let conv = s.chat_state_handle.get_conversation(). await;
@@ -809,8 +806,7 @@ pub(super) async fn run_session(
                    "MEMORY_SUBAGENT_SKIP: skipping on_session_end for subagent session"); }
                    session.maybe_run_dream(). await; let telem = session.memory
                    .telemetry_snapshot(); session.emit_memory_session_summary(& telem,
-                   total_chunks_at_end, session_end_result); if let Some(cancel) = & session
-                   .sync_loop_cancel { cancel.cancel(); } session.feedback_manager
+                   total_chunks_at_end, session_end_result); session.feedback_manager
                    .shutdown(). await; if ! session.startup_hints
                    .is_subagent { session.persist_background_task_manifest(). await; }
                    cleanup_session_scratch(& session); return; } } }

@@ -76,7 +76,12 @@ pub struct PermissionEvent {
 pub enum ClientType {
     /// Generic client - show simple permission options with full command text
     #[default]
-    #[serde(rename = "generic", alias = "grok-shell", alias = "grok_shell")]
+    #[serde(
+        rename = "generic",
+        alias = "grok-shell",
+        alias = "grok_shell",
+        alias = "kigi"
+    )]
     Generic,
     /// Grok TUI client - show fancy options with interactive bash term selection
     #[serde(rename = "grok-tui", alias = "grok_tui")]
@@ -106,15 +111,18 @@ pub enum ClientType {
     Desktop,
 }
 impl ClientType {
-    /// Product token for the `User-Agent` header (e.g. `grok-pager`).
+    /// Product token for the `User-Agent` header. The first-party clients
+    /// (the bundled TUI/pager and the headless runner) all report `kigi`, so
+    /// their User-Agent collapses to `kigi/{version}` (PRD F3); the remaining
+    /// labels identify external ACP clients.
     pub fn user_agent_label(&self) -> &'static str {
         match self {
-            Self::Generic => "grok-shell",
+            Self::Generic => "kigi",
             Self::GrokTUI => "grok-tui",
             Self::GrokWeb => "grok-web",
             Self::Nebula => "nebula",
             Self::Extension => "grok-code-extension",
-            Self::GrokPager => "grok-pager",
+            Self::GrokPager => "kigi",
             Self::Desktop => "grok-desktop",
         }
     }

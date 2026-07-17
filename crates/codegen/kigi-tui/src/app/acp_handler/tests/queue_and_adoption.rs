@@ -1751,24 +1751,7 @@
     }
 
     /// The credit-limit early return discards the popped adoption's buffer.
-    #[test]
-    fn credit_limit_response_discards_adoption_buffer() {
-        let mut app = app_with_running_p1_and_stashed_b1();
-        let id = AgentId(0);
-        send_tool_call_update(&mut app, "b1", "bash-mode-1", None);
-        app.agents
-            .get_mut(&id)
-            .unwrap()
-            .session
-            .credit_limit_blocked = true;
-
-        prompt_response(&mut app, "p1");
-        let agent = app.agents.get(&id).unwrap();
-        assert!(!app.pending_running_adoptions.contains_key(&id));
-        assert!(agent.pending_adoption_updates.is_empty());
-    }
-
-    /// A stash whose pid replayed a durable terminal is discarded, never adopted.
+     /// A stash whose pid replayed a durable terminal is discarded, never adopted.
     #[test]
     fn terminal_in_replay_stash_is_discarded_not_adopted() {
         let mut app = app_with_running_p1_and_stashed_b1();

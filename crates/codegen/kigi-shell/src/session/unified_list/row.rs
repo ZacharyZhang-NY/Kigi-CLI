@@ -2,7 +2,6 @@ use serde::Serialize;
 
 use super::envelope::{FacetMap, SessionKind, SessionMetaEnvelope};
 use super::facets::{FacetRegistry, NormalizedItem};
-use crate::remote::Conversation;
 use crate::session::merge::MergedSession;
 
 #[derive(Debug, Clone)]
@@ -73,44 +72,6 @@ pub fn merged_session_to_row(m: MergedSession, reg: &FacetRegistry) -> UnifiedRo
     }
 }
 
-pub fn conversation_to_row(c: Conversation, reg: &FacetRegistry) -> UnifiedRow {
-    let facets = reg.extract_all(&NormalizedItem::from_conversation(&c));
-    let Conversation {
-        conversation_id,
-        title,
-        modify_time,
-        create_time,
-        ..
-    } = c;
-    let legacy = MergedSession {
-        session_id: conversation_id,
-        summary: title.clone(),
-        first_prompt: None,
-        updated_at: modify_time.as_deref().unwrap_or_default().to_owned(),
-        created_at: create_time.unwrap_or_default(),
-        cwd: String::new(),
-        hostname: None,
-        source: "conversation".to_string(),
-        model_id: None,
-        num_messages: 0,
-        last_active_at: modify_time.clone(),
-        branch: None,
-        repo_name: None,
-        worktree_label: None,
-        git_root_dir: None,
-        git_remotes: Vec::new(),
-        source_workspace_dir: None,
-        session_kind: None,
-    };
-    UnifiedRow {
-        kind: SessionKind::Chat,
-        legacy,
-        title,
-        updated_at: modify_time,
-        facets,
-    }
-}
-
 fn effective_local_ts(m: &MergedSession) -> Option<String> {
     m.last_active_at
         .as_deref()
@@ -151,47 +112,4 @@ pub struct SessionInfo {
 mod tests {
     use super::*;
     use crate::session::unified_list::facet_registry;
-
-    #[test]
-    fn conversation_row_uses_conversation_id_as_session_id() {
-        let c = Conversation {
-            conversation_id: "conv_abc123".into(),
-            title: "Compare GPU vendors".into(),
-            modify_time: Some("2026-06-18T18:02:00Z".into()),
-            create_time: Some("2026-06-18T17:30:00Z".into()),
-            ..Conversation::default()
-        };
-        let row = conversation_to_row(c, facet_registry());
-        assert_eq!(row.legacy.session_id, "conv_abc123");
-        assert_eq!(row.kind, SessionKind::Chat);
-        assert_eq!(row.legacy.source, "conversation");
-        assert_eq!(row.legacy.cwd, "");
-
-        let ext = serde_json::to_value(row.clone().into_ext_superset()).unwrap();
-        assert_eq!(ext["sessionId"], "conv_abc123");
-        assert_eq!(ext["cwd"], "");
-        assert_eq!(ext["source"], "conversation");
-        assert_eq!(ext["_meta"]["x.ai/session"]["kind"], "chat");
-        // Chat rows have no local git enrichment (fields omitted).
-        assert!(ext.get("gitRootDir").is_none());
-        assert!(ext.get("gitRemotes").is_none());
-        assert!(ext.get("sourceWorkspaceDir").is_none());
-        assert!(ext.get("sessionKind").is_none());
-
-        let bare = serde_json::to_value(row.into_session_info()).unwrap();
-        assert_eq!(bare["sessionId"], "conv_abc123");
-    }
-
-    #[test]
-    fn conversation_missing_modify_time_still_resumable() {
-        let c = Conversation {
-            conversation_id: "conv_no_time".into(),
-            title: "Untitled".into(),
-            ..Conversation::default()
-        };
-        let row = conversation_to_row(c, facet_registry());
-        assert_eq!(row.legacy.session_id, "conv_no_time");
-        assert!(row.updated_at.is_none());
-        assert_eq!(row.legacy.updated_at, "");
-    }
 }

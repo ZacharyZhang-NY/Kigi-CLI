@@ -1085,7 +1085,7 @@ async fn test_load_prompts_only_large_session() {
 #[tokio::test]
 async fn test_append_feedback_creates_file_and_persists() {
     use crate::session::persistence::{LocalFeedbackEntry, UserFeedbackEntry};
-    use prod_mc_cli_chat_proxy_types::feedback_types::{
+    use crate::session::feedback_types::{
         ClientType, FeedbackSubmission, FeedbackType, RatingType,
     };
     let temp_dir = TempDir::new().unwrap();
@@ -1101,7 +1101,6 @@ async fn test_append_feedback_creates_file_and_persists() {
         dismissed: false,
         submission: Some(FeedbackSubmission {
             session_id: "test-session-123".into(),
-            user_id: None,
             client_type: ClientType::Tui,
             feedback_type: FeedbackType::Rating,
             turn_number: Some(3),
@@ -1109,22 +1108,13 @@ async fn test_append_feedback_creates_file_and_persists() {
             rating_value: Some(1),
             feedback_text: None,
             feedback_categories: vec![],
-            message_id: None,
             model_id: Some("grok-3-fast".into()),
             resolved_model_id: Some("grok-4.5".into()),
             model_fingerprint: None,
             context_type: None,
-            feature_name: None,
-            tool_name: None,
-            experiment_id: None,
-            comparison_id: None,
-            preferred_model_id: None,
-            preference_strength: None,
-            preference_reasons: vec![],
             request_id: None,
             client_version: None,
             shell_version: None,
-            extension_host: None,
             metadata: None,
             last_user_message: None,
             last_assistant_message: None,
@@ -1135,7 +1125,6 @@ async fn test_append_feedback_creates_file_and_persists() {
             context_tokens_used: None,
             context_window_tokens: None,
             terminal_info: None,
-            unified_log_url: None,
         }),
     });
     adapter.append_feedback(&info, &user_entry).await.unwrap();

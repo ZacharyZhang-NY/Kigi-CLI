@@ -3,8 +3,7 @@ mod envelope;
 mod facets;
 mod row;
 use crate::agent::session_registry_client::SessionRegistryClient;
-use crate::remote::{ConvError, ConvQuery, ConversationsClient};
-use cursor::{CompositeCursor, ConvLane, Paginated, merge_and_paginate};
+use cursor::{CompositeCursor, Paginated, paginate};
 pub use envelope::{FacetMap, FacetValue, SessionKind, SessionMetaEnvelope};
 pub use facets::{
     BRANCH_FACET_KEY, BranchFacet, CWD_FACET_KEY, CwdFacet, FacetProvider, FacetRegistry,
@@ -13,62 +12,18 @@ pub use facets::{
     SOURCE_WORKSPACE_FACET_KEY, STARRED_FACET_KEY, SourceQuery, SourceWorkspaceFacet, StarredFacet,
     WORKSPACE_FACET_KEY, WORKTREE_FACET_KEY, WorkspaceFacet, WorktreeFacet, build_facet_registry,
 };
-pub use row::{
-    ExtSupersetRow, RowMeta, SessionInfo, UnifiedRow, conversation_to_row, merged_session_to_row,
-};
+pub use row::{ExtSupersetRow, RowMeta, SessionInfo, UnifiedRow, merged_session_to_row};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
 pub const DEFAULT_LIMIT: usize = 30;
 const CONV_PAGE_HEADROOM: usize = 5;
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PartialReason {
-    Timeout,
-    Error,
-    NoOauth,
-}
-impl PartialReason {
-    fn as_str(self) -> &'static str {
-        match self {
-            PartialReason::Timeout => "timeout",
-            PartialReason::Error => "error",
-            PartialReason::NoOauth => "no_oauth",
-        }
-    }
-}
 static FACET_REGISTRY: LazyLock<FacetRegistry> = LazyLock::new(build_facet_registry);
 pub fn facet_registry() -> &'static FacetRegistry {
     &FACET_REGISTRY
 }
-/// Hard-off in release builds so they can't enable the
-/// conversations lane via env.
-pub fn conversations_lane_enabled() -> bool {
-    if true {
-        return false;
-    }
-    std::env::var("KIGI_SESSION_LIST_CONVERSATIONS")
-        .ok()
-        .is_some_and(|v| {
-            !matches!(
-                v.trim().to_ascii_lowercase().as_str(),
-                "" | "0" | "false" | "off" | "no"
-            )
-        })
-}
-/// Env lane (desktop `KIGI_SESSION_LIST_CONVERSATIONS`) OR process-wide
-/// `--chat` (`KIGI_CHAT_MODE`); hard-off in release builds.
-/// The single predicate `MvpAgent::conversations_client()` keys on.
-pub fn conversations_lane_active() -> bool {
-    conversations_lane_enabled() || crate::agent::chat_modes::process_chat_mode_enabled()
-}
-/// Parse `x.ai/session/list` params and, under process-wide chat mode, force
-/// the conversations-only `kind` facet (see [`force_kind_chat`]).
 pub fn parse_list_req(raw: &str) -> Result<ListReq, serde_json::Error> {
-    let mut req: ListReq = serde_json::from_str(raw)?;
-    if crate::agent::chat_modes::process_chat_mode_enabled() {
-        force_kind_chat(&mut req);
-    }
-    Ok(req)
+    serde_json::from_str(raw)
 }
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -88,7 +43,6 @@ pub struct UnifiedListResult {
     pub rows: Vec<UnifiedRow>,
     pub next_cursor: Option<String>,
     pub facets: FacetSummary,
-    pub conversations_partial: Option<PartialReason>,
 }
 #[derive(Debug, Default)]
 struct ParsedMeta {
@@ -131,33 +85,8 @@ fn value_list(v: &serde_json::Value) -> Vec<serde_json::Value> {
         other => vec![other.clone()],
     }
 }
-/// Rewrite `req` so the `kind` facet filter is exactly `["chat"]`.
-///
-/// REPLACES any client-sent `kind` allow-list (a union with `"build"` would
-/// re-enable the local lane); every other facet filter and `_meta` key is
-/// left untouched.
-pub fn force_kind_chat(req: &mut ListReq) {
-    let mut meta = match req.meta.take() {
-        Some(serde_json::Value::Object(map)) => map,
-        _ => serde_json::Map::new(),
-    };
-    let mut filters = match meta.remove("x.ai/facetFilters") {
-        Some(serde_json::Value::Object(map)) => map,
-        _ => serde_json::Map::new(),
-    };
-    filters.insert(
-        KIND_FACET_KEY.to_owned(),
-        serde_json::json!([SessionKind::Chat.as_str()]),
-    );
-    meta.insert(
-        "x.ai/facetFilters".to_owned(),
-        serde_json::Value::Object(filters),
-    );
-    req.meta = Some(serde_json::Value::Object(meta));
-}
 pub async fn build_unified_list(
     registry_client: Option<&SessionRegistryClient>,
-    conversations_client: Option<&ConversationsClient>,
     req: ListReq,
 ) -> UnifiedListResult {
     let reg = facet_registry();
@@ -171,13 +100,11 @@ pub async fn build_unified_list(
     let cursor = CompositeCursor::decode(req.cursor.as_deref());
     let mut source_query = SourceQuery::default();
     reg.apply_pushdown(&facet_filters, &mut source_query);
-    let exclude_conversations = excludes_conversations(&facet_filters);
     let exclude_build = excludes_build(&facet_filters);
     let over = (limit * 3).max(100);
-    let local_fut = async {
-        if exclude_build {
-            return Vec::new();
-        }
+    let local_rows = if exclude_build {
+        Vec::new()
+    } else {
         crate::session::merge::fetch_merged(
             registry_client,
             req.cwd.as_deref(),
@@ -189,84 +116,17 @@ pub async fn build_unified_list(
         .map(|m| merged_session_to_row(m, reg))
         .collect::<Vec<UnifiedRow>>()
     };
-    let conv_fut = async {
-        if exclude_conversations {
-            return ConvLane::Skipped;
-        }
-        let Some(client) = conversations_client else {
-            return ConvLane::Skipped;
-        };
-        let q = ConvQuery {
-            page_size: (limit + CONV_PAGE_HEADROOM) as i64,
-            page_token: cursor.conv_page_token.clone(),
-            search_query: query.clone(),
-            workspace_id: source_query.workspace_id.clone(),
-        };
-        match tokio::time::timeout(
-            crate::session::merge::REMOTE_TIMEOUT,
-            client.list_conversations(&q),
-        )
-        .await
-        {
-            Ok(Ok(page)) => {
-                let next_token = page.next_page_token;
-                let rows: Vec<UnifiedRow> = page
-                    .conversations
-                    .into_iter()
-                    .map(|c| conversation_to_row(c, reg))
-                    .collect();
-                let frontier = cursor::conv_frontier(&rows, next_token.is_some());
-                ConvLane::Page {
-                    rows,
-                    next_token,
-                    frontier,
-                }
-            }
-            Ok(Err(ConvError::NoOauth)) => ConvLane::Degraded(PartialReason::NoOauth),
-            Ok(Err(e)) => {
-                tracing::warn!("conversation list failed: {e}");
-                ConvLane::Degraded(PartialReason::Error)
-            }
-            Err(_) => {
-                tracing::warn!("conversation list timed out");
-                ConvLane::Degraded(PartialReason::Timeout)
-            }
-        }
-    };
-    let (local_rows, conv_lane) = tokio::join!(local_fut, conv_fut);
-    {
-        let (conv_lane_status, conv_rows) = match &conv_lane {
-            ConvLane::Skipped => ("skipped", 0),
-            ConvLane::Degraded(reason) => (reason.as_str(), 0),
-            ConvLane::Page { rows, .. } => ("ok", rows.len()),
-        };
-        tracing::debug!(
-            local_lane_skipped = exclude_build,
-            local_rows = local_rows.len(),
-            conv_lane = conv_lane_status,
-            conv_rows,
-            "session list lanes"
-        );
-    }
+    tracing::debug!(
+        local_lane_skipped = exclude_build,
+        local_rows = local_rows.len(),
+        "session list"
+    );
     let local_rows = reg.apply_in_memory_filters(&facet_filters, local_rows);
-    let conv_lane = match conv_lane {
-        ConvLane::Page {
-            rows,
-            next_token,
-            frontier,
-        } => ConvLane::Page {
-            rows: reg.apply_in_memory_filters(&facet_filters, rows),
-            next_token,
-            frontier,
-        },
-        other => other,
-    };
     let Paginated {
         candidates,
         emit_count,
         next_cursor,
-        partial,
-    } = merge_and_paginate(local_rows, conv_lane, &cursor, limit);
+    } = paginate(local_rows, &cursor, limit);
     let mut rows = candidates;
     rows.truncate(emit_count);
     let facets = reg.summarize_window(&rows);
@@ -274,15 +134,6 @@ pub async fn build_unified_list(
         rows,
         next_cursor: next_cursor.map(|c| c.encode()),
         facets,
-        conversations_partial: partial,
-    }
-}
-fn excludes_conversations(filters: &BTreeMap<String, Vec<serde_json::Value>>) -> bool {
-    match filters.get(KIND_FACET_KEY) {
-        Some(allowed) if !allowed.is_empty() => !allowed
-            .iter()
-            .any(|v| v.as_str() == Some(SessionKind::Chat.as_str())),
-        _ => false,
     }
 }
 /// Mirror of [`excludes_conversations`]: `true` when a non-empty `kind`
@@ -307,21 +158,12 @@ pub struct ExtListResponse {
 pub struct ExtListResponseMeta {
     #[serde(rename = "x.ai/facets")]
     pub facets: FacetSummary,
-    #[serde(rename = "x.ai/partial")]
-    pub partial: PartialInfo,
-}
-#[derive(Debug, Clone, Serialize)]
-pub struct PartialInfo {
-    pub conversations: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<&'static str>,
 }
 pub fn ext_list_response(result: UnifiedListResult) -> ExtListResponse {
     let UnifiedListResult {
         rows,
         next_cursor,
         facets,
-        conversations_partial,
     } = result;
     ExtListResponse {
         sessions: rows
@@ -329,13 +171,7 @@ pub fn ext_list_response(result: UnifiedListResult) -> ExtListResponse {
             .map(UnifiedRow::into_ext_superset)
             .collect(),
         next_cursor,
-        meta: ExtListResponseMeta {
-            facets,
-            partial: PartialInfo {
-                conversations: conversations_partial.is_some(),
-                reason: conversations_partial.map(PartialReason::as_str),
-            },
-        },
+        meta: ExtListResponseMeta { facets },
     }
 }
 #[cfg(test)]
@@ -494,74 +330,8 @@ mod tests {
         );
         filters
     }
-    #[test]
-    fn excludes_build_mirrors_excludes_conversations() {
-        assert!(excludes_build(&kind_filter(&["chat"])));
-        assert!(!excludes_conversations(&kind_filter(&["chat"])));
-        assert!(!excludes_build(&kind_filter(&["build"])));
-        assert!(excludes_conversations(&kind_filter(&["build"])));
-        assert!(!excludes_build(&kind_filter(&["build", "chat"])));
-        assert!(!excludes_conversations(&kind_filter(&["build", "chat"])));
-        assert!(!excludes_build(&kind_filter(&[])));
-        assert!(!excludes_conversations(&kind_filter(&[])));
-        assert!(!excludes_build(&BTreeMap::new()));
-        assert!(!excludes_conversations(&BTreeMap::new()));
-    }
     /// The forced `kind` REPLACES a client-sent `kind: ["build"]` (never
     /// unions), so the local lane stays excluded.
-    #[test]
-    fn forced_kind_replaces_client_build_filter() {
-        let mut req = ListReq {
-            meta: Some(serde_json::json!({ "x.ai/facetFilters" : { "kind" : ["build"] }, })),
-            ..ListReq::default()
-        };
-        force_kind_chat(&mut req);
-        let parsed = ParsedMeta::parse(req.meta.as_ref());
-        assert_eq!(
-            parsed.facet_filters.get(KIND_FACET_KEY),
-            Some(&vec![serde_json::json!("chat")]),
-            "forced kind must replace the client filter, not union with it"
-        );
-        assert!(excludes_build(&parsed.facet_filters));
-        assert!(!excludes_conversations(&parsed.facet_filters));
-    }
-    #[test]
-    fn forced_kind_preserves_other_facets() {
-        let mut req = ListReq {
-            meta: Some(serde_json::json!(
-                { "x.ai/facetFilters" : { "kind" : ["build"], "starred" : [true],
-                "workspace" : ["w1"] }, "x.ai/query" : "antelope", "x.ai/limit" : 5,
-                }
-            )),
-            ..ListReq::default()
-        };
-        force_kind_chat(&mut req);
-        let parsed = ParsedMeta::parse(req.meta.as_ref());
-        assert_eq!(
-            parsed.facet_filters.get(KIND_FACET_KEY),
-            Some(&vec![serde_json::json!("chat")])
-        );
-        assert_eq!(
-            parsed.facet_filters.get("starred"),
-            Some(&vec![serde_json::json!(true)])
-        );
-        assert_eq!(
-            parsed.facet_filters.get("workspace"),
-            Some(&vec![serde_json::json!("w1")])
-        );
-        assert_eq!(parsed.query.as_deref(), Some("antelope"));
-        assert_eq!(parsed.limit, Some(5));
-    }
-    #[test]
-    fn forced_kind_creates_facet_filters_when_meta_absent() {
-        let mut req = ListReq::default();
-        force_kind_chat(&mut req);
-        let parsed = ParsedMeta::parse(req.meta.as_ref());
-        assert_eq!(
-            parsed.facet_filters.get(KIND_FACET_KEY),
-            Some(&vec![serde_json::json!("chat")])
-        );
-    }
     fn xai_auth_manager(dir: &std::path::Path) -> std::sync::Arc<crate::auth::AuthManager> {
         let am = std::sync::Arc::new(crate::auth::AuthManager::new(
             dir,
@@ -597,192 +367,5 @@ mod tests {
             }
         });
         addr
-    }
-    /// A client-sent `kind: ["build"]` rewritten by [`force_kind_chat`]
-    /// yields conversations only.
-    #[tokio::test]
-    #[serial_test::serial]
-    async fn forced_kind_serves_conversations_only() {
-        let addr = spawn_conversations_stub(
-            serde_json::json!(
-                { "conversations" : [{ "conversationId" : "c1", "title" : "Hello",
-                "modifyTime" : "2026-07-01T00:00:00Z" }, { "conversationId" : "c2",
-                "title" : "", "modifyTime" : "2026-07-02T00:00:00Z" },], }
-            )
-            .to_string(),
-        )
-        .await;
-        let _env = kigi_test_support::EnvGuard::set(
-            "KIGI_CONVERSATIONS_BASE_URL",
-            format!("http://{addr}"),
-        );
-        let home = tempfile::tempdir().expect("tempdir");
-        let client = ConversationsClient::new(xai_auth_manager(home.path()));
-        let mut req = ListReq {
-            meta: Some(serde_json::json!({ "x.ai/facetFilters" : { "kind" : ["build"] }, })),
-            ..ListReq::default()
-        };
-        force_kind_chat(&mut req);
-        let result = build_unified_list(None, Some(&client), req).await;
-        let ids: Vec<&str> = result
-            .rows
-            .iter()
-            .map(|r| r.legacy.session_id.as_str())
-            .collect();
-        assert_eq!(ids, ["c2", "c1"], "conversations only, newest first");
-        assert!(
-            result
-                .rows
-                .iter()
-                .all(|r| r.legacy.source == "conversation"),
-            "no build row may survive the forced kind filter"
-        );
-        assert_eq!(result.conversations_partial, None);
-    }
-    /// A degraded conversations lane (no OAuth) surfaces through
-    /// `conversations_partial` instead of failing the list.
-    #[tokio::test]
-    #[serial_test::serial]
-    async fn degraded_conversations_lane_reports_no_oauth() {
-        let home = tempfile::tempdir().expect("tempdir");
-        let auth = std::sync::Arc::new(crate::auth::AuthManager::new(
-            home.path(),
-            crate::auth::KimiCodeConfig::default(),
-        ));
-        let client = ConversationsClient::new(auth);
-        let mut req = ListReq::default();
-        force_kind_chat(&mut req);
-        let result = build_unified_list(None, Some(&client), req).await;
-        assert!(result.rows.is_empty());
-        assert_eq!(result.conversations_partial, Some(PartialReason::NoOauth));
-    }
-    /// Build-mode canary: with no conversations client the lane is skipped —
-    /// not degraded.
-    #[tokio::test]
-    async fn non_chat_list_without_client_skips_conversations_lane() {
-        let req = ListReq {
-            cwd: Some("/nonexistent/unified-list-canary".into()),
-            ..ListReq::default()
-        };
-        let result = build_unified_list(None, None, req).await;
-        assert_eq!(
-            result.conversations_partial, None,
-            "no client ⇒ lane skipped, never reported as degraded"
-        );
-        assert!(result.rows.is_empty());
-    }
-    /// Desktop env lane stays env-gated; process chat mode is feature-gated.
-    #[test]
-    #[serial_test::serial]
-    fn conversations_lane_env_gating_matrix() {
-        {
-            let _off = kigi_test_support::EnvGuard::unset("KIGI_SESSION_LIST_CONVERSATIONS");
-            assert!(!conversations_lane_enabled());
-        }
-        {
-            let _on = kigi_test_support::EnvGuard::set("KIGI_SESSION_LIST_CONVERSATIONS", "1");
-            assert!(!conversations_lane_enabled());
-        }
-        {
-            let _off = kigi_test_support::EnvGuard::set("KIGI_SESSION_LIST_CONVERSATIONS", "0");
-            assert!(!conversations_lane_enabled());
-        }
-    }
-    /// Truth table for `conversations_lane_active`: desktop env lane OR
-    /// process chat mode, hard-off in release builds.
-    #[test]
-    #[serial_test::serial]
-    fn conversations_lane_active_truth_table() {
-        use crate::agent::chat_modes::KIGI_CHAT_MODE_ENV;
-        let _chat_off = kigi_test_support::EnvGuard::unset(KIGI_CHAT_MODE_ENV);
-        let _desktop_off = kigi_test_support::EnvGuard::unset("KIGI_SESSION_LIST_CONVERSATIONS");
-        assert!(
-            !conversations_lane_active(),
-            "no env ⇒ lane off (Build-mode default)"
-        );
-        {
-            let _desktop = kigi_test_support::EnvGuard::set("KIGI_SESSION_LIST_CONVERSATIONS", "1");
-            assert!(!conversations_lane_active());
-        }
-        {
-            let _chat = kigi_test_support::EnvGuard::set(KIGI_CHAT_MODE_ENV, "1");
-            assert!(
-                !conversations_lane_active(),
-                "process chat mode must enable the lane (chat feature only)"
-            );
-        }
-    }
-    /// `parse_list_req` forces the conversations-only `kind` exactly when
-    /// process chat mode is on; otherwise the client request is untouched.
-    #[test]
-    #[serial_test::serial]
-    fn parse_list_req_forces_kind_under_process_chat_mode_only() {
-        use crate::agent::chat_modes::KIGI_CHAT_MODE_ENV;
-        let raw = serde_json::json!(
-            { "_meta" : { "x.ai/facetFilters" : { "kind" : ["build"], "starred" : [true]
-            } }, }
-        )
-        .to_string();
-        {
-            let _off = kigi_test_support::EnvGuard::unset(KIGI_CHAT_MODE_ENV);
-            let req = parse_list_req(&raw).expect("parse");
-            let parsed = ParsedMeta::parse(req.meta.as_ref());
-            assert_eq!(
-                parsed.facet_filters.get(KIND_FACET_KEY),
-                Some(&vec![serde_json::json!("build")]),
-                "non-chat: client kind filter untouched"
-            );
-        }
-        {
-            let _on = kigi_test_support::EnvGuard::set(KIGI_CHAT_MODE_ENV, "1");
-            let req = parse_list_req(&raw).expect("parse");
-            let parsed = ParsedMeta::parse(req.meta.as_ref());
-            let expected = if false { "chat" } else { "build" };
-            assert_eq!(
-                parsed.facet_filters.get(KIND_FACET_KEY),
-                Some(&vec![serde_json::json!(expected)])
-            );
-            assert_eq!(
-                parsed.facet_filters.get("starred"),
-                Some(&vec![serde_json::json!(true)]),
-                "other facets pass through"
-            );
-        }
-    }
-    /// Wire pin for the cross-crate `x.ai/partial` envelope the pager parses:
-    /// the serialized reason strings must not drift (the pager maps unknown
-    /// reasons to a generic retry notice, masking a rename).
-    #[test]
-    fn ext_list_response_serializes_partial_reasons() {
-        for (reason, wire) in [
-            (PartialReason::NoOauth, "no_oauth"),
-            (PartialReason::Timeout, "timeout"),
-            (PartialReason::Error, "error"),
-        ] {
-            let value = serde_json::to_value(ext_list_response(UnifiedListResult {
-                rows: Vec::new(),
-                next_cursor: None,
-                facets: facet_registry().summarize_window(&[]),
-                conversations_partial: Some(reason),
-            }))
-            .expect("serialize");
-            assert_eq!(
-                value["_meta"]["x.ai/partial"],
-                serde_json::json!({ "conversations" :
-                true, "reason" : wire })
-            );
-        }
-        let healthy = serde_json::to_value(ext_list_response(UnifiedListResult {
-            rows: Vec::new(),
-            next_cursor: None,
-            facets: facet_registry().summarize_window(&[]),
-            conversations_partial: None,
-        }))
-        .expect("serialize");
-        assert_eq!(
-            healthy["_meta"]["x.ai/partial"],
-            serde_json::json!({ "conversations" :
-            false })
-        );
     }
 }

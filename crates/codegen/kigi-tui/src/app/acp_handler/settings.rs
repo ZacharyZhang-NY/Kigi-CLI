@@ -107,23 +107,6 @@ pub(super) fn handle_settings_update(notif: &acp::ExtNotification, app: &mut App
     if let Some(v) = update.show_resolved_model {
         app.show_resolved_model = v;
     }
-    if let Some(v) = update.sharing_enabled {
-        app.sharing_enabled = v;
-        // Propagate to existing agents so slash-command registries stay
-        // in sync (same fan-out pattern used when creating new agents).
-        for agent in app.agents.values_mut() {
-            agent.set_sharing_enabled(v);
-        }
-    }
-    // Always recompute is_api_key_auth from the tier so a later Free/SuperGrok
-    // stamp does not leave API-key bypass / hidden `/usage` stuck.
-    if let Some(v) = update.subscription_tier_display {
-        let is_key = super::super::app_view::is_api_key_label(&v);
-        app.is_api_key_auth = is_key;
-        app.usage_visible = !is_key && app.team_name.is_none();
-        app.subscription_tier = Some(v);
-        app.apply_tier_restrictions();
-    }
     // TODO: extract resolve_session_picker_grouped helper (duplicates event_loop.rs:143-160)
     // Respect env var > config > remote precedence (mirrors event_loop.rs startup).
     if let Some(remote_val) = update.session_picker_grouped {
@@ -142,33 +125,6 @@ pub(super) fn handle_settings_update(notif: &acp::ExtNotification, app: &mut App
             .unwrap_or(remote_val);
         app.session_picker_grouped = resolved;
     }
-    if let Some(v) = update.subscription_watch_interval_secs {
-        app.subscription_watch_interval_secs = Some(v);
-    }
-
-    // Gate update logic:
-    // - allow_access == Some(true): explicitly granted → lift the gate
-    // - gate_message.is_some(): server sent a new message → impose/update
-    // - Neither condition met: don't touch the gate. In particular,
-    //   allow_access=Some(false) without a gate_message must NOT clear the
-    //   gate (gate_from_settings returns None when gate_message is absent,
-    //   which would incorrectly lift an existing gate).
-    if update.allow_access == Some(true) {
-        let effs = app.lift_gate();
-        app.pending_effects.extend(effs);
-    } else if let Some(msg) = update.gate_message.as_ref()
-        && !msg.is_empty()
-    {
-        // (An empty gate_message would only clear the gate message text, NOT
-        // access, so it intentionally does not touch the gate here.)
-        let effs = app.impose_gate(kigi_shell::auth::GateInfo {
-            message: msg.clone(),
-            url: update.gate_url.clone(),
-            label: update.gate_label.clone(),
-        });
-        app.pending_effects.extend(effs);
-    }
-
     // Load config layers once for tips + group_tool_verbs +
     // collapsed_edit_blocks resolution. Loaded unconditionally: the UI flags
     // re-resolve on every update (see below), and updates are rare (post-auth
@@ -361,21 +317,9 @@ pub(super) struct PagerSettingsUpdate {
     #[serde(default)]
     show_resolved_model: Option<bool>,
     #[serde(default)]
-    sharing_enabled: Option<bool>,
-    #[serde(default)]
     session_picker_grouped: Option<bool>,
     #[serde(default)]
     tips: Option<Vec<String>>,
-    #[serde(default)]
-    gate_message: Option<String>,
-    #[serde(default)]
-    gate_url: Option<String>,
-    #[serde(default)]
-    gate_label: Option<String>,
-    #[serde(default)]
-    allow_access: Option<bool>,
-    #[serde(default)]
-    subscription_tier_display: Option<String>,
     #[serde(default)]
     auto_permission_mode_enabled: Option<bool>,
     /// Soft-default permission mode. Presence-aware: omit = no update,
@@ -389,8 +333,6 @@ pub(super) struct PagerSettingsUpdate {
     group_tool_verbs: Option<bool>,
     #[serde(default)]
     collapsed_edit_blocks: Option<bool>,
-    #[serde(default)]
-    subscription_watch_interval_secs: Option<u64>,
 }
 
 /// Presence-aware string: omit → `None` (`#[serde(default)]`), null →

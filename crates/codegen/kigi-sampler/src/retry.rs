@@ -24,14 +24,10 @@
 //! - `Serialization` (response parsing failure)
 //! - `MaxTokensTruncation` (by design)
 //!
-//! **Server hint** (`x-should-retry` header from CCP):
-//! - `false` → Fatal immediately, regardless of status code
-//! - `true` / absent → falls through to status-code logic above
-//!
-//! Today CCP's header mirrors the client's `is_retryable()` logic
-//! (4xx except 429 = false, 5xx + 429 = true), so no behavior changes
-//! on merge. The header enables future CCP-side refinements (e.g.
-//! marking content-caused 500s as non-retryable) without client updates.
+//! 429 handling honors the standard `Retry-After` response header when
+//! present (delta-seconds; see `client::extract_retry_after`), matching
+//! the Kimi/Moonshot API. The old xAI proxy's `x-should-retry` hint
+//! header was removed with the proxy.
 
 use std::time::Duration;
 
@@ -168,22 +164,6 @@ pub fn classify_error(
     // images and retry, same recovery as 413.
     if err.is_image_processing_error() {
         return RetryDecision::RetryWithImageStrip;
-    }
-
-    // Server explicitly said don't retry (x-should-retry: false).
-    // Trust the server — it knows if the error is request-content-caused
-    // (e.g. malformed tool call in conversation history) vs transient.
-    //
-    // x-should-retry: true is intentionally NOT handled here — we only
-    // use the header to suppress retries (false), not to force them
-    // (true). Forcing retries on non-retryable status codes could
-    // amplify failures. true falls through to existing status-code logic.
-    //
-    // Checked AFTER image-strip guards: image stripping changes the
-    // request payload, so a server "don't retry" on the original
-    // request doesn't apply to the stripped request.
-    if let Some(false) = err.should_retry_header() {
-        return RetryDecision::Fatal(clone_error(err));
     }
 
     // Context-window / size overflow is deterministic — re-sending the same (or
@@ -401,13 +381,11 @@ pub(crate) fn clone_error(err: &SamplingError) -> SamplingError {
             message,
             model_metadata,
             retry_after_secs,
-            should_retry,
         } => SamplingError::Api {
             status: *status,
             message: message.clone(),
             model_metadata: model_metadata.clone(),
             retry_after_secs: *retry_after_secs,
-            should_retry: *should_retry,
         },
         SamplingError::EventStreamError(msg) => SamplingError::EventStreamError(msg.clone()),
         SamplingError::StreamError {
@@ -445,7 +423,6 @@ mod tests {
             message: message.to_string(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         }
     }
 
@@ -455,7 +432,6 @@ mod tests {
             message: "x".to_string(),
             model_metadata: None,
             retry_after_secs: Some(retry_after),
-            should_retry: None,
         }
     }
 
@@ -758,30 +734,14 @@ mod tests {
     }
 
     #[test]
-    fn should_retry_false_overrides_retryable_status() {
-        let err = SamplingError::Api {
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-            message: "boom".into(),
-            model_metadata: None,
-            retry_after_secs: None,
-            should_retry: Some(false),
-        };
-        assert!(matches!(
-            classify_error(&err, 0, 15, RATE_LIMIT_RETRY_THRESHOLD),
-            RetryDecision::Fatal(_)
-        ));
-    }
-
-    #[test]
     fn context_length_overflow_is_fatal_even_as_500() {
-        // The backend streams a size overflow as a ResponseError that becomes a 500 with no
-        // should_retry hint; without the context-length check it would retry the full budget.
+        // The backend streams a size overflow as a ResponseError that becomes a 500;
+        // without the context-length check it would retry the full budget.
         let err = SamplingError::Api {
             status: StatusCode::INTERNAL_SERVER_ERROR,
             message: "none: The prompt is too long for this model's context window.".into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         };
         assert!(matches!(
             classify_error(&err, 0, 15, RATE_LIMIT_RETRY_THRESHOLD),
@@ -790,28 +750,12 @@ mod tests {
     }
 
     #[test]
-    fn should_retry_true_falls_through_to_existing_logic() {
+    fn api_500_first_failure_retries_with_client_rebuild() {
         let err = SamplingError::Api {
             status: StatusCode::INTERNAL_SERVER_ERROR,
             message: "boom".into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: Some(true),
-        };
-        assert!(matches!(
-            classify_error(&err, 0, 15, RATE_LIMIT_RETRY_THRESHOLD),
-            RetryDecision::RetryWithClientRebuild { .. }
-        ));
-    }
-
-    #[test]
-    fn should_retry_absent_falls_through() {
-        let err = SamplingError::Api {
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-            message: "boom".into(),
-            model_metadata: None,
-            retry_after_secs: None,
-            should_retry: None,
         };
         assert!(matches!(
             classify_error(&err, 0, 15, RATE_LIMIT_RETRY_THRESHOLD),
@@ -835,22 +779,5 @@ mod tests {
                 other => panic!("expected Retry, got {other:?}"),
             }
         }
-    }
-
-    #[test]
-    fn should_retry_false_on_429_is_fatal() {
-        // Server says don't retry, even though 429 is normally retryable.
-        // should_retry check runs before rate-limit check.
-        let err = SamplingError::Api {
-            status: StatusCode::TOO_MANY_REQUESTS,
-            message: "rate limited".into(),
-            model_metadata: None,
-            retry_after_secs: Some(10),
-            should_retry: Some(false),
-        };
-        assert!(matches!(
-            classify_error(&err, 0, 15, RATE_LIMIT_RETRY_THRESHOLD),
-            RetryDecision::Fatal(_)
-        ));
     }
 }

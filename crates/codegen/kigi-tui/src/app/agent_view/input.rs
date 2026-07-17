@@ -678,7 +678,6 @@ impl AgentView {
                                 .hit_plan_approval_status
                                 .update_hover(mouse.column, mouse.row);
                             changed |= self.hit_context.update_hover(mouse.column, mouse.row);
-                            changed |= self.hit_credits.update_hover(mouse.column, mouse.row);
                         }
                         MouseEventKind::Down(MouseButton::Left) => {
                             if self.hit_plan_button.contains(mouse.column, mouse.row) {
@@ -943,7 +942,7 @@ impl AgentView {
                 || (key.code == KeyCode::Char('/') && key.modifiers.contains(KeyModifiers::SHIFT)))
         {
             self.active_modal = Some(crate::views::modal::ActiveModal::CommandPalette {
-                entries: crate::views::modal::default_palette_entries(self.sharing_enabled),
+                entries: crate::views::modal::default_palette_entries(),
                 state: crate::views::picker::PickerState::input_active(),
                 window: crate::views::modal_window::ModalWindowState::new(),
             });
@@ -1016,7 +1015,7 @@ impl AgentView {
             }
             ActionId::CommandPalette => {
                 self.active_modal = Some(crate::views::modal::ActiveModal::CommandPalette {
-                    entries: crate::views::modal::default_palette_entries(self.sharing_enabled),
+                    entries: crate::views::modal::default_palette_entries(),
                     state: crate::views::picker::PickerState::input_active(),
                     window: crate::views::modal_window::ModalWindowState::new(),
                 });
@@ -1462,7 +1461,7 @@ mod focus_gained_restore_tests {
         agent.session.state = AgentState::TurnRunning;
         with_permission(&mut agent);
         agent.active_modal = Some(ActiveModal::CommandPalette {
-            entries: crate::views::modal::default_palette_entries(false),
+            entries: crate::views::modal::default_palette_entries(),
             state: crate::views::picker::PickerState::input_active(),
             window: crate::views::modal_window::ModalWindowState::new(),
         });

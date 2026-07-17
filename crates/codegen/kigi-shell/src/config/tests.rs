@@ -2564,7 +2564,7 @@ fn config_layers_user_overrides_managed() {
 fn enterprise_two_file_merge_routes_deployment_key_to_proxy() {
     for k in [
         "KIGI_MANAGED_CONFIG_URL",
-        "KIGI_CLI_CHAT_PROXY_BASE_URL",
+        "KIGI_CODE_BASE_URL",
         "KIGI_TRACE_UPLOAD_ENDPOINT_URL",
     ] {
         unsafe { std::env::remove_var(k) };
@@ -2573,7 +2573,7 @@ fn enterprise_two_file_merge_routes_deployment_key_to_proxy() {
             r#"
 [endpoints]
 xai_api_base_url = "https://inference.acme-corp.example/xai/v1"
-cli_chat_proxy_base_url = "https://cli-chat-proxy.kigi.com/v1"
+coding_api_base_url = "https://cli-chat-proxy.kigi.com/v1"
 
 [model.kigi-build]
 base_url = "https://inference.acme-corp.example/xai/v1"
@@ -2668,13 +2668,13 @@ fn config_layers_system_managed_lowest_priority() {
 #[test]
 fn apply_requirements_value_overrides_user_settings() {
     let raw_config: toml::Value = toml::from_str(
-            "[cli]\nauto_update = true\nchannel = \"beta\"\n\n[features]\nfeedback = true\nlsp_tools = true\nweb_fetch = true\nwrite_file = true\n\n[ui]\nyolo = true\n\n[models]\ndefault = \"user-model\"\nweb_search = \"user-ws-model\"\n\n[endpoints]\ncli_chat_proxy_base_url = \"https://user-proxy.example/v1\"\nxai_api_base_url = \"https://user-api.example/v1\"\nmodels_base_url = \"https://user-models.example/v1\"\nmodels_list_url = \"https://user-models.example/v1/models\"\n",
+            "[cli]\nauto_update = true\nchannel = \"beta\"\n\n[features]\nfeedback = true\nlsp_tools = true\nweb_fetch = true\nwrite_file = true\n\n[ui]\nyolo = true\n\n[models]\ndefault = \"user-model\"\nweb_search = \"user-ws-model\"\n\n[endpoints]\ncoding_api_base_url = \"https://user-proxy.example/v1\"\nxai_api_base_url = \"https://user-api.example/v1\"\nmodels_base_url = \"https://user-models.example/v1\"\nmodels_list_url = \"https://user-models.example/v1/models\"\n",
         )
         .unwrap();
     let mut cfg = crate::agent::config::Config::new_from_toml_cfg(&raw_config).unwrap();
     cfg.default_yolo_mode = true;
     let requirements: toml::Value = toml::from_str(
-            "[cli]\nauto_update = false\nchannel = \"stable\"\n\n[features]\nfeedback = false\nlsp_tools = false\nweb_fetch = false\nwrite_file = false\nremote_fetch = false\n\n[ui]\nyolo = false\n\n[models]\ndefault = \"managed-model\"\nweb_search = \"managed-ws-model\"\n\n[endpoints]\ncli_chat_proxy_base_url = \"https://managed-proxy.example/v1\"\nxai_api_base_url = \"https://managed-api.example/v1\"\nmodels_base_url = \"https://managed-models.example/v1\"\nmodels_list_url = \"https://managed-models.example/v1/models\"\ndeployment_key = \"enterprise-deploy-key-should-not-log\"\n",
+            "[cli]\nauto_update = false\nchannel = \"stable\"\n\n[features]\nfeedback = false\nlsp_tools = false\nweb_fetch = false\nwrite_file = false\nremote_fetch = false\n\n[ui]\nyolo = false\n\n[models]\ndefault = \"managed-model\"\nweb_search = \"managed-ws-model\"\n\n[endpoints]\ncoding_api_base_url = \"https://managed-proxy.example/v1\"\nxai_api_base_url = \"https://managed-api.example/v1\"\nmodels_base_url = \"https://managed-models.example/v1\"\nmodels_list_url = \"https://managed-models.example/v1/models\"\ndeployment_key = \"enterprise-deploy-key-should-not-log\"\n",
         )
         .unwrap();
     let source = RequirementSource::Requirements {
@@ -2697,7 +2697,7 @@ fn apply_requirements_value_overrides_user_settings() {
     assert_eq!(Some("managed-ws-model"), cfg.models.web_search.as_deref());
     assert_eq!(Some("stable"), cfg.cli.channel.as_deref());
     assert_eq!(
-        Some("https://managed-proxy.example/v1"), cfg.endpoints.cli_chat_proxy_base_url
+        Some("https://managed-proxy.example/v1"), cfg.endpoints.coding_api_base_url
         .as_deref()
     );
     assert_eq!("https://managed-api.example/v1", cfg.endpoints.xai_api_base_url);

@@ -1,28 +1,6 @@
 use crate::util::config::RemoteSettings;
 use toml::Value as TomlValue;
 
-/// Resolve whether ZDR users are allowed to use the product.
-///
-/// Precedence: requirements > env > config.toml > managed > remote settings > default (false).
-pub fn resolve_zdr_access_enabled(
-    requirements: Option<&TomlValue>,
-    user: Option<&TomlValue>,
-    managed: Option<&TomlValue>,
-    remote: Option<&RemoteSettings>,
-) -> bool {
-    use crate::agent::config::BoolFlag;
-    fn from_toml(v: Option<&TomlValue>) -> Option<bool> {
-        v?.get("features")?.get("zdr_access_enabled")?.as_bool()
-    }
-    BoolFlag::env("KIGI_ZDR_ACCESS_ENABLED")
-        .requirement(from_toml(requirements))
-        .config(from_toml(user))
-        .managed(from_toml(managed))
-        .feature_flag(remote.and_then(|r| r.zdr_access_enabled))
-        .resolve()
-        .value
-}
-
 /// Whether model-catalog (`/v1/models`) and remote-settings (`/v1/settings`)
 /// fetches from xAI backends are allowed, including the deployment-config sync
 /// bundled into the startup prefetch (the background managed-config sync has

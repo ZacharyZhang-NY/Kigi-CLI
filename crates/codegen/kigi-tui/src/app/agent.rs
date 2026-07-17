@@ -653,16 +653,6 @@ pub struct AgentSession {
     /// fires, so the subsequent `TurnFailed` can be suppressed (the retry handler
     /// already displayed a user-friendly message). Cleared on `finish_turn`.
     pub model_incompatible: bool,
-    /// Set when a `RetryState::Failed` carries a 403 credit-limit error, so
-    /// the error message is suppressed in favour of the upsell modal.
-    /// Cleared on `finish_turn`.
-    pub credit_limit_blocked: bool,
-    /// Set when a rate-limit `RetryState::Exhausted` carries the
-    /// `subscription:free-usage-exhausted` code, so the PromptResponse
-    /// handler shows the free-usage paywall instead of the generic
-    /// rate-limit message. Always set together with [`Self::rate_limited`].
-    /// Cleared on `finish_turn`.
-    pub free_usage_blocked: bool,
     pub(crate) tracker: AcpUpdateTracker,
     /// ACP-advertised slash commands. Seeded from `InitializeResponse.meta`,
     /// updated by `AvailableCommandsUpdate`. The prompt-side registry syncs
@@ -796,8 +786,6 @@ impl AgentSession {
         self.state = AgentState::Idle;
         self.rate_limited = false;
         self.model_incompatible = false;
-        self.credit_limit_blocked = false;
-        self.free_usage_blocked = false;
         self.in_flight_prompt = None;
         self.current_prompt_id = None;
     }
@@ -999,8 +987,6 @@ mod tests {
             restore_degree: None,
             rate_limited: false,
             model_incompatible: false,
-            credit_limit_blocked: false,
-            free_usage_blocked: false,
             available_commands: Vec::new(),
             available_commands_generation: 0,
             available_tools: None,

@@ -1209,9 +1209,6 @@ fn move_setting_away_from_default(app: &mut AppView, key: crate::settings::Setti
         "max_thoughts_width" => {
             let _ = dispatch(Action::SetMaxThoughtsWidth(200), app);
         }
-        "coding_data_sharing" => {
-            let _ = dispatch(Action::SetCodingDataSharing { opted_in: false }, app);
-        }
         "plan_mode" => {
             let _ = dispatch(
                 Action::SetPlanMode(crate::app::actions::PlanModeKind::On),
@@ -1388,8 +1385,6 @@ fn set_simple_mode_propagates_to_every_agent() {
             restore_degree: None,
             rate_limited: false,
             model_incompatible: false,
-            credit_limit_blocked: false,
-            free_usage_blocked: false,
             available_commands: Vec::new(),
             available_commands_generation: 0,
             available_tools: None,

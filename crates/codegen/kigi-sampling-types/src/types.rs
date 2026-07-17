@@ -537,6 +537,15 @@ pub struct Usage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
     pub total_tokens: u32,
+    /// Kimi/Moonshot deviation: the Moonshot chat/completions API reports
+    /// cache hits as a top-level `cached_tokens` field on `usage` instead of
+    /// the OpenAI-standard `prompt_tokens_details.cached_tokens`. Ported from
+    /// kimi-cli's parser (packages/kosong/src/kosong/chat_provider/kimi.py:427-437,
+    /// which checks the top-level field first and cites
+    /// platform.moonshot.cn/docs/api/chat). `From<Usage> for TokenUsage`
+    /// applies the same precedence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_tokens: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_tokens_details: Option<PromptTokensDetails>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -592,6 +601,14 @@ pub struct ChatChunkChoice {
     pub delta: ChatChunkDelta,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub finish_reason: Option<FinishReason>,
+    /// Kimi/Moonshot deviation: some Kimi deployments attach the final
+    /// `usage` object to the last *choice* instead of (or in addition to)
+    /// the chunk's top-level `usage`. Ported from kimi-cli's
+    /// `extract_usage_from_chunk`
+    /// (packages/kosong/src/kosong/chat_provider/kimi.py:522-533), which
+    /// falls back to `choices[0].usage` when `chunk.usage` is absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Usage>,
 }
 
 /// Streaming delta for a tool call.

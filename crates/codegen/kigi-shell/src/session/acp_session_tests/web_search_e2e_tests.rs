@@ -64,9 +64,6 @@ async fn web_search_uses_model_override_from_config_end_to_end() {
         entry,
         crate::agent::config::resolve_credentials(entry, None),
         None,
-        None,
-        None,
-        None,
     );
     let web_search_sampling = crate::tools::config::web_search_sampling_config(resolved);
 

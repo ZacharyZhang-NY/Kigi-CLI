@@ -96,13 +96,9 @@ pub enum SamplingError {
         status: StatusCode,
         message: String,
         model_metadata: Option<ResponseModelMetadata>,
-        /// Parsed from the `Retry-After` response header (seconds).
+        /// Parsed from the standard `Retry-After` response header (seconds).
+        /// The Kimi API only emits delta-seconds; HTTP-dates are ignored.
         retry_after_secs: Option<u64>,
-        /// Parsed from the `x-should-retry` response header.
-        /// `Some(true)` = transient, retry may help.
-        /// `Some(false)` = request-content error, don't retry.
-        /// `None` = header absent (old server or non-proxy origin).
-        should_retry: Option<bool>,
     },
     #[error("reqwest error stream: {0}")]
     EventStreamError(String),
@@ -271,14 +267,6 @@ impl SamplingError {
         }
     }
 
-    /// Server hint on whether this error is worth retrying.
-    pub fn should_retry_header(&self) -> Option<bool> {
-        match self {
-            SamplingError::Api { should_retry, .. } => *should_retry,
-            _ => None,
-        }
-    }
-
     /// True when this error is a context-window/size overflow — deterministic,
     /// so retrying the same payload can't help. See [`is_context_length_error`].
     pub fn is_context_length_error(&self) -> bool {
@@ -304,7 +292,14 @@ impl From<serde_json::Error> for SamplingError {
     }
 }
 
-/// OpenAI-standard provider error format: `{"error": {"message": "...", "type": "..."}}`.
+/// Kimi/Moonshot (OpenAI-compatible) error body:
+/// `{"error": {"message": "...", "type": "..."}}`.
+///
+/// This is the only error format the Kimi chat/completions endpoint emits —
+/// the same shape the official client parses via the OpenAI SDK
+/// (kimi-cli packages/kosong/src/kosong/chat_provider/openai_common.py:83-87
+/// maps `openai.APIStatusError` → status + message). The old xAI proxy's
+/// flat `{"code": "...", "error": "..."}` format was removed with the proxy.
 #[derive(Debug, Deserialize)]
 struct ErrorResponse {
     error: ErrorBody,
@@ -317,36 +312,20 @@ struct ErrorBody {
     kind: Option<String>,
 }
 
-/// Flat error from the Grok proxy/gateway: `{"code": "...", "error": "..."}`.
-#[derive(Debug, Deserialize)]
-struct FlatErrorResponse {
-    error: String,
-    #[serde(default)]
-    code: Option<String>,
-}
-
-/// Extract `(error_type, message)` from either error format.
+/// Extract `(error_type, message)` from an OpenAI-compatible error body.
 fn try_parse_error(data: &str) -> Option<(String, String)> {
-    if let Ok(resp) = serde_json::from_str::<ErrorResponse>(data) {
-        return Some((
-            resp.error.kind.unwrap_or_else(|| "unknown".to_string()),
-            resp.error
-                .message
-                .unwrap_or_else(|| "unknown error".to_string()),
-        ));
-    }
-    if let Ok(flat) = serde_json::from_str::<FlatErrorResponse>(data) {
-        return Some((
-            flat.code.unwrap_or_else(|| "server_error".to_string()),
-            flat.error,
-        ));
-    }
-    None
+    let resp = serde_json::from_str::<ErrorResponse>(data).ok()?;
+    Some((
+        resp.error.kind.unwrap_or_else(|| "unknown".to_string()),
+        resp.error
+            .message
+            .unwrap_or_else(|| "unknown error".to_string()),
+    ))
 }
 
 pub fn parse_error_bytes(bytes: &[u8]) -> String {
     if let Some((error_type, message)) = std::str::from_utf8(bytes).ok().and_then(try_parse_error) {
-        if error_type == "unknown" || error_type == "server_error" {
+        if error_type == "unknown" {
             return message;
         }
         return format!("{error_type}: {message}");
@@ -420,7 +399,6 @@ mod tests {
             message: "none: The prompt is too long for this model's context window.".into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         };
         assert!(api.is_context_length_error());
         assert!(
@@ -489,20 +467,20 @@ mod tests {
         );
     }
 
+    /// Moonshot rate-limit body, OpenAI error shape (the format the Kimi
+    /// endpoints emit; see kimi-cli packages/kosong/src/kosong/chat_provider/chaos.py:88
+    /// for the reference 429 body used by the official client's chaos tests).
     #[test]
-    fn try_parse_stream_error_flat_format() {
-        let data = r#"{"code":"The service is currently unavailable","error":"Service temporarily unavailable. The model did not respond to this request."}"#;
-        let err = try_parse_stream_error(data).expect("should parse flat error");
+    fn try_parse_stream_error_openai_format() {
+        let data = r#"{"error":{"message":"Your account is rate limited","type":"rate_limit_reached_error"}}"#;
+        let err = try_parse_stream_error(data).expect("should parse OpenAI-shaped error");
         match err {
             SamplingError::StreamError {
                 error_type,
                 message,
             } => {
-                assert_eq!(error_type, "The service is currently unavailable");
-                assert_eq!(
-                    message,
-                    "Service temporarily unavailable. The model did not respond to this request."
-                );
+                assert_eq!(error_type, "rate_limit_reached_error");
+                assert_eq!(message, "Your account is rate limited");
             }
             other => panic!("expected StreamError, got {other:?}"),
         }
@@ -518,13 +496,19 @@ mod tests {
     }
 
     #[test]
-    fn parse_error_bytes_flat_format() {
-        let bytes =
-            br#"{"code":"The service is currently unavailable","error":"Service temporarily unavailable."}"#;
-        let msg = parse_error_bytes(bytes);
+    fn parse_error_bytes_openai_format_prefixes_type() {
+        let bytes = br#"{"error":{"message":"Your account is rate limited","type":"rate_limit_reached_error"}}"#;
         assert_eq!(
-            msg,
-            "The service is currently unavailable: Service temporarily unavailable."
+            parse_error_bytes(bytes),
+            "rate_limit_reached_error: Your account is rate limited"
+        );
+    }
+
+    #[test]
+    fn parse_error_bytes_non_json_falls_back_to_raw_text() {
+        assert_eq!(
+            parse_error_bytes(b"  upstream exploded  "),
+            "upstream exploded"
         );
     }
 
@@ -543,7 +527,6 @@ mod tests {
             message: "Content violates usage guidelines.".into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         };
         assert!(
             !err.is_auth_error(),
@@ -558,7 +541,6 @@ mod tests {
             message: "Invalid or expired credentials".into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         };
         assert!(
             err.is_auth_error(),
@@ -579,7 +561,6 @@ mod tests {
             message: "Rate limit exceeded".into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         };
         assert!(err.is_rate_limited());
         assert!(err.is_retryable(), "429 should be retryable");
@@ -594,7 +575,6 @@ mod tests {
             message: "internal".into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         };
         assert!(!server_error.is_rate_limited());
 
@@ -612,7 +592,6 @@ mod tests {
             message: "slow down".into(),
             model_metadata: None,
             retry_after_secs: Some(42),
-            should_retry: None,
         };
         assert_eq!(err.retry_after(), Some(42));
     }
@@ -624,7 +603,6 @@ mod tests {
             message: "slow down".into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         };
         assert_eq!(err.retry_after(), None);
     }
@@ -645,7 +623,6 @@ mod tests {
             message: "Could not decrypt the provided encrypted_content. Ensure the value is the unmodified encrypted_content from a previous response.".into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         };
         assert!(err.is_encrypted_content_error());
         assert!(
@@ -661,7 +638,6 @@ mod tests {
             message: "encrypted_content decryption failed".into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         };
         assert!(
             !err.is_encrypted_content_error(),
@@ -676,7 +652,6 @@ mod tests {
             message: "Invalid model parameter".into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         };
         assert!(
             !err.is_encrypted_content_error(),
@@ -691,7 +666,6 @@ mod tests {
             message: "Could not process image: unsupported format".into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         };
         assert!(err.is_image_processing_error());
         assert!(!err.is_encrypted_content_error());
@@ -704,7 +678,6 @@ mod tests {
             message: "upstream error: 400 Bad Request: Could not process image".into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         };
         assert!(err.is_image_processing_error());
     }
@@ -716,7 +689,6 @@ mod tests {
             message: "Invalid model parameter".into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         };
         assert!(!err.is_image_processing_error());
     }
@@ -728,7 +700,6 @@ mod tests {
             message: "internal server error".into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         };
         assert!(!err.is_image_processing_error());
     }
@@ -740,7 +711,6 @@ mod tests {
             message: "Could not process image".into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         };
         assert!(
             !err.is_image_processing_error(),
@@ -755,7 +725,6 @@ mod tests {
             message: "Could not process image".into(),
             model_metadata: None,
             retry_after_secs: None,
-            should_retry: None,
         };
         assert!(
             !err.is_retryable(),

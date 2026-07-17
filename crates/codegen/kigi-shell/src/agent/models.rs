@@ -10,8 +10,8 @@ use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use indexmap::IndexMap;
 
 use crate::agent::config::{self, ModelEntry, resolve_credentials, sampling_config_for_model};
+use crate::agent::models_fetch::{FetchModelsResult, fetch_models_blocking};
 use crate::auth::{AuthManager, KimiAuth, KimiCodeConfig};
-use crate::remote::{FetchModelsResult, fetch_models_blocking};
 use crate::sampling::SamplerConfig as SamplingConfig;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use kigi_sampling_types::{ReasoningEffort, ReasoningEffortOption};
@@ -290,7 +290,7 @@ impl ModelsManager {
             cache
                 .load_fresh(
                     &fetch_auth.cache_auth_method(),
-                    &crate::remote::models_fetch_origin(
+                    &crate::agent::models_fetch::models_fetch_origin(
                         &cfg.endpoints,
                         fetch_auth,
                         has_session,
@@ -1035,11 +1035,6 @@ impl ModelsManager {
             current_model,
             credentials,
             config.endpoints.alpha_test_key.clone(),
-            config.client_version.clone(),
-            crate::managed_config::resolve_deployment_id(
-                config.endpoints.deployment_key.as_deref(),
-            ),
-            None,
         )
     }
 
@@ -1053,7 +1048,12 @@ impl ModelsManager {
         let fetch_auth = *self.inner.fetch_auth.read();
         let has_oauth = self.inner.auth_manager.current_or_expired().is_some();
         let platform_keys = PlatformApiKeys::resolve(&platforms);
-        crate::remote::models_fetch_origin(&endpoints, fetch_auth, has_oauth, &platform_keys)
+        crate::agent::models_fetch::models_fetch_origin(
+            &endpoints,
+            fetch_auth,
+            has_oauth,
+            &platform_keys,
+        )
     }
 
     fn try_load_cache(&self) -> bool {
@@ -1327,7 +1327,7 @@ struct ModelsCache {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     auth_method: Option<CacheAuthMethod>,
     /// Models-list URL this catalog was fetched from
-    /// ([`crate::remote::models_list_url`]). Compared on load so a cache
+    /// ([`crate::agent::models_fetch::models_fetch_origin`]). Compared on load so a cache
     /// written against one backend is a miss for another: entries embed
     /// absolute `base_url`s, so adopting a foreign-origin cache silently
     /// re-points inference (the windows lifecycle e2e failed exactly this
@@ -1575,43 +1575,6 @@ pub(crate) fn prefetch_models_blocking(
     .models
 }
 
-/// Blocking models + `/v1/settings` prefetch pair, shared by the early
-/// prefetch thread and the leader's startup phase so the settings gate lives
-/// once. The remote_fetch knob is resolved a single time so the two fetch
-/// decisions cannot disagree mid-startup.
-pub(crate) fn prefetch_models_and_settings_blocking(
-    endpoints: &config::EndpointsConfig,
-    auth: Option<&KimiAuth>,
-    fetch_auth: ModelFetchAuth,
-    platform_keys: &PlatformApiKeys,
-) -> (
-    Option<IndexMap<String, ModelEntry>>,
-    Option<crate::util::config::RemoteSettings>,
-) {
-    let remote_fetch_enabled = crate::util::config::resolve_remote_fetch_enabled();
-    let models = prefetch_models_blocking_gated(
-        endpoints,
-        auth,
-        fetch_auth,
-        platform_keys,
-        remote_fetch_enabled,
-    )
-    .models;
-    // Settings need a subscription session; skip for API-key-only setups.
-    let settings = match auth {
-        Some(auth) if remote_fetch_enabled => {
-            let _timer = crate::instrumentation_timer!("startup.early_settings_fetch");
-            crate::remote::fetch_settings_blocking(
-                &endpoints.proxy_url(),
-                auth,
-                endpoints.alpha_test_key.as_deref(),
-            )
-        }
-        _ => None,
-    };
-    (models, settings)
-}
-
 /// `remote_fetch_enabled` is a parameter so the pair helper above resolves the
 /// knob once for both halves.
 fn prefetch_models_blocking_gated(
@@ -1624,8 +1587,12 @@ fn prefetch_models_blocking_gated(
     let cache_auth = fetch_auth.cache_auth_method();
     // Same fetch plan the network path below executes — the cache is only
     // valid for it.
-    let cache_origin =
-        crate::remote::models_fetch_origin(endpoints, fetch_auth, auth.is_some(), platform_keys);
+    let cache_origin = crate::agent::models_fetch::models_fetch_origin(
+        endpoints,
+        fetch_auth,
+        auth.is_some(),
+        platform_keys,
+    );
     let cache = ModelsCacheManager::new();
     if let Some(cached) = cache.load_fresh(&cache_auth, &cache_origin) {
         tracing::info!(
@@ -1703,10 +1670,9 @@ fn stale_cache_or_failure(
     ModelsFetchOutcome::failed(oauth_unauthorized)
 }
 
-/// Startup prefetch result: models + remote settings.
+/// Startup prefetch result: the model catalog, when a fetch plan existed.
 pub struct EarlyPrefetchResult {
     pub models: Option<IndexMap<String, ModelEntry>>,
-    pub settings: Option<crate::util::config::RemoteSettings>,
 }
 
 /// Handle for a startup prefetch thread.
@@ -1743,7 +1709,7 @@ fn resolve_prefetch_env_with_auth(auth: Option<KimiAuth>) -> Option<PrefetchEnv>
 /// `has_custom_endpoint()` (which otherwise forces the prefetch to run): the
 /// explicit off switch must hold even when a stray login, a platform API key,
 /// or a `deployment_key` would re-arm the prefetch — and with it the
-/// `/v1/settings` fetch and the deployment-config sync on the prefetch thread.
+/// deployment-config sync on the prefetch thread.
 ///
 /// PRD F2 acceptance: a moonshot API key alone (no subscription login) must
 /// arm the prefetch so the catalog syncs on startup.
@@ -1754,7 +1720,7 @@ fn resolve_prefetch_env_from_parts(
     remote_fetch_enabled: bool,
 ) -> Option<PrefetchEnv> {
     if !remote_fetch_enabled {
-        tracing::info!("startup model/settings prefetch skipped: remote_fetch disabled");
+        tracing::info!("startup model prefetch skipped: remote_fetch disabled");
         return None;
     }
 
@@ -1779,7 +1745,7 @@ fn resolve_prefetch_env(kimi_code_config: Option<KimiCodeConfig>) -> Option<Pref
     resolve_prefetch_env_with_auth(auth)
 }
 
-/// Start model + settings prefetch on a background thread using pre-resolved auth.
+/// Start the model-catalog prefetch on a background thread using pre-resolved auth.
 ///
 /// When the caller has already obtained valid credentials (e.g. via
 /// `try_ensure_fresh_auth`), pass them here to avoid re-reading stale cached
@@ -1789,7 +1755,7 @@ pub fn start_early_prefetch_with_auth(auth: Option<KimiAuth>) -> Option<EarlyPre
     Some(spawn_prefetch_thread(env))
 }
 
-/// Start model + settings prefetch on a background thread.
+/// Start the model-catalog prefetch on a background thread.
 ///
 /// Convenience wrapper that reads cached auth from disk. Prefer
 /// `start_early_prefetch_with_auth` when you have pre-resolved credentials.
@@ -1805,7 +1771,7 @@ fn spawn_prefetch_thread(env: PrefetchEnv) -> EarlyPrefetchHandle {
         let mut timer = crate::instrumentation_timer!("startup.early_prefetch");
         let proxy_endpoint = env.endpoints.proxy_url();
         timer.with_field("endpoint", proxy_endpoint.as_str());
-        let (models, settings) = prefetch_models_and_settings_blocking(
+        let models = prefetch_models_blocking(
             &env.endpoints,
             env.auth.as_ref(),
             env.model_fetch_auth,
@@ -1824,7 +1790,7 @@ fn spawn_prefetch_thread(env: PrefetchEnv) -> EarlyPrefetchHandle {
             let _ = rt.block_on(crate::managed_config::sync());
         }
 
-        EarlyPrefetchResult { models, settings }
+        EarlyPrefetchResult { models }
     })
 }
 
@@ -3868,7 +3834,7 @@ mod tests {
 
     fn proxied_endpoints(server_uri: &str) -> config::EndpointsConfig {
         config::EndpointsConfig {
-            cli_chat_proxy_base_url: Some(server_uri.to_string()),
+            coding_api_base_url: Some(server_uri.to_string()),
             models_base_url: None,
             models_list_url: None,
             ..config::EndpointsConfig::default()
@@ -3900,7 +3866,7 @@ mod tests {
             ..KimiAuth::test_default()
         };
         let result = tokio::task::spawn_blocking(move || {
-            crate::remote::fetch_models_blocking(
+            crate::agent::models_fetch::fetch_models_blocking(
                 &endpoints,
                 Some(&auth),
                 ModelFetchAuth::Platforms,
@@ -3969,7 +3935,12 @@ mod tests {
         let endpoints = config::EndpointsConfig::default();
         let keys = PlatformApiKeys::test_keys(Some("sk-cn-secret"), None);
         let result = tokio::task::spawn_blocking(move || {
-            crate::remote::fetch_models_blocking(&endpoints, None, ModelFetchAuth::Platforms, &keys)
+            crate::agent::models_fetch::fetch_models_blocking(
+                &endpoints,
+                None,
+                ModelFetchAuth::Platforms,
+                &keys,
+            )
         })
         .await
         .unwrap()
@@ -4062,7 +4033,7 @@ mod tests {
         auth_manager.set_refresher(Arc::new(SwapRefresher));
 
         let mut cfg = config::Config::default();
-        cfg.endpoints.cli_chat_proxy_base_url = Some(server.uri());
+        cfg.endpoints.coding_api_base_url = Some(server.uri());
         let mgr = ModelsManager::new(
             None,
             IndexMap::new(),
@@ -4120,8 +4091,12 @@ mod tests {
         assert!(bundled.contains_key("moonshot-ai/kimi-k2-turbo-preview"));
 
         // 2. A STALE cache for the same fetch plan is served on sync failure.
-        let origin =
-            crate::remote::models_fetch_origin(&endpoints, ModelFetchAuth::Platforms, true, &keys);
+        let origin = crate::agent::models_fetch::models_fetch_origin(
+            &endpoints,
+            ModelFetchAuth::Platforms,
+            true,
+            &keys,
+        );
         let cache = ModelsCacheManager::new();
         let stale = ModelsCache {
             fetched_at: Utc::now() - ChronoDuration::seconds(86_400),
@@ -4203,7 +4178,7 @@ mod tests {
         let _cache = EnvGuard::set("KIGI_MODELS_CACHE_DIR", cache_dir.path().to_str().unwrap());
         let endpoints = proxied_endpoints("http://127.0.0.1:9");
         // Cache written when a moonshot key was ALSO configured...
-        let with_key_origin = crate::remote::models_fetch_origin(
+        let with_key_origin = crate::agent::models_fetch::models_fetch_origin(
             &endpoints,
             ModelFetchAuth::Platforms,
             true,

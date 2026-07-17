@@ -3,57 +3,48 @@
 //! This manager coordinates:
 //! - Signal tracking via SessionSignalsHandle
 //! - Heuristics evaluation to determine when to request feedback
-//! - Periodic sync of signals to the feedback/analytics backend
-//! - Background loading of feedback configuration from the backend
-//! - Creating feedback request records when triggered
-//! - Sending feedback request notifications to clients
+//! - Local persistence of every feedback record
+//! - Forwarding text feedback to the Kimi Code feedback endpoint for
+//!   subscription (OAuth) sessions
 //!
 //! ## Usage
 //! ```ignore
 //! // Create the manager when a session starts
-//! let manager = FeedbackManager::new(session_id, feedback_api_url, user_token);
+//! let manager = FeedbackManager::new(session_id, feedback_client, config);
 //!
 //! // Get the signals handle to pass around for event tracking
 //! let signals = manager.signals_handle();
-//!
-//! // Spawn the background sync task (also loads config)
-//! tokio::spawn(manager.run_sync_loop());
 //!
 //! // Track events
 //! signals.increment_turn();
 //! signals.record_tool_call("read_file");
 //!
 //! // Check for feedback after each turn
-//! // This also records the request with the feedback API if triggered
 //! if let Some(request) = manager.maybe_request_feedback(None).await {
 //!     // Send FeedbackRequest notification to client
 //! }
 //! ```
 
-use std::ops::ControlFlow;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::sync::RwLock;
 
-use crate::agent::feedback_client::{
-    FeedbackApiError, FeedbackClient, signals_to_update, snapshot_to_turn_delta,
-};
+use crate::agent::feedback_client::FeedbackClient;
 use crate::session::feedback::{
     FeedbackEvaluation, FeedbackHeuristics, FeedbackRequest, FeedbackTier, TriggerCondition,
 };
-use crate::session::signals::{SessionSignalsActor, SessionSignalsHandle, TurnDeltaSnapshot};
+use crate::session::signals::{SessionSignalsActor, SessionSignalsHandle};
 
-use prod_mc_cli_chat_proxy_types::feedback_types::{
-    ClientType, ContextType, CreateFeedbackRequestInput, FeedbackContent, FeedbackMode,
-    FeedbackSubmission, FeedbackToolOutcome,
+use crate::session::feedback_types::{
+    ClientType, FeedbackContent, FeedbackMode, FeedbackSubmission, FeedbackToolOutcome,
 };
 
 use crate::session::persistence::{LocalFeedbackEntry, PersistenceMsg, UserFeedbackEntry};
 
 pub(crate) enum SubmitOutcome {
     Submitted,
-    /// No server configured for this session.
+    /// Persisted locally only: no subscription session, or a rating-only
+    /// record with no text content for the Kimi feedback endpoint.
     LocalOnly,
     /// Server request failed.
     Failed(anyhow::Error),
@@ -70,8 +61,9 @@ pub(crate) fn new_submission(
     s
 }
 
-/// Pipeline: persist → strip → submit. Callers merge `KIGI_USER_METADATA` and
-/// set `submission.request_id`.
+/// Pipeline: persist locally → forward text content to the Kimi feedback
+/// endpoint (subscription sessions only). Callers merge `KIGI_USER_METADATA`
+/// and set `submission.request_id`.
 pub(crate) async fn submit_feedback_workflow(
     submission: &mut FeedbackSubmission,
     feedback_client: Option<&FeedbackClient>,
@@ -96,42 +88,33 @@ pub(crate) async fn submit_feedback_workflow(
         }
     }
 
-    let telemetry_model_id = submission.model_id.clone();
     let telemetry_rating_value = submission.rating_value;
-    let telemetry_session_id = submission.session_id.clone();
     let has_feedback_text = submission
         .feedback_text
         .as_ref()
         .is_some_and(|t| !t.is_empty());
-    let request_id = submission.request_id.clone();
-    let appearance_id = request_id.clone();
+    let appearance_id = submission.request_id.clone();
 
-    // Keep client-enriched triage fields; do not strip_metadata (Slack shows Option fields when set).
-
-    let outcome = if let Some(client) = feedback_client {
-        let result = if let Some(req_id) = request_id {
-            with_one_shot_auth_retry(client, || async {
-                client
-                    .complete_request(&req_id, submission)
-                    .await
-                    .map(|_| ())
-            })
-            .await
-        } else {
-            with_one_shot_auth_retry(client, || async {
-                client.submit_feedback(submission).await.map(|_| ())
-            })
-            .await
-        };
-        match result {
-            Ok(()) => SubmitOutcome::Submitted,
-            Err(e) => {
-                tracing::warn!(error = %e, "feedback submission failed");
-                SubmitOutcome::Failed(e)
+    // Only text-bearing feedback goes over the wire: the Kimi endpoint takes
+    // a `content` string (kimi-cli slash.py parity); ratings stay local.
+    let outcome = match (feedback_client, &submission.feedback_text) {
+        (Some(client), Some(text)) if !text.is_empty() => {
+            let model = submission
+                .model_id
+                .as_deref()
+                .or(submission.resolved_model_id.as_deref());
+            match client
+                .submit_feedback(&submission.session_id, text, model)
+                .await
+            {
+                Ok(()) => SubmitOutcome::Submitted,
+                Err(e) => {
+                    tracing::warn!(error = %e, "feedback submission failed");
+                    SubmitOutcome::Failed(e)
+                }
             }
         }
-    } else {
-        SubmitOutcome::LocalOnly
+        _ => SubmitOutcome::LocalOnly,
     };
 
     {
@@ -172,18 +155,13 @@ pub struct FeedbackFlags {
 /// Configuration for the feedback manager.
 #[derive(Debug, Clone)]
 pub struct FeedbackManagerConfig {
-    /// Interval for syncing signals to the analytics backend (default: 30s)
+    /// Interval for the signals actor's periodic bookkeeping tick.
     pub sync_interval: Duration,
     /// Whether user-facing feedback features are enabled (popups, `/feedback`,
     /// ratings). Gated by `KIGI_FEEDBACK_ENABLED`.
     pub feedback_enabled: bool,
     /// Client type (Agent, Tui, Web, Extension)
     pub client_type: ClientType,
-    /// Whether LOC attribution tracking is enabled for this session.
-    /// Propagated into every `SessionTurnDelta` so the server can
-    /// distinguish "tracking off" (zeros are noise) from "tracking on,
-    /// no code changed" (zeros are real data).
-    pub loc_tracking_enabled: bool,
 }
 
 impl Default for FeedbackManagerConfig {
@@ -192,7 +170,6 @@ impl Default for FeedbackManagerConfig {
             sync_interval: Duration::from_secs(60),
             feedback_enabled: false,
             client_type: ClientType::Agent,
-            loc_tracking_enabled: false,
         }
     }
 }
@@ -205,19 +182,17 @@ pub struct FeedbackManager {
     signals_handle: SessionSignalsHandle,
     /// Feedback heuristics evaluator
     heuristics: Arc<RwLock<FeedbackHeuristics>>,
-    /// REST client for the feedback/analytics backend
+    /// Client for the Kimi Code feedback endpoint (subscription sessions).
     feedback_client: Option<FeedbackClient>,
     /// Configuration
     config: FeedbackManagerConfig,
-    /// Whether config has been loaded from server
-    config_loaded: Arc<AtomicBool>,
 }
 
 impl FeedbackManager {
     /// Create a new feedback manager for a session.
     ///
-    /// If `feedback_client` is None, signal syncing is disabled but local
-    /// tracking and heuristics evaluation still work.
+    /// If `feedback_client` is None, submissions stay local but tracking and
+    /// heuristics evaluation still work.
     pub fn new(
         session_id: impl Into<String>,
         feedback_client: Option<FeedbackClient>,
@@ -243,7 +218,6 @@ impl FeedbackManager {
             heuristics: Arc::new(RwLock::new(FeedbackHeuristics::new())),
             feedback_client,
             config,
-            config_loaded: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -267,13 +241,14 @@ impl FeedbackManager {
         self.config.feedback_enabled
     }
 
-    /// REST client for the feedback/analytics backend, if configured.
+    /// Client for the Kimi Code feedback endpoint, if this is a subscription
+    /// session.
     pub fn feedback_client(&self) -> Option<&FeedbackClient> {
         self.feedback_client.as_ref()
     }
 
     /// Client type for this session (Agent, Tui, Web, etc.).
-    pub fn client_type(&self) -> prod_mc_cli_chat_proxy_types::feedback_types::ClientType {
+    pub fn client_type(&self) -> ClientType {
         self.config.client_type
     }
 
@@ -330,47 +305,6 @@ impl FeedbackManager {
         .await
     }
 
-    /// Check if config has been loaded from the server.
-    pub fn is_config_loaded(&self) -> bool {
-        self.config_loaded.load(Ordering::Relaxed)
-    }
-
-    /// Load feedback heuristics config from the backend.
-    /// This is called automatically in run_sync_loop but can be called manually.
-    /// Does not block - errors are logged and defaults are used.
-    #[tracing::instrument(name = "feedback.load_config", skip_all, fields(
-        session_id = %self.session_id,
-    ))]
-    pub async fn load_config(&self) {
-        let Some(client) = &self.feedback_client else {
-            return; // No client, use defaults
-        };
-
-        if self.config.feedback_enabled {
-            match client.get_feedback_config().await {
-                Ok(config) => {
-                    let mut heuristics = self.heuristics.write().await;
-                    heuristics.update_config(&config);
-                    self.config_loaded.store(true, Ordering::Relaxed);
-                    tracing::info!(
-                        session_id = %self.session_id,
-                        config_id = %config.config_id,
-                        config_version = config.config_version,
-                        enabled = config.enabled,
-                        "Loaded feedback heuristics config from server"
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        session_id = %self.session_id,
-                        error = %e,
-                        "Failed to load feedback heuristics config, using defaults"
-                    );
-                }
-            }
-        }
-    }
-
     /// Evaluate heuristics and return a FeedbackRequest if one should be sent.
     ///
     /// Call this after each turn to check if feedback should be requested.
@@ -378,9 +312,6 @@ impl FeedbackManager {
     /// - No tier criteria are met
     /// - The tier was already triggered this session
     /// - Probabilistic sampling says no
-    ///
-    /// When a request is triggered, this method also creates a record via the
-    /// feedback API for tracking and analytics.
     #[tracing::instrument(name = "feedback.maybe_request_feedback", skip_all, fields(
         session_id = %self.session_id,
     ))]
@@ -395,7 +326,6 @@ impl FeedbackManager {
         let signals = self.signals_handle.snapshot().await?;
         let mut heuristics = self.heuristics.write().await;
 
-        // Check if heuristics are globally enabled (from server config)
         if !heuristics.is_enabled() {
             return None;
         }
@@ -422,11 +352,9 @@ impl FeedbackManager {
                 tier = ?request.tier,
                 trigger_type = %request.trigger_type,
                 feedback_mode = ?request.feedback_mode,
+                prompt_id = ?prompt_id,
                 "Feedback request triggered"
             );
-
-            self.record_feedback_request(&request, trigger_condition, feedback_mode, prompt_id)
-                .await;
 
             return Some(request);
         }
@@ -449,11 +377,6 @@ impl FeedbackManager {
     /// `x.ai/debug/trigger_feedback` ACP extension method to exercise
     /// the full feedback notification ↔ response flow without needing a
     /// real session that meets tier criteria.
-    ///
-    /// When a `feedback_client` is configured, the request is also recorded
-    /// via the feedback API — exactly like a real trigger — so that the
-    /// subsequent `complete_request` / `dismiss_request` round-trip from the
-    /// client works end-to-end.
     #[tracing::instrument(name = "feedback.force_feedback_request", skip_all, fields(
         session_id = %self.session_id,
     ))]
@@ -481,268 +404,12 @@ impl FeedbackManager {
 
         // Manual/debug triggers are always dismissible regardless of tier config,
         // since they exist for developer testing, not real user feedback collection.
-        let request = FeedbackRequest::with_mode(
-            self.session_id.clone(),
-            condition.clone(),
-            mode,
-            true,
-            None,
-        );
-
-        self.record_feedback_request(&request, &condition, mode, None)
-            .await;
-
-        request
-    }
-
-    /// Record a feedback request via the feedback API.
-    ///
-    /// This is a best-effort operation — errors are logged but do not
-    /// prevent the request from being sent to the client.
-    #[tracing::instrument(name = "feedback.record_feedback_request", skip_all, fields(
-        session_id = %self.session_id,
-    ))]
-    async fn record_feedback_request(
-        &self,
-        request: &FeedbackRequest,
-        trigger_condition: &TriggerCondition,
-        feedback_mode: FeedbackMode,
-        prompt_id: Option<String>,
-    ) {
-        let Some(client) = &self.feedback_client else {
-            return;
-        };
-
-        let input = CreateFeedbackRequestInput {
-            request_id: request.request_id.clone(),
-            session_id: self.session_id.clone(),
-            client_type: self.config.client_type,
-            feedback_mode,
-            feedback_prompt: Some(request.prompt.clone()),
-            priority: tier_to_priority(trigger_condition.tier),
-            trigger_type: request.trigger_type.clone(),
-            trigger_reason: Some(trigger_condition.trigger_reason()),
-            context_type: Some(ContextType::Session),
-            context_message_ids: vec![],
-            expires_at: None,
-            experiment_id: None,
-            trigger_condition: serde_json::to_value(trigger_condition).ok(),
-            prompt_id,
-        };
-
-        match with_one_shot_auth_retry(client, || client.create_feedback_request(&input)).await {
-            Ok(response) => {
-                tracing::debug!(
-                    request_id = %response.request_id,
-                    "Feedback request recorded with feedback API"
-                );
-            }
-            Err(e) => {
-                tracing::warn!(
-                    request_id = %request.request_id,
-                    error = %e,
-                    "Failed to record feedback request (continuing anyway)"
-                );
-            }
-        }
-    }
-
-    /// Capture a turn-end snapshot and send the delta to the analytics backend.
-    ///
-    /// Call this once per user turn, after the agent has finished all tool-call
-    /// rounds and produced a final response (i.e. alongside `record_turn_complete`).
-    /// Intermediate tool-call steps within the same turn do NOT need their own
-    /// call — the signals actor accumulates tool calls, errors, and latency
-    /// continuously, so the single snapshot at turn end captures the full diff.
-    ///
-    /// The caller provides a pre-captured `TurnDeltaSnapshot` (taken exactly
-    /// once inside the session actor). This avoids double-advancing the delta
-    /// baseline.  If the snapshot is `None` (e.g. the signals actor was shut
-    /// down), this is a no-op.
-    ///
-    /// The delta is converted and sent asynchronously to the backend. Errors
-    /// are logged but never block the turn flow.
-    ///
-    /// Load feedback heuristics config on startup.
-    /// This should be spawned as a background task.
-    #[tracing::instrument(skip_all, fields(session_id = %self.session_id))]
-    pub async fn run_sync_loop(self: Arc<Self>, cancel: tokio_util::sync::CancellationToken) {
-        // Load config in background (non-blocking, errors logged)
-        self.load_config().await;
-        cancel.cancelled().await;
-        tracing::debug!("Feedback sync loop cancelled");
+        FeedbackRequest::with_mode(self.session_id.clone(), condition, mode, true, None)
     }
 
     /// Shutdown the manager: shuts down the signals actor.
     pub async fn shutdown(&self) {
         self.signals_handle.shutdown();
-    }
-}
-
-// Auth outcome handler used by run_sync_loop on 401.
-
-/// Max consecutive failed sync ticks tolerated before stopping the loop.
-/// ~10 minutes at the default 60s interval.
-const MAX_CONSECUTIVE_AUTH_FAILURES: u8 = 10;
-
-/// telemetry `reason` discriminators on the `signals sync loop stopped permanently`
-/// event. Pinned because alerts filter on these strings.
-const REASON_AUTH_PERMANENT_FAILURE: &str = "auth_permanent_failure";
-const REASON_NO_CLIENT_OR_REFRESHER: &str = "no_client_or_refresher";
-
-const LOG_TITLE_TRANSIENT: &str = "signals sync transient auth failure";
-const LOG_TITLE_STOPPED_PERMANENTLY: &str = "signals sync loop stopped permanently";
-
-/// Classification of one 401-recovery attempt.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SyncAuthOutcome {
-    /// Refresh + retry succeeded.
-    Recovered,
-    /// Refresh or retry failed transiently (lock timeout, network, sibling
-    /// race, post-refresh 5xx). Increment the counter and retry next tick.
-    Transient,
-    /// IdP confirmed a terminal failure (`invalid_grant` / `invalid_client`).
-    /// Only re-login will recover.
-    Permanent,
-    /// No client or no refresher configured — nothing to retry.
-    Unrecoverable,
-}
-
-fn handle_auth_outcome(
-    outcome: SyncAuthOutcome,
-    consecutive_auth_failures: &mut u8,
-    session_id: &str,
-) -> ControlFlow<()> {
-    match outcome {
-        SyncAuthOutcome::Recovered => {
-            *consecutive_auth_failures = 0;
-            tracing::info!(
-                session_id = %session_id,
-                "Signal sync recovered after token refresh"
-            );
-            ControlFlow::Continue(())
-        }
-        SyncAuthOutcome::Transient => {
-            *consecutive_auth_failures = consecutive_auth_failures.saturating_add(1);
-            tracing::warn!(
-                session_id = %session_id,
-                consecutive_failures = *consecutive_auth_failures,
-                max = MAX_CONSECUTIVE_AUTH_FAILURES,
-                "Signals sync transient auth failure"
-            );
-            kigi_log::unified_log::warn(
-                LOG_TITLE_TRANSIENT,
-                Some(session_id),
-                Some(serde_json::json!({
-                    "consecutive_failures": *consecutive_auth_failures,
-                    "max": MAX_CONSECUTIVE_AUTH_FAILURES,
-                })),
-            );
-            if *consecutive_auth_failures >= MAX_CONSECUTIVE_AUTH_FAILURES {
-                tracing::warn!(
-                    session_id = %session_id,
-                    consecutive_failures = *consecutive_auth_failures,
-                    "Signals sync loop stopped: consecutive transient auth failures"
-                );
-                kigi_log::unified_log::warn(
-                    "signals sync loop stopped: consecutive transient auth failures",
-                    Some(session_id),
-                    Some(serde_json::json!({
-                        "consecutive_failures": *consecutive_auth_failures,
-                        "max": MAX_CONSECUTIVE_AUTH_FAILURES,
-                    })),
-                );
-                ControlFlow::Break(())
-            } else {
-                ControlFlow::Continue(())
-            }
-        }
-        SyncAuthOutcome::Permanent => {
-            tracing::warn!(
-                session_id = %session_id,
-                reason = REASON_AUTH_PERMANENT_FAILURE,
-                "Signals sync loop stopped: IdP confirmed permanent auth failure"
-            );
-            kigi_log::unified_log::warn(
-                LOG_TITLE_STOPPED_PERMANENTLY,
-                Some(session_id),
-                Some(serde_json::json!({ "reason": REASON_AUTH_PERMANENT_FAILURE })),
-            );
-            ControlFlow::Break(())
-        }
-        SyncAuthOutcome::Unrecoverable => {
-            tracing::warn!(
-                session_id = %session_id,
-                reason = REASON_NO_CLIENT_OR_REFRESHER,
-                "Signals sync loop stopped: no client or no refresher configured"
-            );
-            kigi_log::unified_log::warn(
-                LOG_TITLE_STOPPED_PERMANENTLY,
-                Some(session_id),
-                Some(serde_json::json!({ "reason": REASON_NO_CLIENT_OR_REFRESHER })),
-            );
-            ControlFlow::Break(())
-        }
-    }
-}
-
-/// Check if an error is an HTTP 401 Unauthorized response.
-///
-/// Uses typed downcast on [`FeedbackApiError`] instead of string matching,
-/// so it stays correct even if error messages change.
-fn is_auth_error(error: &anyhow::Error) -> bool {
-    error
-        .downcast_ref::<FeedbackApiError>()
-        .is_some_and(|e| e.is_unauthorized())
-}
-
-/// Check if an error is an HTTP 403 Forbidden response.
-///
-/// 403 from the signals endpoint means the session does not belong to the
-/// current user — a permanent condition that will never self-resolve.
-fn is_forbidden_error(error: &anyhow::Error) -> bool {
-    error
-        .downcast_ref::<FeedbackApiError>()
-        .is_some_and(|e| e.is_forbidden())
-}
-
-/// Run `op` once; on 401, wait for an in-flight refresh to land, then
-/// retry once.  Prefers waiting for the proactive-refresh task or
-/// main-request-path recovery over driving a `ServerRejected` refresh
-/// itself, avoiding the 401-amplification pattern during token-expiry
-/// windows.
-async fn with_one_shot_auth_retry<T, F, Fut>(
-    client: &FeedbackClient,
-    mut op: F,
-) -> anyhow::Result<T>
-where
-    F: FnMut() -> Fut,
-    Fut: std::future::Future<Output = anyhow::Result<T>>,
-{
-    match op().await {
-        Ok(v) => Ok(v),
-        Err(e) if is_auth_error(&e) => {
-            // 1. Wait briefly for the proactive refresh or main-path
-            //    recovery to land a fresh token.
-            let refreshed = client.wait_for_token_refresh(Duration::from_secs(3)).await;
-            // 2. If nobody refreshed, drive our own recovery as fallback.
-            if refreshed || client.try_refresh_credentials().await {
-                op().await
-            } else {
-                Err(e)
-            }
-        }
-        Err(e) => Err(e),
-    }
-}
-
-/// Convert a FeedbackTier to a priority value (1-10, higher = more important).
-fn tier_to_priority(tier: crate::session::feedback::FeedbackTier) -> i32 {
-    use crate::session::feedback::FeedbackTier;
-    match tier {
-        FeedbackTier::Tier1 => 5, // Standard engagement
-        FeedbackTier::Tier2 => 6, // Complex session with recovery
-        FeedbackTier::Tier3 => 7, // Recovery from friction
     }
 }
 
@@ -786,83 +453,6 @@ mod tests {
         manager.shutdown().await;
     }
 
-    #[test]
-    fn test_is_auth_error_detects_401() {
-        use crate::agent::feedback_client::FeedbackApiError;
-        let err: anyhow::Error = FeedbackApiError {
-            status: reqwest::StatusCode::UNAUTHORIZED,
-            context: "Signals update",
-            body: "Invalid or expired credentials".to_string(),
-        }
-        .into();
-        assert!(is_auth_error(&err));
-    }
-
-    #[test]
-    fn test_is_auth_error_ignores_other_statuses() {
-        use crate::agent::feedback_client::FeedbackApiError;
-        let err_500: anyhow::Error = FeedbackApiError {
-            status: reqwest::StatusCode::INTERNAL_SERVER_ERROR,
-            context: "Signals update",
-            body: "oops".to_string(),
-        }
-        .into();
-        assert!(!is_auth_error(&err_500));
-
-        let err_403: anyhow::Error = FeedbackApiError {
-            status: reqwest::StatusCode::FORBIDDEN,
-            context: "Signals update",
-            body: "ZDR team".to_string(),
-        }
-        .into();
-        assert!(!is_auth_error(&err_403));
-    }
-
-    #[test]
-    fn test_is_auth_error_ignores_non_api_errors() {
-        assert!(!is_auth_error(&anyhow::anyhow!("network timeout")));
-        assert!(!is_auth_error(&anyhow::anyhow!("connection refused")));
-    }
-
-    #[test]
-    fn test_is_forbidden_error_detects_403() {
-        use crate::agent::feedback_client::FeedbackApiError;
-        let err: anyhow::Error = FeedbackApiError {
-            status: reqwest::StatusCode::FORBIDDEN,
-            context: "Signals update",
-            body: "Access denied: session does not belong to this user".to_string(),
-        }
-        .into();
-        assert!(is_forbidden_error(&err));
-    }
-
-    #[test]
-    fn test_is_forbidden_error_ignores_other_statuses() {
-        use crate::agent::feedback_client::FeedbackApiError;
-        let err_401: anyhow::Error = FeedbackApiError {
-            status: reqwest::StatusCode::UNAUTHORIZED,
-            context: "Signals update",
-            body: "Invalid credentials".to_string(),
-        }
-        .into();
-        assert!(!is_forbidden_error(&err_401));
-        assert!(!is_forbidden_error(&anyhow::anyhow!("network error")));
-    }
-
-    #[test]
-    fn test_is_auth_error_works_through_anyhow_conversion() {
-        use crate::agent::feedback_client::FeedbackApiError;
-        // Verify the FeedbackApiError survives anyhow::Error round-trip
-        // (this is the actual path: send_json returns FeedbackApiError.into())
-        let api_err = FeedbackApiError {
-            status: reqwest::StatusCode::UNAUTHORIZED,
-            context: "Signals update",
-            body: "token expired".to_string(),
-        };
-        let anyhow_err: anyhow::Error = api_err.into();
-        assert!(is_auth_error(&anyhow_err));
-    }
-
     #[tokio::test]
     async fn test_feedback_manager_disabled() {
         let config = FeedbackManagerConfig {
@@ -895,158 +485,21 @@ mod tests {
         assert!(snapshot.is_none(), "Signals actor should be shut down");
     }
 
-    // ── handle_auth_outcome tests ──────────────────────────────────────────
-
-    /// 9 transient failures must NOT break, and a subsequent `Recovered`
-    /// must reset the counter to 0.
-    #[test]
-    fn test_sync_loop_continues_through_transient_auth_failures() {
-        let mut counter: u8 = 0;
-        for _ in 0..(MAX_CONSECUTIVE_AUTH_FAILURES - 1) {
-            let flow = handle_auth_outcome(SyncAuthOutcome::Transient, &mut counter, "s");
-            assert_eq!(flow, ControlFlow::Continue(()));
-        }
-        assert_eq!(counter, MAX_CONSECUTIVE_AUTH_FAILURES - 1);
-        let flow = handle_auth_outcome(SyncAuthOutcome::Recovered, &mut counter, "s");
-        assert_eq!(flow, ControlFlow::Continue(()));
-        assert_eq!(counter, 0, "Recovered must reset the counter");
-    }
-
-    /// Exactly `MAX_CONSECUTIVE_AUTH_FAILURES` consecutive `Transient`
-    /// outcomes break the loop.
-    #[test]
-    fn test_sync_loop_breaks_after_max_transient_auth_failures() {
-        let mut counter: u8 = 0;
-        for i in 0..(MAX_CONSECUTIVE_AUTH_FAILURES - 1) {
-            let flow = handle_auth_outcome(SyncAuthOutcome::Transient, &mut counter, "s");
-            assert_eq!(
-                flow,
-                ControlFlow::Continue(()),
-                "iteration {i} should still continue"
-            );
-        }
-        // The 10th (== MAX_CONSECUTIVE_AUTH_FAILURES) transient breaks.
-        let flow = handle_auth_outcome(SyncAuthOutcome::Transient, &mut counter, "s");
-        assert_eq!(flow, ControlFlow::Break(()));
-        assert_eq!(counter, MAX_CONSECUTIVE_AUTH_FAILURES);
-    }
-
-    /// `Permanent` breaks immediately and does not bump the counter.
-    #[test]
-    fn test_sync_loop_breaks_immediately_on_permanent_failure() {
-        let mut counter: u8 = 0;
-        let flow = handle_auth_outcome(SyncAuthOutcome::Permanent, &mut counter, "s");
-        assert_eq!(flow, ControlFlow::Break(()));
-        assert_eq!(counter, 0);
-    }
-
-    /// 5 transient → 1 recovered → 5 transient must not break.
-    #[test]
-    fn test_sync_loop_counter_resets_on_successful_sync() {
-        let mut counter: u8 = 0;
-        for _ in 0..5 {
-            assert_eq!(
-                handle_auth_outcome(SyncAuthOutcome::Transient, &mut counter, "s"),
-                ControlFlow::Continue(())
-            );
-        }
-        assert_eq!(counter, 5);
-        assert_eq!(
-            handle_auth_outcome(SyncAuthOutcome::Recovered, &mut counter, "s"),
-            ControlFlow::Continue(())
-        );
-        assert_eq!(counter, 0, "Recovered must reset the counter");
-        for _ in 0..5 {
-            assert_eq!(
-                handle_auth_outcome(SyncAuthOutcome::Transient, &mut counter, "s"),
-                ControlFlow::Continue(())
-            );
-        }
-        assert_eq!(counter, 5, "second burst should be re-counted from zero");
-    }
-
-    /// `Unrecoverable` breaks the loop and does not bump the counter.
-    #[test]
-    fn test_sync_loop_breaks_on_unrecoverable() {
-        let mut counter: u8 = 0;
-        let flow = handle_auth_outcome(SyncAuthOutcome::Unrecoverable, &mut counter, "s");
-        assert_eq!(flow, ControlFlow::Break(()));
-        assert_eq!(counter, 0);
-    }
-
-    /// `FeedbackClient::is_auth_permanently_failed` reflects the attached
-    /// `AuthManager`'s `permanent_failure()` cache (record → true,
-    /// age-out → false).
+    /// A rating-only submission (no text) must not hit the network even when
+    /// no client is configured — the workflow reports LocalOnly.
     #[tokio::test]
-    async fn test_is_auth_permanently_failed_reads_auth_manager() {
-        use crate::agent::feedback_client::FeedbackClient;
-        use crate::auth::error::RefreshTokenFailedReason;
-        use crate::auth::{AuthManager, KimiAuth, KimiCodeConfig};
-        use std::sync::Arc;
+    async fn test_rating_only_submission_stays_local() {
+        use crate::session::feedback_types::RatingType;
 
-        let dir = tempfile::tempdir().unwrap();
-        let am = Arc::new(AuthManager::new(dir.path(), KimiCodeConfig::default()));
-        let client = FeedbackClient::new("http://example/v1", None).with_auth_manager(am.clone());
-
-        assert!(!client.is_auth_permanently_failed());
-
-        // The tombstone is scoped to the live credential's refresh token.
-        am.hot_swap(KimiAuth {
-            key: "tok".into(),
-            refresh_token: Some("rt".into()),
-            expires_at: Some(chrono::Utc::now() - chrono::Duration::hours(1)),
-            ..KimiAuth::test_default()
-        });
-        am.record_permanent_failure("rt".to_string(), RefreshTokenFailedReason::Other.into());
-        assert!(client.is_auth_permanently_failed());
-
-        am.force_permanent_failure_aged_out();
-        assert!(!client.is_auth_permanently_failed());
-    }
-
-    /// With no `AuthManager` attached, `is_auth_permanently_failed` is false.
-    #[test]
-    fn test_is_auth_permanently_failed_without_auth_manager() {
-        use crate::agent::feedback_client::FeedbackClient;
-        let client = FeedbackClient::new("http://example/v1", None);
-        assert!(!client.is_auth_permanently_failed());
-    }
-
-    /// `has_token_refresher` requires BOTH an `AuthManager` AND a refresher
-    /// wired in. Without this, a static-deployment-key session would be
-    /// mis-classified as recoverable.
-    #[tokio::test]
-    async fn test_has_token_refresher_requires_refresher_attached() {
-        use crate::agent::feedback_client::FeedbackClient;
-        use crate::auth::{AuthManager, KimiCodeConfig};
-        use std::sync::Arc;
-
-        struct NoOpRefresher;
-        #[async_trait::async_trait]
-        impl crate::auth::refresh::TokenRefresher for NoOpRefresher {
-            async fn refresh(
-                &self,
-                _reason: crate::auth::refresh::RefreshReason,
-            ) -> crate::auth::refresh::RefreshOutcome {
-                crate::auth::refresh::RefreshOutcome::TransientFailure {
-                    message: "noop".into(),
-                }
-            }
-        }
-
-        let dir = tempfile::tempdir().unwrap();
-        let am = Arc::new(AuthManager::new(dir.path(), KimiCodeConfig::default()));
-
-        let bare = FeedbackClient::new("http://example/v1", None);
-        assert!(!bare.has_token_refresher());
-
-        let with_am = FeedbackClient::new("http://example/v1", None).with_auth_manager(am.clone());
-        assert!(
-            !with_am.has_token_refresher(),
-            "AuthManager without a refresher must NOT be reported as recoverable"
+        let mut submission = new_submission(
+            "sess-local".into(),
+            ClientType::Tui,
+            FeedbackContent::Rating {
+                rating_type: RatingType::Thumbs,
+                rating_value: 1,
+            },
         );
-
-        am.set_refresher(std::sync::Arc::new(NoOpRefresher));
-        assert!(with_am.has_token_refresher());
+        let outcome = submit_feedback_workflow(&mut submission, None, None, false).await;
+        assert!(matches!(outcome, SubmitOutcome::LocalOnly));
     }
 }

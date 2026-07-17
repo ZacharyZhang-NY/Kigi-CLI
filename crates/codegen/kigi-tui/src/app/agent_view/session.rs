@@ -1,5 +1,5 @@
 //! Session lifecycle: bind/reload/replay bookkeeping, turn activity
-//! resolution, context/credit updates, and app-scoped gates.
+//! resolution, context updates, and app-scoped gates.
 #[cfg(test)]
 use super::test_agent_view;
 use super::{
@@ -85,7 +85,6 @@ impl AgentView {
             bash_turn: false,
             cron_task_id: None,
             stashed_prompt: None,
-            credit_limit_stashed_prompt: None,
             reauth_stashed_prompt: None,
             active_modal: None,
             modal_buttons: Vec::new(),
@@ -93,8 +92,6 @@ impl AgentView {
             context_state: None,
             chat_kind: false,
             app_chat_mode: false,
-            credit_balance: None,
-            auto_topup: None,
             goal_state: None,
             parked_wait_marker_for: None,
             end_work_announced: false,
@@ -152,7 +149,6 @@ impl AgentView {
             hovered_prompt: false,
             hit_badge: Default::default(),
             hit_context: Default::default(),
-            hit_credits: Default::default(),
             hit_todo_close: Default::default(),
             hit_bg_close: Default::default(),
             hit_subagent_close: Default::default(),
@@ -257,7 +253,6 @@ impl AgentView {
             active_subagent: None,
             is_subagent_view: false,
             hit_subagent_frame_close: Default::default(),
-            sharing_enabled: false,
             input_log: crate::input_log::InputRingBuffer::new(),
             esc_pressed_at: None,
             pending_first_prompt: None,
@@ -740,21 +735,6 @@ impl AgentView {
             }
         }
     }
-    /// Apply Build coding-credit balance only for non-chat agents.
-    /// Gateway/chat-kind sessions keep credits unset so bars/warnings stay off.
-    pub fn apply_credit_balance(
-        &mut self,
-        balance: Option<crate::views::credit_bar::CreditBalance>,
-        auto_topup: Option<crate::views::credit_bar::AutoTopupInfo>,
-    ) {
-        if self.chat_kind {
-            self.credit_balance = None;
-            self.auto_topup = None;
-            return;
-        }
-        self.credit_balance = balance;
-        self.auto_topup = auto_topup;
-    }
     /// Record a key event to the input flight recorder.
     ///
     /// Zero heap allocations — stores raw `Copy` types in the ring buffer.
@@ -801,18 +781,6 @@ impl AgentView {
             textarea_changed: delta.textarea_changed,
         });
     }
-    /// Set the sharing-enabled flag on this view and propagate it to the
-    /// slash-command registry so the `/share` entry stays hidden/visible in
-    /// lockstep with `AgentView::sharing_enabled`. Use this instead of
-    /// mutating `sharing_enabled` directly when a new agent is created or a
-    /// session is loaded, so the field and registry can't drift.
-    pub fn set_sharing_enabled(&mut self, enabled: bool) {
-        self.sharing_enabled = enabled;
-        self.prompt
-            .slash_controller
-            .registry_mut()
-            .set_share_visible(enabled);
-    }
     /// Show or hide the `/usage` slash command in this agent's registry.
     pub fn set_usage_visible(&mut self, visible: bool) {
         self.prompt
@@ -839,13 +807,11 @@ impl AgentView {
     /// One place for the app-scoped gates a new/adopted session inherits so the session-creation sites cannot drift.
     pub(crate) fn apply_app_scoped_gates(
         &mut self,
-        sharing_enabled: bool,
         usage_visible: bool,
         chat_mode: bool,
         screen_mode: crate::app::ScreenMode,
         restricted_commands: &[String],
     ) {
-        self.set_sharing_enabled(sharing_enabled);
         self.set_usage_visible(usage_visible);
         self.app_chat_mode = chat_mode;
         self.prompt.set_screen_mode(screen_mode);

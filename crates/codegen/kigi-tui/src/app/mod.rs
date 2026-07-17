@@ -41,7 +41,6 @@ pub mod session_startup;
 mod signal_handler;
 pub mod status_blocks;
 pub mod subagent;
-pub mod subscription;
 mod turn_completion;
 mod xt_filter;
 pub(crate) use crate::terminal::kitty_flags_pushed;
@@ -56,7 +55,6 @@ use crossterm::execute;
 use crossterm::terminal::{
     self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, SetTitle,
 };
-pub(crate) use dispatch::{FREE_USAGE_USER_MESSAGE, acp_error_is_free_usage_exhausted};
 pub use foreign_sessions::ForeignScanCoordinator;
 pub(crate) use foreign_sessions::{
     badge_for_picker_source, foreign_tool_display_label, is_foreign_picker_source,
@@ -272,7 +270,6 @@ pub fn resolve_use_leader(
     leader_flag: bool,
     no_leader_flag: bool,
     raw_config: &toml::Value,
-    _remote_settings: Option<&kigi_shell::util::config::RemoteSettings>,
     eligible: bool,
 ) -> (bool, Option<&'static str>) {
     if no_leader_flag {
@@ -287,34 +284,7 @@ pub fn resolve_use_leader(
     if let Some(v) = config::use_leader_from_toml_opt(raw_config) {
         return (v, (!v).then_some("config"));
     }
-    #[cfg(feature = "release-dist")]
-    if let Some(remote_val) = _remote_settings.and_then(|s| s.leader_mode) {
-        return (remote_val, (!remote_val).then_some("remote"));
-    }
     (false, None)
-}
-/// Join early prefetch to get remote settings (with timeout).
-///
-/// Remote settings come from the product settings API and contain `leader_mode`,
-/// feature gates, etc.  Waits up to 2 s for the background thread.
-pub fn join_early_prefetch(
-    handle: Option<kigi_shell::agent::models::EarlyPrefetchHandle>,
-) -> Option<kigi_shell::util::config::RemoteSettings> {
-    let handle = handle?;
-    if handle.is_finished() {
-        return match handle.join() {
-            Ok(r) => r.settings,
-            Err(_) => None,
-        };
-    }
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let _ = tx.send(handle.join());
-    });
-    match rx.recv_timeout(std::time::Duration::from_secs(2)) {
-        Ok(Ok(r)) => r.settings,
-        _ => None,
-    }
 }
 /// First non-blank of CLI > env > config (precedence + blank-skip). `None` →
 /// nothing set; `acp::initialize` canonicalizes and applies the default.
@@ -360,27 +330,21 @@ pub async fn run(
         }
     };
     let refreshed_auth = kigi_shell::auth::try_ensure_fresh_auth(&kimi_code_config).await;
-    let early_prefetch = kigi_shell::agent::models::start_early_prefetch_with_auth(refreshed_auth);
+    // Fire-and-forget model-catalog warmup; nothing joins the handle now that
+    // the xAI settings fetch it used to carry is gone.
+    drop(kigi_shell::agent::models::start_early_prefetch_with_auth(
+        refreshed_auth,
+    ));
     kigi_shell::agent::mvp_agent::warm_async_http_client();
     tokio::task::spawn_blocking(|| {});
     if let Ok(cwd) = std::env::current_dir() {
         crate::git_info::populate_from_cwd_async(cwd);
     }
-    let remote_settings = join_early_prefetch(early_prefetch);
-    kigi_shell::util::config::cache_remote_auto_mode(
-        remote_settings.as_ref().and_then(|s| s.auto_mode.clone()),
-    );
-    kigi_shell::util::config::set_remote_campaigns_from_settings(remote_settings.as_ref());
     let raw_config = kigi_shell::config::load_effective_config()
         .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
     let prefetch_elapsed = startup_start.elapsed();
-    let (use_leader, policy_disable_reason) = resolve_use_leader(
-        args.leader,
-        args.no_leader,
-        &raw_config,
-        remote_settings.as_ref(),
-        true,
-    );
+    let (use_leader, policy_disable_reason) =
+        resolve_use_leader(args.leader, args.no_leader, &raw_config, true);
     tracing::info!(
         use_leader,
         ?policy_disable_reason,
@@ -473,9 +437,7 @@ pub async fn run(
         env_hunk_tracker_mode.as_deref(),
         config_hunk_tracker_mode,
     );
-    let remote_permission_mode = remote_settings
-        .as_ref()
-        .and_then(|s| s.permission_mode.as_deref());
+    let remote_permission_mode = None;
     let launch_yolo = kigi_shell::util::config::effective_yolo_for_launch(
         args.yolo,
         args.permission_mode_flag.as_deref(),
@@ -500,7 +462,7 @@ pub async fn run(
         fs_read: args.fs_read,
         fs_write: args.fs_write,
         installer: args.installer.clone(),
-        remote_settings: remote_settings.clone(),
+        remote_settings: None,
         system_prompt_override: args.system_prompt_override.clone(),
         rules: args.rules.clone(),
         reasoning_effort_override: args
@@ -613,7 +575,7 @@ pub async fn run(
         &mut config_watcher,
         &effective_args,
         session_cwd,
-        remote_settings,
+        None,
         term_state,
         materialized,
         bg_update_rx,
@@ -1305,47 +1267,47 @@ mod tests {
     #[test]
     fn no_leader_flag_wins_over_leader_flag_and_config() {
         let cfg = config_with_leader(true);
-        let (use_leader, reason) = resolve_use_leader(true, true, &cfg, None, true);
+        let (use_leader, reason) = resolve_use_leader(true, true, &cfg, true);
         assert!(!use_leader);
         assert_eq!(reason, None);
     }
     #[test]
     fn leader_flag_enables() {
-        let (use_leader, reason) = resolve_use_leader(true, false, &empty_config(), None, true);
+        let (use_leader, reason) = resolve_use_leader(true, false, &empty_config(), true);
         assert!(use_leader);
         assert_eq!(reason, None);
     }
     #[test]
     fn not_eligible_returns_false() {
         let cfg = config_with_leader(true);
-        let (use_leader, reason) = resolve_use_leader(false, false, &cfg, None, false);
+        let (use_leader, reason) = resolve_use_leader(false, false, &cfg, false);
         assert!(!use_leader);
         assert_eq!(reason, None);
     }
     #[test]
     fn config_toml_enables() {
         let cfg = config_with_leader(true);
-        let (use_leader, reason) = resolve_use_leader(false, false, &cfg, None, true);
+        let (use_leader, reason) = resolve_use_leader(false, false, &cfg, true);
         assert!(use_leader);
         assert_eq!(reason, None);
     }
     #[test]
     fn config_toml_disables() {
         let cfg = config_with_leader(false);
-        let (use_leader, reason) = resolve_use_leader(false, false, &cfg, None, true);
+        let (use_leader, reason) = resolve_use_leader(false, false, &cfg, true);
         assert!(!use_leader);
         assert_eq!(reason, Some("config"));
     }
     #[test]
     fn default_is_false() {
-        let (use_leader, reason) = resolve_use_leader(false, false, &empty_config(), None, true);
+        let (use_leader, reason) = resolve_use_leader(false, false, &empty_config(), true);
         assert!(!use_leader);
         assert_eq!(reason, None);
     }
     #[test]
     fn cli_flag_overrides_config() {
         let cfg = config_with_leader(false);
-        let (use_leader, reason) = resolve_use_leader(true, false, &cfg, None, true);
+        let (use_leader, reason) = resolve_use_leader(true, false, &cfg, true);
         assert!(use_leader);
         assert_eq!(reason, None);
     }
@@ -1379,7 +1341,7 @@ mod tests {
     #[test]
     fn no_leader_flag_overrides_config_for_tui_fallback() {
         let cfg = config_with_leader(true);
-        let (use_leader, reason) = resolve_use_leader(false, true, &cfg, None, true);
+        let (use_leader, reason) = resolve_use_leader(false, true, &cfg, true);
         assert!(!use_leader);
         assert_eq!(reason, None);
     }
@@ -1405,58 +1367,10 @@ mod tests {
         assert!(try_parse_pager(&["grok-pager", "agent"]).is_err());
     }
     #[test]
-    fn remote_settings_none_falls_through_to_default() {
-        let (use_leader, reason) = resolve_use_leader(false, false, &empty_config(), None, true);
+    fn leader_defaults_off_without_config() {
+        let (use_leader, reason) = resolve_use_leader(false, false, &empty_config(), true);
         assert!(!use_leader);
         assert_eq!(reason, None);
-    }
-    #[cfg(feature = "release-dist")]
-    #[test]
-    fn remote_settings_leader_mode_true_enables_leader() {
-        let rs = kigi_shell::util::config::RemoteSettings {
-            leader_mode: Some(true),
-            ..Default::default()
-        };
-        let (use_leader, reason) =
-            resolve_use_leader(false, false, &empty_config(), Some(&rs), true);
-        assert!(use_leader);
-        assert_eq!(reason, None);
-    }
-    #[cfg(feature = "release-dist")]
-    #[test]
-    fn remote_settings_leader_mode_false_disables_leader() {
-        let rs = kigi_shell::util::config::RemoteSettings {
-            leader_mode: Some(false),
-            ..Default::default()
-        };
-        let (use_leader, reason) =
-            resolve_use_leader(false, false, &empty_config(), Some(&rs), true);
-        assert!(!use_leader);
-        assert_eq!(reason, Some("remote"));
-    }
-    #[cfg(feature = "release-dist")]
-    #[test]
-    fn remote_settings_unknown_leader_mode_is_not_policy_disable() {
-        let rs = kigi_shell::util::config::RemoteSettings {
-            leader_mode: None,
-            ..Default::default()
-        };
-        let (use_leader, reason) =
-            resolve_use_leader(false, false, &empty_config(), Some(&rs), true);
-        assert!(!use_leader);
-        assert_eq!(reason, None);
-    }
-    #[cfg(feature = "release-dist")]
-    #[test]
-    fn config_toml_overrides_remote_settings() {
-        let rs = kigi_shell::util::config::RemoteSettings {
-            leader_mode: Some(true),
-            ..Default::default()
-        };
-        let cfg = config_with_leader(false);
-        let (use_leader, reason) = resolve_use_leader(false, false, &cfg, Some(&rs), true);
-        assert!(!use_leader);
-        assert_eq!(reason, Some("config"));
     }
     #[test]
     fn cli_resume_parses_session_id() {

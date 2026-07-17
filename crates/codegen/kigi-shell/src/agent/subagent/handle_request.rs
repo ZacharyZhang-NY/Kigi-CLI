@@ -708,7 +708,6 @@ pub(crate) async fn handle_subagent_request(
         api_key: effective_sampling_config.api_key.clone(),
         auth_type: inherited_auth_type,
         alpha_test_key: ctx.alpha_test_key.clone(),
-        client_version: effective_sampling_config.client_version.clone(),
     };
     kigi_log::unified_log::info(
         "subagent spawn credentials",
@@ -1020,9 +1019,6 @@ pub(crate) async fn handle_subagent_request(
             false,
             subagent_fs_watch,
             None,
-            None,
-            None,
-            None,
             false,
             false,
             std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
@@ -1057,7 +1053,6 @@ pub(crate) async fn handle_subagent_request(
             } else {
                 ctx.memory_config.clone()
             },
-            false,
             Default::default(),
             ctx.managed_mcp_state.clone(),
             None,

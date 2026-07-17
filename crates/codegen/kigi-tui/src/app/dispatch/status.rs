@@ -1,46 +1,12 @@
-//! Session status, sharing, privacy, usage, and info dispatchers.
+//! Session status, privacy, usage, and info dispatchers.
 
 use super::ctx::get_active_agent;
-use super::settings::ui::refresh_open_settings_modals;
 use crate::app::actions::Effect;
 use crate::app::agent::AgentId;
 use crate::app::agent_view::AgentView;
 use crate::app::app_view::{ActiveView, AppView};
 use crate::notifications::{NotificationEvent, NotificationEventKind};
 use crate::scrollback::block::RenderBlock;
-
-/// Toggle YOLO mode (auto-approve all permissions).
-///
-/// When turning ON: auto-approve all currently queued permissions and
-/// restore the stashed prompt. Future incoming permissions will be
-/// auto-approved in `handle_permission_request`.
-///
-/// Share the current session via a public URL.
-///
-/// Produces Effect::ShareSession which spawns an async ACP ext request.
-/// On completion, TaskResult::ShareSessionComplete shows the URL in scrollback.
-pub(super) fn dispatch_share_session(app: &mut AppView) -> Vec<Effect> {
-    if !app.sharing_enabled {
-        app.show_toast("Sharing is disabled");
-        return vec![];
-    }
-    let ActiveView::Agent(id) = app.active_view else {
-        return vec![];
-    };
-    let Some(agent) = app.agents.get_mut(&id) else {
-        return vec![];
-    };
-    let Some(session_id) = agent.session.session_id.clone() else {
-        // No active session — error should have been caught by slash command,
-        // but guard here just in case.
-        return vec![];
-    };
-
-    vec![Effect::ShareSession {
-        agent_id: id,
-        session_id,
-    }]
-}
 
 /// Show session info: fetch via x.ai/session/info and display in scrollback.
 ///
@@ -66,131 +32,6 @@ pub(super) fn dispatch_show_session_info(app: &mut AppView) -> Vec<Effect> {
     }]
 }
 
-/// Show privacy and data retention status as a system message in scrollback.
-///
-/// Three-state display: Enterprise ZDR, coding data sharing opted out,
-/// or opted in. Labels align with `CODING_DATA_SHARING_CHOICES` in
-/// `settings/defs.rs` and the `coding_data_sharing_toast` format.
-pub(super) fn dispatch_show_privacy_info(app: &mut AppView) -> Vec<Effect> {
-    let mut lines = Vec::new();
-
-    if app.is_zdr {
-        // Enterprise ZDR -- the team has disabled retention entirely.
-        lines.push("  Zero Data Retention: enabled");
-        lines.push("  Your data is not retained or used for training (ZDR enabled).");
-    } else if app.coding_data_retention_opt_out {
-        // Coding data sharing opted out -- matches desktop's "Privacy mode" state.
-        lines.push("  Privacy: privacy mode");
-        lines.push("  Your code data will not be trained on or used to improve the product.");
-        lines.push("");
-        lines.push("  Use /privacy opt-in to share data and help improve the product.");
-    } else {
-        // Coding data sharing opted in -- matches desktop's "Share data" state.
-        lines.push("  Privacy: share data");
-        lines.push("  Usage and code data may be used by SpaceXAI to improve the product.");
-        lines.push("");
-        lines.push("  Use /privacy opt-out to enable privacy mode.");
-    }
-
-    lines.push("");
-    lines.push("  Learn more: https://x.ai/legal");
-    let text = lines.join("\n");
-    push_system_to_any_agent(app, &text);
-    vec![]
-}
-
-/// State-only mutation for `coding_data_sharing`. SHELL-owned.
-pub(super) fn set_coding_data_sharing_inner(app: &mut AppView, opted_in: bool) {
-    app.coding_data_retention_opt_out = !opted_in;
-}
-
-/// Set coding-data-sharing preference. SHELL-owned, auth-metadata-backed
-/// (persists via ACP ext-request, NOT `~/.kigi/config.toml`).
-pub(super) fn set_coding_data_sharing(app: &mut AppView, opted_in: bool) -> Vec<Effect> {
-    // ── Guard 1: Enterprise ZDR ──────────────────────────────────────
-    if app.is_zdr {
-        app.show_toast("\u{2717} Cannot change: Zero Data Retention enabled");
-        return vec![];
-    }
-    // ── Guard 2: Non-admin team member ───────────────────────────────
-    if app.team_name.is_some() {
-        let is_admin = app
-            .team_role
-            .as_deref()
-            .is_some_and(|r| r.eq_ignore_ascii_case("admin"));
-        if !is_admin {
-            app.show_toast("\u{2717} Data sharing is controlled by your team admin");
-            return vec![];
-        }
-    }
-    // ── Guard 3: an agent must exist to thread the ACP call through ──
-    let agent_id = match app.active_view {
-        crate::app::app_view::ActiveView::Agent(id) => id,
-        _ => match app.agents.keys().next().copied() {
-            Some(id) => id,
-            None => {
-                tracing::warn!(
-                    target: "settings",
-                    key = "coding_data_sharing",
-                    opted_in,
-                    "set_coding_data_sharing called with no agents — unreachable in \
-                     practice; returning empty (no toast: app.show_toast would no-op)",
-                );
-                return vec![];
-            }
-        },
-    };
-
-    let prev = !app.coding_data_retention_opt_out;
-
-    // ── Idempotent path: toast but skip the ACP round-trip. ──────────
-    if prev == opted_in {
-        app.show_toast(&coding_data_sharing_toast(opted_in));
-        return vec![];
-    }
-
-    // ── Optimistic mutation: state, then UI feedback, then effect. ───
-    set_coding_data_sharing_inner(app, opted_in);
-    refresh_open_settings_modals(app);
-    app.show_toast(&coding_data_sharing_toast(opted_in));
-
-    tracing::info!(
-        target: "settings",
-        key = "coding_data_sharing",
-        opted_in,
-        "setting changed",
-    );
-
-    vec![Effect::SetCodingDataSharing {
-        agent_id,
-        opted_in,
-        rollback_to_opted_in: prev,
-    }]
-}
-
-/// Format the `Coding data sharing` toast. Asymmetric: opt-in
-/// (privacy-degrading) uses ⚠ + consequence text; opt-out (safe
-/// default) uses ✓. Uses display names from the registry catalog.
-pub(super) fn coding_data_sharing_toast(opted_in: bool) -> String {
-    let display = display_for_coding_data_sharing_canonical(opted_in);
-    if opted_in {
-        // Privacy-degrading: warn glyph + spelled-out consequence.
-        format!(
-            "\u{26A0} Coding data sharing: {display} \u{2014} code samples may be retained \
-             for training"
-        )
-    } else {
-        // Safe default — uniform ✓ glyph.
-        format!("\u{2713} Coding data sharing: {display}")
-    }
-}
-
-/// Display string for the canonical bool. Keep aligned with
-/// `CODING_DATA_SHARING_CHOICES` in `settings/defs.rs`.
-fn display_for_coding_data_sharing_canonical(opted_in: bool) -> &'static str {
-    if opted_in { "Opt in" } else { "Opt out" }
-}
-
 /// Scrub an untrusted error string for toast display. Substitutes a
 /// generic placeholder when the input exceeds 120 chars or contains
 /// control / bidi-override characters (prevents escape-sequence
@@ -205,21 +46,6 @@ pub(super) fn scrub_error_for_toast(error: &str) -> String {
         "server error (see logs for details)".to_string()
     } else {
         error.to_string()
-    }
-}
-
-/// Push a system message to the active agent's scrollback, or to any available
-/// agent if on the welcome screen.
-fn push_system_to_any_agent(app: &mut AppView, msg: &str) {
-    let block = crate::scrollback::block::RenderBlock::system(msg.to_string());
-    if let ActiveView::Agent(id) = app.active_view
-        && let Some(agent) = app.agents.get_mut(&id)
-    {
-        agent.scrollback.push_block(block);
-        return;
-    }
-    if let Some(agent) = app.agents.values_mut().next() {
-        agent.scrollback.push_block(block);
     }
 }
 
@@ -244,32 +70,73 @@ pub(super) fn dispatch_show_context_info(app: &mut AppView) -> Vec<Effect> {
     }]
 }
 
-/// Show credit usage: fetch billing data and display inline.
+/// `/usage` — fetch Kimi usage/quota rows and display them inline.
 ///
-/// When the remote settings `grok_build_usage_redirect_url` flag is set (delivered via
-/// RemoteSettings, targeted at personal-team users), skip the backend fetch and
-/// just point the user at that URL instead. This is a kill switch for the
-/// personal-team billing path while it is unreliable.
+/// Produces [`Effect::FetchUsage`], which asks the shell's `x.ai/billing`
+/// extension (`GET {base}/usages`); [`handle_usage_fetched`] renders the
+/// rows as a system block in scrollback.
 pub(super) fn dispatch_show_usage(app: &mut AppView) -> Vec<Effect> {
     let ActiveView::Agent(id) = app.active_view else {
         return vec![];
     };
-    if let Some(url) = app.usage_billing_redirect_url.clone() {
-        if let Some(agent) = app.agents.get_mut(&id) {
-            agent.scrollback.push_block(RenderBlock::System(
-                crate::scrollback::blocks::SystemMessageBlock::new(format!(
-                    "Please check your usage on {url}"
-                )),
-            ));
-        }
-        return vec![];
+    vec![Effect::FetchUsage { agent_id: id }]
+}
+
+/// Render the `/usage` result: the fetched quota rows (kimi-cli
+/// `usage.py` semantics — label, remaining-quota bar, percent left, reset
+/// hint), "No usage data available." for an empty list, or the error.
+pub(super) fn handle_usage_fetched(
+    app: &mut AppView,
+    agent_id: AgentId,
+    result: Result<Vec<kigi_shell::extensions::billing::UsageRow>, String>,
+) -> Vec<Effect> {
+    let msg = match &result {
+        Ok(rows) if rows.is_empty() => "No usage data available.".to_string(),
+        Ok(rows) => format_usage_rows(rows),
+        Err(e) => format!("Couldn't fetch usage: {e}"),
+    };
+    if let Some(agent) = app.agents.get_mut(&agent_id) {
+        agent.scrollback.push_block(RenderBlock::system(msg));
     }
-    // Non-silent fetch: the effect also pulls the auto top-up rule so the
-    // summary can render usage, prepaid credits, and auto top-up together.
-    vec![Effect::FetchBilling {
-        agent_id: id,
-        silent: false,
-    }]
+    vec![]
+}
+
+/// Width of the remaining-quota bar, matching kimi-cli's usage panel.
+const USAGE_BAR_WIDTH: usize = 20;
+
+/// Format usage rows as aligned text lines (kimi-cli `_format_row`
+/// parity): `label  [bar]  N% left  (reset hint)`. The percentage is
+/// derived from `used`/`limit` only — a row without a positive limit
+/// renders as 0% left with an empty bar, exactly like kimi-cli.
+fn format_usage_rows(rows: &[kigi_shell::extensions::billing::UsageRow]) -> String {
+    let label_width = rows
+        .iter()
+        .map(|r| r.label.chars().count())
+        .max()
+        .unwrap_or(0)
+        .max(6);
+    let mut lines = vec!["API Usage".to_string()];
+    for row in rows {
+        let ratio = if row.limit <= 0 {
+            0.0
+        } else {
+            (row.limit - row.used).clamp(0, row.limit) as f64 / row.limit as f64
+        };
+        let filled = (ratio * USAGE_BAR_WIDTH as f64).round() as usize;
+        let filled = filled.min(USAGE_BAR_WIDTH);
+        let bar: String = "\u{2588}".repeat(filled) + &"\u{2591}".repeat(USAGE_BAR_WIDTH - filled);
+        let mut line = format!(
+            "  {:<width$}  [{bar}]  {:.0}% left",
+            row.label,
+            ratio * 100.0,
+            width = label_width,
+        );
+        if let Some(hint) = &row.reset_hint {
+            line.push_str(&format!("  ({hint})"));
+        }
+        lines.push(line);
+    }
+    lines.join("\n")
 }
 
 /// Commit a one-line "update available" notice into the active agent's
@@ -365,58 +232,6 @@ pub(super) fn notify_session_ready(
 }
 
 // TaskResult handlers.
-
-pub(super) fn handle_coding_data_sharing_updated(
-    app: &mut AppView,
-    agent_id: AgentId,
-    opted_in: bool,
-) -> Vec<Effect> {
-    // Re-anchor mirror to server-confirmed value (defense-in-
-    // depth against server reshaping the boolean). `agent_id`
-    // discarded — privacy is app-level, not per-agent.
-    set_coding_data_sharing_inner(app, opted_in);
-    refresh_open_settings_modals(app);
-    // Re-toast on confirmation. Without this, a slow ACP
-    // round-trip would leave the user with only the
-    // optimistic toast (already faded) and no
-    // server-confirmed feedback.
-    app.show_toast(&coding_data_sharing_toast(opted_in));
-    tracing::info!(
-        target: "settings",
-        key = "coding_data_sharing",
-        ?agent_id,
-        opted_in,
-        "ACP update confirmed; mirror re-anchored",
-    );
-    vec![]
-}
-
-pub(super) fn handle_coding_data_sharing_failed(
-    app: &mut AppView,
-    agent_id: AgentId,
-    error: String,
-    rollback_to_opted_in: bool,
-) -> Vec<Effect> {
-    // Revert optimistic mutation: inner → refresh → toast.
-    //
-    // `agent_id` discarded — privacy is global.
-    set_coding_data_sharing_inner(app, rollback_to_opted_in);
-    refresh_open_settings_modals(app);
-    // Scrub long/unsafe error strings before toasting.
-    let scrubbed = scrub_error_for_toast(&error);
-    app.show_toast(&format!(
-        "\u{2717} Couldn't update coding data sharing: {scrubbed}"
-    ));
-    tracing::warn!(
-        target: "settings",
-        key = "coding_data_sharing",
-        ?agent_id,
-        rollback_to_opted_in,
-        %error,
-        "ACP update failed; reverted optimistic mutation",
-    );
-    vec![]
-}
 
 pub(super) fn handle_context_info_complete(
     app: &mut AppView,

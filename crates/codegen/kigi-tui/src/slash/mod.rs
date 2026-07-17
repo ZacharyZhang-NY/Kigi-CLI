@@ -1828,7 +1828,6 @@ mod tests {
             "/compact",
             "/fork",
             "/rewind",
-            "/share",
             "/context",
             "/copy",
             "/export",
