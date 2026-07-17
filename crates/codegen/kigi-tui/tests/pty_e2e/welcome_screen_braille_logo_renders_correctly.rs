@@ -18,7 +18,7 @@ async fn welcome_screen_braille_logo_renders_correctly() {
     let content = ContentController::start().await.expect("start content");
 
     let binary = pager_binary().expect("resolve pager binary");
-    // Use a tall terminal so pick_logo() selects the 7-line logo (≥26 rows).
+    // Use a tall terminal so pick_logo() selects the full moon (≥26 rows).
     let mut harness =
         PtyHarness::spawn_with_content(&binary, DEFAULT_ROWS, DEFAULT_COLS, &content, &[])
             .expect("spawn pager");
@@ -29,24 +29,22 @@ async fn welcome_screen_braille_logo_renders_correctly() {
 
     let screen = harness.screen_contents();
 
-    // The logo contains distinctive Braille characters. If the writer
-    // thread sends raw UTF-8 bytes through a code-page-dependent API,
-    // these 3-byte characters would be mangled into 3 separate single-
-    // byte characters each (e.g. Cyrillic). Check for a few that only
-    // appear in the logo — not in any ASCII menu label.
-    //
-    // From logo07.txt line 2: ⣠⣾⠿⠛
+    // The moon logo is drawn from Braille Pattern characters. If the writer
+    // thread sends raw UTF-8 bytes through a code-page-dependent API, these
+    // 3-byte characters would be mangled into 3 separate single-byte
+    // characters each (e.g. Cyrillic). The moon is procedurally generated,
+    // so assert on the character class rather than specific glyphs: a full
+    // interior cell (⣿) is present through most of the lunation, and there
+    // must be a healthy number of non-blank braille cells overall.
+    let braille_dots = screen
+        .chars()
+        .filter(|c| ('\u{2801}'..='\u{28FF}').contains(c))
+        .count();
     assert!(
-        screen.contains('⣾'),
-        "Braille character ⣾ (U+28FE) not found in screen — \
-         logo may be garbled by code-page misinterpretation.\n\
-         Screen contents:\n{screen}"
-    );
-    assert!(
-        screen.contains('⣿'),
-        "Braille character ⣿ (U+28FF) not found in screen — \
-         logo may be garbled.\n\
-         Screen contents:\n{screen}"
+        braille_dots >= 20,
+        "expected the braille moon (>= 20 non-blank braille cells), found \
+         {braille_dots} — logo may be garbled by code-page \
+         misinterpretation.\nScreen contents:\n{screen}"
     );
 
     harness.quit().expect("clean quit");

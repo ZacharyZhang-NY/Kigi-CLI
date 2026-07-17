@@ -2759,11 +2759,11 @@ mod tests {
 
     #[test]
     fn hero_box_inactive_when_warning_would_overflow() {
-        // Regression: the box is forced to the full 7-row logo, so even a
-        // 3-item menu needs 11 box rows. A startup warning (error_height = 2)
-        // pushes the total past height 19, so the gate must fall back to the
-        // stacked layout instead of overflowing by a row.
-        let area = Rect::new(0, 0, 90, 19);
+        // Regression: the box is forced to the full 10-row moon, so even a
+        // 3-item menu needs 14 box rows (min content 20). A startup warning
+        // (error_height = 2, +1 gap) pushes the total past height 20, so the
+        // gate must fall back to the stacked layout instead of overflowing.
+        let area = Rect::new(0, 0, 90, 20);
         let with_warning = WelcomeLayout::compute(WelcomeLayoutInput {
             content_area: area,
             error_height: 2,
@@ -2814,12 +2814,12 @@ mod tests {
 
     #[test]
     fn hero_box_does_not_overflow_with_tall_menu() {
-        // A 6-item menu makes the box 2 rows taller than the default-4 box, so
-        // the centering pad (derived from the default box) must be clamped or
-        // the box gets pushed down and the version row clips at exactly
-        // min_content_height. 19 == min_content_height(0, 6, 0, 0): a 13-row box
-        // + 1 flex gap + 5 fixed-below.
-        let area = Rect::new(0, 0, 100, 19);
+        // A tall menu can outgrow the default box, so the centering pad
+        // (derived from the default box) must be clamped or the box gets
+        // pushed down and the version row clips at exactly
+        // min_content_height. 20 == min_content_height(0, 6, 0, 0): a 14-row
+        // box (10-row moon) + 1 flex gap + 5 fixed-below.
+        let area = Rect::new(0, 0, 100, 20);
         let layout = WelcomeLayout::compute(WelcomeLayoutInput {
             content_area: area,
             menu_height: 6,
@@ -2845,9 +2845,9 @@ mod tests {
 
     #[test]
     fn hero_box_height_accounts_for_borders_and_padding() {
-        // At h >= 26, logo07 is used (7 lines). With menu_height=3:
-        // right_col = 2 + 0 + 0 + 1 + 3 = 6, inner = max(7, 6) = 7.
-        // hero_box_height = 2 (borders) + 2 (v_pad) + 7 = 11.
+        // At h >= 26 the full moon is used (10 lines). With menu_height=3:
+        // right_col = 2 + 0 + 0 + 1 + 3 = 6, inner = max(10, 6) = 10.
+        // hero_box_height = 2 (borders) + 2 (v_pad) + 10 = 14.
         let area = Rect::new(0, 0, 100, 50);
         let layout = WelcomeLayout::compute(WelcomeLayoutInput {
             content_area: area,
@@ -2855,7 +2855,7 @@ mod tests {
             ..Default::default()
         });
         assert!(layout.has_hero_box());
-        assert_eq!(layout.hero_box.height, 11);
+        assert_eq!(layout.hero_box.height, 14);
     }
 
     #[test]
