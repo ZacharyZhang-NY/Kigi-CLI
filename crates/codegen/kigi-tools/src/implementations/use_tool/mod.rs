@@ -58,7 +58,7 @@ impl Default for UseToolParams {
     }
 }
 
-crate::register_resource!("grok_build", "UseTool", UseToolParams);
+crate::register_resource!("kigi", "UseTool", UseToolParams);
 
 /// Meta tool that dispatches calls to MCP tools discovered via `search_tool`.
 ///
@@ -130,7 +130,7 @@ impl crate::types::tool_metadata::ToolMetadata for UseTool {
     }
 
     fn tool_namespace(&self) -> ToolNamespace {
-        ToolNamespace::GrokBuild
+        ToolNamespace::Kigi
     }
 
     fn description_template(&self) -> &str {
@@ -790,7 +790,7 @@ mod tests {
     fn classify_python_repr_single_line_is_long_line_text() {
         // mcp-server-sqlite returns a Python repr of rows (single quotes) on one
         // long line — JSON-ish but invalid JSON; the long-line case still catches it.
-        let row = "{'id': 0, 'name': 'user0', 'email': 'u0@x.ai', 'age': 20}";
+        let row = "{'id': 0, 'name': 'user0', 'email': 'u0@example.com', 'age': 20}";
         let payload = format!("[{}]", vec![row; 60].join(", "));
         assert!(payload.len() > LONG_LINE_BYTES && !payload.contains('\n'));
         let kind = McpDumpKind::classify(&payload);
@@ -819,7 +819,7 @@ mod tests {
         // CSV is line-addressable (grep/awk work) → Other, no steer.
         let mut csv = String::from("id,name,email,age\n");
         for i in 0..50 {
-            csv.push_str(&format!("{i},user{i},u{i}@x.ai,{}\n", 20 + i));
+            csv.push_str(&format!("{i},user{i},u{i}@example.com,{}\n", 20 + i));
         }
         let kind = McpDumpKind::classify(&csv);
         assert_eq!(kind, McpDumpKind::Other);

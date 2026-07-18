@@ -73,7 +73,7 @@ fn line_col(src: &str, byte: usize) -> (usize, usize) {
 }
 
 /// [`load_toml_file`] plus that layer's `[[version_overrides]]`. Use for
-/// grok config files; use [`load_toml_file`] directly for unrelated TOML.
+/// kigi config files; use [`load_toml_file`] directly for unrelated TOML.
 pub fn load_config_file(path: &Path) -> std::io::Result<toml::Value> {
     let mut v = load_toml_file(path)?;
     apply_version_overrides_with_registered(&mut v)?;
@@ -637,7 +637,7 @@ mod tests {
     fn load_user_config_layer_reads_file_when_home_present() {
         use std::io::Write;
 
-        let dir = std::env::temp_dir().join(format!("grok-load-layer-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("kigi-load-layer-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let mut f = std::fs::File::create(dir.join("config.toml")).unwrap();
         writeln!(f, "[telemetry]\nmode = \"from_file\"\n").unwrap();
@@ -651,7 +651,7 @@ mod tests {
     /// snippet, which can carry a secret and would reach a client caller.
     #[test]
     fn parse_error_keeps_kind_but_not_snippet() {
-        let dir = std::env::temp_dir().join(format!("grok-toml-leak-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("kigi-toml-leak-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("bad.toml");
         // Duplicate key: the message names the key; the secret-bearing source line is only in Display.

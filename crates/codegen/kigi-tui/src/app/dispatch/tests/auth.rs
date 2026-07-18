@@ -218,7 +218,7 @@ fn cancel_login_strips_reauth_prompt_from_scrollback() {
 }
 
 /// Empty `auth_methods` (preferred_method pin unavailable) must not invent
-/// `grok.com` or start an OIDC flow the agent did not advertise.
+/// `kimi-code` or start an OIDC flow the agent did not advertise.
 #[test]
 fn login_with_empty_auth_methods_fails_closed() {
     let mut app = test_app_with_agent();

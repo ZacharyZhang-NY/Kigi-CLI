@@ -518,7 +518,7 @@ async fn doomed_then_reasoning_only_empty_coexist() {
 
 /// `[doom_loop_recovery] enabled = true` in `config.toml` reaches the wire
 /// through the real binary: the session TURN request (marked by
-/// `x-grok-turn-idx`) carries the opt-in header. Aux side-queries the binary
+/// `x-kigi-turn-idx`) carries the opt-in header. Aux side-queries the binary
 /// also fires at `/v1/responses` (e.g. session-title generation) must NOT
 /// carry it — they collect without the actor's retry loop, so an armed
 /// abort there could only fail them, never resample. The recovery behavior
@@ -546,7 +546,7 @@ async fn headless_config_enables_doom_loop_check_header() {
     )
     .expect("write config.toml");
 
-    let mut cmd = tokio::process::Command::new(kigi_test_support::grok_binary());
+    let mut cmd = tokio::process::Command::new(kigi_test_support::kigi_binary());
     cmd.args(["-p", "say hi", "--yolo", "--output-format", "json"])
         .arg("--cwd")
         .arg(workdir.path())
@@ -568,11 +568,11 @@ async fn headless_config_enables_doom_loop_check_header() {
         .iter()
         .filter(|e| e.method == "POST" && e.path.contains("/responses"))
         .collect();
-    // The session turn carries `x-grok-turn-idx`; aux side-queries (session
+    // The session turn carries `x-kigi-turn-idx`; aux side-queries (session
     // title, etc.) do not.
     let (turns, aux): (Vec<_>, Vec<_>) = responses_posts
         .into_iter()
-        .partition(|e| e.header("x-grok-turn-idx").is_some());
+        .partition(|e| e.header("x-kigi-turn-idx").is_some());
     assert!(
         !turns.is_empty(),
         "no session turn POST /v1/responses logged; requests:\n{}",
@@ -580,7 +580,7 @@ async fn headless_config_enables_doom_loop_check_header() {
     );
     for turn in turns {
         assert_eq!(
-            turn.header("x-grok-doom-loop-check"),
+            turn.header("x-kigi-doom-loop-check"),
             Some("true"),
             "[doom_loop_recovery] enabled must reach the turn request header; requests:\n{}",
             server.request_log_summary()
@@ -588,7 +588,7 @@ async fn headless_config_enables_doom_loop_check_header() {
     }
     for side_query in aux {
         assert_eq!(
-            side_query.header("x-grok-doom-loop-check"),
+            side_query.header("x-kigi-doom-loop-check"),
             None::<&str>,
             "the session policy must not leak into aux side-query clients; requests:\n{}",
             server.request_log_summary()

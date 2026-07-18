@@ -1,7 +1,7 @@
 //! `/recap` -- summarize the session so far ("where was I").
 //!
 //! Returns `CommandResult::Action(Action::SendRecap { auto: false })` so the
-//! dispatch layer fires it as an ACP ext method (`x.ai/recap`) that bypasses
+//! dispatch layer fires it as an ACP ext method (`kigi/recap`) that bypasses
 //! the prompt queue. The recap arrives asynchronously as a scrollback line and
 //! is never added to the model conversation.
 

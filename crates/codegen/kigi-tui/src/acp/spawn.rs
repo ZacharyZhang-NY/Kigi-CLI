@@ -1,6 +1,6 @@
 //! Agent spawning — creates the agent process and ACP channels.
 //!
-//! Simplified to only support GrokShell (in-process) mode.
+//! Simplified to only support KigiShell (in-process) mode.
 //! Subprocess and remote modes can be added later if needed.
 
 use std::rc::Rc;
@@ -30,10 +30,10 @@ pub struct SpawnedAgent {
     pub auth_manager: std::sync::Arc<AuthManager>,
 }
 
-/// Spawn a GrokShell agent in a background thread.
+/// Spawn a KigiShell agent in a background thread.
 ///
 /// Returns the ACP client channel for communication and a cancellation token.
-pub async fn spawn_grok_shell(
+pub async fn spawn_kigi_shell(
     agent_config: AgentConfig,
     cancel: &CancellationToken,
     memory_config: Option<kigi_shell::config::MemoryConfig>,

@@ -1095,7 +1095,7 @@ mod tests {
 
     // ─── Description template shell-awareness parity tests ───
     //
-    // Same shape as grok_build/bash: the opencode tool inherits the same
+    // Same shape as kigi/bash: the opencode tool inherits the same
     // Unix-utility guidance and must branch on PowerShell/cmd.
 
     mod description_shell_branches {

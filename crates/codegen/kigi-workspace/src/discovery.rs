@@ -78,7 +78,7 @@ pub async fn discover_agents_md(root_cwd: &Path) -> Vec<Value> {
     files
         .into_iter()
         .map(|mut file| {
-            // Strip rules-file YAML frontmatter so it does not leak as raw YAML (matches grok-build render).
+            // Strip rules-file YAML frontmatter so it does not leak as raw YAML (matches kigi render).
             if file.file_path.contains("/.kigi/rules/")
                 || file.file_path.contains("/.claude/rules/")
             {
@@ -332,7 +332,7 @@ mod tests {
 
     #[test]
     fn agent_config_file_wire_matches_workspace_types_mirror() {
-        // The RPC serializes grok-build's AgentConfigFile and the remote
+        // The RPC serializes kigi's AgentConfigFile and the remote
         // consumer deserializes the workspace-types mirror; pin the cross-crate
         // serde shape so a rename/attr drift on either side can't silently
         // break discovery.
@@ -484,10 +484,10 @@ mod tests {
     #[test]
     fn load_project_config_reads_toml_as_json() {
         let tmp = tempfile::tempdir().unwrap();
-        let grok_dir = tmp.path().join(".kigi");
-        fs::create_dir_all(&grok_dir).unwrap();
+        let kigi_dir = tmp.path().join(".kigi");
+        fs::create_dir_all(&kigi_dir).unwrap();
         fs::write(
-            grok_dir.join("config.toml"),
+            kigi_dir.join("config.toml"),
             "[skills]\npaths = [\"/extra/skills\"]\n\n[plugins]\ndisabled = [\"noisy-plugin\"]\n",
         )
         .unwrap();
@@ -536,7 +536,7 @@ mod tests {
 
     // Note: `resolve_permissions_with_provenance` checks system-managed
     // settings and requirements.toml from the global config, so on a
-    // developer machine with Grok installed it may return non-Null even
+    // developer machine with Kigi installed it may return non-Null even
     // for a temp directory. Both branches assert a concrete condition.
 
     #[tokio::test]

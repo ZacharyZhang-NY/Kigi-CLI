@@ -421,7 +421,7 @@ fn uninstall_result_notice_is_footer_only_not_row_anchored() {
     );
 }
 
-/// Regression (Bugbot): a failed `x.ai/subagent/cancel` RPC must NOT
+/// Regression (Bugbot): a failed `kigi/subagent/cancel` RPC must NOT
 /// finalize the row — the subagent may still be running. Only a shell
 /// response of "nothing live" finalizes it.
 #[test]
@@ -509,7 +509,7 @@ fn cancel_complete_does_nothing() {
 fn switch_model_complete_success_updates_model_and_pushes_message() {
     let mut app = test_app_with_agent();
     let id = AgentId(0);
-    let model_id = acp::ModelId::new(std::sync::Arc::from("grok-4.5"));
+    let model_id = acp::ModelId::new(std::sync::Arc::from("kigi-4.5"));
 
     // Set up available models so the display name can be resolved.
     app.agents
@@ -520,7 +520,7 @@ fn switch_model_complete_success_updates_model_and_pushes_message() {
         .available
         .insert(
             model_id.clone(),
-            acp::ModelInfo::new(model_id.clone(), "Grok 4.5".to_string()),
+            acp::ModelInfo::new(model_id.clone(), "Kigi 4.5".to_string()),
         );
     app.agents
         .get_mut(&id)
@@ -562,12 +562,12 @@ fn switch_model_complete_success_updates_model_and_pushes_message() {
 fn switch_model_complete_skips_message_and_persist_when_unchanged() {
     let mut app = test_app_with_agent();
     let id = AgentId(0);
-    let model_id = acp::ModelId::new(std::sync::Arc::from("grok-4.5"));
+    let model_id = acp::ModelId::new(std::sync::Arc::from("kigi-4.5"));
 
     let agent = app.agents.get_mut(&id).unwrap();
     agent.session.models.available.insert(
         model_id.clone(),
-        acp::ModelInfo::new(model_id.clone(), "Grok 4.5".to_string()),
+        acp::ModelInfo::new(model_id.clone(), "Kigi 4.5".to_string()),
     );
     agent.session.models.current = Some(model_id.clone());
     agent.session.models.reasoning_effort = None;
@@ -667,7 +667,7 @@ fn switch_to_non_reasoning_model_clears_persisted_effort() {
     use kigi_shell::sampling::types::ReasoningEffort;
     let mut app = test_app_with_agent();
     let id = AgentId(0);
-    let model_id = acp::ModelId::new(std::sync::Arc::from("grok-4.5"));
+    let model_id = acp::ModelId::new(std::sync::Arc::from("kigi-4.5"));
 
     // Simulate prior reasoning effort from a previous model.
     app.agents
@@ -686,7 +686,7 @@ fn switch_to_non_reasoning_model_clears_persisted_effort() {
         .available
         .insert(
             model_id.clone(),
-            acp::ModelInfo::new(model_id.clone(), "Grok Build".to_string()),
+            acp::ModelInfo::new(model_id.clone(), "Kigi".to_string()),
         );
     app.agents
         .get_mut(&id)
@@ -773,7 +773,7 @@ fn switch_model_incompatible_agent_shows_question_modal() {
 
     let err = kigi_shell::agent::config::ModelSwitchIncompatibleAgentError {
         code: "MODEL_SWITCH_INCOMPATIBLE_AGENT".into(),
-        active_agent_type: "grok-build".into(),
+        active_agent_type: "kigi".into(),
         required_agent_type: "cursor".into(),
         model_id: "cursor-model".into(),
         suggestion: "start_new_session".into(),
@@ -836,7 +836,7 @@ fn incompatible_agent_rollback_restores_previous_model() {
 
     let err = kigi_shell::agent::config::ModelSwitchIncompatibleAgentError {
         code: "MODEL_SWITCH_INCOMPATIBLE_AGENT".into(),
-        active_agent_type: "grok-build".into(),
+        active_agent_type: "kigi".into(),
         required_agent_type: "cursor".into(),
         model_id: "cursor-model".into(),
         suggestion: "start_new_session".into(),
@@ -882,7 +882,7 @@ fn incompatible_agent_closes_active_modal() {
 
     let err = kigi_shell::agent::config::ModelSwitchIncompatibleAgentError {
         code: "MODEL_SWITCH_INCOMPATIBLE_AGENT".into(),
-        active_agent_type: "grok-build".into(),
+        active_agent_type: "kigi".into(),
         required_agent_type: "cursor".into(),
         model_id: "cursor-model".into(),
         suggestion: "start_new_session".into(),
@@ -919,19 +919,19 @@ fn same_agent_type_switch_no_modal() {
     // should succeed normally — no modal, no IncompatibleAgent error.
     let mut app = test_app_with_agent();
     let id = AgentId(0);
-    let model_a = acp::ModelId::new(std::sync::Arc::from("grok-build-a"));
-    let model_b = acp::ModelId::new(std::sync::Arc::from("grok-build-b"));
+    let model_a = acp::ModelId::new(std::sync::Arc::from("kigi-a"));
+    let model_b = acp::ModelId::new(std::sync::Arc::from("kigi-b"));
 
-    // Add both models to the catalog (no agentType → both use grok-build).
+    // Add both models to the catalog (no agentType → both use kigi).
     let agent = app.agents.get_mut(&id).unwrap();
     agent.session.models.available.insert(
         model_a.clone(),
-        acp::ModelInfo::new(model_a.clone(), "Grok Build A".to_string()),
+        acp::ModelInfo::new(model_a.clone(), "Kigi A".to_string()),
     );
     agent.session.models.set_current(model_a, None);
     agent.session.models.available.insert(
         model_b.clone(),
-        acp::ModelInfo::new(model_b.clone(), "Grok Build B".to_string()),
+        acp::ModelInfo::new(model_b.clone(), "Kigi B".to_string()),
     );
     agent.session.model_switch_pending = true;
 
@@ -963,7 +963,7 @@ fn switch_model_pending_lifecycle() {
     // Full lifecycle: false -> dispatch SwitchModel -> true -> SwitchModelComplete -> false
     let mut app = test_app_with_agent();
     let id = AgentId(0);
-    let model_id = acp::ModelId::new(std::sync::Arc::from("grok-4.5"));
+    let model_id = acp::ModelId::new(std::sync::Arc::from("kigi-4.5"));
 
     // Initially false.
     assert!(!app.agents[&id].session.model_switch_pending);

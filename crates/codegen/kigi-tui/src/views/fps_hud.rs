@@ -182,7 +182,7 @@ mod tests {
     /// both cfgs (the dev half is pinned by the constant's shape, the same
     /// limitation as the `/debug` visibility test).
     #[test]
-    fn grok_fps_env_enables_hud_where_dev_overlay_absent() {
+    fn kigi_fps_env_enables_hud_where_dev_overlay_absent() {
         for truthy in ["1", "full", " "] {
             assert_eq!(
                 FpsHud::with_env(Some(truthy.into())).enabled(),

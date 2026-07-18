@@ -1,4 +1,4 @@
-use kigi_tools::implementations::grok_build::task::types::SubagentCompletionSummary;
+use kigi_tools::implementations::kigi::task::types::SubagentCompletionSummary;
 use kigi_tools::reminders::task_completion::format_between_turn_completions;
 
 fn summary(

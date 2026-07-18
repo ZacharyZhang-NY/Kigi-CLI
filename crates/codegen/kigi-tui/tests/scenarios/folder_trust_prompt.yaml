@@ -13,7 +13,7 @@ environment:
   env:
     - key: KIGI_FOLDER_TRUST
       value: "1"
-    # A self-built (unstamped) grok auto-trusts and never prompts; simulate a
+    # A self-built (unstamped) kigi auto-trusts and never prompts; simulate a
     # release build so the folder-trust prompt is actually evaluated.
     - key: KIGI_TEST_VERSION
       value: "0.0.0-sim"

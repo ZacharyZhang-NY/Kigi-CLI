@@ -38,7 +38,7 @@ impl LeaderCluster {
         // One shared KIGI_SHARE_DIR => one leader; the socket lives beneath it so
         // every client (sharing the same env) elects/attaches to the same one.
         let kigi_home = content.home().join(".kigi");
-        std::fs::create_dir_all(&kigi_home).context("create grok home")?;
+        std::fs::create_dir_all(&kigi_home).context("create kigi home")?;
         let socket = kigi_home.join("leader-e2e.sock");
         let binary = pager_binary().context("resolve pager binary")?;
         Ok(Self {
@@ -194,14 +194,14 @@ mod tests {
     /// Wrap a session update as the envelope stored in `updates.jsonl`.
     fn envelope(update_json: &str) -> String {
         format!(
-            r#"{{"timestamp":1,"method":"_x.ai/session/update","params":{{"sessionId":"s","update":{update_json}}}}}"#
+            r#"{{"timestamp":1,"method":"_kigi/session/update","params":{{"sessionId":"s","update":{update_json}}}}}"#
         )
     }
 
     #[test]
     fn parse_update_payloads_unwraps_and_tolerates_torn_trailing_line() {
         let body = format!(
-            "{}\n{}\n{{\"timestamp\":2,\"method\":\"_x.ai/sess",
+            "{}\n{}\n{{\"timestamp\":2,\"method\":\"_kigi/sess",
             envelope(
                 r#"{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"hi"}}"#
             ),

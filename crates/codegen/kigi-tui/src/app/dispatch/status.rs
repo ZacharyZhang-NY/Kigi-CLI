@@ -8,7 +8,7 @@ use crate::app::app_view::{ActiveView, AppView};
 use crate::notifications::{NotificationEvent, NotificationEventKind};
 use crate::scrollback::block::RenderBlock;
 
-/// Show session info: fetch via x.ai/session/info and display in scrollback.
+/// Show session info: fetch via kigi/session/info and display in scrollback.
 ///
 /// Produces Effect::ShowSessionInfo which spawns an async ACP ext request.
 /// On completion, TaskResult::SessionInfoComplete shows the formatted info.
@@ -49,7 +49,7 @@ pub(super) fn scrub_error_for_toast(error: &str) -> String {
     }
 }
 
-/// Show context info: fetch via x.ai/session/info and display rich breakdown.
+/// Show context info: fetch via kigi/session/info and display rich breakdown.
 ///
 /// Produces Effect::ShowContextInfo which spawns an async ACP ext request.
 /// On completion, TaskResult::ContextInfoComplete shows the formatted info.
@@ -72,7 +72,7 @@ pub(super) fn dispatch_show_context_info(app: &mut AppView) -> Vec<Effect> {
 
 /// `/usage` — fetch Kimi usage/quota rows and display them inline.
 ///
-/// Produces [`Effect::FetchUsage`], which asks the shell's `x.ai/billing`
+/// Produces [`Effect::FetchUsage`], which asks the shell's `kigi/billing`
 /// extension (`GET {base}/usages`); [`handle_usage_fetched`] renders the
 /// rows as a system block in scrollback.
 pub(super) fn dispatch_show_usage(app: &mut AppView) -> Vec<Effect> {
@@ -225,7 +225,7 @@ pub(super) fn notify_session_ready(
 ) {
     notification_service.notify(NotificationEvent {
         kind: NotificationEventKind::SessionReady,
-        title: "Grok".into(),
+        title: "Kigi".into(),
         body: NotificationEventKind::SessionReady.as_str().into(),
         session_id: agent.session.session_id.as_ref().map(|s| s.0.to_string()),
     });

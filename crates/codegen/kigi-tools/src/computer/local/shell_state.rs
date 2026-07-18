@@ -23,14 +23,14 @@ use tokio::io::AsyncReadExt;
 // Marker constants
 // ============================================================================
 
-const BASH_STATE_START_MARKER: &str = "__GROK_BASH_STATE_START__";
-const BASH_STATE_END_MARKER: &str = "__GROK_BASH_STATE_END__";
-const ZSH_STATE_START_MARKER: &str = "__GROK_ZSH_STATE_START__";
-const ZSH_STATE_END_MARKER: &str = "__GROK_ZSH_STATE_END__";
+const BASH_STATE_START_MARKER: &str = "__KIGI_BASH_STATE_START__";
+const BASH_STATE_END_MARKER: &str = "__KIGI_BASH_STATE_END__";
+const ZSH_STATE_START_MARKER: &str = "__KIGI_ZSH_STATE_START__";
+const ZSH_STATE_END_MARKER: &str = "__KIGI_ZSH_STATE_END__";
 
 /// Marker emitted by the init path to separate login-shell noise (MOTD, etc.)
 /// from the actual state dump on stdout.
-const INIT_STATE_MARKER: &str = "__GROK_INIT_STATE_MARKER__";
+const INIT_STATE_MARKER: &str = "__KIGI_INIT_STATE_MARKER__";
 
 /// Maximum time to wait for a shell state init (login shell + rc files).
 const INIT_TIMEOUT: Duration = Duration::from_secs(15);
@@ -47,7 +47,7 @@ pub fn shell_env_overrides() -> HashMap<String, String> {
         ("TERM".to_string(), "dumb".to_string()),
         ("NO_COLOR".to_string(), "1".to_string()),
         ("FORCE_COLOR".to_string(), "0".to_string()),
-        // Re-applied last via [`crate::util::apply_grok_agent_marker`] so request
+        // Re-applied last via [`crate::util::apply_kigi_agent_marker`] so request
         // env cannot clear it.
         (
             crate::util::KIGI_AGENT_ENV.to_string(),
@@ -88,15 +88,15 @@ dump_bash_state() {
     local content="$1"
     local var_name="$2"
     if [[ -n "$content" ]]; then
-      builtin printf 'grok_snap_%s=$(command base64 -d <<'"'"'KIGI_SNAP_EOF_%s'"'"'\n' "$var_name" "$var_name"
+      builtin printf 'kigi_snap_%s=$(command base64 -d <<'"'"'KIGI_SNAP_EOF_%s'"'"'\n' "$var_name" "$var_name"
       command base64 <<<"$content" | command tr -d '\n'
       builtin printf '\nKIGI_SNAP_EOF_%s\n' "$var_name"
       builtin printf ')\n'
-      builtin printf 'eval "$grok_snap_%s"\n' "$var_name"
+      builtin printf 'eval "$kigi_snap_%s"\n' "$var_name"
     fi
   }
 
-  _emit "__GROK_BASH_STATE_START__"
+  _emit "__KIGI_BASH_STATE_START__"
 
   _emit "$PWD"
 
@@ -121,7 +121,7 @@ dump_bash_state() {
   _emit_encoded "$aliases" "ALIASES_B64"
 
   _emit "# end of bash state dump"
-  _emit "__GROK_BASH_STATE_END__"
+  _emit "__KIGI_BASH_STATE_END__"
 }
 "##;
 
@@ -142,15 +142,15 @@ function dump_zsh_state() {
     local content="$1"
     local var_name="$2"
     if [[ -n "$content" ]]; then
-      builtin printf 'grok_snap_%s=$(command base64 -d <<'"'"'KIGI_SNAP_EOF_%s'"'"'\n' "$var_name" "$var_name"
+      builtin printf 'kigi_snap_%s=$(command base64 -d <<'"'"'KIGI_SNAP_EOF_%s'"'"'\n' "$var_name" "$var_name"
       command base64 <<<"$content" | command tr -d '\n'
       builtin printf '\nKIGI_SNAP_EOF_%s\n' "$var_name"
       builtin printf ')\n'
-      builtin printf 'eval "$grok_snap_%s"\n' "$var_name"
+      builtin printf 'eval "$kigi_snap_%s"\n' "$var_name"
     fi
   }
 
-  _emit "__GROK_ZSH_STATE_START__"
+  _emit "__KIGI_ZSH_STATE_START__"
 
   _emit "$PWD"
 
@@ -171,7 +171,7 @@ function dump_zsh_state() {
   _emit_encoded "$aliases" "ALIASES_B64"
 
   _emit "# end of zsh state dump"
-  _emit "__GROK_ZSH_STATE_END__"
+  _emit "__KIGI_ZSH_STATE_END__"
 }
 "##;
 
@@ -688,11 +688,11 @@ mod tests {
 
     #[test]
     fn parse_dump_valid_bash() {
-        let raw = "__GROK_BASH_STATE_START__\n\
+        let raw = "__KIGI_BASH_STATE_START__\n\
                     /home/user/project\n\
                     export FOO=bar\n\
                     # end of bash state dump\n\
-                    __GROK_BASH_STATE_END__\n";
+                    __KIGI_BASH_STATE_END__\n";
         let (cwd, rest) = parse_dump(ShellKind::Bash, raw).unwrap();
         assert_eq!(cwd, PathBuf::from("/home/user/project"));
         assert!(rest.contains("export FOO=bar"));
@@ -700,11 +700,11 @@ mod tests {
 
     #[test]
     fn parse_dump_valid_zsh() {
-        let raw = "__GROK_ZSH_STATE_START__\n\
+        let raw = "__KIGI_ZSH_STATE_START__\n\
                     /tmp\n\
                     typeset -x FOO=bar\n\
                     # end of zsh state dump\n\
-                    __GROK_ZSH_STATE_END__\n";
+                    __KIGI_ZSH_STATE_END__\n";
         let (cwd, rest) = parse_dump(ShellKind::Zsh, raw).unwrap();
         assert_eq!(cwd, PathBuf::from("/tmp"));
         assert!(rest.contains("typeset -x FOO=bar"));
@@ -712,28 +712,28 @@ mod tests {
 
     #[test]
     fn parse_dump_missing_start_marker() {
-        let raw = "/home/user\nexport FOO=bar\n__GROK_BASH_STATE_END__\n";
+        let raw = "/home/user\nexport FOO=bar\n__KIGI_BASH_STATE_END__\n";
         assert!(parse_dump(ShellKind::Bash, raw).is_none());
     }
 
     #[test]
     fn parse_dump_missing_end_marker() {
-        let raw = "__GROK_BASH_STATE_START__\n/home/user\nexport FOO=bar\n";
+        let raw = "__KIGI_BASH_STATE_START__\n/home/user\nexport FOO=bar\n";
         assert!(parse_dump(ShellKind::Bash, raw).is_none());
     }
 
     #[test]
     fn parse_dump_wrong_shell_markers() {
-        let raw = "__GROK_ZSH_STATE_START__\n/tmp\nstuff\n__GROK_ZSH_STATE_END__\n";
+        let raw = "__KIGI_ZSH_STATE_START__\n/tmp\nstuff\n__KIGI_ZSH_STATE_END__\n";
         assert!(parse_dump(ShellKind::Bash, raw).is_none());
     }
 
     #[test]
     fn parse_dump_empty_snapshot() {
-        let raw = "__GROK_BASH_STATE_START__\n\
+        let raw = "__KIGI_BASH_STATE_START__\n\
                     /home/user\n\
                     # end of bash state dump\n\
-                    __GROK_BASH_STATE_END__\n";
+                    __KIGI_BASH_STATE_END__\n";
         let (cwd, rest) = parse_dump(ShellKind::Bash, raw).unwrap();
         assert_eq!(cwd, PathBuf::from("/home/user"));
         assert!(rest.contains("# end of bash state dump"));
@@ -741,15 +741,15 @@ mod tests {
 
     #[test]
     fn parse_after_marker_found() {
-        let output = "Welcome to Ubuntu\nMOTD line\n__GROK_INIT_STATE_MARKER__\nactual data\n";
-        let result = parse_after_marker(output, "__GROK_INIT_STATE_MARKER__");
+        let output = "Welcome to Ubuntu\nMOTD line\n__KIGI_INIT_STATE_MARKER__\nactual data\n";
+        let result = parse_after_marker(output, "__KIGI_INIT_STATE_MARKER__");
         assert_eq!(result, "actual data\n");
     }
 
     #[test]
     fn parse_after_marker_not_found() {
         let output = "just some output\n";
-        let result = parse_after_marker(output, "__GROK_INIT_STATE_MARKER__");
+        let result = parse_after_marker(output, "__KIGI_INIT_STATE_MARKER__");
         assert_eq!(result, output);
     }
 
@@ -797,11 +797,11 @@ mod tests {
             shell: ShellKind::Bash,
         };
 
-        let dump = "__GROK_BASH_STATE_START__\n\
+        let dump = "__KIGI_BASH_STATE_START__\n\
                      /new/dir\n\
                      export X=1\n\
                      # end of bash state dump\n\
-                     __GROK_BASH_STATE_END__\n";
+                     __KIGI_BASH_STATE_END__\n";
         assert!(state.update_from_dump(dump));
         assert_eq!(state.cwd, PathBuf::from("/new/dir"));
         assert!(state.snapshot.contains("export X=1"));
@@ -832,7 +832,7 @@ mod tests {
         assert!(state.cwd.is_absolute());
         // The snapshot should contain at least some env var exports
         assert!(
-            state.snapshot.contains("grok_snap_") || state.snapshot.is_empty(),
+            state.snapshot.contains("kigi_snap_") || state.snapshot.is_empty(),
             "snapshot should contain encoded blocks or be empty: {:?}",
             &state.snapshot[..state.snapshot.len().min(200)]
         );
@@ -995,13 +995,13 @@ mod tests {
         let cwd = std::env::current_dir().unwrap();
         let mut state = ShellState::init(ShellKind::Bash, &cwd).await.unwrap();
 
-        let (code, _) = run_command(&mut state, "export GPG_TTY=/grok-sentinel-tty").await;
+        let (code, _) = run_command(&mut state, "export GPG_TTY=/kigi-sentinel-tty").await;
         assert_eq!(code, 0);
 
         let (code, stdout) = run_command(&mut state, "echo \"[$GPG_TTY]\"").await;
         assert_eq!(code, 0);
         assert!(
-            !stdout.contains("/grok-sentinel-tty"),
+            !stdout.contains("/kigi-sentinel-tty"),
             "GPG_TTY must not persist across commands via the snapshot, got: {stdout:?}"
         );
     }
@@ -1015,13 +1015,13 @@ mod tests {
         let cwd = std::env::current_dir().unwrap();
         let mut state = ShellState::init(ShellKind::Zsh, &cwd).await.unwrap();
 
-        let (code, _) = run_command(&mut state, "export GPG_TTY=/grok-sentinel-tty").await;
+        let (code, _) = run_command(&mut state, "export GPG_TTY=/kigi-sentinel-tty").await;
         assert_eq!(code, 0);
 
         let (code, stdout) = run_command(&mut state, "echo \"[$GPG_TTY]\"").await;
         assert_eq!(code, 0);
         assert!(
-            !stdout.contains("/grok-sentinel-tty"),
+            !stdout.contains("/kigi-sentinel-tty"),
             "GPG_TTY must not persist across commands via the snapshot, got: {stdout:?}"
         );
     }

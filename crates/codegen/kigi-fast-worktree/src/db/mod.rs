@@ -203,7 +203,7 @@ impl WorktreeDb {
 
     /// Open the default DB at `~/.kigi/worktrees.db`.
     ///
-    /// Discovers grok home via `$KIGI_SHARE_DIR`, falling back to the canonicalized
+    /// Discovers kigi home via `$KIGI_SHARE_DIR`, falling back to the canonicalized
     /// `$HOME/.kigi` (matching `kigi_config::kigi_home`).
     /// Path is resolved fresh each call (~1µs env var read) to support
     /// test overrides. Each call opens its own connection — callers in hot
@@ -365,23 +365,23 @@ static KIGI_SHARE_DIR_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(())
 /// `Drop` restores `KIGI_SHARE_DIR` before `_lock` releases, so the env is correct
 /// before another waiting setter proceeds.
 #[cfg(test)]
-pub(crate) struct GrokHomeFixture {
+pub(crate) struct KigiHomeFixture {
     _lock: std::sync::MutexGuard<'static, ()>,
     prev: Option<std::ffi::OsString>,
-    /// The isolated grok home; pass to `WorktreeDb::open` to read the same DB
+    /// The isolated kigi home; pass to `WorktreeDb::open` to read the same DB
     /// `open_default()` writes to.
     pub home: PathBuf,
     _tmp: tempfile::TempDir,
 }
 
 #[cfg(test)]
-impl GrokHomeFixture {
+impl KigiHomeFixture {
     pub(crate) fn new() -> Self {
         let lock = KIGI_SHARE_DIR_ENV_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::TempDir::new().unwrap();
-        let home = tmp.path().join("grok-home");
+        let home = tmp.path().join("kigi-home");
         std::fs::create_dir_all(&home).unwrap();
         // Warm up the DB (journal-mode conversion + schema) before exposing it
         // via KIGI_SHARE_DIR, sparing the test hot loop set_journal_mode's retry
@@ -401,7 +401,7 @@ impl GrokHomeFixture {
 }
 
 #[cfg(test)]
-impl Drop for GrokHomeFixture {
+impl Drop for KigiHomeFixture {
     fn drop(&mut self) {
         unsafe {
             match self.prev.take() {

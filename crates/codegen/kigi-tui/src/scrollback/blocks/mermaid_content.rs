@@ -143,14 +143,14 @@ pub fn mermaid_block_ranges(view: &MarkdownRenderView) -> Vec<Range<usize>> {
 
 /// Whether a theme renders diagrams on a dark surface.
 ///
-/// `GrokDay` is the only light theme; every other concrete theme (and the
-/// `GrokNight` default that `Auto` resolves to before it reaches the cache) is
+/// `KigiDay` is the only light theme; every other concrete theme (and the
+/// `KigiNight` default that `Auto` resolves to before it reaches the cache) is
 /// dark. The render worker maps this to `kigi_mermaid::MermaidTheme`; it
 /// lives here (rather than referencing the engine crate) so the
 /// always-compiled detection module stays independent of the optional
 /// `mermaid` feature.
 pub fn theme_is_dark(theme: ThemeKind) -> bool {
-    !matches!(theme, ThemeKind::GrokDay)
+    !matches!(theme, ThemeKind::KigiDay)
 }
 
 /// Cache key for a rendered diagram: content hash + theme + quality tier +
@@ -580,7 +580,7 @@ mod tests {
     fn cache_key_sensitivity() {
         let dark = MermaidCacheKey::derive(
             "flowchart TD\nA-->B",
-            ThemeKind::GrokNight,
+            ThemeKind::KigiNight,
             80,
             MermaidRenderQuality::Terminal,
         );
@@ -589,7 +589,7 @@ mod tests {
             dark,
             MermaidCacheKey::derive(
                 "flowchart TD\nA-->B",
-                ThemeKind::GrokNight,
+                ThemeKind::KigiNight,
                 80,
                 MermaidRenderQuality::Terminal,
             )
@@ -599,7 +599,7 @@ mod tests {
             dark,
             MermaidCacheKey::derive(
                 "flowchart TD\nA-->C",
-                ThemeKind::GrokNight,
+                ThemeKind::KigiNight,
                 80,
                 MermaidRenderQuality::Terminal,
             )
@@ -609,7 +609,7 @@ mod tests {
             dark,
             MermaidCacheKey::derive(
                 "flowchart TD\nA-->B",
-                ThemeKind::GrokDay,
+                ThemeKind::KigiDay,
                 80,
                 MermaidRenderQuality::Terminal,
             )
@@ -619,7 +619,7 @@ mod tests {
             dark,
             MermaidCacheKey::derive(
                 "flowchart TD\nA-->B",
-                ThemeKind::GrokNight,
+                ThemeKind::KigiNight,
                 160,
                 MermaidRenderQuality::Terminal,
             )
@@ -627,7 +627,7 @@ mod tests {
         // Quality tier change ⇒ different key (and filename).
         let open = MermaidCacheKey::derive(
             "flowchart TD\nA-->B",
-            ThemeKind::GrokNight,
+            ThemeKind::KigiNight,
             80,
             MermaidRenderQuality::Open,
         );
@@ -638,7 +638,7 @@ mod tests {
             open,
             MermaidCacheKey::derive(
                 "flowchart TD\nA-->B",
-                ThemeKind::GrokNight,
+                ThemeKind::KigiNight,
                 999,
                 MermaidRenderQuality::Open,
             )
@@ -650,20 +650,20 @@ mod tests {
         // Widths within the same bucket collapse to one key.
         let a = MermaidCacheKey::derive(
             "x",
-            ThemeKind::GrokNight,
+            ThemeKind::KigiNight,
             80,
             MermaidRenderQuality::Terminal,
         );
         let b = MermaidCacheKey::derive(
             "x",
-            ThemeKind::GrokNight,
+            ThemeKind::KigiNight,
             80 + MERMAID_WIDTH_BUCKET - 1,
             MermaidRenderQuality::Terminal,
         );
         assert_eq!(a, b);
         let c = MermaidCacheKey::derive(
             "x",
-            ThemeKind::GrokNight,
+            ThemeKind::KigiNight,
             80 + MERMAID_WIDTH_BUCKET,
             MermaidRenderQuality::Terminal,
         );
@@ -677,7 +677,7 @@ mod tests {
         let mut set = HashSet::new();
         let key = MermaidCacheKey::derive(
             "A-->B\n",
-            ThemeKind::GrokNight,
+            ThemeKind::KigiNight,
             80,
             MermaidRenderQuality::Terminal,
         );
@@ -685,7 +685,7 @@ mod tests {
         assert!(set.contains(&key));
         assert!(!set.contains(&MermaidCacheKey::derive(
             "A-->B\n",
-            ThemeKind::GrokDay,
+            ThemeKind::KigiDay,
             80,
             MermaidRenderQuality::Terminal,
         )));
@@ -825,13 +825,13 @@ mod tests {
     // -- theme mapping + cache filename --------------------------------------
 
     #[test]
-    fn theme_is_dark_maps_grokday_to_light_only() {
+    fn theme_is_dark_maps_kigiday_to_light_only() {
         assert!(
-            !theme_is_dark(ThemeKind::GrokDay),
-            "GrokDay is the light theme"
+            !theme_is_dark(ThemeKind::KigiDay),
+            "KigiDay is the light theme"
         );
         for dark in [
-            ThemeKind::GrokNight,
+            ThemeKind::KigiNight,
             ThemeKind::TokyoNight,
             ThemeKind::RosePineMoon,
             ThemeKind::OscuraMidnight,
@@ -844,7 +844,7 @@ mod tests {
     fn cache_filename_is_stable_and_keyed() {
         let a = MermaidCacheKey::derive(
             "flowchart TD\nA-->B",
-            ThemeKind::GrokNight,
+            ThemeKind::KigiNight,
             80,
             MermaidRenderQuality::Terminal,
         );
@@ -860,21 +860,21 @@ mod tests {
         // Different theme / source / width → different filename.
         let b = MermaidCacheKey::derive(
             "flowchart TD\nA-->B",
-            ThemeKind::GrokDay,
+            ThemeKind::KigiDay,
             80,
             MermaidRenderQuality::Terminal,
         );
         assert_ne!(a.cache_filename(), b.cache_filename());
         let c = MermaidCacheKey::derive(
             "flowchart TD\nA-->C",
-            ThemeKind::GrokNight,
+            ThemeKind::KigiNight,
             80,
             MermaidRenderQuality::Terminal,
         );
         assert_ne!(a.cache_filename(), c.cache_filename());
         let open = MermaidCacheKey::derive(
             "flowchart TD\nA-->B",
-            ThemeKind::GrokNight,
+            ThemeKind::KigiNight,
             80,
             MermaidRenderQuality::Open,
         );

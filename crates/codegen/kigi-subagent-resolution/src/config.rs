@@ -189,7 +189,7 @@ mod tests {
         let toml_str = r#"
 description = "Research agent"
 default_capability_mode = "read-only"
-model = "grok-3"
+model = "kigi-3"
 reasoning_effort = "high"
 prompt_file = ".kigi/prompts/researcher.md"
 default_isolation = "worktree"
@@ -197,7 +197,7 @@ default_isolation = "worktree"
         let role: SubagentRole = toml::from_str(toml_str).unwrap();
         assert_eq!(role.description, "Research agent");
         assert_eq!(role.default_capability_mode.as_deref(), Some("read-only"));
-        assert_eq!(role.model.as_deref(), Some("grok-3"));
+        assert_eq!(role.model.as_deref(), Some("kigi-3"));
         assert_eq!(role.reasoning_effort.as_deref(), Some("high"));
         assert_eq!(
             role.prompt_file.as_deref(),
@@ -222,7 +222,7 @@ default_isolation = "worktree"
 instructions = "You are a concise writer."
 description = "A concise writing persona."
 instructions_file = ".kigi/personas/concise.md"
-model = "grok-3-fast"
+model = "kigi-3-fast"
 reasoning_effort = "low"
 default_isolation = "none"
 
@@ -247,7 +247,7 @@ description = "Path to write the summary"
             persona.instructions_file.as_deref(),
             Some(".kigi/personas/concise.md")
         );
-        assert_eq!(persona.model.as_deref(), Some("grok-3-fast"));
+        assert_eq!(persona.model.as_deref(), Some("kigi-3-fast"));
         assert_eq!(persona.reasoning_effort.as_deref(), Some("low"));
         assert_eq!(persona.inputs.len(), 1);
         assert_eq!(persona.inputs[0].name, "review_file");

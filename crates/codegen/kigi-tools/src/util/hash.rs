@@ -1,7 +1,7 @@
 //! Shared hashing utilities for hashline anchor generation.
 //!
 //! Provides FNV-1a 32-bit hashing and whitespace-normalized line fingerprinting.
-//! Used by the `grok_build_hashline` anchor schemes.
+//! Used by the `kigi_hashline` anchor schemes.
 //!
 //! ## Normalization policy
 //!

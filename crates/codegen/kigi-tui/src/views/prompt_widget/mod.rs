@@ -12,7 +12,7 @@
 //!                                            ← top vpad (configurable)
 //!  ❯ type here, text wraps                   ← prefix + TextArea
 //!    continuation of long input...            ← TextArea continuation
-//!  grok-3 · yolo                             ← info line (optional)
+//!  kigi-3 · yolo                             ← info line (optional)
 //! ```
 //!
 //! The accent line (┃) and selection box are rendered by the caller.
@@ -1099,7 +1099,7 @@ impl PromptWidget {
                 {
                     // The row's trailing space is its args separator; absorb
                     // an existing plain-text one so accepting mid-token in
-                    // `/mod grok-4` yields `/model grok-4`, not `/model  grok-4`
+                    // `/mod kigi-4` yields `/model kigi-4`, not `/model  kigi-4`
                     // — absorb (rather than trim the insert) so the cursor
                     // lands after the separator, in the args phase. Never
                     // absorb an element's byte: a chip's leading space is chip
@@ -1125,7 +1125,7 @@ impl PromptWidget {
                 false
             }
         } else {
-            // Replace the args range (e.g., "gr" → "Grok 4 Fast").
+            // Replace the args range (e.g., "gr" → "Kigi 4 Fast").
             if let Some(ref range) = snap.args_range
                 && range.end <= text_len
                 && self.textarea.text().is_char_boundary(range.start)
@@ -3012,7 +3012,7 @@ impl PromptWidget {
             }
         }
 
-        // Bottom divider: ╰──────────grok-3 · flags──╯
+        // Bottom divider: ╰──────────kigi-3 · flags──╯
         // Guard on actual allocated height, not requested `info_block`: during
         // resize the layout may squeeze the info block to 0 rows, leaving
         // chunks[2].y past the buffer boundary.

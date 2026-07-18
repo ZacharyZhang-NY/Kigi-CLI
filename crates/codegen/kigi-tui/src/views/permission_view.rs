@@ -1614,7 +1614,7 @@ fn char_wrap(s: &str, width: usize) -> Vec<String> {
 /// RejectOnce renders as a freeform input row (matching question view style)
 /// using the same 1-based shortcut number as its prefix:
 /// ```text
-///  3 [ ] Tell Grok what to do differently
+///  3 [ ] Tell Kigi what to do differently
 ///  3 [x] ❯ my followup message preview...
 /// ```
 ///
@@ -2216,7 +2216,7 @@ mod tests {
         state.description = vec![
             "{".to_string(),
             "  \"issue\": \"ABC-123\",".to_string(),
-            "  \"body\": \"hello from grok\"".to_string(),
+            "  \"body\": \"hello from kigi\"".to_string(),
             "}".to_string(),
         ];
         state.options = vec![acp::PermissionOption::new(
@@ -2242,7 +2242,7 @@ mod tests {
             "args JSON not rendered:\n{text}"
         );
         assert!(
-            text.contains("\"body\": \"hello from grok\""),
+            text.contains("\"body\": \"hello from kigi\""),
             "args JSON not rendered:\n{text}"
         );
         // Option row still visible below the args.

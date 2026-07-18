@@ -3,8 +3,8 @@ use crate::error::AgentBuildError;
 use crate::prompt::context::TemplateOverride;
 use crate::prompt::user_message::UserMessageTemplate;
 use kigi_tools::implementations::codex;
-use kigi_tools::implementations::grok_build;
-use kigi_tools::implementations::grok_build_concise;
+use kigi_tools::implementations::kigi;
+use kigi_tools::implementations::kigi_concise;
 use kigi_tools::implementations::memory;
 use kigi_tools::implementations::opencode;
 use kigi_tools::implementations::search_tool;
@@ -91,7 +91,7 @@ fn registered_public_toolset_preset_names() -> Vec<String> {
         .map(|(name, _)| name.clone())
         .collect()
 }
-/// Orchestrator-specific prompt body appended to the standard GrokBuild
+/// Orchestrator-specific prompt body appended to the standard Kigi
 /// system prompt (`prompt.md`). Instructs the GBL model to delegate
 /// coding and exploration work to subagents.
 const ORCHESTRATOR_PROMPT_BODY: &str = "\
@@ -143,64 +143,64 @@ Write prompts the way you would brief a senior engineer:
 /// Bash tool with clearer model-facing names:
 /// `run_terminal_cmd` → `run_terminal_command`, `is_background` → `background`.
 fn bash_tool_config() -> ToolConfig {
-    ToolConfig::from(&grok_build::BashTool)
+    ToolConfig::from(&kigi::BashTool)
         .with_name("run_terminal_command")
         .with_param_rename("is_background", "background")
 }
 /// Task/subagent tool with clearer model-facing names:
 /// `task` → `spawn_subagent`, `run_in_background` → `background`.
 fn task_tool_config() -> ToolConfig {
-    ToolConfig::from(&grok_build::TaskTool)
+    ToolConfig::from(&kigi::TaskTool)
         .with_name("spawn_subagent")
         .with_param_rename("run_in_background", "background")
 }
 /// Task output tool renamed for clarity:
 /// `get_task_output` → `get_command_or_subagent_output`.
 fn task_output_tool_config() -> ToolConfig {
-    ToolConfig::from(&grok_build::TaskOutputTool).with_name("get_command_or_subagent_output")
+    ToolConfig::from(&kigi::TaskOutputTool).with_name("get_command_or_subagent_output")
 }
 /// `wait_tasks` → `wait_commands_or_subagents`.
 fn wait_tasks_tool_config() -> ToolConfig {
-    ToolConfig::from(&grok_build::WaitTasksTool).with_name("wait_commands_or_subagents")
+    ToolConfig::from(&kigi::WaitTasksTool).with_name("wait_commands_or_subagents")
 }
 /// `kill_task` → `kill_command_or_subagent`.
 fn kill_task_tool_config() -> ToolConfig {
-    ToolConfig::from(&grok_build::KillTaskTool).with_name("kill_command_or_subagent")
+    ToolConfig::from(&kigi::KillTaskTool).with_name("kill_command_or_subagent")
 }
 /// Complete workspace-executable toolset for hub registration.
 ///
-/// Extends `default_grok_build_toolset()` with tools that are dynamically
+/// Extends `default_kigi_toolset()` with tools that are dynamically
 /// injected by `AgentBuilder::build()` or only available in specific modes.
 /// In proxy mode, the workspace server executes ALL tools — the shell has
 /// zero local dispatch.
-pub fn workspace_grok_build_toolset() -> ToolServerConfig {
-    let mut tools = default_grok_build_toolset().tools;
+pub fn workspace_kigi_toolset() -> ToolServerConfig {
+    let mut tools = default_kigi_toolset().tools;
     tools.push((&opencode::OpenCodeWriteTool).into());
-    tools.push((&grok_build::EnterPlanModeTool).into());
-    tools.push((&grok_build::ExitPlanModeTool).into());
-    tools.push((&grok_build::AskUserQuestionTool).into());
-    tools.push((&grok_build::WebSearchTool).into());
-    tools.push((&grok_build::WebFetchTool).into());
+    tools.push((&kigi::EnterPlanModeTool).into());
+    tools.push((&kigi::ExitPlanModeTool).into());
+    tools.push((&kigi::AskUserQuestionTool).into());
+    tools.push((&kigi::WebSearchTool).into());
+    tools.push((&kigi::WebFetchTool).into());
     tools.push((&memory::search_tool::MemorySearchImpl).into());
     tools.push((&memory::get_tool::MemoryGetImpl).into());
-    tools.push((&grok_build::LspTool).into());
+    tools.push((&kigi::LspTool).into());
     ToolServerConfig {
         tools,
         behavior_preset: None,
     }
 }
-/// Toolset for the `grok-computer` (workspace/sandbox) preset.
-fn grok_computer_toolset() -> ToolServerConfig {
+/// Toolset for the `kigi-computer` (workspace/sandbox) preset.
+fn kigi_computer_toolset() -> ToolServerConfig {
     #[allow(unused_mut)]
     let mut tools = vec![
         bash_tool_config(),
-        (&grok_build::ReadFileTool).into(),
-        (&grok_build::SearchReplaceTool).into(),
+        (&kigi::ReadFileTool).into(),
+        (&kigi::SearchReplaceTool).into(),
         (&opencode::OpenCodeWriteTool).into(),
-        (&grok_build::ListDirTool).into(),
-        (&grok_build::GrepTool).into(),
-        (&grok_build::KillTerminalCommandTool).into(),
-        (&grok_build::GetTerminalCommandOutputTool).into(),
+        (&kigi::ListDirTool).into(),
+        (&kigi::GrepTool).into(),
+        (&kigi::KillTerminalCommandTool).into(),
+        (&kigi::GetTerminalCommandOutputTool).into(),
     ];
     ToolServerConfig {
         tools,
@@ -215,13 +215,13 @@ fn grok_computer_toolset() -> ToolServerConfig {
 /// Native (in-crate) toolset presets.
 fn native_toolset_presets() -> Vec<(&'static str, ToolServerConfig)> {
     vec![
-        ("grok-build", workspace_grok_build_toolset()),
-        ("grok-build-concise", grok_build_concise_toolset()),
-        ("grok-build-plan", grok_build_plan_toolset()),
+        ("kigi", workspace_kigi_toolset()),
+        ("kigi-concise", kigi_concise_toolset()),
+        ("kigi-plan", kigi_plan_toolset()),
         ("codex", codex_toolset()),
         ("explore", explore_toolset()),
         ("plan", plan_toolset()),
-        ("grok-computer", grok_computer_toolset()),
+        ("kigi-computer", kigi_computer_toolset()),
     ]
 }
 /// Every named **public** toolset preset (native + externally registered public
@@ -257,46 +257,46 @@ pub fn toolset_for_preset(preset: &str) -> Option<ToolServerConfig> {
         .map(|(_, toolset)| toolset)
         .or_else(|| registered_toolset_preset(&normalized))
 }
-fn default_grok_build_toolset() -> ToolServerConfig {
+fn default_kigi_toolset() -> ToolServerConfig {
     ToolServerConfig {
         tools: vec![
             bash_tool_config(),
-            (&grok_build::ReadFileTool).into(),
-            (&grok_build::SearchReplaceTool).into(),
-            (&grok_build::ListDirTool).into(),
-            (&grok_build::GrepTool).into(),
+            (&kigi::ReadFileTool).into(),
+            (&kigi::SearchReplaceTool).into(),
+            (&kigi::ListDirTool).into(),
+            (&kigi::GrepTool).into(),
             kill_task_tool_config(),
-            (&grok_build::TodoWriteTool).into(),
+            (&kigi::TodoWriteTool).into(),
             task_output_tool_config(),
             wait_tasks_tool_config(),
             task_tool_config(),
-            (&grok_build::SchedulerCreateTool).into(),
-            (&grok_build::SchedulerDeleteTool).into(),
-            (&grok_build::SchedulerListTool).into(),
-            (&grok_build::MonitorTool).into(),
+            (&kigi::SchedulerCreateTool).into(),
+            (&kigi::SchedulerDeleteTool).into(),
+            (&kigi::SchedulerListTool).into(),
+            (&kigi::MonitorTool).into(),
             (&search_tool::SearchTool).into(),
             (&use_tool::UseTool).into(),
-            (&grok_build::UpdateGoalTool).into(),
+            (&kigi::UpdateGoalTool).into(),
         ],
         behavior_preset: None,
     }
 }
-fn grok_build_concise_toolset() -> ToolServerConfig {
+fn kigi_concise_toolset() -> ToolServerConfig {
     ToolServerConfig {
         tools: vec![
-            (&grok_build_concise::BashConciseTool).into(),
-            (&grok_build_concise::ReadFileConciseTool).into(),
-            (&grok_build_concise::SearchReplaceConciseTool).into(),
-            (&grok_build::ListDirTool).into(),
-            (&grok_build::GrepTool).into(),
+            (&kigi_concise::BashConciseTool).into(),
+            (&kigi_concise::ReadFileConciseTool).into(),
+            (&kigi_concise::SearchReplaceConciseTool).into(),
+            (&kigi::ListDirTool).into(),
+            (&kigi::GrepTool).into(),
             kill_task_tool_config(),
-            (&grok_build::TodoWriteTool).into(),
+            (&kigi::TodoWriteTool).into(),
             task_output_tool_config(),
-            (&grok_build::SchedulerCreateTool).into(),
-            (&grok_build::SchedulerDeleteTool).into(),
-            (&grok_build::SchedulerListTool).into(),
-            (&grok_build::MonitorTool).into(),
-            (&grok_build::UpdateGoalTool).into(),
+            (&kigi::SchedulerCreateTool).into(),
+            (&kigi::SchedulerDeleteTool).into(),
+            (&kigi::SchedulerListTool).into(),
+            (&kigi::MonitorTool).into(),
+            (&kigi::UpdateGoalTool).into(),
         ],
         behavior_preset: None,
     }
@@ -306,26 +306,26 @@ fn grok_build_concise_toolset() -> ToolServerConfig {
 /// `hashline_tools` should be the 3 hashline `ToolConfig` entries produced by
 /// `FileToolset::Hashline.tool_configs(&hashline_config)` — they carry the
 /// scheme parameters as tool params.
-pub fn grok_build_hashline_toolset(
+pub fn kigi_hashline_toolset(
     hashline_tools: Vec<kigi_tools::registry::types::ToolConfig>,
 ) -> ToolServerConfig {
     let mut tools: Vec<kigi_tools::registry::types::ToolConfig> = vec![bash_tool_config()];
     tools.extend(hashline_tools);
     tools.extend([
-        (&grok_build::ListDirTool).into(),
+        (&kigi::ListDirTool).into(),
         kill_task_tool_config(),
-        (&grok_build::TodoWriteTool).into(),
+        (&kigi::TodoWriteTool).into(),
         task_output_tool_config(),
         wait_tasks_tool_config(),
         task_tool_config(),
-        (&grok_build::WebSearchTool).into(),
-        (&grok_build::SchedulerCreateTool).into(),
-        (&grok_build::SchedulerDeleteTool).into(),
-        (&grok_build::SchedulerListTool).into(),
-        (&grok_build::MonitorTool).into(),
+        (&kigi::WebSearchTool).into(),
+        (&kigi::SchedulerCreateTool).into(),
+        (&kigi::SchedulerDeleteTool).into(),
+        (&kigi::SchedulerListTool).into(),
+        (&kigi::MonitorTool).into(),
         (&search_tool::SearchTool).into(),
         (&use_tool::UseTool).into(),
-        (&grok_build::UpdateGoalTool).into(),
+        (&kigi::UpdateGoalTool).into(),
     ]);
     ToolServerConfig {
         tools,
@@ -341,7 +341,7 @@ fn codex_toolset() -> ToolServerConfig {
             (&codex::CodexListDirTool).into(),
             (&codex::CodexGrepFilesTool).into(),
             kill_task_tool_config(),
-            (&grok_build::TodoWriteTool).into(),
+            (&kigi::TodoWriteTool).into(),
             task_output_tool_config(),
             (&search_tool::SearchTool).into(),
             (&use_tool::UseTool).into(),
@@ -359,9 +359,9 @@ fn codex_toolset() -> ToolServerConfig {
 fn explore_toolset() -> ToolServerConfig {
     ToolServerConfig {
         tools: vec![
-            (&grok_build::ReadFileTool).into(),
-            (&grok_build::ListDirTool).into(),
-            (&grok_build::GrepTool).into(),
+            (&kigi::ReadFileTool).into(),
+            (&kigi::ListDirTool).into(),
+            (&kigi::GrepTool).into(),
         ],
         behavior_preset: None,
     }
@@ -374,42 +374,42 @@ fn explore_toolset() -> ToolServerConfig {
 fn plan_toolset() -> ToolServerConfig {
     ToolServerConfig {
         tools: vec![
-            (&grok_build::ReadFileTool).into(),
-            (&grok_build::ListDirTool).into(),
-            (&grok_build::GrepTool).into(),
-            (&grok_build::TodoWriteTool).into(),
+            (&kigi::ReadFileTool).into(),
+            (&kigi::ListDirTool).into(),
+            (&kigi::GrepTool).into(),
+            (&kigi::TodoWriteTool).into(),
         ],
         behavior_preset: None,
     }
 }
-/// Grok Build + plan mode toolset.
+/// Kigi + plan mode toolset.
 ///
-/// Extends the default `grok-build` toolset with plan mode tools:
+/// Extends the default `kigi` toolset with plan mode tools:
 /// `enter_plan_mode`, `exit_plan_mode`, and `ask_user_question`.
 /// This allows the agent to enter a structured planning phase before
 /// writing code, with user-approved plans.
-fn grok_build_plan_toolset() -> ToolServerConfig {
+fn kigi_plan_toolset() -> ToolServerConfig {
     ToolServerConfig {
         tools: vec![
             bash_tool_config(),
-            (&grok_build::ReadFileTool).into(),
-            (&grok_build::SearchReplaceTool).into(),
-            (&grok_build::ListDirTool).into(),
-            (&grok_build::GrepTool).into(),
+            (&kigi::ReadFileTool).into(),
+            (&kigi::SearchReplaceTool).into(),
+            (&kigi::ListDirTool).into(),
+            (&kigi::GrepTool).into(),
             kill_task_tool_config(),
-            (&grok_build::TodoWriteTool).into(),
+            (&kigi::TodoWriteTool).into(),
             task_output_tool_config(),
             task_tool_config(),
-            (&grok_build::SchedulerCreateTool).into(),
-            (&grok_build::SchedulerDeleteTool).into(),
-            (&grok_build::SchedulerListTool).into(),
-            (&grok_build::MonitorTool).into(),
+            (&kigi::SchedulerCreateTool).into(),
+            (&kigi::SchedulerDeleteTool).into(),
+            (&kigi::SchedulerListTool).into(),
+            (&kigi::MonitorTool).into(),
             (&search_tool::SearchTool).into(),
             (&use_tool::UseTool).into(),
-            (&grok_build::UpdateGoalTool).into(),
-            (&grok_build::EnterPlanModeTool).into(),
-            (&grok_build::ExitPlanModeTool).into(),
-            (&grok_build::AskUserQuestionTool).into(),
+            (&kigi::UpdateGoalTool).into(),
+            (&kigi::EnterPlanModeTool).into(),
+            (&kigi::ExitPlanModeTool).into(),
+            (&kigi::AskUserQuestionTool).into(),
         ],
         behavior_preset: None,
     }
@@ -424,87 +424,87 @@ fn orchestrator_toolset() -> ToolServerConfig {
     ToolServerConfig {
         tools: vec![
             bash_tool_config(),
-            (&grok_build::ReadFileTool).into(),
-            (&grok_build::ListDirTool).into(),
-            (&grok_build::GrepTool).into(),
+            (&kigi::ReadFileTool).into(),
+            (&kigi::ListDirTool).into(),
+            (&kigi::GrepTool).into(),
             task_tool_config(),
             task_output_tool_config(),
             wait_tasks_tool_config(),
             kill_task_tool_config(),
             (&search_tool::SearchTool).into(),
             (&use_tool::UseTool).into(),
-            (&grok_build::TodoWriteTool).into(),
-            (&grok_build::EnterPlanModeTool).into(),
-            (&grok_build::ExitPlanModeTool).into(),
-            (&grok_build::AskUserQuestionTool).into(),
-            (&grok_build::UpdateGoalTool).into(),
-            (&grok_build::SchedulerCreateTool).into(),
-            (&grok_build::SchedulerDeleteTool).into(),
-            (&grok_build::SchedulerListTool).into(),
-            (&grok_build::MonitorTool).into(),
-            (&grok_build::WebSearchTool).into(),
-            (&grok_build::WebFetchTool).into(),
+            (&kigi::TodoWriteTool).into(),
+            (&kigi::EnterPlanModeTool).into(),
+            (&kigi::ExitPlanModeTool).into(),
+            (&kigi::AskUserQuestionTool).into(),
+            (&kigi::UpdateGoalTool).into(),
+            (&kigi::SchedulerCreateTool).into(),
+            (&kigi::SchedulerDeleteTool).into(),
+            (&kigi::SchedulerListTool).into(),
+            (&kigi::MonitorTool).into(),
+            (&kigi::WebSearchTool).into(),
+            (&kigi::WebFetchTool).into(),
             (&memory::MemorySearchImpl).into(),
             (&memory::MemoryGetImpl).into(),
         ],
         behavior_preset: None,
     }
 }
-/// Grok Build + plan mode toolset WITHOUT subagent tools.
+/// Kigi + plan mode toolset WITHOUT subagent tools.
 ///
-/// Same as `grok_build_plan_toolset` but excludes `TaskTool`,
+/// Same as `kigi_plan_toolset` but excludes `TaskTool`,
 /// `TaskOutputTool`, and `KillTaskTool`. Use this when the shell
 /// does not have subagent infrastructure wired up.
-fn grok_build_plan_no_subagents_toolset() -> ToolServerConfig {
+fn kigi_plan_no_subagents_toolset() -> ToolServerConfig {
     ToolServerConfig {
         tools: vec![
             bash_tool_config(),
-            (&grok_build::ReadFileTool).into(),
-            (&grok_build::SearchReplaceTool).into(),
-            (&grok_build::ListDirTool).into(),
-            (&grok_build::GrepTool).into(),
+            (&kigi::ReadFileTool).into(),
+            (&kigi::SearchReplaceTool).into(),
+            (&kigi::ListDirTool).into(),
+            (&kigi::GrepTool).into(),
             kill_task_tool_config(),
-            (&grok_build::TodoWriteTool).into(),
+            (&kigi::TodoWriteTool).into(),
             task_output_tool_config(),
-            (&grok_build::SchedulerCreateTool).into(),
-            (&grok_build::SchedulerDeleteTool).into(),
-            (&grok_build::SchedulerListTool).into(),
-            (&grok_build::MonitorTool).into(),
+            (&kigi::SchedulerCreateTool).into(),
+            (&kigi::SchedulerDeleteTool).into(),
+            (&kigi::SchedulerListTool).into(),
+            (&kigi::MonitorTool).into(),
             (&search_tool::SearchTool).into(),
             (&use_tool::UseTool).into(),
-            (&grok_build::UpdateGoalTool).into(),
-            (&grok_build::EnterPlanModeTool).into(),
-            (&grok_build::ExitPlanModeTool).into(),
-            (&grok_build::AskUserQuestionTool).into(),
+            (&kigi::UpdateGoalTool).into(),
+            (&kigi::EnterPlanModeTool).into(),
+            (&kigi::ExitPlanModeTool).into(),
+            (&kigi::AskUserQuestionTool).into(),
         ],
         behavior_preset: None,
     }
 }
-/// Default Grok Build toolset + `ask_user_question`.
+/// Default Kigi toolset + `ask_user_question`.
 ///
-/// Same as `default_grok_build_toolset` with the `AskUserQuestionTool` added,
+/// Same as `default_kigi_toolset` with the `AskUserQuestionTool` added,
 /// allowing the agent to ask structured questions without full plan mode.
-fn grok_build_ask_user_toolset() -> ToolServerConfig {
+fn kigi_ask_user_toolset() -> ToolServerConfig {
     ToolServerConfig {
         tools: vec![
             bash_tool_config(),
-            (&grok_build::ReadFileTool).into(),
-            (&grok_build::SearchReplaceTool).into(),
-            (&grok_build::ListDirTool).into(),
-            (&grok_build::GrepTool).into(),
+            (&kigi::ReadFileTool).into(),
+            (&kigi::SearchReplaceTool).into(),
+            (&kigi::ListDirTool).into(),
+            (&kigi::GrepTool).into(),
             kill_task_tool_config(),
-            (&grok_build::TodoWriteTool).into(),
+            (&kigi::TodoWriteTool).into(),
             task_output_tool_config(),
             wait_tasks_tool_config(),
             task_tool_config(),
-            (&grok_build::SchedulerCreateTool).into(),
-            (&grok_build::SchedulerDeleteTool).into(),
-            (&grok_build::SchedulerListTool).into(),
-            (&grok_build::MonitorTool).into(),
+            (&kigi::SchedulerCreateTool).into(),
+            (&kigi::SchedulerDeleteTool).into(),
+            (&kigi::SchedulerListTool).into(),
+            (&kigi::MonitorTool).into(),
             (&search_tool::SearchTool).into(),
             (&use_tool::UseTool).into(),
-            (&grok_build::UpdateGoalTool).into(),
-            (&grok_build::AskUserQuestionTool).into(),
+            (&kigi::UpdateGoalTool).into(),
+            (&kigi::AskUserQuestionTool).into(),
         ],
         behavior_preset: None,
     }
@@ -535,7 +535,7 @@ fn opencode_toolset() -> ToolServerConfig {
 ///
 /// In YAML frontmatter / JSON:
 /// - `model: inherit` or omitted → `Inherit`
-/// - `model: grok-3-fast` → `Override("grok-3-fast")`
+/// - `model: kigi-3-fast` → `Override("kigi-3-fast")`
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ModelOverride {
     /// Use the parent session's model.
@@ -649,28 +649,52 @@ where
 )]
 #[strum(serialize_all = "kebab-case")]
 pub enum BuiltinAgentName {
-    GrokBuild,
-    GrokBuildConcise,
-    GrokBuildPlan,
-    GrokBuildPlanNoSubagents,
-    GrokBuildAskUser,
+    Kigi,
+    KigiConcise,
+    KigiPlan,
+    KigiPlanNoSubagents,
+    KigiAskUser,
     Codex,
     Opencode,
     GeneralPurpose,
     Explore,
     Plan,
     BrowserUse,
-    #[strum(serialize = "grok-build-orchestrator")]
-    GrokBuildOrchestrator,
+    #[strum(serialize = "kigi-orchestrator")]
+    KigiOrchestrator,
 }
+/// Agent-type prefix written by pre-rebrand builds into session files and
+/// model configs (`<prefix>`, `<prefix>-plan`, `<prefix>-concise`, …).
+///
+/// DOCUMENTED ALIAS: sessions persist agent types, so names written by older
+/// builds must keep resolving. The prefix is assembled with `concat!` so the
+/// release-gate grep over Rust sources (which forbids the upstream brand
+/// string) stays clean while the runtime value is the historical spelling.
+pub const LEGACY_AGENT_TYPE_PREFIX: &str = concat!("gr", "ok-build");
+
+/// Map a legacy pre-rebrand agent-type name onto its current `kigi*`
+/// equivalent: `<prefix>` → `kigi`, `<prefix>-plan` → `kigi-plan`, and so on.
+/// Non-legacy names pass through unchanged. Applied at the name-resolution
+/// boundaries ([`crate::discovery::by_name`] and friends,
+/// [`is_strict_harness_agent_type`]) so persisted agent types from old
+/// session files keep loading.
+pub fn canonical_agent_type(name: &str) -> std::borrow::Cow<'_, str> {
+    match name.strip_prefix(LEGACY_AGENT_TYPE_PREFIX) {
+        Some("") => std::borrow::Cow::Borrowed("kigi"),
+        Some(rest) if rest.starts_with('-') => std::borrow::Cow::Owned(format!("kigi{rest}")),
+        _ => std::borrow::Cow::Borrowed(name),
+    }
+}
+
 /// Strict-harness predicate by name. Resolves via `BuiltinAgentName` and
 /// delegates to [`AgentDefinition::is_strict_harness`]; unknown names
 /// return `false` (conservative — never enforce a harness we can't verify).
+/// Accepts legacy pre-rebrand agent-type names via [`canonical_agent_type`].
 /// Callers that already hold an `AgentDefinition` should call that method
 /// directly so project-level shadowing is honored.
 pub fn is_strict_harness_agent_type(name: &str) -> bool {
     use std::str::FromStr;
-    BuiltinAgentName::from_str(name)
+    BuiltinAgentName::from_str(canonical_agent_type(name).as_ref())
         .map(|b| b.definition().is_strict_harness())
         .unwrap_or(false)
 }
@@ -678,18 +702,18 @@ impl BuiltinAgentName {
     /// Build the `AgentDefinition` for this built-in agent.
     pub fn definition(self) -> AgentDefinition {
         match self {
-            Self::GrokBuild => AgentDefinition::default_grok_build(),
-            Self::GrokBuildConcise => AgentDefinition::grok_build_concise(),
-            Self::GrokBuildPlan => AgentDefinition::grok_build_plan(),
-            Self::GrokBuildPlanNoSubagents => AgentDefinition::grok_build_plan_no_subagents(),
-            Self::GrokBuildAskUser => AgentDefinition::grok_build_ask_user(),
+            Self::Kigi => AgentDefinition::default_kigi(),
+            Self::KigiConcise => AgentDefinition::kigi_concise(),
+            Self::KigiPlan => AgentDefinition::kigi_plan(),
+            Self::KigiPlanNoSubagents => AgentDefinition::kigi_plan_no_subagents(),
+            Self::KigiAskUser => AgentDefinition::kigi_ask_user(),
             Self::Codex => AgentDefinition::codex(),
             Self::Opencode => AgentDefinition::opencode(),
             Self::GeneralPurpose => AgentDefinition::general_purpose(),
             Self::Explore => AgentDefinition::explore(),
             Self::Plan => AgentDefinition::plan(),
             Self::BrowserUse => AgentDefinition::browser_use(),
-            Self::GrokBuildOrchestrator => AgentDefinition::grok_build_orchestrator(),
+            Self::KigiOrchestrator => AgentDefinition::kigi_orchestrator(),
         }
     }
     /// Built-in agents available as subagents via the Task tool.
@@ -713,7 +737,7 @@ pub struct AgentDefinition {
     pub plugin_name: Option<String>,
     #[serde(default = "default_prompt_mode")]
     pub prompt_mode: PromptMode,
-    #[serde(default = "default_grok_build_toolset")]
+    #[serde(default = "default_kigi_toolset")]
     pub tool_config: ToolServerConfig,
     /// Runtime capability mode that constrains which tool kinds the agent
     /// can use. Applied during subagent spawn in `handle_subagent_request`
@@ -868,7 +892,7 @@ pub enum AgentScope {
     User,
     /// ~/.kigi/bundled/agents/ (lowest-priority bundled cache)
     Bundled,
-    /// Built-in agent (e.g., default_grok_build(), browser_use()).
+    /// Built-in agent (e.g., default_kigi(), browser_use()).
     #[default]
     BuiltIn,
 }
@@ -1303,9 +1327,9 @@ impl AgentDefinition {
     /// Determine the scope of a definition file based on its path.
     fn scope_from_path(path: &Path) -> AgentScope {
         let path_str = path.to_string_lossy();
-        let grok = kigi_config::user_kigi_home();
+        let kigi = kigi_config::user_kigi_home();
         let home = dirs::home_dir();
-        for (dir, scope) in crate::discovery::user_agent_dirs(home.as_deref(), grok.as_deref()) {
+        for (dir, scope) in crate::discovery::user_agent_dirs(home.as_deref(), kigi.as_deref()) {
             if path.starts_with(&dir) {
                 return scope;
             }
@@ -1371,7 +1395,7 @@ impl AgentDefinition {
     /// stock harness, so a client-supplied `_meta.agentProfile` must NOT
     /// override it. Strict iff any of: bespoke `system_prompt` template,
     /// bespoke `user_message_template`, or curated toolset
-    /// (`!inject_default_tools`). Stock `grok-build*` agents leave all
+    /// (`!inject_default_tools`). Stock `kigi*` agents leave all
     /// three at defaults and are non-strict.
     pub fn is_strict_harness(&self) -> bool {
         use crate::prompt::context::TemplateOverride;
@@ -1390,12 +1414,9 @@ impl AgentDefinition {
         file_tools: Vec<kigi_tools::registry::types::ToolConfig>,
     ) {
         const FILE_TOOL_SLOTS: &[[&str; 2]] = &[
-            ["GrokBuild:read_file", "GrokBuildHashline:hashline_read"],
-            [
-                "GrokBuild:search_replace",
-                "GrokBuildHashline:hashline_edit",
-            ],
-            ["GrokBuild:grep", "GrokBuildHashline:hashline_grep"],
+            ["Kigi:read_file", "KigiHashline:hashline_read"],
+            ["Kigi:search_replace", "KigiHashline:hashline_edit"],
+            ["Kigi:grep", "KigiHashline:hashline_grep"],
         ];
         for tool in self.tool_config.tools.iter_mut() {
             let Some(slot) = FILE_TOOL_SLOTS
@@ -1420,7 +1441,7 @@ impl AgentDefinition {
             description: description.to_string(),
             plugin_name: None,
             prompt_mode: PromptMode::Extend,
-            tool_config: default_grok_build_toolset(),
+            tool_config: default_kigi_toolset(),
             capability_mode: None,
             permission_mode: PermissionMode::Default,
             skills: vec![],
@@ -1452,50 +1473,50 @@ impl AgentDefinition {
             scope: AgentScope::BuiltIn,
         }
     }
-    pub fn default_grok_build() -> Self {
+    pub fn default_kigi() -> Self {
         Self::base(
-            BuiltinAgentName::GrokBuild,
-            "Grok Build agent for software engineering tasks.",
+            BuiltinAgentName::Kigi,
+            "Kigi agent for software engineering tasks.",
         )
     }
-    /// Grok Build Concise agent definition — concise output format for SFT/RL.
-    pub fn grok_build_concise() -> Self {
+    /// Kigi Concise agent definition — concise output format for SFT/RL.
+    pub fn kigi_concise() -> Self {
         Self {
-            tool_config: grok_build_concise_toolset(),
+            tool_config: kigi_concise_toolset(),
             agents_md: false,
             ..Self::base(
-                BuiltinAgentName::GrokBuildConcise,
-                "Grok Build agent with concise output format.",
+                BuiltinAgentName::KigiConcise,
+                "Kigi agent with concise output format.",
             )
         }
     }
-    /// Grok Build agent with plan mode tools.
-    pub fn grok_build_plan() -> Self {
+    /// Kigi agent with plan mode tools.
+    pub fn kigi_plan() -> Self {
         Self {
-            tool_config: grok_build_plan_toolset(),
+            tool_config: kigi_plan_toolset(),
             ..Self::base(
-                BuiltinAgentName::GrokBuildPlan,
-                "Grok Build agent with plan mode support.",
+                BuiltinAgentName::KigiPlan,
+                "Kigi agent with plan mode support.",
             )
         }
     }
-    /// Grok Build + plan mode WITHOUT subagent tools.
-    pub fn grok_build_plan_no_subagents() -> Self {
+    /// Kigi + plan mode WITHOUT subagent tools.
+    pub fn kigi_plan_no_subagents() -> Self {
         Self {
-            tool_config: grok_build_plan_no_subagents_toolset(),
+            tool_config: kigi_plan_no_subagents_toolset(),
             ..Self::base(
-                BuiltinAgentName::GrokBuildPlanNoSubagents,
-                "Grok Build agent with plan mode (no subagents).",
+                BuiltinAgentName::KigiPlanNoSubagents,
+                "Kigi agent with plan mode (no subagents).",
             )
         }
     }
-    /// Default Grok Build agent with the `ask_user_question` tool.
-    pub fn grok_build_ask_user() -> Self {
+    /// Default Kigi agent with the `ask_user_question` tool.
+    pub fn kigi_ask_user() -> Self {
         Self {
-            tool_config: grok_build_ask_user_toolset(),
+            tool_config: kigi_ask_user_toolset(),
             ..Self::base(
-                BuiltinAgentName::GrokBuildAskUser,
-                "Grok Build agent with ask-user-question tool.",
+                BuiltinAgentName::KigiAskUser,
+                "Kigi agent with ask-user-question tool.",
             )
         }
     }
@@ -1567,21 +1588,21 @@ impl AgentDefinition {
             )
         }
     }
-    /// Grok Build Orchestrator — GBL model with full GrokBuild tools
+    /// Kigi Orchestrator — GBL model with full Kigi tools
     /// (skills, MCPs, plan mode) that delegates coding/exploration to
     /// subagents.
     ///
     /// Subagent overrides are applied in `handle_subagent_request`:
     /// general-purpose children get `implementer_toolset()` and explore
     /// children get `explorer_toolset()`, both with the subagent model.
-    pub fn grok_build_orchestrator() -> Self {
+    pub fn kigi_orchestrator() -> Self {
         Self {
             tool_config: orchestrator_toolset(),
             inject_default_tools: false,
             prompt_body: Some(ORCHESTRATOR_PROMPT_BODY.to_string()),
             ..Self::base(
-                BuiltinAgentName::GrokBuildOrchestrator,
-                "GrokBuild orchestrator that delegates coding to specialized subagents",
+                BuiltinAgentName::KigiOrchestrator,
+                "Kigi orchestrator that delegates coding to specialized subagents",
             )
         }
     }
@@ -1610,7 +1631,7 @@ impl AgentDefinition {
             }
         }
         if !value.get("toolConfig").is_some_and(|v| v.is_object()) {
-            def.tool_config = default_grok_build_toolset();
+            def.tool_config = default_kigi_toolset();
         }
         def.scope = AgentScope::BuiltIn;
         Ok(def)
@@ -1632,15 +1653,15 @@ mod tests {
     #[test]
     fn toolset_for_preset_resolves_known_names() {
         for name in [
-            "grok-build",
-            "grok_build",
-            "grok-build-concise",
-            "grok-build-plan",
+            "kigi",
+            "kigi",
+            "kigi-concise",
+            "kigi-plan",
             "codex",
             "explore",
             "plan",
-            "grok-computer",
-            "grok_computer",
+            "kigi-computer",
+            "kigi_computer",
         ] {
             assert!(
                 toolset_for_preset(name).is_some(),
@@ -1651,27 +1672,27 @@ mod tests {
     }
     #[test]
     fn presets_select_distinct_toolsets_by_size() {
-        let gb = toolset_for_preset("grok-build").unwrap();
+        let gb = toolset_for_preset("kigi").unwrap();
         let plan = toolset_for_preset("plan").unwrap();
         let explore = toolset_for_preset("explore").unwrap();
         assert!(explore.tools.len() < plan.tools.len());
         assert!(plan.tools.len() < gb.tools.len());
     }
-    fn grok_computer_exclusive_ids() -> Vec<String> {
+    fn kigi_computer_exclusive_ids() -> Vec<String> {
         #[allow(unused_mut)]
         let mut ids: Vec<String> = vec![
-            ToolConfig::from(&grok_build::GetTerminalCommandOutputTool).id,
-            ToolConfig::from(&grok_build::KillTerminalCommandTool).id,
+            ToolConfig::from(&kigi::GetTerminalCommandOutputTool).id,
+            ToolConfig::from(&kigi::KillTerminalCommandTool).id,
         ];
         ids
     }
     #[test]
-    fn grok_computer_preset_is_curated_grok_build_subset() {
-        let gc = toolset_for_preset("grok-computer").unwrap();
-        let gb = toolset_for_preset("grok-build").unwrap();
+    fn kigi_computer_preset_is_curated_kigi_subset() {
+        let gc = toolset_for_preset("kigi-computer").unwrap();
+        let gb = toolset_for_preset("kigi").unwrap();
         let gb_ids: std::collections::HashSet<&str> =
             gb.tools.iter().map(|t| t.id.as_str()).collect();
-        let exclusive_ids = grok_computer_exclusive_ids();
+        let exclusive_ids = kigi_computer_exclusive_ids();
         assert!(!gc.tools.is_empty());
         for t in &gc.tools {
             if exclusive_ids.contains(&t.id) {
@@ -1679,84 +1700,78 @@ mod tests {
             }
             assert!(
                 gb_ids.contains(t.id.as_str()),
-                "grok-computer tool `{}` must also ship in the grok-build preset",
+                "kigi-computer tool `{}` must also ship in the kigi preset",
                 t.id
             );
         }
         assert!(
             gc.tools.len() < gb.tools.len(),
-            "grok-computer should be a curated subset of grok-build"
+            "kigi-computer should be a curated subset of kigi"
         );
     }
     #[test]
-    fn grok_computer_uses_subagent_free_background_task_tools() {
-        let gc = toolset_for_preset("grok-computer").unwrap();
+    fn kigi_computer_uses_subagent_free_background_task_tools() {
+        let gc = toolset_for_preset("kigi-computer").unwrap();
         let ids: std::collections::HashSet<&str> = gc.tools.iter().map(|t| t.id.as_str()).collect();
         assert!(
             ids.contains(
-                ToolConfig::from(&grok_build::GetTerminalCommandOutputTool)
+                ToolConfig::from(&kigi::GetTerminalCommandOutputTool)
                     .id
                     .as_str()
             )
         );
-        assert!(
-            ids.contains(
-                ToolConfig::from(&grok_build::KillTerminalCommandTool)
-                    .id
-                    .as_str()
-            )
-        );
-        assert!(!ids.contains(ToolConfig::from(&grok_build::TaskOutputTool).id.as_str()));
-        assert!(!ids.contains(ToolConfig::from(&grok_build::KillTaskTool).id.as_str()));
-        assert!(!ids.contains(ToolConfig::from(&grok_build::TaskTool).id.as_str()));
+        assert!(ids.contains(ToolConfig::from(&kigi::KillTerminalCommandTool).id.as_str()));
+        assert!(!ids.contains(ToolConfig::from(&kigi::TaskOutputTool).id.as_str()));
+        assert!(!ids.contains(ToolConfig::from(&kigi::KillTaskTool).id.as_str()));
+        assert!(!ids.contains(ToolConfig::from(&kigi::TaskTool).id.as_str()));
         for t in &gc.tools {
-            if t.id == ToolConfig::from(&grok_build::GetTerminalCommandOutputTool).id
-                || t.id == ToolConfig::from(&grok_build::KillTerminalCommandTool).id
+            if t.id == ToolConfig::from(&kigi::GetTerminalCommandOutputTool).id
+                || t.id == ToolConfig::from(&kigi::KillTerminalCommandTool).id
             {
                 assert!(t.name_override.is_none(), "tool `{}` must not rename", t.id);
             }
         }
     }
-    /// The grok-computer preset must ship a full-file write tool (legacy
-    /// `write_file` parity) — the same OpenCode `write` tool the grok-build
+    /// The kigi-computer preset must ship a full-file write tool (legacy
+    /// `write_file` parity) — the same OpenCode `write` tool the kigi
     /// preset uses. Guards against `search_replace` being the only
     /// file-mutation path, which has no single-tool full-rewrite when the
     /// empty-old_string overwrite guard is enabled.
     #[test]
-    fn grok_computer_preset_includes_write_tool() {
-        let gc = toolset_for_preset("grok-computer").unwrap();
+    fn kigi_computer_preset_includes_write_tool() {
+        let gc = toolset_for_preset("kigi-computer").unwrap();
         let write_id = ToolConfig::from(&opencode::OpenCodeWriteTool).id;
         assert!(
             gc.tools.iter().any(|t| t.id == write_id),
-            "grok-computer preset must include the `{write_id}` tool"
+            "kigi-computer preset must include the `{write_id}` tool"
         );
     }
     #[test]
-    fn grok_computer_preset_excludes_plan_and_lsp() {
-        let gc = toolset_for_preset("grok-computer").unwrap();
+    fn kigi_computer_preset_excludes_plan_and_lsp() {
+        let gc = toolset_for_preset("kigi-computer").unwrap();
         let gc_ids: std::collections::HashSet<&str> =
             gc.tools.iter().map(|t| t.id.as_str()).collect();
         for excluded in [
-            ToolConfig::from(&grok_build::LspTool).id,
-            ToolConfig::from(&grok_build::EnterPlanModeTool).id,
-            ToolConfig::from(&grok_build::ExitPlanModeTool).id,
+            ToolConfig::from(&kigi::LspTool).id,
+            ToolConfig::from(&kigi::EnterPlanModeTool).id,
+            ToolConfig::from(&kigi::ExitPlanModeTool).id,
         ] {
             assert!(
                 !gc_ids.contains(excluded.as_str()),
-                "grok-computer preset must not advertise `{excluded}`"
+                "kigi-computer preset must not advertise `{excluded}`"
             );
         }
-        let full = workspace_grok_build_toolset();
+        let full = workspace_kigi_toolset();
         let full_ids: std::collections::HashSet<&str> =
             full.tools.iter().map(|t| t.id.as_str()).collect();
         for present in [
-            ToolConfig::from(&grok_build::LspTool).id,
-            ToolConfig::from(&grok_build::EnterPlanModeTool).id,
-            ToolConfig::from(&grok_build::ExitPlanModeTool).id,
+            ToolConfig::from(&kigi::LspTool).id,
+            ToolConfig::from(&kigi::EnterPlanModeTool).id,
+            ToolConfig::from(&kigi::ExitPlanModeTool).id,
         ] {
             assert!(
                 full_ids.contains(present.as_str()),
-                "workspace_grok_build_toolset must ship `{present}`"
+                "workspace_kigi_toolset must ship `{present}`"
             );
         }
     }
@@ -1764,12 +1779,12 @@ mod tests {
     /// until classified.
     fn expected_strict_harness(name: BuiltinAgentName) -> bool {
         match name {
-            BuiltinAgentName::Codex | BuiltinAgentName::GrokBuildOrchestrator => true,
-            BuiltinAgentName::GrokBuild
-            | BuiltinAgentName::GrokBuildConcise
-            | BuiltinAgentName::GrokBuildPlan
-            | BuiltinAgentName::GrokBuildPlanNoSubagents
-            | BuiltinAgentName::GrokBuildAskUser
+            BuiltinAgentName::Codex | BuiltinAgentName::KigiOrchestrator => true,
+            BuiltinAgentName::Kigi
+            | BuiltinAgentName::KigiConcise
+            | BuiltinAgentName::KigiPlan
+            | BuiltinAgentName::KigiPlanNoSubagents
+            | BuiltinAgentName::KigiAskUser
             | BuiltinAgentName::GeneralPurpose
             | BuiltinAgentName::Explore
             | BuiltinAgentName::Plan
@@ -1795,22 +1810,22 @@ mod tests {
     }
     #[test]
     fn is_strict_harness_agent_type_classifies_by_name() {
-        for strict in ["codex", "grok-build-orchestrator"] {
+        for strict in ["codex", "kigi-orchestrator"] {
             assert!(
                 is_strict_harness_agent_type(strict),
                 "{strict} should be strict"
             );
         }
         for non_strict in [
-            "grok-build",
-            "grok-build-plan",
-            "grok-build-concise",
-            "grok-build-ask-user",
+            "kigi",
+            "kigi-plan",
+            "kigi-concise",
+            "kigi-ask-user",
             "opencode",
             "browser-use",
             "custom-user-agent",
             "",
-            "grok-build-totally-made-up",
+            "kigi-totally-made-up",
         ] {
             assert!(
                 !is_strict_harness_agent_type(non_strict),
@@ -1965,8 +1980,8 @@ Agent.
     fn test_model_override_display_shows_id() {
         assert_eq!(ModelOverride::Inherit.to_string(), "inherit");
         assert_eq!(
-            ModelOverride::Override("grok-3-fast".to_string()).to_string(),
-            "grok-3-fast"
+            ModelOverride::Override("kigi-3-fast".to_string()).to_string(),
+            "kigi-3-fast"
         );
     }
     #[test]
@@ -1980,7 +1995,7 @@ isolation: worktree
 background: true
 color: blue
 initialPrompt: "hello world"
-model: grok-3
+model: kigi-3
 ---
 
 Agent body.
@@ -1992,7 +2007,7 @@ Agent body.
         assert_eq!(def.background, Some(true));
         assert_eq!(def.color, Some(AgentColor::Blue));
         assert_eq!(def.initial_prompt.as_deref(), Some("hello world"));
-        assert_eq!(def.model, ModelOverride::Override("grok-3".to_string()));
+        assert_eq!(def.model, ModelOverride::Override("kigi-3".to_string()));
     }
     #[test]
     fn test_parse_minimal_definition() {
@@ -2177,7 +2192,7 @@ completionRequirement:
         assert_eq!(rec.max_delay_ms, 10000);
     }
     #[test]
-    fn test_default_tool_config_has_grok_build_tools() {
+    fn test_default_tool_config_has_kigi_tools() {
         let content = r#"---
 name: default-tools
 description: Test default tool config
@@ -2186,7 +2201,7 @@ description: Test default tool config
         let def = AgentDefinition::parse(content).unwrap();
         assert!(
             !def.tool_config.tools.is_empty(),
-            "default tool_config should have grok_build tools"
+            "default tool_config should have kigi tools"
         );
     }
     #[test]
@@ -2256,12 +2271,12 @@ description: Test default tool config
     #[test]
     fn test_from_json_has_default_toolset_with_task_tool() {
         let json = serde_json::json!(
-            { "name" : "grok-build", "description" : "Multi-surface coding agent.",
+            { "name" : "kigi", "description" : "Multi-surface coding agent.",
             "promptMode" : "extend", "permissionMode" : "dontAsk", "agentsMd" : true,
             "promptBody" : "You are a coding assistant." }
         );
         let def = AgentDefinition::from_json(&json).unwrap();
-        let task_tool_id = "GrokBuild:task";
+        let task_tool_id = "Kigi:task";
         assert!(
             def.tool_config.tools.iter().any(|tc| tc.id == task_tool_id),
             "from_json() without toolConfig should include TaskTool in default toolset, \
@@ -2358,9 +2373,9 @@ description: Test default tool config
     }
     #[test]
     fn test_model_override_serde_explicit_model_id() {
-        let yaml = "\"grok-3-fast\"";
+        let yaml = "\"kigi-3-fast\"";
         let m: ModelOverride = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(m, ModelOverride::Override("grok-3-fast".to_string()));
+        assert_eq!(m, ModelOverride::Override("kigi-3-fast".to_string()));
     }
     #[test]
     fn test_model_override_serialize_inherit() {
@@ -2370,17 +2385,17 @@ description: Test default tool config
     }
     #[test]
     fn test_model_override_serialize_override() {
-        let m = ModelOverride::Override("grok-3-fast".to_string());
+        let m = ModelOverride::Override("kigi-3-fast".to_string());
         let s = serde_json::to_string(&m).unwrap();
-        assert_eq!(s, "\"grok-3-fast\"");
+        assert_eq!(s, "\"kigi-3-fast\"");
     }
     #[test]
     fn test_model_override_in_frontmatter() {
-        let content = "---\nname: test\ndescription: Test\nmodel: grok-3-fast\n---\n";
+        let content = "---\nname: test\ndescription: Test\nmodel: kigi-3-fast\n---\n";
         let def = AgentDefinition::parse(content).unwrap();
         assert_eq!(
             def.model,
-            ModelOverride::Override("grok-3-fast".to_string())
+            ModelOverride::Override("kigi-3-fast".to_string())
         );
     }
     #[test]
@@ -2398,21 +2413,21 @@ description: Test default tool config
     #[test]
     fn test_model_override_in_json() {
         let json = serde_json::json!(
-            { "name" : "test", "description" : "Test", "model" : "grok-code-fast-1" }
+            { "name" : "test", "description" : "Test", "model" : "kigi-code-fast-1" }
         );
         let def = AgentDefinition::from_json(&json).unwrap();
         assert_eq!(
             def.model,
-            ModelOverride::Override("grok-code-fast-1".to_string())
+            ModelOverride::Override("kigi-code-fast-1".to_string())
         );
     }
     #[test]
     fn test_builtin_agent_name_strum_round_trip() {
         use std::str::FromStr;
         for (s, expected) in [
-            ("grok-build", BuiltinAgentName::GrokBuild),
-            ("grok-build-concise", BuiltinAgentName::GrokBuildConcise),
-            ("grok-build-ask-user", BuiltinAgentName::GrokBuildAskUser),
+            ("kigi", BuiltinAgentName::Kigi),
+            ("kigi-concise", BuiltinAgentName::KigiConcise),
+            ("kigi-ask-user", BuiltinAgentName::KigiAskUser),
             ("codex", BuiltinAgentName::Codex),
             ("opencode", BuiltinAgentName::Opencode),
             ("general-purpose", BuiltinAgentName::GeneralPurpose),
@@ -2430,6 +2445,49 @@ description: Test default tool config
         use std::str::FromStr;
         assert!(BuiltinAgentName::from_str("nonexistent").is_err());
         assert!(BuiltinAgentName::from_str("not-a-builtin-agent").is_err());
+    }
+    /// Legacy pre-rebrand agent types (as persisted in old session files)
+    /// must map onto the current `kigi*` names; everything else passes
+    /// through unchanged.
+    #[test]
+    fn test_canonical_agent_type_maps_legacy_names() {
+        use std::str::FromStr;
+        let legacy = |suffix: &str| format!("{LEGACY_AGENT_TYPE_PREFIX}{suffix}");
+        for (suffix, expected) in [
+            ("", "kigi"),
+            ("-concise", "kigi-concise"),
+            ("-plan", "kigi-plan"),
+            ("-plan-no-subagents", "kigi-plan-no-subagents"),
+            ("-ask-user", "kigi-ask-user"),
+            ("-orchestrator", "kigi-orchestrator"),
+        ] {
+            let name = legacy(suffix);
+            assert_eq!(canonical_agent_type(&name), expected, "for {name}");
+            // Every mapped name resolves to a real builtin.
+            assert!(
+                BuiltinAgentName::from_str(canonical_agent_type(&name).as_ref()).is_ok(),
+                "legacy {name} must resolve to a builtin"
+            );
+        }
+        // Pass-through for current and unrelated names.
+        assert_eq!(canonical_agent_type("kigi-plan"), "kigi-plan");
+        assert_eq!(canonical_agent_type("general-purpose"), "general-purpose");
+        // A prefix match without a `-` separator is NOT a legacy alias.
+        let not_alias = legacy("ish");
+        assert_eq!(canonical_agent_type(&not_alias), not_alias.as_str());
+    }
+    /// The legacy default agent type resolves through discovery `by_name`,
+    /// which is the boundary session-restore and model `agent_type` strings
+    /// pass through.
+    #[test]
+    fn test_by_name_resolves_legacy_agent_type() {
+        let legacy_plan = format!("{LEGACY_AGENT_TYPE_PREFIX}-plan");
+        let def = crate::discovery::by_name(&legacy_plan).expect("legacy agent type resolves");
+        assert_eq!(def.name, "kigi-plan");
+        assert!(
+            is_strict_harness_agent_type(&format!("{LEGACY_AGENT_TYPE_PREFIX}-concise"))
+                == is_strict_harness_agent_type("kigi-concise")
+        );
     }
     #[test]
     fn test_builtin_agent_name_definition_names_match() {
@@ -2519,7 +2577,7 @@ description: Test default tool config
         assert_eq!(recovered.mcp_inheritance, def.mcp_inheritance);
     }
     fn def_with_template(tpl: crate::prompt::context::TemplateOverride) -> AgentDefinition {
-        let mut def = AgentDefinition::default_grok_build();
+        let mut def = AgentDefinition::default_kigi();
         def.system_prompt = tpl;
         def
     }

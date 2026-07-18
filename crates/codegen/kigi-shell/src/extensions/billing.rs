@@ -1,4 +1,4 @@
-//! `x.ai/billing` extension handler — Kimi Code usage/quota.
+//! `kigi/billing` extension handler — Kimi Code usage/quota.
 //!
 //! Port of kimi-cli's `/usage` command (kimi-cli `src/kimi_cli/ui/shell/usage.py`):
 //! `GET {coding_api_base_url}/usages` with the OAuth Bearer token, parsed into
@@ -17,7 +17,7 @@ use crate::agent::MvpAgent;
 /// human-readable reset hint (e.g. "resets in 2h 5m").
 ///
 /// `Deserialize` because the TUI parses this back out of the
-/// `x.ai/billing` ext response.
+/// `kigi/billing` ext response.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageRow {
@@ -28,7 +28,7 @@ pub struct UsageRow {
     pub reset_hint: Option<String>,
 }
 
-/// Response for `x.ai/billing`: the parsed usage rows, in display order
+/// Response for `kigi/billing`: the parsed usage rows, in display order
 /// (summary row first when the payload carries one).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -55,7 +55,7 @@ pub enum UsageError {
 #[tracing::instrument(skip_all, fields(method = %args.method))]
 pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/billing" => {
+        "kigi/billing" => {
             tracing::info!("handling usage request");
             handle_get_usage(agent).await
         }

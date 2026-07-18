@@ -1,7 +1,7 @@
 //! Unified log forwarding for the pager.
 //!
 //! Buffers log entries in memory and flushes them to the shell via
-//! `x.ai/log` ACP notifications. Call [`init`] once at startup with
+//! `kigi/log` ACP notifications. Call [`init`] once at startup with
 //! the ACP sender, then use [`info`], [`warn`], [`error`], [`debug`]
 //! from anywhere.
 
@@ -66,7 +66,7 @@ fn build_notification(entries: Vec<ClientLogEntry>) -> Option<acp::ExtNotificati
         return None;
     }
     let params = LogNotificationParams {
-        src: LogSource::GrokPager,
+        src: LogSource::KigiPager,
         entries,
     };
     let raw = serde_json::value::to_raw_value(&params).ok()?;

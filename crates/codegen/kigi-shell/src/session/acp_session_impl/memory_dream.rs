@@ -314,10 +314,10 @@ impl SessionActor {
                 ConversationItem::user(user_message),
             ],
             model: Some(model),
-            x_grok_conv_id: Some(session_id.clone()),
-            x_grok_req_id: Some(format!("xai-dream-{}", uuid::Uuid::new_v4())),
-            x_grok_session_id: Some(session_id),
-            x_grok_agent_id: Some(crate::util::agent_id::agent_id()),
+            x_kigi_conv_id: Some(session_id.clone()),
+            x_kigi_req_id: Some(format!("xai-dream-{}", uuid::Uuid::new_v4())),
+            x_kigi_session_id: Some(session_id),
+            x_kigi_agent_id: Some(crate::util::agent_id::agent_id()),
             ..Default::default()
         };
         let response = sampling_client
@@ -413,10 +413,10 @@ impl SessionActor {
             let request = ConversationRequest {
                 items,
                 model: Some(model),
-                x_grok_conv_id: Some(session_id.clone()),
-                x_grok_req_id: Some(format!("xai-flush-{}", uuid::Uuid::new_v4())),
-                x_grok_session_id: Some(session_id.clone()),
-                x_grok_agent_id: Some(crate::util::agent_id::agent_id()),
+                x_kigi_conv_id: Some(session_id.clone()),
+                x_kigi_req_id: Some(format!("xai-flush-{}", uuid::Uuid::new_v4())),
+                x_kigi_session_id: Some(session_id.clone()),
+                x_kigi_agent_id: Some(crate::util::agent_id::agent_id()),
                 ..Default::default()
             };
 
@@ -608,7 +608,7 @@ impl SessionActor {
     }
 
     /// Rewrite a raw memory note into well-structured markdown via a one-shot
-    /// LLM call using the `grok-build` model.
+    /// LLM call using the `kigi` model.
     ///
     /// Follows the same streaming pattern as [`handle_ai_suggest`]: prepares
     /// a sampling client, builds a system+user prompt, streams the response,

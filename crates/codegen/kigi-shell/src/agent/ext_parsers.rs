@@ -5,7 +5,7 @@
 
 use crate::session::SessionCommand;
 
-/// Parse a `x.ai/queue/{remove,reorder,clear,edit,interject}` ext-notification's
+/// Parse a `kigi/queue/{remove,reorder,clear,edit,interject}` ext-notification's
 /// params into the corresponding [`SessionCommand`].
 /// `owner` is the resolved attribution (params `owner`/`clientIdentifier`) used
 /// to scope remove/clear to the requesting client's own items, and recorded as
@@ -17,7 +17,7 @@ pub(super) fn parse_queue_edit_command(
     owner: Option<String>,
 ) -> Option<SessionCommand> {
     match method {
-        "x.ai/queue/remove" => {
+        "kigi/queue/remove" => {
             let id = params.get("id").and_then(|v| v.as_str())?.to_string();
             // The client supplies the version it last saw; the handler removes
             // only on an exact match (stale = benign no-op + rebroadcast).
@@ -32,7 +32,7 @@ pub(super) fn parse_queue_edit_command(
                 owner,
             })
         }
-        "x.ai/queue/reorder" => {
+        "kigi/queue/reorder" => {
             let ordered_ids = params
                 .get("orderedIds")
                 .and_then(|v| v.as_array())
@@ -44,8 +44,8 @@ pub(super) fn parse_queue_edit_command(
                 .unwrap_or_default();
             Some(SessionCommand::ReorderQueue { ordered_ids })
         }
-        "x.ai/queue/clear" => Some(SessionCommand::ClearQueue { owner }),
-        "x.ai/queue/interject" => {
+        "kigi/queue/clear" => Some(SessionCommand::ClearQueue { owner }),
+        "kigi/queue/interject" => {
             let id = params.get("id").and_then(|v| v.as_str())?.to_string();
             // The client supplies the version it last saw; the handler acts
             // only on an exact match (stale = benign no-op + rebroadcast).
@@ -68,7 +68,7 @@ pub(super) fn parse_queue_edit_command(
                 new_text,
             })
         }
-        "x.ai/queue/edit" => {
+        "kigi/queue/edit" => {
             let id = params.get("id").and_then(|v| v.as_str())?.to_string();
             let new_text = params.get("newText").and_then(|v| v.as_str())?.to_string();
             // `owner` is the resolved attribution; for edit it represents the
@@ -88,7 +88,7 @@ pub(super) fn parse_queue_edit_command(
 mod tests {
     use super::*;
 
-    /// Each `x.ai/queue/*` ext-notification maps to the
+    /// Each `kigi/queue/*` ext-notification maps to the
     /// correct versioned/idempotent `SessionCommand`.
     #[test]
     fn parse_queue_edit_command_maps_each_method() {
@@ -96,7 +96,7 @@ mod tests {
         let p = serde_json::json!({
             "sessionId": "s1", "id": "p7", "expectedVersion": 3
         });
-        match parse_queue_edit_command("x.ai/queue/remove", &p, Some("grok-tui".into())) {
+        match parse_queue_edit_command("kigi/queue/remove", &p, Some("kigi-tui".into())) {
             Some(SessionCommand::RemoveQueuedPrompt {
                 id,
                 expected_version,
@@ -104,14 +104,14 @@ mod tests {
             }) => {
                 assert_eq!(id, "p7");
                 assert_eq!(expected_version, 3);
-                assert_eq!(owner.as_deref(), Some("grok-tui"));
+                assert_eq!(owner.as_deref(), Some("kigi-tui"));
             }
             _ => panic!("expected RemoveQueuedPrompt"),
         }
 
         // remove without expectedVersion defaults to 0.
         let p = serde_json::json!({ "sessionId": "s1", "id": "p8" });
-        match parse_queue_edit_command("x.ai/queue/remove", &p, None) {
+        match parse_queue_edit_command("kigi/queue/remove", &p, None) {
             Some(SessionCommand::RemoveQueuedPrompt {
                 expected_version, ..
             }) => assert_eq!(expected_version, 0),
@@ -120,7 +120,7 @@ mod tests {
 
         // reorder: orderedIds array.
         let p = serde_json::json!({ "sessionId": "s1", "orderedIds": ["a", "b", "c"] });
-        match parse_queue_edit_command("x.ai/queue/reorder", &p, None) {
+        match parse_queue_edit_command("kigi/queue/reorder", &p, None) {
             Some(SessionCommand::ReorderQueue { ordered_ids }) => {
                 assert_eq!(ordered_ids, vec!["a", "b", "c"]);
             }
@@ -129,12 +129,12 @@ mod tests {
 
         // clear: owner-scoped.
         match parse_queue_edit_command(
-            "x.ai/queue/clear",
+            "kigi/queue/clear",
             &serde_json::json!({ "sessionId": "s1" }),
-            Some("grok-tui".into()),
+            Some("kigi-tui".into()),
         ) {
             Some(SessionCommand::ClearQueue { owner }) => {
-                assert_eq!(owner.as_deref(), Some("grok-tui"));
+                assert_eq!(owner.as_deref(), Some("kigi-tui"));
             }
             _ => panic!("expected ClearQueue"),
         }
@@ -143,7 +143,7 @@ mod tests {
         let p = serde_json::json!({
             "sessionId": "s1", "id": "p9", "newText": "replacement text"
         });
-        match parse_queue_edit_command("x.ai/queue/edit", &p, Some("grok-vscode".into())) {
+        match parse_queue_edit_command("kigi/queue/edit", &p, Some("kigi-vscode".into())) {
             Some(SessionCommand::EditQueuedPrompt {
                 id,
                 new_text,
@@ -151,14 +151,14 @@ mod tests {
             }) => {
                 assert_eq!(id, "p9");
                 assert_eq!(new_text, "replacement text");
-                assert_eq!(editor.as_deref(), Some("grok-vscode"));
+                assert_eq!(editor.as_deref(), Some("kigi-vscode"));
             }
             _ => panic!("expected EditQueuedPrompt"),
         }
 
         // edit without editor (no owner/clientIdentifier) → editor: None.
         match parse_queue_edit_command(
-            "x.ai/queue/edit",
+            "kigi/queue/edit",
             &serde_json::json!({ "sessionId": "s1", "id": "p9", "newText": "x" }),
             None,
         ) {
@@ -171,7 +171,7 @@ mod tests {
         // edit without newText → None (can't replace text we don't have).
         assert!(
             parse_queue_edit_command(
-                "x.ai/queue/edit",
+                "kigi/queue/edit",
                 &serde_json::json!({ "sessionId": "s1", "id": "p9" }),
                 None,
             )
@@ -181,7 +181,7 @@ mod tests {
         // edit without id → None (can't target an entry).
         assert!(
             parse_queue_edit_command(
-                "x.ai/queue/edit",
+                "kigi/queue/edit",
                 &serde_json::json!({ "sessionId": "s1", "newText": "x" }),
                 None,
             )
@@ -192,7 +192,7 @@ mod tests {
         let p = serde_json::json!({
             "sessionId": "s1", "id": "p10", "expectedVersion": 2
         });
-        match parse_queue_edit_command("x.ai/queue/interject", &p, Some("grok-tui".into())) {
+        match parse_queue_edit_command("kigi/queue/interject", &p, Some("kigi-tui".into())) {
             Some(SessionCommand::InterjectQueuedPrompt {
                 id,
                 expected_version,
@@ -201,7 +201,7 @@ mod tests {
             }) => {
                 assert_eq!(id, "p10");
                 assert_eq!(expected_version, 2);
-                assert_eq!(owner.as_deref(), Some("grok-tui"));
+                assert_eq!(owner.as_deref(), Some("kigi-tui"));
                 assert_eq!(new_text, None, "newText absent → None");
             }
             _ => panic!("expected InterjectQueuedPrompt"),
@@ -211,7 +211,7 @@ mod tests {
         let p = serde_json::json!({
             "sessionId": "s1", "id": "p10", "expectedVersion": 2, "newText": "edited"
         });
-        match parse_queue_edit_command("x.ai/queue/interject", &p, None) {
+        match parse_queue_edit_command("kigi/queue/interject", &p, None) {
             Some(SessionCommand::InterjectQueuedPrompt { new_text, .. }) => {
                 assert_eq!(new_text.as_deref(), Some("edited"));
             }
@@ -222,7 +222,7 @@ mod tests {
         let p = serde_json::json!({
             "sessionId": "s1", "id": "p10", "expectedVersion": 2, "newText": "   "
         });
-        match parse_queue_edit_command("x.ai/queue/interject", &p, None) {
+        match parse_queue_edit_command("kigi/queue/interject", &p, None) {
             Some(SessionCommand::InterjectQueuedPrompt { new_text, .. }) => {
                 assert_eq!(new_text, None, "blank override must be dropped");
             }
@@ -231,7 +231,7 @@ mod tests {
 
         // interject without expectedVersion defaults to 0.
         match parse_queue_edit_command(
-            "x.ai/queue/interject",
+            "kigi/queue/interject",
             &serde_json::json!({ "sessionId": "s1", "id": "p11" }),
             None,
         ) {
@@ -243,17 +243,17 @@ mod tests {
 
         // interject without id → None (can't target an entry).
         assert!(
-            parse_queue_edit_command("x.ai/queue/interject", &serde_json::json!({}), None)
+            parse_queue_edit_command("kigi/queue/interject", &serde_json::json!({}), None)
                 .is_none()
         );
 
         // unknown method → None.
         assert!(
-            parse_queue_edit_command("x.ai/queue/bogus", &serde_json::json!({}), None).is_none()
+            parse_queue_edit_command("kigi/queue/bogus", &serde_json::json!({}), None).is_none()
         );
         // remove without id → None (can't target an entry).
         assert!(
-            parse_queue_edit_command("x.ai/queue/remove", &serde_json::json!({}), None).is_none()
+            parse_queue_edit_command("kigi/queue/remove", &serde_json::json!({}), None).is_none()
         );
     }
 }

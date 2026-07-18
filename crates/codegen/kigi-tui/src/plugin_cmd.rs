@@ -152,7 +152,7 @@ fn trust_prompt(subject: &str, source_arg: &str) -> String {
         "Installing {subject} requires confirmation.\n\
          Plugins can run hooks, MCP servers, and skills on your machine, so installation needs explicit trust.\n\
          \n\
-         To proceed, re-run with --trust:\n  grok plugin install {source_arg} --trust"
+         To proceed, re-run with --trust:\n  kigi plugin install {source_arg} --trust"
     )
 }
 
@@ -277,7 +277,7 @@ fn cmd_uninstall(name: &str, confirm: bool, keep_data: bool) -> Result<()> {
             "Plugin \"{name}\" belongs to repo \"{repo_key}\" which also contains:\n\
              {}\n\n\
              Uninstalling will remove all {total} plugin(s). To proceed:\n\
-               grok plugin uninstall {name} --confirm",
+               kigi plugin uninstall {name} --confirm",
             other_plugins
                 .iter()
                 .map(|p| format!("  - {p}"))
@@ -421,7 +421,7 @@ fn cmd_validate(path: &str) -> Result<()> {
         }
         Ok(ManifestLoadResult::NotFound) => {
             println!(
-                "No plugin.json found. Grok discovers skills, agents, and hooks \
+                "No plugin.json found. Kigi discovers skills, agents, and hooks \
                  automatically from standard directories. A manifest is only needed \
                  for custom paths or metadata."
             );
@@ -517,7 +517,7 @@ mod tests {
             ),
             "{git}"
         );
-        assert!(git.ends_with("  grok plugin install u/r --trust"), "{git}");
+        assert!(git.ends_with("  kigi plugin install u/r --trust"), "{git}");
         let local = trust_prompt("from directory /tmp/p", "./p");
         assert!(
             local.starts_with("Installing from directory /tmp/p requires confirmation."),

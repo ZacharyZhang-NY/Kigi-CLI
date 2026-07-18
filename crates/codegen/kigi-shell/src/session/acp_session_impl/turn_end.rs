@@ -78,7 +78,7 @@ impl SessionActor {
         self.emit_transient_notification(notification);
     }
 
-    /// Emit `x.ai/git_head_changed` after an edit/shell command that may have
+    /// Emit `kigi/git_head_changed` after an edit/shell command that may have
     /// moved HEAD (e.g. `git checkout`), so clients update their status bar
     /// immediately rather than waiting for the debounced fs-watch refresh.
     pub(super) async fn maybe_notify_git_branch(&self) {
@@ -112,7 +112,7 @@ impl SessionActor {
             main_repo,
         };
         if let Ok(raw) = serde_json::value::to_raw_value(&params) {
-            let notification = acp::ExtNotification::new("x.ai/git_head_changed", raw.into());
+            let notification = acp::ExtNotification::new("kigi/git_head_changed", raw.into());
             self.notifications
                 .gateway
                 .forward_fire_and_forget(notification);
@@ -123,12 +123,11 @@ impl SessionActor {
     pub(super) async fn outstanding_reply_for_prompt(
         &self,
         prompt_id: &str,
-    ) -> Option<kigi_tools::implementations::grok_build::task::types::SubagentOutstandingReply>
-    {
+    ) -> Option<kigi_tools::implementations::kigi::task::types::SubagentOutstandingReply> {
         let Some(tx) = &self.tool_context.subagent_event_tx else {
             return Some(Default::default());
         };
-        use kigi_tools::implementations::grok_build::task::types::{
+        use kigi_tools::implementations::kigi::task::types::{
             SubagentEvent, SubagentOutstandingRequest,
         };
         let (respond_to, rx) = tokio::sync::oneshot::channel();
@@ -147,9 +146,7 @@ impl SessionActor {
     /// Report-level incomplete (error-path attach, tests). Same OR as
     /// [`super::turn::UsageDrainOutcome::report_incomplete`].
     pub(super) fn usage_incomplete_from_reply(
-        reply: Option<
-            &kigi_tools::implementations::grok_build::task::types::SubagentOutstandingReply,
-        >,
+        reply: Option<&kigi_tools::implementations::kigi::task::types::SubagentOutstandingReply>,
     ) -> bool {
         super::turn::UsageDrainOutcome::from_outstanding_reply(reply).report_incomplete()
     }
@@ -158,7 +155,7 @@ impl SessionActor {
         let Some(tx) = &self.tool_context.subagent_event_tx else {
             return;
         };
-        use kigi_tools::implementations::grok_build::task::types::{
+        use kigi_tools::implementations::kigi::task::types::{
             SubagentClearUsageNotAppliedRequest, SubagentEvent,
         };
         let _ = tx.send(SubagentEvent::ClearUsageNotApplied(
@@ -186,7 +183,7 @@ impl SessionActor {
                 .borrow()
                 .tool_bridge()
                 .update_resource(
-                    kigi_tools::implementations::grok_build::task::types::CurrentPromptIdResource(
+                    kigi_tools::implementations::kigi::task::types::CurrentPromptIdResource(
                         String::new(),
                     ),
                 )
@@ -257,7 +254,7 @@ impl SessionActor {
 
         // Durable twin of the fire-and-forget `prompt_complete` (emitted from
         // `MvpAgent::prompt`): publish the turn's terminal on the persisted +
-        // replayed `_x.ai/session/update` rail so a viewer that re-attaches
+        // replayed `_kigi/session/update` rail so a viewer that re-attaches
         // mid-turn finalizes from replay instead of stranding on "Waiting…".
         // The caller flushed the replay buffer first, so this lands strictly
         // after the turn's last `session/update` delta. Emit ONLY for a

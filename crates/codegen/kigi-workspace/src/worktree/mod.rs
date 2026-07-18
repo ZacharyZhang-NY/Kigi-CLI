@@ -618,11 +618,11 @@ pub fn resolve_label_collision(base_dir: &Path, label: &str) -> String {
 // Worktree Base Directory Resolution
 // ============================================================================
 
-/// Resolve the grok home for worktree paths via the **same** resolver used for
+/// Resolve the kigi home for worktree paths via the **same** resolver used for
 /// `worktrees.db` (`kigi_fast_worktree::resolve_kigi_home`), so checkout dirs and
 /// the metadata DB always live under the same `.kigi` tree. That resolver
 /// canonicalizes its `$HOME` fallback to match `kigi_config::kigi_home()`,
-/// so worktree paths also agree with trust/hooks and other grok-home paths.
+/// so worktree paths also agree with trust/hooks and other kigi-home paths.
 fn kigi_home() -> std::path::PathBuf {
     kigi_fast_worktree::resolve_kigi_home().unwrap_or_else(|_| {
         dirs::home_dir()
@@ -641,7 +641,7 @@ pub fn worktree_base_dir(git_root: &Path) -> std::path::PathBuf {
 }
 
 /// Resolves the worktree base directory (`~/.kigi/worktrees/<repo_name>`)
-/// for a given source path, correctly handling grok-managed worktrees.
+/// for a given source path, correctly handling kigi-managed worktrees.
 ///
 /// When `source_path` is already under `~/.kigi/worktrees/<repo>/...`, the
 /// repo name is derived from the directory structure directly. This avoids
@@ -649,7 +649,7 @@ pub fn worktree_base_dir(git_root: &Path) -> std::path::PathBuf {
 /// as the main repo root (returning the worktree itself instead of the
 /// original repo).
 ///
-/// For paths outside the grok worktree directory, falls back to
+/// For paths outside the kigi worktree directory, falls back to
 /// `find_main_repo_root_from_path` + `worktree_base_dir`.
 pub fn worktree_base_dir_for_source(source_path: &Path) -> Result<std::path::PathBuf> {
     let worktrees_dir = kigi_home().join("worktrees");
@@ -724,7 +724,7 @@ fn worktree_record_for_cwd(cwd: &str) -> Option<(WorktreeDb, WorktreeRecord)> {
     None
 }
 
-/// The recorded source repo of the grok-managed worktree containing `cwd`, if any.
+/// The recorded source repo of the kigi-managed worktree containing `cwd`, if any.
 ///
 /// Thin wrapper over [`worktree_record_for_cwd`] that drops the DB handle;
 /// returns `None` (without DB I/O) for paths outside `~/.kigi/worktrees/`.
@@ -2276,7 +2276,7 @@ pub async fn remove_jj_workspace(workspace_path: &str) -> Result<()> {
 
 /// Request to resume an existing session in a fresh worktree.
 ///
-/// ACP equivalent of `grok -w -r <session_id>` (optionally with `--ref`).
+/// ACP equivalent of `kigi -w -r <session_id>` (optionally with `--ref`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResumeSessionInWorktreeRequest {
@@ -2296,7 +2296,7 @@ pub struct ResumeSessionInWorktreeRequest {
     pub git_ref: Option<String>,
 }
 
-/// Response from `x.ai/git/worktree/resume_session`.
+/// Response from `kigi/git/worktree/resume_session`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResumeSessionInWorktreeResponse {
@@ -2339,7 +2339,7 @@ pub struct RehydrateSessionRequest {
     pub worktree_path: Option<String>,
 }
 
-/// Response from `x.ai/session/rehydrate`.
+/// Response from `kigi/session/rehydrate`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RehydrateSessionResponse {
@@ -2596,7 +2596,7 @@ mod tests {
         std::fs::write(wt.join("tracked.txt"), "edited").unwrap();
         std::fs::write(wt.join("untracked.txt"), "brand new").unwrap();
 
-        let ref_name = "refs/grok/subagents/dispose-1";
+        let ref_name = "refs/kigi/subagents/dispose-1";
         let returned = snapshot_and_remove_subagent_worktree(&wt, &repo, ref_name)
             .await
             .unwrap();
@@ -2622,7 +2622,7 @@ mod tests {
         std::fs::write(wt.join("tracked.txt"), "edited").unwrap();
         std::fs::write(wt.join("untracked.txt"), "brand new").unwrap();
 
-        let ref_name = "refs/grok/subagents/dispose-2";
+        let ref_name = "refs/kigi/subagents/dispose-2";
         snapshot_and_remove_subagent_worktree(&wt, &repo, ref_name)
             .await
             .unwrap();
@@ -2669,7 +2669,7 @@ mod tests {
         std::fs::write(wt.join("tracked.txt"), "edited").unwrap();
         std::fs::write(wt.join("untracked.txt"), "brand new").unwrap();
 
-        let ref_name = "refs/grok/subagents/standalone-1";
+        let ref_name = "refs/kigi/subagents/standalone-1";
         let returned = snapshot_subagent_worktree(&wt, &repo, ref_name)
             .await
             .unwrap();
@@ -2719,7 +2719,7 @@ mod tests {
         let result = snapshot_and_remove_subagent_worktree(
             &not_a_worktree,
             &not_a_worktree,
-            "refs/grok/subagents/dispose-3",
+            "refs/kigi/subagents/dispose-3",
         )
         .await;
 
@@ -2750,7 +2750,7 @@ mod tests {
         // Canonicalize so macOS /var -> /private/var agrees between the stored
         // record path and `db.get`'s canonicalized query path.
         let root = dunce::canonicalize(temp.path()).unwrap();
-        let home = root.join("grok-home");
+        let home = root.join("kigi-home");
         let wt = home.join("worktrees").join("repo").join("wt");
         std::fs::create_dir_all(&wt).unwrap();
         // Acquire the lock, then set the env under it (LockedTestEnv restores the
@@ -2849,7 +2849,7 @@ mod tests {
         git_commit_all(&repo, "initial");
 
         // Unique basename → unique DB id, so a concurrent open_default writer
-        // can't clobber this row (GrokHomeFixture is not visible across crates).
+        // can't clobber this row (KigiHomeFixture is not visible across crates).
         let wt = temp.path().join("fork-cancel-wt");
         WorktreeBuilder::new(&repo, &wt).create().unwrap();
 

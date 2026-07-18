@@ -42,7 +42,7 @@ async fn reverse_agent_type_mismatch_cursor_to_default() {
         .wait_for_text(MOCK_RESPONSE_SENTINEL, Duration::from_secs(30))
         .expect("response rendered");
 
-    // Switch to default-model (different agent type: cursor → grok-build).
+    // Switch to default-model (different agent type: cursor → kigi).
     harness
         .inject_keys(b"/model default-model\r")
         .expect("type model switch");

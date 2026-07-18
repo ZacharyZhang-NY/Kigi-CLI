@@ -56,7 +56,7 @@ pub fn default_lock_path_in(root: &Path) -> PathBuf {
 }
 
 /// Effective leader lock path: the [`LEADER_SOCKET_ENV`] override's sibling
-/// `.lock` when set, else the default under grok home.
+/// `.lock` when set, else the default under kigi home.
 pub fn default_lock_path() -> PathBuf {
     resolve_lock_path(leader_socket_override(), &kigi_home())
 }
@@ -67,7 +67,7 @@ pub fn default_socket_path_in(root: &Path) -> PathBuf {
 }
 
 /// Effective leader socket path: the [`LEADER_SOCKET_ENV`] override when set,
-/// else the default under grok home.
+/// else the default under kigi home.
 pub fn default_socket_path() -> PathBuf {
     resolve_socket_path(leader_socket_override(), &kigi_home())
 }
@@ -131,7 +131,7 @@ pub struct LeaderLock {
 }
 
 impl LeaderLock {
-    /// Create a new LeaderLock using the default paths in grok home
+    /// Create a new LeaderLock using the default paths in kigi home
     /// (or the [`LEADER_SOCKET_ENV`] override when set).
     pub fn new() -> Self {
         Self {

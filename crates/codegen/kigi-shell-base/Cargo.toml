@@ -3,7 +3,7 @@ license = "Apache-2.0"
 name = "kigi-shell-base"
 version.workspace = true
 edition.workspace = true
-description = "Foundation modules for the grok shell crate family: environment presets, CPU profiling, and process/filesystem utilities."
+description = "Foundation modules for the kigi shell crate family: environment presets, CPU profiling, and process/filesystem utilities."
 
 [features]
 # CI default set: builds a single shared rlib per crate, so downstream test

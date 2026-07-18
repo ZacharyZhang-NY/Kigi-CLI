@@ -1,6 +1,6 @@
 # Permissions and Safety Controls
 
-Grok can read files, search code, edit files, and run shell commands. The permission system controls what the agent is allowed to do. You can combine several independent layers: permission rules, permission modes, hooks, and the OS-level sandbox.
+Kigi can read files, search code, edit files, and run shell commands. The permission system controls what the agent is allowed to do. You can combine several independent layers: permission rules, permission modes, hooks, and the OS-level sandbox.
 
 This guide explains how a tool call is authorized, how to configure permission rules from the CLI, native configuration, or Claude settings, and how to use `PreToolUse` hooks for allow lists that apply in every mode.
 
@@ -100,13 +100,13 @@ Do not use `permission_mode` for this; it is a user-switchable default, not a lo
 
 The user-level `~/.kigi/requirements.toml` is under the user's control, so a developer can remove the lock by editing that file. For enforcement that users cannot override, deploy the setting in the root-owned system file `/etc/kigi/requirements.toml`.
 
-> **Note:** Grok honors the permission rules in Claude Code's `managed-settings.json`, but not its `disableBypassPermissionsMode` lock. To disable always-approve in Grok, use `requirements.toml` as shown above.
+> **Note:** Kigi honors the permission rules in Claude Code's `managed-settings.json`, but not its `disableBypassPermissionsMode` lock. To disable always-approve in Kigi, use `requirements.toml` as shown above.
 
 ---
 
 ## Configuring Permissions
 
-Grok reads permission rules from three compatible sources. Rules from all sources are merged into one set; a rule's effect depends on its action (`deny` > `ask` > `allow`), not on which file it came from.
+Kigi reads permission rules from three compatible sources. Rules from all sources are merged into one set; a rule's effect depends on its action (`deny` > `ask` > `allow`), not on which file it came from.
 
 ### Where Permission Rules Live (Scopes)
 
@@ -117,13 +117,13 @@ Permission rules can be global (all projects), project-scoped (one repository), 
 | Global (all projects) | `~/.kigi/config.toml` | No |
 | Project (committed) | `<project>/.kigi/config.toml` | Yes (commit it) |
 | Project (personal) | `<project>/.claude/settings.local.json` | No (gitignore it) |
-| Interactive grants | Stored internally by Grok, per project | No |
+| Interactive grants | Stored internally by Kigi, per project | No |
 
 Notes on scoping:
 
-- Grok discovers a `.kigi/config.toml` at every directory level from the repository root down to your working directory, so a subdirectory can add rules on top of the repo root's.
+- Kigi discovers a `.kigi/config.toml` at every directory level from the repository root down to your working directory, so a subdirectory can add rules on top of the repo root's.
 - Rules from all scopes are merged into one rule set; `deny` > `ask` > `allow` applies across scopes, so a global `deny` cannot be overridden by a project `allow`.
-- Grok has no native `config.local.toml`. For personal, uncommitted rules in a project, use `.claude/settings.local.json`; Grok reads it directly (see [Claude Code Compatibility](#3-claude-code-compatibility-claudesettingsjson)).
+- Kigi has no native `config.local.toml`. For personal, uncommitted rules in a project, use `.claude/settings.local.json`; Kigi reads it directly (see [Claude Code Compatibility](#3-claude-code-compatibility-claudesettingsjson)).
 - Interactive "Always allow" decisions are stored outside the repository, scoped to the project (see [Interactive Approvals](#interactive-approvals-and-where-they-persist)).
 
 To stop prompts for a specific command in one project, add a narrow allow rule to that project's `.kigi/config.toml` (or `.claude/settings.json`):
@@ -138,7 +138,7 @@ This approves only the listed commands. Always-approve mode, by contrast, approv
 ### 1. CLI Flags
 
 ```bash
-grok -p "Review the API changes" \
+kigi -p "Review the API changes" \
   --allow 'Bash(git *)' \
   --allow 'Bash(gh *)' \
   --allow 'Read' \
@@ -179,7 +179,7 @@ Because `deny` always wins, you cannot combine these `allow` rules with a catch-
 
 Rules from the global `~/.kigi/config.toml` and every project `.kigi/config.toml` (from the repo root down to your working directory) are merged into one rule set, alongside any `.claude/settings.json` rules.
 
-Managed configuration deployed by your organization also contributes `[permission]` rules: the system `/etc/kigi/managed_config.toml`, and a user-level copy that Grok maintains automatically at `~/.kigi/managed_config.toml`. Managed rules merge like rules from any other source, with two properties specific to managed `allow` rules: your own `deny` and `ask` rules win over a managed `allow` (severity ordering), and a catch-all managed `allow` is ignored when always-approve is locked off. For rules that users cannot edit away, use the root-owned system `/etc/kigi/requirements.toml`.
+Managed configuration deployed by your organization also contributes `[permission]` rules: the system `/etc/kigi/managed_config.toml`, and a user-level copy that Kigi maintains automatically at `~/.kigi/managed_config.toml`. Managed rules merge like rules from any other source, with two properties specific to managed `allow` rules: your own `deny` and `ask` rules win over a managed `allow` (severity ordering), and a catch-all managed `allow` is ignored when always-approve is locked off. For rules that users cannot edit away, use the root-owned system `/etc/kigi/requirements.toml`.
 
 Permission rules from every source are read once, when a session starts. Changes apply to the next session.
 
@@ -202,7 +202,7 @@ allow = [
 
 ### 3. Claude Code Compatibility (`.claude/settings.json`)
 
-Grok reads `~/.claude/settings.json` and `~/.claude/settings.local.json`, plus the project-level `<project>/.claude/settings.json` and `settings.local.json` (walking up to the repo root). The native `.kigi` source for permission rules is `config.toml`, described in the section above.
+Kigi reads `~/.claude/settings.json` and `~/.claude/settings.local.json`, plus the project-level `<project>/.claude/settings.json` and `settings.local.json` (walking up to the repo root). The native `.kigi` source for permission rules is `config.toml`, described in the section above.
 
 Example:
 
@@ -223,7 +223,7 @@ Example:
 }
 ```
 
-Supported `defaultMode` values are `default`, `acceptEdits`, `bypassPermissions`, `dontAsk`, and `plan`. Grok reads `defaultMode` from its canonical location under `permissions`; a top-level `defaultMode` is also accepted when the nested key is absent.
+Supported `defaultMode` values are `default`, `acceptEdits`, `bypassPermissions`, `dontAsk`, and `plan`. Kigi reads `defaultMode` from its canonical location under `permissions`; a top-level `defaultMode` is also accepted when the nested key is absent.
 
 `permissions.allow`, `permissions.deny`, and `permissions.ask` entries are translated into native rules and then matched with the semantics in the [Rule Matching Reference](#rule-matching-reference). Translation notes:
 
@@ -250,7 +250,7 @@ Matching is case-sensitive. Leading whitespace in the command is trimmed before 
 
 A trailing `:*` suffix on a Bash rule is stripped to a plain prefix: `Bash(git commit:*)` becomes prefix `git commit`. Because prefixes have no word boundary, a `deny` written as `Bash(sed:*)` also blocks commands such as `sed-custom`.
 
-**Chained commands.** Grok parses each command like a shell and splits it on `&&`, `||`, `;`, `|`, and newlines. The rule actions treat segments differently:
+**Chained commands.** Kigi parses each command like a shell and splits it on `&&`, `||`, `;`, `|`, and newlines. The rule actions treat segments differently:
 
 - `deny` and `ask` rules are checked against every segment, and against the whole string. One denied segment rejects the entire command.
 - `allow` rules are checked against the whole command string only. `Bash(git *)` therefore auto-approves `git status && rm -rf /`, because the full string starts with `git `. Pair narrow allow rules with `deny` rules for the patterns you want to block.
@@ -277,7 +277,7 @@ Path patterns are globs matched against the path string the tool was called with
 
 ### MCP Rules
 
-`MCPTool(...)` patterns match the full Grok tool name in `server__tool` form, with glob support: `MCPTool(linear__*)` matches every tool from the `linear` server. Grok tool names carry no `mcp__` prefix, so a rule written as `mcp__server__tool` never matches an MCP call; write `MCPTool(server__tool)` instead.
+`MCPTool(...)` patterns match the full Kigi tool name in `server__tool` form, with glob support: `MCPTool(linear__*)` matches every tool from the `linear` server. Kigi tool names carry no `mcp__` prefix, so a rule written as `mcp__server__tool` never matches an MCP call; write `MCPTool(server__tool)` instead.
 
 ### WebFetch Rules
 
@@ -325,7 +325,7 @@ The remembered prefix is limited to a short form of the command: read-only comma
 
 ### Persistence Is Per Project
 
-Interactive grants are stored in Grok's own state directory under your home directory, scoped to the directory you launched Grok from. A grant made in one project never applies in another, grants are not written into the repository, and they are not meant to be hand-edited.
+Interactive grants are stored in Kigi's own state directory under your home directory, scoped to the directory you launched Kigi from. A grant made in one project never applies in another, grants are not written into the repository, and they are not meant to be hand-edited.
 
 Interactive grants are personal, per-machine state. For an allowlist you can review in code review and share with teammates, use declarative rules in the project's `.kigi/config.toml` instead.
 
@@ -411,7 +411,7 @@ For hook installation, the JSON format, the trust model for project hooks, and o
 ### Headless git and gh Only (CI and Automation)
 
 ```bash
-grok -p "Implement the feature using only git and GitHub CLI" \
+kigi -p "Implement the feature using only git and GitHub CLI" \
   --allow 'Read' \
   --allow 'Grep' \
   --allow 'Bash(git *)' \

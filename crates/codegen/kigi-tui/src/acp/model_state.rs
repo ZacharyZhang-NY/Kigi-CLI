@@ -74,7 +74,7 @@ impl ModelState {
         }
     }
 
-    /// Machine-readable model ID string for the current model (e.g. "grok-4.5").
+    /// Machine-readable model ID string for the current model (e.g. "kigi-4.5").
     pub fn current_model_id_str(&self) -> Option<&str> {
         Some(self.current.as_ref()?.0.as_ref())
     }
@@ -94,7 +94,7 @@ impl ModelState {
     ///
     /// Honors an explicit `acceptsImages` bool, else an `inputModalities` array
     /// containing `"image"`. DEFAULTS TO `true` when neither key is present:
-    /// correct today (all current Grok models accept images, so nothing is
+    /// correct today (all current Kigi models accept images, so nothing is
     /// suppressed) and forward-compatible (suppresses non-vision models once the
     /// ACP server populates the key). Populating that key server-side is a
     /// separate change.
@@ -223,7 +223,7 @@ impl ModelState {
     /// Map a typed/selected effort token to its canonical value for the current
     /// model. Accepts a menu option id (case-insensitive) or a canonical level
     /// that appears as a **value** in that model's menu. Levels the model does
-    /// not offer (e.g. `none` on grok-4.5) are rejected so we fail in the TUI
+    /// not offer (e.g. `none` on kigi-4.5) are rejected so we fail in the TUI
     /// instead of sending a blocked effort to the API.
     pub fn resolve_effort_token(&self, token: &str) -> Option<ReasoningEffort> {
         match self.current.as_ref() {
@@ -249,7 +249,7 @@ impl ModelState {
         }
         // Canonical level (e.g. "high", "max"→xhigh) only if the model menu
         // actually offers that value — not free-form power-user aliases that
-        // would 400 on the server (e.g. `none` on grok-4.5).
+        // would 400 on the server (e.g. `none` on kigi-4.5).
         let parsed = token.parse::<ReasoningEffort>().ok()?;
         options
             .iter()
@@ -410,21 +410,17 @@ mod tests {
 
     #[test]
     fn update_catalog_preserves_user_effort_when_model_unchanged() {
-        let id = acp::ModelId::new(Arc::from("grok-build"));
+        let id = acp::ModelId::new(Arc::from("kigi"));
         let mut state = ModelState::default();
-        state.available.insert(
-            id.clone(),
-            model_with_effort("grok-build", "Grok Build", "high"),
-        );
+        state
+            .available
+            .insert(id.clone(), model_with_effort("kigi", "Kigi", "high"));
         state.set_current(id.clone(), Some(ReasoningEffort::Xhigh));
         assert_eq!(state.reasoning_effort, Some(ReasoningEffort::Xhigh));
 
         // The broadcast carries the model's static default (high) for the same model.
         let mut refreshed = IndexMap::new();
-        refreshed.insert(
-            id.clone(),
-            model_with_effort("grok-build", "Grok Build", "high"),
-        );
+        refreshed.insert(id.clone(), model_with_effort("kigi", "Kigi", "high"));
         state.update_catalog(refreshed, Some(id.clone()));
 
         assert_eq!(

@@ -1,7 +1,7 @@
 //! Changelog fetching from CDN with local disk cache.
 //!
 //! Both markdown (`*.external.md`) and JSON (`*.external.json`) changelogs
-//! are published per-version to the CDN at `x.ai/cli/changelogs/`.
+//! are published per-version alongside the Kigi GitHub distribution.
 //!
 //! `ChangelogManager::fetch()` retrieves both formats in parallel and
 //! returns a `Changelog` with optional markdown + structured entries.
@@ -11,8 +11,11 @@
 
 use std::path::PathBuf;
 
-/// CDN base for all changelogs (proxies to GCS, cache-friendly).
-const CHANGELOG_BASE: &str = "https://x.ai/cli/changelogs";
+/// Base URL for published changelogs. Kigi distributes via GitHub, so
+/// per-version changelogs live in the release repository. Unreachable or
+/// missing files degrade gracefully to the on-disk cache (see `fetch_with`).
+const CHANGELOG_BASE: &str =
+    "https://raw.githubusercontent.com/ZacharyZhang-NY/Kigi-CLI/main/changelogs";
 const FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// A single structured changelog entry from the published JSON changelog.
@@ -258,7 +261,7 @@ mod tests {
     #[test]
     fn offline_mode_reads_seeded_disk_cache_only() {
         let tmp = tempfile::tempdir().unwrap();
-        let home = tmp.path().join("grok-home");
+        let home = tmp.path().join("kigi-home");
         std::fs::create_dir_all(&home).unwrap();
         std::fs::write(home.join("CHANGELOG.md"), "# seeded offline md\n").unwrap();
         std::fs::write(
@@ -282,7 +285,7 @@ mod tests {
     #[test]
     fn cdn_miss_falls_back_to_env_home_disk_cache() {
         let tmp = tempfile::tempdir().unwrap();
-        let home = tmp.path().join("grok-home-fallback");
+        let home = tmp.path().join("kigi-home-fallback");
         std::fs::create_dir_all(&home).unwrap();
         std::fs::write(home.join("CHANGELOG.md"), "# fallback md\n").unwrap();
 

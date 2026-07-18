@@ -15,7 +15,7 @@ use crate::session::{
 use crate::terminal::AsyncTerminalRunner;
 use crate::tools::ToolContext;
 use kigi_acp_lib::AcpAgentGatewaySender as GatewaySender;
-use kigi_tools::implementations::grok_build::task::types::*;
+use kigi_tools::implementations::kigi::task::types::*;
 use kigi_workspace::file_system::AsyncFileSystem;
 use kigi_hunk_tracker::HunkTrackerHandle;
 use super::*;
@@ -156,8 +156,8 @@ impl SubagentCoordinator {
     pub fn outstanding_reply_for_prompt(
         &self,
         prompt_id: &str,
-    ) -> kigi_tools::implementations::grok_build::task::types::SubagentOutstandingReply {
-        kigi_tools::implementations::grok_build::task::types::SubagentOutstandingReply {
+    ) -> kigi_tools::implementations::kigi::task::types::SubagentOutstandingReply {
+        kigi_tools::implementations::kigi::task::types::SubagentOutstandingReply {
             live_ids: self.outstanding_for_prompt(prompt_id),
             background_live: self.background_live_for_prompt(prompt_id),
             subagent_usage_not_applied: self.subagent_usage_not_applied(prompt_id),

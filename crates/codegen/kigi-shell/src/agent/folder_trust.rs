@@ -148,7 +148,7 @@ pub fn project_scope_allowed(cwd: &Path) -> bool {
 /// is on, the workspace is NOT store-trusted, and repo-local code-exec configs
 /// are present (something to gate). Interactivity is forced `true` because the
 /// caller already confirmed the client can prompt (it advertised
-/// `x.ai/folderTrust.interactive`); the TTY-based [`decide_inputs`] default is
+/// `kigi/folderTrust.interactive`); the TTY-based [`decide_inputs`] default is
 /// false under the ACP stdio transport. Mirrors the [`decide`] precedence so it
 /// cannot drift from the gate: feature-off (kill-switch / opt-out) / store-trusted
 /// / no-configs all collapse to a non-`Prompt` verdict and return false.
@@ -226,7 +226,7 @@ pub(crate) fn record_for_test(cwd: &Path, allowed: bool) {
 /// `allow_prompt` must be `true` ONLY where a blocking stdin y/N read is safe —
 /// i.e. agent `initialize` for the launch directory, before the TUI takes over
 /// the terminal. Every other call site (per-session cwd, leader-served sessions
-/// whose cwd differs from the launch dir, `grok mcp doctor`) passes `false`, so
+/// whose cwd differs from the launch dir, `kigi mcp doctor`) passes `false`, so
 /// an unresolved interactive-but-untrusted workspace resolves **fail-closed**
 /// (untrusted, no prompt) — only the launch dir is ever prompted for.
 pub fn resolve_and_record(cwd: &Path, remote: Option<&RemoteSettings>, allow_prompt: bool) -> bool {
@@ -290,7 +290,7 @@ pub fn resolve_launch_dir_trust(cwd: &Path, remote: Option<&RemoteSettings>) -> 
 /// - A cached **grant** (`Some(true)`) is durable and short-circuits — neither
 ///   `store_trusted` nor `recompute` runs.
 /// - A cached **untrusted** verdict (`Some(false)`) is re-checked via
-///   `store_trusted`: a `grok --trust` grant issued AFTER this workspace was
+///   `store_trusted`: a `kigi --trust` grant issued AFTER this workspace was
 ///   first resolved writes the store, so honor it on the next session without a
 ///   restart. Without this re-read a long-lived leader would mask the grant.
 /// - An **unrecorded** key (`None`) does a full `recompute`, which reports
@@ -389,7 +389,7 @@ fn compute_from_inputs(
 /// merged server list when the workspace is untrusted.
 ///
 /// SINGLE SOURCE OF TRUTH for "project-scoped MCP names" across ALL gate sites
-/// (session merge, the session-less agent pool, `grok mcp doctor`). It MUST
+/// (session merge, the session-less agent pool, `kigi mcp doctor`). It MUST
 /// enumerate every project MCP source the loaders read; adding a new repo-local
 /// MCP source without extending this fn silently re-opens the gate (guarded by
 /// `project_scoped_mcp_names_cover_every_source`).
@@ -1190,9 +1190,9 @@ mod tests {
         // can distinguish it from user/plugin servers. Asserts on the specific
         // key, so any real `~/.kigi/lsp.json` on the test host is irrelevant.
         let tmp = repo_tmp();
-        let grok = tmp.path().join(".kigi");
-        std::fs::create_dir_all(&grok).unwrap();
-        std::fs::write(grok.join("lsp.json"), r#"{"projlsp": {"command": "true"}}"#).unwrap();
+        let kigi = tmp.path().join(".kigi");
+        std::fs::create_dir_all(&kigi).unwrap();
+        std::fs::write(kigi.join("lsp.json"), r#"{"projlsp": {"command": "true"}}"#).unwrap();
 
         let sourced = load_servers_with_plugins_sourced(tmp.path(), &[], &[], &[], &[]);
         let (_, source) = sourced.get("projlsp").expect("project server present");
@@ -1209,9 +1209,9 @@ mod tests {
         // End-to-end of the load-site gate (Sites A/B): a project server loaded
         // from `<cwd>/.kigi/lsp.json` is dropped once the workspace is untrusted.
         let tmp = repo_tmp();
-        let grok = tmp.path().join(".kigi");
-        std::fs::create_dir_all(&grok).unwrap();
-        std::fs::write(grok.join("lsp.json"), r#"{"projlsp": {"command": "true"}}"#).unwrap();
+        let kigi = tmp.path().join(".kigi");
+        std::fs::create_dir_all(&kigi).unwrap();
+        std::fs::write(kigi.join("lsp.json"), r#"{"projlsp": {"command": "true"}}"#).unwrap();
 
         let sourced = load_servers_with_plugins_sourced(tmp.path(), &[], &[], &[], &[]);
         assert!(
@@ -1243,10 +1243,10 @@ mod tests {
             r#"{"mcpServers": {"projjson": {"url": "https://proj.example.com/mcp"}}}"#,
         )
         .unwrap();
-        let grok = tmp.path().join(".kigi");
-        std::fs::create_dir_all(&grok).unwrap();
+        let kigi = tmp.path().join(".kigi");
+        std::fs::create_dir_all(&kigi).unwrap();
         std::fs::write(
-            grok.join("config.toml"),
+            kigi.join("config.toml"),
             "[mcp_servers.projtoml]\nurl = \"https://projtoml.example.com/mcp\"\n",
         )
         .unwrap();
@@ -1264,10 +1264,10 @@ mod tests {
     #[test]
     fn project_scoped_mcp_names_cover_every_source() {
         let tmp = repo_tmp();
-        let grok = tmp.path().join(".kigi");
-        std::fs::create_dir_all(&grok).unwrap();
+        let kigi = tmp.path().join(".kigi");
+        std::fs::create_dir_all(&kigi).unwrap();
         std::fs::write(
-            grok.join("config.toml"),
+            kigi.join("config.toml"),
             "[mcp_servers.cfgsrv]\nurl = \"https://cfg.example.com/mcp\"\n",
         )
         .unwrap();
@@ -1339,7 +1339,7 @@ mod tests {
         let key = workspace_key(tmp.path());
         record(&key, false);
         assert!(!project_scope_allowed(tmp.path()));
-        // Simulate a `grok --trust` grant landing in the store after the
+        // Simulate a `kigi --trust` grant landing in the store after the
         // untrusted verdict was cached: the re-read sees trusted, so the next
         // resolve upgrades the cache without a process restart.
         let allowed = resolve_and_record_inner(

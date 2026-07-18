@@ -181,9 +181,9 @@ async fn install_alpha_channel_resolves_semver_max_from_release_list() {
 
 #[tokio::test]
 #[serial]
-async fn install_removes_legacy_grok_links() {
-    // Pre-rewrite installs left grok/agent/grok-pager links in bin/; the
-    // installer must retire them.
+async fn install_removes_legacy_links() {
+    // Pre-rewrite installs left `agent` links in bin/; the installer must
+    // retire them.
     let _ = test_home();
     reset_home();
     let server = MockServer::start().await;
@@ -192,21 +192,18 @@ async fn install_removes_legacy_grok_links() {
 
     let bin_dir = test_home().join("bin");
     std::fs::create_dir_all(&bin_dir).unwrap();
-    for legacy in ["grok", "agent", "grok-pager"] {
-        std::os::unix::fs::symlink("/tmp/fake-old-target", bin_dir.join(legacy)).unwrap();
-    }
+    let legacy = "agent";
+    std::os::unix::fs::symlink("/tmp/fake-old-target", bin_dir.join(legacy)).unwrap();
 
     install_internal_from_base(Some("0.1.181"), &cfg, &base(&server))
         .await
         .unwrap();
 
-    for legacy in ["grok", "agent", "grok-pager"] {
-        let link = bin_dir.join(legacy);
-        assert!(
-            !link.exists() && !link.is_symlink(),
-            "legacy {legacy} link should be removed"
-        );
-    }
+    let link = bin_dir.join(legacy);
+    assert!(
+        !link.exists() && !link.is_symlink(),
+        "legacy {legacy} link should be removed"
+    );
     assert!(bin_dir.join("kigi").is_symlink(), "kigi link installed");
 }
 

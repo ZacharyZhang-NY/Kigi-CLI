@@ -958,17 +958,17 @@ pub fn apply_doc_mouse_scroll(kind: crossterm::event::MouseEventKind, scroll: &m
 }
 const DOCS_USER_GUIDE_REL: &str = "docs/user-guide";
 /// Prefer keeping the on-disk path when width is tight.
-fn fit_docs_ask_grok_tip(docs_path: &str, width: usize) -> String {
+fn fit_docs_ask_kigi_tip(docs_path: &str, width: usize) -> String {
     use crate::render::line_utils::truncate_str;
     if width == 0 {
         return String::new();
     }
     let long =
-        format!("Tip · Ask Grok about the docs ({docs_path}) — e.g. \"how do I set up MCP?\"");
+        format!("Tip · Ask Kigi about the docs ({docs_path}) — e.g. \"how do I set up MCP?\"");
     if long.width() <= width {
         return long;
     }
-    let short = format!("Tip · Ask Grok about the docs · {docs_path}");
+    let short = format!("Tip · Ask Kigi about the docs · {docs_path}");
     if short.width() <= width {
         return short;
     }
@@ -1054,8 +1054,8 @@ pub fn render_doc_picker_overlay(
     };
     let (picker_area, tip_area) = split_content_for_tip_footer(mca.content);
     if let Some(tip_rect) = tip_area {
-        let docs_path = crate::util::display_user_grok_path(DOCS_USER_GUIDE_REL);
-        let tip_line = fit_docs_ask_grok_tip(&docs_path, tip_rect.width as usize);
+        let docs_path = crate::util::display_user_kigi_path(DOCS_USER_GUIDE_REL);
+        let tip_line = fit_docs_ask_kigi_tip(&docs_path, tip_rect.width as usize);
         render_centered_tip_footer(buf, tip_rect, theme, &tip_line);
     }
     const NARROW_THRESHOLD: u16 = 70;
@@ -1276,7 +1276,7 @@ mod palette_tests {
 #[cfg(test)]
 mod doc_picker_tip_tests {
     use super::{
-        ActiveModal, DOCS_USER_GUIDE_REL, fit_docs_ask_grok_tip, howto_list_modal,
+        ActiveModal, DOCS_USER_GUIDE_REL, fit_docs_ask_kigi_tip, howto_list_modal,
         render_doc_picker_overlay,
     };
     use ratatui::buffer::Buffer;
@@ -1284,16 +1284,16 @@ mod doc_picker_tip_tests {
     use unicode_width::UnicodeWidthStr;
     #[test]
     fn fit_docs_tip_prefers_path_and_never_overflows() {
-        let path = crate::util::display_user_grok_path(DOCS_USER_GUIDE_REL);
+        let path = crate::util::display_user_kigi_path(DOCS_USER_GUIDE_REL);
         let long =
-            format!("Tip · Ask Grok about the docs ({path}) — e.g. \"how do I set up MCP?\"");
-        let short = format!("Tip · Ask Grok about the docs · {path}");
+            format!("Tip · Ask Kigi about the docs ({path}) — e.g. \"how do I set up MCP?\"");
+        let short = format!("Tip · Ask Kigi about the docs · {path}");
         let path_only = format!("Tip · {path}");
-        assert_eq!(fit_docs_ask_grok_tip(&path, long.width()), long);
-        assert_eq!(fit_docs_ask_grok_tip(&path, short.width()), short);
-        assert_eq!(fit_docs_ask_grok_tip(&path, path_only.width()), path_only);
+        assert_eq!(fit_docs_ask_kigi_tip(&path, long.width()), long);
+        assert_eq!(fit_docs_ask_kigi_tip(&path, short.width()), short);
+        assert_eq!(fit_docs_ask_kigi_tip(&path, path_only.width()), path_only);
         for w in [5usize, 12, 20, 30] {
-            let line = fit_docs_ask_grok_tip(&path, w);
+            let line = fit_docs_ask_kigi_tip(&path, w);
             assert!(line.width() <= w, "overflow at {w}: {line:?}");
         }
     }
@@ -1328,7 +1328,7 @@ mod doc_picker_tip_tests {
             all.push('\n');
         }
         assert!(
-            all.contains("Tip") && all.contains("Ask Grok"),
+            all.contains("Tip") && all.contains("Ask Kigi"),
             "missing tip footer:\n{all}"
         );
         assert!(

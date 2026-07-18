@@ -669,7 +669,7 @@ impl LocalTerminalActor {
         }
 
         cmd.envs(crate::util::pager_env());
-        crate::util::apply_grok_agent_marker(&mut cmd);
+        crate::util::apply_kigi_agent_marker(&mut cmd);
 
         cmd.fd_mappings(prep.fd_mappings)
             .map_err(|e| ComputerError::io(format!("fd mapping: {e}")))?;
@@ -1950,7 +1950,7 @@ impl LocalTerminalActor {
                         .map(|m| m.len())
                         .unwrap_or(0);
                     tokio::spawn(async move {
-                        crate::implementations::grok_build::monitor::tool::run_monitor_pipeline(
+                        crate::implementations::kigi::monitor::tool::run_monitor_pipeline(
                             &pipeline_task_id,
                             &pipeline_description,
                             pipeline_terminal,
@@ -2754,7 +2754,7 @@ fn spawn_shell_command(
             cmd.envs(login);
         }
         // Agent marker must win over request/login env.
-        crate::util::apply_grok_agent_marker(&mut cmd);
+        crate::util::apply_kigi_agent_marker(&mut cmd);
 
         // Detach from the controlling terminal so subprocesses cannot open
         // /dev/tty and compete with the TUI for terminal input.
@@ -2762,7 +2762,7 @@ fn spawn_shell_command(
 
         // If the sandbox profile restricts network, install a seccomp BPF
         // filter on the child that blocks connect/bind/sendto/listen/accept.
-        // The parent (grok) process retains network for the LLM API.
+        // The parent (kigi) process retains network for the LLM API.
         // Filesystem restrictions are already inherited from the process-level
         // Landlock/Seatbelt sandbox — no action needed here for FS.
         #[cfg(target_os = "linux")]
@@ -2795,7 +2795,7 @@ fn spawn_shell_command(
         }
         cmd.envs(crate::util::pager_env());
         // Agent marker must win over request env.
-        crate::util::apply_grok_agent_marker(&mut cmd);
+        crate::util::apply_kigi_agent_marker(&mut cmd);
 
         // Set creation flags inline rather than via crate::util::detach_command
         // + new_process_group: tokio's creation_flags is a SET, not OR, so
@@ -2806,7 +2806,7 @@ fn spawn_shell_command(
         //     job so we can assign it to our own ProcessGroup. Per Microsoft
         //     docs this *fails CreateProcess with ERROR_ACCESS_DENIED* (os
         //     error 5) when the parent process is in a job that does not
-        //     have JOB_OBJECT_LIMIT_BREAKAWAY_OK set — common when grok-agent
+        //     have JOB_OBJECT_LIMIT_BREAKAWAY_OK set — common when kigi-agent
         //     is launched under a Windows service, scheduled task, or some
         //     ACP host wrappers. The caller below retries without this flag
         //     on os error 5.
@@ -4212,7 +4212,7 @@ mod tests {
 
         let mut req = make_request("echo \"[$GPG_TTY]\"");
         req.env
-            .insert("GPG_TTY".to_string(), "/grok-sentinel-tty".to_string());
+            .insert("GPG_TTY".to_string(), "/kigi-sentinel-tty".to_string());
 
         let result = backend.run(req).await.unwrap();
         assert_eq!(result.exit_code, Some(0));

@@ -172,7 +172,7 @@ mod tests {
     /// path doesn't regress).
     #[tokio::test]
     async fn construct_user_message_returns_without_git_status_on_bad_dir() {
-        let dir = std::path::Path::new("/tmp/nonexistent-grok-test-dir");
+        let dir = std::path::Path::new("/tmp/nonexistent-kigi-test-dir");
         let msg = construct_user_message(dir, VcsKind::Git, None, None).await;
         // user_info block is always present
         assert!(

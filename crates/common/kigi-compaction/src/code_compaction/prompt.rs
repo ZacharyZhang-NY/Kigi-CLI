@@ -1,12 +1,12 @@
-//! grok-build's session-level summarization prompt.
+//! kigi's session-level summarization prompt.
 //!
-//! Split out of the crate-root `prompt` module so grok-build's full-replace
+//! Split out of the crate-root `prompt` module so kigi's full-replace
 //! prompt lives alongside the rest of its [`code_compaction`](crate::code_compaction)
-//! subsystem. The Grok chat's step-level intra prompt
+//! subsystem. The Kigi chat's step-level intra prompt
 //! ([`format_compaction_prompt`](crate::prompt::format_compaction_prompt))
 //! stays at the crate root.
 
-/// Build grok-build's session-level summarization prompt (no chat history).
+/// Build kigi's session-level summarization prompt (no chat history).
 ///
 /// `user_context` is the optional `/compact <text>` user-provided context,
 /// spliced inline into the structured prompt. Ported verbatim from
@@ -49,11 +49,11 @@ your response.
 /// The prompt is owned by the harness's [`CompactionSampler`] impl (it appends
 /// the prompt as the final user message before sampling), not by the shared
 /// orchestrator. This enum lets each harness select the right one in one place
-/// so the structured (grok-build) and short self-summary prompts stay
+/// so the structured (kigi) and short self-summary prompts stay
 /// shared instead of duplicated per harness.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SummaryPromptKind {
-    /// grok-build's detailed, numbered-section summary prompt.
+    /// kigi's detailed, numbered-section summary prompt.
     #[default]
     Structured,
     /// The short self-summarization prompt.
@@ -106,7 +106,7 @@ mod tests {
     #[test]
     fn kind_structured_matches_build_summary_prompt() {
         // The Structured kind must be byte-identical to the legacy entry point
-        // so routing through the selector never changes grok-build's prompt.
+        // so routing through the selector never changes kigi's prompt.
         assert_eq!(
             build_summary_prompt_kind(SummaryPromptKind::Structured, None),
             build_summary_prompt(None)

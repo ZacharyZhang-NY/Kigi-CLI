@@ -133,7 +133,7 @@ pub struct WorkspaceConfig {
     /// shell caller resolves the verdict and threads it in; callers without a
     /// folder-trust decision pass `true`.
     pub project_lsp_trusted: bool,
-    /// Confine `x.ai/fs/*` / `workspace.fs_*` resolution to the workspace root
+    /// Confine `kigi/fs/*` / `workspace.fs_*` resolution to the workspace root
     /// (reject `..`, absolute-outside-root, symlink escapes). Default `false`
     /// (unconfined) — set to `true` only by the workspace server on a remote
     /// sandbox, where the root is a real tenant boundary.

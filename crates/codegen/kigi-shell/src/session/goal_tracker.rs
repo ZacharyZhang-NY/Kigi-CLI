@@ -252,7 +252,7 @@ impl GoalHistoryEntry {
 // GoalOrchestration (full persisted state)
 
 /// Generate a short opaque identifier used to scope the per-goal
-/// scratch root (`<temp_dir>/grok-goal-<id>`) and the verifier
+/// scratch root (`<temp_dir>/kigi-goal-<id>`) and the verifier
 /// verdict/details files inside it.
 ///
 /// The id is a 12-char prefix of a UUIDv4 simple form — ~48 bits of
@@ -267,13 +267,13 @@ pub(crate) fn generate_verifier_id() -> String {
     s
 }
 
-/// Private per-goal scratch root: `<temp_dir>/grok-goal-<verifier_id>`.
+/// Private per-goal scratch root: `<temp_dir>/kigi-goal-<verifier_id>`.
 ///
 /// Rooted at [`std::env::temp_dir`] (respects `TMPDIR`) and namespaced by the
 /// goal's `verifier_id`, so concurrent goals never collide and cleanup of one
 /// never touches another. Removed wholesale on every terminal goal transition.
 pub(crate) fn goal_scratch_root(verifier_id: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("grok-goal-{verifier_id}"))
+    std::env::temp_dir().join(format!("kigi-goal-{verifier_id}"))
 }
 
 /// Create (or verify) the goal's scratch root, locked to the owner
@@ -1646,7 +1646,7 @@ mod tests {
     /// fresh values on every call. The fixed length is part of the
     /// public contract — verifier file paths embed it verbatim, and
     /// drift here would silently invalidate the documented
-    /// `grok-goal-<12 hex chars>` scratch-root format (and the
+    /// `kigi-goal-<12 hex chars>` scratch-root format (and the
     /// 12-hex restore validation in `from_snapshot`).
     #[test]
     fn generate_verifier_id_is_short_hex_and_unique() {
@@ -2539,7 +2539,7 @@ mod tests {
         activate_tracker(&mut t);
         t.update_live_progress(
             100,
-            vec![("grok-4".to_owned(), 60), ("grok-3".to_owned(), 40)],
+            vec![("kigi-4".to_owned(), 60), ("kigi-3".to_owned(), 40)],
             200_000,
             50,
             3,
@@ -3081,11 +3081,11 @@ mod tests {
         let mut o = make_base_orchestration();
         o.skeptic_model_assignment = vec![
             crate::util::config::GoalRoleModel {
-                model: "grok-4".to_string(),
+                model: "kigi-4".to_string(),
                 agent_type: "general-purpose".to_string(),
             },
             crate::util::config::GoalRoleModel {
-                model: "grok-4.5".to_string(),
+                model: "kigi-4.5".to_string(),
                 agent_type: "cursor".to_string(),
             },
         ];
@@ -3132,7 +3132,7 @@ mod tests {
             activate_tracker(&mut t);
             t.snapshot_mut().unwrap().skeptic_model_assignment =
                 vec![crate::util::config::GoalRoleModel {
-                    model: "grok-4".to_string(),
+                    model: "kigi-4".to_string(),
                     agent_type: "general-purpose".to_string(),
                 }];
             let applied = match ending {
@@ -3170,22 +3170,22 @@ mod tests {
     }
 
     /// The scratch path helpers derive the pinned layout from
-    /// `temp_dir()` + `verifier_id`: a `grok-goal-<vid>` root with an
+    /// `temp_dir()` + `verifier_id`: a `kigi-goal-<vid>` root with an
     /// `implementer/` subdir and per-index `skeptic-<idx>/` subdirs.
     #[test]
     fn scratch_path_helpers_derive_pinned_layout() {
         let root = goal_scratch_root("vid123");
-        assert_eq!(root, std::env::temp_dir().join("grok-goal-vid123"));
+        assert_eq!(root, std::env::temp_dir().join("kigi-goal-vid123"));
         assert_eq!(
             implementer_scratch_dir("vid123"),
             std::env::temp_dir()
-                .join("grok-goal-vid123")
+                .join("kigi-goal-vid123")
                 .join("implementer"),
         );
         assert_eq!(
             skeptic_scratch_dir("vid123", 2),
             std::env::temp_dir()
-                .join("grok-goal-vid123")
+                .join("kigi-goal-vid123")
                 .join("skeptic-2"),
         );
     }

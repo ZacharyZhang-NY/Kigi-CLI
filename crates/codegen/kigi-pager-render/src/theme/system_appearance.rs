@@ -87,7 +87,7 @@ fn mock_override() -> Option<Option<SystemAppearance>> {
 ///
 /// `dark_theme` and `light_theme` are the user-configured themes for each
 /// appearance mode, read from `[ui].auto_dark_theme` and `[ui].auto_light_theme`
-/// in `config.toml`. When `None`, defaults to `GrokNight` / `GrokDay`.
+/// in `config.toml`. When `None`, defaults to `KigiNight` / `KigiDay`.
 ///
 /// This function is the single mapping point for appearance -> theme.
 /// All callers go through it, making the mapping trivially extensible.
@@ -98,8 +98,8 @@ pub fn to_theme_kind(
     light_theme: Option<ThemeKind>,
 ) -> ThemeKind {
     match appearance {
-        SystemAppearance::Light => light_theme.unwrap_or(ThemeKind::GrokDay),
-        SystemAppearance::Dark => dark_theme.unwrap_or(ThemeKind::GrokNight),
+        SystemAppearance::Light => light_theme.unwrap_or(ThemeKind::KigiDay),
+        SystemAppearance::Dark => dark_theme.unwrap_or(ThemeKind::KigiNight),
     }
 }
 
@@ -214,15 +214,15 @@ mod tests {
     }
 
     #[test]
-    fn to_theme_kind_dark_defaults_to_groknight() {
+    fn to_theme_kind_dark_defaults_to_kiginight() {
         let result = to_theme_kind(SystemAppearance::Dark, None, None);
-        assert_eq!(result, ThemeKind::GrokNight);
+        assert_eq!(result, ThemeKind::KigiNight);
     }
 
     #[test]
-    fn to_theme_kind_light_defaults_to_grokday() {
+    fn to_theme_kind_light_defaults_to_kigiday() {
         let result = to_theme_kind(SystemAppearance::Light, None, None);
-        assert_eq!(result, ThemeKind::GrokDay);
+        assert_eq!(result, ThemeKind::KigiDay);
     }
 
     #[test]
@@ -242,30 +242,30 @@ mod tests {
         let result = to_theme_kind(
             SystemAppearance::Dark,
             Some(ThemeKind::RosePineMoon),
-            Some(ThemeKind::GrokNight),
+            Some(ThemeKind::KigiNight),
         );
         assert_eq!(result, ThemeKind::RosePineMoon);
 
         let result = to_theme_kind(
             SystemAppearance::Light,
             Some(ThemeKind::RosePineMoon),
-            Some(ThemeKind::GrokNight),
+            Some(ThemeKind::KigiNight),
         );
-        assert_eq!(result, ThemeKind::GrokNight);
+        assert_eq!(result, ThemeKind::KigiNight);
     }
 
     #[test]
     fn to_theme_kind_dark_ignores_light_override() {
         let result = to_theme_kind(SystemAppearance::Dark, None, Some(ThemeKind::TokyoNight));
         // Dark appearance should use the dark default, not the light override.
-        assert_eq!(result, ThemeKind::GrokNight);
+        assert_eq!(result, ThemeKind::KigiNight);
     }
 
     #[test]
     fn to_theme_kind_light_ignores_dark_override() {
         let result = to_theme_kind(SystemAppearance::Light, Some(ThemeKind::TokyoNight), None);
         // Light appearance should use the light default, not the dark override.
-        assert_eq!(result, ThemeKind::GrokDay);
+        assert_eq!(result, ThemeKind::KigiDay);
     }
 
     #[test]

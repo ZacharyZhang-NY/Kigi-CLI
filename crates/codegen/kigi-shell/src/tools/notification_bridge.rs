@@ -39,7 +39,7 @@ pub struct NotificationBridgeConfig {
     pub persistence_tx: mpsc::UnboundedSender<PersistenceMsg>,
     /// When true, send incremental `output_delta` instead of full `output`
     /// in bash streaming updates. The client must opt in via the
-    /// `x.ai/incrementalBashOutput` capability.
+    /// `kigi/incrementalBashOutput` capability.
     pub incremental_bash_output: bool,
     /// Plan mode tracker shared with the session actor.
     /// Used to transition state on `PlanModeEntered` / `PlanModeExited`
@@ -73,7 +73,7 @@ pub struct NotificationBridgeConfig {
     /// `InjectNotification` path instead of immediate synthetic prompts.
     pub auto_wake_enabled: bool,
     /// When `true`, an approved `PlanModeExited` also arms the tracker's
-    /// next-turn exit reminder. Grok-build leaves this `false` — its
+    /// next-turn exit reminder. Kigi-build leaves this `false` — its
     /// exit-plan tool result already informs the model, and a deferred
     /// reminder would arrive stale. Shared with the session actor (the
     /// `gateway_enabled` pattern) and refreshed on zero-turn rebuilds so the
@@ -248,7 +248,7 @@ async fn handle_notification(
                 "Bash execution backgrounded notification received — forwarding to TUI"
             );
 
-            // Forward as x.ai/task_backgrounded ExtNotification so the TUI can
+            // Forward as kigi/task_backgrounded ExtNotification so the TUI can
             // correlate tool_call_id with task_id and populate the tasks panel.
             let mut notification = crate::extensions::notification::SessionNotification {
                 session_id: config.session_id.clone(),
@@ -279,7 +279,7 @@ async fn handle_notification(
                 .ok();
             if let Some(params) = params {
                 let ext_notification =
-                    acp::ExtNotification::new("x.ai/task_backgrounded", params.into());
+                    acp::ExtNotification::new("kigi/task_backgrounded", params.into());
                 config.gateway.forward_fire_and_forget(ext_notification);
             }
         }
@@ -327,7 +327,7 @@ async fn handle_notification(
             // same way bash does. Relying only on the pipeline's terminal
             // `MonitorEvent` + idle-gated `InjectNotification` was easy to miss
             // when the agent was idle and the monitor produced no further
-            // stdout. The pager still receives x.ai/task_completed below for UI.
+            // stdout. The pager still receives kigi/task_completed below for UI.
             // Stamped on the completion notification below so the pager knows
             // whether a wake response follows the chip.
             let mut will_wake = false;
@@ -460,7 +460,7 @@ async fn handle_notification(
                 .ok();
             if let Some(params) = params {
                 let notification: acp::ExtNotification =
-                    acp::ExtNotification::new("x.ai/task_completed", params.into());
+                    acp::ExtNotification::new("kigi/task_completed", params.into());
                 config.gateway.forward_fire_and_forget(notification);
             }
 
@@ -582,7 +582,7 @@ async fn handle_notification(
                 config
                     .gateway
                     .forward_fire_and_forget(acp::ExtNotification::new(
-                        "x.ai/scheduled_task_inject_prompt",
+                        "kigi/scheduled_task_inject_prompt",
                         params.into(),
                     ));
             }
@@ -603,7 +603,7 @@ async fn handle_notification(
                 config
                     .gateway
                     .forward_fire_and_forget(acp::ExtNotification::new(
-                        "x.ai/scheduled_task_fired",
+                        "kigi/scheduled_task_fired",
                         params.into(),
                     ));
             }
@@ -652,7 +652,7 @@ async fn handle_notification(
                 config
                     .gateway
                     .forward_fire_and_forget(acp::ExtNotification::new(
-                        "x.ai/monitor_event",
+                        "kigi/monitor_event",
                         params.into(),
                     ));
             }
@@ -711,7 +711,7 @@ async fn handle_notification(
                 config
                     .gateway
                     .forward_fire_and_forget(acp::ExtNotification::new(
-                        "x.ai/scheduled_task_deleted",
+                        "kigi/scheduled_task_deleted",
                         params.into(),
                     ));
             }
@@ -752,7 +752,7 @@ async fn handle_notification(
                 config
                     .gateway
                     .forward_fire_and_forget(acp::ExtNotification::new(
-                        "x.ai/scheduled_task_created",
+                        "kigi/scheduled_task_created",
                         params.into(),
                     ));
             }
@@ -901,7 +901,7 @@ mod tests {
     /// must NOT fire the synthetic auto-wake prompt — an async "task completed"
     /// wake mid-goal derails a weak model. It must also NOT be marked
     /// auto-wake-delivered (so surface 2's `TaskCompletionReminder` is free to
-    /// drain it). The pager's `x.ai/task_completed` notification still fires.
+    /// drain it). The pager's `kigi/task_completed` notification still fires.
     #[tokio::test]
     async fn bash_task_completed_suppresses_auto_wake_during_goal_loop() {
         let (config, mut gateway_rx, _persistence_rx, mut cmd_rx) = make_test_config_full();
@@ -946,14 +946,14 @@ mod tests {
         let mut found_ext = false;
         while let Ok(msg) = gateway_rx.try_recv() {
             if let kigi_acp_lib::AcpClientMessage::ExtNotification(args) = msg
-                && args.request.method.as_ref() == "x.ai/task_completed"
+                && args.request.method.as_ref() == "kigi/task_completed"
             {
                 found_ext = true;
             }
         }
         assert!(
             found_ext,
-            "x.ai/task_completed ExtNotification must still be sent for UI"
+            "kigi/task_completed ExtNotification must still be sent for UI"
         );
     }
 
@@ -995,13 +995,13 @@ mod tests {
         );
     }
 
-    /// `will_wake` off the emitted `x.ai/task_completed` params.
+    /// `will_wake` off the emitted `kigi/task_completed` params.
     fn task_completed_will_wake(
         gateway_rx: &mut mpsc::UnboundedReceiver<kigi_acp_lib::AcpClientMessage>,
     ) -> Option<bool> {
         while let Ok(msg) = gateway_rx.try_recv() {
             if let kigi_acp_lib::AcpClientMessage::ExtNotification(args) = msg
-                && args.request.method.as_ref() == "x.ai/task_completed"
+                && args.request.method.as_ref() == "kigi/task_completed"
             {
                 let v: serde_json::Value = serde_json::from_str(args.request.params.get()).ok()?;
                 return v["update"]["will_wake"].as_bool();
@@ -1557,7 +1557,7 @@ mod tests {
             if let kigi_acp_lib::AcpClientMessage::ExtNotification(args) = msg {
                 assert_ne!(
                     args.request.method.as_ref(),
-                    "x.ai/monitor_event",
+                    "kigi/monitor_event",
                     "cross-session monitor event must not be forwarded to the pager"
                 );
             }
@@ -1587,7 +1587,7 @@ mod tests {
 
     #[tokio::test]
     async fn legacy_monitor_event_without_owner_is_injected() {
-        // Legacy / non-grok-build backends record no owner; such events must
+        // Legacy / non-kigi backends record no owner; such events must
         // pass through unchanged for backwards compatibility.
         let (config, mut cmd_rx) = make_test_config();
         let notification = make_monitor_event_notification("mon-legacy", None);
@@ -1635,18 +1635,18 @@ mod tests {
             "block_waited completion should not send Prompt or InjectNotification"
         );
 
-        // The x.ai/task_completed ExtNotification for UI updates must still be sent.
+        // The kigi/task_completed ExtNotification for UI updates must still be sent.
         let mut found_ext = false;
         while let Ok(msg) = gateway_rx.try_recv() {
             if let kigi_acp_lib::AcpClientMessage::ExtNotification(args) = msg
-                && args.request.method.as_ref() == "x.ai/task_completed"
+                && args.request.method.as_ref() == "kigi/task_completed"
             {
                 found_ext = true;
             }
         }
         assert!(
             found_ext,
-            "x.ai/task_completed ExtNotification must still be sent for UI"
+            "kigi/task_completed ExtNotification must still be sent for UI"
         );
     }
 
@@ -1676,18 +1676,18 @@ mod tests {
             "explicitly_killed completion should not send Prompt or InjectNotification"
         );
 
-        // The x.ai/task_completed ExtNotification for UI updates must still be sent.
+        // The kigi/task_completed ExtNotification for UI updates must still be sent.
         let mut found_ext = false;
         while let Ok(msg) = gateway_rx.try_recv() {
             if let kigi_acp_lib::AcpClientMessage::ExtNotification(args) = msg
-                && args.request.method.as_ref() == "x.ai/task_completed"
+                && args.request.method.as_ref() == "kigi/task_completed"
             {
                 found_ext = true;
             }
         }
         assert!(
             found_ext,
-            "x.ai/task_completed ExtNotification must still be sent for UI"
+            "kigi/task_completed ExtNotification must still be sent for UI"
         );
     }
 
@@ -1839,7 +1839,7 @@ mod tests {
         ));
     }
 
-    /// Default (grok) polarity: the exit_plan_mode tool result is the model's
+    /// Default (kigi) polarity: the exit_plan_mode tool result is the model's
     /// only exit signal, so an approved `PlanModeExited` must NOT arm the
     /// deferred exit reminder — in memory or in the persisted snapshot.
     /// Sibling of `plan_mode_exited_arms_exit_reminder_when_gated`.
@@ -1854,7 +1854,7 @@ mod tests {
 
         let notification =
             ToolNotification::PlanModeExited(kigi_tools::notification::types::PlanModeExited {
-                tool_call_id: "tc-exit-grok".into(),
+                tool_call_id: "tc-exit-kigi".into(),
                 plan_content: Some("- step 1".into()),
                 plan_file_path: "/tmp/test-session/plan.md".into(),
             });

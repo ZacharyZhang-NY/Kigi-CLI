@@ -68,7 +68,7 @@ pub(in crate::app::dispatch) fn dispatch_sessions_confirm_close(
     remove_agent_and_cleanup(app, closed_id);
     effects
 }
-/// Rename the current session via x.ai/session/rename.
+/// Rename the current session via kigi/session/rename.
 ///
 /// Produces Effect::RenameSession which spawns an async ACP ext request.
 /// On completion, TaskResult::RenameSessionComplete shows the result.

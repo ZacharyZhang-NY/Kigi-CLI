@@ -157,7 +157,7 @@ pub enum ToolProgress {
 /// across the wire boundary without re-encoding.
 ///
 /// The `Image` variant carries optional metadata fields (`media_id`,
-/// `filename`, `path`, `metadata`) that the Grok SLOP converter uses to
+/// `filename`, `path`, `metadata`) that the Kigi SLOP converter uses to
 /// build `Media` objects with the right identifiers and file paths. Tool
 /// authors populate these in their `ToolOutput::model_output()` impls so
 /// downstream consumers don't need to know the concrete tool type.
@@ -169,11 +169,11 @@ pub enum ContentBlock {
     Text { text: String },
     /// Image. `mime_type` is e.g. `"image/png"`; `data` is base64.
     ///
-    /// Optional metadata fields are used by the Grok SLOP converter to
+    /// Optional metadata fields are used by the Kigi SLOP converter to
     /// produce `Media` objects with the correct identifiers:
     /// - `media_id`: unique image ID for referencing in subsequent tool calls
     /// - `filename`: human-readable filename (e.g. `"xK29f.png"`)
-    /// - `path`: file path on the Grok Computer filesystem
+    /// - `path`: file path on the Kigi Computer filesystem
     /// - `metadata`: arbitrary key-value pairs (e.g. `title`, `webpage_url`)
     Image {
         #[serde(alias = "mimeType")]

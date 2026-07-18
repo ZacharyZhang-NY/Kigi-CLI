@@ -542,7 +542,7 @@ mod tests {
         };
         // Three distinct URLs across two searches, one duplicated.
         let entries = vec![
-            searched("grok", &["https://a.com", "https://b.com"]),
+            searched("kigi", &["https://a.com", "https://b.com"]),
             searched("pager", &["https://b.com", "https://c.com"]),
         ];
         let l = label(&entries);

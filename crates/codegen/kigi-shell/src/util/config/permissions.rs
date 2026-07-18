@@ -344,7 +344,7 @@ mod tests {
 
     #[test]
     fn permission_mode_from_ui_if_set_none_when_no_keys() {
-        let theme: TomlValue = toml::from_str("[ui]\ntheme = \"groknight\"\n").unwrap();
+        let theme: TomlValue = toml::from_str("[ui]\ntheme = \"kiginight\"\n").unwrap();
         assert_eq!(
             permission_mode_from_ui_if_set(theme.get("ui").unwrap()),
             None,
@@ -459,7 +459,7 @@ mod tests {
                 "ask",
             ),
             // No permission keys → Ask.
-            ("[ui]\ntheme = \"groknight\"\n", PermissionMode::Ask, "ask"),
+            ("[ui]\ntheme = \"kiginight\"\n", PermissionMode::Ask, "ask"),
         ];
         for (toml_str, expected_mode, expected_canonical) in cases {
             let root: TomlValue = toml::from_str(toml_str).unwrap();

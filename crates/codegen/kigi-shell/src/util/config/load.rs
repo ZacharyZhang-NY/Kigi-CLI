@@ -142,7 +142,7 @@ mod tests {
     fn test_models_default_parsing() {
         let toml_str = r#"
 [models]
-default = "grok-code-fast-1"
+default = "kigi-code-fast-1"
 "#;
         let root: TomlValue = toml::from_str(toml_str).unwrap();
         if let TomlValue::Table(table) = root
@@ -152,7 +152,7 @@ default = "grok-code-fast-1"
                 .get("default")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
-            assert_eq!(default.as_deref(), Some("grok-code-fast-1"));
+            assert_eq!(default.as_deref(), Some("kigi-code-fast-1"));
         } else {
             panic!("Expected models table");
         }
@@ -198,7 +198,7 @@ secret = "my-secret-token"
     fn test_remote_secret_no_section() {
         let toml_str = r#"
 [models]
-default = "grok-code-fast-1"
+default = "kigi-code-fast-1"
 "#;
         let root: TomlValue = toml::from_str(toml_str).unwrap();
         if let TomlValue::Table(table) = root {

@@ -336,7 +336,7 @@ mod tests {
             redact_secrets("just a normal log line"),
             Cow::Borrowed(_)
         ));
-        assert!(matches!(redact_secrets("model=grok-3"), Cow::Borrowed(_)));
+        assert!(matches!(redact_secrets("model=kigi-3"), Cow::Borrowed(_)));
     }
 
     /// Joins fixture fragments at runtime so realistic-looking fake tokens
@@ -461,14 +461,14 @@ mod tests {
 
     #[test]
     fn redacts_sensitive_url_query_params() {
-        let out = redact_secrets("callback https://x.ai/cb?code=ABC123XYZ&state=xyz789 failed");
+        let out = redact_secrets("callback https://kimi.com/cb?code=ABC123XYZ&state=xyz789 failed");
         assert!(!out.contains("ABC123XYZ"), "OAuth code leaked: {out}");
         assert!(!out.contains("xyz789"), "state leaked: {out}");
     }
 
     #[test]
     fn url_regex_excludes_trailing_punctuation() {
-        let out = redact_secrets("see `https://x.ai/cb?code=ABCD12345`");
+        let out = redact_secrets("see `https://kimi.com/cb?code=ABCD12345`");
         assert!(out.ends_with('`'), "trailing backtick lost: {out}");
     }
 

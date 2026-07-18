@@ -500,7 +500,7 @@ mod tests {
     #[test]
     fn test_copy_git_dir_preserves_worktree_source_marker() {
         // A worktree-from-worktree (standalone) must inherit the source's
-        // `grok-worktree-source` marker so it still points at the ultimate
+        // `kigi-worktree-source` marker so it still points at the ultimate
         // main repo rather than the intermediate worktree.
         let temp = TempDir::new().unwrap();
         let source_git = temp.path().join("source/.git");
@@ -508,12 +508,12 @@ mod tests {
 
         std::fs::create_dir_all(&source_git).unwrap();
         std::fs::write(source_git.join("HEAD"), "ref: refs/heads/main\n").unwrap();
-        std::fs::write(source_git.join("grok-worktree-source"), "/main/repo").unwrap();
+        std::fs::write(source_git.join("kigi-worktree-source"), "/main/repo").unwrap();
 
         copy_git_dir(&source_git, &dest_git).unwrap();
 
         assert_eq!(
-            std::fs::read_to_string(dest_git.join("grok-worktree-source")).unwrap(),
+            std::fs::read_to_string(dest_git.join("kigi-worktree-source")).unwrap(),
             "/main/repo"
         );
     }

@@ -108,7 +108,7 @@ impl MvpAgent {
     }
     /// Resolve folder trust and load launch-dir MCP configs after `initialize`
     /// returns. The walks are synchronous and expensive in large monorepos; they
-    /// must not block the ACP response (grok-desktop sends `initialize` immediately).
+    /// must not block the ACP response (kigi-desktop sends `initialize` immediately).
     pub(super) fn spawn_initialize_launch_mcp_setup(&self) {
         let cwd = self.launch_cwd.clone();
         let compat = self.cfg.borrow().compat_resolved;
@@ -151,7 +151,7 @@ impl MvpAgent {
     /// Build the launch-dir plugin registry snapshot on first use.
     ///
     /// Boot-time discovery was deferred past ACP `initialize` (the cwd→git-root
-    /// plus user/marketplace walks stalled grok-desktop's first `initialize`),
+    /// plus user/marketplace walks stalled kigi-desktop's first `initialize`),
     /// leaving `plugin_registry_handle` empty. That shared snapshot still backs
     /// the launch-dir plugin MCP/LSP merges read in `resolve_mcp_servers` and
     /// the session LSP build, so populate it lazily — off the `initialize`
@@ -292,7 +292,7 @@ impl MvpAgent {
     }
     /// Pre-session command availability snapshot.
     ///
-    /// Used by the `x.ai/commands/list` ext method and the
+    /// Used by the `kigi/commands/list` ext method and the
     /// `InitializeResponse._meta` path (`builtin_commands()`), both of
     /// which fire before any session exists. The eventual agent's toolset
     /// is unknown (depends on the model the user picks), so we fail-closed
@@ -346,7 +346,7 @@ impl MvpAgent {
     ///
     /// Deferred past ACP wiring so `initialize` can respond before folder-trust
     /// scans and `WorkspaceHandle::new_minimal` run (same boot stall as plugin
-    /// discovery on grok-desktop Windows).
+    /// discovery on kigi-desktop Windows).
     fn ensure_local_workspace_ops(
         &self,
     ) -> Result<kigi_workspace::WorkspaceOps, acp::Error> {
@@ -404,7 +404,7 @@ impl MvpAgent {
     /// Returns `SessionToken` when EITHER:
     ///   - `auth_manager` currently has a live (non-expired) credential, OR
     ///   - the active auth method is session-based (`cached_token`,
-    ///     `grok.com`, `oidc`) -- even if the in-memory token is currently
+    ///     `kimi-code`, `oidc`) -- even if the in-memory token is currently
     ///     expired or missing.
     ///
     /// Returns `ApiKey` only when the auth method is BYOK (`xai.api_key`) or
@@ -493,7 +493,7 @@ impl MvpAgent {
             let _ = self
                 .gateway
                 .ext_notification(
-                    acp::ExtNotification::new("x.ai/session_notification", params.into()),
+                    acp::ExtNotification::new("kigi/session_notification", params.into()),
                 )
                 .await;
         }
@@ -621,8 +621,8 @@ impl MvpAgent {
     /// Build deploy-service config. The tool talks directly to the deployer service.
     pub(super) fn prepare_app_builder_deployer_config(
         &self,
-    ) -> kigi_tools::implementations::grok_build::deploy_app::AppBuilderDeployerConfig {
-        use kigi_tools::implementations::grok_build::deploy_app::AppBuilderDeployerConfig;
+    ) -> kigi_tools::implementations::kigi::deploy_app::AppBuilderDeployerConfig {
+        use kigi_tools::implementations::kigi::deploy_app::AppBuilderDeployerConfig;
         AppBuilderDeployerConfig::Disabled
     }
     /// Web search config (PRD F5). The Kimi search service exists only on
@@ -677,8 +677,8 @@ impl MvpAgent {
     ///   OAuth sessions (PRD F5) > None (local pipeline only)
     pub(super) fn prepare_web_fetch_config(
         &self,
-    ) -> kigi_tools::implementations::grok_build::web_fetch::WebFetchConfig {
-        use kigi_tools::implementations::grok_build::web_fetch::WebFetchConfig;
+    ) -> kigi_tools::implementations::kigi::web_fetch::WebFetchConfig {
+        use kigi_tools::implementations::kigi::web_fetch::WebFetchConfig;
         let cfg = self.cfg.borrow();
         if cfg.disable_web_search {
             return WebFetchConfig::Disabled;
@@ -816,7 +816,7 @@ impl MvpAgent {
             subagent_event_tx,
             subagent_event_rx: RefCell::new(Some(subagent_event_rx)),
             subagent_coordinator: RefCell::new(subagent_coordinator),
-            monitor_event_buffer: kigi_tools::implementations::grok_build::task::types::MonitorEventBuffer::default(),
+            monitor_event_buffer: kigi_tools::implementations::kigi::task::types::MonitorEventBuffer::default(),
             workspace_ops: RefCell::new(None),
             require_gateway_sessions: Rc::new(
                 RefCell::new(std::collections::HashSet::new()),
@@ -833,7 +833,7 @@ impl MvpAgent {
         instance.auth_manager.configure_refresher();
         instance
     }
-    /// Handle `x.ai/internal/evict_sessions` — the leader server tells us a
+    /// Handle `kigi/internal/evict_sessions` — the leader server tells us a
     /// client disconnected and these sessions lost their IPC owner.
     ///
     /// **This is the no-evict keystone.** A disconnect must
@@ -1082,12 +1082,12 @@ impl MvpAgent {
         }
     }
     /// Cancel a subagent by id, returning a typed outcome that backs the pager's
-    /// `x.ai/subagent/cancel`. Active/pending → cancelled (a finish follows);
+    /// `kigi/subagent/cancel`. Active/pending → cancelled (a finish follows);
     /// already-finished → its terminal status; unknown id → `NotFound`.
     pub fn cancel_subagent(
         &self,
         subagent_id: &str,
-    ) -> kigi_tools::implementations::grok_build::task::types::SubagentCancelOutcome {
+    ) -> kigi_tools::implementations::kigi::task::types::SubagentCancelOutcome {
         self.subagent_coordinator.borrow_mut().cancel_with_outcome(subagent_id)
     }
     /// List running subagent seeds for a given parent session.
@@ -1183,7 +1183,7 @@ impl MvpAgent {
         let sessions = self.sessions.borrow();
         sessions.get(session_id).cloned()
     }
-    /// Get hooks list for a session (for `x.ai/hooks/list` extension).
+    /// Get hooks list for a session (for `kigi/hooks/list` extension).
     pub async fn list_hooks(
         &self,
         session_id: &acp::SessionId,
@@ -1191,7 +1191,7 @@ impl MvpAgent {
         let handle = self.get_session_handle(session_id)?;
         handle.get_hooks_list().await
     }
-    /// Execute a hooks management action (for `x.ai/hooks/action`).
+    /// Execute a hooks management action (for `kigi/hooks/action`).
     pub async fn execute_hooks_action(
         &self,
         session_id: &acp::SessionId,
@@ -1207,7 +1207,7 @@ impl MvpAgent {
         let handle = self.get_session_handle(session_id)?;
         handle.execute_hooks_action(action).await
     }
-    /// Execute a plugins management action (for `x.ai/plugins/action`).
+    /// Execute a plugins management action (for `kigi/plugins/action`).
     pub async fn execute_plugins_action(
         &self,
         session_id: &acp::SessionId,
@@ -1225,7 +1225,7 @@ impl MvpAgent {
         }
         outcome
     }
-    /// Get a snapshot of the shared plugin registry (for `x.ai/plugins/list`).
+    /// Get a snapshot of the shared plugin registry (for `kigi/plugins/list`).
     pub fn plugin_registry_snapshot(
         &self,
     ) -> Option<std::sync::Arc<kigi_agent::plugins::PluginRegistry>> {
@@ -1352,7 +1352,7 @@ impl MvpAgent {
             current_effort,
         )
     }
-    /// Build the `x.ai/sessionConfig` and `x.ai/sessionDetail` `_meta` values
+    /// Build the `kigi/sessionConfig` and `kigi/sessionDetail` `_meta` values
     /// shared by `new_session` and `load_session`, returned as
     /// `(sessionConfig, sessionDetail)`. Keeping both response paths on this one
     /// builder stops them drifting.
@@ -1364,7 +1364,7 @@ impl MvpAgent {
         model_state: &acp::SessionModelState,
     ) -> (serde_json::Value, serde_json::Value) {
         let config_options = self.session_config_options(Some(session_id), model_state);
-        let detail = session_config::GrokSessionDetail::build(
+        let detail = session_config::KigiSessionDetail::build(
             session_id.0.to_string(),
             cwd,
             model_state.current_model_id.0.to_string(),
@@ -1455,13 +1455,13 @@ impl MvpAgent {
         model_agent_type: Option<&str>,
     ) -> kigi_agent::AgentDefinition {
         use kigi_agent::AgentDefinition;
-        let grok_agent_env_set = std::env::var("KIGI_AGENT")
+        let kigi_agent_env_set = std::env::var("KIGI_AGENT")
             .ok()
             .is_some_and(|s| !s.trim().is_empty());
         let config_agent_explicitly_set = agent_config.name.is_some();
         let model_requires_strict_harness = model_agent_type
             .is_some_and(kigi_agent::config::is_strict_harness_agent_type);
-        if !grok_agent_env_set && !config_agent_explicitly_set
+        if !kigi_agent_env_set && !config_agent_explicitly_set
             && model_requires_strict_harness && let Some(required) = model_agent_type
             && let Some(def) = kigi_agent::discovery::by_name_in_cwd(required, cwd)
         {
@@ -1527,8 +1527,8 @@ impl MvpAgent {
         let agent_name = std::env::var("KIGI_AGENT").ok();
         let resolved = match agent_name.as_deref() {
             Some("browser-use") | Some("browser_use") => AgentDefinition::browser_use(),
-            Some("grok-build-concise") | Some("grok_build_concise") => {
-                AgentDefinition::grok_build_concise()
+            Some("kigi-concise") | Some("kigi_concise") => {
+                AgentDefinition::kigi_concise()
             }
             Some(path) if std::path::Path::new(path).is_absolute() => {
                 match AgentDefinition::from_file(path) {
@@ -1538,17 +1538,17 @@ impl MvpAgent {
                             path = path, error = % e,
                             "Failed to load agent definition from file, falling back to default"
                         );
-                        AgentDefinition::grok_build_plan()
+                        AgentDefinition::kigi_plan()
                     }
                 }
             }
             Some(name) => {
                 kigi_agent::discovery::by_name_in_cwd(name, cwd)
-                    .unwrap_or_else(AgentDefinition::grok_build_plan)
+                    .unwrap_or_else(AgentDefinition::kigi_plan)
             }
-            None => AgentDefinition::grok_build_plan(),
+            None => AgentDefinition::kigi_plan(),
         };
-        if !grok_agent_env_set && !config_agent_explicitly_set
+        if !kigi_agent_env_set && !config_agent_explicitly_set
             && model_requires_strict_harness && let Some(required) = model_agent_type
             && resolved.name != required
         {
@@ -1638,7 +1638,7 @@ impl MvpAgent {
             .client_capabilities
             .meta
             .as_ref()
-            .and_then(|m| m.get("x.ai/fs_notify"))
+            .and_then(|m| m.get("kigi/fs_notify"))
             .and_then(|v| {
                 use crate::session::{ClientFsConfig, ClientFsMode};
                 use kigi_fsnotify::FsConfig;
@@ -1712,7 +1712,7 @@ impl MvpAgent {
                 .client_capabilities
                 .meta
                 .as_ref()
-                .and_then(|m| m.get("x.ai/hunkTracker"))
+                .and_then(|m| m.get("kigi/hunkTracker"))
                 .and_then(|v| v.get("mode"))
                 .and_then(|v| v.as_str()),
         );
@@ -1720,14 +1720,14 @@ impl MvpAgent {
             .client_capabilities
             .meta
             .as_ref()
-            .and_then(|m| m.get("x.ai/incrementalBashOutput"))
+            .and_then(|m| m.get("kigi/incrementalBashOutput"))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         let no_color = init
             .client_capabilities
             .meta
             .as_ref()
-            .and_then(|m| m.get("x.ai/bashOutputNoColor"))
+            .and_then(|m| m.get("kigi/bashOutputNoColor"))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         let hunk_tracking_enabled = hunk_plan.enabled();
@@ -2200,7 +2200,7 @@ impl MvpAgent {
                 .client_capabilities
                 .meta
                 .as_ref()
-                .and_then(|m| m.get("x.ai/gitHeadChanged"))
+                .and_then(|m| m.get("kigi/gitHeadChanged"))
                 .and_then(|v| v.as_bool());
             let fs_watch_caps = crate::session::fs_watch::FsWatchCapabilities::resolve(crate::session::fs_watch::CapabilityInputs {
                 client_notify: fs_notify_config.is_some(),

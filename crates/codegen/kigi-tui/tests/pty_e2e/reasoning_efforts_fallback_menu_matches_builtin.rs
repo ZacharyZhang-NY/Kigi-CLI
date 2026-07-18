@@ -9,7 +9,7 @@ use super::common::*;
 #[ignore]
 async fn reasoning_efforts_fallback_menu_matches_builtin() {
     let content = ContentController::start_with_models(vec![
-        MockModel::new("grok-4.5").with_supports_reasoning_effort(true),
+        MockModel::new("kigi-4.5").with_supports_reasoning_effort(true),
     ])
     .await
     .expect("start content");

@@ -1412,7 +1412,7 @@ mod prompt_suggestion_key_tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     /// Idle agent with the gate open and a loaded suggestion — the state
-    /// right after a turn ends with `x.ai/suggestPrompt` resolved. Pins the
+    /// right after a turn ends with `kigi/suggestPrompt` resolved. Pins the
     /// settings cache so `resolve_enabled()` never reads the dev machine's
     /// config.toml (thread-local, so per-test).
     fn suggestion_agent(text: &str) -> AgentView {

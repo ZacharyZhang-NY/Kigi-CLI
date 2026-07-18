@@ -68,7 +68,7 @@ mod acp_send_failure_tests {
 
     fn ext_request() -> acp::ExtRequest {
         acp::ExtRequest::new(
-            "x.ai/test",
+            "kigi/test",
             serde_json::value::to_raw_value(&serde_json::json!({}))
                 .unwrap()
                 .into(),

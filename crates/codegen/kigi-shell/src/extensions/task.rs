@@ -2,7 +2,7 @@ use agent_client_protocol as acp;
 use kigi_tools::types::{KillOutcome, TaskSnapshot};
 use serde::{Deserialize, Serialize};
 
-use kigi_tools::implementations::grok_build::task::types::{
+use kigi_tools::implementations::kigi::task::types::{
     SubagentCancelOutcome, SubagentSnapshot, SubagentSnapshotStatus,
 };
 
@@ -12,7 +12,7 @@ use crate::session::ExtMethodResult;
 
 type ExtResult = Result<acp::ExtResponse, acp::Error>;
 
-/// Wire DTO for the `x.ai/task/kill` ext request.
+/// Wire DTO for the `kigi/task/kill` ext request.
 ///
 /// `pub` (with both serde directions) so ACP clients (kigi-tui) build
 /// the request from the same type the agent parses — keeping the wire
@@ -24,7 +24,7 @@ pub struct KillTaskRequest {
     pub task_id: String,
 }
 
-/// Wire DTO for the `x.ai/task/kill` ext response payload (nested under
+/// Wire DTO for the `kigi/task/kill` ext response payload (nested under
 /// `result` in the `ExtMethodResult` envelope).
 ///
 /// `pub` (with both serde directions) so ACP clients deserialize the typed
@@ -48,7 +48,7 @@ struct ListTasksResponse {
     tasks: Vec<TaskSnapshot>,
 }
 
-/// Wire DTO for the `x.ai/subagent/cancel` ext request.
+/// Wire DTO for the `kigi/subagent/cancel` ext request.
 ///
 /// `pub` (with both serde directions) so ACP clients (kigi-tui) build
 /// the request from the same type the agent parses.
@@ -94,7 +94,7 @@ impl From<SubagentCancelOutcome> for SubagentCancelOutcomeDto {
     }
 }
 
-/// Wire DTO for the `x.ai/subagent/cancel` response payload (under `result` in
+/// Wire DTO for the `kigi/subagent/cancel` response payload (under `result` in
 /// the `ExtMethodResult` envelope). `pub` + both serde dirs so clients read it typed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -328,7 +328,7 @@ fn respond<T: Serialize>(result: Result<T, impl std::fmt::Display>) -> ExtResult
 
 pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/task/kill" => {
+        "kigi/task/kill" => {
             let req: KillTaskRequest = parse(args)?;
             let result = agent
                 .kill_background_task(&req.session_id, &req.task_id)
@@ -339,7 +339,7 @@ pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
                 });
             respond(result)
         }
-        "x.ai/task/list" => {
+        "kigi/task/list" => {
             let req: ListTasksRequest = parse(args)?;
             let result = agent
                 .list_tasks(&req.session_id)
@@ -368,10 +368,10 @@ struct DeleteScheduledTaskResponse {
     deleted: bool,
 }
 
-/// Handle `x.ai/scheduler/*` extension methods.
+/// Handle `kigi/scheduler/*` extension methods.
 pub async fn handle_scheduler(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/scheduler/delete" => {
+        "kigi/scheduler/delete" => {
             let req: DeleteScheduledTaskRequest = parse(args)?;
             let result = agent
                 .delete_scheduled_task(&req.session_id, &req.task_id)
@@ -386,10 +386,10 @@ pub async fn handle_scheduler(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtRe
     }
 }
 
-/// Handle `x.ai/subagent/*` extension methods.
+/// Handle `kigi/subagent/*` extension methods.
 pub async fn handle_subagent(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/subagent/cancel" => {
+        "kigi/subagent/cancel" => {
             let req: CancelSubagentRequest = parse(args)?;
             tracing::info!(subagent_id = %req.subagent_id, "Cancelling subagent via ext method");
             let outcome = SubagentCancelOutcomeDto::from(agent.cancel_subagent(&req.subagent_id));
@@ -399,7 +399,7 @@ pub async fn handle_subagent(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtRes
                 outcome: Some(outcome),
             }))
         }
-        "x.ai/subagent/get" => {
+        "kigi/subagent/get" => {
             let req: GetSubagentRequest = parse(args)?;
             let block = req.block.unwrap_or(false);
             let timeout_ms = req.timeout_ms.unwrap_or(30_000);
@@ -442,7 +442,7 @@ pub async fn handle_subagent(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtRes
                 }))
             }
         }
-        "x.ai/subagent/list_running" => {
+        "kigi/subagent/list_running" => {
             let req: ListRunningSubagentsRequest = parse(args)?;
             // Sync: collect seeds from coordinator, drop borrow.
             let seeds = agent.list_running_subagents(&req.session_id);
@@ -956,7 +956,7 @@ mod tests {
         assert_eq!(json["forkParentPromptId"], "prompt-5");
     }
 
-    // ── x.ai/subagent/cancel outcome wire DTO ──────────────────────────
+    // ── kigi/subagent/cancel outcome wire DTO ──────────────────────────
 
     #[test]
     fn subagent_cancel_outcome_dto_maps_from_coordinator_outcome() {

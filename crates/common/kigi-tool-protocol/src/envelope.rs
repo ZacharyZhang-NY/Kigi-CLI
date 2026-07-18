@@ -1,4 +1,4 @@
-//! JSON-RPC 2.0 envelope types with the Grok `session_id` / `seq`
+//! JSON-RPC 2.0 envelope types with the Kigi `session_id` / `seq`
 //! extensions.
 //!
 //! Two distinct id concepts coexist in this crate:
@@ -116,7 +116,7 @@ impl fmt::Display for JsonRpcId {
 pub struct JsonRpcRequest<P = serde_json::Value> {
     pub jsonrpc: JsonRpcVersion,
     pub id: JsonRpcId,
-    /// Grok extension: routing/sanity-check session id.
+    /// Kigi extension: routing/sanity-check session id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<SessionId>,
     pub method: String,

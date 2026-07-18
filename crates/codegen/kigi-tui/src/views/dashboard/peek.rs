@@ -1476,11 +1476,11 @@ mod tests {
             DashboardRowId::TopLevel(AgentId(0)),
             fields("Response", &["hello"]),
         );
-        panel.model_name = Some("Grok 4 Fast".to_string());
+        panel.model_name = Some("Kigi 4 Fast".to_string());
         panel.auto_approve = true;
         let bottom = badge_row(&panel, 6);
         assert!(
-            bottom.contains("Grok 4 Fast"),
+            bottom.contains("Kigi 4 Fast"),
             "model on bottom border: {bottom:?}"
         );
         assert!(
@@ -1497,10 +1497,10 @@ mod tests {
         ];
         q.request_id = Some(1);
         let mut qpanel = PeekPanelState::new(DashboardRowId::TopLevel(AgentId(0)), q);
-        qpanel.model_name = Some("Grok 4 Fast".to_string());
+        qpanel.model_name = Some("Kigi 4 Fast".to_string());
         let qbottom = badge_row(&qpanel, 8);
         assert!(
-            qbottom.contains("Grok 4 Fast"),
+            qbottom.contains("Kigi 4 Fast"),
             "model shows in question/approval mode: {qbottom:?}",
         );
 
@@ -1509,7 +1509,7 @@ mod tests {
             DashboardRowId::TopLevel(AgentId(0)),
             fields("Response", &["hi"]),
         );
-        plain.model_name = Some("Grok 4 Fast".to_string());
+        plain.model_name = Some("Kigi 4 Fast".to_string());
         plain.auto_approve = false;
         let plain_bottom = badge_row(&plain, 6);
         assert!(
@@ -1523,7 +1523,7 @@ mod tests {
             DashboardRowId::TopLevel(AgentId(0)),
             fields("Response", &["hi"]),
         );
-        planp.model_name = Some("Grok 4 Fast".to_string());
+        planp.model_name = Some("Kigi 4 Fast".to_string());
         planp.plan_mode = true;
         let plan_bottom = badge_row(&planp, 6);
         assert!(

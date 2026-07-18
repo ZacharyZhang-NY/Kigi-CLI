@@ -111,7 +111,7 @@ pub enum IntraCompactionError {
 /// `min_steps_before_compact` remains on [`IntraCompactionConfig`] for every
 /// mode, but is **not** enforced when
 /// [`mode`](IntraCompactionConfig::mode) is
-/// [`IntraCompactionMode::FullReplace`] — that path matches grok-build's
+/// [`IntraCompactionMode::FullReplace`] — that path matches kigi's
 /// full-replace trigger (token threshold alone) so a large first-step prompt
 /// can still compact. Partial modes still gate on min steps.
 pub fn should_compact(
@@ -200,7 +200,7 @@ mod tests {
         assert_eq!(p.mode, IntraCompactionMode::FullReplace);
         assert_eq!(p.min_steps_before_compact, 3);
         // Field is present; FullReplace only uses the token threshold
-        // (parity with grok-build auto-compact).
+        // (parity with kigi auto-compact).
         let t = should_compact(&p, 90_000, 100_000, 0).expect("should trigger");
         assert_eq!(t.step, 0);
         assert!(should_compact(&p, 90_000, 100_000, 2).is_some());

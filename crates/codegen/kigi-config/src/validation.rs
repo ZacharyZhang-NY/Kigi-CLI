@@ -261,7 +261,7 @@ mod tests {
     fn load_requirements_layer_soft_fails_on_invalid_version_overrides() {
         use std::io::Write;
 
-        let dir = std::env::temp_dir().join(format!("grok-vo-soft-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("kigi-vo-soft-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("requirements.toml");
         let mut f = std::fs::File::create(&path).unwrap();
@@ -285,7 +285,7 @@ telemetry = true
     fn validate_requirements_layer_errs_on_fail_closed_violation() {
         use std::io::Write;
 
-        let dir = std::env::temp_dir().join(format!("grok-vo-validate-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("kigi-vo-validate-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("requirements.toml");
         let mut f = std::fs::File::create(&path).unwrap();
@@ -311,7 +311,7 @@ minimum_version = "not-a-version"
     fn validate_requirements_layer_ok_without_fail_closed() {
         use std::io::Write;
 
-        let dir = std::env::temp_dir().join(format!("grok-vo-soft2-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("kigi-vo-soft2-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("requirements.toml");
         let mut f = std::fs::File::create(&path).unwrap();
@@ -377,7 +377,7 @@ minimum_version = "not-a-version"
     fn fail_closed_key_is_stripped_from_returned_layer() {
         use std::io::Write;
 
-        let dir = std::env::temp_dir().join(format!("grok-vo-strip-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("kigi-vo-strip-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("requirements.toml");
         let mut f = std::fs::File::create(&path).unwrap();
@@ -403,7 +403,7 @@ minimum_version = "not-a-version"
     fn load_user_requirements_reads_layer_when_home_present() {
         use std::io::Write;
 
-        let dir = std::env::temp_dir().join(format!("grok-req-load-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("kigi-req-load-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let mut f = std::fs::File::create(dir.join("requirements.toml")).unwrap();
         writeln!(f, "[features]\ntelemetry = true\n").unwrap();
@@ -423,7 +423,7 @@ minimum_version = "not-a-version"
     fn validate_user_requirements_errs_on_fail_closed_violation() {
         use std::io::Write;
 
-        let dir = std::env::temp_dir().join(format!("grok-req-validate-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("kigi-req-validate-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let mut f = std::fs::File::create(dir.join("requirements.toml")).unwrap();
         writeln!(

@@ -226,7 +226,7 @@ fn log_unknown_mount_ns_once() {
     if !LOGGED.swap(true, Ordering::Relaxed) {
         tracing::info!(
             "cannot read /proc/1/ns/mnt (likely non-root); treating mount namespace as \
-             non-private — overlay/bind strategies stay enabled. If grok is in a private \
+             non-private — overlay/bind strategies stay enabled. If kigi is in a private \
              namespace as non-root, worktrees may be ephemeral."
         );
     }

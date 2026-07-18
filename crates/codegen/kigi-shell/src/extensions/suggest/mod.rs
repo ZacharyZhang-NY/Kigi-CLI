@@ -176,13 +176,13 @@ fn splice_token_into_line(results: &mut [RankedSuggestion], text: &str, range: (
 #[tracing::instrument(skip_all, fields(method = %args.method))]
 pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/suggest" => handle_suggest(agent, args).await,
-        "x.ai/suggestPrompt" => handle_suggest_prompt(agent, args).await,
+        "kigi/suggest" => handle_suggest(agent, args).await,
+        "kigi/suggestPrompt" => handle_suggest_prompt(agent, args).await,
         _ => Err(acp::Error::method_not_found()),
     }
 }
 
-/// Request/response for `x.ai/suggestPrompt` — predict the user's likely next
+/// Request/response for `kigi/suggestPrompt` — predict the user's likely next
 /// prompt after a completed turn (tab-autocomplete ghost text).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -213,7 +213,7 @@ struct SuggestPromptResponse {
 /// Upper bound on the suggestion round-trip. Turn-end prediction is not
 /// latency-critical (the user is reading the agent's reply — the idle window
 /// after a turn is typically long), but a hung call must not pin the oneshot
-/// forever. Reasoning models (e.g. `grok-build`) can take ~30s on a cold
+/// forever. Reasoning models (e.g. `kigi`) can take ~30s on a cold
 /// cache; a late suggestion is still useful (the pager's generation guard
 /// and empty-prompt gating discard it if the user moved on).
 const SUGGEST_PROMPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);

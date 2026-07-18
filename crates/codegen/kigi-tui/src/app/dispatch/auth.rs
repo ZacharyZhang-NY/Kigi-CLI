@@ -24,7 +24,7 @@ pub(super) fn dispatch_logout(_app: &mut AppView) -> Vec<Effect> {
 /// On the eager-auth path (cached token), login_method_id is never set
 /// because the user skipped the login screen.
 ///
-/// Does **not** invent `grok.com` when no interactive method is advertised
+/// Does **not** invent `kimi-code` when no interactive method is advertised
 /// (e.g. `preferred_method=api_key` with no key — empty `auth_methods`).
 /// Callers already surface "No login method available" when this leaves
 /// `login_method_id` unset.

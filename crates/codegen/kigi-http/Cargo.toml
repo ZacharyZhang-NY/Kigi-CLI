@@ -3,7 +3,7 @@ license = "Apache-2.0"
 name = "kigi-http"
 version.workspace = true
 edition.workspace = true
-description = "Shared reqwest HTTP clients and User-Agent construction for the grok CLI."
+description = "Shared reqwest HTTP clients and User-Agent construction for the kigi CLI."
 
 [dependencies]
 reqwest = { workspace = true, features = ["blocking"] }

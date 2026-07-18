@@ -103,7 +103,7 @@ pub(super) fn parse_session_load_restore_meta(
         .and_then(|v| serde_json::from_value(v).ok());
     (code_restored, restore_summary, restore_degree)
 }
-/// CANONICAL wire parser for `LoadSessionResponse._meta["x.ai/runningPromptId"]`.
+/// CANONICAL wire parser for `LoadSessionResponse._meta["kigi/runningPromptId"]`.
 ///
 /// Returns the session's in-flight running prompt id when the session was
 /// loaded MID-turn (some other client is driving), otherwise `None`. The
@@ -114,7 +114,7 @@ pub(crate) fn parse_session_load_running_prompt_id(
     resp_meta: Option<&acp::Meta>,
 ) -> Option<String> {
     resp_meta
-        .and_then(|m| m.get("x.ai/runningPromptId"))
+        .and_then(|m| m.get("kigi/runningPromptId"))
         .and_then(|v| v.as_str())
         .map(String::from)
 }
@@ -133,7 +133,7 @@ pub(crate) fn sanitize_user_error(raw: &str) -> String {
         ("inference_api", "server"),
         ("research-api", "server"),
         ("research_api", "server"),
-        ("grok-code-backend", "server"),
+        ("kigi-code-backend", "server"),
         ("ACP error:", "error:"),
         ("ACP request failed:", "request failed:"),
         ("JSON-RPC error", "request error"),
@@ -165,17 +165,17 @@ pub(crate) fn sanitize_user_error(raw: &str) -> String {
 ///
 /// | plan  | subagents | ask-user | agentProfile                   | askUserQuestion    |
 /// |-------|-----------|----------|--------------------------------|--------------------|
-/// | false | false     | false    | `grok-build` (default)         | `false`            |
-/// | false | true      | false    | `grok-build` (default)         | `false`            |
-/// | false | false     | true     | `grok-build-ask-user`          | omitted (shell gate) |
-/// | false | true      | true     | `grok-build-ask-user`          | omitted (shell gate) |
-/// | true  | false     | false    | `grok-build-plan-no-subagents` | `false`            |
-/// | true  | true      | false    | `grok-build-plan`              | `false`            |
-/// | true  | false     | true     | `grok-build-plan-no-subagents` | omitted (shell gate) |
-/// | true  | true      | true     | `grok-build-plan`              | omitted (shell gate) |
+/// | false | false     | false    | `kigi` (default)         | `false`            |
+/// | false | true      | false    | `kigi` (default)         | `false`            |
+/// | false | false     | true     | `kigi-ask-user`          | omitted (shell gate) |
+/// | false | true      | true     | `kigi-ask-user`          | omitted (shell gate) |
+/// | true  | false     | false    | `kigi-plan-no-subagents` | `false`            |
+/// | true  | true      | false    | `kigi-plan`              | `false`            |
+/// | true  | false     | true     | `kigi-plan-no-subagents` | omitted (shell gate) |
+/// | true  | true      | true     | `kigi-plan`              | omitted (shell gate) |
 ///
 /// When [`Self::chat_mode`] is set (gateway light-frontend / `--chat`), Build
-/// `agentProfile` injection is omitted (K12) and `_meta["x.ai/session"].kind`
+/// `agentProfile` injection is omitted (K12) and `_meta["kigi/session"].kind`
 /// is stamped `"chat"` so the shell takes `require_gateway` / thin profile.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SessionFlags {
@@ -183,7 +183,7 @@ pub(crate) struct SessionFlags {
     pub subagents: bool,
     pub ask_user: bool,
     /// Restore code state on resume (`--restore-code`).
-    /// Injected as `x.ai/restore_code` into `LoadSession` meta, or passed
+    /// Injected as `kigi/restore_code` into `LoadSession` meta, or passed
     /// as `restoreCode` in the `resume_session` ACP payload for worktrees.
     pub restore_code: Option<bool>,
     pub agent_override: Option<serde_json::Value>,
@@ -208,7 +208,7 @@ pub(crate) struct SessionFlags {
 impl SessionFlags {
     /// Resolve the agent profile name from the flags.
     ///
-    /// Returns `None` for the default `grok-build` profile (no `_meta`
+    /// Returns `None` for the default `kigi` profile (no `_meta`
     /// needed; it already includes TaskTool). Chat mode never injects a
     /// Build profile (remote owns agent behavior).
     pub(super) fn agent_profile(&self) -> Option<&'static str> {
@@ -216,9 +216,9 @@ impl SessionFlags {
             return None;
         }
         match (self.plan_mode, self.subagents, self.ask_user) {
-            (true, true, _) => Some("grok-build-plan"),
-            (true, false, _) => Some("grok-build-plan-no-subagents"),
-            (false, _, true) => Some("grok-build-ask-user"),
+            (true, true, _) => Some("kigi-plan"),
+            (true, false, _) => Some("kigi-plan-no-subagents"),
+            (false, _, true) => Some("kigi-ask-user"),
             (false, _, false) => None,
         }
     }
@@ -229,7 +229,7 @@ impl SessionFlags {
     /// emit-site comment below). `--no-ask-user` always forces
     /// `askUserQuestion: false` into the meta, even when paired with
     /// `KIGI_AGENT` — the env var chooses the *agent*, but the tool-strip is
-    /// independent. Chat mode additionally stamps `x.ai/session.kind`.
+    /// independent. Chat mode additionally stamps `kigi/session.kind`.
     pub(super) fn to_meta(&self) -> Option<acp::Meta> {
         let mut meta = serde_json::Map::new();
         if self.chat_mode {
@@ -247,7 +247,7 @@ impl SessionFlags {
             meta.insert("agentProfile".into(), serde_json::json!(profile));
         }
         if self.chat_mode {
-            meta.insert("x.ai/session".into(), serde_json::json!({ "kind" : "chat" }));
+            meta.insert("kigi/session".into(), serde_json::json!({ "kind" : "chat" }));
         }
         if !self.ask_user {
             meta.insert("askUserQuestion".into(), serde_json::json!(false));
@@ -266,13 +266,13 @@ impl SessionFlags {
 /// workspace for `kind=chat`; the client must not bind Direct/envId/attach.
 pub(super) const CHAT_FORBIDDEN_WORKSPACE_BIND_KEYS: &[&str] = &[
     "envId",
-    "x.ai/cloud_server_id",
-    "x.ai/cloud_existing_workspace",
+    "kigi/cloud_server_id",
+    "kigi/cloud_existing_workspace",
 ];
-/// Stamp `_meta["x.ai/session"].kind = "chat"` and strip Build `agentProfile` (K12).
+/// Stamp `_meta["kigi/session"].kind = "chat"` and strip Build `agentProfile` (K12).
 pub(super) fn apply_chat_kind_meta(meta: &mut Option<acp::Meta>) {
     let obj = meta.get_or_insert_with(acp::Meta::new);
-    obj.insert("x.ai/session".into(), serde_json::json!({ "kind" : "chat" }));
+    obj.insert("kigi/session".into(), serde_json::json!({ "kind" : "chat" }));
     obj.remove("agentProfile");
 }
 /// Remove client workspace-bind keys from chat create/load meta (defense in depth).
@@ -360,7 +360,7 @@ pub(super) fn count_chat_history_stats(history_path: &Path) -> (usize, usize) {
     }
     (turn_count, tool_call_count)
 }
-/// Parse the `x.ai/session/list` response payload (the unwrapped
+/// Parse the `kigi/session/list` response payload (the unwrapped
 /// `{ "sessions": [...] }` object) into [`SessionPickerEntry`] rows.
 ///
 /// Shared by the resume picker ([`Effect::FetchSessionList`]) and the
@@ -399,7 +399,7 @@ pub(super) fn parse_session_picker_entries(
                 .map(String::from);
             let is_conversation = v
                 .get("_meta")
-                .and_then(|m| m.get("x.ai/session"))
+                .and_then(|m| m.get("kigi/session"))
                 .and_then(|s| s.get("kind"))
                 .and_then(|k| k.as_str()) == Some("chat");
             let parsed_updated: Option<chrono::DateTime<chrono::Utc>> = v
@@ -548,7 +548,7 @@ pub(super) fn session_picker_entry_to_roster(
 }
 pub(super) async fn send_logout(tx: &AcpAgentTx) {
     let req = acp::ExtRequest::new(
-        "x.ai/auth/logout",
+        "kigi/auth/logout",
         serde_json::value::to_raw_value(&serde_json::json!({}))
             .expect("serialize auth/logout params")
             .into(),
@@ -927,7 +927,7 @@ pub(crate) async fn persist_setting(
 /// Body for `Effect::PersistPermissionMode`. Factored out for testability.
 ///
 /// 1. Persist `ui.permission_mode` to disk.
-/// 2. Fire ACP `x.ai/yolo_mode_changed` (gated on disk success for
+/// 2. Fire ACP `kigi/yolo_mode_changed` (gated on disk success for
 ///    `WithRollback`; always for `BestEffort`).
 /// 3. Return the matching `TaskResult`.
 pub(crate) async fn persist_permission_mode_and_notify(
@@ -951,7 +951,7 @@ pub(crate) async fn persist_permission_mode_and_notify(
             config_str, }
         );
         let notification = acp::ExtNotification::new(
-            "x.ai/yolo_mode_changed",
+            "kigi/yolo_mode_changed",
             serde_json::value::to_raw_value(&params)
                 .expect("serialize yolo_mode_changed params")
                 .into(),
@@ -962,7 +962,7 @@ pub(crate) async fn persist_permission_mode_and_notify(
     }
     route_permission_mode_result(disk_outcome, persist, config_str)
 }
-/// Whether to fire the ACP `x.ai/yolo_mode_changed` notification.
+/// Whether to fire the ACP `kigi/yolo_mode_changed` notification.
 /// `WithRollback` suppresses on disk failure (agent must not see the
 /// optimistic value). `BestEffort` always fires.
 pub(super) fn should_send_yolo_acp_notification(
@@ -975,7 +975,7 @@ pub(super) fn should_send_yolo_acp_notification(
         (Err(_), PermissionModePersist::WithRollback(_)) => false,
     }
 }
-/// Extract the typed kill outcome from an `x.ai/task/kill` ext response.
+/// Extract the typed kill outcome from an `kigi/task/kill` ext response.
 ///
 /// The agent serializes `ExtMethodResult<KillTaskResponse>`, so the outcome
 /// lives at `result.outcome` (`{"result":{"taskId":..,"outcome":
@@ -997,7 +997,7 @@ pub(super) fn parse_kill_outcome(
         .and_then(|envelope| envelope.result)
         .map(|payload| payload.outcome)
 }
-/// Map an `x.ai/subagent/cancel` response (payload under `result`) to a kill
+/// Map an `kigi/subagent/cancel` response (payload under `result`) to a kill
 /// outcome. Prefers the typed `outcome`; falls back to the legacy `cancelled`
 /// bool for an older shell or an unknown future `kind`. An error/unparseable
 /// body is `RpcFailed` (subagent may still be running — leave the row alone).
@@ -1092,7 +1092,7 @@ pub(super) fn persist_hint(
             TaskResult::CancelComplete
         });
 }
-/// Parse an `x.ai/billing` ext response body (the unwrapped `result`
+/// Parse an `kigi/billing` ext response body (the unwrapped `result`
 /// payload) into Kimi usage rows. A body that fails to deserialize is an
 /// error, not an empty quota list, so a malformed response can't render
 /// as "no usage data".

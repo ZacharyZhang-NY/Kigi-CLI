@@ -22,7 +22,7 @@ pub const MAX_SKILL_WALK_DEPTH: usize = 5;
 ///
 /// `skills` is the standard layout (`.kigi/skills/`, `.claude/skills/`,
 /// `.cursor/skills/`). The product-specific `skills-cursor/` layout is no
-/// longer scanned — it pulled vendor default skills into Grok Build sessions.
+/// longer scanned — it pulled vendor default skills into Kigi sessions.
 const SKILL_SUBDIRS: &[&str] = &["skills"];
 
 /// Cursor ships these default skills in `~/.cursor/skills-cursor/`
@@ -815,7 +815,7 @@ pub fn parse_skill_files(skill_files: Vec<(PathBuf, SkillScope)>) -> Vec<SkillIn
 
     // Drop vendor-shipped default skills (vendor builtins) found under
     // a `/.cursor/` or `/.claude/` path. Always applied, independent of the
-    // per-vendor toggle, so vendor builtins never leak into Grok Build.
+    // per-vendor toggle, so vendor builtins never leak into Kigi.
     skills.retain(|s| !is_vendor_default_skill(&s.path, &s.name));
 
     skills
@@ -1467,17 +1467,17 @@ model: test-model
         )
         .unwrap();
         // Same name under /.kigi/ → kept (user content).
-        let grok_shell = tmp.path().join(".kigi").join("skills").join("shell");
-        std::fs::create_dir_all(&grok_shell).unwrap();
+        let kigi_shell = tmp.path().join(".kigi").join("skills").join("shell");
+        std::fs::create_dir_all(&kigi_shell).unwrap();
         std::fs::write(
-            grok_shell.join("SKILL.md"),
+            kigi_shell.join("SKILL.md"),
             "---\nname: shell\ndescription: user content\n---\n",
         )
         .unwrap();
 
         let skills = parse_skill_files(vec![
             (cursor_shell.join("SKILL.md"), SkillScope::User),
-            (grok_shell.join("SKILL.md"), SkillScope::User),
+            (kigi_shell.join("SKILL.md"), SkillScope::User),
         ]);
         assert_eq!(skills.len(), 1, "cursor builtin must be dropped");
         assert!(skills[0].path.contains("/.kigi/"));
@@ -1523,9 +1523,9 @@ model: test-model
             "---\nname: claude-dyn\n---\n",
         )
         .unwrap();
-        let grok_skill = sub.join(".kigi").join("skills").join("grok-dyn");
-        std::fs::create_dir_all(&grok_skill).unwrap();
-        std::fs::write(grok_skill.join("SKILL.md"), "---\nname: grok-dyn\n---\n").unwrap();
+        let kigi_skill = sub.join(".kigi").join("skills").join("kigi-dyn");
+        std::fs::create_dir_all(&kigi_skill).unwrap();
+        std::fs::write(kigi_skill.join("SKILL.md"), "---\nname: kigi-dyn\n---\n").unwrap();
 
         let file = sub.join("file.rs");
         std::fs::write(&file, "fn main() {}").unwrap();
@@ -1541,15 +1541,15 @@ model: test-model
         );
         let names_on: Vec<&str> = on.iter().map(|s| s.name.as_str()).collect();
         assert!(
-            names_on.contains(&"grok-dyn"),
-            "grok-dyn missing: {names_on:?}"
+            names_on.contains(&"kigi-dyn"),
+            "kigi-dyn missing: {names_on:?}"
         );
         assert!(
             names_on.contains(&"claude-dyn"),
             "claude-dyn should be found when claude.skills on: {names_on:?}"
         );
 
-        // claude.skills OFF → only grok-dyn discovered.
+        // claude.skills OFF → only kigi-dyn discovered.
         let mut compat_off = CompatConfig::default();
         compat_off.claude.skills = false;
         let mut checked2 = HashSet::new();
@@ -1562,8 +1562,8 @@ model: test-model
         );
         let names_off: Vec<&str> = off.iter().map(|s| s.name.as_str()).collect();
         assert!(
-            names_off.contains(&"grok-dyn"),
-            "grok-dyn missing: {names_off:?}"
+            names_off.contains(&"kigi-dyn"),
+            "kigi-dyn missing: {names_off:?}"
         );
         assert!(
             !names_off.contains(&"claude-dyn"),

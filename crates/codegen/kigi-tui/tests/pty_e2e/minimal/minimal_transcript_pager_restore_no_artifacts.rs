@@ -83,7 +83,7 @@ async fn minimal_transcript_pager_restore_no_artifacts() {
     // transcript temp-file path — the conversation sentinel can't be used as
     // the signal, it is already visible on the live screen. Then quit it.
     harness
-        .wait_for_text("grok-transcript-", Duration::from_secs(20))
+        .wait_for_text("kigi-transcript-", Duration::from_secs(20))
         .expect("less shows the transcript");
     harness.update(Duration::from_millis(300));
     harness.inject_keys(b"q").expect("quit less");

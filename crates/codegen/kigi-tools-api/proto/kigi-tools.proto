@@ -6,9 +6,9 @@ package kigi.tools.v1;
 // MAIN SERVICE
 // ============================================================================
 
-/// GrokToolsService provides a gRPC interface to the Grok tools runtime.
+/// KigiToolsService provides a gRPC interface to the Kigi tools runtime.
 /// It supports tool execution, discovery, configuration, and lifecycle management.
-service GrokToolsService {
+service KigiToolsService {
   // ========== TOOL EXECUTION ==========
 
   /// Execute a single tool call
@@ -213,7 +213,7 @@ message FinalizeToolServerConfigRequest {
 /// Maps to `ToolConfig` in the tools library.
 message ToolConfigEntry {
   /// Fully qualified tool ID: colon-separated `Namespace:tool`
-  /// (e.g., "GrokBuild:bash", "GrokBuild:read_file").
+  /// (e.g., "Kigi:bash", "Kigi:read_file").
   ///
   /// The whole selection path keys on this format: the default
   /// client-facing name is the segment after the FIRST colon (see
@@ -270,7 +270,7 @@ message FinalizeConfigViolation {
 /// Structured deprecation/lifecycle warning for a specific tool version
 /// or bundle. Informational only — does not affect control flow.
 message VersionWarning {
-  /// Fully-qualified tool ID (e.g. "GrokBuild:run_terminal_cmd").
+  /// Fully-qualified tool ID (e.g. "Kigi:run_terminal_cmd").
   /// Empty for bundle-level warnings.
   string fq_tool_id = 1;
   /// The deprecated version (e.g. "legacy-0.4.10").
@@ -637,9 +637,9 @@ message ToolInfo {
   /// "legacy-0.4.10"). Empty for unmanaged tools.
   string contract_version = 18;
 
-  /// Tool namespace (e.g. "GrokBuild", "Codex", "OpenCode").
+  /// Tool namespace (e.g. "Kigi", "Codex", "OpenCode").
   /// Populated by ListTools pre-finalization from the fully-qualified
-  /// registry key (e.g. "GrokBuild:grep" → namespace="GrokBuild").
+  /// registry key (e.g. "Kigi:grep" → namespace="Kigi").
   string namespace = 19;
 }
 

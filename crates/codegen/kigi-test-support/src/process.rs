@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 /// Pipe all three stdio handles, `kill_on_drop`, spawn, and drain the child's
 /// stderr into the returned buffer on a background task. The one spawn path
-/// shared by every subprocess harness in this crate (`GrokStdioClient`,
+/// shared by every subprocess harness in this crate (`KigiStdioClient`,
 /// `RawStdioClient`, `leader::LeaderStdioClient`); env/args stay with the
 /// callers, whose hermeticity models differ (sandbox-inherit vs `env_clear`).
 /// The drain future is `Send`, so this works on and off a `LocalSet`.
@@ -21,7 +21,7 @@ pub(crate) fn spawn_piped_with_stderr_capture(
     let program = cmd.as_std().get_program().to_string_lossy().into_owned();
     let mut child = cmd
         .spawn()
-        .unwrap_or_else(|e| panic!("failed to spawn grok at {program}: {e}"));
+        .unwrap_or_else(|e| panic!("failed to spawn kigi at {program}: {e}"));
 
     let stderr = Arc::new(std::sync::Mutex::new(Vec::new()));
     let stderr_capture = stderr.clone();

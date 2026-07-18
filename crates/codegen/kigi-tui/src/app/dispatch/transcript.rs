@@ -202,7 +202,7 @@ pub(crate) fn dispatch_open_transcript_pager(app: &mut AppView) {
         return;
     };
 
-    let path = std::env::temp_dir().join(format!("grok-transcript-{}.md", uuid::Uuid::new_v4()));
+    let path = std::env::temp_dir().join(format!("kigi-transcript-{}.md", uuid::Uuid::new_v4()));
     match std::fs::write(&path, content) {
         Ok(()) => {
             app.pending_pager_path = Some(path);
@@ -636,7 +636,7 @@ pub(super) fn handle_skills_toggle_done(
             }
         }
     }
-    // The toggle effect already called x.ai/skills/refresh-baseline
+    // The toggle effect already called kigi/skills/refresh-baseline
     // which triggers the session to reload skills and push an
     // AvailableCommandsUpdate notification with the updated list.
     vec![]

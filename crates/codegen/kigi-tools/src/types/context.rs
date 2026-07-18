@@ -70,7 +70,7 @@ impl TruncationConfig {
     /// - `{max_chars_per_line}` — fixed display value for opencode-compat
     ///   descriptions only; the opencode `read` tool clips at its own
     ///   hardcoded `MAX_LINE_LENGTH` (2000), independent of this config.
-    ///   grok_build `read_file` never clips lines.
+    ///   kigi `read_file` never clips lines.
     ///
     /// Returns the original string unchanged if no placeholders are present.
     pub fn interpolate_description(

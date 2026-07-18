@@ -5,13 +5,13 @@ use serde::Deserialize;
 use std::path::PathBuf;
 /// Parsed prompt with context and query kept separate.
 ///
-/// Some templates put `<user_query>` last (context first); Grok puts it first.
+/// Some templates put `<user_query>` last (context first); Kigi puts it first.
 /// Keeping them separate lets the caller truncate context without
 /// searching for the query boundary in a flat string.
 #[derive(Debug, Clone)]
 pub struct ParsedPrompt {
     /// Context blocks: `<attached_files>` payloads and resource-link sections.
-    /// Grok mode may include editor open/focus metadata; the compat mode does not.
+    /// Kigi mode may include editor open/focus metadata; the compat mode does not.
     /// Empty string when there is no context.
     pub context: String,
     /// The user's query, already wrapped in `<user_query>` tags
@@ -45,7 +45,7 @@ impl ParsedPrompt {
     /// Assemble context, query, and skill information into the final message string.
     ///
     /// Layout:
-    /// - **Grok mode:** `<user_query>` + `<skill_information>` + context
+    /// - **Kigi mode:** `<user_query>` + `<skill_information>` + context
     /// - **Query-last mode:** context + `<user_query>` + `<skill_information>`
     ///
     /// The `<skill_information>` block always follows `<user_query>` immediately
@@ -75,7 +75,7 @@ impl ParsedPrompt {
 /// - `<attached_files>` (bare), resource links, then `<user_query>` last
 /// - File references use `<code_selection>` tags
 ///
-/// When `is_cursor` is false, produces original Grok-format output:
+/// When `is_cursor` is false, produces original Kigi-format output:
 /// - `<user_query>` first, then `<system-reminder>` wrapped `<attached_files>` and resource links
 /// - File references use `<file_contents>` tags
 pub async fn parse_prompt(
@@ -203,7 +203,7 @@ Below are some potentially helpful/relevant pieces of information for figuring o
         if !context.is_empty() {
             context.push_str("\n\n");
         }
-        context.push_str(&render_resource_links_grok(resource_links));
+        context.push_str(&render_resource_links_kigi(resource_links));
     }
     (context, query)
 }
@@ -285,9 +285,9 @@ fn render_regular_links(links: &[&acp::ResourceLink]) -> String {
     }
     s.trim_end_matches('\n').to_string()
 }
-/// Grok-format resource links: `<focused_files>` / `<open_files>` with
+/// Kigi-format resource links: `<focused_files>` / `<open_files>` with
 /// metadata inside a `<system-reminder>` wrapper.
-fn render_resource_links_grok(resource_links: &[acp::ResourceLink]) -> String {
+fn render_resource_links_kigi(resource_links: &[acp::ResourceLink]) -> String {
     let mut regular_links = Vec::new();
     let mut focused_files = Vec::new();
     let mut open_files = Vec::new();
@@ -363,8 +363,8 @@ mod tests {
             format!("{query}\n\n{context}")
         }
     }
-    /// Shorthand: render + assemble for grok mode.
-    fn render_grok(
+    /// Shorthand: render + assemble for kigi mode.
+    fn render_kigi(
         message: &str,
         embedded: Vec<String>,
         file_refs: Vec<String>,
@@ -475,13 +475,13 @@ mod tests {
         assert!(parse_editor_meta(&link).is_none());
     }
     #[test]
-    fn test_grok_render_plain_message() {
-        let result = render_grok("hello", vec![], vec![], &[], false);
+    fn test_kigi_render_plain_message() {
+        let result = render_kigi("hello", vec![], vec![], &[], false);
         assert_eq!(result, "<user_query>\nhello\n</user_query>");
     }
     #[test]
-    fn test_grok_render_with_attachments_uses_system_reminder_wrapper() {
-        let result = render_grok(
+    fn test_kigi_render_with_attachments_uses_system_reminder_wrapper() {
+        let result = render_kigi(
             "check this",
             vec!["embedded content".into()],
             vec![],
@@ -496,25 +496,25 @@ mod tests {
         assert!(result.contains("embedded content"));
         assert!(
             result.starts_with("<user_query>"),
-            "Grok should start with <user_query>, got: {result}"
+            "Kigi should start with <user_query>, got: {result}"
         );
     }
     #[test]
-    fn test_grok_render_user_query_first() {
+    fn test_kigi_render_user_query_first() {
         let link = acp::ResourceLink::new("doc.md", "file:///doc.md")
             .title(Some("My Doc".into()))
             .size(Some(1024));
-        let result = render_grok("hello", vec![], vec![], &[link], false);
+        let result = render_kigi("hello", vec![], vec![], &[link], false);
         let uq_pos = result.find("<user_query>").unwrap();
         let rr_pos = result.find("Referenced resources:").unwrap();
         assert!(
             uq_pos < rr_pos,
-            "Grok: <user_query> ({uq_pos}) should come before resource links ({rr_pos})\ngot: {result}"
+            "Kigi: <user_query> ({uq_pos}) should come before resource links ({rr_pos})\ngot: {result}"
         );
         assert!(result.contains("<system-reminder>"));
     }
     #[test]
-    fn test_grok_render_resource_links_use_focused_files_format() {
+    fn test_kigi_render_resource_links_use_focused_files_format() {
         let links = vec![
             acp::ResourceLink::new("main.rs", "file:///project/src/main.rs").meta(
                 serde_json::json!({ "source" : "editor", "fileState" : "focused",
@@ -528,7 +528,7 @@ mod tests {
                     .cloned(),
             ),
         ];
-        let result = render_grok("hello", vec![], vec![], &links, false);
+        let result = render_kigi("hello", vec![], vec![], &links, false);
         assert!(result.contains("<system-reminder>"), "got: {result}");
         assert!(result.contains("<focused_files>"), "got: {result}");
         assert!(result.contains("<open_files>"), "got: {result}");

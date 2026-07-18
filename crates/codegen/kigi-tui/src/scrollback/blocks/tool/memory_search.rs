@@ -447,7 +447,7 @@ session content
 
     #[test]
     fn shorten_memory_path() {
-        // Paths under the configured grok memory root keep one trailing segment group.
+        // Paths under the configured kigi memory root keep one trailing segment group.
         let memory_root = kigi_config::kigi_home().join("memory");
         let session = memory_root.join("xai-50aa78f0/sessions/2026-05-01.md");
         let top = memory_root.join("MEMORY.md");

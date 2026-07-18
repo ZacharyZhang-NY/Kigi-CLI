@@ -72,8 +72,8 @@ pub enum SubagentSource {
 ///    `visible == callable` guarantee)
 /// 4. Filter: remove agents toggled off via `[subagents.toggle]`
 pub fn all_subagents(cwd: &Path, toggle: &HashMap<String, bool>) -> Vec<SubagentEntry> {
-    let grok = kigi_config::user_kigi_home();
-    all_subagents_with_home(cwd, toggle, dirs::home_dir().as_deref(), grok.as_deref())
+    let kigi = kigi_config::user_kigi_home();
+    all_subagents_with_home(cwd, toggle, dirs::home_dir().as_deref(), kigi.as_deref())
 }
 
 fn all_subagents_with_home(
@@ -189,7 +189,7 @@ fn merge_subagents(
 /// 4. `~/.kigi/bundled/agents/` (bundled, lowest priority)
 ///
 /// Deduplicates by name — higher-priority definitions win.
-/// User-level agent directories in priority order: user grok agents, `.claude`
+/// User-level agent directories in priority order: user kigi agents, `.claude`
 /// compat agents, then bundled. `.kigi` dirs resolve from `kigi_home`
 /// (KIGI_SHARE_DIR-aware) plus the legacy literal `~/.kigi` when KIGI_SHARE_DIR points
 /// elsewhere; `.claude` resolves from `home`.
@@ -200,7 +200,7 @@ pub(crate) fn user_agent_dirs(
     // Legacy literal ~/.kigi, included only when it differs from kigi_home
     // (i.e. KIGI_SHARE_DIR points elsewhere) so agents left in the old location are
     // still discovered and stay consistent with scope_from_path classification.
-    let legacy_grok = home
+    let legacy_kigi = home
         .map(|h| h.join(".kigi"))
         .filter(|legacy| kigi_home != Some(legacy.as_path()));
 
@@ -208,7 +208,7 @@ pub(crate) fn user_agent_dirs(
     if let Some(g) = kigi_home {
         dirs.push((g.join("agents"), AgentScope::User));
     }
-    if let Some(l) = &legacy_grok {
+    if let Some(l) = &legacy_kigi {
         dirs.push((l.join("agents"), AgentScope::User));
     }
     if let Some(h) = home {
@@ -217,15 +217,15 @@ pub(crate) fn user_agent_dirs(
     if let Some(g) = kigi_home {
         dirs.push((g.join("bundled").join("agents"), AgentScope::Bundled));
     }
-    if let Some(l) = &legacy_grok {
+    if let Some(l) = &legacy_kigi {
         dirs.push((l.join("bundled").join("agents"), AgentScope::Bundled));
     }
     dirs
 }
 
 pub fn discover(cwd: &Path) -> Vec<AgentDefinition> {
-    let grok = kigi_config::user_kigi_home();
-    discover_with_home(cwd, dirs::home_dir().as_deref(), grok.as_deref())
+    let kigi = kigi_config::user_kigi_home();
+    discover_with_home(cwd, dirs::home_dir().as_deref(), kigi.as_deref())
 }
 
 fn discover_with_home(
@@ -251,8 +251,8 @@ fn discover_with_home(
 ///
 /// Checks built-ins first, then user-level dirs, then bundled.
 pub fn by_name(name: &str) -> Option<AgentDefinition> {
-    let grok = kigi_config::user_kigi_home();
-    by_name_with_home(name, dirs::home_dir().as_deref(), grok.as_deref())
+    let kigi = kigi_config::user_kigi_home();
+    by_name_with_home(name, dirs::home_dir().as_deref(), kigi.as_deref())
 }
 
 fn by_name_with_home(
@@ -260,8 +260,12 @@ fn by_name_with_home(
     home: Option<&Path>,
     kigi_home: Option<&Path>,
 ) -> Option<AgentDefinition> {
-    // Check built-ins first — type-safe via BuiltinAgentName strum enum
-    if let Ok(builtin) = BuiltinAgentName::from_str(name) {
+    // Check built-ins first — type-safe via BuiltinAgentName strum enum.
+    // Legacy pre-rebrand agent types (persisted in old session files) are
+    // mapped onto their current names first; see `canonical_agent_type`.
+    if let Ok(builtin) =
+        BuiltinAgentName::from_str(crate::config::canonical_agent_type(name).as_ref())
+    {
         return Some(builtin.definition());
     }
 
@@ -287,8 +291,8 @@ fn by_name_with_home(
 /// Project-level `.kigi/agents/` has highest priority, then falls back
 /// to built-ins, user-level, and finally bundled definitions.
 pub fn by_name_in_cwd(name: &str, cwd: &Path) -> Option<AgentDefinition> {
-    let grok = kigi_config::user_kigi_home();
-    by_name_in_cwd_with_home(name, cwd, dirs::home_dir().as_deref(), grok.as_deref())
+    let kigi = kigi_config::user_kigi_home();
+    by_name_in_cwd_with_home(name, cwd, dirs::home_dir().as_deref(), kigi.as_deref())
 }
 
 fn by_name_in_cwd_with_home(
@@ -363,13 +367,13 @@ pub fn all_subagents_with_plugins(
     toggle: &HashMap<String, bool>,
     plugins: Option<&crate::plugins::PluginRegistry>,
 ) -> Vec<SubagentEntry> {
-    let grok = kigi_config::user_kigi_home();
+    let kigi = kigi_config::user_kigi_home();
     all_subagents_with_plugins_and_home(
         cwd,
         toggle,
         plugins,
         dirs::home_dir().as_deref(),
-        grok.as_deref(),
+        kigi.as_deref(),
     )
 }
 
@@ -450,13 +454,13 @@ pub fn by_name_in_cwd_with_plugins(
     cwd: &Path,
     plugins: Option<&crate::plugins::PluginRegistry>,
 ) -> Option<AgentDefinition> {
-    let grok = kigi_config::user_kigi_home();
+    let kigi = kigi_config::user_kigi_home();
     by_name_in_cwd_with_plugins_and_home(
         name,
         cwd,
         plugins,
         dirs::home_dir().as_deref(),
-        grok.as_deref(),
+        kigi.as_deref(),
     )
 }
 
@@ -533,7 +537,7 @@ fn by_name_in_cwd_with_plugins_and_home(
     None
 }
 
-/// Expand `${CLAUDE_PLUGIN_ROOT}` / `${CLAUDE_PLUGIN_DATA}` (and the Grok
+/// Expand `${CLAUDE_PLUGIN_ROOT}` / `${CLAUDE_PLUGIN_DATA}` (and the Kigi
 /// aliases) in a plugin agent's body so the model receives absolute paths,
 /// matching the expected load-time resolution for these variables.
 fn substitute_plugin_vars(def: &mut AgentDefinition, plugin: &crate::plugins::LoadedPlugin) {
@@ -675,8 +679,8 @@ mod tests {
         use crate::plugins::PluginOrigin;
         match scope {
             PluginScope::CliOverride => PluginOrigin::CliOverride,
-            PluginScope::Project => PluginOrigin::ProjectGrok,
-            PluginScope::User => PluginOrigin::UserGrok,
+            PluginScope::Project => PluginOrigin::ProjectKigi,
+            PluginScope::User => PluginOrigin::UserKigi,
             PluginScope::ConfigPath => PluginOrigin::ConfigPath,
         }
     }
@@ -763,27 +767,27 @@ mod tests {
     }
 
     #[test]
-    fn user_agent_dirs_includes_legacy_grok_when_kigi_home_differs() {
+    fn user_agent_dirs_includes_legacy_kigi_when_kigi_home_differs() {
         let home = Path::new("/home/u");
-        let grok = Path::new("/custom/grokhome");
-        let paths: Vec<_> = user_agent_dirs(Some(home), Some(grok))
+        let kigi = Path::new("/custom/kigihome");
+        let paths: Vec<_> = user_agent_dirs(Some(home), Some(kigi))
             .into_iter()
             .map(|(p, _)| p)
             .collect();
-        assert!(paths.contains(&grok.join("agents")));
+        assert!(paths.contains(&kigi.join("agents")));
         assert!(paths.contains(&home.join(".kigi").join("agents")));
         assert!(paths.contains(&home.join(".claude").join("agents")));
-        assert!(paths.contains(&grok.join("bundled").join("agents")));
+        assert!(paths.contains(&kigi.join("bundled").join("agents")));
         assert!(paths.contains(&home.join(".kigi").join("bundled").join("agents")));
     }
 
     #[test]
-    fn user_agent_dirs_dedups_legacy_when_kigi_home_is_dot_grok() {
+    fn user_agent_dirs_dedups_legacy_when_kigi_home_is_dot_kigi() {
         let home = Path::new("/home/u");
-        let grok = home.join(".kigi");
-        let count = user_agent_dirs(Some(home), Some(&grok))
+        let kigi = home.join(".kigi");
+        let count = user_agent_dirs(Some(home), Some(&kigi))
             .into_iter()
-            .filter(|(p, _)| *p == grok.join("agents"))
+            .filter(|(p, _)| *p == kigi.join("agents"))
             .count();
         assert_eq!(
             count, 1,
@@ -807,10 +811,10 @@ mod tests {
     }
 
     #[test]
-    fn test_by_name_builtin_grok_build() {
-        let def = by_name("grok-build");
+    fn test_by_name_builtin_kigi() {
+        let def = by_name("kigi");
         assert!(def.is_some());
-        assert_eq!(def.unwrap().name, "grok-build");
+        assert_eq!(def.unwrap().name, "kigi");
     }
 
     #[test]
@@ -1004,19 +1008,14 @@ mod tests {
         let agents_dir = tmp.path().join(".kigi").join("agents");
         fs::create_dir_all(&agents_dir).unwrap();
 
-        // Create a project-level "grok-build" that shadows the built-in
-        write_agent_file(
-            &agents_dir,
-            "grok-build.md",
-            "grok-build",
-            "Custom grok-build",
-        );
+        // Create a project-level "kigi" that shadows the built-in
+        write_agent_file(&agents_dir, "kigi.md", "kigi", "Custom kigi");
 
-        let def = by_name_in_cwd("grok-build", tmp.path());
+        let def = by_name_in_cwd("kigi", tmp.path());
         assert!(def.is_some());
         let def = def.unwrap();
-        assert_eq!(def.name, "grok-build");
-        assert_eq!(def.description, "Custom grok-build");
+        assert_eq!(def.name, "kigi");
+        assert_eq!(def.description, "Custom kigi");
     }
 
     #[test]
@@ -1024,10 +1023,10 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         // No .kigi/agents/ directory — should fall back to built-in
 
-        let def = by_name_in_cwd("grok-build", tmp.path());
+        let def = by_name_in_cwd("kigi", tmp.path());
         assert!(def.is_some());
         let def = def.unwrap();
-        assert_eq!(def.name, "grok-build");
+        assert_eq!(def.name, "kigi");
         // Should be the built-in, not a custom one
         assert_eq!(def.scope, AgentScope::BuiltIn);
     }
@@ -1048,11 +1047,11 @@ mod tests {
     #[test]
     fn test_orchestrator_from_str_resolves() {
         use std::str::FromStr;
-        let variant = BuiltinAgentName::from_str("grok-build-orchestrator")
-            .expect("from_str must resolve grok-build-orchestrator");
-        assert_eq!(variant, BuiltinAgentName::GrokBuildOrchestrator);
+        let variant = BuiltinAgentName::from_str("kigi-orchestrator")
+            .expect("from_str must resolve kigi-orchestrator");
+        assert_eq!(variant, BuiltinAgentName::KigiOrchestrator);
         let def = variant.definition();
-        assert_eq!(def.name, "grok-build-orchestrator");
+        assert_eq!(def.name, "kigi-orchestrator");
         assert!(
             def.prompt_body.is_some(),
             "orchestrator must have prompt_body"
@@ -1067,9 +1066,9 @@ mod tests {
     #[test]
     fn test_orchestrator_by_name_in_cwd() {
         let tmp = tempfile::tempdir().unwrap();
-        let def = by_name_in_cwd("grok-build-orchestrator", tmp.path())
-            .expect("by_name_in_cwd must find grok-build-orchestrator");
-        assert_eq!(def.name, "grok-build-orchestrator");
+        let def = by_name_in_cwd("kigi-orchestrator", tmp.path())
+            .expect("by_name_in_cwd must find kigi-orchestrator");
+        assert_eq!(def.name, "kigi-orchestrator");
         assert!(def.prompt_body.is_some());
     }
 
@@ -1461,7 +1460,7 @@ mod tests {
         let registry = make_plugin_registry("plugin-one", PluginScope::User, vec![]);
         let plugin = registry.get("plugin-one").unwrap();
 
-        let mut def = AgentDefinition::default_grok_build();
+        let mut def = AgentDefinition::default_kigi();
         def.prompt_body = Some("Body ${CLAUDE_PLUGIN_ROOT}/x".to_string());
         def.system_prompt =
             TemplateOverride::Custom("Data at ${CLAUDE_PLUGIN_DATA}/db".to_string());

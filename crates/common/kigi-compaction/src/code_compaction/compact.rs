@@ -1,6 +1,6 @@
-//! grok-build's full-replace compaction pass.
+//! kigi's full-replace compaction pass.
 //!
-//! grok-build does not select a tail to keep; it summarizes the whole
+//! kigi does not select a tail to keep; it summarizes the whole
 //! conversation and rebuilds a fresh history from scratch. This module is the
 //! transport-agnostic orchestration of that pass:
 //!
@@ -41,7 +41,7 @@ pub struct FullReplaceContext<T> {
     /// The last real user query (raw), kept verbatim post-compaction.
     pub last_user_query: Option<String>,
     /// Working tail retained verbatim (tool/subagent results from the current
-    /// turn). grok-build keeps this; pass empty to drop it.
+    /// turn). kigi keeps this; pass empty to drop it.
     pub recent_messages: Vec<T>,
     /// Pre-rendered `<system-reminder>` (edited files, running tasks,
     /// subagents, MCP, …). The harness builds this; we only carry it.
@@ -99,7 +99,7 @@ pub struct FullReplaceOutput<T> {
 
 /// A successful full-replace **sampling** pass (summary only, no assembly).
 ///
-/// Returned by [`sample_full_replace_summary`] for harnesses (grok-build's
+/// Returned by [`sample_full_replace_summary`] for harnesses (kigi's
 /// shell) that drive the input ladder and assemble the history themselves —
 /// they build the assembly inputs (state-context system-reminder, AGENTS.md,
 /// plan-mode) *after* the LLM call, so they cannot use the bundled
@@ -111,7 +111,7 @@ pub struct FullReplaceSummary {
     pub attempts: u32,
 }
 
-/// Run grok-build's full-replace compaction pass and return the rebuilt
+/// Run kigi's full-replace compaction pass and return the rebuilt
 /// history. Pure orchestration: no triggers, no persistence, no commit.
 ///
 /// - `llm_turns` — the (harness-prepared/sanitized) conversation the model
@@ -172,7 +172,7 @@ where
 /// and report every attempt through `observer`. Returns the raw summary; the
 /// caller assembles the history (and owns the input ladder).
 ///
-/// This is the seam grok-build's shell uses: it drives the verbatim → fitted →
+/// This is the seam kigi's shell uses: it drives the verbatim → fitted →
 /// lossy input ladder around this call (stepping on a
 /// [`FullReplaceError::Sampler`] with `context_overflow = true`) and assembles
 /// the compacted history afterward from inputs it gathers post-sampling.
@@ -193,7 +193,7 @@ where
     }
 
     let prompt = CompactionPrompt {
-        // grok-build appends the summarization prompt as the final user
+        // kigi appends the summarization prompt as the final user
         // message; there is no separate system prompt for the compaction call.
         system: String::new(),
         user: build_summary_prompt(user_context),
@@ -366,11 +366,11 @@ mod tests {
     }
 
     /// Golden end-to-end test: a realistic conversation + a mock sampler that
-    /// returns a structured summary must produce grok-build's exact compacted
+    /// returns a structured summary must produce kigi's exact compacted
     /// history shape, with the LLM output cleaned and the agent-state reminder
     /// carried through as the final item.
     #[tokio::test]
-    async fn full_replace_produces_grok_build_history_shape() {
+    async fn full_replace_produces_kigi_history_shape() {
         let llm_turns = vec![
             MockItem::System("you are a helpful assistant".into()),
             MockItem::User("fix the login bug".into()),

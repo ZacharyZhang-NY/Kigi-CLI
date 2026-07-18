@@ -180,7 +180,7 @@ async fn incremental_dispatch_surfaces_fast_tool_before_slow_sibling() {
 /// `execute_tool_calls` Phase 2. The original implementation hardcoded
 /// `parsed_args.get("file_path")`, which silently bypassed serialization
 /// for any toolset whose edit input declared the path under a different
-/// JSON key. The compat toolset input types use `path`, and grok_build's
+/// JSON key. The compat toolset input types use `path`, and kigi's
 /// `read_file` uses `target_file`, so all of
 /// those calls fell through to fully concurrent dispatch and could lose
 /// edits via TOCTOU on the same workspace file.
@@ -188,8 +188,8 @@ async fn incremental_dispatch_surfaces_fast_tool_before_slow_sibling() {
 /// These tests pin the JSON-key contract so the bucket key keeps tracking
 /// every toolset's actual schema.
 #[test]
-fn lock_path_for_args_matches_grok_build_file_path() {
-    // grok_build search_replace / opencode EditTool / WriteTool / etc.
+fn lock_path_for_args_matches_kigi_file_path() {
+    // kigi search_replace / opencode EditTool / WriteTool / etc.
     let args = serde_json::json!({
         "file_path": "/repo/src/main.rs",
         "old_string": "foo",
@@ -210,8 +210,8 @@ fn lock_path_for_args_matches_path_arg() {
 }
 
 #[test]
-fn lock_path_for_args_matches_grok_build_target_file() {
-    // grok_build read_file uses #[serde(rename = "target_file")].
+fn lock_path_for_args_matches_kigi_target_file() {
+    // kigi read_file uses #[serde(rename = "target_file")].
     let args = serde_json::json!({
         "target_file": "/repo/src/main.rs",
     });
@@ -274,14 +274,14 @@ fn lock_path_for_args_buckets_parallel_compat_strreplace_to_same_lock() {
 }
 
 #[test]
-fn lock_path_for_args_buckets_grok_build_and_compat_to_same_lock_for_same_file() {
-    // A mixed batch (e.g. grok_build search_replace + StrReplace
+fn lock_path_for_args_buckets_kigi_and_compat_to_same_lock_for_same_file() {
+    // A mixed batch (e.g. kigi search_replace + StrReplace
     // in the same turn — possible if the harness ever exposes both, or
     // during toolset migration) must still serialize on the shared file
     // path. file_path takes precedence over path when both are present,
     // but neither tool emits both keys today, so this asserts the
     // cross-toolset key normalization works in practice.
-    let grok = serde_json::json!({
+    let kigi = serde_json::json!({
         "file_path": "/repo/src/main.rs",
         "old_string": "a",
         "new_string": "b",
@@ -291,7 +291,7 @@ fn lock_path_for_args_buckets_grok_build_and_compat_to_same_lock_for_same_file()
         "old_string": "c",
         "new_string": "d",
     });
-    assert_eq!(lock_path_for_args(&grok), lock_path_for_args(&compat));
+    assert_eq!(lock_path_for_args(&kigi), lock_path_for_args(&compat));
 }
 
 /// Regression: skill-discovery reminders must land after all tool results, not mid-batch.

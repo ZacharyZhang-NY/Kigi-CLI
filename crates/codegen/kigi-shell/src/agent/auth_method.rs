@@ -101,7 +101,7 @@ pub struct BuiltAuthMethods {
 /// Ordering (when each method is enabled):
 /// 1. `xai.api_key`     (if `has_external_api_key`)
 /// 2. `cached_token`    (if `has_cached_token`)
-/// 3. `grok.com`        (the Kimi Code device login)
+/// 3. `kimi-code`        (the Kimi Code device login)
 ///
 /// `default_auth_method_id`:
 /// - `cached_token` if `has_cached_token`
@@ -153,7 +153,7 @@ pub fn build_auth_methods(inputs: AuthMethodsBuildInputs<'_>) -> BuiltAuthMethod
 pub enum AuthMethodKind {
     XaiApiKey,
     CachedToken,
-    GrokCom,
+    KimiCode,
     Unknown,
 }
 
@@ -162,7 +162,7 @@ impl AuthMethodKind {
         match id.0.as_ref() {
             XAI_API_KEY_METHOD_ID => Self::XaiApiKey,
             CACHED_TOKEN_AUTH_METHOD_ID => Self::CachedToken,
-            KIGI_COM_METHOD_ID => Self::GrokCom,
+            KIMI_CODE_METHOD_ID => Self::KimiCode,
             _ => Self::Unknown,
         }
     }
@@ -174,12 +174,12 @@ impl AuthMethodKind {
 
     /// `true` for session-based methods (cached_token, interactive login).
     pub fn is_session_based(self) -> bool {
-        matches!(self, Self::CachedToken | Self::GrokCom)
+        matches!(self, Self::CachedToken | Self::KimiCode)
     }
 
     /// Requires user interaction (device-code login in the browser).
     pub fn needs_interactive_login(self) -> bool {
-        matches!(self, Self::GrokCom)
+        matches!(self, Self::KimiCode)
     }
 
     pub fn auth_error_message(self) -> &'static str {
@@ -259,7 +259,7 @@ pub fn method_id_after_cached_token_unavailable(has_external_api_key: bool) -> &
     if has_external_api_key {
         XAI_API_KEY_METHOD_ID
     } else {
-        KIGI_COM_METHOD_ID
+        KIMI_CODE_METHOD_ID
     }
 }
 
@@ -287,17 +287,20 @@ pub fn cached_token_auth_method() -> acp::AuthMethod {
     )
 }
 
-/// Interactive login method id. The literal `"grok.com"` is kept for ACP
-/// wire-compat with the in-repo pager (renaming is a cross-crate wire change
-/// deferred to the command-surface milestone).
-pub const KIGI_COM_METHOD_ID: &str = "grok.com";
+/// Interactive login method id, advertised over ACP by this agent and
+/// selected by the in-repo pager. Both sides of the ACP boundary live in
+/// this repo, so the id is renamed in lockstep everywhere.
+pub const KIMI_CODE_METHOD_ID: &str = "kimi-code";
 
 /// The Kimi Code device-code login.
 pub fn kimi_code_auth_method(label: Option<&str>) -> acp::AuthMethod {
     let name = label.unwrap_or("Kimi Code");
     acp::AuthMethod::Agent(
-        acp::AuthMethodAgent::new(acp::AuthMethodId::new(KIGI_COM_METHOD_ID), name.to_string())
-            .description(Some(format!("Sign in with {name}"))),
+        acp::AuthMethodAgent::new(
+            acp::AuthMethodId::new(KIMI_CODE_METHOD_ID),
+            name.to_string(),
+        )
+        .description(Some(format!("Sign in with {name}"))),
     )
 }
 
@@ -323,14 +326,14 @@ mod tests {
     fn after_cached_token_unavailable_falls_to_interactive_login() {
         assert_eq!(
             method_id_after_cached_token_unavailable(false),
-            KIGI_COM_METHOD_ID,
+            KIMI_CODE_METHOD_ID,
         );
     }
 
     /// Classifier matrix for all auth method variants.
     #[test]
     fn auth_method_kind_classifier_matrix() {
-        let session_methods = [CACHED_TOKEN_AUTH_METHOD_ID, KIGI_COM_METHOD_ID];
+        let session_methods = [CACHED_TOKEN_AUTH_METHOD_ID, KIMI_CODE_METHOD_ID];
         for id in session_methods {
             let kind = AuthMethodKind::from_id(&acp::AuthMethodId::new(id));
             assert!(kind.is_session_based(), "{id} must be session-based");
@@ -345,7 +348,7 @@ mod tests {
         assert!(!unknown.is_session_based());
         // Only the interactive login needs a browser.
         assert!(
-            AuthMethodKind::from_id(&acp::AuthMethodId::new(KIGI_COM_METHOD_ID))
+            AuthMethodKind::from_id(&acp::AuthMethodId::new(KIMI_CODE_METHOD_ID))
                 .needs_interactive_login()
         );
         assert!(
@@ -428,7 +431,7 @@ mod tests {
         });
         assert_eq!(
             method_ids(&built),
-            vec![XAI_API_KEY_METHOD_ID, KIGI_COM_METHOD_ID]
+            vec![XAI_API_KEY_METHOD_ID, KIMI_CODE_METHOD_ID]
         );
         assert_eq!(default_id(&built), Some(XAI_API_KEY_METHOD_ID));
         assert!(
@@ -451,7 +454,7 @@ mod tests {
             vec![
                 XAI_API_KEY_METHOD_ID,
                 CACHED_TOKEN_AUTH_METHOD_ID,
-                KIGI_COM_METHOD_ID
+                KIMI_CODE_METHOD_ID
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -466,7 +469,7 @@ mod tests {
         });
         assert_eq!(
             method_ids(&built),
-            vec![CACHED_TOKEN_AUTH_METHOD_ID, KIGI_COM_METHOD_ID]
+            vec![CACHED_TOKEN_AUTH_METHOD_ID, KIMI_CODE_METHOD_ID]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
         assert_eq!(
@@ -480,7 +483,7 @@ mod tests {
     #[test]
     fn fresh_user_only_advertises_interactive_login() {
         let built = build_auth_methods(default_inputs());
-        assert_eq!(method_ids(&built), vec![KIGI_COM_METHOD_ID]);
+        assert_eq!(method_ids(&built), vec![KIMI_CODE_METHOD_ID]);
         assert_eq!(default_id(&built), None);
     }
 

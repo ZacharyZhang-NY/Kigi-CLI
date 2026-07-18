@@ -3,11 +3,11 @@ use serde::Deserialize;
 /// Schema helper for integers - produces clean integer schema without extra fields.
 /// By default schemars adds "format": "uint" and "minimum": 0.0 which we don't want.
 ///
-/// Use with `#[schemars(with = "GrokIntegerSchema")]` on `Option<usize>` fields.
-pub struct GrokIntegerSchema;
-impl schemars::JsonSchema for GrokIntegerSchema {
+/// Use with `#[schemars(with = "KigiIntegerSchema")]` on `Option<usize>` fields.
+pub struct KigiIntegerSchema;
+impl schemars::JsonSchema for KigiIntegerSchema {
     fn schema_name() -> std::borrow::Cow<'static, str> {
-        "grok_integer_schema".into()
+        "kigi_integer_schema".into()
     }
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
         schemars::json_schema!({ "type" : "integer" })

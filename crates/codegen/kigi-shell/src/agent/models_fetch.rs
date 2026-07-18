@@ -657,13 +657,13 @@ mod tests {
     #[test]
     fn parse_openai_format_uses_id_field() {
         let value = serde_json::json!(
-            { "id" : "grok-3", "object" : "model", "owned_by" : "xai", "context_window" :
+            { "id" : "kigi-3", "object" : "model", "owned_by" : "xai", "context_window" :
             131072 }
         );
-        let result = parse_remote_model_value(&value, "https://api.x.ai/v1").unwrap();
-        assert_eq!(result.model, "grok-3");
-        assert_eq!(result.base_url, "https://api.x.ai/v1");
-        assert_eq!(result.name.as_deref(), Some("grok-3"));
+        let result = parse_remote_model_value(&value, "https://byok.example/v1").unwrap();
+        assert_eq!(result.model, "kigi-3");
+        assert_eq!(result.base_url, "https://byok.example/v1");
+        assert_eq!(result.name.as_deref(), Some("kigi-3"));
     }
     #[test]
     fn parse_model_field_takes_priority_over_id() {
@@ -753,14 +753,14 @@ mod tests {
     fn parse_reads_reasoning_effort_fields() {
         use kigi_sampling_types::ReasoningEffort;
         let value = serde_json::json!(
-            { "model" : "grok-4.5", "context_window" : 1_000_000,
+            { "model" : "kigi-4.5", "context_window" : 1_000_000,
             "supports_reasoning_effort" : true, "reasoning_effort" : "high" }
         );
         let result = parse_remote_model_value(&value, "https://default.url").unwrap();
         assert!(result.supports_reasoning_effort);
         assert_eq!(result.reasoning_effort, Some(ReasoningEffort::High));
         let value = serde_json::json!(
-            { "model" : "grok-4.5", "contextWindow" : 1_000_000,
+            { "model" : "kigi-4.5", "contextWindow" : 1_000_000,
             "supportsReasoningEffort" : true, "reasoningEffort" : "xhigh" }
         );
         let result = parse_remote_model_value(&value, "https://default.url").unwrap();
@@ -775,7 +775,7 @@ mod tests {
     fn parse_reads_reasoning_efforts_list() {
         use kigi_sampling_types::ReasoningEffort;
         let value = serde_json::json!(
-            { "model" : "grok-4.5", "context_window" : 1_000_000, "reasoning_efforts" :
+            { "model" : "kigi-4.5", "context_window" : 1_000_000, "reasoning_efforts" :
             [{ "id" : "deep", "value" : "xhigh", "label" : "Deep" }, { "value" :
             "quantum" }, "low",] }
         );
@@ -819,7 +819,7 @@ mod tests {
     #[test]
     fn parse_remote_model_value_no_laziness_detector_block_yields_default() {
         let value = serde_json::json!(
-            { "model" : "grok-4", "context_window" : 256_000, }
+            { "model" : "kigi-4", "context_window" : 256_000, }
         );
         let result = parse_remote_model_value(&value, "https://default.url").unwrap();
         assert_eq!(
@@ -830,7 +830,7 @@ mod tests {
     #[test]
     fn parse_remote_model_value_parses_camelcase_key() {
         let value = serde_json::json!(
-            { "model" : "grok-4", "context_window" : 256_000, "lazinessDetector" : {
+            { "model" : "kigi-4", "context_window" : 256_000, "lazinessDetector" : {
             "enabled" : true, "max_nudges_per_session" : 2, "idle_threshold_ms" : 12_000,
             "min_confidence" : 0.75, }, }
         );
@@ -847,7 +847,7 @@ mod tests {
     #[test]
     fn parse_remote_model_value_parses_snake_case_laziness_detector() {
         let value = serde_json::json!(
-            { "model" : "grok-4", "context_window" : 256_000, "laziness_detector" : {
+            { "model" : "kigi-4", "context_window" : 256_000, "laziness_detector" : {
             "enabled" : true, "max_nudges_per_session" : 3, "idle_threshold_ms" : 8_000,
             "min_confidence" : 0.6, }, }
         );
@@ -864,7 +864,7 @@ mod tests {
     #[test]
     fn parse_remote_model_value_parses_meta_laziness_detector() {
         let value = serde_json::json!(
-            { "model" : "grok-4", "context_window" : 256_000, "_meta" : {
+            { "model" : "kigi-4", "context_window" : 256_000, "_meta" : {
             "lazinessDetector" : { "enabled" : true, "max_nudges_per_session" : 1,
             "idle_threshold_ms" : 15_000, "min_confidence" : 0.9, }, }, }
         );
@@ -881,7 +881,7 @@ mod tests {
     #[test]
     fn parse_remote_model_value_partial_block_uses_field_defaults() {
         let value = serde_json::json!(
-            { "model" : "grok-4", "context_window" : 256_000, "lazinessDetector" : {
+            { "model" : "kigi-4", "context_window" : 256_000, "lazinessDetector" : {
             "enabled" : true, }, }
         );
         let result = parse_remote_model_value(&value, "https://default.url").unwrap();
@@ -897,7 +897,7 @@ mod tests {
     #[test]
     fn parse_remote_model_value_malformed_block_falls_back_to_default() {
         let value = serde_json::json!(
-            { "model" : "grok-4", "context_window" : 256_000, "lazinessDetector" : {
+            { "model" : "kigi-4", "context_window" : 256_000, "lazinessDetector" : {
             "enabled" : true, "max_nudges_per_session" : "abc", }, }
         );
         let result = parse_remote_model_value(&value, "https://default.url").unwrap();
@@ -909,7 +909,7 @@ mod tests {
     #[test]
     fn parse_remote_model_value_non_object_value_falls_back_to_default() {
         let value = serde_json::json!(
-            { "model" : "grok-4", "context_window" : 256_000, "lazinessDetector" :
+            { "model" : "kigi-4", "context_window" : 256_000, "lazinessDetector" :
             "not-an-object", }
         );
         let result = parse_remote_model_value(&value, "https://default.url").unwrap();
@@ -921,7 +921,7 @@ mod tests {
     #[test]
     fn parse_remote_model_value_top_level_camelcase_wins_over_snake_case() {
         let value = serde_json::json!(
-            { "model" : "grok-4", "context_window" : 256_000, "lazinessDetector" : {
+            { "model" : "kigi-4", "context_window" : 256_000, "lazinessDetector" : {
             "enabled" : true, "max_nudges_per_session" : 7, }, "laziness_detector" : {
             "enabled" : false, "max_nudges_per_session" : 99, }, }
         );
@@ -942,7 +942,7 @@ mod tests {
     #[test]
     fn parse_remote_model_value_parses_include_reasoning_under_camelcase_wrapper() {
         let value = serde_json::json!(
-            { "model" : "grok-4", "context_window" : 256_000, "lazinessDetector" : {
+            { "model" : "kigi-4", "context_window" : 256_000, "lazinessDetector" : {
             "enabled" : true, "include_reasoning" : false, }, }
         );
         let result = parse_remote_model_value(&value, "https://default.url").unwrap();
@@ -951,7 +951,7 @@ mod tests {
     #[test]
     fn parse_remote_model_value_parses_include_reasoning_under_snake_case_wrapper() {
         let value = serde_json::json!(
-            { "model" : "grok-4", "context_window" : 256_000, "laziness_detector" : {
+            { "model" : "kigi-4", "context_window" : 256_000, "laziness_detector" : {
             "enabled" : true, "include_reasoning" : true, }, }
         );
         let result = parse_remote_model_value(&value, "https://default.url").unwrap();
@@ -960,7 +960,7 @@ mod tests {
     #[test]
     fn parse_remote_model_value_omitted_include_reasoning_defaults_to_none() {
         let value = serde_json::json!(
-            { "model" : "grok-4", "context_window" : 256_000, "lazinessDetector" : {
+            { "model" : "kigi-4", "context_window" : 256_000, "lazinessDetector" : {
             "enabled" : true, "max_nudges_per_session" : 2, }, }
         );
         let result = parse_remote_model_value(&value, "https://default.url").unwrap();
@@ -972,7 +972,7 @@ mod tests {
     #[test]
     fn parse_remote_model_value_top_level_wins_over_meta() {
         let value = serde_json::json!(
-            { "model" : "grok-4", "context_window" : 256_000, "lazinessDetector" : {
+            { "model" : "kigi-4", "context_window" : 256_000, "lazinessDetector" : {
             "enabled" : true, "max_nudges_per_session" : 5, }, "_meta" : {
             "lazinessDetector" : { "enabled" : false, "max_nudges_per_session" : 99, },
             }, }
@@ -990,19 +990,19 @@ mod tests {
     #[test]
     fn parse_reads_show_model_fingerprint_field() {
         let value = serde_json::json!(
-            { "model" : "grok-build", "context_window" : 256_000,
+            { "model" : "kigi", "context_window" : 256_000,
             "show_model_fingerprint" : true }
         );
         let result = parse_remote_model_value(&value, "https://default.url").unwrap();
         assert!(result.show_model_fingerprint);
         let value = serde_json::json!(
-            { "model" : "grok-build", "contextWindow" : 256_000, "showModelFingerprint" :
+            { "model" : "kigi", "contextWindow" : 256_000, "showModelFingerprint" :
             true }
         );
         let result = parse_remote_model_value(&value, "https://default.url").unwrap();
         assert!(result.show_model_fingerprint);
         let value = serde_json::json!(
-            { "model" : "grok-build", "context_window" : 256_000, "_meta" : {
+            { "model" : "kigi", "context_window" : 256_000, "_meta" : {
             "showModelFingerprint" : true } }
         );
         let result = parse_remote_model_value(&value, "https://default.url").unwrap();
@@ -1087,10 +1087,13 @@ mod tests {
     fn list_url_derived_from_base_url() {
         let ep = endpoints(
             "https://proxy.kigi.com/v1",
-            Some("https://api.x.ai/v1"),
+            Some("https://byok.example/v1"),
             None,
         );
-        assert_eq!(ep.resolve_models_list_url(), "https://api.x.ai/v1/models");
+        assert_eq!(
+            ep.resolve_models_list_url(),
+            "https://byok.example/v1/models"
+        );
     }
     #[test]
     fn list_url_explicit_overrides_derivation() {

@@ -197,7 +197,7 @@ pub struct AgentsModalState {
     /// Snapshot of bundle catalog used to merge persona lists.
     bundle: BundleState,
     /// Resolved startup agent name (same chain as shell: `[agent]`, `KIGI_AGENT`,
-    /// model `agentType`, then `grok-build`).
+    /// model `agentType`, then `kigi`).
     pub default_agent: String,
     /// Agent running in the current session (`session/info` `agentName`).
     pub active_agent: Option<String>,
@@ -211,12 +211,12 @@ pub struct AgentsModalState {
     pub persona_expanded: std::collections::HashSet<usize>,
 }
 /// Built-in agent names that should be shown to the user.
-/// Skips internal variants (GrokBuildConcise, GrokBuildPlan,
-/// GrokBuildPlanNoSubagents, GrokBuildAskUser, Codex, Opencode,
-/// CursorExtended, GrokBuildOrchestrator).
+/// Skips internal variants (KigiConcise, KigiPlan,
+/// KigiPlanNoSubagents, KigiAskUser, Codex, Opencode,
+/// CursorExtended, KigiOrchestrator).
 fn user_visible_builtins() -> &'static [BuiltinAgentName] {
     &[
-        BuiltinAgentName::GrokBuild,
+        BuiltinAgentName::Kigi,
         BuiltinAgentName::GeneralPurpose,
         BuiltinAgentName::Explore,
         BuiltinAgentName::Plan,

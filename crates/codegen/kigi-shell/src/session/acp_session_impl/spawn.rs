@@ -146,8 +146,8 @@ pub(crate) async fn spawn_session_actor(
     inference_idle_timeout_secs: u64,
     max_retries: Option<u32>,
     web_search_config: kigi_tools::implementations::WebSearchConfig,
-    web_fetch_config: kigi_tools::implementations::grok_build::web_fetch::WebFetchConfig,
-    app_builder_deployer_config: kigi_tools::implementations::grok_build::deploy_app::AppBuilderDeployerConfig,
+    web_fetch_config: kigi_tools::implementations::kigi::web_fetch::WebFetchConfig,
+    app_builder_deployer_config: kigi_tools::implementations::kigi::deploy_app::AppBuilderDeployerConfig,
     write_file_enabled: bool,
     goal_enabled: bool,
     subagents_enabled: bool,
@@ -180,7 +180,7 @@ pub(crate) async fn spawn_session_actor(
         std::sync::Arc<dyn kigi_tools::computer::types::TerminalBackend>,
     >,
     parent_scheduler_handle: Option<
-        kigi_tools::implementations::grok_build::scheduler::types::SchedulerHandle,
+        kigi_tools::implementations::kigi::scheduler::types::SchedulerHandle,
     >,
     max_turns: Option<usize>,
     forked_tool_override: Option<Vec<ToolSpec>>,
@@ -224,7 +224,7 @@ pub(crate) async fn spawn_session_actor(
                 "CLI --allow catch-all ignored: always-approve disabled by managed policy"
             );
             if startup_hints.non_interactive {
-                eprintln!("grok: --allow catch-all ignored: {reason}");
+                eprintln!("kigi: --allow catch-all ignored: {reason}");
             }
         }
         if !cli_permission_rules.is_empty() {
@@ -531,7 +531,7 @@ pub(crate) async fn spawn_session_actor(
     };
     let reminder_policy = resolve_reminder_policy(remote_settings.as_ref(), todo_gate);
     let (user_question_tx, user_question_rx) = tokio::sync::mpsc::unbounded_channel::<
-        kigi_tools::implementations::grok_build::ask_user_question::types::UserQuestionRequest,
+        kigi_tools::implementations::kigi::ask_user_question::types::UserQuestionRequest,
     >();
     let attribution_callback_for_spec = auth_manager.as_ref().map(|am| {
         crate::auth::attribution::ShellAttribution::new_tool_callback(
@@ -672,7 +672,7 @@ pub(crate) async fn spawn_session_actor(
             state.set_acp_servers(acp_mcp_servers, invoker);
             tracing::info!(
                 session_id = % session_info.id.0, acp_mcp_servers = acp_server_count,
-                "Registered in-process SDK MCP servers (x.ai/mcp/sdk_call)"
+                "Registered in-process SDK MCP servers (kigi/mcp/sdk_call)"
             );
         }
         Arc::new(TokioMutex::new(state))
@@ -763,7 +763,7 @@ pub(crate) async fn spawn_session_actor(
     let scheduler_handle_for_handle = {
         let toolset = agent.tool_bridge().toolset();
         let res = toolset.resources.lock().await;
-        res.get::<kigi_tools::implementations::grok_build::scheduler::types::SchedulerHandle>()
+        res.get::<kigi_tools::implementations::kigi::scheduler::types::SchedulerHandle>()
             .cloned()
     };
     if let Err(e) = workspace_ops.bind_local_session(
@@ -831,13 +831,13 @@ pub(crate) async fn spawn_session_actor(
         "Creating feedback manager"
     );
     let feedback_client_type = match client_type {
-        ClientType::GrokTUI => crate::session::feedback_types::ClientType::Tui,
-        ClientType::GrokWeb => crate::session::feedback_types::ClientType::Web,
+        ClientType::KigiTUI => crate::session::feedback_types::ClientType::Tui,
+        ClientType::KigiWeb => crate::session::feedback_types::ClientType::Web,
         ClientType::Nebula => crate::session::feedback_types::ClientType::Nebula,
         ClientType::Extension => crate::session::feedback_types::ClientType::Extension,
         ClientType::Generic => crate::session::feedback_types::ClientType::Agent,
         ClientType::Desktop => crate::session::feedback_types::ClientType::Desktop,
-        ClientType::GrokPager => crate::session::feedback_types::ClientType::Tui,
+        ClientType::KigiPager => crate::session::feedback_types::ClientType::Tui,
     };
     let feedback_config = FeedbackManagerConfig {
         feedback_enabled: feedback_flags.enabled,
@@ -930,7 +930,7 @@ pub(crate) async fn spawn_session_actor(
         .map(|e| e.to_string())
         .collect();
     let (goal_update_tx, goal_update_rx) = tokio::sync::mpsc::unbounded_channel::<
-        kigi_tools::implementations::grok_build::update_goal::UpdateGoalEnvelope,
+        kigi_tools::implementations::kigi::update_goal::UpdateGoalEnvelope,
     >();
     let mut effective_config = crate::config::load_effective_config()
         .ok()
@@ -1224,7 +1224,7 @@ pub(crate) async fn spawn_session_actor(
         .borrow()
         .tool_bridge()
         .update_resource(
-            kigi_tools::implementations::grok_build::update_goal::GoalUpdateHandle(
+            kigi_tools::implementations::kigi::update_goal::GoalUpdateHandle(
                 session.goal_update_tx.clone(),
             ),
         )
@@ -1288,7 +1288,7 @@ pub(crate) async fn spawn_session_actor(
     }
     {
         use agent_client_protocol::Client as _;
-        use kigi_tools::implementations::grok_build::ask_user_question::{
+        use kigi_tools::implementations::kigi::ask_user_question::{
             AskUserQuestionExtRequest, AskUserQuestionExtResponse, UserQuestionError,
             UserQuestionResponse,
         };
@@ -1300,7 +1300,7 @@ pub(crate) async fn spawn_session_actor(
         let mut user_question_rx = user_question_rx;
         tokio::task::spawn_local(async move {
             while let Some(mut request) = user_question_rx.recv().await {
-                use kigi_tools::implementations::grok_build::ask_user_question::AskUserQuestionMode;
+                use kigi_tools::implementations::kigi::ask_user_question::AskUserQuestionMode;
                 let mode = match *current_prompt_mode.lock() {
                     PromptMode::Plan => AskUserQuestionMode::Plan,
                     _ => AskUserQuestionMode::Default,
@@ -1316,7 +1316,7 @@ pub(crate) async fn spawn_session_actor(
                     "ask_user_question reverse-request must carry a non-empty sessionId (design §5.4)"
                 );
                 let ext_request = agent_client_protocol::ExtRequest::new(
-                    "x.ai/ask_user_question",
+                    "kigi/ask_user_question",
                     serde_json::value::to_raw_value(&ext_req)
                         .expect("AskUserQuestionExtRequest serialization should not fail")
                         .into(),
@@ -1521,8 +1521,8 @@ pub(crate) async fn spawn_session_on_thread(
     inference_idle_timeout_secs: u64,
     max_retries: Option<u32>,
     web_search_config: kigi_tools::implementations::WebSearchConfig,
-    web_fetch_config: kigi_tools::implementations::grok_build::web_fetch::WebFetchConfig,
-    app_builder_deployer_config: kigi_tools::implementations::grok_build::deploy_app::AppBuilderDeployerConfig,
+    web_fetch_config: kigi_tools::implementations::kigi::web_fetch::WebFetchConfig,
+    app_builder_deployer_config: kigi_tools::implementations::kigi::deploy_app::AppBuilderDeployerConfig,
     write_file_enabled: bool,
     goal_enabled: bool,
     subagents_enabled: bool,
@@ -1556,7 +1556,7 @@ pub(crate) async fn spawn_session_on_thread(
         std::sync::Arc<dyn kigi_tools::computer::types::TerminalBackend>,
     >,
     parent_scheduler_handle: Option<
-        kigi_tools::implementations::grok_build::scheduler::types::SchedulerHandle,
+        kigi_tools::implementations::kigi::scheduler::types::SchedulerHandle,
     >,
     max_turns: Option<usize>,
     forked_tool_override: Option<Vec<ToolSpec>>,

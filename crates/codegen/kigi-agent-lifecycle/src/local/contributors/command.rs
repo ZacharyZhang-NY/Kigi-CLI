@@ -4,7 +4,7 @@ use crate::send::contributors::command::{
     CommandAction, CommandContributor, CommandInvocation, CommandSpec,
 };
 
-/// `?Send` twin of [`CommandContributor`] for single-threaded hosts like grok build's TUI agent, whose session state is `Rc`/`RefCell`-based and can
+/// `?Send` twin of [`CommandContributor`] for single-threaded hosts like kigi build's TUI agent, whose session state is `Rc`/`RefCell`-based and can
 /// never satisfy the `Send` bounds the send flavor bakes into its boxed hook futures.
 #[async_trait(?Send)]
 pub trait LocalCommandContributor {

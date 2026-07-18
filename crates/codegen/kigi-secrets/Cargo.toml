@@ -3,7 +3,7 @@ license = "Apache-2.0"
 edition.workspace = true
 name = "kigi-secrets"
 version.workspace = true
-description = "Regex sanitizer for Grok Build outbound data (Sentry / Mixpanel / product-event scrubbing)"
+description = "Regex sanitizer for Kigi outbound data (Sentry / Mixpanel / product-event scrubbing)"
 
 [dependencies]
 regex = { workspace = true }

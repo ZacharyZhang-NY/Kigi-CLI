@@ -488,7 +488,7 @@ mod tests {
     #[test]
     fn origin_client_info_from_meta_extracts_identifier_and_version() {
         let meta = serde_json::json!({
-            "clientIdentifier": "grok-desktop",
+            "clientIdentifier": "kigi-desktop",
             "clientVersion": "1.2.3",
         })
         .as_object()
@@ -497,7 +497,7 @@ mod tests {
         assert_eq!(
             origin_client_info_from_meta(Some(&meta)),
             Some(OriginClientInfo {
-                product: "grok-desktop".to_string(),
+                product: "kigi-desktop".to_string(),
                 version: Some("1.2.3".to_string()),
             })
         );
@@ -505,8 +505,11 @@ mod tests {
 
     #[test]
     fn origin_client_info_from_meta_uses_client_type_when_identifier_absent() {
+        // `kigi_web` is used (not the pager) because its user-agent label is
+        // distinct from the Generic default's `kigi` — a clientType parse
+        // failure would fall back to Generic and this assert would catch it.
         let meta = serde_json::json!({
-            "clientType": "grok_pager",
+            "clientType": "kigi_web",
             "clientVersion": "0.1.2",
         })
         .as_object()
@@ -515,9 +518,20 @@ mod tests {
         assert_eq!(
             origin_client_info_from_meta(Some(&meta)),
             Some(OriginClientInfo {
-                product: "grok-pager".to_string(),
+                product: "kigi-web".to_string(),
                 version: Some("0.1.2".to_string()),
             })
+        );
+        // First-party clients collapse to the plain `kigi` product (PRD F3).
+        let pager_meta = serde_json::json!({ "clientType": "kigi_pager" })
+            .as_object()
+            .cloned()
+            .unwrap();
+        assert_eq!(
+            origin_client_info_from_meta(Some(&pager_meta))
+                .expect("pager clientType resolves")
+                .product,
+            "kigi"
         );
     }
 
@@ -525,18 +539,18 @@ mod tests {
     fn merge_origin_client_info_preserves_primary_product_and_backfills_version() {
         let merged = merge_origin_client_info(
             Some(OriginClientInfo {
-                product: "grok-web".to_string(),
+                product: "kigi-web".to_string(),
                 version: None,
             }),
             Some(OriginClientInfo {
-                product: "grok-desktop".to_string(),
+                product: "kigi-desktop".to_string(),
                 version: Some("1.2.3".to_string()),
             }),
         );
         assert_eq!(
             merged,
             Some(OriginClientInfo {
-                product: "grok-web".to_string(),
+                product: "kigi-web".to_string(),
                 version: Some("1.2.3".to_string()),
             })
         );
@@ -545,18 +559,18 @@ mod tests {
     #[test]
     fn session_user_agent_string_renders_expected_variants() {
         let with_version = session_user_agent_string(&OriginClientInfo {
-            product: "grok-desktop".to_string(),
+            product: "kigi-desktop".to_string(),
             version: Some("1.2.3".to_string()),
         });
-        assert!(with_version.starts_with("grok-desktop/1.2.3 kigi/"));
+        assert!(with_version.starts_with("kigi-desktop/1.2.3 kigi/"));
         assert!(with_version.contains(" ("));
 
         let without_version = session_user_agent_string(&OriginClientInfo {
-            product: "grok-web".to_string(),
+            product: "kigi-web".to_string(),
             version: None,
         });
-        assert!(without_version.starts_with("grok-web kigi/"));
-        assert!(!without_version.starts_with("grok-web/"));
+        assert!(without_version.starts_with("kigi-web kigi/"));
+        assert!(!without_version.starts_with("kigi-web/"));
     }
 
     #[test]

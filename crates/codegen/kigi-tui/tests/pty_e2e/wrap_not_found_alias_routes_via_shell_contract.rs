@@ -9,7 +9,7 @@ use super::common::*;
 ///
 /// A fake argv-echoing `$SHELL` makes the assertion deterministic: real alias
 /// expansion is the shell's own contract (and rc-file dependent), while the
-/// argv shape is the part `grok wrap` owns. The quoting round-trip against a
+/// argv shape is the part `kigi wrap` owns. The quoting round-trip against a
 /// real shell is covered by `joined_line_roundtrips_words_through_real_sh` in
 /// `wrap_cmd_tests`.
 #[test]
@@ -18,7 +18,7 @@ use super::common::*;
 fn wrap_not_found_alias_routes_via_shell_contract() {
     let (_dir, shell) = fake_argv_echo_shell();
     let (code, raw) = run_wrap(
-        &["grok-wrap-e2e-alias-xx", "with space"],
+        &["kigi-wrap-e2e-alias-xx", "with space"],
         &[("SHELL", &shell)],
     );
 
@@ -28,7 +28,7 @@ fn wrap_not_found_alias_routes_via_shell_contract() {
     );
     assert!(raw.contains("ARG:-c"), "shell must get -c\nraw:\n{raw}");
     assert!(
-        raw.contains("ARG:grok-wrap-e2e-alias-xx 'with space'"),
+        raw.contains("ARG:kigi-wrap-e2e-alias-xx 'with space'"),
         "rejoined line must keep the first word bare and quote the tail\nraw:\n{raw}"
     );
     assert_eq!(

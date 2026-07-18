@@ -622,7 +622,7 @@ fn sample_line() -> LazinessDebugLogLine {
     LazinessDebugLogLine {
         timestamp: "2026-05-21T22:14:01.123Z".to_string(),
         session_id: "019e4c65-434b-7d62-9d4b-8137d1d413e4".to_string(),
-        model_id: "grok-4.5".to_string(),
+        model_id: "kigi-4.5".to_string(),
         items_sent: 28,
         todo_snapshot: vec![DebugTodoSnapshot {
             id: "turn-finish-test-1".to_string(),

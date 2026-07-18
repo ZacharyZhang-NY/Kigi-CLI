@@ -77,7 +77,7 @@ impl McpCredentialStore {
     /// Save the credential store to the default path.
     pub fn save_default(&self) -> Result<()> {
         let path = Self::default_path().ok_or_else(|| {
-            McpCredentialError::Other("no user grok home (set $KIGI_SHARE_DIR or $HOME)".into())
+            McpCredentialError::Other("no user kigi home (set $KIGI_SHARE_DIR or $HOME)".into())
         })?;
         self.save_to(&path)
     }
@@ -99,7 +99,7 @@ impl McpCredentialStore {
         creds: rmcp::transport::auth::StoredCredentials,
     ) -> Result<()> {
         let path = Self::default_path().ok_or_else(|| {
-            McpCredentialError::Other("no user grok home (set $KIGI_SHARE_DIR or $HOME)".into())
+            McpCredentialError::Other("no user kigi home (set $KIGI_SHARE_DIR or $HOME)".into())
         })?;
         let lock_path = path.with_extension("lock");
 
@@ -417,7 +417,7 @@ mod tests {
 
     #[test]
     fn save_and_load_from_file() {
-        let dir = std::env::temp_dir().join("grok-mcp-credentials-test");
+        let dir = std::env::temp_dir().join("kigi-mcp-credentials-test");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("test_creds.json");
 

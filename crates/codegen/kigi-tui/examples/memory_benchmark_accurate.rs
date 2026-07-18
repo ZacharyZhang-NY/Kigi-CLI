@@ -87,8 +87,8 @@ fn main() {
     println!("--- Clone Performance (1,000,000 clones) ---");
     let iterations = 1_000_000;
 
-    let string_info = create_string_info(1, "general-purpose", "grok-3", "researcher");
-    let arc_info = create_arc_info(1, "general-purpose", "grok-3", "researcher");
+    let string_info = create_string_info(1, "general-purpose", "kigi-3", "researcher");
+    let arc_info = create_arc_info(1, "general-purpose", "kigi-3", "researcher");
 
     let start = Instant::now();
     for _ in 0..iterations {
@@ -115,7 +115,7 @@ fn main() {
     println!("Scenario: 1000 subagents sharing subagent_type, model, persona, status");
 
     let shared_types = ["general-purpose", "explore", "plan"];
-    let shared_models = ["grok-3", "grok-3-mini"];
+    let shared_models = ["kigi-3", "kigi-3-mini"];
     let shared_personas = ["researcher", "analyst", "reviewer"];
 
     // Create string-based infos

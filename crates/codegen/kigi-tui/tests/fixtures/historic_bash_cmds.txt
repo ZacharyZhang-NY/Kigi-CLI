@@ -71,7 +71,7 @@ curl -LsSf "http://file-server.example.internal/cicd/example/install.sh?nocache"
 ! sudo du -shx /.Spotlight-V100 /.DocumentRevisions-V100 /private/var/vm /private/var/folders /cores /Library 2>/dev/null | sort -rh
 ### END
 ### CMD 21
-cat ~/.grok/config.toml | grep composer
+cat ~/.kigi/config.toml | grep composer
 ### END
 ### CMD 22
 KIGI_DEBUG_CONTEXT_WINDOW=100000 KIGI_AUTO_COMPACT_THRESHOLD_PERCENT=5 /tmp/pager-under-test -r 019e0000-0000-7000-8000-000000000001 -p 'reply with exactly: again' --model example-model --always-approve --no-leader > /tmp/compaction-repro/headless5.log 2>&1; echo EXIT=$? >> /tmp/compaction-repro/headless5.log
@@ -95,7 +95,7 @@ strings target/debug/kigi-tui | grep -c slash-mru-writer   # must print >=1\
 SSH_CONNECTION='10.0.0.1 51234 10.0.0.2 22' \\
 ### END
 ### CMD 29
-DYLD_FORCE_FLAT_NAMESPACE=1 DYLD_INSERT_LIBRARIES=/opt/homebrew/lib/faketime/libfaketime.1.dylib FAKETIME_TIMESTAMP_FILE=/tmp/ft.rc FAKETIME_NO_CACHE=1 FAKETIME_DONT_FAKE_MONOTONIC=1 /tmp/pager-date-test --model grok-build --always-approve --no-leader
+DYLD_FORCE_FLAT_NAMESPACE=1 DYLD_INSERT_LIBRARIES=/opt/homebrew/lib/faketime/libfaketime.1.dylib FAKETIME_TIMESTAMP_FILE=/tmp/ft.rc FAKETIME_NO_CACHE=1 FAKETIME_DONT_FAKE_MONOTONIC=1 /tmp/pager-date-test --model kigi --always-approve --no-leader
 ### END
 ### CMD 30
 DYLD_FORCE_FLAT_NAMESPACE=1 DYLD_INSERT_LIBRARIES=/opt/homebrew/lib/faketime/libfaketime.1.dylib FAKETIME_TIMESTAMP_FILE=/tmp/ft.rc FAKETIME_NO_CACHE=1 FAKETIME_DONT_FAKE_MONOTONIC=1 /tmp/pager-date-test --always-approve --no-leader

@@ -170,11 +170,11 @@ pub fn plugin_group(plugin: &kigi_hooks_plugins_types::PluginInfo) -> PluginGrou
     use kigi_hooks_plugins_types::{PluginOrigin, PluginScope};
 
     match &plugin.origin {
-        Some(PluginOrigin::ProjectGrok) => PluginGroup::new(0, "origin:project", "Project"),
+        Some(PluginOrigin::ProjectKigi) => PluginGroup::new(0, "origin:project", "Project"),
         Some(PluginOrigin::ProjectClaude) => {
             PluginGroup::new(1, "origin:project-claude", "Project (Claude)")
         }
-        Some(PluginOrigin::UserGrok) => PluginGroup::new(2, "origin:user", "User"),
+        Some(PluginOrigin::UserKigi) => PluginGroup::new(2, "origin:user", "User"),
         Some(PluginOrigin::UserClaude)
         | Some(PluginOrigin::ClaudeInstalled { marketplace: None }) => {
             PluginGroup::new(3, "origin:user-claude", "User (Claude)")
@@ -192,7 +192,7 @@ pub fn plugin_group(plugin: &kigi_hooks_plugins_types::PluginInfo) -> PluginGrou
             ..
         }) => PluginGroup {
             rank: 5,
-            key: format!("grok-mp:{source}"),
+            key: format!("kigi-mp:{source}"),
             label: source.clone(),
         },
         Some(PluginOrigin::MarketplaceInstall {
@@ -208,7 +208,7 @@ pub fn plugin_group(plugin: &kigi_hooks_plugins_types::PluginInfo) -> PluginGrou
                 }
                 Some(source) => PluginGroup {
                     rank: 5,
-                    key: format!("grok-mp:{source}"),
+                    key: format!("kigi-mp:{source}"),
                     label: source.to_string(),
                 },
                 None => PluginGroup::new(2, "origin:user", "User"),
@@ -2021,9 +2021,9 @@ pub(crate) fn mcp_section_children_hidden(
 /// Returns `(label, is_custom)` where `is_custom` means the source was added
 /// via hooks-paths and can be removed.
 pub fn derive_source_label(source_dir: &str) -> (String, bool) {
-    let grok = kigi_config::kigi_home();
+    let kigi = kigi_config::kigi_home();
     let source_path = std::path::Path::new(source_dir);
-    // Plugin / installed-plugin dirs, under the user grok home (KIGI_SHARE_DIR-aware)
+    // Plugin / installed-plugin dirs, under the user kigi home (KIGI_SHARE_DIR-aware)
     // or a project-scoped `{cwd}/.kigi/<subdir>/`. Returns the first path
     // component after the subdir (the plugin's install directory name).
     let plugin_name = |subdir: &str| -> Option<String> {
@@ -2033,8 +2033,8 @@ pub fn derive_source_label(source_dir: &str) -> (String, bool) {
                 .map(|c| c.as_os_str().to_string_lossy().into_owned())
                 .filter(|s| !s.is_empty())
         };
-        // User grok home (KIGI_SHARE_DIR-aware).
-        if let Ok(rest) = source_path.strip_prefix(grok.join(subdir))
+        // User kigi home (KIGI_SHARE_DIR-aware).
+        if let Ok(rest) = source_path.strip_prefix(kigi.join(subdir))
             && let Some(name) = first_comp(rest)
         {
             return Some(name);
@@ -2054,7 +2054,7 @@ pub fn derive_source_label(source_dir: &str) -> (String, bool) {
         return (format!("Plugin: {name}"), false);
     }
     // Global hooks under $KIGI_SHARE_DIR/hooks
-    let global_hooks = grok.join("hooks");
+    let global_hooks = kigi.join("hooks");
     let global_str = global_hooks.display().to_string();
     if source_dir == global_str || source_dir.starts_with(&format!("{global_str}/")) {
         return ("Global hooks".into(), false);
@@ -2069,7 +2069,7 @@ pub fn derive_source_label(source_dir: &str) -> (String, bool) {
     }
     // Custom directory — removable
     let display = {
-        if let Ok(rest) = source_path.strip_prefix(&grok) {
+        if let Ok(rest) = source_path.strip_prefix(&kigi) {
             let prefix = crate::util::display_kigi_home_prefix();
             let rest_str = rest.to_string_lossy();
             let rest_trimmed = rest_str.strip_prefix('/').unwrap_or(&rest_str);
@@ -2138,7 +2138,7 @@ fn skill_source_str(skill: &SkillInfo) -> String {
         match cs {
             kigi_tools::types::config_source::ConfigSource::User { path } => {
                 if crate::util::is_under_user_kigi_home(path) {
-                    crate::util::display_user_grok_path("skills")
+                    crate::util::display_user_kigi_path("skills")
                 } else if path.display().to_string().contains("/.claude/") {
                     "~/.claude/skills".into()
                 } else {
@@ -3461,7 +3461,7 @@ mod tests {
     fn derive_source_label_detects_project_scoped_plugins() {
         // Regression: project-scoped `{cwd}/.kigi/plugins/<name>/` must label as
         // a (non-removable) plugin, not a removable "Custom" source. The user
-        // grok-home branch is KIGI_SHARE_DIR-aware; this covers the project fallback.
+        // kigi-home branch is KIGI_SHARE_DIR-aware; this covers the project fallback.
         let (label, is_custom) = derive_source_label("/repo/work/.kigi/plugins/my-plugin/hooks");
         assert_eq!(label, "Plugin: my-plugin");
         assert!(!is_custom);
@@ -4844,14 +4844,14 @@ mod tests {
     fn plugin_group_maps_each_origin_variant() {
         use kigi_hooks_plugins_types::PluginOrigin;
         for (origin, rank, key, label) in [
-            (PluginOrigin::ProjectGrok, 0, "origin:project", "Project"),
+            (PluginOrigin::ProjectKigi, 0, "origin:project", "Project"),
             (
                 PluginOrigin::ProjectClaude,
                 1,
                 "origin:project-claude",
                 "Project (Claude)",
             ),
-            (PluginOrigin::UserGrok, 2, "origin:user", "User"),
+            (PluginOrigin::UserKigi, 2, "origin:user", "User"),
             (
                 PluginOrigin::UserClaude,
                 3,
@@ -4878,7 +4878,7 @@ mod tests {
                     git_url: Some("https://example.com/r.git".into()),
                 },
                 5,
-                "grok-mp:xAI Official",
+                "kigi-mp:xAI Official",
                 "xAI Official",
             ),
             (
@@ -4938,7 +4938,7 @@ mod tests {
         let mut mp = make_plugin("mp-tool");
         mp.marketplace_source = Some("xAI Official".into());
         let group = plugin_group(&mp);
-        assert_eq!(group.key, "grok-mp:xAI Official");
+        assert_eq!(group.key, "kigi-mp:xAI Official");
         assert_eq!(group.label, "xAI Official");
 
         let mut direct = make_plugin("direct-tool");
@@ -4955,7 +4955,7 @@ mod tests {
         assert_eq!(plugin_group(&unknown).key, "origin:user");
 
         unknown.marketplace_source = Some("xAI Official".into());
-        assert_eq!(plugin_group(&unknown).key, "grok-mp:xAI Official");
+        assert_eq!(plugin_group(&unknown).key, "kigi-mp:xAI Official");
     }
 
     #[test]
@@ -4968,7 +4968,7 @@ mod tests {
                     marketplace: "claude-market".into(),
                 },
             ),
-            make_plugin_with_origin("user-tool", PluginOrigin::UserGrok),
+            make_plugin_with_origin("user-tool", PluginOrigin::UserKigi),
             make_plugin_with_origin("claude-tool", PluginOrigin::UserClaude),
         ]);
         let buf = render_plugins_into_buffer(&mut state, 100, 40);
@@ -5001,7 +5001,7 @@ mod tests {
     fn plugins_render_multiple_plugins_under_one_group() {
         use kigi_hooks_plugins_types::PluginOrigin;
         let mut state = plugins_modal_state(vec![
-            make_plugin_with_origin("solo-tool", PluginOrigin::UserGrok),
+            make_plugin_with_origin("solo-tool", PluginOrigin::UserKigi),
             make_plugin_with_origin(
                 "catalog-tool",
                 PluginOrigin::ClaudeMarketplace {
@@ -5057,7 +5057,7 @@ mod tests {
     #[test]
     fn plugins_collapsed_group_hides_rows_and_search_forces_open() {
         use kigi_hooks_plugins_types::PluginOrigin;
-        let mut plugin = make_plugin_with_origin("user-tool", PluginOrigin::UserGrok);
+        let mut plugin = make_plugin_with_origin("user-tool", PluginOrigin::UserKigi);
         plugin.root = "/opt/p1".into();
         let mut state = plugins_modal_state(vec![plugin]);
         state.plugins_collapsed_groups.insert("origin:user".into());
@@ -5097,7 +5097,7 @@ mod tests {
         let mut disabled = make_plugin_with_origin("off-tool", PluginOrigin::UserClaude);
         disabled.enabled = false;
         let mut state = plugins_modal_state(vec![
-            make_plugin_with_origin("user-tool", PluginOrigin::UserGrok),
+            make_plugin_with_origin("user-tool", PluginOrigin::UserKigi),
             disabled,
         ]);
         state.plugins_filter = StatusFilter::Disabled;

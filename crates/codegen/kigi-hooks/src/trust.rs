@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 // exist only to migrate prior grants out of the legacy file.
 
 /// Path to the legacy project-hook trust file
-/// (`<user_kigi_home>/trusted-hook-projects`), or `None` when no user grok home
+/// (`<user_kigi_home>/trusted-hook-projects`), or `None` when no user kigi home
 /// resolves. Retained only for the one-time migration into folder-trust.
 pub fn legacy_trust_file_path() -> Option<PathBuf> {
     Some(kigi_config::user_kigi_home()?.join("trusted-hook-projects"))
@@ -59,7 +59,7 @@ fn is_hook_disabled_with_file(hook_name: &str, file: &Path) -> bool {
 /// Disable a hook by name. Adds to .
 pub fn disable_hook(hook_name: &str) -> Result<(), String> {
     let file = disabled_hooks_file_path()
-        .ok_or_else(|| "no user grok home (set $KIGI_SHARE_DIR or $HOME)".to_string())?;
+        .ok_or_else(|| "no user kigi home (set $KIGI_SHARE_DIR or $HOME)".to_string())?;
     disable_hook_with_file(hook_name, &file)
 }
 
@@ -122,7 +122,7 @@ fn enable_hook_with_file(hook_name: &str, file: &Path) -> Result<bool, String> {
     Ok(true)
 }
 
-/// Returns the path to `$KIGI_SHARE_DIR/disabled-hooks`, or `None` when no user grok
+/// Returns the path to `$KIGI_SHARE_DIR/disabled-hooks`, or `None` when no user kigi
 /// home resolves.
 fn disabled_hooks_file_path() -> Option<PathBuf> {
     Some(kigi_config::user_kigi_home()?.join("disabled-hooks"))
@@ -134,9 +134,9 @@ mod tests {
 
     /// Each test creates its own legacy file in its own temp dir -- no shared state.
     fn trust_file_in(dir: &Path) -> PathBuf {
-        let grok_dir = dir.join(".kigi");
-        std::fs::create_dir_all(&grok_dir).unwrap();
-        grok_dir.join("trusted-hook-projects")
+        let kigi_dir = dir.join(".kigi");
+        std::fs::create_dir_all(&kigi_dir).unwrap();
+        kigi_dir.join("trusted-hook-projects")
     }
 
     #[test]

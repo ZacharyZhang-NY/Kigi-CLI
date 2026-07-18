@@ -35,7 +35,7 @@ pub const WORKSPACE_EVENTS_TOOL_ID: &str = "workspace_events";
 pub const WORKSPACE_TOOL_NOTIFICATIONS_TOOL_ID: &str = "workspace_tool_notifications";
 
 /// Tool ID used for workspace-originated client ext-notification frames
-/// (e.g. `x.ai/search/fuzzy/status`). Carries `{ method, params }`.
+/// (e.g. `kigi/search/fuzzy/status`). Carries `{ method, params }`.
 pub const WORKSPACE_CLIENT_EXT_NOTIFICATIONS_TOOL_ID: &str = "workspace_client_ext_notifications";
 
 /// Marker trait for typed workspace RPC requests. Client and server use

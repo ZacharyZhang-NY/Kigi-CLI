@@ -2,7 +2,7 @@
 #[allow(unused_imports)]
 use super::common::*;
 
-/// Direct-route e2e: `grok wrap` with a resolvable explicit path runs the
+/// Direct-route e2e: `kigi wrap` with a resolvable explicit path runs the
 /// command inside the wrap PTY with output passing through, and propagates the
 /// child's exit code — both for success and for a nonzero exit.
 #[test]
@@ -24,6 +24,6 @@ fn wrap_echo_passthrough_and_exit_code() {
     assert_eq!(
         code,
         Some(7),
-        "a nonzero child exit must propagate as grok wrap's own exit\nraw:\n{raw}"
+        "a nonzero child exit must propagate as kigi wrap's own exit\nraw:\n{raw}"
     );
 }

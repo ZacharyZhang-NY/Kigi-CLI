@@ -1,4 +1,4 @@
-//! `x.ai/session/load_history`: fetch one older page of a gateway-backed
+//! `kigi/session/load_history`: fetch one older page of a gateway-backed
 //! conversation by client-owned cursor (`beforeId` → `nextBeforeId`).
 use super::ExtResult;
 use crate::agent::MvpAgent;

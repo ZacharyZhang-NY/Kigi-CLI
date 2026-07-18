@@ -247,7 +247,7 @@ fn scratch_index_path() -> PathBuf {
         .unwrap_or(0);
     let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
     std::env::temp_dir().join(format!(
-        "grok-snapshot-index-{}-{nanos}-{seq}",
+        "kigi-snapshot-index-{}-{nanos}-{seq}",
         std::process::id()
     ))
 }
@@ -259,7 +259,7 @@ fn scratch_index_path() -> PathBuf {
 /// (even if they also match a `.gitignore` rule); only *untracked* files
 /// matching `.gitignore` are excluded.
 ///
-/// `ref_name` must be a fully-qualified ref (e.g. `refs/grok/subagents/<id>`);
+/// `ref_name` must be a fully-qualified ref (e.g. `refs/kigi/subagents/<id>`);
 /// it is overwritten unconditionally. The worktree must have a valid `HEAD`
 /// (subagent worktrees are detached at their base commit), which becomes the
 /// snapshot commit's parent (provenance only).
@@ -301,8 +301,8 @@ fn snapshot_worktree_to_ref_inner(
     message: &str,
 ) -> Result<String> {
     // Synthetic identity scoped to this call so it is never written to git config.
-    const NAME: &str = "Grok Snapshot";
-    const EMAIL: &str = "grok-snapshot@example.com";
+    const NAME: &str = "Kigi Snapshot";
+    const EMAIL: &str = "kigi-snapshot@example.com";
 
     // Stage against a throwaway index so the worktree's real index is untouched.
     let scratch = ScratchIndexGuard {
@@ -690,7 +690,7 @@ mod tests {
         std::fs::write(wt.join("tracked.txt"), "edited").unwrap();
         std::fs::write(wt.join("untracked.txt"), "brand new").unwrap();
 
-        let ref_name = "refs/grok/snapshots/test";
+        let ref_name = "refs/kigi/snapshots/test";
         let snap = snapshot_worktree_to_ref(&wt, ref_name, "snapshot test").unwrap();
         assert!(!snap.is_empty());
 
@@ -738,7 +738,7 @@ mod tests {
         std::fs::write(wt.join("ignored.txt"), "secret").unwrap();
         std::fs::write(wt.join("kept.txt"), "keep me").unwrap();
 
-        let ref_name = "refs/grok/snapshots/ignored";
+        let ref_name = "refs/kigi/snapshots/ignored";
         snapshot_worktree_to_ref(&wt, ref_name, "ignore test").unwrap();
 
         let listing =
@@ -776,7 +776,7 @@ mod tests {
         // Edit the tracked-but-ignored file in the worktree.
         std::fs::write(wt.join("config.env"), "v2").unwrap();
 
-        let ref_name = "refs/grok/snapshots/tracked-ignored";
+        let ref_name = "refs/kigi/snapshots/tracked-ignored";
         let snap = snapshot_worktree_to_ref(&wt, ref_name, "tracked-then-ignored").unwrap();
 
         // A file tracked in HEAD must survive even though it matches .gitignore,
@@ -806,7 +806,7 @@ mod tests {
         std::fs::write(repo_path.join("tracked.txt"), "original").unwrap();
         git_commit_all(&repo_path, "initial");
 
-        let ref_name = "refs/grok/snapshots/clean";
+        let ref_name = "refs/kigi/snapshots/clean";
         let snap = snapshot_worktree_to_ref(&repo_path, ref_name, "clean snapshot").unwrap();
 
         let snap_tree =
@@ -823,7 +823,7 @@ mod tests {
         kigi_test_utils::require_git!();
         let temp = TempDir::new().unwrap();
         let (_repo, wt) = repo_with_worktree(&temp);
-        let ref_name = "refs/grok/snapshots/overwrite";
+        let ref_name = "refs/kigi/snapshots/overwrite";
 
         std::fs::write(wt.join("tracked.txt"), "first").unwrap();
         let snap1 = snapshot_worktree_to_ref(&wt, ref_name, "first").unwrap();
@@ -851,7 +851,7 @@ mod tests {
 
         std::fs::write(wt.join("tracked.txt"), "edited").unwrap();
         std::fs::write(wt.join("untracked.txt"), "brand new").unwrap();
-        let ref_name = "refs/grok/snapshots/survives";
+        let ref_name = "refs/kigi/snapshots/survives";
         let snap = snapshot_worktree_to_ref(&wt, ref_name, "pre-removal").unwrap();
 
         // Delete the worktree dir; the snapshot lives in the shared object/ref store.
@@ -895,7 +895,7 @@ mod tests {
             !before.is_empty(),
             "precondition: there are pending changes"
         );
-        snapshot_worktree_to_ref(&wt, "refs/grok/snapshots/noindex", "no mutate").unwrap();
+        snapshot_worktree_to_ref(&wt, "refs/kigi/snapshots/noindex", "no mutate").unwrap();
         let after = git_capture_in(&wt, &["status", "--porcelain"], &[]).unwrap();
 
         assert_eq!(
@@ -916,7 +916,7 @@ mod tests {
         // A tracked file whose working-tree content has CRLF line endings.
         std::fs::write(wt.join("tracked.txt"), "line1\r\nline2\r\n").unwrap();
 
-        let ref_name = "refs/grok/snapshots/crlf";
+        let ref_name = "refs/kigi/snapshots/crlf";
         let snap = snapshot_worktree_to_ref(&wt, ref_name, "crlf").unwrap();
 
         // The snapshot blob must keep the raw CRLF bytes: our `-c
@@ -946,7 +946,7 @@ mod tests {
         let name = "λ space.txt";
         std::fs::write(wt.join(name), "x").unwrap();
 
-        let ref_name = "refs/grok/snapshots/unicode";
+        let ref_name = "refs/kigi/snapshots/unicode";
         snapshot_worktree_to_ref(&wt, ref_name, "unicode path").unwrap();
 
         // Read the tree with the same hardening (`core.quotepath=false`) so the
@@ -992,7 +992,7 @@ mod tests {
         std::fs::write(wt.join("lf.txt"), "a\nb\n").unwrap();
 
         let snap =
-            snapshot_worktree_to_ref(&wt, "refs/grok/snapshots/roundtrip", "round trip").unwrap();
+            snapshot_worktree_to_ref(&wt, "refs/kigi/snapshots/roundtrip", "round trip").unwrap();
         let base = git_capture_in(&repo_path, &["rev-parse", &format!("{snap}^")], &[]).unwrap();
 
         // Dispose of the worktree dir; only the ref/objects survive.
@@ -1054,7 +1054,7 @@ mod tests {
         // Build a PARENTLESS commit holding the same working state, so its `^`
         // never resolves — exercising the base-unreachable fallback without
         // depending on gc to prune a real base.
-        let snap = snapshot_worktree_to_ref(&wt, "refs/grok/snapshots/orphan-src", "src").unwrap();
+        let snap = snapshot_worktree_to_ref(&wt, "refs/kigi/snapshots/orphan-src", "src").unwrap();
         let tree = git_capture_in(&wt, &["rev-parse", &format!("{snap}^{{tree}}")], &[]).unwrap();
         let ident = [
             ("GIT_AUTHOR_NAME", "T"),
@@ -1100,7 +1100,7 @@ mod tests {
 
         std::fs::write(wt.join("tracked.txt"), "edited").unwrap();
         std::fs::write(wt.join("untracked.txt"), "brand new").unwrap();
-        let snap = snapshot_worktree_to_ref(&wt, "refs/grok/snapshots/idem", "idem").unwrap();
+        let snap = snapshot_worktree_to_ref(&wt, "refs/kigi/snapshots/idem", "idem").unwrap();
         crate::remove_worktree(&wt).unwrap();
 
         // First rehydrate recreates the dest dir.
@@ -1141,7 +1141,7 @@ mod tests {
         std::fs::write(wt.join("tracked.txt"), "edited").unwrap();
         std::fs::write(wt.join("untracked.txt"), "brand new").unwrap();
 
-        let ref_name = "refs/grok/subagents/standalone";
+        let ref_name = "refs/kigi/subagents/standalone";
         let snap = snapshot_worktree_to_ref(&wt, ref_name, "standalone snapshot").unwrap();
 
         // The snapshot lives only in the standalone's own `.git`, NOT in source.
@@ -1192,11 +1192,11 @@ mod tests {
         let temp = TempDir::new().unwrap();
 
         // Isolate the worktree DB (lock + KIGI_SHARE_DIR → private tmp + restore).
-        let fx = crate::db::GrokHomeFixture::new();
+        let fx = crate::db::KigiHomeFixture::new();
 
         let (repo_path, wt) = repo_with_worktree(&temp);
         std::fs::write(wt.join("tracked.txt"), "edited").unwrap();
-        let snap = snapshot_worktree_to_ref(&wt, "refs/grok/snapshots/db", "db test").unwrap();
+        let snap = snapshot_worktree_to_ref(&wt, "refs/kigi/snapshots/db", "db test").unwrap();
         crate::remove_worktree(&wt).unwrap();
 
         // Rehydrate into a UNIQUE-basename dest so its DB id can't collide with

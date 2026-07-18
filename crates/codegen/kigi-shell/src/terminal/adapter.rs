@@ -217,7 +217,7 @@ async fn poll_for_terminal_exit(
 }
 
 fn wrap_command(command: &str) -> Result<String, ComputerError> {
-    // On Windows the ACP client (grok-desktop) spawns with `shell: true`
+    // On Windows the ACP client (kigi-desktop) spawns with `shell: true`
     // which delegates to cmd.exe.  Wrapping in /bin/bash would fail because
     // that path doesn't exist on Windows.  Send the raw command instead.
     #[cfg(not(unix))]

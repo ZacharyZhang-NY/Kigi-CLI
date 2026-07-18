@@ -44,12 +44,12 @@ use kigi_agent::prompt::context::PromptAudience;
 use kigi_agent::prompt::skills::SkillsConfig;
 use kigi_agent::{Agent, AgentBuilder, CompactionPolicy, ReminderPolicy};
 use kigi_tools::computer::types::{AsyncFileSystem, TerminalBackend};
-use kigi_tools::implementations::grok_build::ask_user_question::types::UserQuestionRequest;
-use kigi_tools::implementations::grok_build::deploy_app::AppBuilderDeployerConfig;
-use kigi_tools::implementations::grok_build::task::types::{
+use kigi_tools::implementations::kigi::ask_user_question::types::UserQuestionRequest;
+use kigi_tools::implementations::kigi::deploy_app::AppBuilderDeployerConfig;
+use kigi_tools::implementations::kigi::task::types::{
     MonitorEventBuffer, SubagentEvent, TaskModelValidator,
 };
-use kigi_tools::implementations::grok_build::web_fetch::WebFetchConfig;
+use kigi_tools::implementations::kigi::web_fetch::WebFetchConfig;
 use kigi_tools::implementations::lsp::LspBackend;
 use kigi_tools::implementations::web_search::WebSearchConfig;
 use kigi_tools::notification::ToolNotificationHandle;
@@ -125,7 +125,7 @@ pub(crate) struct AgentRebuildSpec {
     pub system_prompt_label: String,
     pub owner_session_id: Option<String>,
     pub parent_scheduler_handle:
-        Option<kigi_tools::implementations::grok_build::scheduler::types::SchedulerHandle>,
+        Option<kigi_tools::implementations::kigi::scheduler::types::SchedulerHandle>,
 }
 impl AgentRebuildSpec {
     /// Build a fresh [`Agent`] from this spec and an [`AgentDefinition`].
@@ -305,10 +305,10 @@ impl AgentRebuildSpec {
             }))
             .await;
         if let Some(event_tx) = subagent_event_tx.clone() {
-            use kigi_tools::implementations::grok_build::task::backend::{
+            use kigi_tools::implementations::kigi::task::backend::{
                 ChannelBackend, SubagentBackendResource,
             };
-            use kigi_tools::implementations::grok_build::task::types::{
+            use kigi_tools::implementations::kigi::task::types::{
                 SessionIdResource, SubagentDepthCounter, SubagentEventSender,
             };
             let backend = SubagentBackendResource(Arc::new(ChannelBackend::new(event_tx.clone())));
@@ -342,7 +342,7 @@ impl AgentRebuildSpec {
             ))
             .await;
         {
-            use kigi_tools::implementations::grok_build::ask_user_question::UserQuestionSender;
+            use kigi_tools::implementations::kigi::ask_user_question::UserQuestionSender;
             agent
                 .tool_bridge()
                 .update_resource(UserQuestionSender(user_question_tx.clone()))
@@ -424,13 +424,13 @@ mod tests {
         let toolset = agent.tool_bridge().toolset();
         let task_name = toolset
             .tool_name_for_kind(kigi_tools::types::tool::ToolKind::Task)
-            .expect("GrokBuild Task tool should be present");
+            .expect("Kigi Task tool should be present");
         toolset
             .tool_definitions()
             .into_iter()
             .find(|definition| definition.function.name == task_name)
             .and_then(|definition| definition.function.description)
-            .expect("GrokBuild Task description should be present")
+            .expect("Kigi Task description should be present")
     }
     #[tokio::test(flavor = "current_thread")]
     async fn rebuild_projects_fresh_public_model_keys_into_task_description() {
@@ -453,7 +453,7 @@ mod tests {
                 models_manager
                     .insert_test_entry("private-unselectable-model", unselectable);
                 let first = spec
-                    .build_agent(AgentDefinition::default_grok_build())
+                    .build_agent(AgentDefinition::default_kigi())
                     .await
                     .expect("first agent build should succeed");
                 let first_description = task_description(&first);
@@ -478,7 +478,7 @@ mod tests {
                     .insert_test_entry("beta-public", model_entry("internal-beta"));
                 assert!(validator.error_for("beta-public").is_none());
                 let rebuilt = spec
-                    .build_agent(AgentDefinition::default_grok_build())
+                    .build_agent(AgentDefinition::default_kigi())
                     .await
                     .expect("rebuilt agent should succeed");
                 let rebuilt_description = task_description(&rebuilt);

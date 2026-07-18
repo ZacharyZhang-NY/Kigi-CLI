@@ -1,8 +1,8 @@
-use kigi_tools::implementations::grok_build;
+use kigi_tools::implementations::kigi;
 use kigi_tools::registry::types::ToolConfig;
 use serde::{Deserialize, Serialize};
 
-/// Production grok-build foreground command-timeout ceiling (seconds). The
+/// Production kigi foreground command-timeout ceiling (seconds). The
 /// tool-server binary defaults to a 5-minute foreground ceiling
 /// (`DEFAULT_MAX_TIMEOUT_MS`); production opts *up* to 10h by sending this
 /// explicitly (overridable via config.toml). Bounds only foreground commands —
@@ -54,7 +54,7 @@ impl BashToolConfig {
             map.insert("timeout_secs".into(), t.into());
         }
         // The tool-server binary defaults the foreground ceiling to 5 min;
-        // production grok-build opts up to 10h by sending it explicitly
+        // production kigi opts up to 10h by sending it explicitly
         // (overridable via config.toml). Foreground-only; background stays unbounded.
         let max_timeout_secs = self.max_timeout_secs.unwrap_or(PRODUCTION_MAX_TIMEOUT_SECS);
         map.insert("max_timeout_secs".into(), max_timeout_secs.into());
@@ -124,7 +124,7 @@ impl WebFetchToolConfig {
         remote_proxy: Option<&str>,
         remote_domains: Option<&[String]>,
         context_window_tokens: Option<u64>,
-    ) -> kigi_tools::implementations::grok_build::web_fetch::WebFetchParams {
+    ) -> kigi_tools::implementations::kigi::web_fetch::WebFetchParams {
         use crate::agent::config::env_string;
 
         let proxy_endpoint = self
@@ -140,7 +140,7 @@ impl WebFetchToolConfig {
             .cloned()
             .or_else(|| remote_domains.map(|d| d.to_vec()));
 
-        kigi_tools::implementations::grok_build::web_fetch::WebFetchParams {
+        kigi_tools::implementations::kigi::web_fetch::WebFetchParams {
             proxy_endpoint,
             allowed_domains,
             context_window_tokens,
@@ -254,8 +254,8 @@ impl HashlineSchemeConfig {
 
 /// Which set of read/edit/search tools to use for file operations.
 ///
-/// Selects between the standard `GrokBuild` toolset (`read_file`,
-/// `search_replace`, `grep`) and the anchor-based `GrokBuildHashline`
+/// Selects between the standard `Kigi` toolset (`read_file`,
+/// `search_replace`, `grep`) and the anchor-based `KigiHashline`
 /// toolset (`hashline_read`, `hashline_edit`, `hashline_grep`).
 /// The two are mutually exclusive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -279,9 +279,9 @@ impl FileToolset {
     ) -> Result<Vec<ToolConfig>, String> {
         match self {
             Self::Standard => Ok(vec![
-                ToolConfig::for_tool::<grok_build::ReadFileTool>(),
-                ToolConfig::for_tool::<grok_build::SearchReplaceTool>(),
-                ToolConfig::for_tool::<grok_build::GrepTool>(),
+                ToolConfig::for_tool::<kigi::ReadFileTool>(),
+                ToolConfig::for_tool::<kigi::SearchReplaceTool>(),
+                ToolConfig::for_tool::<kigi::GrepTool>(),
             ]),
             Self::Hashline => {
                 hashline_config.validate()?;
@@ -296,7 +296,7 @@ impl FileToolset {
                 };
                 Ok(vec![
                     ToolConfig {
-                        id: "GrokBuildHashline:hashline_read".to_owned(),
+                        id: "KigiHashline:hashline_read".to_owned(),
                         params: params_map.clone(),
                         name_override: None,
                         params_name_overrides: None,
@@ -305,7 +305,7 @@ impl FileToolset {
                         kind: None,
                     },
                     ToolConfig {
-                        id: "GrokBuildHashline:hashline_edit".to_owned(),
+                        id: "KigiHashline:hashline_edit".to_owned(),
                         params: params_map.clone(),
                         name_override: None,
                         params_name_overrides: None,
@@ -314,7 +314,7 @@ impl FileToolset {
                         kind: None,
                     },
                     ToolConfig {
-                        id: "GrokBuildHashline:hashline_grep".to_owned(),
+                        id: "KigiHashline:hashline_grep".to_owned(),
                         params: params_map,
                         name_override: None,
                         params_name_overrides: None,
@@ -344,9 +344,9 @@ mod tests {
             .unwrap();
         assert_eq!(configs.len(), 3);
         let ids: Vec<&str> = configs.iter().map(|c| c.id.as_str()).collect();
-        assert!(ids.contains(&"GrokBuild:read_file"));
-        assert!(ids.contains(&"GrokBuild:search_replace"));
-        assert!(ids.contains(&"GrokBuild:grep"));
+        assert!(ids.contains(&"Kigi:read_file"));
+        assert!(ids.contains(&"Kigi:search_replace"));
+        assert!(ids.contains(&"Kigi:grep"));
     }
 
     #[test]
@@ -356,9 +356,9 @@ mod tests {
             .unwrap();
         assert_eq!(configs.len(), 3);
         let ids: Vec<&str> = configs.iter().map(|c| c.id.as_str()).collect();
-        assert!(ids.contains(&"GrokBuildHashline:hashline_read"));
-        assert!(ids.contains(&"GrokBuildHashline:hashline_edit"));
-        assert!(ids.contains(&"GrokBuildHashline:hashline_grep"));
+        assert!(ids.contains(&"KigiHashline:hashline_read"));
+        assert!(ids.contains(&"KigiHashline:hashline_edit"));
+        assert!(ids.contains(&"KigiHashline:hashline_grep"));
     }
 
     /// Plan/explore omit `search_replace` by contract ("no Write/Edit/
@@ -379,7 +379,7 @@ mod tests {
                 !def.tool_config
                     .tools
                     .iter()
-                    .any(|t| t.id == "GrokBuild:search_replace"),
+                    .any(|t| t.id == "Kigi:search_replace"),
                 "{name}: fixture must be read-only before the override"
             );
             def.override_file_tools(file_tools.clone());
@@ -391,13 +391,13 @@ mod tests {
                 .collect();
             // The swap engages (read moves to hashline)...
             assert!(
-                ids.contains(&"GrokBuildHashline:hashline_read"),
+                ids.contains(&"KigiHashline:hashline_read"),
                 "{name}: {ids:?}"
             );
-            assert!(!ids.contains(&"GrokBuild:read_file"), "{name}: {ids:?}");
+            assert!(!ids.contains(&"Kigi:read_file"), "{name}: {ids:?}");
             // ...but never grants the edit slot.
             assert!(
-                !ids.contains(&"GrokBuildHashline:hashline_edit"),
+                !ids.contains(&"KigiHashline:hashline_edit"),
                 "{name}: override granted an edit tool to a no-edit toolset: {ids:?}"
             );
         }
@@ -595,7 +595,7 @@ mod tests {
         assert_eq!(
             max_timeout(&local.to_bash_params_json(None, None)),
             Some(PRODUCTION_MAX_TIMEOUT_SECS),
-            "production grok-build must set the 10h foreground ceiling"
+            "production kigi must set the 10h foreground ceiling"
         );
     }
 

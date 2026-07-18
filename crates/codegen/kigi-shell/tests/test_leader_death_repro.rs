@@ -4,7 +4,7 @@
 //! Scenario (mirrors the field report "clients see `unknown session id` after
 //! the leader dies"):
 //!
-//! 1. Two stdio clients (`grok agent --leader stdio`) share one leader.
+//! 1. Two stdio clients (`kigi agent --leader stdio`) share one leader.
 //! 2. Each creates its own session and completes a prompt round-trip.
 //! 3. The leader is killed with SIGKILL (crash, no graceful shutdown).
 //! 4. Each client's bridge must reconnect (re-electing / spawning a fresh

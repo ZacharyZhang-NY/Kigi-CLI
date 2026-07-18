@@ -2494,7 +2494,7 @@ fn render_empty_state(buf: &mut Buffer, area: Rect, theme: &Theme, loading: bool
 /// chrome reflects what Enter will do: dispatch a new session vs.
 /// enqueue / send a prompt to the currently-selected agent.
 /// Paint a short right-aligned feedback badge onto the dispatch box's
-/// **top border** (e.g. `✗ Session no longer exists`, `✓ Theme: Grok
+/// **top border** (e.g. `✗ Session no longer exists`, `✓ Theme: Kigi
 /// Day`), in a neutral accent colour. The message is painted VERBATIM:
 /// it already carries its own status glyph — errors are built via
 /// [`DashboardState::set_error_toast`] (`✗`), while successes / info
@@ -4661,7 +4661,7 @@ mod tests {
         let mut state = DashboardState::new();
         // A distinct absolute path outside $HOME (rendered verbatim) that
         // differs from the process cwd. No git cache entry → no branch span.
-        state.cwd = std::path::PathBuf::from("/grok-staged-cwd-marker");
+        state.cwd = std::path::PathBuf::from("/kigi-staged-cwd-marker");
 
         let mut buf = Buffer::empty(area);
         render_header(&mut buf, area, &theme, &rows, &mut state);
@@ -4670,7 +4670,7 @@ mod tests {
             .map(|x| buf[(x, 0)].symbol().to_string())
             .collect();
         assert!(
-            top_row.contains("/grok-staged-cwd-marker"),
+            top_row.contains("/kigi-staged-cwd-marker"),
             "header must render the staged cwd, not the process cwd; got: {top_row:?}",
         );
     }
@@ -5629,12 +5629,12 @@ mod tests {
         let theme = Theme::current();
         let mut state = DashboardState::new();
         let check = crate::glyphs::check_mark();
-        state.error_toast = Some(format!("{check} Theme: Grok Day"));
+        state.error_toast = Some(format!("{check} Theme: Kigi Day"));
         let _ = render_dispatch(&mut buf, Rect::new(0, 0, 80, 3), &theme, &mut state, None);
 
         let top_row: String = (0..80).map(|x| buf[(x, 0)].symbol().to_string()).collect();
         assert!(
-            top_row.contains(&format!("{check} Theme: Grok Day")),
+            top_row.contains(&format!("{check} Theme: Kigi Day")),
             "badge must paint the message verbatim, got: {top_row:?}",
         );
         assert!(
@@ -7051,7 +7051,7 @@ mod tests {
         let area = Rect::new(0, 0, 80, 24);
         // A temp dir with a `.git` child so the toggle is eligible (hermetic,
         // unlike depending on the test's real cwd being a repo).
-        let repo = std::env::temp_dir().join("grok-loc-wt-toggle-repo-test");
+        let repo = std::env::temp_dir().join("kigi-loc-wt-toggle-repo-test");
         std::fs::create_dir_all(repo.join(".git")).expect("mk .git");
         let mut modal =
             LocationPickerState::new(vec![], repo.clone(), std::collections::HashMap::new());
@@ -7111,7 +7111,7 @@ mod tests {
         let area = Rect::new(0, 0, 80, 24);
         let mut modal = LocationPickerState::new(
             vec![],
-            std::path::PathBuf::from("/grok-not-a-repo-xyz-12345"),
+            std::path::PathBuf::from("/kigi-not-a-repo-xyz-12345"),
             std::collections::HashMap::new(),
         );
         let mut buf = Buffer::empty(area);

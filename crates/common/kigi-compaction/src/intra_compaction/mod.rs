@@ -3,7 +3,7 @@
 //! [`CompactionItemBuilder`](crate::CompactionItemBuilder).
 //!
 //! Harness wiring (trigger call sites, LLM transport, metrics backends,
-//! state commit) stays per-harness; the Grok chat host
+//! state commit) stays per-harness; the Kigi chat host
 //! wraps these entry points with its tokenizer + metrics observers.
 
 pub mod compact;

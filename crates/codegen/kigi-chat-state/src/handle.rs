@@ -186,7 +186,7 @@ impl ChatStateHandle {
         });
     }
 
-    /// Out-of-band history repair (`x.ai/session/repair`); see
+    /// Out-of-band history repair (`kigi/session/repair`); see
     /// [`ChatStateCommand::RepairHistory`]. Returns `None` if the actor is
     /// dead, `Some(Err(_))` if a turn was in flight at processing time.
     pub async fn repair_history(

@@ -84,13 +84,13 @@ pub fn estimate_conversation_tokens(items: &[ConversationItem]) -> u64 {
     items.iter().map(estimate_item_tokens).sum()
 }
 
-/// grok-build's [`ItemTokenCounter`](kigi_compaction::ItemTokenCounter)
-/// for the shared compaction engine: the bytes/4 estimate grok-build already
+/// kigi's [`ItemTokenCounter`](kigi_compaction::ItemTokenCounter)
+/// for the shared compaction engine: the bytes/4 estimate kigi already
 /// uses to drive its compaction triggers, exposed through the seam so the
 /// shared budgeting math gets the *same* trusted count.
 ///
 /// Where another host plugs a real BPE tokenizer into the same seam,
-/// grok-build estimates instead, reusing [`estimate_item_tokens`] so the
+/// kigi estimates instead, reusing [`estimate_item_tokens`] so the
 /// per-variant arithmetic (images, reasoning blobs, tool-call args) stays in
 /// one place.
 pub struct EstimatedItemTokenCounter;

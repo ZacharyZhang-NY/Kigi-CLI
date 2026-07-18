@@ -1,4 +1,4 @@
-//! ACP extension handler for session search (`x.ai/session/search`).
+//! ACP extension handler for session search (`kigi/session/search`).
 //!
 //! Exposes session full-text search as an ACP extension method.
 //! The client sends a query and receives ranked results across all
@@ -67,10 +67,10 @@ pub struct SearchSessionHit {
     pub snippet: Option<String>,
 }
 
-/// Route `x.ai/session/search` extension method calls.
+/// Route `kigi/session/search` extension method calls.
 pub async fn handle(args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/session/search" => {
+        "kigi/session/search" => {
             let req: SearchSessionsRequest = super::parse_params(args)?;
             let internal_req = SessionSearchRequest {
                 query: req.query,

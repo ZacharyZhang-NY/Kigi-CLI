@@ -152,7 +152,7 @@ pub fn color_env() -> std::collections::HashMap<String, String> {
 }
 
 /// Returns environment variables that disable colors and ANSI escape codes in CLI
-/// tool output. Used when the client sets `x.ai/bashOutputNoColor: true` (e.g.
+/// tool output. Used when the client sets `kigi/bashOutputNoColor: true` (e.g.
 /// kigi-tui which renders its own UI and doesn't need raw ANSI codes).
 ///
 /// Follows the <https://no-color.org/> convention plus tool-specific overrides.

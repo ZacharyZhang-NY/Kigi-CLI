@@ -1,14 +1,14 @@
 use super::*;
 use serde::Deserialize;
 
-/// Handle `x.ai/models/update` — model list changed (etag-triggered refresh).
+/// Handle `kigi/models/update` — model list changed (etag-triggered refresh).
 pub(super) fn handle_models_update(notif: &acp::ExtNotification, app: &mut AppView) -> bool {
     if let Ok(model_state) = serde_json::from_str::<acp::SessionModelState>(notif.params.get()) {
         use crate::acp::model_state::ModelState;
         let new_models = ModelState::from(Some(model_state));
         tracing::info!(
             count = new_models.available.len(),
-            "models updated via x.ai/models/update"
+            "models updated via kigi/models/update"
         );
 
         let shell_fallback_current = new_models.current.clone();
@@ -46,15 +46,15 @@ pub(super) fn handle_models_update(notif: &acp::ExtNotification, app: &mut AppVi
         }
         true
     } else {
-        tracing::warn!("Failed to parse x.ai/models/update");
+        tracing::warn!("Failed to parse kigi/models/update");
         false
     }
 }
 
-/// Handle `x.ai/settings/update` — remote settings refreshed on `/new`.
+/// Handle `kigi/settings/update` — remote settings refreshed on `/new`.
 pub(super) fn handle_settings_update(notif: &acp::ExtNotification, app: &mut AppView) -> bool {
     let Ok(update) = serde_json::from_str::<PagerSettingsUpdate>(notif.params.get()) else {
-        tracing::warn!("Failed to parse x.ai/settings/update");
+        tracing::warn!("Failed to parse kigi/settings/update");
         return false;
     };
 
@@ -221,7 +221,7 @@ pub(super) fn handle_settings_update(notif: &acp::ExtNotification, app: &mut App
         }
     }
 
-    tracing::info!("settings updated via x.ai/settings/update");
+    tracing::info!("settings updated via kigi/settings/update");
     true
 }
 
@@ -249,7 +249,7 @@ pub(super) fn apply_soft_default_permission_mode(
 }
 
 /// Tell live sessions to leave Auto on the mid-session kill-switch: fire the
-/// `x.ai/yolo_mode_changed` notification the agent maps to
+/// `kigi/yolo_mode_changed` notification the agent maps to
 /// `SetAutoMode { enabled: false }`, fire-and-forget over the shared ACP channel.
 /// The notification is CLIENT-scoped (the agent applies it to every session of
 /// the sending client), so one send covers all affected sessions. `yolo_mode` is
@@ -264,7 +264,7 @@ pub(super) fn notify_sessions_leave_auto(app: &AppView, session_ids: &[acp::Sess
         "permission_mode": "ask",
     });
     let notification = acp::ExtNotification::new(
-        "x.ai/yolo_mode_changed",
+        "kigi/yolo_mode_changed",
         serde_json::value::to_raw_value(&params)
             .expect("serialize yolo_mode_changed params")
             .into(),
@@ -277,12 +277,12 @@ pub(super) fn notify_sessions_leave_auto(app: &AppView, session_ids: &[acp::Sess
     let _ = app.acp_tx.send(args.into());
 }
 
-/// Handle `x.ai/sessions/changed` — the leader broadcasts roster
+/// Handle `kigi/sessions/changed` — the leader broadcasts roster
 /// upserts/removals to all clients (FleetView dashboard).
 pub(super) fn handle_sessions_changed(notif: &acp::ExtNotification, app: &mut AppView) -> bool {
     let Ok(changed) = serde_json::from_str::<crate::app::roster::RosterChanged>(notif.params.get())
     else {
-        tracing::warn!("Failed to parse x.ai/sessions/changed");
+        tracing::warn!("Failed to parse kigi/sessions/changed");
         return false;
     };
     let mut affected = false;
@@ -297,7 +297,7 @@ pub(super) fn handle_sessions_changed(notif: &acp::ExtNotification, app: &mut Ap
     affected
 }
 
-/// Deserialization type for the `x.ai/settings/update` notification payload.
+/// Deserialization type for the `kigi/settings/update` notification payload.
 ///
 /// This is intentionally a separate struct from `SettingsUpdateNotification` in
 /// `kigi-shell/src/agent/mvp_agent.rs`. The shell side derives `Serialize`

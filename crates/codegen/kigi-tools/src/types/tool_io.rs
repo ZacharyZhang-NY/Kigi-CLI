@@ -15,17 +15,17 @@ use crate::implementations::codex::apply_patch::tool::ApplyPatchInput;
 use crate::implementations::codex::grep_files::tool::CodexGrepFilesInput;
 use crate::implementations::codex::list_dir::tool::CodexListDirInput;
 use crate::implementations::codex::read_file::tool::CodexReadFileInput;
-use crate::implementations::grok_build::ask_user_question::AskUserQuestionInput;
-use crate::implementations::grok_build::enter_plan_mode::EnterPlanModeInput;
-use crate::implementations::grok_build::exit_plan_mode::ExitPlanModeInput;
-use crate::implementations::grok_build::grep::GrepSearchInput;
-use crate::implementations::grok_build::list_dir::ListDirInput;
-use crate::implementations::grok_build::read_file::ReadFileInput;
-use crate::implementations::grok_build::search_replace::SearchReplaceInput;
-use crate::implementations::grok_build::todo::TodoWriteInput;
-use crate::implementations::grok_build::update_goal::UpdateGoalInput;
-use crate::implementations::grok_build::web_fetch::WebFetchInput;
-use crate::implementations::grok_build::web_search::WebSearchInput;
+use crate::implementations::kigi::ask_user_question::AskUserQuestionInput;
+use crate::implementations::kigi::enter_plan_mode::EnterPlanModeInput;
+use crate::implementations::kigi::exit_plan_mode::ExitPlanModeInput;
+use crate::implementations::kigi::grep::GrepSearchInput;
+use crate::implementations::kigi::list_dir::ListDirInput;
+use crate::implementations::kigi::read_file::ReadFileInput;
+use crate::implementations::kigi::search_replace::SearchReplaceInput;
+use crate::implementations::kigi::todo::TodoWriteInput;
+use crate::implementations::kigi::update_goal::UpdateGoalInput;
+use crate::implementations::kigi::web_fetch::WebFetchInput;
+use crate::implementations::kigi::web_search::WebSearchInput;
 use crate::implementations::lsp::LspToolInput;
 use crate::implementations::memory::types::{MemoryGetInput, MemorySearchInput};
 use crate::implementations::opencode::write::WriteInput;
@@ -71,7 +71,7 @@ pub enum ToolInput {
     WebFetch(WebFetchInput),
     Write(WriteInput),
     ApplyPatch(ApplyPatchInput),
-    HashlineEdit(crate::implementations::grok_build_hashline::edit::types::HashlineEditInput),
+    HashlineEdit(crate::implementations::kigi_hashline::edit::types::HashlineEditInput),
     CodexListDir(CodexListDirInput),
     CodexGrepFiles(CodexGrepFilesInput),
     CodexReadFile(CodexReadFileInput),
@@ -83,10 +83,10 @@ pub enum ToolInput {
     ExitPlanMode(ExitPlanModeInput),
     AskUserQuestion(AskUserQuestionInput),
     Lsp(LspToolInput),
-    Monitor(crate::implementations::grok_build::monitor::types::MonitorInput),
-    SchedulerCreate(crate::implementations::grok_build::scheduler::create::SchedulerCreateInput),
-    SchedulerDelete(crate::implementations::grok_build::scheduler::delete::SchedulerDeleteInput),
-    SchedulerList(crate::implementations::grok_build::scheduler::list::SchedulerListInput),
+    Monitor(crate::implementations::kigi::monitor::types::MonitorInput),
+    SchedulerCreate(crate::implementations::kigi::scheduler::create::SchedulerCreateInput),
+    SchedulerDelete(crate::implementations::kigi::scheduler::delete::SchedulerDeleteInput),
+    SchedulerList(crate::implementations::kigi::scheduler::list::SchedulerListInput),
     UpdateGoal(UpdateGoalInput),
     /// Dynamic input for runtime-registered tools (MCP, etc.)
     Dynamic(serde_json::Value),

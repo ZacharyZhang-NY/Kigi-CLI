@@ -598,7 +598,7 @@ impl CompactionStateContext {
     /// For a sub-agent with
     /// a single real user turn, `recent_messages` is the ENTIRE working
     /// transcript, and keeping it frees almost nothing while re-cueing the
-    /// model to re-read the same files. grok-build retains
+    /// model to re-read the same files. kigi retains
     /// `recent_messages` so the model keeps verbatim tool context.
     pub fn for_compaction(&self) -> Self {
         Self {
@@ -803,17 +803,17 @@ pub struct CompactedHistoryInput<'a> {
     /// summary. `None` means no state reminder is appended.
     pub system_reminder: Option<String>,
     /// When `true`, emit the compaction summary *before* recent messages.
-    /// When `false` (the default), recent messages come first (grok-build
+    /// When `false` (the default), recent messages come first (kigi
     /// ordering).
     pub summary_before_recent: bool,
     /// Pre-built transcript hint appended to the summary (caller builds it via
     /// [`crate::CompactionMode::transcript_hint`] or
     /// [`format_transcript_location`]). `None` to omit. Appended to BOTH the
-    /// carrier and the grok-build summary.
+    /// carrier and the kigi summary.
     pub transcript_hint: Option<String>,
     /// Number of summaries generated so far for this user query, *including*
     /// the one being built. Rendered verbatim into the carrier's
-    /// "Total summaries generated so far …" footer. Ignored by the grok-build
+    /// "Total summaries generated so far …" footer. Ignored by the kigi
     /// (`summary_before_recent == false`) path. Callers that don't track a
     /// counter pass `1`.
     pub summary_count: u64,
@@ -2679,7 +2679,7 @@ actual user question";
                         arguments: r#"{"target_file":"src/lib.rs"}"#.into(),
                     },
                 ],
-                model_id: Some("grok-3".to_string()),
+                model_id: Some("kigi-3".to_string()),
                 model_fingerprint: None,
                 reasoning_effort: None,
             }),
@@ -2712,7 +2712,7 @@ actual user question";
                         arguments: r#"{"command":"cargo test"}"#.into(),
                     },
                 ],
-                model_id: Some("grok-3".to_string()),
+                model_id: Some("kigi-3".to_string()),
                 model_fingerprint: None,
                 reasoning_effort: None,
             }),
@@ -3390,7 +3390,7 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
         assert!(
             kept.iter()
                 .any(|i| matches!(i, ConversationItem::Reasoning(_))),
-            "reasoning must be kept when strip_reasoning = false (Grok backends)"
+            "reasoning must be kept when strip_reasoning = false (Kigi backends)"
         );
         let stripped = prepare_conversation_for_verbatim_summarization(mk(), true);
         assert!(

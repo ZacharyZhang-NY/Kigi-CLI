@@ -1,4 +1,4 @@
-//! Shared image/PDF/metadata helpers for read tools (grok_build, etc.).
+//! Shared image/PDF/metadata helpers for read tools (kigi, etc.).
 
 pub mod image;
 pub mod metadata;

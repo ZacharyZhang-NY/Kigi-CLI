@@ -599,10 +599,10 @@ pub fn build_classifier_request(
         temperature: Some(0.0),
         max_output_tokens: Some(LAZINESS_MAX_OUTPUT_TOKENS),
         reasoning_effort: None,
-        x_grok_conv_id: session_id_str.clone(),
-        x_grok_req_id: Some(format!("{LAZINESS_REQ_ID_PREFIX}{}", uuid::Uuid::new_v4())),
-        x_grok_session_id: session_id_str,
-        x_grok_agent_id: Some(crate::util::agent_id::agent_id()),
+        x_kigi_conv_id: session_id_str.clone(),
+        x_kigi_req_id: Some(format!("{LAZINESS_REQ_ID_PREFIX}{}", uuid::Uuid::new_v4())),
+        x_kigi_session_id: session_id_str,
+        x_kigi_agent_id: Some(crate::util::agent_id::agent_id()),
         ..ConversationRequest::default()
     }
 }
@@ -957,7 +957,7 @@ pub struct RunArgs {
     /// override surface for the offline tool — production resolves
     /// `LazinessDetectorPerModelConfig::include_reasoning` separately.
     pub include_reasoning: Option<bool>,
-    /// Grok-home directory containing the `auth.json` to consult as
+    /// Kigi-home directory containing the `auth.json` to consult as
     /// the third API-key fallback. Defaults to
     /// `kigi_shell::util::kigi_home::kigi_home()` when `None`.
     /// Exposed as a CLI flag for testability.
@@ -1053,7 +1053,7 @@ pub async fn resolve_api_key(explicit: Option<&str>, kigi_home: &Path) -> Result
     }
     Err(anyhow!(
         "no API key: pass --api-key, set XAI_API_KEY, or run `kigi login` to populate \
-         <grok-home>/auth.json. An expired OIDC token is auto-refreshed when a refresh_token \
+         <kigi-home>/auth.json. An expired OIDC token is auto-refreshed when a refresh_token \
          is present; if not, re-login is required."
     ))
 }
@@ -1061,7 +1061,7 @@ pub async fn resolve_api_key(explicit: Option<&str>, kigi_home: &Path) -> Result
 /// Build an `AuthManager` for `kigi_home`, install the
 /// non-interactive refresher chain, and ask for a usable key. Mirrors
 /// the body of [`crate::auth::try_ensure_fresh_auth`] but accepts an
-/// explicit `kigi_home` so `--grok-home` overrides work in test
+/// explicit `kigi_home` so `--kigi-home` overrides work in test
 /// fixtures (the upstream helper hardcodes the global `kigi_home()`
 /// path).
 ///
@@ -1874,9 +1874,9 @@ mod tests {
         assert!(req.hosted_tools.is_empty());
         assert!(req.tool_choice.is_none());
 
-        assert_eq!(req.x_grok_conv_id.as_deref(), Some("sess-x"));
-        assert_eq!(req.x_grok_session_id.as_deref(), Some("sess-x"));
-        let req_id = req.x_grok_req_id.as_deref().expect("req id");
+        assert_eq!(req.x_kigi_conv_id.as_deref(), Some("sess-x"));
+        assert_eq!(req.x_kigi_session_id.as_deref(), Some("sess-x"));
+        let req_id = req.x_kigi_req_id.as_deref().expect("req id");
         // N3: shared const for the prefix.
         let suffix = req_id
             .strip_prefix(LAZINESS_REQ_ID_PREFIX)
@@ -1888,7 +1888,7 @@ mod tests {
         assert!(!parsed.is_nil());
 
         assert_eq!(
-            req.x_grok_agent_id.as_deref(),
+            req.x_kigi_agent_id.as_deref(),
             Some(crate::util::agent_id::agent_id().as_str())
         );
     }

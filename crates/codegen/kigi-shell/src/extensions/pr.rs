@@ -56,7 +56,7 @@ struct GhGraphqlPullRequest {
 
 pub async fn handle(_agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/pr/status" => {
+        "kigi/pr/status" => {
             let req = parse_params::<PrStatusRequest>(args)?;
             to_ext_response(handle_pr_status(&req.cwd, &req.branch).await)
         }

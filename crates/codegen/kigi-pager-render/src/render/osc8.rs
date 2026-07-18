@@ -91,7 +91,7 @@ fn link_finder() -> &'static LinkFinder {
 }
 
 /// One path segment without spaces (`main.rs`, `.kigi`, `@scope`). Leading `.`
-/// matches dot-directories and `%` matches percent-encoded segments — grok
+/// matches dot-directories and `%` matches percent-encoded segments — kigi
 /// session media lives under `~/.kigi/sessions/%2F…/images/1.jpg`.
 const PATH_SEGMENT: &str = r"[a-zA-Z0-9_@.%][a-zA-Z0-9._+@%\-]*";
 
@@ -565,7 +565,7 @@ mod tests {
         std::fs::write(dir.path().join("images/1.jpg"), b"x").unwrap();
         let media = vec![dir.path().join("images/1.jpg")];
 
-        assert!(local_link_to_file_url("https://x.ai", &media).is_none());
+        assert!(local_link_to_file_url("https://kimi.com", &media).is_none());
         assert!(local_link_to_file_url("mailto:a@b.c", &media).is_none());
         assert!(local_link_to_file_url("#section", &media).is_none());
         // Relative path that isn't a known generated media file.
@@ -786,13 +786,14 @@ mod tests {
 
     #[test]
     fn scan_content_x_offset_applied() {
-        let line = make_line("https://x.ai");
+        let line = make_line("https://kimi.com");
         let mut overlay = LinkOverlay::new();
         scan_unjoined(std::iter::once((0, &line)), 10, &[], &mut overlay);
 
         assert_eq!(overlay.links().len(), 1);
         assert_eq!(overlay.links()[0].col_start, 10);
-        assert_eq!(overlay.links()[0].col_end, 10 + 12);
+        // 16 == "https://kimi.com".len()
+        assert_eq!(overlay.links()[0].col_end, 10 + 16);
     }
 
     // ── File path detection ──
@@ -856,7 +857,7 @@ mod tests {
     }
 
     #[test]
-    fn scan_detects_grok_session_media_path() {
+    fn scan_detects_kigi_session_media_path() {
         // Dot-directory (`.kigi`), percent-encoded session segment, and a
         // trailing sentence period — the shape of media-tool output prose.
         let line = make_line("Saved to /Users/alice/.kigi/sessions/%2Fabc/00000000/images/1.jpg.");
@@ -1097,12 +1098,12 @@ mod tests {
 
     #[test]
     fn scan_file_path_with_dots_and_hyphens() {
-        let line = make_line("Reading /tmp/grok-impl-summary.md now.");
+        let line = make_line("Reading /tmp/kigi-impl-summary.md now.");
         let mut overlay = LinkOverlay::new();
         scan_unjoined(std::iter::once((0, &line)), 0, &[], &mut overlay);
 
         assert_eq!(overlay.links().len(), 1);
-        assert_eq!(&*overlay.links()[0].url, "file:///tmp/grok-impl-summary.md");
+        assert_eq!(&*overlay.links()[0].url, "file:///tmp/kigi-impl-summary.md");
     }
 
     #[test]
@@ -1188,7 +1189,7 @@ mod tests {
     #[test]
     fn scan_detects_tilde_file_path() {
         // The user's example: a `~/Desktop/…md` path in agent output.
-        let raw = "~/Desktop/grok-pager-retention-findings-2026-06-06.md";
+        let raw = "~/Desktop/kigi-pager-retention-findings-2026-06-06.md";
         // Skip when no home directory is resolvable (e.g. minimal sandbox):
         // the tilde stays unexpanded and cannot form an absolute file URL.
         let Ok(expected) = url::Url::from_file_path(shellexpand::tilde(raw).as_ref()) else {

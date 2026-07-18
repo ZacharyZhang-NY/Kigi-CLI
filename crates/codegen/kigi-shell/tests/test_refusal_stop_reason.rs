@@ -71,7 +71,7 @@ async fn test_refusal_turn_completes_with_single_messages_request() {
     with_local_set(|| async {
         let server = refusal_messages_server().await;
         let workdir = git_workdir();
-        let client = GrokStdioClient::spawn(&server, workdir.path()).await;
+        let client = KigiStdioClient::spawn(&server, workdir.path()).await;
 
         client.initialize_with_timeout().await;
         let session_id = client

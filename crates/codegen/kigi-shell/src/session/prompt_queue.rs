@@ -7,7 +7,7 @@
 pub use kigi_prompt_queue::{QueueChanged, QueueEntryMeta, QueueEntryWire};
 
 // Outbound method for broadcast_queue_changed. An ACP routing concern, not a queue concern.
-pub const QUEUE_CHANGED_METHOD: &str = "x.ai/queue/changed";
+pub const QUEUE_CHANGED_METHOD: &str = "kigi/queue/changed";
 
 #[cfg(test)]
 mod tests {
@@ -20,7 +20,7 @@ mod tests {
             entries: vec![QueueEntryWire {
                 id: "p1".to_string(),
                 version: 0,
-                owner: Some("grok-tui".to_string()),
+                owner: Some("kigi-tui".to_string()),
                 last_editor: None,
                 kind: "prompt".to_string(),
                 text: "hello".to_string(),
@@ -56,14 +56,14 @@ mod tests {
         let entry = QueueEntryWire {
             id: "p1".to_string(),
             version: 3,
-            owner: Some("grok-tui".to_string()),
-            last_editor: Some("grok-vscode".to_string()),
+            owner: Some("kigi-tui".to_string()),
+            last_editor: Some("kigi-vscode".to_string()),
             kind: "prompt".to_string(),
             text: "hello".to_string(),
             position: 0,
         };
         let json = serde_json::to_value(&entry).unwrap();
-        assert_eq!(json["lastEditor"], "grok-vscode");
+        assert_eq!(json["lastEditor"], "kigi-vscode");
         let round: QueueEntryWire = serde_json::from_value(json).unwrap();
         assert_eq!(round, entry);
     }

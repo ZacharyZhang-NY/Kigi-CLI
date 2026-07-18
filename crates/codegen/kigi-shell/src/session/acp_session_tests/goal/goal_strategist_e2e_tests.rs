@@ -17,10 +17,10 @@
 use super::support::*;
 use super::*;
 use crate::session::goal_strategist::GOAL_STRATEGIST_SUBAGENT_DESCRIPTION;
-use kigi_tools::implementations::grok_build::task::types::{
+use kigi_tools::implementations::kigi::task::types::{
     SubagentCancelOutcome, SubagentEvent, SubagentResult,
 };
-use kigi_tools::implementations::grok_build::update_goal::UpdateGoalInput;
+use kigi_tools::implementations::kigi::update_goal::UpdateGoalInput;
 use serial_test::serial;
 use std::collections::VecDeque;
 use std::sync::Arc as StdArc;
@@ -104,7 +104,7 @@ fn spawn_coordinator(
 
 async fn answer_strategist(
     behaviour: StrategistBehaviour,
-    req: Box<kigi_tools::implementations::grok_build::task::types::SubagentRequest>,
+    req: Box<kigi_tools::implementations::kigi::task::types::SubagentRequest>,
 ) {
     match behaviour {
         StrategistBehaviour::WriteNoteThenDone => {
@@ -139,7 +139,7 @@ async fn answer_strategist(
 async fn answer_skeptic(
     verdict: SkepticVerdict,
     spawn_idx: usize,
-    req: Box<kigi_tools::implementations::grok_build::task::types::SubagentRequest>,
+    req: Box<kigi_tools::implementations::kigi::task::types::SubagentRequest>,
 ) {
     if let Some(p) = parse_details_path(&req.prompt) {
         let _ = tokio::fs::write(&p, b"# mock skeptic details\n").await;
@@ -243,7 +243,7 @@ fn seed_channel(actor: &SessionActor, cmds: Vec<UpdateGoalInput>) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     *actor.goal_update_rx.borrow_mut() = Some(rx);
     for cmd in cmds {
-        tx.send(kigi_tools::implementations::grok_build::update_goal::envelope_for_test(cmd))
+        tx.send(kigi_tools::implementations::kigi::update_goal::envelope_for_test(cmd))
             .unwrap();
     }
     drop(tx);

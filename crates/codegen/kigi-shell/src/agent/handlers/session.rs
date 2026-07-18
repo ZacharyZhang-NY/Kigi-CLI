@@ -28,27 +28,27 @@ fn backfill_session_summary(summary: &mut Summary) {
     }
 }
 
-/// Router for x.ai/session/* and x.ai/session_summaries/* methods.
+/// Router for kigi/session/* and kigi/session_summaries/* methods.
 pub async fn handle(
     agent: &MvpAgent,
     args: &acp::ExtRequest,
 ) -> Result<acp::ExtResponse, acp::Error> {
     match args.method.as_ref() {
-        "x.ai/session/info" => handle_session_info(agent, args).await,
-        "x.ai/session/close" => handle_session_close(agent, args).await,
-        "x.ai/session/list" => handle_session_list(agent, args).await,
-        "x.ai/sessions/list" => handle_roster_list(agent, args).await,
-        m if m.starts_with("x.ai/session_summaries/") => {
+        "kigi/session/info" => handle_session_info(agent, args).await,
+        "kigi/session/close" => handle_session_close(agent, args).await,
+        "kigi/session/list" => handle_session_list(agent, args).await,
+        "kigi/sessions/list" => handle_roster_list(agent, args).await,
+        m if m.starts_with("kigi/session_summaries/") => {
             handle_session_summaries(agent, args).await
         }
         _ => Err(acp::Error::method_not_found()),
     }
 }
 
-/// `x.ai/sessions/list` — the FleetView roster. Returns every
+/// `kigi/sessions/list` — the FleetView roster. Returns every
 /// resident session plus recently-touched on-disk `Dormant` sessions. Clients
 /// poll this while the dashboard is open and reconcile against the
-/// `x.ai/sessions/changed` broadcast.
+/// `kigi/sessions/changed` broadcast.
 async fn handle_roster_list(
     agent: &MvpAgent,
     _args: &acp::ExtRequest,
@@ -166,7 +166,7 @@ async fn handle_session_close(
         // (see `MvpAgent::handle_evict_sessions` / `close_session_explicit`).
         agent.request_session_shutdown(&sid);
         agent.close_session_explicit(&sid);
-        tracing::info!(session_id = %req.session_id, "session closed via x.ai/session/close");
+        tracing::info!(session_id = %req.session_id, "session closed via kigi/session/close");
     } else {
         tracing::debug!(session_id = %req.session_id, "session/close: session not found (already closed)");
     }
@@ -181,7 +181,7 @@ async fn handle_session_summaries(
     args: &acp::ExtRequest,
 ) -> Result<acp::ExtResponse, acp::Error> {
     match args.method.as_ref() {
-        "x.ai/session_summaries/session_list" => {
+        "kigi/session_summaries/session_list" => {
             let req = serde_json::from_str::<SessionListRequest>(args.params.get())?;
             let cwd = req.workspace_directory.to_string_lossy().to_string();
 
@@ -203,7 +203,7 @@ async fn handle_session_summaries(
 
             Ok(acp::ExtResponse::new(value))
         }
-        "x.ai/session_summaries/workspace_list" => {
+        "kigi/session_summaries/workspace_list" => {
             tracing::debug!("xai/session_summaries/workspace_list is working");
             let _req = serde_json::from_str::<AllSessionOverviewRequest>(args.params.get())?;
 
@@ -215,7 +215,7 @@ async fn handle_session_summaries(
 
             summaries_to_overview_response(summaries)
         }
-        "x.ai/session_summaries/workspace_list_recent" => {
+        "kigi/session_summaries/workspace_list_recent" => {
             let req = serde_json::from_str::<RecentSessionsRequest>(args.params.get())?;
 
             let _timer = crate::instrumentation_timer!("session.list_sessions_recent");

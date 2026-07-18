@@ -572,7 +572,7 @@ fn render_tab_bar(
             // not `theme.gray_dim`. At ANSI16 `gray_dim` collapses to the
             // softer slot (silver on White) which leaves text at ~1.2:1
             // contrast — fine for the modal frame's one-cell border line
-            // but unreadable as text glyphs on grokday.
+            // but unreadable as text glyphs on kigiday.
             let style = if is_active {
                 if state.tabs_focused && !is_embedded {
                     Style::default()
@@ -1210,7 +1210,7 @@ mod tests {
         use ratatui::layout::Rect;
 
         let theme = Theme::current();
-        const TEXT: &str = "Tip · Ask Grok about the docs";
+        const TEXT: &str = "Tip · Ask Kigi about the docs";
         let row_text = |width: u16| {
             let area = Rect {
                 x: 0,
@@ -1229,7 +1229,7 @@ mod tests {
         let start = wide.find("Tip").expect("Tip");
         let trailing = wide.chars().rev().take_while(|c| *c == ' ').count();
         assert!(start.abs_diff(trailing) <= 1, "not centered: {wide:?}");
-        assert!(wide.contains("Ask Grok about the docs"));
+        assert!(wide.contains("Ask Kigi about the docs"));
 
         let tiny = row_text(10);
         assert!(tiny.contains("Tip"));

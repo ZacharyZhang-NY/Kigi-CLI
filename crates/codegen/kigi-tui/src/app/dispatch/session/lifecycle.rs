@@ -154,7 +154,7 @@ pub(in crate::app::dispatch) fn dispatch_new_session(app: &mut AppView) -> Vec<E
 /// [`dispatch_new_worktree_session`].
 pub(in crate::app::dispatch) fn open_new_session_question(app: &mut AppView) -> Vec<Effect> {
     use crate::views::question_view::{LocalQuestionKind, QuestionViewState};
-    use kigi_tools::implementations::grok_build::ask_user_question::{Question, QuestionOption};
+    use kigi_tools::implementations::kigi::ask_user_question::{Question, QuestionOption};
     let ActiveView::Agent(id) = app.active_view else {
         return vec![];
     };
@@ -211,7 +211,7 @@ pub(in crate::app::dispatch) fn open_agent_type_mismatch_question(
     model_name: &str,
 ) -> Vec<Effect> {
     use crate::views::question_view::{LocalQuestionKind, QuestionViewState};
-    use kigi_tools::implementations::grok_build::ask_user_question::{Question, QuestionOption};
+    use kigi_tools::implementations::kigi::ask_user_question::{Question, QuestionOption};
     let ActiveView::Agent(id) = app.active_view else {
         return vec![];
     };
@@ -408,7 +408,7 @@ pub(in crate::app::dispatch) fn clear_startup_actions(app: &mut AppView) {
     let _ = app.deferred_startup.take();
 }
 /// Replay the session-startup actions deferred until auth + trust both resolved
-/// (`--resume` / `--worktree` / initial-prompt / `grok dashboard`). Extracted
+/// (`--resume` / `--worktree` / initial-prompt / `kigi dashboard`). Extracted
 /// from the `AuthComplete` handler so the folder-trust answer can run the SAME
 /// machinery; whichever gate resolves last drains it (each call site guards on
 /// the other gate being `Done`, so it runs exactly once).

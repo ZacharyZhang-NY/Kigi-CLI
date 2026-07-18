@@ -1,6 +1,6 @@
 //! Shared DTO types for hooks/plugins ACP extensions.
 //!
-//! This crate defines the wire format for `x.ai/hooks/*` and `x.ai/plugins/*`
+//! This crate defines the wire format for `kigi/hooks/*` and `kigi/plugins/*`
 //! ACP extension methods. It is dependency-free (only `serde`) so both
 //! `kigi-shell` and `kigi-tui` can depend on it without pulling
 //! in domain logic.
@@ -38,11 +38,11 @@ pub enum PluginOrigin {
     /// CLI `--plugin-dir`.
     CliOverride,
     /// Project `.kigi/plugins/`.
-    ProjectGrok,
+    ProjectKigi,
     /// Project `.claude/plugins/`.
     ProjectClaude,
     /// `$KIGI_SHARE_DIR/plugins/`.
-    UserGrok,
+    UserKigi,
     /// `~/.claude/plugins/`.
     UserClaude,
     /// A compat marketplace clone.
@@ -56,7 +56,7 @@ pub enum PluginOrigin {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         marketplace: Option<String>,
     },
-    /// Grok's install registry (marketplace or direct git/local install).
+    /// Kigi's install registry (marketplace or direct git/local install).
     MarketplaceInstall {
         /// Marketplace source display name (None for direct installs).
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -207,7 +207,7 @@ pub struct HookInfo {
     pub disabled: bool,
 }
 
-/// Response for `x.ai/hooks/list`.
+/// Response for `kigi/hooks/list`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HooksListResponse {
@@ -274,7 +274,7 @@ pub struct PluginInfo {
     pub conflict: Option<String>,
 }
 
-/// Response for `x.ai/plugins/list`.
+/// Response for `kigi/plugins/list`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginsListResponse {
@@ -332,7 +332,7 @@ pub struct McpServerInfo {
     pub config_source: Option<String>,
 }
 
-/// Response for `x.ai/mcp/list` as consumed by the pager.
+/// Response for `kigi/mcp/list` as consumed by the pager.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpServersListResponse {
@@ -513,7 +513,7 @@ impl PluginComponents {
 // Action types
 // ---------------------------------------------------------------------------
 
-/// Request wrapper for `x.ai/hooks/action`.
+/// Request wrapper for `kigi/hooks/action`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HooksActionRequest {
@@ -552,7 +552,7 @@ pub enum HooksAction {
     },
 }
 
-/// Request wrapper for `x.ai/plugins/action`.
+/// Request wrapper for `kigi/plugins/action`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginsActionRequest {
@@ -593,7 +593,7 @@ pub enum PluginsAction {
     },
 }
 
-/// Shared action response for both `x.ai/hooks/action` and `x.ai/plugins/action`.
+/// Shared action response for both `kigi/hooks/action` and `kigi/plugins/action`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionOutcome {
@@ -739,7 +739,7 @@ mod tests {
             mcp_server_count: 0,
             mcp_status: McpStatus::None,
             marketplace_source: None,
-            origin: Some(PluginOrigin::UserGrok),
+            origin: Some(PluginOrigin::UserKigi),
             conflict: None,
         };
         let json = serde_json::to_string(&plugin).unwrap();
@@ -756,9 +756,9 @@ mod tests {
     fn plugin_origin_serde_roundtrip_all_variants() {
         for origin in [
             PluginOrigin::CliOverride,
-            PluginOrigin::ProjectGrok,
+            PluginOrigin::ProjectKigi,
             PluginOrigin::ProjectClaude,
-            PluginOrigin::UserGrok,
+            PluginOrigin::UserKigi,
             PluginOrigin::UserClaude,
             PluginOrigin::ClaudeMarketplace {
                 marketplace: "mp".into(),
@@ -1094,10 +1094,10 @@ mod tests {
 }
 
 // ---------------------------------------------------------------------------
-// Marketplace types (wire format for x.ai/marketplace/* ACP endpoints)
+// Marketplace types (wire format for kigi/marketplace/* ACP endpoints)
 // ---------------------------------------------------------------------------
 
-/// Response for `x.ai/marketplace/list`.
+/// Response for `kigi/marketplace/list`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MarketplaceListResponse {
@@ -1170,7 +1170,7 @@ pub struct MarketplacePluginEntry {
     pub remote_subdir: Option<String>,
 }
 
-/// Request wrapper for `x.ai/marketplace/action`.
+/// Request wrapper for `kigi/marketplace/action`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MarketplaceActionRequest {

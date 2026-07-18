@@ -25,12 +25,12 @@ use tokio::sync::Mutex;
 /// Marker trait for types that can be stored in `Resources`.
 ///
 /// Each implementor must provide a unique `ID` string of the form
-/// `"namespace.Name"` (e.g., `"grok_build.ReadFile"`). The ID is used as
+/// `"namespace.Name"` (e.g., `"kigi.ReadFile"`). The ID is used as
 /// the serialization key when persisting resources.
 ///
 /// Use the `register_resource!` macro to implement this.
 pub trait ResourceType: Any + 'static {
-    /// Unique identifier, e.g. `"grok_build.ReadFile"`.
+    /// Unique identifier, e.g. `"kigi.ReadFile"`.
     const ID: &'static str;
     /// Additional semantic validation for finalize-time params.
     fn validate_params_value(
@@ -47,13 +47,13 @@ impl ResourceType for () {
 /// Implement `ResourceType` for a type with an explicit namespace and name.
 ///
 /// ```ignore
-/// register_resource!("grok_build", "ReadFile", ReadHistory);
+/// register_resource!("kigi", "ReadFile", ReadHistory);
 /// ```
 ///
 /// This generates:
 /// ```ignore
 /// impl ResourceType for ReadHistory {
-///     const ID: &'static str = "grok_build.ReadFile";
+///     const ID: &'static str = "kigi.ReadFile";
 /// }
 /// ```
 #[macro_export]
@@ -154,7 +154,7 @@ type DeserializeFn =
 /// serialize/deserialize closures so `Resources` can round-trip through JSON.
 struct ResourceEntry {
     type_id: TypeId,
-    /// The `ResourceType::ID` string (e.g., `"grok_build.ReadFile"`).
+    /// The `ResourceType::ID` string (e.g., `"kigi.ReadFile"`).
     id: String,
     category: ResourceCategory,
     /// Serialize the value stored at `type_id` to JSON.
@@ -319,11 +319,11 @@ impl Resources {
     /// ```json
     /// {
     ///   "params": {
-    ///     "grok_build.Edit": { ... },
+    ///     "kigi.Edit": { ... },
     ///   },
     ///   "state": {
-    ///     "grok_build.ReadFile": { ... },
-    ///     "grok_build.Todo": { ... },
+    ///     "kigi.ReadFile": { ... },
+    ///     "kigi.Todo": { ... },
     ///   }
     /// }
     /// ```
@@ -755,7 +755,7 @@ impl WebCitationCounter {
         val
     }
 }
-register_resource!("grok_build", "WebCitation", WebCitationCounter);
+register_resource!("kigi", "WebCitation", WebCitationCounter);
 impl std::fmt::Debug for Terminal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Terminal").finish()
@@ -857,17 +857,17 @@ mod tests {
         skip_read_before_edit: bool,
         max_file_size: Option<usize>,
     }
-    register_resource!("grok_build", "Edit", EditConfig);
+    register_resource!("kigi", "Edit", EditConfig);
     #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
     struct ReadHistory {
         files_read: Vec<String>,
     }
-    register_resource!("grok_build", "ReadFile", ReadHistory);
+    register_resource!("kigi", "ReadFile", ReadHistory);
     #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
     struct TodoData {
         items: Vec<String>,
     }
-    register_resource!("grok_build", "Todo", TodoData);
+    register_resource!("kigi", "Todo", TodoData);
     #[test]
     fn insert_and_get_typed_values() {
         let mut res = Resources::new();
@@ -992,7 +992,7 @@ mod tests {
         let json = res.serialize();
         assert!(json.get("state").is_some());
         let state = json.get("state").unwrap();
-        assert!(state.get("grok_build.ReadFile").is_some());
+        assert!(state.get("kigi.ReadFile").is_some());
         let json_str = serde_json::to_string(&json).unwrap();
         assert!(!json_str.contains("/home/user"));
     }
@@ -1003,12 +1003,12 @@ mod tests {
         res.register_params::<EditConfig>();
         let mut state_map = HashMap::new();
         state_map.insert(
-            "grok_build.ReadFile".to_string(),
+            "kigi.ReadFile".to_string(),
             serde_json::json!({ "files_read" : ["loaded.rs"] }),
         );
         let mut params_map = HashMap::new();
         params_map.insert(
-            "grok_build.Edit".to_string(),
+            "kigi.Edit".to_string(),
             serde_json::json!(
                 { "skip_read_before_edit" : true, "max_file_size" : 512 }
             ),
@@ -1033,7 +1033,7 @@ mod tests {
             serde_json::json!({ "foo" : "bar" }),
         );
         state_map.insert(
-            "grok_build.ReadFile".to_string(),
+            "kigi.ReadFile".to_string(),
             serde_json::json!({ "files_read" : ["ok.rs"] }),
         );
         let mut data = HashMap::new();
@@ -1050,7 +1050,7 @@ mod tests {
             skip_read_before_edit: true,
             max_file_size: None,
         }));
-        let val = res.get_json("params", "grok_build.Edit").unwrap();
+        let val = res.get_json("params", "kigi.Edit").unwrap();
         assert_eq!(val["skip_read_before_edit"], true);
     }
     #[test]
@@ -1062,7 +1062,7 @@ mod tests {
     fn get_json_returns_none_for_missing_value() {
         let mut res = Resources::new();
         res.register_params::<EditConfig>();
-        assert!(res.get_json("params", "grok_build.Edit").is_none());
+        assert!(res.get_json("params", "kigi.Edit").is_none());
     }
     #[test]
     fn set_json_updates_registered_value() {
@@ -1070,7 +1070,7 @@ mod tests {
         res.register_params::<EditConfig>();
         let ok = res.set_json(
             "params",
-            "grok_build.Edit",
+            "kigi.Edit",
             serde_json::json!({ "skip_read_before_edit" : true }),
         );
         assert!(ok);

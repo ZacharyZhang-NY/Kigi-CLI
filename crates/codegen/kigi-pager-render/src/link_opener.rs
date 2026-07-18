@@ -1,6 +1,6 @@
 //! Shared URL-opening and scheme validation utilities.
 //!
-//! Extracted from the `OpenSupergrokUrl` dispatch handler so that any
+//! Extracted from the `OpenSubscriptionUrl` dispatch handler so that any
 //! code path (keyboard navigation, mouse click, action dispatch) can
 //! open a link safely without duplicating platform-specific logic.
 
@@ -217,7 +217,7 @@ mod tests {
     #[test]
     fn open_path_command_passes_path_as_a_single_arg() {
         // Path with spaces must be one argument, never shell-interpolated.
-        let path = std::path::Path::new("/tmp/grok session/image 1.jpg");
+        let path = std::path::Path::new("/tmp/kigi session/image 1.jpg");
         let command = build_open_path_command(path);
         let args: Vec<_> = command.get_args().map(|a| a.to_os_string()).collect();
         assert!(args.contains(&path.as_os_str().to_os_string()));

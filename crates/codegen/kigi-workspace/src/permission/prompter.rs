@@ -9,9 +9,9 @@ use crate::permission::{
 use agent_client_protocol::{self as acp, Client as _};
 use kigi_acp_lib::AcpAgentGatewaySender as GatewaySender;
 use kigi_file_utils::events::{Event, EventWriter, PermissionDecision};
-use kigi_tools::implementations::grok_build::web_fetch::domain_from_url;
+use kigi_tools::implementations::kigi::web_fetch::domain_from_url;
 
-const REJECT_ONCE_LABEL: &str = "No, and tell Grok what to do differently";
+const REJECT_ONCE_LABEL: &str = "No, and tell Kigi what to do differently";
 
 /// Stable option id for the edit prompt's "Yes, allow all edits during this
 /// session" choice. Distinct from the generic `"always-allow"` id (used by
@@ -40,7 +40,7 @@ pub const ALLOW_EDITS_SESSION_OPTION_ID: &str = "allow-edits-session";
 ///     2. Drains any queued permission requests with `AllowOnce` responses
 ///     3. Persists `[ui] permission_mode = "always-approve"` to
 ///        `~/.kigi/config.toml` via the `Effect::PersistPermissionMode` effect
-///     4. Sends the existing `x.ai/yolo_mode_changed` ACP notification so
+///     4. Sends the existing `kigi/yolo_mode_changed` ACP notification so
 ///        the agent's permission manager flips its `yolo_mode` flag
 ///
 /// This split keeps the wire protocol bog-standard ACP (no new methods or
@@ -96,7 +96,7 @@ fn enable_always_approve_option() -> acp::PermissionOption {
 }
 
 /// Returns whether the given option is the special "enable always-approve mode"
-/// (global yolo) option that is prepended for GrokTUI / GrokPager / Desktop.
+/// (global yolo) option that is prepended for KigiTUI / KigiPager / Desktop.
 ///
 /// This is the canonical way to identify the option instead of matching on
 /// its human-facing label or assuming position 0. Callers that need to
@@ -108,12 +108,12 @@ pub fn is_enable_always_approve_option(opt: &acp::PermissionOption) -> bool {
 
 /// Returns `true` if the given client type should see the prepended
 /// "enable always-approve mode" option. Limited to the three clients
-/// (`GrokTUI`, `GrokPager`, `Desktop`) that wire the option id through
+/// (`KigiTUI`, `KigiPager`, `Desktop`) that wire the option id through
 /// to their YOLO toggle. Other clients keep their existing option set.
 fn client_supports_enable_always_approve(client_type: ClientType) -> bool {
     matches!(
         client_type,
-        ClientType::GrokTUI | ClientType::GrokPager | ClientType::Desktop
+        ClientType::KigiTUI | ClientType::KigiPager | ClientType::Desktop
     )
 }
 
@@ -188,8 +188,8 @@ pub fn mcp_tool_action<'a>(tool_name: &'a str, server_prefix: Option<&str>) -> &
 /// Pretty-format a single MCP server- or tool-name segment for display:
 /// split on `'_'`, title-case each word, join with spaces. Leaves
 /// non-underscore characters (camelCase, hyphens) intact, so
-/// `"list_issues"` → `"List Issues"`, `"grok_com_notion"` →
-/// `"Grok Com Notion"`, and `"getMyTaskList"` → `"GetMyTaskList"`.
+/// `"list_issues"` → `"List Issues"`, `"kigi_com_notion"` →
+/// `"Kigi Com Notion"`, and `"getMyTaskList"` → `"GetMyTaskList"`.
 pub fn mcp_titleize_segment(name: &str) -> String {
     name.split('_')
         .map(|word| {
@@ -248,10 +248,10 @@ pub struct McpToolPermission {
     /// e.g. `"Always allow:"`. Mirrors `BashCommandPermission::prompt_prefix`.
     pub prompt_prefix: String,
     /// Full tool name as the agent called it
-    /// (e.g. `"grok_com_notion__notion-fetch"`).
+    /// (e.g. `"kigi_com_notion__notion-fetch"`).
     pub tool_name: String,
     /// Server segment (everything before the single `__` separator,
-    /// e.g. `"grok_com_notion"`). `None` if the tool name has no `__`,
+    /// e.g. `"kigi_com_notion"`). `None` if the tool name has no `__`,
     /// in which case the view hides the scope toggle and only offers
     /// tool-scope.
     pub server_prefix: Option<String>,
@@ -397,7 +397,7 @@ impl AcpPrompter {
             ),
         );
 
-        // Bash options for GrokTUI - interactive selection with expandable/contractable terms
+        // Bash options for KigiTUI - interactive selection with expandable/contractable terms
         let mut bash_options: IndexMap<acp::PermissionOptionId, acp::PermissionOption> =
             IndexMap::new();
         bash_options.insert(
@@ -543,7 +543,7 @@ impl AcpPrompter {
                 if self.remember_tool_approvals
                     && matches!(
                         self.client_type,
-                        ClientType::GrokTUI | ClientType::GrokPager | ClientType::Desktop
+                        ClientType::KigiTUI | ClientType::KigiPager | ClientType::Desktop
                     ) =>
             {
                 serde_json::to_value(primary_command_from_script(bash_command))
@@ -565,11 +565,11 @@ impl AcpPrompter {
         match access {
             AccessKind::Edit(_) => self.edit_options.clone(),
             AccessKind::Bash(bash_command) => {
-                // For GrokTUI clients, use the fancy interactive options with term selection
+                // For KigiTUI clients, use the fancy interactive options with term selection
                 // For generic clients (web, etc.), use simpler options that work without
                 // special UI handling
                 match self.client_type {
-                    ClientType::GrokTUI | ClientType::GrokPager | ClientType::Desktop => {
+                    ClientType::KigiTUI | ClientType::KigiPager | ClientType::Desktop => {
                         let mut bash_commands: IndexMap<
                             acp::PermissionOptionId,
                             acp::PermissionOption,
@@ -601,7 +601,7 @@ impl AcpPrompter {
                         bash_commands
                     }
                     ClientType::Generic
-                    | ClientType::GrokWeb
+                    | ClientType::KigiWeb
                     | ClientType::Nebula
                     | ClientType::Extension => {
                         // For generic clients, use simpler options that display well
@@ -654,7 +654,7 @@ impl AcpPrompter {
                 // `fallback_options` (`always-allow`) and the manager's
                 // plain `AllowAlways` arm persists tool-scope.
                 match self.client_type {
-                    ClientType::GrokTUI | ClientType::GrokPager | ClientType::Desktop => {
+                    ClientType::KigiTUI | ClientType::KigiPager | ClientType::Desktop => {
                         let mut options: IndexMap<acp::PermissionOptionId, acp::PermissionOption> =
                             IndexMap::new();
                         let server_prefix = tool_name.split_once("__").map(|(s, _)| s.to_owned());
@@ -694,7 +694,7 @@ impl AcpPrompter {
                         options
                     }
                     ClientType::Generic
-                    | ClientType::GrokWeb
+                    | ClientType::KigiWeb
                     | ClientType::Nebula
                     | ClientType::Extension => self.fallback_options.clone(),
                 }
@@ -991,7 +991,7 @@ mod tests {
 
     #[test]
     fn gate_off_strips_bash_always_allow_keeps_yes_no() {
-        let p = prompter_with_gate(ClientType::GrokPager, false);
+        let p = prompter_with_gate(ClientType::KigiPager, false);
         let access = AccessKind::Bash("kubectl get pods".to_owned());
         let opts = p.build_options(&access);
         assert!(
@@ -1012,7 +1012,7 @@ mod tests {
 
     #[test]
     fn gate_on_includes_bash_always_allow() {
-        let p = prompter_with_gate(ClientType::GrokPager, true);
+        let p = prompter_with_gate(ClientType::KigiPager, true);
         let access = AccessKind::Bash("kubectl get pods".to_owned());
         let opts = p.build_options(&access);
         assert!(
@@ -1027,7 +1027,7 @@ mod tests {
 
     #[test]
     fn gate_off_strips_mcp_always_allow() {
-        let p = prompter_with_gate(ClientType::GrokPager, false);
+        let p = prompter_with_gate(ClientType::KigiPager, false);
         let access = AccessKind::MCPTool {
             name: "linear__list".to_owned(),
             input: serde_json::Value::Null,
@@ -1040,7 +1040,7 @@ mod tests {
 
     #[test]
     fn gate_off_strips_generic_bash_always_and_reject_always() {
-        let p = prompter_with_gate(ClientType::GrokWeb, false);
+        let p = prompter_with_gate(ClientType::KigiWeb, false);
         let access = AccessKind::Bash("kubectl get pods".to_owned());
         let opts = p.build_options(&access);
         assert!(!has_option(&opts, "always-allow"));
@@ -1051,7 +1051,7 @@ mod tests {
 
     #[test]
     fn gate_off_strips_web_fetch_always_allow_domain() {
-        let p = prompter_with_gate(ClientType::GrokPager, false);
+        let p = prompter_with_gate(ClientType::KigiPager, false);
         let access = AccessKind::WebFetch("https://example.com/x".to_owned());
         let opts = p.build_options(&access);
         assert!(!has_option(&opts, "allow-always-domain"));
@@ -1063,7 +1063,7 @@ mod tests {
     fn bash_meta_present_only_when_gate_on_for_fancy_clients() {
         let access = AccessKind::Bash("kubectl get pods".to_owned());
         // Gate on + fancy client → meta carries the parsed command parts.
-        let on = prompter_with_gate(ClientType::GrokPager, true);
+        let on = prompter_with_gate(ClientType::KigiPager, true);
         let meta = on.bash_selection_meta(&access).expect("meta present");
         assert!(
             serde_json::from_value::<
@@ -1073,10 +1073,10 @@ mod tests {
             "meta must deserialize back into BashCommandHighlights"
         );
         // Gate off → no meta (no allow-always-command row to scope).
-        let off = prompter_with_gate(ClientType::GrokPager, false);
+        let off = prompter_with_gate(ClientType::KigiPager, false);
         assert!(off.bash_selection_meta(&access).is_none());
         // Generic client never gets the fancy-UI meta, even with the gate on.
-        let generic = prompter_with_gate(ClientType::GrokWeb, true);
+        let generic = prompter_with_gate(ClientType::KigiWeb, true);
         assert!(generic.bash_selection_meta(&access).is_none());
         // Non-bash access never carries bash meta.
         assert!(
@@ -1087,7 +1087,7 @@ mod tests {
 
     #[test]
     fn bash_reject_always_command_maps_selected_words() {
-        let p = prompter(ClientType::GrokPager);
+        let p = prompter(ClientType::KigiPager);
         let access = AccessKind::Bash("cargo test --workspace".to_owned());
         let opts = p.build_options(&access);
         // Pager path: the ←/→ word-scope selection arrives as
@@ -1121,7 +1121,7 @@ mod tests {
     #[test]
     fn gate_off_keeps_edit_session_allow() {
         // The edit session allow is governed separately, not by this gate.
-        let p = prompter_with_gate(ClientType::GrokPager, false);
+        let p = prompter_with_gate(ClientType::KigiPager, false);
         let access = AccessKind::Edit("src/main.rs".to_owned());
         let opts = p.build_options(&access);
         assert!(
@@ -1142,7 +1142,7 @@ mod tests {
 
     #[test]
     fn mcp_prompt_includes_allow_always_with_meta() {
-        let p = prompter(ClientType::GrokTUI);
+        let p = prompter(ClientType::KigiTUI);
         let access = AccessKind::MCPTool {
             name: "linear__list".to_owned(),
             input: serde_json::Value::Null,
@@ -1161,7 +1161,7 @@ mod tests {
 
     #[test]
     fn mcp_prompt_no_separator_hides_server_scope() {
-        let p = prompter(ClientType::GrokPager);
+        let p = prompter(ClientType::KigiPager);
         let access = AccessKind::MCPTool {
             name: "standalone".to_owned(),
             input: serde_json::Value::Null,
@@ -1178,7 +1178,7 @@ mod tests {
 
     #[test]
     fn mcp_response_tool_scope() {
-        let p = prompter(ClientType::GrokPager);
+        let p = prompter(ClientType::KigiPager);
         let access = AccessKind::MCPTool {
             name: "linear__list".to_owned(),
             input: serde_json::Value::Null,
@@ -1197,7 +1197,7 @@ mod tests {
 
     #[test]
     fn mcp_response_server_scope() {
-        let p = prompter(ClientType::GrokPager);
+        let p = prompter(ClientType::KigiPager);
         let access = AccessKind::MCPTool {
             name: "linear__list".to_owned(),
             input: serde_json::Value::Null,
@@ -1216,7 +1216,7 @@ mod tests {
 
     #[test]
     fn mcp_response_empty_server_falls_back_to_tool() {
-        let p = prompter(ClientType::GrokPager);
+        let p = prompter(ClientType::KigiPager);
         let access = AccessKind::MCPTool {
             name: "linear__list".to_owned(),
             input: serde_json::Value::Null,
@@ -1238,7 +1238,7 @@ mod tests {
         // TUI / Desktop case: option id is `allow-always-mcp` but the renderer
         // does not build the toggle meta. The prompter must default to
         // tool-scope using the access-kind name.
-        let p = prompter(ClientType::GrokTUI);
+        let p = prompter(ClientType::KigiTUI);
         let access = AccessKind::MCPTool {
             name: "notion__fetch".to_owned(),
             input: serde_json::Value::Null,
@@ -1253,7 +1253,7 @@ mod tests {
 
     #[test]
     fn mcp_fallback_client_returns_plain_allow_always() {
-        // non-TUI clients (Generic / GrokWeb / Extension / …) see `fallback_options`. The
+        // non-TUI clients (Generic / KigiWeb / Extension / …) see `fallback_options`. The
         // legacy `"always-allow"` id maps to plain `PromptOutcome::AllowAlways`;
         // the manager arm persists tool-scope from there.
         let p = prompter(ClientType::Generic);
@@ -1303,7 +1303,7 @@ mod tests {
     fn mcp_titleize_segment_handles_snake_camel_kebab() {
         // snake_case → words split + each title-cased
         assert_eq!(mcp_titleize_segment("list_issues"), "List Issues");
-        assert_eq!(mcp_titleize_segment("grok_com_notion"), "Grok Com Notion");
+        assert_eq!(mcp_titleize_segment("kigi_com_notion"), "Kigi Com Notion");
         // single word: just capitalize first letter
         assert_eq!(mcp_titleize_segment("linear"), "Linear");
         // camelCase preserved (no `_` to split on, only first letter touched)
@@ -1330,7 +1330,7 @@ mod tests {
     /// pin position 0 with an exhaustive enumeration.
     #[test]
     fn enable_always_approve_is_first_option_for_pager() {
-        let p = prompter(ClientType::GrokPager);
+        let p = prompter(ClientType::KigiPager);
         let cases: Vec<(&str, AccessKind)> = vec![
             ("edit", AccessKind::Edit("write".to_owned())),
             ("bash", AccessKind::Bash("ls -la".to_owned())),
@@ -1362,13 +1362,13 @@ mod tests {
         }
     }
 
-    /// Same pin as above for `GrokTUI` and `Desktop` — both client types
+    /// Same pin as above for `KigiTUI` and `Desktop` — both client types
     /// route the option id through to the YOLO toggle, so both must
     /// see it. A copy-paste regression that limits the prepend to one
     /// client only would be caught here.
     #[test]
     fn enable_always_approve_is_first_for_tui_and_desktop() {
-        for ct in [ClientType::GrokTUI, ClientType::Desktop] {
+        for ct in [ClientType::KigiTUI, ClientType::Desktop] {
             let p = prompter(ct);
             let opts = p.build_options(&AccessKind::Edit("write".to_owned()));
             assert_eq!(
@@ -1387,7 +1387,7 @@ mod tests {
     fn enable_always_approve_omitted_for_non_tui_clients() {
         for ct in [
             ClientType::Generic,
-            ClientType::GrokWeb,
+            ClientType::KigiWeb,
             ClientType::Nebula,
             ClientType::Extension,
         ] {
@@ -1406,7 +1406,7 @@ mod tests {
     /// state for this id. Pin the override for every access kind.
     #[test]
     fn enable_always_approve_maps_to_allow_once_for_every_access_kind() {
-        let p = prompter(ClientType::GrokPager);
+        let p = prompter(ClientType::KigiPager);
         let cases: Vec<(&str, AccessKind)> = vec![
             ("edit", AccessKind::Edit("write".to_owned())),
             ("bash", AccessKind::Bash("ls".to_owned())),
@@ -1440,7 +1440,7 @@ mod tests {
     /// target kind is in play. Pin the kind regardless.
     #[test]
     fn enable_always_approve_uses_allow_once_kind() {
-        let p = prompter(ClientType::GrokPager);
+        let p = prompter(ClientType::KigiPager);
         let opts = p.build_options(&AccessKind::Edit("write".to_owned()));
         let opt = opts
             .get(&enable_always_approve_id())
@@ -1461,7 +1461,7 @@ mod tests {
     /// allow-once, reject-once, reject-always-command].
     #[test]
     fn bash_option_order_toggle_first_reject_always_last() {
-        let p = prompter(ClientType::GrokPager);
+        let p = prompter(ClientType::KigiPager);
         // "ls" has a parseable primary command, so `allow-always-command`
         // will be inserted into the option list.
         let access = AccessKind::Bash("ls -la".to_owned());

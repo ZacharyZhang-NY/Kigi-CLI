@@ -11,7 +11,7 @@ pub(super) const MAX_FOLLOW_UP_LABEL: usize = 256;
 /// retained `follow_up_seen` ring.
 pub(super) const MAX_RESPONSE_ID_LEN: usize = 128;
 
-/// Deserialize shape of the `x.ai/follow_ups` params emitted by the shell
+/// Deserialize shape of the `kigi/follow_ups` params emitted by the shell
 /// translator: `{ response_id, suggestions: [{ label, .. }] }`. The keys are
 /// prost-derived snake_case — NOT camelCase like most other pager
 /// notification payloads — so this struct must match snake_case verbatim.
@@ -32,13 +32,13 @@ pub(super) struct FollowUpsParams {
     prompt_id: Option<String>,
     /// Reserved replay marker carrier. Absent in v1 (the shell never sets
     /// it); honored from day one so future replay producers need no pager
-    /// change. Parsed loosely as a JSON value to read the `"x.ai/replayed"`
+    /// change. Parsed loosely as a JSON value to read the `"kigi/replayed"`
     /// key (a slash-bearing key prost cannot model as a field).
     #[serde(default, rename = "_meta")]
     meta: Option<serde_json::Value>,
 }
 
-/// A single `x.ai/follow_ups` suggestion. Only the human-facing `label` is
+/// A single `kigi/follow_ups` suggestion. Only the human-facing `label` is
 /// consumed; `properties` / `tool_overrides` (also in the wire shape) are
 /// ignored.
 #[derive(serde::Deserialize)]
@@ -60,11 +60,11 @@ pub(super) fn sanitize_suggestion(label: &str) -> String {
     cleaned.trim().to_owned()
 }
 
-/// Handle `x.ai/follow_ups` — render follow-up suggestion chips for the
+/// Handle `kigi/follow_ups` — render follow-up suggestion chips for the
 /// latest assistant response.
 ///
 /// Newest-response-wins keying lives in [`AgentView::apply_follow_ups`]. The
-/// reserved `_meta["x.ai/replayed"] == true` marker suppresses rendering (it
+/// reserved `_meta["kigi/replayed"] == true` marker suppresses rendering (it
 /// is absent today and treated as optional). The params carry no session id,
 /// so chips target the active agent; a background agent's follow-ups would
 /// mis-route — a forwarding obligation for the shell to add a session id.
@@ -77,7 +77,7 @@ pub(super) fn handle_follow_ups(notif: &acp::ExtNotification, app: &mut AppView)
     if params
         .meta
         .as_ref()
-        .and_then(|m| m.get("x.ai/replayed"))
+        .and_then(|m| m.get("kigi/replayed"))
         .and_then(|v| v.as_bool())
         .unwrap_or(false)
     {

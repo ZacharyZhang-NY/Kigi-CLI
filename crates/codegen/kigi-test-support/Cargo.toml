@@ -3,7 +3,7 @@ license = "Apache-2.0"
 name = "kigi-test-support"
 version.workspace = true
 edition.workspace = true
-description = "Shared test-support for grok-build crates: mock inference server, SSE generators, ACP stdio client, headless runner, env sandbox"
+description = "Shared test-support for kigi crates: mock inference server, SSE generators, ACP stdio client, headless runner, env sandbox"
 publish = false
 
 [dependencies]

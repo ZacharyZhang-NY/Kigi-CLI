@@ -63,7 +63,7 @@ use std::collections::HashMap;
 /// "Apple logo" PUA char) plus a long magic ASCII prefix. The full
 /// sentinel string adds 128 bits of per-call entropy as a hex suffix
 /// followed by another `U+F8FF` char.
-const SENTINEL_PREFIX: &str = "\u{f8ff}__GROK_HOOKS_MASK_";
+const SENTINEL_PREFIX: &str = "\u{f8ff}__KIGI_HOOKS_MASK_";
 const SENTINEL_SUFFIX: &str = "__\u{f8ff}";
 
 /// Build a per-call sentinel string used to hide modifier-form
@@ -704,7 +704,7 @@ mod tests {
     }
 
     /// An earlier sentinel was a fixed string
-    /// `"\u{f8ff}__GROK_HOOKS_MASK__\u{f8ff}"`. A user-supplied
+    /// `"\u{f8ff}__KIGI_HOOKS_MASK__\u{f8ff}"`. A user-supplied
     /// `extra_env` value containing that exact byte sequence would
     /// have been silently rewritten to `${` by the unmask step. The
     /// per-call randomized sentinel removes this hazard. This
@@ -713,7 +713,7 @@ mod tests {
     /// though the input also references that variable through `${VAL}`.
     #[test]
     fn expand_preserves_pre_existing_legacy_fixed_sentinel_in_extra() {
-        let legacy_sentinel = "\u{f8ff}__GROK_HOOKS_MASK__\u{f8ff}";
+        let legacy_sentinel = "\u{f8ff}__KIGI_HOOKS_MASK__\u{f8ff}";
         let mut extra = HashMap::new();
         // Value embeds the legacy sentinel followed by what would
         // have been parsed as an identifier+brace if the unmask

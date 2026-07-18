@@ -37,7 +37,7 @@ pub const MCP_MAX_OUTPUT_BYTES: usize = 20_000;
 /// truncation is byte-oriented (`truncate_str`).
 pub const ENV_MAX_MCP_OUTPUT_BYTES: &str = "MAX_MCP_OUTPUT_BYTES";
 
-/// Grok-native env override for the MCP inline output cap (bytes).
+/// Kigi-native env override for the MCP inline output cap (bytes).
 pub const ENV_KIGI_MAX_MCP_OUTPUT_BYTES: &str = "KIGI_MAX_MCP_OUTPUT_BYTES";
 
 /// Process-wide effective limit. `0` = host has not seeded; fall through to
@@ -62,7 +62,7 @@ fn parse_positive_bytes_env(name: &str) -> Option<usize> {
 
 /// Env tier: `KIGI_MAX_MCP_OUTPUT_BYTES` then `MAX_MCP_OUTPUT_BYTES`.
 ///
-/// Grok-native wins when both are set. Positive integers only. Used by the
+/// Kigi-native wins when both are set. Positive integers only. Used by the
 /// shell resolver and as the standalone fallback when the host has not called
 /// [`set_mcp_max_output_bytes`].
 pub fn mcp_max_output_bytes_from_env() -> Option<usize> {
@@ -298,7 +298,7 @@ mod tests {
             // Clear host seed; with no env, effective limit is the built-in default.
             set_mcp_max_output_bytes(0);
             let prev_max = std::env::var(ENV_MAX_MCP_OUTPUT_BYTES).ok();
-            let prev_grok = std::env::var(ENV_KIGI_MAX_MCP_OUTPUT_BYTES).ok();
+            let prev_kigi = std::env::var(ENV_KIGI_MAX_MCP_OUTPUT_BYTES).ok();
             unsafe {
                 std::env::remove_var(ENV_MAX_MCP_OUTPUT_BYTES);
                 std::env::remove_var(ENV_KIGI_MAX_MCP_OUTPUT_BYTES);
@@ -324,7 +324,7 @@ mod tests {
                     Some(v) => std::env::set_var(ENV_MAX_MCP_OUTPUT_BYTES, v),
                     None => std::env::remove_var(ENV_MAX_MCP_OUTPUT_BYTES),
                 }
-                match prev_grok {
+                match prev_kigi {
                     Some(v) => std::env::set_var(ENV_KIGI_MAX_MCP_OUTPUT_BYTES, v),
                     None => std::env::remove_var(ENV_KIGI_MAX_MCP_OUTPUT_BYTES),
                 }
@@ -337,7 +337,7 @@ mod tests {
     fn env_parser_rejects_zero_and_junk() {
         with_mcp_limit_lock(|| {
             let prev_max = std::env::var(ENV_MAX_MCP_OUTPUT_BYTES).ok();
-            let prev_grok = std::env::var(ENV_KIGI_MAX_MCP_OUTPUT_BYTES).ok();
+            let prev_kigi = std::env::var(ENV_KIGI_MAX_MCP_OUTPUT_BYTES).ok();
             unsafe {
                 std::env::remove_var(ENV_MAX_MCP_OUTPUT_BYTES);
                 std::env::remove_var(ENV_KIGI_MAX_MCP_OUTPUT_BYTES);
@@ -353,7 +353,7 @@ mod tests {
             unsafe { std::env::set_var(ENV_MAX_MCP_OUTPUT_BYTES, "12345") };
             assert_eq!(mcp_max_output_bytes_from_env(), Some(12_345));
 
-            // GROK_* wins over MAX_* when both set.
+            // KIGI_* wins over MAX_* when both set.
             unsafe { std::env::set_var(ENV_KIGI_MAX_MCP_OUTPUT_BYTES, "99999") };
             assert_eq!(mcp_max_output_bytes_from_env(), Some(99_999));
 
@@ -365,7 +365,7 @@ mod tests {
                     Some(v) => std::env::set_var(ENV_MAX_MCP_OUTPUT_BYTES, v),
                     None => std::env::remove_var(ENV_MAX_MCP_OUTPUT_BYTES),
                 }
-                match prev_grok {
+                match prev_kigi {
                     Some(v) => std::env::set_var(ENV_KIGI_MAX_MCP_OUTPUT_BYTES, v),
                     None => std::env::remove_var(ENV_KIGI_MAX_MCP_OUTPUT_BYTES),
                 }

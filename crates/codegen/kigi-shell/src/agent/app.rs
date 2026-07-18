@@ -83,7 +83,7 @@ const MAX_AUTO_UPDATE_BUSY_DEFERRALS: u32 = 24;
 ///
 /// Idle means BOTH `agent_busy` is false (no IPC client request in flight)
 /// AND `activity.is_busy()` is false (no running turn, parked interaction,
-/// or live subagent). The second signal covers relay-driven (grok.com
+/// or live subagent). The second signal covers relay-driven (kimi.com
 /// WebSocket) leaders, whose traffic bypasses the IPC server and never sets
 /// `agent_busy`.
 ///
@@ -217,10 +217,10 @@ fn spawn_agent_local(
 }
 
 /// Build a newline-terminated JSON-RPC request line for an internal
-/// `x.ai/...` extension method, for injection into the agent's inbound ACP
+/// `kigi/...` extension method, for injection into the agent's inbound ACP
 /// stream by the leader's own watcher tasks (config hot-reload, skills).
 ///
-/// The wire method is written **`_`-prefixed** (`_x.ai/internal/...`):
+/// The wire method is written **`_`-prefixed** (`_kigi/internal/...`):
 /// `agent-client-protocol`'s inbound decoder routes a non-built-in method to
 /// `ext_method` only when it carries the `_` extension prefix and rejects
 /// bare custom methods with `-32601 method_not_found`. These injections were
@@ -239,7 +239,7 @@ fn internal_reload_request_line(id: &str, method: &str, params: serde_json::Valu
     format!("{}\n", msg)
 }
 
-/// Start a skills file watcher and wire it to inject `x.ai/internal/reload_skills`
+/// Start a skills file watcher and wire it to inject `kigi/internal/reload_skills`
 /// messages into the shared ACP incoming stream when SKILL.md files change on disk.
 ///
 /// Returns the watcher guard (must be kept alive for the lifetime of the session)
@@ -264,7 +264,7 @@ where
             info!("Skill directory changed on disk, reloading skills for all sessions");
             let line = internal_reload_request_line(
                 "skills-reload",
-                "x.ai/internal/reload_skills",
+                "kigi/internal/reload_skills",
                 serde_json::json!({}),
             );
             let mut tx = skills_tx.lock().await;
@@ -297,7 +297,7 @@ pub async fn run_stdio_agent(
     // are identifiable by version in diagnostic logs.
     kigi_log::unified_log::set_version(kigi_version::VERSION);
 
-    // Log the client that launched us (set by grok-desktop when spawning `grok agent stdio`).
+    // Log the client that launched us (set by kigi-desktop when spawning `kigi agent stdio`).
     // This appears early in unified.jsonl and is extremely useful for auth diagnostics.
     if let Ok(version) = std::env::var("KIGI_CLIENT_VERSION") {
         crate::unified_log::info(
@@ -369,8 +369,8 @@ pub async fn run_stdio_agent(
             auth_manager.start_proactive_refresh(tokio_util::sync::CancellationToken::new());
             // Pause refreshes across system sleep so an OIDC refresh can't straddle a
             // suspend (which can revoke the refresh token and force re-login).
-            // `grok agent stdio` is a local/interactive entrypoint (spawned by
-            // grok-desktop), so it needs the gate like the leader and pager paths;
+            // `kigi agent stdio` is a local/interactive entrypoint (spawned by
+            // kigi-desktop), so it needs the gate like the leader and pager paths;
             // no-op where the OS listener is unavailable.
             auth_manager.start_system_power_listener();
 
@@ -907,7 +907,7 @@ pub async fn run_leader(
                             models_manager_for_config.on_auth_changed().await;
                             let line = internal_reload_request_line(
                                 "config-auth-reloaded",
-                                "x.ai/internal/reload_all_mcp_servers",
+                                "kigi/internal/reload_all_mcp_servers",
                                 serde_json::json!({}),
                             );
                             let mut tx = acp_tx_for_config.lock().await;
@@ -929,7 +929,7 @@ pub async fn run_leader(
                             info!("MCP server config change detected — reloading active sessions");
                             let line = internal_reload_request_line(
                                 "config-reload-mcp",
-                                "x.ai/internal/reload_all_mcp_servers",
+                                "kigi/internal/reload_all_mcp_servers",
                                 serde_json::json!({}),
                             );
                             let mut tx = acp_tx_for_config.lock().await;
@@ -952,7 +952,7 @@ pub async fn run_leader(
                             );
                             let line = internal_reload_request_line(
                                 "config-reload-project-mcp",
-                                "x.ai/internal/reload_project_mcp_servers",
+                                "kigi/internal/reload_project_mcp_servers",
                                 serde_json::json!({ "cwd": cwd.to_string_lossy() }),
                             );
                             let mut tx = acp_tx_for_config.lock().await;
@@ -967,7 +967,7 @@ pub async fn run_leader(
                             info!("Model config change detected — reloading agent model list");
                             let line = internal_reload_request_line(
                                 "config-reload-models",
-                                "x.ai/internal/reload_models",
+                                "kigi/internal/reload_models",
                                 serde_json::json!({}),
                             );
                             let mut tx = acp_tx_for_config.lock().await;
@@ -977,7 +977,7 @@ pub async fn run_leader(
                         }
                         ConfigUpdate::ModelsCacheChanged => {
                             // External write to ~/.kigi/models_cache.json
-                            // (another grok process fetched a fresher /v1/models
+                            // (another kigi process fetched a fresher /v1/models
                             // catalog). Injected into the agent's ACP stream —
                             // NOT applied directly on the manager — so it is
                             // serialized behind any `reload_models` from the
@@ -993,7 +993,7 @@ pub async fn run_leader(
                             info!("Models cache change detected — reloading agent model catalog");
                             let line = internal_reload_request_line(
                                 "config-reload-models-cache",
-                                "x.ai/internal/reload_models_cache",
+                                "kigi/internal/reload_models_cache",
                                 serde_json::json!({}),
                             );
                             let mut tx = acp_tx_for_config.lock().await;
@@ -1030,7 +1030,7 @@ pub async fn run_leader(
                             info!("UI config change detected by watcher");
                             let notification = serde_json::json!({
                                 "jsonrpc": "2.0",
-                                "method": "x.ai/config_changed",
+                                "method": "kigi/config_changed",
                                 "params": {
                                     "section": "ui",
                                     "changes": {
@@ -1114,13 +1114,13 @@ mod tests {
     fn internal_reload_request_line_uses_wire_ext_prefix() {
         let line = internal_reload_request_line(
             "config-reload-models",
-            "x.ai/internal/reload_models",
+            "kigi/internal/reload_models",
             serde_json::json!({}),
         );
         assert!(line.ends_with('\n'), "must be a newline-terminated line");
         let msg: serde_json::Value = serde_json::from_str(line.trim_end()).unwrap();
         assert_eq!(
-            msg["method"], "_x.ai/internal/reload_models",
+            msg["method"], "_kigi/internal/reload_models",
             "wire method must carry the `_` ext prefix or the ACP decoder \
              rejects it with method_not_found"
         );
@@ -1130,7 +1130,7 @@ mod tests {
         // Params must pass through verbatim (project-MCP reload carries cwd).
         let line = internal_reload_request_line(
             "config-reload-project-mcp",
-            "x.ai/internal/reload_project_mcp_servers",
+            "kigi/internal/reload_project_mcp_servers",
             serde_json::json!({ "cwd": "/repo/x" }),
         );
         let msg: serde_json::Value = serde_json::from_str(line.trim_end()).unwrap();

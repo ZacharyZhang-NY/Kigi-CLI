@@ -2,7 +2,7 @@
     use super::*;
 
     /// Regression: a shared-queue interjection renders only via the broadcast,
-    /// and the shell emits the queue-emptying `x.ai/queue/changed` right after
+    /// and the shell emits the queue-emptying `kigi/queue/changed` right after
     /// it — which used to fire the withheld parked marker BELOW the just-
     /// rendered user message ("Worked for …" under the follow-up, flipped
     /// transcript order). The broadcast must consume the marker slot instead.
@@ -680,7 +680,7 @@
         );
     }
 
-    /// `x.ai/task_backgrounded` arriving after the skipped zero-work wait
+    /// `kigi/task_backgrounded` arriving after the skipped zero-work wait
     /// re-evaluates and restores the park.
     #[test]
     fn task_backgrounded_after_zero_work_wait_all_restores_park() {
@@ -716,7 +716,7 @@
     #[test]
     fn interjection_notification_pushes_block_to_matching_session() {
         // Multi-client fix: an interjection typed in one pane is broadcast by
-        // the shell as x.ai/session/interjection; EVERY attached pane (incl.
+        // the shell as kigi/session/interjection; EVERY attached pane (incl.
         // the originator, which no longer pushes a local block) renders it.
         let mut app = make_app_with_agent("sess-view");
         let affected =

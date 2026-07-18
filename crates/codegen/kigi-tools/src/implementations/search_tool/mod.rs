@@ -213,7 +213,7 @@ impl crate::types::tool_metadata::ToolMetadata for SearchTool {
     }
 
     fn tool_namespace(&self) -> ToolNamespace {
-        ToolNamespace::GrokBuild
+        ToolNamespace::Kigi
     }
 
     fn description_template(&self) -> &str {
@@ -697,8 +697,8 @@ mod tests {
     #[test]
     fn hash_value_pinned_output() {
         // Pin a known input/output pair so accidental hasher changes are caught.
-        let h = hash_value(&"grok-mcp-fingerprint-stability-test");
-        assert_eq!(h, hash_value(&"grok-mcp-fingerprint-stability-test"));
+        let h = hash_value(&"kigi-mcp-fingerprint-stability-test");
+        assert_eq!(h, hash_value(&"kigi-mcp-fingerprint-stability-test"));
         // The value must not change across runs (FNV-1a is deterministic).
         // If this assertion fails, the hasher implementation was modified.
         assert_ne!(h, 0, "hash should be non-zero for non-empty input");

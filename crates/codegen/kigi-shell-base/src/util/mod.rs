@@ -166,14 +166,14 @@ pub fn kill_process_by_pid(pid: u32) -> std::io::Result<()> {
         terminate.map_err(|e| std::io::Error::other(format!("TerminateProcess({pid}): {e}")))
     }
 }
-/// True if `pid` is a grok process; pairs with [`kill_process_by_pid`] to avoid killing a recycled PID.
+/// True if `pid` is a kigi process; pairs with [`kill_process_by_pid`] to avoid killing a recycled PID.
 /// Best-effort on macOS/BSD (liveness-only via `kill -0`), exact on Linux (/proc cmdline) and Windows (image path).
-pub fn is_grok_process(pid: u32) -> bool {
+pub fn is_kigi_process(pid: u32) -> bool {
     #[cfg(target_os = "linux")]
     {
         let cmdline_path = format!("/proc/{pid}/cmdline");
         match std::fs::read(&cmdline_path) {
-            Ok(data) => String::from_utf8_lossy(&data).contains("grok"),
+            Ok(data) => String::from_utf8_lossy(&data).contains("kigi"),
             Err(_) => false,
         }
     }
@@ -205,7 +205,7 @@ pub fn is_grok_process(pid: u32) -> bool {
         }
         String::from_utf16_lossy(&buf[..size as usize])
             .to_ascii_lowercase()
-            .contains("grok")
+            .contains("kigi")
     }
     #[cfg(all(not(target_os = "linux"), not(windows)))]
     {
@@ -229,7 +229,7 @@ mod tests {
     }
     #[test]
     fn test_is_production_coding_api_url_rejects_public_api() {
-        assert!(!is_production_coding_api_url("https://api.x.ai/v1"));
+        assert!(!is_production_coding_api_url("https://byok.example/v1"));
     }
     #[test]
     fn test_is_production_coding_api_url_rejects_spoofed_hostname() {
@@ -248,7 +248,7 @@ mod tests {
     }
     #[test]
     fn test_is_effective_coding_endpoint_url_rejects_remote_third_party() {
-        assert!(!is_effective_coding_endpoint_url("https://api.x.ai/v1"));
+        assert!(!is_effective_coding_endpoint_url("https://byok.example/v1"));
         assert!(!is_effective_coding_endpoint_url(
             "https://localhost.evil.example/v1"
         ));
@@ -264,7 +264,7 @@ mod tests {
         assert!(is_first_party_url(
             "https://api.kimi.com/coding/v1/chat/completions"
         ));
-        assert!(!is_first_party_url("https://api.x.ai/v1"));
+        assert!(!is_first_party_url("https://byok.example/v1"));
         assert!(!is_first_party_url("https://api.openai.com/v1"));
         assert!(!is_first_party_url("https://api.anthropic.com/v1"));
         assert!(!is_first_party_url("https://api.kimi.com.evil.example/v1"));
@@ -310,8 +310,8 @@ mod tests {
         );
     }
     #[test]
-    fn is_grok_process_self_true_impossible_pid_false() {
-        assert!(is_grok_process(std::process::id()));
-        assert!(!is_grok_process(u32::MAX));
+    fn is_kigi_process_self_true_impossible_pid_false() {
+        assert!(is_kigi_process(std::process::id()));
+        assert!(!is_kigi_process(u32::MAX));
     }
 }

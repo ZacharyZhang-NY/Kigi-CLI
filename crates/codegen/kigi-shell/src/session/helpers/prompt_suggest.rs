@@ -328,7 +328,7 @@ mod tests {
                 .as_deref(),
             Some(default_suggest_model())
         );
-        // OAuth catalogs exclude grok-build-0.1 → skip the request entirely,
+        // OAuth catalogs exclude kigi-0.1 → skip the request entirely,
         // never a doomed call (and never the session model).
         assert_eq!(
             effective_suggest_model(&Pin::Unpinned, None, |_| false),

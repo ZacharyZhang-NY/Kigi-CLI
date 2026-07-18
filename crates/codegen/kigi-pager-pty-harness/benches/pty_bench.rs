@@ -21,7 +21,7 @@
 //!
 //! Run every scenario in CI and fail on >15% p99 regression:
 //! ```bash
-//! PAGER_BINARY=./artifacts/grok-${VERSION}-linux-x86_64 \
+//! PAGER_BINARY=./artifacts/kigi-${VERSION}-linux-x86_64 \
 //!   cargo bench -p kigi-pager-pty-harness \
 //!   --bench pty_bench -- --all \
 //!   --baseline benches/pty_baselines/linux-x86_64.json

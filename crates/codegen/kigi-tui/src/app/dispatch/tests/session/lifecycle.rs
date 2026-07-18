@@ -172,7 +172,7 @@ fn worktree_session_created_sets_session_and_cwd() {
         &mut app,
     );
     let id = AgentId(0);
-    let worktree_path = PathBuf::from("/tmp/grok-worktrees/pager-123");
+    let worktree_path = PathBuf::from("/tmp/kigi-worktrees/pager-123");
     let session_cwd = worktree_path.clone();
     let effects = dispatch(
         Action::TaskComplete(TaskResult::WorktreeSessionCreated {
@@ -353,13 +353,13 @@ fn worktree_session_created_drains_queued_prompts() {
     let effects = dispatch(Action::SendPrompt("hello".into()), &mut app);
     assert!(effects.is_empty(), "no session_id yet, can't drain");
     assert_eq!(app.agents[&id].session.queue_len(), 1);
-    let worktree_path = PathBuf::from("/tmp/grok-worktrees/pager-abc");
+    let worktree_path = PathBuf::from("/tmp/kigi-worktrees/pager-abc");
     let effects = dispatch(
         Action::TaskComplete(TaskResult::WorktreeSessionCreated {
             agent_id: id,
             session_id: acp::SessionId::new("wt-drain-1"),
             worktree_path,
-            session_cwd: PathBuf::from("/tmp/grok-worktrees/pager-abc"),
+            session_cwd: PathBuf::from("/tmp/kigi-worktrees/pager-abc"),
             models: None,
         }),
         &mut app,
@@ -485,7 +485,7 @@ fn switch_model_without_session_does_nothing() {
     let mut app = test_app_with_agent();
     let id = AgentId(0);
     app.agents.get_mut(&id).unwrap().session.session_id = None;
-    let model_id = acp::ModelId::new(std::sync::Arc::from("grok-4.5"));
+    let model_id = acp::ModelId::new(std::sync::Arc::from("kigi-4.5"));
     let effects = dispatch(
         Action::SwitchModel {
             model_id,
@@ -659,7 +659,7 @@ fn new_session_starts_with_prompt_focused() {
 fn switch_model_deferred_when_no_session_id() {
     let mut app = test_app_with_agent();
     let id = AgentId(0);
-    let model_id = acp::ModelId::new(std::sync::Arc::from("grok-4.5"));
+    let model_id = acp::ModelId::new(std::sync::Arc::from("kigi-4.5"));
     app.agents.get_mut(&id).unwrap().session.session_id = None;
     let effects = dispatch(
         Action::SwitchModel {
@@ -679,7 +679,7 @@ fn switch_model_deferred_when_no_session_id() {
 fn deferred_model_switch_applied_on_session_created() {
     let mut app = test_app_with_agent();
     let id = AgentId(0);
-    let model_id = acp::ModelId::new(std::sync::Arc::from("grok-4.5"));
+    let model_id = acp::ModelId::new(std::sync::Arc::from("kigi-4.5"));
     let session_id: acp::SessionId = "new-session".into();
     app.agents.get_mut(&id).unwrap().session.session_id = None;
     app.agents
@@ -708,7 +708,7 @@ fn deferred_model_switch_applied_on_session_created() {
 #[test]
 fn deferred_model_switch_applied_on_worktree_session_created() {
     let mut app = test_app_git();
-    let model_id = acp::ModelId::new(std::sync::Arc::from("grok-4.5"));
+    let model_id = acp::ModelId::new(std::sync::Arc::from("kigi-4.5"));
     dispatch(
         Action::NewWorktreeSession {
             load_session_id: None,
@@ -1314,7 +1314,7 @@ fn dispatch_new_session_has_empty_scrollback() {
 #[test]
 fn translate_local_submit_always_returns_persist_always_for_new_session() {
     use crate::views::question_view::{LocalQuestionKind, QuestionViewState};
-    use kigi_tools::implementations::grok_build::ask_user_question::{Question, QuestionOption};
+    use kigi_tools::implementations::kigi::ask_user_question::{Question, QuestionOption};
     let q = Question {
         question: "?".into(),
         options: (0..4)
@@ -1354,7 +1354,7 @@ fn translate_local_submit_always_returns_persist_always_for_new_session() {
 #[test]
 fn translate_local_submit_never_returns_persist_never_for_new_session() {
     use crate::views::question_view::{LocalQuestionKind, QuestionViewState};
-    use kigi_tools::implementations::grok_build::ask_user_question::{Question, QuestionOption};
+    use kigi_tools::implementations::kigi::ask_user_question::{Question, QuestionOption};
     let q = Question {
         question: "?".into(),
         options: (0..4)

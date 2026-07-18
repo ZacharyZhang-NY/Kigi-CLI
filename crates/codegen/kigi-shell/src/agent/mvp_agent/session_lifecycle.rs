@@ -12,7 +12,7 @@ impl MvpAgent {
     /// Finalize the cloud session replica (fire-and-forget, "Hook 4").
     ///
     /// Marks the session **done** upstream, so this MUST only run on a genuine
-    /// session end — a terminal/explicit close (`x.ai/session/close`). It must
+    /// session end — a terminal/explicit close (`kigi/session/close`). It must
     /// NOT run on a mere client disconnect or a dead-actor reap: those leave the
     /// conversation resumable on disk, and finalizing would wrongly mark a still
     /// running/resumable session "done".
@@ -58,7 +58,7 @@ impl MvpAgent {
             .clone()
     }
     /// Close a session in response to an **explicit** terminal close
-    /// (`x.ai/session/close`). Finalizes the cloud replica (genuine session
+    /// (`kigi/session/close`). Finalizes the cloud replica (genuine session
     /// end), then removes the session terminally as `Completed`.
     pub(crate) fn close_session_explicit(&self, id: &acp::SessionId) {
         self.finalize_session_replica(id);
@@ -76,7 +76,7 @@ impl MvpAgent {
         self.session_live_state.borrow().get(id).copied()
     }
     /// Roster-delta hook for a terminally removed session. Broadcasts an
-    /// `x.ai/sessions/changed` notification with the session in `removed` so
+    /// `kigi/sessions/changed` notification with the session in `removed` so
     /// every attached dashboard drops the row promptly. Also
     /// records the call site (and the terminal state) for test observability,
     /// since the `session_live_state` entry is dropped on removal.
@@ -91,14 +91,14 @@ impl MvpAgent {
         self.emit_roster_changed(Vec::new(), vec![id.0.to_string()]);
     }
     /// Roster-delta hook for a newly-resident / changed session. Broadcasts an
-    /// `x.ai/sessions/changed` notification with the current entry in
+    /// `kigi/sessions/changed` notification with the current entry in
     /// `upserted` so dashboards add/refresh the row.
     pub(crate) fn push_roster_delta_upserted(&self, id: &acp::SessionId) {
         if let Some(entry) = self.resident_roster_entry(id) {
             self.emit_roster_changed(vec![entry], Vec::new());
         }
     }
-    /// Emit an `x.ai/sessions/changed` upsert for a resident session with an
+    /// Emit an `kigi/sessions/changed` upsert for a resident session with an
     /// explicit `activity`, so every attached dashboard reflects a
     /// turn-boundary transition (Working / Idle / NeedsInput) *immediately*
     /// rather than waiting for the ≤1s roster poll (deltas are emitted
@@ -124,11 +124,11 @@ impl MvpAgent {
             self.emit_roster_changed(vec![entry], Vec::new());
         }
     }
-    /// Fan an `x.ai/sessions/changed` delta out to every attached client.
+    /// Fan an `kigi/sessions/changed` delta out to every attached client.
     ///
     /// This is a roster-wide notification (no `sessionId`), so the leader IPC
     /// server broadcasts it to all clients rather than routing by session (see
-    /// the `x.ai/sessions/changed` special-case in `leader/server.rs`).
+    /// the `kigi/sessions/changed` special-case in `leader/server.rs`).
     pub(super) fn emit_roster_changed(
         &self,
         upserted: Vec<crate::agent::roster::RosterEntry>,

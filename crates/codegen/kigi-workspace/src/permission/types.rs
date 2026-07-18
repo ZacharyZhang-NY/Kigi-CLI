@@ -78,36 +78,36 @@ pub enum ClientType {
     #[default]
     #[serde(
         rename = "generic",
-        alias = "grok-shell",
-        alias = "grok_shell",
+        alias = "kigi-shell",
+        alias = "kigi_shell",
         alias = "kigi"
     )]
     Generic,
-    /// Grok TUI client - show fancy options with interactive bash term selection
-    #[serde(rename = "grok-tui", alias = "grok_tui")]
-    GrokTUI,
-    /// Grok Web client - identified by clientIdentifier "grok-web"
-    #[serde(rename = "grok_web")]
-    GrokWeb,
+    /// Kigi TUI client - show fancy options with interactive bash term selection
+    #[serde(rename = "kigi-tui", alias = "kigi_tui")]
+    KigiTUI,
+    /// Kigi Web client - identified by clientIdentifier "kigi-web"
+    #[serde(rename = "kigi_web")]
+    KigiWeb,
     /// Named client (`"nebula"`) — uses the generic permission UI
     #[serde(rename = "nebula")]
     Nebula,
-    /// IDE extension client (VS Code and similar) - identified by clientIdentifier "grok-code-extension"
+    /// IDE extension client (VS Code and similar) - identified by clientIdentifier "kigi-code-extension"
     #[serde(rename = "extension")]
     Extension,
-    /// Grok Pager client - TUI-like terminal pager with interactive permission UI.
-    /// Treated identically to GrokTUI for permission options (gets bash highlights +
+    /// Kigi Pager client - TUI-like terminal pager with interactive permission UI.
+    /// Treated identically to KigiTUI for permission options (gets bash highlights +
     /// interactive selection). Reports as "pager" for telemetry attribution.
     ///
-    /// Accepts both the hyphenated `"grok-pager"` (what the pager actually
+    /// Accepts both the hyphenated `"kigi-pager"` (what the pager actually
     /// sends over the wire, matching `PAGER_CLIENT_TYPE`) and the underscored
-    /// `"grok_pager"` form for symmetry with the rest of this enum.
-    #[serde(rename = "grok-pager", alias = "grok_pager")]
-    GrokPager,
-    /// Grok Desktop (Electron) client - identified by clientIdentifier "grok-desktop".
+    /// `"kigi_pager"` form for symmetry with the rest of this enum.
+    #[serde(rename = "kigi-pager", alias = "kigi_pager")]
+    KigiPager,
+    /// Kigi Desktop (Electron) client - identified by clientIdentifier "kigi-desktop".
     /// Uses TUI-style bash permission options (primary command extraction + prefix matching)
     /// but without interactive `<`/`>` word selection.
-    #[serde(rename = "grok_desktop")]
+    #[serde(rename = "kigi_desktop")]
     Desktop,
 }
 impl ClientType {
@@ -118,30 +118,30 @@ impl ClientType {
     pub fn user_agent_label(&self) -> &'static str {
         match self {
             Self::Generic => "kigi",
-            Self::GrokTUI => "grok-tui",
-            Self::GrokWeb => "grok-web",
+            Self::KigiTUI => "kigi-tui",
+            Self::KigiWeb => "kigi-web",
             Self::Nebula => "nebula",
-            Self::Extension => "grok-code-extension",
-            Self::GrokPager => "kigi",
-            Self::Desktop => "grok-desktop",
+            Self::Extension => "kigi-code-extension",
+            Self::KigiPager => "kigi",
+            Self::Desktop => "kigi-desktop",
         }
     }
-    /// Resolve from ACP `clientIdentifier` string (e.g. `"grok-web"`, `"grok-desktop"`).
+    /// Resolve from ACP `clientIdentifier` string (e.g. `"kigi-web"`, `"kigi-desktop"`).
     pub fn from_client_identifier(id: Option<&str>) -> Self {
         match id {
-            Some("grok-web") => Self::GrokWeb,
+            Some("kigi-web") => Self::KigiWeb,
             Some("nebula") => Self::Nebula,
-            Some("grok-code-extension") => Self::Extension,
-            Some("grok-desktop") => Self::Desktop,
-            Some("grok-pager") => Self::GrokPager,
+            Some("kigi-code-extension") => Self::Extension,
+            Some("kigi-desktop") => Self::Desktop,
+            Some("kigi-pager") => Self::KigiPager,
             _ => Self::Generic,
         }
     }
     /// Label for feedback reporting and experiment filtering.
     pub fn feedback_label(&self) -> &'static str {
         match self {
-            Self::GrokTUI | Self::GrokPager => "tui",
-            Self::GrokWeb => "web",
+            Self::KigiTUI | Self::KigiPager => "tui",
+            Self::KigiWeb => "web",
             Self::Nebula => "nebula",
             Self::Extension => "extension",
             Self::Generic => "agent",
@@ -498,7 +498,7 @@ mod tests {
     }
     #[test]
     fn hashline_edit_maps_to_edit_access() {
-        use kigi_tools::implementations::grok_build_hashline::edit::types::HashlineEditInput;
+        use kigi_tools::implementations::kigi_hashline::edit::types::HashlineEditInput;
         use kigi_tools::types::ToolInput;
         let input = ToolInput::HashlineEdit(HashlineEditInput {
             file_path: "src/main.rs".into(),
@@ -512,7 +512,7 @@ mod tests {
     }
     #[test]
     fn bash_maps_to_bash_access() {
-        use kigi_tools::implementations::grok_build::bash::BashToolInput;
+        use kigi_tools::implementations::kigi::bash::BashToolInput;
         use kigi_tools::types::ToolInput;
         let input = ToolInput::Bash(BashToolInput {
             command: "cargo test".into(),
@@ -543,7 +543,7 @@ mod tests {
     }
     #[test]
     fn monitor_maps_to_bash_access() {
-        use kigi_tools::implementations::grok_build::monitor::types::MonitorInput;
+        use kigi_tools::implementations::kigi::monitor::types::MonitorInput;
         use kigi_tools::types::ToolInput;
         let input = ToolInput::Monitor(MonitorInput {
             command: "tail -f /var/log/syslog".into(),
@@ -560,7 +560,7 @@ mod tests {
     }
     #[test]
     fn search_replace_maps_to_edit_access() {
-        use kigi_tools::implementations::grok_build::search_replace::SearchReplaceInput;
+        use kigi_tools::implementations::kigi::search_replace::SearchReplaceInput;
         use kigi_tools::types::ToolInput;
         let input = ToolInput::SearchReplace(SearchReplaceInput {
             file_path: "lib.rs".into(),
@@ -576,7 +576,7 @@ mod tests {
     }
     #[test]
     fn web_fetch_maps_to_web_fetch_access() {
-        use kigi_tools::implementations::grok_build::web_fetch::WebFetchInput;
+        use kigi_tools::implementations::kigi::web_fetch::WebFetchInput;
         use kigi_tools::types::ToolInput;
         let input = ToolInput::WebFetch(WebFetchInput {
             url: "https://custom.example.com/api".into(),
@@ -590,7 +590,7 @@ mod tests {
     }
     #[test]
     fn web_search_maps_to_web_search_access() {
-        use kigi_tools::implementations::grok_build::web_search::WebSearchInput;
+        use kigi_tools::implementations::kigi::web_search::WebSearchInput;
         use kigi_tools::types::ToolInput;
         let input = ToolInput::WebSearch(WebSearchInput {
             query: "rust lang".into(),
@@ -631,13 +631,13 @@ mod tests {
         );
     }
     #[test]
-    fn client_type_deserializes_grok_shell_as_generic() {
+    fn client_type_deserializes_kigi_shell_as_generic() {
         assert_eq!(
-            serde_json::from_value::<ClientType>("grok-shell".into()).unwrap(),
+            serde_json::from_value::<ClientType>("kigi-shell".into()).unwrap(),
             ClientType::Generic,
         );
         assert_eq!(
-            serde_json::from_value::<ClientType>("grok_shell".into()).unwrap(),
+            serde_json::from_value::<ClientType>("kigi_shell".into()).unwrap(),
             ClientType::Generic,
         );
         assert_eq!(

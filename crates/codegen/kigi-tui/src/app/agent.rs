@@ -133,7 +133,7 @@ pub enum AgentCommand {
     RestoreCode,
     /// Forking the current session into a peer (no-worktree path).
     /// Drives the spinner shown on the placeholder agent while the
-    /// `x.ai/session/fork` request is in flight.
+    /// `kigi/session/fork` request is in flight.
     ForkSession,
 }
 impl AgentCommand {
@@ -627,11 +627,11 @@ pub struct AgentSession {
     /// `yolo_mode` (yolo wins).
     pub(crate) auto_mode: bool,
     /// Prompt history for the current session, fetched from ACP
-    /// (`x.ai/prompt_history` scoped via `filter_session_id`). Most-recent-first.
+    /// (`kigi/prompt_history` scoped via `filter_session_id`). Most-recent-first.
     /// Fetched on session create/load; prompts sent in this session are
     /// additionally front-inserted locally on send.
     pub prompt_history: Vec<String>,
-    /// True until the session's startup/load `x.ai/prompt_history` fetch completes.
+    /// True until the session's startup/load `kigi/prompt_history` fetch completes.
     pub prompt_history_loading: bool,
     /// Session is currently replaying historical updates from `session/load`.
     /// Used to suppress live-style redraw/render work until the load completes.

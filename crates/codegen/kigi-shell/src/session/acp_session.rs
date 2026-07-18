@@ -61,7 +61,7 @@ use kigi_sampler::SamplerConfig as SamplingConfig;
 use kigi_sampling_types::truncate_bytes;
 use kigi_tools::computer::local::LocalTerminalBackend;
 use kigi_tools::implementations::BashToolInput;
-use kigi_tools::implementations::grok_build::web_fetch::WebFetchConfig;
+use kigi_tools::implementations::kigi::web_fetch::WebFetchConfig;
 use kigi_tools::types::ToolInput;
 use kigi_tools::types::compat::CompatConfig;
 use kigi_tools::types::output::{
@@ -178,7 +178,7 @@ mod spawn;
 use super::acp_types::*;
 pub use spawn::SessionThread;
 pub(crate) use spawn::*;
-/// Client-registered hook gates (the `x.ai/hooks/run` reverse request).
+/// Client-registered hook gates (the `kigi/hooks/run` reverse request).
 mod hooks;
 pub(crate) struct InputItem {
     pub(crate) prompt_id: String,
@@ -461,7 +461,7 @@ pub(crate) struct SessionActor {
     /// Server-side doom-loop check policy, resolved once at spawn by
     /// `Config::resolve_doom_loop_recovery`; `None` = disabled.
     /// `reconstruct_full_config` threads it into the sampler config, and the
-    /// sampler itself sends the matching `x-grok-doom-loop-check` header.
+    /// sampler itself sends the matching `x-kigi-doom-loop-check` header.
     pub(crate) doom_loop_recovery: Option<kigi_sampling_types::DoomLoopRecoveryPolicy>,
     /// Telemetry-only per-turn doom-loop recovery tally (attempts, whether a
     /// budget-spent accept happened, tightest trigger label). Accumulated by
@@ -524,10 +524,10 @@ pub(crate) struct SessionActor {
     /// Wrapped in `RefCell` for mid-session mutation (skill refresh, prompt regen).
     /// Safe: session actor is single-threaded (LocalSet), no concurrent access.
     pub(crate) agent: std::cell::RefCell<kigi_agent::Agent>,
-    /// Dedup slot for `x.ai/git_head_changed`, shared with the fs-watch
+    /// Dedup slot for `kigi/git_head_changed`, shared with the fs-watch
     /// `GitHead` consumer (see `git_head_dedup_key`).
     pub(crate) last_reported_branch: Arc<parking_lot::Mutex<Option<String>>>,
-    /// Client opted into `x.ai/gitHeadChanged`. When false (headless/SDK),
+    /// Client opted into `kigi/gitHeadChanged`. When false (headless/SDK),
     /// `maybe_notify_git_branch` no-ops — no git subprocess.
     git_head_enabled: bool,
     /// Shared models manager for etag-triggered refresh from response headers.
@@ -615,7 +615,7 @@ pub(crate) struct SessionActor {
     pub(crate) goal_update_rx: std::cell::RefCell<
         Option<
             tokio::sync::mpsc::UnboundedReceiver<
-                kigi_tools::implementations::grok_build::update_goal::UpdateGoalEnvelope,
+                kigi_tools::implementations::kigi::update_goal::UpdateGoalEnvelope,
             >,
         >,
     >,
@@ -624,7 +624,7 @@ pub(crate) struct SessionActor {
     /// empty ToolBridge. The `rx` half is owned by the drainer task (see
     /// `goal_update_rx`).
     pub(crate) goal_update_tx: tokio::sync::mpsc::UnboundedSender<
-        kigi_tools::implementations::grok_build::update_goal::UpdateGoalEnvelope,
+        kigi_tools::implementations::kigi::update_goal::UpdateGoalEnvelope,
     >,
     /// Resolved master kill-switch for the verification stage (the
     /// adversarial skeptic panel). `false` short-circuits
@@ -690,7 +690,7 @@ pub(crate) struct SessionActor {
     /// time; only the input is parked here for the TurnEnd drain to
     /// run through the verification stage.
     pub(crate) pending_classifier_completions: parking_lot::Mutex<
-        VecDeque<kigi_tools::implementations::grok_build::update_goal::UpdateGoalInput>,
+        VecDeque<kigi_tools::implementations::kigi::update_goal::UpdateGoalInput>,
     >,
     /// Per-session re-entry guard for the verification stage. Set with
     /// `compare_exchange(false, true)` at fire-entry and cleared on
@@ -742,7 +742,7 @@ pub(crate) struct SessionActor {
     /// Wrapped in `RefCell` for mid-session reload from `&self` methods.
     /// Safe: session actor is single-threaded (LocalSet), no concurrent access.
     pub(crate) hook_registry: std::cell::RefCell<Option<Arc<kigi_hooks::discovery::HookRegistry>>>,
-    /// Client hooks from `session/new` `_meta["x.ai/hooks"]`; gated in
+    /// Client hooks from `session/new` `_meta["kigi/hooks"]`; gated in
     /// [`crate::session::acp_session::hooks`]. `RefCell` so `load_session` reconnect can
     /// replace the set on the live actor (see `SessionCommand::SetClientHooks`).
     pub(crate) client_hooks: std::cell::RefCell<crate::extensions::hooks::ClientHooks>,
@@ -981,7 +981,7 @@ impl SessionActor {
             memory_configured: self.memory.backend_params.is_some(),
             scheduler: tool_names
                 .iter()
-                .any(|n| n == kigi_tools::implementations::grok_build::SCHEDULER_CREATE_TOOL_NAME),
+                .any(|n| n == kigi_tools::implementations::kigi::SCHEDULER_CREATE_TOOL_NAME),
             hooks: self.hook_registry.borrow().is_some(),
             plugins: self.plugin_registry.borrow().is_some(),
             goal,
@@ -1039,7 +1039,7 @@ const PROMPT_CONTEXT_FILENAME: &str = "prompt_context.json";
 /// Persist the structured prompt context to `{session_dir}/prompt_context.json`.
 ///
 /// This is best-effort: failures are logged but do not block session creation.
-/// The saved JSON enables deterministic re-rendering, `grok prompt --json`
+/// The saved JSON enables deterministic re-rendering, `kigi prompt --json`
 /// inspection, and post-hoc debugging of what went into a session's system prompt.
 fn save_prompt_context(session_info: &SessionInfo, prompt_context: &kigi_agent::PromptContext) {
     let dir = crate::session::persistence::session_dir(session_info);
@@ -1232,7 +1232,7 @@ mod turn_completion_emit_tests;
 mod usage_categories_tests;
 #[cfg(test)]
 mod tool_meta_stamp_tests {
-    //! Pin the `x.ai/tool` stamps on the harness emission paths: the early
+    //! Pin the `kigi/tool` stamps on the harness emission paths: the early
     //! ToolCall registered by `prepare_tool_call` and the permission-request
     //! ToolCallUpdate (a dropped `stamp_tool_meta` call would regress silently).
     use super::replay_buffer_send_update_tests::make_replay_send_update_fixture;
@@ -1252,7 +1252,7 @@ mod tool_meta_stamp_tests {
             },
         }
     }
-    /// The `x.ai/tool` object from an event's `_meta`, if present.
+    /// The `kigi/tool` object from an event's `_meta`, if present.
     fn tool_meta(meta: Option<&acp::Meta>) -> Option<&serde_json::Value> {
         meta.and_then(|m| m.get(TOOL_META_KEY))
     }
@@ -1263,10 +1263,8 @@ mod tool_meta_stamp_tests {
             .run_until(async {
                 let mut fixture = make_replay_send_update_fixture().await;
                 fixture.actor.agent = std::cell::RefCell::new(
-                    test_agent_with_tools(vec![ToolConfig::from_id(
-                        "GrokBuild:read_file".to_string(),
-                    )])
-                    .await,
+                    test_agent_with_tools(vec![ToolConfig::from_id("Kigi:read_file".to_string())])
+                        .await,
                 );
                 let prepared = fixture
                     .actor
@@ -1289,13 +1287,13 @@ mod tool_meta_stamp_tests {
                     }
                 }
                 let early = early.expect("early ToolCall emitted");
-                let t = tool_meta(early.as_ref()).expect("early ToolCall carries x.ai/tool");
+                let t = tool_meta(early.as_ref()).expect("early ToolCall carries kigi/tool");
                 assert_eq!(t["name"], "read_file");
                 assert_eq!(t["kind"], "read");
-                assert_eq!(t["namespace"], "grok_build");
+                assert_eq!(t["namespace"], "kigi");
                 assert!(t.get("input").is_none(), "identity-only before parse");
                 let refined = refined.expect("refinement ToolCallUpdate emitted");
-                let t = tool_meta(refined.as_ref()).expect("refinement carries x.ai/tool");
+                let t = tool_meta(refined.as_ref()).expect("refinement carries kigi/tool");
                 assert_eq!(t["input"]["path"], "/tmp/stamp.txt");
             })
             .await;
@@ -1307,10 +1305,8 @@ mod tool_meta_stamp_tests {
             .run_until(async {
                 let mut fixture = make_replay_send_update_fixture().await;
                 fixture.actor.agent = std::cell::RefCell::new(
-                    test_agent_with_tools(vec![ToolConfig::from_id(
-                        "GrokBuild:read_file".to_string(),
-                    )])
-                    .await,
+                    test_agent_with_tools(vec![ToolConfig::from_id("Kigi:read_file".to_string())])
+                        .await,
                 );
                 let (perm_tx, mut perm_rx) = mpsc::unbounded_channel();
                 fixture.actor.permissions = PermissionHandle::Actor {
@@ -1350,7 +1346,7 @@ mod tool_meta_stamp_tests {
                     .take()
                     .expect("permission request must have been issued");
                 let t = tool_meta(update.meta.as_ref())
-                    .expect("permission-request ToolCallUpdate carries x.ai/tool");
+                    .expect("permission-request ToolCallUpdate carries kigi/tool");
                 assert_eq!(t["name"], "read_file");
                 assert_eq!(t["kind"], "read");
                 assert_eq!(t["input"]["path"], "/tmp/stamp.txt");

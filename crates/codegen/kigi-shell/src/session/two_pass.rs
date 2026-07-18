@@ -357,7 +357,7 @@ mod tests {
     #[test]
     fn pass_histories_shape() {
         let conv = vec![
-            ConversationItem::system("You are Grok."),
+            ConversationItem::system("You are Kigi."),
             ConversationItem::user("early"),
             ConversationItem::assistant("early-a"),
             ConversationItem::user("late"),
@@ -372,7 +372,7 @@ mod tests {
         let pass2 = build_two_pass_pass2_history(split.prefix, split.tail, &note1, prompt);
         assert!(pass2.iter().any(|i| matches!(
             i,
-            ConversationItem::System(s) if s.content.as_ref() == "You are Grok."
+            ConversationItem::System(s) if s.content.as_ref() == "You are Kigi."
         )));
         let texts: Vec<String> = pass2.iter().map(|i| i.text_content()).collect();
         assert!(texts.iter().any(|t| t.contains("<summary_content>")));

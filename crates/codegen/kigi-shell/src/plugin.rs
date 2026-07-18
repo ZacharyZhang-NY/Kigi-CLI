@@ -89,7 +89,7 @@ impl std::fmt::Display for UninstallError {
                 write!(
                     f,
                     "Plugin \"{name}\" not found.\n\
-                     Run `grok plugin list` to see installed plugins."
+                     Run `kigi plugin list` to see installed plugins."
                 )
             }
             Self::NeedsConfirm {
@@ -211,7 +211,7 @@ impl std::fmt::Display for UpdateError {
                 write!(
                     f,
                     "Plugin \"{name}\" not found.\n\
-                     Run `grok plugin list` to see installed plugins."
+                     Run `kigi plugin list` to see installed plugins."
                 )
             }
         }

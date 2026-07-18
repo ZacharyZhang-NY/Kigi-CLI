@@ -2,7 +2,7 @@
 //! LLM calls.
 //!
 //! The *policy* lives here (shared across harnesses); the per-harness error
-//! types and their wrapping (e.g. grok-build's `SamplingError` →
+//! types and their wrapping (e.g. kigi's `SamplingError` →
 //! `CompactFailure(acp::Error)`) stay in thin host wrappers that delegate the
 //! status/message decisions to these functions.
 

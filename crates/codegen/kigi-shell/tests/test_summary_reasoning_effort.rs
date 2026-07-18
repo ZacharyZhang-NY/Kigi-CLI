@@ -5,7 +5,7 @@
 //! creation — not only after an explicit model/effort switch (the old
 //! behavior, which left the field absent for sessions that never switched).
 //!
-//! Each test spawns a real `grok agent stdio` process against a mock
+//! Each test spawns a real `kigi agent stdio` process against a mock
 //! inference server and asserts on the persisted `summary.json`.
 //!
 //! Run locally:
@@ -60,10 +60,10 @@ async fn test_fresh_session_persists_reasoning_effort() {
         // user config override (the same path a remote settings catalog entry or
         // `--effort` would populate).
         let home = tempfile::TempDir::new().expect("create temp home");
-        let grok_dir = home.path().join(".kigi");
-        std::fs::create_dir_all(&grok_dir).expect("create .kigi dir");
+        let kigi_dir = home.path().join(".kigi");
+        std::fs::create_dir_all(&kigi_dir).expect("create .kigi dir");
         std::fs::write(
-            grok_dir.join("config.toml"),
+            kigi_dir.join("config.toml"),
             r#"
 [model.test-model]
 supports_reasoning_effort = true
@@ -72,7 +72,7 @@ reasoning_effort = "high"
         )
         .expect("write config.toml");
 
-        let client = GrokStdioClient::spawn_with_home(&server, workdir.path(), home).await;
+        let client = KigiStdioClient::spawn_with_home(&server, workdir.path(), home).await;
         client.initialize_with_timeout().await;
         let session_id = client.create_session_with_timeout(workdir.path()).await;
         let result = client.prompt_with_timeout(&session_id, "say hello").await;
@@ -98,7 +98,7 @@ async fn test_fresh_session_without_effort_omits_field() {
             .await
             .expect("start mock server");
         let workdir = git_workdir();
-        let client = GrokStdioClient::spawn(&server, workdir.path()).await;
+        let client = KigiStdioClient::spawn(&server, workdir.path()).await;
 
         client.initialize_with_timeout().await;
         let session_id = client.create_session_with_timeout(workdir.path()).await;

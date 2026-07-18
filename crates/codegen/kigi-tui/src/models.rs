@@ -1,4 +1,4 @@
-//! `grok models` subcommand.
+//! `kigi models` subcommand.
 
 use anyhow::Result;
 use kigi_shell::agent::config::Config as AgentConfig;
@@ -20,7 +20,7 @@ pub async fn list_available_models(agent_config: &AgentConfig) -> Result<()> {
     println!();
 
     let cancel = CancellationToken::new();
-    let spawned = crate::acp::spawn::spawn_grok_shell(agent_config.clone(), &cancel, None).await?;
+    let spawned = crate::acp::spawn::spawn_kigi_shell(agent_config.clone(), &cancel, None).await?;
 
     let state = list_models(&spawned.channel.tx, PAGER_CLIENT_TYPE, PAGER_CLIENT_VERSION).await?;
 

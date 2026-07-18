@@ -1243,7 +1243,7 @@ impl SessionActor {
                         self.tool_context.subagent_event_tx
                     {
                         let (tx, rx) = tokio::sync::oneshot::channel();
-                        use kigi_tools::implementations::grok_build::task::types::{
+                        use kigi_tools::implementations::kigi::task::types::{
                             SubagentEvent, SubagentListActiveRequest,
                         };
                         let _ =
@@ -2830,11 +2830,11 @@ mod inline_auto_compact_flow_tests {
             SuppressReason::CreditBlock
         );
         assert_eq!(
-            classify("API error (status 402 Payment Required): Grok Build usage balance exhausted"),
+            classify("API error (status 402 Payment Required): Kigi usage balance exhausted"),
             SuppressReason::CreditBlock
         );
         assert_eq!(
-            classify("Grok Build usage limit reached"),
+            classify("Kigi usage limit reached"),
             SuppressReason::CreditBlock
         );
         assert_eq!(

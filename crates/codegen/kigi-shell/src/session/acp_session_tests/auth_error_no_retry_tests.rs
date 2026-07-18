@@ -355,7 +355,7 @@ async fn proactive_refresh_makes_per_turn_refresh_a_cache_hit() {
 fn model_not_found_error() -> kigi_sampler::SamplingErrorInfo {
     kigi_sampler::SamplingErrorInfo {
             kind: kigi_sampler::SamplingErrorKind::Api,
-            message: "API error (status 404 Not Found): The model grok-build does not exist or your team does not have access".into(),
+            message: "API error (status 404 Not Found): The model kigi does not exist or your team does not have access".into(),
             status_code: Some(404),
             is_retryable: false,
             retry_after_secs: None,
@@ -379,7 +379,7 @@ fn model_not_found_error() -> kigi_sampler::SamplingErrorInfo {
 fn unauthorized_401_error() -> kigi_sampler::SamplingErrorInfo {
     kigi_sampler::SamplingErrorInfo {
             kind: kigi_sampler::SamplingErrorKind::Api,
-            message: "Unauthorized (401) from https://cli-chat-proxy.kigi.com/v1/responses: {\"error\":\"Invalid or expired credentials (auth_kind=bearer, x_xai_token_auth=xai-grok-cli, upstream=Unauthenticated, reason=no auth context)\"}".into(),
+            message: "Unauthorized (401) from https://cli-chat-proxy.kigi.com/v1/responses: {\"error\":\"Invalid or expired credentials (auth_kind=bearer, x_xai_token_auth=xai-kigi-cli, upstream=Unauthenticated, reason=no auth context)\"}".into(),
             status_code: Some(401),
             is_retryable: false,
             retry_after_secs: None,
@@ -553,7 +553,7 @@ async fn sampler_401_login_method_with_stale_api_key_auth_type_still_recovers() 
             let (_dir, am) = auth_manager_with_refresher(refresher);
             let (actor, _rx) = make_actor_with_method_and_credentials(
                 Some(am),
-                "grok.com",
+                "kimi-code",
                 kigi_chat_state::AuthType::ApiKey,
                 "stale-session-jwt".to_string(),
             )

@@ -71,7 +71,7 @@ pub enum ConfigChangeEvent {
     AuthChanged,
     GlobalConfigChanged,
     /// `~/.kigi/models_cache.json` changed — the on-disk `/v1/models`
-    /// catalog cache was rewritten, possibly by **another** grok process
+    /// catalog cache was rewritten, possibly by **another** kigi process
     /// sharing the same `~/.kigi` (the writer may also be this process;
     /// the [`ModelsManager`](crate::agent::models::ModelsManager) dedupes
     /// by content before applying).
@@ -229,7 +229,7 @@ impl ConfigFileWatcher {
                 tracing::warn!(
                     path = %kigi_home.display(),
                     error = %e,
-                    "failed to watch grok home directory"
+                    "failed to watch kigi home directory"
                 )
             })
             .ok()?;
@@ -357,10 +357,10 @@ fn watch_cwd_dirs(debouncer: &mut Debouncer<AccessFilteredWatcher>, cwd: &Path) 
     if let Err(e) = debouncer.watcher().watch(cwd, RecursiveMode::NonRecursive) {
         log_watch_error(&e, "failed to watch project cwd (non-recursive)");
     }
-    let grok_dir = cwd.join(".kigi");
+    let kigi_dir = cwd.join(".kigi");
     if let Err(e) = debouncer
         .watcher()
-        .watch(&grok_dir, RecursiveMode::NonRecursive)
+        .watch(&kigi_dir, RecursiveMode::NonRecursive)
     {
         log_watch_error(
             &e,
@@ -376,8 +376,8 @@ fn unwatch_cwd_dirs(debouncer: &mut Debouncer<AccessFilteredWatcher>, cwd: &Path
     if let Err(e) = debouncer.watcher().unwatch(cwd) {
         tracing::debug!(error = %e, "failed to unwatch project cwd");
     }
-    let grok_dir = cwd.join(".kigi");
-    if let Err(e) = debouncer.watcher().unwatch(&grok_dir) {
+    let kigi_dir = cwd.join(".kigi");
+    if let Err(e) = debouncer.watcher().unwatch(&kigi_dir) {
         tracing::debug!(error = %e, "failed to unwatch project .kigi directory");
     }
 }
@@ -752,7 +752,7 @@ mod tests {
 
     /// A write to `<kigi_home>/models_cache.json` must surface as
     /// `ConfigChangeEvent::ModelsCacheChanged` so a long-running leader can
-    /// hot-load a catalog fetched by another grok process.
+    /// hot-load a catalog fetched by another kigi process.
     #[test]
     #[cfg_attr(
         target_os = "macos",
@@ -845,11 +845,11 @@ mod tests {
     fn project_cwd_toml_triggers_reload() {
         let kigi_home = TempDir::new().unwrap();
         let cwd = TempDir::new().unwrap();
-        let project_grok = cwd.path().join(".kigi");
-        fs::create_dir_all(&project_grok).unwrap();
+        let project_kigi = cwd.path().join(".kigi");
+        fs::create_dir_all(&project_kigi).unwrap();
         // Seed the file before the watcher starts so we observe the
         // modification rather than the creation event.
-        fs::write(project_grok.join("config.toml"), "").unwrap();
+        fs::write(project_kigi.join("config.toml"), "").unwrap();
 
         let (_w, mut rx) = ConfigFileWatcher::start(
             kigi_home.path(),
@@ -860,7 +860,7 @@ mod tests {
         .expect("watcher should start");
 
         fs::write(
-            project_grok.join("config.toml"),
+            project_kigi.join("config.toml"),
             "[mcp_servers.x]\ncommand = \"/bin/true\"",
         )
         .unwrap();
@@ -983,9 +983,9 @@ mod tests {
     fn watch_path_dynamic_registration() {
         let kigi_home = TempDir::new().unwrap();
         let new_cwd = TempDir::new().unwrap();
-        let project_grok = new_cwd.path().join(".kigi");
-        fs::create_dir_all(&project_grok).unwrap();
-        fs::write(project_grok.join("config.toml"), "").unwrap();
+        let project_kigi = new_cwd.path().join(".kigi");
+        fs::create_dir_all(&project_kigi).unwrap();
+        fs::write(project_kigi.join("config.toml"), "").unwrap();
 
         let (mut watcher, mut rx) = ConfigFileWatcher::start(
             kigi_home.path(),
@@ -998,7 +998,7 @@ mod tests {
         watcher.watch_path(new_cwd.path());
 
         fs::write(
-            project_grok.join("config.toml"),
+            project_kigi.join("config.toml"),
             "[mcp_servers.y]\ncommand = \"/bin/true\"",
         )
         .unwrap();

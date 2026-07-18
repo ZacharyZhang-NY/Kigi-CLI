@@ -178,7 +178,7 @@ pub fn hyperlink_capabilities(brand: TerminalName) -> HyperlinkCapabilities {
             native_plain_url_open: false,
         },
         // Electron app; behavior undocumented.
-        TerminalName::GrokDesktop => HyperlinkCapabilities {
+        TerminalName::KigiDesktop => HyperlinkCapabilities {
             osc8: Unknown,
             id_param: false,
             scheme_filter: SchemeFilter::Standard,

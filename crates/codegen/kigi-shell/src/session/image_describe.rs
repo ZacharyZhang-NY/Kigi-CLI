@@ -2,7 +2,7 @@
 //!
 //! That harness uses a separate vision endpoint to describe images
 //! rather than passing them inline. When a user message contains image
-//! content blocks, the session calls a vision-capable Grok model
+//! content blocks, the session calls a vision-capable Kigi model
 //! (defaults to the agent's current model unless explicitly overridden)
 //! to produce text descriptions that are injected into the turn. Per-image
 //! requests are deduplicated via [`ImageDescribeCache`] (same bytes +

@@ -71,8 +71,8 @@ impl SlashCommand for ModelCommand {
         }
 
         // Prefer an exact full-string catalog match first. Model display names
-        // often contain spaces ("Grok 4.5"); if we split on the last token
-        // first, a shorter catalog entry ("Grok") would steal the prefix and
+        // often contain spaces ("Kigi 4.5"); if we split on the last token
+        // first, a shorter catalog entry ("Kigi") would steal the prefix and
         // treat "4.5" as an effort level.
         if let Some(id) = ctx.models.resolve_by_name_or_id(trimmed) {
             return CommandResult::Action(Action::SetDefaultModel(id));
@@ -80,7 +80,7 @@ impl SlashCommand for ModelCommand {
 
         // Trailing effort token + reasoning model → session-scoped switch
         // (not persisted as default). Resolve via the shared gate so a rejected
-        // level (e.g. `none` on grok-4.5) surfaces the effort error with the
+        // level (e.g. `none` on kigi-4.5) surfaces the effort error with the
         // model's offered ids — not "Unknown model: … none".
         if let Some((prefix, token)) = split_trailing_token(trimmed)
             && let Some(id) = resolve_model(ctx.models, prefix)
@@ -267,7 +267,7 @@ mod tests {
     fn empty_query_returns_one_row_per_logical_model() {
         let mut state = ModelState::default();
         let (rid, rinfo) = model_with_reasoning("reasoning-x", "Reasoning X");
-        let (pid, pinfo) = plain_model("grok-4.5", "Grok 4.5");
+        let (pid, pinfo) = plain_model("kigi-4.5", "Kigi 4.5");
         state.available.insert(rid, rinfo);
         state.available.insert(pid, pinfo);
 
@@ -290,8 +290,8 @@ mod tests {
         assert_eq!(reasoning.insert_text, "Reasoning X ");
 
         // Plain model has no trailing space -- Enter commits immediately.
-        let plain = items.iter().find(|i| i.match_text == "Grok 4.5").unwrap();
-        assert_eq!(plain.insert_text, "Grok 4.5");
+        let plain = items.iter().find(|i| i.match_text == "Kigi 4.5").unwrap();
+        assert_eq!(plain.insert_text, "Kigi 4.5");
     }
 
     #[test]
@@ -408,30 +408,30 @@ mod tests {
 
     #[test]
     fn run_prefers_full_multi_word_model_name_over_prefix_plus_effort() {
-        // Catalog has both "Grok" (reasoning) and "Grok 4.5". `/model Grok 4.5`
-        // must select the full name, not treat "4.5" as an effort on "Grok".
+        // Catalog has both "Kigi" (reasoning) and "Kigi 4.5". `/model Kigi 4.5`
+        // must select the full name, not treat "4.5" as an effort on "Kigi".
         let mut state = ModelState::default();
-        let (short_id, short_info) = model_with_reasoning("grok", "Grok");
-        let (long_id, long_info) = model_with_reasoning("grok-4.5", "Grok 4.5");
+        let (short_id, short_info) = model_with_reasoning("kigi", "Kigi");
+        let (long_id, long_info) = model_with_reasoning("kigi-4.5", "Kigi 4.5");
         state.available.insert(short_id, short_info);
         state.available.insert(long_id.clone(), long_info);
         let mut ctx = dummy_exec_ctx(&state);
-        let result = ModelCommand.run(&mut ctx, "Grok 4.5");
+        let result = ModelCommand.run(&mut ctx, "Kigi 4.5");
         match result {
             CommandResult::Action(Action::SetDefaultModel(resolved_id)) => {
                 assert_eq!(resolved_id, long_id);
             }
-            other => panic!("expected SetDefaultModel(Grok 4.5), got {other:?}"),
+            other => panic!("expected SetDefaultModel(Kigi 4.5), got {other:?}"),
         }
     }
 
     #[test]
     fn run_rejects_effort_for_non_reasoning_model() {
         let mut state = ModelState::default();
-        let (id, info) = plain_model("grok-4.5", "Grok 4.5");
+        let (id, info) = plain_model("kigi-4.5", "Kigi 4.5");
         state.available.insert(id, info);
         let mut ctx = dummy_exec_ctx(&state);
-        let result = ModelCommand.run(&mut ctx, "Grok 4.5 high");
+        let result = ModelCommand.run(&mut ctx, "Kigi 4.5 high");
         // Falls through to "is the whole string a model name?" — which
         // it isn't, so we get an Unknown error.
         assert!(matches!(result, CommandResult::Error(_)));
@@ -449,10 +449,10 @@ mod tests {
     #[test]
     fn run_bare_model_name_dispatches_set_default_model() {
         let mut state = ModelState::default();
-        let (id, info) = plain_model("grok-4.5", "Grok 4.5");
+        let (id, info) = plain_model("kigi-4.5", "Kigi 4.5");
         state.available.insert(id.clone(), info);
         let mut ctx = dummy_exec_ctx(&state);
-        let result = ModelCommand.run(&mut ctx, "Grok 4.5");
+        let result = ModelCommand.run(&mut ctx, "Kigi 4.5");
         match result {
             CommandResult::Action(Action::SetDefaultModel(resolved_id)) => {
                 assert_eq!(resolved_id, id);
@@ -461,15 +461,15 @@ mod tests {
         }
     }
 
-    /// Case-insensitive matching against the catalog: `/model grok 4.5`
-    /// resolves to the same `ModelId` as `/model Grok 4.5`.
+    /// Case-insensitive matching against the catalog: `/model kigi 4.5`
+    /// resolves to the same `ModelId` as `/model Kigi 4.5`.
     #[test]
     fn run_set_default_model_resolves_case_insensitively() {
         let mut state = ModelState::default();
-        let (id, info) = plain_model("grok-4.5", "Grok 4.5");
+        let (id, info) = plain_model("kigi-4.5", "Kigi 4.5");
         state.available.insert(id.clone(), info);
         let mut ctx = dummy_exec_ctx(&state);
-        let result = ModelCommand.run(&mut ctx, "grok 4.5");
+        let result = ModelCommand.run(&mut ctx, "kigi 4.5");
         match result {
             CommandResult::Action(Action::SetDefaultModel(resolved_id)) => {
                 assert_eq!(resolved_id, id);

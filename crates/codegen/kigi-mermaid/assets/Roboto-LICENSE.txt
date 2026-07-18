@@ -1,7 +1,7 @@
 Roboto-Regular.ttf
 Copyright 2011 Google Inc. All Rights Reserved.
 
-This font is bundled (via include_bytes!) into the distributed Grok CLI binary
+This font is bundled (via include_bytes!) into the distributed Kigi CLI binary
 and is redistributed under the Apache License, Version 2.0 (below). It is used as
 a deterministic fallback face so diagram text metrics do not depend on system
 fonts. Retain this notice alongside the font when redistributing.

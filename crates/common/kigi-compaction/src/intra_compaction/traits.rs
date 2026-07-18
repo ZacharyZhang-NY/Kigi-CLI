@@ -20,7 +20,7 @@ pub enum CompactionTarget {
     /// inter-compaction.
     History,
     /// Replace the *whole* conversation (prior history + accumulated steps)
-    /// with a single summary — grok-build's full-replace strategy. No tail is
+    /// with a single summary — kigi's full-replace strategy. No tail is
     /// kept; the read-view is [`CompactionStreamProc::get_all_turns_for_compaction`].
     FullReplace,
 }
@@ -37,8 +37,8 @@ impl CompactionTarget {
 }
 
 /// Minimal interface the compaction orchestrator needs from the agent's
-/// stream processor. Implemented by Grok chat's
-/// `StreamProcessor` (`Item = Arc<GrokTurn>`).
+/// stream processor. Implemented by Kigi chat's
+/// `StreamProcessor` (`Item = Arc<KigiTurn>`).
 ///
 /// Two read-views are exposed:
 ///
@@ -89,7 +89,7 @@ pub trait CompactionStreamProc: Send + Sync {
     ///
     /// The `Self::Item: Send` bound lets the default hold the history vec across
     /// the second `await` while keeping the boxed future `Send`; every concrete
-    /// item type (`Arc<GrokTurn>`) already satisfies it.
+    /// item type (`Arc<KigiTurn>`) already satisfies it.
     async fn get_all_turns_for_compaction(&self) -> Vec<Self::Item>
     where
         Self::Item: Send,

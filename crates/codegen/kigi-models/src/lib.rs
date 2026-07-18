@@ -608,7 +608,7 @@ mod tests {
         // Aux models fall back to the default (no dedicated entries).
         assert_eq!(default_image_description_model(), "kimi-for-coding");
         assert_eq!(default_session_summary_model(), "kimi-for-coding");
-        // No grok remnants in the embedded fallback.
-        assert!(!DEFAULT_MODELS_JSON.contains("grok"));
+        // No kigi remnants in the embedded fallback.
+        assert!(!DEFAULT_MODELS_JSON.contains("kigi"));
     }
 }

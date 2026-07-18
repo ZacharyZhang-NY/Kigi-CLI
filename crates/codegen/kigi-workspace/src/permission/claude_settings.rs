@@ -21,7 +21,7 @@ pub struct ClaudeSettings {
     pub permissions: Option<ParsedPermissions>,
 
     /// Raw `defaultMode` string when present (canonical under `permissions`, or
-    /// grok-only root legacy). Recognized values: `acceptEdits`,
+    /// kigi-only root legacy). Recognized values: `acceptEdits`,
     /// `bypassPermissions`, `default`, `plan`, `dontAsk`, `auto`.
     #[serde(default)]
     pub default_mode: Option<String>,
@@ -85,7 +85,7 @@ impl ParsedPermissions {
 ///     from `serde_json::Value`. Non-string entries are skipped with warnings.
 ///   - This enables partial success when some entries are malformed.
 ///   - `defaultMode` / `additionalDirectories` prefer the canonical location
-///     under `permissions.*`. Root-level keys are **grok legacy only** (not in
+///     under `permissions.*`. Root-level keys are **kigi legacy only** (not in
 ///     the vendor schema) and are used only when the nested key is **absent** —
 ///     not when it is present but the wrong type.
 pub fn load_claude_settings(path: &Path) -> Option<ClaudeSettings> {
@@ -123,7 +123,7 @@ pub fn load_claude_settings(path: &Path) -> Option<ClaudeSettings> {
         }
     });
 
-    // Canonical vendor settings store these under `permissions`; root is grok legacy only.
+    // Canonical vendor settings store these under `permissions`; root is kigi legacy only.
     let default_mode = extract_default_mode(&value, path);
 
     let additional_directories = extract_additional_directories(&value, path);
@@ -140,7 +140,7 @@ pub fn load_claude_settings(path: &Path) -> Option<ClaudeSettings> {
 
 /// Canonical key is `permissions.defaultMode`.
 ///
-/// Root `defaultMode` is grok-only back-compat for older tests / hand-written
+/// Root `defaultMode` is kigi-only back-compat for older tests / hand-written
 /// configs. Fall back to root only when the nested key is **absent**. If nested
 /// is present but not a string, do not resurrect a root value (malformed
 /// canonical key must not revive stale legacy).
@@ -161,7 +161,7 @@ pub(crate) fn extract_default_mode(value: &serde_json::Value, path: &Path) -> Op
         };
     }
 
-    // Nested key absent — optional grok legacy root.
+    // Nested key absent — optional kigi legacy root.
     match value.get("defaultMode") {
         Some(dm) => match dm.as_str() {
             Some(s) => Some(s.to_string()),
@@ -169,7 +169,7 @@ pub(crate) fn extract_default_mode(value: &serde_json::Value, path: &Path) -> Op
                 warn!(
                     path = %path.display(),
                     actual_type = %dm.type_of(),
-                    "root defaultMode (grok legacy): expected string, ignoring"
+                    "root defaultMode (kigi legacy): expected string, ignoring"
                 );
                 None
             }
@@ -182,7 +182,7 @@ pub(crate) fn extract_default_mode(value: &serde_json::Value, path: &Path) -> Op
 /// legacy/compat. Nested wins when both are present.
 fn extract_additional_directories(value: &serde_json::Value, path: &Path) -> Option<Vec<String>> {
     // Mirror `extract_default_mode`: prefer the Claude-canonical nested key, and
-    // when it is present but the wrong type, do *not* resurrect the grok-legacy
+    // when it is present but the wrong type, do *not* resurrect the kigi-legacy
     // root value (a malformed canonical key must not revive stale legacy).
     let arr = if let Some(nested) = value
         .get("permissions")
@@ -514,7 +514,7 @@ pub fn is_claude_import_marked() -> bool {
     // lives in kigi-shell (inaccessible from here at runtime). They also
     // set this env var so the workspace-resident gate honours the override
     // without a cross-crate dependency.
-    if std::env::var("_GROK_CLAUDE_MARKER_OVERRIDE").as_deref() == Ok("1") {
+    if std::env::var("_KIGI_CLAUDE_MARKER_OVERRIDE").as_deref() == Ok("1") {
         return true;
     }
     let Some(config_path) = kigi_config::user_kigi_home().map(|g| g.join("config.toml")) else {

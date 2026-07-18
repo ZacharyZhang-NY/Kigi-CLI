@@ -20,7 +20,7 @@ struct Cli {
     #[arg(long, value_name = "PATH")]
     scenario: PathBuf,
 
-    /// Pager binary. Defaults to PAGER_BINARY, CARGO_BIN_EXE_kigi-tui,
+    /// Pager binary. Defaults to PAGER_BINARY, CARGO_BIN_EXE_kigi,
     /// or a locally-built debug binary.
     #[arg(long, value_name = "PATH")]
     binary: Option<PathBuf>,

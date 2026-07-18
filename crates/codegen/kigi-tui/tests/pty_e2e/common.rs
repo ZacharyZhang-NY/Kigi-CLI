@@ -186,7 +186,7 @@ pub(crate) fn spawn_polling_session_with_env(
 /// Start the mock server with two models that have different agent types,
 /// and return a `ContentController` configured for agent-type-mismatch
 /// testing. The default model is `"default-model"` (no agent type → uses
-/// `grok-build` harness).
+/// `kigi` harness).
 pub(crate) async fn start_dual_agent_type_content() -> ContentController {
     ContentController::start_with_models(vec![
         MockModel::new("default-model"),
@@ -217,7 +217,7 @@ pub(crate) fn git_repo_with_mcp_json() -> tempfile::TempDir {
 /// point at the isolated temp home, so the trust store starts empty.
 pub(crate) fn trust_env(content: &ContentController, feature_on: bool) -> Vec<(String, String)> {
     let mut env = content.env_for_pager();
-    // A self-built (unstamped) grok auto-trusts and never prompts; simulate a
+    // A self-built (unstamped) kigi auto-trusts and never prompts; simulate a
     // release build so the folder-trust feature is actually evaluated here. The
     // feature-off case below then exercises the TRUE feature-off path, not
     // auto-trust.
@@ -259,7 +259,7 @@ pub(crate) fn turn_sentinel(n: u8) -> String {
 /// Seeded server name; it only renders once the MCP list fetch resolves.
 pub(crate) const MCP_TEST_SERVER: &str = "ptytestmcp";
 
-/// Budget for session creation plus the `x.ai/mcp/list` round-trip.
+/// Budget for session creation plus the `kigi/mcp/list` round-trip.
 pub(crate) const MCP_MENU_LOAD_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Configured servers list with a status badge even when never connected.
@@ -1096,9 +1096,9 @@ pub(crate) fn quit_minimal(harness: &mut PtyHarness) {
     }
 }
 
-// ── grok wrap e2e ───────────────────────────────────────────────────────
+// ── kigi wrap e2e ───────────────────────────────────────────────────────
 
-/// `grok wrap` run budget. Same contention math as the requirements-version
+/// `kigi wrap` run budget. Same contention math as the requirements-version
 /// test: the child's cold exec of the huge debug binary can land its first
 /// write well past 30s under the parallel pty_e2e suite.
 #[cfg(unix)]
@@ -1107,7 +1107,7 @@ pub(crate) const WRAP_TIMEOUT: Duration = Duration::from_secs(120);
 #[cfg(unix)]
 const WRAP_DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Run `grok wrap <wrap_args...>` to completion inside a PTY with an isolated
+/// Run `kigi wrap <wrap_args...>` to completion inside a PTY with an isolated
 /// `KIGI_SHARE_DIR`, returning the exit code (`None` if it never exited within
 /// [`WRAP_TIMEOUT`]) and everything the wrap PTY emitted. `extra_env` is where
 /// tests pin `SHELL`; wrap needs no mock content — it dispatches in `main`
@@ -1124,7 +1124,7 @@ pub(crate) fn run_wrap(wrap_args: &[&str], extra_env: &[(&str, &str)]) -> (Optio
     env.extend_from_slice(extra_env);
 
     let mut harness =
-        PtyHarness::new(&binary, DEFAULT_ROWS, DEFAULT_COLS, &args, &env).expect("spawn grok wrap");
+        PtyHarness::new(&binary, DEFAULT_ROWS, DEFAULT_COLS, &args, &env).expect("spawn kigi wrap");
 
     let code = harness
         .wait_for_exit_and_drain(WRAP_TIMEOUT, WRAP_DRAIN_TIMEOUT)
@@ -1139,7 +1139,7 @@ pub(crate) fn run_wrap(wrap_args: &[&str], extra_env: &[(&str, &str)]) -> (Optio
 
 /// Write an executable fake `$SHELL` that prints each argv element on its own
 /// `ARG:`-prefixed line and exits 0, so tests can assert the exact argv
-/// `grok wrap` hands to the user's shell without depending on any real
+/// `kigi wrap` hands to the user's shell without depending on any real
 /// shell's rc files or alias state. Keep the returned tempdir alive for the
 /// duration of the run.
 #[cfg(unix)]

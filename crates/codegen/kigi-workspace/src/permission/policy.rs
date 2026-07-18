@@ -3,7 +3,7 @@ use crate::permission::shell_access::combine_decisions;
 use crate::permission::types::{
     AccessKind, Decision, PatternMode, PermissionConfig, PermissionRule, RuleAction, ToolFilter,
 };
-use kigi_tools::implementations::grok_build::web_fetch::domain::normalize_domain;
+use kigi_tools::implementations::kigi::web_fetch::domain::normalize_domain;
 
 #[derive(Clone, Copy)]
 enum MatchContext {

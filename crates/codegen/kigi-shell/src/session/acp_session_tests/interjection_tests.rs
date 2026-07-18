@@ -199,7 +199,7 @@ mod interjection_broadcast_tests {
     /// Multi-client fix: a mid-turn interjection must be broadcast to every
     /// attached client (not just the originator) so all panes viewing the same
     /// session render it. This locks the wire contract the pager's
-    /// `handle_interjection` depends on: method `x.ai/session/interjection`
+    /// `handle_interjection` depends on: method `kigi/session/interjection`
     /// carrying `sessionId` + `text`.
     #[tokio::test]
     async fn broadcast_interjection_emits_sessionid_and_text() {
@@ -217,14 +217,14 @@ mod interjection_broadcast_tests {
                 let mut payload = None;
                 while let Ok(msg) = gateway_rx.try_recv() {
                     if let kigi_acp_lib::AcpClientMessage::ExtNotification(args) = msg
-                        && args.request.method.as_ref() == "x.ai/session/interjection"
+                        && args.request.method.as_ref() == "kigi/session/interjection"
                     {
                         payload =
                             serde_json::from_str::<serde_json::Value>(args.request.params.get())
                                 .ok();
                     }
                 }
-                let payload = payload.expect("an x.ai/session/interjection broadcast");
+                let payload = payload.expect("an kigi/session/interjection broadcast");
                 assert_eq!(
                     payload.get("sessionId").and_then(|v| v.as_str()),
                     Some("test-actor"),

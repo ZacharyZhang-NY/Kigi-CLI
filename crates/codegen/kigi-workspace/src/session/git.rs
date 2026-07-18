@@ -778,7 +778,7 @@ fn collect_diff_stats(
     }
     DiffStatsResult { stats, paths }
 }
-/// Payload for the `x.ai/git_head_changed` ACP extension notification.
+/// Payload for the `kigi/git_head_changed` ACP extension notification.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitHeadChanged {
@@ -1790,7 +1790,7 @@ pub async fn stash_before_destructive_op(
         return StashOutcome::Skipped(reason);
     }
     let message = format!(
-        "grok: pre-{label} {} {}",
+        "kigi: pre-{label} {} {}",
         session_id,
         chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ")
     );
@@ -1908,7 +1908,7 @@ pub async fn checkout_session_commit(
 /// The restore-code path runs `git fetch origin` + `git checkout <sha>`,
 /// which *detaches HEAD*. That is only acceptable in two situations:
 ///
-/// 1. `supplied_cwd` is a grok-managed worktree (`~/.kigi/worktrees/...`).
+/// 1. `supplied_cwd` is a kigi-managed worktree (`~/.kigi/worktrees/...`).
 ///    These are disposable snapshots that exist precisely to carry a
 ///    detached session HEAD.
 /// 2. `supplied_cwd` is exactly the cwd the session was persisted with
@@ -3522,7 +3522,7 @@ mod restore_code_tests {
         assert!(porcelain.trim().is_empty(), "got: {porcelain:?}");
         let list = git_cli(tmp.path(), &["stash", "list"]).await.unwrap();
         assert!(
-            list.contains("grok: pre-test sess-2"),
+            list.contains("kigi: pre-test sess-2"),
             "stash list missing session id: {list}"
         );
     }

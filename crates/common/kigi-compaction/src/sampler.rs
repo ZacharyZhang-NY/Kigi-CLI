@@ -31,7 +31,7 @@ pub struct LlmCompactionOutput {
 /// [`Self::Start`], [`Self::EmptyResponse`]) so the shared retry policy can
 /// classify without string matching. [`Self::Other`] remains for samplers
 /// that only surface an opaque error; the orchestrator falls back to
-/// matching the literal messages produced by the Grok chat sampler —
+/// matching the literal messages produced by the Kigi chat sampler —
 /// keep those literals in sync (the `compaction_sample_error_to_intra*`
 /// tests guard the mapping).
 #[derive(Debug)]
@@ -110,7 +110,7 @@ impl CompactionSampleError {
 /// Interface for the LLM call that produces compaction summaries.
 ///
 /// Used by both intra-compaction (steps/history) and inter-compaction.
-/// Implemented by each harness's sampler adapter; grok-build wires its own
+/// Implemented by each harness's sampler adapter; kigi wires its own
 /// transport.
 ///
 /// Returns [`LlmCompactionOutput`] containing both response and thinking

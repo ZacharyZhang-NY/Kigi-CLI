@@ -1,4 +1,4 @@
-//! Leader-follower IPC architecture for grok-shell.
+//! Leader-follower IPC architecture for kigi-shell.
 //!
 //! This module implements a single-leader-per-machine architecture where one leader
 //! process manages the agent state while multiple clients (TUI, IDE extensions, headless)
@@ -40,7 +40,7 @@
 //! // Connect to existing leader or spawn a new one
 //! let caps = ClientCapabilities {
 //!     yolo_mode: true,
-//!     default_model: Some("grok-3-fast".to_string()),
+//!     default_model: Some("kigi-3-fast".to_string()),
 //! };
 //! let conn = connect_or_spawn("my-client", ClientMode::Stdio, caps).await?;
 //!
@@ -106,7 +106,7 @@ fn should_evict(leader_version: Option<&str>, client_version: &str) -> bool {
 const RECONNECT_BASE_DELAY: Duration = Duration::from_secs(1);
 /// Maximum delay between reconnection attempts (caps exponential backoff).
 const RECONNECT_MAX_DELAY: Duration = Duration::from_secs(30);
-/// Maximum reconnection attempts for bounded mode (headless/`grok -p`).
+/// Maximum reconnection attempts for bounded mode (headless/`kigi -p`).
 /// TUI mode uses unlimited retries controlled by a cancellation token.
 const RECONNECT_MAX_ATTEMPTS_BOUNDED: u32 = 5;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -228,7 +228,7 @@ fn build_live_leader_info(payload: ControlPayload) -> Result<LiveLeaderInfo, Lea
 async fn fetch_live_leader_info(socket_path: &Path) -> Result<LiveLeaderInfo, LeaderTargetError> {
     let client = LeaderClient::connect(
         socket_path.to_path_buf(),
-        "grok-leader-discovery",
+        "kigi-leader-discovery",
         ClientMode::Stdio,
         ClientCapabilities::default(),
     )
@@ -805,7 +805,7 @@ pub enum ReconnectPolicy {
     /// Suitable for interactive TUI sessions where the user expects persistence.
     Unbounded,
     /// Retry up to a fixed number of attempts, then fail.
-    /// Suitable for headless/`grok -p` where hanging forever is unacceptable.
+    /// Suitable for headless/`kigi -p` where hanging forever is unacceptable.
     Bounded { max_attempts: u32 },
 }
 impl ReconnectPolicy {
@@ -831,7 +831,7 @@ impl ReconnectPolicy {
 /// ```ignore
 /// let (status_tx, status_rx) = LeaderReconnector::status_channel();
 /// let reconnector = LeaderReconnector::new(
-///     "grok-tui", ClientMode::Stdio, caps, status_tx,
+///     "kigi-tui", ClientMode::Stdio, caps, status_tx,
 /// );
 ///
 /// // When connection dies:
@@ -1112,7 +1112,7 @@ async fn evict_leader(conn: LeaderConnection, lock: &LeaderLock) {
 ///
 /// # Arguments
 ///
-/// * `client_type` - Identifier for the client type (e.g., "grok-tui", "vscode")
+/// * `client_type` - Identifier for the client type (e.g., "kigi-tui", "vscode")
 /// * `mode` - Communication mode (Stdio)
 /// * `capabilities` - Client capabilities (e.g., yolo_mode) to register with the leader
 pub async fn connect_or_spawn(
@@ -1248,8 +1248,8 @@ pub async fn connect_or_spawn(
 /// Resolve the binary to spawn as the leader subprocess.
 ///
 /// For a **managed install** — the running binary lives under `kigi_home`
-/// (e.g. `~/.kigi/...`) — prefer the managed `~/.kigi/bin/grok` symlink. After an
-/// auto-update or `grok update` atomically swaps that symlink, `current_exe()`
+/// (e.g. `~/.kigi/...`) — prefer the managed `~/.kigi/bin/kigi` symlink. After an
+/// auto-update or `kigi update` atomically swaps that symlink, `current_exe()`
 /// still resolves (via `/proc/self/exe` on Linux) to the *old* versioned target,
 /// so spawning it would relaunch the stale binary. The symlink always points to
 /// the freshly-installed version. This mirrors
@@ -1259,23 +1259,23 @@ pub async fn connect_or_spawn(
 /// not under `kigi_home`), keep `current_exe()` so the spawned leader matches the
 /// calling binary.
 ///
-/// Falls back to `~/.kigi/bin/grok` only when `current_exe()` is unavailable.
+/// Falls back to `~/.kigi/bin/kigi` only when `current_exe()` is unavailable.
 fn resolve_exe_for_spawn() -> Result<std::path::PathBuf, ConnectionError> {
     resolve_binary_with_home(&crate::util::kigi_home::kigi_home())
 }
 fn resolve_binary_with_home(kigi_home: &Path) -> Result<std::path::PathBuf, ConnectionError> {
     resolve_binary_impl(kigi_home, std::env::current_exe().ok())
 }
-/// Binary file name for the managed grok install (`grok` / `grok.exe`).
-fn managed_grok_bin_name() -> &'static str {
-    if cfg!(windows) { "grok.exe" } else { "grok" }
+/// Binary file name for the managed kigi install (`kigi` / `kigi.exe`).
+fn managed_kigi_bin_name() -> &'static str {
+    if cfg!(windows) { "kigi.exe" } else { "kigi" }
 }
 /// Core leader-binary resolution with the current-exe path injected, for testability.
 fn resolve_binary_impl(
     kigi_home: &Path,
     current_exe: Option<std::path::PathBuf>,
 ) -> Result<std::path::PathBuf, ConnectionError> {
-    let managed_bin = kigi_home.join("bin").join(managed_grok_bin_name());
+    let managed_bin = kigi_home.join("bin").join(managed_kigi_bin_name());
     if let Some(ref exe) = current_exe
         && path_is_under(exe, kigi_home)
         && managed_bin.exists()
@@ -1992,7 +1992,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let bin_dir = temp.path().join("bin");
         std::fs::create_dir_all(&bin_dir).unwrap();
-        std::fs::write(bin_dir.join("grok"), "fake-binary").unwrap();
+        std::fs::write(bin_dir.join("kigi"), "fake-binary").unwrap();
         let result = resolve_binary_with_home(temp.path()).unwrap();
         let current = std::env::current_exe().unwrap();
         assert_eq!(result, current);
@@ -2009,9 +2009,9 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let bin_dir = temp.path().join("bin");
         std::fs::create_dir_all(&bin_dir).unwrap();
-        let target_v2 = bin_dir.join("grok-v2");
+        let target_v2 = bin_dir.join("kigi-v2");
         std::fs::write(&target_v2, "new-binary").unwrap();
-        std::os::unix::fs::symlink(&target_v2, bin_dir.join("grok")).unwrap();
+        std::os::unix::fs::symlink(&target_v2, bin_dir.join("kigi")).unwrap();
         let result = resolve_binary_with_home(temp.path()).unwrap();
         let current = std::env::current_exe().unwrap();
         assert_eq!(result, current);
@@ -2022,11 +2022,11 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let bin_dir = temp.path().join("bin");
         std::fs::create_dir_all(&bin_dir).unwrap();
-        let new_target = bin_dir.join("grok-v2");
+        let new_target = bin_dir.join("kigi-v2");
         std::fs::write(&new_target, "new-binary").unwrap();
-        let managed = bin_dir.join("grok");
+        let managed = bin_dir.join("kigi");
         std::os::unix::fs::symlink(&new_target, &managed).unwrap();
-        let stale_target = bin_dir.join("grok-v1");
+        let stale_target = bin_dir.join("kigi-v1");
         std::fs::write(&stale_target, "old-binary").unwrap();
         let result = resolve_binary_impl(temp.path(), Some(stale_target)).unwrap();
         assert_eq!(result, managed);
@@ -2036,7 +2036,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let bin_dir = temp.path().join("bin");
         std::fs::create_dir_all(&bin_dir).unwrap();
-        std::fs::write(bin_dir.join(managed_grok_bin_name()), "managed").unwrap();
+        std::fs::write(bin_dir.join(managed_kigi_bin_name()), "managed").unwrap();
         let dev_exe = std::env::current_exe().unwrap();
         let result = resolve_binary_impl(temp.path(), Some(dev_exe.clone())).unwrap();
         assert_eq!(result, dev_exe);
@@ -2046,7 +2046,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let bin_dir = temp.path().join("bin");
         std::fs::create_dir_all(&bin_dir).unwrap();
-        let managed = bin_dir.join(managed_grok_bin_name());
+        let managed = bin_dir.join(managed_kigi_bin_name());
         std::fs::write(&managed, "managed").unwrap();
         let result = resolve_binary_impl(temp.path(), None).unwrap();
         assert_eq!(result, managed);

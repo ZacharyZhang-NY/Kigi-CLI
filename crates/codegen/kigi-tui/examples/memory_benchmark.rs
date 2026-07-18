@@ -49,7 +49,7 @@ fn create_string_info(id: usize) -> SubagentInfoString {
         subagent_type: "general-purpose".to_string(),
         persona: Some("researcher".to_string()),
         role: Some("analyst".to_string()),
-        model: Some("grok-3".to_string()),
+        model: Some("kigi-3".to_string()),
         status: Some("completed".to_string()),
         tools_used: vec!["read".to_string(), "search".to_string(), "edit".to_string()],
     }
@@ -63,7 +63,7 @@ fn create_arc_info(id: usize) -> SubagentInfoArc {
         subagent_type: Arc::from("general-purpose"),
         persona: Some(Arc::from("researcher")),
         role: Some(Arc::from("analyst")),
-        model: Some(Arc::from("grok-3")),
+        model: Some(Arc::from("kigi-3")),
         status: Some(Arc::from("completed")),
         tools_used: vec![Arc::from("read"), Arc::from("search"), Arc::from("edit")],
     }
@@ -173,7 +173,7 @@ fn main() {
     println!("--- Realistic Scenario (100 subagents with varied data) ---");
     let subagent_types = ["general-purpose", "explore", "plan", "implementer"];
     let personas = ["researcher", "analyst", "reviewer", "implementer"];
-    let models = ["grok-3", "grok-3-mini", "grok-4"];
+    let models = ["kigi-3", "kigi-3-mini", "kigi-4"];
     let statuses = ["completed", "failed", "running", "cancelled"];
     let tools = ["read", "edit", "search", "execute", "list_dir"];
 

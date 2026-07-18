@@ -3,7 +3,7 @@
 //! that cannot read the `!Send` `MvpAgent` state on the `LocalSet`).
 //!
 //! The leader's `agent_busy` flag only counts IPC (Unix-socket) requests;
-//! relay (grok.com WebSocket) traffic is bridged straight into the agent's
+//! relay (kimi.com WebSocket) traffic is bridged straight into the agent's
 //! ACP stdin and never sets it, so a relay-driven leader (devbox / remote)
 //! always looked idle and got restarted mid-turn on every update —
 //! surfacing as "Subagent result channel dropped".

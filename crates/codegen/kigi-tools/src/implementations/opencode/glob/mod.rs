@@ -10,7 +10,7 @@ use std::process::Stdio;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
-use crate::implementations::grok_build::grep::ripgrep::rg_path;
+use crate::implementations::kigi::grep::ripgrep::rg_path;
 use crate::types::output::ToolOutput;
 #[allow(unused_imports)]
 use crate::types::resources::{

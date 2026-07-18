@@ -184,7 +184,7 @@ impl From<KillOutcome> for KillOutcomeResponse {
 
 pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/terminal/create" => {
+        "kigi/terminal/create" => {
             let req: CreateTerminalRequest = parse(args)?;
             let env: HashMap<String, String> = req
                 .env
@@ -206,7 +206,7 @@ pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
             respond(result)
         }
 
-        "x.ai/terminal/kill" => {
+        "kigi/terminal/kill" => {
             // Try PTY registry first, then piped terminal registry.
             let req: KillTerminalRequest = parse(args)?;
 
@@ -249,7 +249,7 @@ pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
             }
         }
 
-        "x.ai/terminal/output" => {
+        "kigi/terminal/output" => {
             let req: TerminalIdRequest = parse(args)?;
             let result = terminal::get_terminal_output(&req.session_id, &req.terminal_id)
                 .await
@@ -258,7 +258,7 @@ pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
             respond(result)
         }
 
-        "x.ai/terminal/wait_for_exit" => {
+        "kigi/terminal/wait_for_exit" => {
             let req: TerminalIdRequest = parse(args)?;
             let result = terminal::wait_for_terminal_exit(&req.session_id, &req.terminal_id)
                 .await
@@ -267,7 +267,7 @@ pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
             respond(result)
         }
 
-        "x.ai/terminal/release" => {
+        "kigi/terminal/release" => {
             let req: TerminalIdRequest = parse(args)?;
             terminal::release_terminal(&req.session_id, &req.terminal_id).await;
             ExtMethodResult::success(ReleaseTerminalResponse {})
@@ -275,7 +275,7 @@ pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
                 .map_err(|e| acp::Error::internal_error().data(e.to_string()))
         }
 
-        "x.ai/terminal/background" => {
+        "kigi/terminal/background" => {
             // Mark a terminal as backgrounded - the process keeps running but
             // waiting callers are notified so the agent can continue.
             //
@@ -292,7 +292,7 @@ pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
                 .map_err(|e| acp::Error::internal_error().data(e.to_string()))
         }
 
-        "x.ai/terminal/pty/create" => {
+        "kigi/terminal/pty/create" => {
             let req: PtyCreateRequest = parse(args)?;
             let env: HashMap<String, String> = req
                 .env
@@ -323,7 +323,7 @@ pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
             respond_pty(result)
         }
 
-        "x.ai/terminal/pty/load" => {
+        "kigi/terminal/pty/load" => {
             let req: PtyLoadRequest = parse(args)?;
             let target_client_id = req.meta.map(|m| m.client_id).unwrap_or_default();
             let result =
@@ -332,14 +332,14 @@ pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
             respond_pty(result)
         }
 
-        "x.ai/terminal/pty/resize" => {
+        "kigi/terminal/pty/resize" => {
             let req: PtyResizeRequest = parse(args)?;
             respond_pty(
                 terminal::pty_session::resize_pty(&req.terminal_id, req.rows, req.cols).await,
             )
         }
 
-        "x.ai/terminal/list" => {
+        "kigi/terminal/list" => {
             let terminals = terminal::list_terminals().await;
             respond(Ok::<_, String>(TerminalListResponse { terminals }))
         }

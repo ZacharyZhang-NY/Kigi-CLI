@@ -459,8 +459,8 @@ async fn handle_turn_end_verified_complete_during_drain_skips_bail_nudge() {
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
             *actor.goal_update_rx.borrow_mut() = Some(rx);
             tx.send(
-                kigi_tools::implementations::grok_build::update_goal::envelope_for_test(
-                    kigi_tools::implementations::grok_build::update_goal::UpdateGoalInput {
+                kigi_tools::implementations::kigi::update_goal::envelope_for_test(
+                    kigi_tools::implementations::kigi::update_goal::UpdateGoalInput {
                         completed: Some(true),
                         message: None,
                         blocked_reason: None,
@@ -1436,8 +1436,8 @@ async fn drain_goal_updates_blocked_reason_transitions_after_three_attempts() {
                 let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
                 *actor.goal_update_rx.borrow_mut() = Some(rx);
                 tx.send(
-                    kigi_tools::implementations::grok_build::update_goal::envelope_for_test(
-                        kigi_tools::implementations::grok_build::update_goal::UpdateGoalInput {
+                    kigi_tools::implementations::kigi::update_goal::envelope_for_test(
+                        kigi_tools::implementations::kigi::update_goal::UpdateGoalInput {
                             completed: None,
                             message: Some("longer body".into()),
                             blocked_reason: Some("short label".into()),
@@ -1479,8 +1479,8 @@ async fn drain_goal_updates_blocked_reason_rejected_below_threshold() {
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
             *actor.goal_update_rx.borrow_mut() = Some(rx);
             tx.send(
-                kigi_tools::implementations::grok_build::update_goal::envelope_for_test(
-                    kigi_tools::implementations::grok_build::update_goal::UpdateGoalInput {
+                kigi_tools::implementations::kigi::update_goal::envelope_for_test(
+                    kigi_tools::implementations::kigi::update_goal::UpdateGoalInput {
                         completed: None,
                         message: None,
                         blocked_reason: Some("only label".into()),
@@ -1580,8 +1580,8 @@ async fn drain_goal_updates_blocked_reason_against_non_active_does_not_stash_pau
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
             *actor.goal_update_rx.borrow_mut() = Some(rx);
             tx.send(
-                kigi_tools::implementations::grok_build::update_goal::envelope_for_test(
-                    kigi_tools::implementations::grok_build::update_goal::UpdateGoalInput {
+                kigi_tools::implementations::kigi::update_goal::envelope_for_test(
+                    kigi_tools::implementations::kigi::update_goal::UpdateGoalInput {
                         completed: None,
                         message: Some("body".into()),
                         blocked_reason: Some("would-block".into()),
@@ -1625,7 +1625,7 @@ async fn drain_goal_updates_completes_after_blocked_does_not_leak_pause_message(
                     .store(2, Ordering::Relaxed);
                 let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
                 *actor.goal_update_rx.borrow_mut() = Some(rx);
-                tx.send(kigi_tools::implementations::grok_build::update_goal::envelope_for_test(kigi_tools::implementations::grok_build::update_goal::UpdateGoalInput {
+                tx.send(kigi_tools::implementations::kigi::update_goal::envelope_for_test(kigi_tools::implementations::kigi::update_goal::UpdateGoalInput {
                         completed: None,
                         message: None,
                         blocked_reason: Some("blk".into()),
@@ -1641,7 +1641,7 @@ async fn drain_goal_updates_completes_after_blocked_does_not_leak_pause_message(
                 // accepts complete() from any paused variant (including
                 // Blocked), and the pause_message
                 // is cleared during the transition.
-                tx.send(kigi_tools::implementations::grok_build::update_goal::envelope_for_test(kigi_tools::implementations::grok_build::update_goal::UpdateGoalInput {
+                tx.send(kigi_tools::implementations::kigi::update_goal::envelope_for_test(kigi_tools::implementations::kigi::update_goal::UpdateGoalInput {
 
                         completed: Some(true),
                         message: None,
@@ -1675,8 +1675,8 @@ async fn drain_goal_updates_skips_subsequent_completed_after_block() {
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
             *actor.goal_update_rx.borrow_mut() = Some(rx);
             tx.send(
-                kigi_tools::implementations::grok_build::update_goal::envelope_for_test(
-                    kigi_tools::implementations::grok_build::update_goal::UpdateGoalInput {
+                kigi_tools::implementations::kigi::update_goal::envelope_for_test(
+                    kigi_tools::implementations::kigi::update_goal::UpdateGoalInput {
                         completed: None,
                         message: None,
                         blocked_reason: Some("X".into()),
@@ -1685,8 +1685,8 @@ async fn drain_goal_updates_skips_subsequent_completed_after_block() {
             )
             .unwrap();
             tx.send(
-                kigi_tools::implementations::grok_build::update_goal::envelope_for_test(
-                    kigi_tools::implementations::grok_build::update_goal::UpdateGoalInput {
+                kigi_tools::implementations::kigi::update_goal::envelope_for_test(
+                    kigi_tools::implementations::kigi::update_goal::UpdateGoalInput {
                         completed: Some(true),
                         message: None,
                         blocked_reason: None,
@@ -2259,8 +2259,8 @@ async fn drain_goal_updates_message_only_does_not_change_status() {
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
             *actor.goal_update_rx.borrow_mut() = Some(rx);
             tx.send(
-                kigi_tools::implementations::grok_build::update_goal::envelope_for_test(
-                    kigi_tools::implementations::grok_build::update_goal::UpdateGoalInput {
+                kigi_tools::implementations::kigi::update_goal::envelope_for_test(
+                    kigi_tools::implementations::kigi::update_goal::UpdateGoalInput {
                         completed: None,
                         message: Some("Running tests...".into()),
                         blocked_reason: None,
@@ -2294,7 +2294,7 @@ async fn drain_goal_updates_message_only_does_not_change_status() {
 /// producing an ack"). The drain must instead reply with a clean ack.
 #[tokio::test(flavor = "current_thread")]
 async fn drain_goal_updates_harness_disabled_does_not_drop_ack() {
-    use kigi_tools::implementations::grok_build::update_goal::{
+    use kigi_tools::implementations::kigi::update_goal::{
         RejectReason, UpdateGoalAck, UpdateGoalInput,
     };
     let local = tokio::task::LocalSet::new();
@@ -2374,8 +2374,8 @@ async fn drain_goal_updates_blocked_reason_takes_precedence_over_completed() {
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
             *actor.goal_update_rx.borrow_mut() = Some(rx);
             tx.send(
-                kigi_tools::implementations::grok_build::update_goal::envelope_for_test(
-                    kigi_tools::implementations::grok_build::update_goal::UpdateGoalInput {
+                kigi_tools::implementations::kigi::update_goal::envelope_for_test(
+                    kigi_tools::implementations::kigi::update_goal::UpdateGoalInput {
                         completed: Some(true),
                         message: None,
                         blocked_reason: Some("stuck".into()),
@@ -2404,9 +2404,8 @@ async fn drain_goal_updates_blocked_reason_takes_precedence_over_completed() {
 // classifier sampler invoked); the full Achieved/NotAchieved/cap
 // E2E suite using `MockSpawner` lives separately.
 
-fn make_completed_cmd() -> kigi_tools::implementations::grok_build::update_goal::UpdateGoalEnvelope
-{
-    let input = kigi_tools::implementations::grok_build::update_goal::UpdateGoalInput {
+fn make_completed_cmd() -> kigi_tools::implementations::kigi::update_goal::UpdateGoalEnvelope {
+    let input = kigi_tools::implementations::kigi::update_goal::UpdateGoalInput {
         completed: Some(true),
         message: None,
         blocked_reason: None,
@@ -2966,8 +2965,8 @@ async fn drain_goal_updates_completed_resets_blocked_streak() {
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
             *actor.goal_update_rx.borrow_mut() = Some(rx);
             tx.send(
-                kigi_tools::implementations::grok_build::update_goal::envelope_for_test(
-                    kigi_tools::implementations::grok_build::update_goal::UpdateGoalInput {
+                kigi_tools::implementations::kigi::update_goal::envelope_for_test(
+                    kigi_tools::implementations::kigi::update_goal::UpdateGoalInput {
                         completed: Some(true),
                         message: None,
                         blocked_reason: None,
@@ -3379,7 +3378,7 @@ async fn subagent_spawn_captures_effective_model_id() {
                 .handle_xai_session_notification(spawn_notif_with_model(
                     "a",
                     None,
-                    Some("grok-4.5"),
+                    Some("kigi-4.5"),
                 ))
                 .await;
             let model = actor
@@ -3387,7 +3386,7 @@ async fn subagent_spawn_captures_effective_model_id() {
                 .lock()
                 .get("a")
                 .and_then(|r| r.model.clone());
-            assert_eq!(model.as_deref(), Some("grok-4.5"));
+            assert_eq!(model.as_deref(), Some("kigi-4.5"));
         })
         .await;
 }
@@ -3417,17 +3416,17 @@ async fn goal_tokens_by_model_breaks_down_active_goal_records() {
     local
         .run_until(async {
             let actor = make_test_actor_with_active_goal().await;
-            insert_record_with_model(&actor, "a", Some("test-goal"), 0, 100, Some("grok-4"));
-            insert_record_with_model(&actor, "b", Some("test-goal"), 0, 400, Some("grok-3"));
+            insert_record_with_model(&actor, "a", Some("test-goal"), 0, 100, Some("kigi-4"));
+            insert_record_with_model(&actor, "b", Some("test-goal"), 0, 400, Some("kigi-3"));
             // No captured model → folds under the supplied current model.
             insert_record_with_model(&actor, "c", Some("test-goal"), 0, 50, None);
             // A record from another goal must be excluded.
-            insert_record_with_model(&actor, "d", Some("other-goal"), 0, 999, Some("grok-3"));
+            insert_record_with_model(&actor, "d", Some("other-goal"), 0, 999, Some("kigi-3"));
             // A FINISHED record under the active goal must be excluded from the
             // LIVE active-window breakdown (the per-model analogue of the
-            // finished/in-flight split in goal_tokens). If it leaked, grok-4
+            // finished/in-flight split in goal_tokens). If it leaked, kigi-4
             // would be 800 and sort first.
-            insert_record_with_model(&actor, "e", Some("test-goal"), 0, 700, Some("grok-4"));
+            insert_record_with_model(&actor, "e", Some("test-goal"), 0, 700, Some("kigi-4"));
             actor
                 .subagent_token_records
                 .lock()
@@ -3438,8 +3437,8 @@ async fn goal_tokens_by_model_breaks_down_active_goal_records() {
             assert_eq!(
                 out,
                 vec![
-                    ("grok-3".to_owned(), 400),
-                    ("grok-4".to_owned(), 100),
+                    ("kigi-3".to_owned(), 400),
+                    ("kigi-4".to_owned(), 100),
                     ("cur-model".to_owned(), 50),
                 ]
             );
@@ -3453,7 +3452,7 @@ async fn goal_tokens_by_model_empty_without_active_goal() {
     local
         .run_until(async {
             let actor = make_test_actor_with_active_goal().await;
-            insert_record_with_model(&actor, "a", Some("test-goal"), 0, 100, Some("grok-4"));
+            insert_record_with_model(&actor, "a", Some("test-goal"), 0, 100, Some("kigi-4"));
             // Drop the orchestration: with no active goal the breakdown is
             // empty regardless of any lingering records.
             actor.goal_tracker.lock().clear();
@@ -3757,8 +3756,8 @@ async fn blocked_streak_reaches_pause_across_successful_turns() {
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
             *actor.goal_update_rx.borrow_mut() = Some(rx);
             let blocked = || {
-                kigi_tools::implementations::grok_build::update_goal::envelope_for_test(
-                    kigi_tools::implementations::grok_build::update_goal::UpdateGoalInput {
+                kigi_tools::implementations::kigi::update_goal::envelope_for_test(
+                    kigi_tools::implementations::kigi::update_goal::UpdateGoalInput {
                         completed: None,
                         message: None,
                         blocked_reason: Some("cannot reach service".into()),
@@ -3849,7 +3848,7 @@ async fn subagent_progress_advances_goal_tokens_live_without_double_count() {
                         let kigi_acp_lib::AcpClientMessage::ExtNotification(args) = msg else {
                             continue;
                         };
-                        if args.request.method.as_ref() != "x.ai/session_notification" {
+                        if args.request.method.as_ref() != "kigi/session_notification" {
                             continue;
                         }
                         let Ok(v) =
@@ -4028,8 +4027,8 @@ async fn setup_goal_resets_streaks_from_previous_goal() {
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
             *actor.goal_update_rx.borrow_mut() = Some(rx);
             tx.send(
-                kigi_tools::implementations::grok_build::update_goal::envelope_for_test(
-                    kigi_tools::implementations::grok_build::update_goal::UpdateGoalInput {
+                kigi_tools::implementations::kigi::update_goal::envelope_for_test(
+                    kigi_tools::implementations::kigi::update_goal::UpdateGoalInput {
                         completed: None,
                         message: None,
                         blocked_reason: Some("blk".into()),

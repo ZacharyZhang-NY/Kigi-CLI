@@ -280,7 +280,7 @@ pub async fn handle(
     compat: CompatConfig,
 ) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/skills/add" => {
+        "kigi/skills/add" => {
             let req: SkillsAddRequest = serde_json::from_str(args.params.get())?;
             let cwd = req.cwd.as_deref().unwrap_or(".");
 
@@ -326,7 +326,7 @@ pub async fn handle(
             }))
         }
 
-        "x.ai/skills/remove" => {
+        "kigi/skills/remove" => {
             let req: SkillsRemoveRequest = serde_json::from_str(args.params.get())?;
             let cwd = req.cwd.as_deref().unwrap_or(".");
 
@@ -360,7 +360,7 @@ pub async fn handle(
             }))
         }
 
-        "x.ai/skills/reset" => {
+        "kigi/skills/reset" => {
             let params: CwdParams =
                 serde_json::from_str(args.params.get()).unwrap_or(CwdParams { cwd: None });
             let cwd = params.cwd.as_deref().unwrap_or(".");
@@ -381,13 +381,13 @@ pub async fn handle(
             super::to_ext_response(Ok(SkillsResetResponse { skills, message }))
         }
 
-        "x.ai/skills/list" => {
+        "kigi/skills/list" => {
             let req: SkillsListRequest = serde_json::from_str(args.params.get())?;
             let skills = reload_skills(&req.cwd, plugin_registry, compat).await;
             super::to_ext_response(Ok(SkillsListResponse { skills }))
         }
 
-        "x.ai/skills/config" => {
+        "kigi/skills/config" => {
             let params: CwdParams =
                 serde_json::from_str(args.params.get()).unwrap_or(CwdParams { cwd: None });
             let cwd = params.cwd.as_deref().unwrap_or(".");
@@ -450,7 +450,7 @@ pub async fn handle(
             }))
         }
 
-        "x.ai/skills/toggle" => {
+        "kigi/skills/toggle" => {
             let req: SkillsToggleRequest = serde_json::from_str(args.params.get())?;
             let cwd = req.cwd.as_deref().unwrap_or(".");
 

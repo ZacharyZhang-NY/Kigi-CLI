@@ -1,8 +1,8 @@
 //! Pure construction of the durable, replayable turn-completion terminal.
 //!
 //! `TurnCompleted` is the persisted + replayed twin of the fire-and-forget
-//! `x.ai/session/prompt_complete` notification: it rides the
-//! `_x.ai/session/update` rail so a viewer that re-attaches mid-turn finalizes
+//! `kigi/session/prompt_complete` notification: it rides the
+//! `_kigi/session/update` rail so a viewer that re-attaches mid-turn finalizes
 //! the turn from replay instead of stranding on "Waiting…". The
 //! `(stop_reason, agent_result)` pair is the SAME pair `prompt_complete`
 //! carries (from [`crate::sampling::error::prompt_complete_fields`]), so the

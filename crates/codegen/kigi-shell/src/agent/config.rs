@@ -37,13 +37,11 @@ pub enum AgentMode {
     Generic,
 }
 /// Default agent type when the server or user config doesn't specify one.
-pub const DEFAULT_AGENT_TYPE: &str = "grok-build-plan";
+pub const DEFAULT_AGENT_TYPE: &str = "kigi-plan";
 /// Serde default for `ModelInfo.agent_type` and `ModelEntryConfig.agent_type`.
 pub fn default_agent_type() -> String {
     DEFAULT_AGENT_TYPE.to_owned()
 }
-/// Default base URL for the public xAI API.
-pub const API_BASE_URL_DEFAULT: &str = "https://api.x.ai/v1";
 /// One or more environment variable names that may hold a model API key.
 ///
 /// Serde `untagged`: accepts a string or an array in TOML/JSON.
@@ -143,9 +141,14 @@ pub struct EndpointsConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub coding_api_base_url: Option<String>,
     /// Base URL for direct (BYOK / external-API-key) API calls.
+    ///
+    /// There is NO built-in default endpoint: a BYOK/custom endpoint must be
+    /// explicitly configured via `[endpoints] api_base_url` in config.toml,
+    /// the `KIGI_API_BASE_URL` env var, `--api-base-url`, or a managed
+    /// requirements pin. `None` = not configured.
     /// Accepts the legacy `xai_api_base_url` config key.
-    #[serde(alias = "xai_api_base_url")]
-    pub api_base_url: String,
+    #[serde(alias = "xai_api_base_url", skip_serializing_if = "Option::is_none")]
+    pub api_base_url: Option<String>,
     /// Optional extra access-header value (applied only with the optional
     /// non-production feature, and only for matching first-party hosts).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -225,7 +228,7 @@ impl EndpointsConfig {
     pub fn resolve_feedback_base_url(&self) -> String {
         blank_as_unset(&self.feedback_base_url).unwrap_or_else(|| self.proxy_url())
     }
-    /// Managed deployment-config URL (`grok setup`): explicit `managed_config_url`,
+    /// Managed deployment-config URL (`kigi setup`): explicit `managed_config_url`,
     /// else `proxy_url` + `/deployment/config`. Never `api_base_url`, so the
     /// deployment key reaches the proxy, not the inference host.
     pub fn resolve_managed_config_url(&self) -> String {
@@ -252,8 +255,7 @@ impl Default for EndpointsConfig {
     fn default() -> Self {
         Self {
             coding_api_base_url: std::env::var("KIGI_CODE_BASE_URL").ok(),
-            api_base_url: std::env::var("KIGI_API_BASE_URL")
-                .unwrap_or_else(|_| API_BASE_URL_DEFAULT.to_owned()),
+            api_base_url: env_string("KIGI_API_BASE_URL"),
             alpha_test_key: None,
             models_base_url: env_string("KIGI_MODELS_BASE_URL"),
             models_list_url: env_string("KIGI_MODELS_LIST_URL"),
@@ -1000,7 +1002,7 @@ pub struct Config {
     /// `[model.*]` overrides from config.toml. Resolve via `resolve_model_list()`.
     #[serde(skip)]
     pub config_models: IndexMap<String, ConfigModelOverride>,
-    /// Warnings from `[model.*]` parsing; surfaced by `grok inspect`.
+    /// Warnings from `[model.*]` parsing; surfaced by `kigi inspect`.
     #[serde(skip)]
     pub model_override_warnings: Vec<super::config_model_override_parse::ModelOverrideWarning>,
     pub kimi_code_config: KimiCodeConfig,
@@ -1076,7 +1078,7 @@ pub struct Config {
     /// Typed as `KimiCodeConfig` (same schema) so sub-field typos are caught.
     #[serde(default, skip_serializing)]
     pub auth: Option<KimiCodeConfig>,
-    /// `[desktop]` section — owned by grok-desktop (Electron app), opaque to the CLI agent.
+    /// `[desktop]` section — owned by kigi-desktop (Electron app), opaque to the CLI agent.
     #[serde(default, skip_serializing)]
     pub desktop: Option<toml::Value>,
     /// `[tips]` section — consumed by `merge_tips`.
@@ -1311,13 +1313,13 @@ pub use kigi_shared::ui_config::{ContextualHints, UiConfig};
 /// 2. CLI `--agent-profile` flag
 /// 3. `[agent]` config.toml section (this config)
 /// 4. `KIGI_AGENT` env var
-/// 5. Default `grok-build` agent
+/// 5. Default `kigi` agent
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AgentSelectionConfig {
     /// Name of a built-in or discovered agent definition.
     /// Looked up via `kigi_agent::discovery::by_name_in_cwd()`.
-    /// Examples: "grok-build", "browser-use", or a custom agent name.
+    /// Examples: "kigi", "browser-use", or a custom agent name.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     /// Path to an agent definition file (.md with YAML frontmatter).
@@ -1718,7 +1720,7 @@ impl Config {
             .default(false)
             .resolve()
     }
-    /// Server-side doom-loop check policy (the `x-grok-doom-loop-check`
+    /// Server-side doom-loop check policy (the `x-kigi-doom-loop-check`
     /// header, trigger parsing, and confident-signal resampling, all
     /// applied by the sampler). Merged
     /// PER-FIELD across the `[doom_loop_recovery]` TOML table and the
@@ -2146,7 +2148,7 @@ impl Config {
         resolve_mcp_auto_restart(None, None, self.features.mcp_auto_restart, None, None)
     }
     /// Resolve whether the pager subscribes to the per-server
-    /// `x.ai/mcp/server_status` push.
+    /// `kigi/mcp/server_status` push.
     ///
     /// Thin delegate to the canonical
     /// [`resolve_mcp_push_server_status`] free function — mirrors the
@@ -2251,7 +2253,7 @@ pub fn resolve_mcp_auto_restart(
 /// the precedence is single-sourced.
 ///
 /// The default is `true` — the pager's subscription to
-/// `x.ai/mcp/server_status` is wired default-on, with this
+/// `kigi/mcp/server_status` is wired default-on, with this
 /// flag existing primarily as a kill switch.
 pub fn resolve_mcp_push_server_status(
     requirement: Option<bool>,
@@ -2347,7 +2349,7 @@ impl SyncBoolFlag {
         self.disable_env = Some(name);
         self
     }
-    /// Either-direction env resolver (typically `GROK_*`). Returns
+    /// Either-direction env resolver (typically `KIGI_*`). Returns
     /// `Some(enabled)` for an explicit signal, `None` to fall through.
     pub const fn enable_env(mut self, resolver: fn() -> Option<bool>) -> Self {
         self.enable_env = Some(resolver);
@@ -2830,7 +2832,7 @@ pub struct ModelEntryConfig {
     pub id: Option<String>,
     /// The routing slug sent in API requests.
     pub model: String,
-    /// The base URL of the model. e.g. "https://api.x.ai/v1"
+    /// The base URL of the model. e.g. "https://byok.example/v1"
     pub base_url: String,
     /// Human-readable display name of the model.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2899,7 +2901,7 @@ pub struct ModelEntryConfig {
     #[serde(default, skip_serializing_if = "is_false")]
     pub use_concise: bool,
     /// The type of system prompt to use for this model.
-    /// e.g. "grok-build", "codex".
+    /// e.g. "kigi", "codex".
     #[serde(default = "default_agent_type")]
     pub agent_type: String,
     /// Maximum seconds to wait between SSE chunks during inference streaming.
@@ -3143,7 +3145,7 @@ pub struct ModelInfo {
     /// concise tool output, concise user message prefix, reduced toolset).
     pub use_concise: bool,
     /// The type of agent configuration to use for this model.
-    /// Always has a value; defaults to `"grok-build-plan"` when the server
+    /// Always has a value; defaults to `"kigi-plan"` when the server
     /// or user config doesn't specify one.
     #[serde(default = "default_agent_type")]
     pub agent_type: String,
@@ -3523,9 +3525,9 @@ pub struct Features {
     /// Default: true (index any git repo). Patterns can explicitly match non-git directories.
     #[serde(default)]
     pub codebase_indexing: CodebaseIndexingSetting,
-    /// Show a blocking warning when Grok starts outside a Git repository.
+    /// Show a blocking warning when Kigi starts outside a Git repository.
     /// Default: false. Used as the local fallback when the `non_git_warning` remote settings
-    /// flag in `grok_build_settings` is absent. When the remote flag is present it takes
+    /// flag in `kigi_settings` is absent. When the remote flag is present it takes
     /// precedence — `Some(false)` from remote settings overrides `true` here.
     #[serde(default)]
     pub non_git_warning: bool,
@@ -3600,7 +3602,7 @@ pub struct Features {
     ///
     /// When `true` (default), each successfully-handshaken MCP
     /// client gets a poller that detects rmcp service-loop
-    /// termination and pushes `x.ai/mcp/server_status` updates to
+    /// termination and pushes `kigi/mcp/server_status` updates to
     /// the client. When `false`, neither watchers nor the
     /// dispatcher are spawned — useful as an emergency kill switch
     /// for the rollout. `None` = defer to env / default (true).
@@ -3622,13 +3624,13 @@ pub struct Features {
     /// Resolved via [`Config::resolve_mcp_auto_restart`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mcp_auto_restart: Option<bool>,
-    /// Pager-side subscription to the `x.ai/mcp/server_status` push.
+    /// Pager-side subscription to the `kigi/mcp/server_status` push.
     ///
     /// When `true` (default), the pager subscribes to the per-server
     /// status delta the shell emits via the dispatcher and
     /// patches the MCP servers modal in-place (no re-fetch round
     /// trip). When `false`, the pager ignores the push and falls
-    /// back to the legacy `x.ai/mcp/tools_changed` debounced refetch
+    /// back to the legacy `kigi/mcp/tools_changed` debounced refetch
     /// path. `None` = defer to env / default (true).
     ///
     /// The pager-side gate
@@ -4169,7 +4171,7 @@ mod tests {
             tools: Some(vec!["read_file".into()]),
             ..Default::default()
         };
-        let mut cases = vec![(AgentDefinition::default_grok_build(), true)];
+        let mut cases = vec![(AgentDefinition::default_kigi(), true)];
         for (mut definition, expected_injection) in cases {
             overrides.apply_to_definition(&mut definition);
             assert_eq!(definition.tools, vec!["read_file".to_string()]);
@@ -4185,13 +4187,13 @@ mod tests {
         let toml_src = r#"
 enabled = true
 prompt_type = "no_user_tool_prefix"
-classifier_model = "grok-4.5"
+classifier_model = "kigi-4.5"
 reasoning_effort = "low"
 "#;
         let from_toml: AutoModeConfig = toml::from_str(toml_src).unwrap();
         let json = serde_json::json!(
             { "enabled" : true, "prompt_type" : "no_user_tool_prefix", "classifier_model"
-            : "grok-4.5", "reasoning_effort" : "low" }
+            : "kigi-4.5", "reasoning_effort" : "low" }
         );
         let from_json: AutoModeConfig = serde_json::from_value(json).unwrap();
         for cfg in [&from_toml, &from_json] {
@@ -4200,7 +4202,7 @@ reasoning_effort = "low"
                 cfg.prompt_type,
                 Some(ClassifierPromptType::NoUserToolPrefix)
             );
-            assert_eq!(cfg.classifier_model.as_deref(), Some("grok-4.5"));
+            assert_eq!(cfg.classifier_model.as_deref(), Some("kigi-4.5"));
             assert_eq!(cfg.reasoning_effort, Some(ReasoningEffort::Low));
         }
         let empty: AutoModeConfig = toml::from_str("").unwrap();
@@ -4450,7 +4452,7 @@ reasoning_effort = "low"
         let (model, cfg) = finalize_image_describe_sampler_config(None, &active, Some(3));
         assert_eq!(model, "composer-session-model");
         assert_eq!(cfg.model, "composer-session-model");
-        assert_ne!(cfg.model, "grok-build");
+        assert_ne!(cfg.model, "kigi");
     }
     #[test]
     fn finalize_image_describe_sampler_some_stamps_session_fields() {
@@ -4459,20 +4461,20 @@ reasoning_effort = "low"
             ..Default::default()
         };
         let aux = SamplerConfig {
-            model: "grok-build".into(),
+            model: "kigi".into(),
             ..Default::default()
         };
         let (model, cfg) = finalize_image_describe_sampler_config(Some(aux), &active, Some(7));
-        assert_eq!(model, "grok-build");
-        assert_eq!(cfg.model, "grok-build");
+        assert_eq!(model, "kigi");
+        assert_eq!(cfg.model, "kigi");
         assert_eq!(cfg.max_retries, Some(7));
     }
     #[test]
-    fn resolve_aux_model_honors_grok_build_override() {
+    fn resolve_aux_model_honors_kigi_override() {
         let endpoints = EndpointsConfig::default();
         let mut catalog = IndexMap::new();
         catalog.insert(
-            "grok-build".to_string(),
+            "kigi".to_string(),
             test_model_entry(
                 "v9m-rl-learnability-tp8",
                 "https://vendor.example/v1",
@@ -4481,9 +4483,8 @@ reasoning_effort = "low"
                 None,
             ),
         );
-        let resolved =
-            resolve_aux_model_sampling_config("grok-build", &catalog, &endpoints, None, None)
-                .expect("override entry has an API key, so resolution succeeds");
+        let resolved = resolve_aux_model_sampling_config("kigi", &catalog, &endpoints, None, None)
+            .expect("override entry has an API key, so resolution succeeds");
         assert_eq!(resolved.model, "v9m-rl-learnability-tp8");
         assert_eq!(resolved.base_url, "https://vendor.example/v1");
         assert_eq!(resolved.api_key.as_deref(), Some("vendor-key"));
@@ -4493,7 +4494,7 @@ reasoning_effort = "low"
         let raw_config: toml::Value = toml::from_str(
             r#"
             [model.my-custom-model]
-            model = "grok-4.5"
+            model = "kigi-4.5"
             base_url = "https://api.example.com/v1"
             context_window = 200000
             api_key = "sk-test-key-12345"
@@ -4503,7 +4504,7 @@ reasoning_effort = "low"
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
         let resolved = resolve_model_list(&cfg, None);
         let model = resolved.get("my-custom-model").expect("model should exist");
-        assert_eq!(model.info.model, "grok-4.5");
+        assert_eq!(model.info.model, "kigi-4.5");
         assert_eq!(model.info.base_url, "https://api.example.com/v1");
         assert_eq!(model.api_key, Some("sk-test-key-12345".to_string()));
     }
@@ -4633,8 +4634,9 @@ reasoning_effort = "low"
                 auth_scheme: AuthScheme::Bearer,
             };
             assert_eq!(
-                api_key_creds.base_url, endpoints.api_base_url,
-                "{model_id}: ExternalApiKey must route to api.x.ai"
+                Some(api_key_creds.base_url.as_str()),
+                endpoints.api_base_url.as_deref(),
+                "{model_id}: ExternalApiKey must route to the configured BYOK endpoint"
             );
         }
     }
@@ -4874,7 +4876,7 @@ reasoning_effort = "low"
     #[test]
     fn proxy_messages_models_use_bearer_auth_scheme() {
         let mut model = test_model_entry(
-            "grok-4.5",
+            "kigi-4.5",
             kigi_env::PRODUCTION_ENDPOINTS.coding_api_base_url,
             None,
             None,
@@ -4937,7 +4939,7 @@ reasoning_effort = "low"
     #[test]
     fn auth_scheme_defaults_to_bearer_when_not_set_in_config() {
         let model = test_model_entry(
-            "grok-4.5",
+            "kigi-4.5",
             "https://api.example.com/v1",
             Some("sk-openai-test"),
             None,
@@ -4994,7 +4996,7 @@ reasoning_effort = "low"
             byok_from_lookup(&ModelLookup::Loaded(Some(&byok))),
             ModelByok::Byok,
         );
-        let session = test_model_entry("m", "https://api.x.ai/v1", None, None, None);
+        let session = test_model_entry("m", "https://byok.example/v1", None, None, None);
         assert_eq!(
             byok_from_lookup(&ModelLookup::Loaded(Some(&session))),
             ModelByok::NotByok,
@@ -5257,10 +5259,10 @@ reasoning_effort = "low"
     }
     #[test]
     fn sampling_config_context_window_from_entry_or_default() {
-        let model = test_model_entry("any-model", "https://api.x.ai/v1", None, None, None);
+        let model = test_model_entry("any-model", "https://byok.example/v1", None, None, None);
         let config = sampling_config_for_model(&model, resolve_credentials(&model, None), None);
         assert_eq!(config.context_window, 200_000);
-        let mut model = test_model_entry("any-model", "https://api.x.ai/v1", None, None, None);
+        let mut model = test_model_entry("any-model", "https://byok.example/v1", None, None, None);
         model.info.context_window = NonZeroU64::new(256_000).unwrap();
         let config = sampling_config_for_model(&model, resolve_credentials(&model, None), None);
         assert_eq!(config.context_window, 256_000);
@@ -5270,7 +5272,7 @@ reasoning_effort = "low"
         let raw_config: toml::Value = toml::from_str(
             r#"
             [model.my-responses-model]
-            model = "grok-4.5"
+            model = "kigi-4.5"
             base_url = "https://api.example.com/v1"
             context_window = 200000
             api_backend = "responses"
@@ -5289,7 +5291,7 @@ reasoning_effort = "low"
         let raw_config: toml::Value = toml::from_str(
             r#"
             [model.my-chat-model]
-            model = "grok-4.5"
+            model = "kigi-4.5"
             base_url = "https://api.example.com/v1"
             context_window = 200000
             api_backend = "chat_completions"
@@ -5309,7 +5311,7 @@ reasoning_effort = "low"
         let raw_config: toml::Value = toml::from_str(
             r#"
             [model.my-claude]
-            model = "grok-4.5"
+            model = "kigi-4.5"
             base_url = "https://messages.example.com"
             context_window = 200000
             api_backend = "messages"
@@ -5331,7 +5333,7 @@ reasoning_effort = "low"
         let raw_config: toml::Value = toml::from_str(
             r#"
             [model.my-claude]
-            model = "grok-4.5"
+            model = "kigi-4.5"
             base_url = "https://messages.example.com"
             context_window = 200000
             api_backend = "messages"
@@ -5354,7 +5356,7 @@ reasoning_effort = "low"
         let raw_config: toml::Value = toml::from_str(
             r#"
             [model.my-openai]
-            model = "grok-4.5"
+            model = "kigi-4.5"
             base_url = "https://api.example.com/v1"
             context_window = 200000
             api_backend = "chat_completions"
@@ -5374,7 +5376,7 @@ reasoning_effort = "low"
         let raw_config: toml::Value = toml::from_str(
             r#"
             [model.my-model]
-            model = "grok-4.5"
+            model = "kigi-4.5"
             base_url = "https://api.example.com/v1"
             context_window = 200000
             "#,
@@ -5574,7 +5576,7 @@ reasoning_effort = "low"
         assert_eq!(model.info.agent_type, "codex");
     }
     #[test]
-    fn model_agent_type_defaults_to_grok_build() {
+    fn model_agent_type_defaults_to_kigi() {
         let raw_config: toml::Value = toml::from_str(
             r#"
             [model.my-model]
@@ -5834,12 +5836,12 @@ reasoning_effort = "low"
             r#"
             [model.visible-model]
             model = "visible-model"
-            base_url = "https://api.x.ai/v1"
+            base_url = "https://byok.example/v1"
             context_window = 200000
 
             [model.hidden-model]
             model = "hidden-model"
-            base_url = "https://api.x.ai/v1"
+            base_url = "https://byok.example/v1"
             context_window = 200000
             hidden = true
             "#,
@@ -5874,7 +5876,7 @@ reasoning_effort = "low"
             disabled_models = ["to-disable"]
             [model.to-disable]
             model = "to-disable"
-            base_url = "https://api.x.ai/v1"
+            base_url = "https://byok.example/v1"
             context_window = 200000
             "#,
         )
@@ -5891,7 +5893,7 @@ reasoning_effort = "low"
             hidden_models = ["to-hide"]
             [model.to-hide]
             model = "to-hide"
-            base_url = "https://api.x.ai/v1"
+            base_url = "https://byok.example/v1"
             context_window = 200000
             "#,
         )
@@ -5911,15 +5913,15 @@ reasoning_effort = "low"
             allowed_models = ["keep-*", "explicit-key", "explicit-model-id"]
             [model.to-drop]
             model = "to-drop"
-            base_url = "https://api.x.ai/v1"
+            base_url = "https://byok.example/v1"
             context_window = 256000
             [model.keep-one]
             model = "keep-one"
-            base_url = "https://api.x.ai/v1"
+            base_url = "https://byok.example/v1"
             context_window = 256000
             [model.explicit-key]
             model = "explicit-model-id"
-            base_url = "https://api.x.ai/v1"
+            base_url = "https://byok.example/v1"
             context_window = 256000
             "#,
         )
@@ -5944,7 +5946,7 @@ reasoning_effort = "low"
             allowed_models = []
             [model.foo]
             model = "foo"
-            base_url = "https://api.x.ai/v1"
+            base_url = "https://byok.example/v1"
             context_window = 256000
             "#,
         )
@@ -5958,11 +5960,11 @@ reasoning_effort = "low"
     #[test]
     fn invalid_glob_is_rejected_by_validation() {
         use crate::agent::models::ModelGlobSet;
-        assert!(ModelGlobSet::compile(Some(&vec!["grok[".to_string()])).is_err());
+        assert!(ModelGlobSet::compile(Some(&vec!["kigi[".to_string()])).is_err());
         let raw: toml::Value = toml::from_str(
             r#"
             [models]
-            allowed_models = ["grok["]
+            allowed_models = ["kigi["]
             "#,
         )
         .unwrap();
@@ -5982,13 +5984,13 @@ reasoning_effort = "low"
             r#"
             [model.oauth-only-model]
             model = "oauth-only-model"
-            base_url = "https://api.x.ai/v1"
+            base_url = "https://byok.example/v1"
             context_window = 200000
             supported_in_api = false
 
             [model.public-model]
             model = "public-model"
-            base_url = "https://api.x.ai/v1"
+            base_url = "https://byok.example/v1"
             context_window = 200000
             "#,
         )
@@ -6013,8 +6015,8 @@ reasoning_effort = "low"
         let raw_config: toml::Value = toml::from_str(
             r#"
             [model.slow-model]
-            model = "grok-4.5"
-            base_url = "https://api.x.ai/v1"
+            model = "kigi-4.5"
+            base_url = "https://byok.example/v1"
             context_window = 200000
             inference_idle_timeout_secs = 600
             "#,
@@ -6030,8 +6032,8 @@ reasoning_effort = "low"
         let raw_config: toml::Value = toml::from_str(
             r#"
             [model.default-model]
-            model = "grok-fast"
-            base_url = "https://api.x.ai/v1"
+            model = "kigi-fast"
+            base_url = "https://byok.example/v1"
             context_window = 200000
             "#,
         )
@@ -6136,7 +6138,7 @@ reasoning_effort = "low"
         );
         assert_eq!(
             sampling.base_url, "https://inference.example.com/v1",
-            "should route to the user's custom endpoint, not api.x.ai"
+            "should route to the user's custom endpoint, not the BYOK endpoint"
         );
         unsafe { std::env::remove_var("ENTERPRISE_AUTH_TOKEN") };
     }
@@ -6229,8 +6231,8 @@ reasoning_effort = "low"
     fn config_models_default_custom_model_is_in_resolved_model_list() {
         let (_, models) = resolve_models_from_toml(
             r#"
-            [model.acme-grok]
-            model = "grok-4.5"
+            [model.acme-kigi]
+            model = "kigi-4.5"
             base_url = "https://inference.example.com/v1"
             context_window = 256000
             env_key = "ENTERPRISE_AUTH_TOKEN"
@@ -6238,11 +6240,11 @@ reasoning_effort = "low"
             None,
         );
         assert!(
-            models.contains_key("acme-grok"),
+            models.contains_key("acme-kigi"),
             "user-defined model must be in the resolved model list"
         );
-        let model = models.get("acme-grok").unwrap();
-        assert_eq!(model.info.model, "grok-4.5");
+        let model = models.get("acme-kigi").unwrap();
+        assert_eq!(model.info.model, "kigi-4.5");
         assert_eq!(model.info.base_url, "https://inference.example.com/v1");
     }
     #[test]
@@ -6342,7 +6344,7 @@ reasoning_effort = "low"
             "https://proxy.api/v1",
             None,
             None,
-            Some("https://api.x.ai/v1"),
+            Some("https://byok.example/v1"),
         );
         let sampling = resolve_sampling(&model_no_key, Some("session-key"));
         assert_eq!(
@@ -6361,7 +6363,7 @@ reasoning_effort = "low"
             "env key should be used when no session and no model credentials"
         );
         assert_eq!(
-            sampling.base_url, "https://api.x.ai/v1",
+            sampling.base_url, "https://byok.example/v1",
             "env key should route to api_base_url"
         );
         unsafe { std::env::remove_var("XAI_API_KEY") };
@@ -6447,17 +6449,17 @@ reasoning_effort = "low"
     fn e2e_acp_model_info_no_dedup_on_model_field() {
         let mut models = IndexMap::new();
         models.insert(
-            "default-grok".to_string(),
+            "default-kigi".to_string(),
             test_model_entry(
                 crate::models::default_model(),
                 "https://api.kimi.com/coding/v1",
                 None,
                 None,
-                Some("https://api.x.ai/v1"),
+                Some("https://byok.example/v1"),
             ),
         );
         models.insert(
-            "acme-grok".to_string(),
+            "acme-kigi".to_string(),
             test_model_entry(
                 crate::models::default_model(),
                 "https://inference.example.com/v1",
@@ -6473,11 +6475,11 @@ reasoning_effort = "low"
             "both entries should survive in ACP model list"
         );
         assert!(
-            acp_models.contains_key(&acp::ModelId::new("default-grok")),
+            acp_models.contains_key(&acp::ModelId::new("default-kigi")),
             "default entry should be addressable by map key"
         );
         assert!(
-            acp_models.contains_key(&acp::ModelId::new("acme-grok")),
+            acp_models.contains_key(&acp::ModelId::new("acme-kigi")),
             "user entry should be addressable by map key"
         );
     }
@@ -6550,6 +6552,16 @@ reasoning_effort = "low"
             unsafe { std::env::remove_var(k) };
         }
     }
+    /// PRD §9: there is no built-in BYOK endpoint default — `api_base_url`
+    /// stays unset unless explicitly configured (config key, env var, CLI
+    /// flag, or requirements pin).
+    #[test]
+    #[serial]
+    fn api_base_url_has_no_default() {
+        unset_endpoint_env_vars();
+        assert_eq!(EndpointsConfig::default().api_base_url, None);
+    }
+
     /// INVARIANT: auxiliary-service resolvers resolve to the cli-chat-proxy, never
     /// `api_base_url` — overriding ONLY inference keeps every aux endpoint on
     /// the proxy; explicit per-service overrides win verbatim.
@@ -6559,7 +6571,7 @@ reasoning_effort = "low"
         unset_endpoint_env_vars();
         let inference = "https://inference.acme-corp.example/xai/v1";
         let cfg = EndpointsConfig {
-            api_base_url: inference.to_string(),
+            api_base_url: Some(inference.to_string()),
             coding_api_base_url: None,
             ..Default::default()
         };
@@ -6572,7 +6584,7 @@ reasoning_effort = "low"
             format!("{proxy}/deployment/config")
         );
         assert_eq!(cfg.resolve_feedback_base_url(), proxy);
-        assert_eq!(cfg.api_base_url, inference);
+        assert_eq!(cfg.api_base_url.as_deref(), Some(inference));
         let overridden = EndpointsConfig {
             coding_api_base_url: Some("https://proxy.enterprise.example/v1".to_string()),
             managed_config_url: Some(
@@ -7495,13 +7507,13 @@ reverify_after = 6
     }
     fn planner_pair() -> crate::util::config::GoalRoleModel {
         crate::util::config::GoalRoleModel {
-            model: "grok-4".to_string(),
+            model: "kigi-4".to_string(),
             agent_type: "general-purpose".to_string(),
         }
     }
     fn strategist_pair() -> crate::util::config::GoalRoleModel {
         crate::util::config::GoalRoleModel {
-            model: "grok-4.5".to_string(),
+            model: "kigi-4.5".to_string(),
             agent_type: "cursor".to_string(),
         }
     }
@@ -7701,29 +7713,29 @@ reverify_after = 6
         let toml_str = r#"
 [goal]
 enabled = true
-planner_model = { model = "grok-build", agent_type = "grok-build-plan" }
+planner_model = { model = "kigi", agent_type = "kigi-plan" }
 
 [goal.strategist_model]
-model = "grok-composer-2.5-fast"
+model = "kigi-composer-2.5-fast"
 agent_type = "cursor"
 
 [[goal.skeptic_models]]
-model = "grok-build"
-agent_type = "grok-build-plan"
+model = "kigi"
+agent_type = "kigi-plan"
 
 [[goal.skeptic_models]]
-model = "grok-composer-2.5-fast"
+model = "kigi-composer-2.5-fast"
 agent_type = "cursor"
 "#;
         let raw: toml::Value = toml::from_str(toml_str).unwrap();
         let cfg = Config::new_from_toml_cfg(&raw).unwrap();
-        assert_eq!(cfg.goal.planner_model.as_ref().unwrap().model, "grok-build");
+        assert_eq!(cfg.goal.planner_model.as_ref().unwrap().model, "kigi");
         assert_eq!(
             cfg.goal.strategist_model.as_ref().unwrap().agent_type,
             "cursor"
         );
         assert_eq!(cfg.goal.skeptic_models.len(), 2);
-        assert_eq!(cfg.goal.skeptic_models[0].model, "grok-build");
+        assert_eq!(cfg.goal.skeptic_models[0].model, "kigi");
         assert_eq!(
             cfg.resolve_goal_planner_model(false).source,
             ConfigSource::Config
@@ -7737,7 +7749,7 @@ agent_type = "cursor"
 [goal]
 enabled = true
 classifier_max_runs = 6
-planner_model = { agent_type = "grok-build-plan" }
+planner_model = { agent_type = "kigi-plan" }
 "#;
         let raw: toml::Value = toml::from_str(toml_str).unwrap();
         let cfg = Config::new_from_toml_cfg(&raw)
@@ -7752,21 +7764,21 @@ planner_model = { agent_type = "grok-build-plan" }
 enabled = true
 
 [[goal.skeptic_models]]
-model = "grok-build"
-agent_type = "grok-build-plan"
+model = "kigi"
+agent_type = "kigi-plan"
 
 [[goal.skeptic_models]]
 agent_type = "cursor"
 
 [[goal.skeptic_models]]
-model = "grok-composer-2.5-fast"
+model = "kigi-composer-2.5-fast"
 agent_type = "cursor"
 "#;
         let raw: toml::Value = toml::from_str(toml_str).unwrap();
         let cfg = Config::new_from_toml_cfg(&raw).unwrap();
         assert_eq!(cfg.goal.skeptic_models.len(), 2);
-        assert_eq!(cfg.goal.skeptic_models[0].model, "grok-build");
-        assert_eq!(cfg.goal.skeptic_models[1].model, "grok-composer-2.5-fast");
+        assert_eq!(cfg.goal.skeptic_models[0].model, "kigi");
+        assert_eq!(cfg.goal.skeptic_models[1].model, "kigi-composer-2.5-fast");
     }
     /// Acceptance test: a full managed-config `[goal]` block resolves end-to-end,
     /// every value sourced from config (not remote/default).
@@ -7783,26 +7795,26 @@ classifier_enabled = true
 planner_enabled = true
 verifier_count = 3
 classifier_max_runs = 6
-planner_model = { model = "grok-build", agent_type = "grok-build-plan" }
-strategist_model = { model = "grok-composer-2.5-fast", agent_type = "cursor" }
+planner_model = { model = "kigi", agent_type = "kigi-plan" }
+strategist_model = { model = "kigi-composer-2.5-fast", agent_type = "cursor" }
 
 [[goal.skeptic_models]]
-model = "grok-build"
-agent_type = "grok-build-plan"
+model = "kigi"
+agent_type = "kigi-plan"
 
 [[goal.skeptic_models]]
-model = "grok-composer-2.5-fast"
+model = "kigi-composer-2.5-fast"
 agent_type = "cursor"
 "#,
         )
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw).expect("[goal] config must parse");
-        let grok_build = crate::util::config::GoalRoleModel {
-            model: "grok-build".into(),
-            agent_type: "grok-build-plan".into(),
+        let kigi = crate::util::config::GoalRoleModel {
+            model: "kigi".into(),
+            agent_type: "kigi-plan".into(),
         };
         let composer = crate::util::config::GoalRoleModel {
-            model: "grok-composer-2.5-fast".into(),
+            model: "kigi-composer-2.5-fast".into(),
             agent_type: "cursor".into(),
         };
         let goal_enabled = cfg.resolve_goal().value;
@@ -7814,10 +7826,7 @@ agent_type = "cursor"
         let use_current = cfg.resolve_goal_use_current_model_only().value;
         assert!(!use_current);
         let planner = cfg.resolve_goal_planner_model(use_current);
-        assert_eq!(
-            planner.value,
-            GoalRoleModelChoice::Explicit(grok_build.clone())
-        );
+        assert_eq!(planner.value, GoalRoleModelChoice::Explicit(kigi.clone()));
         assert_eq!(planner.source, ConfigSource::Config);
         assert_eq!(
             cfg.resolve_goal_strategist_model(use_current).value,
@@ -7826,7 +7835,7 @@ agent_type = "cursor"
         assert_eq!(
             cfg.resolve_goal_skeptic_models(use_current).value,
             vec![
-                GoalRoleModelChoice::Explicit(grok_build),
+                GoalRoleModelChoice::Explicit(kigi),
                 GoalRoleModelChoice::Explicit(composer),
             ]
         );
@@ -7910,7 +7919,7 @@ agent_type = "cursor"
             management_api_key = "mgmt-key"
             gcs_service_account_key = "gcs-key"
             [models]
-            default = "grok-3"
+            default = "kigi-3"
             [ui]
             yolo = true
             theme = "dark"
@@ -8532,25 +8541,25 @@ hooks = true
         let mut value: toml::Value = toml::from_str(
             r#"
 [models]
-default = "grok-build"
+default = "kigi"
 
 [[version_overrides]]
 minimum_version = "1.8.0"
 [version_overrides.models]
-default = "grok-4.5"
+default = "kigi-4.5"
 "#,
         )
         .unwrap();
         let v = semver::Version::parse("1.8.0").unwrap();
         kigi_config::apply_version_overrides(&mut value, &v).unwrap();
         let cfg = Config::new_from_toml_cfg(&value).unwrap();
-        assert_eq!(cfg.models.default.as_deref(), Some("grok-4.5"));
+        assert_eq!(cfg.models.default.as_deref(), Some("kigi-4.5"));
     }
     /// Reproduce the enterprise managed config bug: [model.kigi-build] sets
-    /// context_window=500k for model="grok-4.5", but
-    /// [models].default="grok-4.5" resolves to the bare
+    /// context_window=500k for model="kigi-4.5", but
+    /// [models].default="kigi-4.5" resolves to the bare
     /// prefetched entry (256k) because Layer 3 only overrides key
-    /// "kigi-build", not key "grok-4.5".
+    /// "kigi-build", not key "kigi-4.5".
     ///
     /// After the Layer 4 slug propagation fix, both keys should have 500k.
     #[test]
@@ -8559,10 +8568,10 @@ default = "grok-4.5"
         let raw: toml::Value = toml::from_str(
             r#"
             [models]
-            default = "grok-4.5"
+            default = "kigi-4.5"
 
             [model.kigi-build]
-            model = "grok-4.5"
+            model = "kigi-4.5"
             context_window = 500000
             base_url = "https://inference.example.com/v1"
             api_backend = "responses"
@@ -8572,25 +8581,25 @@ default = "grok-4.5"
         let cfg = Config::new_from_toml_cfg(&raw).expect("config should parse");
         let mut prefetched = IndexMap::new();
         let mut entry = test_model_entry(
-            "grok-4.5",
+            "kigi-4.5",
             "https://inference.example.com/v1",
             None,
             None,
             None,
         );
         entry.info.context_window = NonZeroU64::new(default_cw).unwrap();
-        prefetched.insert("grok-4.5".to_owned(), entry);
+        prefetched.insert("kigi-4.5".to_owned(), entry);
         let resolved = resolve_model_list(&cfg, Some(prefetched));
         let by_key = resolved
             .get("kigi-build")
             .expect("kigi-build key must exist");
         assert_eq!(by_key.info.context_window.get(), 500_000);
-        assert_eq!(by_key.info.model, "grok-4.5");
-        let by_latest = resolved.get("grok-4.5").expect("grok-4.5 key must exist");
+        assert_eq!(by_key.info.model, "kigi-4.5");
+        let by_latest = resolved.get("kigi-4.5").expect("kigi-4.5 key must exist");
         assert_eq!(
             by_latest.info.context_window.get(),
             500_000,
-            "BUG: prefetched 'grok-4.5' should inherit 500k from \
+            "BUG: prefetched 'kigi-4.5' should inherit 500k from \
              sibling 'kigi-build' (same model slug), not stay at {default_cw}"
         );
     }
@@ -8601,24 +8610,24 @@ default = "grok-4.5"
         let raw: toml::Value = toml::from_str(
             r#"
             [model.kigi-build]
-            model = "grok-4.5"
+            model = "kigi-4.5"
             context_window = 500000
             base_url = "https://test.example.com/v1"
             api_backend = "responses"
-            agent_type = "grok-build"
+            agent_type = "kigi"
             "#,
         )
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw).expect("config should parse");
         let mut prefetched = IndexMap::new();
         let mut entry =
-            test_model_entry("grok-4.5", "https://test.example.com/v1", None, None, None);
+            test_model_entry("kigi-4.5", "https://test.example.com/v1", None, None, None);
         entry.info.context_window = NonZeroU64::new(default_cw).unwrap();
         entry.info.agent_type = default_agent_type();
         entry.info.api_backend = ApiBackend::default();
-        prefetched.insert("grok-4.5".to_owned(), entry);
+        prefetched.insert("kigi-4.5".to_owned(), entry);
         let resolved = resolve_model_list(&cfg, Some(prefetched));
-        let latest = resolved.get("grok-4.5").unwrap();
+        let latest = resolved.get("kigi-4.5").unwrap();
         assert_eq!(
             latest.info.agent_type,
             default_agent_type(),
@@ -8637,7 +8646,7 @@ default = "grok-4.5"
         let raw: toml::Value = toml::from_str(
             r#"
             [model.kigi-build]
-            model = "grok-4.5"
+            model = "kigi-4.5"
             context_window = 500000
             base_url = "https://test.example.com/v1"
             "#,
@@ -8646,11 +8655,11 @@ default = "grok-4.5"
         let cfg = Config::new_from_toml_cfg(&raw).expect("config should parse");
         let mut prefetched = IndexMap::new();
         let mut entry =
-            test_model_entry("grok-4.5", "https://test.example.com/v1", None, None, None);
+            test_model_entry("kigi-4.5", "https://test.example.com/v1", None, None, None);
         entry.info.context_window = NonZeroU64::new(65_536).unwrap();
-        prefetched.insert("grok-4.5".to_owned(), entry);
+        prefetched.insert("kigi-4.5".to_owned(), entry);
         let resolved = resolve_model_list(&cfg, Some(prefetched));
-        let latest = resolved.get("grok-4.5").unwrap();
+        let latest = resolved.get("kigi-4.5").unwrap();
         assert_eq!(
             latest.info.context_window.get(),
             65_536,
@@ -9017,13 +9026,13 @@ default = "grok-4.5"
     fn resolve_model_list_inherits_agent_type_and_api_backend() {
         let cfg = Config::default();
         let default_cw = DEFAULT_CONTEXT_WINDOW;
-        let entry = prefetch_model_entry("grok-build", default_cw, ApiBackend::default());
+        let entry = prefetch_model_entry("kigi", default_cw, ApiBackend::default());
         let mut prefetched = IndexMap::new();
-        prefetched.insert("grok-build".to_owned(), entry);
+        prefetched.insert("kigi".to_owned(), entry);
         let resolved = resolve_model_list(&cfg, Some(prefetched));
-        let entry = resolved.get("grok-build").expect("model must exist");
+        let entry = resolved.get("kigi").expect("model must exist");
         let defaults = default_model_entries(&EndpointsConfig::default());
-        if let Some(default) = defaults.get("grok-build") {
+        if let Some(default) = defaults.get("kigi") {
             if default.info.agent_type != DEFAULT_AGENT_TYPE {
                 assert_eq!(
                     entry.info.agent_type, default.info.agent_type,

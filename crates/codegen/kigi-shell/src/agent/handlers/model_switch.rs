@@ -226,7 +226,7 @@ fn broadcast_model_changed(
         agent
             .gateway
             .forward_fire_and_forget(acp::ExtNotification::new(
-                "x.ai/session_notification",
+                "kigi/session_notification",
                 params.into(),
             ));
     }

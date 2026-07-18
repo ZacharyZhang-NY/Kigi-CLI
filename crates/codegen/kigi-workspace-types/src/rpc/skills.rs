@@ -198,7 +198,7 @@ mod tests {
             "plugin_root": "/root/.kigi/plugins/infra-plugin",
             "plugin_data": "/root/.kigi/plugin-data/infra-plugin",
             "allowed_tools": ["bash"],
-            "model": "grok-4",
+            "model": "kigi-4",
             "effort": "high",
             "user_invocable": true,
             "disable_model_invocation": false,

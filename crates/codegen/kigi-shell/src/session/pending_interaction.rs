@@ -36,15 +36,15 @@ pub type PendingInteractions = Arc<Mutex<HashMap<String, PendingKind>>>;
 pub enum PendingKind {
     /// `request_permission` for a tool action.
     Permission,
-    /// `x.ai/ask_user_question`.
+    /// `kigi/ask_user_question`.
     Question,
-    /// `x.ai/exit_plan_mode` plan approval.
+    /// `kigi/exit_plan_mode` plan approval.
     PlanApproval,
 }
 
 /// Whether a blocking plan-approval reverse-request is parked in `pending`.
 ///
-/// The resume re-park issues `x.ai/exit_plan_mode` from a detached task
+/// The resume re-park issues `kigi/exit_plan_mode` from a detached task
 /// with no running turn, making it the one parked interaction that also carries a
 /// persisted gate (`awaiting_plan_approval`). `session_has_live_work` consults
 /// this to keep such a session resident until the decision is answered or a real
@@ -70,7 +70,7 @@ fn broadcast(gateway: &GatewaySender, session_id: &acp::SessionId, update: XaiSe
     };
     if let Ok(params) = serde_json::value::to_raw_value(&notification) {
         gateway.forward_fire_and_forget(acp::ExtNotification::new(
-            "x.ai/session_notification",
+            "kigi/session_notification",
             params.into(),
         ));
     }

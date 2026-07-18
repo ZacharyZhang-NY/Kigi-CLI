@@ -588,7 +588,7 @@ pub enum DiscardScope {
     Both,
 }
 
-/// Structured repo info returned by `x.ai/git/info`.
+/// Structured repo info returned by `kigi/git/info`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitInfoData {
@@ -606,7 +606,7 @@ pub struct GitInfoData {
     pub vcs_kind: Option<VcsKind>,
 }
 
-/// Single branch entry returned by `x.ai/git/branches`.
+/// Single branch entry returned by `kigi/git/branches`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitBranchEntry {
@@ -615,7 +615,7 @@ pub struct GitBranchEntry {
     pub remote: bool,
 }
 
-/// Structured result of `x.ai/git/branches`.
+/// Structured result of `kigi/git/branches`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitBranchListData {

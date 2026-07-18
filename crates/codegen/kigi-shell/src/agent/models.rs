@@ -405,7 +405,7 @@ impl ModelsManager {
             self.reselect_current_model_if_missing(&new_config);
         }
 
-        // Push the new catalog to connected clients (`x.ai/models/update`).
+        // Push the new catalog to connected clients (`kigi/models/update`).
         // Without this, a long-running agent (leader mode) correctly swaps
         // its in-memory catalog on a config.toml `[model.*]`/`[models]` edit,
         // but already-connected clients keep rendering the stale model list
@@ -592,10 +592,10 @@ impl ModelsManager {
 
     /// Catalog opt-in to display the served-checkpoint fingerprint for this model.
     ///
-    /// `model_id` may be a routing slug (`config.model`, e.g. `grok-4.5`)
+    /// `model_id` may be a routing slug (`config.model`, e.g. `kigi-4.5`)
     /// OR a catalog key; the catalog map is keyed by the config key, which can
-    /// differ from the slug for custom/enterprise ids (e.g. key `enterprise-grok-build`
-    /// → slug `grok-4.5`). Resolve to the catalog key first so a slug
+    /// differ from the slug for custom/enterprise ids (e.g. key `enterprise-kigi`
+    /// → slug `kigi-4.5`). Resolve to the catalog key first so a slug
     /// caller still finds the opted-in entry.
     pub fn model_show_model_fingerprint(&self, model_id: &str) -> bool {
         let models = self.inner.models.read();
@@ -737,7 +737,7 @@ impl ModelsManager {
                 acp::SessionModelState::new(current, available.values().cloned().collect());
             if let Ok(params) = serde_json::value::to_raw_value(&model_state) {
                 gw.forward_fire_and_forget(acp::ExtNotification::new(
-                    "x.ai/models/update",
+                    "kigi/models/update",
                     params.into(),
                 ));
             }
@@ -749,8 +749,8 @@ impl ModelsManager {
     ///
     /// A long-running leader otherwise only refreshes its catalog from its
     /// *own* fetch paths (startup prefetch, auth change, response-header etag).
-    /// When another grok process sharing `~/.kigi` (a `--no-leader` run, a
-    /// newer client, grok-desktop) fetches a fresher `/v1/models` catalog and
+    /// When another kigi process sharing `~/.kigi` (a `--no-leader` run, a
+    /// newer client, kigi-desktop) fetches a fresher `/v1/models` catalog and
     /// persists it, this picks it up without a network round-trip.
     ///
     /// Guards, in order:
@@ -934,7 +934,7 @@ impl ModelsManager {
     /// delivering events on macOS after resume from sleep. On each
     /// notification the catalog is re-fetched from the server; if the
     /// fetch succeeds and the catalog changed, clients are notified
-    /// via `x.ai/models/update`.
+    /// via `kigi/models/update`.
     pub fn start_auth_refresh_watcher(&self, notify: Arc<tokio::sync::Notify>) {
         let mgr = self.clone();
         let had_catalog_at_start = *self.inner.has_fetched_real_catalog.read();
@@ -1687,7 +1687,7 @@ struct PrefetchEnv {
 
 fn resolve_prefetch_env_with_auth(auth: Option<KimiAuth>) -> Option<PrefetchEnv> {
     let _timer = crate::instrumentation_timer!("startup.early_prefetch_launch");
-    // Config-aware (not env-only) so the prefetch can't leak the bearer to api.x.ai.
+    // Config-aware (not env-only) so the prefetch can't leak the bearer to the BYOK endpoint.
     let mut endpoints = config::EndpointsConfig::from_effective_config();
 
     if endpoints.deployment_key.is_none() {
@@ -1796,8 +1796,8 @@ fn spawn_prefetch_thread(env: PrefetchEnv) -> EarlyPrefetchHandle {
 
 /// Map a model id (catalog key or routing slug) to its catalog key.
 ///
-/// Sessions persist the routing slug (`[model.X].model`, e.g. `grok-4.5`);
-/// the catalog and `/model` picker use config keys (e.g. `enterprise-grok-build`).
+/// Sessions persist the routing slug (`[model.X].model`, e.g. `kigi-4.5`);
+/// the catalog and `/model` picker use config keys (e.g. `enterprise-kigi`).
 /// Last slug match wins so user overrides beat defaults (matches `MvpAgent::resolve_model_id`).
 pub(crate) fn resolve_catalog_key(
     models: &IndexMap<String, ModelEntry>,
@@ -2070,7 +2070,7 @@ pub fn resolve_model_catalog(
 
     // Skip non-reasoning models so we don't send the field to providers that reject it.
     // Also skip models whose effort menu does not include the override (e.g. `--effort none`
-    // must not stamp `none` onto grok-4.5, which only offers low/medium/high).
+    // must not stamp `none` onto kigi-4.5, which only offers low/medium/high).
     if let Some(effort) = cfg.reasoning_effort_override {
         for entry in catalog.values_mut() {
             if model_offers_reasoning_effort(&entry.info, effort) {
@@ -2188,7 +2188,7 @@ mod tests {
             .try_init();
         // Use a temp dir so AuthManager finds no credentials — ensures
         // refresh_async bails at the auth check without needing a tokio runtime.
-        let tmp = std::env::temp_dir().join("grok-test-models-manager");
+        let tmp = std::env::temp_dir().join("kigi-test-models-manager");
         let auth_manager = Arc::new(AuthManager::new(&tmp, KimiCodeConfig::default()));
         ModelsManager::new(
             None,
@@ -2263,11 +2263,11 @@ mod tests {
             allowed_models = ["keep-*"]
             [model.zzz-first]
             model = "zzz-first"
-            base_url = "https://api.x.ai/v1"
+            base_url = "https://byok.example/v1"
             context_window = 256000
             [model.keep-one]
             model = "keep-one"
-            base_url = "https://api.x.ai/v1"
+            base_url = "https://byok.example/v1"
             context_window = 256000
             "#,
         );
@@ -2286,15 +2286,15 @@ mod tests {
         let excluded = config_from_toml(
             r#"
             [models]
-            default = "grok-3"
-            allowed_models = ["grok-4*"]
+            default = "kigi-3"
+            allowed_models = ["kigi-4*"]
             [model.kigi-3]
-            model = "grok-3"
-            base_url = "https://api.x.ai/v1"
+            model = "kigi-3"
+            base_url = "https://byok.example/v1"
             context_window = 256000
             [model.kigi-4]
-            model = "grok-4"
-            base_url = "https://api.x.ai/v1"
+            model = "kigi-4"
+            base_url = "https://byok.example/v1"
             context_window = 256000
             "#,
         );
@@ -2302,7 +2302,7 @@ mod tests {
         assert!(
             validate_selectable(&excluded, &catalog)
                 .unwrap_err()
-                .contains("grok-3")
+                .contains("kigi-3")
         );
 
         // Matches nothing → error.
@@ -2311,8 +2311,8 @@ mod tests {
             [models]
             allowed_models = ["nomatch-*"]
             [model.kigi-4]
-            model = "grok-4"
-            base_url = "https://api.x.ai/v1"
+            model = "kigi-4"
+            base_url = "https://byok.example/v1"
             context_window = 256000
             "#,
         );
@@ -2362,7 +2362,7 @@ mod tests {
         );
 
         // Real switch: both subscribers see the change.
-        mgr.set_current_model_id(acp::ModelId::new("grok-4"));
+        mgr.set_current_model_id(acp::ModelId::new("kigi-4"));
         tokio::time::timeout(std::time::Duration::from_millis(100), rx_a.changed())
             .await
             .expect("rx_a saw the switch")
@@ -2380,13 +2380,13 @@ mod tests {
     async fn model_switch_generation_snapshot_reflects_current_state() {
         let mgr = test_manager();
         let start = mgr.model_switch_generation();
-        mgr.set_current_model_id(acp::ModelId::new("grok-4"));
+        mgr.set_current_model_id(acp::ModelId::new("kigi-4"));
         assert_eq!(mgr.model_switch_generation(), start + 1);
         // Idempotent: same id → no bump.
-        mgr.set_current_model_id(acp::ModelId::new("grok-4"));
+        mgr.set_current_model_id(acp::ModelId::new("kigi-4"));
         assert_eq!(mgr.model_switch_generation(), start + 1);
         // Another real change: another bump.
-        mgr.set_current_model_id(acp::ModelId::new("grok-3"));
+        mgr.set_current_model_id(acp::ModelId::new("kigi-3"));
         assert_eq!(mgr.model_switch_generation(), start + 2);
     }
 
@@ -2430,7 +2430,7 @@ mod tests {
 
     #[test]
     fn current_reasoning_effort_seeded_from_config() {
-        let tmp = std::env::temp_dir().join("grok-test-models-manager-seed");
+        let tmp = std::env::temp_dir().join("kigi-test-models-manager-seed");
         let auth_manager = Arc::new(AuthManager::new(&tmp, KimiCodeConfig::default()));
         let mut cfg = config::Config::default();
         cfg.models.default_reasoning_effort = Some(ReasoningEffort::Xhigh);
@@ -2504,7 +2504,7 @@ mod tests {
         let mut prefetched = IndexMap::new();
         // 4.5-style: supports effort, menu is high only (no none).
         let mut no_none = ModelEntry {
-            info: config::ModelInfo::fallback("grok-4.5"),
+            info: config::ModelInfo::fallback("kigi-4.5"),
             api_key: None,
             env_key: None,
             api_base_url: None,
@@ -2518,7 +2518,7 @@ mod tests {
             default: true,
         }];
         no_none.info.reasoning_effort = Some(ReasoningEffort::High);
-        prefetched.insert("grok-4.5".to_string(), no_none);
+        prefetched.insert("kigi-4.5".to_string(), no_none);
 
         // Model that explicitly offers none.
         let mut with_none = ModelEntry {
@@ -2539,7 +2539,7 @@ mod tests {
 
         let catalog = resolve_model_catalog(&cfg, Some(prefetched));
         assert_eq!(
-            catalog["grok-4.5"].info.reasoning_effort,
+            catalog["kigi-4.5"].info.reasoning_effort,
             Some(ReasoningEffort::High),
             "--effort none must not stamp onto models that do not offer none"
         );
@@ -2598,7 +2598,7 @@ mod tests {
         assert_eq!(catalog["plain"].info.reasoning_effort, None);
 
         // The internal getters read those derived fields.
-        let tmp = std::env::temp_dir().join("grok-test-models-manager-menu-only");
+        let tmp = std::env::temp_dir().join("kigi-test-models-manager-menu-only");
         let auth_manager = Arc::new(AuthManager::new(&tmp, KimiCodeConfig::default()));
         let mgr = ModelsManager::new(
             None,
@@ -2698,37 +2698,37 @@ mod tests {
     fn first_apply_refresh_reselects_default_model() {
         let mgr = test_manager();
         let mut cfg = config::Config::default();
-        cfg.models.default = Some("grok-3".to_string());
+        cfg.models.default = Some("kigi-3".to_string());
 
         assert!(!mgr.has_fetched_real_catalog());
 
-        let prefetched = make_prefetched(&["grok-3", "grok-4"]);
+        let prefetched = make_prefetched(&["kigi-3", "kigi-4"]);
         mgr.apply_refresh_result(&cfg, Some(prefetched), None);
 
         assert!(mgr.has_fetched_real_catalog());
-        assert_eq!(mgr.current_model_id().0.as_ref(), "grok-3");
+        assert_eq!(mgr.current_model_id().0.as_ref(), "kigi-3");
     }
 
     #[test]
     fn subsequent_apply_refresh_preserves_user_model() {
         let mgr = test_manager();
         let mut cfg = config::Config::default();
-        cfg.models.default = Some("grok-3".to_string());
+        cfg.models.default = Some("kigi-3".to_string());
 
-        let prefetched = make_prefetched(&["grok-3", "grok-4"]);
+        let prefetched = make_prefetched(&["kigi-3", "kigi-4"]);
         mgr.apply_refresh_result(&cfg, Some(prefetched), None);
-        mgr.set_current_model_id(acp::ModelId::new("grok-4"));
+        mgr.set_current_model_id(acp::ModelId::new("kigi-4"));
 
         // Simulate on_auth_changed clearing prefetched + etag.
         *mgr.inner.prefetched.write() = None;
         *mgr.inner.etag.write() = None;
 
-        let prefetched = make_prefetched(&["grok-3", "grok-4"]);
+        let prefetched = make_prefetched(&["kigi-3", "kigi-4"]);
         mgr.apply_refresh_result(&cfg, Some(prefetched), None);
 
         assert_eq!(
             mgr.current_model_id().0.as_ref(),
-            "grok-4",
+            "kigi-4",
             "user's model selection must survive auth-change refresh"
         );
     }
@@ -2737,19 +2737,19 @@ mod tests {
     fn subsequent_refresh_reselects_when_model_removed() {
         let mgr = test_manager();
         let mut cfg = config::Config::default();
-        cfg.models.default = Some("grok-3".to_string());
+        cfg.models.default = Some("kigi-3".to_string());
 
-        let prefetched = make_prefetched(&["grok-3", "grok-4"]);
+        let prefetched = make_prefetched(&["kigi-3", "kigi-4"]);
         mgr.apply_refresh_result(&cfg, Some(prefetched), None);
-        mgr.set_current_model_id(acp::ModelId::new("grok-4"));
+        mgr.set_current_model_id(acp::ModelId::new("kigi-4"));
 
-        // Second refresh with grok-4 removed.
-        let prefetched = make_prefetched(&["grok-3", "grok-4.5"]);
+        // Second refresh with kigi-4 removed.
+        let prefetched = make_prefetched(&["kigi-3", "kigi-4.5"]);
         mgr.apply_refresh_result(&cfg, Some(prefetched), None);
 
         assert_eq!(
             mgr.current_model_id().0.as_ref(),
-            "grok-3",
+            "kigi-3",
             "should fall back to config default when current is removed"
         );
     }
@@ -2773,11 +2773,11 @@ mod tests {
     fn apply_config_honors_new_preferred_model() {
         let mgr = test_manager();
         let mut cfg = config::Config::default();
-        cfg.models.default = Some("grok-3".to_string());
+        cfg.models.default = Some("kigi-3".to_string());
 
-        let prefetched = make_prefetched(&["grok-3", "grok-4"]);
+        let prefetched = make_prefetched(&["kigi-3", "kigi-4"]);
         mgr.apply_refresh_result(&cfg, Some(prefetched), None);
-        mgr.set_current_model_id(acp::ModelId::new("grok-4"));
+        mgr.set_current_model_id(acp::ModelId::new("kigi-4"));
 
         // Simulate stale inner cfg (no default) from a racing auth refresh.
         let mut stale_cfg = config::Config::default();
@@ -2785,12 +2785,12 @@ mod tests {
         *mgr.inner.cfg.write() = stale_cfg;
 
         let mut new_cfg = config::Config::default();
-        new_cfg.models.default = Some("grok-3".to_string());
+        new_cfg.models.default = Some("kigi-3".to_string());
         mgr.apply_config(new_cfg);
 
         assert_eq!(
             mgr.current_model_id().0.as_ref(),
-            "grok-3",
+            "kigi-3",
             "apply_config must honor updated preferred model from config"
         );
     }
@@ -2800,10 +2800,10 @@ mod tests {
         let mgr = test_manager();
         let cfg = config::Config::default();
 
-        let prefetched = make_prefetched(&["grok-3", "grok-4"]);
+        let prefetched = make_prefetched(&["kigi-3", "kigi-4"]);
         mgr.apply_refresh_result(&cfg, Some(prefetched), None);
 
-        mgr.set_current_model_id(acp::ModelId::new("grok-4"));
+        mgr.set_current_model_id(acp::ModelId::new("kigi-4"));
 
         // Unrelated config change — preferred model unchanged.
         let new_cfg = config::Config::default();
@@ -2811,7 +2811,7 @@ mod tests {
 
         assert_eq!(
             mgr.current_model_id().0.as_ref(),
-            "grok-4",
+            "kigi-4",
             "apply_config must not reset model when preferred hasn't changed"
         );
     }
@@ -2820,16 +2820,16 @@ mod tests {
     fn apply_config_falls_back_when_preferred_not_in_catalog() {
         let mgr = test_manager();
         let mut cfg = config::Config::default();
-        cfg.models.default = Some("grok-3".to_string());
+        cfg.models.default = Some("kigi-3".to_string());
 
-        let prefetched = make_prefetched(&["grok-3", "grok-4"]);
+        let prefetched = make_prefetched(&["kigi-3", "kigi-4"]);
         mgr.apply_refresh_result(&cfg, Some(prefetched), None);
 
-        mgr.set_current_model_id(acp::ModelId::new("grok-4"));
+        mgr.set_current_model_id(acp::ModelId::new("kigi-4"));
 
         // Preferred model not in catalog — falls back to first entry.
         let mut new_cfg = config::Config::default();
-        new_cfg.models.default = Some("grok-nonexistent".to_string());
+        new_cfg.models.default = Some("kigi-nonexistent".to_string());
         mgr.apply_config(new_cfg);
 
         let current = mgr.current_model_id();
@@ -2845,15 +2845,15 @@ mod tests {
     fn apply_config_both_none_preferred_preserves_current() {
         let mgr = test_manager();
         let cfg = config::Config::default();
-        let prefetched = make_prefetched(&["grok-3", "grok-4"]);
+        let prefetched = make_prefetched(&["kigi-3", "kigi-4"]);
         mgr.apply_refresh_result(&cfg, Some(prefetched), None);
-        mgr.set_current_model_id(acp::ModelId::new("grok-4"));
+        mgr.set_current_model_id(acp::ModelId::new("kigi-4"));
         let new_cfg = config::Config::default();
         mgr.apply_config(new_cfg);
 
         assert_eq!(
             mgr.current_model_id().0.as_ref(),
-            "grok-4",
+            "kigi-4",
             "both-None preferred must preserve user's runtime model"
         );
     }
@@ -2862,13 +2862,13 @@ mod tests {
     fn apply_config_old_some_new_none_preserves_current() {
         let mgr = test_manager();
         let mut cfg = config::Config::default();
-        cfg.models.default = Some("grok-3".to_string());
+        cfg.models.default = Some("kigi-3".to_string());
 
-        let prefetched = make_prefetched(&["grok-3", "grok-4"]);
+        let prefetched = make_prefetched(&["kigi-3", "kigi-4"]);
         mgr.apply_refresh_result(&cfg, Some(prefetched), None);
-        assert_eq!(mgr.current_model_id().0.as_ref(), "grok-3");
+        assert_eq!(mgr.current_model_id().0.as_ref(), "kigi-3");
 
-        mgr.set_current_model_id(acp::ModelId::new("grok-4"));
+        mgr.set_current_model_id(acp::ModelId::new("kigi-4"));
 
         // [models] default removed — is_some() guard prevents reset.
         let new_cfg = config::Config::default();
@@ -2876,7 +2876,7 @@ mod tests {
 
         assert_eq!(
             mgr.current_model_id().0.as_ref(),
-            "grok-4",
+            "kigi-4",
             "old=Some new=None must not reset model (is_some guard)"
         );
     }
@@ -2887,29 +2887,29 @@ mod tests {
     fn auth_refresh_then_config_reload_preserves_user_model() {
         let mgr = test_manager();
         let mut cfg = config::Config::default();
-        cfg.models.default = Some("grok-3".to_string());
+        cfg.models.default = Some("kigi-3".to_string());
 
         // Initial fetch.
-        let prefetched = make_prefetched(&["grok-3", "grok-4"]);
+        let prefetched = make_prefetched(&["kigi-3", "kigi-4"]);
         mgr.apply_refresh_result(&cfg, Some(prefetched), None);
 
-        // User runs /model grok-4.
-        mgr.set_current_model_id(acp::ModelId::new("grok-4"));
+        // User runs /model kigi-4.
+        mgr.set_current_model_id(acp::ModelId::new("kigi-4"));
 
         // Auth refresh races — clears prefetched/etag.
         *mgr.inner.prefetched.write() = None;
         *mgr.inner.etag.write() = None;
 
         // Second fetch must preserve user's model.
-        let prefetched = make_prefetched(&["grok-3", "grok-4"]);
+        let prefetched = make_prefetched(&["kigi-3", "kigi-4"]);
         mgr.apply_refresh_result(&cfg, Some(prefetched), None);
-        assert_eq!(mgr.current_model_id().0.as_ref(), "grok-4");
+        assert_eq!(mgr.current_model_id().0.as_ref(), "kigi-4");
 
         // Config reload with persisted preference.
         let mut new_cfg = config::Config::default();
-        new_cfg.models.default = Some("grok-4".to_string());
+        new_cfg.models.default = Some("kigi-4".to_string());
         mgr.apply_config(new_cfg);
-        assert_eq!(mgr.current_model_id().0.as_ref(), "grok-4");
+        assert_eq!(mgr.current_model_id().0.as_ref(), "kigi-4");
     }
 
     // ── disk-cache hot-reload (external models_cache.json writes) ────
@@ -2931,7 +2931,7 @@ mod tests {
 
         let auth_method = mgr.inner.fetch_auth.read().cache_auth_method();
         cache.persist(
-            &make_prefetched(&["grok-4.5", "grok-4.3"]),
+            &make_prefetched(&["kigi-4.5", "kigi-4.3"]),
             Some("etag-ext"),
             auth_method,
             &mgr.cache_origin(),
@@ -2940,8 +2940,8 @@ mod tests {
         mgr.reload_from_cache_manager(&cache);
 
         assert!(mgr.has_fetched_real_catalog());
-        assert!(mgr.models().contains_key("grok-4.5"));
-        assert!(mgr.models().contains_key("grok-4.3"));
+        assert!(mgr.models().contains_key("kigi-4.5"));
+        assert!(mgr.models().contains_key("kigi-4.3"));
         assert_eq!(mgr.inner.etag.read().as_deref(), Some("etag-ext"));
     }
 
@@ -3025,9 +3025,9 @@ mod tests {
     fn reload_from_disk_cache_skips_identical_catalog_and_adopts_etag() {
         let mgr = test_manager();
         let cfg = config::Config::default();
-        let prefetched = make_prefetched(&["grok-3", "grok-4"]);
+        let prefetched = make_prefetched(&["kigi-3", "kigi-4"]);
         mgr.apply_refresh_result(&cfg, Some(prefetched.clone()), Some("etag-a".into()));
-        mgr.set_current_model_id(acp::ModelId::new("grok-4"));
+        mgr.set_current_model_id(acp::ModelId::new("kigi-4"));
 
         let tmp = tempfile::TempDir::new().unwrap();
         let cache = test_cache_manager(tmp.path());
@@ -3043,7 +3043,7 @@ mod tests {
 
         assert_eq!(
             mgr.current_model_id().0.as_ref(),
-            "grok-4",
+            "kigi-4",
             "identical catalog must not disturb the user's model"
         );
         assert_eq!(
@@ -3068,13 +3068,13 @@ mod tests {
             auth_method: Some(auth_method),
             origin: Some(mgr.cache_origin()),
             etag: Some("etag-stale".into()),
-            models: make_prefetched(&["grok-stale"]),
+            models: make_prefetched(&["kigi-stale"]),
         };
         cache.atomic_write(&stale);
 
         mgr.reload_from_cache_manager(&cache);
 
-        assert!(!mgr.models().contains_key("grok-stale"));
+        assert!(!mgr.models().contains_key("kigi-stale"));
         assert!(mgr.inner.etag.read().is_none());
     }
 
@@ -3093,7 +3093,7 @@ mod tests {
             CacheAuthMethod::Platforms
         };
         cache.persist(
-            &make_prefetched(&["grok-other-auth"]),
+            &make_prefetched(&["kigi-other-auth"]),
             Some("etag-x"),
             other,
             &mgr.cache_origin(),
@@ -3101,7 +3101,7 @@ mod tests {
 
         mgr.reload_from_cache_manager(&cache);
 
-        assert!(!mgr.models().contains_key("grok-other-auth"));
+        assert!(!mgr.models().contains_key("kigi-other-auth"));
     }
 
     /// A cache persisted by a process pointed at a *different backend* (env
@@ -3117,7 +3117,7 @@ mod tests {
         let cache = test_cache_manager(tmp.path());
         let auth_method = mgr.inner.fetch_auth.read().cache_auth_method();
         cache.persist(
-            &make_prefetched(&["grok-other-origin"]),
+            &make_prefetched(&["kigi-other-origin"]),
             Some("etag-y"),
             auth_method,
             "http://127.0.0.1:49953/v1/models",
@@ -3125,7 +3125,7 @@ mod tests {
 
         mgr.reload_from_cache_manager(&cache);
 
-        assert!(!mgr.models().contains_key("grok-other-origin"));
+        assert!(!mgr.models().contains_key("kigi-other-origin"));
         assert!(mgr.inner.etag.read().is_none());
     }
 
@@ -3144,13 +3144,13 @@ mod tests {
             auth_method: Some(auth_method),
             origin: None,
             etag: Some("etag-legacy".into()),
-            models: make_prefetched(&["grok-legacy"]),
+            models: make_prefetched(&["kigi-legacy"]),
         };
         cache.atomic_write(&legacy);
 
         mgr.reload_from_cache_manager(&cache);
 
-        assert!(!mgr.models().contains_key("grok-legacy"));
+        assert!(!mgr.models().contains_key("kigi-legacy"));
     }
 
     // ── clear() resets has_fetched_real_catalog ──────────────────────
@@ -3159,9 +3159,9 @@ mod tests {
     fn clear_resets_has_fetched_real_catalog() {
         let mgr = test_manager();
         let mut cfg = config::Config::default();
-        cfg.models.default = Some("grok-3".to_string());
+        cfg.models.default = Some("kigi-3".to_string());
 
-        let prefetched = make_prefetched(&["grok-3", "grok-4"]);
+        let prefetched = make_prefetched(&["kigi-3", "kigi-4"]);
         mgr.apply_refresh_result(&cfg, Some(prefetched), None);
         assert!(mgr.has_fetched_real_catalog());
 
@@ -3169,7 +3169,7 @@ mod tests {
         assert!(!mgr.has_fetched_real_catalog());
 
         // New identity fetch — resolves default via reselect_default_model.
-        let prefetched = make_prefetched(&["grok-4.5", "grok-4.3"]);
+        let prefetched = make_prefetched(&["kigi-4.5", "kigi-4.3"]);
         mgr.apply_refresh_result(&cfg, Some(prefetched), None);
         let first_available = mgr.available().keys().next().unwrap().clone();
         assert_eq!(
@@ -3610,25 +3610,25 @@ mod tests {
     #[test]
     fn build_prefetched_map_distinct_ids_same_slug() {
         let entries = vec![
-            make_entry_config_with_id(Some("auto"), "grok-build", Some("Auto")),
-            make_entry_config_with_id(Some("grok-build"), "grok-build", Some("Grok Build")),
+            make_entry_config_with_id(Some("auto"), "kigi", Some("Auto")),
+            make_entry_config_with_id(Some("kigi"), "kigi", Some("Kigi")),
             make_entry_config_with_id(
-                Some("grok-composer-2.5-fast"),
-                "grok-composer-2.5-fast",
-                Some("Grok Fast"),
+                Some("kigi-composer-2.5-fast"),
+                "kigi-composer-2.5-fast",
+                Some("Kigi Fast"),
             ),
         ];
         let map = build_prefetched_map(entries);
 
         assert_eq!(map.len(), 3, "all three entries should survive");
         assert!(map.contains_key("auto"));
-        assert!(map.contains_key("grok-build"));
-        assert!(map.contains_key("grok-composer-2.5-fast"));
+        assert!(map.contains_key("kigi"));
+        assert!(map.contains_key("kigi-composer-2.5-fast"));
         assert_eq!(
-            map["auto"].info.model, "grok-build",
-            "auto entry should still route to grok-build"
+            map["auto"].info.model, "kigi",
+            "auto entry should still route to kigi"
         );
-        assert_eq!(map["grok-build"].info.model, "grok-build");
+        assert_eq!(map["kigi"].info.model, "kigi");
     }
 
     /// No id field — falls back to model slug as key.
@@ -3649,13 +3649,13 @@ mod tests {
     #[test]
     fn build_prefetched_map_duplicate_id_overwrites() {
         let entries = vec![
-            make_entry_config_with_id(Some("grok-build"), "grok-build", Some("First")),
-            make_entry_config_with_id(Some("grok-build"), "grok-build", Some("Second")),
+            make_entry_config_with_id(Some("kigi"), "kigi", Some("First")),
+            make_entry_config_with_id(Some("kigi"), "kigi", Some("Second")),
         ];
         let map = build_prefetched_map(entries);
 
         assert_eq!(map.len(), 1, "duplicate id: second overwrites first");
-        assert_eq!(map["grok-build"].info.name.as_deref(), Some("Second"));
+        assert_eq!(map["kigi"].info.name.as_deref(), Some("Second"));
     }
 
     /// Regression: resolve_default_model must match by id before scanning
@@ -3664,31 +3664,24 @@ mod tests {
     #[test]
     fn resolve_default_model_prefers_id_over_model_slug() {
         let mut catalog: IndexMap<String, ModelEntry> = IndexMap::new();
-        catalog.insert(
-            "auto-grok-build".to_string(),
-            make_model_entry("grok-build"),
-        );
-        catalog.insert("grok-build".to_string(), make_model_entry("grok-build"));
+        catalog.insert("auto-kigi".to_string(), make_model_entry("kigi"));
+        catalog.insert("kigi".to_string(), make_model_entry("kigi"));
 
         let mut cfg = config::Config::default();
-        cfg.models.default = Some("grok-build".to_string());
+        cfg.models.default = Some("kigi".to_string());
 
         let (key, _, _) = resolve_default_model(&cfg, &catalog, true);
-        assert_eq!(key, "grok-build", "must match id, not first slug hit");
+        assert_eq!(key, "kigi", "must match id, not first slug hit");
     }
 
     /// No id field — falls back to slug as key.
     #[test]
     fn build_prefetched_map_none_id_falls_back_to_slug() {
-        let entries = vec![make_entry_config_with_id(
-            None,
-            "grok-build",
-            Some("Grok Build"),
-        )];
+        let entries = vec![make_entry_config_with_id(None, "kigi", Some("Kigi"))];
         let map = build_prefetched_map(entries);
 
         assert_eq!(map.len(), 1);
-        assert!(map.contains_key("grok-build"));
+        assert!(map.contains_key("kigi"));
     }
 
     // ── persisted model id → catalog key (session resume) ─────────────
@@ -3696,94 +3689,79 @@ mod tests {
     #[test]
     fn resolve_catalog_key_maps_routing_slug_to_config_key() {
         let mut models = IndexMap::new();
-        models.insert(
-            "enterprise-grok-build".to_string(),
-            make_model_entry("grok-4.5"),
-        );
-        models.insert("grok-4.3".to_string(), make_model_entry("grok-4.3"));
+        models.insert("enterprise-kigi".to_string(), make_model_entry("kigi-4.5"));
+        models.insert("kigi-4.3".to_string(), make_model_entry("kigi-4.3"));
 
-        let persisted = acp::ModelId::new("grok-4.5");
+        let persisted = acp::ModelId::new("kigi-4.5");
         let key = resolve_catalog_key(&models, &persisted).expect("slug must resolve");
-        assert_eq!(key.0.as_ref(), "enterprise-grok-build");
+        assert_eq!(key.0.as_ref(), "enterprise-kigi");
     }
 
     #[test]
     fn resolve_catalog_key_prefers_exact_key_match() {
         let mut models = IndexMap::new();
-        models.insert("grok-4.5".to_string(), make_model_entry("grok-4.5"));
+        models.insert("kigi-4.5".to_string(), make_model_entry("kigi-4.5"));
 
-        let persisted = acp::ModelId::new("grok-4.5");
+        let persisted = acp::ModelId::new("kigi-4.5");
         let key = resolve_catalog_key(&models, &persisted).expect("exact key must resolve");
-        assert_eq!(key.0.as_ref(), "grok-4.5");
+        assert_eq!(key.0.as_ref(), "kigi-4.5");
     }
 
     #[test]
     fn resolve_catalog_key_last_slug_match_wins() {
         let mut models = IndexMap::new();
-        models.insert(
-            "default-grok-build".to_string(),
-            make_model_entry("grok-4.5"),
-        );
-        models.insert("user-grok-build".to_string(), make_model_entry("grok-4.5"));
+        models.insert("default-kigi".to_string(), make_model_entry("kigi-4.5"));
+        models.insert("user-kigi".to_string(), make_model_entry("kigi-4.5"));
 
-        let persisted = acp::ModelId::new("grok-4.5");
+        let persisted = acp::ModelId::new("kigi-4.5");
         let key = resolve_catalog_key(&models, &persisted).expect("slug must resolve");
-        assert_eq!(key.0.as_ref(), "user-grok-build");
+        assert_eq!(key.0.as_ref(), "user-kigi");
     }
 
     #[test]
     fn selectable_catalog_key_for_persisted_none_when_resolved_not_available() {
         let mut models = IndexMap::new();
-        models.insert(
-            "enterprise-grok-build".to_string(),
-            make_model_entry("grok-4.5"),
-        );
+        models.insert("enterprise-kigi".to_string(), make_model_entry("kigi-4.5"));
 
         let available: IndexMap<_, _> = IndexMap::new();
-        let persisted = acp::ModelId::new("grok-4.5");
+        let persisted = acp::ModelId::new("kigi-4.5");
         assert!(selectable_catalog_key_for_persisted(&models, &available, &persisted).is_none());
     }
 
     #[test]
     fn selectable_prefers_available_identity_over_non_selectable_exact_key() {
         let mut models = IndexMap::new();
-        models.insert("grok-build".to_string(), make_model_entry("grok-build"));
-        models.insert(
-            "enterprise-grok-build".to_string(),
-            make_model_entry("grok-build"),
-        );
-        models.insert("grok-4.3".to_string(), make_model_entry("grok-4.3"));
+        models.insert("kigi".to_string(), make_model_entry("kigi"));
+        models.insert("enterprise-kigi".to_string(), make_model_entry("kigi"));
+        models.insert("kigi-4.3".to_string(), make_model_entry("kigi-4.3"));
 
-        let available = test_available_keys(&["enterprise-grok-build", "grok-4.3"]);
+        let available = test_available_keys(&["enterprise-kigi", "kigi-4.3"]);
 
-        let persisted = acp::ModelId::new("grok-build");
+        let persisted = acp::ModelId::new("kigi");
         assert_eq!(
             resolve_catalog_key(&models, &persisted)
                 .expect("exact key exists")
                 .0
                 .as_ref(),
-            "grok-build"
+            "kigi"
         );
         let key = selectable_catalog_key_for_persisted(&models, &available, &persisted)
             .expect("must resolve to selectable section");
-        assert_eq!(key.0.as_ref(), "enterprise-grok-build");
+        assert_eq!(key.0.as_ref(), "enterprise-kigi");
     }
 
     #[test]
     fn selectable_matches_routing_slug_when_no_exact_key() {
         let mut models = IndexMap::new();
-        models.insert(
-            "enterprise-grok-build".to_string(),
-            make_model_entry("grok-build"),
-        );
-        models.insert("grok-4.3".to_string(), make_model_entry("grok-4.3"));
+        models.insert("enterprise-kigi".to_string(), make_model_entry("kigi"));
+        models.insert("kigi-4.3".to_string(), make_model_entry("kigi-4.3"));
 
-        let available = test_available_keys(&["enterprise-grok-build", "grok-4.3"]);
+        let available = test_available_keys(&["enterprise-kigi", "kigi-4.3"]);
 
-        let persisted = acp::ModelId::new("grok-build");
+        let persisted = acp::ModelId::new("kigi");
         let key = selectable_catalog_key_for_persisted(&models, &available, &persisted)
             .expect("slug must resolve to selectable key");
-        assert_eq!(key.0.as_ref(), "enterprise-grok-build");
+        assert_eq!(key.0.as_ref(), "enterprise-kigi");
     }
 
     /// A persisted *selectable* catalog key binds to itself even when a later
@@ -3791,15 +3769,15 @@ mod tests {
     #[test]
     fn selectable_prefers_exact_key_over_later_slug_match() {
         let mut models = IndexMap::new();
-        models.insert("grok-build".to_string(), make_model_entry("grok-4.5"));
-        models.insert("other".to_string(), make_model_entry("grok-build"));
+        models.insert("kigi".to_string(), make_model_entry("kigi-4.5"));
+        models.insert("other".to_string(), make_model_entry("kigi"));
 
-        let available = test_available_keys(&["grok-build", "other"]);
+        let available = test_available_keys(&["kigi", "other"]);
 
-        let persisted = acp::ModelId::new("grok-build");
+        let persisted = acp::ModelId::new("kigi");
         let key = selectable_catalog_key_for_persisted(&models, &available, &persisted)
             .expect("exact selectable key must win");
-        assert_eq!(key.0.as_ref(), "grok-build");
+        assert_eq!(key.0.as_ref(), "kigi");
     }
 
     fn test_available_keys(keys: &[&str]) -> IndexMap<acp::ModelId, acp::ModelInfo> {

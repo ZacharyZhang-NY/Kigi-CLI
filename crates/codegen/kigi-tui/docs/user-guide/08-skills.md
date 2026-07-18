@@ -1,20 +1,20 @@
 # Skills
 
-Skills are reusable prompt packages that extend Grok with task-specific instructions. They let you capture a repeatable procedure once, instead of re-explaining it each session.
+Skills are reusable prompt packages that extend Kigi with task-specific instructions. They let you capture a repeatable procedure once, instead of re-explaining it each session.
 
 ---
 
 ## What Are Skills?
 
-A skill is a directory that contains a `SKILL.md` file. Its markdown body tells Grok how to handle a specific type of task: step-by-step instructions, conventions, and tool-usage patterns.
+A skill is a directory that contains a `SKILL.md` file. Its markdown body tells Kigi how to handle a specific type of task: step-by-step instructions, conventions, and tool-usage patterns.
 
-Use a skill for a repeatable procedure that's too specific for AGENTS.md but too long to retype. Grok activates a skill only when it applies to your current task.
+Use a skill for a repeatable procedure that's too specific for AGENTS.md but too long to retype. Kigi activates a skill only when it applies to your current task.
 
 ---
 
 ## Skill Locations
 
-Grok discovers skills from these directories, in priority order:
+Kigi discovers skills from these directories, in priority order:
 
 | Location | Scope | Priority | Notes |
 |----------|-------|----------|-------|
@@ -26,13 +26,13 @@ Grok discovers skills from these directories, in priority order:
 | `~/.cursor/skills/` | User | Lowest | Cursor compatibility (configurable) |
 | `./.cursor/skills/` | Local / Repo | High | Project Cursor skills (when cursor compat skills are enabled) |
 
-Grok deduplicates skills by name -- a higher-priority location overrides a lower one. Grok also scans `.agents/skills/` (and `commands/`) at each tier (alongside `.kigi/`) and walks every directory between your working directory and the repo root.
+Kigi deduplicates skills by name -- a higher-priority location overrides a lower one. Kigi also scans `.agents/skills/` (and `commands/`) at each tier (alongside `.kigi/`) and walks every directory between your working directory and the repo root.
 
 Flat `*.md` files under a `commands/` directory become user-invocable slash commands (filename stem = command name), matching Claude Code's legacy custom-command layout.
 
 Skill and command discovery does **not** use `.gitignore`. Paths under known skill roots (`.kigi/`, `.agents/`, `.claude/`, `.cursor/`) always load when present on disk — teams often ignore `.claude/**` as local-only config while still expecting `/frontend`-style project commands to work. To hide a skill, use `[skills] ignore` in config (not repo ignore rules).
 
-Grok scans the Claude and Cursor skill directories by default. To stop scanning a vendor, set its `skills` cell to `false` under `[compat.cursor]` or `[compat.claude]` in `~/.kigi/config.toml`, or set the `KIGI_CURSOR_SKILLS_ENABLED` or `KIGI_CLAUDE_SKILLS_ENABLED` environment variable to `false`. See [Configuration](05-configuration.md#harness-compatibility) for details. Grok always filters out known vendor-shipped default skills (such as Cursor's `shell`, `canvas`, and `statusline`), regardless of these settings.
+Kigi scans the Claude and Cursor skill directories by default. To stop scanning a vendor, set its `skills` cell to `false` under `[compat.cursor]` or `[compat.claude]` in `~/.kigi/config.toml`, or set the `KIGI_CURSOR_SKILLS_ENABLED` or `KIGI_CLAUDE_SKILLS_ENABLED` environment variable to `false`. See [Configuration](05-configuration.md#harness-compatibility) for details. Kigi always filters out known vendor-shipped default skills (such as Cursor's `shell`, `canvas`, and `statusline`), regardless of these settings.
 
 ### Additional Skill Directories
 
@@ -45,7 +45,7 @@ ignore = ["~/my-team-skills/wip"]     # Paths to exclude (hidden entirely)
 disabled = ["wip-skill"]              # Skill names to keep listed but inactive
 ```
 
-Each entry in `paths` is a `SKILL.md` file or a directory that Grok walks recursively. `ignore` hides a skill completely; `disabled` keeps it in the list but excludes it from the system prompt and from invocation. `paths` and `ignore` take filesystem paths and support `~` expansion; `disabled` takes skill names.
+Each entry in `paths` is a `SKILL.md` file or a directory that Kigi walks recursively. `ignore` hides a skill completely; `disabled` keeps it in the list but excludes it from the system prompt and from invocation. `paths` and `ignore` take filesystem paths and support `~` expansion; `disabled` takes skill names.
 
 ---
 
@@ -91,10 +91,10 @@ Review staged changes and create a commit with a clear, conventional message.
 
 | Field | Description |
 |-------|-------------|
-| `name` | Skill identifier. Use lowercase letters, digits, and hyphens, up to 64 characters. Grok normalizes spaces and underscores to hyphens. If you omit `name`, Grok uses the skill's directory name. |
-| `description` | What the skill does and when to use it. Grok reads this to decide whether to invoke the skill. If you omit it, Grok uses the first paragraph of the body. |
+| `name` | Skill identifier. Use lowercase letters, digits, and hyphens, up to 64 characters. Kigi normalizes spaces and underscores to hyphens. If you omit `name`, Kigi uses the skill's directory name. |
+| `description` | What the skill does and when to use it. Kigi reads this to decide whether to invoke the skill. If you omit it, Kigi uses the first paragraph of the body. |
 
-Write a specific `description`. It determines when Grok invokes the skill automatically. Name the trigger phrases and use cases.
+Write a specific `description`. It determines when Kigi invokes the skill automatically. Name the trigger phrases and use cases.
 
 ### Optional Frontmatter Fields
 
@@ -111,36 +111,36 @@ Multi-word frontmatter keys use kebab-case (single-word keys like `model` are wr
 | `effort` | Reasoning-effort override. |
 | `license` | License identifier (for example, `Apache-2.0`). |
 | `compatibility` | Environment requirements (for example, `Requires git, docker, jq`). |
-| `metadata` | Arbitrary string key-value pairs. Grok promotes `metadata.author` and `metadata.short-description` for display. |
+| `metadata` | Arbitrary string key-value pairs. Kigi promotes `metadata.author` and `metadata.short-description` for display. |
 
 ---
 
 ## Creating Skills with /create-skill
 
-The `/create-skill` command walks you through building a new skill interactively. Grok asks what you want, drafts the files, and writes them to disk.
+The `/create-skill` command walks you through building a new skill interactively. Kigi asks what you want, drafts the files, and writes them to disk.
 
 ### How It Works
 
-When you run `/create-skill`, Grok:
+When you run `/create-skill`, Kigi:
 
-1. **Gathers requirements.** Grok asks for the skill name, the scope to save it under, and a description of the workflow you want to capture. Use a name with lowercase letters, digits, and hyphens (2–64 characters, starting and ending with a letter or digit).
+1. **Gathers requirements.** Kigi asks for the skill name, the scope to save it under, and a description of the workflow you want to capture. Use a name with lowercase letters, digits, and hyphens (2–64 characters, starting and ending with a letter or digit).
 
-2. **Drafts the description.** Grok writes a `description` that states what the skill does, the phrases that trigger it, and the slash command name. You approve or edit the draft before continuing.
+2. **Drafts the description.** Kigi writes a `description` that states what the skill does, the phrases that trigger it, and the slash command name. You approve or edit the draft before continuing.
 
-3. **Creates the skill directory.** Grok creates the `<scope>/.kigi/skills/<name>/` directory, plus `scripts/` or `references/` subdirectories when the skill needs them.
+3. **Creates the skill directory.** Kigi creates the `<scope>/.kigi/skills/<name>/` directory, plus `scripts/` or `references/` subdirectories when the skill needs them.
 
-4. **Writes SKILL.md.** Grok writes the frontmatter (`name` and `description`) and a markdown body of instructions, along with any supporting files.
+4. **Writes SKILL.md.** Kigi writes the frontmatter (`name` and `description`) and a markdown body of instructions, along with any supporting files.
 
-5. **Verifies and confirms.** Grok reads the file back, confirms it wrote correctly, and tells you how to run the skill.
+5. **Verifies and confirms.** Kigi reads the file back, confirms it wrote correctly, and tells you how to run the skill.
 
 ### Choosing a Scope
 
-Grok asks where to save the skill:
+Kigi asks where to save the skill:
 
-- **Project** (`<repo_root>/.kigi/skills/<name>/`) -- available only in this repository and shareable with teammates through version control. Grok recommends this scope inside a git repository.
+- **Project** (`<repo_root>/.kigi/skills/<name>/`) -- available only in this repository and shareable with teammates through version control. Kigi recommends this scope inside a git repository.
 - **User** (`~/.kigi/skills/<name>/`) -- available across all your projects.
 
-The new skill appears in the slash menu within a few seconds, because Grok reloads skills when files change on disk.
+The new skill appears in the slash menu within a few seconds, because Kigi reloads skills when files change on disk.
 
 ---
 
@@ -161,11 +161,11 @@ Running a skill loads its instructions into the conversation and directs the mod
 /commit fix the build
 ```
 
-To browse your skills, type `/` to open the slash-command menu. Grok lists every built-in command and skill and filters them as you type. To list skills from the command line instead, run `grok inspect` (see [Viewing Skill Details](#viewing-skill-details)).
+To browse your skills, type `/` to open the slash-command menu. Kigi lists every built-in command and skill and filters them as you type. To list skills from the command line instead, run `kigi inspect` (see [Viewing Skill Details](#viewing-skill-details)).
 
 ### Qualified Names
 
-When a skill's name collides with another skill or a built-in command, Grok advertises a qualified name prefixed by the skill's scope -- `local:`, `repo:`, `user:`, or the plugin name. Use the qualified form to choose a specific skill:
+When a skill's name collides with another skill or a built-in command, Kigi advertises a qualified name prefixed by the skill's scope -- `local:`, `repo:`, `user:`, or the plugin name. Use the qualified form to choose a specific skill:
 
 ```
 /local:commit        # The "commit" skill from ./.kigi/skills/
@@ -174,7 +174,7 @@ When a skill's name collides with another skill or a built-in command, Grok adve
 
 ### Automatic Invocation
 
-Grok can invoke a skill on its own when it recognizes a relevant task. Grok matches your prompt against the skill's `description` and `when-to-use` fields, so write both to describe the triggering situation.
+Kigi can invoke a skill on its own when it recognizes a relevant task. Kigi matches your prompt against the skill's `description` and `when-to-use` fields, so write both to describe the triggering situation.
 
 For example, if a skill's description says "Use when the user wants to commit changes," then saying "commit my changes" can trigger that skill automatically. To require an explicit slash command and prevent automatic invocation, set `disable-model-invocation: true` in the frontmatter.
 
@@ -182,14 +182,14 @@ For example, if a skill's description says "Use when the user wants to commit ch
 
 ## Viewing Skill Details
 
-Run `grok inspect` to see every skill Grok discovers, along with the rest of your configuration:
+Run `kigi inspect` to see every skill Kigi discovers, along with the rest of your configuration:
 
 ```bash
-grok inspect          # Human-readable summary
-grok inspect --json   # Machine-readable report
+kigi inspect          # Human-readable summary
+kigi inspect --json   # Machine-readable report
 ```
 
-In the human-readable output, the Skills section lists each skill's name and its source -- `project`, `user`, `bundled`, `config` (a `[skills].paths` entry), `server` (skills synced from the skill store in managed workspaces), or `plugin: <name>`. Grok tags any skill disabled via `[skills].disabled` or from a disabled vendor surface with `[disabled]`.
+In the human-readable output, the Skills section lists each skill's name and its source -- `project`, `user`, `bundled`, `config` (a `[skills].paths` entry), `server` (skills synced from the skill store in managed workspaces), or `plugin: <name>`. Kigi tags any skill disabled via `[skills].disabled` or from a disabled vendor surface with `[disabled]`.
 
 The report honors your `[skills]` config the same way a live session does: skills from `paths` are listed, skills under an `ignore` prefix are hidden, and skills named in `disabled` stay listed but tagged `[disabled]`.
 
@@ -199,9 +199,9 @@ The `--json` report includes the full detail for each skill: its `name`, `descri
 
 ## Bundled and Plugin Skills
 
-Grok ships with built-in skills and extracts them to `~/.kigi/skills/` on startup -- among them `/create-skill`, `/help`, and `/check-work`. Bundled skills behave like user skills, and a same-named skill in a higher-priority location (local or repo) overrides the bundled copy; `grok inspect` labels the extracted copies `bundled` so they stay distinguishable from skills you authored yourself. (A plugin skill of the same name does not override it; it stays available under its qualified `plugin:name` form.)
+Kigi ships with built-in skills and extracts them to `~/.kigi/skills/` on startup -- among them `/create-skill`, `/help`, and `/check-work`. Bundled skills behave like user skills, and a same-named skill in a higher-priority location (local or repo) overrides the bundled copy; `kigi inspect` labels the extracted copies `bundled` so they stay distinguishable from skills you authored yourself. (A plugin skill of the same name does not override it; it stays available under its qualified `plugin:name` form.)
 
-Skills can also come from plugins. When you install a plugin that includes skills, they appear alongside your user and project skills. `grok inspect` labels each plugin-provided skill with its source as `plugin: <name>`.
+Skills can also come from plugins. When you install a plugin that includes skills, they appear alongside your user and project skills. `kigi inspect` labels each plugin-provided skill with its source as `plugin: <name>`.
 
 See the [Plugins guide](09-plugins.md) for more on installing plugins that provide skills.
 
@@ -211,7 +211,7 @@ See the [Plugins guide](09-plugins.md) for more on installing plugins that provi
 
 1. **Write specific descriptions.** The description drives automatic invocation. "Create git commits" is too vague; "Create well-formatted git commits following conventional commit standards. Use when the user wants to commit changes or asks for /commit." works better.
 
-2. **Include concrete steps.** Skills work best when they give Grok a clear, ordered procedure to follow.
+2. **Include concrete steps.** Skills work best when they give Kigi a clear, ordered procedure to follow.
 
 3. **Reference tools by name.** When a skill relies on specific tools (such as `run_terminal_command` or `search_replace`), name them so the model knows what to use.
 

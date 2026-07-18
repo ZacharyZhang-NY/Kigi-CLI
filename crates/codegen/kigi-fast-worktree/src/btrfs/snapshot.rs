@@ -141,7 +141,7 @@ pub fn create_snapshot_with_symlink(btrfs_info: &BtrfsInfo, dest: &Path) -> Resu
             })?;
         } else if !is_safe_snapshot_delete_target(&snapshot_path) {
             bail!(
-                "refusing to delete pre-existing snapshot {}: outside grok-managed \
+                "refusing to delete pre-existing snapshot {}: outside kigi-managed \
                  btrfs storage",
                 snapshot_path.display()
             );
@@ -251,7 +251,7 @@ pub fn snapshot_dest_path(btrfs_mount: &Path, subvolume_root: &Path, dest: &Path
 ///
 /// Symlinks cross mount namespaces and persist across process exits, so the
 /// worktree at `dest` stays visible to the user's other shells and survives a
-/// grok restart.
+/// kigi restart.
 ///
 /// Destructive contract: a pre-existing **stale symlink** at `dest` is unlinked;
 /// a pre-existing **directory** is removed only if empty (`remove_dir`). A
@@ -351,7 +351,7 @@ pub fn delete_snapshot(path: &Path) -> Result<()> {
 ///   canonicalized parent's final component is one of [`BTRFS_SNAPSHOT_SUBDIRS`]
 ///   (`worktrees` or `.kigi-snapshots`),
 /// - and that directory sits **directly under a real btrfs mount point** (from
-///   the live mount table), anchoring the delete to grok-managed storage rather
+///   the live mount table), anchoring the delete to kigi-managed storage rather
 ///   than any directory that merely happens to be named `worktrees`.
 ///
 /// Treat all symlink targets and metadata paths as untrusted input and pass

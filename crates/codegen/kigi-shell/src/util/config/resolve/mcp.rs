@@ -163,7 +163,7 @@ pub const DEFAULT_MCP_STARTUP_TIMEOUT_SECS: u64 = 30;
 /// Env override for the MCP startup timeout, in milliseconds (shared with
 /// common third-party tooling, so an existing setting carries over).
 const ENV_MCP_TIMEOUT_MS: &str = "MCP_TIMEOUT";
-/// Env override for the MCP startup timeout, in seconds (grok-native).
+/// Env override for the MCP startup timeout, in seconds (kigi-native).
 const ENV_MCP_STARTUP_TIMEOUT_SECS: &str = "KIGI_MCP_STARTUP_TIMEOUT_SECS";
 
 /// Cached remote settings `mcp_startup_timeout_secs` (`0` = unset). MCP servers start
@@ -300,7 +300,7 @@ fn max_mcp_output_bytes_from_toml(v: &toml::Value) -> Option<usize> {
 /// Precedence (highest first):
 ///   1. requirements.toml `[mcp] max_output_bytes`
 ///   2. env `KIGI_MAX_MCP_OUTPUT_BYTES` / `MAX_MCP_OUTPUT_BYTES`
-///      (Grok-native wins when both set)
+///      (Kigi-native wins when both set)
 ///   3. effective `config.toml [mcp] max_output_bytes`
 ///   4. remote settings `RemoteSettings.max_mcp_output_bytes`
 ///   5. [`DEFAULT_MAX_MCP_OUTPUT_BYTES`] (20_000)

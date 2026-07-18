@@ -1,6 +1,6 @@
 //! End-to-end tests for the `--debug` firehose file logging.
 //!
-//! Runs the built grok binary against the mock inference server with a
+//! Runs the built kigi binary against the mock inference server with a
 //! caller-owned `$KIGI_SHARE_DIR`, then inspects `~/.kigi/debug/`:
 //! - the `--debug` FLAG drives the firehose end to end through the master switch:
 //!   a live `agent` session launched with `--debug` writes a non-empty per-session
@@ -68,7 +68,7 @@ fn firehose_txt_files(home: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
-/// Build a headless `grok -p` command with a pinned `$KIGI_SHARE_DIR` so the firehose
+/// Build a headless `kigi -p` command with a pinned `$KIGI_SHARE_DIR` so the firehose
 /// lands under `<home>/.kigi/debug`. Firehose env knobs are cleared so the test
 /// is hermetic regardless of the developer's shell.
 fn debug_cmd(
@@ -77,7 +77,7 @@ fn debug_cmd(
     workdir: &Path,
     extra: &[&str],
 ) -> tokio::process::Command {
-    let mut cmd = tokio::process::Command::new(grok_binary());
+    let mut cmd = tokio::process::Command::new(kigi_binary());
     cmd.args(["-p", "say hi", "--yolo", "--output-format", "json"])
         .args(extra)
         .arg("--cwd")
@@ -99,9 +99,9 @@ fn debug_cmd(
 
 /// Poll up to 50×100ms for the per-session firehose at `path` to become non-empty
 /// (its worker flushes asynchronously while the agent process stays alive), then
-/// assert it carries first-party (`xai_grok`) content. Panics with the captured
+/// assert it carries first-party (`xai_kigi`) content. Panics with the captured
 /// stderr tail if it never fills. Shared by the live-agent tests.
-async fn read_session_firehose_when_ready(path: &Path, client: &GrokStdioClient) -> String {
+async fn read_session_firehose_when_ready(path: &Path, client: &KigiStdioClient) -> String {
     let mut content = None;
     for _ in 0..50 {
         if let Ok(text) = std::fs::read_to_string(path)
@@ -121,7 +121,7 @@ async fn read_session_firehose_when_ready(path: &Path, client: &GrokStdioClient)
     // The firehose filter routes first-party crate logs here; assert that rather
     // than a bare non-empty check.
     assert!(
-        content.contains("xai_grok"),
+        content.contains("xai_kigi"),
         "session firehose {path:?} should contain first-party logs, got {} bytes",
         content.len()
     );
@@ -131,7 +131,7 @@ async fn read_session_firehose_when_ready(path: &Path, client: &GrokStdioClient)
 /// `--debug` (headless) runs cleanly: arg-parsing + the master switch + tracing
 /// init don't crash. Per-session routing + content is proven deterministically by
 /// the live `agent` tests (incl. `debug_flag_master_switch_enables_firehose`); a
-/// headless `grok -p` client is near-silent, so its lazily-opened firehose may
+/// headless `kigi -p` client is near-silent, so its lazily-opened firehose may
 /// legitimately stay empty here — file existence is intentionally not asserted.
 #[tokio::test]
 #[ignore] // requires pre-built binary; run with --ignored
@@ -145,7 +145,7 @@ async fn debug_flag_enables_firehose_without_crashing() {
     let cmd = debug_cmd(&server, home.path(), workdir.path(), &["--debug"]);
     let result = run_headless_with_cmd(cmd).await;
 
-    assert_headless_success(&result, "grok --debug headless", Some(&server));
+    assert_headless_success(&result, "kigi --debug headless", Some(&server));
     assert_no_crashes(&result.stderr);
 }
 
@@ -162,7 +162,7 @@ async fn no_debug_flag_writes_no_debug_dir() {
     let cmd = debug_cmd(&server, home.path(), workdir.path(), &[]);
     let result = run_headless_with_cmd(cmd).await;
 
-    assert_headless_success(&result, "grok headless (no --debug)", Some(&server));
+    assert_headless_success(&result, "kigi headless (no --debug)", Some(&server));
     assert!(
         firehose_txt_files(home.path()).is_empty(),
         "no firehose *.txt expected without --debug, found: {:?}",
@@ -186,7 +186,7 @@ async fn agent_session_writes_named_session_file() {
         let kigi_home = home.path().join(".kigi");
         let kigi_home_str = kigi_home.to_string_lossy().into_owned();
 
-        let client = GrokStdioClient::spawn_with_home_and_env(
+        let client = KigiStdioClient::spawn_with_home_and_env(
             &server,
             workdir.path(),
             home,
@@ -235,11 +235,11 @@ async fn debug_flag_master_switch_enables_firehose() {
         let kigi_home = home.path().join(".kigi");
         let kigi_home_str = kigi_home.to_string_lossy().into_owned();
 
-        // Drive `grok --debug agent stdio`: the master switch (which runs before
+        // Drive `kigi --debug agent stdio`: the master switch (which runs before
         // the agent dispatch) must be what enables the firehose — NOT a direct
         // KIGI_DEBUG_LOG env. The spawn helper clears inherited firehose toggles,
         // so the `--debug` flag is the only thing that can enable logging here.
-        let client = GrokStdioClient::spawn_with_home_env_and_args(
+        let client = KigiStdioClient::spawn_with_home_env_and_args(
             &server,
             workdir.path(),
             home,
@@ -292,7 +292,7 @@ async fn debug_file_flag_writes_single_file_and_bypasses_routing() {
     );
     let result = run_headless_with_cmd(cmd).await;
 
-    assert_headless_success(&result, "grok --debug-file", Some(&server));
+    assert_headless_success(&result, "kigi --debug-file", Some(&server));
     assert_no_crashes(&result.stderr);
     assert!(
         explicit.exists(),
@@ -310,7 +310,7 @@ async fn debug_file_flag_writes_single_file_and_bypasses_routing() {
 /// `KIGI_LOG_FILE=<path>` (no `--debug`) writes that exact file (back-compat).
 #[tokio::test]
 #[ignore] // requires pre-built binary; run with --ignored
-async fn grok_log_file_explicit_path_is_written() {
+async fn kigi_log_file_explicit_path_is_written() {
     let server = MockInferenceServer::start()
         .await
         .expect("start mock server");
@@ -322,7 +322,7 @@ async fn grok_log_file_explicit_path_is_written() {
     cmd.env("KIGI_LOG_FILE", &custom);
     let result = run_headless_with_cmd(cmd).await;
 
-    assert_headless_success(&result, "grok KIGI_LOG_FILE=path", Some(&server));
+    assert_headless_success(&result, "kigi KIGI_LOG_FILE=path", Some(&server));
     assert_no_crashes(&result.stderr);
     assert!(
         custom.exists(),

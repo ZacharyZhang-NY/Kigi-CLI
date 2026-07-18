@@ -12,7 +12,7 @@ use crate::appearance::TextSelection;
 use crate::appearance::permission_cursor::DefaultSelectedPermission;
 
 use kigi_shell::agent::config::UiConfig;
-use kigi_tools::implementations::grok_build::ask_user_question;
+use kigi_tools::implementations::kigi::ask_user_question;
 
 // ---------------------------------------------------------------------------
 // Int bounds for `max_thoughts_width`.
@@ -45,12 +45,12 @@ const THEME_CHOICES: &[EnumChoice] = &[
         description: "Follow system dark/light appearance.",
     },
     EnumChoice {
-        canonical: "groknight",
+        canonical: "kiginight",
         display: "Kigi Night",
         description: "Neutral dark with magenta accent.",
     },
     EnumChoice {
-        canonical: "grokday",
+        canonical: "kigiday",
         display: "Kigi Day",
         description: "Light theme for bright environments.",
     },
@@ -280,12 +280,12 @@ const SCREEN_MODE_CHOICES: &[EnumChoice] = &[
     EnumChoice {
         canonical: "fullscreen",
         display: "Fullscreen",
-        description: "Open plain grok in the standard fullscreen TUI. Default when unset.",
+        description: "Open plain kigi in the standard fullscreen TUI. Default when unset.",
     },
     EnumChoice {
         canonical: "minimal",
         display: "Minimal",
-        description: "Open plain grok in scrollback-native (minimal) mode.",
+        description: "Open plain kigi in scrollback-native (minimal) mode.",
     },
 ];
 
@@ -294,12 +294,12 @@ const SCREEN_MODE_CHOICES: &[EnumChoice] = &[
 /// the user can pair any theme with any system-appearance bucket.
 const CONCRETE_THEME_CHOICES: &[EnumChoice] = &[
     EnumChoice {
-        canonical: "groknight",
+        canonical: "kiginight",
         display: "Kigi Night",
         description: "Neutral dark with magenta accent.",
     },
     EnumChoice {
-        canonical: "grokday",
+        canonical: "kigiday",
         display: "Kigi Day",
         description: "Light theme for bright environments.",
     },
@@ -362,7 +362,7 @@ pub fn default_settings() -> Vec<SettingMeta> {
             category: SettingCategory::Appearance,
             owner: SettingOwner::Shell,
             label: "Default screen mode",
-            description: "How plain grok opens next time: Fullscreen (default when unset) or \
+            description: "How plain kigi opens next time: Fullscreen (default when unset) or \
                           Minimal. Writes [ui] screen_mode in config.toml. Restart required. \
                           Switch this session only with /minimal or /fullscreen.",
             keywords: &[
@@ -485,8 +485,8 @@ pub fn default_settings() -> Vec<SettingMeta> {
                 "light",
             ],
             kind: SettingKind::Enum {
-                // `Option<String>` — `None` resolved to "groknight".
-                default: "groknight",
+                // `Option<String>` — `None` resolved to "kiginight".
+                default: "kiginight",
                 choices: THEME_CHOICES,
                 supports_preview: true,
             },
@@ -501,8 +501,8 @@ pub fn default_settings() -> Vec<SettingMeta> {
             description: "Theme to use when the system is in dark mode (only with theme=auto).",
             keywords: &["auto", "dark", "theme", "system", "appearance", "night"],
             kind: SettingKind::Enum {
-                // `Option<String>` — `None` falls back to "groknight".
-                default: "groknight",
+                // `Option<String>` — `None` falls back to "kiginight".
+                default: "kiginight",
                 choices: CONCRETE_THEME_CHOICES,
                 supports_preview: true,
             },
@@ -517,8 +517,8 @@ pub fn default_settings() -> Vec<SettingMeta> {
             description: "Theme to use when the system is in light mode (only with theme=auto).",
             keywords: &["auto", "light", "theme", "system", "appearance", "day"],
             kind: SettingKind::Enum {
-                // `Option<String>` — `None` falls back to "grokday".
-                default: "grokday",
+                // `Option<String>` — `None` falls back to "kigiday".
+                default: "kigiday",
                 choices: CONCRETE_THEME_CHOICES,
                 supports_preview: true,
             },
@@ -636,7 +636,7 @@ pub fn default_settings() -> Vec<SettingMeta> {
             owner: SettingOwner::Shell,
             label: "Default model",
             description: "Model used for new sessions. Changing this also switches the active session. Pick `(no override)` to clear.",
-            keywords: &["model", "default", "agent", "llm", "grok", "switch"],
+            keywords: &["model", "default", "agent", "llm", "kigi", "switch"],
             kind: SettingKind::DynamicEnum {
                 default: "",
                 source: DynamicEnumSource::ActiveModelCatalog,

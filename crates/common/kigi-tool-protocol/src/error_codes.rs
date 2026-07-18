@@ -2,7 +2,7 @@
 //!
 //! Receivers SHOULD switch on `data.code` (the snake_case string) rather
 //! than the numeric JSON-RPC `error.code`. The numeric is the JSON-RPC
-//! envelope code; the string is the Grok stable identifier.
+//! envelope code; the string is the Kigi stable identifier.
 //!
 //! Implemented as a `&'static [(i32, &'static str)]` table; the table is
 //! a small fixed set so a linear scan is faster than any

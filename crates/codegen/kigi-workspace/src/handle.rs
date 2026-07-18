@@ -18,7 +18,7 @@ use std::sync::Arc;
 pub(crate) static WORKSPACE_TERMINAL_BACKEND_ORPHANED_TOTAL: std::sync::LazyLock<IntCounterVec> =
     std::sync::LazyLock::new(|| {
         register_int_counter_vec!(
-            "grok_workspace_terminal_backend_orphaned_total",
+            "kigi_workspace_terminal_backend_orphaned_total",
             "Terminal backends detected orphaned from their session, by detection path \
              (tripwire, expected 0)",
             &["path"]
@@ -43,7 +43,7 @@ use kigi_tool_protocol::turn_hook::{AfterTurnAckPayload, AfterTurnAckStatus};
 pub(crate) static REWIND_CHECKPOINT_CAPTURE_TOTAL: std::sync::LazyLock<IntCounterVec> =
     std::sync::LazyLock::new(|| {
         register_int_counter_vec!(
-            "grok_workspace_rewind_checkpoint_capture_total",
+            "kigi_workspace_rewind_checkpoint_capture_total",
             "Total rewind-checkpoint domain captures",
             &["domain", "outcome"]
         )
@@ -53,7 +53,7 @@ pub(crate) static REWIND_CHECKPOINT_CAPTURE_TOTAL: std::sync::LazyLock<IntCounte
 pub(crate) static REWIND_CHECKPOINT_FINALIZE_TOTAL: std::sync::LazyLock<IntCounterVec> =
     std::sync::LazyLock::new(|| {
         register_int_counter_vec!(
-            "grok_workspace_rewind_checkpoint_finalize_total",
+            "kigi_workspace_rewind_checkpoint_finalize_total",
             "Total rewind-checkpoint finalizes",
             &["outcome"]
         )
@@ -63,7 +63,7 @@ pub(crate) static REWIND_CHECKPOINT_FINALIZE_TOTAL: std::sync::LazyLock<IntCount
 pub(crate) static REWIND_RESTORE_TOTAL: std::sync::LazyLock<IntCounterVec> =
     std::sync::LazyLock::new(|| {
         register_int_counter_vec!(
-            "grok_workspace_rewind_restore_total",
+            "kigi_workspace_rewind_restore_total",
             "Total rewind-checkpoint domain restores",
             &["domain", "result"]
         )
@@ -73,7 +73,7 @@ pub(crate) static REWIND_RESTORE_TOTAL: std::sync::LazyLock<IntCounterVec> =
 pub(crate) static REWIND_CHECKPOINT_DURATION: std::sync::LazyLock<HistogramVec> =
     std::sync::LazyLock::new(|| {
         register_histogram_vec!(
-            "grok_workspace_rewind_checkpoint_duration_seconds",
+            "kigi_workspace_rewind_checkpoint_duration_seconds",
             "Duration of rewind-checkpoint per-domain capture operations",
             &["domain"],
             vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0]
@@ -85,7 +85,7 @@ pub(crate) static REWIND_CHECKPOINT_DURATION: std::sync::LazyLock<HistogramVec> 
 pub(crate) static REWIND_NON_COMPLETED_FINALIZE_TOTAL: std::sync::LazyLock<IntCounterVec> =
     std::sync::LazyLock::new(|| {
         register_int_counter_vec!(
-            "grok_workspace_rewind_non_completed_finalize_total",
+            "kigi_workspace_rewind_non_completed_finalize_total",
             "Non-Completed after_turn boundaries that produced a rewind finalize",
             &["outcome"]
         )
@@ -889,7 +889,7 @@ impl WorkspaceHandle {
     }
     /// Run one poll tick for an active fuzzy search. Returns the next batch of
     /// results (paths absolutized against the search root) or a signal to keep
-    /// polling / stop. Drives the `x.ai/search/fuzzy/status` notification loop.
+    /// polling / stop. Drives the `kigi/search/fuzzy/status` notification loop.
     pub async fn fuzzy_poll(
         &self,
         search_id: &str,
@@ -966,7 +966,7 @@ impl WorkspaceHandle {
             sink(method, params);
         }
     }
-    /// Drive the `x.ai/search/fuzzy/status` stream for an active search: poll
+    /// Drive the `kigi/search/fuzzy/status` stream for an active search: poll
     /// until done / closed / superseded, emitting each new result batch to the
     /// client through the ext-notification sink. Co-located with the manager so
     /// it polls in-process in both local and proxy mode.
@@ -1016,7 +1016,7 @@ impl WorkspaceHandle {
                     .unwrap_or_default(), }
                 );
             }
-            self.emit_client_ext("x.ai/search/fuzzy/status".to_string(), params);
+            self.emit_client_ext("kigi/search/fuzzy/status".to_string(), params);
             if data.done {
                 break;
             }
@@ -1024,7 +1024,7 @@ impl WorkspaceHandle {
     }
     /// Run a content search (ripgrep) and return results.
     /// Run a streaming content (ripgrep) search rooted at `cwd`, emitting each
-    /// batch as `x.ai/search/content/status` via the client sink, and returning
+    /// batch as `kigi/search/content/status` via the client sink, and returning
     /// the final result. Co-located with the sink so it streams in both modes.
     pub async fn run_content_search(
         &self,
@@ -1042,7 +1042,7 @@ impl WorkspaceHandle {
                 .total_files, "done" : batch.done, "truncated" : batch.truncated,
                 }
             );
-            handle.emit_client_ext("x.ai/search/content/status".to_string(), params);
+            handle.emit_client_ext("kigi/search/content/status".to_string(), params);
         })
         .await
         .map_err(|e| WorkspaceError::Internal(e.to_string()))
@@ -1277,11 +1277,11 @@ fn decode_cancellation_category(s: Option<&str>) -> Option<CancellationCategory>
     })
 }
 /// Per-process ephemeral workspace home for handles constructed without an
-/// explicit home (tests, local mode). Never the real grok home —
+/// explicit home (tests, local mode). Never the real kigi home —
 /// only [`connect_local_workspace`] resolves `$KIGI_WORKSPACE_HOME` — so the
 /// default path can never collide with a real workspace's state dir.
 fn ephemeral_workspace_home() -> std::path::PathBuf {
-    std::env::temp_dir().join(format!("grok-workspace-ephemeral-{}", std::process::id()))
+    std::env::temp_dir().join(format!("kigi-workspace-ephemeral-{}", std::process::id()))
 }
 /// Resolve `workspace_rewind_all_outcomes` from `KIGI_WORKSPACE_REWIND_ALL_OUTCOMES` (default off).
 fn rewind_all_outcomes_from_env() -> bool {
@@ -1464,7 +1464,7 @@ pub(crate) mod tests {
             .get()
     }
     fn explicit_cfg(name_override: &str) -> ToolServerConfig {
-        let mut renamed = tc("GrokBuild:read_file", Some(ToolKind::Read));
+        let mut renamed = tc("Kigi:read_file", Some(ToolKind::Read));
         renamed.name_override = Some(name_override.to_owned());
         ToolServerConfig {
             tools: vec![renamed],
@@ -1476,13 +1476,10 @@ pub(crate) mod tests {
     pub(crate) fn background_capable_cfg() -> ToolServerConfig {
         ToolServerConfig {
             tools: vec![
-                tc("GrokBuild:read_file", Some(ToolKind::Read)),
-                tc("GrokBuild:run_terminal_cmd", Some(ToolKind::Execute)),
-                tc(
-                    "GrokBuild:get_task_output",
-                    Some(ToolKind::BackgroundTaskAction),
-                ),
-                tc("GrokBuild:kill_task", Some(ToolKind::KillTaskAction)),
+                tc("Kigi:read_file", Some(ToolKind::Read)),
+                tc("Kigi:run_terminal_cmd", Some(ToolKind::Execute)),
+                tc("Kigi:get_task_output", Some(ToolKind::BackgroundTaskAction)),
+                tc("Kigi:kill_task", Some(ToolKind::KillTaskAction)),
             ],
             behavior_preset: None,
         }
@@ -1537,10 +1534,10 @@ pub(crate) mod tests {
         let backend = session.terminal_backend().clone();
         let out_dir = tempfile::tempdir().expect("temp dir");
         let bg = start_background_sleep(&session, out_dir.path(), "snapshot-bg").await;
-        handle.shared.mcp_tools_snapshot.store(Arc::new(vec![tc(
-            "GrokBuild:read_file",
-            Some(ToolKind::Read),
-        )]));
+        handle
+            .shared
+            .mcp_tools_snapshot
+            .store(Arc::new(vec![tc("Kigi:read_file", Some(ToolKind::Read))]));
         let rebuilt = handle
             .shared
             .re_resolve_all_sessions("mcp_snapshot_changed", true)
@@ -1607,10 +1604,10 @@ pub(crate) mod tests {
             !local.toolset_terminal_is_session_owned().await,
             "precondition: the installed toolset's Terminal must be external"
         );
-        handle.shared.mcp_tools_snapshot.store(Arc::new(vec![tc(
-            "GrokBuild:read_file",
-            Some(ToolKind::Read),
-        )]));
+        handle
+            .shared
+            .mcp_tools_snapshot
+            .store(Arc::new(vec![tc("Kigi:read_file", Some(ToolKind::Read))]));
         handle
             .shared
             .re_resolve_all_sessions("mcp_snapshot_changed", true)
@@ -1730,10 +1727,10 @@ pub(crate) mod tests {
             "the shell must have entered the subdir: {}",
             cwd_before.display()
         );
-        handle.shared.mcp_tools_snapshot.store(Arc::new(vec![tc(
-            "GrokBuild:read_file",
-            Some(ToolKind::Read),
-        )]));
+        handle
+            .shared
+            .mcp_tools_snapshot
+            .store(Arc::new(vec![tc("Kigi:read_file", Some(ToolKind::Read))]));
         let rebuilt = handle
             .shared
             .re_resolve_all_sessions("mcp_snapshot_changed", true)
@@ -1936,7 +1933,7 @@ pub(crate) mod tests {
     async fn client_ext_sink_receives_emitted_notification() {
         let handle = make_handle();
         assert!(!handle.has_client_ext_sink());
-        handle.emit_client_ext("x.ai/noop".to_string(), serde_json::json!({}));
+        handle.emit_client_ext("kigi/noop".to_string(), serde_json::json!({}));
         let captured = Arc::new(parking_lot::Mutex::new(Vec::new()));
         let sink_captured = captured.clone();
         handle.set_client_ext_sink(Arc::new(move |method, params| {
@@ -1944,17 +1941,17 @@ pub(crate) mod tests {
         }));
         assert!(handle.has_client_ext_sink());
         handle.emit_client_ext(
-            "x.ai/search/fuzzy/status".to_string(),
+            "kigi/search/fuzzy/status".to_string(),
             serde_json::json!({ "a" : 1 }),
         );
         let got = captured.lock();
         assert_eq!(got.len(), 1);
-        assert_eq!(got[0].0, "x.ai/search/fuzzy/status");
+        assert_eq!(got[0].0, "kigi/search/fuzzy/status");
         assert_eq!(got[0].1, serde_json::json!({ "a" : 1 }));
     }
     /// End-to-end local streaming: open + change a fuzzy search over real files,
     /// run the notification driver, and assert a correctly-shaped
-    /// `x.ai/search/fuzzy/status` is delivered through the sink with the match.
+    /// `kigi/search/fuzzy/status` is delivered through the sink with the match.
     #[tokio::test]
     async fn fuzzy_change_streams_status_through_sink() {
         use crate::file_system::TargetClientId;
@@ -1965,7 +1962,7 @@ pub(crate) mod tests {
         let captured = Arc::new(parking_lot::Mutex::new(Vec::<serde_json::Value>::new()));
         let sink_captured = captured.clone();
         handle.set_client_ext_sink(Arc::new(move |method, params| {
-            if method == "x.ai/search/fuzzy/status" {
+            if method == "kigi/search/fuzzy/status" {
                 sink_captured.lock().push(params);
             }
         }));
@@ -2042,7 +2039,7 @@ pub(crate) mod tests {
                 sid,
                 &BeforeTurnPayload {
                     turn_number: 7,
-                    model_id: "grok-4".to_owned(),
+                    model_id: "kigi-4".to_owned(),
                     yolo_mode: false,
                     conversation_message_count: 5,
                     session_relationship: "subagent".to_owned(),
@@ -2071,7 +2068,7 @@ pub(crate) mod tests {
                     outcome: TurnHookOutcome::Completed,
                     duration_ms: 1234,
                     tool_call_count: 1,
-                    model_id: "grok-4".to_owned(),
+                    model_id: "kigi-4".to_owned(),
                     written_repo_paths: Vec::new(),
                     cancellation_category: None,
                     cancellation_context: None,
@@ -2094,7 +2091,7 @@ pub(crate) mod tests {
         let ts = by_type("turn_started");
         assert_eq!(ts["session_id"], sid);
         assert_eq!(ts["turn_number"], 7);
-        assert_eq!(ts["model_id"], "grok-4");
+        assert_eq!(ts["model_id"], "kigi-4");
         assert_eq!(ts["yolo_mode"], false);
         assert_eq!(ts["conversation_message_count"], 5);
         assert_eq!(ts["session_relationship"], "subagent");
@@ -2133,7 +2130,7 @@ pub(crate) mod tests {
                 "main",
                 &BeforeTurnPayload {
                     turn_number: 1,
-                    model_id: "grok-4".to_owned(),
+                    model_id: "kigi-4".to_owned(),
                     yolo_mode: true,
                     ..Default::default()
                 },
@@ -2145,7 +2142,7 @@ pub(crate) mod tests {
                 "main",
                 &TurnHookRequest::Before(BeforeTurnPayload {
                     turn_number: 2,
-                    model_id: "grok-4".to_owned(),
+                    model_id: "kigi-4".to_owned(),
                     yolo_mode: false,
                     ..Default::default()
                 }),
@@ -2165,7 +2162,7 @@ pub(crate) mod tests {
                 "never-bound",
                 &TurnHookRequest::Before(BeforeTurnPayload {
                     turn_number: 1,
-                    model_id: "grok-4".to_owned(),
+                    model_id: "kigi-4".to_owned(),
                     yolo_mode: true,
                     ..Default::default()
                 }),
@@ -2187,7 +2184,7 @@ pub(crate) mod tests {
                     sid,
                     &BeforeTurnPayload {
                         turn_number: turn,
-                        model_id: "grok-4".to_owned(),
+                        model_id: "kigi-4".to_owned(),
                         yolo_mode: yolo,
                         ..Default::default()
                     },
@@ -2239,7 +2236,7 @@ pub(crate) mod tests {
                 sid,
                 &BeforeTurnPayload {
                     turn_number: 1,
-                    model_id: "grok-4".to_owned(),
+                    model_id: "kigi-4".to_owned(),
                     yolo_mode: false,
                     conversation_message_count: 0,
                     session_relationship: "primary".to_owned(),
@@ -2260,7 +2257,7 @@ pub(crate) mod tests {
                     outcome: TurnHookOutcome::Completed,
                     duration_ms: 1,
                     tool_call_count: 1,
-                    model_id: "grok-4".to_owned(),
+                    model_id: "kigi-4".to_owned(),
                     written_repo_paths: Vec::new(),
                     cancellation_category: None,
                     cancellation_context: None,
@@ -2290,7 +2287,7 @@ pub(crate) mod tests {
                 sid,
                 &BeforeTurnPayload {
                     turn_number: 1,
-                    model_id: "grok-4".to_owned(),
+                    model_id: "kigi-4".to_owned(),
                     yolo_mode: false,
                     conversation_message_count: 0,
                     session_relationship: "primary".to_owned(),
@@ -2389,7 +2386,7 @@ pub(crate) mod tests {
         let child_ids: Vec<String> = child_baseline.tools.iter().map(|t| t.id.clone()).collect();
         assert_eq!(child_ids, parent_ids);
         let new_parent_baseline = ToolServerConfig {
-            tools: vec![tc("GrokBuild:read_file", Some(ToolKind::Read))],
+            tools: vec![tc("Kigi:read_file", Some(ToolKind::Read))],
             behavior_preset: None,
         };
         let factory = handle.shared.session_factory.clone();
@@ -2425,8 +2422,8 @@ pub(crate) mod tests {
         let handle = make_handle();
         let custom = ToolServerConfig {
             tools: vec![
-                tc("GrokBuild:read_file", Some(ToolKind::Read)),
-                tc("GrokBuild:list_dir", Some(ToolKind::ListDir)),
+                tc("Kigi:read_file", Some(ToolKind::Read)),
+                tc("Kigi:list_dir", Some(ToolKind::ListDir)),
             ],
             behavior_preset: None,
         };
@@ -2452,7 +2449,7 @@ pub(crate) mod tests {
     async fn fork_session_uses_main_session_when_parent_session_id_is_none() {
         let handle = make_handle();
         let marker_config = ToolServerConfig {
-            tools: vec![tc("GrokBuild:read_file", Some(ToolKind::Read))],
+            tools: vec![tc("Kigi:read_file", Some(ToolKind::Read))],
             behavior_preset: None,
         };
         let main = handle.session("main").expect("main present");
@@ -2488,13 +2485,13 @@ pub(crate) mod tests {
             .iter()
             .map(|t| t.id.clone())
             .collect();
-        assert_eq!(baseline_ids, vec!["GrokBuild:read_file".to_string()]);
+        assert_eq!(baseline_ids, vec!["Kigi:read_file".to_string()]);
     }
     #[tokio::test]
     async fn fork_session_uses_named_parent_when_parent_session_id_is_set() {
         let handle = make_handle();
         let custom = ToolServerConfig {
-            tools: vec![tc("GrokBuild:read_file", Some(ToolKind::Read))],
+            tools: vec![tc("Kigi:read_file", Some(ToolKind::Read))],
             behavior_preset: None,
         };
         handle
@@ -2813,7 +2810,7 @@ pub(crate) mod tests {
             .await
             .expect("subB ok");
         let mut rx = handle.shared.events.subscribe();
-        let mcp_tool = tc("GrokBuild:read_file", Some(ToolKind::Read));
+        let mcp_tool = tc("Kigi:read_file", Some(ToolKind::Read));
         let rebuilt = handle.on_mcp_snapshot_changed(vec![mcp_tool]);
         assert_eq!(rebuilt, 3, "main + 2 subagents");
         let mut got: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
@@ -3537,7 +3534,7 @@ pub(crate) mod tests {
                     outcome: TurnHookOutcome::Completed,
                     duration_ms: 10,
                     tool_call_count: 0,
-                    model_id: "grok-4".to_owned(),
+                    model_id: "kigi-4".to_owned(),
                     written_repo_paths: Vec::new(),
                     cancellation_category: None,
                     cancellation_context: None,
@@ -3592,7 +3589,7 @@ pub(crate) mod tests {
                 sid,
                 &BeforeTurnPayload {
                     turn_number: 2,
-                    model_id: "grok-4".to_owned(),
+                    model_id: "kigi-4".to_owned(),
                     yolo_mode: false,
                     conversation_message_count: 0,
                     session_relationship: "primary".to_owned(),
@@ -3608,7 +3605,7 @@ pub(crate) mod tests {
                     outcome: TurnHookOutcome::Cancelled,
                     duration_ms: 10,
                     tool_call_count: 0,
-                    model_id: "grok-4".to_owned(),
+                    model_id: "kigi-4".to_owned(),
                     written_repo_paths: Vec::new(),
                     cancellation_category: Some("permission_rejected".to_owned()),
                     cancellation_context: Some(serde_json::json!({ "recovery" : false })),

@@ -62,7 +62,7 @@ pub(super) fn immediate_server_send_eligible(agent: &AgentView) -> bool {
 
 /// Push the optimistic shared-queue echo for an immediate server-authoritative
 /// send and mirror it into the owning agent so the queue pane renders it
-/// immediately, before the confirming `x.ai/queue/changed` broadcast.
+/// immediately, before the confirming `kigi/queue/changed` broadcast.
 pub(super) fn push_server_queue_echo(
     app: &mut AppView,
     agent_id: AgentId,
@@ -91,7 +91,7 @@ pub(super) fn push_server_queue_echo(
 ///
 /// The agent's `pending_inputs` is the single source of truth for queue
 /// contents and order; the only client-side queue state is the optimistic echo
-/// that bridges the round-trip before the confirming `x.ai/queue/changed`
+/// that bridges the round-trip before the confirming `kigi/queue/changed`
 /// broadcast. Once a prompt's RPC resolves (or we pull it back into the input
 /// on cancel) it will never reappear in a future broadcast, so its echo must be
 /// dropped — otherwise the reconcile in [`AppView::apply_queue_changed`] keeps
@@ -633,7 +633,7 @@ pub(crate) fn apply_turn_start_shim(
     agent.session.current_prompt_id = Some(prompt_id.clone());
     agent.attached_as_viewer = adopted_from_other_client;
     // A new (adopted) turn is starting: drop the prior turn's chips but KEEP the
-    // seen ring, so a buffer-replayed `x.ai/follow_ups` for an older response
+    // seen ring, so a buffer-replayed `kigi/follow_ups` for an older response
     // stays rejected (no stale revival). This is correct for BOTH passive-viewer
     // and self-driven adoption: the adopted turn's OWN follow_ups still
     // re-render via the stamped `promptId` match in `apply_follow_ups` (the
@@ -1150,7 +1150,7 @@ mod tests {
     }
 
     /// FIX 4 (b) via the shim: after starting a NEW turn, a buffer-replayed
-    /// `x.ai/follow_ups` for a PRIOR turn's response stays rejected (its
+    /// `kigi/follow_ups` for a PRIOR turn's response stays rejected (its
     /// `promptId` is not the active turn and it is already seen) — no stale
     /// revival. Covers the self-driven turn start (`p-self`).
     #[test]

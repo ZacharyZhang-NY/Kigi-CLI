@@ -4,7 +4,7 @@
 //!
 //! Harness wiring (turn selection from the conversation store, raw-request
 //! user-query extraction, summary-message assembly, persistence) stays
-//! per-harness; the Grok chat host wraps this pipeline.
+//! per-harness; the Kigi chat host wraps this pipeline.
 
 pub mod compact;
 pub mod config;

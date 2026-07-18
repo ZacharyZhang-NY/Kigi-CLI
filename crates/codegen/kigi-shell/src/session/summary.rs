@@ -117,7 +117,7 @@ pub(crate) fn notify_client(gateway: &Option<GatewaySender>, info: &Info, title:
     };
     if let Ok(params) = serde_json::value::to_raw_value(&notification) {
         gateway.forward_fire_and_forget(acp::ExtNotification::new(
-            "x.ai/session_notification",
+            "kigi/session_notification",
             params.into(),
         ));
     }

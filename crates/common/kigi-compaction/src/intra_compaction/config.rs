@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// Which targets intra-compaction may compact.
 ///
-/// - `FullReplace` (default): grok-build's full-replace strategy — summarize
+/// - `FullReplace` (default): kigi's full-replace strategy — summarize
 ///   the *whole* conversation (prior history + accumulated steps) and rebuild
 ///   context from scratch as `[system] + [summary]`. Drives the shared
 ///   `code_compaction` summarizer directly; no tail is kept.
@@ -56,7 +56,7 @@ pub enum IntraSummarizer {
 ///
 /// When `enabled = false` (default), no intra-compaction runs for that agent.
 ///
-/// Uses **percentage** thresholds (borrowed from grok-shell's
+/// Uses **percentage** thresholds (borrowed from kigi-shell's
 /// `CompactionPolicy`) for portability across models with different context
 /// windows.
 ///
@@ -65,7 +65,7 @@ pub enum IntraSummarizer {
 /// LLM call, audit) and a **mode-specific** block whose fields are each read by
 /// only a subset of modes (see the per-field `[...]` tags). In particular,
 /// `FullReplace` — the default — ignores `min_steps_before_compact` at trigger
-/// time (token threshold only, matching grok-build) and also ignores
+/// time (token threshold only, matching kigi) and also ignores
 /// `summarizer`, `target_threshold_percent`, `steps_trigger_ratio`, and
 /// `user_message_truncate_chars`. The field remains on this config for all
 /// modes (YAML / remote agent config / defaults); only enforcement is mode-dependent.
@@ -107,7 +107,7 @@ pub struct IntraCompactionConfig {
     /// **Enforcement:** applied for `StepsOnly` / `HistoryOnly` /
     /// `HistoryThenSteps`. **Ignored** when [`mode`](Self::mode) is
     /// [`IntraCompactionMode::FullReplace`] (token threshold alone, same idea
-    /// as grok-build full-replace auto-compact). Worthless early passes are
+    /// as kigi full-replace auto-compact). Worthless early passes are
     /// still limited by [`min_compactable_tokens`](Self::min_compactable_tokens)
     /// / reduction guards after a trigger.
     pub min_steps_before_compact: u32,
@@ -192,7 +192,7 @@ pub struct IntraCompactionConfig {
     //    preamble). --
     /// [HistoryOnly / HistoryThenSteps] Character threshold above which an
     /// original user message gets middle-truncated when included in the
-    /// `<grok_user_queries>` preamble prepended to the history compaction
+    /// `<kigi_user_queries>` preamble prepended to the history compaction
     /// summary. Mirrors the inter-compaction Basic threshold. Has no
     /// effect for `Steps` target — steps compaction has no user-queries
     /// preamble. Default: `3000`. (Not always exposed by remote agent-config

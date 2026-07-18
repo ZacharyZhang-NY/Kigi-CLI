@@ -423,7 +423,7 @@ mod tests {
         ui.insert("show_timestamps".into(), TomlValue::Boolean(true));
         ui.insert(
             "auto_light_theme".into(),
-            TomlValue::String("grokday".into()),
+            TomlValue::String("kigiday".into()),
         );
         table.insert("ui".into(), TomlValue::Table(ui));
 
@@ -446,7 +446,7 @@ mod tests {
         );
         assert_eq!(
             ui.get("auto_light_theme").and_then(|v| v.as_str()),
-            Some("grokday"),
+            Some("kigiday"),
             "pre-existing field not in serialized output should be preserved"
         );
     }
@@ -619,7 +619,7 @@ mod tests {
 yolo = true
 show_timestamps = false
 auto_dark_theme = "tokyonight"
-auto_light_theme = "grokday"
+auto_light_theme = "kigiday"
 "#;
         let root: TomlValue = toml::from_str(toml_str).unwrap();
         let cfg = load_config_from_toml(&root);
@@ -627,7 +627,7 @@ auto_light_theme = "grokday"
         assert!(cfg.ui.yolo);
         assert_eq!(cfg.ui.show_timestamps, Some(false));
         assert_eq!(cfg.ui.auto_dark_theme.as_deref(), Some("tokyonight"));
-        assert_eq!(cfg.ui.auto_light_theme.as_deref(), Some("grokday"));
+        assert_eq!(cfg.ui.auto_light_theme.as_deref(), Some("kigiday"));
 
         // Simulate save_config: serialize back through merge_section
         let mut table = root.as_table().unwrap().clone();
@@ -644,7 +644,7 @@ auto_light_theme = "grokday"
         );
         assert_eq!(
             ui.get("auto_light_theme").and_then(|v| v.as_str()),
-            Some("grokday")
+            Some("kigiday")
         );
         assert_eq!(ui.get("yolo").and_then(|v| v.as_bool()), Some(true));
     }
@@ -730,10 +730,10 @@ auto_light_theme = "grokday"
 [ui]
 show_timestamps = true
 auto_dark_theme = "tokyonight"
-auto_light_theme = "grokday"
+auto_light_theme = "kigiday"
 
 [models]
-default = "grok-3"
+default = "kigi-3"
 
 [cli]
 auto_update = true
@@ -742,7 +742,7 @@ auto_update = true
         let mut cfg = load_config_from_toml(&root);
 
         // User changes default model (unrelated to UI)
-        cfg.models.default = Some("grok-4".to_string());
+        cfg.models.default = Some("kigi-4".to_string());
 
         // Simulate save_config
         let mut table = root.as_table().unwrap().clone();
@@ -763,14 +763,14 @@ auto_update = true
         );
         assert_eq!(
             ui.get("auto_light_theme").and_then(|v| v.as_str()),
-            Some("grokday")
+            Some("kigiday")
         );
 
         // Verify the model change went through
         let models = table.get("models").unwrap().as_table().unwrap();
         assert_eq!(
             models.get("default").and_then(|v| v.as_str()),
-            Some("grok-4")
+            Some("kigi-4")
         );
     }
 
@@ -823,7 +823,7 @@ auto_update = true
     #[test]
     fn models_config_serializes_only_some_fields() {
         let m = crate::agent::config::ModelsConfig {
-            default: Some("grok-3".to_string()),
+            default: Some("kigi-3".to_string()),
             ..Default::default()
         };
         let v = TomlValue::try_from(&m).expect("serialize ModelsConfig");
@@ -836,7 +836,7 @@ auto_update = true
             assert!(!t.contains_key("disabled_models"));
             assert!(!t.contains_key("allowed_models"));
             assert!(!t.contains_key("agent_type"));
-            assert_eq!(t.get("default").and_then(|x| x.as_str()), Some("grok-3"));
+            assert_eq!(t.get("default").and_then(|x| x.as_str()), Some("kigi-3"));
         } else {
             panic!("expected table from serialization");
         }
@@ -941,12 +941,12 @@ auto_update = true
         models.insert("unmodeled_foo".into(), TomlValue::String("keep-me".into()));
         table.insert("models".into(), TomlValue::Table(models));
         let cfg = crate::agent::config::ModelsConfig {
-            default: Some("grok-new".to_string()),
+            default: Some("kigi-new".to_string()),
             ..Default::default()
         };
         merge_section(&mut table, "models", &cfg);
         let m = table.get("models").unwrap().as_table().unwrap();
-        assert_eq!(m.get("default").and_then(|v| v.as_str()), Some("grok-new"));
+        assert_eq!(m.get("default").and_then(|v| v.as_str()), Some("kigi-new"));
         assert_eq!(
             m.get("session_summary").and_then(|v| v.as_str()),
             Some("old-title")
@@ -960,10 +960,10 @@ auto_update = true
 
     #[test]
     fn persist_preferred_model_flow_roundtrips_via_load_and_new_from_toml_cfg() {
-        let original = "[models]\ndefault = \"grok-old\"\n";
+        let original = "[models]\ndefault = \"kigi-old\"\n";
         let root: TomlValue = toml::from_str(original).unwrap();
         let mut cfg = load_config_from_toml(&root);
-        cfg.models.default = Some("grok-persisted".to_string());
+        cfg.models.default = Some("kigi-persisted".to_string());
         let mut table = if let TomlValue::Table(t) = root {
             t
         } else {
@@ -972,10 +972,10 @@ auto_update = true
         merge_section(&mut table, "models", &cfg.models);
         let reloaded_root = TomlValue::Table(table);
         let reloaded = load_config_from_toml(&reloaded_root);
-        assert_eq!(reloaded.models.default.as_deref(), Some("grok-persisted"));
+        assert_eq!(reloaded.models.default.as_deref(), Some("kigi-persisted"));
         let cfg2 = crate::agent::config::Config::new_from_toml_cfg(&reloaded_root)
             .expect("new_from_toml_cfg");
-        assert_eq!(cfg2.models.default.as_deref(), Some("grok-persisted"));
+        assert_eq!(cfg2.models.default.as_deref(), Some("kigi-persisted"));
     }
 
     // ── merge_section pin tests for CLI/session setters ──────────────────
@@ -1116,8 +1116,8 @@ auto_update = true
         use crate::agent::config::{Config, ConfigModelOverride, ModelInfo};
         use std::sync::Mutex;
 
-        const TEST_MODEL: &str = "grok-4.5";
-        const OTHER_MODEL: &str = "grok-4.3";
+        const TEST_MODEL: &str = "kigi-4.5";
+        const OTHER_MODEL: &str = "kigi-4.3";
 
         /// Serialize tests that mutate `KIGI_AUTO_COMPACT_THRESHOLD_PERCENT`.
         static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -1453,8 +1453,8 @@ auto_update = true
         // `cfg.ui.auto_{dark,light}_theme = Some(value)`.
         let cfg = apply(|cfg| cfg.ui.auto_dark_theme = Some("tokyonight".to_string()));
         assert_eq!(cfg.ui.auto_dark_theme, Some("tokyonight".to_string()));
-        let cfg = apply(|cfg| cfg.ui.auto_light_theme = Some("grokday".to_string()));
-        assert_eq!(cfg.ui.auto_light_theme, Some("grokday".to_string()));
+        let cfg = apply(|cfg| cfg.ui.auto_light_theme = Some("kigiday".to_string()));
+        assert_eq!(cfg.ui.auto_light_theme, Some("kigiday".to_string()));
 
         // set_hunk_tracker_mode wraps `cfg.ui.hunk_tracker_mode = Some(value)`.
         let cfg = apply(|cfg| cfg.ui.hunk_tracker_mode = Some("off".to_string()));
@@ -1475,7 +1475,7 @@ auto_update = true
         let original = r#"
 [ui]
 compact_mode = true
-theme = "groknight"
+theme = "kiginight"
 auto_dark_theme = "tokyonight"
 custom_user_key = "preserve-me"
 "#;
@@ -1516,8 +1516,8 @@ custom_user_key = "preserve-me"
         let original = r#"
 [ui]
 theme = "auto"
-auto_dark_theme = "groknight"
-auto_light_theme = "grokday"
+auto_dark_theme = "kiginight"
+auto_light_theme = "kigiday"
 custom_unknown_key = 42
 "#;
         let root: TomlValue = toml::from_str(original).unwrap();

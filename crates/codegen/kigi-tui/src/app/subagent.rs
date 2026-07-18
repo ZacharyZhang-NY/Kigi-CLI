@@ -110,7 +110,7 @@ thread_local! {
     static REPLAY_KIGI_SHARE_DIR : std::cell::RefCell < Option < std::path::PathBuf >> = const
     { std::cell::RefCell::new(None) };
 }
-/// Override grok home for disk-replay unit tests (thread-local; production never sets this).
+/// Override kigi home for disk-replay unit tests (thread-local; production never sets this).
 #[cfg(test)]
 pub(crate) fn set_replay_kigi_home_for_tests(home: Option<std::path::PathBuf>) {
     REPLAY_KIGI_SHARE_DIR.with(|h| *h.borrow_mut() = home);
@@ -764,15 +764,15 @@ mod tests {
     #[test]
     fn subagent_meta_all_fields() {
         assert_eq!(
-            format_subagent_meta(Some("researcher"), Some("analyst"), Some("grok-3")),
-            " (researcher \u{00b7} analyst \u{00b7} grok-3)"
+            format_subagent_meta(Some("researcher"), Some("analyst"), Some("kigi-3")),
+            " (researcher \u{00b7} analyst \u{00b7} kigi-3)"
         );
     }
     #[test]
     fn subagent_meta_partial_skips_nones() {
         assert_eq!(
-            format_subagent_meta(Some("researcher"), None, Some("grok-3")),
-            " (researcher \u{00b7} grok-3)"
+            format_subagent_meta(Some("researcher"), None, Some("kigi-3")),
+            " (researcher \u{00b7} kigi-3)"
         );
     }
     #[test]
@@ -813,8 +813,8 @@ mod tests {
     #[test]
     fn subagent_meta_collapses_duplicate_persona_role() {
         assert_eq!(
-            format_subagent_meta(Some("reviewer"), Some("reviewer"), Some("grok-3")),
-            " (reviewer \u{00b7} grok-3)"
+            format_subagent_meta(Some("reviewer"), Some("reviewer"), Some("kigi-3")),
+            " (reviewer \u{00b7} kigi-3)"
         );
     }
     #[test]
@@ -841,8 +841,8 @@ mod tests {
     #[test]
     fn subagent_meta_drops_both_empty_persona_role() {
         assert_eq!(
-            format_subagent_meta(Some(""), Some(" "), Some("grok-3")),
-            " (grok-3)"
+            format_subagent_meta(Some(""), Some(" "), Some("kigi-3")),
+            " (kigi-3)"
         );
     }
     #[test]

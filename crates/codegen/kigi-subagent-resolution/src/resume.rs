@@ -110,7 +110,7 @@ mod tests {
 
     #[test]
     fn matching_type_and_persona_source_has_model() {
-        let source = make_source("general-purpose", Some("impl"), Some("grok-3"));
+        let source = make_source("general-purpose", Some("impl"), Some("kigi-3"));
         let result = validate_resume_identity("general-purpose", Some("impl"), &source);
         assert!(result.is_ok());
     }
@@ -126,7 +126,7 @@ mod tests {
     #[test]
     fn source_model_is_not_validated() {
         // Model is not an identity gate; source model is used only for pinning.
-        let source = make_source("general-purpose", None, Some("grok-3"));
+        let source = make_source("general-purpose", None, Some("kigi-3"));
         let result = validate_resume_identity("general-purpose", None, &source);
         assert!(result.is_ok());
     }
@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn persona_mismatch_still_rejected_when_source_has_model() {
-        let source = make_source("general-purpose", Some("impl"), Some("grok-3"));
+        let source = make_source("general-purpose", Some("impl"), Some("kigi-3"));
         let result = validate_resume_identity("general-purpose", Some("reviewer"), &source);
         assert!(matches!(
             result,

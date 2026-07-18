@@ -12,8 +12,8 @@ fn tool_id_accepts_bare_and_namespaced_names() {
     let bare = ToolId::new("read_file").unwrap();
     assert_eq!(bare.as_str(), "read_file");
 
-    let namespaced = ToolId::new("GrokBuild:read_file").unwrap();
-    assert_eq!(namespaced.as_str(), "GrokBuild:read_file");
+    let namespaced = ToolId::new("Kigi:read_file").unwrap();
+    assert_eq!(namespaced.as_str(), "Kigi:read_file");
 
     assert_eq!(
         ToolId::from_str("github:list_repos").unwrap().as_str(),
@@ -81,8 +81,8 @@ fn tool_id_rejects_empty_segments_around_separator() {
 
 #[test]
 fn tool_id_try_from_string_works() {
-    let id: ToolId = "GrokBuild:read_file".to_owned().try_into().unwrap();
-    assert_eq!(id.as_str(), "GrokBuild:read_file");
+    let id: ToolId = "Kigi:read_file".to_owned().try_into().unwrap();
+    assert_eq!(id.as_str(), "Kigi:read_file");
 }
 
 #[test]
@@ -116,15 +116,15 @@ fn server_id_synthesis_starts_with_auto_prefix() {
     let synth = ServerId::synthesize_for_tool(&conn, &bare);
     assert_eq!(synth.as_str(), "auto:tool:read_file");
 
-    let namespaced = ToolId::new("GrokBuild:read_file").unwrap();
+    let namespaced = ToolId::new("Kigi:read_file").unwrap();
     let synth_ns = ServerId::synthesize_for_tool(&conn, &namespaced);
-    assert_eq!(synth_ns.as_str(), "auto:tool:GrokBuild:read_file");
+    assert_eq!(synth_ns.as_str(), "auto:tool:Kigi:read_file");
 }
 
 #[test]
 fn server_id_synthesis_is_deterministic() {
     let conn = ConnectionId::new("conn-abc").unwrap();
-    let tool = ToolId::new("GrokBuild:read_file").unwrap();
+    let tool = ToolId::new("Kigi:read_file").unwrap();
     let a = ServerId::synthesize_for_tool(&conn, &tool);
     let b = ServerId::synthesize_for_tool(&conn, &tool);
     assert_eq!(

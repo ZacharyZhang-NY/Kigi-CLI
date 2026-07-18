@@ -530,7 +530,7 @@ impl AgentView {
             Some(crate::views::queue_pane::QueueRowOrigin::Server)
         );
         if is_server {
-            // Server row: the agent promotes it to run next (`x.ai/queue/interject`); any kind may send now.
+            // Server row: the agent promotes it to run next (`kigi/queue/interject`); any kind may send now.
             if let Some(row) = row.as_ref()
                 && let Some(server_id) = row.server_id.clone()
             {
@@ -538,7 +538,7 @@ impl AgentView {
                 // flight, so an interject fired now would overtake the row
                 // shell-side and silently no-op (dropping the send-now and
                 // hiding the row behind the armed cancel expectation). Park
-                // the intent; the confirming `x.ai/queue/changed` broadcast
+                // the intent; the confirming `kigi/queue/changed` broadcast
                 // fires it with the row's authoritative version (see
                 // `resolve_send_now_awaiting_confirm`).
                 if self.optimistic_queue_ids.contains(&server_id) {
@@ -568,13 +568,13 @@ impl AgentView {
     }
 
     /// Reconcile this client's optimistic queue echoes against a raw
-    /// `x.ai/queue/changed` broadcast (pre-merge entries — the mirrored
+    /// `kigi/queue/changed` broadcast (pre-merge entries — the mirrored
     /// snapshot re-pins unconfirmed echoes, so it can't tell confirmation
     /// apart), and resolve a parked queue-row send-now
     /// ([`Self::send_now_awaiting_confirm`]).
     ///
     /// Returns `Some((id, version))` when the parked row is now confirmed as
-    /// QUEUED — the caller fires `x.ai/queue/interject` with that
+    /// QUEUED — the caller fires `kigi/queue/interject` with that
     /// authoritative version. A parked row confirmed as RUNNING clears the
     /// park with nothing to do (the natural drain won the race). A row in
     /// neither set stays parked (its RPC is still in flight).
@@ -715,7 +715,7 @@ impl AgentView {
         // Queue-specific actions (delete, edit, reorder). `x`/Delete = row delete.
         if let Some(event) = self.queue.handle_key(key, registry) {
             // Resolve the selected row's origin so edits route correctly:
-            // Server-origin rows go to the agent as `x.ai/queue/*`
+            // Server-origin rows go to the agent as `kigi/queue/*`
             // commands (the rebroadcast is the source of truth); Local rows
             // keep today's in-place mutation.
             let row = self.queue.row_ref(Self::queue_event_id(&event));
@@ -822,7 +822,7 @@ impl AgentView {
         }
     }
 
-    /// Reorder payload for `x.ai/queue/reorder`. Omit only running; include
+    /// Reorder payload for `kigi/queue/reorder`. Omit only running; include
     /// send-now in the list but do not swap past it (shell ranks missing ids last).
     fn server_queue_reordered(&self, selection_id: u64, up: bool) -> Option<Vec<String>> {
         let server_id = self.queue.row_ref(selection_id)?.server_id?;

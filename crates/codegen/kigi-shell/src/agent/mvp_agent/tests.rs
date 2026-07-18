@@ -224,7 +224,7 @@ fn allocate_turn_number_advances_counter() {
 /// With no overrides and model_agent_type = None, the default agent is used.
 #[test]
 #[serial_test::serial]
-fn resolve_agent_definition_defaults_to_grok_build() {
+fn resolve_agent_definition_defaults_to_kigi() {
     let prev = std::env::var("KIGI_AGENT").ok();
     unsafe {
         std::env::remove_var("KIGI_AGENT");
@@ -243,7 +243,7 @@ fn resolve_agent_definition_defaults_to_grok_build() {
     }
 }
 /// When model_agent_type = Some("codex"), the codex agent is selected even
-/// though the default chain would return grok-build.
+/// though the default chain would return kigi.
 #[test]
 #[serial_test::serial]
 fn resolve_agent_definition_model_agent_type_overrides_default() {
@@ -320,13 +320,13 @@ fn resolve_agent_definition_acp_profile_wins_when_model_agent_type_is_default() 
     }
 }
 /// Regression: after `DEFAULT_AGENT_TYPE` flipped to
-/// `grok-build-plan`, models in the catalog that still declare
-/// `agent_type = "grok-build"` explicitly must NOT preempt an ACP
-/// profile. Any value in the `grok-build*` family is the stock harness
+/// `kigi-plan`, models in the catalog that still declare
+/// `agent_type = "kigi"` explicitly must NOT preempt an ACP
+/// profile. Any value in the `kigi*` family is the stock harness
 /// with no strict requirement.
 #[test]
 #[serial_test::serial]
-fn resolve_agent_definition_acp_profile_wins_for_explicit_grok_build_family() {
+fn resolve_agent_definition_acp_profile_wins_for_explicit_kigi_family() {
     let prev = std::env::var("KIGI_AGENT").ok();
     unsafe {
         std::env::remove_var("KIGI_AGENT");
@@ -337,7 +337,7 @@ fn resolve_agent_definition_acp_profile_wins_for_explicit_grok_build_family() {
         "Custom devbox profile", }
     ))
     .expect("agent definition must parse");
-    for family_variant in ["grok-build", "grok-build-plan", "grok-build-concise"] {
+    for family_variant in ["kigi", "kigi-plan", "kigi-concise"] {
         let def = MvpAgent::resolve_agent_definition(
             tmp.path(),
             None,
@@ -347,7 +347,7 @@ fn resolve_agent_definition_acp_profile_wins_for_explicit_grok_build_family() {
         );
         assert_eq!(
             def.name, "custom-devbox-profile",
-            "ACP profile must win for grok-build family variant `{family_variant}`"
+            "ACP profile must win for kigi family variant `{family_variant}`"
         );
     }
     if let Some(v) = prev {
@@ -543,62 +543,62 @@ fn enqueue_replace_system_prompt_override_noop_when_absent_or_empty() {
     );
 }
 /// Regression for the web-client `_meta.agentProfile` -> `set_session_model`
-/// flow: a zero-turn switch from `grok-build` (a client profile name) to
-/// `grok-build-plan` (the default model agent_type) must be
+/// flow: a zero-turn switch from `kigi` (a client profile name) to
+/// `kigi-plan` (the default model agent_type) must be
 /// treated as compatible so the harness rebuild is skipped and the
 /// custom prompt body is preserved.
 #[test]
 fn harnesses_are_compatible_for_stock_family_pairs() {
-    assert!(harnesses_are_compatible("grok-build", "grok-build-plan"));
-    assert!(harnesses_are_compatible("grok-build-plan", "grok-build"));
-    assert!(harnesses_are_compatible("grok-build", "grok-build"));
+    assert!(harnesses_are_compatible("kigi", "kigi-plan"));
+    assert!(harnesses_are_compatible("kigi-plan", "kigi"));
+    assert!(harnesses_are_compatible("kigi", "kigi"));
     assert!(harnesses_are_compatible(
-        "grok-build-concise",
-        "grok-build-plan"
+        "kigi-concise",
+        "kigi-plan"
     ));
     assert!(harnesses_are_compatible(
         "remote-sidebar",
-        "grok-build-plan"
+        "kigi-plan"
     ));
 }
 #[test]
 fn harnesses_are_compatible_rejects_strict_mismatches() {
     assert!(harnesses_are_compatible("codex", "codex"));
-    assert!(!harnesses_are_compatible("grok-build-plan", "codex"));
+    assert!(!harnesses_are_compatible("kigi-plan", "codex"));
 }
 #[test]
 fn explicit_agent_type_wins_over_session_default() {
     assert_eq!(
-        resolve_required_agent_type(Some("cursor"), "grok-build-plan"),
+        resolve_required_agent_type(Some("cursor"), "kigi-plan"),
         "cursor"
     );
 }
 #[test]
-fn null_agent_type_falls_back_to_session_default_grok_build_plan() {
+fn null_agent_type_falls_back_to_session_default_kigi_plan() {
     assert_eq!(
-        resolve_required_agent_type(None, "grok-build-plan"),
-        "grok-build-plan"
+        resolve_required_agent_type(None, "kigi-plan"),
+        "kigi-plan"
     );
 }
 #[test]
-fn null_agent_type_falls_back_to_session_default_grok_build() {
+fn null_agent_type_falls_back_to_session_default_kigi() {
     assert_eq!(
-        resolve_required_agent_type(None, "grok-build"),
-        "grok-build"
+        resolve_required_agent_type(None, "kigi"),
+        "kigi"
     );
 }
 #[test]
 fn null_agent_type_returns_to_session_default_after_cursor_switch() {
-    let session_default = "grok-build-plan";
+    let session_default = "kigi-plan";
     let required_after_null = resolve_required_agent_type(None, session_default);
-    assert_eq!(required_after_null, "grok-build-plan");
+    assert_eq!(required_after_null, "kigi-plan");
     assert_ne!(required_after_null, "cursor");
 }
 /// Compatible stock switches (no rebuild) must NOT mutate `agent_name`,
 /// preserving the session's original ACP `agentProfile`.
 #[test]
 fn agent_name_unchanged_without_harness_rebuild() {
-    let unchanged = agent_name_after_model_switch(false, "grok-build-plan", "remote-sidebar");
+    let unchanged = agent_name_after_model_switch(false, "kigi-plan", "remote-sidebar");
     assert_eq!(
         unchanged, "remote-sidebar",
         "a compatible stock switch must preserve the original agent profile name"
@@ -648,7 +648,7 @@ async fn file_toolset_override_e2e_to_finalized_toolset() {
         web_search_config: kigi_tools::implementations::web_search::WebSearchConfig::default(),
         web_fetch_config: Default::default(),
         lsp: None,
-        app_builder_deployer_config: kigi_tools::implementations::grok_build::deploy_app::AppBuilderDeployerConfig::default(),
+        app_builder_deployer_config: kigi_tools::implementations::kigi::deploy_app::AppBuilderDeployerConfig::default(),
         api_key_provider: None,
         attribution_callback: None,
         system_reminder_tag: kigi_tools::reminders::DEFAULT_REMINDER_TAG,
@@ -741,7 +741,7 @@ fn make_test_handle(
         force_compact: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         permission_handle: kigi_workspace::permission::PermissionHandle::allow_all(),
         attribution_callback: None,
-        agent_name: "grok-build".to_string(),
+        agent_name: "kigi".to_string(),
         session_default_agent_profile: None,
         allowed_subagent_types: None,
         hook_registry: None,
@@ -758,7 +758,7 @@ async fn lookup_session_model_returns_per_session_model() {
     let sid_b = acp::SessionId::new("sess-b");
     let default_model = acp::ModelId::new("default-model");
     let sessions: HashMap<acp::SessionId, crate::session::SessionHandle> = [
-        (sid_a.clone(), make_test_handle("grok-3-fast", false, None)),
+        (sid_a.clone(), make_test_handle("kigi-3-fast", false, None)),
         (sid_b.clone(), make_test_handle("codex-mini", false, None)),
     ]
     .into();
@@ -766,7 +766,7 @@ async fn lookup_session_model_returns_per_session_model() {
         lookup_session_model(&sessions, Some(&sid_a), &default_model)
             .0
             .as_ref(),
-        "grok-3-fast"
+        "kigi-3-fast"
     );
     assert_eq!(
         lookup_session_model(&sessions, Some(&sid_b), &default_model)
@@ -778,13 +778,13 @@ async fn lookup_session_model_returns_per_session_model() {
 /// lookup_session_model falls back to the default when session_id is None.
 #[tokio::test]
 async fn lookup_session_model_fallback_no_session() {
-    let default_model = acp::ModelId::new("grok-3");
+    let default_model = acp::ModelId::new("kigi-3");
     let sessions: HashMap<acp::SessionId, crate::session::SessionHandle> = HashMap::new();
     assert_eq!(
         lookup_session_model(&sessions, None, &default_model)
             .0
             .as_ref(),
-        "grok-3"
+        "kigi-3"
     );
 }
 /// Mutating session A's model_id via the handle does not affect session B.
@@ -794,8 +794,8 @@ async fn set_session_model_does_not_cross_contaminate() {
     let sid_b = acp::SessionId::new("sess-b");
     let default_model = acp::ModelId::new("default");
     let mut sessions: HashMap<acp::SessionId, crate::session::SessionHandle> = [
-        (sid_a.clone(), make_test_handle("grok-3", false, None)),
-        (sid_b.clone(), make_test_handle("grok-3", false, None)),
+        (sid_a.clone(), make_test_handle("kigi-3", false, None)),
+        (sid_b.clone(), make_test_handle("kigi-3", false, None)),
     ]
     .into();
     sessions.get_mut(&sid_a).unwrap().model_id = acp::ModelId::new("codex-mini");
@@ -809,7 +809,7 @@ async fn set_session_model_does_not_cross_contaminate() {
         lookup_session_model(&sessions, Some(&sid_b), &default_model)
             .0
             .as_ref(),
-        "grok-3",
+        "kigi-3",
         "Session B's model must not be affected by session A's model change"
     );
 }
@@ -903,15 +903,15 @@ async fn yolo_toggle_scoped_by_client_identifier() {
     let mut sessions: HashMap<acp::SessionId, crate::session::SessionHandle> = [
         (
             sid_tui.clone(),
-            make_test_handle("grok-3", false, Some("grok-tui")),
+            make_test_handle("kigi-3", false, Some("kigi-tui")),
         ),
         (
             sid_vscode.clone(),
-            make_test_handle("grok-3", false, Some("grok-code-extension")),
+            make_test_handle("kigi-3", false, Some("kigi-code-extension")),
         ),
     ]
     .into();
-    let updated = apply_yolo_mode_to_matching_sessions(&mut sessions, Some("grok-tui"), true);
+    let updated = apply_yolo_mode_to_matching_sessions(&mut sessions, Some("kigi-tui"), true);
     assert_eq!(updated, 1, "exactly one matching session should be updated");
     assert!(
         sessions[&sid_tui].yolo_mode,
@@ -931,15 +931,15 @@ async fn yolo_toggle_can_disable_session_started_with_yolo_enabled() {
     let mut sessions: HashMap<acp::SessionId, crate::session::SessionHandle> = [
         (
             sid_tui.clone(),
-            make_test_handle("grok-3", true, Some("grok-tui")),
+            make_test_handle("kigi-3", true, Some("kigi-tui")),
         ),
         (
             sid_other.clone(),
-            make_test_handle("grok-3", true, Some("grok-code-extension")),
+            make_test_handle("kigi-3", true, Some("kigi-code-extension")),
         ),
     ]
     .into();
-    let updated = apply_yolo_mode_to_matching_sessions(&mut sessions, Some("grok-tui"), false);
+    let updated = apply_yolo_mode_to_matching_sessions(&mut sessions, Some("kigi-tui"), false);
     assert_eq!(updated, 1, "only the sender's session should be updated");
     assert!(
         !sessions[&sid_tui].yolo_mode,
@@ -1030,7 +1030,7 @@ async fn drain_respects_deadline() {
 fn parse_code_nav_capability_present_and_true() {
     let mut meta = serde_json::Map::new();
     meta.insert(
-        "x.ai/codeNavigation".to_string(),
+        "kigi/codeNavigation".to_string(),
         serde_json::json!({ "enabled" : true }),
     );
     let init = acp::InitializeRequest::new(acp::ProtocolVersion::V1).client_capabilities(
@@ -1054,7 +1054,7 @@ fn parse_code_nav_capability_absent_returns_false() {
 fn parse_code_nav_capability_false_returns_false() {
     let mut meta = serde_json::Map::new();
     meta.insert(
-        "x.ai/codeNavigation".to_string(),
+        "kigi/codeNavigation".to_string(),
         serde_json::json!({ "enabled" : false }),
     );
     let init = acp::InitializeRequest::new(acp::ProtocolVersion::V1).client_capabilities(
@@ -1074,18 +1074,18 @@ fn parse_code_nav_capability_false_returns_false() {
 #[tokio::test]
 async fn test_per_session_code_nav_isolation() {
     let web_handle = {
-        let mut h = make_test_handle("model", false, Some("grok-web"));
+        let mut h = make_test_handle("model", false, Some("kigi-web"));
         h.code_nav_enabled = true;
         h
     };
     let tui_handle = {
-        let mut h = make_test_handle("model", false, Some("grok-tui"));
+        let mut h = make_test_handle("model", false, Some("kigi-tui"));
         h.code_nav_enabled = false;
         h
     };
     let check = |handle: &crate::session::SessionHandle| {
         let ct = crate::http::client_type_from_origin(handle.origin_client.as_ref());
-        if !matches!(ct, ClientType::GrokWeb) {
+        if !matches!(ct, ClientType::KigiWeb) {
             return Err(CodeNavEligibility::ClientNotWeb);
         }
         if !handle.code_nav_enabled {
@@ -1322,7 +1322,7 @@ async fn resident_activity_reports_needs_input_when_pending() {
     use crate::agent::roster::RosterActivity;
     let agent = build_minimal_agent_for_tests();
     let sid = acp::SessionId::new("sess-pending");
-    let handle = make_test_handle("grok-3", false, None);
+    let handle = make_test_handle("kigi-3", false, None);
     let pending = handle.pending_interactions.clone();
     let prompt_id = handle.current_prompt_id.clone();
     agent.sessions.borrow_mut().insert(sid.clone(), handle);
@@ -1339,7 +1339,7 @@ async fn resident_activity_reports_needs_input_when_pending() {
     pending.lock().unwrap().clear();
     assert_eq!(agent.resident_activity(&sid), RosterActivity::Working);
 }
-/// Drain the agent gateway, returning the first `x.ai/sessions/changed`
+/// Drain the agent gateway, returning the first `kigi/sessions/changed`
 /// payload that carries an upserted entry (ignoring any unrelated
 /// notifications, which parse into an empty `RosterChanged`).
 fn drain_roster_changed(
@@ -1362,7 +1362,7 @@ fn drain_roster_changed(
     found
 }
 /// A turn-boundary activity delta (`push_roster_activity_delta`) broadcasts
-/// an `x.ai/sessions/changed` upsert carrying the *overridden* activity, so
+/// an `kigi/sessions/changed` upsert carrying the *overridden* activity, so
 /// every attached dashboard reflects Working/Idle immediately instead of
 /// waiting for the ≤1s roster poll (turn-start/turn-end). The
 /// override matters because at turn-start the actor has not yet published
@@ -1384,7 +1384,7 @@ async fn push_roster_activity_delta_broadcasts_overridden_activity() {
     agent
         .sessions
         .borrow_mut()
-        .insert(sid.clone(), make_test_handle("grok-3", false, None));
+        .insert(sid.clone(), make_test_handle("kigi-3", false, None));
     agent.push_roster_activity_delta(&sid, RosterActivity::Working);
     let changed = drain_roster_changed(&mut rx).expect("turn-start delta emitted");
     assert_eq!(changed.upserted.len(), 1);
@@ -1427,7 +1427,7 @@ fn check_nav_eligibility_from_sessions(
         return Err(CodeNavEligibility::SessionRequired);
     };
     let ct = crate::http::client_type_from_origin(handle.origin_client.as_ref());
-    if !matches!(ct, ClientType::GrokWeb) {
+    if !matches!(ct, ClientType::KigiWeb) {
         return Err(CodeNavEligibility::ClientNotWeb);
     }
     if !handle.code_nav_enabled {
@@ -1442,7 +1442,7 @@ fn check_nav_eligibility_from_sessions(
 #[tokio::test]
 async fn test_web_session_with_capability_is_eligible() {
     let sid = acp::SessionId::new("sess-web");
-    let mut handle = make_test_handle("model", false, Some("grok-web"));
+    let mut handle = make_test_handle("model", false, Some("kigi-web"));
     handle.code_nav_enabled = true;
     let sessions = [(sid.clone(), handle)].into();
     assert!(
@@ -1454,7 +1454,7 @@ async fn test_web_session_with_capability_is_eligible() {
 #[tokio::test]
 async fn test_tui_session_is_rejected() {
     let sid = acp::SessionId::new("sess-tui");
-    let mut handle = make_test_handle("model", false, Some("grok-tui"));
+    let mut handle = make_test_handle("model", false, Some("kigi-tui"));
     handle.code_nav_enabled = true;
     let sessions = [(sid.clone(), handle)].into();
     assert_eq!(
@@ -1467,7 +1467,7 @@ async fn test_tui_session_is_rejected() {
 #[tokio::test]
 async fn test_web_session_without_capability_is_rejected() {
     let sid = acp::SessionId::new("sess-web-no-cap");
-    let mut handle = make_test_handle("model", false, Some("grok-web"));
+    let mut handle = make_test_handle("model", false, Some("kigi-web"));
     handle.code_nav_enabled = false;
     let sessions = [(sid.clone(), handle)].into();
     assert_eq!(
@@ -1482,9 +1482,9 @@ async fn test_web_session_without_capability_is_rejected() {
 async fn test_leader_mode_two_sessions_stay_isolated() {
     let web_sid = acp::SessionId::new("web");
     let tui_sid = acp::SessionId::new("tui");
-    let mut web_handle = make_test_handle("model", false, Some("grok-web"));
+    let mut web_handle = make_test_handle("model", false, Some("kigi-web"));
     web_handle.code_nav_enabled = true;
-    let mut tui_handle = make_test_handle("model", false, Some("grok-tui"));
+    let mut tui_handle = make_test_handle("model", false, Some("kigi-tui"));
     tui_handle.code_nav_enabled = false;
     let sessions = [(web_sid.clone(), web_handle), (tui_sid.clone(), tui_handle)].into();
     assert!(
@@ -1505,7 +1505,7 @@ async fn test_leader_mode_two_sessions_stay_isolated() {
 #[tokio::test]
 async fn test_unknown_session_id_returns_session_required() {
     let known_sid = acp::SessionId::new("known");
-    let mut known_handle = make_test_handle("model", false, Some("grok-web"));
+    let mut known_handle = make_test_handle("model", false, Some("kigi-web"));
     known_handle.code_nav_enabled = true;
     let sessions = [(known_sid.clone(), known_handle)].into();
     let stale_sid = acp::SessionId::new("stale-or-evicted");
@@ -1567,7 +1567,7 @@ mod eligibility_gates {
         code_nav_enabled: bool,
         indexing_enabled: bool,
     ) -> Result<(), CodeNavEligibility> {
-        if !matches!(client_type, ClientType::GrokWeb) {
+        if !matches!(client_type, ClientType::KigiWeb) {
             return Err(CodeNavEligibility::ClientNotWeb);
         }
         if !code_nav_enabled {
@@ -1588,27 +1588,27 @@ mod eligibility_gates {
     #[test]
     fn tui_client_rejected() {
         assert_eq!(
-            check_gates(ClientType::GrokTUI, true, true),
+            check_gates(ClientType::KigiTUI, true, true),
             Err(CodeNavEligibility::ClientNotWeb)
         );
     }
     #[test]
     fn web_client_no_capability_rejected() {
         assert_eq!(
-            check_gates(ClientType::GrokWeb, false, true),
+            check_gates(ClientType::KigiWeb, false, true),
             Err(CodeNavEligibility::CapabilityNotAdvertised)
         );
     }
     #[test]
     fn web_client_with_capability_config_disabled_rejected() {
         assert_eq!(
-            check_gates(ClientType::GrokWeb, true, false),
+            check_gates(ClientType::KigiWeb, true, false),
             Err(CodeNavEligibility::DisabledByConfig)
         );
     }
     #[test]
     fn web_client_with_capability_and_config_passes_first_three_gates() {
-        assert!(check_gates(ClientType::GrokWeb, true, true).is_ok());
+        assert!(check_gates(ClientType::KigiWeb, true, true).is_ok());
     }
 }
 #[test]
@@ -1672,12 +1672,12 @@ fn write_updates(dir: &std::path::Path, lines: &[&str]) -> PathBuf {
 }
 fn bg_line(task_id: &str) -> String {
     format!(
-        r#"{{"timestamp":1,"method":"_x.ai/session/update","params":{{"sessionId":"s","update":{{"sessionUpdate":"task_backgrounded","task_id":"{task_id}","command":"sleep 99","cwd":"/tmp"}}}}}}"#
+        r#"{{"timestamp":1,"method":"_kigi/session/update","params":{{"sessionId":"s","update":{{"sessionUpdate":"task_backgrounded","task_id":"{task_id}","command":"sleep 99","cwd":"/tmp"}}}}}}"#
     )
 }
 fn completed_line(task_id: &str) -> String {
     format!(
-        r#"{{"timestamp":2,"method":"_x.ai/session/update","params":{{"sessionId":"s","update":{{"sessionUpdate":"task_completed","task_snapshot":{{"task_id":"{task_id}","completed":true}}}}}}}}"#
+        r#"{{"timestamp":2,"method":"_kigi/session/update","params":{{"sessionId":"s","update":{{"sessionUpdate":"task_completed","task_snapshot":{{"task_id":"{task_id}","completed":true}}}}}}}}"#
     )
 }
 fn orphaned_ids(tasks: &[OrphanedTask]) -> std::collections::HashSet<&str> {
@@ -1751,7 +1751,7 @@ fn orphaned_tasks_skips_malformed_lines() {
 fn orphaned_tasks_ignores_unrelated_updates() {
     let tmp = tempfile::tempdir().unwrap();
     let bg = bg_line("t1");
-    let unrelated = r#"{"timestamp":1,"method":"_x.ai/session/update","params":{"sessionId":"s","update":{"sessionUpdate":"auto_compact_started","percentage":80}}}"#;
+    let unrelated = r#"{"timestamp":1,"method":"_kigi/session/update","params":{"sessionId":"s","update":{"sessionUpdate":"auto_compact_started","percentage":80}}}"#;
     let path = write_updates(tmp.path(), &[&bg, unrelated]);
     let result = MvpAgent::find_orphaned_background_tasks(&Some(path));
     assert_eq!(result.len(), 1);
@@ -1761,7 +1761,7 @@ fn orphaned_tasks_filters_rewind_dead_branches() {
     let tmp = tempfile::tempdir().unwrap();
     let user_msg = r#"{"timestamp":0,"method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"hello"}}}}"#;
     let bg_before_rewind = bg_line("t-dead");
-    let rewind = r#"{"timestamp":3,"method":"_x.ai/session/update","params":{"sessionId":"s","update":{"sessionUpdate":"rewind_marker","target_prompt_index":0,"created_at":"2025-01-01T00:00:00Z"}}}"#;
+    let rewind = r#"{"timestamp":3,"method":"_kigi/session/update","params":{"sessionId":"s","update":{"sessionUpdate":"rewind_marker","target_prompt_index":0,"created_at":"2025-01-01T00:00:00Z"}}}"#;
     let user_msg2 = r#"{"timestamp":4,"method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"retry"}}}}"#;
     let bg_after_rewind = bg_line("t-alive");
     let path = write_updates(
@@ -1804,7 +1804,7 @@ fn on_demand_enabled_from_remote_settings() {
 async fn auth_type_session_based_no_current_returns_session_token() {
     for method_id in [
         crate::agent::auth_method::CACHED_TOKEN_AUTH_METHOD_ID,
-        crate::agent::auth_method::KIGI_COM_METHOD_ID,
+        crate::agent::auth_method::KIMI_CODE_METHOD_ID,
     ] {
         let agent = build_minimal_agent_for_tests();
         agent.set_auth_method(acp::AuthMethodId::new(method_id));
@@ -1848,7 +1848,7 @@ async fn auth_type_session_based_with_current_returns_session_token() {
     use crate::auth::KimiAuth;
     let agent = build_minimal_agent_for_tests();
     agent.set_auth_method(acp::AuthMethodId::new(
-        crate::agent::auth_method::KIGI_COM_METHOD_ID,
+        crate::agent::auth_method::KIMI_CODE_METHOD_ID,
     ));
     agent.auth_manager.hot_swap(KimiAuth::test_default());
     assert!(agent.auth_manager.current().is_some());
@@ -1899,12 +1899,12 @@ async fn cached_token_fallthrough_prefers_api_key_for_deployment_key() {
     );
 }
 /// No advertiseable credentials at all (no env key, no kill switch): the user
-/// genuinely needs to log in, so the fallthrough is interactive `grok.com`.
+/// genuinely needs to log in, so the fallthrough is interactive `kimi-code`.
 #[tokio::test(flavor = "current_thread")]
 #[serial_test::serial]
-async fn cached_token_fallthrough_falls_to_grok_com_without_credentials() {
+async fn cached_token_fallthrough_falls_to_kigi_com_without_credentials() {
     use crate::agent::auth_method::{
-        KIGI_COM_METHOD_ID, LEGACY_XAI_API_KEY_ENV_VAR, XAI_API_KEY_ENV_VAR,
+        KIMI_CODE_METHOD_ID, LEGACY_XAI_API_KEY_ENV_VAR, XAI_API_KEY_ENV_VAR,
     };
     use kigi_test_support::EnvGuard;
     let _lockdown = EnvGuard::unset("KIGI_DISABLE_API_KEY_AUTH");
@@ -1913,8 +1913,8 @@ async fn cached_token_fallthrough_falls_to_grok_com_without_credentials() {
     let agent = build_minimal_agent_for_tests();
     assert_eq!(
         agent.cached_token_fallthrough_method_id().0.as_ref(),
-        KIGI_COM_METHOD_ID,
-        "no API-key creds and no kill switch -> interactive grok.com login",
+        KIMI_CODE_METHOD_ID,
+        "no API-key creds and no kill switch -> interactive kimi.com login",
     );
 }
 /// `parse_session_kind` routes `session/load` to the gateway Chat path vs. the
@@ -1926,22 +1926,22 @@ fn parse_session_kind_matrix() {
     let cases: &[(&str, serde_json::Value, SessionKind)] = &[
         (
             "chat",
-            json!({ "x.ai/session" : { "kind" : "chat" } }),
+            json!({ "kigi/session" : { "kind" : "chat" } }),
             SessionKind::Chat,
         ),
         (
             "build",
-            json!({ "x.ai/session" : { "kind" : "build" } }),
+            json!({ "kigi/session" : { "kind" : "build" } }),
             SessionKind::Build,
         ),
         (
             "chat_malformed_sibling",
-            json!({ "x.ai/session" : { "kind" : "chat", "facets" : "not-a-map" } }),
+            json!({ "kigi/session" : { "kind" : "chat", "facets" : "not-a-map" } }),
             SessionKind::Chat,
         ),
         (
             "unknown_kind",
-            json!({ "x.ai/session" : { "kind" : "frob" } }),
+            json!({ "kigi/session" : { "kind" : "frob" } }),
             SessionKind::Build,
         ),
         ("absent", json!({}), SessionKind::Build),
@@ -1954,9 +1954,9 @@ fn parse_session_kind_matrix() {
 #[test]
 fn chat_initial_model_matrix() {
     let cases: &[(&str, bool, Option<&str>, Option<&str>)] = &[
-        ("chat_with_model", true, Some("grok-4.5"), Some("grok-4.5")),
+        ("chat_with_model", true, Some("kigi-4.5"), Some("kigi-4.5")),
         ("chat_without_model", true, None, None),
-        ("build_with_model", false, Some("grok-4.5"), None),
+        ("build_with_model", false, Some("kigi-4.5"), None),
         ("build_without_model", false, None, None),
     ];
     for (label, is_chat_kind, custom_model_id, expected) in cases {
@@ -1983,27 +1983,27 @@ fn chat_new_session_model_state_matrix() {
     let cases: &[(&str, acp::SessionModelState, Option<&str>, &str)] = &[
         (
             "requested_in_catalog",
-            state_with("auto", &["auto", "grok-4"]),
-            Some("grok-4"),
-            "grok-4",
+            state_with("auto", &["auto", "kigi-4"]),
+            Some("kigi-4"),
+            "kigi-4",
         ),
         (
             "no_request_keeps_catalog_default",
-            state_with("auto", &["auto", "grok-4"]),
+            state_with("auto", &["auto", "kigi-4"]),
             None,
             "auto",
         ),
         (
             "requested_not_in_catalog",
             state_with("auto", &["auto"]),
-            Some("grok-4.5"),
-            "grok-4.5",
+            Some("kigi-4.5"),
+            "kigi-4.5",
         ),
         (
             "requested_with_empty_catalog",
             state_with("", &[]),
-            Some("grok-4"),
-            "grok-4",
+            Some("kigi-4"),
+            "kigi-4",
         ),
     ];
     for (label, state, requested, expected) in cases {
@@ -2069,7 +2069,7 @@ fn ext_method_rewind_uses_local_dispatch_without_bridge() {
         let params = serde_json::json!({ "sessionId" : "sess-local" });
         let err = agent
             .ext_method(acp::ExtRequest::new(
-                "x.ai/rewind/points",
+                "kigi/rewind/points",
                 std::sync::Arc::from(serde_json::value::to_raw_value(&params).unwrap()),
             ))
             .await
@@ -2116,7 +2116,7 @@ fn make_live_session_handle(
     tokio::sync::mpsc::UnboundedReceiver<TestSessionCommand>,
 ) {
     let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
-    let mut handle = make_test_handle("test-model", false, Some("grok-tui"));
+    let mut handle = make_test_handle("test-model", false, Some("kigi-tui"));
     handle.cmd_tx = cmd_tx.clone();
     handle.info = crate::session::info::Info {
         id: sid.clone(),
@@ -2149,14 +2149,14 @@ fn spawn_fake_actor(
     });
     observed_rx
 }
-/// Drive `x.ai/internal/evict_sessions` through the real `ext_notification`
+/// Drive `kigi/internal/evict_sessions` through the real `ext_notification`
 /// handler path (not the internal helper) — matches how the leader server
 /// signals a client disconnect.
 async fn drive_disconnect(agent: &MvpAgent, sid: &acp::SessionId) {
     drive_disconnect_many(agent, &[sid]).await;
 }
 /// Like `drive_disconnect`, but evicts several sessions in a single
-/// `x.ai/internal/evict_sessions` notification — the realistic shape of a
+/// `kigi/internal/evict_sessions` notification — the realistic shape of a
 /// real client disconnect, and the path that exercises `handle_evict_sessions`'
 /// concurrent `join_all` check pass followed by the sequential act pass.
 async fn drive_disconnect_many(agent: &MvpAgent, sids: &[&acp::SessionId]) {
@@ -2166,13 +2166,13 @@ async fn drive_disconnect_many(agent: &MvpAgent, sids: &[&acp::SessionId]) {
     let raw = serde_json::value::to_raw_value(&params).unwrap();
     agent
         .ext_notification(acp::ExtNotification::new(
-            "x.ai/internal/evict_sessions",
+            "kigi/internal/evict_sessions",
             raw.into(),
         ))
         .await
         .expect("evict_sessions notification must be handled");
 }
-/// Drive `x.ai/session/close` through the real `ext_method` dispatch
+/// Drive `kigi/session/close` through the real `ext_method` dispatch
 /// (`ext_method` → `handlers::session::handle` → `handle_session_close`),
 /// exercising the exact production path that finalizes the replica.
 async fn drive_close(agent: &MvpAgent, session_id: &str) -> Result<acp::ExtResponse, acp::Error> {
@@ -2181,7 +2181,7 @@ async fn drive_close(agent: &MvpAgent, session_id: &str) -> Result<acp::ExtRespo
     let raw = serde_json::value::to_raw_value(&params).unwrap();
     agent
         .ext_method(acp::ExtRequest::new(
-            "x.ai/session/close",
+            "kigi/session/close",
             std::sync::Arc::from(raw),
         ))
         .await
@@ -2423,7 +2423,7 @@ fn disconnect_keeps_resident_when_plan_approval_parked() {
         );
     });
 }
-/// Mixed batch in a *single* `x.ai/internal/evict_sessions` notification —
+/// Mixed batch in a *single* `kigi/internal/evict_sessions` notification —
 /// the realistic disconnect shape and the path that exercises
 /// `handle_evict_sessions`' `join_all` two-pass (concurrent `IsBusy` checks,
 /// then sequential act). One session's actor reports busy (→ kept resident,
@@ -2512,7 +2512,7 @@ fn session_live_state_map_is_bounded_across_cycles() {
     });
 }
 /// Finalize fires on a genuine terminal close — driven through the **real**
-/// `x.ai/session/close` dispatch (`ext_method` → `handle_session_close`),
+/// `kigi/session/close` dispatch (`ext_method` → `handle_session_close`),
 /// not the internal helper. Proves finalize was *moved* (not removed) and
 /// guards the handler's `existed` gate. (Finalize assertion is
 /// invocation-level; see note in `finalize_session_replica`.)
@@ -2663,7 +2663,7 @@ fn reload_after_terminal_removal_starts_clean() {
 }
 /// Build an agent whose gateway is wired to a live receiver, so a test can
 /// observe (and answer) agent→client reverse-requests like the dormant
-/// `x.ai/folder_trust/request` round-trip.
+/// `kigi/folder_trust/request` round-trip.
 fn build_agent_with_gateway_rx() -> (
     MvpAgent,
     tokio::sync::mpsc::UnboundedReceiver<kigi_acp_lib::AcpClientMessage>,
@@ -2698,7 +2698,7 @@ fn folder_trust_on() -> crate::util::config::RemoteSettings {
         ..Default::default()
     }
 }
-/// Pull the next `x.ai/folder_trust/request` reverse-request off the gateway and
+/// Pull the next `kigi/folder_trust/request` reverse-request off the gateway and
 /// answer it with `outcome`. Returns the request's decoded params.
 async fn answer_folder_trust_request(
     gw_rx: &mut tokio::sync::mpsc::UnboundedReceiver<kigi_acp_lib::AcpClientMessage>,
@@ -2711,7 +2711,7 @@ async fn answer_folder_trust_request(
     let kigi_acp_lib::AcpClientMessage::ExtMethod(args) = msg else {
         panic!("expected an ext_method reverse-request, got a different message");
     };
-    assert_eq!(args.request.method.as_ref(), "x.ai/folder_trust/request");
+    assert_eq!(args.request.method.as_ref(), "kigi/folder_trust/request");
     let params: serde_json::Value = serde_json::from_str(args.request.params.get()).unwrap();
     let resp: acp::ExtResponse = acp::ExtResponse::new(std::sync::Arc::from(
         serde_json::value::to_raw_value(&serde_json::json!({ "outcome" : outcome })).unwrap(),
@@ -3142,21 +3142,21 @@ mod direct_hub_cloud_removed {
     }
     #[test]
     fn cloud_server_id_meta_is_hard_error() {
-        let meta = serde_json::json!({ "x.ai/cloud_server_id" : "srv-123" });
+        let meta = serde_json::json!({ "kigi/cloud_server_id" : "srv-123" });
         let err = reject_direct_hub_cloud_meta(meta.as_object()).expect_err("must reject");
         assert_direct_hub_error(err);
     }
     #[test]
     fn cloud_server_id_null_still_present_is_hard_error() {
-        let meta = serde_json::json!({ "x.ai/cloud_server_id" : null });
+        let meta = serde_json::json!({ "kigi/cloud_server_id" : null });
         let err = reject_direct_hub_cloud_meta(meta.as_object()).expect_err("must reject");
         assert_direct_hub_error(err);
     }
     #[test]
     fn cloud_server_id_with_gateway_meta_still_hard_error() {
         let meta = serde_json::json!(
-            { "x.ai/cloud_server_id" : "srv-legacy", "envId" : "env-1",
-            "x.ai/cloud_existing_workspace" : { "server_id" : "ws-1", "cwd" :
+            { "kigi/cloud_server_id" : "srv-legacy", "envId" : "env-1",
+            "kigi/cloud_existing_workspace" : { "server_id" : "ws-1", "cwd" :
             "/workspace" } }
         );
         let err = reject_direct_hub_cloud_meta(meta.as_object()).expect_err("Direct stamp wins");
@@ -3173,7 +3173,7 @@ mod direct_hub_cloud_removed {
         assert!(
             reject_direct_hub_cloud_meta(
                 serde_json::json!({
-            "x.ai/cloud_existing_workspace" : { "server_id" : "ws-1", "cwd" :
+            "kigi/cloud_existing_workspace" : { "server_id" : "ws-1", "cwd" :
             "/workspace" } })
                 .as_object()
             )
@@ -3212,7 +3212,7 @@ mod soft_default_settings_emit {
                 let kigi_acp_lib::AcpClientMessage::ExtNotification(args) = msg else {
                     panic!("expected ExtNotification, got {msg:?}");
                 };
-                assert_eq!(args.request.method.as_ref(), "x.ai/settings/update");
+                assert_eq!(args.request.method.as_ref(), "kigi/settings/update");
                 let params: serde_json::Value =
                     serde_json::from_str(args.request.params.get()).expect("parse params");
                 assert_eq!(

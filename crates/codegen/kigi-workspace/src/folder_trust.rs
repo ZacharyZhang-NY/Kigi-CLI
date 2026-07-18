@@ -119,7 +119,7 @@ pub fn decide_inputs_with_interactive(
 /// this binary — true on a local/dev build (no `KIGI_VERSION` release stamp).
 ///
 /// THE single security short-circuit: every explicit trust auto-grant site calls
-/// this (greppable via `folder_trust_inert`). When true a self-built grok never
+/// this (greppable via `folder_trust_inert`). When true a self-built kigi never
 /// prompts, never gates repo-local `.envrc`/`.claude`/hooks/plugins/MCP/LSP, and
 /// does NO `trusted_folders.toml` I/O. Release-stamped builds are unaffected.
 pub fn folder_trust_inert() -> bool {
@@ -145,7 +145,7 @@ fn is_local_build() -> bool {
 /// Resolve whether the folder-trust gate is enabled.
 ///
 /// On a local/dev build (no `KIGI_VERSION` release stamp) the feature is OFF
-/// regardless of env/config/remote — a self-built grok auto-trusts (never
+/// regardless of env/config/remote — a self-built kigi auto-trusts (never
 /// prompts, never gates repo-local MCP/LSP). Folder-trust applies only to
 /// shipped, release-stamped binaries.
 ///
@@ -162,7 +162,7 @@ pub fn feature_enabled(remote: Option<&RemoteSettings>) -> bool {
 fn feature_enabled_for_build(remote: Option<&RemoteSettings>, is_local_build: bool) -> bool {
     // Local/dev builds never gate (auto-trust): folder-trust applies only to
     // shipped, release-stamped binaries. Even an explicit KIGI_FOLDER_TRUST/config
-    // opt-in is ignored here so a self-built grok never prompts.
+    // opt-in is ignored here so a self-built kigi never prompts.
     if is_local_build {
         return false;
     }
@@ -354,7 +354,7 @@ fn collect_repo_config_kinds(cwd: &Path, first_only: bool) -> Vec<&'static str> 
     // Project PLUGIN dirs: project-scoped plugins are unified under folder-trust
     // too, so a repo-local plugin dir is repo-controlled code-exec (hooks/MCP)
     // that must be gated — else a plugin clone (e.g. `.kigi/plugins/evil/`, even
-    // one in a subdir launched via `cd sub && grok`) would resolve trusted and
+    // one in a subdir launched via `cd sub && kigi`) would resolve trusted and
     // run ungated. Uses the shared SSOT walk (cwd→git root) so detection matches
     // exactly what `discover_plugins` scans for Project scope (errs secure).
     if !kigi_agent::plugins::project_plugin_dirs_in(&chain.dirs).is_empty() {
@@ -522,20 +522,20 @@ mod tests {
     }
 
     #[test]
-    fn repo_configs_present_detects_grok_config_mcp_servers() {
+    fn repo_configs_present_detects_kigi_config_mcp_servers() {
         let tmp = repo_tmp();
-        let grok = tmp.path().join(".kigi");
-        std::fs::create_dir_all(&grok).unwrap();
-        std::fs::write(grok.join("config.toml"), "[mcp_servers.x]\ncommand=\"y\"\n").unwrap();
+        let kigi = tmp.path().join(".kigi");
+        std::fs::create_dir_all(&kigi).unwrap();
+        std::fs::write(kigi.join("config.toml"), "[mcp_servers.x]\ncommand=\"y\"\n").unwrap();
         assert!(repo_configs_present(tmp.path()));
     }
 
     #[test]
-    fn repo_configs_present_detects_grok_lsp_json() {
+    fn repo_configs_present_detects_kigi_lsp_json() {
         let tmp = repo_tmp();
-        let grok = tmp.path().join(".kigi");
-        std::fs::create_dir_all(&grok).unwrap();
-        std::fs::write(grok.join("lsp.json"), "{}").unwrap();
+        let kigi = tmp.path().join(".kigi");
+        std::fs::create_dir_all(&kigi).unwrap();
+        std::fs::write(kigi.join("lsp.json"), "{}").unwrap();
         assert!(repo_configs_present(tmp.path()));
     }
 
@@ -647,21 +647,21 @@ mod tests {
         // A project config whose `[mcp_servers]` table is empty has nothing to
         // gate, so it must not trip the gate.
         let tmp = repo_tmp();
-        let grok = tmp.path().join(".kigi");
-        std::fs::create_dir_all(&grok).unwrap();
-        std::fs::write(grok.join("config.toml"), "[mcp_servers]\n").unwrap();
+        let kigi = tmp.path().join(".kigi");
+        std::fs::create_dir_all(&kigi).unwrap();
+        std::fs::write(kigi.join("config.toml"), "[mcp_servers]\n").unwrap();
         assert!(!repo_configs_present(tmp.path()));
     }
 
     #[test]
-    fn repo_configs_present_detects_grok_config_plugins_paths() {
+    fn repo_configs_present_detects_kigi_config_plugins_paths() {
         // A repo whose ONLY repo-local config is `[plugins].paths` (no plugin
         // dir, no MCP/LSP/hooks) must still be gated: those paths load as
         // auto-trusted ConfigPath plugins, so an ungated clone is a live RCE.
         let tmp = repo_tmp();
-        let grok = tmp.path().join(".kigi");
-        std::fs::create_dir_all(&grok).unwrap();
-        std::fs::write(grok.join("config.toml"), "[plugins]\npaths = [\"./x\"]\n").unwrap();
+        let kigi = tmp.path().join(".kigi");
+        std::fs::create_dir_all(&kigi).unwrap();
+        std::fs::write(kigi.join("config.toml"), "[plugins]\npaths = [\"./x\"]\n").unwrap();
         assert!(repo_configs_present(tmp.path()));
     }
 
@@ -670,9 +670,9 @@ mod tests {
         // An empty `[plugins].paths` (or a `[plugins]` table without `paths`)
         // contributes no plugin code-exec, so it must not trip the gate.
         let tmp = repo_tmp();
-        let grok = tmp.path().join(".kigi");
-        std::fs::create_dir_all(&grok).unwrap();
-        std::fs::write(grok.join("config.toml"), "[plugins]\npaths = []\n").unwrap();
+        let kigi = tmp.path().join(".kigi");
+        std::fs::create_dir_all(&kigi).unwrap();
+        std::fs::write(kigi.join("config.toml"), "[plugins]\npaths = []\n").unwrap();
         assert!(!repo_configs_present(tmp.path()));
     }
 
@@ -685,9 +685,9 @@ mod tests {
         // `.kigi/agents` — even when launched from a SUBDIR (the cwd→git-root walk
         // that `first_only` shares). Guards against silent drift between the two.
         let tmp = repo_tmp();
-        let grok = tmp.path().join(".kigi");
-        std::fs::create_dir_all(grok.join("agents")).unwrap();
-        std::fs::write(grok.join("config.toml"), "[plugins]\npaths = [\"./x\"]\n").unwrap();
+        let kigi = tmp.path().join(".kigi");
+        std::fs::create_dir_all(kigi.join("agents")).unwrap();
+        std::fs::write(kigi.join("config.toml"), "[plugins]\npaths = [\"./x\"]\n").unwrap();
         let claude = tmp.path().join(".claude");
         std::fs::create_dir_all(&claude).unwrap();
         std::fs::write(claude.join("settings.json"), r#"{"env":{"X":"1"}}"#).unwrap();
@@ -789,7 +789,7 @@ mod tests {
     #[test]
     fn local_build_ignores_explicit_env_optin() {
         // Auto-trust is absolute on a local build: even an explicit
-        // KIGI_FOLDER_TRUST=1 does NOT enable the feature (so a self-built grok
+        // KIGI_FOLDER_TRUST=1 does NOT enable the feature (so a self-built kigi
         // never prompts). KIGI_SHARE_DIR isolated so on-disk config can't influence it.
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let home = tempfile::tempdir().unwrap();

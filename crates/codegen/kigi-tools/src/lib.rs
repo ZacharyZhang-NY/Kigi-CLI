@@ -1,4 +1,4 @@
-//! Grok tools library.
+//! Kigi tools library.
 
 pub use kigi_version::VERSION;
 

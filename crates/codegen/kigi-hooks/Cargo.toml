@@ -3,7 +3,7 @@ license = "Apache-2.0"
 name = "kigi-hooks"
 version.workspace = true
 edition.workspace = true
-description = "Runtime hook system for Grok — file-based discovery, command execution, and policy enforcement"
+description = "Runtime hook system for Kigi — file-based discovery, command execution, and policy enforcement"
 
 [dependencies]
 fastrand = { workspace = true }

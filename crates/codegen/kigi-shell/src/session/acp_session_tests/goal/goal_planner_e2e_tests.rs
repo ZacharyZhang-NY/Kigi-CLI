@@ -5,7 +5,7 @@
 
 use super::support::*;
 use super::*;
-use kigi_tools::implementations::grok_build::task::types::{SubagentEvent, SubagentResult};
+use kigi_tools::implementations::kigi::task::types::{SubagentEvent, SubagentResult};
 use serial_test::serial;
 use std::sync::Arc as StdArc;
 use std::sync::atomic::{AtomicUsize, Ordering as SeqOrd};

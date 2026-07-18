@@ -74,7 +74,7 @@ fn adapt_thinking(body: &mut Value) {
 
 /// Message-level adaptations:
 ///
-/// * Drop `model_id` — a grok-build extension recorded on assistant turns;
+/// * Drop `model_id` — a kigi extension recorded on assistant turns;
 ///   kimi-cli's message serializer sends no such field
 ///   (packages/kosong/src/kosong/chat_provider/kimi.py:326-353).
 /// * Drop `content` from assistant tool-call messages whose visible content
@@ -330,7 +330,7 @@ mod tests {
         adapt_chat_completions_body(&mut body);
         let assistant = &body["messages"][1];
         assert_eq!(assistant.get("content"), None, "empty content dropped");
-        assert_eq!(assistant.get("model_id"), None, "grok extension dropped");
+        assert_eq!(assistant.get("model_id"), None, "kigi extension dropped");
         assert!(assistant.get("tool_calls").is_some());
         // The user message keeps its content.
         assert_eq!(body["messages"][0]["content"], json!("hi"));

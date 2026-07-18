@@ -3,7 +3,7 @@ license = "Apache-2.0"
 name = "kigi-sandbox"
 version.workspace = true
 edition.workspace = true
-description = "OS-level sandboxing for Grok Build using kernel primitives (Landlock/Seatbelt) via nono"
+description = "OS-level sandboxing for Kigi using kernel primitives (Landlock/Seatbelt) via nono"
 
 [dependencies]
 anyhow = { workspace = true }

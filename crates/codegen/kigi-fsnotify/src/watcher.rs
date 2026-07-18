@@ -3767,7 +3767,7 @@ mod tests {
         #[test]
         fn external_ancestor_sl_arms_in_recursive_root_mode() {
             // Subdir cwd whose `.sl` lives in an ancestor *outside* watch_path
-            // (e.g. `grok` run in `crates/codegen`): the production guard must
+            // (e.g. `kigi` run in `crates/codegen`): the production guard must
             // still attach the watch under a recursive root (fanout=false).
             let temp = TempDir::new().unwrap();
             let repo = dunce::canonicalize(temp.path()).unwrap();

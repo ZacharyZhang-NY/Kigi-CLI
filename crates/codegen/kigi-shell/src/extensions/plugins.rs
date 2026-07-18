@@ -1,4 +1,4 @@
-//! `x.ai/plugins/*` extension handlers.
+//! `kigi/plugins/*` extension handlers.
 //!
 //! Provides the plugins list endpoint for the pager's hooks/plugins modal.
 
@@ -79,9 +79,9 @@ fn origin_to_dto(origin: &kigi_agent::plugins::PluginOrigin) -> PluginOrigin {
     use kigi_agent::plugins::PluginOrigin as AgentOrigin;
     match origin {
         AgentOrigin::CliOverride => PluginOrigin::CliOverride,
-        AgentOrigin::ProjectGrok => PluginOrigin::ProjectGrok,
+        AgentOrigin::ProjectKigi => PluginOrigin::ProjectKigi,
         AgentOrigin::ProjectClaude => PluginOrigin::ProjectClaude,
-        AgentOrigin::UserGrok => PluginOrigin::UserGrok,
+        AgentOrigin::UserKigi => PluginOrigin::UserKigi,
         AgentOrigin::UserClaude => PluginOrigin::UserClaude,
         AgentOrigin::ClaudeMarketplace { marketplace } => PluginOrigin::ClaudeMarketplace {
             marketplace: marketplace.clone(),
@@ -123,7 +123,7 @@ fn marketplace_source_label(origin: &PluginOrigin) -> Option<String> {
 
 pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/plugins/list" => {
+        "kigi/plugins/list" => {
             let req: ListRequest = super::parse_params(args)?;
 
             // A known session answers from its own registry, which includes
@@ -149,7 +149,7 @@ pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
             };
             super::to_ext_response(Ok::<_, anyhow::Error>(response))
         }
-        "x.ai/plugins/action" => {
+        "kigi/plugins/action" => {
             let req: kigi_hooks_plugins_types::PluginsActionRequest = super::parse_params(args)?;
             let sid = acp::SessionId::new(req.session_id);
 
@@ -159,7 +159,7 @@ pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
                 .ok_or_else(|| anyhow::anyhow!("session not found"));
             super::to_ext_response(result)
         }
-        "x.ai/plugins/notify-updates" => {
+        "kigi/plugins/notify-updates" => {
             // Broadcast a PluginUpdatesInstalled notification to the session.
             #[derive(serde::Deserialize)]
             #[serde(rename_all = "camelCase")]

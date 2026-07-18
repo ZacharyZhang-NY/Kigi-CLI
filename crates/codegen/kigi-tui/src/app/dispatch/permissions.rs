@@ -23,7 +23,7 @@ use agent_client_protocol as acp;
 /// existing `set_yolo_mode(true)` flow to flip the local YOLO state, drain
 /// any remaining queued permissions, persist `[ui] permission_mode =
 /// "always-approve"` to `~/.kigi/config.toml`, and fire the
-/// `x.ai/yolo_mode_changed` ACP notification. See the option-id constant
+/// `kigi/yolo_mode_changed` ACP notification. See the option-id constant
 /// doc-comment for the full client/shell split. Under a managed-policy
 /// pin step (b) is refused with a toast — the request is still allowed once.
 pub(super) fn dispatch_permission_select(

@@ -1,10 +1,10 @@
 //! Observability seam for intra-compaction.
 //!
 //! The shared orchestrator reports terminal outcomes through this trait so
-//! each harness can emit its own metrics (Grok chat: its own metrics
+//! each harness can emit its own metrics (Kigi chat: its own metrics
 //! counters/histograms in the harness crate)
 //! without the shared crate depending on a metrics backend. Emission points
-//! and label values are part of the behavior contract — Grok chat's
+//! and label values are part of the behavior contract — Kigi chat's
 //! observer preserves them byte-for-byte.
 
 use std::time::Duration;

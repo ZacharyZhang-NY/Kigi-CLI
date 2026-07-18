@@ -3,11 +3,11 @@
 //! Types are canonical in `kigi-tools`. This module adds ACP ↔ TodoItem
 //! conversions since `kigi-tools` is protocol-agnostic.
 
-pub use kigi_tools::implementations::grok_build::todo::TodoId;
-pub use kigi_tools::implementations::grok_build::todo::TodoItem;
-pub use kigi_tools::implementations::grok_build::todo::TodoPriority;
-pub use kigi_tools::implementations::grok_build::todo::TodoState;
-pub use kigi_tools::implementations::grok_build::todo::TodoStatus;
+pub use kigi_tools::implementations::kigi::todo::TodoId;
+pub use kigi_tools::implementations::kigi::todo::TodoItem;
+pub use kigi_tools::implementations::kigi::todo::TodoPriority;
+pub use kigi_tools::implementations::kigi::todo::TodoState;
+pub use kigi_tools::implementations::kigi::todo::TodoStatus;
 
 use agent_client_protocol as acp;
 

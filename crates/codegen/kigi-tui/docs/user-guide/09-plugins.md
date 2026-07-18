@@ -15,7 +15,7 @@ A plugin is a directory that holds any combination of these components:
 - **MCP servers** -- a `.mcp.json` file of server configurations
 - **LSP servers** -- a `.lsp.json` file of language server configurations
 
-If a plugin includes a `plugin.json` manifest, the manifest can override paths or add metadata; otherwise components load from the convention directories. The manifest is optional: without one, Grok discovers the components above from their standard directories.
+If a plugin includes a `plugin.json` manifest, the manifest can override paths or add metadata; otherwise components load from the convention directories. The manifest is optional: without one, Kigi discovers the components above from their standard directories.
 
 For example, a `team-tools` plugin might include a deploy skill, a code-review agent, pre-commit hooks, and a Linear MCP server. Install them together in one step.
 
@@ -28,25 +28,25 @@ Plugin hooks receive two environment variables beyond the standard ones set for 
 | `KIGI_PLUGIN_ROOT`   | Absolute path to the plugin's installed directory. |
 | `KIGI_PLUGIN_DATA`   | Absolute path to the plugin's writable data directory, for plugin state, caches, and logs. |
 
-Grok sets these values and overrides any value you declare for the same key in the hook JSON's `env` map. (Grok also sets the `CLAUDE_PLUGIN_ROOT` and `CLAUDE_PLUGIN_DATA` aliases for compatibility.) See the [Hooks guide](10-hooks.md) for every environment variable passed to hooks.
+Kigi sets these values and overrides any value you declare for the same key in the hook JSON's `env` map. (Kigi also sets the `CLAUDE_PLUGIN_ROOT` and `CLAUDE_PLUGIN_DATA` aliases for compatibility.) See the [Hooks guide](10-hooks.md) for every environment variable passed to hooks.
 
 ---
 
 ## Plugin locations
 
-Grok discovers plugins from these locations, in priority order:
+Kigi discovers plugins from these locations, in priority order:
 
 | Location | Scope | Trust |
 |----------|-------|-------|
 | `_meta.pluginDirs` (`session/new` / `session/load`) | Session -- loaded for that session only | Trusted automatically |
-| `--plugin-dir` (CLI flag, `grok agent`) | Process -- loaded for that agent process only | Trusted automatically |
+| `--plugin-dir` (CLI flag, `kigi agent`) | Process -- loaded for that agent process only | Trusted automatically |
 | `.kigi/plugins/` | Project -- shared with the team through version control | Requires trust |
 | `~/.kigi/plugins/` | User -- personal plugins for every project | Trusted automatically |
 | `[plugins].paths` (config) | Custom directories you add in `config.toml` | Depends on location |
 
-Grok also reads the `.claude/plugins/` equivalents for compatibility. When two plugins share a name, the higher-priority location wins.
+Kigi also reads the `.claude/plugins/` equivalents for compatibility. When two plugins share a name, the higher-priority location wins.
 
-The Agent SDKs load per-session plugins through `GrokOptions.plugins`, which arrives as `_meta.pluginDirs` on `session/new` and `session/load`; because the caller controls the directory, these plugins are always trusted -- their hooks and MCP servers activate without a prompt, and they never persist beyond the session. The `--plugin-dir` flag is the process-wide equivalent for direct CLI use (repeatable: `grok agent --no-leader --plugin-dir A --plugin-dir B stdio`); it applies to dedicated agent processes only and is ignored in leader mode (the shared leader discovers its own plugins).
+The Agent SDKs load per-session plugins through `KigiOptions.plugins`, which arrives as `_meta.pluginDirs` on `session/new` and `session/load`; because the caller controls the directory, these plugins are always trusted -- their hooks and MCP servers activate without a prompt, and they never persist beyond the session. The `--plugin-dir` flag is the process-wide equivalent for direct CLI use (repeatable: `kigi agent --no-leader --plugin-dir A --plugin-dir B stdio`); it applies to dedicated agent processes only and is ignored in leader mode (the shared leader discovers its own plugins).
 
 ---
 
@@ -88,18 +88,18 @@ Use these keys in the Plugins tab:
 ### Plugin commands
 
 ```bash
-grok plugin list [--json] [--available]   # List installed plugins (--available requires --json)
-grok plugin install <source> --trust      # Git URL, GitHub shorthand (user/repo), or local path
-grok plugin uninstall <name> [--confirm] [--keep-data]   # Aliases: rm, remove
-grok plugin update [<name>]               # Omit the name to update all plugins
-grok plugin enable <name>
-grok plugin disable <name>
-grok plugin details <name>                # Show the plugin's component inventory
-grok plugin validate [<path>]             # Validate plugin.json (default: current directory)
-grok plugin tag [<path>] [--push] [--force] [--dry-run]   # Tag a release from the manifest version
+kigi plugin list [--json] [--available]   # List installed plugins (--available requires --json)
+kigi plugin install <source> --trust      # Git URL, GitHub shorthand (user/repo), or local path
+kigi plugin uninstall <name> [--confirm] [--keep-data]   # Aliases: rm, remove
+kigi plugin update [<name>]               # Omit the name to update all plugins
+kigi plugin enable <name>
+kigi plugin disable <name>
+kigi plugin details <name>                # Show the plugin's component inventory
+kigi plugin validate [<path>]             # Validate plugin.json (default: current directory)
+kigi plugin tag [<path>] [--push] [--force] [--dry-run]   # Tag a release from the manifest version
 ```
 
-Run `grok plugin install <source>` without `--trust` and Grok prints the source and warns that installing will activate the plugin's hooks, MCP servers, and skills, then stops without installing. Add `--trust` to install it.
+Run `kigi plugin install <source>` without `--trust` and Kigi prints the source and warns that installing will activate the plugin's hooks, MCP servers, and skills, then stops without installing. Add `--trust` to install it.
 
 The `<source>` argument accepts:
 
@@ -124,21 +124,21 @@ disable_plugins = true
 
 Enabling a plugin loads its skills, slash commands, and agents. Trust is separate and controls whether a plugin's code runs: even for an enabled plugin, its hooks, MCP servers, and LSP servers stay inactive until you trust it. This prevents an untrusted repository from running code on your machine.
 
-Grok trusts plugins from `~/.kigi/plugins/` automatically. Project plugins in `.kigi/plugins/` require explicit trust. To trust a plugin, install it with `--trust`:
+Kigi trusts plugins from `~/.kigi/plugins/` automatically. Project plugins in `.kigi/plugins/` require explicit trust. To trust a plugin, install it with `--trust`:
 
 ```bash
-grok plugin install <source> --trust
+kigi plugin install <source> --trust
 ```
 
 ---
 
 ## Inspect plugins
 
-Run `grok inspect` to see every discovered plugin and what it provides:
+Run `kigi inspect` to see every discovered plugin and what it provides:
 
 ```bash
-grok inspect          # Show plugins with their skills, agents, hooks, and MCP servers
-grok inspect --json   # Emit machine-readable JSON
+kigi inspect          # Show plugins with their skills, agents, hooks, and MCP servers
+kigi inspect --json   # Emit machine-readable JSON
 ```
 
 Plugin-provided components appear in their sections (Skills, Agents, MCP Servers, and so on) with a `plugin: <name>` label, so you can see where each component originates.

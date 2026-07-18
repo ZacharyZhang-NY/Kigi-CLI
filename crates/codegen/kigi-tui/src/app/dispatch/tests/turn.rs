@@ -160,7 +160,7 @@ fn cancel_turn_leaves_shared_queue_for_agent_to_drain() {
     // shared queue (broadcast to all attached clients). The agent owns the
     // drain: on cancel the FRONT queued prompt runs next (promoted
     // server-side), so the pager must NOT pull it back into the input or
-    // mutate the queue locally — the `x.ai/queue/changed` rebroadcast is the
+    // mutate the queue locally — the `kigi/queue/changed` rebroadcast is the
     // source of truth.
     let mut app = test_app_with_agent();
     let id = AgentId(0);

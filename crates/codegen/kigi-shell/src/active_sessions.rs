@@ -23,7 +23,7 @@ const DATA_FILENAME: &str = "active_sessions.json";
 const LOCK_FILENAME: &str = "active_sessions.lock";
 const TMP_FILENAME: &str = "active_sessions.json.tmp";
 
-// -- Public API (delegates to `_in` variants with default grok home) --------
+// -- Public API (delegates to `_in` variants with default kigi home) --------
 
 /// Register a session as active (idempotent by session_id).
 pub fn register(session: ActiveSession) -> io::Result<()> {

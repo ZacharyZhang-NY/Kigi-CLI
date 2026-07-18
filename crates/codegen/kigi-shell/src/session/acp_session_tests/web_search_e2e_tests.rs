@@ -9,7 +9,7 @@ async fn web_search_errors_when_disabled() {
     let builder = crate::tools::bridge::ToolBridge::get_builder();
     let config = ToolServerConfig {
         tools: vec![ToolConfig {
-            id: "GrokBuild:web_search".into(),
+            id: "Kigi:web_search".into(),
             params: None,
             name_override: None,
             params_name_overrides: None,
@@ -26,13 +26,13 @@ async fn web_search_errors_when_disabled() {
         backend: terminal,
         fs,
         cwd: std::env::temp_dir(),
-        session_folder: std::env::temp_dir().join("grok-web-search-disabled"),
+        session_folder: std::env::temp_dir().join("kigi-web-search-disabled"),
         session_env: std::sync::Arc::new(std::collections::HashMap::new()),
         notification_handle: ToolNotificationHandle::noop(),
         owner_session_id: None,
         parent_scheduler_handle: None,
         skills: vec![],
-        state_path: std::env::temp_dir().join("grok-web-search-disabled/state.json"),
+        state_path: std::env::temp_dir().join("kigi-web-search-disabled/state.json"),
         memory_backend: None,
         web_search_config: kigi_tools::implementations::web_search::WebSearchConfig::Disabled,
         web_fetch_config: Default::default(),

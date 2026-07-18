@@ -110,7 +110,7 @@ impl LazinessAbortReason {
 /// Prompt-structure mitigations against motivated reasoning:
 /// "Do not roleplay", JSON-only, no chain-of-thought,
 /// no role context, transcript framed as third-party data.
-/// Prefix on `x_grok_req_id` for laziness-classifier sampler calls.
+/// Prefix on `x_kigi_req_id` for laziness-classifier sampler calls.
 /// Centralised here so the production producer
 /// (`maybe_fire_laziness_check`) AND the offline replay harness
 /// (`crate::trace_classifier::build_classifier_request`) share a

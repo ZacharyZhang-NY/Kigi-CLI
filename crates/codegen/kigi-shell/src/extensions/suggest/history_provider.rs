@@ -42,7 +42,7 @@ impl HistoryProvider {
 
 /// Rank history matches from three tiers of history sources.
 ///
-/// Priority order: local grok bash history > shell history > cross-CWD history.
+/// Priority order: local kigi bash history > shell history > cross-CWD history.
 fn rank_history_matches(
     prefix: &str,
     local: &[String],

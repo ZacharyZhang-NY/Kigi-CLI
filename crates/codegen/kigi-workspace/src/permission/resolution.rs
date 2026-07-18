@@ -71,7 +71,7 @@ fn synthetic_rules_for_default_mode(
 }
 
 /// Parse a raw defaultMode string: unknown → [`DefaultPermissionMode::Default`]
-/// (fail-safe) with a warn + skip record for `grok inspect`.
+/// (fail-safe) with a warn + skip record for `kigi inspect`.
 fn parse_default_mode_claiming_scope(
     raw: &str,
     path: &Path,
@@ -214,7 +214,7 @@ fn load_requirements_permissions() -> Vec<Sourced<PermissionRule>> {
 ///
 /// Returned paths are ordered from repo root (lowest priority) to `cwd`
 /// (highest priority), matching `kigi-shell::config::find_project_configs`.
-fn find_project_grok_configs(cwd: &Path) -> Vec<PathBuf> {
+fn find_project_kigi_configs(cwd: &Path) -> Vec<PathBuf> {
     let git_root = git2::Repository::discover(cwd)
         .ok()
         .and_then(|repo| repo.workdir().map(|p| p.to_path_buf()));
@@ -242,7 +242,7 @@ fn find_project_grok_configs(cwd: &Path) -> Vec<PathBuf> {
     configs
 }
 
-/// Load `[permission]` rules from native Grok TOML config files:
+/// Load `[permission]` rules from native Kigi TOML config files:
 ///
 ///   * `~/.kigi/config.toml` (lowest priority)
 ///   * Each `.kigi/config.toml` from the git repo root down to `cwd`
@@ -272,7 +272,7 @@ fn load_config_toml_permissions(cwd: &Path) -> Vec<Sourced<PermissionRule>> {
     }
 
     // Project-scoped configs walking from git root down to cwd.
-    for path in find_project_grok_configs(cwd) {
+    for path in find_project_kigi_configs(cwd) {
         match kigi_config::load_config_file(&path) {
             Ok(value) => rules.extend(extract_toml_permissions(&value, || {
                 RequirementSource::Config { path: path.clone() }
@@ -303,7 +303,7 @@ fn managed_config_permissions(
 // Fallback Resolver
 // ═════════════════════════════════════════════════════════════════════════════
 
-/// Resolve permission config, merging native Grok and Claude sources.
+/// Resolve permission config, merging native Kigi and Claude sources.
 /// Evaluation is order-independent (deny > ask > allow); merge order affects
 /// provenance display only.
 ///
@@ -392,7 +392,7 @@ fn is_admin_source(source: &RequirementSource) -> bool {
 }
 
 /// Under the pin, drop untrusted catch-all Allow rules (they substitute for the
-/// blocked `--yolo`); keep admin-tier ones. Records each drop for `grok inspect`.
+/// blocked `--yolo`); keep admin-tier ones. Records each drop for `kigi inspect`.
 fn drop_untrusted_catchall_allows(
     rules: Vec<Sourced<PermissionRule>>,
     policy_block: Option<&'static str>,
@@ -459,7 +459,7 @@ impl ResolveInputs<'static> {
 /// **Always-approve (yolo) is independent of defaultMode:** session always-approve
 /// still auto-approves before [`PromptPolicy::Deny`] (`dontAsk`) is consulted,
 /// so always-approve outranks `defaultMode` unless
-/// bypass is pinned off via grok `requirements.toml`
+/// bypass is pinned off via kigi `requirements.toml`
 /// (`[ui] disable_bypass_permissions_mode = true`). Pair managed `dontAsk` with
 /// that pin when org policy must not be bypassable by `--always-approve`.
 pub async fn resolve_permissions_with_provenance(cwd: &Path) -> Option<ResolvedPermissions> {
@@ -540,7 +540,7 @@ async fn resolve_permissions_with_provenance_inner(
     // `--allow '*'` is filtered at its own merge site (acp_session).
     let all_rules = drop_untrusted_catchall_allows(all_rules, policy_block, &mut skipped);
 
-    // Keep skip-only resolutions alive so the drop reaches `grok inspect`; zero
+    // Keep skip-only resolutions alive so the drop reaches `kigi inspect`; zero
     // rules with Ask is a no-op for the evaluator, identical to the `None` arm.
     if all_rules.is_empty() && prompt_policy == PromptPolicy::Ask && skipped.is_empty() {
         return None;
@@ -627,7 +627,7 @@ fn resolve_claude_settings_inner(
                 warn!(path = %path.display(), "{}", w);
             }
             // Rules *or* skip-only parse failures still own provenance for
-            // `grok inspect` (all-invalid allow/deny/ask must not leave
+            // `kigi inspect` (all-invalid allow/deny/ask must not leave
             // primary_source_path unset and panic below).
             if (!cfg.rules.is_empty() || !warnings.is_empty()) && primary_source_path.is_none() {
                 primary_source_path = Some(path.clone());
@@ -665,7 +665,7 @@ fn resolve_claude_settings_inner(
 
     // A blocked bypass, a claimed defaultMode (incl. typo→default), or skip
     // records still resolve (possibly zero rules) so provenance reaches
-    // `grok inspect` via the outer resolver.
+    // `kigi inspect` via the outer resolver.
     if all_rules.is_empty()
         && prompt_policy == PromptPolicy::Ask
         && !bypass_blocked
@@ -954,10 +954,10 @@ pub const YOLO_PIN_REASON_LEGACY_YOLO: &str =
 /// `Some(reason)` iff a requirements layer sets `[ui]
 /// disable_bypass_permissions_mode = true` (or legacy `[ui] yolo = false`).
 /// Vendor `managed-settings.json` `disableBypassPermissionsMode` is deliberately
-/// not consulted: grok must not inherit a host-wide always-approve lockdown from
-/// that file. grok still honors that file's permission rules / MCP / marketplace
+/// not consulted: kigi must not inherit a host-wide always-approve lockdown from
+/// that file. kigi still honors that file's permission rules / MCP / marketplace
 /// allowlists, and the user's own `--yolo` / `[ui] permission_mode` / runtime
-/// toggle drive always-approve; to disable it in grok use a root-owned
+/// toggle drive always-approve; to disable it in kigi use a root-owned
 /// `requirements.toml`. Fails open on user-writable layers.
 pub fn yolo_disabled_by_policy() -> Option<&'static str> {
     let layers = kigi_config::requirements_layers();
@@ -1204,12 +1204,12 @@ impl McpServerAllowlist {
     }
 }
 
-/// Namespace prefix for managed (grok.com-injected) MCP server names. Defined
+/// Namespace prefix for managed (kimi.com-injected) MCP server names. Defined
 /// here (shell depends on workspace) and re-exported by shell's `to_managed_name`
 /// so the prefix and policy matching never drift.
-pub const MANAGED_MCP_PREFIX: &str = "grok_com_";
+pub const MANAGED_MCP_PREFIX: &str = "kigi_com_";
 
-/// Max `char` length of a managed runtime name (`grok_com_` + normalized display
+/// Max `char` length of a managed runtime name (`kigi_com_` + normalized display
 /// name), sized to the 64-char tool-name budget. Shared by `to_managed_name` and
 /// `mcp_name_matches` so a long policy `serverName` still matches its truncated
 /// runtime name.
@@ -1236,7 +1236,7 @@ fn mcp_server_name(server: &agent_client_protocol::McpServer) -> &str {
 
 /// Match a policy `serverName` against a runtime server name.
 ///
-/// Both sides reduce to one key (strip `grok_com_`, [`normalize_managed_name`],
+/// Both sides reduce to one key (strip `kigi_com_`, [`normalize_managed_name`],
 /// truncate to the cap) compared by exact equality — never substring, so deny
 /// `foo` can't leak onto `foobar`; an empty key never matches.
 fn mcp_name_matches(pattern: &str, name: &str) -> bool {
@@ -1942,7 +1942,7 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let home = tempfile::tempdir().unwrap();
         let _home_guard = EnvVarGuard::set("KIGI_SHARE_DIR", home.path());
-        let _marker_guard = EnvVarGuard::unset("_GROK_CLAUDE_MARKER_OVERRIDE");
+        let _marker_guard = EnvVarGuard::unset("_KIGI_CLAUDE_MARKER_OVERRIDE");
         let tmp = tempfile::tempdir().unwrap();
         let claude_dir = tmp.path().join(".claude");
         std::fs::create_dir_all(&claude_dir).unwrap();
@@ -1976,7 +1976,7 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let _home_guard = EnvVarGuard::set("KIGI_SHARE_DIR", home.path());
         let _real_home_guard = EnvVarGuard::set("HOME", home.path());
-        let _marker_guard = EnvVarGuard::unset("_GROK_CLAUDE_MARKER_OVERRIDE");
+        let _marker_guard = EnvVarGuard::unset("_KIGI_CLAUDE_MARKER_OVERRIDE");
         let tmp = tempfile::tempdir().unwrap();
         let env = load_claude_env_with_project(tmp.path(), true);
         assert!(env.is_empty());
@@ -1992,7 +1992,7 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let home = tempfile::tempdir().unwrap();
         let _home_guard = EnvVarGuard::set("KIGI_SHARE_DIR", home.path());
-        let _marker_guard = EnvVarGuard::unset("_GROK_CLAUDE_MARKER_OVERRIDE");
+        let _marker_guard = EnvVarGuard::unset("_KIGI_CLAUDE_MARKER_OVERRIDE");
         let tmp = tempfile::tempdir().unwrap();
         let claude_dir = tmp.path().join(".claude");
         std::fs::create_dir_all(&claude_dir).unwrap();
@@ -2431,11 +2431,11 @@ mod tests {
     fn mcp_name_matches_strips_managed_prefix_both_sides_exactly() {
         // Exact match after stripping the prefix — never substring.
         assert!(mcp_name_matches("foo", "foo"));
-        assert!(mcp_name_matches("foo", "grok_com_foo"));
-        assert!(mcp_name_matches("grok_com_foo", "foo"));
-        assert!(mcp_name_matches("grok_com_foo", "grok_com_foo"));
+        assert!(mcp_name_matches("foo", "kigi_com_foo"));
+        assert!(mcp_name_matches("kigi_com_foo", "foo"));
+        assert!(mcp_name_matches("kigi_com_foo", "kigi_com_foo"));
         assert!(!mcp_name_matches("foo", "foobar"));
-        assert!(!mcp_name_matches("foo", "grok_com_foobar"));
+        assert!(!mcp_name_matches("foo", "kigi_com_foobar"));
         assert!(!mcp_name_matches("foo", "barfoo"));
         assert!(!mcp_name_matches("foo", "bar"));
         assert!(!mcp_name_matches("", "foo"));
@@ -2453,14 +2453,14 @@ mod tests {
     fn mcp_name_matches_is_case_and_space_insensitive() {
         // A display-cased policy serverName matches to_managed_name's normalized
         // runtime name, for managed and local servers alike.
-        assert!(mcp_name_matches("Slack", "grok_com_slack"));
-        assert!(mcp_name_matches("My Server", "grok_com_my_server"));
-        assert!(mcp_name_matches("grok_com_my_server", "My Server"));
+        assert!(mcp_name_matches("Slack", "kigi_com_slack"));
+        assert!(mcp_name_matches("My Server", "kigi_com_my_server"));
+        assert!(mcp_name_matches("kigi_com_my_server", "My Server"));
         assert!(mcp_name_matches("My Server", "my_server"));
         assert!(mcp_name_matches("SLACK", "slack"));
         assert!(!mcp_name_matches("My Server", "my_server_2"));
         assert!(!mcp_name_matches("", ""));
-        assert!(!mcp_name_matches("grok_com_", "grok_com_anything"));
+        assert!(!mcp_name_matches("kigi_com_", "kigi_com_anything"));
     }
 
     #[test]
@@ -2503,17 +2503,17 @@ mod tests {
         assert!(al.is_server_denied(&bare));
         assert!(!al.is_server_allowed(&bare));
 
-        let managed = http_named("grok_com_foo", "https://foo.example.com/mcp");
+        let managed = http_named("kigi_com_foo", "https://foo.example.com/mcp");
         assert!(al.is_server_denied(&managed));
         assert!(!al.is_server_allowed(&managed));
 
         // Name match is transport-agnostic.
-        let stdio = stdio_named("grok_com_foo", "npx");
+        let stdio = stdio_named("kigi_com_foo", "npx");
         assert!(al.is_server_denied(&stdio));
         assert!(!al.is_server_allowed(&stdio));
 
         // Unrelated names are NOT denied — exact match after strip, never substring.
-        for unrelated in ["foobar", "grok_com_foobar", "barfoo", "bar"] {
+        for unrelated in ["foobar", "kigi_com_foobar", "barfoo", "bar"] {
             let s = http_named(unrelated, "https://x.example.com/mcp");
             assert!(
                 !al.is_server_denied(&s),
@@ -2536,8 +2536,8 @@ mod tests {
         // A name allowlist is transport-agnostic: the named server is allowed on
         // any transport regardless of URL/command, others are blocked.
         assert!(al.is_server_allowed(&http_named("foo", "https://anything.example.com/x")));
-        assert!(al.is_server_allowed(&http_named("grok_com_foo", "https://evil.example.com/x")));
-        assert!(al.is_server_allowed(&stdio_named("grok_com_foo", "/usr/bin/whatever")));
+        assert!(al.is_server_allowed(&http_named("kigi_com_foo", "https://evil.example.com/x")));
+        assert!(al.is_server_allowed(&stdio_named("kigi_com_foo", "/usr/bin/whatever")));
 
         let bar_http = http_named("bar", "https://anything.example.com/x");
         assert!(!al.is_server_allowed(&bar_http));
@@ -2555,7 +2555,7 @@ mod tests {
 
         for s in [
             http_named("foo", "https://foo.example.com/x"),
-            http_named("grok_com_foo", "https://foo.example.com/x"),
+            http_named("kigi_com_foo", "https://foo.example.com/x"),
         ] {
             assert!(al.is_server_denied(&s));
             assert!(
@@ -2569,13 +2569,13 @@ mod tests {
     fn server_name_prefix_edge_cases_vice_versa() {
         // Reverse case: prefixed policy vs bare runtime still matches after strip.
         let al = allowlist_from(serde_json::json!({
-            "deniedMcpServers": [ { "serverName": "grok_com_foo" } ]
+            "deniedMcpServers": [ { "serverName": "kigi_com_foo" } ]
         }));
 
         assert!(al.is_server_denied(&http_named("foo", "https://x.example.com/mcp")));
-        assert!(al.is_server_denied(&http_named("grok_com_foo", "https://x.example.com/mcp")));
+        assert!(al.is_server_denied(&http_named("kigi_com_foo", "https://x.example.com/mcp")));
         assert!(!al.is_server_denied(&http_named("foobar", "https://x.example.com/mcp")));
-        assert!(!al.is_server_denied(&http_named("grok_com_foobar", "https://x.example.com/mcp")));
+        assert!(!al.is_server_denied(&http_named("kigi_com_foobar", "https://x.example.com/mcp")));
     }
 
     #[test]
@@ -3748,7 +3748,7 @@ mod tests {
             skipped
                 .iter()
                 .any(|s| s.rule.contains("dontask") || s.rule.contains("defaultMode=")),
-            "typo should be recorded for grok inspect"
+            "typo should be recorded for kigi inspect"
         );
     }
 

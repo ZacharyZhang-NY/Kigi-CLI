@@ -1496,7 +1496,7 @@ mod searchable_text_tests {
             b.subagent_type = "explore".into();
             b.persona = Some("scout".into());
             b.role = Some("researcher".into());
-            b.model = Some("grok-test".into());
+            b.model = Some("kigi-test".into());
             b.activity_label = Some("Running: cargo build".into());
         }
         let text = block.searchable_text().expect("subagent text");
@@ -1504,7 +1504,7 @@ mod searchable_text_tests {
         assert!(text.contains("explore"), "got: {text:?}");
         assert!(text.contains("scout"), "got: {text:?}");
         assert!(text.contains("researcher"), "got: {text:?}");
-        assert!(text.contains("grok-test"), "got: {text:?}");
+        assert!(text.contains("kigi-test"), "got: {text:?}");
         assert!(text.contains("Running: cargo build"), "got: {text:?}");
         assert!(text.contains("panicked at assert"), "got: {text:?}");
     }
@@ -1539,9 +1539,9 @@ mod searchable_text_tests {
             auto_compact_threshold_percent: 85,
             usage_categories: vec![],
         };
-        let block = RenderBlock::context_info(snapshot, "grok-4.5");
+        let block = RenderBlock::context_info(snapshot, "kigi-4.5");
         // Only the model name is source text; the rest is a numeric breakdown.
-        assert_eq!(block.searchable_text().as_deref(), Some("grok-4.5"));
+        assert_eq!(block.searchable_text().as_deref(), Some("kigi-4.5"));
     }
 
     #[test]

@@ -11,7 +11,7 @@
 //!    picks chain back to back, reproducing the continuous
 //!    `.git/index.lock` / HEAD-move churn of an agent-run rebase.
 //!
-//! With the fs-watch machinery on (`x.ai/hunkTracker` + `x.ai/gitHeadChanged`
+//! With the fs-watch machinery on (`kigi/hunkTracker` + `kigi/gitHeadChanged`
 //! advertised), fsnotify merges rapid lock cycles into one operation and the
 //! session defers debounce fires while an op is in flight, so one rebase
 //! costs at most a couple of `refresh_all_baselines` scans (each scoped to
@@ -425,7 +425,7 @@ fn git_rebase_refresh_storm_e2e() {
     let server = mock_rt
         .block_on(MockInferenceServer::start())
         .expect("mock server");
-    let kigi_home = TempDir::new().expect("grok home");
+    let kigi_home = TempDir::new().expect("kigi home");
 
     // SAFETY: the only live threads are the mock runtime's workers, which
     // serve HTTP and never read the process environment.
@@ -450,8 +450,8 @@ fn git_rebase_refresh_storm_e2e() {
     let on = agent_rt.block_on(run_storm(
         &server,
         Some(json!({
-            "x.ai/hunkTracker": { "mode": "agent_only" },
-            "x.ai/gitHeadChanged": true,
+            "kigi/hunkTracker": { "mode": "agent_only" },
+            "kigi/gitHeadChanged": true,
         })),
         &counter,
         "machinery-on",

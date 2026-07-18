@@ -1,4 +1,4 @@
-//! kigi-tui — Grok Build TUI.
+//! kigi-tui — Kigi TUI.
 //!
 //! A clean-room implementation built on the v3 pager rendering engine.
 

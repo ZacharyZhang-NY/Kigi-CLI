@@ -1,4 +1,4 @@
-//! ACP extension handler for bulk session updates (`x.ai/session/updates`).
+//! ACP extension handler for bulk session updates (`kigi/session/updates`).
 //!
 //! Returns session updates in a single response with rewind dead branches
 //! filtered out. Supports optional pagination (`offset`/`limit`) for large
@@ -30,7 +30,7 @@
 //! Each element in the `updates` array is the full JSONL storage envelope
 //! (with `timestamp`, `method`, and `params` wrapper), not just the inner
 //! notification params. Clients should parse the `method` field to determine
-//! the update type (`"session/update"` for ACP, `"_x.ai/session/update"` for
+//! the update type (`"session/update"` for ACP, `"_kigi/session/update"` for
 //! xAI extensions) and extract the notification payload from `params`.
 
 use std::io::{self, BufRead, BufReader};
@@ -285,7 +285,7 @@ fn extract_last_event_id<T: AsRef<str>>(lines: &[T]) -> Option<String> {
     None
 }
 
-/// Send updates as chunked `_x.ai/session/updates/chunk` notifications.
+/// Send updates as chunked `_kigi/session/updates/chunk` notifications.
 /// Injects routing metadata when `target_client_id` is set.
 fn send_streamed_chunks<T: AsRef<str>>(
     gateway: &kigi_acp_lib::AcpAgentGatewaySender,
@@ -317,7 +317,7 @@ fn send_streamed_chunks<T: AsRef<str>>(
 
         if let Ok(raw) = serde_json::value::to_raw_value(&params) {
             gateway.forward_fire_and_forget(acp::ExtNotification::new(
-                "x.ai/session/updates/chunk",
+                "kigi/session/updates/chunk",
                 std::sync::Arc::from(raw),
             ));
         }
@@ -523,7 +523,7 @@ mod tests {
         }
 
         let raw = serde_json::value::to_raw_value(&serde_json::Value::Object(map)).unwrap();
-        acp::ExtRequest::new("x.ai/session/updates", std::sync::Arc::from(raw))
+        acp::ExtRequest::new("kigi/session/updates", std::sync::Arc::from(raw))
     }
 
     #[tokio::test]
@@ -583,7 +583,7 @@ mod tests {
                 r#"{"timestamp":2,"method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"resp1"}}}}"#,
                 r#"{"timestamp":3,"method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"dead-branch"}}}}"#,
                 r#"{"timestamp":4,"method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"dead-resp"}}}}"#,
-                r#"{"timestamp":5,"method":"_x.ai/session/update","params":{"sessionId":"s","update":{"sessionUpdate":"rewind_marker","target_prompt_index":1}}}"#,
+                r#"{"timestamp":5,"method":"_kigi/session/update","params":{"sessionId":"s","update":{"sessionUpdate":"rewind_marker","target_prompt_index":1}}}"#,
                 r#"{"timestamp":6,"method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"replacement"}}}}"#,
                 r#"{"timestamp":7,"method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"replacement-resp"}}}}"#,
             ]
@@ -659,7 +659,7 @@ mod tests {
         );
         assert_eq!(json["updates"].as_array().unwrap().len(), 2);
 
-        // Clean up the dir written under the real grok home.
+        // Clean up the dir written under the real kigi home.
         let _ = std::fs::remove_dir_all(&child_dir);
     }
 
@@ -689,7 +689,7 @@ mod tests {
             map.insert("offset".into(), serde_json::json!(off));
         }
         let raw = serde_json::value::to_raw_value(&serde_json::Value::Object(map)).unwrap();
-        acp::ExtRequest::new("x.ai/session/updates", std::sync::Arc::from(raw))
+        acp::ExtRequest::new("kigi/session/updates", std::sync::Arc::from(raw))
     }
 
     fn extract_chunk_params(
@@ -798,7 +798,7 @@ mod tests {
             map.insert("limit".into(), serde_json::json!(lim));
         }
         let raw = serde_json::value::to_raw_value(&serde_json::Value::Object(map)).unwrap();
-        acp::ExtRequest::new("x.ai/session/updates", std::sync::Arc::from(raw))
+        acp::ExtRequest::new("kigi/session/updates", std::sync::Arc::from(raw))
     }
 
     fn user_chunk(text: &str) -> String {
@@ -815,7 +815,7 @@ mod tests {
 
     fn xai_rewind(target: usize) -> String {
         format!(
-            r#"{{"timestamp":0,"method":"_x.ai/session/update","params":{{"sessionId":"s","update":{{"sessionUpdate":"rewind_marker","target_prompt_index":{target}}}}}}}"#
+            r#"{{"timestamp":0,"method":"_kigi/session/update","params":{{"sessionId":"s","update":{{"sessionUpdate":"rewind_marker","target_prompt_index":{target}}}}}}}"#
         )
     }
 

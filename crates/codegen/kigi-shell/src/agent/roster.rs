@@ -5,8 +5,8 @@
 //! actors) plus recently-touched on-disk (`Dormant`) sessions. Clients read it
 //! two ways:
 //!
-//!   - request/response `x.ai/sessions/list` → `{ "sessions": [RosterEntry, …] }`
-//!   - broadcast notification `x.ai/sessions/changed` →
+//!   - request/response `kigi/sessions/list` → `{ "sessions": [RosterEntry, …] }`
+//!   - broadcast notification `kigi/sessions/changed` →
 //!     `{ "upserted": [RosterEntry, …], "removed": ["sess-abc", …] }`
 //!
 //! The wire shape is intentionally small and current-state only — no event
@@ -76,13 +76,13 @@ pub struct RosterEntry {
     pub origin: RosterOrigin,
 }
 
-/// Response payload for `x.ai/sessions/list`.
+/// Response payload for `kigi/sessions/list`.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct RosterListResponse {
     pub sessions: Vec<RosterEntry>,
 }
 
-/// Params payload for the `x.ai/sessions/changed` broadcast notification.
+/// Params payload for the `kigi/sessions/changed` broadcast notification.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct RosterChanged {
     #[serde(default)]
@@ -92,8 +92,8 @@ pub struct RosterChanged {
 }
 
 /// JSON-RPC method names for the roster API.
-pub const SESSIONS_LIST_METHOD: &str = "x.ai/sessions/list";
-pub const SESSIONS_CHANGED_METHOD: &str = "x.ai/sessions/changed";
+pub const SESSIONS_LIST_METHOD: &str = "kigi/sessions/list";
+pub const SESSIONS_CHANGED_METHOD: &str = "kigi/sessions/changed";
 
 /// Merge live `resident` rows with on-disk `summaries` into the sorted roster.
 /// Pure, so it is unit-testable without disk or a live actor.
@@ -173,7 +173,7 @@ mod merge_roster_tests {
             title: None,
             cwd: format!("/live/{id}"),
             is_worktree: false,
-            model_id: Some("grok-4".into()),
+            model_id: Some("kigi-4".into()),
             reasoning_effort: None,
             yolo: false,
             activity,

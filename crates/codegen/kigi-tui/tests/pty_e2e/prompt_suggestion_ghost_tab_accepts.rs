@@ -3,7 +3,7 @@
 use super::common::*;
 
 /// The suggestion the mock streams for every request. Serves BOTH the prompt
-/// turn and the turn-end `x.ai/suggestPrompt` call (the mock's fixed mode
+/// turn and the turn-end `kigi/suggestPrompt` call (the mock's fixed mode
 /// answers every request), so after the turn the ghost text mirrors it.
 /// Multi-word so the shell-side sanitizer (`sanitize_suggestion`) accepts it.
 const SUGGESTION: &str = "review the staged changes";
@@ -22,7 +22,7 @@ const ACCEPT_HINT: &str = "accept suggestion";
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore]
 async fn prompt_suggestion_ghost_tab_accepts() {
-    // The suggestion model (`grok-build-0.1`, the shell's built-in default)
+    // The suggestion model (`kigi-0.1`, the shell's built-in default)
     // must be in the mock catalog: the shell catalog-guards the effective
     // suggestion model and *skips the request entirely* when it is not
     // sampleable (`prompt_suggest::effective_suggest_model`), exactly as it
@@ -32,7 +32,7 @@ async fn prompt_suggestion_ghost_tab_accepts() {
     // `test-model` stays first so it remains the session's default model.
     let content = ContentController::start_with_models(vec![
         MockModel::new("test-model"),
-        MockModel::new("grok-build-0.1"),
+        MockModel::new("kigi-0.1"),
     ])
     .await
     .expect("start content");

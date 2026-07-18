@@ -54,8 +54,8 @@ pub struct AcpConnection {
     pub rx: AcpClientRx,
     /// Available models and current selection.
     pub models: ModelState,
-    /// Whether the agent is a grok-shell instance.
-    pub is_grok_shell: bool,
+    /// Whether the agent is a kigi-shell instance.
+    pub is_kigi_shell: bool,
     /// Auth methods advertised by the agent.
     pub auth_methods: Vec<acp::AuthMethod>,
     /// Cancellation token to stop the agent.
@@ -64,9 +64,9 @@ pub struct AcpConnection {
     /// Seeded into every new `AgentSession` so autocomplete has shell builtins
     /// and skills immediately, before any `AvailableCommandsUpdate` arrives.
     pub available_commands: Vec<acp::AvailableCommand>,
-    /// Whether interactive login is required (deferred auth for `grok.com`).
+    /// Whether interactive login is required (deferred auth for `kimi-code`).
     pub needs_login: bool,
-    /// Login button label from `AuthMethod.name` (e.g., "grok.com", "Acme Corp").
+    /// Login button label from `AuthMethod.name` (e.g., "kimi-code", "Acme Corp").
     pub login_label: Option<String>,
     /// The auth method ID to use for login (copied from the first advertised method).
     pub login_method_id: Option<acp::AuthMethodId>,
@@ -83,7 +83,7 @@ pub struct AcpConnection {
     /// resolved by the shell (remote settings / config / env; default OFF) and
     /// advertised in `InitializeResponse.meta.sessionRecap`. The client gates
     /// its automatic away-recap poll and the manual `/recap` on this so a
-    /// disabled feature produces zero `x.ai/recap` traffic. Defaults to `false`
+    /// disabled feature produces zero `kigi/recap` traffic. Defaults to `false`
     /// when absent (e.g. an older shell that predates the feature).
     pub session_recap_available: bool,
     /// `AuthManager` for pager-side authenticated channels.
@@ -183,14 +183,14 @@ pub async fn connect(cancel: &CancellationToken, flags: ConnectFlags) -> Result<
 
     // Spawn the agent
     let memory_config = agent_config.memory_config.clone();
-    let spawned = spawn::spawn_grok_shell(agent_config, cancel, memory_config).await?;
+    let spawned = spawn::spawn_kigi_shell(agent_config, cancel, memory_config).await?;
     let auth_manager = spawned.auth_manager.clone();
     let (tx, rx) = (spawned.channel.tx, spawned.channel.rx);
 
     // Initialize
     let (
         models,
-        is_grok_shell,
+        is_kigi_shell,
         auth_methods,
         default_auth_method_id,
         available_commands,
@@ -218,7 +218,7 @@ pub async fn connect(cancel: &CancellationToken, flags: ConnectFlags) -> Result<
         tx,
         rx,
         models,
-        is_grok_shell,
+        is_kigi_shell,
         auth_methods,
         cancel: spawned.cancel,
         available_commands,
@@ -291,7 +291,7 @@ pub async fn connect_via_leader(
 
     let (
         models,
-        is_grok_shell,
+        is_kigi_shell,
         auth_methods,
         default_auth_method_id,
         available_commands,
@@ -329,7 +329,7 @@ pub async fn connect_via_leader(
         tx,
         rx,
         models,
-        is_grok_shell,
+        is_kigi_shell,
         auth_methods,
         cancel: bridge.cancel,
         available_commands,
@@ -439,10 +439,10 @@ fn client_capabilities_meta(flags: &ConnectFlags) -> serde_json::Value {
     let hunk_mode =
         crate::settings::canonical_hunk_tracker_mode(flags.hunk_tracker_mode.as_deref());
     serde_json::json!({
-        "x.ai/incrementalBashOutput": true,
-        "x.ai/hunkTracker": { "mode": hunk_mode },
-        "x.ai/bashOutputNoColor": true,
-        "x.ai/gitHeadChanged": true,
+        "kigi/incrementalBashOutput": true,
+        "kigi/hunkTracker": { "mode": hunk_mode },
+        "kigi/bashOutputNoColor": true,
+        "kigi/gitHeadChanged": true,
     })
 }
 
@@ -482,11 +482,11 @@ async fn initialize(
 
     let resp: acp::InitializeResponse = acp_send(req, tx).await?;
 
-    // Check if this is a grok-shell agent
-    let is_grok_shell = resp
+    // Check if this is a kigi-shell agent
+    let is_kigi_shell = resp
         .meta
         .as_ref()
-        .and_then(|m| m.get("grokShell"))
+        .and_then(|m| m.get("kigiShell"))
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
@@ -514,7 +514,7 @@ async fn initialize(
 
     Ok((
         models,
-        is_grok_shell,
+        is_kigi_shell,
         resp.auth_methods,
         default_auth_method_id,
         available_commands,
@@ -545,7 +545,7 @@ pub fn parse_session_recap_available(meta: Option<&acp::Meta>) -> bool {
 
 /// Determine whether interactive login is needed based on the advertised auth methods.
 ///
-/// Matches TUI startup behavior: if the first method is `grok.com`, defer auth
+/// Matches TUI startup behavior: if the first method is `kimi-code`, defer auth
 /// and show the login-aware welcome flow. Otherwise, authenticate eagerly.
 ///
 /// Returns `(needs_login, login_label, login_method_id, auth_start_mode)`.
@@ -589,7 +589,7 @@ pub fn startup_auth_metadata(
 ///
 /// Used when eager auth (cached_token / API key) fails and we need to fall
 /// back to the welcome screen with a working login button. Scans the list
-/// for a `grok.com` or `oidc` method — these are the ones that can trigger
+/// for a `kimi-code` or `oidc` method — these are the ones that can trigger
 /// a browser-based re-auth flow.
 pub fn find_interactive_login_method(
     auth_methods: &[acp::AuthMethod],
@@ -767,7 +767,7 @@ mod tests {
 
     #[test]
     fn parse_available_commands_missing_key_returns_empty() {
-        let meta = serde_json::json!({ "grokShell": true });
+        let meta = serde_json::json!({ "kigiShell": true });
         let cmds = parse_available_commands(meta.as_object());
         assert!(cmds.is_empty());
     }
@@ -801,7 +801,7 @@ mod tests {
 
     #[test]
     fn parse_session_recap_available_defaults_off_when_missing() {
-        let meta = serde_json::json!({ "grokShell": true, "cancelRewind": true });
+        let meta = serde_json::json!({ "kigiShell": true, "cancelRewind": true });
         assert!(!parse_session_recap_available(meta.as_object()));
         assert!(!parse_session_recap_available(None));
     }
@@ -832,28 +832,28 @@ mod tests {
     }
 
     #[test]
-    fn startup_auth_grok_com_no_provider_needs_login_pending() {
-        let methods = vec![make_auth_method("grok.com", "grok.com", None)];
+    fn startup_auth_kigi_com_no_provider_needs_login_pending() {
+        let methods = vec![make_auth_method("kimi-code", "kimi-code", None)];
         let (needs, label, method_id, mode) = startup_auth_metadata(&methods);
         assert!(needs);
-        assert_eq!(label.as_deref(), Some("grok.com"));
-        assert_eq!(method_id.as_ref().unwrap().0.as_ref(), "grok.com");
+        assert_eq!(label.as_deref(), Some("kimi-code"));
+        assert_eq!(method_id.as_ref().unwrap().0.as_ref(), "kimi-code");
         assert_eq!(mode, AuthStartMode::Pending);
     }
 
     #[test]
-    fn startup_auth_grok_com_with_external_provider_command() {
+    fn startup_auth_kigi_com_with_external_provider_command() {
         let meta = serde_json::json!({ "external_provider": true });
-        let methods = vec![make_auth_method("grok.com", "Acme Corp", Some(meta))];
+        let methods = vec![make_auth_method("kimi-code", "Acme Corp", Some(meta))];
         let (needs, label, method_id, mode) = startup_auth_metadata(&methods);
         assert!(needs);
         assert_eq!(label.as_deref(), Some("Acme Corp"));
-        assert_eq!(method_id.as_ref().unwrap().0.as_ref(), "grok.com");
+        assert_eq!(method_id.as_ref().unwrap().0.as_ref(), "kimi-code");
         assert_eq!(mode, AuthStartMode::Command);
     }
 
     #[test]
-    fn startup_auth_non_grok_com_no_login() {
+    fn startup_auth_non_kigi_com_no_login() {
         let methods = vec![make_auth_method("api-key", "API Key", None)];
         let (needs, label, method_id, mode) = startup_auth_metadata(&methods);
         assert!(!needs);
@@ -890,7 +890,7 @@ mod tests {
             // enterprise-style: model has `env_key` set and the env var resolves,
             // so the shell-side predicate returns true.
             has_external_api_key: true,
-            // Realistic enterprise user: no cached session token, default `grok.com`
+            // Realistic enterprise user: no cached session token, default `kimi-code`
             // login (no enterprise OIDC).
             has_cached_token: false,
             login_label: None,
@@ -916,27 +916,27 @@ mod tests {
     /// `auth_methods.first()`. This locks the failure mode of the regression:
     /// if a future refactor makes the pager scan past `.first()`, this test
     /// stops being equivalent to
-    /// `startup_auth_grok_com_no_provider_needs_login_pending` above and
+    /// `startup_auth_kigi_com_no_provider_needs_login_pending` above and
     /// either passes or fails on a meaningful new code path.
     #[test]
     fn startup_auth_xai_api_key_not_first_still_requires_login() {
-        use kigi_shell::agent::auth_method::{KIGI_COM_METHOD_ID, XAI_API_KEY_METHOD_ID};
+        use kigi_shell::agent::auth_method::{KIMI_CODE_METHOD_ID, XAI_API_KEY_METHOD_ID};
 
         let methods = vec![
-            make_auth_method(KIGI_COM_METHOD_ID, "Grok", None),
+            make_auth_method(KIMI_CODE_METHOD_ID, "Kigi", None),
             make_auth_method(XAI_API_KEY_METHOD_ID, "xai.api_key", None),
         ];
         let (needs, _, _, _) = startup_auth_metadata(&methods);
         assert!(
             needs,
-            "with grok.com first, the pager must require login -- pinning \
+            "with kimi.com first, the pager must require login -- pinning \
              the BAD-ordering failure mode (xai.api_key not first)",
         );
     }
 
     #[test]
     fn startup_auth_method_id_is_copied_not_synthesized() {
-        let methods = vec![make_auth_method("grok.com", "My Login", None)];
+        let methods = vec![make_auth_method("kimi-code", "My Login", None)];
         let (_, _, method_id, _) = startup_auth_metadata(&methods);
         // Verify it's the exact same ID from the method, not hardcoded
         assert_eq!(&method_id.unwrap(), methods[0].id());
@@ -945,7 +945,7 @@ mod tests {
     #[test]
     fn startup_auth_external_provider_false_is_pending() {
         let meta = serde_json::json!({ "external_provider": false });
-        let methods = vec![make_auth_method("grok.com", "grok.com", Some(meta))];
+        let methods = vec![make_auth_method("kimi-code", "kimi-code", Some(meta))];
         let (_, _, _, mode) = startup_auth_metadata(&methods);
         assert_eq!(mode, AuthStartMode::Pending);
     }
@@ -1033,12 +1033,12 @@ mod tests {
         // Rows 1 & 2 of the truth table: nothing set, and a set-but-blank value,
         // both advertise the `agent_only` default (never `""` → AllDirty).
         let absent = client_capabilities_meta(&ConnectFlags::default());
-        assert_eq!(absent["x.ai/hunkTracker"]["mode"], "agent_only");
+        assert_eq!(absent["kigi/hunkTracker"]["mode"], "agent_only");
         let blank = client_capabilities_meta(&ConnectFlags {
             hunk_tracker_mode: Some("   ".into()),
             ..Default::default()
         });
-        assert_eq!(blank["x.ai/hunkTracker"]["mode"], "agent_only");
+        assert_eq!(blank["kigi/hunkTracker"]["mode"], "agent_only");
     }
 
     #[test]
@@ -1050,7 +1050,7 @@ mod tests {
                 hunk_tracker_mode: Some(raw.into()),
                 ..Default::default()
             });
-            assert_eq!(meta["x.ai/hunkTracker"]["mode"], "off", "raw={raw}");
+            assert_eq!(meta["kigi/hunkTracker"]["mode"], "off", "raw={raw}");
         }
     }
 }

@@ -1,7 +1,7 @@
 //! `/btw` -- ask a side question without interrupting the running agent.
 //!
 //! Returns `CommandResult::Action(Action::SendBtw(...))` so the dispatch layer
-//! fires it as an ACP ext method (`x.ai/btw`) that bypasses the prompt queue.
+//! fires it as an ACP ext method (`kigi/btw`) that bypasses the prompt queue.
 
 use crate::app::actions::Action;
 use crate::slash::command::{CommandExecCtx, CommandResult, SlashCommand};

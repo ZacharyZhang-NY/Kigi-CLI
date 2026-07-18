@@ -832,12 +832,12 @@ mod tests {
     fn find_skill_paths_flat_layout() {
         // Traditional flat layout: skills/<name>/SKILL.md
         let tmp = tempfile::tempdir().unwrap();
-        let grok_dir = tmp.path().join(".kigi");
+        let kigi_dir = tmp.path().join(".kigi");
 
-        write_skill_md(&grok_dir.join("skills").join("alpha"), "alpha");
-        write_skill_md(&grok_dir.join("skills").join("beta"), "beta");
+        write_skill_md(&kigi_dir.join("skills").join("alpha"), "alpha");
+        write_skill_md(&kigi_dir.join("skills").join("beta"), "beta");
 
-        let paths = find_skill_paths(&grok_dir);
+        let paths = find_skill_paths(&kigi_dir);
         assert_eq!(paths.len(), 2);
         assert!(paths.iter().all(|p| p.file_name().unwrap() == "SKILL.md"));
     }
@@ -846,13 +846,13 @@ mod tests {
     fn find_skill_paths_nested_layout() {
         // Nested: skills/team/infra/SKILL.md, skills/team/training/SKILL.md
         let tmp = tempfile::tempdir().unwrap();
-        let grok_dir = tmp.path().join(".kigi");
-        let skills = grok_dir.join("skills");
+        let kigi_dir = tmp.path().join(".kigi");
+        let skills = kigi_dir.join("skills");
 
         write_skill_md(&skills.join("team").join("infra"), "infra");
         write_skill_md(&skills.join("team").join("training"), "training");
 
-        let paths = find_skill_paths(&grok_dir);
+        let paths = find_skill_paths(&kigi_dir);
         assert_eq!(paths.len(), 2);
 
         let path_strs: Vec<String> = paths.iter().map(|p| p.display().to_string()).collect();
@@ -864,8 +864,8 @@ mod tests {
     fn find_skill_paths_mixed_flat_and_nested() {
         // Mix of flat and nested skills
         let tmp = tempfile::tempdir().unwrap();
-        let grok_dir = tmp.path().join(".kigi");
-        let skills = grok_dir.join("skills");
+        let kigi_dir = tmp.path().join(".kigi");
+        let skills = kigi_dir.join("skills");
 
         // Flat
         write_skill_md(&skills.join("top-level"), "top-level");
@@ -874,7 +874,7 @@ mod tests {
         // Nested 2 levels
         write_skill_md(&skills.join("org").join("team").join("deep"), "deep");
 
-        let paths = find_skill_paths(&grok_dir);
+        let paths = find_skill_paths(&kigi_dir);
         assert_eq!(paths.len(), 3);
     }
 
@@ -882,8 +882,8 @@ mod tests {
     fn find_skill_paths_dir_without_skill_md_is_skipped() {
         // A subdirectory exists but has no SKILL.md — should not appear
         let tmp = tempfile::tempdir().unwrap();
-        let grok_dir = tmp.path().join(".kigi");
-        let skills = grok_dir.join("skills");
+        let kigi_dir = tmp.path().join(".kigi");
+        let skills = kigi_dir.join("skills");
 
         write_skill_md(&skills.join("valid"), "valid");
         // Create a dir with no SKILL.md
@@ -893,7 +893,7 @@ mod tests {
         fs::create_dir_all(&other).unwrap();
         fs::write(other.join("README.md"), "not a skill").unwrap();
 
-        let paths = find_skill_paths(&grok_dir);
+        let paths = find_skill_paths(&kigi_dir);
         assert_eq!(paths.len(), 1);
         assert!(paths[0].display().to_string().contains("valid"));
     }
@@ -902,10 +902,10 @@ mod tests {
     fn find_skill_paths_no_skills_dir() {
         // .kigi exists but no skills/ subdirectory
         let tmp = tempfile::tempdir().unwrap();
-        let grok_dir = tmp.path().join(".kigi");
-        fs::create_dir_all(&grok_dir).unwrap();
+        let kigi_dir = tmp.path().join(".kigi");
+        fs::create_dir_all(&kigi_dir).unwrap();
 
-        let paths = find_skill_paths(&grok_dir);
+        let paths = find_skill_paths(&kigi_dir);
         assert!(paths.is_empty());
     }
 
@@ -944,15 +944,15 @@ mod tests {
     fn find_skill_paths_parent_and_child_both_have_skill_md() {
         // A directory has SKILL.md and also has subdirectories with SKILL.md
         let tmp = tempfile::tempdir().unwrap();
-        let grok_dir = tmp.path().join(".kigi");
-        let skills = grok_dir.join("skills");
+        let kigi_dir = tmp.path().join(".kigi");
+        let skills = kigi_dir.join("skills");
 
         // Parent skill
         write_skill_md(&skills.join("parent"), "parent-skill");
         // Child skill inside parent
         write_skill_md(&skills.join("parent").join("child"), "child-skill");
 
-        let paths = find_skill_paths(&grok_dir);
+        let paths = find_skill_paths(&kigi_dir);
         assert_eq!(paths.len(), 2);
 
         let path_strs: Vec<String> = paths.iter().map(|p| p.display().to_string()).collect();
@@ -1108,9 +1108,9 @@ mod tests {
 
     #[test]
     fn parse_model_and_effort() {
-        let content = "---\nname: my-skill\ndescription: test\nmodel: grok-3\neffort: high\n---\n";
+        let content = "---\nname: my-skill\ndescription: test\nmodel: kigi-3\neffort: high\n---\n";
         let parsed = parse_skill_frontmatter(content, None).unwrap();
-        assert_eq!(parsed.model.as_deref(), Some("grok-3"));
+        assert_eq!(parsed.model.as_deref(), Some("kigi-3"));
         assert_eq!(parsed.effort.as_deref(), Some("high"));
     }
 
@@ -1251,7 +1251,7 @@ mod tests {
     #[test]
     fn parse_full_spec_plus_extensions() {
         // Mixed agentskills.io spec fields + our extensions — all must parse.
-        let content = "---\nname: my-skill\ndescription: A full skill\nlicense: MIT\ncompatibility: Python 3.12+\nmetadata:\n  author: test-org\n  version: \"2.0\"\nallowed-tools:\n  - bash\n  - read_file\nargument-hint: file path\nmodel: grok-3\neffort: high\nuser-invocable: true\ndisable-model-invocation: false\n---\nBody content.\n";
+        let content = "---\nname: my-skill\ndescription: A full skill\nlicense: MIT\ncompatibility: Python 3.12+\nmetadata:\n  author: test-org\n  version: \"2.0\"\nallowed-tools:\n  - bash\n  - read_file\nargument-hint: file path\nmodel: kigi-3\neffort: high\nuser-invocable: true\ndisable-model-invocation: false\n---\nBody content.\n";
         let parsed = parse_skill_frontmatter(content, None).unwrap();
         assert_eq!(parsed.name, "my-skill");
         assert_eq!(parsed.description, "A full skill");
@@ -1263,7 +1263,7 @@ mod tests {
             Some(["bash".to_string(), "read_file".to_string()].as_slice())
         );
         assert_eq!(parsed.argument_hint.as_deref(), Some("file path"));
-        assert_eq!(parsed.model.as_deref(), Some("grok-3"));
+        assert_eq!(parsed.model.as_deref(), Some("kigi-3"));
         assert_eq!(parsed.effort.as_deref(), Some("high"));
         assert!(parsed.user_invocable);
         assert!(!parsed.disable_model_invocation);
@@ -1575,7 +1575,7 @@ mod tests {
             root: root.clone(),
             canonical_root: root.clone(),
             scope: PluginScope::User,
-            origin: crate::plugins::PluginOrigin::UserGrok,
+            origin: crate::plugins::PluginOrigin::UserKigi,
             trusted: true,
             enabled: true,
             version: Some("1.0.0".to_string()),
@@ -1653,7 +1653,7 @@ mod tests {
             root: root.to_path_buf(),
             canonical_root: root.to_path_buf(),
             scope: PluginScope::User,
-            origin: crate::plugins::PluginOrigin::UserGrok,
+            origin: crate::plugins::PluginOrigin::UserKigi,
             trusted: true,
             skill_dirs,
             command_dirs: vec![],
@@ -2323,7 +2323,7 @@ mod tests {
             root: root.clone(),
             canonical_root: root,
             scope: PluginScope::Project,
-            origin: crate::plugins::PluginOrigin::ProjectGrok,
+            origin: crate::plugins::PluginOrigin::ProjectKigi,
             trusted: true,
             enabled: true,
             version: Some("1.0.0".to_string()),
@@ -2458,7 +2458,7 @@ mod tests {
             "cursor must be gated off: {dirs:?}"
         );
         assert!(ends_with(&dirs, ".claude"), "claude must remain: {dirs:?}");
-        assert!(ends_with(&dirs, ".kigi"), "grok must remain: {dirs:?}");
+        assert!(ends_with(&dirs, ".kigi"), "kigi must remain: {dirs:?}");
     }
 
     // ── Same-scope frontmatter-name collisions (copied skill dirs) ──────

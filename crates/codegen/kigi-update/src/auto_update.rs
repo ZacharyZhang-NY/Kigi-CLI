@@ -1138,20 +1138,14 @@ async fn remove_stale_models_cache() {
     }
 }
 
-/// Remove stale grok-era links/binaries from `~/.kigi/bin/` left by
-/// installations that predate the Kigi distribution rewrite (`grok`,
-/// `agent`, `grok-pager`). `kigi` is the single managed entry point now.
+/// Remove stale links/binaries from `~/.kigi/bin/` left by installations
+/// that predate the single-binary distribution rewrite (`agent`). `kigi`
+/// is the single managed entry point now.
 async fn remove_legacy_links(bin_dir: &Path) {
-    for base in ["grok", "agent", "grok-pager"] {
-        let name = if cfg!(windows) {
-            format!("{base}.exe")
-        } else {
-            base.to_string()
-        };
-        let link = bin_dir.join(name);
-        if link.exists() || link.is_symlink() {
-            let _ = tokio::fs::remove_file(&link).await;
-        }
+    let name = if cfg!(windows) { "agent.exe" } else { "agent" };
+    let link = bin_dir.join(name);
+    if link.exists() || link.is_symlink() {
+        let _ = tokio::fs::remove_file(&link).await;
     }
 }
 

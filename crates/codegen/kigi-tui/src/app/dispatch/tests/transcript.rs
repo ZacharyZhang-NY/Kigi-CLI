@@ -246,7 +246,7 @@ fn plugins_list_response() -> kigi_hooks_plugins_types::PluginsListResponse {
         plugins: vec![
             test_plugin_info(
                 "user-tool",
-                Some(kigi_hooks_plugins_types::PluginOrigin::UserGrok),
+                Some(kigi_hooks_plugins_types::PluginOrigin::UserKigi),
             ),
             test_plugin_info(
                 "claude-tool",

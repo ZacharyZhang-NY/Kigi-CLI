@@ -67,7 +67,7 @@ fn prompt_request_meta_omits_screen_mode_when_unset() {
     assert_eq!(meta, serde_json::json!({ "promptId" : "p-2" }));
 }
 /// Text-only interjections must omit the `content` key entirely — the
-/// legacy `x.ai/interject` wire shape stays byte-identical.
+/// legacy `kigi/interject` wire shape stays byte-identical.
 #[test]
 fn interject_params_omit_content_when_no_blocks() {
     let sid = acp::SessionId::new("s1");
@@ -83,7 +83,7 @@ fn interject_params_omit_content_when_no_blocks() {
 fn picker_keeps_conversation_with_empty_cwd_and_missing_updated_at() {
     let payload = serde_json::json!(
         { "sessions" : [{ "sessionId" : "conv_abc", "cwd" : "", "summary" :
-        "Compare GPU vendors", "source" : "conversation", "_meta" : { "x.ai/session" : {
+        "Compare GPU vendors", "source" : "conversation", "_meta" : { "kigi/session" : {
         "kind" : "chat" } } }] }
     );
     let entries = parse_session_picker_entries(&payload);
@@ -97,7 +97,7 @@ fn picker_keeps_old_conversation_past_cutoff() {
     let payload = serde_json::json!(
         { "sessions" : [{ "sessionId" : "conv_old", "cwd" : "", "summary" :
         "Ancient chat", "source" : "conversation", "updatedAt" : "2020-01-01T00:00:00Z",
-        "_meta" : { "x.ai/session" : { "kind" : "chat" } } }] }
+        "_meta" : { "kigi/session" : { "kind" : "chat" } } }] }
     );
     let entries = parse_session_picker_entries(&payload);
     assert_eq!(entries.len(), 1, "old conversation must still render");
@@ -112,13 +112,13 @@ fn picker_drops_local_with_missing_updated_at() {
     let entries = parse_session_picker_entries(&payload);
     assert!(entries.is_empty(), "local rows still require a parseable updatedAt");
 }
-/// Untitled grok.com chats must stay listed, rendered as "Untitled".
+/// Untitled kimi.com chats must stay listed, rendered as "Untitled".
 #[test]
 fn picker_keeps_untitled_conversation_as_untitled() {
     let payload = serde_json::json!(
         { "sessions" : [{ "sessionId" : "conv_untitled", "cwd" : "", "summary" : "",
         "source" : "conversation", "updatedAt" : "2026-07-01T00:00:00Z", "_meta" : {
-        "x.ai/session" : { "kind" : "chat" } } }] }
+        "kigi/session" : { "kind" : "chat" } } }] }
     );
     let entries = parse_session_picker_entries(&payload);
     assert_eq!(entries.len(), 1, "untitled conversation must not vanish");
@@ -277,7 +277,7 @@ fn interject_params_carry_content_when_blocks_present() {
     assert_eq!(content.len(), 1);
     assert_eq!(content[0] ["text"], "look at [Image #1]");
 }
-/// `x.ai/billing` ext result (a serialized shell `UsageResponse`) parses
+/// `kigi/billing` ext result (a serialized shell `UsageResponse`) parses
 /// into typed rows; unknown labels/reset hints survive the round trip.
 #[test]
 fn parse_usage_response_reads_rows_from_fixture() {
@@ -473,7 +473,7 @@ async fn persist_setting_type_mismatch_errors_simple_mode() {
 }
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-/// Spawn a fake ACP agent that counts `x.ai/yolo_mode_changed`
+/// Spawn a fake ACP agent that counts `kigi/yolo_mode_changed`
 /// notifications. Exits when the channel closes.
 fn spawn_fake_acp_agent(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<kigi_acp_lib::AcpAgentMessage>,
@@ -483,7 +483,7 @@ fn spawn_fake_acp_agent(
     tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
             if let kigi_acp_lib::AcpAgentMessage::ExtNotification(args) = msg {
-                if args.request.method.as_ref() == "x.ai/yolo_mode_changed" {
+                if args.request.method.as_ref() == "kigi/yolo_mode_changed" {
                     counter_clone.fetch_add(1, Ordering::SeqCst);
                 }
                 let _ = args.response_tx.send(Ok(()));
@@ -590,7 +590,7 @@ async fn persist_permission_mode_acp_notification_fires_once_on_best_effort() {
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     assert_eq!(
         counter.load(Ordering::SeqCst), 1,
-        "ACP `x.ai/yolo_mode_changed` notification must fire exactly once \
+        "ACP `kigi/yolo_mode_changed` notification must fire exactly once \
              on BestEffort path (regardless of disk outcome)",
     );
     assert!(
@@ -972,7 +972,7 @@ async fn fetch_session_list_pushes_query_and_echoes_seq() {
     tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
             if let AcpAgentMessage::ExtMethod(args) = msg {
-                assert_eq!(args.request.method.as_ref(), "x.ai/session/list");
+                assert_eq!(args.request.method.as_ref(), "kigi/session/list");
                 let params: serde_json::Value = serde_json::from_str(
                         args.request.params.get(),
                     )
@@ -1094,7 +1094,7 @@ fn agent_profile_names_are_valid_builtins() {
                 ask_user: false,
                 ..Default::default()
             },
-            "grok-build-plan",
+            "kigi-plan",
         ),
         (
             SessionFlags {
@@ -1103,7 +1103,7 @@ fn agent_profile_names_are_valid_builtins() {
                 ask_user: false,
                 ..Default::default()
             },
-            "grok-build-plan-no-subagents",
+            "kigi-plan-no-subagents",
         ),
         (
             SessionFlags {
@@ -1112,7 +1112,7 @@ fn agent_profile_names_are_valid_builtins() {
                 ask_user: true,
                 ..Default::default()
             },
-            "grok-build-plan",
+            "kigi-plan",
         ),
         (
             SessionFlags {
@@ -1121,7 +1121,7 @@ fn agent_profile_names_are_valid_builtins() {
                 ask_user: true,
                 ..Default::default()
             },
-            "grok-build-plan-no-subagents",
+            "kigi-plan-no-subagents",
         ),
         (
             SessionFlags {
@@ -1130,7 +1130,7 @@ fn agent_profile_names_are_valid_builtins() {
                 ask_user: true,
                 ..Default::default()
             },
-            "grok-build-ask-user",
+            "kigi-ask-user",
         ),
         (
             SessionFlags {
@@ -1139,7 +1139,7 @@ fn agent_profile_names_are_valid_builtins() {
                 ask_user: true,
                 ..Default::default()
             },
-            "grok-build-ask-user",
+            "kigi-ask-user",
         ),
     ];
     for (flags, expected_name) in test_cases {
@@ -1156,13 +1156,13 @@ fn agent_profile_names_are_valid_builtins() {
         );
     }
 }
-/// Default flags produce no agent profile (uses grok-build default).
+/// Default flags produce no agent profile (uses kigi default).
 #[test]
 fn default_flags_produce_no_profile() {
     let flags = SessionFlags::default();
     assert_eq!(flags.agent_profile(), None);
 }
-/// --subagents alone produces no profile (grok-build already has TaskTool).
+/// --subagents alone produces no profile (kigi already has TaskTool).
 #[test]
 fn subagents_without_plan_produces_no_profile() {
     let flags = SessionFlags {
@@ -1178,7 +1178,7 @@ fn subagents_without_plan_produces_no_profile() {
 /// escape hatch and drops `agentProfile` — the tests would then assert the
 /// wrong branch. Empty string counts as unset (`!s.trim().is_empty()`).
 /// Callers must be `#[serial_test::serial(KIGI_AGENT)]` (process-global env).
-fn without_grok_agent() -> crate::test_util::EnvVarGuard {
+fn without_kigi_agent() -> crate::test_util::EnvVarGuard {
     crate::test_util::EnvVarGuard::set("KIGI_AGENT", "")
 }
 /// At the runtime defaults (every `--no-*` flag false → every
@@ -1187,7 +1187,7 @@ fn without_grok_agent() -> crate::test_util::EnvVarGuard {
 #[serial_test::serial(KIGI_AGENT)]
 #[test]
 fn runtime_default_flags_produce_plan_meta() {
-    let _env = without_grok_agent();
+    let _env = without_kigi_agent();
     let flags = SessionFlags {
         plan_mode: true,
         subagents: true,
@@ -1195,7 +1195,7 @@ fn runtime_default_flags_produce_plan_meta() {
         ..Default::default()
     };
     let meta = flags.to_meta().unwrap();
-    assert_eq!(meta["agentProfile"], "grok-build-plan");
+    assert_eq!(meta["agentProfile"], "kigi-plan");
     assert!(meta.get("askUserQuestion").is_none());
     assert_eq!(meta["yoloMode"], false);
 }
@@ -1204,7 +1204,7 @@ fn runtime_default_flags_produce_plan_meta() {
 #[serial_test::serial(KIGI_AGENT)]
 #[test]
 fn plan_only_meta() {
-    let _env = without_grok_agent();
+    let _env = without_kigi_agent();
     let flags = SessionFlags {
         plan_mode: true,
         subagents: false,
@@ -1212,7 +1212,7 @@ fn plan_only_meta() {
         ..Default::default()
     };
     let meta = flags.to_meta().unwrap();
-    assert_eq!(meta["agentProfile"], "grok-build-plan-no-subagents");
+    assert_eq!(meta["agentProfile"], "kigi-plan-no-subagents");
     assert_eq!(meta["askUserQuestion"], false);
     assert_eq!(meta["yoloMode"], false);
 }
@@ -1220,7 +1220,7 @@ fn plan_only_meta() {
 #[serial_test::serial(KIGI_AGENT)]
 #[test]
 fn plan_with_subagents_meta() {
-    let _env = without_grok_agent();
+    let _env = without_kigi_agent();
     let flags = SessionFlags {
         plan_mode: true,
         subagents: true,
@@ -1228,15 +1228,15 @@ fn plan_with_subagents_meta() {
         ..Default::default()
     };
     let meta = flags.to_meta().unwrap();
-    assert_eq!(meta["agentProfile"], "grok-build-plan");
+    assert_eq!(meta["agentProfile"], "kigi-plan");
     assert_eq!(meta["askUserQuestion"], false);
     assert_eq!(meta["yoloMode"], false);
 }
-/// --ask-user alone selects the grok-build-ask-user profile.
+/// --ask-user alone selects the kigi-ask-user profile.
 #[serial_test::serial(KIGI_AGENT)]
 #[test]
 fn ask_user_alone_meta() {
-    let _env = without_grok_agent();
+    let _env = without_kigi_agent();
     let flags = SessionFlags {
         plan_mode: false,
         subagents: false,
@@ -1244,7 +1244,7 @@ fn ask_user_alone_meta() {
         ..Default::default()
     };
     let meta = flags.to_meta().unwrap();
-    assert_eq!(meta["agentProfile"], "grok-build-ask-user");
+    assert_eq!(meta["agentProfile"], "kigi-ask-user");
     assert!(meta.get("askUserQuestion").is_none());
     assert_eq!(meta["yoloMode"], false);
 }
@@ -1252,7 +1252,7 @@ fn ask_user_alone_meta() {
 #[serial_test::serial(KIGI_AGENT)]
 #[test]
 fn plan_with_ask_user_uses_plan_profile() {
-    let _env = without_grok_agent();
+    let _env = without_kigi_agent();
     let flags = SessionFlags {
         plan_mode: true,
         subagents: false,
@@ -1260,14 +1260,14 @@ fn plan_with_ask_user_uses_plan_profile() {
         ..Default::default()
     };
     let meta = flags.to_meta().unwrap();
-    assert_eq!(meta["agentProfile"], "grok-build-plan-no-subagents");
+    assert_eq!(meta["agentProfile"], "kigi-plan-no-subagents");
     assert!(meta.get("askUserQuestion").is_none());
     assert_eq!(meta["yoloMode"], false);
 }
 /// --no-plan --no-subagents --no-ask-user picks the default profile but
 /// must still emit `askUserQuestion: false` so the shell can strip the
 /// tool at the builder. Mirrors the runtime: `subagents` toggle alone
-/// does not need an `agentProfile` (default `grok-build` already has it).
+/// does not need an `agentProfile` (default `kigi` already has it).
 #[test]
 fn subagents_alone_emits_only_ask_user_question_disable() {
     let flags = SessionFlags {
@@ -1280,12 +1280,12 @@ fn subagents_alone_emits_only_ask_user_question_disable() {
     assert!(meta.get("agentProfile").is_none());
     assert_eq!(meta["askUserQuestion"], false);
 }
-/// All three flags on at the runtime default produce grok-build-plan
+/// All three flags on at the runtime default produce kigi-plan
 /// and no `askUserQuestion` field.
 #[serial_test::serial(KIGI_AGENT)]
 #[test]
 fn all_flags_meta() {
-    let _env = without_grok_agent();
+    let _env = without_kigi_agent();
     let flags = SessionFlags {
         plan_mode: true,
         subagents: true,
@@ -1293,7 +1293,7 @@ fn all_flags_meta() {
         ..Default::default()
     };
     let meta = flags.to_meta().unwrap();
-    assert_eq!(meta["agentProfile"], "grok-build-plan");
+    assert_eq!(meta["agentProfile"], "kigi-plan");
     assert!(meta.get("askUserQuestion").is_none());
     assert_eq!(meta["yoloMode"], false);
 }
@@ -1388,7 +1388,7 @@ fn to_meta_chat_mode_stamps_kind_and_omits_agent_profile() {
         ..Default::default()
     };
     let meta = flags.to_meta().expect("chat_mode must emit meta");
-    assert_eq!(meta["x.ai/session"] ["kind"], "chat");
+    assert_eq!(meta["kigi/session"] ["kind"], "chat");
     assert!(
         meta.get("agentProfile").is_none(), "K12: chat mode must omit Build agentProfile"
     );
@@ -1414,7 +1414,7 @@ fn load_meta_chat_kind_alone_stamps_kind_and_strips_profile() {
         scrub_chat_workspace_bind_meta(&mut meta);
     }
     let meta = meta.expect("chat_kind must produce meta");
-    assert_eq!(meta["x.ai/session"] ["kind"], "chat");
+    assert_eq!(meta["kigi/session"] ["kind"], "chat");
     assert!(
         meta.get("agentProfile").is_none(),
         "entry chat_kind must strip Build agentProfile"
@@ -1444,7 +1444,7 @@ fn chat_create_meta_never_includes_workspace_bind_keys_when_cloud_fields_set() {
     apply_chat_kind_meta(&mut meta);
     scrub_chat_workspace_bind_meta(&mut meta);
     let meta = meta.expect("chat create must emit meta");
-    assert_eq!(meta["x.ai/session"] ["kind"], "chat");
+    assert_eq!(meta["kigi/session"] ["kind"], "chat");
     assert_chat_meta_has_no_workspace_bind_keys(
         &serde_json::Value::Object(meta.clone()),
     );
@@ -1457,15 +1457,15 @@ fn chat_load_meta_never_includes_workspace_bind_keys() {
     {
         let obj = meta.get_or_insert_with(acp::Meta::new);
         obj.insert("envId".into(), serde_json::json!("env-poison"));
-        obj.insert("x.ai/cloud_server_id".into(), serde_json::json!("srv-poison"));
+        obj.insert("kigi/cloud_server_id".into(), serde_json::json!("srv-poison"));
         obj.insert(
-            "x.ai/cloud_existing_workspace".into(),
+            "kigi/cloud_existing_workspace".into(),
             serde_json::json!({ "server_id" : "srv-poison", "cwd" : "/ws", }),
         );
     }
     scrub_chat_workspace_bind_meta(&mut meta);
     let meta = meta.expect("chat load must emit meta");
-    assert_eq!(meta["x.ai/session"] ["kind"], "chat");
+    assert_eq!(meta["kigi/session"] ["kind"], "chat");
     assert_chat_meta_has_no_workspace_bind_keys(
         &serde_json::Value::Object(meta.clone()),
     );
@@ -1491,9 +1491,9 @@ fn agent_profile_definitions_have_correct_names() {
     use std::str::FromStr;
     use kigi_agent::config::BuiltinAgentName;
     for name in [
-        "grok-build-plan",
-        "grok-build-plan-no-subagents",
-        "grok-build-ask-user",
+        "kigi-plan",
+        "kigi-plan-no-subagents",
+        "kigi-ask-user",
     ] {
         let builtin = BuiltinAgentName::from_str(name).unwrap();
         let def = builtin.definition();
@@ -1542,23 +1542,23 @@ fn format_session_info_shows_conversation_id_when_present() {
 }
 #[test]
 fn format_session_info_shows_resolved_when_enabled_and_different() {
-    let info = make_session_info("grok-4.5", Some("grok-4.3"), 1000, 10000);
+    let info = make_session_info("kigi-4.5", Some("kigi-4.3"), 1000, 10000);
     let text = format_session_info(&info, None, true);
-    assert!(text.contains("Model: grok-4.5 (grok-4.3)"));
+    assert!(text.contains("Model: kigi-4.5 (kigi-4.3)"));
 }
 #[test]
 fn format_session_info_hides_resolved_when_disabled() {
-    let info = make_session_info("grok-4.5", Some("grok-4.3"), 1000, 10000);
+    let info = make_session_info("kigi-4.5", Some("kigi-4.3"), 1000, 10000);
     let text = format_session_info(&info, None, false);
-    assert!(text.contains("Model: grok-4.5"));
-    assert!(! text.contains("grok-4.3"));
+    assert!(text.contains("Model: kigi-4.5"));
+    assert!(! text.contains("kigi-4.3"));
 }
 #[test]
 fn format_session_info_no_parens_when_resolved_matches_requested() {
-    let info = make_session_info("grok-4.5", Some("grok-4.5"), 1000, 10000);
+    let info = make_session_info("kigi-4.5", Some("kigi-4.5"), 1000, 10000);
     let text = format_session_info(&info, None, true);
-    assert!(text.contains("Model: grok-4.5"));
-    assert!(! text.contains("(grok-4.5)"));
+    assert!(text.contains("Model: kigi-4.5"));
+    assert!(! text.contains("(kigi-4.5)"));
 }
 #[test]
 fn format_session_info_shows_model_hash_when_catalog_flag_set() {
@@ -1647,7 +1647,7 @@ fn session_picker_entry_maps_to_dormant_roster_row() {
         cwd: "/repo/app".to_string(),
         hostname: Some("box".to_string()),
         source: "local".to_string(),
-        model_id: Some("grok-4".to_string()),
+        model_id: Some("kigi-4".to_string()),
         num_messages: 3,
         last_active_at: Some(updated),
         branch: None,
@@ -1660,7 +1660,7 @@ fn session_picker_entry_maps_to_dormant_roster_row() {
     assert_eq!(roster.title.as_deref(), Some("Wire up dashboard"));
     assert_eq!(roster.cwd, "/repo/app");
     assert!(roster.is_worktree, "worktree_label present → is_worktree");
-    assert_eq!(roster.model_id.as_deref(), Some("grok-4"));
+    assert_eq!(roster.model_id.as_deref(), Some("kigi-4"));
     assert_eq!(roster.activity, RosterActivity::Dormant);
     assert!(! roster.resident);
     assert_eq!(roster.last_change_unix_ms, updated.timestamp_millis());

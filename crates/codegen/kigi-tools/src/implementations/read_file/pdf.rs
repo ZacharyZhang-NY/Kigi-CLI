@@ -267,7 +267,7 @@ pub fn raw_text_to_file_content(text: String) -> ReadFileOutput {
 }
 
 enum PageTextStyle {
-    GrokBuild,
+    Kigi,
     Cursor { total_pages: usize },
 }
 
@@ -296,7 +296,7 @@ fn extract_page_texts(
             text.push('\n');
         }
         match style {
-            PageTextStyle::GrokBuild => {
+            PageTextStyle::Kigi => {
                 writeln!(&mut text, "--- Page {} ---", page_idx + 1).ok();
             }
             PageTextStyle::Cursor { .. } => {}
@@ -317,7 +317,7 @@ fn extract_pdf_plain_text(bytes: Vec<u8>, style: PageTextStyle) -> Result<String
     let (doc, page_count) = open_pdf_document(bytes)?;
     let page_indices: Vec<usize> = (0..page_count).collect();
     let style = match style {
-        PageTextStyle::GrokBuild => PageTextStyle::GrokBuild,
+        PageTextStyle::Kigi => PageTextStyle::Kigi,
         PageTextStyle::Cursor { .. } => PageTextStyle::Cursor {
             total_pages: page_count,
         },
@@ -328,7 +328,7 @@ fn extract_pdf_plain_text(bytes: Vec<u8>, style: PageTextStyle) -> Result<String
 /// Extract plain text from all PDF pages (no auto-read page limit).
 #[cfg(test)]
 pub(crate) fn extract_pdf_plain_text_all(bytes: Vec<u8>) -> Result<String, String> {
-    extract_pdf_plain_text(bytes, PageTextStyle::GrokBuild)
+    extract_pdf_plain_text(bytes, PageTextStyle::Kigi)
 }
 
 /// Plain text from all PDF pages in the `Read` format.
@@ -341,7 +341,7 @@ pub(crate) fn extract_pdf_text(
     pages_spec: Option<&str>,
 ) -> Result<ReadFileOutput, String> {
     let (doc, _page_count, page_indices) = open_pdf_and_resolve_pages(bytes, pages_spec)?;
-    let text = extract_page_texts(&doc, &page_indices, PageTextStyle::GrokBuild)?;
+    let text = extract_page_texts(&doc, &page_indices, PageTextStyle::Kigi)?;
     Ok(raw_text_to_file_content(text))
 }
 

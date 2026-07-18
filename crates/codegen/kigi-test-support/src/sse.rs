@@ -1,6 +1,6 @@
 //! SSE stream generators for mock inference endpoints.
 //!
-//! These produce the exact wire format that the grok sampling client expects,
+//! These produce the exact wire format that the kigi sampling client expects,
 //! validated against the real sampling client.
 
 use axum::response::sse::Event;

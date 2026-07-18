@@ -529,7 +529,7 @@ mod tests {
             prompt_id: None,
             payload: HookPayload::SessionStart {
                 source: "new".into(),
-                model_id: Some("grok-3".into()),
+                model_id: Some("kigi-3".into()),
                 agent_type: None,
             },
         };

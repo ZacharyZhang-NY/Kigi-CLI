@@ -1,5 +1,5 @@
-//! ACP stdio clients for testing grok sessions end-to-end: the typed
-//! [`GrokStdioClient`] (`agent-client-protocol::ClientSideConnection` —
+//! ACP stdio clients for testing kigi sessions end-to-end: the typed
+//! [`KigiStdioClient`] (`agent-client-protocol::ClientSideConnection` —
 //! authentication, session lifecycle, permissions, notification streaming) and
 //! the raw-wire [`RawStdioClient`] (verbatim JSON-RPC lines for shapes the
 //! typed client can't produce), plus the shared subprocess spawn/stderr-capture
@@ -15,14 +15,14 @@ use kigi_acp_lib::LineBufferedRead;
 use tempfile::TempDir;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-use crate::env::{grok_binary, test_env_cmd_tokio};
+use crate::env::{kigi_binary, test_env_cmd_tokio};
 use crate::headless::stderr_tail;
 use crate::mock_server::MockInferenceServer;
 use crate::process::spawn_piped_with_stderr_capture;
 
-/// Spawn `grok agent stdio` with the canonical hermetic test env: the sandbox
+/// Spawn `kigi agent stdio` with the canonical hermetic test env: the sandbox
 /// from [`test_env_cmd_tokio`] plus the debug-logging kill-list, so the
-/// hermeticity setup exists exactly once for the typed ([`GrokStdioClient`])
+/// hermeticity setup exists exactly once for the typed ([`KigiStdioClient`])
 /// and raw ([`RawStdioClient`]) harnesses. `leading_args` go before the
 /// `agent stdio` subcommand (global flags); `extra_env` is applied after the
 /// kill-list so a test can still set e.g. `KIGI_DEBUG_LOG=1` explicitly.
@@ -33,7 +33,7 @@ fn spawn_agent_process(
     extra_env: &[(&str, &str)],
     leading_args: &[&str],
 ) -> (tokio::process::Child, Arc<std::sync::Mutex<Vec<u8>>>) {
-    let binary = grok_binary();
+    let binary = kigi_binary();
 
     let mut cmd = tokio::process::Command::new(&binary);
     cmd.args(leading_args)
@@ -107,11 +107,11 @@ impl acp::Client for TestAcpClient {
     }
 }
 
-/// Drives `grok agent stdio` via the ACP protocol over pipes.
+/// Drives `kigi agent stdio` via the ACP protocol over pipes.
 ///
 /// Handles the full lifecycle: spawn → initialize → authenticate → session → prompt.
 /// Child process is killed on drop.
-pub struct GrokStdioClient {
+pub struct KigiStdioClient {
     conn: acp::ClientSideConnection,
     _child: tokio::process::Child,
     home: Option<TempDir>,
@@ -119,7 +119,7 @@ pub struct GrokStdioClient {
     stderr: Arc<std::sync::Mutex<Vec<u8>>>,
 }
 
-impl GrokStdioClient {
+impl KigiStdioClient {
     pub async fn spawn(server: &MockInferenceServer, cwd: &Path) -> Self {
         let home = TempDir::new().expect("create temp home");
         Self::spawn_with_home(server, cwd, home).await
@@ -396,9 +396,9 @@ impl GrokStdioClient {
     }
 }
 
-/// Drives `grok agent stdio` with verbatim newline-delimited JSON-RPC lines.
+/// Drives `kigi agent stdio` with verbatim newline-delimited JSON-RPC lines.
 ///
-/// Exists for wire shapes the typed [`GrokStdioClient`] (`ClientSideConnection`,
+/// Exists for wire shapes the typed [`KigiStdioClient`] (`ClientSideConnection`,
 /// integer ids) can never produce — e.g. Xcode's Swift/Foundation `JSONEncoder`
 /// output: escaped-slash methods (`"session\/prompt"`) and string UUID request
 /// ids. Child process is killed on drop.

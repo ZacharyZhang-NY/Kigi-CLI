@@ -846,7 +846,7 @@ fn prompt_response_resets_turn_state() {
     assert_eq!(app.agents[&id].scrollback.len(), 1);
 }
 
-/// Turn end with prompt suggestions enabled fires the `x.ai/suggestPrompt`
+/// Turn end with prompt suggestions enabled fires the `kigi/suggestPrompt`
 /// fetch (before the billing refresh), and the loaded suggestion routes back
 /// into the agent's controller by id + generation.
 #[test]
@@ -879,8 +879,8 @@ fn turn_end_fetches_prompt_suggestion_when_enabled() {
     };
     assert_eq!(*agent_id, id);
     assert!(session_id.is_some());
-    // No `grok-build-0.1` in the test catalog and no env override →
-    // `None` on the wire; the shell then uses its own `grok-build-0.1`
+    // No `kigi-0.1` in the test catalog and no env override →
+    // `None` on the wire; the shell then uses its own `kigi-0.1`
     // default (suggestion calls never use the session model).
     assert_eq!(*model, None);
 
@@ -1255,7 +1255,7 @@ fn turn_complete_notification_suppressed_when_queue_non_empty() {
 /// Regression: cancelling while prompts are queued must hand the queue to
 /// the agent untouched. The FRONT queued prompt runs next (promoted
 /// server-side), the rest stay queued in order, and the authoritative
-/// `x.ai/queue/changed` rebroadcast — not client-side prediction — updates
+/// `kigi/queue/changed` rebroadcast — not client-side prediction — updates
 /// the mirror. Nothing resurrects or reorders.
 #[test]
 fn cancel_hands_queue_to_agent_without_reordering() {
@@ -1771,7 +1771,7 @@ fn send_prompt_works_after_reconnect_clears() {
 fn switch_model_holds_prompt_until_complete() {
     let mut app = test_app_with_agent();
     let id = AgentId(0);
-    let model_id = acp::ModelId::new(std::sync::Arc::from("grok-4.5"));
+    let model_id = acp::ModelId::new(std::sync::Arc::from("kigi-4.5"));
 
     dispatch(
         Action::SwitchModel {
@@ -1905,7 +1905,7 @@ fn submit_question_answers_cancel_clears_local_modal_and_restores_prompt() {
     // exercising the prompt.restore + cleanup_question_state contract
     // that lives in `submit_question_answers` itself.
     use crate::views::question_view::{LocalQuestionKind, QuestionViewState};
-    use kigi_tools::implementations::grok_build::ask_user_question::{Question, QuestionOption};
+    use kigi_tools::implementations::kigi::ask_user_question::{Question, QuestionOption};
 
     let mut app = fork_test_app();
     let id = AgentId(0);

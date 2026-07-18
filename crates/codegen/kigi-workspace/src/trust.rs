@@ -112,7 +112,7 @@ impl TrustStore {
         Self::default_path_in(kigi_config::user_kigi_home())
     }
 
-    /// Map a resolved user-grok-home to the store path, preserving "no home" as
+    /// Map a resolved user-kigi-home to the store path, preserving "no home" as
     /// "no path" (never synthesizing a fallback). Split from [`Self::default_path`]
     /// as a pure seam so the no-home branch is unit-testable without the
     /// process-global home cache.
@@ -252,7 +252,7 @@ impl TrustStore {
             tracing::warn!(
                 path = %canonical.display(),
                 trusted,
-                "folder trust: no user grok home resolved; trust decision not recorded"
+                "folder trust: no user kigi home resolved; trust decision not recorded"
             );
             return Ok(());
         };
@@ -351,15 +351,15 @@ impl TrustStore {
 /// The key is the canonicalized git repository root when `cwd` is inside a
 /// repo (trust applies to the whole repo), otherwise the canonicalized `cwd`.
 ///
-/// A grok-managed worktree first collapses onto its recorded source repo's git
-/// ROOT (via the `~/.kigi/worktrees.db` registry), so every `grok -w` worktree
+/// A kigi-managed worktree first collapses onto its recorded source repo's git
+/// ROOT (via the `~/.kigi/worktrees.db` registry), so every `kigi -w` worktree
 /// shares one trust key regardless of creation mode — including standalone clones
 /// that git can't link back to their source — and regardless of the subdir
-/// `grok -w` was launched from (the recorded source repo may be a repo subdir).
+/// `kigi -w` was launched from (the recorded source repo may be a repo subdir).
 /// Non-registry git worktrees fall through to the git-topology collapse below.
 ///
 /// A linked git worktree collapses onto its MAIN checkout's root so every
-/// `grok -w` worktree of a repo shares one trust key. The collapse fires ONLY
+/// `kigi -w` worktree of a repo shares one trust key. The collapse fires ONLY
 /// for the conventional `<workdir>/.git` layout — i.e. the common gitdir
 /// resolves back to `<main_workdir>/.git`. For bare or `--separate-git-dir`
 /// repos (where the common gitdir's inferred workdir would be the gitdir's
@@ -383,11 +383,11 @@ pub fn workspace_key(cwd: &Path) -> PathBuf {
 /// Git-topology-derived workspace key (pre-safety-guard); see [`workspace_key`],
 /// which rejects an over-broad derived root in favor of the cwd.
 fn git_derived_workspace_key(cwd: &Path) -> PathBuf {
-    // A grok-managed worktree (any creation mode, incl. standalone clones git
+    // A kigi-managed worktree (any creation mode, incl. standalone clones git
     // can't link) collapses onto its recorded source repo so trust is shared.
     if let Some(source_repo) = crate::worktree::source_repo_for_cwd(&cwd.to_string_lossy()) {
         // Key on the source repo's git ROOT so every worktree of one repo shares
-        // ONE key regardless of the subdir grok -w was launched from (parity with
+        // ONE key regardless of the subdir kigi -w was launched from (parity with
         // the git-topology branch below). Fall back to the recorded path when the
         // source repo is gone (deleted-source standalone worktrees still work).
         let root = git2::Repository::discover(&source_repo)
@@ -490,7 +490,7 @@ impl Drop for ExclusiveLock {
 /// path per line; each becomes a folder-trust grant so the unified gate honors
 /// prior decisions. The legacy file is then renamed to `*.migrated` so it is
 /// read only once. A no-op when the legacy file is absent/already migrated or no
-/// user grok home resolves.
+/// user kigi home resolves.
 pub fn migrate_legacy_hook_trust() {
     // Local/dev builds do NO trust-store I/O: skip the load + legacy-file rename.
     if crate::folder_trust::folder_trust_inert() {
@@ -513,7 +513,7 @@ pub fn migrate_legacy_hook_trust() {
 }
 
 /// Seam for [`migrate_legacy_hook_trust`] with explicit paths, so the migration
-/// is testable without the process-global grok-home cache. Returns the number
+/// is testable without the process-global kigi-home cache. Returns the number
 /// of grants seeded into `store`.
 fn migrate_legacy_hook_trust_in(legacy_file: &Path, store: &mut TrustStore) -> usize {
     // A read error must NOT be mistaken for "no grants": bail without renaming so
@@ -1277,7 +1277,7 @@ mod tests {
 
     #[test]
     fn workspace_key_collapses_linked_worktrees_onto_main_checkout() {
-        // Every linked `grok -w` worktree of a repo must share ONE trust key:
+        // Every linked `kigi -w` worktree of a repo must share ONE trust key:
         // its main checkout's root. Build a real repo + two linked worktrees and
         // assert each collapses onto the main checkout (so it is trusted once,
         // not re-prompted per worktree).
@@ -1416,20 +1416,20 @@ mod tests {
         );
     }
 
-    // ── workspace_key registry collapse (grok-managed worktrees) ─────────
+    // ── workspace_key registry collapse (kigi-managed worktrees) ─────────
 
     // Crate-shared env lock + env guards bundled as ONE value so the env restores
     // before the lock releases by struct field order (see lib.rs), regardless of
     // how the caller binds the fixture's return.
     use crate::LockedTestEnv;
 
-    /// Point `KIGI_SHARE_DIR` at an isolated tempdir and register one grok-managed
+    /// Point `KIGI_SHARE_DIR` at an isolated tempdir and register one kigi-managed
     /// worktree at `<home>/worktrees/repo/<name>` recording `source_repo` and
     /// `creation_mode`. The worktree dir is a PLAIN directory — NOT a git linked
     /// worktree — so only the registry can collapse it. Returns `(env, worktree
     /// dir)`; the [`LockedTestEnv`] holds the lock and restores `KIGI_SHARE_DIR` on
     /// drop (before releasing the lock), so the caller may bind it any way.
-    fn register_grok_worktree(
+    fn register_kigi_worktree(
         temp: &tempfile::TempDir,
         name: &str,
         source_repo: &Path,
@@ -1440,7 +1440,7 @@ mod tests {
         // Canonicalize so macOS /var -> /private/var agrees between the stored
         // record path and the canonicalized lookup query.
         let root = dunce::canonicalize(temp.path()).unwrap();
-        let home = root.join("grok-home");
+        let home = root.join("kigi-home");
         let wt = home.join("worktrees").join("repo").join(name);
         std::fs::create_dir_all(&wt).unwrap();
 
@@ -1470,7 +1470,7 @@ mod tests {
     }
 
     #[test]
-    fn workspace_key_collapses_standalone_grok_worktree_onto_source_repo() {
+    fn workspace_key_collapses_standalone_kigi_worktree_onto_source_repo() {
         // A standalone worktree is a full clone with its OWN `.git`, so git
         // topology can't link it to its source; the registry (worktrees.db) must
         // collapse it onto the recorded source repo so trust is shared. The
@@ -1484,13 +1484,13 @@ mod tests {
         std::fs::create_dir_all(&source_repo).unwrap();
         git2::Repository::init(&source_repo).unwrap();
 
-        let (_env, wt) = register_grok_worktree(&temp, "wt", &source_repo, "standalone");
+        let (_env, wt) = register_kigi_worktree(&temp, "wt", &source_repo, "standalone");
 
         let expected = canonicalize_or_owned(&source_repo);
         assert_eq!(
             workspace_key(&wt),
             expected,
-            "a standalone grok worktree must collapse onto its recorded source repo"
+            "a standalone kigi worktree must collapse onto its recorded source repo"
         );
         // A cwd nested below the worktree root collapses onto the same key (the
         // registry walk ascends to the registered worktree).
@@ -1517,7 +1517,7 @@ mod tests {
         let subdir = repo.join("crates").join("sub");
         std::fs::create_dir_all(&subdir).unwrap();
 
-        let (_env, wt) = register_grok_worktree(&temp, "wt", &subdir, "standalone");
+        let (_env, wt) = register_kigi_worktree(&temp, "wt", &subdir, "standalone");
 
         assert_eq!(
             workspace_key(&wt),
@@ -1532,7 +1532,7 @@ mod tests {
         // `<kigi_home>/worktrees`: `worktree_record_for_cwd` skips the registry
         // there, so the key falls back to git/cwd. Non-vacuous: the registry IS
         // populated with a real git source repo that WOULD be returned for a
-        // worktree cwd, and `outside` is its OWN git repo (under grok HOME but not
+        // worktree cwd, and `outside` is its OWN git repo (under kigi HOME but not
         // under its `worktrees/`) so the fallback is deterministic (no conditional
         // skip) — we assert the key is `outside`'s own root, never the source repo.
         let temp = tempfile::TempDir::new().unwrap();
@@ -1541,10 +1541,10 @@ mod tests {
         std::fs::create_dir_all(&source_repo).unwrap();
         git2::Repository::init(&source_repo).unwrap();
 
-        let (_env, _wt) = register_grok_worktree(&temp, "wt", &source_repo, "standalone");
+        let (_env, _wt) = register_kigi_worktree(&temp, "wt", &source_repo, "standalone");
 
-        // Under grok HOME but NOT under `<home>/worktrees`, and its own git repo.
-        let outside = root.join("grok-home").join("not-worktrees").join("proj");
+        // Under kigi HOME but NOT under `<home>/worktrees`, and its own git repo.
+        let outside = root.join("kigi-home").join("not-worktrees").join("proj");
         std::fs::create_dir_all(&outside).unwrap();
         git2::Repository::init(&outside).unwrap();
 

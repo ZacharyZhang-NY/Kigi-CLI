@@ -10,7 +10,7 @@
 //! Most tools follow the opencode parameter
 //! naming conventions (e.g., `read`/`edit` use `filePath`, `oldString`,
 //! `newString`); `write` is the exception — its input was normalized to
-//! snake_case (`file_path`) for grok_build consistency.
+//! snake_case (`file_path`) for kigi consistency.
 
 pub mod bash;
 pub mod edit;

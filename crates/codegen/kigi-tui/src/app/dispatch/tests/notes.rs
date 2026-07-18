@@ -24,7 +24,7 @@ fn manual_recap_with_no_messages_toasts_empty_state_and_skips_request() {
 
     assert!(
         effects.is_empty(),
-        "empty session must not fire x.ai/recap: {effects:?}"
+        "empty session must not fire kigi/recap: {effects:?}"
     );
     let agent = app.agents.get(&id).unwrap();
     assert!(agent.pending_recap_entry.is_none(), "no loading spinner");
@@ -86,7 +86,7 @@ fn manual_recap_during_batch_load_with_prompts_still_requests() {
 
     assert!(
         matches!(effects.as_slice(), [Effect::SendRecap { auto: false, .. }]),
-        "batched resume with user prompts must still fire x.ai/recap: {effects:?}"
+        "batched resume with user prompts must still fire kigi/recap: {effects:?}"
     );
     let agent = app.agents.get(&id).unwrap();
     assert!(agent.pending_recap_entry.is_some());

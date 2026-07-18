@@ -20,7 +20,7 @@ fn kigi_home_override_path_helpers() {
         "$KIGI_SHARE_DIR"
     );
     assert_eq!(
-        kigi_tui::util::display_user_grok_path("config.toml"),
+        kigi_tui::util::display_user_kigi_path("config.toml"),
         "$KIGI_SHARE_DIR/config.toml"
     );
 

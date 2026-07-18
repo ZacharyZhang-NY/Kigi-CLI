@@ -133,7 +133,7 @@ kigi-crash-handler = { path = "../kigi-crash-handler" }
 parking_lot.workspace = true
 
 # nix: signal handling in notifications/.
-# signal-hook: SIGWINCH handler for the `grok wrap` PTY wrapper (pty_wrap.rs).
+# signal-hook: SIGWINCH handler for the `kigi wrap` PTY wrapper (pty_wrap.rs).
 # libc: poll/read for non-blocking terminal reads in theme/osc11.rs.
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["signal"] }

@@ -8,9 +8,9 @@
 use std::path::Path;
 use std::path::PathBuf;
 
-// ── Grok state directory ────────────────────────────────────────────────────
+// ── Kigi state directory ────────────────────────────────────────────────────
 
-/// Grok state directory — always writable (`$KIGI_SHARE_DIR` or `~/.kigi`).
+/// Kigi state directory — always writable (`$KIGI_SHARE_DIR` or `~/.kigi`).
 pub(crate) fn kigi_home() -> PathBuf {
     kigi_config::kigi_home()
 }

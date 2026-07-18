@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn none_and_minimal_rejected_when_model_menu_omits_them() {
         // Legacy fallback menu is low..xhigh — `none`/`minimal` used to pass
-        // through and 400 on grok-4.5; reject at the TUI instead.
+        // through and 400 on kigi-4.5; reject at the TUI instead.
         let mut state = ModelState::default();
         let (id, info) = model_with_reasoning("reasoning-x", "Reasoning X");
         state.available.insert(id.clone(), info);
@@ -292,7 +292,7 @@ mod tests {
     #[test]
     fn non_reasoning_model_errors() {
         let mut state = ModelState::default();
-        let (id, info) = plain_model("grok-4.5", "Grok 4.5");
+        let (id, info) = plain_model("kigi-4.5", "Kigi 4.5");
         state.available.insert(id.clone(), info);
         state.current = Some(id);
         let mut ctx = dummy_exec_ctx(&state);
@@ -325,7 +325,7 @@ mod tests {
         assert!(cmd.suggest_args(&ctx, "").is_none());
 
         let mut plain = ModelState::default();
-        let (id, info) = plain_model("grok-4.5", "Grok 4.5");
+        let (id, info) = plain_model("kigi-4.5", "Kigi 4.5");
         plain.available.insert(id.clone(), info);
         plain.current = Some(id);
         let ctx = AppCtx {

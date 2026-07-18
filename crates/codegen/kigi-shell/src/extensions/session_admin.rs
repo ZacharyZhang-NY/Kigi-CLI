@@ -4,17 +4,17 @@
 //! persistent or shared agent state but are not part of the per-turn prompt
 //! lifecycle:
 //!
-//! - `x.ai/session/rename`                  rename a session locally
-//! - `x.ai/session/delete`                  delete a session locally
-//! - `x.ai/session/update_mcp_servers`      mid-session MCP server swap
-//! - `x.ai/session/fork`                    fork a session into a new one
-//! - `x.ai/internal/reload_all_mcp_servers` config hot-reload, all sessions
-//! - `x.ai/internal/reload_project_mcp_servers` config hot-reload, cwd-scoped
-//! - `x.ai/internal/reload_skills`          skills file watcher fan-out
-//! - `x.ai/internal/reload_models`          model list hot-reload from config.toml
-//! - `x.ai/internal/reload_models_cache`    model catalog hot-reload from disk cache
-//! - `x.ai/plugins/reload`                  rebuild shared plugin registry
-//! - `x.ai/commands/list`                   list slash commands
+//! - `kigi/session/rename`                  rename a session locally
+//! - `kigi/session/delete`                  delete a session locally
+//! - `kigi/session/update_mcp_servers`      mid-session MCP server swap
+//! - `kigi/session/fork`                    fork a session into a new one
+//! - `kigi/internal/reload_all_mcp_servers` config hot-reload, all sessions
+//! - `kigi/internal/reload_project_mcp_servers` config hot-reload, cwd-scoped
+//! - `kigi/internal/reload_skills`          skills file watcher fan-out
+//! - `kigi/internal/reload_models`          model list hot-reload from config.toml
+//! - `kigi/internal/reload_models_cache`    model catalog hot-reload from disk cache
+//! - `kigi/plugins/reload`                  rebuild shared plugin registry
+//! - `kigi/commands/list`                   list slash commands
 
 use std::path::Path;
 use std::sync::Arc;
@@ -34,19 +34,19 @@ use crate::session::{ExtMethodResult, SessionCommand};
 #[tracing::instrument(skip_all, fields(method = %args.method))]
 pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/session/rename" => handle_session_rename(agent, args).await,
-        "x.ai/session/delete" => handle_session_delete(agent, args).await,
-        "x.ai/session/update_mcp_servers" => handle_update_mcp_servers(agent, args).await,
-        "x.ai/session/fork" => handle_session_fork(agent, args).await,
-        "x.ai/internal/reload_all_mcp_servers" => handle_reload_all_mcp_servers(agent).await,
-        "x.ai/internal/reload_project_mcp_servers" => {
+        "kigi/session/rename" => handle_session_rename(agent, args).await,
+        "kigi/session/delete" => handle_session_delete(agent, args).await,
+        "kigi/session/update_mcp_servers" => handle_update_mcp_servers(agent, args).await,
+        "kigi/session/fork" => handle_session_fork(agent, args).await,
+        "kigi/internal/reload_all_mcp_servers" => handle_reload_all_mcp_servers(agent).await,
+        "kigi/internal/reload_project_mcp_servers" => {
             handle_reload_project_mcp_servers(agent, args).await
         }
-        "x.ai/internal/reload_skills" => handle_reload_skills(agent),
-        "x.ai/internal/reload_models" => handle_reload_models(agent),
-        "x.ai/internal/reload_models_cache" => handle_reload_models_cache(agent),
-        "x.ai/plugins/reload" => handle_plugins_reload(agent).await,
-        "x.ai/commands/list" => handle_commands_list(agent, args).await,
+        "kigi/internal/reload_skills" => handle_reload_skills(agent),
+        "kigi/internal/reload_models" => handle_reload_models(agent),
+        "kigi/internal/reload_models_cache" => handle_reload_models_cache(agent),
+        "kigi/plugins/reload" => handle_plugins_reload(agent).await,
+        "kigi/commands/list" => handle_commands_list(agent, args).await,
         _ => Err(acp::Error::method_not_found()),
     }
 }
@@ -147,7 +147,7 @@ async fn notify_session_title(agent: &MvpAgent, session_id: acp::SessionId, titl
     };
     if let Ok(params) = serde_json::value::to_raw_value(&notification) {
         let ext_notification =
-            acp::ExtNotification::new("x.ai/session_notification", params.into());
+            acp::ExtNotification::new("kigi/session_notification", params.into());
         let _ = agent.gateway.ext_notification(ext_notification).await;
     }
 }
@@ -509,7 +509,7 @@ async fn handle_plugins_reload(agent: &MvpAgent) -> ExtResult {
         let remote_settings = agent.cfg.borrow().remote_settings.clone();
         crate::agent::folder_trust::resolve_and_record(c, remote_settings.as_ref(), false)
     });
-    // Explicit desktop `x.ai/plugins/reload`: force a full local-install re-copy.
+    // Explicit desktop `kigi/plugins/reload`: force a full local-install re-copy.
     agent
         .plugin_registry_handle()
         .reload(session_cwd.as_deref(), &disk_cfg, project_trusted, true);
@@ -534,7 +534,7 @@ async fn handle_commands_list(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtRe
     // For a given cwd, compute the plugin registry the same way a session would
     // at spawn time (via build_for_cwd) and the same way reload_plugins_impl does
     // (ancestor project config walk + vendor compat merge). This is required so
-    // that `x.ai/commands/list` (the pull used by grok-desktop after session
+    // that `kigi/commands/list` (the pull used by kigi-desktop after session
     // start) returns plugin-provided slash commands for the target cwd.
     //
     // The shared snapshot is only populated at agent boot (using process CWD)

@@ -12,11 +12,11 @@ use crate::types::requirements::{Expr, ToolRequirement};
 use crate::types::resources::SharedResources;
 /// The toolset a tool belongs to.
 ///
-/// Serializes to snake_case (`grok_build`, `mcp`, …) for the
+/// Serializes to snake_case (`kigi`, `mcp`, …) for the
 /// canonical tool `_meta` wire contract. PascalCase aliases are accepted on
 /// deserialize so legacy persisted/manifest values still parse. The
 /// `Display` impl remains PascalCase for existing qualified id strings
-/// (e.g. `"GrokBuild:read_file"`); only the serde form goes on the wire.
+/// (e.g. `"Kigi:read_file"`); only the serde form goes on the wire.
 #[derive(
     Debug,
     Clone,
@@ -31,12 +31,12 @@ use crate::types::resources::SharedResources;
 )]
 #[serde(rename_all = "snake_case")]
 pub enum ToolNamespace {
-    #[serde(alias = "GrokBuild")]
-    GrokBuild,
-    #[serde(alias = "GrokBuildConcise")]
-    GrokBuildConcise,
-    #[serde(alias = "GrokBuildHashline")]
-    GrokBuildHashline,
+    #[serde(alias = "Kigi")]
+    Kigi,
+    #[serde(alias = "KigiConcise")]
+    KigiConcise,
+    #[serde(alias = "KigiHashline")]
+    KigiHashline,
     #[serde(alias = "Codex")]
     Codex,
     #[serde(rename = "opencode", alias = "OpenCode", alias = "open_code")]

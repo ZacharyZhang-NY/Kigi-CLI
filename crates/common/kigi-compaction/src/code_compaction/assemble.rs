@@ -1,4 +1,4 @@
-//! Compacted-history assembly (grok-build's rebuild structure, generic).
+//! Compacted-history assembly (kigi's rebuild structure, generic).
 //!
 //! Moved from `kigi-chat-state::compaction_utils::build_compacted_history` and
 //! made generic over a write-side item factory so any harness can assemble
@@ -8,7 +8,7 @@
 //! [SP, UP', AGENTS_MD?, UQ_last?, recent…, summary, reminder?]
 //! ```
 //!
-//! grok-build is the canonical harness. The summary carrier text is built by
+//! kigi is the canonical harness. The summary carrier text is built by
 //! [`super::summary::format_compact_summary_content`].
 
 use crate::item::CompactionItemFactory;
@@ -80,7 +80,7 @@ pub fn assemble_compacted_history<T: CompactionItemFactory>(
         compacted.push(T::new_user(wrap_user_query(last_query.as_str())));
     }
 
-    // grok-build keeps the legacy `<user_query>`-wrapped continuation text and
+    // kigi keeps the legacy `<user_query>`-wrapped continuation text and
     // appends the transcript hint after the continuation summary.
     let mut formatted_summary = format_compact_summary_content(&parts.compaction_summary);
     if let Some(ref hint) = parts.transcript_hint {
@@ -145,7 +145,7 @@ mod tests {
     }
 
     #[test]
-    fn grok_build_order_recent_before_summary() {
+    fn kigi_order_recent_before_summary() {
         let recent = vec![MockItem::Recent("a1".into()), MockItem::Recent("t1".into())];
         let out = assemble_compacted_history(parts(recent));
         // [sys, prefix, agents_md, query, a1, t1, summary, reminder]

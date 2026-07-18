@@ -802,7 +802,7 @@
                 meta,
             };
             acp::ExtNotification::new(
-                "x.ai/session/update",
+                "kigi/session/update",
                 std::sync::Arc::from(serde_json::value::to_raw_value(&payload).unwrap()),
             )
         }
@@ -882,7 +882,7 @@
             meta: Some(serde_json::json!({ "isReplay": true, "eventId": "sess-sub-3" })),
         };
         let notif = acp::ExtNotification::new(
-            "x.ai/session_notification",
+            "kigi/session_notification",
             serde_json::value::to_raw_value(&payload).unwrap().into(),
         );
         assert!(handle_ext_notification(&notif, &mut app));
@@ -996,12 +996,12 @@
         let id = AgentId(0);
         {
             let agent = app.agents.get_mut(&id).unwrap();
-            seed_models(agent, "grok-3", &["grok-3", "grok-4"]);
+            seed_models(agent, "kigi-3", &["kigi-3", "kigi-4"]);
         }
 
         // Unknown model → ignored → both markers untouched.
         assert!(!handle_ext_notification(
-            &model_changed_ext_with_event("sess-1", "grok-99-unknown", "sess-1-7"),
+            &model_changed_ext_with_event("sess-1", "kigi-99-unknown", "sess-1-7"),
             &mut app
         ));
         assert_eq!(
@@ -1015,7 +1015,7 @@
 
         // Known model → applied → both markers advance.
         assert!(handle_ext_notification(
-            &model_changed_ext_with_event("sess-1", "grok-4", "sess-1-8"),
+            &model_changed_ext_with_event("sess-1", "kigi-4", "sess-1-8"),
             &mut app
         ));
         assert_eq!(

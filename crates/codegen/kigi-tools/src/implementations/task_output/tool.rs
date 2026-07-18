@@ -1,5 +1,5 @@
 //! Task output tool — old `impl Tool` deleted.
-//! Helper functions remain for use by `grok_build/task_output/`.
+//! Helper functions remain for use by `kigi/task_output/`.
 
 use crate::computer::types::TaskSnapshot;
 use crate::types::process_manager::format_system_time_rfc3339;

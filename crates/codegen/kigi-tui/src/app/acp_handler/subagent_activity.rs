@@ -98,6 +98,6 @@ pub(crate) fn finalize_killed_subagent(
     let Ok(params) = serde_json::value::to_raw_value(&payload) else {
         return false;
     };
-    let notif = acp::ExtNotification::new("x.ai/session/update", params.into());
+    let notif = acp::ExtNotification::new("kigi/session/update", params.into());
     handle_ext_notification(&notif, app)
 }

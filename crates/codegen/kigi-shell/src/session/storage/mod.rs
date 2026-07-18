@@ -92,8 +92,22 @@ impl Iterator for UpdatesIterator {
 /// Method name for standard ACP session/update notifications.
 const ACP_SESSION_UPDATE_METHOD: &str = "session/update";
 
-/// Method name for xAI extension session/update notifications.
-pub(crate) const XAI_SESSION_UPDATE_METHOD: &str = "_x.ai/session/update";
+/// Method name for extension session/update notifications.
+pub(crate) const XAI_SESSION_UPDATE_METHOD: &str = "_kigi/session/update";
+
+/// Pre-rebrand spelling of [`XAI_SESSION_UPDATE_METHOD`], as written into
+/// `updates.jsonl` by builds that predate the `kigi/` extension-method
+/// rename. READ-SIDE ALIAS ONLY: parsing accepts both spellings so existing
+/// session files keep loading; the write side always emits
+/// [`XAI_SESSION_UPDATE_METHOD`].
+pub(crate) const LEGACY_XAI_SESSION_UPDATE_METHOD: &str = "_x.ai/session/update";
+
+/// Whether `method` names the extension session-update rail, accepting the
+/// current spelling and the legacy pre-rebrand spelling (persisted session
+/// files written by older builds).
+pub(crate) fn is_ext_session_update_method(method: &str) -> bool {
+    method == XAI_SESSION_UPDATE_METHOD || method == LEGACY_XAI_SESSION_UPDATE_METHOD
+}
 
 /// A unified session update that can be either an ACP notification or an xAI extension notification.
 /// This allows storing all session updates in chronological order.
@@ -153,7 +167,7 @@ pub(crate) struct SessionUpdateEnvelope {
     #[serde(default)]
     pub timestamp: u64,
     /// The method name identifying the update type.
-    /// Either "session/update" for ACP or "_x.ai/session/update" for xAI extensions.
+    /// Either "session/update" for ACP or "_kigi/session/update" for xAI extensions.
     pub method: String,
     /// The actual notification payload.
     pub params: serde_json::Value,
@@ -183,7 +197,7 @@ impl SessionUpdateEnvelope {
 
     /// Convert this envelope back into a SessionUpdate.
     pub(crate) fn into_update(self) -> Result<SessionUpdate, serde_json::Error> {
-        if self.method == XAI_SESSION_UPDATE_METHOD {
+        if is_ext_session_update_method(&self.method) {
             let notification: SessionNotification = serde_json::from_value(self.params)?;
             Ok(SessionUpdate::Xai(Box::new(notification)))
         } else {
@@ -224,7 +238,7 @@ impl SessionUpdateEnvelope {
         // Try to parse as envelope first (has "method" + "params")
         if let Ok(envelope) = serde_json::from_str::<BorrowedEnvelope<'_>>(line) {
             let raw_params = envelope.params.get();
-            return if envelope.method == Some(XAI_SESSION_UPDATE_METHOD) {
+            return if envelope.method.is_some_and(is_ext_session_update_method) {
                 let notification: SessionNotification = serde_json::from_str(raw_params)?;
                 Ok(SessionUpdate::Xai(Box::new(notification)))
             } else {
@@ -774,7 +788,7 @@ pub(crate) fn filter_rewind_lines<'a>(lines: Vec<&'a str>) -> Vec<&'a str> {
     for line in &lines {
         let (raw_params, is_xai) = if let Ok(env) = serde_json::from_str::<RawLinePeek<'_>>(line) {
             let raw = env.params.map(|p| p.get()).unwrap_or(line);
-            let xai = env.method == Some(XAI_SESSION_UPDATE_METHOD);
+            let xai = env.method.is_some_and(is_ext_session_update_method);
             (raw, xai)
         } else {
             (*line, false)
@@ -923,7 +937,7 @@ pub fn load_updates_for_replay(
     load_updates_for_replay_from_dir(&session_dir)
 }
 
-/// Like [`load_updates_for_replay`], but resolves the session under a specific grok home.
+/// Like [`load_updates_for_replay`], but resolves the session under a specific kigi home.
 pub fn load_updates_for_replay_at(
     session_id: &str,
     kigi_home: &std::path::Path,
@@ -1666,7 +1680,7 @@ pub(crate) fn parse_prompt_extract_event(line: &str) -> PromptExtractEvent {
     // Step 1: try to extract the envelope (method + raw params).
     let (raw_params, is_xai) = if let Ok(env) = serde_json::from_str::<RawLinePeek<'_>>(line) {
         let raw = env.params.map(|p| p.get()).unwrap_or(line);
-        let xai = env.method == Some(XAI_SESSION_UPDATE_METHOD);
+        let xai = env.method.is_some_and(is_ext_session_update_method);
         (raw, xai)
     } else {
         // Not a valid envelope → try legacy format: the line IS the params.
@@ -1739,7 +1753,7 @@ mod tests {
     /// Wrap a xAI notification as the envelope stored in updates.jsonl.
     fn xai_envelope(session_update_json: &str) -> String {
         format!(
-            r#"{{"timestamp":1,"method":"_x.ai/session/update","params":{{"sessionId":"s","update":{session_update_json}}}}}"#
+            r#"{{"timestamp":1,"method":"_kigi/session/update","params":{{"sessionId":"s","update":{session_update_json}}}}}"#
         )
     }
 
@@ -2479,7 +2493,7 @@ mod tests {
             r#"{"eventId":"ev1"}"#,
         );
         // xAI-style line persisted by an older binary: no _meta at all.
-        let old_xai = r#"{"timestamp":2,"method":"_x.ai/session/update","params":{"sessionId":"s","update":{"sessionUpdate":"hook_annotation","message":"trailing"}}}"#;
+        let old_xai = r#"{"timestamp":2,"method":"_kigi/session/update","params":{"sessionId":"s","update":{"sessionUpdate":"hook_annotation","message":"trailing"}}}"#;
         let raw = format!("{a1}\n{old_xai}\n");
 
         let prepared = prepare_replay_lines(&raw, Some("ev1"));
@@ -2490,7 +2504,7 @@ mod tests {
         assert_eq!(prepared.lines.len(), 2, "full history is replayed");
 
         // Same history with the trailing line stamped resolves incrementally.
-        let new_xai = r#"{"timestamp":2,"method":"_x.ai/session/update","params":{"sessionId":"s","update":{"sessionUpdate":"hook_annotation","message":"trailing"},"_meta":{"eventId":"ev2"}}}"#;
+        let new_xai = r#"{"timestamp":2,"method":"_kigi/session/update","params":{"sessionId":"s","update":{"sessionUpdate":"hook_annotation","message":"trailing"},"_meta":{"eventId":"ev2"}}}"#;
         let raw = format!("{a1}\n{new_xai}\n");
         let prepared = prepare_replay_lines(&raw, Some("ev1"));
         assert!(!prepared.mark_replay);
@@ -2961,12 +2975,12 @@ mod tests {
     fn prepare_replay_reports_spawn_without_finish() {
         let spawn = |id: &str, child: &str| {
             format!(
-                r#"{{"method":"_x.ai/session/update","params":{{"sessionId":"s","update":{{"sessionUpdate":"subagent_spawned","subagent_id":"{id}","parent_session_id":"s","child_session_id":"{child}","subagent_type":"general-purpose","description":"task"}},"_meta":{{"eventId":"s-1"}}}}}}"#
+                r#"{{"method":"_kigi/session/update","params":{{"sessionId":"s","update":{{"sessionUpdate":"subagent_spawned","subagent_id":"{id}","parent_session_id":"s","child_session_id":"{child}","subagent_type":"general-purpose","description":"task"}},"_meta":{{"eventId":"s-1"}}}}}}"#
             )
         };
         let finish = |id: &str| {
             format!(
-                r#"{{"method":"_x.ai/session/update","params":{{"sessionId":"s","update":{{"sessionUpdate":"subagent_finished","subagent_id":"{id}","child_session_id":"c{id}","status":"completed","tool_calls":0,"turns":0,"duration_ms":0}},"_meta":{{"eventId":"s-2"}}}}}}"#
+                r#"{{"method":"_kigi/session/update","params":{{"sessionId":"s","update":{{"sessionUpdate":"subagent_finished","subagent_id":"{id}","child_session_id":"c{id}","status":"completed","tool_calls":0,"turns":0,"duration_ms":0}},"_meta":{{"eventId":"s-2"}}}}}}"#
             )
         };
         // `a` spawns and finishes (paired); `b` only spawns (orphan).
@@ -3138,5 +3152,39 @@ mod tests {
             }
             SessionUpdate::Acp(_) => panic!("expected Xai variant"),
         }
+    }
+
+    /// Session files written before the `kigi/` extension-method rename carry
+    /// the legacy `_…/session/update` method name. The read-side alias must
+    /// keep those lines loading as extension updates; the write side always
+    /// emits the current [`XAI_SESSION_UPDATE_METHOD`].
+    #[test]
+    fn from_str_accepts_legacy_pre_rebrand_method_name() {
+        let line = format!(
+            r#"{{"timestamp":1,"method":"{LEGACY_XAI_SESSION_UPDATE_METHOD}","params":{{"sessionId":"s","update":{{"sessionUpdate":"memory_flush_started"}}}}}}"#
+        );
+        let update = SessionUpdateEnvelope::from_str(&line).unwrap();
+        match &update {
+            SessionUpdate::Xai(notif) => {
+                assert_eq!(
+                    notif.update,
+                    crate::extensions::notification::SessionUpdate::MemoryFlushStarted
+                );
+            }
+            SessionUpdate::Acp(_) => panic!("expected Xai variant for legacy method name"),
+        }
+
+        // Both spellings classify as the extension rail; an unrelated method
+        // does not.
+        assert!(is_ext_session_update_method(XAI_SESSION_UPDATE_METHOD));
+        assert!(is_ext_session_update_method(
+            LEGACY_XAI_SESSION_UPDATE_METHOD
+        ));
+        assert!(!is_ext_session_update_method("session/update"));
+
+        // Write side: envelopes produced today carry the current name only.
+        let reserialized = serde_json::to_string(&update).unwrap();
+        assert!(reserialized.contains(XAI_SESSION_UPDATE_METHOD));
+        assert!(!reserialized.contains(LEGACY_XAI_SESSION_UPDATE_METHOD));
     }
 }

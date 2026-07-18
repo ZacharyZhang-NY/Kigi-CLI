@@ -28,15 +28,15 @@ use kigi_config::kigi_home;
 /// Which env var requested a single-file debug log (drives filter and diagnostics).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DebugSource {
-    GrokLogFile,
-    GrokDebugLog,
+    KigiLogFile,
+    KigiDebugLog,
 }
 
 impl DebugSource {
     fn label(self) -> &'static str {
         match self {
-            Self::GrokLogFile => "KIGI_LOG_FILE",
-            Self::GrokDebugLog => "KIGI_DEBUG_LOG",
+            Self::KigiLogFile => "KIGI_LOG_FILE",
+            Self::KigiDebugLog => "KIGI_DEBUG_LOG",
         }
     }
 }
@@ -62,7 +62,7 @@ pub const RMCP_SSE_NOISE_TARGET: &str = "rmcp::transport::common::client_side_ss
 
 // Broad firehose filter for the routing/KIGI_DEBUG_LOG sources: capture our
 // crates at debug regardless of a narrowing RUST_LOG, with deps at info so they
-// don't flood. Curated first-party allowlist: new grok crates default to `info`
+// don't flood. Curated first-party allowlist: new kigi crates default to `info`
 // until added here.
 const FIREHOSE_BASE_DIRECTIVES: &str = "info,kigi_tui=debug,kigi_shell=debug,kigi_tools=debug,kigi_log=debug,kigi_agent=debug,kigi_mcp=debug,kigi_acp_lib=debug,sampling_log=off";
 
@@ -382,8 +382,8 @@ where
         }
         Some(DebugTarget::SingleFile { path, src }) => {
             let filter = match src {
-                DebugSource::GrokLogFile => default_file_filter(),
-                DebugSource::GrokDebugLog => firehose_filter(),
+                DebugSource::KigiLogFile => default_file_filter(),
+                DebugSource::KigiDebugLog => firehose_filter(),
             };
             match build_file_layer::<S>(&path, filter) {
                 Ok(layer) => registry.with(layer).init(),
@@ -417,11 +417,11 @@ pub(crate) enum DebugTarget {
 ///
 /// Read via `var_os` (not `var`) so a non-UTF-8 path isn't silently dropped.
 pub(crate) fn resolve_debug_target() -> Option<DebugTarget> {
-    let grok_log_file = std::env::var_os("KIGI_LOG_FILE");
-    let grok_debug_log = std::env::var_os("KIGI_DEBUG_LOG");
+    let kigi_log_file = std::env::var_os("KIGI_LOG_FILE");
+    let kigi_debug_log = std::env::var_os("KIGI_DEBUG_LOG");
     resolve_debug_target_inner(
-        grok_log_file.as_deref(),
-        grok_debug_log.as_deref(),
+        kigi_log_file.as_deref(),
+        kigi_debug_log.as_deref(),
         &kigi_home().join("debug"),
     )
 }
@@ -447,19 +447,19 @@ fn os_path(v: &OsStr) -> PathBuf {
 // `OsStr` so non-UTF-8 paths round-trip; only the bool-vs-path discrimination
 // needs UTF-8 (a non-UTF-8 value can't be a bool keyword, so it's a path).
 fn resolve_debug_target_inner(
-    grok_log_file: Option<&OsStr>,
-    grok_debug_log: Option<&OsStr>,
+    kigi_log_file: Option<&OsStr>,
+    kigi_debug_log: Option<&OsStr>,
     debug_dir: &Path,
 ) -> Option<DebugTarget> {
-    if let Some(raw) = grok_log_file
+    if let Some(raw) = kigi_log_file
         && !is_blank(raw)
     {
         return Some(DebugTarget::SingleFile {
             path: os_path(raw),
-            src: DebugSource::GrokLogFile,
+            src: DebugSource::KigiLogFile,
         });
     }
-    let raw = grok_debug_log?;
+    let raw = kigi_debug_log?;
     match raw.to_str().map(str::trim) {
         Some("" | "0" | "false" | "off" | "no") => None,
         Some("1" | "true" | "on" | "yes") => Some(DebugTarget::PerSession {
@@ -468,7 +468,7 @@ fn resolve_debug_target_inner(
         // Any other UTF-8 value, or a non-UTF-8 value (`None`), is an explicit path.
         _ => Some(DebugTarget::SingleFile {
             path: os_path(raw),
-            src: DebugSource::GrokDebugLog,
+            src: DebugSource::KigiDebugLog,
         }),
     }
 }
@@ -596,7 +596,7 @@ mod tests {
             target,
             DebugTarget::SingleFile {
                 path: PathBuf::from("/tmp/custom.log"),
-                src: DebugSource::GrokDebugLog,
+                src: DebugSource::KigiDebugLog,
             }
         );
     }
@@ -613,7 +613,7 @@ mod tests {
             target,
             DebugTarget::SingleFile {
                 path: PathBuf::from("/tmp/explicit.log"),
-                src: DebugSource::GrokLogFile,
+                src: DebugSource::KigiLogFile,
             }
         );
     }
@@ -651,7 +651,7 @@ mod tests {
         let target = resolve_debug_target_inner(None, Some(raw), Path::new("/debug")).unwrap();
         match target {
             DebugTarget::SingleFile { path, src } => {
-                assert_eq!(src, DebugSource::GrokDebugLog);
+                assert_eq!(src, DebugSource::KigiDebugLog);
                 assert_eq!(path.as_os_str(), raw);
             }
             other => panic!("expected SingleFile for non-UTF-8 path, got {other:?}"),
@@ -954,7 +954,7 @@ mod tests {
     fn prune_old_logs_missing_dir_is_noop() {
         // Best-effort: a nonexistent debug dir must not panic.
         prune_old_logs(
-            Path::new("/no/such/grok/debug/dir"),
+            Path::new("/no/such/kigi/debug/dir"),
             std::time::Duration::from_secs(1),
         );
     }

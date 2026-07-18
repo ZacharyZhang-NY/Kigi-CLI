@@ -4,7 +4,7 @@ use crate::common::*;
 
 /// CLI `--minimal` / `--fullscreen` must not write `[ui] screen_mode` to
 /// config.toml. Mode flags are session-scoped; only a manual config.toml edit
-/// should make a mode sticky across plain `grok` launches.
+/// should make a mode sticky across plain `kigi` launches.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore]
 async fn minimal_cli_screen_mode_does_not_persist() {
@@ -51,7 +51,7 @@ async fn minimal_cli_screen_mode_does_not_persist() {
         .wait_for_text(WELCOME_SCREEN_SENTINEL, WELCOME_TIMEOUT)
         .unwrap_or_else(|e| {
             panic!(
-                "plain grok should open fullscreen after --minimal (no sticky write): {e}\nscreen:\n{}",
+                "plain kigi should open fullscreen after --minimal (no sticky write): {e}\nscreen:\n{}",
                 second.screen_contents()
             )
         });

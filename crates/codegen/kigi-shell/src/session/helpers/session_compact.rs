@@ -20,7 +20,7 @@ use reqwest::StatusCode;
 /// `<summary_request>` only -- the surrounding `<user_query>` is implicit
 /// because we push this as a `ConversationItem::user`.
 ///
-/// All other agents (grok-build, etc.) continue to use the detailed
+/// All other agents (kigi, etc.) continue to use the detailed
 /// structured prompt built inline in `generate_session_compact`.
 pub(crate) const SELF_SUMMARIZATION_PROMPT: &str = r#"<summary_request>
 Please summarize the conversation so far. This summary (everything after your
@@ -376,10 +376,10 @@ pub(crate) async fn generate_session_compact(
                     .with_tool_choice(ToolChoice::none());
             }
             let sid = session_id.to_string();
-            message.x_grok_conv_id = Some(sid.clone());
-            message.x_grok_req_id = Some(format!("xai-compact-{}", uuid::Uuid::new_v4()));
-            message.x_grok_session_id = Some(sid);
-            message.x_grok_agent_id = Some(crate::util::agent_id::agent_id());
+            message.x_kigi_conv_id = Some(sid.clone());
+            message.x_kigi_req_id = Some(format!("xai-compact-{}", uuid::Uuid::new_v4()));
+            message.x_kigi_session_id = Some(sid);
+            message.x_kigi_agent_id = Some(crate::util::agent_id::agent_id());
             tracing::info!(
                 compact_model = % sampling_config.model, num_messages = num_messages,
                 "Sending compact request (streaming)"
@@ -471,10 +471,10 @@ pub(crate) async fn generate_session_compact(
                 hosted_tools,
                 model: Some(sampling_config.model.to_owned()),
                 temperature: Some(1.0),
-                x_grok_conv_id: Some(session_id.to_string()),
-                x_grok_req_id: Some(format!("xai-compact-{}", uuid::Uuid::new_v4())),
-                x_grok_session_id: Some(session_id.to_string()),
-                x_grok_agent_id: Some(crate::util::agent_id::agent_id()),
+                x_kigi_conv_id: Some(session_id.to_string()),
+                x_kigi_req_id: Some(format!("xai-compact-{}", uuid::Uuid::new_v4())),
+                x_kigi_session_id: Some(session_id.to_string()),
+                x_kigi_agent_id: Some(crate::util::agent_id::agent_id()),
                 ..Default::default()
             };
             let stream_result = client.conversation_stream_responses(request).await;
@@ -593,10 +593,10 @@ pub(crate) async fn generate_session_compact(
                 hosted_tools,
                 model: Some(sampling_config.model.to_owned()),
                 temperature: Some(1.0),
-                x_grok_conv_id: Some(session_id.to_string()),
-                x_grok_req_id: Some(format!("xai-compact-{}", uuid::Uuid::new_v4())),
-                x_grok_session_id: Some(session_id.to_string()),
-                x_grok_agent_id: Some(crate::util::agent_id::agent_id()),
+                x_kigi_conv_id: Some(session_id.to_string()),
+                x_kigi_req_id: Some(format!("xai-compact-{}", uuid::Uuid::new_v4())),
+                x_kigi_session_id: Some(session_id.to_string()),
+                x_kigi_agent_id: Some(crate::util::agent_id::agent_id()),
                 ..Default::default()
             };
             let stream_result = client.conversation_stream_messages(request).await;
@@ -1127,13 +1127,13 @@ mod compacted_history_shape_tests {
         );
         assert_eq!(compacted.len(), 5);
     }
-    /// Regression guard: grok-build must DROP the working
-    /// tail post-compaction. A prior change routed grok-build to keep `recent_messages`,
+    /// Regression guard: kigi must DROP the working
+    /// tail post-compaction. A prior change routed kigi to keep `recent_messages`,
     /// which survive only as `Tool call omitted...` stubs (dead tokens). Mirrors
-    /// `summary_before_recent_compaction_with_no_user_query_yields_three_messages` for grok-build
+    /// `summary_before_recent_compaction_with_no_user_query_yields_three_messages` for kigi
     /// (`summary_before_recent = false`).
     #[tokio::test]
-    async fn grok_build_compaction_drops_working_tail_regression_206460() {
+    async fn kigi_compaction_drops_working_tail_regression_206460() {
         let conversation = vec![
             ConversationItem::system("You are a helpful assistant."),
             ConversationItem::user(
@@ -1163,7 +1163,7 @@ mod compacted_history_shape_tests {
         let dropped = full.for_compaction();
         assert!(
             dropped.recent_messages.is_empty(),
-            "grok-build must drop recent_messages post-compaction",
+            "kigi must drop recent_messages post-compaction",
         );
         let compacted = build_compacted_history(
             "You are a helpful assistant.",
@@ -1177,7 +1177,7 @@ mod compacted_history_shape_tests {
                 .iter()
                 .any(|i| matches!(i, ConversationItem::ToolResult(_))
                     || i.text_content() == "Tool call omitted..."),
-            "no tail (ToolResult or stub) may leak into the grok-build compacted history",
+            "no tail (ToolResult or stub) may leak into the kigi compacted history",
         );
     }
     /// Verify that the auto-continue prompt (sent after compaction) is also

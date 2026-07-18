@@ -1193,7 +1193,7 @@ async fn reasoning_only_doomloop_turn_captures_every_generation_as_segments() {
                     completion_tokens: Some(0),
                     reasoning_tokens: Some(4096),
                     prompt_tokens: Some(128),
-                    model: "grok-test".to_string(),
+                    model: "kigi-test".to_string(),
                     first_choice_seen: true,
                 }),
                 doom_loop_triggers: None,

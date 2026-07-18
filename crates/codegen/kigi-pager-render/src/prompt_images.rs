@@ -453,7 +453,7 @@ pub fn extract_poster_frame(path: &std::path::Path) -> Option<(Vec<u8>, u32, u32
 /// Create a unique temp directory path for frame extraction.
 fn make_temp_dir() -> PathBuf {
     std::env::temp_dir().join(format!(
-        "grok-video-{}-{}",
+        "kigi-video-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -2764,7 +2764,7 @@ mod tests {
         // time would still satisfy this assertion because the
         // anchor gate now rejects single-slash strings *before* any
         // URL parsing runs.
-        let pasted = "file:/tmp/should_not_exist_abc_grok_pager.png";
+        let pasted = "file:/tmp/should_not_exist_abc_kigi_pager.png";
         assert!(try_read_image_from_path(pasted).is_none());
     }
 
@@ -3583,7 +3583,7 @@ mod tests {
         // user might just have typed `/etc/passwd` as part of prose.
         // (The image branch already filters on file existence; this
         // mirrors that for the non-image branch.)
-        let entries = dropped_paths("/tmp/definitely_does_not_exist_xyz_grok_pager.txt");
+        let entries = dropped_paths("/tmp/definitely_does_not_exist_xyz_kigi_pager.txt");
         assert!(
             entries.is_empty(),
             "bare nonexistent path must fall through to prose; got {entries:?}"

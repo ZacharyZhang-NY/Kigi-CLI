@@ -49,10 +49,10 @@ fn dirs_next_home() -> Option<PathBuf> {
 /// auto-permission-mode feature gate pinned explicitly via `gate_on` so each
 /// test is self-contained and deterministic regardless of the runner's shell.
 fn prepare_sandbox(home: &Path, gate_on: bool) -> Vec<(String, String)> {
-    let grok = home.join(".kigi");
-    let _ = std::fs::create_dir_all(&grok);
+    let kigi = home.join(".kigi");
+    let _ = std::fs::create_dir_all(&kigi);
     if let Some(src) = auth_json_source() {
-        let dest = grok.join("auth.json");
+        let dest = kigi.join("auth.json");
         if let Err(e) = std::fs::copy(&src, &dest) {
             eprintln!("pty_auto_mode: could not copy auth.json ({e}); login may block mode cycle");
         } else {
@@ -69,7 +69,7 @@ fn prepare_sandbox(home: &Path, gate_on: bool) -> Vec<(String, String)> {
     let home_s = home.display().to_string();
     let mut env = vec![
         ("HOME".into(), home_s.clone()),
-        ("KIGI_SHARE_DIR".into(), grok.display().to_string()),
+        ("KIGI_SHARE_DIR".into(), kigi.display().to_string()),
         ("XDG_CONFIG_HOME".into(), format!("{home_s}/.config")),
         ("XDG_DATA_HOME".into(), format!("{home_s}/.local/share")),
         ("XDG_CACHE_HOME".into(), format!("{home_s}/.cache")),

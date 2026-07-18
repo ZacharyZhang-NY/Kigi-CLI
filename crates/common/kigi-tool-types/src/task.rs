@@ -1116,9 +1116,9 @@ mod tests {
     #[test]
     fn task_tool_input_model_parses_explicit() {
         let input: TaskToolInput =
-            serde_json::from_str(r#"{"description": "d", "prompt": "p", "model": "grok-3"}"#)
+            serde_json::from_str(r#"{"description": "d", "prompt": "p", "model": "kigi-3"}"#)
                 .unwrap();
-        assert_eq!(input.model.as_deref(), Some("grok-3"));
+        assert_eq!(input.model.as_deref(), Some("kigi-3"));
     }
 
     #[test]
@@ -1142,12 +1142,12 @@ mod tests {
     #[test]
     fn sanitize_optional_arg_moves_when_no_trim() {
         assert_eq!(
-            sanitize_optional_arg(Some("grok-3".into())).as_deref(),
-            Some("grok-3")
+            sanitize_optional_arg(Some("kigi-3".into())).as_deref(),
+            Some("kigi-3")
         );
         assert_eq!(
-            sanitize_optional_arg(Some("  grok-3  ".into())).as_deref(),
-            Some("grok-3")
+            sanitize_optional_arg(Some("  kigi-3  ".into())).as_deref(),
+            Some("kigi-3")
         );
         assert!(sanitize_optional_arg(Some("null".into())).is_none());
         assert!(sanitize_optional_arg(Some("  NULL  ".into())).is_none());
@@ -1375,8 +1375,8 @@ mod tests {
     // ── Lifecycle tool descriptions ──────────────────────────────────────
     //
     // These lock the exact model-facing text. The "cli_default" cases must
-    // match what the grok-shell MiniJinja templates render for the default
-    // grok-build toolset (monitor + task + bash + read present, POSIX). The
+    // match what the kigi-shell MiniJinja templates render for the default
+    // kigi toolset (monitor + task + bash + read present, POSIX). The
     // "toolbox" cases lock the subagent-only rendering used by the backend toolbox.
 
     #[test]

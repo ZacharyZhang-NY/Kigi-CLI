@@ -220,7 +220,7 @@ impl CommandRegistry {
     ///
     /// Entries are normalized via [`Self::normalize_deny_name`]. Restricted
     /// commands stay visible in the dropdown/completion (discoverability)
-    /// but disappear from `get()` — invoking one shows the SuperGrok upsell
+    /// but disappear from `get()` — invoking one shows the subscription upsell
     /// instead of executing (see the `dispatch_send_prompt_inner` hook).
     /// Pass an empty slice to clear the deny list (e.g. after a tier
     /// upgrade mid-session).
@@ -524,7 +524,7 @@ impl CommandRegistry {
             // triggers/key entries so the dropdown, ghost completion, and
             // palette show them like any other command (discoverability).
             // Execution is blocked by `get()`'s `restricted_match` filter —
-            // invoking one shows the SuperGrok upsell instead.
+            // invoking one shows the subscription upsell instead.
 
             // Insert canonical key.
             self.key_to_index.insert(canonical.to_string(), idx);

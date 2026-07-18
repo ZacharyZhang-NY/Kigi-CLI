@@ -3,7 +3,7 @@ license = "Apache-2.0"
 name = "kigi-markdown-core"
 version.workspace = true
 edition.workspace = true
-description = "Headless markdown analysis sharing Grok Build's exact pulldown-cmark config."
+description = "Headless markdown analysis sharing Kigi's exact pulldown-cmark config."
 
 [dependencies]
 pulldown-cmark = { workspace = true }

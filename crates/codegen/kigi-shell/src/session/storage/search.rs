@@ -8,7 +8,7 @@
 //! The index is bootstrapped (all sessions indexed) on first search.
 //! After that, individual sessions are re-indexed on save/title update
 //! via `notify_session_updated()`. Because the SQLite DB is shared with
-//! other concurrently running grok processes (which may wipe or downgrade
+//! other concurrently running kigi processes (which may wipe or downgrade
 //! it — older binaries drop-and-restamp the schema on open), every
 //! subsequent search re-verifies the on-disk completed-bootstrap marker
 //! and re-runs the full bootstrap when it is missing.
@@ -27,7 +27,7 @@ use super::search_fts::{SessionDoc, SessionSearchIndex, SessionSearchRow};
 use super::search_remote_sync;
 use super::{
     ContentPeek, PromptExtractEvent, RawLinePeek, RawParamsPeek, StorageAdapter,
-    XAI_SESSION_UPDATE_METHOD, collect_prompts_from_events,
+    collect_prompts_from_events, is_ext_session_update_method,
 };
 use crate::session::info::Info;
 use crate::session::persistence::Summary;
@@ -133,7 +133,7 @@ struct SearchManagerState {
 ///
 /// Requires an active tokio runtime on first access (spawns tasks).
 ///
-/// TODO: When multiple grok processes run concurrently, they each have
+/// TODO: When multiple kigi processes run concurrently, they each have
 /// their own `SearchIndexManager` writing to the same SQLite database.
 /// WAL mode prevents corruption, but redundant work is done. Consider
 /// adding reindex claim coordination (like the memory system's
@@ -921,7 +921,7 @@ fn collect_all_indexable_content_single_pass(updates_path: &Path) -> io::Result<
         let (raw_params, is_xai) = if let Ok(env) = serde_json::from_str::<RawLinePeek<'_>>(trimmed)
         {
             let raw = env.params.map(|p| p.get()).unwrap_or(trimmed);
-            let xai = env.method == Some(XAI_SESSION_UPDATE_METHOD);
+            let xai = env.method.is_some_and(is_ext_session_update_method);
             (raw, xai)
         } else {
             (trimmed, false)
@@ -938,7 +938,7 @@ fn collect_all_indexable_content_single_pass(updates_path: &Path) -> io::Result<
         // Content events (user messages, assistant responses, tool calls,
         // thoughts) come from the standard ACP protocol ("session/update").
         // Control events (rewind markers) come from xAI extensions
-        // ("_x.ai/session/update"). Dispatch on source first, then tag.
+        // ("_kigi/session/update"). Dispatch on source first, then tag.
         if !is_xai {
             // ── ACP content events ──────────────────────────────────
             match tag {
@@ -1176,7 +1176,7 @@ fn collect_delta_content(updates_path: &Path, offset: u64) -> io::Result<DeltaRe
         let (raw_params, is_xai) = if let Ok(env) = serde_json::from_str::<RawLinePeek<'_>>(trimmed)
         {
             let raw = env.params.map(|p| p.get()).unwrap_or(trimmed);
-            let xai = env.method == Some(XAI_SESSION_UPDATE_METHOD);
+            let xai = env.method.is_some_and(is_ext_session_update_method);
             (raw, xai)
         } else {
             (trimmed, false)
@@ -1389,7 +1389,7 @@ mod tests {
 
     fn xai_update(session_update_json: &str) -> String {
         format!(
-            r#"{{"timestamp":1,"method":"_x.ai/session/update","params":{{"sessionId":"s","update":{session_update_json}}}}}"#
+            r#"{{"timestamp":1,"method":"_kigi/session/update","params":{{"sessionId":"s","update":{session_update_json}}}}}"#
         )
     }
 

@@ -289,7 +289,7 @@ impl SessionActor {
         );
     }
     /// The activation reminder template for the active template (no
-    /// first-entry/reentry distinction), or grok's reentry/full variant.
+    /// first-entry/reentry distinction), or kigi's reentry/full variant.
     /// Shared by turn-start injection (`inject_plan_mode_reminders` case 1)
     /// and the mid-turn toggle (`activate_plan_mode_mid_turn`).
     fn plan_activation_template(&self, is_reentry: bool) -> &'static str {

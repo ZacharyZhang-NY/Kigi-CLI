@@ -361,7 +361,7 @@ def main() -> None:
     command = extract_command(envelope)
     if command is None or not command_is_recursive(command):
         sys.exit(0)  # nothing to block -> silent allow
-    # Deny. Emit the grok-native decision (read by this repo's runner) and the
+    # Deny. Emit the kigi-native decision (read by this repo's runner) and the
     # Claude-style hookSpecificOutput for forward-compatibility, put the reason
     # on stderr for runners that surface it there, and exit 2 so any exit-code
     # based runner blocks too.

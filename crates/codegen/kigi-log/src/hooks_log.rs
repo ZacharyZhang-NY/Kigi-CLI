@@ -12,9 +12,9 @@
 //! ## Enabling
 //!
 //! ```bash
-//! KIGI_HOOKS_LOG=1 grok              # enable, write to ~/.kigi/logs/hooks.log
-//! KIGI_HOOKS_LOG=/tmp/h.log grok     # write to custom path
-//! KIGI_HOOKS_LOG=0 grok              # explicitly disable
+//! KIGI_HOOKS_LOG=1 kigi              # enable, write to ~/.kigi/logs/hooks.log
+//! KIGI_HOOKS_LOG=/tmp/h.log kigi     # write to custom path
+//! KIGI_HOOKS_LOG=0 kigi              # explicitly disable
 //! tail -f ~/.kigi/logs/hooks.log     # watch in another terminal
 //! ```
 

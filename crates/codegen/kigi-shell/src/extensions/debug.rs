@@ -1,4 +1,4 @@
-//! `x.ai/debug/*` extension handlers for local client testing.
+//! `kigi/debug/*` extension handlers for local client testing.
 //!
 //! These methods bypass heuristics, sampling, cooldowns, and enabled checks
 //! so client engineers can exercise notification → response flows without
@@ -17,11 +17,11 @@ use crate::session::{ExtMethodResult, SessionCommand};
 #[tracing::instrument(skip_all, fields(method = %args.method))]
 pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/debug/trigger_feedback" => {
+        "kigi/debug/trigger_feedback" => {
             tracing::info!("debug: triggering test feedback request");
             handle_trigger_feedback(agent, args).await
         }
-        "x.ai/debug/arm_auto_compact" => handle_arm_auto_compact(agent, args),
+        "kigi/debug/arm_auto_compact" => handle_arm_auto_compact(agent, args),
         _ => Err(acp::Error::method_not_found()),
     }
 }

@@ -8,7 +8,7 @@ use super::common::*;
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore]
 async fn same_agent_type_switch_no_modal() {
-    // Both models have no agent_type → both use grok-build harness.
+    // Both models have no agent_type → both use kigi harness.
     let content = ContentController::start_with_models(vec![
         MockModel::new("model-a"),
         MockModel::new("model-b"),

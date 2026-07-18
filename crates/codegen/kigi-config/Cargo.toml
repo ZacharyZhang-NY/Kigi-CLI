@@ -3,7 +3,7 @@ license = "Apache-2.0"
 name = "kigi-config"
 version.workspace = true
 edition.workspace = true
-description = "Shared config loading for Grok — kigi_home, effective config (requirements > user > managed), TOML merge"
+description = "Shared config loading for Kigi — kigi_home, effective config (requirements > user > managed), TOML merge"
 
 [dependencies]
 base64 = { workspace = true }

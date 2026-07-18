@@ -85,7 +85,7 @@ mod tests {
             TerminalName::AppleTerminal,
             TerminalName::VsCode,
             TerminalName::WarpTerminal,
-            TerminalName::GrokDesktop,
+            TerminalName::KigiDesktop,
             TerminalName::Vte,
             TerminalName::Unknown,
         ];

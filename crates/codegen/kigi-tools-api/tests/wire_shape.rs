@@ -9,7 +9,7 @@ use kigi_tools_api::ToolConfigEntry;
 
 fn full_entry() -> ToolConfigEntry {
     ToolConfigEntry {
-        id: "GrokBuild:grep".to_owned(),
+        id: "Kigi:grep".to_owned(),
         params_json: Some(r#"{"max_results":50}"#.to_owned()),
         name_override: Some("search".to_owned()),
         params_name_overrides: std::collections::HashMap::from([(
@@ -27,7 +27,7 @@ fn tool_config_entry_serializes_to_pinned_json_shape() {
     assert_eq!(
         value,
         serde_json::json!({
-            "id": "GrokBuild:grep",
+            "id": "Kigi:grep",
             "params_json": "{\"max_results\":50}",
             "name_override": "search",
             "params_name_overrides": {"pattern": "query"},
@@ -48,10 +48,9 @@ fn tool_config_entry_round_trips() {
 #[test]
 fn minimal_entry_deserializes_from_id_only() {
     // Consumers must accept sparse payloads: optional fields absent, map empty.
-    let back: ToolConfigEntry =
-        serde_json::from_value(serde_json::json!({"id": "GrokBuild:read_file"}))
-            .expect("deserialize minimal");
-    assert_eq!(back.id, "GrokBuild:read_file");
+    let back: ToolConfigEntry = serde_json::from_value(serde_json::json!({"id": "Kigi:read_file"}))
+        .expect("deserialize minimal");
+    assert_eq!(back.id, "Kigi:read_file");
     assert_eq!(back.params_json, None);
     assert_eq!(back.name_override, None);
     assert!(back.params_name_overrides.is_empty());
@@ -73,7 +72,7 @@ fn explicit_null_optional_fields_deserialize_as_none() {
     // `#[serde(default)]` covers *absent* keys; explicit `null` is handled by
     // the `Option` fields themselves. Pin that both shapes are accepted.
     let back: ToolConfigEntry = serde_json::from_value(serde_json::json!({
-        "id": "GrokBuild:read_file",
+        "id": "Kigi:read_file",
         "params_json": null,
         "name_override": null,
         "behavior_version": null,
@@ -92,7 +91,7 @@ fn explicit_null_map_is_rejected() {
     // map. Producers must omit the key or emit `{}`. Pin the rejection so a
     // codegen change that silently starts accepting `null` is caught.
     let result: Result<ToolConfigEntry, _> = serde_json::from_value(serde_json::json!({
-        "id": "GrokBuild:read_file",
+        "id": "Kigi:read_file",
         "params_name_overrides": null,
     }));
     assert!(

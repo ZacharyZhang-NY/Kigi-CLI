@@ -1,4 +1,4 @@
-//! `x.ai/rollout/survey` extension handler.
+//! `kigi/rollout/survey` extension handler.
 //!
 //! Logs a rollout-survey submission via telemetry (Mixpanel + BigQuery).
 
@@ -11,7 +11,7 @@ use crate::session::{RolloutSurveyRequest, RolloutSurveyResponse};
 #[tracing::instrument(skip_all, fields(method = %args.method))]
 pub async fn handle(_agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/rollout/survey" => {
+        "kigi/rollout/survey" => {
             let req: RolloutSurveyRequest = parse_params(args)?;
 
             tracing::info_span!(

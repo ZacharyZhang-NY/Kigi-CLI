@@ -25,7 +25,7 @@ pub struct SessionConfigOption {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GrokSessionDetail {
+pub struct KigiSessionDetail {
     pub session_id: String,
     pub kind: String,
     pub cwd: String,
@@ -34,7 +34,7 @@ pub struct GrokSessionDetail {
     pub title: Option<String>,
 }
 
-impl GrokSessionDetail {
+impl KigiSessionDetail {
     pub fn build(
         session_id: String,
         cwd: String,
@@ -124,11 +124,8 @@ mod tests {
 
     #[test]
     fn options_have_one_selected_model_and_a_mode_per_effort() {
-        let models = [
-            model("grok-build", "Grok Build"),
-            model("grok-4.5", "Grok 4.5"),
-        ];
-        let current = acp::ModelId::from("grok-build");
+        let models = [model("kigi", "Kigi"), model("kigi-4.5", "Kigi 4.5")];
+        let current = acp::ModelId::from("kigi");
         let opts = build_session_config_options(
             &models,
             &current,
@@ -140,7 +137,7 @@ mod tests {
         assert_eq!(model_opts.len(), 2);
         let selected_models: Vec<_> = model_opts.iter().filter(|o| o.selected).collect();
         assert_eq!(selected_models.len(), 1);
-        assert_eq!(selected_models[0].id, "grok-build");
+        assert_eq!(selected_models[0].id, "kigi");
 
         let mode_opts: Vec<_> = opts.iter().filter(|o| o.category == "mode").collect();
         assert_eq!(mode_opts.len(), SELECTABLE_REASONING_EFFORTS.len());
@@ -153,8 +150,8 @@ mod tests {
     #[test]
     fn none_effort_is_not_a_user_selectable_mode() {
         assert!(!SELECTABLE_REASONING_EFFORTS.contains(&ReasoningEffort::None));
-        let models = [model("grok-build", "Grok Build")];
-        let current = acp::ModelId::from("grok-build");
+        let models = [model("kigi", "Kigi")];
+        let current = acp::ModelId::from("kigi");
         let opts = build_session_config_options(
             &models,
             &current,
@@ -168,8 +165,8 @@ mod tests {
 
     #[test]
     fn no_mode_options_when_model_lacks_effort_support() {
-        let models = [model("grok-build", "Grok Build")];
-        let current = acp::ModelId::from("grok-build");
+        let models = [model("kigi", "Kigi")];
+        let current = acp::ModelId::from("kigi");
         let opts = build_session_config_options(&models, &current, &[], None);
         assert_eq!(opts.len(), 1);
         assert!(opts.iter().all(|o| o.category == "model"));
@@ -177,42 +174,42 @@ mod tests {
 
     #[test]
     fn model_label_falls_back_to_id_when_name_empty() {
-        let models = [model("grok-build", "")];
-        let current = acp::ModelId::from("grok-build");
+        let models = [model("kigi", "")];
+        let current = acp::ModelId::from("kigi");
         let opts = build_session_config_options(&models, &current, &[], None);
-        assert_eq!(opts[0].label, "grok-build");
+        assert_eq!(opts[0].label, "kigi");
     }
 
     #[test]
     fn session_config_option_serializes_camel_case() {
         let opt = SessionConfigOption {
-            id: "grok-build".to_string(),
+            id: "kigi".to_string(),
             category: "model".to_string(),
-            label: "Grok Build".to_string(),
+            label: "Kigi".to_string(),
             description: None,
             selected: true,
         };
         let v = serde_json::to_value(&opt).expect("serialize");
-        assert_eq!(v["id"], "grok-build");
+        assert_eq!(v["id"], "kigi");
         assert_eq!(v["category"], "model");
-        assert_eq!(v["label"], "Grok Build");
+        assert_eq!(v["label"], "Kigi");
         assert_eq!(v["selected"], true);
         assert!(v.get("description").is_none());
     }
 
     #[test]
-    fn grok_session_detail_serializes_camel_case() {
-        let detail = GrokSessionDetail::build(
+    fn kigi_session_detail_serializes_camel_case() {
+        let detail = KigiSessionDetail::build(
             "sess-1".to_string(),
             "/Users/me/xai".to_string(),
-            "grok-build".to_string(),
+            "kigi".to_string(),
             None,
         );
         let v = serde_json::to_value(&detail).expect("serialize");
         assert_eq!(v["sessionId"], "sess-1");
         assert_eq!(v["kind"], "build");
         assert_eq!(v["cwd"], "/Users/me/xai");
-        assert_eq!(v["currentModelId"], "grok-build");
+        assert_eq!(v["currentModelId"], "kigi");
         assert!(v.get("title").is_none());
     }
 }

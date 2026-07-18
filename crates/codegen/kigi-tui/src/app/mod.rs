@@ -306,7 +306,7 @@ fn resolve_hunk_tracker_mode(
 /// its history). Sessions not found locally are restored from remote storage.
 ///
 /// Returns `Ok(true)` when the user accepted a pending update. The caller
-/// should print a message telling the user to relaunch `grok`.
+/// should print a message telling the user to relaunch `kigi`.
 pub async fn run(
     args: PagerArgs,
     bg_update_rx: Option<
@@ -618,9 +618,9 @@ fn print_exit_resume_hint(session_id: &str, minimal: bool, w: &mut impl Write) {
     let _ = writeln!(w);
     let _ = writeln!(w, "Resume this session with:");
     if minimal {
-        let _ = writeln!(w, "  grok --minimal --resume {session_id}");
+        let _ = writeln!(w, "  kigi --minimal --resume {session_id}");
     } else {
-        let _ = writeln!(w, "  grok --resume {session_id}");
+        let _ = writeln!(w, "  kigi --resume {session_id}");
     }
 }
 /// Screen-mode relaunch failure fallback (same quit tail as plain resume).
@@ -1169,16 +1169,16 @@ pub(crate) fn set_terminal_title(title: &str) {
 }
 /// Sanitized/truncated window title. Strips control characters: crossterm's
 /// `SetTitle` emits the string raw inside an OSC sequence, so an embedded
-/// BEL/ESC (titles can arrive from grok.com conversation metadata) would
+/// BEL/ESC (titles can arrive from kimi.com conversation metadata) would
 /// terminate the OSC early and let the remainder inject arbitrary escape
 /// sequences into the terminal.
 fn terminal_title_string(title: &str) -> String {
     let sanitized: String = title.chars().filter(|c| !c.is_control()).collect();
     if sanitized.is_empty() {
-        "grok".into()
+        "kigi".into()
     } else {
         let truncated: String = sanitized.chars().take(80 - 6).collect();
-        format!("{} - grok", truncated)
+        format!("{} - kigi", truncated)
     }
 }
 fn set_panic_hook(mode: ScreenMode) {
@@ -1221,11 +1221,11 @@ mod tests {
     fn terminal_title_strips_control_characters() {
         assert_eq!(
             terminal_title_string("evil\x07\x1b]52;c;payload\x07title"),
-            "evil]52;c;payloadtitle - grok"
+            "evil]52;c;payloadtitle - kigi"
         );
-        assert_eq!(terminal_title_string("\x07\x1b\x00"), "grok");
-        assert_eq!(terminal_title_string(""), "grok");
-        assert_eq!(terminal_title_string("My chat"), "My chat - grok");
+        assert_eq!(terminal_title_string("\x07\x1b\x00"), "kigi");
+        assert_eq!(terminal_title_string(""), "kigi");
+        assert_eq!(terminal_title_string("My chat"), "My chat - kigi");
     }
     #[test]
     fn hunk_tracker_mode_nothing_set_is_none() {
@@ -1316,24 +1316,24 @@ mod tests {
     }
     #[test]
     fn cli_leader_and_no_leader_conflict() {
-        let result = try_parse_pager(&["grok-pager", "--leader", "--no-leader"]);
+        let result = try_parse_pager(&["kigi-pager", "--leader", "--no-leader"]);
         assert!(result.is_err());
     }
     #[test]
     fn cli_leader_flag_parses() {
-        let args = try_parse_pager(&["grok-pager", "--leader"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "--leader"]).unwrap();
         assert!(args.leader);
         assert!(!args.no_leader);
     }
     #[test]
     fn cli_no_leader_flag_parses() {
-        let args = try_parse_pager(&["grok-pager", "--no-leader"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "--no-leader"]).unwrap();
         assert!(!args.leader);
         assert!(args.no_leader);
     }
     #[test]
     fn cli_neither_leader_flag_defaults_false() {
-        let args = try_parse_pager(&["grok-pager"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager"]).unwrap();
         assert!(!args.leader);
         assert!(!args.no_leader);
     }
@@ -1348,13 +1348,13 @@ mod tests {
     /// main() must reject the combination at runtime.
     #[test]
     fn cli_top_level_leader_with_agent_subcommand_parses_flag() {
-        let args = try_parse_pager(&["grok-pager", "--leader", "agent", "stdio"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "--leader", "agent", "stdio"]).unwrap();
         assert!(args.leader);
         assert!(matches!(args.command, Some(Command::Agent(_))));
     }
     #[test]
     fn cli_top_level_no_leader_with_agent_subcommand_parses_flag() {
-        let args = try_parse_pager(&["grok-pager", "--no-leader", "agent", "stdio"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "--no-leader", "agent", "stdio"]).unwrap();
         assert!(args.no_leader);
         assert!(matches!(args.command, Some(Command::Agent(_))));
     }
@@ -1362,7 +1362,7 @@ mod tests {
     /// (kimi-cli parity, F6 — the `acp` alias relies on the same default).
     #[test]
     fn cli_bare_agent_subcommand_defaults_to_stdio() {
-        let args = try_parse_pager(&["grok-pager", "agent"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "agent"]).unwrap();
         let Some(Command::Agent(agent)) = args.command else {
             panic!("expected agent subcommand");
         };
@@ -1376,73 +1376,73 @@ mod tests {
     }
     #[test]
     fn cli_resume_parses_session_id() {
-        let args = try_parse_pager(&["grok-pager", "--resume", "abc-123"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "--resume", "abc-123"]).unwrap();
         assert_eq!(args.session_to_resume(), Some("abc-123"));
     }
     #[test]
     fn cli_short_r_parses_session_id() {
-        let args = try_parse_pager(&["grok-pager", "-r", "abc-123"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "-r", "abc-123"]).unwrap();
         assert_eq!(args.session_to_resume(), Some("abc-123"));
     }
     #[test]
     fn cli_load_alias_parses_session_id() {
-        let args = try_parse_pager(&["grok-pager", "--load", "abc-123"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "--load", "abc-123"]).unwrap();
         assert_eq!(args.session_to_resume(), Some("abc-123"));
     }
     #[test]
     fn cli_resume_preferred_over_load() {
-        let mut args = try_parse_pager(&["grok-pager", "--resume", "from-resume"]).unwrap();
+        let mut args = try_parse_pager(&["kigi-pager", "--resume", "from-resume"]).unwrap();
         args.load_session = Some("from-load".into());
         assert_eq!(args.session_to_resume(), Some("from-resume"));
     }
     #[test]
     fn cli_continue_flag_parses() {
-        let args = try_parse_pager(&["grok-pager", "--continue"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "--continue"]).unwrap();
         assert!(args.continue_last_session);
         assert_eq!(args.session_to_resume(), None);
     }
     #[test]
     fn cli_continue_short_c_parses() {
-        let args = try_parse_pager(&["grok-pager", "-c"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "-c"]).unwrap();
         assert!(args.continue_last_session);
     }
     #[test]
     fn cli_resume_no_id_sets_empty_sentinel() {
-        let args = try_parse_pager(&["grok-pager", "--resume"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "--resume"]).unwrap();
         assert_eq!(args.resume_session.as_deref(), Some(""));
         assert!(args.resume_most_recent());
         assert_eq!(args.session_to_resume(), None);
     }
     #[test]
     fn cli_short_r_no_id_sets_empty_sentinel() {
-        let args = try_parse_pager(&["grok-pager", "-r"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "-r"]).unwrap();
         assert_eq!(args.resume_session.as_deref(), Some(""));
         assert!(args.resume_most_recent());
     }
     #[test]
     fn cli_resume_with_id_is_not_most_recent() {
-        let args = try_parse_pager(&["grok-pager", "--resume", "abc-123"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "--resume", "abc-123"]).unwrap();
         assert!(!args.resume_most_recent());
         assert_eq!(args.session_to_resume(), Some("abc-123"));
     }
     #[test]
     fn cli_no_resume_is_not_most_recent() {
-        let args = try_parse_pager(&["grok-pager"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager"]).unwrap();
         assert!(!args.resume_most_recent());
     }
     #[test]
     fn cli_continue_conflicts_with_resume() {
-        let result = try_parse_pager(&["grok-pager", "--continue", "--resume", "abc"]);
+        let result = try_parse_pager(&["kigi-pager", "--continue", "--resume", "abc"]);
         assert!(result.is_err());
     }
     #[test]
     fn cli_continue_conflicts_with_load() {
-        let result = try_parse_pager(&["grok-pager", "--continue", "--load", "abc"]);
+        let result = try_parse_pager(&["kigi-pager", "--continue", "--load", "abc"]);
         assert!(result.is_err());
     }
     #[test]
     fn cli_no_session_flags_defaults() {
-        let args = try_parse_pager(&["grok-pager"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager"]).unwrap();
         assert!(!args.continue_last_session);
         assert!(args.worktree.is_none());
         assert_eq!(args.session_to_resume(), None);
@@ -1452,7 +1452,7 @@ mod tests {
     /// binary given that flag fails clap parsing instead of silently ignoring.
     #[test]
     fn cli_chat_flag_rejected_without_feature() {
-        assert!(try_parse_pager(&["grok-pager", "--chat"]).is_err());
+        assert!(try_parse_pager(&["kigi-pager", "--chat"]).is_err());
     }
     #[test]
     fn chat_mode_leader_guard_truth_table() {
@@ -1469,49 +1469,49 @@ mod tests {
     }
     #[test]
     fn cli_worktree_flag_parses() {
-        let args = try_parse_pager(&["grok-pager", "--worktree"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "--worktree"]).unwrap();
         assert_eq!(args.worktree.as_deref(), Some(""));
     }
     #[test]
     fn cli_worktree_short_w_parses() {
-        let args = try_parse_pager(&["grok-pager", "-w"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "-w"]).unwrap();
         assert_eq!(args.worktree.as_deref(), Some(""));
     }
     #[test]
     fn cli_worktree_with_label() {
-        let args = try_parse_pager(&["grok-pager", "-w", "my-label"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "-w", "my-label"]).unwrap();
         assert_eq!(args.worktree.as_deref(), Some("my-label"));
     }
     #[test]
     fn cli_worktree_long_with_label() {
-        let args = try_parse_pager(&["grok-pager", "--worktree", "fix-bug"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "--worktree", "fix-bug"]).unwrap();
         assert_eq!(args.worktree.as_deref(), Some("fix-bug"));
     }
     #[test]
     fn cli_worktree_with_empty_string() {
-        let args = try_parse_pager(&["grok-pager", "-w", ""]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "-w", ""]).unwrap();
         assert_eq!(args.worktree.as_deref(), Some(""));
     }
     #[test]
     fn cli_worktree_with_resume_parses() {
-        let args = try_parse_pager(&["grok-pager", "-w", "--resume", "abc"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "-w", "--resume", "abc"]).unwrap();
         assert_eq!(args.worktree.as_deref(), Some(""));
         assert_eq!(args.session_to_resume(), Some("abc"));
     }
     #[test]
     fn cli_worktree_label_with_resume() {
-        let args = try_parse_pager(&["grok-pager", "-w", "my-label", "--resume", "abc"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "-w", "my-label", "--resume", "abc"]).unwrap();
         assert_eq!(args.worktree.as_deref(), Some("my-label"));
         assert_eq!(args.session_to_resume(), Some("abc"));
     }
     #[test]
     fn cli_worktree_default_none() {
-        let args = try_parse_pager(&["grok-pager"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager"]).unwrap();
         assert!(args.worktree.is_none());
     }
     #[test]
     fn cli_session_id_parses() {
-        let args = try_parse_pager(&["grok-pager", "--session-id", "my-id"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "--session-id", "my-id"]).unwrap();
         assert_eq!(args.session_id.as_deref(), Some("my-id"));
         assert!(matches!(
             args.session_startup_intent().unwrap(),
@@ -1520,38 +1520,38 @@ mod tests {
     }
     #[test]
     fn cli_session_id_short_s_parses() {
-        let args = try_parse_pager(&["grok-pager", "-s", "my-id"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "-s", "my-id"]).unwrap();
         assert_eq!(args.session_id.as_deref(), Some("my-id"));
     }
     #[test]
     fn cli_session_id_with_resume_requires_fork() {
-        let args = try_parse_pager(&["grok-pager", "-s", "a", "--resume", "b"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "-s", "a", "--resume", "b"]).unwrap();
         assert!(args.session_startup_intent().is_err());
     }
     #[test]
     fn cli_session_id_with_continue_requires_fork() {
-        let args = try_parse_pager(&["grok-pager", "-s", "a", "--continue"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "-s", "a", "--continue"]).unwrap();
         assert!(args.session_startup_intent().is_err());
     }
     #[test]
     fn cli_session_id_with_resume_and_fork_ok() {
         let args =
-            try_parse_pager(&["grok-pager", "-s", "a", "--resume", "b", "--fork-session"]).unwrap();
+            try_parse_pager(&["kigi-pager", "-s", "a", "--resume", "b", "--fork-session"]).unwrap();
         assert!(args.session_startup_intent().is_ok());
     }
     #[test]
     fn cli_session_id_default_none() {
-        let args = try_parse_pager(&["grok-pager"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager"]).unwrap();
         assert!(args.session_id.is_none());
     }
     #[test]
     fn cli_no_alt_screen_flag_parses() {
-        let args = try_parse_pager(&["grok-pager", "--no-alt-screen"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "--no-alt-screen"]).unwrap();
         assert!(args.no_alt_screen);
     }
     #[test]
     fn cli_no_alt_screen_default_false() {
-        let args = try_parse_pager(&["grok-pager"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager"]).unwrap();
         assert!(!args.no_alt_screen);
     }
     #[test]
@@ -1580,12 +1580,12 @@ mod tests {
     #[test]
     fn cli_completions_parses() {
         use clap_complete::Shell;
-        let args = try_parse_pager(&["grok-pager", "completions", "zsh"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "completions", "zsh"]).unwrap();
         assert!(matches!(
             args.command,
             Some(Command::Completions { shell: Shell::Zsh })
         ));
-        let args = try_parse_pager(&["grok-pager", "completions", "bash"]).unwrap();
+        let args = try_parse_pager(&["kigi-pager", "completions", "bash"]).unwrap();
         assert!(matches!(
             args.command,
             Some(Command::Completions { shell: Shell::Bash })
@@ -1607,7 +1607,7 @@ mod tests {
         print_exit_resume_hint("sess-abc", false, &mut buf);
         assert_eq!(
             String::from_utf8(buf).unwrap(),
-            "\nResume this session with:\n  grok --resume sess-abc\n"
+            "\nResume this session with:\n  kigi --resume sess-abc\n"
         );
     }
     #[test]
@@ -1616,7 +1616,7 @@ mod tests {
         print_exit_resume_hint("sess-abc", true, &mut buf);
         assert_eq!(
             String::from_utf8(buf).unwrap(),
-            "\nResume this session with:\n  grok --minimal --resume sess-abc\n"
+            "\nResume this session with:\n  kigi --minimal --resume sess-abc\n"
         );
     }
     #[test]

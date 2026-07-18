@@ -1,9 +1,9 @@
 //! MCP extension methods and business logic.
 //!
-//! - `x.ai/mcp/list` — list available MCP servers (agent-scoped or session-annotated)
-//! - `x.ai/mcp/call` — invoke an MCP tool directly, outside the LLM loop
-//! - `x.ai/mcp/servers_updated` — notification pushed when the server list changes
-//! - `x.ai/mcp/server_status` — per-server delta pushed by the
+//! - `kigi/mcp/list` — list available MCP servers (agent-scoped or session-annotated)
+//! - `kigi/mcp/call` — invoke an MCP tool directly, outside the LLM loop
+//! - `kigi/mcp/servers_updated` — notification pushed when the server list changes
+//! - `kigi/mcp/server_status` — per-server delta pushed by the
 //!   `StatusDispatcher` (transport-closed pollers, handshake failures,
 //!   config diffs, server-pushed list-changed notifications). See
 //!   [`crate::session::mcp_dispatcher`] for the coalescing /
@@ -24,7 +24,7 @@ use kigi_mcp::wire;
 
 use super::{ExtResult, parse_params, to_ext_response};
 
-/// Agent-only `x.ai/mcp/*` ACP method/notification names.
+/// Agent-only `kigi/mcp/*` ACP method/notification names.
 ///
 /// Unlike [`wire::MCP_CALL`] (the cross-SDK contract, which stays in
 /// `kigi_mcp::wire`), these methods are private to the agent↔client channel and
@@ -32,20 +32,20 @@ use super::{ExtResult, parse_params, to_ext_response};
 /// same string literal across dispatch and notification send sites.
 pub mod mcp_methods {
     /// Shared prefix that routes every MCP ext method to this module's dispatcher.
-    pub const PREFIX: &str = "x.ai/mcp/";
+    pub const PREFIX: &str = "kigi/mcp/";
 
-    pub const LIST: &str = "x.ai/mcp/list";
-    pub const READ_RESOURCE: &str = "x.ai/mcp/read_resource";
-    pub const AUTH_STATUS: &str = "x.ai/mcp/auth_status";
-    pub const AUTH_TRIGGER: &str = "x.ai/mcp/auth_trigger";
-    pub const TOGGLE: &str = "x.ai/mcp/toggle";
-    pub const TOGGLE_TOOL: &str = "x.ai/mcp/toggle_tool";
-    pub const UPSERT: &str = "x.ai/mcp/upsert";
-    pub const DELETE: &str = "x.ai/mcp/delete";
+    pub const LIST: &str = "kigi/mcp/list";
+    pub const READ_RESOURCE: &str = "kigi/mcp/read_resource";
+    pub const AUTH_STATUS: &str = "kigi/mcp/auth_status";
+    pub const AUTH_TRIGGER: &str = "kigi/mcp/auth_trigger";
+    pub const TOGGLE: &str = "kigi/mcp/toggle";
+    pub const TOGGLE_TOOL: &str = "kigi/mcp/toggle_tool";
+    pub const UPSERT: &str = "kigi/mcp/upsert";
+    pub const DELETE: &str = "kigi/mcp/delete";
 
-    pub const SERVERS_UPDATED: &str = "x.ai/mcp/servers_updated";
-    pub const TOOLS_CHANGED: &str = "x.ai/mcp/tools_changed";
-    pub const INIT_PROGRESS: &str = "x.ai/mcp/init_progress";
+    pub const SERVERS_UPDATED: &str = "kigi/mcp/servers_updated";
+    pub const TOOLS_CHANGED: &str = "kigi/mcp/tools_changed";
+    pub const INIT_PROGRESS: &str = "kigi/mcp/init_progress";
 }
 use crate::agent::MvpAgent;
 use crate::session::mcp_servers::{MCP_TOOL_NAME_DELIMITER, McpClient, McpServerName, McpState};
@@ -247,9 +247,9 @@ pub struct McpToolsChanged {
     pub tools: Vec<McpToolEntry>,
 }
 
-// Re-export the `x.ai/mcp/server_status` schema +
+// Re-export the `kigi/mcp/server_status` schema +
 // method constant from the dispatcher module so external callers
-// have a single import point alongside the other `x.ai/mcp/*`
+// have a single import point alongside the other `kigi/mcp/*`
 // types.
 //
 // The canonical definitions still live in
@@ -308,13 +308,13 @@ pub async fn notify_servers_updated(
     if let Ok(params) = serde_json::value::to_raw_value(&payload) {
         let notification = acp::ExtNotification::new(mcp_methods::SERVERS_UPDATED, params.into());
         let _ = gateway.ext_notification(notification).await;
-        tracing::info!("Sent x.ai/mcp/servers_updated notification to client");
+        tracing::info!("Sent kigi/mcp/servers_updated notification to client");
     }
 }
 
 // ── Dispatch ────────────────────────────────────────────────────────
 
-/// Inbound `x.ai/mcp/*` methods this agent services, resolved from the wire string.
+/// Inbound `kigi/mcp/*` methods this agent services, resolved from the wire string.
 ///
 /// Single source of truth for forward-method routing: [`handle`] maps each variant to
 /// its handler, and an unknown method yields `None` → `method_not_found`. The reverse
@@ -1403,7 +1403,7 @@ async fn handle_delete(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
 mod tests {
     use super::*;
 
-    /// The emit-only reverse method (`x.ai/mcp/sdk_call`) shares the `x.ai/mcp/`
+    /// The emit-only reverse method (`kigi/mcp/sdk_call`) shares the `kigi/mcp/`
     /// prefix, so `mvp_agent`'s dispatcher routes an inbound copy of it to this
     /// module's `handle`. It must NOT collide with any forward route — i.e. it has no
     /// `McpRoute`, so `handle` returns `method_not_found` instead of misrouting a stray
@@ -1417,7 +1417,7 @@ mod tests {
         assert_eq!(
             route_mcp_method(wire::MCP_SDK_CALL),
             None,
-            "inbound x.ai/mcp/sdk_call must not resolve to a forward handler"
+            "inbound kigi/mcp/sdk_call must not resolve to a forward handler"
         );
         // Sanity: the forward sibling on the same prefix DOES route.
         assert_eq!(route_mcp_method(wire::MCP_CALL), Some(McpRoute::Call));

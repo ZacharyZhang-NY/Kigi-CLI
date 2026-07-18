@@ -28,7 +28,7 @@ async fn requirements_version_failure_exits_2_with_guidance() {
     )
     .expect("spawn pager");
 
-    let msg = "Update Grok to a version the policy allows";
+    let msg = "Update Kigi to a version the policy allows";
     // This single budget must cover the child's cold *exec* (a ~680MB unoptimized
     // debug binary) plus reaching `main()` and running `validate_requirements` —
     // all before the runtime/TUI. Under the ~60-way-parallel `pty_e2e` suite,

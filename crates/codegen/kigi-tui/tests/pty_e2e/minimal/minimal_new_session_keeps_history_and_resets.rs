@@ -10,13 +10,13 @@ use crate::common::*;
 /// The first turn is genuinely taller than the screen (a fenced code block, not
 /// reflowable prose) so the first welcome card and the turn's head scroll into
 /// *native scrollback* before `/new`. The robust "new session" signal is then
-/// that a *second* welcome card appears (two `Grok Build` banners in
+/// that a *second* welcome card appears (two `Kigi` banners in
 /// scrollback+screen), independent of exactly how content scrolled.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore]
 async fn minimal_new_session_keeps_history_and_resets() {
     /// Substring printed once per minimal welcome card (see `minimal::welcome`).
-    const WELCOME_BANNER: &str = "Grok Build";
+    const WELCOME_BANNER: &str = "Kigi";
 
     let content = ContentController::start().await.expect("start content");
     // Code-block rows (not prose, which markdown-reflows to fit on screen) so

@@ -534,7 +534,7 @@ pub(crate) fn builtin_commands(availability: CommandAvailability) -> Vec<acp::Av
         .collect()
 }
 
-// ── x.ai/commands/list ext method ────────────────────────────────
+// ── kigi/commands/list ext method ────────────────────────────────
 
 #[derive(serde::Deserialize)]
 pub(crate) struct ListCommandsRequest {
@@ -731,7 +731,7 @@ impl BuiltinAction {
 /// How to rewrite the user's prompt when a slash command resolves to a skill.
 ///
 /// - `RewriteToRun` (default): replace `/foo args` with `"run /foo args"`,
-///   matching today's Grok Build flow that calls our dedicated `skill` tool.
+///   matching today's Kigi flow that calls our dedicated `skill` tool.
 /// - `Passthrough`: leave the prompt verbatim. Some templates use this —
 ///   the model is trained to spot a leading `/<name>`, look it up in the
 ///   `<agent_skills>` listing, and call the Read tool on `fullPath`.
@@ -1081,7 +1081,7 @@ fn parse_slash_prefix(prompt_blocks: &[acp::ContentBlock]) -> Option<(&str, &str
 /// default: the model derives the cadence from the request and asks when none
 /// is given.
 fn build_loop_prompt_blocks(args: &str) -> Vec<acp::ContentBlock> {
-    use kigi_tools::implementations::grok_build::{loop_schedule_instruction, loop_usage_message};
+    use kigi_tools::implementations::kigi::{loop_schedule_instruction, loop_usage_message};
 
     let text = if args.trim().is_empty() {
         loop_usage_message().to_string()
@@ -1685,9 +1685,7 @@ mod tests {
     #[test]
     fn loop_prompt_matches_pager_wording() {
         // The shell and pager must stay textually identical so they don't drift.
-        use kigi_tools::implementations::grok_build::{
-            loop_schedule_instruction, loop_usage_message,
-        };
+        use kigi_tools::implementations::kigi::{loop_schedule_instruction, loop_usage_message};
         assert_eq!(loop_text(""), loop_usage_message());
         assert_eq!(
             loop_text("2h run tests"),

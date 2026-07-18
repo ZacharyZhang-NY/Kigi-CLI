@@ -68,7 +68,7 @@ async fn removed_queued_prompt_never_sent() {
     }
 
     // `queued alpha` vanished optimistically the instant `x` was handled; give
-    // the `x.ai/queue/remove` RPC time to reach the shell and mutate the
+    // the `kigi/queue/remove` RPC time to reach the shell and mutate the
     // authoritative queue before we let turn 1 complete. Turn 1 stays gated
     // throughout, so the removal always lands while `alpha` is still queued
     // (never promoted) — the survivor `bravo` is the only thing left to run.

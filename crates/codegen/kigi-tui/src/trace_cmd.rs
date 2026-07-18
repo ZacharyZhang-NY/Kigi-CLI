@@ -159,7 +159,7 @@ pub(crate) fn find_session_dir(session_id: &str) -> Result<PathBuf> {
     kigi_shell::session::persistence::find_session_dir_by_id(session_id).with_context(|| {
         format!(
             "Session '{session_id}' not found under {}",
-            crate::util::display_user_grok_path("sessions")
+            crate::util::display_user_kigi_path("sessions")
         )
     })
 }

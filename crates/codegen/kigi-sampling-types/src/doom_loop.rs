@@ -1,6 +1,6 @@
 //! Server-side doom-loop check: wire contract types and tolerant parsers.
 //!
-//! When the client opts in via the `x-grok-doom-loop-check` request header,
+//! When the client opts in via the `x-kigi-doom-loop-check` request header,
 //! the inference API reports detected generation loops on streaming
 //! `/v1/responses` requests in two places:
 //!
@@ -22,7 +22,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Request header whose presence enables the server-side check.
-pub const DOOM_LOOP_CHECK_HEADER: &str = "x-grok-doom-loop-check";
+pub const DOOM_LOOP_CHECK_HEADER: &str = "x-kigi-doom-loop-check";
 
 /// `type` of the non-standard mid-stream SSE event — also its SSE `event:`
 /// name. async-openai's typed `rs::ResponseStreamEvent` does not know this

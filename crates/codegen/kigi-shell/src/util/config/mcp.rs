@@ -1329,7 +1329,7 @@ auto_update = true
         // Test with no cli section at all
         let toml_str = r#"
 [models]
-default = "grok-code-fast-1"
+default = "kigi-code-fast-1"
 "#;
         let root: TomlValue = toml::from_str(toml_str).unwrap();
         if let TomlValue::Table(ref table) = root {
@@ -1374,7 +1374,7 @@ auto_update = true
     fn test_use_leader_opt_returns_none_when_no_cli_section() {
         let toml_str = r#"
 [models]
-default = "grok-code-fast-1"
+default = "kigi-code-fast-1"
 "#;
         let root: TomlValue = toml::from_str(toml_str).unwrap();
         assert_eq!(use_leader_from_toml_opt(&root), None);
@@ -1702,10 +1702,10 @@ expose_image_base64 = true
     #[test]
     fn mcp_json_all_toml_names_includes_disabled() {
         let tmp = tempfile::tempdir().unwrap();
-        let grok_dir = tmp.path().join(".kigi");
-        std::fs::create_dir_all(&grok_dir).unwrap();
+        let kigi_dir = tmp.path().join(".kigi");
+        std::fs::create_dir_all(&kigi_dir).unwrap();
         std::fs::write(
-            grok_dir.join("config.toml"),
+            kigi_dir.join("config.toml"),
             r#"
 [mcp_servers.enabled_one]
 url = "https://example.com"

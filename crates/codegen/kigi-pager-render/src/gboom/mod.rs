@@ -666,7 +666,7 @@ mod tests {
     #[test]
     #[ignore]
     fn dump_frames_for_visual_inspection() {
-        let dir = std::env::temp_dir().join("grok-gboom-frames");
+        let dir = std::env::temp_dir().join("kigi-gboom-frames");
         std::fs::create_dir_all(&dir).unwrap();
         let dump = |name: &str, state: &mut GboomState| {
             state.sim_gen += 1;

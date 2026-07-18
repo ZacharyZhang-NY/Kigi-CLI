@@ -51,7 +51,7 @@ fn skips_synthetic_reminder_at_index_one() {
 /// Drives the real `handle_rebuild_agent_for_definition` path.
 #[tokio::test(flavor = "current_thread")]
 async fn rebuild_reinjects_goal_update_handle() {
-    use kigi_tools::implementations::grok_build::update_goal::{
+    use kigi_tools::implementations::kigi::update_goal::{
         GoalUpdateHandle, UpdateGoalInput, envelope_for_test,
     };
     let local = tokio::task::LocalSet::new();
@@ -61,9 +61,7 @@ async fn rebuild_reinjects_goal_update_handle() {
             let (persist_tx, _persist_rx) = tokio::sync::mpsc::unbounded_channel();
             let actor = create_test_actor(0, 256_000, 85, gw_tx, persist_tx).await;
             actor
-                .handle_rebuild_agent_for_definition(
-                    kigi_agent::AgentDefinition::default_grok_build(),
-                )
+                .handle_rebuild_agent_for_definition(kigi_agent::AgentDefinition::default_kigi())
                 .await
                 .expect("zero-turn rebuild should succeed");
             let bridge = actor.agent.borrow().tool_bridge().clone();
@@ -99,7 +97,7 @@ async fn rebuild_reinjects_goal_update_handle() {
         .await;
 }
 /// The seeded skill used by the rebuild skill-reminder tests. A non-plugin
-/// Local skill is always listable, so it renders into the grok markdown skill
+/// Local skill is always listable, so it renders into the kigi markdown skill
 /// catalog when the pending baseline is drained for a different agent.
 fn regression_skill() -> kigi_tools::implementations::skills::types::SkillInfo {
     kigi_tools::implementations::skills::types::SkillInfo {
@@ -149,9 +147,9 @@ fn stale_source_reminder() -> ConversationItem {
          - stale-source-skill: from the source session.\n</system-reminder>",
     )
 }
-/// Regression: a zero-turn agent rebuild INTO a grok/Default agent
+/// Regression: a zero-turn agent rebuild INTO a kigi/Default agent
 /// must re-inject the baseline skill `<system-reminder>`. `initialize()`
-/// is otherwise the only place skills are surfaced for the grok agent, so
+/// is otherwise the only place skills are surfaced for the kigi agent, so
 /// before the fix a switch into such an agent — whose rebuilt bridge holds
 /// a pending `BaselineChange` — dropped the skill listing for a no-tool first
 /// turn. Drives the real `inject_baseline_skill_reminder` seam that
@@ -187,7 +185,7 @@ async fn rebuild_reinjects_baseline_skill_reminder_for_non_cursor() {
             let text = reminder.text_content();
             assert!(
                 text.contains("The following skills are available for use:"),
-                "reminder must carry the grok skill catalog header:\n{text}",
+                "reminder must carry the kigi skill catalog header:\n{text}",
             );
             assert!(
                 text.contains("regression-baseline-skill"),

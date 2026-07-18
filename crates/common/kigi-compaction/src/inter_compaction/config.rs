@@ -28,7 +28,7 @@ pub struct InterCompactionConfig {
     /// (Basic strategy ignores this and emits a single chunk.)
     pub dnc_chunk_token_limit: u32,
     /// User messages with character count > this threshold are truncated
-    /// (middle-cut) when assembling the `<grok_user_queries>` preamble.
+    /// (middle-cut) when assembling the `<kigi_user_queries>` preamble.
     /// Applies to both Basic and DivideAndConquer.
     pub user_message_compact_threshold: u32,
 }

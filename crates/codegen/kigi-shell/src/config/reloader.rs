@@ -44,7 +44,7 @@ pub enum ConfigUpdate {
     /// Strictly additive to [`Self::McpServersChanged`] — the unit
     /// variant continues to fire for global-config edits. The two
     /// cases are split so per-project reloads don't
-    /// grok process sharing the home dir). The agent should consult the cache
+    /// kigi process sharing the home dir). The agent should consult the cache
     /// thrash unrelated sessions.
     ProjectMcpServersChanged {
         /// The project root whose `.kigi/`, `.mcp.json`, or
@@ -70,7 +70,7 @@ pub enum ConfigUpdate {
     /// drop redundant `ProjectMcpServersChanged` dispatches on
     /// the reloader doesn't have.
     ModelsCacheChanged,
-    /// Updated UI settings — agent broadcasts `x.ai/config_changed` to IPC clients.
+    /// Updated UI settings — agent broadcasts `kigi/config_changed` to IPC clients.
     Ui {
         theme: Option<String>,
         yolo: bool,
@@ -494,7 +494,7 @@ pub(crate) fn hash_auth_key(key: &str) -> u64 {
 /// Extract the `[skills]` table from an effective config.
 ///
 /// Consumers: the reload dispatch above (change detection →
-/// `ConfigUpdate::Skills`) and `grok inspect` (via the `crate::config`
+/// `ConfigUpdate::Skills`) and `kigi inspect` (via the `crate::config`
 /// re-export), so both honor the same paths/ignore/disabled as a live
 /// session. Session spawn parses the same table separately through the typed
 /// `Config.skills` (agent/config.rs) — keep these in sync rather than adding
@@ -906,14 +906,14 @@ ignore = ["/tmp"]
 [ui]
 theme = "dark"
 yolo = true
-fork_secondary_model = "grok-4.5"
+fork_secondary_model = "kigi-4.5"
 "#,
         )
         .unwrap();
         let (theme, yolo, fork) = extract_ui_fields(&config);
         assert_eq!(theme.as_deref(), Some("dark"));
         assert!(yolo);
-        assert_eq!(fork.as_deref(), Some("grok-4.5"));
+        assert_eq!(fork.as_deref(), Some("kigi-4.5"));
     }
 
     #[test]
@@ -936,7 +936,7 @@ fork_secondary_model = "grok-4.5"
         let b: toml::Value = toml::from_str(
             r#"
 [model.my-custom]
-model = "grok-4.5"
+model = "kigi-4.5"
 base_url = "https://api.example.com/v1"
 "#,
         )
@@ -946,8 +946,8 @@ base_url = "https://api.example.com/v1"
 
     #[test]
     fn models_changed_detects_default_change() {
-        let a: toml::Value = toml::from_str("[models]\ndefault = \"grok-code-fast-1\"").unwrap();
-        let b: toml::Value = toml::from_str("[models]\ndefault = \"grok-code-slow-1\"").unwrap();
+        let a: toml::Value = toml::from_str("[models]\ndefault = \"kigi-code-fast-1\"").unwrap();
+        let b: toml::Value = toml::from_str("[models]\ndefault = \"kigi-code-slow-1\"").unwrap();
         assert_ne!(a.get("models"), b.get("models"));
     }
 

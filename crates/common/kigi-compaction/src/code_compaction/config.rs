@@ -1,4 +1,4 @@
-//! grok-build compaction configuration.
+//! kigi compaction configuration.
 //!
 //! Holds the [`FullReplaceConfig`] tunables struct (mirroring
 //! [`IntraCompactionConfig`](crate::intra_compaction::IntraCompactionConfig) /
@@ -9,12 +9,12 @@
 
 /// Default auto-compact threshold (% of context window) when no other source
 /// (env var, user config, remote per-model/global flags) sets it. Shared by
-/// grok-build and Grok chat (~85% trigger on both sides).
+/// kigi and Kigi chat (~85% trigger on both sides).
 pub const DEFAULT_AUTO_COMPACT_THRESHOLD_PERCENT: u8 = 85;
 
 /// Minimum character count for a cleaned summary seed.
 ///
-/// grok-build retries when the cleaned summary is shorter than this — the
+/// kigi retries when the cleaned summary is shorter than this — the
 /// smallest healthy prod summary observed was ~3,242 chars; anything under
 /// 500 is treated as degenerate and retried like a transient failure.
 pub const MIN_SUMMARY_SEED_CHARS: usize = 500;

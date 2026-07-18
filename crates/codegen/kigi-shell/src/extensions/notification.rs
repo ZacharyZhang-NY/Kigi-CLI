@@ -497,7 +497,7 @@ pub enum SessionUpdate {
     },
     /// A short "where was I" recap of the session so far.
     ///
-    /// Emitted by the `x.ai/recap` ext method: on demand via the `/recap`
+    /// Emitted by the `kigi/recap` ext method: on demand via the `/recap`
     /// slash command (`auto = false`), or automatically when the user
     /// returns to the terminal after being away (`auto = true`). The pager
     /// renders it as an informational scrollback line; it is never added to
@@ -881,8 +881,8 @@ pub enum SessionUpdate {
     /// pending ⏳ for this `tool_call_id`.
     InteractionResolved { tool_call_id: String },
     /// The durable, replayable signal that a turn reached its terminal
-    /// outcome. Rides the persisted `_x.ai/session/update` rail (unlike the
-    /// fire-and-forget `x.ai/session/prompt_complete` notification), so a
+    /// outcome. Rides the persisted `_kigi/session/update` rail (unlike the
+    /// fire-and-forget `kigi/session/prompt_complete` notification), so a
     /// viewer that re-attaches mid-turn can finalize the turn from replay
     /// instead of staying stuck on "Waiting…".
     TurnCompleted {
@@ -1132,7 +1132,7 @@ pub struct CompactionRequestFile {
     /// Schema version for forward compatibility.
     pub schema_version: u32,
     /// Unique artifact identifier (filename stem).
-    /// Note: this is a per-artifact ID, not the model API's `x_grok_req_id`
+    /// Note: this is a per-artifact ID, not the model API's `x_kigi_req_id`
     /// (which is generated per-attempt inside the sampling layer).
     pub request_id: String,
     /// ISO 8601 timestamp of when the compaction call started.
@@ -1140,7 +1140,7 @@ pub struct CompactionRequestFile {
     /// What kicked off the compaction: `"manual"` (user ran `/compact`) or `"auto"`.
     pub trigger: String,
     /// Which prompt template was used: `"short"` (concise self-summarization)
-    /// or `"detailed"` (10-section structured prompt for grok-build and similar agents).
+    /// or `"detailed"` (10-section structured prompt for kigi and similar agents).
     pub prompt_variant: String,
     /// The model id that ran the summarization.
     pub model: String,
@@ -1189,7 +1189,7 @@ pub struct RecapRequestFile {
     /// Schema version for forward compatibility.
     pub schema_version: u32,
     /// Unique artifact identifier (filename stem). Distinct from the model
-    /// API's `x_grok_req_id` (also recorded below for proxy correlation).
+    /// API's `x_kigi_req_id` (also recorded below for proxy correlation).
     pub request_id: String,
     /// ISO 8601 timestamp of when the recap model call started.
     pub created_at: String,
@@ -1199,9 +1199,9 @@ pub struct RecapRequestFile {
     /// The model id used for the recap side-call.
     pub model: String,
     /// Sampling request id sent to the proxy (`xai-recap-{uuid}`).
-    pub x_grok_req_id: String,
+    pub x_kigi_req_id: String,
     /// Sampling conversation id (`recap-{uuid}`).
-    pub x_grok_conv_id: String,
+    pub x_kigi_conv_id: String,
     /// Whether reasoning/thinking blocks were stripped from the prefix
     /// (Anthropic Messages backend only; other backends keep reasoning
     /// verbatim for prompt-cache warmth).
@@ -1238,8 +1238,8 @@ mod tests {
             created_at: "2026-06-30T00:00:00Z".into(),
             trigger: "auto".into(),
             model: "v9-zingster".into(),
-            x_grok_req_id: "xai-recap-abc".into(),
-            x_grok_conv_id: "recap-abc".into(),
+            x_kigi_req_id: "xai-recap-abc".into(),
+            x_kigi_conv_id: "recap-abc".into(),
             strip_reasoning: false,
             reminder_tag: "system-reminder".into(),
             chat_history: vec![],
@@ -1251,7 +1251,7 @@ mod tests {
         let parsed: RecapRequestFile = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.schema_version, 1);
         assert_eq!(parsed.trigger, "auto");
-        assert_eq!(parsed.x_grok_req_id, "xai-recap-abc");
+        assert_eq!(parsed.x_kigi_req_id, "xai-recap-abc");
         assert_eq!(
             parsed.summary.as_deref(),
             Some("We fixed the flaky test in queue_worker.")
@@ -1268,7 +1268,7 @@ mod tests {
             created_at: "2026-06-15T00:00:00Z".into(),
             trigger: "auto".into(),
             prompt_variant: "detailed".into(),
-            model: "grok".into(),
+            model: "kigi".into(),
             user_context: None,
             chat_history: vec![],
             tools: vec![],
@@ -1317,7 +1317,7 @@ mod tests {
             "created_at": "2026-06-01T00:00:00Z",
             "trigger": "manual",
             "prompt_variant": "detailed",
-            "model": "grok",
+            "model": "kigi",
             "user_context": null,
             "chat_history": [],
             "summary": "ok",
@@ -1752,7 +1752,7 @@ mod tests {
             total_worker_rounds: 4,
             total_verify_rounds: 2,
             live_subagent_tokens: Some(10_000),
-            live_tokens_by_model: vec![("grok-4".into(), 6_000), ("grok-3".into(), 4_000)],
+            live_tokens_by_model: vec![("kigi-4".into(), 6_000), ("kigi-3".into(), 4_000)],
             live_context_pct: Some(35),
             live_turn_count: Some(3),
             live_tool_call_count: Some(8),
@@ -1826,7 +1826,7 @@ mod tests {
         assert_eq!(json["total_worker_rounds"], 4);
         assert_eq!(json["total_verify_rounds"], 2);
         assert_eq!(json["live_subagent_tokens"], 10_000);
-        assert_eq!(json["live_tokens_by_model"][0][0], "grok-4");
+        assert_eq!(json["live_tokens_by_model"][0][0], "kigi-4");
         assert_eq!(json["live_tokens_by_model"][0][1], 6_000);
         assert_eq!(json["live_context_pct"], 35);
         assert_eq!(json["last_event"], "worker_completed");
@@ -2001,21 +2001,21 @@ mod tests {
     #[test]
     fn model_changed_serializes_snake_case_with_optional_effort() {
         let with_effort = SessionUpdate::ModelChanged {
-            model_id: "grok-4".into(),
+            model_id: "kigi-4".into(),
             reasoning_effort: Some("high".into()),
         };
         let json = serde_json::to_value(&with_effort).unwrap();
         assert_eq!(json["sessionUpdate"], "model_changed");
-        assert_eq!(json["model_id"], "grok-4");
+        assert_eq!(json["model_id"], "kigi-4");
         assert_eq!(json["reasoning_effort"], "high");
 
         let without_effort = SessionUpdate::ModelChanged {
-            model_id: "grok-3".into(),
+            model_id: "kigi-3".into(),
             reasoning_effort: None,
         };
         let json = serde_json::to_value(&without_effort).unwrap();
         assert_eq!(json["sessionUpdate"], "model_changed");
-        assert_eq!(json["model_id"], "grok-3");
+        assert_eq!(json["model_id"], "kigi-3");
         assert!(
             json.get("reasoning_effort").is_none(),
             "reasoning_effort: None must be skipped on the wire so old pagers \
@@ -2031,7 +2031,7 @@ mod tests {
     #[test]
     fn model_changed_roundtrips_through_json() {
         let original = SessionUpdate::ModelChanged {
-            model_id: "grok-4".into(),
+            model_id: "kigi-4".into(),
             reasoning_effort: Some("medium".into()),
         };
         let json_str = serde_json::to_string(&original).unwrap();
@@ -2052,7 +2052,7 @@ mod tests {
         let notif = SessionNotification {
             session_id: acp::SessionId::new("sess-abc"),
             update: SessionUpdate::ModelChanged {
-                model_id: "grok-4".into(),
+                model_id: "kigi-4".into(),
                 reasoning_effort: None,
             },
             meta: None,
@@ -2060,7 +2060,7 @@ mod tests {
         let json = serde_json::to_value(&notif).unwrap();
         assert_eq!(json["sessionId"], "sess-abc");
         assert_eq!(json["update"]["sessionUpdate"], "model_changed");
-        assert_eq!(json["update"]["model_id"], "grok-4");
+        assert_eq!(json["update"]["model_id"], "kigi-4");
     }
 
     // ── TurnCompleted (durable, replayable turn-end signal) ──

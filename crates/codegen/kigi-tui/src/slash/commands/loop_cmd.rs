@@ -1,5 +1,5 @@
 use agent_client_protocol as acp;
-use kigi_tools::implementations::grok_build::{
+use kigi_tools::implementations::kigi::{
     SCHEDULER_CREATE_TOOL_NAME, loop_schedule_instruction, loop_usage_message,
 };
 

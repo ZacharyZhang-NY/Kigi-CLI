@@ -60,7 +60,7 @@ fn test_system_prompt_write_and_read() {
 
 #[test]
 fn test_system_prompt_is_plain_text_not_json() {
-    let prompt = "You are a Grok Build subagent.";
+    let prompt = "You are a Kigi subagent.";
     // system_prompt.txt is raw text, NOT JSON-encoded.
     assert!(!prompt.starts_with('"'), "must not be JSON-quoted");
     assert!(!prompt.starts_with('{'), "must not be JSON object");
@@ -107,7 +107,7 @@ fn test_system_prompt_matches_chat_history_system_message() {
     let session_dir = tmp.path().join("session-consistency");
     std::fs::create_dir_all(&session_dir).unwrap();
 
-    let system_prompt = "You are a Grok Build subagent.\n\n<tool_calling>\n...";
+    let system_prompt = "You are a Kigi subagent.\n\n<tool_calling>\n...";
 
     // Write system_prompt.txt (same string used for chat_history).
     std::fs::write(session_dir.join(SYSTEM_PROMPT_FILENAME), system_prompt).unwrap();
@@ -164,7 +164,7 @@ fn test_load_system_prompt_returns_content_when_present() {
     let session_dir = tmp.path().join("session-load-test");
     std::fs::create_dir_all(&session_dir).unwrap();
 
-    let prompt = "You are a Grok Build subagent.";
+    let prompt = "You are a Kigi subagent.";
     std::fs::write(session_dir.join(SYSTEM_PROMPT_FILENAME), prompt).unwrap();
 
     let loaded = load_system_prompt_from_dir(&session_dir);
@@ -243,7 +243,7 @@ const HEAD_TOKEN: &str = "HEADSTART_TOKEN_aaa";
 const TAIL_TOKEN: &str = "TAILEND_TOKEN_zzz";
 
 fn fake_prompt_path() -> std::path::PathBuf {
-    std::path::PathBuf::from("/tmp/grok-test-home/sessions/cwd/sid/prompts/prompt_0.txt")
+    std::path::PathBuf::from("/tmp/kigi-test-home/sessions/cwd/sid/prompts/prompt_0.txt")
 }
 
 /// `truncate_bytes_suffix` keeps a char-boundary-safe suffix (multibyte-safe).
@@ -343,7 +343,7 @@ fn build_truncated_preserves_small_query_truncates_context() {
     assert!(message.contains(&query), "small query preserved intact");
     assert!(
         message.starts_with(&query),
-        "grok ordering: query block first"
+        "kigi ordering: query block first"
     );
     assert!(message.contains("CTXHEAD_TOKEN"), "context head preserved");
     assert!(!message.contains(&context), "oversized context truncated");
@@ -381,7 +381,7 @@ fn build_truncated_both_oversized_keeps_bounded_heads() {
     assert!(!message.contains(&context), "full context not inlined");
     assert!(
         message.starts_with("QHEAD_TOKEN"),
-        "grok ordering: query first"
+        "kigi ordering: query first"
     );
     assert!(
         message.len() <= TRUNCATED_PROMPT_PREFIX_SIZE,

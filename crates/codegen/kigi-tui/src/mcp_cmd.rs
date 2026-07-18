@@ -1,4 +1,4 @@
-//! `grok mcp` — manage MCP server configurations from the command line.
+//! `kigi mcp` — manage MCP server configurations from the command line.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -7,24 +7,24 @@ use anyhow::{Result, bail};
 use clap::{Subcommand, ValueEnum};
 use kigi_shell::util::config::{McpServerConfig, McpServerTransportConfig};
 
-use crate::util::display_user_grok_path;
+use crate::util::display_user_kigi_path;
 
 const ADD_AFTER_HELP: &str = "\
 Examples:
   # Add a stdio server (everything after -- is the server command)
-  grok mcp add xcode -- xcrun mcpbridge
+  kigi mcp add xcode -- xcrun mcpbridge
 
   # Add a stdio server with environment variables
-  grok mcp add postgres -e DATABASE_URL=postgres://localhost/mydb -- npx -y @modelcontextprotocol/server-postgres
+  kigi mcp add postgres -e DATABASE_URL=postgres://localhost/mydb -- npx -y @modelcontextprotocol/server-postgres
 
   # Add a remote HTTP server
-  grok mcp add --transport http sentry https://mcp.sentry.dev/mcp
+  kigi mcp add --transport http sentry https://mcp.sentry.dev/mcp
 
   # Add a remote server with an authentication header
-  grok mcp add --transport http api https://mcp.example.com/mcp --header \"Authorization: Bearer YOUR_TOKEN\"
+  kigi mcp add --transport http api https://mcp.example.com/mcp --header \"Authorization: Bearer YOUR_TOKEN\"
 
   # Add to the project config (./.kigi/config.toml) instead of ~/.kigi/config.toml
-  grok mcp add --scope project github -- npx -y @modelcontextprotocol/server-github";
+  kigi mcp add --scope project github -- npx -y @modelcontextprotocol/server-github";
 
 #[derive(Debug, clap::Args, Clone)]
 pub struct McpArgs {
@@ -108,7 +108,7 @@ pub struct AddArgs {
     command_or_url: Option<String>,
 
     /// Arguments passed to the server command. Place them after `--` so
-    /// flags such as `-y` are passed to the server instead of grok.
+    /// flags such as `-y` are passed to the server instead of kigi.
     #[arg(value_name = "ARGS")]
     args: Vec<String>,
 
@@ -191,7 +191,7 @@ fn run_list(json: bool) -> Result<()> {
             .collect();
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else if servers.is_empty() {
-        println!("No MCP servers configured. Run `grok mcp add --help` to get started.");
+        println!("No MCP servers configured. Run `kigi mcp add --help` to get started.");
     } else {
         for (name, (config, scope)) in &servers {
             let transport = match &config.transport {
@@ -316,7 +316,7 @@ fn resolve_add(args: &AddArgs) -> Result<ResolvedAdd> {
         McpTransport::Stdio => {
             let Some(command) = source else {
                 bail!(
-                    "A command is required for stdio servers. Usage: grok mcp add <name> -- <command> [args...]"
+                    "A command is required for stdio servers. Usage: kigi mcp add <name> -- <command> [args...]"
                 );
             };
             if !args.header.is_empty() {
@@ -350,7 +350,7 @@ fn resolve_add(args: &AddArgs) -> Result<ResolvedAdd> {
                         format!("http://{command}")
                     };
                 warnings.push(format!(
-                    "Warning: '{command}' looks like a URL, but it is being added as a stdio command because --transport was not specified.\nFor a remote server, use: grok mcp add --transport http {} {suggested_url}",
+                    "Warning: '{command}' looks like a URL, but it is being added as a stdio command because --transport was not specified.\nFor a remote server, use: kigi mcp add --transport http {} {suggested_url}",
                     args.name
                 ));
             }
@@ -374,7 +374,7 @@ fn resolve_add(args: &AddArgs) -> Result<ResolvedAdd> {
             };
             let Some(url) = source else {
                 bail!(
-                    "A URL is required for {label} servers. Usage: grok mcp add --transport {label} <name> <url>"
+                    "A URL is required for {label} servers. Usage: kigi mcp add --transport {label} <name> <url>"
                 );
             };
             if !url.starts_with("http://") && !url.starts_with("https://") {
@@ -488,7 +488,7 @@ fn scope_target(scope: McpScope) -> PathBuf {
 /// Display form of a scope's config file path.
 fn scope_display(scope: McpScope, path: &Path) -> String {
     match scope {
-        McpScope::User => display_user_grok_path("config.toml"),
+        McpScope::User => display_user_kigi_path("config.toml"),
         McpScope::Project => path.display().to_string(),
     }
 }
@@ -567,9 +567,9 @@ async fn run_remove(name: &str, requested_scope: Option<McpScope>) -> Result<()>
         }
         Err(RemoveError::Ambiguous { project_path }) => {
             eprintln!("MCP server '{name}' exists in multiple scopes:");
-            eprintln!("  user: {}", display_user_grok_path("config.toml"));
+            eprintln!("  user: {}", display_user_kigi_path("config.toml"));
             eprintln!("  project: {}", project_path.display());
-            eprintln!("Specify which one to remove, e.g.: grok mcp remove {name} --scope project");
+            eprintln!("Specify which one to remove, e.g.: kigi mcp remove {name} --scope project");
             std::process::exit(1);
         }
     };
@@ -649,7 +649,7 @@ mod tests {
         // The invocation from the original report: a stdio server whose
         // command follows `--`, with an explicit transport.
         let add = parse_add(&[
-            "grok",
+            "kigi",
             "mcp",
             "add",
             "--transport",
@@ -676,7 +676,7 @@ mod tests {
     #[test]
     fn add_passes_hyphen_flags_and_repeated_env_to_server() {
         let add = parse_add(&[
-            "grok",
+            "kigi",
             "mcp",
             "add",
             "fs",
@@ -709,7 +709,7 @@ mod tests {
 
     #[test]
     fn add_hyphen_flag_without_double_dash_is_rejected() {
-        let err = PagerArgs::try_parse_from(["grok", "mcp", "add", "fs", "npx", "-y"])
+        let err = PagerArgs::try_parse_from(["kigi", "mcp", "add", "fs", "npx", "-y"])
             .expect_err("hyphen args must be escaped with --");
         assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
     }
@@ -717,7 +717,7 @@ mod tests {
     #[test]
     fn add_http_with_headers() {
         let add = parse_add(&[
-            "grok",
+            "kigi",
             "mcp",
             "add",
             "--transport",
@@ -751,7 +751,7 @@ mod tests {
     #[test]
     fn add_sse_sets_transport_type() {
         let add = parse_add(&[
-            "grok",
+            "kigi",
             "mcp",
             "add",
             "--transport",
@@ -773,7 +773,7 @@ mod tests {
     fn add_http_transport_with_non_url_command_is_rejected() {
         // Previously this silently stored `xcrun` as an HTTP URL.
         let add = parse_add(&[
-            "grok",
+            "kigi",
             "mcp",
             "add",
             "--transport",
@@ -791,7 +791,7 @@ mod tests {
     fn add_explicit_stdio_keeps_url_looking_command_as_stdio() {
         // Previously URL sniffing overrode an explicit stdio transport.
         let add = parse_add(&[
-            "grok",
+            "kigi",
             "mcp",
             "add",
             "--transport",
@@ -810,7 +810,7 @@ mod tests {
 
     #[test]
     fn add_default_transport_warns_on_url_looking_command() {
-        let add = parse_add(&["grok", "mcp", "add", "api", "https://mcp.example.com/mcp"]);
+        let add = parse_add(&["kigi", "mcp", "add", "api", "https://mcp.example.com/mcp"]);
         let resolved = resolve_add(&add).expect("defaults to stdio with a warning");
         assert!(matches!(
             resolved.transport,
@@ -821,7 +821,7 @@ mod tests {
 
         // Scheme-less commands get http:// prepended so the suggested
         // command passes URL validation verbatim.
-        let add = parse_add(&["grok", "mcp", "add", "local", "localhost:3000"]);
+        let add = parse_add(&["kigi", "mcp", "add", "local", "localhost:3000"]);
         let resolved = resolve_add(&add).expect("localhost command warns");
         assert!(
             resolved.warnings[0].contains("--transport http local http://localhost:3000"),
@@ -833,21 +833,21 @@ mod tests {
     #[test]
     fn add_scope_project_parses_and_invalid_scope_is_rejected() {
         let add = parse_add(&[
-            "grok", "mcp", "add", "-s", "project", "fs", "--", "npx", "pkg",
+            "kigi", "mcp", "add", "-s", "project", "fs", "--", "npx", "pkg",
         ]);
         assert_eq!(add.scope, McpScope::Project);
 
         let err = PagerArgs::try_parse_from([
-            "grok", "mcp", "add", "-s", "local", "fs", "--", "npx", "pkg",
+            "kigi", "mcp", "add", "-s", "local", "fs", "--", "npx", "pkg",
         ])
-        .expect_err("local is not a grok scope");
+        .expect_err("local is not a kigi scope");
         assert_eq!(err.kind(), clap::error::ErrorKind::InvalidValue);
     }
 
     #[test]
     fn add_legacy_flag_forms_still_parse() {
         let add = parse_add(&[
-            "grok",
+            "kigi",
             "mcp",
             "add",
             "oldfs",
@@ -867,7 +867,7 @@ mod tests {
         }
 
         let add = parse_add(&[
-            "grok",
+            "kigi",
             "mcp",
             "add",
             "remote",
@@ -893,7 +893,7 @@ mod tests {
     #[test]
     fn add_legacy_command_conflicts_with_positional() {
         let err = PagerArgs::try_parse_from([
-            "grok",
+            "kigi",
             "mcp",
             "add",
             "fs",
@@ -910,7 +910,7 @@ mod tests {
         // Pre-parity --env was greedy (`--env A=1 B=2`); with --command the
         // stray pair now lands in the positional and trips the source group.
         let err = PagerArgs::try_parse_from([
-            "grok",
+            "kigi",
             "mcp",
             "add",
             "github",
@@ -928,7 +928,7 @@ mod tests {
         // Without --command the stray pair used to be silently written as the
         // command; resolve_add must reject it with migration guidance.
         let add = parse_add(&[
-            "grok", "mcp", "add", "pg", "--env", "A=1", "B=2", "--", "npx", "-y", "server",
+            "kigi", "mcp", "add", "pg", "--env", "A=1", "B=2", "--", "npx", "-y", "server",
         ]);
         let err = resolve_add(&add).expect_err("env-shaped command must fail");
         assert!(err.to_string().contains("-e A=1 -e B=2"), "got: {err}");
@@ -939,7 +939,7 @@ mod tests {
         // --url with an explicit stdio transport used to silently store the
         // URL as a stdio command.
         let add = parse_add(&[
-            "grok",
+            "kigi",
             "mcp",
             "add",
             "foo",
@@ -953,7 +953,7 @@ mod tests {
 
         // --type without --url used to be silently ignored.
         let add = parse_add(&[
-            "grok",
+            "kigi",
             "mcp",
             "add",
             "bar",
@@ -967,7 +967,7 @@ mod tests {
 
     #[test]
     fn add_validates_name_env_and_headers() {
-        let add = parse_add(&["grok", "mcp", "add", "fs", "-e", "NOT_A_PAIR", "--", "npx"]);
+        let add = parse_add(&["kigi", "mcp", "add", "fs", "-e", "NOT_A_PAIR", "--", "npx"]);
         let err = resolve_add(&add).expect_err("malformed env must fail");
         assert!(
             err.to_string()
@@ -976,7 +976,7 @@ mod tests {
         );
 
         let add = parse_add(&[
-            "grok",
+            "kigi",
             "mcp",
             "add",
             "--transport",
@@ -992,19 +992,19 @@ mod tests {
             "got: {err}"
         );
 
-        let add = parse_add(&["grok", "mcp", "add", "bad name!", "--", "npx"]);
+        let add = parse_add(&["kigi", "mcp", "add", "bad name!", "--", "npx"]);
         let err = resolve_add(&add).expect_err("invalid name must fail");
         assert!(err.to_string().contains("Invalid name"), "got: {err}");
     }
 
     #[test]
     fn add_rejects_mismatched_options_per_transport() {
-        let add = parse_add(&["grok", "mcp", "add", "fs", "-H", "X: y", "--", "npx"]);
+        let add = parse_add(&["kigi", "mcp", "add", "fs", "-H", "X: y", "--", "npx"]);
         let err = resolve_add(&add).expect_err("--header is remote-only");
         assert!(err.to_string().contains("--header"), "got: {err}");
 
         let add = parse_add(&[
-            "grok",
+            "kigi",
             "mcp",
             "add",
             "--transport",
@@ -1018,7 +1018,7 @@ mod tests {
         assert!(err.to_string().contains("--env"), "got: {err}");
 
         let add = parse_add(&[
-            "grok",
+            "kigi",
             "mcp",
             "add",
             "--transport",
@@ -1037,21 +1037,21 @@ mod tests {
 
     #[test]
     fn add_requires_a_source_for_each_transport() {
-        let add = parse_add(&["grok", "mcp", "add", "fs"]);
+        let add = parse_add(&["kigi", "mcp", "add", "fs"]);
         let err = resolve_add(&add).expect_err("stdio without a command must fail");
         assert!(
             err.to_string().contains("command is required"),
             "got: {err}"
         );
 
-        let add = parse_add(&["grok", "mcp", "add", "--transport", "http", "api"]);
+        let add = parse_add(&["kigi", "mcp", "add", "--transport", "http", "api"]);
         let err = resolve_add(&add).expect_err("http without a URL must fail");
         assert!(err.to_string().contains("URL is required"), "got: {err}");
     }
 
     #[test]
     fn remove_accepts_optional_scope() {
-        let args = PagerArgs::try_parse_from(["grok", "mcp", "remove", "fs", "-s", "project"])
+        let args = PagerArgs::try_parse_from(["kigi", "mcp", "remove", "fs", "-s", "project"])
             .expect("remove with scope parses");
         match args.command {
             Some(Command::Mcp(McpArgs {

@@ -3,7 +3,7 @@
 use super::common::*;
 
 /// OSC 52 sink advertisement e2e: the wrapped child must see
-/// `KIGI_OSC52_SINK=1` (the signal an inner `grok` uses to trust OSC 52 over
+/// `KIGI_OSC52_SINK=1` (the signal an inner `kigi` uses to trust OSC 52 over
 /// SSH — see `run_wrapped_command`), including through the `$SHELL -i -c` hop.
 /// The parent env pins the var to `0` so a pass can only come from the wrap
 /// layer's own override, not from an inherited value.

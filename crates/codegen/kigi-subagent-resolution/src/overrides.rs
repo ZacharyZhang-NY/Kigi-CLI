@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use kigi_tool_types::{SubagentCapabilityMode, SubagentIsolationMode};
-use kigi_tools::implementations::grok_build::task::types::SubagentRuntimeOverrides;
+use kigi_tools::implementations::kigi::task::types::SubagentRuntimeOverrides;
 use serde::de::DeserializeOwned;
 
 use crate::config::{SubagentPersona, SubagentRole};
@@ -205,7 +205,7 @@ fn resolve_persona_instructions(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kigi_tools::implementations::grok_build::task::types::ModelOverrideProvenance;
+    use kigi_tools::implementations::kigi::task::types::ModelOverrideProvenance;
 
     /// Helper to build an overrides struct with only the fields we care about.
     fn make_overrides(
@@ -236,26 +236,26 @@ mod tests {
 
     #[test]
     fn explicit_model_overrides_role() {
-        let overrides = make_overrides(Some("grok-light"), None, None, None, None);
+        let overrides = make_overrides(Some("kigi-light"), None, None, None, None);
         let role = SubagentRole {
-            model: Some("grok-3".into()),
+            model: Some("kigi-3".into()),
             ..Default::default()
         };
         let result =
             resolve_effective_overrides(&overrides, Some(&role), &empty_personas(), None, None);
-        assert_eq!(result.model.as_deref(), Some("grok-light"));
+        assert_eq!(result.model.as_deref(), Some("kigi-light"));
     }
 
     #[test]
     fn role_model_used_when_no_explicit() {
         let overrides = make_overrides(None, None, None, None, None);
         let role = SubagentRole {
-            model: Some("grok-3".into()),
+            model: Some("kigi-3".into()),
             ..Default::default()
         };
         let result =
             resolve_effective_overrides(&overrides, Some(&role), &empty_personas(), None, None);
-        assert_eq!(result.model.as_deref(), Some("grok-3"));
+        assert_eq!(result.model.as_deref(), Some("kigi-3"));
     }
 
     #[test]
@@ -265,13 +265,13 @@ mod tests {
         personas.insert(
             "researcher".to_string(),
             SubagentPersona {
-                model: Some("grok-3-fast".into()),
+                model: Some("kigi-3-fast".into()),
                 instructions: Some("Research things.".into()),
                 ..Default::default()
             },
         );
         let result = resolve_effective_overrides(&overrides, None, &personas, None, None);
-        assert_eq!(result.model.as_deref(), Some("grok-3-fast"));
+        assert_eq!(result.model.as_deref(), Some("kigi-3-fast"));
     }
 
     #[test]
@@ -625,9 +625,9 @@ mod tests {
     fn persona_not_found_error_is_non_fatal() {
         // "not found" is a config-level error: persona_error is set but
         // other fields still resolve from role/overrides.
-        let overrides = make_overrides(Some("grok-3"), Some("missing"), None, None, None);
+        let overrides = make_overrides(Some("kigi-3"), Some("missing"), None, None, None);
         let role = SubagentRole {
-            model: Some("grok-light".into()),
+            model: Some("kigi-light".into()),
             default_isolation: Some("worktree".into()),
             ..Default::default()
         };
@@ -640,7 +640,7 @@ mod tests {
         // Non-fatal: other fields ARE resolved (explicit model takes precedence)
         assert_eq!(
             result.model.as_deref(),
-            Some("grok-3"),
+            Some("kigi-3"),
             "explicit model should resolve despite persona error"
         );
     }
@@ -648,7 +648,7 @@ mod tests {
     #[test]
     fn persona_file_error_returns_early_with_defaults() {
         // File I/O errors ARE fatal: early return with defaults.
-        let overrides = make_overrides(Some("grok-3"), Some("broken"), None, None, None);
+        let overrides = make_overrides(Some("kigi-3"), Some("broken"), None, None, None);
         let dir = tempfile::tempdir().unwrap();
         let mut personas = HashMap::new();
         personas.insert(
@@ -660,7 +660,7 @@ mod tests {
             },
         );
         let role = SubagentRole {
-            model: Some("grok-light".into()),
+            model: Some("kigi-light".into()),
             ..Default::default()
         };
         let result = resolve_effective_overrides(&overrides, Some(&role), &personas, None, None);

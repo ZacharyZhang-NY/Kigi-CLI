@@ -18,7 +18,7 @@ async fn tool_bridge_routes_writes_through_injected_fs() {
     let config = ToolServerConfig {
         tools: vec![
             ToolConfig {
-                id: "GrokBuild:read_file".into(),
+                id: "Kigi:read_file".into(),
                 params: None,
                 name_override: None,
                 params_name_overrides: None,
@@ -27,7 +27,7 @@ async fn tool_bridge_routes_writes_through_injected_fs() {
                 kind: None,
             },
             ToolConfig {
-                id: "GrokBuild:search_replace".into(),
+                id: "Kigi:search_replace".into(),
                 params: Some(
                     serde_json::from_value(serde_json::json!({
                         "skip_read_before_edit": true
@@ -47,13 +47,13 @@ async fn tool_bridge_routes_writes_through_injected_fs() {
         backend: terminal,
         fs,
         cwd: cwd.clone(),
-        session_folder: std::env::temp_dir().join("grok-test-fs"),
+        session_folder: std::env::temp_dir().join("kigi-test-fs"),
         session_env: std::sync::Arc::new(std::collections::HashMap::new()),
         notification_handle: ToolNotificationHandle::noop(),
         owner_session_id: None,
         parent_scheduler_handle: None,
         skills: vec![],
-        state_path: std::env::temp_dir().join("grok-test-fs/tool_state.json"),
+        state_path: std::env::temp_dir().join("kigi-test-fs/tool_state.json"),
         memory_backend: None,
         web_search_config: Default::default(),
         web_fetch_config: Default::default(),

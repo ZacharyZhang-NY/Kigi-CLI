@@ -180,7 +180,7 @@ auto_update = true
     fn test_worktree_type_no_cli_section() {
         let toml_str = r#"
 [models]
-default = "grok-code-fast-1"
+default = "kigi-code-fast-1"
 "#;
         let root: TomlValue = toml::from_str(toml_str).unwrap();
         assert_eq!(worktree_type_from_toml(&root), WorktreeType::Linked);
@@ -232,7 +232,7 @@ worktree_type = "invalid"
 
     #[test]
     fn test_worktree_type_from_toml_opt_no_cli_section() {
-        let root: TomlValue = toml::from_str("[models]\ndefault = \"grok\"").unwrap();
+        let root: TomlValue = toml::from_str("[models]\ndefault = \"kigi\"").unwrap();
         assert_eq!(worktree_type_from_toml_opt(&root), None);
     }
 
@@ -319,7 +319,7 @@ worktree_type = "invalid"
 
     #[test]
     fn test_restore_code_from_toml_no_cli_section() {
-        let root: TomlValue = toml::from_str("[models]\ndefault = \"grok\"").unwrap();
+        let root: TomlValue = toml::from_str("[models]\ndefault = \"kigi\"").unwrap();
         assert_eq!(restore_code_from_toml(&root), None);
     }
 

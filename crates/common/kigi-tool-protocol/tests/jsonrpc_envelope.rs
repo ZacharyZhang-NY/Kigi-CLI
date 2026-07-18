@@ -217,7 +217,7 @@ fn full_call_envelope_serialises_to_expected_shape() {
         method: "tool.call".to_owned(),
         params: ToolCallParams {
             tool_call_id: ToolCallId::new("call_xyz").unwrap(),
-            tool_id: ToolId::new("GrokBuild:read_file").unwrap(),
+            tool_id: ToolId::new("Kigi:read_file").unwrap(),
             arguments: json!({"path": "/etc/hosts"}),
             deadline_ms: None,
             behavior_version: None,
@@ -230,7 +230,7 @@ fn full_call_envelope_serialises_to_expected_shape() {
     assert_eq!(v["id"], json!("req-9c4f"));
     assert_eq!(v["session_id"], json!("sess_abc"));
     assert_eq!(v["method"], json!("tool.call"));
-    assert_eq!(v["params"]["tool_id"], json!("GrokBuild:read_file"));
+    assert_eq!(v["params"]["tool_id"], json!("Kigi:read_file"));
     assert_eq!(v["params"]["tool_call_id"], json!("call_xyz"));
 }
 

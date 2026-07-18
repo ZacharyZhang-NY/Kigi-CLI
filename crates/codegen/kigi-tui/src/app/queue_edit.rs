@@ -40,7 +40,7 @@ pub enum PromptMode {
         /// When `Some`, this is a server-authoritative shared-queue row and
         /// `server_id` is the agent's stable `prompt_id`. On save we route
         /// the change through `Action::QueueEditShared` (and rely on the
-        /// `x.ai/queue/changed` rebroadcast for the visual result) instead
+        /// `kigi/queue/changed` rebroadcast for the visual result) instead
         /// of mutating the local `pending_prompts` mirror. `None` is the
         /// pre-existing local-origin path.
         server_id: Option<String>,
@@ -412,7 +412,7 @@ impl AgentView {
         }
         match server_id {
             Some(server_id) => {
-                // Server rows: the queue wire (`x.ai/queue/interject` newText)
+                // Server rows: the queue wire (`kigi/queue/interject` newText)
                 // is text-only, so composer images can't ride along — known
                 // limitation, dropped with an accurate toast.
                 if !self.prompt.images.is_empty() {

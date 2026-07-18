@@ -2,8 +2,8 @@
 //!
 //! The shared compaction algorithms operate over a sequence of *items*
 //! (turns/messages) without knowing the concrete harness type. The chat
-//! harness implements [`CompactionItem`] for its `GrokTurn`;
-//! grok-build implements it for `kigi_sampling_types::ConversationItem`.
+//! harness implements [`CompactionItem`] for its `KigiTurn`;
+//! kigi implements it for `kigi_sampling_types::ConversationItem`.
 //!
 //! Keeping the contract minimal is deliberate: the algorithms only need
 //! enough structure to (a) classify roles, (b) read text, and (c) preserve
@@ -14,18 +14,18 @@
 //!
 //! [`CompactionItemBuilder`] is the *constructive* extension used by the
 //! history-compaction algorithms that need to rebuild items (strip prior
-//! `<grok_user_queries>` blocks, drop tool content from assistant turns,
+//! `<kigi_user_queries>` blocks, drop tool content from assistant turns,
 //! wrap an LLM summary into a carrier item).
 
 /// Harness-agnostic role of a single conversation item.
 ///
-/// This is the common denominator of `GrokRole` (Grok chat) and the
-/// `ConversationItem` variants (grok-build).
+/// This is the common denominator of `KigiRole` (Kigi chat) and the
+/// `ConversationItem` variants (kigi).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompactionRole {
     /// System prompt.
     System,
-    /// Developer prompt (Grok chat) — maps to System on harnesses without a
+    /// Developer prompt (Kigi chat) — maps to System on harnesses without a
     /// distinct developer role.
     Developer,
     /// A user message.
@@ -37,8 +37,8 @@ pub enum CompactionRole {
 }
 
 /// A file attached to a user item, as seen by the shared user-query
-/// extraction (`<grok_file id=".." name=".." />` lines in the
-/// `<grok_user_queries>` preamble).
+/// extraction (`<kigi_file id=".." name=".." />` lines in the
+/// `<kigi_user_queries>` preamble).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompactionFileRef {
     /// Stable unique id of the attachment source.
@@ -51,8 +51,8 @@ pub struct CompactionFileRef {
 /// compaction algorithms.
 ///
 /// Implementors:
-/// - Grok chat: `GrokTurn`
-/// - grok-build: `ConversationItem`
+/// - Kigi chat: `KigiTurn`
+/// - kigi: `ConversationItem`
 pub trait CompactionItem {
     /// The harness-agnostic role of this item.
     fn role(&self) -> CompactionRole;
@@ -60,8 +60,8 @@ pub trait CompactionItem {
     /// The item's text content, if any. Tool results and assistant tool-only
     /// turns may have no text.
     ///
-    /// Returns an owned `String` because some harnesses (Grok chat's
-    /// `GrokTurn`) compute the flattened text on demand rather than storing a
+    /// Returns an owned `String` because some harnesses (Kigi chat's
+    /// `KigiTurn`) compute the flattened text on demand rather than storing a
     /// borrowable slice.
     fn text(&self) -> Option<String>;
 
@@ -75,20 +75,20 @@ pub trait CompactionItem {
     /// `false` for all non-assistant items.
     fn has_tool_requests(&self) -> bool;
 
-    /// Whether this item carries a *prior compaction summary* (Grok chat: a
+    /// Whether this item carries a *prior compaction summary* (Kigi chat: a
     /// `Developer` turn with `DeveloperPromptCategory::ConversationCompaction`).
     ///
     /// The basic history filter keeps such items so earlier summaries get
     /// re-summarised instead of dropped, and `separate_prior_user_queries`
-    /// strips their `<grok_user_queries>` blocks before sampling.
+    /// strips their `<kigi_user_queries>` blocks before sampling.
     ///
     /// Required (no default) on purpose: a forgotten implementation or a
     /// missed `Arc` forwarding would silently drop prior summaries on
     /// re-compaction.
     fn is_compaction_summary(&self) -> bool;
 
-    /// File attachments on a (user) item, for the `<grok_file>` lines in the
-    /// `<grok_user_queries>` preamble. Empty for items without attachments.
+    /// File attachments on a (user) item, for the `<kigi_file>` lines in the
+    /// `<kigi_user_queries>` preamble. Empty for items without attachments.
     ///
     /// Required (no default) for the same reason as
     /// [`Self::is_compaction_summary`]: silent attachment loss on compaction
@@ -103,13 +103,13 @@ pub trait CompactionItem {
 /// through generics, never as `dyn`.
 pub trait CompactionItemBuilder: CompactionItem + Clone {
     /// Construct the item that carries a compaction summary back into the
-    /// conversation (Grok chat: a `Developer` turn with category
+    /// conversation (Kigi chat: a `Developer` turn with category
     /// `ConversationCompaction`). The result must satisfy
     /// `is_compaction_summary() == true`.
     fn compaction_summary_item(text: String) -> Self;
 
     /// Rebuild this item keeping only user-visible content, dropping tool
-    /// requests/results (Grok chat: keep only `Channel` contents of an
+    /// requests/results (Kigi chat: keep only `Channel` contents of an
     /// assistant turn). Returns `None` when nothing visible remains.
     ///
     /// Only meaningful for `Assistant` items; the shared filters never call
@@ -120,18 +120,18 @@ pub trait CompactionItemBuilder: CompactionItem + Clone {
 
 /// Write seam for the full-replace **assembler**
 /// ([`crate::code_compaction::assemble::assemble_compacted_history`]):
-/// constructs the typed harness items that make up grok-build's rebuilt
+/// constructs the typed harness items that make up kigi's rebuilt
 /// history.
 ///
 /// This is a sibling of [`CompactionItemBuilder`], not a part of it, on
-/// purpose. `CompactionItemBuilder` is already implemented by Grok chat's
-/// `GrokTurn`; adding these constructors to it as required methods would break
-/// that impl. They are also grok-build-specific (Grok chat's tail-keep path
+/// purpose. `CompactionItemBuilder` is already implemented by Kigi chat's
+/// `KigiTurn`; adding these constructors to it as required methods would break
+/// that impl. They are also kigi-specific (Kigi chat's tail-keep path
 /// has no `user_meta` / `project_instructions` / `system_reminder` carrier
 /// concept), so they live in their own seam that only the full-replace
 /// assembler depends on.
 ///
-/// The grok-build implementor (`ConversationItem`) maps each constructor to the
+/// The kigi implementor (`ConversationItem`) maps each constructor to the
 /// matching factory so the `SyntheticReason` tags the replay / spawn-time
 /// idempotence guards rely on are preserved.
 pub trait CompactionItemFactory: Sized {
@@ -148,7 +148,7 @@ pub trait CompactionItemFactory: Sized {
 }
 
 /// Forward [`CompactionItem`] through shared references so the algorithms can
-/// operate over `&[Arc<T>]` (Grok chat stores turns as `Arc<GrokTurn>`).
+/// operate over `&[Arc<T>]` (Kigi chat stores turns as `Arc<KigiTurn>`).
 impl<T: CompactionItem + ?Sized> CompactionItem for std::sync::Arc<T> {
     fn role(&self) -> CompactionRole {
         (**self).role()

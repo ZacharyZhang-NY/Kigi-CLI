@@ -10,13 +10,13 @@ Sandbox mode is off by default.
 
 ```bash
 # Run with workspace sandbox (read everywhere, write to CWD + temp dirs + ~/.kigi/)
-grok --sandbox workspace
+kigi --sandbox workspace
 
 # Read-only mode (read everywhere, write only to ~/.kigi/ + temp dirs)
-grok --sandbox read-only
+kigi --sandbox read-only
 
 # Most restrictive profile (read CWD + system paths, write CWD + temp dirs + ~/.kigi/, no child network)
-grok --sandbox strict
+kigi --sandbox strict
 ```
 
 ---
@@ -70,12 +70,12 @@ deny = ["/data/shared-secrets", "**/.env", "**/*.pem"]
 Use the custom profile:
 
 ```bash
-grok --sandbox project
+kigi --sandbox project
 ```
 
 A custom profile can't reuse a built-in name. `--sandbox devbox` always runs the built-in `devbox` profile, shadowing any `[profiles.devbox]` you define.
 
-When the global and per-project files define the same custom profile name, the user-level definition takes precedence and the project definition is ignored. If those two definitions differ, Grok warns about the conflict at startup — on the welcome screen in the TUI, and on stderr for headless runs. Identical duplicate definitions do not produce a warning.
+When the global and per-project files define the same custom profile name, the user-level definition takes precedence and the project definition is ignored. If those two definitions differ, Kigi warns about the conflict at startup — on the welcome screen in the TUI, and on stderr for headless runs. Identical duplicate definitions do not produce a warning.
 
 ### Custom Profile Fields
 
@@ -92,7 +92,7 @@ When the global and per-project files define the same custom profile name, the u
 > bind-over on Linux, so a denied path can neither be read (via `bash`, `grep`, or
 > subagents) nor relocated out of the deny set and read elsewhere (the
 > `mv secret x && cat x` bypass is closed). On **Linux**, read-deny requires
-> `bubblewrap`: if it is missing (or any single deny path can't be bound), Grok
+> `bubblewrap`: if it is missing (or any single deny path can't be bound), Kigi
 > refuses to start rather than run with denied paths exposed (`devbox`, which only
 > write-denies `/data`, still falls back to Landlock). Writes to paths **not** in
 > `deny` are controlled by what you grant in `read_write`.
@@ -112,7 +112,7 @@ When the global and per-project files define the same custom profile name, the u
 > Brace alternation (`{a,b}`), backslash-escapes, and the unusual class forms
 > `[]…]` (literal `]` first) and POSIX `[[:…:]]` are **not** supported, so the two
 > platforms can never interpret a glob differently. A glob using an unsupported
-> metacharacter, or one that is malformed, makes Grok **refuse to start** (fail
+> metacharacter, or one that is malformed, makes Kigi **refuse to start** (fail
 > closed) on **both** platforms — write `*.pem` and `*.key` as separate entries
 > rather than `*.{pem,key}`.
 >
@@ -121,19 +121,19 @@ When the global and per-project files define the same custom profile name, the u
 > matching. Enforcement otherwise differs by platform:
 >
 > - **macOS is airtight:** each glob becomes a Seatbelt regex applied at runtime,
->   so matching files are denied **even if created after Grok starts**.
+>   so matching files are denied **even if created after Kigi starts**.
 > - **Linux is best-effort:** a mount namespace can't glob at runtime, so each
 >   glob is expanded to the files that **exist at launch** and those are bound
 >   over. Files created **later** that match a glob are **not** covered — name
 >   exact paths for anything that must be airtight on Linux. A glob that matches
->   too many files, or whose tree is too deep/broad to walk, makes Grok **refuse
+>   too many files, or whose tree is too deep/broad to walk, makes Kigi **refuse
 >   to start** rather than under-enforce.
 
 ---
 
 ## How It Works
 
-The sandbox is applied to the **entire grok process** at startup using kernel primitives -- not per-command wrapping. This means all tool operations are covered:
+The sandbox is applied to the **entire kigi process** at startup using kernel primitives -- not per-command wrapping. This means all tool operations are covered:
 
 - `read_file`, `search_replace`, `list_dir` -- restricted by Landlock/Seatbelt in-process
 - `bash` commands, `grep` (rg) -- child processes inherit FS restrictions automatically
@@ -146,8 +146,8 @@ The sandbox is **irreversible** once applied. The agent cannot relax restriction
 ## Resuming Sessions
 
 The profile a session was started with is saved with the session and is **fixed
-for the life of the session**. When you resume it (`grok --resume <id>`,
-`grok --continue`, or `grok -r`), Grok restores that same profile automatically —
+for the life of the session**. When you resume it (`kigi --resume <id>`,
+`kigi --continue`, or `kigi -r`), Kigi restores that same profile automatically —
 so a session started with `--sandbox workspace` won't silently come back under a
 stricter default and break commands that previously worked.
 
@@ -176,7 +176,7 @@ Profile resolution order for a **new** session:
 | Linux    | Landlock  | Kernel 5.13 or later   |
 | macOS    | Seatbelt  | macOS (all versions)   |
 
-If the sandbox cannot be applied (e.g., unsupported kernel, missing entitlements), Grok logs a warning and continues without enforcement. The exception is an explicitly-requested **custom profile**: on **both macOS and Linux**, if it cannot be applied (unknown profile, malformed `sandbox.toml`, or — on Linux — `bubblewrap` unavailable for a non-empty `deny`), Grok refuses to start rather than run with its denied paths exposed.
+If the sandbox cannot be applied (e.g., unsupported kernel, missing entitlements), Kigi logs a warning and continues without enforcement. The exception is an explicitly-requested **custom profile**: on **both macOS and Linux**, if it cannot be applied (unknown profile, malformed `sandbox.toml`, or — on Linux — `bubblewrap` unavailable for a non-empty `deny`), Kigi refuses to start rather than run with its denied paths exposed.
 
 ---
 

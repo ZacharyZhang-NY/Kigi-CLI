@@ -643,7 +643,7 @@ mod tests {
         // background colour on the label span so a regression that drops
         // the chip-vs-modal colour alignment gets caught.
         //
-        // Use the unquantized `groknight()` theme directly so warning and
+        // Use the unquantized `kiginight()` theme directly so warning and
         // bg_base remain distinguishable in the test env — `Theme::current()`
         // collapses both to ANSI `Reset` on 16-colour terminals, which
         // would defeat the assertion.
@@ -654,7 +654,7 @@ mod tests {
             2,
             0,
         );
-        let t = Theme::groknight();
+        let t = Theme::kiginight();
         let line = goal_status_line(&g, &t, false, 0, None, 0);
         // The label span is the one whose content starts with "Goal:".
         let label_span = line
@@ -677,7 +677,7 @@ mod tests {
             2,
             0,
         );
-        let t = Theme::groknight();
+        let t = Theme::kiginight();
         let line = goal_status_line(&g, &t, false, 0, None, 0);
         let label_span = line
             .spans
@@ -811,7 +811,7 @@ mod tests {
     #[test]
     fn mcp_status_line_uses_dim_directory_color() {
         // The chip must render in `theme.gray_dim` to match the directory path.
-        let t = Theme::groknight();
+        let t = Theme::kiginight();
         let progress = McpInitProgress {
             total: 2,
             connected: 0,

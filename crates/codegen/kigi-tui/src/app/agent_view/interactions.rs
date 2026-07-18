@@ -1107,7 +1107,7 @@ impl AgentView {
         self.submit_question_answers(skipped)
     }
     fn submit_question_answers(&mut self, skipped: bool) -> InputOutcome {
-        use kigi_tools::implementations::grok_build::ask_user_question::AskUserQuestionExtResponse;
+        use kigi_tools::implementations::kigi::ask_user_question::AskUserQuestionExtResponse;
         self.swap_question_freeform();
         let Some(mut qv) = self.question_view.take() else {
             return InputOutcome::Changed;
@@ -1594,7 +1594,7 @@ mod permission_scope_key_tests {
 #[cfg(test)]
 mod question_no_freeform_tests {
     //! Freeform ("Other") gating for `no_freeform` question modals — e.g.
-    //! the SuperGrok upsell. Regression tests for the bug where clicking
+    //! the subscription upsell. Regression tests for the bug where clicking
     //! under the last option of the upsell selected the (hidden) freeform
     //! row and let the user type into a modal that offers no free text.
     use super::super::test_fixtures::make_agent;
@@ -1605,7 +1605,7 @@ mod question_no_freeform_tests {
     use crossterm::event::{
         KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
     };
-    use kigi_tools::implementations::grok_build::ask_user_question::{Question, QuestionOption};
+    use kigi_tools::implementations::kigi::ask_user_question::{Question, QuestionOption};
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
     /// Fixed options, single-select — shaped like the free-usage upsell.

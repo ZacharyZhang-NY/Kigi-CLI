@@ -1,7 +1,7 @@
 //! WebSocket server for remote agent connections.
 //!
 //! This module provides a WebSocket server that allows remote TUI clients to
-//! connect to a grok agent running on a different machine.
+//! connect to a kigi agent running on a different machine.
 //!
 //! The agent persists across WebSocket reconnections: a single MvpAgent instance
 //! is created on first connection and reused for all subsequent connections. This

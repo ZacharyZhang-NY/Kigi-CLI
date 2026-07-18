@@ -257,7 +257,7 @@ fn managed_config_stale_at_is_false_without_user_home() {
 
 #[test]
 fn managed_config_stale_at_is_true_without_synced_marker() {
-    let dir = std::env::temp_dir().join(format!("grok-stale-nomark-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kigi-stale-nomark-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let _ = std::fs::remove_file(dir.join(MANAGED_CONFIG_CACHE_FILE));
     // No recorded sync (even if config files exist) => stale.
@@ -267,7 +267,7 @@ fn managed_config_stale_at_is_true_without_synced_marker() {
 
 #[test]
 fn managed_config_stale_at_is_false_after_fresh_sync() {
-    let dir = std::env::temp_dir().join(format!("grok-stale-fresh-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kigi-stale-fresh-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     mark_managed_config_synced_at(
         &dir,
@@ -286,7 +286,7 @@ fn managed_config_stale_at_is_false_after_fresh_sync() {
 
 #[test]
 fn managed_deployment_id_at_requires_matching_fingerprint() {
-    let dir = std::env::temp_dir().join(format!("grok-dep-id-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kigi-dep-id-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let server_dep = "37c96487-eda9-4bb2-a767-6444274423c8";
     // Deploy-key path: fingerprint set, principal = server deployment UUID.
@@ -324,7 +324,7 @@ fn managed_deployment_id_at_requires_matching_fingerprint() {
 
 #[test]
 fn managed_config_stale_at_is_true_for_old_sync() {
-    let dir = std::env::temp_dir().join(format!("grok-stale-old-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kigi-stale-old-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let hour_ago = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -344,7 +344,7 @@ fn managed_config_stale_at_is_true_for_old_sync() {
 /// A served-then-deleted artifact reads stale regardless of the timer.
 #[test]
 fn managed_config_stale_when_served_artifact_deleted() {
-    let dir = std::env::temp_dir().join(format!("grok-stale-artgone-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kigi-stale-artgone-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     mark_managed_config_synced_at(
         &dir,
@@ -366,7 +366,7 @@ fn managed_config_stale_when_served_artifact_deleted() {
 /// A config-less principal that served nothing is never misread as stale.
 #[test]
 fn managed_config_not_stale_when_nothing_served() {
-    let dir = std::env::temp_dir().join(format!("grok-stale-noart-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kigi-stale-noart-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     mark_managed_config_synced_at(
         &dir,
@@ -385,7 +385,7 @@ fn managed_config_not_stale_when_nothing_served() {
 /// A cache fetched for a different principal is stale for the current one.
 #[test]
 fn managed_config_stale_on_identity_mismatch() {
-    let dir = std::env::temp_dir().join(format!("grok-stale-ident-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kigi-stale-ident-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     mark_managed_config_synced_at(
         &dir,
@@ -408,7 +408,7 @@ fn managed_config_stale_on_identity_mismatch() {
 /// Legacy marker (no `had_*`) is never flagged missing-artifact-stale.
 #[test]
 fn managed_config_legacy_marker_is_conservative() {
-    let dir = std::env::temp_dir().join(format!("grok-stale-legacy-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kigi-stale-legacy-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -429,7 +429,7 @@ fn managed_config_legacy_marker_is_conservative() {
 /// Hard-staleness: missing artifact or identity mismatch → true; a fresh same-identity cache → false.
 #[test]
 fn hard_stale_only_on_missing_or_identity() {
-    let dir = std::env::temp_dir().join(format!("grok-hardstale-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kigi-hardstale-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     mark_managed_config_synced_at(
         &dir,
@@ -455,7 +455,7 @@ fn hard_stale_only_on_missing_or_identity() {
 /// No marker → hard-stale (never synced → fetch before use).
 #[test]
 fn hard_stale_without_marker() {
-    let dir = std::env::temp_dir().join(format!("grok-hardstale-nomark-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kigi-hardstale-nomark-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let _ = std::fs::remove_file(dir.join(MANAGED_CONFIG_CACHE_FILE));
     assert!(is_managed_config_hard_stale_for_at(&dir, &team("team-a")));
@@ -466,7 +466,7 @@ fn hard_stale_without_marker() {
 /// must not lock a managed user out) and the cache is hard-stale so the next sync rewrites it.
 #[test]
 fn corrupt_marker_reads_as_no_marker_and_allows() {
-    let dir = std::env::temp_dir().join(format!("grok-corrupt-marker-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kigi-corrupt-marker-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("requirements.toml"), "fail_closed = true\n").unwrap();
     std::fs::write(dir.join(MANAGED_CONFIG_CACHE_FILE), "{ not valid json").unwrap();
@@ -482,7 +482,7 @@ fn corrupt_marker_reads_as_no_marker_and_allows() {
 /// A deploy-key switch is detected offline as an identity mismatch (`cache_unusable_for`) and refetched online.
 #[test]
 fn deployment_key_switch_is_stale_and_tampered_offline() {
-    let dir = std::env::temp_dir().join(format!("grok-dk-switch-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kigi-dk-switch-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     // Provisioned with key A: principal = served deployment_id, fingerprint = fp-a.
     mark_managed_config_synced_at(
@@ -510,7 +510,7 @@ fn deployment_key_switch_is_stale_and_tampered_offline() {
 /// A pre-upgrade marker (no `key_fingerprint`) must not fire when a key is now configured — it self-upgrades next sync.
 #[test]
 fn pre_upgrade_marker_without_fingerprint_does_not_fire_on_key() {
-    let dir = std::env::temp_dir().join(format!("grok-dk-preupgrade-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kigi-dk-preupgrade-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -535,7 +535,7 @@ fn pre_upgrade_marker_without_fingerprint_does_not_fire_on_key() {
 /// The team path keys on `principal` (team id), records no fingerprint, and never fires a key mismatch.
 #[test]
 fn team_path_keys_on_principal_not_key_fingerprint() {
-    let dir = std::env::temp_dir().join(format!("grok-team-nofp-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kigi-team-nofp-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     mark_managed_config_synced_at(
         &dir,
@@ -565,7 +565,7 @@ fn team_path_keys_on_principal_not_key_fingerprint() {
 /// The eviction trigger fires only on a confirmed switch; first sync, same identity, `None`, and pre-upgrade markers never fire.
 #[test]
 fn identity_changed_only_on_confirmed_switch() {
-    let dir = std::env::temp_dir().join(format!("grok-ident-changed-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kigi-ident-changed-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
 
     // No marker yet → first sync, nothing to evict.
@@ -646,7 +646,7 @@ fn identity_changed_only_on_confirmed_switch() {
 /// make the gate purge / apply eviction shed a real tenant's policy.
 #[test]
 fn blank_principal_is_never_a_confirmed_switch() {
-    let dir = std::env::temp_dir().join(format!("grok-ident-blank-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kigi-ident-blank-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
 
     // Real recorded team, blank current → not a switch.
@@ -724,7 +724,7 @@ fn blank_principal_is_never_a_confirmed_switch() {
 /// Compromised only when opted in AND tampered; opted-out / never-synced / config-less / intact is never flagged.
 #[test]
 fn compromised_only_when_opted_in_and_deleted_or_substituted() {
-    let dir = std::env::temp_dir().join(format!("grok-compromised-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kigi-compromised-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
 
     // No marker → not compromised.
@@ -787,7 +787,7 @@ fn compromised_only_when_opted_in_and_deleted_or_substituted() {
 /// deleted under a fail_closed marker is compromised.
 #[test]
 fn compromised_on_managed_config_deletion_when_fail_closed() {
-    let dir = std::env::temp_dir().join(format!("grok-compromised-mc-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kigi-compromised-mc-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("managed_config.toml"), "[cli]\n").unwrap();
     mark_managed_config_synced_at(
@@ -811,7 +811,7 @@ fn compromised_on_managed_config_deletion_when_fail_closed() {
 /// Deployment-key path: an opted-in marker is compromised on an offline key switch (the fingerprint is the only offline identity).
 #[test]
 fn compromised_on_deployment_key_switch_when_fail_closed() {
-    let dir = std::env::temp_dir().join(format!("grok-compromised-dk-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kigi-compromised-dk-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
 
     // Provisioned with key A (fp-a), opted into fail_closed, artifact present.
@@ -853,7 +853,7 @@ fn compromised_on_deployment_key_switch_when_fail_closed() {
 /// never a pure identity mismatch; staleness still treats that mismatch as a refetch trigger (asserted alongside).
 #[test]
 fn gate_excludes_pure_identity_mismatch_but_keeps_artifact_and_key_tamper() {
-    let dir = std::env::temp_dir().join(format!("grok-gate-fix1-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kigi-gate-fix1-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
 
     // (1) Principal A (fail_closed), artifact intact; serving team-b = pure identity mismatch → ALLOWED.
@@ -918,7 +918,7 @@ fn gate_excludes_pure_identity_mismatch_but_keeps_artifact_and_key_tamper() {
 /// Opt-in comes from the served response, not disk, so a no-write sync can't disarm the gate.
 #[test]
 fn mark_keeps_fail_closed_armed_without_on_disk_file() {
-    let dir = std::env::temp_dir().join(format!("grok-mark-disarm-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kigi-mark-disarm-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
 
     // Opted-in policy served + present → not compromised (intact).

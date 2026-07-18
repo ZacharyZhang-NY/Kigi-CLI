@@ -444,7 +444,7 @@ pub(crate) async fn capture_git_baseline(workspace_root: &Path) -> Option<String
 /// never sees the spawn live — it is direct (no `task` tool call).
 pub(crate) struct ChannelSpawner {
     pub(crate) event_tx: tokio::sync::mpsc::UnboundedSender<
-        kigi_tools::implementations::grok_build::task::types::SubagentEvent,
+        kigi_tools::implementations::kigi::task::types::SubagentEvent,
     >,
     pub(crate) parent_session_id: String,
     pub(crate) parent_prompt_id: Option<String>,
@@ -503,7 +503,7 @@ impl ChannelSpawner {
         harness_agent_type: Option<String>,
         resume_from: Option<&str>,
     ) -> Result<String, SpawnError> {
-        use kigi_tools::implementations::grok_build::task::types::{
+        use kigi_tools::implementations::kigi::task::types::{
             SubagentEvent, SubagentRequest, SubagentRuntimeOverrides,
         };
         let (result_tx, result_rx) = tokio::sync::oneshot::channel();
@@ -2355,7 +2355,7 @@ mod tests {
 
     #[tokio::test]
     async fn channel_spawner_request_is_harness_internal() {
-        use kigi_tools::implementations::grok_build::task::types::{SubagentEvent, SubagentResult};
+        use kigi_tools::implementations::kigi::task::types::{SubagentEvent, SubagentResult};
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let spawner = ChannelSpawner {
@@ -2402,7 +2402,7 @@ mod tests {
     /// SAME model — i.e. skeptic-0 keeps `pool[0]` on the cold fallback.
     #[tokio::test]
     async fn channel_spawner_applies_per_index_model_to_request() {
-        use kigi_tools::implementations::grok_build::task::types::{SubagentEvent, SubagentResult};
+        use kigi_tools::implementations::kigi::task::types::{SubagentEvent, SubagentResult};
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let spawner = ChannelSpawner {
@@ -2470,7 +2470,7 @@ mod tests {
     /// `None` — the historic default-spawn behavior.
     #[tokio::test]
     async fn channel_spawner_inherit_index_leaves_model_none() {
-        use kigi_tools::implementations::grok_build::task::types::{SubagentEvent, SubagentResult};
+        use kigi_tools::implementations::kigi::task::types::{SubagentEvent, SubagentResult};
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let spawner = ChannelSpawner {
             event_tx: tx,
@@ -2514,7 +2514,7 @@ mod tests {
         let mac_like = Path::new("/var/folders/zz/T");
         assert!(
             validate_details_path_in_root(
-                Path::new("/var/folders/zz/T/grok-goal-abc/goal-classifier-abc-1.md"),
+                Path::new("/var/folders/zz/T/kigi-goal-abc/goal-classifier-abc-1.md"),
                 mac_like,
             )
             .is_ok(),
@@ -2527,7 +2527,7 @@ mod tests {
         );
         assert!(
             validate_details_path_in_root(
-                Path::new("/tmp/grok-goal-abc/goal-classifier-abc-1.md"),
+                Path::new("/tmp/kigi-goal-abc/goal-classifier-abc-1.md"),
                 Path::new("/tmp"),
             )
             .is_ok(),
@@ -3478,10 +3478,10 @@ mod tests {
         ]);
         assert_eq!(a, b, "scratch-path churn must not break the fingerprint");
         let c = gap_fingerprint(&[
-            "no captured output in /var/folders/x1/T/grok-goal-1/out.log for criterion 2",
+            "no captured output in /var/folders/x1/T/kigi-goal-1/out.log for criterion 2",
         ]);
         let d = gap_fingerprint(&[
-            "no captured output in /var/folders/x1/T/grok-goal-2/out.log for criterion 2",
+            "no captured output in /var/folders/x1/T/kigi-goal-2/out.log for criterion 2",
         ]);
         assert_eq!(c, d);
         // Genuinely different gaps still differ.
@@ -3908,7 +3908,7 @@ mod tests {
     /// renders leave no tool placeholder unresolved.
     #[test]
     fn verifier_template_renders_per_agent_type_and_falls_back() {
-        use kigi_tools::implementations::grok_build::task::types::SubagentTypeSummary;
+        use kigi_tools::implementations::kigi::task::types::SubagentTypeSummary;
         let mut tool_names = std::collections::HashMap::new();
         tool_names.insert(
             kigi_tools::types::tool::ToolKind::Read,
@@ -3941,14 +3941,14 @@ mod tests {
         );
         assert_no_tool_placeholders(&cursor);
 
-        // grok-build explicit render: no leftover placeholder either.
-        let grok = RoleToolNames::from_summary(&summary_with(&[
+        // kigi explicit render: no leftover placeholder either.
+        let kigi = RoleToolNames::from_summary(&summary_with(&[
             (kigi_tools::types::tool::ToolKind::Read, "read_file"),
             (kigi_tools::types::tool::ToolKind::ListDir, "list_dir"),
             (kigi_tools::types::tool::ToolKind::Search, "grep"),
         ]))
         .apply(GOAL_VERIFIER_PROMPT_TEMPLATE);
-        assert_no_tool_placeholders(&grok);
+        assert_no_tool_placeholders(&kigi);
 
         // Fallback path (e.g. `describe_subagent_type` ⇒ `Unavailable`): the
         // parent-toolset defaults render and no placeholder survives.
@@ -4123,8 +4123,8 @@ mod tests {
             "/tmp/goal-verifier-details-x-1-0.md",
             "/tmp/goal-verdict-x-1-0.json",
             kind_lens(Some(GoalKind::CodeChange)),
-            "/tmp/grok-goal-x/skeptic-0",
-            "/tmp/grok-goal-x/implementer",
+            "/tmp/kigi-goal-x/skeptic-0",
+            "/tmp/kigi-goal-x/implementer",
             None,
             &RoleToolNames::inherit_defaults(),
             true,
@@ -4136,8 +4136,8 @@ mod tests {
         );
         // The skeptic's own scratch dir AND the implementer-scratch
         // awareness line are both present, with no dangling placeholder.
-        assert!(body.contains("/tmp/grok-goal-x/skeptic-0"));
-        assert!(body.contains("/tmp/grok-goal-x/implementer"));
+        assert!(body.contains("/tmp/kigi-goal-x/skeptic-0"));
+        assert!(body.contains("/tmp/kigi-goal-x/implementer"));
         assert!(
             !body.contains("{SKEPTIC_SCRATCH}") && !body.contains("{IMPLEMENTER_SCRATCH}"),
             "scratch placeholders must be substituted:\n{body}"
@@ -4154,8 +4154,8 @@ mod tests {
             "/tmp/goal-verifier-details-x-1-0.md",
             "/tmp/goal-verdict-x-1-0.json",
             kind_lens(None),
-            "/tmp/grok-goal-x/skeptic-1",
-            "/tmp/grok-goal-x/implementer",
+            "/tmp/kigi-goal-x/skeptic-1",
+            "/tmp/kigi-goal-x/implementer",
             None,
             &RoleToolNames::inherit_defaults(),
             true,
@@ -4181,8 +4181,8 @@ mod tests {
                 "/tmp/goal-verifier-details-x-1-0.md",
                 "/tmp/goal-verdict-x-1-0.json",
                 kind_lens(Some(GoalKind::CodeChange)),
-                "/tmp/grok-goal-x/skeptic-0",
-                "/tmp/grok-goal-x/implementer",
+                "/tmp/kigi-goal-x/skeptic-0",
+                "/tmp/kigi-goal-x/implementer",
                 None,
                 &RoleToolNames::inherit_defaults(),
                 scratch_ready,
@@ -4232,8 +4232,8 @@ mod tests {
                 "/tmp/goal-verifier-details-x-2-1.md",
                 "/tmp/goal-verdict-x-2-1.json",
                 kind_lens(Some(GoalKind::CodeChange)),
-                "/tmp/grok-goal-x/skeptic-1",
-                "/tmp/grok-goal-x/implementer",
+                "/tmp/kigi-goal-x/skeptic-1",
+                "/tmp/kigi-goal-x/implementer",
                 prior,
                 &RoleToolNames::inherit_defaults(),
                 true,
@@ -4266,8 +4266,8 @@ mod tests {
             "/tmp/goal-classifier-x-2-skeptic-0.md",
             "/tmp/goal-verdict-x-2-0.json",
             kind_lens(Some(GoalKind::CodeChange)),
-            "/tmp/grok-goal-x/skeptic-0",
-            "/tmp/grok-goal-x/implementer",
+            "/tmp/kigi-goal-x/skeptic-0",
+            "/tmp/kigi-goal-x/implementer",
             None,
             &RoleToolNames::inherit_defaults(),
             true,
@@ -4289,8 +4289,8 @@ mod tests {
         assert!(body.contains("/tmp/goal-verdict-x-2-0.json"));
         assert!(body.contains("/tmp/goal-classifier-x-2-skeptic-0.md"));
         // Scratch dirs: own + implementer-awareness, both substituted.
-        assert!(body.contains("/tmp/grok-goal-x/skeptic-0"));
-        assert!(body.contains("/tmp/grok-goal-x/implementer"));
+        assert!(body.contains("/tmp/kigi-goal-x/skeptic-0"));
+        assert!(body.contains("/tmp/kigi-goal-x/implementer"));
         assert!(
             !body.contains("{KIND_LENS}")
                 && !body.contains("{DETAILS_FILE}")
@@ -4649,11 +4649,11 @@ mod tests {
             workspace_root,
             verifier_id,
             attempt,
-            model_id: "grok-test",
+            model_id: "kigi-test",
             goal_created_at: 0,
             plan_file: None,
             plan_baseline_file: None,
-            implementer_scratch_dir: Path::new("/tmp/grok-goal-test/implementer"),
+            implementer_scratch_dir: Path::new("/tmp/kigi-goal-test/implementer"),
             scratch_dir_ready: true,
             skeptic_count,
             max_runs: GOAL_CLASSIFIER_MAX_RUNS_DEFAULT,
@@ -4747,7 +4747,7 @@ mod tests {
         // and this skeptic's own dir (derived from verifier_id) are both
         // present; neither placeholder leaks.
         assert!(
-            p.contains("/tmp/grok-goal-test/implementer"),
+            p.contains("/tmp/kigi-goal-test/implementer"),
             "implementer scratch dir missing in prompt",
         );
         assert!(
@@ -5676,7 +5676,7 @@ mod tests {
     /// `runtime_overrides.model`.
     #[tokio::test]
     async fn cold_fallback_after_resume_failure_carries_pool0_model_on_request() {
-        use kigi_tools::implementations::grok_build::task::types::{SubagentEvent, SubagentResult};
+        use kigi_tools::implementations::kigi::task::types::{SubagentEvent, SubagentResult};
         use std::sync::Mutex as StdMutex;
 
         // (model, resume_from) per spawn, in spawn order.
@@ -6068,7 +6068,7 @@ mod tests {
 
     #[tokio::test]
     async fn channel_spawner_blocks_until_subagent_result() {
-        use kigi_tools::implementations::grok_build::task::types::{SubagentEvent, SubagentResult};
+        use kigi_tools::implementations::kigi::task::types::{SubagentEvent, SubagentResult};
 
         let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
         let release = Arc::new(Notify::new());
@@ -6328,7 +6328,7 @@ mod tests {
             verifier_id: &vid,
             attempt: 1,
             kind_lens: "",
-            implementer_scratch: "/tmp/grok-goal-test/implementer",
+            implementer_scratch: "/tmp/kigi-goal-test/implementer",
             scratch_dir_ready: true,
             prior_gaps: None,
         };

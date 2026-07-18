@@ -230,7 +230,7 @@ impl SessionActor {
                     self.notifications
                         .gateway
                         .forward_fire_and_forget(acp::ExtNotification::new(
-                            "x.ai/session_notification",
+                            "kigi/session_notification",
                             params.into(),
                         ));
                 }
@@ -734,7 +734,7 @@ impl SessionActor {
             .ok();
         if let Some(params) = params {
             let ext_notification =
-                acp::ExtNotification::new("x.ai/session_notification", params.into());
+                acp::ExtNotification::new("kigi/session_notification", params.into());
             self.notifications
                 .gateway
                 .forward_fire_and_forget(ext_notification);

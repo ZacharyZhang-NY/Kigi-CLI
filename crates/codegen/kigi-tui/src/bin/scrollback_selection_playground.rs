@@ -84,7 +84,7 @@ impl App {
             "I am thinking through how to answer your question before responding.",
         ));
         scrollback.push_block(RenderBlock::agent_message(
-            "I'm Grok Build, an interactive CLI agent built to help with software engineering tasks like coding, debugging, refactoring, and exploring codebases.",
+            "I'm Kigi, an interactive CLI agent built to help with software engineering tasks like coding, debugging, refactoring, and exploring codebases.",
         ));
         scrollback.push_block(RenderBlock::agent_message(
             "Try drag-selecting text. Double-click toggles fold by default; set Text selection → Word select for double-click word / triple-click line.",

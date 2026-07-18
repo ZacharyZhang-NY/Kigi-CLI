@@ -644,7 +644,7 @@ mod tests {
     use kigi_tools::types::template_renderer::TemplateRenderer;
     use kigi_tools::types::tool::ToolKind;
     use std::collections::HashMap;
-    /// Build a test TemplateRenderer with standard Grok Build tool mappings.
+    /// Build a test TemplateRenderer with standard Kigi tool mappings.
     fn test_renderer() -> TemplateRenderer {
         let tools: HashMap<ToolKind, String> = [
             (ToolKind::Edit, "search_replace".to_owned()),

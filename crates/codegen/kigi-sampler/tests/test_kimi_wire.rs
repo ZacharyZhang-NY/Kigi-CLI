@@ -353,16 +353,16 @@ async fn request_carries_bearer_kigi_ua_and_kimi_dialect_body() {
     for gone in [
         "x-xai-token-auth",
         "x-authenticateresponse",
-        "x-grok-conv-id",
-        "x-grok-req-id",
-        "x-grok-model-override",
-        "x-grok-session-id",
-        "x-grok-agent-id",
-        "x-grok-client-identifier",
-        "x-grok-client-version",
-        "x-grok-deployment-id",
-        "x-grok-user-id",
-        "x-grok-client-mode",
+        "x-kigi-conv-id",
+        "x-kigi-req-id",
+        "x-kigi-model-override",
+        "x-kigi-session-id",
+        "x-kigi-agent-id",
+        "x-kigi-client-identifier",
+        "x-kigi-client-version",
+        "x-kigi-deployment-id",
+        "x-kigi-user-id",
+        "x-kigi-client-mode",
     ] {
         assert!(
             headers.get(gone).is_none(),
@@ -401,7 +401,7 @@ async fn request_carries_bearer_kigi_ua_and_kimi_dialect_body() {
         None,
         "empty tool-call content dropped (kimi.py:339-350)"
     );
-    assert_eq!(assistant.get("model_id"), None, "grok extension dropped");
+    assert_eq!(assistant.get("model_id"), None, "kigi extension dropped");
     assert_eq!(
         assistant["reasoning_content"],
         json!("planning the read"),

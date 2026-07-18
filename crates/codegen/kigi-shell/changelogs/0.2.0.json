@@ -1,7 +1,0 @@
-[
-  {
-    "category": "performance",
-    "description": "**Large chat sessions** now use substantially less memory and run faster during forks, rewinds, and compaction.",
-    "breaking_change": false
-  }
-]

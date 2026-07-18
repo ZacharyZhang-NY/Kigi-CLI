@@ -6,7 +6,7 @@
 //! 3. Start a headless session — startup must re-copy trusted/user-home locals.
 //! 4. Smoke-validate session JSON under `$KIGI_SHARE_DIR/sessions/` after exit.
 //!
-//! Requires a built `grok` binary (`KIGI_BINARY` or cargo-built pager) for the
+//! Requires a built `kigi` binary (`KIGI_BINARY` or cargo-built pager) for the
 //! ignored headless test.
 //!
 //! ```bash
@@ -114,7 +114,7 @@ fn trusted_local_refresh_surfaces_new_agent_via_discovery() {
     let home = dunce::canonicalize(home_tmp.path()).unwrap();
     let kigi_home = home.join(".kigi");
     let _home_guard = EnvVarGuard::set("HOME", &home);
-    let _grok_guard = EnvVarGuard::set("KIGI_SHARE_DIR", &kigi_home);
+    let _kigi_guard = EnvVarGuard::set("KIGI_SHARE_DIR", &kigi_home);
 
     // Live source: a user-home local plugin (mirrors a `~/.claude` local tree).
     let source = home
@@ -198,7 +198,7 @@ fn trusted_local_refresh_surfaces_new_agent_via_discovery() {
 
 /// Full binary smoke: session start runs refresh then writes session JSON.
 #[tokio::test]
-#[ignore = "requires pre-built grok binary; run with --ignored"]
+#[ignore = "requires pre-built kigi binary; run with --ignored"]
 #[serial]
 async fn headless_session_refreshes_trusted_local_plugin_and_writes_session_json() {
     let server = MockInferenceServer::start()
@@ -223,7 +223,7 @@ async fn headless_session_refreshes_trusted_local_plugin_and_writes_session_json
     // is only for the in-process post-run discovery assertion (which resolves the
     // registry via kigi_home()). `#[serial]` keeps it from racing other tests.
     let _home_guard = EnvVarGuard::set("HOME", &home);
-    let _grok_guard = EnvVarGuard::set("KIGI_SHARE_DIR", &kigi_home);
+    let _kigi_guard = EnvVarGuard::set("KIGI_SHARE_DIR", &kigi_home);
 
     let mut registry = InstallRegistry::empty(kigi_home.join("installed-plugins"));
     let installed = register_local_install(&mut registry, &source);
@@ -233,7 +233,7 @@ async fn headless_session_refreshes_trusted_local_plugin_and_writes_session_json
     assert!(!installed.path.join("agents/new.md").exists());
 
     let workdir = git_workdir();
-    let mut cmd = tokio::process::Command::new(grok_binary());
+    let mut cmd = tokio::process::Command::new(kigi_binary());
     cmd.args([
         "-p",
         "say hello",

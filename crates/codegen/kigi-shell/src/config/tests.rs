@@ -111,18 +111,18 @@ fn with_env_var_opt<T>(name: &str, value: Option<&str>, f: impl FnOnce() -> T) -
     result.unwrap_or_else(|p| std::panic::resume_unwind(p))
 }
 /// Run `f` with KIGI_MEMORY explicitly unset.
-fn without_grok_memory<T>(f: impl FnOnce() -> T) -> T {
+fn without_kigi_memory<T>(f: impl FnOnce() -> T) -> T {
     let _guard = MEMORY_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     with_env_var_opt("KIGI_MEMORY", None, f)
 }
 /// Run `f` with KIGI_MEMORY set to a specific value.
-fn with_grok_memory<T>(value: &str, f: impl FnOnce() -> T) -> T {
+fn with_kigi_memory<T>(value: &str, f: impl FnOnce() -> T) -> T {
     let _guard = MEMORY_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     with_env_var_opt("KIGI_MEMORY", Some(value), f)
 }
 #[test]
 fn memory_config_default_disabled() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let config = toml::Value::Table(toml::map::Map::new());
         let mem = MemoryConfig::resolve(false, false, &config, None);
         assert!(! mem.enabled);
@@ -130,7 +130,7 @@ fn memory_config_default_disabled() {
 }
 #[test]
 fn memory_config_cli_flag_enables() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let config = toml::Value::Table(toml::map::Map::new());
         let mem = MemoryConfig::resolve(true, false, &config, None);
         assert!(mem.enabled);
@@ -138,7 +138,7 @@ fn memory_config_cli_flag_enables() {
 }
 #[test]
 fn memory_config_from_toml() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let config: toml::Value = toml::from_str("[memory]\nenabled = true").unwrap();
         let mem = MemoryConfig::resolve(false, false, &config, None);
         assert!(mem.enabled);
@@ -146,7 +146,7 @@ fn memory_config_from_toml() {
 }
 #[test]
 fn memory_config_toml_disabled() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let config: toml::Value = toml::from_str("[memory]\nenabled = false").unwrap();
         let mem = MemoryConfig::resolve(false, false, &config, None);
         assert!(! mem.enabled);
@@ -154,7 +154,7 @@ fn memory_config_toml_disabled() {
 }
 #[test]
 fn memory_config_env_var_enables() {
-    with_grok_memory(
+    with_kigi_memory(
         "1",
         || {
             let config = toml::Value::Table(toml::map::Map::new());
@@ -165,7 +165,7 @@ fn memory_config_env_var_enables() {
 }
 #[test]
 fn memory_config_env_var_true_enables() {
-    with_grok_memory(
+    with_kigi_memory(
         "true",
         || {
             let config = toml::Value::Table(toml::map::Map::new());
@@ -176,7 +176,7 @@ fn memory_config_env_var_true_enables() {
 }
 #[test]
 fn memory_config_env_var_zero_does_not_enable() {
-    with_grok_memory(
+    with_kigi_memory(
         "0",
         || {
             let config = toml::Value::Table(toml::map::Map::new());
@@ -187,7 +187,7 @@ fn memory_config_env_var_zero_does_not_enable() {
 }
 #[test]
 fn memory_config_env_var_false_does_not_enable() {
-    with_grok_memory(
+    with_kigi_memory(
         "false",
         || {
             let config = toml::Value::Table(toml::map::Map::new());
@@ -198,7 +198,7 @@ fn memory_config_env_var_false_does_not_enable() {
 }
 #[test]
 fn memory_config_cli_overrides_toml_disabled() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let config: toml::Value = toml::from_str("[memory]\nenabled = false").unwrap();
         let mem = MemoryConfig::resolve(true, false, &config, None);
         assert!(mem.enabled, "CLI flag should override config file");
@@ -206,7 +206,7 @@ fn memory_config_cli_overrides_toml_disabled() {
 }
 #[test]
 fn memory_config_env_zero_force_disables_toml_enabled() {
-    with_grok_memory(
+    with_kigi_memory(
         "0",
         || {
             let config: toml::Value = toml::from_str("[memory]\nenabled = true")
@@ -221,7 +221,7 @@ fn memory_config_env_zero_force_disables_toml_enabled() {
 }
 #[test]
 fn memory_config_env_false_force_disables_toml_enabled() {
-    with_grok_memory(
+    with_kigi_memory(
         "false",
         || {
             let config: toml::Value = toml::from_str("[memory]\nenabled = true")
@@ -236,7 +236,7 @@ fn memory_config_env_false_force_disables_toml_enabled() {
 }
 #[test]
 fn memory_config_cli_flag_overrides_env_disable() {
-    with_grok_memory(
+    with_kigi_memory(
         "0",
         || {
             let config = toml::Value::Table(toml::map::Map::new());
@@ -249,7 +249,7 @@ fn memory_config_cli_flag_overrides_env_disable() {
 }
 #[test]
 fn memory_config_no_memory_overrides_all() {
-    with_grok_memory(
+    with_kigi_memory(
         "1",
         || {
             let config: toml::Value = toml::from_str("[memory]\nenabled = true")
@@ -264,7 +264,7 @@ fn memory_config_no_memory_overrides_all() {
 }
 #[test]
 fn memory_config_no_memory_alone_disables() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let config = toml::Value::Table(toml::map::Map::new());
         let mem = MemoryConfig::resolve(false, true, &config, None);
         assert!(! mem.enabled, "--no-memory alone should disable");
@@ -272,7 +272,7 @@ fn memory_config_no_memory_alone_disables() {
 }
 #[test]
 fn memory_config_no_memory_overrides_env_enable() {
-    with_grok_memory(
+    with_kigi_memory(
         "1",
         || {
             let config = toml::Value::Table(toml::map::Map::new());
@@ -283,7 +283,7 @@ fn memory_config_no_memory_overrides_env_enable() {
 }
 #[test]
 fn memory_config_no_memory_overrides_toml_enabled() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let config: toml::Value = toml::from_str("[memory]\nenabled = true").unwrap();
         let mem = MemoryConfig::resolve(false, true, &config, None);
         assert!(! mem.enabled, "--no-memory should override TOML enabled=true");
@@ -291,7 +291,7 @@ fn memory_config_no_memory_overrides_toml_enabled() {
 }
 #[test]
 fn memory_config_no_memory_overrides_remote_enabled() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let config = toml::Value::Table(toml::map::Map::new());
         let remote = crate::util::config::RemoteSettings {
             memory_enabled: Some(true),
@@ -303,7 +303,7 @@ fn memory_config_no_memory_overrides_remote_enabled() {
 }
 #[test]
 fn memory_config_defaults_are_correct() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let config = toml::Value::Table(toml::map::Map::new());
         let mem = MemoryConfig::resolve(false, false, &config, None);
         assert_eq!(mem.index.max_chunk_chars, 1600);
@@ -352,7 +352,7 @@ fn memory_config_defaults_are_correct() {
 /// (unknown fields are silently ignored by serde default).
 #[test]
 fn memory_config_watcher_debounce_ms_in_toml_is_silently_ignored() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let toml_str = "[memory.watcher]\nenabled = true\ndebounce_ms = 2000\n";
         let config: toml::Value = toml::from_str(toml_str).unwrap();
         let mem = MemoryConfig::resolve(false, false, &config, None);
@@ -362,7 +362,7 @@ fn memory_config_watcher_debounce_ms_in_toml_is_silently_ignored() {
 }
 #[test]
 fn memory_config_full_toml_parsing() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let toml_str = r#"
 [memory]
 enabled = true
@@ -402,7 +402,7 @@ save_on_end = false
 [compaction.memory_flush]
 enabled = false
 soft_threshold_tokens = 8000
-flush_model = "grok-4"
+flush_model = "kigi-4"
 max_flush_write_chars = 16000
 idle_timeout_secs = 300
 semantic_dedup_threshold = 0.85
@@ -433,7 +433,7 @@ hard_clear_age_turns = 20
         assert!(! mem.session.save_on_end);
         assert!(! mem.flush.enabled);
         assert_eq!(mem.flush.soft_threshold_tokens, 8000);
-        assert_eq!(mem.flush.flush_model.as_deref(), Some("grok-4"));
+        assert_eq!(mem.flush.flush_model.as_deref(), Some("kigi-4"));
         assert_eq!(mem.flush.max_flush_write_chars, 16000);
         assert_eq!(mem.flush.idle_timeout_secs, Some(300));
         assert_eq!(mem.flush.semantic_dedup_threshold, Some(0.85));
@@ -444,7 +444,7 @@ hard_clear_age_turns = 20
 }
 #[test]
 fn memory_config_partial_toml_uses_defaults_for_missing() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let toml_str = r#"
 [memory]
 enabled = true
@@ -465,7 +465,7 @@ max_chunk_chars = 3200
 }
 #[test]
 fn memory_config_remote_settings_enable() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let config = toml::Value::Table(toml::map::Map::new());
         let remote = crate::util::config::RemoteSettings {
             memory_enabled: Some(true),
@@ -477,7 +477,7 @@ fn memory_config_remote_settings_enable() {
 }
 #[test]
 fn memory_config_remote_settings_pruning() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let config = toml::Value::Table(toml::map::Map::new());
         let remote = crate::util::config::RemoteSettings {
             pruning_enabled: Some(true),
@@ -491,7 +491,7 @@ fn memory_config_remote_settings_pruning() {
 }
 #[test]
 fn memory_config_remote_settings_initial_injection() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let config = toml::Value::Table(toml::map::Map::new());
         let remote = crate::util::config::RemoteSettings {
             memory_initial_injection_enabled: Some(false),
@@ -505,7 +505,7 @@ fn memory_config_remote_settings_initial_injection() {
 }
 #[test]
 fn memory_config_local_initial_injection_overrides_remote() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let toml_str = r#"
 [memory.initial_injection]
 enabled = true
@@ -524,7 +524,7 @@ min_score = 0.25
 }
 #[test]
 fn memory_config_local_disabled_blocks_remote_enable() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let config: toml::Value = toml::from_str("[memory]\nenabled = false").unwrap();
         let remote = crate::util::config::RemoteSettings {
             memory_enabled: Some(true),
@@ -538,7 +538,7 @@ fn memory_config_local_disabled_blocks_remote_enable() {
 }
 #[test]
 fn memory_config_local_overrides_remote() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let toml_str = r#"
 [memory.search]
 max_results = 20
@@ -554,7 +554,7 @@ max_results = 20
 }
 #[test]
 fn memory_config_remote_none_is_noop() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let config = toml::Value::Table(toml::map::Map::new());
         let mem_without = MemoryConfig::resolve(false, false, &config, None);
         let mem_with_empty = MemoryConfig::resolve(
@@ -569,7 +569,7 @@ fn memory_config_remote_none_is_noop() {
 }
 #[test]
 fn flush_semantic_dedup_threshold_from_remote_when_no_local_flush() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let config = toml::Value::Table(toml::map::Map::new());
         let remote = crate::util::config::RemoteSettings {
             flush_semantic_dedup_threshold: Some(0.85),
@@ -584,7 +584,7 @@ fn flush_semantic_dedup_threshold_from_remote_when_no_local_flush() {
 }
 #[test]
 fn flush_semantic_dedup_threshold_clamped_from_remote() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let config = toml::Value::Table(toml::map::Map::new());
         let remote = crate::util::config::RemoteSettings {
             flush_semantic_dedup_threshold: Some(1.5),
@@ -608,7 +608,7 @@ fn flush_semantic_dedup_threshold_clamped_from_remote() {
 }
 #[test]
 fn flush_semantic_dedup_threshold_local_blocks_remote() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let toml_str = r#"
 [compaction.memory_flush]
 enabled = true
@@ -628,7 +628,7 @@ semantic_dedup_threshold = 0.88
 }
 #[test]
 fn flush_semantic_dedup_threshold_defaults_to_none() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let config = toml::Value::Table(toml::map::Map::new());
         let mem = MemoryConfig::resolve(false, false, &config, None);
         assert_eq!(
@@ -639,7 +639,7 @@ fn flush_semantic_dedup_threshold_defaults_to_none() {
 }
 #[test]
 fn memory_dream_config_defaults() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let config = toml::Value::Table(toml::map::Map::new());
         let mem = MemoryConfig::resolve(false, false, &config, None);
         assert!(mem.dream.enabled);
@@ -651,7 +651,7 @@ fn memory_dream_config_defaults() {
 }
 #[test]
 fn memory_dream_config_toml_parsing() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let toml_str = r#"
 [memory.dream]
 enabled = true
@@ -671,7 +671,7 @@ check_interval_secs = 600
 }
 #[test]
 fn memory_dream_config_remote_override_when_toml_absent() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let config = toml::Value::Table(toml::map::Map::new());
         let remote = crate::util::config::RemoteSettings {
             dream_enabled: Some(true),
@@ -690,7 +690,7 @@ fn memory_dream_config_remote_override_when_toml_absent() {
 }
 #[test]
 fn memory_dream_config_remote_ignored_when_toml_present() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let toml_str = r#"
 [memory.dream]
 enabled = false
@@ -853,7 +853,7 @@ fn effective_half_life_disabled_legacy_recency_out_of_range_ignored() {
 }
 #[test]
 fn mmr_lambda_clamped_above_one() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let toml_str = r#"
 [memory]
 enabled = true
@@ -873,7 +873,7 @@ lambda = 2.0
 }
 #[test]
 fn mmr_lambda_clamped_below_zero() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let toml_str = r#"
 [memory]
 enabled = true
@@ -893,7 +893,7 @@ lambda = -0.5
 }
 #[test]
 fn memory_config_remote_temporal_decay() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let config = toml::Value::Table(toml::map::Map::new());
         let remote = crate::util::config::RemoteSettings {
             memory_temporal_decay_enabled: Some(false),
@@ -907,7 +907,7 @@ fn memory_config_remote_temporal_decay() {
 }
 #[test]
 fn memory_config_remote_mmr() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let config = toml::Value::Table(toml::map::Map::new());
         let remote = crate::util::config::RemoteSettings {
             memory_mmr_enabled: Some(true),
@@ -921,7 +921,7 @@ fn memory_config_remote_mmr() {
 }
 #[test]
 fn memory_config_remote_mmr_lambda_clamped() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let config = toml::Value::Table(toml::map::Map::new());
         let remote = crate::util::config::RemoteSettings {
             memory_mmr_lambda: Some(5.0),
@@ -936,7 +936,7 @@ fn memory_config_remote_mmr_lambda_clamped() {
 }
 #[test]
 fn memory_config_local_search_blocks_remote_temporal_decay_and_mmr() {
-    without_grok_memory(|| {
+    without_kigi_memory(|| {
         let toml_str = r#"
 [memory.search]
 max_results = 8
@@ -962,18 +962,18 @@ max_results = 8
 /// Mutex to serialize tests that touch the KIGI_SUBAGENTS env var.
 static SUBAGENTS_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// Run `f` with KIGI_SUBAGENTS explicitly unset.
-fn without_grok_subagents<T>(f: impl FnOnce() -> T) -> T {
+fn without_kigi_subagents<T>(f: impl FnOnce() -> T) -> T {
     let _guard = SUBAGENTS_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     with_env_var_opt("KIGI_SUBAGENTS", None, f)
 }
 /// Run `f` with KIGI_SUBAGENTS set to a specific value.
-fn with_grok_subagents<T>(value: &str, f: impl FnOnce() -> T) -> T {
+fn with_kigi_subagents<T>(value: &str, f: impl FnOnce() -> T) -> T {
     let _guard = SUBAGENTS_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     with_env_var_opt("KIGI_SUBAGENTS", Some(value), f)
 }
 #[test]
 fn subagents_config_default_enabled() {
-    without_grok_subagents(|| {
+    without_kigi_subagents(|| {
         let config = toml::Value::Table(toml::map::Map::new());
         let sa = SubagentsConfig::resolve(false, &config, None);
         assert!(sa.enabled);
@@ -981,7 +981,7 @@ fn subagents_config_default_enabled() {
 }
 #[test]
 fn subagents_config_cli_flag_enables() {
-    without_grok_subagents(|| {
+    without_kigi_subagents(|| {
         let config = toml::Value::Table(toml::map::Map::new());
         let sa = SubagentsConfig::resolve(true, &config, None);
         assert!(sa.enabled);
@@ -989,7 +989,7 @@ fn subagents_config_cli_flag_enables() {
 }
 #[test]
 fn subagents_config_env_var_enables() {
-    with_grok_subagents(
+    with_kigi_subagents(
         "1",
         || {
             let config = toml::Value::Table(toml::map::Map::new());
@@ -1000,7 +1000,7 @@ fn subagents_config_env_var_enables() {
 }
 #[test]
 fn subagents_config_env_var_disables() {
-    with_grok_subagents(
+    with_kigi_subagents(
         "0",
         || {
             let config: toml::Value = toml::from_str("[subagents]\nenabled = true")
@@ -1012,7 +1012,7 @@ fn subagents_config_env_var_disables() {
 }
 #[test]
 fn subagents_config_toml_enables() {
-    without_grok_subagents(|| {
+    without_kigi_subagents(|| {
         let config: toml::Value = toml::from_str("[subagents]\nenabled = true").unwrap();
         let sa = SubagentsConfig::resolve(false, &config, None);
         assert!(sa.enabled);
@@ -1020,7 +1020,7 @@ fn subagents_config_toml_enables() {
 }
 #[test]
 fn subagents_config_local_disabled_wins() {
-    without_grok_subagents(|| {
+    without_kigi_subagents(|| {
         let config: toml::Value = toml::from_str("[subagents]\nenabled = false")
             .unwrap();
         let sa = SubagentsConfig::resolve(false, &config, None);
@@ -1029,7 +1029,7 @@ fn subagents_config_local_disabled_wins() {
 }
 #[test]
 fn subagents_config_env_var_disables_default() {
-    with_grok_subagents(
+    with_kigi_subagents(
         "0",
         || {
             let config = toml::Value::Table(toml::map::Map::new());
@@ -1044,7 +1044,7 @@ fn subagents_config_env_var_disables_default() {
 /// as an unknown key and have no effect on resolution.
 #[test]
 fn subagents_config_remote_settings_key_is_ignored() {
-    without_grok_subagents(|| {
+    without_kigi_subagents(|| {
         let _settings: crate::util::config::RemoteSettings = serde_json::from_str(
                 r#"{"subagents_enabled": false}"#,
             )
@@ -1056,7 +1056,7 @@ fn subagents_config_remote_settings_key_is_ignored() {
 }
 #[test]
 fn subagents_config_cli_flag_overrides_env_var() {
-    with_grok_subagents(
+    with_kigi_subagents(
         "0",
         || {
             let config = toml::Value::Table(toml::map::Map::new());
@@ -1067,28 +1067,28 @@ fn subagents_config_cli_flag_overrides_env_var() {
 }
 #[test]
 fn subagents_config_models_parsed() {
-    without_grok_subagents(|| {
+    without_kigi_subagents(|| {
         let config: toml::Value = toml::from_str(
                 r#"
                 [subagents]
                 enabled = true
 
                 [subagents.models]
-                explore = "grok-3-fast"
-                plan = "grok-4.5"
+                explore = "kigi-3-fast"
+                plan = "kigi-4.5"
                 "#,
             )
             .unwrap();
         let sa = SubagentsConfig::resolve(false, &config, None);
         assert!(sa.enabled);
         assert_eq!(sa.models.len(), 2);
-        assert_eq!(sa.models.get("explore").unwrap(), "grok-3-fast");
-        assert_eq!(sa.models.get("plan").unwrap(), "grok-4.5");
+        assert_eq!(sa.models.get("explore").unwrap(), "kigi-3-fast");
+        assert_eq!(sa.models.get("plan").unwrap(), "kigi-4.5");
     });
 }
 #[test]
 fn subagents_config_models_empty_when_missing() {
-    without_grok_subagents(|| {
+    without_kigi_subagents(|| {
         let config: toml::Value = toml::from_str("[subagents]\nenabled = true").unwrap();
         let sa = SubagentsConfig::resolve(false, &config, None);
         assert!(sa.enabled);
@@ -1097,11 +1097,11 @@ fn subagents_config_models_empty_when_missing() {
 }
 #[test]
 fn subagents_config_models_without_enabled() {
-    without_grok_subagents(|| {
+    without_kigi_subagents(|| {
         let config: toml::Value = toml::from_str(
                 r#"
                 [subagents.models]
-                explore = "grok-3-fast"
+                explore = "kigi-3-fast"
                 "#,
             )
             .unwrap();
@@ -1110,30 +1110,30 @@ fn subagents_config_models_without_enabled() {
             ! sa.enabled, "explicit [subagents] section without enabled should be false"
         );
         assert_eq!(sa.models.len(), 1);
-        assert_eq!(sa.models.get("explore").unwrap(), "grok-3-fast");
+        assert_eq!(sa.models.get("explore").unwrap(), "kigi-3-fast");
     });
 }
 #[test]
 fn subagents_config_models_with_env_var_enables() {
-    with_grok_subagents(
+    with_kigi_subagents(
         "1",
         || {
             let config: toml::Value = toml::from_str(
                     r#"
                 [subagents.models]
-                explore = "grok-3-fast"
+                explore = "kigi-3-fast"
                 "#,
                 )
                 .unwrap();
             let sa = SubagentsConfig::resolve(false, &config, None);
             assert!(sa.enabled, "KIGI_SUBAGENTS=1 should enable");
-            assert_eq!(sa.models.get("explore").unwrap(), "grok-3-fast");
+            assert_eq!(sa.models.get("explore").unwrap(), "kigi-3-fast");
         },
     );
 }
 #[test]
 fn subagents_config_toggle_mixed_values() {
-    without_grok_subagents(|| {
+    without_kigi_subagents(|| {
         let config: toml::Value = toml::from_str(
                 r#"
                 [subagents]
@@ -1158,7 +1158,7 @@ fn subagents_config_toggle_mixed_values() {
 }
 #[test]
 fn subagents_config_toggle_missing_defaults_to_empty() {
-    without_grok_subagents(|| {
+    without_kigi_subagents(|| {
         let config: toml::Value = toml::from_str("[subagents]\nenabled = true").unwrap();
         let sa = SubagentsConfig::resolve(false, &config, None);
         assert!(sa.enabled);
@@ -1267,7 +1267,7 @@ fn model_overrides_local_image_description_wins_over_remote() {
     );
 }
 #[test]
-fn model_overrides_default_image_description_is_grok_build() {
+fn model_overrides_default_image_description_is_kigi() {
     with_model_overrides_env(
         None,
         None,
@@ -1282,7 +1282,7 @@ fn model_overrides_default_image_description_is_grok_build() {
     );
 }
 #[test]
-fn model_overrides_default_session_summary_is_grok_build() {
+fn model_overrides_default_session_summary_is_kigi() {
     with_model_overrides_env(
         None,
         None,
@@ -1632,17 +1632,17 @@ fn model_overrides_prompt_suggestion_blank_values_are_unset() {
 /// Lock shared by every test that touches the env var read by
 /// `ToolsConfig::resolve`, so tests can't race.
 static TOOLS_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-fn without_grok_respect_gitignore<T>(f: impl FnOnce() -> T) -> T {
+fn without_kigi_respect_gitignore<T>(f: impl FnOnce() -> T) -> T {
     let _guard = TOOLS_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     with_env_var_opt("KIGI_RESPECT_GITIGNORE", None, f)
 }
-fn with_grok_respect_gitignore<T>(value: &str, f: impl FnOnce() -> T) -> T {
+fn with_kigi_respect_gitignore<T>(value: &str, f: impl FnOnce() -> T) -> T {
     let _guard = TOOLS_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     with_env_var_opt("KIGI_RESPECT_GITIGNORE", Some(value), f)
 }
 #[test]
 fn tools_config_default_disabled() {
-    without_grok_respect_gitignore(|| {
+    without_kigi_respect_gitignore(|| {
         let config = toml::Value::Table(toml::map::Map::new());
         let tc = ToolsConfig::resolve(&config);
         assert!(! tc.respect_gitignore);
@@ -1650,7 +1650,7 @@ fn tools_config_default_disabled() {
 }
 #[test]
 fn tools_config_toml_disables() {
-    without_grok_respect_gitignore(|| {
+    without_kigi_respect_gitignore(|| {
         let config: toml::Value = toml::from_str("[tools]\nrespect_gitignore = false")
             .unwrap();
         let tc = ToolsConfig::resolve(&config);
@@ -1659,7 +1659,7 @@ fn tools_config_toml_disables() {
 }
 #[test]
 fn tools_config_env_var_disables() {
-    with_grok_respect_gitignore(
+    with_kigi_respect_gitignore(
         "0",
         || {
             let config = toml::Value::Table(toml::map::Map::new());
@@ -1670,7 +1670,7 @@ fn tools_config_env_var_disables() {
 }
 #[test]
 fn tools_config_env_var_overrides_toml() {
-    with_grok_respect_gitignore(
+    with_kigi_respect_gitignore(
         "1",
         || {
             let config: toml::Value = toml::from_str(
@@ -1684,7 +1684,7 @@ fn tools_config_env_var_overrides_toml() {
 }
 #[test]
 fn tools_config_env_false_overrides_toml_true() {
-    with_grok_respect_gitignore(
+    with_kigi_respect_gitignore(
         "false",
         || {
             let config: toml::Value = toml::from_str("[tools]\nrespect_gitignore = true")
@@ -1703,7 +1703,7 @@ fn roles_parse_from_toml() {
             [roles.researcher]
             description = "Deep research agent"
             default_capability_mode = "read-only"
-            model = "grok-3"
+            model = "kigi-3"
 
             [roles.implementer]
             description = "Implementation agent"
@@ -1715,7 +1715,7 @@ fn roles_parse_from_toml() {
     let researcher = cfg.get_role("researcher").unwrap();
     assert_eq!(researcher.description, "Deep research agent");
     assert_eq!(researcher.default_capability_mode.as_deref(), Some("read-only"));
-    assert_eq!(researcher.model.as_deref(), Some("grok-3"));
+    assert_eq!(researcher.model.as_deref(), Some("kigi-3"));
     assert!(researcher.prompt_file.is_none());
     let implementer = cfg.get_role("implementer").unwrap();
     assert_eq!(implementer.description, "Implementation agent");
@@ -1777,7 +1777,7 @@ fn validate_roles_passes_valid_config() {
             [roles.good]
             description = "Valid role"
             default_capability_mode = "read-write"
-            model = "grok-3"
+            model = "kigi-3"
         "#;
     let cfg: SubagentsConfig = toml::from_str(toml_str).unwrap();
     assert!(cfg.validate_roles().is_empty());
@@ -2068,7 +2068,7 @@ fn roles_coexist_with_models_and_toggle() {
     let toml_str = r#"
             enabled = true
             [models]
-            explore = "grok-fast"
+            explore = "kigi-fast"
             [toggle]
             plan = false
             [roles.researcher]
@@ -2077,7 +2077,7 @@ fn roles_coexist_with_models_and_toggle() {
         "#;
     let cfg: SubagentsConfig = toml::from_str(toml_str).unwrap();
     assert!(cfg.enabled);
-    assert_eq!(cfg.models.get("explore").map(| s | s.as_str()), Some("grok-fast"));
+    assert_eq!(cfg.models.get("explore").map(| s | s.as_str()), Some("kigi-fast"));
     assert!(! cfg.is_subagent_enabled("plan"));
     assert!(cfg.get_role("researcher").is_some());
 }
@@ -2255,10 +2255,10 @@ coding_api_base_url = "https://cli-chat-proxy.kigi.com/v1"
 [model.kigi-build]
 base_url = "https://inference.acme-corp.example/xai/v1"
 env_key = "ANTHROPIC_AUTH_TOKEN"
-model = "grok-4.5"
+model = "kigi-4.5"
 
 [models]
-default = "grok-4.5"
+default = "kigi-4.5"
 "#,
         )
         .unwrap();
@@ -2376,7 +2376,10 @@ fn apply_requirements_value_overrides_user_settings() {
         Some("https://managed-proxy.example/v1"), cfg.endpoints.coding_api_base_url
         .as_deref()
     );
-    assert_eq!("https://managed-api.example/v1", cfg.endpoints.api_base_url);
+    assert_eq!(
+        Some("https://managed-api.example/v1"),
+        cfg.endpoints.api_base_url.as_deref()
+    );
     assert_eq!(
         Some("https://managed-models.example/v1"), cfg.endpoints.models_base_url
         .as_deref()
@@ -2496,7 +2499,7 @@ fn validate_hooks_path_rejects_traversal_attack() {
     );
 }
 #[test]
-fn validate_hooks_path_accepts_grok_hooks_subdir() {
+fn validate_hooks_path_accepts_kigi_hooks_subdir() {
     let kigi_home = crate::util::kigi_home::kigi_home();
     let valid_path = kigi_home.join("hooks").join("my-hooks");
     let _ = std::fs::create_dir_all(&valid_path);
@@ -2532,7 +2535,7 @@ fn managed_settings_disables_features_and_requirements_overrides() {
     assert!(cfg.ui.yolo);
 }
 /// REGRESSION: external managed-settings.json is advisory, not authoritative.
-/// disableBypassPermissionsMode (-> features.disable_yolo) must NOT clamp the user's own grok yolo.
+/// disableBypassPermissionsMode (-> features.disable_yolo) must NOT clamp the user's own kigi yolo.
 #[test]
 fn managed_settings_does_not_override_user_yolo() {
     use kigi_workspace::permission::resolution::ManagedSettingsFeatures;
@@ -2582,10 +2585,10 @@ fn resolve_effective_plugins_config_gates_project_paths_on_folder_trust() {
     let _sim = simulate_release_build();
     let repo = tempfile::tempdir().unwrap();
     git2::Repository::init(repo.path()).unwrap();
-    let grok = repo.path().join(".kigi");
-    std::fs::create_dir_all(&grok).unwrap();
+    let kigi = repo.path().join(".kigi");
+    std::fs::create_dir_all(&kigi).unwrap();
     std::fs::write(
-            grok.join("config.toml"),
+            kigi.join("config.toml"),
             "[plugins]\npaths = [\"./proj-plugin\"]\ndisabled = [\"proj-bad\"]\n",
         )
         .unwrap();
@@ -2648,10 +2651,10 @@ fn discover_plugins_excludes_untrusted_configpath_plugin_end_to_end() {
     std::fs::create_dir_all(&plugin_dir).unwrap();
     std::fs::write(plugin_dir.join("plugin.json"), r#"{"name":"cfgpath-probe"}"#)
         .unwrap();
-    let grok = cwd.join(".kigi");
-    std::fs::create_dir_all(&grok).unwrap();
+    let kigi = cwd.join(".kigi");
+    std::fs::create_dir_all(&kigi).unwrap();
     std::fs::write(
-            grok.join("config.toml"),
+            kigi.join("config.toml"),
             format!("[plugins]\npaths = ['{}']\n", plugin_dir.display()),
         )
         .unwrap();
@@ -2711,9 +2714,9 @@ fn kill_switched_cold_cwd_stays_allowed_through_plugins_config_read() {
     let _sim = simulate_release_build();
     let repo = tempfile::tempdir().unwrap();
     git2::Repository::init(repo.path()).unwrap();
-    let grok = repo.path().join(".kigi");
-    std::fs::create_dir_all(&grok).unwrap();
-    std::fs::write(grok.join("config.toml"), "[plugins]\npaths = [\"./proj-plugin\"]\n")
+    let kigi = repo.path().join(".kigi");
+    std::fs::create_dir_all(&kigi).unwrap();
+    std::fs::write(kigi.join("config.toml"), "[plugins]\npaths = [\"./proj-plugin\"]\n")
         .unwrap();
     let cwd = repo.path();
     let remote = crate::util::config::RemoteSettings {

@@ -153,10 +153,10 @@ pub fn suggestion_size(text: &str) -> (usize, usize) {
 }
 
 /// Resolve the client-side model hint sent with the suggestion request:
-/// env override > `grok-build-0.1` when the catalog offers it > `None`.
+/// env override > `kigi-0.1` when the catalog offers it > `None`.
 ///
 /// The hint is one tier of the shell-side resolution (env > config.toml >
-/// remote settings > this hint > `grok-build-0.1` default): the shell
+/// remote settings > this hint > `kigi-0.1` default): the shell
 /// catalog-guards the effective model and skips the request entirely when
 /// it is not sampleable — the session model is never used for suggestion
 /// calls.

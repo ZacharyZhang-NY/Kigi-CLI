@@ -5,7 +5,7 @@
     unreachable_code,
     dead_code
 )]
-//! OS-level sandboxing for Grok Build via [nono](https://crates.io/crates/nono).
+//! OS-level sandboxing for Kigi via [nono](https://crates.io/crates/nono).
 //!
 //! Applied once at process startup. Covers in-process `tokio::fs` calls
 //! and child processes. Network is left open at the process level (agent
@@ -48,7 +48,7 @@ static SANDBOX: OnceLock<GlobalSandboxState> = OnceLock::new();
 static CONFIGURED_PROFILE: OnceLock<String> = OnceLock::new();
 static RESTRICT_CHILD_NETWORK: AtomicBool = AtomicBool::new(false);
 static AUTO_ALLOW_BASH: AtomicBool = AtomicBool::new(false);
-const BWRAP_ENV_VAR: &str = "__GROK_INSIDE_BWRAP";
+const BWRAP_ENV_VAR: &str = "__KIGI_INSIDE_BWRAP";
 pub fn is_inside_bwrap() -> bool {
     std::env::var(BWRAP_ENV_VAR).is_ok()
 }
@@ -299,7 +299,7 @@ fn chmod_000(path: &Path) -> Option<()> {
 }
 /// Zero-permission placeholder (file or dir) under `kigi_home` used by bwrap bind-over.
 ///
-/// The placeholder name is suffixed with the current PID so concurrent grok
+/// The placeholder name is suffixed with the current PID so concurrent kigi
 /// processes don't race each other's create/remove/chmod on a shared path (which
 /// could yield `None` and the silent dropped-bind fail-open this avoids).
 #[cfg(all(feature = "enforce", target_os = "linux"))]
@@ -620,10 +620,10 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let ws = std::env::temp_dir().join(format!("grok-{tag}-{}-{nanos}", std::process::id()));
-        let grok = ws.join(".kigi");
-        std::fs::create_dir_all(&grok).unwrap();
-        std::fs::write(grok.join("sandbox.toml"), toml_body).unwrap();
+        let ws = std::env::temp_dir().join(format!("kigi-{tag}-{}-{nanos}", std::process::id()));
+        let kigi = ws.join(".kigi");
+        std::fs::create_dir_all(&kigi).unwrap();
+        std::fs::write(kigi.join("sandbox.toml"), toml_body).unwrap();
         ws
     }
     /// Create a temp workspace defining a `denytest` profile (extends `workspace`)
@@ -659,7 +659,7 @@ mod tests {
     #[cfg(all(feature = "enforce", target_os = "linux"))]
     fn bwrap_reexec_uses_dir_placeholder_for_directories() {
         let _g = EnvGuard::remove(BWRAP_ENV_VAR);
-        let dir = std::env::temp_dir().join(format!("grok-deny-dir-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("kigi-deny-dir-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let dir_str = dir.to_string_lossy().to_string();
         let result = bwrap_reexec_command(&[], &[&dir_str]);

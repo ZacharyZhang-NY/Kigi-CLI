@@ -7,7 +7,7 @@
 //! unnecessary network requests.
 //!
 //! ACP integration: on text change (after debounce), sends an
-//! `x.ai/suggest` request through the Effect pipeline. Stale responses
+//! `kigi/suggest` request through the Effect pipeline. Stale responses
 //! are discarded via generation tracking.
 
 /// Source of a shell command suggestion.
@@ -46,14 +46,14 @@ pub(crate) struct GhostTextState {
     pub(crate) generation: u64,
 }
 
-/// Parsed ghost suggestion from an ACP `x.ai/suggest` response.
+/// Parsed ghost suggestion from an ACP `kigi/suggest` response.
 #[derive(Debug, Clone)]
 pub struct GhostSuggestionParsed {
     pub suffix: String,
     pub source: SuggestionSource,
 }
 
-/// A single completion item from an ACP `x.ai/suggest` response.
+/// A single completion item from an ACP `kigi/suggest` response.
 // `Default` (empty item) exists for downstream test fixtures — functional-
 // update construction (`..Default::default()`) keeps out-of-crate literals
 // (e.g. kigi-pager-minimal's) compiling when optional fields are added.
@@ -87,7 +87,7 @@ impl CompletionItemParsed {
     }
 }
 
-/// Parsed response from an ACP `x.ai/suggest` request.
+/// Parsed response from an ACP `kigi/suggest` request.
 #[derive(Debug, Clone)]
 pub struct SuggestResponseParsed {
     pub ghost: Option<GhostSuggestionParsed>,
@@ -96,7 +96,7 @@ pub struct SuggestResponseParsed {
 }
 
 impl SuggestResponseParsed {
-    /// Parse a raw JSON value from an ACP `x.ai/suggest` response.
+    /// Parse a raw JSON value from an ACP `kigi/suggest` response.
     pub fn from_json(value: &serde_json::Value) -> Option<Self> {
         let result = value.get("result").unwrap_or(value);
         let generation = result.get("generation")?.as_u64()?;
@@ -197,7 +197,7 @@ pub enum SuggestionAction {
     Debounce { generation: u64 },
 }
 
-/// Wire `limit` for `x.ai/suggest` fetches. Matches the shell file
+/// Wire `limit` for `kigi/suggest` fetches. Matches the shell file
 /// provider's ranked-result cap (`MAX_RESULTS` in the shell crate's
 /// `file_provider.rs`): the provider ranks BEFORE capping, the dropdown
 /// renders 6 rows and scrolls the rest. Both fetch sites (Tab and the
@@ -326,7 +326,7 @@ pub struct SuggestionController {
     /// Whether AI-powered suggestions are enabled.
     /// Resolved at construction from `KIGI_SUGGESTIONS_AI` env var.
     pub ai_enabled: bool,
-    /// Model to use for AI suggestions. Sent in the `x.ai/suggest` request.
+    /// Model to use for AI suggestions. Sent in the `kigi/suggest` request.
     /// Resolved at construction from `KIGI_SUGGESTIONS_AI_MODEL` env var.
     pub ai_model: Option<String>,
 }
@@ -734,7 +734,7 @@ impl SuggestionController {
         generation == self.generation
     }
 
-    /// Called when an ACP `x.ai/suggest` response arrives, with the text and
+    /// Called when an ACP `kigi/suggest` response arrives, with the text and
     /// cursor the request was built from (the anchor item `replace_range`
     /// offsets index into, and the position Tab targets). Takes ownership to
     /// avoid copying strings. Discards stale responses.

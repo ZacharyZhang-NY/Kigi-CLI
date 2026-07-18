@@ -230,8 +230,8 @@ pub struct SubagentsConfig {
     ///
     /// ```toml
     /// [subagents.models]
-    /// explore = "grok-3-fast"
-    /// plan = "grok-3"
+    /// explore = "kigi-3-fast"
+    /// plan = "kigi-3"
     /// ```
     #[serde(default)]
     pub models: std::collections::HashMap<String, String>,
@@ -252,7 +252,7 @@ pub struct SubagentsConfig {
     /// [subagents.roles.researcher]
     /// description = "Deep research agent"
     /// default_capability_mode = "read-only"
-    /// model = "grok-3"
+    /// model = "kigi-3"
     ///
     /// [subagents.roles.implementer]
     /// description = "Implementation agent with full access"
@@ -735,7 +735,7 @@ fn walk_toml(
     }
 }
 /// The `[skills]` table from an effective config, shared by the reload
-/// dispatch and `grok inspect`.
+/// dispatch and `kigi inspect`.
 pub(crate) use crate::config::reloader::parse_skills_config;
 /// Effective config: layers + campaign overlay (remote cache + `KIGI_CAMPAIGNS_OVERRIDE`).
 pub use crate::util::config::load_effective_config;
@@ -946,9 +946,9 @@ fn apply_requirements_inner(
     enforce_str!("cli", "channel", config.cli.channel);
     enforce_str!("cli", "minimum_version", config.cli.minimum_version);
     if let Some(val) = req_str(req, "endpoints", "api_base_url")
-        && config.endpoints.api_base_url != val
+        && config.endpoints.api_base_url.as_deref() != Some(val)
     {
-        config.endpoints.api_base_url = val.to_owned();
+        config.endpoints.api_base_url = Some(val.to_owned());
         push("endpoints.api_base_url", val.to_owned());
     }
     if let Some(val) = req_str(req, "endpoints", "coding_api_base_url")
@@ -1128,7 +1128,7 @@ pub use kigi_workspace::project_config::find_project_configs;
 /// ([`find_project_configs`], extending `paths` and `disabled`) plus the
 /// imported `enabledPlugins` merge.
 ///
-/// Shared by `reload_plugins_impl`, `x.ai/commands/list`, and the agent's
+/// Shared by `reload_plugins_impl`, `kigi/commands/list`, and the agent's
 /// eager plugin-registry fan-out so all three discover the same plugins for a
 /// given cwd. Centralizing it prevents the paths/disabled/discovered-command
 /// drift those callers would otherwise accumulate.

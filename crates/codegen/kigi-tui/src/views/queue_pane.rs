@@ -43,7 +43,7 @@ pub enum QueueRowOrigin {
     /// any idle-drained prompt). Edits mutate the local queue directly.
     Local,
     /// A server-authoritative `shared_prompt_queues` entry (plain prompt queued
-    /// while running). Edits route to the agent as `x.ai/queue/*`.
+    /// while running). Edits route to the agent as `kigi/queue/*`.
     Server,
 }
 
@@ -385,7 +385,7 @@ pub struct QueuePane {
     /// Theme kind at the last render. Used to detect a theme switch and
     /// refresh `list_style`, whose `selection_bg` is captured from the theme
     /// (otherwise the focused-row highlight keeps the previous theme's
-    /// `bg_highlight` — e.g. GrokNight's dark band leaking into GrokDay).
+    /// `bg_highlight` — e.g. KigiNight's dark band leaking into KigiDay).
     last_theme: ThemeKind,
     /// Shared visibility/focus state.
     pub overlay: OverlayState,
@@ -827,8 +827,8 @@ impl QueuePane {
         // Detect a theme switch and refresh the list chrome style. Its
         // `selection_bg` (the focused-row highlight) is captured from the
         // theme's `bg_highlight`; without this it would keep the theme active
-        // at construction (default GrokNight, dark) after the user switches —
-        // painting a dark band on a light GrokDay canvas.
+        // at construction (default KigiNight, dark) after the user switches —
+        // painting a dark band on a light KigiDay canvas.
         let current_theme = Theme::current_kind();
         if current_theme != self.last_theme {
             self.last_theme = current_theme;

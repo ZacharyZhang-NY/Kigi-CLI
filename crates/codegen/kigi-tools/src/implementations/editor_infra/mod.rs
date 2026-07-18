@@ -1,4 +1,4 @@
-//! Shared editor infrastructure used by the default grok_build tools.
+//! Shared editor infrastructure used by the default kigi tools.
 pub mod file_operation_lock;
 pub use file_operation_lock::{FileOperationLockGuard, FileOperationLockManager};
 /// Default `block_until_ms` when the model omits the field on blocking shell

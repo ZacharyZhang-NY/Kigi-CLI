@@ -48,7 +48,7 @@ fn apply_agent_endpoint_args(agent_args: &kigi_tui::app::AgentArgs, config: &mut
         config.endpoints.coding_api_base_url = Some(v.clone());
     }
     if let Some(v) = &agent_args.api_base_url {
-        config.endpoints.api_base_url = v.clone();
+        config.endpoints.api_base_url = Some(v.clone());
     }
 }
 /// Resolve --agent-profile path: canonicalize and verify the file exists.
@@ -71,7 +71,7 @@ fn resolve_agent_profile_path(path: &std::path::Path) -> std::path::PathBuf {
 /// Print startup information for the serve command.
 fn print_serve_startup_info(bind_addr: SocketAddr, secret: &str) {
     eprintln!();
-    eprintln!("   Grok agent server starting...");
+    eprintln!("   Kigi agent server starting...");
     eprintln!();
     eprintln!("   Address:  {}:{}", bind_addr.ip(), bind_addr.port());
     eprintln!("   Secret:   {}", secret);
@@ -82,7 +82,7 @@ fn print_serve_startup_info(bind_addr: SocketAddr, secret: &str) {
     );
     eprintln!();
 }
-/// Entrypoint tag for `grok -p`; keys the quiet stderr default in `init_tracing_simple`.
+/// Entrypoint tag for `kigi -p`; keys the quiet stderr default in `init_tracing_simple`.
 const HEADLESS_ENTRYPOINT: &str = "headless";
 /// Initialize simple tracing for non-TUI agent modes.
 fn init_tracing_simple(app_entrypoint: &'static str) {
@@ -112,7 +112,7 @@ fn init_tracing_simple(app_entrypoint: &'static str) {
         .with(kigi_log::hooks_log::layer());
     kigi_log::debug_log::install_firehose(registry, app_entrypoint);
 }
-/// `grok setup`: rendering + exit codes only; fetch logic lives in `kigi_shell::managed_config`.
+/// `kigi setup`: rendering + exit codes only; fetch logic lives in `kigi_shell::managed_config`.
 /// `json` prints the served configuration instead of installing it.
 async fn run_setup_command(json: bool) {
     use kigi_shell::managed_config::{self, SetupOutcome};
@@ -127,7 +127,7 @@ async fn run_setup_command(json: bool) {
         } else {
             eprintln!("  $env:KIGI_DEPLOYMENT_KEY=\"<your-key>\"");
         }
-        eprintln!("  grok setup");
+        eprintln!("  kigi setup");
         eprintln!();
         eprintln!("Or add the key to ~/.kigi/config.toml:");
         eprintln!();
@@ -135,7 +135,7 @@ async fn run_setup_command(json: bool) {
         eprintln!("  deployment_key = \"<your-key>\"");
         eprintln!();
         eprintln!(
-            "If you don't have a deployment key, contact your organization's Grok administrator."
+            "If you don't have a deployment key, contact your organization's Kigi administrator."
         );
         std::process::exit(1);
     }
@@ -147,7 +147,7 @@ async fn run_setup_command(json: bool) {
                 println!("{out}");
                 if !report.configured {
                     eprintln!(
-                        "Your team doesn't have a managed configuration yet. A team admin can set one up at console.x.ai."
+                        "Your team doesn't have a managed configuration yet. Ask a team admin to provision one."
                     );
                 }
             }
@@ -162,7 +162,7 @@ async fn run_setup_command(json: bool) {
         SetupOutcome::Installed => eprintln!("Applied managed configuration."),
         SetupOutcome::NothingConfigured => {
             eprintln!(
-                "Your team doesn't have a managed configuration yet. A team admin can set one up at console.x.ai."
+                "Your team doesn't have a managed configuration yet. Ask a team admin to provision one."
             );
         }
         SetupOutcome::Failed(e) => {
@@ -229,9 +229,9 @@ async fn kill_leaders() -> Result<()> {
         let Some(pid) = leader_pid(d) else {
             continue;
         };
-        if !kigi_shell::util::is_grok_process(pid) {
+        if !kigi_shell::util::is_kigi_process(pid) {
             if let Some(ref lock) = d.lock_path {
-                eprintln!("  PID {pid} is not a grok process, removing stale lock");
+                eprintln!("  PID {pid} is not a kigi process, removing stale lock");
                 let _ = std::fs::remove_file(lock);
                 cleaned += 1;
             }
@@ -274,7 +274,7 @@ async fn connect_to_leader(
         .ok_or_else(|| anyhow::anyhow!("resolved leader target did not include a socket path"))?;
     let client = kigi_shell::leader::LeaderClient::connect(
         socket_path.to_path_buf(),
-        "grok-pager-leader-cli",
+        "kigi-pager-leader-cli",
         ClientMode::Stdio,
         ClientCapabilities::default(),
     )
@@ -354,7 +354,7 @@ struct StdioReplayState {
     /// old leader and is its to retry).
     pending_new: Option<CachedSession>,
     /// Most recently created/loaded session id — reported in
-    /// `x.ai/leader_reconnected` as the primary restored session.
+    /// `kigi/leader_reconnected` as the primary restored session.
     last_session_id: Option<String>,
 }
 impl StdioReplayState {
@@ -422,7 +422,7 @@ fn cache_outgoing_acp_state(msg: &str, state: &std::sync::Mutex<StdioReplayState
                     .and_then(|m| serde_json::to_string(m).ok()),
             });
         }
-        "x.ai/session/close" | "_x.ai/session/close" => {
+        "kigi/session/close" | "_kigi/session/close" => {
             if let Some(sid) = json
                 .get("params")
                 .and_then(|p| p.get("sessionId").or_else(|| p.get("session_id")))
@@ -454,7 +454,7 @@ fn cache_incoming_session_id(msg: &str, state: &std::sync::Mutex<StdioReplayStat
 /// Synthetic JSON-RPC id for the `session/load` the bridge constructs itself
 /// (when the external client only ever sent `session/new`). A string id can
 /// never collide with a numeric id the external client may have in flight.
-const REPLAY_LOAD_REQUEST_ID: &str = "x.ai/leader-replay/session-load";
+const REPLAY_LOAD_REQUEST_ID: &str = "kigi/leader-replay/session-load";
 /// Max silence between two messages from the leader during a replayed request.
 /// A `session/load` streams replay notifications continuously once it starts,
 /// but the pre-replay phase (MCP resolution, session file reads) can be quiet
@@ -587,7 +587,7 @@ fn replay_load_json(sid: &str, cached: &CachedSession) -> Option<String> {
 /// Returns the primary restored session id (the most recently active one,
 /// falling back to any successfully restored session). `None` when there was
 /// nothing to replay or every restore failed — callers emit
-/// `x.ai/leader_reconnected` with empty params in that case, signalling the
+/// `kigi/leader_reconnected` with empty params in that case, signalling the
 /// external client to re-establish state itself.
 async fn replay_acp_state_after_reconnect(
     tx: &tokio::sync::mpsc::UnboundedSender<String>,
@@ -657,7 +657,7 @@ fn shutdown_and_flush_telemetry(exit_code: i32) -> ! {
 }
 /// Emitted by both leader guards (server mode and leader-connect) so the two sites
 /// can't drift.
-const PLUGIN_DIR_LEADER_WARNING: &str = "grok: --plugin-dir is ignored in leader mode; run with --no-leader to \
+const PLUGIN_DIR_LEADER_WARNING: &str = "kigi: --plugin-dir is ignored in leader mode; run with --no-leader to \
      load per-process plugins";
 /// Run the `agent` subcommand, dispatching to the appropriate mode.
 async fn run_agent_command(
@@ -743,7 +743,7 @@ async fn run_agent_command(
         None,
     );
     if let Some(warning) = launch_yolo.blocked_warning {
-        eprintln!("grok: {warning}");
+        eprintln!("kigi: {warning}");
     }
     agent_config.default_yolo_mode = launch_yolo.yolo;
     agent_config.default_auto_mode = kigi_shell::util::config::effective_auto_for_launch(
@@ -916,7 +916,7 @@ async fn run_agent_command(
                                             None => "{}".to_string(),
                                         };
                                         let notification = format!(
-                                            r#"{{"jsonrpc":"2.0","method":"x.ai/leader_reconnected","params":{params}}}"#
+                                            r#"{{"jsonrpc":"2.0","method":"kigi/leader_reconnected","params":{params}}}"#
                                         );
                                         let _ = stdout.write_all(notification.as_bytes()).await;
                                         let _ = stdout.write_all(b"\n").await;
@@ -1051,12 +1051,12 @@ fn raise_fd_limit() {
 fn raise_fd_limit() {}
 /// Single audit point for the `Command::Dashboard` soft-subcommand.
 /// Sets `KIGI_OPEN_DASHBOARD_AT_STARTUP=1` if the user asked for
-/// `grok dashboard`, and clears `args.command` so the regular
+/// `kigi dashboard`, and clears `args.command` so the regular
 /// subcommand match doesn't try to handle it.
 ///
 /// The dashboard is independent of leader mode — it renders local
 /// sessions and, when a leader happens to be present, additionally shows
-/// the leader roster — so `grok dashboard` does NOT force leader mode and
+/// the leader roster — so `kigi dashboard` does NOT force leader mode and
 /// is compatible with `--no-leader`.
 ///
 /// The only gate is the feature flag: a disabled dashboard
@@ -1185,10 +1185,10 @@ fn main() {
     kigi_tui::memory_trace::start(kigi_shell::util::kigi_home::kigi_home().join("memtrace"));
     raise_fd_limit();
     if let Err(e) = kigi_config::validate_requirements() {
-        eprintln!("Couldn't start Grok: {e}");
+        eprintln!("Couldn't start Kigi: {e}");
         eprintln!();
         eprintln!(
-            "Update Grok to a version the policy allows, or ask your administrator \
+            "Update Kigi to a version the policy allows, or ask your administrator \
              to fix the managed requirements."
         );
         std::process::exit(2);
@@ -1198,7 +1198,7 @@ fn main() {
     if kigi_shell::util::config::load_crash_handler_enabled_sync() {
         let crash_dir = kigi_shell::util::kigi_home::kigi_home().join("crash");
         if let Some(report) = kigi_crash_handler::check_previous_crash(&crash_dir) {
-            eprintln!("Grok crashed during your last session.");
+            eprintln!("Kigi crashed during your last session.");
             eprintln!("  Signal:  {}", report.signal_name);
             eprintln!("  Version: {}", report.app_version);
             eprintln!("  Report:  {}", report.report_path.display());
@@ -1244,7 +1244,7 @@ async fn async_main() -> Result<()> {
     }
     if args.chat() {
         anyhow::bail!(
-            "--chat is no longer supported: the grok.com chat frontend it drove was \
+            "--chat is no longer supported: the kimi.com chat frontend it drove was \
              removed along with the xAI backend."
         );
     }
@@ -1307,7 +1307,7 @@ async fn async_main() -> Result<()> {
         && args.prompt_json.is_none()
         && args.prompt_file.is_none();
     kigi_shell::http::set_client_name(if is_interactive {
-        kigi_workspace::permission::ClientType::GrokPager
+        kigi_workspace::permission::ClientType::KigiPager
     } else {
         kigi_workspace::permission::ClientType::Generic
     });
@@ -1323,7 +1323,7 @@ async fn async_main() -> Result<()> {
                     println!("{}", serde_json::to_string(&payload)?);
                 } else {
                     println!(
-                        "grok {}",
+                        "kigi {}",
                         kigi_version::display_version_with_commit(
                             env!("VERSION_WITH_COMMIT"),
                             kigi_update::channel_label(),
@@ -1359,7 +1359,7 @@ async fn async_main() -> Result<()> {
                     };
                     anyhow::bail!(
                         "top-level {flag} applies to the pager TUI, not the agent subcommand. \
-                         Use `grok-pager agent {flag}` instead."
+                         Use `kigi-pager agent {flag}` instead."
                     );
                 }
                 enforce_minimum_version_or_exit(&update_config).await;
@@ -1501,7 +1501,7 @@ async fn async_main() -> Result<()> {
             None,
         );
         if let Some(warning) = launch_yolo.blocked_warning {
-            eprintln!("grok: {warning}");
+            eprintln!("kigi: {warning}");
         }
         let json_schema = args
             .json_schema
@@ -1583,9 +1583,9 @@ async fn async_main() -> Result<()> {
         Ok(true) => {
             let adopted = bg_update_wait.lock().await.take();
             if finish_update_on_exit(adopted, &update_config).await {
-                eprintln!("Update installed. Run `grok` to start.");
+                eprintln!("Update installed. Run `kigi` to start.");
             } else {
-                eprintln!("Update did not complete. Run `grok update` to retry.");
+                eprintln!("Update did not complete. Run `kigi update` to retry.");
             }
             Ok(())
         }
@@ -1596,11 +1596,11 @@ async fn async_main() -> Result<()> {
 /// Complete the update after a quit-for-update (Ctrl+U) exit. Returns `true`
 /// when an update path completed without a reported failure.
 ///
-/// Prefers awaiting the parked waiter for the background `grok update` child
+/// Prefers awaiting the parked waiter for the background `kigi update` child
 /// spawned at startup — the download is usually already done or in flight.
 /// Only when there is no waiter (spawn failed, or no download was needed
 /// because the target was already on disk) or the child failed does this
-/// fall back to a fresh blocking `grok update`, which itself resolves to
+/// fall back to a fresh blocking `kigi update`, which itself resolves to
 /// "Already up to date" without downloading when the disk is current.
 async fn finish_update_on_exit(
     adopted: Option<tokio::task::JoinHandle<std::io::Result<std::process::ExitStatus>>>,
@@ -1700,7 +1700,7 @@ fn get_channel_switch(alpha: bool, stable: bool, enterprise: bool) -> Option<&'s
         None
     }
 }
-/// Handle `grok-pager update [--check] [--json] [--force-reinstall] [--version X] [--alpha|--stable|--enterprise]`.
+/// Handle `kigi-pager update [--check] [--json] [--force-reinstall] [--version X] [--alpha|--stable|--enterprise]`.
 async fn run_update_command(
     check: bool,
     json: bool,
@@ -1742,7 +1742,7 @@ async fn run_update_command(
     }
     Ok(())
 }
-/// After a successful `grok update`, ask any running leader on this machine that
+/// After a successful `kigi update`, ask any running leader on this machine that
 /// is older than `installed_version` to relaunch onto the new binary (bounded
 /// grace; running sessions close and reconnect via `session/load`).
 ///
@@ -1764,7 +1764,7 @@ async fn signal_leaders_to_relaunch(installed_version: &str) {
         }
         let client = match kigi_shell::leader::LeaderClient::connect(
             socket_path,
-            "grok-pager-update",
+            "kigi-pager-update",
             ClientMode::Stdio,
             ClientCapabilities::default(),
         )
@@ -1839,13 +1839,13 @@ mod tests {
         );
     }
     use clap::Parser as _;
-    /// `grok dashboard` flags the startup hook without forcing leader mode —
+    /// `kigi dashboard` flags the startup hook without forcing leader mode —
     /// the dashboard is independent of leader mode, so the launch keeps
     /// whatever leader setting the user (or config) chose.
     #[serial_test::serial(KIGI_AGENT_DASHBOARD)]
     #[test]
     fn dashboard_subcommand_flags_startup_without_forcing_leader() {
-        let mut args = PagerArgs::try_parse_from(["grok", "dashboard"]).unwrap();
+        let mut args = PagerArgs::try_parse_from(["kigi", "dashboard"]).unwrap();
         assert!(!args.leader, "fixture: no explicit --leader");
         flag_dashboard_at_startup_if_requested(&mut args).unwrap();
         assert!(!args.leader, "dashboard must NOT force leader mode");
@@ -1860,13 +1860,13 @@ mod tests {
         );
         unsafe { std::env::remove_var("KIGI_OPEN_DASHBOARD_AT_STARTUP") };
     }
-    /// `grok dashboard --no-leader` is allowed — the dashboard does not
+    /// `kigi dashboard --no-leader` is allowed — the dashboard does not
     /// require a leader, so the combination launches into the dashboard in
     /// non-leader mode.
     #[serial_test::serial(KIGI_AGENT_DASHBOARD)]
     #[test]
     fn dashboard_subcommand_allows_no_leader() {
-        let mut args = PagerArgs::try_parse_from(["grok", "--no-leader", "dashboard"]).unwrap();
+        let mut args = PagerArgs::try_parse_from(["kigi", "--no-leader", "dashboard"]).unwrap();
         flag_dashboard_at_startup_if_requested(&mut args)
             .expect("--no-leader + dashboard must be allowed");
         assert!(args.no_leader, "--no-leader must be preserved");
@@ -1888,7 +1888,7 @@ mod tests {
     #[test]
     fn dashboard_subcommand_errors_when_disabled() {
         unsafe { std::env::set_var("KIGI_AGENT_DASHBOARD", "0") };
-        let mut args = PagerArgs::try_parse_from(["grok", "dashboard"]).unwrap();
+        let mut args = PagerArgs::try_parse_from(["kigi", "dashboard"]).unwrap();
         let result = flag_dashboard_at_startup_if_requested(&mut args);
         unsafe { std::env::remove_var("KIGI_AGENT_DASHBOARD") };
         let err = result.expect_err("disabled dashboard must error");
@@ -1958,7 +1958,7 @@ mod tests {
             &state,
         );
         cache_outgoing_acp_state(
-            r#"{"jsonrpc":"2.0","id":3,"method":"_x.ai/session/close","params":{"sessionId":"s1"}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"_kigi/session/close","params":{"sessionId":"s1"}}"#,
             &state,
         );
         let s = state.lock().unwrap();
@@ -2216,7 +2216,7 @@ mod tests {
             let _init = leader_rx.recv().await.unwrap();
             response_tx
                 .send(
-                    r#"{"jsonrpc":"2.0","method":"x.ai/leader/version_mismatch","params":{}}"#
+                    r#"{"jsonrpc":"2.0","method":"kigi/leader/version_mismatch","params":{}}"#
                         .to_string(),
                 )
                 .unwrap();
@@ -2262,7 +2262,7 @@ mod tests {
     }
     /// A `session/load` rejected by the new leader (error response) must
     /// surface as a failed replay (`None`) so the bridge emits
-    /// `x.ai/leader_reconnected` with empty params and the external client
+    /// `kigi/leader_reconnected` with empty params and the external client
     /// knows to re-establish state itself.
     #[tokio::test]
     async fn replay_returns_none_when_load_is_rejected() {

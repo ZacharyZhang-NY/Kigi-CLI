@@ -15,8 +15,8 @@ use kigi_tools::types::tool::ToolKind;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-/// The Grok [`ToolKind`] a vendor-compat `tools:` allowlist entry resolves to, so
-/// a plugin's upstream allowlist still binds. Backed by the shared vendor-to-Grok
+/// The Kigi [`ToolKind`] a vendor-compat `tools:` allowlist entry resolves to, so
+/// a plugin's upstream allowlist still binds. Backed by the shared vendor-to-Kigi
 /// tool registry in `kigi-tools` (also used by the hook matcher).
 fn claude_tool_kind(name: &str) -> Option<ToolKind> {
     kigi_tools::types::kind_for(name)
@@ -55,7 +55,7 @@ pub struct AgentBuilder {
     notification_handle: ToolNotificationHandle,
     owner_session_id: Option<String>,
     parent_scheduler_handle:
-        Option<kigi_tools::implementations::grok_build::scheduler::types::SchedulerHandle>,
+        Option<kigi_tools::implementations::kigi::scheduler::types::SchedulerHandle>,
     /// The agent definition — set via from_definition() or built up
     /// via individual with_*() calls.
     definition: Option<AgentDefinition>,
@@ -91,10 +91,10 @@ pub struct AgentBuilder {
     /// tools for execution by the agentic sampler, instead of being
     /// registered as local Function tools.
     backend_search: bool,
-    web_fetch_config: kigi_tools::implementations::grok_build::web_fetch::WebFetchConfig,
+    web_fetch_config: kigi_tools::implementations::kigi::web_fetch::WebFetchConfig,
     lsp: Option<std::sync::Arc<dyn kigi_tools::implementations::lsp::LspBackend>>,
     app_builder_deployer_config:
-        kigi_tools::implementations::grok_build::deploy_app::AppBuilderDeployerConfig,
+        kigi_tools::implementations::kigi::deploy_app::AppBuilderDeployerConfig,
     write_file_enabled: bool,
     subagents_enabled: bool,
     ask_user_question_enabled: bool,
@@ -135,27 +135,21 @@ pub struct AgentBuilder {
 /// Ensure plan mode tools (`enter_plan_mode`, `exit_plan_mode`,
 /// `ask_user_question`) are present in the tool config.
 fn ensure_plan_mode_tools(tool_config: &mut kigi_tools::registry::types::ToolServerConfig) {
-    use kigi_tools::implementations::grok_build;
+    use kigi_tools::implementations::kigi;
     let existing: std::collections::HashSet<&str> =
         tool_config.tools.iter().map(|tc| tc.id.as_str()).collect();
-    let missing_enter = !existing.contains("GrokBuild:enter_plan_mode");
-    let missing_exit = !existing.contains("GrokBuild:exit_plan_mode");
-    let missing_ask = !existing.contains("GrokBuild:ask_user_question");
+    let missing_enter = !existing.contains("Kigi:enter_plan_mode");
+    let missing_exit = !existing.contains("Kigi:exit_plan_mode");
+    let missing_ask = !existing.contains("Kigi:ask_user_question");
     drop(existing);
     if missing_enter {
-        tool_config
-            .tools
-            .push((&grok_build::EnterPlanModeTool).into());
+        tool_config.tools.push((&kigi::EnterPlanModeTool).into());
     }
     if missing_exit {
-        tool_config
-            .tools
-            .push((&grok_build::ExitPlanModeTool).into());
+        tool_config.tools.push((&kigi::ExitPlanModeTool).into());
     }
     if missing_ask {
-        tool_config
-            .tools
-            .push((&grok_build::AskUserQuestionTool).into());
+        tool_config.tools.push((&kigi::AskUserQuestionTool).into());
     }
 }
 /// Merge a shell-resolved params map into every matching tool's
@@ -401,7 +395,7 @@ impl AgentBuilder {
     /// Share the parent's scheduler handle so scheduled tasks survive subagent exit.
     pub fn with_parent_scheduler_handle(
         mut self,
-        handle: kigi_tools::implementations::grok_build::scheduler::types::SchedulerHandle,
+        handle: kigi_tools::implementations::kigi::scheduler::types::SchedulerHandle,
     ) -> Self {
         self.parent_scheduler_handle = Some(handle);
         self
@@ -435,7 +429,7 @@ impl AgentBuilder {
     /// `KIGI_WEB_FETCH` env var.
     pub fn with_web_fetch_config(
         mut self,
-        config: kigi_tools::implementations::grok_build::web_fetch::WebFetchConfig,
+        config: kigi_tools::implementations::kigi::web_fetch::WebFetchConfig,
     ) -> Self {
         self.web_fetch_config = config;
         self
@@ -450,7 +444,7 @@ impl AgentBuilder {
     /// Set the deploy service configuration.
     pub fn with_app_builder_deployer_config(
         mut self,
-        config: kigi_tools::implementations::grok_build::deploy_app::AppBuilderDeployerConfig,
+        config: kigi_tools::implementations::kigi::deploy_app::AppBuilderDeployerConfig,
     ) -> Self {
         self.app_builder_deployer_config = config;
         self
@@ -501,14 +495,14 @@ impl AgentBuilder {
         self.subagents_enabled = enabled;
         self
     }
-    /// Set public model slugs advertised in the GrokBuild Task description.
+    /// Set public model slugs advertised in the Kigi Task description.
     pub fn with_task_model_slugs(mut self, slugs: Vec<String>) -> Self {
         self.task_model_slugs = slugs;
         self
     }
     /// Enable or disable the `ask_user_question` tool.
     ///
-    /// When disabled, `GrokBuild:ask_user_question` is stripped from the
+    /// When disabled, `Kigi:ask_user_question` is stripped from the
     /// agent's tool config after `ensure_plan_mode_tools` injection, so
     /// the model cannot ask the user structured questions regardless of
     /// which built-in profile is in use. Driven by the shell's resolved gate
@@ -537,7 +531,7 @@ impl AgentBuilder {
     }
     /// Set the skills config (custom paths, ignore globs) from config.toml.
     /// Without this, only auto-discovered skills (cwd/.kigi/skills, ~/.kigi/skills)
-    /// are included — custom paths added via `x.ai/skills/add` would be ignored.
+    /// are included — custom paths added via `kigi/skills/add` would be ignored.
     pub fn with_skills_config(mut self, config: crate::prompt::skills::SkillsConfig) -> Self {
         self.skills_config = config;
         self
@@ -585,7 +579,7 @@ impl AgentBuilder {
         if let Some(ref def) = self.definition {
             return def.clone();
         }
-        let mut def = AgentDefinition::default_grok_build();
+        let mut def = AgentDefinition::default_kigi();
         if let Some(ref name) = self.name {
             def.name = name.clone();
         }
@@ -668,17 +662,17 @@ impl AgentBuilder {
                     .push((&memory::get_tool::MemoryGetImpl).into());
             }
             if self.web_search_config.is_enabled() {
-                use kigi_tools::implementations::grok_build;
-                tool_config.tools.push((&grok_build::WebSearchTool).into());
+                use kigi_tools::implementations::kigi;
+                tool_config.tools.push((&kigi::WebSearchTool).into());
             }
             if self.web_fetch_config.is_enabled() {
-                use kigi_tools::implementations::grok_build;
-                tool_config.tools.push((&grok_build::WebFetchTool).into());
+                use kigi_tools::implementations::kigi;
+                tool_config.tools.push((&kigi::WebFetchTool).into());
             }
             if self.lsp.is_some() {
                 tool_config
                     .tools
-                    .push((&kigi_tools::implementations::grok_build::LspTool).into());
+                    .push((&kigi_tools::implementations::kigi::LspTool).into());
             }
             let has_write_tool = tool_config
                 .tools
@@ -692,13 +686,13 @@ impl AgentBuilder {
             ensure_plan_mode_tools(&mut tool_config);
         }
         if self.memory_backend.is_none() {
-            let grok_build_ns = kigi_tools::types::tool::ToolNamespace::GrokBuild.to_string();
+            let kigi_ns = kigi_tools::types::tool::ToolNamespace::Kigi.to_string();
             let mem_search_id = format!(
-                "{grok_build_ns}:{}",
+                "{kigi_ns}:{}",
                 kigi_tools::implementations::memory::MEMORY_SEARCH_TOOL_NAME
             );
             let mem_get_id = format!(
-                "{grok_build_ns}:{}",
+                "{kigi_ns}:{}",
                 kigi_tools::implementations::memory::MEMORY_GET_TOOL_NAME
             );
             tool_config
@@ -708,13 +702,13 @@ impl AgentBuilder {
         if !self.ask_user_question_enabled {
             let ask_user_id = format!(
                 "{}:ask_user_question",
-                kigi_tools::types::tool::ToolNamespace::GrokBuild,
+                kigi_tools::types::tool::ToolNamespace::Kigi,
             );
             tool_config.tools.retain(|tc| tc.id != ask_user_id);
         }
         let task_tool_id = format!(
             "{}:{}",
-            kigi_tools::types::tool::ToolNamespace::GrokBuild,
+            kigi_tools::types::tool::ToolNamespace::Kigi,
             "task"
         );
         let mut task_stripped = false;
@@ -762,8 +756,8 @@ impl AgentBuilder {
                                 .unwrap_or(true))
                 })
             };
-            if !has_satisfier(ToolNamespace::GrokBuild, "run_terminal_cmd", true)
-                && !has_satisfier(ToolNamespace::GrokBuildConcise, "run_terminal_cmd", true)
+            if !has_satisfier(ToolNamespace::Kigi, "run_terminal_cmd", true)
+                && !has_satisfier(ToolNamespace::KigiConcise, "run_terminal_cmd", true)
                 && !has_satisfier(ToolNamespace::OpenCode, "bash", false)
             {
                 let lifecycle = ["get_task_output", "wait_tasks", "kill_task"];
@@ -772,30 +766,22 @@ impl AgentBuilder {
                     .retain(|tc| !lifecycle.contains(&short_tool_name(&tc.id)));
             }
         }
-        if let kigi_tools::implementations::grok_build::web_fetch::WebFetchConfig::Enabled {
-            ref params,
-        } = self.web_fetch_config
+        if let kigi_tools::implementations::kigi::web_fetch::WebFetchConfig::Enabled { ref params } =
+            self.web_fetch_config
             && let Ok(params_value) = serde_json::to_value(params)
             && let Some(obj) = params_value.as_object()
         {
-            merge_tool_params(&mut tool_config, &["GrokBuild:web_fetch"], obj);
+            merge_tool_params(&mut tool_config, &["Kigi:web_fetch"], obj);
         }
         if let Some(ref bash_params) = self.bash_params_json {
             merge_tool_params(
                 &mut tool_config,
-                &[
-                    "GrokBuild:run_terminal_cmd",
-                    "GrokBuildConcise:run_terminal_cmd",
-                ],
+                &["Kigi:run_terminal_cmd", "KigiConcise:run_terminal_cmd"],
                 bash_params,
             );
         }
         if let Some(ref ask_params) = self.ask_user_question_params_json {
-            merge_tool_params(
-                &mut tool_config,
-                &["GrokBuild:ask_user_question"],
-                ask_params,
-            );
+            merge_tool_params(&mut tool_config, &["Kigi:ask_user_question"], ask_params);
         }
         if !definition.disallowed_tools.is_empty() {
             let before: std::collections::HashSet<String> =
@@ -878,7 +864,7 @@ impl AgentBuilder {
                 tracing::warn!(
                     agent = % definition.name, unresolved = ? unresolved, allowed = ?
                     definition.tools,
-                    "tools allowlist had unmappable entries; keeping full grok toolset"
+                    "tools allowlist had unmappable entries; keeping full kigi toolset"
                 );
             }
         }
@@ -1419,7 +1405,7 @@ mod tests {
             .contains("If the user does not explicitly request a model, omit `${{ params.task.model }}` to inherit the parent model.")
         );
         assert!(!desc.contains("Available model slugs:"));
-        assert!(!desc.contains(concat!("grok", " models")));
+        assert!(!desc.contains(concat!("kigi", " models")));
     }
     #[test]
     fn build_task_description_handles_empty_model_catalog() {
@@ -1431,7 +1417,7 @@ mod tests {
         let desc = build_task_description(&subagents, &[]);
         assert!(desc.contains("No explicit model slugs are currently available."));
         assert!(desc.contains("Omit `${{ params.task.model }}` to inherit the parent model."));
-        assert!(!desc.contains(concat!("grok", " models")));
+        assert!(!desc.contains(concat!("kigi", " models")));
     }
     #[test]
     fn task_model_guidance_resolves_model_param_override() {
@@ -1525,62 +1511,62 @@ mod tests {
         }
         let cases: &[PagerFlagCase] = &[
             PagerFlagCase {
-                label: "grok-build / subagents+ask_user",
-                profile: AgentDefinition::default_grok_build,
+                label: "kigi / subagents+ask_user",
+                profile: AgentDefinition::default_kigi,
                 subagents: true,
                 ask_user: true,
             },
             PagerFlagCase {
-                label: "grok-build / subagents / no-ask-user",
-                profile: AgentDefinition::default_grok_build,
-                subagents: true,
-                ask_user: false,
-            },
-            PagerFlagCase {
-                label: "grok-build / no-subagents / ask_user",
-                profile: AgentDefinition::default_grok_build,
-                subagents: false,
-                ask_user: true,
-            },
-            PagerFlagCase {
-                label: "grok-build / no-subagents / no-ask-user",
-                profile: AgentDefinition::default_grok_build,
-                subagents: false,
-                ask_user: false,
-            },
-            PagerFlagCase {
-                label: "grok-build-ask-user / subagents",
-                profile: AgentDefinition::grok_build_ask_user,
-                subagents: true,
-                ask_user: true,
-            },
-            PagerFlagCase {
-                label: "grok-build-ask-user / no-subagents",
-                profile: AgentDefinition::grok_build_ask_user,
-                subagents: false,
-                ask_user: true,
-            },
-            PagerFlagCase {
-                label: "grok-build-plan",
-                profile: AgentDefinition::grok_build_plan,
-                subagents: true,
-                ask_user: true,
-            },
-            PagerFlagCase {
-                label: "grok-build-plan / no-ask-user",
-                profile: AgentDefinition::grok_build_plan,
+                label: "kigi / subagents / no-ask-user",
+                profile: AgentDefinition::default_kigi,
                 subagents: true,
                 ask_user: false,
             },
             PagerFlagCase {
-                label: "grok-build-plan-no-subagents",
-                profile: AgentDefinition::grok_build_plan_no_subagents,
+                label: "kigi / no-subagents / ask_user",
+                profile: AgentDefinition::default_kigi,
                 subagents: false,
                 ask_user: true,
             },
             PagerFlagCase {
-                label: "grok-build-plan-no-subagents / no-ask-user",
-                profile: AgentDefinition::grok_build_plan_no_subagents,
+                label: "kigi / no-subagents / no-ask-user",
+                profile: AgentDefinition::default_kigi,
+                subagents: false,
+                ask_user: false,
+            },
+            PagerFlagCase {
+                label: "kigi-ask-user / subagents",
+                profile: AgentDefinition::kigi_ask_user,
+                subagents: true,
+                ask_user: true,
+            },
+            PagerFlagCase {
+                label: "kigi-ask-user / no-subagents",
+                profile: AgentDefinition::kigi_ask_user,
+                subagents: false,
+                ask_user: true,
+            },
+            PagerFlagCase {
+                label: "kigi-plan",
+                profile: AgentDefinition::kigi_plan,
+                subagents: true,
+                ask_user: true,
+            },
+            PagerFlagCase {
+                label: "kigi-plan / no-ask-user",
+                profile: AgentDefinition::kigi_plan,
+                subagents: true,
+                ask_user: false,
+            },
+            PagerFlagCase {
+                label: "kigi-plan-no-subagents",
+                profile: AgentDefinition::kigi_plan_no_subagents,
+                subagents: false,
+                ask_user: true,
+            },
+            PagerFlagCase {
+                label: "kigi-plan-no-subagents / no-ask-user",
+                profile: AgentDefinition::kigi_plan_no_subagents,
                 subagents: false,
                 ask_user: false,
             },
@@ -1629,7 +1615,7 @@ mod tests {
     async fn curated_empty_toolset_fails_agent_build() {
         use kigi_tools::computer::local::LocalTerminalBackend;
         use kigi_tools::notification::ToolNotificationHandle;
-        let mut profile = crate::config::AgentDefinition::default_grok_build();
+        let mut profile = crate::config::AgentDefinition::default_kigi();
         profile.tool_config = Default::default();
         profile.inject_default_tools = false;
         let result = AgentBuilder::new(
@@ -1657,16 +1643,16 @@ mod tests {
     #[tokio::test]
     async fn plan_mode_injected_ask_user_question_receives_params() {
         use kigi_tools::computer::local::LocalTerminalBackend;
-        use kigi_tools::implementations::grok_build::ask_user_question::AskUserQuestionParams;
+        use kigi_tools::implementations::kigi::ask_user_question::AskUserQuestionParams;
         use kigi_tools::notification::ToolNotificationHandle;
         use kigi_tools::types::resources::Params;
-        let profile = crate::config::AgentDefinition::default_grok_build();
+        let profile = crate::config::AgentDefinition::default_kigi();
         assert!(
             !profile
                 .tool_config
                 .tools
                 .iter()
-                .any(|tc| tc.id == "GrokBuild:ask_user_question"),
+                .any(|tc| tc.id == "Kigi:ask_user_question"),
             "test premise: the profile must not pre-declare ask_user_question"
         );
         let mut params = serde_json::Map::new();
@@ -1693,7 +1679,7 @@ mod tests {
     async fn build_with_tools(tools: Vec<String>, disallowed: Vec<String>) -> crate::agent::Agent {
         use kigi_tools::computer::local::LocalTerminalBackend;
         use kigi_tools::notification::ToolNotificationHandle;
-        let mut def = crate::config::AgentDefinition::default_grok_build();
+        let mut def = crate::config::AgentDefinition::default_kigi();
         def.tools = tools;
         def.disallowed_tools = disallowed;
         AgentBuilder::new(
@@ -1714,7 +1700,7 @@ mod tests {
     ) -> Vec<String> {
         use kigi_tools::computer::local::LocalTerminalBackend;
         use kigi_tools::notification::ToolNotificationHandle;
-        let mut def = crate::config::AgentDefinition::default_grok_build();
+        let mut def = crate::config::AgentDefinition::default_kigi();
         def.tools = own_tools;
         def.session_tools_allowlist = Some(session_allow);
         let agent = AgentBuilder::new(
@@ -1791,7 +1777,7 @@ mod tests {
         let mut def = crate::config::AgentDefinition::general_purpose();
         assert!(def.session_tools_allowed("read_file"));
         def.session_tools_allowlist = Some(vec!["read_file".into()]);
-        assert!(def.session_tools_allowed("GrokBuild:read_file"));
+        assert!(def.session_tools_allowed("Kigi:read_file"));
         assert!(!def.session_tools_allowed("grep"));
         def.session_tools_denylist = Some(vec!["read_file".into()]);
         assert!(!def.session_tools_allowed("read_file"));
@@ -1848,7 +1834,7 @@ mod tests {
         assert_eq!(agent.definition().allowed_subagent_types, None);
         use kigi_tools::computer::local::LocalTerminalBackend;
         use kigi_tools::notification::ToolNotificationHandle;
-        let mut def = crate::config::AgentDefinition::default_grok_build();
+        let mut def = crate::config::AgentDefinition::default_kigi();
         def.disallowed_tools = vec!["Agent".into()];
         let agent = AgentBuilder::new(
             std::env::temp_dir(),
@@ -1864,10 +1850,10 @@ mod tests {
     #[tokio::test]
     async fn spawning_blocked_disables_all_background_bash_modes() {
         use kigi_tools::computer::local::LocalTerminalBackend;
-        use kigi_tools::implementations::grok_build::bash::BashParams;
+        use kigi_tools::implementations::kigi::bash::BashParams;
         use kigi_tools::notification::ToolNotificationHandle;
         use kigi_tools::types::resources::Params;
-        let mut definition = crate::config::AgentDefinition::default_grok_build();
+        let mut definition = crate::config::AgentDefinition::default_kigi();
         definition.tools = vec!["run_terminal_cmd".into()];
         let bash_params = serde_json::json!(
             { "max_timeout_secs" : 36_000.0, "auto_background_on_timeout" : true,
@@ -1907,10 +1893,10 @@ mod tests {
             Some(vec!["worker".into()])
         );
     }
-    /// Compat allowlist names (`Read`, `Bash`, `Grep`) map to their Grok
+    /// Compat allowlist names (`Read`, `Bash`, `Grep`) map to their Kigi
     /// equivalents by `ToolKind` — a real restricted toolset, not zero tools.
     #[tokio::test]
-    async fn claude_tool_names_map_to_grok_equivalents() {
+    async fn claude_tool_names_map_to_kigi_equivalents() {
         let tools = vec!["Read".into(), "Bash".into(), "Grep".into()];
         let agent = build_with_tools(tools, vec![]).await;
         let names: Vec<String> = agent
@@ -1936,7 +1922,7 @@ mod tests {
             "Edit must be excluded by the allowlist; got: {names:?}"
         );
     }
-    /// Shell, LSP, ask, and task-lifecycle tool names resolve to their grok
+    /// Shell, LSP, ask, and task-lifecycle tool names resolve to their kigi
     /// `ToolKind`, so those allowlists are honored instead of failing open.
     #[test]
     fn shell_lsp_ask_and_task_tool_names_map() {
@@ -2045,7 +2031,7 @@ mod tests {
         );
     }
     /// A restrictive allowlist must never strip MCP access. Compat allowlists
-    /// treat `mcp__*` as always-on, so grok keeps the MCP meta-tools
+    /// treat `mcp__*` as always-on, so kigi keeps the MCP meta-tools
     /// (`search_tool` / `use_tool`) regardless of what the allowlist names.
     #[tokio::test]
     async fn restrictive_allowlist_keeps_mcp_access() {
@@ -2098,10 +2084,10 @@ mod tests {
     #[tokio::test]
     async fn requested_enabled_web_tools_survive_allowlist() {
         use kigi_tools::computer::local::LocalTerminalBackend;
-        use kigi_tools::implementations::grok_build::web_fetch::WebFetchConfig;
+        use kigi_tools::implementations::kigi::web_fetch::WebFetchConfig;
         use kigi_tools::implementations::web_search::WebSearchConfig;
         use kigi_tools::notification::ToolNotificationHandle;
-        let mut definition = crate::config::AgentDefinition::default_grok_build();
+        let mut definition = crate::config::AgentDefinition::default_kigi();
         definition.tools = vec![
             "read_file".into(),
             "grep".into(),
@@ -2139,7 +2125,7 @@ mod tests {
             assert!(!names.contains(&excluded.to_string()), "got: {names:?}");
         }
     }
-    /// grok-build toolsets have no Skill tool — skills are read from
+    /// kigi toolsets have no Skill tool — skills are read from
     /// `SKILL.md` via `read_file` — so a compat `Skill` allowlist entry grants
     /// toolset.
     #[tokio::test]
@@ -2209,7 +2195,7 @@ mod tests {
             "no full-toolset fallback — unlisted tools must be excluded; got: {names:?}"
         );
     }
-    /// Compat `ToolSearch` meta-tool maps to grok's `search_tool` (MCP
+    /// Compat `ToolSearch` meta-tool maps to kigi's `search_tool` (MCP
     /// is a filter (`retain`) over a `HashSet` of kinds, not an inserter — so the
     /// falling back to the full toolset.
     #[tokio::test]
@@ -2247,7 +2233,7 @@ mod tests {
         } else {
             WebSearchConfig::Disabled
         };
-        let mut def = crate::config::AgentDefinition::default_grok_build();
+        let mut def = crate::config::AgentDefinition::default_kigi();
         def.disallowed_tools = disallowed_tools.iter().map(|s| s.to_string()).collect();
         AgentBuilder::new(
             std::env::temp_dir(),

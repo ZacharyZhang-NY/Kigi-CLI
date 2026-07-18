@@ -135,7 +135,7 @@ async fn write_version_cache_records_recent_timestamp() {
 // writes the file directly so we can control the timestamp.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Write a `GrokVersion`-shaped JSON file with an arbitrary timestamp.
+/// Write a `KigiVersion`-shaped JSON file with an arbitrary timestamp.
 fn write_cache_with_timestamp(version: &str, ts: time::OffsetDateTime) {
     let ts_str = ts
         .format(&time::format_description::well_known::Rfc3339)
@@ -154,7 +154,7 @@ fn write_cache_with_timestamp(version: &str, ts: time::OffsetDateTime) {
 /// Re-implement the cache-freshness check using the public API. We can't
 /// import the private `is_version_cache_fresh` directly, but we can verify
 /// its on-disk contract: file shape + freshness logic via the public
-/// `GrokVersion` JSON layout.
+/// `KigiVersion` JSON layout.
 async fn cache_is_fresh() -> bool {
     // Mirror the implementation: look at version.json under KIGI_SHARE_DIR,
     // parse, and check the TTL.
@@ -218,7 +218,7 @@ async fn version_cache_missing_file_is_not_fresh() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// version.json wire format — the on-disk file is read by every grok launch.
+// version.json wire format — the on-disk file is read by every kigi launch.
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test]

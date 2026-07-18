@@ -13,7 +13,7 @@ use crate::session::WorkspaceSession;
 pub(crate) static WORKSPACE_TOOLSET_SWAP_TOTAL: std::sync::LazyLock<IntCounterVec> =
     std::sync::LazyLock::new(|| {
         register_int_counter_vec!(
-            "grok_workspace_toolset_swap_total",
+            "kigi_workspace_toolset_swap_total",
             "Session toolset installs and swaps, by trigger and guard state",
             &["trigger", "turn_active", "in_flight"]
         )
@@ -26,7 +26,7 @@ pub(crate) static WORKSPACE_TOOLSET_SWAP_TOTAL: std::sync::LazyLock<IntCounterVe
 pub(crate) static WORKSPACE_TOOLSET_SWAP_REJECTED_TOTAL: std::sync::LazyLock<IntCounterVec> =
     std::sync::LazyLock::new(|| {
         register_int_counter_vec!(
-            "grok_workspace_toolset_swap_rejected_total",
+            "kigi_workspace_toolset_swap_rejected_total",
             "Session toolset swaps rejected by the turn-safety guards, by reason and trigger",
             &["reason", "trigger"]
         )
@@ -39,7 +39,7 @@ pub(crate) static WORKSPACE_TOOLSET_SWAP_REJECTED_TOTAL: std::sync::LazyLock<Int
 static WORKSPACE_BIND_REBIND_RERESOLVE_TOTAL: std::sync::LazyLock<IntCounterVec> =
     std::sync::LazyLock::new(|| {
         register_int_counter_vec!(
-            "grok_workspace_bind_rebind_reresolve_total",
+            "kigi_workspace_bind_rebind_reresolve_total",
             "session.bind rebinds that re-resolved a changed explicit toolset, by result",
             &["result"]
         )

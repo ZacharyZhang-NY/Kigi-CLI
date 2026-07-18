@@ -144,13 +144,13 @@ pub struct PromptContext {
     /// stdio / generic-ACP).
     #[serde(default)]
     pub is_non_interactive: bool,
-    /// Identity in the primary grok-build system prompt (`You are <label>…`).
+    /// Identity in the primary kigi system prompt (`You are <label>…`).
     /// Not the UI picker name. Defaults to [`DEFAULT_SYSTEM_PROMPT_LABEL`].
     #[serde(default = "default_system_prompt_label")]
     pub system_prompt_label: String,
 }
-/// Default identity on trim-tool-descriptions (`You are Grok released by xAI`).
-pub const DEFAULT_SYSTEM_PROMPT_LABEL: &str = "Grok";
+/// Default identity on trim-tool-descriptions (`You are Kigi released by xAI`).
+pub const DEFAULT_SYSTEM_PROMPT_LABEL: &str = "Kigi";
 fn default_system_prompt_label() -> String {
     DEFAULT_SYSTEM_PROMPT_LABEL.to_string()
 }
@@ -427,9 +427,9 @@ mod tests {
     #[test]
     fn test_placeholders_system_prompt_label_override() {
         let mut ctx = test_context();
-        ctx.system_prompt_label = "Grok Internal".into();
+        ctx.system_prompt_label = "Kigi Internal".into();
         let p = ctx.placeholders();
-        assert_eq!(p["system_prompt_label"], "Grok Internal");
+        assert_eq!(p["system_prompt_label"], "Kigi Internal");
     }
     #[test]
     fn test_missing_system_prompt_label_deserializes_to_default() {
@@ -1229,7 +1229,7 @@ mod tests {
             ("plan", plan),
         ] {
             assert!(
-                !prompt.contains("You are a Grok Build agent"),
+                !prompt.contains("You are a Kigi agent"),
                 "{name} prompt should not duplicate base template identity"
             );
         }

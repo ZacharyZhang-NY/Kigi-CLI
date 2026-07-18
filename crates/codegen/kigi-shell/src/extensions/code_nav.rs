@@ -7,11 +7,11 @@
 //!
 //! | Method | Description |
 //! |--------|-------------|
-//! | `x.ai/code/goto-definition` | Definition location(s) for symbol at position |
-//! | `x.ai/code/goto-references` | Reference location(s) for symbol at position |
-//! | `x.ai/code/find-definitions` | All definitions of a symbol by name |
-//! | `x.ai/code/find-references` | All references to a symbol by name |
-//! | `x.ai/code/status` | Indexing status |
+//! | `kigi/code/goto-definition` | Definition location(s) for symbol at position |
+//! | `kigi/code/goto-references` | Reference location(s) for symbol at position |
+//! | `kigi/code/find-definitions` | All definitions of a symbol by name |
+//! | `kigi/code/find-references` | All references to a symbol by name |
+//! | `kigi/code/status` | Indexing status |
 
 use std::path::{Path, PathBuf};
 
@@ -129,7 +129,7 @@ pub struct SymbolLocation {
     pub matched_symbol: Option<String>,
 }
 
-/// Reason string for the `x.ai/code/status` response.
+/// Reason string for the `kigi/code/status` response.
 ///
 /// Serialised as a camelCase string so clients can pattern-match on it.
 #[derive(Debug, Serialize)]
@@ -142,7 +142,7 @@ pub enum IndexStatusReason {
     NotStarted,
     /// Client type is not web (web-only for initial rollout).
     ClientNotWeb,
-    /// Client did not advertise `x.ai/codeNavigation.enabled`.
+    /// Client did not advertise `kigi/codeNavigation.enabled`.
     CapabilityNotAdvertised,
     /// `codebase_indexing` feature is disabled in config.
     DisabledByConfig,
@@ -181,7 +181,7 @@ pub async fn handle(
     use kigi_workspace::workspace_ops::*;
 
     match args.method.as_ref() {
-        "x.ai/code/goto-definition" => {
+        "kigi/code/goto-definition" => {
             let req: GotoRequest = serde_json::from_str(args.params.get())
                 .map_err(|e| acp::Error::invalid_params().data(format!("invalid params: {e}")))?;
             let cwd = resolve_cwd(agent, req.cwd.clone(), req.session_id.as_ref())?;
@@ -209,7 +209,7 @@ pub async fn handle(
             );
             to_code_nav_ext_response(result)
         }
-        "x.ai/code/goto-references" => {
+        "kigi/code/goto-references" => {
             let req: GotoRequest = serde_json::from_str(args.params.get())
                 .map_err(|e| acp::Error::invalid_params().data(format!("invalid params: {e}")))?;
             let cwd = resolve_cwd(agent, req.cwd.clone(), req.session_id.as_ref())?;
@@ -238,7 +238,7 @@ pub async fn handle(
             );
             to_code_nav_ext_response(result)
         }
-        "x.ai/code/find-definitions" => {
+        "kigi/code/find-definitions" => {
             let req: FindSymbolRequest = serde_json::from_str(args.params.get())
                 .map_err(|e| acp::Error::invalid_params().data(format!("invalid params: {e}")))?;
             let cwd = resolve_cwd(agent, req.cwd.clone(), req.session_id.as_ref())?;
@@ -268,7 +268,7 @@ pub async fn handle(
             );
             to_code_nav_ext_response(result)
         }
-        "x.ai/code/find-references" => {
+        "kigi/code/find-references" => {
             let req: FindSymbolRequest = serde_json::from_str(args.params.get())
                 .map_err(|e| acp::Error::invalid_params().data(format!("invalid params: {e}")))?;
             let cwd = resolve_cwd(agent, req.cwd.clone(), req.session_id.as_ref())?;
@@ -298,7 +298,7 @@ pub async fn handle(
             );
             to_code_nav_ext_response(result)
         }
-        "x.ai/code/status" => {
+        "kigi/code/status" => {
             let req: StatusRequest = serde_json::from_str(args.params.get())
                 .map_err(|e| acp::Error::invalid_params().data(format!("invalid params: {e}")))?;
             let cwd = resolve_cwd(agent, req.cwd.clone(), req.session_id.as_ref())?;
@@ -422,10 +422,10 @@ fn resolve_cwd(
 fn eligibility_error(reason: CodeNavEligibility) -> acp::Error {
     let msg = match reason {
         CodeNavEligibility::ClientNotWeb => {
-            "code navigation is currently only enabled for grok-web clients"
+            "code navigation is currently only enabled for kigi-web clients"
         }
         CodeNavEligibility::CapabilityNotAdvertised => {
-            "client must advertise x.ai/codeNavigation.enabled to use code navigation"
+            "client must advertise kigi/codeNavigation.enabled to use code navigation"
         }
         CodeNavEligibility::DisabledByConfig => "code navigation is disabled by configuration",
         CodeNavEligibility::NotGitRepo => {

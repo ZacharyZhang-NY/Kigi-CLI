@@ -9,7 +9,7 @@ use super::common::*;
 #[ignore]
 async fn reasoning_efforts_from_config_toml_menu() {
     let content = ContentController::start_with_models(vec![
-        MockModel::new("grok-4.5").with_supports_reasoning_effort(true),
+        MockModel::new("kigi-4.5").with_supports_reasoning_effort(true),
     ])
     .await
     .expect("start content");
@@ -18,10 +18,10 @@ async fn reasoning_efforts_from_config_toml_menu() {
     // Seed `~/.kigi/config.toml` with a per-model reasoning-effort menu.
     let kigi_home = content.home().join(".kigi");
     std::fs::create_dir_all(&kigi_home).expect("create .kigi");
-    // Quote the dotted model id: bare `[model.kigi-4.5]` is TOML key-path syntax (model.kigi-4.5), not the id "grok-4.5".
+    // Quote the dotted model id: bare `[model.kigi-4.5]` is TOML key-path syntax (model.kigi-4.5), not the id "kigi-4.5".
     std::fs::write(
         kigi_home.join("config.toml"),
-        "[model.\"grok-4.5\"]\nreasoning_efforts = [{ value = \"high\", label = \"ConfigHigh\" }]\n",
+        "[model.\"kigi-4.5\"]\nreasoning_efforts = [{ value = \"high\", label = \"ConfigHigh\" }]\n",
     )
     .expect("write config.toml");
 

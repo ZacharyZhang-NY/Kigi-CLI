@@ -506,7 +506,7 @@ mod shell_suggestion_key_tests {
         let mut agent = bash_agent("ls | gr");
         agent.prompt.suggestions.dropdown.items = vec![
             item("grep", None),
-            file_item("ls | grokfile", "grokfile", 5..7),
+            file_item("ls | kigifile", "kigifile", 5..7),
         ];
 
         let outcome = agent.handle_prompt_key_for_test(&key(KeyCode::Tab));

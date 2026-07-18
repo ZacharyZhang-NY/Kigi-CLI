@@ -42,7 +42,7 @@ pub fn clamp_read_length(length: Option<u64>, max_bytes: u64) -> u64 {
         .min(MAX_READ_BYTES)
 }
 
-/// Walk configuration. Field semantics mirror the `x.ai/fs/list` request.
+/// Walk configuration. Field semantics mirror the `kigi/fs/list` request.
 pub(super) struct FsWalk<'a> {
     pub depth: usize,
     pub follow_symlinks: bool,

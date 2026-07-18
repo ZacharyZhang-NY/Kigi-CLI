@@ -72,7 +72,7 @@ struct ReinitOutcome {
 struct AgentLoadOutcome {
     agent_id: super::agent::AgentId,
     success: bool,
-    /// `x.ai/runningPromptId` from the reload response: the turn another
+    /// `kigi/runningPromptId` from the reload response: the turn another
     /// client is driving mid-reconnect, adopted at finalize (mirrors the
     /// `SessionLoaded` adoption in `dispatch.rs`).
     running_prompt_id: Option<String>,
@@ -635,12 +635,12 @@ pub(crate) async fn run(
                 crate::acp::AuthStartMode::Command => super::app_view::AuthMode::Command,
             };
         } else {
-            // --force-login: find the grok.com method from the advertised list
-            let grok_com = connection
+            // --force-login: find the kimi.com method from the advertised list
+            let kigi_com = connection
                 .auth_methods
                 .iter()
-                .find(|m| m.id().0.as_ref() == "grok.com");
-            if let Some(method) = grok_com {
+                .find(|m| m.id().0.as_ref() == "kimi-code");
+            if let Some(method) = kigi_com {
                 app.login_label = Some(method.name().to_string());
                 app.login_method_id = Some(method.id().clone());
                 let is_provider = method
@@ -655,7 +655,7 @@ pub(crate) async fn run(
                     super::app_view::AuthMode::Pending
                 };
             } else {
-                // No grok.com method available, use the first method as fallback
+                // No kimi.com method available, use the first method as fallback
                 let first = &connection.auth_methods[0];
                 app.login_label = Some(first.name().to_string());
                 app.login_method_id = Some(first.id().clone());
@@ -667,7 +667,7 @@ pub(crate) async fn run(
         // by reusing dispatch_login. Effects are stashed and drained after
         // the initial render so the user sees the auth UI right away.
         // Empty auth_methods (preferred_method pin with no credentials) is
-        // fail-closed: do not invent grok.com / auto-start OIDC.
+        // fail-closed: do not invent kimi.com / auto-start OIDC.
         tracing::info!(
             method_id = ?app.login_method_id,
             methods_empty = connection.auth_methods.is_empty(),
@@ -1243,7 +1243,7 @@ pub(crate) async fn run(
         }
     }
 
-    // `grok dashboard` startup: open the dashboard view immediately. The
+    // `kigi dashboard` startup: open the dashboard view immediately. The
     // CLI subcommand wrote a `KIGI_OPEN_DASHBOARD_AT_STARTUP=1` env var
     // so we don't have to thread a flag through every arg struct.
     if std::env::var("KIGI_OPEN_DASHBOARD_AT_STARTUP").as_deref() == Ok("1") {

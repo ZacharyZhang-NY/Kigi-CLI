@@ -51,18 +51,18 @@ pub fn discover_hook_source_paths(
     let home = dirs::home_dir();
     // user_kigi_home() is None when no home resolves, so inspect lists the same
     // sources a live session loads, instead of a cwd-relative .kigi.
-    let grok = kigi_config::user_kigi_home();
+    let kigi = kigi_config::user_kigi_home();
     let mut global = Vec::new();
 
     if !skip_claude && let Some(ref h) = home {
         global.push(h.join(".claude").join("settings.json"));
         global.push(h.join(".claude").join("settings.local.json"));
     }
-    if let Some(ref grok) = grok {
-        global.push(grok.join("hooks"));
+    if let Some(ref kigi) = kigi {
+        global.push(kigi.join("hooks"));
     }
 
-    let custom_paths: Vec<PathBuf> = grok
+    let custom_paths: Vec<PathBuf> = kigi
         .as_ref()
         .and_then(|g| std::fs::read_to_string(g.join("hooks-paths")).ok())
         .map(|content| {

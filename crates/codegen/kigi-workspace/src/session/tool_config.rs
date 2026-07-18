@@ -295,7 +295,7 @@ impl SessionContextFactory for WorkspaceSessionContextFactory {
             web_fetch_config: build_web_fetch_config(),
             lsp: None,
             app_builder_deployer_config:
-                kigi_tools::implementations::grok_build::deploy_app::AppBuilderDeployerConfig::default(),
+                kigi_tools::implementations::kigi::deploy_app::AppBuilderDeployerConfig::default(),
             api_key_provider: None,
             attribution_callback: None,
             system_reminder_tag: kigi_tools::reminders::DEFAULT_REMINDER_TAG,
@@ -317,8 +317,8 @@ impl SessionContextFactory for WorkspaceSessionContextFactory {
 }
 /// Build web fetch config. Enabled with default params unless
 /// `KIGI_DISABLE_WEB_FETCH=1` is set.
-fn build_web_fetch_config() -> kigi_tools::implementations::grok_build::web_fetch::WebFetchConfig {
-    use kigi_tools::implementations::grok_build::web_fetch::{WebFetchConfig, WebFetchParams};
+fn build_web_fetch_config() -> kigi_tools::implementations::kigi::web_fetch::WebFetchConfig {
+    use kigi_tools::implementations::kigi::web_fetch::{WebFetchConfig, WebFetchParams};
     if std::env::var("KIGI_DISABLE_WEB_FETCH").is_ok_and(|v| v == "1" || v == "true") {
         return WebFetchConfig::Disabled;
     }
@@ -414,10 +414,10 @@ pub mod test_support {
     pub fn baseline_config() -> ToolServerConfig {
         ToolServerConfig {
             tools: vec![
-                tc("GrokBuild:read_file", Some(ToolKind::Read)),
-                tc("GrokBuild:search_replace", Some(ToolKind::Edit)),
-                tc("GrokBuild:grep", Some(ToolKind::Search)),
-                tc("GrokBuild:list_dir", Some(ToolKind::ListDir)),
+                tc("Kigi:read_file", Some(ToolKind::Read)),
+                tc("Kigi:search_replace", Some(ToolKind::Edit)),
+                tc("Kigi:grep", Some(ToolKind::Search)),
+                tc("Kigi:list_dir", Some(ToolKind::ListDir)),
             ],
             behavior_preset: None,
         }
@@ -470,13 +470,10 @@ mod tests {
     async fn resolve_session_toolset_mcp_merge_dedup_by_id_baseline_wins() {
         let factory = factory_for_test();
         let baseline = ToolServerConfig {
-            tools: vec![test_support::tc(
-                "GrokBuild:read_file",
-                Some(ToolKind::Read),
-            )],
+            tools: vec![test_support::tc("Kigi:read_file", Some(ToolKind::Read))],
             behavior_preset: None,
         };
-        let mut mcp_dup = test_support::tc("GrokBuild:read_file", Some(ToolKind::Read));
+        let mut mcp_dup = test_support::tc("Kigi:read_file", Some(ToolKind::Read));
         mcp_dup.name_override = Some("mcp_read".into());
         let snapshot = vec![mcp_dup];
         let (_eff, ts, _backend) = resolve_session_toolset(
@@ -507,14 +504,14 @@ mod tests {
     #[test]
     fn backfill_tool_kinds_fills_known_kindless_ids_only() {
         let kinds = HashMap::from([
-            ("GrokBuild:search_replace".to_owned(), ToolKind::Edit),
-            ("GrokBuild:read_file".to_owned(), ToolKind::Read),
+            ("Kigi:search_replace".to_owned(), ToolKind::Edit),
+            ("Kigi:read_file".to_owned(), ToolKind::Read),
         ]);
         let config = ToolServerConfig {
             tools: vec![
-                test_support::tc("GrokBuild:search_replace", None),
+                test_support::tc("Kigi:search_replace", None),
                 test_support::tc("adhoc.opaque", None),
-                test_support::tc("GrokBuild:read_file", Some(ToolKind::Search)),
+                test_support::tc("Kigi:read_file", Some(ToolKind::Search)),
             ],
             behavior_preset: Some("current".to_owned()),
         };
@@ -527,14 +524,14 @@ mod tests {
                 .expect("tool present")
                 .kind
         };
-        assert_eq!(kind_of("GrokBuild:search_replace"), Some(ToolKind::Edit));
+        assert_eq!(kind_of("Kigi:search_replace"), Some(ToolKind::Edit));
         assert_eq!(
             kind_of("adhoc.opaque"),
             None,
             "ids unknown to the registry stay kind-less"
         );
         assert_eq!(
-            kind_of("GrokBuild:read_file"),
+            kind_of("Kigi:read_file"),
             Some(ToolKind::Search),
             "an explicit kind wins over the registry's"
         );
@@ -550,11 +547,11 @@ mod tests {
         let factory = factory_for_test();
         let baseline = ToolServerConfig {
             tools: vec![
-                test_support::tc("GrokBuild:read_file", None),
-                test_support::tc("GrokBuild:grep", None),
-                test_support::tc("GrokBuild:list_dir", None),
-                test_support::tc("GrokBuild:search_replace", None),
-                test_support::tc("GrokBuild:run_terminal_cmd", None),
+                test_support::tc("Kigi:read_file", None),
+                test_support::tc("Kigi:grep", None),
+                test_support::tc("Kigi:list_dir", None),
+                test_support::tc("Kigi:search_replace", None),
+                test_support::tc("Kigi:run_terminal_cmd", None),
             ],
             behavior_preset: None,
         };
@@ -594,10 +591,7 @@ mod tests {
     #[test]
     fn resolve_session_toolset_mcp_edit_dropped_under_readonly() {
         let baseline = ToolServerConfig {
-            tools: vec![test_support::tc(
-                "GrokBuild:read_file",
-                Some(ToolKind::Read),
-            )],
+            tools: vec![test_support::tc("Kigi:read_file", Some(ToolKind::Read))],
             behavior_preset: None,
         };
         let mcp_edit = test_support::tc("mcp.editor", Some(ToolKind::Edit));
@@ -609,7 +603,7 @@ mod tests {
         let factory = factory_for_test();
         let baseline = ToolServerConfig {
             tools: vec![
-                test_support::tc("GrokBuild:read_file", Some(ToolKind::Read)),
+                test_support::tc("Kigi:read_file", Some(ToolKind::Read)),
                 test_support::tc("baseline.opaque", None),
             ],
             behavior_preset: None,
@@ -626,7 +620,7 @@ mod tests {
             "MCP kind: None MUST be dropped under ReadOnly: {kept_ids:?}"
         );
         assert!(
-            kept_ids.contains(&"GrokBuild:read_file"),
+            kept_ids.contains(&"Kigi:read_file"),
             "baseline Read kind must survive ReadOnly: {kept_ids:?}"
         );
         let _ = factory;

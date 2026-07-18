@@ -1,4 +1,4 @@
-//! Foundation modules shared by the grok shell crate family. Extracted from
+//! Foundation modules shared by the kigi shell crate family. Extracted from
 //! `kigi-shell` (which re-exports them at their original paths) so they
 //! build in parallel and stop rebuilding on shell edits.
 

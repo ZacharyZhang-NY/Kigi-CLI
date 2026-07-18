@@ -1,8 +1,8 @@
 //! Syntax highlighting initialization.
 //!
 //! Provides lazily-initialized `Syntect` instances for code highlighting.
-//! Dark themes (GrokNight, TokyoNight) share `grok-night.tmTheme`;
-//! GrokDay uses `grok-day.tmTheme` with deepened colors for light backgrounds.
+//! Dark themes (KigiNight, TokyoNight) share `kigi-night.tmTheme`;
+//! KigiDay uses `kigi-day.tmTheme` with deepened colors for light backgrounds.
 
 use std::sync::OnceLock;
 
@@ -10,9 +10,9 @@ pub use kigi_markdown::Syntect;
 
 use crate::theme::ThemeKind;
 
-static SYNTECT_GROKNIGHT: OnceLock<Syntect> = OnceLock::new();
+static SYNTECT_KIGINIGHT: OnceLock<Syntect> = OnceLock::new();
 static SYNTECT_TOKYONIGHT: OnceLock<Syntect> = OnceLock::new();
-static SYNTECT_GROKDAY: OnceLock<Syntect> = OnceLock::new();
+static SYNTECT_KIGIDAY: OnceLock<Syntect> = OnceLock::new();
 
 /// Convert syntect style to ratatui foreground-only style, quantized for terminal color support.
 pub fn syntect_to_ratatui_fg(style: syntect::highlighting::Style) -> ratatui::style::Style {
@@ -66,14 +66,14 @@ pub fn highlight_line(
 /// Returns the syntect instance matching the active theme.
 pub fn get_syntect() -> &'static Syntect {
     match crate::theme::Theme::current_kind() {
-        ThemeKind::GrokNight
+        ThemeKind::KigiNight
         | ThemeKind::RosePineMoon
         | ThemeKind::OscuraMidnight
-        | ThemeKind::Auto => SYNTECT_GROKNIGHT
-            .get_or_init(|| Syntect::new(include_bytes!("../assets/grok-night.tmTheme"))),
+        | ThemeKind::Auto => SYNTECT_KIGINIGHT
+            .get_or_init(|| Syntect::new(include_bytes!("../assets/kigi-night.tmTheme"))),
         ThemeKind::TokyoNight => SYNTECT_TOKYONIGHT
             .get_or_init(|| Syntect::new(include_bytes!("../assets/tokyo-night.tmTheme"))),
-        ThemeKind::GrokDay => SYNTECT_GROKDAY
-            .get_or_init(|| Syntect::new(include_bytes!("../assets/grok-day.tmTheme"))),
+        ThemeKind::KigiDay => SYNTECT_KIGIDAY
+            .get_or_init(|| Syntect::new(include_bytes!("../assets/kigi-day.tmTheme"))),
     }
 }

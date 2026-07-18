@@ -139,7 +139,7 @@ impl EmbeddingProvider for ApiEmbeddingProvider {
                 let request = kigi_http::shared_client()
                     .post(format!("{}/embeddings", self.api_base))
                     .json(&body_json)
-                    .header("x-grok-client-version", kigi_version::VERSION);
+                    .header("x-kigi-client-version", kigi_version::VERSION);
 
                 let req = match request.build() {
                     Ok(r) => r,

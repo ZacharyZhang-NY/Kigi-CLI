@@ -2,7 +2,7 @@ use crate::agent::subagent::SubagentSpawnContext;
 use crate::session::SessionCommand;
 use agent_client_protocol as acp;
 use kigi_acp_lib::AcpAgentGatewaySender as GatewaySender;
-use kigi_tools::implementations::grok_build::task::types::{SubagentRequest, SubagentResult};
+use kigi_tools::implementations::kigi::task::types::{SubagentRequest, SubagentResult};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -118,7 +118,7 @@ pub(crate) fn ctx_with_toggle(toggle: HashMap<String, bool>) -> SubagentSpawnCon
         image_description_model: crate::test_support::TEST_MODEL.to_owned(),
         workspace_ops: kigi_workspace::WorkspaceOps::for_test(),
         auth_manager: Arc::new(crate::auth::AuthManager::new(
-            std::path::Path::new("/tmp/nonexistent-grok-test"),
+            std::path::Path::new("/tmp/nonexistent-kigi-test"),
             crate::auth::KimiCodeConfig::default(),
         )),
         attribution_callback: None,

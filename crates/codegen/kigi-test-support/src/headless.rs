@@ -1,6 +1,6 @@
-//! Headless mode (`grok -p`) test runner.
+//! Headless mode (`kigi -p`) test runner.
 //!
-//! Runs the grok binary as a subprocess with the mock server, captures output.
+//! Runs the kigi binary as a subprocess with the mock server, captures output.
 
 use std::path::Path;
 use std::process::ExitStatus;
@@ -9,7 +9,7 @@ use std::time::Duration;
 use tempfile::TempDir;
 use tokio::io::AsyncReadExt as _;
 
-use crate::env::{grok_binary, test_env_cmd_tokio};
+use crate::env::{kigi_binary, test_env_cmd_tokio};
 use crate::mock_server::MockInferenceServer;
 
 pub struct HeadlessResult {
@@ -21,7 +21,7 @@ pub struct HeadlessResult {
 
 const HEADLESS_TIMEOUT_SECS: u64 = 60;
 
-/// Run `grok` with the given args against the mock server, with a 60s timeout.
+/// Run `kigi` with the given args against the mock server, with a 60s timeout.
 /// Uses an isolated HOME and disables telemetry.
 pub async fn run_headless(
     server: &MockInferenceServer,
@@ -29,7 +29,7 @@ pub async fn run_headless(
     cwd: &Path,
 ) -> HeadlessResult {
     let home = TempDir::new().expect("create temp home");
-    let mut cmd = tokio::process::Command::new(grok_binary());
+    let mut cmd = tokio::process::Command::new(kigi_binary());
     cmd.args(args)
         .current_dir(cwd)
         .stdin(std::process::Stdio::null())
@@ -41,10 +41,10 @@ pub async fn run_headless(
 }
 
 pub async fn run_headless_with_cmd(mut cmd: tokio::process::Command) -> HeadlessResult {
-    let binary = grok_binary();
+    let binary = kigi_binary();
     let mut child = cmd
         .spawn()
-        .unwrap_or_else(|e| panic!("failed to spawn grok binary at {}: {e}", binary.display()));
+        .unwrap_or_else(|e| panic!("failed to spawn kigi binary at {}: {e}", binary.display()));
 
     let stdout = child.stdout.take().expect("child stdout missing");
     let stderr = child.stderr.take().expect("child stderr missing");
@@ -70,7 +70,7 @@ pub async fn run_headless_with_cmd(mut cmd: tokio::process::Command) -> Headless
     {
         Ok(result) => (
             result.unwrap_or_else(|e| {
-                panic!("failed to wait for grok binary {}: {e}", binary.display())
+                panic!("failed to wait for kigi binary {}: {e}", binary.display())
             }),
             false,
         ),
@@ -78,7 +78,7 @@ pub async fn run_headless_with_cmd(mut cmd: tokio::process::Command) -> Headless
             let _ = child.kill().await;
             let status = child.wait().await.unwrap_or_else(|e| {
                 panic!(
-                    "failed to kill timed out grok binary {}: {e}",
+                    "failed to kill timed out kigi binary {}: {e}",
                     binary.display()
                 )
             });

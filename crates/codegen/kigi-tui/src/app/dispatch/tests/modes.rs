@@ -598,7 +598,7 @@ fn yolo_on_drain_clears_double_click_tracker() {
 /// 2. The dispatcher returns a `PersistPermissionMode` effect with
 ///    canonical `"always-approve"` — this is what flips
 ///    `[ui] permission_mode` on disk AND fires the
-///    `x.ai/yolo_mode_changed` ACP notification back to the shell.
+///    `kigi/yolo_mode_changed` ACP notification back to the shell.
 /// 3. The agent's per-session `yolo_mode` flag is flipped to true,
 ///    so subsequent permission requests are auto-approved by
 ///    `handle_permission_request`.
@@ -651,7 +651,7 @@ fn enable_always_approve_sends_response_and_flips_yolo_and_persists() {
 
     // (2) The dispatcher returns a PersistPermissionMode effect with
     //     canonical "always-approve". This is the bridge that writes
-    //     ~/.kigi/config.toml AND fires x.ai/yolo_mode_changed.
+    //     ~/.kigi/config.toml AND fires kigi/yolo_mode_changed.
     let persist = effects
         .iter()
         .find_map(|e| match e {
@@ -725,7 +725,7 @@ fn enable_always_approve_is_idempotent_when_yolo_already_on() {
             .any(|e| matches!(e, Effect::PersistPermissionMode { .. })),
         "redundant PersistPermissionMode when YOLO already on — the dispatcher \
              must short-circuit to avoid double-writing config.toml and double-firing \
-             x.ai/yolo_mode_changed",
+             kigi/yolo_mode_changed",
     );
 }
 

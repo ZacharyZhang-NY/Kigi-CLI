@@ -5,14 +5,14 @@
 //! Binaries are resolved per role:
 //! - `KIGI_BINARY_LEADER` — the binary that elects the initial leader
 //!   (typically the latest released stable, e.g. fetched from
-//!   `https://storage.googleapis.com/grok-build-public-artifacts/cli/grok-<ver>-linux-x86_64`).
+//!   `https://storage.googleapis.com/kigi-public-artifacts/cli/kigi-<ver>-linux-x86_64`).
 //! - `KIGI_BINARY_CLIENT` — the second client (typically a freshly built main).
 //!
 //! All tests are `#[ignore]`d: they need two pre-built binaries and spawn real
 //! leader subprocesses. On-demand today — no CI lane runs them; invoke with:
 //!
 //! ```bash
-//! KIGI_BINARY_LEADER=/path/to/grok-old KIGI_BINARY_CLIENT=/path/to/grok-new \
+//! KIGI_BINARY_LEADER=/path/to/kigi-old KIGI_BINARY_CLIENT=/path/to/kigi-new \
 //!   cargo test -p kigi-shell --test test_leader_version_skew -- --ignored --nocapture
 //! ```
 
@@ -202,7 +202,7 @@ async fn old_client_adopts_new_leader_and_still_functions() {
                 .expect("old client prompt on new leader failed");
 
             // The leader records the client/leader version mismatch (the
-            // x.ai/leader/version_mismatch notification's server-side warn).
+            // kigi/leader/version_mismatch notification's server-side warn).
             let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
             let mut saw_mismatch = false;
             while tokio::time::Instant::now() < deadline {
@@ -221,7 +221,7 @@ async fn old_client_adopts_new_leader_and_still_functions() {
         .await;
 }
 
-/// `grok update`'s relaunch signal against a REAL old leader: connect,
+/// `kigi update`'s relaunch signal against a REAL old leader: connect,
 /// require `relaunch_v1`, send `RelaunchForUpdate`, and the leader exits so
 /// the surviving client re-elects. Mirrors the private
 /// `signal_leaders_to_relaunch` in `kigi-bin/src/main.rs` (which is
@@ -260,7 +260,7 @@ async fn relaunch_for_update_drives_real_old_leader_to_exit() {
             // The update-signal body, against the sandboxed socket.
             let control = LeaderClient::connect(
                 home.path().join(".kigi").join("leader.sock"),
-                "grok-pager-update",
+                "kigi-pager-update",
                 ClientMode::Stdio,
                 ClientCapabilities::default(),
             )

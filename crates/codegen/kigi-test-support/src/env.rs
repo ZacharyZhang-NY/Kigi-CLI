@@ -63,13 +63,13 @@ fn target_dir() -> PathBuf {
         .unwrap_or_else(|| workspace_root().join("target"))
 }
 
-fn local_grok_binary_path() -> PathBuf {
+fn local_kigi_binary_path() -> PathBuf {
     target_dir()
         .join("debug")
         .join(format!("kigi-tui{}", std::env::consts::EXE_SUFFIX))
 }
 
-fn ensure_local_grok_binary(binary: &Path) {
+fn ensure_local_kigi_binary(binary: &Path) {
     if binary.exists() {
         return;
     }
@@ -95,8 +95,8 @@ fn ensure_local_grok_binary(binary: &Path) {
     );
 }
 
-/// Resolve grok binary: `KIGI_BINARY` env (CI) or a locally built `kigi-tui` binary.
-pub fn grok_binary() -> PathBuf {
+/// Resolve kigi binary: `KIGI_BINARY` env (CI) or a locally built `kigi-tui` binary.
+pub fn kigi_binary() -> PathBuf {
     if let Ok(path) = std::env::var("KIGI_BINARY") {
         let p = PathBuf::from(path);
         assert!(p.exists(), "KIGI_BINARY does not exist: {}", p.display());
@@ -110,8 +110,8 @@ pub fn grok_binary() -> PathBuf {
         }
     }
 
-    let binary = local_grok_binary_path();
-    ensure_local_grok_binary(&binary);
+    let binary = local_kigi_binary_path();
+    ensure_local_kigi_binary(&binary);
     binary
 }
 
@@ -149,14 +149,14 @@ pub fn git_workdir() -> TempDir {
     dir
 }
 
-/// Point grok at the mock server with a fake API key and telemetry disabled.
+/// Point kigi at the mock server with a fake API key and telemetry disabled.
 pub fn test_env_cmd_tokio(
     cmd: &mut tokio::process::Command,
     mock_url: &str,
     home: &std::path::Path,
 ) {
     cmd.env("HOME", home)
-        // HOME alone does not sandbox grok on Windows: the product resolves
+        // HOME alone does not sandbox kigi on Windows: the product resolves
         // `~` via `USERPROFILE`/Known Folders (`std::env::home_dir()`), so
         // without an explicit KIGI_SHARE_DIR every spawned child shares the real
         // `%USERPROFILE%\.kigi` — test 1's models_cache.json (which embeds

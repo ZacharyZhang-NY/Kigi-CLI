@@ -971,7 +971,7 @@
             .remove("will_wake")
             .expect("the typed builder stamps the field");
         let legacy = acp::ExtNotification::new(
-            "x.ai/task_completed",
+            "kigi/task_completed",
             std::sync::Arc::from(serde_json::value::to_raw_value(&v).unwrap()),
         );
         let _ = handle_ext_notification(&legacy, &mut app);

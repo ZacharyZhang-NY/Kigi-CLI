@@ -1,6 +1,6 @@
-//! `grok inspect` — configuration introspection.
+//! `kigi inspect` — configuration introspection.
 //!
-//! Shows everything Grok discovers in the current directory: project
+//! Shows everything Kigi discovers in the current directory: project
 //! instructions, permissions, hooks, skills, agents, plugins, MCP servers,
 //! LSP config, and config.toml sources. Supports `--json` for machine output.
 
@@ -249,7 +249,7 @@ pub struct ConfigSources {
     pub layers: Vec<ConfigLayer>,
 }
 
-/// A single config layer entry for `grok inspect`.
+/// A single config layer entry for `kigi inspect`.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigLayer {
@@ -503,7 +503,7 @@ async fn list_instructions(cwd: &Path) -> Vec<InstructionFile> {
 }
 
 /// Calls the production permission resolver (`resolve_permissions_with_provenance`)
-/// which handles both Grok TOML and vendor settings fallback in one codepath.
+/// which handles both Kigi TOML and vendor settings fallback in one codepath.
 async fn list_permissions(cwd: &Path) -> PermissionsReport {
     use kigi_workspace::permission::resolution;
 
@@ -733,7 +733,7 @@ async fn list_skills(
 /// stays non-bundled. Runtime discovery scopes/precedence are untouched.
 ///
 /// `Bundled`/`Server` sources are constructed only here, never by runtime
-/// discovery: deployed pagers parse `x.ai/skills/list` into a typed
+/// discovery: deployed pagers parse `kigi/skills/list` into a typed
 /// `ConfigSource` and reject unknown tags, so runtime stamping must wait
 /// until clients without these variants have aged out. Until then this
 /// mapping is the single owner of the scope→source translation.
@@ -924,7 +924,7 @@ fn list_lsp_servers(
     // Folder-trust gate (display-only): inspect never spawns servers, but mark the
     // repo-local (project-scoped) entries a session would skip in an untrusted
     // clone so the listing matches the live gate. `remote = None` mirrors
-    // `grok mcp doctor` (no loaded RemoteSettings in a standalone command).
+    // `kigi mcp doctor` (no loaded RemoteSettings in a standalone command).
     crate::agent::folder_trust::resolve_and_record(cwd, None, false);
     let project_allowed = crate::agent::folder_trust::project_scope_allowed(cwd);
 
@@ -1359,7 +1359,7 @@ fn print_human(r: &InspectReport) {
     if r.mcp_servers.is_empty() {
         println!();
         println!("  MCP Servers (0)");
-        println!("  {TREE} (none) \u{2014} see `grok mcp add --help`");
+        println!("  {TREE} (none) \u{2014} see `kigi mcp add --help`");
     } else {
         print_columns(
             "MCP Servers",
@@ -1663,8 +1663,8 @@ mod tests {
     fn model_override_warnings_inspect_smoke() {
         let effective: toml::Value = toml::from_str(
             r#"
-            [model."grok-4.5"]
-            model = "grok-4.5"
+            [model."kigi-4.5"]
+            model = "kigi-4.5"
             env_key = "ANTHROPIC_AUTH_TOKEN"
             compactions_remaining = 1
             send_compactions_remaining = true
@@ -1686,16 +1686,16 @@ mod tests {
                 .any(|w| w.field.as_deref() == Some("reasoning_effort")),
             "invalid enum should warn: {warnings:?}"
         );
-        assert!(cfg.config_models.contains_key("grok-4.5"));
+        assert!(cfg.config_models.contains_key("kigi-4.5"));
 
         let human = render_model_override_warnings(&warnings);
         assert!(human.contains("Model Overrides"), "{human}");
         assert!(
-            human.contains("[model.\"grok-4.5\"] send_compactions_remaining"),
+            human.contains("[model.\"kigi-4.5\"] send_compactions_remaining"),
             "{human}"
         );
         assert!(
-            human.contains("[model.\"grok-4.5\"] reasoning_effort"),
+            human.contains("[model.\"kigi-4.5\"] reasoning_effort"),
             "{human}"
         );
         assert_eq!(render_model_override_warnings(&[]), "");
@@ -1707,7 +1707,7 @@ mod tests {
             .iter()
             .find(|w| w["field"] == "send_compactions_remaining")
             .expect("alias warning present in JSON");
-        assert_eq!(alias_warning["modelKey"], "grok-4.5");
+        assert_eq!(alias_warning["modelKey"], "kigi-4.5");
         assert_eq!(alias_warning["kind"], "duplicate-alias");
         assert!(
             alias_warning["reason"]

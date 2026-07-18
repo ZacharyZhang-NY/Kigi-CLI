@@ -1451,7 +1451,7 @@ mod tests {
             reset_marker_cache_for_test();
             // Also clear the workspace-side env-var override so it doesn't
             // leak into subsequent tests.
-            unsafe { std::env::remove_var("_GROK_CLAUDE_MARKER_OVERRIDE") };
+            unsafe { std::env::remove_var("_KIGI_CLAUDE_MARKER_OVERRIDE") };
         }
     }
 
@@ -1649,7 +1649,7 @@ mod tests {
         // cannot see the shell-side marker cache. Set the env-var override so
         // the workspace-resident marker reader honours the gate; without it
         // the function would read the developer's real ~/.claude settings.
-        unsafe { std::env::set_var("_GROK_CLAUDE_MARKER_OVERRIDE", "1") };
+        unsafe { std::env::set_var("_KIGI_CLAUDE_MARKER_OVERRIDE", "1") };
         let dir = tempfile::tempdir().unwrap();
         let env = kigi_workspace::permission::claude_settings::load_claude_env_with_project(
             dir.path(),
@@ -2167,7 +2167,7 @@ extra_rule_dirs = ["/c/rules"]
         refresh_marker_cache(true);
         // Also set the env-var override so the workspace-resident marker
         // reader (which can't see the shell-side cache) honours the gate.
-        unsafe { std::env::set_var("_GROK_CLAUDE_MARKER_OVERRIDE", "1") };
+        unsafe { std::env::set_var("_KIGI_CLAUDE_MARKER_OVERRIDE", "1") };
         let dir = tempfile::tempdir().unwrap();
         // Drop a Claude permissions file in the tempdir; with the marker set
         // the gate should skip reading it.

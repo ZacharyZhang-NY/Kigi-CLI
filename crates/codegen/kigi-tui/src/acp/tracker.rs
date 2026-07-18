@@ -255,7 +255,7 @@ pub struct AcpUpdateTracker {
     /// Tool call IDs marked as background (`is_background=true`).
     ///
     /// First-detection (no scrollback entry yet): defers entry creation until
-    /// `x.ai/task_backgrounded` creates a `BgTask` block.
+    /// `kigi/task_backgrounded` creates a `BgTask` block.
     /// Late-detection (Execute block already exists): suppresses further output
     /// streaming; the existing block is demoted by `handle_task_backgrounded`.
     ///
@@ -2129,7 +2129,7 @@ fn task_ids_from_raw_input(raw: &serde_json::Value) -> Vec<String> {
 }
 /// Check if a tool call is a background execute (`is_background=true`).
 ///
-/// These are deferred from scrollback — the `x.ai/task_backgrounded`
+/// These are deferred from scrollback — the `kigi/task_backgrounded`
 /// notification creates a `BgTask` block instead of an `Execute` block.
 ///
 /// Eager ACP messages often use `kind=Other` with `title=run_terminal_command`
@@ -2602,7 +2602,7 @@ fn make_relative_path(path: &str) -> String {
 mod tests {
     use super::*;
     use std::sync::Arc;
-    /// Default meta with no timestamps (simulates old grok-shell or tests that
+    /// Default meta with no timestamps (simulates old kigi-shell or tests that
     /// don't care about timing).
     fn meta() -> NotificationMeta {
         NotificationMeta::default()
@@ -4602,7 +4602,7 @@ mod tests {
             "stream A message should be finished"
         );
     }
-    /// No stream_start_ms (old grok-shell) should not break anything.
+    /// No stream_start_ms (old kigi-shell) should not break anything.
     #[test]
     fn no_stream_start_ms_preserves_existing_behavior() {
         let mut sb = ScrollbackState::new();
@@ -5554,7 +5554,7 @@ mod tests {
         .status(acp::ToolCallStatus::Pending)
     }
     #[test]
-    fn is_task_tool_recognizes_grok_build_variant() {
+    fn is_task_tool_recognizes_kigi_variant() {
         assert!(is_task_tool(&initial_tool_call("tc1", "task")));
         let mut with_variant = initial_tool_call("tc2", "anything");
         with_variant.raw_input = Some(serde_json::json!({ "variant" : "Task" }));

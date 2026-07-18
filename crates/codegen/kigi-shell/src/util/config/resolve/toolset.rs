@@ -1,5 +1,5 @@
 use crate::util::config::RemoteSettings;
-use kigi_tools::implementations::grok_build::ask_user_question;
+use kigi_tools::implementations::kigi::ask_user_question;
 use toml::Value as TomlValue;
 
 /// Resolve whether the bash-harness `find`→`bfs` / `grep`→`ugrep` shadows are
@@ -287,9 +287,7 @@ fn resolve_ask_user_question_timeout_secs_from_tiers(
         .or(config)
         .or(managed)
         .or(remote)
-        .unwrap_or(
-            kigi_tools::implementations::grok_build::ask_user_question::RESPONSE_TIMEOUT.as_secs(),
-        )
+        .unwrap_or(kigi_tools::implementations::kigi::ask_user_question::RESPONSE_TIMEOUT.as_secs())
 }
 
 /// Resolve `[toolset.ask_user_question] timeout_secs` (positive seconds).
@@ -307,7 +305,7 @@ fn resolve_ask_user_question_timeout_secs(
 ) -> u64 {
     resolve_ask_user_question_timeout_secs_from_tiers(
         ask_user_question_timeout_secs_from_toml(requirements),
-        kigi_tools::implementations::grok_build::ask_user_question::response_timeout_env_secs(),
+        kigi_tools::implementations::kigi::ask_user_question::response_timeout_env_secs(),
         ask_user_question_timeout_secs_from_toml(user),
         ask_user_question_timeout_secs_from_toml(managed)
             .or_else(|| ask_user_question_timeout_secs_from_toml(system_managed)),
@@ -326,7 +324,7 @@ fn resolve_ask_user_question_timeout_secs(
 /// runs for consumers that skip this resolver.
 pub(crate) fn resolve_ask_user_question_params_from_disk(
     remote: Option<&RemoteSettings>,
-) -> kigi_tools::implementations::grok_build::ask_user_question::AskUserQuestionParams {
+) -> kigi_tools::implementations::kigi::ask_user_question::AskUserQuestionParams {
     let requirements = crate::config::load_merged_requirements();
     let layers = match crate::config::ConfigLayers::load() {
         Ok(l) => Some(l),
@@ -338,7 +336,7 @@ pub(crate) fn resolve_ask_user_question_params_from_disk(
     let user = layers.as_ref().map(|l| &l.user);
     let managed = layers.as_ref().map(|l| &l.managed);
     let system_managed = layers.as_ref().map(|l| &l.system_managed);
-    kigi_tools::implementations::grok_build::ask_user_question::AskUserQuestionParams {
+    kigi_tools::implementations::kigi::ask_user_question::AskUserQuestionParams {
         timeout_enabled: Some(
             resolve_ask_user_question_timeout_enabled(
                 requirements.as_ref(),
@@ -363,7 +361,7 @@ pub(crate) fn resolve_ask_user_question_params_from_disk(
 mod ask_user_question_timeout_tests {
     use super::*;
     use crate::agent::config::ConfigSource;
-    use kigi_tools::implementations::grok_build::ask_user_question::RESPONSE_TIMEOUT_ENV;
+    use kigi_tools::implementations::kigi::ask_user_question::RESPONSE_TIMEOUT_ENV;
 
     // Both env vars are process-global (a dev exports the secs var for TUI
     // repro); serialize and force them unset so these tests can't go flaky.
@@ -439,8 +437,7 @@ mod ask_user_question_timeout_tests {
 
     #[test]
     fn timeout_secs_tier_precedence() {
-        let d =
-            kigi_tools::implementations::grok_build::ask_user_question::RESPONSE_TIMEOUT.as_secs();
+        let d = kigi_tools::implementations::kigi::ask_user_question::RESPONSE_TIMEOUT.as_secs();
         let r = resolve_ask_user_question_timeout_secs_from_tiers;
         assert_eq!(r(None, None, None, None, None), d);
         assert_eq!(r(Some(1), Some(2), Some(3), Some(4), Some(5)), 1); // requirements highest
@@ -453,8 +450,7 @@ mod ask_user_question_timeout_tests {
     #[test]
     fn timeout_secs_rejects_non_positive_layers() {
         let _g = guard();
-        let d =
-            kigi_tools::implementations::grok_build::ask_user_question::RESPONSE_TIMEOUT.as_secs();
+        let d = kigi_tools::implementations::kigi::ask_user_question::RESPONSE_TIMEOUT.as_secs();
         // user 0 and managed negative are dropped; remote fills the gap.
         let zero = toml_ask("timeout_secs = 0");
         let negative = toml_ask("timeout_secs = -5");

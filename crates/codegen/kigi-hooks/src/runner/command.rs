@@ -87,7 +87,7 @@ pub async fn run_command_hook(
     let mut cmd = if is_shell_command {
         // Refuse to spawn when the command interpolates an env var that
         // we can't resolve from any of: the runner's always-set vars, the
-        // per-hook extra_env (plugin vars), or Grok's own process env. The
+        // per-hook extra_env (plugin vars), or Kigi's own process env. The
         // alternative is letting sh expand the var to empty -- which then
         // produces a broken command, exits 127, and (for PreToolUse hooks)
         // fails closed with an opaque "exit code 127" reason. Catching it
@@ -287,7 +287,7 @@ pub(crate) const RUNNER_ALWAYS_SET_ENV: &[&str] = &[
 /// * the runner's always-set env vars (see [`RUNNER_ALWAYS_SET_ENV`]),
 /// * the per-hook `extra_env` map (set by the plugin adapter for plugin
 ///   hooks),
-/// * the Grok process's own environment (which is inherited by the child),
+/// * the Kigi process's own environment (which is inherited by the child),
 /// * local shell assignments inside the command itself (e.g. an
 ///   `INPUT=$(cat)` earlier in the string defines `INPUT` for the rest of
 ///   the command).

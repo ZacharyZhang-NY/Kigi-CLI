@@ -40,13 +40,13 @@ impl TrustStore {
     pub fn load() -> Self {
         // Gate on user_kigi_home() so a project's `.kigi/trusted-plugins` is never
         // read as the user trust store when neither KIGI_SHARE_DIR nor a home dir resolves.
-        let Some(grok) = kigi_config::user_kigi_home() else {
+        let Some(kigi) = kigi_config::user_kigi_home() else {
             return Self {
                 trusted: HashSet::new(),
                 file_path: PathBuf::new(),
             };
         };
-        let file_path = grok.join(TRUST_FILE_NAME);
+        let file_path = kigi.join(TRUST_FILE_NAME);
         let trusted = Self::read_trust_file(&file_path);
         Self { trusted, file_path }
     }

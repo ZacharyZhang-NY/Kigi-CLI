@@ -3,7 +3,7 @@ license = "Apache-2.0"
 name = "kigi-tools-api"
 version.workspace = true
 edition.workspace = true
-description = "Protobuf API definitions for Grok tools"
+description = "Protobuf API definitions for Kigi tools"
 
 [dependencies]
 tonic-prost = { workspace = true }

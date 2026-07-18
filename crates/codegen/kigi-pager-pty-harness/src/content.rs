@@ -92,6 +92,11 @@ impl ContentController {
             ("KIGI_SHARE_DIR".into(), kigi_home),
             ("KIGI_CODE_BASE_URL".into(), self.url()),
             ("KIGI_API_BASE_URL".into(), self.url()),
+            // Hermeticity: bundled open-platform (moonshot) model entries
+            // carry real platform base URLs; the documented dev/test override
+            // pins them to the mock so no PTY test can reach a live endpoint.
+            ("KIGI_MOONSHOT_CN_BASE_URL".into(), self.url()),
+            ("KIGI_MOONSHOT_AI_BASE_URL".into(), self.url()),
             ("XAI_API_KEY".into(), "test-key-for-ci".into()),
             ("KIGI_TELEMETRY_ENABLED".into(), "false".into()),
             ("KIGI_FEEDBACK_ENABLED".into(), "false".into()),
@@ -210,7 +215,7 @@ mod tests {
 
     /// The pre-delegation mock always served 200 `{"allow_access": true}`;
     /// the shared server defaults to 404-until-set. A 404 strands the pager
-    /// on the SuperGrok upsell screen and breaks every PTY test.
+    /// on the subscription upsell screen and breaks every PTY test.
     #[tokio::test]
     async fn settings_endpoint_allows_access_by_default() {
         let content = ContentController::start().await.unwrap();
@@ -280,12 +285,14 @@ mod tests {
         );
         assert_eq!(get("KIGI_CODE_BASE_URL"), Some(content.url()));
         assert_eq!(get("KIGI_API_BASE_URL"), Some(content.url()));
+        assert_eq!(get("KIGI_MOONSHOT_CN_BASE_URL"), Some(content.url()));
+        assert_eq!(get("KIGI_MOONSHOT_AI_BASE_URL"), Some(content.url()));
         assert_eq!(get("XAI_API_KEY").as_deref(), Some("test-key-for-ci"));
         assert_eq!(get("KIGI_TELEMETRY_ENABLED").as_deref(), Some("false"));
         assert_eq!(get("KIGI_FEEDBACK_ENABLED").as_deref(), Some("false"));
         assert_eq!(get("KIGI_TRACE_UPLOAD").as_deref(), Some("false"));
         assert_eq!(get("KIGI_PROMPT_SUGGESTIONS").as_deref(), Some("false"));
         assert_eq!(get("KIGI_MAX_RETRIES").as_deref(), Some("0"));
-        assert_eq!(env.len(), 10, "env list must not silently grow or shrink");
+        assert_eq!(env.len(), 12, "env list must not silently grow or shrink");
     }
 }

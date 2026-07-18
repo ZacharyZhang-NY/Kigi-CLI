@@ -150,17 +150,17 @@ mod init_metrics_tests {
                 })
         };
         assert!(has(
-            "grok_workspace_toolset_swap_rejected_total",
+            "kigi_workspace_toolset_swap_rejected_total",
             &[("reason", "turn_active"), ("trigger", "update_tool_config")]
         ));
         assert!(has(
-            "grok_workspace_rewind_checkpoint_capture_total",
+            "kigi_workspace_rewind_checkpoint_capture_total",
             &[("domain", "fs"), ("outcome", "completed")]
         ));
         assert!(
             families
                 .iter()
-                .any(|mf| mf.name() == "grok_workspace_terminal_backend_orphaned_total")
+                .any(|mf| mf.name() == "kigi_workspace_terminal_backend_orphaned_total")
         );
     }
 }

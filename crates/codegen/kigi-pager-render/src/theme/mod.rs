@@ -1,19 +1,19 @@
 //! Theming for the pager.
 //!
 //! All colors come from the `Theme` struct. No hardcoded colors elsewhere.
-//! The default theme is GrokNight (neutral gray base with TokyoNight accents).
+//! The default theme is KigiNight (neutral gray base with TokyoNight accents).
 //!
 //! ## Color support
 //!
-//! GrokNight is defined in `Color::Rgb` (truecolor). At startup,
+//! KigiNight is defined in `Color::Rgb` (truecolor). At startup,
 //! [`Theme::current()`] quantizes every color to the terminal's detected
 //! capability level via [`Theme::quantized`]. Runtime-generated colors (syntax
 //! highlighting, blending) are also quantized via [`color_support::quantize`].
 
 pub mod cache;
 pub mod color_support;
-mod grokday;
-mod groknight;
+mod kigiday;
+mod kiginight;
 pub mod md_style;
 pub mod osc11;
 mod oscura;
@@ -28,8 +28,8 @@ pub use tokyonight::{Theme, pulse_brightness, wave_brightness};
 /// Available theme variants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ThemeKind {
-    GrokNight = 0,
-    GrokDay = 1,
+    KigiNight = 0,
+    KigiDay = 1,
     TokyoNight = 2,
     RosePineMoon = 3,
     OscuraMidnight = 5,
@@ -46,8 +46,8 @@ pub enum ThemeKind {
 impl ThemeKind {
     /// All theme kinds (including those that may not work on the current terminal).
     pub const ALL: &[ThemeKind] = &[
-        ThemeKind::GrokNight,
-        ThemeKind::GrokDay,
+        ThemeKind::KigiNight,
+        ThemeKind::KigiDay,
         ThemeKind::TokyoNight,
         ThemeKind::RosePineMoon,
         ThemeKind::OscuraMidnight,
@@ -61,7 +61,7 @@ impl ThemeKind {
         // Two possible results — pick the right const slice based on
         // the detected color level. No heap allocation needed.
         const ALL: &[ThemeKind] = ThemeKind::ALL;
-        const NO_TRUECOLOR: &[ThemeKind] = &[ThemeKind::GrokNight, ThemeKind::GrokDay];
+        const NO_TRUECOLOR: &[ThemeKind] = &[ThemeKind::KigiNight, ThemeKind::KigiDay];
 
         if color_support::detect().has_truecolor() {
             ALL
@@ -73,9 +73,9 @@ impl ThemeKind {
     /// Human-readable display name.
     pub fn display_name(self) -> &'static str {
         match self {
-            Self::GrokNight => "groknight",
+            Self::KigiNight => "kiginight",
             Self::TokyoNight => "tokyonight",
-            Self::GrokDay => "grokday",
+            Self::KigiDay => "kigiday",
             Self::RosePineMoon => "rosepine-moon",
             Self::OscuraMidnight => "oscura-midnight",
             Self::Auto => "auto",
@@ -85,13 +85,13 @@ impl ThemeKind {
     /// Whether this theme requires truecolor (24-bit RGB) to look correct.
     ///
     /// TokyoNight uses blue-tinted backgrounds that lose their character
-    /// when quantized to 256 or 16 colors. GrokNight uses neutral grays
+    /// when quantized to 256 or 16 colors. KigiNight uses neutral grays
     /// that survive quantization cleanly.
     pub fn requires_truecolor(self) -> bool {
         match self {
-            Self::GrokNight => false,
+            Self::KigiNight => false,
             Self::TokyoNight => true,
-            Self::GrokDay => false,
+            Self::KigiDay => false,
             Self::RosePineMoon => true,
             Self::OscuraMidnight => true,
             // Auto is resolved to a concrete theme before rendering.
@@ -105,9 +105,9 @@ impl ThemeKind {
         let lower = name.to_lowercase();
         match lower.as_str() {
             "auto" | "system" => Some(Self::Auto),
-            "groknight" | "grok-night" | "dark" => Some(Self::GrokNight),
+            "kiginight" | "kigi-night" | "dark" => Some(Self::KigiNight),
             "tokyonight" | "tokyo-night" | "tokyo" => Some(Self::TokyoNight),
-            "grokday" | "grok-day" | "light" | "day" => Some(Self::GrokDay),
+            "kigiday" | "kigi-day" | "light" | "day" => Some(Self::KigiDay),
             "rosepine" | "rose-pine" | "rosepine-moon" | "rose-pine-moon" => {
                 Some(Self::RosePineMoon)
             }
@@ -139,12 +139,12 @@ pub fn canonical_name(value: &str) -> Option<&'static str> {
 }
 
 /// Human-friendly display name for a canonical theme value (e.g.
-/// `"groknight"` → `"Kigi Night"`). Falls back to `value` verbatim.
+/// `"kiginight"` → `"Kigi Night"`). Falls back to `value` verbatim.
 pub fn display_name_for_canonical(value: &str) -> &str {
     match value {
         "auto" => "Auto",
-        "groknight" => "Kigi Night",
-        "grokday" => "Kigi Day",
+        "kiginight" => "Kigi Night",
+        "kigiday" => "Kigi Day",
         "tokyonight" => "Tokyo Night",
         "rosepine-moon" => "Rose Pine Moon",
         other => other,
@@ -153,7 +153,7 @@ pub fn display_name_for_canonical(value: &str) -> &str {
 
 impl Default for Theme {
     fn default() -> Self {
-        Self::groknight()
+        Self::kiginight()
     }
 }
 
@@ -270,14 +270,14 @@ impl Theme {
             return Self::terminal_default().quantized(level);
         }
         let base = match cache::current_kind() {
-            ThemeKind::GrokNight => Self::groknight(),
+            ThemeKind::KigiNight => Self::kiginight(),
             ThemeKind::TokyoNight => Self::tokyonight(),
-            ThemeKind::GrokDay => Self::grokday(),
+            ThemeKind::KigiDay => Self::kigiday(),
             ThemeKind::RosePineMoon => Self::rosepine_moon(),
             ThemeKind::OscuraMidnight => Self::oscura_midnight(),
             // Auto is resolved to a concrete theme before being stored;
-            // if reached, fall back to GrokNight.
-            ThemeKind::Auto => Self::groknight(),
+            // if reached, fall back to KigiNight.
+            ThemeKind::Auto => Self::kiginight(),
         };
         // Sample polarity pre-quantization — post-quantize `bg_base` may
         // land on a named/indexed entry whose luminance is host-palette-
@@ -342,7 +342,7 @@ impl Theme {
     /// Clamp a theme kind to what the terminal supports.
     fn clamp_to_terminal(kind: ThemeKind) -> ThemeKind {
         if kind.requires_truecolor() && !color_support::detect().has_truecolor() {
-            ThemeKind::GrokNight
+            ThemeKind::KigiNight
         } else {
             kind
         }
@@ -431,7 +431,7 @@ impl Theme {
     /// 2. **Semantic accents (running/error/success/etc.).** Naive
     ///    RGB-distance quantization collapses pastel theme hues onto
     ///    the gray ramp (audit: 18/27 fields became DarkGray or silver
-    ///    on groknight, erasing every state signal). We pin each
+    ///    on kiginight, erasing every state signal). We pin each
     ///    semantic field to a hue-preserving ANSI16 slot, polarity-aware:
     ///    bright variants (`Light*`, idx 9–15) on a dark canvas; normal
     ///    variants (idx 1–7, ~50% luminance) on a light canvas. This
@@ -447,7 +447,7 @@ impl Theme {
     /// theme's polarity (Black for dark themes, White for light themes)
     /// instead of `Color::Reset` — using `Reset` would defer to the
     /// user's terminal profile, which can disagree with the selected
-    /// theme (e.g., GrokNight on a white terminal would show white
+    /// theme (e.g., KigiNight on a white terminal would show white
     /// "holes" through every sunken surface).
     fn ansi16_chrome_overrides(self, dark: bool) -> Self {
         use ratatui::style::Color;
@@ -505,7 +505,7 @@ impl Theme {
             // ── Elevated surfaces: one step off the canvas ──────────────
             // Hover/highlight/visual-selection rows need to read as a
             // distinct "raised" band against the body. Without this every
-            // GrokNight bg field quantizes to Color::Black and these
+            // KigiNight bg field quantizes to Color::Black and these
             // become invisible.
             bg_light: elevated_bg,
             bg_highlight: elevated_bg,
@@ -679,8 +679,8 @@ mod tests {
 
     #[test]
     fn is_auto_returns_false_for_concrete_variants() {
-        assert!(!ThemeKind::GrokNight.is_auto());
-        assert!(!ThemeKind::GrokDay.is_auto());
+        assert!(!ThemeKind::KigiNight.is_auto());
+        assert!(!ThemeKind::KigiDay.is_auto());
         assert!(!ThemeKind::TokyoNight.is_auto());
         assert!(!ThemeKind::RosePineMoon.is_auto());
         assert!(!ThemeKind::OscuraMidnight.is_auto());
@@ -699,17 +699,17 @@ mod tests {
     #[test]
     fn is_dark_classifies_built_in_themes() {
         // Sanity-check the polarity sampler against the theme catalog.
-        assert!(Theme::groknight().is_dark());
+        assert!(Theme::kiginight().is_dark());
         assert!(Theme::tokyonight().is_dark());
         assert!(Theme::rosepine_moon().is_dark());
         assert!(Theme::oscura_midnight().is_dark());
-        assert!(!Theme::grokday().is_dark());
+        assert!(!Theme::kigiday().is_dark());
     }
 
     #[test]
     fn ansi16_overrides_dark_uses_bright_white_high_contrast() {
         use ratatui::style::Color;
-        let t = Theme::groknight().ansi16_chrome_overrides(true);
+        let t = Theme::kiginight().ansi16_chrome_overrides(true);
         assert_eq!(t.bg_light, Color::DarkGray);
         assert_eq!(t.bg_highlight, Color::DarkGray);
         // Idle prompt border sits at `dim_fg` (DarkGray on dark canvas);
@@ -732,7 +732,7 @@ mod tests {
         // flips to silver — see
         // `ansi16_overrides_gray_hierarchy_collapses_to_two_slots`.
         use ratatui::style::Color;
-        let t = Theme::grokday().ansi16_chrome_overrides(false);
+        let t = Theme::kigiday().ansi16_chrome_overrides(false);
         assert_eq!(t.bg_light, Color::Gray);
         assert_eq!(t.bg_highlight, Color::Gray);
         assert_eq!(t.prompt_border, Color::Gray);
@@ -749,7 +749,7 @@ mod tests {
         // (`bg_dark`, `md_code_bg`, `paste_bg`, `scrollbar_bg`) are
         // tested separately in
         // `ansi16_overrides_canvas_matching_surfaces_use_theme_polarity`.
-        let base = Theme::groknight();
+        let base = Theme::kiginight();
         let t = base.ansi16_chrome_overrides(true);
         assert_eq!(t.bg_base, base.bg_base);
     }
@@ -762,12 +762,12 @@ mod tests {
         // pastel RGBs collapse onto silver/DarkGray and every state
         // signal becomes the same gray.
         use ratatui::style::Color;
-        let t_dark = Theme::groknight().ansi16_chrome_overrides(true);
+        let t_dark = Theme::kiginight().ansi16_chrome_overrides(true);
         assert_eq!(t_dark.accent_error, Color::LightRed);
         assert_eq!(t_dark.accent_success, Color::LightGreen);
         assert_eq!(t_dark.accent_running, Color::LightMagenta);
 
-        let t_light = Theme::grokday().ansi16_chrome_overrides(false);
+        let t_light = Theme::kigiday().ansi16_chrome_overrides(false);
         assert_eq!(t_light.accent_error, Color::Red);
         assert_eq!(t_light.accent_success, Color::Green);
         assert_eq!(t_light.accent_running, Color::Magenta);
@@ -781,7 +781,7 @@ mod tests {
         // onto it together — they live in different surfaces so the
         // collision doesn't cause confusion.
         use ratatui::style::Color;
-        let t = Theme::groknight().ansi16_chrome_overrides(true);
+        let t = Theme::kiginight().ansi16_chrome_overrides(true);
         assert_eq!(t.accent_assistant, Color::LightMagenta);
         assert_eq!(t.accent_thinking, Color::LightMagenta);
         assert_eq!(t.accent_running, Color::LightMagenta);
@@ -796,7 +796,7 @@ mod tests {
         // semantic is more important than per-accent differentiation
         // that the palette cannot represent.
         use ratatui::style::Color;
-        let t_dark = Theme::groknight().ansi16_chrome_overrides(true);
+        let t_dark = Theme::kiginight().ansi16_chrome_overrides(true);
         for f in [
             t_dark.command,
             t_dark.warning,
@@ -806,7 +806,7 @@ mod tests {
             assert_eq!(f, Color::LightYellow);
         }
 
-        let t_light = Theme::grokday().ansi16_chrome_overrides(false);
+        let t_light = Theme::kigiday().ansi16_chrome_overrides(false);
         for f in [
             t_light.command,
             t_light.warning,
@@ -824,7 +824,7 @@ mod tests {
         // from the magenta `accent_running` used for subagents) also
         // lives here.
         use ratatui::style::Color;
-        let t = Theme::groknight().ansi16_chrome_overrides(true);
+        let t = Theme::kiginight().ansi16_chrome_overrides(true);
         assert_eq!(t.accent_feedback, Color::LightCyan);
         assert_eq!(t.accent_model, Color::LightCyan);
         assert_eq!(t.running, Color::LightCyan);
@@ -835,12 +835,12 @@ mod tests {
         // System messages, skill invocations, and fuzzy-search matches
         // all carry the same blue family in truecolor.
         use ratatui::style::Color;
-        let t_dark = Theme::groknight().ansi16_chrome_overrides(true);
+        let t_dark = Theme::kiginight().ansi16_chrome_overrides(true);
         assert_eq!(t_dark.accent_system, Color::LightBlue);
         assert_eq!(t_dark.accent_skill, Color::LightBlue);
         assert_eq!(t_dark.fuzzy_accent, Color::LightBlue);
 
-        let t_light = Theme::grokday().ansi16_chrome_overrides(false);
+        let t_light = Theme::kigiday().ansi16_chrome_overrides(false);
         assert_eq!(t_light.accent_system, Color::Blue);
         assert_eq!(t_light.accent_skill, Color::Blue);
         assert_eq!(t_light.fuzzy_accent, Color::Blue);
@@ -852,11 +852,11 @@ mod tests {
         // ANSI16 (the subtle pastel bg tints don't survive quantization).
         // Pin fg to red / green so deletes and inserts stay legible.
         use ratatui::style::Color;
-        let t_dark = Theme::groknight().ansi16_chrome_overrides(true);
+        let t_dark = Theme::kiginight().ansi16_chrome_overrides(true);
         assert_eq!(t_dark.diff_delete_fg, Color::LightRed);
         assert_eq!(t_dark.diff_insert_fg, Color::LightGreen);
 
-        let t_light = Theme::grokday().ansi16_chrome_overrides(false);
+        let t_light = Theme::kigiday().ansi16_chrome_overrides(false);
         assert_eq!(t_light.diff_delete_fg, Color::Red);
         assert_eq!(t_light.diff_insert_fg, Color::Green);
     }
@@ -869,10 +869,10 @@ mod tests {
         //   - dark canvas → Color::White
         //   - light canvas → Color::Black
         use ratatui::style::Color;
-        let t_dark = Theme::groknight().ansi16_chrome_overrides(true);
+        let t_dark = Theme::kiginight().ansi16_chrome_overrides(true);
         assert_eq!(t_dark.accent_user, Color::White);
 
-        let t_light = Theme::grokday().ansi16_chrome_overrides(false);
+        let t_light = Theme::kigiday().ansi16_chrome_overrides(false);
         assert_eq!(t_light.accent_user, Color::Black);
     }
 
@@ -881,7 +881,7 @@ mod tests {
         // Without these pins, every dark RGB bg quantizes to Color::Black
         // and the hover/visual/highlight bands collapse onto the canvas.
         use ratatui::style::Color;
-        let t = Theme::groknight().ansi16_chrome_overrides(true);
+        let t = Theme::kiginight().ansi16_chrome_overrides(true);
         assert_eq!(t.bg_hover, Color::DarkGray);
         assert_eq!(t.bg_visual, Color::DarkGray);
     }
@@ -889,7 +889,7 @@ mod tests {
     #[test]
     fn ansi16_overrides_extended_light_pins_elevated_bg_to_gray() {
         use ratatui::style::Color;
-        let t = Theme::grokday().ansi16_chrome_overrides(false);
+        let t = Theme::kigiday().ansi16_chrome_overrides(false);
         assert_eq!(t.bg_hover, Color::Gray);
         assert_eq!(t.bg_visual, Color::Gray);
     }
@@ -900,16 +900,16 @@ mod tests {
         // must match the theme polarity (Black for dark themes, White
         // for light) — NOT Color::Reset, which would defer to the
         // user's terminal canvas and create polarity mismatches when
-        // the theme disagrees with the terminal profile (e.g. GrokNight
+        // the theme disagrees with the terminal profile (e.g. KigiNight
         // running on a white-canvas terminal).
         use ratatui::style::Color;
-        let t_dark = Theme::groknight().ansi16_chrome_overrides(true);
+        let t_dark = Theme::kiginight().ansi16_chrome_overrides(true);
         assert_eq!(t_dark.bg_dark, Color::Black);
         assert_eq!(t_dark.md_code_bg, Color::Black);
         assert_eq!(t_dark.paste_bg, Color::Black);
         assert_eq!(t_dark.scrollbar_bg, Color::Black);
 
-        let t_light = Theme::grokday().ansi16_chrome_overrides(false);
+        let t_light = Theme::kigiday().ansi16_chrome_overrides(false);
         assert_eq!(t_light.bg_dark, Color::White);
         assert_eq!(t_light.md_code_bg, Color::White);
         assert_eq!(t_light.paste_bg, Color::White);
@@ -928,14 +928,14 @@ mod tests {
         // both take `DarkGray`. The selection-vs-active distinction
         // survives in both polarities via `prompt_border_active`.
         use ratatui::style::Color;
-        let t_dark = Theme::groknight().ansi16_chrome_overrides(true);
+        let t_dark = Theme::kiginight().ansi16_chrome_overrides(true);
         assert_eq!(t_dark.hover_border, Color::DarkGray);
         assert_eq!(t_dark.prompt_border, Color::DarkGray);
         assert_eq!(t_dark.selection_border, Color::Gray);
         assert_eq!(t_dark.prompt_border_active, Color::White);
         assert_ne!(t_dark.selection_border, t_dark.prompt_border_active);
 
-        let t_light = Theme::grokday().ansi16_chrome_overrides(false);
+        let t_light = Theme::kigiday().ansi16_chrome_overrides(false);
         assert_eq!(t_light.hover_border, Color::DarkGray);
         assert_eq!(t_light.prompt_border, Color::Gray);
         assert_eq!(t_light.selection_border, Color::DarkGray);
@@ -948,11 +948,11 @@ mod tests {
         // scrollbar_fg must not equal scrollbar_bg or the thumb is
         // invisible against the canvas-pinned track.
         use ratatui::style::Color;
-        let t_dark = Theme::groknight().ansi16_chrome_overrides(true);
+        let t_dark = Theme::kiginight().ansi16_chrome_overrides(true);
         assert_eq!(t_dark.scrollbar_fg, Color::Gray);
         assert_ne!(t_dark.scrollbar_fg, t_dark.scrollbar_bg);
 
-        let t_light = Theme::grokday().ansi16_chrome_overrides(false);
+        let t_light = Theme::kigiday().ansi16_chrome_overrides(false);
         assert_eq!(t_light.scrollbar_fg, Color::DarkGray);
         assert_ne!(t_light.scrollbar_fg, t_light.scrollbar_bg);
     }
@@ -980,8 +980,8 @@ mod tests {
         };
         for &kind in ThemeKind::ALL {
             let theme = match kind {
-                ThemeKind::GrokNight => Theme::groknight(),
-                ThemeKind::GrokDay => Theme::grokday(),
+                ThemeKind::KigiNight => Theme::kiginight(),
+                ThemeKind::KigiDay => Theme::kigiday(),
                 ThemeKind::TokyoNight => Theme::tokyonight(),
                 ThemeKind::RosePineMoon => Theme::rosepine_moon(),
                 ThemeKind::OscuraMidnight => Theme::oscura_midnight(),
@@ -1007,16 +1007,16 @@ mod tests {
     }
 
     #[test]
-    fn ansi16_quantize_without_override_collapses_groknight_backgrounds() {
+    fn ansi16_quantize_without_override_collapses_kiginight_backgrounds() {
         // Regression-ratchet for the override gate in `Theme::current`:
-        // naive `Basic` quantization maps every dark GrokNight bg field
+        // naive `Basic` quantization maps every dark KigiNight bg field
         // to `Color::Black`, erasing the hierarchy. This test exists to
         // make the motivation for `ansi16_chrome_overrides` explicit —
         // if quantization later gains a "dark gray" mid-tone (e.g., via
         // an ANSI24/ANSI32 level), this test will start failing and the
         // override scope should be revisited.
         use ratatui::style::Color;
-        let q = Theme::groknight().quantized(color_support::ColorLevel::Basic);
+        let q = Theme::kiginight().quantized(color_support::ColorLevel::Basic);
         for (name, color) in [
             ("bg_base", q.bg_base),
             ("bg_light", q.bg_light),
@@ -1052,13 +1052,13 @@ mod tests {
         // brighter slot keeps secondary text legible while still
         // separating "dim" from "muted".
         use ratatui::style::Color;
-        let t_dark = Theme::groknight().ansi16_chrome_overrides(true);
+        let t_dark = Theme::kiginight().ansi16_chrome_overrides(true);
         assert_eq!(t_dark.gray, Color::Gray);
         assert_eq!(t_dark.gray_bright, Color::Gray);
         assert_eq!(t_dark.gray_dim, Color::DarkGray);
         assert_ne!(t_dark.gray, t_dark.gray_dim);
 
-        let t_light = Theme::grokday().ansi16_chrome_overrides(false);
+        let t_light = Theme::kigiday().ansi16_chrome_overrides(false);
         assert_eq!(t_light.gray, Color::DarkGray);
         assert_eq!(t_light.gray_bright, Color::DarkGray);
         assert_eq!(t_light.gray_dim, Color::Gray);
@@ -1111,12 +1111,12 @@ mod tests {
     #[test]
     fn from_name_concrete_variants_still_work() {
         assert_eq!(
-            ThemeKind::from_name("groknight"),
-            Some(ThemeKind::GrokNight)
+            ThemeKind::from_name("kiginight"),
+            Some(ThemeKind::KigiNight)
         );
-        assert_eq!(ThemeKind::from_name("dark"), Some(ThemeKind::GrokNight));
-        assert_eq!(ThemeKind::from_name("grokday"), Some(ThemeKind::GrokDay));
-        assert_eq!(ThemeKind::from_name("light"), Some(ThemeKind::GrokDay));
+        assert_eq!(ThemeKind::from_name("dark"), Some(ThemeKind::KigiNight));
+        assert_eq!(ThemeKind::from_name("kigiday"), Some(ThemeKind::KigiDay));
+        assert_eq!(ThemeKind::from_name("light"), Some(ThemeKind::KigiDay));
         assert_eq!(
             ThemeKind::from_name("tokyonight"),
             Some(ThemeKind::TokyoNight)
@@ -1142,16 +1142,16 @@ mod tests {
         let cases = [
             ("auto", ThemeKind::Auto),
             ("system", ThemeKind::Auto),
-            ("groknight", ThemeKind::GrokNight),
-            ("grok-night", ThemeKind::GrokNight),
-            ("dark", ThemeKind::GrokNight),
+            ("kiginight", ThemeKind::KigiNight),
+            ("kigi-night", ThemeKind::KigiNight),
+            ("dark", ThemeKind::KigiNight),
             ("tokyonight", ThemeKind::TokyoNight),
             ("tokyo-night", ThemeKind::TokyoNight),
             ("tokyo", ThemeKind::TokyoNight),
-            ("grokday", ThemeKind::GrokDay),
-            ("grok-day", ThemeKind::GrokDay),
-            ("light", ThemeKind::GrokDay),
-            ("day", ThemeKind::GrokDay),
+            ("kigiday", ThemeKind::KigiDay),
+            ("kigi-day", ThemeKind::KigiDay),
+            ("light", ThemeKind::KigiDay),
+            ("day", ThemeKind::KigiDay),
             ("rosepine", ThemeKind::RosePineMoon),
             ("rose-pine", ThemeKind::RosePineMoon),
             ("rosepine-moon", ThemeKind::RosePineMoon),

@@ -2,7 +2,7 @@
 //!
 //! The canonical error types now live in `kigi_sampling_types::error`.
 //! This module re-exports them and adds `map_sampling_err_to_acp` which
-//! depends on `agent_client_protocol::Error` (a grok-shell dependency).
+//! depends on `agent_client_protocol::Error` (a kigi-shell dependency).
 
 // Re-export everything from the standalone crate.
 pub use kigi_sampling_types::error::*;
@@ -72,7 +72,7 @@ pub fn map_sampling_err_to_acp(err: SamplingError) -> acp::Error {
             // explanation visible to the user without triggering the client's
             // re-auth flow on -32000.
             StatusCode::FORBIDDEN => {
-                let message = if message.contains("requires a Grok subscription")
+                let message = if message.contains("requires a Kigi subscription")
                     && crate::agent::auth_method::has_xai_api_key_env()
                 {
                     format!(
@@ -477,7 +477,7 @@ mod tests {
         with_api_key_env(Some("xai-test"), || {
             let err = SamplingError::Api {
                 status: StatusCode::FORBIDDEN,
-                message: "The model 'grok-build' requires a Grok subscription.".into(),
+                message: "The model 'kigi' requires a Kigi subscription.".into(),
                 model_metadata: None,
                 retry_after_secs: None,
             };
@@ -501,7 +501,7 @@ mod tests {
         with_api_key_env(None, || {
             let err = SamplingError::Api {
                 status: StatusCode::FORBIDDEN,
-                message: "The model 'grok-build' requires a Grok subscription.".into(),
+                message: "The model 'kigi' requires a Kigi subscription.".into(),
                 model_metadata: None,
                 retry_after_secs: None,
             };

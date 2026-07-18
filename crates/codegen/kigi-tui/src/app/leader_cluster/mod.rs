@@ -75,7 +75,7 @@ async fn bounded<T>(what: &str, fut: impl std::future::Future<Output = T>) -> T 
         .unwrap_or_else(|_| panic!("leader-cluster bring-up timed out: {what}"))
 }
 
-/// The grok home the agent actually persisted under: `kigi_home()` is
+/// The kigi home the agent actually persisted under: `kigi_home()` is
 /// process-cached, so an earlier test in this binary may have pinned it.
 fn effective_kigi_home() -> PathBuf {
     kigi_config::kigi_home()

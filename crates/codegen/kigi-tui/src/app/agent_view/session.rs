@@ -397,7 +397,7 @@ impl AgentView {
         self.session.start_turn(&mut self.scrollback);
     }
     /// Adopt the in-flight turn another client is driving, conveyed by the
-    /// `session/load` response meta (`x.ai/runningPromptId`): enter
+    /// `session/load` response meta (`kigi/runningPromptId`): enter
     /// TurnRunning and match subsequent live deltas. No user-prompt block is
     /// pushed — the turn's prompt and prior chunks arrived via the replay.
     pub(crate) fn adopt_running_prompt(&mut self, prompt_id: String) {

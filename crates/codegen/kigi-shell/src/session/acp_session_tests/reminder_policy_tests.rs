@@ -115,7 +115,7 @@ fn remote_settings_preserves_false_and_zero_todo_gate_fields() {
     assert_eq!(settings.todo_gate_max_fires_per_prompt, Some(0));
 }
 fn def_with_template(tpl: TemplateOverride) -> AgentDefinition {
-    let mut def = AgentDefinition::default_grok_build();
+    let mut def = AgentDefinition::default_kigi();
     def.system_prompt = tpl;
     def
 }
@@ -127,7 +127,7 @@ fn policy_with_gate(enabled: bool) -> ReminderPolicy {
 use crate::session::goal_tracker::GoalStatus;
 #[test]
 fn goal_slash_and_harness_available_predicate_matrix() {
-    use kigi_tools::implementations::grok_build::UPDATE_GOAL_TOOL_NAME;
+    use kigi_tools::implementations::kigi::UPDATE_GOAL_TOOL_NAME;
     let other = vec!["todo_write".to_string()];
     let with_update = vec![UPDATE_GOAL_TOOL_NAME.to_string()];
     for (goal_enabled, tool_names, expect) in [

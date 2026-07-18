@@ -19,11 +19,11 @@ pub(crate) const ENV_AUTO_COMPACT_THRESHOLD_PERCENT: &str = "KIGI_AUTO_COMPACT_T
 ///   3. user TOML `[session].auto_compact_threshold_percent`
 ///      (read from `cfg.session.auto_compact_threshold_percent: Option<u8>`)
 ///   4. remote settings per-model `ModelInfo.auto_compact_threshold_percent`
-///      (populated from `grok_build_models[i].auto_compact_threshold_percent`;
+///      (populated from `kigi_models[i].auto_compact_threshold_percent`;
 ///      intentionally NOT collapsed via `ConfigModelOverride::apply` so the
 ///      user-vs-GB per-model distinction is preserved)
 ///   5. remote settings global `RemoteSettings.auto_compact_threshold_percent`
-///      (populated from `grok_build_settings.auto_compact_threshold_percent`)
+///      (populated from `kigi_settings.auto_compact_threshold_percent`)
 ///   6. default `DEFAULT_AUTO_COMPACT_THRESHOLD_PERCENT` (85)
 ///
 /// Values outside `0..=100` from the env var are ignored with a debug log and

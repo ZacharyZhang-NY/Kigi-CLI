@@ -244,7 +244,7 @@ impl kigi_tool_runtime::Tool for CodexReadFileTool {
         let content = collected.join("\n");
 
         // 5. Build raw_output — the unformatted file content for the read
-        // range. This matches the grok-build ReadFileTool semantics where
+        // range. This matches the kigi ReadFileTool semantics where
         // raw_output is the actual file text without line-number prefixes.
         let raw_output = String::from_utf8_lossy(&file_bytes).into_owned();
 

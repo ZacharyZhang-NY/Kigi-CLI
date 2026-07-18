@@ -31,7 +31,7 @@ impl From<WorktreeType> for ShellWorktreeType {
 /// Create a worktree for the resume-session flow, detecting jj vs git automatically.
 ///
 /// When `git_ref` is set, forces a clean checkout of that ref (same as the
-/// manual `create_from_worktree_sync` path used by `grok -w --ref`).
+/// manual `create_from_worktree_sync` path used by `kigi -w --ref`).
 async fn create_worktree_for_resume(
     source_cwd: &str,
     copy_mode: WorktreeCopyMode,
@@ -1146,7 +1146,7 @@ mod tests {
             .unwrap();
         let list_out = String::from_utf8_lossy(&stash_list.stdout).into_owned();
         assert!(
-            list_out.contains("grok: pre-restore-code sess-dirty-wt"),
+            list_out.contains("kigi: pre-restore-code sess-dirty-wt"),
             "stash list missing session label: {list_out}"
         );
     }

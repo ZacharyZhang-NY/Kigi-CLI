@@ -55,7 +55,7 @@ impl From<serde_json::Value> for DynamicOutput {
         Self { value }
     }
 }
-use crate::implementations::grok_build::todo::{TodoItem, TodoState};
+use crate::implementations::kigi::todo::{TodoItem, TodoState};
 use crate::implementations::skills::skill::SkillOutput;
 use crate::util::truncate::{DEFAULT_SOFT_WRAP_WIDTH, soft_wrap_lines};
 /// Result of running a tool through the ToolRunner pipeline.
@@ -370,12 +370,12 @@ pub struct BashOutput {
     /// When `None`, the consumer should use `output` as the full buffer.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub output_delta: Option<Vec<u8>>,
-    /// Set by the grok_build `run_terminal_cmd` implementation when the
+    /// Set by the kigi `run_terminal_cmd` implementation when the
     /// command was detected as a bare `echo "<msg>"` (or close variant:
     /// echo -n, echo -e, simple printf for literal output, etc.).
     ///
     /// Used for:
-    /// - Telemetry / statistics on this pattern for the grok_build backend.
+    /// - Telemetry / statistics on this pattern for the kigi backend.
     /// - Potential doom-loop / stagnation signals (repeated trivial echoes
     ///   are a common "no progress" signal).
     /// - Model hints (see BareEchoHintState in the bash tool).
@@ -463,7 +463,7 @@ pub struct WebFetchContent {
     pub status_code: u16,
     /// Size of the content in bytes (before truncation).
     pub bytes: usize,
-    /// Internal path to the complete converted body when GrokBuild persisted overflow.
+    /// Internal path to the complete converted body when Kigi persisted overflow.
     #[serde(skip)]
     #[schemars(skip)]
     pub source_artifact: Option<WebFetchSourceArtifact>,
@@ -575,11 +575,11 @@ pub enum ToolOutput {
     EnterPlanMode(EnterPlanModeOutput),
     ExitPlanMode(ExitPlanModeOutput),
     AskUserQuestion(AskUserQuestionOutput),
-    Monitor(crate::implementations::grok_build::monitor::types::MonitorOutput),
-    SchedulerCreate(crate::implementations::grok_build::scheduler::create::SchedulerCreateOutput),
-    SchedulerDelete(crate::implementations::grok_build::scheduler::delete::SchedulerDeleteOutput),
-    SchedulerList(crate::implementations::grok_build::scheduler::list::SchedulerListOutput),
-    UpdateGoal(crate::implementations::grok_build::update_goal::UpdateGoalOutput),
+    Monitor(crate::implementations::kigi::monitor::types::MonitorOutput),
+    SchedulerCreate(crate::implementations::kigi::scheduler::create::SchedulerCreateOutput),
+    SchedulerDelete(crate::implementations::kigi::scheduler::delete::SchedulerDeleteOutput),
+    SchedulerList(crate::implementations::kigi::scheduler::list::SchedulerListOutput),
+    UpdateGoal(crate::implementations::kigi::update_goal::UpdateGoalOutput),
     /// Dynamic output for runtime-registered tools (MCP, test tools, etc.)
     Dynamic(DynamicOutput),
     /// Generic text output for tools that produce simple formatted text
@@ -1193,7 +1193,7 @@ impl kigi_tool_runtime::ToolOutput for MCPOutput {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::implementations::grok_build::todo::{TodoPriority, TodoStatus};
+    use crate::implementations::kigi::todo::{TodoPriority, TodoStatus};
     use kigi_tool_types::KillTaskResult;
     use kigi_tool_types::TaskOutputResult;
     use serde_json::json;
@@ -1724,14 +1724,14 @@ mod tests {
             tool_calls: 3,
             turns: 1,
             duration_ms: 2000,
-            worktree_path: Some("/tmp/grok-worktree/wt-agent".into()),
+            worktree_path: Some("/tmp/kigi-worktree/wt-agent".into()),
             persona: None,
             resume_from_hint: "wt-agent".into(),
             persona_hint: None,
         });
         let rendered = output.to_prompt_format();
         assert!(
-            rendered.contains("<worktree_path>/tmp/grok-worktree/wt-agent</worktree_path>"),
+            rendered.contains("<worktree_path>/tmp/kigi-worktree/wt-agent</worktree_path>"),
             "worktree_path preserved"
         );
         assert!(

@@ -1,4 +1,4 @@
-//! Leader-mode (`grok agent --leader stdio`) test harness.
+//! Leader-mode (`kigi agent --leader stdio`) test harness.
 //!
 //! Spawns the real binary as a stdio client whose bridge elects a leader
 //! subprocess hosting the actual sessions, speaks ACP over pipes, and
@@ -14,16 +14,16 @@ use agent_client_protocol::{self as acp, Agent as _};
 use kigi_acp_lib::LineBufferedRead;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-use crate::env::grok_binary;
+use crate::env::kigi_binary;
 use crate::mock_server::MockInferenceServer;
 use crate::process::spawn_piped_with_stderr_capture;
 
 /// Env var naming the binary that elects/hosts the leader in a two-binary
-/// (version-skew) test. Falls back to [`grok_binary`]'s resolution.
+/// (version-skew) test. Falls back to [`kigi_binary`]'s resolution.
 pub const LEADER_BINARY_ENV: &str = "KIGI_BINARY_LEADER";
 
 /// Env var naming the binary for the second (usually newer) client in a
-/// two-binary test. Falls back to [`grok_binary`]'s resolution.
+/// two-binary test. Falls back to [`kigi_binary`]'s resolution.
 pub const CLIENT_BINARY_ENV: &str = "KIGI_BINARY_CLIENT";
 
 fn role_binary(env_key: &str) -> PathBuf {
@@ -32,17 +32,17 @@ fn role_binary(env_key: &str) -> PathBuf {
         assert!(p.exists(), "{env_key} does not exist: {}", p.display());
         return p;
     }
-    grok_binary()
+    kigi_binary()
 }
 
 /// Binary for the leader-electing side of a version-skew test
-/// (`KIGI_BINARY_LEADER`, else the shared [`grok_binary`] resolution).
+/// (`KIGI_BINARY_LEADER`, else the shared [`kigi_binary`] resolution).
 pub fn leader_binary() -> PathBuf {
     role_binary(LEADER_BINARY_ENV)
 }
 
 /// Binary for the client side of a version-skew test (`KIGI_BINARY_CLIENT`,
-/// else the shared [`grok_binary`] resolution).
+/// else the shared [`kigi_binary`] resolution).
 pub fn client_binary() -> PathBuf {
     role_binary(CLIENT_BINARY_ENV)
 }
@@ -93,7 +93,7 @@ impl acp::Client for LeaderAcpClient {
     }
 
     async fn ext_notification(&self, args: acp::ExtNotification) -> acp::Result<()> {
-        if &*args.method == "x.ai/leader_reconnected" {
+        if &*args.method == "kigi/leader_reconnected" {
             self.capture
                 .reconnected_count
                 .fetch_add(1, Ordering::SeqCst);
@@ -102,7 +102,7 @@ impl acp::Client for LeaderAcpClient {
     }
 }
 
-/// A `grok agent --leader stdio` client subprocess speaking ACP over pipes.
+/// A `kigi agent --leader stdio` client subprocess speaking ACP over pipes.
 /// The leader subprocess it elects hosts the actual sessions.
 pub struct LeaderStdioClient {
     pub conn: acp::ClientSideConnection,
@@ -114,7 +114,7 @@ pub struct LeaderStdioClient {
 
 impl LeaderStdioClient {
     pub async fn spawn(server: &MockInferenceServer, cwd: &Path, home: &Path) -> Self {
-        Self::spawn_with_binary(&grok_binary(), server, cwd, home).await
+        Self::spawn_with_binary(&kigi_binary(), server, cwd, home).await
     }
 
     /// [`Self::spawn`] with an explicit binary, for two-binary version-skew
@@ -128,7 +128,7 @@ impl LeaderStdioClient {
         let mut cmd = tokio::process::Command::new(binary);
         cmd.args(["agent", "--leader", "stdio"])
             .current_dir(cwd)
-            // Hermetic env: the developer's shell may export GROK_* vars
+            // Hermetic env: the developer's shell may export KIGI_* vars
             // (e.g. KIGI_LEADER_SOCKET pointing at a REAL leader on this
             // machine). env_clear + explicit allowlist guarantees the test
             // can never touch a leader outside its sandbox home.
@@ -330,8 +330,8 @@ pub async fn wait_for_new_leader(home: &Path, old_pid: u32, timeout: Duration) -
 
 /// Wait for evidence that the bridge finished its reconnect replay.
 ///
-/// The `x.ai/leader_reconnected` ext notification is dropped by the typed
-/// `ClientSideConnection` (bare `x.ai/*` methods are rejected by the ACP
+/// The `kigi/leader_reconnected` ext notification is dropped by the typed
+/// `ClientSideConnection` (bare `kigi/*` methods are rejected by the ACP
 /// decoder), so we wait for the replayed `session/load` to emit session
 /// notifications instead: the notification count rises above `baseline`.
 pub async fn wait_for_replay_notifications(

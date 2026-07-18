@@ -104,13 +104,13 @@ mod tests {
     fn turn_started_round_trip() {
         let event = SessionEvent::TurnStarted {
             turn_number: 1,
-            model_id: "grok-3".into(),
+            model_id: "kigi-3".into(),
             yolo_mode: true,
         };
         let v = serde_json::to_value(&event).unwrap();
         assert_eq!(v["event_type"], "turn_started");
         assert_eq!(v["turn_number"], 1);
-        assert_eq!(v["model_id"], "grok-3");
+        assert_eq!(v["model_id"], "kigi-3");
         assert_eq!(v["yolo_mode"], true);
         let back: SessionEvent = serde_json::from_value(v).unwrap();
         assert_eq!(back, event);
@@ -121,14 +121,14 @@ mod tests {
         let v = json!({
             "event_type": "turn_started",
             "turn_number": 5,
-            "model_id": "grok-3",
+            "model_id": "kigi-3",
         });
         let event: SessionEvent = serde_json::from_value(v).unwrap();
         assert_eq!(
             event,
             SessionEvent::TurnStarted {
                 turn_number: 5,
-                model_id: "grok-3".into(),
+                model_id: "kigi-3".into(),
                 yolo_mode: false,
             }
         );
@@ -141,7 +141,7 @@ mod tests {
             outcome: TurnHookOutcome::Completed,
             duration_ms: 2500,
             tool_call_count: 7,
-            model_id: "grok-3".into(),
+            model_id: "kigi-3".into(),
         };
         let v = serde_json::to_value(&event).unwrap();
         assert_eq!(v["event_type"], "turn_ended");
@@ -342,7 +342,7 @@ mod tests {
         let v = json!({
             "event_type": "turn_started",
             "turn_number": 1,
-            "model_id": "grok-3",
+            "model_id": "kigi-3",
             "future_field": "should be ignored",
         });
         let event: SessionEvent = serde_json::from_value(v).unwrap();
@@ -350,7 +350,7 @@ mod tests {
             event,
             SessionEvent::TurnStarted {
                 turn_number: 1,
-                model_id: "grok-3".into(),
+                model_id: "kigi-3".into(),
                 yolo_mode: false,
             }
         );
@@ -365,7 +365,7 @@ mod tests {
             "turn_number": 1,
             "duration_ms": 100,
             "tool_call_count": 0,
-            "model_id": "grok-3",
+            "model_id": "kigi-3",
             // missing "outcome"
         });
         assert!(serde_json::from_value::<SessionEvent>(v).is_err());

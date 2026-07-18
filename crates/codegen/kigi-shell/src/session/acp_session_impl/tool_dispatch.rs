@@ -41,11 +41,11 @@ fn str_arg<'a>(args: &'a serde_json::Value, keys: &[&str]) -> Option<&'a str> {
 /// serializing concurrent same-file edits inside `execute_tool_calls`.
 ///
 /// Different toolsets advertise the path under different JSON keys:
-/// - `file_path` — grok_build (`search_replace`), opencode (`EditTool`,
-///   `WriteTool`, `ReadTool`), codex (`read_file`), grok_build_hashline
+/// - `file_path` — kigi (`search_replace`), opencode (`EditTool`,
+///   `WriteTool`, `ReadTool`), codex (`read_file`), kigi_hashline
 ///   (`hashline_edit`)
 /// - `path` — alternate edit/read tools
-/// - `target_file` — grok_build (`read_file`, via `#[serde(rename)]`)
+/// - `target_file` — kigi (`read_file`, via `#[serde(rename)]`)
 ///
 /// Returning the same string for two calls in a batch causes them to share a
 /// `tokio::sync::Mutex` and therefore run sequentially in model-emitted order.
@@ -202,7 +202,7 @@ impl SessionActor {
             is_background: false,
         });
         // Bash mode has no model-issued wire name; resolve the toolset's
-        // execute tool by kind so the x.ai/tool identity still stamps.
+        // execute tool by kind so the kigi/tool identity still stamps.
         let bash_marker = serde_json::json!({"bash_mode": true}).as_object().cloned();
         let exec_wire = {
             let agent = self.agent.borrow();
@@ -366,7 +366,7 @@ pub(crate) const MAX_ARGS_IN_ERROR: usize = 2_000;
 ///
 /// 1. The normal error description (so the model knows *what* failed).
 /// 2. The **original arguments string** the model produced (capped at
-///    [`MAX_ARGS_IN_ERROR`] bytes).  Without this, grok-shell would sanitize
+///    [`MAX_ARGS_IN_ERROR`] bytes).  Without this, kigi-shell would sanitize
 ///    the arguments to `"{}"` before forwarding them to the provider (to
 ///    avoid 400 errors), so the model would only see an empty object and have
 ///    to regenerate all its work from scratch.

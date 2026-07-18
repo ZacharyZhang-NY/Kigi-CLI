@@ -21,16 +21,16 @@ pub(crate) async fn test_agent_default() -> kigi_agent::Agent {
 /// resolve to their builtins when a turn is driven through `handle_prompt`.
 #[cfg(test)]
 pub(crate) async fn test_agent_with_goal_tool() -> kigi_agent::Agent {
-    use kigi_tools::implementations::grok_build::update_goal::UpdateGoalTool;
+    use kigi_tools::implementations::kigi::update_goal::UpdateGoalTool;
     use kigi_tools::registry::types::ToolConfig;
     test_agent_with_tools(vec![ToolConfig::for_tool::<UpdateGoalTool>()]).await
 }
-/// Grok-build agent with the real `TodoWriteTool` (id `todo_write`, kind
+/// Kigi-build agent with the real `TodoWriteTool` (id `todo_write`, kind
 /// `Plan`) registered, so `tool_for_kind(ToolKind::Plan)` resolves through the
 /// live toolset instead of the literal fallback.
 #[cfg(test)]
-pub(crate) async fn test_grok_build_agent_with_todo() -> kigi_agent::Agent {
-    use kigi_tools::implementations::grok_build::todo::TodoWriteTool;
+pub(crate) async fn test_kigi_agent_with_todo() -> kigi_agent::Agent {
+    use kigi_tools::implementations::kigi::todo::TodoWriteTool;
     use kigi_tools::registry::types::ToolConfig;
     test_agent_with_tools(vec![ToolConfig::for_tool::<TodoWriteTool>()]).await
 }
@@ -39,8 +39,8 @@ pub(crate) async fn test_grok_build_agent_with_todo() -> kigi_agent::Agent {
 /// `exit_plan_mode` only finalizes when `enter_plan_mode` is also present.
 #[cfg(test)]
 pub(crate) async fn test_agent_with_plan_tools() -> kigi_agent::Agent {
-    use kigi_tools::implementations::grok_build::enter_plan_mode::EnterPlanModeTool;
-    use kigi_tools::implementations::grok_build::exit_plan_mode::ExitPlanModeTool;
+    use kigi_tools::implementations::kigi::enter_plan_mode::EnterPlanModeTool;
+    use kigi_tools::implementations::kigi::exit_plan_mode::ExitPlanModeTool;
     use kigi_tools::registry::types::ToolConfig;
     test_agent_with_tools(vec![
         ToolConfig::for_tool::<EnterPlanModeTool>(),
@@ -57,7 +57,7 @@ pub(crate) async fn test_agent_with_tools(
             tools,
             behavior_preset: None,
         },
-        kigi_agent::AgentDefinition::default_grok_build(),
+        kigi_agent::AgentDefinition::default_kigi(),
         std::sync::Arc::new(kigi_tools::computer::local::LocalTerminalBackend::new()),
     )
     .await
@@ -78,7 +78,7 @@ async fn test_agent_from_config(
         backend,
         fs,
         cwd: std::path::PathBuf::from("/tmp"),
-        session_folder: std::env::temp_dir().join("grok-test"),
+        session_folder: std::env::temp_dir().join("kigi-test"),
         session_env: std::sync::Arc::new(std::collections::HashMap::new()),
         notification_handle: ToolNotificationHandle::noop(),
         owner_session_id: None,

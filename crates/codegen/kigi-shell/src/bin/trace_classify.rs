@@ -5,9 +5,9 @@
 //! Usage:
 //!   cargo run --bin trace_classify -- \
 //!       --trace /path/to/trace-<id>-all-turns.json \
+//!       --api-base-url <url> \
 //!       [--output out.jsonl] \
 //!       [--model kimi-for-coding] \
-//!       [--api-base-url https://api.x.ai/v1] \
 //!       [--api-key <key> | $XAI_API_KEY | <kigi-home>/auth.json] \
 //!       [--min-confidence 0.7] \
 //!       [--include-reasoning true] \
@@ -47,8 +47,9 @@ struct Cli {
     #[arg(long, default_value = "kimi-for-coding")]
     model: String,
 
-    /// Sampler base URL.
-    #[arg(long, default_value = "https://api.x.ai/v1")]
+    /// Sampler base URL. REQUIRED: there is no default BYOK endpoint —
+    /// pass the base URL your API key is valid for explicitly.
+    #[arg(long)]
     api_base_url: String,
 
     /// API key. Overrides `$XAI_API_KEY` when set; falls back to
@@ -109,13 +110,23 @@ mod tests {
     use super::*;
     use clap::CommandFactory;
 
+    /// Minimal args for a valid invocation. `--api-base-url` is included
+    /// because it is REQUIRED — there is no default BYOK endpoint.
+    const BASE_ARGS: [&str; 5] = [
+        "trace_classify",
+        "--trace",
+        "foo.json",
+        "--api-base-url",
+        "https://byok.example/v1",
+    ];
+
     #[test]
     fn cli_parses_minimal_args() {
-        let cli = Cli::try_parse_from(["trace_classify", "--trace", "foo.json", "--model", "bar"])
+        let cli = Cli::try_parse_from(BASE_ARGS.iter().copied().chain(["--model", "bar"]))
             .expect("parse");
         assert_eq!(cli.trace, PathBuf::from("foo.json"));
         assert_eq!(cli.model, "bar");
-        assert_eq!(cli.api_base_url, "https://api.x.ai/v1");
+        assert_eq!(cli.api_base_url, "https://byok.example/v1");
         assert!(cli.output.is_none());
         assert!(cli.api_key.is_none());
         assert!(cli.min_confidence.is_none());
@@ -123,45 +134,54 @@ mod tests {
         assert!(cli.kigi_home.is_none());
     }
 
+    /// Fail fast: the BYOK path has no default endpoint, so omitting
+    /// `--api-base-url` must be a parse error that names the flag.
+    #[test]
+    fn cli_requires_api_base_url() {
+        let err = Cli::try_parse_from(["trace_classify", "--trace", "foo.json"])
+            .expect_err("missing --api-base-url");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("--api-base-url"),
+            "error mentions --api-base-url: {msg}"
+        );
+    }
+
     /// Per-model knob (mirrored as a CLI override on the offline tool):
     /// `--include-reasoning true` and `--include-reasoning false` both
     /// parse; absent → `None` so the harness default applies.
     #[test]
     fn cli_include_reasoning_override_parses() {
-        let cli_true = Cli::try_parse_from([
-            "trace_classify",
-            "--trace",
-            "foo.json",
-            "--include-reasoning",
-            "true",
-        ])
+        let cli_true = Cli::try_parse_from(
+            BASE_ARGS
+                .iter()
+                .copied()
+                .chain(["--include-reasoning", "true"]),
+        )
         .expect("parse true");
         assert_eq!(cli_true.include_reasoning, Some(true));
 
-        let cli_false = Cli::try_parse_from([
-            "trace_classify",
-            "--trace",
-            "foo.json",
-            "--include-reasoning",
-            "false",
-        ])
+        let cli_false = Cli::try_parse_from(
+            BASE_ARGS
+                .iter()
+                .copied()
+                .chain(["--include-reasoning", "false"]),
+        )
         .expect("parse false");
         assert_eq!(cli_false.include_reasoning, Some(false));
 
-        let cli_absent =
-            Cli::try_parse_from(["trace_classify", "--trace", "foo.json"]).expect("parse absent");
+        let cli_absent = Cli::try_parse_from(BASE_ARGS).expect("parse absent");
         assert!(cli_absent.include_reasoning.is_none());
     }
 
     #[test]
     fn cli_kigi_home_override_parses() {
-        let cli = Cli::try_parse_from([
-            "trace_classify",
-            "--trace",
-            "foo.json",
-            "--kigi-home",
-            "/tmp/scratch-kigi",
-        ])
+        let cli = Cli::try_parse_from(
+            BASE_ARGS
+                .iter()
+                .copied()
+                .chain(["--kigi-home", "/tmp/scratch-kigi"]),
+        )
         .expect("parse");
         assert_eq!(cli.kigi_home, Some(PathBuf::from("/tmp/scratch-kigi")));
     }
@@ -186,8 +206,8 @@ mod tests {
                 .map(|v| v.to_string_lossy().into_owned())
                 .collect::<Vec<_>>()
         };
-        assert_eq!(by_id("model"), vec!["grok-4.5"]);
-        assert_eq!(by_id("api_base_url"), vec!["https://api.x.ai/v1"]);
+        assert_eq!(by_id("model"), vec!["kimi-for-coding"]);
+        assert!(by_id("api_base_url").is_empty(), "no default BYOK endpoint");
         assert!(by_id("min_confidence").is_empty(), "no default");
         assert!(by_id("include_reasoning").is_empty(), "no default");
     }
@@ -195,13 +215,12 @@ mod tests {
     /// F6 — `--min-confidence 0.5` parses and lands in `RunArgs`.
     #[test]
     fn cli_min_confidence_override_parses() {
-        let cli = Cli::try_parse_from([
-            "trace_classify",
-            "--trace",
-            "foo.json",
-            "--min-confidence",
-            "0.42",
-        ])
+        let cli = Cli::try_parse_from(
+            BASE_ARGS
+                .iter()
+                .copied()
+                .chain(["--min-confidence", "0.42"]),
+        )
         .expect("parse");
         assert_eq!(cli.min_confidence, Some(0.42));
     }
@@ -214,7 +233,7 @@ mod tests {
     fn cli_min_confidence_rejects_bad_values() {
         for bad in ["1.5", "-0.1", "nan", "inf", "not-a-float"] {
             let arg = format!("--min-confidence={bad}");
-            let err = Cli::try_parse_from(["trace_classify", "--trace", "foo.json", arg.as_str()])
+            let err = Cli::try_parse_from(BASE_ARGS.iter().copied().chain([arg.as_str()]))
                 .expect_err(bad);
             // Parsing failed — that's all we need. Exact error text
             // is clap-version-dependent.

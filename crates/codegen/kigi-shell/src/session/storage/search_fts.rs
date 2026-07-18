@@ -111,7 +111,7 @@ impl SessionSearchIndex {
             .unwrap_or(None);
 
         // One-way ratchet: drop only on UPGRADE (stored < current). Multiple
-        // grok generations share this DB (stable vs alpha); an equality check
+        // kigi generations share this DB (stable vs alpha); an equality check
         // made each binary wipe the other's index in a ping-pong that left
         // search empty mid-rebootstrap. A newer index is safe to read: bumps
         // regenerate content only (table schema is column-identical), and the
@@ -709,7 +709,7 @@ mod tests {
             index
                 .upsert_doc(&test_doc("s1", "Rust debugging", "borrow checker"))
                 .unwrap();
-            // Simulate an index owned by a newer grok generation that has
+            // Simulate an index owned by a newer kigi generation that has
             // completed a bootstrap.
             index
                 .set_meta("session_search_schema_version", "5")

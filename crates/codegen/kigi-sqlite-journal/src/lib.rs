@@ -562,11 +562,11 @@ mod tests {
 
     #[test]
     fn windows_unc_classifies() {
-        assert!(is_windows_unc(r"\\server\share\grok"));
-        assert!(is_windows_unc(r"\\?\UNC\server\share\grok"));
+        assert!(is_windows_unc(r"\\server\share\kigi"));
+        assert!(is_windows_unc(r"\\?\UNC\server\share\kigi"));
         assert!(is_windows_unc(r"\\?\unc\server\share"));
         assert!(!is_windows_unc(r"\\?\C:\Users\x"));
-        assert!(!is_windows_unc(r"\\.\pipe\grok"));
+        assert!(!is_windows_unc(r"\\.\pipe\kigi"));
         assert!(!is_windows_unc(r"C:\Users\x"));
         assert!(!is_windows_unc("/home/x"));
     }

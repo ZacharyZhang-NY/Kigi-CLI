@@ -33,7 +33,7 @@ struct SessionTokenAuthGate {
     is_session_based: bool,
     model_byok: crate::agent::auth_method::ModelByok,
     /// Whether the request targets a first-party host. Lets an `Unknown`
-    /// BYOK status still refresh against cli-chat-proxy / `*.x.ai` without
+    /// BYOK status still refresh against the first-party cli-chat-proxy hosts without
     /// risking a session-token leak to a third-party BYOK endpoint.
     endpoint_is_first_party: bool,
 }
@@ -419,10 +419,10 @@ impl SessionActor {
                             kigi_workspace::permission::classifier_output_json_schema(),
                         ),
                         reasoning_effort: classifier_reasoning_effort,
-                        x_grok_conv_id: Some(session_id.clone()),
-                        x_grok_req_id: Some(format!("xai-perm-auto-{}", uuid::Uuid::new_v4())),
-                        x_grok_session_id: Some(session_id),
-                        x_grok_agent_id: Some(crate::util::agent_id::agent_id()),
+                        x_kigi_conv_id: Some(session_id.clone()),
+                        x_kigi_req_id: Some(format!("xai-perm-auto-{}", uuid::Uuid::new_v4())),
+                        x_kigi_session_id: Some(session_id),
+                        x_kigi_agent_id: Some(crate::util::agent_id::agent_id()),
                         ..ConversationRequest::default()
                     };
                     let fut = sampling_client.conversation_collect(request);

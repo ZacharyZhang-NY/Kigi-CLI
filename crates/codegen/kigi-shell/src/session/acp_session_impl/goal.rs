@@ -22,7 +22,7 @@ impl RoleCapability {
     /// `can_execute` for terminal/bash).
     fn is_satisfied(
         self,
-        summary: &kigi_tools::implementations::grok_build::task::types::SubagentTypeSummary,
+        summary: &kigi_tools::implementations::kigi::task::types::SubagentTypeSummary,
     ) -> bool {
         match self {
             Self::Skeptic => summary.can_read && summary.can_search,
@@ -42,7 +42,7 @@ pub(crate) struct PanelResolveCache {
     /// result for the role's `general-purpose` toolset on that harness).
     describe: std::collections::HashMap<
         String,
-        kigi_tools::implementations::grok_build::task::types::SubagentDescribeOutcome,
+        kigi_tools::implementations::kigi::task::types::SubagentDescribeOutcome,
     >,
 }
 
@@ -57,7 +57,7 @@ fn role_tool_names_from(
     cache: &PanelResolveCache,
     inherit: &crate::session::goal_role_tools::RoleToolNames,
 ) -> crate::session::goal_role_tools::RoleToolNames {
-    use kigi_tools::implementations::grok_build::task::types::SubagentDescribeOutcome;
+    use kigi_tools::implementations::kigi::task::types::SubagentDescribeOutcome;
     // `override_.agent_type` is the committed harness; the cache is keyed on it.
     match override_.agent_type.as_deref() {
         Some(harness) => match cache.describe.get(harness) {
@@ -115,9 +115,9 @@ impl SessionActor {
         &self,
         current_tokens: i64,
         purpose: DrainPurpose,
-        extra: Vec<kigi_tools::implementations::grok_build::update_goal::UpdateGoalEnvelope>,
+        extra: Vec<kigi_tools::implementations::kigi::update_goal::UpdateGoalEnvelope>,
     ) {
-        use kigi_tools::implementations::grok_build::update_goal::{RejectReason, UpdateGoalAck};
+        use kigi_tools::implementations::kigi::update_goal::{RejectReason, UpdateGoalAck};
         // The `update_goal` tool and its `GoalUpdateHandle` are always
         // registered (see `spawn_session_actor`), so a model can call
         // `update_goal` in a session that never entered goal mode — e.g. any
@@ -650,10 +650,10 @@ impl SessionActor {
         attempt: u32,
         outcome: crate::session::goal_classifier::GoalClassifierOutcome,
         notify: &crate::session::goal_orchestrator::GoalNotifySender,
-    ) -> kigi_tools::implementations::grok_build::update_goal::UpdateGoalAck {
+    ) -> kigi_tools::implementations::kigi::update_goal::UpdateGoalAck {
         use crate::session::goal_classifier::GoalClassifierOutcome;
         use crate::session::goal_tracker::GoalClassifierVerdict;
-        use kigi_tools::implementations::grok_build::update_goal::UpdateGoalAck;
+        use kigi_tools::implementations::kigi::update_goal::UpdateGoalAck;
 
         let current_tokens = self.chat_state_handle.get_total_tokens().await as i64;
         let (tokens_used, finished_marginal) = self.goal_tokens(current_tokens);
@@ -1299,7 +1299,7 @@ impl SessionActor {
         choice: &crate::agent::config::GoalRoleModelChoice,
         capability: RoleCapability,
         event_tx: &tokio::sync::mpsc::UnboundedSender<
-            kigi_tools::implementations::grok_build::task::types::SubagentEvent,
+            kigi_tools::implementations::kigi::task::types::SubagentEvent,
         >,
     ) -> (
         crate::session::goal_planner::RoleSpawnOverride,
@@ -1372,17 +1372,15 @@ impl SessionActor {
         pair: &crate::util::config::GoalRoleModel,
         capability: RoleCapability,
         event_tx: &tokio::sync::mpsc::UnboundedSender<
-            kigi_tools::implementations::grok_build::task::types::SubagentEvent,
+            kigi_tools::implementations::kigi::task::types::SubagentEvent,
         >,
         available_models: &indexmap::IndexMap<String, crate::agent::config::ModelEntry>,
         cache: &mut PanelResolveCache,
     ) -> crate::session::goal_planner::RoleSpawnOverride {
         use crate::session::events::{Event, GoalRoleModelFailOpenReason as Reason};
         use crate::session::goal_planner::RoleSpawnOverride;
-        use kigi_tools::implementations::grok_build::task::backend::{
-            ChannelBackend, SubagentBackend,
-        };
-        use kigi_tools::implementations::grok_build::task::types::SubagentDescribeOutcome;
+        use kigi_tools::implementations::kigi::task::backend::{ChannelBackend, SubagentBackend};
+        use kigi_tools::implementations::kigi::task::types::SubagentDescribeOutcome;
 
         let fail_open = |reason: Reason| {
             self.emit_event(Event::GoalRoleModelFailOpen {
@@ -1408,7 +1406,7 @@ impl SessionActor {
         }
         // 2b. Reject a STRICT harness whose flavor isn't representable (e.g.
         //    `codex`): it resolves, but `resolve_subagent_toolset` would
-        //    silently run grok-build flavor. Non-strict names (grok-build
+        //    silently run kigi flavor. Non-strict names (kigi
         //    family) run the default flavor and pass; unresolvable names fall
         //    through to the describe `Unknown` arm below.
         if kigi_agent::config::is_strict_harness_agent_type(&pair.agent_type)
@@ -1511,9 +1509,9 @@ impl SessionActor {
     /// toolset; [`RoleToolNames::from_parent`] applies the literal fallback for
     /// any kind the bridge lacks, and resolves `{WRITE_TOOL}` from the parent
     /// `Edit` tool when the bridge has no `Write` (so the inherit / retry render
-    /// agrees with `from_summary` — `search_replace` on the default grok-build
+    /// agrees with `from_summary` — `search_replace` on the default kigi
     /// host, not the literal `write`). The `{TOOLSET_TOOLS}` block is empty on
-    /// this path (no per-role toolset enumeration); on the default grok-build
+    /// this path (no per-role toolset enumeration); on the default kigi
     /// host the bridge resolves the parent's real tool ids (`read_file`, …).
     pub(crate) async fn resolve_inherit_role_tool_names(
         &self,
@@ -2340,7 +2338,7 @@ impl SessionActor {
 #[cfg(test)]
 mod role_capability_tests {
     use super::RoleCapability;
-    use kigi_tools::implementations::grok_build::task::types::SubagentTypeSummary;
+    use kigi_tools::implementations::kigi::task::types::SubagentTypeSummary;
 
     fn summary(can_read: bool, can_search: bool, can_execute: bool) -> SubagentTypeSummary {
         SubagentTypeSummary {
@@ -2371,7 +2369,7 @@ mod role_tool_names_tests {
     use super::{PanelResolveCache, role_tool_names_from};
     use crate::session::goal_planner::RoleSpawnOverride;
     use crate::session::goal_role_tools::RoleToolNames;
-    use kigi_tools::implementations::grok_build::task::types::{
+    use kigi_tools::implementations::kigi::task::types::{
         SubagentDescribeOutcome, SubagentTypeSummary,
     };
     use kigi_tools::types::tool::ToolKind;

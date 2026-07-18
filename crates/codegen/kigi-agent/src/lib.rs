@@ -23,7 +23,7 @@ pub use compaction::CompactionPolicy;
 pub use config::AgentDefinition;
 pub use config::preset_names;
 pub use config::toolset_for_preset;
-pub use config::workspace_grok_build_toolset;
+pub use config::workspace_kigi_toolset;
 pub use error::AgentBuildError;
 pub use prompt::context::{DEFAULT_SYSTEM_PROMPT_LABEL, PromptContext};
 pub use system_reminder::ReminderPolicy;

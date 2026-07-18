@@ -82,7 +82,7 @@ fn effective_local_ts(m: &MergedSession) -> Option<String> {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RowMeta {
-    #[serde(rename = "x.ai/session")]
+    #[serde(rename = "kigi/session")]
     pub session: SessionMetaEnvelope,
 }
 

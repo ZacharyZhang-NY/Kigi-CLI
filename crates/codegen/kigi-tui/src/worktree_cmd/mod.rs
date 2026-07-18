@@ -95,7 +95,7 @@ enum WorktreeDbCommand {
 
 pub async fn run(args: WorktreeArgs, agent_config: &AgentConfig) -> Result<()> {
     let cancel = CancellationToken::new();
-    let spawned = crate::acp::spawn::spawn_grok_shell(agent_config.clone(), &cancel, None).await?;
+    let spawned = crate::acp::spawn::spawn_kigi_shell(agent_config.clone(), &cancel, None).await?;
 
     let _init: acp::InitializeResponse = acp_send(
         acp::InitializeRequest::new(acp::ProtocolVersion::V1)
@@ -188,7 +188,7 @@ async fn cmd_list(
 ) -> Result<()> {
     let records: Vec<WorktreeRecord> = ext_call(
         tx,
-        "x.ai/git/worktree/list",
+        "kigi/git/worktree/list",
         &serde_json::json!({
             "repo": repo,
             "type": types,
@@ -208,7 +208,7 @@ async fn cmd_list(
 async fn cmd_show(tx: &kigi_acp_lib::AcpAgentTx, id_or_path: &str) -> Result<()> {
     let rec: Option<WorktreeRecord> = ext_call(
         tx,
-        "x.ai/git/worktree/show",
+        "kigi/git/worktree/show",
         &serde_json::json!({ "idOrPath": id_or_path }),
     )
     .await?;
@@ -239,7 +239,7 @@ async fn cmd_rm(
     for id_or_path in &ids {
         let resp: Result<RemoveResponse> = ext_call(
             tx,
-            "x.ai/git/worktree/remove",
+            "kigi/git/worktree/remove",
             &serde_json::json!({
                 "idOrPath": id_or_path,
                 "force": force,
@@ -271,7 +271,7 @@ async fn cmd_gc(
 ) -> Result<()> {
     let report: GcReport = ext_call(
         tx,
-        "x.ai/git/worktree/gc",
+        "kigi/git/worktree/gc",
         &serde_json::json!({
             "dryRun": dry_run,
             "maxAge": max_age,
@@ -290,7 +290,7 @@ async fn cmd_gc(
 async fn cmd_db(tx: &kigi_acp_lib::AcpAgentTx, command: WorktreeDbCommand) -> Result<()> {
     match command {
         WorktreeDbCommand::Stats => {
-            let stats: DbStats = ext_call(tx, "x.ai/git/worktree/db/stats", &()).await?;
+            let stats: DbStats = ext_call(tx, "kigi/git/worktree/db/stats", &()).await?;
             display::print_stats(&stats);
             Ok(())
         }
@@ -299,12 +299,12 @@ async fn cmd_db(tx: &kigi_acp_lib::AcpAgentTx, command: WorktreeDbCommand) -> Re
             struct PathResp {
                 path: String,
             }
-            let resp: PathResp = ext_call(tx, "x.ai/git/worktree/db/path", &()).await?;
+            let resp: PathResp = ext_call(tx, "kigi/git/worktree/db/path", &()).await?;
             println!("{}", resp.path);
             Ok(())
         }
         WorktreeDbCommand::Rebuild => {
-            let report: RebuildReport = ext_call(tx, "x.ai/git/worktree/db/rebuild", &()).await?;
+            let report: RebuildReport = ext_call(tx, "kigi/git/worktree/db/rebuild", &()).await?;
             display::print_rebuild(&report);
             Ok(())
         }
@@ -318,7 +318,7 @@ mod tests {
     #[test]
     fn ext_request_builds_list_with_filters() {
         let req = ext_request(
-            "x.ai/git/worktree/list",
+            "kigi/git/worktree/list",
             &serde_json::json!({
                 "repo": "xai",
                 "type": ["session"],
@@ -326,7 +326,7 @@ mod tests {
             }),
         )
         .unwrap();
-        assert_eq!(req.method.as_ref(), "x.ai/git/worktree/list");
+        assert_eq!(req.method.as_ref(), "kigi/git/worktree/list");
         let params: serde_json::Value = serde_json::from_str(req.params.get()).unwrap();
         assert_eq!(params["repo"], "xai");
         assert_eq!(params["includeAll"], true);
@@ -335,7 +335,7 @@ mod tests {
     #[test]
     fn ext_request_builds_gc_with_max_age_string() {
         let req = ext_request(
-            "x.ai/git/worktree/gc",
+            "kigi/git/worktree/gc",
             &serde_json::json!({
                 "dryRun": true,
                 "maxAge": "7d",
@@ -351,7 +351,7 @@ mod tests {
     #[test]
     fn ext_request_builds_remove_with_id_or_path() {
         let req = ext_request(
-            "x.ai/git/worktree/remove",
+            "kigi/git/worktree/remove",
             &serde_json::json!({
                 "idOrPath": "wt-abc123",
                 "force": true,
@@ -366,7 +366,7 @@ mod tests {
     #[test]
     fn ext_request_builds_show() {
         let req = ext_request(
-            "x.ai/git/worktree/show",
+            "kigi/git/worktree/show",
             &serde_json::json!({ "idOrPath": "/some/path" }),
         )
         .unwrap();
@@ -376,8 +376,8 @@ mod tests {
 
     #[test]
     fn ext_request_builds_db_stats_empty_params() {
-        let req = ext_request("x.ai/git/worktree/db/stats", &()).unwrap();
-        assert_eq!(req.method.as_ref(), "x.ai/git/worktree/db/stats");
+        let req = ext_request("kigi/git/worktree/db/stats", &()).unwrap();
+        assert_eq!(req.method.as_ref(), "kigi/git/worktree/db/stats");
     }
 
     #[test]

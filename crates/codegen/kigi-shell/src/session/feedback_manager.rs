@@ -374,7 +374,7 @@ impl FeedbackManager {
     /// heuristics, sampling, cooldown, and enabled checks.
     ///
     /// Engineers developing clients can call this via the
-    /// `x.ai/debug/trigger_feedback` ACP extension method to exercise
+    /// `kigi/debug/trigger_feedback` ACP extension method to exercise
     /// the full feedback notification ↔ response flow without needing a
     /// real session that meets tier criteria.
     #[tracing::instrument(name = "feedback.force_feedback_request", skip_all, fields(

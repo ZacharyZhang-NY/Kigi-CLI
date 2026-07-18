@@ -237,7 +237,7 @@ async fn render_blob_attachment(blob: &BlobResourceContents) -> Option<String> {
 /// `/tmp`) never collide on identical content-hash paths and
 /// race each other's cleanup. The real session_dir lives in shell persistence.
 fn session_scratch_root() -> PathBuf {
-    std::env::temp_dir().join(format!("grok-test-sessions-{}", std::process::id()))
+    std::env::temp_dir().join(format!("kigi-test-sessions-{}", std::process::id()))
 }
 /// Write content to session subdir, return absolute path on success.
 /// Uses content hash prefix for dedup: identical content → same path, different content → unique path.
@@ -508,8 +508,8 @@ mod tests {
         let _ = std::fs::remove_file(&expected);
     }
     #[tokio::test]
-    async fn test_grok_render_embedded_resource_uses_file_contents_tag() {
-        let _info = test_info("grok-text");
+    async fn test_kigi_render_embedded_resource_uses_file_contents_tag() {
+        let _info = test_info("kigi-text");
         let resource = EmbeddedResource::new(EmbeddedResourceResource::TextResourceContents(
             agent_client_protocol::TextResourceContents::new(
                 "const x = 1;\nconst y = 2;\n",
@@ -524,8 +524,8 @@ mod tests {
         assert!(!rendered.contains("code_selection"), "got: {rendered}");
     }
     #[tokio::test]
-    async fn test_grok_render_embedded_resource_full_file_uses_is_full_file() {
-        let _info = test_info("grok-full-file");
+    async fn test_kigi_render_embedded_resource_full_file_uses_is_full_file() {
+        let _info = test_info("kigi-full-file");
         let resource = EmbeddedResource::new(EmbeddedResourceResource::TextResourceContents(
             agent_client_protocol::TextResourceContents::new(
                 "fn main() {}\n",

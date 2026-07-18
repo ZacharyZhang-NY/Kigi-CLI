@@ -1,4 +1,4 @@
-//! `x.ai/feedback`, `x.ai/feedback/dismiss`, `x.ai/btw`, and `x.ai/review/*`
+//! `kigi/feedback`, `kigi/feedback/dismiss`, `kigi/btw`, and `kigi/review/*`
 //! extension handlers.
 //!
 //! - `feedback`/`feedback/dismiss`: persist user ratings/text locally; text
@@ -28,15 +28,15 @@ use crate::session::{
 #[tracing::instrument(skip_all, fields(method = %args.method))]
 pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/btw" => {
+        "kigi/btw" => {
             tracing::info!("handling /btw side question");
             handle_btw(agent, args).await
         }
-        "x.ai/feedback" | "x.ai/feedback/dismiss" => {
+        "kigi/feedback" | "kigi/feedback/dismiss" => {
             tracing::info!("handling user feedback");
             handle_feedback(agent, args).await
         }
-        m if m.starts_with("x.ai/review") => {
+        m if m.starts_with("kigi/review") => {
             tracing::info!("handling review comment");
             handle_review(args).await
         }
@@ -44,7 +44,7 @@ pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     }
 }
 
-/// Handle `x.ai/btw` -- a side question that doesn't interrupt the current turn.
+/// Handle `kigi/btw` -- a side question that doesn't interrupt the current turn.
 async fn handle_btw(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     #[derive(serde::Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -89,7 +89,7 @@ async fn handle_feedback(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult 
     }
 
     match args.method.as_ref() {
-        "x.ai/feedback" => {
+        "kigi/feedback" => {
             // Parse the input -- try the full ClientFeedbackInput first,
             // then fall back to the simple FeedbackRequest (from /feedback slash command)
             // which only has {session_id, feedback_text} and no client_type.
@@ -245,7 +245,7 @@ async fn handle_feedback(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult 
                 .expect("to work");
             Ok(acp::ExtResponse::new(value))
         }
-        "x.ai/feedback/dismiss" => {
+        "kigi/feedback/dismiss" => {
             let dismiss_input: FeedbackRequestDismiss = parse_params(args)?;
 
             tracing::info!(
@@ -302,11 +302,11 @@ async fn handle_feedback(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult 
 /// Record inline code review events.
 ///
 /// Methods:
-/// - `x.ai/review/comment`: record a new inline code comment
-/// - `x.ai/review/comment/delete`: record a tombstone event for a deleted comment
+/// - `kigi/review/comment`: record a new inline code comment
+/// - `kigi/review/comment/delete`: record a tombstone event for a deleted comment
 async fn handle_review(args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/review/comment" => {
+        "kigi/review/comment" => {
             let request: CommentRequest = parse_params(args)?;
 
             let comment_id = uuid::Uuid::now_v7().to_string();
@@ -329,7 +329,7 @@ async fn handle_review(args: &acp::ExtRequest) -> ExtResult {
             .expect("to work");
             Ok(acp::ExtResponse::new(value))
         }
-        "x.ai/review/comment/delete" => {
+        "kigi/review/comment/delete" => {
             let request: CommentDeleteRequest = parse_params(args)?;
 
             tracing::info!(

@@ -39,7 +39,7 @@ impl crate::types::tool_metadata::ToolMetadata for MemoryGetImpl {
     }
 
     fn tool_namespace(&self) -> ToolNamespace {
-        ToolNamespace::GrokBuild
+        ToolNamespace::Kigi
     }
 
     fn description_template(&self) -> &str {

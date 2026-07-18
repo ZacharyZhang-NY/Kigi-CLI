@@ -968,7 +968,7 @@ fn try_btrfs_remove(
             // Known residual TOCTOU: validation `lstat`s/canonicalizes then we
             // delete by path (the `btrfs subvolume delete` CLI takes a path, not
             // an fd, so there is no `unlinkat` to close the window). Bounded by:
-            // `btrfs` refuses non-subvolumes, the snapshot dir is grok-owned, and
+            // `btrfs` refuses non-subvolumes, the snapshot dir is kigi-owned, and
             // `..`/symlink targets are already rejected. Accepted as-is.
             if let Some(report) = delete_snapshot_with_delegate_fallback(
                 &resolved,
@@ -2186,7 +2186,7 @@ mod tests {
         use kigi_test_utils::git::{git_commit_all, init_git_repo};
         // Isolate KIGI_SHARE_DIR so the post-removal unregister writes to a private DB.
         #[cfg(feature = "metadata")]
-        let _fx = crate::db::GrokHomeFixture::new();
+        let _fx = crate::db::KigiHomeFixture::new();
 
         let tmp = tempfile::TempDir::new().unwrap();
         let repo = tmp.path().join("repo");
@@ -2837,7 +2837,7 @@ mod tests {
         fn register_worktree_writes_correct_fields() {
             // Isolate KIGI_SHARE_DIR so register_worktree's open_default write lands
             // in our own DB (lock + private tmp + restore via the fixture).
-            let fx = crate::db::GrokHomeFixture::new();
+            let fx = crate::db::KigiHomeFixture::new();
 
             // Unique basename → unique id, so a concurrent open_default writer
             // (KIGI_SHARE_DIR is process-global) can't INSERT-OR-REPLACE our row.
@@ -3411,7 +3411,7 @@ mod tests {
             // remove_worktree must keep the DB record when the on-disk removal
             // fails, so the worktree isn't lost from tracking while leaking on
             // disk (unregister only after a successful removal).
-            let fx = crate::db::GrokHomeFixture::new();
+            let fx = crate::db::KigiHomeFixture::new();
 
             // A regular file makes remove_dir_all fail (ENOTDIR) deterministically.
             let wt_path = fx.home.join("doomed-wt");
@@ -3454,7 +3454,7 @@ mod tests {
             kigi_test_utils::require_git!();
             use kigi_test_utils::git::{git_commit_all, init_git_repo};
 
-            let fx = crate::db::GrokHomeFixture::new();
+            let fx = crate::db::KigiHomeFixture::new();
 
             // A real repo + a real worktree so remove_worktree succeeds on disk.
             let repo = fx.home.join("repo");
@@ -3504,7 +3504,7 @@ mod tests {
 
             // KIGI_SHARE_DIR == the gc DB dir so remove_worktree's open_default
             // unregister hits the same DB the gc record lives in.
-            let fx = crate::db::GrokHomeFixture::new();
+            let fx = crate::db::KigiHomeFixture::new();
             let db = WorktreeDb::open(&fx.home).unwrap();
 
             let dir = fx.home.join("expired-wt");

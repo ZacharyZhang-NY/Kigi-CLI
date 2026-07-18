@@ -73,7 +73,7 @@ pub struct SamplerConfig {
 
     /// Client identity for the User-Agent header (`kigi/{version}` plus an
     /// optional origin product). The old xAI proxy's identity headers
-    /// (`x-grok-client-identifier` / `-client-version` / `-deployment-id` /
+    /// (`x-kigi-client-identifier` / `-client-version` / `-deployment-id` /
     /// `-user-id`) are gone — User-Agent and `extra_headers` are the only
     /// identity signals on the wire.
     pub origin_client: Option<OriginClientInfo>,
@@ -112,7 +112,7 @@ pub struct SamplerConfig {
     pub compaction_at_tokens: Option<CompactionAtTokens>,
 
     /// Server-side doom-loop check policy; `None` disables it. When set, the
-    /// client itself sends the opt-in `x-grok-doom-loop-check` header on
+    /// client itself sends the opt-in `x-kigi-doom-loop-check` header on
     /// streaming Responses API requests and absorbs the reported trigger
     /// events (unlike the environment headers in [`Self::extra_headers`],
     /// this header gates the client's own decode behavior, so it lives with

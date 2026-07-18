@@ -39,7 +39,7 @@ async fn edit_collapsed_oneliner_pty() {
         json!({
             "file_path": abs.to_string_lossy(),
             "old_string": "    return \"hi\"",
-            "new_string": format!("    name = \"grok\"  # {BODY_MARKER}\n    return f\"hi {{name}}\""),
+            "new_string": format!("    name = \"kigi\"  # {BODY_MARKER}\n    return f\"hi {{name}}\""),
         })
         .to_string(),
     );

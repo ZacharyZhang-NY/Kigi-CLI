@@ -175,7 +175,7 @@ pub(crate) fn date_rollover_reminder(
 }
 /// Body of the one-shot interrupt `<system-reminder>` injected on the next real
 /// user turn after a mid-stream abort that left the model with no other signal.
-/// Wrapped in grok's `<system-reminder>` shape by [`SessionActor::push_system_reminder`].
+/// Wrapped in kigi's `<system-reminder>` shape by [`SessionActor::push_system_reminder`].
 /// See [`SessionActor::maybe_inject_interrupt_reminder`].
 pub(crate) const INTERRUPT_REMINDER: &str = "[Request interrupted by user]";
 /// TodoGate when enabled and the prompt carries `<task_completion_discipline>`
@@ -317,7 +317,7 @@ impl SessionActor {
         let Some(tx) = &self.tool_context.subagent_event_tx else {
             return;
         };
-        use kigi_tools::implementations::grok_build::task::types::{
+        use kigi_tools::implementations::kigi::task::types::{
             SubagentCompletionsRequest, SubagentEvent,
         };
         let suppress_ids = self

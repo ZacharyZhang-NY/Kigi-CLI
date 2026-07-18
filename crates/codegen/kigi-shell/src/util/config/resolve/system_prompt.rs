@@ -4,7 +4,7 @@ pub const DEFAULT_SYSTEM_PROMPT_LABEL: &str = kigi_agent::DEFAULT_SYSTEM_PROMPT_
 
 /// Resolve system-prompt identity label.
 /// Precedence: env → config per-model → `[agent]` → GB per-model → GB global →
-/// `"Grok"`. Empty/whitespace falls through.
+/// `"Kigi"`. Empty/whitespace falls through.
 ///
 /// Per-model TOML is looked up by session catalog id, then routing slug
 /// (`ModelInfo.model`). Do not use CLI `-m` alone — it may outlive a mid-session

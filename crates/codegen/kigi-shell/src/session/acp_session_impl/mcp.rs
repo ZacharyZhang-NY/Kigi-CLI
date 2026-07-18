@@ -150,7 +150,7 @@ impl SessionActor {
             );
         }
     }
-    /// Emit per-server `x.ai/mcp/tools_changed` notifications.
+    /// Emit per-server `kigi/mcp/tools_changed` notifications.
     ///
     /// Each emission carries the owning
     /// `sessionId` so the pager can route via `find_session_match`
@@ -182,7 +182,7 @@ impl SessionActor {
             }
         }
     }
-    /// Handle explicit auth trigger from the client (x.ai/mcp/auth_trigger).
+    /// Handle explicit auth trigger from the client (kigi/mcp/auth_trigger).
     ///
     /// Runs force_reauth (browser flow), then re-initializes the server
     /// and registers its tools.
@@ -580,7 +580,7 @@ impl SessionActor {
     /// On success: the new `Arc<McpClient>` is in
     /// `mcp_state.owned_clients[server]` with `ClientState::Ready`,
     /// the dispatcher's `notify_tx` is wired to its
-    /// `GrokClientHandler`, and the liveness watcher is armed —
+    /// `KigiClientHandler`, and the liveness watcher is armed —
     /// matching the post-handshake state produced by
     /// [`Self::ensure_mcp_tools_initialized`] for a fresh server.
     ///
@@ -603,7 +603,7 @@ impl SessionActor {
     /// `Reason::Initialized` from the dispatcher's mapping, one
     /// `Reason::RestartSucceeded` from the restart task).
     ///
-    /// The `GrokClientHandler` constructed inside `try_handshake`
+    /// The `KigiClientHandler` constructed inside `try_handshake`
     /// holds the SHARED `Arc<Mutex<Option<Sender>>>` slot
     /// (`SharedEventTx`), so wiring the sender AFTER the handshake
     /// still routes subsequent `tools/list_changed` /
@@ -814,7 +814,7 @@ impl SessionActor {
                 self.notifications
                     .gateway
                     .forward_fire_and_forget(acp::ExtNotification::new(
-                        "x.ai/mcp_initialized",
+                        "kigi/mcp_initialized",
                         params.into(),
                     ));
             }
@@ -884,7 +884,7 @@ impl SessionActor {
                 self.notifications
                     .gateway
                     .forward_fire_and_forget(acp::ExtNotification::new(
-                        "x.ai/mcp_initialized",
+                        "kigi/mcp_initialized",
                         params.into(),
                     ));
             }
@@ -1432,7 +1432,7 @@ impl SessionActor {
                 "elapsedMs" : elapsed.as_millis() as u64, }
             )) {
                 gateway.forward_fire_and_forget(acp::ExtNotification::new(
-                    "x.ai/mcp_initialized",
+                    "kigi/mcp_initialized",
                     params.into(),
                 ));
             }

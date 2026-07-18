@@ -81,10 +81,10 @@
         let params = serde_json::json!({
             "response_id": "resp-1",
             "suggestions": [{ "label": "x" }],
-            "_meta": { "x.ai/replayed": true },
+            "_meta": { "kigi/replayed": true },
         });
         let notif = acp::ExtNotification::new(
-            "x.ai/follow_ups",
+            "kigi/follow_ups",
             serde_json::value::to_raw_value(&params).unwrap().into(),
         );
         let affected = handle_ext_notification(&notif, &mut app);
@@ -103,7 +103,7 @@
         ];
         for params in bad {
             let notif = acp::ExtNotification::new(
-                "x.ai/follow_ups",
+                "kigi/follow_ups",
                 serde_json::value::to_raw_value(&params).unwrap().into(),
             );
             let affected = handle_ext_notification(&notif, &mut app);
@@ -214,10 +214,10 @@
         let params = serde_json::json!({
             "response_id": "resp-1",
             "suggestions": [{ "label": "x" }],
-            "_meta": { "x.ai/replayed": false },
+            "_meta": { "kigi/replayed": false },
         });
         let notif = acp::ExtNotification::new(
-            "x.ai/follow_ups",
+            "kigi/follow_ups",
             serde_json::value::to_raw_value(&params).unwrap().into(),
         );
         assert!(
@@ -235,7 +235,7 @@
             serde_json::json!({ "response_id": "r", "suggestions": [null] }),
         ] {
             let notif = acp::ExtNotification::new(
-                "x.ai/follow_ups",
+                "kigi/follow_ups",
                 serde_json::value::to_raw_value(&bad).unwrap().into(),
             );
             assert!(

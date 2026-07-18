@@ -213,7 +213,7 @@ pub trait RestartActions {
     ///    bubbles up.
     async fn respawn_stdio(&self, server: &str) -> Result<(), String>;
 
-    /// Push an already-built `x.ai/mcp/server_status` payload to the
+    /// Push an already-built `kigi/mcp/server_status` payload to the
     /// pager. The production impl wraps the dispatcher's gateway
     /// sender via [`forward_status`].
     fn push_status(&self, payload: &McpServerStatusPayload);
@@ -617,7 +617,7 @@ fn push(
 }
 
 /// Serialize a [`McpServerStatusPayload`] and send it to the gateway as an
-/// ACP `x.ai/mcp/server_status` notification. Failures are logged and
+/// ACP `kigi/mcp/server_status` notification. Failures are logged and
 /// dropped — restart-task pushes must not block the session actor.
 ///
 /// Public so production impls and tests can wrap a gateway sender
@@ -1506,7 +1506,7 @@ mod tests {
     fn forward_status_uses_dispatcher_method() {
         assert_eq!(
             crate::session::mcp_dispatcher::SERVER_STATUS_METHOD,
-            "x.ai/mcp/server_status",
+            "kigi/mcp/server_status",
             "wire method name pinned",
         );
         // The `forward_status` function uses

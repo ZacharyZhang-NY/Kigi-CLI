@@ -1,7 +1,7 @@
 use agent_client_protocol as acp;
 use kigi_acp_lib::AcpResult;
 
-pub use kigi_tools::implementations::grok_build::exit_plan_mode::{
+pub use kigi_tools::implementations::kigi::exit_plan_mode::{
     ExitPlanModeExtRequest, ExitPlanModeExtResponse,
 };
 

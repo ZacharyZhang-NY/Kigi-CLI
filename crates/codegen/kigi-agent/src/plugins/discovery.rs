@@ -69,11 +69,11 @@ pub enum PluginOrigin {
     /// CLI `--plugin-dir`.
     CliOverride,
     /// Project `.kigi/plugins/`.
-    ProjectGrok,
+    ProjectKigi,
     /// Project `.claude/plugins/`.
     ProjectClaude,
     /// `$KIGI_SHARE_DIR/plugins/`.
-    UserGrok,
+    UserKigi,
     /// `~/.claude/plugins/`.
     UserClaude,
     /// A compat marketplace clone (project `extraKnownMarketplaces`
@@ -87,7 +87,7 @@ pub enum PluginOrigin {
         /// Marketplace name from the `name@marketplace` JSON key, when present.
         marketplace: Option<String>,
     },
-    /// Grok's install registry (`~/.kigi/installed-plugins`).
+    /// Kigi's install registry (`~/.kigi/installed-plugins`).
     MarketplaceInstall {
         /// Git URL of the installed repo (None for local installs).
         git_url: Option<String>,
@@ -214,10 +214,10 @@ impl DiscoveryConfig {
 /// paths all resolve under `kigi_home()`, so a plugin scanned from the legacy
 /// tree would appear untrusted and lose its persisted state. Keeping plugins on
 /// `kigi_home()` only avoids that half-initialized state.
-fn user_plugin_dirs(home: Option<&Path>, grok: Option<&Path>) -> Vec<(PathBuf, PluginOrigin)> {
+fn user_plugin_dirs(home: Option<&Path>, kigi: Option<&Path>) -> Vec<(PathBuf, PluginOrigin)> {
     let mut dirs = Vec::new();
-    if let Some(g) = grok {
-        dirs.push((g.join("plugins"), PluginOrigin::UserGrok));
+    if let Some(g) = kigi {
+        dirs.push((g.join("plugins"), PluginOrigin::UserKigi));
     }
     if let Some(h) = home {
         dirs.push((h.join(".claude").join("plugins"), PluginOrigin::UserClaude));
@@ -234,7 +234,7 @@ fn project_plugins_dir_origin(plugins_dir: &Path) -> PluginOrigin {
     if is_claude {
         PluginOrigin::ProjectClaude
     } else {
-        PluginOrigin::ProjectGrok
+        PluginOrigin::ProjectKigi
     }
 }
 
@@ -336,10 +336,10 @@ pub fn discover_plugins(
     }
 
     // 4-5. User plugins: $KIGI_SHARE_DIR/plugins, legacy ~/.kigi/plugins, ~/.claude/plugins.
-    // Gate the grok plugins dir on user_kigi_home() so a project's .kigi/plugins
+    // Gate the kigi plugins dir on user_kigi_home() so a project's .kigi/plugins
     // is never scanned as user-global when no home resolves.
-    let grok = kigi_config::user_kigi_home();
-    let plugin_dirs = user_plugin_dirs(dirs::home_dir().as_deref(), grok.as_deref());
+    let kigi = kigi_config::user_kigi_home();
+    let plugin_dirs = user_plugin_dirs(dirs::home_dir().as_deref(), kigi.as_deref());
     for (plugins_dir, origin) in plugin_dirs {
         if plugins_dir.is_dir() {
             scan_plugin_dir(
@@ -903,11 +903,11 @@ mod tests {
     }
 
     #[test]
-    fn user_plugin_dirs_are_grok_and_claude_only_no_legacy() {
+    fn user_plugin_dirs_are_kigi_and_claude_only_no_legacy() {
         let home = Path::new("/home/u");
-        let grok = Path::new("/custom/grokhome");
-        let dirs = user_plugin_dirs(Some(home), Some(grok));
-        assert!(dirs.contains(&(grok.join("plugins"), PluginOrigin::UserGrok)));
+        let kigi = Path::new("/custom/kigihome");
+        let dirs = user_plugin_dirs(Some(home), Some(kigi));
+        assert!(dirs.contains(&(kigi.join("plugins"), PluginOrigin::UserKigi)));
         assert!(dirs.contains(&(
             home.join(".claude").join("plugins"),
             PluginOrigin::UserClaude
@@ -921,7 +921,7 @@ mod tests {
     }
 
     #[test]
-    fn user_plugin_dirs_empty_without_home_or_grok() {
+    fn user_plugin_dirs_empty_without_home_or_kigi() {
         assert!(user_plugin_dirs(None, None).is_empty());
     }
 
@@ -951,10 +951,10 @@ mod tests {
     }
 
     #[test]
-    fn project_plugins_dir_origin_distinguishes_grok_and_claude() {
+    fn project_plugins_dir_origin_distinguishes_kigi_and_claude() {
         assert_eq!(
             project_plugins_dir_origin(Path::new("/repo/.kigi/plugins")),
-            PluginOrigin::ProjectGrok
+            PluginOrigin::ProjectKigi
         );
         assert_eq!(
             project_plugins_dir_origin(Path::new("/repo/.claude/plugins")),
@@ -967,18 +967,18 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
 
         // Create ~/.kigi/plugins/ structure
-        let grok_plugins = tmp.path().join(".kigi").join("plugins");
-        std::fs::create_dir_all(&grok_plugins).unwrap();
-        make_manifest_plugin(&grok_plugins, "user-tool");
+        let kigi_plugins = tmp.path().join(".kigi").join("plugins");
+        std::fs::create_dir_all(&kigi_plugins).unwrap();
+        make_manifest_plugin(&kigi_plugins, "user-tool");
 
         // Override home dir by directly scanning
         let trust = TrustStore::load_from(tmp.path().join("trust"));
         let mut seen = HashSet::new();
         let mut candidates = Vec::new();
         scan_plugin_dir(
-            &grok_plugins,
+            &kigi_plugins,
             PluginScope::User,
-            PluginOrigin::UserGrok,
+            PluginOrigin::UserKigi,
             &trust,
             false,
             &mut seen,
@@ -1002,7 +1002,7 @@ mod tests {
         scan_plugin_dir(
             &plugins_dir,
             PluginScope::User,
-            PluginOrigin::UserGrok,
+            PluginOrigin::UserKigi,
             &trust,
             false,
             &mut seen,
@@ -1325,7 +1325,7 @@ mod tests {
         collect_plugin(
             &user_plugin,
             PluginScope::User,
-            PluginOrigin::UserGrok,
+            PluginOrigin::UserKigi,
             &trust,
             false,
             &mut seen,
@@ -1381,7 +1381,7 @@ mod tests {
         collect_plugin(
             &empty_dir,
             PluginScope::User,
-            PluginOrigin::UserGrok,
+            PluginOrigin::UserKigi,
             &trust,
             false,
             &mut seen,
@@ -1404,7 +1404,7 @@ mod tests {
         collect_plugin(
             &plugin_dir,
             PluginScope::Project,
-            PluginOrigin::ProjectGrok,
+            PluginOrigin::ProjectKigi,
             &trust,
             false,
             &mut seen,
@@ -1427,7 +1427,7 @@ mod tests {
         collect_plugin(
             &plugin_dir,
             PluginScope::Project,
-            PluginOrigin::ProjectGrok,
+            PluginOrigin::ProjectKigi,
             &trust,
             true,
             &mut seen,
@@ -1458,7 +1458,7 @@ mod tests {
                 PluginScope::CliOverride,
                 PluginOrigin::CliOverride,
             ),
-            (&user_dir, PluginScope::User, PluginOrigin::UserGrok),
+            (&user_dir, PluginScope::User, PluginOrigin::UserKigi),
             (
                 &config_dir,
                 PluginScope::ConfigPath,
@@ -1505,7 +1505,7 @@ mod tests {
             .find(|p| p.manifest.name == "proj-mcp")
             .expect("project plugin discovered");
         assert_eq!(p.scope, PluginScope::Project);
-        assert_eq!(p.origin, PluginOrigin::ProjectGrok);
+        assert_eq!(p.origin, PluginOrigin::ProjectKigi);
         assert!(!p.trusted, "untrusted folder must block the project plugin");
 
         // Trusted folder: the same plugin is allowed.

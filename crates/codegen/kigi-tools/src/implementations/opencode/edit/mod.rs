@@ -19,8 +19,8 @@
 use std::sync::Arc;
 
 use crate::computer::types::AsyncFileSystem;
-use crate::implementations::grok_build::search_replace::CONTEXT_LINES;
-use crate::implementations::grok_build::search_replace::helpers::{
+use crate::implementations::kigi::search_replace::CONTEXT_LINES;
+use crate::implementations::kigi::search_replace::helpers::{
     build_edit_details, render_snippet, replace_using_positions,
 };
 use crate::notification::types::FileWritten;
@@ -467,8 +467,8 @@ async fn handle_replacement(
 }
 
 // Note: `replace_at_positions`, `render_snippet`, and `build_edit_details`
-// are imported from `grok_build::search_replace::helpers` — shared across
-// both the grok_build and opencode edit tools.
+// are imported from `kigi::search_replace::helpers` — shared across
+// both the kigi and opencode edit tools.
 
 // ───────────────────────────────────────────────────────────────────────────
 // Tests

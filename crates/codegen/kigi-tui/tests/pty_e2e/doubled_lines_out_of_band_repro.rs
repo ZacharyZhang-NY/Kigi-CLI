@@ -1,24 +1,24 @@
 //! Doubled lines — regression guard via a simulated
 //! out-of-band screen reflow.
 //!
-//! The stack is `tmux -> nvim :terminal -> grok`: nvim/tmux repaint grok's
-//! pane out-of-band (no grok PTY resize), and grok's diff renderer only
+//! The stack is `tmux -> nvim :terminal -> kigi`: nvim/tmux repaint kigi's
+//! pane out-of-band (no kigi PTY resize), and kigi's diff renderer only
 //! re-clears on a real size change — so the rows it doesn't own survive and
 //! you get doubled lines at the top/bottom until restart.
 //!
 //! The harness is a single faithful emulator and can't nest a real tmux/nvim,
 //! so we SIMULATE the out-of-band reflow with `feed_screen` (writes straight
-//! into the virtual terminal, bypassing grok) and then check whether grok
-//! heals it. `NVIM` is set in grok's env so it sees the embedded-editor
+//! into the virtual terminal, bypassing kigi) and then check whether kigi
+//! heals it. `NVIM` is set in kigi's env so it sees the embedded-editor
 //! context the fix keys off (mirroring a real nvim `:terminal`).
 //!
-//! The fix: grok forces a full clear+repaint on `FocusGained` in
+//! The fix: kigi forces a full clear+repaint on `FocusGained` in
 //! editor/multiplexer contexts, so the injected row is gone after refocus.
 //! The final assertion guards that heal.
 
 use super::common::*;
 
-/// Unique sentinel that grok would never render on its own.
+/// Unique sentinel that kigi would never render on its own.
 const STALE_MARKER: &str = "STALE_OUT_OF_BAND_ROW_ZZZ";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -31,7 +31,7 @@ async fn out_of_band_stale_row_heals_on_focus_gained() {
     // Mock-auth env + pretend we're inside a neovim `:terminal` (sets the
     // embedded-editor context the doubled-line fix gates on).
     let mut env = content.env_for_pager();
-    env.push(("NVIM".into(), "/tmp/grok-pty-harness-fake-nvim.sock".into()));
+    env.push(("NVIM".into(), "/tmp/kigi-pty-harness-fake-nvim.sock".into()));
     let env_refs: Vec<(&str, &str)> = env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
 
     let binary = pager_binary().expect("resolve pager binary");
@@ -49,7 +49,7 @@ async fn out_of_band_stale_row_heals_on_focus_gained() {
     );
 
     // Simulate the out-of-band reflow: write a stale row straight into the
-    // virtual screen at col 1 — the static left margin grok's diff renderer
+    // virtual screen at col 1 — the static left margin kigi's diff renderer
     // doesn't repaint during the logo shimmer. The heal is a full clear, so
     // removal is reliable. `\x1b[<row>;<col>H` is 1-based cursor positioning.
     h.feed_screen(format!("\x1b[6;1H{STALE_MARKER}").as_bytes());
@@ -58,16 +58,16 @@ async fn out_of_band_stale_row_heals_on_focus_gained() {
         "marker should be on the virtual screen right after injection"
     );
 
-    // grok must not self-heal out-of-band content via ordinary diff redraws:
+    // kigi must not self-heal out-of-band content via ordinary diff redraws:
     // it only rewrites cells whose own model changed, so this row is stranded.
     h.update(Duration::from_millis(300));
     assert!(
         h.contains_text(STALE_MARKER),
-        "stale row should survive a normal redraw (grok's diff renderer doesn't own it)\nscreen:\n{}",
+        "stale row should survive a normal redraw (kigi's diff renderer doesn't own it)\nscreen:\n{}",
         h.screen_contents()
     );
 
-    // A FocusGained (CSI I) forces a full clear+repaint that re-asserts grok's
+    // A FocusGained (CSI I) forces a full clear+repaint that re-asserts kigi's
     // whole screen and removes the out-of-band row.
     h.inject_keys(b"\x1b[I").expect("inject FocusGained");
     // Poll for the heal instead of a fixed settle so host load can't flake it.

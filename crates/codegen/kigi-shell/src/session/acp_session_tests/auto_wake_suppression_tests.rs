@@ -905,7 +905,7 @@ async fn reparented_record_is_noop_without_goal_harness() {
 /// subagent(s) completed" reminder.
 #[tokio::test(flavor = "current_thread")]
 async fn between_turn_drain_suppresses_auto_wake_delivered_subagents() {
-    use kigi_tools::implementations::grok_build::task::types::{
+    use kigi_tools::implementations::kigi::task::types::{
         SubagentCompletionSummary, SubagentEvent,
     };
     use kigi_tools::reminders::task_completion::AutoWakeDeliveredIds;

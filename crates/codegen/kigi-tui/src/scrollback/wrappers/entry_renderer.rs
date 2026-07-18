@@ -407,7 +407,7 @@ impl<'a> EntryRenderer<'a> {
     ///
     /// Mirrors `desired_height` but derives the content line count from the block's
     /// raw source text (`searchable_text`) instead of laying it out. Lets the layout
-    /// cache size off-screen entries on a bulk load (`grok -r`) without word-wrapping
+    /// cache size off-screen entries on a bulk load (`kigi -r`) without word-wrapping
     /// and markdown-rendering every entry (O(history)). On-screen entries get their
     /// EXACT `desired_height`, so visible content is never estimated.
     pub fn estimate_height(&self, width: u16) -> u16 {
@@ -1486,7 +1486,7 @@ mod tests {
         // Background blocks own the gutter via the existing full-area fill, so
         // the no-bg clear must not run for them. Concrete theme so bg_light !=
         // bg_base (Theme::current() quantizes both to Reset in the test env).
-        let theme = Theme::groknight();
+        let theme = Theme::kiginight();
         assert_ne!(
             theme.bg_light, theme.bg_base,
             "test premise: block bg must differ from base bg"
@@ -1517,14 +1517,14 @@ mod tests {
         // code rectangle gets a notch. Concrete theme so the two bgs differ.
         //
         // Requires color support: under `NO_COLOR` the global markdown style
-        // carries no code background while this test's local `groknight()`
+        // carries no code background while this test's local `kiginight()`
         // theme still has RGB — a mismatch impossible in production.
         // (Historically this passed under NO_COLOR only because the md_style
         // Reset→silver fallback bug painted a concrete bg despite the opt-out.)
         if !crate::theme::color_support::detect().has_color() {
             return;
         }
-        let theme = Theme::groknight();
+        let theme = Theme::kiginight();
         let mut entry = ScrollbackEntry::new(RenderBlock::agent_message("```\nZZZZ\n```\n"));
         // The code block's only content row is the first content row, which is
         // also where the timestamp overlay lands. Drop `created_at` so the
@@ -1802,7 +1802,7 @@ mod tests {
 
         // The off-screen estimate accounts for the affordance row (one per
         // diagram) and so never under-reserves vs the realized height — the
-        // invariant a bulk load (`grok -r`) relies on to avoid clipping.
+        // invariant a bulk load (`kigi -r`) relies on to avoid clipping.
         let est_on = r.estimate_height(80);
         assert_eq!(
             est_on,
@@ -1872,7 +1872,7 @@ mod tests {
         // their previews as panel is pinned by block-side tests.)
         use crate::scrollback::block::StubBlock;
 
-        let theme = Theme::groknight();
+        let theme = Theme::kiginight();
         let entry = ScrollbackEntry::new(RenderBlock::Stub(
             StubBlock::new("alpha\nbravo", Color::Blue).with_line_bg(LINE_BG, true),
         ));
@@ -1900,7 +1900,7 @@ mod tests {
         // tool-preview panels.
         use crate::scrollback::block::StubBlock;
 
-        let theme = Theme::groknight();
+        let theme = Theme::kiginight();
         let entry = ScrollbackEntry::new(RenderBlock::Stub(
             StubBlock::new("alpha\nbravo", Color::Blue).with_line_bg(LINE_BG, false),
         ));

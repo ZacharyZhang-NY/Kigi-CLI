@@ -24,7 +24,7 @@ kigi-tui = { path = "../kigi-tui" }
 # Rendering primitives (must match the pager's versions).
 ratatui = { workspace = true, features = ["crossterm", "unstable-widget-ref"] }
 crossterm = { workspace = true, features = ["event-stream", "bracketed-paste"] }
-# Transcript temp-file names (`grok-transcript-<uuid>.ansi`).
+# Transcript temp-file names (`kigi-transcript-<uuid>.ansi`).
 uuid = { workspace = true, features = ["v4"] }
 tracing = { workspace = true }
 

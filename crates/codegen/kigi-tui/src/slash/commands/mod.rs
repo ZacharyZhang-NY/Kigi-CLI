@@ -140,15 +140,15 @@ mod tests {
     /// Build a ModelState with two models for testing.
     fn sample_models() -> ModelState {
         let mut models = ModelState::default();
-        let id_fast = acp::ModelId::new(Arc::from("grok-4.5"));
+        let id_fast = acp::ModelId::new(Arc::from("kigi-4.5"));
         models.available.insert(
             id_fast.clone(),
-            acp::ModelInfo::new(id_fast.clone(), "Grok 4.5".to_string()),
+            acp::ModelInfo::new(id_fast.clone(), "Kigi 4.5".to_string()),
         );
-        let id_pro = acp::ModelId::new(Arc::from("grok-4.3"));
+        let id_pro = acp::ModelId::new(Arc::from("kigi-4.3"));
         models.available.insert(
             id_pro.clone(),
-            acp::ModelInfo::new(id_pro.clone(), "Grok 4.3".to_string()),
+            acp::ModelInfo::new(id_pro.clone(), "Kigi 4.3".to_string()),
         );
         models.current = Some(id_fast);
         models
@@ -307,10 +307,10 @@ mod tests {
         let models = sample_models();
         let mut ctx = make_ctx(&models);
         let cmd = model::ModelCommand;
-        let result = cmd.run(&mut ctx, "Grok 4.5");
+        let result = cmd.run(&mut ctx, "Kigi 4.5");
         match result {
             CommandResult::Action(Action::SetDefaultModel(id)) => {
-                assert_eq!(id.0.as_ref(), "grok-4.5");
+                assert_eq!(id.0.as_ref(), "kigi-4.5");
             }
             other => panic!("expected Action(SetDefaultModel), got {other:?}"),
         }
@@ -320,10 +320,10 @@ mod tests {
         let models = sample_models();
         let mut ctx = make_ctx(&models);
         let cmd = model::ModelCommand;
-        let result = cmd.run(&mut ctx, "grok-4.3");
+        let result = cmd.run(&mut ctx, "kigi-4.3");
         match result {
             CommandResult::Action(Action::SetDefaultModel(id)) => {
-                assert_eq!(id.0.as_ref(), "grok-4.3");
+                assert_eq!(id.0.as_ref(), "kigi-4.3");
             }
             other => panic!("expected Action(SetDefaultModel), got {other:?}"),
         }
@@ -333,10 +333,10 @@ mod tests {
         let models = sample_models();
         let mut ctx = make_ctx(&models);
         let cmd = model::ModelCommand;
-        let result = cmd.run(&mut ctx, "grok 4.5");
+        let result = cmd.run(&mut ctx, "kigi 4.5");
         match result {
             CommandResult::Action(Action::SetDefaultModel(id)) => {
-                assert_eq!(id.0.as_ref(), "grok-4.5");
+                assert_eq!(id.0.as_ref(), "kigi-4.5");
             }
             other => panic!("expected Action(SetDefaultModel), got {other:?}"),
         }
@@ -387,12 +387,12 @@ mod tests {
         assert!(
             items
                 .iter()
-                .any(|i| i.display.starts_with("Grok 4.5") && i.insert_text == "Grok 4.5")
+                .any(|i| i.display.starts_with("Kigi 4.5") && i.insert_text == "Kigi 4.5")
         );
         assert!(
             items
                 .iter()
-                .any(|i| i.display == "Grok 4.3" && i.insert_text == "Grok 4.3")
+                .any(|i| i.display == "Kigi 4.3" && i.insert_text == "Kigi 4.3")
         );
     }
     #[test]

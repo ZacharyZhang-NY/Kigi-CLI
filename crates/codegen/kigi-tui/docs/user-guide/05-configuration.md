@@ -1,6 +1,6 @@
 # Configuration
 
-Grok reads configuration from local config files, environment variables, and
+Kigi reads configuration from local config files, environment variables, and
 CLI flags. This document covers the common options.
 
 ---
@@ -22,7 +22,7 @@ Configuration is resolved in this order (highest priority first):
 
 Location: `~/.kigi/config.toml`
 
-If the file does not exist, Grok uses built-in defaults. Specify only the values you want to override.
+If the file does not exist, Kigi uses built-in defaults. Specify only the values you want to override.
 
 ### General Settings
 
@@ -31,7 +31,7 @@ If the file does not exist, Grok uses built-in defaults. Specify only the values
 auto_update = true                     # check for updates on launch
 
 [models]
-default = "grok-build"           # model used for new sessions
+default = "kigi"           # model used for new sessions
 
 # Defaults applied to every model; a per-model [model.<id>] value always wins.
 # See "Custom Models" for the per-model overrides and full details.
@@ -97,7 +97,7 @@ simple_mode = false
 ```
 
 You can also toggle this setting from the settings pane (`/settings` →
-**Disable vim input mode**); Grok writes your choice to `[ui] simple_mode` in
+**Disable vim input mode**); Kigi writes your choice to `[ui] simple_mode` in
 `config.toml`.
 
 `simple_mode` and `vim_mode` are independent: `simple_mode` changes the prompt
@@ -154,7 +154,7 @@ active in the **scrollback** pane. It does not affect the input prompt.
 | `true` | All vim-style scrollback bindings are active, exactly as listed in [Keyboard Shortcuts](03-keyboard-shortcuts.md). |
 
 Toggle `vim_mode` at runtime with `/vim-mode`, or from the settings pane
-(`/settings` → **Vim scrollback navigation**). Grok writes the change to
+(`/settings` → **Vim scrollback navigation**). Kigi writes the change to
 `[ui] vim_mode` in `~/.kigi/config.toml` immediately and applies it to every
 future pager session — including new agents and subagents started in the same
 process. There is no separate per-session override; whatever is in
@@ -166,7 +166,7 @@ navigation, while `simple_mode` controls editing in the prompt.
 #### Screen Mode
 
 The `screen_mode` setting under `[ui]` is the **default render mode** for plain
-`grok` launches. Configure it from `/settings` → **Default screen mode**
+`kigi` launches. Configure it from `/settings` → **Default screen mode**
 (restart required), or edit `config.toml` by hand. Both choices write
 `config.toml`. CLI flags (`--minimal` / `--fullscreen`) and slash commands
 (`/minimal` / `/fullscreen`) are session-scoped and do **not** write this key —
@@ -247,7 +247,7 @@ auth_provider_command = "/usr/local/bin/my-auth-provider"
 auth_provider_label = "Acme Corp"
 auth_token_ttl = 3600
 
-[grok_com_config.oidc]
+[kigi_com_config.oidc]
 issuer = "https://acme.okta.com"
 client_id = "0oa1b2c3d4e5f6g7h8i9"
 # scopes = ["openid", "profile", "email", "offline_access", "api:access"]
@@ -346,7 +346,7 @@ explore = true                        # enable/disable specific types
 plan = false
 
 [subagents.models]
-explore = "grok-build"               # route to different models
+explore = "kigi"               # route to different models
 ```
 
 To pin the model a subagent uses, set its entry under `[subagents.models]`.
@@ -393,7 +393,7 @@ Each cell can be toggled via environment variable or `config.toml`. See the
 environment-variables reference for the env var names. Resolution order:
 env var > config.toml > default (on).
 
-`grok inspect` reports cells that still need session-start resolution as
+`kigi inspect` reports cells that still need session-start resolution as
 `?` until a value is available; cells with an explicit env or TOML value
 use that value. Affected discovery entries report
 `compatibilityStatus: "unresolved"` in JSON and `[compat unresolved]` in
@@ -409,7 +409,7 @@ disabled = ["user/a1b2c3d4/noisy-plugin"]
 
 ### Hints
 
-The `[hints]` table holds small persisted UI preferences — mostly "stop asking me" opt-outs. Grok writes these for you when you pick a "don't ask again" / "reset in config.toml" option in the TUI, but you can edit or remove them by hand. Deleting a key restores the default behavior.
+The `[hints]` table holds small persisted UI preferences — mostly "stop asking me" opt-outs. Kigi writes these for you when you pick a "don't ask again" / "reset in config.toml" option in the TUI, but you can edit or remove them by hand. Deleting a key restores the default behavior.
 
 `[hints]` is read from the **effective config merge** (same precedence as other settings): system managed → user `managed_config.toml` → user `config.toml` → user `requirements.toml` → system `requirements.toml`. Higher-priority layers override lower ones. The TUI only **writes** opt-outs to user `~/.kigi/config.toml`.
 
@@ -423,7 +423,7 @@ fork_worktree_mode = "ask"             # /fork worktree prompt: "ask" | "always"
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `project_picker_disabled` | bool | `false` | When `true`, skips the picker that asks you to choose a project directory on the first prompt when Grok is launched from a non-project directory (home, Desktop, Downloads, `/tmp`). Set automatically when you choose **"Don't ask me again"** in that picker. Teams can pin this in `managed_config.toml` or `requirements.toml` via `[hints] project_picker_disabled = true`. |
+| `project_picker_disabled` | bool | `false` | When `true`, skips the picker that asks you to choose a project directory on the first prompt when Kigi is launched from a non-project directory (home, Desktop, Downloads, `/tmp`). Set automatically when you choose **"Don't ask me again"** in that picker. Teams can pin this in `managed_config.toml` or `requirements.toml` via `[hints] project_picker_disabled = true`. |
 | `memory_modal_fullscreen` | bool | `false` | Remembers whether the memory modal was last opened fullscreen. |
 | `new_session_worktree_mode` | string | `"never"` | Worktree prompt for `/new`: `ask` shows the popup, `always` creates a worktree, `never` skips it. |
 | `fork_worktree_mode` | string | `"ask"` | Worktree prompt for `/fork`: `ask`, `always`, or `never`. |
@@ -446,7 +446,7 @@ progress_bar = true       # show tab progress bar (OSC 9;4)
 
 [ui.notifications.title]
 enabled = true
-items = ["action-required", "spinner", "activity", "session-name", "grok"]
+items = ["action-required", "spinner", "activity", "session-name", "kigi"]
 ```
 
 | Option | Type | Default | Description |
@@ -458,7 +458,7 @@ items = ["action-required", "spinner", "activity", "session-name", "grok"]
 | `sleep_prevention` | bool | `true` | Keep the display awake while the agent is working (macOS/Linux). |
 | `progress_bar` | bool | `true` | Show a progress indicator in the terminal tab (OSC 9;4). |
 | `title.enabled` | bool | `true` | Set the terminal title to reflect agent state. |
-| `title.items` | array | (see above) | Items shown in the title bar. Options: `action-required`, `spinner`, `activity`, `session-name`, `cwd`, `model`, `turn-timer`, `grok`. |
+| `title.items` | array | (see above) | Items shown in the title bar. Options: `action-required`, `spinner`, `activity`, `session-name`, `cwd`, `model`, `turn-timer`, `kigi`. |
 
 #### Terminal Support Matrix
 
@@ -473,10 +473,10 @@ items = ["action-required", "spinner", "activity", "session-name", "grok"]
 | VS Code | BEL | Yes | No |
 | Apple Terminal | BEL | No | No |
 | VTE (GNOME Terminal) | OSC 777 | Yes | No |
-| Grok Desktop | None (native) | N/A | N/A |
+| Kigi Desktop | None (native) | N/A | N/A |
 | Unknown | BEL | No | No |
 
-When `method = "auto"`, Grok detects the terminal brand and selects the best
+When `method = "auto"`, Kigi detects the terminal brand and selects the best
 protocol automatically. Set `method` explicitly to override auto-detection.
 
 #### Notification Hooks
@@ -487,14 +487,14 @@ Run custom commands when events occur. Hooks receive environment variables
 ```toml
 # macOS native notification
 [[ui.notifications.hooks]]
-command = "terminal-notifier -title 'Grok' -message '$KIGI_MESSAGE'"
+command = "terminal-notifier -title 'Kigi' -message '$KIGI_MESSAGE'"
 events = ["turn_complete", "approval_required"]
 only_unfocused = true
 timeout_secs = 10
 
 # Push to ntfy server
 [[ui.notifications.hooks]]
-command = "curl -s -d '$KIGI_MESSAGE' ntfy.sh/my-grok-alerts"
+command = "curl -s -d '$KIGI_MESSAGE' ntfy.sh/my-kigi-alerts"
 events = ["turn_complete"]
 only_unfocused = true
 timeout_secs = 10
@@ -529,7 +529,7 @@ Then restart tmux. If passthrough is not available (tmux < 3.3), set
 
 **Focus tracking not working:**
 Some terminals do not report focus events. If `condition = "unfocused"` never
-fires, try `condition = "always"` as a fallback. Grok supports focus tracking
+fires, try `condition = "always"` as a fallback. Kigi supports focus tracking
 in every detected terminal except Apple Terminal and unrecognized terminals.
 
 **Sleep prevention not taking effect:**
@@ -555,7 +555,7 @@ mixpanel_enabled = false                                  # disable Mixpanel pro
 trace_upload = false                                      # disable session/trace uploads (inherits the telemetry toggle when unset)
 ```
 
-Set these only to point telemetry at your own infrastructure or to turn parts of it off. The built-in endpoint and credentials are managed by Grok; leave them unset to use the defaults.
+Set these only to point telemetry at your own infrastructure or to turn parts of it off. The built-in endpoint and credentials are managed by Kigi; leave them unset to use the defaults.
 
 The same `[telemetry]` table also configures the **external OpenTelemetry stream** — an independent opt-in (it does not require the telemetry toggle above) that ships a curated, content-free usage schema to your *own* OTLP collector. Collector auth is supplied via `OTEL_EXPORTER_OTLP_HEADERS` and is never stored on disk. See [Monitoring & Usage](24-monitoring-usage.md) for the full schema, env vars, and privacy model.
 
@@ -584,12 +584,12 @@ auth_provider_label = "Acme Corp"
 auth_token_ttl = 3600
 
 [models]
-default = "company-grok"
+default = "company-kigi"
 
-[model.company-grok]
-model = "grok-build"
-base_url = "https://grok-proxy.acme.com/"
-name = "Grok Build Latest (Proxy)"
+[model.company-kigi]
+model = "kigi"
+base_url = "https://kigi-proxy.acme.com/"
+name = "Kigi Latest (Proxy)"
 context_window = 128000
 
 [features]

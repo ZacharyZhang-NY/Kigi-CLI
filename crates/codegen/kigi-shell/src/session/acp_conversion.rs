@@ -759,7 +759,7 @@ mod tests {
         let output = ToolOutput::Todo(TodoWriteOutput::TodosUpdated(TodoWriteSuccess {
             summary_for_prompt: "tasks".to_string(),
             todos: vec![],
-            state: kigi_tools::implementations::grok_build::todo::TodoState::default(),
+            state: kigi_tools::implementations::kigi::todo::TodoState::default(),
         }));
         let update = acp_tool_update(&output, "call-1", None, None).unwrap();
         assert_eq!(update.fields.status, Some(acp::ToolCallStatus::Completed));
@@ -768,7 +768,7 @@ mod tests {
     #[test]
     fn test_turn_end_plan_cleanup_preserves_semantics_and_priority() {
         use crate::tools::todo::plan_entry_from_todo_item;
-        use kigi_tools::implementations::grok_build::todo::{TodoItem, TodoPriority, TodoStatus};
+        use kigi_tools::implementations::kigi::todo::{TodoItem, TodoPriority, TodoStatus};
 
         // Simulate a mixed todo list at turn end.
         let items = [
@@ -836,13 +836,13 @@ mod tests {
     fn test_acp_plan_update_todo() {
         let output = ToolOutput::Todo(TodoWriteOutput::TodosUpdated(TodoWriteSuccess {
             summary_for_prompt: "tasks".to_string(),
-            todos: vec![kigi_tools::implementations::grok_build::todo::TodoItem {
+            todos: vec![kigi_tools::implementations::kigi::todo::TodoItem {
                 content: "Task 1".to_string(),
-                priority: kigi_tools::implementations::grok_build::todo::TodoPriority::Medium,
-                status: kigi_tools::implementations::grok_build::todo::TodoStatus::Completed,
+                priority: kigi_tools::implementations::kigi::todo::TodoPriority::Medium,
+                status: kigi_tools::implementations::kigi::todo::TodoStatus::Completed,
                 meta: None,
             }],
-            state: kigi_tools::implementations::grok_build::todo::TodoState::default(),
+            state: kigi_tools::implementations::kigi::todo::TodoState::default(),
         }));
         let plan = acp_plan_update(&output).unwrap();
         assert_eq!(plan.entries.len(), 1);

@@ -3,7 +3,7 @@
 """
 Memory System Integration Tests — Full Suite.
 
-Launches grok agent stdio in isolated environments ($HOME override)
+Launches kigi agent stdio in isolated environments ($HOME override)
 with pre-populated memory files. Tests the entire memory lifecycle:
 indexing, search, embeddings, flush, session-end, compaction, pruning.
 
@@ -67,7 +67,7 @@ def section(t):
 
 
 class AcpClient:
-    """Talks ACP (JSON-RPC over NDJSON) to a grok agent stdio subprocess."""
+    """Talks ACP (JSON-RPC over NDJSON) to a kigi agent stdio subprocess."""
 
     def __init__(self, proc, cwd=None):
         self.proc = proc
@@ -163,38 +163,38 @@ class AcpClient:
 
 
 class IsolatedEnv:
-    """Creates a fully isolated grok environment with custom $HOME.
+    """Creates a fully isolated kigi environment with custom $HOME.
 
     The agent subprocess gets a fake $HOME with:
-      ~/.grok/auth.json   (copied from real home)
-      ~/.grok/memory/     (pre-populated by tests)
-      ~/.grok/logs/       (memory.log appears here)
+      ~/.kigi/auth.json   (copied from real home)
+      ~/.kigi/memory/     (pre-populated by tests)
+      ~/.kigi/logs/       (memory.log appears here)
 
     And a workspace directory used as cwd when spawning the agent.
     """
 
     def __init__(self, workspace_name="test-project"):
-        self.root = tempfile.mkdtemp(prefix="grok-memtest-")
+        self.root = tempfile.mkdtemp(prefix="kigi-memtest-")
         self.fake_home = os.path.join(self.root, "home")
         self.workspace = os.path.join(self.root, "workspace", workspace_name)
         os.makedirs(self.fake_home)
         os.makedirs(self.workspace)
 
-        # Create .grok dirs in fake home
-        self.grok_home = os.path.join(self.fake_home, ".grok")
-        self.memory_dir = os.path.join(self.grok_home, "memory")
-        self.logs_dir = os.path.join(self.grok_home, "logs")
+        # Create .kigi dirs in fake home
+        self.kigi_home = os.path.join(self.fake_home, ".kigi")
+        self.memory_dir = os.path.join(self.kigi_home, "memory")
+        self.logs_dir = os.path.join(self.kigi_home, "logs")
         os.makedirs(self.memory_dir)
         os.makedirs(self.logs_dir)
 
         # Copy auth from real home
-        real_auth = os.path.expanduser("~/.grok/auth.json")
+        real_auth = os.path.expanduser("~/.kigi/auth.json")
         if os.path.isfile(real_auth):
-            shutil.copy2(real_auth, os.path.join(self.grok_home, "auth.json"))
+            shutil.copy2(real_auth, os.path.join(self.kigi_home, "auth.json"))
 
     def write_config(self, toml_str):
-        """Write global ~/.grok/config.toml (where the agent reads config)."""
-        with open(os.path.join(self.grok_home, "config.toml"), "w") as f:
+        """Write global ~/.kigi/config.toml (where the agent reads config)."""
+        with open(os.path.join(self.kigi_home, "config.toml"), "w") as f:
             f.write(toml_str)
 
     def write_global_memory(self, content):
@@ -266,9 +266,9 @@ class IsolatedEnv:
         return sorted(files)
 
     def spawn_agent(self, extra_env=None):
-        binary = os.environ.get("KIGI_BINARY", "grok")
+        binary = os.environ.get("KIGI_BINARY", "kigi")
         if not shutil.which(binary) and not os.path.isfile(binary):
-            print(f"{R}grok binary not found: {binary}{N}")
+            print(f"{R}kigi binary not found: {binary}{N}")
             sys.exit(1)
         env = os.environ.copy()
         env["HOME"] = self.fake_home
@@ -671,7 +671,7 @@ def test_fts_special_characters():
 * Use C++ for performance-critical code
 * Configure with --enable-feature=fast_path
 * Email: dev@example.com
-* Path: /usr/local/bin/grok
+* Path: /usr/local/bin/kigi
 * Version >= 2.0.0
 """)
         client = env.spawn_agent()
@@ -1344,10 +1344,10 @@ def test_multiple_workspace_isolation():
         beta_workspace = os.path.join(env1.root, "workspace", "project-beta")
         os.makedirs(beta_workspace, exist_ok=True)
 
-        # Config is already in global ~/.grok/config.toml from env1.write_config
+        # Config is already in global ~/.kigi/config.toml from env1.write_config
 
         # Start agent in workspace beta (reuse env1's fake home)
-        binary = os.environ.get("KIGI_BINARY", "grok")
+        binary = os.environ.get("KIGI_BINARY", "kigi")
         env_vars = os.environ.copy()
         env_vars["HOME"] = env1.fake_home
         env_vars["KIGI_MEMORY"] = "1"

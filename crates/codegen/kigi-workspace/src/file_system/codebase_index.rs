@@ -125,7 +125,7 @@ mod tests {
     //
     // These tests verify the core lazy-start behavior:
     // `CodebaseIndexManager::get()` returns None before the index is created,
-    // which maps to `x.ai/code/status` reporting `reason: notStarted`.
+    // which maps to `kigi/code/status` reporting `reason: notStarted`.
     // `get_or_create()` is the lazy-start entry point called by
     // `MvpAgent::start_codebase_index_for_code_nav` on the first code-nav
     // request for an eligible session.
@@ -134,7 +134,7 @@ mod tests {
     /// An empty CodebaseIndexManager returns None for any path.
     ///
     /// This is the steady-state before ANY code-nav request has been made.
-    /// In `x.ai/code/status`, `resolve_index_handle()` calls
+    /// In `kigi/code/status`, `resolve_index_handle()` calls
     /// `agent.get_codebase_index(cwd)` which calls `mgr.get(cwd)`.
     /// When this returns None the status reports `reason: notStarted` — the
     /// key non-starting guarantee from the plan.

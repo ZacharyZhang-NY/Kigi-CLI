@@ -255,7 +255,7 @@ async fn test_chat_completions_streaming_tool_calls() {
     let server = MockInferenceServer::start().await.unwrap();
     server.enqueue_response(
         "/v1/chat/completions",
-        ScriptedResponse::sse(chat_completion_tool_call_stream(tool_calls, "grok-test")),
+        ScriptedResponse::sse(chat_completion_tool_call_stream(tool_calls, "kigi-test")),
     );
     let client = create_test_client(&server.url(), ApiBackend::ChatCompletions);
 
@@ -296,7 +296,7 @@ async fn test_chat_completions_with_reasoning() {
         ScriptedResponse::sse(chat_completion_with_reasoning_stream(
             "Let me think about this",
             "The answer is 42",
-            "grok-test",
+            "kigi-test",
         )),
     );
     let client = create_test_client(&server.url(), ApiBackend::ChatCompletions);
@@ -344,7 +344,7 @@ async fn chat_completions_collect_synthesizes_reasoning_sibling() {
         ScriptedResponse::sse(chat_completion_with_reasoning_stream(
             "Let me think about this",
             "The answer is 42",
-            "grok-test",
+            "kigi-test",
         )),
     );
     let client = create_test_client(&server.url(), ApiBackend::ChatCompletions);
@@ -453,7 +453,7 @@ async fn chat_completions_upgrade_folds_reconstructed_reasoning_into_request() {
     );
 }
 
-/// Upgrade path, grok-build / Responses API: a legacy session whose
+/// Upgrade path, kigi / Responses API: a legacy session whose
 /// assistant carries inline `reasoning: {text, encrypted, id}` must, on
 /// load, reconstruct a sibling Reasoning item that round-trips back to
 /// the Responses API as a **typed** `reasoning` input item — `summary`,
@@ -462,7 +462,7 @@ async fn chat_completions_upgrade_folds_reconstructed_reasoning_into_request() {
 /// through `reasoning_item_text`.
 #[tokio::test]
 async fn responses_upgrade_roundtrips_reconstructed_reasoning_as_typed_input() {
-    // 1. Seed a legacy grok-build chat_history.jsonl (inline reasoning
+    // 1. Seed a legacy kigi chat_history.jsonl (inline reasoning
     //    with encrypted_content + id — the older shape).
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
@@ -472,7 +472,7 @@ async fn responses_upgrade_roundtrips_reconstructed_reasoning_as_typed_input() {
             "\n",
             r#"{"type":"user","content":[{"type":"text","text":"q1"}]}"#,
             "\n",
-            r#"{"type":"assistant","content":"a1","reasoning":{"text":"legacy grok-build reasoning","encrypted":"ENC_BLOB_xyz","id":"rs_grokbuild_legacy"},"model_id":"grok-build"}"#,
+            r#"{"type":"assistant","content":"a1","reasoning":{"text":"legacy kigi reasoning","encrypted":"ENC_BLOB_xyz","id":"rs_kigibuild_legacy"},"model_id":"kigi"}"#,
             "\n",
         ),
     )
@@ -513,7 +513,7 @@ async fn responses_upgrade_roundtrips_reconstructed_reasoning_as_typed_input() {
         });
     assert_eq!(
         reasoning.get("id").and_then(Value::as_str),
-        Some("rs_grokbuild_legacy"),
+        Some("rs_kigibuild_legacy"),
         "reasoning id preserved"
     );
     assert_eq!(
@@ -528,7 +528,7 @@ async fn responses_upgrade_roundtrips_reconstructed_reasoning_as_typed_input() {
     );
     assert_eq!(
         summary[0].get("text").and_then(Value::as_str),
-        Some("legacy grok-build reasoning")
+        Some("legacy kigi reasoning")
     );
 }
 
@@ -550,7 +550,7 @@ async fn messages_upgrade_emits_reconstructed_reasoning_as_thinking_block() {
             "\n",
             r#"{"type":"user","content":[{"type":"text","text":"q1"}]}"#,
             "\n",
-            r#"{"type":"assistant","content":"a1","reasoning":{"text":"legacy anthropic thinking","encrypted":"SIGNATURE_abc","id":""},"model_id":"grok-4.5"}"#,
+            r#"{"type":"assistant","content":"a1","reasoning":{"text":"legacy anthropic thinking","encrypted":"SIGNATURE_abc","id":""},"model_id":"kigi-4.5"}"#,
             "\n",
         ),
     )
@@ -738,7 +738,7 @@ async fn test_responses_api_streaming_tool_call() {
             "call_xyz789",
             "bash",
             r#"{"command": "ls -la"}"#,
-            "grok-test",
+            "kigi-test",
         )),
     );
     let client = create_test_client(&server.url(), ApiBackend::Responses);
@@ -781,7 +781,7 @@ async fn test_responses_api_with_reasoning_and_encrypted_content() {
             "Let me think step by step about this problem.",
             Some("enc_base64_encrypted_reasoning_chain_data"),
             "The answer based on my reasoning is 42.",
-            "grok-test",
+            "kigi-test",
         )),
     );
     let client = create_test_client(&server.url(), ApiBackend::Responses);
@@ -848,7 +848,7 @@ async fn test_responses_api_reasoning_without_encrypted() {
             "I need to analyze the code carefully.",
             None, // No encrypted content
             "Here is my analysis.",
-            "grok-test",
+            "kigi-test",
         )),
     );
     let client = create_test_client(&server.url(), ApiBackend::Responses);
@@ -955,7 +955,7 @@ async fn test_stream_error_during_streaming() {
                 "id": "chatcmpl-test123",
                 "object": "chat.completion.chunk",
                 "created": 1234567890,
-                "model": "grok-test",
+                "model": "kigi-test",
                 "choices": [{
                     "index": 0,
                     "delta": {"role": "assistant", "content": "Hello"},
@@ -1089,8 +1089,11 @@ async fn test_request_includes_headers() {
     let request = server.requests().pop().unwrap();
 
     assert_eq!(request.header("authorization"), Some("Bearer test-api-key"));
-    assert_eq!(request.header("x-grok-conv-id"), Some("conv-12345"));
-    assert_eq!(request.header("x-grok-req-id"), Some("req-67890"));
+    // PRD F3: auth is a plain bearer — the legacy proxy's tracking marker
+    // headers are never sent on the wire, even when conv/req ids are set on
+    // the request (they remain client-internal plumbing).
+    assert_eq!(request.header("x-kigi-conv-id"), None);
+    assert_eq!(request.header("x-kigi-req-id"), None);
 }
 
 /// The session writes the resolved `x-compaction-at` value into
@@ -1179,7 +1182,7 @@ async fn test_responses_api_request_format() {
 }
 
 /// The sampler owns the doom-loop opt-in: setting
-/// `SamplerConfig::doom_loop_recovery` puts `x-grok-doom-loop-check` on the
+/// `SamplerConfig::doom_loop_recovery` puts `x-kigi-doom-loop-check` on the
 /// wire AND arms the collector, and the server's named check event is
 /// absorbed mid-stream without disturbing the typed event flow.
 #[tokio::test]
@@ -1216,7 +1219,7 @@ async fn test_doom_loop_check_enabled_sends_header_and_absorbs_check_event() {
 
     let logged = server.requests().pop().unwrap();
     assert!(logged.path.contains("/responses"));
-    assert_eq!(logged.header("x-grok-doom-loop-check"), Some("true"));
+    assert_eq!(logged.header("x-kigi-doom-loop-check"), Some("true"));
 }
 
 /// With the check disabled no header goes on the wire, and check frames from
@@ -1257,7 +1260,7 @@ async fn test_doom_loop_check_disabled_sends_no_header_and_drops_check_frames() 
 
     let logged = server.requests().pop().unwrap();
     assert!(logged.path.contains("/responses"));
-    assert_eq!(logged.header("x-grok-doom-loop-check"), None);
+    assert_eq!(logged.header("x-kigi-doom-loop-check"), None);
 }
 
 // ============================================================================

@@ -6,8 +6,8 @@
 //! stay in each product host (for example `kigi-shell`).
 //!
 //! The crate depends on **neither** a conversation-type crate nor
-//! `kigi-sampling-types`. It is decoupled from both Grok chat and
-//! grok-build hosts through a small set of trait seams:
+//! `kigi-sampling-types`. It is decoupled from both Kigi chat and
+//! kigi hosts through a small set of trait seams:
 //!
 //! - [`CompactionItem`] / [`CompactionRole`] / [`CompactionItemBuilder`] —
 //!   abstracts a single turn and its reconstruction.
@@ -21,10 +21,10 @@
 //!
 //! Compaction styles live in their own modules:
 //!
-//! - [`code_compaction`] — grok-build's whole-session **full-replace**
+//! - [`code_compaction`] — kigi's whole-session **full-replace**
 //!   subsystem (prompt/summary/failure/config, assemble, orchestration).
-//! - [`intra_compaction`] — Grok chat's tail-keep, per-step pass.
-//! - [`inter_compaction`] — Grok chat's chunked, between-turn pass.
+//! - [`intra_compaction`] — Kigi chat's tail-keep, per-step pass.
+//! - [`inter_compaction`] — Kigi chat's chunked, between-turn pass.
 //!
 //! Compaction-type content (parallel subfolders): [`steps`] (the step-level
 //! prompt) and [`history`] (filtering, history prompts, validation +
@@ -34,8 +34,8 @@
 //! [`prompt::CompactionPrompt`], [`select`] (tool-pair-safe tail-keep
 //! selection — shared by the intra `Steps` and `History` targets, so it stays
 //! neutral at the crate root rather than under `steps`), and [`reminder`]
-//! (active-agent-state `<system-reminder>` formatting shared by Grok chat and
-//! grok-build; hosts still own snapshotting and host-only sections).
+//! (active-agent-state `<system-reminder>` formatting shared by Kigi chat and
+//! kigi; hosts still own snapshotting and host-only sections).
 
 pub mod code_compaction;
 pub mod history;
@@ -57,7 +57,7 @@ pub mod token;
 /// 3. this constant
 pub use intra_compaction::DEFAULT_COMPACTION_MODEL_NAME;
 
-// grok-build's full-replace subsystem now lives under `code_compaction`;
+// kigi's full-replace subsystem now lives under `code_compaction`;
 // re-exported at the crate root so consumers keep a stable public API.
 pub use code_compaction::{
     CompactedHistoryParts, DEFAULT_AUTO_COMPACT_THRESHOLD_PERCENT, FailureKind,

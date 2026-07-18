@@ -32,7 +32,7 @@ pub(super) fn consume_chat_kind(app: &mut AppView) -> bool {
 /// The prompt is always pushed to the queue first. If the agent is idle
 /// (and has a session), `maybe_drain_queue` pops the front prompt and
 /// sends it in the same dispatch call — no deferred ticks.
-/// Start (if needed) and submit the initial prompt from `grok "<prompt>"`.
+/// Start (if needed) and submit the initial prompt from `kigi "<prompt>"`.
 ///
 /// Shared by the TUI startup path (already authenticated) and the post-login
 /// `AuthComplete` path (deferred via `deferred_startup.prompt`). It does nothing
@@ -511,7 +511,7 @@ pub(super) fn dispatch_send_prompt_inner(
         // immediately instead of being held in the local drip-feed queue. The
         // agent appends it to its authoritative `pending_inputs` (no concurrent
         // turn starts — validated keystone) and drives the drain via
-        // `x.ai/queue/changed`. We render an optimistic echo into the shared
+        // `kigi/queue/changed`. We render an optimistic echo into the shared
         // queue keyed by `prompt_id`; the broadcast reconciles it by id.
         //
         // The IDLE case is unchanged (falls through to the local path below,
@@ -930,7 +930,7 @@ pub(super) fn handle_prompt_response(
                 // Server-authoritative queue lifecycle: this prompt's RPC
                 // resolved without becoming the running turn (removed,
                 // cancelled, rewound). Retire its optimistic echo so a
-                // later `x.ai/queue/changed` broadcast can't re-pin a
+                // later `kigi/queue/changed` broadcast can't re-pin a
                 // stale placeholder and reorder the queue.
                 if let Some(sid) = agent.session.session_id.as_ref().map(|s| s.0.to_string()) {
                     retire_optimistic_echo(
@@ -1171,7 +1171,7 @@ pub(super) fn handle_prompt_response(
                 // title into the body automatically.
                 let notif_title = session_name
                     .map(|s| s.to_string())
-                    .unwrap_or_else(|| "Grok".into());
+                    .unwrap_or_else(|| "Kigi".into());
 
                 app.deferred_notification = Some((
                     NotificationEvent {

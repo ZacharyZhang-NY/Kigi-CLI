@@ -108,7 +108,7 @@ mod tests {
         writer.emit(Event::TurnStarted {
             session_id: "test-session".into(),
             turn_number: 1,
-            model_id: "grok-3".into(),
+            model_id: "kigi-3".into(),
             yolo_mode: false,
             conversation_message_count: 0,
             session_relationship: SessionRelationship::Primary,

@@ -116,8 +116,8 @@ fn test_app() -> AppView {
         agent_override: None,
         bootstrap_acp_commands: Vec::new(),
         auth_methods: vec![acp::AuthMethod::Agent(acp::AuthMethodAgent::new(
-            acp::AuthMethodId::new("grok.com"),
-            "Grok".to_string(),
+            acp::AuthMethodId::new("kimi-code"),
+            "Kigi".to_string(),
         ))],
         auth_state: AuthState::Done,
         trust_state: TrustState::Done,
@@ -462,7 +462,7 @@ fn fork_test_app() -> AppView {
     app
 }
 /// Build a minimal `AcpArgs<acp::ExtRequest>` for an
-/// `x.ai/ask_user_question` ext-method request. Returns the args
+/// `kigi/ask_user_question` ext-method request. Returns the args
 /// plus the receiver half of the response oneshot so the test can
 /// assert the handler completes the ACP roundtrip.
 fn make_ask_user_question_args(
@@ -471,14 +471,13 @@ fn make_ask_user_question_args(
     kigi_acp_lib::AcpArgs<acp::ExtRequest>,
     tokio::sync::oneshot::Receiver<kigi_acp_lib::AcpResult<acp::ExtResponse>>,
 ) {
-    use kigi_tools::implementations::grok_build::ask_user_question::{
+    use kigi_tools::implementations::kigi::ask_user_question::{
         AskUserQuestionExtRequest, Question, QuestionOption,
     };
     let req = AskUserQuestionExtRequest {
         session_id: "test-session".into(),
         tool_call_id: tool_call_id.into(),
-        mode:
-            kigi_tools::implementations::grok_build::ask_user_question::AskUserQuestionMode::Default,
+        mode: kigi_tools::implementations::kigi::ask_user_question::AskUserQuestionMode::Default,
         questions: vec![Question {
             question: "ACP-driven question".into(),
             options: vec![QuestionOption {
@@ -493,7 +492,7 @@ fn make_ask_user_question_args(
     };
     let (tx, rx) = tokio::sync::oneshot::channel();
     let ext = acp::ExtRequest::new(
-        "x.ai/ask_user_question",
+        "kigi/ask_user_question",
         serde_json::value::to_raw_value(&req)
             .expect("serialize AskUserQuestionExtRequest")
             .into(),
@@ -742,7 +741,7 @@ fn with_theme_test_env(f: impl FnOnce()) {
         .unwrap_or_else(|e| e.into_inner());
     crate::theme::cache::reset_for_test();
     crate::theme::cache::seed_auto_theme_defaults_for_test();
-    crate::theme::cache::set(crate::theme::ThemeKind::GrokNight);
+    crate::theme::cache::set(crate::theme::ThemeKind::KigiNight);
     crate::theme::system_appearance::clear_mock();
     f();
     crate::theme::system_appearance::clear_mock();

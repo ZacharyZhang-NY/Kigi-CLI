@@ -108,7 +108,7 @@ impl Default for ClientId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ClientMode {
-    /// Stdio mode (grok agent stdio, grok -p) - uses local IPC.
+    /// Stdio mode (kigi agent stdio, kigi -p) - uses local IPC.
     /// Client sends/receives ACP messages directly via IPC.
     Stdio,
 }
@@ -143,7 +143,7 @@ pub struct ClientCapabilities {
     #[serde(default)]
     pub client_version: Option<String>,
 
-    /// Whether this client has advertised `x.ai/codeNavigation.enabled`.
+    /// Whether this client has advertised `kigi/codeNavigation.enabled`.
     /// When true, the leader injects `codeNavEnabled: true` into `session/new`
     /// and `session/load` requests so the agent can gate code-nav startup on a
     /// per-client basis rather than reading from shared last-initialized state.
@@ -177,7 +177,7 @@ pub struct LeaderCapabilities {
     pub profile_formats: Vec<ProfileArtifactFormat>,
     /// Whether the leader supports [`ControlCommand::RelaunchForUpdate`] — a
     /// disruptive, bounded-grace relaunch onto a freshly-installed binary
-    /// (driven by `grok update`). Old leaders default to `false`, so a new
+    /// (driven by `kigi update`). Old leaders default to `false`, so a new
     /// client falls back to advising a manual restart (graceful degradation).
     #[serde(default)]
     pub relaunch_v1: bool,
@@ -196,12 +196,12 @@ pub enum ControlCommand {
     },
     StopCpuProfile,
     /// Ask the leader to relaunch onto a freshly-installed binary (driven by
-    /// `grok update`). The leader stops admitting new turns, waits a bounded
+    /// `kigi update`). The leader stops admitting new turns, waits a bounded
     /// grace period for in-flight turns to finish, flushes session state, then
     /// exits with [`ShutdownReason::AutoUpdate`] so connected clients reconnect
     /// onto the new binary and restore their sessions via `session/load`.
     ///
-    /// `to_version` is the version `grok update` just installed; the leader uses
+    /// `to_version` is the version `kigi update` just installed; the leader uses
     /// it to decline if it is already running that version or newer.
     RelaunchForUpdate {
         to_version: String,

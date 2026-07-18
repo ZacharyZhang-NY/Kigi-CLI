@@ -207,7 +207,7 @@ impl SessionActor {
             }
             bridge
                 .update_resource(
-                    kigi_tools::implementations::grok_build::update_goal::GoalUpdateHandle(
+                    kigi_tools::implementations::kigi::update_goal::GoalUpdateHandle(
                         self.goal_update_tx.clone(),
                     ),
                 )

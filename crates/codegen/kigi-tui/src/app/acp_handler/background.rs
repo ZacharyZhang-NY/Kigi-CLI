@@ -62,7 +62,7 @@ pub(super) fn route_bg_task_stdout(
     true // Consumed — don't pass to tracker
 }
 
-/// Handle `x.ai/task_backgrounded` — a bash command transitioned to background.
+/// Handle `kigi/task_backgrounded` — a bash command transitioned to background.
 ///
 /// Creates a `BgTaskState` in the central store and sets up the
 /// `tool_call_id → task_id` correlation for stdout routing.
@@ -74,7 +74,7 @@ pub(super) fn route_bg_task_stdout(
 pub(super) fn handle_task_backgrounded(notif: &acp::ExtNotification, app: &mut AppView) -> bool {
     // Parse the SessionNotification envelope
     let Ok(session_notif) = serde_json::from_str::<SessionNotification>(notif.params.get()) else {
-        tracing::warn!("Failed to parse x.ai/task_backgrounded");
+        tracing::warn!("Failed to parse kigi/task_backgrounded");
         return false;
     };
 
@@ -241,7 +241,7 @@ pub(super) fn handle_task_backgrounded(notif: &acp::ExtNotification, app: &mut A
     is_active
 }
 
-/// Handle `x.ai/monitor_event` — background task or monitor emitted new output.
+/// Handle `kigi/monitor_event` — background task or monitor emitted new output.
 pub(super) fn handle_monitor_event(notif: &acp::ExtNotification, app: &mut AppView) -> bool {
     let Ok(session_notif) = serde_json::from_str::<SessionNotification>(notif.params.get()) else {
         return false;
@@ -414,16 +414,16 @@ pub(super) fn handle_scheduled_task_inject_prompt(
     let payload: serde_json::Value = match serde_json::from_str(notif.params.get()) {
         Ok(v) => v,
         Err(e) => {
-            tracing::warn!(error = %e, "Failed to parse x.ai/scheduled_task_inject_prompt");
+            tracing::warn!(error = %e, "Failed to parse kigi/scheduled_task_inject_prompt");
             return false;
         }
     };
     let Some(session_id) = payload["sessionId"].as_str() else {
-        tracing::warn!("x.ai/scheduled_task_inject_prompt: missing or non-string sessionId");
+        tracing::warn!("kigi/scheduled_task_inject_prompt: missing or non-string sessionId");
         return false;
     };
     let Some(prompt) = payload["prompt"].as_str().filter(|s| !s.is_empty()) else {
-        tracing::warn!("x.ai/scheduled_task_inject_prompt: missing or empty prompt");
+        tracing::warn!("kigi/scheduled_task_inject_prompt: missing or empty prompt");
         return false;
     };
     let task_id = payload["taskId"].as_str().unwrap_or("unknown");
@@ -441,7 +441,7 @@ pub(super) fn handle_scheduled_task_inject_prompt(
     };
 
     // Only the driver injects + runs the scheduled prompt. In leader mode the
-    // `x.ai/scheduled_task_inject_prompt` notification is routed by the leader
+    // `kigi/scheduled_task_inject_prompt` notification is routed by the leader
     // to the SINGLE session driver (see `is_scheduled_task_inject_prompt` in
     // leader/server.rs), so any client that receives it IS the driver and must
     // enqueue + run it — including a client that attached via `session/load`
@@ -551,7 +551,7 @@ pub(super) fn handle_git_head_changed(notif: &acp::ExtNotification, app: &mut Ap
 pub(super) fn handle_task_completed(notif: &acp::ExtNotification, app: &mut AppView) -> bool {
     // The payload is a SessionNotification wrapping TaskCompleted { task_snapshot }
     let Ok(session_notif) = serde_json::from_str::<SessionNotification>(notif.params.get()) else {
-        tracing::warn!("Failed to parse x.ai/task_completed");
+        tracing::warn!("Failed to parse kigi/task_completed");
         return false;
     };
 

@@ -121,7 +121,7 @@ async fn test_jsonl_round_trip() {
         .unwrap();
     let plan_state = create_test_plan_state();
     adapter.write_plan_state(&info, &plan_state).await.unwrap();
-    let new_model = acp::ModelId::new("grok-4.3");
+    let new_model = acp::ModelId::new("kigi-4.3");
     adapter.update_current_model(&info, &new_model).await.unwrap();
     let loaded = adapter.load_session(&info).await.unwrap();
     assert_eq!(loaded.summary.info.id, info.id);
@@ -456,12 +456,12 @@ async fn test_subagent_notifications_round_trip() {
         .len()
     );
     let spawned_json: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
-    assert_eq!(spawned_json["method"], "_x.ai/session/update");
+    assert_eq!(spawned_json["method"], "_kigi/session/update");
     let spawned_update = &spawned_json["params"]["update"];
     assert_eq!(spawned_update["sessionUpdate"], "subagent_spawned");
     assert_eq!(spawned_update["subagent_id"], "child-001");
     let finished_json: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
-    assert_eq!(finished_json["method"], "_x.ai/session/update");
+    assert_eq!(finished_json["method"], "_kigi/session/update");
     let finished_update = &finished_json["params"]["update"];
     assert_eq!(finished_update["sessionUpdate"], "subagent_finished");
     assert_eq!(finished_update["tool_calls"], 5);
@@ -742,13 +742,13 @@ async fn test_copy_session_data_with_model_override() {
     };
     let options = CopySessionOptions {
         parent_session_id: Some("source-model-test".to_string()),
-        new_model_id: Some("grok-3".to_string()),
+        new_model_id: Some("kigi-3".to_string()),
         target_prompt_index: None,
         ..Default::default()
     };
     adapter.copy_session_data(&source_info, &target_info, options).await.unwrap();
     let loaded = adapter.load_session(&target_info).await.unwrap();
-    assert_eq!(loaded.summary.current_model_id.0.as_ref(), "grok-3");
+    assert_eq!(loaded.summary.current_model_id.0.as_ref(), "kigi-3");
     assert_eq!(loaded.summary.parent_session_id, Some("source-model-test".to_string()));
 }
 #[tokio::test]
@@ -1108,8 +1108,8 @@ async fn test_append_feedback_creates_file_and_persists() {
             rating_value: Some(1),
             feedback_text: None,
             feedback_categories: vec![],
-            model_id: Some("grok-3-fast".into()),
-            resolved_model_id: Some("grok-4.5".into()),
+            model_id: Some("kigi-3-fast".into()),
+            resolved_model_id: Some("kigi-4.5".into()),
             model_fingerprint: None,
             context_type: None,
             request_id: None,
@@ -1163,7 +1163,7 @@ async fn test_copy_session_data_copies_tool_state() {
         .await
         .unwrap();
     let tool_state_json = serde_json::json!(
-        { "state" : { "grok_build.TodoState" : { "todos" : [] } } }
+        { "state" : { "kigi.TodoState" : { "todos" : [] } } }
     );
     let source_dir = adapter.session_dir(&source_info);
     std::fs::write(
@@ -2250,7 +2250,7 @@ fn load_lines(lines: &[&str]) -> Vec<ConversationItem> {
 }
 /// Real-shape legacy fixture from a web-search session.
 /// The assistant carries `reasoning: { text, encrypted, id }` inline —
-/// the legacy grok-build / Opus / chat-completions shape.
+/// the legacy kigi / Opus / chat-completions shape.
 /// BackendToolCall sits as its own sibling line (it was already a
 /// sibling variant in the legacy shape).
 #[test]
@@ -2260,7 +2260,7 @@ fn read_chat_history_upgrades_legacy_singular_reasoning_to_sibling() {
             r#"{"type":"system","content":"You are helpful."}"#,
             r#"{"type":"user","content":[{"type":"text","text":"cats and dogs"}]}"#,
             r#"{"type":"backend_tool_call","kind":{"tool_type":"web_search","id":"ws_legacy_1","status":"completed","action":{"type":"search","query":"cats and dogs","sources":[]}}}"#,
-            r#"{"type":"assistant","content":"results...","reasoning":{"text":"the results are about cats","encrypted":"enc-blob","id":"rs_legacy"},"model_id":"grok-build"}"#,
+            r#"{"type":"assistant","content":"results...","reasoning":{"text":"the results are about cats","encrypted":"enc-blob","id":"rs_legacy"},"model_id":"kigi"}"#,
         ],
     );
     assert_eq!(
@@ -2336,11 +2336,11 @@ fn read_chat_history_handles_hybrid_legacy_and_post_pr_lines() {
             r#"{"type":"system","content":"sys"}"#,
             r#"{"type":"user","content":[{"type":"text","text":"q1"}]}"#,
             r#"{"type":"backend_tool_call","kind":{"tool_type":"web_search","id":"ws_legacy_1","status":"completed","action":{"type":"search","query":"q1","sources":[]}}}"#,
-            r#"{"type":"assistant","content":"a1","reasoning":{"text":"legacy thinking","encrypted":"enc","id":"rs_legacy"},"model_id":"grok-build"}"#,
+            r#"{"type":"assistant","content":"a1","reasoning":{"text":"legacy thinking","encrypted":"enc","id":"rs_legacy"},"model_id":"kigi"}"#,
             r#"{"type":"user","content":[{"type":"text","text":"q2"}]}"#,
             r#"{"type":"reasoning","id":"rs_postpr","summary":[{"type":"summary_text","text":"new thinking"}]}"#,
             r#"{"type":"backend_tool_call","kind":{"tool_type":"web_search","id":"ws_postpr","status":"completed","action":{"type":"search","query":"q2","sources":[]}}}"#,
-            r#"{"type":"assistant","content":"a2","model_id":"grok-build"}"#,
+            r#"{"type":"assistant","content":"a2","model_id":"kigi"}"#,
         ],
     );
     let kinds: Vec<&'static str> = items
@@ -2381,7 +2381,7 @@ fn read_chat_history_handles_hybrid_legacy_and_post_pr_lines() {
     };
     assert_eq!(legacy_assistant.content.as_ref(), "a1");
     assert_eq!(
-        legacy_assistant.model_id.as_deref(), Some("grok-build"),
+        legacy_assistant.model_id.as_deref(), Some("kigi"),
         "model_id preserved across the upgrade"
     );
     let ConversationItem::Reasoning(reconstructed) = &items[3] else {
@@ -2402,7 +2402,7 @@ fn read_chat_history_is_idempotent_on_post_pr_sessions() {
             r#"{"type":"system","content":"sys"}"#,
             r#"{"type":"user","content":[{"type":"text","text":"q"}]}"#,
             r#"{"type":"reasoning","id":"rs_x","summary":[{"type":"summary_text","text":"thought"}]}"#,
-            r#"{"type":"assistant","content":"a","model_id":"grok-build"}"#,
+            r#"{"type":"assistant","content":"a","model_id":"kigi"}"#,
         ],
     );
     let kinds: Vec<&'static str> = items
@@ -2516,7 +2516,7 @@ fn read_chat_history_skips_merged_line_from_interrupted_append() {
     let good_1 = r#"{"type":"user","content":[{"type":"text","text":"kept"}]}"#;
     let partial = r#"{"type":"assistant","content":"cut mid-wri"#;
     let merged_onto = r#"{"type":"user","content":[{"type":"text","text":"lost"}]}"#;
-    let good_2 = r#"{"type":"assistant","content":"after","model_id":"grok-build"}"#;
+    let good_2 = r#"{"type":"assistant","content":"after","model_id":"kigi"}"#;
     let raw = format!("{good_1}\n{partial}{merged_onto}\n{good_2}\n");
     let temp_dir = TempDir::new().unwrap();
     let (_, _, items) = load_raw_chat(&temp_dir, raw.as_bytes());

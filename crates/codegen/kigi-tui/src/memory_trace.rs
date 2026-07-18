@@ -544,7 +544,7 @@ fn first_threshold_from_env() -> u64 {
 ///
 /// The trace file is created lazily on the first event; the first sample is
 /// taken after one full interval, so short-lived CLI invocations
-/// (`grok --version`, `grok trace …`) leave no files behind.
+/// (`kigi --version`, `kigi trace …`) leave no files behind.
 pub fn start(dir: PathBuf) {
     if !enabled_by_env() {
         return;
@@ -569,7 +569,7 @@ pub fn start(dir: PathBuf) {
     // Detached sampler; the thread holds no locks across sleeps and dies
     // with the process. Named for `sample`/Instruments visibility.
     let _ = std::thread::Builder::new()
-        .name("grok-memtrace".into())
+        .name("kigi-memtrace".into())
         .spawn(move || {
             let mut wrote_start = false;
             loop {

@@ -34,7 +34,7 @@ pub struct SkillOutput {
 }
 
 // Old `SkillToolImpl` + `impl Tool` deleted.
-// New implementation is in `grok_build/skill/`.
+// New implementation is in `kigi/skill/`.
 
 /// Build the formatted skill message shown to the model.
 ///
@@ -238,7 +238,7 @@ pub struct SubstitutionContext<'a> {
 
 /// Apply variable substitutions to skill content.
 ///
-/// Supported variables (Grok-native names + compat aliases):
+/// Supported variables (Kigi-native names + compat aliases):
 ///
 /// | Variable | Alias | Description |
 /// |----------|-------|-------------|
@@ -478,7 +478,7 @@ pub fn extract_skill_body(content: &str) -> String {
 ///
 /// Public entrypoint for the shell crate to load skill content at
 /// prompt-assembly time (the new zero-round-trip path). The private
-/// `load_skill_content` in `grok_build/skill/mod.rs` is a duplicate
+/// `load_skill_content` in `kigi/skill/mod.rs` is a duplicate
 /// of this.
 pub async fn load_skill_content(skill: &SkillInfo) -> Result<String, String> {
     let path = std::path::Path::new(&skill.path);
@@ -910,7 +910,7 @@ Step 2: Check for bugs.
     }
 
     #[test]
-    fn test_grok_plugin_aliases_substitution() {
+    fn test_kigi_plugin_aliases_substitution() {
         let mut content = "Root ${KIGI_PLUGIN_ROOT}, data ${KIGI_PLUGIN_DATA}".to_string();
         apply_substitutions(
             &mut content,

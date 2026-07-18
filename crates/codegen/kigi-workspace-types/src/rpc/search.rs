@@ -37,7 +37,7 @@ pub struct ContentSearchRequest {
     /// Falls back to the workspace root when absent.
     #[serde(default)]
     pub cwd: Option<std::path::PathBuf>,
-    /// Session id used in the `x.ai/search/content/status` payload.
+    /// Session id used in the `kigi/search/content/status` payload.
     #[serde(default)]
     pub context_id: Option<String>,
 }

@@ -11,7 +11,7 @@ pub fn pager_toml_path() -> PathBuf {
     kigi_home().join("pager.toml")
 }
 
-/// User-facing label for the user grok directory (``~/.kigi`` or ``$KIGI_SHARE_DIR``).
+/// User-facing label for the user kigi directory (``~/.kigi`` or ``$KIGI_SHARE_DIR``).
 ///
 /// Derived from resolved [`kigi_home()`] vs `kigi_config::default_kigi_home()`,
 /// not from whether `KIGI_SHARE_DIR` is set in the environment.
@@ -24,7 +24,7 @@ pub fn display_kigi_home_prefix() -> String {
 }
 
 /// User-facing path under [`kigi_home()`], e.g. ``~/.kigi/config.toml``.
-pub fn display_user_grok_path(relative: impl AsRef<Path>) -> String {
+pub fn display_user_kigi_path(relative: impl AsRef<Path>) -> String {
     let rel = relative.as_ref();
     let prefix = display_kigi_home_prefix();
     if rel.as_os_str().is_empty() {
@@ -36,8 +36,8 @@ pub fn display_user_grok_path(relative: impl AsRef<Path>) -> String {
 /// Abbreviate an absolute path for display: prefer [`kigi_home()`], then `$HOME`.
 pub fn abbreviate_path(path: &str) -> Cow<'_, str> {
     let path_buf = Path::new(path);
-    let grok = kigi_home();
-    if let Ok(rest) = path_buf.strip_prefix(&grok) {
+    let kigi = kigi_home();
+    if let Ok(rest) = path_buf.strip_prefix(&kigi) {
         let prefix = display_kigi_home_prefix();
         if rest.as_os_str().is_empty() {
             return Cow::Owned(prefix);
@@ -404,14 +404,14 @@ mod tests {
     }
 
     #[test]
-    fn display_user_grok_path_joins_relative() {
-        let path = display_user_grok_path("config.toml");
+    fn display_user_kigi_path_joins_relative() {
+        let path = display_user_kigi_path("config.toml");
         assert!(path.ends_with("/config.toml") || path.ends_with("\\config.toml"));
         assert!(path.contains(".kigi") || path.contains("$KIGI_SHARE_DIR"));
     }
 
     #[test]
-    fn abbreviate_path_uses_home_when_under_default_grok() {
+    fn abbreviate_path_uses_home_when_under_default_kigi() {
         if let Ok(home) = std::env::var("HOME") {
             if home.is_empty() {
                 return;

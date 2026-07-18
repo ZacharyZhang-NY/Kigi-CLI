@@ -1,17 +1,17 @@
 # Theming and Appearance Customization
 
-Grok Build draws all TUI colors from a central theme. You can switch themes while Grok is running, follow your operating system's light or dark appearance, and adjust scrollback layout, animations, and block styling through configuration files.
+Kigi draws all TUI colors from a central theme. You can switch themes while Kigi is running, follow your operating system's light or dark appearance, and adjust scrollback layout, animations, and block styling through configuration files.
 
 ---
 
 ## Available Themes
 
-Grok includes five built-in themes, plus an `auto` option that follows your system appearance:
+Kigi includes five built-in themes, plus an `auto` option that follows your system appearance:
 
 | Theme | Config Names | Description | Truecolor Required |
 |-------|-------------|-------------|--------------------|
-| **GrokNight** | `groknight`, `grok-night`, `dark` | Neutral dark base with a magenta accent. Default theme. Survives quantization cleanly on 256-color and 16-color terminals. | No |
-| **GrokDay** | `grokday`, `grok-day`, `light`, `day` | Light theme for bright terminal backgrounds. | No |
+| **KigiNight** | `kiginight`, `kigi-night`, `dark` | Neutral dark base with a magenta accent. Default theme. Survives quantization cleanly on 256-color and 16-color terminals. | No |
+| **KigiDay** | `kigiday`, `kigi-day`, `light`, `day` | Light theme for bright terminal backgrounds. | No |
 | **TokyoNight** | `tokyonight`, `tokyo-night`, `tokyo` | Dark, blue-tinted backgrounds from the Tokyo Night palette. Loses its character when quantized. | Yes |
 | **RosePineMoon** | `rosepine`, `rose-pine`, `rosepine-moon`, `rose-pine-moon` | Muted dark palette with mauve accents, from the Rosé Pine family. | Yes |
 | **OscuraMidnight** | `oscura`, `oscura-midnight` | Deep dark base with purple accents. | Yes |
@@ -28,7 +28,7 @@ Theme names are case-insensitive. The `auto` option (alias `system`) is document
 
 ### In the TUI
 
-Run the `/theme` slash command (alias `/t`) to open the theme picker. As you move through the list with the arrow keys, Grok previews each theme in real time. Press Enter to apply and save your choice, or press Escape to revert.
+Run the `/theme` slash command (alias `/t`) to open the theme picker. As you move through the list with the arrow keys, Kigi previews each theme in real time. Press Enter to apply and save your choice, or press Escape to revert.
 
 To switch without the picker, pass a name directly:
 
@@ -51,20 +51,20 @@ theme = "tokyonight"
 
 ## Auto Theme (System Appearance)
 
-Set `theme = "auto"` to have Grok follow your operating system's light/dark appearance and switch themes automatically:
+Set `theme = "auto"` to have Kigi follow your operating system's light/dark appearance and switch themes automatically:
 
 ```toml
 [ui]
 theme = "auto"
 ```
 
-By default, dark mode maps to **GrokNight** and light mode maps to **GrokDay**. Override either mapping with `auto_dark_theme` and `auto_light_theme`:
+By default, dark mode maps to **KigiNight** and light mode maps to **KigiDay**. Override either mapping with `auto_dark_theme` and `auto_light_theme`:
 
 ```toml
 [ui]
 theme = "auto"
 auto_dark_theme = "tokyonight"
-auto_light_theme = "grokday"
+auto_light_theme = "kigiday"
 ```
 
 `theme = "system"` is an alias for `theme = "auto"`.
@@ -78,7 +78,7 @@ auto_light_theme = "grokday"
 | **Windows** | Reads the system personalization registry |
 | **SSH / headless** | Falls back to an OSC 11 terminal background query at startup |
 
-Once running, Grok polls for appearance changes every 5 seconds. Toggling your OS between light and dark mode takes effect within seconds without restarting.
+Once running, Kigi polls for appearance changes every 5 seconds. Toggling your OS between light and dark mode takes effect within seconds without restarting.
 
 ### Via the Settings Pane
 
@@ -88,7 +88,7 @@ Run `/settings` (alias `/config`) and open the **Appearance** category to set th
 
 ## Color Support Detection
 
-On startup, Grok detects your terminal's color capability level:
+On startup, Kigi detects your terminal's color capability level:
 
 | Level | Description | Detection |
 |-------|-------------|-----------|
@@ -96,19 +96,19 @@ On startup, Grok detects your terminal's color capability level:
 | **256-color** | Indexed palette. RGB values are mapped to the nearest palette entry. | Standard xterm-256color |
 | **16-color** | ANSI names only. Colors are mapped to the closest ANSI color. | Basic terminal support |
 
-When you set `NO_COLOR`, Grok emits no color and renders in monochrome.
+When you set `NO_COLOR`, Kigi emits no color and renders in monochrome.
 
 Run `/terminal-setup` to see the detected level (`color` row) and which themes the picker offers on this terminal (`themes` row). When truecolor is missing, the issues section explains how to enable it (or that Terminal.app cannot).
 
 ### Automatic Quantization
 
-Every theme is defined using full RGB values. At startup, Grok quantizes all colors to match the detected capability level. This means:
+Every theme is defined using full RGB values. At startup, Kigi quantizes all colors to match the detected capability level. This means:
 
 - On **truecolor** terminals, colors pass through unchanged.
 - On **256-color** terminals, each RGB value is mapped to the nearest indexed palette entry.
 - On **16-color** terminals, colors map to ANSI names.
 
-GrokNight and GrokDay use neutral grays that quantize cleanly. TokyoNight, RosePineMoon, and OscuraMidnight use distinctive tinted backgrounds that lose their character when quantized, which is why the theme picker hides them on non-truecolor terminals.
+KigiNight and KigiDay use neutral grays that quantize cleanly. TokyoNight, RosePineMoon, and OscuraMidnight use distinctive tinted backgrounds that lose their character when quantized, which is why the theme picker hides them on non-truecolor terminals.
 
 ### Runtime-Generated Colors
 
@@ -118,7 +118,7 @@ Colors generated at runtime (syntax highlighting, background blending) are also 
 
 ## Cursor Color
 
-Grok sets your terminal cursor to the current theme's `accent_user` color using the OSC 12 escape sequence, to indicate an active Grok session. The cursor color is:
+Kigi sets your terminal cursor to the current theme's `accent_user` color using the OSC 12 escape sequence, to indicate an active Kigi session. The cursor color is:
 
 - Applied on startup and on theme switch.
 - Reset to the terminal's default on exit via OSC 112.
@@ -143,13 +143,13 @@ Use compact mode on small screens to maximize content area.
 
 ## Syntax Highlighting
 
-Grok bundles three `.tmTheme` files for code-block syntax highlighting and selects one based on the active theme:
+Kigi bundles three `.tmTheme` files for code-block syntax highlighting and selects one based on the active theme:
 
-- `grok-night.tmTheme` -- GrokNight, RosePineMoon, and OscuraMidnight
-- `grok-day.tmTheme` -- GrokDay
+- `kigi-night.tmTheme` -- KigiNight, RosePineMoon, and OscuraMidnight
+- `kigi-day.tmTheme` -- KigiDay
 - `tokyo-night.tmTheme` -- TokyoNight
 
-Grok selects the matching file automatically when you switch themes. The `.tmTheme` files are built into the binary, so you cannot replace them with your own.
+Kigi selects the matching file automatically when you switch themes. The `.tmTheme` files are built into the binary, so you cannot replace them with your own.
 
 ---
 

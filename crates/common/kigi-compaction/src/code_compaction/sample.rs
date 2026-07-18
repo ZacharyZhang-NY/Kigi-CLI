@@ -1,8 +1,8 @@
 //! The shared bounded-retry summary-sampling loop.
 //!
-//! The canonical `sample → classify → retry` loop, used by **both** grok-build's
+//! The canonical `sample → classify → retry` loop, used by **both** kigi's
 //! full-replace pass ([`sample_full_replace_summary`](super::sample_full_replace_summary))
-//! and Grok chat's intra `Shared` summarizer
+//! and Kigi chat's intra `Shared` summarizer
 //! ([`apply_intra_compaction`](crate::intra_compaction::apply_intra_compaction)).
 //! Centralising it here removes the two near-identical copies that previously
 //! lived in `code_compaction::compact` and `intra_compaction::compact`.
@@ -18,7 +18,7 @@
 //!
 //! The loop is *content-neutral*: callers build the prompt, map the structured
 //! [`SampleRetryError`] onto their own error type, and decide whether to clean
-//! the winning summary (grok-build cleans in its assembler; intra cleans via
+//! the winning summary (kigi cleans in its assembler; intra cleans via
 //! [`format_compact_summary`](super::format_compact_summary)). Per-attempt
 //! telemetry flows through the [`FullReplaceObserver`] seam; callers without
 //! per-attempt metrics (intra) pass `&()`.
@@ -63,7 +63,7 @@ pub enum SampleRetryError {
         /// Whether re-sending the same input cannot help.
         deterministic: bool,
         /// Whether the failure was a context-length overflow (a deterministic
-        /// signal the grok-build host uses to step down its input size).
+        /// signal the kigi host uses to step down its input size).
         context_overflow: bool,
         /// Total attempts made.
         attempts: u32,

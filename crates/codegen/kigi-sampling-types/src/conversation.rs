@@ -532,13 +532,13 @@ pub struct ConversationRequest {
     /// Top-p sampling
     pub top_p: Option<f32>,
     /// Custom headers for xAI tracking
-    pub x_grok_conv_id: Option<String>,
-    pub x_grok_req_id: Option<String>,
-    pub x_grok_session_id: Option<String>,
-    pub x_grok_turn_idx: Option<String>,
-    pub x_grok_agent_id: Option<String>,
-    pub x_grok_deployment_id: Option<String>,
-    pub x_grok_user_id: Option<String>,
+    pub x_kigi_conv_id: Option<String>,
+    pub x_kigi_req_id: Option<String>,
+    pub x_kigi_session_id: Option<String>,
+    pub x_kigi_turn_idx: Option<String>,
+    pub x_kigi_agent_id: Option<String>,
+    pub x_kigi_deployment_id: Option<String>,
+    pub x_kigi_user_id: Option<String>,
     /// Optional opaque tracing context (e.g., where to persist the finalized request payload).
     /// Consumers downcast via `trace.as_ref().unwrap().as_any().downcast_ref::<T>()`.
     pub trace: Option<Box<dyn TraceContext>>,
@@ -717,7 +717,7 @@ pub struct ConversationResponse {
     /// (e.g. the TUI) see the turn as complete.
     pub message_chunks_emitted: u64,
     /// Server-reported doom-loop triggers for this response (Responses API
-    /// only, opt-in via the `x-grok-doom-loop-check` header). Empty when the
+    /// only, opt-in via the `x-kigi-doom-loop-check` header). Empty when the
     /// check is disabled or nothing was reported; deduplicated by raw label.
     /// See [`crate::doom_loop`].
     pub doom_loop_signals: Vec<crate::doom_loop::DoomLoopSignal>,
@@ -1166,8 +1166,8 @@ impl ConversationItem {
 // for `ConversationItem`
 // ---------------------------------------------------------------------------
 //
-// Part of the Grok Compaction unification. Lets the shared, transport-agnostic
-// engine in `crates/common/kigi-compaction` operate over grok-build's
+// Part of the Kigi Compaction unification. Lets the shared, transport-agnostic
+// engine in `crates/common/kigi-compaction` operate over kigi's
 // `ConversationItem` without depending on this crate — the orphan rule forces
 // the impls to live here, next to the type. Mirrors the harness's
 // `impl CompactionItem` for its own turn type.
@@ -1181,7 +1181,7 @@ impl ConversationItem {
 impl kigi_compaction::CompactionItem for ConversationItem {
     fn role(&self) -> kigi_compaction::CompactionRole {
         use kigi_compaction::CompactionRole;
-        // grok-build has no distinct `Developer` role; everything maps onto
+        // kigi has no distinct `Developer` role; everything maps onto
         // the four `Role` variants `ConversationItem::role()` already returns.
         match self.role() {
             Role::System => CompactionRole::System,
@@ -1203,21 +1203,21 @@ impl kigi_compaction::CompactionItem for ConversationItem {
     }
 
     fn is_compaction_summary(&self) -> bool {
-        // grok-build has no structural marker that uniquely identifies a prior
+        // kigi has no structural marker that uniquely identifies a prior
         // compaction summary: the carrier is a `user_meta` item whose
         // `SyntheticReason::CompactionMeta` is also used for re-injected file
         // contents. Returning `false` is safe for the full-replace path, which
         // does not consult this (it summarizes the whole conversation). Revisit
-        // (add a dedicated marker) before routing grok-build history through
+        // (add a dedicated marker) before routing kigi history through
         // the shared `history`/`inter` filter.
         false
     }
 
     fn attachment_refs(&self) -> Vec<kigi_compaction::CompactionFileRef> {
-        // grok-build `UserItem`s carry only `Text`/`Image { url }` content
+        // kigi `UserItem`s carry only `Text`/`Image { url }` content
         // parts — there is no id+name attachment-ref concept like the chat harness's
-        // `GrokTurn`. The full-replace path does not read this; revisit if
-        // image attachments need to survive into the `<grok_user_queries>`
+        // `KigiTurn`. The full-replace path does not read this; revisit if
+        // image attachments need to survive into the `<kigi_user_queries>`
         // preamble.
         Vec::new()
     }
@@ -2090,13 +2090,13 @@ impl From<ConversationRequest> for ChatCompletionRequest {
             search_parameters: None,
             response_format,
             reasoning_effort: req.reasoning_effort,
-            x_grok_conv_id: req.x_grok_conv_id,
-            x_grok_req_id: req.x_grok_req_id,
-            x_grok_session_id: req.x_grok_session_id,
-            x_grok_turn_idx: req.x_grok_turn_idx,
-            x_grok_agent_id: req.x_grok_agent_id,
-            x_grok_deployment_id: req.x_grok_deployment_id,
-            x_grok_user_id: req.x_grok_user_id,
+            x_kigi_conv_id: req.x_kigi_conv_id,
+            x_kigi_req_id: req.x_kigi_req_id,
+            x_kigi_session_id: req.x_kigi_session_id,
+            x_kigi_turn_idx: req.x_kigi_turn_idx,
+            x_kigi_agent_id: req.x_kigi_agent_id,
+            x_kigi_deployment_id: req.x_kigi_deployment_id,
+            x_kigi_user_id: req.x_kigi_user_id,
             trace: None,
         }
     }
@@ -2486,13 +2486,13 @@ impl ConversationRequest {
 
     /// Set conversation ID header
     pub fn with_conv_id(mut self, conv_id: impl Into<String>) -> Self {
-        self.x_grok_conv_id = Some(conv_id.into());
+        self.x_kigi_conv_id = Some(conv_id.into());
         self
     }
 
     /// Set request ID header
     pub fn with_req_id(mut self, req_id: impl Into<String>) -> Self {
-        self.x_grok_req_id = Some(req_id.into());
+        self.x_kigi_req_id = Some(req_id.into());
         self
     }
 
@@ -3240,7 +3240,7 @@ pub fn build_messages_request(req: &ConversationRequest) -> crate::messages::Mes
         .map(|s| s.to_string());
 
     // Faithful native mapping for callers that opt into Anthropic structured
-    // output without tools. The grok-shell agent does NOT use this path — a
+    // output without tools. The kigi-shell agent does NOT use this path — a
     // wire schema here suppresses tool calls, so it routes Messages-backend
     // structured output through the StructuredOutput tool instead (see
     // `ApiBackend::supports_native_schema`).
@@ -3412,7 +3412,7 @@ mod compaction_item_bridge_tests {
 
     #[test]
     fn metadata_accessors_are_conservative() {
-        // grok-build has no structural compaction-summary marker, and no
+        // kigi has no structural compaction-summary marker, and no
         // id+name attachment refs, so both return empty/false.
         assert!(!CompactionItem::is_compaction_summary(
             &ConversationItem::user("u")
@@ -3532,7 +3532,7 @@ mod tests {
         // single-item conversion produces None for reasoning_content. The
         // `conversation_to_chat_messages` helper is what carries reasoning
         // through; tested separately).
-        let assistant = ConversationItem::assistant_with_model("Hi there!", "grok-3");
+        let assistant = ConversationItem::assistant_with_model("Hi there!", "kigi-3");
         let chat_msg = conversation_item_to_chat_message(assistant);
         assert_eq!(chat_msg.reasoning_content, None);
         let back: ConversationItem = chat_msg.into();
@@ -3550,11 +3550,11 @@ mod tests {
             ConversationItem::system("System prompt"),
             ConversationItem::user("User message"),
         ])
-        .with_model("grok-3")
+        .with_model("kigi-3")
         .with_temperature(0.7);
 
         let chat_req: ChatCompletionRequest = req.into();
-        assert_eq!(chat_req.model, Some("grok-3".to_string()));
+        assert_eq!(chat_req.model, Some("kigi-3".to_string()));
         assert_eq!(chat_req.temperature, Some(0.7));
         assert_eq!(chat_req.messages.len(), 2);
     }
@@ -3565,11 +3565,11 @@ mod tests {
             ConversationItem::system("System prompt"),
             ConversationItem::user("User message"),
         ])
-        .with_model("grok-3")
+        .with_model("kigi-3")
         .with_temperature(0.7);
 
         let responses_req: rs::CreateResponse = (&req).into();
-        assert_eq!(responses_req.model, Some("grok-3".to_string()));
+        assert_eq!(responses_req.model, Some("kigi-3".to_string()));
         assert_eq!(responses_req.temperature, Some(0.7));
 
         let rs::InputParam::Items(items) = responses_req.input else {
@@ -3826,7 +3826,7 @@ mod tests {
             instructions: None,
             max_output_tokens: None,
             metadata: None,
-            model: "grok-3".to_string(),
+            model: "kigi-3".to_string(),
             object: "response".to_string(),
             output: vec![rs::OutputItem::Message(rs::OutputMessage {
                 content: vec![rs::OutputMessageContent::OutputText(
@@ -3868,7 +3868,7 @@ mod tests {
         let ConversationItem::Assistant(a) = &item else {
             panic!("Expected Assistant item");
         };
-        assert_eq!(a.model_id, Some("grok-3".to_string()));
+        assert_eq!(a.model_id, Some("kigi-3".to_string()));
         assert_eq!(
             a.reasoning_effort, None,
             "no reasoning config on the response => no effort recorded"
@@ -3887,7 +3887,7 @@ mod tests {
             instructions: None,
             max_output_tokens: None,
             metadata: None,
-            model: "grok-3".to_string(),
+            model: "kigi-3".to_string(),
             object: "response".to_string(),
             output: vec![rs::OutputItem::FunctionCall(rs::FunctionToolCall {
                 arguments: r#"{"path": "/bar.txt"}"#.to_string(),
@@ -3947,7 +3947,7 @@ mod tests {
             instructions: None,
             max_output_tokens: None,
             metadata: None,
-            model: "grok-3".to_string(),
+            model: "kigi-3".to_string(),
             object: "response".to_string(),
             output: vec![],
             parallel_tool_calls: None,
@@ -4076,7 +4076,7 @@ mod tests {
                 name: "read_file".to_string(),
                 arguments: r#"{"path": "/test.txt"}"#.into(),
             }],
-            model_id: Some("grok-3".to_string()),
+            model_id: Some("kigi-3".to_string()),
             model_fingerprint: None,
             reasoning_effort: None,
         };
@@ -4086,7 +4086,7 @@ mod tests {
 
         assert_eq!(chat_msg.text_content(), "Let me help you with that.");
         assert_eq!(chat_msg.tool_calls.len(), 1);
-        assert_eq!(chat_msg.model_id, Some("grok-3".to_string()));
+        assert_eq!(chat_msg.model_id, Some("kigi-3".to_string()));
     }
 
     // ============================================================================
@@ -4275,7 +4275,7 @@ mod tests {
             instructions: None,
             max_output_tokens: None,
             metadata: None,
-            model: "grok-3".to_string(),
+            model: "kigi-3".to_string(),
             object: "response".to_string(),
             output: vec![
                 rs::OutputItem::Reasoning(rs::ReasoningItem {
@@ -4348,7 +4348,7 @@ mod tests {
             instructions: None,
             max_output_tokens: None,
             metadata: None,
-            model: "grok-3".to_string(),
+            model: "kigi-3".to_string(),
             object: "response".to_string(),
             output: vec![
                 rs::OutputItem::Reasoning(rs::ReasoningItem {
@@ -4438,7 +4438,7 @@ mod tests {
             instructions: None,
             max_output_tokens: None,
             metadata: None,
-            model: "grok-3".to_string(),
+            model: "kigi-3".to_string(),
             object: "response".to_string(),
             output: vec![
                 rs::OutputItem::Reasoning(rs::ReasoningItem {
@@ -4531,7 +4531,7 @@ mod tests {
         let assistant_item = ConversationItem::Assistant(AssistantItem {
             content: "The answer is 42.".into(),
             tool_calls: vec![],
-            model_id: Some("grok-3".to_string()),
+            model_id: Some("kigi-3".to_string()),
             model_fingerprint: None,
             reasoning_effort: None,
         });
@@ -4563,7 +4563,7 @@ mod tests {
             ConversationItem::Assistant(AssistantItem {
                 content: "The answer is 4.".into(),
                 tool_calls: vec![],
-                model_id: Some("grok-3".to_string()),
+                model_id: Some("kigi-3".to_string()),
                 model_fingerprint: None,
                 reasoning_effort: None,
             }),
@@ -6290,7 +6290,7 @@ mod tests {
             ConversationItem::Assistant(AssistantItem {
                 content: format!("I edited {worktree}/src/main.rs").into(),
                 tool_calls: vec![],
-                model_id: Some("grok-3".to_string()),
+                model_id: Some("kigi-3".to_string()),
                 model_fingerprint: None,
                 reasoning_effort: None,
             }),
@@ -6833,18 +6833,18 @@ mod tests {
     #[test]
     fn test_conversation_request_builder() {
         let req = ConversationRequest::new()
-            .with_model("grok-3")
+            .with_model("kigi-3")
             .with_temperature(0.5)
             .with_max_output_tokens(1000)
             .with_conv_id("conv-123")
             .with_req_id("req-456")
             .with_tool_choice(ConversationToolChoice::Auto);
 
-        assert_eq!(req.model, Some("grok-3".to_string()));
+        assert_eq!(req.model, Some("kigi-3".to_string()));
         assert_eq!(req.temperature, Some(0.5));
         assert_eq!(req.max_output_tokens, Some(1000));
-        assert_eq!(req.x_grok_conv_id, Some("conv-123".to_string()));
-        assert_eq!(req.x_grok_req_id, Some("req-456".to_string()));
+        assert_eq!(req.x_kigi_conv_id, Some("conv-123".to_string()));
+        assert_eq!(req.x_kigi_req_id, Some("req-456".to_string()));
         assert_matches!(req.tool_choice, Some(ConversationToolChoice::Auto));
     }
 
@@ -6868,22 +6868,22 @@ mod tests {
             model_fingerprint: None,
             reasoning_effort: None,
         }
-        .with_model_id("grok-3");
+        .with_model_id("kigi-3");
 
-        assert_eq!(item.model_id, Some("grok-3".to_string()));
+        assert_eq!(item.model_id, Some("kigi-3".to_string()));
     }
 
     #[test]
     fn test_conversation_item_with_model_id() {
-        let item = ConversationItem::assistant("Hello").with_model_id("grok-3");
+        let item = ConversationItem::assistant("Hello").with_model_id("kigi-3");
 
         let ConversationItem::Assistant(a) = item else {
             panic!("Expected Assistant");
         };
-        assert_eq!(a.model_id, Some("grok-3".to_string()));
+        assert_eq!(a.model_id, Some("kigi-3".to_string()));
 
         // Non-assistant should be unchanged
-        let user = ConversationItem::user("Hi").with_model_id("grok-3");
+        let user = ConversationItem::user("Hi").with_model_id("kigi-3");
         assert_matches!(user, ConversationItem::User(_));
     }
 
@@ -8072,7 +8072,7 @@ mod tests {
             instructions: None,
             max_output_tokens: None,
             metadata: Some(metadata),
-            model: "grok-4.5".into(),
+            model: "kigi-4.5".into(),
             object: "response".into(),
             output: vec![rs::OutputItem::Message(rs::OutputMessage {
                 content: vec![rs::OutputMessageContent::OutputText(
@@ -8112,7 +8112,7 @@ mod tests {
             .expect("response produces at least a trailing Assistant");
         assert_matches!(item, ConversationItem::Assistant(ref a) => {
             assert_eq!(a.model_fingerprint.as_deref(), Some("fp_abc123"));
-            assert_eq!(a.model_id.as_deref(), Some("grok-4.5"));
+            assert_eq!(a.model_id.as_deref(), Some("kigi-4.5"));
             assert_eq!(a.content.as_ref(), "hello");
         });
     }
@@ -8283,7 +8283,7 @@ mod tests {
             instructions: None,
             max_output_tokens: None,
             metadata: None,
-            model: "grok-build".to_string(),
+            model: "kigi".to_string(),
             object: "response".to_string(),
             output: vec![
                 make_reasoning("a", "thinking pre-search", None),
@@ -8593,14 +8593,14 @@ mod tests {
     //
     //   1. v1 assistant with `raw_output: Vec<OutputItem>` (backend-search era)
     //   2. v1 assistant with singular `reasoning: ReasoningContent`
-    //      (earlier grok-build / chat-completions written as v1)
+    //      (earlier kigi / chat-completions written as v1)
     //   3. v0 `ChatRequestMessage` with top-level `reasoning_content`
     //
     // Idempotent (current-format rows produce zero siblings) — verified by
     // `upgrade_is_idempotent_on_post_pr_rows`.
 
     #[test]
-    fn upgrade_legacy_reasoning_singular_grok_build_shape() {
+    fn upgrade_legacy_reasoning_singular_kigi_shape() {
         // Synthetic fixture (truncated text + encrypted stub)
         // (truncated text + encrypted for readability). The assistant row
         // carries `reasoning: { text, encrypted, id }` inline — the
@@ -8613,7 +8613,7 @@ mod tests {
                 "encrypted": "bIfXFNBiP8EI8F7pkKC1tgbYjvVuIctMAlCUGMii",
                 "id": "rs_00000000-0000-4000-8000-000000000001"
             },
-            "model_id": "grok-build",
+            "model_id": "kigi",
             "model_fingerprint": "fp_test000000000001"
         });
         let mut seen = std::collections::HashSet::new();
@@ -8801,7 +8801,7 @@ mod tests {
         let raw = serde_json::json!({
             "type": "assistant",
             "content": "answer",
-            "model_id": "grok-build"
+            "model_id": "kigi"
         });
         let mut seen = std::collections::HashSet::new();
         assert!(upgrade_legacy_reasoning(&raw, &mut seen).is_empty());

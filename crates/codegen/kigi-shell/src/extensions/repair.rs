@@ -1,4 +1,4 @@
-//! `x.ai/session/repair` — out-of-band recovery for sessions bricked by
+//! `kigi/session/repair` — out-of-band recovery for sessions bricked by
 //! corrupted tool-pairing history.
 //!
 //! A `ToolResult` whose owning assistant `tool_call` is missing (e.g. a
@@ -32,7 +32,7 @@ struct RepairSessionRequest {
     dry_run: bool,
 }
 
-/// Response payload for `x.ai/session/repair`.
+/// Response payload for `kigi/session/repair`.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepairSessionResponse {
@@ -67,7 +67,7 @@ impl RepairSessionResponse {
 #[tracing::instrument(skip_all, fields(method = %args.method))]
 pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/session/repair" => handle_session_repair(agent, args).await,
+        "kigi/session/repair" => handle_session_repair(agent, args).await,
         _ => Err(acp::Error::method_not_found()),
     }
 }
@@ -105,18 +105,18 @@ async fn handle_session_repair(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtR
 
 /// Repair a non-resident session's history on disk: load via the resume
 /// path's corruption-tolerant reader (legacy upgrades apply), repair, write
-/// back atomically. `grok_root` is injectable for tests.
-async fn repair_on_disk(grok_root: &std::path::Path, session_id: &str, dry_run: bool) -> ExtResult {
+/// back atomically. `kigi_root` is injectable for tests.
+async fn repair_on_disk(kigi_root: &std::path::Path, session_id: &str, dry_run: bool) -> ExtResult {
     let summary = crate::session::persistence::find_summary_by_session_id_in_root(
         session_id,
-        &grok_root.join("sessions"),
+        &kigi_root.join("sessions"),
     )
     .ok_or_else(|| {
         acp::Error::resource_not_found(Some(format!("session not found: {session_id}")))
     })?;
     let info = summary.info.clone();
 
-    let storage = JsonlStorageAdapter::with_root(grok_root.to_path_buf());
+    let storage = JsonlStorageAdapter::with_root(kigi_root.to_path_buf());
     let mut chat_history = storage
         .load_session_without_updates(&info)
         .await

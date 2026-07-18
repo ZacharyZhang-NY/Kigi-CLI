@@ -1,10 +1,10 @@
 # Monitoring Usage (External OpenTelemetry)
 
-> **Status: alpha.** The schema below is versioned (`grok_code.schema.version = v1`);
+> **Status: alpha.** The schema below is versioned (`kigi_code.schema.version = v1`);
 > additive changes may occur without notice, renames/removals will bump the
 > version and be called out in the changelog.
 
-Grok CLI can export usage **metrics** and **events** to your organization's
+Kigi CLI can export usage **metrics** and **events** to your organization's
 own OpenTelemetry collector, so platform teams can monitor adoption, token
 consumption, tool-permission decisions, and errors across the fleet — without
 any data flowing through SpaceXAI.
@@ -32,7 +32,7 @@ export OTEL_LOGS_EXPORTER=otlp
 export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf  # or grpc
 export OTEL_EXPORTER_OTLP_ENDPOINT=https://collector.corp.example:4318
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <collector-token>"
-grok
+kigi
 ```
 
 `KIGI_EXTERNAL_OTEL=1` alone enables **nothing** — you must also select at
@@ -56,7 +56,7 @@ without the master switch.
 | `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` | `delta` | `delta` \| `cumulative`. |
 | `OTEL_METRICS_INCLUDE_SESSION_ID` | `1` | Attach `session.id` to metrics (cardinality opt-out). |
 | `OTEL_METRICS_INCLUDE_VERSION` | `0` | Attach `app.version` to metrics. |
-| `OTEL_LOG_USER_PROMPTS` | `0` | Content gate: prompt text on `grok_code.user_prompt` (60 KB cap, secret-scrubbed). |
+| `OTEL_LOG_USER_PROMPTS` | `0` | Content gate: prompt text on `kigi_code.user_prompt` (60 KB cap, secret-scrubbed). |
 | `OTEL_LOG_TOOL_DETAILS` | `0` | Content gate: tool parameters (4 KB cap), full file paths, verbatim MCP/skill/plugin names. Bash command text is **never** exported in v1, even with this gate. |
 
 `OTEL_RESOURCE_ATTRIBUTES` is deliberately ignored: the resource is built
@@ -95,7 +95,7 @@ There is deliberately no `headers` key: supply collector auth via
 `OTEL_EXPORTER_OTLP_HEADERS` so tokens are never stored on disk.
 
 Managed deployments can additionally enable org-wide telemetry by distributing
-the `[telemetry]` `otel_*` keys through `grok setup` managed config /
+the `[telemetry]` `otel_*` keys through `kigi setup` managed config /
 requirements pins, or force-disable it fleet-wide with the same local config
 layers (`external_otel_disabled`, content-gate locks).
 
@@ -103,29 +103,29 @@ layers (`external_otel_disabled`, content-gate locks).
 
 | Attribute | Value |
 |---|---|
-| `service.name` | `grok-cli` |
+| `service.name` | `kigi-cli` |
 | `service.version`, `client.version` | build/client versions |
 | `app.entrypoint` | `cli` \| `headless` \| `agent` |
 | `terminal.type` | terminal emulator brand |
-| `grok_code.schema.version` | `v1` |
+| `kigi_code.schema.version` | `v1` |
 
 Identity attributes (`user.id`, and `organization.id` / `team.id` /
 `deployment.id` when known) are attached per metric data point and per event
 once authentication completes. `prompt.id` (per-prompt UUID) appears on
 events only, never metrics.
 
-## Metrics (meter scope `ai.xai.grok_code`)
+## Metrics (meter scope `ai.xai.kigi_code`)
 
 | Metric | Unit | Attributes |
 |---|---|---|
-| `grok_code.session.count` | `{session}` | base attrs only |
-| `grok_code.token.usage` | `{token}` | `type` = `input` \| `output` \| `reasoning` \| `cache_read`; `model` |
-| `grok_code.turn.count` | `{turn}` | `outcome` = `completed` \| `cancelled` \| `error`; `model` |
-| `grok_code.tool.decision` | `{decision}` | `tool_name`, `decision` = `allow` \| `deny` \| `cancelled` \| `followup`, `access_kind`, `permission_mode` |
-| `grok_code.tool.usage` | `{call}` | `tool_name`, `outcome` |
-| `grok_code.error.count` | `{error}` | `error_category`, `model` |
+| `kigi_code.session.count` | `{session}` | base attrs only |
+| `kigi_code.token.usage` | `{token}` | `type` = `input` \| `output` \| `reasoning` \| `cache_read`; `model` |
+| `kigi_code.turn.count` | `{turn}` | `outcome` = `completed` \| `cancelled` \| `error`; `model` |
+| `kigi_code.tool.decision` | `{decision}` | `tool_name`, `decision` = `allow` \| `deny` \| `cancelled` \| `followup`, `access_kind`, `permission_mode` |
+| `kigi_code.tool.usage` | `{call}` | `tool_name`, `outcome` |
+| `kigi_code.error.count` | `{error}` | `error_category`, `model` |
 
-There is no `cost.usage` metric: join `grok_code.token.usage` with your own
+There is no `cost.usage` metric: join `kigi_code.token.usage` with your own
 price sheet. `lines_of_code.count` and `active_time.total` are planned for a
 later phase.
 
@@ -143,23 +143,23 @@ active.
 
 | `event.name` | Attributes |
 |---|---|
-| `grok_code.session_start` | `model`, `permission_mode`, `mcp_server_count`, `plugin_count`, `skill_count`, `hook_count`, `memory_enabled`, `is_git_repo`, `client_identifier` |
-| `grok_code.session_end` | `duration_secs`, `turn_count`, `tool_call_count`, `compaction_count`, `model` |
-| `grok_code.user_prompt` | `prompt_length`, `model`, `screen_mode?` (`fullscreen` \| `inline` \| `minimal` \| `headless` \| `other`); `prompt` (**prompts**) |
-| `grok_code.turn_completed` | `outcome`, `duration_ms`, `tool_call_count`, `model`, `error_category?`, `cancellation_category?` |
-| `grok_code.api_request` | `model`, `duration_ms`, `stop_reason?`, `input_tokens`, `output_tokens`, `reasoning_tokens`, `cache_read_tokens` |
-| `grok_code.api_error` | `error_category`, `model`, `status_code?`, `duration_ms?` |
-| `grok_code.tool_result` | `tool_name`, `outcome`, `success`, `duration_ms`, `file_extension`; `tool_parameters`, `file_path` (**details**) |
-| `grok_code.tool_decision` | `tool_name`, `decision`, `access_kind`, `permission_mode`, `source` |
-| `grok_code.mcp_server_connection` | `status`, `transport_type`, `duration_ms`, `tool_count?`, `error_type?`; `mcp_server.name` (**details**; collapsed to `mcp_server` otherwise) |
-| `grok_code.permission_mode_changed` | `to_mode`, `trigger` |
-| `grok_code.skill_activated` | `skill_source`; `skill.name` (**details**) |
-| `grok_code.plugin_loaded` | `install_kind?`, `success`, `error_category?`; `plugin_name` (**details**) |
-| `grok_code.compaction` | `duration_ms`, `tokens_before`, `tokens_after`, `model?` |
-| `grok_code.subagent` | `phase` = `launched` \| `completed`, `subagent_type?`, `outcome?`, `duration_ms?` |
-| `grok_code.auth` | `auth_method` |
-| `grok_code.internal_error` | `error_type` (class only — no message, no location) |
-| `grok_code.model_switched` | `from_model`, `to_model`, `success`, `error_code?` |
+| `kigi_code.session_start` | `model`, `permission_mode`, `mcp_server_count`, `plugin_count`, `skill_count`, `hook_count`, `memory_enabled`, `is_git_repo`, `client_identifier` |
+| `kigi_code.session_end` | `duration_secs`, `turn_count`, `tool_call_count`, `compaction_count`, `model` |
+| `kigi_code.user_prompt` | `prompt_length`, `model`, `screen_mode?` (`fullscreen` \| `inline` \| `minimal` \| `headless` \| `other`); `prompt` (**prompts**) |
+| `kigi_code.turn_completed` | `outcome`, `duration_ms`, `tool_call_count`, `model`, `error_category?`, `cancellation_category?` |
+| `kigi_code.api_request` | `model`, `duration_ms`, `stop_reason?`, `input_tokens`, `output_tokens`, `reasoning_tokens`, `cache_read_tokens` |
+| `kigi_code.api_error` | `error_category`, `model`, `status_code?`, `duration_ms?` |
+| `kigi_code.tool_result` | `tool_name`, `outcome`, `success`, `duration_ms`, `file_extension`; `tool_parameters`, `file_path` (**details**) |
+| `kigi_code.tool_decision` | `tool_name`, `decision`, `access_kind`, `permission_mode`, `source` |
+| `kigi_code.mcp_server_connection` | `status`, `transport_type`, `duration_ms`, `tool_count?`, `error_type?`; `mcp_server.name` (**details**; collapsed to `mcp_server` otherwise) |
+| `kigi_code.permission_mode_changed` | `to_mode`, `trigger` |
+| `kigi_code.skill_activated` | `skill_source`; `skill.name` (**details**) |
+| `kigi_code.plugin_loaded` | `install_kind?`, `success`, `error_category?`; `plugin_name` (**details**) |
+| `kigi_code.compaction` | `duration_ms`, `tokens_before`, `tokens_after`, `model?` |
+| `kigi_code.subagent` | `phase` = `launched` \| `completed`, `subagent_type?`, `outcome?`, `duration_ms?` |
+| `kigi_code.auth` | `auth_method` |
+| `kigi_code.internal_error` | `error_type` (class only — no message, no location) |
+| `kigi_code.model_switched` | `from_model`, `to_model`, `success`, `error_code?` |
 
 ## Privacy model
 
@@ -213,14 +213,14 @@ Example queries (PromQL, with the Prometheus exporter above):
 
 ```promql
 # Tokens by model and type across the org, 1h rate
-sum by (model, type) (rate(grok_code_token_usage_total[1h]))
+sum by (model, type) (rate(kigi_code_token_usage_total[1h]))
 
 # Sessions per team per day
-sum by (team_id) (increase(grok_code_session_count_total[1d]))
+sum by (team_id) (increase(kigi_code_session_count_total[1d]))
 
 # Tool-permission denial ratio
-sum(rate(grok_code_tool_decision_total{decision="deny"}[1h]))
-  / sum(rate(grok_code_tool_decision_total[1h]))
+sum(rate(kigi_code_tool_decision_total{decision="deny"}[1h]))
+  / sum(rate(kigi_code_tool_decision_total[1h]))
 ```
 
 ## Debugging

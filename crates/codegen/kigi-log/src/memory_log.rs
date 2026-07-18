@@ -13,7 +13,7 @@
 //!
 //! ```bash
 //! # build with memory logging enabled, then:
-//! KIGI_MEMORY_LOG=0 grok                # disable even when enabled
+//! KIGI_MEMORY_LOG=0 kigi                # disable even when enabled
 //! tail -f ~/.kigi/logs/memory.log      # watch in another terminal
 //! ```
 

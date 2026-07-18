@@ -127,7 +127,7 @@
         }))
         .unwrap();
         let msg = AcpClientMessage::ExtMethod(kigi_acp_lib::AcpArgs {
-            request: acp::ExtRequest::new("x.ai/ask_user_question", raw.into()),
+            request: acp::ExtRequest::new("kigi/ask_user_question", raw.into()),
             response_tx: tx,
         });
 
@@ -168,7 +168,7 @@
         }))
         .unwrap();
         let msg = AcpClientMessage::ExtMethod(kigi_acp_lib::AcpArgs {
-            request: acp::ExtRequest::new("x.ai/ask_user_question", raw.into()),
+            request: acp::ExtRequest::new("kigi/ask_user_question", raw.into()),
             response_tx: tx,
         });
 
@@ -270,7 +270,7 @@
         let raw = serde_json::value::to_raw_value(&ext_req).unwrap();
         handle(
             AcpClientMessage::ExtMethod(kigi_acp_lib::AcpArgs {
-                request: acp::ExtRequest::new("x.ai/exit_plan_mode", raw.into()),
+                request: acp::ExtRequest::new("kigi/exit_plan_mode", raw.into()),
                 response_tx: tx,
             }),
             &mut app,
@@ -317,7 +317,7 @@
         let raw = serde_json::value::to_raw_value(&ext_req).unwrap();
         handle(
             AcpClientMessage::ExtMethod(kigi_acp_lib::AcpArgs {
-                request: acp::ExtRequest::new("x.ai/exit_plan_mode", raw.into()),
+                request: acp::ExtRequest::new("kigi/exit_plan_mode", raw.into()),
                 response_tx: tx,
             }),
             &mut app,
@@ -355,7 +355,7 @@
         let raw = serde_json::value::to_raw_value(&ext_req).unwrap();
         handle(
             AcpClientMessage::ExtMethod(kigi_acp_lib::AcpArgs {
-                request: acp::ExtRequest::new("x.ai/exit_plan_mode", raw.into()),
+                request: acp::ExtRequest::new("kigi/exit_plan_mode", raw.into()),
                 response_tx: tx,
             }),
             &mut app,

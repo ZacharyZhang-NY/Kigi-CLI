@@ -650,7 +650,7 @@ mod tests {
     fn load_from_settings_file_no_hooks_key() {
         let dir = tempfile::tempdir().unwrap();
         let settings = dir.path().join("settings.json");
-        std::fs::write(&settings, r#"{"theme": "dark", "model": "grok-3"}"#).unwrap();
+        std::fs::write(&settings, r#"{"theme": "dark", "model": "kigi-3"}"#).unwrap();
 
         let (registry, errors) =
             load_hooks_from_sources(&[HookSource::SettingsFile(&settings)], &[]);

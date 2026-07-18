@@ -6,12 +6,12 @@
 //! BEFORE the permission layer can auto-approve.
 use super::support::*;
 use super::*;
-/// Build an actor whose toolset parses grok `search_replace` plus the plan
+/// Build an actor whose toolset parses kigi `search_replace` plus the plan
 /// tools (so `${{ tools.by_kind.exit_plan }}` resolves in the rejection
 /// message), with a gateway drain answering session notifications.
 async fn build_gate_actor() -> SessionActor {
-    use kigi_tools::implementations::grok_build::enter_plan_mode::EnterPlanModeTool;
-    use kigi_tools::implementations::grok_build::exit_plan_mode::ExitPlanModeTool;
+    use kigi_tools::implementations::kigi::enter_plan_mode::EnterPlanModeTool;
+    use kigi_tools::implementations::kigi::exit_plan_mode::ExitPlanModeTool;
     use kigi_tools::registry::types::ToolConfig;
     let (gateway_tx, mut gateway_rx) =
         tokio::sync::mpsc::unbounded_channel::<kigi_acp_lib::AcpClientMessage>();
@@ -19,8 +19,8 @@ async fn build_gate_actor() -> SessionActor {
         tokio::sync::mpsc::unbounded_channel::<PersistenceMsg>();
     let actor = create_test_actor(0, 256_000, 85, gateway_tx, persistence_tx).await;
     *actor.agent.borrow_mut() = test_agent_with_tools(vec![
-        ToolConfig::from_id("GrokBuild:read_file"),
-        ToolConfig::from_id("GrokBuild:search_replace"),
+        ToolConfig::from_id("Kigi:read_file"),
+        ToolConfig::from_id("Kigi:search_replace"),
         ToolConfig::for_tool::<EnterPlanModeTool>(),
         ToolConfig::for_tool::<ExitPlanModeTool>(),
     ])
@@ -77,10 +77,10 @@ async fn tool_result_text(actor: &SessionActor, call_id: &str) -> String {
         .unwrap_or_else(|| panic!("no tool_result for {call_id} in {conv:?}"))
 }
 /// The headline: plan mode Active + allow-all permissions (the always-approve
-/// worst case) still rejects a grok edit outside the plan file, without ever
+/// worst case) still rejects a kigi edit outside the plan file, without ever
 /// reaching the permission layer, and steers the model to `exit_plan_mode`.
 #[tokio::test(flavor = "current_thread")]
-async fn plan_mode_rejects_grok_edit_outside_plan_file_despite_allow_all_permissions() {
+async fn plan_mode_rejects_kigi_edit_outside_plan_file_despite_allow_all_permissions() {
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async {

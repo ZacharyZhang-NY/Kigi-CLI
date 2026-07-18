@@ -1112,7 +1112,7 @@ fn tab_decision_rangeless_rows_never_get_token_semantics() {
     let mut sc = decision_controller("ls | gr");
     sc.dropdown.items = vec![
         rangeless,
-        span_item("grokfile", 5..7, SuggestionSource::FilePath),
+        span_item("kigifile", 5..7, SuggestionSource::FilePath),
     ];
     assert_eq!(sc.tab_decision("ls | gr", "ls | gr".len()), TabAction::Open);
 

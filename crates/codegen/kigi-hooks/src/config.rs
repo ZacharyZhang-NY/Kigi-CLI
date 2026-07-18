@@ -15,7 +15,7 @@ use crate::matcher::HookMatcher;
 #[derive(Debug)]
 pub struct HooksMap {
     pub events: HashMap<HookEventName, Vec<MatcherGroup>>,
-    /// Event names present in the JSON but not recognized by Grok.
+    /// Event names present in the JSON but not recognized by Kigi.
     pub skipped_events: Vec<String>,
 }
 

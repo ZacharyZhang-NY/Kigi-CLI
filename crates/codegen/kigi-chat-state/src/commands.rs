@@ -111,7 +111,7 @@ pub enum ChatStateCommand {
         is_compaction: bool,
     },
 
-    /// Out-of-band history repair (`x.ai/session/repair`): run
+    /// Out-of-band history repair (`kigi/session/repair`): run
     /// [`crate::compaction_utils::repair_history`] and persist when changed;
     /// `dry_run` only reports.
     ///

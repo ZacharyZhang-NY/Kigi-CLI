@@ -1,4 +1,4 @@
-//! Integration test for `_x.ai/session/update` notifications.
+//! Integration test for `_kigi/session/update` notifications.
 //!
 //! This test verifies that:
 //! 1. xAI session notifications (e.g., diff_review) can be sent via ext_notification
@@ -123,7 +123,7 @@ async fn test_xai_session_notification_storage_roundtrip() {
 
 /// Test that a `TurnCompleted` terminal round-trips through storage — the
 /// persistence half of the "stuck on Waiting…" fix, where the durable terminal
-/// must survive `updates.jsonl` and reload as a replayable `_x.ai/session/update`.
+/// must survive `updates.jsonl` and reload as a replayable `_kigi/session/update`.
 #[tokio::test]
 async fn test_turn_completed_round_trips_through_storage() {
     let temp_dir = TempDir::new().unwrap();

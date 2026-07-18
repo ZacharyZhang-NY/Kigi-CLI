@@ -466,7 +466,7 @@ mod tests {
     #[test]
     fn preamble_uses_primary_text_color_for_description() {
         // Pin theme to avoid races with parallel tests that call `cache::set`.
-        crate::theme::cache::set(crate::theme::ThemeKind::GrokNight);
+        crate::theme::cache::set(crate::theme::ThemeKind::KigiNight);
         let block =
             BgTaskBlock::started("ls", "t1").with_description(Some("List the files".into()));
         let text = block.preamble(&test_ctx()).expect("preamble");

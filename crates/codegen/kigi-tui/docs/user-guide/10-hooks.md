@@ -1,12 +1,12 @@
 # Hooks
 
-Hooks let you run a script or send an HTTP request at key moments in a Grok session. Use them to automate tasks, enforce safety checks, log activity, send notifications, and integrate your own tools.
+Hooks let you run a script or send an HTTP request at key moments in a Kigi session. Use them to automate tasks, enforce safety checks, log activity, send notifications, and integrate your own tools.
 
 ---
 
 ## What Are Hooks?
 
-A hook is a shell command or HTTP endpoint that Grok calls when a specific lifecycle event occurs. Hooks can:
+A hook is a shell command or HTTP endpoint that Kigi calls when a specific lifecycle event occurs. Hooks can:
 
 - **Block actions** -- A `PreToolUse` hook can deny a dangerous command before it runs.
 - **React to events** -- A `PostToolUse` hook can log every tool execution to a file.
@@ -41,7 +41,7 @@ A hook is a shell command or HTTP endpoint that Grok calls when a specific lifec
        "SessionStart": [
          {
            "hooks": [
-             { "type": "command", "command": "echo 'Grok session started in '$(pwd)" }
+             { "type": "command", "command": "echo 'Kigi session started in '$(pwd)" }
            ]
          }
        ]
@@ -49,7 +49,7 @@ A hook is a shell command or HTTP endpoint that Grok calls when a specific lifec
    }
    ```
 
-3. Start (or restart) a Grok session. The hook runs automatically on `SessionStart`.
+3. Start (or restart) a Kigi session. The hook runs automatically on `SessionStart`.
 
 4. Press `Ctrl+L` on non–VS Code family terminals (or run `/hooks` anywhere — preferred on VS Code family) and check the Hooks tab to confirm it loaded.
 
@@ -100,7 +100,7 @@ Because hooks are unified under folder-trust, a `--trust` / `/hooks-trust` grant
 
 ### Cursor Hook Compatibility
 
-Grok accepts Cursor's camelCase hook event names, so `~/.cursor/hooks.json` loads unchanged:
+Kigi accepts Cursor's camelCase hook event names, so `~/.cursor/hooks.json` loads unchanged:
 
 | Cursor event | Maps to |
 |---|---|
@@ -145,7 +145,7 @@ Each `.json` file can define hooks for multiple events:
 
 ### Key Fields
 
-- **Event name** (top-level key): any event listed in [Hook Events](#hook-events). Grok skips unrecognized event names so a shared Claude or Cursor settings file still loads.
+- **Event name** (top-level key): any event listed in [Hook Events](#hook-events). Kigi skips unrecognized event names so a shared Claude or Cursor settings file still loads.
 - **matcher** (optional): A regular expression that selects which invocations trigger the hook. It applies to the tool events — `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, and `PermissionDenied` — where it tests the tool name, and to `Notification`, where it tests the notification type. The lifecycle events (`SessionStart`, `SessionEnd`, `Stop`, `UserPromptSubmit`) reject a matcher; other events ignore it. An empty or omitted matcher matches everything. The matcher tests the real tool name; MCP calls routed through the internal `use_tool` dispatcher appear as the qualified `server__tool` name (e.g. `linear__save_issue`), so match on that, not the dispatcher name.
 - **type**: `"command"` (run a script or shell one-liner) or `"http"` (POST the event to a URL).
 - **command**: Path to executable (relative to the JSON file) or inline shell command.
@@ -153,7 +153,7 @@ Each `.json` file can define hooks for multiple events:
 
 ### Tool Name Aliases
 
-In a `matcher`, Grok maps Claude-style tool names to its own so hooks migrated from Claude fire correctly. Common aliases include:
+In a `matcher`, Kigi maps Claude-style tool names to its own so hooks migrated from Claude fire correctly. Common aliases include:
 
 - `Bash` → `run_terminal_command`
 - `Read` → `read_file`
@@ -206,7 +206,7 @@ For events like `SessionStart` or `PostToolUse`, stdout is ignored. Just exit 0 
 
 ### Environment Variables
 
-Grok sets several environment variables on every hook process. These are useful when writing context-aware or plugin-aware hook scripts.
+Kigi sets several environment variables on every hook process. These are useful when writing context-aware or plugin-aware hook scripts.
 
 #### Runner-injected variables (always available)
 
@@ -216,7 +216,7 @@ These variables are set by the hook runner for **every** hook:
 |-----------------------|-------------|
 | `KIGI_HOOK_EVENT`     | The name of the event that triggered the hook (e.g. `pre_tool_use`, `session_start`, `post_tool_use`, `session_end`, `stop`, `notification`). |
 | `KIGI_HOOK_NAME`      | The configured name of this specific hook (includes the plugin prefix for plugin-provided hooks). |
-| `KIGI_SESSION_ID`     | The unique identifier of the current Grok session. |
+| `KIGI_SESSION_ID`     | The unique identifier of the current Kigi session. |
 | `KIGI_WORKSPACE_ROOT` | Absolute path to the root of the current workspace. |
 | `CLAUDE_PROJECT_DIR`  | Absolute path to the workspace root. A Claude Code-compatible alias for `KIGI_WORKSPACE_ROOT`, set for every hook. |
 
@@ -224,7 +224,7 @@ These variables are **reserved**. Any values you attempt to set for them via the
 
 #### Plugin hook variables
 
-When a hook originates from a plugin, Grok additionally injects the following variables:
+When a hook originates from a plugin, Kigi additionally injects the following variables:
 
 | Variable             | Description |
 |----------------------|-------------|
@@ -261,7 +261,7 @@ Both `command` and `url` support `${VAR}` and `$VAR` expansion. See the custom-h
 Instead of a local script, call a remote endpoint:
 
 ```json
-{ "type": "http", "url": "https://hooks.example.com/grok-event", "timeout": 15 }
+{ "type": "http", "url": "https://hooks.example.com/kigi-event", "timeout": 15 }
 ```
 
 The full event envelope is POSTed as JSON.
@@ -308,7 +308,7 @@ Enable or disable an individual hook at runtime by pressing `Space` in the Hooks
 
 ### Mid-Session Reload
 
-Press `r` in the Hooks tab to reload all hooks from disk. Grok re-reads every hook source, so this picks up changes you made to hook files during the session.
+Press `r` in the Hooks tab to reload all hooks from disk. Kigi re-reads every hook source, so this picks up changes you made to hook files during the session.
 
 ---
 
@@ -378,4 +378,4 @@ echo '{"decision": "allow"}'
 - **Hook not running?** Press `Ctrl+L` on non–VS Code family (or run `/hooks` anywhere) to see if it is loaded and matched.
 - **Project hooks ignored?** The folder may be untrusted. Run `/hooks-trust` (or relaunch with `--trust`).
 - **Script not found?** Check the path is relative to the `.json` file and executable (`chmod +x`).
-- **See errors?** Capture logs by launching with `RUST_LOG=debug KIGI_LOG_FILE=/tmp/grok.log grok`, then check `/tmp/grok.log`.
+- **See errors?** Capture logs by launching with `RUST_LOG=debug KIGI_LOG_FILE=/tmp/kigi.log kigi`, then check `/tmp/kigi.log`.

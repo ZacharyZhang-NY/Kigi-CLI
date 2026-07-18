@@ -415,9 +415,9 @@ async fn manual_recap_generation_failure_persists_request_artifact() {
                         "artifact must include the recap request items"
                     );
                     assert!(
-                        artifact.x_grok_req_id.starts_with("xai-recap-"),
+                        artifact.x_kigi_req_id.starts_with("xai-recap-"),
                         "req id: {}",
-                        artifact.x_grok_req_id
+                        artifact.x_kigi_req_id
                     );
                     saw_recap_request = true;
                 }
@@ -529,7 +529,7 @@ async fn manual_recap_over_budget_trims_persisted_request_and_is_display_only() 
 /// Over-budget recap serializes to a well-formed Anthropic Messages payload:
 /// system preserved, reasoning stripped, no dangling `tool_use`/`tool_result`, no
 /// `tool_result` before the appended instruction. (Messages is the strictest
-/// shape, so it also covers the laxer grok ChatCompletions/Responses shapes.)
+/// shape, so it also covers the laxer kigi ChatCompletions/Responses shapes.)
 #[test]
 fn over_budget_recap_serializes_to_well_formed_messages_request() {
     use crate::session::helpers::session_recap;
@@ -568,7 +568,7 @@ fn over_budget_recap_serializes_to_well_formed_messages_request() {
         ConversationItem::tool_result("c2", "z".repeat(40_000)),     // trailing run
     ];
 
-    // grok backend => strip_reasoning=false; the over-budget branch strips anyway.
+    // kigi backend => strip_reasoning=false; the over-budget branch strips anyway.
     let items = session_recap::budget_recap_items(conv, "system-reminder", false, 8_000);
     let req = ConversationRequest::from_items(items);
     let msg = kigi_sampling_types::build_messages_request(&req);

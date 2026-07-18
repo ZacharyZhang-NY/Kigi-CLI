@@ -198,16 +198,16 @@ fn dispatch_confirm_reset_setting_reset_dispatches_typed_setter_for_shared_enum(
         &mut app,
     );
 
-    // Reset → SetTheme("groknight") (the registered default).
+    // Reset → SetTheme("kiginight") (the registered default).
     assert_eq!(effects.len(), 1);
     match &effects[0] {
         Effect::PersistSetting { key, value, .. } => {
             assert_eq!(*key, "theme");
-            assert_eq!(value, &SettingValue::Enum("groknight"));
+            assert_eq!(value, &SettingValue::Enum("kiginight"));
         }
         other => panic!("expected PersistSetting, got {other:?}"),
     }
-    assert_eq!(app.current_ui.theme.as_deref(), Some("groknight"));
+    assert_eq!(app.current_ui.theme.as_deref(), Some("kiginight"));
 }
 
 #[test]

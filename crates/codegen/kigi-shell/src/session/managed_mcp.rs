@@ -506,7 +506,7 @@ mod tests {
         let tagged = apply_mcp_server_policy(
             vec![
                 acp::McpServer::Http(
-                    acp::McpServerHttp::new("grok_com_slack", "https://mcp.slack.com/sse")
+                    acp::McpServerHttp::new("kigi_com_slack", "https://mcp.slack.com/sse")
                         .headers(vec![]),
                 ),
                 // Substring-only match must not be denied.
@@ -521,7 +521,7 @@ mod tests {
 
         let slack = tagged
             .iter()
-            .find(|s| mcp_server_name(&s.server) == "grok_com_slack")
+            .find(|s| mcp_server_name(&s.server) == "kigi_com_slack")
             .expect("managed server present in policy output");
         assert!(
             matches!(
@@ -762,7 +762,7 @@ enabled = false
             root: plugin_root.clone(),
             canonical_root: plugin_root.clone(),
             scope: PluginScope::User,
-            origin: kigi_agent::plugins::PluginOrigin::UserGrok,
+            origin: kigi_agent::plugins::PluginOrigin::UserKigi,
             trusted: true,
             skill_dirs: vec![],
             command_dirs: vec![],
@@ -830,7 +830,7 @@ enabled = false
             root: plugin_root.clone(),
             canonical_root: plugin_root.clone(),
             scope: PluginScope::User,
-            origin: kigi_agent::plugins::PluginOrigin::UserGrok,
+            origin: kigi_agent::plugins::PluginOrigin::UserKigi,
             trusted: true,
             skill_dirs: vec![],
             command_dirs: vec![],
@@ -904,7 +904,7 @@ enabled = false
             root: plugin_root.clone(),
             canonical_root: plugin_root.clone(),
             scope: PluginScope::User,
-            origin: kigi_agent::plugins::PluginOrigin::UserGrok,
+            origin: kigi_agent::plugins::PluginOrigin::UserKigi,
             trusted: true,
             skill_dirs: vec![],
             command_dirs: vec![],

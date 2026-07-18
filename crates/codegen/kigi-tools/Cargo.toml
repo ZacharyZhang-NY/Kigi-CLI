@@ -3,7 +3,7 @@ license = "Apache-2.0"
 edition.workspace = true
 name = "kigi-tools"
 version.workspace = true
-description = "Grok tools library"
+description = "Kigi tools library"
 
 [dependencies]
 anyhow = { workspace = true }

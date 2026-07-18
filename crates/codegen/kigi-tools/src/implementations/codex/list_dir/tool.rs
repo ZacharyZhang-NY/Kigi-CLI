@@ -2,7 +2,7 @@
 //!
 //! This is a faithful port of `codex-rs/core/src/tools/handlers/list_dir.rs`.
 //! It does NOT respect `.gitignore`, does NOT exclude hidden files, and requires
-//! absolute paths. See the plan document for the full diff vs the grok-build
+//! absolute paths. See the plan document for the full diff vs the kigi
 //! `ListDirTool`.
 
 use std::collections::VecDeque;

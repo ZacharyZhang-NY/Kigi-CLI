@@ -26,7 +26,7 @@ pub enum DeferredSessionStartup {
         parent_cwd: Option<PathBuf>,
         new_session_id: Option<String>,
     },
-    /// Fresh plain Grok session whose first prompt resumes a foreign tool session.
+    /// Fresh plain Kigi session whose first prompt resumes a foreign tool session.
     ForeignResume {
         tool: kigi_workspace::foreign_sessions::ForeignSessionTool,
         native_id: String,
@@ -53,7 +53,7 @@ impl DeferredStartupActions {
         std::mem::take(self)
     }
 }
-/// Build `x.ai/session/fork` params shared by TUI effects and headless.
+/// Build `kigi/session/fork` params shared by TUI effects and headless.
 ///
 /// `new_cwd` is the write namespace for the child (parent session cwd when
 /// cross-cwd); preflight must use the same path via [`effective_fork_new_cwd`].
@@ -114,7 +114,7 @@ pub fn parent_session_is_worktree(session_id: &str, cwd: &Path) -> bool {
     }
     false
 }
-/// Parse `newSessionId` from an `x.ai/session/fork` ACP response body.
+/// Parse `newSessionId` from an `kigi/session/fork` ACP response body.
 pub fn fork_response_new_session_id(resp_json: &str) -> Option<String> {
     let v: serde_json::Value = serde_json::from_str(resp_json).unwrap_or_default();
     if v.get("error").is_some_and(|e| !e.is_null()) {
@@ -375,7 +375,7 @@ pub struct MaterializeCtx {
     pub has_worktree: bool,
     /// When true, attempt remote restore if the session is not on disk.
     pub allow_remote_restore: bool,
-    /// Process-wide flag: resume targets are grok.com conversations, not
+    /// Process-wide flag: resume targets are kimi.com conversations, not
     /// the local disk store. Always `false` without the optional feature;
     /// setting it anyway errors rather than silently falling back to disk.
     pub chat_mode: bool,
@@ -404,12 +404,12 @@ async fn most_recent_session_id(cwd: &str) -> anyhow::Result<(String, Option<Str
     let first = summaries.first().ok_or_else(|| {
         anyhow::anyhow!(
             "No session found for current directory. \
-             Use 'grok' to start a new session."
+             Use 'kigi' to start a new session."
         )
     })?;
     Ok((first.info.id.to_string(), first.display_title_opt()))
 }
-/// `AuthManager` for direct grok.com calls made outside the agent (pre-ACP
+/// `AuthManager` for direct kimi.com calls made outside the agent (pre-ACP
 /// `--continue` conversation listing, the GCS restore effect). Wires the
 /// auth-provider refresher before the first `auth()`: without it, environments
 /// that mint credentials via `auth_provider_command` report `NoOauth`.
@@ -689,14 +689,14 @@ mod tests {
     #[test]
     fn intent_default_is_new_auto() {
         assert_eq!(
-            parse(&["grok"]).session_startup_intent().unwrap(),
+            parse(&["kigi"]).session_startup_intent().unwrap(),
             SessionStartupIntent::NewAuto
         );
     }
     #[test]
     fn intent_resume_id() {
         assert_eq!(
-            parse(&["grok", "--resume", "abc"])
+            parse(&["kigi", "--resume", "abc"])
                 .session_startup_intent()
                 .unwrap(),
             SessionStartupIntent::Resume {
@@ -708,7 +708,7 @@ mod tests {
     #[test]
     fn intent_resume_empty_is_most_recent() {
         assert_eq!(
-            parse(&["grok", "--resume"])
+            parse(&["kigi", "--resume"])
                 .session_startup_intent()
                 .unwrap(),
             SessionStartupIntent::Resume {
@@ -720,7 +720,7 @@ mod tests {
     #[test]
     fn intent_continue() {
         assert_eq!(
-            parse(&["grok", "-c"]).session_startup_intent().unwrap(),
+            parse(&["kigi", "-c"]).session_startup_intent().unwrap(),
             SessionStartupIntent::Resume {
                 session_id: None,
                 most_recent_for_cwd: true,
@@ -730,7 +730,7 @@ mod tests {
     #[test]
     fn intent_session_id_alone_is_new_with_id() {
         assert_eq!(
-            parse(&["grok", "--session-id", "my-id"])
+            parse(&["kigi", "--session-id", "my-id"])
                 .session_startup_intent()
                 .unwrap(),
             SessionStartupIntent::NewWithId {
@@ -740,7 +740,7 @@ mod tests {
     }
     #[test]
     fn intent_session_id_with_resume_without_fork_errors() {
-        let err = parse(&["grok", "-r", "a", "-s", "b"])
+        let err = parse(&["kigi", "-r", "a", "-s", "b"])
             .session_startup_intent()
             .unwrap_err();
         assert_eq!(err, StartupFlagError::SessionIdRequiresFork);
@@ -748,7 +748,7 @@ mod tests {
     #[test]
     fn intent_fork_with_resume() {
         assert_eq!(
-            parse(&["grok", "-r", "old", "--fork-session"])
+            parse(&["kigi", "-r", "old", "--fork-session"])
                 .session_startup_intent()
                 .unwrap(),
             SessionStartupIntent::ForkFrom {
@@ -761,7 +761,7 @@ mod tests {
     #[test]
     fn intent_fork_with_resume_and_new_id() {
         assert_eq!(
-            parse(&["grok", "-r", "old", "--fork-session", "-s", "new"])
+            parse(&["kigi", "-r", "old", "--fork-session", "-s", "new"])
                 .session_startup_intent()
                 .unwrap(),
             SessionStartupIntent::ForkFrom {
@@ -773,21 +773,21 @@ mod tests {
     }
     #[test]
     fn intent_fork_alone_errors() {
-        let err = parse(&["grok", "--fork-session"])
+        let err = parse(&["kigi", "--fork-session"])
             .session_startup_intent()
             .unwrap_err();
         assert_eq!(err, StartupFlagError::ForkRequiresResumeOrContinue);
     }
     #[test]
     fn intent_fork_with_worktree_errors() {
-        let err = parse(&["grok", "-r", "a", "--fork-session", "-w"])
+        let err = parse(&["kigi", "-r", "a", "--fork-session", "-w"])
             .session_startup_intent()
             .unwrap_err();
         assert_eq!(err, StartupFlagError::ForkWithWorktree);
     }
     #[test]
     fn intent_from_flags_matches_pager_args() {
-        let args = parse(&["grok", "-r", "old", "--fork-session", "-s", "new"]);
+        let args = parse(&["kigi", "-r", "old", "--fork-session", "-s", "new"]);
         let from_flags = session_startup_intent_from_flags(SessionStartupFlags {
             session_id: Some("new"),
             resume_session_id: Some("old"),
@@ -888,7 +888,7 @@ mod tests {
     }
     #[test]
     fn materialize_ctx_chat_mode_from_args() {
-        assert!(!MaterializeCtx::from_pager_args(&parse(&["grok"])).chat_mode);
+        assert!(!MaterializeCtx::from_pager_args(&parse(&["kigi"])).chat_mode);
     }
     /// Explicit-id resume under `--chat` passes the id through untouched:
     /// no disk resolution, no GCS restore (the cwd does not even exist).

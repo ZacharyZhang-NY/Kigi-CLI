@@ -95,8 +95,8 @@ pub(in crate::app::dispatch) fn apply_persist_worktree_mode(
 /// Build the two persistence options shared by the fork and new-session
 /// worktree question modals ("Always worktree" / "Never worktree").
 pub(super) fn worktree_persist_options()
--> [kigi_tools::implementations::grok_build::ask_user_question::QuestionOption; 2] {
-    use kigi_tools::implementations::grok_build::ask_user_question::QuestionOption;
+-> [kigi_tools::implementations::kigi::ask_user_question::QuestionOption; 2] {
+    use kigi_tools::implementations::kigi::ask_user_question::QuestionOption;
     [
         QuestionOption {
             label: "Always worktree".into(),
@@ -117,7 +117,7 @@ pub(super) fn worktree_persist_options()
 /// instead -- the modal-collision protocol.
 fn open_fork_question(app: &mut AppView, directive: Option<String>) -> Vec<Effect> {
     use crate::views::question_view::{LocalQuestionKind, QuestionViewState};
-    use kigi_tools::implementations::grok_build::ask_user_question::{Question, QuestionOption};
+    use kigi_tools::implementations::kigi::ask_user_question::{Question, QuestionOption};
     let ActiveView::Agent(id) = app.active_view else {
         return vec![];
     };
@@ -168,7 +168,7 @@ fn open_fork_question(app: &mut AppView, directive: Option<String>) -> Vec<Effec
 /// `worktree == true` reuses the existing
 /// [`Effect::CreateWorktreeSession`] pipeline (with `load_session_id`
 /// set to the parent session id). `worktree == false` emits the new
-/// [`Effect::ForkSession`] which calls `x.ai/session/fork` directly.
+/// [`Effect::ForkSession`] which calls `kigi/session/fork` directly.
 pub(in crate::app::dispatch) fn dispatch_fork_resolved(
     app: &mut AppView,
     worktree: bool,

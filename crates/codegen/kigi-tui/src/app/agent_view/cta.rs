@@ -52,7 +52,7 @@ impl AgentView {
         }
     }
 
-    /// Apply an `x.ai/follow_ups` notification, keyed by `response_id`
+    /// Apply an `kigi/follow_ups` notification, keyed by `response_id`
     /// (newest-response-wins).
     ///
     /// Monotonic accept-the-newer: a never-seen `response_id` is strictly newer
@@ -78,7 +78,7 @@ impl AgentView {
     }
 
     /// `apply_follow_ups` with the turn identity (`prompt_id`) the shell stamps
-    /// on each `x.ai/follow_ups` notification (the same `promptId` it stamps on
+    /// on each `kigi/follow_ups` notification (the same `promptId` it stamps on
     /// every `session/update`). The identity makes viewer-adoption dedup
     /// DETERMINISTIC:
     ///
@@ -86,7 +86,7 @@ impl AgentView {
     ///   `prompt_id` equals `session.current_prompt_id`) re-renders even when its
     ///   chips were cleared by turn adoption — so chips that were applied then
     ///   cleared reappear instead of being lost until reload.
-    /// - A buffer-replayed `x.ai/follow_ups` for a PRIOR turn's `response_id`
+    /// - A buffer-replayed `kigi/follow_ups` for a PRIOR turn's `response_id`
     ///   stays rejected by the seen-ring (its `prompt_id` is not the active one),
     ///   so stale chips are never revived on the new turn.
     ///
@@ -219,7 +219,7 @@ impl AgentView {
         true
     }
 
-    /// Buffer a stamped `x.ai/follow_ups` for a turn that is not yet current,
+    /// Buffer a stamped `kigi/follow_ups` for a turn that is not yet current,
     /// keyed by its `promptId`. A newer delivery for the same `promptId`
     /// overwrites the earlier one (keep the latest); the FIFO order list bounds
     /// the map to [`MAX_PENDING_FOLLOW_UPS`], evicting only the oldest entry.
@@ -249,7 +249,7 @@ impl AgentView {
         }
     }
 
-    /// Flush a buffered `x.ai/follow_ups` for `prompt_id` (a turn that has just
+    /// Flush a buffered `kigi/follow_ups` for `prompt_id` (a turn that has just
     /// become current). Renders the chips through [`apply_follow_ups_with_prompt`]
     /// — now that `current_prompt_id == prompt_id`, the stamped delivery is
     /// accepted as the active turn's. Returns whether chips were rendered. A
@@ -292,7 +292,7 @@ impl AgentView {
 
     /// Reload reset that PRESERVES the running turn's follow-ups for
     /// `keep_prompt_id` (the turn the load is about to adopt). On `SessionLoaded`
-    /// the running turn's `x.ai/follow_ups` arrive on the ext channel DURING
+    /// the running turn's `kigi/follow_ups` arrive on the ext channel DURING
     /// `loading_replay`; an unconditional reset would drop them before adoption
     /// could re-render them, so the chips would never appear unless the server
     /// resent them. The running turn's chips live in ONE of two places at reset

@@ -6,7 +6,7 @@
 //! session's `subagents/` dir and flips any stale `running` meta (not tracked by
 //! the live coordinator) to `cancelled` (mechanism A, the meta pass).
 //!
-//! This test spawns a real `grok agent stdio` process, seeds an orphaned
+//! This test spawns a real `kigi agent stdio` process, seeds an orphaned
 //! `running` meta on disk, resumes the session, and asserts the meta was
 //! reconciled to `cancelled`.
 //!
@@ -57,7 +57,7 @@ async fn resume_reconciles_orphaned_running_subagent() {
         let workdir = git_workdir();
 
         // Phase 1: create a real session, then take its home so we can seed it.
-        let mut writer = GrokStdioClient::spawn(&server, workdir.path()).await;
+        let mut writer = KigiStdioClient::spawn(&server, workdir.path()).await;
         writer.initialize_with_timeout().await;
         let session_id = writer.create_session_with_timeout(workdir.path()).await;
         let shared_home = writer.take_home();
@@ -66,7 +66,7 @@ async fn resume_reconciles_orphaned_running_subagent() {
         // Simulate a crash: inject a subagent meta left `running` on disk (no
         // terminal write, no SubagentFinished) — exactly what a dead process
         // leaves behind.
-        // GrokStdioClient sets HOME=<temp>; the binary uses <HOME>/.kigi as KIGI_SHARE_DIR.
+        // KigiStdioClient sets HOME=<temp>; the binary uses <HOME>/.kigi as KIGI_SHARE_DIR.
         let kigi_home = shared_home.path().join(".kigi");
         let session_dir = locate_session_dir(&kigi_home, session_id.0.as_ref());
         let sub_id = "sa-orphan";
@@ -89,7 +89,7 @@ async fn resume_reconciles_orphaned_running_subagent() {
         .unwrap();
 
         // Phase 2: resume in a fresh process. `load_session` runs the reconcile.
-        let reader = GrokStdioClient::spawn_with_home(&server, workdir.path(), shared_home).await;
+        let reader = KigiStdioClient::spawn_with_home(&server, workdir.path(), shared_home).await;
         reader.initialize_with_timeout().await;
         let _ = reader
             .load_session_with_timeout(&session_id, workdir.path())

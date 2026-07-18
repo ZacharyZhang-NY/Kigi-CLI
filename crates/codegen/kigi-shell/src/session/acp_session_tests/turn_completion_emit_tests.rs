@@ -388,7 +388,7 @@ async fn send_now_cancel_stamps_cancel_trigger_on_turn_end() {
             let mut wire_meta = None;
             while let Ok(msg) = gateway_rx.try_recv() {
                 if let kigi_acp_lib::AcpClientMessage::ExtNotification(args) = msg
-                    && args.request.method.as_ref() == "x.ai/session_notification"
+                    && args.request.method.as_ref() == "kigi/session_notification"
                     && let Ok(v) =
                         serde_json::from_str::<serde_json::Value>(args.request.params.get())
                     && v["update"]["sessionUpdate"] == "turn_completed"

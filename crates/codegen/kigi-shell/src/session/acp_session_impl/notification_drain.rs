@@ -94,7 +94,7 @@ impl SessionActor {
             .borrow()
             .tool_bridge()
             .update_resource(
-                kigi_tools::implementations::grok_build::task::types::CurrentPromptIdResource(
+                kigi_tools::implementations::kigi::task::types::CurrentPromptIdResource(
                     prompt_id.clone(),
                 ),
             )
@@ -249,7 +249,7 @@ impl SessionActor {
         let Some(buffer) = &self.tool_context.monitor_event_buffer else {
             return;
         };
-        for event in kigi_tools::implementations::grok_build::task::types::drain_owned(
+        for event in kigi_tools::implementations::kigi::task::types::drain_owned(
             buffer,
             Some(self.session_info.id.0.as_ref()),
         ) {
@@ -308,7 +308,7 @@ impl SessionActor {
         notifications: Vec<PendingNotification>,
         task_output_tool_name: &str,
     ) -> bool {
-        use kigi_tools::implementations::grok_build::task::types::MonitorEventNotification;
+        use kigi_tools::implementations::kigi::task::types::MonitorEventNotification;
 
         // Collapse monitor entries: collect their text into events, remember
         // where the first one sat so the batch lands in arrival position.

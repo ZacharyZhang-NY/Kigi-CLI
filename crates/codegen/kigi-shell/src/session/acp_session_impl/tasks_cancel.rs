@@ -179,7 +179,7 @@ impl SessionActor {
 
     fn cancel_subagents_for_prompt_id(&self, parent_prompt_id: &str) {
         if let Some(event_tx) = self.tool_context.subagent_event_tx.clone() {
-            use kigi_tools::implementations::grok_build::task::types::{
+            use kigi_tools::implementations::kigi::task::types::{
                 SubagentCancelRequest, SubagentCancelTarget, SubagentEvent,
             };
             let _ = event_tx.send(SubagentEvent::Cancel(SubagentCancelRequest {
@@ -346,7 +346,7 @@ impl SessionActor {
             // * normal interactive cancel: remove ONLY the running turn,
             //   PRESERVING every queued prompt so the `Cancel` handler's
             //   follow-up `maybe_start_running_task` promotes the new front (the
-            //   user's next queued prompt) and rebroadcasts `x.ai/queue/changed`.
+            //   user's next queued prompt) and rebroadcasts `kigi/queue/changed`.
             //   The cancelling client does not pull any prompt back into its
             //   input — the server queue is the single source of truth for what
             //   runs next. Previously every cancel did `std::mem::take`,
@@ -418,7 +418,7 @@ impl SessionActor {
             .borrow()
             .tool_bridge()
             .update_resource(
-                kigi_tools::implementations::grok_build::task::types::CurrentPromptIdResource(
+                kigi_tools::implementations::kigi::task::types::CurrentPromptIdResource(
                     String::new(),
                 ),
             )

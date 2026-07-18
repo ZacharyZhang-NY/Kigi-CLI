@@ -14,7 +14,7 @@ use std::time::Instant;
 
 use kigi_acp_lib::AcpResult;
 use kigi_markdown::StreamingMarkdownRenderer;
-pub use kigi_tools::implementations::grok_build::ask_user_question::{
+pub use kigi_tools::implementations::kigi::ask_user_question::{
     AskUserQuestionMode, Question, QuestionOption,
 };
 use ratatui::buffer::Buffer;
@@ -68,7 +68,7 @@ pub enum QuestionFocus {
 }
 
 /// Pager-internal origin for a locally-opened question (one that was NOT
-/// driven by an ACP `x.ai/ask_user_question` request).
+/// driven by an ACP `kigi/ask_user_question` request).
 ///
 /// Drives what `submit_question_answers` returns when the user submits.
 /// Mutually exclusive with `QuestionViewState.response_tx`: a local
@@ -118,7 +118,7 @@ pub enum LocalQuestionKind {
 
 /// Complete state for the question view overlay.
 ///
-/// Created when an `x.ai/ask_user_question` ext-method request arrives;
+/// Created when an `kigi/ask_user_question` ext-method request arrives;
 /// destroyed on submit, skip, or cancel.
 ///
 /// Not `Clone` because it owns a `oneshot::Sender` for the ACP response.
@@ -171,7 +171,7 @@ pub struct QuestionViewState {
     /// `Some(1)` = Skip interview.
     pub bottom_panel_index: Option<usize>,
     /// `Some` when this question was opened locally (e.g. by `/fork`)
-    /// instead of by an ACP `x.ai/ask_user_question` request. `None` for
+    /// instead of by an ACP `kigi/ask_user_question` request. `None` for
     /// ACP questions (preserves today's behaviour).
     ///
     /// Mutually exclusive with `response_tx`: a local question never has
@@ -210,7 +210,7 @@ impl QuestionViewState {
 
     /// Create a new question view state with an ACP response sender.
     ///
-    /// Called by the `ExtMethod` handler when a blocking `x.ai/ask_user_question`
+    /// Called by the `ExtMethod` handler when a blocking `kigi/ask_user_question`
     /// request arrives from the shell coordinator.
     pub fn with_response_tx(
         tool_call_id: String,
@@ -724,7 +724,7 @@ impl QuestionViewState {
     /// the current freeform text so the caller can load it into the prompt.
     ///
     /// No-op returning an empty string when `no_freeform` is set: such
-    /// questions (e.g. the SuperGrok upsell) have no freeform row, so
+    /// questions (e.g. the subscription upsell) have no freeform row, so
     /// `InputMode` must be unreachable. Callers gate on `no_freeform` /
     /// [`Self::is_on_freeform_row`] too; this is defense in depth.
     pub fn activate_freeform_input(&mut self) -> String {
@@ -812,10 +812,9 @@ impl QuestionViewState {
     /// - Notes included when freeform text is non-empty and selected.
     pub fn build_accepted_response(
         &self,
-    ) -> kigi_tools::implementations::grok_build::ask_user_question::AskUserQuestionExtResponse
-    {
+    ) -> kigi_tools::implementations::kigi::ask_user_question::AskUserQuestionExtResponse {
         use indexmap::IndexMap;
-        use kigi_tools::implementations::grok_build::ask_user_question::{
+        use kigi_tools::implementations::kigi::ask_user_question::{
             AskUserQuestionExtResponse, QuestionAnnotation,
         };
         use std::collections::HashMap;
@@ -899,7 +898,7 @@ impl QuestionViewState {
     /// double-send.
     pub fn send_ext_response(
         &mut self,
-        response: kigi_tools::implementations::grok_build::ask_user_question::AskUserQuestionExtResponse,
+        response: kigi_tools::implementations::kigi::ask_user_question::AskUserQuestionExtResponse,
     ) -> bool {
         let Some(tx) = self.response_tx.take() else {
             return false;
@@ -2545,7 +2544,7 @@ mod tests {
 
     // ── no_freeform ────────────────────────────────────────────────────
 
-    /// `no_freeform` questions (e.g. the SuperGrok upsell) have no "Other"
+    /// `no_freeform` questions (e.g. the subscription upsell) have no "Other"
     /// row, so activating freeform input must be impossible: focus stays in
     /// Navigation and nothing gets marked selected. Regression test for the
     /// upsell modal letting the user type after clicking under the last

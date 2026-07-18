@@ -56,7 +56,7 @@ impl ParsedMeta {
             return Self::default();
         };
         let facet_filters = meta
-            .get("x.ai/facetFilters")
+            .get("kigi/facetFilters")
             .and_then(|v| v.as_object())
             .map(|obj| {
                 obj.iter()
@@ -65,11 +65,11 @@ impl ParsedMeta {
             })
             .unwrap_or_default();
         let query = meta
-            .get("x.ai/query")
+            .get("kigi/query")
             .and_then(|v| v.as_str())
             .map(str::to_owned);
         let limit = meta
-            .get("x.ai/limit")
+            .get("kigi/limit")
             .and_then(serde_json::Value::as_u64)
             .map(|n| n as usize);
         Self {
@@ -156,7 +156,7 @@ pub struct ExtListResponse {
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct ExtListResponseMeta {
-    #[serde(rename = "x.ai/facets")]
+    #[serde(rename = "kigi/facets")]
     pub facets: FacetSummary,
 }
 pub fn ext_list_response(result: UnifiedListResult) -> ExtListResponse {
@@ -188,7 +188,7 @@ mod tests {
             cwd: "/Users/me/xai".into(),
             hostname: Some("devbox".into()),
             source: "local".into(),
-            model_id: Some("grok-build".into()),
+            model_id: Some("kigi".into()),
             num_messages: 7,
             last_active_at: Some(updated_at.into()),
             branch: Some("main".into()),
@@ -229,7 +229,7 @@ mod tests {
         assert_eq!(value["source"], "local");
         assert_eq!(value["numMessages"], 7);
         assert_eq!(value["title"], "a summary");
-        assert_eq!(value["_meta"]["x.ai/session"]["kind"], "build");
+        assert_eq!(value["_meta"]["kigi/session"]["kind"], "build");
         assert_eq!(value["gitRootDir"], "/Users/me/xai");
         assert_eq!(value["gitRemotes"][0], "git@github.com:example/repo.git");
         assert_eq!(value["sourceWorkspaceDir"], "/Users/me/xai-src");
@@ -250,7 +250,7 @@ mod tests {
         assert_eq!(value["sessionId"], "s1");
         assert_eq!(value["cwd"], "/Users/me/xai");
         assert_eq!(value["title"], "a summary");
-        assert_eq!(value["_meta"]["x.ai/session"]["kind"], "build");
+        assert_eq!(value["_meta"]["kigi/session"]["kind"], "build");
         assert!(value.get("summary").is_none());
         assert!(value.get("source").is_none());
     }
@@ -307,8 +307,8 @@ mod tests {
     #[test]
     fn parsed_meta_reads_facet_filters_query_and_limit() {
         let meta = serde_json::json!(
-            { "x.ai/facetFilters" : { "kind" : ["build"], "starred" : true },
-            "x.ai/query" : "antelope", "x.ai/limit" : 5, }
+            { "kigi/facetFilters" : { "kind" : ["build"], "starred" : true },
+            "kigi/query" : "antelope", "kigi/limit" : 5, }
         );
         let parsed = ParsedMeta::parse(Some(&meta));
         assert_eq!(parsed.query.as_deref(), Some("antelope"));

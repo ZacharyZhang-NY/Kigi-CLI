@@ -1,4 +1,4 @@
-//! Detects whether grok is running inside an editor's embedded `:terminal`
+//! Detects whether kigi is running inside an editor's embedded `:terminal`
 //! (Neovim/Vim `:terminal`, Emacs `vterm`).
 //!
 //! WHY this matters: inside an editor `:terminal` the *immediate* terminal
@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 use super::env_get;
 
-/// Which embedded editor `:terminal` grok is running inside.
+/// Which embedded editor `:terminal` kigi is running inside.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EmbeddedEditor {
     /// Neovim `:terminal` (sets `NVIM`, or legacy `NVIM_LISTEN_ADDRESS`).

@@ -21,7 +21,7 @@ use std::sync::Arc;
 /// and the parent-side `describe_subagent_type` probe so the gated/probed
 /// toolset matches the spawned one.
 ///
-/// [`SubagentRuntimeOverrides::harness_agent_type`]: kigi_tools::implementations::grok_build::task::types::SubagentRuntimeOverrides::harness_agent_type
+/// [`SubagentRuntimeOverrides::harness_agent_type`]: kigi_tools::implementations::kigi::task::types::SubagentRuntimeOverrides::harness_agent_type
 pub(crate) const GOAL_ROLE_SUBAGENT_TYPE: &str = "general-purpose";
 
 /// Resolved per-role spawn override.
@@ -36,7 +36,7 @@ pub(crate) const GOAL_ROLE_SUBAGENT_TYPE: &str = "general-purpose";
 pub(crate) struct RoleSpawnOverride {
     /// Resolved, post-auth, post-fail-open model id, or `None` to inherit.
     pub model: Option<String>,
-    /// Resolved harness `agent_type` (e.g. `"grok-build-plan"`)
+    /// Resolved harness `agent_type` (e.g. `"kigi-plan"`)
     /// whose `AgentDefinition` decides the spawned subagent's harness flavor
     /// (system prompt + toolset), applied REGARDLESS of the
     /// parent agent. `None` ⇒ inherit the session harness. NOT a subagent type —
@@ -254,7 +254,7 @@ pub(crate) fn parse_terminal_response(text: &str) -> bool {
 
 pub(crate) struct ChannelSpawner {
     pub(crate) event_tx: tokio::sync::mpsc::UnboundedSender<
-        kigi_tools::implementations::grok_build::task::types::SubagentEvent,
+        kigi_tools::implementations::kigi::task::types::SubagentEvent,
     >,
     pub(crate) parent_session_id: String,
     pub(crate) parent_prompt_id: Option<String>,
@@ -299,7 +299,7 @@ impl ChannelSpawner {
         model: Option<String>,
         harness_agent_type: Option<String>,
     ) -> Result<String, SpawnError> {
-        use kigi_tools::implementations::grok_build::task::types::{
+        use kigi_tools::implementations::kigi::task::types::{
             SubagentEvent, SubagentRequest, SubagentRuntimeOverrides,
         };
         let (result_tx, result_rx) = tokio::sync::oneshot::channel();
@@ -499,7 +499,7 @@ mod tests {
     #[test]
     fn planner_template_default_render_preserves_wording_and_has_no_placeholders() {
         // Default/inherit render: placeholders resolve to the literal parent
-        // (grok-build) tool names; guards against accidental wording drift.
+        // (kigi) tool names; guards against accidental wording drift.
         let rendered = RoleToolNames::inherit_defaults().apply(GOAL_PLANNER_PROMPT_TEMPLATE);
         assert!(
             rendered.contains("with your\n`read_file`/`grep`/`list_dir` tools to clarify scope"),
@@ -597,7 +597,7 @@ mod tests {
 
     #[tokio::test]
     async fn channel_spawner_request_is_harness_internal() {
-        use kigi_tools::implementations::grok_build::task::types::{SubagentEvent, SubagentResult};
+        use kigi_tools::implementations::kigi::task::types::{SubagentEvent, SubagentResult};
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let spawner = ChannelSpawner {
@@ -740,7 +740,7 @@ mod tests {
                 context: "",
                 plan_file: &plan_file,
                 attempt: 1,
-                model_id: "grok-test",
+                model_id: "kigi-test",
                 tool_names: &RoleToolNames::inherit_defaults(),
                 inherit_tool_names: &RoleToolNames::inherit_defaults(),
             },
@@ -769,7 +769,7 @@ mod tests {
                 context: "",
                 plan_file: &plan_file,
                 attempt: 1,
-                model_id: "grok-test",
+                model_id: "kigi-test",
                 tool_names: &RoleToolNames::inherit_defaults(),
                 inherit_tool_names: &RoleToolNames::inherit_defaults(),
             },
@@ -804,7 +804,7 @@ mod tests {
                 context: "",
                 plan_file: &plan_file,
                 attempt: 1,
-                model_id: "grok-test",
+                model_id: "kigi-test",
                 tool_names: &RoleToolNames::inherit_defaults(),
                 inherit_tool_names: &RoleToolNames::inherit_defaults(),
             },
@@ -846,7 +846,7 @@ mod tests {
                 context: "",
                 plan_file: &plan_file,
                 attempt: 1,
-                model_id: "grok-test",
+                model_id: "kigi-test",
                 tool_names: &RoleToolNames::inherit_defaults(),
                 inherit_tool_names: &RoleToolNames::inherit_defaults(),
             },
@@ -888,7 +888,7 @@ mod tests {
                 context: "",
                 plan_file: &plan_file,
                 attempt: 1,
-                model_id: "grok-test",
+                model_id: "kigi-test",
                 tool_names: &RoleToolNames::inherit_defaults(),
                 inherit_tool_names: &RoleToolNames::inherit_defaults(),
             },
@@ -927,7 +927,7 @@ mod tests {
                 context: "",
                 plan_file: &plan_file,
                 attempt: 1,
-                model_id: "grok-test",
+                model_id: "kigi-test",
                 tool_names: &RoleToolNames::inherit_defaults(),
                 inherit_tool_names: &RoleToolNames::inherit_defaults(),
             },
@@ -953,7 +953,7 @@ mod tests {
                 context: "",
                 plan_file: &plan_file,
                 attempt: 1,
-                model_id: "grok-test",
+                model_id: "kigi-test",
                 tool_names: &RoleToolNames::inherit_defaults(),
                 inherit_tool_names: &RoleToolNames::inherit_defaults(),
             },
@@ -990,7 +990,7 @@ mod tests {
                 context: "prior conversation\n",
                 plan_file: &plan_file,
                 attempt: 1,
-                model_id: "grok-test",
+                model_id: "kigi-test",
                 tool_names: &RoleToolNames::inherit_defaults(),
                 inherit_tool_names: &RoleToolNames::inherit_defaults(),
             },
@@ -1197,7 +1197,7 @@ mod tests {
     /// request's `harness_agent_type`, not the subagent_type.
     #[tokio::test]
     async fn channel_spawner_threads_harness_override_to_request() {
-        use kigi_tools::implementations::grok_build::task::types::{SubagentEvent, SubagentResult};
+        use kigi_tools::implementations::kigi::task::types::{SubagentEvent, SubagentResult};
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let spawner = ChannelSpawner {
             event_tx: tx,
@@ -1494,7 +1494,7 @@ mod tests {
     /// `ChannelSpawner` whose explicit spawn fails still returns `Planned`.
     #[tokio::test]
     async fn planner_retries_to_inherit_instead_of_failing_closed() {
-        use kigi_tools::implementations::grok_build::task::types::{SubagentEvent, SubagentResult};
+        use kigi_tools::implementations::kigi::task::types::{SubagentEvent, SubagentResult};
         let plan_file = tmp_plan_file("retry-failopen");
         let plan_for_coord = plan_file.clone();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1540,7 +1540,7 @@ mod tests {
                 context: "",
                 plan_file: &plan_file,
                 attempt: 1,
-                model_id: "grok-test",
+                model_id: "kigi-test",
                 tool_names: &RoleToolNames::inherit_defaults(),
                 inherit_tool_names: &RoleToolNames::inherit_defaults(),
             },
@@ -1561,7 +1561,7 @@ mod tests {
     /// fail-CLOSED cancellation semantics.
     #[tokio::test]
     async fn planner_cancellation_pauses_as_aborted_without_retry() {
-        use kigi_tools::implementations::grok_build::task::types::{SubagentEvent, SubagentResult};
+        use kigi_tools::implementations::kigi::task::types::{SubagentEvent, SubagentResult};
         use std::sync::atomic::{AtomicUsize, Ordering};
         let plan_file = tmp_plan_file("cancel-aborted");
         let spawns = Arc::new(AtomicUsize::new(0));
@@ -1601,7 +1601,7 @@ mod tests {
                 context: "",
                 plan_file: &plan_file,
                 attempt: 1,
-                model_id: "grok-test",
+                model_id: "kigi-test",
                 tool_names: &RoleToolNames::inherit_defaults(),
                 inherit_tool_names: &RoleToolNames::inherit_defaults(),
             },

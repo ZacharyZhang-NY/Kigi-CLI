@@ -90,19 +90,19 @@ pub struct ChatCompletionRequest {
 
     /// custom headers
     #[serde(skip)]
-    pub x_grok_conv_id: Option<String>,
+    pub x_kigi_conv_id: Option<String>,
     #[serde(skip)]
-    pub x_grok_req_id: Option<String>,
+    pub x_kigi_req_id: Option<String>,
     #[serde(skip)]
-    pub x_grok_session_id: Option<String>,
+    pub x_kigi_session_id: Option<String>,
     #[serde(skip)]
-    pub x_grok_turn_idx: Option<String>,
+    pub x_kigi_turn_idx: Option<String>,
     #[serde(skip)]
-    pub x_grok_agent_id: Option<String>,
+    pub x_kigi_agent_id: Option<String>,
     #[serde(skip)]
-    pub x_grok_deployment_id: Option<String>,
+    pub x_kigi_deployment_id: Option<String>,
     #[serde(skip)]
-    pub x_grok_user_id: Option<String>,
+    pub x_kigi_user_id: Option<String>,
 
     /// Optional opaque tracing context (e.g., where to persist the finalized request payload).
     /// This is intentionally not serialized or deserialized.
@@ -127,13 +127,13 @@ impl ChatCompletionRequest {
             search_parameters: None,
             response_format: None,
             reasoning_effort: None,
-            x_grok_conv_id: None,
-            x_grok_req_id: None,
-            x_grok_session_id: None,
-            x_grok_turn_idx: None,
-            x_grok_agent_id: None,
-            x_grok_deployment_id: None,
-            x_grok_user_id: None,
+            x_kigi_conv_id: None,
+            x_kigi_req_id: None,
+            x_kigi_session_id: None,
+            x_kigi_turn_idx: None,
+            x_kigi_agent_id: None,
+            x_kigi_deployment_id: None,
+            x_kigi_user_id: None,
             trace: None,
         }
     }
@@ -153,13 +153,13 @@ impl ChatCompletionRequest {
             search_parameters: None,
             response_format: None,
             reasoning_effort: None,
-            x_grok_conv_id: None,
-            x_grok_req_id: None,
-            x_grok_session_id: None,
-            x_grok_turn_idx: None,
-            x_grok_agent_id: None,
-            x_grok_deployment_id: None,
-            x_grok_user_id: None,
+            x_kigi_conv_id: None,
+            x_kigi_req_id: None,
+            x_kigi_session_id: None,
+            x_kigi_turn_idx: None,
+            x_kigi_agent_id: None,
+            x_kigi_deployment_id: None,
+            x_kigi_user_id: None,
             trace: None,
         }
     }
@@ -1082,16 +1082,16 @@ pub struct CreateResponseWrapper {
     pub inner: crate::rs::CreateResponse,
 
     /// Custom header: conversation ID for tracking.
-    pub x_grok_conv_id: Option<String>,
+    pub x_kigi_conv_id: Option<String>,
 
     /// Custom header: request ID for tracking.
-    pub x_grok_req_id: Option<String>,
+    pub x_kigi_req_id: Option<String>,
 
-    pub x_grok_session_id: Option<String>,
-    pub x_grok_turn_idx: Option<String>,
-    pub x_grok_agent_id: Option<String>,
-    pub x_grok_deployment_id: Option<String>,
-    pub x_grok_user_id: Option<String>,
+    pub x_kigi_session_id: Option<String>,
+    pub x_kigi_turn_idx: Option<String>,
+    pub x_kigi_agent_id: Option<String>,
+    pub x_kigi_deployment_id: Option<String>,
+    pub x_kigi_user_id: Option<String>,
 
     /// Optional tracing context (e.g., where to persist the finalized request payload).
     pub trace: Option<Box<dyn TraceContext>>,
@@ -1107,13 +1107,13 @@ impl CreateResponseWrapper {
     pub fn new(inner: crate::rs::CreateResponse) -> Self {
         Self {
             inner,
-            x_grok_conv_id: None,
-            x_grok_req_id: None,
-            x_grok_session_id: None,
-            x_grok_turn_idx: None,
-            x_grok_agent_id: None,
-            x_grok_deployment_id: None,
-            x_grok_user_id: None,
+            x_kigi_conv_id: None,
+            x_kigi_req_id: None,
+            x_kigi_session_id: None,
+            x_kigi_turn_idx: None,
+            x_kigi_agent_id: None,
+            x_kigi_deployment_id: None,
+            x_kigi_user_id: None,
             trace: None,
             extra_raw_tools: vec![],
         }
@@ -1121,13 +1121,13 @@ impl CreateResponseWrapper {
 
     /// Set the conversation ID header.
     pub fn with_conv_id(mut self, conv_id: impl Into<String>) -> Self {
-        self.x_grok_conv_id = Some(conv_id.into());
+        self.x_kigi_conv_id = Some(conv_id.into());
         self
     }
 
     /// Set the request ID header.
     pub fn with_req_id(mut self, req_id: impl Into<String>) -> Self {
-        self.x_grok_req_id = Some(req_id.into());
+        self.x_kigi_req_id = Some(req_id.into());
         self
     }
 
@@ -1154,16 +1154,16 @@ pub struct MessagesRequestWrapper {
     pub inner: crate::messages::MessagesRequest,
 
     /// Custom header: conversation ID for tracking.
-    pub x_grok_conv_id: Option<String>,
+    pub x_kigi_conv_id: Option<String>,
 
     /// Custom header: request ID for tracking.
-    pub x_grok_req_id: Option<String>,
+    pub x_kigi_req_id: Option<String>,
 
-    pub x_grok_session_id: Option<String>,
-    pub x_grok_turn_idx: Option<String>,
-    pub x_grok_agent_id: Option<String>,
-    pub x_grok_deployment_id: Option<String>,
-    pub x_grok_user_id: Option<String>,
+    pub x_kigi_session_id: Option<String>,
+    pub x_kigi_turn_idx: Option<String>,
+    pub x_kigi_agent_id: Option<String>,
+    pub x_kigi_deployment_id: Option<String>,
+    pub x_kigi_user_id: Option<String>,
 
     /// Optional tracing context (e.g., where to persist the finalized request payload).
     pub trace: Option<Box<dyn TraceContext>>,
@@ -1174,26 +1174,26 @@ impl MessagesRequestWrapper {
     pub fn new(inner: crate::messages::MessagesRequest) -> Self {
         Self {
             inner,
-            x_grok_conv_id: None,
-            x_grok_req_id: None,
-            x_grok_session_id: None,
-            x_grok_turn_idx: None,
-            x_grok_agent_id: None,
-            x_grok_deployment_id: None,
-            x_grok_user_id: None,
+            x_kigi_conv_id: None,
+            x_kigi_req_id: None,
+            x_kigi_session_id: None,
+            x_kigi_turn_idx: None,
+            x_kigi_agent_id: None,
+            x_kigi_deployment_id: None,
+            x_kigi_user_id: None,
             trace: None,
         }
     }
 
     /// Set the conversation ID header.
     pub fn with_conv_id(mut self, conv_id: impl Into<String>) -> Self {
-        self.x_grok_conv_id = Some(conv_id.into());
+        self.x_kigi_conv_id = Some(conv_id.into());
         self
     }
 
     /// Set the request ID header.
     pub fn with_req_id(mut self, req_id: impl Into<String>) -> Self {
-        self.x_grok_req_id = Some(req_id.into());
+        self.x_kigi_req_id = Some(req_id.into());
         self
     }
 
@@ -1311,7 +1311,7 @@ mod tests {
     fn parse_reasoning_efforts_meta_absent_is_none() {
         assert!(parse_reasoning_efforts_meta(None).is_none());
         assert!(
-            parse_reasoning_efforts_meta(Some(json!({ "agentType": "grok" }).as_object().unwrap()))
+            parse_reasoning_efforts_meta(Some(json!({ "agentType": "kigi" }).as_object().unwrap()))
                 .is_none()
         );
     }

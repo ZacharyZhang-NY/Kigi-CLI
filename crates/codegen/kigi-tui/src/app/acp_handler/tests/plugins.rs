@@ -21,7 +21,7 @@
                 XaiSessionUpdate::PluginsChanged {
                     plugins: vec![crate::views::extensions_modal::test_plugin_info(
                         "user-tool",
-                        Some(kigi_hooks_plugins_types::PluginOrigin::UserGrok),
+                        Some(kigi_hooks_plugins_types::PluginOrigin::UserKigi),
                     )],
                 },
             ),
@@ -60,7 +60,7 @@
                     plugins: vec![
                         crate::views::extensions_modal::test_plugin_info(
                             "user-tool",
-                            Some(kigi_hooks_plugins_types::PluginOrigin::UserGrok),
+                            Some(kigi_hooks_plugins_types::PluginOrigin::UserKigi),
                         ),
                         crate::views::extensions_modal::test_plugin_info(
                             "claude-tool",
@@ -103,7 +103,7 @@
                 XaiSessionUpdate::PluginsChanged {
                     plugins: vec![crate::views::extensions_modal::test_plugin_info(
                         "user-tool",
-                        Some(kigi_hooks_plugins_types::PluginOrigin::UserGrok),
+                        Some(kigi_hooks_plugins_types::PluginOrigin::UserKigi),
                     )],
                 },
             ),

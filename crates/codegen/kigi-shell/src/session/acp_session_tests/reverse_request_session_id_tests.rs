@@ -2,10 +2,10 @@
 //! (permission / `ask_user_question` / plan-approval) must carry a
 //! non-empty `sessionId`, otherwise Tier-2 routing silently drops it
 //! (`server.rs`). The invariant holds today; these tests pin it.
-use kigi_tools::implementations::grok_build::ask_user_question::{
+use kigi_tools::implementations::kigi::ask_user_question::{
     AskUserQuestionExtRequest, AskUserQuestionMode,
 };
-use kigi_tools::implementations::grok_build::exit_plan_mode::ExitPlanModeExtRequest;
+use kigi_tools::implementations::kigi::exit_plan_mode::ExitPlanModeExtRequest;
 
 #[test]
 fn ask_user_question_request_carries_session_id() {

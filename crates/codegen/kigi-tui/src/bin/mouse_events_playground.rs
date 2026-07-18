@@ -152,7 +152,7 @@ fn draw(f: &mut ratatui::Frame, app: &App) {
         )),
         Line::from(""),
         Line::from(
-            "I'm Grok Build, an interactive CLI agent built to help with software engineering tasks.",
+            "I'm Kigi, an interactive CLI agent built to help with software engineering tasks.",
         ),
         Line::from(
             "This sample is here so you can drag over real text while watching raw mouse events.",

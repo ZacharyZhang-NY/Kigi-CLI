@@ -1,14 +1,14 @@
-//! In-process SDK MCP servers over the ACP reverse channel (`x.ai/mcp/sdk_call`).
+//! In-process SDK MCP servers over the ACP reverse channel (`kigi/mcp/sdk_call`).
 //!
-//! The official `grok-agent-sdk` lets a host define in-process tools (`@tool` /
+//! The official `kigi-agent-sdk` lets a host define in-process tools (`@tool` /
 //! `create_sdk_mcp_server`). When `transport="acp"`, the SDK registers them in
-//! `session/new` `_meta["x.ai/mcp/servers"] = [{ "name", "serverId" }]` and the agent
+//! `session/new` `_meta["kigi/mcp/servers"] = [{ "name", "serverId" }]` and the agent
 //! invokes their tools by sending each MCP JSON-RPC message back to the client as a
-//! reverse `x.ai/mcp/sdk_call` request — handled here by [`GatewayAcpInvoker`].
+//! reverse `kigi/mcp/sdk_call` request — handled here by [`GatewayAcpInvoker`].
 //!
-//! NOTE: the *reverse* route (agent -> client, `x.ai/mcp/sdk_call`) invokes a tool that
+//! NOTE: the *reverse* route (agent -> client, `kigi/mcp/sdk_call`) invokes a tool that
 //! lives in the SDK's process. It is the zero-IPC mirror of the *forward* route (client
-//! -> agent, `x.ai/mcp/call` in `extensions::mcp`), which invokes a tool on a server the
+//! -> agent, `kigi/mcp/call` in `extensions::mcp`), which invokes a tool on a server the
 //! AGENT is connected to. They use distinct method strings and sit on opposite request
 //! handlers, so they never collide.
 
@@ -20,7 +20,7 @@ use kigi_mcp::acp_transport::AcpReverseInvoker;
 use kigi_mcp::servers::AcpServerEntry;
 use kigi_mcp::wire;
 
-/// Parse `_meta["x.ai/mcp/servers"]` into [`AcpServerEntry`] registrations. Each entry
+/// Parse `_meta["kigi/mcp/servers"]` into [`AcpServerEntry`] registrations. Each entry
 /// is deserialized directly into the canonical type (so the `serverId` wire field is
 /// serde-checked, not hand-read); entries missing `name`/`serverId` are skipped with a
 /// warning. A name seen twice keeps the first (server names are the tool namespace, so a
@@ -38,12 +38,12 @@ pub fn parse_acp_mcp_servers(meta: Option<&acp::Meta>) -> Vec<AcpServerEntry> {
         let server: AcpServerEntry = match serde_json::from_value(entry.clone()) {
             Ok(server) => server,
             Err(err) => {
-                tracing::warn!(entry = %entry, %err, "ignoring malformed x.ai/mcp/servers entry");
+                tracing::warn!(entry = %entry, %err, "ignoring malformed kigi/mcp/servers entry");
                 continue;
             }
         };
         if !seen.insert(server.name.clone()) {
-            tracing::warn!(name = %server.name, "ignoring duplicate x.ai/mcp/servers entry");
+            tracing::warn!(name = %server.name, "ignoring duplicate kigi/mcp/servers entry");
             continue;
         }
         servers.push(server);
@@ -53,7 +53,7 @@ pub fn parse_acp_mcp_servers(meta: Option<&acp::Meta>) -> Vec<AcpServerEntry> {
 
 /// Reverse-RPC invoker for in-process SDK MCP servers.
 ///
-/// Each [`invoke`](AcpReverseInvoker::invoke) sends one `x.ai/mcp/sdk_call` reverse request
+/// Each [`invoke`](AcpReverseInvoker::invoke) sends one `kigi/mcp/sdk_call` reverse request
 /// straight through the gateway. `AcpAgentGatewaySender::send` returns a `Send` future
 /// (unlike the `?Send` `acp::Client::ext_method` trait method), so the rmcp transport's
 /// `Send` invoker bound is satisfied with no relay task. Calls are independent and may
@@ -68,7 +68,7 @@ impl GatewayAcpInvoker {
     }
 }
 
-/// Reverse `x.ai/mcp/sdk_call` params. Declares the on-wire field names once (mirrors
+/// Reverse `kigi/mcp/sdk_call` params. Declares the on-wire field names once (mirrors
 /// the forward side's typed `McpCallRequest`) so the `serverId` literal isn't hand-spelled.
 #[derive(serde::Serialize)]
 struct SdkCallParams<'a> {
@@ -111,7 +111,7 @@ mod tests {
     #[test]
     fn parses_valid_entries_and_skips_malformed() {
         let meta = serde_json::json!({
-            "x.ai/mcp/servers": [
+            "kigi/mcp/servers": [
                 { "name": "harness-tools", "serverId": "srv_0" },
                 { "name": "missing-id" },
                 { "serverId": "no_name" },
@@ -126,7 +126,7 @@ mod tests {
     #[test]
     fn duplicate_names_keep_the_first() {
         let meta = serde_json::json!({
-            "x.ai/mcp/servers": [
+            "kigi/mcp/servers": [
                 { "name": "tools", "serverId": "srv_0" },
                 { "name": "tools", "serverId": "srv_1" },
             ]

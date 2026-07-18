@@ -230,7 +230,7 @@ pub fn convert_list_response(resp: McpsListResponse) -> Vec<McpServerInfo> {
     servers
 }
 
-/// Patch a single server row in-place from an `x.ai/mcp/server_status`
+/// Patch a single server row in-place from an `kigi/mcp/server_status`
 /// push.
 ///
 /// Finds the row by `name` and updates its `status` (and optionally its

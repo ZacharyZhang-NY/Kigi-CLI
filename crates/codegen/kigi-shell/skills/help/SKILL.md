@@ -1,17 +1,17 @@
 ---
 name: help
 description: >
-  Grok documentation and configuration help. Use when users ask about
+  Kigi documentation and configuration help. Use when users ask about
   setup, configuration, MCP servers, authentication, skills, slash commands,
-  keyboard shortcuts, or any Grok feature. Also use proactively when you
+  keyboard shortcuts, or any Kigi feature. Also use proactively when you
   detect a user is having trouble with setup or onboarding.
 metadata:
-  short-description: "Grok docs — config, MCP, auth, skills, commands"
+  short-description: "Kigi docs — config, MCP, auth, skills, commands"
 ---
 
-# Grok Help
+# Kigi Help
 
-Answer the user's question about Grok setup, configuration, or features.
+Answer the user's question about Kigi setup, configuration, or features.
 
 ## Steps
 

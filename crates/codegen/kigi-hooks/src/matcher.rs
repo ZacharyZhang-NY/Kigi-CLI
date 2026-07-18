@@ -6,9 +6,9 @@ use regex::Regex;
 ///
 /// - an empty pattern or `"*"` matches every tool;
 /// - a "simple" pattern (only `[A-Za-z0-9_|]`, i.e. a plain name or `|`-list) is an
-///   **exact** match against each name (after external→Grok alias expansion), NOT a regex;
+///   **exact** match against each name (after external→Kigi alias expansion), NOT a regex;
 /// - anything else is an **unanchored** regex (also tested against the tool's external
-///   alias names, so e.g. `^Bash$` matches the Grok tool `run_terminal_command`).
+///   alias names, so e.g. `^Bash$` matches the Kigi tool `run_terminal_command`).
 ///
 /// The simple-vs-regex split is deliberate: it avoids anchoring a `|`-alternation (a
 /// naive `^a|b|c$` anchors only the first/last term and silently over-matches). Whitespace
@@ -61,8 +61,8 @@ fn is_simple_form(pattern: &str) -> bool {
 }
 
 /// Expand a simple-form pattern into the exact set of names it matches: each `|`-term
-/// plus any Grok tool names that term aliases (so `"Bash"` also matches
-/// `run_terminal_command`), per the shared external-name to Grok registry in
+/// plus any Kigi tool names that term aliases (so `"Bash"` also matches
+/// `run_terminal_command`), per the shared external-name to Kigi registry in
 /// `kigi-tools`. Empty terms and duplicates are dropped.
 fn exact_names(pattern: &str) -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
@@ -155,22 +155,22 @@ mod tests {
     // ── External tool-name aliases ────────────────────────────────
 
     #[test]
-    fn claude_bash_matches_grok_tool() {
+    fn claude_bash_matches_kigi_tool() {
         let m = HookMatcher::new("Bash").unwrap();
         assert!(m.is_match("Bash")); // external alias name
-        assert!(m.is_match("run_terminal_command")); // Grok name
+        assert!(m.is_match("run_terminal_command")); // Kigi name
         assert!(!m.is_match("read_file"));
         // Bug-fix regression: exact, not prefix.
         assert!(!m.is_match("run_terminal_command_v2"));
     }
 
     #[test]
-    fn claude_edit_write_matches_grok_tool_exactly() {
+    fn claude_edit_write_matches_kigi_tool_exactly() {
         let m = HookMatcher::new("Edit|Write").unwrap();
         assert!(m.is_match("Edit"));
         assert!(m.is_match("Write"));
-        assert!(m.is_match("search_replace")); // Grok equivalent
-        assert!(m.is_match("hashline_edit")); // second Grok alias
+        assert!(m.is_match("search_replace")); // Kigi equivalent
+        assert!(m.is_match("hashline_edit")); // second Kigi alias
         assert!(!m.is_match("read_file"));
         // The old anchoring bug matched these; the exact-list mode must not.
         assert!(!m.is_match("Editorial"));
@@ -178,7 +178,7 @@ mod tests {
     }
 
     #[test]
-    fn claude_read_matches_grok_tool() {
+    fn claude_read_matches_kigi_tool() {
         let m = HookMatcher::new("Read").unwrap();
         assert!(m.is_match("Read"));
         assert!(m.is_match("read_file"));
@@ -186,8 +186,8 @@ mod tests {
     }
 
     #[test]
-    fn regex_against_claude_alias_matches_grok_tool() {
-        // A regex written against an external alias still matches the Grok tool
+    fn regex_against_claude_alias_matches_kigi_tool() {
+        // A regex written against an external alias still matches the Kigi tool
         // (legacy alias-name expansion).
         let m = HookMatcher::new("^Bash$").unwrap();
         assert!(m.is_match("run_terminal_command"));

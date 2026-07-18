@@ -27,18 +27,18 @@ fn is_container_no_display() -> bool {
 
 /// Cached result of the "an upstream OSC 52 sink is capturing our output" check.
 ///
-/// `grok wrap` runs a command inside a local PTY, scans its output for OSC 52
+/// `kigi wrap` runs a command inside a local PTY, scans its output for OSC 52
 /// clipboard sequences, and writes their payload to the *real* (local) system
 /// clipboard (see `kigi-tui`'s `pty_wrap` module). It advertises this to
 /// the wrapped program via an environment variable so the
-/// inner `grok` knows its OSC 52 writes are reliably intercepted and copied,
+/// inner `kigi` knows its OSC 52 writes are reliably intercepted and copied,
 /// even when the inner terminal brand is misdetected (e.g. over SSH, where only
 /// `TERM` propagates and Apple Terminal / unknown brands look OSC-52-incapable).
 ///
 /// Two names are accepted: the canonical `KIGI_OSC52_SINK` (inherited by local
 /// children) and the `LC_`-prefixed `LC_KIGI_OSC52_SINK`, which the default
 /// OpenSSH client/server configs forward (`SendEnv LANG LC_*` /
-/// `AcceptEnv LANG LC_*`) so the signal survives the hop into a remote `grok`.
+/// `AcceptEnv LANG LC_*`) so the signal survives the hop into a remote `kigi`.
 pub fn osc52_sink_active() -> bool {
     static SINK: OnceLock<bool> = OnceLock::new();
     *SINK.get_or_init(|| {
@@ -124,7 +124,7 @@ pub fn resolve_clipboard_route(ctx: &TerminalContext) -> ClipboardRoute {
         // Linux: always emit OSC 52 as a safety net. This matches other
         // terminal agent CLIs which emit OSC 52 on every copy.
         // macOS/Windows: only in tmux/SSH/container contexts, or when an
-        // upstream `grok wrap` sink is capturing our output and will forward
+        // upstream `kigi wrap` sink is capturing our output and will forward
         // the sequence to the real clipboard.
         osc52: cfg!(target_os = "linux")
             || is_tmux

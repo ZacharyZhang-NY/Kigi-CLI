@@ -181,12 +181,12 @@ fn extract_retry_after(headers: &reqwest::header::HeaderMap) -> Option<u64> {
 
 fn extract_model_metadata(headers: &reqwest::header::HeaderMap) -> Option<ResponseModelMetadata> {
     let context_window = headers
-        .get("x-grok-context-window")
+        .get("x-kigi-context-window")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<u64>().ok());
 
     let max_completion_tokens = headers
-        .get("x-grok-max-completion-tokens")
+        .get("x-kigi-max-completion-tokens")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<u32>().ok());
 
@@ -399,7 +399,7 @@ impl SamplingClient {
 
         // Always set User-Agent: per-session origin if available, else fallback.
         // This and `extra_headers` are the only client-identity signals on the
-        // wire — the old xAI proxy's `x-grok-*` marker headers are gone
+        // wire — the old xAI proxy's `x-kigi-*` marker headers are gone
         // (PRD F3: auth is a plain bearer; kimi-cli sends only User-Agent
         // plus the OAuth device headers, src/kimi_cli/llm.py:317-323).
         {
@@ -1096,7 +1096,7 @@ impl SamplingClient {
     ///
     /// The third tuple element is a per-request doom-loop signal collector,
     /// `Some` only when `SamplerConfig::doom_loop_recovery` is set — the same
-    /// gate that adds the opt-in `x-grok-doom-loop-check` request header, so
+    /// gate that adds the opt-in `x-kigi-doom-loop-check` request header, so
     /// header and parse protection cannot drift apart. It is filled by the
     /// SSE decoder as the server reports triggers and is meant to be handed
     /// to `stream_responses` so the signals land on the final
@@ -1674,11 +1674,11 @@ impl SamplingClient {
         self.apply_conversation_defaults(&mut request)?;
 
         let trace = request.trace.take();
-        let x_grok_conv_id = request.x_grok_conv_id.clone();
-        let x_grok_req_id = request.x_grok_req_id.clone();
-        let x_grok_session_id = request.x_grok_session_id.clone();
-        let x_grok_turn_idx = request.x_grok_turn_idx.clone();
-        let x_grok_agent_id = request.x_grok_agent_id.clone();
+        let x_kigi_conv_id = request.x_kigi_conv_id.clone();
+        let x_kigi_req_id = request.x_kigi_req_id.clone();
+        let x_kigi_session_id = request.x_kigi_session_id.clone();
+        let x_kigi_turn_idx = request.x_kigi_turn_idx.clone();
+        let x_kigi_agent_id = request.x_kigi_agent_id.clone();
 
         // Collect xAI-specific tools that can't be expressed via rs::Tool
         // (e.g., x_search). These are injected as raw JSON after serialization.
@@ -1687,11 +1687,11 @@ impl SamplingClient {
         let responses_request: rs::CreateResponse = (&request).into();
 
         let mut wrapper = CreateResponseWrapper::new(responses_request);
-        wrapper.x_grok_conv_id = x_grok_conv_id;
-        wrapper.x_grok_req_id = x_grok_req_id;
-        wrapper.x_grok_session_id = x_grok_session_id;
-        wrapper.x_grok_turn_idx = x_grok_turn_idx;
-        wrapper.x_grok_agent_id = x_grok_agent_id;
+        wrapper.x_kigi_conv_id = x_kigi_conv_id;
+        wrapper.x_kigi_req_id = x_kigi_req_id;
+        wrapper.x_kigi_session_id = x_kigi_session_id;
+        wrapper.x_kigi_turn_idx = x_kigi_turn_idx;
+        wrapper.x_kigi_agent_id = x_kigi_agent_id;
         wrapper.extra_raw_tools = extra_tools;
 
         if let Some(trace) = trace {
@@ -1711,20 +1711,20 @@ impl SamplingClient {
         self.apply_conversation_defaults(&mut request)?;
 
         let trace = request.trace.take();
-        let x_grok_conv_id = request.x_grok_conv_id.clone();
-        let x_grok_req_id = request.x_grok_req_id.clone();
-        let x_grok_session_id = request.x_grok_session_id.clone();
-        let x_grok_turn_idx = request.x_grok_turn_idx.clone();
-        let x_grok_agent_id = request.x_grok_agent_id.clone();
+        let x_kigi_conv_id = request.x_kigi_conv_id.clone();
+        let x_kigi_req_id = request.x_kigi_req_id.clone();
+        let x_kigi_session_id = request.x_kigi_session_id.clone();
+        let x_kigi_turn_idx = request.x_kigi_turn_idx.clone();
+        let x_kigi_agent_id = request.x_kigi_agent_id.clone();
 
         let responses_request: rs::CreateResponse = (&request).into();
 
         let mut wrapper = CreateResponseWrapper::new(responses_request);
-        wrapper.x_grok_conv_id = x_grok_conv_id;
-        wrapper.x_grok_req_id = x_grok_req_id;
-        wrapper.x_grok_session_id = x_grok_session_id;
-        wrapper.x_grok_turn_idx = x_grok_turn_idx;
-        wrapper.x_grok_agent_id = x_grok_agent_id;
+        wrapper.x_kigi_conv_id = x_kigi_conv_id;
+        wrapper.x_kigi_req_id = x_kigi_req_id;
+        wrapper.x_kigi_session_id = x_kigi_session_id;
+        wrapper.x_kigi_turn_idx = x_kigi_turn_idx;
+        wrapper.x_kigi_agent_id = x_kigi_agent_id;
 
         if let Some(trace) = trace {
             wrapper.trace = Some(trace);
@@ -1746,20 +1746,20 @@ impl SamplingClient {
         self.apply_conversation_defaults(&mut request)?;
 
         let trace = request.trace.take();
-        let x_grok_conv_id = request.x_grok_conv_id.clone();
-        let x_grok_req_id = request.x_grok_req_id.clone();
-        let x_grok_session_id = request.x_grok_session_id.clone();
-        let x_grok_turn_idx = request.x_grok_turn_idx.clone();
-        let x_grok_agent_id = request.x_grok_agent_id.clone();
+        let x_kigi_conv_id = request.x_kigi_conv_id.clone();
+        let x_kigi_req_id = request.x_kigi_req_id.clone();
+        let x_kigi_session_id = request.x_kigi_session_id.clone();
+        let x_kigi_turn_idx = request.x_kigi_turn_idx.clone();
+        let x_kigi_agent_id = request.x_kigi_agent_id.clone();
 
         let messages_request = build_messages_request(&request);
 
         let mut wrapper = MessagesRequestWrapper::new(messages_request);
-        wrapper.x_grok_conv_id = x_grok_conv_id;
-        wrapper.x_grok_req_id = x_grok_req_id;
-        wrapper.x_grok_session_id = x_grok_session_id;
-        wrapper.x_grok_turn_idx = x_grok_turn_idx;
-        wrapper.x_grok_agent_id = x_grok_agent_id;
+        wrapper.x_kigi_conv_id = x_kigi_conv_id;
+        wrapper.x_kigi_req_id = x_kigi_req_id;
+        wrapper.x_kigi_session_id = x_kigi_session_id;
+        wrapper.x_kigi_turn_idx = x_kigi_turn_idx;
+        wrapper.x_kigi_agent_id = x_kigi_agent_id;
 
         if let Some(trace) = trace {
             wrapper.trace = Some(trace);
@@ -1778,20 +1778,20 @@ impl SamplingClient {
         self.apply_conversation_defaults(&mut request)?;
 
         let trace = request.trace.take();
-        let x_grok_conv_id = request.x_grok_conv_id.clone();
-        let x_grok_req_id = request.x_grok_req_id.clone();
-        let x_grok_session_id = request.x_grok_session_id.clone();
-        let x_grok_turn_idx = request.x_grok_turn_idx.clone();
-        let x_grok_agent_id = request.x_grok_agent_id.clone();
+        let x_kigi_conv_id = request.x_kigi_conv_id.clone();
+        let x_kigi_req_id = request.x_kigi_req_id.clone();
+        let x_kigi_session_id = request.x_kigi_session_id.clone();
+        let x_kigi_turn_idx = request.x_kigi_turn_idx.clone();
+        let x_kigi_agent_id = request.x_kigi_agent_id.clone();
 
         let messages_request = build_messages_request(&request);
 
         let mut wrapper = MessagesRequestWrapper::new(messages_request);
-        wrapper.x_grok_conv_id = x_grok_conv_id;
-        wrapper.x_grok_req_id = x_grok_req_id;
-        wrapper.x_grok_session_id = x_grok_session_id;
-        wrapper.x_grok_turn_idx = x_grok_turn_idx;
-        wrapper.x_grok_agent_id = x_grok_agent_id;
+        wrapper.x_kigi_conv_id = x_kigi_conv_id;
+        wrapper.x_kigi_req_id = x_kigi_req_id;
+        wrapper.x_kigi_session_id = x_kigi_session_id;
+        wrapper.x_kigi_turn_idx = x_kigi_turn_idx;
+        wrapper.x_kigi_agent_id = x_kigi_agent_id;
 
         if let Some(trace) = trace {
             wrapper.trace = Some(trace);
@@ -1893,13 +1893,13 @@ mod tests {
             search_parameters: None,
             response_format: None,
             reasoning_effort: None,
-            x_grok_conv_id: None,
-            x_grok_req_id: None,
-            x_grok_session_id: None,
-            x_grok_turn_idx: None,
-            x_grok_agent_id: None,
-            x_grok_deployment_id: None,
-            x_grok_user_id: None,
+            x_kigi_conv_id: None,
+            x_kigi_req_id: None,
+            x_kigi_session_id: None,
+            x_kigi_turn_idx: None,
+            x_kigi_agent_id: None,
+            x_kigi_deployment_id: None,
+            x_kigi_user_id: None,
             trace: None,
         };
 
@@ -2377,7 +2377,7 @@ mod tests {
                 "id": "resp_1",
                 "object": "response",
                 "created_at": 0,
-                "model": "grok-build",
+                "model": "kigi",
                 "status": "completed",
                 "output": [],
                 "usage": {
@@ -2417,7 +2417,7 @@ mod tests {
                 "sequence_number": 0,
                 "response": {{
                     "id": "resp_1", "object": "response", "created_at": 0,
-                    "model": "grok-build", "status": "completed", "output": [],
+                    "model": "kigi", "status": "completed", "output": [],
                     "usage": {{
                         "input_tokens": 10,
                         "input_tokens_details": {{ "cached_tokens": 0 }},
@@ -2463,7 +2463,7 @@ mod tests {
                 "id": "resp_1",
                 "object": "response",
                 "created_at": 0,
-                "model": "grok-build",
+                "model": "kigi",
                 "status": "completed",
                 "output": [],
                 "usage": {
@@ -2497,7 +2497,7 @@ mod tests {
                 "id": "resp_1",
                 "object": "response",
                 "created_at": 0,
-                "model": "grok-build",
+                "model": "kigi",
                 "status": "completed",
                 "output": [],
                 "usage": {

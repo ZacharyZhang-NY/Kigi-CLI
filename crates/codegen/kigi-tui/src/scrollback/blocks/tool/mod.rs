@@ -656,7 +656,7 @@ mod tests {
             ToolCallBlock::ListDir(ListDirToolCallBlock::new("src")),
             ToolCallBlock::Search(SearchToolCallBlock::new("todo")),
             ToolCallBlock::WebFetch(WebFetchToolCallBlock::new("https://example.com")),
-            ToolCallBlock::WebSearch(WebSearchToolCallBlock::new("grok")),
+            ToolCallBlock::WebSearch(WebSearchToolCallBlock::new("kigi")),
             ToolCallBlock::IntegrationSearch(IntegrationSearchToolCallBlock::new("linear")),
             ToolCallBlock::UseTool(UseToolCallBlock::new("linear__save_issue")),
             ToolCallBlock::MemorySearch(MemorySearchToolCallBlock::new("auth")),

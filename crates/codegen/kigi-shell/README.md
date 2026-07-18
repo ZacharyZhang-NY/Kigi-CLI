@@ -1,4 +1,4 @@
-# Grok
+# Kigi
 
 A terminal-based AI coding assistant and agentic harness.
 
@@ -11,24 +11,24 @@ Use it interactively as a TUI, or integrate it into your own apps via headless m
 curl -fsSL https://x.ai/cli/install.sh | bash
 
 # Interactive TUI
-grok
+kigi
 
 # Headless (for scripts/automation)
-grok -p "Explain this codebase"
+kigi -p "Explain this codebase"
 
 # Agent mode (for IDE/app integration)
-grok agent stdio
+kigi agent stdio
 ```
 
 ## Contents
 
 - [Installation](#installation)
 - [Authentication](#authentication) — browser login, API key, OIDC, external auth providers
-- **Using Grok**
+- **Using Kigi**
   - [Interactive TUI](#interactive-tui) — shortcuts, slash commands, file references
   - [Headless Mode](#headless-mode) — scripting, CI/CD, output formats
   - [Agent Mode](#agent-mode) — stdio, ACP integration
-  - [SSH Passthrough](#ssh-passthrough-grok-ssh) — Apple Terminal clipboard support
+  - [SSH Passthrough](#ssh-passthrough-kigi-ssh) — Apple Terminal clipboard support
 - **Configuration**
   - [Config File](#configuration) — general settings, telemetry, LSP, enterprise deployment
   - [Custom Models](#custom-models) — BYOK, Ollama, OpenAI, custom endpoints
@@ -44,14 +44,14 @@ grok agent stdio
   - [Memory](#memory) — cross-session knowledge persistence
   - [Sandbox](#sandbox) — OS-level filesystem/network isolation
 - **Reference**
-  - [Introspection (`grok inspect`)](#introspection)
+  - [Introspection (`kigi inspect`)](#introspection)
   - [Claude Code Compatibility](#claude-code-compatibility)
   - [Built-in Tools](#built-in-tools)
   - [Session Persistence](#session-persistence) — storage layout, resume
   - [File Locations](#file-locations)
   - [Environment Variables](#environment-variables)
   - [Troubleshooting](#troubleshooting)
-- [Building with Grok](#building-with-grok) — headless API, ACP SDK integration
+- [Building with Kigi](#building-with-kigi) — headless API, ACP SDK integration
 
 ---
 
@@ -68,13 +68,13 @@ curl -fsSL https://x.ai/cli/install.sh | bash -s 0.1.42
 Verify installation:
 
 ```bash
-grok --version
+kigi --version
 ```
 
 Update to the latest version:
 
 ```bash
-grok update
+kigi update
 ```
 
 ---
@@ -83,20 +83,20 @@ grok update
 
 ### Browser Login (Default)
 
-On first launch, Grok opens your browser to authenticate with grok.com:
+On first launch, Kigi opens your browser to authenticate with kigi.com:
 
 ```bash
-grok
+kigi
 ```
 
-Credentials are stored in `~/.kigi/auth.json` and persist across sessions. Tokens expire after 7 days; Grok will prompt you to re-authenticate when needed.
+Credentials are stored in `~/.kigi/auth.json` and persist across sessions. Tokens expire after 7 days; Kigi will prompt you to re-authenticate when needed.
 
 ### Re-authenticate
 
 To switch accounts or fix authentication issues:
 
 ```bash
-grok login
+kigi login
 ```
 
 ### API Key
@@ -105,7 +105,7 @@ For CI/CD, automation, or environments without browser access, use an API key fr
 
 ```bash
 export XAI_API_KEY="xai-..."
-grok
+kigi
 ```
 
 The API key takes precedence over browser credentials.
@@ -123,7 +123,7 @@ Authenticate developers via your own Identity Provider (Okta, Azure AD, Auth0) i
 
 ```toml
 # ~/.kigi/config.toml
-[grok_com_config.oidc]
+[kigi_com_config.oidc]
 issuer = "https://acme.okta.com"
 client_id = "0oa1b2c3d4e5f6g7h8i9"
 ```
@@ -136,10 +136,10 @@ export KIGI_OIDC_CLIENT_ID="0oa1b2c3d4e5f6g7h8i9"
 
 Customers typically also override the API endpoint to point at their own proxy:
 ```bash
-export KIGI_CLI_CHAT_PROXY_BASE_URL="https://grok-proxy.acme.com/v1"
+export KIGI_CLI_CHAT_PROXY_BASE_URL="https://kigi-proxy.acme.com/v1"
 ```
 
-**3. Run `grok`.** The CLI discovers endpoints via `{issuer}/.well-known/openid-configuration`, opens the IdP login page, and stores tokens in `~/.kigi/auth.json`. The OIDC token is sent as `Authorization: Bearer` to the configured proxy. Tokens auto-refresh silently via the stored `refresh_token`.
+**3. Run `kigi`.** The CLI discovers endpoints via `{issuer}/.well-known/openid-configuration`, opens the IdP login page, and stores tokens in `~/.kigi/auth.json`. The OIDC token is sent as `Authorization: Bearer` to the configured proxy. Tokens auto-refresh silently via the stored `refresh_token`.
 
 **Optional fields:**
 
@@ -152,13 +152,13 @@ export KIGI_CLI_CHAT_PROXY_BASE_URL="https://grok-proxy.acme.com/v1"
 
 For environments where browser-based login isn't possible (sandboxed VMs, CI runners, air-gapped networks), delegate authentication to an external binary or script. This is the recommended approach for enterprise deployments where your company runs its own auth infrastructure (SSO, device code flows, certificate auth, etc.).
 
-Grok is provider-agnostic — it doesn't know or care how your binary authenticates. It just runs the command, reads a token from stdout, and stores it. Your binary is a black box that handles the entire auth flow.
+Kigi is provider-agnostic — it doesn't know or care how your binary authenticates. It just runs the command, reads a token from stdout, and stores it. Your binary is a black box that handles the entire auth flow.
 
 #### How It Works
 
 ```
 ┌──────────────┐     sh -c     ┌────────────────────────┐
-│     Grok     │──────────────▶│  your auth binary      │
+│     Kigi     │──────────────▶│  your auth binary      │
 │              │               │                        │
 │  reads       │◀── stdout ────│  prints token          │
 │  auth.json   │               │                        │
@@ -166,11 +166,11 @@ Grok is provider-agnostic — it doesn't know or care how your binary authentica
 └──────────────┘               └────────────────────────┘
 ```
 
-1. Grok runs your command via `sh -c "<command>"`
+1. Kigi runs your command via `sh -c "<command>"`
 2. Your binary does whatever auth flow it needs (SSO login, device code, cert exchange, etc.)
 3. **stderr** → displayed directly to the user (use for login URLs, status messages, progress)
-4. **stdout** → captured by Grok and saved to `~/.kigi/auth.json` as the access token
-5. exit 0 → success; exit non-zero → Grok falls through to interactive login
+4. **stdout** → captured by Kigi and saved to `~/.kigi/auth.json` as the access token
+5. exit 0 → success; exit non-zero → Kigi falls through to interactive login
 
 #### The stdout / stderr Contract
 
@@ -178,10 +178,10 @@ This is the most important thing to get right:
 
 | Stream | What to print | Who sees it |
 |--------|---------------|-------------|
-| **stdout** | The token — nothing else | Grok (parsed and stored in `auth.json`) |
+| **stdout** | The token — nothing else | Kigi (parsed and stored in `auth.json`) |
 | **stderr** | Login URLs, status messages, errors, progress | The user (displayed in their terminal) |
 
-**Do not print anything to stdout except the token.** No progress messages, no debug output, no "Login successful!" text. Grok reads stdout verbatim and tries to parse it as a token. Any extra text will break parsing.
+**Do not print anything to stdout except the token.** No progress messages, no debug output, no "Login successful!" text. Kigi reads stdout verbatim and tries to parse it as a token. Any extra text will break parsing.
 
 #### stdout Token Format
 
@@ -197,7 +197,7 @@ eyJhbGciOiJSUzI1NiIs...
 {"access_token": "eyJhbGciOi...", "refresh_token": "ref-tok", "expires_in": 3600}
 ```
 
-Use JSON if your tokens expire and you want Grok to automatically re-run the binary before expiry. The `expires_in` field (seconds until expiry) tells Grok when to proactively refresh. Without it, Grok assumes tokens last 30 days.
+Use JSON if your tokens expire and you want Kigi to automatically re-run the binary before expiry. The `expires_in` field (seconds until expiry) tells Kigi when to proactively refresh. Without it, Kigi assumes tokens last 30 days.
 
 #### Minimal Example
 
@@ -209,7 +209,7 @@ echo "Visit: https://sso.acme.com/device-login?code=ABCD-1234" >&2
 
 # ... do the auth flow, get a token ...
 
-# Print ONLY the token to stdout (Grok captures this)
+# Print ONLY the token to stdout (Kigi captures this)
 echo "eyJhbGciOiJSUzI1NiIs..."
 ```
 
@@ -230,11 +230,11 @@ export KIGI_AUTH_PROVIDER_LABEL="Acme Corp"   # optional
 export KIGI_AUTH_TOKEN_TTL=3600               # optional
 ```
 
-If your binary outputs a bare token string (not JSON with `expires_in`), set `auth_token_ttl` to the token's expected lifetime in seconds. Without it, Grok cannot detect expiry proactively and will only refresh after a 401.
+If your binary outputs a bare token string (not JSON with `expires_in`), set `auth_token_ttl` to the token's expected lifetime in seconds. Without it, Kigi cannot detect expiry proactively and will only refresh after a 401.
 
 The command is run via `sh -c`, so it can be a binary path, a shell script, or a pipeline.
 
-When `auth_provider_label` is set, the TUI welcome screen shows **"Login with Acme Corp"** instead of "Login with grok.com". In headless mode (`grok -p`), the label has no effect — stderr from your binary is printed directly to the terminal.
+When `auth_provider_label` is set, the TUI welcome screen shows **"Login with Acme Corp"** instead of "Login with kigi.com". In headless mode (`kigi -p`), the label has no effect — stderr from your binary is printed directly to the terminal.
 
 > **Enterprise setup:** For a complete enterprise `config.toml` combining external auth, corporate proxy, and telemetry settings, see [Enterprise Deployment](#enterprise-deployment) in the Configuration section.
 
@@ -243,7 +243,7 @@ When `auth_provider_label` is set, the TUI welcome screen shows **"Login with Ac
 ```bash
 #!/bin/sh
 # 1. Request device code from your IdP
-RESP=$(curl -s -X POST https://auth.acme.com/device/code -d "client_id=grok-cli")
+RESP=$(curl -s -X POST https://auth.acme.com/device/code -d "client_id=kigi-cli")
 CODE=$(echo "$RESP" | jq -r '.user_code')
 URL=$(echo "$RESP" | jq -r '.verification_uri')
 DEVICE_CODE=$(echo "$RESP" | jq -r '.device_code')
@@ -266,7 +266,7 @@ echo "{\"access_token\": \"$TOKEN\", \"expires_in\": 3600}"
 
 #### Example: Auth Binary with Refresh Support
 
-When Grok needs to refresh an expired token, it re-runs your binary with `KIGI_AUTH_EXPIRED=1` set in the environment. Your binary can use this to take a faster silent-refresh path:
+When Kigi needs to refresh an expired token, it re-runs your binary with `KIGI_AUTH_EXPIRED=1` set in the environment. Your binary can use this to take a faster silent-refresh path:
 
 ```bash
 #!/bin/sh
@@ -288,31 +288,31 @@ fi
 echo "{\"access_token\": \"$TOKEN\", \"expires_in\": 3600}"
 ```
 
-`KIGI_AUTH_EXPIRED` is optional — if your binary ignores it, Grok still works. It just runs the same flow for both login and refresh.
+`KIGI_AUTH_EXPIRED` is optional — if your binary ignores it, Kigi still works. It just runs the same flow for both login and refresh.
 
 ### Automatic Credential Refresh
 
-Grok supports automatic credential refresh for external auth providers and OIDC. When Grok detects that your token is expired (either locally based on `expires_in`, or when the server returns a 401), it automatically re-runs your `auth_provider_command` to obtain new credentials before retrying the request.
+Kigi supports automatic credential refresh for external auth providers and OIDC. When Kigi detects that your token is expired (either locally based on `expires_in`, or when the server returns a 401), it automatically re-runs your `auth_provider_command` to obtain new credentials before retrying the request.
 
-This is transparent — you don't need to do anything. Grok handles it in the background during your session.
+This is transparent — you don't need to do anything. Kigi handles it in the background during your session.
 
 **When does refresh happen?**
 
-- **Before expiry:** If your binary returned `expires_in` in its JSON output, or you set `auth_token_ttl` in config, Grok re-runs the binary ~5 minutes before the token expires, so you never see an auth error.
-- **On auth error:** If the server rejects a request with 401/403 (e.g. token was revoked or expired), Grok re-runs the binary and retries the request once.
-- **OIDC:** If you're using OIDC and have a `refresh_token`, Grok silently refreshes via your IdP without re-opening the browser.
+- **Before expiry:** If your binary returned `expires_in` in its JSON output, or you set `auth_token_ttl` in config, Kigi re-runs the binary ~5 minutes before the token expires, so you never see an auth error.
+- **On auth error:** If the server rejects a request with 401/403 (e.g. token was revoked or expired), Kigi re-runs the binary and retries the request once.
+- **OIDC:** If you're using OIDC and have a `refresh_token`, Kigi silently refreshes via your IdP without re-opening the browser.
 
 **Tuning the refresh buffer:**
 
 ```bash
-# Grok refreshes tokens 5 minutes before expiry by default.
+# Kigi refreshes tokens 5 minutes before expiry by default.
 # Set to 0 to only refresh on 401. Set higher for very short-lived tokens.
 export KIGI_AUTH_EARLY_INVALIDATION_SECS=300
 ```
 
 **Keep in mind:**
-- When using `auth_provider_command`, you don't need to run `grok login` before starting — Grok runs your binary automatically on first launch. You _can_ run `grok login` to explicitly hydrate `auth.json` ahead of time if you prefer.
-- If both OIDC and `auth_provider_command` are configured: at **login** time, Grok tries OIDC silent refresh first (if a `refresh_token` exists), then the external binary, then browser-based login. During a **session**, whichever method is configured is used exclusively — if `auth_provider_command` is set it handles all mid-session refreshes; otherwise OIDC silent refresh is used.
+- When using `auth_provider_command`, you don't need to run `kigi login` before starting — Kigi runs your binary automatically on first launch. You _can_ run `kigi login` to explicitly hydrate `auth.json` ahead of time if you prefer.
+- If both OIDC and `auth_provider_command` are configured: at **login** time, Kigi tries OIDC silent refresh first (if a `refresh_token` exists), then the external binary, then browser-based login. During a **session**, whichever method is configured is used exclusively — if `auth_provider_command` is set it handles all mid-session refreshes; otherwise OIDC silent refresh is used.
 - Your binary's stderr output is displayed to the user but interactive stdin is not supported. This works well for browser-based SSO flows where the binary displays a URL and you complete authentication in the browser.
 
 #### Troubleshooting Auth
@@ -320,8 +320,8 @@ export KIGI_AUTH_EARLY_INVALIDATION_SECS=300
 Enable debug logging to trace the auth flow:
 
 ```bash
-grok --debug-file /tmp/grok-auth.log -p "hello"
-tail -f /tmp/grok-auth.log
+kigi --debug-file /tmp/kigi-auth.log -p "hello"
+tail -f /tmp/kigi-auth.log
 ```
 
 Common log messages:
@@ -336,16 +336,16 @@ Common log messages:
 
 ### Using auth.json for API Access
 
-If you've authenticated with `grok login`, you can use the stored credentials to call the CLI chat proxy directly via curl. The proxy requires specific headers that mirror what the grok CLI sends internally:
+If you've authenticated with `kigi login`, you can use the stored credentials to call the CLI chat proxy directly via curl. The proxy requires specific headers that mirror what the kigi CLI sends internally:
 
 ```bash
 curl -s -N -X POST "https://cli-chat-proxy.kigi.com/v1/chat/completions" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $(jq -r '."https://accounts.x.ai/sign-in".key' ~/.kigi/auth.json)" \
-  -H "X-XAI-Token-Auth: xai-grok-cli" \
-  -H "x-grok-model-override: grok-build" \
+  -H "X-XAI-Token-Auth: xai-kigi-cli" \
+  -H "x-kigi-model-override: kigi" \
   -d '{
-    "model": "grok-build",
+    "model": "kigi",
     "messages": [{"role": "user", "content": "Hello!"}],
     "stream": true
   }'
@@ -355,9 +355,9 @@ curl -s -N -X POST "https://cli-chat-proxy.kigi.com/v1/chat/completions" \
 
 | Header                           | Required | Purpose                                                                                                                                                                                   |
 | -------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Authorization: Bearer <token>`  | Yes      | Session token from `~/.kigi/auth.json` (set by `grok login`)                                                                                                                              |
-| `X-XAI-Token-Auth: xai-grok-cli` | Yes      | Tells the auth middleware to validate as a CLI session token                                                                                                                              |
-| `x-grok-model-override: <model>` | Yes\*    | The proxy uses this header (not the JSON body) to route to the correct backend. \*Can be omitted for `grok-build` which is on the default route, but always safe to include. |
+| `Authorization: Bearer <token>`  | Yes      | Session token from `~/.kigi/auth.json` (set by `kigi login`)                                                                                                                              |
+| `X-XAI-Token-Auth: xai-kigi-cli` | Yes      | Tells the auth middleware to validate as a CLI session token                                                                                                                              |
+| `x-kigi-model-override: <model>` | Yes\*    | The proxy uses this header (not the JSON body) to route to the correct backend. \*Can be omitted for `kigi` which is on the default route, but always safe to include. |
 
 **Streaming vs non-streaming:**
 
@@ -365,9 +365,9 @@ Most models behind the proxy only support streaming. Always use `"stream": true`
 
 | Model                 | Non-streaming  | Streaming    |
 | --------------------- | -------------- | ------------ |
-| `grok-build`    | ✅ Supported   | ✅ Supported |
+| `kigi`    | ✅ Supported   | ✅ Supported |
 
-> **Note:** `auth.json` tokens expire after 7 days. Run `grok login` to refresh.
+> **Note:** `auth.json` tokens expire after 7 days. Run `kigi login` to refresh.
 
 ---
 
@@ -378,7 +378,7 @@ The TUI (Terminal User Interface) provides a full interactive coding environment
 ### Launch
 
 ```bash
-grok [OPTIONS]
+kigi [OPTIONS]
 ```
 
 ### Options
@@ -404,16 +404,16 @@ grok [OPTIONS]
 
 ```bash
 # Start in a specific project
-grok --cwd ~/projects/my-app
+kigi --cwd ~/projects/my-app
 
 # Start with an initial task
-grok --prompt "Review this codebase and suggest improvements"
+kigi --prompt "Review this codebase and suggest improvements"
 
 # Add project-specific rules
-grok --rules "Always use TypeScript. Prefer functional components."
+kigi --rules "Always use TypeScript. Prefer functional components."
 
 # Auto-approve mode for trusted tasks
-grok --always-approve --prompt "Format all files"
+kigi --always-approve --prompt "Format all files"
 ```
 
 ### Keyboard Shortcuts
@@ -458,7 +458,7 @@ Type `/` in the input to access commands:
 
 ```bash
 # Example usage in TUI:
-/model grok-build
+/model kigi
 /new
 /rewind
 /feedback Something isn't working
@@ -499,7 +499,7 @@ The `!` modifier allows you to attach any file in the project regardless of igno
 
 ## Headless Mode
 
-Run Grok non-interactively from the command line. Use headless mode when you need to:
+Run Kigi non-interactively from the command line. Use headless mode when you need to:
 
 - **Automate tasks** — CI/CD pipelines, pre-commit hooks, cron jobs
 - **Script workflows** — Batch process files, chain with other tools
@@ -511,7 +511,7 @@ Headless mode accepts a single prompt, executes it with full tool access, and re
 ### Basic Usage
 
 ```bash
-grok -p "Your prompt here"
+kigi -p "Your prompt here"
 ```
 
 ### Options
@@ -519,7 +519,7 @@ grok -p "Your prompt here"
 | Flag                    | Description                                           |
 | ----------------------- | ----------------------------------------------------- |
 | `-p, --single <PROMPT>` | The prompt to send (required)                         |
-| `-m, --model <MODEL>`   | Model to use (e.g., `grok-build`)               |
+| `-m, --model <MODEL>`   | Model to use (e.g., `kigi`)               |
 | `-s, --session-id <ID>` | Create or resume a headless session with this ID      |
 | `-r, --resume <ID>`     | Resume an existing session (errors if not found)      |
 | `-c, --continue`        | Continue the most recent session in current directory |
@@ -555,13 +555,13 @@ Tool names correspond to the internal tool IDs shown below. For quick reference:
 
 ```bash
 # Only allow read-only tools
-grok -p "Explain this codebase" --tools "read_file,grep,list_dir"
+kigi -p "Explain this codebase" --tools "read_file,grep,list_dir"
 
 # Remove web access and file editing
-grok -p "Review this code" --disallowed-tools "web_search,web_fetch,search_replace"
+kigi -p "Review this code" --disallowed-tools "web_search,web_fetch,search_replace"
 
 # Remove shell access
-grok -p "Review this code" --disallowed-tools "run_terminal_cmd"
+kigi -p "Review this code" --disallowed-tools "run_terminal_cmd"
 ```
 
 `--disallowed-tools` also supports special `Agent` entries to control subagent spawning:
@@ -574,10 +574,10 @@ grok -p "Review this code" --disallowed-tools "run_terminal_cmd"
 
 ```bash
 # Allow tools but prevent the agent from spawning any subagents
-grok -p "Fix this bug" --disallowed-tools "Agent"
+kigi -p "Fix this bug" --disallowed-tools "Agent"
 
 # Block only the explore subagent
-grok -p "Refactor this module" --disallowed-tools "Agent(explore)"
+kigi -p "Refactor this module" --disallowed-tools "Agent(explore)"
 ```
 
 When `--tools` is set, only the listed tools are available and default tool injection is disabled. When both flags are present, `--disallowed-tools` runs after `--tools` — use this to start from an allowlist and then remove specific entries.
@@ -604,19 +604,19 @@ Glob patterns support `*` (single-level wildcard) and `**` (recursive). A bare p
 
 ```bash
 # Deny all shell commands matching "rm*"
-grok -p "Clean up this project" --deny "Bash(rm*)"
+kigi -p "Clean up this project" --deny "Bash(rm*)"
 
 # Allow npm commands, deny everything else dangerous
-grok -p "Set up the project" --allow "Bash(npm*)" --deny "Bash(sudo*)"
+kigi -p "Set up the project" --allow "Bash(npm*)" --deny "Bash(sudo*)"
 
 # Deny edits outside src/
-grok -p "Refactor the code" --deny "Edit(/etc/**)"
+kigi -p "Refactor the code" --deny "Edit(/etc/**)"
 
 # Allow all bash commands (auto-approve without prompting)
-grok -p "Build the project" --allow "Bash"
+kigi -p "Build the project" --allow "Bash"
 
 # Combine: allow fetching docs sites, deny other URLs
-grok --allow "WebFetch(domain:docs.rs)" --deny "WebFetch(*)"
+kigi --allow "WebFetch(domain:docs.rs)" --deny "WebFetch(*)"
 ```
 
 `--allow` and `--deny` can be repeated to add multiple rules. Deny rules take precedence over allow rules. These flags work in both TUI and headless mode.
@@ -625,26 +625,26 @@ grok --allow "WebFetch(domain:docs.rs)" --deny "WebFetch(*)"
 
 ```bash
 # Simple question
-grok -p "What does this project do?"
+kigi -p "What does this project do?"
 
 # Use a specific model
-grok -p "Optimize this function" -m grok-build
+kigi -p "Optimize this function" -m kigi
 
 # Get JSON output for parsing
-grok -p "List all TODO comments in the codebase" --output-format json
+kigi -p "List all TODO comments in the codebase" --output-format json
 
 # Streaming JSON for real-time processing
-grok -p "Explain the architecture" --output-format streaming-json
+kigi -p "Explain the architecture" --output-format streaming-json
 
 # Multi-turn conversation (session ID is returned in JSON output)
-grok -p "Remember: the secret number is 42" --output-format json
-grok -p "What's the secret number?" --resume <sessionId>
+kigi -p "Remember: the secret number is 42" --output-format json
+kigi -p "What's the secret number?" --resume <sessionId>
 
 # Resume most recent session
-grok -p "Continue where we left off" -c
+kigi -p "Continue where we left off" -c
 
 # Run in a different directory
-grok -p "Run the tests" --cwd ~/projects/other-app --always-approve
+kigi -p "Run the tests" --cwd ~/projects/other-app --always-approve
 ```
 
 ### Scripting with Named Sessions
@@ -653,10 +653,10 @@ For CI and automation, `-s/--session-id` lets you choose your own session ID:
 
 ```bash
 # Start a session namespaced to a PR
-grok -p "Review the changes in this PR" -s "critique-myrepo-pr-123"
+kigi -p "Review the changes in this PR" -s "critique-myrepo-pr-123"
 
 # Continue in the same session
-grok -p "Now check for security issues" -s "critique-myrepo-pr-123"
+kigi -p "Now check for security issues" -s "critique-myrepo-pr-123"
 ```
 
 If the session exists it picks up where you left off; if not, a new one is created.
@@ -697,25 +697,25 @@ Here's a summary of the codebase...
 
 ```bash
 # Pipe output to a file
-grok -p "Generate a README" > README.md
+kigi -p "Generate a README" > README.md
 
 # Parse JSON output with jq
-grok -p "List files" --output-format json | jq -r '.text'
+kigi -p "List files" --output-format json | jq -r '.text'
 
 # CI/CD: automated code review
-grok -p "Review changes for bugs and security issues." \
+kigi -p "Review changes for bugs and security issues." \
   --output-format json --always-approve | jq -r '.text' > review.md
 
 # Pipeline: chain with other tools
-git diff --staged | grok -p "Write a concise commit message for these changes"
+git diff --staged | kigi -p "Write a concise commit message for these changes"
 
 # Batch: process multiple files
 for file in src/*.js; do
-  grok -p "Migrate $file from CommonJS to ES modules." --always-approve
+  kigi -p "Migrate $file from CommonJS to ES modules." --always-approve
 done
 
 # Pre-commit hook
-grok -p "Review staged changes for obvious bugs. Reply OK if fine, or list issues." \
+kigi -p "Review staged changes for obvious bugs. Reply OK if fine, or list issues." \
   --always-approve --output-format json | jq -r '.text' | grep -q "^OK" || exit 1
 ```
 
@@ -725,14 +725,14 @@ grok -p "Review staged changes for obvious bugs. Reply OK if fine, or list issue
 
 ## Agent Mode
 
-Run Grok as an ACP (Agent Client Protocol) agent for integration with IDEs, editors, and custom tooling.
+Run Kigi as an ACP (Agent Client Protocol) agent for integration with IDEs, editors, and custom tooling.
 
 ### stdio Transport
 
 For direct integration with ACP clients:
 
 ```bash
-grok agent stdio
+kigi agent stdio
 ```
 
 Communication happens via JSON-RPC over stdin/stdout. This mode is used by:
@@ -745,7 +745,7 @@ Communication happens via JSON-RPC over stdin/stdout. This mode is used by:
 
 | Flag                  | Description                                                                         |
 | --------------------- | ----------------------------------------------------------------------------------- |
-| `-m, --model <MODEL>` | Override the default model ID (e.g., `grok-build`)                           |
+| `-m, --model <MODEL>` | Override the default model ID (e.g., `kigi`)                           |
 | `--always-approve`    | Start in always-approve mode (auto-approve all tool executions without confirmation) |
 | `--reauth`            | Force re-authentication flow                                                        |
 
@@ -755,7 +755,7 @@ Communication happens via JSON-RPC over stdin/stdout. This mode is used by:
 To expose the agent over the internet (instead of local network), run a WebSocket relay server and have the agent connect to it:
 
 ```bash
-grok agent headless --grok-ws-url wss://your-relay.example.com/ws
+kigi agent headless --kigi-ws-url wss://your-relay.example.com/ws
 ```
 
 The agent connects OUT to your relay, and your web clients connect to the same relay. Useful for building web UIs where browsers can't spawn local processes.
@@ -764,31 +764,31 @@ The agent connects OUT to your relay, and your web clients connect to the same r
 
 ---
 
-## SSH Passthrough (`grok ssh`)
+## SSH Passthrough (`kigi ssh`)
 
-Use `grok ssh` instead of plain `ssh` when connecting to remote hosts in terminals that lack native support (e.g. Apple Terminal) for local OSC 52 clipboard interception.
+Use `kigi ssh` instead of plain `ssh` when connecting to remote hosts in terminals that lack native support (e.g. Apple Terminal) for local OSC 52 clipboard interception.
 
 ```bash
 # Basic usage (same args as ssh)
-grok ssh user@host
+kigi ssh user@host
 
 # With SSH flags
-grok ssh -t user@host
-grok ssh -L 8080:localhost:8080 user@host
+kigi ssh -t user@host
+kigi ssh -L 8080:localhost:8080 user@host
 
 # With remote command
-grok ssh user@host -- tmux attach
+kigi ssh user@host -- tmux attach
 ```
 
-On macOS, if the terminal doesn't natively handle OSC 52, `grok ssh` runs SSH inside a local PTY that intercepts clipboard sequences and writes them to `pbcopy`. Both plain OSC 52 and tmux DCS passthrough are handled. Terminals with native OSC 52 (iTerm2, Ghostty, Kitty, WezTerm, Alacritty) get a plain `ssh` exec with no wrapper.
+On macOS, if the terminal doesn't natively handle OSC 52, `kigi ssh` runs SSH inside a local PTY that intercepts clipboard sequences and writes them to `pbcopy`. Both plain OSC 52 and tmux DCS passthrough are handled. Terminals with native OSC 52 (iTerm2, Ghostty, Kitty, WezTerm, Alacritty) get a plain `ssh` exec with no wrapper.
 
 This runs entirely locally.
 
 ---
 
-## Building with Grok
+## Building with Kigi
 
-Grok can be used as an OpenAI-compatible chat completion backend. Choose between two integration modes:
+Kigi can be used as an OpenAI-compatible chat completion backend. Choose between two integration modes:
 
 | Mode         | Use Case                                                           |
 | ------------ | ------------------------------------------------------------------ |
@@ -799,7 +799,7 @@ Grok can be used as an OpenAI-compatible chat completion backend. Choose between
 
 ### Headless Mode (Simple Chat Completion)
 
-Use headless mode for simple integrations. Spawns `grok -p` and parses JSON output.
+Use headless mode for simple integrations. Spawns `kigi -p` and parses JSON output.
 
 #### Python - Headless
 
@@ -808,7 +808,7 @@ import asyncio
 import json
 import os
 
-class GrokChat:
+class KigiChat:
     """Simple OpenAI-compatible wrapper using headless mode."""
 
     def __init__(self, cwd="."):
@@ -816,10 +816,10 @@ class GrokChat:
         self.env = {**os.environ}
 
     def _build_cmd(self, prompt, model, stream):
-        return ["grok", "-p", prompt, "-m", model, "--cwd", self.cwd,
+        return ["kigi", "-p", prompt, "-m", model, "--cwd", self.cwd,
                 "--output-format", "streaming-json" if stream else "json", "--always-approve"]
 
-    async def create(self, messages, model="grok-build", stream=False):
+    async def create(self, messages, model="kigi", stream=False):
         prompt = messages[-1]["content"] if len(messages) == 1 else "\n".join(
             f"{m['role']}: {m['content']}" for m in messages
         )
@@ -856,7 +856,7 @@ class GrokChat:
 
 # Usage
 async def main():
-    client = GrokChat(cwd=".")
+    client = KigiChat(cwd=".")
 
     # Non-streaming
     response = await client.create([{"role": "user", "content": "What files are here?"}])
@@ -876,7 +876,7 @@ asyncio.run(main())
 ```typescript
 import { execa } from "execa";
 
-class GrokChat {
+class KigiChat {
   constructor(private cwd = ".") {}
 
   private buildArgs(prompt: string, model: string, stream: boolean) {
@@ -895,7 +895,7 @@ class GrokChat {
 
   async create(
     messages: { role: string; content: string }[],
-    { model = "grok-build", stream = false } = {},
+    { model = "kigi", stream = false } = {},
   ) {
     const prompt =
       messages.length === 1
@@ -905,7 +905,7 @@ class GrokChat {
     if (stream) return this.streamResponse(prompt, model);
 
     const { stdout } = await execa(
-      "grok",
+      "kigi",
       this.buildArgs(prompt, model, false),
     );
     const data = JSON.parse(stdout || '{"text":""}');
@@ -920,7 +920,7 @@ class GrokChat {
   }
 
   async *streamResponse(prompt: string, model: string) {
-    const proc = execa("grok", this.buildArgs(prompt, model, true));
+    const proc = execa("kigi", this.buildArgs(prompt, model, true));
     for await (const chunk of proc.stdout!) {
       for (const line of chunk.toString().split("\n").filter(Boolean)) {
         const event = JSON.parse(line);
@@ -935,7 +935,7 @@ class GrokChat {
 }
 
 // Usage
-const client = new GrokChat(".");
+const client = new KigiChat(".");
 
 // Non-streaming
 const response = await client.create([
@@ -964,7 +964,7 @@ Use the Agent Client Protocol for full access to tool calls, thoughts, plans, an
 import asyncio
 import json
 
-class GrokACPChat:
+class KigiACPChat:
     """Rich OpenAI-compatible wrapper using ACP protocol."""
 
     def __init__(self, cwd="."):
@@ -974,7 +974,7 @@ class GrokACPChat:
 
     async def init(self):
         self.proc = await asyncio.create_subprocess_exec(
-            "grok", "agent", "stdio",
+            "kigi", "agent", "stdio",
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE
         )
@@ -1004,7 +1004,7 @@ class GrokACPChat:
         line = await self.proc.stdout.readline()
         return json.loads(line).get("result", {})
 
-    async def create(self, messages, model="grok-build", stream=False):
+    async def create(self, messages, model="kigi", stream=False):
         prompt = [{"type": "text", "text": m["content"]} for m in messages]
 
         # For streaming, yield chunks as they arrive
@@ -1065,7 +1065,7 @@ class GrokACPChat:
 
 # Usage
 async def main():
-    client = await GrokACPChat(cwd=".").init()
+    client = await KigiACPChat(cwd=".").init()
 
     # Streaming with rich updates
     async for chunk in await client.create(
@@ -1091,7 +1091,7 @@ asyncio.run(main())
 import { spawn, ChildProcess } from "child_process";
 import * as readline from "readline";
 
-class GrokACPChat {
+class KigiACPChat {
   private proc!: ChildProcess;
   private sessionId!: string;
   private rl!: readline.Interface;
@@ -1099,7 +1099,7 @@ class GrokACPChat {
   constructor(private cwd = ".") {}
 
   async init() {
-    this.proc = spawn("grok", ["agent", "stdio"]);
+    this.proc = spawn("kigi", ["agent", "stdio"]);
     this.rl = readline.createInterface({ input: this.proc.stdout! });
 
     // Initialize
@@ -1133,7 +1133,7 @@ class GrokACPChat {
 
   async create(
     messages: { role: string; content: string }[],
-    { model = "grok-build", stream = false } = {},
+    { model = "kigi", stream = false } = {},
   ) {
     const prompt = messages.map((m) => ({ type: "text", text: m.content }));
 
@@ -1203,7 +1203,7 @@ class GrokACPChat {
 }
 
 // Usage
-const client = await new GrokACPChat(".").init();
+const client = await new KigiACPChat(".").init();
 
 // Streaming with rich updates
 for await (const chunk of await client.create(
@@ -1223,7 +1223,7 @@ for await (const chunk of await client.create(
 
 ### ACP Protocol Reference
 
-Grok implements the [Agent Client Protocol (ACP)](https://agentclientprotocol.com), a standard for AI agent communication.
+Kigi implements the [Agent Client Protocol (ACP)](https://agentclientprotocol.com), a standard for AI agent communication.
 
 #### Architecture
 
@@ -1234,7 +1234,7 @@ Grok implements the [Agent Client Protocol (ACP)](https://agentclientprotocol.co
 └──────────────────┬──────────────────────┘
                    │ JSON-RPC over stdio
 ┌──────────────────▼──────────────────────┐
-│           grok agent stdio              │
+│           kigi agent stdio              │
 │                                         │
 │  ┌─────────┐  ┌─────────┐  ┌─────────┐  │
 │  │ Session │  │  Tools  │  │   MCP   │  │
@@ -1272,7 +1272,7 @@ Grok implements the [Agent Client Protocol (ACP)](https://agentclientprotocol.co
 
 ## Configuration
 
-Grok reads configuration from `~/.kigi/config.toml`. If the file doesn't exist, Grok uses sensible defaults. You only need to specify values you want to override.
+Kigi reads configuration from `~/.kigi/config.toml`. If the file doesn't exist, Kigi uses sensible defaults. You only need to specify values you want to override.
 
 Each feature section below documents its own config. This section covers the general-purpose settings that don't have their own top-level section.
 
@@ -1283,7 +1283,7 @@ Each feature section below documents its own config. This section covers the gen
 auto_update = true                     # check for updates on launch
 
 [models]
-default = "grok-build"           # model used for new sessions
+default = "kigi"           # model used for new sessions
 
 [ui]
 max_thoughts_width = 120               # max column width for reasoning display
@@ -1334,18 +1334,18 @@ When building from source, defaults can also be baked into the binary at compile
 
 ### LSP Servers
 
-Grok can connect to Language Server Protocol (LSP) servers configured in JSON files. LSP integration gives Grok language-aware code intelligence while it works in your repository.
+Kigi can connect to Language Server Protocol (LSP) servers configured in JSON files. LSP integration gives Kigi language-aware code intelligence while it works in your repository.
 
 LSP support is used in two ways:
 
-- **Passive diagnostics** — after edits, Grok can surface language-server diagnostics such as errors and warnings.
-- **The `lsp` tool** — Grok can actively query the language server for `goToDefinition`, `findReferences`, `hover`, `goToImplementation`, `documentSymbol`, and `workspaceSymbol`.
+- **Passive diagnostics** — after edits, Kigi can surface language-server diagnostics such as errors and warnings.
+- **The `lsp` tool** — Kigi can actively query the language server for `goToDefinition`, `findReferences`, `hover`, `goToImplementation`, `documentSymbol`, and `workspaceSymbol`.
 
 Reference: [Language Server Protocol](https://microsoft.github.io/language-server-protocol/)
 
 #### Config locations
 
-Grok looks for server definitions in:
+Kigi looks for server definitions in:
 
 - project config: `<repo>/.kigi/lsp.json`
 - user config: `~/.kigi/lsp.json`
@@ -1362,7 +1362,7 @@ Having an `lsp.json` file is enough for passive diagnostics. The model-visible `
 Enable the tool for one run:
 
 ```bash
-KIGI_LSP_TOOLS=1 grok
+KIGI_LSP_TOOLS=1 kigi
 ```
 
 Or enable it in config:
@@ -1372,7 +1372,7 @@ Or enable it in config:
 lsp_tools = true
 ```
 
-If LSP tools are enabled but no usable server config is found, Grok emits a non-fatal warning in logs and continues without the `lsp` tool. If config exists but every server fails to start, the tool may still be present and will fail on first use with a startup error.
+If LSP tools are enabled but no usable server config is found, Kigi emits a non-fatal warning in logs and continues without the `lsp` tool. If config exists but every server fails to start, the tool may still be present and will fail on first use with a startup error.
 
 #### Example `lsp.json`
 
@@ -1414,7 +1414,7 @@ If LSP tools are enabled but no usable server config is found, Grok emits a non-
 
 #### Installing language servers
 
-Grok does not bundle language server binaries. You must install the server yourself and make sure the configured `command` is runnable on your machine.
+Kigi does not bundle language server binaries. You must install the server yourself and make sure the configured `command` is runnable on your machine.
 
 Examples:
 
@@ -1446,12 +1446,12 @@ auth_provider_label = "Acme Corp"
 auth_token_ttl = 3600               # if your provider outputs bare tokens
 
 [models]
-default = "company-grok"
+default = "company-kigi"
 
-[model.company-grok]
-model = "grok-build"
-base_url = "https://grok-proxy.acme.com/"
-name = "Grok Build Latest (Proxy)"
+[model.company-kigi]
+model = "kigi"
+base_url = "https://kigi-proxy.acme.com/"
+name = "Kigi Latest (Proxy)"
 context_window = 256000
 
 [features]
@@ -1462,21 +1462,21 @@ telemetry = false
 timeout_secs = 120.0
 ```
 
-With this config, `grok` runs your auth binary, stores the token, and routes inference through your corporate proxy. See [Authentication](#authentication) for full auth setup details.
+With this config, `kigi` runs your auth binary, stores the token, and routes inference through your corporate proxy. See [Authentication](#authentication) for full auth setup details.
 
 ---
 
 ## AGENTS.md
 
-Add project-specific instructions by creating an agent rules file (e.g., `AGENTS.md`). Grok reads these files and appends their contents to the system prompt.
+Add project-specific instructions by creating an agent rules file (e.g., `AGENTS.md`). Kigi reads these files and appends their contents to the system prompt.
 
-Grok scans for agent rules in this order:
+Kigi scans for agent rules in this order:
 
 1. `~/.kigi/` (global rules)
 2. If inside a git repo: every directory from the repo root → current working directory (inclusive)
 3. If **not** inside a git repo: only the current working directory
 
-Within each directory, Grok checks for these filenames:
+Within each directory, Kigi checks for these filenames:
 
 - `Agents.md`, `Claude.md`, `AGENT.md`, `AGENTS.md`
 
@@ -1488,11 +1488,11 @@ Ordering matters: files found later (deeper directories) come last, so they effe
 
 ## Skills
 
-Skills are reusable prompt packages that extend Grok with specialized workflows, domain knowledge, and tool integrations. Use them to encode repeatable procedures that would otherwise require re-explaining each session.
+Skills are reusable prompt packages that extend Kigi with specialized workflows, domain knowledge, and tool integrations. Use them to encode repeatable procedures that would otherwise require re-explaining each session.
 
 ### Skill Locations
 
-Grok discovers skills from these directories (in priority order):
+Kigi discovers skills from these directories (in priority order):
 
 | Location                    | Scope | Priority |
 | --------------------------- | ----- | -------- |
@@ -1550,7 +1550,7 @@ Review staged changes and create a commit with a clear, conventional message.
 | Field         | Description                                                                  |
 | ------------- | ---------------------------------------------------------------------------- |
 | `name`        | Skill identifier (lowercase, hyphens, max 64 chars)                          |
-| `description` | What the skill does and when to use it—this is how Grok decides to invoke it |
+| `description` | What the skill does and when to use it—this is how Kigi decides to invoke it |
 
 ### Using Skills
 
@@ -1565,9 +1565,9 @@ Review staged changes and create a commit with a clear, conventional message.
 
 **Slash command shorthand:**
 
-Users can reference skills as `/skill-name` (e.g., `/commit`). When you see this pattern, Grok invokes the corresponding skill.
+Users can reference skills as `/skill-name` (e.g., `/commit`). When you see this pattern, Kigi invokes the corresponding skill.
 
-> **Tip:** The `description` field is critical — it determines when Grok automatically invokes the skill. Be specific about trigger phrases and use cases.
+> **Tip:** The `description` field is critical — it determines when Kigi automatically invokes the skill. Be specific about trigger phrases and use cases.
 
 ---
 
@@ -1575,12 +1575,12 @@ Users can reference skills as `/skill-name` (e.g., `/commit`). When you see this
 
 Agent profiles control the system prompt, toolset, and behavior of a session. A profile is a `.md` file with YAML frontmatter, or a named agent discovered from disk.
 
-Grok discovers agent definitions from `.kigi/agents/` (project), `~/.kigi/agents/` (user), and built-in agents. Priority (highest wins):
+Kigi discovers agent definitions from `.kigi/agents/` (project), `~/.kigi/agents/` (user), and built-in agents. Priority (highest wins):
 
 1. `--agent-profile <PATH>` CLI flag
 2. `[agent]` section in `config.toml`
 3. `KIGI_AGENT` env var
-4. Default `grok-build` agent
+4. Default `kigi` agent
 
 ```toml
 # ~/.kigi/config.toml
@@ -1590,7 +1590,7 @@ name = "my-custom-agent"             # Discovered by name
 ```
 
 ```bash
-grok --agent-profile ./my-agent.md
+kigi --agent-profile ./my-agent.md
 # or
 export KIGI_AGENT="my-custom-agent"
 ```
@@ -1623,7 +1623,7 @@ explore = true                       # default — omitted agents are enabled
 plan = false                         # disable plan subagent
 
 [subagents.models]
-explore = "grok-build"              # route explore to a lighter model
+explore = "kigi"              # route explore to a lighter model
 ```
 
 By default a subagent inherits the parent session's model. Only an explicit
@@ -1639,7 +1639,7 @@ Roles define reusable capability/model defaults. Personas layer tone and behavio
 [subagents.roles.researcher]
 description = "Deep research agent"
 default_capability_mode = "read-only"
-model = "grok-build"
+model = "kigi"
 prompt_file = ".kigi/prompts/researcher.md"
 
 [subagents.personas.concise]
@@ -1653,7 +1653,7 @@ Both are also discovered from `.kigi/roles/*.toml` and `.kigi/personas/*.toml` f
 
 ## Plugins
 
-Plugins extend Grok with additional tools, skills, and MCP servers from external packages.
+Plugins extend Kigi with additional tools, skills, and MCP servers from external packages.
 
 ### Plugin Locations
 
@@ -1680,7 +1680,7 @@ Manage plugins at runtime with `/plugins list`, `/plugins reload`, or `/plugins 
 
 Hooks run project scripts on tool and session lifecycle events (pre/post-tool-use, session start/end). Projects must be explicitly trusted before their hooks execute.
 
-Grok discovers hooks from `.kigi/hooks/` in the project directory. Manage them with:
+Kigi discovers hooks from `.kigi/hooks/` in the project directory. Manage them with:
 
 ```
 /hooks-list              # show hooks loaded in this session
@@ -1712,9 +1712,9 @@ max_completion_tokens = 8192          # Max tokens per response
 context_window = 256000               # Total context window in tokens (for auto-compact)
 ```
 
-**Credential resolution order:** `api_key` → `env_key` → `XAI_API_KEY`. If neither `api_key` nor `env_key` is set, Grok falls back to the global `XAI_API_KEY` environment variable.
+**Credential resolution order:** `api_key` → `env_key` → `XAI_API_KEY`. If neither `api_key` nor `env_key` is set, Kigi falls back to the global `XAI_API_KEY` environment variable.
 
-The `context_window` parameter is used to calculate when auto-compact should trigger. If not specified, Grok falls back to built-in defaults for known models.
+The `context_window` parameter is used to calculate when auto-compact should trigger. If not specified, Kigi falls back to built-in defaults for known models.
 
 ### Overriding Built-in Models
 
@@ -1731,7 +1731,7 @@ temperature = 0.5
 api_key = "sk-custom"
 ```
 
-**How it works:** When you override a built-in model, Grok starts with the default configuration (including the correct `base_url` from your `[endpoints]` setting), then applies only the fields you specify. Unspecified fields inherit from the default.
+**How it works:** When you override a built-in model, Kigi starts with the default configuration (including the correct `base_url` from your `[endpoints]` setting), then applies only the fields you specify. Unspecified fields inherit from the default.
 
 **Priority order:**
 1. Your config (`[model.*]`) — highest priority
@@ -1783,13 +1783,13 @@ env_key = "OPENAI_API_KEY"
 
 ```bash
 # List available models (including custom)
-grok models
+kigi models
 
 # Use in TUI via slash command
 /model my-model
 
 # Use in headless mode
-grok -p "Hello" -m my-model
+kigi -p "Hello" -m my-model
 
 # Set as default
 # In config.toml:
@@ -1799,7 +1799,7 @@ default = "my-model"
 
 ### Custom Models Endpoint
 
-Point Grok at a custom OpenAI-compatible `/v1/models` endpoint instead of the default cli-chat-proxy. Useful when models are served behind a corporate gateway or self-hosted inference stack.
+Point Kigi at a custom OpenAI-compatible `/v1/models` endpoint instead of the default cli-chat-proxy. Useful when models are served behind a corporate gateway or self-hosted inference stack.
 
 **Environment variables:**
 
@@ -1814,10 +1814,10 @@ Point Grok at a custom OpenAI-compatible `/v1/models` endpoint instead of the de
 ```bash
 export KIGI_MODELS_BASE_URL="https://api.acme.com/v1"
 export XAI_API_KEY="xai-..."
-grok
+kigi
 ```
 
-Grok fetches the model list from `{KIGI_MODELS_BASE_URL}/models` on startup and sends inference requests to `KIGI_MODELS_BASE_URL`. This follows the standard OpenAI-compatible convention used by OpenAI, Anthropic, OpenRouter, Groq, Together.ai, and others.
+Kigi fetches the model list from `{KIGI_MODELS_BASE_URL}/models` on startup and sends inference requests to `KIGI_MODELS_BASE_URL`. This follows the standard OpenAI-compatible convention used by OpenAI, Anthropic, OpenRouter, Groq, Together.ai, and others.
 
 If your model list endpoint differs from `{base_url}/models`, set `KIGI_MODELS_LIST_URL` explicitly.
 
@@ -1834,13 +1834,13 @@ api_key = "my-api-key"
 
 When using `[endpoints]` with partial model overrides, the `base_url` is inherited from the endpoints config — you don't need to specify it in each `[model.*]` section.
 
-**Auth behavior:** When `models_base_url` is set, Grok uses API key auth (`Authorization: Bearer`) instead of session auth. `grok login` is not required — only the API key.
+**Auth behavior:** When `models_base_url` is set, Kigi uses API key auth (`Authorization: Bearer`) instead of session auth. `kigi login` is not required — only the API key.
 
 ---
 
 ## MCP Servers
 
-Extend Grok's capabilities with [Model Context Protocol](https://modelcontextprotocol.io) servers.
+Extend Kigi's capabilities with [Model Context Protocol](https://modelcontextprotocol.io) servers.
 
 ### Configuration
 
@@ -1860,7 +1860,7 @@ tool_timeouts = { create_issue = 120, search = 30 }  # Per-tool timeout override
 
 ### Project-Scoped MCP Servers
 
-MCP servers can also be configured per-project in `.kigi/config.toml`. Grok walks from the current directory up to the git repo root, loading `.kigi/config.toml` at each level:
+MCP servers can also be configured per-project in `.kigi/config.toml`. Kigi walks from the current directory up to the git repo root, loading `.kigi/config.toml` at each level:
 
 | Location                        | Scope             | Priority |
 | ------------------------------- | ----------------- | -------- |
@@ -1959,7 +1959,7 @@ See the [MCP Server Registry](https://github.com/modelcontextprotocol/servers) f
 
 > **Experimental:** requires `--experimental-memory` (or `KIGI_MEMORY=1` / `[memory] enabled = true` in config).
 
-Cross-session memory lets Grok remember facts, decisions, code patterns, and debugging workflows across separate sessions in the same project.
+Cross-session memory lets Kigi remember facts, decisions, code patterns, and debugging workflows across separate sessions in the same project.
 
 ### How it works
 
@@ -1976,11 +1976,11 @@ An SQLite index enables fast hybrid search (FTS5 keyword + optional vector KNN) 
 
 ```bash
 # Per-session flag
-grok --experimental-memory
+kigi --experimental-memory
 
 # Environment variable (persists for the shell session)
 export KIGI_MEMORY=1
-grok
+kigi
 
 # Config file (persists permanently)
 # ~/.kigi/config.toml
@@ -1990,7 +1990,7 @@ enabled = true
 
 ### What gets saved automatically
 
-At the end of each session, Grok saves a **structured metadata summary** to the daily session log:
+At the end of each session, Kigi saves a **structured metadata summary** to the daily session log:
 - Message counts (user / assistant / tool)
 - Topics — the first few real user prompts from the session
 - Tool-usage breakdown (e.g., `read_file: 4, search_replace: 3`)
@@ -2028,7 +2028,7 @@ Omit `workspace` or `global` and it defaults to workspace scope.
 
 ### Searching memory
 
-Grok searches memory automatically on the first turn of each session and after compaction. The first-turn injection can be disabled or given its own score threshold under `[memory.initial_injection]`. You can also invoke `memory_search` and `memory_get` directly via the model prompt:
+Kigi searches memory automatically on the first turn of each session and after compaction. The first-turn injection can be disabled or given its own score threshold under `[memory.initial_injection]`. You can also invoke `memory_search` and `memory_get` directly via the model prompt:
 
 ```
 Search memory for "auth middleware patterns"
@@ -2039,13 +2039,13 @@ Read my workspace MEMORY.md
 
 ```bash
 # Open workspace MEMORY.md in $EDITOR / $VISUAL
-grok memory edit
+kigi memory edit
 
 # Open global MEMORY.md
-grok memory edit --global
+kigi memory edit --global
 
 # Show memory statistics: file count, chunk count, and index size
-grok memory stats
+kigi memory stats
 ```
 
 ### Configuration reference
@@ -2066,7 +2066,7 @@ Key options under `[memory]` in `~/.kigi/config.toml`:
 
 ### Observability
 
-When first-turn memory injection runs, Grok emits the `grok-shell-memory_injection`
+When first-turn memory injection runs, Kigi emits the `kigi-shell-memory_injection`
 telemetry event. It includes:
 - whether the greeting fallback query path was used
 - result counts and top score
@@ -2076,7 +2076,7 @@ telemetry event. It includes:
 
 ## Sandbox
 
-Grok can restrict what the agent process and its spawned commands can access on
+Kigi can restrict what the agent process and its spawned commands can access on
 your filesystem and network using OS-level kernel primitives (Landlock on Linux,
 Seatbelt on macOS). This is off by default.
 
@@ -2084,13 +2084,13 @@ Seatbelt on macOS). This is off by default.
 
 ```bash
 # Run with workspace sandbox (read everywhere, write only to CWD + /tmp)
-grok --sandbox workspace
+kigi --sandbox workspace
 
 # Read-only mode (agent can read but not write anything)
-grok --sandbox read-only
+kigi --sandbox read-only
 
 # Maximum isolation (read/write CWD only, no child network)
-grok --sandbox strict
+kigi --sandbox strict
 ```
 
 ### Built-in Profiles
@@ -2128,12 +2128,12 @@ deny = ["/data/shared-secrets"]
 Use it:
 
 ```bash
-grok --sandbox devbox
+kigi --sandbox devbox
 ```
 
 ### How It Works
 
-The sandbox is applied to the **entire grok process** at startup using kernel
+The sandbox is applied to the **entire kigi process** at startup using kernel
 primitives — not per-command wrapping. This means all tool operations are
 covered:
 
@@ -2148,7 +2148,7 @@ model cannot convince the agent to relax restrictions at runtime.
 
 - **Platform support**: Sandbox enforcement uses Landlock on Linux (kernel ≥ 5.13)
   and Seatbelt on macOS. If the sandbox cannot be applied (e.g., unsupported
-  kernel, missing entitlements), Grok logs a warning and continues without
+  kernel, missing entitlements), Kigi logs a warning and continues without
   enforcement.
 
 - **Network restrictions are partial**: Profiles with `restrict_network` block
@@ -2166,11 +2166,11 @@ for telemetry and debugging.
 
 ## Introspection
 
-Use `grok inspect` to see everything Grok discovers in the current directory:
+Use `kigi inspect` to see everything Kigi discovers in the current directory:
 
 ```bash
-grok inspect          # human-readable output
-grok inspect --json   # machine-readable JSON
+kigi inspect          # human-readable output
+kigi inspect --json   # machine-readable JSON
 ```
 
 The output shows all loaded configuration organized by type:
@@ -2190,11 +2190,11 @@ Plugin-provided components appear in their respective sections with a `[plugin: 
 
 ## Claude Code Compatibility
 
-Grok automatically discovers configuration from Claude Code directories alongside native `.kigi/` paths. No extra setup is needed.
+Kigi automatically discovers configuration from Claude Code directories alongside native `.kigi/` paths. No extra setup is needed.
 
 ### What is picked up
 
-| Component         | Claude Code location                                 | How Grok uses it                 |
+| Component         | Claude Code location                                 | How Kigi uses it                 |
 | ----------------- | ---------------------------------------------------- | -------------------------------- |
 | **Skills**        | `.claude/skills/`, `~/.claude/skills/`               | Loaded as skills (same as `.kigi/skills/`) |
 | **Agents**        | `.claude/agents/`, `~/.claude/agents/`               | Loaded as subagents              |
@@ -2207,13 +2207,13 @@ Grok automatically discovers configuration from Claude Code directories alongsid
 
 ### Plugin components
 
-Claude Code plugins can provide skills (`skills/`), commands (`commands/`), agents (`agents/`), hooks (`hooks/hooks.json`), MCP servers (`.mcp.json`), and LSP servers (`.lsp.json`). All component types are discovered and used by Grok at runtime.
+Claude Code plugins can provide skills (`skills/`), commands (`commands/`), agents (`agents/`), hooks (`hooks/hooks.json`), MCP servers (`.mcp.json`), and LSP servers (`.lsp.json`). All component types are discovered and used by Kigi at runtime.
 
 ---
 
 ## Built-in Tools
 
-Grok includes these tools by default:
+Kigi includes these tools by default:
 
 | Tool             | Description                                                    |
 | ---------------- | -------------------------------------------------------------- |
@@ -2262,7 +2262,7 @@ When no custom `allowed_domains` is set, the tool permits a default allowlist of
 
 ## Session Persistence
 
-Grok automatically persists conversations to disk. This works across all modes: TUI, headless, and agent stdio.
+Kigi automatically persists conversations to disk. This works across all modes: TUI, headless, and agent stdio.
 
 ### Storage Layout
 
@@ -2299,23 +2299,23 @@ Control session behavior with flags:
 
 ```bash
 # New session each time (default)
-grok -p "Hello"
+kigi -p "Hello"
 
 # Create or resume a named session
-grok -p "Remember: X=42" -s my-session
-grok -p "What is X?" -s my-session
+kigi -p "Remember: X=42" -s my-session
+kigi -p "What is X?" -s my-session
 
 # Resume existing session (errors if not found)
-grok -p "Continue" -r my-session
+kigi -p "Continue" -r my-session
 
 # Continue most recent session in current directory
-grok -p "What were we doing?" -c
+kigi -p "What were we doing?" -c
 ```
 
 Session ID is returned in JSON output:
 
 ```bash
-grok -p "Hello" --output-format json | jq -r '.sessionId'
+kigi -p "Hello" --output-format json | jq -r '.sessionId'
 ```
 
 ### Agent stdio (ACP)
@@ -2395,7 +2395,7 @@ The agent persists all session updates automatically. Clients can reconnect and 
 
 ## Shell Completions
 
-Generate completions for your shell and install them to enable tab completion for `grok` commands and flags.
+Generate completions for your shell and install them to enable tab completion for `kigi` commands and flags.
 
 **Note:** The paths below are recommended defaults. Some environments do not automatically source the standard locations — you may need to adapt them to your shell framework or distro conventions.
 
@@ -2405,22 +2405,22 @@ Generate and install:
 
 ```bash
 mkdir -p ~/.local/share/bash-completion/completions
-grok completions bash > ~/.local/share/bash-completion/completions/grok
+kigi completions bash > ~/.local/share/bash-completion/completions/kigi
 ```
 
 Reload your shell or run `source ~/.bashrc`.
 
-Alternative (Grok-managed location):
+Alternative (Kigi-managed location):
 
 ```bash
 mkdir -p ~/.kigi/completions/bash
-grok completions bash > ~/.kigi/completions/bash/grok.bash
+kigi completions bash > ~/.kigi/completions/bash/kigi.bash
 ```
 
 Add to `~/.bashrc`:
 
 ```bash
-[[ -r "$HOME/.kigi/completions/bash/grok.bash" ]] && source "$HOME/.kigi/completions/bash/grok.bash"
+[[ -r "$HOME/.kigi/completions/bash/kigi.bash" ]] && source "$HOME/.kigi/completions/bash/kigi.bash"
 ```
 
 ### Zsh
@@ -2429,7 +2429,7 @@ Generate and install:
 
 ```bash
 mkdir -p ~/.zsh/completions
-grok completions zsh > ~/.zsh/completions/_grok
+kigi completions zsh > ~/.zsh/completions/_kigi
 ```
 
 Add to `~/.zshrc`:
@@ -2440,11 +2440,11 @@ autoload -Uz compinit
 compinit
 ```
 
-Alternative (Grok-managed location):
+Alternative (Kigi-managed location):
 
 ```bash
 mkdir -p ~/.kigi/completions/zsh
-grok completions zsh > ~/.kigi/completions/zsh/_grok
+kigi completions zsh > ~/.kigi/completions/zsh/_kigi
 ```
 
 Add to `~/.zshrc`:
@@ -2457,7 +2457,7 @@ compinit
 
 ### After Upgrading
 
-Regenerate completions after upgrading `grok` — the script reflects the CLI of the installed version.
+Regenerate completions after upgrading `kigi` — the script reflects the CLI of the installed version.
 
 ---
 
@@ -2465,14 +2465,14 @@ Regenerate completions after upgrading `grok` — the script reflects the CLI of
 
 ### Debug logging
 
-Write logs to a file for debugging. The TUI captures stderr, so `RUST_LOG` alone won't produce visible output in production — use `grok --debug` or `KIGI_LOG_FILE` instead:
+Write logs to a file for debugging. The TUI captures stderr, so `RUST_LOG` alone won't produce visible output in production — use `kigi --debug` or `KIGI_LOG_FILE` instead:
 
 ```bash
 # Per-session debug log (~/.kigi/debug/<sessionId>.txt)
-grok --debug
+kigi --debug
 
 # Log to a custom path
-KIGI_LOG_FILE=/tmp/grok-debug.log grok
+KIGI_LOG_FILE=/tmp/kigi-debug.log kigi
 
 # Tail the most-recently-opened session's log in another terminal (Unix symlink)
 tail -f ~/.kigi/debug/latest.txt
@@ -2482,25 +2482,25 @@ The `--debug` firehose uses a fixed filter (first-party crates at `debug`) and i
 
 ```bash
 # Debug auth, info for everything else
-KIGI_LOG_FILE=/tmp/grok-debug.log RUST_LOG="info,kigi_shell::auth=debug" grok
+KIGI_LOG_FILE=/tmp/kigi-debug.log RUST_LOG="info,kigi_shell::auth=debug" kigi
 ```
 
 ### Authentication fails
 
 ```bash
 # Clear credentials and re-login
-grok login
+kigi login
 
 # Debug auth issues — check the log for "auth:" entries
-grok --debug-file /tmp/grok-auth.log -p "hello"
-grep "auth:" /tmp/grok-auth.log
+kigi --debug-file /tmp/kigi-auth.log -p "hello"
+grep "auth:" /tmp/kigi-auth.log
 ```
 
 ### Model not found
 
 ```bash
 # List available models
-grok models
+kigi models
 
 # Check config.toml for typos in [model.*] sections
 ```

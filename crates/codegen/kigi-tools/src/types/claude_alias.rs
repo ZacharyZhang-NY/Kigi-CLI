@@ -1,8 +1,8 @@
-//! Canonical external-settings tool name ↔ Grok tool correspondence: one table
+//! Canonical external-settings tool name ↔ Kigi tool correspondence: one table
 //! replacing two that drifted apart.
 //!
 //! Two consumers read it independently. The hook matcher (`kigi-hooks`) needs the
-//! Grok tool **names** an external settings term maps to (and the reverse, for regex
+//! Kigi tool **names** an external settings term maps to (and the reverse, for regex
 //! matchers); the agent builder (`kigi-agent`) needs the [`ToolKind`] a `tools:`
 //! allowlist entry resolves to. A row may carry a kind without names (`PowerShell`
 //! shares `Execute`, with no distinct tool) or names without a kind (e.g.
@@ -13,14 +13,14 @@
 use super::tool::ToolKind;
 use ToolKind::*;
 
-/// One Claude tool's correspondence to Grok, read via the accessor functions below.
+/// One Claude tool's correspondence to Kigi, read via the accessor functions below.
 struct ClaudeTool {
     claude: &'static str,
-    /// Grok [`ToolKind`] for allowlist resolution; `None` for names that are matchable
+    /// Kigi [`ToolKind`] for allowlist resolution; `None` for names that are matchable
     /// (spawn/plan-mode directives) but must not resolve an allowlist.
     kind: Option<ToolKind>,
-    /// Grok tool names this Claude tool maps to (empty when there is no direct
-    /// Grok tool — the entry then only contributes a `kind`).
+    /// Kigi tool names this Claude tool maps to (empty when there is no direct
+    /// Kigi tool — the entry then only contributes a `kind`).
     kigi: &'static [&'static str],
 }
 
@@ -79,7 +79,7 @@ const CLAUDE_TOOLS: &[ClaudeTool] = &[
     match_only("ListMcpResourcesTool", &["ListMcpResources"]),                        // cursor preset
 ];
 
-/// The Grok [`ToolKind`] a Claude allowlist entry resolves to, if any.
+/// The Kigi [`ToolKind`] a Claude allowlist entry resolves to, if any.
 pub fn kind_for(claude: &str) -> Option<ToolKind> {
     CLAUDE_TOOLS
         .iter()
@@ -87,7 +87,7 @@ pub fn kind_for(claude: &str) -> Option<ToolKind> {
         .and_then(|t| t.kind)
 }
 
-/// The Grok tool names a Claude matcher term fires on.
+/// The Kigi tool names a Claude matcher term fires on.
 pub fn kigi_names_for(claude: &str) -> impl Iterator<Item = &'static str> {
     CLAUDE_TOOLS
         .iter()
@@ -106,7 +106,7 @@ pub fn claude_names_for(kigi_name: &str) -> impl Iterator<Item = &'static str> +
         .map(|t| t.claude)
 }
 
-/// Every distinct Grok name the table references, for the `kigi-agent` drift-check
+/// Every distinct Kigi name the table references, for the `kigi-agent` drift-check
 /// test that asserts each is a real client tool name.
 pub fn kigi_names() -> impl Iterator<Item = &'static str> {
     let mut seen = std::collections::HashSet::new();
@@ -131,7 +131,7 @@ mod tests {
 
     #[test]
     fn every_row_contributes() {
-        // A row with neither a kind nor a Grok name is dead weight (and signals a typo).
+        // A row with neither a kind nor a Kigi name is dead weight (and signals a typo).
         for t in CLAUDE_TOOLS {
             assert!(
                 t.kind.is_some() || !t.kigi.is_empty(),

@@ -2539,7 +2539,7 @@ mod tests {
     #[test]
     fn persistent_and_active_overlay_agree_on_same_endpoints() {
         // Pin theme to avoid races with parallel tests that call `cache::set`.
-        crate::theme::cache::set(crate::theme::ThemeKind::GrokNight);
+        crate::theme::cache::set(crate::theme::ThemeKind::KigiNight);
         let mut model = ResolvedSelectionModel::default();
         for i in 0..4u16 {
             model.push_line(ResolvedSelectableLine {

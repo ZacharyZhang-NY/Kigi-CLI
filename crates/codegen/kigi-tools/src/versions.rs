@@ -26,7 +26,7 @@ pub enum BehaviorLifecycle {
 /// Per-tool version metadata. Each managed tool has one entry in `TOOL_VERSION_REGISTRY`.
 #[derive(Debug)]
 pub struct ToolVersionEntry {
-    /// Fully-qualified tool ID (e.g. `"GrokBuild:run_terminal_cmd"`).
+    /// Fully-qualified tool ID (e.g. `"Kigi:run_terminal_cmd"`).
     pub fq_tool_id: &'static str,
     /// Supported versions and their individual lifecycle.
     pub versions: &'static [VersionLifecycle],
@@ -70,7 +70,7 @@ pub struct PresetEntry {
     /// Lifecycle stage of this preset.
     pub lifecycle: BehaviorLifecycle,
     /// Per-tool default versions for this preset.
-    /// Keys are fully-qualified tool IDs (e.g. `"GrokBuild:run_terminal_cmd"`).
+    /// Keys are fully-qualified tool IDs (e.g. `"Kigi:run_terminal_cmd"`).
     /// Tools not listed here fall back to `"current"`.
     pub tool_defaults: &'static [(&'static str, &'static str)],
 }
@@ -79,16 +79,16 @@ pub struct PresetEntry {
 ///
 /// Only tools listed here can have `behavior_version` overrides.
 /// Uses fully-qualified IDs (`Namespace:tool_id`) to prevent collisions
-/// between namespaces (e.g. `GrokBuild:run_terminal_cmd` vs.
-/// `GrokBuildConcise:run_terminal_cmd`).
+/// between namespaces (e.g. `Kigi:run_terminal_cmd` vs.
+/// `KigiConcise:run_terminal_cmd`).
 pub const MANAGED_TOOLS: &[&str] = &[
-    "GrokBuild:run_terminal_cmd",
-    "GrokBuild:read_file",
-    "GrokBuild:search_replace",
-    "GrokBuild:list_dir",
-    "GrokBuild:grep",
-    "GrokBuild:kill_task",
-    "GrokBuild:get_task_output",
+    "Kigi:run_terminal_cmd",
+    "Kigi:read_file",
+    "Kigi:search_replace",
+    "Kigi:list_dir",
+    "Kigi:grep",
+    "Kigi:kill_task",
+    "Kigi:get_task_output",
 ];
 
 // Helper constant for concise registry entries.
@@ -174,31 +174,31 @@ const V_LEGACY_TASK_OUTPUT: VersionLifecycle = VersionLifecycle {
 /// `summary` and `source_refs`. Do not use a shared legacy constant.
 pub const TOOL_VERSION_REGISTRY: &[ToolVersionEntry] = &[
     ToolVersionEntry {
-        fq_tool_id: "GrokBuild:run_terminal_cmd",
+        fq_tool_id: "Kigi:run_terminal_cmd",
         versions: &[V_CURRENT, V_LEGACY_BASH],
     },
     ToolVersionEntry {
-        fq_tool_id: "GrokBuild:read_file",
+        fq_tool_id: "Kigi:read_file",
         versions: &[V_CURRENT, V_LEGACY_READ_FILE],
     },
     ToolVersionEntry {
-        fq_tool_id: "GrokBuild:search_replace",
+        fq_tool_id: "Kigi:search_replace",
         versions: &[V_CURRENT, V_LEGACY_SEARCH_REPLACE],
     },
     ToolVersionEntry {
-        fq_tool_id: "GrokBuild:list_dir",
+        fq_tool_id: "Kigi:list_dir",
         versions: &[V_CURRENT, V_LEGACY_LIST_DIR],
     },
     ToolVersionEntry {
-        fq_tool_id: "GrokBuild:grep",
+        fq_tool_id: "Kigi:grep",
         versions: &[V_CURRENT], // Managed but no legacy implementation.
     },
     ToolVersionEntry {
-        fq_tool_id: "GrokBuild:kill_task",
+        fq_tool_id: "Kigi:kill_task",
         versions: &[V_CURRENT, V_LEGACY_KILL_TASK],
     },
     ToolVersionEntry {
-        fq_tool_id: "GrokBuild:get_task_output",
+        fq_tool_id: "Kigi:get_task_output",
         versions: &[V_CURRENT, V_LEGACY_TASK_OUTPUT],
     },
 ];
@@ -220,12 +220,12 @@ pub const PRESETS: &[PresetEntry] = &[
         name: "legacy-0.4.10",
         lifecycle: BehaviorLifecycle::Active,
         tool_defaults: &[
-            ("GrokBuild:run_terminal_cmd", "legacy-0.4.10"),
-            ("GrokBuild:read_file", "legacy-0.4.10"),
-            ("GrokBuild:search_replace", "legacy-0.4.10"),
-            ("GrokBuild:get_task_output", "legacy-0.4.10"),
-            ("GrokBuild:kill_task", "legacy-0.4.10"),
-            ("GrokBuild:list_dir", "legacy-0.4.10"),
+            ("Kigi:run_terminal_cmd", "legacy-0.4.10"),
+            ("Kigi:read_file", "legacy-0.4.10"),
+            ("Kigi:search_replace", "legacy-0.4.10"),
+            ("Kigi:get_task_output", "legacy-0.4.10"),
+            ("Kigi:kill_task", "legacy-0.4.10"),
+            ("Kigi:list_dir", "legacy-0.4.10"),
         ],
     },
     // Release-named presets are best-effort compatibility bundles, not full
@@ -240,13 +240,13 @@ pub const PRESETS: &[PresetEntry] = &[
         // version other than `legacy-0.4.10` had been carved out yet.
         // `grep` was managed but current-only (no legacy port).
         tool_defaults: &[
-            ("GrokBuild:run_terminal_cmd", "current"),
-            ("GrokBuild:read_file", "current"),
-            ("GrokBuild:search_replace", "current"),
-            ("GrokBuild:list_dir", "current"),
-            ("GrokBuild:grep", "current"),
-            ("GrokBuild:kill_task", "current"),
-            ("GrokBuild:get_task_output", "current"),
+            ("Kigi:run_terminal_cmd", "current"),
+            ("Kigi:read_file", "current"),
+            ("Kigi:search_replace", "current"),
+            ("Kigi:list_dir", "current"),
+            ("Kigi:grep", "current"),
+            ("Kigi:kill_task", "current"),
+            ("Kigi:get_task_output", "current"),
         ],
     },
 ];
@@ -495,21 +495,21 @@ mod tests {
 
     #[test]
     fn current_preset_resolves_to_current() {
-        let v = resolve_version("current", "GrokBuild:run_terminal_cmd", None).unwrap();
+        let v = resolve_version("current", "Kigi:run_terminal_cmd", None).unwrap();
         assert_eq!(v, Some("current".to_string()));
     }
 
     #[test]
     fn legacy_preset_resolves_ported_tool() {
         // run_terminal_cmd is ported — resolves to "legacy-0.4.10".
-        let v = resolve_version("legacy-0.4.10", "GrokBuild:run_terminal_cmd", None).unwrap();
+        let v = resolve_version("legacy-0.4.10", "Kigi:run_terminal_cmd", None).unwrap();
         assert_eq!(v, Some("legacy-0.4.10".to_string()));
     }
 
     #[test]
     fn legacy_preset_falls_back_to_current_for_unported_tool() {
         // grep is managed but has no legacy-0.4.10 preset entry — falls back to "current".
-        let v = resolve_version("legacy-0.4.10", "GrokBuild:grep", None).unwrap();
+        let v = resolve_version("legacy-0.4.10", "Kigi:grep", None).unwrap();
         assert_eq!(v, Some("current".to_string()));
     }
 
@@ -517,12 +517,12 @@ mod tests {
     fn legacy_preset_resolves_all_ported_tools() {
         // All 6 ported tools should resolve to "legacy-0.4.10" under the legacy preset.
         for fq_id in &[
-            "GrokBuild:run_terminal_cmd",
-            "GrokBuild:read_file",
-            "GrokBuild:search_replace",
-            "GrokBuild:get_task_output",
-            "GrokBuild:kill_task",
-            "GrokBuild:list_dir",
+            "Kigi:run_terminal_cmd",
+            "Kigi:read_file",
+            "Kigi:search_replace",
+            "Kigi:get_task_output",
+            "Kigi:kill_task",
+            "Kigi:list_dir",
         ] {
             let v = resolve_version("legacy-0.4.10", fq_id, None).unwrap();
             assert_eq!(
@@ -535,38 +535,31 @@ mod tests {
 
     #[test]
     fn per_tool_override_wins() {
-        let v = resolve_version(
-            "current",
-            "GrokBuild:run_terminal_cmd",
-            Some("legacy-0.4.10"),
-        )
-        .unwrap();
+        let v = resolve_version("current", "Kigi:run_terminal_cmd", Some("legacy-0.4.10")).unwrap();
         assert_eq!(v, Some("legacy-0.4.10".to_string()));
     }
 
     #[test]
     fn unmanaged_tool_returns_none() {
-        let v = resolve_version("current", "GrokBuild:web_search", None).unwrap();
+        let v = resolve_version("current", "Kigi:web_search", None).unwrap();
         assert_eq!(v, None);
     }
 
     #[test]
     fn override_on_unmanaged_tool_errors() {
-        let err =
-            resolve_version("current", "GrokBuild:web_search", Some("legacy-0.4.10")).unwrap_err();
+        let err = resolve_version("current", "Kigi:web_search", Some("legacy-0.4.10")).unwrap_err();
         assert!(err.contains("unmanaged tool"));
     }
 
     #[test]
     fn unknown_preset_errors() {
-        let err = resolve_version("nonexistent", "GrokBuild:run_terminal_cmd", None).unwrap_err();
+        let err = resolve_version("nonexistent", "Kigi:run_terminal_cmd", None).unwrap_err();
         assert!(err.contains("unknown behavior_preset"));
     }
 
     #[test]
     fn unknown_override_version_errors() {
-        let err =
-            resolve_version("current", "GrokBuild:run_terminal_cmd", Some("v999")).unwrap_err();
+        let err = resolve_version("current", "Kigi:run_terminal_cmd", Some("v999")).unwrap_err();
         assert!(
             err.contains("is not supported for tool"),
             "expected 'is not supported' error, got: {err}"
@@ -587,30 +580,29 @@ mod tests {
 
     #[test]
     fn concise_namespace_not_managed() {
-        // GrokBuildConcise tools should NOT be version-managed.
-        assert!(!is_version_managed("GrokBuildConcise:run_terminal_cmd"));
-        let v = resolve_version("current", "GrokBuildConcise:run_terminal_cmd", None).unwrap();
+        // KigiConcise tools should NOT be version-managed.
+        assert!(!is_version_managed("KigiConcise:run_terminal_cmd"));
+        let v = resolve_version("current", "KigiConcise:run_terminal_cmd", None).unwrap();
         assert_eq!(v, None);
     }
 
     #[test]
     fn is_version_managed_matches_catalog() {
-        assert!(is_version_managed("GrokBuild:run_terminal_cmd"));
-        assert!(is_version_managed("GrokBuild:read_file"));
-        assert!(is_version_managed("GrokBuild:search_replace"));
-        assert!(is_version_managed("GrokBuild:list_dir"));
-        assert!(is_version_managed("GrokBuild:grep"));
-        assert!(is_version_managed("GrokBuild:kill_task"));
+        assert!(is_version_managed("Kigi:run_terminal_cmd"));
+        assert!(is_version_managed("Kigi:read_file"));
+        assert!(is_version_managed("Kigi:search_replace"));
+        assert!(is_version_managed("Kigi:list_dir"));
+        assert!(is_version_managed("Kigi:grep"));
+        assert!(is_version_managed("Kigi:kill_task"));
         // Not managed:
-        assert!(!is_version_managed("GrokBuild:todo_write"));
+        assert!(!is_version_managed("Kigi:todo_write"));
     }
 
     // ─── Warning behavior tests ───
 
     #[test]
     fn active_version_produces_no_warning() {
-        let res =
-            resolve_version_with_warnings("current", "GrokBuild:run_terminal_cmd", None).unwrap();
+        let res = resolve_version_with_warnings("current", "Kigi:run_terminal_cmd", None).unwrap();
         assert!(
             res.warnings.is_empty(),
             "active versions should produce no warnings, got: {:?}",
@@ -621,8 +613,7 @@ mod tests {
     #[test]
     fn active_bundle_produces_no_bundle_level_warning() {
         let res =
-            resolve_version_with_warnings("legacy-0.4.10", "GrokBuild:run_terminal_cmd", None)
-                .unwrap();
+            resolve_version_with_warnings("legacy-0.4.10", "Kigi:run_terminal_cmd", None).unwrap();
         assert!(
             res.warnings.iter().all(|w| !w.fq_tool_id.is_empty()),
             "no bundle-level warning expected for Active bundle, got: {:?}",
@@ -639,8 +630,7 @@ mod tests {
         // Since all current versions are Active, we test the code path by
         // calling validate_and_resolve on an Active version and verifying
         // no warning, then documenting the contract.
-        let (version, warnings) =
-            validate_and_resolve("GrokBuild:run_terminal_cmd", "current").unwrap();
+        let (version, warnings) = validate_and_resolve("Kigi:run_terminal_cmd", "current").unwrap();
         assert_eq!(version, Some("current".to_string()));
         assert!(
             warnings.is_empty(),
@@ -649,7 +639,7 @@ mod tests {
 
         // Verify the Deprecated branch structure is reachable:
         // validate_and_resolve for a version not in registry → Err
-        let err = validate_and_resolve("GrokBuild:grep", "legacy-0.4.10").unwrap_err();
+        let err = validate_and_resolve("Kigi:grep", "legacy-0.4.10").unwrap_err();
         assert!(err.contains("is not supported"), "got: {err}");
     }
 
@@ -658,7 +648,7 @@ mod tests {
         // RemovalCandidate versions should be rejected with replacement.
         // Since no current versions are RemovalCandidate, verify the error
         // for unsupported version (which exercises the same not-found path).
-        let err = validate_and_resolve("GrokBuild:grep", "legacy-0.4.10").unwrap_err();
+        let err = validate_and_resolve("Kigi:grep", "legacy-0.4.10").unwrap_err();
         assert!(err.contains("is not supported for tool"));
         assert!(err.contains("supported versions: [current]"));
     }
@@ -666,28 +656,27 @@ mod tests {
     #[test]
     fn resolve_with_warnings_returns_correct_version() {
         let res =
-            resolve_version_with_warnings("legacy-0.4.10", "GrokBuild:run_terminal_cmd", None)
-                .unwrap();
+            resolve_version_with_warnings("legacy-0.4.10", "Kigi:run_terminal_cmd", None).unwrap();
         assert_eq!(res.contract_version, Some("legacy-0.4.10".to_string()));
     }
 
     #[test]
     fn resolve_with_warnings_unmanaged_returns_none_no_warnings() {
-        let res = resolve_version_with_warnings("current", "GrokBuild:web_search", None).unwrap();
+        let res = resolve_version_with_warnings("current", "Kigi:web_search", None).unwrap();
         assert_eq!(res.contract_version, None);
         assert!(res.warnings.is_empty());
     }
 
     #[test]
     fn resolve_with_warnings_unsupported_version_errors_with_list() {
-        let err = resolve_version_with_warnings("current", "GrokBuild:grep", Some("legacy-0.4.10"))
+        let err = resolve_version_with_warnings("current", "Kigi:grep", Some("legacy-0.4.10"))
             .unwrap_err();
         assert!(
             err.contains("is not supported for tool"),
             "expected 'not supported' error, got: {err}"
         );
         assert!(
-            err.contains("GrokBuild:grep"),
+            err.contains("Kigi:grep"),
             "error should mention the tool, got: {err}"
         );
         assert!(

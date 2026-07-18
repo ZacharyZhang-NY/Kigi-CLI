@@ -1,12 +1,12 @@
-//! Built-binary end-to-end tests for the grok (kigi-tui) binary.
+//! Built-binary end-to-end tests for the kigi (kigi-tui) binary.
 //!
-//! These tests verify that the built grok binary works end-to-end against a mock
+//! These tests verify that the built kigi binary works end-to-end against a mock
 //! inference server. They catch dynamic linking failures (libgit2/OpenSSL),
 //! session initialization crashes, and protocol regressions.
 //!
 //! The tests exercise:
-//! - **Smoke** (`grok --version`): binary loads without crashing
-//! - **ACP stdio** (`grok agent stdio`): full protocol lifecycle via ClientSideConnection
+//! - **Smoke** (`kigi --version`): binary loads without crashing
+//! - **ACP stdio** (`kigi agent stdio`): full protocol lifecycle via ClientSideConnection
 //!
 //! Tests are `#[ignore]`d by default — they require a pre-built binary.
 //!
@@ -17,7 +17,7 @@
 //!
 //! In CI, set `KIGI_BINARY` to point at the release artifact:
 //! ```bash
-//! KIGI_BINARY=./artifacts/grok-0.1.159-linux-x86_64 \
+//! KIGI_BINARY=./artifacts/kigi-0.1.159-linux-x86_64 \
 //!   cargo test -p kigi-shell --test test_built_binary_e2e -- --ignored
 //! ```
 
@@ -50,9 +50,9 @@ async fn single_model_server(model: &str, backend: &str) -> MockInferenceServer 
     .expect("start mock server")
 }
 
-async fn grok_build_server() -> MockInferenceServer {
+async fn kigi_server() -> MockInferenceServer {
     MockInferenceServer::start_with_models(vec![
-        MockModelEntry::with_agent_type("grok-4.5", "grok-build")
+        MockModelEntry::with_agent_type("kigi-4.5", "kigi")
             .with_api_backend("responses")
             .with_supports_backend_search(true),
     ])
@@ -112,7 +112,7 @@ async fn run_headless_with_env(
     env: &[(&str, &str)],
 ) -> HeadlessResult {
     let home = tempfile::TempDir::new().expect("create temp home");
-    let mut cmd = tokio::process::Command::new(grok_binary());
+    let mut cmd = tokio::process::Command::new(kigi_binary());
     cmd.args(args)
         .current_dir(cwd)
         .stdin(std::process::Stdio::null())
@@ -133,7 +133,7 @@ async fn run_headless_with_env(
 #[tokio::test]
 #[ignore] // requires pre-built binary; run with --ignored
 async fn test_version_exits_zero() {
-    let binary = grok_binary();
+    let binary = kigi_binary();
     let output = Command::new(&binary)
         .arg("--version")
         .output()
@@ -141,7 +141,7 @@ async fn test_version_exits_zero() {
 
     assert!(
         output.status.success(),
-        "grok --version failed (exit {:?}):\n{}",
+        "kigi --version failed (exit {:?}):\n{}",
         output.status.code(),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -153,7 +153,7 @@ async fn test_version_exits_zero() {
 #[tokio::test]
 #[ignore] // requires pre-built binary; run with --ignored
 async fn test_version_with_crash_handler_exits_zero() {
-    let binary = grok_binary();
+    let binary = kigi_binary();
     let output = Command::new(&binary)
         .arg("--version")
         .env("KIGI_CRASH_HANDLER", "1")
@@ -162,7 +162,7 @@ async fn test_version_with_crash_handler_exits_zero() {
 
     assert!(
         output.status.success(),
-        "grok --version with KIGI_CRASH_HANDLER=1 failed (exit {:?}):\n{}",
+        "kigi --version with KIGI_CRASH_HANDLER=1 failed (exit {:?}):\n{}",
         output.status.code(),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -183,7 +183,7 @@ async fn test_headless_session_in_git_repo() {
     let workdir = git_workdir();
     let result = run_headless(&server, &["-p", "say hello", "--yolo"], workdir.path()).await;
 
-    assert_headless_success(&result, "grok -p in git repo", Some(&server));
+    assert_headless_success(&result, "kigi -p in git repo", Some(&server));
     assert_no_crashes(&result.stderr);
     assert!(
         server.request_count() > 0,
@@ -197,7 +197,7 @@ async fn test_headless_session_in_git_repo() {
     );
 }
 
-/// Verify grok works in a non-git directory (exercises the fallback codepath
+/// Verify kigi works in a non-git directory (exercises the fallback codepath
 /// where libgit2 discovers there's no repo instead of initializing one).
 #[tokio::test]
 #[ignore] // requires pre-built binary; run with --ignored
@@ -210,14 +210,14 @@ async fn test_headless_session_in_non_git_dir() {
 
     let result = run_headless(&server, &["-p", "say hello", "--yolo"], workdir.path()).await;
 
-    assert_headless_success(&result, "grok -p in non-git dir", Some(&server));
+    assert_headless_success(&result, "kigi -p in non-git dir", Some(&server));
     assert_no_crashes(&result.stderr);
 }
 
 #[tokio::test]
 #[ignore] // requires pre-built binary; run with --ignored
 async fn test_headless_tools_allowlist_keeps_enabled_web_tools() {
-    let server = grok_build_server().await;
+    let server = kigi_server().await;
     server.preset_allow_access();
     let workdir = git_workdir();
 
@@ -235,7 +235,7 @@ async fn test_headless_tools_allowlist_keeps_enabled_web_tools() {
     )
     .await;
 
-    assert_headless_success(&result, "grok -p --tools with web tools", Some(&server));
+    assert_headless_success(&result, "kigi -p --tools with web tools", Some(&server));
     assert_no_crashes(&result.stderr);
     let names = inference_tool_names(&server);
     for expected in ["read_file", "grep", "list_dir", "web_search", "web_fetch"] {
@@ -275,7 +275,7 @@ async fn test_headless_tools_allowlist_keeps_enabled_web_tools() {
 #[tokio::test]
 #[ignore] // requires pre-built binary; run with --ignored
 async fn test_headless_tools_allowlist_does_not_fail_open_for_disabled_web_fetch() {
-    let server = grok_build_server().await;
+    let server = kigi_server().await;
     server.set_settings(serde_json::json!({
         "allow_access": true,
         "web_fetch_enabled": false,
@@ -298,7 +298,7 @@ async fn test_headless_tools_allowlist_does_not_fail_open_for_disabled_web_fetch
 
     assert_headless_success(
         &result,
-        "grok -p --tools with disabled web_fetch",
+        "kigi -p --tools with disabled web_fetch",
         Some(&server),
     );
     assert_no_crashes(&result.stderr);
@@ -315,7 +315,7 @@ async fn test_headless_tools_allowlist_does_not_fail_open_for_disabled_web_fetch
 #[tokio::test]
 #[ignore] // requires pre-built binary; run with --ignored
 async fn test_headless_terminal_only_allowlist_is_foreground_only() {
-    let server = grok_build_server().await;
+    let server = kigi_server().await;
     let workdir = git_workdir();
 
     let result = run_headless(
@@ -325,7 +325,7 @@ async fn test_headless_terminal_only_allowlist_is_foreground_only() {
     )
     .await;
 
-    assert_headless_success(&result, "grok -p --tools run_terminal_cmd", Some(&server));
+    assert_headless_success(&result, "kigi -p --tools run_terminal_cmd", Some(&server));
     assert_no_crashes(&result.stderr);
     let request = inference_request(&server);
     let terminal = request["tools"]
@@ -386,7 +386,7 @@ async fn test_headless_free_usage_exhausted_prints_paywall_message() {
     assert_no_crashes(&result.stderr);
     let combined = format!("{}\n{}", result.stdout, result.stderr);
     assert!(
-        combined.contains("reached your free Grok Build usage limit"),
+        combined.contains("reached your free Kigi usage limit"),
         "expected the free-usage paywall message\nstdout:\n{}\nstderr tail:\n{}",
         result.stdout,
         stderr_tail(&result.stderr, 1000)
@@ -421,7 +421,7 @@ async fn test_headless_streaming_json_output() {
 
     assert_headless_success(
         &result,
-        "grok -p --output-format streaming-json",
+        "kigi -p --output-format streaming-json",
         Some(&server),
     );
     assert_no_crashes(&result.stderr);
@@ -468,19 +468,19 @@ async fn test_headless_streaming_json_output() {
 async fn test_headless_json_reports_server_cost() {
     use kigi_test_support::scripted::SseEvent;
 
-    let server = single_model_server("grok-4.5", "chat_completions").await;
+    let server = single_model_server("kigi-4.5", "chat_completions").await;
     let chunk = |body: serde_json::Value| SseEvent::data(body.to_string());
     server.enqueue_response(
         "/v1/chat/completions",
         kigi_test_support::scripted::ScriptedResponse::sse(vec![
             chunk(serde_json::json!({
                 "id": "chatcmpl-cost", "object": "chat.completion.chunk", "created": 0,
-                "model": "grok-4.5",
+                "model": "kigi-4.5",
                 "choices": [{ "index": 0, "delta": { "content": "4" }, "finish_reason": "stop" }]
             })),
             chunk(serde_json::json!({
                 "id": "chatcmpl-cost", "object": "chat.completion.chunk", "created": 0,
-                "model": "grok-4.5", "choices": [],
+                "model": "kigi-4.5", "choices": [],
                 "usage": {
                     "prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15,
                     "cost_in_usd_ticks": 1_234_500_000_i64
@@ -498,7 +498,7 @@ async fn test_headless_json_reports_server_cost() {
             "what is 2+2",
             "--yolo",
             "--model",
-            "grok-4.5",
+            "kigi-4.5",
             "--max-turns",
             "1",
             "--output-format",
@@ -508,7 +508,7 @@ async fn test_headless_json_reports_server_cost() {
     )
     .await;
 
-    assert_headless_success(&result, "grok -p (scripted cost)", Some(&server));
+    assert_headless_success(&result, "kigi -p (scripted cost)", Some(&server));
     let output = parse_stdout_json(&result);
     assert_eq!(output["total_cost_usd"], 0.12345);
     assert_eq!(output["total_cost_usd_ticks"], 1_234_500_000_i64);
@@ -528,7 +528,7 @@ async fn test_headless_json_reports_server_cost() {
 #[tokio::test]
 #[ignore] // requires pre-built binary; run with --ignored
 async fn test_headless_json_reports_usage_on_max_turns() {
-    let server = single_model_server("grok-4.5", "chat_completions").await;
+    let server = single_model_server("kigi-4.5", "chat_completions").await;
     server.enqueue_response(
         "/v1/chat/completions",
         kigi_test_support::scripted::ScriptedResponse::sse(
@@ -537,7 +537,7 @@ async fn test_headless_json_reports_usage_on_max_turns() {
                 "call-1",
                 "read_file",
                 r#"{"path":"README.md"}"#,
-                "grok-4.5",
+                "kigi-4.5",
             ),
         ),
     );
@@ -550,7 +550,7 @@ async fn test_headless_json_reports_usage_on_max_turns() {
             "read the readme",
             "--yolo",
             "--model",
-            "grok-4.5",
+            "kigi-4.5",
             "--max-turns",
             "1",
             "--output-format",
@@ -569,7 +569,7 @@ async fn test_headless_json_reports_usage_on_max_turns() {
 #[tokio::test]
 #[ignore] // requires pre-built binary; run with --ignored
 async fn test_headless_streaming_json_usage() {
-    let server = single_model_server("grok-4.5", "chat_completions").await;
+    let server = single_model_server("kigi-4.5", "chat_completions").await;
     let workdir = git_workdir();
     let result = run_headless(
         &server,
@@ -578,7 +578,7 @@ async fn test_headless_streaming_json_usage() {
             "say hello",
             "--yolo",
             "--model",
-            "grok-4.5",
+            "kigi-4.5",
             "--output-format",
             "streaming-json",
         ],
@@ -604,7 +604,7 @@ async fn test_headless_streaming_json_usage() {
 #[tokio::test]
 #[ignore] // requires pre-built binary; run with --ignored
 async fn headless_json_schema_chat_completions_uses_response_format() {
-    let server = single_model_server("grok-4.5", "chat_completions").await;
+    let server = single_model_server("kigi-4.5", "chat_completions").await;
     server.set_response(r#"{"name":"Alice","age":30}"#);
 
     let workdir = git_workdir();
@@ -615,7 +615,7 @@ async fn headless_json_schema_chat_completions_uses_response_format() {
             "extract name and age",
             "--yolo",
             "--model",
-            "grok-4.5",
+            "kigi-4.5",
             "--json-schema",
             r#"{"type":"object","properties":{"name":{"type":"string"},"age":{"type":"integer"}},"required":["name","age"],"additionalProperties":false}"#,
             "--max-turns",
@@ -627,7 +627,7 @@ async fn headless_json_schema_chat_completions_uses_response_format() {
 
     assert_headless_success(
         &result,
-        "grok -p --json-schema (chat_completions)",
+        "kigi -p --json-schema (chat_completions)",
         Some(&server),
     );
     assert_no_crashes(&result.stderr);
@@ -663,7 +663,7 @@ async fn headless_json_schema_chat_completions_uses_response_format() {
 #[tokio::test]
 #[ignore] // requires pre-built binary; run with --ignored
 async fn headless_json_schema_responses_uses_text_format() {
-    let server = single_model_server("grok-4.5", "responses").await;
+    let server = single_model_server("kigi-4.5", "responses").await;
     server.set_response(r#"{"name":"Alice","age":30}"#);
 
     let workdir = git_workdir();
@@ -674,7 +674,7 @@ async fn headless_json_schema_responses_uses_text_format() {
             "extract name and age",
             "--yolo",
             "--model",
-            "grok-4.5",
+            "kigi-4.5",
             "--json-schema",
             NAME_AGE_SCHEMA,
             "--max-turns",
@@ -684,7 +684,7 @@ async fn headless_json_schema_responses_uses_text_format() {
     )
     .await;
 
-    assert_headless_success(&result, "grok -p --json-schema (responses)", Some(&server));
+    assert_headless_success(&result, "kigi -p --json-schema (responses)", Some(&server));
     assert_no_crashes(&result.stderr);
 
     let output = parse_stdout_json(&result);
@@ -740,7 +740,7 @@ async fn headless_json_schema_messages_backend_uses_structured_output_tool() {
     )
     .await;
 
-    assert_headless_success(&result, "grok -p --json-schema (messages)", Some(&server));
+    assert_headless_success(&result, "kigi -p --json-schema (messages)", Some(&server));
     assert_no_crashes(&result.stderr);
 
     let output = parse_stdout_json(&result);
@@ -824,7 +824,7 @@ async fn headless_json_schema_messages_validates_text_when_tool_not_called() {
 
     assert_headless_success(
         &result,
-        "grok -p --json-schema (messages, text)",
+        "kigi -p --json-schema (messages, text)",
         Some(&server),
     );
     assert_no_crashes(&result.stderr);
@@ -871,7 +871,7 @@ async fn headless_json_schema_messages_retries_on_schema_violation() {
 
     assert_headless_success(
         &result,
-        "grok -p --json-schema (messages, retry)",
+        "kigi -p --json-schema (messages, retry)",
         Some(&server),
     );
     assert_no_crashes(&result.stderr);
@@ -887,7 +887,7 @@ async fn headless_json_schema_messages_retries_on_schema_violation() {
 #[tokio::test]
 #[ignore] // requires pre-built binary; run with --ignored
 async fn invalid_json_schema_disables_structured_output_and_surfaces_error() {
-    let server = single_model_server("grok-4.5", "chat_completions").await;
+    let server = single_model_server("kigi-4.5", "chat_completions").await;
     server.set_response(r#"{"name":"Alice","age":30}"#);
 
     let workdir = git_workdir();
@@ -898,7 +898,7 @@ async fn invalid_json_schema_disables_structured_output_and_surfaces_error() {
             "extract name and age",
             "--yolo",
             "--model",
-            "grok-4.5",
+            "kigi-4.5",
             // Valid JSON object, but `pattern` is an invalid regex → schema
             // compilation (`jsonschema::validator_for`) fails.
             "--json-schema",
@@ -912,7 +912,7 @@ async fn invalid_json_schema_disables_structured_output_and_surfaces_error() {
 
     assert_headless_success(
         &result,
-        "grok -p --json-schema (invalid schema)",
+        "kigi -p --json-schema (invalid schema)",
         Some(&server),
     );
     assert_no_crashes(&result.stderr);
@@ -950,9 +950,9 @@ async fn invalid_json_schema_disables_structured_output_and_surfaces_error() {
 }
 
 // ============================================================================
-// ACP stdio tests (grok agent stdio)
+// ACP stdio tests (kigi agent stdio)
 //
-// These test the agent as a server: spawn `grok agent stdio`, speak the full
+// These test the agent as a server: spawn `kigi agent stdio`, speak the full
 // ACP protocol over pipes, verify the lifecycle works end-to-end.
 // ============================================================================
 
@@ -965,7 +965,7 @@ async fn test_stdio_full_session_lifecycle() {
     with_local_set(|| async {
         let server = MockInferenceServer::start().await.expect("start mock server");
         let workdir = git_workdir();
-        let client = GrokStdioClient::spawn(&server, workdir.path()).await;
+        let client = KigiStdioClient::spawn(&server, workdir.path()).await;
 
         // Initialize and authenticate
         let init_resp = client.initialize_with_timeout().await;
@@ -1001,7 +1001,7 @@ async fn test_stdio_full_session_lifecycle() {
     .await;
 }
 
-/// Verify that x.ai/session/close frees the session.
+/// Verify that kigi/session/close frees the session.
 /// Creates a session, closes it via ext_method, then verifies session/info
 /// returns an empty response (session no longer exists).
 #[tokio::test]
@@ -1012,7 +1012,7 @@ async fn test_stdio_session_close() {
             .await
             .expect("start mock server");
         let workdir = git_workdir();
-        let client = GrokStdioClient::spawn(&server, workdir.path()).await;
+        let client = KigiStdioClient::spawn(&server, workdir.path()).await;
 
         client.initialize_with_timeout().await;
         let session_id = client.create_session_with_timeout(workdir.path()).await;
@@ -1020,7 +1020,7 @@ async fn test_stdio_session_close() {
         // Session should be alive — session/info returns data with sessionId
         let info_resp = client
             .ext_method(
-                "x.ai/session/info",
+                "kigi/session/info",
                 serde_json::json!({ "sessionId": session_id.0.as_ref() }),
             )
             .await;
@@ -1039,7 +1039,7 @@ async fn test_stdio_session_close() {
         // Close the session
         let close_resp = client
             .ext_method(
-                "x.ai/session/close",
+                "kigi/session/close",
                 serde_json::json!({ "sessionId": session_id.0.as_ref() }),
             )
             .await;
@@ -1053,7 +1053,7 @@ async fn test_stdio_session_close() {
         // Session should be gone — session/info returns empty result (no sessionId)
         let info_after = client
             .ext_method(
-                "x.ai/session/info",
+                "kigi/session/info",
                 serde_json::json!({ "sessionId": session_id.0.as_ref() }),
             )
             .await;
@@ -1074,7 +1074,7 @@ async fn test_stdio_prompt_then_immediate_load_session() {
     with_local_set(|| async {
         let server = MockInferenceServer::start().await.expect("start mock server");
         let workdir = git_workdir();
-        let mut writer = GrokStdioClient::spawn(&server, workdir.path()).await;
+        let mut writer = KigiStdioClient::spawn(&server, workdir.path()).await;
 
         let init_resp = writer.initialize_with_timeout().await;
         assert!(
@@ -1095,7 +1095,7 @@ async fn test_stdio_prompt_then_immediate_load_session() {
         let shared_home = writer.take_home();
         drop(writer);
 
-        let reader = GrokStdioClient::spawn_with_home(&server, workdir.path(), shared_home).await;
+        let reader = KigiStdioClient::spawn_with_home(&server, workdir.path(), shared_home).await;
         reader.initialize_with_timeout().await;
         let _ = reader
             .load_session_with_timeout(&session_id, workdir.path())
@@ -1252,7 +1252,7 @@ async fn test_stdio_xcode_escaped_slash_methods_get_responses() {
 // ── Config test harness ─────────────────────────────────────────────────────
 
 /// Isolated headless run with a custom `~/.kigi/`. Clean env (no leaked
-/// host credentials). Write config files into `grok_dir()` before `run()`.
+/// host credentials). Write config files into `kigi_dir()` before `run()`.
 struct ConfigTestHarness {
     home: tempfile::TempDir,
     workdir: tempfile::TempDir,
@@ -1277,7 +1277,7 @@ impl ConfigTestHarness {
         }
     }
 
-    fn grok_dir(&self) -> std::path::PathBuf {
+    fn kigi_dir(&self) -> std::path::PathBuf {
         self.home.path().join(".kigi")
     }
 
@@ -1287,7 +1287,7 @@ impl ConfigTestHarness {
     }
 
     async fn run(&self) -> HeadlessResult {
-        let mut cmd = tokio::process::Command::new(grok_binary());
+        let mut cmd = tokio::process::Command::new(kigi_binary());
         cmd.args(["-p", "say hello", "--yolo"])
             .current_dir(self.workdir.path())
             .stdin(std::process::Stdio::null())
@@ -1296,10 +1296,10 @@ impl ConfigTestHarness {
             .kill_on_drop(true)
             .env_clear()
             .env("HOME", self.home.path())
-            // Windows resolves `~` via USERPROFILE, not HOME — pin the grok
+            // Windows resolves `~` via USERPROFILE, not HOME — pin the kigi
             // home explicitly so the sandbox holds on all platforms (see
             // `test_env_cmd_tokio`).
-            .env("KIGI_SHARE_DIR", self.grok_dir())
+            .env("KIGI_SHARE_DIR", self.kigi_dir())
             .env("PATH", std::env::var("PATH").unwrap_or_default());
         for (k, v) in &self.env {
             cmd.env(k, v);
@@ -1310,14 +1310,14 @@ impl ConfigTestHarness {
 
 // ── Enterprise managed config tests ────────────────────────────────────────
 
-/// Enterprise BYOK: managed_config.toml overrides grok-build with a custom
+/// Enterprise BYOK: managed_config.toml overrides kigi with a custom
 /// endpoint + env_key. Mock rejects unauthenticated requests with 401.
 /// Regression guard for the 0.1.220 authentication regression.
 #[tokio::test]
 #[ignore] // requires pre-built binary; run with --ignored
 async fn test_headless_managed_config_byok_sends_authorized_requests() {
     let server = MockInferenceServer::start_with_required_auth(
-        vec![MockModelEntry::new("grok-4.5")],
+        vec![MockModelEntry::new("kigi-4.5")],
         "test-byok-secret-token",
     )
     .await
@@ -1325,7 +1325,7 @@ async fn test_headless_managed_config_byok_sends_authorized_requests() {
 
     let mut h = ConfigTestHarness::new(&server);
     std::fs::write(
-        h.grok_dir().join("managed_config.toml"),
+        h.kigi_dir().join("managed_config.toml"),
         format!(
             r#"
 [endpoints]
@@ -1337,10 +1337,10 @@ api_backend = "responses"
 base_url = "{url}"
 context_window = 500000
 env_key = "KIGI_TEST_BYOK_TOKEN"
-model = "grok-4.5"
+model = "kigi-4.5"
 
 [models]
-default = "grok-4.5"
+default = "kigi-4.5"
 "#,
             url = server.url()
         ),
@@ -1369,7 +1369,7 @@ default = "grok-4.5"
 #[ignore] // requires pre-built binary; run with --ignored
 async fn headless_reasoning_efforts_payload_parses_and_legacy_effort_rides_wire() {
     let server = MockInferenceServer::start_with_models(vec![
-        MockModelEntry::new("grok-4.5")
+        MockModelEntry::new("kigi-4.5")
             .with_api_backend("chat_completions")
             .with_supports_reasoning_effort(true)
             .with_reasoning_effort("xhigh")
@@ -1390,7 +1390,7 @@ async fn headless_reasoning_efforts_payload_parses_and_legacy_effort_rides_wire(
             "hi",
             "--yolo",
             "--model",
-            "grok-4.5",
+            "kigi-4.5",
             "--max-turns",
             "1",
         ],
@@ -1398,7 +1398,7 @@ async fn headless_reasoning_efforts_payload_parses_and_legacy_effort_rides_wire(
     )
     .await;
 
-    assert_headless_success(&result, "grok -p reasoning_efforts list", Some(&server));
+    assert_headless_success(&result, "kigi -p reasoning_efforts list", Some(&server));
     assert_no_crashes(&result.stderr);
 
     // The legacy effort scalar rides the chat-completions request unchanged.
@@ -1527,7 +1527,7 @@ async fn test_headless_timeout_exit_kills_pending_background_task() {
 
     assert_headless_success(
         &result,
-        "grok -p with pending background task",
+        "kigi -p with pending background task",
         Some(&server),
     );
     assert_no_crashes(&result.stderr);
@@ -1565,7 +1565,7 @@ async fn test_headless_no_wait_exit_kills_background_task() {
     )
     .await;
 
-    assert_headless_success(&result, "grok -p --no-wait-for-background", Some(&server));
+    assert_headless_success(&result, "kigi -p --no-wait-for-background", Some(&server));
     assert_no_crashes(&result.stderr);
 
     let pid = read_task_pid(&pid_file);
@@ -1630,7 +1630,7 @@ async fn test_headless_waits_for_short_background_task_and_exits_clean() {
     )
     .await;
 
-    assert_headless_success(&result, "grok -p with short background task", Some(&server));
+    assert_headless_success(&result, "kigi -p with short background task", Some(&server));
     assert_no_crashes(&result.stderr);
     assert!(
         marker.exists(),

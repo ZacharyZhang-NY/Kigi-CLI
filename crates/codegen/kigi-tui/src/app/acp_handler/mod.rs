@@ -2,8 +2,8 @@
 //!
 //! Routes incoming [`AcpClientMessage`] notifications to the appropriate
 //! agent's tracker, queues permission requests for interactive handling,
-//! and xAI session extension notifications (`x.ai/session_notification` and
-//! replay-path `x.ai/session/update`).
+//! and xAI session extension notifications (`kigi/session_notification` and
+//! replay-path `kigi/session/update`).
 
 use std::collections::hash_map::Entry;
 use std::path::PathBuf;
@@ -591,39 +591,39 @@ pub(crate) fn handle(msg: AcpClientMessage, app: &mut AppView) -> bool {
 /// Handle an xAI extension notification.
 ///
 /// Dispatches on method string:
-/// - `x.ai/session_notification` / `x.ai/session/update` → per-agent session updates
+/// - `kigi/session_notification` / `kigi/session/update` → per-agent session updates
 fn handle_ext_notification(notif: &acp::ExtNotification, app: &mut AppView) -> bool {
     match notif.method.as_ref() {
-        "x.ai/session_notification" | "x.ai/session/update" => {
+        "kigi/session_notification" | "kigi/session/update" => {
             handle_session_notification(notif, app)
         }
-        "x.ai/follow_ups" => handle_follow_ups(notif, app),
-        "x.ai/task_backgrounded" => handle_task_backgrounded(notif, app),
-        "x.ai/task_completed" => handle_task_completed(notif, app),
-        "x.ai/models/update" => handle_models_update(notif, app),
-        "x.ai/settings/update" => handle_settings_update(notif, app),
-        "x.ai/sessions/changed" => handle_sessions_changed(notif, app),
-        "x.ai/queue/changed" => handle_queue_changed(notif, app),
+        "kigi/follow_ups" => handle_follow_ups(notif, app),
+        "kigi/task_backgrounded" => handle_task_backgrounded(notif, app),
+        "kigi/task_completed" => handle_task_completed(notif, app),
+        "kigi/models/update" => handle_models_update(notif, app),
+        "kigi/settings/update" => handle_settings_update(notif, app),
+        "kigi/sessions/changed" => handle_sessions_changed(notif, app),
+        "kigi/queue/changed" => handle_queue_changed(notif, app),
         // TODO(prompt_complete-deprecation): Legacy removal (gated): durable turn_completed is already consumed via finalize_turn_from_terminal; keep & re-point the lost-RPC reconcile to the durable rail before deleting.
-        "x.ai/session/prompt_complete" => handle_prompt_complete(notif, app),
-        "x.ai/session/interjection" => handle_interjection(notif, app),
-        "x.ai/monitor_event" => handle_monitor_event(notif, app),
-        "x.ai/scheduled_task_created" => handle_scheduled_task_created(notif, app),
-        "x.ai/scheduled_task_fired" => handle_scheduled_task_fired(notif, app),
-        "x.ai/scheduled_task_deleted" => handle_scheduled_task_deleted(notif, app),
-        "x.ai/scheduled_task_inject_prompt" => handle_scheduled_task_inject_prompt(notif, app),
-        "x.ai/git_head_changed" => handle_git_head_changed(notif, app),
-        "x.ai/mcp/init_progress" => handle_mcp_init_progress(notif, app),
-        "x.ai/mcp/tools_changed" | "x.ai/mcp_initialized" => handle_mcp_tools_changed(notif, app),
-        "x.ai/mcp/server_status" if push_server_status_enabled() => {
+        "kigi/session/prompt_complete" => handle_prompt_complete(notif, app),
+        "kigi/session/interjection" => handle_interjection(notif, app),
+        "kigi/monitor_event" => handle_monitor_event(notif, app),
+        "kigi/scheduled_task_created" => handle_scheduled_task_created(notif, app),
+        "kigi/scheduled_task_fired" => handle_scheduled_task_fired(notif, app),
+        "kigi/scheduled_task_deleted" => handle_scheduled_task_deleted(notif, app),
+        "kigi/scheduled_task_inject_prompt" => handle_scheduled_task_inject_prompt(notif, app),
+        "kigi/git_head_changed" => handle_git_head_changed(notif, app),
+        "kigi/mcp/init_progress" => handle_mcp_init_progress(notif, app),
+        "kigi/mcp/tools_changed" | "kigi/mcp_initialized" => handle_mcp_tools_changed(notif, app),
+        "kigi/mcp/server_status" if push_server_status_enabled() => {
             handle_mcp_server_status(notif, app)
         }
-        "x.ai/mcp/servers_updated" => handle_mcp_servers_updated(notif, app),
+        "kigi/mcp/servers_updated" => handle_mcp_servers_updated(notif, app),
         _ => false,
     }
 }
 
-/// Handle `x.ai/session/interjection` — the leader broadcasts this
+/// Handle `kigi/session/interjection` — the leader broadcasts this
 /// sessionId-bearing notification to every attached client when a mid-turn
 /// interjection is queued (emitted from the session actor's `Interject`
 /// command handler). Each client renders the interjection as a scrollback
@@ -638,7 +638,7 @@ fn handle_ext_notification(notif: &acp::ExtNotification, app: &mut AppView) -> b
 /// renders, so legacy shells degrade to "render everywhere" rather than drop.
 fn handle_interjection(notif: &acp::ExtNotification, app: &mut AppView) -> bool {
     let Ok(parsed) = serde_json::from_str::<serde_json::Value>(notif.params.get()) else {
-        tracing::warn!("Failed to parse x.ai/session/interjection");
+        tracing::warn!("Failed to parse kigi/session/interjection");
         return false;
     };
     let Some(session_id) = parsed.get("sessionId").and_then(|v| v.as_str()) else {
@@ -672,7 +672,7 @@ fn handle_interjection(notif: &acp::ExtNotification, app: &mut AppView) -> bool 
     // Interjecting into a parked wait continues the turn below this block —
     // the withheld "Worked for …" marker must not fire late beneath it
     // (shared-queue interjects render only via this broadcast, and the shell
-    // emits the queue-emptying `x.ai/queue/changed` right after it).
+    // emits the queue-emptying `kigi/queue/changed` right after it).
     agent.suppress_parked_marker_on_interject();
     is_active
 }
@@ -684,8 +684,8 @@ fn handle_interjection(notif: &acp::ExtNotification, app: &mut AppView) -> bool 
 /// immediately (for unknown methods).
 fn handle_ext_method(ext: kigi_acp_lib::AcpArgs<acp::ExtRequest>, app: &mut AppView) -> bool {
     match ext.request.method.as_ref() {
-        "x.ai/ask_user_question" => handle_ask_user_question(ext, app),
-        "x.ai/exit_plan_mode" => handle_exit_plan_mode(ext, app),
+        "kigi/ask_user_question" => handle_ask_user_question(ext, app),
+        "kigi/exit_plan_mode" => handle_exit_plan_mode(ext, app),
         unknown => {
             tracing::warn!("Unknown ext_method: {unknown}");
             ext.response_tx

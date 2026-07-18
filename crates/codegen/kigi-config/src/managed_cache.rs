@@ -67,7 +67,7 @@ pub fn mark_managed_config_synced(marker: SyncMarker<'_>) {
     }
 }
 
-/// Server-side GrokBuildDeployment UUID from the last deploy-key managed-config
+/// Server-side KigiDeployment UUID from the last deploy-key managed-config
 /// sync, bound to the key that synced it: returns the marker's `principal` only
 /// when the marker's `key_fingerprint` equals `key_fingerprint`, so a rotated or
 /// removed key never reports the previous deployment's id. Team-path syncs store

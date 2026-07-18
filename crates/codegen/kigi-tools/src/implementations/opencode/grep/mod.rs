@@ -10,7 +10,7 @@ use std::process::Stdio;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
-use crate::implementations::grok_build::grep::ripgrep::rg_path;
+use crate::implementations::kigi::grep::ripgrep::rg_path;
 use crate::types::output::{GrepFileMatch, GrepLineMatch, GrepSearchOutput};
 use crate::types::requirements::{Expr, ToolRequirement};
 #[allow(unused_imports)]

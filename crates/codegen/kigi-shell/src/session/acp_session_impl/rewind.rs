@@ -525,7 +525,7 @@ impl SessionActor {
             .send(PersistenceMsg::MergeRewindPointsFrom { target_index });
     }
 
-    /// Out-of-band history repair (`x.ai/session/repair`) for a resident
+    /// Out-of-band history repair (`kigi/session/repair`) for a resident
     /// session: run `kigi_chat_state::compaction_utils::repair_history` inside
     /// the chat-state actor, then flush persistence so `chat_history.jsonl`
     /// is rewritten on disk before the caller sees success.

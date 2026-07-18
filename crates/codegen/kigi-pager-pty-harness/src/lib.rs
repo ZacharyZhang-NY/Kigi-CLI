@@ -256,12 +256,12 @@ impl PtyHarness {
     }
 
     /// Feed bytes **directly into the virtual screen only**, bypassing the
-    /// child (grok).
+    /// child (kigi).
     ///
     /// Simulates an out-of-band repaint/reflow by an outer layer (tmux, or an
     /// nvim/vim `:terminal`) that changes what's on screen without going
-    /// through grok's stdout. Used to reproduce the doubled-line class of bugs
-    /// where grok's diff renderer never re-asserts a region it didn't write
+    /// through kigi's stdout. Used to reproduce the doubled-line class of bugs
+    /// where kigi's diff renderer never re-asserts a region it didn't write
     /// itself (since the harness is a single faithful emulator and cannot nest
     /// a real tmux/nvim).
     pub fn feed_screen(&mut self, bytes: &[u8]) {

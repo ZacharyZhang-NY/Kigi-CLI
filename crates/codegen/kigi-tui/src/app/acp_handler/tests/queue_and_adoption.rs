@@ -2,7 +2,7 @@
     use super::*;
 
     /// The pager reconciles the authoritative shared prompt queue from the
-    /// `x.ai/queue/changed` broadcast, and an empty broadcast clears it.
+    /// `kigi/queue/changed` broadcast, and an empty broadcast clears it.
     #[test]
     fn queue_changed_reconciles_shared_queue() {
         let mut app = make_app_with_agent("sess-1");
@@ -144,7 +144,7 @@
             params["runningPromptId"] = serde_json::json!(r);
         }
         acp::ExtNotification::new(
-            "x.ai/queue/changed",
+            "kigi/queue/changed",
             std::sync::Arc::from(serde_json::value::to_raw_value(&params).unwrap()),
         )
     }
@@ -336,7 +336,7 @@
             serde_json::from_str(&json_str).unwrap();
         assert_eq!(mirror.running_prompt_id.as_deref(), Some("prompt-running"));
 
-        let notif = acp::ExtNotification::new("x.ai/queue/changed", raw.into());
+        let notif = acp::ExtNotification::new("kigi/queue/changed", raw.into());
 
         // Case 1: current_prompt_id is None -> adopt it.
         let mut app = make_app_with_agent("sess-1");
@@ -415,7 +415,7 @@
     /// Regression: when the shell promotes
     /// a server-initiated / auto-wake prompt (synthetic id `task-completed-…`,
     /// injected when a background task finishes) to the running turn, it
-    /// broadcasts `x.ai/queue/changed` with `runningPromptId` = that synthetic
+    /// broadcasts `kigi/queue/changed` with `runningPromptId` = that synthetic
     /// id. The pager must NOT adopt it via the turn-start shim: those turns run
     /// inside the actor and emit no `prompt_complete` / `PromptResponse`, so
     /// `start_turn()` here would strand the pager on "Responding…" forever
@@ -1736,7 +1736,7 @@
             "promptId": "p1",
         });
         let notif = acp::ExtNotification::new(
-            "x.ai/session/prompt_complete",
+            "kigi/session/prompt_complete",
             serde_json::value::to_raw_value(&params).unwrap().into(),
         );
         handle_prompt_complete(&notif, &mut app);
@@ -2093,7 +2093,7 @@
     fn viewer_does_not_enter_turn_running_for_server_initiated_turn() {
         // A server-initiated / auto-wake turn (synthetic prompt id, e.g. a
         // background subagent or task completion: `task-completed-…`) runs inside
-        // the actor and emits NO `x.ai/session/prompt_complete`. If a viewer
+        // the actor and emits NO `kigi/session/prompt_complete`. If a viewer
         // entered TurnRunning for it, nothing would ever finish the turn and the
         // viewer would be stuck "Responding…" forever — exactly the bug where one
         // dashboard showed "Worked for" while the other was stuck responding.
@@ -2131,7 +2131,7 @@
     fn viewer_enters_turn_running_for_scheduler_fired_cron_turn() {
         // A `/loop` (scheduled-task) turn has a synthetic `scheduler-fired-…`
         // prompt id, but UNLIKE auto-wake turns it is client-driven via
-        // `MvpAgent::prompt()` and DOES emit `x.ai/session/prompt_complete`. So a
+        // `MvpAgent::prompt()` and DOES emit `kigi/session/prompt_complete`. So a
         // viewer MUST enter TurnRunning for it — otherwise the dashboard's
         // locally-tracked row for a running `/loop` session never shows Working.
         let mut app = make_app_with_agent("sess-view");
@@ -2173,7 +2173,7 @@
 
     #[test]
     fn viewer_prompt_complete_finishes_turn() {
-        // A viewer in TurnRunning receives x.ai/session/prompt_complete for its
+        // A viewer in TurnRunning receives kigi/session/prompt_complete for its
         // session -> finish_turn: state Idle, current_prompt_id cleared.
         let mut app = make_app_with_agent("sess-view");
         app.agents.get_mut(&AgentId(0)).unwrap().attached_as_viewer = true;

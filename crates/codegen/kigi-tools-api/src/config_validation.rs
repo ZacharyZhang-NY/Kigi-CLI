@@ -138,12 +138,12 @@ mod tests {
 
     #[test]
     fn unset_params_is_ok_none() {
-        assert_eq!(parse_params_json(0, "GrokBuild:grep", None), Ok(None));
+        assert_eq!(parse_params_json(0, "Kigi:grep", None), Ok(None));
     }
 
     #[test]
     fn valid_object_is_returned() {
-        let parsed = parse_params_json(0, "GrokBuild:grep", Some(r#"{"max_results":50}"#)).unwrap();
+        let parsed = parse_params_json(0, "Kigi:grep", Some(r#"{"max_results":50}"#)).unwrap();
         assert_eq!(
             parsed,
             Some(
@@ -157,7 +157,7 @@ mod tests {
 
     #[test]
     fn empty_string_is_a_parse_error() {
-        let err = parse_params_json(3, "GrokBuild:grep", Some("")).unwrap_err();
+        let err = parse_params_json(3, "Kigi:grep", Some("")).unwrap_err();
         assert_eq!(err.index, 3);
         assert_eq!(err.field_path(), "tools[3].params_json");
         assert!(matches!(
@@ -188,10 +188,10 @@ mod tests {
 
     #[test]
     fn name_override_unset_or_valid_is_ok() {
-        assert_eq!(validate_name_override(0, "GrokBuild:grep", None), Ok(()));
-        for name in ["search", "GrokBuild:grep", "a-b_C9"] {
+        assert_eq!(validate_name_override(0, "Kigi:grep", None), Ok(()));
+        for name in ["search", "Kigi:grep", "a-b_C9"] {
             assert_eq!(
-                validate_name_override(0, "GrokBuild:grep", Some(name)),
+                validate_name_override(0, "Kigi:grep", Some(name)),
                 Ok(()),
                 "name={name:?}"
             );
@@ -201,7 +201,7 @@ mod tests {
     #[test]
     fn name_override_outside_charset_is_rejected() {
         for name in ["has space", "", "a:b:c", "dot.name"] {
-            let err = validate_name_override(2, "GrokBuild:grep", Some(name)).unwrap_err();
+            let err = validate_name_override(2, "Kigi:grep", Some(name)).unwrap_err();
             assert_eq!(err.index, 2, "name={name:?}");
             assert_eq!(err.field_path(), "tools[2].name_override");
             assert!(
@@ -228,30 +228,27 @@ mod tests {
 
     #[test]
     fn all_ids_present_returns_none() {
-        let entries = [entry("GrokBuild:grep"), entry("GrokBuild:read_file")];
-        let allowed = allowed(&["GrokBuild:grep", "GrokBuild:read_file", "GrokBuild:bash"]);
+        let entries = [entry("Kigi:grep"), entry("Kigi:read_file")];
+        let allowed = allowed(&["Kigi:grep", "Kigi:read_file", "Kigi:bash"]);
         assert_eq!(first_unknown_tool_id(&entries, &allowed), None);
     }
 
     #[test]
     fn empty_entries_returns_none() {
-        assert_eq!(
-            first_unknown_tool_id(&[], &allowed(&["GrokBuild:grep"])),
-            None
-        );
+        assert_eq!(first_unknown_tool_id(&[], &allowed(&["Kigi:grep"])), None);
     }
 
     #[test]
     fn first_unknown_id_is_returned_with_index() {
         let entries = [
-            entry("GrokBuild:grep"),
-            entry("GrokBuild:nonexistent"),
-            entry("GrokBuild:also_missing"),
+            entry("Kigi:grep"),
+            entry("Kigi:nonexistent"),
+            entry("Kigi:also_missing"),
         ];
-        let allowed = allowed(&["GrokBuild:grep"]);
+        let allowed = allowed(&["Kigi:grep"]);
         assert_eq!(
             first_unknown_tool_id(&entries, &allowed),
-            Some((1, "GrokBuild:nonexistent"))
+            Some((1, "Kigi:nonexistent"))
         );
     }
 }

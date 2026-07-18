@@ -1,6 +1,6 @@
 //! Stable per-install agent identifier.
 //!
-//! Stamped on requests (`x-grok-agent-id` / `x_grok_agent_id`) so the backend
+//! Stamped on requests (`x-kigi-agent-id` / `x_kigi_agent_id`) so the backend
 //! can bucket by install. Cached in `$KIGI_SHARE_DIR/agent_id` so every process on
 //! this install (and restarts) agree; the in-memory `OnceLock` makes repeat
 //! calls free.
@@ -12,7 +12,7 @@ static AGENT_ID: OnceLock<String> = OnceLock::new();
 /// Cached agent instance ID — per-process lifetime.
 static AGENT_INSTANCE_ID: OnceLock<String> = OnceLock::new();
 
-/// Returns the per-install agent ID, backed by a file cache under the grok
+/// Returns the per-install agent ID, backed by a file cache under the kigi
 /// home so it is stable across process restarts.
 pub fn agent_id() -> String {
     AGENT_ID.get_or_init(load_or_compute_agent_id).clone()

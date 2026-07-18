@@ -616,7 +616,7 @@ fn transform_session_id_in_update(
 /// 2. Truncates at the last complete turn boundary. A complete turn runs
 ///    `User → Assistant → (matching ToolResults)`, possibly across multiple
 ///    Assistant/ToolResult cycles, with `Reasoning` siblings interleaved
-///    throughout (real grok-build turns emit `[reasoning, assistant, tool
+///    throughout (real kigi turns emit `[reasoning, assistant, tool
 ///    results, reasoning, assistant, ...]`). The scan treats everything
 ///    except `Assistant` as transparent and only advances the boundary when an
 ///    Assistant closes every tool call it made, so it survives reasoning

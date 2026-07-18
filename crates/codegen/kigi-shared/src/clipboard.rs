@@ -767,9 +767,9 @@ mod platform {
     {
         let temp_dir = std::env::temp_dir();
         (
-            temp_dir.join("grok-clipboard-probe.png"),
-            temp_dir.join("grok-clipboard-probe.tiff"),
-            temp_dir.join("grok-clipboard-probe.jpg"),
+            temp_dir.join("kigi-clipboard-probe.png"),
+            temp_dir.join("kigi-clipboard-probe.tiff"),
+            temp_dir.join("kigi-clipboard-probe.jpg"),
         )
     }
 
@@ -2713,7 +2713,7 @@ mod tests {
     #[test]
     #[ignore]
     fn round_trip() {
-        let sentinel = format!("grok-clipboard-test-{}", std::process::id());
+        let sentinel = format!("kigi-clipboard-test-{}", std::process::id());
         set_text(&sentinel).expect("set_text failed");
         let got = get_text().expect("get_text failed");
         assert_eq!(got.as_deref(), Some(sentinel.as_str()));

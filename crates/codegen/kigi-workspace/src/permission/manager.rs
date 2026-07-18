@@ -18,7 +18,7 @@ use crate::permission::types::{
     AccessKind, ClientType, Decision, EditPolicy, PermissionCommand, PermissionEvent, PromptPolicy,
 };
 use kigi_paths::AbsPathBuf;
-use kigi_tools::implementations::grok_build::web_fetch::{DomainMatcher, domain::normalize_domain};
+use kigi_tools::implementations::kigi::web_fetch::{DomainMatcher, domain::normalize_domain};
 
 /// Canonical `decision_reason` triggers for the uploaded artifact. Single source
 /// so the emit sites can't drift or misspell (the field doc lists these values).
@@ -911,7 +911,7 @@ fn spawn_permission_manager_with_pin(
         //
         // Prior to this change, that choice would set edit_policy=Allow and
         // persist it to ~/.kigi/sessions/<cwd>/permission.toml. This caused
-        // the allow to survive full restarts (new grok process, new agent
+        // the allow to survive full restarts (new kigi process, new agent
         // session in the same directory), which did not match the label or
         // user expectation (and did not match upstream session-scoped
         // behavior).
@@ -1579,7 +1579,7 @@ fn spawn_permission_manager_with_pin(
                                     (Decision::Allow, "allow_edits_for_session")
                                 }
                                 PromptOutcome::AllowAlways => {
-                                    // Fallback clients (Generic / GrokWeb /
+                                    // Fallback clients (Generic / KigiWeb /
                                     // Extension) submit the legacy `"always-allow"` option
                                     // id, which the prompter maps to plain `AllowAlways`.
                                     // They have no scope toggle, so default to tool-scope
@@ -2400,7 +2400,7 @@ mod tests {
     /// Spawn a manager whose prompter is wired to a live gateway receiver backed
     /// by `client`, so prompting performs a real `request_permission` round-trip.
     /// `client_type` selects the option set the prompter builds (e.g. the
-    /// always-approve option is only offered for `GrokTUI | GrokPager | Desktop`).
+    /// always-approve option is only offered for `KigiTUI | KigiPager | Desktop`).
     fn manager_with_recording_client(
         cwd: &AbsPathBuf,
         config: Option<crate::permission::types::PermissionConfig>,
@@ -4930,10 +4930,10 @@ mod tests {
                 let cwd = AbsPathBuf::new(tmp.path().to_path_buf()).unwrap();
                 let client = RecordingClient::default();
                 let prompts = client.prompts.clone();
-                // GrokPager wires the always-approve option through to its YOLO
+                // KigiPager wires the always-approve option through to its YOLO
                 // toggle; it is the option set the auto path prompts under.
                 let (mgr, _e) =
-                    manager_with_recording_client(&cwd, None, client, ClientType::GrokPager);
+                    manager_with_recording_client(&cwd, None, client, ClientType::KigiPager);
                 mgr.set_auto_mode(true);
                 // Force classify to Block. Interactive auto mode must now prompt
                 // on the FIRST block instead of denying.
@@ -5000,7 +5000,7 @@ mod tests {
                 let client = RecordingClient::default();
                 let prompts = client.prompts.clone();
                 let (mgr, _e) =
-                    manager_with_recording_client(&cwd, None, client, ClientType::GrokPager);
+                    manager_with_recording_client(&cwd, None, client, ClientType::KigiPager);
                 mgr.set_auto_mode(true);
                 mgr.set_classifier(Some(LlmPermissionClassifier::with_fixed_model_text(
                     r#"{"thinking":"t","shouldBlock":true,"reason":"x"}"#,
@@ -5050,7 +5050,7 @@ mod tests {
                 let client = RecordingClient::default();
                 let prompts = client.prompts.clone();
                 let (mgr, _e) =
-                    manager_with_recording_client(&cwd, None, client, ClientType::GrokPager);
+                    manager_with_recording_client(&cwd, None, client, ClientType::KigiPager);
                 mgr.set_auto_mode(true);
                 mgr.set_classifier(Some(LlmPermissionClassifier::with_fixed_model_text(
                     r#"{"thinking":"t","shouldBlock":true,"reason":"x"}"#,
@@ -5098,7 +5098,7 @@ mod tests {
                 let client = RecordingClient::default();
                 let prompts = client.prompts.clone();
                 let (mgr, _e) =
-                    manager_with_recording_client(&cwd, None, client, ClientType::GrokPager);
+                    manager_with_recording_client(&cwd, None, client, ClientType::KigiPager);
                 mgr.set_auto_mode(true);
                 mgr.set_classifier(Some(LlmPermissionClassifier::with_fixed_model_text(
                     r#"{"thinking":"t","shouldBlock":true,"reason":"x"}"#,
@@ -5144,7 +5144,7 @@ mod tests {
                 let client = RecordingClient::default();
                 let prompts = client.prompts.clone();
                 let (mgr, _e) =
-                    manager_with_recording_client(&cwd, None, client, ClientType::GrokPager);
+                    manager_with_recording_client(&cwd, None, client, ClientType::KigiPager);
                 mgr.set_auto_mode(true);
                 mgr.set_classifier(Some(LlmPermissionClassifier::with_fixed_model_text(
                     r#"{"thinking":"t","shouldBlock":true,"reason":"x"}"#,
@@ -5193,7 +5193,7 @@ mod tests {
                 let client = RecordingClient::default();
                 let prompts = client.prompts.clone();
                 let (mgr, _e) =
-                    manager_with_recording_client(&cwd, None, client, ClientType::GrokPager);
+                    manager_with_recording_client(&cwd, None, client, ClientType::KigiPager);
                 mgr.set_auto_mode(true);
                 mgr.set_classifier(Some(LlmPermissionClassifier::with_fixed_model_text(
                     r#"{"thinking":"t","shouldBlock":true,"reason":"x"}"#,
@@ -5239,7 +5239,7 @@ mod tests {
                 let client = RecordingClient::default();
                 let prompts = client.prompts.clone();
                 let (mgr, _e) =
-                    manager_with_recording_client(&cwd, None, client, ClientType::GrokPager);
+                    manager_with_recording_client(&cwd, None, client, ClientType::KigiPager);
                 mgr.set_auto_mode(true);
                 mgr.set_classifier(Some(LlmPermissionClassifier::with_fixed_model_text(
                     r#"{"thinking":"t","shouldBlock":true,"reason":"x"}"#,
@@ -5324,7 +5324,7 @@ mod tests {
                 let client = RecordingClient::default();
                 let prompts = client.prompts.clone();
                 let (mgr, _e) =
-                    manager_with_recording_client(&cwd, None, client, ClientType::GrokPager);
+                    manager_with_recording_client(&cwd, None, client, ClientType::KigiPager);
                 mgr.set_auto_mode(true);
                 mgr.set_classifier(Some(LlmPermissionClassifier::with_fixed_model_text(
                     r#"{"thinking":"t","shouldBlock":false,"reason":"x"}"#,
@@ -5373,7 +5373,7 @@ mod tests {
                 let client = RecordingClient::default();
                 let prompts = client.prompts.clone();
                 let (mgr, _e) =
-                    manager_with_recording_client(&cwd, None, client, ClientType::GrokPager);
+                    manager_with_recording_client(&cwd, None, client, ClientType::KigiPager);
                 mgr.set_auto_mode(true);
                 mgr.set_classifier(Some(LlmPermissionClassifier::with_fixed_model_text(
                     r#"{"thinking":"t","shouldBlock":true,"reason":"x"}"#,

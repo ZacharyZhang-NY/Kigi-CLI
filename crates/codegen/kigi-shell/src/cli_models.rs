@@ -1,4 +1,4 @@
-//! Data APIs for `grok models`. Clients own display.
+//! Data APIs for `kigi models`. Clients own display.
 
 use agent_client_protocol as acp;
 use anyhow::Result;
@@ -6,11 +6,11 @@ use kigi_acp_lib::{AcpAgentTx, acp_send};
 
 use crate::agent::config::Config as AgentConfig;
 
-/// Status for the `grok models` banner (display order ≠ sampling priority; see [`AuthStatus::resolve`]).
+/// Status for the `kigi models` banner (display order ≠ sampling priority; see [`AuthStatus::resolve`]).
 #[derive(Debug, PartialEq, Eq)]
 pub enum AuthStatus {
     ApiKey,
-    /// Auth host from `grok_ws_origin` (scheme stripped).
+    /// Auth host from `kigi_ws_origin` (scheme stripped).
     LoggedIn(String),
     /// Catalog key of the first model with own `api_key`/`env_key`.
     ModelCredentials(String),

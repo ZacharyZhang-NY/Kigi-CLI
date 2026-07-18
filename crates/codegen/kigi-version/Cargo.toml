@@ -3,7 +3,7 @@ license = "Apache-2.0"
 name = "kigi-version"
 version.workspace = true
 edition.workspace = true
-description = "Lockstepped grok CLI version."
+description = "Lockstepped kigi CLI version."
 
 [dependencies]
 semver = { workspace = true }

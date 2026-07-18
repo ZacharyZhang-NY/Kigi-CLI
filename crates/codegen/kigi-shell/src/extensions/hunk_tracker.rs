@@ -311,7 +311,7 @@ pub async fn handle(
         // ───────────────────────────────────────────────────────────────
         // Queries
         // ───────────────────────────────────────────────────────────────
-        "x.ai/hunk-tracker/get-hunks" => {
+        "kigi/hunk-tracker/get-hunks" => {
             let req = parse_params::<GetHunksRequest>(args)?;
             let ctx = get_hunk_tracker(agent, req.session_id.as_ref())?;
 
@@ -355,7 +355,7 @@ pub async fn handle(
             }))
         }
 
-        "x.ai/hunk-tracker/get-files" => {
+        "kigi/hunk-tracker/get-files" => {
             let req = parse_params::<GetFilesRequest>(args)?;
             let ctx = get_hunk_tracker(agent, req.session_id.as_ref())?;
 
@@ -371,7 +371,7 @@ pub async fn handle(
             to_ext_response(Ok(GetFilesResponse { files }))
         }
 
-        "x.ai/hunk-tracker/get-all-file-contents" => {
+        "kigi/hunk-tracker/get-all-file-contents" => {
             let req = parse_params::<GetFilesRequest>(args)?;
 
             let sid = req.session_id.as_ref().map(|s| s.0.as_ref());
@@ -398,7 +398,7 @@ pub async fn handle(
             to_ext_response(Ok(GetAllFileContentsResponse { files }))
         }
 
-        "x.ai/hunk-tracker/get-summary" => {
+        "kigi/hunk-tracker/get-summary" => {
             let req = parse_params::<GetSummaryRequest>(args)?;
 
             let sid = req.session_id.as_ref().map(|s| s.0.as_ref());
@@ -412,7 +412,7 @@ pub async fn handle(
         // ───────────────────────────────────────────────────────────────
         // Single Hunk Action
         // ───────────────────────────────────────────────────────────────
-        "x.ai/hunk-tracker/hunk-action" => {
+        "kigi/hunk-tracker/hunk-action" => {
             let req = parse_params::<HunkActionRequest>(args)?;
 
             let action_kind = match req.action.as_str() {
@@ -448,7 +448,7 @@ pub async fn handle(
         // ───────────────────────────────────────────────────────────────
         // Bulk Actions
         // ───────────────────────────────────────────────────────────────
-        "x.ai/hunk-tracker/file-action" => {
+        "kigi/hunk-tracker/file-action" => {
             let req = parse_params::<FileActionRequest>(args)?;
 
             let action_kind = match req.action.as_str() {
@@ -479,7 +479,7 @@ pub async fn handle(
             }
         }
 
-        "x.ai/hunk-tracker/turn-action" => {
+        "kigi/hunk-tracker/turn-action" => {
             let req = parse_params::<TurnActionRequest>(args)?;
 
             let action_kind = match req.action.as_str() {
@@ -510,7 +510,7 @@ pub async fn handle(
             }
         }
 
-        "x.ai/hunk-tracker/all-action" => {
+        "kigi/hunk-tracker/all-action" => {
             let req = parse_params::<AllActionRequest>(args)?;
 
             let action_kind = match req.action.as_str() {

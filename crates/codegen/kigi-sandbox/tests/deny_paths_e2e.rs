@@ -323,7 +323,7 @@ fn run_deny_case(
     }
 
     let tmp = std::env::temp_dir().join(format!(
-        "grok-sandbox-e2e-{tag}-{}-{}",
+        "kigi-sandbox-e2e-{tag}-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

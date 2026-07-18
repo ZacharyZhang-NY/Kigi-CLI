@@ -40,7 +40,7 @@ pub(crate) struct RoleToolNames {
     /// `{SEARCH_TOOL}` — `ToolKind::Search` (grep maps here).
     pub search: String,
     /// `{WRITE_TOOL}` — `ToolKind::Write`, falling back to `ToolKind::Edit`
-    /// (the default grok-build host's `search_replace` mutator) when `Write`
+    /// (the default kigi host's `search_replace` mutator) when `Write`
     /// is absent from the describe summary.
     pub write: String,
     /// `{EXECUTE_TOOL}` — `ToolKind::Execute` (terminal/bash maps here).
@@ -99,7 +99,7 @@ impl RoleToolNames {
     /// `{WRITE_TOOL}` falls back to the parent `Edit` tool name when the bridge
     /// has no `Write` — mirroring [`Self::from_summary`], so the inherit / retry
     /// render names the same mutator the subagent actually exposes (e.g.
-    /// `search_replace` on the default grok-build host) instead of the literal
+    /// `search_replace` on the default kigi host) instead of the literal
     /// `write` default. No `{TOOLSET_TOOLS}` enumeration on the inherit path.
     pub(crate) fn from_parent(
         read: Option<String>,
@@ -127,14 +127,14 @@ impl RoleToolNames {
     /// summary (the `name_override`-aware client name per kind), and
     /// `{TOOLSET_TOOLS}` enumerates the toolset.
     pub(crate) fn from_summary(
-        summary: &kigi_tools::implementations::grok_build::task::types::SubagentTypeSummary,
+        summary: &kigi_tools::implementations::kigi::task::types::SubagentTypeSummary,
     ) -> Self {
         let get = |kind: ToolKind| summary.tool_names.get(&kind).cloned();
         Self::from_parts(
             get(ToolKind::Read),
             get(ToolKind::ListDir),
             get(ToolKind::Search),
-            // The default grok-build host's pre-spawn describe probe exposes only
+            // The default kigi host's pre-spawn describe probe exposes only
             // `Edit` (`search_replace`) as the file mutator — the injection-only
             // `write`/`Write` tool is absent there. Without this fallback
             // `{WRITE_TOOL}` would render the literal `write` default instead of
@@ -264,7 +264,7 @@ fn enumerate_toolset_tools(tool_names: &std::collections::HashMap<ToolKind, Stri
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use kigi_tools::implementations::grok_build::task::types::SubagentTypeSummary;
+    use kigi_tools::implementations::kigi::task::types::SubagentTypeSummary;
 
     /// Build a `SubagentTypeSummary` from `(ToolKind, name)` pairs for the
     /// per-agent_type rendering tests. Shared with the planner / classifier /
@@ -312,8 +312,8 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn from_summary_uses_grok_build_names() {
-        // A grok-build toolset: client names match the literal defaults.
+    fn from_summary_uses_kigi_names() {
+        // A kigi toolset: client names match the literal defaults.
         let tn = RoleToolNames::from_summary(&summary_with(&[
             (ToolKind::Read, "read_file"),
             (ToolKind::ListDir, "list_dir"),
@@ -379,7 +379,7 @@ pub(crate) mod tests {
     fn web_tools_fall_back_when_absent_from_the_toolset() {
         // A summary / parent bridge without WebSearch/WebFetch ⇒ both resolve to
         // the stock client names, so the planner prompt still names a real tool
-        // on the default grok-build host (the stock `web_search`/`web_fetch`).
+        // on the default kigi host (the stock `web_search`/`web_fetch`).
         let summary = RoleToolNames::from_summary(&summary_with(&[(ToolKind::Read, "rd")]));
         assert_eq!(summary.web_search, "web_search");
         assert_eq!(summary.web_fetch, "web_fetch");
@@ -389,8 +389,8 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn from_summary_write_falls_back_to_edit_on_default_grok_build_host() {
-        // Default grok-build host: the pre-spawn describe probe exposes only
+    fn from_summary_write_falls_back_to_edit_on_default_kigi_host() {
+        // Default kigi host: the pre-spawn describe probe exposes only
         // `Edit` (`search_replace`); `Write` is injection-only and absent. The
         // planner gate accepts this toolset, so `{WRITE_TOOL}` must name the
         // real mutator (`search_replace`), not the literal `write` default.
@@ -415,7 +415,7 @@ pub(crate) mod tests {
 
     #[test]
     fn from_parent_write_falls_back_to_edit_when_bridge_has_no_write() {
-        // Default grok-build parent bridge: no `Write`, only `Edit`
+        // Default kigi parent bridge: no `Write`, only `Edit`
         // (`search_replace`). The inherit / fail-open render must name the
         // real mutator, not the literal `write` default — matching
         // `from_summary`'s primary render.
@@ -510,10 +510,10 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn parent_and_summary_renders_agree_on_default_grok_build_mutator() {
+    fn parent_and_summary_renders_agree_on_default_kigi_mutator() {
         // The explicit-pair `primary` (from_summary) and inherit/fail-open
         // `fallback` (from_parent) renders must name the SAME mutator on the
-        // default grok-build host (Edit-only toolset), so a fail-open retry
+        // default kigi host (Edit-only toolset), so a fail-open retry
         // can never disagree with the first attempt's `{WRITE_TOOL}`.
         let primary = RoleToolNames::from_summary(&summary_with(&[
             (ToolKind::Read, "read_file"),

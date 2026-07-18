@@ -204,7 +204,7 @@ impl NotificationService {
     }
 
     pub fn shutdown(&mut self) {
-        // Reset the tab title back to "grok" so it doesn't linger on the
+        // Reset the tab title back to "kigi" so it doesn't linger on the
         // last activity label after exit.
         let title_esc = self.title_manager.reset();
         kigi_shell::util::with_locked_stderr(|stderr| {
@@ -471,7 +471,7 @@ mod tests {
         });
         svc.notify(NotificationEvent {
             kind: NotificationEventKind::TurnComplete,
-            title: "Grok".into(),
+            title: "Kigi".into(),
             body: "Turn complete".into(),
             session_id: Some("test-session".into()),
         });
@@ -486,7 +486,7 @@ mod tests {
         });
         svc.notify(NotificationEvent {
             kind: NotificationEventKind::SessionReady,
-            title: "Grok".into(),
+            title: "Kigi".into(),
             body: "Session ready".into(),
             session_id: None,
         });
@@ -743,7 +743,7 @@ mod tests {
         // crash regardless of suppression state.
         svc.notify(NotificationEvent {
             kind: NotificationEventKind::TurnComplete,
-            title: "Grok".into(),
+            title: "Kigi".into(),
             body: "Done".into(),
             session_id: None,
         });

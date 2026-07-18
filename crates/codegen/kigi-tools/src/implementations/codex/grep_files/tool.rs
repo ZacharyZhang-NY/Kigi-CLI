@@ -3,7 +3,7 @@
 //! This is a faithful port of `codex-rs/core/src/tools/handlers/grep_files.rs`.
 //! It returns **file paths only** (`--files-with-matches`), sorted by
 //! modification time. See the plan document for the full diff vs the
-//! grok-build `GrepTool`.
+//! kigi `GrepTool`.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 use tokio::time::timeout;
 
-use crate::implementations::grok_build::grep::ripgrep::rg_path;
+use crate::implementations::kigi::grep::ripgrep::rg_path;
 use crate::types::output::CodexGrepFilesOutput;
 use crate::types::requirements::Expr;
 #[allow(unused_imports)]
@@ -59,8 +59,8 @@ pub struct CodexGrepFilesInput {
 
 /// Codex-namespace grep_files tool — file-path-only regex search.
 ///
-/// Shares `ToolKind::Search` with the grok-build `GrepTool`. These tools are
-/// namespace-exclusive — consumers enable either `GrokBuild` or `Codex` search,
+/// Shares `ToolKind::Search` with the kigi `GrepTool`. These tools are
+/// namespace-exclusive — consumers enable either `Kigi` or `Codex` search,
 /// never both simultaneously. This follows the same pattern as
 /// `CodexListDirTool`/`ListDirTool` (`ToolKind::ListDir`) and
 /// `CodexReadFileTool`/`ReadFileImpl` (`ToolKind::Read`).

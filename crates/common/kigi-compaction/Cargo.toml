@@ -3,7 +3,7 @@ license = "Apache-2.0"
 name = "kigi-compaction"
 version.workspace = true
 edition.workspace = true
-description = "Shared, transport-agnostic compaction engine for Grok chat and Grok Build."
+description = "Shared, transport-agnostic compaction engine for Kigi chat and Kigi."
 
 [dependencies]
 anyhow = { workspace = true }

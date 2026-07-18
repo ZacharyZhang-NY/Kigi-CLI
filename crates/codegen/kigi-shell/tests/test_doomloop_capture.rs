@@ -29,7 +29,7 @@ async fn responses_api_reasoning_only_is_classified_as_reasoning_only() {
         "/v1/responses",
         ScriptedResponse::sse(responses_api_reasoning_only_events(
             "let me think carefully about this",
-            "grok-test",
+            "kigi-test",
         )),
     );
     let client = create_test_client(&server.url(), ApiBackend::Responses);

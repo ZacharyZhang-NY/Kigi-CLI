@@ -234,7 +234,7 @@ Agent definitions are discovered from multiple locations with priority:
 2. **User-level**: `~/.kigi/agents/*.md`
 3. **Compat paths** (lowest priority): additional vendor agent
    directories under the user home (when enabled)
-4. **Built-in**: `default_grok_build()`, `browser_use()`
+4. **Built-in**: `default_kigi()`, `browser_use()`
 
 Name-based dedup ensures the highest-priority definition wins. For
 example, a project `.kigi/agents/code-reviewer.md` shadows a
@@ -275,7 +275,7 @@ user-level definition with the same name.
 
 | Name | Prompt Mode | Description |
 |---|---|---|
-| `grok-build` | extend | Default agent for software engineering tasks |
+| `kigi` | extend | Default agent for software engineering tasks |
 | `browser-use` | full | Web browsing and interaction agent |
 
 ## Error Handling

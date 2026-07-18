@@ -71,7 +71,7 @@ fn flag_takes_value(flag: &str) -> bool {
 ///
 /// Strips prior session-selection / mode flags, one-shot session-creation
 /// directives, and any bare positional prompt so a cold-start
-/// `grok "do the thing"` does not re-submit on resume. Keeps everything else
+/// `kigi "do the thing"` does not re-submit on resume. Keeps everything else
 /// (e.g. `--no-leader`, `--model`, endpoint overrides) intact, including the
 /// value token that follows value-taking flags.
 ///
@@ -175,7 +175,7 @@ pub(crate) fn build_screen_mode_relaunch_args(
             continue;
         }
 
-        // Bare positional prompt (e.g. `grok "fix the bug"`). Must not re-fire
+        // Bare positional prompt (e.g. `kigi "fix the bug"`). Must not re-fire
         // on resume. Clap positionals never start with `-`. Values for earlier
         // flags were already consumed above, so any remaining bare word here is
         // the prompt.
@@ -210,7 +210,7 @@ pub(crate) fn screen_mode_relaunch_resume_hint(session_id: &str, want_minimal: b
     } else {
         "--fullscreen"
     };
-    format!("{KIGI_SCREEN_MODE_ENV}={mode} grok {flag} --resume {session_id}")
+    format!("{KIGI_SCREEN_MODE_ENV}={mode} kigi {flag} --resume {session_id}")
 }
 
 /// Replace the current process with a relaunch into the requested screen mode.
@@ -331,7 +331,7 @@ pub(crate) fn parse_screen_mode(value: Option<&str>) -> Option<super::ScreenMode
 ///
 /// Reads **and removes** the variable so the override is truly one-shot: it
 /// must not linger in this process's environment where every spawned child
-/// (tool shells, workers, nested `grok` invocations) would inherit a forced
+/// (tool shells, workers, nested `kigi` invocations) would inherit a forced
 /// screen mode the user never asked for.
 ///
 /// When set, the returned mode **wins** over CLI flags (`--minimal`,
@@ -440,7 +440,7 @@ mod tests {
 
     #[test]
     fn adds_minimal_and_resume() {
-        let out = build_screen_mode_relaunch_args(args(&["grok", "--no-leader"]), "abc", true);
+        let out = build_screen_mode_relaunch_args(args(&["kigi", "--no-leader"]), "abc", true);
         assert_eq!(
             as_strs(&out),
             vec!["--no-leader", "--resume", "abc", "--minimal"]
@@ -451,7 +451,7 @@ mod tests {
     /// resolution still works without the env override.
     #[test]
     fn adds_fullscreen_and_resume() {
-        let out = build_screen_mode_relaunch_args(args(&["grok", "--no-leader"]), "abc", false);
+        let out = build_screen_mode_relaunch_args(args(&["kigi", "--no-leader"]), "abc", false);
         assert_eq!(
             as_strs(&out),
             vec!["--no-leader", "--resume", "abc", "--fullscreen"]
@@ -466,7 +466,7 @@ mod tests {
     fn strips_session_id_flag() {
         let out = build_screen_mode_relaunch_args(
             args(&[
-                "grok",
+                "kigi",
                 "--session-id",
                 "11111111-1111-1111-1111-111111111111",
                 "--no-leader",
@@ -480,7 +480,7 @@ mod tests {
         );
 
         let out = build_screen_mode_relaunch_args(
-            args(&["grok", "-s", "11111111-1111-1111-1111-111111111111"]),
+            args(&["kigi", "-s", "11111111-1111-1111-1111-111111111111"]),
             "new",
             false,
         );
@@ -494,7 +494,7 @@ mod tests {
     fn strips_worktree_and_restore_code() {
         let out = build_screen_mode_relaunch_args(
             args(&[
-                "grok",
+                "kigi",
                 "-w",
                 "feature-x",
                 "--worktree-ref",
@@ -518,7 +518,7 @@ mod tests {
     fn strips_eq_forms_of_one_shot_flags() {
         let out = build_screen_mode_relaunch_args(
             args(&[
-                "grok",
+                "kigi",
                 "--session-id=u1",
                 "--worktree=wt",
                 "--worktree-ref=main",
@@ -539,7 +539,7 @@ mod tests {
     #[test]
     fn strips_bare_worktree_without_eating_next_flag() {
         let out = build_screen_mode_relaunch_args(
-            args(&["grok", "--worktree", "--no-leader"]),
+            args(&["kigi", "--worktree", "--no-leader"]),
             "new",
             false,
         );
@@ -552,7 +552,7 @@ mod tests {
     #[test]
     fn strips_prior_minimal_and_resume() {
         let out = build_screen_mode_relaunch_args(
-            args(&["grok", "--minimal", "--resume", "old", "--no-leader"]),
+            args(&["kigi", "--minimal", "--resume", "old", "--no-leader"]),
             "new",
             false,
         );
@@ -570,7 +570,7 @@ mod tests {
     #[test]
     fn strips_prior_fullscreen_flag() {
         let out = build_screen_mode_relaunch_args(
-            args(&["grok", "--fullscreen", "--resume", "old", "--no-leader"]),
+            args(&["kigi", "--fullscreen", "--resume", "old", "--no-leader"]),
             "new",
             true,
         );
@@ -584,7 +584,7 @@ mod tests {
     #[test]
     fn strips_short_resume_and_continue() {
         let out = build_screen_mode_relaunch_args(
-            args(&["grok", "-r", "old", "-c", "--no-leader"]),
+            args(&["kigi", "-r", "old", "-c", "--no-leader"]),
             "sid",
             true,
         );
@@ -598,7 +598,7 @@ mod tests {
     #[test]
     fn strips_resume_equals_form() {
         let out = build_screen_mode_relaunch_args(
-            args(&["grok", "--resume=old-id", "--no-leader"]),
+            args(&["kigi", "--resume=old-id", "--no-leader"]),
             "sid",
             false,
         );
@@ -611,7 +611,7 @@ mod tests {
     #[test]
     fn strips_positional_prompt() {
         let out = build_screen_mode_relaunch_args(
-            args(&["grok", "--no-leader", "fix the bug"]),
+            args(&["kigi", "--no-leader", "fix the bug"]),
             "sid",
             true,
         );
@@ -624,11 +624,11 @@ mod tests {
 
     #[test]
     fn double_dash_and_following_positionals_dropped() {
-        // `grok --no-leader -- "fix the bug"`: everything after `--` is the
+        // `kigi --no-leader -- "fix the bug"`: everything after `--` is the
         // prompt. The separator itself must go too, or the appended
         // `--resume <id>` would be parsed as positional prompt words.
         let out = build_screen_mode_relaunch_args(
-            args(&["grok", "--no-leader", "--", "fix the bug"]),
+            args(&["kigi", "--no-leader", "--", "fix the bug"]),
             "sid",
             false,
         );
@@ -644,9 +644,9 @@ mod tests {
         // as the bare positional prompt (regression: relaunch argv drops flag values).
         let out = build_screen_mode_relaunch_args(
             args(&[
-                "grok",
+                "kigi",
                 "--model",
-                "grok-4",
+                "kigi-4",
                 "--cwd",
                 "/tmp/proj",
                 "--leader-socket",
@@ -663,7 +663,7 @@ mod tests {
             as_strs(&out),
             vec![
                 "--model",
-                "grok-4",
+                "kigi-4",
                 "--cwd",
                 "/tmp/proj",
                 "--leader-socket",
@@ -682,7 +682,7 @@ mod tests {
     #[test]
     fn keeps_equals_form_and_short_model_flag() {
         let out = build_screen_mode_relaunch_args(
-            args(&["grok", "-m", "grok-4", "--cwd=/tmp/proj", "--no-leader"]),
+            args(&["kigi", "-m", "kigi-4", "--cwd=/tmp/proj", "--no-leader"]),
             "sid",
             false,
         );
@@ -690,7 +690,7 @@ mod tests {
             as_strs(&out),
             vec![
                 "-m",
-                "grok-4",
+                "kigi-4",
                 "--cwd=/tmp/proj",
                 "--no-leader",
                 "--resume",
@@ -705,7 +705,7 @@ mod tests {
         // `--no-leader` is boolean; the bare word after it is the prompt and
         // must be dropped, not attached as a spurious value.
         let out = build_screen_mode_relaunch_args(
-            args(&["grok", "--no-leader", "fix the bug"]),
+            args(&["kigi", "--no-leader", "fix the bug"]),
             "sid",
             false,
         );
@@ -717,9 +717,9 @@ mod tests {
 
     #[test]
     fn resume_without_value_then_flag_is_not_eaten() {
-        // `grok --resume --no-leader` (resume most-recent; next token is a flag).
+        // `kigi --resume --no-leader` (resume most-recent; next token is a flag).
         let out = build_screen_mode_relaunch_args(
-            args(&["grok", "--resume", "--no-leader"]),
+            args(&["kigi", "--resume", "--no-leader"]),
             "sid",
             false,
         );
@@ -833,11 +833,11 @@ mod tests {
         // explicit flag keeps the resume in the right mode if the env is dropped.
         assert_eq!(
             screen_mode_relaunch_resume_hint("abc-sid", false),
-            "KIGI_SCREEN_MODE=fullscreen grok --fullscreen --resume abc-sid"
+            "KIGI_SCREEN_MODE=fullscreen kigi --fullscreen --resume abc-sid"
         );
         assert_eq!(
             screen_mode_relaunch_resume_hint("abc-sid", true),
-            "KIGI_SCREEN_MODE=minimal grok --minimal --resume abc-sid"
+            "KIGI_SCREEN_MODE=minimal kigi --minimal --resume abc-sid"
         );
     }
 

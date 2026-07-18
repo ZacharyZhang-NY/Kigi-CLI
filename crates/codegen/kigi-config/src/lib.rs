@@ -1,4 +1,4 @@
-//! Config file loading for Grok.
+//! Config file loading for Kigi.
 //!
 //! Merge order (lowest → highest priority):
 //! 1. `/etc/kigi/managed_config.toml`

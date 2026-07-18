@@ -60,9 +60,7 @@ impl UsageDrainOutcome {
     /// Same policy as freeze's terminal outcome: FG live → fail-closed;
     /// sticky and background → report only.
     pub(super) fn from_outstanding_reply(
-        reply: Option<
-            &kigi_tools::implementations::grok_build::task::types::SubagentOutstandingReply,
-        >,
+        reply: Option<&kigi_tools::implementations::kigi::task::types::SubagentOutstandingReply>,
     ) -> Self {
         match reply {
             None => Self {
@@ -1050,7 +1048,7 @@ impl SessionActor {
         let Some(tx) = &self.tool_context.subagent_event_tx else {
             return false;
         };
-        use kigi_tools::implementations::grok_build::task::types::{
+        use kigi_tools::implementations::kigi::task::types::{
             SubagentEvent, SubagentMarkUsageNotAppliedRequest,
         };
         let (respond_to, ack) = tokio::sync::oneshot::channel();
@@ -1074,12 +1072,12 @@ impl SessionActor {
     /// `push_user_message`, NOT `inject_synthetic_user_message`: the latter
     /// persists a `UserMessageChunk` to `updates.jsonl`, which resume
     /// replays — the raw XML would render as a user prompt. Clients see
-    /// monitor events only via the structured `x.ai/monitor_event` channel.
+    /// monitor events only via the structured `kigi/monitor_event` channel.
     pub(crate) async fn inject_pending_monitor_events(&self) {
         let Some(buffer) = &self.tool_context.monitor_event_buffer else {
             return;
         };
-        let mine = kigi_tools::implementations::grok_build::task::types::drain_owned(
+        let mine = kigi_tools::implementations::kigi::task::types::drain_owned(
             buffer,
             Some(self.session_info.id.0.as_ref()),
         );
@@ -1632,12 +1630,12 @@ impl SessionActor {
                 )),
             );
             let mut request = request;
-            request.x_grok_session_id = Some(self.session_info.id.to_string());
-            request.x_grok_turn_idx =
+            request.x_kigi_session_id = Some(self.session_info.id.to_string());
+            request.x_kigi_turn_idx =
                 Some(self.chat_state_handle.get_prompt_index().await.to_string());
-            request.x_grok_agent_id = Some(crate::util::agent_id::agent_id());
-            if request.x_grok_deployment_id.is_none() {
-                request.x_grok_deployment_id = crate::managed_config::resolve_deployment_id(
+            request.x_kigi_agent_id = Some(crate::util::agent_id::agent_id());
+            if request.x_kigi_deployment_id.is_none() {
+                request.x_kigi_deployment_id = crate::managed_config::resolve_deployment_id(
                     crate::managed_config::resolve_deployment_key().as_deref(),
                 );
             }
@@ -2115,7 +2113,7 @@ mod user_echo_broadcast_tests {
         );
     }
     /// Interject-fallback turns are persist-only: every pane already rendered
-    /// the text from the `x.ai/session/interjection` broadcast, so a live
+    /// the text from the `kigi/session/interjection` broadcast, so a live
     /// echo would duplicate the block.
     #[test]
     fn interject_fallback_turn_is_persist_only() {

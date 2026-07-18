@@ -654,8 +654,8 @@ mod tests {
             scope,
             origin: match scope {
                 PluginScope::CliOverride => PluginOrigin::CliOverride,
-                PluginScope::Project => PluginOrigin::ProjectGrok,
-                PluginScope::User => PluginOrigin::UserGrok,
+                PluginScope::Project => PluginOrigin::ProjectKigi,
+                PluginScope::User => PluginOrigin::UserKigi,
                 PluginScope::ConfigPath => PluginOrigin::ConfigPath,
             },
             trusted,

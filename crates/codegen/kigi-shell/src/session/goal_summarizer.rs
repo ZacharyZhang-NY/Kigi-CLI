@@ -82,7 +82,7 @@ pub(crate) trait GoalSummarizerSpawner: Send + Sync {
 
 pub(crate) struct ChannelSpawner {
     pub(crate) event_tx: tokio::sync::mpsc::UnboundedSender<
-        kigi_tools::implementations::grok_build::task::types::SubagentEvent,
+        kigi_tools::implementations::kigi::task::types::SubagentEvent,
     >,
     pub(crate) parent_session_id: String,
     pub(crate) parent_prompt_id: Option<String>,
@@ -129,7 +129,7 @@ impl ChannelSpawner {
         harness_agent_type: Option<String>,
     ) -> Result<String, SpawnError> {
         use kigi_tool_types::SubagentCapabilityMode;
-        use kigi_tools::implementations::grok_build::task::types::{
+        use kigi_tools::implementations::kigi::task::types::{
             SubagentEvent, SubagentRequest, SubagentRuntimeOverrides,
         };
         let (result_tx, result_rx) = tokio::sync::oneshot::channel();
@@ -342,7 +342,7 @@ mod tests {
             .replace("{DETAILS_FILE}", &details_str)
             .replace("{SESSION_TRACES_DIR}", &traces_dir_str);
         let rendered = RoleToolNames::inherit_defaults().apply(&with_paths);
-        // §7 tool placeholders resolve to the default grok-build names.
+        // §7 tool placeholders resolve to the default kigi names.
         assert!(rendered.contains("read_file"));
         assert!(rendered.contains("grep"));
         assert!(rendered.contains("list_dir"));
@@ -422,7 +422,7 @@ mod tests {
             details_file: None,
             session_traces_dir: plan.parent().unwrap(),
             attempt: 2,
-            model_id: "grok-test",
+            model_id: "kigi-test",
             tool_names,
         }
     }
@@ -604,7 +604,7 @@ mod tests {
     #[tokio::test]
     async fn channel_spawner_request_is_harness_internal_and_read_only() {
         use kigi_tool_types::SubagentCapabilityMode;
-        use kigi_tools::implementations::grok_build::task::types::{SubagentEvent, SubagentResult};
+        use kigi_tools::implementations::kigi::task::types::{SubagentEvent, SubagentResult};
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let spawner = ChannelSpawner {

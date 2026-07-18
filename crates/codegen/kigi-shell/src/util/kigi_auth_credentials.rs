@@ -1,6 +1,6 @@
 use reqwest::RequestBuilder;
 use std::sync::Arc;
-/// Credentials for authenticating with grok backend services.
+/// Credentials for authenticating with kigi backend services.
 ///
 /// Two construction modes:
 /// - `with_auth_manager(am)` — live mode. `resolve_async()` drives

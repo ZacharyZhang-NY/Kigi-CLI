@@ -2,7 +2,7 @@
 //!
 //! Covers the JSON-erased object-safe surface (`ToolDyn`) and the
 //! variant-keyed family lookup (`ToolFamily`). Mirrors the toolbox
-//! `GrokToolDyn` / `GrokToolFamily` tests but against the runtime's
+//! `KigiToolDyn` / `KigiToolFamily` tests but against the runtime's
 //! typed `Tool` trait.
 
 use std::sync::Arc;

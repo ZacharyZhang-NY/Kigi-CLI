@@ -1,6 +1,6 @@
 //! End-to-end test for the global `[models]` defaults.
 //!
-//! Runs the built grok binary against the mock inference server with a
+//! Runs the built kigi binary against the mock inference server with a
 //! caller-owned `$KIGI_SHARE_DIR` whose `config.toml` sets every global `[models]`
 //! default. Asserts the turn succeeds with all of them set and that the
 //! wire-observable one — `extra_headers` — reaches the `/v1/chat/completions`
@@ -47,7 +47,7 @@ stream_tool_calls = true
     )
     .expect("write config.toml");
 
-    let mut cmd = tokio::process::Command::new(grok_binary());
+    let mut cmd = tokio::process::Command::new(kigi_binary());
     cmd.args(["-p", "say hi", "--yolo", "--output-format", "json"])
         .arg("--cwd")
         .arg(workdir.path())

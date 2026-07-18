@@ -76,7 +76,7 @@ fn resolve_config(cfg: &AgentConfig, auth_manager: &AuthManager) -> AgentConfig 
     crate::util::config::sync_campaign_fields(&mut cfg);
     crate::agent::config::apply_remote_settings_side_effects(cfg.remote_settings.as_ref());
 
-    // env var > remote settings > Local. Skip remote settings for Generic (grok -p, subagents).
+    // env var > remote settings > Local. Skip remote settings for Generic (kigi -p, subagents).
     if cfg.storage_mode == StorageMode::Local
         && cfg.mode != crate::agent::config::AgentMode::Generic
     {
@@ -86,7 +86,7 @@ fn resolve_config(cfg: &AgentConfig, auth_manager: &AuthManager) -> AgentConfig 
     if cfg.storage_mode == StorageMode::Writeback
         && !auth_manager.current().is_some_and(|a| a.is_session_auth())
     {
-        tracing::info!("Writeback is disabled: requires auth with grok.com");
+        tracing::info!("Writeback is disabled: requires auth with kimi.com");
         cfg.storage_mode = StorageMode::Local;
     }
 

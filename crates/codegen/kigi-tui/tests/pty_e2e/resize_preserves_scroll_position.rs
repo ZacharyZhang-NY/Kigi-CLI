@@ -4,15 +4,15 @@ use super::common::*;
 
 // ── Reproduction: horizontal resize must not lose the scroll position ─────
 //
-// Bug: when the user has scrolled UP into grok's scrollback (NOT pinned to the
-// bottom / not following) and the terminal is resized HORIZONTALLY, grok loses
+// Bug: when the user has scrolled UP into kigi's scrollback (NOT pinned to the
+// bottom / not following) and the terminal is resized HORIZONTALLY, kigi loses
 // its scroll position and the view jumps. Root cause:
 // `ScrollbackState.scroll_offset` is an ABSOLUTE count of WRAPPED DISPLAY ROWS
 // (`scrollback/state/mod.rs`). On a width change `prepare_layout` re-wraps all
 // content at the new width and rebuilds the row map, but LEAVES `scroll_offset`
 // unchanged (Case 1 full rebuild) — so the same row number now points at
 // different content and the viewport jumps. It only happens when NOT following;
-// in follow/tail mode grok re-pins to the bottom (no jump).
+// in follow/tail mode kigi re-pins to the bottom (no jump).
 //
 // This test parks the marker in the MIDDLE of the viewport while scrolled into
 // the middle of the transcript (TOP and BOTTOM sentinels both scrolled off),
@@ -23,10 +23,10 @@ use super::common::*;
 // rebuild and restored after) re-pins the viewport-top content across the
 // reflow so the marker stays put.
 //
-// Runs FULLSCREEN (alt-screen): grok's mode-independent scroll-anchor logic is
+// Runs FULLSCREEN (alt-screen): kigi's mode-independent scroll-anchor logic is
 // what's under test. `Viewport::Fullscreen` is autoresized on resize with no DSR
-// cursor probe, so grok itself re-wraps at the new width, and the alt-screen grid
-// is not reflowed by the terminal — so the marker's position reflects grok's own
+// cursor probe, so kigi itself re-wraps at the new width, and the alt-screen grid
+// is not reflowed by the terminal — so the marker's position reflects kigi's own
 // re-layout, with no harness-reflow confound.
 
 /// Unique marker on its own (non-wrapping) line, with WRAPPING content above it.
@@ -75,7 +75,7 @@ const POS_TOLERANCE: i32 = 2;
 /// paragraphs, a block of short non-wrapping guard paragraphs, the marker on its
 /// own line, a long run of short filler, then a bottom sentinel.
 ///
-/// grok renders markdown with SOFT line breaks (a single `\n` becomes a space),
+/// kigi renders markdown with SOFT line breaks (a single `\n` becomes a space),
 /// so every logical line is emitted as its own paragraph (blank line between)
 /// to get a predictable one-hard-line-per-line layout where only the long
 /// paragraphs re-wrap on a width change.
@@ -185,10 +185,10 @@ async fn resize_preserves_scroll_position() {
     content.set_response(scroll_anchor_response());
 
     // Spawn FULLSCREEN (alt-screen). `Viewport::Fullscreen` is autoresized on a
-    // terminal resize with NO DSR cursor probe, so grok re-wraps the scrollback
-    // at the new width and the stale `scroll_offset` surfaces the jump in grok's
+    // terminal resize with NO DSR cursor probe, so kigi re-wraps the scrollback
+    // at the new width and the stale `scroll_offset` surfaces the jump in kigi's
     // OWN rendered output. The alt-screen grid is not reflowed by the terminal on
-    // resize, so this isolates grok's scroll-anchor logic with no harness confound.
+    // resize, so this isolates kigi's scroll-anchor logic with no harness confound.
     let binary = pager_binary().expect("resolve pager binary");
     let mut harness =
         PtyHarness::spawn_with_content(&binary, DEFAULT_ROWS, WIDE_COLS, &content, &[])

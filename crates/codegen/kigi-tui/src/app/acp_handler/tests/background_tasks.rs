@@ -2,7 +2,7 @@
     use super::*;
 
     /// Regression (resume sync): the on-disk replay stream re-emits persisted
-    /// notifications through the generic `x.ai/session/update` envelope. A
+    /// notifications through the generic `kigi/session/update` envelope. A
     /// background `monitor`/bash task (`TaskBackgrounded`) must restore into
     /// `bg_tasks` on a resumed / second terminal — not be dropped by the
     /// default match arm — so the idle "watching" status line and the Tasks pane
@@ -24,7 +24,7 @@
             description: None,
         };
         handle(
-            make_ext_session_notification_with_method("sess-1", "x.ai/session/update", update),
+            make_ext_session_notification_with_method("sess-1", "kigi/session/update", update),
             &mut app,
         );
 
@@ -51,7 +51,7 @@
         handle(
             make_ext_session_notification_with_method(
                 "sess-1",
-                "x.ai/session/update",
+                "kigi/session/update",
                 XaiSessionUpdate::ScheduledTaskCreated {
                     task_id: "loop-1".into(),
                     prompt: "check deploy".into(),
@@ -72,7 +72,7 @@
         handle(
             make_ext_session_notification_with_method(
                 "sess-1",
-                "x.ai/session/update",
+                "kigi/session/update",
                 XaiSessionUpdate::ScheduledTaskDeleted {
                     task_id: "loop-1".into(),
                 },
@@ -177,7 +177,7 @@
             meta: None,
         };
         let raw = serde_json::value::to_raw_value(&notif).unwrap();
-        let notif = acp::ExtNotification::new("x.ai/task_backgrounded", raw.into());
+        let notif = acp::ExtNotification::new("kigi/task_backgrounded", raw.into());
         assert!(handle_task_backgrounded(&notif, &mut app));
 
         let agent = app.agents.get(&AgentId(0)).unwrap();
@@ -232,7 +232,7 @@
             meta: None,
         };
         let raw = serde_json::value::to_raw_value(&notif).unwrap();
-        let notif = acp::ExtNotification::new("x.ai/task_backgrounded", raw.into());
+        let notif = acp::ExtNotification::new("kigi/task_backgrounded", raw.into());
         assert!(handle_task_backgrounded(&notif, &mut app));
 
         let agent = app.agents.get(&AgentId(0)).unwrap();

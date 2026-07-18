@@ -5,11 +5,11 @@
 //! `priority` — no caller-supplied IDs.
 //!
 //! State is stored as `State<TodoState>` in Resources, shared with the
-//! grok_build todo infrastructure.
+//! kigi todo infrastructure.
 
 use std::fmt::Write;
 
-use crate::implementations::grok_build::todo::{TodoItem, TodoPriority, TodoState, TodoStatus};
+use crate::implementations::kigi::todo::{TodoItem, TodoPriority, TodoState, TodoStatus};
 use crate::types::output::{TodoWriteOutput, TodoWriteSuccess};
 use crate::types::requirements::{Expr, ToolRequirement};
 #[allow(unused_imports)]

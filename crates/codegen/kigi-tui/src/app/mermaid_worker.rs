@@ -1233,7 +1233,7 @@ mod tests {
     fn key(source: &str) -> MermaidCacheKey {
         MermaidCacheKey::derive(
             source,
-            ThemeKind::GrokNight,
+            ThemeKind::KigiNight,
             80,
             MermaidRenderQuality::Terminal,
         )
@@ -1768,22 +1768,22 @@ mod tests {
     fn is_render_subcommand_matches_only_argv1() {
         let argv = |v: &[&str]| v.iter().map(std::ffi::OsString::from).collect::<Vec<_>>();
         assert!(is_render_subcommand(&argv(&[
-            "grok",
+            "kigi",
             MERMAID_RENDER_SUBCOMMAND
         ])));
         assert!(is_render_subcommand(&argv(&[
-            "grok",
+            "kigi",
             MERMAID_RENDER_SUBCOMMAND,
             "--out",
             "/tmp/x.png",
         ])));
         // Normal invocations are not the render child.
-        assert!(!is_render_subcommand(&argv(&["grok"])));
-        assert!(!is_render_subcommand(&argv(&["grok", "chat"])));
+        assert!(!is_render_subcommand(&argv(&["kigi"])));
+        assert!(!is_render_subcommand(&argv(&["kigi", "chat"])));
         assert!(!is_render_subcommand(&argv(&[])));
         // The subcommand only counts as argv[1], not deeper in the args.
         assert!(!is_render_subcommand(&argv(&[
-            "grok",
+            "kigi",
             "chat",
             MERMAID_RENDER_SUBCOMMAND,
         ])));
@@ -2052,12 +2052,12 @@ mod tests {
         let src = "flowchart LR\nA-->B";
         let dark_key = MermaidCacheKey::derive(
             src,
-            ThemeKind::GrokNight,
+            ThemeKind::KigiNight,
             80,
             MermaidRenderQuality::Terminal,
         );
         let light_key =
-            MermaidCacheKey::derive(src, ThemeKind::GrokDay, 80, MermaidRenderQuality::Terminal);
+            MermaidCacheKey::derive(src, ThemeKind::KigiDay, 80, MermaidRenderQuality::Terminal);
         assert_ne!(
             dark_key.cache_filename(),
             light_key.cache_filename(),
@@ -2116,7 +2116,7 @@ mod tests {
     /// hence the cache key — is deterministic).
     fn agent_with_session(name: &str) -> AgentView {
         use_test_mermaid_dir();
-        let cwd = PathBuf::from("/grok-mermaid-test").join(name);
+        let cwd = PathBuf::from("/kigi-mermaid-test").join(name);
         let mut agent = crate::app::agent_view::test_agent_view(Some(name), cwd);
         agent.last_terminal_size = (100, 40);
         agent
@@ -2301,7 +2301,7 @@ mod tests {
 
         // An on-click render in flight, keyed at the click-time theme + width.
         let click_key =
-            MermaidCacheKey::derive(src, ThemeKind::GrokNight, 80, MermaidRenderQuality::Open);
+            MermaidCacheKey::derive(src, ThemeKind::KigiNight, 80, MermaidRenderQuality::Open);
         let mut rt = MermaidRuntime::new();
         rt.pending.push(PendingMermaidAction {
             key: click_key.clone(),
@@ -2312,7 +2312,7 @@ mod tests {
         // A later (live) theme + width derives a DIFFERENT full key for the same
         // source — full-key matching would no longer find the pending render...
         let live_key =
-            MermaidCacheKey::derive(src, ThemeKind::GrokDay, 240, MermaidRenderQuality::Open);
+            MermaidCacheKey::derive(src, ThemeKind::KigiDay, 240, MermaidRenderQuality::Open);
         assert_ne!(
             click_key, live_key,
             "a theme/width change alters the full cache key",

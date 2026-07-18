@@ -38,7 +38,7 @@
                 "token_baseline": 100,
                 "finished_subagent_tokens": 99,
                 "live_subagent_tokens": 4_321,
-                "live_tokens_by_model": [["grok-4", 6_000], ["grok-3", 4_000]],
+                "live_tokens_by_model": [["kigi-4", 6_000], ["kigi-3", 4_000]],
                 "live_context_pct": 42,
                 "live_turn_count": 7,
                 "live_tool_call_count": 11,
@@ -54,7 +54,7 @@
             }
         });
         let raw = serde_json::value::to_raw_value(&raw_payload).unwrap();
-        let request = acp::ExtNotification::new("x.ai/session_notification", raw.into());
+        let request = acp::ExtNotification::new("kigi/session_notification", raw.into());
         let (tx, _rx) = tokio::sync::oneshot::channel();
         let msg = AcpClientMessage::ExtNotification(kigi_acp_lib::AcpArgs {
             request,
@@ -94,7 +94,7 @@
         assert_eq!(goal.live_subagent_tokens, Some(4_321));
         assert_eq!(
             goal.live_tokens_by_model,
-            vec![("grok-4".to_owned(), 6_000), ("grok-3".to_owned(), 4_000)],
+            vec![("kigi-4".to_owned(), 6_000), ("kigi-3".to_owned(), 4_000)],
             "populated per-model breakdown must round-trip wire->display"
         );
         assert_eq!(goal.live_context_pct, Some(42));
@@ -147,7 +147,7 @@
             let (tx, _rx) = tokio::sync::oneshot::channel();
             handle(
                 AcpClientMessage::ExtNotification(kigi_acp_lib::AcpArgs {
-                    request: acp::ExtNotification::new("x.ai/session_notification", raw.into()),
+                    request: acp::ExtNotification::new("kigi/session_notification", raw.into()),
                     response_tx: tx,
                 }),
                 app,
@@ -372,7 +372,7 @@
             }
         });
         let raw = serde_json::value::to_raw_value(&raw_payload).unwrap();
-        let request = acp::ExtNotification::new("x.ai/session_notification", raw.into());
+        let request = acp::ExtNotification::new("kigi/session_notification", raw.into());
         let (tx, _rx) = tokio::sync::oneshot::channel();
         let msg = AcpClientMessage::ExtNotification(kigi_acp_lib::AcpArgs {
             request,

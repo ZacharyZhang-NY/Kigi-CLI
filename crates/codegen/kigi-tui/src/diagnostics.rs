@@ -2060,7 +2060,7 @@ mod tests {
     #[test]
     fn notification_none_protocol_no_warnings() {
         let ctx = TerminalContext {
-            brand: TerminalName::GrokDesktop,
+            brand: TerminalName::KigiDesktop,
             ..Default::default()
         };
         let query = FakeTmuxQuery::healthy_modern();
@@ -2084,7 +2084,7 @@ mod tests {
         assert!(supports_focus_tracking(TerminalName::Terminator));
         assert!(supports_focus_tracking(TerminalName::WarpTerminal));
         assert!(supports_focus_tracking(TerminalName::VsCode));
-        assert!(supports_focus_tracking(TerminalName::GrokDesktop));
+        assert!(supports_focus_tracking(TerminalName::KigiDesktop));
         assert!(!supports_focus_tracking(TerminalName::AppleTerminal));
         assert!(!supports_focus_tracking(TerminalName::Unknown));
         assert!(!supports_focus_tracking(TerminalName::Otty));
@@ -2133,7 +2133,7 @@ mod tests {
                 line.starts_with(&format!("  themes       {n}/{total}: ")),
                 "level {level:?}: {line}"
             );
-            assert!(line.contains("groknight") && line.contains("grokday"));
+            assert!(line.contains("kiginight") && line.contains("kigiday"));
             assert!(!line.contains("tokyonight"));
         }
     }

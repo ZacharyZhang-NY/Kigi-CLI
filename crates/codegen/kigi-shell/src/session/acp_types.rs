@@ -460,7 +460,7 @@ pub struct ContextInfo {
     /// at the time this snapshot was captured. Comes from the 6-tier resolution
     /// (env > user per-model > user global > GB per-model > GB global > 85).
     /// Used by the TUI `/context` view so the displayed “Auto-compact at X%”
-    /// always matches the actual trigger (e.g. 65 for grok-build in remote settings).
+    /// always matches the actual trigger (e.g. 65 for kigi in remote settings).
     #[serde(default = "default_auto_compact_threshold")]
     pub auto_compact_threshold_percent: u8,
     /// Itemized usage rows (skills listing, MCP server listing). Empty on
@@ -495,7 +495,7 @@ fn default_auto_compact_threshold() -> u8 {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionInfoData {
-    /// Agent definition name for this session (e.g. `grok-build`).
+    /// Agent definition name for this session (e.g. `kigi`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_name: Option<String>,
     pub model: Option<String>,
@@ -554,7 +554,7 @@ pub fn model_display_name(
     model.to_string()
 }
 
-/// Full wire response for `x.ai/session/info`.
+/// Full wire response for `kigi/session/info`.
 ///
 /// Wraps `SessionInfoData` with session-level fields (`session_id`, `cwd`)
 /// that come from the agent layer rather than the session actor.
@@ -659,7 +659,7 @@ mod tests {
         );
         assert_eq!(input.session_id, "sess-1");
 
-        let submission = input.to_submission(Some("grok-3".into()), None, None, Some(5));
+        let submission = input.to_submission(Some("kigi-3".into()), None, None, Some(5));
         assert_eq!(
             submission.client_type,
             crate::session::feedback_types::ClientType::Desktop

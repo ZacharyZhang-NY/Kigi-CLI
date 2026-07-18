@@ -216,7 +216,7 @@ mod tests {
             ],
             sampling_config: SamplingConfig {
                 base_url: "https://api.example.com".to_string(),
-                model: "grok-3".to_string(),
+                model: "kigi-3".to_string(),
                 max_completion_tokens: Some(4096),
                 temperature: Some(0.7),
                 top_p: None,

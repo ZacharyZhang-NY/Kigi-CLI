@@ -80,7 +80,7 @@ impl Default for TitleConfig {
                 TitleItem::Spinner,
                 TitleItem::Activity,
                 TitleItem::SessionName,
-                TitleItem::Grok,
+                TitleItem::Kigi,
             ],
         }
     }
@@ -95,7 +95,7 @@ pub enum TitleItem {
     Cwd,
     Model,
     TurnTimer,
-    Grok,
+    Kigi,
     ActionRequired,
 }
 
@@ -177,11 +177,11 @@ session_recap_threshold_secs = 30
 # Set the terminal/tab title to reflect agent state.
 enabled = true
 # Items shown in the title. Options: action-required, spinner, activity,
-# session-name, cwd, model, turn-timer, grok
-items = [\"action-required\", \"spinner\", \"activity\", \"session-name\", \"grok\"]
+# session-name, cwd, model, turn-timer, kigi
+items = [\"action-required\", \"spinner\", \"activity\", \"session-name\", \"kigi\"]
 
 # [[ui.notifications.hooks]]
-# command = \"terminal-notifier -title 'Grok' -message '$KIGI_MESSAGE'\"
+# command = \"terminal-notifier -title 'Kigi' -message '$KIGI_MESSAGE'\"
 # events = [\"turn_complete\", \"approval_required\"]
 # only_unfocused = true
 # timeout_secs = 10
@@ -210,7 +210,7 @@ mod tests {
             session_recap_threshold_secs: 90,
             title: TitleConfig {
                 enabled: false,
-                items: vec![TitleItem::Grok, TitleItem::Cwd],
+                items: vec![TitleItem::Kigi, TitleItem::Cwd],
             },
             hooks: vec![NotificationHook {
                 command: "notify-send".into(),

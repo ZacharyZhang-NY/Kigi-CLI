@@ -2,7 +2,7 @@
 //!
 //! Spawns a command inside a local pseudo-terminal, intercepts the OSC 52
 //! clipboard escape sequences it emits, and writes their payload to the local
-//! system clipboard. This is the engine behind `grok wrap` (see
+//! system clipboard. This is the engine behind `kigi wrap` (see
 //! [`crate::wrap_cmd`]); it makes clipboard "copy" work for programs running
 //! somewhere that cannot reach the user's clipboard (containers, SSH) even when
 //! the outer terminal does not handle OSC 52 itself (for example Apple
@@ -51,7 +51,7 @@ const BASE64_STANDARD_INDIFFERENT: base64::engine::GeneralPurpose =
 
 /// Run an arbitrary command inside a local PTY with OSC 52 output filtering.
 ///
-/// This is the engine behind `grok wrap`: it spawns
+/// This is the engine behind `kigi wrap`: it spawns
 /// `program` (with `args`) attached to a local pseudo-terminal, forwards the
 /// outer terminal's size changes to it, and filters its output through
 /// [`Osc52Filter`], which intercepts OSC 52 clipboard sequences and writes
@@ -80,12 +80,12 @@ pub(crate) fn run_wrapped_command(program: &str, args: &[String]) -> Result<i32>
     args.iter().for_each(|arg| cmd.arg(arg));
 
     // Advertise to the wrapped program — and anything it spawns, e.g. a remote
-    // `grok` reached over SSH — that its OSC 52 clipboard writes are being
-    // intercepted here and copied to the real local clipboard. The inner grok
+    // `kigi` reached over SSH — that its OSC 52 clipboard writes are being
+    // intercepted here and copied to the real local clipboard. The inner kigi
     // reads this (see `kigi_pager_render::clipboard::osc52_sink_active`) to
     // *trust* OSC 52 even when it can't detect an OSC-52-capable terminal,
     // which is the usual SSH case (only `TERM` propagates, so Apple Terminal /
-    // unknown brands look incapable and the inner grok would otherwise report
+    // unknown brands look incapable and the inner kigi would otherwise report
     // "Copy failed" despite the copy actually working).
     //
     // `CommandBuilder::new` inherits the full parent environment; `env` overlays
@@ -106,7 +106,7 @@ pub(crate) fn run_wrapped_command(program: &str, args: &[String]) -> Result<i32>
     // channel. Cross-thread use of portable-pty's `Write` impl observed EIO
     // (errno 5) on macOS even for small inject payloads; confining `write_all`
     // to a single owner thread avoids that. Handles are intentionally
-    // detached — `grok wrap` is short-lived and exits with the child.
+    // detached — `kigi wrap` is short-lived and exits with the child.
     let mut pty_reader = pair.master.try_clone_reader()?;
 
     // NOTE: we intentionally do NOT block SIGWINCH here. The resize handler

@@ -829,7 +829,7 @@ mod tests {
 
     /// Line printed to stdout once the subprocess holds the flock.
     #[cfg(unix)]
-    const LOCK_HOLDER_READY: &str = "__GROK_LOCK_HOLDER_READY__";
+    const LOCK_HOLDER_READY: &str = "__KIGI_LOCK_HOLDER_READY__";
 
     /// Subprocess entry point for the cross-process lock tests. Only does
     /// anything when re-executed with `KIGI_TEST_LOCK_HOLDER` set; a normal

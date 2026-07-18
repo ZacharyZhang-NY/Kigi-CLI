@@ -62,7 +62,7 @@ pub(crate) fn recap_instruction(tag: &str) -> String {
 /// 1. Optionally strips reasoning/thinking blocks (`strip_reasoning`). This is
 ///    only needed on the Anthropic Messages backend, which rejects thinking
 ///    blocks sent without a top-level `thinking` config. Every other backend
-///    (grok/SGLang via ChatCompletions/Responses) keeps reasoning VERBATIM so
+///    (kigi/SGLang via ChatCompletions/Responses) keeps reasoning VERBATIM so
 ///    the conversation prefix is byte-identical to the last turn and the
 ///    provider's prefix KV cache stays warm — which is the whole reason we
 ///    append the instruction after the prefix. Mirrors compaction's
@@ -89,7 +89,7 @@ pub(crate) fn build_recap_items(
 }
 
 /// Cap on the effective context window for recap budgeting: the verified
-/// `max_prompt_length` for current `grok-build` / `grok-4.5` product backends
+/// `max_prompt_length` for current `kigi` / `kigi-4.5` product backends
 /// (`500000`). Applied via `min(window, CAP)`, so a smaller real window still
 /// wins (e.g. a 256k legacy model or a debug override).
 const RECAP_CONTEXT_WINDOW_CAP: u64 = 500_000;
@@ -110,10 +110,10 @@ const RECAP_BUDGET_HEADROOM_TOKENS: u64 = 4_000;
 /// `ic_400_prompt_too_long` on long sessions. Not an absolute guarantee — a
 /// degenerate tiny window, an oversized retained `System` prefix, or estimator
 /// optimism can still exceed the real limit (the 85% + headroom + 500k cap make
-/// that unlikely for normal grok-build sessions).
+/// that unlikely for normal kigi sessions).
 ///
 /// * Fast path — if the whole snapshot already fits, returns
-///   `build_recap_items(...)` verbatim (keeps the grok prefix KV cache warm;
+///   `build_recap_items(...)` verbatim (keeps the kigi prefix KV cache warm;
 ///   honors the caller's `strip_reasoning`).
 /// * Over budget — strip reasoning (the prefix cache is lost once we trim),
 ///   normalize the trailing boundary ([`pop_trailing_tool_run`]),
@@ -136,7 +136,7 @@ pub(crate) fn budget_recap_items(
     let snapshot_budget = prompt_budget.saturating_sub(estimate_item_tokens(&instruction));
 
     // Un-stripped estimate is a safe upper bound (stripping only shrinks); the
-    // verbatim path keeps the grok prefix cache warm.
+    // verbatim path keeps the kigi prefix cache warm.
     let pre_tokens = estimate_conversation_tokens(&conversation);
     if pre_tokens <= snapshot_budget {
         return build_recap_items(conversation, tag, strip_reasoning);
@@ -690,13 +690,13 @@ mod tests {
     }
 
     #[test]
-    fn budget_over_budget_strips_reasoning_even_on_grok() {
+    fn budget_over_budget_strips_reasoning_even_on_kigi() {
         let conv = vec![
             mk_reasoning("r1"),
             ConversationItem::assistant("did stuff"),
             ConversationItem::user("z".repeat(40_000)),
         ];
-        // grok backend => strip_reasoning=false, but the over-budget branch must
+        // kigi backend => strip_reasoning=false, but the over-budget branch must
         // strip reasoning anyway (the prefix cache is already lost once trimmed).
         let out = budget_recap_items(conv, "system-reminder", false, 8_000);
         assert!(
@@ -707,19 +707,19 @@ mod tests {
     }
 
     #[test]
-    fn budget_fast_path_keeps_reasoning_on_grok() {
+    fn budget_fast_path_keeps_reasoning_on_kigi() {
         let conv = vec![
             mk_reasoning("r1"),
             ConversationItem::assistant("did stuff"),
             ConversationItem::user("small"),
         ];
-        // Fits under a large window on grok (strip_reasoning=false) => verbatim,
+        // Fits under a large window on kigi (strip_reasoning=false) => verbatim,
         // reasoning kept so the prefix KV cache stays warm.
         let out = budget_recap_items(conv, "system-reminder", false, 256_000);
         assert!(
             out.iter()
                 .any(|i| matches!(i, ConversationItem::Reasoning(_))),
-            "fits path on grok must keep reasoning verbatim"
+            "fits path on kigi must keep reasoning verbatim"
         );
     }
 

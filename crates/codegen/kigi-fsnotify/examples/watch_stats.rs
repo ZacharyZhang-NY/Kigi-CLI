@@ -14,7 +14,7 @@
 //! Tree shapes are scaled replicas of synthetic large-repo measurements:
 //! - `js`: a JS/turbo monorepo where `node_modules/` trees nested below the
 //!   top level dominate the directory count (the shape behind the original
-//!   "grok holds 55k inotify watches" report).
+//!   "kigi holds 55k inotify watches" report).
 //! - `large`: a wide multi-language monorepo — 44 top-level dirs, ~52k
 //!   non-ignored dirs, ~7k nested-ignored, a large top-level `target/`, and
 //!   a `.git` with 13k+ internal dirs (objects/modules/logs/refs-remotes).

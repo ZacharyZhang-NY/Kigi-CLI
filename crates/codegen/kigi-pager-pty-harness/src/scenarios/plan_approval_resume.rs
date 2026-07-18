@@ -2,7 +2,7 @@
 //!
 //! When `exit_plan_mode` is parked and the user quits, the shell persists
 //! `awaiting_plan_approval = true` in `plan_mode.json`. On `--continue` the
-//! shell re-issues the `x.ai/exit_plan_mode` reverse-request — a real live ACP
+//! shell re-issues the `kigi/exit_plan_mode` reverse-request — a real live ACP
 //! waiter — so the pager re-shows approval chrome through its normal path with
 //! no pager-side disk logic. Approving then leaves plan mode and starts the
 //! implement turn.

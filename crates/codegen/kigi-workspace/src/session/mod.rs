@@ -448,7 +448,7 @@ pub struct WorkspaceShared {
     /// `discovery` module.
     pub(crate) plugin_discovery_config: crate::discovery::PluginDiscoveryConfig,
     /// Sink for workspace-originated ext-notifications to the client (e.g.
-    /// `x.ai/search/fuzzy/status`). Mode-agnostic: the shell wires it to the
+    /// `kigi/search/fuzzy/status`). Mode-agnostic: the shell wires it to the
     /// agent gateway in local mode, and to the server in proxy mode. `None` until
     /// set via [`WorkspaceHandle::set_client_ext_sink`](crate::handle::WorkspaceHandle::set_client_ext_sink).
     pub(crate) client_ext_sink: arc_swap::ArcSwap<Option<ClientExtSink>>,

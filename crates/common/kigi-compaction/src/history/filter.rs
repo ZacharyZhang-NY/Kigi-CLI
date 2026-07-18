@@ -1,7 +1,7 @@
 //! Item filtering and user-query extraction for history compaction —
 //! generic over [`CompactionItem`] / [`CompactionItemBuilder`].
 //!
-//! Behavior is byte-for-byte identical for Grok chat (`T = Arc<GrokTurn>`).
+//! Behavior is byte-for-byte identical for Kigi chat (`T = Arc<KigiTurn>`).
 
 use tracing::info;
 
@@ -43,7 +43,7 @@ pub fn keep_turn_for_basic_compaction<T: CompactionItem + ?Sized>(turn: &T) -> b
 ///   [`CompactionItemBuilder::strip_tool_content`]).
 /// - Keep `User` items as-is (separation happens later).
 /// - Drop `System` and non-summary `Developer` items; keep prior compaction
-///   summaries so their `<grok_user_queries>` sections can be split out.
+///   summaries so their `<kigi_user_queries>` sections can be split out.
 pub fn filter_turns_for_inter_compaction<T: CompactionItemBuilder>(turns: &[T]) -> Vec<T> {
     turns
         .iter()
@@ -73,9 +73,9 @@ pub fn filter_turns_for_inter_compaction<T: CompactionItemBuilder>(turns: &[T]) 
 ///
 /// A prior compaction from DnC has the format:
 /// ```text
-/// <grok_user_queries>
+/// <kigi_user_queries>
 /// ...user messages...
-/// </grok_user_queries>
+/// </kigi_user_queries>
 ///
 /// <chunk_summary index="0">
 /// ...
@@ -83,13 +83,13 @@ pub fn filter_turns_for_inter_compaction<T: CompactionItemBuilder>(turns: &[T]) 
 /// ```
 ///
 /// Returns `(all_user_messages_sections, rest)`.
-/// Extracts **all** `<grok_user_queries>...</grok_user_queries>` blocks
+/// Extracts **all** `<kigi_user_queries>...</kigi_user_queries>` blocks
 /// (there may be multiple after chained compactions) and concatenates them.
 /// Everything outside these blocks is returned as `rest`.
 /// If no blocks are found, returns `(None, full_text)`.
 pub fn split_prior_compaction_text(text: &str) -> (Option<String>, String) {
-    let start_tag = "<grok_user_queries>";
-    let end_tag = "</grok_user_queries>";
+    let start_tag = "<kigi_user_queries>";
+    let end_tag = "</kigi_user_queries>";
 
     let mut user_sections = Vec::new();
     let mut rest = String::new();
@@ -158,11 +158,11 @@ pub fn truncate_middle(msg: &str, max_chars: usize) -> Option<String> {
     Some(format!("{}...[truncated]...{}", front, back))
 }
 
-/// Extract a `<grok_user_queries>` XML block from `User` items in `turns`.
+/// Extract a `<kigi_user_queries>` XML block from `User` items in `turns`.
 ///
-/// Walks `turns`, finds `User` items, and formats each as a `<grok_query>`
+/// Walks `turns`, finds `User` items, and formats each as a `<kigi_query>`
 /// element with text content (from [`CompactionItem::text`]) and any
-/// `<grok_file id="..." name="..." />` lines for the item's attachment
+/// `<kigi_file id="..." name="..." />` lines for the item's attachment
 /// refs. Long user messages are truncated via [`truncate_middle`].
 ///
 /// Returns `None` if no user items produced any non-empty content.
@@ -171,7 +171,7 @@ pub fn extract_user_queries_from_turns<T: CompactionItem>(
     user_truncate_chars: u32,
 ) -> Option<String> {
     let threshold = user_truncate_chars as usize;
-    let mut result = String::from("<grok_user_queries>\n");
+    let mut result = String::from("<kigi_user_queries>\n");
     let mut emitted_any = false;
 
     for turn in turns {
@@ -188,7 +188,7 @@ pub fn extract_user_queries_from_turns<T: CompactionItem>(
         }
         emitted_any = true;
 
-        result.push_str("<grok_query>");
+        result.push_str("<kigi_query>");
         match truncate_middle(&text, threshold) {
             Some(truncated) => {
                 info!(
@@ -204,23 +204,23 @@ pub fn extract_user_queries_from_turns<T: CompactionItem>(
             result.push('\n');
             for att_ref in attachments {
                 result.push_str(&format!(
-                    "<grok_file id=\"{}\" name=\"{}\" />\n",
+                    "<kigi_file id=\"{}\" name=\"{}\" />\n",
                     att_ref.id, att_ref.name
                 ));
             }
         }
-        result.push_str("</grok_query>\n");
+        result.push_str("</kigi_query>\n");
     }
 
     if !emitted_any {
         return None;
     }
-    result.push_str("</grok_user_queries>");
+    result.push_str("</kigi_user_queries>");
     Some(result)
 }
 
 /// Walk `turns`, find any prior compaction summary items, extract their
-/// `<grok_user_queries>` blocks via [`split_prior_compaction_text`], and
+/// `<kigi_user_queries>` blocks via [`split_prior_compaction_text`], and
 /// concatenate them.
 ///
 /// Returns `None` if no prior compaction items are present or none
@@ -237,26 +237,26 @@ pub fn extract_prior_user_queries<T: CompactionItemBuilder>(turns: &[T]) -> Opti
 /// Output of [`separate_prior_user_queries`].
 #[derive(Debug, Clone)]
 pub struct SeparatedHistoryTurns<T> {
-    /// `turns` with the `<grok_user_queries>` block stripped from every
+    /// `turns` with the `<kigi_user_queries>` block stripped from every
     /// prior compaction summary item. Safe to feed to the compaction LLM —
     /// it will not re-emit the user-queries metadata.
     /// A prior compaction item whose `rest` is empty after stripping is
     /// dropped entirely.
     pub turns_for_llm: Vec<T>,
-    /// Concatenation of every `<grok_user_queries>` block found (in
+    /// Concatenation of every `<kigi_user_queries>` block found (in
     /// document order, joined by `\n`). `None` if no prior compaction
     /// item contained a user-queries block. Preserved verbatim so it
     /// can be passed to [`assemble_user_queries_preamble`].
     pub prior_user_queries: Option<String>,
     /// `true` if at least one prior compaction summary item was observed,
-    /// regardless of whether it contained a `<grok_user_queries>` block.
+    /// regardless of whether it contained a `<kigi_user_queries>` block.
     /// Used by inter-compaction to record the
     /// `ConversationCompactionCount{status="recompaction"}` metric.
     pub has_prior_compaction: bool,
 }
 
 /// Walk `turns`, split every prior compaction summary item into (a) its
-/// `<grok_user_queries>` block (preserved verbatim for the next summary)
+/// `<kigi_user_queries>` block (preserved verbatim for the next summary)
 /// and (b) the rest of the summary content (rebuilt as a new summary item
 /// and forwarded to the LLM). Non-compaction items are forwarded unchanged.
 ///
@@ -264,10 +264,10 @@ pub struct SeparatedHistoryTurns<T> {
 /// handle prior compactions identically:
 ///
 /// - **inter** calls this on the filtered item list before its chunking
-///   loop, so the LLM never sees `<grok_user_queries>` from earlier rounds.
+///   loop, so the LLM never sees `<kigi_user_queries>` from earlier rounds.
 /// - **intra** calls this on `turns_to_compact` for the `History` target
 ///   before sampling, for the same reason. Without this stripping, the LLM
-///   would see the prior `<grok_user_queries>` and tend to copy it into the
+///   would see the prior `<kigi_user_queries>` and tend to copy it into the
 ///   new summary — which then chains with the explicit preamble we prepend,
 ///   snowballing across re-compactions.
 pub fn separate_prior_user_queries<T: CompactionItemBuilder>(
@@ -293,7 +293,7 @@ pub fn separate_prior_user_queries<T: CompactionItemBuilder>(
             }
             // Matches inter's previous inline behavior (`if !rest.is_empty()`):
             // a prior compaction item whose entire content was the
-            // `<grok_user_queries>` block (and therefore stripped to an empty
+            // `<kigi_user_queries>` block (and therefore stripped to an empty
             // `rest`) contributes nothing for the LLM and is dropped here.
             if !rest.is_empty() {
                 turns_for_llm.push(T::compaction_summary_item(rest));
@@ -501,9 +501,9 @@ mod tests {
     fn extract_user_queries_wraps_single_user_turn() {
         let turns = vec![MockItem::user("hello world")];
         let out = extract_user_queries_from_turns(&turns, 3_000).expect("got block");
-        assert!(out.starts_with("<grok_user_queries>"));
-        assert!(out.ends_with("</grok_user_queries>"));
-        assert!(out.contains("<grok_query>hello world</grok_query>"));
+        assert!(out.starts_with("<kigi_user_queries>"));
+        assert!(out.ends_with("</kigi_user_queries>"));
+        assert!(out.contains("<kigi_query>hello world</kigi_query>"));
     }
 
     #[test]
@@ -517,8 +517,8 @@ mod tests {
 
     #[test]
     fn extract_prior_user_queries_concatenates_blocks() {
-        let inner = "<grok_user_queries>\n<grok_query>first</grok_query>\n</grok_user_queries>";
-        let inner2 = "<grok_user_queries>\n<grok_query>second</grok_query>\n</grok_user_queries>";
+        let inner = "<kigi_user_queries>\n<kigi_query>first</kigi_query>\n</kigi_user_queries>";
+        let inner2 = "<kigi_user_queries>\n<kigi_query>second</kigi_query>\n</kigi_user_queries>";
         let turns = vec![MockItem::summary(inner), MockItem::summary(inner2)];
         let out = extract_prior_user_queries(&turns).expect("found prior");
         assert!(out.contains("first"));
@@ -533,7 +533,7 @@ mod tests {
 
     #[test]
     fn separate_strips_user_queries_from_summary_item() {
-        let prior = "<grok_user_queries>\n<grok_query>Q1</grok_query>\n</grok_user_queries>\n\n<chunk_summary index=\"0\">S1</chunk_summary>";
+        let prior = "<kigi_user_queries>\n<kigi_query>Q1</kigi_query>\n</kigi_user_queries>\n\n<chunk_summary index=\"0\">S1</chunk_summary>";
         let turns = vec![MockItem::summary(prior), MockItem::user("Q2")];
 
         let sep = separate_prior_user_queries(&turns);
@@ -541,14 +541,14 @@ mod tests {
         assert!(sep.has_prior_compaction);
         let prior = sep.prior_user_queries.expect("prior queries extracted");
         assert!(prior.contains("Q1"));
-        assert!(prior.contains("<grok_user_queries>"));
+        assert!(prior.contains("<kigi_user_queries>"));
 
         assert_eq!(sep.turns_for_llm.len(), 2);
         match &sep.turns_for_llm[0] {
             MockItem::Developer { text, summary } => {
                 assert!(*summary);
                 assert!(text.contains("<chunk_summary"));
-                assert!(!text.contains("<grok_user_queries>"));
+                assert!(!text.contains("<kigi_user_queries>"));
                 assert!(!text.contains("Q1"));
             }
             other => panic!("expected summary item, got {:?}", other),
@@ -558,7 +558,7 @@ mod tests {
 
     #[test]
     fn separate_drops_summary_item_with_no_rest() {
-        let only_queries = "<grok_user_queries>\n<grok_query>Q</grok_query>\n</grok_user_queries>";
+        let only_queries = "<kigi_user_queries>\n<kigi_query>Q</kigi_query>\n</kigi_user_queries>";
         let turns = vec![MockItem::summary(only_queries), MockItem::user("hello")];
 
         let sep = separate_prior_user_queries(&turns);

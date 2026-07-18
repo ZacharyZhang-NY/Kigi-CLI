@@ -10,7 +10,7 @@
 //! tool results in the next prompt, which the model API rejects with a 400.
 //!
 //! This is the harness-agnostic core: it operates over any slice of
-//! [`CompactionItem`], so both Grok chat (`GrokTurn`) and grok-build
+//! [`CompactionItem`], so both Kigi chat (`KigiTurn`) and kigi
 //! (`ConversationItem`) share one implementation.
 
 use crate::item::CompactionItem;

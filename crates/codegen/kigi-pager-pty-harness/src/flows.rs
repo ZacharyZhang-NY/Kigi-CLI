@@ -67,12 +67,13 @@ pub fn inference_request_count(content: &ContentController) -> usize {
         .count()
 }
 
-/// Seed a fake xAI OAuth entry into the isolated home's `auth.json` so the
-/// shell has session auth (the harness's `XAI_API_KEY` is ApiKey/BYOK mode
-/// and never enters the auth manager). Load-bearing details: the scope key
-/// must be `<issuer>::<client_id>`, `auth_mode` must be `oidc`, and
-/// `expires_at` must be far-future so no network refresh is attempted; the
-/// mock server accepts any bearer. Pair with [`oauth_env_for_pager`].
+/// Seed a fake Kimi Code OAuth entry into the isolated home's `auth.json` so
+/// the shell has session auth (the harness's `XAI_API_KEY` is ApiKey/BYOK mode
+/// and never enters the auth manager). Load-bearing details: the map key must
+/// be the Kimi Code scope key (`oauth/kimi-code`), `auth_mode` must be
+/// `oauth`, and `expires_at` must be far-future so no network refresh is
+/// attempted; the mock server accepts any bearer. Pair with
+/// [`oauth_env_for_pager`].
 pub fn seed_fake_oauth(content: &ContentController, user: &str) {
     let kigi_home = content.home().join(".kigi");
     std::fs::create_dir_all(&kigi_home).expect("create temp .kigi");
@@ -80,16 +81,14 @@ pub fn seed_fake_oauth(content: &ContentController, user: &str) {
         kigi_home.join("auth.json"),
         format!(
             r#"{{
-  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {{
+  "oauth/kimi-code": {{
     "key": "pty-test-oauth-token",
     "auth_mode": "oauth",
     "create_time": "2026-01-01T00:00:00Z",
     "user_id": "{user}",
     "email": "{user}@test.invalid",
     "expires_at": "2030-01-01T00:00:00Z",
-    "refresh_token": "pty-test-refresh-token",
-    "oidc_issuer": "https://auth.x.ai",
-    "oidc_client_id": "b1a00492-073a-47ea-816f-4c329264a828"
+    "refresh_token": "pty-test-refresh-token"
   }}
 }}"#
         ),

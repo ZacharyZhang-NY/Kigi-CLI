@@ -35,7 +35,7 @@ pub struct CampaignOverride {
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct DoomLoopRecoverySettings {
-    /// Send the `x-grok-doom-loop-check` header and parse the reported
+    /// Send the `x-kigi-doom-loop-check` header and parse the reported
     /// triggers. `Some(false)` is a kill-switch; absent ⇒ client default (off).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
@@ -284,7 +284,7 @@ pub struct RemoteSettings {
     pub dream_check_interval_secs: Option<u64>,
     #[serde(default)]
     pub writeback_enabled: Option<bool>,
-    /// OAuth2 provider issuer URL (e.g., "https://auth.x.ai"). When present
+    /// OAuth2 provider issuer URL (e.g., "https://auth.kimi.com"). When present
     /// together with `oauth2_client_id`, the client uses OAuth2 authorization code
     /// flow. Controlled via remote settings for gradual rollout.
     #[serde(default)]
@@ -292,11 +292,11 @@ pub struct RemoteSettings {
     /// OAuth2 client_id for the CLI. Paired with `oauth2_issuer`.
     #[serde(default)]
     pub oauth2_client_id: Option<String>,
-    /// When `Some(true)`, enable grok's default OAuth2 (xAI auth.x.ai).
+    /// When `Some(true)`, enable kigi's default OAuth2 (auth.kimi.com).
     /// Enterprise OIDC (user's own IdP via `oidc` config) always wins.
     /// Controlled via remote settings; `--oauth` CLI flag overrides.
     #[serde(default)]
-    pub grok_oauth_enabled: Option<bool>,
+    pub kigi_oauth_enabled: Option<bool>,
     #[serde(default)]
     pub lsp_tools_enabled: Option<bool>,
     /// Folder-trust gate kill-switch / remote default. Gates whether repo-local
@@ -323,7 +323,7 @@ pub struct RemoteSettings {
     /// fallback (per-server config, env, and requirements/managed override it).
     #[serde(default)]
     pub mcp_startup_timeout_secs: Option<u64>,
-    /// remote settings `grok_build_settings.max_mcp_output_bytes` — global default
+    /// remote settings `kigi_settings.max_mcp_output_bytes` — global default
     /// MCP tool-result inline cap (bytes). Overridden by requirements, env,
     /// and `config.toml [mcp] max_output_bytes`. Built-in default 20_000.
     #[serde(default)]
@@ -340,7 +340,7 @@ pub struct RemoteSettings {
     /// Enable/disable the runtime turn-end TodoGate remotely.
     /// Precedence: CLI `--todo-gate` > this field > built-in default (`false`).
     /// The gate ships disabled; set this to `Some(true)` (via the
-    /// `grok_build_settings` remote settings key) to enable it. See
+    /// `kigi_settings` remote settings key) to enable it. See
     /// `session::acp_session::resolve_reminder_policy`.
     #[serde(default)]
     pub todo_gate_enabled: Option<bool>,
@@ -463,7 +463,7 @@ pub struct RemoteSettings {
     #[serde(default)]
     pub tips: Option<Vec<String>>,
     /// When present, controls the non-Git-repo warning at session start.
-    /// Controlled via remote settings (`non_git_warning` in `grok_build_settings`).
+    /// Controlled via remote settings (`non_git_warning` in `kigi_settings`).
     /// Takes precedence over `[features] non_git_warning` in config.toml:
     /// `Some(true)` enables, `Some(false)` acts as a kill-switch, `None` falls back to local config.
     #[serde(default)]
@@ -473,10 +473,10 @@ pub struct RemoteSettings {
     #[serde(default)]
     pub image_description_model: Option<String>,
     /// Server-side pin for the next-prompt suggestion model (tab-autocomplete
-    /// ghost text), from the `grok_build_settings` remote settings flag. Sits below
+    /// ghost text), from the `kigi_settings` remote settings flag. Sits below
     /// env (`KIGI_PROMPT_SUGGESTIONS_MODEL`) and `[models] prompt_suggestion`
     /// in config.toml, above the client hint and the built-in
-    /// `grok-build-0.1` default. The effective model is catalog-guarded: when
+    /// `kigi-0.1` default. The effective model is catalog-guarded: when
     /// it is not in the shell's model catalog the suggestion request is
     /// skipped entirely (never the session model). See
     /// `ModelOverrideConfig::resolve` and `handle_suggest_prompt`.
@@ -570,7 +570,7 @@ pub struct RemoteSettings {
     pub sharing_enabled: Option<bool>,
     /// Voice mode (STT dictation). Client default is **on** when absent.
     /// `Some(false)` is a remote kill switch; `Some(true)` forces on.
-    /// Overridable locally via `KIGI_VOICE_MODE`. Free-tier SuperGrok upsell
+    /// Overridable locally via `KIGI_VOICE_MODE`. Free-tier subscription upsell
     /// is a separate client tier gate.
     #[serde(default)]
     pub voice_mode_enabled: Option<bool>,
@@ -631,7 +631,7 @@ pub struct RemoteSettings {
     pub on_demand_enabled: Option<bool>,
     /// When set to a non-empty URL, the pager's `/usage` command shows a link
     /// to that URL instead of fetching billing data from the backend.
-    /// Server-controlled via the remote settings `grok_build_usage_redirect_url`
+    /// Server-controlled via the remote settings `kigi_usage_redirect_url`
     /// feature flag (target it at personal-team users). `None`/empty keeps the
     /// default behaviour of fetching usage from the backend.
     #[serde(default)]
@@ -643,8 +643,8 @@ pub struct RemoteSettings {
     #[serde(default)]
     pub suggestions_ai_enabled: Option<bool>,
     /// Global auto-compact threshold percent (0-100) from remote settings
-    /// `grok_build_settings`. Per-model override on `ModelInfo`
-    /// (`grok_build_models`) takes precedence; user config and env var
+    /// `kigi_settings`. Per-model override on `ModelInfo`
+    /// (`kigi_models`) takes precedence; user config and env var
     /// further override per the resolver chain.
     #[serde(default)]
     pub auto_compact_threshold_percent: Option<u8>,
@@ -761,15 +761,15 @@ where
 }
 /// A model + the harness whose system prompt / toolset flavor that model must
 /// run against. The pair is the atomic configurable unit because a model is
-/// only guaranteed to work with a compatible harness (cursor vs grok-build).
+/// only guaranteed to work with a compatible harness (cursor vs kigi).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GoalRoleModel {
-    /// Model id, e.g. "grok-4". Resolved against available models at
+    /// Model id, e.g. "kigi-4". Resolved against available models at
     /// spawn time; unknown/unauthorized ⇒ fail-open to current model.
     pub model: String,
-    /// Harness `agent_type` (e.g. "cursor", "grok-build-plan") whose
+    /// Harness `agent_type` (e.g. "cursor", "kigi-plan") whose
     /// `AgentDefinition` decides the role subagent's harness flavor (system
-    /// prompt + cursor-vs-grok-build toolset), applied REGARDLESS of the
+    /// prompt + cursor-vs-kigi toolset), applied REGARDLESS of the
     /// session/parent agent. Resolved by NAME (project/plugin/builtin lookup,
     /// then re-flavored by the subagent toolset resolver) — NOT via the main
     /// session's env/ACP/strict-harness precedence chain. NOT a subagent type:
@@ -813,18 +813,18 @@ mod tests {
     }
     #[test]
     fn remote_settings_image_description_model_round_trip() {
-        let json = r#"{"image_description_model": "grok-build"}"#;
+        let json = r#"{"image_description_model": "kigi"}"#;
         let s: RemoteSettings = serde_json::from_str(json).unwrap();
-        assert_eq!(s.image_description_model.as_deref(), Some("grok-build"));
+        assert_eq!(s.image_description_model.as_deref(), Some("kigi"));
         let out = serde_json::to_string(&s).unwrap();
         let s2: RemoteSettings = serde_json::from_str(&out).unwrap();
         assert_eq!(s2.image_description_model, s.image_description_model);
     }
     #[test]
     fn remote_settings_prompt_suggestion_model_round_trip() {
-        let json = r#"{"prompt_suggestion_model": "grok-build-0.1"}"#;
+        let json = r#"{"prompt_suggestion_model": "kigi-0.1"}"#;
         let s: RemoteSettings = serde_json::from_str(json).unwrap();
-        assert_eq!(s.prompt_suggestion_model.as_deref(), Some("grok-build-0.1"));
+        assert_eq!(s.prompt_suggestion_model.as_deref(), Some("kigi-0.1"));
         let out = serde_json::to_string(&s).unwrap();
         let s2: RemoteSettings = serde_json::from_str(&out).unwrap();
         assert_eq!(s2.prompt_suggestion_model, s.prompt_suggestion_model);
@@ -842,12 +842,12 @@ mod tests {
     #[test]
     fn remote_settings_goal_planner_model_round_trip() {
         let json =
-            r#"{"goal_planner_model": {"model": "grok-4", "agent_type": "general-purpose"}}"#;
+            r#"{"goal_planner_model": {"model": "kigi-4", "agent_type": "general-purpose"}}"#;
         let s: RemoteSettings = serde_json::from_str(json).unwrap();
         assert_eq!(
             s.goal_planner_model,
             Some(GoalRoleModel {
-                model: "grok-4".to_string(),
+                model: "kigi-4".to_string(),
                 agent_type: "general-purpose".to_string(),
             })
         );
@@ -857,12 +857,12 @@ mod tests {
     }
     #[test]
     fn remote_settings_goal_strategist_model_round_trip() {
-        let json = r#"{"goal_strategist_model": {"model": "grok-4.5", "agent_type": "cursor"}}"#;
+        let json = r#"{"goal_strategist_model": {"model": "kigi-4.5", "agent_type": "cursor"}}"#;
         let s: RemoteSettings = serde_json::from_str(json).unwrap();
         assert_eq!(
             s.goal_strategist_model,
             Some(GoalRoleModel {
-                model: "grok-4.5".to_string(),
+                model: "kigi-4.5".to_string(),
                 agent_type: "cursor".to_string(),
             })
         );
@@ -873,19 +873,19 @@ mod tests {
     #[test]
     fn remote_settings_goal_skeptic_models_fully_valid_pool_round_trips() {
         let json = r#"{"goal_skeptic_models": [
-            {"model": "grok-4", "agent_type": "general-purpose"},
-            {"model": "grok-3", "agent_type": "cursor"}
+            {"model": "kigi-4", "agent_type": "general-purpose"},
+            {"model": "kigi-3", "agent_type": "cursor"}
         ]}"#;
         let s: RemoteSettings = serde_json::from_str(json).unwrap();
         assert_eq!(
             s.goal_skeptic_models,
             vec![
                 GoalRoleModel {
-                    model: "grok-4".to_string(),
+                    model: "kigi-4".to_string(),
                     agent_type: "general-purpose".to_string(),
                 },
                 GoalRoleModel {
-                    model: "grok-3".to_string(),
+                    model: "kigi-3".to_string(),
                     agent_type: "cursor".to_string(),
                 },
             ]
@@ -897,20 +897,20 @@ mod tests {
     #[test]
     fn remote_settings_goal_skeptic_models_one_bad_item_does_not_poison_pool() {
         let json = r#"{"goal_skeptic_models": [
-            {"model": "grok-4", "agent_type": "general-purpose"},
-            {"model": "grok-broken"},
-            {"model": "grok-3", "agent_type": "cursor"}
+            {"model": "kigi-4", "agent_type": "general-purpose"},
+            {"model": "kigi-broken"},
+            {"model": "kigi-3", "agent_type": "cursor"}
         ]}"#;
         let s: RemoteSettings = serde_json::from_str(json).unwrap();
         assert_eq!(
             s.goal_skeptic_models,
             vec![
                 GoalRoleModel {
-                    model: "grok-4".to_string(),
+                    model: "kigi-4".to_string(),
                     agent_type: "general-purpose".to_string(),
                 },
                 GoalRoleModel {
-                    model: "grok-3".to_string(),
+                    model: "kigi-3".to_string(),
                     agent_type: "cursor".to_string(),
                 },
             ]
@@ -957,13 +957,13 @@ mod tests {
     fn remote_settings_goal_skeptic_models_missing_model_entry_dropped() {
         let json = r#"{"goal_skeptic_models": [
             {"agent_type": "general-purpose"},
-            {"model": "grok-3", "agent_type": "cursor"}
+            {"model": "kigi-3", "agent_type": "cursor"}
         ]}"#;
         let s: RemoteSettings = serde_json::from_str(json).unwrap();
         assert_eq!(
             s.goal_skeptic_models,
             vec![GoalRoleModel {
-                model: "grok-3".to_string(),
+                model: "kigi-3".to_string(),
                 agent_type: "cursor".to_string(),
             }]
         );
@@ -972,14 +972,14 @@ mod tests {
     fn remote_settings_goal_skeptic_models_wrong_typed_scalar_dropped() {
         let json = r#"{"goal_skeptic_models": [
             {"model": 123, "agent_type": "general-purpose"},
-            {"model": "grok-3", "agent_type": ["cursor"]},
-            {"model": "grok-4", "agent_type": "general-purpose"}
+            {"model": "kigi-3", "agent_type": ["cursor"]},
+            {"model": "kigi-4", "agent_type": "general-purpose"}
         ]}"#;
         let s: RemoteSettings = serde_json::from_str(json).unwrap();
         assert_eq!(
             s.goal_skeptic_models,
             vec![GoalRoleModel {
-                model: "grok-4".to_string(),
+                model: "kigi-4".to_string(),
                 agent_type: "general-purpose".to_string(),
             }]
         );
@@ -987,13 +987,13 @@ mod tests {
     #[test]
     fn remote_settings_goal_skeptic_models_extra_unknown_fields_kept() {
         let json = r#"{"goal_skeptic_models": [
-            {"model": "grok-4", "agent_type": "general-purpose", "reasoning_effort": "high"}
+            {"model": "kigi-4", "agent_type": "general-purpose", "reasoning_effort": "high"}
         ]}"#;
         let s: RemoteSettings = serde_json::from_str(json).unwrap();
         assert_eq!(
             s.goal_skeptic_models,
             vec![GoalRoleModel {
-                model: "grok-4".to_string(),
+                model: "kigi-4".to_string(),
                 agent_type: "general-purpose".to_string(),
             }]
         );
@@ -1045,28 +1045,28 @@ mod tests {
     fn remote_settings_goal_role_models_malformed_pair_does_not_drop_other_fields() {
         let json = r#"{
             "goal_planner_model": {"model": "broken"},
-            "goal_strategist_model": {"model": "grok-4.5", "agent_type": "cursor"},
-            "default_model": "grok-4"
+            "goal_strategist_model": {"model": "kigi-4.5", "agent_type": "cursor"},
+            "default_model": "kigi-4"
         }"#;
         let s: RemoteSettings = serde_json::from_str(json).unwrap();
         assert_eq!(s.goal_planner_model, None);
         assert_eq!(
             s.goal_strategist_model,
             Some(GoalRoleModel {
-                model: "grok-4.5".to_string(),
+                model: "kigi-4.5".to_string(),
                 agent_type: "cursor".to_string(),
             })
         );
-        assert_eq!(s.default_model.as_deref(), Some("grok-4"));
+        assert_eq!(s.default_model.as_deref(), Some("kigi-4"));
     }
     #[test]
     fn remote_settings_goal_role_model_extra_unknown_fields_kept_single_pair() {
-        let json = r#"{"goal_planner_model": {"model": "grok-4", "agent_type": "general-purpose", "future": true}}"#;
+        let json = r#"{"goal_planner_model": {"model": "kigi-4", "agent_type": "general-purpose", "future": true}}"#;
         let s: RemoteSettings = serde_json::from_str(json).unwrap();
         assert_eq!(
             s.goal_planner_model,
             Some(GoalRoleModel {
-                model: "grok-4".to_string(),
+                model: "kigi-4".to_string(),
                 agent_type: "general-purpose".to_string(),
             })
         );

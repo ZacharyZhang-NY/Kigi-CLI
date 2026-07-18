@@ -21,7 +21,7 @@ fn parse_aws_credentials(content: &str) -> anyhow::Result<aws_sdk_s3::config::Cr
             &parsed.aws_secret_access_key,
             parsed.aws_session_token,
             None,
-            "grok-shell-trace-upload",
+            "kigi-shell-trace-upload",
         ));
     }
 
@@ -51,7 +51,7 @@ fn parse_aws_credentials(content: &str) -> anyhow::Result<aws_sdk_s3::config::Cr
             &s,
             token,
             None,
-            "grok-shell-trace-upload",
+            "kigi-shell-trace-upload",
         )),
         _ => anyhow::bail!(
             "AWS credentials are neither valid JSON \
@@ -109,7 +109,7 @@ pub(crate) async fn build_s3_client(
             "test",
             None,
             None,
-            "grok-shell-test",
+            "kigi-shell-test",
         ));
     }
 

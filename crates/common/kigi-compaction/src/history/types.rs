@@ -12,7 +12,7 @@ pub enum CompactionStrategy {
     /// Divide turns into ≤ `dnc_chunk_token_limit` chunks, compact each,
     /// then combine the summaries into a final compaction.
     DivideAndConquer,
-    /// grok-build style full-replace summarization: summarize the selected
+    /// kigi style full-replace summarization: summarize the selected
     /// persisted history range with the code-compaction full-replace prompt and
     /// persist the summary as the durable conversation compaction overlay.
     FullReplace,

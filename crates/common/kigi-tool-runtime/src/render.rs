@@ -199,7 +199,7 @@ pub fn extract_content_blocks(value: &Value) -> Vec<ContentBlock> {
     }
 
     if let Some(obj) = value.as_object() {
-        // grok-build `ToolRunResult`: the model sees `prompt_text` (reminders
+        // kigi `ToolRunResult`: the model sees `prompt_text` (reminders
         // appended), never a JSON dump of the structured result.
         if let Some(Value::String(prompt_text)) = obj.get("prompt_text")
             && obj.contains_key("output")

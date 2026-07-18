@@ -65,10 +65,10 @@ impl acp::Agent for MvpAgent {
         }
         if client_type == ClientType::Generic {
             match client_identifier.as_deref() {
-                Some("grok-web") => client_type = ClientType::GrokWeb,
+                Some("kigi-web") => client_type = ClientType::KigiWeb,
                 Some("nebula") => client_type = ClientType::Nebula,
-                Some("grok-code-extension") => client_type = ClientType::Extension,
-                Some("grok-desktop") => client_type = ClientType::Desktop,
+                Some("kigi-code-extension") => client_type = ClientType::Extension,
+                Some("kigi-desktop") => client_type = ClientType::Desktop,
                 _ => {}
             }
         }
@@ -80,7 +80,7 @@ impl acp::Agent for MvpAgent {
             code_nav_enabled, client_type = ? client_type, event =
             "code_nav_capability_parsed",
             "code-nav capability initialized from initialize request; \
-             index will start lazily on first x.ai/code/* request if eligible"
+             index will start lazily on first kigi/code/* request if eligible"
         );
         let interactive_trust_client = Self::parse_interactive_trust_capability(
             &arguments,
@@ -279,7 +279,7 @@ impl acp::Agent for MvpAgent {
                         .load_session(true)
                         .meta(
                             serde_json::json!(
-                                { "x.ai/fs_notify" : true, "x.ai/hooks" : { "blockingEvents"
+                                { "kigi/fs_notify" : true, "kigi/hooks" : { "blockingEvents"
                                 : [kigi_hooks::event::HookEventName::PreToolUse],
                                 "decisions" : ["deny"], }, }
                             )
@@ -297,7 +297,7 @@ impl acp::Agent for MvpAgent {
                 .meta({
                     let metadata = parse_json_object_env("KIGI_AGENT_METADATA");
                     serde_json::json!(
-                        { "grokShell" : true, "defaultAuthMethodId" :
+                        { "kigiShell" : true, "defaultAuthMethodId" :
                         default_auth_method_id_wire, (kigi_mcp::wire::MCP_SDK) :
                         true, (SESSION_PLUGIN_DIRS_CAPABILITY_KEY) : true,
                         "currentWorkingDirectory" : current_working_directory
@@ -372,7 +372,7 @@ impl acp::Agent for MvpAgent {
                     return self
                         .authenticate(
                             acp::AuthenticateRequest::new(
-                                    acp::AuthMethodId::new(auth_method::KIGI_COM_METHOD_ID),
+                                    acp::AuthMethodId::new(auth_method::KIMI_CODE_METHOD_ID),
                                 )
                                 .meta(arguments.meta),
                         )
@@ -425,7 +425,7 @@ impl acp::Agent for MvpAgent {
                 emit_login_span(true, "cached_token", uid.as_deref(), None);
                 Ok(self.auth_response_with_meta())
             }
-            auth_method::KIGI_COM_METHOD_ID => {
+            auth_method::KIMI_CODE_METHOD_ID => {
                 let kimi_ctx = self.auth_manager.kimi_code_config().clone();
                 let auth_meta = AuthRequestMeta::from_json(arguments.meta.as_ref());
                 tracing::info!(
@@ -488,10 +488,10 @@ impl acp::Agent for MvpAgent {
                     let mut sampling_config = self.sampling_config.borrow_mut();
                     sampling_config.api_key = Some(auth.key.clone());
                     tracing::debug!(
-                        "auth: grok.com/oidc handler set api_key (SessionToken)"
+                        "auth: kimi.com/oidc handler set api_key (SessionToken)"
                     );
                     kigi_log::unified_log::debug(
-                        "auth: grok.com/oidc handler set api_key (SessionToken)",
+                        "auth: kimi.com/oidc handler set api_key (SessionToken)",
                         None,
                         None,
                     );
@@ -827,7 +827,7 @@ impl acp::Agent for MvpAgent {
             Some(serde_json::json!({ "cwd" : cwd.as_str() })),
         );
         let models = if is_chat_kind {
-            // The grok.com chat-mode model picker was removed with the xAI
+            // The kimi.com chat-mode model picker was removed with the xAI
             // proxy; a chat-kind session has no managed catalog to offer.
             chat_new_session_model_state(
                 acp::SessionModelState::new(acp::ModelId::from(String::new()), Vec::new()),
@@ -846,8 +846,8 @@ impl acp::Agent for MvpAgent {
             feedback_enabled, }
         );
         if let Some(obj) = meta.as_object_mut() {
-            obj.insert("x.ai/sessionConfig".to_string(), session_config_value);
-            obj.insert("x.ai/sessionDetail".to_string(), session_detail_value);
+            obj.insert("kigi/sessionConfig".to_string(), session_config_value);
+            obj.insert("kigi/sessionDetail".to_string(), session_detail_value);
         }
         Ok(
             acp::NewSessionResponse::new(session_id)
@@ -874,12 +874,12 @@ impl acp::Agent for MvpAgent {
         let persist_data = arguments
             .meta
             .as_ref()
-            .and_then(|m| m.get("x.ai/persist"))
+            .and_then(|m| m.get("kigi/persist"))
             .cloned();
         let target_client_id = arguments
             .meta
             .as_ref()
-            .and_then(|m| m.get("x.ai/leaderClientId"))
+            .and_then(|m| m.get("kigi/leaderClientId"))
             .cloned();
         let acp::LoadSessionRequest {
             session_id,
@@ -1010,7 +1010,7 @@ impl acp::Agent for MvpAgent {
         );
         let restore_code_requested = request_meta
             .as_ref()
-            .and_then(|m| m.get("x.ai/restore_code"))
+            .and_then(|m| m.get("kigi/restore_code"))
             .and_then(|v| v.as_bool())
             .unwrap_or(self.restore_code);
         let registry_client_for_restore = self.session_registry_client();
@@ -1030,7 +1030,7 @@ impl acp::Agent for MvpAgent {
                 target : kigi_workspace::session::git::RESTORE_CODE_LOG, session_id =
                 % session_id.0, supplied_cwd = % cwd.as_str(), persisted_cwd = % summary
                 .info.cwd, target_sha = % target_sha,
-                "restore_code: skipping session HEAD checkout — supplied cwd is neither a grok worktree nor the session's persisted cwd (refusing to detach the source repo)"
+                "restore_code: skipping session HEAD checkout — supplied cwd is neither a kigi worktree nor the session's persisted cwd (refusing to detach the source repo)"
             );
             kigi_log::unified_log::warn(
                 "restore_code: skipped session HEAD checkout (unsafe cwd)",
@@ -1075,7 +1075,7 @@ impl acp::Agent for MvpAgent {
         let load_envrc = {
             let skip_envrc = request_meta
                 .as_ref()
-                .and_then(|m| m.get("x.ai/skip_envrc"))
+                .and_then(|m| m.get("kigi/skip_envrc"))
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
             if skip_envrc {
@@ -1156,7 +1156,7 @@ impl acp::Agent for MvpAgent {
         );
         let prompt_display_cwd = request_meta
             .as_ref()
-            .and_then(|m| m.get("x.ai/display_cwd"))
+            .and_then(|m| m.get("kigi/display_cwd"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .or_else(|| summary.prompt_display_cwd.clone());
@@ -1462,7 +1462,7 @@ impl acp::Agent for MvpAgent {
         let mut response_meta_map = serde_json::Map::new();
         response_meta_map.insert("sessionId".to_string(), serde_json::json!(session_id));
         if let Some(persist) = persist_data {
-            response_meta_map.insert("x.ai/persist".to_string(), persist);
+            response_meta_map.insert("kigi/persist".to_string(), persist);
         }
         let session_cwd = self
             .sessions
@@ -1517,7 +1517,7 @@ impl acp::Agent for MvpAgent {
         {
             response_meta_map
                 .insert(
-                    "x.ai/runningPromptId".to_string(),
+                    "kigi/runningPromptId".to_string(),
                     serde_json::json!(running_prompt_id),
                 );
         }
@@ -1529,8 +1529,8 @@ impl acp::Agent for MvpAgent {
                 summary.display_title_opt(),
                 &model_state,
             );
-        response_meta_map.insert("x.ai/sessionConfig".to_string(), session_config_value);
-        response_meta_map.insert("x.ai/sessionDetail".to_string(), session_detail_value);
+        response_meta_map.insert("kigi/sessionConfig".to_string(), session_config_value);
+        response_meta_map.insert("kigi/sessionDetail".to_string(), session_detail_value);
         let response_meta = serde_json::Value::Object(response_meta_map);
         kigi_log::unified_log::info(
             "session loaded",
@@ -1846,7 +1846,7 @@ impl acp::Agent for MvpAgent {
             self.gateway
                 .forward_fire_and_forget(
                     acp::ExtNotification::new(
-                        "x.ai/session/prompt_complete",
+                        "kigi/session/prompt_complete",
                         params.into(),
                     ),
                 );
@@ -2045,116 +2045,116 @@ impl acp::Agent for MvpAgent {
         let mut backend_no_bridge_err: Option<acp::Error> = None;
         let method = args.method.clone();
         let result = match method.as_ref() {
-            "x.ai/getApiKey" | "x.ai/setApiKey" => {
+            "kigi/getApiKey" | "kigi/setApiKey" => {
                 crate::extensions::auth::handle(self, &args).await
             }
-            "x.ai/session/info" | "x.ai/session/close" | "x.ai/session/list"
-            | "x.ai/sessions/list" => {
+            "kigi/session/info" | "kigi/session/close" | "kigi/session/list"
+            | "kigi/sessions/list" => {
                 crate::agent::handlers::session::handle(self, &args).await
             }
-            "x.ai/session/updates" => {
+            "kigi/session/updates" => {
                 crate::extensions::session_updates::handle(&args, &self.gateway).await
             }
-            "x.ai/session/load_history" => {
+            "kigi/session/load_history" => {
                 crate::extensions::chat_conversation_history::handle(self, &args).await
             }
-            "x.ai/session/search" => {
+            "kigi/session/search" => {
                 crate::extensions::session_search::handle(&args).await
             }
-            "x.ai/session/resolve_local_for_worktree_resume"
-            | "x.ai/session/rehydrate" => {
+            "kigi/session/resolve_local_for_worktree_resume"
+            | "kigi/session/rehydrate" => {
                 let ops = self.resolve_workspace_ops()?;
                 crate::extensions::worktree::handle(self, &ops, &args).await
             }
-            "x.ai/session/rename" | "x.ai/session/delete"
-            | "x.ai/session/update_mcp_servers" | "x.ai/session/fork"
-            | "x.ai/internal/reload_all_mcp_servers"
-            | "x.ai/internal/reload_project_mcp_servers" | "x.ai/internal/reload_skills"
-            | "x.ai/internal/reload_models" | "x.ai/internal/reload_models_cache"
-            | "x.ai/plugins/reload"
-            | "x.ai/commands/list" => {
+            "kigi/session/rename" | "kigi/session/delete"
+            | "kigi/session/update_mcp_servers" | "kigi/session/fork"
+            | "kigi/internal/reload_all_mcp_servers"
+            | "kigi/internal/reload_project_mcp_servers" | "kigi/internal/reload_skills"
+            | "kigi/internal/reload_models" | "kigi/internal/reload_models_cache"
+            | "kigi/plugins/reload"
+            | "kigi/commands/list" => {
                 crate::extensions::session_admin::handle(self, &args).await
             }
-            "x.ai/session/repair" => crate::extensions::repair::handle(self, &args).await,
-            "x.ai/billing" => crate::extensions::billing::handle(self, &args).await,
-            "x.ai/memory/flush" | "x.ai/memory/rewrite" => {
+            "kigi/session/repair" => crate::extensions::repair::handle(self, &args).await,
+            "kigi/billing" => crate::extensions::billing::handle(self, &args).await,
+            "kigi/memory/flush" | "kigi/memory/rewrite" => {
                 crate::extensions::memory::handle(self, &args).await
             }
-            "x.ai/skills/refresh-baseline" => {
+            "kigi/skills/refresh-baseline" => {
                 self.refresh_skill_baseline_for_all_sessions();
                 crate::extensions::to_ext_response(
                     Ok(serde_json::json!({ "ok" : true })),
                 )
             }
-            "x.ai/interject" => crate::extensions::interject::handle(self, &args).await,
-            "x.ai/feedback" | "x.ai/feedback/dismiss" | "x.ai/btw" => {
+            "kigi/interject" => crate::extensions::interject::handle(self, &args).await,
+            "kigi/feedback" | "kigi/feedback/dismiss" | "kigi/btw" => {
                 crate::extensions::feedback::handle(self, &args).await
             }
-            "x.ai/recap" => crate::extensions::recap::handle(self, &args).await,
-            "x.ai/rollout/survey" => {
+            "kigi/recap" => crate::extensions::recap::handle(self, &args).await,
+            "kigi/rollout/survey" => {
                 crate::extensions::rollout::handle(self, &args).await
             }
-            "x.ai/prompt_history" => {
+            "kigi/prompt_history" => {
                 crate::extensions::prompt_history::handle(self, &args).await
             }
-            "x.ai/suggest" => crate::extensions::suggest::handle(self, &args).await,
-            "x.ai/suggestPrompt" => crate::extensions::suggest::handle(self, &args).await,
-            s if s.starts_with("x.ai/auth/") => {
+            "kigi/suggest" => crate::extensions::suggest::handle(self, &args).await,
+            "kigi/suggestPrompt" => crate::extensions::suggest::handle(self, &args).await,
+            s if s.starts_with("kigi/auth/") => {
                 crate::extensions::auth::handle(self, &args).await
             }
-            s if s.starts_with("x.ai/session_summaries/") => {
+            s if s.starts_with("kigi/session_summaries/") => {
                 crate::agent::handlers::session::handle(self, &args).await
             }
-            s if s.starts_with("x.ai/git/worktree/") => {
+            s if s.starts_with("kigi/git/worktree/") => {
                 let ops = self.resolve_workspace_ops()?;
                 crate::extensions::worktree::handle(self, &ops, &args).await
             }
-            s if s.starts_with("x.ai/git/") => {
+            s if s.starts_with("kigi/git/") => {
                 let ops = self.resolve_workspace_ops()?;
                 crate::extensions::git::handle(self, &ops, &args).await
             }
-            s if s.starts_with("x.ai/compact_conversation") => {
+            s if s.starts_with("kigi/compact_conversation") => {
                 crate::extensions::memory::handle(self, &args).await
             }
-            s if s.starts_with("x.ai/plugins/") => {
+            s if s.starts_with("kigi/plugins/") => {
                 crate::extensions::plugins::handle(self, &args).await
             }
-            s if s.starts_with("x.ai/hooks/") => {
+            s if s.starts_with("kigi/hooks/") => {
                 crate::extensions::hooks::handle(self, &args).await
             }
-            s if s.starts_with("x.ai/hunk-tracker/") => {
+            s if s.starts_with("kigi/hunk-tracker/") => {
                 let ops = self.resolve_workspace_ops()?;
                 crate::extensions::hunk_tracker::handle(self, &ops, &args).await
             }
-            s if s.starts_with("x.ai/pr/") => {
+            s if s.starts_with("kigi/pr/") => {
                 crate::extensions::pr::handle(self, &args).await
             }
             s if s.starts_with(crate::extensions::mcp::mcp_methods::PREFIX) => {
                 crate::extensions::mcp::handle(self, &args).await
             }
-            s if s.starts_with("x.ai/task/") => {
+            s if s.starts_with("kigi/task/") => {
                 crate::extensions::task::handle(self, &args).await
             }
-            s if s.starts_with("x.ai/scheduler/") => {
+            s if s.starts_with("kigi/scheduler/") => {
                 crate::extensions::task::handle_scheduler(self, &args).await
             }
-            s if s.starts_with("x.ai/subagent/") => {
+            s if s.starts_with("kigi/subagent/") => {
                 crate::extensions::task::handle_subagent(self, &args).await
             }
-            s if s.starts_with("x.ai/terminal/") => {
+            s if s.starts_with("kigi/terminal/") => {
                 crate::extensions::terminal::handle(self, &args).await
             }
             s if crate::extensions::fs::is_fs_method(s) => {
                 crate::extensions::fs::handle(self, &args).await
             }
-            s if s.starts_with("x.ai/search/") => {
+            s if s.starts_with("kigi/search/") => {
                 crate::extensions::search::handle(self, &args).await
             }
-            s if s.starts_with("x.ai/code/") => {
+            s if s.starts_with("kigi/code/") => {
                 let ops = self.resolve_workspace_ops()?;
                 crate::extensions::code_nav::handle(self, &ops, &args).await
             }
-            s if s.starts_with("x.ai/skills/") => {
+            s if s.starts_with("kigi/skills/") => {
                 let compat = self.cfg.borrow().compat_resolved;
                 crate::extensions::skills::handle(
                         &args,
@@ -2163,13 +2163,13 @@ impl acp::Agent for MvpAgent {
                     )
                     .await
             }
-            s if s.starts_with("x.ai/review") => {
+            s if s.starts_with("kigi/review") => {
                 crate::extensions::feedback::handle(self, &args).await
             }
-            s if s.starts_with("x.ai/debug/") => {
+            s if s.starts_with("kigi/debug/") => {
                 crate::extensions::debug::handle(self, &args).await
             }
-            s if s.starts_with("x.ai/rewind") => {
+            s if s.starts_with("kigi/rewind") => {
                 crate::extensions::rewind::handle(self, &args).await
             }
             other => {
@@ -2193,7 +2193,7 @@ impl acp::Agent for MvpAgent {
         args: acp::ExtNotification,
     ) -> Result<(), acp::Error> {
         tracing::info!("Received extension notification: method={}", args.method);
-        if args.method.as_ref() == "x.ai/yolo_mode_changed"
+        if args.method.as_ref() == "kigi/yolo_mode_changed"
             && let Ok(params) = serde_json::from_str::<
                 serde_json::Value,
             >(args.params.get())
@@ -2257,7 +2257,7 @@ impl acp::Agent for MvpAgent {
                 );
             }
         }
-        if args.method.as_ref() == "x.ai/permissions/reset" {
+        if args.method.as_ref() == "kigi/permissions/reset" {
             let sessions = self.sessions.borrow();
             let updated = sessions
                 .values()
@@ -2273,10 +2273,10 @@ impl acp::Agent for MvpAgent {
                 "Permission state reset for matching sessions"
             );
         }
-        if args.method.as_ref() == "x.ai/internal/evict_sessions" {
+        if args.method.as_ref() == "kigi/internal/evict_sessions" {
             self.handle_evict_sessions(&args.params).await;
         }
-        if args.method.as_ref() == "x.ai/toggle_plan_mode"
+        if args.method.as_ref() == "kigi/toggle_plan_mode"
             && let Ok(params) = serde_json::from_str::<
                 serde_json::Value,
             >(args.params.get())
@@ -2317,8 +2317,8 @@ impl acp::Agent for MvpAgent {
             }
         }
         if matches!(
-            args.method.as_ref(), "x.ai/queue/remove" | "x.ai/queue/reorder" |
-            "x.ai/queue/clear" | "x.ai/queue/edit" | "x.ai/queue/interject"
+            args.method.as_ref(), "kigi/queue/remove" | "kigi/queue/reorder" |
+            "kigi/queue/clear" | "kigi/queue/edit" | "kigi/queue/interject"
         )
             && let Ok(params) = serde_json::from_str::<
                 serde_json::Value,
@@ -2358,14 +2358,14 @@ impl acp::Agent for MvpAgent {
                 );
             }
         }
-        if args.method.as_ref() == "x.ai/terminal/pty/input"
+        if args.method.as_ref() == "kigi/terminal/pty/input"
             && let Ok(params) = serde_json::from_str::<
                 serde_json::Value,
             >(args.params.get())
         {
             crate::extensions::terminal::handle_pty_input(&params).await;
         }
-        if args.method.as_ref() == "_x.ai/session/update" {
+        if args.method.as_ref() == "_kigi/session/update" {
             if let Ok(notification) = serde_json::from_str::<
                 SessionNotification,
             >(args.params.get()) {
@@ -2393,7 +2393,7 @@ impl acp::Agent for MvpAgent {
                 tracing::warn!("Failed to parse xAI session notification params");
             }
         }
-        if args.method.as_ref() == "x.ai/telemetry/non_git_decision" {
+        if args.method.as_ref() == "kigi/telemetry/non_git_decision" {
             #[derive(serde::Deserialize)]
             struct NonGitDecisionParams {
                 decision: String,
@@ -2412,7 +2412,7 @@ impl acp::Agent for MvpAgent {
                 tracing::warn!("Failed to parse non_git_decision telemetry params");
             }
         }
-        if args.method.as_ref() == "x.ai/telemetry/multi_agent_followup" {
+        if args.method.as_ref() == "kigi/telemetry/multi_agent_followup" {
             #[derive(serde::Deserialize)]
             struct MultiAgentFollowupParams {
                 preferred_agent_label: char,
@@ -2433,7 +2433,7 @@ impl acp::Agent for MvpAgent {
                 tracing::warn!("Failed to parse multi-agent followup telemetry params");
             }
         }
-        if args.method.as_ref() == "x.ai/telemetry/multi_agent_apply" {
+        if args.method.as_ref() == "kigi/telemetry/multi_agent_apply" {
             #[derive(serde::Deserialize)]
             struct MultiAgentApplyParams {
                 applied_agent_label: char,
@@ -2454,7 +2454,7 @@ impl acp::Agent for MvpAgent {
                 tracing::warn!("Failed to parse multi-agent apply telemetry params");
             }
         }
-        if args.method.as_ref() == "x.ai/telemetry/multi_agent_discard" {
+        if args.method.as_ref() == "kigi/telemetry/multi_agent_discard" {
             #[derive(serde::Deserialize)]
             struct MultiAgentDiscardParams {
                 /// (label, session_id, model_id)

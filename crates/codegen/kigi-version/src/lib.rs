@@ -1,4 +1,4 @@
-//! Installed grok CLI version, lockstepped with shipping binaries.
+//! Installed kigi CLI version, lockstepped with shipping binaries.
 
 use semver::Version;
 

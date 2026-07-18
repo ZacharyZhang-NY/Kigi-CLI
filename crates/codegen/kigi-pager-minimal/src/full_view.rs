@@ -133,7 +133,7 @@ fn finish_transcript(app: &mut AppView, id: kigi_tui::app::agent::AgentId, out: 
         }
         return;
     }
-    let path = std::env::temp_dir().join(format!("grok-transcript-{}.ansi", uuid::Uuid::new_v4()));
+    let path = std::env::temp_dir().join(format!("kigi-transcript-{}.ansi", uuid::Uuid::new_v4()));
     match std::fs::write(&path, out) {
         Ok(()) => {
             app.pending_pager_path = Some(path);

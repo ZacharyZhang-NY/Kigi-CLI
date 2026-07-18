@@ -13,7 +13,7 @@ pub const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(
 /// return the [`ConfigSource`](crate::types::config_source::ConfigSource) of each.
 ///
 /// Plugin configs fill gaps (new server names) but never override user/project config.
-/// This is the canonical merge function — both session startup and `grok inspect` call it.
+/// This is the canonical merge function — both session startup and `kigi inspect` call it.
 /// Accepts both file-based `.lsp.json` paths and inline `lspServers` JSON values
 /// from plugin manifests (`plugin.json`).
 pub fn load_servers_with_plugins_sourced(

@@ -21,7 +21,7 @@ pub use command_display::strip_redundant_session_cd;
 #[cfg(unix)]
 pub use env::detach_from_tty;
 pub use env::substitute_plugin_tokens;
-pub use env::{KIGI_AGENT_ENV, KIGI_AGENT_ENV_VALUE, apply_grok_agent_marker, pager_env};
+pub use env::{KIGI_AGENT_ENV, KIGI_AGENT_ENV_VALUE, apply_kigi_agent_marker, pager_env};
 pub use fs::{UnicodePathMatch, canonicalize_with_timeout, try_resolve_unicode_filename};
 pub use kigi_home::{kigi_application, kigi_home};
 pub use kigi_tty_utils::detach_std_command;

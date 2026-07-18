@@ -20,7 +20,7 @@ pub struct PreToolUseResult {
 /// Hook failures (timeouts, crashes, command-not-found, env-var
 /// pre-spawn refusals, malformed output) are **fail-open**: the failure
 /// is logged and surfaced in the per-hook results for the UI scrollback,
-/// but the tool call continues as if the hook had allowed it. Grok
+/// but the tool call continues as if the hook had allowed it. Kigi
 /// runs in protected environments where induced-failure bypass of
 /// security hooks is not part of the threat model; the previous
 /// fail-closed posture over-blocked innocent tool calls when

@@ -1,7 +1,7 @@
 //! Resume re-park of the `exit_plan_mode` approval + the mid-turn
 //! disconnect handling.
 //!
-//! On resume the shell re-issues the `x.ai/exit_plan_mode` reverse-request when
+//! On resume the shell re-issues the `kigi/exit_plan_mode` reverse-request when
 //! `awaiting_plan_approval` was persisted, recreating a real live waiter so the
 //! pager's existing approve/revise/abandon path works unchanged. These tests
 //! pin the reverse-request shape, the awaiting-bit lifecycle, and the mid-turn
@@ -93,7 +93,7 @@ async fn request_plan_approval_issues_reverse_request_and_clears_flag() {
             );
 
             let (method, session_id) = responder.await.unwrap();
-            assert_eq!(method.as_deref(), Some("x.ai/exit_plan_mode"));
+            assert_eq!(method.as_deref(), Some("kigi/exit_plan_mode"));
             assert_eq!(
                 session_id.as_deref(),
                 Some("test-actor"),

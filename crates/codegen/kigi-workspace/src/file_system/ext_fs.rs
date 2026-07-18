@@ -1,9 +1,9 @@
 //! Filesystem extension ops (`workspace.fs_*`) — the server-proxied backing
-//! for the shell's `x.ai/fs/*` ACP extension methods.
+//! for the shell's `kigi/fs/*` ACP extension methods.
 //!
 //! These mirror the pure functions that previously lived only in the
 //! shell (`kigi-shell/src/session/file_system.rs`) so that, in proxy
-//! mode, a `x.ai/fs/*` request executes on the *remote* workspace server
+//! mode, a `kigi/fs/*` request executes on the *remote* workspace server
 //! instead of the agent host. Each request type implements
 //! [`WorkspaceOp`], so it runs in-process for local sessions and routes
 //! over the server `workspace_rpc` tool for proxy sessions — identical wire

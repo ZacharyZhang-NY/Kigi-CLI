@@ -277,7 +277,7 @@ pub(super) fn build_truncated_prompt_message(
 }
 /// Replace the file-referencing offload `notice` embedded in `message` with the
 /// no-file [`OFFLOAD_FAILED_NOTICE`]. Position-independent (the notice sits at the
-/// end for grok ordering), so a failed offload never
+/// end for kigi ordering), so a failed offload never
 /// leaves the model chasing a "read this file" pointer to a file that does not
 /// exist. Returns `message` unchanged if the notice is absent (defensive).
 pub(super) fn strip_offload_notice(message: &str, notice: &str) -> String {
