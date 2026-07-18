@@ -2038,7 +2038,7 @@ impl AgentView {
         }
         let mode_flags: &[PromptFlag] = &mode_flags_vec;
         let multiline = self.multiline_mode;
-        let model_label = match self.session.models.reasoning_effort {
+        let model_label = match self.session.models.reasoning_effort_display() {
             Some(eff) => format!("{model_id} ({eff})"),
             None => model_id,
         };

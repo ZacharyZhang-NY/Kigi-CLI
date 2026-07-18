@@ -3060,7 +3060,7 @@ impl AppView {
                             self.tip.as_deref()
                         };
                         let model_name_base = self.models.current_model_name().unwrap_or_default();
-                        let model_name = match self.models.reasoning_effort {
+                        let model_name = match self.models.reasoning_effort_display() {
                             Some(eff) => format!("{model_name_base} ({eff})"),
                             None => model_name_base,
                         };

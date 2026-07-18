@@ -204,6 +204,22 @@ impl ModelState {
         parse_reasoning_efforts_meta(info.meta.as_ref()).unwrap_or_else(legacy_effort_options)
     }
 
+    /// Display token for the current reasoning effort, in the MODEL's own
+    /// vocabulary: the menu option id whose value matches (e.g. K3 spells
+    /// `Xhigh` as `max`), falling back to the canonical name only when the
+    /// model has no menu entry for it. Displays must never leak the internal
+    /// canonical spelling for a level the server names differently.
+    pub fn reasoning_effort_display(&self) -> Option<String> {
+        let effort = self.reasoning_effort?;
+        let display = self
+            .reasoning_effort_options()
+            .into_iter()
+            .find(|opt| opt.value == effort)
+            .map(|opt| opt.id)
+            .unwrap_or_else(|| effort.as_str().to_owned());
+        Some(display)
+    }
+
     /// Map a typed/selected effort token to its canonical value for the current
     /// model. Accepts a menu option id (case-insensitive) or a canonical level
     /// that appears as a **value** in that model's menu. Levels the model does
@@ -477,6 +493,30 @@ mod tests {
         assert_eq!(opts[0].value, ReasoningEffort::Medium);
         assert_eq!(opts[1].id, "deep");
         assert_eq!(opts[1].description.as_deref(), Some("Max"));
+    }
+
+    /// K3 spells `Xhigh` as `max` (live /models `think_efforts`): every
+    /// display surface must show the model's own vocabulary, never the
+    /// internal canonical name.
+    #[test]
+    fn reasoning_effort_display_uses_model_vocabulary() {
+        let mut state = state_with_meta(Some(serde_json::json!({
+            "supportsReasoningEffort": true,
+            "reasoningEfforts": [
+                { "id": "low", "value": "low", "label": "Low" },
+                { "id": "high", "value": "high", "label": "High" },
+                { "id": "max", "value": "xhigh", "label": "Max" },
+            ],
+        })));
+        state.reasoning_effort = Some(ReasoningEffort::Xhigh);
+        assert_eq!(state.reasoning_effort_display().as_deref(), Some("max"));
+        state.reasoning_effort = Some(ReasoningEffort::Low);
+        assert_eq!(state.reasoning_effort_display().as_deref(), Some("low"));
+        // No menu entry for the level → canonical fallback (never hide it).
+        state.reasoning_effort = Some(ReasoningEffort::Medium);
+        assert_eq!(state.reasoning_effort_display().as_deref(), Some("medium"));
+        state.reasoning_effort = None;
+        assert_eq!(state.reasoning_effort_display(), None);
     }
 
     #[test]

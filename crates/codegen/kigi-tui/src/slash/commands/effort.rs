@@ -69,7 +69,7 @@ impl SlashCommand for EffortCommand {
                 .collect();
             let current = ctx
                 .models
-                .reasoning_effort
+                .reasoning_effort_display()
                 .map(|e| format!(" (current: {e})"))
                 .unwrap_or_default();
             let levels = if offered.is_empty() {
