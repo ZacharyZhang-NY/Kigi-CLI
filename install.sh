@@ -191,9 +191,23 @@ case ":$PATH:" in
         printf 'Run `kigi` to get started.\n'
         ;;
     *)
-        printf '\n%s is not on your PATH. Add it with:\n\n' "$BIN_DIR"
-        printf '  export PATH="%s:$PATH"    # sh / bash / zsh (add to your shell rc)\n' "$BIN_DIR"
-        printf '  fish_add_path %s          # fish\n\n' "$BIN_DIR"
-        printf 'Then run `kigi` to get started.\n'
+        printf '\n%s is not on your PATH. Add it permanently:\n\n' "$BIN_DIR"
+        case "${SHELL:-}" in
+            */zsh)
+                printf "  echo 'export PATH=\"%s:\$PATH\"' >> ~/.zshrc\n" "$BIN_DIR"
+                ;;
+            */bash)
+                # macOS login shells read ~/.bash_profile; Linux reads ~/.bashrc.
+                if [ "$PLATFORM_OS" = "macos" ]; then BASH_RC="~/.bash_profile"; else BASH_RC="~/.bashrc"; fi
+                printf "  echo 'export PATH=\"%s:\$PATH\"' >> %s\n" "$BIN_DIR" "$BASH_RC"
+                ;;
+            */fish)
+                printf '  fish_add_path %s\n' "$BIN_DIR"
+                ;;
+            *)
+                printf "  echo 'export PATH=\"%s:\$PATH\"' >> ~/.profile\n" "$BIN_DIR"
+                ;;
+        esac
+        printf '\nThen open a new terminal (or source the file) and run `kigi` to get started.\n'
         ;;
 esac
