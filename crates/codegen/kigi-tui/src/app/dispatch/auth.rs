@@ -387,9 +387,6 @@ pub(super) fn handle_auth_complete(
         // status only; shell auto-syncs post-auth
         let mut effects = dispatch(Action::RequestBundleStatus, app);
 
-        // Fetch changelog (mirrors startup path for interactive login).
-        effects.push(Effect::FetchChangelog);
-
         // Replay deferred session startup once BOTH gates are open. Auth
         // is now Done, so `session_startup_allowed()` here means "is trust
         // also resolved?" -- if trust is still Pending its question renders

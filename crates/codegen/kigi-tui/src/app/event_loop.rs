@@ -1136,12 +1136,6 @@ pub(crate) async fn run(
         if process_effects(effs, &mut tasks, &mut app, &progress_tx) {
             return Ok(make_run_result(&app));
         }
-        // Fetch changelog off the render path so the welcome screen
-        // can display bullets and /release-notes uses the cached result.
-        let effs = vec![super::actions::Effect::FetchChangelog];
-        if process_effects(effs, &mut tasks, &mut app, &progress_tx) {
-            return Ok(make_run_result(&app));
-        }
     }
 
     if !post_render_effects.is_empty()

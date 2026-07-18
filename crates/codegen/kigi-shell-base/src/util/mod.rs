@@ -1,4 +1,3 @@
-pub mod changelog;
 pub mod event_id;
 pub mod kigi_home;
 pub mod secure_file;

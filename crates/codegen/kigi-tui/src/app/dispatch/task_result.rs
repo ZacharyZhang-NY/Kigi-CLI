@@ -442,11 +442,6 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
             }
             vec![]
         }
-        TaskResult::ChangelogFetched { markdown, entries } => {
-            app.changelog_markdown = markdown;
-            app.changelog_bullets = kigi_shell::util::changelog::bullets_from_entries(&entries, 3);
-            vec![]
-        }
         TaskResult::ClipboardAttachmentProbed {
             ctx,
             image,

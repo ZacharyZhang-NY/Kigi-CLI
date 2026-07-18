@@ -1712,27 +1712,6 @@ pub(crate) fn execute(
                     TaskResult::PromptImagePreviewPrepared
                 });
         }
-        Effect::FetchChangelog => {
-            tasks
-                .spawn(async move {
-                    let changelog = tokio::task::spawn_blocking(|| {
-                            kigi_shell::util::changelog::ChangelogManager::new()
-                                .fetch()
-                        })
-                        .await
-                        .unwrap_or_else(|e| {
-                            tracing::warn!(error = % e, "changelog fetch task failed");
-                            kigi_shell::util::changelog::Changelog {
-                                markdown: None,
-                                entries: None,
-                            }
-                        });
-                    TaskResult::ChangelogFetched {
-                        markdown: changelog.markdown,
-                        entries: changelog.entries.unwrap_or_default(),
-                    }
-                });
-        }
         Effect::PersistMemoryFullscreen { fullscreen } => {
             persist_hint(
                 tasks,

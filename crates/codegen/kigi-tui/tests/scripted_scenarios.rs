@@ -66,12 +66,6 @@ async fn scripted_slash_resize_storm() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore]
-async fn scripted_release_notes_scroll() {
-    run_scenario("release_notes_scroll.yaml").await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore]
 async fn scripted_mock_response() {
     run_scenario("mock_response.yaml").await;
 }

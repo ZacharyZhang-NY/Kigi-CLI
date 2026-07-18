@@ -116,8 +116,8 @@ pub fn extract_bundled_files(kigi_home: &std::path::Path) {
 
     let _ = std::fs::create_dir_all(kigi_home);
 
-    // Clean up cached changelog files from previous version so
-    // /release-notes fetches fresh content for the new version.
+    // Clean up changelog caches written by the removed changelog feature
+    // (kigi <= 0.1.0 cached CDN release notes in the kigi home).
     for stale in &["CHANGELOG.json", "CHANGELOG.md"] {
         let _ = std::fs::remove_file(kigi_home.join(stale));
     }

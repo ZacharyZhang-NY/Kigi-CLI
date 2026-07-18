@@ -1,8 +1,8 @@
 //! Hero box component — side-by-side logo + menu inside a bordered box.
 
 use ratatui::buffer::Buffer;
-use ratatui::layout::{Constraint, Flex, Layout, Position, Rect};
-use ratatui::style::{Modifier, Style};
+use ratatui::layout::{Constraint, Flex, Layout, Rect};
+use ratatui::style::Style;
 use ratatui::text::Span;
 use ratatui::widgets::{Block, BorderType, Borders, Widget};
 
@@ -27,18 +27,11 @@ const HERO_SUBTITLE: &str = "Thanks for trying Kigi, give feedback with /feedbac
 
 use super::{PROMPT_HEIGHT, VERSION_GAP};
 
-/// Rows the "thanks" subtitle occupies. Hidden when the in-box info slot
-/// (changelog) is shown, to keep the box compact.
-fn subtitle_rows(info_height: u16) -> u16 {
-    if info_height > 0 { 0 } else { 1 }
-}
-
-/// Height of the hero box's right column: version + optional subtitle +
-/// optional info block + the gap before the menu + the menu itself.
-fn right_col_height(menu_height: u16, info_height: u16) -> u16 {
-    let info_gap = if info_height > 0 { 1u16 } else { 0 };
-    // version(1) + subtitle + [info_gap + info] + gap-before-menu(1) + menu
-    1 + subtitle_rows(info_height) + info_gap + info_height + 1 + menu_height
+/// Height of the hero box's right column: version + subtitle + the gap
+/// before the menu + the menu itself.
+fn right_col_height(menu_height: u16) -> u16 {
+    // version(1) + subtitle(1) + gap-before-menu(1) + menu
+    3 + menu_height
 }
 
 /// Minimum content-area height the hero box needs to render without truncating:
@@ -46,13 +39,8 @@ fn right_col_height(menu_height: u16, info_height: u16) -> u16 {
 /// below (tip + prompt + version). The box always shows the full-height logo,
 /// so a terminal shorter than this falls back to the stacked layout instead of
 /// overflowing.
-pub(super) fn min_content_height(
-    error_height: u16,
-    menu_height: u16,
-    tip_height: u16,
-    info_height: u16,
-) -> u16 {
-    let inner = super::logo::full_logo_line_count().max(right_col_height(menu_height, info_height));
+pub(super) fn min_content_height(error_height: u16, menu_height: u16, tip_height: u16) -> u16 {
+    let inner = super::logo::full_logo_line_count().max(right_col_height(menu_height));
     let hero_box_height = 2 + V_PAD * 2 + inner;
     let gap_after_error = if error_height > 0 { 1u16 } else { 0 };
     gap_after_error + error_height + hero_box_height + 1 + WelcomeLayout::fixed_below(tip_height)
@@ -70,33 +58,26 @@ fn left_col_width() -> u16 {
 }
 
 /// Compute the hero box layout: bordered box with logo left, version + menu right.
-///
-/// Sizes the in-box info slot here (the fixed `changelog_height`) so the
-/// renderer just draws into `hero_info`.
 pub(super) fn compute_hero_box(
     content_area: Rect,
     error_height: u16,
     menu_height: u16,
     tip_height: u16,
-    changelog_height: u16,
 ) -> WelcomeLayout {
     let zero = Rect::default();
     let tip_gap = if tip_height > 0 { 1u16 } else { 0 };
     let fixed_below = WelcomeLayout::fixed_below(tip_height);
 
     // Column widths are height-independent, so derive them once and reuse for
-    // both the measurement and the rects: `hero_info.width == info_slot_width`,
-    // i.e. measured == drawn.
+    // both the measurement and the rects.
     let box_width = content_area.width.saturating_sub(6).min(120);
     let inner_width = box_width.saturating_sub(2);
     let left_col_width = left_col_width();
     let right_width = inner_width.saturating_sub(left_col_width);
-    let info_slot_width = right_width.saturating_sub(H_INSET);
-    let info_height = changelog_height;
+    let menu_slot_width = right_width.saturating_sub(H_INSET);
 
     let logo_rows = super::logo::full_logo_line_count();
-    let info_gap = if info_height > 0 { 1u16 } else { 0 };
-    let inner_height = logo_rows.max(right_col_height(menu_height, info_height));
+    let inner_height = logo_rows.max(right_col_height(menu_height));
     let hero_box_height = 2 + V_PAD * 2 + inner_height;
 
     let gap_after_error = if error_height > 0 { 1 } else { 0 };
@@ -105,7 +86,7 @@ pub(super) fn compute_hero_box(
     // Top padding for vertical centering (use the default menu height so the
     // logo position stays constant regardless of picker/focus state).
     let default_menu_height = 4u16;
-    let default_inner = logo_rows.max(right_col_height(default_menu_height, info_height));
+    let default_inner = logo_rows.max(right_col_height(default_menu_height));
     let default_hero = 2 + V_PAD * 2 + default_inner;
     let remaining = content_area.height.saturating_sub(fixed_above);
     let top_pad = remaining
@@ -190,39 +171,22 @@ pub(super) fn compute_hero_box(
         height: 1,
     };
 
-    // Subtitle line below version — hidden when the info slot is shown.
-    let hero_subtitle = if subtitle_rows(info_height) > 0 {
-        Rect {
-            x: right_x,
-            y: inner.y + 1,
-            width: right_width,
-            height: 1,
-        }
-    } else {
-        zero
+    // Subtitle line below version.
+    let hero_subtitle = Rect {
+        x: right_x,
+        y: inner.y + 1,
+        width: right_width,
+        height: 1,
     };
 
-    // Info block (changelog) below version + optional subtitle.
-    let info_y = inner.y + 1 + subtitle_rows(info_height) + info_gap;
-    let hero_info = if info_height > 0 {
-        Rect {
-            x: right_x,
-            y: info_y,
-            width: info_slot_width,
-            height: info_height,
-        }
-    } else {
-        zero
-    };
-
-    // version + subtitle + info_gap + info + gap-before-menu
-    let right_header_rows = 1 + subtitle_rows(info_height) + info_gap + info_height + 1;
+    // version + subtitle + gap-before-menu
+    let right_header_rows = 3;
 
     // Menu below the header rows, left-aligned in right column.
     let hero_menu = Rect {
         x: right_x,
         y: inner.y + right_header_rows,
-        width: info_slot_width,
+        width: menu_slot_width,
         height: menu_height.min(inner.height.saturating_sub(right_header_rows)),
     };
 
@@ -230,7 +194,6 @@ pub(super) fn compute_hero_box(
         logo: zero,
         error,
         menu: zero,
-        changelog: zero,
         tip,
         prompt,
         version: version_slot,
@@ -238,26 +201,12 @@ pub(super) fn compute_hero_box(
         hero_logo,
         hero_version,
         hero_subtitle,
-        hero_info,
         hero_menu,
     }
 }
 
-/// Changelog content shown in the hero box info slot.
-pub(super) struct ChangelogDisplay<'a> {
-    pub(super) bullets: &'a [String],
-    pub(super) has_full_notes: bool,
-}
-
-/// Hit-test rects produced by [`render_hero_box`].
-pub(super) struct HeroBoxRects {
-    /// Hit-test rect per menu item row (for click/hover).
-    pub(super) menu_rects: Vec<Rect>,
-    /// Clickable changelog info block, if drawn.
-    pub(super) changelog_cta_rect: Option<Rect>,
-}
-
 /// Render the bordered hero box with logo left, version + subtitle + menu right.
+/// Returns the hit-test rect per menu item row (for click/hover).
 pub(super) fn render_hero_box(
     layout: &WelcomeLayout,
     buf: &mut Buffer,
@@ -265,8 +214,7 @@ pub(super) fn render_hero_box(
     menu_items: &[(&str, &str)],
     selected: Option<usize>,
     mouse_pos: Option<(u16, u16)>,
-    changelog: ChangelogDisplay<'_>,
-) -> HeroBoxRects {
+) -> Vec<Rect> {
     // Dim the box border toward the background for a softer, dimmer gray.
     let border_color = crate::render::color::blend_color(theme.bg_base, theme.gray_dim, 0.45)
         .unwrap_or(theme.gray_dim);
@@ -289,30 +237,15 @@ pub(super) fn render_hero_box(
     );
 
     // Subtitle line below the version.
-    if layout.hero_subtitle.height > 0 {
-        let subtitle_style = Style::default().fg(theme.gray);
-        buf.set_span(
-            layout.hero_subtitle.x,
-            layout.hero_subtitle.y,
-            &Span::styled(HERO_SUBTITLE, subtitle_style),
-            layout.hero_subtitle.width,
-        );
-    }
+    let subtitle_style = Style::default().fg(theme.gray);
+    buf.set_span(
+        layout.hero_subtitle.x,
+        layout.hero_subtitle.y,
+        &Span::styled(HERO_SUBTITLE, subtitle_style),
+        layout.hero_subtitle.width,
+    );
 
-    // In-box info slot: the changelog, always in this same position.
-    let mut changelog_cta_rect = None;
-    if layout.hero_info.height > 0 && !changelog.bullets.is_empty() {
-        changelog_cta_rect = render_hero_changelog(
-            buf,
-            theme,
-            layout.hero_info,
-            changelog.bullets,
-            changelog.has_full_notes,
-            mouse_pos,
-        );
-    }
-
-    let menu_rects = super::menu::render_menu(
+    super::menu::render_menu(
         layout.hero_menu,
         buf,
         theme,
@@ -320,58 +253,5 @@ pub(super) fn render_hero_box(
         selected,
         mouse_pos,
         layout.hero_menu.width,
-    );
-    HeroBoxRects {
-        menu_rects,
-        changelog_cta_rect,
-    }
-}
-
-/// Render the changelog block (header + bullets) in the info slot. When
-/// `clickable` (full notes exist), the whole block opens the notes on click and
-/// brightens while hovered; returns that clickable rect.
-fn render_hero_changelog(
-    buf: &mut Buffer,
-    theme: &Theme,
-    area: Rect,
-    bullets: &[String],
-    clickable: bool,
-    mouse_pos: Option<(u16, u16)>,
-) -> Option<Rect> {
-    if area.width == 0 || area.height == 0 {
-        return None;
-    }
-
-    let hovered =
-        clickable && mouse_pos.is_some_and(|(mx, my)| area.contains(Position::new(mx, my)));
-
-    let header_style = super::hover_style(
-        theme,
-        hovered,
-        Style::default()
-            .fg(theme.gray_bright)
-            .add_modifier(Modifier::DIM),
-    );
-    let title = "Changelog";
-    buf.set_span(
-        area.x,
-        area.y,
-        &Span::styled(title, header_style),
-        area.width,
-    );
-
-    // Bullets start 2 rows down (header + blank), matching the height budget.
-    let bullet_style = super::hover_style(theme, hovered, Style::default().fg(theme.gray_bright));
-    let max_text_width = area.width.saturating_sub(4) as usize; // " • " prefix + pad
-    for (i, bullet) in bullets.iter().enumerate() {
-        let row = area.y + 2 + i as u16;
-        if row >= area.y + area.height {
-            break;
-        }
-        let truncated = crate::render::line_utils::truncate_str(bullet, max_text_width);
-        let text = format!(" \u{2022} {truncated}");
-        buf.set_span(area.x, row, &Span::styled(text, bullet_style), area.width);
-    }
-
-    clickable.then_some(area)
+    )
 }

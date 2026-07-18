@@ -395,16 +395,6 @@ Show terminal capability detection and setup info — including color level, whi
 
 Aliases: `/terminal-check`, `/terminal-info`
 
-### `/release-notes`
-
-View release notes for the current version.
-
-```
-/release-notes
-```
-
-Aliases: `/changelog`
-
 ### `/docs`
 
 Browse in-TUI How-to Guides, open online Build docs, or jump to a guide by title.

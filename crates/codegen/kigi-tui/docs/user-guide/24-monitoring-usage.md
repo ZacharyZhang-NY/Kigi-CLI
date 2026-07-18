@@ -2,7 +2,7 @@
 
 > **Status: alpha.** The schema below is versioned (`kigi_code.schema.version = v1`);
 > additive changes may occur without notice, renames/removals will bump the
-> version and be called out in the changelog.
+> version.
 
 Kigi CLI can export usage **metrics** and **events** to your organization's
 own OpenTelemetry collector, so platform teams can monitor adoption, token

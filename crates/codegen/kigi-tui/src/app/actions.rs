@@ -1471,10 +1471,6 @@ pub enum Effect {
         /// `SwitchModelComplete` so `IncompatibleAgent` can roll back.
         prev_model_id: Option<acp::ModelId>,
     },
-    /// Fetch changelog from CDN (both markdown + structured JSON).
-    /// Runs off the render path via `spawn_blocking`. Result is cached
-    /// on `AppView` so `/release-notes` and the welcome screen share it.
-    FetchChangelog,
     /// Persist memory modal fullscreen preference to `[hints]` in config.toml.
     PersistMemoryFullscreen { fullscreen: bool },
     /// Persist the project-picker opt-out to `[hints] project_picker_disabled`.
@@ -2129,11 +2125,6 @@ pub enum TaskResult {
         /// Forwarded from `Effect::SwitchModel.prev_model_id` for
         /// rollback on `IncompatibleAgent`.
         prev_model_id: Option<acp::ModelId>,
-    },
-    /// Changelog fetched from CDN (both formats).
-    ChangelogFetched {
-        markdown: Option<String>,
-        entries: Vec<kigi_shell::util::changelog::ChangelogEntry>,
     },
     /// Cross-session prompt history loaded from ACP.
     PromptHistoryLoaded {
