@@ -191,23 +191,45 @@ case ":$PATH:" in
         printf 'Run `kigi` to get started.\n'
         ;;
     *)
-        printf '\n%s is not on your PATH. Add it permanently:\n\n' "$BIN_DIR"
+        # Persist BIN_DIR on PATH in the login shell's rc file, so the user
+        # doesn't have to. Idempotent: skipped when the rc already mentions
+        # the bin dir. On write failure the manual command is printed and the
+        # script fails loudly (the binary itself is already installed).
+        persist_line() {
+            rc="$1"
+            line="$2"
+            if [ -f "$rc" ] && grep -qF "$BIN_DIR" "$rc"; then
+                printf '\n%s is already configured in %s.\n' "$BIN_DIR" "$rc"
+                return 0
+            fi
+            printf '\n# Added by the kigi installer\n%s\n' "$line" >> "$rc" \
+                || err "could not write $rc — add kigi to your PATH manually: $line"
+            printf '\nAdded %s to your PATH in %s.\n' "$BIN_DIR" "$rc"
+        }
+        EXPORT_LINE="export PATH=\"$BIN_DIR:\$PATH\""
         case "${SHELL:-}" in
             */zsh)
-                printf "  echo 'export PATH=\"%s:\$PATH\"' >> ~/.zshrc\n" "$BIN_DIR"
+                persist_line "${ZDOTDIR:-$HOME}/.zshrc" "$EXPORT_LINE"
                 ;;
             */bash)
                 # macOS login shells read ~/.bash_profile; Linux reads ~/.bashrc.
-                if [ "$PLATFORM_OS" = "macos" ]; then BASH_RC="~/.bash_profile"; else BASH_RC="~/.bashrc"; fi
-                printf "  echo 'export PATH=\"%s:\$PATH\"' >> %s\n" "$BIN_DIR" "$BASH_RC"
+                if [ "$PLATFORM_OS" = "macos" ]; then
+                    persist_line "$HOME/.bash_profile" "$EXPORT_LINE"
+                else
+                    persist_line "$HOME/.bashrc" "$EXPORT_LINE"
+                fi
                 ;;
             */fish)
-                printf '  fish_add_path %s\n' "$BIN_DIR"
+                # fish_add_path in config.fish is fish's own idempotent way
+                # to persist a PATH entry.
+                FISH_CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/fish"
+                mkdir -p "$FISH_CONF_DIR"
+                persist_line "$FISH_CONF_DIR/config.fish" "fish_add_path $BIN_DIR"
                 ;;
             *)
-                printf "  echo 'export PATH=\"%s:\$PATH\"' >> ~/.profile\n" "$BIN_DIR"
+                persist_line "$HOME/.profile" "$EXPORT_LINE"
                 ;;
         esac
-        printf '\nThen open a new terminal (or source the file) and run `kigi` to get started.\n'
+        printf 'Open a new terminal, then run `kigi` to get started.\n'
         ;;
 esac

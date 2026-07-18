@@ -138,12 +138,13 @@ try {
     $OnPath = (($UserPath -split ";") -contains $BinDir) -or
               (($env:Path -split ";") -contains $BinDir)
     if (-not $OnPath) {
+        # Persist the bin dir on the per-user PATH so the user doesn't have
+        # to. Registry-backed; every new terminal picks it up automatically.
+        $NewUserPath = if ($UserPath) { "$BinDir;$UserPath" } else { $BinDir }
+        [Environment]::SetEnvironmentVariable("Path", $NewUserPath, "User")
         Write-Host ""
-        Write-Host "$BinDir is not on your PATH. Add it for the current user with:"
-        Write-Host ""
-        Write-Host "  [Environment]::SetEnvironmentVariable('Path', `"$BinDir;`" + [Environment]::GetEnvironmentVariable('Path', 'User'), 'User')"
-        Write-Host ""
-        Write-Host "Then open a new terminal and run 'kigi' to get started."
+        Write-Host "Added $BinDir to your user PATH."
+        Write-Host "Open a new terminal, then run 'kigi' to get started."
     } else {
         Write-Host "Run 'kigi' to get started."
     }
