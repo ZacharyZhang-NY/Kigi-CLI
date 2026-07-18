@@ -3,7 +3,7 @@ pub mod find_protoc;
 use anyhow::Context;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::{fs, iter};
+use std::{env, fs, iter};
 
 /// Find the protoc well-known types include directory.
 ///
@@ -113,11 +113,27 @@ impl XaiProtoBuilder {
         }
 
         // Can only process one input file when using --dependency_out=FILE.
+        // Both protoc outputs go to real files: /dev/stdout and /dev/null do
+        // not exist on Windows (the release build failed on exactly this).
+        // OUT_DIR is always set for build scripts; deterministic names make
+        // reruns overwrite instead of accumulate.
+        let scratch_dir = env::var_os("OUT_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(env::temp_dir);
         for proto in protos {
+            let stem = proto
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .context("proto file name not UTF-8")?;
+            let dep_file = scratch_dir.join(format!("{stem}.protoc-deps.d"));
+            let descriptor_file = scratch_dir.join(format!("{stem}.protoc-desc.bin"));
             let mut command = Command::new(protoc.unwrap_or(Path::new("protoc")));
             command
-                .arg("--dependency_out=/dev/stdout")
-                .arg("--descriptor_set_out=/dev/null");
+                .arg(format!("--dependency_out={}", dep_file.display()))
+                .arg(format!(
+                    "--descriptor_set_out={}",
+                    descriptor_file.display()
+                ));
 
             // Add protoc's well-known types include directory first (if found).
             // This is needed for Bazel sandboxed builds where protoc and its
@@ -143,15 +159,23 @@ impl XaiProtoBuilder {
                 return Err(anyhow::anyhow!("protoc command failed"));
             }
 
-            let output =
-                String::from_utf8(output.stdout).context("protoc command output not UTF-8")?;
+            let output = fs::read_to_string(&dep_file)
+                .with_context(|| format!("read protoc dependency file {}", dep_file.display()))?;
 
+            // Make-style `.d` format: `<descriptor path>: dep1 dep2 …`.
+            // Compare with normalized separators — protoc may spell the
+            // target path with forward slashes even on Windows.
             let mut lines = output.lines();
-            let first_line = lines.next().context("protoc command output is empty")?;
-            let prefix = "/dev/null:";
-            let rem = first_line.strip_prefix(prefix).with_context(|| {
-                format!("protoc command output must start with /dev/null: {output:?}")
-            })?;
+            let first_line = lines.next().context("protoc dependency output is empty")?;
+            let normalized_first = first_line.replace('\\', "/");
+            let prefix = format!("{}:", descriptor_file.display()).replace('\\', "/");
+            let rem_len = normalized_first
+                .strip_prefix(&prefix)
+                .with_context(|| {
+                    format!("protoc dependency output must start with {prefix:?}: {output:?}")
+                })?
+                .len();
+            let rem = &first_line[first_line.len() - rem_len..];
             for line in iter::once(rem).chain(lines) {
                 let line = line.trim();
                 let line = line.strip_suffix("\\").unwrap_or(line);
