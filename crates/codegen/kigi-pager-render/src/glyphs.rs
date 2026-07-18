@@ -218,14 +218,44 @@ pub fn diamond_hollow_char() -> char {
 /// 1-column ASCII spinner (`|`, `/`, `-`, `\`) on legacy ConHost.
 ///
 /// The U+2800 Braille Patterns block is not part of CP437 and renders as
-/// tofu on the legacy console raster font, so the turn-status line, the
-/// MCP-connecting chip, the image-viewer loader, and the `/btw` overlay
-/// all fall back to the classic ASCII spinner there. Every frame in both
-/// sets is exactly 1 column so the surrounding layout never shifts.
+/// tofu on the legacy console raster font, so the starting-session row,
+/// the MCP-connecting chip, the image-viewer loader, and the `/btw`
+/// overlay all fall back to the classic ASCII spinner there. Every frame
+/// in both sets is exactly 1 column so the surrounding layout never
+/// shifts. (The turn-status "Waiting for response…" line uses
+/// [`moon_spinner_frames`] instead.)
 pub fn braille_spinner_frames() -> &'static [&'static str] {
     const FANCY: &[&str] = &[
         "\u{280b}", "\u{2819}", "\u{2839}", "\u{2838}", "\u{283c}", "\u{2834}", "\u{2826}",
         "\u{2827}",
+    ];
+    const FALLBACK: &[&str] = &["|", "/", "-", "\\"];
+    if is_legacy_windows_console() {
+        FALLBACK
+    } else {
+        FANCY
+    }
+}
+
+/// Moon-phase spinner frames (`🌑🌒🌓🌔🌕🌖🌗🌘`) normally; the ASCII
+/// spinner on legacy ConHost.
+///
+/// The turn-status "Waiting for response…" line reuses the official
+/// kimi-cli's lunation animation (rich's `moon` spinner) — one full
+/// lunation per cycle, matching the welcome-screen moon logo. Emoji
+/// frames are 2 columns wide; the caller measures the rendered frame
+/// (`spinner_str.width()`) so the layout adapts. Legacy ConHost's raster
+/// font has no emoji, so it falls back to the 1-column ASCII spinner.
+pub fn moon_spinner_frames() -> &'static [&'static str] {
+    const FANCY: &[&str] = &[
+        "\u{1f311}",
+        "\u{1f312}",
+        "\u{1f313}",
+        "\u{1f314}",
+        "\u{1f315}",
+        "\u{1f316}",
+        "\u{1f317}",
+        "\u{1f318}",
     ];
     const FALLBACK: &[&str] = &["|", "/", "-", "\\"];
     if is_legacy_windows_console() {

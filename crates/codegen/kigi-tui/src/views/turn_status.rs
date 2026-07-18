@@ -351,13 +351,13 @@ pub fn render_turn_status(
 
     // ── Build components ──
     // While a tool is blocked on a permission prompt or `ask_user_question`,
-    // swap the running braille spinner for a pulsing `◆`. Same animation
-    // shape the drain-blocked and plan-approval indicators already use,
-    // so every "your turn" status reads with one consistent visual cue.
+    // swap the spinning moon for a pulsing `◆`. Same animation shape the
+    // drain-blocked and plan-approval indicators already use, so every
+    // "your turn" status reads with one consistent visual cue.
     let spinner_str = if is_pending_user_input {
         format!("{} ", crate::glyphs::diamond_filled())
     } else {
-        let frames = crate::glyphs::braille_spinner_frames();
+        let frames = crate::glyphs::moon_spinner_frames();
         let frame_idx = (tick / SPINNER_DIVISOR) as usize % frames.len();
         format!("{} ", frames[frame_idx])
     };
