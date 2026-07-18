@@ -92,7 +92,7 @@ fn build_open_path_command(path: &std::path::Path) -> std::process::Command {
 /// - **Windows**: `explorer.exe /select,<path>` reveals + highlights the file
 ///   in Explorer. We deliberately avoid `cmd /c start`, whose `%VAR%`
 ///   expansion corrupts the percent-encoded session-directory segment in
-///   imagine media paths (e.g. `…\C%3A%5CUsers…`).
+///   media paths (e.g. `…\C%3A%5CUsers…`).
 /// - **macOS / Linux**: `open` / `xdg-open` open the file in its default app.
 pub fn open_path(path: &std::path::Path) -> bool {
     // Never launch a real GUI app in tests.
@@ -208,28 +208,6 @@ pub fn open_url_if_safe(url: &str, filter: SchemeFilter) -> bool {
         tracing::debug!(url, "URL scheme not permitted");
         false
     }
-}
-
-/// Ensure `url` carries the given query parameter, returning the rewritten URL.
-///
-/// If the URL already contains a parameter with that name, its value is left
-/// untouched (the caller upstream may have intentionally set one). On parse
-/// failure, the original string is returned unchanged so this is safe to apply
-/// to opener input from untrusted sources.
-///
-/// Used by the SuperGrok upsell flow to attribute clicks to `referrer=grok-build`,
-/// matching the OAuth consent screen and x.ai/cli marketing links regardless of
-/// what the remote settings `gate_url` value happens to be.
-pub fn ensure_query_param(url: &str, key: &str, value: &str) -> String {
-    let Ok(mut parsed) = url::Url::parse(url) else {
-        return url.to_string();
-    };
-    let already_present = parsed.query_pairs().any(|(k, _)| k == key);
-    if already_present {
-        return parsed.to_string();
-    }
-    parsed.query_pairs_mut().append_pair(key, value);
-    parsed.to_string()
 }
 
 #[cfg(test)]
@@ -381,55 +359,6 @@ mod tests {
             "\thttps://example.com\n",
             SchemeFilter::Standard
         ));
-    }
-
-    #[test]
-    fn ensure_query_param_appends_when_missing() {
-        let out = ensure_query_param("https://grok.com/supergrok", "referrer", "grok-build");
-        assert_eq!(out, "https://grok.com/supergrok?referrer=grok-build");
-    }
-
-    #[test]
-    fn ensure_query_param_preserves_existing_value() {
-        let out = ensure_query_param(
-            "https://grok.com/supergrok?referrer=other",
-            "referrer",
-            "grok-build",
-        );
-        assert_eq!(out, "https://grok.com/supergrok?referrer=other");
-    }
-
-    #[test]
-    fn ensure_query_param_keeps_other_query_pairs() {
-        let out = ensure_query_param(
-            "https://grok.com/supergrok?heavy=1",
-            "referrer",
-            "grok-build",
-        );
-        assert_eq!(
-            out,
-            "https://grok.com/supergrok?heavy=1&referrer=grok-build"
-        );
-    }
-
-    #[test]
-    fn ensure_query_param_preserves_fragment() {
-        // The current remote settings value uses a hash fragment for client-side
-        // routing (`grok.com/#supergrok`); we still want the referrer attached.
-        let out = ensure_query_param("https://grok.com/#supergrok", "referrer", "grok-build");
-        assert_eq!(out, "https://grok.com/?referrer=grok-build#supergrok");
-    }
-
-    #[test]
-    fn ensure_query_param_returns_unchanged_on_parse_failure() {
-        let out = ensure_query_param("not a url", "referrer", "grok-build");
-        assert_eq!(out, "not a url");
-    }
-
-    #[test]
-    fn ensure_query_param_url_encodes_value() {
-        let out = ensure_query_param("https://grok.com/supergrok", "referrer", "grok build");
-        assert_eq!(out, "https://grok.com/supergrok?referrer=grok+build");
     }
 
     #[test]

@@ -254,7 +254,7 @@ struct RowSegment {
 /// joiner to the *previous* row (see `BlockLine::joiner`): `None` = hard
 /// break, `Some("")` = mid-word wrap, `Some(" ")` = word wrap. Consecutive
 /// rows connected by `Some(..)` joiners are re-joined into one logical line
-/// before matching, so a long path or URL soft-wrapped across rows (imagine
+/// before matching, so a long path or URL soft-wrapped across rows (media
 /// media lives at `~/.kigi/sessions/%2F…/images/1.jpg`, which wraps in
 /// narrow panes) is detected whole and each row's fragment gets its own
 /// clickable overlay region. Spans within a row are likewise concatenated so
@@ -858,7 +858,7 @@ mod tests {
     #[test]
     fn scan_detects_grok_session_media_path() {
         // Dot-directory (`.kigi`), percent-encoded session segment, and a
-        // trailing sentence period — the shape of `image_gen` output prose.
+        // trailing sentence period — the shape of media-tool output prose.
         let line = make_line("Saved to /Users/alice/.kigi/sessions/%2Fabc/00000000/images/1.jpg.");
         let mut overlay = LinkOverlay::new();
         scan_unjoined(std::iter::once((0, &line)), 0, &[], &mut overlay);
@@ -873,7 +873,7 @@ mod tests {
 
     #[test]
     fn scan_detects_media_path_soft_wrapped_across_rows() {
-        // Regression: `image_gen` output prose wraps the long session path
+        // Regression: media-tool output prose wraps the long session path
         // across visual rows (`joiner: Some("")` mid-word break). Previously
         // each row was scanned in isolation, so only the `/Users/alice`
         // fragment on the first row matched and became clickable.

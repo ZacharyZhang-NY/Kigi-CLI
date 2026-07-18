@@ -559,38 +559,7 @@ pub(super) async fn run_session(
                    tracing::warn!(server = sname.as_str(), error = % e,
                    "Failed to persist server enabled state to config"); } let _ = respond_to
                    .send(Ok(())); }); } SessionCommand::ToggleMcpTool { server_name, tool_name,
-                   enabled, is_managed_gateway, respond_to } => { if is_managed_gateway { let
-                   mut disabled_tools = crate
-                   ::util::config::get_all_mcp_disabled_tools(std::path::Path::new(& session
-                   .session_info.cwd)); if tool_name.is_empty() { let set = disabled_tools
-                   .entry(crate ::util::config::MANAGED_GATEWAY_DISABLED_CONNECTORS_KEY
-                   .to_string()).or_default(); if enabled { set.remove(& server_name); } else {
-                   set.insert(server_name.clone()); }
-                   if set.is_empty() { disabled_tools
-                   .remove(crate ::util::config::MANAGED_GATEWAY_DISABLED_CONNECTORS_KEY); } }
-                   else if enabled { if let Some(set) = disabled_tools.get_mut(& server_name) {
-                   set.remove(& tool_name); if set.is_empty() { disabled_tools.remove(&
-                   server_name); } } } else { disabled_tools.entry(server_name.clone())
-                   .or_default().insert(tool_name.clone()); } session
-                   .refresh_mcp_snapshot_and_schedule_reminder_with_disabled(& disabled_tools,).
-                   await; session.refresh_goal_harness_enabled(). await; let disabled_vec : Vec
-                   < String > = if tool_name.is_empty() { disabled_tools.get(crate
-                   ::util::config::MANAGED_GATEWAY_DISABLED_CONNECTORS_KEY).map(| s | s.iter()
-                   .cloned().collect()).unwrap_or_default() } else { disabled_tools.get(&
-                   server_name).map(| s | s.iter().cloned().collect()).unwrap_or_default() };
-                   let notifications = session.notifications.gateway.clone(); let session_id =
-                   session.session_info.id.0.clone(); let server_for_persist = if tool_name
-                   .is_empty() { crate ::util::config::MANAGED_GATEWAY_DISABLED_CONNECTORS_KEY
-                   .to_string() } else { server_name.clone() }; tokio::task::spawn_local(async
-                   move { if let Err(e) = crate ::util::config::save_mcp_disabled_tools(&
-                   server_for_persist, & disabled_vec,). await { tracing::warn!(server =
-                   server_for_persist.as_str(), error = % e,
-                   "Failed to persist disabled_tools to config"); } let payload = crate
-                   ::extensions::mcp::McpToolsChanged { session_id : session_id.to_string(),
-                   server_name : String::new(), tools : Vec::new(), }; if let Ok(params) =
-                   serde_json::value::to_raw_value(& payload) { notifications
-                   .forward_fire_and_forget(acp::ExtNotification::new("x.ai/mcp/tools_changed",
-                   params.into())); } let _ = respond_to.send(Ok(())); }); continue; } let
+                   enabled, respond_to } => { let
                    qualified = format!("{}{}{}", server_name, crate
                    ::session::mcp_servers::MCP_TOOL_NAME_DELIMITER, tool_name,); let mut
                    mcp_state = session.mcp_state.lock(). await; if enabled { if let Some(set) =
@@ -663,11 +632,7 @@ pub(super) async fn run_session(
                    SessionCommand::McpAuthTrigger { server_name, respond_to } => { let s =
                    session.clone(); tokio::task::spawn_local(async move { let result = s
                    .handle_mcp_auth_trigger(& server_name). await; let _ = respond_to
-                   .send(result); }); } SessionCommand::GetManagedGatewayDisabledTools {
-                   respond_to } => { let disabled_tools = crate
-                   ::util::config::get_all_mcp_disabled_tools(std::path::Path::new(& session
-                   .session_info.cwd),); let _ = respond_to.send(disabled_tools); }
-                   SessionCommand::RetryAuthRequiredServers { respond_to } => { let s = session
+                   .send(result); }); } SessionCommand::RetryAuthRequiredServers { respond_to } => { let s = session
                    .clone(); tokio::task::spawn_local(async move { s
                    .retry_auth_required_servers(). await; let _ = respond_to.send(()); }); }
                    SessionCommand::RefreshMcpSearchIndex => { session

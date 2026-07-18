@@ -50,14 +50,7 @@ pub fn build_config_resolved_event(
         .map(|c| kigi_file_utils::events::McpConfigServer {
             name: inner::mcp_server_name(c).to_string(),
             transport: inner::mcp_transport_str(c).to_string(),
-            source: if inner::mcp_server_name(c)
-                .starts_with(crate::session::managed_mcp::MANAGED_MCP_PREFIX)
-            {
-                "managed"
-            } else {
-                "local"
-            }
-            .to_string(),
+            source: "local".to_string(),
         })
         .collect();
     kigi_file_utils::events::Event::McpConfigResolved { servers, disabled }

@@ -1,6 +1,5 @@
-//! Canonical slash-command wording (`/loop`, `/imagine`, `/imagine-video`, `/goal`),
-//! shared by every front-end (Grok Build shell/pager and other hosts) so
-//! expansions cannot drift.
+//! Canonical slash-command wording (`/loop`, `/goal`), shared by every
+//! front-end (shell/pager and other hosts) so expansions cannot drift.
 
 /// Canonical tool name advertised by the scheduler create tool. Gating code
 /// (shell `CommandAvailability`, pager `required_tools`, host command lists)
@@ -44,91 +43,6 @@ pub fn loop_schedule_instruction(args: &str) -> String {
     )
 }
 
-/// Canonical name of the image generation tool; gates `/imagine`.
-pub const IMAGE_GEN_TOOL_NAME: &str = "image_gen";
-
-/// Advertised name of the /imagine command.
-pub const IMAGINE_COMMAND_NAME: &str = "imagine";
-
-/// Canonical name of the image-to-video tool; gates `/imagine-video`.
-pub const IMAGE_TO_VIDEO_TOOL_NAME: &str = "image_to_video";
-
-/// Advertised name of the /imagine-video command.
-pub const IMAGINE_VIDEO_COMMAND_NAME: &str = "imagine-video";
-
-/// Usage hint shown when `/imagine` is invoked with no arguments.
-pub fn imagine_usage_message() -> &'static str {
-    "Usage: /imagine <description>\n\
-     Provide a text description to generate an image."
-}
-
-/// Build the model instruction that `/imagine` expands into for `prompt`.
-pub fn imagine_instruction(prompt: &str) -> String {
-    format!(
-        "Call the image_gen tool immediately, passing the user's prompt below \
-         verbatim — do not rewrite, embellish, or expand it. \
-         After the tool completes, briefly acknowledge and mention \
-         where the image was saved.\n\n\
-         Prompt: {prompt}"
-    )
-}
-
-/// Usage hint shown when `/imagine-video` is invoked with no arguments.
-pub fn imagine_video_usage_message() -> &'static str {
-    "Usage: /imagine-video <description>\n\
-     Provide a text description to generate a video."
-}
-
-/// Build the model instruction that `/imagine-video` expands into for `prompt`.
-pub fn imagine_video_instruction(prompt: &str) -> String {
-    format!(
-        "{IMAGINE_VIDEO_SKILL}\n\n\
-         User prompt: {prompt}"
-    )
-}
-
-/// Video workflow guidance injected by `/imagine-video`.
-const IMAGINE_VIDEO_SKILL: &str = "\
-# Imagine Video
-
-Video starts from an image — there is no text-to-video tool. \
-Default to `image_to_video`; use `reference_to_video` only when the user \
-explicitly asks for it or a shot genuinely needs multiple reference images.
-
-## Default: single clip
-
-Unless the user asks for a long video, multiple scenes, or a multi-shot sequence, \
-generate **one** video:
-
-1. Create a source image with `image_gen` that stages the first frame \
-(composition, subject, lighting).
-2. Call `image_to_video` with that image and a short prompt describing the motion \
-or camera move (1–2 sentences, present tense).
-3. After the tool completes, mention the saved file path so the user can find it.
-
-## Longer / multi-shot videos
-
-When the user requests a longer video, multiple scenes, or a narrative sequence:
-
-1. **Plan the story as shots** — break the idea into distinct shots, one beat each.
-2. **Favor frequent, short shots** — prefer more 6s clips over fewer long ones; more cuts keep it dynamic.
-3. **Create each shot's source image** with `image_gen` (or `image_edit` to combine references), keeping characters and settings consistent across shots.
-4. **Animate each shot with `image_to_video`** — the source image becomes frame 1.
-5. **Assemble with FFmpeg** using stream copy (`ffmpeg -f concat ... -c copy` — never re-encode). \
-Keep every shot at the same resolution and frame rate so the concat works. \
-After assembly, mention the final output path.
-
-## Shot guidance
-
-- **Prompt-craft:** one short, vivid moment in present tense with a clear camera movement, in 1–2 sentences.
-- **Minimal but interesting:** one clear subject, one simple motion or camera move per shot. Avoid complex multi-action animation; make the shot compelling through composition, lighting, and a strong moment.
-- **Complex source image?** Intricate frames (busy geometry, fine detail, heavy reflections) warp when animated. Keep the subject fixed and move only the camera (slow push-in, orbit, or parallax), or break into simpler shots. For new shots, generate a simpler, animation-friendly base image rather than animating a busy one.
-- **`image_to_video` animates from frame 1** — stage the first frame with `image_gen`/`image_edit` before animating.
-- **Aspect ratio:** set it on the source image (`image_gen` `aspect_ratio`); don't re-crop an existing video.
-- **Duration:** 6s or 10s only (prefer 6s); round to the nearest.
-- **Real people:** reference-first — drive the video from a verified reference image; never animate a named person without one.
-- Don't loop the same clip unless asked.";
-
 pub const UPDATE_GOAL_TOOL_NAME: &str = "update_goal";
 
 pub const GOAL_COMMAND_NAME: &str = "goal";
@@ -169,22 +83,6 @@ pub fn goal_instruction(objective: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn imagine_instruction_carries_prompt_verbatim() {
-        let text = imagine_instruction("a golden sunset");
-        assert!(text.contains("a golden sunset"));
-        assert!(text.contains("image_gen"));
-        assert!(text.contains("verbatim"));
-    }
-
-    #[test]
-    fn imagine_video_instruction_carries_prompt_and_workflow() {
-        let text = imagine_video_instruction("a cat playing piano");
-        assert!(text.contains("a cat playing piano"));
-        assert!(text.contains("image_to_video"));
-        assert!(text.contains("FFmpeg"));
-    }
 
     #[test]
     fn instruction_carries_args_and_contract_tokens() {

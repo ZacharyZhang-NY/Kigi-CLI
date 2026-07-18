@@ -89,9 +89,6 @@ pub struct PickerRow<'a> {
     /// `description_lines` are empty. The `expanded` field controls
     /// which glyph is rendered.
     pub collapsible: bool,
-    /// Underline the final description line (when expanded) so it reads as a
-    /// clickable link. Used for the Managed connectors URL.
-    pub underline_last_desc: bool,
 }
 
 /// A key-value pair shown in an expanded picker row.
@@ -725,11 +722,9 @@ pub fn compute_row_height(row: &PickerRow<'_>, width: u16) -> usize {
 /// When `row.expanded && !row.fields.is_empty()`, renders key-value detail lines
 /// below (indented, label in `gray`, value in `gray_bright`).
 ///
-/// Rows consumed by a rendered picker row/entry, plus the row band of its
-/// underlined link line (recorded from what is painted) for click hit-testing.
+/// Rows consumed by a rendered picker row/entry.
 pub struct RenderedRow {
     pub rows: u16,
-    pub link_band: Option<std::ops::Range<u16>>,
 }
 
 /// `max_rows` caps rendering to available vertical space; detail fields beyond
@@ -749,10 +744,7 @@ pub fn render_picker_row(
     max_rows: u16,
 ) -> RenderedRow {
     if max_rows == 0 {
-        return RenderedRow {
-            rows: 0,
-            link_band: None,
-        };
+        return RenderedRow { rows: 0 };
     }
     let base_bg = picker_base_bg(bg, theme);
     let embed = crate::views::modal_window::embedded_row_style(theme, row.selected);
@@ -894,7 +886,6 @@ pub fn render_picker_row(
 
     // Description lines (shown when expanded) or summary lines (collapsed).
     let mut rows = 1u16;
-    let mut link_band: Option<std::ops::Range<u16>> = None;
     let secondary_lines: &[&str] = if row.expanded {
         row.description_lines
     } else {
@@ -907,28 +898,18 @@ pub fn render_picker_row(
             .fg(theme.text_primary)
             .bg(base_bg)
             .add_modifier(Modifier::BOLD);
-        // Underline the final description line when the row opts in, so it reads as a link.
-        let link_style = highlight_style.add_modifier(Modifier::UNDERLINED);
-        let last_line = secondary_lines.len().saturating_sub(1);
         let max_w = width.saturating_sub(indent) as usize;
-        for (li, desc) in secondary_lines.iter().enumerate() {
-            let is_link = row.underline_last_desc && row.expanded && li == last_line;
-            let hl = if is_link { link_style } else { highlight_style };
+        for desc in secondary_lines.iter() {
             // Render with [bracket] highlight markers: text inside
             // [...] is shown in bold/bright, brackets are stripped.
-            let line = parse_highlight_spans(desc, desc_style, hl);
+            let line = parse_highlight_spans(desc, desc_style, highlight_style);
             let wrapped = word_wrap_line(&line, max_w);
-            let link_start = y + rows;
             for wrap_line in wrapped {
                 if rows >= max_rows {
                     break;
                 }
                 render_styled_spans(buf, &wrap_line, x + indent, y + rows, max_w);
                 rows += 1;
-            }
-            // Record only painted rows, so a vertically-clipped link records nothing.
-            if is_link && y + rows > link_start {
-                link_band = Some(link_start..(y + rows));
             }
         }
     }
@@ -1000,7 +981,7 @@ pub fn render_picker_row(
         }
     }
 
-    RenderedRow { rows, link_band }
+    RenderedRow { rows }
 }
 
 /// Render a single picker entry (header or row).
@@ -1019,10 +1000,7 @@ pub fn render_picker_entry(
     max_rows: u16,
 ) -> RenderedRow {
     if max_rows == 0 {
-        return RenderedRow {
-            rows: 0,
-            link_band: None,
-        };
+        return RenderedRow { rows: 0 };
     }
     match entry {
         PickerEntry::Header { label } => {
@@ -1041,10 +1019,7 @@ pub fn render_picker_entry(
                 Span::styled(sep, sep_style),
             ]);
             buf.set_line(x, y, &line, width);
-            RenderedRow {
-                rows: 1,
-                link_band: None,
-            }
+            RenderedRow { rows: 1 }
         }
         PickerEntry::Row(row) => {
             render_picker_row(buf, x, y, width, theme, row, hovered, bg, max_rows)
@@ -1359,9 +1334,6 @@ pub struct PickerState {
     pub scroll_offset: Option<usize>,
     /// Hit areas from the last render (for mouse hit-testing).
     pub hit_areas: Option<PickerHitAreas>,
-    /// Entry index and absolute row band of the underlined link line from the
-    /// last render (the Managed connectors URL), for click-to-open hit-testing.
-    pub link_band: Option<(usize, std::ops::Range<u16>)>,
     /// Hit areas for tab labels (one per tab, `None` if tab didn't fit).
     pub tab_hit_areas: Option<Vec<Option<Rect>>>,
     /// Hit area for the filter indicator in the search bar.
@@ -1387,7 +1359,6 @@ impl Default for PickerState {
             hovered: None,
             scroll_offset: None,
             hit_areas: None,
-            link_band: None,
             tab_hit_areas: None,
             filter_area: None,
             filter_hovered: false,
@@ -1427,7 +1398,6 @@ impl PickerState {
         self.expanded.clear();
         self.close_hovered = false;
         self.hit_areas = None;
-        self.link_band = None;
         self.tab_hit_areas = None;
         self.filter_area = None;
         self.filter_hovered = false;
@@ -1779,7 +1749,6 @@ fn render_picker_content_inner(
     scrollbar_x_override: Option<u16>,
 ) -> PickerContentHitAreas {
     // Cleared each paint; set below if a row underlines its last description line.
-    state.link_band = None;
     let is_clickable_non_sel = |i: usize| non_selectable_clickable.get(i).copied().unwrap_or(false);
     let empty_hit = PickerContentHitAreas {
         item_rects: vec![],
@@ -1880,7 +1849,6 @@ fn render_picker_content_inner(
 
     let mut item_rects = Vec::new();
     let mut entry_indices = Vec::new();
-    let mut link_band: Option<(usize, std::ops::Range<u16>)> = None;
 
     // Skip entries until we've consumed scroll_visual visual rows.
     let mut visual_rows_consumed = 0usize;
@@ -1928,9 +1896,6 @@ fn render_picker_content_inner(
             remaining,
         );
         let rows_consumed = rendered.rows;
-        if let Some(band) = rendered.link_band {
-            link_band = Some((entry_idx, band));
-        }
 
         if !is_header && (!is_non_sel(entry_idx) || is_clickable_non_sel(entry_idx)) {
             let row_rect = Rect {
@@ -1944,8 +1909,6 @@ fn render_picker_content_inner(
         }
         y += rows_consumed;
     }
-    state.link_band = link_band;
-
     // Scrollbar. (Globally suppressed in minimal mode via
     // `render::scrollbar::set_scrollbars_hidden`.)
     if needs_scroll {
@@ -3259,76 +3222,6 @@ mod tests {
             unfocused_text.contains("/ to search"),
             "unfocused search bar should show the `/ to search` placeholder, got {unfocused_text:?}",
         );
-    }
-
-    #[test]
-    fn underline_last_desc_underlines_only_the_link_line() {
-        use ratatui::buffer::Buffer;
-        use ratatui::layout::Rect;
-
-        let theme = Theme::current();
-        // Wide enough that each description line fits on a single visual row:
-        // y+0 = label, y+1 = instruction, y+2 = bracket-highlighted URL.
-        let area = Rect::new(0, 0, 60, 6);
-        let desc: &[&str] = &["some instruction text", "[example.com/link]"];
-
-        let render = |underline_last_desc: bool| -> (Buffer, Option<std::ops::Range<u16>>) {
-            let row = PickerRow {
-                label: "Group header",
-                right_label: "",
-                selected: false,
-                expanded: true,
-                fields: &[],
-                description_lines: desc,
-                summary_lines: &[],
-                dimmed: false,
-                indent: 0,
-                badge: "",
-                badge_color: None,
-                collapsible: true,
-                underline_last_desc,
-            };
-            let mut buf = Buffer::empty(area);
-            let rendered = render_picker_row(
-                &mut buf,
-                area.x,
-                area.y,
-                area.width,
-                &theme,
-                &row,
-                false,
-                None,
-                area.height,
-            );
-            (buf, rendered.link_band)
-        };
-
-        // Rows (relative to area top) that have any underlined cell.
-        let underlined_rows = |buf: &Buffer| -> Vec<u16> {
-            (area.y..area.y + area.height)
-                .filter(|&y| {
-                    (0..area.width).any(|x| {
-                        buf.cell((x, y))
-                            .map(|c| c.modifier.contains(Modifier::UNDERLINED))
-                            .unwrap_or(false)
-                    })
-                })
-                .collect()
-        };
-
-        let (on, on_band) = render(true);
-        // Only the final (link) description line (row y+2) is underlined; the
-        // label (y+0) and instruction (y+1) rows are not.
-        assert_eq!(underlined_rows(&on), vec![2]);
-        // Render <-> hit-test parity: the recorded band equals the painted rows.
-        assert_eq!(on_band, Some(2..3));
-
-        let (off, off_band) = render(false);
-        assert!(
-            underlined_rows(&off).is_empty(),
-            "opt-out rows underline nothing"
-        );
-        assert_eq!(off_band, None, "opt-out records no link band");
     }
 
     #[test]

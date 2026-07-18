@@ -648,8 +648,6 @@ async fn file_toolset_override_e2e_to_finalized_toolset() {
         web_search_config: kigi_tools::implementations::web_search::WebSearchConfig::default(),
         web_fetch_config: Default::default(),
         lsp: None,
-        image_gen_config: kigi_tools::implementations::grok_build::image_gen::ImageGenConfig::default(),
-        video_gen_config: kigi_tools::implementations::grok_build::video_gen::VideoGenConfig::default(),
         app_builder_deployer_config: kigi_tools::implementations::grok_build::deploy_app::AppBuilderDeployerConfig::default(),
         api_key_provider: None,
         attribution_callback: None,
@@ -744,7 +742,6 @@ fn make_test_handle(
         permission_handle: kigi_workspace::permission::PermissionHandle::allow_all(),
         attribution_callback: None,
         agent_name: "grok-build".to_string(),
-        managed_mcp_proxy_base_url: String::new(),
         session_default_agent_profile: None,
         allowed_subagent_types: None,
         hook_registry: None,
@@ -1135,38 +1132,6 @@ fn test_sessionless_request_requires_session_id() {
         Err(CodeNavEligibility::SessionRequired),
         "cwd-only requests with no sessionId must return SessionRequired"
     );
-}
-#[tokio::test(flavor = "current_thread")]
-async fn ext_method_routes_auth_cleared_and_refreshes_resident_sessions() {
-    let local = tokio::task::LocalSet::new();
-    local
-        .run_until(async {
-            let agent = build_agent_with_auth(crate::auth::KimiAuth {
-                key: "eligible".into(),
-                auth_mode: crate::auth::AuthMode::OAuth,
-                ..crate::auth::KimiAuth::test_default()
-            });
-            use acp::Agent as _;
-            agent.managed_mcp_cache.lock().await.enable_gateway_tools();
-            let sid = acp::SessionId::new("sess-auth-cleared");
-            let (handle, _tx, mut cmd_rx) = make_live_session_handle(&sid, None);
-            agent.sessions.borrow_mut().insert(sid, handle);
-            let params = serde_json::json!({});
-            agent
-                .ext_method(acp::ExtRequest::new(
-                    "x.ai/internal/auth_cleared",
-                    std::sync::Arc::from(serde_json::value::to_raw_value(&params).unwrap()),
-                ))
-                .await
-                .expect("auth_cleared must route through session-admin");
-            let cmd = tokio::time::timeout(std::time::Duration::from_secs(1), cmd_rx.recv())
-                .await
-                .expect("refresh command should be sent")
-                .expect("channel should stay open until command is received");
-            assert!(matches!(cmd, SessionCommand::RefreshMcpSearchIndex));
-            assert!(!agent.managed_mcp_cache.lock().await.gateway_tools_active);
-        })
-        .await;
 }
 /// Build a minimal MvpAgent suitable for testing extension methods.
 fn build_minimal_agent_for_tests() -> MvpAgent {
@@ -1860,7 +1825,7 @@ async fn auth_type_session_based_no_current_returns_session_token() {
 /// BYOK guard. Users with `xai.api_key` must continue to report `ApiKey`
 /// regardless of live-token state -- BYOK sessions have nothing to refresh,
 /// and reporting `SessionToken` would route through cli-chat-proxy paths
-/// (image_gen / video_gen base_url) that don't apply to BYOK keys.
+/// that don't apply to BYOK keys.
 #[tokio::test(flavor = "current_thread")]
 async fn auth_type_xai_api_key_no_current_returns_api_key() {
     let agent = build_minimal_agent_for_tests();
@@ -1950,26 +1915,6 @@ async fn cached_token_fallthrough_falls_to_grok_com_without_credentials() {
         agent.cached_token_fallthrough_method_id().0.as_ref(),
         KIGI_COM_METHOD_ID,
         "no API-key creds and no kill switch -> interactive grok.com login",
-    );
-}
-/// The imagine tier gate fails **open**: with no resolved auth we can't confirm
-/// a restricted personal tier, so the tools stay advertised and un-flagged (the
-/// server 429 remains the authoritative backstop). Guards against accidentally
-/// disabling a paid feature when tier info hasn't loaded.
-#[tokio::test(flavor = "current_thread")]
-async fn prepare_image_gen_config_fails_open_without_auth() {
-    use kigi_tools::implementations::grok_build::image_gen::ImageGenConfig;
-    let agent = build_minimal_agent_for_tests();
-    agent.sampling_config.borrow_mut().api_key = Some("test-key".to_string());
-    let ImageGenConfig::Enabled {
-        tier_restricted, ..
-    } = agent.prepare_image_gen_config()
-    else {
-        panic!("expected Enabled");
-    };
-    assert!(
-        !tier_restricted,
-        "no resolved auth ⇒ fail open (tools not tier-restricted)"
     );
 }
 /// `parse_session_kind` routes `session/load` to the gateway Chat path vs. the
@@ -2107,7 +2052,6 @@ fn chat_session_spawn_options_matches_thin_profile() {
     assert!(!opts.client_fs_read);
     assert!(!opts.client_fs_write);
     assert!(opts.chat_history.is_empty());
-    assert!(opts.managed_mcp_expires_at.is_none());
     assert!(!opts.session_auto_mode);
     assert!(
         opts.persistence.is_noop(),

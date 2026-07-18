@@ -46,7 +46,7 @@ pub use kigi_workspace_types::MCP_TOOL_NAME_DELIMITER;
 
 /// Normalize an MCP server URL for comparison: strip trailing slashes.
 /// Must match the normalization the host's managed-config layer uses
-/// (e.g. shell's `session::managed_mcp::normalize_url`) so refresh
+/// (e.g. shell's `session::managed_mcp::normalize_url`) so URL
 /// lookup keys agree.
 fn normalize_url(url: &str) -> String {
     url.trim_end_matches('/').to_string()
@@ -112,7 +112,7 @@ pub struct McpConfigDiff {
     pub retained: Vec<McpServerName>,
 }
 
-/// MCP server name used as the key in client/tool maps (e.g. `"github"`, `"grok_com_linear"`).
+/// MCP server name used as the key in client/tool maps (e.g. `"github"`).
 pub type McpServerName = String;
 
 /// Unqualified MCP tool name (e.g. `"create_issue"`, without the `server__` prefix).
@@ -4012,16 +4012,6 @@ fn is_figma_mcp(server_name: &str, url: &str) -> bool {
     if server_name.eq_ignore_ascii_case("figma") {
         return true;
     }
-    // Legacy direct managed name (`grok_com_figma`); newer clients use gateway tools (`managed_mcp_gateway_tools_enabled`).
-    const MANAGED_PREFIX: &str = "grok_com_";
-    if let (Some(prefix), Some(rest)) = (
-        server_name.get(..MANAGED_PREFIX.len()),
-        server_name.get(MANAGED_PREFIX.len()..),
-    ) && prefix.eq_ignore_ascii_case(MANAGED_PREFIX)
-        && rest.eq_ignore_ascii_case("figma")
-    {
-        return true;
-    }
     reqwest::Url::parse(url)
         .ok()
         .and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase()))
@@ -4510,14 +4500,10 @@ mod tests {
     fn is_figma_mcp_matches_name_and_host() {
         assert!(is_figma_mcp("figma", "https://example.com/mcp"));
         assert!(is_figma_mcp("Figma", "https://example.com/mcp"));
-        assert!(is_figma_mcp("grok_com_figma", "https://example.com/mcp"));
-        assert!(is_figma_mcp("GROK_COM_FIGMA", "https://example.com/mcp"));
-        assert!(is_figma_mcp("grok_com_FIGMA", "https://example.com/mcp"));
         assert!(is_figma_mcp("other", "https://mcp.figma.com/mcp"));
         assert!(is_figma_mcp("other", "https://figma.com/mcp"));
         assert!(!is_figma_mcp("linear", "https://mcp.linear.app/mcp"));
         assert!(!is_figma_mcp("figma_extra", "https://example.com/mcp"));
-        assert!(!is_figma_mcp("grok_com_linear", "https://example.com/mcp"));
         assert!(!is_figma_mcp("linear", "not-a-url"));
         assert!(!is_figma_mcp("linear", "https://notfigma.com/mcp"));
         assert!(!is_figma_mcp("linear", "https://figma.com.evil/mcp"));
@@ -6762,7 +6748,7 @@ mod tests {
     fn is_auth_rejection_message_matches_auth_signals() {
         // The verbatim string captured in production for a managed handshake.
         assert!(is_auth_rejection_message(
-            "MCP server 'grok_com_notion' handshake failed: Auth required, when send initialize request"
+            "MCP server 'notion' handshake failed: Auth required, when send initialize request"
         ));
         assert!(is_auth_rejection_message("401 Unauthorized"));
         assert!(is_auth_rejection_message("unauthorized"));

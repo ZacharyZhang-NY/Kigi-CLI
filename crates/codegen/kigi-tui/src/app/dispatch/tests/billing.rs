@@ -130,7 +130,7 @@ fn unknown_non_restricted_command_still_passes_through() {
     app.agents
         .get_mut(&id)
         .unwrap()
-        .set_restricted_commands(&["imagine".to_string()]);
+        .set_restricted_commands(&["loop".to_string()]);
 
     let effects = dispatch(Action::SendPrompt("/frobnicate arg".into()), &mut app);
 

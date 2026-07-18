@@ -480,31 +480,13 @@ impl SessionActor {
             }
         });
         let _drainer_guard = crate::util::AbortOnDrop(drainer);
-        while let Some((idx, mut result)) = dispatch_rx.recv().await {
+        while let Some((idx, result)) = dispatch_rx.recv().await {
             let prepared = approved_slots[idx]
                 .take()
                 .expect("dispatch index should match an approved slot exactly once");
             self.signals_handle().record_tool_call(&prepared.tool_name);
             let tool_start = self.events.tool_started(prepared.tool_name.clone());
             let mut post_tool_use_result: Option<serde_json::Value> = None;
-            if let Some((server, _)) =
-                crate::session::mcp_servers::parse_mcp_tool_name(&prepared.tool_name)
-                && server.starts_with(crate::session::managed_mcp::MANAGED_MCP_PREFIX)
-            {
-                let auth_rejected = match &result {
-                    Err(err) => kigi_mcp::servers::is_auth_rejection_message(&err.to_string()),
-                    Ok(tool_result) => {
-                        tool_result.output.is_error()
-                            && kigi_mcp::servers::is_auth_rejection_message(
-                                &tool_result.prompt_text,
-                            )
-                    }
-                };
-                if auth_rejected && self.reactive_managed_reauth(&server).await.is_ok() {
-                    result = dispatch_tool(&self.workspace_ops, &prepared, &self.session_info.id.0)
-                        .await;
-                }
-            }
             let tool_result_size_bytes = match &result {
                 Ok(tool_result) => tool_result.prompt_text.len() as i64,
                 Err(_) => 0,
@@ -745,12 +727,6 @@ impl SessionActor {
         }
         let mcp_parts = parse_mcp_tool_name(&call.function.name);
         let is_mcp_tool = mcp_parts.is_some();
-        if let Some((ref server, _)) = mcp_parts
-            && server.starts_with(crate::session::managed_mcp::MANAGED_MCP_PREFIX)
-        {
-            let _span = tracing::info_span!("tool.refresh_managed_mcp").entered();
-            self.refresh_managed_mcp_if_stale().await;
-        }
         if is_mcp_tool && !self.mcp_state.lock().await.is_initialized() {
             match self.mcp_strategy {
                 McpInitStrategy::Blocking => {
@@ -1480,33 +1456,6 @@ impl SessionActor {
             ToolInput::WebSearch(ws) => (
                 format!("Web search: \"{}\"", ws.query),
                 acp::ToolKind::Search,
-                vec![],
-                vec![],
-            ),
-            ToolInput::ImageGen(ig) => (
-                format!("imagine: {}", ig.prompt),
-                acp::ToolKind::Other,
-                vec![],
-                vec![],
-            ),
-            ToolInput::ImageEdit(ie) => (
-                format!("imagine-edit: {}", ie.prompt),
-                acp::ToolKind::Other,
-                vec![],
-                vec![],
-            ),
-            ToolInput::ImageToVideo(i2v) => (
-                format!(
-                    "image-to-video: {}",
-                    i2v.prompt.as_deref().unwrap_or(&i2v.image)
-                ),
-                acp::ToolKind::Other,
-                vec![],
-                vec![],
-            ),
-            ToolInput::ReferenceToVideo(r2v) => (
-                format!("reference-to-video: {}", r2v.prompt),
-                acp::ToolKind::Other,
                 vec![],
                 vec![],
             ),

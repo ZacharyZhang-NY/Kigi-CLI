@@ -143,16 +143,6 @@ fn subagent_inherits_parent_lsp_via_context() {
     );
 }
 #[test]
-fn subagent_inherits_managed_mcp_state_via_context() {
-    let handle = crate::session::managed_mcp::ManagedMcpStateHandle::default();
-    let mut ctx = ctx_with_toggle(HashMap::new());
-    ctx.managed_mcp_state = handle.clone();
-    assert!(
-        Arc::ptr_eq(& handle, & ctx.managed_mcp_state),
-        "child should share parent's managed MCP state (Arc identity)"
-    );
-}
-#[test]
 fn no_parent_lsp_means_child_gets_none() {
     let ctx = ctx_with_toggle(HashMap::new());
     assert!(ctx.lsp.is_none());
@@ -1110,7 +1100,6 @@ fn dummy_tracker(
         permission_handle: kigi_workspace::permission::PermissionHandle::allow_all(),
         attribution_callback: None,
         agent_name: "grok-build".to_string(),
-        managed_mcp_proxy_base_url: String::new(),
         session_default_agent_profile: None,
         allowed_subagent_types: None,
         hook_registry: None,

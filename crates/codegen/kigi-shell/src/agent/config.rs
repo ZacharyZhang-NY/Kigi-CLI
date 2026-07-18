@@ -301,9 +301,6 @@ pub struct Requirements {
     pub tool_search: Constrained<bool>,
     pub web_fetch: Constrained<bool>,
     pub ask_user_question: Constrained<bool>,
-    pub image_gen: Constrained<bool>,
-    pub image_edit: Constrained<bool>,
-    pub video_gen: Constrained<bool>,
     pub write_file: Constrained<bool>,
     /// Voice dictation (STT). Pin via requirements/managed `[features] voice_mode`.
     pub voice_mode: Constrained<bool>,
@@ -1075,8 +1072,6 @@ pub struct Config {
     pub memory: crate::config::MemoryConfig,
     #[serde(default, skip_serializing)]
     pub compaction: CompactionConfig,
-    #[serde(default, skip_serializing)]
-    pub managed_mcps: crate::config::ManagedMcpsConfig,
     /// `[auth]` alias — consumed by `expand_auth_alias` before serde.
     /// Typed as `KimiCodeConfig` (same schema) so sub-field typos are caught.
     #[serde(default, skip_serializing)]
@@ -1206,18 +1201,6 @@ pub struct Config {
     /// Resolved by [`crate::config::ToolsConfig::resolve`].
     #[serde(skip)]
     pub respect_gitignore: bool,
-    /// When `true`, `MvpAgent::prepare_video_gen_config` returns
-    /// `VideoGenConfig::Disabled`, dropping `video_gen` (and any
-    /// future ZDR-incompatible tools) from the model's tool set.
-    /// Resolved by [`crate::config::ToolsConfig::resolve`].
-    #[serde(skip)]
-    pub disable_zdr_incompatible_tools: bool,
-    /// S3 config for ZDR video output (presigned upload to team bucket).
-    /// Only used when `disable_zdr_incompatible_tools` is `true` and the
-    /// config is valid. Resolved by [`crate::config::ToolsConfig::resolve`].
-    #[serde(skip)]
-    pub zdr_video_output_s3:
-        Option<kigi_tools::implementations::grok_build::video_gen::ZdrVideoOutputS3Config>,
     /// Whether to enrich path-not-found errors with CWD reminders,
     /// "dropped repo folder" correction, and similar-name suggestions.
     /// Default `false`. Enabled via remote settings.
@@ -1225,13 +1208,6 @@ pub struct Config {
     /// which sessions had path-not-found hints active.
     #[serde(default)]
     pub path_not_found_hints: bool,
-    /// Whether to fetch managed MCP configs from the managed connectors service at startup.
-    /// Resolved by [`crate::config::ManagedMcpsConfig::resolve`]: env var >
-    /// config.toml > remote settings > default (off in headless, on in interactive).
-    #[serde(skip)]
-    pub managed_mcps_enabled: bool,
-    #[serde(skip)]
-    pub managed_mcp_gateway_tools_enabled: bool,
     /// Whether auto-wake is enabled: when a background task or subagent
     /// completes, immediately inject a synthetic prompt instead of waiting
     /// for the idle-gated notification drain.
@@ -1446,7 +1422,6 @@ impl Default for Config {
             subagents: crate::config::SubagentsConfig::default(),
             memory: crate::config::MemoryConfig::default(),
             compaction: CompactionConfig::default(),
-            managed_mcps: crate::config::ManagedMcpsConfig::default(),
             auth: None,
             desktop: None,
             tips: None,
@@ -1476,15 +1451,11 @@ impl Default for Config {
             todo_gate: false,
             laziness_debug_log: None,
             respect_gitignore: false,
-            disable_zdr_incompatible_tools: false,
-            zdr_video_output_s3: None,
             path_not_found_hints: false,
             cli_experimental_memory: false,
             cli_no_memory: false,
             cli_subagents: None,
             memory_config: None,
-            managed_mcps_enabled: true,
-            managed_mcp_gateway_tools_enabled: false,
             auto_wake_enabled: true,
             compat_resolved: CompatConfig::default(),
             requirements: Requirements::default(),
@@ -1603,8 +1574,6 @@ impl Config {
     /// Call immediately after `new_from_toml_cfg()`. Fields resolved:
     /// - subagents (6 fields) via `SubagentsConfig::resolve`
     /// - respect_gitignore via `ToolsConfig::resolve`
-    /// - disable_zdr_incompatible_tools via `ToolsConfig::resolve`
-    /// - managed_mcps_enabled via `ManagedMcpsConfig::resolve`
     /// - session_summary_model / image_description_model /
     ///   prompt_suggest_model_pin via `ModelOverrideConfig::resolve`
     /// - memory_config via `MemoryConfig::resolve`
@@ -1624,15 +1593,6 @@ impl Config {
             Some(pinned) => pinned,
             None => tools.respect_gitignore,
         };
-        self.disable_zdr_incompatible_tools = tools.disable_zdr_incompatible_tools;
-        self.zdr_video_output_s3 = tools.zdr_video_output_s3;
-        let mcps = crate::config::ManagedMcpsConfig::resolve(
-            ctx.raw_config,
-            ctx.remote_settings,
-            ctx.is_headless,
-        );
-        self.managed_mcps_enabled = mcps.enabled;
-        self.managed_mcp_gateway_tools_enabled = mcps.gateway_tools_enabled;
         let models = crate::config::ModelOverrideConfig::resolve(
             ctx.cli_session_summary_model,
             ctx.raw_config,
@@ -1866,51 +1826,6 @@ impl Config {
             .feature_flag(ff)
             .default(true)
             .resolve()
-    }
-    /// `image_gen` tool gate. Default on; gated only by the `KIGI_IMAGE_GEN`
-    /// env var and managed-config requirement pin.
-    pub(crate) fn resolve_image_gen(&self) -> Resolved<bool> {
-        BoolFlag::env("KIGI_IMAGE_GEN")
-            .requirement(self.requirements.image_gen.pinned())
-            .default(true)
-            .resolve()
-    }
-    /// `image_edit` tool gate.
-    ///
-    /// The remote settings `imagine_tools_disabled` denylist is authoritative:
-    /// when it lists `image_edit`, the tool is force-removed and local
-    /// env/config can't re-enable it. A managed requirement pin still outranks
-    /// it; otherwise the tool defaults on and is overridable via
-    /// `KIGI_IMAGE_EDIT`.
-    pub(crate) fn resolve_image_edit(&self) -> Resolved<bool> {
-        use kigi_tools::implementations::grok_build::IMAGE_EDIT_TOOL_NAME;
-        if let Some(pinned) = self.requirements.image_edit.pinned() {
-            return Resolved::new(pinned, ConfigSource::Requirement);
-        }
-        if self
-            .remote_settings
-            .as_ref()
-            .is_some_and(|s| s.imagine_tool_disabled(IMAGE_EDIT_TOOL_NAME))
-        {
-            return Resolved::new(false, ConfigSource::Remote);
-        }
-        BoolFlag::env("KIGI_IMAGE_EDIT").default(true).resolve()
-    }
-    /// Optional Imagine model override for `image_gen`. When set (non-empty),
-    /// `image_gen` calls this model slug instead of the default quality model.
-    /// Precedence: env `KIGI_IMAGE_GEN_MODEL_OVERRIDE` > `[features]
-    /// image_gen_model_override` config > remote settings `image_gen_model_override`.
-    /// `None` → default model (`grok-imagine-image-quality`).
-    pub(crate) fn resolve_image_gen_model_override(&self) -> Option<String> {
-        resolve_string_flag(
-            None,
-            "KIGI_IMAGE_GEN_MODEL_OVERRIDE",
-            self.features.image_gen_model_override.as_deref(),
-            self.remote_settings
-                .as_ref()
-                .and_then(|s| s.image_gen_model_override.as_deref()),
-        )
-        .map(|r| r.value)
     }
     /// Goal mode (`/goal`) master switch. Default ON: deployments that can't
     /// reach cli-chat-proxy `/v1/settings` (custom `models_base_url`, external
@@ -3646,13 +3561,6 @@ pub struct Features {
     /// compaction. `None` = defer to remote settings / env / default (`false`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub two_pass_compaction: Option<bool>,
-    /// Video generation tool. `None` = defer to remote settings / env / default (false).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub video_gen: Option<bool>,
-    /// `image_gen` Imagine model override. `None`/empty = defer to remote settings
-    /// (`image_gen_model_override`) / env / default (`grok-imagine-image-quality`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub image_gen_model_override: Option<String>,
     /// Write file tool. `None` = defer to remote settings / env / default (true).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub write_file: Option<bool>,
@@ -4470,34 +4378,6 @@ reasoning_effort = "low"
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
         assert_eq!(cfg.toolset.bash.timeout_secs, Some(30.5));
-    }
-    #[test]
-    fn resolve_runtime_fields_propagates_disable_zdr_incompatible_tools() {
-        fn ctx(raw: &toml::Value) -> RuntimeResolutionContext<'_> {
-            RuntimeResolutionContext {
-                raw_config: raw,
-                remote_settings: None,
-                cwd: None,
-                is_headless: false,
-                cli_subagents: None,
-                cli_session_summary_model: None,
-                cli_experimental_memory: false,
-                cli_no_memory: false,
-                disable_web_search: false,
-                todo_gate: false,
-                laziness_debug_log: None,
-                storage_mode: None,
-            }
-        }
-        let empty: toml::Value = toml::Value::Table(toml::map::Map::new());
-        let mut cfg = Config::new_from_toml_cfg(&empty).unwrap();
-        cfg.resolve_runtime_fields(&ctx(&empty));
-        assert!(!cfg.disable_zdr_incompatible_tools);
-        let zdr: toml::Value =
-            toml::from_str("[tools]\ndisable_zdr_incompatible_tools = true").unwrap();
-        let mut cfg = Config::new_from_toml_cfg(&zdr).unwrap();
-        cfg.resolve_runtime_fields(&ctx(&zdr));
-        assert!(cfg.disable_zdr_incompatible_tools);
     }
     #[test]
     fn resolve_runtime_fields_propagates_disable_web_search() {
@@ -7215,51 +7095,6 @@ reasoning_effort = "low"
         assert_eq!(r.source, ConfigSource::Remote);
         assert!(!r.value);
     }
-    #[test]
-    #[serial]
-    fn resolve_image_gen_model_override_remote_settings_or_config() {
-        unsafe { std::env::remove_var("KIGI_IMAGE_GEN_MODEL_OVERRIDE") };
-        let with = |config: Option<&str>, gb: Option<&str>| Config {
-            features: Features {
-                image_gen_model_override: config.map(String::from),
-                ..Default::default()
-            },
-            remote_settings: Some(crate::util::config::RemoteSettings {
-                image_gen_model_override: gb.map(String::from),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        assert_eq!(Config::default().resolve_image_gen_model_override(), None);
-        assert_eq!(
-            with(None, Some("grok-imagine-image")).resolve_image_gen_model_override(),
-            Some("grok-imagine-image".to_owned())
-        );
-        assert_eq!(
-            with(Some("grok-imagine-image-pro"), Some("grok-imagine-image"))
-                .resolve_image_gen_model_override(),
-            Some("grok-imagine-image-pro".to_owned())
-        );
-    }
-    #[test]
-    #[serial]
-    fn imagine_tools_disabled_gates_image_edit() {
-        unsafe { std::env::remove_var("KIGI_IMAGE_EDIT") };
-        let with_list = |tools: Vec<&str>| Config {
-            remote_settings: Some(crate::util::config::RemoteSettings {
-                imagine_tools_disabled: Some(tools.into_iter().map(String::from).collect()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        unsafe { std::env::set_var("KIGI_IMAGE_EDIT", "1") };
-        let off = with_list(vec!["image_edit"]).resolve_image_edit();
-        assert!(!off.value);
-        assert_eq!(off.source, ConfigSource::Remote);
-        unsafe { std::env::remove_var("KIGI_IMAGE_EDIT") };
-        assert!(with_list(vec!["image_to_video"]).resolve_image_edit().value);
-        assert!(Config::default().resolve_image_edit().value);
-    }
     /// Clear every env var the goal/companion resolvers read so tests
     /// start from a known baseline regardless of run order.
     fn clear_goal_envs() {
@@ -8103,8 +7938,6 @@ agent_type = "cursor"
             secret = "value"
             [worktree_pool]
             pool_size = 4
-            [managed_mcps]
-            enabled = true
             [mcp_servers.test]
             url = "https://mcp.test.com"
             [toolset.bash]
@@ -8237,12 +8070,6 @@ agent_type = "cursor"
             std::env::remove_var("KIGI_CLAUDE_SKILLS_ENABLED");
             std::env::remove_var("KIGI_CLAUDE_RULES_ENABLED");
             std::env::remove_var("KIGI_CLAUDE_AGENTS_ENABLED");
-        }
-    }
-    fn clear_managed_mcp_env_vars() {
-        unsafe {
-            std::env::remove_var("KIGI_MANAGED_MCPS_ENABLED");
-            std::env::remove_var("KIGI_MANAGED_MCP_GATEWAY_TOOLS_ENABLED");
         }
     }
     fn isolate_compat_env() -> Vec<EnvGuard> {
@@ -8531,7 +8358,6 @@ hooks = true
     #[serial]
     fn resolve_runtime_fields_interactive_defaults() {
         clear_runtime_env_vars();
-        clear_managed_mcp_env_vars();
         let raw = empty_config();
         let mut cfg = Config::new_from_toml_cfg(&raw).unwrap();
         cfg.resolve_runtime_fields(&RuntimeResolutionContext {
@@ -8550,67 +8376,11 @@ hooks = true
         });
         assert!(cfg.subagents_enabled);
         assert!(!cfg.respect_gitignore);
-        assert!(cfg.managed_mcps_enabled);
-        assert!(!cfg.managed_mcp_gateway_tools_enabled);
         assert_eq!(
             cfg.session_summary_model,
             Some(crate::models::default_session_summary_model().to_owned())
         );
         assert!(!cfg.path_not_found_hints);
-    }
-    #[test]
-    #[serial]
-    fn resolve_runtime_fields_headless_defaults() {
-        clear_runtime_env_vars();
-        clear_managed_mcp_env_vars();
-        let raw = empty_config();
-        let mut cfg = Config::new_from_toml_cfg(&raw).unwrap();
-        cfg.resolve_runtime_fields(&RuntimeResolutionContext {
-            raw_config: &raw,
-            remote_settings: None,
-            cwd: None,
-            is_headless: true,
-            cli_subagents: None,
-            cli_session_summary_model: None,
-            cli_experimental_memory: false,
-            cli_no_memory: false,
-            disable_web_search: false,
-            todo_gate: false,
-            laziness_debug_log: None,
-            storage_mode: None,
-        });
-        assert!(
-            !cfg.managed_mcps_enabled,
-            "headless should default managed_mcps to false"
-        );
-        assert!(!cfg.managed_mcp_gateway_tools_enabled);
-    }
-    #[test]
-    #[serial]
-    fn resolve_runtime_fields_managed_gateway_tools_from_remote() {
-        clear_runtime_env_vars();
-        clear_managed_mcp_env_vars();
-        let raw = empty_config();
-        let remote = crate::util::config::RemoteSettings {
-            managed_mcp_gateway_tools_enabled: Some(true),
-            ..Default::default()
-        };
-        let mut cfg = Config::new_from_toml_cfg(&raw).unwrap();
-        cfg.resolve_runtime_fields(&RuntimeResolutionContext {
-            raw_config: &raw,
-            remote_settings: Some(&remote),
-            cwd: None,
-            is_headless: false,
-            cli_subagents: None,
-            cli_session_summary_model: None,
-            cli_experimental_memory: false,
-            cli_no_memory: false,
-            disable_web_search: false,
-            todo_gate: false,
-            laziness_debug_log: None,
-            storage_mode: None,
-        });
-        assert!(cfg.managed_mcp_gateway_tools_enabled);
     }
     #[test]
     #[serial]
@@ -8751,12 +8521,10 @@ hooks = true
         cfg.resolve_runtime_fields(&ctx);
         let first_subagents = cfg.subagents_enabled;
         let first_gitignore = cfg.respect_gitignore;
-        let first_mcps = cfg.managed_mcps_enabled;
         let first_ss = cfg.session_summary_model.clone();
         cfg.resolve_runtime_fields(&ctx);
         assert_eq!(cfg.subagents_enabled, first_subagents);
         assert_eq!(cfg.respect_gitignore, first_gitignore);
-        assert_eq!(cfg.managed_mcps_enabled, first_mcps);
         assert_eq!(cfg.session_summary_model, first_ss);
     }
     #[test]

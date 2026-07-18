@@ -474,62 +474,6 @@ impl SubagentsConfig {
         result
     }
 }
-/// Managed MCP connector fetching config (`[managed_mcps]` in config.toml).
-///
-/// See [`Self::resolve`] for full priority chain.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(default)]
-pub struct ManagedMcpsConfig {
-    pub enabled: bool,
-    pub gateway_tools_enabled: bool,
-}
-impl Default for ManagedMcpsConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            gateway_tools_enabled: false,
-        }
-    }
-}
-impl ManagedMcpsConfig {
-    /// Priority: env var > TOML > remote > default (enabled interactive, disabled headless).
-    pub fn resolve(
-        config: &toml::Value,
-        remote: Option<&crate::util::config::RemoteSettings>,
-        is_headless: bool,
-    ) -> Self {
-        let mut result: Self = config
-            .get("managed_mcps")
-            .and_then(|v| v.clone().try_into().ok())
-            .unwrap_or(Self {
-                enabled: !is_headless,
-                gateway_tools_enabled: false,
-            });
-        let managed_mcps_table = config.get("managed_mcps").and_then(|v| v.as_table());
-        let has_local_enabled = managed_mcps_table.is_some_and(|t| t.contains_key("enabled"));
-        let resolved = crate::agent::config::resolve_enabled(
-            None,
-            "KIGI_MANAGED_MCPS_ENABLED",
-            result.enabled,
-            has_local_enabled,
-            remote.and_then(|r| r.managed_mcps_enabled),
-            !is_headless,
-        );
-        result.enabled = resolved.value;
-        let has_local_gateway_tools =
-            managed_mcps_table.is_some_and(|t| t.contains_key("gateway_tools_enabled"));
-        let gateway_resolved = crate::agent::config::resolve_enabled(
-            None,
-            "KIGI_MANAGED_MCP_GATEWAY_TOOLS_ENABLED",
-            result.gateway_tools_enabled,
-            has_local_gateway_tools,
-            remote.and_then(|r| r.managed_mcp_gateway_tools_enabled),
-            false,
-        );
-        result.gateway_tools_enabled = result.enabled && gateway_resolved.value;
-        result
-    }
-}
 /// Auxiliary model overrides under `[models]`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(default)]
@@ -656,8 +600,7 @@ impl ModelOverrideConfig {
 ///
 /// ```toml
 /// [tools]
-/// disable_zdr_incompatible_tools = true
-/// # [tools.zdr_video_output_s3] — see ZdrVideoOutputS3Config
+/// respect_gitignore = true
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(default)]
@@ -665,29 +608,12 @@ pub struct ToolsConfig {
     /// When `true`, all tools (including `read_file`) filter gitignored
     /// files. When `false` (default), each tool picks its own default.
     pub respect_gitignore: bool,
-    /// Drop tools whose xAI API requires server-side artifact storage
-    /// (currently just `video_gen`). Intended for ZDR-bound teams via
-    /// `~/.kigi/managed_config.toml`. Defaults to `false`.
-    pub disable_zdr_incompatible_tools: bool,
-    /// Optional S3 bucket config for ZDR video output. When present (and
-    /// valid), video tools presign an upload URL and pass it to the API so
-    /// the generated video lands in a team-owned bucket instead of being
-    /// downloaded locally. Only effective when `disable_zdr_incompatible_tools`
-    /// is `true`. Populated from `[tools.zdr_video_output_s3]` in config.
-    pub zdr_video_output_s3:
-        Option<kigi_tools::implementations::grok_build::video_gen::ZdrVideoOutputS3Config>,
 }
 impl ToolsConfig {
     /// Resolve the final tools config, in priority order:
-    /// 1. Env vars `KIGI_RESPECT_GITIGNORE` and
-    ///    `KIGI_DISABLE_ZDR_INCOMPATIBLE_TOOLS` (`0`/`false` off,
-    ///    `1`/`true` on).
+    /// 1. Env var `KIGI_RESPECT_GITIGNORE` (`0`/`false` off, `1`/`true` on).
     /// 2. `[tools]` block from the merged effective config.
-    /// 3. Defaults (both `false`).
-    ///
-    /// Fields are read individually so a malformed
-    /// `[tools.zdr_video_output_s3]` cannot wipe `disable_zdr_incompatible_tools`
-    /// (or any other tools flag) via whole-table deserialize failure.
+    /// 3. Default (`false`).
     pub fn resolve(config: &toml::Value) -> Self {
         let tools = config.get("tools");
         let mut result = Self {
@@ -695,33 +621,6 @@ impl ToolsConfig {
                 .and_then(|t| t.get("respect_gitignore"))
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false),
-            disable_zdr_incompatible_tools: tools
-                .and_then(|t| t.get("disable_zdr_incompatible_tools"))
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false),
-            zdr_video_output_s3: tools
-                .and_then(|t| t.get("zdr_video_output_s3"))
-                .and_then(|s3_val| match s3_val
-                    .clone()
-                    .try_into::<
-                        kigi_tools::implementations::grok_build::video_gen::ZdrVideoOutputS3Config,
-                    >()
-                {
-                    Ok(cfg) if cfg.is_valid() => Some(cfg),
-                    Ok(_) => {
-                        tracing::warn!(
-                            "tools.zdr_video_output_s3 is present but incomplete; ignoring ZDR video output config"
-                        );
-                        None
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            error = % e,
-                            "tools.zdr_video_output_s3 failed to parse; ignoring ZDR video output config"
-                        );
-                        None
-                    }
-                }),
         };
         match std::env::var("KIGI_RESPECT_GITIGNORE").as_deref() {
             Ok("0") | Ok("false") => {
@@ -729,15 +628,6 @@ impl ToolsConfig {
             }
             Ok("1") | Ok("true") => {
                 result.respect_gitignore = true;
-            }
-            _ => {}
-        }
-        match std::env::var("KIGI_DISABLE_ZDR_INCOMPATIBLE_TOOLS").as_deref() {
-            Ok("0") | Ok("false") => {
-                result.disable_zdr_incompatible_tools = false;
-            }
-            Ok("1") | Ok("true") => {
-                result.disable_zdr_incompatible_tools = true;
             }
             _ => {}
         }
@@ -1009,9 +899,6 @@ fn apply_requirements_inner(
     pin_feature!(tool_search);
     pin_feature!(web_fetch);
     pin_feature!(ask_user_question);
-    pin_requirement_only!(image_gen);
-    pin_requirement_only!(image_edit);
-    pin_feature!(video_gen);
     pin_feature!(write_file);
     pin_feature!(voice_mode);
     pin_requirement_only!(remote_fetch);
@@ -1020,7 +907,6 @@ fn apply_requirements_inner(
     enforce_opt!("cli", "show_tips", config.cli.show_tips);
     enforce_val!("memory", "enabled", config.memory.enabled);
     enforce_val!("subagents", "enabled", config.subagents.enabled);
-    enforce_val!("managed_mcps", "enabled", config.managed_mcps.enabled);
     if let Some(val) = req_bool(req, "tools", "respect_gitignore") {
         config
             .requirements

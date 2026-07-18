@@ -55,73 +55,6 @@ impl From<serde_json::Value> for DynamicOutput {
         Self { value }
     }
 }
-/// Typed saved path for the media tools (`image_gen` / `video_gen` /
-/// `image_edit`), so consumers read it directly instead of scraping the prose.
-/// A struct (not a bare `PathBuf`) is required: `ToolOutput` is internally
-/// tagged and only accepts map payloads.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MediaGenOutput {
-    /// Absolute path to the saved media file. Empty for [`Self::uploaded`].
-    pub path: PathBuf,
-    /// Basename of the saved media file (for example, `8.jpg`).
-    #[serde(default)]
-    pub filename: String,
-    /// Session-relative media directory name (for example, `images` or `videos`).
-    #[serde(default)]
-    pub session_folder: String,
-    /// Set when the media was uploaded to a remote presigned URL (ZDR video
-    /// output) and is not available locally; omitted otherwise.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub uploaded_url: Option<String>,
-}
-impl MediaGenOutput {
-    pub fn new(path: PathBuf) -> Self {
-        let filename = path
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        let session_folder = path
-            .parent()
-            .and_then(|parent| parent.file_name())
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        Self {
-            path,
-            filename,
-            session_folder,
-            uploaded_url: None,
-        }
-    }
-    /// Media uploaded to a remote presigned URL and not available locally
-    /// (ZDR video output). No local path/filename/session folder.
-    pub fn uploaded(url: String) -> Self {
-        Self {
-            path: PathBuf::new(),
-            filename: String::new(),
-            session_folder: String::new(),
-            uploaded_url: Some(url),
-        }
-    }
-    /// Model-facing prose. `action` is the variant's lead-in
-    /// ("Image generated" / "Video generated" / "Image edited"); the trailing
-    /// guidance stops the model re-reading or narrating the result.
-    pub fn prompt_text(&self, action: &str) -> String {
-        if let Some(url) = &self.uploaded_url {
-            return format!(
-                "{action} and uploaded to {url}. The file is not available locally — reference it by this URL. Do not read or re-display it, and do not describe how it appears to the user."
-            );
-        }
-        let path = self.path.to_string_lossy().to_string();
-        let message = format!(
-            "{action} and saved to {path}. Do not read or re-display it, and do not describe how it appears to the user."
-        );
-        serde_json::json!(
-            { "path" : path, "filename" : & self.filename, "session_folder" : & self
-            .session_folder, "message" : message, }
-        )
-        .to_string()
-    }
-}
 use crate::implementations::grok_build::todo::{TodoItem, TodoState};
 use crate::implementations::skills::skill::SkillOutput;
 use crate::util::truncate::{DEFAULT_SOFT_WRAP_WIDTH, soft_wrap_lines};
@@ -653,14 +586,6 @@ pub enum ToolOutput {
     /// (e.g., memory_search, memory_get). The string is the pre-formatted
     /// prompt text — no additional rendering is needed.
     Text(TextOutput),
-    #[from(skip)]
-    ImageGen(MediaGenOutput),
-    #[from(skip)]
-    ImageToVideo(MediaGenOutput),
-    #[from(skip)]
-    ReferenceToVideo(MediaGenOutput),
-    #[from(skip)]
-    ImageEdit(MediaGenOutput),
 }
 impl ToolOutput {
     /// Whether this output is a logical tool failure, for `tool.execution`'s
@@ -977,10 +902,6 @@ impl ToolOutput {
             ToolOutput::UpdateGoal(o) => o.summary.clone(),
             ToolOutput::Dynamic(v) => serde_json::to_string_pretty(&v.value).unwrap_or_default(),
             ToolOutput::Text(text) => text.text.clone(),
-            ToolOutput::ImageGen(m) => m.prompt_text("Image generated"),
-            ToolOutput::ImageToVideo(m) => m.prompt_text("Video generated"),
-            ToolOutput::ReferenceToVideo(m) => m.prompt_text("Video generated"),
-            ToolOutput::ImageEdit(m) => m.prompt_text("Image edited"),
         }
     }
 }
@@ -1318,91 +1239,6 @@ mod tests {
             round_trip.consumed_completion_task_id.as_deref(),
             Some("task-abc")
         );
-    }
-    #[test]
-    fn media_gen_output() {
-        let cases = [
-            (
-                ToolOutput::ImageGen(MediaGenOutput::new("/tmp/images/1.jpg".into())),
-                "ImageGen",
-                "/tmp/images/1.jpg",
-                "1.jpg",
-                "images",
-                "Image generated and saved to /tmp/images/1.jpg. Do not read or re-display it, and do not describe how it appears to the user.",
-            ),
-            (
-                ToolOutput::ImageToVideo(MediaGenOutput::new("/tmp/videos/2.mp4".into())),
-                "ImageToVideo",
-                "/tmp/videos/2.mp4",
-                "2.mp4",
-                "videos",
-                "Video generated and saved to /tmp/videos/2.mp4. Do not read or re-display it, and do not describe how it appears to the user.",
-            ),
-            (
-                ToolOutput::ReferenceToVideo(MediaGenOutput::new("/tmp/videos/3.mp4".into())),
-                "ReferenceToVideo",
-                "/tmp/videos/3.mp4",
-                "3.mp4",
-                "videos",
-                "Video generated and saved to /tmp/videos/3.mp4. Do not read or re-display it, and do not describe how it appears to the user.",
-            ),
-            (
-                ToolOutput::ImageEdit(MediaGenOutput::new("/tmp/images/2.jpg".into())),
-                "ImageEdit",
-                "/tmp/images/2.jpg",
-                "2.jpg",
-                "images",
-                "Image edited and saved to /tmp/images/2.jpg. Do not read or re-display it, and do not describe how it appears to the user.",
-            ),
-        ];
-        for (output, ty, path, filename, session_folder, message) in cases {
-            let prompt_json: serde_json::Value =
-                serde_json::from_str(&output.to_prompt_format()).unwrap();
-            assert_eq!(prompt_json["path"], path);
-            assert_eq!(prompt_json["filename"], filename);
-            assert_eq!(prompt_json["session_folder"], session_folder);
-            assert_eq!(prompt_json["message"], message);
-            let json = to_json(output);
-            assert_eq!(json["type"], ty);
-            assert_eq!(json["path"], path);
-            assert_eq!(json["filename"], filename);
-            assert_eq!(json["session_folder"], session_folder);
-            let (ToolOutput::ImageGen(m)
-            | ToolOutput::ImageToVideo(m)
-            | ToolOutput::ReferenceToVideo(m)
-            | ToolOutput::ImageEdit(m)) = serde_json::from_value(json).unwrap()
-            else {
-                panic!("unexpected variant");
-            };
-            assert_eq!(m.path, PathBuf::from(path));
-            assert_eq!(m.filename, filename);
-            assert_eq!(m.session_folder, session_folder);
-        }
-    }
-    #[test]
-    fn media_gen_output_uploaded() {
-        let url = "https://files.example.com/team/video-abc.mp4";
-        let output = ToolOutput::ImageToVideo(MediaGenOutput::uploaded(url.to_string()));
-        let prompt = output.to_prompt_format();
-        assert!(prompt.contains(url), "prompt must include the upload URL");
-        assert!(
-            prompt.contains("not available locally"),
-            "prompt must tell the model the file is remote-only"
-        );
-        assert!(
-            prompt.contains("Do not read or re-display"),
-            "prompt must include re-display guard"
-        );
-        let json = to_json(output);
-        assert_eq!(json["uploaded_url"], url);
-        assert!(
-            json.get("path").is_some(),
-            "path field must be present (empty for uploaded)"
-        );
-        let ToolOutput::ImageToVideo(m) = serde_json::from_value(json).unwrap() else {
-            panic!("unexpected variant");
-        };
-        assert_eq!(m, MediaGenOutput::uploaded(url.to_string()));
     }
     #[test]
     fn read_file_not_found_json() {

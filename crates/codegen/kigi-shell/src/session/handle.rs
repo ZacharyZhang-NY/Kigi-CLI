@@ -130,7 +130,6 @@ pub struct SessionHandle {
     pub attribution_callback: Option<kigi_sampler::SharedAttributionCallback>,
     /// The agent definition name for this session.
     pub agent_name: String,
-    pub managed_mcp_proxy_base_url: String,
     pub session_default_agent_profile: Option<String>,
     /// Subagent types this agent can spawn (from Agent(t1, t2) in tools).
     pub allowed_subagent_types: Option<Vec<String>>,
@@ -399,25 +398,6 @@ impl SessionHandle {
         tool_name: String,
         enabled: bool,
     ) -> Result<(), agent_client_protocol::Error> {
-        self.toggle_mcp_tool_with_source(server_name, tool_name, enabled, false)
-            .await
-    }
-    pub async fn toggle_managed_gateway_tool(
-        &self,
-        server_name: String,
-        tool_name: String,
-        enabled: bool,
-    ) -> Result<(), agent_client_protocol::Error> {
-        self.toggle_mcp_tool_with_source(server_name, tool_name, enabled, true)
-            .await
-    }
-    async fn toggle_mcp_tool_with_source(
-        &self,
-        server_name: String,
-        tool_name: String,
-        enabled: bool,
-        is_managed_gateway: bool,
-    ) -> Result<(), agent_client_protocol::Error> {
         let (tx, rx) = oneshot::channel();
         if self
             .cmd_tx
@@ -425,7 +405,6 @@ impl SessionHandle {
                 server_name,
                 tool_name,
                 enabled,
-                is_managed_gateway,
                 respond_to: tx,
             })
             .is_err()
@@ -434,17 +413,6 @@ impl SessionHandle {
         }
         rx.await
             .map_err(|_| agent_client_protocol::Error::internal_error().data("session closed"))?
-    }
-    pub async fn managed_gateway_disabled_tool_names(&self) -> HashMap<String, HashSet<String>> {
-        let (tx, rx) = oneshot::channel();
-        if self
-            .cmd_tx
-            .send(SessionCommand::GetManagedGatewayDisabledTools { respond_to: tx })
-            .is_err()
-        {
-            return HashMap::new();
-        }
-        rx.await.unwrap_or_default()
     }
     pub async fn retry_auth_required_servers(&self) {
         let (tx, rx) = oneshot::channel();

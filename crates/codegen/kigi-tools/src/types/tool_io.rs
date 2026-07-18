@@ -19,14 +19,11 @@ use crate::implementations::grok_build::ask_user_question::AskUserQuestionInput;
 use crate::implementations::grok_build::enter_plan_mode::EnterPlanModeInput;
 use crate::implementations::grok_build::exit_plan_mode::ExitPlanModeInput;
 use crate::implementations::grok_build::grep::GrepSearchInput;
-use crate::implementations::grok_build::image_edit::ImageEditInput;
-use crate::implementations::grok_build::image_gen::ImageGenInput;
 use crate::implementations::grok_build::list_dir::ListDirInput;
 use crate::implementations::grok_build::read_file::ReadFileInput;
 use crate::implementations::grok_build::search_replace::SearchReplaceInput;
 use crate::implementations::grok_build::todo::TodoWriteInput;
 use crate::implementations::grok_build::update_goal::UpdateGoalInput;
-use crate::implementations::grok_build::video_gen::{ImageToVideoInput, ReferenceToVideoInput};
 use crate::implementations::grok_build::web_fetch::WebFetchInput;
 use crate::implementations::grok_build::web_search::WebSearchInput;
 use crate::implementations::lsp::LspToolInput;
@@ -71,10 +68,6 @@ pub enum ToolInput {
     KillTask(KillTaskToolInput),
     Task(TaskToolInput),
     WebSearch(WebSearchInput),
-    ImageGen(ImageGenInput),
-    ImageEdit(ImageEditInput),
-    ImageToVideo(ImageToVideoInput),
-    ReferenceToVideo(ReferenceToVideoInput),
     WebFetch(WebFetchInput),
     Write(WriteInput),
     ApplyPatch(ApplyPatchInput),

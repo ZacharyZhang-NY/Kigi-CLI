@@ -1980,7 +1980,7 @@ mod tests {
 
         let mut state = ScrollbackState::new();
         state.push_block(RenderBlock::ToolCall(ToolCallBlock::Other(
-            OtherToolCallBlock::new("image_to_video", "clip").with_media_ref(path.clone(), true),
+            OtherToolCallBlock::new("media_tool", "clip").with_media_ref(path.clone(), true),
         )));
 
         // Without ffmpeg the entry reserves only the compact banner.

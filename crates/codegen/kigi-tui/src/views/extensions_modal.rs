@@ -455,8 +455,6 @@ pub enum ButtonAction {
     ReloadSkills,
     /// Refresh MCP server list (re-fetch from shell).
     RefreshMcpList,
-    /// Open grok.com connectors page (MCP tab: press `o`).
-    OpenManagedConnectors,
     /// Update (fetch latest from source) the selected plugin.
     UpdateSelectedPlugin,
     /// Uninstall the selected plugin.
@@ -1586,8 +1584,6 @@ pub struct ExtensionsModalState {
     /// should be mutated by input handlers; the window's copy is a
     /// rendering hint synced each frame.
     pub active_tab: ExtensionsTab,
-    /// Session team principal for managed-connectors deep links in section copy.
-    pub session_team_id: Option<String>,
     /// Hooks list data (fetched from shell).
     pub hooks_data: TabDataState<kigi_hooks_plugins_types::HooksListResponse>,
     /// Plugins list data (fetched from shell).
@@ -1683,7 +1679,6 @@ impl ExtensionsModalState {
         Self {
             window: ModalWindowState::with_tabs(ExtensionsTab::ALL.len()),
             active_tab: tab,
-            session_team_id: None,
             hooks_data: TabDataState::Loading,
             plugins_data: TabDataState::Loading,
             button_areas: Vec::new(),
@@ -2544,8 +2539,7 @@ pub fn render_extensions_modal(
             ExtensionsTab::McpServers => {
                 if let TabDataState::Loaded(ref servers) = state.mcps_data {
                     use crate::views::mcps_modal::{
-                        McpSectionId, section_description_lines, section_for, section_key,
-                        section_label,
+                        McpSectionId, section_for, section_key, section_label,
                     };
 
                     init_mcps_section_collapse_on_first_load(
@@ -2582,10 +2576,7 @@ pub fn render_extensions_modal(
                         );
                         entry_labels.push(section_label(section_id, section_servers.len()));
                         entry_right_labels.push(String::new());
-                        entry_desc_lines.push(section_description_lines(
-                            section_id,
-                            state.session_team_id.as_deref(),
-                        ));
+                        entry_desc_lines.push(vec![]);
                         entry_summary_lines.push(vec![]);
                         entry_fields.push(vec![]);
                         entry_is_header.push(false);
@@ -2990,20 +2981,6 @@ pub fn render_extensions_modal(
         Rect::new(content_area.x, content_area.y, content_area.width, 1)
     };
 
-    // Underline the Managed section's last description line (the connectors URL) as a link affordance.
-    let managed_section_key =
-        crate::views::mcps_modal::section_key(&crate::views::mcps_modal::McpSectionId::Managed);
-    // `underline_last_desc` and the recorded click band both assume the URL is the
-    // LAST Managed description line; trip a test if that ever stops holding.
-    debug_assert!(
-        crate::views::mcps_modal::section_description_lines(
-            &crate::views::mcps_modal::McpSectionId::Managed,
-            state.session_team_id.as_deref(),
-        )
-        .last()
-        .is_some_and(|l| l.starts_with('[') && l.ends_with(']')),
-        "Managed section's last description line must be the bracketed connectors URL",
-    );
     let picker_entries: Vec<picker::PickerEntry<'_>> = entry_labels
         .iter()
         .enumerate()
@@ -3039,7 +3016,6 @@ pub fn render_extensions_modal(
                     badge: entry_badge_text.get(i).map(|s| s.as_str()).unwrap_or(""),
                     badge_color: entry_badge_color.get(i).copied().flatten(),
                     collapsible: is_collapsible,
-                    underline_last_desc: group_key.is_some_and(|k| *k == managed_section_key),
                 })
             }
         })
@@ -3062,7 +3038,6 @@ pub fn render_extensions_modal(
     // below own the entries area instead.
     let (item_rects, entry_indices) = if in_input_mode {
         // No picker render in input mode: clear any stale recorded link band.
-        state.picker_state.link_band = None;
         (Vec::new(), Vec::new())
     } else {
         let content_hit = picker::render_picker_content_with_scrollbar_x(
@@ -3502,7 +3477,7 @@ mod tests {
         let mask = build_entry_non_selectable(
             &[false, false, true],
             &[
-                Some("mcp-section:managed".into()),
+                Some("mcp-section:local".into()),
                 Some("mcp-tools:0".into()),
                 None,
             ],
@@ -3519,7 +3494,7 @@ mod tests {
     #[test]
     fn build_entry_non_selectable_clickable_is_empty_for_mcp_sections() {
         let mask = build_entry_non_selectable_clickable(&[
-            Some("mcp-section:managed".into()),
+            Some("mcp-section:local".into()),
             Some("mcp-tools:0".into()),
             None,
         ]);
@@ -3568,8 +3543,8 @@ mod tests {
         }
     }
 
-    // Fixture layout (managed section, two servers with tools):
-    //   0  section header     group_key=Some("mcp-section:managed")  data=None
+    // Fixture layout (local section, two servers with tools):
+    //   0  section header     group_key=Some("mcp-section:local")  data=None
     //   1  server 0 header    group_key=Some("mcp-tools:0")          data=Some(0)
     //   2  tool 0 of svr 0    group_key=None                         data=Some(0)
     //   3  tool 1 of svr 0    group_key=None                         data=Some(0)
@@ -3579,7 +3554,7 @@ mod tests {
         let mut state = ExtensionsModalState::new(ExtensionsTab::McpServers);
         state.entry_data_indices = vec![None, Some(0), Some(0), Some(0), Some(1), Some(1)];
         state.entry_group_keys = vec![
-            Some("mcp-section:managed".to_string()),
+            Some("mcp-section:local".to_string()),
             Some("mcp-tools:0".to_string()),
             None,
             None,
@@ -3612,12 +3587,12 @@ mod tests {
     }
 
     #[test]
-    fn mcp_section_managed_collapsed_hides_child_servers() {
+    fn mcp_section_local_collapsed_hides_child_servers() {
         let mut collapsed = std::collections::HashSet::new();
-        collapsed.insert("mcp-section:managed".to_string());
+        collapsed.insert("mcp-section:local".to_string());
         assert!(mcp_section_children_hidden(
             &collapsed,
-            "mcp-section:managed",
+            "mcp-section:local",
             false
         ));
     }
@@ -3625,10 +3600,10 @@ mod tests {
     #[test]
     fn mcp_section_search_forces_children_visible() {
         let mut collapsed = std::collections::HashSet::new();
-        collapsed.insert("mcp-section:managed".to_string());
+        collapsed.insert("mcp-section:local".to_string());
         assert!(!mcp_section_children_hidden(
             &collapsed,
-            "mcp-section:managed",
+            "mcp-section:local",
             true
         ));
     }
@@ -3638,9 +3613,9 @@ mod tests {
         let mut state = ExtensionsModalState::new(ExtensionsTab::McpServers);
         state
             .mcps_collapsed_sections
-            .insert("mcp-section:managed".to_string());
+            .insert("mcp-section:local".to_string());
         state.picker_state.query = "linear".into();
-        assert!(state.is_group_expanded(0, "mcp-section:managed"));
+        assert!(state.is_group_expanded(0, "mcp-section:local"));
     }
 
     #[test]
@@ -3655,7 +3630,7 @@ mod tests {
 
     #[test]
     fn mcp_auth_intercept_on_expand_detects_auth_required_server() {
-        use crate::views::mcps_modal::{McpServerDisplayStatus, McpServerInfo, McpWireSource};
+        use crate::views::mcps_modal::{McpServerDisplayStatus, McpServerInfo};
 
         let mut state = ExtensionsModalState::new(ExtensionsTab::McpServers);
         state.mcps_data = TabDataState::Loaded(vec![McpServerInfo {
@@ -3666,16 +3641,11 @@ mod tests {
             auth_required: true,
             tools: vec![],
             enabled: true,
-            source: "managed".into(),
-            wire_source: McpWireSource::Managed,
+            source: "local".into(),
             plugin_name: None,
-            is_managed_gateway: false,
         }]);
         state.entry_data_indices = vec![None, Some(0)];
-        state.entry_group_keys = vec![
-            Some("mcp-section:managed".into()),
-            Some("mcp-tools:0".into()),
-        ];
+        state.entry_group_keys = vec![Some("mcp-section:local".into()), Some("mcp-tools:0".into())];
         state.picker_state.selected = 1;
         assert!(
             state.mcp_auth_intercept_on_expand(),
@@ -3692,7 +3662,6 @@ mod tests {
 
     fn make_mcp_server_for_rows(
         name: &str,
-        wire: crate::views::mcps_modal::McpWireSource,
         tools: Vec<(&str, bool)>,
     ) -> crate::views::mcps_modal::McpServerInfo {
         use crate::views::mcps_modal::{McpServerDisplayStatus, McpToolDetail};
@@ -3715,22 +3684,15 @@ mod tests {
             tools: tool_details,
             enabled: true,
             source: "local".into(),
-            wire_source: wire,
             plugin_name: None,
-            is_managed_gateway: false,
         }
     }
 
     #[test]
-    fn mcp_collapsed_managed_section_omits_server_rows() {
-        use crate::views::mcps_modal::McpWireSource;
-
-        let servers = vec![
-            make_mcp_server_for_rows("grok_com_linear", McpWireSource::Managed, vec![]),
-            make_mcp_server_for_rows("local-srv", McpWireSource::Local, vec![]),
-        ];
+    fn mcp_collapsed_local_section_omits_server_rows() {
+        let servers = vec![make_mcp_server_for_rows("local-srv", vec![])];
         let mut collapsed = std::collections::HashSet::new();
-        collapsed.insert("mcp-section:managed".to_string());
+        collapsed.insert("mcp-section:local".to_string());
         let rows = build_mcp_servers_picker_rows(
             &servers,
             "",
@@ -3739,33 +3701,20 @@ mod tests {
             &std::collections::HashSet::new(),
         );
         assert!(
-            rows.labels
-                .iter()
-                .any(|l| l.starts_with("Managed by grok.com")),
-            "managed section header must appear"
-        );
-        assert!(
-            !rows.labels.iter().any(|l| l == "grok_com_linear"),
-            "servers in collapsed managed section must be omitted"
-        );
-        assert!(
             rows.labels.iter().any(|l| l.starts_with("Local")),
-            "local section should still render"
+            "local section header must appear"
         );
-        assert!(rows.labels.iter().any(|l| l == "local-srv"));
+        assert!(
+            !rows.labels.iter().any(|l| l == "local-srv"),
+            "servers in collapsed local section must be omitted"
+        );
     }
 
     #[test]
     fn mcp_tool_rows_emitted_when_tools_expanded_by_server_index() {
-        use crate::views::mcps_modal::McpWireSource;
-
         let servers = vec![
-            make_mcp_server_for_rows(
-                "alpha",
-                McpWireSource::Managed,
-                vec![("tool-a1", true), ("tool-a2", true)],
-            ),
-            make_mcp_server_for_rows("beta", McpWireSource::Managed, vec![("tool-b1", true)]),
+            make_mcp_server_for_rows("alpha", vec![("tool-a1", true), ("tool-a2", true)]),
+            make_mcp_server_for_rows("beta", vec![("tool-b1", true)]),
         ];
         let mut tools_expanded = std::collections::HashSet::new();
         tools_expanded.insert(0);
@@ -3792,7 +3741,7 @@ mod tests {
 
     #[test]
     fn mcps_plugin_sections_collapsed_on_first_load() {
-        use crate::views::mcps_modal::{McpServerDisplayStatus, McpServerInfo, McpWireSource};
+        use crate::views::mcps_modal::{McpServerDisplayStatus, McpServerInfo};
 
         let servers = vec![
             McpServerInfo {
@@ -3804,9 +3753,7 @@ mod tests {
                 tools: vec![],
                 enabled: true,
                 source: "plugin: alpha".into(),
-                wire_source: McpWireSource::Local,
                 plugin_name: Some("alpha".into()),
-                is_managed_gateway: false,
             },
             McpServerInfo {
                 name: "p2-srv".into(),
@@ -3817,20 +3764,13 @@ mod tests {
                 tools: vec![],
                 enabled: true,
                 source: "plugin: beta".into(),
-                wire_source: McpWireSource::Local,
                 plugin_name: Some("beta".into()),
-                is_managed_gateway: false,
             },
         ];
         let mut state = ExtensionsModalState::new(ExtensionsTab::McpServers);
         assert!(
             !state.mcps_collapsed_sections.contains("mcp-section:local"),
             "Local section starts expanded by default for a less noisy initial view"
-        );
-        assert!(
-            !state
-                .mcps_collapsed_sections
-                .contains("mcp-section:managed")
         );
         init_mcps_section_collapse_on_first_load(
             &mut state.mcps_collapsed_sections,

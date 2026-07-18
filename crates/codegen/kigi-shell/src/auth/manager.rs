@@ -1877,7 +1877,7 @@ impl AuthManager {
 }
 
 /// Bridges `Arc<AuthManager>` into the `ApiKeyProvider` trait used by
-/// tool clients (image_gen, video_gen, web_search, embedding). Sync callers
+/// tool clients (web_search, embedding). Sync callers
 /// get the buffered snapshot; async callers drive the refresh chain.
 pub(crate) struct SharedAuthKeyProvider(pub Arc<AuthManager>);
 

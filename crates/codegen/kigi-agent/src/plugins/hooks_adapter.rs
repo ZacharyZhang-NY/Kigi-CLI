@@ -171,7 +171,7 @@ fn process_hooks_content(
         // Substitute plugin env vars in command paths at config-load time so
         // that hooks like `${CLAUDE_PLUGIN_ROOT}/hooks/foo.sh` resolve to the
         // real plugin directory regardless of which spawn branch the runner
-        // takes (mirrors what managed_mcp does for MCP server commands).
+        // takes (mirrors what the MCP server-command loader does).
         if let Some(cmd) = &spec.command {
             let cmd_str = cmd.to_string_lossy();
             // Mirror what `managed_mcp::load_plugin_mcp_servers_from_config`

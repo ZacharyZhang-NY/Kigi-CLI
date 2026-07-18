@@ -509,71 +509,8 @@ impl SessionActor {
                 folder_path: server_dir.map(|d| d.to_string_lossy().to_string()),
             });
         }
-        let gateway_entries = self.gather_gateway_mcp_servers(mcps_root.as_deref()).await;
-        entries.extend(gateway_entries);
         entries.sort_by(|a, b| a.name.cmp(&b.name));
         entries
-    }
-    async fn gather_gateway_mcp_servers(
-        &self,
-        mcps_root: Option<&std::path::Path>,
-    ) -> Vec<kigi_agent::prompt::user_message::McpServerEntry> {
-        use kigi_agent::prompt::user_message::McpServerEntry;
-        let disabled_gateway_tools = crate::util::config::get_all_mcp_disabled_tools(
-            std::path::Path::new(&self.session_info.cwd),
-        );
-        let catalog = {
-            let state = self.managed_mcp_handle.lock().await;
-            if state.gateway_tools_active {
-                match &state.gateway_tool_cache {
-                    crate::session::managed_mcp::GatewayToolCatalogCache::Ready(catalog) => {
-                        Some(catalog.clone())
-                    }
-                    _ => None,
-                }
-            } else {
-                None
-            }
-        };
-        let Some(catalog) = catalog else {
-            return Vec::new();
-        };
-        let mut connectors = std::collections::BTreeMap::<String, String>::new();
-        let mut gateway_connectors: Vec<String> = catalog
-            .tools
-            .iter()
-            .map(|tool| tool.connector_id.clone())
-            .collect();
-        gateway_connectors.sort_unstable();
-        gateway_connectors.dedup();
-        let mut descriptors = Vec::new();
-        for tool in &catalog.tools {
-            if gateway_tool_is_disabled(tool, &disabled_gateway_tools) {
-                continue;
-            }
-            connectors
-                .entry(tool.connector_id.clone())
-                .or_insert_with(|| tool.connector_name.clone());
-            descriptors.push(crate::session::mcp_descriptors::GatewayToolDescriptor {
-                connector_id: tool.connector_id.clone(),
-                tool_id: tool.tool_id.clone(),
-                description: tool.description.clone(),
-                json_schema: tool.json_schema.clone(),
-            });
-        }
-        connectors
-            .into_iter()
-            .map(|(connector_id, connector_name)| McpServerEntry {
-                folder_path: mcps_root.map(|root| {
-                    crate::session::mcp_descriptors::server_descriptor_dir(root, &connector_id)
-                        .to_string_lossy()
-                        .to_string()
-                }),
-                name: connector_id,
-                server_use_instructions: (!connector_name.trim().is_empty())
-                    .then_some(connector_name),
-            })
-            .collect()
     }
     /// Build a `PathRewriter` for sanitizing overlay paths in model-facing text.
     ///

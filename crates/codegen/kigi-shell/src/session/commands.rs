@@ -346,7 +346,7 @@ pub enum SessionCommand {
         server_name: String,
         enabled: bool,
         /// Fully-formed server config to add when re-enabling. Built by the
-        /// caller via `merge_managed_mcp_servers` (with OAuth headers injected).
+        /// caller via `merge_managed_mcp_servers`.
         /// `None` when disabling.
         server_config: Option<acp::McpServer>,
         respond_to: oneshot::Sender<Result<(), acp::Error>>,
@@ -357,16 +357,11 @@ pub enum SessionCommand {
         server_name: String,
         tool_name: String,
         enabled: bool,
-        is_managed_gateway: bool,
         respond_to: oneshot::Sender<Result<(), acp::Error>>,
     },
     /// Read MCP status: which servers are configured, which clients are healthy, what tools.
     GetMcpStatus {
         respond_to: oneshot::Sender<crate::extensions::mcp::McpStatusSnapshot>,
-    },
-    GetManagedGatewayDisabledTools {
-        respond_to:
-            oneshot::Sender<std::collections::HashMap<String, std::collections::HashSet<String>>>,
     },
     /// Snapshot the session's live MCP client pool for subagent inheritance.
     SnapshotMcpPool {

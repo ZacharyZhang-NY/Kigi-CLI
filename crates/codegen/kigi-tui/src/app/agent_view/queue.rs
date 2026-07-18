@@ -498,7 +498,7 @@ impl AgentView {
     /// can't be resolved. Prompt-like rows may interject: plain prompts, plus
     /// raw skill slash rows (`/find-session args`) whose wire payload IS the
     /// display text — the shell expands those at the interjection drain. Rows
-    /// with a client-expanded payload (`/imagine`, `/loop`) and non-prompt
+    /// with a client-expanded payload (`/loop`) and non-prompt
     /// kinds stay queued: interjecting them would send the display text, not
     /// the payload.
     pub(in crate::app) fn queue_row_prompt_like(&self, id: u64) -> Option<bool> {
@@ -1309,13 +1309,13 @@ mod queue_edit_routing_tests {
         );
     }
 
-    /// A client-expanded row (`/imagine`-shaped: wire payload != display
+    /// A client-expanded row (`/loop`-shaped: wire payload != display
     /// text) stays queued — interjecting it would send the display text,
     /// not the payload.
     #[test]
     fn force_interject_local_expanded_row_keeps_it_queued() {
         let mut agent =
-            running_agent_with_local_skill("/imagine a cat", "<expanded imagine instructions>");
+            running_agent_with_local_skill("/loop 5m check", "<expanded loop instructions>");
         let registry = non_vscode_registry();
 
         let ids = agent.queue.entry_ids();

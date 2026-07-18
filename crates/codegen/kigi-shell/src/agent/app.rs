@@ -917,15 +917,6 @@ pub async fn run_leader(
                         }
                         ConfigUpdate::AuthCleared => {
                             auth_manager_for_config.clear_in_memory();
-                            let line = internal_reload_request_line(
-                                "config-auth-cleared",
-                                "x.ai/internal/auth_cleared",
-                                serde_json::json!({}),
-                            );
-                            let mut tx = acp_tx_for_config.lock().await;
-                            if let Err(e) = tx.write_all(line.as_bytes()).await {
-                                warn!(error = %e, "failed to inject auth-cleared cleanup into ACP stream");
-                            }
                             models_manager_for_config.on_auth_changed().await;
                             kigi_log::unified_log::warn(
                                 "auth cleared from disk",
@@ -1144,14 +1135,6 @@ mod tests {
         );
         let msg: serde_json::Value = serde_json::from_str(line.trim_end()).unwrap();
         assert_eq!(msg["params"]["cwd"], "/repo/x");
-
-        let line = internal_reload_request_line(
-            "config-auth-cleared",
-            "x.ai/internal/auth_cleared",
-            serde_json::json!({}),
-        );
-        let msg: serde_json::Value = serde_json::from_str(line.trim_end()).unwrap();
-        assert_eq!(msg["method"], "_x.ai/internal/auth_cleared");
     }
 
     #[tokio::test]

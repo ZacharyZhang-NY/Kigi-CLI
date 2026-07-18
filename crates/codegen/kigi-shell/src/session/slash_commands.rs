@@ -1697,11 +1697,11 @@ mod tests {
 
     #[test]
     fn build_tools_meta_serialises_tool_names() {
-        let names = vec!["scheduler_create".to_string(), "image_gen".to_string()];
+        let names = vec!["scheduler_create".to_string(), "web_search".to_string()];
         let v = build_tools_meta(&names);
         assert_eq!(
             serde_json::Value::Object(v),
-            serde_json::json!({"tools": ["scheduler_create", "image_gen"]})
+            serde_json::json!({"tools": ["scheduler_create", "web_search"]})
         );
     }
 

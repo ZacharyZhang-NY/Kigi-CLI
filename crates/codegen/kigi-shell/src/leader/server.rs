@@ -5297,20 +5297,16 @@ mod tests {
         let (mut reader_a, _writer_a) = connect_and_register(&sock_path, "client-a").await;
         let (mut reader_b, _writer_b) = connect_and_register(&sock_path, "client-b").await;
         tokio::time::sleep(Duration::from_millis(20)).await;
-        let update = r#"{"jsonrpc":"2.0","method":"_x.ai/mcp/servers_updated","params":{"method":"x.ai/mcp/servers_updated","params":{"mcpServers":[{"name":"grok_com_slack","source":"managed"}]}}}"#;
+        let update = r#"{"jsonrpc":"2.0","method":"_x.ai/mcp/servers_updated","params":{"method":"x.ai/mcp/servers_updated","params":{"mcpServers":[{"name":"team_slack","source":"local"}]}}}"#;
         response_tx.send(update.to_string()).unwrap();
         let got_a = next_acp_payload(&mut reader_a).await;
         let got_b = next_acp_payload(&mut reader_b).await;
         assert!(
-            got_a
-                .as_deref()
-                .is_some_and(|p| p.contains("grok_com_slack")),
+            got_a.as_deref().is_some_and(|p| p.contains("team_slack")),
             "client A must receive the MCP catalog broadcast, got {got_a:?}"
         );
         assert!(
-            got_b
-                .as_deref()
-                .is_some_and(|p| p.contains("grok_com_slack")),
+            got_b.as_deref().is_some_and(|p| p.contains("team_slack")),
             "client B must receive the MCP catalog broadcast, got {got_b:?}"
         );
         cancel.cancel();

@@ -84,123 +84,6 @@ impl MvpAgent {
                 }
             })
     }
-    fn has_managed_mcp_auth(&self) -> bool {
-        self.auth_manager
-            .current_or_expired()
-            .is_some_and(|a| a.is_session_auth())
-    }
-    /// Requires feature flag AND xAI authentication (OIDC or legacy WebLogin).
-    pub(super) fn can_fetch_managed_mcps(&self) -> bool {
-        let cfg = self.cfg.borrow();
-        cfg.managed_mcps_enabled && !cfg.managed_mcp_gateway_tools_enabled
-            && self.has_managed_mcp_auth()
-    }
-    fn can_fetch_managed_mcp_gateway_tools(&self) -> bool {
-        self.cfg.borrow().managed_mcp_gateway_tools_enabled
-            && self.has_managed_mcp_auth()
-    }
-    pub async fn get_managed_mcp_configs(
-        &self,
-    ) -> Vec<crate::session::managed_mcp::ManagedMcpConfig> {
-        if !self.can_fetch_managed_mcps() {
-            return vec![];
-        }
-        let proxy_url = self.cfg.borrow().endpoints.proxy_url();
-        crate::session::managed_mcp::fetch_managed_mcp_configs(
-                &self.managed_mcp_cache,
-                &proxy_url,
-                &self.auth_manager,
-            )
-            .await
-    }
-    pub async fn get_managed_mcp_gateway_tool_catalog(
-        &self,
-    ) -> Option<crate::session::managed_mcp::GatewayToolCatalog> {
-        if !self.can_fetch_managed_mcp_gateway_tools() {
-            self.managed_mcp_cache.lock().await.disable_gateway_tools();
-            return None;
-        }
-        self.managed_mcp_cache.lock().await.enable_gateway_tools();
-        let proxy_url = self.cfg.borrow().endpoints.proxy_url();
-        let auth_key = self
-            .auth_manager
-            .get_valid_token()
-            .await
-            .ok()
-            .or_else(|| self.auth_manager.current_or_expired().map(|a| a.key));
-        crate::session::managed_mcp::get_or_fetch_gateway_tool_catalog(
-                &self.managed_mcp_cache,
-                &proxy_url,
-                auth_key.as_deref(),
-            )
-            .await
-    }
-    pub fn managed_mcp_cache(
-        &self,
-    ) -> &crate::session::managed_mcp::ManagedMcpStateHandle {
-        &self.managed_mcp_cache
-    }
-    pub(crate) fn disable_managed_gateway_tools_and_refresh_sessions(&self) {
-        self.disable_managed_gateway_tools_and_refresh_sessions_with_txs(
-            self.sessions.borrow().values().map(|handle| handle.cmd_tx.clone()).collect(),
-        );
-    }
-    fn disable_managed_gateway_tools_and_refresh_sessions_with_txs(
-        &self,
-        session_txs: Vec<tokio::sync::mpsc::UnboundedSender<SessionCommand>>,
-    ) {
-        let cache = self.managed_mcp_cache.clone();
-        tokio::task::spawn_local(async move {
-            cache.lock().await.disable_gateway_tools();
-            for tx in session_txs {
-                let _ = tx.send(SessionCommand::RefreshMcpSearchIndex);
-            }
-        });
-    }
-    pub(crate) fn spawn_managed_gateway_tool_catalog_fetch(&self) {
-        let session_txs: Vec<_> = self
-            .sessions
-            .borrow()
-            .values()
-            .map(|handle| handle.cmd_tx.clone())
-            .collect();
-        if !self.can_fetch_managed_mcp_gateway_tools() {
-            self.disable_managed_gateway_tools_and_refresh_sessions_with_txs(
-                session_txs,
-            );
-            return;
-        }
-        let cache = self.managed_mcp_cache.clone();
-        let proxy_url = self.cfg.borrow().endpoints.proxy_url();
-        let auth_manager = self.auth_manager.clone();
-        tokio::task::spawn_local(async move {
-            let auth_key = auth_manager
-                .get_valid_token()
-                .await
-                .ok()
-                .or_else(|| auth_manager.current_or_expired().map(|a| a.key));
-            if !auth_manager
-                .current_or_expired()
-                .is_some_and(|a| a.is_session_auth())
-            {
-                cache.lock().await.disable_gateway_tools();
-                for tx in session_txs {
-                    let _ = tx.send(SessionCommand::RefreshMcpSearchIndex);
-                }
-                return;
-            }
-            cache.lock().await.enable_gateway_tools();
-            crate::session::managed_mcp::get_or_fetch_gateway_tool_catalog(
-                    &cache,
-                    &proxy_url,
-                    auth_key.as_deref(),
-                )
-                .await;
-            for tx in session_txs {
-                let _ = tx.send(SessionCommand::RefreshMcpSearchIndex);
-            }
-        });
-    }
     /// Resolve the launch dir's project-scope trust verdict ONCE and return it
     /// with its path.
     ///
@@ -226,15 +109,12 @@ impl MvpAgent {
     /// Resolve folder trust and load launch-dir MCP configs after `initialize`
     /// returns. The walks are synchronous and expensive in large monorepos; they
     /// must not block the ACP response (grok-desktop sends `initialize` immediately).
-    pub(super) fn spawn_initialize_launch_mcp_setup(&self, fetch_managed_mcps: bool) {
+    pub(super) fn spawn_initialize_launch_mcp_setup(&self) {
         let cwd = self.launch_cwd.clone();
         let compat = self.cfg.borrow().compat_resolved;
         let remote_settings = self.cfg.borrow().remote_settings.clone();
         let gateway = self.gateway.clone();
         let agent_mcp_state = self.agent_mcp_state.clone();
-        let managed_mcp_cache = self.managed_mcp_cache.clone();
-        let proxy_url = self.cfg.borrow().endpoints.proxy_url();
-        let auth_manager = self.auth_manager.clone();
         tokio::task::spawn_local(async move {
             let local_mcp_servers = match tokio::task::spawn_blocking(move || {
                     let local = crate::util::config::load_mcp_servers(&cwd, &compat);
@@ -258,27 +138,9 @@ impl MvpAgent {
             }
             crate::extensions::mcp::notify_servers_updated(
                     &gateway,
-                    &[],
                     &local_mcp_servers,
                 )
                 .await;
-            if !fetch_managed_mcps {
-                return;
-            }
-            let managed = crate::session::managed_mcp::fetch_managed_mcp_configs(
-                    &managed_mcp_cache,
-                    &proxy_url,
-                    &auth_manager,
-                )
-                .await;
-            if !managed.is_empty() {
-                crate::extensions::mcp::notify_servers_updated(
-                        &gateway,
-                        &managed,
-                        &local_mcp_servers,
-                    )
-                    .await;
-            }
         });
     }
     pub fn agent_mcp_state(
@@ -311,23 +173,19 @@ impl MvpAgent {
             plugin_count = count, "lazily populated plugin registry snapshot"
         );
     }
-    /// Fetch managed configs, merge with client servers, return merged list + earliest expiry.
-    pub(super) async fn resolve_mcp_servers(
+    /// Merge on-disk/plugin MCP servers with client servers.
+    pub(super) fn resolve_mcp_servers(
         &self,
         client_servers: Vec<acp::McpServer>,
         cwd: &std::path::Path,
-    ) -> (Vec<acp::McpServer>, Option<chrono::DateTime<chrono::Utc>>) {
+    ) -> Vec<acp::McpServer> {
         self.ensure_plugin_registry();
-        let managed = self.get_managed_mcp_configs().await;
-        let expires_at = managed.iter().filter_map(|c| c.token_expires_at).min();
-        let merged = crate::session::managed_mcp::merge_managed_mcp_servers(
+        crate::session::managed_mcp::merge_managed_mcp_servers(
             client_servers,
             cwd,
-            &managed,
             self.plugin_registry_handle.snapshot().as_deref(),
             &self.cfg.borrow().compat_resolved,
-        );
-        (merged, expires_at)
+        )
     }
     /// Set the memory configuration (called from TUI after config resolution).
     pub fn set_memory_config(&mut self, config: crate::config::MemoryConfig) {
@@ -760,79 +618,12 @@ impl MvpAgent {
         );
         (id.clone(), new_config)
     }
-    /// Build image generation config.
-    ///
-    /// Both BYOK and session (OAuth) users go direct to `api_base_url`.
-    /// `sampling_config.api_key` carries the OAuth bearer for session users (the
-    /// `api_key_provider` refreshes it per request), so IC authenticates and
-    /// meters Imagine usage per-user.
-    pub(super) fn prepare_image_gen_config(
-        &self,
-    ) -> kigi_tools::implementations::grok_build::image_gen::ImageGenConfig {
-        use kigi_tools::implementations::grok_build::image_gen::ImageGenConfig;
-        let sampling_config = self.sampling_config.borrow();
-        let Some(ref api_key) = sampling_config.api_key else {
-            return ImageGenConfig::Disabled;
-        };
-        let cfg = self.cfg.borrow();
-        let base_url = cfg.endpoints.api_base_url.clone();
-        let version = cfg
-            .client_version
-            .clone()
-            .unwrap_or_else(|| kigi_version::VERSION.to_string());
-        let alpha_test_key = cfg.endpoints.alpha_test_key.clone();
-        let mut headers = indexmap::IndexMap::new();
-        headers.insert("user-agent".to_string(), format!("kigi/{version}"));
-        ImageGenConfig::Enabled {
-            api_key: api_key.clone(),
-            base_url,
-            extra_headers: headers,
-            image_gen_enabled: cfg.resolve_image_gen().value,
-            image_edit_enabled: cfg.resolve_image_edit().value,
-            model_override: cfg.resolve_image_gen_model_override(),
-            tier_restricted: false,
-        }
-    }
     /// Build deploy-service config. The tool talks directly to the deployer service.
     pub(super) fn prepare_app_builder_deployer_config(
         &self,
     ) -> kigi_tools::implementations::grok_build::deploy_app::AppBuilderDeployerConfig {
         use kigi_tools::implementations::grok_build::deploy_app::AppBuilderDeployerConfig;
         AppBuilderDeployerConfig::Disabled
-    }
-    /// Build video generation config. Video tools call the xAI API directly.
-    pub(super) fn prepare_video_gen_config(
-        &self,
-    ) -> kigi_tools::implementations::grok_build::video_gen::VideoGenConfig {
-        use kigi_tools::implementations::grok_build::video_gen::VideoGenConfig;
-        let Some(api_key) = self.sampling_config.borrow().api_key.clone() else {
-            return VideoGenConfig::Disabled;
-        };
-        let cfg = self.cfg.borrow();
-        let zdr_video_output_s3 = cfg
-            .disable_zdr_incompatible_tools
-            .then(|| cfg.zdr_video_output_s3.clone())
-            .flatten()
-            .filter(|s3| s3.is_valid());
-        if cfg.disable_zdr_incompatible_tools && zdr_video_output_s3.is_none() {
-            tracing::info!("video_gen disabled by tools.disable_zdr_incompatible_tools");
-            return VideoGenConfig::Disabled;
-        }
-        let base_url = cfg.endpoints.api_base_url.clone();
-        let version = cfg
-            .client_version
-            .clone()
-            .unwrap_or_else(|| kigi_version::VERSION.to_string());
-        let alpha_test_key = cfg.endpoints.alpha_test_key.clone();
-        let mut headers = indexmap::IndexMap::new();
-        headers.insert("user-agent".to_string(), format!("kigi/{version}"));
-        VideoGenConfig::Enabled {
-            api_key,
-            base_url,
-            extra_headers: headers,
-            zdr_video_output_s3: zdr_video_output_s3.map(Box::new),
-            tier_restricted: false,
-        }
     }
     /// Web search config (PRD F5). The Kimi search service exists only on
     /// the Kimi Code subscription channel (`POST {coding_base}/search`,
@@ -1016,7 +807,6 @@ impl MvpAgent {
             worktree_type,
             restore_code,
             session_registry_local,
-            managed_mcp_cache: Default::default(),
             agent_mcp_state: std::sync::Arc::new(
                 tokio::sync::Mutex::new(
                     crate::session::mcp_servers::McpState::new(vec![]),
@@ -1829,7 +1619,6 @@ impl MvpAgent {
             persisted_goal_mode,
             persisted_announcement_state,
             session_meta,
-            managed_mcp_expires_at,
             model_agent_type,
             session_model_id,
             session_yolo_mode,
@@ -2258,8 +2047,6 @@ impl MvpAgent {
             .and_then(|entry| entry.info.max_retries);
         let origin_client = self.origin_client_info_from_meta(init.meta.as_ref());
         let web_search_config = self.prepare_web_search_config();
-        let image_gen_config = self.prepare_image_gen_config();
-        let video_gen_config = self.prepare_video_gen_config();
         let app_builder_deployer_config = self.prepare_app_builder_deployer_config();
         let web_fetch_config = self.prepare_web_fetch_config();
         let write_file_enabled = self.cfg.borrow().resolve_write_file().value;
@@ -2309,7 +2096,6 @@ impl MvpAgent {
             let cfg = self.cfg.borrow();
             cfg.resolve_backend_tools().value
         };
-        let managed_mcp_proxy_url = self.cfg.borrow().endpoints.proxy_url();
         let init_meta = self
             .initialize_request
             .get()
@@ -2471,9 +2257,6 @@ impl MvpAgent {
                     persisted_announcement_state,
                     self.memory_config.clone(),
                     feedback_flags,
-                    self.managed_mcp_cache.clone(),
-                    managed_mcp_expires_at,
-                    managed_mcp_proxy_url,
                     session_model_id,
                     session_yolo_mode,
                     session_auto_mode,
@@ -2482,8 +2265,6 @@ impl MvpAgent {
                     model_max_retries,
                     web_search_config,
                     web_fetch_config,
-                    image_gen_config,
-                    video_gen_config,
                     app_builder_deployer_config,
                     write_file_enabled,
                     goal_enabled,
@@ -2617,7 +2398,6 @@ impl MvpAgent {
         self.notify_session_cwd_for_watch(std::path::Path::new(&session_info.cwd));
         self.activity.register_session(&session_info.id.0, &handle);
         self.sessions.borrow_mut().insert(session_info.id.clone(), handle);
-        self.spawn_managed_gateway_tool_catalog_fetch();
         let cwd_for_maintenance = session_info.cwd.clone();
         tokio::spawn(async move {
             crate::session::prompt_history::truncate_if_needed_async(cwd_for_maintenance)

@@ -44,7 +44,6 @@ members = [
     "crates/codegen/kigi-shared",
     "crates/codegen/kigi-shell",
     "crates/codegen/kigi-shell-base",
-    "crates/codegen/kigi-shell-session-support",
     "crates/codegen/kigi-subagent-resolution",
     "crates/codegen/kigi-test-support",
     "crates/codegen/kigi-tools",
@@ -274,7 +273,6 @@ kigi-secrets = { path = "crates/codegen/kigi-secrets" }
 kigi-shared = { path = "crates/codegen/kigi-shared" }
 kigi-shell = { path = "crates/codegen/kigi-shell" }
 kigi-shell-base = { path = "crates/codegen/kigi-shell-base" }
-kigi-shell-session-support = { path = "crates/codegen/kigi-shell-session-support" }
 kigi-log = { path = "crates/codegen/kigi-log" }
 kigi-test-support = { path = "crates/codegen/kigi-test-support" }
 kigi-tools = { path = "crates/codegen/kigi-tools" }

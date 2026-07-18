@@ -100,7 +100,7 @@ impl QueuedPrompt {
     /// `true` for plain rows (no `wire_blocks`) and for raw skill slash rows
     /// (`/find-session args` — a single Text block equal to `text`, expanded
     /// shell-side at delivery), so interjecting `text` loses nothing. `false`
-    /// when the payload was expanded client-side (`/imagine`, `/loop`):
+    /// when the payload was expanded client-side (`/loop`):
     /// interjecting those by `text` would drop the expansion, and by payload
     /// would render the raw instruction.
     pub fn wire_matches_display(&self) -> bool {
@@ -1272,7 +1272,7 @@ mod tests {
     }
     /// `wire_matches_display` splits interjectable rows (no payload, or a raw
     /// skill slash payload equal to the display text) from client-expanded
-    /// payloads (`/imagine`, `/loop`) that must run as their own turn.
+    /// payloads (`/loop`) that must run as their own turn.
     #[test]
     fn wire_matches_display_classifies_payload_shapes() {
         let text_block = |t: &str| acp::ContentBlock::Text(acp::TextContent::new(t.to_string()));
@@ -1285,7 +1285,7 @@ mod tests {
         assert!(raw_skill.wire_matches_display(), "raw slash payload");
         let expanded = QueuedPrompt {
             wire_blocks: Some(vec![text_block("<skill>body</skill>")]),
-            ..QueuedPrompt::plain(3, "/imagine cat", QueueEntryKind::Prompt)
+            ..QueuedPrompt::plain(3, "/loop cat", QueueEntryKind::Prompt)
         };
         assert!(!expanded.wire_matches_display(), "expanded payload");
         let multi_block = QueuedPrompt {

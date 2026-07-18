@@ -1106,7 +1106,6 @@ fn render_location_picker(
                 badge: badge.as_str(),
                 badge_color: (!badge.is_empty()).then_some(theme.accent_user),
                 collapsible: false,
-                underline_last_desc: false,
             })
         })
         .collect();

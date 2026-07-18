@@ -353,166 +353,6 @@ pub(crate) fn state_is_busy(state: &State) -> bool {
     state.running_task.is_some() || !state.pending_inputs.is_empty()
 }
 use crate::auth::AuthManager;
-#[derive(Clone)]
-struct ShellManagedGatewayToolClient {
-    proxy_base_url: String,
-    auth_manager: Arc<AuthManager>,
-}
-#[async_trait::async_trait]
-impl kigi_tools::types::resources::ManagedGatewayToolCaller for ShellManagedGatewayToolClient {
-    async fn call_tool(
-        &self,
-        call_id: &str,
-        arguments: serde_json::Value,
-        caller: &str,
-    ) -> Result<
-        kigi_tools::types::resources::ManagedGatewayToolCallResponse,
-        kigi_tool_runtime::ToolError,
-    > {
-        let auth_key = self
-            .auth_manager
-            .get_valid_token()
-            .await
-            .ok()
-            .or_else(|| self.auth_manager.current_or_expired().map(|a| a.key))
-            .ok_or_else(|| kigi_tool_runtime::ToolError::unauthorized("no auth token available"))?;
-        let response = crate::session::managed_mcp::call_gateway_tool(
-            &self.proxy_base_url,
-            &auth_key,
-            call_id,
-            arguments,
-        )
-        .await
-        .map_err(|error| managed_gateway_error_to_tool_error(error, caller))?;
-        Ok(
-            kigi_tools::types::resources::ManagedGatewayToolCallResponse {
-                result: response.result,
-                connectors_needing_reauth: response.connectors_needing_reauth,
-            },
-        )
-    }
-}
-fn managed_gateway_error_to_tool_error(
-    error: crate::session::managed_mcp::ManagedMcpFetchError,
-    caller: &str,
-) -> kigi_tool_runtime::ToolError {
-    match error {
-        crate::session::managed_mcp::ManagedMcpFetchError::Status { status, message } => {
-            let detail = format!("Managed MCP gateway tool call failed: {message}");
-            let mut err = if status == reqwest::StatusCode::UNAUTHORIZED {
-                kigi_tool_runtime::ToolError::unauthorized(detail)
-            } else if status == reqwest::StatusCode::FORBIDDEN {
-                kigi_tool_runtime::ToolError::permission_denied(detail)
-            } else {
-                let tool_id = kigi_tool_protocol::ToolId::new(caller).unwrap_or_else(|_| {
-                    kigi_tool_protocol::ToolId::new("use_tool").expect("valid")
-                });
-                kigi_tool_runtime::ToolError::execution(tool_id, detail)
-            };
-            match err.details.as_mut() {
-                Some(serde_json::Value::Object(map)) => {
-                    map.insert(
-                        HTTP_STATUS_DETAILS_KEY.to_string(),
-                        serde_json::json!(status.as_u16()),
-                    );
-                }
-                _ => {
-                    err.details =
-                        Some(serde_json::json!({ HTTP_STATUS_DETAILS_KEY : status.as_u16(), }));
-                }
-            }
-            err
-        }
-        crate::session::managed_mcp::ManagedMcpFetchError::Transport(e) => {
-            kigi_tool_runtime::ToolError::network_error(format!(
-                "Managed MCP gateway tool call failed: {}",
-                e.without_url()
-            ))
-        }
-        crate::session::managed_mcp::ManagedMcpFetchError::NoAuth => {
-            kigi_tool_runtime::ToolError::unauthorized("no auth token available")
-        }
-    }
-}
-#[cfg(test)]
-mod managed_gateway_error_tests {
-    use super::*;
-    fn status_error(code: u16, message: &str) -> crate::session::managed_mcp::ManagedMcpFetchError {
-        crate::session::managed_mcp::ManagedMcpFetchError::Status {
-            status: reqwest::StatusCode::from_u16(code).unwrap(),
-            message: message.to_string(),
-        }
-    }
-    #[test]
-    fn unauthorized_status_maps_to_unauthorized_and_carries_status() {
-        let err = managed_gateway_error_to_tool_error(status_error(401, "expired"), "use_tool");
-        assert_eq!(err.kind, kigi_tool_runtime::ToolErrorKind::Unauthorized);
-        assert!(err.detail.contains("expired"));
-        let details = err.details.as_ref().unwrap();
-        assert_eq!(
-            details.get(HTTP_STATUS_DETAILS_KEY),
-            Some(&serde_json::json!(401))
-        );
-    }
-    #[test]
-    fn forbidden_status_maps_to_permission_denied_and_carries_status() {
-        let err = managed_gateway_error_to_tool_error(status_error(403, "denied"), "use_tool");
-        assert_eq!(err.kind, kigi_tool_runtime::ToolErrorKind::PermissionDenied);
-        let details = err.details.as_ref().unwrap();
-        assert_eq!(
-            details.get(HTTP_STATUS_DETAILS_KEY),
-            Some(&serde_json::json!(403))
-        );
-    }
-    #[test]
-    fn general_status_maps_to_execution_with_caller_tool_id() {
-        let err = managed_gateway_error_to_tool_error(status_error(500, "boom"), "CallMcpTool");
-        assert_eq!(err.kind, kigi_tool_runtime::ToolErrorKind::Execution);
-        let details = err.details.as_ref().unwrap();
-        assert_eq!(
-            details.get(HTTP_STATUS_DETAILS_KEY),
-            Some(&serde_json::json!(500))
-        );
-        assert_eq!(
-            details.get("tool_id"),
-            Some(&serde_json::json!("CallMcpTool"))
-        );
-    }
-    #[test]
-    fn general_status_falls_back_to_use_tool_for_unknown_caller() {
-        let err = managed_gateway_error_to_tool_error(status_error(500, "boom"), "not a tool id");
-        assert_eq!(err.kind, kigi_tool_runtime::ToolErrorKind::Execution);
-        let details = err.details.as_ref().unwrap();
-        assert_eq!(details.get("tool_id"), Some(&serde_json::json!("use_tool")));
-    }
-    #[test]
-    fn no_auth_maps_to_unauthorized() {
-        let err = managed_gateway_error_to_tool_error(
-            crate::session::managed_mcp::ManagedMcpFetchError::NoAuth,
-            "use_tool",
-        );
-        assert_eq!(err.kind, kigi_tool_runtime::ToolErrorKind::Unauthorized);
-    }
-    #[tokio::test]
-    async fn transport_error_maps_to_network_error_without_url() {
-        let transport = reqwest::Client::new()
-            .post("http://127.0.0.1:1/mcp/tools/call")
-            .send()
-            .await
-            .expect_err("connection to a dead port should fail");
-        let err = managed_gateway_error_to_tool_error(
-            crate::session::managed_mcp::ManagedMcpFetchError::Transport(transport),
-            "use_tool",
-        );
-        assert_eq!(err.kind, kigi_tool_runtime::ToolErrorKind::NetworkError);
-        assert!(err.detail.contains("Managed MCP gateway tool call failed"));
-        assert!(
-            !err.detail.contains("http://"),
-            "transport detail must not leak the proxy URL: {}",
-            err.detail
-        );
-    }
-}
 /// Data carried from prepare_tool_call → dispatch_tool → finalize.
 #[derive(Debug, Clone)]
 pub(crate) struct PreparedToolCall {
@@ -858,10 +698,6 @@ pub(crate) struct SessionActor {
     /// flag is set short-circuits through
     /// [`Self::account_not_achieved_without_sampler`].
     pub(crate) goal_classifier_in_flight: std::sync::atomic::AtomicBool,
-    /// Agent-level managed MCP config cache (refreshed in background).
-    pub(crate) managed_mcp_handle: crate::session::managed_mcp::ManagedMcpStateHandle,
-    /// Earliest managed MCP token expiry; checked before tool dispatch.
-    pub(crate) managed_mcp_expires_at: std::sync::Mutex<Option<chrono::DateTime<chrono::Utc>>>,
     /// Original client-provided MCP servers from session creation.
     /// Retained for re-merge during plugin reload.
     pub(crate) initial_client_mcp_servers: Vec<acp::McpServer>,
@@ -1315,200 +1151,6 @@ fn load_prompt_context_from_dir(
 #[cfg(test)]
 #[path = "acp_session_tests/client_hooks_tests.rs"]
 mod client_hooks_tests;
-#[cfg(test)]
-#[path = "acp_session_tests/replace_system_prompt_tests.rs"]
-mod replace_system_prompt_tests;
-#[cfg(test)]
-#[path = "acp_session_tests/support.rs"]
-mod support;
-#[cfg(test)]
-#[path = "acp_session_tests/usage_categories_tests.rs"]
-mod usage_categories_tests;
-#[cfg(test)]
-mod managed_gateway_descriptor_tests {
-    use super::*;
-    use kigi_tools::types::output::{MCPOutput, ToolOutput};
-    use kigi_tools::types::tool::{ToolKind, ToolNamespace};
-    #[derive(Debug, Default)]
-    struct FixtureMcpTool;
-    impl kigi_tools::types::tool_metadata::ToolMetadata for FixtureMcpTool {
-        fn kind(&self) -> ToolKind {
-            ToolKind::Other
-        }
-        fn tool_namespace(&self) -> ToolNamespace {
-            ToolNamespace::MCP
-        }
-        fn description_template(&self) -> &str {
-            "fixture"
-        }
-    }
-    impl kigi_tool_runtime::Tool for FixtureMcpTool {
-        type Args = serde_json::Value;
-        type Output = ToolOutput;
-        fn id(&self) -> kigi_tool_protocol::ToolId {
-            kigi_tool_protocol::ToolId::new("server__tool").expect("valid")
-        }
-        fn description(
-            &self,
-            _ctx: &::kigi_tool_runtime::ListToolsContext,
-        ) -> kigi_tool_types::ToolDescription {
-            kigi_tool_types::ToolDescription::new("server__tool", "fixture")
-        }
-        async fn run(
-            &self,
-            _ctx: kigi_tool_runtime::ToolCallContext,
-            _args: serde_json::Value,
-        ) -> Result<ToolOutput, kigi_tool_runtime::ToolError> {
-            Ok(ToolOutput::MCP(MCPOutput::okay_output(
-                "server__tool".to_string(),
-                "server".to_string(),
-                "ok".to_string(),
-            )))
-        }
-    }
-    #[tokio::test]
-    async fn refresh_snapshot_indexes_only_admitted_gateway_tools() {
-        let bridge = Arc::new(crate::tools::bridge::ToolBridge::for_test());
-        bridge
-            .register_mcp_tools(
-                "server__tool".to_string(),
-                FixtureMcpTool,
-                Some(serde_json::json!({ "type" : "object" })),
-            )
-            .await
-            .expect("local fixture registration succeeds");
-        let mcp_state = Arc::new(TokioMutex::new(McpState::new(vec![])));
-        let managed = crate::session::managed_mcp::ManagedMcpStateHandle::default();
-        {
-            let mut state = managed.lock().await;
-            state.enable_gateway_tools();
-            let epoch = state.start_gateway_tool_fetch().unwrap();
-            assert!(state.complete_gateway_tool_fetch(
-                epoch,
-                crate::session::managed_mcp::GatewayToolCatalog {
-                    tools: vec![
-                        crate::session::managed_mcp::GatewayTool {
-                            connector_id: "server".to_string(),
-                            connector_name: "Gateway Collision".to_string(),
-                            tool_id: "tool".to_string(),
-                            tool_name: "Collision".to_string(),
-                            call_id: "gateway.collision".to_string(),
-                            description: "Gateway collision".to_string(),
-                            json_schema: serde_json::json!({ "type" : "object" }),
-                        },
-                        crate::session::managed_mcp::GatewayTool {
-                            connector_id: "gateway".to_string(),
-                            connector_name: "Gateway".to_string(),
-                            tool_id: "search".to_string(),
-                            tool_name: "Search".to_string(),
-                            call_id: "gateway.search".to_string(),
-                            description: "Gateway search".to_string(),
-                            json_schema: serde_json::json!({ "type" : "object" }),
-                        },
-                    ],
-                    total_tools: 2,
-                    connectors_needing_reauth: vec![],
-                }
-            ));
-        }
-        let snapshot = Arc::new(std::sync::Mutex::new(
-            crate::session::tool_index::ToolMetadataSnapshot::default(),
-        ));
-        refresh_mcp_snapshot_for_test(bridge, mcp_state, managed, snapshot.clone()).await;
-        let snapshot = snapshot.lock().unwrap();
-        let names: std::collections::HashSet<&str> = snapshot
-            .tools
-            .iter()
-            .map(|tool| tool.qualified_name.as_str())
-            .collect();
-        assert!(names.contains("gateway__search"));
-        let server_tool = snapshot
-            .tools
-            .iter()
-            .find(|tool| tool.qualified_name == "server__tool")
-            .expect("local MCP tool remains indexed");
-        assert_eq!(server_tool.server_name, "server");
-        assert_eq!(server_tool.description, "fixture");
-    }
-    #[tokio::test]
-    async fn refresh_snapshot_excludes_disabled_gateway_tools_and_connectors() {
-        let bridge = Arc::new(crate::tools::bridge::ToolBridge::for_test());
-        let mcp_state = Arc::new(TokioMutex::new(McpState::new(vec![])));
-        let managed = crate::session::managed_mcp::ManagedMcpStateHandle::default();
-        {
-            let mut state = managed.lock().await;
-            state.enable_gateway_tools();
-            let epoch = state.start_gateway_tool_fetch().unwrap();
-            assert!(state.complete_gateway_tool_fetch(
-                epoch,
-                crate::session::managed_mcp::GatewayToolCatalog {
-                    tools: vec![
-                        crate::session::managed_mcp::GatewayTool {
-                            connector_id: "linear".to_string(),
-                            connector_name: "Linear".to_string(),
-                            tool_id: "list_issues".to_string(),
-                            tool_name: "List".to_string(),
-                            call_id: "linear.list_issues".to_string(),
-                            description: "List issues".to_string(),
-                            json_schema: serde_json::json!({ "type" : "object" }),
-                        },
-                        crate::session::managed_mcp::GatewayTool {
-                            connector_id: "linear".to_string(),
-                            connector_name: "Linear".to_string(),
-                            tool_id: "create_issue".to_string(),
-                            tool_name: "Create".to_string(),
-                            call_id: "linear.create_issue".to_string(),
-                            description: "Create issue".to_string(),
-                            json_schema: serde_json::json!({ "type" : "object" }),
-                        },
-                        crate::session::managed_mcp::GatewayTool {
-                            connector_id: "slack".to_string(),
-                            connector_name: "Slack".to_string(),
-                            tool_id: "search".to_string(),
-                            tool_name: "Search".to_string(),
-                            call_id: "slack.search".to_string(),
-                            description: "Search Slack".to_string(),
-                            json_schema: serde_json::json!({ "type" : "object" }),
-                        },
-                    ],
-                    total_tools: 3,
-                    connectors_needing_reauth: vec![],
-                }
-            ));
-        }
-        let snapshot = Arc::new(std::sync::Mutex::new(
-            crate::session::tool_index::ToolMetadataSnapshot::default(),
-        ));
-        let disabled: std::collections::HashMap<String, std::collections::HashSet<String>> =
-            std::collections::HashMap::from([
-                (
-                    "linear".to_string(),
-                    std::collections::HashSet::from(["linear__create_issue".to_string()]),
-                ),
-                (
-                    crate::util::config::MANAGED_GATEWAY_DISABLED_CONNECTORS_KEY.to_string(),
-                    std::collections::HashSet::from(["slack".to_string()]),
-                ),
-            ]);
-        refresh_mcp_snapshot_for_test_with_disabled(
-            bridge,
-            mcp_state,
-            managed,
-            snapshot.clone(),
-            &disabled,
-        )
-        .await;
-        let snapshot = snapshot.lock().unwrap();
-        let names: std::collections::HashSet<&str> = snapshot
-            .tools
-            .iter()
-            .map(|tool| tool.qualified_name.as_str())
-            .collect();
-        assert!(names.contains("linear__list_issues"));
-        assert!(!names.contains("linear__create_issue"));
-        assert!(!names.contains("slack__search"));
-    }
-}
 /// ToolBridge must route file operations through the injected FileSystem,
 /// not direct disk I/O. When `.with_fs()` is dropped from the builder,
 /// tools fall back to LocalFs and ACP client-side enforcement stops working.
@@ -1518,7 +1160,6 @@ mod fs_injection_regression_tests;
 #[cfg(test)]
 #[path = "acp_session_tests/interjection_actor_tests.rs"]
 mod interjection_actor_tests;
-#[cfg(test)]
 #[cfg(test)]
 #[path = "acp_session_tests/permission_auto_mode_tests.rs"]
 mod permission_auto_mode_tests;
@@ -1559,6 +1200,9 @@ mod prompt_queue_actor_tests;
 #[path = "acp_session_tests/record_response_token_usage_tests.rs"]
 mod record_response_token_usage_tests;
 #[cfg(test)]
+#[path = "acp_session_tests/replace_system_prompt_tests.rs"]
+mod replace_system_prompt_tests;
+#[cfg(test)]
 #[path = "acp_session_tests/replay_buffer_send_update_tests.rs"]
 mod replay_buffer_send_update_tests;
 #[cfg(test)]
@@ -1578,8 +1222,14 @@ mod rewrite_zero_turn_prefix_tests;
 #[path = "acp_session_tests/subagent_usage_fold_tests.rs"]
 mod subagent_usage_fold_tests;
 #[cfg(test)]
+#[path = "acp_session_tests/support.rs"]
+mod support;
+#[cfg(test)]
 #[path = "acp_session_tests/turn_completion_emit_tests.rs"]
 mod turn_completion_emit_tests;
+#[cfg(test)]
+#[path = "acp_session_tests/usage_categories_tests.rs"]
+mod usage_categories_tests;
 #[cfg(test)]
 mod tool_meta_stamp_tests {
     //! Pin the `x.ai/tool` stamps on the harness emission paths: the early
@@ -1759,14 +1409,32 @@ mod cancel_running_task_tests;
 #[path = "acp_session_tests/feedback_turn_lookup_tests.rs"]
 mod feedback_turn_lookup_tests;
 #[cfg(test)]
+#[path = "acp_session_tests/goal/goal_backoff_tests.rs"]
+mod goal_backoff_tests;
+#[cfg(test)]
+#[path = "acp_session_tests/goal/goal_classifier_e2e_tests.rs"]
+mod goal_classifier_e2e_tests;
+#[cfg(test)]
+#[path = "acp_session_tests/goal/goal_planner_e2e_tests.rs"]
+mod goal_planner_e2e_tests;
+#[cfg(test)]
 #[path = "acp_session_tests/goal/goal_reminder_subagent_rules_tests.rs"]
 mod goal_reminder_subagent_rules_tests;
+#[cfg(test)]
+#[path = "acp_session_tests/goal/goal_strategist_e2e_tests.rs"]
+mod goal_strategist_e2e_tests;
+#[cfg(test)]
+#[path = "acp_session_tests/goal/goal_summarizer_e2e_tests.rs"]
+mod goal_summarizer_e2e_tests;
 #[cfg(test)]
 #[path = "acp_session_tests/idle_resume_tests.rs"]
 mod idle_resume_tests;
 #[cfg(test)]
 #[path = "acp_session_tests/inline_auto_compact_flow_tests.rs"]
 mod inline_auto_compact_flow_tests;
+#[cfg(test)]
+#[path = "acp_session_tests/interjection_tests.rs"]
+mod interjection_tests;
 #[cfg(test)]
 #[path = "acp_session_tests/laziness/laziness_debug_tests.rs"]
 mod laziness_debug_tests;
@@ -1780,9 +1448,6 @@ mod laziness_integration_tests;
 #[path = "acp_session_tests/load_user_prompts_tests.rs"]
 mod load_user_prompts_tests;
 #[cfg(test)]
-#[path = "acp_session_tests/media_gen_auth_retry_tests.rs"]
-mod media_gen_auth_retry_tests;
-#[cfg(test)]
 #[path = "acp_session_tests/memory_config_tests.rs"]
 mod memory_config_tests;
 #[cfg(test)]
@@ -1792,14 +1457,17 @@ mod parallel_dispatch_tests;
 #[path = "acp_session_tests/prompt_context_persistence_tests.rs"]
 mod prompt_context_persistence_tests;
 #[cfg(test)]
-#[path = "acp_session_tests/reactive_managed_reauth_e2e_tests.rs"]
-mod reactive_managed_reauth_e2e_tests;
+#[path = "acp_session_tests/recap_display_only_tests.rs"]
+mod recap_display_only_tests;
 #[cfg(test)]
-#[path = "acp_session_tests/reactive_managed_reauth_tests.rs"]
-mod reactive_managed_reauth_tests;
+#[path = "acp_session_tests/reminder_policy_tests.rs"]
+mod reminder_policy_tests;
 #[cfg(test)]
 #[path = "acp_session_tests/session_thread_tests.rs"]
 mod session_thread_tests;
+#[cfg(test)]
+#[path = "acp_session_tests/tool_auth_retry_tests.rs"]
+mod tool_auth_retry_tests;
 #[cfg(test)]
 #[path = "acp_session_tests/turn/turn_end_guard_tests.rs"]
 mod turn_end_guard_tests;
@@ -1809,215 +1477,3 @@ mod wait_for_mcp_prefix_tests;
 #[cfg(test)]
 #[path = "acp_session_tests/web_search_e2e_tests.rs"]
 mod web_search_e2e_tests;
-#[cfg(test)]
-mod managed_gateway_tool_tests {
-    use super::*;
-    use kigi_tools::types::output::{MCPOutput, ToolOutput};
-    use kigi_tools::types::tool::{ToolKind, ToolNamespace};
-    use kigi_tools::types::tool_metadata::ToolMetadata;
-    #[derive(Debug)]
-    struct FixtureMcpTool;
-    impl ToolMetadata for FixtureMcpTool {
-        fn kind(&self) -> ToolKind {
-            ToolKind::Other
-        }
-        fn tool_namespace(&self) -> ToolNamespace {
-            ToolNamespace::MCP
-        }
-        fn description_template(&self) -> &str {
-            "fixture"
-        }
-    }
-    impl kigi_tool_runtime::Tool for FixtureMcpTool {
-        type Args = serde_json::Value;
-        type Output = ToolOutput;
-        fn id(&self) -> kigi_tool_protocol::ToolId {
-            kigi_tool_protocol::ToolId::new("server__tool").expect("valid")
-        }
-        fn description(
-            &self,
-            _ctx: &::kigi_tool_runtime::ListToolsContext,
-        ) -> kigi_tool_types::ToolDescription {
-            kigi_tool_types::ToolDescription::new("server__tool", "fixture")
-        }
-        async fn run(
-            &self,
-            _ctx: kigi_tool_runtime::ToolCallContext,
-            _args: serde_json::Value,
-        ) -> Result<ToolOutput, kigi_tool_runtime::ToolError> {
-            Ok(ToolOutput::MCP(MCPOutput::okay_output(
-                "server__tool".to_string(),
-                "server".to_string(),
-                "ok".to_string(),
-            )))
-        }
-    }
-    #[tokio::test]
-    async fn refresh_snapshot_seeds_only_admitted_gateway_catalog_entries() {
-        let bridge = Arc::new(crate::tools::bridge::ToolBridge::for_test());
-        bridge
-            .register_mcp_tools(
-                "server__tool".to_string(),
-                FixtureMcpTool,
-                Some(serde_json::json!({ "type" : "object" })),
-            )
-            .await
-            .expect("local fixture registration succeeds");
-        let mcp_state = Arc::new(TokioMutex::new(McpState::new(vec![])));
-        let managed = crate::session::managed_mcp::ManagedMcpStateHandle::default();
-        {
-            let mut state = managed.lock().await;
-            state.enable_gateway_tools();
-            let epoch = state.start_gateway_tool_fetch().unwrap();
-            assert!(state.complete_gateway_tool_fetch(
-                epoch,
-                crate::session::managed_mcp::GatewayToolCatalog {
-                    tools: vec![
-                        crate::session::managed_mcp::GatewayTool {
-                            connector_id: "server".to_string(),
-                            connector_name: "Gateway Collision".to_string(),
-                            tool_id: "tool".to_string(),
-                            tool_name: "Collision".to_string(),
-                            call_id: "gateway.collision".to_string(),
-                            description: "Gateway collision".to_string(),
-                            json_schema: serde_json::json!({ "type" : "object" }),
-                        },
-                        crate::session::managed_mcp::GatewayTool {
-                            connector_id: "gateway".to_string(),
-                            connector_name: "Gateway".to_string(),
-                            tool_id: "search".to_string(),
-                            tool_name: "Search".to_string(),
-                            call_id: "gateway.search".to_string(),
-                            description: "Gateway search".to_string(),
-                            json_schema: serde_json::json!({ "type" : "object" }),
-                        },
-                    ],
-                    total_tools: 2,
-                    connectors_needing_reauth: vec![],
-                }
-            ));
-        }
-        let snapshot = Arc::new(std::sync::Mutex::new(
-            crate::session::tool_index::ToolMetadataSnapshot::default(),
-        ));
-        refresh_mcp_snapshot_for_test(bridge.clone(), mcp_state, managed, snapshot.clone()).await;
-        let catalog = bridge
-            .read_resource::<kigi_tools::types::resources::ManagedGatewayToolCatalog>()
-            .await
-            .expect("catalog resource should be seeded");
-        assert!(catalog.get("gateway__search").is_some());
-        assert!(
-            catalog.get("server__tool").is_none(),
-            "gateway catalog resource must match admitted snapshot and skip local collisions"
-        );
-    }
-    #[tokio::test]
-    async fn refresh_snapshot_excludes_disabled_gateway_tools_and_connectors() {
-        let bridge = Arc::new(crate::tools::bridge::ToolBridge::for_test());
-        let mcp_state = Arc::new(TokioMutex::new(McpState::new(vec![])));
-        let managed = crate::session::managed_mcp::ManagedMcpStateHandle::default();
-        {
-            let mut state = managed.lock().await;
-            state.enable_gateway_tools();
-            let epoch = state.start_gateway_tool_fetch().unwrap();
-            assert!(state.complete_gateway_tool_fetch(
-                epoch,
-                crate::session::managed_mcp::GatewayToolCatalog {
-                    tools: vec![
-                        crate::session::managed_mcp::GatewayTool {
-                            connector_id: "linear".to_string(),
-                            connector_name: "Linear".to_string(),
-                            tool_id: "list_issues".to_string(),
-                            tool_name: "List".to_string(),
-                            call_id: "linear.list_issues".to_string(),
-                            description: "List issues".to_string(),
-                            json_schema: serde_json::json!({ "type" : "object" }),
-                        },
-                        crate::session::managed_mcp::GatewayTool {
-                            connector_id: "linear".to_string(),
-                            connector_name: "Linear".to_string(),
-                            tool_id: "create_issue".to_string(),
-                            tool_name: "Create".to_string(),
-                            call_id: "linear.create_issue".to_string(),
-                            description: "Create issue".to_string(),
-                            json_schema: serde_json::json!({ "type" : "object" }),
-                        },
-                        crate::session::managed_mcp::GatewayTool {
-                            connector_id: "slack".to_string(),
-                            connector_name: "Slack".to_string(),
-                            tool_id: "search".to_string(),
-                            tool_name: "Search".to_string(),
-                            call_id: "slack.search".to_string(),
-                            description: "Search Slack".to_string(),
-                            json_schema: serde_json::json!({ "type" : "object" }),
-                        },
-                    ],
-                    total_tools: 3,
-                    connectors_needing_reauth: vec![],
-                }
-            ));
-        }
-        let snapshot = Arc::new(std::sync::Mutex::new(
-            crate::session::tool_index::ToolMetadataSnapshot::default(),
-        ));
-        let disabled: std::collections::HashMap<String, std::collections::HashSet<String>> =
-            std::collections::HashMap::from([
-                (
-                    "linear".to_string(),
-                    std::collections::HashSet::from(["linear__create_issue".to_string()]),
-                ),
-                (
-                    crate::util::config::MANAGED_GATEWAY_DISABLED_CONNECTORS_KEY.to_string(),
-                    std::collections::HashSet::from(["slack".to_string()]),
-                ),
-            ]);
-        refresh_mcp_snapshot_for_test_with_disabled(
-            bridge.clone(),
-            mcp_state,
-            managed,
-            snapshot.clone(),
-            &disabled,
-        )
-        .await;
-        let catalog = bridge
-            .read_resource::<kigi_tools::types::resources::ManagedGatewayToolCatalog>()
-            .await
-            .expect("catalog resource should be seeded");
-        assert!(catalog.get("linear__list_issues").is_some());
-        assert!(catalog.get("linear__create_issue").is_none());
-        assert!(catalog.get("slack__search").is_none());
-        let snapshot = snapshot.lock().unwrap();
-        let names: std::collections::HashSet<&str> = snapshot
-            .tools
-            .iter()
-            .map(|tool| tool.qualified_name.as_str())
-            .collect();
-        assert!(names.contains("linear__list_issues"));
-        assert!(!names.contains("linear__create_issue"));
-        assert!(!names.contains("slack__search"));
-    }
-}
-#[cfg(test)]
-#[path = "acp_session_tests/goal/goal_backoff_tests.rs"]
-mod goal_backoff_tests;
-#[cfg(test)]
-#[path = "acp_session_tests/goal/goal_classifier_e2e_tests.rs"]
-mod goal_classifier_e2e_tests;
-#[cfg(test)]
-#[path = "acp_session_tests/goal/goal_planner_e2e_tests.rs"]
-mod goal_planner_e2e_tests;
-#[cfg(test)]
-#[path = "acp_session_tests/goal/goal_strategist_e2e_tests.rs"]
-mod goal_strategist_e2e_tests;
-#[cfg(test)]
-#[path = "acp_session_tests/goal/goal_summarizer_e2e_tests.rs"]
-mod goal_summarizer_e2e_tests;
-#[cfg(test)]
-#[path = "acp_session_tests/interjection_tests.rs"]
-mod interjection_tests;
-#[cfg(test)]
-#[path = "acp_session_tests/recap_display_only_tests.rs"]
-mod recap_display_only_tests;
-#[cfg(test)]
-#[path = "acp_session_tests/reminder_policy_tests.rs"]
-mod reminder_policy_tests;

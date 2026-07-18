@@ -304,7 +304,6 @@ impl MvpAgent {
             session_env,
             parent_attribution_callback,
             parent_agent_name,
-            parent_managed_mcp_proxy_base_url,
         ) = {
             let sessions = self.sessions.borrow();
             let ps = sessions.get(&parent_sid);
@@ -339,7 +338,6 @@ impl MvpAgent {
                     .unwrap_or_else(|| std::sync::Arc::new(std::collections::HashMap::new())),
                 ps.and_then(|h| h.attribution_callback.clone()),
                 ps.map(|h| h.agent_name.clone()),
-                ps.map(|h| h.managed_mcp_proxy_base_url.clone()),
             )
         };
         let (
@@ -401,8 +399,6 @@ impl MvpAgent {
             gateway: self.gateway.clone(),
             client_hooks: Default::default(),
             sampling_config: self.sampling_config.borrow().clone(),
-            managed_mcp_proxy_base_url: parent_managed_mcp_proxy_base_url
-                .unwrap_or_else(|| self.coding_api_base_url()),
             alpha_test_key: self.alpha_test_key(),
             auth_method_id: self
                 .auth_method_id
@@ -429,8 +425,6 @@ impl MvpAgent {
             memory_config: self.memory_config.clone(),
             web_search_config: self.prepare_web_search_config(),
             web_fetch_config: self.prepare_web_fetch_config(),
-            image_gen_config: self.prepare_image_gen_config(),
-            video_gen_config: self.prepare_video_gen_config(),
             app_builder_deployer_config: self.prepare_app_builder_deployer_config(),
             write_file_enabled: self.cfg.borrow().resolve_write_file().value,
             goal_enabled: self.cfg.borrow().resolve_goal().value,
@@ -505,7 +499,6 @@ impl MvpAgent {
                     .map(|h| h.mcp_servers.clone())
                     .unwrap_or_default()
             },
-            managed_mcp_state: self.managed_mcp_cache.clone(),
             parent_mcp_pool: None,
             parent_tool_snapshot: None,
             parent_skills: None,

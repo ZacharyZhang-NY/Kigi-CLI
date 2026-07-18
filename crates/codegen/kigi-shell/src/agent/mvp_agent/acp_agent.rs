@@ -270,13 +270,7 @@ impl acp::Agent for MvpAgent {
         let current_working_directory = self.launch_cwd.clone();
         let hostname = gethostname::gethostname();
         let mcp_servers: Vec<crate::extensions::mcp::McpServerEntry> = Vec::new();
-        let fetch_managed_mcps = self.cfg.borrow().managed_mcps_enabled
-            && self.can_fetch_managed_mcps();
-        if self.cfg.borrow().managed_mcps_enabled && !fetch_managed_mcps {
-            tracing::info!("Managed MCP fetch: DISABLED");
-        }
-        self.spawn_initialize_launch_mcp_setup(fetch_managed_mcps);
-        self.spawn_managed_gateway_tool_catalog_fetch();
+        self.spawn_initialize_launch_mcp_setup();
         let init_model_state = self.model_state(None);
         Ok(
             acp::InitializeResponse::new(acp::ProtocolVersion::V1)
@@ -545,9 +539,7 @@ impl acp::Agent for MvpAgent {
         let remote_settings = self.cfg.borrow().remote_settings.clone();
         folder_trust::resolve_and_record(cwd.as_path(), remote_settings.as_ref(), false);
         let initial_client_mcp_servers = arguments.mcp_servers.clone();
-        let (mcp_servers, managed_mcp_expires_at) = self
-            .resolve_mcp_servers(arguments.mcp_servers, cwd.as_path())
-            .await;
+        let mcp_servers = self.resolve_mcp_servers(arguments.mcp_servers, cwd.as_path());
         let mcp_meta_config_map = parse_mcp_meta_config(arguments.meta.as_ref());
         let client_session_id = arguments
             .meta
@@ -756,7 +748,6 @@ impl acp::Agent for MvpAgent {
                         persisted_goal_mode: None,
                         persisted_announcement_state: None,
                         session_meta: arguments.meta.as_ref(),
-                        managed_mcp_expires_at,
                         model_agent_type: model_agent_type.as_deref(),
                         session_model_id,
                         session_yolo_mode,
@@ -902,9 +893,7 @@ impl acp::Agent for MvpAgent {
         let remote_settings = self.cfg.borrow().remote_settings.clone();
         folder_trust::resolve_and_record(cwd.as_path(), remote_settings.as_ref(), false);
         let initial_client_mcp_servers = client_mcp_servers.clone();
-        let (mcp_servers, managed_mcp_expires_at) = self
-            .resolve_mcp_servers(client_mcp_servers, cwd.as_path())
-            .await;
+        let mcp_servers = self.resolve_mcp_servers(client_mcp_servers, cwd.as_path());
         let mcp_meta_config_map = parse_mcp_meta_config(request_meta.as_ref());
         let mut load_timer = crate::instrumentation_timer!("session.load_session");
         load_timer.with_field("session_id", session_id.0.as_ref());
@@ -1212,7 +1201,6 @@ impl acp::Agent for MvpAgent {
                         persisted_goal_mode: _persisted_goal_mode,
                         persisted_announcement_state,
                         session_meta: request_meta.as_ref(),
-                        managed_mcp_expires_at,
                         model_agent_type: persisted_agent_name.as_deref(),
                         session_model_id: summary.current_model_id.clone(),
                         session_yolo_mode,
@@ -2083,7 +2071,7 @@ impl acp::Agent for MvpAgent {
             | "x.ai/internal/reload_all_mcp_servers"
             | "x.ai/internal/reload_project_mcp_servers" | "x.ai/internal/reload_skills"
             | "x.ai/internal/reload_models" | "x.ai/internal/reload_models_cache"
-            | "x.ai/internal/auth_cleared" | "x.ai/plugins/reload"
+            | "x.ai/plugins/reload"
             | "x.ai/commands/list" => {
                 crate::extensions::session_admin::handle(self, &args).await
             }

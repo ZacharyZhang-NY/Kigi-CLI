@@ -46,11 +46,9 @@ use kigi_agent::{Agent, AgentBuilder, CompactionPolicy, ReminderPolicy};
 use kigi_tools::computer::types::{AsyncFileSystem, TerminalBackend};
 use kigi_tools::implementations::grok_build::ask_user_question::types::UserQuestionRequest;
 use kigi_tools::implementations::grok_build::deploy_app::AppBuilderDeployerConfig;
-use kigi_tools::implementations::grok_build::image_gen::ImageGenConfig;
 use kigi_tools::implementations::grok_build::task::types::{
     MonitorEventBuffer, SubagentEvent, TaskModelValidator,
 };
-use kigi_tools::implementations::grok_build::video_gen::VideoGenConfig;
 use kigi_tools::implementations::grok_build::web_fetch::WebFetchConfig;
 use kigi_tools::implementations::lsp::LspBackend;
 use kigi_tools::implementations::web_search::WebSearchConfig;
@@ -95,8 +93,6 @@ pub(crate) struct AgentRebuildSpec {
     pub web_search_config: WebSearchConfig,
     pub backend_search: bool,
     pub web_fetch_config: WebFetchConfig,
-    pub image_gen_config: ImageGenConfig,
-    pub video_gen_config: VideoGenConfig,
     pub app_builder_deployer_config: AppBuilderDeployerConfig,
     pub write_file_enabled: bool,
     pub subagents_enabled: bool,
@@ -125,7 +121,6 @@ pub(crate) struct AgentRebuildSpec {
     pub respect_gitignore: bool,
     pub path_not_found_hints: bool,
     pub mcp_state: Arc<tokio::sync::Mutex<crate::session::mcp_servers::McpState>>,
-    pub managed_gateway_tool_client: Option<kigi_tools::types::resources::ManagedGatewayToolClient>,
     pub is_non_interactive: bool,
     pub system_prompt_label: String,
     pub owner_session_id: Option<String>,
@@ -190,8 +185,6 @@ impl AgentRebuildSpec {
             web_search_config,
             backend_search,
             web_fetch_config,
-            image_gen_config,
-            video_gen_config,
             app_builder_deployer_config,
             write_file_enabled,
             subagents_enabled,
@@ -218,7 +211,6 @@ impl AgentRebuildSpec {
             respect_gitignore,
             path_not_found_hints,
             mcp_state,
-            managed_gateway_tool_client,
             is_non_interactive,
             system_prompt_label,
             owner_session_id,
@@ -244,8 +236,6 @@ impl AgentRebuildSpec {
         .with_state_path(bridge_state_path.clone())
         .with_web_search_config(web_search_config.clone())
         .with_backend_search(*backend_search)
-        .with_image_gen_config(image_gen_config.clone())
-        .with_video_gen_config(video_gen_config.clone())
         .with_app_builder_deployer_config(app_builder_deployer_config.clone())
         .with_web_fetch_config(web_fetch_config.clone())
         .with_write_file_enabled(*write_file_enabled)
@@ -351,9 +341,6 @@ impl AgentRebuildSpec {
                 *path_not_found_hints,
             ))
             .await;
-        if let Some(client) = managed_gateway_tool_client.clone() {
-            agent.tool_bridge().update_resource(client).await;
-        }
         {
             use kigi_tools::implementations::grok_build::ask_user_question::UserQuestionSender;
             agent
@@ -392,8 +379,6 @@ pub(crate) fn test_rebuild_spec_default() -> Arc<AgentRebuildSpec> {
         web_search_config: WebSearchConfig::default(),
         backend_search: false,
         web_fetch_config: WebFetchConfig::Disabled,
-        image_gen_config: ImageGenConfig::default(),
-        video_gen_config: VideoGenConfig::default(),
         app_builder_deployer_config: AppBuilderDeployerConfig::default(),
         write_file_enabled: true,
         subagents_enabled: false,
@@ -422,7 +407,6 @@ pub(crate) fn test_rebuild_spec_default() -> Arc<AgentRebuildSpec> {
         mcp_state: Arc::new(tokio::sync::Mutex::new(
             crate::session::mcp_servers::McpState::new(vec![]),
         )),
-        managed_gateway_tool_client: None,
         is_non_interactive: false,
         system_prompt_label: kigi_agent::DEFAULT_SYSTEM_PROMPT_LABEL.to_string(),
         owner_session_id: Some("test-session".to_string()),

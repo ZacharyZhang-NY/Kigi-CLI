@@ -1201,154 +1201,6 @@ fn subagents_config_is_subagent_enabled_false_when_toggled_off() {
     );
     assert!(sa.is_subagent_enabled("explore"), "explore = true should return enabled");
 }
-fn with_managed_mcp_env<T>(
-    managed_mcps: Option<&str>,
-    gateway_tools: Option<&str>,
-    f: impl FnOnce() -> T,
-) -> T {
-    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    with_env_var_opt(
-        "KIGI_MANAGED_MCPS_ENABLED",
-        managed_mcps,
-        || with_env_var_opt("KIGI_MANAGED_MCP_GATEWAY_TOOLS_ENABLED", gateway_tools, f),
-    )
-}
-#[test]
-#[serial_test::serial]
-fn managed_mcps_interactive_default_enabled() {
-    with_managed_mcp_env(
-        None,
-        None,
-        || {
-            let empty = toml::Value::Table(toml::map::Map::new());
-            let cfg = ManagedMcpsConfig::resolve(&empty, None, false);
-            assert!(cfg.enabled);
-        },
-    );
-}
-#[test]
-#[serial_test::serial]
-fn managed_mcps_headless_default_disabled() {
-    with_managed_mcp_env(
-        None,
-        None,
-        || {
-            let empty = toml::Value::Table(toml::map::Map::new());
-            let cfg = ManagedMcpsConfig::resolve(&empty, None, true);
-            assert!(! cfg.enabled);
-        },
-    );
-}
-#[test]
-#[serial_test::serial]
-fn managed_mcp_gateway_tools_default_disabled() {
-    with_managed_mcp_env(
-        None,
-        None,
-        || {
-            let empty = toml::Value::Table(toml::map::Map::new());
-            let cfg = ManagedMcpsConfig::resolve(&empty, None, false);
-            assert!(! cfg.gateway_tools_enabled);
-        },
-    );
-}
-#[test]
-#[serial_test::serial]
-fn managed_mcp_gateway_tools_require_managed_master() {
-    with_managed_mcp_env(
-        None,
-        None,
-        || {
-            let config: toml::Value = toml::from_str(
-                    r#"
-                [managed_mcps]
-                gateway_tools_enabled = true
-                "#,
-                )
-                .unwrap();
-            let remote = crate::util::config::RemoteSettings {
-                managed_mcps_enabled: Some(false),
-                ..Default::default()
-            };
-            let cfg = ManagedMcpsConfig::resolve(&config, Some(&remote), true);
-            assert!(! cfg.enabled);
-            assert!(! cfg.gateway_tools_enabled);
-        },
-    );
-}
-#[test]
-#[serial_test::serial]
-fn managed_mcp_gateway_tools_remote_enabled() {
-    with_managed_mcp_env(
-        None,
-        None,
-        || {
-            let empty = toml::Value::Table(toml::map::Map::new());
-            let remote = crate::util::config::RemoteSettings {
-                managed_mcp_gateway_tools_enabled: Some(true),
-                ..Default::default()
-            };
-            let cfg = ManagedMcpsConfig::resolve(&empty, Some(&remote), false);
-            assert!(cfg.gateway_tools_enabled);
-        },
-    );
-}
-#[test]
-#[serial_test::serial]
-fn managed_mcp_gateway_tools_env_overrides_remote() {
-    with_managed_mcp_env(
-        None,
-        Some("0"),
-        || {
-            let empty = toml::Value::Table(toml::map::Map::new());
-            let remote = crate::util::config::RemoteSettings {
-                managed_mcp_gateway_tools_enabled: Some(true),
-                ..Default::default()
-            };
-            let cfg = ManagedMcpsConfig::resolve(&empty, Some(&remote), false);
-            assert!(! cfg.gateway_tools_enabled);
-        },
-    );
-}
-#[test]
-#[serial_test::serial]
-fn managed_mcp_gateway_tools_env_on_overrides_remote_off() {
-    with_managed_mcp_env(
-        None,
-        Some("1"),
-        || {
-            let empty = toml::Value::Table(toml::map::Map::new());
-            let remote = crate::util::config::RemoteSettings {
-                managed_mcp_gateway_tools_enabled: Some(false),
-                ..Default::default()
-            };
-            let cfg = ManagedMcpsConfig::resolve(&empty, Some(&remote), false);
-            assert!(cfg.gateway_tools_enabled);
-        },
-    );
-}
-#[test]
-#[serial_test::serial]
-fn managed_mcp_gateway_tools_enabled_with_managed_master() {
-    with_managed_mcp_env(
-        None,
-        None,
-        || {
-            let config: toml::Value = toml::from_str(
-                    r#"
-                [managed_mcps]
-                enabled = true
-                gateway_tools_enabled = true
-                "#,
-                )
-                .unwrap();
-            let cfg = ManagedMcpsConfig::resolve(&config, None, false);
-            assert!(cfg.enabled);
-            assert!(cfg.gateway_tools_enabled);
-        },
-    );
-}
 fn with_model_overrides_env_full<T>(
     ss: Option<&str>,
     id: Option<&str>,
@@ -1777,28 +1629,16 @@ fn model_overrides_prompt_suggestion_blank_values_are_unset() {
         },
     );
 }
-/// Lock shared by every test that touches the env vars read by
-/// `ToolsConfig::resolve`, so tests across both fields can't race.
+/// Lock shared by every test that touches the env var read by
+/// `ToolsConfig::resolve`, so tests can't race.
 static TOOLS_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-/// Set both `ToolsConfig` env vars for the duration of `f`, then
-/// restore. `None` clears the var.
-fn with_tools_env<T>(
-    respect_gitignore: Option<&str>,
-    disable_zdr: Option<&str>,
-    f: impl FnOnce() -> T,
-) -> T {
-    let _guard = TOOLS_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    with_env_var_opt(
-        "KIGI_RESPECT_GITIGNORE",
-        respect_gitignore,
-        || with_env_var_opt("KIGI_DISABLE_ZDR_INCOMPATIBLE_TOOLS", disable_zdr, f),
-    )
-}
 fn without_grok_respect_gitignore<T>(f: impl FnOnce() -> T) -> T {
-    with_tools_env(None, None, f)
+    let _guard = TOOLS_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    with_env_var_opt("KIGI_RESPECT_GITIGNORE", None, f)
 }
 fn with_grok_respect_gitignore<T>(value: &str, f: impl FnOnce() -> T) -> T {
-    with_tools_env(Some(value), None, f)
+    let _guard = TOOLS_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    with_env_var_opt("KIGI_RESPECT_GITIGNORE", Some(value), f)
 }
 #[test]
 fn tools_config_default_disabled() {
@@ -1856,87 +1696,6 @@ fn tools_config_env_false_overrides_toml_true() {
             );
         },
     );
-}
-#[test]
-fn zdr_incompatible_tools_env_overrides_toml_false() {
-    with_tools_env(
-        None,
-        Some("true"),
-        || {
-            let config: toml::Value = toml::from_str(
-                    "[tools]\ndisable_zdr_incompatible_tools = false",
-                )
-                .unwrap();
-            let tc = ToolsConfig::resolve(&config);
-            assert!(tc.disable_zdr_incompatible_tools, "env must override TOML");
-        },
-    );
-}
-#[test]
-fn zdr_video_output_s3_deserializes_from_tools_block() {
-    let config: toml::Value = toml::from_str(
-            r#"
-            [tools]
-            disable_zdr_incompatible_tools = true
-
-            [tools.zdr_video_output_s3]
-            bucket = "team-videos"
-            endpoint = "https://s3.example.com"
-            region = "us-east-1"
-
-            [tools.zdr_video_output_s3.read_write]
-            access_key_id = "AKIA..."
-            secret_access_key = "secret"
-            "#,
-        )
-        .unwrap();
-    let tc = ToolsConfig::resolve(&config);
-    let s3 = tc.zdr_video_output_s3.expect("zdr_video_output_s3 should deserialize");
-    assert_eq!(s3.bucket, "team-videos");
-    assert!(s3.is_valid());
-}
-#[test]
-fn incomplete_zdr_video_output_s3_is_ignored() {
-    without_grok_respect_gitignore(|| {
-        let config: toml::Value = toml::from_str(
-                r#"
-                [tools]
-                disable_zdr_incompatible_tools = true
-
-                [tools.zdr_video_output_s3]
-                bucket = "team-videos"
-                "#,
-            )
-            .unwrap();
-        let tc = ToolsConfig::resolve(&config);
-        assert!(tc.zdr_video_output_s3.is_none());
-        assert!(
-            tc.disable_zdr_incompatible_tools,
-            "incomplete zdr_video_output_s3 must not drop disable_zdr_incompatible_tools"
-        );
-    });
-}
-#[test]
-fn malformed_zdr_video_output_s3_preserves_zdr_flag() {
-    without_grok_respect_gitignore(|| {
-        let config: toml::Value = toml::from_str(
-                r#"
-                [tools]
-                disable_zdr_incompatible_tools = true
-                respect_gitignore = true
-
-                [tools.zdr_video_output_s3]
-                bucket = "team-videos"
-                endpoint = "https://s3.example.com"
-                region = "us-east-1"
-                "#,
-            )
-            .unwrap();
-        let tc = ToolsConfig::resolve(&config);
-        assert!(tc.zdr_video_output_s3.is_none());
-        assert!(tc.disable_zdr_incompatible_tools);
-        assert!(tc.respect_gitignore);
-    });
 }
 #[test]
 fn roles_parse_from_toml() {

@@ -461,7 +461,6 @@ fn render_mcps(
                 badge: badges[i].as_str(),
                 badge_color: badge_colors[i],
                 collapsible: collapsibles[i],
-                underline_last_desc: false,
             })
         })
         .collect();
@@ -516,7 +515,7 @@ fn measure_entries(entries: &[PickerEntry<'_>]) -> u16 {
 mod tests {
     use super::*;
     use kigi_tui::views::extensions_modal::ExtensionsModalState;
-    use kigi_tui::views::mcps_modal::{McpServerDisplayStatus, McpServerInfo, McpWireSource};
+    use kigi_tui::views::mcps_modal::{McpServerDisplayStatus, McpServerInfo};
     use ratatui::layout::Rect;
 
     fn agent() -> AgentView {
@@ -533,9 +532,7 @@ mod tests {
             tools: Vec::new(),
             enabled: true,
             source: "local".to_string(),
-            wire_source: McpWireSource::Local,
             plugin_name: None,
-            is_managed_gateway: false,
         }
     }
 

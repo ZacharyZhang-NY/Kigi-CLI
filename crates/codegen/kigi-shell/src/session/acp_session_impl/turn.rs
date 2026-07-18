@@ -574,16 +574,6 @@ impl SessionActor {
                     .data(format!("failed to save user images to assets dir: {e}"))
             })?
         };
-        let attached_image_refs = if self.is_cursor_harness() {
-            Vec::new()
-        } else {
-            crate::session::placeholder_images::attached_image_references(&user_images)
-        };
-        self.tool_bridge_handle()
-            .update_resource(kigi_tools::types::resources::AttachedImages(
-                attached_image_refs,
-            ))
-            .await;
         let prompt_text_for_hook = user_message.clone();
         {
             let origin = super::super::PromptOrigin::from_prompt_id(prompt_id);

@@ -115,7 +115,6 @@ prost = { workspace = true, optional = true }
 kigi-paths = { path = "../kigi-paths" }
 kigi-shell-base = { workspace = true }
 kigi-env = { workspace = true }
-kigi-shell-session-support = { workspace = true }
 kigi-shared = { workspace = true }
 kigi-tracing-macros = { path = "../kigi-tracing-macros" }
 kigi-fsnotify = { path = "../kigi-fsnotify" }

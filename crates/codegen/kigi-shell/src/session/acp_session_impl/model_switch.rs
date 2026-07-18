@@ -196,9 +196,6 @@ impl SessionActor {
                     std::sync::Arc::new(tool_index),
                 ))
                 .await;
-            if let Some(client) = self.rebuild_spec.managed_gateway_tool_client.clone() {
-                bridge.update_resource(client).await;
-            }
             let plan_path = self.plan_mode.lock().plan_file_path().to_path_buf();
             bridge
                 .update_resource(kigi_tools::types::resources::PlanFilePath(plan_path))

@@ -533,19 +533,6 @@ pub fn acp_tool_update(
                 )]))
                 .raw_output(raw_output_json(output, rewriter)),
         )),
-        // Dual channel: prose for non-pager clients, typed `raw_output` for the pager.
-        ToolOutput::ImageGen(_)
-        | ToolOutput::ImageToVideo(_)
-        | ToolOutput::ReferenceToVideo(_)
-        | ToolOutput::ImageEdit(_) => Some(acp::ToolCallUpdate::new(
-            acp::ToolCallId::new(Arc::from(tool_call_id)),
-            acp::ToolCallUpdateFields::new()
-                .status(Some(acp::ToolCallStatus::Completed))
-                .content(Some(vec![acp::ToolCallContent::from(
-                    acp::ContentBlock::Text(acp::TextContent::new(output.to_prompt_format())),
-                )]))
-                .raw_output(raw_output_json(output, rewriter)),
-        )),
         ToolOutput::SubagentCompleted(sub) => {
             // Text includes resume handle for discoverability + meta for TUI.
             // Shared with the chat-bidi server via `to_model_text` so both
@@ -1033,34 +1020,6 @@ mod tests {
             }
             other => panic!("Expected ReadFile, got {:?}", other),
         }
-    }
-
-    #[test]
-    fn test_media_gen_acp_update_emits_prose_and_raw_output() {
-        // Dual channel: prompt-format JSON in content, typed variant in raw_output.
-        let output = ToolOutput::ImageToVideo(MediaGenOutput::new(PathBuf::from(
-            "/tmp/session/videos/3.mp4",
-        )));
-        let update = acp_tool_update(&output, "tc-1", None, None).expect("update");
-        let content = update.fields.content.expect("content");
-        let text = match &content[0] {
-            acp::ToolCallContent::Content(acp::Content {
-                content: acp::ContentBlock::Text(t),
-                ..
-            }) => t.text.clone(),
-            other => panic!("expected text content, got {other:?}"),
-        };
-        let prompt_json: serde_json::Value = serde_json::from_str(&text).expect("prompt json");
-        assert_eq!(prompt_json["path"], "/tmp/session/videos/3.mp4");
-        assert_eq!(prompt_json["filename"], "3.mp4");
-        assert_eq!(prompt_json["session_folder"], "videos");
-        assert_eq!(
-            prompt_json["message"],
-            "Video generated and saved to /tmp/session/videos/3.mp4. Do not read or re-display it, and do not describe how it appears to the user."
-        );
-        let raw = update.fields.raw_output.expect("raw_output");
-        assert_eq!(raw["type"], "ImageToVideo");
-        assert_eq!(raw["path"], "/tmp/session/videos/3.mp4");
     }
 
     #[test]

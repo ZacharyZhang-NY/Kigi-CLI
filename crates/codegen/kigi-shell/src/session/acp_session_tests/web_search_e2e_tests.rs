@@ -37,8 +37,6 @@ async fn web_search_errors_when_disabled() {
         web_search_config: kigi_tools::implementations::web_search::WebSearchConfig::Disabled,
         web_fetch_config: Default::default(),
         lsp: None,
-        image_gen_config: Default::default(),
-        video_gen_config: Default::default(),
         app_builder_deployer_config: Default::default(),
         api_key_provider: None,
         attribution_callback: None,

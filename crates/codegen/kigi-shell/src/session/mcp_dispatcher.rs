@@ -50,7 +50,6 @@ use tokio::sync::Mutex as TokioMutex;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::extensions::mcp::McpServerSource;
-use crate::session::managed_mcp::MANAGED_MCP_PREFIX;
 
 /// Tumbling-window coalescing period. See module doc.
 pub const COALESCE_WINDOW: Duration = Duration::from_millis(50);
@@ -65,10 +64,9 @@ pub const SERVER_STATUS_METHOD: &str = "x.ai/mcp/server_status";
 pub struct McpServerStatusPayload {
     /// Owning session id.
     pub session_id: String,
-    /// MCP server name (`grok_com_linear`, `github`, ...).
+    /// MCP server name (`github`, ...).
     pub name: String,
-    /// `managed` (sourced from cli-chat-proxy / `grok_com_` prefix)
-    /// or `local` (user `.kigi/config.toml`).
+    /// Always `local` (user `.kigi/config.toml` and friends).
     pub source: McpServerSource,
     /// Current status — see [`McpServerStatus`].
     pub status: McpServerStatus,
@@ -131,22 +129,12 @@ pub enum McpServerStatusReason {
     RestartSucceeded,
     /// The auto-restart path exhausted retries.
     RestartFailed,
-    /// A managed connector's reactive re-auth re-fetched a fresh token,
-    /// swapped the client, and re-handshook successfully. Distinct from
-    /// `RestartSucceeded` (reserved for the transport-close auto-restart
-    /// path) so a recovered managed token is observable on the wire.
-    ManagedTokenRefreshed,
 }
 
-/// Build [`McpServerSource`] from a server name. Mirrors the
-/// existing convention used by `build_mcp_catalog` and friends:
-/// names with the `MANAGED_MCP_PREFIX` prefix are managed.
-pub fn classify_source(name: &str) -> McpServerSource {
-    if name.starts_with(MANAGED_MCP_PREFIX) {
-        McpServerSource::Managed
-    } else {
-        McpServerSource::Local
-    }
+/// Build [`McpServerSource`] from a server name. All servers are
+/// locally configured.
+pub fn classify_source(_name: &str) -> McpServerSource {
+    McpServerSource::Local
 }
 
 /// State for the dispatcher's "intentional teardown" tracking.
@@ -392,22 +380,6 @@ pub fn build_payload(
             McpServerStatusReason::TransportClosed,
             None,
         ),
-        // A managed connector rejected for auth reasons surfaces as
-        // NeedsAuth ("visit grok.com"), not a generic Unavailable, so a
-        // client consuming only `server_status` (not the `mcp/list`
-        // `auth_required` boolean) shows the correct terminal state. Uses
-        // the same `is_auth_rejection_message` classifier the reroute and
-        // the reactive recovery path key on, so they cannot drift.
-        (McpClientEventKind::HandshakeFailed, McpClientEvent::HandshakeFailed { reason, .. })
-            if source == McpServerSource::Managed
-                && kigi_mcp::servers::is_auth_rejection_message(reason) =>
-        {
-            (
-                McpServerStatus::NeedsAuth,
-                McpServerStatusReason::AuthExpired,
-                Some(reason.clone()),
-            )
-        }
         (McpClientEventKind::HandshakeFailed, McpClientEvent::HandshakeFailed { reason, .. }) => {
             let detail = reason.clone();
             (
@@ -586,7 +558,7 @@ pub fn recoverable_http_servers(
             )
         })
         .map(|c| mcp_server_name(c).to_string())
-        .filter(|name| !name.starts_with(MANAGED_MCP_PREFIX) && !disabled.contains(name))
+        .filter(|name| !disabled.contains(name))
         .collect()
 }
 
@@ -984,58 +956,9 @@ mod tests {
         );
     }
 
-    /// Contract: a managed connector whose handshake is rejected for
-    /// auth reasons surfaces as `NeedsAuth`/`auth_expired` ("visit
-    /// grok.com"), NOT a generic `Unavailable`. Keys on the shared
-    /// `is_auth_rejection_message` classifier.
-    #[test]
-    fn managed_handshake_auth_rejection_maps_to_needs_auth() {
-        let key = (
-            "grok_com_notion".to_string(),
-            McpClientEventKind::HandshakeFailed,
-        );
-        let ev = McpClientEvent::HandshakeFailed {
-            server: "grok_com_notion".to_string(),
-            reason: "Auth required, when send initialize request".to_string(),
-        };
-        let payload = build_payload("sess1", &key, &ev);
-        assert_eq!(payload.source, McpServerSource::Managed);
-        assert_eq!(payload.status, McpServerStatus::NeedsAuth);
-        assert_eq!(payload.reason, McpServerStatusReason::AuthExpired);
-        let json = serde_json::to_value(&payload).unwrap();
-        // `McpServerStatus` serializes lowercase (no underscore); the
-        // reason enum serializes snake_case.
-        assert_eq!(json["status"], "needsauth");
-        assert_eq!(json["reason"], "auth_expired");
-    }
-
-    /// A managed handshake failure that is NOT an auth rejection (e.g. a
-    /// 403 policy denial or a 502) must stay `Unavailable` — the
-    /// `NeedsAuth` arm is auth-only.
-    #[test]
-    fn managed_handshake_non_auth_stays_unavailable() {
-        for reason in ["403 Forbidden", "cli-chat-proxy returned 502"] {
-            let key = (
-                "grok_com_slack".to_string(),
-                McpClientEventKind::HandshakeFailed,
-            );
-            let ev = McpClientEvent::HandshakeFailed {
-                server: "grok_com_slack".to_string(),
-                reason: reason.to_string(),
-            };
-            let payload = build_payload("sess1", &key, &ev);
-            assert_eq!(
-                payload.status,
-                McpServerStatus::Unavailable,
-                "non-auth managed failure must stay Unavailable: {reason}",
-            );
-            assert_eq!(payload.reason, McpServerStatusReason::HandshakeFailed);
-        }
-    }
-
-    /// The `NeedsAuth` arm is managed-only: a local (non-managed) server
-    /// whose handshake error happens to contain auth wording stays
-    /// `Unavailable` (local auth recovery is the OAuth path, not this one).
+    /// A local server whose handshake error happens to contain auth
+    /// wording stays `Unavailable` (local auth recovery is the OAuth
+    /// path, not this one).
     #[test]
     fn local_handshake_auth_rejection_stays_unavailable() {
         let key = ("github".to_string(), McpClientEventKind::HandshakeFailed);
@@ -1047,32 +970,6 @@ mod tests {
         assert_eq!(payload.source, McpServerSource::Local);
         assert_eq!(payload.status, McpServerStatus::Unavailable);
         assert_eq!(payload.reason, McpServerStatusReason::HandshakeFailed);
-    }
-
-    /// Wire contract: the new `ManagedTokenRefreshed` reason (emitted by
-    /// the reactive re-auth success push) serializes to snake_case.
-    #[test]
-    fn managed_token_refreshed_reason_serializes() {
-        let payload = McpServerStatusPayload {
-            session_id: "sess1".to_string(),
-            name: "grok_com_linear".to_string(),
-            source: McpServerSource::Managed,
-            status: McpServerStatus::Ready,
-            reason: McpServerStatusReason::ManagedTokenRefreshed,
-            detail: None,
-            tools: None,
-        };
-        let json = serde_json::to_value(&payload).unwrap();
-        assert_eq!(json["status"], "ready");
-        assert_eq!(json["reason"], "managed_token_refreshed");
-    }
-
-    /// Contract: managed server names (starting with `grok_com_`)
-    /// are classified as `Managed`; everything else as `Local`.
-    #[test]
-    fn classify_source_uses_managed_prefix() {
-        assert_eq!(classify_source("grok_com_linear"), McpServerSource::Managed);
-        assert_eq!(classify_source("github"), McpServerSource::Local);
     }
 
     /// Snapshot of the wire shape for one TransportClosed status push.
@@ -1393,15 +1290,14 @@ mod tests {
         )
     }
 
-    /// `recoverable_http_servers` keeps only non-managed, non-disabled
+    /// `recoverable_http_servers` keeps only non-disabled
     /// HTTP/SSE entries — the same predicate as the recovery gate.
     #[test]
-    fn recoverable_http_servers_excludes_managed_stdio_and_disabled() {
+    fn recoverable_http_servers_excludes_stdio_and_disabled() {
         let configs = vec![
             http_cfg("http-mcp-server"),
-            http_cfg("grok_com_slack"), // managed
-            http_cfg("admin_off"),      // disabled
-            stdio_cfg("local_stdio"),   // stdio
+            http_cfg("admin_off"),    // disabled
+            stdio_cfg("local_stdio"), // stdio
         ];
         let disabled: HashSet<String> = ["admin_off".to_string()].into_iter().collect();
         let got = recoverable_http_servers(&configs, &disabled);

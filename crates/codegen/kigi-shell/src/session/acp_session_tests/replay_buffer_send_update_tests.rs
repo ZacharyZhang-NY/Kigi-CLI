@@ -198,8 +198,6 @@ pub(super) async fn make_replay_send_update_fixture() -> ReplaySendUpdateFixture
         goal_plan_reconciled: std::sync::atomic::AtomicBool::new(false),
         pending_classifier_completions: parking_lot::Mutex::new(VecDeque::new()),
         goal_classifier_in_flight: std::sync::atomic::AtomicBool::new(false),
-        managed_mcp_handle: Default::default(),
-        managed_mcp_expires_at: std::sync::Mutex::new(None),
         initial_client_mcp_servers: vec![],
         tool_metadata_snapshot: Arc::new(std::sync::Mutex::new(Default::default())),
         mcp_announced_servers: Mutex::new(HashMap::new()),

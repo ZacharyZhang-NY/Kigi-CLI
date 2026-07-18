@@ -19,27 +19,12 @@ impl McpReminderMode {
     }
 }
 
-pub(super) fn gateway_tool_is_disabled(
-    tool: &crate::session::managed_mcp::GatewayTool,
-    disabled_gateway_tools: &std::collections::HashMap<String, std::collections::HashSet<String>>,
-) -> bool {
-    let qualified_name = tool.qualified_name();
-    disabled_gateway_tools
-        .get(crate::util::config::MANAGED_GATEWAY_DISABLED_CONNECTORS_KEY)
-        .is_some_and(|set| set.contains(&tool.connector_id))
-        || disabled_gateway_tools
-            .get(&tool.connector_id)
-            .is_some_and(|set| set.contains(&qualified_name))
-}
-
 pub(super) async fn refresh_mcp_snapshot_and_schedule_reminder_with(
     tool_bridge: Arc<crate::tools::bridge::ToolBridge>,
     mcp_state: Arc<TokioMutex<McpState>>,
-    managed_mcp_handle: crate::session::managed_mcp::ManagedMcpStateHandle,
     tool_metadata_snapshot: Arc<std::sync::Mutex<crate::session::tool_index::ToolMetadataSnapshot>>,
     mcp_reminder_dirty: Arc<std::sync::atomic::AtomicBool>,
     mcp_initialized: bool,
-    disabled_gateway_tools: &std::collections::HashMap<String, std::collections::HashSet<String>>,
     // External harness only: per-workspace `mcps/` descriptor root. `Some` makes
     // this refresh also update the on-disk descriptor mirror so late-connecting
     // servers become discoverable; `None` for other agent types (no-op).
@@ -51,7 +36,7 @@ pub(super) async fn refresh_mcp_snapshot_and_schedule_reminder_with(
 
     let all_defs = tool_bridge.tool_definitions().await;
     let mut seen_tools = std::collections::HashSet::new();
-    let mut mcp_tools: Vec<ToolMetadata> = all_defs
+    let mcp_tools: Vec<ToolMetadata> = all_defs
         .iter()
         .filter(|d| d.function.name.contains("__"))
         .filter(|d| seen_tools.insert(d.function.name.clone()))
@@ -67,61 +52,6 @@ pub(super) async fn refresh_mcp_snapshot_and_schedule_reminder_with(
             }
         })
         .collect();
-
-    let (gateway_catalog, mut gateway_connectors) = {
-        let state = managed_mcp_handle.lock().await;
-        let catalog = if state.gateway_tools_active {
-            match &state.gateway_tool_cache {
-                crate::session::managed_mcp::GatewayToolCatalogCache::Ready(catalog) => {
-                    Some(catalog.clone())
-                }
-                _ => None,
-            }
-        } else {
-            None
-        };
-        let connectors: Vec<String> = state.gateway_tool_connectors_seen.iter().cloned().collect();
-        (catalog, connectors)
-    };
-
-    if let Some(catalog) = gateway_catalog.as_ref() {
-        gateway_connectors.extend(catalog.tools.iter().map(|tool| tool.connector_id.clone()));
-    }
-    gateway_connectors.sort_unstable();
-    gateway_connectors.dedup();
-    let mut gateway_resource_entries = Vec::new();
-    if let Some(catalog) = gateway_catalog.as_ref() {
-        for tool in &catalog.tools {
-            let qualified_name = tool.qualified_name();
-            if gateway_tool_is_disabled(tool, disabled_gateway_tools) {
-                continue;
-            }
-            if !seen_tools.insert(qualified_name.clone()) {
-                continue;
-            }
-            gateway_resource_entries.push((
-                qualified_name.clone(),
-                kigi_tools::types::resources::ManagedGatewayToolSource {
-                    connector_id: tool.connector_id.clone(),
-                    connector_name: tool.connector_name.clone(),
-                    tool_id: tool.tool_id.clone(),
-                    tool_name: tool.tool_name.clone(),
-                    call_id: tool.call_id.clone(),
-                },
-            ));
-            // Gateway ids are the model/search contract. Display labels stay
-            // out of ToolMetadata so search_tool and permissions use stable ids:
-            // connector_id/tool_id here, connector_name/tool_name in UI only.
-            mcp_tools.push(ToolMetadata {
-                qualified_name,
-                server_name: tool.connector_id.clone(),
-                tool_name: tool.tool_id.clone(),
-                description: tool.description.clone(),
-                parameters: extract_parameter_names(&tool.json_schema),
-                input_schema: tool.json_schema.clone(),
-            });
-        }
-    }
 
     let servers_with_tools: std::collections::HashSet<&str> =
         mcp_tools.iter().map(|t| t.server_name.as_str()).collect();
@@ -150,12 +80,6 @@ pub(super) async fn refresh_mcp_snapshot_and_schedule_reminder_with(
         snapshot.mcp_initialized = mcp_initialized;
     }
 
-    tool_bridge
-        .update_resource(kigi_tools::types::resources::ManagedGatewayToolCatalog(
-            gateway_resource_entries.into_iter().collect(),
-        ))
-        .await;
-
     mcp_reminder_dirty.store(true, std::sync::atomic::Ordering::Relaxed);
     tracing::debug!("MCP snapshot updated, reminder marked dirty");
 
@@ -170,30 +94,8 @@ pub(super) async fn refresh_mcp_snapshot_and_schedule_reminder_with(
                 .map(|(n, c)| (n.clone(), Arc::clone(c)))
                 .collect()
         };
-        let protected_connectors = clients.iter().map(|(name, _)| name.clone()).collect();
-        let mut gateway_descriptors = Vec::new();
-        if let Some(catalog) = gateway_catalog.as_ref() {
-            for tool in &catalog.tools {
-                if gateway_tool_is_disabled(tool, disabled_gateway_tools) {
-                    continue;
-                }
-                gateway_descriptors.push(crate::session::mcp_descriptors::GatewayToolDescriptor {
-                    connector_id: tool.connector_id.clone(),
-                    tool_id: tool.tool_id.clone(),
-                    description: tool.description.clone(),
-                    json_schema: tool.json_schema.clone(),
-                });
-            }
-        }
         crate::session::mcp_descriptors::materialize_descriptors_for_clients(&mcps_root, clients)
             .await;
-        crate::session::mcp_descriptors::materialize_descriptors_for_gateway_tools(
-            &mcps_root,
-            gateway_descriptors,
-            gateway_connectors,
-            protected_connectors,
-        )
-        .await;
     }
 }
 
@@ -201,35 +103,14 @@ pub(super) async fn refresh_mcp_snapshot_and_schedule_reminder_with(
 pub(crate) async fn refresh_mcp_snapshot_for_test(
     tool_bridge: Arc<crate::tools::bridge::ToolBridge>,
     mcp_state: Arc<TokioMutex<McpState>>,
-    managed_mcp_handle: crate::session::managed_mcp::ManagedMcpStateHandle,
     tool_metadata_snapshot: Arc<std::sync::Mutex<crate::session::tool_index::ToolMetadataSnapshot>>,
-) {
-    refresh_mcp_snapshot_for_test_with_disabled(
-        tool_bridge,
-        mcp_state,
-        managed_mcp_handle,
-        tool_metadata_snapshot,
-        &Default::default(),
-    )
-    .await;
-}
-
-#[cfg(test)]
-pub(crate) async fn refresh_mcp_snapshot_for_test_with_disabled(
-    tool_bridge: Arc<crate::tools::bridge::ToolBridge>,
-    mcp_state: Arc<TokioMutex<McpState>>,
-    managed_mcp_handle: crate::session::managed_mcp::ManagedMcpStateHandle,
-    tool_metadata_snapshot: Arc<std::sync::Mutex<crate::session::tool_index::ToolMetadataSnapshot>>,
-    disabled_gateway_tools: &std::collections::HashMap<String, std::collections::HashSet<String>>,
 ) {
     refresh_mcp_snapshot_and_schedule_reminder_with(
         tool_bridge,
         mcp_state,
-        managed_mcp_handle,
         tool_metadata_snapshot,
         Arc::new(std::sync::atomic::AtomicBool::new(false)),
         false,
-        disabled_gateway_tools,
         None,
     )
     .await;

@@ -7,7 +7,7 @@ use super::test_fixtures;
 use crate::app::actions::Action;
 use crate::app::app_view::InputOutcome;
 use crate::views::file_search::line_viewer::LineViewerState;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent};
 
 impl AgentView {
     // -- Agents modal input handling --
@@ -225,19 +225,6 @@ impl AgentView {
             .is_some_and(|s| s.input.is_some())
         {
             return self.handle_modal_input_key(key);
-        }
-
-        // Ctrl+O opens grok.com connectors on the MCP servers tab.
-        if key.code == KeyCode::Char('o')
-            && key.modifiers == KeyModifiers::CONTROL
-            && self.extensions_modal.as_ref().is_some_and(|s| {
-                s.active_tab == crate::views::extensions_modal::ExtensionsTab::McpServers
-                    && !s.picker_state.search_active
-            })
-        {
-            return self.execute_modal_button_action(
-                crate::views::extensions_modal::ButtonAction::OpenManagedConnectors,
-            );
         }
 
         // Route chrome keys through ModalWindow first (mirrors the mouse path).
@@ -768,22 +755,6 @@ impl AgentView {
             &config,
         );
 
-        // Open the connectors URL on mouse-down (parity with Ctrl+O). A section-row
-        // click routes as Selected or NonSelectableClick, so intercept both here.
-        let clicked_entry = match &outcome {
-            crate::views::picker::PickerOutcome::Selected(i)
-            | crate::views::picker::PickerOutcome::Expand(i)
-            | crate::views::picker::PickerOutcome::NonSelectableClick(i) => Some(*i),
-            _ => None,
-        };
-        if let Some(idx) = clicked_entry
-            && self.extensions_modal_click_opens_connectors(idx, mouse.row)
-        {
-            return self.execute_modal_button_action(
-                crate::views::extensions_modal::ButtonAction::OpenManagedConnectors,
-            );
-        }
-
         // Hover states are managed by ModalWindow (close) and picker (filter).
 
         match outcome {
@@ -862,20 +833,6 @@ impl AgentView {
             state.mcps_collapsed_sections.insert(gk.to_string());
         }
         state.picker_state.scroll_offset = None;
-    }
-
-    /// Whether a click at `mouse_row` on entry `entry_idx` hit the connectors URL
-    /// link band recorded at last paint (opens the URL instead of folding).
-    fn extensions_modal_click_opens_connectors(&self, entry_idx: usize, mouse_row: u16) -> bool {
-        self.extensions_modal.as_ref().is_some_and(|state| {
-            // Parity with the Ctrl+O guard: don't open while the search bar has focus.
-            !state.picker_state.search_active
-                && state
-                    .picker_state
-                    .link_band
-                    .as_ref()
-                    .is_some_and(|(idx, band)| *idx == entry_idx && band.contains(&mouse_row))
-        })
     }
 
     /// Non-selectable mask for the extensions modal picker (from last render).
@@ -1094,9 +1051,6 @@ impl AgentView {
                         && let Some(idx) = state.selected_data_index()
                         && let Some(server) = servers.get(idx)
                     {
-                        if server.is_managed_gateway {
-                            return InputOutcome::Action(Action::OpenManagedConnectors);
-                        }
                         // Drop repeats while an action is in flight on the same
                         // row to avoid double-spawning the OAuth browser flow.
                         let sel = state.picker_state.selected;
@@ -1120,9 +1074,6 @@ impl AgentView {
                 InputOutcome::Action(Action::ReloadSkills)
             }
             ButtonAction::RefreshMcpList => InputOutcome::Action(Action::RefreshMcpList),
-            ButtonAction::OpenManagedConnectors => {
-                InputOutcome::Action(Action::OpenManagedConnectors)
-            }
             ButtonAction::ToggleSelectedMcpServer => {
                 if let Some(ref mut state) = self.extensions_modal {
                     use crate::views::extensions_modal::TabDataState;
@@ -1179,29 +1130,15 @@ impl AgentView {
             ButtonAction::RemoveSelectedMcpServer => {
                 let resolved = self.extensions_modal.as_ref().and_then(|state| {
                     use crate::views::extensions_modal::TabDataState;
-                    use crate::views::mcps_modal::is_removable;
                     let TabDataState::Loaded(ref servers) = state.mcps_data else {
                         return None;
                     };
                     let idx = state.selected_data_index()?;
                     let server = servers.get(idx)?;
-                    if is_removable(server) {
-                        Some(Ok(server.name.clone()))
-                    } else {
-                        Some(Err(server.name.clone()))
-                    }
+                    Some(server.name.clone())
                 });
                 match resolved {
-                    Some(Err(name)) => {
-                        if let Some(ref mut s) = self.extensions_modal {
-                            s.modal_message =
-                                Some(crate::views::extensions_modal::ModalMessage::Error(
-                                    format!("Cannot remove managed server '{name}'"),
-                                ));
-                        }
-                        InputOutcome::Changed
-                    }
-                    Some(Ok(server_name)) => {
+                    Some(server_name) => {
                         if let Some(ref mut s) = self.extensions_modal {
                             s.pending_action = Some("removing...".into());
                             s.pending_entry_index = Some(s.picker_state.selected);
@@ -1627,150 +1564,5 @@ mod extensions_modal_search_key_tests {
         let state = agent.extensions_modal.as_ref().unwrap();
         assert_eq!(state.active_tab, ExtensionsTab::Hooks);
         assert!(state.picker_state.search_active);
-    }
-}
-
-#[cfg(test)]
-mod connectors_url_click_tests {
-    use super::AgentView;
-    use crate::app::actions::Action;
-    use crate::app::app_view::InputOutcome;
-    use crate::views::extensions_modal::{
-        ExtensionsModalState, ExtensionsTab, TabDataState, render_extensions_modal,
-    };
-    use crate::views::mcps_modal::{McpServerDisplayStatus, McpServerInfo, McpWireSource};
-    use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-    use ratatui::buffer::Buffer;
-    use ratatui::layout::Rect;
-
-    fn managed_server() -> McpServerInfo {
-        McpServerInfo {
-            name: "grok_com_linear".into(),
-            display_name: None,
-            status: McpServerDisplayStatus::Ready,
-            tool_count: 0,
-            auth_required: false,
-            tools: vec![],
-            enabled: true,
-            source: "managed".into(),
-            wire_source: McpWireSource::Managed,
-            plugin_name: None,
-            is_managed_gateway: false,
-        }
-    }
-
-    // Build an agent whose extensions modal shows an expanded Managed section,
-    // then paint it so `hit_areas` + `link_band` reflect the real layout.
-    fn rendered_agent() -> AgentView {
-        let mut agent = super::test_fixtures::make_agent();
-        let mut state = ExtensionsModalState::new(ExtensionsTab::McpServers);
-        state.mcps_data = TabDataState::Loaded(vec![managed_server()]);
-        agent.extensions_modal = Some(state);
-        let area = Rect::new(0, 0, 100, 40);
-        let mut buf = Buffer::empty(area);
-        render_extensions_modal(
-            &mut buf,
-            area,
-            agent.extensions_modal.as_mut().unwrap(),
-            None,
-            false,
-            0,
-        );
-        agent
-    }
-
-    fn left_down(column: u16, row: u16) -> MouseEvent {
-        MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column,
-            row,
-            modifiers: KeyModifiers::NONE,
-        }
-    }
-
-    // (column inside the Managed row, its recorded URL band) from the last paint.
-    fn managed_url_hit(agent: &AgentView) -> (u16, std::ops::Range<u16>) {
-        let state = agent.extensions_modal.as_ref().unwrap();
-        let (entry_idx, band) = state
-            .picker_state
-            .link_band
-            .clone()
-            .expect("expanded Managed section records a connectors URL band");
-        let hit = state.picker_state.hit_areas.as_ref().unwrap();
-        let pos = hit
-            .entry_indices
-            .iter()
-            .position(|&e| e == entry_idx)
-            .unwrap();
-        (hit.item_rects[pos].x + 2, band)
-    }
-
-    #[test]
-    fn mouse_down_on_url_row_opens_connectors() {
-        let mut agent = rendered_agent();
-        let (col, band) = managed_url_hit(&agent);
-        let outcome = agent.handle_extensions_modal_mouse(&left_down(col, band.start));
-        assert!(matches!(
-            outcome,
-            InputOutcome::Action(Action::OpenManagedConnectors)
-        ));
-        // The section stays expanded (opened, did not fold).
-        assert!(
-            !agent
-                .extensions_modal
-                .as_ref()
-                .unwrap()
-                .mcps_collapsed_sections
-                .contains("mcp-section:managed")
-        );
-    }
-
-    #[test]
-    fn mouse_down_on_label_row_folds_not_opens() {
-        let mut agent = rendered_agent();
-        let (col, label_row) = {
-            let state = agent.extensions_modal.as_ref().unwrap();
-            let (entry_idx, _band) = state.picker_state.link_band.clone().unwrap();
-            let hit = state.picker_state.hit_areas.as_ref().unwrap();
-            let pos = hit
-                .entry_indices
-                .iter()
-                .position(|&e| e == entry_idx)
-                .unwrap();
-            let rect = hit.item_rects[pos];
-            (rect.x + 2, rect.y) // first row of the item rect is the fold-toggle label
-        };
-        let outcome = agent.handle_extensions_modal_mouse(&left_down(col, label_row));
-        assert!(!matches!(
-            outcome,
-            InputOutcome::Action(Action::OpenManagedConnectors)
-        ));
-        // Fold happened: the Managed section is now collapsed.
-        assert!(
-            agent
-                .extensions_modal
-                .as_ref()
-                .unwrap()
-                .mcps_collapsed_sections
-                .contains("mcp-section:managed")
-        );
-    }
-
-    #[test]
-    fn mouse_down_on_url_row_while_searching_does_not_open() {
-        // Parity with the Ctrl+O guard: opening is suppressed while search is active.
-        let mut agent = rendered_agent();
-        let (col, band) = managed_url_hit(&agent);
-        agent
-            .extensions_modal
-            .as_mut()
-            .unwrap()
-            .picker_state
-            .search_active = true;
-        let outcome = agent.handle_extensions_modal_mouse(&left_down(col, band.start));
-        assert!(!matches!(
-            outcome,
-            InputOutcome::Action(Action::OpenManagedConnectors)
-        ));
     }
 }

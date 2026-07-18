@@ -1054,9 +1054,6 @@ pub(crate) async fn handle_subagent_request(
                 ctx.memory_config.clone()
             },
             Default::default(),
-            ctx.managed_mcp_state.clone(),
-            None,
-            ctx.managed_mcp_proxy_base_url.clone(),
             effective_model_id,
             ctx.yolo_mode
                 || matches!(
@@ -1069,8 +1066,6 @@ pub(crate) async fn handle_subagent_request(
             None,
             ctx.web_search_config.clone(),
             ctx.web_fetch_config.clone(),
-            ctx.image_gen_config.clone(),
-            ctx.video_gen_config.clone(),
             ctx.app_builder_deployer_config.clone(),
             ctx.write_file_enabled,
             ctx.goal_enabled,

@@ -6293,7 +6293,6 @@ dependencies = [
  "kigi-sandbox",
  "kigi-shared",
  "kigi-shell-base",
- "kigi-shell-session-support",
  "kigi-sqlite-journal",
  "kigi-subagent-resolution",
  "kigi-system-power",
@@ -6387,27 +6386,6 @@ dependencies = [
  "tracing",
  "url",
  "windows 0.61.3",
-]
-
-[[package]]
-name = "kigi-shell-session-support"
-version = "0.1.0"
-dependencies = [
- "agent-client-protocol",
- "axum",
- "chrono",
- "kigi-file-utils",
- "kigi-http",
- "kigi-shell-base",
- "kigi-version",
- "kigi-workspace",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tokio-util",
- "tracing",
 ]
 
 [[package]]

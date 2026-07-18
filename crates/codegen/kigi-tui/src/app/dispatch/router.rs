@@ -869,12 +869,6 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
             }
             vec![]
         }
-        Action::OpenManagedConnectors => {
-            use crate::terminal::hyperlinks::SchemeFilter;
-            let url = crate::views::mcps_modal::managed_connectors_url(None);
-            crate::app::link_opener::open_url_if_safe(&url, SchemeFilter::Standard);
-            vec![]
-        }
         Action::OpenNextLink => {
             with_active_agent(app, |agent| agent.cycle_highlighted_link(true));
             vec![]

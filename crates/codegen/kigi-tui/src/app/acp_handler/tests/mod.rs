@@ -1818,7 +1818,7 @@ pub(super) fn make_mcps_modal_with_servers(
     state
 }
 pub(super) fn seed_owner_agent_with_open_modal(app: &mut AppView) {
-    use crate::views::mcps_modal::{McpServerDisplayStatus, McpServerInfo, McpWireSource};
+    use crate::views::mcps_modal::{McpServerDisplayStatus, McpServerInfo};
     let owner = app.agents.get_mut(&AgentId(0)).expect("owner present");
     owner.extensions_modal = Some(
         make_mcps_modal_with_servers(
@@ -1826,8 +1826,7 @@ pub(super) fn seed_owner_agent_with_open_modal(app: &mut AppView) {
                 McpServerInfo { name : "alpha".into(), display_name : None, status :
                 McpServerDisplayStatus::Initializing, tool_count : 0, auth_required :
                 false, tools : Vec::new(), enabled : true, source : "local".into(),
-                wire_source : McpWireSource::Local, plugin_name : None,
-                is_managed_gateway : false, }
+                plugin_name : None, }
             ],
         ),
     );

@@ -2536,7 +2536,7 @@ mod tests {
 
     #[test]
     fn markdown_wrapped_session_media_path_fully_linkified() {
-        // Regression: imagine-tool prose whose long session path soft-wraps
+        // Regression: media-tool prose whose long session path soft-wraps
         // across rows. The whole path must be clickable (one overlay region
         // per row, all pointing at the full file:// URL) — not just the
         // leading path fragment on the first row.
@@ -3285,7 +3285,7 @@ mod tests {
 
         let mut entries = vec![
             ScrollbackEntry::new(RenderBlock::ToolCall(ToolCallBlock::Other(
-                OtherToolCallBlock::new("image_gen", "saved image")
+                OtherToolCallBlock::new("media_tool", "saved image")
                     .with_media_ref(&image_path, false),
             ))),
             ScrollbackEntry::new(RenderBlock::execute_with_output(
@@ -4142,7 +4142,7 @@ mod tests {
         std::fs::write(&image_path, make_test_png(120, 120)).unwrap();
 
         let entry = ScrollbackEntry::new(RenderBlock::ToolCall(ToolCallBlock::Other(
-            OtherToolCallBlock::new("image_gen", "saved image").with_media_ref(&image_path, false),
+            OtherToolCallBlock::new("media_tool", "saved image").with_media_ref(&image_path, false),
         )));
         let viewport = Rect::new(0, 0, 80, 30);
         let result = render_with_scratch(std::slice::from_ref(&entry), viewport, 0, None);

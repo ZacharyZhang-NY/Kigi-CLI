@@ -124,7 +124,6 @@ pub(crate) struct SessionSpawnOptions<'a> {
         crate::session::announcement_state::AnnouncementState,
     >,
     pub session_meta: Option<&'a acp::Meta>,
-    pub managed_mcp_expires_at: Option<chrono::DateTime<chrono::Utc>>,
     pub model_agent_type: Option<&'a str>,
     pub session_model_id: acp::ModelId,
     pub session_yolo_mode: bool,
@@ -260,7 +259,6 @@ pub(crate) fn chat_session_spawn_options<'a>(
         persisted_goal_mode: None,
         persisted_announcement_state: None,
         session_meta,
-        managed_mcp_expires_at: None,
         model_agent_type,
         session_model_id,
         session_yolo_mode,
@@ -591,8 +589,6 @@ pub struct MvpAgent {
     /// Local config.toml override for session registry (`[cli] session_registry`).
     /// `Some(true)` enables, `Some(false)` disables, `None` defers to remote settings.
     session_registry_local: Option<bool>,
-    /// Managed MCP configs and gateway tool catalog; lazily fetched.
-    managed_mcp_cache: crate::session::managed_mcp::ManagedMcpStateHandle,
     /// Agent-level MCP server state. LEADER-SAFE(shared): MCP servers are
     /// agent-scoped, not per-client.
     agent_mcp_state: std::sync::Arc<

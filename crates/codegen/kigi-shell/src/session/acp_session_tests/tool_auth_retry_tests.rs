@@ -77,7 +77,7 @@ fn err(msg: &str) -> Result<ToolRunResult, kigi_tool_runtime::ToolError> {
     ))
 }
 
-/// Production-shaped HTTP failure (image_gen / video_gen emit this on
+/// Production-shaped HTTP failure (tool HTTP clients emit this on
 /// any non-success status). Use for retry tests that should exercise
 /// the structured status-code path rather than the string fallback.
 fn http_err(status: u16, msg: &str) -> Result<ToolRunResult, kigi_tool_runtime::ToolError> {
@@ -98,14 +98,14 @@ fn is_auth_tool_error_classification() {
     // (expected, error) — covers every branch + a sample of negatives
     // a careless edit could plausibly break.
     let cases: Vec<(bool, kigi_tool_runtime::ToolError)> = vec![
-        // Primary path: image_gen / video_gen now surface 401s as
+        // Primary path: tool HTTP clients surface 401s as
         // structured custom errors with status in details; classifier
         // matches the status code, not the rendered string.
         (
             true,
             kigi_tool_runtime::ToolError::new(
                 kigi_tool_runtime::ToolErrorKind::Custom,
-                "Image generation failed with HTTP 401 Unauthorized: missing token",
+                "Tool call failed with HTTP 401 Unauthorized: missing token",
             )
             .with_details(
                 serde_json::json!({"code": "http_failure", HTTP_STATUS_DETAILS_KEY: 401}),
@@ -175,14 +175,14 @@ fn is_auth_tool_error_classification() {
         // Negative: transport failure must not trigger a token refresh.
         (
             false,
-            kigi_tool_runtime::ToolError::invalid_arguments("Image generation timed out after 60s"),
+            kigi_tool_runtime::ToolError::invalid_arguments("tool call timed out after 60s"),
         ),
         // Negative: structural not-found error; not a network response.
         (
             false,
             kigi_tool_runtime::ToolError::not_found(
-                kigi_tool_protocol::ToolId::new("image_gen").expect("valid"),
-                "Tool not found: image_gen",
+                kigi_tool_protocol::ToolId::new("no_such_tool").expect("valid"),
+                "Tool not found: no_such_tool",
             ),
         ),
         // Negative: bare digits embedded in a request id must not trigger
@@ -240,11 +240,11 @@ async fn auth_error_with_successful_refresh_retries() {
     let am = succeeding_am();
     let calls = AtomicUsize::new(0);
 
-    let r = call_with_auth_retry(Some(&am), None, "image_gen", || {
+    let r = call_with_auth_retry(Some(&am), None, "test_tool", || {
         let n = calls.fetch_add(1, Ordering::SeqCst);
         async move {
             if n == 0 {
-                http_err(401, "Image generation failed with HTTP 401 Unauthorized: x")
+                http_err(401, "Tool call failed with HTTP 401 Unauthorized: x")
             } else {
                 ok_result("retried-ok")
             }
@@ -299,7 +299,7 @@ async fn retry_is_bounded_at_one_even_if_retry_also_fails_with_auth() {
 
     let r = call_with_auth_retry(Some(&am), None, "test_tool", || {
         calls.fetch_add(1, Ordering::SeqCst);
-        async { http_err(401, "Image generation failed with HTTP 401 Unauthorized: x") }
+        async { http_err(401, "Tool call failed with HTTP 401 Unauthorized: x") }
     })
     .await;
 

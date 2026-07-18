@@ -58,8 +58,6 @@ async fn tool_bridge_routes_writes_through_injected_fs() {
         web_search_config: Default::default(),
         web_fetch_config: Default::default(),
         lsp: None,
-        image_gen_config: Default::default(),
-        video_gen_config: Default::default(),
         app_builder_deployer_config: Default::default(),
         api_key_provider: None,
         attribution_callback: None,

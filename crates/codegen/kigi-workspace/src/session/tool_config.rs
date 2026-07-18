@@ -294,10 +294,6 @@ impl SessionContextFactory for WorkspaceSessionContextFactory {
             web_search_config: kigi_tools::implementations::web_search::WebSearchConfig::default(),
             web_fetch_config: build_web_fetch_config(),
             lsp: None,
-            image_gen_config:
-                kigi_tools::implementations::grok_build::image_gen::ImageGenConfig::default(),
-            video_gen_config:
-                kigi_tools::implementations::grok_build::video_gen::VideoGenConfig::default(),
             app_builder_deployer_config:
                 kigi_tools::implementations::grok_build::deploy_app::AppBuilderDeployerConfig::default(),
             api_key_provider: None,
@@ -389,8 +385,6 @@ pub mod test_support {
                 web_search_config: Default::default(),
                 web_fetch_config: Default::default(),
                 lsp: None,
-                image_gen_config: Default::default(),
-                video_gen_config: Default::default(),
                 app_builder_deployer_config: Default::default(),
                 api_key_provider: None,
                 attribution_callback: None,

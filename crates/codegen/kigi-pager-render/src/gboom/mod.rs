@@ -2,7 +2,7 @@
 //! the terminal via the kitty graphics protocol.
 //!
 //! Typing `/gboom` (and nothing else) opens a modal overlay — the same
-//! surface the imagine-video player uses — and streams PNG frames via
+//! surface the inline video player uses — and streams PNG frames via
 //! per-frame kitty `a=T` retransmission at the ~30 fps animation tick. The
 //! simulation steps with wall-clock `dt`, so gameplay speed is independent
 //! of the achieved frame rate.

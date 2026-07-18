@@ -139,9 +139,6 @@ pub(crate) async fn spawn_session_actor(
     persisted_announcement_state: Option<crate::session::announcement_state::AnnouncementState>,
     memory_config: Option<crate::config::MemoryConfig>,
     feedback_flags: crate::session::feedback_manager::FeedbackFlags,
-    managed_mcp_handle: crate::session::managed_mcp::ManagedMcpStateHandle,
-    managed_mcp_expires_at: Option<chrono::DateTime<chrono::Utc>>,
-    managed_mcp_proxy_base_url: String,
     session_model_id: acp::ModelId,
     session_yolo_mode: bool,
     session_auto_mode: bool,
@@ -150,8 +147,6 @@ pub(crate) async fn spawn_session_actor(
     max_retries: Option<u32>,
     web_search_config: kigi_tools::implementations::WebSearchConfig,
     web_fetch_config: kigi_tools::implementations::grok_build::web_fetch::WebFetchConfig,
-    image_gen_config: kigi_tools::implementations::grok_build::image_gen::ImageGenConfig,
-    video_gen_config: kigi_tools::implementations::grok_build::video_gen::VideoGenConfig,
     app_builder_deployer_config: kigi_tools::implementations::grok_build::deploy_app::AppBuilderDeployerConfig,
     write_file_enabled: bool,
     goal_enabled: bool,
@@ -660,14 +655,6 @@ pub(crate) async fn spawn_session_actor(
     let context_window_tokens = context_window_override
         .map(|c| c.get())
         .unwrap_or(sampling_config.context_window);
-    let managed_gateway_tool_client = auth_manager.as_ref().map(|am| {
-        kigi_tools::types::resources::ManagedGatewayToolClient(Arc::new(
-            ShellManagedGatewayToolClient {
-                proxy_base_url: managed_mcp_proxy_base_url.clone(),
-                auth_manager: am.clone(),
-            },
-        ))
-    });
     let mcp_state = {
         let mut state = McpState::new_with_meta(mcp_servers.clone(), mcp_meta_config_map);
         if let Some(ref pool) = parent_mcp_pool {
@@ -711,8 +698,6 @@ pub(crate) async fn spawn_session_actor(
         web_search_config: web_search_config.clone(),
         backend_search: backend_tools_enabled,
         web_fetch_config: web_fetch_config.clone(),
-        image_gen_config: image_gen_config.clone(),
-        video_gen_config: video_gen_config.clone(),
         app_builder_deployer_config: app_builder_deployer_config.clone(),
         write_file_enabled,
         subagents_enabled,
@@ -739,7 +724,6 @@ pub(crate) async fn spawn_session_actor(
         respect_gitignore,
         path_not_found_hints,
         mcp_state: mcp_state.clone(),
-        managed_gateway_tool_client: managed_gateway_tool_client.clone(),
         is_non_interactive: startup_hints.non_interactive,
         system_prompt_label,
         owner_session_id: Some(session_info.id.0.to_string()),
@@ -1125,8 +1109,6 @@ pub(crate) async fn spawn_session_actor(
         goal_plan_reconciled: std::sync::atomic::AtomicBool::new(false),
         pending_classifier_completions: parking_lot::Mutex::new(VecDeque::new()),
         goal_classifier_in_flight: std::sync::atomic::AtomicBool::new(false),
-        managed_mcp_handle,
-        managed_mcp_expires_at: std::sync::Mutex::new(managed_mcp_expires_at),
         tool_metadata_snapshot: Arc::new(std::sync::Mutex::new(Default::default())),
         mcp_announced_servers: Mutex::new(
             persisted_announcement_state
@@ -1222,14 +1204,6 @@ pub(crate) async fn spawn_session_actor(
             .update_resource(kigi_tools::types::tool_index::ToolIndex(
                 std::sync::Arc::new(tool_index),
             ))
-            .await;
-    }
-    if let Some(client) = managed_gateway_tool_client.clone() {
-        session
-            .agent
-            .borrow()
-            .tool_bridge()
-            .update_resource(client)
             .await;
     }
     {
@@ -1448,7 +1422,6 @@ pub(crate) async fn spawn_session_actor(
             permission_handle: permissions_for_handle,
             attribution_callback: attribution_callback_for_handle,
             agent_name: agent_name_for_handle,
-            managed_mcp_proxy_base_url,
             session_default_agent_profile,
             allowed_subagent_types: allowed_subagent_types_for_handle,
             hook_registry: hook_registry_for_handle,
@@ -1541,9 +1514,6 @@ pub(crate) async fn spawn_session_on_thread(
     persisted_announcement_state: Option<crate::session::announcement_state::AnnouncementState>,
     memory_config: Option<crate::config::MemoryConfig>,
     feedback_flags: crate::session::feedback_manager::FeedbackFlags,
-    managed_mcp_handle: crate::session::managed_mcp::ManagedMcpStateHandle,
-    managed_mcp_expires_at: Option<chrono::DateTime<chrono::Utc>>,
-    managed_mcp_proxy_base_url: String,
     session_model_id: acp::ModelId,
     session_yolo_mode: bool,
     session_auto_mode: bool,
@@ -1552,8 +1522,6 @@ pub(crate) async fn spawn_session_on_thread(
     max_retries: Option<u32>,
     web_search_config: kigi_tools::implementations::WebSearchConfig,
     web_fetch_config: kigi_tools::implementations::grok_build::web_fetch::WebFetchConfig,
-    image_gen_config: kigi_tools::implementations::grok_build::image_gen::ImageGenConfig,
-    video_gen_config: kigi_tools::implementations::grok_build::video_gen::VideoGenConfig,
     app_builder_deployer_config: kigi_tools::implementations::grok_build::deploy_app::AppBuilderDeployerConfig,
     write_file_enabled: bool,
     goal_enabled: bool,
@@ -1688,9 +1656,6 @@ pub(crate) async fn spawn_session_on_thread(
                     persisted_announcement_state,
                     memory_config,
                     feedback_flags,
-                    managed_mcp_handle,
-                    managed_mcp_expires_at,
-                    managed_mcp_proxy_base_url,
                     session_model_id,
                     session_yolo_mode,
                     session_auto_mode,
@@ -1699,8 +1664,6 @@ pub(crate) async fn spawn_session_on_thread(
                     max_retries,
                     web_search_config,
                     web_fetch_config,
-                    image_gen_config,
-                    video_gen_config,
                     app_builder_deployer_config,
                     write_file_enabled,
                     goal_enabled,

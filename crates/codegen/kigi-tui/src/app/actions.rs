@@ -58,8 +58,6 @@ pub enum Action {
     ExitSessionConfirmed,
     /// Open an arbitrary URL in the system browser (with scheme validation).
     OpenUrl(String),
-    /// Open grok.com managed connectors, appending session teamId when set.
-    OpenManagedConnectors,
     /// Cycle to the next visible link (or highlight the first if none selected).
     OpenNextLink,
     /// Cycle to the previous visible link.

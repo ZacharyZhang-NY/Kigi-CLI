@@ -5,7 +5,6 @@ const BUNDLED_FILES: &[(&str, &str)] = &[("README.md", include_str!("../README.m
 const HELP_SKILL_MD: &str = include_str!("../skills/help/SKILL.md");
 const CREATE_SKILL_MD: &str = include_str!("../skills/create-skill/SKILL.md");
 const CODE_REVIEW_SKILL_MD: &str = include_str!("../skills/code-review/SKILL.md");
-const IMAGINE_SKILL_MD: &str = include_str!("../skills/imagine/SKILL.md");
 /// Compiled-in SKILL.md content for `/check-work` (available to headless mode).
 pub const CHECK_SKILL_MD: &str = include_str!("../skills/check-work/SKILL.md");
 /// Compiled-in SKILL.md content for headless `--best-of-n` (not extracted as
@@ -40,7 +39,8 @@ pub const BEST_OF_N_SKILL_MD: &str = include_str!("../skills/best-of-n/SKILL.md"
 ///   them for many releases.
 /// - After the rename has had time to propagate, you **may** clean old
 ///   strings out of this list for hygiene.
-const LEGACY_BUNDLED_SKILL_NAMES: &[&str] = &["check", "best-of-n", "docx", "pptx", "xlsx"];
+const LEGACY_BUNDLED_SKILL_NAMES: &[&str] =
+    &["check", "best-of-n", "docx", "pptx", "xlsx", "imagine"];
 
 /// All bundled skill SKILL.md files. Single source of truth used by both
 /// the full extraction path (version bump) and the missing-file fast path
@@ -56,7 +56,6 @@ const BUNDLED_SKILLS: &[(&str, &str)] = &[
     ("help", HELP_SKILL_MD),
     ("create-skill", CREATE_SKILL_MD),
     ("code-review", CODE_REVIEW_SKILL_MD),
-    ("imagine", IMAGINE_SKILL_MD),
     ("check-work", CHECK_SKILL_MD),
 ];
 
@@ -210,13 +209,13 @@ mod tests {
             std::fs::write(home.join(filename), "old").unwrap();
         }
         std::fs::write(home.join("skills/help/SKILL.md"), "old").unwrap();
-        for name in ["check-work", "imagine", "code-review"] {
+        for name in ["check-work", "code-review"] {
             std::fs::write(home.join(format!("skills/{name}/SKILL.md")), "old").unwrap();
         }
         std::fs::write(home.join(".metadata_version"), "0.0.0-stale").unwrap();
 
         // Simulate legacy skills that should be cleaned up.
-        for name in ["check", "best-of-n", "docx", "pptx", "xlsx"] {
+        for name in ["check", "best-of-n", "docx", "pptx", "xlsx", "imagine"] {
             std::fs::create_dir_all(home.join(format!("skills/{name}"))).unwrap();
             std::fs::write(
                 home.join(format!("skills/{name}/SKILL.md")),
@@ -238,7 +237,7 @@ mod tests {
             std::fs::read_to_string(home.join("skills/help/SKILL.md")).unwrap(),
             "old"
         );
-        for name in ["check-work", "imagine", "code-review"] {
+        for name in ["check-work", "code-review"] {
             assert_ne!(
                 std::fs::read_to_string(home.join(format!("skills/{name}/SKILL.md"))).unwrap(),
                 "old",
@@ -248,7 +247,7 @@ mod tests {
 
         // Legacy skill directories must have been removed (the key part of
         // supporting renames like check → check-work without leaving orphans).
-        for name in ["check", "best-of-n", "docx", "pptx", "xlsx"] {
+        for name in ["check", "best-of-n", "docx", "pptx", "xlsx", "imagine"] {
             assert!(
                 !home.join(format!("skills/{name}")).exists(),
                 "legacy '{name}' skill directory should have been deleted during version bump"

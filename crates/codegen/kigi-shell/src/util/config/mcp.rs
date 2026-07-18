@@ -328,12 +328,10 @@ pub fn all_toml_mcp_server_names(cwd: &std::path::Path) -> std::collections::Has
     load_all_mcp_configs(cwd).keys().cloned().collect()
 }
 
-pub const MANAGED_GATEWAY_DISABLED_CONNECTORS_KEY: &str = "__managed_gateway_connectors";
-
 /// Persist `disabled_tools` for a server under `[disabled_mcp_tools]` in config.toml.
 ///
 /// Uses a dedicated top-level section (not `[mcp_servers]`) to avoid creating
-/// incomplete server entries that fail to deserialize for managed servers.
+/// incomplete server entries that fail to deserialize.
 pub async fn save_mcp_disabled_tools(server_name: &str, disabled_tools: &[String]) -> Result<()> {
     let path = config_path();
     let mut root: TomlValue = match tokio::fs::read_to_string(&path).await {

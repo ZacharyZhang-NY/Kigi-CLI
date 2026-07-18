@@ -1451,13 +1451,13 @@ fn tool_definition_mode_concise_supports_alternate_meta_tool_pair() {
 #[test]
 fn tool_error_wire_render_limited_round_trips_with_card_id() {
     let err = ToolErrorWire::RenderLimited {
-        tool_id: ToolId::new("render:imagine_video").unwrap(),
+        tool_id: ToolId::new("render:video_player").unwrap(),
         card_id: Some("card-uuid-123".to_owned()),
         reason: "budget exceeded".to_owned(),
     };
     let v = roundtrip(&err);
     assert_eq!(v["code"], json!("render_limited"));
-    assert_eq!(v["tool_id"], json!("render:imagine_video"));
+    assert_eq!(v["tool_id"], json!("render:video_player"));
     assert_eq!(v["card_id"], json!("card-uuid-123"));
     assert_eq!(v["reason"], json!("budget exceeded"));
 }
@@ -1465,7 +1465,7 @@ fn tool_error_wire_render_limited_round_trips_with_card_id() {
 #[test]
 fn tool_error_wire_render_limited_omits_card_id_when_none() {
     let err = ToolErrorWire::RenderLimited {
-        tool_id: ToolId::new("render:imagine_video").unwrap(),
+        tool_id: ToolId::new("render:video_player").unwrap(),
         card_id: None,
         reason: "budget exceeded".to_owned(),
     };

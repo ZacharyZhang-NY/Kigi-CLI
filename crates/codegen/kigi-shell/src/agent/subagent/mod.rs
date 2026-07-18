@@ -144,7 +144,6 @@ pub(crate) struct SubagentSpawnContext {
     /// context is built (an async snapshot from the parent session actor).
     pub client_hooks: crate::extensions::hooks::ClientHooks,
     pub sampling_config: kigi_sampler::SamplerConfig,
-    pub managed_mcp_proxy_base_url: String,
     /// The staging auth header value propagated from the parent. Used
     /// when materialising subagent `SamplerConfig`s for auth-flow tracking
     /// and for `inject_url_derived_headers` in the construction helpers.
@@ -209,10 +208,6 @@ pub(crate) struct SubagentSpawnContext {
     pub web_search_config: kigi_tools::implementations::WebSearchConfig,
     /// Resolved config for web fetch.
     pub web_fetch_config: kigi_tools::implementations::grok_build::web_fetch::WebFetchConfig,
-    /// Image generation config (parent-inherited).
-    pub image_gen_config: kigi_tools::implementations::grok_build::image_gen::ImageGenConfig,
-    /// Resolved config for video generation.
-    pub video_gen_config: kigi_tools::implementations::grok_build::video_gen::VideoGenConfig,
     /// Resolved config for the deploy service.
     pub app_builder_deployer_config:
         kigi_tools::implementations::grok_build::deploy_app::AppBuilderDeployerConfig,
@@ -320,8 +315,6 @@ pub(crate) struct SubagentSpawnContext {
     /// time). Servers added later via `UpdateMcpServers` (managed MCPs, plugin reload)
     /// will not appear here. Named references only resolve against the initial config.
     pub parent_mcp_configs: Vec<agent_client_protocol::McpServer>,
-    /// Parent's managed MCP state handle (Arc-shared, no re-fetch).
-    pub managed_mcp_state: crate::session::managed_mcp::ManagedMcpStateHandle,
     /// Snapshot of the parent session's MCP client pool at spawn time.
     pub parent_mcp_pool: Option<crate::session::mcp_servers::SharedMcpPool>,
     /// Snapshot of the parent session's resolved tool schema at spawn time.

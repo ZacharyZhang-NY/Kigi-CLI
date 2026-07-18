@@ -622,7 +622,6 @@ pub(crate) fn build_grouped_picker_entries<'a>(
                 badge: b.badge,
                 badge_color: None,
                 collapsible: b.collapsible,
-                underline_last_desc: false,
             }));
             grouped_pos += 1;
         }

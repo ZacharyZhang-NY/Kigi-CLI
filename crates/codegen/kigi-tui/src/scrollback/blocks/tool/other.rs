@@ -190,7 +190,7 @@ impl BlockContent for OtherToolCallBlock {
         let muted_collapsed =
             ctx.mute_when_collapsed(ctx.appearance.scrollback.blocks.tool.muted_collapsed);
 
-        // Inline media blocks (image_gen / video_gen): render the header and a
+        // Inline media blocks: render the header and a
         // filepath line on every terminal.
         if let Some(media_path) = self.media_ref_path() {
             let header = self.collapsed_line(&theme, muted_collapsed, Some(ctx.content_width()));
