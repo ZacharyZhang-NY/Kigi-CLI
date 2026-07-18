@@ -53,9 +53,9 @@ pub enum WorkspaceError {
     #[error("hunk action failed: {0}")]
     HunkActionFailed(String),
 
-    /// An error from the server connection or tool server.
-    #[error("hub error: {0}")]
-    HubError(String),
+    /// An internal workspace error.
+    #[error("workspace error: {0}")]
+    Internal(String),
 
     /// Deploy-service error tagged with its gRPC status class; see
     /// [`DeployError`] for how the class crosses the workspace RPC boundary.

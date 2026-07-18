@@ -52,7 +52,6 @@ members = [
     "crates/codegen/kigi-update",
     "crates/codegen/kigi-version",
     "crates/codegen/kigi-workspace",
-    "crates/codegen/kigi-workspace-client",
     "crates/codegen/kigi-workspace-types",
     "crates/codegen/kigi-hooks-plugins-types",
     "crates/codegen/kigi-hunk-tracker",
@@ -65,16 +64,12 @@ members = [
     "crates/codegen/kigi-token-estimation",
     "crates/codegen/kigi-tracing-macros",
     "crates/codegen/kigi-tty-utils",
-    "crates/common/kigi-computer-hub-core",
-    "crates/common/kigi-computer-hub-mcp-adapter",
-    "crates/common/kigi-computer-hub-sdk",
     "crates/common/kigi-compaction",
     "crates/common/kigi-interjection-core",
     "crates/common/kigi-test-utils",
     "crates/common/kigi-tool-protocol",
     "crates/common/kigi-tool-runtime",
     "crates/common/kigi-tool-types",
-    "crates/common/kigi-tracing",
     "third_party/dagre_rust",
     "third_party/graphlib_rust",
     "third_party/mermaid-to-svg",
@@ -130,10 +125,6 @@ educe = "0.6.0"
 enum_delegate = "0.2"
 env_logger = "0.11"
 eventsource-stream = "0.2"
-fastrace = { version = "0.7" }
-fastrace-opentelemetry = { version = "0.18" }
-fastrace-reqwest = { version = "0.2" }
-fastrace-tonic = { version = "0.1" }
 fastrand = "2"
 filetime = "0.2.25"
 flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
@@ -178,9 +169,6 @@ oauth2 = "5"
 obfstr = "0.4"
 once_cell = "1"
 opentelemetry = "0.32"
-opentelemetry-http = { version = "0.32", features = ["reqwest-blocking"] }
-opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic", "reqwest-blocking-client", "tls-roots"] }
-opentelemetry-proto = { version = "0.32", features = ["gen-tonic"] }
 opentelemetry_sdk = { version = "0.32.1", features = ["spec_unstable_metrics_views"] }
 parking_lot = "0.12.4"
 pbjson-build = "0.9"
@@ -239,7 +227,6 @@ tiny-skia = "0.12"
 tokio = { version = "1", features = ["full"] }
 tokio-retry = "0.3"
 tokio-stream = "0.1"
-tokio-tungstenite = "0.27"
 tokio-util = { version = "0.7", features = ["rt"] }
 toml = "0.9"
 toml_edit = "0.22"
@@ -269,8 +256,6 @@ wiremock = "0.6"
 wl-clipboard-rs = "0.9"
 kigi-acp-lib = { path = "crates/codegen/kigi-acp-lib" }
 kigi-agent-lifecycle = { path = "crates/codegen/kigi-agent-lifecycle" }
-kigi-computer-hub-core = { path = "crates/common/kigi-computer-hub-core" }
-kigi-computer-hub-sdk = { path = "crates/common/kigi-computer-hub-sdk" }
 kigi-gix-status = { path = "crates/codegen/kigi-gix-status" }
 kigi-agent = { path = "crates/codegen/kigi-agent" }
 kigi-auth = { path = "crates/codegen/kigi-auth" }
@@ -310,7 +295,6 @@ kigi-token-estimation = { path = "crates/codegen/kigi-token-estimation" }
 kigi-tool-protocol = { path = "crates/common/kigi-tool-protocol" }
 kigi-tool-runtime = { path = "crates/common/kigi-tool-runtime" }
 kigi-tool-types = { path = "crates/common/kigi-tool-types" }
-kigi-tracing = { path = "crates/common/kigi-tracing" }
 kigi-tty-utils = { path = "crates/codegen/kigi-tty-utils" }
 zbus = { version = "5" }
 zstd = "0.13"
@@ -388,7 +372,3 @@ too_many_arguments = "allow"
 # TODO: -> "deny" once/if merge queue enabled
 uninlined_format_args = "allow"
 
-# The `fastrace::trace(properties = { … })` proc-macro expands `"{param}"`
-# into `format!("{}", param)`, which clippy flags as useless_format.
-# Suppressed until the upstream crate fixes its codegen (fixed in 0.7.16+).
-useless_format = "allow"

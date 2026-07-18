@@ -165,7 +165,7 @@ pub fn test_env_cmd_tokio(
         // Mirrors `leader.rs` and the pty-harness `env_for_pager`.
         .env("KIGI_SHARE_DIR", home.join(".kigi"))
         .env("KIGI_CODE_BASE_URL", mock_url)
-        .env("KIGI_XAI_API_BASE_URL", mock_url)
+        .env("KIGI_API_BASE_URL", mock_url)
         .env("XAI_API_KEY", "test-key-for-ci")
         .env("KIGI_TELEMETRY_ENABLED", "false")
         .env("KIGI_FEEDBACK_ENABLED", "false")

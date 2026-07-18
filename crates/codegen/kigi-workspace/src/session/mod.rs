@@ -8,12 +8,8 @@ pub mod tool_config;
 use crate::capability::CapabilityMode;
 use crate::config::{MemoryConfig, SessionContextFactory};
 use crate::file_system::{AsyncFsWrapper, LocalFs};
-use crate::hub::{HubConfig, HubHandle};
 use crate::session::file_state::FileStateTracker;
-use kigi_computer_hub_mcp_adapter::McpBridgeHandle;
 use kigi_hunk_tracker::HunkTrackerHandle;
-use kigi_mcp::servers::McpState;
-use kigi_tool_protocol::ToolId;
 use kigi_tool_runtime::WorkspaceViewerContext;
 use kigi_tools::notification::types::{ToolNotification, ToolNotificationHandle};
 use kigi_tools::registry::types::{FinalizedToolset, ToolConfig, ToolServerConfig};
@@ -76,12 +72,6 @@ pub struct WorkspaceSession {
     inner: RwLock<WorkspaceSessionInner>,
     /// Per-session lock that serialises `update_tool_config` calls.
     pub(crate) update_lock: tokio::sync::Mutex<()>,
-    /// Per-session MCP state (owned clients, etc.).
-    pub(crate) mcp_state: Arc<tokio::sync::Mutex<McpState>>,
-    /// MCP bridges kept alive for the session lifetime.
-    pub(crate) mcp_bridges: tokio::sync::Mutex<Vec<McpBridgeHandle>>,
-    /// Qualified tool IDs registered on the server for this session's MCP tools.
-    pub(crate) mcp_tool_ids: tokio::sync::Mutex<Vec<ToolId>>,
     /// Per-user feature-flag bag resolved at session-bind time, frozen for
     /// the session lifetime. `None` → tools use their safe defaults.
     pub(crate) viewer_ctx: Option<WorkspaceViewerContext>,
@@ -107,8 +97,7 @@ pub struct WorkspaceSession {
     /// created (or last rebound) with. `None` when the session was resolved
     /// from the workspace default (no explicit toolset in the bind metadata).
     /// Lets a rebind detect a config change and re-resolve instead of silently
-    /// reusing a stale toolset (e.g. a session created by a metadata-less
-    /// hub revive bind that a config-carrying client rebind must correct).
+    /// reusing a stale toolset.
     bind_tool_config_fingerprint: std::sync::Mutex<Option<serde_json::Value>>,
     /// The last snapshot-driven rebuild failed and kept a stale toolset;
     /// cleared by any successful install. While set, an identical-config
@@ -190,9 +179,6 @@ impl WorkspaceSession {
             update_lock: tokio::sync::Mutex::new(()),
             bind_tool_config_fingerprint: std::sync::Mutex::new(None),
             stale_resolve: std::sync::atomic::AtomicBool::new(false),
-            mcp_state: Arc::new(tokio::sync::Mutex::new(McpState::new(vec![]))),
-            mcp_bridges: tokio::sync::Mutex::new(Vec::new()),
-            mcp_tool_ids: tokio::sync::Mutex::new(Vec::new()),
             viewer_ctx,
             yolo_mode: std::sync::atomic::AtomicBool::new(false),
             system_notifications,
@@ -440,9 +426,6 @@ pub type ClientExtSink = std::sync::Arc<dyn Fn(String, serde_json::Value) + Send
 /// Workspace-wide shared state.
 pub struct WorkspaceShared {
     pub(crate) default_tool_config: ToolServerConfig,
-    /// Require an explicit toolset on every `session.bind`; see
-    /// [`crate::config::WorkspaceConfig::require_explicit_toolset`].
-    pub(crate) require_explicit_toolset: bool,
     /// See [`crate::config::WorkspaceConfig::confine_fs_to_workspace_root`].
     /// Default `false`; enabled only for remote-sandbox workspace servers.
     pub(crate) confine_fs_to_workspace_root: bool,
@@ -464,38 +447,16 @@ pub struct WorkspaceShared {
     /// disabled/enabled lists). Used by `discover_plugins` via the
     /// `discovery` module.
     pub(crate) plugin_discovery_config: crate::discovery::PluginDiscoveryConfig,
-    /// Live server connection handle. `None` until
-    /// [`WorkspaceHandle::connect_hub`](crate::handle::WorkspaceHandle::connect_hub)
-    /// is called (or if no [`HubConfig`] was provided).
-    ///
-    /// Uses `tokio::sync::Mutex` so the guard can be held across the
-    /// async `HubHandle::connect()` call, preventing TOCTOU races.
-    pub(crate) hub_handle: tokio::sync::Mutex<Option<HubHandle>>,
-    /// Remote-origin tool configs (consumer direction), updated by the
-    /// notification listener.
-    pub(crate) hub_tools_snapshot: arc_swap::ArcSwap<Vec<ToolConfig>>,
-    /// Server config stashed at construction time for deferred connect.
-    pub(crate) hub_config: Option<HubConfig>,
-    /// Auth provider for xAI service calls.
-    pub(crate) auth_provider: Option<kigi_computer_hub_sdk::SharedAuthProvider>,
-    /// Connection-level sink feeding the `ActivityTracker` (drained by
-    /// `run_activity_feed`); not a network egress. `None` until `connect_hub()` sets it.
-    pub(crate) activity_notify_handle:
-        arc_swap::ArcSwap<Option<kigi_tools::notification::types::ToolNotificationHandle>>,
     /// Sink for workspace-originated ext-notifications to the client (e.g.
     /// `x.ai/search/fuzzy/status`). Mode-agnostic: the shell wires it to the
     /// agent gateway in local mode, and to the server in proxy mode. `None` until
     /// set via [`WorkspaceHandle::set_client_ext_sink`](crate::handle::WorkspaceHandle::set_client_ext_sink).
     pub(crate) client_ext_sink: arc_swap::ArcSwap<Option<ClientExtSink>>,
-    pub(crate) local_registry: kigi_computer_hub_sdk::LocalRegistry,
+    pub(crate) local_registry: kigi_tool_runtime::LocalRegistry,
     pub(crate) activity_tracker: std::sync::Arc<crate::activity::ActivityTracker>,
     /// Runtime-tunable timing/threshold config for the tool server.
     /// Read by the status publisher task and at shutdown.
     pub(crate) status_config: crate::status_config::StatusConfig,
-    /// Opaque metadata for the tool server registration, forwarded verbatim to
-    /// the server; structured access goes through
-    /// [`WorkspaceShared::server_metadata_typed`].
-    pub(crate) server_metadata: Option<serde_json::Value>,
     /// Workspace-level fuzzy search manager. Separate from the shell's
     /// own `FuzzySearchManager` — this instance serves remote (hub/RPC)
     /// clients.
@@ -533,7 +494,6 @@ pub struct WorkspaceShared {
     /// turn start inside the check→install window deterministically.
     #[cfg(test)]
     pub(crate) post_resolve_test_hook: parking_lot::Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
-    pub(crate) client_fs_hash_memo: crate::file_system::client_fs::FileHashMemo,
 }
 impl WorkspaceShared {
     /// Workspace root directory.
@@ -578,40 +538,6 @@ impl WorkspaceShared {
             .get(session_id)
             .map(|w| w.value().clone())
     }
-    /// Stable hub server id (`--server-id`), if a hub config is present.
-    pub(crate) fn server_id(&self) -> Option<String> {
-        self.hub_config.as_ref().and_then(|c| c.server_id.clone())
-    }
-    /// Auth provider used for xAI service calls.
-    pub fn auth_provider(&self) -> Option<&kigi_computer_hub_sdk::SharedAuthProvider> {
-        self.auth_provider.as_ref()
-    }
-    /// Parse the opaque [`server_metadata`](Self::server_metadata) blob into
-    /// the typed subset the workspace needs (currently `sandbox_id`);
-    /// unknown/missing fields default cleanly. A present-but-malformed blob is
-    /// logged and salvaged field-by-field (a bad sibling field must not
-    /// silently drop `sandbox_id` from every environment artifact).
-    pub(crate) fn server_metadata_typed(&self) -> crate::config::WorkspaceServerMetadata {
-        let Some(v) = self.server_metadata.as_ref() else {
-            return Default::default();
-        };
-        match serde_json::from_value(v.clone()) {
-            Ok(typed) => typed,
-            Err(e) => {
-                tracing::warn!(
-                    error = % e,
-                    "workspace: malformed server_metadata; salvaging sandbox_id field-wise"
-                );
-                crate::config::WorkspaceServerMetadata {
-                    sandbox_id: v
-                        .get("sandbox_id")
-                        .and_then(serde_json::Value::as_str)
-                        .map(str::to_owned),
-                    ..Default::default()
-                }
-            }
-        }
-    }
     pub fn default_tool_config(&self) -> &ToolServerConfig {
         &self.default_tool_config
     }
@@ -623,49 +549,6 @@ impl WorkspaceShared {
     }
     pub fn mcp_tools_snapshot(&self) -> Arc<Vec<ToolConfig>> {
         self.mcp_tools_snapshot.load_full()
-    }
-    /// The tool server, if a server connection is active.
-    ///
-    /// Returns a clone of the [`ToolServer`](kigi_computer_hub_sdk::ToolServer)
-    /// which is cheap (`Arc` bump). Uses `try_lock` to avoid blocking
-    /// on the async mutex from synchronous contexts. Returns `None` if
-    /// the lock is held (i.e. a `connect_hub` call is in progress).
-    pub fn hub_server(&self) -> Option<kigi_computer_hub_sdk::ToolServer> {
-        self.hub_handle
-            .try_lock()
-            .ok()
-            .and_then(|guard| guard.as_ref().map(|h| h.server.clone()))
-    }
-    /// Like [`Self::hub_server`] but awaits the `hub_handle` lock instead of
-    /// returning `None` on contention. Use from async contexts that must not
-    /// confuse a transient `connect_hub` lock-hold with "no hub connected";
-    /// `None` means no hub is connected.
-    pub async fn hub_server_blocking(&self) -> Option<kigi_computer_hub_sdk::ToolServer> {
-        self.hub_handle
-            .lock()
-            .await
-            .as_ref()
-            .map(|h| h.server.clone())
-    }
-    /// Current snapshot of hub-provided tool configs (consumer direction).
-    pub fn hub_tools_snapshot(&self) -> Arc<Vec<ToolConfig>> {
-        self.hub_tools_snapshot.load_full()
-    }
-    /// Compose a session's tool `ctx.notification_handle` as a fan-out of the
-    /// connection-level activity feed (internal tracker accounting) and the
-    /// opt-in per-session `system.notify` sender. Only the `system.notify` leg
-    /// reaches a client, so the fan-out can't double-wake. `None` → factory default.
-    pub(crate) fn compose_session_notification_handle(
-        &self,
-        system_notify_handle: Option<ToolNotificationHandle>,
-    ) -> Option<ToolNotificationHandle> {
-        let activity = self.activity_notify_handle.load_full().as_ref().clone();
-        match (activity, system_notify_handle) {
-            (None, None) => None,
-            (Some(a), None) => Some(a),
-            (None, Some(s)) => Some(s),
-            (Some(a), Some(s)) => Some(ToolNotificationHandle::tee(vec![a, s])),
-        }
     }
     pub fn activity_tracker(&self) -> &std::sync::Arc<crate::activity::ActivityTracker> {
         &self.activity_tracker
@@ -717,7 +600,6 @@ impl WorkspaceShared {
         };
         let trigger = SwapTrigger::from_rebuild_source(source);
         let mcp_snap = self.mcp_tools_snapshot.load_full();
-        let hub_snap = self.hub_tools_snapshot.load_full();
         let sessions: Vec<(String, Arc<WorkspaceSession>)> = {
             let guard = self.sessions.read();
             guard
@@ -779,7 +661,6 @@ impl WorkspaceShared {
                 baseline,
                 session.capability_mode(),
                 &mcp_snap,
-                &hub_snap,
                 session.cwd().to_path_buf(),
                 session.session_env().clone(),
                 &sid,
@@ -787,7 +668,7 @@ impl WorkspaceShared {
                 Some(self.local_registry.clone()),
                 self.lsp.clone(),
                 session.viewer_ctx().cloned(),
-                self.compose_session_notification_handle(session.system_notify_handle()),
+                session.system_notify_handle(),
                 session.terminal_backend().clone(),
             ) {
                 Ok((effective, toolset)) => {

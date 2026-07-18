@@ -110,12 +110,6 @@ See ~/.kigi/README.md for more information.
     },
     /// Manage git worktrees
     Worktree(crate::worktree_cmd::WorktreeArgs),
-    /// Expose this workspace to the Computer Hub (via the leader).
-    ///
-    /// Disabled by default and enabled server-side per account; set
-    /// `KIGI_WORKSPACE_COMMAND=1` to enable it locally for testing.
-    #[command(hide = true)]
-    Workspace(WorkspaceMgmtArgs),
     /// Open the Agent Dashboard view at startup.
     ///
     /// Centralised, agent-native overview of every session (top-level and
@@ -138,7 +132,7 @@ pub struct WrapArgs {
     )]
     pub command: Vec<String>,
 }
-/// Targets a running leader process by PID (used by `kigi leader` / `kigi workspace`).
+/// Targets a running leader process by PID (used by `kigi leader`).
 #[derive(Debug, clap::Args, Clone, Default)]
 pub struct LeaderTargetArgs {
     /// Leader process ID from `kigi leader list`.
@@ -168,69 +162,6 @@ pub enum LeaderMgmtCommand {
     },
     /// Stop all running leader processes
     Kill,
-}
-#[derive(Debug, clap::Args, Clone)]
-pub struct WorkspaceMgmtArgs {
-    #[command(subcommand)]
-    pub command: WorkspaceMgmtCommand,
-}
-#[derive(Debug, Subcommand, Clone)]
-pub enum WorkspaceMgmtCommand {
-    /// Start (or update) the workspace→hub exposure.
-    Start(WorkspaceStartArgs),
-    /// Drain and disconnect from the hub, keeping the exposure warm.
-    Pause {
-        #[command(flatten)]
-        target: LeaderTargetArgs,
-        /// Emit machine-readable JSON output.
-        #[arg(long)]
-        json: bool,
-    },
-    /// Reconnect a paused exposure to the hub.
-    Resume {
-        #[command(flatten)]
-        target: LeaderTargetArgs,
-        /// Emit machine-readable JSON output.
-        #[arg(long)]
-        json: bool,
-    },
-    /// Stop exposing the workspace (the leader keeps running).
-    Stop {
-        #[command(flatten)]
-        target: LeaderTargetArgs,
-        /// Emit machine-readable JSON output.
-        #[arg(long)]
-        json: bool,
-    },
-    /// Restart the exposure (stop, then start with the given options).
-    Restart(WorkspaceStartArgs),
-    /// Show the current workspace-exposure status.
-    #[command(visible_alias = "list")]
-    Status {
-        #[command(flatten)]
-        target: LeaderTargetArgs,
-        /// Emit machine-readable JSON output.
-        #[arg(long)]
-        json: bool,
-    },
-}
-#[derive(Debug, clap::Args, Clone)]
-pub struct WorkspaceStartArgs {
-    /// Computer Hub WebSocket URL (default: `[hub].url`, then the prod hub).
-    #[arg(long, value_name = "URL")]
-    pub hub_url: Option<String>,
-    /// Workspace root directory to expose. Defaults to the current directory.
-    #[arg(long, value_name = "DIR", value_hint = ValueHint::DirPath)]
-    pub cwd: Option<PathBuf>,
-    /// Force leader mode for this command, overriding config.
-    #[arg(long, conflicts_with = "no_leader")]
-    pub leader: bool,
-    /// Refuse to start even when config enables leader mode.
-    #[arg(long, conflicts_with = "leader")]
-    pub no_leader: bool,
-    /// Emit machine-readable JSON output.
-    #[arg(long)]
-    pub json: bool,
 }
 /// Arguments for the `agent` subcommand.
 #[derive(Debug, clap::Args, Clone)]
@@ -276,9 +207,9 @@ pub struct AgentArgs {
     /// Override the CLI chat proxy base URL.
     #[arg(long = "coding-api-base-url")]
     pub coding_api_base_url: Option<String>,
-    /// Override the public xAI API base URL.
-    #[arg(long = "xai-api-base-url")]
-    pub xai_api_base_url: Option<String>,
+    /// Override the direct (BYOK / external-API-key) API base URL.
+    #[arg(long = "api-base-url")]
+    pub api_base_url: Option<String>,
     /// Agent runtime mode. Optional: bare `kigi agent` (and the `kigi acp`
     /// alias) default to stdio.
     #[command(subcommand)]

@@ -928,9 +928,6 @@ pub(crate) struct SessionActor {
     /// Centralized event tracking: event log, turn-end guard, active tool,
     /// doom loop terminate flag. All event-related state lives here.
     pub(crate) events: crate::session::events::EventTracker,
-    /// Optional hub-side session event emitter (always constructed without a
-    /// harness client in the agent; methods no-op with `None` transport).
-    pub(crate) observability_bridge: kigi_computer_hub_sdk::ObservabilityBridge,
     /// Turn number captured at the start of each turn (before prompt index
     /// increment).  Used by `ToolCallStarted` bridge emissions so they
     /// report the same turn number as `TurnStarted` / `TurnEnded`.
@@ -1522,8 +1519,6 @@ mod fs_injection_regression_tests;
 #[path = "acp_session_tests/interjection_actor_tests.rs"]
 mod interjection_actor_tests;
 #[cfg(test)]
-#[path = "acp_session_tests/observability_bridge_mapping_tests.rs"]
-mod observability_bridge_mapping_tests;
 #[cfg(test)]
 #[path = "acp_session_tests/permission_auto_mode_tests.rs"]
 mod permission_auto_mode_tests;

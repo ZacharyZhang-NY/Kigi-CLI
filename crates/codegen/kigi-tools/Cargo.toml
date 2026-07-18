@@ -52,9 +52,6 @@ serde_path_to_error = { workspace = true }
 kigi-tool-runtime = { workspace = true }
 kigi-tool-types = { workspace = true }
 kigi-tool-protocol = { workspace = true }
-kigi-computer-hub-core = { workspace = true }
-kigi-computer-hub-sdk = { workspace = true }
-
 futures = { workspace = true }
 similar = { workspace = true }
 strum = { version = "0.26", features = ["derive"] }

@@ -664,8 +664,6 @@ pub struct MvpAgent {
     plugin_registry_initialized: std::cell::Cell<bool>,
     persona_io_summaries: Vec<String>,
     /// Local workspace ops, built lazily via [`Self::ensure_local_workspace_ops`].
-    /// The agent never opens Computer Hub as a harness/client; remote cloud
-    /// sandboxes are gateway-owned (`gateway_bridge` / `computer_sessions`).
     workspace_ops: RefCell<Option<kigi_workspace::WorkspaceOps>>,
     /// Sessions opened with `require_gateway` / chat light-frontend (K13).
     /// Prompt-time guard consults this when the bridge map entry is missing,

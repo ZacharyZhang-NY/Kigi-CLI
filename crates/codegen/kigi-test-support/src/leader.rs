@@ -142,7 +142,7 @@ impl LeaderStdioClient {
             // (re-)elected leader binds the same sandboxed path.
             .env("KIGI_LEADER_SOCKET", home.join(".kigi").join("leader.sock"))
             .env("KIGI_CODE_BASE_URL", server.url())
-            .env("KIGI_XAI_API_BASE_URL", server.url())
+            .env("KIGI_API_BASE_URL", server.url())
             .env("XAI_API_KEY", "test-key-for-ci")
             .env("KIGI_TELEMETRY_ENABLED", "false")
             .env("KIGI_FEEDBACK_ENABLED", "false")

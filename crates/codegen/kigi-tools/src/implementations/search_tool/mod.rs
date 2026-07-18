@@ -90,7 +90,7 @@ pub fn build_server_reminder(
         return None;
     }
 
-    let mut text = format!("Connected MCP servers:\n",);
+    let mut text = "Connected MCP servers:\n".to_string();
     for server in servers {
         text.push_str(&format_server_line(server));
     }

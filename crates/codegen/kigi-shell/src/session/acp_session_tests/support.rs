@@ -12,12 +12,6 @@ pub(crate) const HARNESS_VERIFIES_SENTENCE: &str =
 pub(crate) const PLAN_SEED_TODOS_PHRASE: &str =
     "Seed todos from the plan's acceptance criteria via";
 #[cfg(test)]
-pub(crate) fn noop_observability_bridge() -> kigi_computer_hub_sdk::ObservabilityBridge {
-    kigi_computer_hub_sdk::ObservabilityBridge::new(
-        None,
-        kigi_tool_protocol::SessionId::new("test").expect("valid"),
-    )
-}
 #[cfg(test)]
 pub(crate) async fn test_agent_default() -> kigi_agent::Agent {
     test_agent_with_tools(vec![]).await
@@ -99,7 +93,6 @@ async fn test_agent_from_config(
         video_gen_config: Default::default(),
         app_builder_deployer_config: Default::default(),
         api_key_provider: None,
-        auth_provider: None,
         attribution_callback: None,
         system_reminder_tag: kigi_tools::reminders::DEFAULT_REMINDER_TAG,
     };
@@ -336,7 +329,6 @@ pub(crate) async fn create_test_actor_ex(
         plugin_registry: std::cell::RefCell::new(None),
         plugin_registry_handle: None,
         events: crate::session::events::EventTracker::new(std::path::Path::new("/tmp")),
-        observability_bridge: noop_observability_bridge(),
         current_turn_number: std::cell::Cell::new(0),
         last_recap_main_turn: std::cell::Cell::new(0),
         recap_in_flight: std::cell::Cell::new(false),

@@ -1059,11 +1059,11 @@ fn apply_requirements_inner(
     enforce_str!("models", "default", config.models.default);
     enforce_str!("cli", "channel", config.cli.channel);
     enforce_str!("cli", "minimum_version", config.cli.minimum_version);
-    if let Some(val) = req_str(req, "endpoints", "xai_api_base_url")
-        && config.endpoints.xai_api_base_url != val
+    if let Some(val) = req_str(req, "endpoints", "api_base_url")
+        && config.endpoints.api_base_url != val
     {
-        config.endpoints.xai_api_base_url = val.to_owned();
-        push("endpoints.xai_api_base_url", val.to_owned());
+        config.endpoints.api_base_url = val.to_owned();
+        push("endpoints.api_base_url", val.to_owned());
     }
     if let Some(val) = req_str(req, "endpoints", "coding_api_base_url")
         && config.endpoints.coding_api_base_url.as_deref() != Some(val)

@@ -251,34 +251,8 @@ pub(crate) async fn spawn_session_actor(
             .as_ref()
             .map(kigi_workspace::permission::resolution::deny_read_globs_from_config)
             .unwrap_or_default();
-        let hub_permission = if kigi_workspace::permission::hitl_permission_live_enabled() {
-            let server = match workspace_ops.workspace_handle() {
-                Some(handle) => handle.hub_server_blocking().await,
-                None => None,
-            };
-            let transport = server
-                .and_then(|server| {
-                    kigi_workspace::permission::ToolServerPermissionTransport::from_session_id(
-                        server,
-                        session_info.id.0.as_ref(),
-                    )
-                })
-                .map(|t| {
-                    std::sync::Arc::new(t)
-                        as std::sync::Arc<dyn kigi_workspace::permission::PermissionHookTransport>
-                });
-            if transport.is_none() {
-                tracing::debug!(
-                    session_id = % session_info.id.0,
-                    "hitl permission live enabled but no remote transport available; using local prompt"
-                );
-            }
-            transport
-        } else {
-            None
-        };
         let (permissions, _permission_events_rx) =
-            kigi_workspace::permission::spawn_permission_manager_with_hub(
+            kigi_workspace::permission::spawn_permission_manager(
                 session_info.id.clone(),
                 gateway.clone(),
                 tool_context.cwd.clone(),
@@ -289,7 +263,6 @@ pub(crate) async fn spawn_session_actor(
                 session_yolo_mode,
                 session_client_identifier.clone(),
                 crate::util::config::remember_tool_approvals_from_disk(),
-                hub_permission,
             );
         if crate::util::config::auto_mode_session_active(
             crate::util::config::auto_permission_mode_enabled_from_disk(),
@@ -975,11 +948,6 @@ pub(crate) async fn spawn_session_actor(
     let (goal_update_tx, goal_update_rx) = tokio::sync::mpsc::unbounded_channel::<
         kigi_tools::implementations::grok_build::update_goal::UpdateGoalEnvelope,
     >();
-    let obs_bridge = {
-        let sid = kigi_tool_protocol::SessionId::new(&*session_info.id.0)
-            .unwrap_or_else(|_| kigi_tool_protocol::SessionId::new("unknown").expect("valid"));
-        kigi_computer_hub_sdk::ObservabilityBridge::new(None, sid)
-    };
     let mut effective_config = crate::config::load_effective_config()
         .ok()
         .and_then(|raw| crate::agent::config::Config::new_from_toml_cfg(&raw).ok())
@@ -1199,7 +1167,6 @@ pub(crate) async fn spawn_session_actor(
         events: crate::session::events::EventTracker::new(
             &crate::session::persistence::session_dir(&session_info),
         ),
-        observability_bridge: obs_bridge,
         current_turn_number: std::cell::Cell::new(0),
         last_recap_main_turn: std::cell::Cell::new(0),
         recap_in_flight: std::cell::Cell::new(false),

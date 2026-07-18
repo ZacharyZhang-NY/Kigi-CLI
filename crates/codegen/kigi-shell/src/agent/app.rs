@@ -518,11 +518,7 @@ pub async fn run_leader(
         lock_path: lock.lock_path().clone(),
         socket_suffix: socket_suffix_from_paths(lock.lock_path(), &socket_path).unwrap_or_default(),
         leader_binary_version: kigi_version::VERSION.to_string(),
-    })
-    .with_default_hub_url(agent_config.hub.url.clone());
-
-    // Cloned before control_state moves into the IPC server; auth wired below.
-    let workspace_control = control_state.workspace.clone();
+    });
 
     // ── Phase 3: Bind socket and start IPC server (BEFORE auth/prefetch) ──────
     //
@@ -654,8 +650,6 @@ pub async fn run_leader(
     // process so a refresh can't straddle a suspend.
     shared_auth_manager.start_system_power_listener();
 
-    // Same manager as the leader, so the exposure never writes auth.json itself.
-    workspace_control.set_auth_manager(shared_auth_manager.clone());
     let auth_manager_for_agent = shared_auth_manager.clone();
     let auth_manager_for_config = shared_auth_manager;
 

@@ -323,15 +323,6 @@ impl SessionActor {
             self.emit_event(crate::session::events::Event::ToolStarted {
                 tool_name: call.function.name.clone(),
             });
-            self.observability_bridge
-                .emit(
-                    kigi_tool_protocol::session_event::SessionEvent::ToolCallStarted {
-                        tool_call_id: call.id.clone(),
-                        tool_name: call.function.name.clone(),
-                        turn_number: self.current_turn_number.get(),
-                    },
-                )
-                .await;
             let call_name = call.function.name.clone();
             match self
                 .prepare_tool_call(call, &mut deferred_followups)
@@ -653,16 +644,6 @@ impl SessionActor {
                 duration_ms,
                 outcome: tool_outcome,
             });
-            self.observability_bridge
-                .emit(
-                    kigi_tool_protocol::session_event::SessionEvent::ToolCallCompleted {
-                        tool_call_id: prepared.call_id.clone(),
-                        tool_name: prepared.tool_name.clone(),
-                        duration_ms,
-                        outcome: map_tool_outcome(tool_outcome),
-                    },
-                )
-                .await;
             tracing::info_span!(
                 "tool.execution", tool_name = % prepared.tool_name, tool_use_id = %
                 prepared.call_id, tool_input_size_bytes = prepared.raw_arguments.len() as

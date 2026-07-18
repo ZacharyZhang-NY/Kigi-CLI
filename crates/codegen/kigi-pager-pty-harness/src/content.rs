@@ -91,7 +91,7 @@ impl ContentController {
             // KIGI_SHARE_DIR is set in the test runner's env).
             ("KIGI_SHARE_DIR".into(), kigi_home),
             ("KIGI_CODE_BASE_URL".into(), self.url()),
-            ("KIGI_XAI_API_BASE_URL".into(), self.url()),
+            ("KIGI_API_BASE_URL".into(), self.url()),
             ("XAI_API_KEY".into(), "test-key-for-ci".into()),
             ("KIGI_TELEMETRY_ENABLED".into(), "false".into()),
             ("KIGI_FEEDBACK_ENABLED".into(), "false".into()),
@@ -279,7 +279,7 @@ mod tests {
             content.home().join(".kigi").to_str()
         );
         assert_eq!(get("KIGI_CODE_BASE_URL"), Some(content.url()));
-        assert_eq!(get("KIGI_XAI_API_BASE_URL"), Some(content.url()));
+        assert_eq!(get("KIGI_API_BASE_URL"), Some(content.url()));
         assert_eq!(get("XAI_API_KEY").as_deref(), Some("test-key-for-ci"));
         assert_eq!(get("KIGI_TELEMETRY_ENABLED").as_deref(), Some("false"));
         assert_eq!(get("KIGI_FEEDBACK_ENABLED").as_deref(), Some("false"));

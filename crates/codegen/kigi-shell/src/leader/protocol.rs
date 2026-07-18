@@ -108,9 +108,6 @@ impl Default for ClientId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ClientMode {
-    /// Headless mode (grok agent, grok agent headless) - uses websocket relay.
-    /// Leader connects to websocket relay once and forwards messages.
-    Headless,
     /// Stdio mode (grok agent stdio, grok -p) - uses local IPC.
     /// Client sends/receives ACP messages directly via IPC.
     Stdio,
@@ -178,8 +175,6 @@ pub struct LeaderCapabilities {
     pub runtime_cpu_profile: bool,
     #[serde(default)]
     pub profile_formats: Vec<ProfileArtifactFormat>,
-    #[serde(default)]
-    pub workspace_exposure: bool,
     /// Whether the leader supports [`ControlCommand::RelaunchForUpdate`] — a
     /// disruptive, bounded-grace relaunch onto a freshly-installed binary
     /// (driven by `grok update`). Old leaders default to `false`, so a new
@@ -200,15 +195,6 @@ pub enum ControlCommand {
         frequency_hz: Option<i32>,
     },
     StopCpuProfile,
-    WorkspaceStart {
-        #[serde(default)]
-        hub_url: Option<String>,
-        cwd: String,
-    },
-    WorkspacePause,
-    WorkspaceResume,
-    WorkspaceStop,
-    WorkspaceStatus,
     /// Ask the leader to relaunch onto a freshly-installed binary (driven by
     /// `grok update`). The leader stops admitting new turns, waits a bounded
     /// grace period for in-flight turns to finish, flushes session state, then
@@ -259,18 +245,6 @@ pub enum ControlPayload {
         svg_path: PathBuf,
         started_at: String,
         stopped_at: String,
-    },
-    WorkspaceStatus {
-        state: String,
-        #[serde(default)]
-        hub_url: Option<String>,
-        #[serde(default)]
-        cwd: Option<String>,
-        uptime_ms: u64,
-        active_tool_calls: u32,
-        #[serde(default)]
-        sessions: Vec<String>,
-        pid: u32,
     },
     /// Ack for [`ControlCommand::RelaunchForUpdate`]: the leader accepted the
     /// request and will exit after a bounded grace period of `grace_ms`.
@@ -531,7 +505,6 @@ mod tests {
                 control_v1: true,
                 runtime_cpu_profile: true,
                 profile_formats: vec![ProfileArtifactFormat::Svg],
-                workspace_exposure: true,
                 relaunch_v1: true,
             }),
         };
@@ -549,7 +522,6 @@ mod tests {
                     control_v1: true,
                     runtime_cpu_profile: true,
                     profile_formats,
-                    workspace_exposure: true,
                     relaunch_v1: true,
                 }),
             } if profile_formats == vec![ProfileArtifactFormat::Svg]
@@ -620,71 +592,6 @@ mod tests {
                 frequency_hz: None,
             }
         ));
-    }
-
-    #[tokio::test]
-    async fn workspace_control_command_roundtrip() {
-        let (mut client, mut server) = duplex(1024);
-        let msg = ClientMessage::Control {
-            request_id: "ws-1".into(),
-            command: ControlCommand::WorkspaceStart {
-                hub_url: Some("wss://hub.example/v1/tools".into()),
-                cwd: "/home/u/proj".into(),
-            },
-        };
-
-        write_message(&mut client, &msg).await.unwrap();
-        let received: ClientMessage = read_message(&mut server).await.unwrap();
-
-        assert!(matches!(
-            received,
-            ClientMessage::Control {
-                request_id,
-                command: ControlCommand::WorkspaceStart { hub_url: Some(url), cwd },
-            } if request_id == "ws-1"
-                && url == "wss://hub.example/v1/tools"
-                && cwd == "/home/u/proj"
-        ));
-    }
-
-    #[test]
-    fn workspace_status_payload_roundtrip() {
-        let payload = ControlPayload::WorkspaceStatus {
-            state: "running".into(),
-            hub_url: Some("wss://hub.example/v1/tools".into()),
-            cwd: Some("/home/u/proj".into()),
-            uptime_ms: 4200,
-            active_tool_calls: 2,
-            sessions: vec!["grok-a".into(), "grok-b".into()],
-            pid: 4242,
-        };
-        let json = serde_json::to_string(&payload).unwrap();
-        let decoded: ControlPayload = serde_json::from_str(&json).unwrap();
-        assert_eq!(decoded, payload);
-        assert!(json.contains("\"type\":\"workspace_status\""));
-    }
-
-    #[test]
-    fn workspace_status_payload_defaults_optional_fields() {
-        let json = r#"{"type":"workspace_status","state":"none","uptime_ms":0,"active_tool_calls":0,"pid":1}"#;
-        let decoded: ControlPayload = serde_json::from_str(json).unwrap();
-        assert!(matches!(
-            decoded,
-            ControlPayload::WorkspaceStatus {
-                state,
-                hub_url: None,
-                cwd: None,
-                sessions,
-                ..
-            } if state == "none" && sessions.is_empty()
-        ));
-    }
-
-    #[test]
-    fn workspace_exposure_capability_defaults_false() {
-        let json = r#"{"control_v1":true,"runtime_cpu_profile":false,"profile_formats":[]}"#;
-        let caps: LeaderCapabilities = serde_json::from_str(json).unwrap();
-        assert!(!caps.workspace_exposure);
     }
 
     #[test]

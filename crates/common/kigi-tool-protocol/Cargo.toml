@@ -3,7 +3,7 @@ license = "Apache-2.0"
 name = "kigi-tool-protocol"
 version.workspace = true
 edition.workspace = true
-description = "Wire-protocol types for the xAI Computer Hub"
+description = "Tool wire-protocol types"
 
 [dependencies]
 kigi-tool-types = { workspace = true }

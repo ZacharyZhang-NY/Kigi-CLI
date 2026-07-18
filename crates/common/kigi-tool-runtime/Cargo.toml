@@ -3,17 +3,18 @@ license = "Apache-2.0"
 name = "kigi-tool-runtime"
 version.workspace = true
 edition.workspace = true
-description = "Unified Tool trait, dispatch trait, error taxonomy, notifications, and search index for the xAI Computer Hub"
+description = "Unified Tool trait, dispatch trait, error taxonomy, notifications, local tool registry, and search index"
 
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
+indexmap = { workspace = true }
+parking_lot = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tokio-util = { workspace = true }
-kigi-tools-api = { workspace = true }
 kigi-tool-protocol = { workspace = true }
 kigi-tool-types = { workspace = true }
 

@@ -2093,11 +2093,11 @@ mod tests {
         assert!(validate_anchor(&padded, &lines, &scheme).is_err());
 
         // Stale anchor with arrow reports the stripped anchor in error metadata.
-        let stale = format!("2:zzz:zzz\u{2192}content");
+        let stale = "2:zzz:zzz\u{2192}content".to_string();
         let err = validate_anchor(&stale, &lines, &scheme).unwrap_err();
         assert_eq!(err.requested_anchor.as_deref(), Some("2:zzz:zzz"));
 
-        let stale_ascii = format!("2:zzz:zzz->content");
+        let stale_ascii = "2:zzz:zzz->content".to_string();
         let err = validate_anchor(&stale_ascii, &lines, &scheme).unwrap_err();
         assert_eq!(err.requested_anchor.as_deref(), Some("2:zzz:zzz"));
     }

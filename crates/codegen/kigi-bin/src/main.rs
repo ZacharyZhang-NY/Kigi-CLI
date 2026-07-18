@@ -37,7 +37,6 @@ use kigi_tui::app::{
     AgentCmd, Command, LeaderMgmtArgs, LeaderMgmtCommand, LeaderTargetArgs, PagerArgs,
     resolve_use_leader,
 };
-use kigi_tui::app::{WorkspaceMgmtArgs, WorkspaceMgmtCommand, WorkspaceStartArgs};
 use kigi_tui::client_identity::PAGER_CLIENT_VERSION;
 use kigi_update::{UpdateConfig, auto_update, enforce_minimum_version_or_exit};
 use std::env;
@@ -48,8 +47,8 @@ fn apply_agent_endpoint_args(agent_args: &kigi_tui::app::AgentArgs, config: &mut
     if let Some(v) = &agent_args.coding_api_base_url {
         config.endpoints.coding_api_base_url = Some(v.clone());
     }
-    if let Some(v) = &agent_args.xai_api_base_url {
-        config.endpoints.xai_api_base_url = v.clone();
+    if let Some(v) = &agent_args.api_base_url {
+        config.endpoints.api_base_url = v.clone();
     }
 }
 /// Resolve --agent-profile path: canonicalize and verify the file exists.
@@ -323,194 +322,6 @@ fn ensure_control_caps(reg: &LeaderRegistration) -> Result<&LeaderCapabilities> 
     reg.leader_capabilities
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("Leader does not advertise capabilities (legacy version)"))
-}
-/// Env override for the `kigi workspace` gate: any truthy value enables the
-/// command locally, a falsy one disables it. This is the only gate now that
-/// the server-side feature flag (xAI remote settings) is gone.
-const WORKSPACE_COMMAND_ENV: &str = "KIGI_WORKSPACE_COMMAND";
-/// The `KIGI_WORKSPACE_COMMAND` override, if set (`Some(true)`/`Some(false)`);
-/// `None` means unset (the command stays disabled by default).
-fn workspace_command_env_override() -> Option<bool> {
-    std::env::var(WORKSPACE_COMMAND_ENV)
-        .ok()
-        .map(|v| env_flag_enabled(&v))
-}
-/// Resolve the gate: enabled exactly when the env override says so.
-fn workspace_command_gate(env_override: Option<bool>) -> bool {
-    env_override.unwrap_or(false)
-}
-/// Truthy parse for grok on/off env vars: everything enables except the common
-/// falsy spellings (`0`, `false`, `off`, `no`, empty).
-fn env_flag_enabled(value: &str) -> bool {
-    !matches!(
-        value.trim().to_ascii_lowercase().as_str(),
-        "" | "0" | "false" | "off" | "no"
-    )
-}
-async fn run_workspace_mgmt(args: WorkspaceMgmtArgs) -> Result<()> {
-    if !workspace_command_gate(workspace_command_env_override()) {
-        anyhow::bail!(
-            "`kigi workspace` is experimental and disabled by default. \
-             Set {WORKSPACE_COMMAND_ENV}=1 to enable it."
-        )
-    }
-    match args.command {
-        WorkspaceMgmtCommand::Start(a) => workspace_start(a, false).await,
-        WorkspaceMgmtCommand::Restart(a) => workspace_start(a, true).await,
-        WorkspaceMgmtCommand::Pause { target, json } => {
-            workspace_control(&target, json, ControlCommand::WorkspacePause).await
-        }
-        WorkspaceMgmtCommand::Resume { target, json } => {
-            workspace_control(&target, json, ControlCommand::WorkspaceResume).await
-        }
-        WorkspaceMgmtCommand::Stop { target, json } => {
-            workspace_control(&target, json, ControlCommand::WorkspaceStop).await
-        }
-        WorkspaceMgmtCommand::Status { target, json } => {
-            workspace_control(&target, json, ControlCommand::WorkspaceStatus).await
-        }
-    }
-}
-fn ensure_workspace_caps(reg: &LeaderRegistration) -> Result<()> {
-    let caps = ensure_control_caps(reg)?;
-    if !caps.workspace_exposure {
-        anyhow::bail!(
-            "the running leader does not support workspace exposure — stop the \
-             leader process and re-run to pick up the new version"
-        );
-    }
-    Ok(())
-}
-async fn connect_workspace_control(
-    _agent_config: &AgentConfig,
-    target: &LeaderTargetArgs,
-) -> Result<LeaderClient> {
-    if target.pid.is_some() {
-        let (_descriptor, client) = connect_to_leader(target).await?;
-        return Ok(client);
-    }
-    let socket = default_socket_path();
-    LeaderClient::connect(
-        socket,
-        "grok-workspace-cli",
-        ClientMode::Stdio,
-        ClientCapabilities::default(),
-    )
-    .await
-    .map_err(|e| {
-        anyhow::anyhow!(
-            "no running leader ({e}). \
-             Start a grok session, or run `grok workspace start`."
-        )
-    })
-}
-async fn workspace_control(
-    target: &LeaderTargetArgs,
-    json: bool,
-    command: ControlCommand,
-) -> Result<()> {
-    let raw_config = kigi_shell::config::load_effective_config_disk_only()
-        .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
-    let agent_config = AgentConfig::new_from_toml_cfg(&raw_config)
-        .map_err(|e| anyhow::anyhow!("Failed to create agent config: {e}"))?;
-    let client = connect_workspace_control(&agent_config, target).await?;
-    ensure_workspace_caps(client.registration())?;
-    let payload = client.send_control(command).await??;
-    render_workspace_payload(&payload, json);
-    client.cancel();
-    Ok(())
-}
-async fn workspace_start(args: WorkspaceStartArgs, restart: bool) -> Result<()> {
-    use kigi_shell::auth::ensure_authenticated;
-    let raw_config = kigi_shell::config::load_effective_config()
-        .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
-    let agent_config = AgentConfig::new_from_toml_cfg(&raw_config)
-        .map_err(|e| anyhow::anyhow!("Failed to create agent config: {e}"))?;
-    let (use_leader, _) = resolve_use_leader(args.leader, args.no_leader, &raw_config, true);
-    if !use_leader {
-        anyhow::bail!(
-            "`grok workspace` requires leader mode (the workspace is shared via the leader).\n\
-             Enable it with `[cli] use_leader = true` in ~/.kigi/config.toml, or pass --leader."
-        );
-    }
-    ensure_authenticated(
-        &agent_config.kimi_code_config,
-        false,
-        Some("No cached credentials found. Run `kigi login` first."),
-    )
-    .await?;
-    let capabilities = ClientCapabilities {
-        client_version: Some(PAGER_CLIENT_VERSION.to_string()),
-        ..Default::default()
-    };
-    let conn = connect_or_spawn("grok-workspace-cli", ClientMode::Stdio, capabilities)
-        .await
-        .map_err(|e| anyhow::anyhow!("failed to start or connect to leader: {e}"))?;
-    drop(conn);
-    let target = LeaderTargetArgs::default();
-    let client = connect_workspace_control(&agent_config, &target).await?;
-    ensure_workspace_caps(client.registration())?;
-    if restart {
-        let _ = client.send_control(ControlCommand::WorkspaceStop).await;
-    }
-    let cwd = match args.cwd {
-        Some(p) => p,
-        None => std::env::current_dir()
-            .map_err(|e| anyhow::anyhow!("cannot determine current directory: {e}"))?,
-    };
-    let cwd = std::path::absolute(&cwd).unwrap_or(cwd);
-    let payload = client
-        .send_control(ControlCommand::WorkspaceStart {
-            hub_url: args.hub_url.clone(),
-            cwd: cwd.display().to_string(),
-        })
-        .await??;
-    render_workspace_payload(&payload, args.json);
-    client.cancel();
-    Ok(())
-}
-fn render_workspace_payload(payload: &ControlPayload, json: bool) {
-    let ControlPayload::WorkspaceStatus {
-        state,
-        hub_url,
-        cwd,
-        uptime_ms,
-        active_tool_calls,
-        sessions,
-        pid,
-    } = payload
-    else {
-        eprintln!("unexpected control response: {payload:?}");
-        return;
-    };
-    if json {
-        let value = serde_json::json!(
-            { "state" : state, "hubUrl" : hub_url, "cwd" : cwd, "uptimeMs" : uptime_ms,
-            "activeToolCalls" : active_tool_calls, "sessions" : sessions, "pid" : pid, }
-        );
-        println!("{}", serde_json::to_string(&value).unwrap_or_default());
-        return;
-    }
-    if state == "none" {
-        println!("Workspace exposure: not running (leader PID {pid})");
-        return;
-    }
-    println!("Workspace exposure: {state}");
-    if let Some(url) = hub_url {
-        println!("  hub:      {url}");
-    }
-    if let Some(dir) = cwd {
-        println!("  cwd:      {dir}");
-    }
-    println!("  uptime:   {}s", uptime_ms / 1000);
-    println!("  active:   {active_tool_calls} tool call(s)");
-    let session_list = if sessions.is_empty() {
-        "-".to_string()
-    } else {
-        sessions.join(", ")
-    };
-    println!("  sessions: {} ({session_list})", sessions.len());
-    println!("  leader:   PID {pid}");
 }
 /// How to rebuild one session's `session/load` after a leader reconnect.
 #[derive(Default, Clone)]
@@ -1604,10 +1415,6 @@ async fn async_main() -> Result<()> {
                     .map_err(|e| anyhow::anyhow!("Failed to create agent config: {e}"))?;
                 return kigi_tui::worktree_cmd::run(worktree_args, &agent_config).await;
             }
-            Command::Workspace(workspace_args) => {
-                init_tracing_simple("cli");
-                return run_workspace_mgmt(workspace_args).await;
-            }
             Command::Sessions(sessions_args) => {
                 init_tracing_simple("cli");
                 return kigi_tui::sessions_cmd::run(sessions_args).await;
@@ -2093,23 +1900,6 @@ mod tests {
             std::env::var("KIGI_OPEN_DASHBOARD_AT_STARTUP").is_err(),
             "failure path must not flag the startup hook",
         );
-    }
-    #[test]
-    fn workspace_command_gate_resolution() {
-        assert!(workspace_command_gate(Some(true)));
-        assert!(!workspace_command_gate(Some(false)));
-        assert!(!workspace_command_gate(None), "unset env defaults to off");
-    }
-    #[serial_test::serial(KIGI_WORKSPACE_COMMAND)]
-    #[test]
-    fn workspace_command_env_override_parsing() {
-        unsafe { std::env::remove_var("KIGI_WORKSPACE_COMMAND") };
-        assert_eq!(workspace_command_env_override(), None);
-        unsafe { std::env::set_var("KIGI_WORKSPACE_COMMAND", "1") };
-        assert_eq!(workspace_command_env_override(), Some(true));
-        unsafe { std::env::set_var("KIGI_WORKSPACE_COMMAND", "off") };
-        assert_eq!(workspace_command_env_override(), Some(false));
-        unsafe { std::env::remove_var("KIGI_WORKSPACE_COMMAND") };
     }
     fn make_state() -> std::sync::Mutex<StdioReplayState> {
         std::sync::Mutex::new(StdioReplayState::default())

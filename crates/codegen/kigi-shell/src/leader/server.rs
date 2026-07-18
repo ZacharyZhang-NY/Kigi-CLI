@@ -27,8 +27,6 @@ use crate::cpu_profile::{
 };
 use agent_client_protocol::AGENT_METHOD_NAMES;
 use kanal::{AsyncReceiver, AsyncSender};
-use kigi_computer_hub_sdk::{AuthCredential, AuthIdentity, AuthProvider};
-use kigi_workspace::WorkspaceHandle;
 use parking_lot::Mutex;
 use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
@@ -129,19 +127,13 @@ pub struct LeaderServerMetadata {
 pub struct LeaderServerControlState {
     pub metadata: LeaderServerMetadata,
     pub cpu_profile: Arc<Mutex<CpuProfileManager>>,
-    pub workspace: Arc<WorkspaceControl>,
 }
 impl LeaderServerControlState {
     pub fn new(metadata: LeaderServerMetadata) -> Self {
         Self {
             metadata,
             cpu_profile: Arc::new(Mutex::new(CpuProfileManager::new())),
-            workspace: Arc::new(WorkspaceControl::new(None)),
         }
-    }
-    pub fn with_default_hub_url(mut self, default_hub_url: Option<String>) -> Self {
-        self.workspace = Arc::new(WorkspaceControl::new(default_hub_url));
-        self
     }
     fn leader_capabilities(&self) -> LeaderCapabilities {
         let manager = self.cpu_profile.lock();
@@ -149,84 +141,9 @@ impl LeaderServerControlState {
             control_v1: true,
             runtime_cpu_profile: manager.runtime_cpu_profile(),
             profile_formats: manager.profile_formats().to_vec(),
-            workspace_exposure: true,
             relaunch_v1: true,
         }
     }
-}
-pub struct WorkspaceControl {
-    default_hub_url: Option<String>,
-    /// Hub credential, wired to the leader's `AuthManager` once auth is ready.
-    /// A `watch` so a starting leader (socket up, auth pending) can be awaited
-    /// instead of failing the command.
-    auth: tokio::sync::watch::Sender<Option<Arc<dyn AuthProvider>>>,
-    /// Serializes mutating commands (start/pause/resume/stop) so their long
-    /// awaits (drain, reconnect) never interleave.
-    lock: tokio::sync::Mutex<()>,
-    /// Current exposure, published for lock-free reads so `status` never
-    /// blocks behind an in-flight drain/reconnect.
-    exposure: arc_swap::ArcSwapOption<WorkspaceExposure>,
-}
-impl WorkspaceControl {
-    fn new(default_hub_url: Option<String>) -> Self {
-        Self {
-            default_hub_url,
-            auth: tokio::sync::watch::channel(None).0,
-            lock: tokio::sync::Mutex::new(()),
-            exposure: arc_swap::ArcSwapOption::empty(),
-        }
-    }
-    /// Wire the hub credential to the leader's shared `AuthManager` (sole
-    /// owner of refresh + persistence).
-    pub fn set_auth_manager(&self, auth_manager: Arc<AuthManager>) {
-        self.auth
-            .send_replace(Some(Arc::new(LeaderAuthProvider { auth_manager })));
-    }
-}
-impl std::fmt::Debug for WorkspaceControl {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("WorkspaceControl")
-            .field("default_hub_url", &self.default_hub_url)
-            .finish_non_exhaustive()
-    }
-}
-/// Hub [`AuthProvider`] backed by the leader's `AuthManager`: returns the
-/// current token at each connect/reconnect; never writes auth.json.
-struct LeaderAuthProvider {
-    auth_manager: Arc<AuthManager>,
-}
-impl std::fmt::Debug for LeaderAuthProvider {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LeaderAuthProvider").finish_non_exhaustive()
-    }
-}
-impl AuthProvider for LeaderAuthProvider {
-    fn current(&self) -> AuthCredential {
-        let token = self
-            .auth_manager
-            .current_or_expired()
-            .map(|a| a.key)
-            .unwrap_or_default();
-        AuthCredential::bearer(token)
-    }
-    /// Owner identity from the leader's `AuthManager`, surfaced on the auth
-    /// provider instead of a separate auth.json read. The Kimi credential
-    /// carries no principal metadata; only the (possibly empty) user id.
-    fn identity(&self) -> Option<AuthIdentity> {
-        let a = self.auth_manager.current_or_expired()?;
-        Some(AuthIdentity {
-            user_id: a.user_id,
-            principal_type: None,
-            principal_id: None,
-        })
-    }
-}
-struct WorkspaceExposure {
-    handle: WorkspaceHandle,
-    hub_url: String,
-    cwd: PathBuf,
-    started_at: Instant,
-    paused: std::sync::atomic::AtomicBool,
 }
 /// Rewrite JSON-RPC request ID **in place** by prefixing with client ID to
 /// avoid collisions.
@@ -934,233 +851,6 @@ fn leader_info_payload(control_state: &LeaderServerControlState) -> ControlPaylo
         profile_formats: manager.profile_formats().to_vec(),
     }
 }
-const PROD_COMPUTER_HUB_URL: &str = "wss://computer-hub.kigi.com/v1/tools";
-const WORKSPACE_DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
-fn workspace_err(message: impl Into<String>) -> ControlError {
-    ControlError {
-        code: ControlErrorCode::InternalError,
-        message: message.into(),
-        details: None,
-    }
-}
-/// Resolve the hub credential, waiting if the leader is still wiring auth
-/// (the IPC socket comes up first). Resolves the instant auth is wired or the
-/// leader cancels — event-driven, no timeout.
-async fn wait_for_leader_auth(
-    ws: &WorkspaceControl,
-    cancel: &CancellationToken,
-) -> Result<Arc<dyn AuthProvider>, ControlError> {
-    let mut rx = ws.auth.subscribe();
-    tokio::select! {
-        result = rx.wait_for(| v | v.is_some()) => match result { Ok(guard) => Ok(guard
-        .clone().expect("waited for Some")), Err(_) =>
-        Err(workspace_err("leader is shutting down; cannot expose workspace to the hub",)),
-        }, _ = cancel.cancelled() =>
-        Err(workspace_err("leader is shutting down; cannot expose workspace to the hub",)),
-    }
-}
-fn workspace_server_id() -> String {
-    let raw = gethostname::gethostname()
-        .to_string_lossy()
-        .to_ascii_lowercase();
-    let sanitized: String = raw
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect();
-    let name = sanitized.trim_matches('-');
-    if name.is_empty() {
-        "grok-workspace".to_string()
-    } else {
-        name.to_string()
-    }
-}
-async fn drain_and_disconnect(handle: &WorkspaceHandle) {
-    let tracker = handle.activity_tracker().clone();
-    tracker.set_draining();
-    if tokio::time::timeout(WORKSPACE_DRAIN_TIMEOUT, tracker.wait_until_drained())
-        .await
-        .is_err()
-    {
-        warn!(
-            active = tracker.total_active(),
-            "workspace drain timed out; disconnecting hub anyway"
-        );
-    }
-    handle.shutdown_hub().await;
-}
-fn build_workspace_status(
-    metadata: &LeaderServerMetadata,
-    exposure: Option<&WorkspaceExposure>,
-) -> ControlPayload {
-    match exposure {
-        None => ControlPayload::WorkspaceStatus {
-            state: "none".to_string(),
-            hub_url: None,
-            cwd: None,
-            uptime_ms: 0,
-            active_tool_calls: 0,
-            sessions: Vec::new(),
-            pid: metadata.pid,
-        },
-        Some(exp) => {
-            let snapshot = exp.handle.activity_tracker().snapshot();
-            let mut sessions = exp.handle.session_ids();
-            sessions.sort();
-            ControlPayload::WorkspaceStatus {
-                state: if exp.paused.load(std::sync::atomic::Ordering::Relaxed) {
-                    "paused"
-                } else {
-                    "running"
-                }
-                .to_string(),
-                hub_url: Some(exp.hub_url.clone()),
-                cwd: Some(exp.cwd.display().to_string()),
-                uptime_ms: exp.started_at.elapsed().as_millis() as u64,
-                active_tool_calls: snapshot.active_tool_calls,
-                sessions,
-                pid: metadata.pid,
-            }
-        }
-    }
-}
-async fn handle_workspace_start(
-    control_state: LeaderServerControlState,
-    hub_url: Option<String>,
-    cwd: String,
-    cancel: CancellationToken,
-) -> Result<ControlPayload, ControlError> {
-    let ws = &control_state.workspace;
-    let url_str = hub_url
-        .filter(|u| !u.trim().is_empty())
-        .or_else(|| ws.default_hub_url.clone())
-        .unwrap_or_else(|| PROD_COMPUTER_HUB_URL.to_string());
-    let url = url::Url::parse(&url_str)
-        .map_err(|e| workspace_err(format!("invalid hub url {url_str}: {e}")))?;
-    let cwd_path = PathBuf::from(&cwd);
-    let _serialize = ws.lock.lock().await;
-    if let Some(existing) = ws.exposure.load_full()
-        && !existing.paused.load(Ordering::Relaxed)
-        && existing.cwd == cwd_path
-        && existing.hub_url == url_str
-    {
-        return Ok(build_workspace_status(
-            &control_state.metadata,
-            Some(existing.as_ref()),
-        ));
-    }
-    let allow_insecure_ws =
-        url.scheme() == "ws" && matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "::1"));
-    let status_config = kigi_workspace::StatusConfig::from_env();
-    let alpha_test_key = None;
-    let auth = wait_for_leader_auth(ws, &cancel).await?;
-    let server_id = workspace_server_id();
-    let metadata = serde_json::json!(
-        { "source" : "grok-workspace", "hostname" : gethostname::gethostname()
-        .to_string_lossy(), "cwd" : cwd_path.display().to_string(), }
-    );
-    crate::agent::folder_trust::resolve_and_record(&cwd_path, None, false);
-    let project_lsp_trusted = crate::agent::folder_trust::project_scope_allowed(&cwd_path);
-    let handle = kigi_workspace::connect_local_workspace(
-        cwd_path.clone(),
-        url,
-        auth,
-        Some(metadata),
-        Some(server_id),
-        alpha_test_key,
-        allow_insecure_ws,
-        status_config,
-        project_lsp_trusted,
-        None,
-        None,
-        false,
-        false,
-    )
-    .await
-    .map_err(|e| workspace_err(format!("failed to connect workspace to hub: {e}")))?;
-    let exposure = Arc::new(WorkspaceExposure {
-        handle,
-        hub_url: url_str,
-        cwd: cwd_path,
-        started_at: Instant::now(),
-        paused: AtomicBool::new(false),
-    });
-    let payload = build_workspace_status(&control_state.metadata, Some(exposure.as_ref()));
-    if let Some(old) = ws.exposure.swap(Some(exposure)) {
-        drain_and_disconnect(&old.handle).await;
-    }
-    Ok(payload)
-}
-async fn handle_workspace_pause(
-    control_state: LeaderServerControlState,
-) -> Result<ControlPayload, ControlError> {
-    let ws = &control_state.workspace;
-    let _serialize = ws.lock.lock().await;
-    let Some(exp) = ws.exposure.load_full() else {
-        return Err(workspace_err("no workspace exposure is running"));
-    };
-    if !exp.paused.load(Ordering::Relaxed) {
-        drain_and_disconnect(&exp.handle).await;
-        exp.paused.store(true, Ordering::Relaxed);
-    }
-    Ok(build_workspace_status(
-        &control_state.metadata,
-        Some(exp.as_ref()),
-    ))
-}
-async fn handle_workspace_resume(
-    control_state: LeaderServerControlState,
-) -> Result<ControlPayload, ControlError> {
-    let ws = &control_state.workspace;
-    let _serialize = ws.lock.lock().await;
-    let Some(exp) = ws.exposure.load_full() else {
-        return Err(workspace_err("no workspace exposure is running"));
-    };
-    if exp.paused.load(Ordering::Relaxed) {
-        exp.handle.activity_tracker().set_active();
-        if let Err(e) = exp.handle.connect_hub().await {
-            exp.handle.activity_tracker().set_draining();
-            return Err(workspace_err(format!("failed to reconnect to hub: {e}")));
-        }
-        exp.paused.store(false, Ordering::Relaxed);
-    }
-    Ok(build_workspace_status(
-        &control_state.metadata,
-        Some(exp.as_ref()),
-    ))
-}
-async fn handle_workspace_stop(
-    control_state: LeaderServerControlState,
-) -> Result<ControlPayload, ControlError> {
-    let ws = &control_state.workspace;
-    let _serialize = ws.lock.lock().await;
-    if let Some(exp) = ws.exposure.swap(None) {
-        drain_and_disconnect(&exp.handle).await;
-    }
-    Ok(build_workspace_status(&control_state.metadata, None))
-}
-async fn handle_workspace_status(
-    control_state: LeaderServerControlState,
-) -> Result<ControlPayload, ControlError> {
-    let exposure = control_state.workspace.exposure.load_full();
-    Ok(build_workspace_status(
-        &control_state.metadata,
-        exposure.as_deref(),
-    ))
-}
-async fn finalize_workspace_on_shutdown(control_state: LeaderServerControlState) {
-    let ws = &control_state.workspace;
-    let _serialize = ws.lock.lock().await;
-    if let Some(exp) = ws.exposure.swap(None) {
-        info!("Draining workspace exposure on leader shutdown");
-        drain_and_disconnect(&exp.handle).await;
-    }
-}
 fn handle_control_command(
     control_state: &LeaderServerControlState,
     command: ControlCommand,
@@ -1207,13 +897,6 @@ fn handle_control_command(
         }
         ControlCommand::StopCpuProfile => {
             unreachable!("StopCpuProfile must be handled asynchronously")
-        }
-        ControlCommand::WorkspaceStart { .. }
-        | ControlCommand::WorkspacePause
-        | ControlCommand::WorkspaceResume
-        | ControlCommand::WorkspaceStop
-        | ControlCommand::WorkspaceStatus => {
-            unreachable!("workspace control commands are handled asynchronously")
         }
         ControlCommand::RelaunchForUpdate { .. } => {
             unreachable!("RelaunchForUpdate must be handled asynchronously")
@@ -1564,13 +1247,6 @@ pub async fn run_leader_server(
             agent_activity = agent_activity.clone(); let relaunching = relaunching
             .clone(); tokio::spawn(async move { let result = match command {
             ControlCommand::StopCpuProfile => { handle_stop_cpu_profile(control_state).
-            await } ControlCommand::WorkspaceStart { hub_url, cwd } => {
-            handle_workspace_start(control_state, hub_url, cwd, cancel.clone(),). await }
-            ControlCommand::WorkspacePause => { handle_workspace_pause(control_state).
-            await } ControlCommand::WorkspaceResume => {
-            handle_workspace_resume(control_state). await } ControlCommand::WorkspaceStop
-            => { handle_workspace_stop(control_state). await }
-            ControlCommand::WorkspaceStatus => { handle_workspace_status(control_state).
             await } ControlCommand::RelaunchForUpdate { to_version } => {
             decide_relaunch_for_update(& control_state, to_version, & relaunching,) }
             other => handle_control_command(& control_state, other), }; let arm_relaunch
@@ -1806,7 +1482,6 @@ pub async fn run_leader_server(
             debug!("No client available for notification routing, message dropped"); } }
         }
     }
-    finalize_workspace_on_shutdown(control_state.clone()).await;
     finalize_cpu_profile_on_shutdown(control_state).await;
     let _ = std::fs::remove_file(&socket_path);
     Ok(())
@@ -2213,48 +1888,6 @@ mod tests {
             decide_relaunch_for_update(&control_state, "0.3.0".to_string(), &relaunching),
             Ok(ControlPayload::RelaunchDeclined { .. })
         ));
-    }
-    #[derive(Debug)]
-    struct TestAuth;
-    impl AuthProvider for TestAuth {
-        fn current(&self) -> AuthCredential {
-            AuthCredential::bearer("test-token")
-        }
-    }
-    #[tokio::test]
-    async fn wait_for_leader_auth_returns_when_already_wired() {
-        let ws = WorkspaceControl::new(None);
-        ws.auth.send_replace(Some(Arc::new(TestAuth)));
-        let cancel = CancellationToken::new();
-        let auth = wait_for_leader_auth(&ws, &cancel).await.expect("wired");
-        assert!(matches!(auth.current(), AuthCredential::Bearer { .. }));
-    }
-    #[tokio::test]
-    async fn wait_for_leader_auth_resolves_when_wired_late() {
-        let ws = Arc::new(WorkspaceControl::new(None));
-        let cancel = CancellationToken::new();
-        let waiter = {
-            let ws = ws.clone();
-            let cancel = cancel.clone();
-            tokio::spawn(async move { wait_for_leader_auth(&ws, &cancel).await.is_ok() })
-        };
-        tokio::task::yield_now().await;
-        ws.auth.send_replace(Some(Arc::new(TestAuth)));
-        assert!(waiter.await.unwrap(), "auth wired late should resolve Ok");
-    }
-    #[tokio::test]
-    async fn workspace_start_errors_when_cancelled_before_auth() {
-        let state = default_test_control_state(Path::new("/tmp/grok-ws-auth-test.sock"));
-        let cancel = CancellationToken::new();
-        cancel.cancel();
-        let err = handle_workspace_start(state, None, "/tmp".to_string(), cancel)
-            .await
-            .unwrap_err();
-        assert!(
-            err.message.contains("shutting down"),
-            "unexpected error: {}",
-            err.message
-        );
     }
     async fn setup_test_server(
         temp: &TempDir,

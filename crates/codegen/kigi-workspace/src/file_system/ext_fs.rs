@@ -62,7 +62,7 @@ impl WorkspaceOp for FsListReq {
         let req = self.clone();
         tokio::task::spawn_blocking(move || list(&abs, &req, confine_root))
             .await
-            .map_err(|e| WorkspaceError::HubError(e.to_string()))?
+            .map_err(|e| WorkspaceError::Internal(e.to_string()))?
     }
 }
 
@@ -98,7 +98,7 @@ impl WorkspaceOp for FsReadFileReq {
         if !ranged {
             let bytes = tokio::fs::read(&abs)
                 .await
-                .map_err(|e| WorkspaceError::HubError(e.to_string()))?;
+                .map_err(|e| WorkspaceError::Internal(e.to_string()))?;
             return Ok(build_file_entry(&bytes));
         }
 
@@ -106,9 +106,9 @@ impl WorkspaceOp for FsReadFileReq {
         // chunk is `[offset, offset + min(length, max_bytes, cap))`.
         let md = tokio::fs::metadata(&abs)
             .await
-            .map_err(|e| WorkspaceError::HubError(e.to_string()))?;
+            .map_err(|e| WorkspaceError::Internal(e.to_string()))?;
         if md.is_dir() {
-            return Err(WorkspaceError::HubError(format!(
+            return Err(WorkspaceError::Internal(format!(
                 "not a file: {}",
                 self.path
             )));
@@ -120,7 +120,7 @@ impl WorkspaceOp for FsReadFileReq {
         let length = super::walk::clamp_read_length(self.length, self.max_bytes);
         let chunk = super::walk::read_range(&abs, offset, length)
             .await
-            .map_err(|e| WorkspaceError::HubError(e.to_string()))?;
+            .map_err(|e| WorkspaceError::Internal(e.to_string()))?;
         Ok(build_ranged_entry(chunk, size, self.encoding))
     }
 }
@@ -143,8 +143,8 @@ impl WorkspaceOp for FsWriteFileReq {
             std::fs::write(&abs, content.as_bytes())
         })
         .await
-        .map_err(|e| WorkspaceError::HubError(e.to_string()))?
-        .map_err(|e| WorkspaceError::HubError(e.to_string()))?;
+        .map_err(|e| WorkspaceError::Internal(e.to_string()))?
+        .map_err(|e| WorkspaceError::Internal(e.to_string()))?;
         Ok(())
     }
 }
@@ -160,7 +160,7 @@ impl WorkspaceOp for FsDeleteFileReq {
         let (abs, _) = ws.confine_to_workspace_root(&abs_unconfined).await?;
         tokio::fs::remove_file(&abs)
             .await
-            .map_err(|e| WorkspaceError::HubError(e.to_string()))?;
+            .map_err(|e| WorkspaceError::Internal(e.to_string()))?;
         Ok(())
     }
 }

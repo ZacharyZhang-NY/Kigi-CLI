@@ -4,9 +4,8 @@ fn main() {
             ".", // match every message & enum
             "#[derive(serde::Serialize, serde::Deserialize)]",
         )
-        // ToolConfigEntry is embedded in external JSON contracts (Computer Hub
-        // `session.bind` metadata and agent-config JSON) where sparse payloads
-        // must deserialize. Defaults are applied per optional field (not
+        // ToolConfigEntry is embedded in external JSON contracts
+        // (agent-config JSON) where sparse payloads must deserialize. Defaults are applied per optional field (not
         // type-level) so the required `id` field still fails deserialization
         // when missing instead of silently becoming "". See tests/wire_shape.rs.
         .field_attribute(

@@ -54,7 +54,7 @@ pub fn build_session_tar(session_dir: &Path, session_id: &str) -> Result<Vec<u8>
 
         let metadata = ExportMetadata {
             session_id: session_id.to_owned(),
-            grok_version: env!("VERSION_WITH_COMMIT").to_owned(),
+            kigi_version: env!("VERSION_WITH_COMMIT").to_owned(),
             os: std::env::consts::OS.to_owned(),
             arch: std::env::consts::ARCH.to_owned(),
             exported_at: chrono::Utc::now().to_rfc3339(),
@@ -86,7 +86,7 @@ pub fn build_session_tar(session_dir: &Path, session_id: &str) -> Result<Vec<u8>
 #[derive(serde::Serialize)]
 struct ExportMetadata {
     session_id: String,
-    grok_version: String,
+    kigi_version: String,
     os: String,
     arch: String,
     exported_at: String,

@@ -175,9 +175,6 @@ pub async fn connect(cancel: &CancellationToken, flags: ConnectFlags) -> Result<
     if let Some(effort) = flags.reasoning_effort_override {
         agent_config.reasoning_effort_override = Some(effort);
     }
-    // Agent connect intentionally leaves hub URL unset; provider hub is
-    // WorkspaceStartArgs only.
-
     if !flags.permission_rules.is_empty() {
         agent_config.cli_agent_overrides.permission_rules = flags.permission_rules.clone();
     }

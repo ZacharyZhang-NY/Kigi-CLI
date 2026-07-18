@@ -79,7 +79,6 @@ kigi-acp-lib = { workspace = true }
 axum = { workspace = true, features = ["ws", "multipart"] }
 backon = { workspace = true }
 webbrowser = { workspace = true }
-tokio-tungstenite = { workspace = true, features = ["rustls-tls-native-roots"] }
 tokio-rustls = { version = "0.26", default-features = false, features = [
     "ring",
     "logging",
@@ -161,8 +160,7 @@ parking_lot.workspace = true
 dashmap.workspace = true
 
 # Used by acp_session.rs and mcp_servers.rs for the unified
-# kigi_tool_runtime::Tool dispatch model and the computer-hub MCP adapter.
-kigi-computer-hub-sdk = { workspace = true }
+# kigi_tool_runtime::Tool dispatch model.
 kigi-tool-runtime = { workspace = true }
 kigi-tool-protocol = { workspace = true }
 kigi-tool-types = { workspace = true }

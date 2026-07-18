@@ -1,6 +1,4 @@
 //! [`WorkspaceHandle`] -- public handle to a workspace instance.
-use fastrace::future::FutureExt as _;
-use fastrace::local::LocalSpan;
 use kigi_hunk_tracker::{HunkTrackerActor, HunkTrackerHandle, TrackingMode};
 use kigi_tool_protocol::ToolServerStatusPayload;
 use kigi_tool_protocol::turn_hook::TurnHookOutcome;
@@ -10,81 +8,6 @@ use prometheus::{
 };
 use std::path::PathBuf;
 use std::sync::Arc;
-/// Default SIGTERM drain budget (ms); override via
-/// `KIGI_WORKSPACE_TERMINATION_GRACE_MS`. 45s fits under the K8s grace period.
-const DEFAULT_TERMINATION_GRACE_MS: u64 = 45_000;
-/// preStop-hook drain marker; override via `KIGI_WORKSPACE_DRAINING_FILE`.
-const DEFAULT_DRAINING_FILE: &str = "/tmp/workspace-server.draining";
-static DRAIN_STARTED_TOTAL: std::sync::LazyLock<IntCounterVec> = std::sync::LazyLock::new(|| {
-    register_int_counter_vec!(
-        "grok_workspace_drain_started_total",
-        "Graceful drains started, by trigger reason",
-        &["reason"]
-    )
-    .unwrap()
-});
-static DRAIN_COMPLETED_TOTAL: std::sync::LazyLock<IntCounterVec> = std::sync::LazyLock::new(|| {
-    register_int_counter_vec!(
-        "grok_workspace_drain_completed_total",
-        "Graceful drains completed, by outcome",
-        &["outcome"]
-    )
-    .unwrap()
-});
-static DRAIN_DURATION: std::sync::LazyLock<Histogram> = std::sync::LazyLock::new(|| {
-    register_histogram!(
-        "grok_workspace_drain_duration_seconds",
-        "Wall-clock duration of a graceful two-phase drain",
-        vec![0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0]
-    )
-    .unwrap()
-});
-/// `session.bind` resolutions advertising zero model-facing tools, by reason.
-/// At most one reason is counted per zero-tool bind.
-static WORKSPACE_BIND_ZERO_TOOLS_TOTAL: std::sync::LazyLock<IntCounterVec> =
-    std::sync::LazyLock::new(|| {
-        register_int_counter_vec!(
-            "grok_workspace_bind_zero_tools_total",
-            "session.bind resolutions advertising zero model-facing tools, by reason",
-            &["reason"]
-        )
-        .unwrap()
-    });
-/// `session.bind` resolutions that FAILED the bind (the server reports
-/// bind-unavailable and the harness re-provisions), by reason. Distinct from
-/// [`WORKSPACE_BIND_ZERO_TOOLS_TOTAL`], which counts binds that *completed*
-/// while advertising zero model-facing tools.
-static WORKSPACE_BIND_FAILED_TOTAL: std::sync::LazyLock<IntCounterVec> =
-    std::sync::LazyLock::new(|| {
-        register_int_counter_vec!(
-            "grok_workspace_bind_failed_total",
-            "session.bind resolutions that failed the bind, by reason",
-            &["reason"]
-        )
-        .unwrap()
-    });
-/// Pinned tool ids this binary could not serve at `session.bind`.
-static WORKSPACE_BIND_UNSERVED_TOOLS_TOTAL: std::sync::LazyLock<IntCounter> =
-    std::sync::LazyLock::new(|| {
-        register_int_counter!(
-            "grok_workspace_bind_unserved_tools_total",
-            "Pinned tool ids unknown to this binary at session.bind (reported, not served)"
-        )
-        .unwrap()
-    });
-/// Model-facing tools advertised per successful `session.bind` (the RPC infra
-/// handler is not counted). Catches silent shrinkage of a session's toolset.
-static WORKSPACE_BIND_ADVERTISED_TOOLS: std::sync::LazyLock<Histogram> =
-    std::sync::LazyLock::new(|| {
-        register_histogram!(
-            "grok_workspace_bind_advertised_tools",
-            "Model-facing tools advertised per successful session.bind",
-            vec![
-                0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0, 16.0, 20.0, 30.0
-            ]
-        )
-        .unwrap()
-    });
 /// Tripwire, expected 0 in production. `path="swap"`: a toolset swap found
 /// the outgoing toolset's `Terminal` resource pointing at a backend other
 /// than the session-owned one — a resolve path bypassed the session-owned
@@ -106,7 +29,6 @@ use crate::capability::CapabilityMode;
 use crate::config::{
     AgentSessionConfig, DEFAULT_EVENT_BUFFER_CAPACITY, HookSourceConfig, WorkspaceConfig,
 };
-use crate::diag_server::DiagHandle;
 use crate::error::{WorkspaceError, WorkspaceResult};
 use crate::session::swap_policy::{
     DeferReason, SessionSnapshot, SwapAction, SwapDecision, SwapPolicy, SwapTrigger,
@@ -114,9 +36,6 @@ use crate::session::swap_policy::{
 };
 use crate::session::tool_config::resolve_session_toolset;
 use crate::session::{WorkspaceSession, WorkspaceShared};
-use crate::workspace_ops::{
-    GetFileEntry, GetFileResult, GetFilesRes, PutFileEntry, PutFileResult, PutFilesRes,
-};
 use kigi_file_utils::events::types::CancellationCategory;
 use kigi_file_utils::events::{Event, SessionRelationship, TurnOutcomeLabel};
 use kigi_tool_protocol::turn_hook::{AfterTurnAckPayload, AfterTurnAckStatus};
@@ -240,33 +159,6 @@ pub(crate) fn record_non_completed_finalize_canary(outcome: TurnHookOutcome) {
 }
 /// Zero-init this module's metric families. See [`crate::init_metrics`].
 pub(crate) fn init_metrics() {
-    for reason in [DrainReason::Sigterm, DrainReason::Evict] {
-        DRAIN_STARTED_TOTAL
-            .with_label_values(&[reason.as_str()])
-            .inc_by(0);
-    }
-    for outcome in [DrainOutcome::Full, DrainOutcome::Partial] {
-        DRAIN_COMPLETED_TOTAL
-            .with_label_values(&[outcome.as_str()])
-            .inc_by(0);
-    }
-    WORKSPACE_BIND_UNSERVED_TOOLS_TOTAL.inc_by(0);
-    std::sync::LazyLock::force(&DRAIN_DURATION);
-    std::sync::LazyLock::force(&WORKSPACE_BIND_ADVERTISED_TOOLS);
-    for reason in [
-        "workspace_shutdown",
-        "session_lookup_failed",
-        "session_error",
-    ] {
-        WORKSPACE_BIND_FAILED_TOTAL
-            .with_label_values(&[reason])
-            .inc_by(0);
-    }
-    for reason in ["empty_after_filter", "missing_tool_config"] {
-        WORKSPACE_BIND_ZERO_TOOLS_TOTAL
-            .with_label_values(&[reason])
-            .inc_by(0);
-    }
     WORKSPACE_TERMINAL_BACKEND_ORPHANED_TOTAL
         .with_label_values(&["swap"])
         .inc_by(0);
@@ -292,42 +184,6 @@ pub(crate) fn init_metrics() {
             .inc_by(0);
     }
 }
-/// Outcome of a hub `session.bind` against an already-existing session
-/// (see [`WorkspaceHandle::rebind_existing_hub_session`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RebindOutcome {
-    /// Same (or no) explicit toolset — session reused untouched.
-    Reused,
-    /// Changed explicit toolset — re-resolved and swapped in.
-    Reresolved,
-    /// Changed explicit toolset, but the re-resolve failed; existing kept.
-    ReresolveFailed,
-    /// Changed explicit toolset, but the session's toolset is externally
-    /// owned (local-bind shape) — nothing was resolved or swapped; the
-    /// existing toolset (and fingerprint) kept. Reused-semantics for the
-    /// bind reply: advertise the KEPT toolset, drop any unserved set from
-    /// the unapplied resolve.
-    KeptExternallyOwned,
-    /// Changed explicit toolset while the session had tool calls in flight
-    /// (`explicit → different-explicit` transition only) — existing kept;
-    /// a later rebind with no calls in flight applies the correction.
-    ReresolveDeferredInFlight,
-}
-/// What [`WorkspaceHandle::resolve_and_swap_session_toolset`] actually did —
-/// so no caller can mistake a deliberate skip for an installed swap (the
-/// skip leaves toolset AND fingerprint untouched).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[must_use = "a skip means the config was NOT applied; callers must not report success"]
-pub(crate) enum SwapOutcome {
-    /// Toolset re-resolved and installed; fingerprint updated.
-    Swapped,
-    /// Identical fingerprint ([`SwapDecision::Reuse`]): the live toolset
-    /// already reflects the config, nothing resolved or changed.
-    Reused,
-    /// Externally-owned (local-bind) toolset: rebuild skipped, nothing
-    /// changed. See `toolset_terminal_is_session_owned`.
-    SkippedExternallyOwned,
-}
 /// Public handle to a workspace instance. Owns shared state (sessions,
 /// MCP snapshot, tool config, event bus) and session lifecycle.
 #[derive(Clone)]
@@ -335,62 +191,6 @@ pub struct WorkspaceHandle {
     pub(crate) shared: Arc<WorkspaceShared>,
 }
 impl WorkspaceHandle {
-    /// `None` when not connected. Never hands out an owned
-    /// `ToolServer` — a clone-drop begins server teardown.
-    pub async fn trace_donation_reporter(
-        &self,
-        service_name: &str,
-    ) -> Option<(
-        kigi_computer_hub_sdk::HubDonatingReporter,
-        kigi_computer_hub_sdk::TraceDonationPump,
-    )> {
-        self.shared
-            .hub_handle
-            .lock()
-            .await
-            .as_ref()
-            .map(|hub| hub.server.trace_donation_reporter(service_name))
-    }
-    /// Post-connect entry point for the log export layer, the analogue of
-    /// [`Self::trace_donation_reporter`]. Returns `None` when not connected
-    /// (the layer stays inert). On
-    /// `Some`, yields a [`LogDonationSender`] to swap into the
-    /// already-installed inert `DonatingLogLayer` plus a drain handle.
-    /// Never hands out an owned `ToolServer` — a clone-drop begins server
-    /// teardown.
-    ///
-    /// [`LogDonationSender`]: kigi_computer_hub_sdk::LogDonationSender
-    pub async fn log_donation_layer(
-        &self,
-        service_name: &str,
-    ) -> Option<(
-        kigi_computer_hub_sdk::LogDonationSender,
-        kigi_computer_hub_sdk::LogDonationPump,
-    )> {
-        self.shared
-            .hub_handle
-            .lock()
-            .await
-            .as_ref()
-            .map(|hub| hub.server.log_donation_layer(service_name))
-    }
-    /// Post-connect entry point for metric export, the analogue of
-    /// [`Self::trace_donation_reporter`]. Returns `None` when not connected
-    /// (no reporter is spawned). On
-    /// `Some`, spawns the periodic Prometheus-registry gather → OTLP →
-    /// export pump and yields a drain handle. Never hands out an owned
-    /// `ToolServer` — a clone-drop begins server teardown.
-    pub async fn metric_donation_reporter(
-        &self,
-        service_name: &str,
-    ) -> Option<kigi_computer_hub_sdk::MetricDonationPump> {
-        self.shared
-            .hub_handle
-            .lock()
-            .await
-            .as_ref()
-            .map(|hub| hub.server.metric_donation_reporter(service_name))
-    }
     /// Construct a handle with zero sessions.
     ///
     /// Sessions are created explicitly via [`Self::create_session`] or
@@ -408,24 +208,6 @@ impl WorkspaceHandle {
             rewind_all_outcomes_from_env(),
         )
     }
-    /// Construct a handle with an explicit `$KIGI_WORKSPACE_HOME`.
-    ///
-    /// [`connect_local_workspace`] calls this; [`Self::new`] takes the
-    /// ephemeral-home path for tests and local mode.
-    ///
-    /// # Panics
-    /// Requires a Tokio runtime to be entered (for broadcast channel).
-    pub(crate) fn new_with_home(
-        config: WorkspaceConfig,
-        workspace_home: std::path::PathBuf,
-    ) -> WorkspaceResult<Self> {
-        Self::build(
-            config,
-            workspace_home,
-            events_enabled(),
-            rewind_all_outcomes_from_env(),
-        )
-    }
     fn build(
         config: WorkspaceConfig,
         workspace_home: std::path::PathBuf,
@@ -433,7 +215,7 @@ impl WorkspaceHandle {
         workspace_rewind_all_outcomes: bool,
     ) -> WorkspaceResult<Self> {
         let sessions = std::collections::HashMap::new();
-        let local_registry = kigi_computer_hub_sdk::LocalRegistry::new();
+        let local_registry = kigi_tool_runtime::LocalRegistry::new();
         let capacity = if config.event_buffer_capacity == 0 {
             DEFAULT_EVENT_BUFFER_CAPACITY
         } else {
@@ -513,7 +295,6 @@ impl WorkspaceHandle {
         activity_tracker.set_event_writers(session_event_writers.clone());
         let shared = WorkspaceShared {
             default_tool_config: config.default_tool_config,
-            require_explicit_toolset: config.require_explicit_toolset,
             confine_fs_to_workspace_root: config.confine_fs_to_workspace_root,
             root_cwd: config.root_cwd.clone(),
             sessions: parking_lot::RwLock::new(sessions),
@@ -526,16 +307,10 @@ impl WorkspaceHandle {
             hook_load_errors,
             skills_config: config.skills_config,
             plugin_discovery_config: config.plugin_discovery_config,
-            hub_handle: tokio::sync::Mutex::new(None),
-            hub_tools_snapshot: arc_swap::ArcSwap::new(Arc::new(vec![])),
-            hub_config: config.hub_config,
-            auth_provider: config.auth_provider,
-            activity_notify_handle: arc_swap::ArcSwap::new(Arc::new(None)),
             client_ext_sink: arc_swap::ArcSwap::new(Arc::new(None)),
             local_registry,
             activity_tracker,
             status_config: config.status_config,
-            server_metadata: config.server_metadata,
             fuzzy_searches: Arc::new(tokio::sync::Mutex::new(
                 crate::file_system::FuzzySearchManager::new(std::time::Duration::from_secs(300)),
             )),
@@ -549,7 +324,6 @@ impl WorkspaceHandle {
             session_event_writers,
             #[cfg(test)]
             post_resolve_test_hook: parking_lot::Mutex::new(None),
-            client_fs_hash_memo: Default::default(),
         };
         Ok(Self {
             shared: Arc::new(shared),
@@ -561,21 +335,6 @@ impl WorkspaceHandle {
     }
     pub fn activity_tracker(&self) -> &std::sync::Arc<crate::activity::ActivityTracker> {
         &self.shared.activity_tracker
-    }
-    /// The [`ToolServer`](kigi_computer_hub_sdk::ToolServer) for this
-    /// workspace, if a server connection is active.
-    ///
-    /// Non-blocking: returns `None` both when no server is connected and when the
-    /// handle is momentarily locked (e.g. a concurrent connect), so callers
-    /// must treat `None` as "no server available right now" and degrade gracefully.
-    pub fn hub_server(&self) -> Option<kigi_computer_hub_sdk::ToolServer> {
-        self.shared.hub_server()
-    }
-    /// Like [`Self::hub_server`] but awaits the connection lock instead of returning
-    /// `None` on contention, so a transient `connect_hub` lock is not mistaken
-    /// for "no server". `None` means no server is connected. Use from async callers.
-    pub async fn hub_server_blocking(&self) -> Option<kigi_computer_hub_sdk::ToolServer> {
-        self.shared.hub_server_blocking().await
     }
     /// Get the workspace root directory.
     pub(crate) fn root_cwd(&self) -> crate::error::WorkspaceResult<PathBuf> {
@@ -689,29 +448,22 @@ impl WorkspaceHandle {
         let session_env = Arc::new(std::collections::HashMap::new());
         let config = tool_config.unwrap_or_else(|| self.shared.default_tool_config.clone());
         let mcp_snapshot = self.shared.mcp_tools_snapshot.load_full();
-        let hub_snapshot = self.shared.hub_tools_snapshot.load_full();
         let system_notify_channel = system_notifications
             .then(kigi_tools::notification::types::ToolNotificationHandle::channel);
         let system_notify_handle = system_notify_channel.as_ref().map(|(h, _)| h.clone());
-        let (effective, toolset, terminal_backend) = {
-            let _span = LocalSpan::enter_with_local_parent("tool_server.toolset_resolve")
-                .with_property(|| ("session_id", session_id.clone()));
-            resolve_session_toolset(
-                config,
-                capability,
-                &mcp_snapshot,
-                &hub_snapshot,
-                cwd.clone(),
-                session_env.clone(),
-                &session_id,
-                self.shared.session_factory.as_ref(),
-                Some(self.shared.local_registry.clone()),
-                self.shared.lsp.clone(),
-                viewer_ctx.clone(),
-                self.shared
-                    .compose_session_notification_handle(system_notify_handle),
-            )
-        }?;
+        let (effective, toolset, terminal_backend) = resolve_session_toolset(
+            config,
+            capability,
+            &mcp_snapshot,
+            cwd.clone(),
+            session_env.clone(),
+            &session_id,
+            self.shared.session_factory.as_ref(),
+            Some(self.shared.local_registry.clone()),
+            self.shared.lsp.clone(),
+            viewer_ctx.clone(),
+            system_notify_handle,
+        )?;
         let session = Arc::new(WorkspaceSession::new(
             session_id.clone(),
             cwd,
@@ -735,324 +487,6 @@ impl WorkspaceHandle {
             session.session_id(),
         );
         Ok(session)
-    }
-    /// Update a session's tool config with auth and serialization; the RPC
-    /// handler derives `caller_session_id` from the server-bound envelope.
-    /// Swap gating (retryable `TurnActive`, stale heal): [`SwapPolicy::evaluate`].
-    pub(crate) async fn update_tool_config(
-        &self,
-        caller_session_id: &str,
-        session_id: &str,
-        new_config: kigi_tools::registry::types::ToolServerConfig,
-    ) -> crate::error::WorkspaceResult<()> {
-        let session = self
-            .session(session_id)
-            .ok_or_else(|| crate::error::WorkspaceError::SessionNotFound(session_id.to_owned()))?;
-        if caller_session_id != session_id {
-            return Err(crate::error::WorkspaceError::Unauthorized {
-                caller: caller_session_id.to_owned(),
-                target: session_id.to_owned(),
-            });
-        }
-        match self
-            .resolve_and_swap_session_toolset(&session, new_config, SwapTrigger::UpdateRpc)
-            .await?
-        {
-            SwapOutcome::Swapped | SwapOutcome::Reused => Ok(()),
-            SwapOutcome::SkippedExternallyOwned => Err(
-                crate::error::WorkspaceError::ToolsetExternallyOwned(session_id.to_owned()),
-            ),
-        }
-    }
-    /// Re-resolve `new_config` against the session's frozen bind-time inputs
-    /// and atomically swap its toolset (`ToolsChanged`). Update-RPC entry:
-    /// gated by [`SwapPolicy::evaluate`], twice (entry + post-resolve).
-    pub(crate) async fn resolve_and_swap_session_toolset(
-        &self,
-        session: &Arc<crate::session::WorkspaceSession>,
-        new_config: kigi_tools::registry::types::ToolServerConfig,
-        trigger: SwapTrigger,
-    ) -> crate::error::WorkspaceResult<SwapOutcome> {
-        let _update_guard = session.update_lock.lock().await;
-        let session_id = session.session_id();
-        let new_fingerprint = serde_json::to_value(&new_config).ok();
-        let snapshot = SessionSnapshot::capture(
-            session,
-            &self.shared.activity_tracker,
-            new_fingerprint.as_ref(),
-        )
-        .await;
-        match SwapPolicy::evaluate(&snapshot, trigger) {
-            SwapDecision::Reuse => {
-                tracing::debug!(
-                    session_id = % session_id, trigger = trigger.metric_label(),
-                    "toolset config identical to the stored bind fingerprint — \
-                     reused untouched"
-                );
-                Ok(SwapOutcome::Reused)
-            }
-            SwapDecision::Skip(reason) => {
-                record_swap_decision(
-                    &self.shared.activity_tracker,
-                    trigger,
-                    session_id,
-                    SwapAction::Skipped(reason),
-                );
-                tracing::warn!(
-                    session_id = % session_id, trigger = trigger.metric_label(),
-                    "toolset swap skipped: toolset terminal backend is externally \
-                     owned (local bind)"
-                );
-                Ok(SwapOutcome::SkippedExternallyOwned)
-            }
-            SwapDecision::Defer(reason) => {
-                record_swap_decision(
-                    &self.shared.activity_tracker,
-                    trigger,
-                    session_id,
-                    SwapAction::Deferred(reason),
-                );
-                tracing::info!(
-                    session_id = % session_id, trigger = trigger.metric_label(),
-                    "toolset mutation rejected: turn active — retry at the turn boundary"
-                );
-                Err(crate::error::WorkspaceError::TurnActive(
-                    session_id.to_owned(),
-                ))
-            }
-            SwapDecision::Apply => {
-                self.resolve_and_swap_session_toolset_locked(
-                    session,
-                    new_config,
-                    new_fingerprint,
-                    trigger,
-                )
-                .await
-            }
-        }
-    }
-    /// The [`SwapDecision::Apply`] arm: resolve `new_config` (whose
-    /// fingerprint `new_fingerprint` must be) and install it. Callers hold
-    /// `update_lock` and evaluated [`SwapPolicy`] to `Apply` under that hold.
-    async fn resolve_and_swap_session_toolset_locked(
-        &self,
-        session: &Arc<crate::session::WorkspaceSession>,
-        new_config: kigi_tools::registry::types::ToolServerConfig,
-        new_fingerprint: Option<serde_json::Value>,
-        trigger: SwapTrigger,
-    ) -> crate::error::WorkspaceResult<SwapOutcome> {
-        let session_id = session.session_id().to_owned();
-        let mcp_snapshot = self.shared.mcp_tools_snapshot.load_full();
-        let hub_snapshot = self.shared.hub_tools_snapshot.load_full();
-        let cwd = session.cwd().to_path_buf();
-        let session_env = session.session_env().clone();
-        let cap = session.capability_mode();
-        let factory = self.shared.session_factory.clone();
-        let lr = self.shared.local_registry.clone();
-        let lsp = self.shared.lsp.clone();
-        let sid = session_id.to_owned();
-        let viewer_ctx = session.viewer_ctx().cloned();
-        let notification_handle = self
-            .shared
-            .compose_session_notification_handle(session.system_notify_handle());
-        let terminal_backend = session.terminal_backend().clone();
-        let resolve_result = tokio::task::spawn_blocking(move || {
-            crate::session::tool_config::resolve_session_toolset_rebuild(
-                new_config,
-                cap,
-                &mcp_snapshot,
-                &hub_snapshot,
-                cwd,
-                session_env,
-                &sid,
-                factory.as_ref(),
-                Some(lr),
-                lsp,
-                viewer_ctx,
-                notification_handle,
-                terminal_backend,
-            )
-        })
-        .await
-        .map_err(|e| crate::error::WorkspaceError::JoinError(e.to_string()))?;
-        let (effective, new_toolset) = resolve_result?;
-        #[cfg(test)]
-        if let Some(hook) = self.shared.post_resolve_test_hook.lock().as_ref() {
-            hook();
-        }
-        if trigger.rechecks_after_resolve() {
-            let snapshot = SessionSnapshot::capture(
-                session,
-                &self.shared.activity_tracker,
-                new_fingerprint.as_ref(),
-            )
-            .await;
-            match SwapPolicy::evaluate(&snapshot, trigger) {
-                SwapDecision::Apply => {}
-                SwapDecision::Reuse => {
-                    tracing::debug!(
-                        session_id = % session_id, trigger = trigger.metric_label(),
-                        "resolved toolset discarded post-resolve: a concurrent \
-                         bind installed the identical fingerprint during the \
-                         re-resolve"
-                    );
-                    return Ok(SwapOutcome::Reused);
-                }
-                SwapDecision::Skip(reason) => {
-                    record_swap_decision(
-                        &self.shared.activity_tracker,
-                        trigger,
-                        &session_id,
-                        SwapAction::Skipped(reason),
-                    );
-                    tracing::warn!(
-                        session_id = % session_id, trigger = trigger.metric_label(),
-                        "toolset swap skipped: toolset terminal backend is externally \
-                         owned (local bind)"
-                    );
-                    return Ok(SwapOutcome::SkippedExternallyOwned);
-                }
-                SwapDecision::Defer(reason) => {
-                    let reason = match reason {
-                        DeferReason::TurnActive => DeferReason::TurnActiveLate,
-                        other => other,
-                    };
-                    record_swap_decision(
-                        &self.shared.activity_tracker,
-                        trigger,
-                        &session_id,
-                        SwapAction::Deferred(reason),
-                    );
-                    tracing::info!(
-                        session_id = % session_id, trigger = trigger.metric_label(),
-                        "toolset mutation rejected post-resolve: a turn started during \
-                         the re-resolve — resolved toolset discarded; retry at the \
-                         turn boundary"
-                    );
-                    return Err(crate::error::WorkspaceError::TurnActive(session_id));
-                }
-            }
-        }
-        session
-            .replace_carrying_browser_service(Arc::new(effective), new_toolset)
-            .await;
-        session.set_bind_tool_config_fingerprint(new_fingerprint);
-        session.clear_stale_resolve();
-        record_swap_decision(
-            &self.shared.activity_tracker,
-            trigger,
-            &session_id,
-            SwapAction::Applied,
-        );
-        let _ = self
-            .shared
-            .events
-            .send(kigi_workspace_types::WorkspaceEvent::ToolsChanged {
-                session_id: session_id.to_owned(),
-            });
-        Ok(SwapOutcome::Swapped)
-    }
-    /// Hub `session.bind` against an existing session: reuse, or re-resolve
-    /// and swap per the owner-rebind policy rows (incl. the identical stale
-    /// heal). `explicit_cfg=None` never overwrites; `None` = session vanished.
-    pub(crate) async fn rebind_existing_hub_session(
-        &self,
-        session_id: &str,
-        explicit_cfg: Option<kigi_tools::registry::types::ToolServerConfig>,
-        bind_fingerprint: Option<serde_json::Value>,
-    ) -> Option<(Arc<crate::session::WorkspaceSession>, RebindOutcome)> {
-        let session = self.session(session_id)?;
-        let Some(cfg) = explicit_cfg else {
-            return Some((session, RebindOutcome::Reused));
-        };
-        let outcome = {
-            let _update_guard = session.update_lock.lock().await;
-            let snapshot = SessionSnapshot::capture(
-                &session,
-                &self.shared.activity_tracker,
-                bind_fingerprint.as_ref(),
-            )
-            .await;
-            match SwapPolicy::evaluate(&snapshot, SwapTrigger::OwnerRebind) {
-                SwapDecision::Reuse => RebindOutcome::Reused,
-                SwapDecision::Defer(reason) => {
-                    record_swap_decision(
-                        &self.shared.activity_tracker,
-                        SwapTrigger::OwnerRebind,
-                        session_id,
-                        SwapAction::Deferred(reason),
-                    );
-                    tracing::warn!(
-                        session_id = % session_id, in_flight = snapshot
-                        .in_flight_calls(),
-                        "session.bind: rebind swap (changed explicit toolset or stale-heal \
-                         re-apply) deferred: tool calls in flight — keeping the existing \
-                         toolset"
-                    );
-                    RebindOutcome::ReresolveDeferredInFlight
-                }
-                SwapDecision::Skip(reason) => {
-                    record_swap_decision(
-                        &self.shared.activity_tracker,
-                        SwapTrigger::OwnerRebind,
-                        session_id,
-                        SwapAction::Skipped(reason),
-                    );
-                    tracing::warn!(
-                        session_id = % session_id,
-                        "session.bind: rebind carried a changed toolset config, but the \
-                         session's toolset is externally owned (local bind) — keeping the \
-                         existing toolset; the new config did NOT take effect"
-                    );
-                    RebindOutcome::KeptExternallyOwned
-                }
-                SwapDecision::Apply => {
-                    match self
-                        .resolve_and_swap_session_toolset_locked(
-                            &session,
-                            cfg,
-                            bind_fingerprint,
-                            SwapTrigger::OwnerRebind,
-                        )
-                        .await
-                    {
-                        Ok(SwapOutcome::Swapped) => {
-                            tracing::info!(
-                                session_id = % session_id,
-                                "session.bind: rebind carried a changed toolset config — re-resolved \
-                             and swapped"
-                            );
-                            RebindOutcome::Reresolved
-                        }
-                        Ok(SwapOutcome::Reused) => RebindOutcome::Reused,
-                        Ok(SwapOutcome::SkippedExternallyOwned) => {
-                            tracing::warn!(
-                                session_id = % session_id,
-                                "session.bind: rebind carried a changed toolset config, but the \
-                             session's toolset is externally owned (local bind) — keeping the \
-                             existing toolset; the new config did NOT take effect"
-                            );
-                            RebindOutcome::KeptExternallyOwned
-                        }
-                        Err(e) => {
-                            record_swap_decision(
-                                &self.shared.activity_tracker,
-                                SwapTrigger::OwnerRebind,
-                                session_id,
-                                SwapAction::ApplyFailed,
-                            );
-                            tracing::warn!(
-                                session_id = % session_id, error = % e,
-                                "session.bind: rebind toolset re-resolve failed — keeping the \
-                             existing toolset"
-                            );
-                            RebindOutcome::ReresolveFailed
-                        }
-                    }
-                }
-            }
-        };
-        Some((session, outcome))
     }
     pub async fn on_before_turn(
         &self,
@@ -1177,72 +611,6 @@ impl WorkspaceHandle {
             self.on_yolo_toggled(session_id, yolo_mode);
         }
     }
-    /// Preemption-aware graceful drain: waits for in-flight tool calls and
-    /// background tasks within `grace_budget`. Shared by the SIGTERM and
-    /// server-evict triggers so they can't diverge.
-    ///
-    /// The preStop drain marker is (re)written at the start and end with the
-    /// live count of outstanding work (active tool calls + background tasks),
-    /// so a preStop hook never reads `0` while a tool call is still running.
-    ///
-    /// Returns that same outstanding count after the deadline, so `0` means a
-    /// fully clean drain — consistent with the final marker and
-    /// [`DrainOutcome::Full`]; a wedged tool call keeps it non-zero.
-    pub async fn two_phase_drain(
-        &self,
-        grace_budget: std::time::Duration,
-        reason: DrainReason,
-    ) -> usize {
-        let tracker = self.shared.activity_tracker.clone();
-        let start = std::time::Instant::now();
-        tracker.set_draining();
-        tracker.poke();
-        DRAIN_STARTED_TOTAL
-            .with_label_values(&[reason.as_str()])
-            .inc();
-        let active_at_start = tracker.total_active() as usize;
-        let drain_file = draining_file_path();
-        write_draining_marker(&drain_file, active_at_start);
-        tracing::info!(
-            drain_reason = reason.as_str(),
-            grace_ms = grace_budget.as_millis() as u64,
-            active_at_start,
-            "workspace: graceful drain commencing"
-        );
-        let tools_idle = tokio::time::timeout(grace_budget, tracker.wait_until_tools_idle())
-            .await
-            .is_ok();
-        if !tools_idle {
-            tracing::warn!(
-                active = tracker.total_active(),
-                "drain deadline exceeded — tool calls still in flight"
-            );
-        }
-        let total_unfinished = self.shared.activity_tracker.total_active() as usize;
-        let outcome = classify_drain_outcome(tools_idle);
-        DRAIN_COMPLETED_TOTAL
-            .with_label_values(&[outcome.as_str()])
-            .inc();
-        DRAIN_DURATION.observe(start.elapsed().as_secs_f64());
-        write_draining_marker(&drain_file, total_unfinished);
-        if total_unfinished > 0 {
-            tracing::warn!(
-                reason = reason.as_str(),
-                outcome = outcome.as_str(),
-                total_unfinished,
-                duration_ms = start.elapsed().as_millis() as u64,
-                "workspace: graceful drain finished with work still outstanding"
-            );
-        } else {
-            tracing::info!(
-                reason = reason.as_str(),
-                outcome = outcome.as_str(),
-                duration_ms = start.elapsed().as_millis() as u64,
-                "workspace: graceful drain complete"
-            );
-        }
-        total_unfinished
-    }
     /// Bookkeeping for a cancelled in-flight tool call: marks it as
     /// completed in the activity tracker. Does **not** abort execution
     /// of the tool — that requires `CancellationToken` plumbing (future work).
@@ -1328,7 +696,7 @@ impl WorkspaceHandle {
     async fn canonicalize_root_dir(root: &std::path::Path) -> WorkspaceResult<PathBuf> {
         #[allow(clippy::disallowed_methods)]
         let canonical = tokio::fs::canonicalize(root).await.map_err(|e| {
-            WorkspaceError::HubError(format!("failed to canonicalize workspace root: {e}"))
+            WorkspaceError::Internal(format!("failed to canonicalize workspace root: {e}"))
         })?;
         Ok(dunce::simplified(&canonical).to_path_buf())
     }
@@ -1359,7 +727,7 @@ impl WorkspaceHandle {
     ) -> WorkspaceResult<PathBuf> {
         use std::path::{Component, Path};
         if req_path.is_empty() {
-            return Err(WorkspaceError::HubError("empty path not allowed".into()));
+            return Err(WorkspaceError::Internal("empty path not allowed".into()));
         }
         let path = Path::new(req_path);
         let joined = if path.is_absolute() {
@@ -1383,7 +751,7 @@ impl WorkspaceHandle {
         }
         let normalized: PathBuf = components.into_iter().collect();
         if !normalized.starts_with(root) && !normalized.starts_with(canonical_root) {
-            return Err(WorkspaceError::HubError(format!(
+            return Err(WorkspaceError::Internal(format!(
                 "path escapes workspace root: {req_path}"
             )));
         }
@@ -1396,7 +764,7 @@ impl WorkspaceHandle {
                 Ok(canonical) => {
                     let canonical = dunce::simplified(&canonical).to_path_buf();
                     if !canonical.starts_with(canonical_root) {
-                        return Err(WorkspaceError::HubError(format!(
+                        return Err(WorkspaceError::Internal(format!(
                             "path resolves outside workspace root (symlink escape): {req_path}"
                         )));
                     }
@@ -1410,12 +778,12 @@ impl WorkspaceHandle {
                         && md.file_type().is_symlink()
                     {
                         if symlink_hops >= MAX_SYMLINK_HOPS {
-                            return Err(WorkspaceError::HubError(format!(
+                            return Err(WorkspaceError::Internal(format!(
                                 "path resolves outside workspace root (unresolved symlink chain): {req_path}"
                             )));
                         }
                         let Ok(target) = tokio::fs::read_link(&check_path).await else {
-                            return Err(WorkspaceError::HubError(format!(
+                            return Err(WorkspaceError::Internal(format!(
                                 "failed to resolve symlink for containment: {req_path}"
                             )));
                         };
@@ -1443,7 +811,7 @@ impl WorkspaceHandle {
                     }
                 }
                 Err(e) => {
-                    return Err(WorkspaceError::HubError(format!(
+                    return Err(WorkspaceError::Internal(format!(
                         "failed to verify path containment: {e}"
                     )));
                 }
@@ -1465,7 +833,7 @@ impl WorkspaceHandle {
             return Ok((path.to_path_buf(), None));
         }
         let path_str = path.to_str().ok_or_else(|| {
-            WorkspaceError::HubError(format!("non-UTF-8 path: {}", path.display()))
+            WorkspaceError::Internal(format!("non-UTF-8 path: {}", path.display()))
         })?;
         let canonical_root = self.canonical_root().await?;
         let confined = self.resolve_service_path(path_str, &canonical_root).await?;
@@ -1482,252 +850,11 @@ impl WorkspaceHandle {
             return Ok((path.to_path_buf(), None));
         }
         let path_str = path.to_str().ok_or_else(|| {
-            WorkspaceError::HubError(format!("non-UTF-8 path: {}", path.display()))
+            WorkspaceError::Internal(format!("non-UTF-8 path: {}", path.display()))
         })?;
         let canonical_root = Self::canonicalize_root_dir(root).await?;
         let confined = Self::resolve_path_within_root(path_str, root, &canonical_root).await?;
         Ok((confined, Some(canonical_root)))
-    }
-    /// Write files to the workspace filesystem (service-level, no hunk tracking).
-    ///
-    /// Files are written sequentially. If file N fails, files 1..N-1 are
-    /// already on disk and will NOT be rolled back. Callers must inspect
-    /// per-file results in the response to detect partial failures.
-    pub async fn put_files(&self, files: Vec<PutFileEntry>) -> WorkspaceResult<PutFilesRes> {
-        let canonical_root = self.canonical_root().await?;
-        let mut results = Vec::with_capacity(files.len());
-        for entry in files {
-            let result = self.put_single_file(&entry, &canonical_root).await;
-            results.push(result);
-        }
-        Ok(PutFilesRes { results })
-    }
-    async fn put_single_file(
-        &self,
-        entry: &PutFileEntry,
-        canonical_root: &std::path::Path,
-    ) -> PutFileResult {
-        let resolved = match self.resolve_service_path(&entry.path, canonical_root).await {
-            Ok(p) => p,
-            Err(e) => {
-                return PutFileResult {
-                    path: entry.path.clone(),
-                    ok: false,
-                    error: Some(e.to_string()),
-                    hash: None,
-                };
-            }
-        };
-        if entry.create_dirs
-            && let Some(parent) = resolved.parent()
-            && let Err(e) = tokio::fs::create_dir_all(parent).await
-        {
-            return PutFileResult {
-                path: entry.path.clone(),
-                ok: false,
-                error: Some(format!("failed to create directories: {e}")),
-                hash: None,
-            };
-        }
-        let write_result = if entry.append {
-            use tokio::io::AsyncWriteExt;
-            async {
-                let mut f = tokio::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&resolved)
-                    .await?;
-                f.write_all(entry.content.as_bytes()).await?;
-                f.flush().await
-            }
-            .await
-        } else {
-            tokio::fs::write(&resolved, entry.content.as_bytes()).await
-        };
-        match write_result {
-            Ok(()) => {
-                let hash = sha256_hex(entry.content.as_bytes());
-                PutFileResult {
-                    path: entry.path.clone(),
-                    ok: true,
-                    error: None,
-                    hash: Some(hash),
-                }
-            }
-            Err(e) => PutFileResult {
-                path: entry.path.clone(),
-                ok: false,
-                error: Some(e.to_string()),
-                hash: None,
-            },
-        }
-    }
-    /// Read files from the workspace filesystem with optional cache
-    /// validation and byte-range support.
-    ///
-    /// Files are read sequentially. Each result includes:
-    /// - `exists`: whether the file exists on disk.
-    /// - `content`: file content (full or requested byte range as UTF-8).
-    /// - `hash`: SHA-256 hex digest of the **full** file content.
-    /// - `matched`: true if `if_none_match` matched the current hash.
-    /// - `size`: total file size in bytes.
-    pub async fn get_files(&self, files: Vec<GetFileEntry>) -> WorkspaceResult<GetFilesRes> {
-        let canonical_root = self.canonical_root().await?;
-        let mut results = Vec::with_capacity(files.len());
-        for entry in files {
-            let result = self.get_single_file(&entry, &canonical_root).await;
-            results.push(result);
-        }
-        Ok(GetFilesRes { results })
-    }
-    async fn get_single_file(
-        &self,
-        entry: &GetFileEntry,
-        canonical_root: &std::path::Path,
-    ) -> GetFileResult {
-        let resolved = match self.resolve_service_path(&entry.path, canonical_root).await {
-            Ok(p) => p,
-            Err(e) => {
-                return GetFileResult {
-                    path: entry.path.clone(),
-                    exists: false,
-                    content: None,
-                    hash: None,
-                    matched: false,
-                    size: None,
-                    error: Some(e.to_string()),
-                };
-            }
-        };
-        let is_chunked = entry.offset.is_some() || entry.length.is_some();
-        let metadata = match tokio::fs::metadata(&resolved).await {
-            Ok(m) => m,
-            Err(e)
-                if e.kind() == std::io::ErrorKind::NotFound
-                    || e.kind() == std::io::ErrorKind::NotADirectory =>
-            {
-                return GetFileResult {
-                    path: entry.path.clone(),
-                    exists: false,
-                    content: None,
-                    hash: None,
-                    matched: false,
-                    size: None,
-                    error: None,
-                };
-            }
-            Err(e) => {
-                return GetFileResult {
-                    path: entry.path.clone(),
-                    exists: true,
-                    content: None,
-                    hash: None,
-                    matched: false,
-                    size: None,
-                    error: Some(e.to_string()),
-                };
-            }
-        };
-        let file_size = metadata.len();
-        if is_chunked {
-            let req_offset = entry.offset.unwrap_or(0);
-            let req_length = entry.length.unwrap_or(file_size.saturating_sub(req_offset));
-            let read_result = stream_hash_and_range(&resolved, req_offset, req_length).await;
-            match read_result {
-                Ok((hash, chunk_bytes, _streamed)) => {
-                    if let Some(ref etag) = entry.if_none_match
-                        && *etag == hash
-                    {
-                        return GetFileResult {
-                            path: entry.path.clone(),
-                            exists: true,
-                            content: None,
-                            hash: Some(hash),
-                            matched: true,
-                            size: Some(file_size),
-                            error: None,
-                        };
-                    }
-                    match String::from_utf8(chunk_bytes) {
-                        Ok(content) => GetFileResult {
-                            path: entry.path.clone(),
-                            exists: true,
-                            content: Some(content),
-                            hash: Some(hash),
-                            matched: false,
-                            size: Some(file_size),
-                            error: None,
-                        },
-                        Err(e) => GetFileResult {
-                            path: entry.path.clone(),
-                            exists: true,
-                            content: None,
-                            hash: Some(hash),
-                            matched: false,
-                            size: Some(file_size),
-                            error: Some(format!("not valid UTF-8 in range: {e}")),
-                        },
-                    }
-                }
-                Err(e) => GetFileResult {
-                    path: entry.path.clone(),
-                    exists: true,
-                    content: None,
-                    hash: None,
-                    matched: false,
-                    size: Some(file_size),
-                    error: Some(e.to_string()),
-                },
-            }
-        } else {
-            match tokio::fs::read(&resolved).await {
-                Ok(bytes) => {
-                    let hash = sha256_hex(&bytes);
-                    if let Some(ref etag) = entry.if_none_match
-                        && *etag == hash
-                    {
-                        return GetFileResult {
-                            path: entry.path.clone(),
-                            exists: true,
-                            content: None,
-                            hash: Some(hash),
-                            matched: true,
-                            size: Some(file_size),
-                            error: None,
-                        };
-                    }
-                    match String::from_utf8(bytes) {
-                        Ok(content) => GetFileResult {
-                            path: entry.path.clone(),
-                            exists: true,
-                            content: Some(content),
-                            hash: Some(hash),
-                            matched: false,
-                            size: Some(file_size),
-                            error: None,
-                        },
-                        Err(e) => GetFileResult {
-                            path: entry.path.clone(),
-                            exists: true,
-                            content: None,
-                            hash: Some(hash),
-                            matched: false,
-                            size: Some(file_size),
-                            error: Some(format!("not valid UTF-8: {e}")),
-                        },
-                    }
-                }
-                Err(e) => GetFileResult {
-                    path: entry.path.clone(),
-                    exists: true,
-                    content: None,
-                    hash: None,
-                    matched: false,
-                    size: Some(file_size),
-                    error: Some(e.to_string()),
-                },
-            }
-        }
     }
     /// Open a fuzzy file search index rooted at the workspace cwd.
     pub async fn fuzzy_open(
@@ -1918,7 +1045,7 @@ impl WorkspaceHandle {
             handle.emit_client_ext("x.ai/search/content/status".to_string(), params);
         })
         .await
-        .map_err(|e| WorkspaceError::HubError(e.to_string()))
+        .map_err(|e| WorkspaceError::Internal(e.to_string()))
     }
     pub fn get_or_create_codebase_index(
         &self,
@@ -1972,193 +1099,6 @@ impl WorkspaceHandle {
             }
             tracing::debug!("codebase index event forwarder exited");
         })
-    }
-    /// Start MCP servers for a session and bridge them to the server.
-    pub async fn start_session_mcp_servers(
-        &self,
-        session_id: &str,
-        configs: Vec<agent_client_protocol::McpServer>,
-    ) -> crate::error::WorkspaceResult<crate::mcp::McpStartResult> {
-        use crate::mcp::{
-            McpClientTransportAdapter, McpStartFailure, McpStartResult, QualifiedMcpToolHandler,
-            make_bridge_config, server_name_from_mcp_error,
-        };
-        use kigi_computer_hub_mcp_adapter::McpBridge;
-        use kigi_computer_hub_sdk::ToolServerHandler as _;
-        use kigi_mcp::servers::MCP_TOOL_NAME_DELIMITER;
-        use kigi_tool_protocol::SessionId;
-        let tool_server = {
-            let hub_guard = self.shared.hub_handle.lock().await;
-            let hub = hub_guard
-                .as_ref()
-                .ok_or_else(|| WorkspaceError::HubError("no hub connection".into()))?;
-            hub.server.clone()
-        };
-        let session = self
-            .session(session_id)
-            .ok_or_else(|| WorkspaceError::SessionNotFound(session_id.to_owned()))?;
-        let sid = SessionId::new(session_id)
-            .map_err(|e| WorkspaceError::HubError(format!("invalid session_id: {e}")))?;
-        {
-            let mut tool_ids = session.mcp_tool_ids.lock().await;
-            for tid in tool_ids.drain(..) {
-                let _ = tool_server.unregister_tool_dynamic(&tid, &sid).await;
-            }
-            let mut existing_bridges = session.mcp_bridges.lock().await;
-            existing_bridges.clear();
-            let mut state = session.mcp_state.lock().await;
-            state.owned_clients.clear();
-        }
-        let session_id_owned = session_id.to_owned();
-        let event_writer = self.shared.session_event_writer(session_id);
-        let rt_handle = tokio::runtime::Handle::current();
-        let mcp_results: Vec<Result<kigi_mcp::servers::McpClient, kigi_mcp::servers::McpError>> =
-            tokio::task::spawn_blocking(move || {
-                use kigi_mcp::oauth_config::McpOAuthConfigMap;
-                use kigi_mcp::servers::{McpClientTimeoutOverrides, McpMetaConfigMap};
-                use std::collections::HashMap;
-                let overrides_map: HashMap<String, McpClientTimeoutOverrides> = HashMap::new();
-                let meta_config_map = McpMetaConfigMap::new();
-                let oauth_config_map = McpOAuthConfigMap::new();
-                rt_handle.block_on(kigi_mcp::servers::start_mcp_servers(
-                    configs,
-                    Some(&session_id_owned),
-                    &overrides_map,
-                    &meta_config_map,
-                    &oauth_config_map,
-                    &event_writer,
-                    kigi_mcp::servers::OauthInteractivity::Interactive,
-                ))
-            })
-            .await
-            .map_err(|e| WorkspaceError::JoinError(e.to_string()))?;
-        let mcp_state = session.mcp_state.clone();
-        let mut started = Vec::new();
-        let mut failed = Vec::new();
-        let mut bridges = Vec::new();
-        let mut registered_tool_ids = Vec::new();
-        for result in mcp_results {
-            match result {
-                Ok(client) => {
-                    let server_name = client.server_name().to_owned();
-                    let client = Arc::new(client);
-                    {
-                        let mut state = mcp_state.lock().await;
-                        state
-                            .owned_clients
-                            .insert(server_name.clone(), Arc::clone(&client));
-                    }
-                    let transport: Arc<dyn kigi_computer_hub_mcp_adapter::McpTransport> =
-                        Arc::new(McpClientTransportAdapter::new(Arc::clone(&client)));
-                    let bridge_config = make_bridge_config(sid.clone(), &server_name);
-                    match McpBridge::connect(transport, &bridge_config).await {
-                        Ok(handle) => {
-                            for handler in handle.bridge.handlers() {
-                                let qualified_name = format!(
-                                    "{}{}{}",
-                                    server_name,
-                                    MCP_TOOL_NAME_DELIMITER,
-                                    handler.tool_id()
-                                );
-                                let qualified = match QualifiedMcpToolHandler::try_new(
-                                    qualified_name.clone(),
-                                    handler.clone(),
-                                ) {
-                                    Some(h) => Arc::new(h),
-                                    None => continue,
-                                };
-                                if let Err(e) = tool_server
-                                    .register_tool_dynamic(qualified, vec![sid.clone()])
-                                    .await
-                                {
-                                    tracing::warn!(
-                                        server = % server_name, tool = % qualified_name, error = %
-                                        e, "failed to register MCP tool on hub"
-                                    );
-                                } else if let Ok(tid) =
-                                    kigi_tool_protocol::ToolId::new(&qualified_name)
-                                {
-                                    registered_tool_ids.push(tid);
-                                }
-                            }
-                            bridges.push(handle);
-                            started.push(server_name);
-                        }
-                        Err(e) => {
-                            {
-                                let mut state = mcp_state.lock().await;
-                                state.owned_clients.remove(&server_name);
-                            }
-                            tracing::warn!(
-                                server = % server_name, error = % e,
-                                "McpBridge::connect failed"
-                            );
-                            failed.push(McpStartFailure {
-                                name: server_name,
-                                error: e.to_string(),
-                            });
-                        }
-                    }
-                }
-                Err(e) => {
-                    let name = server_name_from_mcp_error(&e).to_owned();
-                    tracing::warn!(
-                        server = % name, error = % e, "MCP server start failed"
-                    );
-                    failed.push(McpStartFailure {
-                        name,
-                        error: e.to_string(),
-                    });
-                }
-            }
-        }
-        {
-            let mut session_bridges = session.mcp_bridges.lock().await;
-            session_bridges.extend(bridges);
-        }
-        {
-            let mut ids = session.mcp_tool_ids.lock().await;
-            ids.extend(registered_tool_ids);
-        }
-        tracing::info!(
-            session_id = % session_id, started = ? started, failed_count = failed.len(),
-            "session MCP servers initialized"
-        );
-        if !started.is_empty() {
-            let _ = self
-                .shared
-                .events
-                .send(kigi_workspace_types::WorkspaceEvent::ToolsChanged {
-                    session_id: session_id.to_owned(),
-                });
-        }
-        Ok(McpStartResult { started, failed })
-    }
-    /// Unregister all MCP tools for a session from the server.
-    pub async fn teardown_session_mcp(&self, session_id: &str) {
-        let tool_server = {
-            let hub_guard = self.shared.hub_handle.lock().await;
-            match hub_guard.as_ref() {
-                Some(hub) => hub.server.clone(),
-                None => return,
-            }
-        };
-        let session = match self.session(session_id) {
-            Some(s) => s,
-            None => return,
-        };
-        let sid = match kigi_tool_protocol::SessionId::new(session_id) {
-            Ok(s) => s,
-            Err(_) => return,
-        };
-        let mut tool_ids = session.mcp_tool_ids.lock().await;
-        for tid in tool_ids.drain(..) {
-            let _ = tool_server.unregister_tool_dynamic(&tid, &sid).await;
-        }
-        let mut bridges = session.mcp_bridges.lock().await;
-        bridges.clear();
-        let mut state = session.mcp_state.lock().await;
-        state.owned_clients.clear();
     }
     /// Look up an existing session.
     pub fn session(&self, session_id: &str) -> Option<Arc<WorkspaceSession>> {
@@ -2216,13 +1156,11 @@ impl WorkspaceHandle {
         env.extend(config.extra_env.clone());
         let session_env = Arc::new(env);
         let mcp_snapshot = self.shared.mcp_tools_snapshot.load_full();
-        let hub_snapshot = self.shared.hub_tools_snapshot.load_full();
         let inherited_viewer_ctx = parent.viewer_ctx().cloned();
         let (effective, toolset, terminal_backend) = resolve_session_toolset(
             baseline,
             config.capability_mode,
             &mcp_snapshot,
-            &hub_snapshot,
             cwd.clone(),
             session_env.clone(),
             &config.agent_id,
@@ -2230,7 +1168,7 @@ impl WorkspaceHandle {
             Some(self.shared.local_registry.clone()),
             self.shared.lsp.clone(),
             inherited_viewer_ctx.clone(),
-            self.shared.compose_session_notification_handle(None),
+            None,
         )?;
         let (hunk_event_tx, _hunk_event_rx) = tokio::sync::mpsc::unbounded_channel();
         let hunk_cancel = tokio_util::sync::CancellationToken::new();
@@ -2300,986 +1238,6 @@ impl WorkspaceHandle {
             )
         })
     }
-    /// Bulk-replace hub tool configs and re-resolve every session.
-    pub fn on_hub_tools_changed(
-        &self,
-        new_hub_tools: Vec<kigi_tools::registry::types::ToolConfig>,
-    ) -> usize {
-        self.shared
-            .hub_tools_snapshot
-            .store(Arc::new(new_hub_tools));
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(
-                self.shared
-                    .re_resolve_all_sessions("hub_tools_changed", true),
-            )
-        })
-    }
-    /// Per-`session.bind` handler resolver: resolves the bind metadata into a
-    /// session toolset (fail-closed in strict mode) and returns the handlers
-    /// plus the bind-report fields. Extracted from `connect_hub` so tests can
-    /// drive the full bind path without a hub connection.
-    pub(crate) fn session_bind_resolver(
-        &self,
-        catalog: Arc<Vec<Arc<dyn kigi_computer_hub_sdk::ToolServerHandler>>>,
-        rpc_tool_id: kigi_tool_protocol::ToolId,
-    ) -> kigi_computer_hub_sdk::SessionHandlerResolver {
-        let weak_shared = Arc::downgrade(&self.shared);
-        Arc::new(
-            move |sid: kigi_tool_protocol::SessionId, params: Option<serde_json::Value>| {
-                let catalog = catalog.clone();
-                let rpc_tool_id = rpc_tool_id.clone();
-                let weak_shared = weak_shared.clone();
-                let bind_parent = params
-                    .as_ref()
-                    .and_then(|p| p.pointer("/trace_context"))
-                    .and_then(serde_json::Value::as_str)
-                    .and_then(fastrace::collector::SpanContext::decode_w3c_traceparent)
-                    .unwrap_or_else(kigi_tracing::local_or_random_span_ctx);
-                let bind_span = fastrace::Span::root("tool_server.session_bind", bind_parent)
-                    .with_properties(|| {
-                        [
-                            ("session_id", sid.to_string()),
-                            ("force_tracing", "true".to_owned()),
-                        ]
-                    });
-                Box::pin(
-                async move {
-                    let Some(shared) = weak_shared.upgrade() else {
-                        WORKSPACE_BIND_FAILED_TOTAL
-                            .with_label_values(&["workspace_shutdown"])
-                            .inc();
-                        return Err(
-                            kigi_tool_runtime::ToolError::service_unavailable(
-                                "workspace is shutting down; cannot bind session",
-                            ),
-                        );
-                    };
-                    let ws = WorkspaceHandle { shared };
-                    let sid_str = sid.to_string();
-                    let params = params.unwrap_or(serde_json::Value::Null);
-                    let bind_cwd = params
-                        .pointer("/cwd")
-                        .and_then(serde_json::Value::as_str)
-                        .map(std::path::PathBuf::from);
-                    let bind_config = params
-                        .pointer("/metadata")
-                        .map(crate::config::WorkspaceBindConfig::from_metadata)
-                        .unwrap_or_default();
-                    let empty_toolset = || kigi_tools::registry::types::ToolServerConfig {
-                        tools: vec![],
-                        behavior_preset: None,
-                    };
-                    let mut resolve_zero_reason: Option<&'static str> = None;
-                    let mut resolve_error: Option<String> = None;
-                    let mut unserved_tool_ids: Vec<String> = Vec::new();
-                    let known_ids = ws.shared.session_factory.known_tool_ids();
-                    let known_id = |id: &str| known_ids.contains(id);
-                    let require_explicit = ws.shared.require_explicit_toolset;
-                    let tool_config = match bind_config
-                        .resolve(&known_id, require_explicit)
-                    {
-                        crate::config::ResolvedToolset::Toolset(resolved) => {
-                            unserved_tool_ids = resolved.unserved_tool_ids;
-                            Some(resolved.toolset)
-                        }
-                        crate::config::ResolvedToolset::UseDefault => None,
-                        crate::config::ResolvedToolset::MissingToolConfig => {
-                            if bind_config.rpc_only {
-                                tracing::info!(
-                                    session_id = % sid_str,
-                                    "session.bind: rpc_only bind with no toolset — \
-                                     failing closed with an empty toolset"
-                                );
-                            } else {
-                                tracing::warn!(
-                                    session_id = % sid_str,
-                                    "session.bind: no explicit tool configuration passed and this \
-                                     workspace requires one — failing closed with an empty toolset"
-                                );
-                            }
-                            resolve_zero_reason = Some("missing_tool_config");
-                            resolve_error = Some(
-                                format!(
-                                    "missing_tool_config: no usable explicit tool configuration \
-                                 on session.bind (absent, or dropped as malformed — see \
-                                 server logs) and this workspace requires one (presets are \
-                                 not supported; server version {})",
-                                    kigi_version::VERSION
-                                ),
-                            );
-                            Some(empty_toolset())
-                        }
-                        crate::config::ResolvedToolset::InvalidToolConfig(err) => {
-                            tracing::warn!(
-                                session_id = % sid_str, error = % err,
-                                "session.bind: invalid tool config entry — failing closed with an empty toolset"
-                            );
-                            resolve_zero_reason = Some("invalid_tool_config");
-                            resolve_error = Some(
-                                format!(
-                                    "invalid_tool_config: {err} (server version {})",
-                                    kigi_version::VERSION
-                                ),
-                            );
-                            Some(empty_toolset())
-                        }
-                    };
-                    let (explicit_cfg, bind_fingerprint) = match (
-                        &tool_config,
-                        resolve_zero_reason,
-                    ) {
-                        (Some(cfg), None) if !cfg.tools.is_empty() => {
-                            (Some(cfg.clone()), serde_json::to_value(cfg).ok())
-                        }
-                        _ => (None, None),
-                    };
-                    let capability = bind_config
-                        .capability_mode
-                        .unwrap_or(crate::capability::CapabilityMode::All);
-                    let yolo_mode = bind_config.yolo_mode.unwrap_or(false);
-                    tracing::info!(
-                        session_id = % sid_str, cwd = ? bind_cwd, preset = ? bind_config
-                        .preset, capability = ? capability, yolo_mode,
-                        "session.bind: resolving workspace session toolset"
-                    );
-                    let created = {
-                        let _span = LocalSpan::enter_with_local_parent(
-                                "tool_server.session_bind.create_session",
-                            )
-                            .with_property(|| ("session_id", sid_str.clone()));
-                        ws.create_session_with_config(
-                            sid_str.clone(),
-                            bind_cwd,
-                            tool_config,
-                            capability,
-                            bind_config.viewer_ctx.clone(),
-                            bind_config.system_notifications,
-                        )
-                    };
-                    let session = match created {
-                        Ok(session) => {
-                            session.set_yolo_mode(yolo_mode);
-                            session
-                                .set_bind_tool_config_fingerprint_if_unset(
-                                    bind_fingerprint.clone(),
-                                );
-                            tracing::info!(
-                                session_id = % sid_str,
-                                "workspace session created for hub bind"
-                            );
-                            session
-                        }
-                        Err(crate::error::WorkspaceError::SessionAlreadyExists(_)) => {
-                            match ws
-                                .rebind_existing_hub_session(
-                                    &sid_str,
-                                    explicit_cfg,
-                                    bind_fingerprint,
-                                )
-                                .await
-                            {
-                                Some((session, RebindOutcome::Reresolved)) => session,
-                                Some((session, _)) => {
-                                    unserved_tool_ids.clear();
-                                    if resolve_zero_reason != Some("invalid_tool_config")
-                                        && !session.effective_tool_config().tools.is_empty()
-                                    {
-                                        resolve_error = None;
-                                        resolve_zero_reason = None;
-                                    }
-                                    session
-                                }
-                                None => {
-                                    WORKSPACE_BIND_FAILED_TOTAL
-                                        .with_label_values(&["session_lookup_failed"])
-                                        .inc();
-                                    return Err(
-                                        kigi_tool_runtime::ToolError::service_unavailable(
-                                            format!(
-                                                "session rebind raced teardown for `{sid_str}`; retry"
-                                            ),
-                                        ),
-                                    );
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            tracing::error!(
-                                session_id = % sid_str, error = % e,
-                                "failed to create workspace session for hub bind"
-                            );
-                            WORKSPACE_BIND_FAILED_TOTAL
-                                .with_label_values(&["session_error"])
-                                .inc();
-                            return Err(
-                                kigi_tool_runtime::ToolError::service_unavailable(
-                                    format!("failed to create workspace session: {e}"),
-                                ),
-                            );
-                        }
-                    };
-                    let mut handlers = {
-                        let _span = LocalSpan::enter_with_local_parent(
-                                "tool_server.session_bind.handlers",
-                            )
-                            .with_property(|| ("session_id", sid_str.clone()));
-                        build_session_routed_handlers(&session.toolset(), &ws)
-                    };
-                    let advertised: Vec<String> = handlers
-                        .iter()
-                        .map(|h| h.tool_id().as_str().to_owned())
-                        .collect();
-                    WORKSPACE_BIND_ADVERTISED_TOOLS.observe(advertised.len() as f64);
-                    if advertised.is_empty() {
-                        let reason = resolve_zero_reason.unwrap_or("empty_after_filter");
-                        let skip_zero_metric = bind_config.rpc_only
-                            && reason == "missing_tool_config";
-                        if skip_zero_metric {
-                            tracing::info!(
-                                session_id = % sid_str, reason,
-                                "session.bind: advertising zero model-facing tools (rpc_only)"
-                            );
-                        } else {
-                            tracing::warn!(
-                                session_id = % sid_str,
-                                "session.bind: advertising zero model-facing tools (RPC handler only)"
-                            );
-                            WORKSPACE_BIND_ZERO_TOOLS_TOTAL
-                                .with_label_values(&[reason])
-                                .inc();
-                        }
-                    }
-                    handlers
-                        .extend(
-                            catalog
-                                .iter()
-                                .filter(|h| h.tool_id() == rpc_tool_id)
-                                .cloned(),
-                        );
-                    if !unserved_tool_ids.is_empty() {
-                        WORKSPACE_BIND_UNSERVED_TOOLS_TOTAL
-                            .inc_by(unserved_tool_ids.len() as u64);
-                        tracing::warn!(
-                            session_id = % sid_str, unserved = ? unserved_tool_ids,
-                            "session.bind: serving partial pinned toolset"
-                        );
-                    }
-                    tracing::info!(
-                        session_id = % sid_str, advertised = advertised.len(), tools = ?
-                        advertised, unserved = ? unserved_tool_ids,
-                        "session.bind: advertising finalized session toolset"
-                    );
-                    Ok(kigi_computer_hub_sdk::ResolvedSessionHandlers {
-                        handlers,
-                        unserved_tool_ids,
-                        resolve_error,
-                    })
-                }
-                    .in_span(bind_span),
-            )
-            },
-        )
-    }
-    /// Connect to the server, start the tool server (provider
-    /// direction) and notification listener (consumer direction).
-    ///
-    /// No-op if no `hub_config` was provided or already connected.
-    ///
-    /// The tool server exposes the workspace's main session tools so
-    /// the server can dispatch `tool_call_request` frames to them. The
-    /// notification listener updates `hub_tools_snapshot` and
-    /// re-resolves every session's toolset whenever the server announces
-    /// tool changes.
-    pub async fn connect_hub(&self) -> WorkspaceResult<()> {
-        use crate::hub::{HubHandle, apply_tools_changed, hub_result};
-        tracing::info!("WorkspaceHandle::connect_hub — starting");
-        let hub_config = match &self.shared.hub_config {
-            Some(c) => {
-                let mut cfg = c.clone();
-                cfg.activity_tracker = Some(self.shared.activity_tracker.clone());
-                cfg
-            }
-            None => {
-                tracing::info!("WorkspaceHandle::connect_hub — no hub config, skipping");
-                return Ok(());
-            }
-        };
-        let mut hub_guard = self.shared.hub_handle.lock().await;
-        if hub_guard.is_some() {
-            return Ok(());
-        }
-        tracing::info!(
-            url = % hub_config.url, "WorkspaceHandle::connect_hub — connecting to hub"
-        );
-        let (template_handlers, rpc_tool_id) = {
-            let session_env = Arc::new(std::collections::HashMap::new());
-            let mcp_snapshot = self.shared.mcp_tools_snapshot.load_full();
-            let hub_snapshot = self.shared.hub_tools_snapshot.load_full();
-            let (_, template_toolset, _template_backend) = resolve_session_toolset(
-                self.shared.default_tool_config.clone(),
-                crate::capability::CapabilityMode::All,
-                &mcp_snapshot,
-                &hub_snapshot,
-                self.shared.root_cwd.clone(),
-                session_env,
-                "__template__",
-                self.shared.session_factory.as_ref(),
-                Some(self.shared.local_registry.clone()),
-                self.shared.lsp.clone(),
-                None,
-                None,
-            )?;
-            let mut handlers = build_session_routed_handlers(&template_toolset, self);
-            let tool_names: Vec<String> = handlers
-                .iter()
-                .map(|h| h.tool_id().as_str().to_owned())
-                .collect();
-            let rpc_handler: Arc<dyn kigi_computer_hub_sdk::ToolServerHandler> =
-                Arc::new(crate::hub_server::WorkspaceRpcHandler::new(self.clone()));
-            let rpc_tool_id = rpc_handler.tool_id();
-            handlers.push(rpc_handler);
-            tracing::info!(
-                tool_count = handlers.len(), tools = ? tool_names,
-                "Registering server tool catalog on hub"
-            );
-            (handlers, rpc_tool_id)
-        };
-        let catalog: Arc<Vec<Arc<dyn kigi_computer_hub_sdk::ToolServerHandler>>> =
-            Arc::new(template_handlers.clone());
-        let resolver = self.session_bind_resolver(catalog, rpc_tool_id);
-        let mut handle = hub_result(
-            HubHandle::connect(
-                &hub_config,
-                self.shared.status_config.ws_ping,
-                self.shared.status_config.ws_reconnect_backoff.clone(),
-                template_handlers,
-                self.shared.server_metadata.clone(),
-                Some(resolver),
-            )
-            .await,
-        )?;
-        tracing::info!("WorkspaceHandle::connect_hub — connected, starting server + listeners");
-        let (activity_notify_handle, activity_notify_rx) =
-            kigi_tools::notification::types::ToolNotificationHandle::channel();
-        let activity_feed_task = tokio::spawn(run_activity_feed(
-            self.shared.activity_tracker.clone(),
-            activity_notify_rx,
-        ));
-        handle.set_activity_feed_task(activity_feed_task);
-        self.shared
-            .activity_notify_handle
-            .store(Arc::new(Some(activity_notify_handle)));
-        let server = handle.server.clone();
-        let server_task = tokio::spawn(async move {
-            if let Err(e) = server.run().await {
-                tracing::warn!(
-                    error = % e, "hub tool server run loop exited with error"
-                );
-            }
-        });
-        handle.set_server_task(server_task);
-        let mut notification_rx = handle.server.subscribe_notifications();
-        let shared = self.shared.clone();
-        let listener_task = tokio::spawn(async move {
-            while let Some(notification) = notification_rx.recv().await {
-                match notification {
-                    kigi_computer_hub_sdk::HubNotification::ToolsChanged {
-                        added,
-                        removed,
-                        updated,
-                        ..
-                    } => {
-                        let current = shared.hub_tools_snapshot.load_full();
-                        let new_tools = apply_tools_changed(&current, &added, &removed, &updated);
-                        shared.hub_tools_snapshot.store(Arc::new(new_tools));
-                        shared
-                            .re_resolve_all_sessions("hub_notification", true)
-                            .await;
-                    }
-                    other => {
-                        tracing::debug!(?other, "hub notification (unhandled type)");
-                    }
-                }
-            }
-            tracing::debug!("hub notification listener exited");
-        });
-        handle.set_notification_task(listener_task);
-        let hub_warn_threshold = self.shared.status_config.hub_warn_threshold;
-        let hub_backoff_base = self.shared.status_config.hub_backoff_base;
-        /// Compute exponential backoff: `base` * 2^min(n, 7).
-        fn hub_backoff(base: std::time::Duration, consecutive_errors: u32) -> std::time::Duration {
-            base.saturating_mul(2u32.pow(consecutive_errors.min(7)))
-        }
-        let events_rx = self.shared.events.subscribe();
-        let server_for_events = handle.server.clone();
-        let event_publisher_task = tokio::spawn(async move {
-            let mut rx = events_rx;
-            let mut consecutive_errors: u32 = 0;
-            loop {
-                match rx.recv().await {
-                    Ok(event) => {
-                        let payload =
-                            serde_json::to_value(&event).unwrap_or(serde_json::Value::Null);
-                        let frame = kigi_tool_protocol::ToolNotificationFrame::custom(
-                            kigi_tool_protocol::ToolId::new(
-                                crate::hub_ids::WORKSPACE_EVENTS_TOOL_ID,
-                            )
-                            .expect("constant tool id"),
-                            "workspace_event",
-                            payload,
-                        );
-                        if let Err(e) = server_for_events.send_notification(frame).await {
-                            consecutive_errors += 1;
-                            if consecutive_errors <= hub_warn_threshold {
-                                tracing::warn!(
-                                    error = % e, "failed to send workspace event to hub"
-                                );
-                            } else {
-                                tracing::debug!(
-                                    error = % e, consecutive = consecutive_errors,
-                                    "workspace event send failed (backoff)"
-                                );
-                            }
-                            tokio::time::sleep(hub_backoff(hub_backoff_base, consecutive_errors))
-                                .await;
-                        } else {
-                            consecutive_errors = 0;
-                        }
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                        tracing::warn!(skipped = n, "workspace event publisher lagged");
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                }
-            }
-            tracing::debug!("workspace event publisher exited");
-        });
-        handle.set_event_publisher_task(event_publisher_task);
-        let tracker_for_status = self.shared.activity_tracker.clone();
-        let server_conn = handle.server.connection().clone();
-        let heartbeat = self.shared.status_config.heartbeat;
-        let keepalive = self.shared.status_config.keepalive;
-        let status_publisher_task = tokio::spawn(async move {
-            /// Attempt to send a status frame.
-            ///
-            /// Returns `Some(true)` on success, `Some(false)` on transport
-            /// failure (hub unreachable), and `None` when the send was
-            /// skipped due to a local error (serialization, id allocation)
-            /// that does not indicate a dead connection.
-            async fn send_status(
-                conn: &kigi_computer_hub_sdk::HubConnection,
-                payload: ToolServerStatusPayload,
-            ) -> Option<bool> {
-                let params = match serde_json::to_value(&payload) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        tracing::warn!(
-                            error = % e, "failed to serialize tool server status"
-                        );
-                        return None;
-                    }
-                };
-                let request_id = match conn.try_alloc_request_id() {
-                    Ok(id) => id,
-                    Err(e) => {
-                        tracing::warn!(
-                            error = % e, "failed to alloc request id for status"
-                        );
-                        return None;
-                    }
-                };
-                let req = kigi_tool_protocol::JsonRpcRequest {
-                    jsonrpc: kigi_tool_protocol::JsonRpcVersion,
-                    id: kigi_tool_protocol::JsonRpcId::from_request_id(&request_id),
-                    session_id: None,
-                    method: kigi_tool_protocol::Method::ToolServerStatus
-                        .as_wire_str()
-                        .to_owned(),
-                    params,
-                };
-                if let Err(e) = conn.call_request(request_id, &req).await {
-                    tracing::debug!(error = % e, "tool_server.status send failed");
-                    return Some(false);
-                }
-                Some(true)
-            }
-            fn dedup_key(p: &ToolServerStatusPayload) -> ToolServerStatusPayload {
-                let mut k = p.clone();
-                k.uptime_ms = 0;
-                k
-            }
-            let mut last_sent: std::collections::HashMap<Option<String>, ToolServerStatusPayload> =
-                std::collections::HashMap::new();
-            let mut consecutive_errors: u32 = 0;
-            let mut last_successful_send = std::time::Instant::now();
-            {
-                let payload = tracker_for_status.snapshot();
-                if send_status(&server_conn, payload.clone()).await == Some(true) {
-                    last_sent.insert(None, payload);
-                    last_successful_send = std::time::Instant::now();
-                }
-            }
-            const MIN_REPUBLISH_INTERVAL: std::time::Duration =
-                std::time::Duration::from_millis(250);
-            let mut last_cycle = tokio::time::Instant::now() - MIN_REPUBLISH_INTERVAL;
-            loop {
-                tracker_for_status.wait_for_change(heartbeat).await;
-                let since_last = last_cycle.elapsed();
-                if since_last < MIN_REPUBLISH_INTERVAL {
-                    tokio::time::sleep(MIN_REPUBLISH_INTERVAL - since_last).await;
-                }
-                last_cycle = tokio::time::Instant::now();
-                let mut any_attempt = false;
-                let mut any_success = false;
-                let session_ids = tracker_for_status.known_sessions();
-                for sid in &session_ids {
-                    let payload = tracker_for_status.snapshot_session(sid);
-                    let key = Some(sid.clone());
-                    if last_sent.get(&key).map(dedup_key) == Some(dedup_key(&payload)) {
-                        continue;
-                    }
-                    if let Some(ok) = send_status(&server_conn, payload.clone()).await {
-                        any_attempt = true;
-                        if ok {
-                            any_success = true;
-                            last_sent.insert(key, payload);
-                            last_successful_send = std::time::Instant::now();
-                        }
-                    }
-                }
-                last_sent.retain(|k, _| match k {
-                    None => true,
-                    Some(sid) => session_ids.iter().any(|s| s == sid),
-                });
-                let payload = tracker_for_status.snapshot();
-                let needs_send = last_sent.get(&None).map(dedup_key) != Some(dedup_key(&payload));
-                let force_keepalive =
-                    !needs_send && !any_success && last_successful_send.elapsed() >= keepalive;
-                if (needs_send || force_keepalive)
-                    && let Some(ok) = send_status(&server_conn, payload.clone()).await
-                {
-                    any_attempt = true;
-                    if ok {
-                        any_success = true;
-                        last_sent.insert(None, payload);
-                        last_successful_send = std::time::Instant::now();
-                    }
-                }
-                if any_attempt && !any_success {
-                    consecutive_errors += 1;
-                    if consecutive_errors <= hub_warn_threshold {
-                        tracing::warn!(
-                            "status publisher: hub unreachable ({} consecutive failed cycles)",
-                            consecutive_errors,
-                        );
-                    } else {
-                        tracing::debug!(
-                            consecutive = consecutive_errors,
-                            "status publish failed (backoff)"
-                        );
-                    }
-                    tokio::time::sleep(hub_backoff(hub_backoff_base, consecutive_errors)).await;
-                } else if any_success {
-                    consecutive_errors = 0;
-                }
-            }
-        });
-        handle.set_status_publisher_task(status_publisher_task);
-        {
-            let (ext_tx, mut ext_rx) =
-                tokio::sync::mpsc::unbounded_channel::<(String, serde_json::Value)>();
-            let server_for_ext = handle.server.clone();
-            let ext_task = tokio::spawn(async move {
-                while let Some((method, params)) = ext_rx.recv().await {
-                    let frame = kigi_tool_protocol::ToolNotificationFrame::custom(
-                        kigi_tool_protocol::ToolId::new(
-                            crate::hub_ids::WORKSPACE_CLIENT_EXT_NOTIFICATIONS_TOOL_ID,
-                        )
-                        .expect("constant tool id"),
-                        "client_ext_notification",
-                        serde_json::json!({ "method" : method, "params" : params }),
-                    );
-                    let _ = server_for_ext.send_notification(frame).await;
-                }
-            });
-            handle.set_client_ext_forwarder_task(ext_task);
-            self.set_client_ext_sink(Arc::new(move |method, params| {
-                let _ = ext_tx.send((method, params));
-            }));
-        }
-        handle.set_codebase_index_forwarder_task(self.spawn_codebase_index_event_forwarder());
-        *hub_guard = Some(handle);
-        Ok(())
-    }
-    /// Shutdown the server connection, if active.
-    pub async fn shutdown_hub(&self) {
-        let handle = self.shared.hub_handle.lock().await.take();
-        if let Some(h) = handle {
-            h.shutdown().await;
-        }
-    }
-}
-/// Build one [`SessionRoutedToolHandler`](crate::hub::SessionRoutedToolHandler)
-/// per tool in `toolset`, keyed by client (function) name. Shared by the
-/// connect-time catalog and the per-`session.bind` resolver so the two
-/// construction paths cannot drift.
-///
-/// `finalize` already rejects duplicate client names, so the `seen` set is
-/// defense-in-depth: it guards a regression from ever emitting two handlers
-/// with the same `tool_id` (which would duplicate the bind response and
-/// silently first-win at dispatch).
-fn build_session_routed_handlers(
-    toolset: &kigi_tools::registry::types::FinalizedToolset,
-    ws: &WorkspaceHandle,
-) -> Vec<Arc<dyn kigi_computer_hub_sdk::ToolServerHandler>> {
-    let tool_kinds = toolset.tool_kinds();
-    let mut seen = std::collections::HashSet::new();
-    let mut handlers = Vec::new();
-    for def in toolset.tool_definitions() {
-        if !seen.insert(def.function.name.clone()) {
-            tracing::warn!(
-                tool = % def.function.name,
-                "duplicate client name in finalized toolset; skipping"
-            );
-            continue;
-        }
-        let mut desc = kigi_tool_types::ToolDescription::new(
-            def.function.name.clone(),
-            def.function.description.clone().unwrap_or_default(),
-        );
-        desc.arguments_schema = Some(def.function.parameters.clone());
-        desc.kind = tool_kinds.get(&def.function.name).cloned();
-        match crate::hub::SessionRoutedToolHandler::new(
-            def.function.name.clone(),
-            desc,
-            Some(def.function.parameters.clone()),
-            ws.clone(),
-        ) {
-            Ok(handler) => handlers
-                .push(Arc::new(handler) as Arc<dyn kigi_computer_hub_sdk::ToolServerHandler>),
-            Err(e) => {
-                tracing::warn!(
-                    tool = % def.function.name, error = % e,
-                    "client name is not a valid ToolId; skipping hub registration"
-                );
-            }
-        }
-    }
-    handlers
-}
-/// Apply a tool notification to the ActivityTracker background-task count.
-/// `started` must precede `completed`, else the unknown `completed` no-ops and
-/// strands the count.
-pub(crate) fn apply_background_task_notification(
-    tracker: &crate::activity::ActivityTracker,
-    notification: &kigi_tools::notification::types::ToolNotification,
-) {
-    use kigi_tools::notification::types::ToolNotification;
-    match notification {
-        ToolNotification::BashExecutionBackgrounded(bg) => {
-            tracker.background_task_started(&bg.task_id);
-        }
-        ToolNotification::TaskCompleted(snap) => {
-            tracker.background_task_completed(&snap.task_id);
-        }
-        _ => {}
-    }
-}
-/// Tracker-only drain of the session tool-notification stream — not a network
-/// send, so the hibernation decrement isn't delayed by send backoff and
-/// notifications aren't misattributed across sessions.
-pub(crate) async fn run_activity_feed(
-    tracker: Arc<crate::activity::ActivityTracker>,
-    mut rx: tokio::sync::mpsc::UnboundedReceiver<kigi_tools::notification::types::ToolNotification>,
-) {
-    while let Some(notification) = rx.recv().await {
-        apply_background_task_notification(&tracker, &notification);
-    }
-}
-/// Compute SHA-256 hex digest.
-fn sha256_hex(data: &[u8]) -> String {
-    use sha2::Digest;
-    format!("{:x}", sha2::Sha256::digest(data))
-}
-/// What triggered a [`WorkspaceHandle::two_phase_drain`] — the metric label.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DrainReason {
-    /// Process received SIGTERM / Ctrl-C (standalone `workspace_server`).
-    Sigterm,
-    /// Hub sent `tool_server.evict`.
-    Evict,
-}
-impl DrainReason {
-    /// Stable `reason` label for `grok_workspace_drain_started_total`.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            DrainReason::Sigterm => "sigterm",
-            DrainReason::Evict => "evict",
-        }
-    }
-}
-/// Terminal classification of a graceful drain — the metric label.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DrainOutcome {
-    /// All in-flight tool calls and background tasks finished within budget.
-    Full,
-    /// Tool calls still in flight at the deadline.
-    Partial,
-}
-impl DrainOutcome {
-    /// Stable `outcome` label for `grok_workspace_drain_completed_total`.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            DrainOutcome::Full => "full",
-            DrainOutcome::Partial => "partial",
-        }
-    }
-}
-/// Classify a drain: `Partial` when the deadline expired with tool calls still
-/// in flight, `Full` otherwise.
-fn classify_drain_outcome(tools_idle: bool) -> DrainOutcome {
-    if !tools_idle {
-        DrainOutcome::Partial
-    } else {
-        DrainOutcome::Full
-    }
-}
-/// The SIGTERM drain budget from `KIGI_WORKSPACE_TERMINATION_GRACE_MS`
-/// (default [`DEFAULT_TERMINATION_GRACE_MS`]). The hub-evict path uses the
-/// hub-provided `grace_period_ms` instead.
-pub fn termination_grace_from_env() -> std::time::Duration {
-    grace_budget_from_raw(std::env::var("KIGI_WORKSPACE_TERMINATION_GRACE_MS").ok())
-}
-/// Pure parse of the termination-grace env value: a positive integer ms wins,
-/// anything else (absent, unparseable, zero) falls back to the default.
-fn grace_budget_from_raw(raw: Option<String>) -> std::time::Duration {
-    let ms = raw
-        .and_then(|s| s.trim().parse::<u64>().ok())
-        .filter(|&ms| ms > 0)
-        .unwrap_or(DEFAULT_TERMINATION_GRACE_MS);
-    std::time::Duration::from_millis(ms)
-}
-/// Path of the preStop drain marker (`KIGI_WORKSPACE_DRAINING_FILE` or
-/// [`DEFAULT_DRAINING_FILE`]).
-fn draining_file_path() -> std::path::PathBuf {
-    std::env::var("KIGI_WORKSPACE_DRAINING_FILE")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| std::path::PathBuf::from(DEFAULT_DRAINING_FILE))
-}
-/// Atomically write `outstanding` (total durability work still pending: upload
-/// queue depth + in-flight artifact producers) to the drain marker (temp +
-/// fsync + rename) so the preStop hook never reads a torn value and never sees
-/// `0` while a producer could still enqueue. Best-effort. The temp name is
-/// unique (pid + counter) so concurrent evict drains don't race on a fixed
-/// `.tmp`.
-fn write_draining_marker(path: &std::path::Path, outstanding: usize) {
-    use std::io::Write;
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
-    let mut tmp = path.as_os_str().to_owned();
-    tmp.push(format!(
-        ".{}.{}.draining.tmp",
-        std::process::id(),
-        TMP_SEQ.fetch_add(1, Ordering::Relaxed)
-    ));
-    let tmp = std::path::PathBuf::from(tmp);
-    let result = std::fs::File::create(&tmp)
-        .and_then(|mut f| {
-            f.write_all(outstanding.to_string().as_bytes())?;
-            f.sync_all()
-        })
-        .and_then(|()| std::fs::rename(&tmp, path));
-    if let Err(e) = result {
-        tracing::warn!(
-            path = % path.display(), error = % e, "failed to write drain marker"
-        );
-        let _ = std::fs::remove_file(&tmp);
-    }
-}
-/// Stream a file once: SHA-256 over every byte while capturing the
-/// `[offset, offset + length)` overlap. Returns
-/// `(hash_hex, range_bytes, total_streamed_bytes)`.
-///
-/// Shared by [`WorkspaceHandle::get_files`]' chunked reads and the
-/// `file_system::client_fs` ops so the overlap arithmetic lives in one
-/// place.
-pub(crate) async fn stream_hash_and_range(
-    path: &std::path::Path,
-    offset: u64,
-    length: u64,
-) -> std::io::Result<(String, Vec<u8>, u64)> {
-    use sha2::{Digest, Sha256};
-    use tokio::io::AsyncReadExt;
-    let req_end = offset.saturating_add(length);
-    let mut f = tokio::fs::File::open(path).await?;
-    let mut hasher = Sha256::new();
-    let mut chunk = Vec::new();
-    let mut pos: u64 = 0;
-    let mut buf = [0u8; 64 * 1024];
-    loop {
-        let n = f.read(&mut buf).await?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-        let start = pos.max(offset);
-        let end = (pos + n as u64).min(req_end);
-        if start < end {
-            let local_start = (start - pos) as usize;
-            let local_end = (end - pos) as usize;
-            chunk.extend_from_slice(&buf[local_start..local_end]);
-        }
-        pos += n as u64;
-    }
-    Ok((format!("{:x}", hasher.finalize()), chunk, pos))
-}
-/// Create a [`WorkspaceHandle`] and connect it to the hub.
-///
-/// This is the shared setup used by both the standalone `workspace_server`
-/// binary and the TUI's in-process local workspace server. The workspace
-/// registers its tools on the server so external clients can reach them.
-/// Sessions are bound dynamically by clients calling `bind_server`.
-///
-/// `confine_fs_to_workspace_root` confines `x.ai/fs/*` resolution to the root.
-/// The standalone workspace server defaults it on (it always backs a remote
-/// sandbox; override via `KIGI_WORKSPACE_CONFINE_FS_TO_ROOT`); the CLI leader
-/// passes `false`.
-///
-/// Returns the connected handle (caller should keep it alive for the
-/// lifetime of the server connection).
-pub async fn connect_local_workspace(
-    cwd: std::path::PathBuf,
-    hub_url: url::Url,
-    auth: kigi_computer_hub_sdk::SharedAuthProvider,
-    metadata: Option<serde_json::Value>,
-    server_id: Option<String>,
-    alpha_test_key: Option<String>,
-    allow_insecure_ws: bool,
-    status_config: crate::status_config::StatusConfig,
-    project_lsp_trusted: bool,
-    ready_file: Option<std::path::PathBuf>,
-    diag: Option<DiagHandle>,
-    require_explicit_toolset: bool,
-    confine_fs_to_workspace_root: bool,
-) -> WorkspaceResult<WorkspaceHandle> {
-    use crate::session::tool_config::WorkspaceSessionContextFactory;
-    let workspace_home = resolve_workspace_home();
-    std::fs::create_dir_all(&workspace_home).map_err(|e| {
-        WorkspaceError::HubError(format!(
-            "failed to create workspace home {}: {e}",
-            workspace_home.display()
-        ))
-    })?;
-    let api_base_url = kigi_env::coding_api_base_url();
-    let mut factory = WorkspaceSessionContextFactory::with_auth(auth.clone(), api_base_url.clone());
-    if crate::session::tool_config::tool_state_enabled() {
-        factory = factory.with_tool_state_home(workspace_home.clone());
-    }
-    let hub_cfg = crate::hub::HubConfig {
-        url: hub_url,
-        auth: auth.clone(),
-        activity_tracker: None,
-        server_id,
-        alpha_test_key,
-        allow_insecure_ws,
-        ready_file,
-        diag,
-    };
-    let tool_config = kigi_agent::workspace_grok_build_toolset();
-    let mut ws_config = WorkspaceConfig::new_for_proxy(
-        cwd,
-        Arc::new(factory),
-        hub_cfg,
-        auth.clone(),
-        metadata,
-        status_config,
-        tool_config,
-    );
-    ws_config.project_lsp_trusted = project_lsp_trusted;
-    ws_config.require_explicit_toolset = require_explicit_toolset;
-    ws_config.confine_fs_to_workspace_root = confine_fs_to_workspace_root;
-    if let Ok(dir) = std::env::var("KIGI_WORKSPACE_SERVER_SKILLS_DIR")
-        && !dir.is_empty()
-    {
-        ws_config.skills_config.server_skill_dirs = vec![dir];
-    }
-    if let Ok(dir) = std::env::var("KIGI_WORKSPACE_BUNDLED_SKILLS_DIR")
-        && !dir.is_empty()
-    {
-        let allowlist = std::env::var("KIGI_WORKSPACE_BUNDLED_SKILLS_ALLOWLIST").ok();
-        ws_config
-            .skills_config
-            .ignore
-            .extend(bundled_allowlist_ignore_dirs(&dir, allowlist.as_deref()));
-        ws_config.skills_config.bundled_skill_dirs = vec![dir];
-    }
-    if crate::session::tool_config::tool_state_enabled() {
-        let home = workspace_home.clone();
-        tokio::spawn(async move {
-            crate::recovery::cleanup_stale_sessions(
-                &home,
-                crate::recovery::DEFAULT_SESSION_MAX_AGE,
-            )
-            .await;
-        });
-    }
-    let ws_handle = WorkspaceHandle::new_with_home(ws_config, workspace_home)
-        .map_err(|e| WorkspaceError::HubError(format!("failed to create workspace: {e}")))?;
-    ws_handle.connect_hub().await?;
-    Ok(ws_handle)
-}
-/// Resolve `$KIGI_WORKSPACE_HOME` — the workspace-owned on-disk state root.
-///
-/// Precedence:
-/// 1. `$KIGI_WORKSPACE_HOME` (operator override).
-/// 2. `<kigi_home>/workspace`, where `<kigi_home>` honours `$KIGI_SHARE_DIR` and
-///    otherwise falls back to `~/.kigi` (see [`kigi_config::kigi_home`]).
-pub fn resolve_workspace_home() -> std::path::PathBuf {
-    if let Ok(p) = std::env::var("KIGI_WORKSPACE_HOME")
-        && !p.trim().is_empty()
-    {
-        return std::path::PathBuf::from(p);
-    }
-    kigi_config::kigi_home().join("workspace")
-}
-/// Skill `ignore` entries for the allow-list: subdirs of `dir` not in the
-/// comma-separated list (`bundled__` prefix optional). Blank list → none;
-/// unreadable `dir` → ignore `dir` itself (fail closed).
-fn bundled_allowlist_ignore_dirs(dir: &str, allowlist: Option<&str>) -> Vec<String> {
-    let allowed: std::collections::HashSet<&str> = allowlist
-        .unwrap_or_default()
-        .split(',')
-        .map(|s| s.trim())
-        .map(|s| s.strip_prefix("bundled__").unwrap_or(s))
-        .filter(|s| !s.is_empty())
-        .collect();
-    if allowed.is_empty() {
-        return vec![];
-    }
-    let entries = match std::fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(err) => {
-            tracing::warn!(
-                dir, % err,
-                "bundled skills dir unreadable; allow-list ignores the whole dir"
-            );
-            return vec![dir.to_string()];
-        }
-    };
-    let mut dirs: Vec<String> = entries
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.path().is_dir())
-        .filter(|entry| {
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            let stripped = name.strip_prefix("bundled__").unwrap_or(&name);
-            !allowed.contains(stripped)
-        })
-        .map(|entry| entry.path().to_string_lossy().into_owned())
-        .collect();
-    dirs.sort();
-    dirs
 }
 /// Whether per-session `events.jsonl` recording is enabled
 /// (`KIGI_WORKSPACE_EVENTS_ENABLED=true`). Any other value — including unset —
@@ -3329,141 +1287,6 @@ fn ephemeral_workspace_home() -> std::path::PathBuf {
 fn rewind_all_outcomes_from_env() -> bool {
     kigi_config::env_bool("KIGI_WORKSPACE_REWIND_ALL_OUTCOMES").unwrap_or(false)
 }
-/// `ToolHandle` adapter that delegates to a workspace session's
-/// [`FinalizedToolset`]. Used by [`WorkspaceHandle::create_local_harness`]
-/// to populate a [`LocalRegistry`] for in-process tool dispatch.
-///
-/// This is the same dispatch pattern as [`SessionRoutedToolHandler`] in
-/// `hub.rs`, but implements `ToolHandle` (for `LocalRegistry`) instead
-/// of `ToolServerHandler` (for `ToolServer`).
-struct SessionToolHandle {
-    tool_id: kigi_tool_protocol::ToolId,
-    desc: kigi_tool_types::ToolDescription,
-    workspace: WorkspaceHandle,
-    session_id: String,
-}
-impl SessionToolHandle {
-    fn new(
-        tool_name: String,
-        desc: kigi_tool_types::ToolDescription,
-        workspace: WorkspaceHandle,
-        session_id: String,
-    ) -> Result<Self, kigi_tool_protocol::IdError> {
-        Ok(Self {
-            tool_id: kigi_tool_protocol::ToolId::new(tool_name)?,
-            desc,
-            workspace,
-            session_id,
-        })
-    }
-    fn name(&self) -> &str {
-        self.tool_id.as_str()
-    }
-}
-impl std::fmt::Debug for SessionToolHandle {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SessionToolHandle")
-            .field("tool_name", &self.name())
-            .field("session_id", &self.session_id)
-            .finish()
-    }
-}
-#[async_trait::async_trait]
-impl kigi_tool_runtime::ToolDyn for SessionToolHandle {
-    fn id(&self) -> kigi_tool_protocol::ToolId {
-        self.tool_id.clone()
-    }
-    fn description(
-        &self,
-        _ctx: &::kigi_tool_runtime::ListToolsContext,
-    ) -> kigi_tool_types::ToolDescription {
-        self.desc.clone()
-    }
-    async fn execute(
-        &self,
-        ctx: kigi_tool_runtime::ToolCallContext,
-        args: serde_json::Value,
-    ) -> kigi_tool_runtime::ToolStream<kigi_tool_runtime::TypedToolOutput> {
-        use kigi_tool_runtime::{ToolError, ToolErrorKind, ToolStreamItem, terminal_only};
-        let session = match self.workspace.session(&self.session_id) {
-            Some(s) => s,
-            None => {
-                return terminal_only(Err(ToolError::new(
-                    ToolErrorKind::InvalidArguments,
-                    format!("session not bound: {}", self.session_id),
-                )));
-            }
-        };
-        let toolset = session.toolset();
-        let call_id = ctx.call_id.to_string();
-        let tool_id = self.id();
-        let tool_name = self.name().to_owned();
-        let session_label = self.session_id.clone();
-        tracing::debug!(
-            tool = % self.name(), call_id = % call_id, session = % self.session_id,
-            "local harness: dispatching tool call"
-        );
-        let inner = toolset.call_streaming(self.name(), args, &call_id, None);
-        Box::pin(async_stream::stream! {
-            use futures::StreamExt; let mut inner = inner; while let Some(item) =
-            inner.next(). await { match item { ToolStreamItem::Progress(p) => { yield
-            ToolStreamItem::Progress(p); } ToolStreamItem::Terminal(Ok(run_result))
-            => { yield ToolStreamItem::Terminal(Ok(run_result
-            .into_typed_tool_output(tool_id),)); return; }
-            ToolStreamItem::Terminal(Err(e)) => { tracing::error!(tool = % tool_name,
-            session = % session_label, error = % e,
-            "local harness tool call failed"); yield
-            ToolStreamItem::Terminal(Err(ToolError::new(ToolErrorKind::TerminalError,
-            e.to_string(),))); return; } } } yield
-            ToolStreamItem::Terminal(Err(ToolError::new(ToolErrorKind::TerminalError,
-            "tool stream ended without a terminal",)));
-        })
-    }
-}
-impl WorkspaceHandle {
-    /// Create a local-only [`ToolHarness`] backed by this workspace's
-    /// session toolset.
-    ///
-    /// Tools are dispatched in-process via a [`LocalRegistry`] — no hub
-    /// connection needed. Each tool is resolved dynamically from the
-    /// session's live [`FinalizedToolset`] at call time, so tool config
-    /// hot-reloads (via `update_tool_config()`) take effect automatically.
-    pub fn create_local_harness(
-        &self,
-        session_id: &str,
-    ) -> WorkspaceResult<kigi_computer_hub_sdk::ToolHarness> {
-        let session = self
-            .session(session_id)
-            .ok_or_else(|| WorkspaceError::SessionNotFound(session_id.to_string()))?;
-        let toolset = session.toolset();
-        let registry = kigi_computer_hub_sdk::LocalRegistry::new();
-        for def in toolset.tool_definitions() {
-            let tool_name = def.function.name.clone();
-            let desc = kigi_tool_types::ToolDescription::new(
-                tool_name.clone(),
-                def.function.description.clone().unwrap_or_default(),
-            );
-            match SessionToolHandle::new(tool_name, desc, self.clone(), session_id.to_string()) {
-                Ok(tool) => {
-                    registry.register_dyn(Arc::new(tool) as Arc<dyn kigi_tool_runtime::ToolDyn>);
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        tool = % def.function.name, error = % e,
-                        "client name is not a valid ToolId; skipping local-harness registration"
-                    );
-                }
-            }
-        }
-        let session_id = kigi_tool_protocol::SessionId::new(session_id.to_string())
-            .map_err(|e| WorkspaceError::HubError(format!("invalid session id: {e}")))?;
-        Ok(kigi_computer_hub_sdk::ToolHarness::local_only_with(
-            registry,
-            session_id,
-            kigi_tool_runtime::TypedExtensions::default(),
-        ))
-    }
-}
 impl WorkspaceHandle {
     /// Minimal handle for local mode (no hub). Requires Tokio runtime.
     pub fn new_minimal(
@@ -3485,12 +1308,8 @@ impl WorkspaceHandle {
             hook_project_sources: vec![],
             skills_config: Default::default(),
             plugin_discovery_config: Default::default(),
-            hub_config: None,
-            auth_provider: None,
-            server_metadata: None,
             status_config: Default::default(),
             project_lsp_trusted,
-            require_explicit_toolset: false,
             confine_fs_to_workspace_root: false,
         };
         Self::build(
@@ -3522,12 +1341,8 @@ impl WorkspaceHandle {
             hook_project_sources: vec![],
             skills_config: Default::default(),
             plugin_discovery_config: Default::default(),
-            hub_config: None,
-            auth_provider: None,
-            server_metadata: None,
             status_config: Default::default(),
             project_lsp_trusted: true,
-            require_explicit_toolset: false,
             confine_fs_to_workspace_root: false,
         }
     }
@@ -3565,32 +1380,16 @@ pub(crate) mod tests {
     pub(crate) fn make_handle() -> WorkspaceHandle {
         make_handle_with_rewind_all_outcomes(false)
     }
-    /// [`make_handle`] with `require_explicit_toolset` (strict sandbox mode).
-    pub(crate) fn make_strict_handle() -> WorkspaceHandle {
-        make_handle_with_options(false, true)
-    }
-    /// [`make_handle`] with fs confinement on (mirrors a remote-sandbox server).
+    /// [`make_handle`] with fs confinement on.
     pub(crate) fn make_confining_handle() -> WorkspaceHandle {
-        make_handle_inner(false, false, Default::default(), true)
+        make_handle_inner(false, Default::default(), true)
     }
     /// [`make_handle`] with an explicit `workspace_rewind_all_outcomes` value.
     pub(crate) fn make_handle_with_rewind_all_outcomes(enabled: bool) -> WorkspaceHandle {
-        make_handle_inner(enabled, false, Default::default(), false)
-    }
-    pub(crate) fn make_handle_with_options(
-        rewind_all_outcomes: bool,
-        require_explicit_toolset: bool,
-    ) -> WorkspaceHandle {
-        make_handle_inner(
-            rewind_all_outcomes,
-            require_explicit_toolset,
-            Default::default(),
-            false,
-        )
+        make_handle_inner(enabled, Default::default(), false)
     }
     fn make_handle_inner(
         rewind_all_outcomes: bool,
-        require_explicit_toolset: bool,
         status_config: crate::StatusConfig,
         confine_fs_to_workspace_root: bool,
     ) -> WorkspaceHandle {
@@ -3607,14 +1406,8 @@ pub(crate) mod tests {
             hook_project_sources: vec![],
             skills_config: Default::default(),
             plugin_discovery_config: Default::default(),
-            hub_config: None,
-            auth_provider: Some(Arc::new(kigi_computer_hub_sdk::AuthCredential::bearer(
-                "test-token",
-            ))),
-            server_metadata: None,
             status_config,
             project_lsp_trusted: true,
-            require_explicit_toolset,
             confine_fs_to_workspace_root,
         };
         let handle = WorkspaceHandle::build(
@@ -3628,146 +1421,6 @@ pub(crate) mod tests {
             .create_session("main")
             .expect("create main session should succeed");
         handle
-    }
-    pub(crate) const BASH_CCO_STUB_NAME: &str = "bash_cco_stub";
-    pub(crate) const BASH_CCO_STUB_STDOUT: &str = "cco-stdout";
-    #[derive(Debug)]
-    pub(crate) struct BashCcoStub;
-    impl kigi_tools::types::tool_metadata::ToolMetadata for BashCcoStub {
-        fn kind(&self) -> ToolKind {
-            ToolKind::Execute
-        }
-        fn tool_namespace(&self) -> kigi_tools::types::tool::ToolNamespace {
-            kigi_tools::types::tool::ToolNamespace::MCP
-        }
-        fn description_template(&self) -> &str {
-            "bash cco stub"
-        }
-    }
-    impl kigi_tool_runtime::Tool for BashCcoStub {
-        type Args = serde_json::Value;
-        type Output = kigi_tools::types::output::ToolOutput;
-        fn id(&self) -> kigi_tool_protocol::ToolId {
-            kigi_tool_protocol::ToolId::new(BASH_CCO_STUB_NAME).expect("valid tool id")
-        }
-        fn description(
-            &self,
-            _ctx: &::kigi_tool_runtime::ListToolsContext,
-        ) -> kigi_tool_types::ToolDescription {
-            kigi_tool_types::ToolDescription::new(BASH_CCO_STUB_NAME, "bash cco stub")
-        }
-        async fn run(
-            &self,
-            _ctx: kigi_tool_runtime::ToolCallContext,
-            _input: serde_json::Value,
-        ) -> Result<kigi_tools::types::output::ToolOutput, kigi_tool_runtime::ToolError> {
-            let output = BASH_CCO_STUB_STDOUT.as_bytes();
-            Ok(kigi_tools::types::output::ToolOutput::Bash(
-                kigi_tools::types::output::BashOutput {
-                    output: output.to_vec(),
-                    output_for_prompt:
-                        kigi_tools::types::output::BashOutput::make_output_for_prompt(
-                            BASH_CCO_STUB_STDOUT,
-                        ),
-                    exit_code: 0,
-                    command: format!("echo {BASH_CCO_STUB_STDOUT}"),
-                    truncated: false,
-                    signal: None,
-                    timed_out: false,
-                    description: None,
-                    current_dir: "/tmp".into(),
-                    output_file: String::new(),
-                    total_bytes: output.len(),
-                    output_delta: None,
-                    was_bare_echo: false,
-                },
-            ))
-        }
-    }
-    pub(crate) fn register_bash_cco_stub(handle: &WorkspaceHandle) {
-        let session = handle.session("main").expect("main session present");
-        session
-            .toolset()
-            .register_tool(
-                BASH_CCO_STUB_NAME.to_owned(),
-                BashCcoStub,
-                Some(serde_json::json!({ "type" : "object", "properties" : {} })),
-            )
-            .expect("register bash_cco_stub");
-    }
-    pub(crate) fn assert_bash_cco_terminal(typed: &kigi_tool_runtime::TypedToolOutput) {
-        use kigi_tool_runtime::ToolOutput as _;
-        let resp = typed
-            .chat_completion_output()
-            .expect("bash chat_completion_output must be preserved");
-        let cer = resp
-            .result
-            .as_ref()
-            .and_then(|r| r.code_execution_result.as_ref())
-            .expect("code_execution_result");
-        assert_eq!(cer.stdout, BASH_CCO_STUB_STDOUT);
-        assert_eq!(cer.exit_code, 0);
-        assert!(!cer.command_timed_out);
-    }
-    pub(crate) async fn drain_terminal_ok(
-        mut stream: impl futures::Stream<
-            Item = kigi_tool_runtime::ToolStreamItem<kigi_tool_runtime::TypedToolOutput>,
-        > + Unpin,
-    ) -> kigi_tool_runtime::TypedToolOutput {
-        use futures::StreamExt;
-        use kigi_tool_runtime::ToolStreamItem;
-        while let Some(item) = stream.next().await {
-            match item {
-                ToolStreamItem::Terminal(Ok(t)) => return t,
-                ToolStreamItem::Progress(_) => {}
-                ToolStreamItem::Terminal(Err(e)) => {
-                    panic!("expected Terminal(Ok), got Err: {e}")
-                }
-            }
-        }
-        panic!("stream ended without terminal")
-    }
-    #[tokio::test]
-    async fn local_harness_preserves_bash_chat_completion_output() {
-        use kigi_tool_runtime::ToolCallContext;
-        let handle = make_handle();
-        register_bash_cco_stub(&handle);
-        let harness = handle.create_local_harness("main").expect("local harness");
-        let tool_id = kigi_tool_protocol::ToolId::new(BASH_CCO_STUB_NAME).expect("valid tool id");
-        let stream = harness
-            .call(tool_id, serde_json::json!({}), ToolCallContext::default())
-            .await;
-        let typed = drain_terminal_ok(stream).await;
-        assert_bash_cco_terminal(&typed);
-    }
-    /// No connection ⇒ every export entry point returns `None`, so the
-    /// binary leaves the `DonatingLogLayer` inert and spawns no metric reporter.
-    /// This is the flag-free "activate only on connection" contract that log
-    /// and metric export share with the pre-existing `trace_donation_reporter`.
-    #[tokio::test]
-    async fn donation_entry_points_are_inert_without_a_hub() {
-        let handle = make_handle();
-        assert!(
-            handle
-                .trace_donation_reporter("prod_grok_workspace")
-                .await
-                .is_none(),
-            "trace export must stay inert without a connection"
-        );
-        assert!(
-            handle
-                .log_donation_layer("prod_grok_workspace")
-                .await
-                .is_none(),
-            "log export must stay inert without a connection"
-        );
-        assert!(
-            handle
-                .metric_donation_reporter("prod_grok_workspace")
-                .await
-                .is_none(),
-            "metric export must stay inert without a connection"
-        );
     }
     #[test]
     fn rewind_outcome_label_maps_each_variant() {
@@ -3789,144 +1442,6 @@ pub(crate) mod tests {
         assert_eq!(rewind_result_label(true), "success");
         assert_eq!(rewind_result_label(false), "failure");
     }
-    /// The per-bind handler builder maps the session's finalized toolset 1:1 —
-    /// one handler per `tool_definitions()` entry, keyed by client name, with no
-    /// extra handlers and no RPC handler (that is appended by the resolver /
-    /// `connect_hub`, not here). The resolver-level "no intersection, no silent
-    /// drop" guarantee is covered by
-    /// [`resolver_advertises_tool_absent_from_connect_catalog`].
-    #[tokio::test]
-    async fn build_session_routed_handlers_covers_finalized_toolset() {
-        let handle = make_handle();
-        let session = handle.session("main").expect("main session exists");
-        let toolset = session.toolset();
-        let expected: std::collections::HashSet<String> = toolset
-            .tool_definitions()
-            .iter()
-            .map(|d| d.function.name.clone())
-            .collect();
-        assert!(
-            expected.contains("read_file"),
-            "baseline toolset should expose read_file"
-        );
-        let handlers = build_session_routed_handlers(&toolset, &handle);
-        let got: std::collections::HashSet<String> = handlers
-            .iter()
-            .map(|h| h.tool_id().as_str().to_owned())
-            .collect();
-        assert_eq!(handlers.len(), expected.len(), "one handler per tool def");
-        assert_eq!(
-            got, expected,
-            "advertised handlers must equal the finalized toolset (no intersection)"
-        );
-    }
-    #[tokio::test]
-    async fn build_session_routed_handlers_skips_invalid_client_name_without_panic() {
-        let handle = make_handle();
-        let mut renamed = tc("GrokBuild:read_file", Some(ToolKind::Read));
-        renamed.name_override = Some("bad name!".to_owned());
-        let session = handle
-            .create_session_with_config(
-                "sess-invalid-name",
-                None,
-                Some(ToolServerConfig {
-                    tools: vec![renamed, tc("GrokBuild:grep", Some(ToolKind::Read))],
-                    behavior_preset: None,
-                }),
-                CapabilityMode::All,
-                None,
-                false,
-            )
-            .expect("create session with invalidly renamed tool");
-        let handlers = build_session_routed_handlers(&session.toolset(), &handle);
-        let names: Vec<String> = handlers
-            .iter()
-            .map(|h| h.tool_id().as_str().to_owned())
-            .collect();
-        assert!(
-            !names.iter().any(|n| n == "bad name!"),
-            "the invalid client name must be skipped: {names:?}"
-        );
-        assert!(
-            names.iter().any(|n| n == "grep"),
-            "valid tools must still get handlers: {names:?}"
-        );
-    }
-    /// Regression for the deleted catalog intersection. Reproduces the
-    /// `session.bind` resolver tail's composition — `build_session_routed_handlers`
-    /// for the session toolset, plus the single RPC handler filtered from the
-    /// connect-time catalog — and proves a session tool whose client name is
-    /// ABSENT from that (grok-build) catalog is still advertised. The old
-    /// `catalog ∩ session-names` filter silently dropped exactly such tools
-    /// (grok-build renames → 6/11).
-    #[tokio::test]
-    async fn resolver_advertises_tool_absent_from_connect_catalog() {
-        let handle = make_handle();
-        let catalog_toolset = handle
-            .session("main")
-            .expect("main session exists")
-            .toolset();
-        let mut catalog = build_session_routed_handlers(&catalog_toolset, &handle);
-        let rpc_handler: Arc<dyn kigi_computer_hub_sdk::ToolServerHandler> =
-            Arc::new(crate::hub_server::WorkspaceRpcHandler::new(handle.clone()));
-        let rpc_tool_id = rpc_handler.tool_id();
-        catalog.push(rpc_handler);
-        let catalog_names: std::collections::HashSet<String> = catalog
-            .iter()
-            .map(|h| h.tool_id().as_str().to_owned())
-            .collect();
-        let mut renamed = tc("GrokBuild:read_file", Some(ToolKind::Read));
-        renamed.name_override = Some("non_catalog_tool".to_owned());
-        let session = handle
-            .create_session_with_config(
-                "sess-non-catalog",
-                None,
-                Some(ToolServerConfig {
-                    tools: vec![renamed],
-                    behavior_preset: None,
-                }),
-                CapabilityMode::All,
-                None,
-                false,
-            )
-            .expect("create session with renamed tool");
-        assert!(
-            !catalog_names.contains("non_catalog_tool"),
-            "precondition: the renamed tool must be absent from the catalog"
-        );
-        let toolset = session.toolset();
-        let mut handlers = build_session_routed_handlers(&toolset, &handle);
-        handlers.extend(
-            catalog
-                .iter()
-                .filter(|h| h.tool_id() == rpc_tool_id)
-                .cloned(),
-        );
-        let advertised: std::collections::HashSet<String> = handlers
-            .iter()
-            .map(|h| h.tool_id().as_str().to_owned())
-            .collect();
-        assert!(
-            advertised.contains("non_catalog_tool"),
-            "a session tool absent from the catalog must still be advertised"
-        );
-        assert_eq!(
-            handlers
-                .iter()
-                .filter(|h| h.tool_id() == rpc_tool_id)
-                .count(),
-            1,
-            "exactly one RPC handler appended"
-        );
-        let mut expected: std::collections::HashSet<String> = toolset
-            .tool_definitions()
-            .iter()
-            .map(|d| d.function.name.clone())
-            .collect();
-        expected.insert(rpc_tool_id.as_str().to_owned());
-        assert_eq!(advertised, expected);
-    }
-    /// Client names advertised by a session's current toolset.
     fn session_tool_names(session: &Arc<crate::session::WorkspaceSession>) -> Vec<String> {
         session
             .toolset()
@@ -3935,463 +1450,6 @@ pub(crate) mod tests {
             .map(|d| d.function.name.clone())
             .collect()
     }
-    /// The sandbox-resume regression (`workspace_tool_coverage_incomplete`): a
-    /// session created by a metadata-less bind resolves the workspace default;
-    /// a later rebind that carries the client's explicit toolset must
-    /// re-resolve and swap it in — not silently reuse the default — so the
-    /// bind response advertises the configured (renamed) tools. A repeat
-    /// rebind with the identical config is a no-op reuse.
-    #[tokio::test]
-    async fn rebind_with_changed_explicit_toolset_reresolves_and_swaps() {
-        let handle = make_handle();
-        let session = handle
-            .create_session_with_config("resumed", None, None, CapabilityMode::All, None, false)
-            .expect("create default-resolved session");
-        session.set_bind_tool_config_fingerprint(None);
-        assert!(
-            session_tool_names(&session)
-                .iter()
-                .all(|n| n != "renamed_read"),
-            "precondition: the default toolset must not carry the override name"
-        );
-        let mut renamed = tc("GrokBuild:read_file", Some(ToolKind::Read));
-        renamed.name_override = Some("renamed_read".to_owned());
-        let cfg = ToolServerConfig {
-            tools: vec![renamed],
-            behavior_preset: None,
-        };
-        let fingerprint = serde_json::to_value(&cfg).ok();
-        let (rebound, outcome) = handle
-            .rebind_existing_hub_session("resumed", Some(cfg.clone()), fingerprint.clone())
-            .await
-            .expect("session exists");
-        assert_eq!(outcome, RebindOutcome::Reresolved);
-        assert_eq!(
-            session_tool_names(&rebound),
-            vec!["renamed_read".to_owned()],
-            "the rebind must swap in the explicit toolset's resolution"
-        );
-        let (_, outcome) = handle
-            .rebind_existing_hub_session("resumed", Some(cfg), fingerprint)
-            .await
-            .expect("session exists");
-        assert_eq!(outcome, RebindOutcome::Reused);
-    }
-    /// A rebind without an explicit toolset (default resolution, or the
-    /// fail-closed placeholders which the caller maps to `None`) must never
-    /// downgrade an explicitly-configured session to the default toolset.
-    #[tokio::test]
-    async fn rebind_without_explicit_toolset_reuses_existing() {
-        let handle = make_handle();
-        let mut renamed = tc("GrokBuild:read_file", Some(ToolKind::Read));
-        renamed.name_override = Some("renamed_read".to_owned());
-        let cfg = ToolServerConfig {
-            tools: vec![renamed],
-            behavior_preset: None,
-        };
-        let session = handle
-            .create_session_with_config(
-                "configured",
-                None,
-                Some(cfg.clone()),
-                CapabilityMode::All,
-                None,
-                false,
-            )
-            .expect("create configured session");
-        session.set_bind_tool_config_fingerprint(serde_json::to_value(&cfg).ok());
-        let (rebound, outcome) = handle
-            .rebind_existing_hub_session("configured", None, None)
-            .await
-            .expect("session exists");
-        assert_eq!(outcome, RebindOutcome::Reused);
-        assert_eq!(
-            session_tool_names(&rebound),
-            vec!["renamed_read".to_owned()],
-            "a metadata-less rebind must not clobber the configured toolset"
-        );
-    }
-    /// The create arm's fingerprint write is set-if-unset: a concurrent
-    /// rebind that already swapped in its toolset (and recorded its
-    /// fingerprint under `update_lock`) must not be clobbered by the create
-    /// task's deferred write, or a later identical rebind would `Reused`-skip
-    /// against a fingerprint that no longer describes the live toolset.
-    #[tokio::test]
-    async fn create_fingerprint_write_does_not_clobber_concurrent_rebind() {
-        let handle = make_handle();
-        let session = handle
-            .create_session_with_config("racy", None, None, CapabilityMode::All, None, false)
-            .expect("create session");
-        let mut renamed = tc("GrokBuild:read_file", Some(ToolKind::Read));
-        renamed.name_override = Some("renamed_read".to_owned());
-        let cfg_b = ToolServerConfig {
-            tools: vec![renamed],
-            behavior_preset: None,
-        };
-        let fp_b = serde_json::to_value(&cfg_b).ok();
-        let (_, outcome) = handle
-            .rebind_existing_hub_session("racy", Some(cfg_b.clone()), fp_b.clone())
-            .await
-            .expect("session exists");
-        assert_eq!(outcome, RebindOutcome::Reresolved);
-        let fp_a = serde_json::to_value(&ToolServerConfig {
-            tools: vec![tc("GrokBuild:list_dir", Some(ToolKind::ListDir))],
-            behavior_preset: None,
-        })
-        .ok();
-        session.set_bind_tool_config_fingerprint_if_unset(fp_a);
-        let (rebound, outcome) = handle
-            .rebind_existing_hub_session("racy", Some(cfg_b), fp_b)
-            .await
-            .expect("session exists");
-        assert_eq!(outcome, RebindOutcome::Reused);
-        assert_eq!(
-            session_tool_names(&rebound),
-            vec!["renamed_read".to_owned()]
-        );
-    }
-    /// A vanished session yields `None` (the caller falls back to RPC-only).
-    #[tokio::test]
-    async fn rebind_missing_session_returns_none() {
-        let handle = make_handle();
-        assert!(
-            handle
-                .rebind_existing_hub_session("no-such-session", None, None)
-                .await
-                .is_none()
-        );
-    }
-    fn swap_rejected_count(reason: &str, trigger: &str) -> u64 {
-        crate::session::swap_policy::WORKSPACE_TOOLSET_SWAP_REJECTED_TOTAL
-            .with_label_values(&[reason, trigger])
-            .get()
-    }
-    /// The lazy-bind / resume-correction regression lock: a
-    /// default-resolved session (stored fingerprint `None`) must accept the
-    /// owner's explicit-config rebind even mid-turn with a call in flight —
-    /// the owner bind is designed to land mid-turn, and deferring it would
-    /// serve a toolset that contradicts the config-built prompt.
-    #[tokio::test]
-    async fn rebind_none_to_explicit_swaps_mid_turn() {
-        let handle = make_handle();
-        let session = handle
-            .create_session_with_config("lazy", None, None, CapabilityMode::All, None, false)
-            .expect("create default-resolved session");
-        session.set_bind_tool_config_fingerprint(None);
-        let tracker = handle.activity_tracker().clone();
-        tracker.turn_started("lazy", 1);
-        tracker.tool_call_started("lazy-c1", "read_file", Some("lazy"));
-        let cfg = explicit_cfg("renamed_read");
-        let fingerprint = serde_json::to_value(&cfg).ok();
-        let (rebound, outcome) = handle
-            .rebind_existing_hub_session("lazy", Some(cfg), fingerprint)
-            .await
-            .expect("session exists");
-        assert_eq!(
-            outcome,
-            RebindOutcome::Reresolved,
-            "a None → explicit correction must swap even mid-turn with calls in flight"
-        );
-        assert_eq!(
-            session_tool_names(&rebound),
-            vec!["renamed_read".to_owned()]
-        );
-    }
-    /// `explicit → different-explicit` under dispatch: the rebind keeps the
-    /// existing toolset (`ReresolveDeferredInFlight`, counted); once the
-    /// call completes, a later rebind applies the correction.
-    #[tokio::test]
-    async fn rebind_explicit_to_explicit_with_in_flight_call_defers_then_corrects() {
-        use kigi_file_utils::events::ToolOutcome;
-        let rejected_before = swap_rejected_count("in_flight", "owner_rebind");
-        let handle = make_handle();
-        let cfg_a = explicit_cfg("read_a");
-        let session = handle
-            .create_session_with_config(
-                "busy",
-                None,
-                Some(cfg_a.clone()),
-                CapabilityMode::All,
-                None,
-                false,
-            )
-            .expect("create session with cfg A");
-        session.set_bind_tool_config_fingerprint(serde_json::to_value(&cfg_a).ok());
-        let tracker = handle.activity_tracker().clone();
-        tracker.tool_call_started("busy-c1", "read_a", Some("busy"));
-        let cfg_b = explicit_cfg("read_b");
-        let fp_b = serde_json::to_value(&cfg_b).ok();
-        let (kept, outcome) = handle
-            .rebind_existing_hub_session("busy", Some(cfg_b.clone()), fp_b.clone())
-            .await
-            .expect("session exists");
-        assert_eq!(outcome, RebindOutcome::ReresolveDeferredInFlight);
-        assert_eq!(
-            session_tool_names(&kept),
-            vec!["read_a".to_owned()],
-            "the existing toolset must be kept while a call is in flight"
-        );
-        assert!(
-            swap_rejected_count("in_flight", "owner_rebind") > rejected_before,
-            "the deferred swap must be counted"
-        );
-        tracker.tool_call_completed("busy-c1", Some("busy"), ToolOutcome::Success);
-        let (rebound, outcome) = handle
-            .rebind_existing_hub_session("busy", Some(cfg_b), fp_b)
-            .await
-            .expect("session exists");
-        assert_eq!(
-            outcome,
-            RebindOutcome::Reresolved,
-            "the correction must apply once no calls are in flight"
-        );
-        assert_eq!(session_tool_names(&rebound), vec!["read_b".to_owned()]);
-    }
-    /// A reconnect's identical `session.bind` heals a stale session: reuse
-    /// without the marker, defer in-flight, rebuild + clear once idle.
-    #[tokio::test]
-    async fn rebind_identical_reapply_repairs_stale_resolve() {
-        use kigi_file_utils::events::ToolOutcome;
-        let handle = make_handle();
-        let cfg = explicit_cfg("renamed_read");
-        let fingerprint = serde_json::to_value(&cfg).ok();
-        let session = handle
-            .create_session_with_config(
-                "stale-rebind",
-                None,
-                Some(cfg.clone()),
-                CapabilityMode::All,
-                None,
-                false,
-            )
-            .expect("create session");
-        session.set_bind_tool_config_fingerprint(fingerprint.clone());
-        let toolset_before = session.toolset();
-        let (_, outcome) = handle
-            .rebind_existing_hub_session("stale-rebind", Some(cfg.clone()), fingerprint.clone())
-            .await
-            .expect("session exists");
-        assert_eq!(outcome, RebindOutcome::Reused);
-        assert!(
-            Arc::ptr_eq(&session.toolset(), &toolset_before),
-            "without the stale marker the identical rebind must not rebuild"
-        );
-        session.mark_stale_resolve();
-        let tracker = handle.activity_tracker().clone();
-        tracker.tool_call_started("stale-c1", "read_file", Some("stale-rebind"));
-        let rejected_before = swap_rejected_count("in_flight", "owner_rebind");
-        let (kept, outcome) = handle
-            .rebind_existing_hub_session("stale-rebind", Some(cfg.clone()), fingerprint.clone())
-            .await
-            .expect("session exists");
-        assert_eq!(
-            outcome,
-            RebindOutcome::ReresolveDeferredInFlight,
-            "the heal must defer while a call is in flight"
-        );
-        assert!(
-            Arc::ptr_eq(&kept.toolset(), &toolset_before),
-            "the deferred heal must keep the existing toolset"
-        );
-        assert!(kept.stale_resolve(), "the deferred heal keeps the marker");
-        assert!(
-            swap_rejected_count("in_flight", "owner_rebind") > rejected_before,
-            "the deferred heal must be counted"
-        );
-        tracker.tool_call_completed("stale-c1", Some("stale-rebind"), ToolOutcome::Success);
-        let (healed, outcome) = handle
-            .rebind_existing_hub_session("stale-rebind", Some(cfg), fingerprint)
-            .await
-            .expect("session exists");
-        assert_eq!(
-            outcome,
-            RebindOutcome::Reresolved,
-            "the idle reconnect must repair the stale toolset"
-        );
-        assert!(
-            !Arc::ptr_eq(&healed.toolset(), &toolset_before),
-            "the heal must install a freshly resolved toolset"
-        );
-        assert!(
-            !healed.stale_resolve(),
-            "a successful install must clear the stale marker"
-        );
-    }
-    /// The RPC path rejects a mid-turn config change with the retryable
-    /// `TurnActive` error (counted); the retry at the turn boundary succeeds.
-    #[tokio::test]
-    async fn update_tool_config_rejects_mid_turn_then_succeeds_at_boundary() {
-        let rejected_before = swap_rejected_count("turn_active", "update_tool_config");
-        let handle = make_handle();
-        handle.activity_tracker().turn_started("main", 1);
-        let cfg = explicit_cfg("renamed_read");
-        let err = handle
-            .update_tool_config("main", "main", cfg.clone())
-            .await
-            .expect_err("a mid-turn config change must be rejected");
-        assert!(
-            matches!(err, WorkspaceError::TurnActive(ref s) if s == "main"),
-            "got {err:?}"
-        );
-        assert!(
-            swap_rejected_count("turn_active", "update_tool_config") > rejected_before,
-            "the rejection must be counted"
-        );
-        let session = handle.session("main").expect("main session exists");
-        assert!(
-            session_tool_names(&session)
-                .iter()
-                .all(|n| n != "renamed_read"),
-            "the rejected config must not take effect"
-        );
-        handle.activity_tracker().turn_completed("main", 1, 0);
-        handle
-            .update_tool_config("main", "main", cfg)
-            .await
-            .expect("the retry at the turn boundary must succeed");
-        let session = handle.session("main").expect("main session exists");
-        assert_eq!(
-            session_tool_names(&session),
-            vec!["renamed_read".to_owned()]
-        );
-    }
-    /// TOCTOU lock: a turn that starts DURING the re-resolve (after the
-    /// entry check passed) must still abort the install — the resolved
-    /// toolset is discarded, the fingerprint stays unchanged, and the
-    /// rejection is counted under `reason="turn_active_late"`. The retry at
-    /// the turn boundary then succeeds.
-    #[tokio::test]
-    async fn update_tool_config_rejects_turn_started_during_resolve() {
-        let late_rejected_before = swap_rejected_count("turn_active_late", "update_tool_config");
-        let handle = make_handle();
-        let session = handle.session("main").expect("main session exists");
-        let toolset_before = session.toolset();
-        let hook_handle = handle.clone();
-        *handle.shared.post_resolve_test_hook.lock() = Some(Box::new(move || {
-            hook_handle.activity_tracker().turn_started("main", 7);
-        }));
-        let cfg = explicit_cfg("late_read");
-        let err = handle
-            .update_tool_config("main", "main", cfg.clone())
-            .await
-            .expect_err("a turn starting mid-resolve must abort the install");
-        assert!(
-            matches!(err, WorkspaceError::TurnActive(ref s) if s == "main"),
-            "got {err:?}"
-        );
-        assert!(
-            swap_rejected_count("turn_active_late", "update_tool_config") > late_rejected_before,
-            "the post-resolve rejection must be counted distinctly"
-        );
-        let session = handle.session("main").expect("main session exists");
-        assert!(
-            Arc::ptr_eq(&session.toolset(), &toolset_before),
-            "the resolved toolset must be discarded, not installed"
-        );
-        assert!(
-            session.bind_tool_config_matches(None),
-            "the unapplied config's fingerprint must NOT be recorded"
-        );
-        *handle.shared.post_resolve_test_hook.lock() = None;
-        handle.activity_tracker().turn_completed("main", 7, 0);
-        handle
-            .update_tool_config("main", "main", cfg)
-            .await
-            .expect("the retry at the turn boundary must succeed");
-        let session = handle.session("main").expect("main session exists");
-        assert_eq!(session_tool_names(&session), vec!["late_read".to_owned()]);
-    }
-    /// Re-applying the session's current config mid-turn stays allowed
-    /// (matching fingerprint), so hot-reload re-applies keep working
-    /// during turns.
-    #[tokio::test]
-    async fn update_tool_config_reapply_of_current_config_allowed_mid_turn() {
-        let handle = make_handle();
-        let cfg = explicit_cfg("renamed_read");
-        let session = handle
-            .create_session_with_config(
-                "hot",
-                None,
-                Some(cfg.clone()),
-                CapabilityMode::All,
-                None,
-                false,
-            )
-            .expect("create session");
-        session.set_bind_tool_config_fingerprint(serde_json::to_value(&cfg).ok());
-        handle.activity_tracker().turn_started("hot", 1);
-        handle
-            .update_tool_config("hot", "hot", cfg)
-            .await
-            .expect("an identical-config re-apply must not be turn_active-rejected");
-    }
-    #[tokio::test]
-    async fn update_tool_config_identical_reapply_repairs_stale_resolve() {
-        let handle = make_handle();
-        let cfg = explicit_cfg("renamed_read");
-        let session = handle
-            .create_session_with_config(
-                "stale",
-                None,
-                Some(cfg.clone()),
-                CapabilityMode::All,
-                None,
-                false,
-            )
-            .expect("create session");
-        session.set_bind_tool_config_fingerprint(serde_json::to_value(&cfg).ok());
-        let toolset_before = session.toolset();
-        handle
-            .update_tool_config("stale", "stale", cfg.clone())
-            .await
-            .expect("an identical re-apply must succeed");
-        assert!(
-            Arc::ptr_eq(&session.toolset(), &toolset_before),
-            "without the stale marker the identical re-apply must not rebuild"
-        );
-        session.mark_stale_resolve();
-        let rejected_before = swap_rejected_count("turn_active", "update_tool_config");
-        handle.activity_tracker().turn_started("stale", 1);
-        let err = handle
-            .update_tool_config("stale", "stale", cfg.clone())
-            .await
-            .expect_err("a mid-turn recovery re-apply must be rejected");
-        assert!(
-            matches!(err, WorkspaceError::TurnActive(ref s) if s == "stale"),
-            "got {err:?}"
-        );
-        assert!(
-            swap_rejected_count("turn_active", "update_tool_config") > rejected_before,
-            "the rejected recovery must be counted"
-        );
-        assert!(
-            session.stale_resolve(),
-            "the rejected recovery must keep the stale marker"
-        );
-        assert!(
-            Arc::ptr_eq(&session.toolset(), &toolset_before),
-            "the rejected recovery must not install"
-        );
-        handle.activity_tracker().turn_completed("stale", 1, 0);
-        handle
-            .update_tool_config("stale", "stale", cfg.clone())
-            .await
-            .expect("the boundary retry must repair the stale toolset");
-        let session = handle.session("stale").expect("session exists");
-        assert!(
-            !Arc::ptr_eq(&session.toolset(), &toolset_before),
-            "the recovery re-apply must install a freshly resolved toolset"
-        );
-        assert!(
-            !session.stale_resolve(),
-            "a successful install must clear the stale marker"
-        );
-        assert!(
-            session.bind_tool_config_matches(serde_json::to_value(&cfg).ok().as_ref()),
-            "the stored fingerprint must be unchanged by the identical recovery"
-        );
-    }
-    /// The `Terminal` resource of a session's current toolset.
     async fn toolset_terminal(
         toolset: &Arc<kigi_tools::registry::types::FinalizedToolset>,
     ) -> Arc<dyn kigi_tools::computer::types::TerminalBackend> {
@@ -4468,57 +1526,9 @@ pub(crate) mod tests {
             .await
             .expect("start background task")
     }
-    /// A rebind that swaps in a different explicit toolset must rebuild the
-    /// toolset AROUND the session-owned terminal backend, not a fresh one —
-    /// that identity is what keeps background tasks alive across the swap.
-    #[tokio::test]
-    async fn rebind_swap_preserves_session_terminal_backend() {
-        let orphaned_before = orphaned_swap_count();
-        let handle = make_handle();
-        let cfg_a = explicit_cfg("read_a");
-        let session = handle
-            .create_session_with_config(
-                "owned",
-                None,
-                Some(cfg_a.clone()),
-                CapabilityMode::All,
-                None,
-                false,
-            )
-            .expect("create session with cfg A");
-        session.set_bind_tool_config_fingerprint(serde_json::to_value(&cfg_a).ok());
-        let backend = session.terminal_backend().clone();
-        assert!(
-            Arc::ptr_eq(&backend, &toolset_terminal(&session.toolset()).await),
-            "create must wire the session-owned backend into the toolset"
-        );
-        let cfg_b = explicit_cfg("read_b");
-        let fingerprint_b = serde_json::to_value(&cfg_b).ok();
-        let (rebound, outcome) = handle
-            .rebind_existing_hub_session("owned", Some(cfg_b), fingerprint_b)
-            .await
-            .expect("session exists");
-        assert_eq!(outcome, RebindOutcome::Reresolved);
-        assert_eq!(session_tool_names(&rebound), vec!["read_b".to_owned()]);
-        assert!(
-            Arc::ptr_eq(&backend, rebound.terminal_backend()),
-            "the session-owned backend must not be replaced by a swap"
-        );
-        assert!(
-            Arc::ptr_eq(&backend, &toolset_terminal(&rebound.toolset()).await),
-            "the swapped-in toolset must reference the session-owned backend"
-        );
-        assert_eq!(
-            orphaned_swap_count(),
-            orphaned_before,
-            "the orphaned-backend tripwire must stay 0"
-        );
-    }
-    /// A snapshot-driven `re_resolve_all_sessions` rebuild (MCP snapshot
-    /// change) must also rebuild around the session-owned backend — with a
-    /// LIVE background task riding through the rebuild. This is the
-    /// regression lock for snapshot-triggered swaps killing background
-    /// tasks by minting a fresh backend per session.
+    /// A snapshot-driven rebuild must rebuild the toolset AROUND the
+    /// session-owned terminal backend, not a fresh one — that identity is
+    /// what keeps background tasks alive across the swap.
     #[tokio::test]
     async fn re_resolve_all_sessions_preserves_session_terminal_backend() {
         let orphaned_before = orphaned_swap_count();
@@ -4622,112 +1632,6 @@ pub(crate) mod tests {
             orphaned_before,
             "the skip must not fire the orphaned-backend tripwire"
         );
-        let outcome = handle
-            .resolve_and_swap_session_toolset(
-                &local,
-                explicit_cfg("read_new"),
-                SwapTrigger::UpdateRpc,
-            )
-            .await
-            .expect("the skip is not an internal error at the choke point");
-        assert_eq!(outcome, SwapOutcome::SkippedExternallyOwned);
-        assert!(
-            Arc::ptr_eq(&local.toolset(), &external_toolset),
-            "the choke point must not swap an externally-owned toolset"
-        );
-        assert_eq!(orphaned_swap_count(), orphaned_before);
-        let err = handle
-            .update_tool_config("local", "local", explicit_cfg("read_new"))
-            .await
-            .expect_err("update_tool_config must refuse an externally-owned toolset");
-        assert!(
-            matches!(err, crate ::error::WorkspaceError::ToolsetExternallyOwned(ref s) if
-            s == "local"),
-            "expected ToolsetExternallyOwned, got: {err:?}"
-        );
-        assert!(
-            Arc::ptr_eq(&local.toolset(), &external_toolset),
-            "the refused update must leave the toolset untouched"
-        );
-        let fp_local = serde_json::to_value(explicit_cfg("read_local")).ok();
-        local.set_bind_tool_config_fingerprint(fp_local.clone());
-        let cfg_new = explicit_cfg("read_new2");
-        let fp_new = serde_json::to_value(&cfg_new).ok();
-        let (rebound, outcome) = handle
-            .rebind_existing_hub_session("local", Some(cfg_new), fp_new.clone())
-            .await
-            .expect("session exists");
-        assert_eq!(outcome, RebindOutcome::KeptExternallyOwned);
-        assert!(
-            Arc::ptr_eq(&rebound.toolset(), &external_toolset),
-            "the rebind must keep the externally-owned toolset"
-        );
-        assert!(
-            rebound.bind_tool_config_matches(fp_local.as_ref()),
-            "the stored fingerprint must be unchanged by the skipped swap"
-        );
-        assert!(
-            !rebound.bind_tool_config_matches(fp_new.as_ref()),
-            "the unapplied config's fingerprint must NOT be recorded"
-        );
-        assert_eq!(orphaned_swap_count(), orphaned_before);
-        handle
-            .update_tool_config("local", "local", explicit_cfg("read_local"))
-            .await
-            .expect("an identical config on an externally-owned toolset is a no-op success");
-        assert!(
-            Arc::ptr_eq(&local.toolset(), &external_toolset),
-            "the identical no-op must leave the externally-owned toolset untouched"
-        );
-        assert!(
-            local.bind_tool_config_matches(fp_local.as_ref()),
-            "the identical no-op must leave the stored fingerprint untouched"
-        );
-        assert_eq!(orphaned_swap_count(), orphaned_before);
-    }
-    /// A background task started before a toolset swap must still be
-    /// queryable through the NEW toolset's `Terminal` resource — the
-    /// swap ⇒ empty task table + SIGKILL incident class.
-    #[tokio::test]
-    async fn background_task_survives_toolset_swap() {
-        let orphaned_before = orphaned_swap_count();
-        let handle = make_handle();
-        let cfg_a = explicit_cfg("read_a");
-        let session = handle
-            .create_session_with_config(
-                "bg",
-                None,
-                Some(cfg_a.clone()),
-                CapabilityMode::All,
-                None,
-                false,
-            )
-            .expect("create session");
-        session.set_bind_tool_config_fingerprint(serde_json::to_value(&cfg_a).ok());
-        let out_dir = tempfile::tempdir().expect("temp dir");
-        let bg = start_background_sleep(&session, out_dir.path(), "bg-task").await;
-        let cfg_b = explicit_cfg("read_b");
-        let fingerprint_b = serde_json::to_value(&cfg_b).ok();
-        let (rebound, outcome) = handle
-            .rebind_existing_hub_session("bg", Some(cfg_b), fingerprint_b)
-            .await
-            .expect("session exists");
-        assert_eq!(outcome, RebindOutcome::Reresolved);
-        let new_terminal = toolset_terminal(&rebound.toolset()).await;
-        let task = new_terminal
-            .get_task(&bg.task_id)
-            .await
-            .expect("the task table must survive the toolset swap");
-        assert!(
-            !task.completed,
-            "the task's process must still be running after the swap"
-        );
-        assert_eq!(
-            orphaned_swap_count(),
-            orphaned_before,
-            "the orphaned-backend tripwire must stay 0"
-        );
-        new_terminal.kill_task(&bg.task_id).await;
     }
     /// Test factory whose sessions own a PERSISTENT-shell backend (the
     /// production factory shape). The plain [`TestSessionContextFactory`]
@@ -4774,12 +1678,8 @@ pub(crate) mod tests {
             hook_project_sources: vec![],
             skills_config: Default::default(),
             plugin_discovery_config: Default::default(),
-            hub_config: None,
-            auth_provider: None,
-            server_metadata: None,
             status_config: Default::default(),
             project_lsp_trusted: true,
-            require_explicit_toolset: false,
             confine_fs_to_workspace_root: false,
         };
         WorkspaceHandle::build(config, ephemeral_workspace_home(), false, false)
@@ -4830,16 +1730,16 @@ pub(crate) mod tests {
             "the shell must have entered the subdir: {}",
             cwd_before.display()
         );
-        let cfg_b = explicit_cfg("read_b");
-        let (rebound, outcome) = handle
-            .rebind_existing_hub_session(
-                "shell-swap",
-                Some(cfg_b.clone()),
-                serde_json::to_value(&cfg_b).ok(),
-            )
-            .await
-            .expect("session exists");
-        assert_eq!(outcome, RebindOutcome::Reresolved);
+        handle.shared.mcp_tools_snapshot.store(Arc::new(vec![tc(
+            "GrokBuild:read_file",
+            Some(ToolKind::Read),
+        )]));
+        let rebuilt = handle
+            .shared
+            .re_resolve_all_sessions("mcp_snapshot_changed", true)
+            .await;
+        assert!(rebuilt >= 1, "the session must be rebuilt");
+        let rebound = handle.session("shell-swap").expect("session still exists");
         let cwd_after = toolset_terminal(&rebound.toolset())
             .await
             .get_shell_cwd()
@@ -5119,12 +2019,8 @@ pub(crate) mod tests {
             hook_project_sources: vec![],
             skills_config: Default::default(),
             plugin_discovery_config: Default::default(),
-            hub_config: None,
-            auth_provider: None,
-            server_metadata: None,
             status_config: Default::default(),
             project_lsp_trusted: true,
-            require_explicit_toolset: false,
             confine_fs_to_workspace_root: false,
         };
         let home = tempfile::tempdir().unwrap();
@@ -5468,36 +2364,10 @@ pub(crate) mod tests {
             "default workspace_home must live under the temp dir, got {}",
             home.display()
         );
-        assert_ne!(
-            home,
-            resolve_workspace_home(),
-            "default construction must NOT use the real $KIGI_WORKSPACE_HOME"
-        );
-    }
-    /// `server_metadata_typed` defaults cleanly when no metadata is configured.
-    #[tokio::test]
-    async fn server_metadata_typed_defaults_without_metadata() {
-        let handle = make_handle();
-        assert_eq!(handle.shared().server_metadata_typed().sandbox_id, None);
-    }
-    /// `server_metadata_typed` parses `sandbox_id` from the registration blob.
-    #[tokio::test]
-    async fn server_metadata_typed_parses_sandbox_id() {
-        use crate::session::tool_config::test_support::TestSessionContextFactory;
-        let factory = Arc::new(TestSessionContextFactory::new());
-        let cwd = factory.temp.path().to_path_buf();
-        let mut config = WorkspaceHandle::test_config(cwd, factory);
-        config.server_metadata =
-            Some(serde_json::json!({ "sandbox_id" : "sb_test123", "mode" : "remote", }));
-        let handle = WorkspaceHandle::build(config, ephemeral_workspace_home(), false, false)
-            .expect("handle construction should succeed");
-        assert_eq!(
-            handle
-                .shared()
-                .server_metadata_typed()
-                .sandbox_id
-                .as_deref(),
-            Some("sb_test123")
+        assert!(
+            home.starts_with(std::env::temp_dir()),
+            "default construction must use an ephemeral temp home, got {}",
+            home.display()
         );
     }
     #[tokio::test]
@@ -5524,12 +2394,10 @@ pub(crate) mod tests {
         };
         let factory = handle.shared.session_factory.clone();
         let mcp_snapshot = handle.shared.mcp_tools_snapshot.load_full();
-        let hub_snapshot = handle.shared.hub_tools_snapshot.load_full();
         let (eff, ts, _backend) = resolve_session_toolset(
             new_parent_baseline,
             parent.capability_mode(),
             &mcp_snapshot,
-            &hub_snapshot,
             parent.cwd().to_path_buf(),
             parent.session_env().clone(),
             "main",
@@ -5590,12 +2458,10 @@ pub(crate) mod tests {
         let main = handle.session("main").expect("main present");
         let factory = handle.shared.session_factory.clone();
         let mcp_snapshot = handle.shared.mcp_tools_snapshot.load_full();
-        let hub_snapshot = handle.shared.hub_tools_snapshot.load_full();
         let (eff, ts, _backend) = resolve_session_toolset(
             marker_config,
             main.capability_mode(),
             &mcp_snapshot,
-            &hub_snapshot,
             main.cwd().to_path_buf(),
             main.session_env().clone(),
             "main",
@@ -6010,12 +2876,8 @@ pub(crate) mod tests {
             hook_project_sources: vec![],
             skills_config: Default::default(),
             plugin_discovery_config: Default::default(),
-            hub_config: None,
-            auth_provider: None,
-            server_metadata: None,
             status_config: Default::default(),
             project_lsp_trusted: true,
-            require_explicit_toolset: false,
             confine_fs_to_workspace_root: false,
         };
         let handle = WorkspaceHandle::new(config).expect("ok");
@@ -6045,12 +2907,8 @@ pub(crate) mod tests {
             hook_project_sources: vec![HookSourceConfig::Directory(hooks_dir)],
             skills_config: Default::default(),
             plugin_discovery_config: Default::default(),
-            hub_config: None,
-            auth_provider: None,
-            server_metadata: None,
             status_config: Default::default(),
             project_lsp_trusted: true,
-            require_explicit_toolset: false,
             confine_fs_to_workspace_root: false,
         };
         let handle = WorkspaceHandle::new(config).expect("ok");
@@ -6101,12 +2959,8 @@ pub(crate) mod tests {
             hook_project_sources: vec![],
             skills_config: Default::default(),
             plugin_discovery_config: Default::default(),
-            hub_config: None,
-            auth_provider: None,
-            server_metadata: None,
             status_config: Default::default(),
             project_lsp_trusted: true,
-            require_explicit_toolset: false,
             confine_fs_to_workspace_root: false,
         };
         let handle = WorkspaceHandle::new(config).expect("construction must still succeed");
@@ -6142,12 +2996,8 @@ pub(crate) mod tests {
             hook_project_sources: vec![HookSourceConfig::SettingsFile(project_settings)],
             skills_config: Default::default(),
             plugin_discovery_config: Default::default(),
-            hub_config: None,
-            auth_provider: None,
-            server_metadata: None,
             status_config: Default::default(),
             project_lsp_trusted: true,
-            require_explicit_toolset: false,
             confine_fs_to_workspace_root: false,
         };
         let handle = WorkspaceHandle::new(config).expect("ok");
@@ -6170,12 +3020,8 @@ pub(crate) mod tests {
             hook_project_sources: vec![],
             skills_config: Default::default(),
             plugin_discovery_config: Default::default(),
-            hub_config: None,
-            auth_provider: None,
-            server_metadata: None,
             status_config: Default::default(),
             project_lsp_trusted: true,
-            require_explicit_toolset: false,
             confine_fs_to_workspace_root: false,
         };
         let handle = WorkspaceHandle::new(config).expect("must not panic on missing source");
@@ -6202,119 +3048,13 @@ pub(crate) mod tests {
             hook_project_sources: vec![HookSourceConfig::Directory(empty_dir)],
             skills_config: Default::default(),
             plugin_discovery_config: Default::default(),
-            hub_config: None,
-            auth_provider: None,
-            server_metadata: None,
             status_config: Default::default(),
             project_lsp_trusted: true,
-            require_explicit_toolset: false,
             confine_fs_to_workspace_root: false,
         };
         let handle = WorkspaceHandle::new(config).expect("ok");
         assert!(handle.hook_registry().is_empty());
         assert!(handle.hook_load_errors().is_empty());
-    }
-    #[tokio::test]
-    async fn hub_tools_snapshot_starts_empty() {
-        let handle = make_handle();
-        assert!(handle.shared().hub_tools_snapshot().is_empty());
-        assert!(handle.shared().hub_server().is_none());
-    }
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn on_hub_tools_changed_emits_per_session_events() {
-        let handle = make_handle();
-        handle
-            .fork_session(fork_cfg_with(
-                "hubA",
-                CapabilityMode::ReadWrite,
-                None,
-                Some("main"),
-            ))
-            .await
-            .expect("hubA ok");
-        let mut rx = handle.shared.events.subscribe();
-        let hub_tool = tc("hub:remote_exec", None);
-        let rebuilt = handle.on_hub_tools_changed(vec![hub_tool]);
-        assert_eq!(rebuilt, 2, "main + 1 subagent");
-        let mut got: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-        for _ in 0..2 {
-            let ev = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
-                .await
-                .expect("event arrives")
-                .expect("not closed");
-            match ev {
-                WorkspaceEvent::ToolsChanged { session_id } => {
-                    got.insert(session_id);
-                }
-                other => panic!("unexpected event: {other:?}"),
-            }
-        }
-        assert_eq!(
-            got,
-            ["main".to_string(), "hubA".to_string()]
-                .into_iter()
-                .collect::<std::collections::BTreeSet<String>>()
-        );
-    }
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn on_hub_tools_changed_updates_snapshot() {
-        let handle = make_handle();
-        assert!(handle.shared().hub_tools_snapshot().is_empty());
-        let hub_tool = tc("hub:remote_exec", None);
-        handle.on_hub_tools_changed(vec![hub_tool]);
-        let snapshot = handle.shared().hub_tools_snapshot();
-        assert_eq!(snapshot.len(), 1);
-        assert_eq!(snapshot[0].id, "hub:remote_exec");
-    }
-    #[tokio::test]
-    async fn connect_hub_noop_when_no_config() {
-        let handle = make_handle();
-        let result = handle.connect_hub().await;
-        assert!(result.is_ok());
-        assert!(handle.shared().hub_server().is_none());
-    }
-    #[test]
-    fn workspace_shared_auth_provider_uses_workspace_config() {
-        let temp = tempfile::tempdir().unwrap();
-        let service_auth: kigi_computer_hub_sdk::SharedAuthProvider = Arc::new(
-            kigi_computer_hub_sdk::auth::AuthCredential::bearer("xai-service-token"),
-        );
-        let hub_auth: kigi_computer_hub_sdk::SharedAuthProvider = Arc::new(
-            kigi_computer_hub_sdk::auth::AuthCredential::bearer("hub-token"),
-        );
-        let hub_cfg = crate::hub::HubConfig {
-            url: url::Url::parse("ws://127.0.0.1:9/ws").unwrap(),
-            auth: hub_auth.clone(),
-            activity_tracker: None,
-            server_id: Some("server-1".to_string()),
-            alpha_test_key: None,
-            allow_insecure_ws: true,
-            ready_file: None,
-            diag: None,
-        };
-        let config = WorkspaceConfig::new_for_proxy(
-            temp.path().to_path_buf(),
-            Arc::new(TestSessionContextFactory::new()),
-            hub_cfg,
-            service_auth.clone(),
-            None,
-            Default::default(),
-            baseline_config(),
-        );
-        let handle = WorkspaceHandle::build(config, ephemeral_workspace_home(), false, false)
-            .expect("handle construction should succeed");
-        let shared_auth = handle
-            .shared()
-            .auth_provider()
-            .expect("WorkspaceConfig auth provider must populate WorkspaceShared");
-        assert_eq!(shared_auth.current(), service_auth.current());
-        assert_ne!(shared_auth.current(), hub_auth.current());
-    }
-    #[tokio::test]
-    async fn shutdown_hub_noop_when_not_connected() {
-        let handle = make_handle();
-        handle.shutdown_hub().await;
-        assert!(handle.shared().hub_server().is_none());
     }
     #[tokio::test]
     async fn codebase_index_forwarder_abort_releases_shared() {
@@ -6708,481 +3448,6 @@ pub(crate) mod tests {
             "child must inherit the parent's stream_tool_progress flag"
         );
     }
-    /// Build the resolver exactly the way `connect_hub` does: session catalog
-    /// handlers + the workspace RPC handler.
-    fn bind_resolver_fixture(
-        handle: &WorkspaceHandle,
-    ) -> kigi_computer_hub_sdk::SessionHandlerResolver {
-        let catalog_toolset = handle.session("main").expect("main session").toolset();
-        let mut catalog = build_session_routed_handlers(&catalog_toolset, handle);
-        let rpc_handler: Arc<dyn kigi_computer_hub_sdk::ToolServerHandler> =
-            Arc::new(crate::hub_server::WorkspaceRpcHandler::new(handle.clone()));
-        let rpc_tool_id = rpc_handler.tool_id();
-        catalog.push(rpc_handler);
-        handle.session_bind_resolver(Arc::new(catalog), rpc_tool_id)
-    }
-    fn handler_names(resolved: &kigi_computer_hub_sdk::ResolvedSessionHandlers) -> Vec<String> {
-        resolved
-            .handlers
-            .iter()
-            .map(|h| h.tool_id().as_str().to_owned())
-            .collect()
-    }
-    /// Strict mode, preset-only bind: the full resolver path fails closed —
-    /// RPC-only advertise + a `missing_tool_config` reason in the bind report.
-    #[tokio::test]
-    async fn strict_bind_without_explicit_toolset_fails_closed_end_to_end() {
-        let handle = make_strict_handle();
-        let resolver = bind_resolver_fixture(&handle);
-        let resolved = resolver(
-            kigi_tool_protocol::SessionId::new("bind-e2e-strict").unwrap(),
-            Some(serde_json::json!(
-                { "metadata" : { "preset" : "grok-computer", "capability_mode" :
-                "all" }, }
-            )),
-        )
-        .await
-        .expect("bind must succeed");
-        assert_eq!(
-            handler_names(&resolved),
-            vec![crate::hub_ids::WORKSPACE_RPC_TOOL_ID.to_owned()],
-            "must advertise the RPC handler only"
-        );
-        let reason = resolved.resolve_error.expect("resolve_error must be set");
-        assert!(
-            reason.starts_with("missing_tool_config:"),
-            "reason must name the fail-closed cause: {reason}"
-        );
-        assert!(
-            reason.contains(kigi_version::VERSION),
-            "reason must carry the server version: {reason}"
-        );
-    }
-    #[tokio::test]
-    async fn strict_rpc_only_bind_fails_closed_with_resolve_error_end_to_end() {
-        let handle = make_strict_handle();
-        let resolver = bind_resolver_fixture(&handle);
-        let resolved = resolver(
-            kigi_tool_protocol::SessionId::new("bind-e2e-rpc-only").unwrap(),
-            Some(serde_json::json!(
-                { "metadata" : { "capability_mode" : "read_write", "rpc_only" :
-                true, "system_notifications" : true, }, }
-            )),
-        )
-        .await
-        .expect("bind must succeed");
-        assert_eq!(
-            handler_names(&resolved),
-            vec![crate::hub_ids::WORKSPACE_RPC_TOOL_ID.to_owned()],
-        );
-        let reason = resolved.resolve_error.expect("resolve_error must be set");
-        assert!(reason.starts_with("missing_tool_config:"), "{reason}");
-    }
-    /// Strict mode, explicit `tools`: resolves and advertises the configured
-    /// tool with no resolve_error.
-    #[tokio::test]
-    async fn strict_bind_with_explicit_toolset_serves_it_end_to_end() {
-        let handle = make_strict_handle();
-        let resolver = bind_resolver_fixture(&handle);
-        let resolved = resolver(
-            kigi_tool_protocol::SessionId::new("bind-e2e-tools").unwrap(),
-            Some(serde_json::json!(
-                { "metadata" : { "tools" : [{ "id" : "GrokBuild:read_file" }] },
-                }
-            )),
-        )
-        .await
-        .expect("bind must succeed");
-        let names = handler_names(&resolved);
-        assert!(
-            names.iter().any(|n| n == "read_file"),
-            "configured tool must be advertised: {names:?}"
-        );
-        assert_eq!(resolved.resolve_error, None);
-        assert!(resolved.unserved_tool_ids.is_empty());
-    }
-    /// Lax mode (CLI/local embedders), metadata-less bind: falls back to the
-    /// default catalog with no resolve_error.
-    #[tokio::test]
-    async fn lax_bind_without_metadata_uses_default_catalog_end_to_end() {
-        let handle = make_handle();
-        let resolver = bind_resolver_fixture(&handle);
-        let resolved = resolver(
-            kigi_tool_protocol::SessionId::new("bind-e2e-lax").unwrap(),
-            None,
-        )
-        .await
-        .expect("bind must succeed");
-        let names = handler_names(&resolved);
-        assert!(
-            names.iter().any(|n| n == "read_file") && names.iter().any(|n| n == "grep"),
-            "default catalog must be advertised: {names:?}"
-        );
-        assert_eq!(resolved.resolve_error, None);
-    }
-    /// A rebind whose explicit config is REJECTED (invalid entry) keeps the
-    /// fail-closed reason even though the healthy session's previous toolset
-    /// is reused — the client must learn its new config did not take effect.
-    #[tokio::test]
-    async fn rejected_rebind_config_keeps_resolve_error_end_to_end() {
-        let handle = make_strict_handle();
-        let resolver = bind_resolver_fixture(&handle);
-        let sid = kigi_tool_protocol::SessionId::new("bind-e2e-rejected").unwrap();
-        let first = resolver(
-            sid.clone(),
-            Some(serde_json::json!(
-                { "metadata" : { "tools" : [{ "id" : "GrokBuild:read_file" }] },
-                }
-            )),
-        )
-        .await
-        .expect("healthy bind");
-        assert_eq!(first.resolve_error, None);
-        let second = resolver(
-            sid,
-            Some(serde_json::json!(
-                { "metadata" : { "tools" : [{ "id" : "GrokBuild:read_file",
-                "params_json" : "{not json" }] }, }
-            )),
-        )
-        .await
-        .expect("rejected rebind still advertises the previous toolset");
-        assert!(
-            handler_names(&second).iter().any(|n| n == "read_file"),
-            "previous toolset must still be served"
-        );
-        let reason = second
-            .resolve_error
-            .expect("rejected config must keep the fail-closed reason");
-        assert!(reason.starts_with("invalid_tool_config:"), "{reason}");
-    }
-    /// An explicit EMPTY toolset (RPC-only clients, e.g. deploy binds) must
-    /// reuse an existing session unchanged — never swap its tools away.
-    #[tokio::test]
-    async fn explicit_empty_toolset_rebind_never_swaps_session_tools() {
-        let handle = make_strict_handle();
-        let resolver = bind_resolver_fixture(&handle);
-        let sid = kigi_tool_protocol::SessionId::new("bind-e2e-rpc-only").unwrap();
-        let first = resolver(
-            sid.clone(),
-            Some(serde_json::json!(
-                { "metadata" : { "tools" : [{ "id" : "GrokBuild:read_file" }] },
-                }
-            )),
-        )
-        .await
-        .expect("agent bind");
-        assert!(handler_names(&first).iter().any(|n| n == "read_file"));
-        let rpc_bind = resolver(
-            sid,
-            Some(serde_json::json!(
-                { "metadata" : { "tool_config" : { "tools" : [] } }, }
-            )),
-        )
-        .await
-        .expect("rpc-only rebind");
-        assert!(
-            handler_names(&rpc_bind).iter().any(|n| n == "read_file"),
-            "agent session tools must survive an RPC-only rebind"
-        );
-        assert_eq!(rpc_bind.resolve_error, None);
-    }
-    /// Rebind heal end-to-end: a strict fail-closed bind leaves the session
-    /// empty; a corrected rebind with explicit tools rebuilds and advertises
-    /// them with the report cleared.
-    #[tokio::test]
-    async fn strict_rebind_with_corrected_toolset_heals_end_to_end() {
-        let handle = make_strict_handle();
-        let resolver = bind_resolver_fixture(&handle);
-        let sid = kigi_tool_protocol::SessionId::new("bind-e2e-heal").unwrap();
-        let first = resolver(
-            sid.clone(),
-            Some(serde_json::json!({ "metadata" : { "preset" : "grok-computer" } })),
-        )
-        .await
-        .expect("fail-closed bind still succeeds with an RPC-only advertise");
-        assert!(first.resolve_error.is_some(), "first bind must fail closed");
-        let second = resolver(
-            sid,
-            Some(serde_json::json!(
-                { "metadata" : { "tools" : [{ "id" : "GrokBuild:read_file" }] },
-                }
-            )),
-        )
-        .await
-        .expect("bind must succeed");
-        let names = handler_names(&second);
-        assert!(
-            names.iter().any(|n| n == "read_file"),
-            "corrected rebind must advertise the explicit toolset: {names:?}"
-        );
-        assert_eq!(
-            second.resolve_error, None,
-            "healed rebind must not carry the stale fail-closed reason"
-        );
-    }
-    /// Owner bind: capability `all` + explicit toolset (strict servers fail
-    /// closed otherwise).
-    fn owner_full_bind_metadata() -> serde_json::Value {
-        serde_json::json!(
-            { "metadata" : { "capability_mode" : "all", "tools" : [{ "id" :
-            "GrokBuild:read_file" }, { "id" : "GrokBuild:search_replace" }, { "id" :
-            "GrokBuild:grep" }, { "id" : "GrokBuild:list_dir" },], }, }
-        )
-    }
-    const OWNER_TOOLS: [&str; 4] = ["read_file", "search_replace", "grep", "list_dir"];
-    #[track_caller]
-    fn assert_advertises_owner_tools(names: &[String], context: &str) {
-        for tool in OWNER_TOOLS {
-            assert!(
-                names.iter().any(|n| n == tool),
-                "{context}: owner tool `{tool}` missing from advertised set {names:?}"
-            );
-        }
-    }
-    /// Consumer-shaped rebinds against a live owner session must `Reuse` it
-    /// unchanged — never shrink its toolset or narrow its frozen capability.
-    #[tokio::test]
-    async fn owner_toolset_survives_concurrent_consumer_shaped_rebinds() {
-        let handle = make_strict_handle();
-        let resolver = bind_resolver_fixture(&handle);
-        let sid = kigi_tool_protocol::SessionId::new("bind-e2e-consumer-storm").unwrap();
-        let owner = resolver(sid.clone(), Some(owner_full_bind_metadata()))
-            .await
-            .expect("owner bind");
-        assert_advertises_owner_tools(&handler_names(&owner), "owner bind");
-        assert_eq!(owner.resolve_error, None);
-        let consumer_shapes: Vec<Option<serde_json::Value>> = vec![
-            Some(
-                serde_json::json!({ "metadata" : { "capability_mode" : "read_only" }
-                }),
-            ),
-            Some(
-                serde_json::json!({ "metadata" : { "capability_mode" : "read_write"
-            } }),
-            ),
-            None,
-            Some(serde_json::json!({ "metadata" : { "tool_config" : {
-            "tools" : [] } } })),
-        ];
-        let storm = futures::future::join_all(
-            consumer_shapes
-                .iter()
-                .cycle()
-                .take(12)
-                .cloned()
-                .map(|metadata| resolver(sid.clone(), metadata)),
-        )
-        .await;
-        for (i, result) in storm.into_iter().enumerate() {
-            let resolved = result.expect("consumer-shaped rebind must not error");
-            assert_advertises_owner_tools(
-                &handler_names(&resolved),
-                &format!("consumer-shaped rebind #{i}"),
-            );
-            assert_eq!(
-                resolved.resolve_error, None,
-                "reuse against a healthy owner session must not surface a resolve error"
-            );
-        }
-        let session = handle
-            .session("bind-e2e-consumer-storm")
-            .expect("owner session survives the storm");
-        assert_eq!(
-            session.capability_mode(),
-            CapabilityMode::All,
-            "consumer-shaped rebinds must never narrow the owner's frozen capability"
-        );
-        assert_advertises_owner_tools(
-            &session
-                .toolset()
-                .tool_definitions()
-                .into_iter()
-                .map(|d| d.function.name)
-                .collect::<Vec<_>>(),
-            "post-storm session toolset",
-        );
-    }
-    /// On a fresh workspace-server the FIRST bind freezes `capability_mode`: consumer-shaped
-    /// first binds strand the session narrow (why consumers never bind); owner-first is whole.
-    #[tokio::test]
-    async fn restored_server_first_bind_ordering_decides_capability_and_toolset() {
-        let handle = make_strict_handle();
-        let resolver = bind_resolver_fixture(&handle);
-        let sid = kigi_tool_protocol::SessionId::new("bind-e2e-restore-read-first").unwrap();
-        let read_first = resolver(
-            sid.clone(),
-            Some(serde_json::json!(
-                { "metadata" : { "capability_mode" : "read_only" } }
-            )),
-        )
-        .await
-        .expect("consumer-shaped bind resolves");
-        assert_eq!(
-            handler_names(&read_first),
-            vec![crate::hub_ids::WORKSPACE_RPC_TOOL_ID.to_owned()],
-            "strict fail-closed create advertises the RPC handler only"
-        );
-        let agent = resolver(sid, Some(owner_full_bind_metadata()))
-            .await
-            .expect("agent bind resolves");
-        let names = handler_names(&agent);
-        assert!(
-            names.iter().any(|n| n == "read_file"),
-            "agent bind heals the read-class toolset: {names:?}"
-        );
-        assert!(
-            !names.iter().any(|n| n == "search_replace"),
-            "frozen read_only capability keeps filtering Edit-class tools — \
-             the incident's shrunken toolset: {names:?}"
-        );
-        let session = handle
-            .session("bind-e2e-restore-read-first")
-            .expect("session exists");
-        assert_eq!(
-            session.capability_mode(),
-            CapabilityMode::ReadOnly,
-            "the consumer-shaped first bind froze the capability for good"
-        );
-        let handle = make_strict_handle();
-        let resolver = bind_resolver_fixture(&handle);
-        let sid = kigi_tool_protocol::SessionId::new("bind-e2e-restore-write-first").unwrap();
-        resolver(
-            sid.clone(),
-            Some(serde_json::json!(
-                { "metadata" : { "capability_mode" : "read_write" } }
-            )),
-        )
-        .await
-        .expect("consumer-shaped bind resolves");
-        resolver(sid, Some(owner_full_bind_metadata()))
-            .await
-            .expect("agent bind resolves");
-        let session = handle
-            .session("bind-e2e-restore-write-first")
-            .expect("session exists");
-        assert_eq!(
-            session.capability_mode(),
-            CapabilityMode::ReadWrite,
-            "the agent's `all` must not take on a session a deploy/write-shaped \
-             bind created first — this narrower freeze is why deploy and fs \
-             writes are consumers now"
-        );
-        let handle = make_strict_handle();
-        let resolver = bind_resolver_fixture(&handle);
-        let sid = kigi_tool_protocol::SessionId::new("bind-e2e-restore-owner-first").unwrap();
-        let owner = resolver(sid, Some(owner_full_bind_metadata()))
-            .await
-            .expect("owner bind resolves");
-        assert_advertises_owner_tools(&handler_names(&owner), "owner-first bind");
-        assert_eq!(owner.resolve_error, None);
-        let session = handle
-            .session("bind-e2e-restore-owner-first")
-            .expect("session exists");
-        assert_eq!(
-            session.capability_mode(),
-            CapabilityMode::All,
-            "owner-first ordering yields the full capability the agent declared"
-        );
-    }
-    /// Isolation matrix #1–#3 through the REAL `session.bind` resolver (the
-    /// closure `connect_hub` installs — the exact path both a soft rebind and
-    /// an SDK dead-loop FULL rebind re-run): with a live background task,
-    /// an identical rebind (`Reused`) and a changed-explicit-toolset rebind
-    /// (`Reresolved`, driven with no in-flight tool calls) both keep the
-    /// session-owned backend (`Arc::ptr_eq`) and the running task, while the
-    /// changed rebind swaps the advertised handler set.
-    ///
-    /// The remaining matrix-#3 sub-asserts live beside the swap tests above:
-    /// persistent-shell cwd preservation
-    /// (`reresolved_swap_preserves_persistent_shell_cwd`) and the
-    /// snapshot-driven rebuild with a live task
-    /// (`re_resolve_all_sessions_preserves_session_terminal_backend`).
-    #[tokio::test]
-    async fn bind_flow_rebinds_keep_backend_and_task_alive_end_to_end() {
-        let orphaned_before = orphaned_swap_count();
-        let handle = make_handle();
-        let resolver = bind_resolver_fixture(&handle);
-        let sid = kigi_tool_protocol::SessionId::new("bind-e2e-bg").unwrap();
-        let bg_metadata = serde_json::json!(
-            { "metadata" : { "tools" : [{ "id" : "GrokBuild:read_file" }, { "id" :
-            "GrokBuild:run_terminal_cmd" }, { "id" : "GrokBuild:get_task_output" }, {
-            "id" : "GrokBuild:kill_task" },] }, }
-        );
-        let first = resolver(sid.clone(), Some(bg_metadata.clone()))
-            .await
-            .expect("owner bind");
-        assert!(
-            handler_names(&first)
-                .iter()
-                .any(|n| n == "run_terminal_cmd"),
-            "owner bind must serve the execute tool"
-        );
-        let session = handle.session("bind-e2e-bg").expect("session created");
-        let backend = session.terminal_backend().clone();
-        let out_dir = tempfile::tempdir().expect("temp dir");
-        let bg = start_background_sleep(&session, out_dir.path(), "bind-e2e-bg-task").await;
-        let reused = resolver(sid.clone(), Some(bg_metadata))
-            .await
-            .expect("identical rebind");
-        assert!(
-            handler_names(&reused)
-                .iter()
-                .any(|n| n == "run_terminal_cmd"),
-            "a reused rebind keeps advertising the existing toolset"
-        );
-        let session = handle.session("bind-e2e-bg").expect("session kept");
-        assert!(
-            Arc::ptr_eq(&backend, session.terminal_backend()),
-            "an identical rebind must keep the session-owned backend"
-        );
-        assert!(
-            !backend
-                .get_task(&bg.task_id)
-                .await
-                .expect("task listed across the reused rebind")
-                .completed,
-            "the task must still be running after the reused rebind"
-        );
-        let swapped = resolver(
-            sid,
-            Some(serde_json::json!(
-                { "metadata" : { "tools" : [{ "id" : "GrokBuild:read_file" }] },
-                }
-            )),
-        )
-        .await
-        .expect("changed-toolset rebind");
-        let names = handler_names(&swapped);
-        assert!(
-            names.iter().any(|n| n == "read_file")
-                && !names.iter().any(|n| n == "run_terminal_cmd"),
-            "the changed rebind must advertise the NEW toolset only: {names:?}"
-        );
-        let session = handle.session("bind-e2e-bg").expect("session kept");
-        assert!(
-            Arc::ptr_eq(&backend, session.terminal_backend()),
-            "a toolset-swapping rebind must keep the session-owned backend"
-        );
-        assert!(
-            Arc::ptr_eq(&backend, &toolset_terminal(&session.toolset()).await),
-            "the swapped-in toolset must reference the session-owned backend"
-        );
-        assert!(
-            !backend
-                .get_task(&bg.task_id)
-                .await
-                .expect("task table must survive the toolset swap")
-                .completed,
-            "the task's process must still be running after the swap"
-        );
-        assert_eq!(
-            orphaned_swap_count(),
-            orphaned_before,
-            "the orphaned-backend tripwire must stay 0"
-        );
-        backend.kill_task(&bg.task_id).await;
-    }
     /// Dropping and rebinding a session with the same ID surfaces the
     /// new `viewer_ctx` (kill-switch for mid-session staleness).
     #[tokio::test]
@@ -7362,156 +3627,6 @@ pub(crate) mod tests {
         assert_eq!(
             ended["cancellation_context"],
             serde_json::json!({ "recovery" : false })
-        );
-    }
-    fn bundled_dir_fixture(subdirs: &[&str]) -> tempfile::TempDir {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        for name in subdirs {
-            std::fs::create_dir(tmp.path().join(name)).expect("create subdir");
-        }
-        std::fs::write(tmp.path().join("BUILD.bazel"), b"").expect("create file");
-        tmp
-    }
-    #[test]
-    fn bundled_allowlist_blank_ignores_nothing() {
-        let tmp = bundled_dir_fixture(&["bundled__pdf", "bundled__xlsx"]);
-        let dir = tmp.path().to_string_lossy().into_owned();
-        for allowlist in [None, Some(""), Some("  "), Some(" , ,")] {
-            assert_eq!(
-                bundled_allowlist_ignore_dirs(&dir, allowlist),
-                Vec::<String>::new(),
-                "allowlist {allowlist:?} must produce no ignore entries"
-            );
-        }
-    }
-    #[test]
-    fn bundled_allowlist_ignores_complement() {
-        let tmp = bundled_dir_fixture(&["bundled__pdf", "bundled__xlsx", "bundled__docx"]);
-        let dir = tmp.path().to_string_lossy().into_owned();
-        let got = bundled_allowlist_ignore_dirs(&dir, Some("xlsx, pdf"));
-        let want = vec![
-            tmp.path()
-                .join("bundled__docx")
-                .to_string_lossy()
-                .into_owned(),
-        ];
-        assert_eq!(got, want);
-    }
-    #[test]
-    fn bundled_allowlist_strips_bundled_prefix() {
-        let tmp = bundled_dir_fixture(&["bundled__pdf", "xlsx", "bundled__skip"]);
-        let dir = tmp.path().to_string_lossy().into_owned();
-        let got = bundled_allowlist_ignore_dirs(&dir, Some("bundled__pdf,bundled__xlsx"));
-        let want = vec![
-            tmp.path()
-                .join("bundled__skip")
-                .to_string_lossy()
-                .into_owned(),
-        ];
-        assert_eq!(got, want);
-    }
-    #[test]
-    fn bundled_allowlist_unreadable_dir_fails_closed() {
-        let got = bundled_allowlist_ignore_dirs("/nonexistent/bundled-skills", Some("pdf"));
-        assert_eq!(got, vec!["/nonexistent/bundled-skills".to_string()]);
-    }
-    /// Unique skill names: discovery also reads the dev machine's `~/.kigi`.
-    #[tokio::test]
-    async fn bundled_allowlist_filters_discovery() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        for name in ["allowlist-e2e-kept", "allowlist-e2e-blocked"] {
-            let skill_dir = tmp.path().join(format!("bundled__{name}"));
-            std::fs::create_dir(&skill_dir).expect("create subdir");
-            std::fs::write(
-                skill_dir.join("SKILL.md"),
-                format!("---\nname: {name}\ndescription: test\n---\nbody"),
-            )
-            .expect("write SKILL.md");
-        }
-        let dir = tmp.path().to_string_lossy().into_owned();
-        let cwd = tempfile::tempdir().expect("tempdir");
-        let mut config = crate::discovery::SkillsConfig {
-            bundled_skill_dirs: vec![dir.clone()],
-            ..Default::default()
-        };
-        config.ignore.extend(bundled_allowlist_ignore_dirs(
-            &dir,
-            Some("allowlist-e2e-kept"),
-        ));
-        let skills = crate::discovery::discover_skills(cwd.path(), &config).await;
-        let names: Vec<&str> = skills
-            .iter()
-            .filter_map(|s| s["name"].as_str())
-            .filter(|n| n.starts_with("allowlist-e2e-"))
-            .collect();
-        assert_eq!(
-            names,
-            vec!["allowlist-e2e-kept"],
-            "only the allowlisted skill survives"
-        );
-    }
-    #[test]
-    fn classify_drain_outcome_covers_all_arms() {
-        assert_eq!(classify_drain_outcome(false), DrainOutcome::Partial);
-        assert_eq!(classify_drain_outcome(true), DrainOutcome::Full);
-    }
-    #[test]
-    fn drain_reason_and_outcome_labels_are_stable() {
-        assert_eq!(DrainReason::Sigterm.as_str(), "sigterm");
-        assert_eq!(DrainReason::Evict.as_str(), "evict");
-        assert_eq!(DrainOutcome::Full.as_str(), "full");
-        assert_eq!(DrainOutcome::Partial.as_str(), "partial");
-    }
-    #[test]
-    fn grace_budget_from_raw_parses_and_falls_back() {
-        let d = |ms| std::time::Duration::from_millis(ms);
-        assert_eq!(grace_budget_from_raw(None), d(DEFAULT_TERMINATION_GRACE_MS));
-        assert_eq!(grace_budget_from_raw(Some("120000".into())), d(120_000));
-        assert_eq!(grace_budget_from_raw(Some("  90000 ".into())), d(90_000));
-        assert_eq!(
-            grace_budget_from_raw(Some("0".into())),
-            d(DEFAULT_TERMINATION_GRACE_MS)
-        );
-        assert_eq!(
-            grace_budget_from_raw(Some("nonsense".into())),
-            d(DEFAULT_TERMINATION_GRACE_MS)
-        );
-    }
-    #[test]
-    fn write_draining_marker_writes_count_atomically() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("workspace-server.draining");
-        write_draining_marker(&path, 5);
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "5");
-        let leftover_tmp = std::fs::read_dir(dir.path())
-            .unwrap()
-            .filter_map(|e| e.ok())
-            .any(|e| e.file_name().to_string_lossy().ends_with(".draining.tmp"));
-        assert!(!leftover_tmp, "temp file must be renamed away");
-        write_draining_marker(&path, 0);
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "0");
-    }
-    #[tokio::test]
-    async fn two_phase_drain_no_queue_marks_draining_and_returns_zero() {
-        let handle = make_handle();
-        let tracker = handle.activity_tracker().clone();
-        assert!(!tracker.is_draining());
-        let unfinished = handle
-            .two_phase_drain(std::time::Duration::from_millis(300), DrainReason::Sigterm)
-            .await;
-        assert_eq!(unfinished, 0, "no queue → nothing pending to lose");
-        assert!(
-            tracker.is_draining(),
-            "drain must mark the tracker draining"
-        );
-        let snap = tracker.snapshot();
-        assert_eq!(
-            snap.status,
-            kigi_tool_protocol::ToolServerLifecycleStatus::Draining
-        );
-        assert!(
-            snap.drain_started_ms.is_some(),
-            "drain_started_ms must be stamped at drain start"
         );
     }
 }

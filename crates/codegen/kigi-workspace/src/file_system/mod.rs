@@ -7,13 +7,8 @@ pub use ext_fs::{
     FsReadFileReq, FsWriteFileReq,
 };
 
-// Client-facing read-only fs ops (`workspace.client_fs_*`). Not re-exported:
-// its wire types live in `kigi_workspace_types::rpc::fs` (the `ClientFs*`
-// types) and would collide with the shell-facing `ext_fs` names above.
-pub(crate) mod client_fs;
-
 // Shared filesystem core: paginated listing + binary-safe ranged reads,
-// used by `client_fs`, `ext_fs`, and the shell-local `session::file_system`.
+// used by `ext_fs` and the shell-local `session::file_system`.
 mod walk;
 pub use walk::{
     ChunkPayload, ListOptions, ListPage, ListedEntry, MAX_LIST_COLLECT, MAX_READ_BYTES,

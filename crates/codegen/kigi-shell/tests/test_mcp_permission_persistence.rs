@@ -16,7 +16,7 @@ use kigi_workspace::permission::types::{
 };
 use kigi_workspace::permission::{
     AccessKind, ClientType, Decision, PermissionCommand, PermissionHandle, PermissionState,
-    spawn_permission_manager, spawn_permission_manager_with_hub,
+    spawn_permission_manager,
 };
 use serial_test::serial;
 use tokio::sync::{mpsc, oneshot};
@@ -221,6 +221,7 @@ async fn run_actor_test_full<F, Fut>(
                 vec![],
                 initial_yolo,
                 None,
+                true,
             );
             body(handle, gw, cwd).await;
         })
@@ -357,7 +358,7 @@ async fn policy_ask_suppresses_mcp_tool_allowlist() {
 
             let (gw, _gw_task) = fake_gateway();
             // Gate OFF so the `ask` rule stays a hard floor over the grant.
-            let (handle, _events) = spawn_permission_manager_with_hub(
+            let (handle, _events) = spawn_permission_manager(
                 make_session_id(),
                 gw.sender.clone(),
                 cwd.clone(),
@@ -368,7 +369,6 @@ async fn policy_ask_suppresses_mcp_tool_allowlist() {
                 false,
                 None,
                 false, // remember_tool_approvals
-                None,
             );
 
             // Script an outright reject so we can confirm the prompt fires.
@@ -408,7 +408,7 @@ async fn policy_ask_suppresses_mcp_server_allowlist() {
 
             let (gw, _gw_task) = fake_gateway();
             // Gate OFF so the `ask` rule stays a hard floor over the grant.
-            let (handle, _events) = spawn_permission_manager_with_hub(
+            let (handle, _events) = spawn_permission_manager(
                 make_session_id(),
                 gw.sender.clone(),
                 cwd.clone(),
@@ -419,7 +419,6 @@ async fn policy_ask_suppresses_mcp_server_allowlist() {
                 false,
                 None,
                 false, // remember_tool_approvals
-                None,
             );
 
             gw.expected.send(("reject-once".to_string(), None)).unwrap();
@@ -463,6 +462,7 @@ async fn policy_deny_takes_precedence_over_mcp_allowlist() {
                 vec![],
                 false,
                 None,
+                true,
             );
 
             // Do NOT script a response: a policy Deny must short-circuit

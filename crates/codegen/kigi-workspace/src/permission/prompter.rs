@@ -321,9 +321,6 @@ pub struct AcpPrompter {
     /// at decision-time through it. `EventWriter::noop()` when events recording
     /// is disabled (the default for the permission scaffolding's own tests).
     event_writer: EventWriter,
-    /// Server permission transport: when set, [`request`](Self::request) asks chat for the
-    /// decision over the server; `None` keeps the local prompt.
-    hub_permission: Option<Arc<dyn crate::permission::PermissionHookTransport>>,
     /// When `false` (default, fail-safe), the per-tool "Always allow …" options
     /// are stripped (see [`REMEMBER_TOOL_APPROVALS_GATED_IDS`]).
     remember_tool_approvals: bool,
@@ -496,7 +493,6 @@ impl AcpPrompter {
             // must NOT double-emit. A workspace-server-side caller that owns the
             // per-session `events.jsonl` opts in via [`with_event_writer`].
             event_writer: EventWriter::noop(),
-            hub_permission: None,
             // Fail-safe default; opt in via `with_remember_tool_approvals`.
             remember_tool_approvals: false,
         }
@@ -506,16 +502,6 @@ impl AcpPrompter {
     /// See [`AcpPrompter::remember_tool_approvals`].
     pub fn with_remember_tool_approvals(mut self, enabled: bool) -> Self {
         self.remember_tool_approvals = enabled;
-        self
-    }
-
-    /// Route the permission prompt to chat over the server when `Some`;
-    /// `None` keeps the local prompt.
-    pub fn with_hub_permission(
-        mut self,
-        hub_permission: Option<Arc<dyn crate::permission::PermissionHookTransport>>,
-    ) -> Self {
-        self.hub_permission = hub_permission;
         self
     }
 
@@ -737,41 +723,29 @@ impl AcpPrompter {
             prompt_start,
         };
 
-        let outcome = match &self.hub_permission {
-            // Route the prompt to chat over the server (see
-            // `ToolServerPermissionTransport` for the await/release contract).
-            Some(transport) => {
-                crate::permission::hub_permission::request_permission_via_hub(
-                    transport.as_ref(),
-                    access,
-                    tool_call_update.tool_call_id.0.as_ref(),
-                )
-                .await
-            }
-            None => {
-                let permission_options = self.build_options(access);
-                let req = acp::RequestPermissionRequest::new(
-                    self.session_id.clone(),
-                    tool_call_update.clone(),
-                    permission_options.values().cloned().collect(),
-                )
-                .meta(self.bash_selection_meta(access));
-                match self.gateway.request_permission(req).await {
-                    Ok(resp) => match resp.outcome {
-                        acp::RequestPermissionOutcome::Cancelled => PromptOutcome::Cancelled,
-                        acp::RequestPermissionOutcome::Selected(selected) => map_selected_outcome(
-                            &permission_options,
-                            &selected.option_id,
-                            resp.meta.as_ref(),
-                            access,
-                        ),
-                        // TODO(acp-0.10): `RequestPermissionOutcome` is #[non_exhaustive].
-                        _ => PromptOutcome::Error("unknown permission outcome".to_owned()),
-                    },
-                    Err(e) => {
-                        tracing::error!(?e, "failed to request permission");
-                        PromptOutcome::Error("failed to request permission".to_owned())
-                    }
+        let outcome = {
+            let permission_options = self.build_options(access);
+            let req = acp::RequestPermissionRequest::new(
+                self.session_id.clone(),
+                tool_call_update.clone(),
+                permission_options.values().cloned().collect(),
+            )
+            .meta(self.bash_selection_meta(access));
+            match self.gateway.request_permission(req).await {
+                Ok(resp) => match resp.outcome {
+                    acp::RequestPermissionOutcome::Cancelled => PromptOutcome::Cancelled,
+                    acp::RequestPermissionOutcome::Selected(selected) => map_selected_outcome(
+                        &permission_options,
+                        &selected.option_id,
+                        resp.meta.as_ref(),
+                        access,
+                    ),
+                    // TODO(acp-0.10): `RequestPermissionOutcome` is #[non_exhaustive].
+                    _ => PromptOutcome::Error("unknown permission outcome".to_owned()),
+                },
+                Err(e) => {
+                    tracing::error!(?e, "failed to request permission");
+                    PromptOutcome::Error("failed to request permission".to_owned())
                 }
             }
         };

@@ -1323,7 +1323,7 @@ const CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(300);
 struct ModelsCache {
     fetched_at: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    grok_version: Option<String>,
+    kigi_version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     auth_method: Option<CacheAuthMethod>,
     /// Models-list URL this catalog was fetched from
@@ -1418,7 +1418,7 @@ impl ModelsCacheManager {
     ) -> Option<ModelsCache> {
         let data = std::fs::read(&self.path).ok()?;
         let cache: ModelsCache = serde_json::from_slice(&data).ok()?;
-        if cache.grok_version.as_deref() != Some(kigi_version::VERSION) {
+        if cache.kigi_version.as_deref() != Some(kigi_version::VERSION) {
             tracing::debug!("models cache version mismatch");
             return None;
         }
@@ -1447,7 +1447,7 @@ impl ModelsCacheManager {
     ) {
         let cache = ModelsCache {
             fetched_at: Utc::now(),
-            grok_version: Some(kigi_version::VERSION.to_string()),
+            kigi_version: Some(kigi_version::VERSION.to_string()),
             auth_method: Some(auth_method),
             origin: Some(origin.to_string()),
             etag: etag.map(|s| s.to_string()),
@@ -3064,7 +3064,7 @@ mod tests {
         let auth_method = mgr.inner.fetch_auth.read().cache_auth_method();
         let stale = ModelsCache {
             fetched_at: Utc::now() - ChronoDuration::seconds(3600),
-            grok_version: Some(kigi_version::VERSION.to_string()),
+            kigi_version: Some(kigi_version::VERSION.to_string()),
             auth_method: Some(auth_method),
             origin: Some(mgr.cache_origin()),
             etag: Some("etag-stale".into()),
@@ -3140,7 +3140,7 @@ mod tests {
         let auth_method = mgr.inner.fetch_auth.read().cache_auth_method();
         let legacy = ModelsCache {
             fetched_at: Utc::now(),
-            grok_version: Some(kigi_version::VERSION.to_string()),
+            kigi_version: Some(kigi_version::VERSION.to_string()),
             auth_method: Some(auth_method),
             origin: None,
             etag: Some("etag-legacy".into()),
@@ -4100,7 +4100,7 @@ mod tests {
         let cache = ModelsCacheManager::new();
         let stale = ModelsCache {
             fetched_at: Utc::now() - ChronoDuration::seconds(86_400),
-            grok_version: Some(kigi_version::VERSION.to_string()),
+            kigi_version: Some(kigi_version::VERSION.to_string()),
             auth_method: Some(CacheAuthMethod::Platforms),
             origin: Some(origin),
             etag: None,
@@ -4187,7 +4187,7 @@ mod tests {
         let cache = ModelsCacheManager::new();
         cache.atomic_write(&ModelsCache {
             fetched_at: Utc::now() - ChronoDuration::seconds(86_400),
-            grok_version: Some(kigi_version::VERSION.to_string()),
+            kigi_version: Some(kigi_version::VERSION.to_string()),
             auth_method: Some(CacheAuthMethod::Platforms),
             origin: Some(with_key_origin),
             etag: None,

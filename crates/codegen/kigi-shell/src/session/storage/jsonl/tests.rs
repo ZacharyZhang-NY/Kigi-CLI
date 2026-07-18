@@ -1052,7 +1052,7 @@ async fn test_load_prompts_only_large_session() {
             info.id.clone(),
             acp::SessionUpdate::UserMessageChunk(
                 acp::ContentChunk::new(
-                    acp::ContentBlock::Text(acp::TextContent::new(format!("part2"))),
+                    acp::ContentBlock::Text(acp::TextContent::new("part2".to_string())),
                 ),
             ),
         );

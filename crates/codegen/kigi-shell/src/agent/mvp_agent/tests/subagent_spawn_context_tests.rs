@@ -39,6 +39,7 @@ async fn subagent_spawn_context_inherits_parent_permission_handle() {
                     Vec::new(),
                     false,
                     None,
+                    true,
                 );
 
             let mut handle = make_test_handle("test-model", false, None);

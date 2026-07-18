@@ -12,7 +12,6 @@ pub mod init;
 pub mod models;
 pub(crate) mod models_fetch;
 pub mod mvp_agent;
-pub(crate) mod proxy;
 pub(crate) mod restore_code;
 pub mod roster;
 pub mod server;

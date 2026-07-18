@@ -21,8 +21,7 @@ pub const SCHEMA_VERSION: u32 = 1;
 /// path (`kigi_sqlite_journal::JournalMode::open`) — the journal mode depends
 /// on the database's filesystem.
 pub fn schema_sql(dimensions: usize, vec_available: bool) -> String {
-    let mut sql = format!(
-        r#"
+    let mut sql = r#"
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -50,7 +49,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(text, content='');
 
 INSERT OR IGNORE INTO meta(key, value) VALUES ('reindex_claim', '');
 "#
-    );
+    .to_string();
 
     if vec_available {
         sql.push_str(&format!(

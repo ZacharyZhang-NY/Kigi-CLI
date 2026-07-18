@@ -2312,7 +2312,6 @@ mod inline_auto_compact_flow_tests {
             plugin_registry: std::cell::RefCell::new(None),
             plugin_registry_handle: None,
             events: crate::session::events::EventTracker::new(std::path::Path::new("/tmp")),
-            observability_bridge: noop_observability_bridge(),
             current_turn_number: std::cell::Cell::new(0),
             last_recap_main_turn: std::cell::Cell::new(0),
             recap_in_flight: std::cell::Cell::new(false),

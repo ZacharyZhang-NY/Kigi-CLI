@@ -43,7 +43,7 @@ pub fn default_agent_type() -> String {
     DEFAULT_AGENT_TYPE.to_owned()
 }
 /// Default base URL for the public xAI API.
-pub const XAI_API_BASE_URL_DEFAULT: &str = "https://api.x.ai/v1";
+pub const API_BASE_URL_DEFAULT: &str = "https://api.x.ai/v1";
 /// One or more environment variable names that may hold a model API key.
 ///
 /// Serde `untagged`: accepts a string or an array in TOML/JSON.
@@ -142,8 +142,10 @@ pub struct EndpointsConfig {
     /// default value) lets an org pin the proxy to the default on purpose.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub coding_api_base_url: Option<String>,
-    /// Base URL for the public xAI API.
-    pub xai_api_base_url: String,
+    /// Base URL for direct (BYOK / external-API-key) API calls.
+    /// Accepts the legacy `xai_api_base_url` config key.
+    #[serde(alias = "xai_api_base_url")]
+    pub api_base_url: String,
     /// Optional extra access-header value (applied only with the optional
     /// non-production feature, and only for matching first-party hosts).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -166,54 +168,6 @@ pub struct EndpointsConfig {
     /// Defaults to `{proxy_url()}/deployment/config`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub managed_config_url: Option<String>,
-    /// Env: `OTEL_EXPORTER_OTLP_ENDPOINT`. OTLP collector base; `/v1/traces` is
-    /// appended. Legacy repoint of the INTERNAL trace pipeline — deprecated in
-    /// favor of `KIGI_INTERNAL_OTLP_TRACES_ENDPOINT`, and ignored by the internal
-    /// pipeline when `KIGI_EXTERNAL_OTEL` is set (the standard `OTEL_*` vars then
-    /// route the external stream only).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub otel_exporter_otlp_endpoint: Option<String>,
-    /// Env: `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`. Full traces endpoint, used
-    /// verbatim; overrides `otel_exporter_otlp_endpoint`. Same legacy/deprecation
-    /// semantics as `otel_exporter_otlp_endpoint`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub otel_exporter_otlp_traces_endpoint: Option<String>,
-    /// Env: `OTEL_EXPORTER_OTLP_HEADERS`. `k=v,k2=v2`; merged onto export headers.
-    /// Same legacy/deprecation semantics as `otel_exporter_otlp_endpoint`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub otel_exporter_otlp_headers: Option<String>,
-    /// Env: `KIGI_INTERNAL_OTLP_TRACES_ENDPOINT`. Full INTERNAL traces endpoint,
-    /// used verbatim. Dev/debug repoint of the internal span firehose (replaces
-    /// the legacy `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` behavior; used by
-    /// local-ic-testing / internal dev flows). Wins over the legacy `OTEL_*` vars.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub grok_internal_otlp_traces_endpoint: Option<String>,
-    /// Env: `KIGI_INTERNAL_OTLP_HEADERS`. `k=v,k2=v2` extra headers for the
-    /// internal export (debug). Wins over the legacy `OTEL_EXPORTER_OTLP_HEADERS`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub grok_internal_otlp_headers: Option<String>,
-    /// External-OTEL master switch, captured at construction via
-    /// [`external_otel_master_switch_resolved`] — the same layered resolution
-    /// (requirement pin > `KIGI_EXTERNAL_OTEL` env > `[telemetry].otel_enabled`
-    /// config, managed layers included) that activates the external stream.
-    /// When set, the standard `OTEL_EXPORTER_OTLP_*` vars are reserved for the
-    /// external OTEL stream and the internal trace pipeline ignores them
-    /// entirely — an admin who opts in (by *any* layer, including an org
-    /// enable distributed via managed config with no env var) never receives
-    /// the internally-authed firehose. Held as a field (not re-read in the
-    /// resolvers) so the resolvers stay pure and testable without env races.
-    #[serde(skip)]
-    pub external_otel_master_switch: bool,
-    /// Env: `OTEL_TRACES_EXPORTER`. `otlp` (default) or `none` to disable spans.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub otel_traces_exporter: Option<String>,
-    /// Env: `OTEL_BSP_SCHEDULE_DELAY` (OTel) or `OTEL_TRACES_EXPORT_INTERVAL`
-    /// (Claude alias). Batch flush interval (ms).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub otel_traces_export_interval: Option<u64>,
-    /// Env: `OTEL_EXPORTER_OTLP_TIMEOUT`. Export HTTP timeout (ms).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub otel_exporter_otlp_timeout: Option<u64>,
     /// Read by `load_management_api_key_sync()`. Declared for `serde_ignored`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub management_api_key: Option<String>,
@@ -227,18 +181,6 @@ fn blank_as_unset(opt: &Option<String>) -> Option<String> {
     opt.as_deref()
         .filter(|s| !s.trim().is_empty())
         .map(str::to_owned)
-}
-/// Parse a `k=v,k2=v2` OTLP header list (the `OTEL_EXPORTER_OTLP_HEADERS`
-/// format, shared with `KIGI_INTERNAL_OTLP_HEADERS`): split on `,`,
-/// `split_once('=')`, trim key/value, skip blank keys, keep empty values.
-fn parse_otlp_header_list(raw: &str) -> Vec<(String, String)> {
-    raw.split(',')
-        .filter_map(|kv| {
-            let (k, v) = kv.split_once('=')?;
-            let k = k.trim();
-            (!k.is_empty()).then(|| (k.to_string(), v.trim().to_string()))
-        })
-        .collect()
 }
 impl EndpointsConfig {
     pub fn has_custom_endpoint(&self) -> bool {
@@ -257,22 +199,18 @@ impl EndpointsConfig {
     /// Layer the `[endpoints]` table from `config` over the env/default base.
     /// No field is derived from another — defaulting is done by the resolvers.
     pub(crate) fn from_config_value(config: &toml::Value) -> Self {
-        let default = Self::default();
-        let external_otel_master_switch = default.external_otel_master_switch;
-        let mut base = match toml::Value::try_from(default) {
+        let mut base = match toml::Value::try_from(Self::default()) {
             Ok(v) => v,
             Err(_) => return Self::default(),
         };
         if let Some(endpoints) = config.get("endpoints") {
             crate::config::deep_merge_toml(&mut base, endpoints);
         }
-        let mut resolved: Self = base.try_into().unwrap_or_default();
-        resolved.external_otel_master_switch = external_otel_master_switch;
-        resolved
+        base.try_into().unwrap_or_default()
     }
     /// The subscription proxy base URL through which all auxiliary services (and
     /// OAuth/session inference) resolve: explicit `coding_api_base_url`, else
-    /// [`kigi_env::coding_api_base_url`]. NEVER falls back to `xai_api_base_url` —
+    /// [`kigi_env::coding_api_base_url`]. NEVER falls back to `api_base_url` —
     /// that is the inference endpoint (API-key auth) only.
     pub fn proxy_url(&self) -> String {
         blank_as_unset(&self.coding_api_base_url).unwrap_or_else(kigi_env::coding_api_base_url)
@@ -283,12 +221,12 @@ impl EndpointsConfig {
             .unwrap_or_else(|| self.proxy_url())
     }
     /// Feedback endpoint — an auxiliary service, so it defaults to the
-    /// cli-chat-proxy, never `xai_api_base_url`.
+    /// cli-chat-proxy, never `api_base_url`.
     pub fn resolve_feedback_base_url(&self) -> String {
         blank_as_unset(&self.feedback_base_url).unwrap_or_else(|| self.proxy_url())
     }
     /// Managed deployment-config URL (`grok setup`): explicit `managed_config_url`,
-    /// else `proxy_url` + `/deployment/config`. Never `xai_api_base_url`, so the
+    /// else `proxy_url` + `/deployment/config`. Never `api_base_url`, so the
     /// deployment key reaches the proxy, not the inference host.
     pub fn resolve_managed_config_url(&self) -> String {
         blank_as_unset(&self.managed_config_url).unwrap_or_else(|| {
@@ -297,99 +235,6 @@ impl EndpointsConfig {
                 self.proxy_url().trim_end_matches('/')
             )
         })
-    }
-    /// INTERNAL OTLP traces endpoint. Precedence:
-    /// 1. `grok_internal_otlp_traces_endpoint` (verbatim)
-    /// 2. legacy `otel_exporter_otlp_traces_endpoint` (verbatim) >
-    ///    `otel_exporter_otlp_endpoint` + `/v1/traces` — ONLY when the
-    ///    external-OTEL master switch is unset (back-compat; deprecated)
-    /// 3. `proxy_url` + `/traces`.
-    /// Uses the proxy default (not the `xai_api_base_url` fallback) so
-    /// telemetry reports to xAI even when inference is overridden. When the
-    /// master switch IS set, the standard `OTEL_EXPORTER_OTLP_*` values are
-    /// completely ignored here so the internally-authed firehose never lands
-    /// at an external collector.
-    pub fn resolve_otlp_traces_endpoint(&self) -> String {
-        if let Some(full) = blank_as_unset(&self.grok_internal_otlp_traces_endpoint) {
-            return full.trim_end_matches('/').to_string();
-        }
-        if !self.external_otel_master_switch
-            && let Some(legacy) = self.legacy_internal_otlp_traces_endpoint()
-        {
-            tracing::warn!(
-                "Repointing the internal trace pipeline via OTEL_EXPORTER_OTLP_ENDPOINT / \
-                 OTEL_EXPORTER_OTLP_TRACES_ENDPOINT is deprecated; use \
-                 KIGI_INTERNAL_OTLP_TRACES_ENDPOINT instead — the standard OTEL_* vars will \
-                 route the external OTEL stream only in a future release"
-            );
-            return legacy;
-        }
-        format!("{}/traces", self.proxy_url().trim_end_matches('/'))
-    }
-    /// Legacy (standard-OTEL-var) internal traces endpoint, if any:
-    /// `otel_exporter_otlp_traces_endpoint` verbatim, else
-    /// `otel_exporter_otlp_endpoint` + `/v1/traces`. Ignores the master switch.
-    fn legacy_internal_otlp_traces_endpoint(&self) -> Option<String> {
-        if let Some(full) = blank_as_unset(&self.otel_exporter_otlp_traces_endpoint) {
-            return Some(full.trim_end_matches('/').to_string());
-        }
-        blank_as_unset(&self.otel_exporter_otlp_endpoint)
-            .map(|base| format!("{}/v1/traces", base.trim_end_matches('/')))
-    }
-    /// Extra headers for the INTERNAL export: `grok_internal_otlp_headers`
-    /// first; legacy fallback to `otel_exporter_otlp_headers` ONLY when the
-    /// external-OTEL master switch is unset (back-compat for existing users).
-    pub fn resolve_otlp_headers(&self) -> Vec<(String, String)> {
-        if let Some(headers) = blank_as_unset(&self.grok_internal_otlp_headers) {
-            return parse_otlp_header_list(&headers);
-        }
-        if !self.external_otel_master_switch {
-            return parse_otlp_header_list(
-                self.otel_exporter_otlp_headers.as_deref().unwrap_or(""),
-            );
-        }
-        Vec::new()
-    }
-    /// Whether the legacy fallback actually supplied the internal endpoint OR
-    /// internal headers from the standard `OTEL_EXPORTER_OTLP_*` vars — i.e.
-    /// the master switch is unset AND (`otel_exporter_otlp_traces_endpoint` /
-    /// `otel_exporter_otlp_endpoint` is non-blank for the endpoint, or
-    /// `otel_exporter_otlp_headers` is non-blank for headers) AND no
-    /// `grok_internal_otlp_*` override shadowed that half.
-    ///
-    /// CONTRACT: this flag is passed to the external OTEL stream's init, which
-    /// MUST refuse to activate when it is true — the same standard vars cannot
-    /// feed both pipelines (no-double-send invariant, enforced in code).
-    pub fn internal_otlp_consumed_standard_vars(&self) -> bool {
-        if self.external_otel_master_switch {
-            return false;
-        }
-        let endpoint_consumed = blank_as_unset(&self.grok_internal_otlp_traces_endpoint).is_none()
-            && self.legacy_internal_otlp_traces_endpoint().is_some();
-        let headers_consumed = blank_as_unset(&self.grok_internal_otlp_headers).is_none()
-            && blank_as_unset(&self.otel_exporter_otlp_headers).is_some();
-        endpoint_consumed || headers_consumed
-    }
-    /// Trace export enabled unless `OTEL_TRACES_EXPORTER=none`. Deliberately
-    /// still honored by the internal pipeline even with `KIGI_EXTERNAL_OTEL`
-    /// set: disabling internal span export is the safe direction.
-    pub fn resolve_traces_export_enabled(&self) -> bool {
-        !matches!(
-            self.otel_traces_exporter.as_deref().map(str::trim),
-            Some("none")
-        )
-    }
-    /// `OTEL_BSP_SCHEDULE_DELAY` / `OTEL_TRACES_EXPORT_INTERVAL` — tuning-only,
-    /// deliberately shared between the internal and external pipelines.
-    pub fn resolve_otlp_export_interval(&self) -> Option<std::time::Duration> {
-        self.otel_traces_export_interval
-            .map(std::time::Duration::from_millis)
-    }
-    /// `OTEL_EXPORTER_OTLP_TIMEOUT` — tuning-only, deliberately shared between
-    /// the internal and external pipelines.
-    pub fn resolve_otlp_timeout(&self) -> Option<std::time::Duration> {
-        self.otel_exporter_otlp_timeout
-            .map(std::time::Duration::from_millis)
     }
     /// `models_list_url` > `{models_base_url}/models` > `{proxy_base_url}/models`.
     pub fn resolve_models_list_url(&self) -> String {
@@ -407,26 +252,14 @@ impl Default for EndpointsConfig {
     fn default() -> Self {
         Self {
             coding_api_base_url: std::env::var("KIGI_CODE_BASE_URL").ok(),
-            xai_api_base_url: std::env::var("KIGI_XAI_API_BASE_URL")
-                .unwrap_or_else(|_| XAI_API_BASE_URL_DEFAULT.to_owned()),
+            api_base_url: std::env::var("KIGI_API_BASE_URL")
+                .unwrap_or_else(|_| API_BASE_URL_DEFAULT.to_owned()),
             alpha_test_key: None,
             models_base_url: env_string("KIGI_MODELS_BASE_URL"),
             models_list_url: env_string("KIGI_MODELS_LIST_URL"),
             feedback_base_url: env_string("KIGI_FEEDBACK_BASE_URL"),
             deployment_key: env_string("KIGI_DEPLOYMENT_KEY"),
             managed_config_url: env_string("KIGI_MANAGED_CONFIG_URL"),
-            otel_exporter_otlp_endpoint: env_string("OTEL_EXPORTER_OTLP_ENDPOINT"),
-            otel_exporter_otlp_traces_endpoint: env_string("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"),
-            otel_exporter_otlp_headers: env_string("OTEL_EXPORTER_OTLP_HEADERS"),
-            grok_internal_otlp_traces_endpoint: env_string("KIGI_INTERNAL_OTLP_TRACES_ENDPOINT"),
-            grok_internal_otlp_headers: env_string("KIGI_INTERNAL_OTLP_HEADERS"),
-            external_otel_master_switch: external_otel_master_switch_resolved(),
-            otel_traces_exporter: env_string("OTEL_TRACES_EXPORTER"),
-            otel_traces_export_interval: env_string("OTEL_BSP_SCHEDULE_DELAY")
-                .or_else(|| env_string("OTEL_TRACES_EXPORT_INTERVAL"))
-                .and_then(|s| s.parse().ok()),
-            otel_exporter_otlp_timeout: env_string("OTEL_EXPORTER_OTLP_TIMEOUT")
-                .and_then(|s| s.parse().ok()),
             management_api_key: None,
             gcs_service_account_key: None,
         }
@@ -1005,30 +838,6 @@ pub struct RemoteConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub secret: Option<String>,
 }
-/// `[hub]` section from config.toml.
-///
-/// Optional default Computer Hub URL for **workspace provider** exposure
-/// (`grok workspace` / leader `with_default_hub_url`). Does **not** enable
-/// agent-side harness/client connections or alter local session behavior.
-///
-/// ```toml
-/// [hub]
-/// url = "wss://hub.x.ai/ws"
-/// ```
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(default)]
-pub struct HubConfig {
-    /// Hub WebSocket URL (`ws://` or `wss://`) used as the leader default for
-    /// `grok workspace start` when the CLI does not pass `--hub-url`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
-}
-impl HubConfig {
-    /// Whether a non-empty hub URL is configured (workspace default only).
-    pub fn is_enabled(&self) -> bool {
-        self.url.as_ref().is_some_and(|u| !u.trim().is_empty())
-    }
-}
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WorktreePoolConfig {
@@ -1250,9 +1059,6 @@ pub struct Config {
     pub harness: HarnessConfig,
     #[serde(default, skip_serializing)]
     pub remote: RemoteConfig,
-    /// Computer Hub configuration (`[hub]` in config.toml).
-    #[serde(default, skip_serializing)]
-    pub hub: HubConfig,
     #[serde(default, skip_serializing)]
     pub worktree_pool: WorktreePoolConfig,
     #[serde(default, skip_serializing)]
@@ -1632,7 +1438,6 @@ impl Default for Config {
             platforms: PlatformsConfig::default(),
             harness: HarnessConfig::default(),
             remote: RemoteConfig::default(),
-            hub: HubConfig::default(),
             worktree_pool: WorktreePoolConfig::default(),
             sandbox: SandboxSettingsConfig::default(),
             mcp_servers: std::collections::HashMap::new(),
@@ -2702,41 +2507,6 @@ pub(crate) fn read_requirements_toml() -> Option<toml::Value> {
 /// Stable per key, never reversible to the key bytes.
 pub fn deployment_id_from_key(key: &str) -> String {
     uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, key.as_bytes()).to_string()
-}
-/// Resolve the external-OTEL master switch exactly the way the external
-/// stream's activation does: **requirement pin > `KIGI_EXTERNAL_OTEL` env >
-/// `[telemetry].otel_enabled` config layer (managed config included) > off**.
-///
-/// The internal trace pipeline keys its "ignore `OTEL_EXPORTER_OTLP_*`"
-/// behavior off this value ([`EndpointsConfig::external_otel_master_switch`]),
-/// so an org enable distributed via managed config / requirements (no env
-/// var) flips **both** sides together. A desync here would leave the
-/// internally-authed firehose honoring legacy `OTEL_*` repointing while
-/// `internal_pipeline_consumed_otel_vars` simultaneously blocks the external
-/// stream — exactly the split this design forbids.
-pub(crate) fn external_otel_master_switch_resolved() -> bool {
-    external_otel_master_switch_from(
-        kigi_config::load_merged_requirements().as_ref(),
-        env_bool("KIGI_EXTERNAL_OTEL"),
-        crate::config::load_effective_config().ok().as_ref(),
-    )
-}
-/// Testable core of [`external_otel_master_switch_resolved`].
-pub(crate) fn external_otel_master_switch_from(
-    requirements: Option<&toml::Value>,
-    env_switch: Option<bool>,
-    effective_config: Option<&toml::Value>,
-) -> bool {
-    let table_enabled = |v: Option<&toml::Value>| -> Option<bool> {
-        v?.get("telemetry")?.get("otel_enabled")?.as_bool()
-    };
-    if let Some(pinned) = table_enabled(requirements) {
-        return pinned;
-    }
-    if let Some(env) = env_switch {
-        return env;
-    }
-    table_enabled(effective_config).unwrap_or(false)
 }
 /// Seed free-function remote caches after writing `Config.remote_settings`.
 pub fn apply_remote_settings_side_effects(settings: Option<&crate::util::config::RemoteSettings>) {
@@ -4983,7 +4753,7 @@ reasoning_effort = "low"
                 auth_scheme: AuthScheme::Bearer,
             };
             assert_eq!(
-                api_key_creds.base_url, endpoints.xai_api_base_url,
+                api_key_creds.base_url, endpoints.api_base_url,
                 "{model_id}: ExternalApiKey must route to api.x.ai"
             );
         }
@@ -6890,24 +6660,18 @@ reasoning_effort = "low"
         for k in [
             "KIGI_CODE_BASE_URL",
             kigi_env::CODE_BASE_URL_ENV,
-            "KIGI_XAI_API_BASE_URL",
+            "KIGI_API_BASE_URL",
             "KIGI_FEEDBACK_BASE_URL",
             "KIGI_TRACE_UPLOAD_URL",
             "KIGI_MANAGED_CONFIG_URL",
             "KIGI_MODELS_BASE_URL",
             "KIGI_MODELS_LIST_URL",
-            "OTEL_EXPORTER_OTLP_ENDPOINT",
-            "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
-            "OTEL_EXPORTER_OTLP_HEADERS",
-            "KIGI_INTERNAL_OTLP_TRACES_ENDPOINT",
-            "KIGI_INTERNAL_OTLP_HEADERS",
-            "KIGI_EXTERNAL_OTEL",
         ] {
             unsafe { std::env::remove_var(k) };
         }
     }
     /// INVARIANT: auxiliary-service resolvers resolve to the cli-chat-proxy, never
-    /// `xai_api_base_url` — overriding ONLY inference keeps every aux endpoint on
+    /// `api_base_url` — overriding ONLY inference keeps every aux endpoint on
     /// the proxy; explicit per-service overrides win verbatim.
     #[test]
     #[serial]
@@ -6915,7 +6679,7 @@ reasoning_effort = "low"
         unset_endpoint_env_vars();
         let inference = "https://inference.acme-corp.example/xai/v1";
         let cfg = EndpointsConfig {
-            xai_api_base_url: inference.to_string(),
+            api_base_url: inference.to_string(),
             coding_api_base_url: None,
             ..Default::default()
         };
@@ -6928,11 +6692,7 @@ reasoning_effort = "low"
             format!("{proxy}/deployment/config")
         );
         assert_eq!(cfg.resolve_feedback_base_url(), proxy);
-        assert_eq!(
-            cfg.resolve_otlp_traces_endpoint(),
-            format!("{proxy}/traces")
-        );
-        assert_eq!(cfg.xai_api_base_url, inference);
+        assert_eq!(cfg.api_base_url, inference);
         let overridden = EndpointsConfig {
             coding_api_base_url: Some("https://proxy.enterprise.example/v1".to_string()),
             managed_config_url: Some(
@@ -6946,10 +6706,6 @@ reasoning_effort = "low"
             "https://proxy.enterprise.example/v1"
         );
         assert_eq!(
-            overridden.resolve_otlp_traces_endpoint(),
-            "https://proxy.enterprise.example/v1/traces"
-        );
-        assert_eq!(
             overridden.resolve_managed_config_url(),
             "https://control.enterprise.example/deployment/config"
         );
@@ -6958,7 +6714,7 @@ reasoning_effort = "low"
             "https://feedback.enterprise.example"
         );
     }
-    /// REGRESSION: the managed-config URL never follows `xai_api_base_url`
+    /// REGRESSION: the managed-config URL never follows `api_base_url`
     /// through the full loader `Config::new_from_toml_cfg` — a distinct construction
     /// path from `from_config_value`, so the deployment key never reaches the
     /// inference host on either.
@@ -6969,7 +6725,7 @@ reasoning_effort = "low"
         let cfg = Config::new_from_toml_cfg(
             &toml::from_str(
                 r#"[endpoints]
-                xai_api_base_url = "https://inference.acme-corp.example/xai/v1""#,
+                api_base_url = "https://inference.acme-corp.example/xai/v1""#,
             )
             .unwrap(),
         )
@@ -8467,311 +8223,6 @@ agent_type = "cursor"
             "exactly the typo'd key must be flagged"
         );
     }
-    #[test]
-    fn otlp_traces_endpoint_precedence() {
-        let proxy = "https://inference.acme.com/v1".to_string();
-        let derived = EndpointsConfig {
-            coding_api_base_url: Some(proxy.clone()),
-            ..Default::default()
-        };
-        assert_eq!(
-            derived.resolve_otlp_traces_endpoint(),
-            "https://inference.acme.com/v1/traces"
-        );
-        let base = EndpointsConfig {
-            coding_api_base_url: Some(proxy.clone()),
-            otel_exporter_otlp_endpoint: Some("https://otel.acme.com".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(
-            base.resolve_otlp_traces_endpoint(),
-            "https://otel.acme.com/v1/traces"
-        );
-        let full = EndpointsConfig {
-            coding_api_base_url: Some(proxy),
-            otel_exporter_otlp_endpoint: Some("https://ignored.example".to_string()),
-            otel_exporter_otlp_traces_endpoint: Some("https://otel.acme.com/v1/traces".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(
-            full.resolve_otlp_traces_endpoint(),
-            "https://otel.acme.com/v1/traces"
-        );
-    }
-    #[test]
-    fn otlp_headers_parse() {
-        let cfg = EndpointsConfig {
-            otel_exporter_otlp_headers: Some("a=1, b = 2 ,=skip,c=".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(
-            cfg.resolve_otlp_headers(),
-            vec![
-                ("a".to_string(), "1".to_string()),
-                ("b".to_string(), "2".to_string()),
-                ("c".to_string(), String::new()),
-            ]
-        );
-    }
-    /// Base config for the internal-OTLP tests: pinned proxy, every OTLP knob
-    /// explicitly unset so ambient env (via `Default`) can't leak in.
-    fn internal_otlp_test_config() -> EndpointsConfig {
-        EndpointsConfig {
-            coding_api_base_url: Some("https://proxy.example/v1".to_string()),
-            otel_exporter_otlp_endpoint: None,
-            otel_exporter_otlp_traces_endpoint: None,
-            otel_exporter_otlp_headers: None,
-            grok_internal_otlp_traces_endpoint: None,
-            grok_internal_otlp_headers: None,
-            external_otel_master_switch: false,
-            ..Default::default()
-        }
-    }
-    /// `grok_internal_otlp_traces_endpoint` wins over the legacy `OTEL_*`
-    /// fields regardless of the master switch.
-    #[test]
-    fn internal_otlp_endpoint_grok_internal_wins_regardless_of_switch() {
-        for switch in [false, true] {
-            let cfg = EndpointsConfig {
-                grok_internal_otlp_traces_endpoint: Some(
-                    "https://internal.example/traces/".to_string(),
-                ),
-                otel_exporter_otlp_traces_endpoint: Some(
-                    "https://legacy.example/v1/traces".to_string(),
-                ),
-                otel_exporter_otlp_endpoint: Some("https://legacy-base.example".to_string()),
-                external_otel_master_switch: switch,
-                ..internal_otlp_test_config()
-            };
-            assert_eq!(
-                cfg.resolve_otlp_traces_endpoint(),
-                "https://internal.example/traces",
-                "switch={switch}: KIGI_INTERNAL_OTLP_TRACES_ENDPOINT must win verbatim (trailing / trimmed)"
-            );
-        }
-    }
-    /// Master switch unset → legacy fallback preserved (back-compat).
-    #[test]
-    fn internal_otlp_endpoint_legacy_fallback_when_switch_unset() {
-        let traces = EndpointsConfig {
-            otel_exporter_otlp_traces_endpoint: Some(
-                "https://legacy.example/v1/traces".to_string(),
-            ),
-            ..internal_otlp_test_config()
-        };
-        assert_eq!(
-            traces.resolve_otlp_traces_endpoint(),
-            "https://legacy.example/v1/traces"
-        );
-        let base = EndpointsConfig {
-            otel_exporter_otlp_endpoint: Some("https://legacy-base.example/".to_string()),
-            ..internal_otlp_test_config()
-        };
-        assert_eq!(
-            base.resolve_otlp_traces_endpoint(),
-            "https://legacy-base.example/v1/traces"
-        );
-    }
-    /// Master switch SET → legacy `OTEL_*` endpoint/headers are completely
-    /// ignored by the internal pipeline (the external stream owns them); the
-    /// internal pipeline falls back to the proxy default and
-    /// `internal_otlp_consumed_standard_vars()` is false.
-    #[test]
-    fn internal_otlp_ignores_legacy_vars_when_switch_set() {
-        let cfg = EndpointsConfig {
-            otel_exporter_otlp_traces_endpoint: Some(
-                "https://admin-collector.example/v1/traces".to_string(),
-            ),
-            otel_exporter_otlp_endpoint: Some("https://admin-collector.example".to_string()),
-            otel_exporter_otlp_headers: Some("authorization=Bearer admin".to_string()),
-            external_otel_master_switch: true,
-            ..internal_otlp_test_config()
-        };
-        assert_eq!(
-            cfg.resolve_otlp_traces_endpoint(),
-            "https://proxy.example/v1/traces",
-            "internal firehose must never follow OTEL_* to the external collector"
-        );
-        assert_eq!(cfg.resolve_otlp_headers(), Vec::<(String, String)>::new());
-        assert!(!cfg.internal_otlp_consumed_standard_vars());
-    }
-    /// `internal_otlp_consumed_standard_vars()` truth table.
-    #[test]
-    fn internal_otlp_consumed_standard_vars_cases() {
-        struct Case {
-            switch: bool,
-            legacy_traces_ep: bool,
-            legacy_base_ep: bool,
-            legacy_headers: bool,
-            internal_ep: bool,
-            internal_headers: bool,
-            expected: bool,
-            why: &'static str,
-        }
-        let unset = Case {
-            switch: false,
-            legacy_traces_ep: false,
-            legacy_base_ep: false,
-            legacy_headers: false,
-            internal_ep: false,
-            internal_headers: false,
-            expected: false,
-            why: "nothing set",
-        };
-        let cases = [
-            Case { ..unset },
-            Case {
-                legacy_traces_ep: true,
-                expected: true,
-                why: "legacy traces endpoint consumed",
-                ..unset
-            },
-            Case {
-                legacy_base_ep: true,
-                expected: true,
-                why: "legacy base endpoint consumed",
-                ..unset
-            },
-            Case {
-                legacy_headers: true,
-                expected: true,
-                why: "legacy headers consumed",
-                ..unset
-            },
-            Case {
-                legacy_traces_ep: true,
-                internal_ep: true,
-                expected: false,
-                why: "internal endpoint shadows legacy",
-                ..unset
-            },
-            Case {
-                legacy_headers: true,
-                internal_headers: true,
-                expected: false,
-                why: "internal headers shadow legacy",
-                ..unset
-            },
-            Case {
-                legacy_traces_ep: true,
-                legacy_headers: true,
-                internal_ep: true,
-                expected: true,
-                why: "endpoint shadowed but legacy headers still consumed (headers half)",
-                ..unset
-            },
-            Case {
-                switch: true,
-                legacy_traces_ep: true,
-                legacy_base_ep: true,
-                legacy_headers: true,
-                expected: false,
-                why: "switch set: legacy vars ignored",
-                ..unset
-            },
-        ];
-        for case in cases {
-            let cfg = EndpointsConfig {
-                external_otel_master_switch: case.switch,
-                otel_exporter_otlp_traces_endpoint: case
-                    .legacy_traces_ep
-                    .then(|| "https://legacy.example/v1/traces".to_string()),
-                otel_exporter_otlp_endpoint: case
-                    .legacy_base_ep
-                    .then(|| "https://legacy-base.example".to_string()),
-                otel_exporter_otlp_headers: case.legacy_headers.then(|| "k=v".to_string()),
-                grok_internal_otlp_traces_endpoint: case
-                    .internal_ep
-                    .then(|| "https://internal.example/traces".to_string()),
-                grok_internal_otlp_headers: case.internal_headers.then(|| "ik=iv".to_string()),
-                ..internal_otlp_test_config()
-            };
-            assert_eq!(
-                cfg.internal_otlp_consumed_standard_vars(),
-                case.expected,
-                "case: {}",
-                case.why
-            );
-        }
-    }
-    /// Headers precedence: `grok_internal_otlp_headers` wins; legacy
-    /// `otel_exporter_otlp_headers` only when the master switch is unset.
-    #[test]
-    fn internal_otlp_headers_precedence() {
-        for switch in [false, true] {
-            let cfg = EndpointsConfig {
-                grok_internal_otlp_headers: Some("x-debug=1".to_string()),
-                otel_exporter_otlp_headers: Some("legacy=1".to_string()),
-                external_otel_master_switch: switch,
-                ..internal_otlp_test_config()
-            };
-            assert_eq!(
-                cfg.resolve_otlp_headers(),
-                vec![("x-debug".to_string(), "1".to_string())],
-                "switch={switch}"
-            );
-        }
-        let legacy = EndpointsConfig {
-            otel_exporter_otlp_headers: Some("legacy=1".to_string()),
-            ..internal_otlp_test_config()
-        };
-        assert_eq!(
-            legacy.resolve_otlp_headers(),
-            vec![("legacy".to_string(), "1".to_string())]
-        );
-    }
-    /// Regression: an org enable via `[telemetry].otel_enabled`
-    /// (managed config / requirements — no `KIGI_EXTERNAL_OTEL` env var) must
-    /// flip the master switch the *internal* pipeline keys off, so legacy
-    /// `OTEL_EXPORTER_OTLP_*` repointing shuts off in lockstep with the
-    /// external stream activating. A desync would point the internally-authed
-    /// firehose at the customer collector while
-    /// `internal_pipeline_consumed_otel_vars` blocks the external stream.
-    #[test]
-    fn external_otel_master_switch_resolves_from_all_layers() {
-        let enabled_table: toml::Value =
-            toml::from_str("[telemetry]\notel_enabled = true").unwrap();
-        let disabled_table: toml::Value =
-            toml::from_str("[telemetry]\notel_enabled = false").unwrap();
-        assert!(external_otel_master_switch_from(
-            None,
-            None,
-            Some(&enabled_table)
-        ));
-        assert!(!external_otel_master_switch_from(None, None, None));
-        assert!(!external_otel_master_switch_from(
-            None,
-            Some(false),
-            Some(&enabled_table)
-        ));
-        assert!(external_otel_master_switch_from(
-            None,
-            Some(true),
-            Some(&disabled_table)
-        ));
-        assert!(!external_otel_master_switch_from(
-            Some(&disabled_table),
-            Some(true),
-            Some(&enabled_table)
-        ));
-        assert!(external_otel_master_switch_from(
-            Some(&enabled_table),
-            Some(false),
-            None
-        ));
-        let cfg = EndpointsConfig {
-            otel_exporter_otlp_traces_endpoint: Some(
-                "https://collector.corp:4318/v1/traces".into(),
-            ),
-            external_otel_master_switch: true,
-            ..internal_otlp_test_config()
-        };
-        assert!(!cfg.internal_otlp_consumed_standard_vars());
-        assert!(
-            !cfg.resolve_otlp_traces_endpoint()
-                .contains("collector.corp")
-        );
-    }
     fn empty_config() -> toml::Value {
         toml::Value::Table(toml::map::Map::new())
     }
@@ -9818,26 +9269,6 @@ default = "grok-4.5"
                 );
             }
         }
-    }
-    #[test]
-    fn hub_config_default_has_no_url() {
-        assert!(HubConfig::default().url.is_none());
-        assert!(!HubConfig::default().is_enabled());
-    }
-    #[test]
-    fn hub_config_is_enabled_only_for_nonempty_url() {
-        assert!(
-            HubConfig {
-                url: Some("wss://hub.example/ws".into()),
-            }
-            .is_enabled()
-        );
-        assert!(
-            !HubConfig {
-                url: Some("   ".into()),
-            }
-            .is_enabled()
-        );
     }
     #[test]
     fn resolve_model_list_prunes_bundled_entries_not_in_prefetch() {

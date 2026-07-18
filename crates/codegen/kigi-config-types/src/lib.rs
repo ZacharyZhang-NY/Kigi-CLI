@@ -694,11 +694,6 @@ pub struct RemoteSettings {
     /// See `Config::resolve_image_edit`.
     #[serde(default)]
     pub imagine_tools_disabled: Option<Vec<String>>,
-    /// remote settings gate for the `grok workspace` CLI command (Computer Hub
-    /// workspace exposure), from `grok_build_settings.workspace_command_enabled`.
-    /// `Some(true)` enables it; `None`/`Some(false)` (the default) keep it off.
-    #[serde(default)]
-    pub workspace_command_enabled: Option<bool>,
     /// Master switch for jemalloc heap sampling + threshold dumps.
     /// `Some(true)` enables, `Some(false)` kill-switch, `None` = client default off.
     #[serde(default)]
@@ -1306,24 +1301,6 @@ mod tests {
         let json = r#"{}"#;
         let s: RemoteSettings = serde_json::from_str(json).unwrap();
         assert_eq!(s.folder_trust_enabled, None);
-    }
-    #[test]
-    fn remote_settings_workspace_command_enabled_present() {
-        let json = r#"{"workspace_command_enabled": true}"#;
-        let s: RemoteSettings = serde_json::from_str(json).unwrap();
-        assert_eq!(s.workspace_command_enabled, Some(true));
-    }
-    #[test]
-    fn remote_settings_workspace_command_enabled_false() {
-        let json = r#"{"workspace_command_enabled": false}"#;
-        let s: RemoteSettings = serde_json::from_str(json).unwrap();
-        assert_eq!(s.workspace_command_enabled, Some(false));
-    }
-    #[test]
-    fn remote_settings_workspace_command_enabled_absent() {
-        let json = r#"{}"#;
-        let s: RemoteSettings = serde_json::from_str(json).unwrap();
-        assert_eq!(s.workspace_command_enabled, None);
     }
     #[test]
     fn remote_settings_permission_mode_deserializes() {

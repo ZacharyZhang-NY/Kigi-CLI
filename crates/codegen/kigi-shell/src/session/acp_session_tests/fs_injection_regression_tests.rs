@@ -62,7 +62,6 @@ async fn tool_bridge_routes_writes_through_injected_fs() {
         video_gen_config: Default::default(),
         app_builder_deployer_config: Default::default(),
         api_key_provider: None,
-        auth_provider: None,
         attribution_callback: None,
         system_reminder_tag: kigi_tools::reminders::DEFAULT_REMINDER_TAG,
     };

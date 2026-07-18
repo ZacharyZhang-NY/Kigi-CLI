@@ -432,7 +432,7 @@ fn git_rebase_refresh_storm_e2e() {
     unsafe {
         std::env::set_var("KIGI_SHARE_DIR", kigi_home.path());
         std::env::set_var("KIGI_CODE_BASE_URL", server.url());
-        std::env::set_var("KIGI_XAI_API_BASE_URL", server.url());
+        std::env::set_var("KIGI_API_BASE_URL", server.url());
         std::env::set_var("XAI_API_KEY", "test-key-for-ci");
         std::env::set_var("KIGI_TELEMETRY_ENABLED", "false");
         std::env::set_var("KIGI_FEEDBACK_ENABLED", "false");

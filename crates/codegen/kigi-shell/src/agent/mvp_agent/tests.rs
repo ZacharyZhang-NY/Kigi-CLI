@@ -652,7 +652,6 @@ async fn file_toolset_override_e2e_to_finalized_toolset() {
         video_gen_config: kigi_tools::implementations::grok_build::video_gen::VideoGenConfig::default(),
         app_builder_deployer_config: kigi_tools::implementations::grok_build::deploy_app::AppBuilderDeployerConfig::default(),
         api_key_provider: None,
-        auth_provider: None,
         attribution_callback: None,
         system_reminder_tag: kigi_tools::reminders::DEFAULT_REMINDER_TAG,
     };
@@ -3183,7 +3182,6 @@ fn interactive_trust_prompt_reprompts_after_untrust() {
 }
 mod direct_hub_cloud_removed {
     use super::super::{DIRECT_HUB_CLOUD_REMOVED_MSG, reject_direct_hub_cloud_meta};
-    use crate::agent::config::HubConfig;
     fn assert_direct_hub_error(err: agent_client_protocol::Error) {
         assert_eq!(
             err.data.as_ref(),
@@ -3237,38 +3235,6 @@ mod direct_hub_cloud_removed {
             )
             .is_ok()
         );
-    }
-    #[test]
-    fn hub_url_gating_matrix() {
-        let with_url = HubConfig {
-            url: Some("wss://hub.example/ws".into()),
-        };
-        let without_url = HubConfig { url: None };
-        let blank = HubConfig {
-            url: Some("   ".into()),
-        };
-        assert!(with_url.is_enabled());
-        assert!(!without_url.is_enabled());
-        assert!(!blank.is_enabled());
-    }
-    #[test]
-    fn hub_config_is_url_only_workspace_default() {
-        let json = serde_json::to_value(HubConfig {
-            url: Some("wss://hub.example/ws".into()),
-        })
-        .expect("serialize");
-        let obj = json.as_object().expect("object");
-        assert_eq!(
-            obj.keys().collect::<Vec<_>>(),
-            vec!["url"],
-            "HubConfig must only serialize url (no proxy-mode fields)"
-        );
-        let from_legacy: HubConfig = serde_json::from_value(serde_json::json!(
-            { "url" : "wss://hub.example/ws", "workspace_mode" : "remote",
-            "send_turn_hooks" : false, }
-        ))
-        .expect("ignore unknown fields");
-        assert_eq!(from_legacy.url.as_deref(), Some("wss://hub.example/ws"));
     }
 }
 mod soft_default_settings_emit {

@@ -1,16 +1,17 @@
-//! xAI Computer Hub — unified runtime contract.
+//! Unified tool runtime contract.
 //!
 //! Single home for the `Tool` trait, `ToolDispatch`, `ToolError`,
 //! `ToolNotification`, `ToolSearchIndex`, `ToolCallContext`, `ToolStream`,
-//! and the helper constructors that build well-formed streams. Adapters
-//! for individual tool sources re-export from here so every tool author
-//! sees the same surface.
+//! the in-process `LocalRegistry`, and the helper constructors that build
+//! well-formed streams. Adapters for individual tool sources re-export
+//! from here so every tool author sees the same surface.
 
 #![forbid(unsafe_code)]
 
 pub mod context;
 pub mod dispatch;
 pub mod error;
+pub mod local_registry;
 pub mod notification;
 pub mod render;
 pub mod search;
@@ -19,10 +20,11 @@ pub mod tool;
 
 pub use context::{
     BehaviorVersion, Cancellation, Cwd, ListToolsContext, SessionContext, ToolCallContext,
-    TraceContext, TypedExtensions, WorkspaceBindMetadata, WorkspaceViewerContext,
+    TraceContext, TypedExtensions, WorkspaceViewerContext,
 };
 pub use dispatch::ToolDispatch;
 pub use error::{ToolError, ToolErrorKind};
+pub use local_registry::LocalRegistry;
 pub use notification::{
     BashExecutionBackgrounded, BashExecutionComplete, BashExecutionFailed, BashExecutionTimeout,
     BashNotificationBase, BashOutputChunk, FileRead, FileWritten, LspServerCrashed,

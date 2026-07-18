@@ -35,7 +35,6 @@ pub(crate) fn fake_caps(control_v1: bool, relaunch_v1: bool) -> LeaderCapabiliti
         control_v1,
         runtime_cpu_profile: false,
         profile_formats: Vec::new(),
-        workspace_exposure: false,
         relaunch_v1,
     }
 }

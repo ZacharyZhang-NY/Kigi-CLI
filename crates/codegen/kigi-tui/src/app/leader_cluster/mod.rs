@@ -318,7 +318,7 @@ impl PagerLeaderCluster {
         let env = vec![
             crate::test_util::EnvVarGuard::set("KIGI_SHARE_DIR", kigi_home.path()),
             crate::test_util::EnvVarGuard::set("KIGI_CODE_BASE_URL", server.url()),
-            crate::test_util::EnvVarGuard::set("KIGI_XAI_API_BASE_URL", server.url()),
+            crate::test_util::EnvVarGuard::set("KIGI_API_BASE_URL", server.url()),
             crate::test_util::EnvVarGuard::set("XAI_API_KEY", "test-key-for-ci"),
             crate::test_util::EnvVarGuard::set("KIGI_TELEMETRY_ENABLED", "false"),
             crate::test_util::EnvVarGuard::set("KIGI_FEEDBACK_ENABLED", "false"),

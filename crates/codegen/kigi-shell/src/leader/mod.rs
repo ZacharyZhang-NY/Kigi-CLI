@@ -1113,7 +1113,7 @@ async fn evict_leader(conn: LeaderConnection, lock: &LeaderLock) {
 /// # Arguments
 ///
 /// * `client_type` - Identifier for the client type (e.g., "grok-tui", "vscode")
-/// * `mode` - Communication mode (Stdio or Headless)
+/// * `mode` - Communication mode (Stdio)
 /// * `capabilities` - Client capabilities (e.g., yolo_mode) to register with the leader
 pub async fn connect_or_spawn(
     client_type: &str,

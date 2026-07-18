@@ -41,7 +41,6 @@ async fn web_search_errors_when_disabled() {
         video_gen_config: Default::default(),
         app_builder_deployer_config: Default::default(),
         api_key_provider: None,
-        auth_provider: None,
         attribution_callback: None,
         system_reminder_tag: kigi_tools::reminders::DEFAULT_REMINDER_TAG,
     };

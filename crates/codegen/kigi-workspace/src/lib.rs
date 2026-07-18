@@ -10,8 +10,6 @@ pub mod activity;
 pub mod capability;
 pub mod channel;
 pub mod config;
-pub mod daemonize;
-pub mod diag_server;
 pub mod discovery;
 pub mod envrc;
 pub mod error;
@@ -20,17 +18,8 @@ pub mod folder_trust;
 pub mod foreign_sessions;
 pub mod fs_notify;
 pub mod handle;
-pub mod hub;
-pub mod hub_auth;
-pub mod hub_channel;
-pub mod hub_ids;
-pub mod hub_server;
-pub mod mcp;
 pub mod permission;
-pub mod preview_supervisor;
 pub mod project_config;
-pub mod recovery;
-pub mod rpc_envelope;
 pub mod session;
 pub mod status_config;
 pub use status_config::StatusConfig;
@@ -46,25 +35,18 @@ pub use config::{
 };
 pub use error::{WorkspaceError, WorkspaceResult};
 pub use file_system::*;
-pub use handle::{
-    DrainOutcome, DrainReason, WorkspaceHandle, connect_local_workspace, resolve_workspace_home,
-    termination_grace_from_env,
-};
-pub use hub::HubConfig;
+pub use handle::WorkspaceHandle;
 pub use kigi_hunk_tracker::HunkTrackerHandle;
-pub use kigi_workspace_client::WorkspaceClient;
 pub use kigi_workspace_types::WorkspaceEvent;
 pub use permission::*;
 pub use session::{WorkspaceSession, WorkspaceShared};
 pub use session::{file_state, git, jj};
 pub use workspace_ops::{WorkspaceOp, WorkspaceOps};
 /// Zero-init every workspace metric family so idle panels render a `0` baseline
-/// instead of "No data". Idempotent; call once at workspace-server startup.
+/// instead of "No data". Idempotent; call once at startup.
 pub fn init_metrics() {
     handle::init_metrics();
     session::swap_policy::init_metrics();
-    permission::init_metrics();
-    hub_server::init_metrics();
 }
 /// Crate-wide lock serializing every test that mutates the process-global
 /// environment (`KIGI_SHARE_DIR`, `HOME`, …). nextest isolates each test in its own
@@ -168,21 +150,17 @@ mod init_metrics_tests {
                 })
         };
         assert!(has(
-            "grok_workspace_rpc_requests_total",
-            &[("method", "unknown"), ("result", "error")]
-        ));
-        assert!(has(
-            "grok_workspace_drain_started_total",
-            &[("reason", "sigterm")]
-        ));
-        assert!(has(
             "grok_workspace_toolset_swap_rejected_total",
             &[("reason", "turn_active"), ("trigger", "update_tool_config")]
+        ));
+        assert!(has(
+            "grok_workspace_rewind_checkpoint_capture_total",
+            &[("domain", "fs"), ("outcome", "completed")]
         ));
         assert!(
             families
                 .iter()
-                .any(|mf| mf.name() == "grok_workspace_permission_timeout_total")
+                .any(|mf| mf.name() == "grok_workspace_terminal_backend_orphaned_total")
         );
     }
 }

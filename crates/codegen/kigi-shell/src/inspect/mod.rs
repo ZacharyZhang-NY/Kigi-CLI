@@ -53,7 +53,7 @@ impl std::fmt::Display for Scope {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InspectReport {
-    pub grok_version: String,
+    pub kigi_version: String,
     pub channel: String,
     pub cwd: String,
     pub project_root: Option<String>,
@@ -370,7 +370,7 @@ async fn build_report(cwd: &Path) -> InspectReport {
         .unwrap_or_default();
 
     InspectReport {
-        grok_version: kigi_version::VERSION.to_string(),
+        kigi_version: kigi_version::VERSION.to_string(),
         channel: crate::util::config::channel_name_from_cache()
             .unwrap_or("unknown")
             .to_string(),
@@ -1224,7 +1224,7 @@ fn render_harness_compatibility(report: &ExternalCompatReport) -> String {
 fn print_human(r: &InspectReport) {
     println!();
     println!("  Environment");
-    println!("  {TREE} Version: {} [{}]", r.grok_version, r.channel);
+    println!("  {TREE} Version: {} [{}]", r.kigi_version, r.channel);
     println!("  {TREE} CWD: {}", r.cwd);
     if let Some(ref root) = r.project_root {
         println!("  {TREE} Git root: {}", root);

@@ -1330,7 +1330,7 @@ async fn test_headless_managed_config_byok_sends_authorized_requests() {
             r#"
 [endpoints]
 deployment_key = "test-deployment-key"
-xai_api_base_url = "{url}"
+api_base_url = "{url}"
 
 [model.kigi-build]
 api_backend = "responses"

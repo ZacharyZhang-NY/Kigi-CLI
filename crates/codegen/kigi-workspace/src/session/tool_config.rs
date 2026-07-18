@@ -1,11 +1,10 @@
 //! Tool config resolution pipeline.
 //!
-//! Five-step resolution:
+//! Four-step resolution:
 //! 1. `effective_tool_config = config.tool_config.unwrap_or_else(|| parent.effective_tool_config.clone())`
 //! 2. `merged = merge_mcp_tools(effective_tool_config, shared.mcp_servers.snapshot())`
-//! 3. `merged = merge_hub_tools(merged, shared.hub_tools_snapshot())`
-//! 4. `filtered = config.capability_mode.filter(merged)`
-//! 5. `toolset = build_finalized_toolset(filtered, &session.cwd, &session.session_env, ...)`
+//! 3. `filtered = config.capability_mode.filter(merged)`
+//! 4. `toolset = build_finalized_toolset(filtered, &session.cwd, &session.session_env, ...)`
 use crate::capability::{CapabilityMode, kind_allowed};
 use crate::config::SessionContextFactory;
 use crate::error::{WorkspaceError, WorkspaceResult};
@@ -19,19 +18,16 @@ use std::sync::Arc;
 /// Create-shaped entry of the resolution pipeline: run
 /// [`resolve_session_toolset_rebuild`] around a FRESH factory-built
 /// session-lifetime terminal backend, and return that backend so the caller
-/// can store it on the session it is creating. Session-less resolves (the
-/// `__template__` catalog resolve in `connect_hub`) also use this entry and
-/// simply drop the returned backend with the toolset.
+/// can store it on the session it is creating.
 pub(crate) fn resolve_session_toolset(
     effective_tool_config: ToolServerConfig,
     capability_mode: CapabilityMode,
     mcp_snapshot: &[ToolConfig],
-    hub_snapshot: &[ToolConfig],
     cwd: PathBuf,
     session_env: Arc<HashMap<String, String>>,
     session_id: &str,
     factory: &dyn SessionContextFactory,
-    local_registry: Option<kigi_computer_hub_sdk::LocalRegistry>,
+    local_registry: Option<kigi_tool_runtime::LocalRegistry>,
     lsp: Option<std::sync::Arc<dyn kigi_tools::implementations::lsp::LspBackend>>,
     viewer_ctx: Option<kigi_tool_runtime::WorkspaceViewerContext>,
     notification_handle: Option<kigi_tools::notification::types::ToolNotificationHandle>,
@@ -45,7 +41,6 @@ pub(crate) fn resolve_session_toolset(
         effective_tool_config,
         capability_mode,
         mcp_snapshot,
-        hub_snapshot,
         cwd,
         session_env,
         session_id,
@@ -66,24 +61,23 @@ pub(crate) fn resolve_session_toolset(
 ///
 /// Returns the *unmodified* `effective_tool_config` (step-1 baseline) so
 /// the caller can store it on the session. The FinalizedToolset reflects
-/// MCP + hub merging and capability filtering on top of that baseline.
+/// MCP merging and capability filtering on top of that baseline.
 ///
-/// **MCP-origin and hub-origin `kind: None` tools are dropped under
-/// every non-`All` mode.** Baseline `kind: None` tools are always kept —
-/// but before filtering, kind-less baseline entries whose id the binary's
-/// registry knows get their [`ToolKind`] backfilled (see
-/// [`backfill_tool_kinds`]), so the capability filter applies to pinned
-/// server-bind toolsets whose wire entries cannot carry a kind.
+/// **MCP-origin `kind: None` tools are dropped under every non-`All`
+/// mode.** Baseline `kind: None` tools are always kept — but before
+/// filtering, kind-less baseline entries whose id the binary's registry
+/// knows get their [`ToolKind`] backfilled (see [`backfill_tool_kinds`]),
+/// so the capability filter applies to pinned toolsets whose wire entries
+/// cannot carry a kind.
 pub(crate) fn resolve_session_toolset_rebuild(
     effective_tool_config: ToolServerConfig,
     capability_mode: CapabilityMode,
     mcp_snapshot: &[ToolConfig],
-    hub_snapshot: &[ToolConfig],
     cwd: PathBuf,
     session_env: Arc<HashMap<String, String>>,
     session_id: &str,
     factory: &dyn SessionContextFactory,
-    local_registry: Option<kigi_computer_hub_sdk::LocalRegistry>,
+    local_registry: Option<kigi_tool_runtime::LocalRegistry>,
     lsp: Option<std::sync::Arc<dyn kigi_tools::implementations::lsp::LspBackend>>,
     viewer_ctx: Option<kigi_tool_runtime::WorkspaceViewerContext>,
     notification_handle: Option<kigi_tools::notification::types::ToolNotificationHandle>,
@@ -94,24 +88,7 @@ pub(crate) fn resolve_session_toolset_rebuild(
         builder = builder.with_local_registry(lr);
     }
     let baseline = backfill_tool_kinds(&effective_tool_config, &builder.known_tool_kinds());
-    let filtered = merge_and_filter(
-        &baseline,
-        mcp_snapshot,
-        hub_snapshot,
-        capability_mode,
-        session_id,
-    );
-    let hub_ids: std::collections::HashSet<&str> =
-        hub_snapshot.iter().map(|t| t.id.as_str()).collect();
-    let finalize_config = ToolServerConfig {
-        tools: filtered
-            .tools
-            .iter()
-            .filter(|t| !hub_ids.contains(t.id.as_str()))
-            .cloned()
-            .collect(),
-        behavior_preset: filtered.behavior_preset.clone(),
-    };
+    let finalize_config = merge_and_filter(&baseline, mcp_snapshot, capability_mode, session_id);
     let mut ctx = factory.build_session_context(session_id, cwd, session_env, terminal_backend);
     if let Some(lsp_handle) = lsp {
         ctx.lsp = Some(lsp_handle);
@@ -157,22 +134,20 @@ fn backfill_tool_kinds(
         behavior_preset: config.behavior_preset.clone(),
     }
 }
-/// Steps 2-4 of the resolution pipeline, without step 5 (`finalize`):
+/// Steps 2-3 of the resolution pipeline, without the `finalize` step:
 ///
 /// - **Step 2** -- MCP merge: append MCP-origin tools, skipping ID/name collisions with baseline.
-/// - **Step 3** -- Hub merge: append hub-origin tools, skipping ID/name collisions with baseline or MCP.
-/// - **Step 4** -- Capability filter: drop tools whose `kind` is not allowed by the mode.
-///   External (MCP/hub) `kind: None` tools are only kept under `CapabilityMode::All`.
+/// - **Step 3** -- Capability filter: drop tools whose `kind` is not allowed by the mode.
+///   External (MCP) `kind: None` tools are only kept under `CapabilityMode::All`.
 ///
-/// Priority on ID/name collision: baseline wins > MCP wins > hub is skipped.
+/// Priority on ID/name collision: baseline wins over MCP.
 pub(crate) fn merge_and_filter(
     baseline: &ToolServerConfig,
     mcp_snapshot: &[ToolConfig],
-    hub_snapshot: &[ToolConfig],
     mode: CapabilityMode,
     session_id: &str,
 ) -> ToolServerConfig {
-    if mcp_snapshot.is_empty() && hub_snapshot.is_empty() {
+    if mcp_snapshot.is_empty() {
         return mode.filter(baseline);
     }
     let baseline_ids: std::collections::HashSet<&str> =
@@ -187,7 +162,6 @@ pub(crate) fn merge_and_filter(
         .collect();
     let mut tagged: Vec<(ToolConfig, bool)> =
         baseline.tools.iter().cloned().map(|t| (t, false)).collect();
-    let mut mcp_tool_ids: std::collections::HashSet<&str> = std::collections::HashSet::new();
     for mcp_tool in mcp_snapshot {
         if baseline_ids.contains(mcp_tool.id.as_str()) {
             tracing::warn!(
@@ -205,34 +179,7 @@ pub(crate) fn merge_and_filter(
             );
             continue;
         }
-        mcp_tool_ids.insert(mcp_tool.id.as_str());
         tagged.push((mcp_tool.clone(), true));
-    }
-    for hub_tool in hub_snapshot {
-        if baseline_ids.contains(hub_tool.id.as_str()) {
-            tracing::debug!(
-                hub_id = % hub_tool.id, session = % session_id,
-                "skipping remote tool: id collides with baseline"
-            );
-            continue;
-        }
-        if mcp_tool_ids.contains(hub_tool.id.as_str()) {
-            tracing::debug!(
-                hub_id = % hub_tool.id, session = % session_id,
-                "skipping remote tool: id collides with MCP tool"
-            );
-            continue;
-        }
-        let client_name = hub_tool.resolve_client_name(&hub_tool.id);
-        if !taken_names.insert(client_name.clone()) {
-            tracing::debug!(
-                hub_id = % hub_tool.id, client_name = % client_name, session = %
-                session_id,
-                "skipping remote tool: resolved client name collides with another tool"
-            );
-            continue;
-        }
-        tagged.push((hub_tool.clone(), true));
     }
     let kept: Vec<ToolConfig> = tagged
         .into_iter()
@@ -250,19 +197,13 @@ pub(crate) fn merge_and_filter(
 }
 /// Alias for backward compatibility.
 pub type NoopSessionContextFactory = WorkspaceSessionContextFactory;
-/// Whether per-session `tool_state.json` persistence + per-turn upload is
-/// enabled (`KIGI_WORKSPACE_TOOL_STATE_ENABLED=true`; any other value keeps
-/// legacy behavior).
-pub fn tool_state_enabled() -> bool {
-    std::env::var("KIGI_WORKSPACE_TOOL_STATE_ENABLED").as_deref() == Ok("true")
-}
 /// Sanitize a `session_id` into a single safe filesystem path segment: chars
 /// outside `[A-Za-z0-9_-]` become `_`, empty becomes `anon`. When any
 /// replacement happened, an 8-hex digest of the ORIGINAL id is appended so the
 /// mapping stays injective — plain substitution would collide distinct ids
 /// (`sess/1` and `sess_1`) into one directory, cross-contaminating
-/// persistence, rehydration, and [`crate::recovery::cleanup_stale_sessions`].
-/// Already-safe ids (the common UUID case) map to themselves.
+/// persistence and rehydration. Already-safe ids (the common UUID case)
+/// map to themselves.
 fn sanitize_session_id(session_id: &str) -> String {
     let mut safe = String::with_capacity(session_id.len());
     let mut modified = false;
@@ -297,16 +238,7 @@ fn ensure_session_dir(root: &std::path::Path, session_id: &str) -> (PathBuf, std
 /// hazard is the global `environ` array, not the variable's value).
 #[cfg(test)]
 pub(crate) use crate::ENV_TEST_LOCK as TOOL_STATE_ENV_LOCK;
-/// [`SessionContextFactory`] for workspace server sessions.
-///
-/// When constructed with an [`AuthProvider`] and API base URL, gen tools
-/// (image_gen, video_gen) are enabled using the provider's current
-/// OAuth token. Without auth, gen tools default to `Disabled`.
-///
-/// When [`with_tool_state_home`](Self::with_tool_state_home) is set, each
-/// session's [`SessionContext::state_path`] is rooted at
-/// `<home>/sessions/<session_id>/`; left unset, `state_path` stays empty
-/// (legacy behavior).
+/// [`SessionContextFactory`] for workspace sessions.
 ///
 /// [`SessionContext::session_folder`] is `/tmp/sessions/<sanitized_id>/`
 /// (terminal logs and other tool artifacts — not the project `cwd`).
@@ -318,64 +250,11 @@ pub(crate) use crate::ENV_TEST_LOCK as TOOL_STATE_ENV_LOCK;
 /// [`build_terminal_backend`]: crate::config::SessionContextFactory::build_terminal_backend
 /// [`build_session_context`]: crate::config::SessionContextFactory::build_session_context
 /// [`LocalTerminalBackend`]: kigi_tools::computer::local::LocalTerminalBackend
-pub struct WorkspaceSessionContextFactory {
-    auth: Option<kigi_computer_hub_sdk::SharedAuthProvider>,
-    api_base_url: Option<String>,
-    /// Resolved `$KIGI_WORKSPACE_HOME` when tool-state persistence is enabled;
-    /// `None` disables it. Resolved once by the caller so the factory performs
-    /// no per-build env reads.
-    tool_state_home: Option<PathBuf>,
-}
-impl Default for WorkspaceSessionContextFactory {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+#[derive(Default)]
+pub struct WorkspaceSessionContextFactory;
 impl WorkspaceSessionContextFactory {
     pub fn new() -> Self {
-        Self {
-            auth: None,
-            api_base_url: None,
-            tool_state_home: None,
-        }
-    }
-    /// Factory with auth — gen tools use the provider's live token.
-    pub fn with_auth(
-        auth: kigi_computer_hub_sdk::SharedAuthProvider,
-        api_base_url: String,
-    ) -> Self {
-        Self {
-            auth: Some(auth),
-            api_base_url: Some(api_base_url),
-            tool_state_home: None,
-        }
-    }
-    /// Enable session-keyed tool-state persistence rooted at `home`
-    /// (`$KIGI_WORKSPACE_HOME`). Callers should only invoke this when
-    /// [`tool_state_enabled`] is `true`.
-    pub fn with_tool_state_home(mut self, home: PathBuf) -> Self {
-        self.tool_state_home = Some(home);
-        self
-    }
-    /// `<tool_state_home>/sessions/<sanitized_id>/tool_state.json`, or empty
-    /// when persistence is disabled / dir creation fails.
-    fn resolve_state_path(&self, session_id: &str) -> PathBuf {
-        let Some(home) = self.tool_state_home.as_ref() else {
-            return PathBuf::new();
-        };
-        let (dir, created) = ensure_session_dir(home, session_id);
-        if let Err(e) = created {
-            tracing::warn!(
-                session = % session_id, dir = % dir.display(), error = % e,
-                "tool_state: failed to create session dir; persistence disabled for session"
-            );
-            return PathBuf::new();
-        }
-        tracing::debug!(
-            session = % session_id, dir = % dir.display(),
-            "tool_state: persistence bound to session-keyed dir"
-        );
-        dir.join("tool_state.json")
+        Self
     }
     /// `/tmp/sessions/<sanitized_id>/` for terminal logs and other tool artifacts.
     fn resolve_session_folder(session_id: &str) -> PathBuf {
@@ -397,59 +276,9 @@ impl SessionContextFactory for WorkspaceSessionContextFactory {
         session_env: Arc<HashMap<String, String>>,
         backend: Arc<dyn kigi_tools::computer::types::TerminalBackend>,
     ) -> kigi_tools::registry::types::SessionContext {
-        use kigi_tools::implementations::grok_build::deploy_app::AppBuilderDeployerConfig;
-        use kigi_tools::implementations::grok_build::image_gen::ImageGenConfig;
-        use kigi_tools::implementations::grok_build::video_gen::VideoGenConfig;
-        use kigi_tools::implementations::web_search::WebSearchConfig;
         let fs = Arc::new(kigi_tools::computer::local::LocalFs)
             as Arc<dyn kigi_tools::computer::types::AsyncFileSystem>;
         let notification_handle = kigi_tools::notification::ToolNotificationHandle::noop();
-        let (image_gen_config, video_gen_config, web_search_config, app_builder_deployer_config) =
-            if let (Some(auth), Some(url)) = (&self.auth, &self.api_base_url) {
-                let cred = auth.current();
-                match cred {
-                    kigi_computer_hub_sdk::AuthCredential::Bearer { token, .. } => {
-                        let headers = build_proxy_headers(url);
-                        (
-                            ImageGenConfig::Enabled {
-                                api_key: token.clone(),
-                                base_url: url.clone(),
-                                extra_headers: headers.clone(),
-                                image_gen_enabled: true,
-                                image_edit_enabled: true,
-                                model_override: None,
-                                tier_restricted: false,
-                            },
-                            VideoGenConfig::Enabled {
-                                api_key: token.clone(),
-                                base_url: url.clone(),
-                                extra_headers: headers.clone(),
-                                zdr_video_output_s3: None,
-                                tier_restricted: false,
-                            },
-                            WebSearchConfig::Enabled {
-                                search_url: format!("{}/search", url.trim_end_matches('/')),
-                                api_key: token,
-                                extra_headers: headers,
-                            },
-                            AppBuilderDeployerConfig::default(),
-                        )
-                    }
-                    _ => (
-                        ImageGenConfig::default(),
-                        VideoGenConfig::default(),
-                        WebSearchConfig::default(),
-                        AppBuilderDeployerConfig::default(),
-                    ),
-                }
-            } else {
-                (
-                    ImageGenConfig::default(),
-                    VideoGenConfig::default(),
-                    WebSearchConfig::default(),
-                    AppBuilderDeployerConfig::default(),
-                )
-            };
         kigi_tools::registry::types::SessionContext {
             backend,
             fs,
@@ -460,16 +289,18 @@ impl SessionContextFactory for WorkspaceSessionContextFactory {
             owner_session_id: None,
             parent_scheduler_handle: None,
             skills: vec![],
-            state_path: self.resolve_state_path(session_id),
+            state_path: PathBuf::new(),
             memory_backend: None,
-            web_search_config,
+            web_search_config: kigi_tools::implementations::web_search::WebSearchConfig::default(),
             web_fetch_config: build_web_fetch_config(),
             lsp: None,
-            image_gen_config,
-            video_gen_config,
-            app_builder_deployer_config,
+            image_gen_config:
+                kigi_tools::implementations::grok_build::image_gen::ImageGenConfig::default(),
+            video_gen_config:
+                kigi_tools::implementations::grok_build::video_gen::VideoGenConfig::default(),
+            app_builder_deployer_config:
+                kigi_tools::implementations::grok_build::deploy_app::AppBuilderDeployerConfig::default(),
             api_key_provider: None,
-            auth_provider: self.auth.clone(),
             attribution_callback: None,
             system_reminder_tag: kigi_tools::reminders::DEFAULT_REMINDER_TAG,
         }
@@ -487,18 +318,6 @@ impl SessionContextFactory for WorkspaceSessionContextFactory {
             std::sync::LazyLock::new(|| Arc::new(ToolRegistryBuilder::new().known_tool_ids()));
         IDS.clone()
     }
-}
-/// Build extra headers for API calls routed through the chat proxy.
-/// Mirrors the shell's `inject_proxy_headers` logic.
-fn build_proxy_headers(base_url: &str) -> indexmap::IndexMap<String, String> {
-    let mut headers = indexmap::IndexMap::new();
-    let version = kigi_version::VERSION;
-    headers.insert(
-        "user-agent".to_string(),
-        format!("kigi-workspace/{version}"),
-    );
-    headers.insert("x-grok-client-version".to_string(), version.to_string());
-    headers
 }
 /// Build web fetch config. Enabled with default params unless
 /// `KIGI_DISABLE_WEB_FETCH=1` is set.
@@ -574,7 +393,6 @@ pub mod test_support {
                 video_gen_config: Default::default(),
                 app_builder_deployer_config: Default::default(),
                 api_key_provider: None,
-                auth_provider: None,
                 attribution_callback: None,
                 system_reminder_tag: kigi_tools::reminders::DEFAULT_REMINDER_TAG,
             }
@@ -635,7 +453,6 @@ mod tests {
             baseline,
             CapabilityMode::ReadWrite,
             &[],
-            &[],
             cwd,
             empty_env(),
             "main",
@@ -672,7 +489,6 @@ mod tests {
             baseline,
             CapabilityMode::ReadWrite,
             &snapshot,
-            &[],
             PathBuf::from("/tmp"),
             empty_env(),
             "main",
@@ -752,7 +568,6 @@ mod tests {
             baseline,
             CapabilityMode::ReadOnly,
             &[],
-            &[],
             PathBuf::from("/tmp"),
             empty_env(),
             "main",
@@ -792,13 +607,7 @@ mod tests {
             behavior_preset: None,
         };
         let mcp_edit = test_support::tc("mcp.editor", Some(ToolKind::Edit));
-        let filtered = merge_and_filter(
-            &baseline,
-            &[mcp_edit],
-            &[],
-            CapabilityMode::ReadOnly,
-            "test",
-        );
+        let filtered = merge_and_filter(&baseline, &[mcp_edit], CapabilityMode::ReadOnly, "test");
         assert!(!filtered.tools.iter().any(|t| t.id == "mcp.editor"));
     }
     #[tokio::test]
@@ -812,13 +621,7 @@ mod tests {
             behavior_preset: None,
         };
         let mcp = vec![test_support::tc("mcp.opaque", None)];
-        let filtered = merge_and_filter(
-            &baseline,
-            &mcp,
-            &[],
-            CapabilityMode::ReadOnly,
-            "test_session",
-        );
+        let filtered = merge_and_filter(&baseline, &mcp, CapabilityMode::ReadOnly, "test_session");
         let kept_ids: Vec<&str> = filtered.tools.iter().map(|t| t.id.as_str()).collect();
         assert!(
             kept_ids.contains(&"baseline.opaque"),
@@ -841,7 +644,7 @@ mod tests {
             behavior_preset: None,
         };
         let mcp = vec![test_support::tc("mcp.opaque", None)];
-        let filtered = merge_and_filter(&baseline, &mcp, &[], CapabilityMode::All, "test_session");
+        let filtered = merge_and_filter(&baseline, &mcp, CapabilityMode::All, "test_session");
         let kept_ids: Vec<&str> = filtered.tools.iter().map(|t| t.id.as_str()).collect();
         assert!(
             kept_ids.contains(&"mcp.opaque"),
@@ -859,157 +662,13 @@ mod tests {
         let mut mcp_b = test_support::tc("mcp.tool_b", Some(ToolKind::Read));
         mcp_b.name_override = Some("shared_name".into());
         let mcp = vec![mcp_a, mcp_b];
-        let filtered = merge_and_filter(
-            &baseline,
-            &mcp,
-            &[],
-            CapabilityMode::ReadOnly,
-            "test_session",
-        );
+        let filtered = merge_and_filter(&baseline, &mcp, CapabilityMode::ReadOnly, "test_session");
         let ids: Vec<&str> = filtered.tools.iter().map(|t| t.id.as_str()).collect();
         assert!(ids.contains(&"mcp.tool_a"), "first wins: {ids:?}");
         assert!(
             !ids.contains(&"mcp.tool_b"),
             "duplicate name dropped: {ids:?}"
         );
-    }
-    #[test]
-    fn hub_tool_merged_into_empty_baseline() {
-        let baseline = ToolServerConfig {
-            tools: vec![],
-            behavior_preset: None,
-        };
-        let hub = vec![test_support::tc("hub:remote_exec", None)];
-        let filtered = merge_and_filter(&baseline, &[], &hub, CapabilityMode::All, "test");
-        let ids: Vec<&str> = filtered.tools.iter().map(|t| t.id.as_str()).collect();
-        assert!(
-            ids.contains(&"hub:remote_exec"),
-            "remote tool should appear under All mode: {ids:?}"
-        );
-    }
-    #[test]
-    fn hub_tool_dropped_under_readonly_because_kind_none() {
-        let baseline = ToolServerConfig {
-            tools: vec![test_support::tc(
-                "GrokBuild:read_file",
-                Some(ToolKind::Read),
-            )],
-            behavior_preset: None,
-        };
-        let hub = vec![test_support::tc("hub:remote_exec", None)];
-        let filtered = merge_and_filter(&baseline, &[], &hub, CapabilityMode::ReadOnly, "test");
-        let ids: Vec<&str> = filtered.tools.iter().map(|t| t.id.as_str()).collect();
-        assert!(
-            !ids.contains(&"hub:remote_exec"),
-            "hub kind: None MUST be dropped under ReadOnly: {ids:?}"
-        );
-    }
-    #[test]
-    fn hub_tool_dedup_baseline_wins() {
-        let baseline = ToolServerConfig {
-            tools: vec![test_support::tc("hub:read_file", Some(ToolKind::Read))],
-            behavior_preset: None,
-        };
-        let hub = vec![test_support::tc("hub:read_file", None)];
-        let filtered = merge_and_filter(&baseline, &[], &hub, CapabilityMode::All, "test");
-        let count = filtered
-            .tools
-            .iter()
-            .filter(|t| t.id == "hub:read_file")
-            .count();
-        assert_eq!(count, 1, "duplicate should be deduped");
-    }
-    #[test]
-    fn hub_tool_dedup_mcp_wins_over_hub() {
-        let baseline = ToolServerConfig {
-            tools: vec![],
-            behavior_preset: None,
-        };
-        let mcp = vec![test_support::tc("hub:shared_tool", Some(ToolKind::Read))];
-        let hub = vec![test_support::tc("hub:shared_tool", None)];
-        let filtered = merge_and_filter(&baseline, &mcp, &hub, CapabilityMode::All, "test");
-        let count = filtered
-            .tools
-            .iter()
-            .filter(|t| t.id == "hub:shared_tool")
-            .count();
-        assert_eq!(count, 1, "MCP wins; hub duplicate skipped");
-        let tool = filtered
-            .tools
-            .iter()
-            .find(|t| t.id == "hub:shared_tool")
-            .unwrap();
-        assert_eq!(tool.kind, Some(ToolKind::Read));
-    }
-    #[test]
-    fn hub_tool_name_collision_with_baseline_skipped() {
-        let baseline = ToolServerConfig {
-            tools: vec![test_support::tc(
-                "GrokBuild:read_file",
-                Some(ToolKind::Read),
-            )],
-            behavior_preset: None,
-        };
-        let mut hub_tool = test_support::tc("hub:read_file_v2", None);
-        hub_tool.name_override = Some("read_file".into());
-        let hub = vec![hub_tool];
-        let filtered = merge_and_filter(&baseline, &[], &hub, CapabilityMode::All, "test");
-        let ids: Vec<&str> = filtered.tools.iter().map(|t| t.id.as_str()).collect();
-        assert!(
-            !ids.contains(&"hub:read_file_v2"),
-            "remote tool with colliding client name must be skipped: {ids:?}"
-        );
-    }
-    #[test]
-    fn empty_hub_snapshot_is_noop() {
-        let baseline = test_support::baseline_config();
-        let baseline_ids: Vec<String> = baseline.tools.iter().map(|t| t.id.clone()).collect();
-        let filtered = merge_and_filter(&baseline, &[], &[], CapabilityMode::ReadWrite, "test");
-        let filtered_ids: Vec<String> = filtered.tools.iter().map(|t| t.id.clone()).collect();
-        assert_eq!(filtered_ids, baseline_ids);
-    }
-    /// Only the literal `"true"` enables tool-state persistence.
-    #[test]
-    fn tool_state_enabled_only_true_enables() {
-        let _guard = super::TOOL_STATE_ENV_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let var = "KIGI_WORKSPACE_TOOL_STATE_ENABLED";
-        unsafe { std::env::remove_var(var) };
-        assert!(!tool_state_enabled(), "unset → disabled");
-        unsafe { std::env::set_var(var, "false") };
-        assert!(!tool_state_enabled(), "false → disabled");
-        unsafe { std::env::set_var(var, "1") };
-        assert!(!tool_state_enabled(), "1 → disabled (only \"true\")");
-        unsafe { std::env::set_var(var, "true") };
-        assert!(tool_state_enabled(), "true → enabled");
-        unsafe { std::env::remove_var(var) };
-    }
-    /// With a tool-state home set, state is rooted at
-    /// `<home>/sessions/<session_id>/tool_state.json` and the dir is created.
-    #[test]
-    fn factory_resolves_session_keyed_state_path_when_home_set() {
-        let home = tempfile::TempDir::new().unwrap();
-        let factory =
-            WorkspaceSessionContextFactory::new().with_tool_state_home(home.path().to_path_buf());
-        let p = factory.resolve_state_path("sess-1");
-        assert_eq!(
-            p,
-            home.path()
-                .join("sessions")
-                .join("sess-1")
-                .join("tool_state.json")
-        );
-        assert!(
-            home.path().join("sessions").join("sess-1").is_dir(),
-            "the session dir must be created so the persistence writer can rename into it"
-        );
-    }
-    /// Without a tool-state home, `state_path` stays empty (legacy behavior).
-    #[test]
-    fn factory_state_path_empty_when_home_unset() {
-        let factory = WorkspaceSessionContextFactory::new();
-        assert_eq!(factory.resolve_state_path("sess-1"), PathBuf::new());
     }
     #[test]
     fn factory_session_folder_is_tmp_sessions_not_project_cwd() {
@@ -1063,18 +722,16 @@ mod tests {
     /// A hostile `session_id` (`../../etc`) is sanitized to a single safe
     /// segment and cannot traverse outside `<home>/sessions/`.
     #[test]
-    fn factory_sanitizes_malicious_session_id_no_traversal() {
+    fn ensure_session_dir_sanitizes_malicious_session_id_no_traversal() {
         let home = tempfile::TempDir::new().unwrap();
-        let factory =
-            WorkspaceSessionContextFactory::new().with_tool_state_home(home.path().to_path_buf());
         let sessions = home.path().join("sessions");
-        let p = factory.resolve_state_path("../../etc");
+        let (session_dir, created) = ensure_session_dir(home.path(), "../../etc");
+        assert!(created.is_ok());
         assert!(
-            p.starts_with(&sessions),
-            "state path escaped sessions/: {}",
-            p.display()
+            session_dir.starts_with(&sessions),
+            "session dir escaped sessions/: {}",
+            session_dir.display()
         );
-        let session_dir = p.parent().expect("state path has a parent dir");
         assert_eq!(
             session_dir.parent(),
             Some(sessions.as_path()),
@@ -1123,7 +780,6 @@ mod tests {
             test_support::baseline_config(),
             CapabilityMode::ReadWrite,
             &[],
-            &[],
             cwd.clone(),
             empty_env(),
             "sess-A",
@@ -1144,7 +800,6 @@ mod tests {
         let (_eff, ts_b, _backend_b) = resolve_session_toolset(
             test_support::baseline_config(),
             CapabilityMode::ReadWrite,
-            &[],
             &[],
             cwd.clone(),
             empty_env(),
@@ -1169,7 +824,6 @@ mod tests {
         let (_eff, ts_c, _backend_c) = resolve_session_toolset(
             test_support::baseline_config(),
             CapabilityMode::ReadWrite,
-            &[],
             &[],
             cwd,
             empty_env(),

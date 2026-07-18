@@ -762,7 +762,7 @@ impl MvpAgent {
     }
     /// Build image generation config.
     ///
-    /// Both BYOK and session (OAuth) users go direct to `xai_api_base_url`.
+    /// Both BYOK and session (OAuth) users go direct to `api_base_url`.
     /// `sampling_config.api_key` carries the OAuth bearer for session users (the
     /// `api_key_provider` refreshes it per request), so IC authenticates and
     /// meters Imagine usage per-user.
@@ -775,7 +775,7 @@ impl MvpAgent {
             return ImageGenConfig::Disabled;
         };
         let cfg = self.cfg.borrow();
-        let base_url = cfg.endpoints.xai_api_base_url.clone();
+        let base_url = cfg.endpoints.api_base_url.clone();
         let version = cfg
             .client_version
             .clone()
@@ -818,7 +818,7 @@ impl MvpAgent {
             tracing::info!("video_gen disabled by tools.disable_zdr_incompatible_tools");
             return VideoGenConfig::Disabled;
         }
-        let base_url = cfg.endpoints.xai_api_base_url.clone();
+        let base_url = cfg.endpoints.api_base_url.clone();
         let version = cfg
             .client_version
             .clone()

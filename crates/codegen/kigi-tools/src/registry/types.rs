@@ -283,12 +283,6 @@ pub struct SessionContext {
     /// instead of using the key baked into their config at construction time.
     /// Prevents 401 failures when a session outlives the initial token lifetime.
     pub api_key_provider: Option<crate::types::SharedApiKeyProvider>,
-    /// Auth provider which returns a kigi_computer_hub_sdk::AuthCredential. Can be used by
-    /// tools that need to authenticate with services.
-    ///
-    /// Not to be confused with the api_key_provider, which is a legacy
-    /// provider used by the shell's auth manager.
-    pub auth_provider: Option<kigi_computer_hub_sdk::SharedAuthProvider>,
     /// Optional 401-attribution callback for tool HTTP clients. When
     /// set, a 401 from `image_gen` / `video_gen` / `web_search`
     /// emits an `auth_401_attribution` event via this hook. Hosts can
@@ -351,7 +345,7 @@ type OutputConverter =
 /// `.await`.
 struct DispatchParts {
     /// Resolved `LocalRegistry` handle to dispatch through.
-    lr_handle: Arc<dyn kigi_computer_hub_core::ToolHandle>,
+    lr_handle: kigi_tool_runtime::ArcTool,
     /// Runtime context built for the call (resources, renderer, cwd,
     /// behavior version, inner-dispatch).
     ctx: kigi_tool_runtime::ToolCallContext,
@@ -394,7 +388,7 @@ struct ToolEntry {
     >,
     /// Registers this tool into a `LocalRegistry` using the concrete type.
     /// Captured at `register::<T>()` time when T is known.
-    register_in_local: Box<dyn Fn(&kigi_computer_hub_sdk::LocalRegistry) + Send + Sync>,
+    register_in_local: Box<dyn Fn(&kigi_tool_runtime::LocalRegistry) + Send + Sync>,
 }
 /// Per-reminder metadata stored in the builder.
 struct ReminderEntry {
@@ -450,7 +444,7 @@ pub struct FinalizedToolset {
     scheduler_cancel: Option<tokio_util::sync::CancellationToken>,
     /// Shared local registry for in-process dispatch.
     /// Contains only config-enabled tools. Can be shared with ToolHarness.
-    local_registry: kigi_computer_hub_sdk::LocalRegistry,
+    local_registry: kigi_tool_runtime::LocalRegistry,
     /// Lock-free access to the template renderer for tool name/param resolution.
     /// Cloned into `ToolCallContext::extensions` on each `call()` so tools
     /// can resolve names without acquiring the `resources` mutex.
@@ -519,7 +513,7 @@ impl RequirementError {
 pub struct ToolRegistryBuilder {
     tools: HashMap<String, ToolEntry>,
     reminders: Vec<ReminderEntry>,
-    shared_local_registry: Option<kigi_computer_hub_sdk::LocalRegistry>,
+    shared_local_registry: Option<kigi_tool_runtime::LocalRegistry>,
 }
 impl Default for ToolRegistryBuilder {
     fn default() -> Self {
@@ -613,7 +607,7 @@ impl ToolRegistryBuilder {
                     let typed = serde_json::from_value::<T::Args>(json)?;
                     Ok(typed.into())
                 }),
-                register_in_local: Box::new(|lr: &kigi_computer_hub_sdk::LocalRegistry| {
+                register_in_local: Box::new(|lr: &kigi_tool_runtime::LocalRegistry| {
                     lr.register(T::default());
                 }),
             },
@@ -744,7 +738,7 @@ impl ToolRegistryBuilder {
         }
         b
     }
-    pub fn with_local_registry(mut self, registry: kigi_computer_hub_sdk::LocalRegistry) -> Self {
+    pub fn with_local_registry(mut self, registry: kigi_tool_runtime::LocalRegistry) -> Self {
         self.shared_local_registry = Some(registry);
         self
     }
@@ -989,9 +983,6 @@ impl ToolRegistryBuilder {
         }
         if let Some(memory_backend) = ctx.memory_backend {
             resources.insert(memory_backend);
-        }
-        if let Some(auth_provider) = ctx.auth_provider.clone() {
-            resources.insert(auth_provider);
         }
         if let Ok(client) = crate::implementations::web_search::client::WebSearchClient::new(
             &ctx.web_search_config,
@@ -1265,7 +1256,7 @@ impl FinalizedToolset {
             )),
             resources_persistence: Arc::new(ResourcesPersistence::noop()),
             scheduler_cancel: None,
-            local_registry: kigi_computer_hub_sdk::LocalRegistry::new(),
+            local_registry: kigi_tool_runtime::LocalRegistry::new(),
             renderer: Arc::new(TemplateRenderer::new(
                 std::collections::HashMap::new(),
                 std::collections::HashMap::new(),
@@ -1273,9 +1264,6 @@ impl FinalizedToolset {
             system_reminder_tag: "system-reminder",
             workspace_viewer_ctx: None,
         }
-    }
-    pub fn local_registry(&self) -> &kigi_computer_hub_sdk::LocalRegistry {
-        &self.local_registry
     }
     /// Get all tool definitions to send to the client.
     pub fn tool_definitions(&self) -> Vec<ToolDefinition> {
@@ -2018,7 +2006,6 @@ mod tests {
             app_builder_deployer_config:
                 crate::implementations::grok_build::deploy_app::AppBuilderDeployerConfig::default(),
             api_key_provider: None,
-            auth_provider: None,
             attribution_callback: None,
             system_reminder_tag: crate::reminders::DEFAULT_REMINDER_TAG,
         }

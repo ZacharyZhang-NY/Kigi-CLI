@@ -48,7 +48,6 @@ pub use cli::{
     AgentArgs, AgentCmd, Command, LeaderArgs, LeaderMgmtArgs, LeaderMgmtCommand, LeaderTargetArgs,
     OutputFormat, PagerArgs, ServeArgs, WrapArgs,
 };
-pub use cli::{WorkspaceMgmtArgs, WorkspaceMgmtCommand, WorkspaceStartArgs};
 use crossterm::cursor::{self, SetCursorStyle};
 use crossterm::event;
 use crossterm::execute;
