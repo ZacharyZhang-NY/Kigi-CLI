@@ -447,6 +447,66 @@ impl MvpAgent {
             )
             .await
     }
+    /// `authenticate(moonshot-cn / moonshot-ai)`: interactive open-platform
+    /// API-key login from the welcome picker.
+    ///
+    /// Reloads the platform keys from disk+env (the TUI persists the pasted
+    /// key to `[platforms.<id>]` in config.toml immediately before this call),
+    /// fails with an actionable error when none is configured, validates the
+    /// key against `GET {platform_base}/models`, then marks the session
+    /// authenticated exactly like an external API key: publish the method id
+    /// (NOT session-based — no token refresh), swap the freshly-stamped config
+    /// into the models manager, and trigger the model sync so the catalog
+    /// gains the platform's entries. The key itself is never logged.
+    pub(super) async fn authenticate_moonshot(
+        &self,
+        platform: kigi_models::PlatformId,
+        method_id: acp::AuthMethodId,
+    ) -> Result<AuthenticateResponse, acp::Error> {
+        let keys =
+            crate::agent::models::PlatformApiKeys::resolve_from_effective_config();
+        auth_method::authenticate_platform_api_key(platform, keys.key_for(platform))
+            .await
+            .inspect_err(|_| {
+                emit_login_span(
+                    false,
+                    method_id.0.as_ref(),
+                    None,
+                    Some("platform_key_invalid_or_missing"),
+                );
+            })?;
+        // Swap the on-disk config (now carrying the key) into the models
+        // manager so `apply_platform_credentials` stamps the platform's
+        // catalog entries; a parse failure keeps the last-known-good config
+        // (`on_auth_changed` below still re-resolves keys from disk itself).
+        match crate::config::load_effective_config()
+            .map_err(|e| e.to_string())
+            .and_then(|raw| crate::agent::config::Config::new_from_toml_cfg(&raw))
+        {
+            Ok(new_cfg) => self.models_manager.apply_config(new_cfg),
+            Err(e) => {
+                tracing::warn!(
+                    error = % e,
+                    "moonshot auth: config reload failed; keeping last-known-good"
+                );
+            }
+        }
+        self.set_auth_method(method_id.clone());
+        self.models_manager.on_auth_changed().await;
+        emit_login_span(true, method_id.0.as_ref(), None, None);
+        // Report api-key auth mode so the pager's `apply_auth_meta` treats
+        // the session like every other external-API-key login (badge shown,
+        // `/usage` hidden).
+        let auth_meta = crate::auth::AuthMeta {
+            email: None,
+            auth_mode: Some("api_key".to_string()),
+            show_resolved_model: None,
+        };
+        let meta = serde_json::to_value(auth_meta)
+            .ok()
+            .and_then(|v| v.as_object().cloned());
+        Ok(AuthenticateResponse::new().meta(meta))
+    }
     pub(crate) fn deployment_key(&self) -> Option<String> {
         self.cfg.borrow().endpoints.deployment_key.clone()
     }

@@ -102,6 +102,15 @@ pub struct BuiltAuthMethods {
 /// 1. `xai.api_key`     (if `has_external_api_key`)
 /// 2. `cached_token`    (if `has_cached_token`)
 /// 3. `kimi-code`        (the Kimi Code device login)
+/// 4. `moonshot-cn`      (Moonshot Open Platform API-key login, always)
+/// 5. `moonshot-ai`      (Moonshot Open Platform API-key login, always)
+///
+/// The moonshot methods are for the INTERACTIVE login picker only: they come
+/// after `kimi-code` so they can never become `auth_methods.first()` (the
+/// pager's startup metadata / eager-auth fallback reads `first()`), and they
+/// are never the `default_auth_method_id` (a configured moonshot key already
+/// authenticates eagerly via `xai.api_key` — the catalog entries it stamps
+/// satisfy `should_advertise_xai_api_key`).
 ///
 /// `default_auth_method_id`:
 /// - `cached_token` if `has_cached_token`
@@ -141,6 +150,8 @@ pub fn build_auth_methods(inputs: AuthMethodsBuildInputs<'_>) -> BuiltAuthMethod
     }
 
     methods.push(kimi_code_auth_method(login_label));
+    methods.push(moonshot_auth_method(kigi_models::PlatformId::MoonshotCn));
+    methods.push(moonshot_auth_method(kigi_models::PlatformId::MoonshotAi));
 
     BuiltAuthMethods {
         methods,
@@ -154,6 +165,10 @@ pub enum AuthMethodKind {
     XaiApiKey,
     CachedToken,
     KimiCode,
+    /// Moonshot Open Platform API-key login (moonshot.cn).
+    MoonshotCn,
+    /// Moonshot Open Platform API-key login (moonshot.ai).
+    MoonshotAi,
     Unknown,
 }
 
@@ -163,13 +178,17 @@ impl AuthMethodKind {
             XAI_API_KEY_METHOD_ID => Self::XaiApiKey,
             CACHED_TOKEN_AUTH_METHOD_ID => Self::CachedToken,
             KIMI_CODE_METHOD_ID => Self::KimiCode,
+            MOONSHOT_CN_METHOD_ID => Self::MoonshotCn,
+            MOONSHOT_AI_METHOD_ID => Self::MoonshotAi,
             _ => Self::Unknown,
         }
     }
 
-    /// API key auth: no auth.json, no refresh, no user interaction.
+    /// API key auth: no auth.json session, no refresh, no browser round-trip.
+    /// The moonshot methods qualify — they validate a configured platform key
+    /// and then behave exactly like an external-API-key session.
     pub fn is_api_key(self) -> bool {
-        matches!(self, Self::XaiApiKey)
+        matches!(self, Self::XaiApiKey | Self::MoonshotCn | Self::MoonshotAi)
     }
 
     /// `true` for session-based methods (cached_token, interactive login).
@@ -304,6 +323,108 @@ pub fn kimi_code_auth_method(label: Option<&str>) -> acp::AuthMethod {
     )
 }
 
+/// Interactive API-key login for the Moonshot open platforms. Method ids
+/// equal [`kigi_models::PlatformId::as_str`] (`moonshot-cn` / `moonshot-ai`),
+/// which is also the `[platforms.<id>]` config-table name — one id everywhere.
+pub const MOONSHOT_CN_METHOD_ID: &str = "moonshot-cn";
+pub const MOONSHOT_AI_METHOD_ID: &str = "moonshot-ai";
+
+/// The open platform behind an interactive moonshot method id. `None` for
+/// every other id (including `kimi-code`, whose platform uses OAuth).
+pub fn moonshot_platform_for_method_id(id: &acp::AuthMethodId) -> Option<kigi_models::PlatformId> {
+    match id.0.as_ref() {
+        MOONSHOT_CN_METHOD_ID => Some(kigi_models::PlatformId::MoonshotCn),
+        MOONSHOT_AI_METHOD_ID => Some(kigi_models::PlatformId::MoonshotAi),
+        _ => None,
+    }
+}
+
+/// Console host for an open platform, used in method descriptions and login
+/// copy ("platform.moonshot.cn" / "platform.moonshot.ai").
+pub fn moonshot_console_host(platform: kigi_models::PlatformId) -> &'static str {
+    match platform {
+        kigi_models::PlatformId::MoonshotCn => "platform.moonshot.cn",
+        _ => "platform.moonshot.ai",
+    }
+}
+
+/// A Moonshot Open Platform API-key login method.
+pub fn moonshot_auth_method(platform: kigi_models::PlatformId) -> acp::AuthMethod {
+    let host_suffix = match platform {
+        kigi_models::PlatformId::MoonshotCn => "moonshot.cn",
+        _ => "moonshot.ai",
+    };
+    acp::AuthMethod::Agent(
+        acp::AuthMethodAgent::new(
+            acp::AuthMethodId::new(platform.as_str()),
+            format!("Moonshot Open Platform (API key \u{b7} {host_suffix})"),
+        )
+        .description(Some(format!(
+            "API key from {}",
+            moonshot_console_host(platform)
+        ))),
+    )
+}
+
+/// Actionable error for a moonshot `authenticate` with no key configured.
+pub fn missing_moonshot_key_error(platform: kigi_models::PlatformId) -> String {
+    let env_var = platform
+        .api_key_env_names()
+        .first()
+        .copied()
+        .unwrap_or(kigi_models::MOONSHOT_API_KEY_ENV);
+    format!(
+        "No API key configured for {} \u{2014} paste one in the login screen or set {env_var}",
+        platform.as_str(),
+    )
+}
+
+/// Validate + accept a Moonshot open-platform API key for `authenticate`.
+///
+/// `key` is the caller-resolved credential (env > config; see
+/// `resolve_platform_api_key`) — `None` fails with the actionable
+/// missing-key message. A present key is validated with
+/// `GET {platform_base}/models` (the same endpoint the catalog fetch uses):
+/// 401 → "invalid API key"; any other non-success status or network error
+/// surfaces as-is. SECURITY: the key is only ever sent as the bearer header —
+/// it must never appear in errors or logs.
+pub(crate) async fn authenticate_platform_api_key(
+    platform: kigi_models::PlatformId,
+    key: Option<&str>,
+) -> Result<(), acp::Error> {
+    let auth_err = |message: String| {
+        let mut err = acp::Error::auth_required();
+        err.message = message;
+        err
+    };
+    let Some(key) = key else {
+        return Err(auth_err(missing_moonshot_key_error(platform)));
+    };
+    let url = format!("{}/models", platform.base_url().trim_end_matches('/'));
+    let response = crate::http::shared_client()
+        .get(&url)
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .map_err(|e| auth_err(format!("Couldn't reach {}: {e}", platform.as_str())))?;
+    let status = response.status();
+    if status.as_u16() == 401 {
+        return Err(auth_err(format!(
+            "Invalid API key for {} \u{2014} check your key on {}",
+            platform.as_str(),
+            moonshot_console_host(platform),
+        )));
+    }
+    if !status.is_success() {
+        return Err(auth_err(format!(
+            "{} key validation failed: HTTP {}",
+            platform.as_str(),
+            status.as_u16(),
+        )));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -343,6 +464,21 @@ mod tests {
         assert!(api.is_api_key());
         assert!(!api.is_session_based());
         assert!(!api.needs_interactive_login());
+        // Moonshot methods are API-key shaped: NOT session-based (no token
+        // refresh may ever run for them) and no browser round-trip.
+        for id in [MOONSHOT_CN_METHOD_ID, MOONSHOT_AI_METHOD_ID] {
+            let kind = AuthMethodKind::from_id(&acp::AuthMethodId::new(id));
+            assert!(kind.is_api_key(), "{id} must classify as api-key");
+            assert!(!kind.is_session_based(), "{id} must not be session-based");
+            assert!(
+                !is_session_based_method(&acp::AuthMethodId::new(id)),
+                "is_session_based_method({id}) must stay false"
+            );
+            assert!(
+                !kind.needs_interactive_login(),
+                "{id} must not need a browser login"
+            );
+        }
         let unknown = AuthMethodKind::from_id(&acp::AuthMethodId::new("who-knows"));
         assert_eq!(unknown, AuthMethodKind::Unknown);
         assert!(!unknown.is_session_based());
@@ -431,7 +567,12 @@ mod tests {
         });
         assert_eq!(
             method_ids(&built),
-            vec![XAI_API_KEY_METHOD_ID, KIMI_CODE_METHOD_ID]
+            vec![
+                XAI_API_KEY_METHOD_ID,
+                KIMI_CODE_METHOD_ID,
+                MOONSHOT_CN_METHOD_ID,
+                MOONSHOT_AI_METHOD_ID
+            ]
         );
         assert_eq!(default_id(&built), Some(XAI_API_KEY_METHOD_ID));
         assert!(
@@ -454,13 +595,15 @@ mod tests {
             vec![
                 XAI_API_KEY_METHOD_ID,
                 CACHED_TOKEN_AUTH_METHOD_ID,
-                KIMI_CODE_METHOD_ID
+                KIMI_CODE_METHOD_ID,
+                MOONSHOT_CN_METHOD_ID,
+                MOONSHOT_AI_METHOD_ID
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
     }
 
-    /// Session-only user: cached_token first, interactive login as fallback.
+    /// Session-only user: cached_token first, interactive logins after it.
     #[test]
     fn session_only_user_first_method_is_cached_token() {
         let built = build_auth_methods(AuthMethodsBuildInputs {
@@ -469,7 +612,12 @@ mod tests {
         });
         assert_eq!(
             method_ids(&built),
-            vec![CACHED_TOKEN_AUTH_METHOD_ID, KIMI_CODE_METHOD_ID]
+            vec![
+                CACHED_TOKEN_AUTH_METHOD_ID,
+                KIMI_CODE_METHOD_ID,
+                MOONSHOT_CN_METHOD_ID,
+                MOONSHOT_AI_METHOD_ID
+            ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
         assert_eq!(
@@ -478,13 +626,44 @@ mod tests {
         );
     }
 
-    /// Fresh user: only the interactive login is advertised; no default
-    /// method (login required).
+    /// Fresh user: the interactive picker methods are advertised — the OAuth
+    /// device login FIRST (`auth_methods.first()` drives the login screen),
+    /// then the two Moonshot API-key logins. No default method (login
+    /// required).
     #[test]
-    fn fresh_user_only_advertises_interactive_login() {
+    fn fresh_user_advertises_picker_methods_kimi_code_first() {
         let built = build_auth_methods(default_inputs());
-        assert_eq!(method_ids(&built), vec![KIMI_CODE_METHOD_ID]);
+        assert_eq!(
+            method_ids(&built),
+            vec![
+                KIMI_CODE_METHOD_ID,
+                MOONSHOT_CN_METHOD_ID,
+                MOONSHOT_AI_METHOD_ID
+            ]
+        );
         assert_eq!(default_id(&built), None);
+        assert_eq!(first_kind(&built.methods), Some(AuthMethodKind::KimiCode));
+    }
+
+    /// The moonshot methods must never be the default (eager) method: the
+    /// pager authenticates `default_auth_method_id` without user interaction,
+    /// and a configured moonshot key already rides the `xai.api_key` path.
+    #[test]
+    fn moonshot_methods_are_never_the_default() {
+        for (api, cached) in [(false, false), (true, false), (false, true), (true, true)] {
+            let built = build_auth_methods(AuthMethodsBuildInputs {
+                has_external_api_key: api,
+                has_cached_token: cached,
+                ..default_inputs()
+            });
+            assert!(
+                !matches!(
+                    default_id(&built),
+                    Some(MOONSHOT_CN_METHOD_ID) | Some(MOONSHOT_AI_METHOD_ID)
+                ),
+                "default must not be a moonshot method (api={api}, cached={cached})"
+            );
+        }
     }
 
     /// `XAI_API_KEY` alone (no per-model creds) triggers advertising
@@ -521,5 +700,72 @@ mod tests {
         let _new = EnvGuard::set(XAI_API_KEY_ENV_VAR, "new-key");
         let _legacy = EnvGuard::set(LEGACY_XAI_API_KEY_ENV_VAR, "legacy-key");
         assert_eq!(read_xai_api_key_env().unwrap(), "new-key");
+    }
+
+    /// Moonshot authenticate with no configured key: actionable error naming
+    /// the platform, the login screen, and the platform-scoped env var. No
+    /// HTTP is attempted (`key: None` short-circuits).
+    #[tokio::test]
+    async fn moonshot_authenticate_without_key_is_actionable() {
+        let err = authenticate_platform_api_key(kigi_models::PlatformId::MoonshotCn, None)
+            .await
+            .expect_err("missing key must fail");
+        assert_eq!(
+            err.message,
+            "No API key configured for moonshot-cn \u{2014} paste one in the login screen \
+             or set KIGI_MOONSHOT_CN_API_KEY"
+        );
+    }
+
+    /// Moonshot authenticate validates the key against `GET {base}/models`;
+    /// a 200 accepts the key.
+    #[tokio::test]
+    #[serial]
+    async fn moonshot_authenticate_valid_key_succeeds() {
+        use wiremock::matchers::{header, method, path};
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(method("GET"))
+            .and(path("/models"))
+            .and(header("Authorization", "Bearer sk-good"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "data": [] })),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let _base = EnvGuard::set(kigi_models::MOONSHOT_CN_BASE_URL_ENV, &server.uri());
+        authenticate_platform_api_key(kigi_models::PlatformId::MoonshotCn, Some("sk-good"))
+            .await
+            .expect("200 from /models must validate the key");
+    }
+
+    /// A 401 from `/models` is an invalid key — the error names the platform
+    /// and console, and NEVER contains the key itself.
+    #[tokio::test]
+    #[serial]
+    async fn moonshot_authenticate_401_is_invalid_key_error() {
+        use wiremock::matchers::{method, path};
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(method("GET"))
+            .and(path("/models"))
+            .respond_with(wiremock::ResponseTemplate::new(401))
+            .mount(&server)
+            .await;
+        let _base = EnvGuard::set(kigi_models::MOONSHOT_AI_BASE_URL_ENV, &server.uri());
+        let err = authenticate_platform_api_key(
+            kigi_models::PlatformId::MoonshotAi,
+            Some("sk-bad-secret"),
+        )
+        .await
+        .expect_err("401 must fail");
+        assert_eq!(
+            err.message,
+            "Invalid API key for moonshot-ai \u{2014} check your key on platform.moonshot.ai"
+        );
+        assert!(
+            !err.message.contains("sk-bad-secret"),
+            "the key must never leak into errors"
+        );
     }
 }

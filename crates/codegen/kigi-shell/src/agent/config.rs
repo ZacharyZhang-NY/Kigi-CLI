@@ -821,6 +821,75 @@ pub(crate) fn resolve_platform_api_key_with(
     platforms.config_api_key(platform)
 }
 
+/// Persist `[platforms.<id>].api_key` into `~/.kigi/config.toml` — the exact
+/// table [`resolve_platform_api_key`] reads back (env vars still win over the
+/// file). Shared writer for the CLI and the TUI login screen; same in-process
+/// pattern as the `kigi mcp add` writer (whole-file toml round-trip, atomic
+/// tmp+rename), taken under the config write lock so it can't interleave with
+/// a settings save.
+///
+/// SECURITY: the key lands in the file by design; it must never be logged,
+/// and errors carry only path/IO context — never the key.
+pub async fn save_platform_api_key(
+    platform: kigi_models::PlatformId,
+    api_key: &str,
+) -> anyhow::Result<()> {
+    let _guard = crate::util::config::lock_config_writes().await;
+    save_platform_api_key_at(&crate::util::config::user_config_path(), platform, api_key).await
+}
+
+/// Path-injectable core of [`save_platform_api_key`] (tests use a tempdir).
+/// Does NOT take the config write lock — production callers go through
+/// [`save_platform_api_key`].
+pub async fn save_platform_api_key_at(
+    path: &std::path::Path,
+    platform: kigi_models::PlatformId,
+    api_key: &str,
+) -> anyhow::Result<()> {
+    use toml::Value as TomlValue;
+    use toml::map::Map as TomlMap;
+
+    anyhow::ensure!(
+        !platform.uses_oauth(),
+        "{} authenticates via OAuth and takes no API key",
+        platform.as_str(),
+    );
+    let api_key = api_key.trim();
+    anyhow::ensure!(!api_key.is_empty(), "API key must not be empty");
+
+    let mut root: TomlValue = match tokio::fs::read_to_string(path).await {
+        Ok(s) => toml::from_str(&s).map_err(|e| {
+            // Refuse to overwrite an unparseable config — a silent fallback
+            // to an empty table would drop every other section.
+            anyhow::anyhow!("refusing to overwrite unparseable {}: {e}", path.display())
+        })?,
+        Err(_) => TomlValue::Table(TomlMap::new()),
+    };
+    let table = root
+        .as_table_mut()
+        .ok_or_else(|| anyhow::anyhow!("config root is not a table"))?;
+    let platforms = table
+        .entry("platforms")
+        .or_insert_with(|| TomlValue::Table(TomlMap::new()))
+        .as_table_mut()
+        .ok_or_else(|| anyhow::anyhow!("[platforms] is not a table"))?;
+    let entry = platforms
+        .entry(platform.as_str().to_string())
+        .or_insert_with(|| TomlValue::Table(TomlMap::new()))
+        .as_table_mut()
+        .ok_or_else(|| anyhow::anyhow!("[platforms.{}] is not a table", platform.as_str()))?;
+    entry.insert(
+        "api_key".to_string(),
+        TomlValue::String(api_key.to_string()),
+    );
+
+    let toml_str = toml::to_string_pretty(&root)?;
+    // Mode-preserving atomic write: a 0600 config must not widen while
+    // receiving a secret.
+    crate::util::config::atomic_write_string(path, &toml_str)?;
+    Ok(())
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HarnessConfig {
@@ -9216,6 +9285,80 @@ default = "kigi-4.5"
         assert!(
             crate::agent::auth_method::should_advertise_xai_api_key(models.values()),
             "a moonshot env key alone must advertise the API-key auth method"
+        );
+    }
+    /// The login-screen writer persists `[platforms.<id>].api_key` into the
+    /// exact table `resolve_platform_api_key` reads back, preserving sibling
+    /// tables and never leaking onto the other platform.
+    #[tokio::test]
+    async fn save_platform_api_key_round_trips_through_resolver() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "[ui]\ncompact_mode = true\n").unwrap();
+
+        save_platform_api_key_at(&path, kigi_models::PlatformId::MoonshotCn, "sk-from-tui")
+            .await
+            .expect("write must succeed");
+
+        let raw: toml::Value = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let platforms: PlatformsConfig = raw
+            .get("platforms")
+            .cloned()
+            .expect("[platforms] written")
+            .try_into()
+            .expect("PlatformsConfig parses");
+        // Env unset in this resolve (injected getenv) → config file wins.
+        let resolved =
+            resolve_platform_api_key_with(kigi_models::PlatformId::MoonshotCn, &platforms, |_| {
+                None
+            });
+        assert_eq!(resolved.as_deref(), Some("sk-from-tui"));
+        assert!(
+            platforms
+                .config_api_key(kigi_models::PlatformId::MoonshotAi)
+                .is_none(),
+            "the cn key must not leak onto the ai platform"
+        );
+        assert!(
+            raw.get("ui")
+                .and_then(|ui| ui.get("compact_mode"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            "sibling [ui] table must be preserved"
+        );
+    }
+    /// Writer guardrails: the OAuth platform takes no key, empty keys are
+    /// rejected, and an unparseable config is refused (never clobbered).
+    #[tokio::test]
+    async fn save_platform_api_key_rejects_invalid_inputs() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+
+        assert!(
+            save_platform_api_key_at(&path, kigi_models::PlatformId::KimiCode, "sk-x")
+                .await
+                .is_err(),
+            "kimi-code authenticates via OAuth and must reject an API key"
+        );
+        assert!(
+            save_platform_api_key_at(&path, kigi_models::PlatformId::MoonshotCn, "   ")
+                .await
+                .is_err(),
+            "blank keys must be rejected"
+        );
+
+        let bad = "this is [not valid toml\n";
+        std::fs::write(&path, bad).unwrap();
+        assert!(
+            save_platform_api_key_at(&path, kigi_models::PlatformId::MoonshotCn, "sk-x")
+                .await
+                .is_err(),
+            "unparseable config must be refused"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            bad,
+            "unparseable config must be left untouched"
         );
     }
     #[test]

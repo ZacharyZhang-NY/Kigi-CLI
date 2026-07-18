@@ -23,7 +23,7 @@ listed command and check the listed observable.
 | 11 | Worktrees | auto | `cargo test -p kigi-fast-worktree --lib`; manual: `kigi worktree list` |
 | 12 | Mermaid rendering | auto | `cargo test -p kigi-mermaid --lib` |
 | 13 | Crash handling | auto | `cargo test -p kigi-crash-handler --lib` |
-| 14 | Kimi auth (device flow) | auto | `cargo test -p kigi-shell --lib auth::` (138 cases incl. live-shape fixtures); manual: `kigi login` completes in a browser, token lands in keyring service `kigi` |
+| 14 | Kimi auth (login picker: device flow + Moonshot API key) | auto | `cargo test -p kigi-shell --lib auth::` (138 cases incl. live-shape fixtures) + `cargo test -p kigi-shell --lib auth_method` (moonshot validation); manual: `kigi login` completes in a browser, token lands in keyring service `kigi`; welcome picker also accepts a Moonshot API key into `[platforms.*]` in config.toml |
 | 15 | Inference (ChatCompletions Kimi dialect) | auto | `cargo test -p kigi-sampler` (incl. `test_kimi_wire`); e2e: `scratchpad` mock flow (write → run → answer), see AGENTS.md |
 | 16 | Model catalog sync (`/models`) | auto | `cargo test -p kigi-shell --lib models_fetch` + `cargo test -p kigi-models --lib` |
 | 17 | Search/fetch tools (OAuth-gated) | auto | `cargo test -p kigi-tools --lib web_search` and `--lib web_fetch` (Kimi wire contracts) |

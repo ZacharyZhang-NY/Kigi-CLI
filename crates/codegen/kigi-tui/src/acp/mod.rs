@@ -909,6 +909,57 @@ mod tests {
         assert_eq!(mode, AuthStartMode::Pending);
     }
 
+    /// CROSS-CRATE: the moonshot picker methods must not change startup.
+    ///
+    /// - Fresh user: `kimi-code` is still `auth_methods.first()` → login
+    ///   screen; the interactive fallback still resolves to `kimi-code`.
+    /// - Configured moonshot key (BYOK shape, the headless
+    ///   `KIGI_MOONSHOT_CN_API_KEY`-only e2e): eager auth selects
+    ///   `xai.api_key` via `default_auth_method_id` — NEVER a moonshot
+    ///   method. The moonshot ids exist for the interactive picker only.
+    #[test]
+    fn moonshot_methods_are_never_selected_for_eager_auth() {
+        use kigi_shell::agent::auth_method::{
+            AuthMethodsBuildInputs, KIMI_CODE_METHOD_ID, MOONSHOT_AI_METHOD_ID,
+            MOONSHOT_CN_METHOD_ID, XAI_API_KEY_METHOD_ID, build_auth_methods,
+        };
+
+        let fresh = build_auth_methods(AuthMethodsBuildInputs {
+            has_external_api_key: false,
+            has_cached_token: false,
+            login_label: None,
+        });
+        let (needs, _, method_id, _) = startup_auth_metadata(&fresh.methods);
+        assert!(needs, "fresh user must still hit the login screen");
+        assert_eq!(method_id.unwrap().0.as_ref(), KIMI_CODE_METHOD_ID);
+        let (_, fallback_id, _) = find_interactive_login_method(&fresh.methods);
+        assert_eq!(
+            fallback_id.unwrap().0.as_ref(),
+            KIMI_CODE_METHOD_ID,
+            "the interactive fallback must stay the OAuth device login"
+        );
+
+        let byok = build_auth_methods(AuthMethodsBuildInputs {
+            has_external_api_key: true,
+            has_cached_token: false,
+            login_label: None,
+        });
+        let (needs, _, _, _) = startup_auth_metadata(&byok.methods);
+        assert!(
+            !needs,
+            "a configured key must keep skipping the login screen"
+        );
+        let selected =
+            select_eager_auth_method(&byok.methods, byok.default_auth_method_id.as_ref())
+                .expect("eager method must resolve");
+        assert_eq!(selected.0.as_ref(), XAI_API_KEY_METHOD_ID);
+        assert!(
+            selected.0.as_ref() != MOONSHOT_CN_METHOD_ID
+                && selected.0.as_ref() != MOONSHOT_AI_METHOD_ID,
+            "eager auth must never pick a moonshot picker method"
+        );
+    }
+
     /// Inverse direction: when `xai.api_key` is NOT in the list, the pager
     /// MUST show the login screen. We assert this with `xai.api_key` present
     /// LATER in the list (the shape of a past regression) and confirm the

@@ -569,6 +569,15 @@ pub enum Action {
     CancelLogin,
     /// User submitted a manually-pasted auth token (loopback mode).
     SubmitAuthCode(String),
+    /// User selected a Moonshot row on the welcome login picker: switch the
+    /// welcome screen into API-key entry for that platform.
+    BeginPlatformKeyEntry(crate::app::app_view::PlatformLogin),
+    /// Esc from the API-key entry box: return to the login picker.
+    CancelPlatformKeyEntry,
+    /// User submitted a pasted Moonshot API key: persist it to
+    /// `[platforms.<id>]` in config.toml, then authenticate with the
+    /// platform's method id. The key must never be logged.
+    SubmitPlatformApiKey(String),
     /// Copy the auth URL to the clipboard during authentication.
     CopyAuthUrl,
     /// Show the raw auth URL with mouse capture disabled for manual copy.
@@ -1611,6 +1620,14 @@ pub enum Effect {
     PollAuthUrl { request_seq: u64 },
     /// Submit a manually-pasted auth code (ext request).
     SubmitAuthCode { request_seq: u64, code: String },
+    /// Persist a Moonshot API key to `[platforms.<id>]` in config.toml, then
+    /// send AuthenticateRequest with the platform's method id. SECURITY: the
+    /// key must never appear in logs or errors.
+    PersistPlatformApiKeyAndAuthenticate {
+        request_seq: u64,
+        target: crate::app::app_view::PlatformLogin,
+        key: String,
+    },
     /// Fetch MCP server list from the shell (kigi/mcp/list).
     FetchMcpsList {
         agent_id: AgentId,

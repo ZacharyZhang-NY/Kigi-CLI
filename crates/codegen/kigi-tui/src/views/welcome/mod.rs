@@ -12,7 +12,11 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Widget, Wrap};
 
-use crate::app::app_view::{AuthMode, AuthState, SessionPickerEntry, TrustState};
+use agent_client_protocol as acp;
+
+use crate::app::app_view::{
+    AuthMode, AuthState, PendingMenuItem, SessionPickerEntry, TrustState, pending_menu_items,
+};
 use crate::startup::StartupWarning;
 use crate::theme::Theme;
 use crate::views::prompt_widget::{PromptFlag, PromptInfo, PromptWidget};
@@ -524,6 +528,9 @@ pub struct WelcomeRenderParams<'a> {
     /// Folder-trust state. When `Pending` (auth done, access granted), the
     /// welcome screen renders the trust question instead of the normal prompt.
     pub trust_state: &'a TrustState,
+    /// Shell-advertised auth methods — the login picker lists the interactive
+    /// ones (see [`pending_menu_items`]).
+    pub auth_methods: &'a [acp::AuthMethod],
     pub login_label: Option<&'a str>,
     pub auth_code_input: &'a str,
     pub clipboard_copied: bool,
@@ -602,9 +609,14 @@ pub fn render_welcome(
 
     let mut result = match params.auth_state {
         AuthState::Pending { error } => {
-            let label = params.login_label.unwrap_or("kimi.com");
-            let login_text = format!("Login with {}", label);
-            let menu = [("l", login_text.as_str()), ("q", "Quit")];
+            // Login picker: one row per interactive method + Quit.
+            let items: Vec<PendingMenuItem> =
+                pending_menu_items(params.auth_methods, params.login_label);
+            let menu: Vec<(&str, &str)> = items
+                .iter()
+                .enumerate()
+                .map(|(i, item)| (item.shortcut(i), item.label()))
+                .collect();
             let msg = error.as_deref().map(|e| (e, theme.accent_error));
             let info = PromptInfo {
                 model_name: params.model_name,
@@ -1278,7 +1290,13 @@ fn render_welcome_authenticating(
             ])
             .flex(Flex::Center)
             .areas(prompt_area);
-            render_auth_input_box(prompt_centered, buf, theme, auth_code_input);
+            render_auth_input_box(
+                prompt_centered,
+                buf,
+                theme,
+                auth_code_input,
+                "Paste your token here...",
+            );
 
             // Hints
             let mut hint_spans = vec![
@@ -1295,6 +1313,78 @@ fn render_welcome_authenticating(
             Paragraph::new(hints).render(hint_area, buf);
 
             (click_rect, fallback_rect)
+        }
+
+        AuthMode::ApiKeyEntry(target) => {
+            // Moonshot API-key paste box: instruction + input + hints. No
+            // auth-URL machinery — the key comes from the platform console.
+            let h_pad: u16 = content_area.width / 6;
+            let inner_width = content_area.width.saturating_sub(h_pad * 2).max(1);
+            let instruction = format!(
+                "Paste your Moonshot API key (from {})",
+                target.console_host()
+            );
+            let msg_height = (instruction.len() as u16).div_ceil(inner_width);
+            let [_, logo_area, _, msg_area, _, prompt_area, _, hint_area, _] = Layout::vertical([
+                Constraint::Length(top_pad),
+                Constraint::Length(logo_line_count),
+                Constraint::Length(1),          // gap
+                Constraint::Length(msg_height), // instruction
+                Constraint::Min(1),             // gap
+                Constraint::Length(5),          // prompt box
+                Constraint::Length(1),          // gap
+                Constraint::Length(1),          // hints
+                Constraint::Min(0),
+            ])
+            .areas(content_area);
+
+            render_logo(logo_area, buf, theme, content_area.height);
+
+            let msg = Line::from(Span::styled(
+                instruction,
+                Style::default().fg(theme.gray_bright),
+            ))
+            .alignment(Alignment::Center);
+            Paragraph::new(msg)
+                .wrap(Wrap { trim: false })
+                .block(Block::default().padding(Padding::horizontal(h_pad)))
+                .render(msg_area, buf);
+
+            let [_, prompt_centered, _] = Layout::horizontal([
+                Constraint::Min(0),
+                Constraint::Length(content_area.width),
+                Constraint::Min(0),
+            ])
+            .flex(Flex::Center)
+            .areas(prompt_area);
+            render_auth_input_box(
+                prompt_centered,
+                buf,
+                theme,
+                auth_code_input,
+                "Paste your API key here...",
+            );
+
+            let hints = Line::from(vec![
+                Span::styled(
+                    "enter",
+                    Style::default()
+                        .fg(theme.accent_user)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("  submit    ", Style::default().fg(theme.gray)),
+                Span::styled(
+                    "esc",
+                    Style::default()
+                        .fg(theme.accent_user)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("  back", Style::default().fg(theme.gray)),
+            ])
+            .alignment(Alignment::Center);
+            Paragraph::new(hints).render(hint_area, buf);
+
+            (None, None)
         }
 
         AuthMode::Command => render_browser_status_arm(
@@ -2008,7 +2098,13 @@ pub(crate) fn render_session_picker(
 }
 
 /// Render the auth token input box (loopback mode).
-fn render_auth_input_box(area: Rect, buf: &mut Buffer, theme: &Theme, input: &str) {
+fn render_auth_input_box(
+    area: Rect,
+    buf: &mut Buffer,
+    theme: &Theme,
+    input: &str,
+    placeholder: &str,
+) {
     let prompt_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.accent_user))
@@ -2022,7 +2118,11 @@ fn render_auth_input_box(area: Rect, buf: &mut Buffer, theme: &Theme, input: &st
     prompt_block.render(area, buf);
 
     if inner.height > 0 && inner.width > 2 {
-        let display = mask_auth_token_for_display(input);
+        let display = if input.is_empty() {
+            placeholder.to_string()
+        } else {
+            mask_auth_token_for_display(input)
+        };
 
         let style = if input.is_empty() {
             Style::default().fg(theme.gray_dim)
@@ -2151,6 +2251,7 @@ mod tests {
             prompt_focus: WelcomePromptFocus::Unfocused,
             auth_state,
             trust_state,
+            auth_methods: &[],
             login_label: None,
             auth_code_input: "",
             clipboard_copied: false,
@@ -2189,6 +2290,93 @@ mod tests {
         let mut picker = PickerState::default();
         render_welcome(area, &mut buf, params, &mut prompt, &mut picker);
         buffer_text(&buf)
+    }
+
+    /// The unauthenticated welcome menu lists one row per interactive login
+    /// method — the OAuth device login plus BOTH Moonshot open platforms —
+    /// and Quit, when the shell advertises all three.
+    #[test]
+    fn pending_menu_lists_three_login_rows_plus_quit() {
+        use kigi_shell::agent::auth_method::{AuthMethodsBuildInputs, build_auth_methods};
+        let built = build_auth_methods(AuthMethodsBuildInputs {
+            has_external_api_key: false,
+            has_cached_token: false,
+            login_label: None,
+        });
+        let auth = AuthState::Pending { error: None };
+        let trust = TrustState::Done;
+        let mut params = render_params(&auth, &trust, None);
+        params.auth_methods = &built.methods;
+        let text = render_done_text(&params);
+        assert!(text.contains("Kimi Code (OAuth)"), "{text}");
+        assert!(
+            text.contains("Moonshot Open Platform (API key \u{b7} moonshot.cn)"),
+            "{text}"
+        );
+        assert!(
+            text.contains("Moonshot Open Platform (API key \u{b7} moonshot.ai)"),
+            "{text}"
+        );
+        assert!(text.contains("Quit"), "{text}");
+        // Shortcut hints for muscle memory: `l` (first row) and `q` (Quit).
+        assert!(text.contains('l'), "{text}");
+        assert!(text.contains('q'), "{text}");
+    }
+
+    /// An old/limited shell that advertises only `kimi-code` keeps the
+    /// two-row shape (single login row + Quit) — and never a Moonshot row.
+    #[test]
+    fn pending_menu_without_moonshot_methods_keeps_two_rows() {
+        let methods = vec![kigi_shell::agent::auth_method::kimi_code_auth_method(None)];
+        let auth = AuthState::Pending { error: None };
+        let trust = TrustState::Done;
+        let mut params = render_params(&auth, &trust, None);
+        params.auth_methods = &methods;
+        let text = render_done_text(&params);
+        assert!(text.contains("Kimi Code (OAuth)"), "{text}");
+        assert!(!text.contains("Moonshot"), "{text}");
+    }
+
+    /// The Moonshot API-key entry arm renders the platform copy, the paste
+    /// box, and the esc-back hint — and no OAuth-URL affordances.
+    #[test]
+    fn api_key_entry_arm_shows_platform_copy_and_paste_box() {
+        let area = Rect::new(0, 0, 80, 40);
+        let mut buf = Buffer::empty(area);
+        let theme = Theme::current();
+
+        let (copy_rect, fallback_rect) = render_welcome_authenticating(
+            area,
+            &mut buf,
+            &theme,
+            logo_line_count(area.height),
+            None, // auth_url — none in key-entry mode
+            AuthMode::ApiKeyEntry(crate::app::app_view::PlatformLogin::MoonshotCn),
+            "",    // auth_code_input
+            false, // clipboard_copied
+            false, // show_raw_url
+        );
+
+        let text = buffer_text(&buf);
+        // The instruction may soft-wrap; assert its two halves (each stays an
+        // intact word run on one row).
+        assert!(
+            text.contains("Paste your Moonshot API key"),
+            "key-entry arm must show the platform instruction, got:\n{text}"
+        );
+        assert!(
+            text.contains("platform.moonshot.cn"),
+            "key-entry arm must name the platform console, got:\n{text}"
+        );
+        assert!(
+            text.contains("Paste your API key here..."),
+            "key-entry arm must render the paste box placeholder, got:\n{text}"
+        );
+        assert!(
+            text.contains("esc") && text.contains("back"),
+            "key-entry arm must hint esc-back, got:\n{text}"
+        );
+        assert!(copy_rect.is_none() && fallback_rect.is_none());
     }
 
     #[test]

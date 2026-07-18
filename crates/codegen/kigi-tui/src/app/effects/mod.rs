@@ -1895,6 +1895,35 @@ pub(crate) fn execute(
                     }
                 });
         }
+        Effect::PersistPlatformApiKeyAndAuthenticate { request_seq, target, key } => {
+            let tx = acp_tx.clone();
+            let abort_handle = tasks
+                .spawn(async move {
+                    // Persist first so the shell's authenticate handler
+                    // (which re-reads config + env) finds the key. The
+                    // writer's errors never contain the key.
+                    if let Err(e) = kigi_shell::agent::config::save_platform_api_key(
+                            target.platform_id(),
+                            &key,
+                        )
+                        .await
+                    {
+                        let error = format!("Couldn't save API key: {e}");
+                        ulog::error(
+                            "platform api key persist failed",
+                            None,
+                            Some(serde_json::json!({ "error" : & error })),
+                        );
+                        return TaskResult::AuthFailed {
+                            request_seq,
+                            error,
+                        };
+                    }
+                    send_authenticate(&tx, request_seq, target.method_id(), false, false)
+                        .await
+                });
+            meta.auth_abort_handle = Some((request_seq, abort_handle));
+        }
         Effect::SubmitAuthCode { request_seq, code } => {
             let tx = acp_tx.clone();
             tasks

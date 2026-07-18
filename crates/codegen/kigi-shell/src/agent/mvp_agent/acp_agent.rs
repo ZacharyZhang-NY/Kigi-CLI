@@ -508,6 +508,14 @@ impl acp::Agent for MvpAgent {
                 );
                 Ok(self.auth_response_with_meta())
             }
+            auth_method::MOONSHOT_CN_METHOD_ID | auth_method::MOONSHOT_AI_METHOD_ID => {
+                let platform = auth_method::moonshot_platform_for_method_id(
+                        &arguments.method_id,
+                    )
+                    .expect("match arm guarantees a moonshot method id");
+                self.authenticate_moonshot(platform, arguments.method_id.clone())
+                    .await
+            }
             _ => {
                 Err(
                     acp::Error::invalid_params()

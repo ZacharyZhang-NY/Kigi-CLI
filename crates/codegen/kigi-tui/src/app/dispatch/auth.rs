@@ -7,7 +7,7 @@ use super::session::lifecycle::{clear_startup_actions, drain_startup_actions};
 use crate::app::actions::{Action, Effect};
 use crate::app::agent::AgentId;
 use crate::app::agent_view::AgentView;
-use crate::app::app_view::{ActiveView, AppView, AuthMode, AuthState};
+use crate::app::app_view::{ActiveView, AppView, AuthMode, AuthState, PlatformLogin};
 use crate::scrollback::block::RenderBlock;
 use crate::scrollback::blocks::SessionEvent;
 
@@ -250,6 +250,74 @@ pub(super) fn dispatch_submit_auth_code(app: &mut AppView, code: String) -> Vec<
     };
 
     vec![Effect::SubmitAuthCode { request_seq, code }]
+}
+
+/// A Moonshot row was selected on the welcome login picker: switch the
+/// welcome screen into the API-key paste box for that platform.
+pub(super) fn dispatch_begin_platform_key_entry(
+    app: &mut AppView,
+    target: PlatformLogin,
+) -> Vec<Effect> {
+    let request_seq = app.next_auth_request_seq;
+    app.next_auth_request_seq += 1;
+    app.auth_code_input.clear();
+    app.auth_state = AuthState::Authenticating {
+        request_seq,
+        handle: None,
+        auth_url: None,
+        mode: AuthMode::ApiKeyEntry(target),
+    };
+    vec![]
+}
+
+/// Esc in the API-key paste box: back to the login picker (no error line).
+/// Bumps the request seq so any stale in-flight auth result is dropped by
+/// the `AuthComplete`/`AuthFailed` guards.
+pub(super) fn dispatch_cancel_platform_key_entry(app: &mut AppView) -> Vec<Effect> {
+    if !matches!(
+        app.auth_state,
+        AuthState::Authenticating {
+            mode: AuthMode::ApiKeyEntry(_),
+            ..
+        }
+    ) {
+        return vec![];
+    }
+    app.next_auth_request_seq += 1;
+    app.auth_code_input.clear();
+    app.auth_state = AuthState::Pending { error: None };
+    vec![]
+}
+
+/// Enter with a non-empty key in the API-key paste box: persist the key to
+/// `[platforms.<id>]` in config.toml, then authenticate with the platform's
+/// method id (one sequential background task — see the effect handler).
+/// The screen shows the connecting state while the key is validated; a
+/// failure lands back on the picker with the error line (`AuthFailed`).
+pub(super) fn dispatch_submit_platform_api_key(app: &mut AppView, key: String) -> Vec<Effect> {
+    let (request_seq, target) = match &app.auth_state {
+        AuthState::Authenticating {
+            request_seq,
+            mode: AuthMode::ApiKeyEntry(target),
+            ..
+        } => (*request_seq, *target),
+        _ => return vec![],
+    };
+    let key = key.trim().to_string();
+    if key.is_empty() {
+        return vec![];
+    }
+    app.auth_state = AuthState::Authenticating {
+        request_seq,
+        handle: None,
+        auth_url: None,
+        mode: AuthMode::Pending,
+    };
+    vec![Effect::PersistPlatformApiKeyAndAuthenticate {
+        request_seq,
+        target,
+        key,
+    }]
 }
 
 // TaskResult handlers.

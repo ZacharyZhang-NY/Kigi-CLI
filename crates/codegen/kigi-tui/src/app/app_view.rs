@@ -260,6 +260,117 @@ pub enum AuthMode {
     Loopback,
     /// RFC 8628 device flow: device code + copyable URL, no paste box.
     Device,
+    /// Open-platform API-key entry: paste box for a Moonshot key selected
+    /// from the welcome login picker. Esc returns to the picker (no quit).
+    ApiKeyEntry(PlatformLogin),
+}
+/// Open-platform API-key login target, selected from the welcome picker.
+/// Mirrors the shell's `moonshot-cn` / `moonshot-ai` interactive auth
+/// methods ([`kigi_shell::agent::auth_method`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlatformLogin {
+    MoonshotCn,
+    MoonshotAi,
+}
+impl PlatformLogin {
+    /// The picker target behind an advertised ACP method id; `None` for every
+    /// non-moonshot method.
+    pub fn from_method_id(id: &acp::AuthMethodId) -> Option<Self> {
+        match id.0.as_ref() {
+            kigi_shell::agent::auth_method::MOONSHOT_CN_METHOD_ID => Some(Self::MoonshotCn),
+            kigi_shell::agent::auth_method::MOONSHOT_AI_METHOD_ID => Some(Self::MoonshotAi),
+            _ => None,
+        }
+    }
+    /// The registry platform whose `[platforms.<id>]` table stores the key.
+    pub fn platform_id(self) -> kigi_shell::models::PlatformId {
+        match self {
+            Self::MoonshotCn => kigi_shell::models::PlatformId::MoonshotCn,
+            Self::MoonshotAi => kigi_shell::models::PlatformId::MoonshotAi,
+        }
+    }
+    /// The ACP auth method id to `authenticate` with after persisting the key.
+    pub fn method_id(self) -> acp::AuthMethodId {
+        acp::AuthMethodId::new(self.platform_id().as_str())
+    }
+    /// Console host shown in the paste-box copy.
+    pub fn console_host(self) -> &'static str {
+        match self {
+            Self::MoonshotCn => "platform.moonshot.cn",
+            Self::MoonshotAi => "platform.moonshot.ai",
+        }
+    }
+}
+/// One row of the unauthenticated welcome menu (the login picker).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PendingMenuItem {
+    /// Interactive OAuth login (the existing `kimi-code` device flow).
+    Login {
+        label: String,
+    },
+    /// Open-platform API-key entry.
+    ApiKey {
+        target: PlatformLogin,
+        label: String,
+    },
+    Quit,
+}
+impl PendingMenuItem {
+    /// Shortcut-column text for this row (`l` on the OAuth row for
+    /// muscle-memory compat, `q` on Quit).
+    pub fn shortcut(&self, index: usize) -> &'static str {
+        match self {
+            Self::Login { .. } if index == 0 => "l",
+            Self::Quit => "q",
+            _ => "",
+        }
+    }
+    pub fn label(&self) -> &str {
+        match self {
+            Self::Login { label } | Self::ApiKey { label, .. } => label,
+            Self::Quit => "Quit",
+        }
+    }
+}
+/// Build the welcome login-picker rows from the shell-advertised methods:
+/// every INTERACTIVE method — the OAuth device login plus the Moonshot
+/// API-key logins — followed by Quit. `xai.api_key` and `cached_token` are
+/// non-interactive (eager-auth only) and never listed. When the shell
+/// advertises no interactive method at all (fail-closed `preferred_method`
+/// pins, old agents), fall back to the historical single Login row so the
+/// screen keeps its shape and `Action::Login` surfaces the proper error.
+pub fn pending_menu_items(
+    auth_methods: &[acp::AuthMethod],
+    login_label: Option<&str>,
+) -> Vec<PendingMenuItem> {
+    use kigi_shell::agent::auth_method::AuthMethodKind;
+    let mut items: Vec<PendingMenuItem> = Vec::new();
+    for method in auth_methods {
+        if let Some(target) = PlatformLogin::from_method_id(method.id()) {
+            items.push(PendingMenuItem::ApiKey {
+                target,
+                label: method.name().to_string(),
+            });
+        } else if AuthMethodKind::from_id(method.id()).needs_interactive_login() {
+            items.push(PendingMenuItem::Login {
+                label: format!("{} (OAuth)", method.name()),
+            });
+        }
+    }
+    if items.is_empty() {
+        items.push(PendingMenuItem::Login {
+            label: format!("Login with {}", login_label.unwrap_or("kimi.com")),
+        });
+    }
+    items.push(PendingMenuItem::Quit);
+    items
+}
+/// True when the login picker offers a real choice (more than one login row
+/// besides Quit). Startup then lands on the picker instead of auto-starting
+/// the OAuth device flow; single-choice shells keep the historical
+/// auto-trigger.
+pub fn login_picker_has_choice(auth_methods: &[acp::AuthMethod]) -> bool {
+    pending_menu_items(auth_methods, None).len() > 2
 }
 /// Folder-trust state for the welcome screen.
 ///
@@ -1517,6 +1628,7 @@ impl AppView {
                     trust_state: &self.trust_state,
                     cwd: &self.cwd,
                     mid_session_login: self.auth_return_view.is_some(),
+                    auth_methods: &self.auth_methods,
                     auth_code_input: &mut self.auth_code_input,
                     prompt: &mut self.welcome_prompt,
                     prompt_focused: &mut self.welcome_prompt_focused,
@@ -2049,6 +2161,9 @@ struct WelcomeInputCtx<'a> {
     /// that was started from inside a session. Esc / `q` then cancel the
     /// login and return to the session rather than quitting the app.
     mid_session_login: bool,
+    /// Shell-advertised auth methods — drives the login-picker rows shown in
+    /// the `AuthState::Pending` welcome menu.
+    auth_methods: &'a [acp::AuthMethod],
     auth_code_input: &'a mut String,
     prompt: &'a mut PromptWidget,
     prompt_focused: &'a mut bool,
@@ -2515,8 +2630,17 @@ fn handle_welcome_input(ev: &Event, ctx: &mut WelcomeInputCtx<'_>) -> InputOutco
                     }
                     return InputOutcome::Action(Action::QuitConfirmed);
                 }
-                if key!('l').matches(key) || key!(Enter).matches(key) {
-                    return InputOutcome::Action(Action::Login);
+                let items = pending_menu_items(ctx.auth_methods, None);
+                if let Some(outcome) = handle_menu_nav(key, ctx.menu_index, items.len()) {
+                    return outcome;
+                }
+                // 'l' keeps its muscle-memory meaning: the first (OAuth) row.
+                if key!('l').matches(key) {
+                    return dispatch_pending_menu_action(&items, 0);
+                }
+                if key!(Enter).matches(key) {
+                    let index = ctx.menu_index.filter(|i| *i < items.len()).unwrap_or(0);
+                    return dispatch_pending_menu_action(&items, index);
                 }
             }
             AuthState::Authenticating { .. } if *ctx.show_raw_url => {
@@ -2524,6 +2648,37 @@ fn handle_welcome_input(ev: &Event, ctx: &mut WelcomeInputCtx<'_>) -> InputOutco
                     return InputOutcome::Action(Action::HideRawAuthUrl);
                 }
                 return InputOutcome::Unchanged;
+            }
+            AuthState::Authenticating {
+                mode: AuthMode::ApiKeyEntry(_),
+                ..
+            } => {
+                // Esc cancels BACK TO THE PICKER (unlike the OAuth flows,
+                // where Esc quits): the user chose this row a keystroke ago.
+                if key!(Esc).matches(key) {
+                    return InputOutcome::Action(Action::CancelPlatformKeyEntry);
+                }
+                if key!('q', CONTROL).matches(key) || key!('c', CONTROL).matches(key) {
+                    if ctx.mid_session_login {
+                        return InputOutcome::Action(Action::CancelLogin);
+                    }
+                    return InputOutcome::Action(Action::QuitConfirmed);
+                }
+                if key!(Enter).matches(key) {
+                    let trimmed = ctx.auth_code_input.trim().to_string();
+                    if !trimmed.is_empty() {
+                        return InputOutcome::Action(Action::SubmitPlatformApiKey(trimmed));
+                    }
+                    return InputOutcome::Unchanged;
+                }
+                if key!(Backspace).matches(key) {
+                    ctx.auth_code_input.pop();
+                    return InputOutcome::Changed;
+                }
+                if let crossterm::event::KeyCode::Char(c) = key.code {
+                    ctx.auth_code_input.push(c);
+                    return InputOutcome::Changed;
+                }
             }
             AuthState::Authenticating {
                 mode: AuthMode::Loopback,
@@ -2573,7 +2728,7 @@ fn handle_welcome_input(ev: &Event, ctx: &mut WelcomeInputCtx<'_>) -> InputOutco
                 return InputOutcome::ActionThenForward(Action::NewSession);
             }
             AuthState::Authenticating {
-                mode: AuthMode::Loopback,
+                mode: AuthMode::Loopback | AuthMode::ApiKeyEntry(_),
                 ..
             } => {
                 let cleaned: String = text.chars().filter(|c| *c != '\n' && *c != '\r').collect();
@@ -2597,7 +2752,8 @@ fn handle_welcome_input(ev: &Event, ctx: &mut WelcomeInputCtx<'_>) -> InputOutco
                         && mouse.row < rect.y + rect.height
                     {
                         if matches!(ctx.auth_state, AuthState::Pending { .. }) {
-                            return dispatch_pending_menu_action(i);
+                            let items = pending_menu_items(ctx.auth_methods, None);
+                            return dispatch_pending_menu_action(&items, i);
                         }
                         if ctx.has_claude_import
                             && i == 0
@@ -2715,13 +2871,16 @@ fn handle_menu_nav(
         _ => None,
     }
 }
-/// Dispatch an action for a welcome menu item when not yet authenticated.
-/// Menu layout: 0 = Login, 1 = Quit.
-fn dispatch_pending_menu_action(index: usize) -> InputOutcome {
-    match index {
-        0 => InputOutcome::Action(Action::Login),
-        1 => InputOutcome::Action(Action::Quit),
-        _ => InputOutcome::Unchanged,
+/// Dispatch an action for a welcome login-picker row (not yet authenticated).
+/// Rows come from [`pending_menu_items`]: interactive methods + Quit.
+fn dispatch_pending_menu_action(items: &[PendingMenuItem], index: usize) -> InputOutcome {
+    match items.get(index) {
+        Some(PendingMenuItem::Login { .. }) => InputOutcome::Action(Action::Login),
+        Some(PendingMenuItem::ApiKey { target, .. }) => {
+            InputOutcome::Action(Action::BeginPlatformKeyEntry(*target))
+        }
+        Some(PendingMenuItem::Quit) => InputOutcome::Action(Action::Quit),
+        None => InputOutcome::Unchanged,
     }
 }
 /// Dispatch an action for a welcome menu item by index.
@@ -3073,6 +3232,7 @@ impl AppView {
                             cwd: &self.cwd,
                             auth_state: &self.auth_state,
                             trust_state: &self.trust_state,
+                            auth_methods: &self.auth_methods,
                             login_label: self.login_label.as_deref(),
                             auth_code_input: &self.auth_code_input,
                             clipboard_copied: self.auth_clipboard_copied,
@@ -6840,6 +7000,133 @@ pub(crate) mod tests {
         app.welcome_prompt_focused = false;
         let outcome = app.handle_input(&key_event(KeyCode::Char('n'), KeyModifiers::NONE));
         assert!(matches!(outcome, InputOutcome::Unchanged));
+    }
+    /// The shell's fresh-user auth methods (kimi-code + both moonshot
+    /// platforms) map to picker rows: OAuth first, then the two API-key rows,
+    /// then Quit.
+    fn fresh_user_auth_methods() -> Vec<acp::AuthMethod> {
+        kigi_shell::agent::auth_method::build_auth_methods(
+            kigi_shell::agent::auth_method::AuthMethodsBuildInputs {
+                has_external_api_key: false,
+                has_cached_token: false,
+                login_label: None,
+            },
+        )
+        .methods
+    }
+    #[test]
+    fn pending_menu_items_lists_interactive_methods_plus_quit() {
+        let items = pending_menu_items(&fresh_user_auth_methods(), None);
+        assert_eq!(items.len(), 4, "3 login rows + Quit, got {items:?}");
+        assert!(
+            matches!(&items[0], PendingMenuItem::Login { label } if label == "Kimi Code (OAuth)"),
+            "row 0 must be the OAuth login, got {:?}",
+            items[0]
+        );
+        assert_eq!(
+            items[1],
+            PendingMenuItem::ApiKey {
+                target: PlatformLogin::MoonshotCn,
+                label: "Moonshot Open Platform (API key \u{b7} moonshot.cn)".into(),
+            }
+        );
+        assert_eq!(
+            items[2],
+            PendingMenuItem::ApiKey {
+                target: PlatformLogin::MoonshotAi,
+                label: "Moonshot Open Platform (API key \u{b7} moonshot.ai)".into(),
+            }
+        );
+        assert_eq!(items[3], PendingMenuItem::Quit);
+        // The non-interactive methods must never appear as rows.
+        let byok = kigi_shell::agent::auth_method::build_auth_methods(
+            kigi_shell::agent::auth_method::AuthMethodsBuildInputs {
+                has_external_api_key: true,
+                has_cached_token: true,
+                login_label: None,
+            },
+        );
+        assert_eq!(
+            pending_menu_items(&byok.methods, None).len(),
+            4,
+            "xai.api_key / cached_token must not add rows"
+        );
+    }
+    /// Startup lands on the picker only when there is a real choice: the
+    /// three-method shell has one, an old kimi-code-only shell (or an empty
+    /// list) does not — those keep the auto-triggered device flow.
+    #[test]
+    fn login_picker_has_choice_only_with_multiple_login_rows() {
+        assert!(login_picker_has_choice(&fresh_user_auth_methods()));
+        let kimi_only = vec![kigi_shell::agent::auth_method::kimi_code_auth_method(None)];
+        assert!(!login_picker_has_choice(&kimi_only));
+        assert!(!login_picker_has_choice(&[]));
+    }
+    /// With all three methods advertised, arrows+Enter select a Moonshot row
+    /// and 'l' keeps selecting the first (OAuth) row.
+    #[test]
+    fn welcome_pending_arrows_select_moonshot_row() {
+        let mut app = test_app();
+        app.auth_methods = fresh_user_auth_methods();
+        app.auth_state = AuthState::Pending { error: None };
+        app.welcome_prompt_focused = false;
+        // Down → row 0 (OAuth), Down → row 1 (moonshot-cn).
+        app.handle_input(&key_event(KeyCode::Down, KeyModifiers::NONE));
+        app.handle_input(&key_event(KeyCode::Down, KeyModifiers::NONE));
+        let outcome = app.handle_input(&key_event(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(
+            matches!(
+                outcome,
+                InputOutcome::Action(Action::BeginPlatformKeyEntry(PlatformLogin::MoonshotCn))
+            ),
+            "Enter on row 1 must open moonshot-cn key entry, got {outcome:?}"
+        );
+        // 'l' is muscle-memory for the first (OAuth) row regardless of the
+        // arrow selection.
+        let outcome = app.handle_input(&key_event(KeyCode::Char('l'), KeyModifiers::NONE));
+        assert!(matches!(outcome, InputOutcome::Action(Action::Login)));
+    }
+    #[test]
+    fn welcome_api_key_entry_esc_returns_to_picker() {
+        let mut app = test_app();
+        app.auth_state = AuthState::Authenticating {
+            request_seq: 1,
+            handle: None,
+            auth_url: None,
+            mode: AuthMode::ApiKeyEntry(PlatformLogin::MoonshotCn),
+        };
+        let outcome = app.handle_input(&key_event(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(
+            matches!(
+                outcome,
+                InputOutcome::Action(Action::CancelPlatformKeyEntry)
+            ),
+            "Esc must cancel back to the picker, got {outcome:?}"
+        );
+    }
+    #[test]
+    fn welcome_api_key_entry_enter_submits_typed_key() {
+        let mut app = test_app();
+        app.auth_state = AuthState::Authenticating {
+            request_seq: 1,
+            handle: None,
+            auth_url: None,
+            mode: AuthMode::ApiKeyEntry(PlatformLogin::MoonshotAi),
+        };
+        // Empty input: Enter is a no-op.
+        let outcome = app.handle_input(&key_event(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(matches!(outcome, InputOutcome::Unchanged));
+        for c in "sk-42".chars() {
+            app.handle_input(&key_event(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        assert_eq!(app.auth_code_input, "sk-42");
+        let outcome = app.handle_input(&key_event(KeyCode::Enter, KeyModifiers::NONE));
+        match outcome {
+            InputOutcome::Action(Action::SubmitPlatformApiKey(key)) => {
+                assert_eq!(key, "sk-42");
+            }
+            other => panic!("expected SubmitPlatformApiKey, got {other:?}"),
+        }
     }
     #[test]
     fn welcome_done_n_starts_session() {

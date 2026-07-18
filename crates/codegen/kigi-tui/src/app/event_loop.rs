@@ -683,6 +683,13 @@ pub(crate) async fn run(
                 error: Some("No login method available".to_string()),
             };
             vec![]
+        } else if super::app_view::login_picker_has_choice(&app.auth_methods) {
+            // Multiple interactive login choices (OAuth + Moonshot API-key
+            // rows): land on the login picker instead of auto-starting the
+            // device flow, so the user can choose a platform. Single-choice
+            // shells keep the historical auto-trigger below.
+            app.auth_state = super::app_view::AuthState::Pending { error: None };
+            vec![]
         } else {
             dispatch::dispatch(Action::Login, &mut app)
         }

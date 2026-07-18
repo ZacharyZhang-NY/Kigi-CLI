@@ -100,6 +100,120 @@ fn auth_complete_with_deferred_load_also_fetches_status() {
     assert!(app.deferred_startup.session.is_none());
 }
 
+/// The Moonshot API-key entry flow: picking a row opens the paste box,
+/// submitting a key dispatches ONE effect that persists the key and then
+/// authenticates with the platform's method id, and the visual flips to the
+/// connecting state under the same request seq.
+#[test]
+fn submit_platform_api_key_dispatches_persist_then_authenticate() {
+    use crate::app::app_view::PlatformLogin;
+
+    let mut app = test_app();
+    app.auth_state = AuthState::Pending { error: None };
+
+    let effects = dispatch(
+        Action::BeginPlatformKeyEntry(PlatformLogin::MoonshotCn),
+        &mut app,
+    );
+    assert!(effects.is_empty(), "entering key entry is UI-only");
+    let seq = match &app.auth_state {
+        AuthState::Authenticating {
+            request_seq,
+            mode: AuthMode::ApiKeyEntry(PlatformLogin::MoonshotCn),
+            ..
+        } => *request_seq,
+        other => panic!("expected ApiKeyEntry(MoonshotCn), got {other:?}"),
+    };
+
+    let effects = dispatch(Action::SubmitPlatformApiKey("sk-test-key".into()), &mut app);
+    match effects.as_slice() {
+        [
+            Effect::PersistPlatformApiKeyAndAuthenticate {
+                request_seq,
+                target,
+                key,
+            },
+        ] => {
+            assert_eq!(*request_seq, seq);
+            assert_eq!(*target, PlatformLogin::MoonshotCn);
+            assert_eq!(key, "sk-test-key");
+            assert_eq!(
+                target.method_id().0.as_ref(),
+                "moonshot-cn",
+                "authenticate must use the shell's moonshot-cn method id"
+            );
+        }
+        other => panic!("expected exactly the persist+authenticate effect, got {other:?}"),
+    }
+    // Same seq, connecting visual: this attempt's AuthComplete/AuthFailed
+    // still matches.
+    assert!(matches!(
+        app.auth_state,
+        AuthState::Authenticating {
+            request_seq,
+            mode: AuthMode::Pending,
+            ..
+        } if request_seq == seq
+    ));
+
+    // Failed validation lands back on the picker with the error line.
+    dispatch(
+        Action::TaskComplete(TaskResult::AuthFailed {
+            request_seq: seq,
+            error: "Invalid API key for moonshot-cn".into(),
+        }),
+        &mut app,
+    );
+    assert!(matches!(
+        &app.auth_state,
+        AuthState::Pending { error: Some(e) } if e == "Invalid API key for moonshot-cn"
+    ));
+}
+
+/// Esc in the paste box returns to the picker (no error), clears the typed
+/// key, and invalidates the seq so stale auth results are dropped.
+#[test]
+fn cancel_platform_key_entry_returns_to_picker() {
+    use crate::app::app_view::PlatformLogin;
+
+    let mut app = test_app();
+    app.auth_state = AuthState::Pending { error: None };
+    dispatch(
+        Action::BeginPlatformKeyEntry(PlatformLogin::MoonshotAi),
+        &mut app,
+    );
+    app.auth_code_input = "sk-half-typed".into();
+    let seq_before = app.next_auth_request_seq;
+
+    let effects = dispatch(Action::CancelPlatformKeyEntry, &mut app);
+    assert!(effects.is_empty());
+    assert!(matches!(app.auth_state, AuthState::Pending { error: None }));
+    assert!(app.auth_code_input.is_empty(), "typed key must be cleared");
+    assert!(app.next_auth_request_seq > seq_before);
+}
+
+/// A submitted empty/whitespace key is a no-op (stays in the paste box).
+#[test]
+fn submit_platform_api_key_ignores_blank_key() {
+    use crate::app::app_view::PlatformLogin;
+
+    let mut app = test_app();
+    app.auth_state = AuthState::Pending { error: None };
+    dispatch(
+        Action::BeginPlatformKeyEntry(PlatformLogin::MoonshotCn),
+        &mut app,
+    );
+    let effects = dispatch(Action::SubmitPlatformApiKey("   ".into()), &mut app);
+    assert!(effects.is_empty());
+    assert!(matches!(
+        app.auth_state,
+        AuthState::Authenticating {
+            mode: AuthMode::ApiKeyEntry(PlatformLogin::MoonshotCn),
+            ..
+        }
+    ));
+}
+
 /// `/login` from the welcome screen (startup / logged-out) must NOT
 /// stash a return view — the normal login-then-load flow is preserved.
 #[test]
