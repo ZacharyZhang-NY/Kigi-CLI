@@ -1,7 +1,7 @@
 //! I/O integration tests for the auto-update crate.
 //!
 //! These tests touch global process state — `KIGI_SHARE_DIR` (a `OnceLock` in
-//! `kigi-config`), `KIGI_TEST_VERSION`, and `NPM_TOKEN` — so they
+//! `kigi-config`), `KIGI_TEST_VERSION` — so they
 //! must run serially. Once `KIGI_SHARE_DIR` is initialized for a process, it can't
 //! be changed; we set it from a single shared `OnceLock` and reset the
 //! contents of the directory between tests.
@@ -277,13 +277,13 @@ async fn write_version_cache_idempotent_for_same_version() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// get_installed_grok_version env override
+// get_installed_kigi_version env override
 //
 // The function honors `KIGI_TEST_VERSION` for testing. We exercise it
 // via the public re-export only — no private items leaked.
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// Note: `get_installed_grok_version` is not re-exported from `lib.rs`, but
+// Note: `get_installed_kigi_version` is not re-exported from `lib.rs`, but
 // it's `pub` from `version` module and accessible via `version::`.
 
 #[tokio::test]
@@ -295,7 +295,7 @@ async fn get_installed_version_uses_env_var_override() {
     unsafe {
         std::env::set_var("KIGI_TEST_VERSION", "9.9.9");
     }
-    let v = kigi_update::version::get_installed_grok_version();
+    let v = kigi_update::version::get_installed_kigi_version();
     assert_eq!(v, "9.9.9");
     unsafe {
         std::env::remove_var("KIGI_TEST_VERSION");
@@ -311,7 +311,7 @@ async fn get_installed_version_falls_back_to_cargo_pkg_version_when_env_unset() 
     unsafe {
         std::env::remove_var("KIGI_TEST_VERSION");
     }
-    let v = kigi_update::version::get_installed_grok_version();
+    let v = kigi_update::version::get_installed_kigi_version();
     // The compile-time CARGO_PKG_VERSION must be a parseable semver string.
     let _: semver::Version = v
         .parse()
@@ -328,13 +328,13 @@ async fn get_installed_version_with_env_var_takes_precedence() {
         unsafe {
             std::env::remove_var("KIGI_TEST_VERSION");
         }
-        kigi_update::version::get_installed_grok_version()
+        kigi_update::version::get_installed_kigi_version()
     };
 
     unsafe {
         std::env::set_var("KIGI_TEST_VERSION", "0.0.0-test");
     }
-    let overridden = kigi_update::version::get_installed_grok_version();
+    let overridden = kigi_update::version::get_installed_kigi_version();
     assert_ne!(real, overridden);
     assert_eq!(overridden, "0.0.0-test");
 
@@ -352,7 +352,7 @@ async fn get_installed_version_handles_alpha_prerelease_in_env() {
     unsafe {
         std::env::set_var("KIGI_TEST_VERSION", "0.1.200-alpha.5");
     }
-    let v = kigi_update::version::get_installed_grok_version();
+    let v = kigi_update::version::get_installed_kigi_version();
     assert_eq!(v, "0.1.200-alpha.5");
     unsafe {
         std::env::remove_var("KIGI_TEST_VERSION");
@@ -370,7 +370,7 @@ async fn get_installed_version_does_not_validate_env_var_format() {
     unsafe {
         std::env::set_var("KIGI_TEST_VERSION", "not-a-version");
     }
-    let v = kigi_update::version::get_installed_grok_version();
+    let v = kigi_update::version::get_installed_kigi_version();
     assert_eq!(v, "not-a-version");
     unsafe {
         std::env::remove_var("KIGI_TEST_VERSION");

@@ -2,17 +2,19 @@
 //! truncation / corruption / cancel at every point, and after every iteration
 //! assert the single invariant that makes the brick impossible:
 //!
-//! > `~/.kigi/bin/grok` resolves to a binary that passes the smoke-test, OR it
+//! > `~/.kigi/bin/kigi` resolves to a binary that passes the smoke-test, OR it
 //! > is still the previous-good binary. It is never a broken/partial binary,
 //! > and a `.tmp` never masquerades as the active binary.
 //!
 //! The invariant is checked by RE-RESOLVING the symlink and RE-RUNNING the
 //! binary from disk every time — never by re-reading a value the harness set.
 //!
-//! A controllable raw HTTP/1.1 server serves a real executable ("good")
-//! artifact and can truncate the body, close the connection early, serve a
-//! right-length-but-garbage body, or hang mid-transfer — for both the parallel
-//! byte-range path and the single-connection path.
+//! A controllable raw HTTP/1.1 GitHub-Releases-shaped server serves release
+//! JSON, SHA256SUMS, and the archive, and can truncate the archive body,
+//! close the connection early, serve a right-length-but-garbage body (caught
+//! by the SHA-256 gate), serve a correctly-checksummed archive whose binary
+//! fails to run (caught by the smoke test), or hang mid-transfer — for both
+//! the parallel byte-range path and the single-connection path.
 
 #![cfg(unix)]
 
@@ -35,38 +37,44 @@ use kigi_update::auto_update::install_internal_from_base;
 // Artifacts + fixtures
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// A real executable larger than the 16 MiB parallel threshold (at least 2
-/// chunks), so the parallel byte-range path is exercised. The shell exits on
-/// line 2, never reading the newline padding.
+/// A real executable whose ARCHIVE clears the 16 MiB parallel threshold (at
+/// least 2 chunks), so the parallel byte-range path is exercised. The shell
+/// exits on line 2, never reading the padding — which is pseudo-random bytes
+/// so gzip cannot compress the archive below the threshold.
 fn large_good_artifact() -> Vec<u8> {
     let mut v = b"#!/bin/sh\nexit 0\n".to_vec();
-    v.resize(33 * 1024 * 1024, b'\n');
+    v.reserve(34 * 1024 * 1024);
+    // xorshift64* keeps the padding incompressible without an RNG dependency.
+    let mut x: u64 = 0x243F6A8885A308D3;
+    while v.len() < 34 * 1024 * 1024 {
+        x ^= x >> 12;
+        x ^= x << 25;
+        x ^= x >> 27;
+        v.extend_from_slice(&x.wrapping_mul(0x2545F4914F6CDD1D).to_le_bytes());
+    }
     v
 }
 
-/// Seed a previous-good versioned binary + both managed symlinks
-/// (`grok` and `agent` — see `swap_managed_bin_links`). Returns the
-/// absolute path of the seeded binary.
+/// Seed a previous-good versioned binary + the managed `kigi` symlink.
+/// Returns the absolute path of the seeded binary.
 fn seed_previous_good(home: &Path, version: &str, platform: &str) -> PathBuf {
     let downloads = home.join("downloads");
     let bin = home.join("bin");
     std::fs::create_dir_all(&downloads).unwrap();
     std::fs::create_dir_all(&bin).unwrap();
 
-    let prev = downloads.join(format!("grok-{version}-{platform}"));
+    let prev = downloads.join(format!("kigi-{version}-{platform}"));
     std::fs::write(&prev, small_good_artifact()).unwrap();
     std::fs::set_permissions(&prev, std::fs::Permissions::from_mode(0o755)).unwrap();
 
-    let rel = format!("../downloads/grok-{version}-{platform}");
-    for name in ["grok", "agent"] {
-        let link = bin.join(name);
-        let _ = std::fs::remove_file(&link);
-        std::os::unix::fs::symlink(&rel, &link).unwrap();
-    }
+    let rel = format!("../downloads/kigi-{version}-{platform}");
+    let link = bin.join("kigi");
+    let _ = std::fs::remove_file(&link);
+    std::os::unix::fs::symlink(&rel, &link).unwrap();
     dunce::canonicalize(&prev).unwrap()
 }
 
-/// What the active `grok` should resolve to after an install attempt.
+/// What the active `kigi` should resolve to after an install attempt.
 #[derive(Clone, Copy, PartialEq)]
 enum Expect {
     /// The new version was installed and activated.
@@ -77,34 +85,21 @@ enum Expect {
 
 /// THE invariant. Re-resolves the on-disk symlink and RE-EXECUTES the resolved
 /// binary; never inspects a harness-held value. Guarantees the active managed
-/// link is always runnable and is never a `.tmp` or a partial file. Applied
-/// to both `grok` and `agent` — `swap_managed_bin_links` moves them together.
+/// link is always runnable and is never a `.tmp` or a partial file.
 fn assert_invariant(home: &Path, prev_good: &Path, new_binary: &Path, expect: Expect) {
-    for name in ["grok", "agent"] {
-        assert_link_invariant(home, name, prev_good, new_binary, expect);
-    }
-}
-
-fn assert_link_invariant(
-    home: &Path,
-    name: &str,
-    prev_good: &Path,
-    new_binary: &Path,
-    expect: Expect,
-) {
-    let link = home.join("bin").join(name);
-    assert!(link.is_symlink(), "{name} must remain a symlink");
+    let link = home.join("bin").join("kigi");
+    assert!(link.is_symlink(), "kigi must remain a symlink");
 
     // Resolve from disk. canonicalize fails on a dangling link — that alone
     // would be a brick.
     let resolved = dunce::canonicalize(&link)
-        .unwrap_or_else(|e| panic!("active {name} symlink does not resolve: {e}"));
+        .unwrap_or_else(|e| panic!("active kigi symlink does not resolve: {e}"));
 
     // A `.tmp` file must never be the live target.
     let resolved_name = resolved.file_name().unwrap().to_string_lossy().to_string();
     assert!(
         !resolved_name.contains(".tmp"),
-        "active {name} must not be a temp file: {resolved_name}"
+        "active kigi must not be a temp file: {resolved_name}"
     );
 
     // Re-run the resolved binary from disk: the active link must always run.
@@ -118,7 +113,7 @@ fn assert_link_invariant(
         .unwrap_or(false);
     assert!(
         ran_ok,
-        "active {name} must pass the smoke-test, but {} did not run",
+        "active kigi must pass the smoke-test, but {} did not run",
         resolved.display()
     );
 
@@ -126,11 +121,11 @@ fn assert_link_invariant(
         Expect::NewBinary => assert_eq!(
             resolved,
             dunce::canonicalize(new_binary).unwrap(),
-            "expected the newly-installed binary to be active for {name}"
+            "expected the newly-installed binary to be active"
         ),
         Expect::PreviousGood => assert_eq!(
             resolved, prev_good,
-            "expected the previous-good binary to stay active for {name} after a rejected install"
+            "expected the previous-good binary to stay active after a rejected install"
         ),
     }
 }
@@ -149,12 +144,12 @@ async fn run_one(
     let prev_good = seed_previous_good(home, "0.1.100", &platform);
     let new_binary = home
         .join("downloads")
-        .join(format!("grok-{version}-{platform}"));
+        .join(format!("kigi-{version}-{platform}"));
     let cfg = make_update_config("stable");
 
     server.set_mode(mode);
 
-    let base = server.uri();
+    let base = server.base();
     let install = install_internal_from_base(Some(version), &cfg, &base);
     let expect = match (mode, cancel_after) {
         (Mode::Full, None) => {
@@ -180,7 +175,7 @@ async fn run_one(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Deterministic matrix — single-connection path (small artifact)
+// Deterministic matrix — single-connection path (small archive)
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test(flavor = "multi_thread")]
@@ -191,15 +186,20 @@ async fn blitz_single_connection_matrix() {
         return;
     }
     let server = ArtifactServer::start(small_good_artifact());
-    let len = small_good_artifact().len();
+    let len = server.archive_len("0.1.181");
 
     // Happy path first so we know the symlink CAN move to the new binary.
     run_one(&server, Mode::Full, "0.1.181", None).await;
 
-    // Right-length garbage — caught by the smoke-test (Layer 2).
+    // Right-length garbage — caught by the SHA-256 gate.
     run_one(&server, Mode::Garbage, "0.1.181", None).await;
 
-    // Premature EOF at several offsets — caught by the length/transport checks.
+    // Correctly-checksummed archive with a broken binary — caught by the
+    // smoke test.
+    run_one(&server, Mode::BadBinary, "0.1.181", None).await;
+
+    // Premature EOF at several offsets — caught by the length/transport
+    // checks (and the checksum gate as belt-and-suspenders).
     for k in [0usize, 1, len / 2, len.saturating_sub(1)] {
         run_one(&server, Mode::Truncate(k), "0.1.181", None).await;
     }
@@ -220,12 +220,12 @@ async fn blitz_single_connection_matrix() {
     // calls reset_home() at the start of every case, so this checks the happy
     // path stays reachable — not recovery over a dirty dir. The genuine
     // recovery-without-reset assertion lives in
-    // integrity_failure_is_clean_keeps_previous_good_and_emits_telemetry.
+    // smoke_and_checksum_failures_keep_previous_good_then_recover.
     run_one(&server, Mode::Full, "0.1.182", None).await;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Deterministic matrix — parallel byte-range path (>= 16 MiB artifact)
+// Deterministic matrix — parallel byte-range path (>= 16 MiB archive)
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test(flavor = "multi_thread")]
@@ -235,22 +235,23 @@ async fn blitz_parallel_path_matrix() {
         eprintln!("skipping: shell scripts cannot execute in this sandbox");
         return;
     }
-    let body = large_good_artifact();
-    let len = body.len();
-    let server = ArtifactServer::start(body);
+    let server = ArtifactServer::start(large_good_artifact());
+    let len = server.archive_len("0.1.181");
+    assert!(
+        len >= 16 * 1024 * 1024,
+        "archive must clear the parallel threshold (got {len} bytes)"
+    );
 
     // Happy path through the parallel reassembly.
     run_one(&server, Mode::Full, "0.1.181", None).await;
 
-    // Right-length garbage reassembled from range chunks — smoke-test catches.
+    // Right-length garbage reassembled from range chunks — checksum catches.
     run_one(&server, Mode::Garbage, "0.1.181", None).await;
 
     // Short chunk inside the range / set_len zero region. With Content-Length
     // present (the blitz server always sends it), a premature close surfaces as
-    // a reqwest stream error that rejects the chunk; the download_range
-    // byte-count check is the belt-and-suspenders for the rarer close-delimited
-    // (Content-Length-absent) case. The parallel path falls back to single-
-    // connection, which classifies the same truncation as DownloadIncomplete.
+    // a reqwest stream error that rejects the chunk; the parallel path falls
+    // back to single-connection, which hits the same truncation.
     for k in [0usize, 1024, len / 3, len - 4096] {
         run_one(&server, Mode::Truncate(k), "0.1.181", None).await;
     }
@@ -269,12 +270,13 @@ async fn blitz_parallel_path_matrix() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Smoke-test rejects garbage and keeps previous-good
+// Checksum + smoke-test rejections keep previous-good, then recover WITHOUT
+// a reset in between.
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn smoke_test_rejects_garbage_and_keeps_previous_good() {
+async fn smoke_and_checksum_failures_keep_previous_good_then_recover() {
     if !can_exec_shell_scripts() {
         eprintln!("skipping: shell scripts cannot execute in this sandbox");
         return;
@@ -285,23 +287,28 @@ async fn smoke_test_rejects_garbage_and_keeps_previous_good() {
     let platform = host_platform();
     let prev_good = seed_previous_good(home, "0.1.100", &platform);
     let cfg = make_update_config("stable");
-
-    server.set_mode(Mode::Garbage);
-    let base = server.uri();
-    let result = install_internal_from_base(Some("0.1.181"), &cfg, &base).await;
-    assert!(result.is_err(), "garbage artifact must not install");
-
+    let base = server.base();
     let new_binary = home
         .join("downloads")
-        .join(format!("grok-0.1.181-{platform}"));
+        .join(format!("kigi-0.1.181-{platform}"));
+
+    // Checksum failure (garbage body) keeps previous good.
+    server.set_mode(Mode::Garbage);
+    let result = install_internal_from_base(Some("0.1.181"), &cfg, &base).await;
+    assert!(result.is_err(), "garbage archive must not install");
     assert_invariant(home, &prev_good, &new_binary, Expect::PreviousGood);
 
-    // A subsequent clean serve must succeed.
+    // Smoke-test failure (valid checksum, broken binary) keeps previous good.
+    server.set_mode(Mode::BadBinary);
+    let result = install_internal_from_base(Some("0.1.181"), &cfg, &base).await;
+    assert!(result.is_err(), "broken binary must not install");
+    assert_invariant(home, &prev_good, &new_binary, Expect::PreviousGood);
+
+    // A subsequent clean serve must succeed over the SAME dirty state.
     server.set_mode(Mode::Full);
-    let base = server.uri();
     install_internal_from_base(Some("0.1.181"), &cfg, &base)
         .await
-        .expect("clean serve after a failure should succeed");
+        .expect("clean serve after failures should succeed");
     assert_invariant(home, &prev_good, &new_binary, Expect::NewBinary);
 }
 
@@ -328,7 +335,7 @@ impl Rng {
 
 async fn fuzz_loop(iterations: usize, seed: u64) {
     let server = ArtifactServer::start(small_good_artifact());
-    let len = small_good_artifact().len();
+    let len = server.archive_len("0.1.181");
     let mut rng = Rng(seed);
 
     for i in 0..iterations {
@@ -340,9 +347,10 @@ async fn fuzz_loop(iterations: usize, seed: u64) {
             run_one(&server, Mode::Full, version, None).await;
             continue;
         }
-        match rng.below(3) {
+        match rng.below(4) {
             0 => run_one(&server, Mode::Garbage, version, None).await,
-            1 => {
+            1 => run_one(&server, Mode::BadBinary, version, None).await,
+            2 => {
                 // k in [0, len): always strictly truncating (k == len would be
                 // a complete transfer).
                 let k = rng.below(len);
@@ -381,11 +389,11 @@ async fn blitz_fuzz_bounded() {
 }
 
 /// The "test it a million times, cancelling at every point" stress run. Gated
-/// behind `#[ignore]`; invoke via `just blitz-stress` or
+/// behind `#[ignore]`; invoke via
 /// `cargo nextest run -p kigi-update --run-ignored all`.
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-#[ignore = "stress: 100k iterations, run via `just blitz-stress`"]
+#[ignore = "stress: 100k iterations"]
 async fn blitz_fuzz_stress() {
     if !can_exec_shell_scripts() {
         eprintln!("skipping: shell scripts cannot execute in this sandbox");

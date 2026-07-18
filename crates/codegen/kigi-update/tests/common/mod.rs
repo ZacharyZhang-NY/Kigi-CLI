@@ -40,8 +40,7 @@ use std::sync::OnceLock;
 /// this directory for the lifetime of the process.
 ///
 /// Also clears env vars that the auto-update code consults so a parent shell's
-/// values can't pollute the baseline (e.g. running tests from `npm run` would
-/// otherwise inherit `npm_config_user_agent` and `NPM_TOKEN`).
+/// values can't pollute the baseline.
 pub fn test_home() -> &'static PathBuf {
     static HOME: OnceLock<PathBuf> = OnceLock::new();
     HOME.get_or_init(|| {
@@ -52,10 +51,9 @@ pub fn test_home() -> &'static PathBuf {
         unsafe {
             std::env::set_var("KIGI_SHARE_DIR", &path);
             std::env::remove_var("KIGI_TEST_VERSION");
-            std::env::remove_var("NPM_TOKEN");
             std::env::remove_var("KIGI_INSTALLER");
-            std::env::remove_var("KIGI_MANAGED_BY_NPM");
             std::env::remove_var("KIGI_MANAGED_BY_INTERNAL");
+            std::env::remove_var(kigi_env::UPDATE_BASE_URL_ENV);
         }
         path
     })
@@ -74,24 +72,32 @@ pub fn reset_home() {
     // SAFETY: tests using this helper must be `#[serial]`.
     unsafe {
         std::env::remove_var("KIGI_TEST_VERSION");
-        std::env::remove_var("NPM_TOKEN");
         std::env::remove_var("KIGI_INSTALLER");
+        std::env::remove_var(kigi_env::UPDATE_BASE_URL_ENV);
     }
 }
 
-/// Override the version reported by `get_installed_grok_version()` for the
+/// Override the version reported by `get_installed_kigi_version()` for the
 /// duration of the test (until [`reset_home`] or process exit).
 pub fn set_test_version(v: &str) {
     // SAFETY: tests using this helper must be `#[serial]`.
     unsafe { std::env::set_var("KIGI_TEST_VERSION", v) };
 }
 
+/// Point the production update flows (`check_update_status`,
+/// `ensure_latest_on_disk`, `run_update`) at a mock GitHub Releases API.
+/// Cleared by [`reset_home`].
+pub fn set_update_base(base: &str) {
+    // SAFETY: tests using this helper must be `#[serial]`.
+    unsafe { std::env::set_var(kigi_env::UPDATE_BASE_URL_ENV, base) };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Install-test fixtures (shared by the blitz + convergence suites)
+// Install-test fixtures
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Host `{os}-{arch}` string matching the versioned binary naming scheme
-/// (`grok-{version}-{platform}`).
+/// (`kigi-{version}-{platform}`).
 pub fn host_platform() -> String {
     let os = if cfg!(target_os = "macos") {
         "macos"
@@ -110,6 +116,27 @@ pub fn host_platform() -> String {
     format!("{os}-{arch}")
 }
 
+/// Host Rust target triple, matching `auto_update::target_triple()` and the
+/// release-asset naming in `.github/workflows/release.yml`.
+pub fn host_triple() -> &'static str {
+    if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        "aarch64-apple-darwin"
+    } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+        "x86_64-apple-darwin"
+    } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+        "aarch64-unknown-linux-gnu"
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        "x86_64-unknown-linux-gnu"
+    } else {
+        panic!("unsupported test platform");
+    }
+}
+
+/// Release-archive asset name for `version` on the host platform.
+pub fn archive_name(version: &str) -> String {
+    format!("kigi-{version}-{}.tar.gz", host_triple())
+}
+
 /// Minimal [`kigi_update::UpdateConfig`] for install tests.
 pub fn make_update_config(channel: &str) -> kigi_update::UpdateConfig {
     kigi_update::UpdateConfig {
@@ -118,7 +145,6 @@ pub fn make_update_config(channel: &str) -> kigi_update::UpdateConfig {
         deployment_key: None,
         alpha_test_key: None,
         channel: channel.to_string(),
-        npm_registry: None,
     }
 }
 
@@ -168,7 +194,113 @@ pub fn backdate_downloads() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PATH-override fake binary
+// GitHub Releases fixtures
+//
+// Wire shapes mirror the real GitHub REST API
+// (https://docs.github.com/en/rest/releases/releases):
+//   GET /repos/{o}/{r}/releases/latest      → release object
+//   GET /repos/{o}/{r}/releases/tags/{tag}  → release object
+//   GET /repos/{o}/{r}/releases             → array of release objects
+// Release object: {"tag_name":"v0.1.0","assets":[{"name":"...",
+// "browser_download_url":"..."}]}
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Build a tar.gz archive from `(name, bytes)` entries.
+#[cfg(unix)]
+pub fn make_tar_gz(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    let gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    let mut builder = tar::Builder::new(gz);
+    for (name, data) in entries {
+        let mut header = tar::Header::new_gnu();
+        header.set_size(data.len() as u64);
+        header.set_mode(0o755);
+        header.set_cksum();
+        builder.append_data(&mut header, name, *data).unwrap();
+    }
+    builder.into_inner().unwrap().finish().unwrap()
+}
+
+/// Release archive containing a single `kigi` entry with `binary` as its body.
+#[cfg(unix)]
+pub fn make_release_archive(binary: &[u8]) -> Vec<u8> {
+    make_tar_gz(&[("kigi", binary)])
+}
+
+/// Hex SHA-256 of `bytes` (as written into SHA256SUMS manifests).
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+/// GitHub release JSON for `version`, with asset download URLs rooted at
+/// `{server_uri}/dl/v{version}/…`.
+pub fn release_json(server_uri: &str, version: &str) -> serde_json::Value {
+    let name = archive_name(version);
+    serde_json::json!({
+        "tag_name": format!("v{version}"),
+        "draft": false,
+        "prerelease": !semver::Version::parse(version).unwrap().pre.is_empty(),
+        "assets": [
+            {
+                "name": name,
+                "browser_download_url": format!("{server_uri}/dl/v{version}/{name}"),
+            },
+            {
+                "name": "SHA256SUMS",
+                "browser_download_url": format!("{server_uri}/dl/v{version}/SHA256SUMS"),
+            },
+        ],
+    })
+}
+
+/// Mount the per-release endpoints for `version` on a wiremock server:
+/// `GET /releases/tags/v{version}` plus the archive and SHA256SUMS asset
+/// downloads. Callers that need `latest` also call [`mount_latest`].
+///
+/// The base URL to hand the updater is `format!("{}/releases", server.uri())`.
+#[cfg(unix)]
+pub async fn mount_release(server: &wiremock::MockServer, version: &str, binary: &[u8]) {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, ResponseTemplate};
+
+    let archive = make_release_archive(binary);
+    let sums = format!("{}  {}\n", sha256_hex(&archive), archive_name(version));
+
+    Mock::given(method("GET"))
+        .and(path(format!("/releases/tags/v{version}")))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(release_json(&server.uri(), version)),
+        )
+        .mount(server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(format!("/dl/v{version}/{}", archive_name(version))))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(archive))
+        .mount(server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(format!("/dl/v{version}/SHA256SUMS")))
+        .respond_with(ResponseTemplate::new(200).set_body_string(sums))
+        .mount(server)
+        .await;
+}
+
+/// Mount `GET /releases/latest` returning `version`.
+pub async fn mount_latest(server: &wiremock::MockServer, version: &str) {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, ResponseTemplate};
+
+    Mock::given(method("GET"))
+        .and(path("/releases/latest"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(release_json(&server.uri(), version)),
+        )
+        .mount(server)
+        .await;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATH-override fake binary (used by the install.sh harness)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// RAII guard that places a sh-script with name `name` at the head of `PATH`.
@@ -215,18 +347,8 @@ impl FakeBinGuard {
         }
     }
 
-    /// Install a fake `npm` using the standard [`fake_npm_script`] template.
-    pub fn install_npm() -> Self {
-        Self::install("npm", fake_npm_script)
-    }
-
-    /// Install a fake `gh` using the standard [`fake_gh_script`] template.
-    pub fn install_gh() -> Self {
-        Self::install("gh", fake_gh_script)
-    }
-
-    /// The tempdir backing this guard (where canned stdout/stderr/exit files
-    /// can be written by tests, and where `<name>-args.log` is appended).
+    /// The tempdir backing this guard (where canned response files can be
+    /// written by tests, and where `<name>-args.log` is appended).
     pub fn dir(&self) -> PathBuf {
         self.tmp.path().to_path_buf()
     }
@@ -239,46 +361,6 @@ impl FakeBinGuard {
             .map(String::from)
             .collect()
     }
-
-    pub fn set_stdout(&self, content: &str) {
-        std::fs::write(self.dir().join(format!("{}-stdout", self.name)), content).unwrap();
-    }
-
-    pub fn set_stderr(&self, content: &str) {
-        std::fs::write(self.dir().join(format!("{}-stderr", self.name)), content).unwrap();
-    }
-
-    pub fn set_alpha_stdout(&self, content: &str) {
-        std::fs::write(
-            self.dir().join(format!("{}-alpha-stdout", self.name)),
-            content,
-        )
-        .unwrap();
-    }
-
-    pub fn set_stable_only_stdout(&self, content: &str) {
-        std::fs::write(
-            self.dir().join(format!("{}-stable-only-stdout", self.name)),
-            content,
-        )
-        .unwrap();
-    }
-
-    pub fn set_with_pre_stdout(&self, content: &str) {
-        std::fs::write(
-            self.dir().join(format!("{}-with-pre-stdout", self.name)),
-            content,
-        )
-        .unwrap();
-    }
-
-    pub fn set_exit_code(&self, code: i32) {
-        std::fs::write(
-            self.dir().join(format!("{}-exit", self.name)),
-            code.to_string(),
-        )
-        .unwrap();
-    }
 }
 
 impl Drop for FakeBinGuard {
@@ -286,68 +368,4 @@ impl Drop for FakeBinGuard {
         // SAFETY: serial_test ensures no other thread races on PATH.
         unsafe { std::env::set_var("PATH", &self.prev_path) };
     }
-}
-
-/// Single-quote a path for safe substitution into a sh script.
-fn single_quote_for_sh(p: &Path) -> String {
-    let s = p.to_string_lossy();
-    // Escape any embedded single quotes (paranoid — tempdir paths shouldn't
-    // contain them, but defensively quote).
-    let escaped = s.replace('\'', "'\\''");
-    format!("'{escaped}'")
-}
-
-/// sh script body for a fake `npm`. Logs argv to `<dir>/npm-args.log` and
-/// dispatches stdout based on the first matching argv pattern:
-///
-/// - argv contains `@alpha`     → cat `<dir>/npm-alpha-stdout`
-/// - else                       → cat `<dir>/npm-stdout`
-///
-/// Always cats `<dir>/npm-stderr` to stderr (if exists). Exits with the integer
-/// in `<dir>/npm-exit` (default 0).
-pub fn fake_npm_script(dir: &Path) -> String {
-    let dq = single_quote_for_sh(dir);
-    format!(
-        r#"#!/bin/sh
-echo "$@" >> {dq}/npm-args.log
-if echo "$@" | grep -q '@alpha'; then
-  if [ -f {dq}/npm-alpha-stdout ]; then cat {dq}/npm-alpha-stdout; fi
-elif [ -f {dq}/npm-stdout ]; then
-  cat {dq}/npm-stdout
-fi
-if [ -f {dq}/npm-stderr ]; then cat {dq}/npm-stderr >&2; fi
-exit_code=0
-if [ -f {dq}/npm-exit ]; then exit_code=$(cat {dq}/npm-exit); fi
-exit "$exit_code"
-"#
-    )
-}
-
-/// sh script body for a fake `gh`. Logs argv to `<dir>/gh-args.log` and
-/// dispatches stdout based on `release list` argv:
-///
-/// - argv contains `release list --exclude-pre-releases` → `<dir>/gh-stable-only-stdout`
-/// - argv contains `release list` (no exclude flag)      → `<dir>/gh-with-pre-stdout`
-/// - else                                                 → `<dir>/gh-stdout`
-///
-/// Exits with `<dir>/gh-exit` (default 0).
-pub fn fake_gh_script(dir: &Path) -> String {
-    let dq = single_quote_for_sh(dir);
-    format!(
-        r#"#!/bin/sh
-echo "$@" >> {dq}/gh-args.log
-if echo "$@" | grep -q 'release list'; then
-  if echo "$@" | grep -q '\-\-exclude-pre-releases'; then
-    if [ -f {dq}/gh-stable-only-stdout ]; then cat {dq}/gh-stable-only-stdout; fi
-  else
-    if [ -f {dq}/gh-with-pre-stdout ]; then cat {dq}/gh-with-pre-stdout; fi
-  fi
-elif [ -f {dq}/gh-stdout ]; then
-  cat {dq}/gh-stdout
-fi
-exit_code=0
-if [ -f {dq}/gh-exit ]; then exit_code=$(cat {dq}/gh-exit); fi
-exit "$exit_code"
-"#
-    )
 }

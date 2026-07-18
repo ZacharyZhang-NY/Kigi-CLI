@@ -1,32 +1,21 @@
-//! End-to-end tests for the lock-free concurrent-updater convergence model
-//! (the "double download" fix): updaters key staleness off the on-disk
-//! install, so a binary another process already installed is never
-//! downloaded again — and the accepted same-instant residual race is
-//! genuinely harmless thanks to per-attempt download temp names.
+//! End-to-end tests for the production update flows (`check_update_status`,
+//! `ensure_latest_on_disk`, `run_update`, `run_update_if_available`) against
+//! a GitHub-Releases-shaped [`common::artifact_server::ArtifactServer`],
+//! injected via the `KIGI_UPDATE_BASE_URL` override that
+//! `kigi_env::update_base_url()` honors.
 //!
-//! Production has three independent downloader paths that can race around a
-//! release:
+//! Three invariant families:
 //!
-//! 1. TUI startup: `check_update_background` spawns a detached `grok update`
-//!    (the Ctrl+U path now adopts this child instead of spawning a second).
-//! 2. Explicit `grok update` (incl. the Ctrl+U fallback when there is no
-//!    live child).
-//! 3. Leader mode: the hourly checker runs `ensure_latest_on_disk`
-//!    in-process.
+//! 1. **Convergence**: a binary already on disk (installed by another
+//!    process) is never downloaded a second time, but stale runners still
+//!    get the relaunch/report signal.
+//! 2. **Status**: `kigi update --check` reports upgrades only, surfaces
+//!    fetch errors in the `error` field, and never advertises downgrades.
+//! 3. **Race integrity**: concurrent installers — even for different
+//!    versions — never leave a corrupt active binary.
 //!
-//! Two layers are exercised here:
-//!
-//! - **Convergence** (`ensure_latest_on_disk`, `run_update`): a sequential
-//!   updater finds the target already on disk and skips the download. The
-//!   artifact server / fake `gh` count downloads so the skip is asserted,
-//!   not assumed.
-//! - **Race integrity** (`install_internal_from_base` run concurrently): the
-//!   same-instant race is accepted as rare; these tests pin the property
-//!   that makes it acceptable — concurrent installs (same or *different*
-//!   versions) never corrupt the active binary. Before the per-attempt
-//!   temp-name fix, every `0.1.x` download shared one `grok-0.1.tmp`
-//!   (`with_extension("tmp")` eats everything after the last dot), so racer
-//!   A could atomically rename racer B's half-written file into place.
+//! Everything here is `#[serial]`: KIGI_SHARE_DIR, KIGI_UPDATE_BASE_URL and
+//! KIGI_TEST_VERSION are process-global.
 
 #![cfg(unix)]
 
@@ -39,11 +28,34 @@ use serial_test::serial;
 
 use common::artifact_server::ArtifactServer;
 use common::{
-    FakeBinGuard, can_exec_shell_scripts, host_platform, make_update_config, reset_home,
-    set_test_version, small_good_artifact, test_home,
+    can_exec_shell_scripts, host_platform, make_update_config, reset_home, set_test_version,
+    set_update_base, small_good_artifact, test_home,
 };
-use kigi_update::auto_update::{ensure_latest_on_disk, install_internal_from_base, run_update};
+use kigi_update::auto_update::{
+    UpdateRunMode, check_update_status, ensure_latest_on_disk, install_internal_from_base,
+    run_update, run_update_if_available,
+};
 use kigi_update::version::installed_on_disk_version;
+
+/// Lay down a managed-install layout in the test KIGI_SHARE_DIR:
+/// `bin/kigi -> ../downloads/kigi-<version>-<platform>` (what the installer
+/// produces; the canonical link the disk-version probe reads).
+fn fake_managed_install(version: &str) {
+    let home = test_home();
+    let downloads = home.join("downloads");
+    let bin = home.join("bin");
+    std::fs::create_dir_all(&downloads).unwrap();
+    std::fs::create_dir_all(&bin).unwrap();
+    let name = format!("kigi-{version}-{}", host_platform());
+    std::fs::write(downloads.join(&name), small_good_artifact()).unwrap();
+    std::fs::set_permissions(
+        downloads.join(&name),
+        std::fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
+    let _ = std::fs::remove_file(bin.join("kigi"));
+    std::os::unix::fs::symlink(Path::new("../downloads").join(&name), bin.join("kigi")).unwrap();
+}
 
 /// Assert the active `~/.kigi/bin/kigi` resolves to the expected versioned
 /// binary, actually runs, and has exactly the expected content (the content
@@ -55,8 +67,8 @@ fn assert_active_binary(home: &Path, version: &str, platform: &str, expected_con
         .unwrap_or_else(|e| panic!("active kigi symlink does not resolve: {e}"));
     assert_eq!(
         resolved.file_name().unwrap().to_string_lossy(),
-        format!("grok-{version}-{platform}"),
-        "active grok must be the expected version"
+        format!("kigi-{version}-{platform}"),
+        "active kigi must be the expected version"
     );
     assert_eq!(
         std::fs::read(&resolved).unwrap(),
@@ -72,88 +84,20 @@ fn assert_active_binary(home: &Path, version: &str, platform: &str, expected_con
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
-    assert!(ran_ok, "active grok must pass the smoke-test");
+    assert!(ran_ok, "active kigi must pass the smoke-test");
 }
 
-/// Lay down a managed-install layout in the test KIGI_SHARE_DIR:
-/// `bin/{kigi,grok,agent} -> ../downloads/grok-<version>-<platform>` (what
-/// `install_internal_from_base` produces; `kigi` is the canonical link the
-/// disk-version probe reads, `grok` the legacy compat link).
-fn fake_managed_install(version: &str) {
-    let home = test_home();
-    let downloads = home.join("downloads");
-    let bin = home.join("bin");
-    std::fs::create_dir_all(&downloads).unwrap();
-    std::fs::create_dir_all(&bin).unwrap();
-    let name = format!("grok-{version}-{}", host_platform());
-    std::fs::write(downloads.join(&name), small_good_artifact()).unwrap();
-    std::fs::set_permissions(
-        downloads.join(&name),
-        std::fs::Permissions::from_mode(0o755),
-    )
-    .unwrap();
-    for link in ["kigi", "grok", "agent"] {
-        std::os::unix::fs::symlink(
-            std::path::Path::new("../downloads").join(&name),
-            bin.join(link),
-        )
-        .unwrap();
-    }
-}
-
-/// Fake `gh` that logs argv to `<dir>/gh-args.log`, answers
-/// `release list --exclude-pre-releases` from `<dir>/gh-stable-only-stdout`,
-/// and for `release download ... --output <path>` writes a smoke-passing
-/// artifact to the output path.
-fn fake_gh_serving_releases(dir: &std::path::Path) -> String {
-    let dq = format!("'{}'", dir.to_string_lossy().replace('\'', "'\\''"));
-    format!(
-        r#"#!/bin/sh
-echo "$@" >> {dq}/gh-args.log
-case "$*" in
-  *"release list"*)
-    if [ -f {dq}/gh-stable-only-stdout ]; then cat {dq}/gh-stable-only-stdout; fi
-    ;;
-  *"release download"*)
-    out=""
-    prev=""
-    for a in "$@"; do
-      if [ "$prev" = "--output" ]; then out="$a"; fi
-      prev="$a"
-    done
-    if [ -n "$out" ]; then
-      printf '#!/bin/sh\nexit 0\n' > "$out"
-      chmod +x "$out"
-    fi
-    ;;
-esac
-exit 0
-"#
-    )
-}
-
-/// Count `release download` invocations in the fake gh's argv log.
-fn gh_download_count(g: &FakeBinGuard) -> usize {
-    g.args_log()
-        .iter()
-        .filter(|l| l.contains("release download"))
-        .count()
-}
-
-fn setup_gh_release(running_version: &str) -> FakeBinGuard {
+fn setup(server: &ArtifactServer, latest: &str, running: &str) {
     let _ = test_home();
     reset_home();
-    set_test_version(running_version);
-    // SAFETY: serial_test ensures no race; reset_home clears this between tests.
-    unsafe { std::env::set_var("KIGI_INSTALLER", "gh-release") };
-    FakeBinGuard::install("gh", fake_gh_serving_releases)
+    server.set_latest(latest);
+    set_update_base(&server.base());
+    set_test_version(running);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Convergence: ensure_latest_on_disk downloads once, then every subsequent
 // pass (the leader's hourly re-entry) converges without re-downloading.
-// This is the e2e companion to the decision-level tests in
-// test_downgrade_matrix.rs — it asserts on actual download invocations.
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -163,15 +107,15 @@ async fn ensure_latest_downloads_once_then_converges_without_redownload() {
         eprintln!("skipping: shell scripts cannot execute in this sandbox");
         return;
     }
-    let g = setup_gh_release("0.2.5");
-    g.set_stable_only_stdout("v0.2.7\n");
+    let server = ArtifactServer::start(small_good_artifact());
+    setup(&server, "0.2.7", "0.2.5");
     let cfg = make_update_config("stable");
 
     // Pass 1: disk is empty → downloads and installs.
     let first = ensure_latest_on_disk(&cfg).await.unwrap();
     assert_eq!(first.installed.as_deref(), Some("0.2.7"));
     assert!(first.relaunch_needed, "running 0.2.5 < disk 0.2.7");
-    assert_eq!(gh_download_count(&g), 1, "first pass downloads");
+    assert_eq!(server.request_count(), 1, "first pass downloads");
     assert_eq!(installed_on_disk_version().as_deref(), Some("0.2.7"));
 
     // Pass 2 (the pre-fix hourly re-download): disk already current →
@@ -181,17 +125,11 @@ async fn ensure_latest_downloads_once_then_converges_without_redownload() {
     assert_eq!(second.installed, None, "second pass must not re-download");
     assert!(second.relaunch_needed, "still running 0.2.5 < disk 0.2.7");
     assert_eq!(
-        gh_download_count(&g),
+        server.request_count(),
         1,
         "hourly re-entry must not download again"
     );
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Convergence: explicit `grok update` (the Ctrl+U fallback path) finds the
-// binary another process already installed and skips the download — while
-// still returning the target version so stale leaders get signalled.
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 #[serial]
@@ -200,8 +138,8 @@ async fn run_update_skips_download_when_disk_already_current() {
         eprintln!("skipping: shell scripts cannot execute in this sandbox");
         return;
     }
-    let g = setup_gh_release("0.2.5");
-    g.set_stable_only_stdout("v0.2.7\n");
+    let server = ArtifactServer::start(small_good_artifact());
+    setup(&server, "0.2.7", "0.2.5");
     // Another process (TUI background download) already installed 0.2.7.
     fake_managed_install("0.2.7");
     let mut cfg = make_update_config("stable");
@@ -215,7 +153,7 @@ async fn run_update_skips_download_when_disk_already_current() {
          signals stale leaders to relaunch"
     );
     assert_eq!(
-        gh_download_count(&g),
+        server.request_count(),
         0,
         "a binary someone else installed must not be downloaded again"
     );
@@ -228,8 +166,8 @@ async fn run_update_force_still_redownloads_when_disk_current() {
         eprintln!("skipping: shell scripts cannot execute in this sandbox");
         return;
     }
-    let g = setup_gh_release("0.2.7");
-    g.set_stable_only_stdout("v0.2.7\n");
+    let server = ArtifactServer::start(small_good_artifact());
+    setup(&server, "0.2.7", "0.2.7");
     fake_managed_install("0.2.7");
     let mut cfg = make_update_config("stable");
 
@@ -237,88 +175,41 @@ async fn run_update_force_still_redownloads_when_disk_current() {
 
     assert_eq!(result.as_deref(), Some("0.2.7"));
     assert_eq!(
-        gh_download_count(&g),
+        server.request_count(),
         1,
         "--force must bypass the disk-current skip and reinstall"
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Installer gating: the disk-version probe must only be trusted for
-// installers that actually maintain the managed `~/.kigi/bin/grok` symlink
-// (internal, gh-release). For npm, a symlink left over from a previous
-// internal install LIES about the npm install's version — and in the worst
-// direction (leftover "newer" than the registry) it would silently suppress
-// npm updates forever.
-// ─────────────────────────────────────────────────────────────────────────────
-
-fn setup_npm(running_version: &str) -> FakeBinGuard {
-    let _ = test_home();
-    reset_home();
-    set_test_version(running_version);
-    // SAFETY: serial_test ensures no race; reset_home clears this between tests.
-    unsafe { std::env::set_var("KIGI_INSTALLER", "npm") };
-    FakeBinGuard::install_npm()
-}
-
 #[tokio::test]
 #[serial]
-async fn npm_update_not_suppressed_by_leftover_newer_internal_symlink() {
+async fn run_update_rolls_back_when_latest_moved_backwards() {
+    // Release rollback: the latest release points BELOW the on-disk install
+    // (a bad release was deleted). The internal installer is authoritative,
+    // so run_update must converge the disk down to it.
     if !can_exec_shell_scripts() {
         eprintln!("skipping: shell scripts cannot execute in this sandbox");
         return;
     }
-    let g = setup_npm("0.2.5");
-    g.set_stdout("\"0.2.7\"\n");
-    // Leftover symlink from a previous internal install, claiming to be
-    // NEWER than the npm registry. It says nothing about the npm-managed
-    // global install and must be ignored for npm staleness decisions.
-    fake_managed_install("0.2.9");
+    let server = ArtifactServer::start(small_good_artifact());
+    setup(&server, "0.2.5", "0.2.7");
+    fake_managed_install("0.2.7");
     let mut cfg = make_update_config("stable");
 
     let result = run_update(false, None, None, &mut cfg).await.unwrap();
 
     assert_eq!(
         result.as_deref(),
-        Some("0.2.7"),
-        "npm update must proceed despite the lying leftover symlink"
+        Some("0.2.5"),
+        "rollback target installed"
     );
-    assert!(
-        g.args_log().iter().any(|l| l.contains("i -g")),
-        "npm install must actually run: {:?}",
-        g.args_log()
-    );
+    assert_eq!(installed_on_disk_version().as_deref(), Some("0.2.5"));
+    assert_eq!(server.request_count(), 1);
 }
 
-#[tokio::test]
-#[serial]
-async fn ensure_latest_npm_ignores_leftover_internal_symlink() {
-    if !can_exec_shell_scripts() {
-        eprintln!("skipping: shell scripts cannot execute in this sandbox");
-        return;
-    }
-    let g = setup_npm("0.2.5");
-    g.set_stdout("\"0.2.7\"\n");
-    fake_managed_install("0.2.9");
-    let cfg = make_update_config("stable");
-
-    let outcome = ensure_latest_on_disk(&cfg).await.unwrap();
-
-    assert_eq!(
-        outcome.installed.as_deref(),
-        Some("0.2.7"),
-        "npm leader pass must install despite the lying leftover symlink"
-    );
-    assert!(
-        outcome.relaunch_needed,
-        "running 0.2.5 < freshly installed 0.2.7"
-    );
-    assert!(
-        g.args_log().iter().any(|l| l.contains("i -g")),
-        "npm install must actually run: {:?}",
-        g.args_log()
-    );
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// Disk-version probe
+// ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 #[serial]
@@ -349,7 +240,7 @@ async fn disk_probe_rejects_dangling_symlink() {
 
     std::fs::remove_file(
         home.join("downloads")
-            .join(format!("grok-0.2.7-{platform}")),
+            .join(format!("kigi-0.2.7-{platform}")),
     )
     .unwrap();
 
@@ -370,14 +261,14 @@ async fn ensure_latest_repairs_dangling_symlink_by_downloading() {
     // Dangling symlink + stale running process: the probe returns None, so
     // the decision falls back to the running version and the download runs,
     // repairing the install instead of wedging on "already up to date".
-    let g = setup_gh_release("0.2.5");
-    g.set_stable_only_stdout("v0.2.7\n");
+    let server = ArtifactServer::start(small_good_artifact());
+    setup(&server, "0.2.7", "0.2.5");
     let home = test_home();
     let platform = host_platform();
     fake_managed_install("0.2.7");
     std::fs::remove_file(
         home.join("downloads")
-            .join(format!("grok-0.2.7-{platform}")),
+            .join(format!("kigi-0.2.7-{platform}")),
     )
     .unwrap();
     let cfg = make_update_config("stable");
@@ -389,7 +280,7 @@ async fn ensure_latest_repairs_dangling_symlink_by_downloading() {
         Some("0.2.7"),
         "dangling symlink must be repaired by an actual download"
     );
-    assert_eq!(gh_download_count(&g), 1);
+    assert_eq!(server.request_count(), 1);
     assert_eq!(
         installed_on_disk_version().as_deref(),
         Some("0.2.7"),
@@ -398,18 +289,127 @@ async fn ensure_latest_repairs_dangling_symlink_by_downloading() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// check_update_status (`kigi update --check`)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+#[serial]
+async fn check_status_reports_update_when_release_is_newer() {
+    let server = ArtifactServer::start(small_good_artifact());
+    setup(&server, "0.2.7", "0.2.5");
+    let cfg = make_update_config("stable");
+
+    let status = check_update_status(&cfg).await;
+
+    assert_eq!(status.current_version, "0.2.5");
+    assert_eq!(status.latest_version.as_deref(), Some("0.2.7"));
+    assert!(status.update_available);
+    assert_eq!(status.installer.as_deref(), Some("internal"));
+    assert_eq!(status.error, None);
+}
+
+#[tokio::test]
+#[serial]
+async fn check_status_never_reports_downgrade_as_update() {
+    // --check reports upgrades only; a rolled-back release is not advertised
+    // (auto-update converges separately).
+    let server = ArtifactServer::start(small_good_artifact());
+    setup(&server, "0.2.5", "0.2.7");
+    let cfg = make_update_config("stable");
+
+    let status = check_update_status(&cfg).await;
+
+    assert_eq!(status.latest_version.as_deref(), Some("0.2.5"));
+    assert!(!status.update_available, "downgrade must not be advertised");
+    assert_eq!(status.error, None);
+}
+
+#[tokio::test]
+#[serial]
+async fn check_status_surfaces_fetch_error_in_error_field() {
+    // Point the updater at a dead endpoint (bound then dropped port →
+    // connection refused). The status must carry the error rather than
+    // pretending "up to date".
+    let _ = test_home();
+    reset_home();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    set_update_base(&format!("http://127.0.0.1:{port}/releases"));
+    set_test_version("0.2.5");
+    let cfg = make_update_config("stable");
+
+    let status = check_update_status(&cfg).await;
+
+    assert!(!status.update_available);
+    assert_eq!(status.latest_version, None);
+    let err = status.error.as_deref().expect("error must be surfaced");
+    assert!(!err.is_empty());
+
+    // And it serializes into the --json contract.
+    let v = serde_json::to_value(&status).unwrap();
+    assert!(v["error"].is_string());
+    assert_eq!(v["updateAvailable"], false);
+}
+
+#[tokio::test]
+#[serial]
+async fn check_status_unsupported_channel_reports_error() {
+    let server = ArtifactServer::start(small_good_artifact());
+    setup(&server, "0.2.7", "0.2.5");
+    let cfg = make_update_config("beta");
+
+    let status = check_update_status(&cfg).await;
+
+    assert!(!status.update_available);
+    let err = status.error.as_deref().expect("channel error surfaced");
+    assert!(
+        err.contains("Unsupported release channel 'beta'"),
+        "err: {err}"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// run_update_if_available — the auto-update opt-out gate.
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+#[serial]
+async fn run_update_if_available_respects_auto_update_false() {
+    // With cli.auto_update = false persisted, the startup check must return
+    // without ever touching the network (the update base points at a dead
+    // port — any fetch would error, any download would install).
+    let _ = test_home();
+    reset_home();
+    std::fs::write(
+        test_home().join("config.toml"),
+        "[cli]\nauto_update = false\n",
+    )
+    .unwrap();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    set_update_base(&format!("http://127.0.0.1:{port}/releases"));
+    set_test_version("0.1.0");
+    let cfg = make_update_config("stable");
+
+    let ran = run_update_if_available(UpdateRunMode::Blocking, false, &cfg)
+        .await
+        .unwrap();
+    assert!(!ran, "auto_update=false must suppress the update entirely");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Race integrity: the accepted same-instant race must stay harmless. Two (or
 // three) installers running concurrently — even for DIFFERENT versions —
-// must never leave a corrupt active binary. Pre-fix, all 0.1.x downloads
-// shared one `grok-0.1.tmp`, so a concurrent racer could atomically rename a
-// half-written file into place.
+// must never leave a corrupt active binary.
 // ─────────────────────────────────────────────────────────────────────────────
 
 async fn run_concurrent_installs(
     server: &ArtifactServer,
     versions: &[&str],
 ) -> Vec<anyhow::Result<()>> {
-    let base = server.uri();
+    let base = server.base();
     let mut tasks = Vec::new();
     for version in versions {
         let base = base.clone();
@@ -466,9 +466,6 @@ async fn concurrent_different_version_installs_do_not_corrupt_each_other() {
     let server = ArtifactServer::start(artifact.clone());
     server.set_slow(true);
 
-    // Pre-fix, BOTH of these wrote to downloads/grok-0.1.tmp concurrently
-    // (with_extension("tmp") truncates at the last dot), so one racer could
-    // rename the other's partial file into its own versioned path.
     let results = run_concurrent_installs(&server, &["0.1.181", "0.1.182"]).await;
     for r in results {
         r.expect("both racing installs must succeed");
@@ -478,7 +475,7 @@ async fn concurrent_different_version_installs_do_not_corrupt_each_other() {
     for version in ["0.1.181", "0.1.182"] {
         let path = home
             .join("downloads")
-            .join(format!("grok-{version}-{platform}"));
+            .join(format!("kigi-{version}-{platform}"));
         assert_eq!(
             std::fs::read(&path).unwrap(),
             artifact,
@@ -488,17 +485,18 @@ async fn concurrent_different_version_installs_do_not_corrupt_each_other() {
 
     // The active symlink points at whichever racer swapped last; it must
     // resolve and run regardless.
-    let resolved = dunce::canonicalize(home.join("bin").join("grok")).unwrap();
+    let resolved = dunce::canonicalize(home.join("bin").join("kigi")).unwrap();
     assert_eq!(std::fs::read(&resolved).unwrap(), artifact);
     let name = resolved.file_name().unwrap().to_string_lossy().to_string();
     assert!(
         !name.contains(".tmp"),
-        "active grok must never be a temp file: {name}"
+        "active kigi must never be a temp file: {name}"
     );
 
-    // No stray shared temp file left behind (the pre-fix collision name).
+    // No stray shared temp file left behind (a with_extension-style
+    // collision name).
     assert!(
-        !home.join("downloads").join("grok-0.1.tmp").exists(),
-        "the pre-fix shared temp name must not exist"
+        !home.join("downloads").join("kigi-0.1.tmp").exists(),
+        "the shared-temp-name collision must not exist"
     );
 }

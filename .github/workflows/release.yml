@@ -1,0 +1,134 @@
+name: Release
+
+# PRD F8: on tag push v*, build the single-file kigi binary for the five
+# supported targets, package per-target archives named
+# kigi-<version>-<target-triple>.{tar.gz|zip} (binary + LICENSE + NOTICE +
+# THIRD-PARTY-NOTICES), generate SHA256SUMS, and publish everything as a
+# GitHub Release. install.sh / install.ps1 and the in-app self-updater
+# (kigi-update) both resolve these exact asset names — keep the naming in
+# lockstep with auto_update::release_asset_name().
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-14
+          # macos-14 runners are arm64; the x86_64 slice is a cross-compile
+          # against the same SDK (macos-13 Intel runners are deprecated).
+          - target: x86_64-apple-darwin
+            os: macos-14
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          - target: x86_64-pc-windows-msvc
+            os: windows-2022
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tag matches workspace version
+        shell: bash
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          cargo_version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
+          if [ "$tag_version" != "$cargo_version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match workspace version $cargo_version" >&2
+            exit 1
+          fi
+
+      - name: Install toolchain (rust-toolchain.toml)
+        run: rustup show
+
+      - name: Add build target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Install dotslash (protoc launcher)
+        run: cargo install dotslash --locked
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build kigi (release-dist)
+        run: cargo build --profile release-dist -p kigi-bin --locked --target ${{ matrix.target }}
+
+      - name: Package archive (tar.gz)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          archive="kigi-${version}-${{ matrix.target }}.tar.gz"
+          staging="$(mktemp -d)"
+          cp "target/${{ matrix.target }}/release-dist/kigi" "$staging/kigi"
+          cp LICENSE "$staging/"
+          [ -f NOTICE ] && cp NOTICE "$staging/"
+          for f in THIRD-PARTY-NOTICES THIRD-PARTY-NOTICES.md; do
+            [ -f "$f" ] && cp "$f" "$staging/"
+          done
+          tar -C "$staging" -czf "$archive" .
+          shasum -a 256 "$archive" || sha256sum "$archive"
+          echo "ARCHIVE=$archive" >> "$GITHUB_ENV"
+
+      - name: Package archive (zip)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart("v")
+          $archive = "kigi-$version-${{ matrix.target }}.zip"
+          $staging = New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP "staging")
+          Copy-Item "target/${{ matrix.target }}/release-dist/kigi.exe" (Join-Path $staging "kigi.exe")
+          Copy-Item LICENSE $staging
+          if (Test-Path NOTICE) { Copy-Item NOTICE $staging }
+          foreach ($f in @("THIRD-PARTY-NOTICES", "THIRD-PARTY-NOTICES.md")) {
+            if (Test-Path $f) { Copy-Item $f $staging }
+          }
+          Compress-Archive -Path (Join-Path $staging "*") -DestinationPath $archive
+          Get-FileHash -Algorithm SHA256 $archive
+          Add-Content -Path $env:GITHUB_ENV -Value "ARCHIVE=$archive"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARCHIVE }}
+          path: ${{ env.ARCHIVE }}
+          if-no-files-found: error
+
+  release:
+    name: publish GitHub Release
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS
+        working-directory: dist
+        run: |
+          ls -l
+          sha256sum kigi-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true

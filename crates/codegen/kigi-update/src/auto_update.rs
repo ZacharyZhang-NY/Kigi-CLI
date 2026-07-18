@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use std::io::{self, Write};
-use std::process::{Command, Stdio};
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::time::Duration;
 
 #[cfg(unix)]
@@ -11,8 +12,8 @@ use indicatif::{ProgressBar, ProgressStyle};
 use tokio::io::AsyncWriteExt;
 
 use crate::version::{
-    UpdateConfig, fetch_latest_version, get_installed_grok_version, get_latest_version,
-    is_version_cache_fresh, try_fetch_stable_pointer, write_version_cache,
+    Release, UpdateConfig, fetch_latest_version, get_installed_kigi_version, get_latest_version,
+    is_version_cache_fresh, try_fetch_stable_version, write_version_cache,
 };
 use kigi_shell::util::config;
 use kigi_shell::util::kigi_home::{kigi_application, kigi_home};
@@ -25,23 +26,23 @@ pub enum UpdateRunMode {
 
 const PROMPT_UPDATE_NOW: &str = "Update now? [Y/n/d]";
 const MSG_AUTO_UPDATE_BACKGROUND: &str = "Auto-update running in background.";
-const MSG_RUN_UPDATE_MANUAL: &str = "Run `grok update` to get the latest version.";
-/// Manual-install one-liner for this platform's bootstrap installer.
+const MSG_RUN_UPDATE_MANUAL: &str = "Run `kigi update` to get the latest version.";
+
+/// Manual-install one-liner for this platform's bootstrap installer
+/// (install.sh / install.ps1 hosted at the repo root, PRD F8).
 fn manual_install_cmd() -> &'static str {
     if cfg!(windows) {
-        "irm https://x.ai/cli/install.ps1 | iex"
+        "irm https://raw.githubusercontent.com/ZacharyZhang-NY/Kigi-CLI/main/install.ps1 | iex"
     } else {
-        "curl -fsSL https://x.ai/cli/install.sh | bash"
+        "curl -fsSL https://raw.githubusercontent.com/ZacharyZhang-NY/Kigi-CLI/main/install.sh | sh"
     }
 }
 
-/// Build a reinstall hint for a known installer type.
-fn reinstall_hint(installer: &str) -> String {
-    match installer {
-        "npm" => "Please reinstall via npm:\n  npm i -g @xai-official/grok".to_string(),
-        "gh-release" => "Please reinstall via GitHub Releases:\n  gh release download --repo xai-org-shared/grok-build --pattern 'grok-*' --output grok && chmod +x grok".to_string(),
-        _ => format!("Please reinstall via:\n  {}", manual_install_cmd()),
-    }
+/// Build a reinstall hint for a known installer type. Every installer is
+/// "internal" (GitHub Releases) today; the parameter survives so the hint
+/// stays correct if another backend ever returns.
+fn reinstall_hint(_installer: &str) -> String {
+    format!("Please reinstall via:\n  {}", manual_install_cmd())
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -65,10 +66,7 @@ pub fn print_update_status(status: &UpdateStatus, json: bool) -> anyhow::Result<
     }
 
     if let Some(error) = status.error.as_deref() {
-        println!(
-            "Grok Build - v{} [{}]",
-            status.current_version, status.channel
-        );
+        println!("Kigi - v{} [{}]", status.current_version, status.channel);
         println!("Update check failed: {error}");
         return Ok(());
     }
@@ -78,35 +76,35 @@ pub fn print_update_status(status: &UpdateStatus, json: bool) -> anyhow::Result<
     if status.update_available {
         if let Some(latest_version) = status.latest_version.as_deref() {
             println!(
-                "A new version of Grok Build is available: {} -> {}{}",
+                "A new version of Kigi is available: {} -> {}{}",
                 status.current_version, latest_version, channel_label
             );
         } else {
-            println!("A new version of Grok Build is available.");
+            println!("A new version of Kigi is available.");
         }
         return Ok(());
     }
 
     if let Some(latest_version) = status.latest_version.as_deref() {
         println!(
-            "Grok Build - v{} (latest: {}){}",
+            "Kigi - v{} (latest: {}){}",
             status.current_version, latest_version, channel_label
         );
         return Ok(());
     }
 
-    println!("Grok Build - v{}{}", status.current_version, channel_label);
+    println!("Kigi - v{}{}", status.current_version, channel_label);
     Ok(())
 }
 
 pub async fn check_update_status(update_config: &UpdateConfig) -> UpdateStatus {
     let installer = get_installer().await.map(|value| value.to_string());
-    let current_version = get_installed_grok_version();
+    let current_version = get_installed_kigi_version();
     let current_config = config::load_config().await;
     let auto_update = current_config.cli.auto_update;
     let channel = update_config.channel.clone();
 
-    let Some(ref inst) = installer else {
+    let Some(ref _inst) = installer else {
         return UpdateStatus {
             current_version,
             latest_version: None,
@@ -118,7 +116,7 @@ pub async fn check_update_status(update_config: &UpdateConfig) -> UpdateStatus {
         };
     };
 
-    match get_latest_version(inst, update_config).await {
+    match get_latest_version(update_config).await {
         Ok(latest_version) => {
             let mut error = None;
             // --check reports upgrades only; a rolled-back pointer isn't a "new version" to advertise here (auto-update converges separately).
@@ -169,13 +167,13 @@ pub async fn check_update_status(update_config: &UpdateConfig) -> UpdateStatus {
 }
 
 /// Installer + version the leader/background path should converge to: an
-/// upgrade OR an authoritative-installer rollback. `None` means stay put. Gates
-/// on the installer (via `installer_allows_downgrade`) so npm is never
-/// downgraded — the decision depends on the installer, never the caller.
+/// upgrade OR an authoritative-installer rollback. `None` means stay put.
+/// Gates on the installer (via `installer_allows_downgrade`) so the decision
+/// depends on the installer, never the caller.
 pub async fn auto_update_target(update_config: &UpdateConfig) -> Option<(&'static str, String)> {
     let installer = get_installer().await?;
-    let current = get_installed_grok_version();
-    let latest = fetch_latest_version(installer, update_config).await.ok()?;
+    let current = get_installed_kigi_version();
+    let latest = fetch_latest_version(update_config).await.ok()?;
     needs_update(
         &current,
         &latest,
@@ -197,23 +195,20 @@ pub struct EnsureLatestOutcome {
     pub relaunch_needed: bool,
 }
 
-/// One leader auto-update pass: converge the on-disk install to the channel
-/// pointer (downloading **only** when the disk is actually behind it), then
+/// One leader auto-update pass: converge the on-disk install to the latest
+/// release (downloading **only** when the disk is actually behind it), then
 /// report whether the running process should relaunch onto the on-disk binary.
 ///
 /// Unlike [`run_update`] this never uses the compiled-in version for the
 /// download decision — a binary already installed by another process (TUI
-/// background download, explicit `grok update`) is reused as-is. This both
+/// background download, explicit `kigi update`) is reused as-is. This both
 /// removes the duplicate download in leader mode and stops the pre-fix
 /// hourly re-download while a busy leader keeps deferring its relaunch.
 ///
 /// When the disk version is unknowable ([`disk_version_for_installer`]:
-/// npm-managed installs, Windows copy-based installs, dev builds), this
-/// degrades to the pre-fix behavior — download when the *running* process is
-/// stale, relaunch only after a download this pass actually installed
-/// something. Note the Windows consequence: the hourly busy-leader
-/// re-download is NOT fixed there; only the symlink layout can prove the
-/// disk is current without exec'ing the binary.
+/// Windows copy-based installs, dev builds), this degrades to the pre-fix
+/// behavior — download when the *running* process is stale, relaunch only
+/// after a download this pass actually installed something.
 pub async fn ensure_latest_on_disk(update_config: &UpdateConfig) -> Result<EnsureLatestOutcome> {
     let mut outcome = EnsureLatestOutcome {
         installed: None,
@@ -223,10 +218,10 @@ pub async fn ensure_latest_on_disk(update_config: &UpdateConfig) -> Result<Ensur
         return Ok(outcome);
     };
     let allow_downgrade = installer_allows_downgrade(installer);
-    let latest = fetch_latest_version(installer, update_config).await?;
+    let latest = fetch_latest_version(update_config).await?;
 
     let effective_current =
-        disk_version_for_installer(installer).unwrap_or_else(get_installed_grok_version);
+        disk_version_for_installer(installer).unwrap_or_else(get_installed_kigi_version);
     if needs_update(
         &effective_current,
         &latest,
@@ -242,7 +237,7 @@ pub async fn ensure_latest_on_disk(update_config: &UpdateConfig) -> Result<Ensur
     // Relaunch when the running binary differs from what's on disk in the
     // channel's update direction — covers binaries installed by other
     // processes, not just the install above.
-    let running = get_installed_grok_version();
+    let running = get_installed_kigi_version();
     if let Some(disk_now) =
         disk_version_for_installer(installer).or_else(|| outcome.installed.clone())
     {
@@ -254,18 +249,12 @@ pub async fn ensure_latest_on_disk(update_config: &UpdateConfig) -> Result<Ensur
 }
 
 /// Disk-version probe gated on the installer actually maintaining the
-/// managed `~/.kigi/bin/grok` symlink.
-///
-/// Only the internal (install.sh / CDN) and gh-release installers write that
-/// symlink. npm manages its own global install, so for npm a symlink left
-/// over from a previous internal install would LIE about the npm install's
-/// version — in the worst direction, a leftover symlink "newer" than the npm
-/// registry would make every updater report "already up to date" and
-/// silently suppress npm updates forever. Unknown installers are treated
-/// like npm (no trustworthy disk version).
+/// managed `~/.kigi/bin/kigi` symlink. Only the internal (GitHub Releases)
+/// installer writes that symlink; unknown installers report no trustworthy
+/// disk version.
 fn disk_version_for_installer(installer: &str) -> Option<String> {
     match installer {
-        "internal" | "gh-release" => crate::version::installed_on_disk_version(),
+        "internal" => crate::version::installed_on_disk_version(),
         _ => None,
     }
 }
@@ -273,43 +262,32 @@ fn disk_version_for_installer(installer: &str) -> Option<String> {
 fn env_installer() -> Option<&'static str> {
     if let Ok(v) = std::env::var("KIGI_INSTALLER") {
         return match v.to_ascii_lowercase().as_str() {
-            "npm" => Some("npm"),
             "internal" => Some("internal"),
-            "gh-release" | "gh" => Some("gh-release"),
             _ => None,
         };
-    }
-    if std::env::var_os("KIGI_MANAGED_BY_NPM").is_some() {
-        return Some("npm");
     }
     if std::env::var_os("KIGI_MANAGED_BY_INTERNAL").is_some() {
         return Some("internal");
     }
-    if std::env::var_os("npm_config_user_agent").is_some() {
-        return Some("npm");
-    }
     None
 }
 
+/// Resolve the active installer backend. Every supported install path
+/// (install.sh, install.ps1, self-update) is "internal" — binaries from this
+/// repo's GitHub Releases (PRD F8: no PyPI/npm packages).
 pub async fn get_installer() -> Option<&'static str> {
     if let Some(i) = env_installer() {
         return Some(i);
     }
-    let cfg = config::load_config().await;
-    match cfg.cli.installer.as_deref() {
-        Some("npm") => Some("npm"),
-        Some("gh-release") => Some("gh-release"),
-        _ => Some("internal"),
-    }
+    // Any persisted installer value maps to the single supported backend.
+    let _ = config::load_config().await.cli.installer;
+    Some("internal")
 }
 
 fn needs_update(current: &str, target: &str, channel: &str, allow_downgrade: bool) -> Option<bool> {
     let current = semver::Version::parse(current).ok()?;
     let target = semver::Version::parse(target).ok()?;
     match channel {
-        // NOTE: With the 0.2.X versioning scheme, all versions are plain
-        // semver (no pre-release suffix). The pre-release checks in this
-        // match are dead code but kept as a safety net.
         "stable" | "enterprise" => {
             if !target.pre.is_empty() {
                 tracing::warn!(
@@ -333,37 +311,30 @@ fn needs_update(current: &str, target: &str, channel: &str, allow_downgrade: boo
     })
 }
 
-/// Returns `true` for installer backends whose version source is authoritative
-/// (managed by xAI directly), meaning a pointer rollback is intentional and
-/// should trigger a client downgrade. Returns `false` for backends like npm
-/// where stale corporate registries/proxies can return arbitrarily old versions.
-///
-/// Users who installed via `install.sh` are classified as `"internal"` by
-/// `get_installer()`, so they also get rollback support.
+/// Returns `true` for installer backends whose version source is
+/// authoritative (this repo's GitHub Releases), meaning a release rollback
+/// (deleted/yanked latest) is intentional and should trigger a client
+/// downgrade. Unknown backends never downgrade.
 fn installer_allows_downgrade(installer: &str) -> bool {
-    match installer {
-        "internal" | "gh-release" => true,
-        "npm" => false,
-        _ => false,
-    }
+    installer == "internal"
 }
 
 /// Result of a background update availability check.
 #[derive(Debug, Clone)]
 pub struct UpdateAvailable {
-    /// The latest version string (e.g. "0.1.200").
+    /// The latest version string (e.g. "0.1.2").
     pub latest_version: String,
 }
 
 /// Outcome of [`check_update_background`].
 pub struct BackgroundUpdateCheck {
-    /// `Some` when the *running* binary is older than the channel pointer —
+    /// `Some` when the *running* binary is older than the latest release —
     /// drives the in-TUI restart hint regardless of who downloads the binary.
     pub update: Option<UpdateAvailable>,
-    /// Handle to the background `grok update` child, `Some` only when a
+    /// Handle to the background `kigi update` child, `Some` only when a
     /// download was actually started (the on-disk install was behind the
-    /// pointer). The TUI parks this and `wait()`s on it at quit-for-update
-    /// time instead of spawning a second downloader.
+    /// latest release). The TUI parks this and `wait()`s on it at
+    /// quit-for-update time instead of spawning a second downloader.
     pub download: Option<tokio::process::Child>,
 }
 
@@ -379,12 +350,12 @@ impl BackgroundUpdateCheck {
 /// Check for available updates without blocking the TUI startup.
 ///
 /// Sets [`BackgroundUpdateCheck::update`] when the running binary is older
-/// than the channel pointer. If `auto_update` is enabled **and the on-disk
-/// install is also behind the pointer**, kicks off a non-blocking download
-/// (spawns `grok update` as a detached child process) so the new binary is
-/// ready when the user quits and relaunches. When another process (an earlier
-/// TUI, the leader's hourly checker) already put the target version on disk,
-/// no download is started — only the restart hint is surfaced.
+/// than the latest release. If `auto_update` is enabled **and the on-disk
+/// install is also behind it**, kicks off a non-blocking download (spawns
+/// `kigi update` as a detached child process) so the new binary is ready
+/// when the user quits and relaunches. When another process (an earlier TUI,
+/// the leader's hourly checker) already put the target version on disk, no
+/// download is started — only the restart hint is surfaced.
 pub async fn check_update_background(update_config: &UpdateConfig) -> BackgroundUpdateCheck {
     let Some(installer) = get_installer().await else {
         return BackgroundUpdateCheck::none();
@@ -399,8 +370,8 @@ pub async fn check_update_background(update_config: &UpdateConfig) -> Background
         return BackgroundUpdateCheck::none();
     }
 
-    let current_version = get_installed_grok_version();
-    let latest_version = match fetch_latest_version(installer, update_config).await {
+    let current_version = get_installed_kigi_version();
+    let latest_version = match fetch_latest_version(update_config).await {
         Ok(v) => v,
         Err(_) => return BackgroundUpdateCheck::none(),
     };
@@ -414,17 +385,15 @@ pub async fn check_update_background(update_config: &UpdateConfig) -> Background
     )
     .unwrap_or(false)
     {
-        let stable_ptr = try_fetch_stable_pointer().await;
+        let stable_ptr = try_fetch_stable_version().await;
         write_version_cache(&latest_version, stable_ptr.as_deref()).await;
         return BackgroundUpdateCheck::none();
     }
 
-    // Only download when the on-disk install is behind the pointer; the
-    // running process being stale (checked above) just means "show the
-    // restart hint". The quit-for-update path's `grok update` child resolves
-    // to "Already up to date" against the same disk state. Gated on the
-    // installer maintaining the managed symlink — for npm a leftover symlink
-    // would wrongly suppress the download (see `disk_version_for_installer`).
+    // Only download when the on-disk install is behind the latest release;
+    // the running process being stale (checked above) just means "show the
+    // restart hint". The quit-for-update path's `kigi update` child resolves
+    // to "Already up to date" against the same disk state.
     let disk_needs_download = match disk_version_for_installer(installer) {
         Some(disk) => needs_update(
             &disk,
@@ -497,13 +466,13 @@ pub async fn run_update_if_available(
         tracing::warn!("Failed to save auto-update setting: {}", e);
     }
 
-    let current_version = get_installed_grok_version();
+    let current_version = get_installed_kigi_version();
     // installer is guaranteed Some by the guard at the top of this function.
     let inst = installer.unwrap();
     // Fetch without writing version.json — we only cache after confirming the
     // update is not needed or after a successful blocking install. This prevents
     // a failed background download from suppressing retries for the TTL window.
-    let latest_version = match fetch_latest_version(inst, update_config).await {
+    let latest_version = match fetch_latest_version(update_config).await {
         Ok(v) => v,
         Err(_) => return Ok(false),
     };
@@ -515,7 +484,7 @@ pub async fn run_update_if_available(
     )
     .unwrap_or(false)
     {
-        let stable_ptr = try_fetch_stable_pointer().await;
+        let stable_ptr = try_fetch_stable_version().await;
         write_version_cache(&latest_version, stable_ptr.as_deref()).await;
         return Ok(false);
     }
@@ -523,7 +492,7 @@ pub async fn run_update_if_available(
     let channel_label = format!(" [{}]", update_config.channel);
     if auto_update {
         eprintln!(
-            "A new version of Grok Build is available: {} -> {}{}",
+            "A new version of Kigi is available: {} -> {}{}",
             current_version, latest_version, channel_label
         );
         if interactive {
@@ -551,7 +520,7 @@ pub async fn run_update_if_available(
             return Ok(false);
         }
         eprintln!(
-            "A new version of Grok Build is available: {} -> {}{}",
+            "A new version of Kigi is available: {} -> {}{}",
             current_version, latest_version, channel_label
         );
         if interactive {
@@ -586,7 +555,7 @@ pub async fn run_update_if_available(
     Ok(false)
 }
 
-/// Launch "grok update" in blocking or non-blocking mode.
+/// Launch "kigi update" in blocking or non-blocking mode.
 ///
 /// In `NonBlocking` mode the spawned child's handle is returned so the caller
 /// can later `wait()` on the in-flight download (e.g. the TUI's
@@ -617,7 +586,7 @@ async fn run_update_subcommand(run_mode: UpdateRunMode) -> Result<Option<tokio::
             // No detach: the child must stay in the foreground process group so Ctrl+C cancels it with the parent; the atomic install protocol makes mid-download kills safe.
             let status = cmd.status().await?;
             if !status.success() {
-                anyhow::bail!("grok update failed with {}", status);
+                anyhow::bail!("kigi update failed with {}", status);
             }
             Ok(None)
         }
@@ -634,12 +603,12 @@ async fn run_update_subcommand(run_mode: UpdateRunMode) -> Result<Option<tokio::
     }
 }
 
-/// Resolve the grok binary path for re-execution after an update.
+/// Resolve the kigi binary path for re-execution after an update.
 ///
 /// `current_exe()` resolves symlinks via `/proc/self/exe` (see proc(5)),
 /// so it returns the old versioned target after a symlink swap.
-/// Prefer `~/.kigi/bin/grok` which always points to the latest version.
-fn resolve_restart_exe() -> Result<std::path::PathBuf> {
+/// Prefer `~/.kigi/bin/kigi` which always points to the latest version.
+fn resolve_restart_exe() -> Result<PathBuf> {
     let canonical = kigi_application();
     if canonical.exists() {
         return Ok(canonical);
@@ -647,16 +616,16 @@ fn resolve_restart_exe() -> Result<std::path::PathBuf> {
     Ok(std::env::current_exe()?)
 }
 
-/// Restart grok with the original command-line arguments to pick up the update.
-pub fn restart_grok() -> Result<()> {
+/// Restart kigi with the original command-line arguments to pick up the update.
+pub fn restart_kigi() -> Result<()> {
     let exe = resolve_restart_exe()?;
-    let mut cmd = Command::new(exe);
+    let mut cmd = std::process::Command::new(exe);
     for arg in std::env::args_os().skip(1) {
         cmd.arg(arg);
     }
     cmd.env_clear();
     cmd.envs(std::env::vars_os().filter(|(k, _)| k != "KIGI_AUTO_UPDATE"));
-    eprintln!("Restarting Grok...");
+    eprintln!("Restarting Kigi...");
 
     // Use exec on Unix to replace the current process, avoiding stdio issues
     // when the parent exits. On Windows, fall back to spawn + exit.
@@ -688,15 +657,7 @@ pub async fn run_install_script(
     target: Option<&str>,
     update_config: &UpdateConfig,
 ) -> Result<()> {
-    let result = match installer {
-        "npm" => install_npm(
-            target,
-            &update_config.channel,
-            update_config.npm_registry.as_deref(),
-        ),
-        "gh-release" => install_gh_release(target).await,
-        _ => install_internal(target, update_config).await,
-    };
+    let result = install_internal(target, update_config).await;
     if result.is_ok() {
         remove_stale_models_cache().await;
     }
@@ -709,7 +670,8 @@ pub async fn run_install_script(
     })
 }
 
-/// Detect the current platform (os, arch) for binary downloads.
+/// Detect the current platform (os, arch) for versioned on-disk binary names
+/// (`kigi-<version>-<os>-<arch>`).
 pub(crate) fn detect_platform() -> Result<(&'static str, &'static str)> {
     let os = if cfg!(target_os = "macos") {
         "macos"
@@ -730,6 +692,38 @@ pub(crate) fn detect_platform() -> Result<(&'static str, &'static str)> {
     Ok((os, arch))
 }
 
+/// Rust target triple for this build — the key that maps a platform to its
+/// release-asset name. Must stay in lockstep with the five targets built by
+/// `.github/workflows/release.yml` and the tables in install.sh/install.ps1.
+pub(crate) fn target_triple() -> Result<&'static str> {
+    let triple = if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        "aarch64-apple-darwin"
+    } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+        "x86_64-apple-darwin"
+    } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+        "aarch64-unknown-linux-gnu"
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        "x86_64-unknown-linux-gnu"
+    } else if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
+        "x86_64-pc-windows-msvc"
+    } else {
+        anyhow::bail!("no released kigi artifact for this platform")
+    };
+    Ok(triple)
+}
+
+/// Release archives are tar.gz everywhere except Windows (zip).
+pub(crate) const ARCHIVE_EXT: &str = if cfg!(windows) { "zip" } else { "tar.gz" };
+
+/// Release-asset archive name for `version` on this platform:
+/// `kigi-<version>-<target-triple>.{tar.gz|zip}` (PRD F8).
+pub(crate) fn release_asset_name(version: &str) -> Result<String> {
+    Ok(format!("kigi-{version}-{}.{ARCHIVE_EXT}", target_triple()?))
+}
+
+/// Name of the checksum manifest asset attached to every release.
+pub(crate) const SHA256SUMS_ASSET: &str = "SHA256SUMS";
+
 /// Age past which a leftover `.tmp` download file (or a freshly-renamed
 /// versioned binary) is considered abandoned (crashed/killed updater) and
 /// safe for `cleanup_old_downloads` to sweep. Generous compared to the
@@ -740,29 +734,27 @@ pub(crate) fn detect_platform() -> Result<(&'static str, &'static str)> {
 const STALE_TMP_AGE: Duration = Duration::from_secs(60 * 60);
 
 /// Total timeout for a CLI artifact download request (including body).
-/// Previously 5 minutes, which was too tight on slow links and caused the
-/// transfer to abort and restart from zero repeatedly.
 const DOWNLOAD_REQUEST_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 
 /// Unique temp path for an in-flight download of `dest`.
 ///
 /// Appends `.{pid}-{seq}.tmp` to the FULL file name instead of using
 /// `Path::with_extension`, which treats everything after the last dot of the
-/// versioned name as the extension (`grok-0.1.181-linux-x86_64` →
-/// `grok-0.1.tmp`) and therefore collides for every `0.1.x` version. The PID
+/// versioned name as the extension (`kigi-0.1.1-linux-x86_64` →
+/// `kigi-0.1.tmp`) and therefore collides for every `0.1.x` version. The PID
 /// plus a per-process counter makes the name unique per download attempt —
 /// across processes (two updaters racing in the same instant, the accepted
 /// lock-free residual race) and within one process — so no racer can ever
 /// rename another's half-written temp file into place. Leftovers older than
 /// [`STALE_TMP_AGE`] are swept by `cleanup_old_downloads`.
-fn tmp_download_path(dest: &std::path::Path) -> std::path::PathBuf {
+fn tmp_download_path(dest: &Path) -> PathBuf {
     unique_temp_sibling(dest, "tmp")
 }
 
 /// Unique temp path `<base>.{pid}-{seq}.{ext}`, appended to the full name so a
-/// versioned base like `grok-0.1.181` doesn't collide via `with_extension`.
+/// versioned base like `kigi-0.1.1` doesn't collide via `with_extension`.
 /// PID + per-process counter keep racing updaters from clobbering each other.
-fn unique_temp_sibling(base: &std::path::Path, ext: &str) -> std::path::PathBuf {
+fn unique_temp_sibling(base: &Path, ext: &str) -> PathBuf {
     use std::sync::atomic::{AtomicU64, Ordering};
     static SEQ: AtomicU64 = AtomicU64::new(0);
     let mut name = base
@@ -779,7 +771,7 @@ fn unique_temp_sibling(base: &std::path::Path, ext: &str) -> std::path::PathBuf 
 
 /// Set `+x` on the temp file before renaming onto `dest`, so a concurrent
 /// same-version installer never execs `dest` while it is still 0644.
-async fn publish_downloaded_artifact(tmp: &std::path::Path, dest: &std::path::Path) -> Result<()> {
+async fn publish_downloaded_artifact(tmp: &Path, dest: &Path) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -798,18 +790,21 @@ fn parallel_chunk_count(size: u64) -> u64 {
     (size_mb / 16).clamp(1, 8)
 }
 
+/// HTTP client for release-asset downloads. GitHub requires a `User-Agent`
+/// on every request; asset downloads follow redirects to the CDN.
+fn asset_client() -> Result<reqwest::Client> {
+    Ok(reqwest::Client::builder()
+        .user_agent(concat!("kigi/", env!("CARGO_PKG_VERSION")))
+        .timeout(DOWNLOAD_REQUEST_TIMEOUT)
+        .build()?)
+}
+
 /// Try a parallel byte-range download to `dest`. Returns Err if the server
 /// doesn't advertise a Content-Length, the file is too small to be worth
 /// splitting, the range request is rejected, or any chunk transfer fails.
 /// The caller is expected to fall back to a single-connection download on Err.
-async fn try_parallel_download(
-    url: &str,
-    dest: &std::path::Path,
-    with_progress: bool,
-) -> Result<()> {
-    let client = reqwest::Client::builder()
-        .timeout(DOWNLOAD_REQUEST_TIMEOUT)
-        .build()?;
+async fn try_parallel_download(url: &str, dest: &Path, with_progress: bool) -> Result<()> {
+    let client = asset_client()?;
 
     let head = client.head(url).send().await?;
     if !head.status().is_success() {
@@ -894,7 +889,7 @@ async fn try_parallel_download(
 async fn download_range(
     client: &reqwest::Client,
     url: &str,
-    dest: &std::path::Path,
+    dest: &Path,
     start: u64,
     end: u64,
     progress: Option<&ProgressBar>,
@@ -935,7 +930,7 @@ async fn download_range(
 /// with bytes downloaded, total size, and ETA. Otherwise a spinner with a byte
 /// counter is used as a fallback.
 #[doc(hidden)]
-pub async fn download_with_progress(url: &str, dest: &std::path::Path) -> Result<()> {
+pub async fn download_with_progress(url: &str, dest: &Path) -> Result<()> {
     // Try parallel byte-range first. Falls through to single-connection on any
     // failure (HEAD missing Content-Length, ranges rejected, partial-fetch error).
     match try_parallel_download(url, dest, true).await {
@@ -945,9 +940,7 @@ pub async fn download_with_progress(url: &str, dest: &std::path::Path) -> Result
         }
     }
 
-    let client = reqwest::Client::builder()
-        .timeout(DOWNLOAD_REQUEST_TIMEOUT)
-        .build()?;
+    let client = asset_client()?;
     let resp = client.get(url).send().await?;
 
     if !resp.status().is_success() {
@@ -997,7 +990,7 @@ pub async fn download_with_progress(url: &str, dest: &std::path::Path) -> Result
 
 /// Download a file silently (no progress bar).
 #[doc(hidden)]
-pub async fn download_silent(url: &str, dest: &std::path::Path) -> Result<()> {
+pub async fn download_silent(url: &str, dest: &Path) -> Result<()> {
     match try_parallel_download(url, dest, false).await {
         Ok(()) => return Ok(()),
         Err(e) => {
@@ -1005,9 +998,7 @@ pub async fn download_silent(url: &str, dest: &std::path::Path) -> Result<()> {
         }
     }
 
-    let client = reqwest::Client::builder()
-        .timeout(DOWNLOAD_REQUEST_TIMEOUT)
-        .build()?;
+    let client = asset_client()?;
     let resp = client.get(url).send().await?;
 
     if !resp.status().is_success() {
@@ -1029,6 +1020,110 @@ pub async fn download_silent(url: &str, dest: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
+/// Fetch a small text asset (the SHA256SUMS manifest) into memory.
+async fn fetch_asset_text(url: &str) -> Result<String> {
+    let client = asset_client()?;
+    let resp = client.get(url).send().await?;
+    if !resp.status().is_success() {
+        anyhow::bail!("Download failed: HTTP {} for {}", resp.status(), url);
+    }
+    Ok(resp.text().await?)
+}
+
+/// Hex-encoded SHA-256 of a file, computed off the async runtime.
+async fn sha256_hex_of_file(path: &Path) -> Result<String> {
+    let path = path.to_owned();
+    tokio::task::spawn_blocking(move || -> Result<String> {
+        use sha2::{Digest, Sha256};
+        let mut f = std::fs::File::open(&path)?;
+        let mut hasher = Sha256::new();
+        std::io::copy(&mut f, &mut hasher)?;
+        Ok(format!("{:x}", hasher.finalize()))
+    })
+    .await
+    .map_err(|e| anyhow::anyhow!("sha256 task panicked: {e}"))?
+}
+
+/// Look up the expected SHA-256 for `asset_name` in a `sha256sum`-format
+/// manifest (`<hex><whitespace><name>` per line; a leading `*` on the name
+/// marks binary mode and is ignored).
+fn expected_sha256_for(sums: &str, asset_name: &str) -> Result<String> {
+    for line in sums.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Some((hash, name)) = line.split_once(char::is_whitespace) else {
+            continue;
+        };
+        if name.trim().trim_start_matches('*') != asset_name {
+            continue;
+        }
+        let hash = hash.trim();
+        if hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Ok(hash.to_ascii_lowercase());
+        }
+        anyhow::bail!("malformed SHA256SUMS entry for {asset_name}: '{line}'");
+    }
+    anyhow::bail!("SHA256SUMS has no entry for {asset_name}")
+}
+
+/// Extract the single `kigi` binary from a release archive to `dest_tmp`
+/// (caller publishes it with the usual chmod+rename). Archives are tar.gz on
+/// Unix and zip on Windows, containing `kigi(.exe)` plus license files.
+async fn extract_kigi_binary(archive: &Path, dest_tmp: &Path) -> Result<()> {
+    let archive = archive.to_owned();
+    let dest_tmp = dest_tmp.to_owned();
+    tokio::task::spawn_blocking(move || extract_kigi_binary_blocking(&archive, &dest_tmp))
+        .await
+        .map_err(|e| anyhow::anyhow!("archive extraction task panicked: {e}"))?
+}
+
+#[cfg(not(windows))]
+fn extract_kigi_binary_blocking(archive: &Path, dest_tmp: &Path) -> Result<()> {
+    let f = std::fs::File::open(archive)?;
+    let gz = flate2::read::GzDecoder::new(f);
+    let mut ar = tar::Archive::new(gz);
+    for entry in ar.entries()? {
+        let mut entry = entry?;
+        let is_kigi = entry
+            .path()?
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n == "kigi");
+        if is_kigi {
+            let mut out = std::fs::File::create(dest_tmp)?;
+            std::io::copy(&mut entry, &mut out)?;
+            return Ok(());
+        }
+    }
+    anyhow::bail!("archive {} contains no 'kigi' binary", archive.display())
+}
+
+#[cfg(windows)]
+fn extract_kigi_binary_blocking(archive: &Path, dest_tmp: &Path) -> Result<()> {
+    let f = std::fs::File::open(archive)?;
+    let mut zip = zip::ZipArchive::new(f)?;
+    for i in 0..zip.len() {
+        let mut entry = zip.by_index(i)?;
+        let base_name = entry
+            .name()
+            .rsplit(['/', '\\'])
+            .next()
+            .unwrap_or_default()
+            .to_string();
+        if base_name.eq_ignore_ascii_case("kigi.exe") {
+            let mut out = std::fs::File::create(dest_tmp)?;
+            std::io::copy(&mut entry, &mut out)?;
+            return Ok(());
+        }
+    }
+    anyhow::bail!(
+        "archive {} contains no 'kigi.exe' binary",
+        archive.display()
+    )
+}
+
 /// Delete `~/.kigi/models_cache.json` after a successful update.
 ///
 /// The cache embeds the binary version and will be treated as a miss by the
@@ -1043,99 +1138,49 @@ async fn remove_stale_models_cache() {
     }
 }
 
-/// Remove the stale `grok-pager` symlink/binary from `~/.kigi/bin/` left by
-/// older installations that shipped a separate pager binary.
-async fn remove_stale_pager(bin_dir: &std::path::Path) {
-    let name = if cfg!(windows) {
-        "grok-pager.exe"
-    } else {
-        "grok-pager"
-    };
-    let link = bin_dir.join(name);
-    if link.exists() || link.is_symlink() {
-        let _ = tokio::fs::remove_file(&link).await;
-    }
-}
-
-/// Fetch a CLI object from GCS. On Windows the public bucket may use a `.exe`
-/// suffix; try that first, then the extensionless name used on macOS/Linux.
-async fn download_cli_artifact_from_gcs(
-    gcs_base_url: &str,
-    object_name: &str,
-    dest: &std::path::Path,
-    with_progress: bool,
-) -> Result<()> {
-    let base = gcs_base_url.trim_end_matches('/');
-    #[cfg(windows)]
-    {
-        let with_exe = format!("{}/{}.exe", base, object_name);
-        let r = if with_progress {
-            download_with_progress(&with_exe, dest).await
+/// Remove stale grok-era links/binaries from `~/.kigi/bin/` left by
+/// installations that predate the Kigi distribution rewrite (`grok`,
+/// `agent`, `grok-pager`). `kigi` is the single managed entry point now.
+async fn remove_legacy_links(bin_dir: &Path) {
+    for base in ["grok", "agent", "grok-pager"] {
+        let name = if cfg!(windows) {
+            format!("{base}.exe")
         } else {
-            download_silent(&with_exe, dest).await
+            base.to_string()
         };
-        match r {
-            Ok(()) => return Ok(()),
-            Err(e) => tracing::debug!("{with_exe} not found, trying extensionless: {e}"),
+        let link = bin_dir.join(name);
+        if link.exists() || link.is_symlink() {
+            let _ = tokio::fs::remove_file(&link).await;
         }
-    }
-    let url = format!("{}/{}", base, object_name);
-    if with_progress {
-        download_with_progress(&url, dest).await
-    } else {
-        download_silent(&url, dest).await
     }
 }
 
 async fn install_internal(target: Option<&str>, update_config: &UpdateConfig) -> Result<()> {
-    install_internal_from_bases(target, update_config, crate::version::CLI_BASE_URLS).await
+    install_internal_from_base(target, update_config, &crate::version::update_base_url()).await
 }
 
-/// Try the base-dependent install phase ([`download_verified_from_base`]:
-/// version resolution, download, smoke test) against each base URL in turn,
-/// falling through to the next on any failure. Used to keep installs working
-/// when the primary CDN endpoint (Cloudflare) is unreachable but the fallback
-/// (direct GCS) still resolves.
-///
-/// Download-phase side effects (download dir creation, binary fetch) are
-/// idempotent, so retrying with a different base after a partial failure is
-/// safe. Local activation ([`activate_verified_download`]: link swap,
-/// cleanup, config persist) runs once after the first successful download —
-/// its failures are not base-dependent, so they abort the install instead of
-/// triggering a pointless re-download from the next base.
+/// Test-visible entry point: same as [`install_internal`] but resolves
+/// releases from `base_url` (a GitHub-Releases-shaped API) instead of
+/// [`kigi_env::update_base_url`]. Persists installer config and writes to
+/// `~/.kigi/bin/`, so callers must isolate `KIGI_SHARE_DIR`.
 #[doc(hidden)]
-pub async fn install_internal_from_bases(
+pub async fn install_internal_from_base(
     target: Option<&str>,
     update_config: &UpdateConfig,
-    bases: &[&str],
+    base_url: &str,
 ) -> Result<()> {
-    let mut last_err: Option<anyhow::Error> = None;
-    for (i, base) in bases.iter().enumerate() {
-        match download_verified_from_base(target, update_config, base).await {
-            Ok(download) => return activate_verified_download(&download).await,
-            Err(e) => {
-                if i + 1 < bases.len() {
-                    tracing::warn!(
-                        "install via {} failed ({:#}); trying next base URL",
-                        base,
-                        e
-                    );
-                }
-                last_err = Some(e);
-            }
-        }
-    }
-    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("no CLI base URLs to try")))
+    let download = download_verified_from_base(target, update_config, base_url).await?;
+    activate_verified_download(&download).await
 }
 
-const SMOKE_TEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+const SMOKE_TEST_TIMEOUT: Duration = Duration::from_secs(10);
 
-async fn smoke_test_binary(binary_path: &std::path::Path) -> bool {
+async fn smoke_test_binary(binary_path: &Path) -> bool {
     let mut cmd = tokio::process::Command::new(binary_path);
     cmd.arg("--version")
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
     kigi_tools::util::detach_command(&mut cmd);
     match tokio::time::timeout(SMOKE_TEST_TIMEOUT, cmd.status()).await {
         Ok(Ok(status)) => status.success(),
@@ -1143,64 +1188,89 @@ async fn smoke_test_binary(binary_path: &std::path::Path) -> bool {
     }
 }
 
-/// Test-only entry point: same as [`install_internal`] but reads from
-/// `gcs_base_url` instead of the hardcoded GCS bucket. Persists installer
-/// config and writes to `~/.kigi/bin/`, so callers must isolate
-/// `KIGI_SHARE_DIR`.
-#[doc(hidden)]
-pub async fn install_internal_from_base(
-    target: Option<&str>,
-    update_config: &UpdateConfig,
-    gcs_base_url: &str,
-) -> Result<()> {
-    let download = download_verified_from_base(target, update_config, gcs_base_url).await?;
-    activate_verified_download(&download).await
-}
-
-/// A downloaded and smoke-tested binary in `~/.kigi/downloads/`, not yet
-/// activated as the managed `grok`/`agent`.
+/// A downloaded, checksum-verified, and smoke-tested binary in
+/// `~/.kigi/downloads/`, not yet activated as the managed `kigi`.
 struct VerifiedDownload {
     version: String,
-    binary_path: std::path::PathBuf,
+    binary_path: PathBuf,
 }
 
-/// Base-dependent install phase: resolve the version (per base when no
-/// target is pinned), download the binary, and smoke-test it. Failures here
-/// are worth retrying against another base URL.
+/// Resolve the release to install: pinned version → `GET {base}/tags/v{v}`;
+/// otherwise the channel's latest.
+async fn resolve_release(target: Option<&str>, channel: &str, base_url: &str) -> Result<Release> {
+    match target {
+        Some(v) => {
+            semver::Version::parse(v)
+                .map_err(|_| anyhow::anyhow!("invalid version format: '{}'", v))?;
+            crate::version::fetch_release_for_version_from_base(v, base_url).await
+        }
+        None => crate::version::fetch_latest_release_from_base(channel, base_url).await,
+    }
+}
+
+/// Download phase: resolve the release, download the platform archive,
+/// verify its SHA-256 against the release's SHA256SUMS manifest, extract the
+/// `kigi` binary, and smoke-test it. Nothing is activated yet.
 async fn download_verified_from_base(
     target: Option<&str>,
     update_config: &UpdateConfig,
-    gcs_base_url: &str,
+    base_url: &str,
 ) -> Result<VerifiedDownload> {
     let (os, arch) = detect_platform()?;
     let platform = format!("{}-{}", os, arch);
 
-    let version = match target {
-        Some(v) => {
-            semver::Version::parse(v)
-                .map_err(|_| anyhow::anyhow!("invalid version format: '{}'", v))?;
-            v.to_string()
-        }
-        None => {
-            crate::version::fetch_gcs_version_from_base(&update_config.channel, gcs_base_url)
-                .await?
-        }
-    };
+    let release = resolve_release(target, &update_config.channel, base_url).await?;
+    let version = release.version()?;
+
+    let asset_name = release_asset_name(&version)?;
+    let archive_asset = release.asset(&asset_name)?;
+    let sums_asset = release.asset(SHA256SUMS_ASSET)?;
+
+    // Fetch the checksum manifest FIRST: if it's missing or unreadable we
+    // fail before spending bandwidth on the archive.
+    let sums = fetch_asset_text(&sums_asset.browser_download_url).await?;
+    let expected = expected_sha256_for(&sums, &asset_name)?;
 
     let kigi_home = kigi_home();
     let download_dir = kigi_home.join("downloads");
     tokio::fs::create_dir_all(&download_dir).await?;
 
-    let binary_name = format!("grok-{}-{}", version, platform);
+    let archive_path = download_dir.join(&asset_name);
+    let binary_name = format!("kigi-{}-{}", version, platform);
     let binary_path = download_dir.join(&binary_name);
 
-    eprintln!("  Downloading grok v{} ({})...", version, platform);
+    eprintln!("  Downloading kigi v{} ({})...", version, target_triple()?);
 
-    // Published already +x (see `publish_downloaded_artifact`).
-    download_cli_artifact_from_gcs(gcs_base_url, &binary_name, &binary_path, true).await?;
+    download_with_progress(&archive_asset.browser_download_url, &archive_path).await?;
+
+    // Checksum gate: a corrupt or tampered archive is deleted and never
+    // extracted, let alone activated.
+    let actual = sha256_hex_of_file(&archive_path).await?;
+    if actual != expected {
+        let _ = tokio::fs::remove_file(&archive_path).await;
+        anyhow::bail!(
+            "SHA256 mismatch for {asset_name}: expected {expected}, got {actual}.\n\
+             Your current version is unchanged."
+        );
+    }
+
+    // Extract to a unique temp sibling, then publish (chmod +x, atomic
+    // rename) so a concurrent same-version installer never sees a partial
+    // or non-executable binary at the final path.
+    let extract_tmp = unique_temp_sibling(&binary_path, "tmp");
+    if let Err(e) = extract_kigi_binary(&archive_path, &extract_tmp).await {
+        let _ = tokio::fs::remove_file(&extract_tmp).await;
+        let _ = tokio::fs::remove_file(&archive_path).await;
+        return Err(e);
+    }
+    publish_downloaded_artifact(&extract_tmp, &binary_path).await?;
+
+    // The archive has served its purpose; the versioned binary is what
+    // `cleanup_old_downloads` retention manages.
+    let _ = tokio::fs::remove_file(&archive_path).await;
 
     // Smoke-test: run the binary before activating it. A truncated or
-    // corrupt download is caught here and never becomes the active grok.
+    // corrupt extraction is caught here and never becomes the active kigi.
     if !smoke_test_binary(&binary_path).await {
         let _ = tokio::fs::remove_file(&binary_path).await;
         // No prefix: run_install_script's wrap adds "Auto-update failed:".
@@ -1218,25 +1288,23 @@ async fn download_verified_from_base(
     })
 }
 
-/// Local activation phase: swap the managed bin links to the downloaded
-/// binary and finish bookkeeping. Nothing here depends on which base URL
-/// served the download, so callers must not retry another base on failure.
+/// Local activation phase: swap the managed `~/.kigi/bin/kigi` link to the
+/// downloaded binary and finish bookkeeping.
 async fn activate_verified_download(download: &VerifiedDownload) -> Result<()> {
     let kigi_home = kigi_home();
     let download_dir = kigi_home.join("downloads");
     let bin_dir = kigi_home.join("bin");
     tokio::fs::create_dir_all(&bin_dir).await?;
 
-    // Atomic swap of ~/.kigi/bin/{kigi,grok,agent} -> downloaded binary.
-    let link_path = swap_managed_bin_links(&download.binary_path, &bin_dir).await?;
+    // Atomic swap of ~/.kigi/bin/kigi -> downloaded binary.
+    let link_path = swap_managed_bin_link(&download.binary_path, &bin_dir).await?;
 
-    remove_stale_pager(&bin_dir).await;
+    remove_legacy_links(&bin_dir).await;
 
     eprintln!();
 
     // Clean up old versioned binaries (keeps current + 1 previous).
-    cleanup_old_downloads(&download_dir, "grok", &download.version).await;
-    cleanup_old_downloads(&download_dir, "grok-pager", &download.version).await;
+    cleanup_old_downloads(&download_dir, "kigi", &download.version).await;
 
     // Persist installer to config.toml so future runs auto-detect internal.
     let _ = config::update_config(|st| {
@@ -1257,16 +1325,16 @@ async fn activate_verified_download(download: &VerifiedDownload) -> Result<()> {
 /// supported shell and writes the output to the standard completion paths.
 /// Failures are silently ignored — completions are a nice-to-have, not a
 /// requirement for a successful update.
-async fn regenerate_completions(binary: &std::path::Path, kigi_home: &std::path::Path) {
+async fn regenerate_completions(binary: &Path, kigi_home: &Path) {
     // Derive $HOME independently — kigi_home may be overridden via KIGI_SHARE_DIR
     // env var, so kigi_home.parent() isn't necessarily the user's home dir.
     #[allow(deprecated)]
     let user_home = std::env::home_dir().unwrap_or_default();
 
-    let completions: &[(&str, std::path::PathBuf)] = &[
-        ("bash", kigi_home.join("completions/bash/grok.bash")),
-        ("zsh", kigi_home.join("completions/zsh/_grok")),
-        ("fish", user_home.join(".config/fish/completions/grok.fish")),
+    let completions: &[(&str, PathBuf)] = &[
+        ("bash", kigi_home.join("completions/bash/kigi.bash")),
+        ("zsh", kigi_home.join("completions/zsh/_kigi")),
+        ("fish", user_home.join(".config/fish/completions/kigi.fish")),
     ];
 
     for (shell, dest) in completions {
@@ -1275,9 +1343,9 @@ async fn regenerate_completions(binary: &std::path::Path, kigi_home: &std::path:
         }
         let mut cmd = tokio::process::Command::new(binary);
         cmd.args(["completions", shell])
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null());
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
         kigi_tools::util::detach_command(&mut cmd);
         let Ok(output) = cmd.output().await else {
             continue;
@@ -1290,9 +1358,9 @@ async fn regenerate_completions(binary: &std::path::Path, kigi_home: &std::path:
 
 /// Compute a relative symlink target from `link` to `target`.
 ///
-/// When both paths share a grandparent (e.g. `~/.kigi/bin/grok` and
-/// `~/.kigi/downloads/grok-0.1.203-linux-x86_64`), returns a relative path
-/// like `../downloads/grok-0.1.203-linux-x86_64`.  When they share the same
+/// When both paths share a grandparent (e.g. `~/.kigi/bin/kigi` and
+/// `~/.kigi/downloads/kigi-0.1.2-linux-x86_64`), returns a relative path
+/// like `../downloads/kigi-0.1.2-linux-x86_64`.  When they share the same
 /// parent directory, returns just the filename.  Falls back to the absolute
 /// `target` path for any other layout.
 ///
@@ -1300,265 +1368,57 @@ async fn regenerate_completions(binary: &std::path::Path, kigi_home: &std::path:
 /// into a container with a different `$HOME` (and thus a different absolute
 /// prefix).
 #[cfg(unix)]
-fn relative_symlink_target(target: &std::path::Path, link: &std::path::Path) -> std::path::PathBuf {
+fn relative_symlink_target(target: &Path, link: &Path) -> PathBuf {
     let (Some(target_parent), Some(link_parent)) = (target.parent(), link.parent()) else {
         return target.to_path_buf();
     };
-    // Same directory — just the filename (e.g. grok-latest -> grok-0.1.203-…)
+    // Same directory — just the filename (e.g. kigi-latest -> kigi-0.1.2-…)
     if target_parent == link_parent
         && let Some(name) = target.file_name()
     {
-        return std::path::PathBuf::from(name);
+        return PathBuf::from(name);
     }
-    // Sibling directories — ../target_dir/filename (e.g. bin/grok -> ../downloads/grok-…)
+    // Sibling directories — ../target_dir/filename (e.g. bin/kigi -> ../downloads/kigi-…)
     if let (Some(tp), Some(lp)) = (target_parent.parent(), link_parent.parent())
         && tp == lp
         && let (Some(dir_name), Some(file_name)) = (target_parent.file_name(), target.file_name())
     {
-        return std::path::Path::new("..").join(dir_name).join(file_name);
+        return Path::new("..").join(dir_name).join(file_name);
     }
     target.to_path_buf()
 }
 
-/// Swap `~/.kigi/bin/{kigi,grok,agent}` to point at `binary_path`. Returns the
-/// `grok` link path (for [`regenerate_completions`]).
-///
-/// `grok` and `agent` are first-class entry points that the bootstrap
-/// installers (`install.sh`, `install.ps1`, `install-enterprise.sh`)
-/// maintain in lockstep, and so must the updater — otherwise `grok update`
-/// leaves `agent` pinned at the previous version.
+/// Swap `~/.kigi/bin/kigi` to point at `binary_path`. Returns the link path
+/// (for [`regenerate_completions`]).
 ///
 /// Unix: atomic symlink swap with relative target (survives Docker
-/// bind-mounts of `~/.kigi/`). Windows: [`windows_replace_exe`].
-///
-/// **All-or-nothing.** Each link's prior state is captured (Unix: prior
-/// symlink target; Windows: `.rollback.bak`; or `Absent` marker via
-/// `symlink_metadata`) before the swap, and any earlier successful swaps
-/// are rolled back if a later one fails — including *removing* a link that
-/// didn't exist before. Restore failures go to `tracing::warn!`; the swap
-/// error itself propagates unwrapped so the caller's `reinstall_hint` wrap
-/// stays the user-visible message.
-async fn swap_managed_bin_links(
-    binary_path: &std::path::Path,
-    bin_dir: &std::path::Path,
-) -> Result<std::path::PathBuf> {
-    // `kigi` is the canonical managed link (what `kigi_application()` and the
-    // disk-version probe read); `grok` is kept as a legacy compat link until
-    // the M3 distribution rewrite retires it.
+/// bind-mounts of `~/.kigi/`); a failed swap leaves the prior link intact.
+/// Windows: [`windows_replace_exe`], which restores the prior binary itself
+/// when the replacement copy fails.
+async fn swap_managed_bin_link(binary_path: &Path, bin_dir: &Path) -> Result<PathBuf> {
     let kigi_name = if cfg!(windows) { "kigi.exe" } else { "kigi" };
-    let grok_name = if cfg!(windows) { "grok.exe" } else { "grok" };
-    let agent_name = if cfg!(windows) { "agent.exe" } else { "agent" };
-    let kigi_link = bin_dir.join(kigi_name);
-    let grok_link = bin_dir.join(grok_name);
-    let agent_link = bin_dir.join(agent_name);
-    let link_paths: [std::path::PathBuf; 3] = [kigi_link.clone(), grok_link, agent_link];
+    let link_path = bin_dir.join(kigi_name);
 
-    // Capture every link up-front so a 2nd-link capture failure can't
-    // strand the 1st mid-swap.
-    let mut captured: Vec<LinkRollback> = Vec::with_capacity(link_paths.len());
-    for path in &link_paths {
-        match LinkRollback::capture(path).await {
-            Ok(rb) => captured.push(rb),
-            Err(e) => {
-                // Nothing swapped yet; drop any Windows .rollback.bak files.
-                for prior in &captured {
-                    prior.cleanup().await;
-                }
-                return Err(e)
-                    .with_context(|| format!("capturing rollback state for {}", path.display()));
-            }
-        }
-    }
-
-    let mut completed: Vec<&LinkRollback> = Vec::with_capacity(captured.len());
-    for (i, (link_path, rollback)) in link_paths.iter().zip(captured.iter()).enumerate() {
-        #[cfg(unix)]
-        let swap_result = {
-            let rel_target = relative_symlink_target(binary_path, link_path);
-            atomic_symlink_swap(&rel_target, link_path).await
-        };
-        #[cfg(windows)]
-        let swap_result = windows_replace_exe(binary_path, link_path).await;
-        #[cfg(not(any(unix, windows)))]
-        let swap_result: Result<()> = {
-            // No managed bin layout on this target; no-op.
-            let _ = (binary_path, link_path);
-            Ok(())
-        };
-
-        match swap_result {
-            Ok(()) => completed.push(rollback),
-            Err(e) => {
-                // Restore each successful swap in reverse. On restore
-                // failure keep the .rollback.bak as a recovery artifact
-                // (Windows only) and warn!; the swap error propagates so
-                // `reinstall_hint` is the user-visible message.
-                for prior in completed.iter().rev() {
-                    if let Err(restore_err) = prior.restore().await {
-                        let backup_note = prior.backup_path().map_or(String::new(), |p| {
-                            format!(" (prior binary preserved at {})", p.display())
-                        });
-                        tracing::warn!(
-                            "failed to roll back managed bin link {}: {restore_err:#}{backup_note}",
-                            prior.link_path().display(),
-                        );
-                        continue;
-                    }
-                    prior.cleanup().await;
-                }
-                // Failed swap had no active state to restore; drop its backup.
-                rollback.cleanup().await;
-                // Drop backups for never-attempted later captures (Windows orphans).
-                for later in &captured[i + 1..] {
-                    later.cleanup().await;
-                }
-                return Err(e);
-            }
-        }
-    }
-
-    for cap in &captured {
-        cap.cleanup().await;
-    }
-    Ok(kigi_link)
-}
-
-/// Snapshot of a managed-bin link's prior state for rollback in
-/// [`swap_managed_bin_links`]. `Absent` vs `Present` is discriminated up
-/// front via `symlink_metadata` so capture errors never get misread as
-/// "link was absent".
-enum LinkRollback {
-    /// Link was absent before the swap; rollback removes the one we created.
-    Absent { link_path: std::path::PathBuf },
-    /// Link existed before the swap; rollback restores its prior contents.
-    Present {
-        link_path: std::path::PathBuf,
-        /// Unix: prior symlink target (relative or absolute).
-        #[cfg(unix)]
-        prior_target: std::path::PathBuf,
-        /// Windows: `.rollback.bak` copy of the previous binary.
-        #[cfg(windows)]
-        backup_path: std::path::PathBuf,
-    },
-}
-
-impl LinkRollback {
-    async fn capture(link_path: &std::path::Path) -> Result<Self> {
-        let lp = link_path.to_path_buf();
-
-        // `symlink_metadata` (lstat) handles valid symlinks, broken
-        // symlinks, and regular files alike. Any IO error other than
-        // NotFound aborts the swap before mutation.
-        match tokio::fs::symlink_metadata(&lp).await {
-            Ok(_) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(LinkRollback::Absent { link_path: lp });
-            }
-            Err(e) => {
-                return Err(e).with_context(|| format!("stat {} before swap", lp.display()));
-            }
-        }
-
-        #[cfg(unix)]
-        {
-            let prior_target = tokio::fs::read_link(&lp)
-                .await
-                .with_context(|| format!("reading prior symlink target {}", lp.display()))?;
-            Ok(LinkRollback::Present {
-                link_path: lp,
-                prior_target,
-            })
-        }
-        #[cfg(windows)]
-        {
-            // Per-process+sequence backup name via `unique_temp_sibling`
-            // so concurrent updaters can't clobber each other's backups.
-            let backup_path = unique_temp_sibling(&lp, "rollback.bak");
-            tokio::fs::copy(&lp, &backup_path).await.with_context(|| {
-                format!(
-                    "backing up {} to {} before swap",
-                    lp.display(),
-                    backup_path.display(),
-                )
-            })?;
-            Ok(LinkRollback::Present {
-                link_path: lp,
-                backup_path,
-            })
-        }
-    }
-
-    fn link_path(&self) -> &std::path::Path {
-        match self {
-            LinkRollback::Absent { link_path } => link_path,
-            LinkRollback::Present { link_path, .. } => link_path,
-        }
-    }
-
-    /// Path to the on-disk backup (Windows only — Unix is in-memory).
-    #[cfg(windows)]
-    fn backup_path(&self) -> Option<&std::path::Path> {
-        match self {
-            LinkRollback::Present { backup_path, .. } => Some(backup_path),
-            LinkRollback::Absent { .. } => None,
-        }
-    }
     #[cfg(unix)]
-    fn backup_path(&self) -> Option<&std::path::Path> {
-        None
+    {
+        let rel_target = relative_symlink_target(binary_path, &link_path);
+        atomic_symlink_swap(&rel_target, &link_path)
+            .await
+            .with_context(|| format!("swapping managed bin link {}", link_path.display()))?;
+    }
+    #[cfg(windows)]
+    {
+        windows_replace_exe(binary_path, &link_path)
+            .await
+            .with_context(|| format!("replacing managed binary {}", link_path.display()))?;
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        // No managed bin layout on this target; no-op.
+        let _ = binary_path;
     }
 
-    async fn restore(&self) -> Result<()> {
-        match self {
-            LinkRollback::Absent { link_path } => {
-                // Remove the link we created. NotFound (someone else
-                // cleaned up) is fine; anything else is a real failure.
-                match tokio::fs::remove_file(link_path).await {
-                    Ok(()) => Ok(()),
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-                    Err(e) => Err(e).with_context(|| {
-                        format!("removing rolled-back link {}", link_path.display())
-                    }),
-                }
-            }
-            #[cfg(unix)]
-            LinkRollback::Present {
-                link_path,
-                prior_target,
-            } => atomic_symlink_swap(prior_target, link_path)
-                .await
-                .with_context(|| {
-                    format!("restoring prior symlink target for {}", link_path.display())
-                }),
-            #[cfg(windows)]
-            LinkRollback::Present {
-                link_path,
-                backup_path,
-            } => {
-                // Route through `windows_replace_exe` so rollback inherits
-                // the same ERROR_SHARING_VIOLATION rename-aside fallback
-                // as the forward path.
-                windows_replace_exe(backup_path, link_path)
-                    .await
-                    .with_context(|| {
-                        format!(
-                            "restoring {} from {}",
-                            link_path.display(),
-                            backup_path.display()
-                        )
-                    })
-            }
-        }
-    }
-
-    async fn cleanup(&self) {
-        #[cfg(windows)]
-        if let LinkRollback::Present { backup_path, .. } = self {
-            let _ = tokio::fs::remove_file(backup_path).await;
-        }
-        #[cfg(unix)]
-        let _ = self; // no on-disk backup on Unix
-    }
+    Ok(link_path)
 }
 
 /// Atomically swap a symlink to point to a new target.
@@ -1570,7 +1430,7 @@ impl LinkRollback {
 /// running process has mmap'd causes SIGKILL because the kernel can no longer
 /// verify the code signature of the executable pages.
 #[cfg(unix)]
-async fn atomic_symlink_swap(target: &std::path::Path, link_path: &std::path::Path) -> Result<()> {
+async fn atomic_symlink_swap(target: &Path, link_path: &Path) -> Result<()> {
     // Per-racer temp name: a shared one makes remove_file → symlink racy
     // (EEXIST, or ENOENT when another racer renames the link away).
     sweep_stale_tmp_links(link_path, STALE_TMP_AGE).await;
@@ -1585,7 +1445,7 @@ async fn atomic_symlink_swap(target: &std::path::Path, link_path: &std::path::Pa
 /// symlink and rename. Only those older than `max_age` are removed, so a
 /// concurrent racer's in-flight link is never deleted out from under it.
 #[cfg(unix)]
-async fn sweep_stale_tmp_links(link_path: &std::path::Path, max_age: Duration) {
+async fn sweep_stale_tmp_links(link_path: &Path, max_age: Duration) {
     let (Some(dir), Some(name)) = (
         link_path.parent(),
         link_path.file_name().and_then(|n| n.to_str()),
@@ -1632,7 +1492,7 @@ async fn sweep_stale_tmp_links(link_path: &std::path::Path, max_age: Duration) {
 /// swept best-effort at the start of each cycle; still-locked ones survive
 /// until a later update runs after those processes exit.
 #[cfg(windows)]
-async fn windows_replace_exe(src: &std::path::Path, dest: &std::path::Path) -> Result<()> {
+async fn windows_replace_exe(src: &Path, dest: &Path) -> Result<()> {
     let file_name = dest
         .file_name()
         .ok_or_else(|| anyhow::anyhow!("destination has no filename: {}", dest.display()))?
@@ -1690,7 +1550,7 @@ async fn windows_replace_exe(src: &std::path::Path, dest: &std::path::Path) -> R
     rename_result.map_err(|e| {
         anyhow::anyhow!(
             "cannot rename locked executable {}: {e}\n\
-             Close all running grok sessions and retry.",
+             Close all running kigi sessions and retry.",
             dest.display(),
         )
     })?;
@@ -1708,8 +1568,8 @@ async fn windows_replace_exe(src: &std::path::Path, dest: &std::path::Path) -> R
 /// `<exe>.old.{pid}-{seq}.old` asides accumulated by prior update cycles.
 /// Locked ones (still-running images) survive and are collected by a later
 /// update once those processes exit. The `<exe>.old` prefix keeps the sweep
-/// away from `<exe>` itself, other executables' leftovers, and the
-/// `.rollback.bak` / `.tmp` sibling shapes.
+/// away from `<exe>` itself, other executables' leftovers, and the `.tmp`
+/// sibling shapes.
 ///
 /// Unlike `sweep_stale_tmp_links` there is deliberately no `max_age` gate:
 /// rename preserves mtime, so a racer's seconds-old aside already looks
@@ -1718,7 +1578,7 @@ async fn windows_replace_exe(src: &std::path::Path, dest: &std::path::Path) -> R
 /// rollback source while both racers converge on the same dest) is the
 /// accepted lock-free residual race (see `tmp_download_path`).
 #[cfg(windows)]
-async fn sweep_old_exe_backups(old: &std::path::Path) {
+async fn sweep_old_exe_backups(old: &Path) {
     let _ = tokio::fs::remove_file(old).await;
     let (Some(dir), Some(old_name)) = (old.parent(), old.file_name().and_then(|n| n.to_str()))
     else {
@@ -1741,21 +1601,21 @@ async fn sweep_old_exe_backups(old: &std::path::Path) {
 
 /// Best-effort cleanup of old versioned binaries for a given binary name.
 ///
-/// Mirrors the npm `cleanupOldVersions()` policy: keeps the current version
-/// plus one previous version (in case a process is still running the old binary
-/// and hasn't fully loaded all pages yet — deleting it on macOS causes SIGKILL
-/// because the kernel can no longer verify the code signature).
+/// Keeps the current version plus one previous version (in case a process is
+/// still running the old binary and hasn't fully loaded all pages yet —
+/// deleting it on macOS causes SIGKILL because the kernel can no longer
+/// verify the code signature).
 ///
-/// `bin_prefix` is the binary name prefix, e.g. `"grok"` or `"grok-pager"`.
-/// Files must match `{bin_prefix}-{digit}*` to be considered versioned binaries
-/// (this avoids `grok-*` matching `grok-pager-*` or `grok-latest`).
+/// `bin_prefix` is the binary name prefix, e.g. `"kigi"`. Files must match
+/// `{bin_prefix}-{digit}*` to be considered versioned binaries (this avoids
+/// `kigi-*` matching `kigi-latest` or differently-suffixed siblings).
 ///
 /// Temporary/partial files (containing `.tmp`) are deleted only once they
 /// are **stale** (mtime older than [`STALE_TMP_AGE`]). A fresh `.tmp` may be
 /// a concurrent updater's in-flight download — the same-instant race the
 /// lock-free design accepts — and deleting it out from under that updater
 /// would make its atomic rename fail.
-async fn cleanup_old_downloads(dir: &std::path::Path, bin_prefix: &str, current_version: &str) {
+async fn cleanup_old_downloads(dir: &Path, bin_prefix: &str, current_version: &str) {
     let prefix = format!("{}-", bin_prefix);
     let current_semver = match semver::Version::parse(current_version) {
         Ok(v) => v,
@@ -1806,21 +1666,21 @@ async fn cleanup_old_downloads(dir: &std::path::Path, bin_prefix: &str, current_
             }
             continue;
         }
-        // Skip symlinks (e.g. grok-latest).
+        // Skip symlinks (e.g. kigi-latest).
         if let Ok(ft) = entry.file_type().await
             && ft.is_symlink()
         {
             continue;
         }
         // The suffix after the prefix must start with a digit to be a versioned
-        // binary (avoids `grok-latest`, `grok-pager-*` when prefix is `grok`).
+        // binary (avoids `kigi-latest` and other non-versioned siblings).
         let suffix = &name[prefix.len()..];
         if !suffix.starts_with(|c: char| c.is_ascii_digit()) {
             continue;
         }
         // Extract the version portion via the shared parser (handles the
-        // internal `grok-0.1.150-macos-aarch64`, pre-release, and npm
-        // `grok-0.1.150` layouts — see `version_from_versioned_binary_name`).
+        // managed `kigi-0.1.0-macos-aarch64`, pre-release, and bare
+        // `kigi-0.1.0` layouts — see `version_from_versioned_binary_name`).
         let Some(ver_str) = crate::version::version_from_versioned_binary_name(&name, bin_prefix)
         else {
             continue;
@@ -1838,7 +1698,6 @@ async fn cleanup_old_downloads(dir: &std::path::Path, bin_prefix: &str, current_
     versioned.sort_by(|a, b| b.0.cmp(&a.0));
 
     // Keep the most recent old version (index 0), delete the rest (index 1+).
-    // This matches the npm policy: current + 1 previous.
     for (_, name) in versioned.iter().skip(1) {
         let path = dir.join(name);
         // Same freshness guard as the `.tmp` sweep: a versioned binary
@@ -1861,285 +1720,6 @@ async fn cleanup_old_downloads(dir: &std::path::Path, bin_prefix: &str, current_
     }
 }
 
-/// Download a single asset from a GitHub release via `gh release download`.
-async fn gh_release_download(tag: &str, pattern: &str, dest: &std::path::Path) -> Result<()> {
-    let pb = ProgressBar::new_spinner();
-    pb.set_style(
-        ProgressStyle::default_spinner()
-            .template("  {spinner:.cyan} Downloading from GitHub Releases...")
-            .unwrap(),
-    );
-    pb.enable_steady_tick(Duration::from_millis(100));
-
-    let mut cmd = tokio::process::Command::new("gh");
-    cmd.args([
-        "release",
-        "download",
-        tag,
-        "--repo",
-        crate::version::GH_RELEASE_REPO,
-        "--pattern",
-        pattern,
-        "--output",
-        &dest.to_string_lossy(),
-        "--clobber",
-    ])
-    .stdin(Stdio::null())
-    .stdout(Stdio::null())
-    .stderr(Stdio::piped());
-    kigi_tools::util::detach_command(&mut cmd);
-    cmd.envs(kigi_tools::util::pager_env());
-    let output = cmd.output().await?;
-
-    pb.finish_and_clear();
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!(
-            "gh release download failed for {} tag {} from {}: {}",
-            pattern,
-            tag,
-            crate::version::GH_RELEASE_REPO,
-            stderr.trim()
-        );
-    }
-    Ok(())
-}
-
-/// Download and install grok from GitHub Releases (xai-org-shared/grok-build).
-///
-/// Uses `gh release download` to fetch the binary matching the current platform.
-/// This works anywhere the `gh` CLI is authenticated, without needing npm or
-/// internal network access.
-async fn install_gh_release(target: Option<&str>) -> Result<()> {
-    let (os, arch) = detect_platform()?;
-    let platform = format!("{}-{}", os, arch);
-
-    let version = match target {
-        Some(v) => v.to_string(),
-        None => crate::version::fetch_gh_release_version("stable").await?,
-    };
-
-    let kigi_home = kigi_home();
-    let download_dir = kigi_home.join("downloads");
-    let bin_dir = kigi_home.join("bin");
-    tokio::fs::create_dir_all(&download_dir).await?;
-    tokio::fs::create_dir_all(&bin_dir).await?;
-
-    let binary_name = format!("grok-{}-{}", version, platform);
-    let binary_path = download_dir.join(&binary_name);
-    let tag = format!("v{}", version);
-
-    eprintln!(
-        "  Downloading grok v{} ({}) from GitHub Releases...",
-        version, platform
-    );
-
-    gh_release_download(&tag, &binary_name, &binary_path).await?;
-
-    // chmod +x
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        tokio::fs::set_permissions(&binary_path, std::fs::Permissions::from_mode(0o755)).await?;
-    }
-
-    // Atomic swap of ~/.kigi/bin/{kigi,grok,agent} -> downloaded binary.
-    swap_managed_bin_links(&binary_path, &bin_dir).await?;
-
-    // Update grok-latest -> versioned binary so any existing symlinks that route
-    // through it (e.g. /usr/local/bin/grok -> ~/.kigi/downloads/grok-latest)
-    // resolve to the newly installed version.
-    #[cfg(unix)]
-    {
-        let latest_path = download_dir.join("grok-latest");
-        let rel_target = relative_symlink_target(&binary_path, &latest_path);
-        if let Err(e) = atomic_symlink_swap(&rel_target, &latest_path).await {
-            tracing::warn!("Failed to update grok-latest symlink: {e}");
-        }
-    }
-
-    // Also update /usr/local/bin/{grok,agent} if either points directly into
-    // ~/.kigi/downloads/ (legacy layout — skips the grok-latest indirection).
-    // Permission errors ignored.
-    #[cfg(unix)]
-    for name in ["grok", "agent"] {
-        let system_link = std::path::PathBuf::from(format!("/usr/local/bin/{name}"));
-        if let Ok(existing_target) = tokio::fs::read_link(&system_link).await {
-            let target_str = existing_target.to_string_lossy();
-            if target_str.contains(".kigi/downloads/") && !target_str.ends_with("grok-latest") {
-                // Try to update; ignore permission errors
-                let _ = atomic_symlink_swap(&binary_path, &system_link).await;
-            }
-        }
-    }
-
-    remove_stale_pager(&bin_dir).await;
-
-    eprintln!();
-
-    // Clean up old versioned binaries (keeps current + 1 previous).
-    cleanup_old_downloads(&download_dir, "grok", &version).await;
-    cleanup_old_downloads(&download_dir, "grok-pager", &version).await;
-
-    // Persist installer to config.toml so future runs auto-detect gh-release.
-    let _ = config::update_config(|st| {
-        st.cli.installer = Some("gh-release".to_string());
-    })
-    .await;
-
-    Ok(())
-}
-
-/// Creates a temporary .npmrc file with the NPM token if present.
-/// Returns the path to the created file, or None if no token was set.
-fn create_temp_npmrc(npm_registry: Option<&str>) -> Result<Option<std::path::PathBuf>> {
-    if let Ok(token) = std::env::var("NPM_TOKEN") {
-        let token = token.trim();
-        if !token.is_empty() {
-            let dir = std::env::temp_dir();
-            let npmrc_path = dir.join(format!(".npmrc-{}-install", std::process::id()));
-            let registry_host = npm_registry
-                .and_then(|r| reqwest::Url::parse(r).ok())
-                .map(|u| {
-                    let host = u.host_str().unwrap_or("registry.npmjs.org");
-                    let port_suffix = u.port().map(|p| format!(":{}", p)).unwrap_or_default();
-                    format!("{}{}{}", host, port_suffix, u.path().trim_end_matches('/'))
-                })
-                .unwrap_or_else(|| "registry.npmjs.org".to_string());
-            let npmrc_content = format!("//{}/:_authToken={}\n", registry_host, token);
-            std::fs::write(&npmrc_path, npmrc_content)?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(&npmrc_path, std::fs::Permissions::from_mode(0o600))?;
-            }
-            return Ok(Some(npmrc_path));
-        }
-    }
-    Ok(None)
-}
-
-/// Check if other grok processes are running (macOS only).
-///
-/// On macOS, `npm i -g` replaces the vendored binary in node_modules in-place.
-/// Any grok process running from that vendored path will be SIGKILL'd by the
-/// kernel because macOS (Apple Silicon in particular) can no longer verify
-/// the code signature of the mmap'd executable pages once the backing file
-/// inode is unlinked.
-///
-/// While our postinstall.js now uses versioned binaries under ~/.kigi/bin/
-/// (so processes launched from there are safe), older installations or npx
-/// invocations may still be running the vendored binary directly.
-#[cfg(target_os = "macos")]
-fn warn_if_other_grok_processes_running() {
-    let my_pid = std::process::id().to_string();
-    let mut cmd = Command::new("pgrep");
-    cmd.args(["-f", "grok"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    kigi_tools::util::detach_std_command(&mut cmd);
-    if let Ok(output) = cmd.output() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let other_pids: Vec<&str> = stdout
-            .lines()
-            .map(|l| l.trim())
-            .filter(|pid| !pid.is_empty() && *pid != my_pid)
-            .collect();
-        if !other_pids.is_empty() {
-            eprintln!(
-                "  ⚠ Warning: {} other grok process(es) detected.",
-                other_pids.len()
-            );
-            eprintln!("    Processes running from the npm vendored binary path may be");
-            eprintln!("    killed by macOS when npm replaces the package files.");
-            eprintln!("    Consider closing other grok sessions before updating.");
-            eprintln!();
-        }
-    }
-}
-
-/// Test-only entry point: invokes the private [`install_npm`] for tests
-/// that swap in a fake `npm` via PATH.
-#[doc(hidden)]
-pub fn install_npm_for_test(
-    target: Option<&str>,
-    channel: &str,
-    npm_registry: Option<&str>,
-) -> Result<()> {
-    install_npm(target, channel, npm_registry)
-}
-
-fn install_npm(target: Option<&str>, channel: &str, npm_registry: Option<&str>) -> Result<()> {
-    // Warn on macOS about potential impact on other running processes.
-    #[cfg(target_os = "macos")]
-    warn_if_other_grok_processes_running();
-
-    let version_arg = match target {
-        Some(ver) => format!("@xai-official/grok@{ver}"),
-        None => {
-            // All current callers resolve the version via get_latest_version
-            // (which applies max(stable, alpha) for the alpha channel) before
-            // reaching here.  Falling back to a raw dist-tag would bypass that
-            // logic, so warn loudly if this path is ever hit.
-            tracing::warn!(
-                channel,
-                "install_npm called without a resolved version, falling back to dist-tag"
-            );
-            format!(
-                "@xai-official/grok@{}",
-                if channel == "alpha" {
-                    "alpha"
-                } else {
-                    "latest"
-                }
-            )
-        }
-    };
-
-    let pb = ProgressBar::new_spinner();
-    pb.set_style(
-        ProgressStyle::default_spinner()
-            .template("  {spinner:.cyan} Installing via npm...")
-            .unwrap(),
-    );
-    pb.enable_steady_tick(Duration::from_millis(100));
-
-    let mut cmd = Command::new("npm");
-    cmd.args(["i", "-g", &version_arg]);
-    if let Some(registry) = npm_registry {
-        cmd.arg(format!("--registry={}", registry));
-    }
-
-    // Use a temporary .npmrc to avoid exposing the token in process lists or shell history.
-    let temp_npmrc = create_temp_npmrc(npm_registry)?;
-    if let Some(ref npmrc_path) = temp_npmrc {
-        cmd.arg(format!("--userconfig={}", npmrc_path.display()));
-    }
-
-    cmd.stdin(Stdio::null())
-        .stdout(Stdio::null())
-        // inherit, not piped — same rationale as run_update_subcommand.
-        .stderr(Stdio::inherit());
-    kigi_tools::util::detach_std_command(&mut cmd);
-    let status = cmd.status()?;
-
-    if let Some(path) = temp_npmrc
-        && let Err(e) = std::fs::remove_file(&path)
-    {
-        tracing::warn!("Failed to remove temp .npmrc file: {}", e);
-    }
-
-    pb.finish_and_clear();
-
-    if !status.success() {
-        anyhow::bail!("npm install failed. Please try again.");
-    }
-    eprintln!();
-    Ok(())
-}
-
 pub async fn apply_channel_switch(channel_switch: Option<&str>, update_config: &mut UpdateConfig) {
     if let Some(ch) = channel_switch
         && update_config.channel != ch
@@ -2153,7 +1733,7 @@ pub async fn apply_channel_switch(channel_switch: Option<&str>, update_config: &
     }
 }
 
-/// Run the `grok update` command. Returns `Ok(Some(version))` when the target
+/// Run the `kigi update` command. Returns `Ok(Some(version))` when the target
 /// version is present on disk afterwards — either installed by this call or
 /// found already installed (e.g. by a concurrent background download); returns
 /// `Ok(None)` when there is no installer or no applicable target. Callers use
@@ -2185,7 +1765,7 @@ pub async fn run_update(
         .await;
     }
 
-    let current_version = get_installed_grok_version();
+    let current_version = get_installed_kigi_version();
 
     // When --version is given, skip the latest-version check and install directly
     if let Some(version) = pinned_version {
@@ -2193,7 +1773,7 @@ pub async fn run_update(
             anyhow::bail!("{e}");
         }
         eprintln!(
-            "Installing Grok {} (current: {})...",
+            "Installing Kigi {} (current: {})...",
             version, current_version
         );
         eprintln!();
@@ -2218,7 +1798,7 @@ pub async fn run_update(
             .unwrap(),
     );
     pb.enable_steady_tick(Duration::from_millis(100));
-    let latest_version = fetch_latest_version(installer, update_config).await?;
+    let latest_version = fetch_latest_version(update_config).await?;
     pb.finish_and_clear();
 
     let install_target = match crate::minimum_version::apply_floor(&latest_version) {
@@ -2236,9 +1816,7 @@ pub async fn run_update(
     // What's on disk wins over this process's compiled-in version: a
     // concurrent or earlier updater (TUI background download, leader hourly
     // checker) may already have installed the target, in which case there is
-    // nothing to download. Gated on the installer maintaining the managed
-    // symlink — for npm a leftover symlink would lie (see
-    // `disk_version_for_installer`).
+    // nothing to download.
     let effective_current =
         disk_version_for_installer(installer).unwrap_or_else(|| current_version.clone());
 
@@ -2258,7 +1836,7 @@ pub async fn run_update(
                 if channel_switch.is_some() && effective_current != install_target {
                     // Fall through to install
                 } else {
-                    let stable_ptr = try_fetch_stable_pointer().await;
+                    let stable_ptr = try_fetch_stable_version().await;
                     write_version_cache(&install_target, stable_ptr.as_deref()).await;
                     eprintln!("Already up to date ({}).", effective_current);
                     // Retry if a prior sync failed.
@@ -2304,24 +1882,24 @@ pub async fn run_update(
         .unwrap_or(true)
     {
         eprintln!(
-            "Forcing reinstall of Grok {} (already up to date)",
+            "Forcing reinstall of Kigi {} (already up to date)",
             effective_current
         );
         &effective_current
     } else {
-        eprintln!("Updating Grok {} → {}", effective_current, install_target);
+        eprintln!("Updating Kigi {} → {}", effective_current, install_target);
         &install_target
     };
 
     eprintln!();
     run_install_script(installer, Some(target_version), update_config).await?;
-    // Fetch the stable pointer now so the new binary has it immediately
+    // Fetch the stable version now so the new binary has it immediately
     // for channel_label() display, rather than waiting for the next
     // TTL-gated update check (~30 min).
-    let stable_ptr = try_fetch_stable_pointer().await;
+    let stable_ptr = try_fetch_stable_version().await;
     write_version_cache(target_version, stable_ptr.as_deref()).await;
     refresh_deployment_config().await;
-    eprintln!("  ✓ grok v{} installed successfully!", target_version);
+    eprintln!("  ✓ kigi v{} installed successfully!", target_version);
 
     if !force && std::env::var_os("KIGI_AUTO_UPDATE").is_none() {
         eprintln!("  Please restart Kigi.");
@@ -2348,11 +1926,11 @@ async fn refresh_deployment_config() {
     match kigi_shell::managed_config::sync().await {
         Ok(true) => eprintln!("  Applied managed configuration."),
         Ok(false) => tracing::debug!("no managed configuration to apply"),
-        // Auth issues aren't actionable mid-update: quiet here, loud on `grok setup`.
+        // Auth issues aren't actionable mid-update: quiet here, loud on `kigi setup`.
         Err(e) if e.is_auth_rejection() => tracing::debug!("managed config not applied: {e}"),
         Err(e) if e.is_retryable() => {
             tracing::debug!("managed config refresh failed: {e}");
-            eprintln!("  Couldn't apply managed configuration. Run `grok setup` to retry.");
+            eprintln!("  Couldn't apply managed configuration. Run `kigi setup` to retry.");
         }
         Err(e) => eprintln!("  Couldn't apply managed configuration. {e}"),
     }
@@ -2364,12 +1942,12 @@ mod tests {
 
     #[test]
     fn test_tmp_download_path_is_unique_per_version_and_per_attempt() {
-        // The old `with_extension("tmp")` collapsed every 0.1.x versioned
-        // name onto a single `grok-0.1.tmp`; the helper must keep distinct
+        // `with_extension("tmp")` would collapse every 0.1.x versioned name
+        // onto a single `kigi-0.1.tmp`; the helper must keep distinct
         // versions distinct AND make repeated attempts (same process, e.g.
         // concurrent tokio tasks) unique.
-        let dest_181 = std::path::Path::new("/home/u/.kigi/downloads/grok-0.1.181-linux-x86_64");
-        let dest_182 = std::path::Path::new("/home/u/.kigi/downloads/grok-0.1.182-linux-x86_64");
+        let dest_181 = Path::new("/home/u/.kigi/downloads/kigi-0.1.181-linux-x86_64");
+        let dest_182 = Path::new("/home/u/.kigi/downloads/kigi-0.1.182-linux-x86_64");
 
         let a = tmp_download_path(dest_181);
         let b = tmp_download_path(dest_182);
@@ -2383,7 +1961,7 @@ mod tests {
 
         let name = a.file_name().unwrap().to_string_lossy().to_string();
         assert!(
-            name.starts_with("grok-0.1.181-linux-x86_64."),
+            name.starts_with("kigi-0.1.181-linux-x86_64."),
             "full versioned name must be preserved: {name}"
         );
         assert!(
@@ -2392,62 +1970,165 @@ mod tests {
         );
         assert_eq!(
             a.parent(),
-            std::path::Path::new("/home/u/.kigi/downloads").into(),
+            Path::new("/home/u/.kigi/downloads").into(),
             "temp file must stay in the destination directory for atomic rename"
         );
     }
 
+    // ──────────────────────────────────────────────────────────────────────
+    // needs_update — channel/upgrade/downgrade semantics
+    // ──────────────────────────────────────────────────────────────────────
+
     #[test]
-    fn test_needs_update_same_version() {
-        assert_eq!(
-            needs_update("0.1.141", "0.1.141", "stable", false),
-            Some(false)
-        );
+    fn test_needs_update_matrix() {
+        // (current, target, channel, allow_downgrade, expected)
+        let cases: &[(&str, &str, &str, bool, Option<bool>)] = &[
+            // Same version: never an update, regardless of allow_downgrade.
+            ("0.1.141", "0.1.141", "stable", false, Some(false)),
+            ("0.2.5", "0.2.5", "stable", true, Some(false)),
+            ("0.2.5", "0.2.5", "alpha", true, Some(false)),
+            // Plain upgrades.
+            ("0.1.140", "0.1.141", "stable", false, Some(true)),
+            ("0.2.5", "0.2.7", "stable", true, Some(true)),
+            ("0.2.5", "0.2.7", "alpha", false, Some(true)),
+            ("0.1.140", "0.1.999", "stable", false, Some(true)),
+            ("0.1.999", "0.2.0", "stable", false, Some(true)),
+            ("99.99.99", "100.0.0", "stable", false, Some(true)),
+            ("0.0.0", "0.0.1", "stable", false, Some(true)),
+            // Downgrades: only when the installer allows them.
+            ("0.1.141", "0.1.140", "stable", false, Some(false)),
+            ("0.2.7", "0.2.5", "stable", true, Some(true)),
+            ("0.2.7", "0.2.5", "alpha", true, Some(true)),
+            ("0.1.207", "0.1.206", "enterprise", true, Some(true)),
+            ("2.0.0", "1.99.99", "stable", true, Some(true)),
+            ("2.0.0", "1.99.99", "stable", false, Some(false)),
+            // Pre-release targets rejected on stable/enterprise, even for
+            // rollbacks.
+            ("0.1.139", "0.1.140-alpha.1", "stable", false, Some(false)),
+            ("0.2.7", "0.2.5-alpha.1", "stable", true, Some(false)),
+            ("0.2.7", "0.2.5-alpha.1", "enterprise", true, Some(false)),
+            (
+                "0.1.150-alpha.1",
+                "0.1.151-alpha.1",
+                "stable",
+                false,
+                Some(false),
+            ),
+            // Pre-release CURRENT on stable/enterprise: force-install a
+            // release even if semver-lower, independent of allow_downgrade.
+            ("0.1.149-alpha.1", "0.1.148", "stable", false, Some(true)),
+            ("0.1.149-alpha.1", "0.1.148", "stable", true, Some(true)),
+            (
+                "0.1.206-alpha.3",
+                "0.1.206",
+                "enterprise",
+                false,
+                Some(true),
+            ),
+            // Alpha channel follows raw semver.
+            ("0.1.140-alpha.8", "0.1.140", "alpha", false, Some(true)),
+            (
+                "0.1.148-alpha.1",
+                "0.1.148-alpha.3",
+                "alpha",
+                false,
+                Some(true),
+            ),
+            (
+                "0.1.148-alpha.3",
+                "0.1.148-alpha.2",
+                "alpha",
+                false,
+                Some(false),
+            ),
+            (
+                "0.1.148-alpha.3",
+                "0.1.148-alpha.2",
+                "alpha",
+                true,
+                Some(true),
+            ),
+            ("0.1.150-alpha.99", "0.1.150", "alpha", false, Some(true)),
+            (
+                "0.1.150-alpha.5",
+                "0.1.150-beta.1",
+                "alpha",
+                false,
+                Some(true),
+            ),
+            ("0.1.140", "0.1.139-alpha.5", "alpha", false, Some(false)),
+            // Enterprise behaves like stable for upgrades.
+            ("0.1.205", "0.1.206", "enterprise", false, Some(true)),
+            ("0.1.207", "0.1.206", "enterprise", false, Some(false)),
+            (
+                "0.1.205",
+                "0.1.206-alpha.1",
+                "enterprise",
+                false,
+                Some(false),
+            ),
+            // Parse failures and unknown channels → None.
+            ("not-a-version", "0.1.141", "stable", false, None),
+            ("0.1.141", "garbage", "stable", false, None),
+            ("garbage", "0.1.141", "alpha", false, None),
+            ("", "0.1.141", "stable", false, None),
+            ("0.1.141", "", "stable", false, None),
+            ("  0.1.141", "0.1.142", "stable", false, None),
+            ("0.1", "0.1.141", "stable", false, None),
+            ("0.1.140", "0.1.141", "beta", false, None),
+            ("0.1.140", "0.1.141", "beta", true, None),
+            ("0.1.140", "0.1.141", "STABLE", false, None),
+            ("0.1.140", "0.1.141", "Stable", false, None),
+            ("0.1.140", "0.1.141", "", false, None),
+        ];
+        for (current, target, channel, allow_downgrade, expected) in cases {
+            assert_eq!(
+                needs_update(current, target, channel, *allow_downgrade),
+                *expected,
+                "needs_update({current:?}, {target:?}, {channel:?}, {allow_downgrade})"
+            );
+        }
     }
 
     #[test]
-    fn test_needs_update_invalid_versions() {
+    fn test_needs_update_with_build_metadata_uses_semver_crate_ordering() {
+        // SUBTLE: per the semver SPEC, build metadata (after `+`) MUST be
+        // ignored when determining version precedence. However the `semver`
+        // crate's `PartialOrd` impl compares build metadata lexicographically
+        // for differing values. So `0.1.141+xyz > 0.1.141+abc` returns true
+        // here even though spec-wise they are equal.
+        //
+        // This means the release pipeline MUST NOT publish multiple builds of
+        // the same version differing only in build metadata, or auto-update
+        // will bounce users between them. The test locks in the surprising
+        // behavior so it can't change silently.
         assert_eq!(
-            needs_update("not-a-version", "0.1.141", "stable", false),
-            None
+            needs_update("0.1.141+abc", "0.1.141+xyz", "stable", false),
+            Some(true),
+            "semver crate orders by build metadata lexicographically (contra spec)"
         );
-        assert_eq!(needs_update("0.1.141", "garbage", "stable", false), None);
-    }
-
-    #[test]
-    fn test_needs_update_unknown_channel() {
-        assert_eq!(needs_update("0.1.140", "0.1.141", "beta", false), None);
-    }
-
-    #[test]
-    fn test_needs_update_enterprise_channel_behaves_like_stable() {
-        // Enterprise uses the same conservative pre-release rules as stable.
-        // Same version: no update.
         assert_eq!(
-            needs_update("0.1.206", "0.1.206", "enterprise", false),
-            Some(false)
-        );
-        // Newer stable: update.
-        assert_eq!(
-            needs_update("0.1.205", "0.1.206", "enterprise", false),
+            needs_update("0.1.141", "0.1.141+abc", "stable", false),
             Some(true)
         );
-        // Older stable: no downgrade (allow_downgrade=false).
-        assert_eq!(
-            needs_update("0.1.207", "0.1.206", "enterprise", false),
-            Some(false)
-        );
-        // Pre-release candidate rejected on enterprise channel.
-        assert_eq!(
-            needs_update("0.1.205", "0.1.206-alpha.1", "enterprise", false),
-            Some(false)
-        );
-        // Current pre-release on enterprise forces upgrade (even to equal base).
-        assert_eq!(
-            needs_update("0.1.206-alpha.3", "0.1.206", "enterprise", false),
-            Some(true)
-        );
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // installer_allows_downgrade
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_installer_allows_downgrade_internal_only() {
+        assert!(installer_allows_downgrade("internal"));
+        assert!(!installer_allows_downgrade("unknown"));
+        assert!(!installer_allows_downgrade(""));
+        assert!(!installer_allows_downgrade("npm"));
+        assert!(!installer_allows_downgrade("homebrew"));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // atomic_symlink_swap
+    // ──────────────────────────────────────────────────────────────────────
 
     #[cfg(unix)]
     #[tokio::test]
@@ -2456,7 +2137,7 @@ mod tests {
         let target = dir.path().join("binary-v1");
         std::fs::write(&target, "v1").unwrap();
 
-        let link = dir.path().join("grok");
+        let link = dir.path().join("kigi");
         // No existing symlink — should create one.
         atomic_symlink_swap(&target, &link).await.unwrap();
 
@@ -2467,30 +2148,7 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn test_atomic_symlink_swap_replaces_existing() {
-        let dir = tempfile::tempdir().unwrap();
-
-        let target_v1 = dir.path().join("binary-v1");
-        std::fs::write(&target_v1, "v1").unwrap();
-        let target_v2 = dir.path().join("binary-v2");
-        std::fs::write(&target_v2, "v2").unwrap();
-
-        let link = dir.path().join("grok");
-        // Set up initial symlink to v1.
-        std::os::unix::fs::symlink(&target_v1, &link).unwrap();
-        assert_eq!(std::fs::read_to_string(&link).unwrap(), "v1");
-
-        // Swap to v2.
-        atomic_symlink_swap(&target_v2, &link).await.unwrap();
-
-        assert!(link.is_symlink());
-        assert_eq!(std::fs::read_link(&link).unwrap(), target_v2);
-        assert_eq!(std::fs::read_to_string(&link).unwrap(), "v2");
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn test_atomic_symlink_swap_preserves_old_target() {
+    async fn test_atomic_symlink_swap_replaces_existing_and_preserves_old_target() {
         let dir = tempfile::tempdir().unwrap();
 
         let target_v1 = dir.path().join("binary-v1");
@@ -2498,42 +2156,21 @@ mod tests {
         let target_v2 = dir.path().join("binary-v2");
         std::fs::write(&target_v2, "v2-content").unwrap();
 
-        let link = dir.path().join("grok");
+        let link = dir.path().join("kigi");
         std::os::unix::fs::symlink(&target_v1, &link).unwrap();
+        assert_eq!(std::fs::read_to_string(&link).unwrap(), "v1-content");
 
-        // Swap to v2.
         atomic_symlink_swap(&target_v2, &link).await.unwrap();
+
+        assert!(link.is_symlink());
+        assert_eq!(std::fs::read_link(&link).unwrap(), target_v2);
+        assert_eq!(std::fs::read_to_string(&link).unwrap(), "v2-content");
 
         // The old target file must still exist on disk — this is the key
         // property that prevents SIGKILL on macOS.  Running processes that
         // have binary-v1 mmap'd can continue to page-fault from it.
         assert!(target_v1.exists(), "old binary must not be deleted");
         assert_eq!(std::fs::read_to_string(&target_v1).unwrap(), "v1-content");
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn test_atomic_symlink_swap_no_intermediate_missing_state() {
-        // Verify that the link path always exists (is never absent) during
-        // the swap.  We can't truly test atomicity without threads, but we
-        // can at least verify the path exists before and after.
-        let dir = tempfile::tempdir().unwrap();
-
-        let target_v1 = dir.path().join("binary-v1");
-        std::fs::write(&target_v1, "v1").unwrap();
-        let target_v2 = dir.path().join("binary-v2");
-        std::fs::write(&target_v2, "v2").unwrap();
-
-        let link = dir.path().join("grok");
-        std::os::unix::fs::symlink(&target_v1, &link).unwrap();
-        assert!(link.exists(), "link should exist before swap");
-
-        atomic_symlink_swap(&target_v2, &link).await.unwrap();
-        assert!(link.exists(), "link should exist after swap");
-
-        // No tmp-link file should be left behind.
-        let tmp_link = link.with_extension("tmp-link");
-        assert!(!tmp_link.exists(), "temp link should be cleaned up");
     }
 
     #[cfg(unix)]
@@ -2546,8 +2183,8 @@ mod tests {
         let target = dir.path().join("binary-v2");
         std::fs::write(&target, "v2").unwrap();
 
-        let link = dir.path().join("grok");
-        // Simulate an old installation where grok is a regular file.
+        let link = dir.path().join("kigi");
+        // Simulate an old installation where kigi is a regular file.
         std::fs::write(&link, "old-binary").unwrap();
 
         atomic_symlink_swap(&target, &link).await.unwrap();
@@ -2568,7 +2205,7 @@ mod tests {
         let target_v2 = dir.path().join("binary-v2");
         std::fs::write(&target_v2, "v2").unwrap();
 
-        let link = dir.path().join("grok");
+        let link = dir.path().join("kigi");
         std::os::unix::fs::symlink(&target_v1, &link).unwrap();
         std::os::unix::fs::symlink(&target_v1, link.with_extension("tmp-link")).unwrap();
 
@@ -2583,24 +2220,24 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let target = dir.path().join("binary-v1");
         std::fs::write(&target, "v1").unwrap();
-        let link = dir.path().join("grok");
+        let link = dir.path().join("kigi");
         std::os::unix::fs::symlink(&target, &link).unwrap();
 
         // Old- and new-style leftover temp links.
-        let leftover_old = dir.path().join("grok.tmp-link");
-        let leftover_new = dir.path().join("grok.123-0.tmp-link");
+        let leftover_old = dir.path().join("kigi.tmp-link");
+        let leftover_new = dir.path().join("kigi.123-0.tmp-link");
         std::os::unix::fs::symlink(&target, &leftover_old).unwrap();
         std::os::unix::fs::symlink(&target, &leftover_new).unwrap();
 
         // max_age = ZERO: every leftover is stale and removed; the active
-        // `grok` link (no `.tmp-link` suffix) is untouched.
+        // `kigi` link (no `.tmp-link` suffix) is untouched.
         sweep_stale_tmp_links(&link, Duration::ZERO).await;
         assert!(!leftover_old.exists() && !leftover_new.exists());
         assert!(link.is_symlink(), "active link must be preserved");
 
         // A fresh leftover under a real max_age is preserved — it could be a
         // concurrent racer's in-flight link.
-        let fresh = dir.path().join("grok.999-9.tmp-link");
+        let fresh = dir.path().join("kigi.999-9.tmp-link");
         std::os::unix::fs::symlink(&target, &fresh).unwrap();
         sweep_stale_tmp_links(&link, Duration::from_secs(3600)).await;
         assert!(fresh.exists(), "fresh tmp-link must be preserved");
@@ -2611,7 +2248,7 @@ mod tests {
     async fn test_atomic_symlink_swap_multiple_sequential_swaps() {
         // Simulate v1 -> v2 -> v3 -> v4 sequential swaps.
         let dir = tempfile::tempdir().unwrap();
-        let link = dir.path().join("grok");
+        let link = dir.path().join("kigi");
 
         for i in 1..=4 {
             let target = dir.path().join(format!("binary-v{}", i));
@@ -2638,140 +2275,12 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn test_atomic_symlink_swap_with_absolute_target() {
-        // atomic_symlink_swap stores whatever path is given — if absolute,
-        // readlink returns the absolute path.
-        let dir = tempfile::tempdir().unwrap();
-
-        let binary = dir.path().join("grok-0.1.141");
-        std::fs::write(&binary, "v141").unwrap();
-
-        let link = dir.path().join("grok");
-        atomic_symlink_swap(&binary, &link).await.unwrap();
-
-        assert!(link.is_symlink());
-        // readlink returns the absolute path we passed.
-        assert_eq!(std::fs::read_link(&link).unwrap(), binary);
-        assert_eq!(std::fs::read_to_string(&link).unwrap(), "v141");
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn test_atomic_symlink_swap_with_relative_target() {
-        // When given a relative path, the symlink stores a relative target.
-        let dir = tempfile::tempdir().unwrap();
-        let downloads = dir.path().join("downloads");
-        let bin = dir.path().join("bin");
-        std::fs::create_dir_all(&downloads).unwrap();
-        std::fs::create_dir_all(&bin).unwrap();
-
-        std::fs::write(downloads.join("grok-0.1.203"), "v203").unwrap();
-
-        let rel_target = std::path::Path::new("../downloads/grok-0.1.203");
-        let link = bin.join("grok");
-        atomic_symlink_swap(rel_target, &link).await.unwrap();
-
-        assert!(link.is_symlink());
-        assert_eq!(
-            std::fs::read_link(&link).unwrap(),
-            std::path::PathBuf::from("../downloads/grok-0.1.203")
-        );
-        assert_eq!(std::fs::read_to_string(&link).unwrap(), "v203");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn test_relative_symlink_target_sibling_dirs() {
-        // bin/grok -> ../downloads/grok-0.1.203
-        let target = std::path::Path::new("/home/alice/.kigi/downloads/grok-0.1.203");
-        let link = std::path::Path::new("/home/alice/.kigi/bin/grok");
-        let result = relative_symlink_target(target, link);
-        assert_eq!(
-            result,
-            std::path::PathBuf::from("../downloads/grok-0.1.203")
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn test_relative_symlink_target_same_dir() {
-        // downloads/grok-latest -> grok-0.1.203 (same directory)
-        let target = std::path::Path::new("/home/alice/.kigi/downloads/grok-0.1.203");
-        let link = std::path::Path::new("/home/alice/.kigi/downloads/grok-latest");
-        let result = relative_symlink_target(target, link);
-        assert_eq!(result, std::path::PathBuf::from("grok-0.1.203"));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn test_relative_symlink_target_cross_tree_stays_absolute() {
-        // /usr/local/bin/grok -> /home/alice/.kigi/downloads/grok-0.1.203
-        // Different grandparents — should stay absolute.
-        let target = std::path::Path::new("/home/alice/.kigi/downloads/grok-0.1.203");
-        let link = std::path::Path::new("/usr/local/bin/grok");
-        let result = relative_symlink_target(target, link);
-        assert_eq!(
-            result,
-            std::path::PathBuf::from("/home/alice/.kigi/downloads/grok-0.1.203")
-        );
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn test_relative_symlink_survives_directory_move() {
-        // Simulates Docker bind-mount: create ~/.kigi/ layout at path A,
-        // then move it to path B and verify the symlink still resolves.
-        let dir = tempfile::tempdir().unwrap();
-
-        // Create alice's layout
-        let alice = dir.path().join("alice").join(".kigi");
-        let alice_downloads = alice.join("downloads");
-        let alice_bin = alice.join("bin");
-        std::fs::create_dir_all(&alice_downloads).unwrap();
-        std::fs::create_dir_all(&alice_bin).unwrap();
-        std::fs::write(alice_downloads.join("grok-0.1.203"), "binary-content").unwrap();
-
-        // Create a relative symlink (what the fix produces)
-        let rel_target = std::path::Path::new("../downloads/grok-0.1.203");
-        let link = alice_bin.join("grok");
-        atomic_symlink_swap(rel_target, &link).await.unwrap();
-
-        // Verify it works at the original location
-        assert_eq!(std::fs::read_to_string(&link).unwrap(), "binary-content");
-
-        // "Bind-mount" to bob: copy the entire .kigi tree
-        let bob_home = dir.path().join("bob");
-        std::fs::create_dir_all(&bob_home).unwrap();
-        let bob = bob_home.join(".kigi");
-        let copy_status = std::process::Command::new("cp")
-            .args(["-a", alice.to_str().unwrap(), bob.to_str().unwrap()])
-            .status()
-            .unwrap();
-        assert!(copy_status.success());
-
-        // Verify the symlink resolves at bob's path too
-        let bob_link = bob.join("bin").join("grok");
-        assert!(bob_link.is_symlink());
-        assert_eq!(
-            std::fs::read_link(&bob_link).unwrap(),
-            std::path::PathBuf::from("../downloads/grok-0.1.203"),
-            "symlink target should be relative"
-        );
-        assert_eq!(
-            std::fs::read_to_string(&bob_link).unwrap(),
-            "binary-content",
-            "relative symlink should resolve at the new path"
-        );
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
     async fn test_atomic_symlink_swap_broken_symlink_target() {
         // If the current symlink is broken (target deleted externally),
         // the swap should still succeed.
         let dir = tempfile::tempdir().unwrap();
 
-        let link = dir.path().join("grok");
+        let link = dir.path().join("kigi");
         // Create a broken symlink — points to a file that doesn't exist.
         std::os::unix::fs::symlink(dir.path().join("deleted-binary"), &link).unwrap();
         assert!(link.is_symlink());
@@ -2788,160 +2297,82 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&link).unwrap(), "v2");
     }
 
+    #[cfg(unix)]
     #[test]
-    fn test_needs_update_prerelease_to_stable_forces_install() {
-        // Inadmissible current (pre-release on stable channel) → install even
-        // if the candidate is semver-lower.
+    fn test_relative_symlink_target_layouts() {
+        // bin/kigi -> ../downloads/kigi-0.1.2 (sibling directories)
+        let target = Path::new("/home/alice/.kigi/downloads/kigi-0.1.2");
+        let link = Path::new("/home/alice/.kigi/bin/kigi");
         assert_eq!(
-            needs_update("0.1.149-alpha.1", "0.1.148", "stable", false),
-            Some(true)
+            relative_symlink_target(target, link),
+            PathBuf::from("../downloads/kigi-0.1.2")
         );
+
+        // downloads/kigi-latest -> kigi-0.1.2 (same directory)
+        let link = Path::new("/home/alice/.kigi/downloads/kigi-latest");
         assert_eq!(
-            needs_update("0.1.148-alpha.3", "0.1.148", "stable", false),
-            Some(true)
+            relative_symlink_target(target, link),
+            PathBuf::from("kigi-0.1.2")
+        );
+
+        // /usr/local/bin/kigi -> absolute (different grandparents)
+        let link = Path::new("/usr/local/bin/kigi");
+        assert_eq!(
+            relative_symlink_target(target, link),
+            PathBuf::from("/home/alice/.kigi/downloads/kigi-0.1.2")
         );
     }
 
-    #[test]
-    fn test_needs_update_stable_to_alpha_no_install_when_candidate_equal() {
-        // Server returns max(stable, alpha) for alpha channel. When the user's
-        // stable version already IS the candidate, no install needed.
-        assert_eq!(
-            needs_update("0.1.148", "0.1.148", "alpha", false),
-            Some(false)
-        );
-    }
-
-    #[test]
-    fn test_needs_update_stable_channel_never_gets_prerelease() {
-        assert_eq!(
-            needs_update("0.1.139", "0.1.140-alpha.1", "stable", false),
-            Some(false)
-        );
-        assert_eq!(
-            needs_update("0.1.0", "0.1.1-beta.1", "stable", false),
-            Some(false)
-        );
-    }
-
-    #[test]
-    fn test_needs_update_valid_current_only_upgrades() {
-        // Admissible current on the target channel → pure semver (allow_downgrade=false).
-        assert_eq!(
-            needs_update("0.1.140", "0.1.141", "stable", false),
-            Some(true)
-        );
-        assert_eq!(
-            needs_update("0.1.141", "0.1.140", "stable", false),
-            Some(false)
-        );
-        assert_eq!(
-            needs_update("0.1.140-alpha.8", "0.1.140", "alpha", false),
-            Some(true)
-        );
-        assert_eq!(
-            needs_update("0.1.140", "0.1.139-alpha.5", "alpha", false),
-            Some(false)
-        );
-        // Alpha → newer alpha: upgrade.
-        assert_eq!(
-            needs_update("0.1.148-alpha.1", "0.1.148-alpha.3", "alpha", false),
-            Some(true)
-        );
-        // Alpha → older alpha: no downgrade (allow_downgrade=false).
-        assert_eq!(
-            needs_update("0.1.148-alpha.3", "0.1.148-alpha.2", "alpha", false),
-            Some(false)
-        );
-    }
-
-    #[test]
-    fn test_needs_update_large_version_numbers() {
-        // Ensure no overflow on realistic version numbers
-        assert_eq!(
-            needs_update("0.1.140", "0.1.999", "stable", false),
-            Some(true)
-        );
-        assert_eq!(
-            needs_update("0.1.999", "0.2.0", "stable", false),
-            Some(true)
-        );
-        assert_eq!(
-            needs_update("99.99.99", "100.0.0", "stable", false),
-            Some(true)
-        );
-    }
-
+    #[cfg(unix)]
     #[tokio::test]
-    async fn test_cleanup_old_downloads_keeps_current_plus_one() {
+    async fn test_relative_symlink_survives_directory_move() {
+        // Simulates Docker bind-mount: create ~/.kigi/ layout at path A,
+        // then copy it to path B and verify the symlink still resolves.
         let dir = tempfile::tempdir().unwrap();
-        let d = dir.path();
 
-        // Simulate 5 old grok binaries in downloads dir.
-        for v in ["0.1.140", "0.1.141", "0.1.142", "0.1.143", "0.1.144"] {
-            std::fs::write(d.join(format!("grok-{}-macos-aarch64", v)), v).unwrap();
-        }
-        // Current version.
-        std::fs::write(d.join("grok-0.1.145-macos-aarch64"), "current").unwrap();
+        let alice = dir.path().join("alice").join(".kigi");
+        let alice_downloads = alice.join("downloads");
+        let alice_bin = alice.join("bin");
+        std::fs::create_dir_all(&alice_downloads).unwrap();
+        std::fs::create_dir_all(&alice_bin).unwrap();
+        std::fs::write(alice_downloads.join("kigi-0.1.2"), "binary-content").unwrap();
 
-        make_all_stale(d);
+        let rel_target = Path::new("../downloads/kigi-0.1.2");
+        let link = alice_bin.join("kigi");
+        atomic_symlink_swap(rel_target, &link).await.unwrap();
+        assert_eq!(std::fs::read_to_string(&link).unwrap(), "binary-content");
 
-        cleanup_old_downloads(d, "grok", "0.1.145").await;
+        // "Bind-mount" to bob: copy the entire .kigi tree.
+        let bob_home = dir.path().join("bob");
+        std::fs::create_dir_all(&bob_home).unwrap();
+        let bob = bob_home.join(".kigi");
+        let copy_status = std::process::Command::new("cp")
+            .args(["-a", alice.to_str().unwrap(), bob.to_str().unwrap()])
+            .status()
+            .unwrap();
+        assert!(copy_status.success());
 
-        // Current must survive.
-        assert!(d.join("grok-0.1.145-macos-aarch64").exists(), "current");
-        // Newest old version (0.1.144) must survive.
-        assert!(d.join("grok-0.1.144-macos-aarch64").exists(), "N-1");
-        // Everything else should be deleted.
-        assert!(
-            !d.join("grok-0.1.143-macos-aarch64").exists(),
-            "0.1.143 should be deleted"
+        let bob_link = bob.join("bin").join("kigi");
+        assert!(bob_link.is_symlink());
+        assert_eq!(
+            std::fs::read_link(&bob_link).unwrap(),
+            PathBuf::from("../downloads/kigi-0.1.2"),
+            "symlink target should be relative"
         );
-        assert!(
-            !d.join("grok-0.1.142-macos-aarch64").exists(),
-            "0.1.142 should be deleted"
-        );
-        assert!(
-            !d.join("grok-0.1.141-macos-aarch64").exists(),
-            "0.1.141 should be deleted"
-        );
-        assert!(
-            !d.join("grok-0.1.140-macos-aarch64").exists(),
-            "0.1.140 should be deleted"
+        assert_eq!(
+            std::fs::read_to_string(&bob_link).unwrap(),
+            "binary-content",
+            "relative symlink should resolve at the new path"
         );
     }
 
-    #[tokio::test]
-    async fn test_cleanup_old_downloads_does_not_touch_other_binaries() {
-        let dir = tempfile::tempdir().unwrap();
-        let d = dir.path();
-
-        // grok and grok-pager should not interfere with each other.
-        std::fs::write(d.join("grok-0.1.140-macos-aarch64"), "old-grok").unwrap();
-        std::fs::write(d.join("grok-0.1.141-macos-aarch64"), "current-grok").unwrap();
-        std::fs::write(d.join("grok-pager-0.1.140-macos-aarch64"), "old-pager").unwrap();
-        std::fs::write(d.join("grok-pager-0.1.141-macos-aarch64"), "current-pager").unwrap();
-
-        // Cleanup only grok — pager files must be untouched.
-        make_all_stale(d);
-
-        cleanup_old_downloads(d, "grok", "0.1.141").await;
-
-        assert!(d.join("grok-0.1.141-macos-aarch64").exists());
-        assert!(d.join("grok-0.1.140-macos-aarch64").exists()); // only old, kept as N-1
-        assert!(
-            d.join("grok-pager-0.1.140-macos-aarch64").exists(),
-            "pager untouched"
-        );
-        assert!(
-            d.join("grok-pager-0.1.141-macos-aarch64").exists(),
-            "pager untouched"
-        );
-    }
+    // ──────────────────────────────────────────────────────────────────────
+    // cleanup_old_downloads
+    // ──────────────────────────────────────────────────────────────────────
 
     /// Backdate a file's mtime past [`STALE_TMP_AGE`] so cleanup treats it
     /// as an abandoned download / genuinely old binary.
-    fn make_stale(path: &std::path::Path) {
+    fn make_stale(path: &Path) {
         let old = std::time::SystemTime::now() - (STALE_TMP_AGE + Duration::from_secs(60));
         let f = std::fs::File::options().write(true).open(path).unwrap();
         f.set_times(std::fs::FileTimes::new().set_modified(old))
@@ -2952,7 +2383,7 @@ mod tests {
     /// freshly-written binary or temp file (it may belong to a concurrent
     /// in-flight install), so retention-policy tests must age their fixtures
     /// to look like real leftovers from previous releases.
-    fn make_all_stale(dir: &std::path::Path) {
+    fn make_all_stale(dir: &Path) {
         for entry in std::fs::read_dir(dir).unwrap() {
             let p = entry.unwrap().path();
             if p.is_file() {
@@ -2962,30 +2393,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_cleanup_old_downloads_keeps_current_plus_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+
+        for v in ["0.1.140", "0.1.141", "0.1.142", "0.1.143", "0.1.144"] {
+            std::fs::write(d.join(format!("kigi-{}-macos-aarch64", v)), v).unwrap();
+        }
+        std::fs::write(d.join("kigi-0.1.145-macos-aarch64"), "current").unwrap();
+
+        make_all_stale(d);
+
+        cleanup_old_downloads(d, "kigi", "0.1.145").await;
+
+        assert!(d.join("kigi-0.1.145-macos-aarch64").exists(), "current");
+        assert!(d.join("kigi-0.1.144-macos-aarch64").exists(), "N-1");
+        for v in ["0.1.140", "0.1.141", "0.1.142", "0.1.143"] {
+            assert!(
+                !d.join(format!("kigi-{}-macos-aarch64", v)).exists(),
+                "{v} should be deleted"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn test_cleanup_old_downloads_removes_stale_tmp_keeps_fresh_tmp() {
         let dir = tempfile::tempdir().unwrap();
         let d = dir.path();
 
         // Stale tmp: abandoned by a crashed updater — swept.
-        std::fs::write(d.join("grok-0.1.140-macos-aarch64.tmp"), "partial").unwrap();
-        make_stale(&d.join("grok-0.1.140-macos-aarch64.tmp"));
+        std::fs::write(d.join("kigi-0.1.140-macos-aarch64.tmp"), "partial").unwrap();
+        make_stale(&d.join("kigi-0.1.140-macos-aarch64.tmp"));
         // Fresh tmp: a concurrent updater's in-flight download — kept, or
         // its atomic rename would fail with ENOENT.
-        std::fs::write(d.join("grok-0.1.142-macos-aarch64.77-0.tmp"), "inflight").unwrap();
-        std::fs::write(d.join("grok-0.1.141-macos-aarch64"), "current").unwrap();
+        std::fs::write(d.join("kigi-0.1.142-macos-aarch64.77-0.tmp"), "inflight").unwrap();
+        std::fs::write(d.join("kigi-0.1.141-macos-aarch64"), "current").unwrap();
 
-        cleanup_old_downloads(d, "grok", "0.1.141").await;
+        cleanup_old_downloads(d, "kigi", "0.1.141").await;
 
         assert!(
-            !d.join("grok-0.1.140-macos-aarch64.tmp").exists(),
+            !d.join("kigi-0.1.140-macos-aarch64.tmp").exists(),
             "stale tmp cleaned up"
         );
         assert!(
-            d.join("grok-0.1.142-macos-aarch64.77-0.tmp").exists(),
+            d.join("kigi-0.1.142-macos-aarch64.77-0.tmp").exists(),
             "fresh in-flight tmp must NOT be swept"
         );
         assert!(
-            d.join("grok-0.1.141-macos-aarch64").exists(),
+            d.join("kigi-0.1.141-macos-aarch64").exists(),
             "current kept"
         );
     }
@@ -2999,26 +2454,25 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let d = dir.path();
 
-        // Three old versions + current: policy would delete .138 and .139.
         for v in ["0.1.138", "0.1.139", "0.1.140"] {
-            std::fs::write(d.join(format!("grok-{v}-macos-aarch64")), v).unwrap();
+            std::fs::write(d.join(format!("kigi-{v}-macos-aarch64")), v).unwrap();
         }
-        std::fs::write(d.join("grok-0.1.141-macos-aarch64"), "current").unwrap();
+        std::fs::write(d.join("kigi-0.1.141-macos-aarch64"), "current").unwrap();
         make_all_stale(d);
         // .138 is re-written NOW — simulating a racer that just renamed its
         // download into place (e.g. a rollback install racing an upgrade).
-        std::fs::write(d.join("grok-0.1.138-macos-aarch64"), "in-flight").unwrap();
+        std::fs::write(d.join("kigi-0.1.138-macos-aarch64"), "in-flight").unwrap();
 
-        cleanup_old_downloads(d, "grok", "0.1.141").await;
+        cleanup_old_downloads(d, "kigi", "0.1.141").await;
 
-        assert!(d.join("grok-0.1.141-macos-aarch64").exists(), "current");
-        assert!(d.join("grok-0.1.140-macos-aarch64").exists(), "N-1 kept");
+        assert!(d.join("kigi-0.1.141-macos-aarch64").exists(), "current");
+        assert!(d.join("kigi-0.1.140-macos-aarch64").exists(), "N-1 kept");
         assert!(
-            d.join("grok-0.1.138-macos-aarch64").exists(),
+            d.join("kigi-0.1.138-macos-aarch64").exists(),
             "fresh just-renamed binary must NOT be deleted"
         );
         assert!(
-            !d.join("grok-0.1.139-macos-aarch64").exists(),
+            !d.join("kigi-0.1.139-macos-aarch64").exists(),
             "genuinely old binary still swept"
         );
     }
@@ -3029,244 +2483,340 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let d = dir.path();
 
-        // grok-latest is a symlink — must be skipped.
-        let target = d.join("grok-0.1.141-macos-aarch64");
+        // kigi-latest is a symlink — must be skipped.
+        let target = d.join("kigi-0.1.141-macos-aarch64");
         std::fs::write(&target, "current").unwrap();
-        std::os::unix::fs::symlink(&target, d.join("grok-latest")).unwrap();
+        std::os::unix::fs::symlink(&target, d.join("kigi-latest")).unwrap();
 
         make_all_stale(d);
 
-        cleanup_old_downloads(d, "grok", "0.1.141").await;
+        cleanup_old_downloads(d, "kigi", "0.1.141").await;
 
         assert!(
-            d.join("grok-latest").exists(),
+            d.join("kigi-latest").exists(),
             "symlink must not be deleted"
         );
         assert!(target.exists(), "current must not be deleted");
     }
 
     #[tokio::test]
-    async fn test_cleanup_old_downloads_empty_dir() {
-        let dir = tempfile::tempdir().unwrap();
-        // Should not panic or error on empty directory.
-        make_all_stale(dir.path());
-
-        cleanup_old_downloads(dir.path(), "grok", "0.1.141").await;
-    }
-
-    #[tokio::test]
     async fn test_cleanup_old_downloads_version_prefix_collision() {
-        // Regression test: version "0.1.14" must not protect "0.1.140", "0.1.141", etc.
+        // Regression: version "0.1.14" must not protect "0.1.140", "0.1.141".
         let dir = tempfile::tempdir().unwrap();
         let d = dir.path();
 
-        std::fs::write(d.join("grok-0.1.14-macos-aarch64"), "current").unwrap();
-        std::fs::write(d.join("grok-0.1.140-macos-aarch64"), "old-140").unwrap();
-        std::fs::write(d.join("grok-0.1.141-macos-aarch64"), "old-141").unwrap();
-        std::fs::write(d.join("grok-0.1.13-macos-aarch64"), "old-13").unwrap();
+        std::fs::write(d.join("kigi-0.1.14-macos-aarch64"), "current").unwrap();
+        std::fs::write(d.join("kigi-0.1.140-macos-aarch64"), "old-140").unwrap();
+        std::fs::write(d.join("kigi-0.1.141-macos-aarch64"), "old-141").unwrap();
+        std::fs::write(d.join("kigi-0.1.13-macos-aarch64"), "old-13").unwrap();
 
         make_all_stale(d);
 
-        cleanup_old_downloads(d, "grok", "0.1.14").await;
+        cleanup_old_downloads(d, "kigi", "0.1.14").await;
 
-        // Current must survive.
+        assert!(d.join("kigi-0.1.14-macos-aarch64").exists(), "current");
         assert!(
-            d.join("grok-0.1.14-macos-aarch64").exists(),
-            "current 0.1.14"
-        );
-        // Newest old version (0.1.141) must survive as N-1.
-        assert!(
-            d.join("grok-0.1.141-macos-aarch64").exists(),
+            d.join("kigi-0.1.141-macos-aarch64").exists(),
             "N-1 is 0.1.141"
         );
-        // 0.1.140 and 0.1.13 should be deleted.
-        assert!(
-            !d.join("grok-0.1.140-macos-aarch64").exists(),
-            "0.1.140 should be deleted"
-        );
-        assert!(
-            !d.join("grok-0.1.13-macos-aarch64").exists(),
-            "0.1.13 should be deleted"
-        );
+        assert!(!d.join("kigi-0.1.140-macos-aarch64").exists());
+        assert!(!d.join("kigi-0.1.13-macos-aarch64").exists());
     }
 
     #[tokio::test]
-    async fn test_cleanup_old_downloads_pager_multi_version() {
-        // Verify cleanup works for grok-pager with multiple old versions.
+    async fn test_cleanup_old_downloads_alpha_and_mixed_versions() {
+        // Pre-release names parse whole, and semver ordering decides N-1.
         let dir = tempfile::tempdir().unwrap();
         let d = dir.path();
 
-        for v in ["0.1.148", "0.1.149", "0.1.150"] {
-            std::fs::write(d.join(format!("grok-pager-{}-linux-x64", v)), v).unwrap();
-        }
-        std::fs::write(d.join("grok-pager-0.1.151-linux-x64"), "current").unwrap();
+        std::fs::write(d.join("kigi-0.1.148-macos-aarch64"), "stable-148").unwrap();
+        std::fs::write(d.join("kigi-0.1.149-alpha.1-macos-aarch64"), "alpha-149").unwrap();
+        std::fs::write(d.join("kigi-0.1.149-macos-aarch64"), "stable-149").unwrap();
+        std::fs::write(d.join("kigi-0.1.150-macos-aarch64"), "current").unwrap();
 
         make_all_stale(d);
 
-        cleanup_old_downloads(d, "grok-pager", "0.1.151").await;
+        cleanup_old_downloads(d, "kigi", "0.1.150").await;
 
-        assert!(d.join("grok-pager-0.1.151-linux-x64").exists(), "current");
-        assert!(d.join("grok-pager-0.1.150-linux-x64").exists(), "N-1 kept");
-        assert!(
-            !d.join("grok-pager-0.1.149-linux-x64").exists(),
-            "0.1.149 deleted"
-        );
-        assert!(
-            !d.join("grok-pager-0.1.148-linux-x64").exists(),
-            "0.1.148 deleted"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_cleanup_old_downloads_npm_layout() {
-        // npm layout: files are just `grok-{version}` (no platform suffix).
-        let dir = tempfile::tempdir().unwrap();
-        let d = dir.path();
-
-        for v in ["0.1.138", "0.1.139", "0.1.140"] {
-            std::fs::write(d.join(format!("grok-{}", v)), v).unwrap();
-        }
-        std::fs::write(d.join("grok-0.1.141"), "current").unwrap();
-
-        make_all_stale(d);
-
-        cleanup_old_downloads(d, "grok", "0.1.141").await;
-
-        assert!(d.join("grok-0.1.141").exists(), "current");
-        assert!(d.join("grok-0.1.140").exists(), "N-1 kept");
-        assert!(!d.join("grok-0.1.139").exists(), "0.1.139 deleted");
-        assert!(!d.join("grok-0.1.138").exists(), "0.1.138 deleted");
-    }
-
-    #[tokio::test]
-    async fn test_cleanup_old_downloads_alpha_versions() {
-        // Alpha version filenames include pre-release tags:
-        //   grok-0.1.150-alpha.1-macos-aarch64
-        let dir = tempfile::tempdir().unwrap();
-        let d = dir.path();
-
-        std::fs::write(d.join("grok-0.1.148-alpha.1-macos-aarch64"), "alpha-148-1").unwrap();
-        std::fs::write(d.join("grok-0.1.148-alpha.2-macos-aarch64"), "alpha-148-2").unwrap();
-        std::fs::write(d.join("grok-0.1.149-alpha.1-macos-aarch64"), "alpha-149-1").unwrap();
-        // Current version is the newest alpha.
-        std::fs::write(d.join("grok-0.1.150-alpha.1-macos-aarch64"), "current").unwrap();
-
-        make_all_stale(d);
-
-        cleanup_old_downloads(d, "grok", "0.1.150-alpha.1").await;
-
-        // Current must survive.
-        assert!(
-            d.join("grok-0.1.150-alpha.1-macos-aarch64").exists(),
-            "current alpha"
-        );
-        // Newest old (0.1.149-alpha.1) kept as N-1.
-        assert!(
-            d.join("grok-0.1.149-alpha.1-macos-aarch64").exists(),
-            "N-1 alpha"
-        );
-        // Older alphas deleted.
-        assert!(
-            !d.join("grok-0.1.148-alpha.2-macos-aarch64").exists(),
-            "0.1.148-alpha.2 deleted"
-        );
-        assert!(
-            !d.join("grok-0.1.148-alpha.1-macos-aarch64").exists(),
-            "0.1.148-alpha.1 deleted"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_cleanup_old_downloads_mixed_stable_and_alpha() {
-        // Mix of stable and alpha binaries in the same directory.
-        let dir = tempfile::tempdir().unwrap();
-        let d = dir.path();
-
-        std::fs::write(d.join("grok-0.1.148-macos-aarch64"), "stable-148").unwrap();
-        std::fs::write(d.join("grok-0.1.149-alpha.1-macos-aarch64"), "alpha-149").unwrap();
-        std::fs::write(d.join("grok-0.1.149-macos-aarch64"), "stable-149").unwrap();
-        // Current is a stable release.
-        std::fs::write(d.join("grok-0.1.150-macos-aarch64"), "current").unwrap();
-
-        make_all_stale(d);
-
-        cleanup_old_downloads(d, "grok", "0.1.150").await;
-
-        // Current must survive.
-        assert!(d.join("grok-0.1.150-macos-aarch64").exists(), "current");
+        assert!(d.join("kigi-0.1.150-macos-aarch64").exists(), "current");
         // Newest old is 0.1.149 stable (semver: 0.1.149 > 0.1.149-alpha.1).
         assert!(
-            d.join("grok-0.1.149-macos-aarch64").exists(),
+            d.join("kigi-0.1.149-macos-aarch64").exists(),
             "N-1 is stable 0.1.149"
         );
-        // The rest should be deleted.
+        assert!(!d.join("kigi-0.1.149-alpha.1-macos-aarch64").exists());
+        assert!(!d.join("kigi-0.1.148-macos-aarch64").exists());
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_old_downloads_ignores_non_versioned_and_unrelated_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+        std::fs::write(d.join("kigi-latest"), "alias").unwrap();
+        std::fs::write(d.join("kigi-9garbage-macos-aarch64"), "junk").unwrap();
+        std::fs::write(d.join("README.md"), "readme").unwrap();
+        std::fs::write(d.join("other-tool-0.1.0"), "other").unwrap();
+        std::fs::write(d.join("kigi-0.1.140-macos-aarch64"), "v140").unwrap();
+        std::fs::write(d.join("kigi-0.1.141-macos-aarch64"), "current").unwrap();
+
+        make_all_stale(d);
+
+        cleanup_old_downloads(d, "kigi", "0.1.141").await;
+
+        assert!(d.join("kigi-latest").exists());
         assert!(
-            !d.join("grok-0.1.149-alpha.1-macos-aarch64").exists(),
-            "alpha 0.1.149-alpha.1 deleted"
+            d.join("kigi-9garbage-macos-aarch64").exists(),
+            "unparseable file must be ignored, not deleted"
         );
-        assert!(
-            !d.join("grok-0.1.148-macos-aarch64").exists(),
-            "stable 0.1.148 deleted"
-        );
+        assert!(d.join("README.md").exists());
+        assert!(d.join("other-tool-0.1.0").exists());
+        assert!(d.join("kigi-0.1.140-macos-aarch64").exists(), "N-1 kept");
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_old_downloads_invalid_current_version_is_no_op() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+        std::fs::write(d.join("kigi-0.1.140-macos-aarch64"), "v140").unwrap();
+        std::fs::write(d.join("kigi-0.1.141-macos-aarch64"), "v141").unwrap();
+
+        make_all_stale(d);
+
+        cleanup_old_downloads(d, "kigi", "not-a-version").await;
+        assert!(d.join("kigi-0.1.140-macos-aarch64").exists());
+        assert!(d.join("kigi-0.1.141-macos-aarch64").exists());
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_old_downloads_missing_dir_no_panic() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("does-not-exist");
+        cleanup_old_downloads(&missing, "kigi", "0.1.141").await;
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_old_downloads_multiplatform_in_same_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+        // Same version, multiple platforms: both are "current" via the
+        // version equality check.
+        std::fs::write(d.join("kigi-0.1.141-macos-aarch64"), "mac").unwrap();
+        std::fs::write(d.join("kigi-0.1.141-linux-x86_64"), "linux").unwrap();
+        std::fs::write(d.join("kigi-0.1.140-macos-aarch64"), "old-mac").unwrap();
+        std::fs::write(d.join("kigi-0.1.139-macos-aarch64"), "older-mac").unwrap();
+
+        make_all_stale(d);
+
+        cleanup_old_downloads(d, "kigi", "0.1.141").await;
+
+        assert!(d.join("kigi-0.1.141-macos-aarch64").exists());
+        assert!(d.join("kigi-0.1.141-linux-x86_64").exists());
+        assert!(d.join("kigi-0.1.140-macos-aarch64").exists());
+        assert!(!d.join("kigi-0.1.139-macos-aarch64").exists());
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // reinstall_hint
+    // reinstall_hint / manual_install_cmd
     // ──────────────────────────────────────────────────────────────────────
 
     #[test]
-    fn test_reinstall_hint_npm_mentions_npm_command() {
-        let hint = reinstall_hint("npm");
-        assert!(hint.contains("npm i -g"), "should suggest npm i -g: {hint}");
-        assert!(
-            hint.contains("@xai-official/grok"),
-            "should name the package: {hint}"
-        );
-    }
-
-    #[test]
-    fn test_reinstall_hint_gh_release_mentions_gh_command() {
-        let hint = reinstall_hint("gh-release");
-        assert!(
-            hint.contains("gh release download"),
-            "should suggest gh release download: {hint}"
-        );
-        assert!(
-            hint.contains("xai-org-shared/grok-build"),
-            "should name the repo: {hint}"
-        );
-    }
-
-    #[test]
-    fn test_reinstall_hint_internal_mentions_platform_installer() {
+    fn test_reinstall_hint_points_at_repo_install_script() {
         let hint = reinstall_hint("internal");
         if cfg!(windows) {
             assert!(hint.contains("irm"), "should suggest irm install: {hint}");
             assert!(
-                hint.contains("install.ps1"),
-                "should reference install.ps1: {hint}"
+                hint.contains("ZacharyZhang-NY/Kigi-CLI/main/install.ps1"),
+                "should reference the repo's install.ps1: {hint}"
             );
         } else {
             assert!(hint.contains("curl"), "should suggest curl install: {hint}");
             assert!(
-                hint.contains("install.sh"),
-                "should reference install.sh: {hint}"
+                hint.contains("ZacharyZhang-NY/Kigi-CLI/main/install.sh"),
+                "should reference the repo's install.sh: {hint}"
             );
+        }
+        // Unknown installers fall back to the same hint.
+        assert_eq!(reinstall_hint("homebrew"), hint);
+        assert_eq!(reinstall_hint(""), hint);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Asset naming: targets → release asset names
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    #[test]
+    fn test_detect_platform_matches_compile_time_cfg() {
+        let (os, arch) = detect_platform().unwrap();
+        if cfg!(target_os = "macos") {
+            assert_eq!(os, "macos");
+        }
+        if cfg!(target_os = "linux") {
+            assert_eq!(os, "linux");
+        }
+        if cfg!(target_os = "windows") {
+            assert_eq!(os, "windows");
+        }
+        if cfg!(target_arch = "x86_64") {
+            assert_eq!(arch, "x86_64");
+        }
+        if cfg!(target_arch = "aarch64") {
+            assert_eq!(arch, "aarch64");
         }
     }
 
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     #[test]
-    fn test_reinstall_hint_unknown_falls_back_to_internal() {
-        // Unknown installer falls back to the same hint as "internal".
-        let unknown = reinstall_hint("homebrew");
-        let internal = reinstall_hint("internal");
-        assert_eq!(unknown, internal);
+    fn test_release_asset_name_matches_release_workflow_naming() {
+        // Must stay in lockstep with .github/workflows/release.yml, which
+        // publishes kigi-<version>-<target-triple>.{tar.gz|zip}.
+        let triple = target_triple().unwrap();
+        assert!(
+            [
+                "aarch64-apple-darwin",
+                "x86_64-apple-darwin",
+                "aarch64-unknown-linux-gnu",
+                "x86_64-unknown-linux-gnu",
+                "x86_64-pc-windows-msvc",
+            ]
+            .contains(&triple),
+            "triple {triple} is not one of the five released targets"
+        );
+
+        let name = release_asset_name("0.1.0").unwrap();
+        if cfg!(windows) {
+            assert_eq!(name, format!("kigi-0.1.0-{triple}.zip"));
+        } else {
+            assert_eq!(name, format!("kigi-0.1.0-{triple}.tar.gz"));
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // SHA256SUMS parsing
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_expected_sha256_for_parses_sha256sum_format() {
+        let sums = "\
+0000000000000000000000000000000000000000000000000000000000000001  kigi-0.1.0-aarch64-apple-darwin.tar.gz
+0000000000000000000000000000000000000000000000000000000000000002  kigi-0.1.0-x86_64-unknown-linux-gnu.tar.gz
+0000000000000000000000000000000000000000000000000000000000000003 *kigi-0.1.0-x86_64-pc-windows-msvc.zip
+";
+        assert_eq!(
+            expected_sha256_for(sums, "kigi-0.1.0-aarch64-apple-darwin.tar.gz").unwrap(),
+            "0000000000000000000000000000000000000000000000000000000000000001"
+        );
+        assert_eq!(
+            expected_sha256_for(sums, "kigi-0.1.0-x86_64-unknown-linux-gnu.tar.gz").unwrap(),
+            "0000000000000000000000000000000000000000000000000000000000000002"
+        );
+        // `*name` binary-mode marker is accepted.
+        assert_eq!(
+            expected_sha256_for(sums, "kigi-0.1.0-x86_64-pc-windows-msvc.zip").unwrap(),
+            "0000000000000000000000000000000000000000000000000000000000000003"
+        );
+        // Uppercase hashes normalize to lowercase.
+        let upper = "ABCDEF0000000000000000000000000000000000000000000000000000000000  a.tar.gz";
+        assert_eq!(
+            expected_sha256_for(upper, "a.tar.gz").unwrap(),
+            "abcdef0000000000000000000000000000000000000000000000000000000000"
+        );
     }
 
     #[test]
-    fn test_reinstall_hint_empty_falls_back_to_internal() {
-        let hint = reinstall_hint("");
-        assert_eq!(hint, reinstall_hint("internal"));
+    fn test_expected_sha256_for_missing_or_malformed_entries_error() {
+        let sums =
+            "0000000000000000000000000000000000000000000000000000000000000001  present.tar.gz\n";
+        let err = expected_sha256_for(sums, "absent.tar.gz").unwrap_err();
+        assert!(format!("{err}").contains("no entry"), "err: {err}");
+
+        // Truncated hash is malformed, not silently accepted.
+        let bad = "deadbeef  present.tar.gz\n";
+        let err = expected_sha256_for(bad, "present.tar.gz").unwrap_err();
+        assert!(format!("{err}").contains("malformed"), "err: {err}");
+
+        // Non-hex hash of the right length is malformed too.
+        let nonhex = format!("{}  present.tar.gz\n", "g".repeat(64));
+        let err = expected_sha256_for(&nonhex, "present.tar.gz").unwrap_err();
+        assert!(format!("{err}").contains("malformed"), "err: {err}");
+
+        // Empty manifest.
+        let err = expected_sha256_for("", "present.tar.gz").unwrap_err();
+        assert!(format!("{err}").contains("no entry"), "err: {err}");
+    }
+
+    #[tokio::test]
+    async fn test_sha256_hex_of_file_matches_known_vector() {
+        // SHA-256("abc") is a NIST test vector.
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("abc.txt");
+        std::fs::write(&p, b"abc").unwrap();
+        assert_eq!(
+            sha256_hex_of_file(&p).await.unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Archive extraction (Unix: tar.gz)
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[cfg(not(windows))]
+    fn make_tar_gz(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        let mut builder = tar::Builder::new(gz);
+        for (name, data) in entries {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(data.len() as u64);
+            header.set_mode(0o755);
+            header.set_cksum();
+            builder.append_data(&mut header, name, *data).unwrap();
+        }
+        builder.into_inner().unwrap().finish().unwrap()
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn test_extract_kigi_binary_finds_kigi_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("kigi-0.1.0-test.tar.gz");
+        std::fs::write(
+            &archive,
+            make_tar_gz(&[
+                ("LICENSE", b"license text"),
+                ("kigi", b"#!/bin/sh\nexit 0\n"),
+            ]),
+        )
+        .unwrap();
+
+        let out = dir.path().join("kigi-extracted");
+        extract_kigi_binary(&archive, &out).await.unwrap();
+        assert_eq!(std::fs::read(&out).unwrap(), b"#!/bin/sh\nexit 0\n");
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn test_extract_kigi_binary_missing_entry_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("kigi-0.1.0-test.tar.gz");
+        std::fs::write(&archive, make_tar_gz(&[("LICENSE", b"license only")])).unwrap();
+
+        let out = dir.path().join("kigi-extracted");
+        let err = extract_kigi_binary(&archive, &out).await.unwrap_err();
+        assert!(format!("{err}").contains("no 'kigi' binary"), "err: {err}");
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn test_extract_kigi_binary_garbage_archive_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("kigi-0.1.0-test.tar.gz");
+        std::fs::write(&archive, b"this is not a gzip stream").unwrap();
+
+        let out = dir.path().join("kigi-extracted");
+        assert!(extract_kigi_binary(&archive, &out).await.is_err());
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -3278,7 +2828,7 @@ mod tests {
             current_version: "0.1.150".to_string(),
             latest_version: Some("0.1.151".to_string()),
             update_available: true,
-            installer: Some("npm".to_string()),
+            installer: Some("internal".to_string()),
             channel: "stable".to_string(),
             auto_update: Some(true),
             error: None,
@@ -3311,7 +2861,7 @@ mod tests {
         assert_eq!(v["currentVersion"], "0.1.150");
         assert_eq!(v["latestVersion"], "0.1.151");
         assert_eq!(v["updateAvailable"], true);
-        assert_eq!(v["installer"], "npm");
+        assert_eq!(v["installer"], "internal");
         assert_eq!(v["channel"], "stable");
         assert_eq!(v["autoUpdate"], true);
         assert!(v["error"].is_null());
@@ -3342,30 +2892,13 @@ mod tests {
             current_version: "0.1.150".to_string(),
             latest_version: None,
             update_available: false,
-            installer: Some("npm".to_string()),
+            installer: Some("internal".to_string()),
             channel: "stable".to_string(),
             auto_update: Some(true),
-            error: Some("npm view failed: ENETUNREACH".to_string()),
+            error: Some("GitHub API returned HTTP 403".to_string()),
         };
         let v = serde_json::to_value(&s).unwrap();
-        assert_eq!(v["error"], "npm view failed: ENETUNREACH");
-    }
-
-    #[test]
-    fn test_update_status_alpha_channel_serialized() {
-        let s = UpdateStatus {
-            current_version: "0.1.150-alpha.1".to_string(),
-            latest_version: Some("0.1.150-alpha.2".to_string()),
-            update_available: true,
-            installer: Some("npm".to_string()),
-            channel: "alpha".to_string(),
-            auto_update: Some(true),
-            error: None,
-        };
-        let v = serde_json::to_value(&s).unwrap();
-        assert_eq!(v["channel"], "alpha");
-        assert_eq!(v["currentVersion"], "0.1.150-alpha.1");
-        assert_eq!(v["latestVersion"], "0.1.150-alpha.2");
+        assert_eq!(v["error"], "GitHub API returned HTTP 403");
     }
 
     #[test]
@@ -3381,566 +2914,41 @@ mod tests {
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // print_update_status — exercise both code paths via JSON serialization
-    // (the human path writes to stdout/stderr which is hard to capture
-    //  without altering the function signature).
+    // print_update_status — both code paths must not panic or error.
     // ──────────────────────────────────────────────────────────────────────
 
     #[test]
-    fn test_print_update_status_json_returns_ok() {
-        let s = make_status();
-        // We can't easily capture stdout, but we can confirm the function
-        // doesn't panic or return Err on a well-formed status.
-        print_update_status(&s, true).unwrap();
+    fn test_print_update_status_all_shapes_return_ok() {
+        print_update_status(&make_status(), true).unwrap();
+        print_update_status(&make_status(), false).unwrap();
+        print_update_status(
+            &UpdateStatus {
+                current_version: "0.1.150".to_string(),
+                latest_version: None,
+                update_available: false,
+                installer: None,
+                channel: "stable".to_string(),
+                auto_update: None,
+                error: None,
+            },
+            false,
+        )
+        .unwrap();
+        print_update_status(
+            &UpdateStatus {
+                current_version: "0.1.150".to_string(),
+                latest_version: Some("0.1.150".to_string()),
+                update_available: false,
+                installer: Some("internal".to_string()),
+                channel: "stable".to_string(),
+                auto_update: Some(true),
+                error: Some("network down".to_string()),
+            },
+            false,
+        )
+        .unwrap();
     }
 
-    #[test]
-    fn test_print_update_status_human_returns_ok_when_update_available() {
-        let s = make_status();
-        print_update_status(&s, false).unwrap();
-    }
-
-    #[test]
-    fn test_print_update_status_human_returns_ok_when_no_installer() {
-        let s = UpdateStatus {
-            current_version: "0.1.150".to_string(),
-            latest_version: None,
-            update_available: false,
-            installer: None,
-            channel: "stable".to_string(),
-            auto_update: None,
-            error: None,
-        };
-        print_update_status(&s, false).unwrap();
-    }
-
-    #[test]
-    fn test_print_update_status_human_returns_ok_with_error() {
-        let s = UpdateStatus {
-            current_version: "0.1.150".to_string(),
-            latest_version: None,
-            update_available: false,
-            installer: Some("npm".to_string()),
-            channel: "stable".to_string(),
-            auto_update: Some(true),
-            error: Some("network down".to_string()),
-        };
-        print_update_status(&s, false).unwrap();
-    }
-
-    #[test]
-    fn test_print_update_status_human_returns_ok_when_up_to_date() {
-        let s = UpdateStatus {
-            current_version: "0.1.150".to_string(),
-            latest_version: Some("0.1.150".to_string()),
-            update_available: false,
-            installer: Some("npm".to_string()),
-            channel: "stable".to_string(),
-            auto_update: Some(true),
-            error: None,
-        };
-        print_update_status(&s, false).unwrap();
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // needs_update — additional edge cases
-    // ──────────────────────────────────────────────────────────────────────
-
-    #[test]
-    fn test_needs_update_empty_current_returns_none() {
-        assert_eq!(needs_update("", "0.1.141", "stable", false), None);
-    }
-
-    #[test]
-    fn test_needs_update_empty_latest_returns_none() {
-        assert_eq!(needs_update("0.1.141", "", "stable", false), None);
-    }
-
-    #[test]
-    fn test_needs_update_whitespace_returns_none() {
-        // Leading/trailing whitespace is not stripped — semver::parse rejects.
-        assert_eq!(needs_update("  0.1.141", "0.1.142", "stable", false), None);
-        assert_eq!(needs_update("0.1.141", "0.1.142  ", "stable", false), None);
-    }
-
-    #[test]
-    fn test_needs_update_channel_is_case_sensitive() {
-        // "STABLE", "Stable", "ENTERPRISE" etc. are not recognized — must be exact lowercase.
-        assert_eq!(needs_update("0.1.140", "0.1.141", "STABLE", false), None);
-        assert_eq!(needs_update("0.1.140", "0.1.141", "Stable", false), None);
-        assert_eq!(needs_update("0.1.140", "0.1.141", "ALPHA", false), None);
-        assert_eq!(
-            needs_update("0.1.140", "0.1.141", "ENTERPRISE", false),
-            None
-        );
-    }
-
-    #[test]
-    fn test_needs_update_unknown_channels_return_none() {
-        // Unknown channels (not stable/alpha/enterprise) return None.
-        assert_eq!(needs_update("0.1.140", "0.1.141", "beta", false), None);
-        assert_eq!(needs_update("0.1.140", "0.1.141", "nightly", false), None);
-        assert_eq!(needs_update("0.1.140", "0.1.141", "", false), None);
-        assert_eq!(needs_update("0.1.140", "0.1.141", "rc", false), None);
-        // Enterprise is explicitly supported (behaves like stable).
-        assert_eq!(
-            needs_update("0.1.140", "0.1.141", "enterprise", false),
-            Some(true)
-        );
-        // Unknown channels return None regardless of allow_downgrade.
-        assert_eq!(needs_update("0.1.140", "0.1.141", "beta", true), None);
-        assert_eq!(needs_update("0.1.140", "0.1.141", "", true), None);
-    }
-
-    #[test]
-    fn test_needs_update_zero_versions() {
-        assert_eq!(needs_update("0.0.0", "0.0.1", "stable", false), Some(true));
-        assert_eq!(needs_update("0.0.0", "0.0.0", "stable", false), Some(false));
-    }
-
-    #[test]
-    fn test_needs_update_major_version_jump() {
-        assert_eq!(needs_update("0.9.99", "1.0.0", "stable", false), Some(true));
-        assert_eq!(
-            needs_update("1.99.99", "2.0.0", "stable", false),
-            Some(true)
-        );
-        // Major downgrade: not an upgrade (allow_downgrade=false).
-        assert_eq!(
-            needs_update("2.0.0", "1.99.99", "stable", false),
-            Some(false)
-        );
-    }
-
-    #[test]
-    fn test_needs_update_alpha_to_alpha_same_version_not_upgrade() {
-        assert_eq!(
-            needs_update("0.1.150-alpha.5", "0.1.150-alpha.5", "alpha", false),
-            Some(false)
-        );
-    }
-
-    #[test]
-    fn test_needs_update_alpha_to_beta_same_base_is_upgrade_per_semver() {
-        // semver: alpha.5 < beta.1 (lexicographic on identifiers per spec)
-        assert_eq!(
-            needs_update("0.1.150-alpha.5", "0.1.150-beta.1", "alpha", false),
-            Some(true)
-        );
-    }
-
-    #[test]
-    fn test_needs_update_with_build_metadata_uses_semver_crate_ordering() {
-        // SUBTLE: per the semver SPEC, build metadata (after `+`) MUST be
-        // ignored when determining version precedence. However the `semver`
-        // crate's `PartialOrd` impl compares build metadata lexicographically
-        // for differing values. So `0.1.141+xyz > 0.1.141+abc` returns true
-        // here even though spec-wise they are equal.
-        //
-        // This means CI publishers MUST NOT publish multiple builds of the
-        // same version differing only in build metadata, or auto-update will
-        // bounce users between them. Today our pipeline doesn't, so this is
-        // latent — but the test locks in the surprising behavior so it can't
-        // change silently.
-        assert_eq!(
-            needs_update("0.1.141+abc", "0.1.141+xyz", "stable", false),
-            Some(true),
-            "semver crate orders by build metadata lexicographically (contra spec)"
-        );
-        // No build metadata vs with build metadata: semver crate treats
-        // a version with build > the same version without it.
-        assert_eq!(
-            needs_update("0.1.141", "0.1.141+abc", "stable", false),
-            Some(true)
-        );
-    }
-
-    #[test]
-    fn test_needs_update_partial_versions_rejected() {
-        assert_eq!(needs_update("0.1", "0.1.141", "stable", false), None);
-        assert_eq!(needs_update("0", "0.1.141", "stable", false), None);
-        assert_eq!(needs_update("0.1.141", "1", "stable", false), None);
-    }
-
-    #[test]
-    fn test_needs_update_alpha_channel_with_invalid_versions_returns_none() {
-        // Same parse-failure behavior on alpha as stable.
-        assert_eq!(needs_update("garbage", "0.1.141", "alpha", false), None);
-        assert_eq!(needs_update("0.1.141", "garbage", "alpha", false), None);
-    }
-
-    #[test]
-    fn test_needs_update_alpha_channel_treats_release_as_higher_than_prerelease() {
-        // On alpha channel, a release version is semver-higher than its
-        // matching pre-release: 0.1.150 > 0.1.150-alpha.99.
-        assert_eq!(
-            needs_update("0.1.150-alpha.99", "0.1.150", "alpha", false),
-            Some(true)
-        );
-    }
-
-    #[test]
-    fn test_needs_update_stable_does_not_install_when_pre_and_pre() {
-        // current is pre-release, latest is also pre-release on stable channel:
-        // latest is rejected as pre-release, so no install.
-        assert_eq!(
-            needs_update("0.1.150-alpha.1", "0.1.151-alpha.1", "stable", false),
-            Some(false)
-        );
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // needs_update — allow_downgrade=true (rollback support)
-    // ──────────────────────────────────────────────────────────────────────
-
-    #[test]
-    fn test_needs_update_downgrade_stable_when_allowed() {
-        // Rollback scenario: stable pointer moved from 0.2.7 → 0.2.5.
-        // GCS/internal installer: allow_downgrade=true → triggers update.
-        assert_eq!(needs_update("0.2.7", "0.2.5", "stable", true), Some(true));
-    }
-
-    #[test]
-    fn test_needs_update_downgrade_stable_blocked_when_disallowed() {
-        // Same rollback scenario but npm installer: allow_downgrade=false → no update.
-        assert_eq!(needs_update("0.2.7", "0.2.5", "stable", false), Some(false));
-    }
-
-    #[test]
-    fn test_needs_update_downgrade_alpha_when_allowed() {
-        // Alpha rollback: pointer moved backward.
-        assert_eq!(needs_update("0.2.7", "0.2.5", "alpha", true), Some(true));
-        // Alpha pre-release downgrade.
-        assert_eq!(
-            needs_update("0.1.148-alpha.3", "0.1.148-alpha.2", "alpha", true),
-            Some(true)
-        );
-    }
-
-    #[test]
-    fn test_needs_update_downgrade_enterprise_when_allowed() {
-        assert_eq!(
-            needs_update("0.1.207", "0.1.206", "enterprise", true),
-            Some(true)
-        );
-    }
-
-    #[test]
-    fn test_needs_update_same_version_unaffected_by_allow_downgrade() {
-        // Same version → no update regardless of allow_downgrade setting.
-        assert_eq!(needs_update("0.2.5", "0.2.5", "stable", true), Some(false));
-        assert_eq!(needs_update("0.2.5", "0.2.5", "stable", false), Some(false));
-        assert_eq!(needs_update("0.2.5", "0.2.5", "alpha", true), Some(false));
-    }
-
-    #[test]
-    fn test_needs_update_upgrade_unaffected_by_allow_downgrade() {
-        // Upgrade works regardless of allow_downgrade setting.
-        assert_eq!(needs_update("0.2.5", "0.2.7", "stable", true), Some(true));
-        assert_eq!(needs_update("0.2.5", "0.2.7", "stable", false), Some(true));
-        assert_eq!(needs_update("0.2.5", "0.2.7", "alpha", true), Some(true));
-        assert_eq!(needs_update("0.2.5", "0.2.7", "alpha", false), Some(true));
-    }
-
-    #[test]
-    fn test_needs_update_downgrade_major_version_when_allowed() {
-        // Major version downgrade (e.g. v2 → v1 rollback).
-        assert_eq!(needs_update("2.0.0", "1.99.99", "stable", true), Some(true));
-    }
-
-    #[test]
-    fn test_needs_update_downgrade_prerelease_still_rejected_on_stable() {
-        // Even with allow_downgrade=true, pre-release targets are rejected on
-        // stable/enterprise channels (safety net).
-        assert_eq!(
-            needs_update("0.2.7", "0.2.5-alpha.1", "stable", true),
-            Some(false)
-        );
-        assert_eq!(
-            needs_update("0.2.7", "0.2.5-alpha.1", "enterprise", true),
-            Some(false)
-        );
-    }
-
-    #[test]
-    fn test_needs_update_prerelease_current_forces_install_regardless_of_allow_downgrade() {
-        // Pre-release current on stable channel → force-install, independent
-        // of allow_downgrade.
-        assert_eq!(
-            needs_update("0.1.149-alpha.1", "0.1.148", "stable", true),
-            Some(true)
-        );
-        assert_eq!(
-            needs_update("0.1.149-alpha.1", "0.1.148", "stable", false),
-            Some(true)
-        );
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // installer_allows_downgrade
-    // ──────────────────────────────────────────────────────────────────────
-
-    #[test]
-    fn test_installer_allows_downgrade_internal() {
-        assert!(installer_allows_downgrade("internal"));
-    }
-
-    #[test]
-    fn test_installer_allows_downgrade_gh_release() {
-        assert!(installer_allows_downgrade("gh-release"));
-    }
-
-    #[test]
-    fn test_installer_allows_downgrade_npm_blocked() {
-        // npm registries can return stale/misconfigured versions — no downgrade.
-        assert!(!installer_allows_downgrade("npm"));
-    }
-
-    #[test]
-    fn test_installer_allows_downgrade_unknown_blocked() {
-        assert!(!installer_allows_downgrade("unknown"));
-        assert!(!installer_allows_downgrade(""));
-        assert!(!installer_allows_downgrade("homebrew"));
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // detect_platform
-    // ──────────────────────────────────────────────────────────────────────
-
-    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-    #[test]
-    fn test_detect_platform_returns_known_os() {
-        let (os, arch) = detect_platform().unwrap();
-        assert!(
-            os == "macos" || os == "linux" || os == "windows",
-            "got os={os}"
-        );
-        assert!(arch == "x86_64" || arch == "aarch64", "got arch={arch}");
-    }
-
-    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-    #[test]
-    fn test_detect_platform_matches_compile_time_cfg() {
-        let (os, arch) = detect_platform().unwrap();
-        if cfg!(target_os = "macos") {
-            assert_eq!(os, "macos");
-        }
-        if cfg!(target_os = "linux") {
-            assert_eq!(os, "linux");
-        }
-        if cfg!(target_os = "windows") {
-            assert_eq!(os, "windows");
-        }
-        if cfg!(target_arch = "x86_64") {
-            assert_eq!(arch, "x86_64");
-        }
-        if cfg!(target_arch = "aarch64") {
-            assert_eq!(arch, "aarch64");
-        }
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // cleanup_old_downloads — additional edge cases
-    // ──────────────────────────────────────────────────────────────────────
-
-    #[tokio::test]
-    async fn test_cleanup_old_downloads_invalid_current_version_is_no_op() {
-        let dir = tempfile::tempdir().unwrap();
-        let d = dir.path();
-        std::fs::write(d.join("grok-0.1.140-macos-aarch64"), "v140").unwrap();
-        std::fs::write(d.join("grok-0.1.141-macos-aarch64"), "v141").unwrap();
-
-        // Invalid version string → cleanup must early-return without deleting.
-        make_all_stale(d);
-
-        cleanup_old_downloads(d, "grok", "not-a-version").await;
-        assert!(d.join("grok-0.1.140-macos-aarch64").exists());
-        assert!(d.join("grok-0.1.141-macos-aarch64").exists());
-    }
-
-    #[tokio::test]
-    async fn test_cleanup_old_downloads_missing_dir_no_panic() {
-        let dir = tempfile::tempdir().unwrap();
-        let missing = dir.path().join("does-not-exist");
-        // Must not panic when the directory doesn't exist.
-        cleanup_old_downloads(&missing, "grok", "0.1.141").await;
-    }
-
-    #[tokio::test]
-    async fn test_cleanup_old_downloads_files_with_non_digit_suffix_skipped() {
-        let dir = tempfile::tempdir().unwrap();
-        let d = dir.path();
-        // Files matching prefix but with a non-digit-leading suffix must be
-        // ignored (e.g. grok-latest, grok-pager-* when prefix is grok).
-        std::fs::write(d.join("grok-latest"), "alias").unwrap();
-        std::fs::write(d.join("grok-pager-0.1.141-macos-aarch64"), "pager").unwrap();
-        std::fs::write(d.join("grok-0.1.140-macos-aarch64"), "v140").unwrap();
-        std::fs::write(d.join("grok-0.1.141-macos-aarch64"), "current").unwrap();
-
-        make_all_stale(d);
-
-        cleanup_old_downloads(d, "grok", "0.1.141").await;
-
-        // grok-latest and grok-pager-* must be untouched.
-        assert!(d.join("grok-latest").exists());
-        assert!(d.join("grok-pager-0.1.141-macos-aarch64").exists());
-    }
-
-    #[tokio::test]
-    async fn test_cleanup_old_downloads_unparseable_version_skipped() {
-        let dir = tempfile::tempdir().unwrap();
-        let d = dir.path();
-        // Files with prefix + digit but unparseable as semver are ignored
-        // (not deleted, not counted).
-        std::fs::write(d.join("grok-9garbage-macos-aarch64"), "junk").unwrap();
-        std::fs::write(d.join("grok-0.1.141-macos-aarch64"), "current").unwrap();
-
-        make_all_stale(d);
-
-        cleanup_old_downloads(d, "grok", "0.1.141").await;
-
-        assert!(
-            d.join("grok-9garbage-macos-aarch64").exists(),
-            "unparseable file must be ignored, not deleted"
-        );
-        assert!(d.join("grok-0.1.141-macos-aarch64").exists());
-    }
-
-    #[tokio::test]
-    async fn test_cleanup_old_downloads_only_current_present_no_op() {
-        let dir = tempfile::tempdir().unwrap();
-        let d = dir.path();
-        std::fs::write(d.join("grok-0.1.141-macos-aarch64"), "current").unwrap();
-
-        make_all_stale(d);
-
-        cleanup_old_downloads(d, "grok", "0.1.141").await;
-
-        assert!(d.join("grok-0.1.141-macos-aarch64").exists());
-    }
-
-    #[tokio::test]
-    async fn test_cleanup_old_downloads_only_one_old_keeps_it() {
-        let dir = tempfile::tempdir().unwrap();
-        let d = dir.path();
-        std::fs::write(d.join("grok-0.1.140-macos-aarch64"), "v140").unwrap();
-        std::fs::write(d.join("grok-0.1.141-macos-aarch64"), "current").unwrap();
-
-        make_all_stale(d);
-
-        cleanup_old_downloads(d, "grok", "0.1.141").await;
-
-        // Only one old version → keep it as N-1.
-        assert!(d.join("grok-0.1.140-macos-aarch64").exists(), "N-1 kept");
-        assert!(d.join("grok-0.1.141-macos-aarch64").exists(), "current");
-    }
-
-    #[tokio::test]
-    async fn test_cleanup_old_downloads_unrelated_files_untouched() {
-        let dir = tempfile::tempdir().unwrap();
-        let d = dir.path();
-        // Files that don't start with the prefix must never be touched.
-        std::fs::write(d.join("README.md"), "readme").unwrap();
-        std::fs::write(d.join("config.toml"), "config").unwrap();
-        std::fs::write(d.join("other-tool-0.1.0"), "other").unwrap();
-        std::fs::write(d.join("grok-0.1.140-macos-aarch64"), "v140").unwrap();
-        std::fs::write(d.join("grok-0.1.141-macos-aarch64"), "current").unwrap();
-
-        make_all_stale(d);
-
-        cleanup_old_downloads(d, "grok", "0.1.141").await;
-
-        assert!(d.join("README.md").exists());
-        assert!(d.join("config.toml").exists());
-        assert!(d.join("other-tool-0.1.0").exists());
-    }
-
-    #[tokio::test]
-    async fn test_cleanup_old_downloads_multiplatform_in_same_dir() {
-        let dir = tempfile::tempdir().unwrap();
-        let d = dir.path();
-        // Same version, multiple platforms (uncommon, but possible).
-        // Both should be considered "current" via the version equality check.
-        std::fs::write(d.join("grok-0.1.141-macos-aarch64"), "mac").unwrap();
-        std::fs::write(d.join("grok-0.1.141-linux-x86_64"), "linux").unwrap();
-        std::fs::write(d.join("grok-0.1.140-macos-aarch64"), "old-mac").unwrap();
-        std::fs::write(d.join("grok-0.1.139-macos-aarch64"), "older-mac").unwrap();
-
-        make_all_stale(d);
-
-        cleanup_old_downloads(d, "grok", "0.1.141").await;
-
-        // Both platform variants of current must survive.
-        assert!(d.join("grok-0.1.141-macos-aarch64").exists());
-        assert!(d.join("grok-0.1.141-linux-x86_64").exists());
-        // N-1 (0.1.140) kept, older deleted.
-        assert!(d.join("grok-0.1.140-macos-aarch64").exists());
-        assert!(!d.join("grok-0.1.139-macos-aarch64").exists());
-    }
-
-    #[tokio::test]
-    async fn test_cleanup_old_downloads_tmp_files_deleted_even_when_unparseable() {
-        let dir = tempfile::tempdir().unwrap();
-        let d = dir.path();
-        // Stale tmp files are deleted regardless of version-parseability.
-        std::fs::write(d.join("grok-junk.tmp"), "partial").unwrap();
-        make_stale(&d.join("grok-junk.tmp"));
-        std::fs::write(d.join("grok-0.1.140-macos-aarch64.tmp"), "partial2").unwrap();
-        make_stale(&d.join("grok-0.1.140-macos-aarch64.tmp"));
-        std::fs::write(d.join("grok-0.1.141-macos-aarch64"), "current").unwrap();
-
-        make_all_stale(d);
-
-        cleanup_old_downloads(d, "grok", "0.1.141").await;
-
-        assert!(!d.join("grok-junk.tmp").exists(), "junk tmp deleted");
-        assert!(
-            !d.join("grok-0.1.140-macos-aarch64.tmp").exists(),
-            "versioned tmp deleted"
-        );
-        assert!(d.join("grok-0.1.141-macos-aarch64").exists());
-    }
-
-    #[tokio::test]
-    async fn test_cleanup_old_downloads_three_olds_keeps_only_newest() {
-        // Regression: keep exactly N-1, not N-2 or older.
-        let dir = tempfile::tempdir().unwrap();
-        let d = dir.path();
-        for v in ["0.1.138", "0.1.139", "0.1.140"] {
-            std::fs::write(d.join(format!("grok-{}-macos-aarch64", v)), v).unwrap();
-        }
-        std::fs::write(d.join("grok-0.1.141-macos-aarch64"), "current").unwrap();
-
-        make_all_stale(d);
-
-        cleanup_old_downloads(d, "grok", "0.1.141").await;
-
-        assert!(d.join("grok-0.1.141-macos-aarch64").exists(), "current");
-        assert!(d.join("grok-0.1.140-macos-aarch64").exists(), "N-1 only");
-        assert!(!d.join("grok-0.1.139-macos-aarch64").exists());
-        assert!(!d.join("grok-0.1.138-macos-aarch64").exists());
-    }
-
-    #[tokio::test]
-    async fn test_cleanup_old_downloads_darwin_platform_recognized() {
-        // The `darwin` alias for macOS is in PLATFORM_OS — versions on
-        // grok-X.Y.Z-darwin-* layouts must split correctly.
-        let dir = tempfile::tempdir().unwrap();
-        let d = dir.path();
-        std::fs::write(d.join("grok-0.1.140-darwin-arm64"), "v140").unwrap();
-        std::fs::write(d.join("grok-0.1.141-darwin-arm64"), "current").unwrap();
-
-        make_all_stale(d);
-
-        cleanup_old_downloads(d, "grok", "0.1.141").await;
-
-        assert!(d.join("grok-0.1.141-darwin-arm64").exists(), "current");
-        assert!(d.join("grok-0.1.140-darwin-arm64").exists(), "N-1");
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
     // ──────────────────────────────────────────────────────────────────────
     // UpdateRunMode
     // ──────────────────────────────────────────────────────────────────────
@@ -3972,38 +2980,34 @@ mod tests {
         );
         assert_eq!(
             MSG_RUN_UPDATE_MANUAL,
-            "Run `grok update` to get the latest version."
+            "Run `kigi update` to get the latest version."
         );
+        assert_eq!(SHA256SUMS_ASSET, "SHA256SUMS");
+        if cfg!(windows) {
+            assert_eq!(ARCHIVE_EXT, "zip");
+        } else {
+            assert_eq!(ARCHIVE_EXT, "tar.gz");
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────
     // env_installer — env-var based, must run serially.
     //
     // Resolution order (matches function body):
-    //   1. KIGI_INSTALLER (npm | internal | gh-release | gh)
-    //   2. KIGI_MANAGED_BY_NPM       → npm
-    //   3. KIGI_MANAGED_BY_INTERNAL  → internal
-    //   4. npm_config_user_agent      → npm
-    //   5. None
+    //   1. KIGI_INSTALLER (internal; anything else → None)
+    //   2. KIGI_MANAGED_BY_INTERNAL → internal
+    //   3. None
     // ──────────────────────────────────────────────────────────────────────
 
     /// Snapshot every installer-related env var so the test can clear them
-    /// at start and restore them at end. Without this, a parent shell that
-    /// sets e.g. `npm_config_user_agent` (which happens whenever you run via
-    /// `npm run`) silently makes every "no env vars" test misbehave.
+    /// at start and restore them at end.
     struct InstallerEnvGuard {
         prev: Vec<(&'static str, Option<std::ffi::OsString>)>,
     }
 
     impl InstallerEnvGuard {
         fn isolate() -> Self {
-            const VARS: &[&str] = &[
-                "KIGI_INSTALLER",
-                "KIGI_MANAGED_BY_NPM",
-                "KIGI_MANAGED_BY_INTERNAL",
-                "npm_config_user_agent",
-                "NPM_TOKEN",
-            ];
+            const VARS: &[&str] = &["KIGI_INSTALLER", "KIGI_MANAGED_BY_INTERNAL"];
             let prev: Vec<_> = VARS.iter().map(|k| (*k, std::env::var_os(k))).collect();
             unsafe {
                 for k in VARS {
@@ -4036,89 +3040,31 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
-    fn test_env_installer_explicit_npm() {
-        let _g = InstallerEnvGuard::isolate();
-        unsafe { std::env::set_var("KIGI_INSTALLER", "npm") };
-        assert_eq!(env_installer(), Some("npm"));
-    }
-
-    #[test]
-    #[serial_test::serial]
     fn test_env_installer_explicit_internal() {
         let _g = InstallerEnvGuard::isolate();
         unsafe { std::env::set_var("KIGI_INSTALLER", "internal") };
+        assert_eq!(env_installer(), Some("internal"));
+        // Case-insensitive.
+        unsafe { std::env::set_var("KIGI_INSTALLER", "INTERNAL") };
         assert_eq!(env_installer(), Some("internal"));
     }
 
     #[test]
     #[serial_test::serial]
-    fn test_env_installer_explicit_gh_release() {
-        let _g = InstallerEnvGuard::isolate();
-        unsafe { std::env::set_var("KIGI_INSTALLER", "gh-release") };
-        assert_eq!(env_installer(), Some("gh-release"));
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn test_env_installer_explicit_gh_alias() {
-        // `gh` is shorthand for `gh-release`.
-        let _g = InstallerEnvGuard::isolate();
-        unsafe { std::env::set_var("KIGI_INSTALLER", "gh") };
-        assert_eq!(env_installer(), Some("gh-release"));
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn test_env_installer_explicit_uppercase_normalized() {
-        let _g = InstallerEnvGuard::isolate();
-        unsafe { std::env::set_var("KIGI_INSTALLER", "NPM") };
-        assert_eq!(env_installer(), Some("npm"));
-
-        unsafe { std::env::set_var("KIGI_INSTALLER", "Gh-Release") };
-        assert_eq!(env_installer(), Some("gh-release"));
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn test_env_installer_explicit_unknown_value_returns_none() {
+    fn test_env_installer_unknown_or_empty_returns_none() {
         // CRITICAL: when the explicit env var is set to something we don't
-        // recognize, we early-return None. This means we do NOT fall through
-        // to the other env vars or to config. So `KIGI_INSTALLER=brew`
-        // disables the env-installer detection entirely.
+        // recognize, we early-return None and do NOT fall through to the
+        // other env vars.
         let _g = InstallerEnvGuard::isolate();
-        unsafe { std::env::set_var("KIGI_INSTALLER", "brew") };
-        // Even if MANAGED_BY_NPM is also set, the explicit var wins (and rejects).
-        unsafe { std::env::set_var("KIGI_MANAGED_BY_NPM", "1") };
+        unsafe { std::env::set_var("KIGI_INSTALLER", "npm") };
+        unsafe { std::env::set_var("KIGI_MANAGED_BY_INTERNAL", "1") };
         assert_eq!(
             env_installer(),
             None,
-            "explicit KIGI_INSTALLER=brew must early-return None, not fall through"
+            "explicit unknown KIGI_INSTALLER must early-return None, not fall through"
         );
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn test_env_installer_explicit_empty_returns_none() {
-        let _g = InstallerEnvGuard::isolate();
         unsafe { std::env::set_var("KIGI_INSTALLER", "") };
         assert_eq!(env_installer(), None);
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn test_env_installer_managed_by_npm() {
-        let _g = InstallerEnvGuard::isolate();
-        unsafe { std::env::set_var("KIGI_MANAGED_BY_NPM", "1") };
-        assert_eq!(env_installer(), Some("npm"));
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn test_env_installer_managed_by_npm_any_value() {
-        // The check is `is_some` — any value (including empty) wins.
-        let _g = InstallerEnvGuard::isolate();
-        unsafe { std::env::set_var("KIGI_MANAGED_BY_NPM", "") };
-        assert_eq!(env_installer(), Some("npm"));
     }
 
     #[test]
@@ -4127,207 +3073,9 @@ mod tests {
         let _g = InstallerEnvGuard::isolate();
         unsafe { std::env::set_var("KIGI_MANAGED_BY_INTERNAL", "1") };
         assert_eq!(env_installer(), Some("internal"));
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn test_env_installer_npm_config_user_agent_implies_npm() {
-        // npm sets npm_config_user_agent in the env of any process it spawns.
-        // The trampoline relies on this fallback when MANAGED_BY_NPM was lost.
-        let _g = InstallerEnvGuard::isolate();
-        unsafe {
-            std::env::set_var(
-                "npm_config_user_agent",
-                "npm/10.2.0 node/v20.11.0 darwin arm64 workspaces/false",
-            )
-        };
-        assert_eq!(env_installer(), Some("npm"));
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn test_env_installer_managed_by_npm_wins_over_npm_config_user_agent() {
-        // Both set: the order in env_installer is MANAGED_BY_NPM checked first,
-        // so MANAGED_BY_NPM wins. (Result is the same — both → npm — but the
-        // resolution path matters for future maintainers.)
-        let _g = InstallerEnvGuard::isolate();
-        unsafe {
-            std::env::set_var("KIGI_MANAGED_BY_NPM", "1");
-            std::env::set_var("npm_config_user_agent", "npm/10");
-        }
-        assert_eq!(env_installer(), Some("npm"));
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn test_env_installer_explicit_internal_wins_over_npm_managed() {
-        // KIGI_INSTALLER=internal must override an inherited MANAGED_BY_NPM.
-        let _g = InstallerEnvGuard::isolate();
-        unsafe {
-            std::env::set_var("KIGI_INSTALLER", "internal");
-            std::env::set_var("KIGI_MANAGED_BY_NPM", "1");
-        }
+        // The check is `is_some` — any value (including empty) wins.
+        unsafe { std::env::set_var("KIGI_MANAGED_BY_INTERNAL", "") };
         assert_eq!(env_installer(), Some("internal"));
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // create_temp_npmrc — also env-var based (NPM_TOKEN), must run serially.
-    // ──────────────────────────────────────────────────────────────────────
-
-    #[test]
-    #[serial_test::serial]
-    fn test_create_temp_npmrc_no_token_returns_none() {
-        let _g = InstallerEnvGuard::isolate();
-        let result = create_temp_npmrc(None).unwrap();
-        assert!(result.is_none(), "no NPM_TOKEN must yield None");
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn test_create_temp_npmrc_empty_token_returns_none() {
-        // An empty token is not a real token — must not write a file.
-        let _g = InstallerEnvGuard::isolate();
-        unsafe { std::env::set_var("NPM_TOKEN", "") };
-        let result = create_temp_npmrc(None).unwrap();
-        assert!(result.is_none(), "empty NPM_TOKEN must yield None");
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn test_create_temp_npmrc_whitespace_only_token_returns_none() {
-        // Whitespace-only is treated as empty after trim.
-        let _g = InstallerEnvGuard::isolate();
-        unsafe { std::env::set_var("NPM_TOKEN", "   \t\n  ") };
-        let result = create_temp_npmrc(None).unwrap();
-        assert!(result.is_none(), "whitespace NPM_TOKEN must yield None");
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn test_create_temp_npmrc_default_registry() {
-        let _g = InstallerEnvGuard::isolate();
-        unsafe { std::env::set_var("NPM_TOKEN", "secret123") };
-        let path = create_temp_npmrc(None).unwrap().expect("file written");
-        let body = std::fs::read_to_string(&path).unwrap();
-
-        assert!(
-            body.contains("registry.npmjs.org"),
-            "default registry: {body}"
-        );
-        assert!(body.contains("_authToken=secret123"), "token: {body}");
-        assert!(body.starts_with("//"), "must be // prefix: {body}");
-        assert!(body.ends_with('\n'), "must end with newline: {body}");
-
-        let _ = std::fs::remove_file(&path);
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn test_create_temp_npmrc_token_trimmed() {
-        let _g = InstallerEnvGuard::isolate();
-        unsafe { std::env::set_var("NPM_TOKEN", "  padded-token  ") };
-        let path = create_temp_npmrc(None).unwrap().expect("file written");
-        let body = std::fs::read_to_string(&path).unwrap();
-        assert!(
-            body.contains("_authToken=padded-token"),
-            "token must be trimmed: {body}"
-        );
-        assert!(
-            !body.contains("padded-token  "),
-            "trailing whitespace must be stripped: {body}"
-        );
-        let _ = std::fs::remove_file(&path);
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn test_create_temp_npmrc_custom_registry_extracts_host_and_path() {
-        let _g = InstallerEnvGuard::isolate();
-        unsafe { std::env::set_var("NPM_TOKEN", "tok") };
-        let path = create_temp_npmrc(Some("https://npm.example.com/repository/npm/"))
-            .unwrap()
-            .expect("file written");
-        let body = std::fs::read_to_string(&path).unwrap();
-
-        // Host + path must be preserved (trailing slash stripped per impl).
-        assert!(
-            body.contains("npm.example.com/repository/npm"),
-            "registry host+path: {body}"
-        );
-        assert!(body.contains("_authToken=tok"));
-
-        let _ = std::fs::remove_file(&path);
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn test_create_temp_npmrc_custom_registry_with_port() {
-        let _g = InstallerEnvGuard::isolate();
-        unsafe { std::env::set_var("NPM_TOKEN", "tok") };
-        let path = create_temp_npmrc(Some("https://npm.example.com:8443/"))
-            .unwrap()
-            .expect("file written");
-        let body = std::fs::read_to_string(&path).unwrap();
-        assert!(
-            body.contains("npm.example.com:8443"),
-            "port must be preserved: {body}"
-        );
-        let _ = std::fs::remove_file(&path);
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn test_create_temp_npmrc_invalid_registry_url_falls_back_to_default() {
-        // If the registry string doesn't parse as a URL, fall back to the
-        // public npm host so the auth token isn't silently lost.
-        let _g = InstallerEnvGuard::isolate();
-        unsafe { std::env::set_var("NPM_TOKEN", "tok") };
-        let path = create_temp_npmrc(Some("not a url"))
-            .unwrap()
-            .expect("file written");
-        let body = std::fs::read_to_string(&path).unwrap();
-        assert!(
-            body.contains("registry.npmjs.org"),
-            "invalid URL falls back: {body}"
-        );
-        let _ = std::fs::remove_file(&path);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    #[serial_test::serial]
-    fn test_create_temp_npmrc_file_perms_are_0600() {
-        // The file contains an auth token — must be readable only by owner.
-        use std::os::unix::fs::PermissionsExt;
-        let _g = InstallerEnvGuard::isolate();
-        unsafe { std::env::set_var("NPM_TOKEN", "secret") };
-        let path = create_temp_npmrc(None).unwrap().expect("file written");
-
-        let perms = std::fs::metadata(&path).unwrap().permissions();
-        let mode = perms.mode() & 0o777;
-        assert_eq!(
-            mode, 0o600,
-            "npmrc must be 0600 to protect the auth token, got {mode:o}"
-        );
-
-        let _ = std::fs::remove_file(&path);
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn test_create_temp_npmrc_unique_path_per_pid() {
-        // Two parallel installs would clobber each other if the path didn't
-        // include the PID. Verify the filename includes the current PID.
-        let _g = InstallerEnvGuard::isolate();
-        unsafe { std::env::set_var("NPM_TOKEN", "tok") };
-        let path = create_temp_npmrc(None).unwrap().expect("file written");
-        let pid = std::process::id().to_string();
-        let name = path.file_name().unwrap().to_string_lossy().to_string();
-        assert!(
-            name.contains(&pid),
-            "filename should include PID: {name} (pid={pid})"
-        );
-        let _ = std::fs::remove_file(&path);
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -4336,44 +3084,18 @@ mod tests {
 
     #[cfg(windows)]
     #[tokio::test]
-    async fn test_windows_replace_exe_creates_dest_when_missing() {
+    async fn test_windows_replace_exe_creates_and_overwrites_dest() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("new-binary.exe");
         std::fs::write(&src, "new content").unwrap();
-        let dest = dir.path().join("grok.exe");
+        let dest = dir.path().join("kigi.exe");
 
         windows_replace_exe(&src, &dest).await.unwrap();
-
-        assert!(dest.exists());
         assert_eq!(std::fs::read(&dest).unwrap(), b"new content");
-    }
 
-    #[cfg(windows)]
-    #[tokio::test]
-    async fn test_windows_replace_exe_overwrites_unlocked_dest() {
-        let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("new-binary.exe");
-        std::fs::write(&src, "new content").unwrap();
-        let dest = dir.path().join("grok.exe");
-        std::fs::write(&dest, "old content").unwrap();
-
+        std::fs::write(&src, "newer content").unwrap();
         windows_replace_exe(&src, &dest).await.unwrap();
-
-        assert_eq!(std::fs::read(&dest).unwrap(), b"new content");
-    }
-
-    #[cfg(windows)]
-    #[tokio::test]
-    async fn test_windows_replace_exe_preserves_binary_bytes() {
-        let dir = tempfile::tempdir().unwrap();
-        let body: Vec<u8> = (0u8..=255).cycle().take(4096).collect();
-        let src = dir.path().join("binary.exe");
-        std::fs::write(&src, &body).unwrap();
-        let dest = dir.path().join("grok.exe");
-
-        windows_replace_exe(&src, &dest).await.unwrap();
-
-        assert_eq!(std::fs::read(&dest).unwrap(), body);
+        assert_eq!(std::fs::read(&dest).unwrap(), b"newer content");
     }
 
     #[cfg(windows)]
@@ -4382,9 +3104,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("new.exe");
         std::fs::write(&src, "new").unwrap();
-        let dest = dir.path().join("grok.exe");
+        let dest = dir.path().join("kigi.exe");
         std::fs::write(&dest, "current").unwrap();
-        let old = dir.path().join("grok.exe.old");
+        let old = dir.path().join("kigi.exe.old");
         std::fs::write(&old, "stale-from-prior-update").unwrap();
 
         windows_replace_exe(&src, &dest).await.unwrap();
@@ -4416,7 +3138,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("new.exe");
         std::fs::write(&src, "updated binary").unwrap();
-        let dest = dir.path().join("grok.exe");
+        let dest = dir.path().join("kigi.exe");
         std::fs::write(&dest, "running binary").unwrap();
 
         let _lock = std::fs::OpenOptions::new()
@@ -4429,7 +3151,7 @@ mod tests {
 
         assert_eq!(std::fs::read_to_string(&dest).unwrap(), "updated binary");
 
-        let old = dir.path().join("grok.exe.old");
+        let old = dir.path().join("kigi.exe.old");
         assert!(old.exists(), ".old must exist after rename fallback");
         drop(_lock);
         assert_eq!(std::fs::read_to_string(&old).unwrap(), "running binary");
@@ -4438,7 +3160,7 @@ mod tests {
     #[cfg(windows)]
     #[tokio::test]
     async fn test_windows_replace_exe_rollback_on_copy_failure() {
-        // No stale .old: the aside IS grok.exe.old, so this pins the
+        // No stale .old: the aside IS kigi.exe.old, so this pins the
         // non-diverted rollback branch (rename .old back onto dest).
         use std::os::windows::fs::OpenOptionsExt;
         const FILE_SHARE_READ: u32 = 0x00000001;
@@ -4447,7 +3169,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("new.exe");
         std::fs::write(&src, "updated binary").unwrap();
-        let dest = dir.path().join("grok.exe");
+        let dest = dir.path().join("kigi.exe");
         std::fs::write(&dest, "original").unwrap();
 
         // Dest locked like a running exe: blocks writes but allows rename.
@@ -4474,36 +3196,8 @@ mod tests {
             "original",
             "rollback must restore the original binary"
         );
-        let old = dir.path().join("grok.exe.old");
+        let old = dir.path().join("kigi.exe.old");
         assert!(!old.exists(), "rollback must consume the .old aside");
-    }
-
-    #[cfg(windows)]
-    #[tokio::test]
-    async fn test_windows_replace_exe_idempotent_same_content() {
-        let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("binary.exe");
-        std::fs::write(&src, "same content").unwrap();
-        let dest = dir.path().join("grok.exe");
-        std::fs::write(&dest, "same content").unwrap();
-
-        windows_replace_exe(&src, &dest).await.unwrap();
-
-        assert_eq!(std::fs::read_to_string(&dest).unwrap(), "same content");
-    }
-
-    #[cfg(windows)]
-    #[tokio::test]
-    async fn test_windows_replace_exe_empty_binary() {
-        let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("empty.exe");
-        std::fs::write(&src, b"").unwrap();
-        let dest = dir.path().join("grok.exe");
-        std::fs::write(&dest, "non-empty").unwrap();
-
-        windows_replace_exe(&src, &dest).await.unwrap();
-
-        assert_eq!(std::fs::metadata(&dest).unwrap().len(), 0);
     }
 
     #[cfg(windows)]
@@ -4519,9 +3213,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("new.exe");
         std::fs::write(&src, "updated binary").unwrap();
-        let dest = dir.path().join("grok.exe");
+        let dest = dir.path().join("kigi.exe");
         std::fs::write(&dest, "running binary").unwrap();
-        let old = dir.path().join("grok.exe.old");
+        let old = dir.path().join("kigi.exe.old");
         std::fs::write(&old, "previous binary").unwrap();
 
         // No FILE_SHARE_DELETE: .old cannot be deleted or rename-replaced.
@@ -4545,13 +3239,13 @@ mod tests {
             "previous binary",
             "locked .old must be left in place"
         );
-        let asides: Vec<std::path::PathBuf> = std::fs::read_dir(dir.path())
+        let asides: Vec<PathBuf> = std::fs::read_dir(dir.path())
             .unwrap()
             .filter_map(|e| e.ok().map(|e| e.path()))
             .filter(|p| {
                 p.file_name()
                     .and_then(|n| n.to_str())
-                    .is_some_and(|n| n.starts_with("grok.exe.old.") && n.ends_with(".old"))
+                    .is_some_and(|n| n.starts_with("kigi.exe.old.") && n.ends_with(".old"))
             })
             .collect();
         assert_eq!(
@@ -4567,64 +3261,6 @@ mod tests {
 
     #[cfg(windows)]
     #[tokio::test]
-    async fn test_windows_replace_exe_rollback_restores_from_diverted_aside() {
-        // Copy failure after a divert must roll dest back from the unique
-        // aside, not the hardcoded .old (which still holds the locked image).
-        use std::os::windows::fs::OpenOptionsExt;
-        const FILE_SHARE_READ: u32 = 0x00000001;
-        const FILE_SHARE_DELETE: u32 = 0x00000004;
-
-        let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("new.exe");
-        std::fs::write(&src, "updated binary").unwrap();
-        let dest = dir.path().join("grok.exe");
-        std::fs::write(&dest, "running binary").unwrap();
-        let old = dir.path().join("grok.exe.old");
-        std::fs::write(&old, "previous binary").unwrap();
-
-        // No FILE_SHARE_DELETE: .old survives the sweep and forces a divert.
-        let _old_lock = std::fs::OpenOptions::new()
-            .read(true)
-            .share_mode(FILE_SHARE_READ)
-            .open(&old)
-            .unwrap();
-        // Dest locked like a running exe: blocks writes but allows rename.
-        let _dest_lock = std::fs::OpenOptions::new()
-            .read(true)
-            .share_mode(FILE_SHARE_READ | FILE_SHARE_DELETE)
-            .open(&dest)
-            .unwrap();
-        // Exclusive src lock: both copies fail with a sharing violation, so
-        // the rename dance runs and the second copy triggers the rollback.
-        let _src_lock = std::fs::OpenOptions::new()
-            .read(true)
-            .share_mode(0)
-            .open(&src)
-            .unwrap();
-
-        let result = windows_replace_exe(&src, &dest).await;
-
-        assert!(result.is_err());
-        assert_eq!(
-            std::fs::read_to_string(&dest).unwrap(),
-            "running binary",
-            "rollback must restore dest from the diverted aside"
-        );
-        assert_eq!(std::fs::read_to_string(&old).unwrap(), "previous binary");
-        let leftover_asides = std::fs::read_dir(dir.path())
-            .unwrap()
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                let name = e.file_name();
-                let name = name.to_string_lossy();
-                name.starts_with("grok.exe.old.") && name.ends_with(".old")
-            })
-            .count();
-        assert_eq!(leftover_asides, 0, "rollback must consume the aside");
-    }
-
-    #[cfg(windows)]
-    #[tokio::test]
     async fn test_windows_replace_exe_sweeps_accumulated_asides() {
         // Asides pile up while superseded sessions keep running; a later
         // update must collect the no-longer-locked ones — but never another
@@ -4632,16 +3268,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("new.exe");
         std::fs::write(&src, "new").unwrap();
-        let dest = dir.path().join("grok.exe");
+        let dest = dir.path().join("kigi.exe");
         std::fs::write(&dest, "current").unwrap();
-        let old = dir.path().join("grok.exe.old");
+        let old = dir.path().join("kigi.exe.old");
         std::fs::write(&old, "stale").unwrap();
-        let aside_a = dir.path().join("grok.exe.old.1234-0.old");
-        let aside_b = dir.path().join("grok.exe.old.1234-1.old");
+        let aside_a = dir.path().join("kigi.exe.old.1234-0.old");
+        let aside_b = dir.path().join("kigi.exe.old.1234-1.old");
         std::fs::write(&aside_a, "aside-a").unwrap();
         std::fs::write(&aside_b, "aside-b").unwrap();
-        let agent_old = dir.path().join("agent.exe.old");
-        std::fs::write(&agent_old, "agent-old").unwrap();
+        let other_old = dir.path().join("other.exe.old");
+        std::fs::write(&other_old, "other-old").unwrap();
 
         windows_replace_exe(&src, &dest).await.unwrap();
 
@@ -4650,7 +3286,7 @@ mod tests {
         assert!(!aside_a.exists(), "aside must be swept");
         assert!(!aside_b.exists(), "aside must be swept");
         assert!(
-            agent_old.exists(),
+            other_old.exists(),
             "other executables' leftovers must be untouched"
         );
     }

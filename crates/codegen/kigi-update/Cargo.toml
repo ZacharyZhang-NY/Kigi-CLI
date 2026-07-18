@@ -12,6 +12,7 @@ reqwest = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true, features = ["serde"] }
 tokio = { workspace = true, features = ["fs", "process", "io-util", "macros", "time"] }
@@ -21,10 +22,20 @@ kigi-env = { workspace = true }
 kigi-tools = { workspace = true }
 kigi-version = { workspace = true }
 
+# Release archives: tar.gz on Unix, zip on Windows (PRD F8).
+[target.'cfg(not(windows))'.dependencies]
+flate2 = { workspace = true }
+tar = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+zip = { workspace = true }
+
 [dev-dependencies]
+flate2 = { workspace = true }
 semver = { workspace = true }
 serde_json = { workspace = true }
 serial_test = { workspace = true }
+tar = { workspace = true }
 tempfile = { workspace = true }
 time = { workspace = true, features = ["serde"] }
 tokio = { workspace = true, features = ["fs", "macros", "rt-multi-thread", "test-util"] }

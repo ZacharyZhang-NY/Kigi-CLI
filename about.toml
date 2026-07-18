@@ -1,0 +1,45 @@
+# cargo-about configuration (PRD F8 / release packaging).
+#
+# Generates THIRD-PARTY-NOTICES.md at the repo root:
+#
+#   cargo about generate about.hbs -o THIRD-PARTY-NOTICES.md
+#
+# Regeneration is a release-checklist step (docs/RELEASE.md), not a CI gate.
+# The accepted list mirrors deny.toml's [licenses].allow — keep them in sync.
+
+accepted = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    # In the dependency graph but not in deny.toml's allow list (deny only
+    # gates advisories in CI today): colored_json (EPL-2.0), finl_unicode /
+    # wezterm-bidi (Unicode-DFS-2016), terminfo (WTFPL).
+    "EPL-2.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "MPL-2.0",
+    "OpenSSL",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "WTFPL",
+    "Zlib",
+]
+
+# Notices cover what we ship: the kigi binary's dependency graph.
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+]
+
+# ring bundles ISC/MIT/OpenSSL-derived texts in a single LICENSE file that
+# SPDX expression parsing cannot classify on its own.
+[ring]
+accepted = ["ISC", "MIT", "OpenSSL"]

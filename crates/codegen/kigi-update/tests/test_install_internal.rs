@@ -1,10 +1,10 @@
-//! End-to-end tests for `install_internal` — the GCS-bucket installer used
-//! when `installer = "internal"` is configured.
+//! End-to-end tests for the internal installer — GitHub Releases via a
+//! wiremock server shaped like the real API (PRD F8).
 //!
-//! Wires together a wiremock-mocked GCS bucket + an isolated `KIGI_SHARE_DIR`
+//! Wires together a mocked `releases/…` API + an isolated `KIGI_SHARE_DIR`
 //! tempdir so we can verify the full install pipeline:
-//!   fetch version → download grok binary → chmod → atomic symlink →
-//!   cleanup_old_downloads → persist installer config.
+//!   resolve release → download archive → verify SHA-256 → extract →
+//!   smoke-test → atomic symlink → cleanup_old_downloads → persist config.
 //!
 //! The function reads `kigi_home()` (a process-wide `OnceLock`), so all
 //! tests in this binary share a single `KIGI_SHARE_DIR` and run serially via
@@ -18,58 +18,17 @@ use serial_test::serial;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use common::{reset_home, test_home};
-use kigi_update::UpdateConfig;
-use kigi_update::auto_update::{install_internal_from_base, install_internal_from_bases};
+use common::{
+    archive_name, host_platform, make_release_archive, make_update_config, mount_latest,
+    mount_release, release_json, reset_home, sha256_hex, small_good_artifact, test_home,
+};
+use kigi_update::auto_update::install_internal_from_base;
+use kigi_update::version::installed_on_disk_version;
 
-fn host_platform() -> String {
-    let os = if cfg!(target_os = "macos") {
-        "macos"
-    } else if cfg!(target_os = "linux") {
-        "linux"
-    } else {
-        panic!("unsupported test platform");
-    };
-    let arch = if cfg!(target_arch = "x86_64") {
-        "x86_64"
-    } else if cfg!(target_arch = "aarch64") {
-        "aarch64"
-    } else {
-        panic!("unsupported test arch");
-    };
-    format!("{os}-{arch}")
-}
-
-fn make_config(channel: &str) -> UpdateConfig {
-    UpdateConfig {
-        proxy_base_url: "http://test.invalid/v1".to_string(),
-        auth_scope: "test".to_string(),
-        deployment_key: None,
-        alpha_test_key: None,
-        channel: channel.to_string(),
-        npm_registry: None,
-    }
-}
-
-/// Mount GCS endpoints for a given version. Returns the `MockServer`.
-async fn mount_gcs(version: &str, platform: &str) -> MockServer {
-    let server = MockServer::start().await;
-
-    // Channel pointer: stable returns this version.
-    Mock::given(method("GET"))
-        .and(path("/stable"))
-        .respond_with(ResponseTemplate::new(200).set_body_string(version))
-        .mount(&server)
-        .await;
-
-    // Main grok binary download.
-    Mock::given(method("GET"))
-        .and(path(format!("/grok-{version}-{platform}")))
-        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"#!/bin/sh\nexit 0\n".to_vec()))
-        .mount(&server)
-        .await;
-
-    server
+/// Base URL for the updater: `{server}/releases`, mirroring the production
+/// `https://api.github.com/repos/{owner}/{repo}/releases`.
+fn base(server: &MockServer) -> String {
+    format!("{}/releases", server.uri())
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -78,224 +37,82 @@ async fn mount_gcs(version: &str, platform: &str) -> MockServer {
 
 #[tokio::test]
 #[serial]
-async fn install_internal_pinned_version_writes_binary_and_symlink() {
+async fn install_pinned_version_writes_binary_and_symlink() {
     let _ = test_home();
     reset_home();
     let platform = host_platform();
-    let server = mount_gcs("0.1.181", &platform).await;
-    let cfg = make_config("stable");
+    let server = MockServer::start().await;
+    mount_release(&server, "0.1.181", &small_good_artifact()).await;
+    let cfg = make_update_config("stable");
 
-    install_internal_from_base(Some("0.1.181"), &cfg, &server.uri())
+    install_internal_from_base(Some("0.1.181"), &cfg, &base(&server))
         .await
         .unwrap();
 
     let home = test_home();
     let downloaded = home
         .join("downloads")
-        .join(format!("grok-0.1.181-{platform}"));
-    assert!(downloaded.exists(), "binary downloaded: {downloaded:?}");
-    assert_eq!(std::fs::read(&downloaded).unwrap(), b"#!/bin/sh\nexit 0\n");
+        .join(format!("kigi-0.1.181-{platform}"));
+    assert!(downloaded.exists(), "binary extracted: {downloaded:?}");
+    assert_eq!(std::fs::read(&downloaded).unwrap(), small_good_artifact());
 
-    let symlink = home.join("bin").join("grok");
-    assert!(symlink.is_symlink(), "grok symlink created");
+    let symlink = home.join("bin").join("kigi");
+    assert!(symlink.is_symlink(), "kigi symlink created");
     let target = std::fs::read_link(&symlink).unwrap();
     assert_eq!(
         target.file_name().unwrap(),
-        format!("grok-0.1.181-{platform}").as_str()
+        format!("kigi-0.1.181-{platform}").as_str()
     );
 
-    // `grok` and `agent` move together — see `swap_managed_bin_links`.
-    let agent_link = home.join("bin").join("agent");
-    assert!(agent_link.is_symlink(), "agent symlink created");
-    let agent_target = std::fs::read_link(&agent_link).unwrap();
-    assert_eq!(agent_target, target, "agent and grok point at same target");
-}
-
-/// Regression: pre-existing `agent` symlink from a prior install must be
-/// swapped to the new version, not left stale (the original bug).
-#[tokio::test]
-#[serial]
-async fn install_internal_updates_stale_agent_symlink_to_new_version() {
-    let _ = test_home();
-    reset_home();
-    let platform = host_platform();
-    let server = mount_gcs("0.1.181", &platform).await;
-    let cfg = make_config("stable");
-
-    // Prior install: both links point at an older versioned binary.
-    let home = test_home();
-    let bin_dir = home.join("bin");
-    let download_dir = home.join("downloads");
-    std::fs::create_dir_all(&bin_dir).unwrap();
-    std::fs::create_dir_all(&download_dir).unwrap();
-    let old_binary = download_dir.join(format!("grok-0.1.180-{platform}"));
-    std::fs::write(&old_binary, b"#!/bin/sh\nexit 0\n").unwrap();
-    let rel_old = std::path::Path::new("..")
-        .join("downloads")
-        .join(format!("grok-0.1.180-{platform}"));
-    std::os::unix::fs::symlink(&rel_old, bin_dir.join("grok")).unwrap();
-    std::os::unix::fs::symlink(&rel_old, bin_dir.join("agent")).unwrap();
-
-    install_internal_from_base(Some("0.1.181"), &cfg, &server.uri())
-        .await
-        .unwrap();
-
-    let agent_link = bin_dir.join("agent");
-    let agent_target = std::fs::read_link(&agent_link).unwrap();
-    assert_eq!(
-        agent_target.file_name().unwrap(),
-        format!("grok-0.1.181-{platform}").as_str(),
-        "agent symlink must swap to the new version, not stay on old"
-    );
-}
-
-/// Rollback regression: if `agent` swap fails after `grok` succeeded,
-/// `grok` must roll back to its prior target (all-or-nothing).
-#[tokio::test]
-#[serial]
-async fn install_internal_rolls_back_grok_when_agent_swap_fails() {
-    let _ = test_home();
-    reset_home();
-    let platform = host_platform();
-    let server = mount_gcs("0.1.181", &platform).await;
-    let cfg = make_config("stable");
-
-    let home = test_home();
-    let bin_dir = home.join("bin");
-    let download_dir = home.join("downloads");
-    std::fs::create_dir_all(&bin_dir).unwrap();
-    std::fs::create_dir_all(&download_dir).unwrap();
-    let old_binary = download_dir.join(format!("grok-0.1.180-{platform}"));
-    std::fs::write(&old_binary, b"#!/bin/sh\nexit 0\n").unwrap();
-    let rel_old = std::path::Path::new("..")
-        .join("downloads")
-        .join(format!("grok-0.1.180-{platform}"));
-    std::os::unix::fs::symlink(&rel_old, bin_dir.join("grok")).unwrap();
-
-    // Sabotage the agent swap: non-empty directory → rename fails with EISDIR.
-    let agent_dir = bin_dir.join("agent");
-    std::fs::create_dir(&agent_dir).unwrap();
-    std::fs::write(agent_dir.join("blocker"), b"x").unwrap();
-
-    let err = install_internal_from_base(Some("0.1.181"), &cfg, &server.uri())
-        .await
-        .expect_err("agent swap must fail when target is a non-empty dir");
-    drop(err);
-
-    // grok must be rolled back to the prior version.
-    let grok_target = std::fs::read_link(bin_dir.join("grok")).unwrap();
-    assert_eq!(
-        grok_target.file_name().unwrap(),
-        format!("grok-0.1.180-{platform}").as_str(),
-        "grok must be rolled back when agent swap fails"
-    );
-}
-
-/// Absent-prior rollback regression: fresh install (no prior `grok` /
-/// `agent`), sabotaged `agent` swap must *remove* the just-created `grok`
-/// link so we don't leave it on the new binary while `agent` is absent.
-#[tokio::test]
-#[serial]
-async fn install_internal_rollback_removes_absent_prior_grok_link() {
-    let _ = test_home();
-    reset_home();
-    let platform = host_platform();
-    let server = mount_gcs("0.1.181", &platform).await;
-    let cfg = make_config("stable");
-
-    let home = test_home();
-    let bin_dir = home.join("bin");
-    std::fs::create_dir_all(&bin_dir).unwrap();
-
-    // No prior `grok`. Sabotage `agent` swap: non-empty directory → EISDIR.
-    let agent_dir = bin_dir.join("agent");
-    std::fs::create_dir(&agent_dir).unwrap();
-    std::fs::write(agent_dir.join("blocker"), b"x").unwrap();
+    // The archive must not linger after extraction.
     assert!(
-        !bin_dir.join("grok").exists() && !bin_dir.join("grok").is_symlink(),
-        "precondition: grok must not exist before install",
+        !home
+            .join("downloads")
+            .join(archive_name("0.1.181"))
+            .exists(),
+        "archive should be removed after extraction"
     );
 
-    let err = install_internal_from_base(Some("0.1.181"), &cfg, &server.uri())
-        .await
-        .expect_err("agent swap must fail when target is a non-empty dir");
-    drop(err);
-
-    let grok_path = bin_dir.join("grok");
-    assert!(
-        !grok_path.is_symlink() && !grok_path.exists(),
-        "grok must be removed on rollback when there was no prior link",
-    );
+    // The disk-version probe reads the new install back.
+    assert_eq!(installed_on_disk_version().as_deref(), Some("0.1.181"));
 }
 
 #[tokio::test]
 #[serial]
-async fn install_internal_chmods_binary_executable() {
+async fn install_chmods_binary_executable() {
     use std::os::unix::fs::PermissionsExt;
     let _ = test_home();
     reset_home();
     let platform = host_platform();
-    let server = mount_gcs("0.1.181", &platform).await;
-    let cfg = make_config("stable");
+    let server = MockServer::start().await;
+    mount_release(&server, "0.1.181", &small_good_artifact()).await;
+    let cfg = make_update_config("stable");
 
-    install_internal_from_base(Some("0.1.181"), &cfg, &server.uri())
+    install_internal_from_base(Some("0.1.181"), &cfg, &base(&server))
         .await
         .unwrap();
 
-    let home = test_home();
-    let binary = home
+    let binary = test_home()
         .join("downloads")
-        .join(format!("grok-0.1.181-{platform}"));
+        .join(format!("kigi-0.1.181-{platform}"));
     let mode = std::fs::metadata(&binary).unwrap().permissions().mode();
     assert!(mode & 0o111 != 0, "binary must be executable, got {mode:o}");
 }
 
 #[tokio::test]
 #[serial]
-async fn install_internal_cleans_up_stale_pager_symlink() {
-    // Old installations shipped a separate grok-pager binary. Verify the
-    // update removes the stale symlink from ~/.kigi/bin/.
+async fn install_persists_installer_config() {
     let _ = test_home();
     reset_home();
-    let platform = host_platform();
-    let server = mount_gcs("0.1.181", &platform).await;
-    let cfg = make_config("stable");
+    let server = MockServer::start().await;
+    mount_release(&server, "0.1.181", &small_good_artifact()).await;
+    let cfg = make_update_config("stable");
 
-    let home = test_home();
-    let bin_dir = home.join("bin");
-    std::fs::create_dir_all(&bin_dir).unwrap();
-    let pager_link = bin_dir.join("grok-pager");
-    std::os::unix::fs::symlink("/tmp/fake-old-pager", &pager_link).unwrap();
-    assert!(
-        pager_link.is_symlink(),
-        "precondition: stale symlink exists"
-    );
-
-    install_internal_from_base(Some("0.1.181"), &cfg, &server.uri())
+    install_internal_from_base(Some("0.1.181"), &cfg, &base(&server))
         .await
         .unwrap();
 
-    assert!(
-        !pager_link.exists() && !pager_link.is_symlink(),
-        "stale grok-pager symlink should be removed"
-    );
-}
-
-#[tokio::test]
-#[serial]
-async fn install_internal_persists_installer_config() {
-    let _ = test_home();
-    reset_home();
-    let platform = host_platform();
-    let server = mount_gcs("0.1.181", &platform).await;
-    let cfg = make_config("stable");
-
-    install_internal_from_base(Some("0.1.181"), &cfg, &server.uri())
-        .await
-        .unwrap();
-
-    let home = test_home();
-    let cfg_body = std::fs::read_to_string(home.join("config.toml")).unwrap();
+    let cfg_body = std::fs::read_to_string(test_home().join("config.toml")).unwrap();
     assert!(
         cfg_body.contains("installer = \"internal\""),
         "config should set installer = internal: {cfg_body}"
@@ -304,63 +121,93 @@ async fn install_internal_persists_installer_config() {
 
 #[tokio::test]
 #[serial]
-async fn install_internal_resolves_version_via_channel_pointer_when_no_target() {
+async fn install_resolves_version_via_latest_when_no_target() {
     let _ = test_home();
     reset_home();
     let platform = host_platform();
-    let server = mount_gcs("0.1.181", &platform).await;
-    let cfg = make_config("stable");
+    let server = MockServer::start().await;
+    mount_release(&server, "0.1.181", &small_good_artifact()).await;
+    mount_latest(&server, "0.1.181").await;
+    let cfg = make_update_config("stable");
 
-    // No pinned version → must fetch /stable pointer to resolve.
-    install_internal_from_base(None, &cfg, &server.uri())
+    // No pinned version → must resolve GET {base}/latest.
+    install_internal_from_base(None, &cfg, &base(&server))
         .await
         .unwrap();
 
-    let home = test_home();
     assert!(
-        home.join("downloads")
-            .join(format!("grok-0.1.181-{platform}"))
+        test_home()
+            .join("downloads")
+            .join(format!("kigi-0.1.181-{platform}"))
             .exists(),
-        "binary at version from /stable pointer"
+        "binary at version from /releases/latest"
     );
 }
 
 #[tokio::test]
 #[serial]
-async fn install_internal_alpha_channel_resolves_max_of_alpha_and_stable() {
+async fn install_alpha_channel_resolves_semver_max_from_release_list() {
     let _ = test_home();
     reset_home();
     let platform = host_platform();
     let server = MockServer::start().await;
 
-    // Stable points to 0.1.181, alpha points to 0.1.180-alpha.5 — stable wins.
+    // List endpoint (newest-published first) carries a pre-release AND a
+    // semver-higher stable — the alpha channel must pick the stable (the
+    // max), never get stuck on the pre-release.
+    let list = serde_json::json!([
+        release_json(&server.uri(), "0.1.180-alpha.5"),
+        release_json(&server.uri(), "0.1.181"),
+    ]);
     Mock::given(method("GET"))
-        .and(path("/stable"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("0.1.181"))
+        .and(path("/releases"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(list))
         .mount(&server)
         .await;
-    Mock::given(method("GET"))
-        .and(path("/alpha"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("0.1.180-alpha.5"))
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path(format!("/grok-0.1.181-{platform}")))
-        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"#!/bin/sh\nexit 0\n".to_vec()))
-        .mount(&server)
-        .await;
+    mount_release(&server, "0.1.181", &small_good_artifact()).await;
 
-    let cfg = make_config("alpha");
-    install_internal_from_base(None, &cfg, &server.uri())
+    let cfg = make_update_config("alpha");
+    install_internal_from_base(None, &cfg, &base(&server))
         .await
         .unwrap();
 
-    let home = test_home();
     assert!(
-        home.join("downloads")
-            .join(format!("grok-0.1.181-{platform}"))
+        test_home()
+            .join("downloads")
+            .join(format!("kigi-0.1.181-{platform}"))
             .exists()
     );
+}
+
+#[tokio::test]
+#[serial]
+async fn install_removes_legacy_grok_links() {
+    // Pre-rewrite installs left grok/agent/grok-pager links in bin/; the
+    // installer must retire them.
+    let _ = test_home();
+    reset_home();
+    let server = MockServer::start().await;
+    mount_release(&server, "0.1.181", &small_good_artifact()).await;
+    let cfg = make_update_config("stable");
+
+    let bin_dir = test_home().join("bin");
+    std::fs::create_dir_all(&bin_dir).unwrap();
+    for legacy in ["grok", "agent", "grok-pager"] {
+        std::os::unix::fs::symlink("/tmp/fake-old-target", bin_dir.join(legacy)).unwrap();
+    }
+
+    install_internal_from_base(Some("0.1.181"), &cfg, &base(&server))
+        .await
+        .unwrap();
+
+    for legacy in ["grok", "agent", "grok-pager"] {
+        let link = bin_dir.join(legacy);
+        assert!(
+            !link.exists() && !link.is_symlink(),
+            "legacy {legacy} link should be removed"
+        );
+    }
+    assert!(bin_dir.join("kigi").is_symlink(), "kigi link installed");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -369,26 +216,37 @@ async fn install_internal_alpha_channel_resolves_max_of_alpha_and_stable() {
 
 #[tokio::test]
 #[serial]
-async fn install_internal_fails_on_grok_binary_404() {
+async fn install_fails_on_archive_404() {
     let _ = test_home();
     reset_home();
-    let platform = host_platform();
     let server = MockServer::start().await;
 
+    // Release JSON + SHA256SUMS exist, but the archive itself 404s.
+    let archive = make_release_archive(&small_good_artifact());
     Mock::given(method("GET"))
-        .and(path("/stable"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("0.1.181"))
+        .and(path("/releases/tags/v0.1.181"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(release_json(&server.uri(), "0.1.181")),
+        )
         .mount(&server)
         .await;
-    // Main binary returns 404 — must propagate as error.
     Mock::given(method("GET"))
-        .and(path(format!("/grok-0.1.181-{platform}")))
+        .and(path("/dl/v0.1.181/SHA256SUMS"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+            "{}  {}\n",
+            sha256_hex(&archive),
+            archive_name("0.1.181")
+        )))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(format!("/dl/v0.1.181/{}", archive_name("0.1.181"))))
         .respond_with(ResponseTemplate::new(404))
         .mount(&server)
         .await;
 
-    let cfg = make_config("stable");
-    let err = install_internal_from_base(Some("0.1.181"), &cfg, &server.uri())
+    let cfg = make_update_config("stable");
+    let err = install_internal_from_base(Some("0.1.181"), &cfg, &base(&server))
         .await
         .unwrap_err();
     let msg = format!("{err:#}");
@@ -397,61 +255,274 @@ async fn install_internal_fails_on_grok_binary_404() {
 
 #[tokio::test]
 #[serial]
-async fn install_internal_rejects_invalid_pinned_version() {
+async fn install_fails_on_missing_release() {
     let _ = test_home();
     reset_home();
     let server = MockServer::start().await;
-    let cfg = make_config("stable");
+    Mock::given(method("GET"))
+        .and(path("/releases/tags/v0.9.9"))
+        .respond_with(ResponseTemplate::new(404).set_body_string(r#"{"message":"Not Found"}"#))
+        .mount(&server)
+        .await;
 
-    let err = install_internal_from_base(Some("not-a-version"), &cfg, &server.uri())
+    let cfg = make_update_config("stable");
+    let err = install_internal_from_base(Some("0.9.9"), &cfg, &base(&server))
+        .await
+        .unwrap_err();
+    let msg = format!("{err:#}");
+    assert!(msg.contains("404"), "msg: {msg}");
+}
+
+#[tokio::test]
+#[serial]
+async fn install_rejects_invalid_pinned_version() {
+    let _ = test_home();
+    reset_home();
+    let server = MockServer::start().await;
+    let cfg = make_update_config("stable");
+
+    let err = install_internal_from_base(Some("not-a-version"), &cfg, &base(&server))
         .await
         .unwrap_err();
     let msg = format!("{err:#}");
     assert!(msg.contains("invalid version format"), "msg: {msg}");
 }
 
+#[tokio::test]
+#[serial]
+async fn install_rejects_checksum_mismatch_and_leaves_no_binary() {
+    let _ = test_home();
+    reset_home();
+    let platform = host_platform();
+    let server = MockServer::start().await;
+
+    // SHA256SUMS lists a hash that does NOT match the served archive.
+    Mock::given(method("GET"))
+        .and(path("/releases/tags/v0.1.181"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(release_json(&server.uri(), "0.1.181")),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/dl/v0.1.181/SHA256SUMS"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+            "{}  {}\n",
+            "0".repeat(64),
+            archive_name("0.1.181")
+        )))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(format!("/dl/v0.1.181/{}", archive_name("0.1.181"))))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_bytes(make_release_archive(&small_good_artifact())),
+        )
+        .mount(&server)
+        .await;
+
+    let cfg = make_update_config("stable");
+    let err = install_internal_from_base(Some("0.1.181"), &cfg, &base(&server))
+        .await
+        .unwrap_err();
+    let msg = format!("{err:#}");
+    assert!(msg.contains("SHA256 mismatch"), "msg: {msg}");
+
+    let home = test_home();
+    assert!(
+        !home
+            .join("downloads")
+            .join(format!("kigi-0.1.181-{platform}"))
+            .exists(),
+        "no binary may be published from a checksum-failed archive"
+    );
+    assert!(
+        !home
+            .join("downloads")
+            .join(archive_name("0.1.181"))
+            .exists(),
+        "the rejected archive must be deleted"
+    );
+    assert!(
+        !home.join("bin").join("kigi").is_symlink(),
+        "no symlink may be activated"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn install_fails_when_sha256sums_asset_missing() {
+    let _ = test_home();
+    reset_home();
+    let server = MockServer::start().await;
+
+    // Release JSON without a SHA256SUMS asset — must fail up front, before
+    // downloading the archive.
+    let name = archive_name("0.1.181");
+    let json = serde_json::json!({
+        "tag_name": "v0.1.181",
+        "draft": false,
+        "prerelease": false,
+        "assets": [
+            { "name": name, "browser_download_url": format!("{}/dl/v0.1.181/{name}", server.uri()) },
+        ],
+    });
+    Mock::given(method("GET"))
+        .and(path("/releases/tags/v0.1.181"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json))
+        .mount(&server)
+        .await;
+    // The archive endpoint must never be contacted.
+    Mock::given(method("GET"))
+        .and(path(format!("/dl/v0.1.181/{name}")))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let cfg = make_update_config("stable");
+    let err = install_internal_from_base(Some("0.1.181"), &cfg, &base(&server))
+        .await
+        .unwrap_err();
+    let msg = format!("{err:#}");
+    assert!(msg.contains("SHA256SUMS"), "msg: {msg}");
+}
+
+#[tokio::test]
+#[serial]
+async fn install_smoke_test_rejects_bad_binary_with_valid_checksum() {
+    let _ = test_home();
+    reset_home();
+    let platform = host_platform();
+    let server = MockServer::start().await;
+
+    // Archive checksums fine but its binary exits 1 — only the smoke test
+    // can catch this, and it must leave no active install behind.
+    mount_release(&server, "0.1.181", b"#!/bin/sh\nexit 1\n").await;
+
+    let cfg = make_update_config("stable");
+    let err = install_internal_from_base(Some("0.1.181"), &cfg, &base(&server))
+        .await
+        .unwrap_err();
+    let msg = format!("{err:#}");
+    assert!(msg.contains("failed to run"), "msg: {msg}");
+
+    let home = test_home();
+    assert!(
+        !home
+            .join("downloads")
+            .join(format!("kigi-0.1.181-{platform}"))
+            .exists(),
+        "smoke-test-failed binary must be deleted"
+    );
+    assert!(
+        !home.join("bin").join("kigi").is_symlink(),
+        "no symlink may be activated"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn install_swap_failure_leaves_prior_install_active() {
+    // Sabotage activation: bin/kigi as a non-empty directory makes the
+    // symlink rename fail. The download itself lands, but the prior state
+    // of bin/ must be untouched (nothing half-activated).
+    let _ = test_home();
+    reset_home();
+    let server = MockServer::start().await;
+    mount_release(&server, "0.1.181", &small_good_artifact()).await;
+    let cfg = make_update_config("stable");
+
+    let bin_dir = test_home().join("bin");
+    let kigi_dir = bin_dir.join("kigi");
+    std::fs::create_dir_all(&kigi_dir).unwrap();
+    std::fs::write(kigi_dir.join("blocker"), b"x").unwrap();
+
+    let err = install_internal_from_base(Some("0.1.181"), &cfg, &base(&server))
+        .await
+        .expect_err("swap must fail when the link path is a non-empty dir");
+    let msg = format!("{err:#}");
+    assert!(msg.contains("swapping managed bin link"), "msg: {msg}");
+
+    assert!(
+        kigi_dir.is_dir() && kigi_dir.join("blocker").exists(),
+        "failed swap must not clobber the existing path"
+    );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Cleanup integration: install v1, then v2, verify N-1 retention.
+// Rollback semantics: pinned installs move DOWN as well as up (the release
+// channel is authoritative for the internal installer).
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 #[serial]
-async fn install_internal_cleans_up_old_versions_keeping_n_minus_one() {
+async fn install_rollback_then_upgrade_sequence() {
     let _ = test_home();
     reset_home();
     let platform = host_platform();
+    let server = MockServer::start().await;
+    for v in ["0.2.5", "0.2.7"] {
+        mount_release(&server, v, &small_good_artifact()).await;
+    }
+    let cfg = make_update_config("stable");
 
-    // Install v1, v2, v3 sequentially. After v3, only v3 (current) and v2
-    // (N-1) should remain on disk; v1 should be deleted.
+    // Up, back down (rollback), then up again.
+    for version in ["0.2.7", "0.2.5", "0.2.7"] {
+        install_internal_from_base(Some(version), &cfg, &base(&server))
+            .await
+            .unwrap();
+        let target = std::fs::read_link(test_home().join("bin").join("kigi")).unwrap();
+        assert_eq!(
+            target.file_name().unwrap(),
+            format!("kigi-{version}-{platform}").as_str(),
+            "active binary must follow the pinned install"
+        );
+        assert_eq!(installed_on_disk_version().as_deref(), Some(version));
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cleanup integration: install v1..v3, verify N-1 retention.
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+#[serial]
+async fn install_cleans_up_old_versions_keeping_n_minus_one() {
+    let _ = test_home();
+    reset_home();
+    let platform = host_platform();
+    let server = MockServer::start().await;
+    for v in ["0.1.179", "0.1.180", "0.1.181"] {
+        mount_release(&server, v, &small_good_artifact()).await;
+    }
+    let cfg = make_update_config("stable");
+
     for v in ["0.1.179", "0.1.180", "0.1.181"] {
         // Age earlier installs: cleanup never deletes freshly-written
         // binaries (concurrent-racer protection), so retention assertions
         // need the previous installs to look like old leftovers.
         common::backdate_downloads();
-        let server = mount_gcs(v, &platform).await;
-        let cfg = make_config("stable");
-        install_internal_from_base(Some(v), &cfg, &server.uri())
+        install_internal_from_base(Some(v), &cfg, &base(&server))
             .await
             .unwrap();
     }
 
-    let home = test_home();
-    let downloads = home.join("downloads");
+    let downloads = test_home().join("downloads");
     assert!(
-        downloads.join(format!("grok-0.1.181-{platform}")).exists(),
+        downloads.join(format!("kigi-0.1.181-{platform}")).exists(),
         "current"
     );
     assert!(
-        downloads.join(format!("grok-0.1.180-{platform}")).exists(),
+        downloads.join(format!("kigi-0.1.180-{platform}")).exists(),
         "N-1 retained"
     );
     assert!(
-        !downloads.join(format!("grok-0.1.179-{platform}")).exists(),
+        !downloads.join(format!("kigi-0.1.179-{platform}")).exists(),
         "oldest deleted"
     );
 
-    // Symlink updated to latest.
-    let target = std::fs::read_link(home.join("bin").join("grok")).unwrap();
+    let target = std::fs::read_link(test_home().join("bin").join("kigi")).unwrap();
     assert!(
         target
             .file_name()
@@ -464,202 +535,48 @@ async fn install_internal_cleans_up_old_versions_keeping_n_minus_one() {
 
 #[tokio::test]
 #[serial]
-async fn install_internal_idempotent_for_same_version() {
-    // Re-installing the same version should not error and should leave the
-    // binary at the same path with the same content.
+async fn install_idempotent_for_same_version() {
     let _ = test_home();
     reset_home();
     let platform = host_platform();
-    let server = mount_gcs("0.1.181", &platform).await;
-    let cfg = make_config("stable");
+    let server = MockServer::start().await;
+    mount_release(&server, "0.1.181", &small_good_artifact()).await;
+    let cfg = make_update_config("stable");
 
-    install_internal_from_base(Some("0.1.181"), &cfg, &server.uri())
+    install_internal_from_base(Some("0.1.181"), &cfg, &base(&server))
         .await
         .unwrap();
-    let first = std::fs::read(
-        test_home()
-            .join("downloads")
-            .join(format!("grok-0.1.181-{platform}")),
-    )
-    .unwrap();
+    let path_installed = test_home()
+        .join("downloads")
+        .join(format!("kigi-0.1.181-{platform}"));
+    let first = std::fs::read(&path_installed).unwrap();
 
-    install_internal_from_base(Some("0.1.181"), &cfg, &server.uri())
+    install_internal_from_base(Some("0.1.181"), &cfg, &base(&server))
         .await
         .unwrap();
-    let second = std::fs::read(
-        test_home()
-            .join("downloads")
-            .join(format!("grok-0.1.181-{platform}")),
-    )
-    .unwrap();
+    let second = std::fs::read(&path_installed).unwrap();
 
     assert_eq!(first, second);
-    let target = std::fs::read_link(test_home().join("bin").join("grok")).unwrap();
+    let target = std::fs::read_link(test_home().join("bin").join("kigi")).unwrap();
     assert!(target.to_string_lossy().contains("0.1.181"));
 }
 
 #[tokio::test]
 #[serial]
-async fn install_internal_creates_kigi_home_subdirs_if_missing() {
+async fn install_creates_kigi_home_subdirs_if_missing() {
     let _ = test_home();
     reset_home();
-    // Explicitly delete bin/ and downloads/ so install must create them.
     let _ = std::fs::remove_dir_all(test_home().join("bin"));
     let _ = std::fs::remove_dir_all(test_home().join("downloads"));
 
-    let platform = host_platform();
-    let server = mount_gcs("0.1.181", &platform).await;
-    let cfg = make_config("stable");
+    let server = MockServer::start().await;
+    mount_release(&server, "0.1.181", &small_good_artifact()).await;
+    let cfg = make_update_config("stable");
 
-    install_internal_from_base(Some("0.1.181"), &cfg, &server.uri())
+    install_internal_from_base(Some("0.1.181"), &cfg, &base(&server))
         .await
         .unwrap();
 
     assert!(test_home().join("bin").is_dir());
     assert!(test_home().join("downloads").is_dir());
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Multi-base URL fallback: install_internal_from_bases tries each base in
-// preference order, falling through to the next on failure.
-// ─────────────────────────────────────────────────────────────────────────────
-
-#[tokio::test]
-#[serial]
-async fn install_internal_from_bases_falls_back_to_secondary_when_primary_fails() {
-    // Primary server returns 500 on every endpoint (CDN outage simulation);
-    // fallback server serves the install successfully. Result: install
-    // succeeds via fallback.
-    let _ = test_home();
-    reset_home();
-    let platform = host_platform();
-
-    let primary = MockServer::start().await;
-    Mock::given(method("GET"))
-        .respond_with(ResponseTemplate::new(500))
-        .mount(&primary)
-        .await;
-
-    let fallback = mount_gcs("0.1.181", &platform).await;
-    let cfg = make_config("stable");
-
-    install_internal_from_bases(
-        Some("0.1.181"),
-        &cfg,
-        &[primary.uri().as_str(), fallback.uri().as_str()],
-    )
-    .await
-    .unwrap();
-
-    assert!(
-        test_home()
-            .join("downloads")
-            .join(format!("grok-0.1.181-{platform}"))
-            .exists(),
-        "fallback should produce a downloaded binary"
-    );
-}
-
-#[tokio::test]
-#[serial]
-async fn install_internal_from_bases_uses_primary_when_it_works() {
-    // Both bases work; the install must use the primary (first one) and
-    // never touch the fallback. Verified by tearing down the fallback
-    // server immediately after configuration — if the install reached for
-    // it, the request would fail.
-    let _ = test_home();
-    reset_home();
-    let platform = host_platform();
-
-    let primary = mount_gcs("0.1.181", &platform).await;
-    let cfg = make_config("stable");
-
-    install_internal_from_bases(
-        Some("0.1.181"),
-        &cfg,
-        &[primary.uri().as_str(), "http://127.0.0.1:1"],
-    )
-    .await
-    .unwrap();
-
-    assert!(
-        test_home()
-            .join("downloads")
-            .join(format!("grok-0.1.181-{platform}"))
-            .exists()
-    );
-}
-
-#[tokio::test]
-#[serial]
-async fn install_internal_from_bases_propagates_last_error_when_all_fail() {
-    // Every base returns 500 — the install must fail, surfacing the final
-    // base's error rather than silently succeeding.
-    let _ = test_home();
-    reset_home();
-
-    let bad1 = MockServer::start().await;
-    Mock::given(method("GET"))
-        .respond_with(ResponseTemplate::new(500))
-        .mount(&bad1)
-        .await;
-
-    let bad2 = MockServer::start().await;
-    Mock::given(method("GET"))
-        .respond_with(ResponseTemplate::new(500))
-        .mount(&bad2)
-        .await;
-
-    let cfg = make_config("stable");
-    let err = install_internal_from_bases(
-        Some("0.1.181"),
-        &cfg,
-        &[bad1.uri().as_str(), bad2.uri().as_str()],
-    )
-    .await
-    .unwrap_err();
-    let msg = format!("{err:#}");
-    assert!(msg.contains("Download failed"), "msg: {msg}");
-}
-
-/// Regression: a local failure after a successful download (sabotaged
-/// `agent` swap) must fail the install immediately — the fallback base must
-/// never be contacted for a pointless re-download.
-#[tokio::test]
-#[serial]
-async fn install_internal_from_bases_does_not_redownload_on_local_swap_failure() {
-    let _ = test_home();
-    reset_home();
-    let platform = host_platform();
-
-    let primary = mount_gcs("0.1.181", &platform).await;
-    let fallback = mount_gcs("0.1.181", &platform).await;
-    let cfg = make_config("stable");
-
-    let home = test_home();
-    let bin_dir = home.join("bin");
-    std::fs::create_dir_all(&bin_dir).unwrap();
-    // Sabotage activation: agent as a non-empty dir fails the swap's
-    // rollback capture (read_link on a directory) before any rename.
-    let agent_dir = bin_dir.join("agent");
-    std::fs::create_dir(&agent_dir).unwrap();
-    std::fs::write(agent_dir.join("blocker"), b"x").unwrap();
-
-    install_internal_from_bases(
-        Some("0.1.181"),
-        &cfg,
-        &[primary.uri().as_str(), fallback.uri().as_str()],
-    )
-    .await
-    .expect_err("swap failure must fail the install");
-
-    let fallback_requests = fallback
-        .received_requests()
-        .await
-        .expect("request recording is enabled on MockServer::start()");
-    assert!(
-        fallback_requests.is_empty(),
-        "local swap failure must not fall through to the next base: {} request(s)",
-        fallback_requests.len()
-    );
 }

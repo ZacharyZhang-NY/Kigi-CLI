@@ -32,10 +32,27 @@ rustflags = [
 ]
 
 [target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "force-unwind-tables=yes"]
+rustflags = [
+    "-C", "force-unwind-tables=yes",
+    # Binary hardening (SECURITY): Full RELRO + non-executable stack
+    # These flags prevent: GOT overwrite attacks, lazy binding exploits, stack shellcode
+    # IMPORTANT: If changing build system (e.g. from cargo to Bazel-only),
+    # ensure equivalent linker hardening is applied to production binaries.
+    "-C", "link-arg=-Wl,-z,relro,-z,now,-z,noexecstack",
+]
 
+# NOTE: no target-cpu pin. Release artifacts (PRD F8) must run on ordinary
+# aarch64 hardware; the default baseline for the target is the portable
+# choice. (The upstream grok-build tree pinned target-cpu=neoverse-v2 here —
+# a server-CPU tune from xAI's build fleet that would emit instructions
+# unavailable on common Cortex-A cores.)
 [target.aarch64-unknown-linux-gnu]
-rustflags = ["-C", "target-cpu=neoverse-v2", "-C", "force-unwind-tables=yes"]
+rustflags = [
+    "-C", "force-unwind-tables=yes",
+    # Binary hardening (SECURITY): Full RELRO + non-executable stack — see
+    # x86_64-unknown-linux-gnu above.
+    "-C", "link-arg=-Wl,-z,relro,-z,now,-z,noexecstack",
+]
 
 [target.x86_64-unknown-linux-musl]
 rustflags = [

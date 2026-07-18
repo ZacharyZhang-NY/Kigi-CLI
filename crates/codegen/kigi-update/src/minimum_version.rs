@@ -1,15 +1,15 @@
 //! Minimum-version enforcement.
 //!
-//! When `cli.minimum_version` is set in any config layer, Grok refuses to
+//! When `cli.minimum_version` is set in any config layer, Kigi refuses to
 //! start below that floor. With auto-update on, we install
-//! `max(latest, minimum)`; otherwise the user is asked to run `grok update`.
+//! `max(latest, minimum)`; otherwise the user is asked to run `kigi update`.
 //!
 //! Set `KIGI_TEST_VERSION` to manually exercise either path without producing
 //! a real out-of-date build.
 
 use crate::auto_update::{get_installer, run_install_script};
 use crate::version::{
-    UpdateConfig, fetch_latest_version, get_installed_grok_version, write_version_cache,
+    UpdateConfig, fetch_latest_version, get_installed_kigi_version, write_version_cache,
 };
 use kigi_shell::util::config;
 use tracing::{info, warn};
@@ -36,7 +36,7 @@ enum EnforcementOutcome {
 pub(crate) enum MinimumVersionError {
     /// `source` chains via `Error::source()`; omitted from `Display`.
     #[error(
-        "The minimum version \"{value}\" in your Grok configuration \
+        "The minimum version \"{value}\" in your Kigi configuration \
          isn't a valid version number. Update `cli.minimum_version` and try again."
     )]
     InvalidMinimum {
@@ -45,22 +45,22 @@ pub(crate) enum MinimumVersionError {
         source: semver::Error,
     },
     #[error(
-        "This version of Grok ({current}) is no longer supported. \
-         Run `grok update` to install version {minimum} or later."
+        "This version of Kigi ({current}) is no longer supported. \
+         Run `kigi update` to install version {minimum} or later."
     )]
     AutoUpdateDisabled { current: String, minimum: String },
-    /// `npm` / `gh` / `internal` GCS — none detected.
+    /// No installer backend detected.
     #[error(
-        "This version of Grok ({current}) is no longer supported. \
-         Run `grok update` to install version {minimum} or later."
+        "This version of Kigi ({current}) is no longer supported. \
+         Run `kigi update` to install version {minimum} or later."
     )]
     NoInstaller { current: String, minimum: String },
     /// `detail` is telemetry-only; omitted from `Display` to avoid stacking
     /// the installer's own action language.
     #[error(
-        "This version of Grok ({current}) is no longer supported, \
+        "This version of Kigi ({current}) is no longer supported, \
          and the update to version {minimum} didn't complete.\n\n\
-         Run `grok update` to try again."
+         Run `kigi update` to try again."
     )]
     UpgradeFailed {
         current: String,
@@ -70,7 +70,7 @@ pub(crate) enum MinimumVersionError {
     /// Latest release is known but still below the floor (vs `NoReleaseFound`,
     /// which couldn't probe at all).
     #[error(
-        "This version of Grok ({current}) is no longer supported. \
+        "This version of Kigi ({current}) is no longer supported. \
          Version {minimum} or later is required, but the most recent release is {latest}. \
          Contact your administrator."
     )]
@@ -81,15 +81,15 @@ pub(crate) enum MinimumVersionError {
     },
     /// Couldn't probe the registry — likely transient.
     #[error(
-        "This version of Grok ({current}) is no longer supported. \
+        "This version of Kigi ({current}) is no longer supported. \
          Version {minimum} or later is required, but no release was found. \
          Check your network connection, or contact your administrator."
     )]
     NoReleaseFound { current: String, minimum: String },
-    /// `grok update --version X` requested a version below the floor.
+    /// `kigi update --version X` requested a version below the floor.
     #[error(
-        "Cannot install Grok {target}: the configured minimum is {minimum}. \
-         Run `grok update` to install the latest allowed version."
+        "Cannot install Kigi {target}: the configured minimum is {minimum}. \
+         Run `kigi update` to install the latest allowed version."
     )]
     TargetBelowFloor { target: String, minimum: String },
 }
@@ -133,7 +133,7 @@ fn evaluate_minimum_version(
 }
 
 /// Refuse an explicit install target below the configured floor.
-/// Used by `grok update --version X`.
+/// Used by `kigi update --version X`.
 pub(crate) fn check_install_target(target: &str) -> Result<(), MinimumVersionError> {
     let floor = resolve_floor_or_error()?;
     check_install_target_inner(target, floor.as_deref())
@@ -154,7 +154,7 @@ fn check_install_target_inner(
 }
 
 /// `max(target, configured_floor)`; passthrough when no floor is set.
-/// Used by `grok update` to keep the install target at or above the pin.
+/// Used by `kigi update` to keep the install target at or above the pin.
 pub(crate) fn apply_floor(target: &str) -> Result<String, MinimumVersionError> {
     let floor = resolve_floor_or_error()?;
     apply_floor_inner(target, floor.as_deref())
@@ -193,7 +193,7 @@ async fn enforce_minimum_version(
     minimum_version: Option<&str>,
     update_config: &UpdateConfig,
 ) -> Result<EnforcementOutcome, MinimumVersionError> {
-    let current_version = get_installed_grok_version();
+    let current_version = get_installed_kigi_version();
     let decision = evaluate_minimum_version(&current_version, minimum_version)?;
     let MinimumVersionDecision::BelowMinimum { current, minimum } = decision else {
         info!(current = %current_version, "minimum_version: floor satisfied");
@@ -214,12 +214,12 @@ async fn enforce_minimum_version(
         return Err(MinimumVersionError::NoInstaller { current, minimum });
     };
 
-    let latest = fetch_latest_version(installer, update_config).await.ok();
+    let latest = fetch_latest_version(update_config).await.ok();
     let target = pick_target_version(latest.as_deref(), &minimum);
 
     info!(%current, %target, installer, "minimum_version: installing upgrade");
     eprintln!(
-        "This version of Grok ({current}) is no longer supported. \
+        "This version of Kigi ({current}) is no longer supported. \
          Updating to {target}…"
     );
 
@@ -276,12 +276,12 @@ pub async fn enforce_minimum_version_or_exit(update_config: &UpdateConfig) {
     match enforce_minimum_version(Some(&min), update_config).await {
         Ok(EnforcementOutcome::Allowed) => {}
         Ok(EnforcementOutcome::Upgraded) => {
-            // TODO: restart_grok uses exec() which carries the same
+            // TODO: restart_kigi uses exec() which carries the same
             // SIGABRT risk as the old piped-stderr update path if the
             // child process ever writes to a broken pipe. For now this
             // path is rare (only fires when the server pushes a minimum
             // version bump), so print a relaunch message instead.
-            eprintln!("Update installed. Run `grok` to start.");
+            eprintln!("Update installed. Run `kigi` to start.");
             std::process::exit(0);
         }
         Err(e) => {
@@ -370,7 +370,7 @@ mod tests {
         // SAFETY: #[serial] excludes other env-touching tests.
         unsafe { std::env::set_var("KIGI_TEST_VERSION", "0.1.50") };
         let decision =
-            evaluate_minimum_version(&get_installed_grok_version(), Some("0.1.100")).unwrap();
+            evaluate_minimum_version(&get_installed_kigi_version(), Some("0.1.100")).unwrap();
         assert!(matches!(
             decision,
             MinimumVersionDecision::BelowMinimum { .. }

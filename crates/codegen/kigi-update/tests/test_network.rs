@@ -4,6 +4,11 @@
 //! directly. We don't need `serial_test` here because each `MockServer` binds
 //! to its own random port and tests don't touch global state.
 //!
+//! Release JSON fixtures mirror the real GitHub REST API
+//! (https://docs.github.com/en/rest/releases/releases#get-the-latest-release):
+//! `GET /repos/{owner}/{repo}/releases/latest` →
+//! `{"tag_name":"v0.1.0","assets":[{"name":"...","browser_download_url":"..."}]}`.
+//!
 //! NOTE on retry timing: the prod retry backoff is 1s + 2s + 4s = 7s
 //! wall-clock. We can't use `tokio::time::pause()` because reqwest's I/O
 //! reactor uses the same tokio timer and stalls when time is paused. So
@@ -15,299 +20,299 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
 use kigi_update::auto_update::{download_silent, download_with_progress};
-use kigi_update::version::fetch_gcs_version_from_base;
+use kigi_update::version::{fetch_latest_release_from_base, fetch_release_for_version_from_base};
+
+fn tag_json(tag: &str) -> serde_json::Value {
+    serde_json::json!({ "tag_name": tag, "draft": false, "prerelease": false, "assets": [] })
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Happy-path tests (fast, no retries triggered).
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn gcs_pointer_returns_version_on_success() {
+async fn latest_release_returns_version_on_success() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/stable"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("0.1.181\n"))
+        .and(path("/latest"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tag_json("v0.1.181")))
         .expect(1)
         .mount(&server)
         .await;
 
-    let v = fetch_gcs_version_from_base("stable", &server.uri())
+    let release = fetch_latest_release_from_base("stable", &server.uri())
         .await
         .unwrap();
-    assert_eq!(v, "0.1.181");
+    assert_eq!(release.version().unwrap(), "0.1.181");
 }
 
 #[tokio::test]
-async fn gcs_pointer_trims_whitespace() {
+async fn latest_release_accepts_bare_semver_tag() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/stable"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("  0.1.181  \r\n  "))
+        .and(path("/latest"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tag_json("0.1.181")))
         .mount(&server)
         .await;
 
-    let v = fetch_gcs_version_from_base("stable", &server.uri())
+    let release = fetch_latest_release_from_base("stable", &server.uri())
         .await
         .unwrap();
-    assert_eq!(v, "0.1.181");
+    assert_eq!(release.version().unwrap(), "0.1.181");
 }
 
 #[tokio::test]
-async fn gcs_pointer_rejects_invalid_semver_no_retry() {
-    // Invalid semver in the channel pointer is a hard error — must NOT
-    // retry (it's a server data bug, not a transient failure).
+async fn latest_release_rejects_non_semver_tag_without_retry() {
+    // A non-semver tag is a repo data bug, not a transient failure — the
+    // fetch succeeds in one request and version() reports the bad tag.
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/stable"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("not-a-version"))
-        .expect(1) // exactly one request — no retry on parse failure
+        .and(path("/latest"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tag_json("release-one")))
+        .expect(1)
         .mount(&server)
         .await;
 
-    let err = fetch_gcs_version_from_base("stable", &server.uri())
+    let release = fetch_latest_release_from_base("stable", &server.uri())
+        .await
+        .unwrap();
+    let err = release.version().unwrap_err();
+    assert!(format!("{err}").contains("not semver"), "err: {err}");
+}
+
+#[tokio::test]
+async fn alpha_channel_picks_semver_max_from_release_list() {
+    // The list is ordered by publication date (newest first) — NOT semver.
+    // Alpha must take the semver max, so a newer-published pre-release does
+    // not shadow a semver-higher stable and vice versa.
+    let server = MockServer::start().await;
+    let list = serde_json::json!([
+        { "tag_name": "v0.1.180-alpha.5", "draft": false, "prerelease": true, "assets": [] },
+        { "tag_name": "v0.1.181", "draft": false, "prerelease": false, "assets": [] },
+        { "tag_name": "v0.1.179", "draft": false, "prerelease": false, "assets": [] },
+    ]);
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(list))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let release = fetch_latest_release_from_base("alpha", &server.uri())
+        .await
+        .unwrap();
+    assert_eq!(release.version().unwrap(), "0.1.181");
+}
+
+#[tokio::test]
+async fn alpha_channel_returns_prerelease_when_it_is_max() {
+    let server = MockServer::start().await;
+    let list = serde_json::json!([
+        { "tag_name": "v0.1.182-alpha.1", "draft": false, "prerelease": true, "assets": [] },
+        { "tag_name": "v0.1.181", "draft": false, "prerelease": false, "assets": [] },
+    ]);
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(list))
+        .mount(&server)
+        .await;
+
+    let release = fetch_latest_release_from_base("alpha", &server.uri())
+        .await
+        .unwrap();
+    assert_eq!(release.version().unwrap(), "0.1.182-alpha.1");
+}
+
+#[tokio::test]
+async fn alpha_channel_skips_drafts_and_non_semver_tags() {
+    let server = MockServer::start().await;
+    let list = serde_json::json!([
+        { "tag_name": "v9.9.9", "draft": true, "prerelease": false, "assets": [] },
+        { "tag_name": "nightly", "draft": false, "prerelease": false, "assets": [] },
+        { "tag_name": "v0.1.181", "draft": false, "prerelease": false, "assets": [] },
+    ]);
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(list))
+        .mount(&server)
+        .await;
+
+    let release = fetch_latest_release_from_base("alpha", &server.uri())
+        .await
+        .unwrap();
+    assert_eq!(
+        release.version().unwrap(),
+        "0.1.181",
+        "drafts and non-semver tags must not win"
+    );
+}
+
+#[tokio::test]
+async fn alpha_channel_empty_list_is_an_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+        .mount(&server)
+        .await;
+
+    let err = fetch_latest_release_from_base("alpha", &server.uri())
         .await
         .unwrap_err();
-    let msg = format!("{err:#}");
-    assert!(msg.contains("invalid semver"), "msg: {msg}");
+    assert!(format!("{err:#}").contains("no releases"), "err: {err:#}");
 }
 
 #[tokio::test]
-async fn gcs_pointer_alpha_channel_returns_max_of_alpha_and_stable_when_stable_higher() {
+async fn stable_channel_does_not_fetch_the_release_list() {
+    // Stable users resolve /latest only; the list endpoint must not be hit.
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/alpha"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("0.1.180-alpha.5"))
+        .and(path("/latest"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tag_json("v0.1.181")))
         .expect(1)
         .mount(&server)
         .await;
     Mock::given(method("GET"))
-        .and(path("/stable"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("0.1.181"))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let v = fetch_gcs_version_from_base("alpha", &server.uri())
-        .await
-        .unwrap();
-    assert_eq!(v, "0.1.181");
-}
-
-#[tokio::test]
-async fn gcs_pointer_alpha_returns_alpha_when_higher() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/alpha"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("0.1.182-alpha.1"))
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/stable"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("0.1.181"))
-        .mount(&server)
-        .await;
-
-    let v = fetch_gcs_version_from_base("alpha", &server.uri())
-        .await
-        .unwrap();
-    assert_eq!(v, "0.1.182-alpha.1");
-}
-
-#[tokio::test]
-async fn gcs_pointer_stable_channel_does_not_fetch_alpha() {
-    // Stable-channel users should not pay the cost of fetching the alpha
-    // pointer. The mock for /alpha should never be hit.
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/stable"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("0.1.181"))
-        .expect(1)
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/alpha"))
+        .and(path("/"))
         .respond_with(ResponseTemplate::new(500))
         .expect(0)
         .mount(&server)
         .await;
 
-    let v = fetch_gcs_version_from_base("stable", &server.uri())
+    let release = fetch_latest_release_from_base("stable", &server.uri())
         .await
         .unwrap();
-    assert_eq!(v, "0.1.181");
+    assert_eq!(release.version().unwrap(), "0.1.181");
 }
 
 #[tokio::test]
-async fn gcs_pointer_with_long_pre_release_version() {
+async fn release_for_version_fetches_tag_endpoint() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/alpha"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("0.1.190-alpha.42"))
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/stable"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("0.1.189"))
+        .and(path("/tags/v0.1.150"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tag_json("v0.1.150")))
+        .expect(1)
         .mount(&server)
         .await;
 
-    let v = fetch_gcs_version_from_base("alpha", &server.uri())
+    let release = fetch_release_for_version_from_base("0.1.150", &server.uri())
         .await
         .unwrap();
-    assert_eq!(v, "0.1.190-alpha.42");
+    assert_eq!(release.version().unwrap(), "0.1.150");
 }
 
 #[tokio::test]
-async fn gcs_pointer_preserves_path_in_base_url() {
-    // base_url may include a path component (in practice the prod GCS URL
-    // does: `/cli`). The function appends `/{channel}`.
+async fn base_url_trailing_slash_is_tolerated() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/cli/stable"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("0.1.181"))
+        .and(path("/latest"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tag_json("v0.1.181")))
         .mount(&server)
         .await;
 
-    let base = format!("{}/cli", server.uri());
-    let v = fetch_gcs_version_from_base("stable", &base).await.unwrap();
-    assert_eq!(v, "0.1.181");
+    let base = format!("{}/", server.uri());
+    let release = fetch_latest_release_from_base("stable", &base)
+        .await
+        .unwrap();
+    assert_eq!(release.version().unwrap(), "0.1.181");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Retry behavior — these tests intentionally exercise the 1s+2s+4s backoff,
-// so each takes ~7 seconds. They run in parallel.
+// so each takes up to ~7 seconds. They run in parallel.
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn gcs_pointer_retries_on_5xx_then_succeeds() {
+async fn latest_release_retries_on_5xx_then_succeeds() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/stable"))
+        .and(path("/latest"))
         .respond_with(ResponseTemplate::new(503).set_body_string("backend down"))
         .up_to_n_times(2)
         .mount(&server)
         .await;
     Mock::given(method("GET"))
-        .and(path("/stable"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("0.1.181"))
+        .and(path("/latest"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tag_json("v0.1.181")))
         .mount(&server)
         .await;
 
-    let v = fetch_gcs_version_from_base("stable", &server.uri())
+    let release = fetch_latest_release_from_base("stable", &server.uri())
         .await
         .unwrap();
-    assert_eq!(v, "0.1.181");
+    assert_eq!(release.version().unwrap(), "0.1.181");
 }
 
 #[tokio::test]
-async fn gcs_pointer_gives_up_after_max_retries() {
+async fn latest_release_gives_up_after_max_retries() {
     let server = MockServer::start().await;
     // 4 attempts total: initial + 3 retries.
     Mock::given(method("GET"))
-        .and(path("/stable"))
+        .and(path("/latest"))
         .respond_with(ResponseTemplate::new(500))
         .expect(4)
         .mount(&server)
         .await;
 
-    let err = fetch_gcs_version_from_base("stable", &server.uri())
+    let err = fetch_latest_release_from_base("stable", &server.uri())
         .await
         .unwrap_err();
     let msg = format!("{err:#}");
     assert!(msg.contains("HTTP 500"), "msg: {msg}");
+    assert!(msg.contains("/latest"), "url should be in error: {msg}");
 }
 
 #[tokio::test]
-async fn gcs_pointer_retries_on_empty_body() {
+async fn latest_release_404_fails_fast_without_retry() {
+    // 404 = release/repo missing — a data condition, not transient. Exactly
+    // one request, and the GitHub error body is surfaced.
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/stable"))
-        .respond_with(ResponseTemplate::new(200).set_body_string(""))
-        .up_to_n_times(2)
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/stable"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("0.1.181"))
+        .and(path("/latest"))
+        .respond_with(ResponseTemplate::new(404).set_body_string(r#"{"message":"Not Found"}"#))
+        .expect(1)
         .mount(&server)
         .await;
 
-    let v = fetch_gcs_version_from_base("stable", &server.uri())
-        .await
-        .unwrap();
-    assert_eq!(v, "0.1.181");
-}
-
-#[tokio::test]
-async fn gcs_pointer_alpha_propagates_error_from_either_pointer() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/alpha"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("0.1.182-alpha.1"))
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/stable"))
-        .respond_with(ResponseTemplate::new(500))
-        .expect(4)
-        .mount(&server)
-        .await;
-
-    let err = fetch_gcs_version_from_base("alpha", &server.uri())
-        .await
-        .unwrap_err();
-    let msg = format!("{err:#}");
-    assert!(msg.contains("HTTP 500"), "msg: {msg}");
-}
-
-#[tokio::test]
-async fn gcs_pointer_4xx_is_retryable_until_exhausted() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/stable"))
-        .respond_with(ResponseTemplate::new(404))
-        .expect(4)
-        .mount(&server)
-        .await;
-
-    let err = fetch_gcs_version_from_base("stable", &server.uri())
+    let err = fetch_latest_release_from_base("stable", &server.uri())
         .await
         .unwrap_err();
     let msg = format!("{err:#}");
     assert!(msg.contains("HTTP 404"), "msg: {msg}");
+    assert!(msg.contains("Not Found"), "msg: {msg}");
 }
 
 #[tokio::test]
-async fn gcs_pointer_includes_url_in_error_message() {
+async fn latest_release_malformed_json_fails_without_retry() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/stable"))
-        .respond_with(ResponseTemplate::new(500))
-        .expect(4)
+        .and(path("/latest"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("<html>not json</html>"))
+        .expect(1)
         .mount(&server)
         .await;
 
-    let err = fetch_gcs_version_from_base("stable", &server.uri())
+    let err = fetch_latest_release_from_base("stable", &server.uri())
         .await
         .unwrap_err();
     let msg = format!("{err:#}");
-    assert!(msg.contains("/stable"), "url should be in error: {msg}");
+    assert!(msg.contains("unexpected JSON"), "msg: {msg}");
 }
 
 #[tokio::test]
-async fn gcs_pointer_connection_refused_is_retried_and_returns_error() {
+async fn latest_release_connection_refused_is_retried_and_returns_error() {
     // Bind a TcpListener to claim a port, then drop it so connections refuse.
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     drop(listener);
     let url = format!("http://127.0.0.1:{port}");
 
-    let err = fetch_gcs_version_from_base("stable", &url)
+    let err = fetch_latest_release_from_base("stable", &url)
         .await
         .unwrap_err();
     let msg = format!("{err:#}").to_lowercase();
     assert!(
-        msg.contains("fetch failed")
+        msg.contains("request failed")
             || msg.contains("connection")
             || msg.contains("error sending request")
             || msg.contains("refused"),
@@ -325,14 +330,14 @@ async fn download_silent_writes_body_to_dest() {
     let server = MockServer::start().await;
     let body = b"binary contents \x00\x01\x02".to_vec();
     Mock::given(method("GET"))
-        .and(path("/grok-0.1.181-macos-aarch64"))
+        .and(path("/kigi-0.1.181-macos-aarch64"))
         .respond_with(ResponseTemplate::new(200).set_body_bytes(body.clone()))
         .mount(&server)
         .await;
 
     let tmp = tempfile::tempdir().unwrap();
-    let dest = tmp.path().join("grok");
-    let url = format!("{}/grok-0.1.181-macos-aarch64", server.uri());
+    let dest = tmp.path().join("kigi");
+    let url = format!("{}/kigi-0.1.181-macos-aarch64", server.uri());
     download_silent(&url, &dest).await.unwrap();
 
     let written = std::fs::read(&dest).unwrap();
@@ -371,7 +376,7 @@ async fn download_silent_atomically_renames_via_tmp_file() {
         .await;
 
     let tmp = tempfile::tempdir().unwrap();
-    let dest = tmp.path().join("grok");
+    let dest = tmp.path().join("kigi");
     download_silent(&format!("{}/bin", server.uri()), &dest)
         .await
         .unwrap();
@@ -399,7 +404,7 @@ async fn download_silent_publishes_executable() {
         .await;
 
     let tmp = tempfile::tempdir().unwrap();
-    let dest = tmp.path().join("grok-0.1.181-linux-x86_64");
+    let dest = tmp.path().join("kigi-0.1.181-linux-x86_64");
     download_silent(&format!("{}/bin", server.uri()), &dest)
         .await
         .unwrap();
@@ -422,7 +427,7 @@ async fn download_silent_fails_on_4xx() {
         .await;
 
     let tmp = tempfile::tempdir().unwrap();
-    let dest = tmp.path().join("grok");
+    let dest = tmp.path().join("kigi");
     let err = download_silent(&format!("{}/missing", server.uri()), &dest)
         .await
         .unwrap_err();
@@ -443,7 +448,7 @@ async fn download_silent_fails_on_5xx() {
         .await;
 
     let tmp = tempfile::tempdir().unwrap();
-    let dest = tmp.path().join("grok");
+    let dest = tmp.path().join("kigi");
     let err = download_silent(&format!("{}/x", server.uri()), &dest)
         .await
         .unwrap_err();
@@ -460,7 +465,7 @@ async fn download_silent_overwrites_existing_dest() {
         .await;
 
     let tmp = tempfile::tempdir().unwrap();
-    let dest = tmp.path().join("grok");
+    let dest = tmp.path().join("kigi");
     std::fs::write(&dest, "old content").unwrap();
 
     download_silent(&format!("{}/x", server.uri()), &dest)
@@ -481,7 +486,7 @@ async fn download_silent_handles_empty_body() {
         .await;
 
     let tmp = tempfile::tempdir().unwrap();
-    let dest = tmp.path().join("grok");
+    let dest = tmp.path().join("kigi");
     download_silent(&format!("{}/x", server.uri()), &dest)
         .await
         .unwrap();
@@ -503,7 +508,7 @@ async fn download_silent_streams_large_body() {
         .await;
 
     let tmp = tempfile::tempdir().unwrap();
-    let dest = tmp.path().join("grok");
+    let dest = tmp.path().join("kigi");
     download_silent(&format!("{}/big", server.uri()), &dest)
         .await
         .unwrap();
@@ -524,7 +529,7 @@ async fn download_silent_to_nonexistent_parent_dir_fails() {
 
     let tmp = tempfile::tempdir().unwrap();
     // Parent directory does NOT exist — should fail at file create.
-    let dest = tmp.path().join("missing-subdir").join("grok");
+    let dest = tmp.path().join("missing-subdir").join("kigi");
     let err = download_silent(&format!("{}/x", server.uri()), &dest)
         .await
         .unwrap_err();
@@ -547,14 +552,14 @@ async fn download_with_progress_writes_body_with_content_length() {
     let server = MockServer::start().await;
     let body = b"binary content".to_vec();
     Mock::given(method("GET"))
-        .and(path("/grok"))
+        .and(path("/kigi"))
         .respond_with(ResponseTemplate::new(200).set_body_bytes(body.clone()))
         .mount(&server)
         .await;
 
     let tmp = tempfile::tempdir().unwrap();
-    let dest = tmp.path().join("grok");
-    download_with_progress(&format!("{}/grok", server.uri()), &dest)
+    let dest = tmp.path().join("kigi");
+    download_with_progress(&format!("{}/kigi", server.uri()), &dest)
         .await
         .unwrap();
 
@@ -571,7 +576,7 @@ async fn download_with_progress_fails_on_http_error() {
         .await;
 
     let tmp = tempfile::tempdir().unwrap();
-    let dest = tmp.path().join("grok");
+    let dest = tmp.path().join("kigi");
     let err = download_with_progress(&format!("{}/x", server.uri()), &dest)
         .await
         .unwrap_err();
@@ -590,7 +595,7 @@ async fn download_with_progress_atomic_rename() {
         .await;
 
     let tmp = tempfile::tempdir().unwrap();
-    let dest = tmp.path().join("grok");
+    let dest = tmp.path().join("kigi");
     download_with_progress(&format!("{}/x", server.uri()), &dest)
         .await
         .unwrap();
@@ -663,7 +668,7 @@ async fn download_silent_parallel_path_reassembles_bytes() {
         .await;
 
     let tmp = tempfile::tempdir().unwrap();
-    let dest = tmp.path().join("grok-binary");
+    let dest = tmp.path().join("kigi-binary");
     download_silent(&format!("{}/big", server.uri()), &dest)
         .await
         .unwrap();

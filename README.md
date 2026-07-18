@@ -87,6 +87,6 @@ launcher at `bin/protoc`; install dotslash (`brew install dotslash` or
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE), [NOTICE](NOTICE), and
-[THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES). Code ported from
+[THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES.md). Code ported from
 openai/codex and sst/opencode is documented in
 [crates/codegen/kigi-tools/THIRD_PARTY_NOTICES.md](crates/codegen/kigi-tools/THIRD_PARTY_NOTICES.md).

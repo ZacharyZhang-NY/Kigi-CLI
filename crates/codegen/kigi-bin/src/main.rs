@@ -1655,9 +1655,6 @@ fn build_update_config() -> UpdateConfig {
                 kigi_shell::agent::config::EndpointsConfig::default().deployment_key;
         }
     });
-    config.npm_registry = std::env::var(obfstr::obfstr!("KIGI_NPM_REGISTRY"))
-        .ok()
-        .or_else(kigi_shell::util::config::load_npm_registry_sync);
     if let Ok(root) = kigi_shell::config::load_effective_config_disk_only()
         && let Some(ch) = kigi_shell::util::config::channel_from_toml_opt(&root)
     {

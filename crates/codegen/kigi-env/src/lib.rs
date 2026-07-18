@@ -29,6 +29,9 @@ pub const PRODUCTION_ENDPOINTS: KigiEndpoints = KigiEndpoints {
 pub const CODE_BASE_URL_ENV: &str = "KIGI_CODE_BASE_URL";
 /// Env var overriding [`oauth_host`] (PRD F1).
 pub const OAUTH_HOST_ENV: &str = "KIGI_OAUTH_HOST";
+/// Env var overriding [`update_base_url`] (PRD F8). Points the self-updater
+/// at an alternate GitHub-Releases-shaped API (mirrors, tests).
+pub const UPDATE_BASE_URL_ENV: &str = "KIGI_UPDATE_BASE_URL";
 
 fn resolve(var: &str, compiled: &'static str) -> String {
     match std::env::var(var) {
@@ -49,10 +52,11 @@ pub fn oauth_host() -> String {
     resolve(OAUTH_HOST_ENV, PRODUCTION_ENDPOINTS.oauth_host)
 }
 
-/// GitHub Releases API endpoint for the self-updater. Compile-time constant;
-/// the updater's channel/rollback semantics layer on top of it.
-pub fn update_base_url() -> &'static str {
-    PRODUCTION_ENDPOINTS.update_base_url
+/// GitHub Releases API endpoint for the self-updater:
+/// `KIGI_UPDATE_BASE_URL` override when set, else the compiled production
+/// endpoint. The updater's channel/rollback semantics layer on top of it.
+pub fn update_base_url() -> String {
+    resolve(UPDATE_BASE_URL_ENV, PRODUCTION_ENDPOINTS.update_base_url)
 }
 
 /// Subscription upgrade page shown in rate-limit and upsell surfaces.
@@ -144,6 +148,12 @@ mod tests {
         drop(_g);
         let _g2 = EnvVarGuard::set(OAUTH_HOST_ENV, "https://auth.example.test");
         assert_eq!(oauth_host(), "https://auth.example.test");
+        drop(_g2);
+        let _g3 = EnvVarGuard::set(UPDATE_BASE_URL_ENV, "http://127.0.0.1:1/releases");
+        assert_eq!(update_base_url(), "http://127.0.0.1:1/releases");
+        drop(_g3);
+        let _unset = EnvVarGuard::remove(UPDATE_BASE_URL_ENV);
+        assert_eq!(update_base_url(), PRODUCTION_ENDPOINTS.update_base_url);
     }
 
     #[test]
