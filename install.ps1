@@ -131,9 +131,12 @@ try {
     Write-Host ""
     Write-Host "kigi v$ResolvedVersion installed to $Dest"
 
+    # -contains instead of Where-Object/.Count: under Set-StrictMode, .Count
+    # on an empty (null) filter result throws PropertyNotFoundStrict — which
+    # fired on every fresh install, since that's exactly the not-on-PATH case.
     $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    $OnPath = ($UserPath -split ";" | Where-Object { $_ -eq $BinDir }).Count -gt 0 -or
-              ($env:Path -split ";" | Where-Object { $_ -eq $BinDir }).Count -gt 0
+    $OnPath = (($UserPath -split ";") -contains $BinDir) -or
+              (($env:Path -split ";") -contains $BinDir)
     if (-not $OnPath) {
         Write-Host ""
         Write-Host "$BinDir is not on your PATH. Add it for the current user with:"
