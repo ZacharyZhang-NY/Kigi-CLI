@@ -60,6 +60,19 @@ jobs:
       - name: Install dotslash (protoc launcher)
         run: cargo install dotslash --locked
 
+      # Windows cannot exec the dotslash launcher directly (no shebang
+      # support → os error 193), and the build script's documented fallback
+      # is a protoc on PATH — install the same version the dotslash file
+      # pins (v29.3).
+      - name: Install protoc (Windows PATH fallback)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $url = "https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-win64.zip"
+          Invoke-WebRequest -Uri $url -OutFile protoc.zip
+          Expand-Archive protoc.zip -DestinationPath "$env:USERPROFILE\protoc"
+          Add-Content $env:GITHUB_PATH "$env:USERPROFILE\protoc\bin"
+
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
