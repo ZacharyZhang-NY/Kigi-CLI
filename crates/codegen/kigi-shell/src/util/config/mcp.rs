@@ -138,6 +138,12 @@ pub fn load_mcp_servers_with_oauth(
         servers_map.entry(name).or_insert(config);
     }
 
+    // `--mcp-config-file` entries override everything: an explicitly passed
+    // file is the most specific intent (kimi-cli parity, F6).
+    for (name, config) in load_cli_mcp_config_files_as_configs() {
+        servers_map.insert(name, config);
+    }
+
     let mut oauth_configs = McpOAuthConfigMap::new();
     let mut acp_servers = Vec::new();
 
@@ -265,6 +271,11 @@ pub(crate) fn reload_mcp_servers_merged(
     );
     for (name, config) in mcp_json_servers {
         servers.entry(name).or_insert(config);
+    }
+
+    // `--mcp-config-file` entries override everything (kimi-cli parity, F6).
+    for (name, config) in load_cli_mcp_config_files_as_configs() {
+        servers.insert(name, config);
     }
 
     let sub = &crate::config::expand_env_vars_in_string;
@@ -966,6 +977,32 @@ fn load_claude_json_mcp_servers_from(
 }
 
 /// Read and parse a JSON file. Returns `None` on I/O or parse errors (logged).
+/// Env var carrying `--mcp-config-file` paths across the TUI → shell
+/// process boundary (joined with the platform path separator). kimi-cli
+/// parity (F6): each file uses the `.mcp.json` shape
+/// (`{"mcpServers": {...}}`) and its entries override every config-scope
+/// source — an explicitly passed file is the most specific intent.
+pub const MCP_CONFIG_FILES_ENV: &str = "KIGI_MCP_CONFIG_FILES";
+
+/// Servers from `--mcp-config-file` paths (via [`MCP_CONFIG_FILES_ENV`]),
+/// later files winning on name conflicts. Unreadable/unparsable files fail
+/// loudly at CLI parse time; here they only warn (the env may outlive the
+/// file).
+pub(crate) fn load_cli_mcp_config_files_as_configs() -> IndexMap<String, McpServerConfig> {
+    let mut result = IndexMap::new();
+    let Some(paths) = std::env::var_os(MCP_CONFIG_FILES_ENV) else {
+        return result;
+    };
+    for path in std::env::split_paths(&paths) {
+        if let Some(config) = read_mcp_json(&path) {
+            for (name, cfg) in config.mcp_servers {
+                result.insert(name, cfg);
+            }
+        }
+    }
+    result
+}
+
 pub(crate) fn read_mcp_json(path: &std::path::Path) -> Option<McpConfig> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| {
@@ -1148,6 +1185,61 @@ pub fn session_registry_from_toml_opt(root: &TomlValue) -> Option<bool> {
 
 #[cfg(test)]
 mod tests {
+    /// `--mcp-config-file` env plumbing: later files override earlier ones,
+    /// and entries parse with the `.mcp.json` shape. Serialized on the env
+    /// var via the kigi_env guard (process-global state).
+    #[test]
+    #[serial_test::serial(kigi_mcp_config_files_env)]
+    fn cli_mcp_config_files_load_in_order_with_later_files_winning() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first.json");
+        let second = dir.path().join("second.json");
+        std::fs::write(
+            &first,
+            serde_json::json!({ "mcpServers": {
+                "shared": { "command": "first-cmd" },
+                "only-first": { "command": "keep-me" }
+            }})
+            .to_string(),
+        )
+        .unwrap();
+        std::fs::write(
+            &second,
+            serde_json::json!({ "mcpServers": {
+                "shared": { "command": "second-cmd" }
+            }})
+            .to_string(),
+        )
+        .unwrap();
+        let joined = std::env::join_paths([&first, &second]).unwrap();
+        let _guard =
+            kigi_env::EnvVarGuard::set(super::MCP_CONFIG_FILES_ENV, joined.to_str().unwrap());
+
+        let command_of = |c: &McpServerConfig| match &c.transport {
+            McpServerTransportConfig::Stdio { command, .. } => command.clone(),
+            other => panic!("expected stdio transport, got {other:?}"),
+        };
+        let configs = super::load_cli_mcp_config_files_as_configs();
+        assert_eq!(configs.len(), 2);
+        assert_eq!(
+            configs.get("shared").map(command_of).as_deref(),
+            Some("second-cmd"),
+            "the later file must win on name conflicts"
+        );
+        assert_eq!(
+            configs.get("only-first").map(command_of).as_deref(),
+            Some("keep-me")
+        );
+    }
+
+    /// Without the env var the loader is inert.
+    #[test]
+    #[serial_test::serial(kigi_mcp_config_files_env)]
+    fn cli_mcp_config_files_absent_env_is_empty() {
+        let _guard = kigi_env::EnvVarGuard::remove(super::MCP_CONFIG_FILES_ENV);
+        assert!(super::load_cli_mcp_config_files_as_configs().is_empty());
+    }
+
     use super::*;
     use toml::Value as TomlValue;
 

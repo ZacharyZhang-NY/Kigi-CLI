@@ -896,8 +896,9 @@ async fn run_agent_command(
     drop(kigi_shell::agent::models::start_early_prefetch(None));
     kigi_shell::agent::mvp_agent::warm_async_http_client();
     tokio::task::spawn_blocking(|| {});
-    let is_stdio = matches!(agent_args.mode, AgentCmd::Stdio);
-    let is_leader = matches!(agent_args.mode, AgentCmd::Leader(_));
+    let mode = agent_args.mode.clone().unwrap_or(AgentCmd::Stdio);
+    let is_stdio = matches!(mode, AgentCmd::Stdio);
+    let is_leader = matches!(mode, AgentCmd::Leader(_));
     if !is_stdio && !is_leader {
         eprintln!(
             "Kigi v{}",
@@ -965,7 +966,7 @@ async fn run_agent_command(
         storage_mode: None,
     });
     let agent_memory_config = agent_config.memory_config.clone();
-    let leader_eligible = matches!(&agent_args.mode, AgentCmd::Stdio);
+    let leader_eligible = is_stdio;
     let (use_leader, policy_disable_reason) = resolve_use_leader(
         agent_args.leader,
         agent_args.no_leader,
@@ -1128,7 +1129,7 @@ async fn run_agent_command(
             }
         }
     }
-    match agent_args.mode {
+    match mode {
         AgentCmd::Stdio => run_stdio_agent(&agent_config, None, agent_memory_config).await,
         AgentCmd::Serve(a) => {
             let secret = a.get_secret();
@@ -1439,6 +1440,21 @@ async fn async_main() -> Result<()> {
     if let Some(ref socket) = args.leader_socket {
         unsafe { std::env::set_var(kigi_shell::leader::LEADER_SOCKET_ENV, socket) };
     }
+    if !args.mcp_config_file.is_empty() {
+        // Fail fast on unusable files: an explicitly passed config that
+        // cannot be read must abort, not silently degrade the session.
+        for path in &args.mcp_config_file {
+            let content = std::fs::read_to_string(path)
+                .map_err(|e| anyhow::anyhow!("--mcp-config-file {}: {e}", path.display()))?;
+            serde_json::from_str::<serde_json::Value>(&content).map_err(|e| {
+                anyhow::anyhow!("--mcp-config-file {}: invalid JSON: {e}", path.display())
+            })?;
+        }
+        let joined = std::env::join_paths(&args.mcp_config_file).map_err(|e| {
+            anyhow::anyhow!("--mcp-config-file paths cannot be joined into the env: {e}")
+        })?;
+        unsafe { std::env::set_var(kigi_shell::util::config::MCP_CONFIG_FILES_ENV, joined) };
+    }
     if let Some(ref path) = args.debug_file {
         unsafe {
             std::env::set_var("KIGI_DEBUG_LOG", path);
@@ -1504,6 +1520,24 @@ async fn async_main() -> Result<()> {
                     );
                 }
                 return Ok(());
+            }
+            Command::Acp(agent_args) => {
+                if let Some(mode) = &agent_args.mode {
+                    anyhow::bail!(
+                        "`kigi acp` always runs the stdio server; `{mode:?}` does not apply. \
+                         Use `kigi agent ...` for other runtime modes."
+                    );
+                }
+                enforce_minimum_version_or_exit(&update_config).await;
+                return run_agent_command(
+                    agent_args,
+                    args.permission_mode_flag.clone(),
+                    args.trust,
+                    args.no_auto_update,
+                    args.disable_web_search,
+                    &update_config,
+                )
+                .await;
             }
             Command::Agent(agent_args) => {
                 if args.leader || args.no_leader {

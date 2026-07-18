@@ -80,6 +80,11 @@ pub enum McpCommand {
         #[arg(short = 's', long, value_enum)]
         scope: Option<McpScope>,
     },
+    /// Authorize with an OAuth-enabled remote MCP server
+    Auth {
+        /// Name of the MCP server to authorize
+        name: String,
+    },
     /// Diagnose MCP server configuration and connectivity
     Doctor {
         /// Emit machine-readable JSON output
@@ -142,7 +147,27 @@ pub async fn run(mcp_args: McpArgs) -> Result<()> {
         McpCommand::List { json } => run_list(json),
         McpCommand::Add(args) => run_add(args).await,
         McpCommand::Remove { name, scope } => run_remove(&name, scope).await,
+        McpCommand::Auth { name } => run_auth(&name).await,
         McpCommand::Doctor { json, name } => run_doctor(json, name).await,
+    }
+}
+
+/// kimi-cli `mcp auth` parity: start the named remote server with the
+/// interactive OAuth flow and report the tool count on success.
+async fn run_auth(name: &str) -> Result<()> {
+    let cwd = current_dir_or_exit();
+    println!("Authorizing with '{name}'...");
+    println!("A browser window will open if authorization is required.");
+    match kigi_shell::mcp_doctor::run_auth(&cwd, name).await {
+        Ok(tool_count) => {
+            println!("Successfully authorized with '{name}'.");
+            println!("Available tools: {tool_count}");
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("Authorization failed: {e}");
+            std::process::exit(1);
+        }
     }
 }
 

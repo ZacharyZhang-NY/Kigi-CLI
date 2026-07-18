@@ -1359,12 +1359,15 @@ mod tests {
         assert!(args.no_leader);
         assert!(matches!(args.command, Some(Command::Agent(_))));
     }
-    /// The `agent` subcommand requires an explicit mode (stdio|serve|leader);
-    /// the old bare `agent` headless form was removed.
+    /// Bare `agent` parses with no mode and defaults to stdio at dispatch
+    /// (kimi-cli parity, F6 — the `acp` alias relies on the same default).
     #[test]
-    fn cli_bare_agent_subcommand_requires_mode() {
-        assert!(try_parse_pager(&["grok-pager", "--leader", "agent"]).is_err());
-        assert!(try_parse_pager(&["grok-pager", "agent"]).is_err());
+    fn cli_bare_agent_subcommand_defaults_to_stdio() {
+        let args = try_parse_pager(&["grok-pager", "agent"]).unwrap();
+        let Some(Command::Agent(agent)) = args.command else {
+            panic!("expected agent subcommand");
+        };
+        assert!(agent.mode.is_none(), "bare agent carries no explicit mode");
     }
     #[test]
     fn leader_defaults_off_without_config() {

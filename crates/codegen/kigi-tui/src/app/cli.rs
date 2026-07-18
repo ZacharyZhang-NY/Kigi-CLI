@@ -7,6 +7,8 @@ use std::path::PathBuf;
 /// Top-level commands for the pager binary.
 #[derive(Debug, Clone, Subcommand)]
 pub enum Command {
+    /// Run the ACP server over stdio (alias of `agent stdio`; kimi-cli parity)
+    Acp(Box<AgentArgs>),
     /// Run Kigi without the interactive UI
     Agent(Box<AgentArgs>),
     /// Show the configuration Kigi discovers for this directory
@@ -270,9 +272,10 @@ pub struct AgentArgs {
     /// Override the public xAI API base URL.
     #[arg(long = "xai-api-base-url")]
     pub xai_api_base_url: Option<String>,
-    /// Agent runtime mode
+    /// Agent runtime mode. Optional: bare `kigi agent` (and the `kigi acp`
+    /// alias) default to stdio.
     #[command(subcommand)]
-    pub mode: AgentCmd,
+    pub mode: Option<AgentCmd>,
 }
 impl AgentArgs {
     /// Canonicalized `--plugin-dir` paths, warning to stderr and skipping
@@ -387,6 +390,15 @@ pub struct PagerArgs {
     /// Working directory.
     #[arg(long)]
     pub cwd: Option<PathBuf>,
+    /// MCP config file to load (`{"mcpServers": {...}}`). Repeat the option
+    /// for multiple files; entries override config.toml-scoped servers.
+    #[arg(
+        long = "mcp-config-file",
+        value_name = "PATH",
+        global = true,
+        value_hint = ValueHint::FilePath
+    )]
+    pub mcp_config_file: Vec<PathBuf>,
     /// Use a custom leader socket path instead of the default `~/.kigi/leader.sock`.
     #[arg(
         long = "leader-socket",
@@ -923,6 +935,30 @@ mod tests {
         let err = PagerArgs::try_parse_from(["grok", "--minimal", "--fullscreen"]).unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
     }
+    /// kimi-cli parity (F6): bare `kigi acp` runs the stdio ACP server, and
+    /// bare `kigi agent` defaults to stdio at dispatch (mode is optional).
+    #[test]
+    fn acp_alias_and_bare_agent_default_to_stdio() {
+        let args = PagerArgs::try_parse_from(["kigi", "acp"]).unwrap();
+        let Some(Command::Acp(agent)) = args.command else {
+            panic!("expected acp subcommand");
+        };
+        assert!(agent.mode.is_none(), "acp must not carry a runtime mode");
+
+        let args = PagerArgs::try_parse_from(["kigi", "agent"]).unwrap();
+        let Some(Command::Agent(agent)) = args.command else {
+            panic!("expected agent subcommand");
+        };
+        assert!(agent.mode.is_none(), "bare agent defaults to stdio");
+
+        // Explicit modes still parse under `agent`.
+        let args = PagerArgs::try_parse_from(["kigi", "agent", "stdio"]).unwrap();
+        let Some(Command::Agent(agent)) = args.command else {
+            panic!("expected agent subcommand");
+        };
+        assert!(matches!(agent.mode, Some(AgentCmd::Stdio)));
+    }
+
     #[test]
     fn agent_plugin_dir_repeatable_and_canonicalized() {
         let tmp = tempfile::tempdir().unwrap();
@@ -948,7 +984,7 @@ mod tests {
             panic!("expected agent subcommand");
         };
         assert_eq!(agent.plugin_dirs, vec![dir.clone(), file, missing]);
-        assert!(matches!(agent.mode, AgentCmd::Stdio));
+        assert!(matches!(agent.mode, Some(AgentCmd::Stdio)));
         assert!(agent.no_leader);
         assert_eq!(
             agent.canonical_plugin_dirs(),

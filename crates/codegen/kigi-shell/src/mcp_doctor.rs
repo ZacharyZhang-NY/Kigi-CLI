@@ -513,6 +513,50 @@ async fn check_server(
 
 // ── Entry point ─────────────────────────────────────────────────
 
+/// `kigi mcp auth <name>` (kimi-cli `mcp auth` parity): start the named
+/// remote server with interactive OAuth — the browser flow opens when the
+/// server requires it — complete the handshake, and return the discovered
+/// tool count. Errors are user-facing strings.
+pub async fn run_auth(cwd: &Path, name: &str) -> Result<usize, String> {
+    let (_sources, discovered) = discover_servers(cwd);
+    let all_names: Vec<String> = discovered
+        .iter()
+        .map(|d| mcp_servers::mcp_server_name(&d.server).to_string())
+        .collect();
+    let Some(found) = discovered
+        .into_iter()
+        .find(|d| mcp_servers::mcp_server_name(&d.server) == name)
+    else {
+        let hint = if all_names.is_empty() {
+            String::new()
+        } else {
+            format!(" Available servers: {}", all_names.join(", "))
+        };
+        return Err(format!("MCP server '{name}' not found.{hint}"));
+    };
+    if matches!(found.server, agent_client_protocol::McpServer::Stdio(_)) {
+        return Err(format!(
+            "MCP server '{name}' is a local stdio server; OAuth applies to \
+             remote (http/sse) servers only."
+        ));
+    }
+    let fail = |c: Check| {
+        let mut msg = c.label;
+        if let Some(detail) = c.detail {
+            msg = format!("{msg}: {detail}");
+        }
+        msg
+    };
+    let (client, _started) = check_server_start(found.server, cwd).await.map_err(fail)?;
+    let (service, _handshake) = check_handshake(&client).await.map_err(fail)?;
+    use kigi_mcp::rmcp::model::PaginatedRequestParams;
+    let tools = service
+        .list_tools(Some(PaginatedRequestParams::default()))
+        .await
+        .map_err(|e| format!("tools/list failed after authorization: {e}"))?;
+    Ok(tools.tools.len())
+}
+
 pub async fn run_doctor(cwd: &Path, name_filter: Option<&str>) -> DoctorReport {
     let (mut sources, mut discovered) = discover_servers(cwd);
 
