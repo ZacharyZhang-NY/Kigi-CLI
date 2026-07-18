@@ -18,7 +18,9 @@ Agent Client Protocol (ACP).
 [Coexistence with the official CLI](#coexistence-with-the-official-kimi-cli) ·
 [License](#license)
 
-https://github.com/ZacharyZhang-NY/Kigi-CLI/raw/main/video/Kigi.mp4
+![Kigi demo](video/Kigi.gif)
+
+[Full-quality recording (mp4)](video/Kigi.mp4)
 
 </div>
 
