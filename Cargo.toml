@@ -250,7 +250,7 @@ walkdir = "2"
 webbrowser = { version = "1.0.4" }
 which = "8"
 keyring = { version = "3", default-features = false }
-windows = { version = "0.61", features = ["Win32_Security", "Win32_Security_Authorization", "Win32_Foundation", "Win32_System_Threading", "Win32_System_JobObjects", "Win32_System_Console", "Win32_System_Pipes"] }
+windows = { version = "0.62", features = ["Win32_Security", "Win32_Security_Authorization", "Win32_Foundation", "Win32_System_Threading", "Win32_System_JobObjects", "Win32_System_Console", "Win32_System_Pipes"] }
 wiremock = "0.6"
 wl-clipboard-rs = "0.9"
 kigi-acp-lib = { path = "crates/codegen/kigi-acp-lib" }
