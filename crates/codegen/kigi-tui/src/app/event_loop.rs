@@ -881,6 +881,19 @@ pub(crate) async fn run(
         );
     }
 
+    // F7: one-time offer to import the official kimi-cli configuration.
+    // Parallel to the Claude-import detection (`has_claude_import`), but
+    // deliberately lightweight: a welcome-screen system line pointing at the
+    // CLI command instead of a modal. Disappears once `kigi import-kimi` has
+    // run (marker file under ~/.kigi); the scan is read-only over ~/.kimi.
+    if kigi_shell::kimi_import::has_pending_kimi_import() {
+        app.startup_warnings.push(crate::startup::StartupWarning {
+            severity: crate::startup::WarningSeverity::Info,
+            message: "Found official kimi-cli settings in ~/.kimi.".to_string(),
+            action: Some("Run `kigi import-kimi` to import them (one-time).".to_string()),
+        });
+    }
+
     // Apply initial config (may come from existing ~/.kigi/pager.toml).
     let mut initial_config = config_watcher.current().clone();
     // The cache holds the USER compact value; the render value is derived

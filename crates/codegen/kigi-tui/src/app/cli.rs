@@ -17,6 +17,13 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// One-time, read-only import of the official kimi-cli configuration
+    /// (~/.kimi): MCP servers, custom model providers, default model
+    ImportKimi {
+        /// Print what would be imported without writing anything.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Manage running leader processes
     Leader(LeaderMgmtArgs),
     /// Sign out and clear cached credentials
@@ -1208,6 +1215,23 @@ mod tests {
                 .expect("both effort flag names parse (reverse order)");
         assert_eq!(reverse.reasoning_effort.as_deref(), Some("low"));
     }
+    /// PRD F7: `import-kimi` parses with and without `--dry-run`.
+    #[test]
+    fn import_kimi_parses_with_and_without_dry_run() {
+        let args = PagerArgs::try_parse_from(["kigi", "import-kimi", "--dry-run"])
+            .expect("import-kimi --dry-run parses");
+        assert!(matches!(
+            args.command,
+            Some(Command::ImportKimi { dry_run: true })
+        ));
+        let args =
+            PagerArgs::try_parse_from(["kigi", "import-kimi"]).expect("bare import-kimi parses");
+        assert!(matches!(
+            args.command,
+            Some(Command::ImportKimi { dry_run: false })
+        ));
+    }
+
     #[test]
     fn agent_args_effort_alias_parses() {
         let args = PagerArgs::try_parse_from(["grok", "agent", "--effort", "max", "stdio"])

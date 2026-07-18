@@ -23,6 +23,7 @@ pub use kigi_http as http;
 pub use kigi_workspace::foreign_sessions;
 pub mod inspect;
 pub mod instrumentation;
+pub mod kimi_import;
 pub mod leader;
 pub mod managed_config;
 pub mod mcp_doctor;

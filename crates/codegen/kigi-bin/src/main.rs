@@ -1567,6 +1567,10 @@ async fn async_main() -> Result<()> {
                 kigi_shell::inspect::inspect(&cwd, json).await?;
                 return Ok(());
             }
+            Command::ImportKimi { dry_run } => {
+                init_tracing_simple("cli");
+                return kigi_tui::import_kimi_cmd::run(dry_run);
+            }
             Command::Setup { json } => {
                 init_tracing_simple("cli");
                 run_setup_command(json).await;
