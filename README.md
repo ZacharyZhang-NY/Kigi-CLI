@@ -43,7 +43,7 @@ irm https://raw.githubusercontent.com/ZacharyZhang-NY/Kigi-CLI/main/install.ps1 
 ```
 
 ```sh
-kigi --version   # kigi 0.1.0 … unofficial Kimi Code CLI community build
+kigi --version   # kigi 0.1.1 … unofficial Kimi Code CLI community build
 kigi login       # sign in with your Kimi Code subscription (device-code flow)
 kigi             # start the TUI
 ```
