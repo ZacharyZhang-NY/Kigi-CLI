@@ -50,3 +50,30 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: cargo test
         run: cargo test --workspace --locked
+
+  perf:
+    name: performance budgets (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain (rust-toolchain.toml)
+        run: rustup show
+      - name: Install dotslash (protoc launcher)
+        run: cargo install dotslash --locked
+      - uses: Swatinem/rust-cache@v2
+      - name: Install hyperfine (macOS)
+        if: runner.os == 'macOS'
+        run: brew install hyperfine
+      - name: Install hyperfine (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y hyperfine
+      - name: Build release binaries
+        run: |
+          cargo build --release -p kigi-bin --locked
+          cargo build --release -p kigi-pager-pty-harness --bin pty-scenario --locked
+      - name: Enforce performance budgets
+        run: scripts/bench.sh target/release/kigi

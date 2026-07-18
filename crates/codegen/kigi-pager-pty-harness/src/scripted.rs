@@ -585,6 +585,7 @@ impl ScriptedScenarioRunner {
 
         for (index, step) in scenario.steps.iter().enumerate() {
             let step_number = index + 1;
+            let step_started = std::time::Instant::now();
             match run_step(
                 &mut harness,
                 &content,
@@ -593,7 +594,8 @@ impl ScriptedScenarioRunner {
                 step_number,
                 step,
             ) {
-                Ok(outcome) => {
+                Ok(mut outcome) => {
+                    outcome.elapsed_ms = step_started.elapsed().as_millis() as u64;
                     report.artifacts.extend(outcome.artifacts.clone());
                     report.steps.push(outcome);
                 }
@@ -1189,6 +1191,11 @@ pub struct StepOutcome {
     pub action: String,
     pub status: StepStatus,
     pub message: Option<String>,
+    /// Wall-clock time this step took. For a leading `WaitForText` step this
+    /// IS the pager's first-frame latency (spawn → text painted), which the
+    /// CI perf budget reads (scripts/bench.sh).
+    #[serde(default)]
+    pub elapsed_ms: u64,
     #[serde(default)]
     pub artifacts: Vec<VisualArtifact>,
 }
@@ -1200,6 +1207,7 @@ impl StepOutcome {
             action: action_name(action).to_owned(),
             status: StepStatus::Passed,
             message: None,
+            elapsed_ms: 0,
             artifacts: Vec::new(),
         }
     }
@@ -1221,6 +1229,7 @@ impl StepOutcome {
             action: action_name(action).to_owned(),
             status: StepStatus::Failed,
             message: Some(message),
+            elapsed_ms: 0,
             artifacts: Vec::new(),
         }
     }

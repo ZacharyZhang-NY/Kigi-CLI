@@ -1,0 +1,9 @@
+{
+  "name": "first-frame",
+  "description": "CI perf budget: time from pager spawn to the first painted welcome frame (PRD: <= 300ms).",
+  "terminal": { "rows": 40, "cols": 120, "respond_to_queries": true },
+  "environment": { "env": [ { "key": "KIGI_DISABLE_KEYRING", "value": "1" } ] },
+  "steps": [
+    { "action": "wait_for_text", "text": "Kigi", "timeout_ms": 10000 }
+  ]
+}
