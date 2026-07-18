@@ -287,8 +287,6 @@ pub enum PromptInputMode {
     Normal,
     /// Bash mode (`!` prefix): Enter sends `Action::SendBashCommand`.
     Bash,
-    /// Feedback mode (`~` prefix, teal accent): Enter sends `Action::SendFeedback`.
-    Feedback,
     /// Remember mode (`#` prefix, green accent): Enter sends `Action::SendRememberNote`.
     Remember,
 }
@@ -297,7 +295,6 @@ impl PromptInputMode {
         match self {
             PromptInputMode::Normal => None,
             PromptInputMode::Bash => Some(theme.command),
-            PromptInputMode::Feedback => Some(theme.accent_feedback),
             PromptInputMode::Remember => Some(theme.accent_remember),
         }
     }
@@ -305,14 +302,12 @@ impl PromptInputMode {
         match self {
             PromptInputMode::Normal => None,
             PromptInputMode::Bash => Some(("! ", theme.command)),
-            PromptInputMode::Feedback => Some(("~ ", theme.accent_feedback)),
             PromptInputMode::Remember => Some(("# ", theme.accent_remember)),
         }
     }
     pub fn placeholder_override(self, multiline: bool) -> Option<&'static str> {
         match self {
             PromptInputMode::Normal | PromptInputMode::Bash => None,
-            PromptInputMode::Feedback => Some("Type your feedback..."),
             PromptInputMode::Remember => {
                 if multiline {
                     Some("Save a memory note... (Enter for newline, Shift+Enter to save)")
@@ -326,7 +321,6 @@ impl PromptInputMode {
         match self {
             PromptInputMode::Normal => None,
             PromptInputMode::Bash => Some("Run shell command"),
-            PromptInputMode::Feedback => Some("Send feedback"),
             PromptInputMode::Remember => Some("Save memory note"),
         }
     }
@@ -334,7 +328,6 @@ impl PromptInputMode {
         match self {
             PromptInputMode::Normal => Action::SendPrompt(text),
             PromptInputMode::Bash => Action::SendBashCommand(text),
-            PromptInputMode::Feedback => Action::SendFeedback(text),
             PromptInputMode::Remember => Action::SendRememberNote(text),
         }
     }
@@ -351,7 +344,6 @@ impl PromptInputMode {
                     || ctrl_u
                     || ctrl_c
             }
-            PromptInputMode::Feedback => key.code == KeyCode::Backspace || key.code == KeyCode::Esc,
         }
     }
 }
@@ -3079,10 +3071,6 @@ mod prompt_input_mode_tests {
             Some(theme.command)
         );
         assert_eq!(
-            PromptInputMode::Feedback.accent_color(&theme),
-            Some(theme.accent_feedback)
-        );
-        assert_eq!(
             PromptInputMode::Remember.accent_color(&theme),
             Some(theme.accent_remember)
         );
@@ -3096,10 +3084,6 @@ mod prompt_input_mode_tests {
             Some(("! ", theme.command))
         );
         assert_eq!(
-            PromptInputMode::Feedback.prefix_override(&theme),
-            Some(("~ ", theme.accent_feedback))
-        );
-        assert_eq!(
             PromptInputMode::Remember.prefix_override(&theme),
             Some(("# ", theme.accent_remember))
         );
@@ -3110,14 +3094,6 @@ mod prompt_input_mode_tests {
         assert_eq!(PromptInputMode::Normal.placeholder_override(true), None);
         assert_eq!(PromptInputMode::Bash.placeholder_override(false), None);
         assert_eq!(PromptInputMode::Bash.placeholder_override(true), None);
-        assert_eq!(
-            PromptInputMode::Feedback.placeholder_override(false),
-            Some("Type your feedback...")
-        );
-        assert_eq!(
-            PromptInputMode::Feedback.placeholder_override(true),
-            Some("Type your feedback...")
-        );
         assert_eq!(
             PromptInputMode::Remember.placeholder_override(false),
             Some("Save a memory note... (Shift+Enter for multiline)")
@@ -3135,10 +3111,6 @@ mod prompt_input_mode_tests {
             Some("Run shell command")
         );
         assert_eq!(
-            PromptInputMode::Feedback.prompt_info_override(),
-            Some("Send feedback")
-        );
-        assert_eq!(
             PromptInputMode::Remember.prompt_info_override(),
             Some("Save memory note")
         );
@@ -3151,9 +3123,6 @@ mod prompt_input_mode_tests {
         let t2 = "ls -l".to_string();
         assert!(matches!(PromptInputMode::Bash.send_action(t2.clone()),
             Action::SendBashCommand(t) if t == t2));
-        let t3 = "this is feedback".to_string();
-        assert!(matches!(PromptInputMode::Feedback.send_action(t3.clone()),
-            Action::SendFeedback(t) if t == t3));
         let t4 = "remember this".to_string();
         assert!(matches!(PromptInputMode::Remember.send_action(t4.clone()),
             Action::SendRememberNote(t) if t == t4));
@@ -3181,16 +3150,5 @@ mod prompt_input_mode_tests {
             assert!(!mode.is_exit_key(&KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE)));
             assert!(!mode.is_exit_key(&KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE)));
         }
-    }
-    #[test]
-    fn is_exit_key_feedback_uses_stricter_set() {
-        let mode = PromptInputMode::Feedback;
-        assert!(mode.is_exit_key(&KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE)));
-        assert!(mode.is_exit_key(&KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)));
-        assert!(!mode.is_exit_key(&KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL)));
-        assert!(!mode.is_exit_key(&KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL)));
-        assert!(!mode.is_exit_key(&KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)));
-        assert!(!mode.is_exit_key(&KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
-        assert!(!mode.is_exit_key(&KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE)));
     }
 }

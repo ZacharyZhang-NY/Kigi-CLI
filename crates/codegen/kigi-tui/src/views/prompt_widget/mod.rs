@@ -174,7 +174,7 @@ pub struct PromptStyle {
     pub prefix_override: Option<(&'static str, ratatui::style::Color)>,
     /// Override the placeholder text shown when the textarea is empty.
     /// When `Some(text)`, uses this instead of the default `"Build anything"`.
-    /// Used for feedback mode (`"Type your feedback..."`).
+    /// Used for remember mode (`"Save a memory note..."`).
     pub placeholder_override: Option<&'static str>,
     /// Compact mode (currently unused for info_block sizing).
     pub compact: bool,

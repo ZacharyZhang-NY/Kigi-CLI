@@ -2599,61 +2599,6 @@ pub(crate) fn execute(
                     }
                 });
         }
-        Effect::SendFeedback { agent_id, session_id, feedback_text } => {
-            use kigi_shell::session::ClientType;
-            use kigi_shell::session::acp_types::ClientFeedbackInput;
-            let terminal_info = Some(
-                crate::terminal::terminal_context().feedback_info(),
-            );
-            let tx = acp_tx.clone();
-            tasks
-                .spawn(async move {
-                    let input = ClientFeedbackInput {
-                        session_id: session_id.0.to_string(),
-                        client_type: ClientType::Tui,
-                        rating_type: None,
-                        rating_value: None,
-                        feedback_text: Some(feedback_text),
-                        feedback_categories: vec![],
-                        context_type: None,
-                        turn_number: None,
-                        request_id: None,
-                        client_version: Some(kigi_version::VERSION.to_string()),
-                        metadata: None,
-                        terminal_info,
-                    };
-                    let raw_params = match serde_json::value::to_raw_value(&input) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            return TaskResult::FeedbackFailed {
-                                agent_id,
-                                error: sanitize_user_error(
-                                    &format!("couldn't serialize feedback: {e}"),
-                                ),
-                            };
-                        }
-                    };
-                    let request = acp::ExtRequest::new(
-                        "kigi/feedback",
-                        raw_params.into(),
-                    );
-                    match acp_send(request, &tx).await {
-                        Ok(_) => {
-                            TaskResult::FeedbackComplete {
-                                agent_id,
-                            }
-                        }
-                        Err(e) => {
-                            TaskResult::FeedbackFailed {
-                                agent_id,
-                                error: sanitize_user_error(
-                                    &format!("couldn't send feedback: {e}"),
-                                ),
-                            }
-                        }
-                    }
-                });
-        }
         Effect::RewriteMemoryNote {
             agent_id,
             session_id,

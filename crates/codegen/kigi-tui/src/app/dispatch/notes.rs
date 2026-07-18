@@ -1,4 +1,4 @@
-//! Feedback, remember-note, btw, and recap dispatchers.
+//! Remember-note, btw, and recap dispatchers.
 
 use super::ctx::with_active_agent;
 use crate::app::actions::Effect;
@@ -18,16 +18,6 @@ fn next_rewrite_nonce() -> u64 {
     REWRITE_NONCE.fetch_add(1, Ordering::Relaxed)
 }
 
-/// Enter feedback mode: visual change to prompt bar (teal accent, pencil prefix).
-/// No side effects — the user types feedback text and presses Enter to send.
-pub(super) fn dispatch_enter_feedback_mode(app: &mut AppView) -> Vec<Effect> {
-    with_active_agent(app, |agent| {
-        agent.prompt_input_mode = PromptInputMode::Feedback;
-        agent.prompt.set_text("");
-    });
-    vec![]
-}
-
 /// Enter remember mode: visual change to prompt bar (remember accent, `#` prefix).
 /// No side effects — the user types a memory note and presses Enter to send.
 pub(super) fn dispatch_enter_remember_mode(app: &mut AppView) -> Vec<Effect> {
@@ -36,47 +26,6 @@ pub(super) fn dispatch_enter_remember_mode(app: &mut AppView) -> Vec<Effect> {
         agent.prompt.set_text("");
     });
     vec![]
-}
-
-/// Send feedback text to the server. Shows a thank-you message immediately
-/// and fires the HTTP POST as a background effect.
-pub(super) fn dispatch_send_feedback(app: &mut AppView, text: String) -> Vec<Effect> {
-    let ActiveView::Agent(id) = app.active_view else {
-        return vec![];
-    };
-    let Some(agent) = app.agents.get_mut(&id) else {
-        return vec![];
-    };
-
-    agent.prompt_input_mode = PromptInputMode::Normal;
-    agent.prompt.set_text("");
-    // Submitting feedback retires any edit-contextual ephemeral tip.
-    agent.ephemeral_tip.clear_on_submit();
-
-    let trimmed = text.trim().to_string();
-    if trimmed.is_empty() {
-        agent.scrollback.push_block(RenderBlock::system(
-            "Please provide feedback text.".to_string(),
-        ));
-        return vec![];
-    }
-
-    let Some(session_id) = agent.session.session_id.clone() else {
-        agent
-            .scrollback
-            .push_block(RenderBlock::system("No active session.".to_string()));
-        return vec![];
-    };
-
-    agent.scrollback.push_block(RenderBlock::system(
-        "Thanks for the feedback! The Kigi team is on it.".to_string(),
-    ));
-
-    vec![Effect::SendFeedback {
-        agent_id: id,
-        session_id,
-        feedback_text: trimmed,
-    }]
 }
 
 /// Send a raw remember note for LLM-powered rewriting via `kigi/memory/rewrite`.

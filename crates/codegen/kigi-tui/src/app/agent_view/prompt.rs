@@ -868,10 +868,9 @@ impl AgentView {
             {
                 self.prompt.history_search.deactivate();
                 // Detect `! ` prefix to restore bash mode. Refined: only reset to Normal
-                // if currently in Bash (preserve Feedback/Remember if active). The ! prefix
-                // restore only applies when not in Feedback/Remember.
-                if self.prompt_input_mode != PromptInputMode::Feedback
-                    && self.prompt_input_mode != PromptInputMode::Remember
+                // if currently in Bash (preserve Remember if active). The ! prefix
+                // restore only applies when not in Remember.
+                if self.prompt_input_mode != PromptInputMode::Remember
                     && let Some(cmd) = text.strip_prefix("! ")
                 {
                     self.prompt_input_mode = PromptInputMode::Bash;

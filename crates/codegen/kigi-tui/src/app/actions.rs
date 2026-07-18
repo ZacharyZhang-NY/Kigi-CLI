@@ -623,10 +623,6 @@ pub enum Action {
     /// to config.toml). `/plan <desc>` uses `EnterPlanMode` instead
     /// because it also starts a turn.
     SetPlanMode(PlanModeKind),
-    /// Enter feedback mode (visual prompt change, not a send).
-    EnterFeedbackMode,
-    /// Send feedback text collected in feedback mode.
-    SendFeedback(String),
     /// Enter remember mode (visual prompt change, not a send).
     EnterRememberMode,
     /// Send a remember note from # mode. Routes through LLM rewrite when a
@@ -1717,12 +1713,6 @@ pub enum Effect {
     FetchBundleStatus,
     /// Fetch a bundled entry's raw content via `kigi/bundle/entry/get`.
     FetchCatalogEntry { kind: String, name: String },
-    /// Send feedback about the current session (fire-and-forget POST).
-    SendFeedback {
-        agent_id: AgentId,
-        session_id: acp::SessionId,
-        feedback_text: String,
-    },
     /// Save a remember note to global MEMORY.md (async file write).
     SaveMemoryNote {
         agent_id: AgentId,
@@ -2264,15 +2254,6 @@ pub enum TaskResult {
     },
     /// Context info fetch failed.
     ContextInfoFailed {
-        agent_id: AgentId,
-        error: String,
-    },
-    /// Feedback submitted successfully (fire-and-forget).
-    FeedbackComplete {
-        agent_id: AgentId,
-    },
-    /// Feedback submission failed.
-    FeedbackFailed {
         agent_id: AgentId,
         error: String,
     },

@@ -33,8 +33,7 @@ use super::modes::{
     set_permission_mode, set_plan_mode, set_yolo_mode,
 };
 use super::notes::{
-    dispatch_enter_feedback_mode, dispatch_enter_remember_mode,
-    dispatch_save_remember_note_from_modal, dispatch_send_btw, dispatch_send_feedback,
+    dispatch_enter_remember_mode, dispatch_save_remember_note_from_modal, dispatch_send_btw,
     dispatch_send_recap, dispatch_send_remember_note,
 };
 use super::permissions::{
@@ -784,8 +783,6 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
         Action::ShowPlan => dispatch_show_plan(app),
         Action::EnterPlanMode { description } => dispatch_enter_plan_mode(app, description),
         Action::SetPlanMode(kind) => set_plan_mode(app, kind),
-        Action::EnterFeedbackMode => dispatch_enter_feedback_mode(app),
-        Action::SendFeedback(text) => dispatch_send_feedback(app, text),
         Action::EnterRememberMode => dispatch_enter_remember_mode(app),
         Action::SendRememberNote(text) => dispatch_send_remember_note(app, text),
         Action::SaveRememberNoteFromModal => dispatch_save_remember_note_from_modal(app),
