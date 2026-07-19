@@ -7,7 +7,8 @@
 //! phase model: the terminator is the ellipse `x = cos(2πp)·√(1−y²)`, with
 //! sunlight arriving from the right while waxing and from the left while
 //! waning. The dark limb keeps a faint outline ring so the silhouette never
-//! disappears at new moon.
+//! disappears at new moon. A fixed map of lunar maria textures the disc:
+//! dark blotches on the sunlit side, faint gray patches on the dark limb.
 //!
 //! Hidden entirely on legacy Windows consoles: the U+2800 braille block is
 //! not covered by the ConHost raster fonts and would render as tofu.
@@ -51,6 +52,30 @@ const PULSE: f32 = 0.10;
 const PULSE_SECS: f32 = 5.0;
 /// Squared inner radius (normalized) of the dark-limb outline ring.
 const RING_INNER_SQ: f32 = 0.82;
+
+/// Lunar maria as `(cx, cy, radius²)` in normalized disc coordinates
+/// (x right, y down), loosely after the near side's real maria. On the
+/// sunlit disc a mare dot is drawn in the resting gray (a dark blotch);
+/// on the dark limb it is drawn in the same gray, which reads as a faint
+/// light patch against the empty limb.
+const MARIA: &[(f32, f32, f32)] = &[
+    (-0.40, -0.42, 0.018), // Imbrium
+    (0.12, -0.50, 0.008),  // Serenitatis
+    (0.40, -0.22, 0.012),  // Tranquillitatis
+    (0.55, 0.20, 0.005),   // Fecunditatis
+    (0.62, -0.42, 0.004),  // Crisium
+    (-0.58, 0.05, 0.010),  // Procellarum
+    (-0.28, 0.40, 0.006),  // Nubium
+    (0.08, 0.12, 0.004),   // Vaporum
+];
+
+fn in_mare(dx: f32, dy: f32) -> bool {
+    MARIA.iter().any(|&(mx, my, r_sq)| {
+        let ex = dx - mx;
+        let ey = dy - my;
+        ex * ex + ey * ey <= r_sq
+    })
+}
 
 /// One logo size tier, in braille cells.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -152,8 +177,8 @@ fn moon_cells(size: MoonSize, p: f32) -> Vec<Vec<Option<MoonCell>>> {
         .map(|cell_row| {
             (0..size.cols as i32)
                 .map(|cell_col| {
-                    let mut mask = 0u32;
-                    let mut lit = false;
+                    let mut lit_mask = 0u32;
+                    let mut dark_mask = 0u32;
                     for (dot_col, col_bits) in DOT_BITS.iter().enumerate() {
                         for (dot_row, bit) in col_bits.iter().enumerate() {
                             let x = cell_col * 2 + dot_col as i32;
@@ -164,15 +189,28 @@ fn moon_cells(size: MoonSize, p: f32) -> Vec<Vec<Option<MoonCell>>> {
                             if d_sq > 1.0 {
                                 continue;
                             }
+                            let mare = in_mare(dx, dy);
                             if dot_lit(dx, dy, p) {
-                                mask |= bit;
-                                lit = true;
-                            } else if d_sq >= RING_INNER_SQ {
-                                // Dark limb: keep the outline ring visible.
-                                mask |= bit;
+                                if mare {
+                                    // Dark blotch on the sunlit disc.
+                                    dark_mask |= bit;
+                                } else {
+                                    lit_mask |= bit;
+                                }
+                            } else if mare || d_sq >= RING_INNER_SQ {
+                                // Dark limb: outline ring plus faint maria.
+                                dark_mask |= bit;
                             }
                         }
                     }
+                    // A braille cell holds a single color, so a cell with any
+                    // sunlit dots renders only those (mare dots in it stay
+                    // background-dark); otherwise its dark dots render gray.
+                    let (mask, lit) = if lit_mask != 0 {
+                        (lit_mask, true)
+                    } else {
+                        (dark_mask, false)
+                    };
                     (mask != 0).then(|| MoonCell {
                         ch: char::from_u32(0x2800 + mask).expect("braille block"),
                         lit,
@@ -405,6 +443,32 @@ mod tests {
             cells.iter().flatten().flatten().all(|c| !c.lit),
             "no cell may be lit at new moon"
         );
+    }
+
+    #[test]
+    fn maria_texture_the_disc_in_both_extremes() {
+        // Full moon: mare dots stay dark, so the drawn glyphs must cover
+        // fewer dots than the geometric disc (lit_dots ignores maria).
+        let full = moon_cells(FULL, 0.5);
+        let drawn_dots: u32 = full
+            .iter()
+            .flatten()
+            .flatten()
+            .map(|c| (c.ch as u32 - 0x2800).count_ones())
+            .sum();
+        assert!(
+            (drawn_dots as usize) < lit_dots(0.5),
+            "full moon must keep dark maria holes"
+        );
+        // New moon: maria show as drawn (gray) cells well inside the outline
+        // ring — Procellarum sits around cell (5, 4) on the full-size grid.
+        let new = moon_cells(FULL, 0.0);
+        assert!(
+            new[5][4].is_some(),
+            "new moon must show maria inside the ring"
+        );
+        assert!(in_mare(-0.58, 0.05), "Procellarum anchors the maria map");
+        assert!(!in_mare(0.0, 0.85), "south pole stays mare-free");
     }
 
     #[test]
