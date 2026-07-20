@@ -92,11 +92,28 @@ async fn make_graph_actor(
     TempDir,
     tokio::sync::mpsc::UnboundedReceiver<PersistenceMsg>,
 ) {
+    let (mut actor, tmp, rx) = make_graph_actor_detached().await;
+    actor.tool_context.subagent_event_tx = Some(coordinator_tx);
+    (actor, tmp, rx)
+}
+
+/// Like [`make_graph_actor`] but with NO coordinator attached — used by
+/// parallel tests whose coordinator needs the repo path (`tmp.path()`)
+/// before it can mint worktrees.
+async fn make_graph_actor_detached() -> (
+    SessionActor,
+    TempDir,
+    tokio::sync::mpsc::UnboundedReceiver<PersistenceMsg>,
+) {
     let tmp = TempDir::new().expect("tempdir");
     let (gateway_tx, _gateway_rx) =
         tokio::sync::mpsc::unbounded_channel::<kigi_acp_lib::AcpClientMessage>();
     let (persistence_tx, persistence_rx) = tokio::sync::mpsc::unbounded_channel::<PersistenceMsg>();
     let mut actor = create_test_actor(0, 256_000, 85, gateway_tx, persistence_tx).await;
+    // Parallel batches require a real git repo (worktree isolation +
+    // merge-back); serial paths tolerate it. One empty commit suffices.
+    init_git_repo(tmp.path());
+    actor.tool_context.cwd = kigi_paths::AbsPathBuf::new(tmp.path().to_path_buf()).unwrap();
     actor.events = crate::session::events::EventTracker::new(tmp.path());
     actor.goal_enabled = true;
     set_goal_harness_for_tests(&actor);
@@ -108,7 +125,6 @@ async fn make_graph_actor(
     actor.graph_tracker = Arc::new(parking_lot::Mutex::new(GraphTracker::new(
         tmp.path().to_path_buf(),
     )));
-    actor.tool_context.subagent_event_tx = Some(coordinator_tx);
     (actor, tmp, persistence_rx)
 }
 
@@ -689,6 +705,697 @@ async fn graph_status_renders_glyphs_deps_tokens_and_pause() {
             let paused = actor.graph_status_message().await;
             assert!(paused.contains("Paused: "), "{paused}");
             assert!(paused.contains("sampler exploded"), "{paused}");
+        })
+        .await;
+    unsafe { std::env::remove_var(ENV_FLAG) };
+}
+
+// ── G1: parallel fan-out ────────────────────────────────────────────
+
+/// One captured harness spawn, for post-hoc assertions.
+#[derive(Debug, Clone)]
+struct CapturedSpawn {
+    prompt: String,
+    resume_from: Option<String>,
+    cwd: Option<String>,
+    isolation_worktree: bool,
+}
+
+fn run_git(dir: &std::path::Path, args: &[&str]) {
+    let out = std::process::Command::new("git")
+        .current_dir(dir)
+        .args(args)
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@t")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@t")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+fn init_git_repo(dir: &std::path::Path) {
+    run_git(dir, &["init", "-q", "-b", "main"]);
+    std::fs::write(dir.join(".gitkeep"), "x").unwrap();
+    run_git(dir, &["add", "."]);
+    run_git(dir, &["commit", "-qm", "base"]);
+}
+
+/// Scripted coordinator: the closure decides each spawn's reply from
+/// the request; every spawn is captured. Also tracks the max number of
+/// WORKER spawns in flight at once (reply to the first worker is held
+/// until a second worker arrives when `require_two_workers` is set —
+/// proving genuine fan-out, not sequential dispatch).
+fn spawn_scripted_coordinator(
+    repo: std::path::PathBuf,
+    mut script: impl FnMut(&kigi_tools::implementations::kigi::task::types::SubagentRequest) -> String
+    + 'static,
+    require_two_workers: bool,
+) -> (
+    tokio::sync::mpsc::UnboundedSender<SubagentEvent>,
+    StdArc<std::sync::Mutex<Vec<CapturedSpawn>>>,
+) {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<SubagentEvent>();
+    let captured: StdArc<std::sync::Mutex<Vec<CapturedSpawn>>> =
+        StdArc::new(std::sync::Mutex::new(Vec::new()));
+    let cap_task = StdArc::clone(&captured);
+    tokio::task::spawn_local(async move {
+        let mut held: Option<(tokio::sync::oneshot::Sender<SubagentResult>, SubagentResult)> = None;
+        while let Some(ev) = rx.recv().await {
+            if let SubagentEvent::Spawn(req) = ev {
+                cap_task.lock().unwrap().push(CapturedSpawn {
+                    prompt: req.prompt.clone(),
+                    resume_from: req.resume_from.clone(),
+                    cwd: req.cwd.clone(),
+                    isolation_worktree: matches!(
+                        req.runtime_overrides.isolation,
+                        Some(kigi_tool_types::SubagentIsolationMode::Worktree)
+                    ),
+                });
+                let output = script(&req);
+                let is_worker = req.prompt.contains("Graph Node Worker");
+                // Honor the isolation contract with a REAL worktree so the
+                // round-1 guard and the merge-back run the true path
+                // (empty diff ⇒ apply Success ⇒ worktree cleanup).
+                let worktree_path = (is_worker
+                    && matches!(
+                        req.runtime_overrides.isolation,
+                        Some(kigi_tool_types::SubagentIsolationMode::Worktree)
+                    ))
+                .then(|| {
+                    let wt = repo.join(format!("wt-{}", req.id));
+                    run_git(&repo, &["worktree", "add", "-q", wt.to_str().unwrap()]);
+                    wt.to_string_lossy().into_owned()
+                });
+                let result = SubagentResult {
+                    success: true,
+                    output: StdArc::from(output.as_str()),
+                    subagent_id: req.id.clone(),
+                    child_session_id: req.id.clone(),
+                    tokens_used: 10,
+                    worktree_path,
+                    ..Default::default()
+                };
+                if require_two_workers && is_worker && held.is_none() {
+                    // Hold the first worker's reply until the second
+                    // worker spawn arrives — join_all must have BOTH in
+                    // flight for this to make progress (fan-out proof).
+                    held = Some((req.result_tx, result));
+                    continue;
+                }
+                if is_worker && let Some((held_tx, held_result)) = held.take() {
+                    let _ = held_tx.send(held_result);
+                }
+                let _ = req.result_tx.send(result);
+            }
+        }
+    });
+    (tx, captured)
+}
+
+fn diamond_graph_json() -> Vec<u8> {
+    serde_json::json!({
+        "nodes": [
+            {"id": "a", "title": "Node A", "spec": "do a", "deps": []},
+            {"id": "b", "title": "Node B", "spec": "do b", "deps": []},
+            {"id": "c", "title": "Node C", "spec": "do c", "deps": ["a", "b"]},
+        ]
+    })
+    .to_string()
+    .into_bytes()
+}
+
+/// Route a scripted reply by spawn kind: planner writes the DAG, workers
+/// claim done, verifiers approve.
+fn happy_reply(
+    req: &kigi_tools::implementations::kigi::task::types::SubagentRequest,
+    dag: &[u8],
+) -> String {
+    if req.prompt.contains("Graph Plan Writer") {
+        let path = req
+            .prompt
+            .find("/graph.json")
+            .map(|end| {
+                let end = end + "/graph.json".len();
+                let start = req.prompt[..end - "/graph.json".len()]
+                    .rfind(|c: char| !c.is_ascii_graphic() || c == '`')
+                    .map(|i| i + 1)
+                    .unwrap_or(0);
+                req.prompt[start..end].to_string()
+            })
+            .expect("planner prompt embeds path");
+        std::fs::create_dir_all(std::path::Path::new(&path).parent().unwrap()).unwrap();
+        std::fs::write(&path, dag).unwrap();
+        "Done".to_owned()
+    } else if req.prompt.contains("Graph Node Worker") {
+        "NODE_RESULT: done\nImplemented per spec; checks run.".to_owned()
+    } else {
+        "NODE_VERDICT: achieved".to_owned()
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn parallel_batch_fans_out_then_serial_tail_completes() {
+    unsafe { std::env::set_var(ENV_FLAG, "0") };
+    let local = tokio::task::LocalSet::new();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        local.run_until(async {
+            let dag = diamond_graph_json();
+            let (mut actor, _tmp, _prx) = make_graph_actor_detached().await;
+            let (coord_tx, captured) = spawn_scripted_coordinator(
+                _tmp.path().to_path_buf(),
+                move |req| happy_reply(req, &dag),
+                true,
+            );
+            actor.tool_context.subagent_event_tx = Some(coord_tx);
+            actor.graph_concurrency = 2;
+
+            // Roots a+b run as a parallel batch; c is the serial tail.
+            let outcome = actor.setup_graph("build the diamond", None).await;
+            let reminder = match outcome {
+                graph::GraphSetupOutcome::Inference { reminder, .. } => reminder,
+                graph::GraphSetupOutcome::Message(msg) => panic!("expected Inference: {msg}"),
+            };
+            assert!(
+                reminder.contains("Node C"),
+                "serial tail must be node c: {reminder}"
+            );
+            let statuses = node_statuses(&actor);
+            assert_eq!(statuses[0].1, NodeStatus::Achieved, "a via batch");
+            assert_eq!(statuses[1].1, NodeStatus::Achieved, "b via batch");
+            assert_eq!(statuses[2].1, NodeStatus::Running, "c on the goal engine");
+            {
+                let caps = captured.lock().unwrap();
+                let workers: Vec<_> = caps
+                    .iter()
+                    .filter(|c| c.prompt.contains("Graph Node Worker"))
+                    .collect();
+                let verifiers: Vec<_> = caps
+                    .iter()
+                    .filter(|c| c.prompt.contains("Graph Node Verifier"))
+                    .collect();
+                assert_eq!(workers.len(), 2, "one worker per batch node");
+                assert_eq!(verifiers.len(), 2, "one verifier per claim");
+                assert!(
+                    workers.iter().all(|w| w.isolation_worktree),
+                    "first worker rounds must request worktree isolation"
+                );
+                // The held-reply gate above proves both were in flight
+                // concurrently, or this test would have hung.
+            }
+            // Worker session ids stamped for audit.
+            assert!(
+                actor
+                    .graph_tracker
+                    .lock()
+                    .node(&crate::session::graph_plan::node_id_for_slug("a"))
+                    .unwrap()
+                    .goal_id
+                    .is_some(),
+                "worker session id must be recorded on the node"
+            );
+
+            // Finish c and gn-final serially (G0 machinery).
+            for _ in 0..2 {
+                drive_node_goal_to_complete(&actor).await;
+                let _ = actor.run_graph_round_end().await;
+            }
+            assert_eq!(
+                actor.graph_tracker.lock().status(),
+                Some(GoalStatus::Complete)
+            );
+        }),
+    )
+    .await
+    .expect("parallel batch did not fan out (held-reply gate starved)");
+    unsafe { std::env::remove_var(ENV_FLAG) };
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn verifier_rejection_iterates_worker_with_resume_and_gaps() {
+    unsafe { std::env::set_var(ENV_FLAG, "0") };
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let dag = diamond_graph_json();
+            let mut a_verify_rejections = 0u32;
+            let (mut actor, _tmp, _prx) = make_graph_actor_detached().await;
+            let (coord_tx, captured) = spawn_scripted_coordinator(
+                _tmp.path().to_path_buf(),
+                move |req| {
+                    if req.prompt.contains("Graph Plan Writer") {
+                        return happy_reply(req, &dag);
+                    }
+                    if req.prompt.contains("Graph Node Worker") {
+                        return "NODE_RESULT: done\nwork done.".to_owned();
+                    }
+                    // Verifier: reject node A's FIRST attempt only.
+                    if req.prompt.contains("do a") && a_verify_rejections == 0 {
+                        a_verify_rejections += 1;
+                        return "NODE_VERDICT: not_achieved\nGAPS:\n- tests were not run"
+                            .to_owned();
+                    }
+                    "NODE_VERDICT: achieved".to_owned()
+                },
+                false,
+            );
+            actor.tool_context.subagent_event_tx = Some(coord_tx);
+            actor.graph_concurrency = 2;
+            let _ = actor.setup_graph("build the diamond", None).await;
+
+            let a_id = crate::session::graph_plan::node_id_for_slug("a");
+            let a = actor.graph_tracker.lock().node(&a_id).cloned().unwrap();
+            assert_eq!(a.status, NodeStatus::Achieved);
+            assert_eq!(a.rounds, 2, "one rejection ⇒ two worker rounds");
+
+            let caps = captured.lock().unwrap();
+            let a_workers: Vec<_> = caps
+                .iter()
+                .filter(|c| c.prompt.contains("Graph Node Worker") && c.prompt.contains("do a"))
+                .collect();
+            assert_eq!(a_workers.len(), 2);
+            assert!(a_workers[0].resume_from.is_none());
+            assert!(
+                a_workers[1].resume_from.is_some(),
+                "round 2 must resume the round-1 child session"
+            );
+            assert!(
+                !a_workers[1].isolation_worktree,
+                "resume keeps the existing worktree; no fresh isolation"
+            );
+            assert!(
+                a_workers[1].prompt.contains("tests were not run"),
+                "round 2 must carry the verifier's gaps"
+            );
+        })
+        .await;
+    unsafe { std::env::remove_var(ENV_FLAG) };
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn blocked_worker_fails_node_and_blocks_dependent_chain() {
+    unsafe { std::env::set_var(ENV_FLAG, "0") };
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let dag = diamond_graph_json();
+            let (mut actor, _tmp, _prx) = make_graph_actor_detached().await;
+            let (coord_tx, _captured) = spawn_scripted_coordinator(
+                _tmp.path().to_path_buf(),
+                move |req| {
+                    if req.prompt.contains("Graph Plan Writer") {
+                        return happy_reply(req, &dag);
+                    }
+                    if req.prompt.contains("Graph Node Worker") {
+                        if req.prompt.contains("do a") {
+                            return "NODE_RESULT: blocked\nimpossible in this environment"
+                                .to_owned();
+                        }
+                        return "NODE_RESULT: done\nok".to_owned();
+                    }
+                    "NODE_VERDICT: achieved".to_owned()
+                },
+                false,
+            );
+            actor.tool_context.subagent_event_tx = Some(coord_tx);
+            actor.graph_concurrency = 2;
+            match actor.setup_graph("build the diamond", None).await {
+                graph::GraphSetupOutcome::Message(_) => {}
+                graph::GraphSetupOutcome::Inference { reminder, .. } => {
+                    panic!("wedged graph must not reach inference: {reminder}")
+                }
+            }
+            let statuses = node_statuses(&actor);
+            assert_eq!(statuses[0].1, NodeStatus::Failed, "a blocked by worker");
+            assert_eq!(statuses[1].1, NodeStatus::Achieved, "b unaffected");
+            assert_eq!(statuses[2].1, NodeStatus::Blocked, "c depends on a");
+            assert_eq!(statuses[3].1, NodeStatus::Blocked, "final depends on all");
+            assert_eq!(
+                actor.graph_tracker.lock().status(),
+                Some(GoalStatus::Blocked),
+                "wedged graph pauses as Blocked"
+            );
+            let a = actor
+                .graph_tracker
+                .lock()
+                .node(&crate::session::graph_plan::node_id_for_slug("a"))
+                .cloned()
+                .unwrap();
+            assert!(
+                a.failure.as_deref().unwrap().contains("impossible"),
+                "{:?}",
+                a.failure
+            );
+        })
+        .await;
+    unsafe { std::env::remove_var(ENV_FLAG) };
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn merge_conflict_on_real_worktree_fails_the_node() {
+    if std::process::Command::new("git")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        eprintln!("git unavailable; skipping merge-conflict test");
+        return;
+    }
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            fn git(dir: &std::path::Path, args: &[&str]) {
+                let out = std::process::Command::new("git")
+                    .current_dir(dir)
+                    .args(args)
+                    .env("GIT_AUTHOR_NAME", "t")
+                    .env("GIT_AUTHOR_EMAIL", "t@t")
+                    .env("GIT_COMMITTER_NAME", "t")
+                    .env("GIT_COMMITTER_EMAIL", "t@t")
+                    .output()
+                    .unwrap();
+                assert!(
+                    out.status.success(),
+                    "git {args:?}: {}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+            }
+            let repo = TempDir::new().unwrap();
+            git(repo.path(), &["init", "-q", "-b", "main"]);
+            std::fs::write(repo.path().join("f.txt"), "base\n").unwrap();
+            git(repo.path(), &["add", "."]);
+            git(repo.path(), &["commit", "-qm", "base"]);
+            let wt = repo.path().join("wt");
+            git(
+                repo.path(),
+                &["worktree", "add", "-q", wt.to_str().unwrap()],
+            );
+            // Conflicting edits: main tree and worktree both diverge from base.
+            std::fs::write(repo.path().join("f.txt"), "ours\n").unwrap();
+            std::fs::write(wt.join("f.txt"), "theirs\n").unwrap();
+
+            let (coord_tx, _count) = spawn_graph_planner_coordinator(vec![]);
+            let (actor, _tmp, _prx) = make_graph_actor(coord_tx).await;
+            let err = actor
+                .merge_node_worktree("gn-test", Some(wt.to_str().unwrap()), None)
+                .await
+                .expect_err("conflicting edits must surface as a merge failure");
+            assert!(err.contains("f.txt"), "conflict names the file: {err}");
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn parallel_budget_gate_trips_between_batches_and_charges_all_nodes() {
+    unsafe { std::env::set_var(ENV_FLAG, "0") };
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let dag = diamond_graph_json();
+            let (mut actor, _tmp, _prx) = make_graph_actor_detached().await;
+            let (coord_tx, _captured) = spawn_scripted_coordinator(
+                _tmp.path().to_path_buf(),
+                move |req| {
+                    if req.prompt.contains("Graph Plan Writer") {
+                        return happy_reply(req, &dag);
+                    }
+                    if req.prompt.contains("Graph Node Worker") {
+                        // Node A succeeds; node B claims blocked (fails) —
+                        // BOTH must charge the budget.
+                        if req.prompt.contains("do b") {
+                            return "NODE_RESULT: blocked\nnope".to_owned();
+                        }
+                        return "NODE_RESULT: done\nok".to_owned();
+                    }
+                    "NODE_VERDICT: achieved".to_owned()
+                },
+                false,
+            );
+            actor.tool_context.subagent_event_tx = Some(coord_tx);
+            actor.graph_concurrency = 2;
+            // Stub charges 10 tokens per spawn: batch = worker a + verifier a
+            // + worker b (blocked, no verifier) = 30 > budget 25 → the gate
+            // trips at the next dispatch iteration.
+            match actor.setup_graph("build the diamond", Some(25)).await {
+                graph::GraphSetupOutcome::Message(_) => {}
+                graph::GraphSetupOutcome::Inference { reminder, .. } => {
+                    panic!("budget-dead graph must not reach inference: {reminder}")
+                }
+            }
+            assert_eq!(
+                actor.graph_tracker.lock().status(),
+                Some(GoalStatus::BudgetLimited),
+                "inter-batch gate must trip"
+            );
+            let s = actor.graph_tracker.lock().snapshot().cloned().unwrap();
+            assert_eq!(
+                s.tokens_spent_nodes, 30,
+                "achieved (20) AND failed (10) nodes must both charge the budget"
+            );
+        })
+        .await;
+    unsafe { std::env::remove_var(ENV_FLAG) };
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn cap_trims_batch_and_leftover_root_goes_serial() {
+    unsafe { std::env::set_var(ENV_FLAG, "0") };
+    let triple_root = serde_json::json!({
+        "nodes": [
+            {"id": "a", "title": "Node A", "spec": "do a", "deps": []},
+            {"id": "b", "title": "Node B", "spec": "do b", "deps": []},
+            {"id": "c", "title": "Node C", "spec": "do c", "deps": []},
+        ]
+    })
+    .to_string()
+    .into_bytes();
+    let local = tokio::task::LocalSet::new();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        local.run_until(async {
+            let dag = triple_root;
+            let (mut actor, _tmp, _prx) = make_graph_actor_detached().await;
+            let (coord_tx, captured) = spawn_scripted_coordinator(
+                _tmp.path().to_path_buf(),
+                move |req| happy_reply(req, &dag),
+                true,
+            );
+            actor.tool_context.subagent_event_tx = Some(coord_tx);
+            actor.graph_concurrency = 2;
+            let outcome = actor.setup_graph("three roots", None).await;
+            // Batch 1 = {a, b} (cap-trimmed); leftover root c is the sole
+            // Ready node afterwards → serial launch on the goal engine.
+            let reminder = match outcome {
+                graph::GraphSetupOutcome::Inference { reminder, .. } => reminder,
+                graph::GraphSetupOutcome::Message(msg) => panic!("expected Inference: {msg}"),
+            };
+            assert!(reminder.contains("Node C"), "{reminder}");
+            let workers = captured
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|c| c.prompt.contains("Graph Node Worker"))
+                .count();
+            assert_eq!(workers, 2, "take(cap) must trim the third root");
+            assert_eq!(node_statuses(&actor)[2].1, NodeStatus::Running, "c serial");
+        }),
+    )
+    .await
+    .expect("cap-trim batch starved");
+    unsafe { std::env::remove_var(ENV_FLAG) };
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn resume_after_cancelled_batch_demotes_orphaned_running_nodes() {
+    unsafe { std::env::set_var(ENV_FLAG, "0") };
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let dag = diamond_graph_json();
+            let (mut actor, _tmp, _prx) = make_graph_actor_detached().await;
+            let (coord_tx, _captured) = spawn_scripted_coordinator(
+                _tmp.path().to_path_buf(),
+                move |req| happy_reply(req, &dag),
+                false,
+            );
+            actor.tool_context.subagent_event_tx = Some(coord_tx);
+            actor.graph_concurrency = 2;
+            let _ = actor.setup_graph("build the diamond", None).await;
+
+            // Simulate an Esc mid-batch: nodes a+b marked Running with no
+            // executor (batch future dropped), cascade paused the graph.
+            {
+                let mut tracker = actor.graph_tracker.lock();
+                if let Some(s) = tracker.snapshot_mut() {
+                    s.nodes[0].status = NodeStatus::Running;
+                    s.nodes[1].status = NodeStatus::Running;
+                    s.current_node = None;
+                }
+            }
+            actor.reset_goal_engine_state().await;
+            actor
+                .graph_tracker
+                .lock()
+                .pause(crate::session::goal_tracker::GoalPauseReason::User);
+
+            // /graph resume must demote the orphans and re-dispatch — NOT
+            // wedge-pause with "no runnable node".
+            match actor.resume_graph().await {
+                graph::GraphSetupOutcome::Inference { reminder, .. } => {
+                    assert!(reminder.contains("Node C"), "{reminder}");
+                }
+                graph::GraphSetupOutcome::Message(msg) => {
+                    panic!("resume must re-dispatch orphaned batch nodes, got: {msg}")
+                }
+            }
+            assert_eq!(
+                actor.graph_tracker.lock().status(),
+                Some(GoalStatus::Active)
+            );
+            let statuses = node_statuses(&actor);
+            assert_eq!(statuses[0].1, NodeStatus::Achieved, "a re-ran via batch");
+            assert_eq!(statuses[1].1, NodeStatus::Achieved, "b re-ran via batch");
+        })
+        .await;
+    unsafe { std::env::remove_var(ENV_FLAG) };
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn batch_merges_real_worktrees_and_cleans_them_up() {
+    if std::process::Command::new("git")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        eprintln!("git unavailable; skipping real-worktree batch merge test");
+        return;
+    }
+    unsafe { std::env::set_var(ENV_FLAG, "0") };
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            fn git(dir: &std::path::Path, args: &[&str]) {
+                let out = std::process::Command::new("git")
+                    .current_dir(dir)
+                    .args(args)
+                    .env("GIT_AUTHOR_NAME", "t")
+                    .env("GIT_AUTHOR_EMAIL", "t@t")
+                    .env("GIT_COMMITTER_NAME", "t")
+                    .env("GIT_COMMITTER_EMAIL", "t@t")
+                    .output()
+                    .unwrap();
+                assert!(
+                    out.status.success(),
+                    "git {args:?}: {}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+            }
+            let repo = TempDir::new().unwrap();
+            git(repo.path(), &["init", "-q", "-b", "main"]);
+            std::fs::write(repo.path().join("base.txt"), "base\n").unwrap();
+            git(repo.path(), &["add", "."]);
+            git(repo.path(), &["commit", "-qm", "base"]);
+            let wt_a = repo.path().join("wt_a");
+            let wt_b = repo.path().join("wt_b");
+            git(
+                repo.path(),
+                &["worktree", "add", "-q", wt_a.to_str().unwrap()],
+            );
+            git(
+                repo.path(),
+                &["worktree", "add", "-q", wt_b.to_str().unwrap()],
+            );
+            // Disjoint node outputs.
+            std::fs::write(wt_a.join("a_out.txt"), "from a\n").unwrap();
+            std::fs::write(wt_b.join("b_out.txt"), "from b\n").unwrap();
+
+            let dag = diamond_graph_json();
+            let wt_a_str = wt_a.to_str().unwrap().to_owned();
+            let wt_b_str = wt_b.to_str().unwrap().to_owned();
+            // Scripted coordinator that returns REAL worktree paths on
+            // worker results (bypasses spawn_scripted_coordinator's
+            // default-None worktree_path).
+            let (coord_tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<SubagentEvent>();
+            tokio::task::spawn_local(async move {
+                while let Some(ev) = rx.recv().await {
+                    if let SubagentEvent::Spawn(req) = ev {
+                        let (output, wt): (String, Option<String>) = if req
+                            .prompt
+                            .contains("Graph Plan Writer")
+                        {
+                            let path = req
+                                .prompt
+                                .find("/graph.json")
+                                .map(|end| {
+                                    let end = end + "/graph.json".len();
+                                    let start = req.prompt[..end - "/graph.json".len()]
+                                        .rfind(|c: char| !c.is_ascii_graphic() || c == '`')
+                                        .map(|i| i + 1)
+                                        .unwrap_or(0);
+                                    req.prompt[start..end].to_string()
+                                })
+                                .unwrap();
+                            std::fs::create_dir_all(std::path::Path::new(&path).parent().unwrap())
+                                .unwrap();
+                            std::fs::write(&path, &dag).unwrap();
+                            ("Done".to_owned(), None)
+                        } else if req.prompt.contains("Graph Node Worker") {
+                            let wt = if req.prompt.contains("do a") {
+                                wt_a_str.clone()
+                            } else {
+                                wt_b_str.clone()
+                            };
+                            ("NODE_RESULT: done\nwrote output file".to_owned(), Some(wt))
+                        } else {
+                            ("NODE_VERDICT: achieved".to_owned(), None)
+                        };
+                        let _ = req.result_tx.send(SubagentResult {
+                            success: true,
+                            output: StdArc::from(output.as_str()),
+                            subagent_id: req.id.clone(),
+                            child_session_id: req.id.clone(),
+                            tokens_used: 10,
+                            worktree_path: wt,
+                            ..Default::default()
+                        });
+                    }
+                }
+            });
+            let (mut actor, _tmp, _prx) = make_graph_actor(coord_tx).await;
+            actor.graph_concurrency = 2;
+            // Point the actor's cwd-based HEAD guard at the real repo.
+            actor.tool_context.cwd =
+                kigi_paths::AbsPathBuf::new(repo.path().to_path_buf()).unwrap();
+
+            let _ = actor.setup_graph("build the diamond", None).await;
+            let statuses = node_statuses(&actor);
+            assert_eq!(statuses[0].1, NodeStatus::Achieved);
+            assert_eq!(statuses[1].1, NodeStatus::Achieved);
+            // SEQUENTIAL merge landed both nodes' files in the MAIN tree.
+            assert_eq!(
+                std::fs::read_to_string(repo.path().join("a_out.txt")).unwrap(),
+                "from a\n"
+            );
+            assert_eq!(
+                std::fs::read_to_string(repo.path().join("b_out.txt")).unwrap(),
+                "from b\n"
+            );
+            // Storage discipline: merged worktrees are removed.
+            assert!(!wt_a.exists(), "merged worktree a must be cleaned up");
+            assert!(!wt_b.exists(), "merged worktree b must be cleaned up");
         })
         .await;
     unsafe { std::env::remove_var(ENV_FLAG) };

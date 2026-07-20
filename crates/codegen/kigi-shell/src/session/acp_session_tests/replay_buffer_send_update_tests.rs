@@ -185,6 +185,8 @@ pub(super) async fn make_replay_send_update_fixture() -> ReplaySendUpdateFixture
         graph_tracker: Arc::new(parking_lot::Mutex::new(
             crate::session::graph_tracker::GraphTracker::new(std::env::temp_dir()),
         )),
+        graph_concurrency: 1,
+        graph_node_rounds: 3,
         goal_turn_task_ids: parking_lot::Mutex::new(std::collections::HashSet::new()),
         goal_continuation_streak: std::sync::atomic::AtomicU32::new(0),
         goal_blocked_streak: std::sync::atomic::AtomicU32::new(0),

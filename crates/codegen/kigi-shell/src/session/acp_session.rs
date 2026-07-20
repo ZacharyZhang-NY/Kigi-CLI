@@ -95,6 +95,8 @@ pub use types::{TodoGateDecision, TodoGateReason};
 mod goal;
 #[path = "acp_session_impl/graph.rs"]
 mod graph;
+#[path = "acp_session_impl/graph_workers.rs"]
+mod graph_workers;
 #[path = "acp_session_impl/interjection.rs"]
 mod interjection;
 #[path = "acp_session_impl/tool_calls.rs"]
@@ -599,6 +601,12 @@ pub(crate) struct SessionActor {
     /// layered over the goal engine. Modeled after `goal_tracker` above;
     /// all graph state logic lives in `graph_tracker.rs`.
     pub(crate) graph_tracker: Arc<parking_lot::Mutex<crate::session::graph_tracker::GraphTracker>>,
+    /// Max graph nodes running concurrently (1 = serial G0 behavior).
+    /// Cached at actor construction from `resolve_graph_concurrency`.
+    pub(crate) graph_concurrency: u32,
+    /// Max worker↔verifier rounds per parallel graph node before the
+    /// node fails. Cached at actor construction.
+    pub(crate) graph_node_rounds: u32,
     /// `task_id`s of background tasks (and monitors) that originated during
     /// the goal turn — either spawned by the goal model itself or reparented
     /// from a harness verifier/planner subagent on its exit. Their late

@@ -49,6 +49,17 @@ import) or any `KIMI_*` env var.
 - `third_party/` — vendored Mermaid rendering stack (untouched policy).
 - `bin/protoc` — dotslash launcher used by proto codegen.
 
+## Storage discipline
+
+- Tests that touch the filesystem MUST use `tempfile::TempDir` (drop
+  cleans up) — never bare `std::env::temp_dir()` + `create_dir_all`,
+  which leaks directories into the OS temp root forever.
+- `target/` grows past 150GB across repeated full-workspace builds
+  (incremental is already off); run `cargo clean` when it exceeds
+  ~50GB and at milestone boundaries.
+- Graph node worktrees are removed right after a successful merge-back;
+  only FAILED nodes keep theirs for postmortem.
+
 ## Test seams
 
 Cross-crate test hooks are behind the `test-support` cargo feature
@@ -86,6 +97,19 @@ edges stay deterministic Rust. The harness appends a terminal
   the verifier gates completion).
 - `/goal` and `/graph` are mutually exclusive while the graph owns the
   engine; e2e suite: `acp_session_tests/graph/graph_e2e_tests.rs`.
+- Parallel fan-out (G1): with `KIGI_GRAPH_CONCURRENCY > 1` (default 3,
+  clamp [1,8]) and ≥2 `Ready` nodes, `drive_graph` runs batches via
+  `acp_session_impl/graph_workers.rs` — per node a bounded
+  worker↔verifier subagent loop (`KIGI_GRAPH_NODE_ROUNDS`, default 3;
+  `general-purpose` children; worktree isolation on round 1, resume
+  keeps context+worktree on later rounds; `NODE_RESULT:` /
+  `NODE_VERDICT:` terminal contracts parsed fail-closed), then
+  SEQUENTIAL merge-back via `kigi_workspace::worktree::apply_worktree`
+  (`ApplyMode::Merge`); a conflict fails the node and blocks its
+  dependents while other chains continue. `gn-final` always runs
+  serially on the full goal engine. Concurrency=1 is byte-identical to
+  the serial G0 path. Ceiling: a worker round exceeding the foreground
+  subagent await budget (600s) is cancelled and retried via resume.
 
 ## Milestones (PRD §8.3)
 

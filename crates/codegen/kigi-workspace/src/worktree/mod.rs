@@ -2090,16 +2090,22 @@ async fn get_apply_context(worktree_path: &str) -> Result<ApplyContext> {
     .await?
 }
 
-async fn get_file_at_commit(worktree_path: &str, commit: &str, path: &str) -> Option<String> {
-    git_cli(
-        Path::new(worktree_path),
-        &["show", &format!("{}:{}", commit, path)],
-    )
-    .await
-    .ok()
+/// Raw blob bytes at `commit:path`, or `None` when absent. Byte-exact
+/// (NOT `git_cli`, which lossy-decodes and trims): the 3-way merge below
+/// must compare content byte-for-byte or binary files mis-merge.
+async fn get_file_at_commit(worktree_path: &str, commit: &str, path: &str) -> Option<Vec<u8>> {
+    let output = tokio::process::Command::new("git")
+        .arg("-C")
+        .arg(worktree_path)
+        .arg("show")
+        .arg(format!("{}:{}", commit, path))
+        .output()
+        .await
+        .ok()?;
+    output.status.success().then_some(output.stdout)
 }
 
-async fn apply_file_content(dest: &Path, content: Option<&String>) -> bool {
+async fn apply_file_content(dest: &Path, content: Option<&Vec<u8>>) -> bool {
     match content {
         Some(data) => {
             if let Some(parent) = dest.parent() {
@@ -2112,6 +2118,14 @@ async fn apply_file_content(dest: &Path, content: Option<&String>) -> bool {
             true
         }
     }
+}
+
+/// Lossy decode for the `FileConflict` wire payload only — comparisons
+/// above stay byte-exact.
+fn conflict_text(content: &Option<Vec<u8>>) -> Option<String> {
+    content
+        .as_ref()
+        .map(|b| String::from_utf8_lossy(b).into_owned())
 }
 
 pub async fn apply_worktree(req: &ApplyWorktreeRequest) -> Result<ApplyWorktreeResponse> {
@@ -2133,7 +2147,7 @@ pub async fn apply_worktree(req: &ApplyWorktreeRequest) -> Result<ApplyWorktreeR
     for file_change in ctx.changed_files {
         let worktree_file = Path::new(worktree_path).join(&file_change.path);
         let main_file = git_root.join(&file_change.path);
-        let theirs = tokio::fs::read_to_string(&worktree_file).await.ok();
+        let theirs = tokio::fs::read(&worktree_file).await.ok();
 
         if req.mode == ApplyMode::Overwrite {
             if apply_file_content(&main_file, theirs.as_ref()).await {
@@ -2142,21 +2156,28 @@ pub async fn apply_worktree(req: &ApplyWorktreeRequest) -> Result<ApplyWorktreeR
             continue;
         }
 
-        // Merge mode
+        // Merge mode — 3-way-lite over raw bytes.
         let base = get_file_at_commit(worktree_path, &ctx.base_commit, &file_change.path).await;
-        let ours = tokio::fs::read_to_string(&main_file).await.ok();
+        let ours = tokio::fs::read(&main_file).await.ok();
 
         if base == ours {
+            // Main side untouched: take the worktree's version.
             if apply_file_content(&main_file, theirs.as_ref()).await {
                 files.push(file_change);
             }
+        } else if ours == theirs {
+            // Both sides hold identical content (e.g. dirty state the
+            // worktree inherited at creation, or an earlier sequential
+            // apply already landed the same change): already present —
+            // not a conflict, nothing to write.
+            files.push(file_change);
         } else if base != theirs {
             conflicts.push(FileConflict {
                 path: file_change.path,
                 change_type: file_change.change_type,
-                base,
-                ours,
-                theirs,
+                base: conflict_text(&base),
+                ours: conflict_text(&ours),
+                theirs: conflict_text(&theirs),
             });
         }
     }

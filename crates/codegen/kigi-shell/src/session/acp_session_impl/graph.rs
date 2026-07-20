@@ -38,7 +38,7 @@ pub(super) enum GraphSetupOutcome {
 /// Compose the goal objective for one graph node. The node spec is the
 /// contract; the graph context line keeps the node model from wandering
 /// into other nodes' scope.
-fn node_goal_objective(
+pub(super) fn node_goal_objective(
     graph_objective: &str,
     node: &GraphNode,
     position: usize,
@@ -157,18 +157,17 @@ impl SessionActor {
         self.persist_graph_state();
         tracing::info!(total, "graph: DAG installed, launching first node");
 
-        match self.launch_next_graph_node().await {
+        match self.drive_graph().await {
             Some(reminder) => GraphSetupOutcome::Inference {
                 reminder,
                 user_msg: format!(
-                    "Graph created: {total} nodes (incl. final verification). Starting node 1."
+                    "Graph created: {total} nodes (incl. final verification). Starting work."
                 ),
             },
-            // Validation guarantees at least one root, so no Ready node
-            // here means the budget gate tripped inside the launcher.
+            // The dispatch loop already settled (parallel completion,
+            // pause, budget) and messaged; point at the status view.
             None => GraphSetupOutcome::Message(
-                "Graph created but no node could start (budget exhausted?). See /graph status."
-                    .to_owned(),
+                "Graph did not enter a serial node. See /graph status.".to_owned(),
             ),
         }
     }
@@ -434,32 +433,64 @@ impl SessionActor {
             .lock()
             .mark_node_achieved(&node_id, rounds, node_tokens);
         self.persist_graph_state();
+        self.drive_graph().await
+    }
 
-        if self.graph_tracker.lock().all_achieved() {
-            let (total, objective) = {
-                let mut tracker = self.graph_tracker.lock();
-                tracker.complete();
-                let snapshot = tracker.snapshot();
-                (
-                    snapshot.map(|s| s.nodes.len()).unwrap_or(0),
-                    snapshot.map(|s| s.objective.clone()).unwrap_or_default(),
+    /// THE single dispatch loop, shared by setup/advance/resume: run
+    /// parallel batches while ≥2 nodes are `Ready` (and the cap allows),
+    /// then launch the next serial node on the goal engine and return
+    /// its reminder — or settle the graph (complete / wedged / paused /
+    /// budget) and return `None`. With `graph_concurrency == 1` this
+    /// degenerates to exactly the G0 serial behavior.
+    pub(super) async fn drive_graph(&self) -> Option<String> {
+        loop {
+            if !self.graph_tracker.lock().is_active() {
+                // Paused/limited during a batch (cancel cascade) or by a
+                // serial-launch failure — the pauser already messaged.
+                return None;
+            }
+            if self.graph_tracker.lock().remaining_budget() == Some(0) {
+                tracing::warn!("graph: budget exhausted at dispatch");
+                self.graph_tracker.lock().budget_limit();
+                self.persist_graph_state();
+                self.send_slash_command_output(
+                    "Graph token budget exhausted. Use /graph clear, then /graph <objective>.",
                 )
-            };
-            self.persist_graph_state();
-            self.reset_goal_engine_state().await;
-            tracing::info!(total, "graph: complete");
-            self.send_slash_command_output(&format!(
-                "Graph complete: all {total} nodes achieved (final verification included).\n\
-                 Objective: {objective}"
-            ))
-            .await;
-            return None;
-        }
-
-        match self.launch_next_graph_node().await {
-            Some(reminder) => Some(reminder),
-            None => {
-                if self.graph_tracker.lock().is_wedged() {
+                .await;
+                return None;
+            }
+            let ready: Vec<String> = self
+                .graph_tracker
+                .lock()
+                .snapshot()
+                .map(|s| {
+                    s.nodes
+                        .iter()
+                        .filter(|n| n.status == NodeStatus::Ready)
+                        .map(|n| n.id.clone())
+                        .collect()
+                })
+                .unwrap_or_default();
+            if ready.is_empty() {
+                if self.graph_tracker.lock().all_achieved() {
+                    let (total, objective) = {
+                        let mut tracker = self.graph_tracker.lock();
+                        tracker.complete();
+                        let snapshot = tracker.snapshot();
+                        (
+                            snapshot.map(|s| s.nodes.len()).unwrap_or(0),
+                            snapshot.map(|s| s.objective.clone()).unwrap_or_default(),
+                        )
+                    };
+                    self.persist_graph_state();
+                    self.reset_goal_engine_state().await;
+                    tracing::info!(total, "graph: complete");
+                    self.send_slash_command_output(&format!(
+                        "Graph complete: all {total} nodes achieved (final verification \
+                         included).\nObjective: {objective}"
+                    ))
+                    .await;
+                } else if self.graph_tracker.lock().is_wedged() {
                     tracing::warn!("graph: wedged (no runnable node, work remaining)");
                     self.graph_tracker.lock().pause_with_message(
                         GoalPauseReason::Verification,
@@ -467,13 +498,53 @@ impl SessionActor {
                     );
                     self.persist_graph_state();
                     self.send_slash_command_output(
-                        "Graph blocked: a dependency chain failed and no runnable node is left. \
-                         See /graph status.",
+                        "Graph blocked: a dependency chain failed and no runnable node is \
+                         left. See /graph status.",
+                    )
+                    .await;
+                } else {
+                    tracing::error!("graph: active with no ready node and work remaining");
+                    self.graph_tracker.lock().pause_with_message(
+                        GoalPauseReason::Infra,
+                        "Scheduler found no runnable node while work remains".to_owned(),
+                    );
+                    self.persist_graph_state();
+                    // Never pause invisibly: the user must know the
+                    // scheduler stopped and why.
+                    self.send_slash_command_output(
+                        "Graph paused: scheduler found no runnable node while work \
+                         remains. See /graph status.",
                     )
                     .await;
                 }
-                None
+                return None;
             }
+            // Parallel batches need per-node worktrees, which need a git
+            // repo. Outside one, degrade to serial (the goal engine works
+            // anywhere) instead of letting N workers share one tree.
+            let parallel_possible = kigi_workspace::session::git::find_git_root_from_path(
+                self.tool_context.cwd.as_path(),
+            )
+            .is_ok();
+            let cap = if parallel_possible {
+                self.graph_concurrency as usize
+            } else {
+                1
+            };
+            if cap <= 1 || ready.len() == 1 {
+                return self.launch_next_graph_node().await;
+            }
+            let batch: Vec<String> = ready.into_iter().take(cap).collect();
+            // No goal is Active during a batch, so arm the interrupt
+            // gate explicitly: a queued user prompt must stack FIFO
+            // behind the batch instead of cancelling the graph turn
+            // (the in-turn loop re-syncs the gate from goal status at
+            // every round start).
+            self.set_goal_loop_active_resource(true).await;
+            self.run_graph_parallel_batch(batch).await;
+            // Loop: the batch resolved nodes (achieved/failed); recompute
+            // and keep driving — another batch, a serial tail (gn-final),
+            // or settle.
         }
     }
 
@@ -560,7 +631,24 @@ impl SessionActor {
                 "Graph is budget-limited. Use /graph clear, then /graph <objective>.".to_owned(),
             ),
             Some(s) if s.is_paused() => {
-                self.graph_tracker.lock().resume();
+                {
+                    let mut tracker = self.graph_tracker.lock();
+                    tracker.resume();
+                    // A cancel during a parallel batch left its nodes
+                    // marked Running with no executor. Demote every
+                    // orphaned in-flight node back to Ready, keeping only
+                    // the node whose goal actually lives in the engine —
+                    // otherwise resume wedges forever (nothing Ready,
+                    // nothing achieved, is_wedged false).
+                    let keep = self
+                        .goal_tracker
+                        .lock()
+                        .snapshot()
+                        .is_some()
+                        .then(|| tracker.current_node_id().map(str::to_owned))
+                        .flatten();
+                    tracker.demote_orphaned_in_flight(keep.as_deref());
+                }
                 self.persist_graph_state();
                 tracing::info!("graph: resumed");
                 // Planning never finished? Re-plan before touching nodes.
@@ -607,13 +695,14 @@ impl SessionActor {
                         }
                     }
                 } else {
-                    match self.launch_next_graph_node().await {
+                    match self.drive_graph().await {
                         Some(reminder) => GraphSetupOutcome::Inference {
                             reminder,
                             user_msg: "Graph resumed.".to_owned(),
                         },
                         None => GraphSetupOutcome::Message(
-                            "Graph resumed but no node is runnable. See /graph status.".to_owned(),
+                            "Graph resumed but did not enter a serial node. See /graph status."
+                                .to_owned(),
                         ),
                     }
                 }
@@ -639,7 +728,7 @@ impl SessionActor {
                 }
                 self.graph_tracker.lock().install_nodes(nodes);
                 self.persist_graph_state();
-                Ok(self.launch_next_graph_node().await)
+                Ok(self.drive_graph().await)
             }
             Err(reason) => {
                 {

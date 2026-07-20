@@ -1919,6 +1919,26 @@ impl Config {
     pub(crate) fn resolve_graph(&self) -> Resolved<bool> {
         BoolFlag::env("KIGI_GRAPH").default(false).resolve()
     }
+    /// Max graph nodes running concurrently (`KIGI_GRAPH_CONCURRENCY`).
+    /// 1 = serial (G0-identical); clamped to [1, 8] — the coordinator has
+    /// no cap of its own, so this is the only brake on worker fan-out.
+    pub(crate) fn resolve_graph_concurrency(&self) -> u32 {
+        std::env::var("KIGI_GRAPH_CONCURRENCY")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+            .unwrap_or(3)
+            .clamp(1, 8)
+    }
+    /// Max worker↔verifier rounds per parallel graph node
+    /// (`KIGI_GRAPH_NODE_ROUNDS`); exhausting them fails the node.
+    /// Clamped to [1, 8].
+    pub(crate) fn resolve_graph_node_rounds(&self) -> u32 {
+        std::env::var("KIGI_GRAPH_NODE_ROUNDS")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+            .unwrap_or(3)
+            .clamp(1, 8)
+    }
     /// Classifier, planner, and summary all default to goal mode itself: when
     /// `/goal` is on they are on unless config/env/remote says otherwise.
     /// `goal_enabled` is the session's already-resolved master switch (the same

@@ -628,6 +628,42 @@ impl GraphTracker {
         }
     }
 
+    /// Demote in-flight (`Running`/`Verifying`) nodes whose executor is
+    /// gone back to `Ready`, keeping `keep` (the node whose goal still
+    /// lives in the engine, if any). Used by the IN-SESSION resume path:
+    /// a cancel during a parallel batch aborts the batch future after
+    /// nodes were marked Running, and — unlike a restart, where
+    /// `from_snapshot` sanitizes — nothing else would ever demote them,
+    /// wedging every subsequent resume. Re-running is safe by design
+    /// (verifier-gated).
+    pub fn demote_orphaned_in_flight(&mut self, keep: Option<&str>) {
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
+        for node in &mut state.nodes {
+            if matches!(node.status, NodeStatus::Running | NodeStatus::Verifying)
+                && keep != Some(node.id.as_str())
+            {
+                node.status = NodeStatus::Ready;
+            }
+        }
+        state.current_node = keep.map(str::to_owned);
+        self.recompute_ready();
+    }
+
+    /// Charge a node's spend against the graph budget and stamp it on
+    /// the node, independent of verdict — a FAILED node's tokens were
+    /// still spent (budget integrity).
+    pub fn charge_node_tokens(&mut self, id: &str, tokens: i64) {
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
+        if let Some(node) = state.nodes.iter_mut().find(|n| n.id == id) {
+            node.tokens_used = tokens;
+        }
+        state.tokens_spent_nodes = state.tokens_spent_nodes.saturating_add(tokens);
+    }
+
     /// Promote every `Waiting` node whose deps are all `Achieved` to
     /// `Ready`.
     pub fn recompute_ready(&mut self) {

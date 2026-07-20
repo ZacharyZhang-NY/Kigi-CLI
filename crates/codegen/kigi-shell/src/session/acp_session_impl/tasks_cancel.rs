@@ -478,6 +478,14 @@ impl SessionActor {
         if let Some(running_task) = running_task {
             running_task.abort();
         }
+        // Re-sweep subagents AFTER the abort: the first sweep raced the
+        // still-live turn future, which may have spawned NEW harness
+        // children (graph batch workers/verifiers) between the sweep and
+        // the abort. Coordinator-channel FIFO guarantees this second
+        // Cancel lands after any Spawn the turn issued before it died.
+        if cancel_subagents && let Some(prompt_id) = cancelled_prompt_id.as_deref() {
+            self.cancel_subagents_for_prompt_id(prompt_id);
+        }
         // The aborted turn's `BlockingWaitGuard`s drop asynchronously (they
         // live in tool futures owned by the drainer task / subagent spawn
         // task). Until they do, `queue_input` would read a stale depth > 0 and

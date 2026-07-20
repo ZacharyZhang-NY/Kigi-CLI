@@ -193,10 +193,12 @@ mod tests {
         ]))
     }
 
-    fn tmp_graph_file(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("kigi-graph-planner-test-{name}"));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir.join("graph.json")
+    /// Self-cleaning temp home per test: never leak dirs into the OS
+    /// temp root (storage discipline — see AGENTS.md gates).
+    fn tmp_graph_file(_name: &str) -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("graph.json");
+        (dir, path)
     }
 
     async fn run(spawner: MockSpawner, graph_file: &Path) -> GraphPlannerOutcome {
@@ -216,8 +218,7 @@ mod tests {
 
     #[tokio::test]
     async fn valid_artifact_yields_canonical_nodes() {
-        let target = tmp_graph_file("valid");
-        let _ = std::fs::remove_file(&target);
+        let (_tmp, target) = tmp_graph_file("valid");
         let body = serde_json::json!({
             "nodes": [
                 {"id": "core", "title": "Core", "spec": "core spec", "deps": []},
@@ -242,8 +243,7 @@ mod tests {
 
     #[tokio::test]
     async fn prompt_embeds_objective_feedback_and_tool_names() {
-        let target = tmp_graph_file("prompt");
-        let _ = std::fs::remove_file(&target);
+        let (_tmp, target) = tmp_graph_file("prompt");
         let spawner = MockSpawner {
             response: MockReply::Done,
             body: None,
@@ -274,7 +274,7 @@ mod tests {
 
     #[tokio::test]
     async fn invalid_artifact_is_retryable_with_reason() {
-        let target = tmp_graph_file("invalid");
+        let (_tmp, target) = tmp_graph_file("invalid");
         let spawner = MockSpawner {
             response: MockReply::Done,
             body: Some(br#"{"nodes":[{"id":"a","title":"A","spec":"s","deps":["a"]}]}"#.to_vec()),
@@ -291,8 +291,7 @@ mod tests {
 
     #[tokio::test]
     async fn missing_artifact_fails_closed() {
-        let target = tmp_graph_file("missing");
-        let _ = std::fs::remove_file(&target);
+        let (_tmp, target) = tmp_graph_file("missing");
         let spawner = MockSpawner {
             response: MockReply::Done,
             body: None,
@@ -309,7 +308,7 @@ mod tests {
 
     #[tokio::test]
     async fn runtime_error_fails_closed() {
-        let target = tmp_graph_file("runtime");
+        let (_tmp, target) = tmp_graph_file("runtime");
         let spawner = MockSpawner {
             response: MockReply::Runtime { cancelled: false },
             body: None,
@@ -326,7 +325,7 @@ mod tests {
 
     #[tokio::test]
     async fn oversize_artifact_is_invalid_with_cap_in_reason() {
-        let target = tmp_graph_file("oversize");
+        let (_tmp, target) = tmp_graph_file("oversize");
         let mut body = vec![b'x'; (MAX_GRAPH_JSON_BYTES as usize) + 1];
         body[0] = b'{'; // content is irrelevant; the size gate fires first
         let spawner = MockSpawner {
@@ -345,7 +344,7 @@ mod tests {
 
     #[tokio::test]
     async fn transport_error_fails_closed() {
-        let target = tmp_graph_file("transport");
+        let (_tmp, target) = tmp_graph_file("transport");
         let spawner = MockSpawner {
             response: MockReply::Transport,
             body: None,
@@ -362,7 +361,7 @@ mod tests {
 
     #[tokio::test]
     async fn cancelled_runtime_error_reports_aborted() {
-        let target = tmp_graph_file("aborted");
+        let (_tmp, target) = tmp_graph_file("aborted");
         let spawner = MockSpawner {
             response: MockReply::Runtime { cancelled: true },
             body: None,
