@@ -22,3 +22,11 @@ GAPS:
 
 Be strict but fair: judge ONLY this node's contract, not sibling nodes'
 scope and not style preferences.
+
+If you notice NECESSARY work that lies OUTSIDE this node's contract, it
+is NOT a gap — do not fail the node for it. Report it instead, each item
+on its own line before your verdict:
+
+```
+DISCOVERED: <one-line description of the out-of-scope work>
+```

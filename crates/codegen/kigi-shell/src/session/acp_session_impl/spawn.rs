@@ -1101,6 +1101,7 @@ pub(crate) async fn spawn_session_actor(
         graph_tracker,
         graph_concurrency: effective_config.resolve_graph_concurrency(),
         graph_node_rounds: effective_config.resolve_graph_node_rounds(),
+        graph_replan_cap: effective_config.resolve_graph_replan_cap(),
         goal_turn_task_ids: parking_lot::Mutex::new(std::collections::HashSet::new()),
         goal_continuation_streak: std::sync::atomic::AtomicU32::new(0),
         goal_blocked_streak: std::sync::atomic::AtomicU32::new(0),

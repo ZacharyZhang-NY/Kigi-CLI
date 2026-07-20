@@ -91,9 +91,13 @@ impl NodeStatus {
 }
 
 /// Dependency edge kind. `Blocks` is the planner-authored ordering
-/// dependency; `DiscoveredFrom` marks a node appended by a replan (G3)
-/// pointing back at the node whose execution surfaced it. Both gate
-/// scheduling identically; the kind is audit/render metadata.
+/// dependency and the ONLY kind that gates scheduling.
+/// `DiscoveredFrom` marks a node appended by a replan (G3) pointing
+/// back at the node whose execution surfaced it — pure audit/render
+/// metadata: its origin is always terminal at replan time, so gating on
+/// it would either be a no-op (origin Achieved) or a permanent wedge
+/// (origin Failed — and a failed node's discoveries are still real
+/// work).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DepKind {
@@ -185,6 +189,16 @@ impl GraphHistoryEntry {
     }
 }
 
+/// One piece of out-of-scope work surfaced during node execution
+/// (`DISCOVERED:` marker from a worker, verifier, or the serial node's
+/// final text). Queued until the next replan boundary.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Discovery {
+    /// Node whose execution surfaced this work.
+    pub from_node: String,
+    pub description: String,
+}
+
 // GraphOrchestration (full persisted state)
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -220,6 +234,13 @@ pub struct GraphOrchestration {
     /// on resume/complete (mirrors `GoalOrchestration::pause_message`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pause_message: Option<String>,
+    /// Discoveries queued for the next replan boundary. Drained by a
+    /// replan pass; past the replan cap they drain to history only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_discoveries: Vec<Discovery>,
+    /// Replan passes consumed (bounded by `KIGI_GRAPH_REPLAN_CAP`).
+    #[serde(default)]
+    pub replan_runs: u32,
 }
 
 fn default_plan_version() -> u32 {
@@ -366,6 +387,8 @@ impl GraphTracker {
             tokens_spent_nodes: 0,
             history: Vec::new(),
             pause_message: None,
+            pending_discoveries: Vec::new(),
+            replan_runs: 0,
         };
         state
             .history
@@ -654,6 +677,80 @@ impl GraphTracker {
         }
     }
 
+    /// Queue discoveries for the next replan boundary (records each in
+    /// history so the audit trail survives even past the replan cap).
+    pub fn queue_discoveries(&mut self, discoveries: Vec<Discovery>) {
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
+        for d in discoveries {
+            push_history(
+                state,
+                GraphHistoryEntry::now(
+                    GraphEvent::Unknown,
+                    Some(d.from_node.clone()),
+                    Some(format!("discovered: {}", d.description)),
+                ),
+            );
+            state.pending_discoveries.push(d);
+        }
+    }
+
+    /// Install a validated replan appendix: bump `plan_version`, append
+    /// the new nodes, gate the terminal node on them too (demoting it
+    /// back to `Waiting` if it was already `Ready`), consume the pending
+    /// discoveries, and recompute readiness. SGH discipline: versions
+    /// are immutable — existing nodes are never touched here (the
+    /// validator guarantees the appendix references them read-only).
+    pub fn append_replan_nodes(&mut self, new_nodes: Vec<GraphNode>) {
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
+        let new_ids: Vec<String> = new_nodes.iter().map(|n| n.id.clone()).collect();
+        state.nodes.extend(new_nodes);
+        if let Some(final_node) = state.nodes.iter_mut().find(|n| n.id == FINAL_NODE_ID) {
+            for id in &new_ids {
+                if id != FINAL_NODE_ID && !final_node.deps.iter().any(|d| &d.on == id) {
+                    final_node.deps.push(NodeDep {
+                        on: id.clone(),
+                        kind: DepKind::Blocks,
+                    });
+                }
+            }
+            // A Ready terminal node whose gate just grew must wait again.
+            if final_node.status == NodeStatus::Ready {
+                final_node.status = NodeStatus::Waiting;
+            }
+        }
+        state.plan_version += 1;
+        state.replan_runs += 1;
+        state.pending_discoveries.clear();
+        push_history(
+            state,
+            GraphHistoryEntry::now(
+                GraphEvent::PlanningCompleted,
+                None,
+                Some(format!(
+                    "replan v{}: +{} node(s)",
+                    state.plan_version,
+                    new_ids.len()
+                )),
+            ),
+        );
+        self.recompute_ready();
+    }
+
+    /// Drain pending discoveries WITHOUT replanning (cap exhausted):
+    /// they stay in history (queued there at capture time) only.
+    pub fn drain_discoveries_to_history(&mut self) -> usize {
+        let Some(state) = self.state.as_mut() else {
+            return 0;
+        };
+        let n = state.pending_discoveries.len();
+        state.pending_discoveries.clear();
+        n
+    }
+
     /// Demote in-flight (`Running`/`Verifying`) nodes whose executor is
     /// gone back to `Ready`, keeping `keep` (the node whose goal still
     /// lives in the engine, if any). Used by the IN-SESSION resume path:
@@ -704,7 +801,11 @@ impl GraphTracker {
             .collect();
         for node in &mut state.nodes {
             if node.status == NodeStatus::Waiting
-                && node.deps.iter().all(|d| achieved.contains(&d.on))
+                && node
+                    .deps
+                    .iter()
+                    .filter(|d| d.kind == DepKind::Blocks)
+                    .all(|d| achieved.contains(&d.on))
             {
                 node.status = NodeStatus::Ready;
             }
@@ -734,7 +835,12 @@ fn block_dependents(state: &mut GraphOrchestration, failed_id: &str) {
             if node.status.is_terminal() || blocked.contains(&node.id) {
                 continue;
             }
-            if node.deps.iter().any(|d| blocked.contains(&d.on)) {
+            if node
+                .deps
+                .iter()
+                .filter(|d| d.kind == DepKind::Blocks)
+                .any(|d| blocked.contains(&d.on))
+            {
                 node.status = NodeStatus::Blocked;
                 node.failure = Some(format!("blocked: dependency chain failed at {failed_id}"));
                 blocked.insert(node.id.clone());
@@ -919,6 +1025,59 @@ mod tests {
     fn unknown_node_status_restores_as_ready() {
         assert_eq!(NodeStatus::from_wire_str("half_done"), NodeStatus::Ready);
         assert_eq!(NodeStatus::from_wire_str("achieved"), NodeStatus::Achieved);
+    }
+
+    #[test]
+    fn discovered_from_edges_never_gate_scheduling() {
+        let mut t = tracker_with(vec![node("a", &[]), node("b", &[])]);
+        t.mark_node_running("a", "g".into());
+        t.mark_node_failed("a", "dead".into());
+        // Appendix node whose ONLY edge is DiscoveredFrom on the failed
+        // origin: must become Ready (audit edge, not a gate) and must
+        // not be swept by block_dependents.
+        t.append_replan_nodes(vec![GraphNode {
+            id: "gn-doc".into(),
+            title: "Docs".into(),
+            spec: "s".into(),
+            deps: vec![NodeDep {
+                on: "a".into(),
+                kind: DepKind::DiscoveredFrom,
+            }],
+            status: NodeStatus::Waiting,
+            goal_id: None,
+            rounds: 0,
+            tokens_used: 0,
+            failure: None,
+        }]);
+        assert_eq!(t.node("gn-doc").unwrap().status, NodeStatus::Ready);
+    }
+
+    #[test]
+    fn replan_appendix_regates_the_final_node_and_bumps_version() {
+        let mut t = tracker_with(vec![node("a", &[]), node(FINAL_NODE_ID, &["a"])]);
+        t.mark_node_running("a", "g1".into());
+        t.mark_node_achieved("a", 1, 10);
+        // Final node unlocked…
+        assert_eq!(t.node(FINAL_NODE_ID).unwrap().status, NodeStatus::Ready);
+        assert_eq!(t.snapshot().unwrap().plan_version, 1);
+        // …then a replan appendix lands: final must wait again.
+        t.queue_discoveries(vec![Discovery {
+            from_node: "a".into(),
+            description: "docs".into(),
+        }]);
+        t.append_replan_nodes(vec![node("docs", &[])]);
+        let s = t.snapshot().unwrap();
+        assert_eq!(s.plan_version, 2);
+        assert_eq!(s.replan_runs, 1);
+        assert!(s.pending_discoveries.is_empty());
+        let final_node = t.node(FINAL_NODE_ID).unwrap();
+        assert_eq!(
+            final_node.status,
+            NodeStatus::Waiting,
+            "a Ready terminal node whose gate grew must wait again"
+        );
+        assert!(final_node.deps.iter().any(|d| d.on == "docs"));
+        assert_eq!(t.next_ready_node().unwrap().id, "docs");
     }
 
     #[test]

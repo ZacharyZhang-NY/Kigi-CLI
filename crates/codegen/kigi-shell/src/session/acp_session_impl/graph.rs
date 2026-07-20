@@ -49,7 +49,10 @@ pub(super) fn node_goal_objective(
          {spec}\n\n\
          This node is one unit of a larger graph objective:\n\
          {graph_objective}\n\n\
-         Complete ONLY this node's scope; other nodes cover the rest.",
+         Complete ONLY this node's scope; other nodes cover the rest. If you \
+         find NECESSARY work outside this node's scope, do NOT do it — list \
+         each item on its own line as `DISCOVERED: <description>` in your \
+         final summary; the harness turns these into new graph nodes.",
         title = node.title,
         spec = node.spec,
     )
@@ -339,7 +342,7 @@ impl SessionActor {
     /// Write the immutable plan baseline for the current version.
     /// `create_new` guarantees a frozen baseline is never overwritten —
     /// an existing file is the infra failure it looks like.
-    async fn write_graph_baseline(&self, nodes: &[GraphNode]) -> std::io::Result<()> {
+    pub(super) async fn write_graph_baseline(&self, nodes: &[GraphNode]) -> std::io::Result<()> {
         let path = {
             let tracker = self.graph_tracker.lock();
             let version = tracker.snapshot().map(|s| s.plan_version).unwrap_or(1);
@@ -543,6 +546,22 @@ impl SessionActor {
             .snapshot()
             .map(|o| o.total_worker_rounds)
             .unwrap_or(0);
+        // Serial-path discovery capture: the node's final assistant text
+        // may carry `DISCOVERED:` items (same contract as the parallel
+        // workers, zero extra tool surface).
+        if let Some(text) = self.chat_state_handle.get_last_assistant_text().await {
+            let found = super::graph_workers::parse_discovered_lines(&text);
+            if !found.is_empty() {
+                let ds: Vec<super::super::graph_tracker::Discovery> = found
+                    .into_iter()
+                    .map(|description| super::super::graph_tracker::Discovery {
+                        from_node: node_id.clone(),
+                        description,
+                    })
+                    .collect();
+                self.graph_tracker.lock().queue_discoveries(ds);
+            }
+        }
         self.archive_node_artifacts(&node_id).await;
         tracing::info!(%node_id, rounds, node_tokens, "graph: node achieved");
         self.graph_tracker
@@ -565,6 +584,9 @@ impl SessionActor {
                 // serial-launch failure — the pauser already messaged.
                 return None;
             }
+            // Replan boundary: fold queued discoveries into the graph
+            // (bounded; failure degrades to history-only).
+            self.maybe_replan_graph().await;
             if self.graph_tracker.lock().remaining_budget() == Some(0) {
                 tracing::warn!("graph: budget exhausted at dispatch");
                 self.graph_tracker.lock().budget_limit();

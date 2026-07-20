@@ -2778,6 +2778,8 @@ async fn graph_mode_state_round_trips_and_tombstones() {
         tokens_spent_nodes: 42,
         history: vec![],
         pause_message: None,
+        pending_discoveries: vec![],
+        replan_runs: 0,
     };
     adapter.write_graph_mode_state(&info, Some(&state)).await.unwrap();
     let loaded = adapter.load_session_without_updates(&info).await.unwrap();

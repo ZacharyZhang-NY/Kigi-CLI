@@ -118,6 +118,18 @@ edges stay deterministic Rust. The harness appends a terminal
   `persist_graph_state` chokepoint (checkpoint ⇔ badge tick); old
   pagers degrade via `#[serde(other)] Unknown`. PTY scenarios:
   `graph_slash_presession{,_disabled}.yaml`.
+- G3: dynamic replan. `DISCOVERED: <text>` line markers (fence-stripped,
+  placeholder-filtered) from workers/verifiers/the serial node's final
+  text queue as `pending_discoveries`; at each dispatch boundary
+  `maybe_replan_graph` (`acp_session_impl/graph_replan.rs`) runs a
+  replanner subagent producing an APPEND-ONLY appendix
+  (`validate_replan`: existing-id deps allowed, edges onto `gn-final`
+  rejected — they would cycle after the final-gating extension),
+  bumps `plan_version`, freezes `graph.baseline.v{N}.json`, and regates
+  `gn-final` (Ready→Waiting). Bounded by `KIGI_GRAPH_REPLAN_CAP`
+  (default 3, 0 = off); past the cap — and after the final node has
+  achieved — discoveries drain to history only. Replan failure degrades
+  (history + notice); it never pauses a working graph.
 
 ## Milestones (PRD §8.3)
 

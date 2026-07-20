@@ -136,6 +136,26 @@ pub(crate) fn parse_node_verdict(output: &str) -> NodeVerdict {
     }
 }
 
+/// Line-anchored `DISCOVERED:` items outside fenced blocks. The
+/// placeholder filter (`<`) drops template echoes ("<one-line
+/// description …>") a child may parrot back.
+pub(crate) fn parse_discovered_lines(output: &str) -> Vec<String> {
+    strip_fenced_blocks(output)
+        .lines()
+        .filter_map(|l| {
+            l.trim_start()
+                .trim_start_matches('`')
+                .strip_prefix("DISCOVERED:")
+        })
+        .map(str::trim)
+        // Placeholder-echo defense: drop only the templates' literal
+        // "<one-line description …>" shape, not every '<' (legit Rust
+        // discoveries mention generics like Vec<String>).
+        .filter(|d| !d.is_empty() && !d.starts_with('<'))
+        .map(str::to_owned)
+        .collect()
+}
+
 // Spawner seam (mockable in tests)
 
 pub(crate) struct WorkerSpawnSpec {
@@ -258,6 +278,8 @@ pub(crate) struct NodeRunReport {
     pub worktree_path: Option<String>,
     /// Last worker child session id (audit link, stored on the node).
     pub worker_session_id: Option<String>,
+    /// `DISCOVERED:` items surfaced by the workers/verifiers (deduped).
+    pub discoveries: Vec<String>,
 }
 
 fn worker_prompt(node_objective: &str, gaps: &[String]) -> String {
@@ -282,7 +304,8 @@ fn verifier_prompt(node_objective: &str, worker_summary: &str) -> String {
     // into the verifier's context.
     let safe_summary = worker_summary
         .replace("NODE_VERDICT", "NODE-VERDICT")
-        .replace("NODE_RESULT", "NODE-RESULT");
+        .replace("NODE_RESULT", "NODE-RESULT")
+        .replace("DISCOVERED", "DISCOVERED-");
     format!(
         "{VERIFIER_PROMPT_TEMPLATE}\n\nNODE OBJECTIVE (the contract to judge):\n{node_objective}\n\n\
          IMPLEMENTER'S CLAIM (audit it, do not trust it):\n{safe_summary}\n"
@@ -298,6 +321,7 @@ pub(crate) async fn run_node_to_verdict(
     rounds_cap: u32,
 ) -> NodeRunReport {
     let mut tokens: i64 = 0;
+    let mut discoveries: Vec<String> = Vec::new();
     let mut gaps: Vec<String> = Vec::new();
     let mut resume_from: Option<String> = None;
     let mut worktree_path: Option<String> = None;
@@ -326,6 +350,7 @@ pub(crate) async fn run_node_to_verdict(
                     tokens_used: tokens,
                     worktree_path,
                     worker_session_id: resume_from,
+                    discoveries: discoveries.clone(),
                 };
             }
         };
@@ -341,6 +366,11 @@ pub(crate) async fn run_node_to_verdict(
         if !outcome.child_session_id.is_empty() {
             resume_from = Some(outcome.child_session_id.clone());
         }
+        for d in parse_discovered_lines(&outcome.output) {
+            if !discoveries.contains(&d) {
+                discoveries.push(d);
+            }
+        }
 
         if outcome.cancelled {
             return NodeRunReport {
@@ -351,6 +381,7 @@ pub(crate) async fn run_node_to_verdict(
                 tokens_used: tokens,
                 worktree_path,
                 worker_session_id: resume_from,
+                discoveries,
             };
         }
         if outcome.backgrounded {
@@ -393,6 +424,7 @@ pub(crate) async fn run_node_to_verdict(
                 tokens_used: tokens,
                 worktree_path: None,
                 worker_session_id: resume_from,
+                discoveries: discoveries.clone(),
             };
         }
 
@@ -406,6 +438,7 @@ pub(crate) async fn run_node_to_verdict(
                     tokens_used: tokens,
                     worktree_path,
                     worker_session_id: resume_from,
+                    discoveries: discoveries.clone(),
                 };
             }
             WorkerClaim::Unparseable => {
@@ -429,6 +462,11 @@ pub(crate) async fn run_node_to_verdict(
                 let verdict = match spawner.spawn(&verify_id, verify_spec).await {
                     Ok(v) => {
                         tokens = tokens.saturating_add(v.tokens_used as i64);
+                        for d in parse_discovered_lines(&v.output) {
+                            if !discoveries.contains(&d) {
+                                discoveries.push(d);
+                            }
+                        }
                         if v.success {
                             parse_node_verdict(&v.output)
                         } else {
@@ -456,6 +494,7 @@ pub(crate) async fn run_node_to_verdict(
                             tokens_used: tokens,
                             worktree_path,
                             worker_session_id: resume_from,
+                            discoveries: discoveries.clone(),
                         };
                     }
                     NodeVerdict::NotAchieved { gaps: new_gaps } => {
@@ -477,6 +516,7 @@ pub(crate) async fn run_node_to_verdict(
         tokens_used: tokens,
         worktree_path,
         worker_session_id: resume_from,
+        discoveries,
     }
 }
 
@@ -582,6 +622,18 @@ impl SessionActor {
                     .and_then(|s| s.nodes.iter_mut().find(|n| n.id == report.node_id))
             {
                 node.goal_id = Some(worker_id.clone());
+            }
+            if !report.discoveries.is_empty() {
+                // A failed node's discoveries are still real work.
+                let ds: Vec<crate::session::graph_tracker::Discovery> = report
+                    .discoveries
+                    .iter()
+                    .map(|d| crate::session::graph_tracker::Discovery {
+                        from_node: report.node_id.clone(),
+                        description: d.clone(),
+                    })
+                    .collect();
+                self.graph_tracker.lock().queue_discoveries(ds);
             }
             if !report.achieved {
                 failed += 1;

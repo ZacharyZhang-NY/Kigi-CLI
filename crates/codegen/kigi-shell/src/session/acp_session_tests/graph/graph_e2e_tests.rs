@@ -1619,3 +1619,184 @@ async fn graph_slash_terminal_outcomes_through_handle_prompt() {
         .await;
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
+
+// ── G3: dynamic replan ─────────────────────────────────────────────
+
+/// Route replies for the replan flow: planner writes the diamond,
+/// node-a's worker reports a discovery, the replanner appends a `docs`
+/// node discovered_from gn-a, everything else is happy-path.
+fn replan_reply(
+    req: &kigi_tools::implementations::kigi::task::types::SubagentRequest,
+    dag: &[u8],
+) -> String {
+    if req.prompt.contains("Graph Replanner") {
+        let path = req
+            .prompt
+            .find("/replan.v")
+            .map(|start_idx| {
+                let end = req.prompt[start_idx..]
+                    .find(".json")
+                    .map(|e| start_idx + e + ".json".len())
+                    .unwrap();
+                let start = req.prompt[..start_idx]
+                    .rfind(|c: char| !c.is_ascii_graphic() || c == '`')
+                    .map(|i| i + 1)
+                    .unwrap_or(0);
+                req.prompt[start..end].to_string()
+            })
+            .expect("replanner prompt embeds the artifact path");
+        let a_id = crate::session::graph_plan::node_id_for_slug("a");
+        let body = serde_json::json!({
+            "nodes": [{
+                "id": "docs",
+                "title": "Docs page",
+                "spec": "write the docs page",
+                "deps": [],
+                "discovered_from": [a_id],
+            }]
+        })
+        .to_string();
+        std::fs::create_dir_all(std::path::Path::new(&path).parent().unwrap()).unwrap();
+        std::fs::write(&path, body).unwrap();
+        return "Done".to_owned();
+    }
+    if req.prompt.contains("Graph Node Worker") && req.prompt.contains("do a") {
+        return "NODE_RESULT: done\nBuilt a.\nDISCOVERED: also need a docs page".to_owned();
+    }
+    happy_reply(req, dag)
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn discovery_triggers_replan_and_appended_node_runs_to_achieved() {
+    unsafe { std::env::set_var(ENV_FLAG, "0") };
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let dag = diamond_graph_json();
+            let (mut actor, _tmp, _prx) = make_graph_actor_detached().await;
+            let (coord_tx, captured) = spawn_scripted_coordinator(
+                _tmp.path().to_path_buf(),
+                move |req| replan_reply(req, &dag),
+                false,
+            );
+            actor.tool_context.subagent_event_tx = Some(coord_tx);
+            actor.graph_concurrency = 2;
+
+            let outcome = actor.setup_graph("build the diamond", None).await;
+            // Batch(a+b) → replan appends docs → batch/serial drains the
+            // rest → the serial tail is gn-final (5 nodes total now).
+            let reminder = match outcome {
+                graph::GraphSetupOutcome::Inference { reminder, .. } => reminder,
+                graph::GraphSetupOutcome::Message(msg) => panic!("expected Inference: {msg}"),
+            };
+            let s = actor.graph_tracker.lock().snapshot().cloned().unwrap();
+            assert_eq!(s.nodes.len(), 5, "diamond(3) + final + appended docs");
+            assert_eq!(s.plan_version, 2, "replan bumped the version");
+            assert_eq!(s.replan_runs, 1);
+            assert!(s.pending_discoveries.is_empty());
+            let docs_id = crate::session::graph_plan::node_id_for_slug("docs");
+            let docs = s.nodes.iter().find(|n| n.id == docs_id).expect("docs node");
+            assert!(
+                docs.deps.iter().any(|d| {
+                    d.on == crate::session::graph_plan::node_id_for_slug("a")
+                        && d.kind == crate::session::graph_tracker::DepKind::DiscoveredFrom
+                }),
+                "appendix carries the DiscoveredFrom edge: {:?}",
+                docs.deps
+            );
+            // gn-final gates on the appendix too.
+            let final_node = s
+                .nodes
+                .iter()
+                .find(|n| n.id == crate::session::graph_tracker::FINAL_NODE_ID)
+                .unwrap();
+            assert!(final_node.deps.iter().any(|d| d.on == docs_id));
+            // docs already ran in the second batch (parallel with c) or
+            // serially; by the time a serial reminder surfaces it must be
+            // for gn-final with everything else achieved.
+            assert!(reminder.contains("Final verification"), "{reminder}");
+
+            // Both baselines exist; v1 stayed byte-identical.
+            let b1 = actor.graph_tracker.lock().baseline_path(1);
+            let b2 = actor.graph_tracker.lock().baseline_path(2);
+            assert!(b1.is_file() && b2.is_file());
+            let v1: Vec<crate::session::graph_tracker::GraphNode> =
+                serde_json::from_slice(&std::fs::read(&b1).unwrap()).unwrap();
+            assert_eq!(v1.len(), 4, "v1 baseline must not gain the appendix");
+            let v2: Vec<crate::session::graph_tracker::GraphNode> =
+                serde_json::from_slice(&std::fs::read(&b2).unwrap()).unwrap();
+            assert_eq!(v2.len(), 5);
+
+            // Finish gn-final serially → graph Complete.
+            drive_node_goal_to_complete(&actor).await;
+            let end = actor.run_graph_round_end().await;
+            assert!(end.is_none());
+            assert_eq!(
+                actor.graph_tracker.lock().status(),
+                Some(GoalStatus::Complete)
+            );
+            // Exactly one replanner spawn.
+            let replans = captured
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|c| c.prompt.contains("Graph Replanner"))
+                .count();
+            assert_eq!(replans, 1);
+        })
+        .await;
+    unsafe { std::env::remove_var(ENV_FLAG) };
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn replan_cap_zero_drains_discoveries_to_history_and_converges() {
+    unsafe { std::env::set_var(ENV_FLAG, "0") };
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let dag = diamond_graph_json();
+            let (mut actor, _tmp, _prx) = make_graph_actor_detached().await;
+            let (coord_tx, captured) = spawn_scripted_coordinator(
+                _tmp.path().to_path_buf(),
+                move |req| replan_reply(req, &dag),
+                false,
+            );
+            actor.tool_context.subagent_event_tx = Some(coord_tx);
+            actor.graph_concurrency = 2;
+            actor.graph_replan_cap = 0;
+
+            let _ = actor.setup_graph("build the diamond", None).await;
+            let s = actor.graph_tracker.lock().snapshot().cloned().unwrap();
+            assert_eq!(s.nodes.len(), 4, "no appendix with the cap at 0");
+            assert_eq!(s.plan_version, 1);
+            assert!(s.pending_discoveries.is_empty(), "drained to history");
+            assert!(
+                s.history.iter().any(|h| h
+                    .detail
+                    .as_deref()
+                    .is_some_and(|d| d.contains("discovered: also need a docs page"))),
+                "discovery must survive in history"
+            );
+            let replans = captured
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|c| c.prompt.contains("Graph Replanner"))
+                .count();
+            assert_eq!(replans, 0, "cap 0 must never spawn the replanner");
+
+            // Graph still converges (serial tail: c, then gn-final).
+            for _ in 0..2 {
+                drive_node_goal_to_complete(&actor).await;
+                let _ = actor.run_graph_round_end().await;
+            }
+            assert_eq!(
+                actor.graph_tracker.lock().status(),
+                Some(GoalStatus::Complete)
+            );
+        })
+        .await;
+    unsafe { std::env::remove_var(ENV_FLAG) };
+}

@@ -41,6 +41,10 @@ struct PlannedNode {
     spec: String,
     #[serde(default)]
     deps: Vec<String>,
+    /// Replan artifacts only: EXISTING node ids (`gn-…`) whose execution
+    /// surfaced this node. Ignored by the initial-plan path.
+    #[serde(default)]
+    discovered_from: Vec<String>,
 }
 
 /// Why a planner artifact was rejected. Rendered verbatim into the
@@ -53,11 +57,30 @@ pub(crate) enum GraphPlanError {
     TooManyNodes(usize),
     BadSlug(String),
     DuplicateSlug(String),
-    EmptyField { slug: String, field: &'static str },
-    UnknownDep { slug: String, dep: String },
+    EmptyField {
+        slug: String,
+        field: &'static str,
+    },
+    UnknownDep {
+        slug: String,
+        dep: String,
+    },
     SelfDep(String),
     Cycle(Vec<String>),
     IdCollision(String, String),
+    /// Replan: a new node's canonical id collides with an existing node.
+    ExistingCollision(String),
+    /// Replan: a `deps` entry targets a Failed/Blocked node — the new
+    /// node could never become Ready.
+    DeadDep {
+        slug: String,
+        dep: String,
+    },
+    /// Replan: `discovered_from` references a node id not in the graph.
+    UnknownOrigin {
+        slug: String,
+        origin: String,
+    },
 }
 
 impl std::fmt::Display for GraphPlanError {
@@ -86,6 +109,19 @@ impl std::fmt::Display for GraphPlanError {
             Self::IdCollision(a, b) => write!(
                 f,
                 "hash id collision between slugs {a:?} and {b:?}; rename one"
+            ),
+            Self::ExistingCollision(s) => write!(
+                f,
+                "new node {s:?} collides with an existing graph node; rename it"
+            ),
+            Self::UnknownOrigin { slug, origin } => write!(
+                f,
+                "node {slug:?} claims discovered_from unknown node {origin:?}"
+            ),
+            Self::DeadDep { slug, dep } => write!(
+                f,
+                "node {slug:?} depends on {dep:?}, which already failed; depend on \
+                 live nodes only (or none)"
             ),
         }
     }
@@ -295,6 +331,214 @@ fn final_verification_node(objective: &str, planner_nodes: &[GraphNode]) -> Grap
     }
 }
 
+/// Parse and validate a REPLAN artifact against the existing graph:
+/// strictly append-only. New nodes may depend on existing `gn-…` ids or
+/// on each other; the combined graph must stay acyclic; existing nodes
+/// are never modified. Returns the canonicalized appendix — `Waiting`
+/// status, `Blocks` deps, plus one `DiscoveredFrom` edge per validated
+/// `discovered_from` origin.
+pub(crate) fn validate_replan(
+    existing: &[GraphNode],
+    json: &str,
+) -> Result<Vec<GraphNode>, GraphPlanError> {
+    let mut planned: PlannedGraph =
+        serde_json::from_str(json).map_err(|e| GraphPlanError::Parse(e.to_string()))?;
+    if planned.nodes.is_empty() {
+        return Err(GraphPlanError::Empty);
+    }
+    // Whole-graph cap: MAX_GRAPH_NODES planner nodes + gn-final. The
+    // payload excludes the final node so "the cap is N" stays truthful
+    // for replans too.
+    if planned.nodes.len() + existing.len() > MAX_GRAPH_NODES + 1 {
+        return Err(GraphPlanError::TooManyNodes(
+            planned.nodes.len() + existing.len() - 1,
+        ));
+    }
+    for node in &mut planned.nodes {
+        let mut seen_deps = std::collections::HashSet::new();
+        node.deps.retain(|d| seen_deps.insert(d.clone()));
+    }
+
+    let existing_ids: std::collections::HashSet<&str> =
+        existing.iter().map(|n| n.id.as_str()).collect();
+    let mut seen = std::collections::HashSet::new();
+    for node in &planned.nodes {
+        if !valid_slug(&node.id) {
+            return Err(GraphPlanError::BadSlug(node.id.clone()));
+        }
+        if !seen.insert(node.id.as_str()) {
+            return Err(GraphPlanError::DuplicateSlug(node.id.clone()));
+        }
+        if node.title.trim().is_empty() {
+            return Err(GraphPlanError::EmptyField {
+                slug: node.id.clone(),
+                field: "title",
+            });
+        }
+        if node.spec.trim().is_empty() {
+            return Err(GraphPlanError::EmptyField {
+                slug: node.id.clone(),
+                field: "spec",
+            });
+        }
+        for origin in &node.discovered_from {
+            if !existing_ids.contains(origin.as_str()) {
+                return Err(GraphPlanError::UnknownOrigin {
+                    slug: node.id.clone(),
+                    origin: origin.clone(),
+                });
+            }
+            // Any edge onto the terminal node would cycle the moment
+            // append_replan_nodes gates it on the appendix. Fail fast.
+            if origin == FINAL_NODE_ID {
+                return Err(GraphPlanError::UnknownDep {
+                    slug: node.id.clone(),
+                    dep: FINAL_NODE_ID.to_owned(),
+                });
+            }
+        }
+        if node.deps.iter().any(|d| d == FINAL_NODE_ID) {
+            return Err(GraphPlanError::UnknownDep {
+                slug: node.id.clone(),
+                dep: FINAL_NODE_ID.to_owned(),
+            });
+        }
+    }
+
+    // Canonical ids for the appendix; must not collide with anything.
+    let mut id_of: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
+    let mut owner_of_id: std::collections::HashMap<String, &str> = std::collections::HashMap::new();
+    for node in &planned.nodes {
+        let id = node_id_for_slug(&node.id);
+        if existing_ids.contains(id.as_str()) {
+            return Err(GraphPlanError::ExistingCollision(node.id.clone()));
+        }
+        if let Some(prior) = owner_of_id.insert(id.clone(), node.id.as_str()) {
+            return Err(GraphPlanError::IdCollision(
+                prior.to_owned(),
+                node.id.clone(),
+            ));
+        }
+        id_of.insert(node.id.as_str(), id);
+    }
+
+    // Deps resolve against existing ids (verbatim) or new slugs.
+    let resolve = |dep: &str| -> Option<String> {
+        if existing_ids.contains(dep) {
+            Some(dep.to_owned())
+        } else {
+            id_of.get(dep).cloned()
+        }
+    };
+    let dead_ids: std::collections::HashSet<&str> = existing
+        .iter()
+        .filter(|n| matches!(n.status, NodeStatus::Failed | NodeStatus::Blocked))
+        .map(|n| n.id.as_str())
+        .collect();
+    for node in &planned.nodes {
+        for dep in &node.deps {
+            if dep == &node.id {
+                return Err(GraphPlanError::SelfDep(node.id.clone()));
+            }
+            if resolve(dep).is_none() {
+                return Err(GraphPlanError::UnknownDep {
+                    slug: node.id.clone(),
+                    dep: dep.clone(),
+                });
+            }
+            // An ordering dep on a dead node can never satisfy; fail
+            // fast so the attempt-2 feedback loop repairs the artifact.
+            // (`discovered_from` origins are exempt — audit-only edges,
+            // and failed origins are the NORMAL salvage case.)
+            if dead_ids.contains(dep.as_str()) {
+                return Err(GraphPlanError::DeadDep {
+                    slug: node.id.clone(),
+                    dep: dep.clone(),
+                });
+            }
+        }
+    }
+
+    // Combined-graph acyclicity (Kahn over existing edges + appendix).
+    // Existing nodes only ever depend on existing nodes, so seeding
+    // their edges verbatim is sound.
+    {
+        let mut ids: Vec<String> = existing.iter().map(|n| n.id.clone()).collect();
+        ids.extend(planned.nodes.iter().map(|n| id_of[n.id.as_str()].clone()));
+        let index_of: std::collections::HashMap<&str, usize> = ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| (id.as_str(), i))
+            .collect();
+        let mut edges: Vec<(usize, usize)> = Vec::new();
+        for n in existing {
+            for d in &n.deps {
+                edges.push((index_of[d.on.as_str()], index_of[n.id.as_str()]));
+            }
+        }
+        for n in &planned.nodes {
+            let to = index_of[id_of[n.id.as_str()].as_str()];
+            for d in &n.deps {
+                edges.push((index_of[resolve(d).expect("validated").as_str()], to));
+            }
+        }
+        let mut indegree = vec![0usize; ids.len()];
+        for (_, to) in &edges {
+            indegree[*to] += 1;
+        }
+        let mut done = vec![false; ids.len()];
+        for _ in 0..ids.len() {
+            let Some(next) = (0..ids.len()).find(|&i| !done[i] && indegree[i] == 0) else {
+                let cycle: Vec<String> = (0..ids.len())
+                    .filter(|&i| !done[i])
+                    .map(|i| ids[i].clone())
+                    .collect();
+                return Err(GraphPlanError::Cycle(cycle));
+            };
+            done[next] = true;
+            for (from, to) in &edges {
+                if *from == next {
+                    indegree[*to] -= 1;
+                }
+            }
+        }
+    }
+
+    Ok(planned
+        .nodes
+        .iter()
+        .map(|p| {
+            let mut deps: Vec<NodeDep> = p
+                .deps
+                .iter()
+                .map(|d| NodeDep {
+                    on: resolve(d).expect("validated"),
+                    kind: DepKind::Blocks,
+                })
+                .collect();
+            for origin in &p.discovered_from {
+                if !deps.iter().any(|d| &d.on == origin) {
+                    deps.push(NodeDep {
+                        on: origin.clone(),
+                        kind: DepKind::DiscoveredFrom,
+                    });
+                }
+            }
+            GraphNode {
+                id: id_of[p.id.as_str()].clone(),
+                title: p.title.trim().to_owned(),
+                spec: p.spec.trim().to_owned(),
+                deps,
+                status: NodeStatus::Waiting,
+                goal_id: None,
+                rounds: 0,
+                tokens_used: 0,
+                failure: None,
+            }
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -422,6 +666,134 @@ mod tests {
         let nodes = parse_and_validate(&json, "o").unwrap();
         assert_eq!(nodes[0].id, node_id_for_slug("z"));
         assert_eq!(nodes[1].id, node_id_for_slug("a"));
+    }
+
+    fn existing_graph() -> Vec<GraphNode> {
+        parse_and_validate(&plan_json(&[("a", &[]), ("b", &["a"])]), "objective").unwrap()
+    }
+
+    #[test]
+    fn replan_appendix_resolves_existing_ids_and_adds_discovered_from_edges() {
+        let existing = existing_graph();
+        let a_id = node_id_for_slug("a");
+        let json = serde_json::json!({
+            "nodes": [{
+                "id": "docs",
+                "title": "Docs",
+                "spec": "write docs",
+                "deps": [a_id.clone()],
+                "discovered_from": [a_id.clone()],
+            }]
+        })
+        .to_string();
+        let appendix = validate_replan(&existing, &json).unwrap();
+        assert_eq!(appendix.len(), 1);
+        let node = &appendix[0];
+        assert_eq!(node.status, NodeStatus::Waiting);
+        // Blocks dep on the existing id, deduped against the
+        // DiscoveredFrom edge (same target keeps the Blocks edge only).
+        assert_eq!(node.deps.len(), 1);
+        assert_eq!(node.deps[0].on, a_id);
+        assert_eq!(node.deps[0].kind, DepKind::Blocks);
+
+        // Distinct origin gets its own DiscoveredFrom edge.
+        let b_id = node_id_for_slug("b");
+        let json = serde_json::json!({
+            "nodes": [{
+                "id": "docs2",
+                "title": "Docs 2",
+                "spec": "s",
+                "deps": [a_id.clone()],
+                "discovered_from": [b_id.clone()],
+            }]
+        })
+        .to_string();
+        let appendix = validate_replan(&existing, &json).unwrap();
+        let node = &appendix[0];
+        assert_eq!(node.deps.len(), 2);
+        assert!(
+            node.deps
+                .iter()
+                .any(|d| d.on == b_id && d.kind == DepKind::DiscoveredFrom)
+        );
+    }
+
+    #[test]
+    fn replan_rejects_blocks_deps_on_dead_nodes_but_allows_dead_origins() {
+        let mut existing = existing_graph();
+        let a_id = node_id_for_slug("a");
+        existing.iter_mut().find(|n| n.id == a_id).unwrap().status = NodeStatus::Failed;
+        let dead_dep = serde_json::json!({
+            "nodes": [{"id": "x", "title": "T", "spec": "s", "deps": [a_id.clone()]}]
+        })
+        .to_string();
+        assert!(matches!(
+            validate_replan(&existing, &dead_dep).unwrap_err(),
+            GraphPlanError::DeadDep { .. }
+        ));
+        // A dead ORIGIN is the normal salvage case — allowed, and the
+        // audit-only DiscoveredFrom edge never gates scheduling.
+        let dead_origin = serde_json::json!({
+            "nodes": [{"id": "x", "title": "T", "spec": "s", "deps": [],
+                        "discovered_from": [a_id]}]
+        })
+        .to_string();
+        assert!(validate_replan(&existing, &dead_origin).is_ok());
+    }
+
+    #[test]
+    fn replan_rejects_edges_onto_the_terminal_node() {
+        let existing = existing_graph();
+        for json in [
+            serde_json::json!({"nodes": [{"id": "x", "title": "T", "spec": "s",
+                "deps": [FINAL_NODE_ID]}]}),
+            serde_json::json!({"nodes": [{"id": "x", "title": "T", "spec": "s",
+                "deps": [], "discovered_from": [FINAL_NODE_ID]}]}),
+        ] {
+            assert!(
+                matches!(
+                    validate_replan(&existing, &json.to_string()).unwrap_err(),
+                    GraphPlanError::UnknownDep { .. }
+                ),
+                "an edge onto gn-final would cycle after the final-gating extension"
+            );
+        }
+    }
+
+    #[test]
+    fn replan_rejects_collisions_unknown_origins_and_cycles() {
+        let existing = existing_graph();
+        // Re-using an existing slug collides on the canonical id.
+        let dup = serde_json::json!({
+            "nodes": [{"id": "a", "title": "T", "spec": "s", "deps": []}]
+        })
+        .to_string();
+        assert_eq!(
+            validate_replan(&existing, &dup).unwrap_err(),
+            GraphPlanError::ExistingCollision("a".into())
+        );
+        // Unknown discovered_from origin.
+        let bad_origin = serde_json::json!({
+            "nodes": [{"id": "x", "title": "T", "spec": "s", "deps": [],
+                        "discovered_from": ["gn-ghost"]}]
+        })
+        .to_string();
+        assert!(matches!(
+            validate_replan(&existing, &bad_origin).unwrap_err(),
+            GraphPlanError::UnknownOrigin { .. }
+        ));
+        // New-node cycle.
+        let cyc = serde_json::json!({
+            "nodes": [
+                {"id": "x", "title": "T", "spec": "s", "deps": ["y"]},
+                {"id": "y", "title": "T", "spec": "s", "deps": ["x"]},
+            ]
+        })
+        .to_string();
+        assert!(matches!(
+            validate_replan(&existing, &cyc).unwrap_err(),
+            GraphPlanError::Cycle(_)
+        ));
     }
 
     /// A repeated dep entry is harmless planner redundancy: it must be

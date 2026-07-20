@@ -26,7 +26,9 @@ use super::graph_plan::{self, MAX_GRAPH_JSON_BYTES};
 use super::graph_tracker::GraphNode;
 
 const GRAPH_PLANNER_PROMPT_TEMPLATE: &str = include_str!("templates/graph_planner_prompt.md");
+const GRAPH_REPLANNER_PROMPT_TEMPLATE: &str = include_str!("templates/graph_replanner_prompt.md");
 pub(crate) const GRAPH_PLANNER_SUBAGENT_DESCRIPTION: &str = "graph plan writer";
+pub(crate) const GRAPH_REPLANNER_SUBAGENT_DESCRIPTION: &str = "graph replanner";
 
 #[derive(Debug)]
 pub(crate) enum GraphPlannerOutcome {
@@ -63,6 +65,16 @@ pub(crate) async fn run_graph_planner(
         };
     }
 
+    // A stale artifact from a prior pass would satisfy the
+    // missing-file guard below and be trusted as this pass's output.
+    // Delete first; only NotFound is benign.
+    if let Err(err) = tokio::fs::remove_file(inputs.graph_file).await
+        && err.kind() != std::io::ErrorKind::NotFound
+    {
+        return GraphPlannerOutcome::FailClosed {
+            reason: format!("failed to clear stale graph artifact: {err}"),
+        };
+    }
     let graph_file_str = inputs.graph_file.to_string_lossy();
     let with_graph_file = GRAPH_PLANNER_PROMPT_TEMPLATE.replace("{GRAPH_FILE}", &graph_file_str);
     let render = |tool_names: &RoleToolNames| -> String {
@@ -134,6 +146,122 @@ pub(crate) async fn run_graph_planner(
     };
 
     match graph_plan::parse_and_validate(&json, inputs.objective) {
+        Ok(nodes) => GraphPlannerOutcome::Planned(nodes),
+        Err(err) => GraphPlannerOutcome::Invalid {
+            reason: err.to_string(),
+        },
+    }
+}
+
+pub(crate) struct GraphReplannerInputs<'a> {
+    pub objective: &'a str,
+    /// Compact JSON of the existing nodes (id/title/status/deps).
+    pub current_graph: &'a str,
+    /// The queued discoveries, one per line with their origin node ids.
+    pub discoveries: &'a str,
+    /// On retry, the previous artifact's validation error.
+    pub feedback: &'a str,
+    pub graph_file: &'a Path,
+    pub tool_names: &'a RoleToolNames,
+    pub inherit_tool_names: &'a RoleToolNames,
+}
+
+/// Run one REPLAN attempt: render, spawn, read the artifact, validate
+/// against the existing graph (append-only). An empty `{"nodes": []}`
+/// appendix is the sanctioned "everything already covered" escape hatch
+/// and returns `Planned(vec![])`.
+pub(crate) async fn run_graph_replanner(
+    spawner: Arc<dyn GoalPlannerSpawner>,
+    existing: &[GraphNode],
+    inputs: GraphReplannerInputs<'_>,
+) -> GraphPlannerOutcome {
+    if let Some(parent) = inputs.graph_file.parent()
+        && let Err(err) = tokio::fs::create_dir_all(parent).await
+    {
+        return GraphPlannerOutcome::FailClosed {
+            reason: format!("failed to create graph dir {}: {err}", parent.display()),
+        };
+    }
+    // A stale artifact from a prior pass would satisfy the
+    // missing-file guard below and be trusted as this pass's output.
+    // Delete first; only NotFound is benign.
+    if let Err(err) = tokio::fs::remove_file(inputs.graph_file).await
+        && err.kind() != std::io::ErrorKind::NotFound
+    {
+        return GraphPlannerOutcome::FailClosed {
+            reason: format!("failed to clear stale graph artifact: {err}"),
+        };
+    }
+    let graph_file_str = inputs.graph_file.to_string_lossy();
+    let with_graph_file = GRAPH_REPLANNER_PROMPT_TEMPLATE.replace("{GRAPH_FILE}", &graph_file_str);
+    let render = |tool_names: &RoleToolNames| -> String {
+        let rendered = tool_names.apply(&with_graph_file);
+        format!(
+            "{rendered}\n\nOBJECTIVE:\n{}\n\nCURRENT GRAPH:\n{}\n\nDISCOVERIES:\n{}\n\nCONTEXT:\n{}\n",
+            inputs.objective, inputs.current_graph, inputs.discoveries, inputs.feedback
+        )
+    };
+    let prompt = RoleRenderedPrompt {
+        primary: render(inputs.tool_names),
+        fallback: render(inputs.inherit_tool_names),
+    };
+    let spawn_id = uuid::Uuid::now_v7().to_string();
+    let response = match spawner.spawn_planner(&spawn_id, prompt).await {
+        Ok(text) => text,
+        Err(SpawnError::Transport(detail)) => {
+            return GraphPlannerOutcome::FailClosed {
+                reason: format!("graph replanner transport error: {detail}"),
+            };
+        }
+        Err(SpawnError::Runtime { message, cancelled }) => {
+            return GraphPlannerOutcome::FailClosed {
+                reason: if cancelled {
+                    format!("graph replanner aborted: {message}")
+                } else {
+                    format!("graph replanner runtime error: {message}")
+                },
+            };
+        }
+    };
+    match tokio::fs::metadata(inputs.graph_file).await {
+        Ok(meta) if meta.is_file() && meta.len() > 0 => {
+            if meta.len() > MAX_GRAPH_JSON_BYTES {
+                return GraphPlannerOutcome::Invalid {
+                    reason: format!(
+                        "replan JSON is {} bytes; the cap is {MAX_GRAPH_JSON_BYTES}",
+                        meta.len()
+                    ),
+                };
+            }
+        }
+        _ => {
+            tracing::info!(
+                graph_file = %graph_file_str,
+                terminal_token_ok = parse_terminal_response(&response),
+                "graph replanner: artifact missing or empty; failing closed",
+            );
+            return GraphPlannerOutcome::FailClosed {
+                reason: "graph replanner produced no artifact".to_owned(),
+            };
+        }
+    }
+    let json = match tokio::fs::read_to_string(inputs.graph_file).await {
+        Ok(json) => json,
+        Err(err) => {
+            return GraphPlannerOutcome::FailClosed {
+                reason: format!("failed to read replan artifact: {err}"),
+            };
+        }
+    };
+    // Escape hatch: an explicitly empty appendix means "already covered".
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&json)
+        && v.get("nodes")
+            .and_then(|n| n.as_array())
+            .is_some_and(Vec::is_empty)
+    {
+        return GraphPlannerOutcome::Planned(Vec::new());
+    }
+    match graph_plan::validate_replan(existing, &json) {
         Ok(nodes) => GraphPlannerOutcome::Planned(nodes),
         Err(err) => GraphPlannerOutcome::Invalid {
             reason: err.to_string(),

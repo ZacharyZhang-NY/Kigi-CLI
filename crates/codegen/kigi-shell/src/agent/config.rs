@@ -1929,6 +1929,16 @@ impl Config {
             .unwrap_or(3)
             .clamp(1, 8)
     }
+    /// Max replan passes per graph (`KIGI_GRAPH_REPLAN_CAP`); 0 turns
+    /// dynamic replanning off. Past the cap, discoveries drain to
+    /// history only — the graph must still converge. Clamped to [0, 10].
+    pub(crate) fn resolve_graph_replan_cap(&self) -> u32 {
+        std::env::var("KIGI_GRAPH_REPLAN_CAP")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+            .unwrap_or(3)
+            .clamp(0, 10)
+    }
     /// Max worker↔verifier rounds per parallel graph node
     /// (`KIGI_GRAPH_NODE_ROUNDS`); exhausting them fails the node.
     /// Clamped to [1, 8].

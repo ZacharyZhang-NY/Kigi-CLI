@@ -292,6 +292,7 @@ pub(crate) async fn create_test_actor_ex(
         )),
         graph_concurrency: 1,
         graph_node_rounds: 3,
+        graph_replan_cap: 3,
         goal_turn_task_ids: parking_lot::Mutex::new(std::collections::HashSet::new()),
         goal_continuation_streak: std::sync::atomic::AtomicU32::new(0),
         goal_blocked_streak: std::sync::atomic::AtomicU32::new(0),

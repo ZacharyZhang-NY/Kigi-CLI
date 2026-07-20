@@ -95,6 +95,8 @@ pub use types::{TodoGateDecision, TodoGateReason};
 mod goal;
 #[path = "acp_session_impl/graph.rs"]
 mod graph;
+#[path = "acp_session_impl/graph_replan.rs"]
+mod graph_replan;
 #[path = "acp_session_impl/graph_workers.rs"]
 mod graph_workers;
 #[path = "acp_session_impl/interjection.rs"]
@@ -607,6 +609,9 @@ pub(crate) struct SessionActor {
     /// Max worker↔verifier rounds per parallel graph node before the
     /// node fails. Cached at actor construction.
     pub(crate) graph_node_rounds: u32,
+    /// Max replan passes per graph (0 = replanning off). Cached at
+    /// actor construction.
+    pub(crate) graph_replan_cap: u32,
     /// `task_id`s of background tasks (and monitors) that originated during
     /// the goal turn — either spawned by the goal model itself or reparented
     /// from a harness verifier/planner subagent on its exit. Their late

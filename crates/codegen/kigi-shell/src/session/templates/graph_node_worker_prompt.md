@@ -13,6 +13,16 @@ Rules:
 - If a GAPS section appears below, a verifier rejected the previous round —
   close exactly those gaps first, then re-check the whole node contract.
 - Do not commit; the harness owns version control.
+- If you find NECESSARY work outside this node's contract (a missing
+  prerequisite, a broken sibling area, follow-up the objective implies),
+  do NOT do it. Report each item on its own line, anywhere in your final
+  message:
+
+  ```
+  DISCOVERED: <one-line description of the out-of-scope work>
+  ```
+
+  The harness turns these into new graph nodes.
 
 Your final message MUST end with exactly one of:
 
