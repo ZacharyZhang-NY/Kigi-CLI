@@ -93,6 +93,8 @@ pub(crate) use types::*;
 pub use types::{TodoGateDecision, TodoGateReason};
 #[path = "acp_session_impl/goal.rs"]
 mod goal;
+#[path = "acp_session_impl/graph.rs"]
+mod graph;
 #[path = "acp_session_impl/interjection.rs"]
 mod interjection;
 #[path = "acp_session_impl/tool_calls.rs"]
@@ -589,6 +591,14 @@ pub(crate) struct SessionActor {
     /// Goal mode orchestration tracker. Session-scoped state for the
     /// Design-Execute-Verify loop. Modeled after `plan_mode` above.
     pub(crate) goal_tracker: Arc<parking_lot::Mutex<crate::session::goal_tracker::GoalTracker>>,
+    /// Whether graph mode (`/graph`) is enabled for this session (feature
+    /// flag `KIGI_GRAPH`). Availability additionally requires the goal
+    /// harness — graph nodes execute as goals.
+    pub(crate) graph_enabled: bool,
+    /// Graph mode orchestration tracker: the deterministic DAG scheduler
+    /// layered over the goal engine. Modeled after `goal_tracker` above;
+    /// all graph state logic lives in `graph_tracker.rs`.
+    pub(crate) graph_tracker: Arc<parking_lot::Mutex<crate::session::graph_tracker::GraphTracker>>,
     /// `task_id`s of background tasks (and monitors) that originated during
     /// the goal turn — either spawned by the goal model itself or reparented
     /// from a harness verifier/planner subagent on its exit. Their late
@@ -985,6 +995,9 @@ impl SessionActor {
             hooks: self.hook_registry.borrow().is_some(),
             plugins: self.plugin_registry.borrow().is_some(),
             goal,
+            // Graph rides the goal harness: nodes execute as goals, so
+            // `/graph` is only real when `/goal` is.
+            graph: self.graph_enabled && goal,
         }
     }
     /// Names of every tool registered with the session's tool bridge.
@@ -1422,6 +1435,9 @@ mod goal_strategist_e2e_tests;
 #[cfg(test)]
 #[path = "acp_session_tests/goal/goal_summarizer_e2e_tests.rs"]
 mod goal_summarizer_e2e_tests;
+#[cfg(test)]
+#[path = "acp_session_tests/graph/graph_e2e_tests.rs"]
+mod graph_e2e_tests;
 #[cfg(test)]
 #[path = "acp_session_tests/idle_resume_tests.rs"]
 mod idle_resume_tests;

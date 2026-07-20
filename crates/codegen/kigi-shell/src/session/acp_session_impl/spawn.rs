@@ -136,6 +136,7 @@ pub(crate) async fn spawn_session_actor(
     persisted_signals: Option<crate::session::signals::SessionSignals>,
     persisted_plan_mode: Option<crate::session::plan_mode::PlanModeSnapshot>,
     persisted_goal_mode: Option<crate::session::goal_tracker::GoalOrchestration>,
+    persisted_graph_mode: Option<crate::session::graph_tracker::GraphOrchestration>,
     persisted_announcement_state: Option<crate::session::announcement_state::AnnouncementState>,
     memory_config: Option<crate::config::MemoryConfig>,
     feedback_flags: crate::session::feedback_manager::FeedbackFlags,
@@ -150,6 +151,7 @@ pub(crate) async fn spawn_session_actor(
     app_builder_deployer_config: kigi_tools::implementations::kigi::deploy_app::AppBuilderDeployerConfig,
     write_file_enabled: bool,
     goal_enabled: bool,
+    graph_enabled: bool,
     subagents_enabled: bool,
     ask_user_question_enabled: bool,
     client_hooks: crate::extensions::hooks::ClientHooks,
@@ -426,6 +428,15 @@ pub(crate) async fn spawn_session_actor(
             crate::session::goal_tracker::GoalTracker::from_snapshot(session_dir, snapshot)
         } else {
             crate::session::goal_tracker::GoalTracker::new(session_dir)
+        };
+        Arc::new(parking_lot::Mutex::new(tracker))
+    };
+    let graph_tracker = {
+        let session_dir = crate::session::persistence::session_dir(&session_info);
+        let tracker = if let Some(snapshot) = persisted_graph_mode {
+            crate::session::graph_tracker::GraphTracker::from_snapshot(session_dir, snapshot)
+        } else {
+            crate::session::graph_tracker::GraphTracker::new(session_dir)
         };
         Arc::new(parking_lot::Mutex::new(tracker))
     };
@@ -1086,6 +1097,8 @@ pub(crate) async fn spawn_session_actor(
         goal_harness_enabled: std::sync::atomic::AtomicBool::new(false),
         goal_harness_availability_reconciled: std::sync::atomic::AtomicBool::new(false),
         goal_tracker,
+        graph_enabled,
+        graph_tracker,
         goal_turn_task_ids: parking_lot::Mutex::new(std::collections::HashSet::new()),
         goal_continuation_streak: std::sync::atomic::AtomicU32::new(0),
         goal_blocked_streak: std::sync::atomic::AtomicU32::new(0),
@@ -1511,6 +1524,7 @@ pub(crate) async fn spawn_session_on_thread(
     persisted_signals: Option<crate::session::signals::SessionSignals>,
     persisted_plan_mode: Option<crate::session::plan_mode::PlanModeSnapshot>,
     persisted_goal_mode: Option<crate::session::goal_tracker::GoalOrchestration>,
+    persisted_graph_mode: Option<crate::session::graph_tracker::GraphOrchestration>,
     persisted_announcement_state: Option<crate::session::announcement_state::AnnouncementState>,
     memory_config: Option<crate::config::MemoryConfig>,
     feedback_flags: crate::session::feedback_manager::FeedbackFlags,
@@ -1525,6 +1539,7 @@ pub(crate) async fn spawn_session_on_thread(
     app_builder_deployer_config: kigi_tools::implementations::kigi::deploy_app::AppBuilderDeployerConfig,
     write_file_enabled: bool,
     goal_enabled: bool,
+    graph_enabled: bool,
     subagents_enabled: bool,
     ask_user_question_enabled: bool,
     client_hooks: crate::extensions::hooks::ClientHooks,
@@ -1653,6 +1668,7 @@ pub(crate) async fn spawn_session_on_thread(
                     persisted_signals,
                     persisted_plan_mode,
                     persisted_goal_mode,
+                    persisted_graph_mode,
                     persisted_announcement_state,
                     memory_config,
                     feedback_flags,
@@ -1667,6 +1683,7 @@ pub(crate) async fn spawn_session_on_thread(
                     app_builder_deployer_config,
                     write_file_enabled,
                     goal_enabled,
+                    graph_enabled,
                     subagents_enabled,
                     ask_user_question_enabled,
                     client_hooks,

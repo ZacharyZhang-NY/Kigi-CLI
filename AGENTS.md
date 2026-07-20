@@ -56,6 +56,37 @@ Cross-crate test hooks are behind the `test-support` cargo feature
 dependents' `[dev-dependencies]`. Don't expose new test seams as plain
 `#[cfg(test)]` items across crate boundaries.
 
+## Graph mode (`/graph`, post-0.1.x — plan.md in the parent dir)
+
+A deterministic DAG scheduler layered over the goal engine: `/graph
+<objective>` decomposes the objective into nodes (graph planner subagent
+→ Agentproof-style static gate in `graph_plan.rs`), then executes each
+node as one ordinary goal — the agentic loop lives INSIDE the node; the
+edges stay deterministic Rust. The harness appends a terminal
+`gn-final` verification node depending on every planner node.
+
+- Feature flag `KIGI_GRAPH=1` (default off); availability additionally
+  requires the goal harness (`BuiltinGate::Graph`).
+- Key modules (kigi-shell): `session/graph_tracker.rs` (pure state
+  machine; reuses `GoalStatus`/`GoalPhase`/`GoalPauseReason`),
+  `session/graph_plan.rs` (planner-JSON contract + validation + fnv id
+  canonicalization), `session/graph_planner.rs` (planner runner, reuses
+  the goal planner spawn plumbing),
+  `session/acp_session_impl/graph.rs` (orchestration seam).
+- Seam points: `handle_prompt` intercepts GraphSet/GraphResume; the
+  in-turn loop's `EndTurn` arm calls `run_graph_round_end()` to advance
+  nodes within the same turn; goal auto-pauses cascade to the graph in
+  `auto_pause_goal_if_active_inner`; node goals are armed with the
+  REMAINING graph budget so `enforce_goal_token_budget` cascades trips.
+- Persistence: `PersistenceMsg::GraphModeState(Option<..>)` →
+  `<session_dir>/graph/state.json` (`None` tombstones after clear);
+  immutable per-version baselines `graph/graph.baseline.v{N}.json`;
+  per-node goal artifacts archived to `graph/<node_id>/`. Restore
+  demotes `Active`→`UserPaused` and `Running`→`Ready` (re-run is safe:
+  the verifier gates completion).
+- `/goal` and `/graph` are mutually exclusive while the graph owns the
+  engine; e2e suite: `acp_session_tests/graph/graph_e2e_tests.rs`.
+
 ## Milestones (PRD §8.3)
 
 - M0 (done): rename, deletions (voice/telemetry/announcements/marketplace/

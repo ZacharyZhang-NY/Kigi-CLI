@@ -154,7 +154,9 @@ pub enum GoalPauseReason {
 }
 
 impl GoalPauseReason {
-    fn to_status(self) -> GoalStatus {
+    /// Also used by the graph tracker (`graph_tracker.rs`), which reuses
+    /// the goal status vocabulary for graph-level pauses.
+    pub(crate) fn to_status(self) -> GoalStatus {
         match self {
             Self::User => GoalStatus::UserPaused,
             Self::BackOff => GoalStatus::BackOffPaused,
@@ -166,7 +168,8 @@ impl GoalPauseReason {
 
     /// Short, stable label stashed in the `GoalPaused` history entry's
     /// `detail` so the pager's Recent History distinguishes pause causes.
-    fn history_detail(self) -> &'static str {
+    /// Shared with the graph tracker's `GraphPaused` entries.
+    pub(crate) fn history_detail(self) -> &'static str {
         match self {
             Self::User => "user",
             Self::BackOff => "back_off",

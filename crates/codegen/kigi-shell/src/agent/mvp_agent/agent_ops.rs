@@ -1677,6 +1677,7 @@ impl MvpAgent {
             persisted_signals,
             persisted_plan_mode,
             persisted_goal_mode,
+            persisted_graph_mode,
             persisted_announcement_state,
             session_meta,
             model_agent_type,
@@ -2111,6 +2112,7 @@ impl MvpAgent {
         let web_fetch_config = self.prepare_web_fetch_config();
         let write_file_enabled = self.cfg.borrow().resolve_write_file().value;
         let goal_enabled = self.cfg.borrow().resolve_goal().value;
+        let graph_enabled = self.cfg.borrow().resolve_graph().value;
         let subagents_enabled = self.cfg.borrow().subagents_enabled;
         let ask_user_question_enabled = parse_ask_user_question_from_meta(session_meta)
             .unwrap_or_else(|| self.cfg.borrow().resolve_ask_user_question().value);
@@ -2314,6 +2316,7 @@ impl MvpAgent {
                     persisted_signals,
                     persisted_plan_mode,
                     persisted_goal_mode,
+                    persisted_graph_mode,
                     persisted_announcement_state,
                     self.memory_config.clone(),
                     feedback_flags,
@@ -2328,6 +2331,7 @@ impl MvpAgent {
                     app_builder_deployer_config,
                     write_file_enabled,
                     goal_enabled,
+                    graph_enabled,
                     subagents_enabled,
                     ask_user_question_enabled,
                     client_hooks,

@@ -747,16 +747,24 @@ impl SessionActor {
                 ok_end_turn(0, None)
             }
             BuiltinAction::GoalPause => {
+                if self.graph_owns_goal_engine() {
+                    self.send_slash_command_output(
+                        "A graph owns the goal engine. Use /graph pause instead.",
+                    )
+                    .await;
+                    return ok_end_turn(0, None);
+                }
                 let current_tokens = self.chat_state_handle.get_total_tokens().await as i64;
                 use crate::session::goal_tracker::{GoalPauseReason, GoalStatus};
                 let (msg, changed) = {
                     let mut tracker = self.goal_tracker.lock();
                     match tracker.status() {
                         Some(GoalStatus::Active) => {
-                            debug_assert!(
-                                tracker.pause(GoalPauseReason::User),
-                                "Active goal must pause"
-                            );
+                            // Side effect OUTSIDE the assert: debug_assert!
+                            // strips its condition in release builds, which
+                            // would silently skip the pause itself.
+                            let paused = tracker.pause(GoalPauseReason::User);
+                            debug_assert!(paused, "Active goal must pause");
                             ("Goal paused. Use /goal resume to continue.", true)
                         }
                         Some(
@@ -790,26 +798,83 @@ impl SessionActor {
                 unreachable!("GoalResume is intercepted in handle_prompt")
             }
             BuiltinAction::GoalClear => {
-                self.goal_tracker.lock().clear();
-                // `/goal clear` is a deliberate user reset — drop both
-                // streaks so stale counters from the previous goal
-                // can't leak into the next one.
-                self.goal_continuation_streak
-                    .store(0, std::sync::atomic::Ordering::Relaxed);
-                self.goal_blocked_streak
-                    .store(0, std::sync::atomic::Ordering::Relaxed);
-                // Drop goal-turn-origin task ids so a future goal's drain
-                // doesn't suppress the next goal's (or post-goal) tasks.
-                self.goal_turn_task_ids.lock().clear();
-                // Clear per-subagent token records so stale entries
-                // from the previous goal don't leak into the next.
-                self.subagent_token_records.lock().clear();
-                self.clear_pending_classifier_completions();
-                // Emit a cleared notification so the pager drops goal state.
-                let update = crate::session::goal_orchestrator::build_goal_cleared();
-                self.send_xai_notification(update).await;
+                if self.graph_owns_goal_engine() {
+                    self.send_slash_command_output(
+                        "A graph owns the goal engine. Use /graph clear instead.",
+                    )
+                    .await;
+                    return ok_end_turn(0, None);
+                }
+                // `/goal clear` is a deliberate user reset — the shared
+                // helper drops the tracker, both streaks, goal-turn task
+                // ids, per-subagent token records, pending classifier
+                // claims, and notifies the pager. Shared with the graph
+                // node boundary and `/graph clear`.
+                self.reset_goal_engine_state().await;
                 self.send_slash_command_output("Goal cleared.").await;
                 ok_end_turn(0, None)
+            }
+            BuiltinAction::GraphStatus => {
+                let msg = self.graph_status_message().await;
+                self.send_slash_command_output(&msg).await;
+                ok_end_turn(0, None)
+            }
+            BuiltinAction::GraphPause => {
+                use crate::session::goal_tracker::{GoalPauseReason, GoalStatus};
+                let (msg, changed) = {
+                    let mut tracker = self.graph_tracker.lock();
+                    match tracker.status() {
+                        Some(GoalStatus::Active) => {
+                            // Side effect OUTSIDE the assert: debug_assert!
+                            // strips its condition in release builds, which
+                            // would silently skip the pause itself.
+                            let paused = tracker.pause(GoalPauseReason::User);
+                            debug_assert!(paused, "Active graph must pause");
+                            ("Graph paused. Use /graph resume to continue.", true)
+                        }
+                        Some(s) if s.is_paused() => ("Graph is already paused.", false),
+                        Some(GoalStatus::Complete) => ("Graph is already complete.", false),
+                        Some(GoalStatus::BudgetLimited) => ("Graph is budget-limited.", false),
+                        Some(_) | None => ("No graph is currently set.", false),
+                    }
+                };
+                if changed {
+                    // Pause the running node's goal too so the in-turn
+                    // loop stops at the next round boundary.
+                    self.auto_pause_goal_if_active(GoalPauseReason::User).await;
+                    self.persist_graph_state();
+                }
+                self.send_slash_command_output(msg).await;
+                ok_end_turn(0, None)
+            }
+            BuiltinAction::GraphClear => {
+                let had_graph = self.graph_tracker.lock().snapshot().is_some();
+                // Clear the goal engine ONLY when the graph owns it
+                // (Active/paused ⇒ the engine's goal is a node goal). A
+                // terminal graph (Complete/BudgetLimited) may coexist
+                // with an unrelated standalone /goal the user started
+                // afterwards — that goal must survive /graph clear.
+                if self.graph_owns_goal_engine() {
+                    self.reset_goal_engine_state().await;
+                }
+                self.graph_tracker.lock().clear();
+                self.persist_graph_state();
+                self.send_slash_command_output(if had_graph {
+                    "Graph cleared."
+                } else {
+                    "No graph is currently set."
+                })
+                .await;
+                ok_end_turn(0, None)
+            }
+            // GraphSet / GraphResume are intercepted in handle_prompt
+            // (like GoalSet / GoalResume) so a successful setup/resume
+            // flows through to model inference.
+            BuiltinAction::GraphSet { .. } => {
+                unreachable!("GraphSet is intercepted in handle_prompt")
+            }
+            BuiltinAction::GraphResume => {
+                unreachable!("GraphResume is intercepted in handle_prompt")
             }
         }
     }

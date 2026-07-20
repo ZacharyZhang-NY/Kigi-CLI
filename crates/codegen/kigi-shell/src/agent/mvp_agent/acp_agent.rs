@@ -754,6 +754,7 @@ impl acp::Agent for MvpAgent {
                         persisted_signals: None,
                         persisted_plan_mode: None,
                         persisted_goal_mode: None,
+                        persisted_graph_mode: None,
                         persisted_announcement_state: None,
                         session_meta: arguments.meta.as_ref(),
                         model_agent_type: model_agent_type.as_deref(),
@@ -985,6 +986,7 @@ impl acp::Agent for MvpAgent {
             signals: persisted_signals,
             announcement_state: persisted_announcement_state,
             goal_mode_state: _persisted_goal_mode,
+            graph_mode_state: _persisted_graph_mode,
         } = persistence_info;
         let restored_awaiting_plan_approval = persisted_plan_mode
             .as_ref()
@@ -1207,6 +1209,7 @@ impl acp::Agent for MvpAgent {
                         persisted_signals,
                         persisted_plan_mode,
                         persisted_goal_mode: _persisted_goal_mode,
+                        persisted_graph_mode: _persisted_graph_mode,
                         persisted_announcement_state,
                         session_meta: request_meta.as_ref(),
                         model_agent_type: persisted_agent_name.as_deref(),

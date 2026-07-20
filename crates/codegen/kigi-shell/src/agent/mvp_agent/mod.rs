@@ -120,6 +120,7 @@ pub(crate) struct SessionSpawnOptions<'a> {
     pub persisted_signals: Option<crate::session::signals::SessionSignals>,
     pub persisted_plan_mode: Option<crate::session::plan_mode::PlanModeSnapshot>,
     pub persisted_goal_mode: Option<crate::session::goal_tracker::GoalOrchestration>,
+    pub persisted_graph_mode: Option<crate::session::graph_tracker::GraphOrchestration>,
     pub persisted_announcement_state: Option<
         crate::session::announcement_state::AnnouncementState,
     >,
@@ -257,6 +258,7 @@ pub(crate) fn chat_session_spawn_options<'a>(
         persisted_signals: None,
         persisted_plan_mode: None,
         persisted_goal_mode: None,
+        persisted_graph_mode: None,
         persisted_announcement_state: None,
         session_meta,
         model_agent_type,

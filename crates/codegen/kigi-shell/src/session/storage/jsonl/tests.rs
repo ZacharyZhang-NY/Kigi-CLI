@@ -2751,3 +2751,45 @@ async fn load_session_without_updates_survives_merged_chat_line() {
         "resume succeeds; only the merged record is dropped"
     );
 }
+
+#[tokio::test]
+async fn graph_mode_state_round_trips_and_tombstones() {
+    use crate::session::goal_tracker::{GoalPhase, GoalStatus};
+    use crate::session::graph_tracker::{GraphNode, GraphOrchestration, NodeStatus};
+    let tmp = TempDir::new().unwrap();
+    let adapter = JsonlStorageAdapter::with_root(tmp.path().to_path_buf());
+    let info = create_test_info();
+    adapter.init_session(&info, default_model_id()).await.unwrap();
+    let state = GraphOrchestration {
+        graph_id: "g-1".into(),
+        objective: "obj".into(),
+        status: GoalStatus::Active,
+        phase: GoalPhase::Executing,
+        plan_version: 1,
+        nodes: vec![GraphNode {
+            id: "gn-1".into(), title: "T".into(), spec: "S".into(), deps: vec![],
+            status: NodeStatus::Achieved, goal_id: Some("goal-1".into()),
+            rounds: 2, tokens_used: 42, failure: None,
+        }],
+        current_node: None,
+        created_at: "2026-07-20T00:00:00Z".into(),
+        elapsed_ms: 5,
+        token_budget: Some(100),
+        tokens_spent_nodes: 42,
+        history: vec![],
+        pause_message: None,
+    };
+    adapter.write_graph_mode_state(&info, Some(&state)).await.unwrap();
+    let loaded = adapter.load_session_without_updates(&info).await.unwrap();
+    let got = loaded.graph_mode_state.expect("graph state must round-trip");
+    assert_eq!(got.graph_id, "g-1");
+    assert_eq!(got.nodes.len(), 1);
+    assert_eq!(got.nodes[0].status, NodeStatus::Achieved);
+    assert_eq!(got.nodes[0].tokens_used, 42);
+    assert_eq!(got.token_budget, Some(100));
+    // Tombstone removes the file; a second tombstone is not an error.
+    adapter.write_graph_mode_state(&info, None).await.unwrap();
+    adapter.write_graph_mode_state(&info, None).await.unwrap();
+    let after = adapter.load_session_without_updates(&info).await.unwrap();
+    assert!(after.graph_mode_state.is_none(), "cleared graph must not resurrect");
+}

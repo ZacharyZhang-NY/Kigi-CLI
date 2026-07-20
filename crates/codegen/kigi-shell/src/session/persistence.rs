@@ -335,6 +335,10 @@ pub enum PersistenceMsg {
     AnnouncementState(crate::session::announcement_state::AnnouncementState),
     /// Persist goal mode orchestration state.
     GoalModeState(crate::session::goal_tracker::GoalOrchestration),
+    /// Persist graph mode orchestration state; `None` tombstones the
+    /// state file after `/graph clear` so a cleared graph can never
+    /// resurrect on session restore.
+    GraphModeState(Option<crate::session::graph_tracker::GraphOrchestration>),
     /// Persist a local feedback entry (user feedback)
     Feedback(LocalFeedbackEntry),
     /// Persist a /btw side question entry
@@ -1592,6 +1596,15 @@ impl SessionPersistence {
                         tracing::warn!(?e, "failed to write goal mode state");
                     }
                 }
+                PersistenceMsg::GraphModeState(state) => {
+                    if let Err(e) = self
+                        .storage
+                        .write_graph_mode_state(&self.info, state.as_ref())
+                        .await
+                    {
+                        tracing::warn!(?e, "failed to write graph mode state");
+                    }
+                }
                 PersistenceMsg::ContentChunk(content_chunks) => {
                     let content_part = content_chunks
                         .content_chunks
@@ -2095,6 +2108,8 @@ pub struct PersistedInfoLight {
     pub announcement_state: Option<crate::session::announcement_state::AnnouncementState>,
     /// Persisted goal mode orchestration state (None for sessions without goal mode)
     pub goal_mode_state: Option<crate::session::goal_tracker::GoalOrchestration>,
+    /// Persisted graph mode orchestration state (None for sessions without graph mode)
+    pub graph_mode_state: Option<crate::session::graph_tracker::GraphOrchestration>,
 }
 
 /// Loads a session for streaming updates without reading them into memory.
@@ -2131,6 +2146,7 @@ pub(crate) async fn load_light(
         signals: persisted.signals,
         announcement_state: persisted.announcement_state,
         goal_mode_state: persisted.goal_mode_state,
+        graph_mode_state: persisted.graph_mode_state,
     };
 
     let (tx, rx) = mpsc::unbounded_channel::<PersistenceMsg>();

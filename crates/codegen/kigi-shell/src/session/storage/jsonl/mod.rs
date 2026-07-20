@@ -102,6 +102,9 @@ impl JsonlStorageAdapter {
     fn goal_mode_state_file(&self, info: &Info) -> PathBuf {
         self.session_dir(info).join("goal").join("state.json")
     }
+    fn graph_mode_state_file(&self, info: &Info) -> PathBuf {
+        self.session_dir(info).join("graph").join("state.json")
+    }
     fn rewind_points_file(&self, info: &Info) -> PathBuf {
         self.session_dir(info).join("rewind_points.jsonl")
     }
@@ -1095,6 +1098,29 @@ impl StorageAdapter for JsonlStorageAdapter {
         tokio::fs::write(&tmp, json).await?;
         tokio::fs::rename(&tmp, &target).await
     }
+    async fn write_graph_mode_state(
+        &self,
+        info: &Info,
+        state: Option<&crate::session::graph_tracker::GraphOrchestration>,
+    ) -> io::Result<()> {
+        let target = self.graph_mode_state_file(info);
+        let Some(state) = state else {
+            // Tombstone: a cleared graph must not resurrect on restore.
+            return match tokio::fs::remove_file(&target).await {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+                Err(e) => Err(e),
+            };
+        };
+        let json = serde_json::to_vec_pretty(state)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        if let Some(parent) = target.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        let tmp = target.with_extension("json.tmp");
+        tokio::fs::write(&tmp, json).await?;
+        tokio::fs::rename(&tmp, &target).await
+    }
     async fn load_session(&self, info: &Info) -> io::Result<PersistedData> {
         let summary = self.read_summary_sync(info)?;
         let chat_history =
@@ -1116,6 +1142,10 @@ impl StorageAdapter for JsonlStorageAdapter {
             .read_optional_json_sync::<crate::session::goal_tracker::GoalOrchestration>(
                 &self.goal_mode_state_file(info),
             )?;
+        let graph_mode_state = self
+            .read_optional_json_sync::<crate::session::graph_tracker::GraphOrchestration>(
+                &self.graph_mode_state_file(info),
+            )?;
         let rewind_points = self.read_jsonl::<RewindPoint>(self.rewind_points_file(info))?;
         let result = PersistedData {
             summary,
@@ -1127,6 +1157,7 @@ impl StorageAdapter for JsonlStorageAdapter {
             signals,
             announcement_state,
             goal_mode_state,
+            graph_mode_state,
         };
         tracing::info!(
             session_id = % info.id, num_chat_messages = result.chat_history.len(),
@@ -1164,6 +1195,10 @@ impl StorageAdapter for JsonlStorageAdapter {
             .read_optional_json_sync::<crate::session::goal_tracker::GoalOrchestration>(
                 &self.goal_mode_state_file(info),
             )?;
+        let graph_mode_state = self
+            .read_optional_json_sync::<crate::session::graph_tracker::GraphOrchestration>(
+                &self.graph_mode_state_file(info),
+            )?;
         let result = super::PersistedDataLight {
             summary,
             chat_history,
@@ -1172,6 +1207,7 @@ impl StorageAdapter for JsonlStorageAdapter {
             signals,
             announcement_state,
             goal_mode_state,
+            graph_mode_state,
         };
         tracing::info!(
             session_id = % info.id, num_chat_messages = result.chat_history.len(),

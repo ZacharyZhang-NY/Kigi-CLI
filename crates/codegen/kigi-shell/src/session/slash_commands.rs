@@ -42,6 +42,10 @@ pub(crate) enum BuiltinGate {
     Hooks,
     Plugins,
     Goal,
+    /// `resolve_graph()` feature flag is on AND the goal harness is
+    /// available (graph nodes execute as goals, so `/graph` needs
+    /// everything `/goal` needs).
+    Graph,
 }
 
 /// All built-in slash commands. Order here = display order in autocomplete.
@@ -256,6 +260,31 @@ pub(super) const BUILTIN_COMMANDS: &[BuiltinCommand] = &[
             }
         },
     },
+    BuiltinCommand {
+        name: "graph",
+        description: "Decompose an objective into a dependency graph of autonomous goals",
+        argument_hint: Some("<objective> [--budget <tokens>] | status | pause | resume | clear"),
+        aliases: &[],
+        gate: BuiltinGate::Graph,
+        resolve: |args| {
+            let trimmed = args.trim();
+            match trimmed.to_lowercase().as_str() {
+                // `show` upgrades to a rendered DAG view in G5; until then
+                // it is an alias for the status tree.
+                "" | "status" | "show" => BuiltinAction::GraphStatus,
+                "pause" => BuiltinAction::GraphPause,
+                "resume" => BuiltinAction::GraphResume,
+                "clear" => BuiltinAction::GraphClear,
+                _ => {
+                    let (objective, token_budget) = parse_goal_budget(trimmed);
+                    BuiltinAction::GraphSet {
+                        objective,
+                        token_budget,
+                    }
+                }
+            }
+        },
+    },
 ];
 
 /// Split a trailing `--budget <tokens>` flag off a `/goal` objective.
@@ -387,6 +416,9 @@ pub(crate) struct CommandAvailability {
     pub hooks: bool,
     pub plugins: bool,
     pub goal: bool,
+    /// `/graph` gate: the graph feature flag AND the goal harness (nodes
+    /// execute as goals) are both available.
+    pub graph: bool,
 }
 
 impl CommandAvailability {
@@ -401,6 +433,7 @@ impl CommandAvailability {
             BuiltinGate::Hooks => self.hooks,
             BuiltinGate::Plugins => self.plugins,
             BuiltinGate::Goal => self.goal,
+            BuiltinGate::Graph => self.graph,
         }
     }
 
@@ -416,6 +449,7 @@ impl CommandAvailability {
             hooks: true,
             plugins: true,
             goal: true,
+            graph: true,
         }
     }
 }
@@ -660,6 +694,14 @@ pub(super) enum BuiltinAction {
     GoalPause,
     GoalResume,
     GoalClear,
+    GraphSet {
+        objective: String,
+        token_budget: Option<i64>,
+    },
+    GraphStatus,
+    GraphPause,
+    GraphResume,
+    GraphClear,
 }
 
 impl BuiltinAction {
@@ -692,6 +734,11 @@ impl BuiltinAction {
             | BuiltinAction::GoalPause
             | BuiltinAction::GoalResume
             | BuiltinAction::GoalClear => "goal",
+            BuiltinAction::GraphSet { .. }
+            | BuiltinAction::GraphStatus
+            | BuiltinAction::GraphPause
+            | BuiltinAction::GraphResume
+            | BuiltinAction::GraphClear => "graph",
         }
     }
 
@@ -724,6 +771,11 @@ impl BuiltinAction {
             | BuiltinAction::GoalPause
             | BuiltinAction::GoalResume
             | BuiltinAction::GoalClear => false,
+            BuiltinAction::GraphSet { .. } => true,
+            BuiltinAction::GraphStatus
+            | BuiltinAction::GraphPause
+            | BuiltinAction::GraphResume
+            | BuiltinAction::GraphClear => false,
         }
     }
 }
@@ -1523,6 +1575,7 @@ mod tests {
                 "session-info",
                 "feedback",
                 "goal",
+                "graph",
                 "loop",
                 "commit",
                 "deploy",
@@ -1604,6 +1657,69 @@ mod tests {
             ..CommandAvailability::all_enabled()
         });
         assert!(!names.iter().any(|n| n == "goal"), "got: {names:?}");
+    }
+
+    #[test]
+    fn availability_filters_graph_command() {
+        let names = advertised_names(CommandAvailability {
+            graph: false,
+            ..CommandAvailability::all_enabled()
+        });
+        assert!(!names.iter().any(|n| n == "graph"), "got: {names:?}");
+    }
+
+    #[test]
+    fn graph_does_not_resolve_when_gate_off() {
+        let availability = CommandAvailability {
+            graph: false,
+            ..CommandAvailability::all_enabled()
+        };
+        assert!(
+            resolve(
+                vec![text_block("/graph status")],
+                &[],
+                availability,
+                SkillSlashRewrite::default(),
+            )
+            .is_ok(),
+            "expected pass-through (Ok), got an outcome",
+        );
+    }
+
+    #[test]
+    fn graph_resolves_subcommands_and_budget() {
+        let set = resolve_builtin("graph", "ship the feature --budget 5000")
+            .expect("/graph must resolve");
+        match set {
+            BuiltinAction::GraphSet {
+                objective,
+                token_budget,
+            } => {
+                assert_eq!(objective, "ship the feature");
+                assert_eq!(token_budget, Some(5000));
+            }
+            other => panic!("expected GraphSet, got /{}", other.command_name()),
+        }
+        assert!(matches!(
+            resolve_builtin("graph", ""),
+            Some(BuiltinAction::GraphStatus)
+        ));
+        assert!(matches!(
+            resolve_builtin("graph", "show"),
+            Some(BuiltinAction::GraphStatus)
+        ));
+        assert!(matches!(
+            resolve_builtin("graph", "pause"),
+            Some(BuiltinAction::GraphPause)
+        ));
+        assert!(matches!(
+            resolve_builtin("graph", "resume"),
+            Some(BuiltinAction::GraphResume)
+        ));
+        assert!(matches!(
+            resolve_builtin("graph", "clear"),
+            Some(BuiltinAction::GraphClear)
+        ));
     }
 
     #[test]
@@ -1718,6 +1834,7 @@ mod tests {
             "memory",
             "feedback",
             "goal",
+            "graph",
             "hooks-list",
             "plugins",
             "reload-plugins",
@@ -2074,6 +2191,7 @@ mod tests {
             "dream",
             "feedback",
             "goal",
+            "graph",
             "loop",
             "hooks-list",
             "hooks-trust",

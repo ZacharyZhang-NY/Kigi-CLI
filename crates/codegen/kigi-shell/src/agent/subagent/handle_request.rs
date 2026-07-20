@@ -1036,6 +1036,7 @@ pub(crate) async fn handle_subagent_request(
             None,
             None,
             None,
+            None,
             if verbatim_mirror_fork {
                 None
             } else if let Some(scope) = agent_memory_scope {
@@ -1069,6 +1070,8 @@ pub(crate) async fn handle_subagent_request(
             ctx.app_builder_deployer_config.clone(),
             ctx.write_file_enabled,
             ctx.goal_enabled,
+            // Graph mode is a depth-0 harness; child sessions never drive it.
+            false,
             true,
             ctx.ask_user_question_enabled,
             ctx.client_hooks.clone(),

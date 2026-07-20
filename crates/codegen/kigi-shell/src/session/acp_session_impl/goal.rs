@@ -1904,6 +1904,19 @@ impl SessionActor {
             tokens_used,
             finished_marginal,
         );
+        // Graph cascade: node goals are armed with the REMAINING graph
+        // budget, so a node-level budget trip is the graph-level trip.
+        if self.graph_harness_enabled() && self.graph_tracker.lock().is_active() {
+            tracing::warn!("graph: node goal budget trip cascades to graph BudgetLimited");
+            self.graph_tracker.lock().budget_limit();
+            self.persist_graph_state();
+            self.send_slash_command_output(&format!(
+                "Graph token budget reached ({tokens_used} tokens this node) — graph \
+                 stopped. Use /graph clear, then /graph <objective> to start a new one."
+            ))
+            .await;
+            return true;
+        }
         self.send_slash_command_output(&format!(
             "Goal token budget reached ({tokens_used} of {budget} tokens) — goal \
              stopped. Use /goal clear, then /goal <objective> to start a new one."
@@ -2265,30 +2278,57 @@ impl SessionActor {
         message: Option<String>,
     ) -> bool {
         let current_tokens = self.chat_state_handle.get_total_tokens().await as i64;
-        {
+        let graph_message = message.clone();
+        let goal_paused = {
             let mut tracker = self.goal_tracker.lock();
-            if tracker.status() != Some(crate::session::goal_tracker::GoalStatus::Active) {
-                return false;
+            if tracker.status() == Some(crate::session::goal_tracker::GoalStatus::Active) {
+                // Active is guaranteed here, so the transition succeeds.
+                match message {
+                    Some(msg) => tracker.pause_with_message(reason, msg),
+                    None => tracker.pause(reason),
+                };
+                true
+            } else {
+                false
             }
-            // The early-return above guarantees `Active`, so the pause
-            // transition always succeeds here.
-            match message {
-                Some(msg) => tracker.pause_with_message(reason, msg),
-                None => tracker.pause(reason),
-            };
+        };
+        if goal_paused {
+            self.clear_pending_classifier_completions();
+            let (tokens_used, finished_marginal) = self.goal_tokens(current_tokens);
+            let notify = self.goal_notify_sender();
+            notify.emit_goal_updated(
+                &mut self.goal_tracker.lock(),
+                tokens_used,
+                finished_marginal,
+            );
+            self.emit_event(crate::session::events::Event::GoalAutoPaused {
+                reason: reason.into(),
+            });
         }
-        self.clear_pending_classifier_completions();
-        let (tokens_used, finished_marginal) = self.goal_tokens(current_tokens);
-        let notify = self.goal_notify_sender();
-        notify.emit_goal_updated(
-            &mut self.goal_tracker.lock(),
-            tokens_used,
-            finished_marginal,
-        );
-        self.emit_event(crate::session::events::Event::GoalAutoPaused {
-            reason: reason.into(),
-        });
-        true
+        // Graph cascade chokepoint: every goal auto-pause path funnels
+        // through here. It runs REGARDLESS of whether a goal pause
+        // applied — a cancel can land while the graph is Active with no
+        // node goal in the engine (during graph planning, or on the node
+        // boundary between engine reset and goal creation), and the
+        // graph must still lose its self-driving status. `pause` is
+        // Active-only, so double cascades are idempotent.
+        if self.graph_harness_enabled() && self.graph_tracker.lock().is_active() {
+            let node = self
+                .graph_tracker
+                .lock()
+                .current_node_id()
+                .map(str::to_owned);
+            tracing::info!(reason = ?reason, node = ?node, goal_paused, "graph: cascading pause to graph");
+            let detail = match (&node, &graph_message) {
+                (Some(n), Some(msg)) => format!("Node {n} paused: {msg}"),
+                (Some(n), None) => format!("Node {n} paused ({reason:?})"),
+                (None, Some(msg)) => format!("Paused with no node goal in flight: {msg}"),
+                (None, None) => format!("Paused with no node goal in flight ({reason:?})"),
+            };
+            self.graph_tracker.lock().pause_with_message(reason, detail);
+            self.persist_graph_state();
+        }
+        goal_paused
     }
 
     /// Match the last assistant message text (via

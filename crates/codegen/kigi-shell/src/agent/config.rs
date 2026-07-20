@@ -1912,6 +1912,13 @@ impl Config {
             .default(true)
             .resolve()
     }
+    /// Graph mode (`/graph`) master switch. Default OFF — gray-released via
+    /// `KIGI_GRAPH=1` only (plan.md G0 gate). Graph mode additionally
+    /// requires the goal harness (nodes execute as goals), enforced at
+    /// availability time, not here.
+    pub(crate) fn resolve_graph(&self) -> Resolved<bool> {
+        BoolFlag::env("KIGI_GRAPH").default(false).resolve()
+    }
     /// Classifier, planner, and summary all default to goal mode itself: when
     /// `/goal` is on they are on unless config/env/remote says otherwise.
     /// `goal_enabled` is the session's already-resolved master switch (the same

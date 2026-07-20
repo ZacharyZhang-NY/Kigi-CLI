@@ -305,15 +305,57 @@ impl SessionActor {
                         objective,
                         token_budget,
                     } => {
+                        // The graph owns the goal engine while set: a
+                        // manual /goal would corrupt the running node.
+                        if self.graph_owns_goal_engine() {
+                            self.send_slash_command_output(
+                                "A graph owns the goal engine. Use /graph status, or /graph \
+                                 clear before /goal.",
+                            )
+                            .await;
+                            return ok_end_turn(0, None);
+                        }
                         let reminder = self.setup_goal(&objective, token_budget).await;
                         vec![text_block(reminder), text_block(objective)]
                     }
-                    BuiltinAction::GoalResume => match self.resume_goal().await {
-                        GoalResumeOutcome::Inference { reminder, user_msg } => {
+                    BuiltinAction::GoalResume => {
+                        if self.graph_owns_goal_engine() {
+                            self.send_slash_command_output(
+                                "A graph owns the goal engine. Use /graph resume instead.",
+                            )
+                            .await;
+                            return ok_end_turn(0, None);
+                        }
+                        match self.resume_goal().await {
+                            GoalResumeOutcome::Inference { reminder, user_msg } => {
+                                self.send_slash_command_output(&user_msg).await;
+                                vec![text_block(reminder)]
+                            }
+                            GoalResumeOutcome::Message(msg) => {
+                                self.send_slash_command_output(&msg).await;
+                                return ok_end_turn(0, None);
+                            }
+                        }
+                    }
+                    BuiltinAction::GraphSet {
+                        objective,
+                        token_budget,
+                    } => match self.setup_graph(&objective, token_budget).await {
+                        super::graph::GraphSetupOutcome::Inference { reminder, user_msg } => {
+                            self.send_slash_command_output(&user_msg).await;
+                            vec![text_block(reminder), text_block(objective)]
+                        }
+                        super::graph::GraphSetupOutcome::Message(msg) => {
+                            self.send_slash_command_output(&msg).await;
+                            return ok_end_turn(0, None);
+                        }
+                    },
+                    BuiltinAction::GraphResume => match self.resume_graph().await {
+                        super::graph::GraphSetupOutcome::Inference { reminder, user_msg } => {
                             self.send_slash_command_output(&user_msg).await;
                             vec![text_block(reminder)]
                         }
-                        GoalResumeOutcome::Message(msg) => {
+                        super::graph::GraphSetupOutcome::Message(msg) => {
                             self.send_slash_command_output(&msg).await;
                             return ok_end_turn(0, None);
                         }
@@ -688,13 +730,35 @@ impl SessionActor {
                     self.goal_tracker.lock().status(),
                 );
                 if !goal_active {
-                    break round;
+                    // The node goal may have resolved MID-round without a
+                    // graph cascade (e.g. a classifier-disabled completion
+                    // applied by the mid-turn drainer). Consult the graph
+                    // seam before ending the turn so the graph advances or
+                    // settles loudly instead of stranding Active forever.
+                    match self.run_graph_round_end().await {
+                        Some(node_reminder) => {
+                            self.inject_goal_continuation_message(node_reminder).await;
+                            continue;
+                        }
+                        None => break round,
+                    }
                 }
                 match self.run_goal_round_end().await {
                     GoalRoundDecision::Continue(directive) => {
                         self.inject_goal_continuation_message(directive).await;
                     }
-                    GoalRoundDecision::EndTurn => break round,
+                    GoalRoundDecision::EndTurn => {
+                        // Graph seam: when the node goal resolved, the
+                        // graph may advance to the next node inside the
+                        // SAME turn (multi-loop closed loop). None ends
+                        // the turn for real (graph done/paused/absent).
+                        match self.run_graph_round_end().await {
+                            Some(node_reminder) => {
+                                self.inject_goal_continuation_message(node_reminder).await;
+                            }
+                            None => break round,
+                        }
+                    }
                 }
             }
         };

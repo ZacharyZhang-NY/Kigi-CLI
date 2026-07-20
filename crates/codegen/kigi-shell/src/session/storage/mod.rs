@@ -271,6 +271,8 @@ pub struct PersistedData {
     pub announcement_state: Option<crate::session::announcement_state::AnnouncementState>,
     /// Persisted goal mode orchestration state (None for sessions without goal mode)
     pub goal_mode_state: Option<crate::session::goal_tracker::GoalOrchestration>,
+    /// Persisted graph mode orchestration state (None for sessions without graph mode)
+    pub graph_mode_state: Option<crate::session::graph_tracker::GraphOrchestration>,
 }
 
 /// Persisted data WITHOUT updates - for memory-efficient session loading
@@ -288,6 +290,8 @@ pub struct PersistedDataLight {
     pub announcement_state: Option<crate::session::announcement_state::AnnouncementState>,
     /// Persisted goal mode orchestration state (None for sessions without goal mode)
     pub goal_mode_state: Option<crate::session::goal_tracker::GoalOrchestration>,
+    /// Persisted graph mode orchestration state (None for sessions without graph mode)
+    pub graph_mode_state: Option<crate::session::graph_tracker::GraphOrchestration>,
 }
 
 /// Result of copying session data
@@ -593,6 +597,14 @@ pub trait StorageAdapter: Send + Sync {
         &self,
         info: &Info,
         state: &crate::session::goal_tracker::GoalOrchestration,
+    ) -> io::Result<()>;
+
+    /// Write/update the graph mode orchestration state. `None` removes
+    /// the state file (tombstone after `/graph clear`).
+    async fn write_graph_mode_state(
+        &self,
+        info: &Info,
+        state: Option<&crate::session::graph_tracker::GraphOrchestration>,
     ) -> io::Result<()>;
 
     /// Load all persisted data for a session
