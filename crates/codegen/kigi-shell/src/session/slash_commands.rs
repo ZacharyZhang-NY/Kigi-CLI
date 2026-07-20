@@ -263,7 +263,9 @@ pub(super) const BUILTIN_COMMANDS: &[BuiltinCommand] = &[
     BuiltinCommand {
         name: "graph",
         description: "Decompose an objective into a dependency graph of autonomous goals",
-        argument_hint: Some("<objective> [--budget <tokens>] | status | pause | resume | clear"),
+        argument_hint: Some(
+            "<objective> [--budget <tokens>] | status | pause | resume [--budget <tokens>] | clear",
+        ),
         aliases: &[],
         gate: BuiltinGate::Graph,
         resolve: |args| {
@@ -273,9 +275,27 @@ pub(super) const BUILTIN_COMMANDS: &[BuiltinCommand] = &[
                 // it is an alias for the status tree.
                 "" | "status" | "show" => BuiltinAction::GraphStatus,
                 "pause" => BuiltinAction::GraphPause,
-                "resume" => BuiltinAction::GraphResume,
+                "resume" => BuiltinAction::GraphResume { extra_budget: None },
                 "clear" => BuiltinAction::GraphClear,
                 _ => {
+                    // ANY input starting with `resume` is a resume attempt
+                    // and must NEVER fall through to GraphSet — a typo'd
+                    // top-up would otherwise silently replace a resumable
+                    // BudgetLimited graph. Well-formed `resume --budget
+                    // <tokens>` (case-insensitive keywords) carries the
+                    // top-up; malformed variants resolve to a plain
+                    // resume, whose BudgetLimited arm prints the usage.
+                    let lower = trimmed.to_lowercase();
+                    if let Some(rest) = lower.strip_prefix("resume") {
+                        let extra_budget = rest
+                            .trim()
+                            .strip_prefix("--budget")
+                            .map(str::trim)
+                            .filter(|v| !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()))
+                            .and_then(|v| v.parse::<i64>().ok())
+                            .filter(|extra| *extra > 0);
+                        return BuiltinAction::GraphResume { extra_budget };
+                    }
                     let (objective, token_budget) = parse_goal_budget(trimmed);
                     BuiltinAction::GraphSet {
                         objective,
@@ -700,7 +720,9 @@ pub(super) enum BuiltinAction {
     },
     GraphStatus,
     GraphPause,
-    GraphResume,
+    GraphResume {
+        extra_budget: Option<i64>,
+    },
     GraphClear,
 }
 
@@ -737,7 +759,7 @@ impl BuiltinAction {
             BuiltinAction::GraphSet { .. }
             | BuiltinAction::GraphStatus
             | BuiltinAction::GraphPause
-            | BuiltinAction::GraphResume
+            | BuiltinAction::GraphResume { .. }
             | BuiltinAction::GraphClear => "graph",
         }
     }
@@ -772,10 +794,10 @@ impl BuiltinAction {
             | BuiltinAction::GoalResume
             | BuiltinAction::GoalClear => false,
             BuiltinAction::GraphSet { .. } => true,
-            BuiltinAction::GraphStatus
-            | BuiltinAction::GraphPause
-            | BuiltinAction::GraphResume
-            | BuiltinAction::GraphClear => false,
+            BuiltinAction::GraphResume { extra_budget } => extra_budget.is_some(),
+            BuiltinAction::GraphStatus | BuiltinAction::GraphPause | BuiltinAction::GraphClear => {
+                false
+            }
         }
     }
 }
@@ -1714,7 +1736,26 @@ mod tests {
         ));
         assert!(matches!(
             resolve_builtin("graph", "resume"),
-            Some(BuiltinAction::GraphResume)
+            Some(BuiltinAction::GraphResume { extra_budget: None })
+        ));
+        assert!(matches!(
+            resolve_builtin("graph", "resume --budget 800"),
+            Some(BuiltinAction::GraphResume {
+                extra_budget: Some(800)
+            })
+        ));
+        // Malformed top-ups resolve to a PLAIN resume — never to
+        // GraphSet, which would silently replace a resumable graph; the
+        // BudgetLimited resume arm then prints the usage hint.
+        assert!(matches!(
+            resolve_builtin("graph", "resume --budget nope"),
+            Some(BuiltinAction::GraphResume { extra_budget: None })
+        ));
+        assert!(matches!(
+            resolve_builtin("graph", "Resume --Budget 800"),
+            Some(BuiltinAction::GraphResume {
+                extra_budget: Some(800)
+            })
         ));
         assert!(matches!(
             resolve_builtin("graph", "clear"),

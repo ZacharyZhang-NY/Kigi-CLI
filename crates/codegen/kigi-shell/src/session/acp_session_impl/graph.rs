@@ -55,6 +55,98 @@ pub(super) fn node_goal_objective(
     )
 }
 
+/// Snake-case wire form of a graph/goal status (matches the
+/// `GoalUpdated` vocabulary the pager already parses).
+fn graph_status_str(status: GoalStatus) -> &'static str {
+    match status {
+        GoalStatus::Active => "active",
+        GoalStatus::UserPaused => "user_paused",
+        GoalStatus::BackOffPaused => "back_off_paused",
+        GoalStatus::NoProgressPaused => "no_progress_paused",
+        GoalStatus::InfraPaused => "infra_paused",
+        GoalStatus::Blocked => "blocked",
+        GoalStatus::BudgetLimited => "budget_limited",
+        GoalStatus::Complete => "complete",
+    }
+}
+
+fn graph_event_as_str(event: &super::super::graph_tracker::GraphEvent) -> &'static str {
+    use super::super::graph_tracker::GraphEvent;
+    match event {
+        GraphEvent::GraphCreated => "graph_created",
+        GraphEvent::PlanningStarted => "planning_started",
+        GraphEvent::PlanningCompleted => "planning_completed",
+        GraphEvent::PlanningFailed => "planning_failed",
+        GraphEvent::NodeStarted => "node_started",
+        GraphEvent::NodeAchieved => "node_achieved",
+        GraphEvent::NodeFailed => "node_failed",
+        GraphEvent::GraphPaused => "graph_paused",
+        GraphEvent::GraphResumed => "graph_resumed",
+        GraphEvent::GraphCompleted => "graph_completed",
+        GraphEvent::GraphCleared => "graph_cleared",
+        GraphEvent::BudgetExceeded => "budget_exceeded",
+        GraphEvent::Unknown => "unknown",
+    }
+}
+
+/// Build the pager-facing `GraphUpdated` badge payload from a snapshot.
+pub(crate) fn build_graph_updated(
+    state: &super::super::graph_tracker::GraphOrchestration,
+) -> crate::extensions::notification::SessionUpdate {
+    use super::super::goal_tracker::GoalPhase;
+    let count = |s: NodeStatus| state.nodes.iter().filter(|n| n.status == s).count() as u32;
+    let current = state
+        .current_node
+        .as_deref()
+        .and_then(|id| state.nodes.iter().find(|n| n.id == id));
+    crate::extensions::notification::SessionUpdate::GraphUpdated {
+        graph_id: state.graph_id.clone(),
+        objective: state.objective.clone(),
+        status: graph_status_str(state.status).to_owned(),
+        phase: match state.phase {
+            GoalPhase::Idle => "idle",
+            GoalPhase::Planning => "planning",
+            GoalPhase::Executing => "executing",
+        }
+        .to_owned(),
+        plan_version: state.plan_version,
+        total_nodes: state.nodes.len() as u32,
+        achieved_nodes: count(NodeStatus::Achieved),
+        failed_nodes: count(NodeStatus::Failed) + count(NodeStatus::Blocked),
+        running_nodes: count(NodeStatus::Running) + count(NodeStatus::Verifying),
+        current_node: current.map(|n| n.id.clone()),
+        current_node_title: current.map(|n| n.title.clone()),
+        token_budget: state.token_budget,
+        tokens_spent: state.tokens_spent_nodes,
+        last_event: state
+            .history
+            .last()
+            .map(|e| graph_event_as_str(&e.event).to_owned()),
+        pause_message: state.pause_message.clone(),
+    }
+}
+
+/// `status: "cleared"` sentinel — the pager drops its graph state.
+pub(crate) fn build_graph_cleared() -> crate::extensions::notification::SessionUpdate {
+    crate::extensions::notification::SessionUpdate::GraphUpdated {
+        graph_id: String::new(),
+        objective: String::new(),
+        status: "cleared".to_owned(),
+        phase: "idle".to_owned(),
+        plan_version: 0,
+        total_nodes: 0,
+        achieved_nodes: 0,
+        failed_nodes: 0,
+        running_nodes: 0,
+        current_node: None,
+        current_node_title: None,
+        token_budget: None,
+        tokens_spent: 0,
+        last_event: None,
+        pause_message: None,
+    }
+}
+
 impl SessionActor {
     /// Graph feature flag AND the goal harness (nodes execute as goals).
     pub(super) fn graph_harness_enabled(&self) -> bool {
@@ -62,13 +154,21 @@ impl SessionActor {
     }
 
     /// Send the current graph snapshot (or a tombstone after `clear`) to
-    /// the persistence actor. Every graph transition is a checkpoint.
+    /// the persistence actor, AND notify the pager: every graph
+    /// transition is both a checkpoint and a `GraphUpdated` badge tick
+    /// (single chokepoint — no transition can persist without also
+    /// updating the UI, and vice versa).
     pub(crate) fn persist_graph_state(&self) {
         let snapshot = self.graph_tracker.lock().snapshot().cloned();
+        let update = match &snapshot {
+            Some(state) => build_graph_updated(state),
+            None => build_graph_cleared(),
+        };
         let _ = self
             .notifications
             .persistence_tx
             .send(PersistenceMsg::GraphModeState(snapshot));
+        self.goal_notify_sender().send_update(update);
     }
 
     /// True when the graph occupies the goal engine (any non-terminal
@@ -97,9 +197,12 @@ impl SessionActor {
                 );
             }
             let graph_status = self.graph_tracker.lock().status();
-            if matches!(graph_status, Some(s) if s == GoalStatus::Active || s.is_paused()) {
+            // Refuse over ANYTHING non-Complete — including BudgetLimited,
+            // which is resumable and must never be silently replaced.
+            if matches!(graph_status, Some(s) if s != GoalStatus::Complete) {
                 return GraphSetupOutcome::Message(
-                    "A graph is already set. Use /graph status, /graph resume, or /graph clear."
+                    "A graph is already set. Use /graph status, /graph resume \
+                     [--budget <tokens>], or /graph clear."
                         .to_owned(),
                 );
             }
@@ -282,7 +385,8 @@ impl SessionActor {
             self.graph_tracker.lock().budget_limit();
             self.persist_graph_state();
             self.send_slash_command_output(
-                "Graph token budget exhausted. Use /graph clear, then /graph <objective>.",
+                "Graph token budget exhausted. Top up with /graph resume --budget <tokens>, \
+                 or /graph clear to abandon.",
             )
             .await;
             return None;
@@ -347,9 +451,21 @@ impl SessionActor {
                 // Node goals are armed with the remaining graph budget,
                 // so a node-level trip IS the graph-level trip. The
                 // enforce-side cascade normally handles this; mirroring
-                // here is idempotent (budget_limit is Active-only).
+                // here is idempotent (budget_limit is Active-only), and
+                // the two charge sites are mutually exclusive with it.
                 tracing::warn!("graph: node goal budget-limited; graph budget-limited");
-                self.graph_tracker.lock().budget_limit();
+                let current_tokens = self.chat_state_handle.get_total_tokens().await as i64;
+                let node_tokens = self.goal_tokens_used(current_tokens);
+                {
+                    let mut tracker = self.graph_tracker.lock();
+                    // Budget integrity: the tripped node's partial burn
+                    // was still spent — charge it before the demotion
+                    // clears current_node.
+                    if let Some(node_id) = tracker.current_node_id().map(str::to_owned) {
+                        tracker.charge_node_tokens(&node_id, node_tokens);
+                    }
+                    tracker.budget_limit();
+                }
                 self.persist_graph_state();
                 None
             }
@@ -454,7 +570,8 @@ impl SessionActor {
                 self.graph_tracker.lock().budget_limit();
                 self.persist_graph_state();
                 self.send_slash_command_output(
-                    "Graph token budget exhausted. Use /graph clear, then /graph <objective>.",
+                    "Graph token budget exhausted. Top up with /graph resume --budget <tokens>, \
+                 or /graph clear to abandon.",
                 )
                 .await;
                 return None;
@@ -614,7 +731,7 @@ impl SessionActor {
     /// included); otherwise (post-restart empty engine) launch the next
     /// `Ready` node fresh — the verifier gates completion, so re-running
     /// a node is always safe.
-    pub(super) async fn resume_graph(&self) -> GraphSetupOutcome {
+    pub(super) async fn resume_graph(&self, extra_budget: Option<i64>) -> GraphSetupOutcome {
         use super::goal_support::GoalResumeOutcome;
         let status = self.graph_tracker.lock().status();
         match status {
@@ -627,10 +744,43 @@ impl SessionActor {
             Some(GoalStatus::Complete) => GraphSetupOutcome::Message(
                 "Graph is already complete. Use /graph <objective> to start a new one.".to_owned(),
             ),
-            Some(GoalStatus::BudgetLimited) => GraphSetupOutcome::Message(
-                "Graph is budget-limited. Use /graph clear, then /graph <objective>.".to_owned(),
-            ),
+            Some(GoalStatus::BudgetLimited) => {
+                let Some(extra) = extra_budget else {
+                    return GraphSetupOutcome::Message(
+                        "Graph is budget-limited. Top up with /graph resume --budget \
+                         <tokens>, or /graph clear to abandon."
+                            .to_owned(),
+                    );
+                };
+                if !self.graph_tracker.lock().resume_budget_limited(extra) {
+                    return GraphSetupOutcome::Message(
+                        "Budget top-up must be a positive token count.".to_owned(),
+                    );
+                }
+                self.persist_graph_state();
+                tracing::info!(extra, "graph: resumed with budget top-up");
+                match self.drive_graph().await {
+                    Some(reminder) => GraphSetupOutcome::Inference {
+                        reminder,
+                        user_msg: format!("Graph resumed with {extra} fresh budget tokens."),
+                    },
+                    None => GraphSetupOutcome::Message(
+                        "Graph resumed with fresh budget but did not enter a serial node. \
+                         See /graph status."
+                            .to_owned(),
+                    ),
+                }
+            }
             Some(s) if s.is_paused() => {
+                if extra_budget.is_some() {
+                    // Never silently discard an explicit flag.
+                    return GraphSetupOutcome::Message(
+                        "--budget only applies to a budget-limited graph; this graph is \
+                         paused. Use /graph resume (no flags) to continue, or /graph \
+                         clear to abandon."
+                            .to_owned(),
+                    );
+                }
                 {
                     let mut tracker = self.graph_tracker.lock();
                     tracker.resume();

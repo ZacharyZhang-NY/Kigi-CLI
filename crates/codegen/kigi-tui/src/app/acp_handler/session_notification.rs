@@ -977,6 +977,37 @@ pub(super) fn handle_session_notification(notif: &acp::ExtNotification, app: &mu
         XaiSessionUpdate::InteractionResolved { tool_call_id } => {
             agent.dismiss_resolved_interaction(&tool_call_id)
         }
+        XaiSessionUpdate::GraphUpdated {
+            objective,
+            status,
+            total_nodes,
+            achieved_nodes,
+            failed_nodes,
+            running_nodes,
+            current_node_title,
+            token_budget,
+            tokens_spent,
+            pause_message,
+            ..
+        } => {
+            if status == "cleared" {
+                agent.graph_state.take();
+            } else {
+                agent.graph_state = Some(crate::app::agent::GraphDisplayState {
+                    objective,
+                    status: crate::app::agent::GoalDisplayStatus::parse(&status),
+                    total_nodes,
+                    achieved_nodes,
+                    failed_nodes,
+                    running_nodes,
+                    current_node_title,
+                    token_budget,
+                    tokens_spent,
+                    pause_message,
+                });
+            }
+            true
+        }
         _ => {
             tracing::trace!(
                 "Ignoring {}: {:?}",

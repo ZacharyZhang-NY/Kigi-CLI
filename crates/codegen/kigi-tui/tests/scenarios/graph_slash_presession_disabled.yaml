@@ -1,0 +1,45 @@
+name: graph-slash-presession-disabled
+description: >
+  Fail-closed counterpart: with `KIGI_GRAPH=0` (goal harness still on),
+  `/graph` must NOT appear in the pre-session slash menu, while the menu
+  itself keeps working for other commands.
+terminal:
+  rows: 40
+  cols: 100
+environment:
+  env:
+    - key: KIGI_GOAL
+      value: "1"
+    - key: KIGI_GRAPH
+      value: "0"
+mock:
+  response: "unused — this scenario never submits a prompt."
+steps:
+  - action: wait_for_text
+    text: Quit
+    timeout_ms: 20000
+  - action: assert_not_contains
+    text: panicked
+  - action: focus_prompt
+  - action: type_text
+    text: "/graph"
+  - action: wait
+    millis: 300
+  - action: assert_not_contains
+    text: dependency graph
+  - action: assert_running
+  - action: screenshot
+    name: graph-absent-from-slash-menu
+    note: "/graph hidden with KIGI_GRAPH=0 (fail-closed gate)."
+  # The menu itself still works: clear "/graph" (6 chars) and try /compact.
+  - action: keys
+    keys: "<BS><BS><BS><BS><BS><BS>"
+  - action: type_text
+    text: "/compact"
+  - action: wait
+    millis: 300
+  - action: assert_contains
+    text: Compact conversation history
+  - action: screenshot
+    name: slash-menu-still-works
+    note: "Slash menu functional; only /graph is gated off."

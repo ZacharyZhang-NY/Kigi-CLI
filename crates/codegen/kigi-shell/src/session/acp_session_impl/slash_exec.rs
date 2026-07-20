@@ -873,7 +873,7 @@ impl SessionActor {
             BuiltinAction::GraphSet { .. } => {
                 unreachable!("GraphSet is intercepted in handle_prompt")
             }
-            BuiltinAction::GraphResume => {
+            BuiltinAction::GraphResume { .. } => {
                 unreachable!("GraphResume is intercepted in handle_prompt")
             }
         }

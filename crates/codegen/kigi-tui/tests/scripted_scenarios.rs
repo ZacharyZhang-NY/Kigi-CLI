@@ -339,6 +339,21 @@ async fn scripted_goal_slash_presession() {
     run_scenario("goal_slash_presession.yaml").await;
 }
 
+/// `/graph` gating mirror of the `/goal` pre-session scenarios: with
+/// `KIGI_GRAPH=1` (+ the goal harness) the command must be advertised on
+/// the welcome screen before any session exists.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "scripted scenario; run with cargo test -- --ignored"]
+async fn scripted_graph_slash_presession() {
+    run_scenario("graph_slash_presession.yaml").await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "scripted scenario; run with cargo test -- --ignored"]
+async fn scripted_graph_slash_presession_disabled() {
+    run_scenario("graph_slash_presession_disabled.yaml").await;
+}
+
 /// Counterpart to `scripted_goal_slash_presession`: with the goal flag
 /// explicitly off (`KIGI_GOAL=0`; goal mode defaults on), `/goal` must stay
 /// hidden pre-session (gate fail-closed) while an
@@ -516,6 +531,8 @@ fn scenarios_parse() {
         "path_space_hyperlink.yaml",
         "goal_slash_presession.yaml",
         "goal_slash_presession_disabled.yaml",
+        "graph_slash_presession.yaml",
+        "graph_slash_presession_disabled.yaml",
         "folder_trust_prompt.yaml",
         "dashboard_model_list_click.yaml",
         "paste_chip_double_click.yaml",

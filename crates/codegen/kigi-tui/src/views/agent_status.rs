@@ -283,6 +283,75 @@ pub fn goal_status_line(
 }
 
 // ---------------------------------------------------------------------------
+// Graph status chip
+// ---------------------------------------------------------------------------
+
+/// Build the compact `/graph` status chip: node progress, the current
+/// node, and spend. Same chip idiom as [`goal_status_line`] — dim
+/// brackets, paused chips invert onto `theme.warning`, active chips
+/// animate.
+pub fn graph_status_line(
+    graph: &crate::app::agent::GraphDisplayState,
+    theme: &Theme,
+    tick: usize,
+) -> Line<'static> {
+    let dim_style = Style::default().fg(theme.gray_dim).bg(theme.bg_base);
+    let label_style = if graph.status.is_paused() {
+        Style::default().fg(theme.bg_base).bg(theme.warning)
+    } else {
+        Style::default().fg(theme.accent_plan).bg(theme.bg_base)
+    };
+    let is_active = matches!(graph.status, GoalDisplayStatus::Active);
+
+    let mut progress = format!("{}/{}", graph.achieved_nodes, graph.total_nodes);
+    if graph.failed_nodes > 0 {
+        progress.push_str(&format!(" ({} failed)", graph.failed_nodes));
+    }
+    // Planner titles are uncapped; clamp so one long title can't push
+    // the whole status bar off-screen.
+    let clamped_title = graph.current_node_title.as_deref().map(|t| {
+        if t.chars().count() > 40 {
+            let head: String = t.chars().take(39).collect();
+            format!("{head}…")
+        } else {
+            t.to_owned()
+        }
+    });
+    let label = match (&graph.status, clamped_title.as_deref()) {
+        (GoalDisplayStatus::Active, Some(title)) => format!("{progress} · {title}"),
+        (GoalDisplayStatus::Active, None) if graph.running_nodes > 1 => {
+            format!("{progress} · {} nodes in flight", graph.running_nodes)
+        }
+        (GoalDisplayStatus::Complete, _) => format!("{progress} · complete"),
+        (GoalDisplayStatus::BudgetLimited, _) => format!("{progress} · budget limit"),
+        (status, _) if status.is_paused() => format!("{progress} · paused"),
+        _ => progress,
+    };
+    let graph_text = if is_active {
+        let frames = crate::glyphs::dot_spinner_frames();
+        let frame = frames[(tick / 4) % frames.len()];
+        format!("{frame} Graph: {label}")
+    } else {
+        format!("Graph: {label}")
+    };
+
+    let tokens_str = format_tokens_compact(graph.tokens_spent.max(0));
+    let tokens_display = match graph.token_budget {
+        Some(budget) if budget > 0 => {
+            format!("{}/{} tokens", tokens_str, format_tokens_compact(budget))
+        }
+        _ => format!("{tokens_str} tokens"),
+    };
+
+    Line::from(vec![
+        Span::styled("[", dim_style),
+        Span::styled(graph_text, label_style),
+        Span::styled("]", dim_style),
+        Span::styled(format!("  {tokens_display}"), dim_style),
+    ])
+}
+
+// ---------------------------------------------------------------------------
 // MCP connecting indicator
 // ---------------------------------------------------------------------------
 

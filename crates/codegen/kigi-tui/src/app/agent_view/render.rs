@@ -1243,6 +1243,13 @@ impl AgentView {
                 ),
             );
         }
+        if let Some(ref graph) = self.graph_state {
+            let tick = self.tasks.tick_count() as usize;
+            status.push(
+                "graph",
+                crate::views::agent_status::graph_status_line(graph, &theme, tick),
+            );
+        }
         if let Some(mcp_line) = self.mcp_init_progress.as_ref().and_then(|p| {
             crate::views::agent_status::mcp_status_line(p, self.scrollback.animation_tick(), &theme)
         }) {

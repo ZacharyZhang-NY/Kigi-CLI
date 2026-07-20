@@ -310,8 +310,13 @@ impl MvpAgent {
     pub(crate) fn command_availability(
         &self,
     ) -> crate::session::slash_commands::CommandAvailability {
+        let goal = self.cfg.borrow().resolve_goal().value;
         crate::session::slash_commands::CommandAvailability {
-            goal: self.cfg.borrow().resolve_goal().value,
+            goal,
+            // Same convention as /goal: the flag is known at initialize
+            // time, so advertise pre-session; the in-session path
+            // re-checks the live toolset.
+            graph: goal && self.cfg.borrow().resolve_graph().value,
             ..crate::session::slash_commands::CommandAvailability::default()
         }
     }

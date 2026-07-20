@@ -1,0 +1,40 @@
+name: graph-slash-presession
+description: >
+  With the graph feature flag on (`KIGI_GRAPH=1`, plus `KIGI_GOAL=1` — the
+  graph gate requires the goal harness), `/graph` must appear in the
+  slash-command menu on the welcome screen *before* the first user turn
+  creates a session. Typing `/graph` pre-session must surface the command
+  and its description in the dropdown.
+terminal:
+  rows: 40
+  cols: 100
+environment:
+  env:
+    - key: KIGI_GOAL
+      value: "1"
+    - key: KIGI_GRAPH
+      value: "1"
+mock:
+  response: "unused — this scenario never submits a prompt."
+steps:
+  - action: wait_for_text
+    text: Quit
+    timeout_ms: 20000
+  - action: assert_not_contains
+    text: panicked
+  # Sanity: nothing has been submitted yet, so no session exists.
+  - action: assert_not_contains
+    text: dependency graph
+  - action: focus_prompt
+  - action: type_text
+    text: "/graph"
+  - action: wait
+    millis: 300
+  # The dropdown row carries the builtin's description, which only renders
+  # when /graph is actually advertised pre-session.
+  - action: assert_contains
+    text: dependency graph
+  - action: assert_running
+  - action: screenshot
+    name: graph-in-slash-menu-presession
+    note: "/graph advertised in the slash menu on the welcome screen (KIGI_GRAPH=1), before any prompt."

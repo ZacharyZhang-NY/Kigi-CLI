@@ -350,16 +350,18 @@ impl SessionActor {
                             return ok_end_turn(0, None);
                         }
                     },
-                    BuiltinAction::GraphResume => match self.resume_graph().await {
-                        super::graph::GraphSetupOutcome::Inference { reminder, user_msg } => {
-                            self.send_slash_command_output(&user_msg).await;
-                            vec![text_block(reminder)]
+                    BuiltinAction::GraphResume { extra_budget } => {
+                        match self.resume_graph(extra_budget).await {
+                            super::graph::GraphSetupOutcome::Inference { reminder, user_msg } => {
+                                self.send_slash_command_output(&user_msg).await;
+                                vec![text_block(reminder)]
+                            }
+                            super::graph::GraphSetupOutcome::Message(msg) => {
+                                self.send_slash_command_output(&msg).await;
+                                return ok_end_turn(0, None);
+                            }
                         }
-                        super::graph::GraphSetupOutcome::Message(msg) => {
-                            self.send_slash_command_output(&msg).await;
-                            return ok_end_turn(0, None);
-                        }
-                    },
+                    }
                     _ => return self.execute_builtin_slash_command(action).await,
                 }
             }

@@ -562,8 +562,11 @@ impl GraphTracker {
     }
 
     /// `Active -> BudgetLimited`; `true` if the transition happened.
-    /// The in-flight node (if any) is terminally resolved to `Failed` so
-    /// a budget-dead graph never persists a forever-`Running` node.
+    /// Every in-flight node (the serial engine node AND any parallel
+    /// batch node) demotes to `Ready`: a budget trip is a resource
+    /// stop, not a verdict on the node — so no forever-`Running` node
+    /// is ever persisted, and a later budget top-up
+    /// ([`Self::resume_budget_limited`]) re-dispatches it naturally.
     pub fn budget_limit(&mut self) -> bool {
         self.account_elapsed();
         let Some(state) = self.state.as_mut() else {
@@ -573,12 +576,10 @@ impl GraphTracker {
             return false;
         }
         let in_flight = state.current_node.clone();
-        if let Some(node_id) = &in_flight
-            && let Some(node) = state.nodes.iter_mut().find(|n| n.id == *node_id)
-            && !node.status.is_terminal()
-        {
-            node.status = NodeStatus::Failed;
-            node.failure = Some("graph token budget exhausted".to_owned());
+        for node in &mut state.nodes {
+            if matches!(node.status, NodeStatus::Running | NodeStatus::Verifying) {
+                node.status = NodeStatus::Ready;
+            }
         }
         state.current_node = None;
         state.status = GoalStatus::BudgetLimited;
@@ -588,6 +589,31 @@ impl GraphTracker {
             GraphHistoryEntry::now(GraphEvent::BudgetExceeded, in_flight, None),
         );
         self.last_probe = None;
+        true
+    }
+
+    /// `BudgetLimited -> Active` with `extra` fresh headroom: the new
+    /// budget becomes spent-so-far + extra. `true` if applied.
+    pub fn resume_budget_limited(&mut self, extra: i64) -> bool {
+        let Some(state) = self.state.as_mut() else {
+            return false;
+        };
+        if state.status != GoalStatus::BudgetLimited || extra <= 0 {
+            return false;
+        }
+        state.token_budget = Some(state.tokens_spent_nodes.saturating_add(extra));
+        state.status = GoalStatus::Active;
+        state.pause_message = None;
+        push_history(
+            state,
+            GraphHistoryEntry::now(
+                GraphEvent::GraphResumed,
+                None,
+                Some(format!("budget topped up by {extra}")),
+            ),
+        );
+        self.last_probe = Some(Instant::now());
+        self.recompute_ready();
         true
     }
 
@@ -860,27 +886,33 @@ mod tests {
     }
 
     #[test]
-    fn budget_limit_terminally_fails_the_running_node() {
+    fn budget_limit_demotes_in_flight_and_top_up_resumes() {
         let mut t = GraphTracker::new(std::env::temp_dir());
         t.create_graph("g".into(), "o".into(), Some(10), "t".into());
         t.install_nodes(vec![node("a", &[]), node("b", &["a"])]);
         t.mark_node_running("a", "goal-1".into());
+        t.charge_node_tokens("a", 12);
         assert!(t.budget_limit());
         assert_eq!(t.status(), Some(GoalStatus::BudgetLimited));
         let s = t.snapshot().unwrap();
         assert_eq!(
             s.nodes[0].status,
-            NodeStatus::Failed,
-            "a budget-dead graph must not persist a forever-Running node"
-        );
-        assert!(
-            s.nodes[0]
-                .failure
-                .as_deref()
-                .unwrap()
-                .contains("budget exhausted")
+            NodeStatus::Ready,
+            "budget trip is a resource stop, not a node verdict — no \
+             forever-Running node, runnable again after a top-up"
         );
         assert_eq!(s.current_node, None);
+
+        assert!(!t.resume_budget_limited(0), "top-up must be positive");
+        assert!(t.resume_budget_limited(100));
+        assert_eq!(t.status(), Some(GoalStatus::Active));
+        assert_eq!(
+            t.snapshot().unwrap().token_budget,
+            Some(112),
+            "new budget = spent so far + extra headroom"
+        );
+        assert_eq!(t.remaining_budget(), Some(100));
+        assert_eq!(t.next_ready_node().unwrap().id, "a");
     }
 
     #[test]

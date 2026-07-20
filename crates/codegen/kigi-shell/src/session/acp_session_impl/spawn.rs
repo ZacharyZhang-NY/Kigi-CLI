@@ -1244,6 +1244,13 @@ pub(crate) async fn spawn_session_actor(
             ),
         )
         .await;
+    // A restored graph was demoted (Active→UserPaused, Running→Ready) IN
+    // MEMORY after the updates-log replay, whose last GraphUpdated still
+    // shows the pre-shutdown Active state. Re-emit truth once so a
+    // reattached pager never renders a stale self-driving chip.
+    if session.graph_tracker.lock().snapshot().is_some() {
+        session.persist_graph_state();
+    }
     if let Some(ref display_cwd) = prompt_display_cwd {
         session
             .agent

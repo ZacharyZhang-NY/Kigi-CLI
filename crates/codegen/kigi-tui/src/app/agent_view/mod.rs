@@ -745,6 +745,9 @@ pub struct AgentView {
     /// Current goal orchestration state. Set by `GoalUpdated` session
     /// notifications, cleared when a new session starts.
     pub goal_state: Option<super::agent::GoalDisplayState>,
+    /// Current graph orchestration state. Set by `GraphUpdated` session
+    /// notifications, cleared on the `"cleared"` sentinel / new session.
+    pub graph_state: Option<super::agent::GraphDisplayState>,
     /// The consumed parked-wait marker slot for the current turn, if any.
     /// Keyed by prompt id: a new turn naturally invalidates the slot with no
     /// explicit clear site. See [`ParkedMarkerSlot`].

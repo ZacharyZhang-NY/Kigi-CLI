@@ -110,6 +110,14 @@ edges stay deterministic Rust. The harness appends a terminal
   serially on the full goal engine. Concurrency=1 is byte-identical to
   the serial G0 path. Ceiling: a worker round exceeding the foreground
   subagent await budget (600s) is cancelled and retried via resume.
+- G2: `BudgetLimited` is resumable — a budget trip demotes in-flight
+  nodes to `Ready` (resource stop, not a verdict) and
+  `/graph resume --budget <tokens>` re-arms with fresh headroom. The
+  pager shows a graph status chip driven by the `GraphUpdated` wire
+  variant (`extensions/notification.rs`), emitted from the single
+  `persist_graph_state` chokepoint (checkpoint ⇔ badge tick); old
+  pagers degrade via `#[serde(other)] Unknown`. PTY scenarios:
+  `graph_slash_presession{,_disabled}.yaml`.
 
 ## Milestones (PRD §8.3)
 

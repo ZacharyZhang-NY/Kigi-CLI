@@ -1908,11 +1908,21 @@ impl SessionActor {
         // budget, so a node-level budget trip is the graph-level trip.
         if self.graph_harness_enabled() && self.graph_tracker.lock().is_active() {
             tracing::warn!("graph: node goal budget trip cascades to graph BudgetLimited");
-            self.graph_tracker.lock().budget_limit();
+            {
+                let mut tracker = self.graph_tracker.lock();
+                // Budget integrity: charge the tripped node's partial burn
+                // BEFORE budget_limit clears current_node — otherwise the
+                // top-up arithmetic runs on an under-counted ledger.
+                if let Some(node_id) = tracker.current_node_id().map(str::to_owned) {
+                    tracker.charge_node_tokens(&node_id, tokens_used);
+                }
+                tracker.budget_limit();
+            }
             self.persist_graph_state();
             self.send_slash_command_output(&format!(
                 "Graph token budget reached ({tokens_used} tokens this node) — graph \
-                 stopped. Use /graph clear, then /graph <objective> to start a new one."
+                 stopped. Top up with /graph resume --budget <tokens>, or /graph clear \
+                 to abandon."
             ))
             .await;
             return true;

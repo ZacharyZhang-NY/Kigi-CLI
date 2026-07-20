@@ -93,6 +93,7 @@ impl AgentView {
             chat_kind: false,
             app_chat_mode: false,
             goal_state: None,
+            graph_state: None,
             parked_wait_marker_for: None,
             end_work_announced: false,
             pending_stop_hooks: None,

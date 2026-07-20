@@ -421,7 +421,7 @@ async fn graph_restore_demotes_running_node_and_resume_relaunches_it() {
             );
 
             // /graph resume relaunches node b as a fresh goal.
-            match restored.resume_graph().await {
+            match restored.resume_graph(None).await {
                 graph::GraphSetupOutcome::Inference { reminder, .. } => {
                     assert!(
                         reminder.contains("Graph node 2/4"),
@@ -474,9 +474,9 @@ async fn node_budget_is_graph_remaining_and_trip_cascades() {
                 Some(GoalStatus::BudgetLimited),
                 "node budget trip IS the graph budget trip"
             );
-            // The in-flight node is terminally resolved — never a
-            // forever-Running node on a budget-dead graph.
-            assert_eq!(node_statuses(&actor)[0].1, NodeStatus::Failed);
+            // The in-flight node demotes to Ready — a budget trip is a
+            // resource stop, not a node verdict; a top-up re-runs it.
+            assert_eq!(node_statuses(&actor)[0].1, NodeStatus::Ready);
             assert_eq!(actor.graph_tracker.lock().current_node_id(), None);
 
             // A terminal graph no longer owns the engine: the user may
@@ -648,7 +648,7 @@ async fn planning_invalid_twice_pauses_and_resume_replans() {
             // /graph resume re-plans; a now-valid artifact launches node 1.
             let (good_tx, _good_count) = spawn_graph_planner_coordinator(vec![chain_graph_json()]);
             actor.tool_context.subagent_event_tx = Some(good_tx);
-            match actor.resume_graph().await {
+            match actor.resume_graph(None).await {
                 graph::GraphSetupOutcome::Inference { reminder, .. } => {
                     assert!(reminder.contains("Graph node 1/4"), "{reminder}");
                 }
@@ -1252,7 +1252,7 @@ async fn resume_after_cancelled_batch_demotes_orphaned_running_nodes() {
 
             // /graph resume must demote the orphans and re-dispatch — NOT
             // wedge-pause with "no runnable node".
-            match actor.resume_graph().await {
+            match actor.resume_graph(None).await {
                 graph::GraphSetupOutcome::Inference { reminder, .. } => {
                     assert!(reminder.contains("Node C"), "{reminder}");
                 }
@@ -1396,6 +1396,225 @@ async fn batch_merges_real_worktrees_and_cleans_them_up() {
             // Storage discipline: merged worktrees are removed.
             assert!(!wt_a.exists(), "merged worktree a must be cleaned up");
             assert!(!wt_b.exists(), "merged worktree b must be cleaned up");
+        })
+        .await;
+    unsafe { std::env::remove_var(ENV_FLAG) };
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn budget_top_up_resumes_a_budget_limited_graph_to_completion() {
+    unsafe { std::env::set_var(ENV_FLAG, "0") };
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let dag = diamond_graph_json();
+            let (mut actor, _tmp, _prx) = make_graph_actor_detached().await;
+            let (coord_tx, _captured) = spawn_scripted_coordinator(
+                _tmp.path().to_path_buf(),
+                move |req| happy_reply(req, &dag),
+                false,
+            );
+            actor.tool_context.subagent_event_tx = Some(coord_tx);
+            actor.graph_concurrency = 2;
+            // Tiny budget: the a+b batch spends 40 (4 spawns × 10) > 30,
+            // so the inter-batch gate trips before c.
+            let _ = actor.setup_graph("build the diamond", Some(30)).await;
+            assert_eq!(
+                actor.graph_tracker.lock().status(),
+                Some(GoalStatus::BudgetLimited)
+            );
+
+            // Plain resume must refuse with the top-up hint.
+            match actor.resume_graph(None).await {
+                graph::GraphSetupOutcome::Message(msg) => {
+                    assert!(msg.contains("--budget"), "{msg}");
+                }
+                graph::GraphSetupOutcome::Inference { .. } => {
+                    panic!("budget-limited graph must not resume without a top-up")
+                }
+            }
+
+            // Top-up resumes and reaches the serial tail (node c).
+            match actor.resume_graph(Some(1_000)).await {
+                graph::GraphSetupOutcome::Inference { reminder, .. } => {
+                    assert!(reminder.contains("Node C"), "{reminder}");
+                }
+                graph::GraphSetupOutcome::Message(msg) => {
+                    panic!("top-up must resume the graph, got: {msg}")
+                }
+            }
+            // Finish c + gn-final serially.
+            for _ in 0..2 {
+                drive_node_goal_to_complete(&actor).await;
+                let _ = actor.run_graph_round_end().await;
+            }
+            assert_eq!(
+                actor.graph_tracker.lock().status(),
+                Some(GoalStatus::Complete)
+            );
+        })
+        .await;
+    unsafe { std::env::remove_var(ENV_FLAG) };
+}
+
+// ── handle_prompt-level coverage (real interception wiring) ────────────
+
+fn agent_text(n: &acp::SessionNotification) -> Option<String> {
+    match &n.update {
+        acp::SessionUpdate::AgentMessageChunk(chunk) => match &chunk.content {
+            acp::ContentBlock::Text(t) => Some(t.text.clone()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn capture_gateway(
+    mut gateway_rx: tokio::sync::mpsc::UnboundedReceiver<kigi_acp_lib::AcpClientMessage>,
+) -> StdArc<tokio::sync::Mutex<Vec<acp::SessionNotification>>> {
+    let sent = StdArc::new(tokio::sync::Mutex::new(Vec::new()));
+    let sent_for_task = sent.clone();
+    tokio::task::spawn_local(async move {
+        while let Some(msg) = gateway_rx.recv().await {
+            if let kigi_acp_lib::AcpClientMessage::SessionNotification(args) = msg {
+                sent_for_task.lock().await.push(args.request);
+                let _ = args.response_tx.send(Ok(()));
+            }
+        }
+    });
+    sent
+}
+
+fn drain_replay(
+    actor: StdArc<SessionActor>,
+    mut event_rx: tokio::sync::mpsc::UnboundedReceiver<SessionEvent>,
+) {
+    let settings = actor.buffering_settings.clone();
+    tokio::task::spawn_local(async move {
+        let mut replay_buffer = ReplayBuffer::new(settings);
+        while let Some(event) = event_rx.recv().await {
+            match event {
+                SessionEvent::Notification(notification) => {
+                    if let Some((primary, secondary)) = replay_buffer.consume_chunk(notification) {
+                        actor.emit_buffered(primary).await;
+                        if let Some(extra) = secondary {
+                            actor.emit_buffered(extra).await;
+                        }
+                    }
+                }
+                SessionEvent::FlushReplay { respond_to } => {
+                    if let Some(notification) = replay_buffer.flush() {
+                        actor.emit_buffered(notification).await;
+                    }
+                    if let Some(tx) = respond_to {
+                        let _ = tx.send(());
+                    }
+                }
+            }
+        }
+    });
+}
+
+/// Actor whose `/graph` slash commands resolve through the REAL
+/// `handle_prompt` path: `update_goal` registered (goal gate),
+/// `graph_enabled` set, gateway capture + replay drainer wired.
+async fn make_graph_turn_actor() -> (
+    StdArc<SessionActor>,
+    StdArc<tokio::sync::Mutex<Vec<acp::SessionNotification>>>,
+) {
+    let (gateway_tx, gateway_rx) =
+        tokio::sync::mpsc::unbounded_channel::<kigi_acp_lib::AcpClientMessage>();
+    let sent = capture_gateway(gateway_rx);
+    let (persistence_tx, _persistence_rx) =
+        tokio::sync::mpsc::unbounded_channel::<PersistenceMsg>();
+    let (mut actor, event_rx) =
+        create_test_actor_ex(0, 256_000, 85, gateway_tx, persistence_tx).await;
+    *actor.agent.borrow_mut() = test_agent_with_goal_tool().await;
+    actor.goal_enabled = true;
+    actor.graph_enabled = true;
+    let actor = StdArc::new(actor);
+    drain_replay(actor.clone(), event_rx);
+    (actor, sent)
+}
+
+async fn drive_terminal_slash(
+    actor: &StdArc<SessionActor>,
+    sent: &StdArc<tokio::sync::Mutex<Vec<acp::SessionNotification>>>,
+    prompt: &str,
+) -> String {
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        actor.handle_prompt(
+            &format!("graph-slash-{}", prompt.replace([' ', '/'], "-")),
+            vec![acp::ContentBlock::Text(acp::TextContent::new(
+                prompt.to_string(),
+            ))],
+            PromptMode::Agent,
+            None,
+            None,
+            false,
+            None,
+            None,
+        ),
+    )
+    .await
+    .expect("terminal slash outcome must end the turn without inference");
+    assert!(result.is_ok(), "turn must succeed: {result:?}");
+    tokio::task::yield_now().await;
+    let sent = sent.lock().await;
+    sent.iter()
+        .filter_map(agent_text)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn graph_slash_terminal_outcomes_through_handle_prompt() {
+    unsafe { std::env::set_var(ENV_FLAG, "0") };
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (actor, sent) = make_graph_turn_actor().await;
+
+            // /graph status with no graph: terminal message, no inference.
+            let text = drive_terminal_slash(&actor, &sent, "/graph status").await;
+            assert!(
+                text.contains("No graph is set"),
+                "status message must reach the gateway: {text}"
+            );
+
+            // /graph resume with no graph.
+            let text = drive_terminal_slash(&actor, &sent, "/graph resume").await;
+            assert!(text.contains("No graph is set"), "{text}");
+
+            // Seed an Active graph that owns the engine; /goal commands
+            // must be refused through the REAL interception guards.
+            actor.graph_tracker.lock().create_graph(
+                "g-1".into(),
+                "obj".into(),
+                None,
+                "2026-01-01T00:00:00Z".into(),
+            );
+            let text = drive_terminal_slash(&actor, &sent, "/goal pause").await;
+            assert!(
+                text.contains("graph owns the goal engine"),
+                "/goal pause refusal must surface: {text}"
+            );
+            let text = drive_terminal_slash(&actor, &sent, "/goal clear").await;
+            assert!(text.contains("graph owns the goal engine"), "{text}");
+
+            // /graph pause on the planning-phase Active graph pauses it.
+            let text = drive_terminal_slash(&actor, &sent, "/graph pause").await;
+            assert!(text.contains("Graph paused"), "{text}");
+            assert!(
+                actor
+                    .graph_tracker
+                    .lock()
+                    .status()
+                    .is_some_and(|s| s.is_paused())
+            );
         })
         .await;
     unsafe { std::env::remove_var(ENV_FLAG) };

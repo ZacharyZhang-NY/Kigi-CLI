@@ -897,6 +897,36 @@ pub enum SessionUpdate {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         usage: Option<PromptUsage>,
     },
+    /// Graph mode (`/graph`) progress for the pager's status chip.
+    /// Wire tag `graph_updated`; `status: "cleared"` tells the pager to
+    /// drop its graph state (same sentinel convention as `GoalUpdated`).
+    /// Old pagers degrade to [`Self::Unknown`] silently.
+    GraphUpdated {
+        graph_id: String,
+        objective: String,
+        /// Goal-status vocabulary (`active`, paused family,
+        /// `budget_limited`, `complete`) plus `cleared`.
+        status: String,
+        /// `idle` | `planning` | `executing`.
+        phase: String,
+        plan_version: u32,
+        total_nodes: u32,
+        achieved_nodes: u32,
+        failed_nodes: u32,
+        running_nodes: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        current_node: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        current_node_title: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        token_budget: Option<i64>,
+        #[serde(default)]
+        tokens_spent: i64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        last_event: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pause_message: Option<String>,
+    },
     /// Catch-all for unrecognized session update types.
     /// Allows forward/backward compatibility when variants are added or removed.
     /// All fields from the unrecognized variant are discarded during deserialization.
@@ -2291,5 +2321,90 @@ mod tests {
         assert!(serde_json::from_str::<SessionUpdate>(missing_prompt_id).is_err());
         let missing_stop_reason = r#"{"sessionUpdate": "turn_completed", "prompt_id": "p-1"}"#;
         assert!(serde_json::from_str::<SessionUpdate>(missing_stop_reason).is_err());
+    }
+}
+
+#[cfg(test)]
+mod graph_updated_wire_tests {
+    use super::*;
+
+    fn full_graph_updated() -> SessionUpdate {
+        SessionUpdate::GraphUpdated {
+            graph_id: "g-1".into(),
+            objective: "ship it".into(),
+            status: "active".into(),
+            phase: "executing".into(),
+            plan_version: 2,
+            total_nodes: 5,
+            achieved_nodes: 2,
+            failed_nodes: 1,
+            running_nodes: 1,
+            current_node: Some("gn-abc".into()),
+            current_node_title: Some("Node C".into()),
+            token_budget: Some(10_000),
+            tokens_spent: 4_200,
+            last_event: Some("node_achieved".into()),
+            pause_message: None,
+        }
+    }
+
+    #[test]
+    fn graph_updated_round_trips_with_snake_case_tag() {
+        let update = full_graph_updated();
+        let json = serde_json::to_value(&update).unwrap();
+        assert_eq!(json["sessionUpdate"], "graph_updated");
+        assert_eq!(json["achieved_nodes"], 2);
+        assert_eq!(json["current_node_title"], "Node C");
+        // Omitted optionals must not serialize at all.
+        assert!(json.get("pause_message").is_none());
+        let back: SessionUpdate = serde_json::from_value(json).unwrap();
+        assert_eq!(back, update);
+    }
+
+    #[test]
+    fn graph_updated_minimal_payload_fills_defaults() {
+        // Only the required fields on the wire: every optional absent,
+        // `tokens_spent` relies on #[serde(default)].
+        let json = serde_json::json!({
+            "sessionUpdate": "graph_updated",
+            "graph_id": "g-2",
+            "objective": "o",
+            "status": "cleared",
+            "phase": "idle",
+            "plan_version": 0,
+            "total_nodes": 0,
+            "achieved_nodes": 0,
+            "failed_nodes": 0,
+            "running_nodes": 0,
+        });
+        let update: SessionUpdate = serde_json::from_value(json).unwrap();
+        match update {
+            SessionUpdate::GraphUpdated {
+                status,
+                tokens_spent,
+                current_node,
+                token_budget,
+                pause_message,
+                ..
+            } => {
+                assert_eq!(status, "cleared");
+                assert_eq!(tokens_spent, 0, "#[serde(default)] must backfill");
+                assert!(current_node.is_none());
+                assert!(token_budget.is_none());
+                assert!(pause_message.is_none());
+            }
+            other => panic!("expected GraphUpdated, got {other:?}"),
+        }
+    }
+
+    /// An OLD pager (this enum before the variant existed) must degrade
+    /// a graph_updated payload to `Unknown` — pinned by feeding an
+    /// unknown-tag payload through today's enum, which uses the same
+    /// #[serde(other)] mechanism.
+    #[test]
+    fn unknown_tags_still_degrade_gracefully() {
+        let json = serde_json::json!({ "sessionUpdate": "graph_updated_v99", "x": 1 });
+        let update: SessionUpdate = serde_json::from_value(json).unwrap();
+        assert_eq!(update, SessionUpdate::Unknown);
     }
 }

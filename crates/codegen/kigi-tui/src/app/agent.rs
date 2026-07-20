@@ -385,6 +385,25 @@ impl GoalDisplayPhase {
         }
     }
 }
+/// Graph mode display state — the pager-side mirror of the
+/// `GraphUpdated` session notification (see the shell's
+/// `extensions/notification.rs`). Deliberately lean: the status chip
+/// shows counts + the current node; details live in `/graph status`.
+#[derive(Debug, Clone)]
+pub struct GraphDisplayState {
+    pub objective: String,
+    /// Reuses the goal display-status vocabulary (same wire strings).
+    pub status: GoalDisplayStatus,
+    pub total_nodes: u32,
+    pub achieved_nodes: u32,
+    pub failed_nodes: u32,
+    pub running_nodes: u32,
+    pub current_node_title: Option<String>,
+    pub token_budget: Option<i64>,
+    pub tokens_spent: i64,
+    pub pause_message: Option<String>,
+}
+
 /// Display state for an active goal, populated from `GoalUpdated`
 /// session notifications emitted by the goal orchestrator.
 #[derive(Debug, Clone)]
