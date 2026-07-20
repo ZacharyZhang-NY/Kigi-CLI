@@ -167,11 +167,98 @@ impl SessionActor {
             Some(state) => build_graph_updated(state),
             None => build_graph_cleared(),
         };
+        // Project-level shared file (G4): refreshed at every checkpoint
+        // while this session holds the writer lock. Failures are loud in
+        // logs but never block progress — the session state below is the
+        // durable source of truth.
+        if let Some(dir) = &self.graph_project_dir
+            && self.graph_project_lock.borrow().is_some()
+        {
+            let result = match &snapshot {
+                Some(state) => crate::session::graph_project::project(dir, state),
+                None => crate::session::graph_project::remove(dir),
+            };
+            if let Err(err) = result {
+                tracing::warn!(%err, dir = %dir.display(), "graph: project file sync failed");
+            }
+        }
         let _ = self
             .notifications
             .persistence_tx
             .send(PersistenceMsg::GraphModeState(snapshot));
         self.goal_notify_sender().send_update(update);
+    }
+
+    /// Best-effort peek at the projected graph's identity, for the
+    /// lock-then-mutate sites: holding the flock proves nobody writes
+    /// NOW, not that the file's content belongs to THIS session's graph.
+    /// `None` = no file / unreadable (warned).
+    pub(super) fn projected_graph_id(&self) -> Option<String> {
+        let dir = self.graph_project_dir.as_deref()?;
+        match crate::session::graph_project::load(dir) {
+            Ok(state) => state.map(|s| s.graph_id),
+            Err(err) => {
+                tracing::warn!(%err, "graph: projected file unreadable during identity check");
+                None
+            }
+        }
+    }
+
+    /// Claim project writership for a SESSION-owned graph about to
+    /// resume: acquire the lock and verify the projected file (if any)
+    /// belongs to this graph — a foreign projection must never be
+    /// clobbered by our next checkpoint. `Some(msg)` = refuse with msg
+    /// (lock released).
+    pub(super) fn claim_project_graph_for_resume(&self) -> Option<String> {
+        match self.acquire_project_graph_writer() {
+            Ok(true) => {}
+            Ok(false) => {
+                return Some(
+                    "Another kigi instance holds this project's graph (single-writer \
+                     lock); resume it there, or /graph clear here to drop this \
+                     session's copy."
+                        .to_owned(),
+                );
+            }
+            Err(err) => {
+                return Some(format!("Failed to acquire the project graph lock: {err}"));
+            }
+        }
+        let session_graph_id = self
+            .graph_tracker
+            .lock()
+            .snapshot()
+            .map(|s| s.graph_id.clone());
+        if let (Some(projected), Some(ours)) = (self.projected_graph_id(), session_graph_id)
+            && projected != ours
+        {
+            self.graph_project_lock.borrow_mut().take();
+            return Some(format!(
+                "The project graph file belongs to a different graph ({projected}); \
+                 this session's graph is {ours}. Use /graph resume in a fresh session \
+                 to revive the project graph, or /graph clear here first."
+            ));
+        }
+        None
+    }
+
+    /// Become the project graph's single writer. `Ok(false)` = another
+    /// kigi instance owns it (caller degrades read-only); `Ok(true)` =
+    /// acquired or no project dir (feature off outside git).
+    pub(super) fn acquire_project_graph_writer(&self) -> std::io::Result<bool> {
+        let Some(dir) = &self.graph_project_dir else {
+            return Ok(true);
+        };
+        if self.graph_project_lock.borrow().is_some() {
+            return Ok(true);
+        }
+        match crate::session::graph_project::try_acquire_writer(dir)? {
+            crate::session::graph_project::LockOutcome::Acquired(lock) => {
+                *self.graph_project_lock.borrow_mut() = Some(lock);
+                Ok(true)
+            }
+            crate::session::graph_project::LockOutcome::Busy => Ok(false),
+        }
     }
 
     /// True when the graph occupies the goal engine (any non-terminal
@@ -211,6 +298,45 @@ impl SessionActor {
             }
         }
 
+        match self.acquire_project_graph_writer() {
+            Ok(true) => {}
+            Ok(false) => {
+                return GraphSetupOutcome::Message(
+                    "Another kigi instance holds this project's graph (single-writer \
+                     lock). Use /graph status here for a read-only view, or run the \
+                     graph from that instance."
+                        .to_owned(),
+                );
+            }
+            Err(err) => {
+                return GraphSetupOutcome::Message(format!(
+                    "Failed to acquire the project graph lock: {err}"
+                ));
+            }
+        }
+        // The project file may hold a dead session's REVIVABLE graph —
+        // the same never-silently-replace rule as the session guard
+        // above applies to it (a Complete one may be overwritten).
+        if let Some(dir) = self.graph_project_dir.as_deref() {
+            match crate::session::graph_project::load(dir) {
+                Ok(Some(existing)) if existing.status != GoalStatus::Complete => {
+                    self.graph_project_lock.borrow_mut().take();
+                    return GraphSetupOutcome::Message(format!(
+                        "A project graph exists in .kigi/graph.jsonl ({}: {}). Use \
+                         /graph resume to revive it or /graph clear to discard it.",
+                        existing.graph_id, existing.objective,
+                    ));
+                }
+                Ok(_) => {}
+                Err(err) => {
+                    self.graph_project_lock.borrow_mut().take();
+                    return GraphSetupOutcome::Message(format!(
+                        "Project graph file is unreadable: {err}\n\
+                         Fix or delete .kigi/graph.jsonl, then retry."
+                    ));
+                }
+            }
+        }
         let graph_id = uuid::Uuid::new_v4().to_string();
         tracing::info!(%graph_id, "graph: created, planning started");
         self.graph_tracker.lock().create_graph(
@@ -757,9 +883,74 @@ impl SessionActor {
         use super::goal_support::GoalResumeOutcome;
         let status = self.graph_tracker.lock().status();
         match status {
-            None => GraphSetupOutcome::Message(
-                "No graph is set. Use /graph <objective> to start one.".to_owned(),
-            ),
+            None => {
+                // Cross-session revive: the graph follows the REPO. A
+                // fresh session in the same project can pick it up from
+                // .kigi/graph.jsonl (single-writer lock required).
+                let Some(dir) = self.graph_project_dir.clone() else {
+                    return GraphSetupOutcome::Message(
+                        "No graph is set. Use /graph <objective> to start one.".to_owned(),
+                    );
+                };
+                // Lock BEFORE load: reading first races the owner's final
+                // checkpoint/clear and could resurrect a just-cleared
+                // graph from the pre-release copy.
+                match self.acquire_project_graph_writer() {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        return GraphSetupOutcome::Message(
+                            "Another kigi instance holds this project's graph \
+                             (single-writer lock); /graph status shows a read-only view."
+                                .to_owned(),
+                        );
+                    }
+                    Err(err) => {
+                        return GraphSetupOutcome::Message(format!(
+                            "Failed to acquire the project graph lock: {err}"
+                        ));
+                    }
+                }
+                let release_and = |msg: String| {
+                    self.graph_project_lock.borrow_mut().take();
+                    GraphSetupOutcome::Message(msg)
+                };
+                let loaded = match crate::session::graph_project::load(&dir) {
+                    Ok(Some(state)) => state,
+                    Ok(None) => {
+                        return release_and(
+                            "No graph is set. Use /graph <objective> to start one.".to_owned(),
+                        );
+                    }
+                    Err(err) => {
+                        return release_and(format!(
+                            "Project graph file is unreadable: {err}\n\
+                             Fix or delete .kigi/graph.jsonl, then retry."
+                        ));
+                    }
+                };
+                tracing::info!(
+                    graph_id = %loaded.graph_id,
+                    "graph: revived from project file"
+                );
+                // from_snapshot sanitization (Active→UserPaused,
+                // Running→Ready) applies to the revived state too.
+                {
+                    let session_dir =
+                        crate::session::persistence::session_dir(&crate::session::info::Info {
+                            id: self.session_info.id.clone(),
+                            cwd: self.session_info.cwd.clone(),
+                        });
+                    *self.graph_tracker.lock() =
+                        crate::session::graph_tracker::GraphTracker::from_snapshot(
+                            session_dir,
+                            loaded,
+                        );
+                }
+                self.persist_graph_state();
+                // Recurse exactly once: the tracker now holds a paused
+                // graph, so the paused-family arm below handles it.
+                Box::pin(self.resume_graph(extra_budget)).await
+            }
             Some(GoalStatus::Active) => {
                 GraphSetupOutcome::Message("Graph is already running.".to_owned())
             }
@@ -774,6 +965,14 @@ impl SessionActor {
                             .to_owned(),
                     );
                 };
+                if extra <= 0 {
+                    return GraphSetupOutcome::Message(
+                        "Budget top-up must be a positive token count.".to_owned(),
+                    );
+                }
+                if let Some(msg) = self.claim_project_graph_for_resume() {
+                    return GraphSetupOutcome::Message(msg);
+                }
                 if !self.graph_tracker.lock().resume_budget_limited(extra) {
                     return GraphSetupOutcome::Message(
                         "Budget top-up must be a positive token count.".to_owned(),
@@ -802,6 +1001,13 @@ impl SessionActor {
                          clear to abandon."
                             .to_owned(),
                     );
+                }
+                // A session-snapshot-restored graph resumes here WITHOUT
+                // ever having passed the create/revive lock sites; claim
+                // the project writer (with identity check) now or the
+                // projection silently diverges forever.
+                if let Some(msg) = self.claim_project_graph_for_resume() {
+                    return GraphSetupOutcome::Message(msg);
                 }
                 {
                     let mut tracker = self.graph_tracker.lock();
@@ -924,8 +1130,32 @@ impl SessionActor {
         let current_tokens = self.chat_state_handle.get_total_tokens().await as i64;
         let node_goal_tokens = self.goal_tokens_used(current_tokens);
         let tracker = self.graph_tracker.lock();
-        let Some(s) = tracker.snapshot() else {
-            return "No graph is set. Use /graph <objective> to start one.".to_owned();
+        let project_fallback;
+        let s = match tracker.snapshot() {
+            Some(s) => s,
+            None => {
+                // Read-only project view (e.g. a second kigi instance
+                // that does not hold the writer lock).
+                match self
+                    .graph_project_dir
+                    .as_deref()
+                    .map(crate::session::graph_project::load)
+                {
+                    Some(Ok(Some(state))) => {
+                        project_fallback = state;
+                        &project_fallback
+                    }
+                    Some(Err(err)) => {
+                        return format!(
+                            "Project graph file is unreadable: {err}\n\
+                             Fix or delete .kigi/graph.jsonl."
+                        );
+                    }
+                    _ => {
+                        return "No graph is set. Use /graph <objective> to start one.".to_owned();
+                    }
+                }
+            }
         };
         let achieved = s
             .nodes

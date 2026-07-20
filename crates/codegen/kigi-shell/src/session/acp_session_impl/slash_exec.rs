@@ -857,8 +857,57 @@ impl SessionActor {
                 if self.graph_owns_goal_engine() {
                     self.reset_goal_engine_state().await;
                 }
+                // Projection teardown only when there is something of
+                // OURS to un-project: with no session graph, deleting
+                // .kigi/graph.jsonl would destroy another session's
+                // revivable graph while replying "No graph is set".
+                let session_graph_id = self
+                    .graph_tracker
+                    .lock()
+                    .snapshot()
+                    .map(|s| s.graph_id.clone());
                 self.graph_tracker.lock().clear();
+                if had_graph {
+                    // Take the writer lock if we don't hold it (e.g. a
+                    // session-snapshot-restored graph cleared before any
+                    // resume). Busy = another instance owns the project
+                    // graph; local-only clear is then correct.
+                    match self.acquire_project_graph_writer() {
+                        Ok(true) => {
+                            // Identity check: only remove a projection
+                            // that belongs to the graph being cleared.
+                            let foreign = match (self.projected_graph_id(), &session_graph_id) {
+                                (Some(projected), Some(ours)) => projected != *ours,
+                                _ => false,
+                            };
+                            if foreign {
+                                tracing::info!(
+                                    "graph clear: projection belongs to a different \
+                                     graph; leaving .kigi/graph.jsonl in place"
+                                );
+                                self.graph_project_lock.borrow_mut().take();
+                            }
+                        }
+                        Ok(false) => {
+                            tracing::info!(
+                                "graph clear: another instance holds the project \
+                                 graph; local session state cleared only"
+                            );
+                        }
+                        Err(err) => {
+                            tracing::warn!(
+                                %err,
+                                "graph clear: project lock acquisition failed; \
+                                 .kigi/graph.jsonl may survive as stale"
+                            );
+                        }
+                    }
+                }
+                // persist runs BEFORE the lock drops so the projection
+                // removal (when we hold writer rights on OUR graph)
+                // executes; without the lock it is a session-only clear.
                 self.persist_graph_state();
+                self.graph_project_lock.borrow_mut().take();
                 self.send_slash_command_output(if had_graph {
                     "Graph cleared."
                 } else {

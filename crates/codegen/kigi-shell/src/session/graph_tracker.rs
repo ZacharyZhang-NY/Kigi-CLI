@@ -213,7 +213,9 @@ pub struct GraphOrchestration {
     pub plan_version: u32,
     /// Topological-friendly storage order (planner order + harness
     /// appendix). The scheduler picks the first `Ready` node in this
-    /// order, so execution is deterministic.
+    /// order, so execution is deterministic. `default` so the project
+    /// header line (which omits `nodes`) deserializes.
+    #[serde(default)]
     pub nodes: Vec<GraphNode>,
     /// Node currently running as the active goal, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]

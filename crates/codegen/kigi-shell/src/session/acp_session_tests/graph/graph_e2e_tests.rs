@@ -1800,3 +1800,95 @@ async fn replan_cap_zero_drains_discoveries_to_history_and_converges() {
         .await;
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
+
+// ── G4: project-level shared graph ─────────────────────────────────
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn project_graph_revives_in_a_fresh_session_and_write_lock_is_exclusive() {
+    unsafe { std::env::set_var(ENV_FLAG, "0") };
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let dag = chain_graph_json();
+            let (mut actor_a, tmp, _prx) = make_graph_actor_detached().await;
+            let (coord_tx, _count) = spawn_graph_planner_coordinator(vec![dag]);
+            actor_a.tool_context.subagent_event_tx = Some(coord_tx);
+            // The fixture repo is the project root: point the projection
+            // there explicitly (find_git_root works too, but this keeps
+            // the test hermetic against outer repos).
+            let project_dir = tmp.path().join(".kigi");
+            actor_a.graph_project_dir = Some(project_dir.clone());
+
+            let _ = actor_a.setup_graph("ship the widget", None).await;
+            // Node a achieved, node b running; projection follows.
+            drive_node_goal_to_complete(&actor_a).await;
+            let _ = actor_a.run_graph_round_end().await;
+            let projected = crate::session::graph_project::load(&project_dir)
+                .unwrap()
+                .expect("checkpoint must project to .kigi/graph.jsonl");
+            assert_eq!(projected.nodes.len(), 4);
+            assert_eq!(projected.nodes[0].status, NodeStatus::Achieved);
+            assert_eq!(projected.nodes[1].status, NodeStatus::Running);
+
+            // While A holds the writer lock, a second instance is
+            // read-only: status renders from the file, resume refuses.
+            let (coord_b, _cb) = spawn_graph_planner_coordinator(vec![]);
+            let (mut actor_b, _tmp_b, _prx_b) = make_graph_actor_detached().await;
+            actor_b.tool_context.subagent_event_tx = Some(coord_b);
+            actor_b.graph_project_dir = Some(project_dir.clone());
+            let status = actor_b.graph_status_message().await;
+            assert!(
+                status.contains("ship the widget"),
+                "read-only view: {status}"
+            );
+            match actor_b.resume_graph(None).await {
+                graph::GraphSetupOutcome::Message(msg) => {
+                    assert!(msg.contains("single-writer"), "{msg}");
+                }
+                graph::GraphSetupOutcome::Inference { .. } => {
+                    panic!("second instance must not steal the writer lock")
+                }
+            }
+
+            // A dies (lock released); a FRESH session revives the graph
+            // from the project file: b demotes to Ready and relaunches.
+            actor_a.graph_project_lock.borrow_mut().take();
+            drop(actor_a);
+            let (coord_c, _cc) = spawn_graph_planner_coordinator(vec![]);
+            let (mut actor_c, _tmp_c, _prx_c) = make_graph_actor_detached().await;
+            actor_c.tool_context.subagent_event_tx = Some(coord_c);
+            actor_c.graph_project_dir = Some(project_dir.clone());
+            match actor_c.resume_graph(None).await {
+                graph::GraphSetupOutcome::Inference { reminder, .. } => {
+                    assert!(
+                        reminder.contains("Graph node 2/4"),
+                        "revive must relaunch node b: {reminder}"
+                    );
+                }
+                graph::GraphSetupOutcome::Message(msg) => {
+                    panic!("fresh session must revive from the project file: {msg}")
+                }
+            }
+            assert_eq!(
+                actor_c.graph_tracker.lock().status(),
+                Some(GoalStatus::Active)
+            );
+
+            // /graph clear removes the projection and releases the lock.
+            drive_node_goal_to_complete(&actor_c).await;
+            let actor_c = StdArc::new(actor_c);
+            let _ = actor_c
+                .execute_builtin_slash_command(BuiltinAction::GraphClear)
+                .await;
+            assert!(
+                crate::session::graph_project::load(&project_dir)
+                    .unwrap()
+                    .is_none(),
+                "clear must remove .kigi/graph.jsonl"
+            );
+            assert!(actor_c.graph_project_lock.borrow().is_none());
+        })
+        .await;
+    unsafe { std::env::remove_var(ENV_FLAG) };
+}

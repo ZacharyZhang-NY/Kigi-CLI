@@ -612,6 +612,14 @@ pub(crate) struct SessionActor {
     /// Max replan passes per graph (0 = replanning off). Cached at
     /// actor construction.
     pub(crate) graph_replan_cap: u32,
+    /// `.kigi` dir at the git root, when the session cwd is in a git
+    /// repo — home of the project-level shared graph projection.
+    pub(crate) graph_project_dir: Option<std::path::PathBuf>,
+    /// Held single-writer lock on the project graph. `Some` while this
+    /// session owns the graph (created or resumed it); dropped on
+    /// `/graph clear`.
+    pub(crate) graph_project_lock:
+        std::cell::RefCell<Option<crate::session::graph_project::ProjectGraphLock>>,
     /// `task_id`s of background tasks (and monitors) that originated during
     /// the goal turn — either spawned by the goal model itself or reparented
     /// from a harness verifier/planner subagent on its exit. Their late

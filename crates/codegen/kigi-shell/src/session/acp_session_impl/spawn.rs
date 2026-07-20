@@ -431,6 +431,8 @@ pub(crate) async fn spawn_session_actor(
         };
         Arc::new(parking_lot::Mutex::new(tracker))
     };
+    let graph_project_dir =
+        crate::session::graph_project::project_graph_dir(tool_context.cwd.as_path());
     let graph_tracker = {
         let session_dir = crate::session::persistence::session_dir(&session_info);
         let tracker = if let Some(snapshot) = persisted_graph_mode {
@@ -1102,6 +1104,8 @@ pub(crate) async fn spawn_session_actor(
         graph_concurrency: effective_config.resolve_graph_concurrency(),
         graph_node_rounds: effective_config.resolve_graph_node_rounds(),
         graph_replan_cap: effective_config.resolve_graph_replan_cap(),
+        graph_project_dir,
+        graph_project_lock: std::cell::RefCell::new(None),
         goal_turn_task_ids: parking_lot::Mutex::new(std::collections::HashSet::new()),
         goal_continuation_streak: std::sync::atomic::AtomicU32::new(0),
         goal_blocked_streak: std::sync::atomic::AtomicU32::new(0),
@@ -1248,8 +1252,13 @@ pub(crate) async fn spawn_session_actor(
     // A restored graph was demoted (Active→UserPaused, Running→Ready) IN
     // MEMORY after the updates-log replay, whose last GraphUpdated still
     // shows the pre-shutdown Active state. Re-emit truth once so a
-    // reattached pager never renders a stale self-driving chip.
+    // reattached pager never renders a stale self-driving chip — and
+    // best-effort reclaim project writership so the shared file gets the
+    // demoted truth too (Busy = another instance owns it; skip quietly).
     if session.graph_tracker.lock().snapshot().is_some() {
+        if let Some(msg) = session.claim_project_graph_for_resume() {
+            tracing::info!(%msg, "graph restore: project writership not reclaimed");
+        }
         session.persist_graph_state();
     }
     if let Some(ref display_cwd) = prompt_display_cwd {
