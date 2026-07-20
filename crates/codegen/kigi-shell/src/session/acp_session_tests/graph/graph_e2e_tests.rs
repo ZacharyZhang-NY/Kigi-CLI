@@ -1892,3 +1892,62 @@ async fn project_graph_revives_in_a_fresh_session_and_write_lock_is_exclusive() 
         .await;
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
+
+// ── G5: /graph show DAG rendering ──────────────────────────────────
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn graph_show_renders_dag_through_handle_prompt() {
+    unsafe { std::env::set_var(ENV_FLAG, "0") };
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (actor, sent) = make_graph_turn_actor().await;
+            // No graph: show degrades to the status message.
+            let text = drive_terminal_slash(&actor, &sent, "/graph show").await;
+            assert!(text.contains("No graph is set"), "{text}");
+
+            // Seed a small diamond directly on the tracker.
+            {
+                let mut tracker = actor.graph_tracker.lock();
+                tracker.create_graph(
+                    "g-1".into(),
+                    "ship the widget".into(),
+                    None,
+                    "2026-01-01T00:00:00Z".into(),
+                );
+                let mk = |id: &str, title: &str, deps: &[&str]| {
+                    crate::session::graph_tracker::GraphNode {
+                        id: id.into(),
+                        title: title.into(),
+                        spec: String::new(),
+                        deps: deps
+                            .iter()
+                            .map(|d| crate::session::graph_tracker::NodeDep {
+                                on: (*d).into(),
+                                kind: crate::session::graph_tracker::DepKind::Blocks,
+                            })
+                            .collect(),
+                        status: NodeStatus::Waiting,
+                        goal_id: None,
+                        rounds: 0,
+                        tokens_used: 0,
+                        failure: None,
+                    }
+                };
+                tracker.install_nodes(vec![
+                    mk("gn-a", "Core", &[]),
+                    mk("gn-b", "API", &["gn-a"]),
+                    mk("gn-c", "Docs", &["gn-b"]),
+                ]);
+            }
+            let text = drive_terminal_slash(&actor, &sent, "/graph show").await;
+            assert!(text.contains("┌"), "box art rendered: {text}");
+            assert!(text.contains("▼"), "edges rendered: {text}");
+            assert!(text.contains("○ Core"), "{text}");
+            assert!(text.contains("· API"), "{text}");
+            assert!(text.contains("achieved"), "legend rendered: {text}");
+        })
+        .await;
+    unsafe { std::env::remove_var(ENV_FLAG) };
+}

@@ -819,6 +819,22 @@ impl SessionActor {
                 self.send_slash_command_output(&msg).await;
                 ok_end_turn(0, None)
             }
+            BuiltinAction::GraphShow => {
+                // Box-drawing DAG; wider than the budget (or no graph)
+                // degrades to the indented status tree — wrapped box art
+                // is worse than no art.
+                const SHOW_WIDTH_BUDGET: usize = 120;
+                let rendered =
+                    self.graph_tracker.lock().snapshot().and_then(|s| {
+                        crate::session::graph_render::render_dag(s, SHOW_WIDTH_BUDGET)
+                    });
+                let msg = match rendered {
+                    Some(dag) => dag,
+                    None => self.graph_status_message().await,
+                };
+                self.send_slash_command_output(&msg).await;
+                ok_end_turn(0, None)
+            }
             BuiltinAction::GraphPause => {
                 use crate::session::goal_tracker::{GoalPauseReason, GoalStatus};
                 let (msg, changed) = {

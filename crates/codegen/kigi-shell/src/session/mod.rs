@@ -304,6 +304,7 @@ pub mod goal_tracker;
 pub(crate) mod graph_plan;
 pub(crate) mod graph_planner;
 pub(crate) mod graph_project;
+pub(crate) mod graph_render;
 pub mod graph_tracker;
 pub mod helpers;
 pub(crate) mod image_describe;

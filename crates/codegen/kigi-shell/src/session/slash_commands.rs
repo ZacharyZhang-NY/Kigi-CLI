@@ -271,9 +271,8 @@ pub(super) const BUILTIN_COMMANDS: &[BuiltinCommand] = &[
         resolve: |args| {
             let trimmed = args.trim();
             match trimmed.to_lowercase().as_str() {
-                // `show` upgrades to a rendered DAG view in G5; until then
-                // it is an alias for the status tree.
-                "" | "status" | "show" => BuiltinAction::GraphStatus,
+                "" | "status" => BuiltinAction::GraphStatus,
+                "show" => BuiltinAction::GraphShow,
                 "pause" => BuiltinAction::GraphPause,
                 "resume" => BuiltinAction::GraphResume { extra_budget: None },
                 "clear" => BuiltinAction::GraphClear,
@@ -719,6 +718,7 @@ pub(super) enum BuiltinAction {
         token_budget: Option<i64>,
     },
     GraphStatus,
+    GraphShow,
     GraphPause,
     GraphResume {
         extra_budget: Option<i64>,
@@ -758,6 +758,7 @@ impl BuiltinAction {
             | BuiltinAction::GoalClear => "goal",
             BuiltinAction::GraphSet { .. }
             | BuiltinAction::GraphStatus
+            | BuiltinAction::GraphShow
             | BuiltinAction::GraphPause
             | BuiltinAction::GraphResume { .. }
             | BuiltinAction::GraphClear => "graph",
@@ -795,9 +796,10 @@ impl BuiltinAction {
             | BuiltinAction::GoalClear => false,
             BuiltinAction::GraphSet { .. } => true,
             BuiltinAction::GraphResume { extra_budget } => extra_budget.is_some(),
-            BuiltinAction::GraphStatus | BuiltinAction::GraphPause | BuiltinAction::GraphClear => {
-                false
-            }
+            BuiltinAction::GraphStatus
+            | BuiltinAction::GraphShow
+            | BuiltinAction::GraphPause
+            | BuiltinAction::GraphClear => false,
         }
     }
 }
@@ -1728,7 +1730,7 @@ mod tests {
         ));
         assert!(matches!(
             resolve_builtin("graph", "show"),
-            Some(BuiltinAction::GraphStatus)
+            Some(BuiltinAction::GraphShow)
         ));
         assert!(matches!(
             resolve_builtin("graph", "pause"),
