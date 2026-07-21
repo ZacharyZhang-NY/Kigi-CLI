@@ -466,6 +466,36 @@ const OPENROUTER_SPEC: PlatformSpec = PlatformSpec {
     strip_listing_id_prefix: None,
 };
 
+/// Base-URL override for Together AI (dev/test escape hatch).
+pub const TOGETHER_BASE_URL_ENV: &str = "KIGI_TOGETHER_BASE_URL";
+
+const TOGETHER_SPEC: PlatformSpec = PlatformSpec {
+    id: "together",
+    display_name: "Together AI",
+    base_url: BaseUrlSource::EnvOr {
+        env: TOGETHER_BASE_URL_ENV,
+        default: "https://api.together.xyz/v1",
+    },
+    uses_oauth: false,
+    allowed_model_prefixes: None,
+    api_key_envs: &["TOGETHER_API_KEY"],
+    vendor: "Together",
+    console_host: Some("api.together.xyz"),
+    login_label: Some("Together AI (API key)"),
+    models_dev_id: Some("togetherai"),
+    wire_serves_metadata: false,
+    wire_api: PlatformWireApi::ChatCompletions,
+    // Together's /v1/models is a BARE JSON array (parse_openai_listing is
+    // tolerant), and it mixes chat/embedding/rerank/image types; keep
+    // tool-calling enrichment-known chat models only.
+    listing: ListingDialect::OpenAi,
+    chat_compat: PlatformChatCompat::Passthrough,
+    key_header: PlatformKeyHeader::Bearer,
+    key_validation_path: None,
+    strip_listing_id_prefix: None,
+    restrict_to_enriched: true,
+};
+
 /// The platform registry. Platforms are compiled-in spec rows; there is no
 /// dynamic provider registration (PRD F2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -492,12 +522,14 @@ pub enum PlatformId {
     Google,
     /// OpenRouter meta-provider (API key, wire-served metadata).
     OpenRouter,
+    /// Together AI platform API (API key, bare-array listing).
+    Together,
 }
 
 impl PlatformId {
     /// All platforms, in catalog precedence order: the subscription channel
     /// first so "default model = first list item" favors it when present.
-    pub const ALL: [PlatformId; 11] = [
+    pub const ALL: [PlatformId; 12] = [
         Self::KimiCode,
         Self::MoonshotCn,
         Self::MoonshotAi,
@@ -509,6 +541,7 @@ impl PlatformId {
         Self::Fireworks,
         Self::Google,
         Self::OpenRouter,
+        Self::Together,
     ];
 
     /// The registry row backing this platform (single source of per-platform
@@ -526,6 +559,7 @@ impl PlatformId {
             Self::Fireworks => &FIREWORKS_SPEC,
             Self::Google => &GOOGLE_SPEC,
             Self::OpenRouter => &OPENROUTER_SPEC,
+            Self::Together => &TOGETHER_SPEC,
         }
     }
 
@@ -738,6 +772,20 @@ pub struct WireThinkEfforts {
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct WireModelsResponse {
     pub data: Vec<WireModel>,
+}
+
+/// Parse an OpenAI-shape `/models` listing, tolerant of BOTH the standard
+/// envelope `{object:"list", data:[...]}` and a bare top-level array `[...]`
+/// (Together AI serves the bare-array form).
+pub fn parse_openai_listing(json: &str) -> Result<Vec<WireModel>, serde_json::Error> {
+    // Sniff the top-level shape so a malformed body yields the diagnostic for
+    // the shape it actually is (a broken bare-array element reports the
+    // element error, not a misleading "expected the envelope object").
+    if json.trim_start().starts_with('[') {
+        serde_json::from_str::<Vec<WireModel>>(json)
+    } else {
+        Ok(serde_json::from_str::<WireModelsResponse>(json)?.data)
+    }
 }
 
 // ── Anthropic listing adapter (ListingDialect::Anthropic) ───────────────────
@@ -1173,6 +1221,28 @@ mod tests {
         );
     }
 
+    /// The OpenAI listing parser accepts both the standard envelope and a
+    /// bare top-level array (Together AI serves the bare form).
+    #[test]
+    fn openai_listing_parse_accepts_envelope_and_bare_array() {
+        let envelope = r#"{"object":"list","data":[
+            {"id":"a","context_length":1000},{"id":"b"}]}"#;
+        let bare = r#"[{"id":"a","context_length":1000},{"id":"b"}]"#;
+        for (label, json) in [("envelope", envelope), ("bare array", bare)] {
+            let models =
+                parse_openai_listing(json).unwrap_or_else(|e| panic!("{label} must parse: {e}"));
+            assert_eq!(
+                models.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(),
+                vec!["a", "b"],
+                "{label}"
+            );
+            assert_eq!(models[0].context_length, 1000);
+        }
+        // Neither shape → error (not a silent empty list).
+        assert!(parse_openai_listing("\"not a list\"").is_err());
+        assert!(parse_openai_listing("{").is_err());
+    }
+
     /// OpenRouter's `/models` is public, so its key validation must target
     /// an auth-requiring endpoint; every other platform validates against
     /// the default `/models`.
@@ -1239,9 +1309,10 @@ mod tests {
                 PlatformId::Fireworks => 8,
                 PlatformId::Google => 9,
                 PlatformId::OpenRouter => 10,
+                PlatformId::Together => 11,
             }
         }
-        const VARIANT_COUNT: usize = 11; // update together with `ordinal`
+        const VARIANT_COUNT: usize = 12; // update together with `ordinal`
         let mut seen: Vec<usize> = PlatformId::ALL.iter().map(|&p| ordinal(p)).collect();
         seen.sort_unstable();
         seen.dedup();
