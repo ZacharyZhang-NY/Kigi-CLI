@@ -625,7 +625,9 @@ mod tests {
                 "qwen-token-plan-cn",
                 "kimi-coding",
                 "zai",
-                "zai-coding-cn"
+                "zai-coding-cn",
+                "xiaomi",
+                "xiaomi-token-plan-cn"
             ]
         );
         assert_eq!(default_id(&built), Some(XAI_API_KEY_METHOD_ID));
@@ -669,7 +671,9 @@ mod tests {
                 "qwen-token-plan-cn",
                 "kimi-coding",
                 "zai",
-                "zai-coding-cn"
+                "zai-coding-cn",
+                "xiaomi",
+                "xiaomi-token-plan-cn"
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -706,7 +710,9 @@ mod tests {
                 "qwen-token-plan-cn",
                 "kimi-coding",
                 "zai",
-                "zai-coding-cn"
+                "zai-coding-cn",
+                "xiaomi",
+                "xiaomi-token-plan-cn"
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -746,7 +752,9 @@ mod tests {
                 "qwen-token-plan-cn",
                 "kimi-coding",
                 "zai",
-                "zai-coding-cn"
+                "zai-coding-cn",
+                "xiaomi",
+                "xiaomi-token-plan-cn"
             ]
         );
         assert_eq!(default_id(&built), None);
@@ -1145,6 +1153,56 @@ mod tests {
         assert_eq!(
             err.message,
             "Invalid API key for zai-coding-cn \u{2014} check your key on open.bigmodel.cn"
+        );
+    }
+
+    /// Xiaomi MiMo (global): /models is auth-gated (401 for a bad key).
+    #[tokio::test]
+    #[serial]
+    async fn xiaomi_validates_against_models_and_rejects_bad_key() {
+        use wiremock::matchers::{method, path};
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(method("GET"))
+            .and(path("/models"))
+            .respond_with(wiremock::ResponseTemplate::new(401))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let _base = EnvGuard::set(kigi_models::XIAOMI_BASE_URL_ENV, &server.uri());
+        let err = authenticate_platform_api_key(kigi_models::PlatformId::Xiaomi, Some("xm-bad"))
+            .await
+            .expect_err("a 401 from /models must reject the key");
+        assert_eq!(
+            err.message,
+            "Invalid API key for xiaomi \u{2014} check your key on xiaomimimo.com"
+        );
+    }
+
+    /// Xiaomi Token Plan CN: distinct base URL; same auth-gated validation.
+    #[tokio::test]
+    #[serial]
+    async fn xiaomi_token_plan_cn_validates_against_models_and_rejects_bad_key() {
+        use wiremock::matchers::{method, path};
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(method("GET"))
+            .and(path("/models"))
+            .respond_with(wiremock::ResponseTemplate::new(401))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let _base = EnvGuard::set(
+            kigi_models::XIAOMI_TOKEN_PLAN_CN_BASE_URL_ENV,
+            &server.uri(),
+        );
+        let err = authenticate_platform_api_key(
+            kigi_models::PlatformId::XiaomiTokenPlanCn,
+            Some("xm-cn-bad"),
+        )
+        .await
+        .expect_err("a 401 from /models must reject the key");
+        assert_eq!(
+            err.message,
+            "Invalid API key for xiaomi-token-plan-cn \u{2014} check your key on xiaomimimo.com"
         );
     }
 }

@@ -772,6 +772,62 @@ const ZAI_CODING_CN_SPEC: PlatformSpec = PlatformSpec {
     restrict_to_enriched: true,
 };
 
+pub const XIAOMI_BASE_URL_ENV: &str = "KIGI_XIAOMI_BASE_URL";
+const XIAOMI_SPEC: PlatformSpec = PlatformSpec {
+    id: "xiaomi",
+    display_name: "Xiaomi MiMo",
+    // Xiaomi MiMo. Per Pi this is plain OpenAI-compatible chat completions.
+    base_url: BaseUrlSource::EnvOr {
+        env: XIAOMI_BASE_URL_ENV,
+        default: "https://api.xiaomimimo.com/v1",
+    },
+    uses_oauth: false,
+    allowed_model_prefixes: None,
+    api_key_envs: &["XIAOMI_API_KEY"],
+    vendor: "Xiaomi",
+    console_host: Some("xiaomimimo.com"),
+    login_label: Some("Xiaomi MiMo (API key)"),
+    models_dev_id: Some("xiaomi"),
+    // /models auth-gated → validator; enrichment from models.dev; restrict to
+    // tool-calling chat models. Live ids match the snapshot keys (mimo-v2.5,
+    // mimo-v2-pro, ...) byte-for-byte (verified vs Pi).
+    wire_serves_metadata: false,
+    wire_api: PlatformWireApi::ChatCompletions,
+    listing: ListingDialect::OpenAi,
+    chat_compat: PlatformChatCompat::Passthrough,
+    key_header: PlatformKeyHeader::Bearer,
+    key_validation_path: None,
+    strip_listing_id_prefix: None,
+    restrict_to_enriched: true,
+};
+
+pub const XIAOMI_TOKEN_PLAN_CN_BASE_URL_ENV: &str = "KIGI_XIAOMI_TOKEN_PLAN_CN_BASE_URL";
+const XIAOMI_TOKEN_PLAN_CN_SPEC: PlatformSpec = PlatformSpec {
+    id: "xiaomi-token-plan-cn",
+    display_name: "Xiaomi Token Plan (China)",
+    base_url: BaseUrlSource::EnvOr {
+        env: XIAOMI_TOKEN_PLAN_CN_BASE_URL_ENV,
+        default: "https://token-plan-cn.xiaomimimo.com/v1",
+    },
+    uses_oauth: false,
+    allowed_model_prefixes: None,
+    api_key_envs: &["XIAOMI_TOKEN_PLAN_CN_API_KEY"],
+    vendor: "Xiaomi",
+    console_host: Some("xiaomimimo.com"),
+    login_label: Some("Xiaomi Token Plan China (API key)"),
+    models_dev_id: Some("xiaomi-token-plan-cn"),
+    // The CN token plan listing also carries mimo TTS models (tool_call=false)
+    // → restrict drops them, keeping only the tool-calling chat models.
+    wire_serves_metadata: false,
+    wire_api: PlatformWireApi::ChatCompletions,
+    listing: ListingDialect::OpenAi,
+    chat_compat: PlatformChatCompat::Passthrough,
+    key_header: PlatformKeyHeader::Bearer,
+    key_validation_path: None,
+    strip_listing_id_prefix: None,
+    restrict_to_enriched: true,
+};
+
 /// The platform registry. Platforms are compiled-in spec rows; there is no
 /// dynamic provider registration (PRD F2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -818,12 +874,16 @@ pub enum PlatformId {
     Zai,
     /// Z.AI coding plan, China / Zhipu BigModel (API key, OpenAI-compatible).
     ZaiCodingCn,
+    /// Xiaomi MiMo, global (API key, OpenAI-compatible).
+    Xiaomi,
+    /// Xiaomi Token Plan, China (API key, OpenAI-compatible).
+    XiaomiTokenPlanCn,
 }
 
 impl PlatformId {
     /// All platforms, in catalog precedence order: the subscription channel
     /// first so "default model = first list item" favors it when present.
-    pub const ALL: [PlatformId; 21] = [
+    pub const ALL: [PlatformId; 23] = [
         Self::KimiCode,
         Self::MoonshotCn,
         Self::MoonshotAi,
@@ -845,6 +905,8 @@ impl PlatformId {
         Self::KimiCoding,
         Self::Zai,
         Self::ZaiCodingCn,
+        Self::Xiaomi,
+        Self::XiaomiTokenPlanCn,
     ];
 
     /// The registry row backing this platform (single source of per-platform
@@ -872,6 +934,8 @@ impl PlatformId {
             Self::KimiCoding => &KIMI_CODING_SPEC,
             Self::Zai => &ZAI_SPEC,
             Self::ZaiCodingCn => &ZAI_CODING_CN_SPEC,
+            Self::Xiaomi => &XIAOMI_SPEC,
+            Self::XiaomiTokenPlanCn => &XIAOMI_TOKEN_PLAN_CN_SPEC,
         }
     }
 
@@ -1633,9 +1697,11 @@ mod tests {
                 PlatformId::KimiCoding => 18,
                 PlatformId::Zai => 19,
                 PlatformId::ZaiCodingCn => 20,
+                PlatformId::Xiaomi => 21,
+                PlatformId::XiaomiTokenPlanCn => 22,
             }
         }
-        const VARIANT_COUNT: usize = 21; // update together with `ordinal`
+        const VARIANT_COUNT: usize = 23; // update together with `ordinal`
         let mut seen: Vec<usize> = PlatformId::ALL.iter().map(|&p| ordinal(p)).collect();
         seen.sort_unstable();
         seen.dedup();
