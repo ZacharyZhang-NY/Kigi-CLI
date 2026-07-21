@@ -47,7 +47,7 @@ pub(crate) fn adapt_chat_completions_body_for(
         kigi_sampling_types::ChatCompat::Passthrough => {
             strip_kigi_private_message_fields(body);
         }
-        kigi_sampling_types::ChatCompat::Mistral => {
+        kigi_sampling_types::ChatCompat::StrictOpenAi => {
             strip_kigi_private_message_fields(body);
             strip_stream_options(body);
         }
@@ -410,7 +410,7 @@ mod tests {
     }
 
     #[test]
-    fn mistral_dialect_strips_stream_options_and_private_fields() {
+    fn strict_openai_dialect_strips_stream_options_and_private_fields() {
         use kigi_sampling_types::ChatCompat;
         // Mistral 422s on stream_options (extra_forbidden) and doesn't know
         // kigi's private message fields; OpenAI-style reasoning_effort stays.
@@ -424,7 +424,7 @@ mod tests {
                   "reasoning_content": "internal", "model_id": "kigi/x" }
             ]
         });
-        adapt_chat_completions_body_for(ChatCompat::Mistral, &mut body);
+        adapt_chat_completions_body_for(ChatCompat::StrictOpenAi, &mut body);
         assert_eq!(
             body.get("stream_options"),
             None,

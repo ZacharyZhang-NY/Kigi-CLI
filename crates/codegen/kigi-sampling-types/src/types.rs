@@ -1078,11 +1078,15 @@ pub enum ChatCompat {
     DeepSeek,
     /// Leave the body as-is (OpenAI-style `reasoning_effort` passes through).
     Passthrough,
-    /// Mistral wire: OpenAI-style `reasoning_effort` passes through, but the
-    /// strict Pydantic validator 422-rejects `stream_options` (the SDK's
-    /// request model has no such field), so it must be stripped. Also strips
-    /// the kigi-private message fields like Passthrough.
-    Mistral,
+    /// Strict OpenAI-compatible validators (Mistral, Cerebras) reject any
+    /// out-of-schema request field with a 4xx (`additionalProperties:false`).
+    /// kigi injects `stream_options.include_usage` on every streaming
+    /// request, which such validators reject, so it is stripped (streaming
+    /// usage falls back to token estimation). `reasoning_effort` passes
+    /// through; private message fields are stripped like Passthrough.
+    /// (Serde alias `mistral` keeps sessions persisted before the rename.)
+    #[serde(alias = "mistral")]
+    StrictOpenAi,
 }
 
 pub const REASONING_EFFORT_META_KEY: &str = "reasoningEffort";
@@ -1449,6 +1453,21 @@ mod tests {
     /// String content (the only shape non-Mistral providers send) stays the
     /// answer verbatim with no thinking — byte-identical to the pre-change
     /// deserialization.
+    /// The StrictOpenAi dialect kept the serde alias `mistral`, so sessions
+    /// persisted before the rename still deserialize.
+    #[test]
+    fn chat_compat_mistral_alias_deserializes_to_strict_openai() {
+        let v: ChatCompat = serde_json::from_str("\"mistral\"").unwrap();
+        assert_eq!(v, ChatCompat::StrictOpenAi);
+        // New value round-trips as strict_open_ai.
+        let v: ChatCompat = serde_json::from_str("\"strict_open_ai\"").unwrap();
+        assert_eq!(v, ChatCompat::StrictOpenAi);
+        assert_eq!(
+            serde_json::to_string(&ChatCompat::StrictOpenAi).unwrap(),
+            "\"strict_open_ai\""
+        );
+    }
+
     #[test]
     fn chunk_delta_string_content_unchanged() {
         let delta: ChatChunkDelta =

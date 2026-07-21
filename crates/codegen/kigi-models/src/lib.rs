@@ -70,7 +70,9 @@ pub enum PlatformChatCompat {
     Kimi,
     DeepSeek,
     Passthrough,
-    Mistral,
+    /// Strict OpenAI-compatible validator (Mistral, Cerebras) — strips
+    /// `stream_options` and private fields.
+    StrictOpenAi,
 }
 
 /// How a platform's API key rides requests (listing, validation, inference).
@@ -365,8 +367,9 @@ const MISTRAL_SPEC: PlatformSpec = PlatformSpec {
     wire_api: PlatformWireApi::ChatCompletions,
     listing: ListingDialect::OpenAi,
     // Mistral's strict validator 422s on `stream_options`, and its reasoning
-    // models return array content — the Mistral dialect handles both.
-    chat_compat: PlatformChatCompat::Mistral,
+    // models return array content — the StrictOpenAi dialect strips
+    // stream_options; the response deserializer handles arrays universally.
+    chat_compat: PlatformChatCompat::StrictOpenAi,
     key_header: PlatformKeyHeader::Bearer,
     // The listing carries embed/moderation/OCR entries; keep tool-calling
     // chat models only.
@@ -496,6 +499,38 @@ const TOGETHER_SPEC: PlatformSpec = PlatformSpec {
     restrict_to_enriched: true,
 };
 
+/// Base-URL override for Cerebras (dev/test escape hatch).
+pub const CEREBRAS_BASE_URL_ENV: &str = "KIGI_CEREBRAS_BASE_URL";
+
+const CEREBRAS_SPEC: PlatformSpec = PlatformSpec {
+    id: "cerebras",
+    display_name: "Cerebras",
+    base_url: BaseUrlSource::EnvOr {
+        env: CEREBRAS_BASE_URL_ENV,
+        default: "https://api.cerebras.ai/v1",
+    },
+    uses_oauth: false,
+    allowed_model_prefixes: None,
+    api_key_envs: &["CEREBRAS_API_KEY"],
+    vendor: "Cerebras",
+    console_host: Some("cloud.cerebras.ai"),
+    login_label: Some("Cerebras (API key)"),
+    models_dev_id: Some("cerebras"),
+    // /models is minimal (id only, no context) → enrichment supplies context
+    // + effort menus. The catalog is all chat LLMs (no embedding/tts
+    // pollution), so keep every live model and enrich the known ones.
+    wire_serves_metadata: false,
+    wire_api: PlatformWireApi::ChatCompletions,
+    listing: ListingDialect::OpenAi,
+    // Cerebras uses strict additionalProperties:false validation (400s on
+    // out-of-schema fields like store/thinking); strip stream_options.
+    chat_compat: PlatformChatCompat::StrictOpenAi,
+    key_header: PlatformKeyHeader::Bearer,
+    key_validation_path: None,
+    strip_listing_id_prefix: None,
+    restrict_to_enriched: false,
+};
+
 /// The platform registry. Platforms are compiled-in spec rows; there is no
 /// dynamic provider registration (PRD F2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -524,12 +559,14 @@ pub enum PlatformId {
     OpenRouter,
     /// Together AI platform API (API key, bare-array listing).
     Together,
+    /// Cerebras platform API (API key, OpenAI-compatible ChatCompletions).
+    Cerebras,
 }
 
 impl PlatformId {
     /// All platforms, in catalog precedence order: the subscription channel
     /// first so "default model = first list item" favors it when present.
-    pub const ALL: [PlatformId; 12] = [
+    pub const ALL: [PlatformId; 13] = [
         Self::KimiCode,
         Self::MoonshotCn,
         Self::MoonshotAi,
@@ -542,6 +579,7 @@ impl PlatformId {
         Self::Google,
         Self::OpenRouter,
         Self::Together,
+        Self::Cerebras,
     ];
 
     /// The registry row backing this platform (single source of per-platform
@@ -560,6 +598,7 @@ impl PlatformId {
             Self::Google => &GOOGLE_SPEC,
             Self::OpenRouter => &OPENROUTER_SPEC,
             Self::Together => &TOGETHER_SPEC,
+            Self::Cerebras => &CEREBRAS_SPEC,
         }
     }
 
@@ -1310,9 +1349,10 @@ mod tests {
                 PlatformId::Google => 9,
                 PlatformId::OpenRouter => 10,
                 PlatformId::Together => 11,
+                PlatformId::Cerebras => 12,
             }
         }
-        const VARIANT_COUNT: usize = 12; // update together with `ordinal`
+        const VARIANT_COUNT: usize = 13; // update together with `ordinal`
         let mut seen: Vec<usize> = PlatformId::ALL.iter().map(|&p| ordinal(p)).collect();
         seen.sort_unstable();
         seen.dedup();

@@ -604,7 +604,8 @@ mod tests {
                 "fireworks",
                 "google",
                 "openrouter",
-                "together"
+                "together",
+                "cerebras"
             ]
         );
         assert_eq!(default_id(&built), Some(XAI_API_KEY_METHOD_ID));
@@ -639,7 +640,8 @@ mod tests {
                 "fireworks",
                 "google",
                 "openrouter",
-                "together"
+                "together",
+                "cerebras"
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -667,7 +669,8 @@ mod tests {
                 "fireworks",
                 "google",
                 "openrouter",
-                "together"
+                "together",
+                "cerebras"
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -698,7 +701,8 @@ mod tests {
                 "fireworks",
                 "google",
                 "openrouter",
-                "together"
+                "together",
+                "cerebras"
             ]
         );
         assert_eq!(default_id(&built), None);

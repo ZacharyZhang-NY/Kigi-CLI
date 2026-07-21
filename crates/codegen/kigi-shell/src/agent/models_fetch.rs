@@ -1304,8 +1304,8 @@ mod tests {
         let cfg = crate::agent::config::sampling_config_for_model(&model_entry, creds, None);
         assert_eq!(
             cfg.chat_compat,
-            kigi_sampling_types::ChatCompat::Mistral,
-            "mistral entries must map to the Mistral dialect (stream_options strip)"
+            kigi_sampling_types::ChatCompat::StrictOpenAi,
+            "mistral entries use the StrictOpenAi dialect (stream_options strip)"
         );
     }
 
@@ -1692,6 +1692,116 @@ mod tests {
         assert_eq!(
             cfg.chat_compat,
             kigi_sampling_types::ChatCompat::Passthrough
+        );
+    }
+
+    /// Cerebras-cycle e2e: enrich WITHOUT restrict (the unpolluted-catalog
+    /// path). A minimal listing (bare ids, no context) → every live model is
+    /// kept; the enrichment-known one gains context + an effort menu, the
+    /// unknown one keeps the default context. Passthrough dialect.
+    #[tokio::test(flavor = "multi_thread")]
+    #[serial_test::serial]
+    async fn cerebras_enriches_without_restrict_keeping_all_models() {
+        let platform_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/models"))
+            .and(wiremock::matchers::header("Authorization", "Bearer cb-1"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                // Minimal Cerebras listing: ids only, no context.
+                serde_json::json!({ "data": [
+                    { "id": "gpt-oss-120b", "object": "model" },
+                    { "id": "brand-new-cerebras-model", "object": "model" }
+                ]}),
+            ))
+            .expect(1)
+            .mount(&platform_server)
+            .await;
+        let modelsdev_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/api.json"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({ "cerebras": { "models": {
+                    "gpt-oss-120b": {
+                        "limit": {"context": 131072, "output": 40960},
+                        "reasoning": true,
+                        "reasoning_options": [
+                            {"type": "effort", "values": ["low", "medium", "high"]}
+                        ],
+                        "tool_call": true
+                    }
+                }}}),
+            ))
+            .expect(1)
+            .mount(&modelsdev_server)
+            .await;
+        let cache_dir = tempfile::tempdir().unwrap();
+        let _base = kigi_test_support::EnvGuard::set(
+            kigi_models::CEREBRAS_BASE_URL_ENV,
+            platform_server.uri(),
+        );
+        let _mdev = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_URL_ENV,
+            format!("{}/api.json", modelsdev_server.uri()),
+        );
+        let _mdev_cache = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_CACHE_DIR_ENV,
+            cache_dir.path(),
+        );
+        let endpoints = crate::agent::config::EndpointsConfig::default();
+        let keys = crate::agent::models::PlatformApiKeys::test_single(
+            kigi_models::PlatformId::Cerebras,
+            "cb-1",
+        );
+        let result = tokio::task::spawn_blocking(move || {
+            fetch_platform_models_blocking(&endpoints, None, &keys)
+        })
+        .await
+        .unwrap()
+        .expect("fetch must succeed");
+        // restrict=false → BOTH the known and the unknown model are kept.
+        assert_eq!(
+            result
+                .models
+                .iter()
+                .map(|m| m.id.as_deref().unwrap_or_default())
+                .collect::<Vec<_>>(),
+            vec!["cerebras/gpt-oss-120b", "cerebras/brand-new-cerebras-model"],
+            "enrich-without-restrict keeps every live model"
+        );
+        let known = &result.models[0];
+        assert_eq!(known.context_window.get(), 131_072, "known model enriched");
+        assert_eq!(known.max_completion_tokens, Some(40_960));
+        assert!(
+            known.supports_reasoning_effort,
+            "enrichment effort menu → selectable levels"
+        );
+        assert_eq!(
+            known
+                .reasoning_efforts
+                .iter()
+                .map(|o| o.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["low", "medium", "high"],
+            "effort menu comes from enrichment"
+        );
+        let unknown = &result.models[1];
+        assert_eq!(
+            unknown.context_window.get(),
+            DEFAULT_CONTEXT_WINDOW,
+            "an enrichment-unknown model keeps the default context (not dropped)"
+        );
+        let model_entry = crate::agent::config::ModelEntry::from_config_entry(known);
+        let creds = crate::agent::config::ResolvedCredentials {
+            api_key: Some("cb-1".into()),
+            base_url: known.base_url.clone(),
+            auth_type: kigi_chat_state::AuthType::ApiKey,
+            auth_scheme: Default::default(),
+        };
+        let cfg = crate::agent::config::sampling_config_for_model(&model_entry, creds, None);
+        assert_eq!(
+            cfg.chat_compat,
+            kigi_sampling_types::ChatCompat::StrictOpenAi,
+            "Cerebras uses the StrictOpenAi dialect (strict validator strips stream_options)"
         );
     }
 
