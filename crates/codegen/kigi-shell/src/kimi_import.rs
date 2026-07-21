@@ -611,7 +611,7 @@ model = "kimi-for-coding"
 max_context_size = 262144
 
 [models.my-openai]
-provider = "openrouter"
+provider = "customllm"
 model = "gpt-x"
 max_context_size = 128000
 
@@ -620,9 +620,9 @@ type = "kimi"
 base_url = "https://api.kimi.com/coding/v1"
 api_key = "sk-kimi-secret"
 
-[providers.openrouter]
+[providers.customllm]
 type = "openai_legacy"
-base_url = "https://openrouter.ai/api/v1"
+base_url = "https://llm.example.test/v1"
 api_key = "sk-or-secret"
 "#,
         )
@@ -711,7 +711,7 @@ api_key = "sk-or-secret"
         let m = &plan.custom_models[0];
         assert_eq!(m.alias, "my-openai");
         assert_eq!(m.model, "gpt-x");
-        assert_eq!(m.base_url, "https://openrouter.ai/api/v1");
+        assert_eq!(m.base_url, "https://llm.example.test/v1");
         assert_eq!(m.api_key.as_deref(), Some("sk-or-secret"));
         assert_eq!(m.context_window, Some(128_000));
 
@@ -850,7 +850,7 @@ api_key = "sk-ms"
         assert_eq!(model["model"].as_str().unwrap(), "gpt-x");
         assert_eq!(
             model["base_url"].as_str().unwrap(),
-            "https://openrouter.ai/api/v1"
+            "https://llm.example.test/v1"
         );
         assert_eq!(model["api_key"].as_str().unwrap(), "sk-or-secret");
         assert_eq!(model["context_window"].as_integer().unwrap(), 128_000);

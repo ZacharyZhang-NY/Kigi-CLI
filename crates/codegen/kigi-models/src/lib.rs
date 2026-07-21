@@ -144,6 +144,11 @@ struct PlatformSpec {
     /// (tts/embeddings/image). Availability still requires the LIVE listing;
     /// this only drops listing noise, never adds models.
     restrict_to_enriched: bool,
+    /// Path (relative to base) to hit for API-key VALIDATION at login, when
+    /// the listing endpoint can't validate. OpenRouter's `/models` is public
+    /// (200 for any key), so a bad key would false-accept at login; its
+    /// `/key` endpoint 401s properly. `None` = validate against `/models`.
+    key_validation_path: Option<&'static str>,
     /// A prefix to strip from each live-listing model id before filtering,
     /// enrichment lookup, and managed-key formation. Google's OpenAI-compat
     /// `/models` returns `models/`-prefixed ids while its chat endpoint (and
@@ -171,6 +176,7 @@ const KIMI_CODE_SPEC: PlatformSpec = PlatformSpec {
     chat_compat: PlatformChatCompat::Kimi,
     key_header: PlatformKeyHeader::Bearer,
     restrict_to_enriched: false,
+    key_validation_path: None,
     strip_listing_id_prefix: None,
 };
 
@@ -194,6 +200,7 @@ const MOONSHOT_CN_SPEC: PlatformSpec = PlatformSpec {
     chat_compat: PlatformChatCompat::Kimi,
     key_header: PlatformKeyHeader::Bearer,
     restrict_to_enriched: false,
+    key_validation_path: None,
     strip_listing_id_prefix: None,
 };
 
@@ -217,6 +224,7 @@ const MOONSHOT_AI_SPEC: PlatformSpec = PlatformSpec {
     chat_compat: PlatformChatCompat::Kimi,
     key_header: PlatformKeyHeader::Bearer,
     restrict_to_enriched: false,
+    key_validation_path: None,
     strip_listing_id_prefix: None,
 };
 
@@ -245,6 +253,7 @@ const OPENAI_SPEC: PlatformSpec = PlatformSpec {
     chat_compat: PlatformChatCompat::Passthrough,
     key_header: PlatformKeyHeader::Bearer,
     restrict_to_enriched: true,
+    key_validation_path: None,
     strip_listing_id_prefix: None,
 };
 
@@ -273,6 +282,7 @@ const ANTHROPIC_SPEC: PlatformSpec = PlatformSpec {
     chat_compat: PlatformChatCompat::Passthrough,
     key_header: PlatformKeyHeader::XApiKey,
     restrict_to_enriched: false,
+    key_validation_path: None,
     strip_listing_id_prefix: None,
 };
 
@@ -301,6 +311,7 @@ const DEEPSEEK_SPEC: PlatformSpec = PlatformSpec {
     chat_compat: PlatformChatCompat::DeepSeek,
     key_header: PlatformKeyHeader::Bearer,
     restrict_to_enriched: false,
+    key_validation_path: None,
     strip_listing_id_prefix: None,
 };
 
@@ -329,6 +340,7 @@ const GROQ_SPEC: PlatformSpec = PlatformSpec {
     // The listing carries whisper/tts entries; keep tool-calling chat
     // models only.
     restrict_to_enriched: true,
+    key_validation_path: None,
     strip_listing_id_prefix: None,
 };
 
@@ -359,6 +371,7 @@ const MISTRAL_SPEC: PlatformSpec = PlatformSpec {
     // The listing carries embed/moderation/OCR entries; keep tool-calling
     // chat models only.
     restrict_to_enriched: true,
+    key_validation_path: None,
     strip_listing_id_prefix: None,
 };
 
@@ -388,6 +401,7 @@ const FIREWORKS_SPEC: PlatformSpec = PlatformSpec {
     // The inference /models listing can include embedding/non-chat models;
     // keep tool-calling enrichment-known models only.
     restrict_to_enriched: true,
+    key_validation_path: None,
     strip_listing_id_prefix: None,
 };
 
@@ -417,7 +431,39 @@ const GOOGLE_SPEC: PlatformSpec = PlatformSpec {
     // The compat listing carries embedding/tts/image models; keep
     // tool-calling enrichment-known chat models only.
     restrict_to_enriched: true,
+    key_validation_path: None,
     strip_listing_id_prefix: Some("models/"),
+};
+
+/// Base-URL override for OpenRouter (dev/test escape hatch).
+pub const OPENROUTER_BASE_URL_ENV: &str = "KIGI_OPENROUTER_BASE_URL";
+
+const OPENROUTER_SPEC: PlatformSpec = PlatformSpec {
+    id: "openrouter",
+    display_name: "OpenRouter",
+    base_url: BaseUrlSource::EnvOr {
+        env: OPENROUTER_BASE_URL_ENV,
+        // Note /api/v1, not /v1.
+        default: "https://openrouter.ai/api/v1",
+    },
+    uses_oauth: false,
+    allowed_model_prefixes: None,
+    api_key_envs: &["OPENROUTER_API_KEY"],
+    vendor: "OpenRouter",
+    console_host: Some("openrouter.ai"),
+    login_label: Some("OpenRouter (API key)"),
+    // OpenRouter's public /models serves context_length for every model, so
+    // enrichment is neither needed nor fetched (verified live: 340/340 carry
+    // a top-level context_length). Not a models.dev provider here.
+    models_dev_id: None,
+    wire_serves_metadata: true,
+    wire_api: PlatformWireApi::ChatCompletions,
+    listing: ListingDialect::OpenAi,
+    chat_compat: PlatformChatCompat::Passthrough,
+    key_header: PlatformKeyHeader::Bearer,
+    restrict_to_enriched: false,
+    key_validation_path: Some("/key"),
+    strip_listing_id_prefix: None,
 };
 
 /// The platform registry. Platforms are compiled-in spec rows; there is no
@@ -444,12 +490,14 @@ pub enum PlatformId {
     Fireworks,
     /// Google Gemini platform API (API key, OpenAI-compatibility shim).
     Google,
+    /// OpenRouter meta-provider (API key, wire-served metadata).
+    OpenRouter,
 }
 
 impl PlatformId {
     /// All platforms, in catalog precedence order: the subscription channel
     /// first so "default model = first list item" favors it when present.
-    pub const ALL: [PlatformId; 10] = [
+    pub const ALL: [PlatformId; 11] = [
         Self::KimiCode,
         Self::MoonshotCn,
         Self::MoonshotAi,
@@ -460,6 +508,7 @@ impl PlatformId {
         Self::Mistral,
         Self::Fireworks,
         Self::Google,
+        Self::OpenRouter,
     ];
 
     /// The registry row backing this platform (single source of per-platform
@@ -476,6 +525,7 @@ impl PlatformId {
             Self::Mistral => &MISTRAL_SPEC,
             Self::Fireworks => &FIREWORKS_SPEC,
             Self::Google => &GOOGLE_SPEC,
+            Self::OpenRouter => &OPENROUTER_SPEC,
         }
     }
 
@@ -570,6 +620,13 @@ impl PlatformId {
     /// (e.g. Google's `models/`). `None` = use the id verbatim.
     pub fn strip_listing_id_prefix(self) -> Option<&'static str> {
         self.spec().strip_listing_id_prefix
+    }
+
+    /// Path (relative to base) for API-key validation at login. Defaults to
+    /// `/models`; a platform whose listing is public (OpenRouter) overrides
+    /// it with an auth-requiring endpoint so a bad key can't false-accept.
+    pub fn key_validation_path(self) -> &'static str {
+        self.spec().key_validation_path.unwrap_or("/models")
     }
 
     /// Model-listing endpoint shape + headers.
@@ -1116,6 +1173,24 @@ mod tests {
         );
     }
 
+    /// OpenRouter's `/models` is public, so its key validation must target
+    /// an auth-requiring endpoint; every other platform validates against
+    /// the default `/models`.
+    #[test]
+    fn only_openrouter_overrides_the_validation_path() {
+        assert_eq!(PlatformId::OpenRouter.key_validation_path(), "/key");
+        for p in PlatformId::ALL {
+            if p != PlatformId::OpenRouter {
+                assert_eq!(
+                    p.key_validation_path(),
+                    "/models",
+                    "{} must validate against /models",
+                    p.as_str()
+                );
+            }
+        }
+    }
+
     /// Google's compat listing returns `models/`-prefixed ids; the spec
     /// must declare the strip so they canonicalize to the bare snapshot
     /// form. Every other platform uses ids verbatim.
@@ -1163,9 +1238,10 @@ mod tests {
                 PlatformId::Mistral => 7,
                 PlatformId::Fireworks => 8,
                 PlatformId::Google => 9,
+                PlatformId::OpenRouter => 10,
             }
         }
-        const VARIANT_COUNT: usize = 10; // update together with `ordinal`
+        const VARIANT_COUNT: usize = 11; // update together with `ordinal`
         let mut seen: Vec<usize> = PlatformId::ALL.iter().map(|&p| ordinal(p)).collect();
         seen.sort_unstable();
         seen.dedup();

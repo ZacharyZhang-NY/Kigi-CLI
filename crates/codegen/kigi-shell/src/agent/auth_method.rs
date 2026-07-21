@@ -394,7 +394,11 @@ pub(crate) async fn authenticate_platform_api_key(
     let Some(key) = key else {
         return Err(auth_err(missing_platform_key_error(platform)));
     };
-    let url = format!("{}/models", platform.base_url().trim_end_matches('/'));
+    let url = format!(
+        "{}{}",
+        platform.base_url().trim_end_matches('/'),
+        platform.key_validation_path()
+    );
     let request = match platform.key_header() {
         kigi_models::PlatformKeyHeader::Bearer => crate::http::shared_client()
             .get(&url)
@@ -598,7 +602,8 @@ mod tests {
                 "groq",
                 "mistral",
                 "fireworks",
-                "google"
+                "google",
+                "openrouter"
             ]
         );
         assert_eq!(default_id(&built), Some(XAI_API_KEY_METHOD_ID));
@@ -631,7 +636,8 @@ mod tests {
                 "groq",
                 "mistral",
                 "fireworks",
-                "google"
+                "google",
+                "openrouter"
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -657,7 +663,8 @@ mod tests {
                 "groq",
                 "mistral",
                 "fireworks",
-                "google"
+                "google",
+                "openrouter"
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -686,7 +693,8 @@ mod tests {
                 "groq",
                 "mistral",
                 "fireworks",
-                "google"
+                "google",
+                "openrouter"
             ]
         );
         assert_eq!(default_id(&built), None);
@@ -815,5 +823,64 @@ mod tests {
             !err.message.contains("sk-bad-secret"),
             "the key must never leak into errors"
         );
+    }
+
+    /// OpenRouter's `/models` is PUBLIC (200 for any key), so validation must
+    /// hit its auth-requiring `/key` endpoint instead — otherwise a bad key
+    /// false-accepts at login. The mock serves `/models` 200 always; a bad
+    /// key must still be rejected (proving `/models` is NOT what's validated).
+    #[tokio::test]
+    #[serial]
+    async fn openrouter_validates_against_key_endpoint_not_public_models() {
+        use wiremock::matchers::{method, path};
+        let server = wiremock::MockServer::start().await;
+        // Public listing: 200 for anyone. If validation used this, a bad key
+        // would pass.
+        wiremock::Mock::given(method("GET"))
+            .and(path("/models"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "data": [] })),
+            )
+            .mount(&server)
+            .await;
+        // Auth-required key endpoint: 401 for a bad key.
+        wiremock::Mock::given(method("GET"))
+            .and(path("/key"))
+            .respond_with(wiremock::ResponseTemplate::new(401))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let _base = EnvGuard::set(kigi_models::OPENROUTER_BASE_URL_ENV, &server.uri());
+        let err =
+            authenticate_platform_api_key(kigi_models::PlatformId::OpenRouter, Some("sk-or-bad"))
+                .await
+                .expect_err("a bad key must be rejected via /key, not accepted via /models");
+        assert_eq!(
+            err.message,
+            "Invalid API key for openrouter \u{2014} check your key on openrouter.ai"
+        );
+    }
+
+    /// A valid OpenRouter key: `/key` returns 200 → accepted.
+    #[tokio::test]
+    #[serial]
+    async fn openrouter_valid_key_succeeds_via_key_endpoint() {
+        use wiremock::matchers::{header, method, path};
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(method("GET"))
+            .and(path("/key"))
+            .and(header("Authorization", "Bearer sk-or-good"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "data": { "label": "k" } })),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let _base = EnvGuard::set(kigi_models::OPENROUTER_BASE_URL_ENV, &server.uri());
+        authenticate_platform_api_key(kigi_models::PlatformId::OpenRouter, Some("sk-or-good"))
+            .await
+            .expect("200 from /key must validate the key");
     }
 }
