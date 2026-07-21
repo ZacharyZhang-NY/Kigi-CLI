@@ -284,7 +284,7 @@ fn fetch_one_platform_models(
         .map(|s| s.to_string());
     let listing: kigi_models::WireModelsResponse = response.json()?;
     let total = listing.data.len();
-    let filtered = kigi_models::filter_allowed_models(platform, listing.data);
+    let mut filtered = kigi_models::filter_allowed_models(platform, listing.data);
     if filtered.len() != total {
         tracing::info!(
             platform = platform.as_str(),
@@ -292,6 +292,51 @@ fn fetch_one_platform_models(
             kept = filtered.len(),
             "applied platform model-prefix filter"
         );
+    }
+    // Polluted listings (tts/embeddings/image entries) are restricted to
+    // models the enrichment catalog knows. FAIL-SAFE: if enrichment has no
+    // data for this provider at all (refresh broken AND snapshot gap), keep
+    // the full listing with a warning — a noisy picker beats an empty one.
+    if platform.restrict_to_enriched()
+        && let Some(dev_id) = platform.models_dev_id()
+    {
+        let provider_known = enrichment.get(dev_id).is_some_and(|m| !m.is_empty());
+        if provider_known {
+            let before = filtered.len();
+            let mut dropped: Vec<String> = Vec::new();
+            // Keep only tool-calling chat models: membership alone would
+            // admit models.dev-known embeddings/moderation entries, which
+            // would 400 on every agentic request (EnrichmentModel.tool_call
+            // exists exactly for this cut).
+            filtered.retain(|wire| {
+                let keep = kigi_models::enrichment::lookup(enrichment, dev_id, &wire.id)
+                    .is_some_and(|meta| meta.tool_call);
+                if !keep {
+                    dropped.push(wire.id.clone());
+                }
+                keep
+            });
+            if filtered.len() != before {
+                tracing::info!(
+                    platform = platform.as_str(),
+                    before,
+                    kept = filtered.len(),
+                    "restricted listing to tool-calling enrichment-known models"
+                );
+                // A launch-day model missing from enrichment lands here for
+                // up to models.dev lag + cache TTL — keep the ids traceable.
+                tracing::debug!(
+                    platform = platform.as_str(),
+                    dropped = ?dropped,
+                    "listing ids dropped by the enrichment restriction"
+                );
+            }
+        } else {
+            tracing::warn!(
+                platform = platform.as_str(),
+                "no enrichment data for provider; keeping full listing"
+            );
+        }
     }
     let base_url = if platform.uses_oauth() {
         endpoints.proxy_url()
@@ -329,8 +374,9 @@ fn fetch_one_platform_models(
 /// Map a live `think_efforts` block to catalog effort options. The wire
 /// token stays the option id/label (`"max"` → label `"Max"`) so the UI
 /// mirrors the server's vocabulary, while the canonical value maps through
-/// the [`kigi_sampling_types::ReasoningEffort`] parser (`"max"` → `Xhigh`).
-/// Unknown tokens are dropped with a warning rather than inventing a level.
+/// the [`kigi_sampling_types::ReasoningEffort`] parser (`"max"` → `Max`
+/// since the Xhigh/Max split). Unknown tokens are dropped with a warning
+/// rather than inventing a level.
 fn think_efforts_to_options(
     think: &kigi_models::WireThinkEfforts,
 ) -> Vec<kigi_sampling_types::ReasoningEffortOption> {
@@ -379,6 +425,13 @@ pub(crate) fn platform_wire_model_to_entry(
     });
     let env_key = (!platform.uses_oauth())
         .then(|| crate::agent::config::EnvKeys::new(platform.api_key_env_names().iter().copied()));
+    let api_backend = match platform.wire_api() {
+        kigi_models::PlatformWireApi::ChatCompletions => {
+            crate::sampling::ApiBackend::ChatCompletions
+        }
+        kigi_models::PlatformWireApi::Responses => crate::sampling::ApiBackend::Responses,
+        kigi_models::PlatformWireApi::Messages => crate::sampling::ApiBackend::Messages,
+    };
     crate::agent::config::ModelEntryConfig {
         id: Some(platform.managed_model_key(&wire.id)),
         name: Some(wire.display_name.clone().unwrap_or_else(|| wire.id.clone())),
@@ -390,7 +443,7 @@ pub(crate) fn platform_wire_model_to_entry(
         top_p: None,
         api_key: None,
         env_key,
-        api_backend: Default::default(),
+        api_backend,
         auth_scheme: None,
         reasoning_effort: think_efforts
             .and_then(|t| t.default_effort.as_deref())
@@ -662,6 +715,127 @@ fn get_string_map(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// OpenAI-cycle e2e (mock wire): a polluted bare-id `/models` listing +
+    /// a models.dev refresh produce a catalog with ONLY chat models, enriched
+    /// context windows / efforts, and the Responses backend — the full
+    /// "live list + documented metadata" contract.
+    #[tokio::test(flavor = "multi_thread")]
+    #[serial_test::serial]
+    async fn openai_listing_is_enriched_filtered_and_responses_backed() {
+        let platform_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/models"))
+            .and(wiremock::matchers::header("Authorization", "Bearer sk-oai"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({ "data": [
+                    { "id": "gpt-5-test", "object": "model", "owned_by": "openai" },
+                    { "id": "whisper-1", "object": "model", "owned_by": "openai" },
+                    { "id": "text-embedding-tiny", "object": "model" }
+                ]}),
+            ))
+            .expect(1)
+            .mount(&platform_server)
+            .await;
+        let modelsdev_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/api.json"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({ "openai": { "models": {
+                    "gpt-5-test": {
+                        "name": "GPT-5 Test",
+                        "reasoning": true,
+                        "reasoning_options": [
+                            {"type": "effort", "values": ["low", "medium", "high"]}
+                        ],
+                        "limit": {"context": 400000, "output": 128000},
+                        "modalities": {"input": ["text", "image"]},
+                        "tool_call": true
+                    },
+                    // models.dev KNOWS embeddings models — membership alone
+                    // must not admit them; the tool_call cut does.
+                    "text-embedding-tiny": {
+                        "limit": {"context": 8191}
+                    }
+                }}}),
+            ))
+            .expect(1)
+            .mount(&modelsdev_server)
+            .await;
+        let cache_dir = tempfile::tempdir().unwrap();
+        let _base = kigi_test_support::EnvGuard::set(
+            kigi_models::OPENAI_BASE_URL_ENV,
+            platform_server.uri(),
+        );
+        let _mdev = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_URL_ENV,
+            format!("{}/api.json", modelsdev_server.uri()),
+        );
+        let _mdev_cache = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_CACHE_DIR_ENV,
+            cache_dir.path(),
+        );
+
+        let endpoints = crate::agent::config::EndpointsConfig::default();
+        let keys = crate::agent::models::PlatformApiKeys::test_single(
+            kigi_models::PlatformId::OpenAi,
+            "sk-oai",
+        );
+        let result = tokio::task::spawn_blocking(move || {
+            fetch_platform_models_blocking(&endpoints, None, &keys)
+        })
+        .await
+        .unwrap()
+        .expect("fetch must succeed");
+
+        assert_eq!(
+            result
+                .models
+                .iter()
+                .map(|m| m.id.as_deref().unwrap_or_default())
+                .collect::<Vec<_>>(),
+            vec!["openai/gpt-5-test"],
+            "pollution must be filtered: whisper (enrichment-unknown) AND \
+             text-embedding-tiny (enrichment-known but not tool-calling)"
+        );
+        let entry = &result.models[0];
+        assert_eq!(
+            entry.context_window.get(),
+            400_000,
+            "context window must come from enrichment (wire had none)"
+        );
+        assert_eq!(
+            entry.api_backend,
+            crate::sampling::ApiBackend::Responses,
+            "OpenAI entries must use the Responses backend"
+        );
+        assert_eq!(entry.name.as_deref(), Some("GPT-5 Test"));
+        assert!(entry.supports_reasoning_effort, "efforts must be filled");
+        assert_eq!(
+            entry
+                .reasoning_efforts
+                .iter()
+                .map(|o| o.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["low", "medium", "high"]
+        );
+        assert!(
+            entry
+                .capabilities
+                .contains(&kigi_models::ModelCapability::Thinking),
+            "enrichment reasoning flag must derive the thinking capability"
+        );
+        assert_eq!(
+            entry.env_key,
+            Some(crate::agent::config::EnvKeys::single("OPENAI_API_KEY")),
+            "entries carry the env NAME (never key values)"
+        );
+        assert!(
+            cache_dir.path().join("models_dev_cache.json").exists(),
+            "the refresh must be cached in the overridden dir"
+        );
+    }
+
     #[test]
     fn get_env_keys_parses_strings_and_rejects_non_strings() {
         use crate::agent::config::EnvKeys;
@@ -1160,6 +1334,10 @@ mod tests {
         assert_eq!(
             platform_models_url(kigi_models::PlatformId::MoonshotAi, &cfg),
             "https://api.moonshot.ai/v1/models"
+        );
+        assert_eq!(
+            platform_models_url(kigi_models::PlatformId::OpenAi, &cfg),
+            "https://api.openai.com/v1/models"
         );
         // Proxy override re-points the subscription platform only.
         let proxied = EndpointsConfig::from_config_value(

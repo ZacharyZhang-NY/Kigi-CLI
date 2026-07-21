@@ -583,7 +583,8 @@ mod tests {
                 XAI_API_KEY_METHOD_ID,
                 KIMI_CODE_METHOD_ID,
                 MOONSHOT_CN_METHOD_ID,
-                MOONSHOT_AI_METHOD_ID
+                MOONSHOT_AI_METHOD_ID,
+                "openai"
             ]
         );
         assert_eq!(default_id(&built), Some(XAI_API_KEY_METHOD_ID));
@@ -609,7 +610,8 @@ mod tests {
                 CACHED_TOKEN_AUTH_METHOD_ID,
                 KIMI_CODE_METHOD_ID,
                 MOONSHOT_CN_METHOD_ID,
-                MOONSHOT_AI_METHOD_ID
+                MOONSHOT_AI_METHOD_ID,
+                "openai"
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -628,7 +630,8 @@ mod tests {
                 CACHED_TOKEN_AUTH_METHOD_ID,
                 KIMI_CODE_METHOD_ID,
                 MOONSHOT_CN_METHOD_ID,
-                MOONSHOT_AI_METHOD_ID
+                MOONSHOT_AI_METHOD_ID,
+                "openai"
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -650,7 +653,8 @@ mod tests {
             vec![
                 KIMI_CODE_METHOD_ID,
                 MOONSHOT_CN_METHOD_ID,
-                MOONSHOT_AI_METHOD_ID
+                MOONSHOT_AI_METHOD_ID,
+                "openai"
             ]
         );
         assert_eq!(default_id(&built), None);

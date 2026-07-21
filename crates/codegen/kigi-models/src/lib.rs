@@ -42,6 +42,15 @@ fn env_or(var: &str, compiled: &str) -> String {
     }
 }
 
+/// Inference dialect a platform speaks. Leaf-safe mirror of the sampler's
+/// `ApiBackend` (kigi-models must stay dependency-light); the shell maps it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlatformWireApi {
+    ChatCompletions,
+    Responses,
+    Messages,
+}
+
 /// Where a platform's base URL is resolved from.
 enum BaseUrlSource {
     /// The Kimi Code subscription base, owned by `kigi_env`
@@ -91,6 +100,13 @@ struct PlatformSpec {
     /// window / thinking metadata — enrichment (and its network refresh) is
     /// skipped entirely for such platforms.
     wire_serves_metadata: bool,
+    /// Inference dialect (mapped to the sampler backend by the shell).
+    wire_api: PlatformWireApi,
+    /// Restrict the live listing to models the enrichment catalog knows —
+    /// for providers whose `/models` is polluted with non-chat entries
+    /// (tts/embeddings/image). Availability still requires the LIVE listing;
+    /// this only drops listing noise, never adds models.
+    restrict_to_enriched: bool,
 }
 
 const KIMI_CODE_SPEC: PlatformSpec = PlatformSpec {
@@ -105,6 +121,8 @@ const KIMI_CODE_SPEC: PlatformSpec = PlatformSpec {
     login_label: None,
     models_dev_id: Some("kimi-for-coding"),
     wire_serves_metadata: true,
+    wire_api: PlatformWireApi::ChatCompletions,
+    restrict_to_enriched: false,
 };
 
 const MOONSHOT_CN_SPEC: PlatformSpec = PlatformSpec {
@@ -122,6 +140,8 @@ const MOONSHOT_CN_SPEC: PlatformSpec = PlatformSpec {
     login_label: Some("Moonshot Open Platform (API key \u{b7} moonshot.cn)"),
     models_dev_id: Some("moonshotai-cn"),
     wire_serves_metadata: true,
+    wire_api: PlatformWireApi::ChatCompletions,
+    restrict_to_enriched: false,
 };
 
 const MOONSHOT_AI_SPEC: PlatformSpec = PlatformSpec {
@@ -139,6 +159,32 @@ const MOONSHOT_AI_SPEC: PlatformSpec = PlatformSpec {
     login_label: Some("Moonshot Open Platform (API key \u{b7} moonshot.ai)"),
     models_dev_id: Some("moonshotai"),
     wire_serves_metadata: true,
+    wire_api: PlatformWireApi::ChatCompletions,
+    restrict_to_enriched: false,
+};
+
+/// Base-URL override for OpenAI (dev/test escape hatch).
+pub const OPENAI_BASE_URL_ENV: &str = "KIGI_OPENAI_BASE_URL";
+
+const OPENAI_SPEC: PlatformSpec = PlatformSpec {
+    id: "openai",
+    display_name: "OpenAI",
+    base_url: BaseUrlSource::EnvOr {
+        env: OPENAI_BASE_URL_ENV,
+        default: "https://api.openai.com/v1",
+    },
+    uses_oauth: false,
+    allowed_model_prefixes: None,
+    api_key_envs: &["OPENAI_API_KEY"],
+    vendor: "OpenAI",
+    console_host: Some("platform.openai.com"),
+    login_label: Some("OpenAI (API key)"),
+    models_dev_id: Some("openai"),
+    // GET /v1/models returns bare ids only (no context/thinking metadata)
+    // and is polluted with tts/embeddings/image entries.
+    wire_serves_metadata: false,
+    wire_api: PlatformWireApi::Responses,
+    restrict_to_enriched: true,
 };
 
 /// The platform registry. Platforms are compiled-in spec rows; there is no
@@ -151,12 +197,19 @@ pub enum PlatformId {
     MoonshotCn,
     /// Moonshot AI open platform, api.moonshot.ai (API key).
     MoonshotAi,
+    /// OpenAI platform API (API key, Responses dialect).
+    OpenAi,
 }
 
 impl PlatformId {
     /// All platforms, in catalog precedence order: the subscription channel
     /// first so "default model = first list item" favors it when present.
-    pub const ALL: [PlatformId; 3] = [Self::KimiCode, Self::MoonshotCn, Self::MoonshotAi];
+    pub const ALL: [PlatformId; 4] = [
+        Self::KimiCode,
+        Self::MoonshotCn,
+        Self::MoonshotAi,
+        Self::OpenAi,
+    ];
 
     /// The registry row backing this platform (single source of per-platform
     /// data; every accessor below reads it).
@@ -165,6 +218,7 @@ impl PlatformId {
             Self::KimiCode => &KIMI_CODE_SPEC,
             Self::MoonshotCn => &MOONSHOT_CN_SPEC,
             Self::MoonshotAi => &MOONSHOT_AI_SPEC,
+            Self::OpenAi => &OPENAI_SPEC,
         }
     }
 
@@ -242,6 +296,17 @@ impl PlatformId {
     /// and its network refresh are skipped for such platforms.
     pub fn wire_serves_metadata(self) -> bool {
         self.spec().wire_serves_metadata
+    }
+
+    /// Inference dialect this platform speaks (shell maps to `ApiBackend`).
+    pub fn wire_api(self) -> PlatformWireApi {
+        self.spec().wire_api
+    }
+
+    /// Restrict the live listing to enrichment-known models (drops non-chat
+    /// listing noise on polluted providers). Never adds models.
+    pub fn restrict_to_enriched(self) -> bool {
+        self.spec().restrict_to_enriched
     }
 }
 
@@ -573,9 +638,10 @@ mod tests {
                 PlatformId::KimiCode => 0,
                 PlatformId::MoonshotCn => 1,
                 PlatformId::MoonshotAi => 2,
+                PlatformId::OpenAi => 3,
             }
         }
-        const VARIANT_COUNT: usize = 3; // update together with `ordinal`
+        const VARIANT_COUNT: usize = 4; // update together with `ordinal`
         let mut seen: Vec<usize> = PlatformId::ALL.iter().map(|&p| ordinal(p)).collect();
         seen.sort_unstable();
         seen.dedup();

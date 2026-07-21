@@ -141,6 +141,14 @@ impl PlatformApiKeys {
         }
         Self { keys }
     }
+
+    /// Test-only constructor for a single API-key platform.
+    #[cfg(test)]
+    pub(crate) fn test_single(platform: kigi_models::PlatformId, key: &str) -> Self {
+        Self {
+            keys: std::collections::BTreeMap::from([(platform, key.to_owned())]),
+        }
+    }
 }
 
 pub(crate) fn task_model_error_for_catalog(

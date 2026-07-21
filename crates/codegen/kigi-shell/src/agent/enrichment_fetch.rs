@@ -57,8 +57,15 @@ fn registry_models_dev_ids() -> BTreeSet<&'static str> {
         .collect()
 }
 
+/// Cache dir override (tests re-home the cache away from the real
+/// `~/.kigi` — same pattern as `KIGI_MODELS_CACHE_DIR`).
+pub(crate) const MODELS_DEV_CACHE_DIR_ENV: &str = "KIGI_MODELS_DEV_CACHE_DIR";
+
 fn cache_path() -> std::path::PathBuf {
-    crate::util::kigi_home::kigi_home().join(CACHE_FILE)
+    match std::env::var(MODELS_DEV_CACHE_DIR_ENV) {
+        Ok(dir) if !dir.trim().is_empty() => std::path::PathBuf::from(dir).join(CACHE_FILE),
+        _ => crate::util::kigi_home::kigi_home().join(CACHE_FILE),
+    }
 }
 
 fn refresh_url() -> Option<String> {
@@ -198,13 +205,21 @@ mod tests {
 
     /// Wire-served-only platform sets never trigger IO — and never force the
     /// bundled parse (empty owned catalog; the merge branch is gated off).
+    /// Kimi/Moonshot users therefore keep a zero-egress, zero-cache fetch
+    /// path even now that enrichment-needing platforms (OpenAI) exist.
     #[test]
     fn wire_served_platforms_get_empty_catalog_without_io() {
-        assert!(!any_platform_needs_enrichment(
-            &kigi_models::PlatformId::ALL
-        ));
-        let catalog = load_enrichment_catalog(&kigi_models::PlatformId::ALL);
+        let wire_served = [
+            kigi_models::PlatformId::KimiCode,
+            kigi_models::PlatformId::MoonshotCn,
+            kigi_models::PlatformId::MoonshotAi,
+        ];
+        assert!(!any_platform_needs_enrichment(&wire_served));
+        let catalog = load_enrichment_catalog(&wire_served);
         assert!(catalog.is_empty());
+        // The full registry now DOES need enrichment (OpenAI is
+        // wire_serves_metadata=false) — the fast path must not hide that.
+        assert!(any_platform_needs_enrichment(&kigi_models::PlatformId::ALL));
     }
 
     fn cache_file_in(dir: &tempfile::TempDir) -> std::path::PathBuf {

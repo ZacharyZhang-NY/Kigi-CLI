@@ -794,34 +794,11 @@ pub enum ReasoningEffort {
 }
 
 impl ReasoningEffort {
-    pub fn to_responses_api(self) -> crate::rs::ReasoningEffort {
-        match self {
-            Self::None => crate::rs::ReasoningEffort::None,
-            Self::Minimal => crate::rs::ReasoningEffort::Minimal,
-            Self::Low => crate::rs::ReasoningEffort::Low,
-            Self::Medium => crate::rs::ReasoningEffort::Medium,
-            Self::High => crate::rs::ReasoningEffort::High,
-            Self::Xhigh => crate::rs::ReasoningEffort::Xhigh,
-            // INTERIM: async-openai (0.33 pinned; upstream through 0.41
-            // still lacks it) has no `Max` variant. The Responses backend
-            // gains true `max` via a post-serialize body patch in the OpenAI
-            // provider cycle; until then Max downgrades to xhigh — reachable
-            // via `[model.*] reasoning_effort = "max"` on a responses-backend
-            // model, hence the loud warn.
-            Self::Max => {
-                tracing::warn!(
-                    "reasoning effort `max` downgraded to `xhigh` on the \
-                     Responses backend (typed wire enum has no max yet)"
-                );
-                crate::rs::ReasoningEffort::Xhigh
-            }
-        }
-    }
-
-    /// Inverse of [`to_responses_api`](Self::to_responses_api): the effort the
-    /// Responses API echoes back on `response.reasoning.effort`. (`max`
-    /// echoes cannot reach here — async-openai's enum has no such variant;
-    /// the OpenAI provider cycle handles them before typed parsing.)
+    /// The canonical effort behind a typed Responses-API echo
+    /// (`response.reasoning.effort`). `max` echoes never reach the typed
+    /// enum — [`normalize_effort_echo`] drops them pre-parse (async-openai
+    /// has no such variant); the request direction writes the wire string
+    /// via [`patch_reasoning_effort`].
     pub fn from_responses_api(effort: crate::rs::ReasoningEffort) -> Self {
         match effort {
             crate::rs::ReasoningEffort::None => Self::None,
@@ -909,6 +886,52 @@ where
             None
         }
     }))
+}
+
+/// Write the canonical effort onto a serialized Responses request body
+/// (`body.reasoning.effort`). This is the ONLY place effort reaches the
+/// Responses wire: the typed `rs::ReasoningEffort` tops out at `xhigh`, so
+/// `max` must be written post-serialize. A `None` effort leaves the body
+/// untouched (the provider default applies).
+pub fn patch_reasoning_effort(body: &mut Value, effort: Option<ReasoningEffort>) {
+    let Some(effort) = effort else { return };
+    let Some(obj) = body.as_object_mut() else {
+        return;
+    };
+    let reasoning = obj
+        .entry("reasoning")
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    if let Some(reasoning) = reasoning.as_object_mut() {
+        reasoning.insert(
+            "effort".to_string(),
+            Value::String(effort.as_str().to_string()),
+        );
+    }
+}
+
+/// Neutralize a `reasoning.effort` echo the typed `rs` enum cannot parse
+/// (`max`): remove it so response deserialization succeeds. The turn's
+/// canonical effort lives in the session sampling config regardless; only
+/// the per-item echo metadata is dropped, recorded as not-echoed.
+/// (Ceiling: async-openai lacks a Max variant; delete this when it grows
+/// one.) Handles both bare response bodies (`/reasoning/effort`) and
+/// stream-event envelopes (`/response/reasoning/effort`).
+pub fn normalize_effort_echo(value: &mut Value) {
+    for path in ["/reasoning", "/response/reasoning"] {
+        if let Some(reasoning) = value.pointer_mut(path).and_then(|v| v.as_object_mut())
+            && let Some(effort) = reasoning.get("effort").and_then(|v| v.as_str())
+            && crate::rs::ReasoningEffort::deserialize(serde_json::Value::String(
+                effort.to_string(),
+            ))
+            .is_err()
+        {
+            tracing::debug!(
+                effort,
+                "reasoning.effort echo unrepresentable in the typed enum; dropping"
+            );
+            reasoning.remove("effort");
+        }
+    }
 }
 
 pub const REASONING_EFFORT_META_KEY: &str = "reasoningEffort";
@@ -1126,6 +1149,12 @@ pub struct CreateResponseWrapper {
     /// The inner Responses API request.
     pub inner: crate::rs::CreateResponse,
 
+    /// Canonical reasoning effort for this request. The typed
+    /// `inner.reasoning.effort` stays `None` (async-openai's enum cannot
+    /// spell `max`); [`patch_reasoning_effort`] writes this value onto the
+    /// serialized body just before send.
+    pub reasoning_effort: Option<ReasoningEffort>,
+
     /// Custom header: conversation ID for tracking.
     pub x_kigi_conv_id: Option<String>,
 
@@ -1152,6 +1181,7 @@ impl CreateResponseWrapper {
     pub fn new(inner: crate::rs::CreateResponse) -> Self {
         Self {
             inner,
+            reasoning_effort: None,
             x_kigi_conv_id: None,
             x_kigi_req_id: None,
             x_kigi_session_id: None,

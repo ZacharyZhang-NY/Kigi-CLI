@@ -70,6 +70,9 @@ fn deserialize_response_event(data: &str) -> Result<rs::ResponseStreamEvent> {
         Err(first_err) => {
             // Try sanitizing: parse as Value, strip unknown tools, retry.
             if let Ok(mut value) = serde_json::from_str::<serde_json::Value>(data) {
+                // A `max` reasoning-effort echo is unrepresentable in the
+                // typed enum; drop it so the event parses.
+                kigi_sampling_types::normalize_effort_echo(&mut value);
                 // Strip tools that async_openai's rs::Tool can't deserialize
                 // (e.g., xAI-specific "x_search"). Instead of maintaining a
                 // hardcoded allowlist, try deserializing each tool entry —
@@ -1028,6 +1031,7 @@ impl SamplingClient {
         // it in post-serialize. This is the last surviving piece of the
         // old raw_output machinery.
         kigi_sampling_types::patch_reasoning_text_types(&mut request_body);
+        kigi_sampling_types::patch_reasoning_effort(&mut request_body, request.reasoning_effort);
         let http_request = self.post(self.endpoint("responses")).json(&request_body);
 
         let response = http_request.send().await.map_err(|e| {
@@ -1074,7 +1078,16 @@ impl SamplingClient {
             });
         }
 
-        let response_obj = serde_json::from_slice::<rs::Response>(&bytes).map_err(|e| {
+        let mut response_value =
+            serde_json::from_slice::<serde_json::Value>(&bytes).map_err(|e| {
+                let raw_body = String::from_utf8_lossy(&bytes);
+                tracing::error!(error = %e, raw_body = %raw_body, "Response body is not JSON");
+                SamplingError::Serialization(e)
+            })?;
+        // A `max` effort echo is unrepresentable in the typed enum — drop it
+        // rather than failing the whole response.
+        kigi_sampling_types::normalize_effort_echo(&mut response_value);
+        let response_obj = serde_json::from_value::<rs::Response>(response_value).map_err(|e| {
             let raw_body = String::from_utf8_lossy(&bytes);
             tracing::error!(
                 error = %e,
@@ -1156,6 +1169,7 @@ impl SamplingClient {
             }
         }
         kigi_sampling_types::patch_reasoning_text_types(&mut request_body);
+        kigi_sampling_types::patch_reasoning_effort(&mut request_body, request.reasoning_effort);
         // Fresh per attempt so signals never leak across retries; `None`
         // (check disabled) sends no header and does no peek work per event.
         let doom_loop = self
@@ -1687,6 +1701,7 @@ impl SamplingClient {
         let responses_request: rs::CreateResponse = (&request).into();
 
         let mut wrapper = CreateResponseWrapper::new(responses_request);
+        wrapper.reasoning_effort = request.reasoning_effort;
         wrapper.x_kigi_conv_id = x_kigi_conv_id;
         wrapper.x_kigi_req_id = x_kigi_req_id;
         wrapper.x_kigi_session_id = x_kigi_session_id;
@@ -1720,6 +1735,7 @@ impl SamplingClient {
         let responses_request: rs::CreateResponse = (&request).into();
 
         let mut wrapper = CreateResponseWrapper::new(responses_request);
+        wrapper.reasoning_effort = request.reasoning_effort;
         wrapper.x_kigi_conv_id = x_kigi_conv_id;
         wrapper.x_kigi_req_id = x_kigi_req_id;
         wrapper.x_kigi_session_id = x_kigi_session_id;

@@ -2158,7 +2158,10 @@ impl From<&ConversationRequest> for rs::CreateResponse {
             prompt_cache_key: None,
             prompt_cache_retention: None,
             reasoning: Some(rs::Reasoning {
-                effort: req.reasoning_effort.map(|e| e.to_responses_api()),
+                // Effort is written onto the serialized body by
+                // `patch_reasoning_effort` (the typed enum cannot spell
+                // `max`); the wrapper carries the canonical value.
+                effort: None,
                 summary: Some(rs::ReasoningSummary::Concise),
             }),
             safety_identifier: None,
@@ -5191,6 +5194,10 @@ mod tests {
 
     #[test]
     fn test_responses_request_carries_reasoning_effort_nested() {
+        // Wire contract since the Max split: the typed conversion leaves
+        // reasoning.effort UNSET (async-openai's enum cannot spell `max`);
+        // `patch_reasoning_effort` writes the canonical token onto the
+        // serialized body — every level, `xhigh` and `max` distinct.
         for (variant, expected) in [
             (crate::ReasoningEffort::None, "none"),
             (crate::ReasoningEffort::Minimal, "minimal"),
@@ -5198,6 +5205,7 @@ mod tests {
             (crate::ReasoningEffort::Medium, "medium"),
             (crate::ReasoningEffort::High, "high"),
             (crate::ReasoningEffort::Xhigh, "xhigh"),
+            (crate::ReasoningEffort::Max, "max"),
         ] {
             let req = ConversationRequest {
                 reasoning_effort: Some(variant),
@@ -5205,13 +5213,54 @@ mod tests {
                     .with_model("test")
             };
             let resp: crate::rs::CreateResponse = (&req).into();
-            let json = serde_json::to_value(&resp).unwrap();
+            let mut json = serde_json::to_value(&resp).unwrap();
+            assert_eq!(
+                json.pointer("/reasoning/effort"),
+                None,
+                "typed conversion must leave effort unset ({variant:?})"
+            );
+            crate::patch_reasoning_effort(&mut json, req.reasoning_effort);
             assert_eq!(
                 json.pointer("/reasoning/effort").and_then(|v| v.as_str()),
                 Some(expected),
-                "{variant:?} should serialize as reasoning.effort={expected:?}; got: {json:#}",
+                "{variant:?} should be patched as reasoning.effort={expected:?}; got: {json:#}",
+            );
+            assert_eq!(
+                json.pointer("/reasoning/summary").and_then(|v| v.as_str()),
+                Some("concise"),
+                "the patch must not clobber reasoning.summary"
             );
         }
+    }
+
+    #[test]
+    fn normalize_effort_echo_drops_only_unrepresentable_tokens() {
+        // `max` echo (bare response shape) is dropped so typed parsing
+        // succeeds; known tokens pass through; stream-event envelopes are
+        // handled via /response/reasoning.
+        let mut bare = serde_json::json!({ "reasoning": { "effort": "max", "summary": "c" } });
+        crate::normalize_effort_echo(&mut bare);
+        assert_eq!(bare.pointer("/reasoning/effort"), None);
+        assert_eq!(
+            bare.pointer("/reasoning/summary").and_then(|v| v.as_str()),
+            Some("c")
+        );
+
+        let mut known = serde_json::json!({ "reasoning": { "effort": "high" } });
+        crate::normalize_effort_echo(&mut known);
+        assert_eq!(
+            known.pointer("/reasoning/effort").and_then(|v| v.as_str()),
+            Some("high"),
+            "representable echoes must pass through"
+        );
+
+        let mut event = serde_json::json!({ "response": { "reasoning": { "effort": "max" } } });
+        crate::normalize_effort_echo(&mut event);
+        assert_eq!(event.pointer("/response/reasoning/effort"), None);
+
+        let mut absent = serde_json::json!({ "output": [] });
+        crate::normalize_effort_echo(&mut absent);
+        assert_eq!(absent, serde_json::json!({ "output": [] }));
     }
 
     #[test]

@@ -160,18 +160,22 @@ struct KimiProviderToml {
 }
 
 /// Built-in kigi platform a kimi provider duplicates, if any: provider type
-/// `kimi` is the Kimi Code subscription channel; the two Moonshot open
-/// platforms are recognized by their fixed production hosts (the same hosts
-/// `kigi_models::PlatformId::base_url` compiles in).
+/// `kimi` is the Kimi Code subscription channel; API-key platforms are
+/// recognized by their production hosts (the same hosts
+/// `kigi_models::PlatformId::base_url` compiles in — moonshot, openai, and
+/// every future registry row automatically).
 fn builtin_platform(provider: &KimiProviderToml) -> Option<PlatformId> {
     if provider.provider_type == "kimi" {
         return Some(PlatformId::KimiCode);
     }
-    match url_host(&provider.base_url) {
-        Some("api.moonshot.cn") => Some(PlatformId::MoonshotCn),
-        Some("api.moonshot.ai") => Some(PlatformId::MoonshotAi),
-        _ => None,
-    }
+    let host = url_host(&provider.base_url)?;
+    PlatformId::ALL.into_iter().find(|platform| {
+        if platform.uses_oauth() {
+            return false;
+        }
+        let base = platform.base_url();
+        url_host(&base) == Some(host)
+    })
 }
 
 /// Host component of an http(s) URL. `None` for other schemes.
