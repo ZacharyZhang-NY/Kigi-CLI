@@ -176,8 +176,9 @@ fn fetch_platform_models_blocking(
     let enabled = enabled_platforms(auth.is_some(), platform_keys);
     if enabled.is_empty() {
         return Err(BackendError::Auth(
-            "No platform credentials: log in with `kigi login` or configure a moonshot API key \
-             (KIGI_MOONSHOT_API_KEY or [platforms.*] in ~/.kigi/config.toml)."
+            "No platform credentials: log in with `kigi login`, paste a platform API key in \
+             the login screen (stored in ~/.kigi/auth.json), or set a platform env var such \
+             as KIGI_MOONSHOT_API_KEY."
                 .into(),
         ));
     }

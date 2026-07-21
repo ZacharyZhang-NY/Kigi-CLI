@@ -27,5 +27,6 @@ pub use meta::AuthMeta;
 pub use model::{AuthMode, KimiAuth, lookup_auth};
 pub(crate) use model::{TOKEN_TTL, is_expired, token_suffix};
 pub use storage::{
-    clear_api_key, read_api_key, read_auth_json, read_token_by_scope, store_api_key,
+    clear_api_key, read_api_key, read_auth_json, read_platform_api_key, read_token_by_scope,
+    store_api_key, store_platform_api_key,
 };

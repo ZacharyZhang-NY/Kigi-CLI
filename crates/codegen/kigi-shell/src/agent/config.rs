@@ -794,22 +794,17 @@ pub struct PlatformCredentialConfig {
     pub api_key: Option<String>,
 }
 
-/// Resolve the API key for an open-platform registry entry:
-/// platform-scoped env > generic `KIGI_MOONSHOT_API_KEY` env > config file.
-/// `None` for the OAuth platform and when nothing is configured.
-/// The returned value must never be logged.
-pub(crate) fn resolve_platform_api_key(
-    platform: kigi_models::PlatformId,
-    platforms: &PlatformsConfig,
-) -> Option<String> {
-    resolve_platform_api_key_with(platform, platforms, |name| std::env::var(name).ok())
-}
-
-/// Testable core of [`resolve_platform_api_key`] with an injected getenv.
+/// Resolve the API key for an API-key registry platform with injected env
+/// and auth.json readers. Precedence: env > auth.json > config file — the
+/// same "env always wins" rule the config-file layer already follows.
+/// `None` for OAuth platforms and when nothing is configured. The batch
+/// production caller is `PlatformApiKeys::resolve` (reads auth.json once
+/// for the whole registry sweep). The returned value must never be logged.
 pub(crate) fn resolve_platform_api_key_with(
     platform: kigi_models::PlatformId,
     platforms: &PlatformsConfig,
     mut getenv: impl FnMut(&str) -> Option<String>,
+    stored: impl FnOnce(kigi_models::PlatformId) -> Option<String>,
 ) -> Option<String> {
     for name in platform.api_key_env_names() {
         if let Some(value) = getenv(name)
@@ -818,15 +813,19 @@ pub(crate) fn resolve_platform_api_key_with(
             return Some(value);
         }
     }
+    if let Some(value) = stored(platform)
+        && !value.trim().is_empty()
+    {
+        return Some(value);
+    }
     platforms.config_api_key(platform)
 }
 
-/// Persist `[platforms.<id>].api_key` into `~/.kigi/config.toml` — the exact
-/// table [`resolve_platform_api_key`] reads back (env vars still win over the
-/// file). Shared writer for the CLI and the TUI login screen; same in-process
-/// pattern as the `kigi mcp add` writer (whole-file toml round-trip, atomic
-/// tmp+rename), taken under the config write lock so it can't interleave with
-/// a settings save.
+/// Persist a platform API key into `~/.kigi/auth.json` under the platform-id
+/// scope — the per-provider auth.json key contract that
+/// [`resolve_platform_api_key`] reads back (env vars still win). Shared
+/// writer for the CLI and the TUI login screen. Legacy `[platforms.*]`
+/// config.toml keys remain a read-only fallback source.
 ///
 /// SECURITY: the key lands in the file by design; it must never be logged,
 /// and errors carry only path/IO context — never the key.
@@ -834,21 +833,15 @@ pub async fn save_platform_api_key(
     platform: kigi_models::PlatformId,
     api_key: &str,
 ) -> anyhow::Result<()> {
-    let _guard = crate::util::config::lock_config_writes().await;
-    save_platform_api_key_at(&crate::util::config::user_config_path(), platform, api_key).await
+    save_platform_api_key_in(&crate::util::kigi_home::kigi_home(), platform, api_key)
 }
 
-/// Path-injectable core of [`save_platform_api_key`] (tests use a tempdir).
-/// Does NOT take the config write lock — production callers go through
-/// [`save_platform_api_key`].
-pub async fn save_platform_api_key_at(
-    path: &std::path::Path,
+/// Home-injectable core of [`save_platform_api_key`] (tests use a tempdir).
+pub fn save_platform_api_key_in(
+    kigi_home: &std::path::Path,
     platform: kigi_models::PlatformId,
     api_key: &str,
 ) -> anyhow::Result<()> {
-    use toml::Value as TomlValue;
-    use toml::map::Map as TomlMap;
-
     anyhow::ensure!(
         !platform.uses_oauth(),
         "{} authenticates via OAuth and takes no API key",
@@ -856,38 +849,13 @@ pub async fn save_platform_api_key_at(
     );
     let api_key = api_key.trim();
     anyhow::ensure!(!api_key.is_empty(), "API key must not be empty");
-
-    let mut root: TomlValue = match tokio::fs::read_to_string(path).await {
-        Ok(s) => toml::from_str(&s).map_err(|e| {
-            // Refuse to overwrite an unparseable config — a silent fallback
-            // to an empty table would drop every other section.
-            anyhow::anyhow!("refusing to overwrite unparseable {}: {e}", path.display())
-        })?,
-        Err(_) => TomlValue::Table(TomlMap::new()),
-    };
-    let table = root
-        .as_table_mut()
-        .ok_or_else(|| anyhow::anyhow!("config root is not a table"))?;
-    let platforms = table
-        .entry("platforms")
-        .or_insert_with(|| TomlValue::Table(TomlMap::new()))
-        .as_table_mut()
-        .ok_or_else(|| anyhow::anyhow!("[platforms] is not a table"))?;
-    let entry = platforms
-        .entry(platform.as_str().to_string())
-        .or_insert_with(|| TomlValue::Table(TomlMap::new()))
-        .as_table_mut()
-        .ok_or_else(|| anyhow::anyhow!("[platforms.{}] is not a table", platform.as_str()))?;
-    entry.insert(
-        "api_key".to_string(),
-        TomlValue::String(api_key.to_string()),
-    );
-
-    let toml_str = toml::to_string_pretty(&root)?;
-    // Mode-preserving atomic write: a 0600 config must not widen while
-    // receiving a secret.
-    crate::util::config::atomic_write_string(path, &toml_str)?;
-    Ok(())
+    crate::auth::store_platform_api_key(kigi_home, platform, api_key).map_err(|e| {
+        anyhow::anyhow!(
+            "saving {} API key to auth.json in {}: {e}",
+            platform.as_str(),
+            kigi_home.display()
+        )
+    })
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -2565,9 +2533,10 @@ fn managed_settings_env_flag(key: &str) -> Option<bool> {
 }
 /// Assemble the final model map. Priority (highest wins):
 /// config.toml `[model.*]` > prefetched (remote) > hardcoded defaults.
-pub fn resolve_model_list(
+pub(crate) fn resolve_model_list(
     cfg: &Config,
     prefetched: Option<IndexMap<String, ModelEntry>>,
+    platform_keys: &crate::agent::models::PlatformApiKeys,
 ) -> IndexMap<String, ModelEntry> {
     let mut resolved: IndexMap<String, ModelEntry> = IndexMap::new();
     if cfg.endpoints.has_custom_endpoint() {
@@ -2681,7 +2650,7 @@ pub fn resolve_model_list(
     }
     apply_global_extra_headers(&mut resolved, &cfg.models);
     apply_global_scalar_defaults(&mut resolved, &cfg.models);
-    apply_platform_credentials(&mut resolved, &cfg.platforms);
+    apply_platform_credentials(&mut resolved, &cfg.platforms, platform_keys);
     for entry in resolved.values_mut() {
         entry.info.derive_reasoning_effort_fields();
     }
@@ -2704,6 +2673,7 @@ pub fn resolve_model_list(
 fn apply_platform_credentials(
     resolved: &mut IndexMap<String, ModelEntry>,
     platforms: &PlatformsConfig,
+    platform_keys: &crate::agent::models::PlatformApiKeys,
 ) {
     for (key, entry) in resolved.iter_mut() {
         let id = entry.info.id.as_deref().unwrap_or(key.as_str());
@@ -2720,15 +2690,23 @@ fn apply_platform_credentials(
             .env_key
             .as_ref()
             .is_some_and(|k| k.resolve_value().is_some());
-        if entry.api_key.is_none()
-            && !env_resolves
-            && let Some(config_key) = platforms.config_api_key(platform)
-        {
-            tracing::debug!(
-                model_key = %key, platform = platform.as_str(),
-                "stamped [platforms] config api_key onto open-platform entry"
-            );
-            entry.api_key = Some(config_key);
+        if entry.api_key.is_none() && !env_resolves {
+            // The resolved snapshot (env > auth.json > config, minus env
+            // which stays live via env_key above) wins over a raw config.toml
+            // read, so a key rotated via the TUI login can never lose to a
+            // stale `[platforms.*]` entry. The config fallback keeps callers
+            // that pass an empty snapshot (tests, pure-config paths) working.
+            let stamped = platform_keys
+                .key_for(platform)
+                .map(str::to_owned)
+                .or_else(|| platforms.config_api_key(platform));
+            if let Some(stamped) = stamped {
+                tracing::debug!(
+                    model_key = %key, platform = platform.as_str(),
+                    "stamped resolved platform api_key onto open-platform entry"
+                );
+                entry.api_key = Some(stamped);
+            }
         }
         // A credentialed open-platform entry is usable by API-key users.
         if entry.has_own_credentials() {
@@ -3877,7 +3855,7 @@ pub fn try_resolve_model_credentials(
     let cfg = Config::new_from_toml_cfg(&raw)
         .map_err(|e| tracing::warn!(error = % e, "config parse failed for credential resolution"))
         .ok()?;
-    let models = resolve_model_list(&cfg, None);
+    let models = resolve_model_list(&cfg, None, &Default::default());
     let entry = find_model_by_id(&models, model_id)?;
     let credentials = resolve_credentials(entry, session_key);
     Some(credentials)
@@ -3936,7 +3914,7 @@ fn with_resolved_model<T>(model_id: &str, f: impl FnOnce(ModelLookup) -> T) -> T
     else {
         return f(ModelLookup::ConfigUnavailable);
     };
-    let models = resolve_model_list(&cfg, None);
+    let models = resolve_model_list(&cfg, None, &Default::default());
     f(ModelLookup::Loaded(find_model_by_id(&models, model_id)))
 }
 /// Resolve a standalone `SamplerConfig` for an auxiliary model slug (image
@@ -4616,7 +4594,7 @@ reasoning_effort = "low"
         )
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
-        let resolved = resolve_model_list(&cfg, None);
+        let resolved = resolve_model_list(&cfg, None, &Default::default());
         let model = resolved.get("my-custom-model").expect("model should exist");
         assert_eq!(model.info.model, "kigi-4.5");
         assert_eq!(model.info.base_url, "https://api.example.com/v1");
@@ -5131,7 +5109,7 @@ reasoning_effort = "low"
         ))
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
-        let resolved = resolve_model_list(&cfg, None);
+        let resolved = resolve_model_list(&cfg, None, &Default::default());
         let model = resolved.get(dm).expect("model should exist");
         assert_eq!(model.api_key, Some("user-custom-api-key".to_string()));
         assert_eq!(model.info.model, dm);
@@ -5184,7 +5162,7 @@ reasoning_effort = "low"
         ))
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
-        let model = resolve_model_list(&cfg, None)
+        let model = resolve_model_list(&cfg, None, &Default::default())
             .get(dm)
             .expect("model should exist")
             .clone();
@@ -5200,7 +5178,7 @@ reasoning_effort = "low"
         ))
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
-        let model = resolve_model_list(&cfg, None)
+        let model = resolve_model_list(&cfg, None, &Default::default())
             .get(dm)
             .expect("model should exist")
             .clone();
@@ -5221,7 +5199,7 @@ reasoning_effort = "low"
         ))
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
-        let model = resolve_model_list(&cfg, None)
+        let model = resolve_model_list(&cfg, None, &Default::default())
             .get(dm)
             .expect("model should exist")
             .clone();
@@ -5237,7 +5215,7 @@ reasoning_effort = "low"
         ))
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
-        let model = resolve_model_list(&cfg, None)
+        let model = resolve_model_list(&cfg, None, &Default::default())
             .get(dm)
             .expect("model should exist")
             .clone();
@@ -5253,7 +5231,7 @@ reasoning_effort = "low"
         ))
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
-        let model = resolve_model_list(&cfg, None)
+        let model = resolve_model_list(&cfg, None, &Default::default())
             .get(dm)
             .expect("model should exist")
             .clone();
@@ -5367,7 +5345,7 @@ reasoning_effort = "low"
         )
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
-        let resolved = resolve_model_list(&cfg, None);
+        let resolved = resolve_model_list(&cfg, None, &Default::default());
         let model = resolved.get("my-custom-model").expect("model should exist");
         assert_eq!(model.info.context_window, NonZeroU64::new(256_000).unwrap());
     }
@@ -5394,7 +5372,7 @@ reasoning_effort = "low"
         )
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
-        let resolved = resolve_model_list(&cfg, None);
+        let resolved = resolve_model_list(&cfg, None, &Default::default());
         let model = resolved
             .get("my-responses-model")
             .expect("model should exist");
@@ -5413,7 +5391,7 @@ reasoning_effort = "low"
         )
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
-        let resolved = resolve_model_list(&cfg, None);
+        let resolved = resolve_model_list(&cfg, None, &Default::default());
         let model = resolved.get("my-chat-model").expect("model should exist");
         assert_eq!(model.info.api_backend, ApiBackend::ChatCompletions);
     }
@@ -5433,7 +5411,7 @@ reasoning_effort = "low"
         )
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
-        let resolved = resolve_model_list(&cfg, None);
+        let resolved = resolve_model_list(&cfg, None, &Default::default());
         let model = resolved.get("my-claude").expect("model should exist");
         assert!(
             model.info.supports_reasoning_effort,
@@ -5456,7 +5434,7 @@ reasoning_effort = "low"
         )
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
-        let resolved = resolve_model_list(&cfg, None);
+        let resolved = resolve_model_list(&cfg, None, &Default::default());
         let model = resolved.get("my-claude").expect("model should exist");
         assert!(
             !model.info.supports_reasoning_effort,
@@ -5478,7 +5456,7 @@ reasoning_effort = "low"
         )
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
-        let resolved = resolve_model_list(&cfg, None);
+        let resolved = resolve_model_list(&cfg, None, &Default::default());
         let model = resolved.get("my-openai").expect("model should exist");
         assert!(
             !model.info.supports_reasoning_effort,
@@ -5497,7 +5475,7 @@ reasoning_effort = "low"
         )
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
-        let resolved = resolve_model_list(&cfg, None);
+        let resolved = resolve_model_list(&cfg, None, &Default::default());
         let model = resolved.get("my-model").expect("model should exist");
         assert_eq!(model.info.api_backend, ApiBackend::ChatCompletions);
     }
@@ -5523,7 +5501,7 @@ reasoning_effort = "low"
         )
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
-        let resolved = resolve_model_list(&cfg, None);
+        let resolved = resolve_model_list(&cfg, None, &Default::default());
         let model = resolved
             .get("my-concise-model")
             .expect("model should exist");
@@ -5541,7 +5519,7 @@ reasoning_effort = "low"
         )
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
-        let resolved = resolve_model_list(&cfg, None);
+        let resolved = resolve_model_list(&cfg, None, &Default::default());
         let model = resolved.get("my-model").expect("model should exist");
         assert!(!model.info.use_concise);
     }
@@ -5600,7 +5578,7 @@ reasoning_effort = "low"
         )
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
-        let resolved = resolve_model_list(&cfg, None);
+        let resolved = resolve_model_list(&cfg, None, &Default::default());
         let model = resolved.get("my-model").expect("model should exist");
         assert!(
             !model.info.use_concise,
@@ -5685,7 +5663,7 @@ reasoning_effort = "low"
         )
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
-        let resolved = resolve_model_list(&cfg, None);
+        let resolved = resolve_model_list(&cfg, None, &Default::default());
         let model = resolved.get("my-agent-model").expect("model should exist");
         assert_eq!(model.info.agent_type, "codex");
     }
@@ -5701,7 +5679,7 @@ reasoning_effort = "low"
         )
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
-        let resolved = resolve_model_list(&cfg, None);
+        let resolved = resolve_model_list(&cfg, None, &Default::default());
         let model = resolved.get("my-model").expect("model should exist");
         assert_eq!(model.info.agent_type, DEFAULT_AGENT_TYPE);
     }
@@ -5962,7 +5940,7 @@ reasoning_effort = "low"
         )
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).unwrap();
-        let catalog = resolve_model_catalog(&cfg, None);
+        let catalog = resolve_model_catalog(&cfg, None, &Default::default());
         let available = available_models(&catalog, true);
         assert!(
             catalog.contains_key("visible-model"),
@@ -5995,7 +5973,11 @@ reasoning_effort = "low"
             "#,
         )
         .unwrap();
-        let catalog = resolve_model_catalog(&Config::new_from_toml_cfg(&raw).unwrap(), None);
+        let catalog = resolve_model_catalog(
+            &Config::new_from_toml_cfg(&raw).unwrap(),
+            None,
+            &Default::default(),
+        );
         assert!(!catalog.contains_key("to-disable"));
     }
     #[test]
@@ -6012,7 +5994,11 @@ reasoning_effort = "low"
             "#,
         )
         .unwrap();
-        let catalog = resolve_model_catalog(&Config::new_from_toml_cfg(&raw).unwrap(), None);
+        let catalog = resolve_model_catalog(
+            &Config::new_from_toml_cfg(&raw).unwrap(),
+            None,
+            &Default::default(),
+        );
         let available = available_models(&catalog, true);
         assert!(catalog.contains_key("to-hide"));
         assert!(catalog["to-hide"].info.hidden);
@@ -6040,7 +6026,11 @@ reasoning_effort = "low"
             "#,
         )
         .unwrap();
-        let catalog = resolve_model_catalog(&Config::new_from_toml_cfg(&raw).unwrap(), None);
+        let catalog = resolve_model_catalog(
+            &Config::new_from_toml_cfg(&raw).unwrap(),
+            None,
+            &Default::default(),
+        );
         assert!(catalog["keep-one"].info.user_selectable, "wildcard match");
         assert!(
             catalog["explicit-key"].info.user_selectable,
@@ -6065,7 +6055,11 @@ reasoning_effort = "low"
             "#,
         )
         .unwrap();
-        let catalog = resolve_model_catalog(&Config::new_from_toml_cfg(&raw).unwrap(), None);
+        let catalog = resolve_model_catalog(
+            &Config::new_from_toml_cfg(&raw).unwrap(),
+            None,
+            &Default::default(),
+        );
         assert!(
             catalog["foo"].info.user_selectable,
             "empty allowed_models must not restrict"
@@ -6110,7 +6104,7 @@ reasoning_effort = "low"
         )
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw).unwrap();
-        let catalog = resolve_model_catalog(&cfg, None);
+        let catalog = resolve_model_catalog(&cfg, None, &Default::default());
         assert!(catalog.contains_key("oauth-only-model"));
         assert!(catalog.contains_key("public-model"));
         let api_available = available_models(&catalog, false);
@@ -6137,7 +6131,7 @@ reasoning_effort = "low"
         )
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
-        let resolved = resolve_model_list(&cfg, None);
+        let resolved = resolve_model_list(&cfg, None, &Default::default());
         let model = resolved.get("slow-model").expect("model should exist");
         assert_eq!(model.info.inference_idle_timeout_secs, Some(600));
     }
@@ -6153,7 +6147,7 @@ reasoning_effort = "low"
         )
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
-        let resolved = resolve_model_list(&cfg, None);
+        let resolved = resolve_model_list(&cfg, None, &Default::default());
         let model = resolved.get("default-model").expect("model should exist");
         assert_eq!(model.info.inference_idle_timeout_secs, None);
     }
@@ -6214,7 +6208,7 @@ reasoning_effort = "low"
     ) -> (Config, IndexMap<String, ModelEntry>) {
         let raw: toml::Value = toml::from_str(toml_str).expect("test TOML should parse");
         let cfg = Config::new_from_toml_cfg(&raw).expect("config should parse");
-        let resolved = resolve_model_list(&cfg, prefetched);
+        let resolved = resolve_model_list(&cfg, prefetched, &Default::default());
         (cfg, resolved)
     }
     fn resolve_sampling(model: &ModelEntry, session_key: Option<&str>) -> SamplerConfig {
@@ -6539,7 +6533,7 @@ reasoning_effort = "low"
                 None,
             ),
         );
-        let resolved = resolve_model_list(&cfg, Some(prefetched));
+        let resolved = resolve_model_list(&cfg, Some(prefetched), &Default::default());
         assert!(
             resolved.contains_key("acme-model"),
             "enterprise model should be present"
@@ -6553,7 +6547,7 @@ reasoning_effort = "low"
     #[test]
     fn e2e_default_endpoint_still_injects_defaults() {
         let cfg = Config::default();
-        let resolved = resolve_model_list(&cfg, None);
+        let resolved = resolve_model_list(&cfg, None, &Default::default());
         assert!(
             resolved.contains_key(BUNDLED_DEFAULT_KEY),
             "default model should be present when using default endpoint"
@@ -8703,7 +8697,7 @@ default = "kigi-4.5"
         );
         entry.info.context_window = NonZeroU64::new(default_cw).unwrap();
         prefetched.insert("kigi-4.5".to_owned(), entry);
-        let resolved = resolve_model_list(&cfg, Some(prefetched));
+        let resolved = resolve_model_list(&cfg, Some(prefetched), &Default::default());
         let by_key = resolved
             .get("kigi-build")
             .expect("kigi-build key must exist");
@@ -8740,7 +8734,7 @@ default = "kigi-4.5"
         entry.info.agent_type = default_agent_type();
         entry.info.api_backend = ApiBackend::default();
         prefetched.insert("kigi-4.5".to_owned(), entry);
-        let resolved = resolve_model_list(&cfg, Some(prefetched));
+        let resolved = resolve_model_list(&cfg, Some(prefetched), &Default::default());
         let latest = resolved.get("kigi-4.5").unwrap();
         assert_eq!(
             latest.info.agent_type,
@@ -8772,7 +8766,7 @@ default = "kigi-4.5"
             test_model_entry("kigi-4.5", "https://test.example.com/v1", None, None, None);
         entry.info.context_window = NonZeroU64::new(65_536).unwrap();
         prefetched.insert("kigi-4.5".to_owned(), entry);
-        let resolved = resolve_model_list(&cfg, Some(prefetched));
+        let resolved = resolve_model_list(&cfg, Some(prefetched), &Default::default());
         let latest = resolved.get("kigi-4.5").unwrap();
         assert_eq!(
             latest.info.context_window.get(),
@@ -8795,7 +8789,7 @@ default = "kigi-4.5"
         );
         entry.info.context_window = NonZeroU64::new(default_cw).unwrap();
         prefetched.insert("some-unknown-model".to_owned(), entry);
-        let resolved = resolve_model_list(&cfg, Some(prefetched));
+        let resolved = resolve_model_list(&cfg, Some(prefetched), &Default::default());
         let model = resolved.get("some-unknown-model").unwrap();
         assert_eq!(
             model.info.context_window.get(),
@@ -8944,7 +8938,7 @@ default = "kigi-4.5"
         let entry = prefetch_model_entry("remote-only-model", 200_000, ApiBackend::default());
         let mut prefetched = IndexMap::new();
         prefetched.insert("remote-only-model".to_owned(), entry);
-        let resolved = resolve_model_list(&cfg, Some(prefetched));
+        let resolved = resolve_model_list(&cfg, Some(prefetched), &Default::default());
         let model = resolved
             .get("remote-only-model")
             .expect("prefetched model should exist");
@@ -8970,7 +8964,7 @@ default = "kigi-4.5"
         let entry = prefetch_model_entry("remote-only-model", 200_000, ApiBackend::default());
         let mut prefetched = IndexMap::new();
         prefetched.insert("remote-only-model".to_owned(), entry);
-        let resolved = resolve_model_list(&cfg, Some(prefetched));
+        let resolved = resolve_model_list(&cfg, Some(prefetched), &Default::default());
         let info = &resolved
             .get("remote-only-model")
             .expect("prefetched model should exist")
@@ -8997,7 +8991,7 @@ default = "kigi-4.5"
         let entry = prefetch_model_entry("remote-only-model", 200_000, ApiBackend::default());
         let mut prefetched = IndexMap::new();
         prefetched.insert("remote-only-model".to_owned(), entry);
-        let resolved = resolve_model_list(&cfg, Some(prefetched));
+        let resolved = resolve_model_list(&cfg, Some(prefetched), &Default::default());
         let model = resolved
             .get("remote-only-model")
             .expect("model should exist");
@@ -9021,7 +9015,7 @@ default = "kigi-4.5"
         entry.info.max_retries = Some(3);
         let mut prefetched = IndexMap::new();
         prefetched.insert("remote-only-model".to_owned(), entry);
-        let resolved = resolve_model_list(&cfg, Some(prefetched));
+        let resolved = resolve_model_list(&cfg, Some(prefetched), &Default::default());
         let model = resolved
             .get("remote-only-model")
             .expect("prefetched model should exist");
@@ -9058,7 +9052,7 @@ default = "kigi-4.5"
         )
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
-        let resolved = resolve_model_list(&cfg, None);
+        let resolved = resolve_model_list(&cfg, None, &Default::default());
         let custom = &resolved.get("custom").expect("custom model").info;
         assert_eq!(custom.reasoning_efforts.len(), 2);
         assert_eq!(custom.reasoning_efforts[0].label, "High");
@@ -9094,7 +9088,7 @@ default = "kigi-4.5"
         }];
         let mut prefetched = IndexMap::new();
         prefetched.insert("kigi-x".to_owned(), entry);
-        let resolved = resolve_model_list(&cfg, Some(prefetched));
+        let resolved = resolve_model_list(&cfg, Some(prefetched), &Default::default());
         let efforts = &resolved
             .get("kigi-x")
             .expect("kigi-x")
@@ -9113,7 +9107,7 @@ default = "kigi-4.5"
         let entry = prefetch_model_entry(BUNDLED_DEFAULT_KEY, default_cw, ApiBackend::default());
         let mut prefetched = IndexMap::new();
         prefetched.insert(BUNDLED_DEFAULT_KEY.to_owned(), entry);
-        let resolved = resolve_model_list(&cfg, Some(prefetched));
+        let resolved = resolve_model_list(&cfg, Some(prefetched), &Default::default());
         let entry = resolved.get(BUNDLED_DEFAULT_KEY).expect("model must exist");
         assert_ne!(
             entry.info.context_window.get(),
@@ -9128,7 +9122,7 @@ default = "kigi-4.5"
         let entry = prefetch_model_entry(BUNDLED_DEFAULT_KEY, explicit_cw, ApiBackend::default());
         let mut prefetched = IndexMap::new();
         prefetched.insert(BUNDLED_DEFAULT_KEY.to_owned(), entry);
-        let resolved = resolve_model_list(&cfg, Some(prefetched));
+        let resolved = resolve_model_list(&cfg, Some(prefetched), &Default::default());
         let entry = resolved.get(BUNDLED_DEFAULT_KEY).expect("model must exist");
         assert_eq!(
             entry.info.context_window.get(),
@@ -9143,7 +9137,7 @@ default = "kigi-4.5"
         let entry = prefetch_model_entry("kigi", default_cw, ApiBackend::default());
         let mut prefetched = IndexMap::new();
         prefetched.insert("kigi".to_owned(), entry);
-        let resolved = resolve_model_list(&cfg, Some(prefetched));
+        let resolved = resolve_model_list(&cfg, Some(prefetched), &Default::default());
         let entry = resolved.get("kigi").expect("model must exist");
         let defaults = default_model_entries(&EndpointsConfig::default());
         if let Some(default) = defaults.get("kigi") {
@@ -9169,9 +9163,9 @@ default = "kigi-4.5"
         if let Some(e) = defs.shift_remove(BUNDLED_DEFAULT_KEY) {
             p.insert(BUNDLED_DEFAULT_KEY.to_string(), e);
         }
-        let resolved = resolve_model_list(&cfg, Some(p));
+        let resolved = resolve_model_list(&cfg, Some(p), &Default::default());
         assert!(resolved.contains_key(BUNDLED_DEFAULT_KEY));
-        let no_p = resolve_model_list(&cfg, None);
+        let no_p = resolve_model_list(&cfg, None, &Default::default());
         assert!(no_p.contains_key(BUNDLED_DEFAULT_KEY));
     }
     #[test]
@@ -9182,7 +9176,7 @@ default = "kigi-4.5"
         if let Some(e) = defs.shift_remove(BUNDLED_DEFAULT_KEY) {
             p.insert(BUNDLED_DEFAULT_KEY.to_string(), e);
         }
-        let resolved = resolve_model_list(&cfg, Some(p));
+        let resolved = resolve_model_list(&cfg, Some(p), &Default::default());
         let sess: Vec<_> = resolved
             .values()
             .filter(|e| e.visible_for_auth(true))
@@ -9203,7 +9197,7 @@ default = "kigi-4.5"
         let mut p = IndexMap::new();
         let e = prefetch_model_entry("secret-xyz", 200000, ApiBackend::default());
         p.insert("secret-xyz".to_string(), e);
-        let resolved = resolve_model_list(&cfg, Some(p));
+        let resolved = resolve_model_list(&cfg, Some(p), &Default::default());
         assert!(resolved.contains_key("secret-xyz"));
         assert!(!resolved.contains_key(BUNDLED_DEFAULT_KEY));
     }
@@ -9213,14 +9207,14 @@ default = "kigi-4.5"
         let mut p = IndexMap::new();
         let e = prefetch_model_entry("kimi-fresh", 500_000, ApiBackend::Responses);
         p.insert("kimi-fresh".to_string(), e);
-        let resolved = resolve_model_list(&cfg, Some(p));
+        let resolved = resolve_model_list(&cfg, Some(p), &Default::default());
         assert!(resolved.contains_key("kimi-fresh"));
         assert!(!resolved.contains_key(BUNDLED_DEFAULT_KEY));
     }
     #[test]
     fn resolve_model_list_empty_prefetch_yields_empty_base() {
         let cfg = Config::default();
-        let resolved = resolve_model_list(&cfg, Some(IndexMap::new()));
+        let resolved = resolve_model_list(&cfg, Some(IndexMap::new()), &Default::default());
         assert!(resolved.is_empty());
     }
     /// Regression: enterprise managed config aliases the bundled subscription
@@ -9239,7 +9233,7 @@ default = "kigi-4.5"
         )
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw).expect("config should parse");
-        let resolved = resolve_model_list(&cfg, None);
+        let resolved = resolve_model_list(&cfg, None, &Default::default());
         let entry = resolved
             .get(BUNDLED_DEFAULT_KEY)
             .expect("bundled default must exist");
@@ -9261,7 +9255,7 @@ default = "kigi-4.5"
         )
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw).expect("config should parse");
-        let resolved = resolve_model_list(&cfg, None);
+        let resolved = resolve_model_list(&cfg, None, &Default::default());
         let entry = resolved
             .get(BUNDLED_DEFAULT_KEY)
             .expect("bundled default must exist");
@@ -9287,7 +9281,7 @@ default = "kigi-4.5"
         )
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw).expect("config should parse");
-        let resolved = resolve_model_list(&cfg, None);
+        let resolved = resolve_model_list(&cfg, None, &Default::default());
 
         let cn = resolved
             .get("moonshot-cn/kimi-k2-turbo-preview")
@@ -9318,6 +9312,76 @@ default = "kigi-4.5"
             "the OAuth platform takes no API key"
         );
     }
+    /// A key that resolves ONLY via auth.json (the TUI-paste storage) must be
+    /// stamped onto the platform's catalog entries exactly like a config.toml
+    /// key — otherwise login validates the key but every completion goes out
+    /// keyless (401), and restart falls back to the login screen.
+    #[test]
+    #[serial]
+    fn auth_json_resolved_key_stamps_matching_open_platform_entries() {
+        let _cn = EnvGuard::unset(kigi_models::MOONSHOT_CN_API_KEY_ENV);
+        let _ai = EnvGuard::unset(kigi_models::MOONSHOT_AI_API_KEY_ENV);
+        let _gen = EnvGuard::unset(kigi_models::MOONSHOT_API_KEY_ENV);
+        let cfg = Config::default();
+        // The resolved snapshot as PlatformApiKeys::resolve would build it
+        // from an auth.json `moonshot-cn` scope (no env, no config.toml).
+        let keys =
+            crate::agent::models::PlatformApiKeys::test_keys(Some("sk-from-auth-json"), None);
+        let resolved = resolve_model_list(&cfg, None, &keys);
+
+        let cn = resolved
+            .get("moonshot-cn/kimi-k2-turbo-preview")
+            .expect("bundled moonshot-cn entry");
+        assert_eq!(
+            cn.api_key.as_deref(),
+            Some("sk-from-auth-json"),
+            "auth.json-resolved key must be stamped onto the entry"
+        );
+        assert!(
+            cn.visible_for_auth(false),
+            "credentialed open-platform entry must be visible to API-key users"
+        );
+        assert!(
+            crate::agent::auth_method::should_advertise_xai_api_key(resolved.values()),
+            "a stamped auth.json key alone must advertise the API-key auth \
+             method on restart (no login screen)"
+        );
+        let ai = resolved
+            .get("moonshot-ai/kimi-k2-turbo-preview")
+            .expect("bundled moonshot-ai entry");
+        assert!(
+            ai.api_key.is_none(),
+            "the cn key must not leak onto the ai platform"
+        );
+    }
+    /// When auth.json and config.toml disagree, the resolved snapshot
+    /// (auth.json) wins — the same precedence the login validator uses, so a
+    /// key rotated via the TUI can never lose to a stale config.toml key.
+    #[test]
+    #[serial]
+    fn auth_json_key_beats_stale_config_key_when_stamping() {
+        let _cn = EnvGuard::unset(kigi_models::MOONSHOT_CN_API_KEY_ENV);
+        let _ai = EnvGuard::unset(kigi_models::MOONSHOT_AI_API_KEY_ENV);
+        let _gen = EnvGuard::unset(kigi_models::MOONSHOT_API_KEY_ENV);
+        let raw: toml::Value = toml::from_str(
+            r#"
+            [platforms.moonshot-cn]
+            api_key = "sk-stale-config"
+            "#,
+        )
+        .unwrap();
+        let cfg = Config::new_from_toml_cfg(&raw).expect("config should parse");
+        let keys = crate::agent::models::PlatformApiKeys::test_keys(Some("sk-rotated"), None);
+        let resolved = resolve_model_list(&cfg, None, &keys);
+        let cn = resolved
+            .get("moonshot-cn/kimi-k2-turbo-preview")
+            .expect("bundled moonshot-cn entry");
+        assert_eq!(
+            cn.api_key.as_deref(),
+            Some("sk-rotated"),
+            "the resolved snapshot must beat the stale config.toml key"
+        );
+    }
     /// F2 acceptance: with ONLY a moonshot key (env), the api-key auth method
     /// is advertised (no login screen) because the catalog has a credentialed
     /// entry.
@@ -9326,84 +9390,96 @@ default = "kigi-4.5"
     fn moonshot_env_key_advertises_api_key_auth_method() {
         let _gen = EnvGuard::set(kigi_models::MOONSHOT_API_KEY_ENV, "sk-only-moonshot");
         let cfg = Config::default();
-        let models = resolve_model_list(&cfg, None);
+        let models = resolve_model_list(&cfg, None, &Default::default());
         assert!(
             crate::agent::auth_method::should_advertise_xai_api_key(models.values()),
             "a moonshot env key alone must advertise the API-key auth method"
         );
     }
-    /// The login-screen writer persists `[platforms.<id>].api_key` into the
-    /// exact table `resolve_platform_api_key` reads back, preserving sibling
-    /// tables and never leaking onto the other platform.
-    #[tokio::test]
-    async fn save_platform_api_key_round_trips_through_resolver() {
+    /// The login-screen writer persists the key into auth.json under the
+    /// platform-id scope — the exact scope `resolve_platform_api_key` reads
+    /// back — trimming whitespace and never leaking onto the other platform.
+    #[test]
+    fn save_platform_api_key_round_trips_through_resolver() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("config.toml");
-        std::fs::write(&path, "[ui]\ncompact_mode = true\n").unwrap();
+        let home = dir.path();
 
-        save_platform_api_key_at(&path, kigi_models::PlatformId::MoonshotCn, "sk-from-tui")
-            .await
+        save_platform_api_key_in(home, kigi_models::PlatformId::MoonshotCn, "  sk-from-tui  ")
             .expect("write must succeed");
 
-        let raw: toml::Value = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        let platforms: PlatformsConfig = raw
-            .get("platforms")
-            .cloned()
-            .expect("[platforms] written")
-            .try_into()
-            .expect("PlatformsConfig parses");
-        // Env unset in this resolve (injected getenv) → config file wins.
-        let resolved =
-            resolve_platform_api_key_with(kigi_models::PlatformId::MoonshotCn, &platforms, |_| {
-                None
-            });
-        assert_eq!(resolved.as_deref(), Some("sk-from-tui"));
-        assert!(
-            platforms
-                .config_api_key(kigi_models::PlatformId::MoonshotAi)
-                .is_none(),
+        // Env unset in this resolve (injected getenv) → auth.json wins.
+        let platforms = PlatformsConfig::default();
+        let resolved = resolve_platform_api_key_with(
+            kigi_models::PlatformId::MoonshotCn,
+            &platforms,
+            |_| None,
+            |p| crate::auth::read_platform_api_key(home, p),
+        );
+        assert_eq!(
+            resolved.as_deref(),
+            Some("sk-from-tui"),
+            "trimmed key round-trips"
+        );
+        assert_eq!(
+            crate::auth::read_platform_api_key(home, kigi_models::PlatformId::MoonshotAi),
+            None,
             "the cn key must not leak onto the ai platform"
         );
-        assert!(
-            raw.get("ui")
-                .and_then(|ui| ui.get("compact_mode"))
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false),
-            "sibling [ui] table must be preserved"
-        );
     }
-    /// Writer guardrails: the OAuth platform takes no key, empty keys are
-    /// rejected, and an unparseable config is refused (never clobbered).
-    #[tokio::test]
-    async fn save_platform_api_key_rejects_invalid_inputs() {
+    /// Precedence: env var > auth.json scope > `[platforms.*]` config file.
+    #[test]
+    fn platform_key_precedence_env_then_auth_json_then_config() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("config.toml");
+        let home = dir.path();
+        save_platform_api_key_in(home, kigi_models::PlatformId::MoonshotCn, "sk-auth-json")
+            .expect("write must succeed");
+        let platforms: PlatformsConfig =
+            toml::from_str("[moonshot-cn]\napi_key = \"sk-config\"\n").unwrap();
+
+        let stored = |p| crate::auth::read_platform_api_key(home, p);
+        // Env wins over both files.
+        let resolved = resolve_platform_api_key_with(
+            kigi_models::PlatformId::MoonshotCn,
+            &platforms,
+            |name| (name == kigi_models::MOONSHOT_CN_API_KEY_ENV).then(|| "sk-env".to_owned()),
+            stored,
+        );
+        assert_eq!(resolved.as_deref(), Some("sk-env"));
+        // auth.json wins over config.toml.
+        let resolved = resolve_platform_api_key_with(
+            kigi_models::PlatformId::MoonshotCn,
+            &platforms,
+            |_| None,
+            stored,
+        );
+        assert_eq!(resolved.as_deref(), Some("sk-auth-json"));
+        // config.toml is the last fallback.
+        let resolved = resolve_platform_api_key_with(
+            kigi_models::PlatformId::MoonshotCn,
+            &platforms,
+            |_| None,
+            |_| None,
+        );
+        assert_eq!(resolved.as_deref(), Some("sk-config"));
+    }
+    /// Writer guardrails: the OAuth platform takes no key and empty keys are
+    /// rejected — and a rejected write never creates auth.json.
+    #[test]
+    fn save_platform_api_key_rejects_invalid_inputs() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
 
         assert!(
-            save_platform_api_key_at(&path, kigi_models::PlatformId::KimiCode, "sk-x")
-                .await
-                .is_err(),
+            save_platform_api_key_in(home, kigi_models::PlatformId::KimiCode, "sk-x").is_err(),
             "kimi-code authenticates via OAuth and must reject an API key"
         );
         assert!(
-            save_platform_api_key_at(&path, kigi_models::PlatformId::MoonshotCn, "   ")
-                .await
-                .is_err(),
+            save_platform_api_key_in(home, kigi_models::PlatformId::MoonshotCn, "   ").is_err(),
             "blank keys must be rejected"
         );
-
-        let bad = "this is [not valid toml\n";
-        std::fs::write(&path, bad).unwrap();
         assert!(
-            save_platform_api_key_at(&path, kigi_models::PlatformId::MoonshotCn, "sk-x")
-                .await
-                .is_err(),
-            "unparseable config must be refused"
-        );
-        assert_eq!(
-            std::fs::read_to_string(&path).unwrap(),
-            bad,
-            "unparseable config must be left untouched"
+            !home.join("auth.json").exists(),
+            "rejected writes must not create auth.json"
         );
     }
     #[test]

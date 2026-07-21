@@ -12,6 +12,7 @@ use tokio_util::sync::CancellationToken;
 
 #[path = "manager/lock.rs"]
 mod lock;
+pub(crate) use lock::try_lock_auth_file_nonblocking;
 #[path = "manager/sleep_gate.rs"]
 mod sleep_gate;
 

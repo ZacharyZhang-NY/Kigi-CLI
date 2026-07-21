@@ -452,18 +452,19 @@ impl MvpAgent {
             )
             .await
     }
-    /// `authenticate(moonshot-cn / moonshot-ai)`: interactive open-platform
-    /// API-key login from the welcome picker.
+    /// `authenticate(<api-key platform id>)`: interactive API-key login from
+    /// the welcome picker for any non-OAuth registry platform.
     ///
     /// Reloads the platform keys from disk+env (the TUI persists the pasted
-    /// key to `[platforms.<id>]` in config.toml immediately before this call),
-    /// fails with an actionable error when none is configured, validates the
-    /// key against `GET {platform_base}/models`, then marks the session
-    /// authenticated exactly like an external API key: publish the method id
-    /// (NOT session-based — no token refresh), swap the freshly-stamped config
-    /// into the models manager, and trigger the model sync so the catalog
-    /// gains the platform's entries. The key itself is never logged.
-    pub(super) async fn authenticate_moonshot(
+    /// key to auth.json under the platform-id scope immediately before this
+    /// call), fails with an actionable error when none is configured,
+    /// validates the key against `GET {platform_base}/models`, then marks the
+    /// session authenticated exactly like an external API key: publish the
+    /// method id (NOT session-based — no token refresh), swap the
+    /// freshly-stamped config into the models manager, and trigger the model
+    /// sync so the catalog gains the platform's entries. The key itself is
+    /// never logged.
+    pub(super) async fn authenticate_api_key_platform(
         &self,
         platform: kigi_models::PlatformId,
         method_id: acp::AuthMethodId,
@@ -480,10 +481,11 @@ impl MvpAgent {
                     Some("platform_key_invalid_or_missing"),
                 );
             })?;
-        // Swap the on-disk config (now carrying the key) into the models
-        // manager so `apply_platform_credentials` stamps the platform's
-        // catalog entries; a parse failure keeps the last-known-good config
-        // (`on_auth_changed` below still re-resolves keys from disk itself).
+        // Rebuild the catalog from the on-disk config: the rebuild freshly
+        // resolves platform keys (env > auth.json > config), so the key just
+        // persisted to auth.json is stamped onto the platform's entries; a
+        // parse failure keeps the last-known-good config (`on_auth_changed`
+        // below still re-resolves keys from disk itself).
         match crate::config::load_effective_config()
             .map_err(|e| e.to_string())
             .and_then(|raw| crate::agent::config::Config::new_from_toml_cfg(&raw))

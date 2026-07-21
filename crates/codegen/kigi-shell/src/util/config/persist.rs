@@ -92,13 +92,6 @@ pub async fn save_config(config: &Config) -> Result<()> {
     Ok(())
 }
 
-/// Acquire the `config.toml` write lock used by [`save_config`], so callers that
-/// mutate the file directly (marketplace add/remove) can't interleave with a
-/// settings save and clobber it.
-pub(crate) async fn lock_config_writes() -> tokio::sync::MutexGuard<'static, ()> {
-    SAVE_LOCK.lock().await
-}
-
 /// Read a file, treating only `NotFound` as empty. Hard read errors (EACCES,
 /// EIO) propagate so callers don't clobber an unreadable file on the next write.
 pub(crate) fn read_to_string_or_empty(path: &std::path::Path) -> std::io::Result<String> {

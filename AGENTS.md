@@ -150,6 +150,22 @@ edges stay deterministic Rust. The harness appends a terminal
   the replan cap; `{"ops": []}` is a respected free no-op; failures
   degrade.
 
+## Provider registry & API-key auth (post-0.1.3 expansion)
+
+- The platform registry is compiled-in spec rows in `kigi-models`
+  (`PlatformSpec`; adding a platform = enum variant + `ALL` entry + `spec()`
+  arm + row; registry tests enforce completeness/uniqueness/row shape).
+- API-key resolution precedence, per platform: platform env var(s) >
+  `auth.json` scope named by the platform id (`moonshot-cn`, …) >
+  legacy `[platforms.<id>]` in config.toml (read-only fallback).
+- The TUI login picker persists pasted keys to `auth.json` (platform-id
+  scope, `api_key` mode) — never to config.toml. The keyring holds ONLY the
+  OAuth session scope; platform keys are file-only.
+- Auth method ids over ACP equal the platform ids; interactive picker rows
+  are built generically from advertised methods (`AuthMethodKind::
+  ApiKeyPlatform`), so new registry rows appear in the picker with no TUI
+  changes.
+
 ## Milestones (PRD §8.3)
 
 - M0 (done): rename, deletions (voice/telemetry/announcements/marketplace/

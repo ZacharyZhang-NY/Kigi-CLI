@@ -55,38 +55,57 @@ enum CacheAuthMethod {
     Platforms,
 }
 
-/// Resolved open-platform API keys (PRD F2): platform-scoped env >
-/// generic `KIGI_MOONSHOT_API_KEY` env > `[platforms.*]` config.
+/// Resolved API-key platform credentials (PRD F2), one entry per registry
+/// platform with a usable key: platform env var(s) > auth.json platform
+/// scope > `[platforms.*]` config.
 ///
 /// SECURITY: values are secrets — the manual `Debug` impl prints presence
 /// only, and nothing here may be logged or persisted.
 #[derive(Clone, Default)]
 pub(crate) struct PlatformApiKeys {
-    moonshot_cn: Option<String>,
-    moonshot_ai: Option<String>,
+    keys: std::collections::BTreeMap<kigi_models::PlatformId, String>,
 }
 
 impl std::fmt::Debug for PlatformApiKeys {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PlatformApiKeys")
-            .field("moonshot_cn", &self.moonshot_cn.is_some())
-            .field("moonshot_ai", &self.moonshot_ai.is_some())
-            .finish()
+        let mut s = f.debug_struct("PlatformApiKeys");
+        for platform in kigi_models::PlatformId::ALL {
+            if !platform.uses_oauth() {
+                s.field(platform.as_str(), &self.keys.contains_key(&platform));
+            }
+        }
+        s.finish()
     }
 }
 
 impl PlatformApiKeys {
     pub(crate) fn resolve(platforms: &config::PlatformsConfig) -> Self {
-        Self {
-            moonshot_cn: config::resolve_platform_api_key(
-                kigi_models::PlatformId::MoonshotCn,
+        // Read auth.json ONCE for the whole registry sweep — per-platform
+        // re-reads would mean one file parse per provider on every resolve.
+        let stored =
+            crate::auth::read_auth_json(&crate::util::kigi_home::kigi_home().join("auth.json"))
+                .ok();
+        let mut keys = std::collections::BTreeMap::new();
+        for platform in kigi_models::PlatformId::ALL {
+            if platform.uses_oauth() {
+                continue;
+            }
+            let key = config::resolve_platform_api_key_with(
+                platform,
                 platforms,
-            ),
-            moonshot_ai: config::resolve_platform_api_key(
-                kigi_models::PlatformId::MoonshotAi,
-                platforms,
-            ),
+                |name| std::env::var(name).ok(),
+                |p| {
+                    stored
+                        .as_ref()
+                        .and_then(|m| m.get(p.as_str()))
+                        .map(|a| a.key.clone())
+                },
+            );
+            if let Some(key) = key {
+                keys.insert(platform, key);
+            }
         }
+        Self { keys }
     }
 
     /// Resolve from the effective on-disk config (startup paths that have no
@@ -101,26 +120,26 @@ impl PlatformApiKeys {
     }
 
     pub(crate) fn key_for(&self, platform: kigi_models::PlatformId) -> Option<&str> {
-        match platform {
-            kigi_models::PlatformId::KimiCode => None,
-            kigi_models::PlatformId::MoonshotCn => self.moonshot_cn.as_deref(),
-            kigi_models::PlatformId::MoonshotAi => self.moonshot_ai.as_deref(),
-        }
+        self.keys.get(&platform).map(String::as_str)
     }
 
-    /// Any open-platform key configured? Drives "should we prefetch without a
-    /// session" and the F2 acceptance path (moonshot key only, no login).
+    /// Any API-key platform credentialed? Drives "should we prefetch without
+    /// a session" and the F2 acceptance path (platform key only, no login).
     pub(crate) fn any(&self) -> bool {
-        self.moonshot_cn.is_some() || self.moonshot_ai.is_some()
+        !self.keys.is_empty()
     }
 
     /// Test-only constructor (fields are private to this module).
     #[cfg(test)]
     pub(crate) fn test_keys(cn: Option<&str>, ai: Option<&str>) -> Self {
-        Self {
-            moonshot_cn: cn.map(str::to_owned),
-            moonshot_ai: ai.map(str::to_owned),
+        let mut keys = std::collections::BTreeMap::new();
+        if let Some(k) = cn {
+            keys.insert(kigi_models::PlatformId::MoonshotCn, k.to_owned());
         }
+        if let Some(k) = ai {
+            keys.insert(kigi_models::PlatformId::MoonshotAi, k.to_owned());
+        }
+        Self { keys }
     }
 }
 
@@ -300,7 +319,11 @@ impl ModelsManager {
                 .map(|c| c.models)
         });
         let has_prefetched = prefetched_models.is_some();
-        let catalog = resolve_model_catalog(cfg, prefetched_models.clone());
+        let catalog = resolve_model_catalog(
+            cfg,
+            prefetched_models.clone(),
+            &PlatformApiKeys::resolve(&cfg.platforms),
+        );
 
         // Validate only against a real catalog; a bundled-only first run defers
         // to the async fetch (`apply_refresh_result`).
@@ -348,7 +371,11 @@ impl ModelsManager {
             return;
         }
         let prefetched = self.inner.prefetched.read().clone();
-        let new_catalog = resolve_model_catalog(&new_config, prefetched);
+        let new_catalog = resolve_model_catalog(
+            &new_config,
+            prefetched,
+            &PlatformApiKeys::resolve(&new_config.platforms),
+        );
         let has_real_catalog = *self.inner.has_fetched_real_catalog.read();
         if has_real_catalog && let Err(e) = validate_selectable(&new_config, &new_catalog) {
             tracing::error!(error = %e, "ignoring config reload: allowed_models excludes all models");
@@ -636,7 +663,8 @@ impl ModelsManager {
     // ── Mutations ───────────────────────────────────────────────────
 
     fn rebuild(&self, cfg: &config::Config, prefetched: Option<IndexMap<String, ModelEntry>>) {
-        *self.inner.models.write() = resolve_model_catalog(cfg, prefetched);
+        *self.inner.models.write() =
+            resolve_model_catalog(cfg, prefetched, &PlatformApiKeys::resolve(&cfg.platforms));
     }
 
     /// Refresh models when the etag changes.
@@ -2015,11 +2043,13 @@ impl ModelGlobSet {
 /// `find_model_by_id`/`models()` and ignore `user_selectable`, so they need no
 /// exemption. Globs are validated at load (`Config::validate_model_filters`);
 /// the arms here fail closed if one slips through.
-pub fn resolve_model_catalog(
+pub(crate) fn resolve_model_catalog(
     cfg: &config::Config,
     prefetched: Option<IndexMap<String, ModelEntry>>,
+    platform_keys: &PlatformApiKeys,
 ) -> IndexMap<String, ModelEntry> {
-    let mut catalog: IndexMap<String, ModelEntry> = config::resolve_model_list(cfg, prefetched);
+    let mut catalog: IndexMap<String, ModelEntry> =
+        config::resolve_model_list(cfg, prefetched, platform_keys);
 
     if let Ok(Some(disabled)) = ModelGlobSet::compile(cfg.models.disabled_models.as_ref()) {
         let before = catalog.len();
@@ -2271,7 +2301,7 @@ mod tests {
             context_window = 256000
             "#,
         );
-        let catalog = resolve_model_catalog(&cfg, None);
+        let catalog = resolve_model_catalog(&cfg, None, &Default::default());
         let (_key, entry, _src) = resolve_default_model(&cfg, &catalog, true);
         assert!(
             entry.info.user_selectable,
@@ -2298,7 +2328,7 @@ mod tests {
             context_window = 256000
             "#,
         );
-        let catalog = resolve_model_catalog(&excluded, None);
+        let catalog = resolve_model_catalog(&excluded, None, &Default::default());
         assert!(
             validate_selectable(&excluded, &catalog)
                 .unwrap_err()
@@ -2316,7 +2346,7 @@ mod tests {
             context_window = 256000
             "#,
         );
-        let catalog = resolve_model_catalog(&zero, None);
+        let catalog = resolve_model_catalog(&zero, None, &Default::default());
         assert!(validate_selectable(&zero, &catalog).is_err());
     }
 
@@ -2463,7 +2493,7 @@ mod tests {
         reasoning_entry.info.supports_reasoning_effort = true;
         prefetched.insert("reasoning-model".to_string(), reasoning_entry);
 
-        let catalog = resolve_model_catalog(&cfg, Some(prefetched));
+        let catalog = resolve_model_catalog(&cfg, Some(prefetched), &Default::default());
         assert_eq!(
             catalog["reasoning-model"].info.reasoning_effort,
             Some(ReasoningEffort::High),
@@ -2484,7 +2514,7 @@ mod tests {
         };
         prefetched.insert("plain-model".to_string(), plain_entry);
 
-        let catalog = resolve_model_catalog(&cfg, Some(prefetched));
+        let catalog = resolve_model_catalog(&cfg, Some(prefetched), &Default::default());
         assert_eq!(
             catalog["plain-model"].info.reasoning_effort, None,
             "non-reasoning default model must NOT be stamped with persisted effort",
@@ -2537,7 +2567,7 @@ mod tests {
         }];
         prefetched.insert("legacy-none".to_string(), with_none);
 
-        let catalog = resolve_model_catalog(&cfg, Some(prefetched));
+        let catalog = resolve_model_catalog(&cfg, Some(prefetched), &Default::default());
         assert_eq!(
             catalog["kigi-4.5"].info.reasoning_effort,
             Some(ReasoningEffort::High),
@@ -2583,7 +2613,7 @@ mod tests {
         cfg.config_models
             .insert("plain".to_string(), config::ConfigModelOverride::default());
 
-        let catalog = resolve_model_catalog(&cfg, None);
+        let catalog = resolve_model_catalog(&cfg, None, &Default::default());
         let info = &catalog["menu-only"].info;
         assert!(
             info.supports_reasoning_effort,
@@ -2644,7 +2674,7 @@ mod tests {
         };
         prefetched.insert("plain-model".to_string(), plain_entry);
 
-        let catalog = resolve_model_catalog(&cfg, Some(prefetched));
+        let catalog = resolve_model_catalog(&cfg, Some(prefetched), &Default::default());
         assert_eq!(
             catalog["reasoning-model"].info.reasoning_effort,
             Some(ReasoningEffort::High),
@@ -3314,10 +3344,7 @@ mod tests {
     use serial_test::serial;
 
     fn keys(cn: Option<&str>, ai: Option<&str>) -> PlatformApiKeys {
-        PlatformApiKeys {
-            moonshot_cn: cn.map(str::to_owned),
-            moonshot_ai: ai.map(str::to_owned),
-        }
+        PlatformApiKeys::test_keys(cn, ai)
     }
 
     #[test]
@@ -3366,6 +3393,7 @@ mod tests {
                 kigi_models::PlatformId::MoonshotCn,
                 &platforms,
                 getenv,
+                |_| None,
             )
             .as_deref(),
             Some("env-cn"),
@@ -3376,6 +3404,7 @@ mod tests {
                 kigi_models::PlatformId::MoonshotAi,
                 &platforms,
                 getenv,
+                |_| None,
             )
             .as_deref(),
             Some("env-generic"),
@@ -3387,6 +3416,7 @@ mod tests {
                 kigi_models::PlatformId::MoonshotAi,
                 &platforms,
                 |_| None,
+                |_| None,
             )
             .as_deref(),
             Some("cfg-ai"),
@@ -3397,6 +3427,7 @@ mod tests {
                 kigi_models::PlatformId::KimiCode,
                 &platforms,
                 getenv,
+                |_| None,
             ),
             None,
         );
@@ -3962,6 +3993,15 @@ mod tests {
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .with_test_writer()
             .try_init();
+        // Hermetic home + no platform keys: this path resolves PlatformApiKeys
+        // (env + auth.json). A dev machine's real ~/.kigi/auth.json platform
+        // scope or moonshot env var would enable a LIVE moonshot fetch here,
+        // short-circuiting the refresh-retry under test.
+        let hermetic_home = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("KIGI_SHARE_DIR", hermetic_home.path());
+        let _cn = EnvGuard::unset(kigi_models::MOONSHOT_CN_API_KEY_ENV);
+        let _ai = EnvGuard::unset(kigi_models::MOONSHOT_AI_API_KEY_ENV);
+        let _gen = EnvGuard::unset(kigi_models::MOONSHOT_API_KEY_ENV);
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/models"))
@@ -4063,7 +4103,7 @@ mod tests {
             true,
         );
         assert!(outcome.models.is_none(), "no cache and no network → None");
-        let bundled = resolve_model_catalog(&config::Config::default(), None);
+        let bundled = resolve_model_catalog(&config::Config::default(), None, &Default::default());
         assert!(bundled.contains_key("kimi-code/kimi-for-coding"));
         assert!(bundled.contains_key("moonshot-cn/kimi-k2-thinking-turbo"));
         assert!(bundled.contains_key("moonshot-ai/kimi-k2-turbo-preview"));

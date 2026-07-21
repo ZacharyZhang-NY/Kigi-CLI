@@ -112,14 +112,14 @@ fn submit_platform_api_key_dispatches_persist_then_authenticate() {
     app.auth_state = AuthState::Pending { error: None };
 
     let effects = dispatch(
-        Action::BeginPlatformKeyEntry(PlatformLogin::MoonshotCn),
+        Action::BeginPlatformKeyEntry(PlatformLogin(kigi_shell::models::PlatformId::MoonshotCn)),
         &mut app,
     );
     assert!(effects.is_empty(), "entering key entry is UI-only");
     let seq = match &app.auth_state {
         AuthState::Authenticating {
             request_seq,
-            mode: AuthMode::ApiKeyEntry(PlatformLogin::MoonshotCn),
+            mode: AuthMode::ApiKeyEntry(PlatformLogin(kigi_shell::models::PlatformId::MoonshotCn)),
             ..
         } => *request_seq,
         other => panic!("expected ApiKeyEntry(MoonshotCn), got {other:?}"),
@@ -135,7 +135,10 @@ fn submit_platform_api_key_dispatches_persist_then_authenticate() {
             },
         ] => {
             assert_eq!(*request_seq, seq);
-            assert_eq!(*target, PlatformLogin::MoonshotCn);
+            assert_eq!(
+                *target,
+                PlatformLogin(kigi_shell::models::PlatformId::MoonshotCn)
+            );
             assert_eq!(key, "sk-test-key");
             assert_eq!(
                 target.method_id().0.as_ref(),
@@ -179,7 +182,7 @@ fn cancel_platform_key_entry_returns_to_picker() {
     let mut app = test_app();
     app.auth_state = AuthState::Pending { error: None };
     dispatch(
-        Action::BeginPlatformKeyEntry(PlatformLogin::MoonshotAi),
+        Action::BeginPlatformKeyEntry(PlatformLogin(kigi_shell::models::PlatformId::MoonshotAi)),
         &mut app,
     );
     app.auth_code_input = "sk-half-typed".into();
@@ -200,7 +203,7 @@ fn submit_platform_api_key_ignores_blank_key() {
     let mut app = test_app();
     app.auth_state = AuthState::Pending { error: None };
     dispatch(
-        Action::BeginPlatformKeyEntry(PlatformLogin::MoonshotCn),
+        Action::BeginPlatformKeyEntry(PlatformLogin(kigi_shell::models::PlatformId::MoonshotCn)),
         &mut app,
     );
     let effects = dispatch(Action::SubmitPlatformApiKey("   ".into()), &mut app);
@@ -208,7 +211,7 @@ fn submit_platform_api_key_ignores_blank_key() {
     assert!(matches!(
         app.auth_state,
         AuthState::Authenticating {
-            mode: AuthMode::ApiKeyEntry(PlatformLogin::MoonshotCn),
+            mode: AuthMode::ApiKeyEntry(PlatformLogin(kigi_shell::models::PlatformId::MoonshotCn)),
             ..
         }
     ));

@@ -311,7 +311,7 @@ mod tests {
             w.kind == ModelOverrideWarningKind::DuplicateAlias
                 && w.field.as_deref() == Some("send_compactions_remaining")
         }));
-        let resolved = crate::agent::config::resolve_model_list(&cfg, None);
+        let resolved = crate::agent::config::resolve_model_list(&cfg, None, &Default::default());
         assert!(resolved.contains_key("kigi-4.5"));
     }
 

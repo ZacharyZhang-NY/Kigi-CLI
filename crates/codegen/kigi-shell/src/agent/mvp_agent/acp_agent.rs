@@ -508,21 +508,23 @@ impl acp::Agent for MvpAgent {
                 );
                 Ok(self.auth_response_with_meta())
             }
-            auth_method::MOONSHOT_CN_METHOD_ID | auth_method::MOONSHOT_AI_METHOD_ID => {
-                let platform = auth_method::moonshot_platform_for_method_id(
-                        &arguments.method_id,
-                    )
-                    .expect("match arm guarantees a moonshot method id");
-                self.authenticate_moonshot(platform, arguments.method_id.clone())
-                    .await
-            }
             _ => {
-                Err(
-                    acp::Error::invalid_params()
-                        .data(
-                            format!("unsupported auth method: {}", arguments.method_id.0),
-                        ),
-                )
+                if let Some(platform) =
+                    auth_method::platform_for_method_id(&arguments.method_id)
+                {
+                    self.authenticate_api_key_platform(
+                        platform,
+                        arguments.method_id.clone(),
+                    )
+                    .await
+                } else {
+                    Err(
+                        acp::Error::invalid_params()
+                            .data(
+                                format!("unsupported auth method: {}", arguments.method_id.0),
+                            ),
+                    )
+                }
             }
         }
     }

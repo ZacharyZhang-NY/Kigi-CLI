@@ -574,9 +574,9 @@ pub enum Action {
     BeginPlatformKeyEntry(crate::app::app_view::PlatformLogin),
     /// Esc from the API-key entry box: return to the login picker.
     CancelPlatformKeyEntry,
-    /// User submitted a pasted Moonshot API key: persist it to
-    /// `[platforms.<id>]` in config.toml, then authenticate with the
-    /// platform's method id. The key must never be logged.
+    /// User submitted a pasted platform API key: persist it to auth.json
+    /// under the platform-id scope, then authenticate with the platform's
+    /// method id. The key must never be logged.
     SubmitPlatformApiKey(String),
     /// Copy the auth URL to the clipboard during authentication.
     CopyAuthUrl,
@@ -1612,7 +1612,7 @@ pub enum Effect {
     PollAuthUrl { request_seq: u64 },
     /// Submit a manually-pasted auth code (ext request).
     SubmitAuthCode { request_seq: u64, code: String },
-    /// Persist a Moonshot API key to `[platforms.<id>]` in config.toml, then
+    /// Persist a platform API key to auth.json (platform-id scope), then
     /// send AuthenticateRequest with the platform's method id. SECURITY: the
     /// key must never appear in logs or errors.
     PersistPlatformApiKeyAndAuthenticate {

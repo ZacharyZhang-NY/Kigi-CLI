@@ -290,7 +290,7 @@ pub(super) fn dispatch_cancel_platform_key_entry(app: &mut AppView) -> Vec<Effec
 }
 
 /// Enter with a non-empty key in the API-key paste box: persist the key to
-/// `[platforms.<id>]` in config.toml, then authenticate with the platform's
+/// auth.json (platform-id scope), then authenticate with the platform's
 /// method id (one sequential background task — see the effect handler).
 /// The screen shows the connecting state while the key is validated; a
 /// failure lands back on the picker with the error line (`AuthFailed`).

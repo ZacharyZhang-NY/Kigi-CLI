@@ -96,9 +96,9 @@ pub(crate) fn disable_mock_keyring_for_test() {
 fn keyring_entry() -> Result<&'static keyring::Entry, keyring::Error> {
     static ENTRY: std::sync::OnceLock<Result<keyring::Entry, keyring::Error>> =
         std::sync::OnceLock::new();
-    match ENTRY.get_or_init(|| {
-        keyring::Entry::new(KEYRING_SERVICE, crate::auth::config::KIMI_CODE_OAUTH_SCOPE)
-    }) {
+    match ENTRY
+        .get_or_init(|| keyring::Entry::new(KEYRING_SERVICE, crate::auth::KIMI_CODE_OAUTH_SCOPE))
+    {
         Ok(entry) => Ok(entry),
         // `keyring::Error` is not `Clone`; surface a stable equivalent.
         Err(e) => {
@@ -536,6 +536,71 @@ pub fn store_api_key(kigi_home: &Path, api_key: &str) -> std::io::Result<()> {
     write_auth_json(&path, &map)
 }
 
+/// Read an API-key platform's key from auth.json. The scope is the platform
+/// id itself (`anthropic`, `moonshot-cn`, …) — the stable per-provider
+/// auth.json key contract. `None` when absent or unreadable.
+pub fn read_platform_api_key(
+    kigi_home: &Path,
+    platform: kigi_models::PlatformId,
+) -> Option<String> {
+    let path = kigi_home.join("auth.json");
+    let map = read_auth_json(&path).ok()?;
+    map.get(platform.as_str()).map(|a| a.key.clone())
+}
+
+/// Store an API-key platform's key in auth.json under its platform-id scope.
+/// Same corrupt-recovery + atomic-write path as [`store_api_key`]; all other
+/// scopes (OAuth session, other platforms) are preserved.
+///
+/// SECURITY: the key must never be logged; errors carry only IO context.
+pub fn store_platform_api_key(
+    kigi_home: &Path,
+    platform: kigi_models::PlatformId,
+    api_key: &str,
+) -> std::io::Result<()> {
+    if platform.uses_oauth() {
+        // Real error, not debug_assert: an OAuth scope written here would
+        // shadow the session entry in release builds too.
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!(
+                "{} authenticates via OAuth and takes no API key",
+                platform.as_str()
+            ),
+        ));
+    }
+    let path = kigi_home.join("auth.json");
+    // Serialize with the manager's cross-process auth.json writers (token
+    // refresh holds the same flock): an unlocked read-modify-write here
+    // could write back a pre-refresh map and revert a rotated refresh
+    // token (token-family revocation → forced re-login). Bounded retry;
+    // a sustained holder fails loudly rather than racing.
+    let mut lock = None;
+    for _ in 0..20 {
+        lock = super::manager::try_lock_auth_file_nonblocking(&path);
+        if lock.is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    let Some(_lock) = lock else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::WouldBlock,
+            "auth.json is locked by another kigi process; try again",
+        ));
+    };
+    let mut map = read_auth_json_or_empty_recovering_corrupt(&path)?;
+    map.insert(
+        platform.as_str().to_owned(),
+        KimiAuth {
+            key: api_key.to_owned(),
+            auth_mode: AuthMode::ApiKey,
+            ..Default::default()
+        },
+    );
+    write_auth_json(&path, &map)
+}
+
 /// Remove the `kigi::api_key` scope from auth.json.
 pub fn clear_api_key(kigi_home: &Path) -> std::io::Result<()> {
     let path = kigi_home.join("auth.json");
@@ -548,6 +613,80 @@ pub fn clear_api_key(kigi_home: &Path) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod platform_key_tests {
+    use super::*;
+
+    /// Store/read round-trip under the platform-id scope; the OAuth session
+    /// scope and other platform scopes in the same file are preserved.
+    #[test]
+    fn platform_key_round_trip_preserves_other_scopes() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        // Pre-existing OAuth session entry must survive platform-key writes.
+        let path = home.join("auth.json");
+        let mut map = AuthStore::new();
+        map.insert(
+            crate::auth::KIMI_CODE_OAUTH_SCOPE.to_owned(),
+            KimiAuth {
+                key: "oauth-token".to_owned(),
+                auth_mode: AuthMode::OAuth,
+                ..Default::default()
+            },
+        );
+        write_auth_json(&path, &map).unwrap();
+
+        store_platform_api_key(home, kigi_models::PlatformId::MoonshotCn, "sk-cn").unwrap();
+        store_platform_api_key(home, kigi_models::PlatformId::MoonshotAi, "sk-ai").unwrap();
+
+        assert_eq!(
+            read_platform_api_key(home, kigi_models::PlatformId::MoonshotCn).as_deref(),
+            Some("sk-cn")
+        );
+        assert_eq!(
+            read_platform_api_key(home, kigi_models::PlatformId::MoonshotAi).as_deref(),
+            Some("sk-ai")
+        );
+        let stored = read_auth_json(&path).unwrap();
+        assert_eq!(
+            stored
+                .get(crate::auth::KIMI_CODE_OAUTH_SCOPE)
+                .map(|a| a.key.as_str()),
+            Some("oauth-token"),
+            "platform-key writes must not clobber the OAuth session scope"
+        );
+        assert_eq!(
+            stored.get("moonshot-cn").map(|a| a.auth_mode.clone()),
+            Some(AuthMode::ApiKey),
+            "platform keys are stored as api_key mode under the platform id"
+        );
+    }
+
+    /// The OAuth platform takes no API key — a real error in release builds.
+    #[test]
+    fn storing_key_for_oauth_platform_is_invalid_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = store_platform_api_key(dir.path(), kigi_models::PlatformId::KimiCode, "sk-x")
+            .expect_err("oauth platform must reject api keys");
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(
+            !dir.path().join("auth.json").exists(),
+            "rejected write must not create auth.json"
+        );
+    }
+
+    /// Missing file reads as None (not an error) — resolution treats absent
+    /// auth.json as "no stored key".
+    #[test]
+    fn reading_platform_key_without_auth_json_is_none() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            read_platform_api_key(dir.path(), kigi_models::PlatformId::MoonshotCn),
+            None
+        );
+    }
 }
 
 #[cfg(test)]

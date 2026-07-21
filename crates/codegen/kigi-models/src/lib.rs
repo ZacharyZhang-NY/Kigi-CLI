@@ -60,7 +60,8 @@ enum BaseUrlSource {
 /// `all_covers_every_variant` test — a variant missing from `ALL` would
 /// otherwise be silently unparseable and excluded from model sync.
 struct PlatformSpec {
-    /// Wire id (auth method id, managed-model-key prefix, config key).
+    /// Wire id (auth method id, managed-model-key prefix, config key, and —
+    /// for API-key platforms — the auth.json scope the key is stored under).
     id: &'static str,
     display_name: &'static str,
     base_url: BaseUrlSource,
@@ -74,6 +75,13 @@ struct PlatformSpec {
     ///
     /// SECURITY: the *values* behind these names must never be logged.
     api_key_envs: &'static [&'static str],
+    /// Short vendor word for login copy ("Paste your {vendor} API key").
+    vendor: &'static str,
+    /// Where the user gets an API key (login copy + key-validation errors).
+    /// `None` for OAuth channels.
+    console_host: Option<&'static str>,
+    /// Interactive login-picker label. `None` = fall back to `display_name`.
+    login_label: Option<&'static str>,
 }
 
 const KIMI_CODE_SPEC: PlatformSpec = PlatformSpec {
@@ -83,6 +91,9 @@ const KIMI_CODE_SPEC: PlatformSpec = PlatformSpec {
     uses_oauth: true,
     allowed_model_prefixes: None,
     api_key_envs: &[],
+    vendor: "Kimi",
+    console_host: None,
+    login_label: None,
 };
 
 const MOONSHOT_CN_SPEC: PlatformSpec = PlatformSpec {
@@ -95,6 +106,9 @@ const MOONSHOT_CN_SPEC: PlatformSpec = PlatformSpec {
     uses_oauth: false,
     allowed_model_prefixes: Some(&["kimi-k"]),
     api_key_envs: &[MOONSHOT_CN_API_KEY_ENV, MOONSHOT_API_KEY_ENV],
+    vendor: "Moonshot",
+    console_host: Some("platform.moonshot.cn"),
+    login_label: Some("Moonshot Open Platform (API key \u{b7} moonshot.cn)"),
 };
 
 const MOONSHOT_AI_SPEC: PlatformSpec = PlatformSpec {
@@ -107,6 +121,9 @@ const MOONSHOT_AI_SPEC: PlatformSpec = PlatformSpec {
     uses_oauth: false,
     allowed_model_prefixes: Some(&["kimi-k"]),
     api_key_envs: &[MOONSHOT_AI_API_KEY_ENV, MOONSHOT_API_KEY_ENV],
+    vendor: "Moonshot",
+    console_host: Some("platform.moonshot.ai"),
+    login_label: Some("Moonshot Open Platform (API key \u{b7} moonshot.ai)"),
 };
 
 /// The platform registry. Platforms are compiled-in spec rows; there is no
@@ -182,6 +199,23 @@ impl PlatformId {
     /// `{platform_id}/{model_id}` (kimi-cli `managed_model_key`).
     pub fn managed_model_key(self, model_id: &str) -> String {
         format!("{}/{model_id}", self.as_str())
+    }
+
+    /// Short vendor word for login copy ("Paste your {vendor} API key").
+    pub fn vendor(self) -> &'static str {
+        self.spec().vendor
+    }
+
+    /// Console host where the user obtains an API key, for login copy and
+    /// key-validation errors. `None` for OAuth channels.
+    pub fn console_host(self) -> Option<&'static str> {
+        self.spec().console_host
+    }
+
+    /// Label for the interactive login picker (falls back to the display
+    /// name when the row doesn't override it).
+    pub fn login_label(self) -> &'static str {
+        self.spec().login_label.unwrap_or(self.spec().display_name)
     }
 }
 
@@ -529,6 +563,39 @@ mod tests {
             VARIANT_COUNT,
             "PlatformId::ALL must contain every variant"
         );
+    }
+
+    /// Row-shape invariants the login UI and key resolution rely on:
+    /// API-key platforms carry a console host (paste-box copy) and at least
+    /// one key env var (missing-key error names it); OAuth channels carry
+    /// neither key envs nor a console host requirement.
+    #[test]
+    fn api_key_rows_carry_console_host_and_env_names() {
+        for p in PlatformId::ALL {
+            if p.uses_oauth() {
+                assert!(
+                    p.api_key_env_names().is_empty(),
+                    "{}: OAuth platforms take no key envs",
+                    p.as_str()
+                );
+            } else {
+                assert!(
+                    p.console_host().is_some(),
+                    "{}: API-key platforms must name their console host",
+                    p.as_str()
+                );
+                assert!(
+                    !p.api_key_env_names().is_empty(),
+                    "{}: API-key platforms must name at least one key env",
+                    p.as_str()
+                );
+                assert!(
+                    !p.vendor().is_empty(),
+                    "{}: API-key platforms must set a vendor word",
+                    p.as_str()
+                );
+            }
+        }
     }
 
     /// `parse` resolves by scanning spec rows, so duplicate ids would

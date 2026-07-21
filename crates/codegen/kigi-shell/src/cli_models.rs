@@ -35,7 +35,11 @@ impl AuthStatus {
                 .unwrap_or(&origin);
             return Self::LoggedIn(host.to_owned());
         }
-        let models = crate::agent::config::resolve_model_list(agent_config, None);
+        let models = crate::agent::config::resolve_model_list(
+            agent_config,
+            None,
+            &crate::agent::models::PlatformApiKeys::resolve(&agent_config.platforms),
+        );
         if crate::agent::auth_method::should_advertise_xai_api_key(models.values())
             && let Some(name) = models
                 .iter()

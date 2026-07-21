@@ -264,41 +264,35 @@ pub enum AuthMode {
     /// from the welcome login picker. Esc returns to the picker (no quit).
     ApiKeyEntry(PlatformLogin),
 }
-/// Open-platform API-key login target, selected from the welcome picker.
-/// Mirrors the shell's `moonshot-cn` / `moonshot-ai` interactive auth
-/// methods ([`kigi_shell::agent::auth_method`]).
+/// API-key platform login target, selected from the welcome picker. Wraps a
+/// non-OAuth registry platform ([`kigi_shell::models::PlatformId`]);
+/// [`Self::from_method_id`] — the production entry point — guarantees the
+/// non-OAuth invariant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PlatformLogin {
-    MoonshotCn,
-    MoonshotAi,
-}
+pub struct PlatformLogin(pub kigi_shell::models::PlatformId);
 impl PlatformLogin {
     /// The picker target behind an advertised ACP method id; `None` for every
-    /// non-moonshot method.
+    /// method that isn't an API-key registry platform.
     pub fn from_method_id(id: &acp::AuthMethodId) -> Option<Self> {
-        match id.0.as_ref() {
-            kigi_shell::agent::auth_method::MOONSHOT_CN_METHOD_ID => Some(Self::MoonshotCn),
-            kigi_shell::agent::auth_method::MOONSHOT_AI_METHOD_ID => Some(Self::MoonshotAi),
-            _ => None,
-        }
+        kigi_shell::agent::auth_method::platform_for_method_id(id).map(Self)
     }
-    /// The registry platform whose `[platforms.<id>]` table stores the key.
+    /// The registry platform whose auth.json scope stores the key.
     pub fn platform_id(self) -> kigi_shell::models::PlatformId {
-        match self {
-            Self::MoonshotCn => kigi_shell::models::PlatformId::MoonshotCn,
-            Self::MoonshotAi => kigi_shell::models::PlatformId::MoonshotAi,
-        }
+        self.0
     }
     /// The ACP auth method id to `authenticate` with after persisting the key.
     pub fn method_id(self) -> acp::AuthMethodId {
         acp::AuthMethodId::new(self.platform_id().as_str())
     }
-    /// Console host shown in the paste-box copy.
+    /// Vendor word for the paste-box copy ("Paste your {vendor} API key").
+    pub fn vendor(self) -> &'static str {
+        self.0.vendor()
+    }
+    /// Console host shown in the paste-box copy. Every API-key registry row
+    /// carries one (pinned by a kigi-models registry test); the fallback is
+    /// unreachable copy, not control flow.
     pub fn console_host(self) -> &'static str {
-        match self {
-            Self::MoonshotCn => "platform.moonshot.cn",
-            Self::MoonshotAi => "platform.moonshot.ai",
-        }
+        self.0.console_host().unwrap_or("the provider console")
     }
 }
 /// One row of the unauthenticated welcome menu (the login picker).
@@ -6909,14 +6903,14 @@ pub(crate) mod tests {
         assert_eq!(
             items[1],
             PendingMenuItem::ApiKey {
-                target: PlatformLogin::MoonshotCn,
+                target: PlatformLogin(kigi_shell::models::PlatformId::MoonshotCn),
                 label: "Moonshot Open Platform (API key \u{b7} moonshot.cn)".into(),
             }
         );
         assert_eq!(
             items[2],
             PendingMenuItem::ApiKey {
-                target: PlatformLogin::MoonshotAi,
+                target: PlatformLogin(kigi_shell::models::PlatformId::MoonshotAi),
                 label: "Moonshot Open Platform (API key \u{b7} moonshot.ai)".into(),
             }
         );
@@ -6960,7 +6954,9 @@ pub(crate) mod tests {
         assert!(
             matches!(
                 outcome,
-                InputOutcome::Action(Action::BeginPlatformKeyEntry(PlatformLogin::MoonshotCn))
+                InputOutcome::Action(Action::BeginPlatformKeyEntry(PlatformLogin(
+                    kigi_shell::models::PlatformId::MoonshotCn
+                )))
             ),
             "Enter on row 1 must open moonshot-cn key entry, got {outcome:?}"
         );
@@ -6976,7 +6972,7 @@ pub(crate) mod tests {
             request_seq: 1,
             handle: None,
             auth_url: None,
-            mode: AuthMode::ApiKeyEntry(PlatformLogin::MoonshotCn),
+            mode: AuthMode::ApiKeyEntry(PlatformLogin(kigi_shell::models::PlatformId::MoonshotCn)),
         };
         let outcome = app.handle_input(&key_event(KeyCode::Esc, KeyModifiers::NONE));
         assert!(
@@ -6994,7 +6990,7 @@ pub(crate) mod tests {
             request_seq: 1,
             handle: None,
             auth_url: None,
-            mode: AuthMode::ApiKeyEntry(PlatformLogin::MoonshotAi),
+            mode: AuthMode::ApiKeyEntry(PlatformLogin(kigi_shell::models::PlatformId::MoonshotAi)),
         };
         // Empty input: Enter is a no-op.
         let outcome = app.handle_input(&key_event(KeyCode::Enter, KeyModifiers::NONE));

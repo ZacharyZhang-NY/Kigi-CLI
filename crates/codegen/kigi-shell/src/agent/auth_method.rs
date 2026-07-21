@@ -102,13 +102,13 @@ pub struct BuiltAuthMethods {
 /// 1. `xai.api_key`     (if `has_external_api_key`)
 /// 2. `cached_token`    (if `has_cached_token`)
 /// 3. `kimi-code`        (the Kimi Code device login)
-/// 4. `moonshot-cn`      (Moonshot Open Platform API-key login, always)
-/// 5. `moonshot-ai`      (Moonshot Open Platform API-key login, always)
+/// 4. every API-key registry platform, in `PlatformId::ALL` order
+///    (`moonshot-cn`, `moonshot-ai`, …), always advertised
 ///
-/// The moonshot methods are for the INTERACTIVE login picker only: they come
+/// The platform methods are for the INTERACTIVE login picker only: they come
 /// after `kimi-code` so they can never become `auth_methods.first()` (the
 /// pager's startup metadata / eager-auth fallback reads `first()`), and they
-/// are never the `default_auth_method_id` (a configured moonshot key already
+/// are never the `default_auth_method_id` (a configured platform key already
 /// authenticates eagerly via `xai.api_key` — the catalog entries it stamps
 /// satisfy `should_advertise_xai_api_key`).
 ///
@@ -150,8 +150,11 @@ pub fn build_auth_methods(inputs: AuthMethodsBuildInputs<'_>) -> BuiltAuthMethod
     }
 
     methods.push(kimi_code_auth_method(login_label));
-    methods.push(moonshot_auth_method(kigi_models::PlatformId::MoonshotCn));
-    methods.push(moonshot_auth_method(kigi_models::PlatformId::MoonshotAi));
+    for platform in kigi_models::PlatformId::ALL {
+        if !platform.uses_oauth() {
+            methods.push(platform_auth_method(platform));
+        }
+    }
 
     BuiltAuthMethods {
         methods,
@@ -165,10 +168,8 @@ pub enum AuthMethodKind {
     XaiApiKey,
     CachedToken,
     KimiCode,
-    /// Moonshot Open Platform API-key login (moonshot.cn).
-    MoonshotCn,
-    /// Moonshot Open Platform API-key login (moonshot.ai).
-    MoonshotAi,
+    /// Registry API-key platform login (method id = the platform id).
+    ApiKeyPlatform(kigi_models::PlatformId),
     Unknown,
 }
 
@@ -178,17 +179,18 @@ impl AuthMethodKind {
             XAI_API_KEY_METHOD_ID => Self::XaiApiKey,
             CACHED_TOKEN_AUTH_METHOD_ID => Self::CachedToken,
             KIMI_CODE_METHOD_ID => Self::KimiCode,
-            MOONSHOT_CN_METHOD_ID => Self::MoonshotCn,
-            MOONSHOT_AI_METHOD_ID => Self::MoonshotAi,
-            _ => Self::Unknown,
+            other => match platform_for_method_id_str(other) {
+                Some(platform) => Self::ApiKeyPlatform(platform),
+                None => Self::Unknown,
+            },
         }
     }
 
     /// API key auth: no auth.json session, no refresh, no browser round-trip.
-    /// The moonshot methods qualify — they validate a configured platform key
-    /// and then behave exactly like an external-API-key session.
+    /// The registry platform methods qualify — they validate a configured
+    /// platform key and then behave exactly like an external-API-key session.
     pub fn is_api_key(self) -> bool {
-        matches!(self, Self::XaiApiKey | Self::MoonshotCn | Self::MoonshotAi)
+        matches!(self, Self::XaiApiKey | Self::ApiKeyPlatform(_))
     }
 
     /// `true` for session-based methods (cached_token, interactive login).
@@ -323,65 +325,56 @@ pub fn kimi_code_auth_method(label: Option<&str>) -> acp::AuthMethod {
     )
 }
 
-/// Interactive API-key login for the Moonshot open platforms. Method ids
-/// equal [`kigi_models::PlatformId::as_str`] (`moonshot-cn` / `moonshot-ai`),
-/// which is also the `[platforms.<id>]` config-table name — one id everywhere.
+/// Interactive API-key login method ids equal
+/// [`kigi_models::PlatformId::as_str`] (`moonshot-cn` / `moonshot-ai` / …),
+/// which is also the `[platforms.<id>]` config-table name and the auth.json
+/// scope — one id everywhere.
 pub const MOONSHOT_CN_METHOD_ID: &str = "moonshot-cn";
 pub const MOONSHOT_AI_METHOD_ID: &str = "moonshot-ai";
 
-/// The open platform behind an interactive moonshot method id. `None` for
-/// every other id (including `kimi-code`, whose platform uses OAuth).
-pub fn moonshot_platform_for_method_id(id: &acp::AuthMethodId) -> Option<kigi_models::PlatformId> {
-    match id.0.as_ref() {
-        MOONSHOT_CN_METHOD_ID => Some(kigi_models::PlatformId::MoonshotCn),
-        MOONSHOT_AI_METHOD_ID => Some(kigi_models::PlatformId::MoonshotAi),
-        _ => None,
-    }
+/// The API-key registry platform behind an interactive method id. `None`
+/// for every other id (including `kimi-code`, whose platform uses OAuth).
+pub fn platform_for_method_id(id: &acp::AuthMethodId) -> Option<kigi_models::PlatformId> {
+    platform_for_method_id_str(id.0.as_ref())
 }
 
-/// Console host for an open platform, used in method descriptions and login
-/// copy ("platform.moonshot.cn" / "platform.moonshot.ai").
-pub fn moonshot_console_host(platform: kigi_models::PlatformId) -> &'static str {
-    match platform {
-        kigi_models::PlatformId::MoonshotCn => "platform.moonshot.cn",
-        _ => "platform.moonshot.ai",
-    }
+fn platform_for_method_id_str(id: &str) -> Option<kigi_models::PlatformId> {
+    kigi_models::PlatformId::parse(id).filter(|p| !p.uses_oauth())
 }
 
-/// A Moonshot Open Platform API-key login method.
-pub fn moonshot_auth_method(platform: kigi_models::PlatformId) -> acp::AuthMethod {
-    let host_suffix = match platform {
-        kigi_models::PlatformId::MoonshotCn => "moonshot.cn",
-        _ => "moonshot.ai",
+/// An API-key registry platform's login method (picker label + description
+/// from the platform's spec row).
+pub fn platform_auth_method(platform: kigi_models::PlatformId) -> acp::AuthMethod {
+    let description = match platform.console_host() {
+        Some(host) => format!("API key from {host}"),
+        None => format!("API key for {}", platform.display_name()),
     };
     acp::AuthMethod::Agent(
         acp::AuthMethodAgent::new(
             acp::AuthMethodId::new(platform.as_str()),
-            format!("Moonshot Open Platform (API key \u{b7} {host_suffix})"),
+            platform.login_label().to_string(),
         )
-        .description(Some(format!(
-            "API key from {}",
-            moonshot_console_host(platform)
-        ))),
+        .description(Some(description)),
     )
 }
 
-/// Actionable error for a moonshot `authenticate` with no key configured.
-pub fn missing_moonshot_key_error(platform: kigi_models::PlatformId) -> String {
-    let env_var = platform
-        .api_key_env_names()
-        .first()
-        .copied()
-        .unwrap_or(kigi_models::MOONSHOT_API_KEY_ENV);
-    format!(
-        "No API key configured for {} \u{2014} paste one in the login screen or set {env_var}",
-        platform.as_str(),
-    )
+/// Actionable error for a platform `authenticate` with no key configured.
+pub fn missing_platform_key_error(platform: kigi_models::PlatformId) -> String {
+    match platform.api_key_env_names().first() {
+        Some(env_var) => format!(
+            "No API key configured for {} \u{2014} paste one in the login screen or set {env_var}",
+            platform.as_str(),
+        ),
+        None => format!(
+            "No API key configured for {} \u{2014} paste one in the login screen",
+            platform.as_str(),
+        ),
+    }
 }
 
-/// Validate + accept a Moonshot open-platform API key for `authenticate`.
+/// Validate + accept an API-key platform's key for `authenticate`.
 ///
-/// `key` is the caller-resolved credential (env > config; see
+/// `key` is the caller-resolved credential (env > auth.json > config; see
 /// `resolve_platform_api_key`) — `None` fails with the actionable
 /// missing-key message. A present key is validated with
 /// `GET {platform_base}/models` (the same endpoint the catalog fetch uses):
@@ -398,7 +391,7 @@ pub(crate) async fn authenticate_platform_api_key(
         err
     };
     let Some(key) = key else {
-        return Err(auth_err(missing_moonshot_key_error(platform)));
+        return Err(auth_err(missing_platform_key_error(platform)));
     };
     let url = format!("{}/models", platform.base_url().trim_end_matches('/'));
     let response = crate::http::shared_client()
@@ -412,7 +405,7 @@ pub(crate) async fn authenticate_platform_api_key(
         return Err(auth_err(format!(
             "Invalid API key for {} \u{2014} check your key on {}",
             platform.as_str(),
-            moonshot_console_host(platform),
+            platform.console_host().unwrap_or("the provider console"),
         )));
     }
     if !status.is_success() {
@@ -464,10 +457,14 @@ mod tests {
         assert!(api.is_api_key());
         assert!(!api.is_session_based());
         assert!(!api.needs_interactive_login());
-        // Moonshot methods are API-key shaped: NOT session-based (no token
-        // refresh may ever run for them) and no browser round-trip.
+        // Registry platform methods are API-key shaped: NOT session-based (no
+        // token refresh may ever run for them) and no browser round-trip.
         for id in [MOONSHOT_CN_METHOD_ID, MOONSHOT_AI_METHOD_ID] {
             let kind = AuthMethodKind::from_id(&acp::AuthMethodId::new(id));
+            assert!(
+                matches!(kind, AuthMethodKind::ApiKeyPlatform(p) if p.as_str() == id),
+                "{id} must classify as its ApiKeyPlatform"
+            );
             assert!(kind.is_api_key(), "{id} must classify as api-key");
             assert!(!kind.is_session_based(), "{id} must not be session-based");
             assert!(
@@ -490,6 +487,21 @@ mod tests {
         assert!(
             !AuthMethodKind::from_id(&acp::AuthMethodId::new(CACHED_TOKEN_AUTH_METHOD_ID))
                 .needs_interactive_login()
+        );
+    }
+
+    /// The OAuth platform id must never resolve as an API-key platform
+    /// method — `platform_for_method_id`'s `uses_oauth` filter is what keeps
+    /// the generic `authenticate` arm from hijacking the device login.
+    #[test]
+    fn oauth_platform_id_is_not_an_api_key_method() {
+        assert_eq!(
+            platform_for_method_id(&acp::AuthMethodId::new(KIMI_CODE_METHOD_ID)),
+            None
+        );
+        assert_eq!(
+            AuthMethodKind::from_id(&acp::AuthMethodId::new(KIMI_CODE_METHOD_ID)),
+            AuthMethodKind::KimiCode
         );
     }
 
@@ -673,7 +685,7 @@ mod tests {
     fn global_external_api_key_advertises_xai_api_key_first() {
         let _set = EnvGuard::set(XAI_API_KEY_ENV_VAR, "xai-external-key");
         let cfg = Config::default();
-        let models = resolve_model_list(&cfg, None);
+        let models = resolve_model_list(&cfg, None, &Default::default());
         let has_external_api_key = should_advertise_xai_api_key(models.values());
         assert!(has_external_api_key);
         let built = build_auth_methods(AuthMethodsBuildInputs {

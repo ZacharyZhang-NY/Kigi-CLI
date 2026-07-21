@@ -1218,12 +1218,13 @@ fn render_welcome_authenticating(
         }
 
         AuthMode::ApiKeyEntry(target) => {
-            // Moonshot API-key paste box: instruction + input + hints. No
+            // Platform API-key paste box: instruction + input + hints. No
             // auth-URL machinery — the key comes from the platform console.
             let h_pad: u16 = content_area.width / 6;
             let inner_width = content_area.width.saturating_sub(h_pad * 2).max(1);
             let instruction = format!(
-                "Paste your Moonshot API key (from {})",
+                "Paste your {} API key (from {})",
+                target.vendor(),
                 target.console_host()
             );
             let msg_height = (instruction.len() as u16).div_ceil(inner_width);
@@ -2136,7 +2137,9 @@ mod tests {
             &theme,
             logo_line_count(area.height),
             None, // auth_url — none in key-entry mode
-            AuthMode::ApiKeyEntry(crate::app::app_view::PlatformLogin::MoonshotCn),
+            AuthMode::ApiKeyEntry(crate::app::app_view::PlatformLogin(
+                kigi_shell::models::PlatformId::MoonshotCn,
+            )),
             "",    // auth_code_input
             false, // clipboard_copied
             false, // show_raw_url
