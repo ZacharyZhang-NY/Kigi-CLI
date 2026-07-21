@@ -270,6 +270,7 @@ struct ClientDefaults {
     top_p: Option<f32>,
     api_backend: ApiBackend,
     auth_scheme: AuthScheme,
+    chat_compat: kigi_sampling_types::ChatCompat,
     stream_tool_calls: bool,
     doom_loop_recovery: Option<kigi_sampling_types::DoomLoopRecoveryPolicy>,
 }
@@ -456,6 +457,7 @@ impl SamplingClient {
             top_p: config.top_p,
             api_backend: config.api_backend,
             auth_scheme: config.auth_scheme,
+            chat_compat: config.chat_compat,
             stream_tool_calls: config.stream_tool_calls,
             doom_loop_recovery: config.doom_loop_recovery,
         };
@@ -775,7 +777,10 @@ impl SamplingClient {
             tracing::error!("Failed to serialize chat/completions request: {}", e);
             SamplingError::Serialization(e)
         })?;
-        crate::kimi_compat::adapt_chat_completions_body(&mut request_body);
+        crate::kimi_compat::adapt_chat_completions_body_for(
+            self.defaults.chat_compat,
+            &mut request_body,
+        );
 
         let http_request = self
             .post(self.endpoint("chat/completions"))
@@ -829,7 +834,10 @@ impl SamplingClient {
             tracing::error!("Failed to serialize chat/completions request: {}", e);
             SamplingError::Serialization(e)
         })?;
-        crate::kimi_compat::adapt_chat_completions_body(&mut request_body);
+        crate::kimi_compat::adapt_chat_completions_body_for(
+            self.defaults.chat_compat,
+            &mut request_body,
+        );
 
         let http_request = self
             .post(self.endpoint("chat/completions"))
@@ -1880,6 +1888,7 @@ mod tests {
             top_p: None,
             api_backend: ApiBackend::ChatCompletions,
             auth_scheme: AuthScheme::Bearer,
+            chat_compat: Default::default(),
             extra_headers: IndexMap::new(),
             context_window: 8192,
             force_http1: false,
@@ -2076,6 +2085,7 @@ mod tests {
             api_key: Some("bearer-key-abc123".to_string()),
             api_backend: ApiBackend::Messages,
             auth_scheme: AuthScheme::Bearer,
+            chat_compat: Default::default(),
             ..minimal_config()
         };
         let client = SamplingClient::new(cfg).expect("client should build");
@@ -2242,6 +2252,7 @@ mod tests {
             api_key: Some("stale-bearer".to_string()),
             api_backend: ApiBackend::Messages,
             auth_scheme: AuthScheme::Bearer,
+            chat_compat: Default::default(),
             bearer_resolver: Some(std::sync::Arc::new(StaticBearerResolver("fresh-bearer"))),
             ..minimal_config()
         };
@@ -2270,6 +2281,7 @@ mod tests {
             api_key: Some("stale-bearer".to_string()),
             api_backend: ApiBackend::Responses,
             auth_scheme: AuthScheme::Bearer,
+            chat_compat: Default::default(),
             bearer_resolver: Some(std::sync::Arc::new(StaticBearerResolver("fresh-bearer"))),
             ..minimal_config()
         };

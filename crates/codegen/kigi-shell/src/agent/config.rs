@@ -4062,6 +4062,20 @@ pub fn sampling_config_for_model(
         &credentials.base_url,
     );
     let api_backend = info.api_backend.clone();
+    // Managed platform entries speak their registry dialect; BYOK/custom
+    // entries keep the historical Kimi body adaptation.
+    let chat_compat = info
+        .id
+        .as_deref()
+        .and_then(kigi_models::parse_managed_model_key)
+        .map(|(platform, _)| match platform.chat_compat() {
+            kigi_models::PlatformChatCompat::Kimi => kigi_sampling_types::ChatCompat::Kimi,
+            kigi_models::PlatformChatCompat::DeepSeek => kigi_sampling_types::ChatCompat::DeepSeek,
+            kigi_models::PlatformChatCompat::Passthrough => {
+                kigi_sampling_types::ChatCompat::Passthrough
+            }
+        })
+        .unwrap_or_default();
     SamplerConfig {
         api_key: credentials.api_key,
         model: model_name,
@@ -4071,6 +4085,7 @@ pub fn sampling_config_for_model(
         top_p,
         api_backend,
         auth_scheme: credentials.auth_scheme,
+        chat_compat,
         extra_headers,
         context_window: info.context_window.get(),
         reasoning_effort: info.reasoning_effort,

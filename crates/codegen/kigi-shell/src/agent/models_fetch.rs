@@ -1022,6 +1022,107 @@ mod tests {
         );
     }
 
+    /// DeepSeek-cycle e2e: bare OpenAI-shape listing + enrichment efforts
+    /// (high/max) produce ChatCompletions entries whose sampler config
+    /// speaks the DeepSeek thinking dialect.
+    #[tokio::test(flavor = "multi_thread")]
+    #[serial_test::serial]
+    async fn deepseek_listing_enriches_and_maps_dialect() {
+        let platform_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/models"))
+            .and(wiremock::matchers::header("Authorization", "Bearer sk-ds"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({ "data": [
+                    { "id": "deepseek-v4-pro", "object": "model", "owned_by": "deepseek" }
+                ]}),
+            ))
+            .expect(1)
+            .mount(&platform_server)
+            .await;
+        let modelsdev_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/api.json"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({ "deepseek": { "models": { "deepseek-v4-pro": {
+                    "reasoning": true,
+                    "reasoning_options": [
+                        {"type": "toggle"},
+                        {"type": "effort", "values": ["high", "max"]}
+                    ],
+                    "limit": {"context": 1000000, "output": 384000},
+                    "tool_call": true
+                }}}}),
+            ))
+            .expect(1)
+            .mount(&modelsdev_server)
+            .await;
+        let cache_dir = tempfile::tempdir().unwrap();
+        let _base = kigi_test_support::EnvGuard::set(
+            kigi_models::DEEPSEEK_BASE_URL_ENV,
+            platform_server.uri(),
+        );
+        let _mdev = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_URL_ENV,
+            format!("{}/api.json", modelsdev_server.uri()),
+        );
+        let _mdev_cache = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_CACHE_DIR_ENV,
+            cache_dir.path(),
+        );
+        let endpoints = crate::agent::config::EndpointsConfig::default();
+        let keys = crate::agent::models::PlatformApiKeys::test_single(
+            kigi_models::PlatformId::DeepSeek,
+            "sk-ds",
+        );
+        let result = tokio::task::spawn_blocking(move || {
+            fetch_platform_models_blocking(&endpoints, None, &keys)
+        })
+        .await
+        .unwrap()
+        .expect("fetch must succeed");
+        assert_eq!(result.models.len(), 1);
+        let entry = &result.models[0];
+        assert_eq!(entry.id.as_deref(), Some("deepseek/deepseek-v4-pro"));
+        assert_eq!(entry.context_window.get(), 1_000_000);
+        assert_eq!(entry.max_completion_tokens, Some(384_000));
+        assert_eq!(
+            entry.api_backend,
+            crate::sampling::ApiBackend::ChatCompletions
+        );
+        assert_eq!(
+            entry
+                .reasoning_efforts
+                .iter()
+                .map(|o| o.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["high", "max"]
+        );
+
+        // The managed id maps to the DeepSeek chat dialect; a BYOK entry
+        // (no managed key) keeps the historical Kimi adaptation.
+        let model_entry = crate::agent::config::ModelEntry::from_config_entry(entry);
+        let creds = crate::agent::config::ResolvedCredentials {
+            api_key: Some("sk-ds".into()),
+            base_url: entry.base_url.clone(),
+            auth_type: kigi_chat_state::AuthType::ApiKey,
+            auth_scheme: Default::default(),
+        };
+        let cfg = crate::agent::config::sampling_config_for_model(&model_entry, creds, None);
+        assert_eq!(cfg.chat_compat, kigi_sampling_types::ChatCompat::DeepSeek);
+        let mut byok = entry.clone();
+        byok.id = Some("my-custom".into());
+        let byok_entry = crate::agent::config::ModelEntry::from_config_entry(&byok);
+        let creds = crate::agent::config::ResolvedCredentials {
+            api_key: Some("sk-x".into()),
+            base_url: byok.base_url.clone(),
+            auth_type: kigi_chat_state::AuthType::ApiKey,
+            auth_scheme: Default::default(),
+        };
+        let cfg = crate::agent::config::sampling_config_for_model(&byok_entry, creds, None);
+        assert_eq!(cfg.chat_compat, kigi_sampling_types::ChatCompat::Kimi);
+    }
+
     #[test]
     fn get_env_keys_parses_strings_and_rejects_non_strings() {
         use crate::agent::config::EnvKeys;

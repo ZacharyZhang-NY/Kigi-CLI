@@ -938,6 +938,26 @@ pub fn normalize_effort_echo(value: &mut Value) {
 /// wires (Messages inference and the /v1/models listing).
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";
 
+/// ChatCompletions request-body adaptation dialect. Providers disagree on
+/// how thinking rides an OpenAI-compatible body: Kimi wants
+/// `thinking:{type,effort}`, DeepSeek wants
+/// `thinking:{type,reasoning_effort}`, most others take the OpenAI-style
+/// `reasoning_effort` scalar untouched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChatCompat {
+    /// Kimi wire (`thinking:{type,effort}`, canonical xhigh spelled max).
+    /// The default: BYOK/custom ChatCompletions endpoints keep the
+    /// historical kigi behavior.
+    #[default]
+    Kimi,
+    /// DeepSeek wire (`thinking:{type,reasoning_effort}`, official docs:
+    /// low/medium map to high and xhigh to max server-side).
+    DeepSeek,
+    /// Leave the body as-is (OpenAI-style `reasoning_effort` passes through).
+    Passthrough,
+}
+
 pub const REASONING_EFFORT_META_KEY: &str = "reasoningEffort";
 pub const SUPPORTS_REASONING_EFFORT_META_KEY: &str = "supportsReasoningEffort";
 
@@ -1126,6 +1146,11 @@ pub struct SamplingConfig {
     pub max_completion_tokens: Option<u32>,
     pub temperature: Option<f32>,
     pub top_p: Option<f32>,
+    /// ChatCompletions body-adaptation dialect (per-platform; serde-default
+    /// Kimi keeps pre-field sessions and BYOK endpoints on the historical
+    /// behavior).
+    #[serde(default)]
+    pub chat_compat: ChatCompat,
     /// Which API backend to use for this model
     #[serde(default)]
     pub api_backend: ApiBackend,

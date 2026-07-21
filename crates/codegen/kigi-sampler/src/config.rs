@@ -70,6 +70,11 @@ pub struct SamplerConfig {
 
     // Reasoning effort
     pub reasoning_effort: Option<ReasoningEffort>,
+    /// ChatCompletions body-adaptation dialect (per-platform; BYOK/custom
+    /// endpoints default to the historical Kimi behavior; lenient default on
+    /// deserialize so persisted configs from before the field parse).
+    #[serde(default)]
+    pub chat_compat: kigi_sampling_types::ChatCompat,
 
     /// Client identity for the User-Agent header (`kigi/{version}` plus an
     /// optional origin product). The old xAI proxy's identity headers
@@ -135,6 +140,7 @@ impl Default for SamplerConfig {
             model: String::new(),
             max_completion_tokens: None,
             temperature: None,
+            chat_compat: kigi_sampling_types::ChatCompat::default(),
             top_p: None,
             api_backend: ApiBackend::default(),
             auth_scheme: AuthScheme::default(),

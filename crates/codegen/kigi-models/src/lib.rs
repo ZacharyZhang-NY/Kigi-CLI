@@ -63,6 +63,15 @@ pub enum ListingDialect {
     Anthropic,
 }
 
+/// ChatCompletions body-adaptation dialect (leaf-safe mirror of the
+/// sampler's `ChatCompat`; the shell maps it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlatformChatCompat {
+    Kimi,
+    DeepSeek,
+    Passthrough,
+}
+
 /// How a platform's API key rides requests (listing, validation, inference).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlatformKeyHeader {
@@ -125,6 +134,8 @@ struct PlatformSpec {
     wire_api: PlatformWireApi,
     /// Model-listing endpoint shape + headers.
     listing: ListingDialect,
+    /// ChatCompletions body-adaptation dialect (ignored for other backends).
+    chat_compat: PlatformChatCompat,
     /// Key header style for listing/validation/inference.
     key_header: PlatformKeyHeader,
     /// Restrict the live listing to models the enrichment catalog knows —
@@ -148,6 +159,7 @@ const KIMI_CODE_SPEC: PlatformSpec = PlatformSpec {
     wire_serves_metadata: true,
     wire_api: PlatformWireApi::ChatCompletions,
     listing: ListingDialect::OpenAi,
+    chat_compat: PlatformChatCompat::Kimi,
     key_header: PlatformKeyHeader::Bearer,
     restrict_to_enriched: false,
 };
@@ -169,6 +181,7 @@ const MOONSHOT_CN_SPEC: PlatformSpec = PlatformSpec {
     wire_serves_metadata: true,
     wire_api: PlatformWireApi::ChatCompletions,
     listing: ListingDialect::OpenAi,
+    chat_compat: PlatformChatCompat::Kimi,
     key_header: PlatformKeyHeader::Bearer,
     restrict_to_enriched: false,
 };
@@ -190,6 +203,7 @@ const MOONSHOT_AI_SPEC: PlatformSpec = PlatformSpec {
     wire_serves_metadata: true,
     wire_api: PlatformWireApi::ChatCompletions,
     listing: ListingDialect::OpenAi,
+    chat_compat: PlatformChatCompat::Kimi,
     key_header: PlatformKeyHeader::Bearer,
     restrict_to_enriched: false,
 };
@@ -216,6 +230,7 @@ const OPENAI_SPEC: PlatformSpec = PlatformSpec {
     wire_serves_metadata: false,
     wire_api: PlatformWireApi::Responses,
     listing: ListingDialect::OpenAi,
+    chat_compat: PlatformChatCompat::Passthrough,
     key_header: PlatformKeyHeader::Bearer,
     restrict_to_enriched: true,
 };
@@ -242,7 +257,35 @@ const ANTHROPIC_SPEC: PlatformSpec = PlatformSpec {
     wire_serves_metadata: false,
     wire_api: PlatformWireApi::Messages,
     listing: ListingDialect::Anthropic,
+    chat_compat: PlatformChatCompat::Passthrough,
     key_header: PlatformKeyHeader::XApiKey,
+    restrict_to_enriched: false,
+};
+
+/// Base-URL override for DeepSeek (dev/test escape hatch).
+pub const DEEPSEEK_BASE_URL_ENV: &str = "KIGI_DEEPSEEK_BASE_URL";
+
+const DEEPSEEK_SPEC: PlatformSpec = PlatformSpec {
+    id: "deepseek",
+    display_name: "DeepSeek",
+    base_url: BaseUrlSource::EnvOr {
+        env: DEEPSEEK_BASE_URL_ENV,
+        // No /v1: chat rides {base}/chat/completions, listing {base}/models
+        // (official docs).
+        default: "https://api.deepseek.com",
+    },
+    uses_oauth: false,
+    allowed_model_prefixes: None,
+    api_key_envs: &["DEEPSEEK_API_KEY"],
+    vendor: "DeepSeek",
+    console_host: Some("platform.deepseek.com"),
+    login_label: Some("DeepSeek (API key)"),
+    models_dev_id: Some("deepseek"),
+    wire_serves_metadata: false,
+    wire_api: PlatformWireApi::ChatCompletions,
+    listing: ListingDialect::OpenAi,
+    chat_compat: PlatformChatCompat::DeepSeek,
+    key_header: PlatformKeyHeader::Bearer,
     restrict_to_enriched: false,
 };
 
@@ -260,17 +303,20 @@ pub enum PlatformId {
     OpenAi,
     /// Anthropic platform API (API key, Messages dialect).
     Anthropic,
+    /// DeepSeek platform API (API key, ChatCompletions dialect).
+    DeepSeek,
 }
 
 impl PlatformId {
     /// All platforms, in catalog precedence order: the subscription channel
     /// first so "default model = first list item" favors it when present.
-    pub const ALL: [PlatformId; 5] = [
+    pub const ALL: [PlatformId; 6] = [
         Self::KimiCode,
         Self::MoonshotCn,
         Self::MoonshotAi,
         Self::OpenAi,
         Self::Anthropic,
+        Self::DeepSeek,
     ];
 
     /// The registry row backing this platform (single source of per-platform
@@ -282,6 +328,7 @@ impl PlatformId {
             Self::MoonshotAi => &MOONSHOT_AI_SPEC,
             Self::OpenAi => &OPENAI_SPEC,
             Self::Anthropic => &ANTHROPIC_SPEC,
+            Self::DeepSeek => &DEEPSEEK_SPEC,
         }
     }
 
@@ -380,6 +427,12 @@ impl PlatformId {
     /// Key header style for listing/validation/inference requests.
     pub fn key_header(self) -> PlatformKeyHeader {
         self.spec().key_header
+    }
+
+    /// ChatCompletions body-adaptation dialect (shell maps to the sampler's
+    /// `ChatCompat`; meaningless for other backends).
+    pub fn chat_compat(self) -> PlatformChatCompat {
+        self.spec().chat_compat
     }
 }
 
@@ -931,9 +984,10 @@ mod tests {
                 PlatformId::MoonshotAi => 2,
                 PlatformId::OpenAi => 3,
                 PlatformId::Anthropic => 4,
+                PlatformId::DeepSeek => 5,
             }
         }
-        const VARIANT_COUNT: usize = 5; // update together with `ordinal`
+        const VARIANT_COUNT: usize = 6; // update together with `ordinal`
         let mut seen: Vec<usize> = PlatformId::ALL.iter().map(|&p| ordinal(p)).collect();
         seen.sort_unstable();
         seen.dedup();

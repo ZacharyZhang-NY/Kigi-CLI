@@ -2149,6 +2149,7 @@ mod inline_auto_compact_flow_tests {
                 temperature: None,
                 top_p: None,
                 api_backend: Default::default(),
+                chat_compat: Default::default(),
                 extra_headers: Default::default(),
                 context_window: std::num::NonZeroU64::new(context_window)
                     .expect("test context_window must be non-zero"),

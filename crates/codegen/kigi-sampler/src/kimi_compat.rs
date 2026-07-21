@@ -29,6 +29,73 @@ pub(crate) fn adapt_chat_completions_body(body: &mut Value) {
     adapt_tool_schemas(body);
 }
 
+/// Dialect-dispatched body adaptation. Kimi keeps the full historical
+/// pipeline (thinking + message hygiene + schema normalization — all built
+/// for the Kimi wire's strictness); DeepSeek differs ONLY in how thinking
+/// rides the body; Passthrough providers take OpenAI-style bodies verbatim
+/// (their `reasoning_effort` scalar is already the wire form).
+pub(crate) fn adapt_chat_completions_body_for(
+    compat: kigi_sampling_types::ChatCompat,
+    body: &mut Value,
+) {
+    match compat {
+        kigi_sampling_types::ChatCompat::Kimi => adapt_chat_completions_body(body),
+        kigi_sampling_types::ChatCompat::DeepSeek => {
+            adapt_thinking_deepseek(body);
+            strip_kigi_private_message_fields(body);
+        }
+        kigi_sampling_types::ChatCompat::Passthrough => {
+            strip_kigi_private_message_fields(body);
+        }
+    }
+}
+
+/// Remove kigi-internal history artifacts from input messages before they
+/// reach a non-Kimi wire. `reasoning_content` is Kimi's replayed-thinking
+/// field (Kimi consumes it; DeepSeek documents it as prefix-mode-only and
+/// historically 400s on it; other providers don't know it) and `model_id`
+/// is kigi's private per-message provenance. Kimi's own pipeline handles
+/// these in `adapt_messages`.
+fn strip_kigi_private_message_fields(body: &mut Value) {
+    let Some(messages) = body.get_mut("messages").and_then(|m| m.as_array_mut()) else {
+        return;
+    };
+    for message in messages {
+        if let Some(obj) = message.as_object_mut() {
+            obj.remove("reasoning_content");
+            obj.remove("model_id");
+        }
+    }
+}
+
+/// DeepSeek spells the thinking control `thinking:{type, reasoning_effort}`
+/// (api-docs.deepseek.com create-chat-completion; the server maps
+/// low/medium→high and xhigh→max itself, so the canonical level passes
+/// through verbatim). `none` disables thinking; absent leaves the server
+/// default (enabled).
+fn adapt_thinking_deepseek(body: &mut Value) {
+    let Some(obj) = body.as_object_mut() else {
+        return;
+    };
+    let Some(effort) = obj.remove("reasoning_effort") else {
+        return;
+    };
+    let Some(level) = effort.as_str().map(str::to_owned) else {
+        return;
+    };
+    if level == "none" {
+        obj.insert(
+            "thinking".to_string(),
+            serde_json::json!({ "type": "disabled" }),
+        );
+    } else {
+        obj.insert(
+            "thinking".to_string(),
+            serde_json::json!({ "type": "enabled", "reasoning_effort": level }),
+        );
+    }
+}
+
 /// Map the OpenAI-style `reasoning_effort` knob onto Kimi's `thinking`
 /// request field and drop `reasoning_effort` from the wire.
 ///
@@ -279,6 +346,91 @@ fn infer_type_from_values(values: &[Value]) -> &'static str {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn deepseek_dialect_spells_thinking_reasoning_effort() {
+        use kigi_sampling_types::ChatCompat;
+        // Official docs: thinking:{type, reasoning_effort}; server maps
+        // low/medium→high, xhigh→max itself — levels pass through verbatim.
+        let mut body = json!({ "model": "deepseek-v4-pro", "reasoning_effort": "high" });
+        adapt_chat_completions_body_for(ChatCompat::DeepSeek, &mut body);
+        assert_eq!(body.get("reasoning_effort"), None);
+        assert_eq!(
+            body["thinking"],
+            json!({ "type": "enabled", "reasoning_effort": "high" })
+        );
+
+        let mut body = json!({ "model": "deepseek-v4-flash", "reasoning_effort": "max" });
+        adapt_chat_completions_body_for(ChatCompat::DeepSeek, &mut body);
+        assert_eq!(
+            body["thinking"],
+            json!({ "type": "enabled", "reasoning_effort": "max" })
+        );
+
+        // none disables; absent leaves the server default (no thinking key).
+        let mut body = json!({ "reasoning_effort": "none" });
+        adapt_chat_completions_body_for(ChatCompat::DeepSeek, &mut body);
+        assert_eq!(body["thinking"], json!({ "type": "disabled" }));
+        let mut body = json!({ "model": "deepseek-chat" });
+        adapt_chat_completions_body_for(ChatCompat::DeepSeek, &mut body);
+        assert_eq!(body.get("thinking"), None);
+
+        // DeepSeek does NOT get kimi's message/tool-schema rewrites (empty
+        // assistant tool-call content survives — DeepSeek's documented
+        // function-calling round-trip uses that shape), but kigi-private
+        // fields are stripped: replayed reasoning_content is prefix-mode-only
+        // on the DeepSeek wire (historically a 400 in input messages).
+        let mut body = json!({
+            "reasoning_effort": "high",
+            "messages": [
+                { "role": "assistant", "content": "", "tool_calls": [{}],
+                  "reasoning_content": "replayed thinking", "model_id": "kigi/x" }
+            ]
+        });
+        adapt_chat_completions_body_for(ChatCompat::DeepSeek, &mut body);
+        assert_eq!(body["messages"][0]["content"], json!(""));
+        assert_eq!(body["messages"][0].get("reasoning_content"), None);
+        assert_eq!(body["messages"][0].get("model_id"), None);
+    }
+
+    #[test]
+    fn passthrough_dialect_leaves_openai_body_verbatim() {
+        use kigi_sampling_types::ChatCompat;
+        // Verbatim EXCEPT kigi-private history artifacts, which no non-Kimi
+        // wire understands.
+        let mut body = json!({
+            "model": "gpt-oss",
+            "reasoning_effort": "high",
+            "messages": [
+                { "role": "user", "content": "hi" },
+                { "role": "assistant", "content": "yo",
+                  "reasoning_content": "internal", "model_id": "kigi/x" }
+            ]
+        });
+        adapt_chat_completions_body_for(ChatCompat::Passthrough, &mut body);
+        assert_eq!(
+            body,
+            json!({
+                "model": "gpt-oss",
+                "reasoning_effort": "high",
+                "messages": [
+                    { "role": "user", "content": "hi" },
+                    { "role": "assistant", "content": "yo" }
+                ]
+            }),
+            "reasoning_effort stays OpenAI-style; private fields are stripped"
+        );
+    }
+
+    #[test]
+    fn kimi_dialect_dispatch_matches_legacy_pipeline() {
+        use kigi_sampling_types::ChatCompat;
+        let mut via_dispatch = json!({ "model": "k3", "reasoning_effort": "max" });
+        adapt_chat_completions_body_for(ChatCompat::Kimi, &mut via_dispatch);
+        let mut via_legacy = json!({ "model": "k3", "reasoning_effort": "max" });
+        adapt_chat_completions_body(&mut via_legacy);
+        assert_eq!(via_dispatch, via_legacy, "Kimi dispatch = legacy pipeline");
+    }
 
     #[test]
     fn reasoning_effort_maps_to_kimi_thinking_field() {

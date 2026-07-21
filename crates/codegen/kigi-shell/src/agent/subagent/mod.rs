@@ -889,6 +889,7 @@ async fn read_parent_sampling_config(
                 top_p: cfg.top_p,
                 api_backend: cfg.api_backend,
                 auth_scheme,
+                chat_compat: cfg.chat_compat,
                 extra_headers,
                 context_window: cfg.context_window.get(),
                 reasoning_effort: cfg.reasoning_effort,
