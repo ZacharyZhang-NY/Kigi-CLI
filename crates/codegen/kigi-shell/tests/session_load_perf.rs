@@ -627,7 +627,7 @@ async fn full_session_load_e2e() {
         std::env::set_var("KIGI_INSTRUMENTATION_LOG", &instr_log);
         std::env::set_var("KIGI_CODE_BASE_URL", server.url());
         std::env::set_var("KIGI_API_BASE_URL", server.url());
-        std::env::set_var("XAI_API_KEY", "test-key-for-ci");
+        std::env::set_var("KIGI_API_KEY", "test-key-for-ci");
         std::env::set_var("KIGI_TELEMETRY_ENABLED", "false");
         std::env::set_var("KIGI_FEEDBACK_ENABLED", "false");
         std::env::set_var("KIGI_TRACE_UPLOAD", "false");

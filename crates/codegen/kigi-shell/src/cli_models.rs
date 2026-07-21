@@ -92,7 +92,9 @@ pub async fn list_models(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::auth_method::{LEGACY_XAI_API_KEY_ENV_VAR, XAI_API_KEY_ENV_VAR};
+    use crate::agent::auth_method::{
+        HOUSE_API_KEY_ENV_VAR, LEGACY_XAI_API_KEY_ENV_VAR, XAI_API_KEY_ENV_VAR,
+    };
     use crate::agent::config::Config;
     use crate::auth::{AuthMode, KimiAuth};
     use kigi_test_support::EnvGuard;
@@ -102,10 +104,11 @@ mod tests {
     ///
     /// Uses `KIGI_AUTH_PATH` (not `KIGI_SHARE_DIR`) so a OnceLock-cached real home
     /// with `auth.json` cannot leak into these tests.
-    fn isolate_auth_sources() -> (tempfile::TempDir, [EnvGuard; 7]) {
+    fn isolate_auth_sources() -> (tempfile::TempDir, [EnvGuard; 8]) {
         let dir = tempfile::tempdir().unwrap();
         let auth_path = dir.path().join("no-auth.json");
         let guards = [
+            EnvGuard::unset(HOUSE_API_KEY_ENV_VAR),
             EnvGuard::unset(XAI_API_KEY_ENV_VAR),
             EnvGuard::unset(LEGACY_XAI_API_KEY_ENV_VAR),
             EnvGuard::unset("KIGI_AUTH"),

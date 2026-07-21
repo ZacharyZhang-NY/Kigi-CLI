@@ -165,7 +165,7 @@ impl acp::Agent for MvpAgent {
                 &crate::util::kigi_home::kigi_home(),
             )
         {
-            unsafe { std::env::set_var("XAI_API_KEY", &api_key) };
+            unsafe { std::env::set_var("KIGI_API_KEY", &api_key) };
             tracing::info!("auth: loaded API key from auth.json (xai::api_key scope)");
             kigi_log::unified_log::info(
                 "auth: loaded API key from auth.json (xai::api_key scope)",
@@ -357,7 +357,7 @@ impl acp::Agent for MvpAgent {
                         return Err(
                             acp::Error::auth_required()
                                 .data(
-                                    "Set XAI_API_KEY or add api_key/env_key to config.toml.",
+                                    "Set KIGI_API_KEY or add api_key/env_key to config.toml.",
                                 ),
                         );
                     }

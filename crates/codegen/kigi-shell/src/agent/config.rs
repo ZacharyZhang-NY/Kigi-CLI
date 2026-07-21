@@ -4893,7 +4893,9 @@ reasoning_effort = "low"
     #[test]
     #[serial]
     fn resolve_credentials_empty_env_key_falls_through_to_global_key() {
-        use crate::agent::auth_method::{LEGACY_XAI_API_KEY_ENV_VAR, XAI_API_KEY_ENV_VAR};
+        use crate::agent::auth_method::{
+            HOUSE_API_KEY_ENV_VAR, LEGACY_XAI_API_KEY_ENV_VAR, XAI_API_KEY_ENV_VAR,
+        };
         use kigi_chat_state::AuthType;
         use kigi_test_support::EnvGuard;
         let sentinel = "xai-global-sentinel-key";
@@ -4901,6 +4903,9 @@ reasoning_effort = "low"
         let alias = "KIGI_TEST_EMPTY_ENV_GLOBAL_ALIAS";
         let _primary = EnvGuard::set(primary, "");
         let _alias = EnvGuard::set(alias, "");
+        // Unset the new house primary so the back-compat XAI_API_KEY is the
+        // global key under test (not shadowed by an ambient KIGI_API_KEY).
+        let _house = EnvGuard::unset(HOUSE_API_KEY_ENV_VAR);
         let _global = EnvGuard::set(XAI_API_KEY_ENV_VAR, sentinel);
         let _legacy = EnvGuard::unset(LEGACY_XAI_API_KEY_ENV_VAR);
         let mut model = test_model_entry("m", "https://inference.example/v1", None, None, None);
@@ -6454,7 +6459,13 @@ reasoning_effort = "low"
             None,
             None,
         );
-        unsafe { std::env::set_var("XAI_API_KEY", "env-key") };
+        // Clear the house primary + legacy so the XAI_API_KEY set below is the
+        // env key resolved by read_xai_api_key_env (KIGI_API_KEY wins otherwise).
+        unsafe {
+            std::env::remove_var("KIGI_API_KEY");
+            std::env::remove_var("KIGI_CODE_XAI_API_KEY");
+            std::env::set_var("XAI_API_KEY", "env-key");
+        }
         let sampling = resolve_sampling(&model_with_key, Some("session-key"));
         assert_eq!(
             sampling.api_key.as_deref(),

@@ -19,24 +19,36 @@ pub(crate) fn new_shared_auth_method_id(initial: Option<acp::AuthMethodId>) -> S
     ))
 }
 
-/// Env var that, when set, advertises `xai.api_key` as a viable auth method.
+/// Primary env var that, when set, advertises `xai.api_key` as a viable auth
+/// method. NOTE: `xai.api_key` is the *house* bring-your-own-key method (the
+/// upstream product is house-branded "xai"), unrelated to the x.ai/Grok
+/// provider. That collision is why the primary env moved here to `KIGI_API_KEY`
+/// — `XAI_API_KEY` is now the x.ai/Grok provider key (see `XAI_SPEC`).
 ///
 /// Kept as a constant so test code and the production check stay in sync.
+pub const HOUSE_API_KEY_ENV_VAR: &str = "KIGI_API_KEY";
+
+/// Back-compat fallback env: `XAI_API_KEY` was the house BYOK key before it
+/// became the x.ai/Grok provider key. Still honored so existing house-BYOK
+/// deployments keep working (they share the key with the Grok provider).
 pub const XAI_API_KEY_ENV_VAR: &str = "XAI_API_KEY";
 
-/// Legacy env var name. Checked as a fallback when `XAI_API_KEY` is not set,
-/// so existing deployments that use the old name keep working.
+/// Legacy env var name (pre-`XAI_API_KEY`). Checked last so the oldest
+/// deployments keep working.
 pub const LEGACY_XAI_API_KEY_ENV_VAR: &str = "KIGI_CODE_XAI_API_KEY";
 
-/// Read the API key from the environment.
+/// Read the house BYOK API key from the environment.
 ///
-/// Checks `XAI_API_KEY` first, then falls back to the legacy
-/// `KIGI_CODE_XAI_API_KEY` for backward compatibility.
+/// Checks `KIGI_API_KEY` first, then the back-compat `XAI_API_KEY`, then the
+/// legacy `KIGI_CODE_XAI_API_KEY`.
 pub fn read_xai_api_key_env() -> Result<String, std::env::VarError> {
-    std::env::var(XAI_API_KEY_ENV_VAR).or_else(|_| std::env::var(LEGACY_XAI_API_KEY_ENV_VAR))
+    std::env::var(HOUSE_API_KEY_ENV_VAR)
+        .or_else(|_| std::env::var(XAI_API_KEY_ENV_VAR))
+        .or_else(|_| std::env::var(LEGACY_XAI_API_KEY_ENV_VAR))
 }
 
-/// Returns `true` if either `XAI_API_KEY` or `KIGI_CODE_XAI_API_KEY` is set.
+/// Returns `true` if any house BYOK env is set: `KIGI_API_KEY` (primary) or the
+/// back-compat `XAI_API_KEY` / `KIGI_CODE_XAI_API_KEY`.
 pub fn has_xai_api_key_env() -> bool {
     read_xai_api_key_env().is_ok()
 }
@@ -271,7 +283,7 @@ pub fn session_token_auth_gate(
 pub const AUTH_ERROR_SESSION_EXPIRED: &str =
     "Session expired. Run `kigi login` to re-authenticate.";
 
-pub const AUTH_ERROR_API_KEY: &str = "Authentication failed. Run `kigi login`, set XAI_API_KEY, or add api_key to ~/.kigi/config.toml.";
+pub const AUTH_ERROR_API_KEY: &str = "Authentication failed. Run `kigi login`, set KIGI_API_KEY, or add api_key to ~/.kigi/config.toml.";
 
 /// Next ACP method id when `cached_token` cannot proceed (missing / expired):
 /// prefer non-interactive `xai.api_key` when advertiseable, else the
@@ -292,7 +304,7 @@ pub fn xai_api_key_auth_method() -> acp::AuthMethod {
             "xai.api_key".to_string(),
         )
         .description(Some(format!(
-            "{XAI_API_KEY_ENV_VAR} or api_key/env_key in config.toml"
+            "{HOUSE_API_KEY_ENV_VAR} or api_key/env_key in config.toml"
         ))),
     )
 }
@@ -607,7 +619,8 @@ mod tests {
                 "together",
                 "cerebras",
                 "nvidia",
-                "vercel-ai-gateway"
+                "vercel-ai-gateway",
+                "xai"
             ]
         );
         assert_eq!(default_id(&built), Some(XAI_API_KEY_METHOD_ID));
@@ -645,7 +658,8 @@ mod tests {
                 "together",
                 "cerebras",
                 "nvidia",
-                "vercel-ai-gateway"
+                "vercel-ai-gateway",
+                "xai"
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -676,7 +690,8 @@ mod tests {
                 "together",
                 "cerebras",
                 "nvidia",
-                "vercel-ai-gateway"
+                "vercel-ai-gateway",
+                "xai"
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -710,7 +725,8 @@ mod tests {
                 "together",
                 "cerebras",
                 "nvidia",
-                "vercel-ai-gateway"
+                "vercel-ai-gateway",
+                "xai"
             ]
         );
         assert_eq!(default_id(&built), None);
@@ -759,19 +775,32 @@ mod tests {
     #[test]
     #[serial]
     fn legacy_env_var_fallback_advertises_xai_api_key() {
+        let _house = EnvGuard::unset(HOUSE_API_KEY_ENV_VAR);
         let _unset = EnvGuard::unset(XAI_API_KEY_ENV_VAR);
         let _set = EnvGuard::set(LEGACY_XAI_API_KEY_ENV_VAR, "legacy-key");
         assert!(has_xai_api_key_env());
         assert_eq!(read_xai_api_key_env().unwrap(), "legacy-key");
     }
 
-    /// The new env var takes precedence over the legacy one.
+    /// `XAI_API_KEY` takes precedence over the older legacy env var.
     #[test]
     #[serial]
-    fn new_env_var_takes_precedence_over_legacy() {
+    fn xai_env_var_takes_precedence_over_legacy() {
+        let _house = EnvGuard::unset(HOUSE_API_KEY_ENV_VAR);
         let _new = EnvGuard::set(XAI_API_KEY_ENV_VAR, "new-key");
         let _legacy = EnvGuard::set(LEGACY_XAI_API_KEY_ENV_VAR, "legacy-key");
         assert_eq!(read_xai_api_key_env().unwrap(), "new-key");
+    }
+
+    /// After the migration, `KIGI_API_KEY` is the house BYOK primary and wins
+    /// over the back-compat `XAI_API_KEY` (now the x.ai/Grok provider key).
+    #[test]
+    #[serial]
+    fn house_env_var_takes_precedence_over_xai() {
+        let _house = EnvGuard::set(HOUSE_API_KEY_ENV_VAR, "house-key");
+        let _xai = EnvGuard::set(XAI_API_KEY_ENV_VAR, "grok-key");
+        let _legacy = EnvGuard::set(LEGACY_XAI_API_KEY_ENV_VAR, "legacy-key");
+        assert_eq!(read_xai_api_key_env().unwrap(), "house-key");
     }
 
     /// Moonshot authenticate with no configured key: actionable error naming
@@ -930,5 +959,51 @@ mod tests {
         authenticate_platform_api_key(kigi_models::PlatformId::OpenRouter, Some("sk-or-good"))
             .await
             .expect("200 from /key must validate the key");
+    }
+
+    /// xAI has no validation-path override: `/v1/models` itself requires auth
+    /// (401 without a valid key), so it doubles as the validator. A bad key is
+    /// rejected.
+    #[tokio::test]
+    #[serial]
+    async fn xai_validates_against_models_and_rejects_bad_key() {
+        use wiremock::matchers::{method, path};
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(method("GET"))
+            .and(path("/models"))
+            .respond_with(wiremock::ResponseTemplate::new(401))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let _base = EnvGuard::set(kigi_models::XAI_BASE_URL_ENV, &server.uri());
+        let err = authenticate_platform_api_key(kigi_models::PlatformId::Xai, Some("xai-bad"))
+            .await
+            .expect_err("a 401 from /models must reject the key");
+        assert_eq!(
+            err.message,
+            "Invalid API key for xai \u{2014} check your key on console.x.ai"
+        );
+    }
+
+    /// A valid xAI key: `/models` returns 200 for the Bearer header → accepted.
+    #[tokio::test]
+    #[serial]
+    async fn xai_valid_key_succeeds_via_models() {
+        use wiremock::matchers::{header, method, path};
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(method("GET"))
+            .and(path("/models"))
+            .and(header("Authorization", "Bearer xai-good"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "data": [] })),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let _base = EnvGuard::set(kigi_models::XAI_BASE_URL_ENV, &server.uri());
+        authenticate_platform_api_key(kigi_models::PlatformId::Xai, Some("xai-good"))
+            .await
+            .expect("200 from /models must validate the key");
     }
 }

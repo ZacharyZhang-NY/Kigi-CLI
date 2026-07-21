@@ -597,6 +597,41 @@ const VERCEL_SPEC: PlatformSpec = PlatformSpec {
     restrict_to_enriched: true,
 };
 
+pub const XAI_BASE_URL_ENV: &str = "KIGI_XAI_BASE_URL";
+const XAI_SPEC: PlatformSpec = PlatformSpec {
+    id: "xai",
+    display_name: "xAI (Grok)",
+    base_url: BaseUrlSource::EnvOr {
+        env: XAI_BASE_URL_ENV,
+        default: "https://api.x.ai/v1",
+    },
+    uses_oauth: false,
+    allowed_model_prefixes: None,
+    // NOTE: `XAI_API_KEY` is ALSO read as a legacy fallback by the house BYOK
+    // path (`read_xai_api_key_env`), whose primary env is now `KIGI_API_KEY`.
+    // Here it is the x.ai/Grok provider key (its canonical ecosystem name).
+    api_key_envs: &["XAI_API_KEY"],
+    vendor: "xAI",
+    console_host: Some("console.x.ai"),
+    login_label: Some("xAI (Grok) (API key)"),
+    models_dev_id: Some("xai"),
+    // /v1/models is minimal (ids only; rich metadata lives on the non-standard
+    // /v1/language-models), so take context/limits from models.dev enrichment.
+    // The /v1/models ids match the models.dev "xai" keys byte-for-byte
+    // (grok-4.5, grok-4.20-0309-reasoning, ...); restrict to tool-calling chat
+    // models to drop the grok-imagine-* image/video generators.
+    wire_serves_metadata: false,
+    wire_api: PlatformWireApi::ChatCompletions,
+    listing: ListingDialect::OpenAi,
+    chat_compat: PlatformChatCompat::Passthrough,
+    key_header: PlatformKeyHeader::Bearer,
+    // /v1/models requires auth (401 without a key), so it doubles as the key
+    // validator; no separate public endpoint needed.
+    key_validation_path: None,
+    strip_listing_id_prefix: None,
+    restrict_to_enriched: true,
+};
+
 /// The platform registry. Platforms are compiled-in spec rows; there is no
 /// dynamic provider registration (PRD F2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -631,12 +666,14 @@ pub enum PlatformId {
     Nvidia,
     /// Vercel AI Gateway (API key, wire-listed with models.dev enrichment).
     Vercel,
+    /// xAI Grok platform (API key, OpenAI-compatible ChatCompletions).
+    Xai,
 }
 
 impl PlatformId {
     /// All platforms, in catalog precedence order: the subscription channel
     /// first so "default model = first list item" favors it when present.
-    pub const ALL: [PlatformId; 15] = [
+    pub const ALL: [PlatformId; 16] = [
         Self::KimiCode,
         Self::MoonshotCn,
         Self::MoonshotAi,
@@ -652,6 +689,7 @@ impl PlatformId {
         Self::Cerebras,
         Self::Nvidia,
         Self::Vercel,
+        Self::Xai,
     ];
 
     /// The registry row backing this platform (single source of per-platform
@@ -673,6 +711,7 @@ impl PlatformId {
             Self::Cerebras => &CEREBRAS_SPEC,
             Self::Nvidia => &NVIDIA_SPEC,
             Self::Vercel => &VERCEL_SPEC,
+            Self::Xai => &XAI_SPEC,
         }
     }
 
@@ -1428,9 +1467,10 @@ mod tests {
                 PlatformId::Cerebras => 12,
                 PlatformId::Nvidia => 13,
                 PlatformId::Vercel => 14,
+                PlatformId::Xai => 15,
             }
         }
-        const VARIANT_COUNT: usize = 15; // update together with `ordinal`
+        const VARIANT_COUNT: usize = 16; // update together with `ordinal`
         let mut seen: Vec<usize> = PlatformId::ALL.iter().map(|&p| ordinal(p)).collect();
         seen.sort_unstable();
         seen.dedup();

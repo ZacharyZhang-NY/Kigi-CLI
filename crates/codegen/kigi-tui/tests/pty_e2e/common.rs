@@ -138,7 +138,7 @@ pub(crate) fn tall_response(sentinel: &str, rows: usize) -> String {
 /// Spawn a pager with fake session (OAuth) auth, then drive it into a live
 /// session (welcome → prompt → mock response). Session auth matters: the
 /// settings poll requires `auth_manager.auth()`, and the harness's default
-/// `XAI_API_KEY` (ApiKey/BYOK mode, no auth.json entry) would never fetch
+/// `KIGI_API_KEY` (ApiKey/BYOK mode, no auth.json entry) would never fetch
 /// `/v1/settings`. Call `content.set_response(..)` BEFORE this so the entry
 /// prompt streams.
 pub(crate) fn spawn_polling_session(content: &ContentController, oauth_user: &str) -> PtyHarness {

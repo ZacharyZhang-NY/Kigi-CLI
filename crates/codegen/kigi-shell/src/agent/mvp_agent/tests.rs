@@ -1904,10 +1904,12 @@ async fn cached_token_fallthrough_prefers_api_key_for_deployment_key() {
 #[serial_test::serial]
 async fn cached_token_fallthrough_falls_to_kigi_com_without_credentials() {
     use crate::agent::auth_method::{
-        KIMI_CODE_METHOD_ID, LEGACY_XAI_API_KEY_ENV_VAR, XAI_API_KEY_ENV_VAR,
+        HOUSE_API_KEY_ENV_VAR, KIMI_CODE_METHOD_ID, LEGACY_XAI_API_KEY_ENV_VAR,
+        XAI_API_KEY_ENV_VAR,
     };
     use kigi_test_support::EnvGuard;
     let _lockdown = EnvGuard::unset("KIGI_DISABLE_API_KEY_AUTH");
+    let _house = EnvGuard::unset(HOUSE_API_KEY_ENV_VAR);
     let _new = EnvGuard::unset(XAI_API_KEY_ENV_VAR);
     let _legacy = EnvGuard::unset(LEGACY_XAI_API_KEY_ENV_VAR);
     let agent = build_minimal_agent_for_tests();

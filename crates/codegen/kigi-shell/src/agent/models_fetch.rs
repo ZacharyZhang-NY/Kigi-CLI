@@ -132,7 +132,7 @@ fn fetch_custom_endpoint_models_blocking(
                 .ok_or(std::env::VarError::NotPresent)
         })
         .map_err(|_| {
-            BackendError::Auth("No API key for custom models endpoint. Set XAI_API_KEY.".into())
+            BackendError::Auth("No API key for custom models endpoint. Set KIGI_API_KEY.".into())
         })?;
     let request = client
         .get(&url)
@@ -1983,6 +1983,96 @@ mod tests {
         let model_entry = crate::agent::config::ModelEntry::from_config_entry(entry);
         let creds = crate::agent::config::ResolvedCredentials {
             api_key: Some("vg-1".into()),
+            base_url: entry.base_url.clone(),
+            auth_type: kigi_chat_state::AuthType::ApiKey,
+            auth_scheme: Default::default(),
+        };
+        let cfg = crate::agent::config::sampling_config_for_model(&model_entry, creds, None);
+        assert_eq!(
+            cfg.chat_compat,
+            kigi_sampling_types::ChatCompat::Passthrough
+        );
+    }
+
+    /// xAI-cycle e2e: /v1/models is minimal (bare grok ids, no context), so
+    /// enrichment supplies context/limits; the restriction drops the
+    /// non-tool-calling grok-imagine-* generators; bare id round-trips under
+    /// the `xai/` key; Passthrough dialect.
+    #[tokio::test(flavor = "multi_thread")]
+    #[serial_test::serial]
+    async fn xai_enriches_restricts_and_maps_passthrough() {
+        let platform_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/models"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                // xAI /v1/models is minimal: id/object only, NO context field —
+                // so a non-zero context below can only come from enrichment.
+                serde_json::json!({ "data": [
+                    { "id": "grok-4.5", "object": "model" },
+                    { "id": "grok-imagine-image", "object": "model" }
+                ]}),
+            ))
+            .expect(1)
+            .mount(&platform_server)
+            .await;
+        let modelsdev_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/api.json"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({ "xai": { "models": {
+                    "grok-4.5": {
+                        "limit": {"context": 500000, "output": 128000},
+                        "tool_call": true
+                    },
+                    // present in enrichment too, but not tool-calling → dropped.
+                    "grok-imagine-image": { "limit": {"context": 8000} }
+                }}}),
+            ))
+            .expect(1)
+            .mount(&modelsdev_server)
+            .await;
+        let cache_dir = tempfile::tempdir().unwrap();
+        let _base =
+            kigi_test_support::EnvGuard::set(kigi_models::XAI_BASE_URL_ENV, platform_server.uri());
+        let _mdev = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_URL_ENV,
+            format!("{}/api.json", modelsdev_server.uri()),
+        );
+        let _mdev_cache = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_CACHE_DIR_ENV,
+            cache_dir.path(),
+        );
+        let endpoints = crate::agent::config::EndpointsConfig::default();
+        let keys = crate::agent::models::PlatformApiKeys::test_single(
+            kigi_models::PlatformId::Xai,
+            "xai-1",
+        );
+        let result = tokio::task::spawn_blocking(move || {
+            fetch_platform_models_blocking(&endpoints, None, &keys)
+        })
+        .await
+        .unwrap()
+        .expect("fetch must succeed");
+        assert_eq!(
+            result
+                .models
+                .iter()
+                .map(|m| m.id.as_deref().unwrap_or_default())
+                .collect::<Vec<_>>(),
+            vec!["xai/grok-4.5"],
+            "grok-imagine-image (not tool-calling) dropped; bare id kept under the xai key"
+        );
+        let entry = &result.models[0];
+        assert_eq!(
+            entry.context_window.get(),
+            500_000,
+            "context comes from enrichment (the wire listing carries none)"
+        );
+        assert_eq!(entry.max_completion_tokens, Some(128_000));
+        assert_eq!(entry.model, "grok-4.5", "the bare grok id rides the wire");
+        let model_entry = crate::agent::config::ModelEntry::from_config_entry(entry);
+        let creds = crate::agent::config::ResolvedCredentials {
+            api_key: Some("xai-1".into()),
             base_url: entry.base_url.clone(),
             auth_type: kigi_chat_state::AuthType::ApiKey,
             auth_scheme: Default::default(),

@@ -143,7 +143,7 @@ impl LeaderStdioClient {
             .env("KIGI_LEADER_SOCKET", home.join(".kigi").join("leader.sock"))
             .env("KIGI_CODE_BASE_URL", server.url())
             .env("KIGI_API_BASE_URL", server.url())
-            .env("XAI_API_KEY", "test-key-for-ci")
+            .env("KIGI_API_KEY", "test-key-for-ci")
             .env("KIGI_TELEMETRY_ENABLED", "false")
             .env("KIGI_FEEDBACK_ENABLED", "false")
             .env("KIGI_TRACE_UPLOAD", "false")

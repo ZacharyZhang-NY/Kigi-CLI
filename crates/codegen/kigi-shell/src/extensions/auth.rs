@@ -56,18 +56,18 @@ fn handle_set_api_key(args: &acp::ExtRequest) -> ExtResult {
             crate::auth::clear_api_key(&kigi_home)
                 .map_err(|e| acp::Error::internal_error().data(e.to_string()))?;
             // SAFETY: ext_method is single-threaded per agent
-            unsafe { std::env::remove_var("XAI_API_KEY") };
+            unsafe { std::env::remove_var("KIGI_API_KEY") };
         } else {
             crate::auth::store_api_key(&kigi_home, k)
                 .map_err(|e| acp::Error::internal_error().data(e.to_string()))?;
             // SAFETY: ext_method is single-threaded per agent
-            unsafe { std::env::set_var("XAI_API_KEY", k) };
+            unsafe { std::env::set_var("KIGI_API_KEY", k) };
         }
     } else {
         crate::auth::clear_api_key(&kigi_home)
             .map_err(|e| acp::Error::internal_error().data(e.to_string()))?;
         // SAFETY: ext_method is single-threaded per agent
-        unsafe { std::env::remove_var("XAI_API_KEY") };
+        unsafe { std::env::remove_var("KIGI_API_KEY") };
     }
     ExtMethodResult::success(serde_json::json!({ "ok": true }))
         .to_ext_response()

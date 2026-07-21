@@ -76,7 +76,7 @@ pub fn map_sampling_err_to_acp(err: SamplingError) -> acp::Error {
                     && crate::agent::auth_method::has_xai_api_key_env()
                 {
                     format!(
-                        "{message}\n\nYou have an API key set (XAI_API_KEY). \
+                        "{message}\n\nYou have an API key set (KIGI_API_KEY). \
                          Your cached OAuth session is being used instead. \
                          To use your API key, run `kigi logout` or type /logout in the TUI."
                     )
@@ -441,24 +441,32 @@ mod tests {
         );
     }
 
-    /// Helper: run a closure with XAI_API_KEY temporarily set (or cleared).
-    /// Cleans up even if the closure panics.
+    /// Helper: run a closure with the house BYOK key (KIGI_API_KEY) temporarily
+    /// set (or cleared). Clears every house-key env (KIGI_API_KEY plus the
+    /// back-compat XAI_API_KEY / KIGI_CODE_XAI_API_KEY) so the "no key" case is
+    /// hermetic. Cleans up even if the closure panics.
     fn with_api_key_env<F: FnOnce()>(key: Option<&str>, f: F) {
+        let prev_house = std::env::var("KIGI_API_KEY").ok();
         let prev = std::env::var("XAI_API_KEY").ok();
         let prev_legacy = std::env::var("KIGI_CODE_XAI_API_KEY").ok();
         // SAFETY: serial_test ensures no concurrent env mutation.
         unsafe {
+            std::env::remove_var("KIGI_API_KEY");
             std::env::remove_var("XAI_API_KEY");
             std::env::remove_var("KIGI_CODE_XAI_API_KEY");
             if let Some(k) = key {
-                std::env::set_var("XAI_API_KEY", k);
+                std::env::set_var("KIGI_API_KEY", k);
             }
         }
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
         // Restore original state.
         unsafe {
+            std::env::remove_var("KIGI_API_KEY");
             std::env::remove_var("XAI_API_KEY");
             std::env::remove_var("KIGI_CODE_XAI_API_KEY");
+            if let Some(v) = prev_house {
+                std::env::set_var("KIGI_API_KEY", v);
+            }
             if let Some(v) = prev {
                 std::env::set_var("XAI_API_KEY", v);
             }

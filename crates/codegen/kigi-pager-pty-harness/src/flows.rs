@@ -96,11 +96,12 @@ pub fn seed_fake_oauth(content: &ContentController, user: &str) {
     .expect("seed fake oauth auth.json");
 }
 
-/// [`ContentController::env_for_pager`] minus `XAI_API_KEY`, so the entry
-/// written by [`seed_fake_oauth`] is the active credential.
+/// [`ContentController::env_for_pager`] minus the house BYOK key
+/// (`KIGI_API_KEY`), so the entry written by [`seed_fake_oauth`] is the active
+/// credential.
 pub fn oauth_env_for_pager(content: &ContentController) -> Vec<(String, String)> {
     let mut env = content.env_for_pager();
-    env.retain(|(k, _)| k != "XAI_API_KEY");
+    env.retain(|(k, _)| k != "KIGI_API_KEY");
     env
 }
 

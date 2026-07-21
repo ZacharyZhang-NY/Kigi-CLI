@@ -1044,7 +1044,9 @@ pub async fn resolve_api_key(explicit: Option<&str>, kigi_home: &Path) -> Result
     if let Some(k) = explicit.map(str::trim).filter(|s| !s.is_empty()) {
         return Ok(k.to_owned());
     }
-    let env_key = std::env::var("XAI_API_KEY").ok();
+    // Canonical house-key resolution: KIGI_API_KEY, then the back-compat
+    // XAI_API_KEY / KIGI_CODE_XAI_API_KEY (see `read_xai_api_key_env`).
+    let env_key = crate::agent::auth_method::read_xai_api_key_env().ok();
     if let Some(k) = env_key.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
         return Ok(k.to_owned());
     }
@@ -1052,7 +1054,7 @@ pub async fn resolve_api_key(explicit: Option<&str>, kigi_home: &Path) -> Result
         return Ok(key);
     }
     Err(anyhow!(
-        "no API key: pass --api-key, set XAI_API_KEY, or run `kigi login` to populate \
+        "no API key: pass --api-key, set KIGI_API_KEY, or run `kigi login` to populate \
          <kigi-home>/auth.json. An expired OIDC token is auto-refreshed when a refresh_token \
          is present; if not, re-login is required."
     ))
@@ -2344,7 +2346,7 @@ mod tests {
         .await;
         assert!(
             msg.contains("--api-key")
-                && msg.contains("XAI_API_KEY")
+                && msg.contains("KIGI_API_KEY")
                 && msg.contains("kigi login")
                 && msg.contains("auth.json"),
             "error names all three sources: {msg}",
@@ -2445,7 +2447,9 @@ mod tests {
     ///   refresher that could mint credentials independent of the
     ///   fixture.
     const ISOLATED_ENV_KEYS: &[&str] = &[
+        "KIGI_API_KEY",
         "XAI_API_KEY",
+        "KIGI_CODE_XAI_API_KEY",
         "KIGI_AUTH",
         "KIGI_AUTH_PATH",
         "KIGI_AUTH_PROVIDER_COMMAND",

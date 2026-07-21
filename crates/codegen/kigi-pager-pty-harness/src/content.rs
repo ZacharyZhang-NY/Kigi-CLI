@@ -97,7 +97,7 @@ impl ContentController {
             // pins them to the mock so no PTY test can reach a live endpoint.
             ("KIGI_MOONSHOT_CN_BASE_URL".into(), self.url()),
             ("KIGI_MOONSHOT_AI_BASE_URL".into(), self.url()),
-            ("XAI_API_KEY".into(), "test-key-for-ci".into()),
+            ("KIGI_API_KEY".into(), "test-key-for-ci".into()),
             ("KIGI_TELEMETRY_ENABLED".into(), "false".into()),
             ("KIGI_FEEDBACK_ENABLED".into(), "false".into()),
             ("KIGI_TRACE_UPLOAD".into(), "false".into()),
@@ -287,7 +287,7 @@ mod tests {
         assert_eq!(get("KIGI_API_BASE_URL"), Some(content.url()));
         assert_eq!(get("KIGI_MOONSHOT_CN_BASE_URL"), Some(content.url()));
         assert_eq!(get("KIGI_MOONSHOT_AI_BASE_URL"), Some(content.url()));
-        assert_eq!(get("XAI_API_KEY").as_deref(), Some("test-key-for-ci"));
+        assert_eq!(get("KIGI_API_KEY").as_deref(), Some("test-key-for-ci"));
         assert_eq!(get("KIGI_TELEMETRY_ENABLED").as_deref(), Some("false"));
         assert_eq!(get("KIGI_FEEDBACK_ENABLED").as_deref(), Some("false"));
         assert_eq!(get("KIGI_TRACE_UPLOAD").as_deref(), Some("false"));

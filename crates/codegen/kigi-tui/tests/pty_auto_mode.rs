@@ -78,7 +78,7 @@ fn prepare_sandbox(home: &Path, gate_on: bool) -> Vec<(String, String)> {
         ("NO_COLOR".into(), "0".into()),
         ("TERM_PROGRAM".into(), "".into()),
         ("TMUX".into(), "".into()),
-        // Do not set XAI_API_KEY — prefer OIDC entry in auth.json (pty_e2e pattern).
+        // Do not set KIGI_API_KEY — prefer OIDC entry in auth.json (pty_e2e pattern).
     ];
     // Pin the feature gate explicitly so the cycle is deterministic regardless
     // of the developer's shell. `KIGI_AUTO_PERMISSION_MODE` is the highest gate
