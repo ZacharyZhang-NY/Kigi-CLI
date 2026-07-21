@@ -346,6 +346,34 @@ const MISTRAL_SPEC: PlatformSpec = PlatformSpec {
     restrict_to_enriched: true,
 };
 
+/// Base-URL override for Fireworks (dev/test escape hatch).
+pub const FIREWORKS_BASE_URL_ENV: &str = "KIGI_FIREWORKS_BASE_URL";
+
+const FIREWORKS_SPEC: PlatformSpec = PlatformSpec {
+    id: "fireworks",
+    display_name: "Fireworks AI",
+    base_url: BaseUrlSource::EnvOr {
+        env: FIREWORKS_BASE_URL_ENV,
+        // Inference plane (note the /inference/v1 path, not /v1).
+        default: "https://api.fireworks.ai/inference/v1",
+    },
+    uses_oauth: false,
+    allowed_model_prefixes: None,
+    api_key_envs: &["FIREWORKS_API_KEY"],
+    vendor: "Fireworks",
+    console_host: Some("fireworks.ai"),
+    login_label: Some("Fireworks AI (API key)"),
+    models_dev_id: Some("fireworks-ai"),
+    wire_serves_metadata: false,
+    wire_api: PlatformWireApi::ChatCompletions,
+    listing: ListingDialect::OpenAi,
+    chat_compat: PlatformChatCompat::Passthrough,
+    key_header: PlatformKeyHeader::Bearer,
+    // The inference /models listing can include embedding/non-chat models;
+    // keep tool-calling enrichment-known models only.
+    restrict_to_enriched: true,
+};
+
 /// The platform registry. Platforms are compiled-in spec rows; there is no
 /// dynamic provider registration (PRD F2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -366,12 +394,14 @@ pub enum PlatformId {
     Groq,
     /// Mistral platform API (API key, OpenAI-compatible ChatCompletions).
     Mistral,
+    /// Fireworks AI platform API (API key, OpenAI-compatible ChatCompletions).
+    Fireworks,
 }
 
 impl PlatformId {
     /// All platforms, in catalog precedence order: the subscription channel
     /// first so "default model = first list item" favors it when present.
-    pub const ALL: [PlatformId; 8] = [
+    pub const ALL: [PlatformId; 9] = [
         Self::KimiCode,
         Self::MoonshotCn,
         Self::MoonshotAi,
@@ -380,6 +410,7 @@ impl PlatformId {
         Self::DeepSeek,
         Self::Groq,
         Self::Mistral,
+        Self::Fireworks,
     ];
 
     /// The registry row backing this platform (single source of per-platform
@@ -394,6 +425,7 @@ impl PlatformId {
             Self::DeepSeek => &DEEPSEEK_SPEC,
             Self::Groq => &GROQ_SPEC,
             Self::Mistral => &MISTRAL_SPEC,
+            Self::Fireworks => &FIREWORKS_SPEC,
         }
     }
 
@@ -1052,9 +1084,10 @@ mod tests {
                 PlatformId::DeepSeek => 5,
                 PlatformId::Groq => 6,
                 PlatformId::Mistral => 7,
+                PlatformId::Fireworks => 8,
             }
         }
-        const VARIANT_COUNT: usize = 8; // update together with `ordinal`
+        const VARIANT_COUNT: usize = 9; // update together with `ordinal`
         let mut seen: Vec<usize> = PlatformId::ALL.iter().map(|&p| ordinal(p)).collect();
         seen.sort_unstable();
         seen.dedup();
