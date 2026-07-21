@@ -563,6 +563,40 @@ const NVIDIA_SPEC: PlatformSpec = PlatformSpec {
     restrict_to_enriched: true,
 };
 
+/// Base-URL override for Vercel AI Gateway (dev/test escape hatch).
+pub const VERCEL_BASE_URL_ENV: &str = "KIGI_VERCEL_BASE_URL";
+
+const VERCEL_SPEC: PlatformSpec = PlatformSpec {
+    id: "vercel-ai-gateway",
+    display_name: "Vercel AI Gateway",
+    base_url: BaseUrlSource::EnvOr {
+        env: VERCEL_BASE_URL_ENV,
+        default: "https://ai-gateway.vercel.sh/v1",
+    },
+    uses_oauth: false,
+    allowed_model_prefixes: None,
+    api_key_envs: &["AI_GATEWAY_API_KEY"],
+    vendor: "Vercel",
+    console_host: Some("vercel.com"),
+    login_label: Some("Vercel AI Gateway (API key)"),
+    models_dev_id: Some("vercel"),
+    // Vercel's /models serves rich metadata but under `context_window` (not
+    // the WireModel `context_length`), so take context from models.dev
+    // enrichment instead; restrict to tool-calling chat models (the gateway
+    // lists embedding/image/rerank types too). Ids are creator/model,
+    // byte-matching the models.dev "vercel" keys.
+    wire_serves_metadata: false,
+    wire_api: PlatformWireApi::ChatCompletions,
+    listing: ListingDialect::OpenAi,
+    chat_compat: PlatformChatCompat::Passthrough,
+    key_header: PlatformKeyHeader::Bearer,
+    // /models is PUBLIC (200 for any key), so validate against /credits,
+    // which 401s for a bad key.
+    key_validation_path: Some("/credits"),
+    strip_listing_id_prefix: None,
+    restrict_to_enriched: true,
+};
+
 /// The platform registry. Platforms are compiled-in spec rows; there is no
 /// dynamic provider registration (PRD F2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -595,12 +629,14 @@ pub enum PlatformId {
     Cerebras,
     /// NVIDIA NIM platform API (API key, OpenAI-compatible ChatCompletions).
     Nvidia,
+    /// Vercel AI Gateway (API key, wire-listed with models.dev enrichment).
+    Vercel,
 }
 
 impl PlatformId {
     /// All platforms, in catalog precedence order: the subscription channel
     /// first so "default model = first list item" favors it when present.
-    pub const ALL: [PlatformId; 14] = [
+    pub const ALL: [PlatformId; 15] = [
         Self::KimiCode,
         Self::MoonshotCn,
         Self::MoonshotAi,
@@ -615,6 +651,7 @@ impl PlatformId {
         Self::Together,
         Self::Cerebras,
         Self::Nvidia,
+        Self::Vercel,
     ];
 
     /// The registry row backing this platform (single source of per-platform
@@ -635,6 +672,7 @@ impl PlatformId {
             Self::Together => &TOGETHER_SPEC,
             Self::Cerebras => &CEREBRAS_SPEC,
             Self::Nvidia => &NVIDIA_SPEC,
+            Self::Vercel => &VERCEL_SPEC,
         }
     }
 
@@ -1318,14 +1356,16 @@ mod tests {
         assert!(parse_openai_listing("{").is_err());
     }
 
-    /// OpenRouter's `/models` is public, so its key validation must target
-    /// an auth-requiring endpoint; every other platform validates against
-    /// the default `/models`.
+    /// Providers whose `/models` listing is public must validate keys
+    /// against an auth-requiring endpoint; every other platform validates
+    /// against the default `/models`.
     #[test]
-    fn only_openrouter_overrides_the_validation_path() {
+    fn public_listing_providers_override_the_validation_path() {
         assert_eq!(PlatformId::OpenRouter.key_validation_path(), "/key");
+        assert_eq!(PlatformId::Vercel.key_validation_path(), "/credits");
+        let overrides = [PlatformId::OpenRouter, PlatformId::Vercel];
         for p in PlatformId::ALL {
-            if p != PlatformId::OpenRouter {
+            if !overrides.contains(&p) {
                 assert_eq!(
                     p.key_validation_path(),
                     "/models",
@@ -1387,9 +1427,10 @@ mod tests {
                 PlatformId::Together => 11,
                 PlatformId::Cerebras => 12,
                 PlatformId::Nvidia => 13,
+                PlatformId::Vercel => 14,
             }
         }
-        const VARIANT_COUNT: usize = 14; // update together with `ordinal`
+        const VARIANT_COUNT: usize = 15; // update together with `ordinal`
         let mut seen: Vec<usize> = PlatformId::ALL.iter().map(|&p| ordinal(p)).collect();
         seen.sort_unstable();
         seen.dedup();

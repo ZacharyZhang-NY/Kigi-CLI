@@ -606,7 +606,8 @@ mod tests {
                 "openrouter",
                 "together",
                 "cerebras",
-                "nvidia"
+                "nvidia",
+                "vercel-ai-gateway"
             ]
         );
         assert_eq!(default_id(&built), Some(XAI_API_KEY_METHOD_ID));
@@ -643,7 +644,8 @@ mod tests {
                 "openrouter",
                 "together",
                 "cerebras",
-                "nvidia"
+                "nvidia",
+                "vercel-ai-gateway"
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -673,7 +675,8 @@ mod tests {
                 "openrouter",
                 "together",
                 "cerebras",
-                "nvidia"
+                "nvidia",
+                "vercel-ai-gateway"
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -706,7 +709,8 @@ mod tests {
                 "openrouter",
                 "together",
                 "cerebras",
-                "nvidia"
+                "nvidia",
+                "vercel-ai-gateway"
             ]
         );
         assert_eq!(default_id(&built), None);
@@ -871,6 +875,38 @@ mod tests {
         assert_eq!(
             err.message,
             "Invalid API key for openrouter \u{2014} check your key on openrouter.ai"
+        );
+    }
+
+    /// Vercel's `/models` is public too; validation must hit `/credits`
+    /// (401s for a bad key). A bad key is rejected even though `/models`
+    /// would 200.
+    #[tokio::test]
+    #[serial]
+    async fn vercel_validates_against_credits_endpoint_not_public_models() {
+        use wiremock::matchers::{method, path};
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(method("GET"))
+            .and(path("/models"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "data": [] })),
+            )
+            .mount(&server)
+            .await;
+        wiremock::Mock::given(method("GET"))
+            .and(path("/credits"))
+            .respond_with(wiremock::ResponseTemplate::new(401))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let _base = EnvGuard::set(kigi_models::VERCEL_BASE_URL_ENV, &server.uri());
+        let err = authenticate_platform_api_key(kigi_models::PlatformId::Vercel, Some("vg-bad"))
+            .await
+            .expect_err("a bad key must be rejected via /credits, not accepted via /models");
+        assert_eq!(
+            err.message,
+            "Invalid API key for vercel-ai-gateway \u{2014} check your key on vercel.com"
         );
     }
 
