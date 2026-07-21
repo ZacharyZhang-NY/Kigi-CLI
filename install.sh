@@ -186,50 +186,69 @@ mv -f "$TMP_LINK" "$BIN_DIR/kigi"
 
 printf '\nkigi v%s installed to %s\n' "$RESOLVED_VERSION" "$BIN_DIR/kigi"
 
+# Persist a line into an rc file. Idempotent via the grep guard; on write
+# failure the manual command is printed and the script fails loudly (the
+# binary itself is already installed).
+persist_line() {
+    rc="$1"
+    line="$2"
+    guard="$3"
+    what="$4"
+    if [ -f "$rc" ] && grep -qF "$guard" "$rc"; then
+        printf '\n%s is already configured in %s.\n' "$what" "$rc"
+        return 0
+    fi
+    printf '\n# Added by the kigi installer\n%s\n' "$line" >> "$rc" \
+        || err "could not write $rc — configure it manually: $line"
+    printf '\nAdded %s in %s.\n' "$what" "$rc"
+}
+
+# Resolve the login shell's rc file and env-line syntax once; PATH and
+# feature-flag persistence below both write to the same place.
+case "${SHELL:-}" in
+    */zsh)
+        RC_FILE="${ZDOTDIR:-$HOME}/.zshrc"
+        PATH_LINE="export PATH=\"$BIN_DIR:\$PATH\""
+        GRAPH_LINE="export KIGI_GRAPH=1"
+        ;;
+    */bash)
+        # macOS login shells read ~/.bash_profile; Linux reads ~/.bashrc.
+        if [ "$PLATFORM_OS" = "macos" ]; then
+            RC_FILE="$HOME/.bash_profile"
+        else
+            RC_FILE="$HOME/.bashrc"
+        fi
+        PATH_LINE="export PATH=\"$BIN_DIR:\$PATH\""
+        GRAPH_LINE="export KIGI_GRAPH=1"
+        ;;
+    */fish)
+        # fish_add_path in config.fish is fish's own idempotent way
+        # to persist a PATH entry.
+        FISH_CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/fish"
+        mkdir -p "$FISH_CONF_DIR"
+        RC_FILE="$FISH_CONF_DIR/config.fish"
+        PATH_LINE="fish_add_path $BIN_DIR"
+        GRAPH_LINE="set -gx KIGI_GRAPH 1"
+        ;;
+    *)
+        RC_FILE="$HOME/.profile"
+        PATH_LINE="export PATH=\"$BIN_DIR:\$PATH\""
+        GRAPH_LINE="export KIGI_GRAPH=1"
+        ;;
+esac
+
 case ":$PATH:" in
     *":$BIN_DIR:"*)
         printf 'Run `kigi` to get started.\n'
         ;;
     *)
-        # Persist BIN_DIR on PATH in the login shell's rc file, so the user
-        # doesn't have to. Idempotent: skipped when the rc already mentions
-        # the bin dir. On write failure the manual command is printed and the
-        # script fails loudly (the binary itself is already installed).
-        persist_line() {
-            rc="$1"
-            line="$2"
-            if [ -f "$rc" ] && grep -qF "$BIN_DIR" "$rc"; then
-                printf '\n%s is already configured in %s.\n' "$BIN_DIR" "$rc"
-                return 0
-            fi
-            printf '\n# Added by the kigi installer\n%s\n' "$line" >> "$rc" \
-                || err "could not write $rc — add kigi to your PATH manually: $line"
-            printf '\nAdded %s to your PATH in %s.\n' "$BIN_DIR" "$rc"
-        }
-        EXPORT_LINE="export PATH=\"$BIN_DIR:\$PATH\""
-        case "${SHELL:-}" in
-            */zsh)
-                persist_line "${ZDOTDIR:-$HOME}/.zshrc" "$EXPORT_LINE"
-                ;;
-            */bash)
-                # macOS login shells read ~/.bash_profile; Linux reads ~/.bashrc.
-                if [ "$PLATFORM_OS" = "macos" ]; then
-                    persist_line "$HOME/.bash_profile" "$EXPORT_LINE"
-                else
-                    persist_line "$HOME/.bashrc" "$EXPORT_LINE"
-                fi
-                ;;
-            */fish)
-                # fish_add_path in config.fish is fish's own idempotent way
-                # to persist a PATH entry.
-                FISH_CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/fish"
-                mkdir -p "$FISH_CONF_DIR"
-                persist_line "$FISH_CONF_DIR/config.fish" "fish_add_path $BIN_DIR"
-                ;;
-            *)
-                persist_line "$HOME/.profile" "$EXPORT_LINE"
-                ;;
-        esac
+        persist_line "$RC_FILE" "$PATH_LINE" "$BIN_DIR" "$BIN_DIR (PATH)"
         printf 'Open a new terminal, then run `kigi` to get started.\n'
         ;;
 esac
+
+# Graph engineering ships enabled by default. The KIGI_GRAPH guard makes
+# this idempotent AND respects an explicit user opt-out (an existing
+# `export KIGI_GRAPH=0` line is left untouched). Disable any time with:
+#   echo 'export KIGI_GRAPH=0' >> <your shell rc>
+persist_line "$RC_FILE" "$GRAPH_LINE" "KIGI_GRAPH" "graph engineering (KIGI_GRAPH=1)"

@@ -2,6 +2,12 @@
 
 <h1>Kigi (<code>kigi</code>) 🌘</h1>
 
+<h3>🕸️ The world's first CLI with built-in <em>Graph Engineering</em></h3>
+
+<p><code>/graph</code> turns one objective into a dependency graph of
+autonomous, self-verifying agent loops — planned, parallelized,
+adversarially verified, and merged back, end to end.</p>
+
 **Kigi** is an unofficial Kimi Code CLI community build — a terminal-based
 AI coding agent re-targeted at the Kimi Code subscription API and the
 Moonshot open platform, built on the Apache-2.0 sources of
@@ -13,6 +19,7 @@ interactively, headlessly for scripting/CI, or embedded in editors via the
 Agent Client Protocol (ACP).
 
 [Installation](#installation) ·
+[Graph engineering](#graph-engineering) ·
 [Providers and API keys](#providers-and-api-keys) ·
 [Building from source](#building-from-source) ·
 [Coexistence with the official CLI](#coexistence-with-the-official-kimi-cli) ·
@@ -50,9 +57,53 @@ kigi             # start the TUI
 
 The installer verifies every download against the release's `SHA256SUMS`,
 installs into `~/.kigi/bin/kigi` (`%USERPROFILE%\.kigi\bin\kigi.exe` on
-Windows), and prints the PATH line to add. Later releases arrive through the
+Windows), persists the PATH line for you, and **enables graph engineering
+by default** (`KIGI_GRAPH=1`; see [Graph engineering](#graph-engineering)
+to disable). Later releases arrive through the
 built-in self-updater (`kigi update`, gated by `KIGI_AUTO_UPDATE`), which
 pulls from the same GitHub Releases feed.
+
+## Graph engineering
+
+Kigi is the first CLI to ship *graph engineering* as a first-class command:
+where a loop drives one agent, a graph is the programmable organization
+connecting many.
+
+```
+/graph <objective> [--budget <tokens>]   # decompose + run fully autonomously
+/graph status                            # node tree, budget, current work
+/graph show                              # box-drawing DAG view
+/graph pause | resume [--budget <n>]     # halt / continue (budget top-up)
+/graph clear                             # abandon the graph
+```
+
+One `/graph <objective>` runs the whole closed loop: a planner subagent
+decomposes the objective into a validated dependency DAG; independent
+nodes fan out as parallel workers in isolated git worktrees, each gated
+by an adversarial verifier and merged back three-way; out-of-scope
+discoveries (`DISCOVERED:`) replan the graph append-only; a topology
+optimizer prunes false dependencies at plan boundaries; and a terminal
+verification node re-checks the *whole* objective before the graph
+completes. State follows your repo in `.kigi/graph.jsonl`, so a fresh
+session — or a teammate — can `/graph resume` where you left off.
+
+The installer enables it by default. To disable:
+
+```sh
+# macOS / Linux
+echo 'export KIGI_GRAPH=0' >> ~/.zshrc   # or ~/.bashrc / ~/.bash_profile
+```
+
+```powershell
+# Windows PowerShell
+[Environment]::SetEnvironmentVariable('KIGI_GRAPH','0','User')
+```
+
+(One-off instead: `KIGI_GRAPH=0 kigi`.) Tuning knobs:
+`KIGI_GRAPH_CONCURRENCY` (parallel nodes, default 3),
+`KIGI_GRAPH_NODE_ROUNDS` (worker↔verifier rounds per node, default 3),
+`KIGI_GRAPH_REPLAN_CAP` (replan passes, default 3),
+`KIGI_GRAPH_OPTIMIZER=0` (disable the optimizer pass).
 
 ## Providers and API keys
 
