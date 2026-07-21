@@ -594,7 +594,8 @@ mod tests {
                 MOONSHOT_AI_METHOD_ID,
                 "openai",
                 "anthropic",
-                "deepseek"
+                "deepseek",
+                "groq"
             ]
         );
         assert_eq!(default_id(&built), Some(XAI_API_KEY_METHOD_ID));
@@ -623,7 +624,8 @@ mod tests {
                 MOONSHOT_AI_METHOD_ID,
                 "openai",
                 "anthropic",
-                "deepseek"
+                "deepseek",
+                "groq"
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -645,7 +647,8 @@ mod tests {
                 MOONSHOT_AI_METHOD_ID,
                 "openai",
                 "anthropic",
-                "deepseek"
+                "deepseek",
+                "groq"
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -670,7 +673,8 @@ mod tests {
                 MOONSHOT_AI_METHOD_ID,
                 "openai",
                 "anthropic",
-                "deepseek"
+                "deepseek",
+                "groq"
             ]
         );
         assert_eq!(default_id(&built), None);

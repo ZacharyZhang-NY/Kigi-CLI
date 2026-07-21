@@ -289,6 +289,33 @@ const DEEPSEEK_SPEC: PlatformSpec = PlatformSpec {
     restrict_to_enriched: false,
 };
 
+/// Base-URL override for Groq (dev/test escape hatch).
+pub const GROQ_BASE_URL_ENV: &str = "KIGI_GROQ_BASE_URL";
+
+const GROQ_SPEC: PlatformSpec = PlatformSpec {
+    id: "groq",
+    display_name: "Groq",
+    base_url: BaseUrlSource::EnvOr {
+        env: GROQ_BASE_URL_ENV,
+        default: "https://api.groq.com/openai/v1",
+    },
+    uses_oauth: false,
+    allowed_model_prefixes: None,
+    api_key_envs: &["GROQ_API_KEY"],
+    vendor: "Groq",
+    console_host: Some("console.groq.com"),
+    login_label: Some("Groq (API key)"),
+    models_dev_id: Some("groq"),
+    wire_serves_metadata: false,
+    wire_api: PlatformWireApi::ChatCompletions,
+    listing: ListingDialect::OpenAi,
+    chat_compat: PlatformChatCompat::Passthrough,
+    key_header: PlatformKeyHeader::Bearer,
+    // The listing carries whisper/tts entries; keep tool-calling chat
+    // models only.
+    restrict_to_enriched: true,
+};
+
 /// The platform registry. Platforms are compiled-in spec rows; there is no
 /// dynamic provider registration (PRD F2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -305,18 +332,21 @@ pub enum PlatformId {
     Anthropic,
     /// DeepSeek platform API (API key, ChatCompletions dialect).
     DeepSeek,
+    /// Groq platform API (API key, OpenAI-compatible ChatCompletions).
+    Groq,
 }
 
 impl PlatformId {
     /// All platforms, in catalog precedence order: the subscription channel
     /// first so "default model = first list item" favors it when present.
-    pub const ALL: [PlatformId; 6] = [
+    pub const ALL: [PlatformId; 7] = [
         Self::KimiCode,
         Self::MoonshotCn,
         Self::MoonshotAi,
         Self::OpenAi,
         Self::Anthropic,
         Self::DeepSeek,
+        Self::Groq,
     ];
 
     /// The registry row backing this platform (single source of per-platform
@@ -329,6 +359,7 @@ impl PlatformId {
             Self::OpenAi => &OPENAI_SPEC,
             Self::Anthropic => &ANTHROPIC_SPEC,
             Self::DeepSeek => &DEEPSEEK_SPEC,
+            Self::Groq => &GROQ_SPEC,
         }
     }
 
@@ -985,9 +1016,10 @@ mod tests {
                 PlatformId::OpenAi => 3,
                 PlatformId::Anthropic => 4,
                 PlatformId::DeepSeek => 5,
+                PlatformId::Groq => 6,
             }
         }
-        const VARIANT_COUNT: usize = 6; // update together with `ordinal`
+        const VARIANT_COUNT: usize = 7; // update together with `ordinal`
         let mut seen: Vec<usize> = PlatformId::ALL.iter().map(|&p| ordinal(p)).collect();
         seen.sort_unstable();
         seen.dedup();
@@ -1073,6 +1105,12 @@ mod tests {
         assert_eq!(
             parse_managed_model_key("kimi-code/kimi-for-coding"),
             Some((PlatformId::KimiCode, "kimi-for-coding"))
+        );
+        // FIRST-slash split: provider-native slashed ids (11 of 15 groq
+        // models, e.g. openai/gpt-oss-120b) must survive the round trip.
+        assert_eq!(
+            parse_managed_model_key("groq/openai/gpt-oss-120b"),
+            Some((PlatformId::Groq, "openai/gpt-oss-120b"))
         );
         // No prefix / unknown platform / empty model id → None.
         assert_eq!(parse_managed_model_key("kimi-for-coding"), None);

@@ -6638,7 +6638,12 @@ reasoning_effort = "low"
         );
     }
     #[test]
+    #[serial]
     fn e2e_enterprise_endpoints_only_no_model_override() {
+        // Hermetic: the moonshot-base assertion below races serial tests
+        // that legitimately point KIGI_MOONSHOT_CN_BASE_URL at wiremock —
+        // this test was non-serial and read the env mid-guard.
+        let _cn = EnvGuard::unset(kigi_models::MOONSHOT_CN_BASE_URL_ENV);
         let (_, models) = resolve_models_from_toml(
             r#"
             [endpoints]
