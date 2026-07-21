@@ -379,8 +379,9 @@ pub fn missing_platform_key_error(platform: kigi_models::PlatformId) -> String {
 /// missing-key message. A present key is validated with
 /// `GET {platform_base}/models` (the same endpoint the catalog fetch uses):
 /// 401 → "invalid API key"; any other non-success status or network error
-/// surfaces as-is. SECURITY: the key is only ever sent as the bearer header —
-/// it must never appear in errors or logs.
+/// surfaces as-is. SECURITY: the key is only ever sent as the platform's
+/// key header (Bearer or x-api-key) — it must never appear in errors or
+/// logs.
 pub(crate) async fn authenticate_platform_api_key(
     platform: kigi_models::PlatformId,
     key: Option<&str>,
@@ -394,9 +395,16 @@ pub(crate) async fn authenticate_platform_api_key(
         return Err(auth_err(missing_platform_key_error(platform)));
     };
     let url = format!("{}/models", platform.base_url().trim_end_matches('/'));
-    let response = crate::http::shared_client()
-        .get(&url)
-        .header("Authorization", format!("Bearer {key}"))
+    let request = match platform.key_header() {
+        kigi_models::PlatformKeyHeader::Bearer => crate::http::shared_client()
+            .get(&url)
+            .header("Authorization", format!("Bearer {key}")),
+        kigi_models::PlatformKeyHeader::XApiKey => crate::http::shared_client()
+            .get(&url)
+            .header("x-api-key", key)
+            .header("anthropic-version", kigi_sampling_types::ANTHROPIC_VERSION),
+    };
+    let response = request
         .send()
         .await
         .map_err(|e| auth_err(format!("Couldn't reach {}: {e}", platform.as_str())))?;
@@ -584,7 +592,8 @@ mod tests {
                 KIMI_CODE_METHOD_ID,
                 MOONSHOT_CN_METHOD_ID,
                 MOONSHOT_AI_METHOD_ID,
-                "openai"
+                "openai",
+                "anthropic"
             ]
         );
         assert_eq!(default_id(&built), Some(XAI_API_KEY_METHOD_ID));
@@ -611,7 +620,8 @@ mod tests {
                 KIMI_CODE_METHOD_ID,
                 MOONSHOT_CN_METHOD_ID,
                 MOONSHOT_AI_METHOD_ID,
-                "openai"
+                "openai",
+                "anthropic"
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -631,7 +641,8 @@ mod tests {
                 KIMI_CODE_METHOD_ID,
                 MOONSHOT_CN_METHOD_ID,
                 MOONSHOT_AI_METHOD_ID,
-                "openai"
+                "openai",
+                "anthropic"
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -654,7 +665,8 @@ mod tests {
                 KIMI_CODE_METHOD_ID,
                 MOONSHOT_CN_METHOD_ID,
                 MOONSHOT_AI_METHOD_ID,
-                "openai"
+                "openai",
+                "anthropic"
             ]
         );
         assert_eq!(default_id(&built), None);

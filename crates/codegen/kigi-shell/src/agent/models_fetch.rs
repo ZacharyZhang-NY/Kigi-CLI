@@ -266,12 +266,25 @@ fn fetch_one_platform_models(
     enrichment: &kigi_models::enrichment::EnrichmentCatalog,
 ) -> Result<(Vec<crate::agent::config::ModelEntryConfig>, Option<String>), BackendError> {
     let client = crate::http::shared_blocking_client();
-    let url = platform_models_url(platform, endpoints);
+    let url = match platform.listing() {
+        kigi_models::ListingDialect::OpenAi => platform_models_url(platform, endpoints),
+        // Anthropic paginates (default 20); limit=1000 is the documented max
+        // and far above the catalog size (the adapter warns on has_more).
+        kigi_models::ListingDialect::Anthropic => {
+            format!("{}?limit=1000", platform_models_url(platform, endpoints))
+        }
+    };
     tracing::info!(platform = platform.as_str(), url = %url, "fetching platform models");
-    let response = client
-        .get(&url)
-        .header("Authorization", format!("Bearer {}", bearer))
-        .send()?;
+    let request = match platform.key_header() {
+        kigi_models::PlatformKeyHeader::Bearer => client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", bearer)),
+        kigi_models::PlatformKeyHeader::XApiKey => client
+            .get(&url)
+            .header("x-api-key", bearer)
+            .header("anthropic-version", kigi_sampling_types::ANTHROPIC_VERSION),
+    };
+    let response = request.send()?;
     if !response.status().is_success() {
         let status = response.status().as_u16();
         let body = response.text().unwrap_or_default();
@@ -282,9 +295,22 @@ fn fetch_one_platform_models(
         .get("etag")
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
-    let listing: kigi_models::WireModelsResponse = response.json()?;
-    let total = listing.data.len();
-    let mut filtered = kigi_models::filter_allowed_models(platform, listing.data);
+    let data = match platform.listing() {
+        kigi_models::ListingDialect::OpenAi => {
+            response.json::<kigi_models::WireModelsResponse>()?.data
+        }
+        kigi_models::ListingDialect::Anthropic => {
+            let body = response.text()?;
+            kigi_models::parse_anthropic_listing(&body).map_err(|e| {
+                BackendError::RequestFailed {
+                    status: 200,
+                    body: format!("anthropic listing parse failed: {e}"),
+                }
+            })?
+        }
+    };
+    let total = data.len();
+    let mut filtered = kigi_models::filter_allowed_models(platform, data);
     if filtered.len() != total {
         tracing::info!(
             platform = platform.as_str(),
@@ -432,19 +458,27 @@ pub(crate) fn platform_wire_model_to_entry(
         kigi_models::PlatformWireApi::Responses => crate::sampling::ApiBackend::Responses,
         kigi_models::PlatformWireApi::Messages => crate::sampling::ApiBackend::Messages,
     };
+    let auth_scheme = match platform.key_header() {
+        kigi_models::PlatformKeyHeader::Bearer => None,
+        kigi_models::PlatformKeyHeader::XApiKey => Some(kigi_sampler::AuthScheme::XApiKey),
+    };
     crate::agent::config::ModelEntryConfig {
         id: Some(platform.managed_model_key(&wire.id)),
         name: Some(wire.display_name.clone().unwrap_or_else(|| wire.id.clone())),
         model: wire.id,
         base_url: base_url.to_owned(),
         description: None,
-        max_completion_tokens: None,
+        // The wire/enrichment output cap; the sampler otherwise defaults to
+        // 128K, which Anthropic rejects on smaller-cap models (400 on every
+        // request for e.g. a 64K haiku).
+        max_completion_tokens: (wire.max_output_tokens > 0)
+            .then(|| u32::try_from(wire.max_output_tokens).unwrap_or(u32::MAX)),
         temperature: None,
         top_p: None,
         api_key: None,
         env_key,
         api_backend,
-        auth_scheme: None,
+        auth_scheme,
         reasoning_effort: think_efforts
             .and_then(|t| t.default_effort.as_deref())
             .and_then(|s| s.parse().ok()),
@@ -833,6 +867,158 @@ mod tests {
         assert!(
             cache_dir.path().join("models_dev_cache.json").exists(),
             "the refresh must be cached in the overridden dir"
+        );
+    }
+
+    /// Anthropic-cycle e2e (mock wire): the Anthropic listing dialect —
+    /// x-api-key + anthropic-version headers, ?limit=1000 — maps
+    /// wire-served metadata (max_input_tokens, per-level effort
+    /// capabilities) onto Messages-backed XApiKey entries, and enrichment
+    /// fills a zero max_input_tokens without touching wire-served values.
+    #[tokio::test(flavor = "multi_thread")]
+    #[serial_test::serial]
+    async fn anthropic_listing_maps_wire_metadata_and_enrichment_fills_gaps() {
+        let platform_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/models"))
+            .and(wiremock::matchers::query_param("limit", "1000"))
+            .and(wiremock::matchers::header("x-api-key", "sk-ant"))
+            .and(wiremock::matchers::header(
+                "anthropic-version",
+                "2023-06-01",
+            ))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({ "data": [
+                    {
+                        "id": "claude-opus-4-8",
+                        "display_name": "Claude Opus 4.8",
+                        "type": "model",
+                        "max_input_tokens": 1_000_000,
+                        "capabilities": {
+                            "effort": {
+                                "supported": true,
+                                "low": {"supported": true},
+                                "medium": {"supported": true},
+                                "high": {"supported": true},
+                                "xhigh": {"supported": true},
+                                "max": {"supported": true}
+                            },
+                            "thinking": {"supported": true},
+                            "image_input": {"supported": true}
+                        }
+                    },
+                    {
+                        "id": "claude-gap-test",
+                        "type": "model",
+                        "max_input_tokens": 0,
+                        "capabilities": {
+                            "effort": {"supported": false},
+                            "thinking": {"supported": true},
+                            "image_input": {"supported": false}
+                        }
+                    }
+                ], "has_more": false }),
+            ))
+            .expect(1)
+            .mount(&platform_server)
+            .await;
+        let modelsdev_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/api.json"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({ "anthropic": { "models": {
+                    "claude-gap-test": {
+                        "limit": {"context": 200000, "output": 64000},
+                        "tool_call": true,
+                        "reasoning": true,
+                        "reasoning_options": [
+                            {"type": "effort", "values": ["low", "high"]}
+                        ]
+                    },
+                    "claude-opus-4-8": {
+                        "limit": {"context": 555},
+                        "tool_call": true
+                    }
+                }}}),
+            ))
+            .expect(1)
+            .mount(&modelsdev_server)
+            .await;
+        let cache_dir = tempfile::tempdir().unwrap();
+        let _base = kigi_test_support::EnvGuard::set(
+            kigi_models::ANTHROPIC_BASE_URL_ENV,
+            platform_server.uri(),
+        );
+        let _mdev = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_URL_ENV,
+            format!("{}/api.json", modelsdev_server.uri()),
+        );
+        let _mdev_cache = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_CACHE_DIR_ENV,
+            cache_dir.path(),
+        );
+
+        let endpoints = crate::agent::config::EndpointsConfig::default();
+        let keys = crate::agent::models::PlatformApiKeys::test_single(
+            kigi_models::PlatformId::Anthropic,
+            "sk-ant",
+        );
+        let result = tokio::task::spawn_blocking(move || {
+            fetch_platform_models_blocking(&endpoints, None, &keys)
+        })
+        .await
+        .unwrap()
+        .expect("fetch must succeed");
+
+        assert_eq!(result.models.len(), 2);
+        let opus = &result.models[0];
+        assert_eq!(opus.id.as_deref(), Some("anthropic/claude-opus-4-8"));
+        assert_eq!(
+            opus.context_window.get(),
+            1_000_000,
+            "wire max_input_tokens must WIN over enrichment (555)"
+        );
+        assert_eq!(opus.api_backend, crate::sampling::ApiBackend::Messages);
+        assert_eq!(
+            opus.auth_scheme,
+            Some(kigi_sampler::AuthScheme::XApiKey),
+            "anthropic entries must ride x-api-key at inference"
+        );
+        assert_eq!(
+            opus.reasoning_efforts
+                .iter()
+                .map(|o| o.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["low", "medium", "high", "xhigh", "max"],
+            "wire effort capabilities become the menu"
+        );
+        let gap = &result.models[1];
+        assert_eq!(
+            gap.context_window.get(),
+            200_000,
+            "a zero wire context must be filled by enrichment"
+        );
+        assert_eq!(
+            gap.max_completion_tokens,
+            Some(64_000),
+            "the enrichment output cap must reach max_completion_tokens"
+        );
+        assert!(
+            gap.reasoning_efforts.is_empty() && !gap.supports_reasoning_effort,
+            "the wire's explicit effort decline must block enrichment's menu \
+             (pre-4.6 models 400 on adaptive thinking); efforts={:?} supports={}",
+            gap.reasoning_efforts,
+            gap.supports_reasoning_effort,
+        );
+        let opus = &result.models[0];
+        assert_eq!(
+            opus.max_completion_tokens, None,
+            "no wire/enrichment cap on this fixture entry — sampler default applies"
+        );
+        assert!(
+            gap.capabilities
+                .contains(&kigi_models::ModelCapability::Thinking),
+            "wire thinking capability must survive"
         );
     }
 

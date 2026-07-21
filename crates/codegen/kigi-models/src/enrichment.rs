@@ -19,9 +19,8 @@ pub struct EnrichmentModel {
     /// Max context window in tokens (`limit.context`).
     #[serde(default, skip_serializing_if = "is_zero")]
     pub context: u64,
-    /// Max output tokens (`limit.output`). Not yet consumed by
-    /// [`enrich_wire_model`]; feeds `max_completion_tokens` when provider
-    /// cycles start mapping it.
+    /// Max output tokens (`limit.output`); fills a wire-unserved output cap
+    /// (Anthropic 400s when `max_tokens` exceeds the model's limit).
     #[serde(default, skip_serializing_if = "is_zero")]
     pub output: u64,
     /// Model supports reasoning/thinking.
@@ -186,6 +185,9 @@ pub fn enrich_wire_model(wire: &mut crate::WireModel, meta: &EnrichmentModel) {
     if wire.context_length == 0 && meta.context > 0 {
         wire.context_length = meta.context;
     }
+    if wire.max_output_tokens == 0 && meta.output > 0 {
+        wire.max_output_tokens = meta.output;
+    }
     if meta.reasoning {
         wire.supports_reasoning = true;
     }
@@ -235,6 +237,7 @@ mod tests {
     fn enrich_fills_gaps_and_never_overwrites_wire() {
         let meta = EnrichmentModel {
             context: 400_000,
+            output: 64_000,
             reasoning: true,
             efforts: vec!["low".into(), "high".into()],
             image_in: true,
@@ -246,6 +249,7 @@ mod tests {
             serde_json::from_value(serde_json::json!({ "id": "gpt-test" })).unwrap();
         enrich_wire_model(&mut bare, &meta);
         assert_eq!(bare.context_length, 400_000);
+        assert_eq!(bare.max_output_tokens, 64_000, "output cap filled");
         assert!(bare.supports_reasoning);
         assert!(bare.supports_image_in);
         assert_eq!(bare.display_name.as_deref(), Some("GPT Test"));
@@ -258,12 +262,14 @@ mod tests {
         let mut served: crate::WireModel = serde_json::from_value(serde_json::json!({
             "id": "gpt-test",
             "context_length": 123,
+            "max_output_tokens": 77,
             "display_name": "Wire Name",
             "think_efforts": { "support": true, "valid_efforts": ["max"] }
         }))
         .unwrap();
         enrich_wire_model(&mut served, &meta);
         assert_eq!(served.context_length, 123, "wire context wins");
+        assert_eq!(served.max_output_tokens, 77, "wire output cap wins");
         assert_eq!(served.display_name.as_deref(), Some("Wire Name"));
         assert_eq!(
             served.think_efforts.unwrap().valid_efforts,

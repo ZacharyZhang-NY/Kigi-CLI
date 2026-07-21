@@ -51,6 +51,27 @@ pub enum PlatformWireApi {
     Messages,
 }
 
+/// Shape + headers of a platform's model-listing endpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListingDialect {
+    /// `GET {base}/models`, `Authorization: Bearer`, `{data:[{id,...}]}`
+    /// (the F4 wire contract; kimi extends it with think_efforts etc.).
+    OpenAi,
+    /// `GET {base}/models?limit=1000`, `x-api-key` + `anthropic-version`
+    /// headers, Anthropic's response shape (parsed by
+    /// [`parse_anthropic_listing`]).
+    Anthropic,
+}
+
+/// How a platform's API key rides requests (listing, validation, inference).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlatformKeyHeader {
+    /// `Authorization: Bearer <key>`.
+    Bearer,
+    /// `x-api-key: <key>` plus `anthropic-version` (Anthropic wire).
+    XApiKey,
+}
+
 /// Where a platform's base URL is resolved from.
 enum BaseUrlSource {
     /// The Kimi Code subscription base, owned by `kigi_env`
@@ -102,6 +123,10 @@ struct PlatformSpec {
     wire_serves_metadata: bool,
     /// Inference dialect (mapped to the sampler backend by the shell).
     wire_api: PlatformWireApi,
+    /// Model-listing endpoint shape + headers.
+    listing: ListingDialect,
+    /// Key header style for listing/validation/inference.
+    key_header: PlatformKeyHeader,
     /// Restrict the live listing to models the enrichment catalog knows —
     /// for providers whose `/models` is polluted with non-chat entries
     /// (tts/embeddings/image). Availability still requires the LIVE listing;
@@ -122,6 +147,8 @@ const KIMI_CODE_SPEC: PlatformSpec = PlatformSpec {
     models_dev_id: Some("kimi-for-coding"),
     wire_serves_metadata: true,
     wire_api: PlatformWireApi::ChatCompletions,
+    listing: ListingDialect::OpenAi,
+    key_header: PlatformKeyHeader::Bearer,
     restrict_to_enriched: false,
 };
 
@@ -141,6 +168,8 @@ const MOONSHOT_CN_SPEC: PlatformSpec = PlatformSpec {
     models_dev_id: Some("moonshotai-cn"),
     wire_serves_metadata: true,
     wire_api: PlatformWireApi::ChatCompletions,
+    listing: ListingDialect::OpenAi,
+    key_header: PlatformKeyHeader::Bearer,
     restrict_to_enriched: false,
 };
 
@@ -160,6 +189,8 @@ const MOONSHOT_AI_SPEC: PlatformSpec = PlatformSpec {
     models_dev_id: Some("moonshotai"),
     wire_serves_metadata: true,
     wire_api: PlatformWireApi::ChatCompletions,
+    listing: ListingDialect::OpenAi,
+    key_header: PlatformKeyHeader::Bearer,
     restrict_to_enriched: false,
 };
 
@@ -184,7 +215,35 @@ const OPENAI_SPEC: PlatformSpec = PlatformSpec {
     // and is polluted with tts/embeddings/image entries.
     wire_serves_metadata: false,
     wire_api: PlatformWireApi::Responses,
+    listing: ListingDialect::OpenAi,
+    key_header: PlatformKeyHeader::Bearer,
     restrict_to_enriched: true,
+};
+
+/// Base-URL override for Anthropic (dev/test escape hatch).
+pub const ANTHROPIC_BASE_URL_ENV: &str = "KIGI_ANTHROPIC_BASE_URL";
+
+const ANTHROPIC_SPEC: PlatformSpec = PlatformSpec {
+    id: "anthropic",
+    display_name: "Anthropic",
+    base_url: BaseUrlSource::EnvOr {
+        env: ANTHROPIC_BASE_URL_ENV,
+        default: "https://api.anthropic.com/v1",
+    },
+    uses_oauth: false,
+    allowed_model_prefixes: None,
+    api_key_envs: &["ANTHROPIC_API_KEY"],
+    vendor: "Anthropic",
+    console_host: Some("console.anthropic.com"),
+    login_label: Some("Anthropic (API key)"),
+    models_dev_id: Some("anthropic"),
+    // The 2026 /v1/models serves capabilities + max_input_tokens, but the
+    // adapter maps only what's present — enrichment fills gaps (wire wins).
+    wire_serves_metadata: false,
+    wire_api: PlatformWireApi::Messages,
+    listing: ListingDialect::Anthropic,
+    key_header: PlatformKeyHeader::XApiKey,
+    restrict_to_enriched: false,
 };
 
 /// The platform registry. Platforms are compiled-in spec rows; there is no
@@ -199,16 +258,19 @@ pub enum PlatformId {
     MoonshotAi,
     /// OpenAI platform API (API key, Responses dialect).
     OpenAi,
+    /// Anthropic platform API (API key, Messages dialect).
+    Anthropic,
 }
 
 impl PlatformId {
     /// All platforms, in catalog precedence order: the subscription channel
     /// first so "default model = first list item" favors it when present.
-    pub const ALL: [PlatformId; 4] = [
+    pub const ALL: [PlatformId; 5] = [
         Self::KimiCode,
         Self::MoonshotCn,
         Self::MoonshotAi,
         Self::OpenAi,
+        Self::Anthropic,
     ];
 
     /// The registry row backing this platform (single source of per-platform
@@ -219,6 +281,7 @@ impl PlatformId {
             Self::MoonshotCn => &MOONSHOT_CN_SPEC,
             Self::MoonshotAi => &MOONSHOT_AI_SPEC,
             Self::OpenAi => &OPENAI_SPEC,
+            Self::Anthropic => &ANTHROPIC_SPEC,
         }
     }
 
@@ -308,6 +371,16 @@ impl PlatformId {
     pub fn restrict_to_enriched(self) -> bool {
         self.spec().restrict_to_enriched
     }
+
+    /// Model-listing endpoint shape + headers.
+    pub fn listing(self) -> ListingDialect {
+        self.spec().listing
+    }
+
+    /// Key header style for listing/validation/inference requests.
+    pub fn key_header(self) -> PlatformKeyHeader {
+        self.spec().key_header
+    }
 }
 
 /// Split a managed catalog key `{platform_id}/{model_id}` back into its
@@ -370,6 +443,10 @@ pub struct WireModel {
     pub supports_video_in: bool,
     #[serde(default)]
     pub display_name: Option<String>,
+    /// Max output tokens (`max_tokens` on the Anthropic listing; absent on
+    /// the Kimi/OpenAI-shape wires). 0 = unserved → enrichment may fill.
+    #[serde(default)]
+    pub max_output_tokens: u64,
     /// `"only"` marks always-thinking models (thinking cannot be disabled).
     /// Verified against the live `api.kimi.com/coding/v1/models` response.
     #[serde(default)]
@@ -398,6 +475,126 @@ pub struct WireThinkEfforts {
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct WireModelsResponse {
     pub data: Vec<WireModel>,
+}
+
+// ── Anthropic listing adapter (ListingDialect::Anthropic) ───────────────────
+
+#[derive(serde::Deserialize)]
+struct AnthropicListing {
+    /// No default: a 200 body without `data` is a contract violation and
+    /// must error like the OpenAI-shape branch, not yield an empty catalog.
+    data: Vec<AnthropicModel>,
+    #[serde(default)]
+    has_more: bool,
+}
+
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct AnthropicModel {
+    id: String,
+    display_name: Option<String>,
+    max_input_tokens: u64,
+    /// The model's output cap (Anthropic REQUIRES `max_tokens` on
+    /// /v1/messages and 400s when it exceeds this).
+    max_tokens: u64,
+    capabilities: AnthropicCapabilities,
+}
+
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct AnthropicCapabilities {
+    effort: AnthropicEffort,
+    thinking: AnthropicSupported,
+    image_input: AnthropicSupported,
+}
+
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct AnthropicEffort {
+    supported: bool,
+    low: AnthropicSupported,
+    medium: AnthropicSupported,
+    high: AnthropicSupported,
+    xhigh: AnthropicSupported,
+    max: AnthropicSupported,
+}
+
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct AnthropicSupported {
+    supported: bool,
+}
+
+/// Parse the 2026 Anthropic `GET /v1/models` response into the F4
+/// [`WireModel`] shape: `max_input_tokens` → context (0 stays 0 so
+/// enrichment can fill it), `capabilities.thinking/image_input` → flags,
+/// `capabilities.effort.{level}.supported` → `think_efforts` in canonical
+/// order. `has_more: true` (impossible under `?limit=1000` for Anthropic's
+/// catalog size) warns rather than silently truncating.
+pub fn parse_anthropic_listing(json: &str) -> Result<Vec<WireModel>, serde_json::Error> {
+    let listing: AnthropicListing = serde_json::from_str(json)?;
+    if listing.has_more {
+        tracing::warn!(
+            fetched = listing.data.len(),
+            "anthropic /models reports more pages beyond limit=1000; \
+             listing may be incomplete"
+        );
+    }
+    Ok(listing
+        .data
+        .into_iter()
+        .filter(|m| {
+            let keep = !m.id.is_empty();
+            if !keep {
+                tracing::warn!("anthropic listing entry without id; dropping");
+            }
+            keep
+        })
+        .map(|m| {
+            let e = &m.capabilities.effort;
+            let valid_efforts: Vec<String> = [
+                ("low", e.low.supported),
+                ("medium", e.medium.supported),
+                ("high", e.high.supported),
+                ("xhigh", e.xhigh.supported),
+                ("max", e.max.supported),
+            ]
+            .into_iter()
+            .filter(|(_, supported)| *supported)
+            .map(|(level, _)| level.to_string())
+            .collect();
+            // The wire has no default marker; the provider's implicit
+            // default applies until the user picks a level. An explicit
+            // `supported: false` becomes a DECLINE sentinel (support=false)
+            // — distinguishable from "wire silent", so enrichment can never
+            // inject a menu the server rejects (pre-4.6 models 400 on
+            // adaptive thinking).
+            let think_efforts = if e.supported && !valid_efforts.is_empty() {
+                Some(WireThinkEfforts {
+                    support: true,
+                    valid_efforts,
+                    default_effort: None,
+                })
+            } else {
+                Some(WireThinkEfforts {
+                    support: false,
+                    valid_efforts: Vec::new(),
+                    default_effort: None,
+                })
+            };
+            WireModel {
+                id: m.id,
+                context_length: m.max_input_tokens,
+                supports_reasoning: m.capabilities.thinking.supported,
+                supports_image_in: m.capabilities.image_input.supported,
+                supports_video_in: false,
+                display_name: m.display_name,
+                max_output_tokens: m.max_tokens,
+                supports_thinking_type: None,
+                think_efforts,
+            }
+        })
+        .collect())
 }
 
 impl WireModel {
@@ -619,6 +816,100 @@ mod tests {
         assert_eq!(caps, sorted);
     }
 
+    /// The Anthropic listing adapter maps the documented 2026 response shape
+    /// (platform.claude.com/docs/en/api/models-list) onto WireModel: effort
+    /// capability levels become think_efforts in canonical order, a zero
+    /// max_input_tokens stays zero (enrichment fills it), unknown fields
+    /// tolerated, effort.supported=false yields no menu.
+    #[test]
+    fn anthropic_listing_maps_documented_shape() {
+        let json = serde_json::json!({
+            "data": [
+                {
+                    "id": "claude-opus-4-6",
+                    "display_name": "Claude Opus 4.6",
+                    "created_at": "2026-02-04T00:00:00Z",
+                    "type": "model",
+                    "max_input_tokens": 1_000_000,
+                    "max_tokens": 128_000,
+                    "created_at_is_ignored": true,
+                    "capabilities": {
+                        "batch": { "supported": true },
+                        "effort": {
+                            "supported": true,
+                            "low": { "supported": true },
+                            "medium": { "supported": true },
+                            "high": { "supported": true },
+                            "xhigh": { "supported": true },
+                            "max": { "supported": true }
+                        },
+                        "thinking": {
+                            "supported": true,
+                            "types": {
+                                "adaptive": { "supported": true },
+                                "enabled": { "supported": true }
+                            }
+                        },
+                        "image_input": { "supported": true },
+                        "structured_outputs": { "supported": true }
+                    }
+                },
+                {
+                    "id": "claude-legacy",
+                    "max_input_tokens": 0,
+                    "capabilities": {
+                        "effort": { "supported": false },
+                        "thinking": { "supported": false },
+                        "image_input": { "supported": false }
+                    }
+                }
+            ],
+            "first_id": "claude-opus-4-6",
+            "last_id": "claude-legacy",
+            "has_more": false
+        })
+        .to_string();
+        let models = parse_anthropic_listing(&json).expect("documented shape parses");
+        assert_eq!(models.len(), 2);
+        let opus = &models[0];
+        assert_eq!(opus.id, "claude-opus-4-6");
+        assert_eq!(opus.context_length, 1_000_000);
+        assert_eq!(
+            opus.max_output_tokens, 128_000,
+            "wire max_tokens is the output cap (Anthropic 400s above it)"
+        );
+        assert!(opus.supports_reasoning && opus.supports_image_in);
+        assert_eq!(opus.display_name.as_deref(), Some("Claude Opus 4.6"));
+        let efforts = opus.think_efforts.as_ref().expect("effort menu");
+        assert_eq!(
+            efforts.valid_efforts,
+            ["low", "medium", "high", "xhigh", "max"],
+            "levels in canonical order from per-level supported flags"
+        );
+        assert_eq!(efforts.default_effort, None);
+        let legacy = &models[1];
+        assert_eq!(legacy.context_length, 0, "zero stays zero for enrichment");
+        let decline = legacy
+            .think_efforts
+            .as_ref()
+            .expect("explicit wire decline is a sentinel, not absence");
+        assert!(
+            !decline.support && decline.valid_efforts.is_empty(),
+            "effort.supported=false must block enrichment menu injection"
+        );
+        assert!(!legacy.supports_reasoning);
+
+        // A 200 body without `data` is a contract violation, not an empty
+        // catalog; entries without an id are dropped with a warning.
+        assert!(parse_anthropic_listing("{}").is_err());
+        let ghosts = serde_json::json!({ "data": [ {}, { "id": "real" } ] }).to_string();
+        let models = parse_anthropic_listing(&ghosts).unwrap();
+        assert_eq!(
+            models.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(),
+            vec!["real"]
+        );
+    }
+
     #[test]
     fn platform_ids_round_trip() {
         for p in PlatformId::ALL {
@@ -639,9 +930,10 @@ mod tests {
                 PlatformId::MoonshotCn => 1,
                 PlatformId::MoonshotAi => 2,
                 PlatformId::OpenAi => 3,
+                PlatformId::Anthropic => 4,
             }
         }
-        const VARIANT_COUNT: usize = 4; // update together with `ordinal`
+        const VARIANT_COUNT: usize = 5; // update together with `ordinal`
         let mut seen: Vec<usize> = PlatformId::ALL.iter().map(|&p| ordinal(p)).collect();
         seen.sort_unstable();
         seen.dedup();
@@ -804,6 +1096,7 @@ mod tests {
                 supports_image_in: false,
                 supports_video_in: false,
                 display_name: None,
+                max_output_tokens: 0,
                 supports_thinking_type: None,
                 think_efforts: None,
             },
@@ -814,6 +1107,7 @@ mod tests {
                 supports_image_in: false,
                 supports_video_in: false,
                 display_name: None,
+                max_output_tokens: 0,
                 supports_thinking_type: None,
                 think_efforts: None,
             },

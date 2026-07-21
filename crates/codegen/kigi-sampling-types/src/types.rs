@@ -934,6 +934,10 @@ pub fn normalize_effort_echo(value: &mut Value) {
     }
 }
 
+/// The `anthropic-version` header value kigi speaks on Anthropic-style
+/// wires (Messages inference and the /v1/models listing).
+pub const ANTHROPIC_VERSION: &str = "2023-06-01";
+
 pub const REASONING_EFFORT_META_KEY: &str = "reasoningEffort";
 pub const SUPPORTS_REASONING_EFFORT_META_KEY: &str = "supportsReasoningEffort";
 

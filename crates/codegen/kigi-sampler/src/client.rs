@@ -371,6 +371,14 @@ impl SamplingClient {
                         )
                     })?;
                     headers.insert(HeaderName::from_static("x-api-key"), header_value);
+                    if config.api_backend == kigi_sampling_types::ApiBackend::Messages {
+                        // The real Anthropic Messages wire rejects requests
+                        // without this; compatible endpoints ignore it.
+                        headers.insert(
+                            HeaderName::from_static("anthropic-version"),
+                            HeaderValue::from_static(kigi_sampling_types::ANTHROPIC_VERSION),
+                        );
+                    }
                 }
                 AuthScheme::Bearer => {
                     let bearer = format!("Bearer {}", api_key);
@@ -1888,6 +1896,41 @@ mod tests {
             doom_loop_recovery: None,
             header_injector: None,
         }
+    }
+
+    /// The real Anthropic Messages wire rejects requests without
+    /// `anthropic-version`; the XApiKey+Messages client must carry it in its
+    /// default headers, and Bearer/ChatCompletions clients must NOT.
+    #[test]
+    fn x_api_key_messages_client_sends_anthropic_version() {
+        let mut config = minimal_config();
+        config.auth_scheme = AuthScheme::XApiKey;
+        config.api_backend = ApiBackend::Messages;
+        let client = SamplingClient::new(config).expect("client builds");
+        assert_eq!(
+            client
+                .default_headers
+                .get("anthropic-version")
+                .and_then(|v| v.to_str().ok()),
+            Some(kigi_sampling_types::ANTHROPIC_VERSION)
+        );
+        assert!(client.default_headers.get("x-api-key").is_some());
+
+        let bearer = SamplingClient::new(minimal_config()).expect("client builds");
+        assert!(
+            bearer.default_headers.get("anthropic-version").is_none(),
+            "non-anthropic clients must not grow the header"
+        );
+        let mut x_api_chat = minimal_config();
+        x_api_chat.auth_scheme = AuthScheme::XApiKey;
+        let x_api_chat = SamplingClient::new(x_api_chat).expect("client builds");
+        assert!(
+            x_api_chat
+                .default_headers
+                .get("anthropic-version")
+                .is_none(),
+            "XApiKey without the Messages backend must not grow the header"
+        );
     }
 
     /// Verify the serialized shape of StreamingChatRequest matches the
