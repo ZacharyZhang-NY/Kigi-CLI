@@ -78,10 +78,15 @@ pub fn try_acquire_writer(dir: &Path) -> std::io::Result<LockOutcome> {
         .open(lock_file_path(dir))?;
     match file.try_lock_exclusive() {
         Ok(()) => Ok(LockOutcome::Acquired(ProjectGraphLock { _file: file })),
-        Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => Ok(LockOutcome::Busy),
-        // fs2 maps "already locked" differently per platform; treat the
-        // documented contention errno as Busy too.
-        Err(err) if err.raw_os_error() == Some(libc::EWOULDBLOCK) => Ok(LockOutcome::Busy),
+        // fs2 maps contention differently per platform (EWOULDBLOCK on
+        // unix, ERROR_LOCK_VIOLATION on Windows); its
+        // `lock_contended_error()` is the portable classifier.
+        Err(err)
+            if err.kind() == std::io::ErrorKind::WouldBlock
+                || err.raw_os_error() == fs2::lock_contended_error().raw_os_error() =>
+        {
+            Ok(LockOutcome::Busy)
+        }
         Err(err) => Err(err),
     }
 }
