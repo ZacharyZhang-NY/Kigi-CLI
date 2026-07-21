@@ -716,6 +716,62 @@ const KIMI_CODING_SPEC: PlatformSpec = PlatformSpec {
     strip_listing_id_prefix: None,
 };
 
+pub const ZAI_BASE_URL_ENV: &str = "KIGI_ZAI_BASE_URL";
+const ZAI_SPEC: PlatformSpec = PlatformSpec {
+    id: "zai",
+    display_name: "Z.AI",
+    // Z.AI coding plan (GLM). Per Pi (earendil-works/pi) this is plain
+    // OpenAI-compatible chat completions — no special thinking dialect.
+    base_url: BaseUrlSource::EnvOr {
+        env: ZAI_BASE_URL_ENV,
+        default: "https://api.z.ai/api/coding/paas/v4",
+    },
+    uses_oauth: false,
+    allowed_model_prefixes: None,
+    api_key_envs: &["ZAI_API_KEY"],
+    vendor: "Z.AI",
+    console_host: Some("z.ai"),
+    login_label: Some("Z.AI (API key)"),
+    models_dev_id: Some("zai-coding-plan"),
+    // /models auth-gated → validator; enrichment from models.dev; restrict to
+    // tool-calling GLM chat models. Live ids match the snapshot keys
+    // (glm-4.7, glm-5-turbo, glm-5.2, ...) byte-for-byte (verified vs Pi).
+    wire_serves_metadata: false,
+    wire_api: PlatformWireApi::ChatCompletions,
+    listing: ListingDialect::OpenAi,
+    chat_compat: PlatformChatCompat::Passthrough,
+    key_header: PlatformKeyHeader::Bearer,
+    key_validation_path: None,
+    strip_listing_id_prefix: None,
+    restrict_to_enriched: true,
+};
+
+pub const ZAI_CODING_CN_BASE_URL_ENV: &str = "KIGI_ZAI_CODING_CN_BASE_URL";
+const ZAI_CODING_CN_SPEC: PlatformSpec = PlatformSpec {
+    id: "zai-coding-cn",
+    display_name: "Z.AI Coding (China)",
+    // Zhipu/BigModel-hosted CN coding plan; same OpenAI-compatible shape.
+    base_url: BaseUrlSource::EnvOr {
+        env: ZAI_CODING_CN_BASE_URL_ENV,
+        default: "https://open.bigmodel.cn/api/coding/paas/v4",
+    },
+    uses_oauth: false,
+    allowed_model_prefixes: None,
+    api_key_envs: &["ZAI_CODING_CN_API_KEY"],
+    vendor: "Z.AI",
+    console_host: Some("open.bigmodel.cn"),
+    login_label: Some("Z.AI Coding China (API key)"),
+    models_dev_id: Some("zhipuai-coding-plan"),
+    wire_serves_metadata: false,
+    wire_api: PlatformWireApi::ChatCompletions,
+    listing: ListingDialect::OpenAi,
+    chat_compat: PlatformChatCompat::Passthrough,
+    key_header: PlatformKeyHeader::Bearer,
+    key_validation_path: None,
+    strip_listing_id_prefix: None,
+    restrict_to_enriched: true,
+};
+
 /// The platform registry. Platforms are compiled-in spec rows; there is no
 /// dynamic provider registration (PRD F2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -758,12 +814,16 @@ pub enum PlatformId {
     QwenTokenPlanCn,
     /// Kimi For Coding via a static KIMI_API_KEY (same endpoint as `KimiCode`).
     KimiCoding,
+    /// Z.AI coding plan, global (API key, OpenAI-compatible GLM).
+    Zai,
+    /// Z.AI coding plan, China / Zhipu BigModel (API key, OpenAI-compatible).
+    ZaiCodingCn,
 }
 
 impl PlatformId {
     /// All platforms, in catalog precedence order: the subscription channel
     /// first so "default model = first list item" favors it when present.
-    pub const ALL: [PlatformId; 19] = [
+    pub const ALL: [PlatformId; 21] = [
         Self::KimiCode,
         Self::MoonshotCn,
         Self::MoonshotAi,
@@ -783,6 +843,8 @@ impl PlatformId {
         Self::QwenTokenPlan,
         Self::QwenTokenPlanCn,
         Self::KimiCoding,
+        Self::Zai,
+        Self::ZaiCodingCn,
     ];
 
     /// The registry row backing this platform (single source of per-platform
@@ -808,6 +870,8 @@ impl PlatformId {
             Self::QwenTokenPlan => &QWEN_TOKEN_PLAN_SPEC,
             Self::QwenTokenPlanCn => &QWEN_TOKEN_PLAN_CN_SPEC,
             Self::KimiCoding => &KIMI_CODING_SPEC,
+            Self::Zai => &ZAI_SPEC,
+            Self::ZaiCodingCn => &ZAI_CODING_CN_SPEC,
         }
     }
 
@@ -1567,9 +1631,11 @@ mod tests {
                 PlatformId::QwenTokenPlan => 16,
                 PlatformId::QwenTokenPlanCn => 17,
                 PlatformId::KimiCoding => 18,
+                PlatformId::Zai => 19,
+                PlatformId::ZaiCodingCn => 20,
             }
         }
-        const VARIANT_COUNT: usize = 19; // update together with `ordinal`
+        const VARIANT_COUNT: usize = 21; // update together with `ordinal`
         let mut seen: Vec<usize> = PlatformId::ALL.iter().map(|&p| ordinal(p)).collect();
         seen.sort_unstable();
         seen.dedup();

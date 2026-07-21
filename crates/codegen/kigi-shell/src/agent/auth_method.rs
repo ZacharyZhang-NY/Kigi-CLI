@@ -623,7 +623,9 @@ mod tests {
                 "xai",
                 "qwen-token-plan",
                 "qwen-token-plan-cn",
-                "kimi-coding"
+                "kimi-coding",
+                "zai",
+                "zai-coding-cn"
             ]
         );
         assert_eq!(default_id(&built), Some(XAI_API_KEY_METHOD_ID));
@@ -665,7 +667,9 @@ mod tests {
                 "xai",
                 "qwen-token-plan",
                 "qwen-token-plan-cn",
-                "kimi-coding"
+                "kimi-coding",
+                "zai",
+                "zai-coding-cn"
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -700,7 +704,9 @@ mod tests {
                 "xai",
                 "qwen-token-plan",
                 "qwen-token-plan-cn",
-                "kimi-coding"
+                "kimi-coding",
+                "zai",
+                "zai-coding-cn"
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -738,7 +744,9 @@ mod tests {
                 "xai",
                 "qwen-token-plan",
                 "qwen-token-plan-cn",
-                "kimi-coding"
+                "kimi-coding",
+                "zai",
+                "zai-coding-cn"
             ]
         );
         assert_eq!(default_id(&built), None);
@@ -1092,6 +1100,51 @@ mod tests {
         assert_eq!(
             err.message,
             "Invalid API key for kimi-coding \u{2014} check your key on www.kimi.com"
+        );
+    }
+
+    /// Z.AI (global): /models is auth-gated (401 for a bad key) → validator.
+    #[tokio::test]
+    #[serial]
+    async fn zai_validates_against_models_and_rejects_bad_key() {
+        use wiremock::matchers::{method, path};
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(method("GET"))
+            .and(path("/models"))
+            .respond_with(wiremock::ResponseTemplate::new(401))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let _base = EnvGuard::set(kigi_models::ZAI_BASE_URL_ENV, &server.uri());
+        let err = authenticate_platform_api_key(kigi_models::PlatformId::Zai, Some("zai-bad"))
+            .await
+            .expect_err("a 401 from /models must reject the key");
+        assert_eq!(
+            err.message,
+            "Invalid API key for zai \u{2014} check your key on z.ai"
+        );
+    }
+
+    /// Z.AI Coding CN: distinct base URL (Zhipu BigModel) + console host.
+    #[tokio::test]
+    #[serial]
+    async fn zai_coding_cn_validates_against_models_and_rejects_bad_key() {
+        use wiremock::matchers::{method, path};
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(method("GET"))
+            .and(path("/models"))
+            .respond_with(wiremock::ResponseTemplate::new(401))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let _base = EnvGuard::set(kigi_models::ZAI_CODING_CN_BASE_URL_ENV, &server.uri());
+        let err =
+            authenticate_platform_api_key(kigi_models::PlatformId::ZaiCodingCn, Some("zai-cn-bad"))
+                .await
+                .expect_err("a 401 from /models must reject the key");
+        assert_eq!(
+            err.message,
+            "Invalid API key for zai-coding-cn \u{2014} check your key on open.bigmodel.cn"
         );
     }
 }

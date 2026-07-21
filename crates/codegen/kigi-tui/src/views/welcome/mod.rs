@@ -2070,7 +2070,16 @@ mod tests {
     }
 
     fn render_done_text(params: &WelcomeRenderParams<'_>) -> String {
-        let area = Rect::new(0, 0, 100, 40);
+        render_done_text_h(params, 40)
+    }
+
+    /// Render at an explicit height. The login picker lists one row per
+    /// advertised platform; with ~20 API-key providers the menu no longer
+    /// fits a 40-row viewport, so the full-menu content test needs more rows
+    /// to verify every label renders. (On-terminal, rows past the fold are
+    /// clipped — the `q`/`l` shortcuts still work; see the menu-scroll debt.)
+    fn render_done_text_h(params: &WelcomeRenderParams<'_>, height: u16) -> String {
+        let area = Rect::new(0, 0, 100, height);
         let mut buf = Buffer::empty(area);
         let mut prompt = PromptWidget::new();
         let mut picker = PickerState::default();
@@ -2093,7 +2102,9 @@ mod tests {
         let trust = TrustState::Done;
         let mut params = render_params(&auth, &trust, None);
         params.auth_methods = &built.methods;
-        let text = render_done_text(&params);
+        // Tall viewport so every advertised login row renders (the picker now
+        // lists ~20 platforms); this asserts content coverage, not fit.
+        let text = render_done_text_h(&params, 72);
         assert!(text.contains("Kimi Code (OAuth)"), "{text}");
         assert!(
             text.contains("Moonshot Open Platform (API key \u{b7} moonshot.cn)"),
