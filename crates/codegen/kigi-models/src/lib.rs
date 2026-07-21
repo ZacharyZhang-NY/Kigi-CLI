@@ -144,6 +144,14 @@ struct PlatformSpec {
     /// (tts/embeddings/image). Availability still requires the LIVE listing;
     /// this only drops listing noise, never adds models.
     restrict_to_enriched: bool,
+    /// A prefix to strip from each live-listing model id before filtering,
+    /// enrichment lookup, and managed-key formation. Google's OpenAI-compat
+    /// `/models` returns `models/`-prefixed ids while its chat endpoint (and
+    /// the models.dev snapshot) use the bare id — stripping canonicalizes to
+    /// the bare form. `None` = no stripping (the id is used verbatim). The
+    /// strip is a no-op when the prefix is absent, so it is safe even if a
+    /// listing returns some ids already bare.
+    strip_listing_id_prefix: Option<&'static str>,
 }
 
 const KIMI_CODE_SPEC: PlatformSpec = PlatformSpec {
@@ -163,6 +171,7 @@ const KIMI_CODE_SPEC: PlatformSpec = PlatformSpec {
     chat_compat: PlatformChatCompat::Kimi,
     key_header: PlatformKeyHeader::Bearer,
     restrict_to_enriched: false,
+    strip_listing_id_prefix: None,
 };
 
 const MOONSHOT_CN_SPEC: PlatformSpec = PlatformSpec {
@@ -185,6 +194,7 @@ const MOONSHOT_CN_SPEC: PlatformSpec = PlatformSpec {
     chat_compat: PlatformChatCompat::Kimi,
     key_header: PlatformKeyHeader::Bearer,
     restrict_to_enriched: false,
+    strip_listing_id_prefix: None,
 };
 
 const MOONSHOT_AI_SPEC: PlatformSpec = PlatformSpec {
@@ -207,6 +217,7 @@ const MOONSHOT_AI_SPEC: PlatformSpec = PlatformSpec {
     chat_compat: PlatformChatCompat::Kimi,
     key_header: PlatformKeyHeader::Bearer,
     restrict_to_enriched: false,
+    strip_listing_id_prefix: None,
 };
 
 /// Base-URL override for OpenAI (dev/test escape hatch).
@@ -234,6 +245,7 @@ const OPENAI_SPEC: PlatformSpec = PlatformSpec {
     chat_compat: PlatformChatCompat::Passthrough,
     key_header: PlatformKeyHeader::Bearer,
     restrict_to_enriched: true,
+    strip_listing_id_prefix: None,
 };
 
 /// Base-URL override for Anthropic (dev/test escape hatch).
@@ -261,6 +273,7 @@ const ANTHROPIC_SPEC: PlatformSpec = PlatformSpec {
     chat_compat: PlatformChatCompat::Passthrough,
     key_header: PlatformKeyHeader::XApiKey,
     restrict_to_enriched: false,
+    strip_listing_id_prefix: None,
 };
 
 /// Base-URL override for DeepSeek (dev/test escape hatch).
@@ -288,6 +301,7 @@ const DEEPSEEK_SPEC: PlatformSpec = PlatformSpec {
     chat_compat: PlatformChatCompat::DeepSeek,
     key_header: PlatformKeyHeader::Bearer,
     restrict_to_enriched: false,
+    strip_listing_id_prefix: None,
 };
 
 /// Base-URL override for Groq (dev/test escape hatch).
@@ -315,6 +329,7 @@ const GROQ_SPEC: PlatformSpec = PlatformSpec {
     // The listing carries whisper/tts entries; keep tool-calling chat
     // models only.
     restrict_to_enriched: true,
+    strip_listing_id_prefix: None,
 };
 
 /// Base-URL override for Mistral (dev/test escape hatch).
@@ -344,6 +359,7 @@ const MISTRAL_SPEC: PlatformSpec = PlatformSpec {
     // The listing carries embed/moderation/OCR entries; keep tool-calling
     // chat models only.
     restrict_to_enriched: true,
+    strip_listing_id_prefix: None,
 };
 
 /// Base-URL override for Fireworks (dev/test escape hatch).
@@ -372,6 +388,36 @@ const FIREWORKS_SPEC: PlatformSpec = PlatformSpec {
     // The inference /models listing can include embedding/non-chat models;
     // keep tool-calling enrichment-known models only.
     restrict_to_enriched: true,
+    strip_listing_id_prefix: None,
+};
+
+/// Base-URL override for Google Gemini (dev/test escape hatch).
+pub const GOOGLE_BASE_URL_ENV: &str = "KIGI_GOOGLE_BASE_URL";
+
+const GOOGLE_SPEC: PlatformSpec = PlatformSpec {
+    id: "google",
+    display_name: "Google Gemini",
+    base_url: BaseUrlSource::EnvOr {
+        env: GOOGLE_BASE_URL_ENV,
+        // Gemini's OpenAI-compatibility shim (bare model ids, Bearer key).
+        default: "https://generativelanguage.googleapis.com/v1beta/openai",
+    },
+    uses_oauth: false,
+    allowed_model_prefixes: None,
+    api_key_envs: &["GEMINI_API_KEY"],
+    vendor: "Google",
+    console_host: Some("aistudio.google.com"),
+    login_label: Some("Google Gemini (API key)"),
+    models_dev_id: Some("google"),
+    wire_serves_metadata: false,
+    wire_api: PlatformWireApi::ChatCompletions,
+    listing: ListingDialect::OpenAi,
+    chat_compat: PlatformChatCompat::Passthrough,
+    key_header: PlatformKeyHeader::Bearer,
+    // The compat listing carries embedding/tts/image models; keep
+    // tool-calling enrichment-known chat models only.
+    restrict_to_enriched: true,
+    strip_listing_id_prefix: Some("models/"),
 };
 
 /// The platform registry. Platforms are compiled-in spec rows; there is no
@@ -396,12 +442,14 @@ pub enum PlatformId {
     Mistral,
     /// Fireworks AI platform API (API key, OpenAI-compatible ChatCompletions).
     Fireworks,
+    /// Google Gemini platform API (API key, OpenAI-compatibility shim).
+    Google,
 }
 
 impl PlatformId {
     /// All platforms, in catalog precedence order: the subscription channel
     /// first so "default model = first list item" favors it when present.
-    pub const ALL: [PlatformId; 9] = [
+    pub const ALL: [PlatformId; 10] = [
         Self::KimiCode,
         Self::MoonshotCn,
         Self::MoonshotAi,
@@ -411,6 +459,7 @@ impl PlatformId {
         Self::Groq,
         Self::Mistral,
         Self::Fireworks,
+        Self::Google,
     ];
 
     /// The registry row backing this platform (single source of per-platform
@@ -426,6 +475,7 @@ impl PlatformId {
             Self::Groq => &GROQ_SPEC,
             Self::Mistral => &MISTRAL_SPEC,
             Self::Fireworks => &FIREWORKS_SPEC,
+            Self::Google => &GOOGLE_SPEC,
         }
     }
 
@@ -514,6 +564,12 @@ impl PlatformId {
     /// listing noise on polluted providers). Never adds models.
     pub fn restrict_to_enriched(self) -> bool {
         self.spec().restrict_to_enriched
+    }
+
+    /// Prefix to strip from live-listing model ids before filter/enrich/key
+    /// (e.g. Google's `models/`). `None` = use the id verbatim.
+    pub fn strip_listing_id_prefix(self) -> Option<&'static str> {
+        self.spec().strip_listing_id_prefix
     }
 
     /// Model-listing endpoint shape + headers.
@@ -1060,6 +1116,27 @@ mod tests {
         );
     }
 
+    /// Google's compat listing returns `models/`-prefixed ids; the spec
+    /// must declare the strip so they canonicalize to the bare snapshot
+    /// form. Every other platform uses ids verbatim.
+    #[test]
+    fn only_google_strips_a_listing_id_prefix() {
+        assert_eq!(
+            PlatformId::Google.strip_listing_id_prefix(),
+            Some("models/")
+        );
+        for p in PlatformId::ALL {
+            if p != PlatformId::Google {
+                assert_eq!(
+                    p.strip_listing_id_prefix(),
+                    None,
+                    "{} must use listing ids verbatim",
+                    p.as_str()
+                );
+            }
+        }
+    }
+
     #[test]
     fn platform_ids_round_trip() {
         for p in PlatformId::ALL {
@@ -1085,9 +1162,10 @@ mod tests {
                 PlatformId::Groq => 6,
                 PlatformId::Mistral => 7,
                 PlatformId::Fireworks => 8,
+                PlatformId::Google => 9,
             }
         }
-        const VARIANT_COUNT: usize = 9; // update together with `ordinal`
+        const VARIANT_COUNT: usize = 10; // update together with `ordinal`
         let mut seen: Vec<usize> = PlatformId::ALL.iter().map(|&p| ordinal(p)).collect();
         seen.sort_unstable();
         seen.dedup();

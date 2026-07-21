@@ -309,6 +309,19 @@ fn fetch_one_platform_models(
             })?
         }
     };
+    // Canonicalize listing ids before filtering/enrichment/keying. Google's
+    // OpenAI-compat `/models` returns `models/`-prefixed ids while its chat
+    // endpoint and the models.dev snapshot use the bare id — without this the
+    // enrichment lookup misses and `restrict_to_enriched` would empty the
+    // catalog. No-op for platforms with no configured prefix.
+    let mut data = data;
+    if let Some(prefix) = platform.strip_listing_id_prefix() {
+        for wire in &mut data {
+            if let Some(bare) = wire.id.strip_prefix(prefix) {
+                wire.id = bare.to_string();
+            }
+        }
+    }
     let total = data.len();
     let mut filtered = kigi_models::filter_allowed_models(platform, data);
     if filtered.len() != total {
@@ -1392,6 +1405,103 @@ mod tests {
         assert_eq!(
             cfg.model, "accounts/fireworks/models/glm-5p2",
             "the sampler wire model is the native slashed id end-to-end"
+        );
+    }
+
+    /// Google/Gemini-cycle e2e: the OpenAI-compat listing returns
+    /// `models/`-PREFIXED ids (Google's real shape), which the Google spec's
+    /// `strip_listing_id_prefix` canonicalizes to the bare form the models.dev
+    /// snapshot + chat endpoint use — WITHOUT the strip, restrict_to_enriched
+    /// would silently drop every Gemini model. Embedding pollution is
+    /// restricted away; Passthrough dialect; bare id on the wire.
+    #[tokio::test(flavor = "multi_thread")]
+    #[serial_test::serial]
+    async fn google_compat_listing_strips_prefix_restricts_and_maps_passthrough() {
+        let platform_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/models"))
+            .and(wiremock::matchers::header("Authorization", "Bearer gk-1"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({ "data": [
+                    // Real Gemini compat shape: `models/`-prefixed ids.
+                    { "id": "models/gemini-2.5-pro", "object": "model" },
+                    { "id": "models/gemini-embedding-001", "object": "model" }
+                ]}),
+            ))
+            .expect(1)
+            .mount(&platform_server)
+            .await;
+        let modelsdev_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/api.json"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({ "google": { "models": {
+                    "gemini-2.5-pro": {
+                        "limit": {"context": 1048576, "output": 65536},
+                        "tool_call": true
+                    },
+                    "gemini-embedding-001": { "limit": {"context": 2048} }
+                }}}),
+            ))
+            .expect(1)
+            .mount(&modelsdev_server)
+            .await;
+        let cache_dir = tempfile::tempdir().unwrap();
+        let _base = kigi_test_support::EnvGuard::set(
+            kigi_models::GOOGLE_BASE_URL_ENV,
+            platform_server.uri(),
+        );
+        let _mdev = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_URL_ENV,
+            format!("{}/api.json", modelsdev_server.uri()),
+        );
+        let _mdev_cache = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_CACHE_DIR_ENV,
+            cache_dir.path(),
+        );
+        let endpoints = crate::agent::config::EndpointsConfig::default();
+        let keys = crate::agent::models::PlatformApiKeys::test_single(
+            kigi_models::PlatformId::Google,
+            "gk-1",
+        );
+        let result = tokio::task::spawn_blocking(move || {
+            fetch_platform_models_blocking(&endpoints, None, &keys)
+        })
+        .await
+        .unwrap()
+        .expect("fetch must succeed");
+        assert_eq!(
+            result
+                .models
+                .iter()
+                .map(|m| m.id.as_deref().unwrap_or_default())
+                .collect::<Vec<_>>(),
+            vec!["google/gemini-2.5-pro"],
+            "prefix stripped → matches bare snapshot → kept as the bare \
+             managed key; embedding (not tool-calling) dropped"
+        );
+        let entry = &result.models[0];
+        assert_eq!(
+            entry.context_window.get(),
+            1_048_576,
+            "enrichment matched the bare id"
+        );
+        assert_eq!(entry.max_completion_tokens, Some(65_536));
+        assert_eq!(
+            entry.model, "gemini-2.5-pro",
+            "the BARE Gemini id rides the wire (chat rejects the models/ prefix)"
+        );
+        let model_entry = crate::agent::config::ModelEntry::from_config_entry(entry);
+        let creds = crate::agent::config::ResolvedCredentials {
+            api_key: Some("gk-1".into()),
+            base_url: entry.base_url.clone(),
+            auth_type: kigi_chat_state::AuthType::ApiKey,
+            auth_scheme: Default::default(),
+        };
+        let cfg = crate::agent::config::sampling_config_for_model(&model_entry, creds, None);
+        assert_eq!(
+            cfg.chat_compat,
+            kigi_sampling_types::ChatCompat::Passthrough
         );
     }
 
