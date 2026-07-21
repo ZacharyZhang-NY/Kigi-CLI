@@ -4074,6 +4074,7 @@ pub fn sampling_config_for_model(
             kigi_models::PlatformChatCompat::Passthrough => {
                 kigi_sampling_types::ChatCompat::Passthrough
             }
+            kigi_models::PlatformChatCompat::Mistral => kigi_sampling_types::ChatCompat::Mistral,
         })
         .unwrap_or_default();
     SamplerConfig {

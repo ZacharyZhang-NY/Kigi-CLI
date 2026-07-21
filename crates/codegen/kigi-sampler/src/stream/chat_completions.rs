@@ -517,6 +517,85 @@ mod tests {
         }
     }
 
+    /// Deserialize a full chunk from a JSON `delta` so it flows through the
+    /// `#[serde(from = "RawChatChunkDelta")]` content-split path (Mistral
+    /// sends array `content`).
+    fn chunk_from_delta(delta: serde_json::Value) -> ChatCompletionChunk {
+        serde_json::from_value(serde_json::json!({
+            "id": "c",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "mistral-medium-latest",
+            "choices": [{ "index": 0, "delta": delta, "finish_reason": null }],
+        }))
+        .expect("mistral chunk deserializes")
+    }
+
+    /// End-to-end: a Mistral reasoning stream (array `content` thinking
+    /// deltas → a transition delta carrying both a thinking and a text chunk
+    /// → plain-string answer deltas) is split by deserialization and consumed
+    /// into the SAME reasoning-sibling + assistant-answer result the
+    /// `reasoning_content` string path produces. Closes the array-path
+    /// integration gap.
+    #[tokio::test]
+    async fn mistral_reasoning_array_stream_splits_into_reasoning_and_answer() {
+        let chunks: Vec<Result<ChatCompletionChunk, SamplingError>> = vec![
+            Ok(chunk_from_delta(serde_json::json!({ "content": [
+                { "type": "thinking",
+                  "thinking": [{ "type": "text", "text": "Let me think. " }] }
+            ]}))),
+            Ok(chunk_from_delta(serde_json::json!({ "content": [
+                { "type": "thinking",
+                  "thinking": [{ "type": "text", "text": "It's 22." }] }
+            ]}))),
+            // Transition: one array with a closing thinking chunk AND the
+            // first answer text chunk.
+            Ok(chunk_from_delta(serde_json::json!({ "content": [
+                { "type": "thinking", "thinking": [{ "type": "text", "text": " Done." }] },
+                { "type": "text", "text": "Answer: " }
+            ]}))),
+            // Answer phase: plain-string deltas (no longer arrays).
+            Ok(chunk_from_delta(serde_json::json!({ "content": "22." }))),
+            Ok(final_chunk(FinishReason::Stop)),
+        ];
+        let raw = stream::iter(chunks).boxed();
+        let events = collect(stream_chat_completions(
+            raw,
+            None,
+            rid(),
+            Duration::from_secs(60),
+        ))
+        .await;
+
+        // Channel tokens: thinking rode the Reasoning channel, answer the Text
+        // channel — never crossed.
+        let mut reasoning = String::new();
+        let mut answer = String::new();
+        for e in &events {
+            if let SamplingEvent::ChannelToken { channel, text, .. } = e {
+                match channel {
+                    SamplingChannel::Reasoning => reasoning.push_str(text),
+                    SamplingChannel::Text => answer.push_str(text),
+                }
+            }
+        }
+        assert_eq!(reasoning, "Let me think. It's 22. Done.");
+        assert_eq!(answer, "Answer: 22.");
+
+        // The accumulated final response carries the same split.
+        match events.last().unwrap() {
+            SamplingEvent::Completed { response, .. } => {
+                let r = response
+                    .reasoning_items()
+                    .next()
+                    .expect("array thinking became a reasoning sibling");
+                let rs::SummaryPart::SummaryText(t) = &r.summary[0];
+                assert_eq!(t.text, "Let me think. It's 22. Done.");
+            }
+            other => panic!("expected Completed, got {other:?}"),
+        }
+    }
+
     #[tokio::test]
     async fn tool_call_stream_emits_deltas_and_assembles_final_call() {
         // First chunk has id + name + part of arguments.

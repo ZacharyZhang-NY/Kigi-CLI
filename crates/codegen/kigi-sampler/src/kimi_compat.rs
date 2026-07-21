@@ -47,6 +47,22 @@ pub(crate) fn adapt_chat_completions_body_for(
         kigi_sampling_types::ChatCompat::Passthrough => {
             strip_kigi_private_message_fields(body);
         }
+        kigi_sampling_types::ChatCompat::Mistral => {
+            strip_kigi_private_message_fields(body);
+            strip_stream_options(body);
+        }
+    }
+}
+
+/// Mistral's strict Pydantic validator 422-rejects `stream_options`
+/// (`extra_forbidden` on `stream_options.include_usage`; its request model
+/// has no such field). kigi injects `stream_options.include_usage` on every
+/// streaming request for the other providers, so strip the whole object for
+/// Mistral. Streaming usage falls back to token estimation (as for any
+/// provider that omits streaming usage).
+fn strip_stream_options(body: &mut Value) {
+    if let Some(obj) = body.as_object_mut() {
+        obj.remove("stream_options");
     }
 }
 
@@ -391,6 +407,38 @@ mod tests {
         assert_eq!(body["messages"][0]["content"], json!(""));
         assert_eq!(body["messages"][0].get("reasoning_content"), None);
         assert_eq!(body["messages"][0].get("model_id"), None);
+    }
+
+    #[test]
+    fn mistral_dialect_strips_stream_options_and_private_fields() {
+        use kigi_sampling_types::ChatCompat;
+        // Mistral 422s on stream_options (extra_forbidden) and doesn't know
+        // kigi's private message fields; OpenAI-style reasoning_effort stays.
+        let mut body = json!({
+            "model": "mistral-medium-latest",
+            "reasoning_effort": "high",
+            "stream": true,
+            "stream_options": { "include_usage": true },
+            "messages": [
+                { "role": "assistant", "content": "hi",
+                  "reasoning_content": "internal", "model_id": "kigi/x" }
+            ]
+        });
+        adapt_chat_completions_body_for(ChatCompat::Mistral, &mut body);
+        assert_eq!(
+            body.get("stream_options"),
+            None,
+            "stream_options must be stripped"
+        );
+        assert_eq!(body["stream"], json!(true), "stream flag stays");
+        assert_eq!(
+            body["reasoning_effort"],
+            json!("high"),
+            "OpenAI-style effort passes through (Mistral accepts it natively)"
+        );
+        assert_eq!(body["messages"][0].get("reasoning_content"), None);
+        assert_eq!(body["messages"][0].get("model_id"), None);
+        assert_eq!(body["messages"][0]["content"], json!("hi"));
     }
 
     #[test]

@@ -1206,6 +1206,90 @@ mod tests {
         );
     }
 
+    /// Mistral-cycle e2e: embed pollution restricted away, and the Mistral
+    /// dialect (strips stream_options, handles reasoning arrays) is mapped.
+    #[tokio::test(flavor = "multi_thread")]
+    #[serial_test::serial]
+    async fn mistral_listing_restricts_and_maps_mistral_dialect() {
+        let platform_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/models"))
+            .and(wiremock::matchers::header("Authorization", "Bearer msk-1"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({ "data": [
+                    { "id": "devstral-latest", "object": "model" },
+                    { "id": "mistral-embed", "object": "model" }
+                ]}),
+            ))
+            .expect(1)
+            .mount(&platform_server)
+            .await;
+        let modelsdev_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/api.json"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({ "mistral": { "models": {
+                    "devstral-latest": {
+                        "limit": {"context": 262144, "output": 65536},
+                        "tool_call": true
+                    },
+                    "mistral-embed": { "limit": {"context": 8000} }
+                }}}),
+            ))
+            .expect(1)
+            .mount(&modelsdev_server)
+            .await;
+        let cache_dir = tempfile::tempdir().unwrap();
+        let _base = kigi_test_support::EnvGuard::set(
+            kigi_models::MISTRAL_BASE_URL_ENV,
+            platform_server.uri(),
+        );
+        let _mdev = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_URL_ENV,
+            format!("{}/api.json", modelsdev_server.uri()),
+        );
+        let _mdev_cache = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_CACHE_DIR_ENV,
+            cache_dir.path(),
+        );
+        let endpoints = crate::agent::config::EndpointsConfig::default();
+        let keys = crate::agent::models::PlatformApiKeys::test_single(
+            kigi_models::PlatformId::Mistral,
+            "msk-1",
+        );
+        let result = tokio::task::spawn_blocking(move || {
+            fetch_platform_models_blocking(&endpoints, None, &keys)
+        })
+        .await
+        .unwrap()
+        .expect("fetch must succeed");
+        assert_eq!(
+            result
+                .models
+                .iter()
+                .map(|m| m.id.as_deref().unwrap_or_default())
+                .collect::<Vec<_>>(),
+            vec!["mistral/devstral-latest"],
+            "embed (enrichment-known, not tool-calling) must be dropped"
+        );
+        let entry = &result.models[0];
+        assert_eq!(entry.context_window.get(), 262_144);
+        assert_eq!(entry.max_completion_tokens, Some(65_536));
+        let model_entry = crate::agent::config::ModelEntry::from_config_entry(entry);
+        let creds = crate::agent::config::ResolvedCredentials {
+            api_key: Some("msk-1".into()),
+            base_url: entry.base_url.clone(),
+            auth_type: kigi_chat_state::AuthType::ApiKey,
+            auth_scheme: Default::default(),
+        };
+        let cfg = crate::agent::config::sampling_config_for_model(&model_entry, creds, None);
+        assert_eq!(
+            cfg.chat_compat,
+            kigi_sampling_types::ChatCompat::Mistral,
+            "mistral entries must map to the Mistral dialect (stream_options strip)"
+        );
+    }
+
     #[test]
     fn get_env_keys_parses_strings_and_rejects_non_strings() {
         use crate::agent::config::EnvKeys;

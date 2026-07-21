@@ -595,7 +595,8 @@ mod tests {
                 "openai",
                 "anthropic",
                 "deepseek",
-                "groq"
+                "groq",
+                "mistral"
             ]
         );
         assert_eq!(default_id(&built), Some(XAI_API_KEY_METHOD_ID));
@@ -625,7 +626,8 @@ mod tests {
                 "openai",
                 "anthropic",
                 "deepseek",
-                "groq"
+                "groq",
+                "mistral"
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -648,7 +650,8 @@ mod tests {
                 "openai",
                 "anthropic",
                 "deepseek",
-                "groq"
+                "groq",
+                "mistral"
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -674,7 +677,8 @@ mod tests {
                 "openai",
                 "anthropic",
                 "deepseek",
-                "groq"
+                "groq",
+                "mistral"
             ]
         );
         assert_eq!(default_id(&built), None);

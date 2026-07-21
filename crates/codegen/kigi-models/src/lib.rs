@@ -70,6 +70,7 @@ pub enum PlatformChatCompat {
     Kimi,
     DeepSeek,
     Passthrough,
+    Mistral,
 }
 
 /// How a platform's API key rides requests (listing, validation, inference).
@@ -316,6 +317,35 @@ const GROQ_SPEC: PlatformSpec = PlatformSpec {
     restrict_to_enriched: true,
 };
 
+/// Base-URL override for Mistral (dev/test escape hatch).
+pub const MISTRAL_BASE_URL_ENV: &str = "KIGI_MISTRAL_BASE_URL";
+
+const MISTRAL_SPEC: PlatformSpec = PlatformSpec {
+    id: "mistral",
+    display_name: "Mistral",
+    base_url: BaseUrlSource::EnvOr {
+        env: MISTRAL_BASE_URL_ENV,
+        default: "https://api.mistral.ai/v1",
+    },
+    uses_oauth: false,
+    allowed_model_prefixes: None,
+    api_key_envs: &["MISTRAL_API_KEY"],
+    vendor: "Mistral",
+    console_host: Some("console.mistral.ai"),
+    login_label: Some("Mistral (API key)"),
+    models_dev_id: Some("mistral"),
+    wire_serves_metadata: false,
+    wire_api: PlatformWireApi::ChatCompletions,
+    listing: ListingDialect::OpenAi,
+    // Mistral's strict validator 422s on `stream_options`, and its reasoning
+    // models return array content — the Mistral dialect handles both.
+    chat_compat: PlatformChatCompat::Mistral,
+    key_header: PlatformKeyHeader::Bearer,
+    // The listing carries embed/moderation/OCR entries; keep tool-calling
+    // chat models only.
+    restrict_to_enriched: true,
+};
+
 /// The platform registry. Platforms are compiled-in spec rows; there is no
 /// dynamic provider registration (PRD F2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -334,12 +364,14 @@ pub enum PlatformId {
     DeepSeek,
     /// Groq platform API (API key, OpenAI-compatible ChatCompletions).
     Groq,
+    /// Mistral platform API (API key, OpenAI-compatible ChatCompletions).
+    Mistral,
 }
 
 impl PlatformId {
     /// All platforms, in catalog precedence order: the subscription channel
     /// first so "default model = first list item" favors it when present.
-    pub const ALL: [PlatformId; 7] = [
+    pub const ALL: [PlatformId; 8] = [
         Self::KimiCode,
         Self::MoonshotCn,
         Self::MoonshotAi,
@@ -347,6 +379,7 @@ impl PlatformId {
         Self::Anthropic,
         Self::DeepSeek,
         Self::Groq,
+        Self::Mistral,
     ];
 
     /// The registry row backing this platform (single source of per-platform
@@ -360,6 +393,7 @@ impl PlatformId {
             Self::Anthropic => &ANTHROPIC_SPEC,
             Self::DeepSeek => &DEEPSEEK_SPEC,
             Self::Groq => &GROQ_SPEC,
+            Self::Mistral => &MISTRAL_SPEC,
         }
     }
 
@@ -1017,9 +1051,10 @@ mod tests {
                 PlatformId::Anthropic => 4,
                 PlatformId::DeepSeek => 5,
                 PlatformId::Groq => 6,
+                PlatformId::Mistral => 7,
             }
         }
-        const VARIANT_COUNT: usize = 7; // update together with `ordinal`
+        const VARIANT_COUNT: usize = 8; // update together with `ordinal`
         let mut seen: Vec<usize> = PlatformId::ALL.iter().map(|&p| ordinal(p)).collect();
         seen.sort_unstable();
         seen.dedup();

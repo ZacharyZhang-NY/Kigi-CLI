@@ -487,7 +487,69 @@ pub enum FinishReason {
     FunctionCall,
 }
 
+/// Wire `content` field on a chat response/delta. OpenAI-compatible providers
+/// send a plain string, but reasoning providers (Mistral) send an ARRAY of
+/// typed chunks: `{"type":"text","text":".."}` for the answer and
+/// `{"type":"thinking","thinking":[{"type":"text","text":".."}],...}` for the
+/// chain of thought (verified against the mistralai/client-python SDK models).
+/// The chunk union is OPEN — unknown chunk types are ignored, never fatal.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum WireContent {
+    Text(String),
+    Chunks(Vec<Value>),
+}
+
+/// Read a chunk's `text` string field into `dst` when present (defensive: a
+/// reference/tool-reference/unknown chunk simply has no `text`).
+fn push_chunk_text(dst: &mut String, chunk: &Value) {
+    if let Some(t) = chunk.get("text").and_then(Value::as_str) {
+        dst.push_str(t);
+    }
+}
+
+fn non_empty(s: String) -> Option<String> {
+    if s.is_empty() { None } else { Some(s) }
+}
+
+impl WireContent {
+    /// Split into `(visible answer text, thinking text)`. A plain string is
+    /// the answer with no thinking; an array routes `text` chunks to the
+    /// answer and the nested `text` of `thinking` chunks to the reasoning
+    /// channel. Byte-identical for string content (the only shape non-Mistral
+    /// providers ever send).
+    fn split(self) -> (Option<String>, Option<String>) {
+        match self {
+            // Preserve string content verbatim (incl. empty) — byte-identical
+            // to the pre-change `content: Option<String>` for every provider
+            // that sends a string.
+            WireContent::Text(s) => (Some(s), None),
+            WireContent::Chunks(chunks) => {
+                let mut answer = String::new();
+                let mut thinking = String::new();
+                for c in &chunks {
+                    match c.get("type").and_then(Value::as_str) {
+                        Some("text") => push_chunk_text(&mut answer, c),
+                        Some("thinking") => {
+                            // `thinking` is a nested list of chunks.
+                            if let Some(inner) = c.get("thinking").and_then(Value::as_array) {
+                                for ic in inner {
+                                    push_chunk_text(&mut thinking, ic);
+                                }
+                            }
+                        }
+                        // reference / tool_reference / unknown → not text.
+                        _ => {}
+                    }
+                }
+                (non_empty(answer), non_empty(thinking))
+            }
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(from = "RawChatResponseMessage")]
 pub struct ChatResponseMessage {
     pub role: Role,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -500,6 +562,38 @@ pub struct ChatResponseMessage {
     pub tool_call_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub citations: Option<Vec<String>>,
+}
+
+/// Deserialization mirror of [`ChatResponseMessage`] that accepts array
+/// `content` and folds thinking chunks into `reasoning_content`.
+#[derive(Deserialize)]
+struct RawChatResponseMessage {
+    role: Role,
+    #[serde(default)]
+    content: Option<WireContent>,
+    #[serde(default)]
+    reasoning_content: Option<String>,
+    #[serde(default)]
+    tool_calls: Vec<ToolCallResponse>,
+    #[serde(default)]
+    tool_call_id: Option<String>,
+    #[serde(default)]
+    citations: Option<Vec<String>>,
+}
+
+impl From<RawChatResponseMessage> for ChatResponseMessage {
+    fn from(r: RawChatResponseMessage) -> Self {
+        let (answer, thinking) = r.content.map(WireContent::split).unwrap_or((None, None));
+        ChatResponseMessage {
+            role: r.role,
+            content: answer,
+            // The wire's own `reasoning_content` wins; else thinking chunks.
+            reasoning_content: r.reasoning_content.or(thinking),
+            tool_calls: r.tool_calls,
+            tool_call_id: r.tool_call_id,
+            citations: r.citations,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -649,6 +743,7 @@ pub struct ToolCallFunctionDelta {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(from = "RawChatChunkDelta")]
 pub struct ChatChunkDelta {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<Role>,
@@ -656,14 +751,41 @@ pub struct ChatChunkDelta {
     pub content: Option<String>,
     pub reasoning_content: Option<String>,
     /// Tool call deltas. Handles `null` in JSON as empty vec.
-    #[serde(
-        default,
-        skip_serializing_if = "Vec::is_empty",
-        deserialize_with = "deserialize_null_default"
-    )]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tool_calls: Vec<ToolCallDelta>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+}
+
+/// Deserialization mirror of [`ChatChunkDelta`] that accepts array `content`
+/// (Mistral reasoning streams a thinking-chunk array during the thinking
+/// phase, then plain-string answer deltas) and folds thinking into
+/// `reasoning_content`.
+#[derive(Deserialize)]
+struct RawChatChunkDelta {
+    #[serde(default)]
+    role: Option<Role>,
+    #[serde(default)]
+    content: Option<WireContent>,
+    #[serde(default)]
+    reasoning_content: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    tool_calls: Vec<ToolCallDelta>,
+    #[serde(default)]
+    tool_call_id: Option<String>,
+}
+
+impl From<RawChatChunkDelta> for ChatChunkDelta {
+    fn from(r: RawChatChunkDelta) -> Self {
+        let (answer, thinking) = r.content.map(WireContent::split).unwrap_or((None, None));
+        ChatChunkDelta {
+            role: r.role,
+            content: answer,
+            reasoning_content: r.reasoning_content.or(thinking),
+            tool_calls: r.tool_calls,
+            tool_call_id: r.tool_call_id,
+        }
+    }
 }
 
 /// Parameters to control realtime data.
@@ -956,6 +1078,11 @@ pub enum ChatCompat {
     DeepSeek,
     /// Leave the body as-is (OpenAI-style `reasoning_effort` passes through).
     Passthrough,
+    /// Mistral wire: OpenAI-style `reasoning_effort` passes through, but the
+    /// strict Pydantic validator 422-rejects `stream_options` (the SDK's
+    /// request model has no such field), so it must be stripped. Also strips
+    /// the kigi-private message fields like Passthrough.
+    Mistral,
 }
 
 pub const REASONING_EFFORT_META_KEY: &str = "reasoningEffort";
@@ -1318,6 +1445,98 @@ impl From<crate::messages::MessagesRequest> for MessagesRequestWrapper {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// String content (the only shape non-Mistral providers send) stays the
+    /// answer verbatim with no thinking — byte-identical to the pre-change
+    /// deserialization.
+    #[test]
+    fn chunk_delta_string_content_unchanged() {
+        let delta: ChatChunkDelta =
+            serde_json::from_value(json!({ "content": "hello world" })).unwrap();
+        assert_eq!(delta.content.as_deref(), Some("hello world"));
+        assert_eq!(delta.reasoning_content, None);
+        // A DeepSeek-style wire reasoning_content still rides its own field.
+        let delta: ChatChunkDelta =
+            serde_json::from_value(json!({ "content": "hi", "reasoning_content": "because" }))
+                .unwrap();
+        assert_eq!(delta.content.as_deref(), Some("hi"));
+        assert_eq!(delta.reasoning_content.as_deref(), Some("because"));
+        // Null / absent content → None.
+        let delta: ChatChunkDelta = serde_json::from_value(json!({})).unwrap();
+        assert_eq!(delta.content, None);
+    }
+
+    /// Mistral reasoning: array content routes `text` chunks to the answer
+    /// and the nested `text` of `thinking` chunks to reasoning_content
+    /// (verified shapes from the mistralai/client-python SDK).
+    #[test]
+    fn chunk_delta_array_content_splits_thinking_and_answer() {
+        // Thinking phase: array with only a thinking chunk (nested list).
+        let delta: ChatChunkDelta = serde_json::from_value(json!({
+            "content": [
+                { "type": "thinking", "thinking": [{ "type": "text", "text": "step 1" }],
+                  "signature": null, "closed": false }
+            ]
+        }))
+        .unwrap();
+        assert_eq!(delta.content, None, "thinking phase has no visible answer");
+        assert_eq!(delta.reasoning_content.as_deref(), Some("step 1"));
+
+        // Answer phase: plain string delta.
+        let delta: ChatChunkDelta =
+            serde_json::from_value(json!({ "content": "the answer" })).unwrap();
+        assert_eq!(delta.content.as_deref(), Some("the answer"));
+        assert_eq!(delta.reasoning_content, None);
+
+        // Transition delta: one array carrying both a closing thinking chunk
+        // and the first text chunk → both channels populated.
+        let delta: ChatChunkDelta = serde_json::from_value(json!({
+            "content": [
+                { "type": "thinking", "thinking": [{ "type": "text", "text": "done" }] },
+                { "type": "text", "text": "Answer: 22" }
+            ]
+        }))
+        .unwrap();
+        assert_eq!(delta.content.as_deref(), Some("Answer: 22"));
+        assert_eq!(delta.reasoning_content.as_deref(), Some("done"));
+    }
+
+    /// The chunk union is OPEN: unknown chunk types and reference chunks are
+    /// ignored, never fatal (SDK's UnknownContentChunk fallback).
+    #[test]
+    fn content_array_tolerates_unknown_chunk_types() {
+        let delta: ChatChunkDelta = serde_json::from_value(json!({
+            "content": [
+                { "type": "reference", "reference_ids": [1, 2] },
+                { "type": "some_future_chunk", "payload": { "x": 1 } },
+                { "type": "text", "text": "visible" }
+            ]
+        }))
+        .unwrap();
+        assert_eq!(delta.content.as_deref(), Some("visible"));
+        assert_eq!(delta.reasoning_content, None);
+    }
+
+    /// Non-streaming ChatResponseMessage gets the same array handling.
+    #[test]
+    fn response_message_array_content_splits() {
+        let msg: ChatResponseMessage = serde_json::from_value(json!({
+            "role": "assistant",
+            "content": [
+                { "type": "thinking", "thinking": [{ "type": "text", "text": "reasoning" }] },
+                { "type": "text", "text": "final" }
+            ]
+        }))
+        .unwrap();
+        assert_eq!(msg.content.as_deref(), Some("final"));
+        assert_eq!(msg.reasoning_content.as_deref(), Some("reasoning"));
+        // String content still works.
+        let msg: ChatResponseMessage = serde_json::from_value(json!({
+            "role": "assistant", "content": "plain"
+        }))
+        .unwrap();
+        assert_eq!(msg.content.as_deref(), Some("plain"));
+    }
 
     #[test]
     fn reasoning_effort_serde_lowercase_round_trip() {
