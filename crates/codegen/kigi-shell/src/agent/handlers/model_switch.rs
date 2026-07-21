@@ -110,6 +110,29 @@ pub(crate) async fn apply(
             .models_manager
             .model_supports_reasoning_effort(model_id.0.as_ref())
         {
+            // Legacy migration: pre-split sessions persisted canonical
+            // `xhigh` for models whose live menu now spells the top tier
+            // `max` (K3). The wire is identical either way (kimi_compat
+            // renames xhigh→max), but the menu has no xhigh-valued row, so
+            // display/active-row would drift from the model vocabulary and
+            // the stale token would be re-persisted forever. Migrate once.
+            let eff = if eff == kigi_sampling_types::ReasoningEffort::Xhigh
+                && !agent
+                    .models_manager
+                    .model_offers_effort(model_id.0.as_ref(), eff)
+                && agent.models_manager.model_offers_effort(
+                    model_id.0.as_ref(),
+                    kigi_sampling_types::ReasoningEffort::Max,
+                ) {
+                tracing::info!(
+                    session_id = % session_id.0,
+                    "set_session_model: migrating legacy xhigh override to max \
+                     (model menu offers max, not xhigh)"
+                );
+                kigi_sampling_types::ReasoningEffort::Max
+            } else {
+                eff
+            };
             tracing::info!(
                 session_id = % session_id.0, effort = % eff,
                 "set_session_model: applying reasoning_effort override from meta"

@@ -69,13 +69,16 @@ async fn reasoning_efforts_menu_renders_and_remaps_on_wire() {
         .wait_for_text("second turn", Duration::from_secs(30))
         .expect("second turn rendered");
 
-    let sent_xhigh = content
+    // The chat-completions body is always adapted before send: the
+    // `reasoning_effort` scalar is folded into Kimi's `thinking` field and
+    // canonical `xhigh` is spelled `max` on the wire (kimi_compat).
+    let sent_effort = content
         .request_bodies()
         .iter()
-        .any(|b| b.pointer("/reasoning_effort").and_then(|v| v.as_str()) == Some("xhigh"));
+        .any(|b| b.pointer("/thinking/effort").and_then(|v| v.as_str()) == Some("max"));
     assert!(
-        sent_xhigh,
-        "`/effort deep` must send the mapped canonical reasoning_effort=xhigh\nbodies: {:#?}",
+        sent_effort,
+        "`/effort deep` must send the remapped level as thinking.effort=max\nbodies: {:#?}",
         content.request_bodies()
     );
 

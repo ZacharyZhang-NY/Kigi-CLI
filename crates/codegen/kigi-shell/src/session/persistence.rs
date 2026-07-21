@@ -879,7 +879,14 @@ pub struct Summary {
     /// `None` for sessions created before this field existed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox_profile: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Lenient on read: an unknown token written by a newer kigi (grown
+    /// effort vocabulary) drops to `None` rather than hiding the whole
+    /// session from listings / failing resume after a version rollback.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "kigi_sampling_types::lenient_reasoning_effort_opt"
+    )]
     pub reasoning_effort: Option<ReasoningEffort>,
 }
 
@@ -1000,6 +1007,22 @@ mod is_hidden_tests {
             )
             .unwrap()
         }
+    }
+
+    #[test]
+    fn summary_unknown_reasoning_effort_token_degrades_to_none() {
+        // A summary written by a NEWER kigi with a grown effort vocabulary
+        // must not vanish from listings or fail resume on this binary.
+        let mut s = summary_with_kind(None);
+        s.reasoning_effort = Some(ReasoningEffort::Max);
+        let json = serde_json::to_string(&s).unwrap();
+        let future = json.replace("\"max\"", "\"hypermax\"");
+        assert_ne!(json, future, "fixture must actually carry the token");
+        let back: Summary = serde_json::from_str(&future).expect("record must survive");
+        assert_eq!(back.reasoning_effort, None);
+        // Known tokens (including post-split "max") still round-trip.
+        let back: Summary = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.reasoning_effort, Some(ReasoningEffort::Max));
     }
 
     #[test]

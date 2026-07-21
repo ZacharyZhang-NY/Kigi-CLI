@@ -5,7 +5,10 @@ use kigi_shell::sampling::types::{ReasoningEffort, ReasoningEffortOption};
 use crate::slash::command::ArgItem;
 
 /// Effort levels in the built-in fallback menu (strongest first). `none`/`minimal`
-/// are still accepted by `ReasoningEffort::from_str` for power users.
+/// are still accepted by `ReasoningEffort::from_str` for power users. `max` is
+/// deliberately absent: it exists only where a model's server menu offers it
+/// (e.g. Kimi K3) — the legacy fallback reproduces the historical rows, and
+/// offering `max` on models that reject it would 400.
 pub(crate) const EFFORT_LEVELS: &[ReasoningEffort] = &[
     ReasoningEffort::Xhigh,
     ReasoningEffort::High,
@@ -20,7 +23,8 @@ pub(crate) fn effort_description(level: ReasoningEffort) -> &'static str {
         ReasoningEffort::Low => "Faster, lighter reasoning",
         ReasoningEffort::Medium => "Balanced reasoning",
         ReasoningEffort::High => "Heavy reasoning",
-        ReasoningEffort::Xhigh => "Maximum reasoning",
+        ReasoningEffort::Xhigh => "Extra-heavy reasoning",
+        ReasoningEffort::Max => "Maximum reasoning",
     }
 }
 

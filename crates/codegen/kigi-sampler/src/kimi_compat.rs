@@ -292,9 +292,19 @@ mod tests {
             json!({ "type": "enabled", "effort": "high" })
         );
 
-        // Canonical `xhigh` is spelled `max` on the Kimi wire (the K3
-        // valid_efforts vocabulary is low/high/max).
+        // Legacy canonical `xhigh` (pre-Max configs/sessions) is spelled
+        // `max` on the Kimi wire (the K3 valid_efforts vocabulary is
+        // low/high/max — there is no `xhigh` there).
         let mut body = json!({ "model": "k3", "reasoning_effort": "xhigh" });
+        adapt_chat_completions_body(&mut body);
+        assert_eq!(
+            body["thinking"],
+            json!({ "type": "enabled", "effort": "max" })
+        );
+
+        // Canonical `max` (what the K3 menu token parses to since the
+        // ReasoningEffort::Max split) passes through unchanged.
+        let mut body = json!({ "model": "k3", "reasoning_effort": "max" });
         adapt_chat_completions_body(&mut body);
         assert_eq!(
             body["thinking"],

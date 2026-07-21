@@ -338,7 +338,7 @@ fn think_efforts_to_options(
         .collect()
 }
 
-fn platform_wire_model_to_entry(
+pub(crate) fn platform_wire_model_to_entry(
     platform: kigi_models::PlatformId,
     wire: kigi_models::WireModel,
     base_url: &str,
@@ -703,7 +703,9 @@ mod tests {
             "https://api.kimi.com/coding/v1",
         );
         assert!(entry.supports_reasoning_effort);
-        assert_eq!(entry.reasoning_effort, Some(ReasoningEffort::Xhigh));
+        // The wire token "max" is canonical Max since the Xhigh/Max split;
+        // kimi_compat still spells it "max" on the inference wire.
+        assert_eq!(entry.reasoning_effort, Some(ReasoningEffort::Max));
         let ids: Vec<&str> = entry
             .reasoning_efforts
             .iter()
@@ -723,7 +725,7 @@ mod tests {
             [
                 ReasoningEffort::Low,
                 ReasoningEffort::High,
-                ReasoningEffort::Xhigh
+                ReasoningEffort::Max
             ],
         );
         let max = entry

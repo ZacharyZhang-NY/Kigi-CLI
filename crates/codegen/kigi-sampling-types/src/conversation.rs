@@ -250,8 +250,13 @@ pub struct AssistantItem {
     /// `response.reasoning.effort` (Responses API). Stored beside
     /// `model_id`/`model_fingerprint` so per-response effort survives
     /// mid-session model/effort switches. `None` for synthetic items and
-    /// backends that don't echo it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// backends that don't echo it. Lenient on read: an unknown token from a
+    /// newer kigi drops to `None` rather than failing the history line.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::types::lenient_reasoning_effort_opt"
+    )]
     pub reasoning_effort: Option<crate::ReasoningEffort>,
 }
 
@@ -5077,12 +5082,34 @@ mod tests {
     }
 
     #[test]
+    fn assistant_item_unknown_reasoning_effort_token_degrades_to_none() {
+        // History lines written by a NEWER kigi (grown effort vocabulary)
+        // must not fail this binary's history parse — the lenient
+        // deserializer must be wired on the AssistantItem field itself.
+        let json = serde_json::json!({
+            "role": "assistant",
+            "content": "hi",
+            "reasoning_effort": "hypermax"
+        });
+        let item: AssistantItem = serde_json::from_value(json).expect("history line must survive");
+        assert_eq!(item.reasoning_effort, None);
+        let json = serde_json::json!({
+            "role": "assistant",
+            "content": "hi",
+            "reasoning_effort": "max"
+        });
+        let item: AssistantItem = serde_json::from_value(json).unwrap();
+        assert_eq!(item.reasoning_effort, Some(crate::ReasoningEffort::Max));
+    }
+
+    #[test]
     fn test_messages_request_wire_format_for_supported_variants() {
         for (variant, expected) in [
             (crate::ReasoningEffort::Low, "low"),
             (crate::ReasoningEffort::Medium, "medium"),
             (crate::ReasoningEffort::High, "high"),
-            (crate::ReasoningEffort::Xhigh, "max"),
+            (crate::ReasoningEffort::Xhigh, "xhigh"),
+            (crate::ReasoningEffort::Max, "max"),
         ] {
             let req = messages_test_request(Some(variant));
             let msgs = build_messages_request(&req);
@@ -5131,6 +5158,7 @@ mod tests {
             (crate::ReasoningEffort::Medium, "medium"),
             (crate::ReasoningEffort::High, "high"),
             (crate::ReasoningEffort::Xhigh, "xhigh"),
+            (crate::ReasoningEffort::Max, "max"),
         ] {
             let req = ConversationRequest::from_items(vec![ConversationItem::user("hi")])
                 .with_model("test");

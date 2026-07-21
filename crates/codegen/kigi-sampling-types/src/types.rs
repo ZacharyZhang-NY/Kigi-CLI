@@ -787,6 +787,10 @@ pub enum ReasoningEffort {
     Medium,
     High,
     Xhigh,
+    /// Distinct top tier above `xhigh` (OpenAI Responses and Anthropic
+    /// Messages both accept `xhigh` AND `max` as separate levels in 2026;
+    /// the Kimi wire spells its top tier `max` with no `xhigh`).
+    Max,
 }
 
 impl ReasoningEffort {
@@ -798,11 +802,26 @@ impl ReasoningEffort {
             Self::Medium => crate::rs::ReasoningEffort::Medium,
             Self::High => crate::rs::ReasoningEffort::High,
             Self::Xhigh => crate::rs::ReasoningEffort::Xhigh,
+            // INTERIM: async-openai (0.33 pinned; upstream through 0.41
+            // still lacks it) has no `Max` variant. The Responses backend
+            // gains true `max` via a post-serialize body patch in the OpenAI
+            // provider cycle; until then Max downgrades to xhigh — reachable
+            // via `[model.*] reasoning_effort = "max"` on a responses-backend
+            // model, hence the loud warn.
+            Self::Max => {
+                tracing::warn!(
+                    "reasoning effort `max` downgraded to `xhigh` on the \
+                     Responses backend (typed wire enum has no max yet)"
+                );
+                crate::rs::ReasoningEffort::Xhigh
+            }
         }
     }
 
     /// Inverse of [`to_responses_api`](Self::to_responses_api): the effort the
-    /// Responses API echoes back on `response.reasoning.effort`.
+    /// Responses API echoes back on `response.reasoning.effort`. (`max`
+    /// echoes cannot reach here — async-openai's enum has no such variant;
+    /// the OpenAI provider cycle handles them before typed parsing.)
     pub fn from_responses_api(effort: crate::rs::ReasoningEffort) -> Self {
         match effort {
             crate::rs::ReasoningEffort::None => Self::None,
@@ -822,17 +841,21 @@ impl ReasoningEffort {
             Self::Medium => "medium",
             Self::High => "high",
             Self::Xhigh => "xhigh",
+            Self::Max => "max",
         }
     }
 
-    /// Anthropic Messages API `output_config.effort` string; `None` for unsupported variants.
+    /// Anthropic Messages API effort string; `None` for unsupported variants.
+    /// `xhigh` and `max` are distinct levels on the 2026 Messages API (both
+    /// appear in `GET /v1/models` `capabilities.effort`).
     pub fn to_messages_api(self) -> Option<&'static str> {
         match self {
             Self::None | Self::Minimal => None,
             Self::Low => Some("low"),
             Self::Medium => Some("medium"),
             Self::High => Some("high"),
-            Self::Xhigh => Some("max"),
+            Self::Xhigh => Some("xhigh"),
+            Self::Max => Some("max"),
         }
     }
 }
@@ -853,7 +876,8 @@ impl std::str::FromStr for ReasoningEffort {
             "low" => Ok(Self::Low),
             "medium" => Ok(Self::Medium),
             "high" => Ok(Self::High),
-            "xhigh" | "max" => Ok(Self::Xhigh), // max is a CLI/UX alias of xhigh
+            "xhigh" => Ok(Self::Xhigh),
+            "max" => Ok(Self::Max),
             _ => Err(format!(
                 "invalid reasoning effort: {s:?} (expected one of: none, minimal, low, medium, high, xhigh, max)"
             )),
@@ -861,9 +885,30 @@ impl std::str::FromStr for ReasoningEffort {
     }
 }
 
-/// Canonical wire parse only (`max` → `Xhigh`); remapped menu ids need a model catalog.
+/// Canonical wire parse; remapped menu ids need a model catalog.
 pub fn parse_canonical_effort_token(token: &str) -> Option<ReasoningEffort> {
     token.parse().ok()
+}
+
+/// Deserialize an optional effort LENIENTLY for persisted stores (session
+/// summaries, chat history): a token this binary doesn't know — written by a
+/// newer kigi after the effort vocabulary grew, exactly what happened when
+/// `max` split from `xhigh` — degrades to `None` with a warning instead of
+/// failing the whole record, so listings and resume survive version
+/// rollback. Non-string values still error (real corruption stays loud), and
+/// config-TOML parsing stays strict — its layer warn-skips explicitly.
+pub fn lenient_reasoning_effort_opt<'de, D>(d: D) -> Result<Option<ReasoningEffort>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw = Option::<String>::deserialize(d)?;
+    Ok(raw.and_then(|s| match s.parse::<ReasoningEffort>() {
+        Ok(effort) => Some(effort),
+        Err(error) => {
+            tracing::warn!(token = %s, %error, "persisted reasoning_effort unknown; dropping");
+            None
+        }
+    }))
 }
 
 pub const REASONING_EFFORT_META_KEY: &str = "reasoningEffort";
@@ -1224,6 +1269,7 @@ mod tests {
             ReasoningEffort::Medium,
             ReasoningEffort::High,
             ReasoningEffort::Xhigh,
+            ReasoningEffort::Max,
         ] {
             let json = serde_json::to_string(&v).unwrap();
             assert_eq!(json, format!("\"{}\"", v.as_str()), "serialize {v:?}");
@@ -1231,31 +1277,32 @@ mod tests {
             assert_eq!(back, v, "round-trip {v:?}");
         }
         assert!(serde_json::from_str::<ReasoningEffort>("\"BOGUS\"").is_err());
-        assert!(serde_json::from_str::<ReasoningEffort>("\"max\"").is_err());
     }
 
     #[test]
-    fn reasoning_effort_from_str_accepts_max_as_xhigh() {
+    fn reasoning_effort_from_str_max_and_xhigh_are_distinct() {
         assert_eq!(
             "max".parse::<ReasoningEffort>().unwrap(),
-            ReasoningEffort::Xhigh
+            ReasoningEffort::Max
         );
         assert_eq!(
             "MAX".parse::<ReasoningEffort>().unwrap(),
-            ReasoningEffort::Xhigh
+            ReasoningEffort::Max
         );
         assert_eq!(
             "xhigh".parse::<ReasoningEffort>().unwrap(),
             ReasoningEffort::Xhigh
         );
-        assert_eq!(ReasoningEffort::Xhigh.as_str(), "xhigh");
+        // Messages API: distinct wire tokens per level (2026 capabilities).
+        assert_eq!(ReasoningEffort::Xhigh.to_messages_api(), Some("xhigh"));
+        assert_eq!(ReasoningEffort::Max.to_messages_api(), Some("max"));
     }
 
     #[test]
     fn parse_canonical_effort_token_helper() {
         assert_eq!(
             parse_canonical_effort_token("max"),
-            Some(ReasoningEffort::Xhigh)
+            Some(ReasoningEffort::Max)
         );
         assert_eq!(
             parse_canonical_effort_token("high"),

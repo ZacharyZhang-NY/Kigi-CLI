@@ -183,16 +183,47 @@ fn stashed_model_keeps_model_when_unsupported() {
 }
 
 #[test]
-fn effort_only_accepts_max_as_xhigh() {
+fn effort_max_rejected_when_model_offers_no_max() {
+    // Since the Xhigh/Max split, "max" is its own canonical level — a model
+    // whose menu has no max-valued option rejects it with the offered list
+    // (previously the parse alias silently rode it onto the xhigh option).
     let models = models_with_current(true);
     let out = take_deferred_model_switch(None, &models, Some("max"));
     assert_eq!(
         out,
         DeferredSwitchOutcome {
-            switch: Some((
-                models.current.clone().unwrap(),
-                Some(ReasoningEffort::Xhigh)
-            )),
+            switch: None,
+            effort_error: Some(EffortTokenError::UnknownToken {
+                token: "max".into(),
+                offered: vec!["deep".into(), "high".into()],
+            }),
+        }
+    );
+}
+
+#[test]
+fn effort_only_accepts_canonical_max_when_offered() {
+    // K3-shaped menu: the "max" wire token carries canonical Max.
+    let id = acp::ModelId::new(Arc::from("k3"));
+    let meta = serde_json::json!({
+        "supportsReasoningEffort": true,
+        "reasoningEffort": "max",
+        "reasoningEfforts": [
+            { "id": "low", "value": "low", "label": "Low" },
+            { "id": "high", "value": "high", "label": "High" },
+            { "id": "max", "value": "max", "label": "Max" },
+        ],
+    });
+    let info = acp::ModelInfo::new(id.clone(), id.0.to_string()).meta(meta.as_object().cloned());
+    let mut models = ModelState::default();
+    models.available.insert(id.clone(), info);
+    models.current = Some(id);
+    models.reasoning_effort = Some(ReasoningEffort::High);
+    let out = take_deferred_model_switch(None, &models, Some("max"));
+    assert_eq!(
+        out,
+        DeferredSwitchOutcome {
+            switch: Some((models.current.clone().unwrap(), Some(ReasoningEffort::Max))),
             effort_error: None,
         }
     );

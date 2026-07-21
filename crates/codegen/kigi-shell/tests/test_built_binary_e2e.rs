@@ -1401,15 +1401,17 @@ async fn headless_reasoning_efforts_payload_parses_and_legacy_effort_rides_wire(
     assert_headless_success(&result, "kigi -p reasoning_efforts list", Some(&server));
     assert_no_crashes(&result.stderr);
 
-    // The legacy effort scalar rides the chat-completions request unchanged.
+    // The chat-completions body is always adapted before send: the effort
+    // scalar becomes Kimi's `thinking` field, with canonical `xhigh`
+    // spelled `max` on the wire (kimi_compat rename).
     let effort_on_wire = server.requests().iter().any(|r| {
         r.body.as_ref().is_some_and(|body| {
-            body.pointer("/reasoning_effort").and_then(|v| v.as_str()) == Some("xhigh")
+            body.pointer("/thinking/effort").and_then(|v| v.as_str()) == Some("max")
         })
     });
     assert!(
         effort_on_wire,
-        "legacy reasoning_effort=xhigh must reach the wire\n{}",
+        "legacy reasoning_effort=xhigh must reach the wire as thinking.effort=max\n{}",
         server.request_log_summary()
     );
 }

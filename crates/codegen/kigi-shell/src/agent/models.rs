@@ -561,6 +561,22 @@ impl ModelsManager {
             .unwrap_or(false)
     }
 
+    /// Whether the model's effort menu offers this canonical value (legacy
+    /// built-in set when the menu is empty). Used to migrate pre-split
+    /// `xhigh` overrides onto `max`-vocabulary models at restore.
+    pub fn model_offers_effort(
+        &self,
+        model_id: &str,
+        effort: kigi_sampling_types::ReasoningEffort,
+    ) -> bool {
+        self.inner
+            .models
+            .read()
+            .get(model_id)
+            .map(|e| model_offers_reasoning_effort(e.info(), effort))
+            .unwrap_or(false)
+    }
+
     /// The catalog default reasoning effort for `model_id`, if the catalog
     /// pins one. Used as the final fallback when neither the session handle
     /// nor the global config sets an explicit effort, so surfaced config stays
@@ -2117,6 +2133,9 @@ pub(crate) fn resolve_model_catalog(
 /// Uses the server `reasoning_efforts` menu when present; otherwise the
 /// built-in low/medium/high/xhigh set (same as the pager legacy menu — no
 /// `none`/`minimal`).
+/// `max` is NOT in the legacy built-in set: models gain it only via an
+/// explicit server/BYOK menu entry (Kimi K3's `max` token), so an empty-menu
+/// model rejects it rather than sending a level its endpoint may 400 on.
 fn model_offers_reasoning_effort(info: &config::ModelInfo, effort: ReasoningEffort) -> bool {
     if !info.supports_reasoning_effort {
         return false;
@@ -3809,6 +3828,51 @@ mod tests {
         let key = selectable_catalog_key_for_persisted(&models, &available, &persisted)
             .expect("exact selectable key must win");
         assert_eq!(key.0.as_ref(), "kigi");
+    }
+
+    /// The restore-migration inputs: a K3-shaped menu (low/high/max tokens)
+    /// offers Max but NOT Xhigh; a legacy empty-menu model offers Xhigh but
+    /// NOT Max. `model_switch` relies on exactly this pair to migrate
+    /// pre-split `xhigh` overrides onto `max`-vocabulary models.
+    #[test]
+    fn offers_effort_distinguishes_k3_menu_from_legacy_set() {
+        let k3_wire: kigi_models::WireModel = serde_json::from_value(serde_json::json!({
+            "id": "k3",
+            "context_length": 1_048_576,
+            "supports_reasoning": true,
+            "supports_thinking_type": "only",
+            "think_efforts": {
+                "support": true,
+                "valid_efforts": ["low", "high", "max"],
+                "default_effort": "max"
+            }
+        }))
+        .unwrap();
+        let k3_cfg = crate::agent::models_fetch::platform_wire_model_to_entry(
+            kigi_models::PlatformId::KimiCode,
+            k3_wire,
+            "https://api.kimi.com/coding/v1",
+        );
+        let k3 = config::ModelInfo::from_config(&k3_cfg);
+        assert!(model_offers_reasoning_effort(&k3, ReasoningEffort::Max));
+        assert!(model_offers_reasoning_effort(&k3, ReasoningEffort::Low));
+        assert!(
+            !model_offers_reasoning_effort(&k3, ReasoningEffort::Xhigh),
+            "K3's menu has no xhigh token — the migration precondition"
+        );
+
+        let mut legacy_cfg = k3_cfg.clone();
+        legacy_cfg.reasoning_efforts = Vec::new();
+        legacy_cfg.supports_reasoning_effort = true;
+        let legacy = config::ModelInfo::from_config(&legacy_cfg);
+        assert!(model_offers_reasoning_effort(
+            &legacy,
+            ReasoningEffort::Xhigh
+        ));
+        assert!(
+            !model_offers_reasoning_effort(&legacy, ReasoningEffort::Max),
+            "legacy built-in set must not offer max (endpoint may 400)"
+        );
     }
 
     fn test_available_keys(keys: &[&str]) -> IndexMap<acp::ModelId, acp::ModelInfo> {
