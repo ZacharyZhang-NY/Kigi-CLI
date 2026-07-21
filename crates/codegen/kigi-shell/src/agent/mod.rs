@@ -4,6 +4,7 @@ pub mod auth_method;
 pub mod chat_modes;
 pub mod config;
 pub mod config_model_override_parse;
+pub(crate) mod enrichment_fetch;
 mod ext_parsers;
 pub(crate) mod feedback_client;
 pub mod folder_trust;

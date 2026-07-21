@@ -16,6 +16,8 @@
 
 use std::sync::LazyLock;
 
+pub mod enrichment;
+
 // ── Platform registry (PRD F2) ──────────────────────────────────────────────
 
 /// Env var holding the moonshot-cn API key (wins over the generic name).
@@ -82,6 +84,13 @@ struct PlatformSpec {
     console_host: Option<&'static str>,
     /// Interactive login-picker label. `None` = fall back to `display_name`.
     login_label: Option<&'static str>,
+    /// This platform's provider id on models.dev, for metadata enrichment.
+    /// `None` = not covered there (enrichment silently skips).
+    models_dev_id: Option<&'static str>,
+    /// True when the platform's `/models` listing itself serves context
+    /// window / thinking metadata — enrichment (and its network refresh) is
+    /// skipped entirely for such platforms.
+    wire_serves_metadata: bool,
 }
 
 const KIMI_CODE_SPEC: PlatformSpec = PlatformSpec {
@@ -94,6 +103,8 @@ const KIMI_CODE_SPEC: PlatformSpec = PlatformSpec {
     vendor: "Kimi",
     console_host: None,
     login_label: None,
+    models_dev_id: Some("kimi-for-coding"),
+    wire_serves_metadata: true,
 };
 
 const MOONSHOT_CN_SPEC: PlatformSpec = PlatformSpec {
@@ -109,6 +120,8 @@ const MOONSHOT_CN_SPEC: PlatformSpec = PlatformSpec {
     vendor: "Moonshot",
     console_host: Some("platform.moonshot.cn"),
     login_label: Some("Moonshot Open Platform (API key \u{b7} moonshot.cn)"),
+    models_dev_id: Some("moonshotai-cn"),
+    wire_serves_metadata: true,
 };
 
 const MOONSHOT_AI_SPEC: PlatformSpec = PlatformSpec {
@@ -124,6 +137,8 @@ const MOONSHOT_AI_SPEC: PlatformSpec = PlatformSpec {
     vendor: "Moonshot",
     console_host: Some("platform.moonshot.ai"),
     login_label: Some("Moonshot Open Platform (API key \u{b7} moonshot.ai)"),
+    models_dev_id: Some("moonshotai"),
+    wire_serves_metadata: true,
 };
 
 /// The platform registry. Platforms are compiled-in spec rows; there is no
@@ -216,6 +231,17 @@ impl PlatformId {
     /// name when the row doesn't override it).
     pub fn login_label(self) -> &'static str {
         self.spec().login_label.unwrap_or(self.spec().display_name)
+    }
+
+    /// This platform's provider id on models.dev (metadata enrichment).
+    pub fn models_dev_id(self) -> Option<&'static str> {
+        self.spec().models_dev_id
+    }
+
+    /// True when the live `/models` wire serves metadata itself — enrichment
+    /// and its network refresh are skipped for such platforms.
+    pub fn wire_serves_metadata(self) -> bool {
+        self.spec().wire_serves_metadata
     }
 }
 

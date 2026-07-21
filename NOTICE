@@ -19,3 +19,8 @@ Modifications relative to the upstream work (Apache License 2.0 §4(b) notice):
 This product includes code ported from openai/codex and sst/opencode; see
 crates/codegen/kigi-tools/THIRD_PARTY_NOTICES.md for the license terms and
 the per-file change notices.
+
+This product bundles model metadata derived from models.dev
+(https://github.com/sst/models.dev, MIT License) as
+crates/codegen/kigi-models/enrichment_snapshot.json, and may refresh it
+from https://models.dev/api.json at runtime.

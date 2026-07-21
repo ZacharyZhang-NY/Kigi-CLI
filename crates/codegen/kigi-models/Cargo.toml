@@ -9,6 +9,7 @@ description = "Kimi platform registry, /models wire contract, capability derivat
 kigi-env = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+tracing = { workspace = true }
 
 [lints]
 workspace = true

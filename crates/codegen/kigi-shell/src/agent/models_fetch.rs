@@ -4,9 +4,11 @@
 //! (the subscription platform via the OAuth session, the open platforms via
 //! their API keys), plus the custom-endpoint OpenAI-compatible listing path.
 //!
-//! This is the sole surviving network surface relocated out of the deleted
-//! xAI-proxy backend client (`remote/`); it talks only to the configured
-//! Kimi/Moonshot model endpoints, never to a proxy backend.
+//! This is the network surface relocated out of the deleted xAI-proxy
+//! backend client (`remote/`); it talks only to the configured platform
+//! model endpoints (plus the models.dev metadata refresh when an enabled
+//! platform needs enrichment — see `enrichment_fetch`), never to a proxy
+//! backend.
 use crate::auth::KimiAuth;
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -188,6 +190,9 @@ fn fetch_platform_models_blocking(
     let mut oauth_unauthorized = false;
     let mut successes = 0usize;
     let mut last_error: Option<BackendError> = None;
+    // Loaded once per fetch pass; zero IO while every enabled platform
+    // serves its own metadata (kimi/moonshot today).
+    let enrichment = crate::agent::enrichment_fetch::load_enrichment_catalog(&enabled);
     for platform in &enabled {
         let bearer = if platform.uses_oauth() {
             auth.map(|a| a.key.clone())
@@ -198,7 +203,7 @@ fn fetch_platform_models_blocking(
                 .expect("enabled_platforms gated on key presence")
                 .to_owned()
         };
-        match fetch_one_platform_models(*platform, endpoints, &bearer) {
+        match fetch_one_platform_models(*platform, endpoints, &bearer, &enrichment) {
             Ok((platform_models, platform_etag)) => {
                 tracing::info!(
                     platform = platform.as_str(),
@@ -258,6 +263,7 @@ fn fetch_one_platform_models(
     platform: kigi_models::PlatformId,
     endpoints: &crate::agent::config::EndpointsConfig,
     bearer: &str,
+    enrichment: &kigi_models::enrichment::EnrichmentCatalog,
 ) -> Result<(Vec<crate::agent::config::ModelEntryConfig>, Option<String>), BackendError> {
     let client = crate::http::shared_blocking_client();
     let url = platform_models_url(platform, endpoints);
@@ -294,7 +300,23 @@ fn fetch_one_platform_models(
     };
     let models = filtered
         .into_iter()
-        .map(|wire| platform_wire_model_to_entry(platform, wire, &base_url))
+        .map(|mut wire| {
+            // Metadata-poor listings (bare ids) get context window / thinking
+            // levels from the models.dev catalog; wire-served platforms skip
+            // this entirely and wire values always win (enrich_wire_model).
+            if !platform.wire_serves_metadata()
+                && let Some(dev_id) = platform.models_dev_id()
+            {
+                match kigi_models::enrichment::lookup(enrichment, dev_id, &wire.id) {
+                    Some(meta) => kigi_models::enrichment::enrich_wire_model(&mut wire, meta),
+                    None => tracing::debug!(
+                        platform = platform.as_str(), model = %wire.id,
+                        "no enrichment entry; defaults will apply"
+                    ),
+                }
+            }
+            platform_wire_model_to_entry(platform, wire, &base_url)
+        })
         .collect();
     Ok((models, etag))
 }

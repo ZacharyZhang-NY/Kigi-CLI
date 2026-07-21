@@ -5965,6 +5965,7 @@ dependencies = [
  "kigi-env",
  "serde",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]
