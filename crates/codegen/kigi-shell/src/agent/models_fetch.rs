@@ -2175,6 +2175,91 @@ mod tests {
         );
     }
 
+    /// Kimi-For-Coding static-key e2e: same endpoint + Kimi dialect as the OAuth
+    /// kimi-code platform, keyed by KIMI_API_KEY. Kimi's /models serves its own
+    /// metadata (wire_serves_metadata), so context comes from the WIRE and the
+    /// models.dev fetch is skipped entirely (all enabled platforms self-serve);
+    /// no restriction; Kimi dialect.
+    #[tokio::test(flavor = "multi_thread")]
+    #[serial_test::serial]
+    async fn kimi_coding_static_key_uses_wire_metadata_and_kimi_dialect() {
+        let platform_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/models"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({ "data": [
+                    { "id": "k3", "object": "model", "context_length": 1_048_576,
+                      "supports_reasoning": true }
+                ]}),
+            ))
+            .expect(1)
+            .mount(&platform_server)
+            .await;
+        // Point models.dev at an ALWAYS-500 server: enrichment must NOT be
+        // fetched for an all-wire-metadata provider, so this is never hit.
+        let modelsdev_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/api.json"))
+            .respond_with(wiremock::ResponseTemplate::new(500))
+            .expect(0)
+            .mount(&modelsdev_server)
+            .await;
+        let cache_dir = tempfile::tempdir().unwrap();
+        let _base =
+            kigi_test_support::EnvGuard::set(kigi_env::CODE_BASE_URL_ENV, platform_server.uri());
+        let _mdev = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_URL_ENV,
+            format!("{}/api.json", modelsdev_server.uri()),
+        );
+        let _mdev_cache = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_CACHE_DIR_ENV,
+            cache_dir.path(),
+        );
+        let endpoints = crate::agent::config::EndpointsConfig::default();
+        let keys = crate::agent::models::PlatformApiKeys::test_single(
+            kigi_models::PlatformId::KimiCoding,
+            "kc-1",
+        );
+        let result = tokio::task::spawn_blocking(move || {
+            fetch_platform_models_blocking(&endpoints, None, &keys)
+        })
+        .await
+        .unwrap()
+        .expect("fetch must succeed");
+        assert_eq!(
+            result
+                .models
+                .iter()
+                .map(|m| m.id.as_deref().unwrap_or_default())
+                .collect::<Vec<_>>(),
+            vec!["kimi-coding/k3"],
+            "wire model kept under the platform key (no restriction)"
+        );
+        let entry = &result.models[0];
+        assert_eq!(
+            entry.context_window.get(),
+            1_048_576,
+            "context comes from the WIRE (wire_serves_metadata); enrichment was skipped"
+        );
+        assert_eq!(entry.model, "k3");
+        // The managed key must parse back to KimiCoding — so the Kimi dialect
+        // below is a real attribution, not the default-dialect fallback that a
+        // failed parse would also yield.
+        assert_eq!(
+            kigi_models::parse_managed_model_key(entry.id.as_deref().unwrap()),
+            Some((kigi_models::PlatformId::KimiCoding, "k3")),
+        );
+        let model_entry = crate::agent::config::ModelEntry::from_config_entry(entry);
+        let creds = crate::agent::config::ResolvedCredentials {
+            api_key: Some("kc-1".into()),
+            base_url: entry.base_url.clone(),
+            auth_type: kigi_chat_state::AuthType::ApiKey,
+            auth_scheme: Default::default(),
+        };
+        let cfg = crate::agent::config::sampling_config_for_model(&model_entry, creds, None);
+        assert_eq!(cfg.chat_compat, kigi_sampling_types::ChatCompat::Kimi);
+    }
+
     #[test]
     fn get_env_keys_parses_strings_and_rejects_non_strings() {
         use crate::agent::config::EnvKeys;

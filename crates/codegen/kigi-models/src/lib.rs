@@ -689,6 +689,33 @@ const QWEN_TOKEN_PLAN_CN_SPEC: PlatformSpec = PlatformSpec {
     restrict_to_enriched: true,
 };
 
+const KIMI_CODING_SPEC: PlatformSpec = PlatformSpec {
+    id: "kimi-coding",
+    display_name: "Kimi For Coding",
+    // Same endpoint as the OAuth `kimi-code` platform (KIGI_CODE_BASE_URL
+    // override), but authenticated with a static KIMI_API_KEY instead of the
+    // device flow. Kimi's /coding/v1/models serves its own metadata and the
+    // Kimi thinking dialect applies verbatim.
+    base_url: BaseUrlSource::KigiEnvCoding,
+    uses_oauth: false,
+    allowed_model_prefixes: None,
+    api_key_envs: &["KIMI_API_KEY"],
+    vendor: "Kimi",
+    console_host: Some("www.kimi.com"),
+    login_label: Some("Kimi For Coding (API key)"),
+    models_dev_id: Some("kimi-for-coding"),
+    wire_serves_metadata: true,
+    wire_api: PlatformWireApi::ChatCompletions,
+    listing: ListingDialect::OpenAi,
+    chat_compat: PlatformChatCompat::Kimi,
+    key_header: PlatformKeyHeader::Bearer,
+    // /coding/v1/models requires auth (401 without a key), so it doubles as
+    // the key validator.
+    key_validation_path: None,
+    restrict_to_enriched: false,
+    strip_listing_id_prefix: None,
+};
+
 /// The platform registry. Platforms are compiled-in spec rows; there is no
 /// dynamic provider registration (PRD F2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -729,12 +756,14 @@ pub enum PlatformId {
     QwenTokenPlan,
     /// Alibaba Qwen Token Plan, China (API key, DashScope compatible-mode).
     QwenTokenPlanCn,
+    /// Kimi For Coding via a static KIMI_API_KEY (same endpoint as `KimiCode`).
+    KimiCoding,
 }
 
 impl PlatformId {
     /// All platforms, in catalog precedence order: the subscription channel
     /// first so "default model = first list item" favors it when present.
-    pub const ALL: [PlatformId; 18] = [
+    pub const ALL: [PlatformId; 19] = [
         Self::KimiCode,
         Self::MoonshotCn,
         Self::MoonshotAi,
@@ -753,6 +782,7 @@ impl PlatformId {
         Self::Xai,
         Self::QwenTokenPlan,
         Self::QwenTokenPlanCn,
+        Self::KimiCoding,
     ];
 
     /// The registry row backing this platform (single source of per-platform
@@ -777,6 +807,7 @@ impl PlatformId {
             Self::Xai => &XAI_SPEC,
             Self::QwenTokenPlan => &QWEN_TOKEN_PLAN_SPEC,
             Self::QwenTokenPlanCn => &QWEN_TOKEN_PLAN_CN_SPEC,
+            Self::KimiCoding => &KIMI_CODING_SPEC,
         }
     }
 
@@ -1535,9 +1566,10 @@ mod tests {
                 PlatformId::Xai => 15,
                 PlatformId::QwenTokenPlan => 16,
                 PlatformId::QwenTokenPlanCn => 17,
+                PlatformId::KimiCoding => 18,
             }
         }
-        const VARIANT_COUNT: usize = 18; // update together with `ordinal`
+        const VARIANT_COUNT: usize = 19; // update together with `ordinal`
         let mut seen: Vec<usize> = PlatformId::ALL.iter().map(|&p| ordinal(p)).collect();
         seen.sort_unstable();
         seen.dedup();
