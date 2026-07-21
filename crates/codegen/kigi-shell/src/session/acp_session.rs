@@ -95,6 +95,8 @@ pub use types::{TodoGateDecision, TodoGateReason};
 mod goal;
 #[path = "acp_session_impl/graph.rs"]
 mod graph;
+#[path = "acp_session_impl/graph_optimize.rs"]
+mod graph_optimize;
 #[path = "acp_session_impl/graph_replan.rs"]
 mod graph_replan;
 #[path = "acp_session_impl/graph_workers.rs"]
@@ -612,6 +614,9 @@ pub(crate) struct SessionActor {
     /// Max replan passes per graph (0 = replanning off). Cached at
     /// actor construction.
     pub(crate) graph_replan_cap: u32,
+    /// Topology optimizer switch (plan-boundary passes; shares the
+    /// replan cap). Cached at actor construction.
+    pub(crate) graph_optimizer_enabled: bool,
     /// `.kigi` dir at the git root, when the session cwd is in a git
     /// repo — home of the project-level shared graph projection.
     pub(crate) graph_project_dir: Option<std::path::PathBuf>,

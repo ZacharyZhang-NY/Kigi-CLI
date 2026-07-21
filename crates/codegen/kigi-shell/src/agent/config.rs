@@ -1929,6 +1929,14 @@ impl Config {
             .unwrap_or(3)
             .clamp(1, 8)
     }
+    /// Graph topology optimizer master switch (`KIGI_GRAPH_OPTIMIZER`;
+    /// default on, `0` disables). Runs at plan boundaries only.
+    pub(crate) fn resolve_graph_optimizer_enabled(&self) -> bool {
+        !matches!(
+            std::env::var("KIGI_GRAPH_OPTIMIZER").ok().as_deref(),
+            Some("0") | Some("false")
+        )
+    }
     /// Max replan passes per graph (`KIGI_GRAPH_REPLAN_CAP`); 0 turns
     /// dynamic replanning off. Past the cap, discoveries drain to
     /// history only — the graph must still converge. Clamped to [0, 10].

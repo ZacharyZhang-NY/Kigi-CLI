@@ -388,6 +388,8 @@ impl SessionActor {
         self.graph_tracker.lock().install_nodes(nodes);
         self.persist_graph_state();
         tracing::info!(total, "graph: DAG installed, launching first node");
+        // Plan-boundary optimizer pass ① (post-initial-planning).
+        self.maybe_optimize_graph().await;
 
         match self.drive_graph().await {
             Some(reminder) => GraphSetupOutcome::Inference {

@@ -742,6 +742,27 @@ impl GraphTracker {
         self.recompute_ready();
     }
 
+    /// Install an optimizer-transformed node set: bump `plan_version`,
+    /// consume a shared replan-cap slot, recompute readiness. The
+    /// validator already guaranteed immutable nodes are untouched.
+    pub fn install_optimized_nodes(&mut self, nodes: Vec<GraphNode>) {
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
+        state.nodes = nodes;
+        state.plan_version += 1;
+        state.replan_runs += 1;
+        push_history(
+            state,
+            GraphHistoryEntry::now(
+                GraphEvent::PlanningCompleted,
+                None,
+                Some(format!("optimized to v{}", state.plan_version)),
+            ),
+        );
+        self.recompute_ready();
+    }
+
     /// Drain pending discoveries WITHOUT replanning (cap exhausted):
     /// they stay in history (queued there at capture time) only.
     pub fn drain_discoveries_to_history(&mut self) -> usize {

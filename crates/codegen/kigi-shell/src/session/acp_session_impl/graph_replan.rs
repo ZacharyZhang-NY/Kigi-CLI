@@ -198,6 +198,9 @@ impl SessionActor {
                          discovered work."
                     ))
                     .await;
+                    // Plan-boundary optimizer pass ② (piggybacked on the
+                    // replan version boundary).
+                    self.maybe_optimize_graph().await;
                     return;
                 }
                 GraphPlannerOutcome::Invalid { reason } if attempt == 1 => {

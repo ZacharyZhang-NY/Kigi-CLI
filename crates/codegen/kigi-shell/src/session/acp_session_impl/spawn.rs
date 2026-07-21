@@ -1104,6 +1104,7 @@ pub(crate) async fn spawn_session_actor(
         graph_concurrency: effective_config.resolve_graph_concurrency(),
         graph_node_rounds: effective_config.resolve_graph_node_rounds(),
         graph_replan_cap: effective_config.resolve_graph_replan_cap(),
+        graph_optimizer_enabled: effective_config.resolve_graph_optimizer_enabled(),
         graph_project_dir,
         graph_project_lock: std::cell::RefCell::new(None),
         goal_turn_task_ids: parking_lot::Mutex::new(std::collections::HashSet::new()),

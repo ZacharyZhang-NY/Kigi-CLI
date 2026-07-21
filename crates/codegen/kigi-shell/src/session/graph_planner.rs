@@ -269,6 +269,71 @@ pub(crate) async fn run_graph_replanner(
     }
 }
 
+/// Generic single-shot artifact pass: render `template` + `sections`,
+/// spawn the role child, enforce the stale-artifact/size/missing-file
+/// discipline, and return the artifact's raw JSON for the caller to
+/// validate. Shared by the optimizer (and any future boundary pass).
+pub(crate) struct ArtifactPassSpec<'a> {
+    pub template: &'a str,
+    pub sections: &'a str,
+    pub graph_file: &'a Path,
+    pub tool_names: &'a RoleToolNames,
+    pub role: &'a str,
+}
+
+pub(crate) async fn run_graph_artifact_pass(
+    spawner: Arc<dyn GoalPlannerSpawner>,
+    spec: ArtifactPassSpec<'_>,
+) -> Result<String, String> {
+    if let Some(parent) = spec.graph_file.parent()
+        && let Err(err) = tokio::fs::create_dir_all(parent).await
+    {
+        return Err(format!("failed to create graph dir: {err}"));
+    }
+    if let Err(err) = tokio::fs::remove_file(spec.graph_file).await
+        && err.kind() != std::io::ErrorKind::NotFound
+    {
+        return Err(format!("failed to clear stale artifact: {err}"));
+    }
+    let graph_file_str = spec.graph_file.to_string_lossy();
+    let rendered = spec
+        .tool_names
+        .apply(&spec.template.replace("{GRAPH_FILE}", &graph_file_str));
+    let prompt_text = format!("{rendered}\n\n{}", spec.sections);
+    let prompt = RoleRenderedPrompt {
+        primary: prompt_text.clone(),
+        fallback: prompt_text,
+    };
+    let spawn_id = uuid::Uuid::now_v7().to_string();
+    match spawner.spawn_planner(&spawn_id, prompt).await {
+        Ok(_) => {}
+        Err(SpawnError::Transport(detail)) => {
+            return Err(format!("{} transport error: {detail}", spec.role));
+        }
+        Err(SpawnError::Runtime { message, cancelled }) => {
+            return Err(if cancelled {
+                format!("{} aborted: {message}", spec.role)
+            } else {
+                format!("{} runtime error: {message}", spec.role)
+            });
+        }
+    }
+    match tokio::fs::metadata(spec.graph_file).await {
+        Ok(meta) if meta.is_file() && meta.len() > 0 && meta.len() <= MAX_GRAPH_JSON_BYTES => {}
+        Ok(meta) if meta.len() > MAX_GRAPH_JSON_BYTES => {
+            return Err(format!(
+                "{} artifact is {} bytes; the cap is {MAX_GRAPH_JSON_BYTES}",
+                spec.role,
+                meta.len()
+            ));
+        }
+        _ => return Err(format!("{} produced no artifact", spec.role)),
+    }
+    tokio::fs::read_to_string(spec.graph_file)
+        .await
+        .map_err(|err| format!("failed to read {} artifact: {err}", spec.role))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

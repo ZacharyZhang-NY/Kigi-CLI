@@ -130,6 +130,25 @@ edges stay deterministic Rust. The harness appends a terminal
   (default 3, 0 = off); past the cap — and after the final node has
   achieved — discoveries drain to history only. Replan failure degrades
   (history + notice); it never pauses a working graph.
+- G4: the graph follows the repo. Every checkpoint projects to
+  `.kigi/graph.jsonl` at the git root (`session/graph_project.rs`,
+  header line + one node per line, atomic write); single writer via an
+  fs2 flock sidecar; other instances get read-only `/graph status`.
+  Fresh sessions revive via `/graph resume` (load UNDER the lock,
+  from_snapshot demotions apply). All lock-then-mutate sites
+  identity-check the projected `graph_id`; kigi never commits the file.
+- G5: `/graph show` renders box-drawing DAG art
+  (`session/graph_render.rs`, Sugiyama-lite: longest-path layers, dummy
+  pass-throughs, barycenter ordering, bus lanes). Wider than 120 cols
+  degrades to the status tree.
+- G6: plan-boundary topology optimizer
+  (`acp_session_impl/graph_optimize.rs`; `KIGI_GRAPH_OPTIMIZER=0`
+  disables). Restricted ops (`remove_dep`/`reorder`/`merge`/`split`)
+  validated by `graph_plan::apply_optimization`: pending-only targets,
+  immutable nodes byte-identical in the result, terminal gate rebuilt,
+  whole-graph acyclicity. Applied passes bump `plan_version` and share
+  the replan cap; `{"ops": []}` is a respected free no-op; failures
+  degrade.
 
 ## Milestones (PRD §8.3)
 

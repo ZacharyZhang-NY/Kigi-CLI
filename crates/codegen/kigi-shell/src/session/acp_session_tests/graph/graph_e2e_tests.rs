@@ -1951,3 +1951,155 @@ async fn graph_show_renders_dag_through_handle_prompt() {
         .await;
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
+
+// ── G6: topology optimizer ─────────────────────────────────────────
+
+/// Chain a→b→c where b's dep on a is FALSE; the optimizer removes it,
+/// unlocking a+b as parallel roots — proven by the held-reply fan-out
+/// gate (the test hangs if the batch is not truly concurrent).
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn optimizer_removes_false_dep_and_unlocks_real_parallelism() {
+    unsafe { std::env::set_var(ENV_FLAG, "0") };
+    let local = tokio::task::LocalSet::new();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        local.run_until(async {
+            let dag = serde_json::json!({
+                "nodes": [
+                    {"id": "a", "title": "Node A", "spec": "do a", "deps": []},
+                    {"id": "b", "title": "Node B", "spec": "do b", "deps": ["a"]},
+                ]
+            })
+            .to_string()
+            .into_bytes();
+            let b_id = crate::session::graph_plan::node_id_for_slug("b");
+            let a_id = crate::session::graph_plan::node_id_for_slug("a");
+            let (mut actor, _tmp, _prx) = make_graph_actor_detached().await;
+            let (coord_tx, captured) = spawn_scripted_coordinator(
+                _tmp.path().to_path_buf(),
+                move |req| {
+                    if req.prompt.contains("Graph Topology Optimizer") {
+                        let path = req
+                            .prompt
+                            .find("/optimize.v")
+                            .map(|start_idx| {
+                                let end = req.prompt[start_idx..]
+                                    .find(".json")
+                                    .map(|e| start_idx + e + ".json".len())
+                                    .unwrap();
+                                let start = req.prompt[..start_idx]
+                                    .rfind(|c: char| !c.is_ascii_graphic() || c == '`')
+                                    .map(|i| i + 1)
+                                    .unwrap_or(0);
+                                req.prompt[start..end].to_string()
+                            })
+                            .expect("optimizer prompt embeds artifact path");
+                        let ops = serde_json::json!({
+                            "ops": [{"op": "remove_dep", "node": b_id, "dep": a_id}]
+                        })
+                        .to_string();
+                        std::fs::create_dir_all(std::path::Path::new(&path).parent().unwrap())
+                            .unwrap();
+                        std::fs::write(&path, ops).unwrap();
+                        return "Done".to_owned();
+                    }
+                    happy_reply(req, &dag)
+                },
+                // Held-reply gate: the first WORKER's reply is withheld
+                // until the second worker spawn arrives — sequential
+                // execution would deadlock (timeout catches regression).
+                true,
+            );
+            actor.tool_context.subagent_event_tx = Some(coord_tx);
+            actor.graph_concurrency = 2;
+            actor.graph_optimizer_enabled = true;
+
+            let outcome = actor.setup_graph("two independent tasks", None).await;
+            let reminder = match outcome {
+                graph::GraphSetupOutcome::Inference { reminder, .. } => reminder,
+                graph::GraphSetupOutcome::Message(msg) => panic!("expected Inference: {msg}"),
+            };
+            assert!(
+                reminder.contains("Final verification"),
+                "a+b batched in parallel; serial tail is gn-final: {reminder}"
+            );
+            let s = actor.graph_tracker.lock().snapshot().cloned().unwrap();
+            assert_eq!(s.plan_version, 2, "optimizer pass bumped the version");
+            assert_eq!(s.replan_runs, 1, "optimizer consumed a shared cap slot");
+            let workers = captured
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|c| c.prompt.contains("Graph Node Worker"))
+                .count();
+            assert_eq!(workers, 2, "both nodes ran as batch workers");
+        }),
+    )
+    .await
+    .expect("optimizer parallelism test starved (fan-out regression)");
+    unsafe { std::env::remove_var(ENV_FLAG) };
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn optimizer_disabled_never_spawns_a_pass() {
+    unsafe { std::env::set_var(ENV_FLAG, "0") };
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let dag = chain_graph_json();
+            let (mut actor, _tmp, _prx) = make_graph_actor_detached().await;
+            let (coord_tx, captured) = spawn_scripted_coordinator(
+                _tmp.path().to_path_buf(),
+                move |req| happy_reply(req, &dag),
+                false,
+            );
+            actor.tool_context.subagent_event_tx = Some(coord_tx);
+            actor.graph_optimizer_enabled = false;
+            let _ = actor.setup_graph("chain", None).await;
+            let passes = captured
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|c| c.prompt.contains("Graph Topology Optimizer"))
+                .count();
+            assert_eq!(passes, 0, "KIGI_GRAPH_OPTIMIZER=0 must be a hard off");
+            assert_eq!(
+                actor.graph_tracker.lock().snapshot().unwrap().plan_version,
+                1
+            );
+        })
+        .await;
+    unsafe { std::env::remove_var(ENV_FLAG) };
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn optimizer_skips_when_shared_cap_is_exhausted() {
+    unsafe { std::env::set_var(ENV_FLAG, "0") };
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let dag = chain_graph_json();
+            let (mut actor, _tmp, _prx) = make_graph_actor_detached().await;
+            let (coord_tx, captured) = spawn_scripted_coordinator(
+                _tmp.path().to_path_buf(),
+                move |req| happy_reply(req, &dag),
+                false,
+            );
+            actor.tool_context.subagent_event_tx = Some(coord_tx);
+            actor.graph_optimizer_enabled = true;
+            actor.graph_replan_cap = 0; // shared cap already exhausted
+            let _ = actor.setup_graph("chain", None).await;
+            let passes = captured
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|c| c.prompt.contains("Graph Topology Optimizer"))
+                .count();
+            assert_eq!(passes, 0, "cap guard must gate the optimizer too");
+        })
+        .await;
+    unsafe { std::env::remove_var(ENV_FLAG) };
+}

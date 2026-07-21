@@ -293,6 +293,7 @@ pub(crate) async fn create_test_actor_ex(
         graph_concurrency: 1,
         graph_node_rounds: 3,
         graph_replan_cap: 3,
+        graph_optimizer_enabled: false,
         graph_project_dir: None,
         graph_project_lock: std::cell::RefCell::new(None),
         goal_turn_task_ids: parking_lot::Mutex::new(std::collections::HashSet::new()),
