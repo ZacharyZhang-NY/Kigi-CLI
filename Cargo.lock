@@ -5442,7 +5442,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-acp-lib"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "agent-client-protocol",
  "async-trait",
@@ -5456,7 +5456,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-agent"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "chrono",
  "dirs 6.0.0",
@@ -5486,7 +5486,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-agent-lifecycle"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "async-trait",
  "tokio",
@@ -5495,7 +5495,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-auth"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "async-trait",
  "http 1.4.2",
@@ -5508,7 +5508,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-bin"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -5543,7 +5543,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-chat-state"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "indexmap",
  "kigi-compaction",
@@ -5560,7 +5560,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-codebase-graph"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "ahash",
  "clap",
@@ -5596,7 +5596,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-compaction"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5609,7 +5609,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-config"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "base64",
  "blake3",
@@ -5632,7 +5632,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-config-types"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "agent-client-protocol",
  "indexmap",
@@ -5646,7 +5646,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-crash-handler"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "backtrace",
  "libc",
@@ -5657,7 +5657,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-env"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "tracing",
  "url",
@@ -5665,7 +5665,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-fast-worktree"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "bytes",
@@ -5697,7 +5697,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-file-utils"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "aws-config",
@@ -5721,7 +5721,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-fsnotify"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "criterion",
  "dunce",
@@ -5742,7 +5742,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-gix-status"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "gix",
  "kigi-test-utils",
@@ -5752,7 +5752,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-hooks"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "fastrand",
  "kigi-config",
@@ -5771,7 +5771,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-hooks-plugins-types"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -5779,7 +5779,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-http"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "kigi-auth",
  "kigi-log",
@@ -5794,7 +5794,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-hunk-tracker"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "chrono",
  "dunce",
@@ -5815,14 +5815,14 @@ dependencies = [
 
 [[package]]
 name = "kigi-interjection-core"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "kigi-log"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "chrono",
@@ -5840,7 +5840,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-markdown"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anstyle",
  "anstyle-lossy",
@@ -5864,14 +5864,14 @@ dependencies = [
 
 [[package]]
 name = "kigi-markdown-core"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "pulldown-cmark",
 ]
 
 [[package]]
 name = "kigi-mcp"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "agent-client-protocol",
  "async-trait",
@@ -5908,7 +5908,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-memory"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -5942,7 +5942,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-mermaid"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "fontdb",
  "image",
@@ -5960,7 +5960,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-models"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "kigi-env",
  "serde",
@@ -5969,7 +5969,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-pager-minimal"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "chrono",
  "crossterm",
@@ -5986,7 +5986,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-pager-pty-harness"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -6011,7 +6011,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-pager-render"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "agent-client-protocol",
  "anstyle",
@@ -6063,7 +6063,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-paths"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "camino",
  "serde",
@@ -6073,7 +6073,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-prompt-queue"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -6081,7 +6081,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-proto-build"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "pbjson-build",
@@ -6092,7 +6092,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-ratatui-inline"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "ansi-width",
  "anstyle-parse 0.2.7",
@@ -6109,7 +6109,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-ratatui-textarea"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "arboard",
  "chrono",
@@ -6130,7 +6130,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-sampler"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "async-openai",
  "async-stream",
@@ -6153,7 +6153,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-sampling-types"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "assert_matches",
  "async-openai",
@@ -6169,7 +6169,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-sandbox"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "chrono",
@@ -6190,7 +6190,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-secrets"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "regex",
  "serde_json",
@@ -6228,7 +6228,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-shell"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -6365,7 +6365,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-shell-base"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "chrono",
@@ -6390,7 +6390,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-sqlite-journal"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "libc",
  "rusqlite",
@@ -6401,7 +6401,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-subagent-resolution"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "kigi-sampling-types",
  "kigi-tool-types",
@@ -6416,7 +6416,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-system-power"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "windows-sys 0.59.0",
  "zbus",
@@ -6424,7 +6424,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-test-support"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -6446,7 +6446,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-test-utils"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "runfiles",
  "tracing",
@@ -6455,11 +6455,11 @@ dependencies = [
 
 [[package]]
 name = "kigi-token-estimation"
-version = "0.1.2"
+version = "0.1.3"
 
 [[package]]
 name = "kigi-tool-protocol"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "kigi-tool-types",
  "serde",
@@ -6470,7 +6470,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-tool-runtime"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6488,7 +6488,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-tool-types"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "minijinja",
  "schemars 1.2.1",
@@ -6498,7 +6498,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-tools"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -6575,7 +6575,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-tools-api"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "kigi-proto-build",
  "kigi-tool-protocol",
@@ -6588,11 +6588,11 @@ dependencies = [
 
 [[package]]
 name = "kigi-tracing-macros"
-version = "0.1.2"
+version = "0.1.3"
 
 [[package]]
 name = "kigi-tty-utils"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "libc",
  "nix 0.30.1",
@@ -6602,7 +6602,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-tui"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "agent-client-protocol",
  "ansi-to-tui",
@@ -6689,7 +6689,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-update"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "dunce",
@@ -6718,14 +6718,14 @@ dependencies = [
 
 [[package]]
 name = "kigi-version"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "semver",
 ]
 
 [[package]]
 name = "kigi-workspace"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -6804,7 +6804,7 @@ dependencies = [
 
 [[package]]
 name = "kigi-workspace-types"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "base64",
  "chrono",
@@ -8838,7 +8838,7 @@ dependencies = [
 
 [[package]]
 name = "ptyctl"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -8856,7 +8856,7 @@ dependencies = [
 
 [[package]]
 name = "ptyctl-cli"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "axum",
