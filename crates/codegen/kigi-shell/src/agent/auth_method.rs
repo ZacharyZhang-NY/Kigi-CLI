@@ -620,7 +620,9 @@ mod tests {
                 "cerebras",
                 "nvidia",
                 "vercel-ai-gateway",
-                "xai"
+                "xai",
+                "qwen-token-plan",
+                "qwen-token-plan-cn"
             ]
         );
         assert_eq!(default_id(&built), Some(XAI_API_KEY_METHOD_ID));
@@ -659,7 +661,9 @@ mod tests {
                 "cerebras",
                 "nvidia",
                 "vercel-ai-gateway",
-                "xai"
+                "xai",
+                "qwen-token-plan",
+                "qwen-token-plan-cn"
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -691,7 +695,9 @@ mod tests {
                 "cerebras",
                 "nvidia",
                 "vercel-ai-gateway",
-                "xai"
+                "xai",
+                "qwen-token-plan",
+                "qwen-token-plan-cn"
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -726,7 +732,9 @@ mod tests {
                 "cerebras",
                 "nvidia",
                 "vercel-ai-gateway",
-                "xai"
+                "xai",
+                "qwen-token-plan",
+                "qwen-token-plan-cn"
             ]
         );
         assert_eq!(default_id(&built), None);
@@ -1005,5 +1013,57 @@ mod tests {
         authenticate_platform_api_key(kigi_models::PlatformId::Xai, Some("xai-good"))
             .await
             .expect("200 from /models must validate the key");
+    }
+
+    /// Qwen Token Plan (global): DashScope /models is auth-gated (401 for a bad
+    /// key), so it validates the key; the error names the Model Studio console.
+    #[tokio::test]
+    #[serial]
+    async fn qwen_token_plan_validates_against_models_and_rejects_bad_key() {
+        use wiremock::matchers::{method, path};
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(method("GET"))
+            .and(path("/models"))
+            .respond_with(wiremock::ResponseTemplate::new(401))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let _base = EnvGuard::set(kigi_models::QWEN_TOKEN_PLAN_BASE_URL_ENV, &server.uri());
+        let err =
+            authenticate_platform_api_key(kigi_models::PlatformId::QwenTokenPlan, Some("qtp-bad"))
+                .await
+                .expect_err("a 401 from /models must reject the key");
+        assert_eq!(
+            err.message,
+            "Invalid API key for qwen-token-plan \u{2014} check your key on \
+             modelstudio.console.alibabacloud.com"
+        );
+    }
+
+    /// Qwen Token Plan (China): distinct base URL + console host; same
+    /// auth-gated /models validation.
+    #[tokio::test]
+    #[serial]
+    async fn qwen_token_plan_cn_validates_against_models_and_rejects_bad_key() {
+        use wiremock::matchers::{method, path};
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(method("GET"))
+            .and(path("/models"))
+            .respond_with(wiremock::ResponseTemplate::new(401))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let _base = EnvGuard::set(kigi_models::QWEN_TOKEN_PLAN_CN_BASE_URL_ENV, &server.uri());
+        let err = authenticate_platform_api_key(
+            kigi_models::PlatformId::QwenTokenPlanCn,
+            Some("qtp-cn-bad"),
+        )
+        .await
+        .expect_err("a 401 from /models must reject the key");
+        assert_eq!(
+            err.message,
+            "Invalid API key for qwen-token-plan-cn \u{2014} check your key on \
+             bailian.console.aliyun.com"
+        );
     }
 }

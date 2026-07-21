@@ -632,6 +632,63 @@ const XAI_SPEC: PlatformSpec = PlatformSpec {
     restrict_to_enriched: true,
 };
 
+pub const QWEN_TOKEN_PLAN_BASE_URL_ENV: &str = "KIGI_QWEN_TOKEN_PLAN_BASE_URL";
+const QWEN_TOKEN_PLAN_SPEC: PlatformSpec = PlatformSpec {
+    id: "qwen-token-plan",
+    display_name: "Qwen Token Plan",
+    base_url: BaseUrlSource::EnvOr {
+        env: QWEN_TOKEN_PLAN_BASE_URL_ENV,
+        default: "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+    },
+    uses_oauth: false,
+    allowed_model_prefixes: None,
+    api_key_envs: &["QWEN_TOKEN_PLAN_API_KEY"],
+    vendor: "Alibaba",
+    console_host: Some("modelstudio.console.alibabacloud.com"),
+    login_label: Some("Qwen Token Plan (API key)"),
+    models_dev_id: Some("alibaba-token-plan"),
+    // DashScope compatible-mode /models is auth-gated (no wire metadata), so
+    // take context/limits from the models.dev "alibaba-token-plan" snapshot;
+    // restrict to tool-calling chat models to drop the qwen-image / wan image
+    // generators the token plan also lists.
+    wire_serves_metadata: false,
+    wire_api: PlatformWireApi::ChatCompletions,
+    listing: ListingDialect::OpenAi,
+    chat_compat: PlatformChatCompat::Passthrough,
+    key_header: PlatformKeyHeader::Bearer,
+    // /models requires auth (401 without a key), so it doubles as the key
+    // validator.
+    key_validation_path: None,
+    strip_listing_id_prefix: None,
+    restrict_to_enriched: true,
+};
+
+pub const QWEN_TOKEN_PLAN_CN_BASE_URL_ENV: &str = "KIGI_QWEN_TOKEN_PLAN_CN_BASE_URL";
+const QWEN_TOKEN_PLAN_CN_SPEC: PlatformSpec = PlatformSpec {
+    id: "qwen-token-plan-cn",
+    display_name: "Qwen Token Plan (China)",
+    base_url: BaseUrlSource::EnvOr {
+        env: QWEN_TOKEN_PLAN_CN_BASE_URL_ENV,
+        default: "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+    },
+    uses_oauth: false,
+    allowed_model_prefixes: None,
+    api_key_envs: &["QWEN_TOKEN_PLAN_CN_API_KEY"],
+    vendor: "Alibaba",
+    console_host: Some("bailian.console.aliyun.com"),
+    login_label: Some("Qwen Token Plan China (API key)"),
+    models_dev_id: Some("alibaba-token-plan-cn"),
+    // China endpoint; same DashScope compatible-mode shape as the global plan.
+    wire_serves_metadata: false,
+    wire_api: PlatformWireApi::ChatCompletions,
+    listing: ListingDialect::OpenAi,
+    chat_compat: PlatformChatCompat::Passthrough,
+    key_header: PlatformKeyHeader::Bearer,
+    key_validation_path: None,
+    strip_listing_id_prefix: None,
+    restrict_to_enriched: true,
+};
+
 /// The platform registry. Platforms are compiled-in spec rows; there is no
 /// dynamic provider registration (PRD F2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -668,12 +725,16 @@ pub enum PlatformId {
     Vercel,
     /// xAI Grok platform (API key, OpenAI-compatible ChatCompletions).
     Xai,
+    /// Alibaba Qwen Token Plan, global (API key, DashScope compatible-mode).
+    QwenTokenPlan,
+    /// Alibaba Qwen Token Plan, China (API key, DashScope compatible-mode).
+    QwenTokenPlanCn,
 }
 
 impl PlatformId {
     /// All platforms, in catalog precedence order: the subscription channel
     /// first so "default model = first list item" favors it when present.
-    pub const ALL: [PlatformId; 16] = [
+    pub const ALL: [PlatformId; 18] = [
         Self::KimiCode,
         Self::MoonshotCn,
         Self::MoonshotAi,
@@ -690,6 +751,8 @@ impl PlatformId {
         Self::Nvidia,
         Self::Vercel,
         Self::Xai,
+        Self::QwenTokenPlan,
+        Self::QwenTokenPlanCn,
     ];
 
     /// The registry row backing this platform (single source of per-platform
@@ -712,6 +775,8 @@ impl PlatformId {
             Self::Nvidia => &NVIDIA_SPEC,
             Self::Vercel => &VERCEL_SPEC,
             Self::Xai => &XAI_SPEC,
+            Self::QwenTokenPlan => &QWEN_TOKEN_PLAN_SPEC,
+            Self::QwenTokenPlanCn => &QWEN_TOKEN_PLAN_CN_SPEC,
         }
     }
 
@@ -1468,9 +1533,11 @@ mod tests {
                 PlatformId::Nvidia => 13,
                 PlatformId::Vercel => 14,
                 PlatformId::Xai => 15,
+                PlatformId::QwenTokenPlan => 16,
+                PlatformId::QwenTokenPlanCn => 17,
             }
         }
-        const VARIANT_COUNT: usize = 16; // update together with `ordinal`
+        const VARIANT_COUNT: usize = 18; // update together with `ordinal`
         let mut seen: Vec<usize> = PlatformId::ALL.iter().map(|&p| ordinal(p)).collect();
         seen.sort_unstable();
         seen.dedup();
