@@ -1,8 +1,8 @@
 //! Kimi model catalog primitives (PRD F2/F4).
 //!
 //! This crate owns:
-//! - the fixed three-platform registry ([`PlatformId`]): the Kimi Code
-//!   subscription channel plus the two Moonshot open platforms;
+//! - the compiled-in platform registry ([`PlatformId`] + its spec rows): the
+//!   Kimi Code subscription channel plus the API-key platforms;
 //! - the `GET {base}/models` wire contract ([`WireModel`]) and the capability
 //!   derivation ported from kimi-cli `auth/platforms.py`;
 //! - the managed catalog key format `{platform_id}/{model_id}`;
@@ -40,8 +40,77 @@ fn env_or(var: &str, compiled: &str) -> String {
     }
 }
 
-/// The fixed platform registry. Kigi talks to exactly these three model
-/// providers; there is no dynamic provider registration (PRD F2).
+/// Where a platform's base URL is resolved from.
+enum BaseUrlSource {
+    /// The Kimi Code subscription base, owned by `kigi_env`
+    /// (honors `KIGI_CODE_BASE_URL`).
+    KigiEnvCoding,
+    /// Fixed compiled default with a dev/test env-var override.
+    EnvOr {
+        env: &'static str,
+        default: &'static str,
+    },
+}
+
+/// One row of the platform registry. All per-platform data lives in these
+/// rows; [`PlatformId`] methods only read fields. Adding a platform touches
+/// exactly four sites in this file: the enum variant, the `ALL` entry, the
+/// `spec()` arm, and the row (plus quirk code where a provider deviates).
+/// The `spec()` arm is compiler-enforced; the `ALL` entry is enforced by the
+/// `all_covers_every_variant` test — a variant missing from `ALL` would
+/// otherwise be silently unparseable and excluded from model sync.
+struct PlatformSpec {
+    /// Wire id (auth method id, managed-model-key prefix, config key).
+    id: &'static str,
+    display_name: &'static str,
+    base_url: BaseUrlSource,
+    /// True for OAuth-bearer subscription channels.
+    uses_oauth: bool,
+    /// Model-id prefixes admitted from this platform's `/models` listing.
+    /// `None` = no filtering (listing served pre-filtered).
+    allowed_model_prefixes: Option<&'static [&'static str]>,
+    /// Env var names holding this platform's API key, in precedence order
+    /// (first set, non-blank value wins). Empty for OAuth channels.
+    ///
+    /// SECURITY: the *values* behind these names must never be logged.
+    api_key_envs: &'static [&'static str],
+}
+
+const KIMI_CODE_SPEC: PlatformSpec = PlatformSpec {
+    id: "kimi-code",
+    display_name: "Kimi Code",
+    base_url: BaseUrlSource::KigiEnvCoding,
+    uses_oauth: true,
+    allowed_model_prefixes: None,
+    api_key_envs: &[],
+};
+
+const MOONSHOT_CN_SPEC: PlatformSpec = PlatformSpec {
+    id: "moonshot-cn",
+    display_name: "Moonshot AI Open Platform (moonshot.cn)",
+    base_url: BaseUrlSource::EnvOr {
+        env: MOONSHOT_CN_BASE_URL_ENV,
+        default: "https://api.moonshot.cn/v1",
+    },
+    uses_oauth: false,
+    allowed_model_prefixes: Some(&["kimi-k"]),
+    api_key_envs: &[MOONSHOT_CN_API_KEY_ENV, MOONSHOT_API_KEY_ENV],
+};
+
+const MOONSHOT_AI_SPEC: PlatformSpec = PlatformSpec {
+    id: "moonshot-ai",
+    display_name: "Moonshot AI Open Platform (moonshot.ai)",
+    base_url: BaseUrlSource::EnvOr {
+        env: MOONSHOT_AI_BASE_URL_ENV,
+        default: "https://api.moonshot.ai/v1",
+    },
+    uses_oauth: false,
+    allowed_model_prefixes: Some(&["kimi-k"]),
+    api_key_envs: &[MOONSHOT_AI_API_KEY_ENV, MOONSHOT_API_KEY_ENV],
+};
+
+/// The platform registry. Platforms are compiled-in spec rows; there is no
+/// dynamic provider registration (PRD F2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum PlatformId {
     /// Kimi Code subscription (OAuth bearer from the F1 device flow).
@@ -57,55 +126,48 @@ impl PlatformId {
     /// first so "default model = first list item" favors it when present.
     pub const ALL: [PlatformId; 3] = [Self::KimiCode, Self::MoonshotCn, Self::MoonshotAi];
 
-    pub fn as_str(self) -> &'static str {
+    /// The registry row backing this platform (single source of per-platform
+    /// data; every accessor below reads it).
+    const fn spec(self) -> &'static PlatformSpec {
         match self {
-            Self::KimiCode => "kimi-code",
-            Self::MoonshotCn => "moonshot-cn",
-            Self::MoonshotAi => "moonshot-ai",
+            Self::KimiCode => &KIMI_CODE_SPEC,
+            Self::MoonshotCn => &MOONSHOT_CN_SPEC,
+            Self::MoonshotAi => &MOONSHOT_AI_SPEC,
         }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        self.spec().id
     }
 
     pub fn parse(s: &str) -> Option<Self> {
-        match s {
-            "kimi-code" => Some(Self::KimiCode),
-            "moonshot-cn" => Some(Self::MoonshotCn),
-            "moonshot-ai" => Some(Self::MoonshotAi),
-            _ => None,
-        }
+        Self::ALL.into_iter().find(|p| p.spec().id == s)
     }
 
     pub fn display_name(self) -> &'static str {
-        match self {
-            Self::KimiCode => "Kimi Code",
-            Self::MoonshotCn => "Moonshot AI Open Platform (moonshot.cn)",
-            Self::MoonshotAi => "Moonshot AI Open Platform (moonshot.ai)",
-        }
+        self.spec().display_name
     }
 
     /// Inference/model-listing base URL. The subscription base honors the
     /// `KIGI_CODE_BASE_URL` override via [`kigi_env::coding_api_base_url`];
-    /// the open-platform bases are fixed in production, with
-    /// `KIGI_MOONSHOT_{CN,AI}_BASE_URL` as dev/test overrides.
+    /// API-key platform bases are fixed in production, with a per-platform
+    /// env var (e.g. `KIGI_MOONSHOT_{CN,AI}_BASE_URL`) as dev/test override.
     pub fn base_url(self) -> String {
-        match self {
-            Self::KimiCode => kigi_env::coding_api_base_url(),
-            Self::MoonshotCn => env_or(MOONSHOT_CN_BASE_URL_ENV, "https://api.moonshot.cn/v1"),
-            Self::MoonshotAi => env_or(MOONSHOT_AI_BASE_URL_ENV, "https://api.moonshot.ai/v1"),
+        match self.spec().base_url {
+            BaseUrlSource::KigiEnvCoding => kigi_env::coding_api_base_url(),
+            BaseUrlSource::EnvOr { env, default } => env_or(env, default),
         }
     }
 
-    /// True for the OAuth-bearer subscription channel.
+    /// True for OAuth-bearer subscription channels.
     pub fn uses_oauth(self) -> bool {
-        matches!(self, Self::KimiCode)
+        self.spec().uses_oauth
     }
 
     /// Model-id prefixes admitted from this platform's `/models` listing.
     /// `None` = no filtering (subscription listing is served pre-filtered).
     pub fn allowed_model_prefixes(self) -> Option<&'static [&'static str]> {
-        match self {
-            Self::KimiCode => None,
-            Self::MoonshotCn | Self::MoonshotAi => Some(&["kimi-k"]),
-        }
+        self.spec().allowed_model_prefixes
     }
 
     /// Env var names holding this platform's API key, in precedence order
@@ -113,11 +175,7 @@ impl PlatformId {
     ///
     /// SECURITY: the *values* behind these names must never be logged.
     pub fn api_key_env_names(self) -> &'static [&'static str] {
-        match self {
-            Self::KimiCode => &[],
-            Self::MoonshotCn => &[MOONSHOT_CN_API_KEY_ENV, MOONSHOT_API_KEY_ENV],
-            Self::MoonshotAi => &[MOONSHOT_AI_API_KEY_ENV, MOONSHOT_API_KEY_ENV],
-        }
+        self.spec().api_key_envs
     }
 
     /// Managed catalog key for a model served by this platform:
@@ -441,7 +499,47 @@ mod tests {
         for p in PlatformId::ALL {
             assert_eq!(PlatformId::parse(p.as_str()), Some(p));
         }
-        assert_eq!(PlatformId::parse("openai"), None);
+        assert_eq!(PlatformId::parse("not-a-platform"), None);
+    }
+
+    /// A variant missing from `ALL` compiles fine (`ALL`'s length is a plain
+    /// literal) but is silently unparseable and excluded from model sync.
+    /// The exhaustive match below fails compilation when a variant is added,
+    /// forcing this test — and with it the `ALL` entry — to be updated.
+    #[test]
+    fn all_covers_every_variant() {
+        fn ordinal(p: PlatformId) -> usize {
+            match p {
+                PlatformId::KimiCode => 0,
+                PlatformId::MoonshotCn => 1,
+                PlatformId::MoonshotAi => 2,
+            }
+        }
+        const VARIANT_COUNT: usize = 3; // update together with `ordinal`
+        let mut seen: Vec<usize> = PlatformId::ALL.iter().map(|&p| ordinal(p)).collect();
+        seen.sort_unstable();
+        seen.dedup();
+        assert_eq!(
+            seen.len(),
+            PlatformId::ALL.len(),
+            "duplicate variant in ALL"
+        );
+        assert_eq!(
+            seen.len(),
+            VARIANT_COUNT,
+            "PlatformId::ALL must contain every variant"
+        );
+    }
+
+    /// `parse` resolves by scanning spec rows, so duplicate ids would
+    /// silently shadow a platform. Pin uniqueness as rows are added.
+    #[test]
+    fn platform_spec_ids_unique() {
+        let mut ids: Vec<&str> = PlatformId::ALL.iter().map(|p| p.as_str()).collect();
+        ids.sort_unstable();
+        let before = ids.len();
+        ids.dedup();
+        assert_eq!(ids.len(), before, "duplicate platform spec id");
     }
 
     #[test]
@@ -473,7 +571,7 @@ mod tests {
         );
         // No prefix / unknown platform / empty model id → None.
         assert_eq!(parse_managed_model_key("kimi-for-coding"), None);
-        assert_eq!(parse_managed_model_key("openai/gpt"), None);
+        assert_eq!(parse_managed_model_key("not-a-platform/gpt"), None);
         assert_eq!(parse_managed_model_key("moonshot-cn/"), None);
     }
 
