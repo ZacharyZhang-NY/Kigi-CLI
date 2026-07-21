@@ -1805,6 +1805,98 @@ mod tests {
         );
     }
 
+    /// NVIDIA-cycle e2e: polluted listing (embedding/image models) restricted
+    /// to tool-calling enrichment-known chat models; slashed org/model ids;
+    /// StrictOpenAi dialect (strips stream_options — some NIM models reject it).
+    #[tokio::test(flavor = "multi_thread")]
+    #[serial_test::serial]
+    async fn nvidia_restricts_slashed_ids_and_maps_strict_dialect() {
+        let platform_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/models"))
+            .and(wiremock::matchers::header(
+                "Authorization",
+                "Bearer nvapi-1",
+            ))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({ "data": [
+                    { "id": "meta/llama-3.3-70b-instruct", "object": "model" },
+                    { "id": "baai/bge-m3", "object": "model" }
+                ]}),
+            ))
+            .expect(1)
+            .mount(&platform_server)
+            .await;
+        let modelsdev_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/api.json"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({ "nvidia": { "models": {
+                    "meta/llama-3.3-70b-instruct": {
+                        "limit": {"context": 128000, "output": 32768},
+                        "tool_call": true
+                    },
+                    "baai/bge-m3": { "limit": {"context": 8192} }
+                }}}),
+            ))
+            .expect(1)
+            .mount(&modelsdev_server)
+            .await;
+        let cache_dir = tempfile::tempdir().unwrap();
+        let _base = kigi_test_support::EnvGuard::set(
+            kigi_models::NVIDIA_BASE_URL_ENV,
+            platform_server.uri(),
+        );
+        let _mdev = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_URL_ENV,
+            format!("{}/api.json", modelsdev_server.uri()),
+        );
+        let _mdev_cache = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_CACHE_DIR_ENV,
+            cache_dir.path(),
+        );
+        let endpoints = crate::agent::config::EndpointsConfig::default();
+        let keys = crate::agent::models::PlatformApiKeys::test_single(
+            kigi_models::PlatformId::Nvidia,
+            "nvapi-1",
+        );
+        let result = tokio::task::spawn_blocking(move || {
+            fetch_platform_models_blocking(&endpoints, None, &keys)
+        })
+        .await
+        .unwrap()
+        .expect("fetch must succeed");
+        assert_eq!(
+            result
+                .models
+                .iter()
+                .map(|m| m.id.as_deref().unwrap_or_default())
+                .collect::<Vec<_>>(),
+            vec!["nvidia/meta/llama-3.3-70b-instruct"],
+            "bge-m3 embedding (not tool-calling) dropped; slashed org/model id kept"
+        );
+        let entry = &result.models[0];
+        assert_eq!(entry.context_window.get(), 128_000);
+        assert_eq!(entry.max_completion_tokens, Some(32_768));
+        assert_eq!(
+            entry.model, "meta/llama-3.3-70b-instruct",
+            "the native slashed id rides the wire"
+        );
+        let model_entry = crate::agent::config::ModelEntry::from_config_entry(entry);
+        let creds = crate::agent::config::ResolvedCredentials {
+            api_key: Some("nvapi-1".into()),
+            base_url: entry.base_url.clone(),
+            auth_type: kigi_chat_state::AuthType::ApiKey,
+            auth_scheme: Default::default(),
+        };
+        let cfg = crate::agent::config::sampling_config_for_model(&model_entry, creds, None);
+        assert_eq!(
+            cfg.chat_compat,
+            kigi_sampling_types::ChatCompat::StrictOpenAi,
+            "NVIDIA uses StrictOpenAi (strips stream_options for NIM models that reject it)"
+        );
+    }
+
     #[test]
     fn get_env_keys_parses_strings_and_rejects_non_strings() {
         use crate::agent::config::EnvKeys;

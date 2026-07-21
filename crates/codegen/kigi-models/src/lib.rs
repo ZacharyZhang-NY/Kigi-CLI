@@ -531,6 +531,38 @@ const CEREBRAS_SPEC: PlatformSpec = PlatformSpec {
     restrict_to_enriched: false,
 };
 
+/// Base-URL override for NVIDIA NIM (dev/test escape hatch).
+pub const NVIDIA_BASE_URL_ENV: &str = "KIGI_NVIDIA_BASE_URL";
+
+const NVIDIA_SPEC: PlatformSpec = PlatformSpec {
+    id: "nvidia",
+    display_name: "NVIDIA NIM",
+    base_url: BaseUrlSource::EnvOr {
+        env: NVIDIA_BASE_URL_ENV,
+        default: "https://integrate.api.nvidia.com/v1",
+    },
+    uses_oauth: false,
+    allowed_model_prefixes: None,
+    api_key_envs: &["NVIDIA_API_KEY"],
+    vendor: "NVIDIA",
+    console_host: Some("build.nvidia.com"),
+    login_label: Some("NVIDIA NIM (API key)"),
+    models_dev_id: Some("nvidia"),
+    wire_serves_metadata: false,
+    wire_api: PlatformWireApi::ChatCompletions,
+    listing: ListingDialect::OpenAi,
+    // NIM exposes raw vLLM behavior; stream_options support varies per model
+    // and some 4xx on it, so strip it (StrictOpenAi) to keep streaming
+    // working across the fleet.
+    chat_compat: PlatformChatCompat::StrictOpenAi,
+    key_header: PlatformKeyHeader::Bearer,
+    key_validation_path: None,
+    strip_listing_id_prefix: None,
+    // The listing mixes chat/embedding/rerank/vision/image models; keep
+    // tool-calling enrichment-known chat models only.
+    restrict_to_enriched: true,
+};
+
 /// The platform registry. Platforms are compiled-in spec rows; there is no
 /// dynamic provider registration (PRD F2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -561,12 +593,14 @@ pub enum PlatformId {
     Together,
     /// Cerebras platform API (API key, OpenAI-compatible ChatCompletions).
     Cerebras,
+    /// NVIDIA NIM platform API (API key, OpenAI-compatible ChatCompletions).
+    Nvidia,
 }
 
 impl PlatformId {
     /// All platforms, in catalog precedence order: the subscription channel
     /// first so "default model = first list item" favors it when present.
-    pub const ALL: [PlatformId; 13] = [
+    pub const ALL: [PlatformId; 14] = [
         Self::KimiCode,
         Self::MoonshotCn,
         Self::MoonshotAi,
@@ -580,6 +614,7 @@ impl PlatformId {
         Self::OpenRouter,
         Self::Together,
         Self::Cerebras,
+        Self::Nvidia,
     ];
 
     /// The registry row backing this platform (single source of per-platform
@@ -599,6 +634,7 @@ impl PlatformId {
             Self::OpenRouter => &OPENROUTER_SPEC,
             Self::Together => &TOGETHER_SPEC,
             Self::Cerebras => &CEREBRAS_SPEC,
+            Self::Nvidia => &NVIDIA_SPEC,
         }
     }
 
@@ -1350,9 +1386,10 @@ mod tests {
                 PlatformId::OpenRouter => 10,
                 PlatformId::Together => 11,
                 PlatformId::Cerebras => 12,
+                PlatformId::Nvidia => 13,
             }
         }
-        const VARIANT_COUNT: usize = 13; // update together with `ordinal`
+        const VARIANT_COUNT: usize = 14; // update together with `ordinal`
         let mut seen: Vec<usize> = PlatformId::ALL.iter().map(|&p| ordinal(p)).collect();
         seen.sort_unstable();
         seen.dedup();
