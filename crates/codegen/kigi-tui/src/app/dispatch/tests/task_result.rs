@@ -1592,6 +1592,78 @@ fn rollback_reverts_thread_local_cache_too() {
     .unwrap();
 }
 
+/// A default_model persist failure must NOT revert the live session's
+/// model. The switch already succeeded in the session (its own failure
+/// path reports separately); a DISK write failure only means the default
+/// won't stick for the next launch — same policy as PersistPreferredModel
+/// ("still active for this session"). Regression: the rollback arm
+/// re-showed the ORIGINAL model and issued a reverse SwitchModel, which
+/// on Windows (persist failures from AV/indexer file locks) made every
+/// picker selection appear to not take.
+#[test]
+fn default_model_persist_failure_keeps_live_model() {
+    use crate::settings::SettingValue;
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+    for (mid, name) in [("old-model", "Old Model"), ("new-model", "New Model")] {
+        let model_id = acp::ModelId::new(std::sync::Arc::from(mid));
+        let info = acp::ModelInfo::new(model_id.clone(), name.to_string());
+        app.agents
+            .get_mut(&id)
+            .unwrap()
+            .session
+            .models
+            .available
+            .insert(model_id.clone(), info.clone());
+        app.models.available.insert(model_id, info);
+    }
+    // User picked the new model; optimistic update applied.
+    let _ = dispatch(
+        Action::SetDefaultModel(acp::ModelId::new(std::sync::Arc::from("new-model"))),
+        &mut app,
+    );
+    assert_eq!(
+        app.agents[&id]
+            .session
+            .models
+            .current
+            .as_ref()
+            .map(|m| m.0.as_ref()),
+        Some("new-model"),
+    );
+
+    // Disk persist fails (the Windows sharing-violation shape).
+    let effects = dispatch(
+        Action::TaskComplete(TaskResult::SettingPersistFailed {
+            key: "default_model",
+            rollback_value: SettingValue::String("Old Model".into()),
+            error: "Access is denied. (os error 5)".into(),
+        }),
+        &mut app,
+    );
+
+    assert_eq!(
+        app.agents[&id]
+            .session
+            .models
+            .current
+            .as_ref()
+            .map(|m| m.0.as_ref()),
+        Some("new-model"),
+        "a persist failure must not revert the live session's model"
+    );
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, Effect::SwitchModel { .. })),
+        "no reverse SwitchModel may be issued for a disk-persist failure"
+    );
+    assert!(
+        read_toast(&app).contains("Could not save"),
+        "the save failure must still be surfaced"
+    );
+}
+
 /// `set_yolo_mode_inner` is the backstop: even a (stale) rollback
 /// value of "always-approve" must not re-enable yolo under the pin.
 #[test]
