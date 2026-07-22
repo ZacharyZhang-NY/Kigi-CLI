@@ -269,6 +269,17 @@ edges stay deterministic Rust. The harness appends a terminal
   token (`resolve_generic_oauth_tokens`, refreshed on expiry) and routes
   `platform.oauth().is_some()` → `platform.base_url()` (kimi-code alone →
   `proxy_url()`). Tokens/codes/verifiers are NEVER logged.
+- A stored subscription-OAuth session IS a catalog fetch source. Every
+  fetch-PLAN decision that cannot afford real token resolution — the startup
+  prefetch arming gate, `on_auth_changed`'s wipe guard
+  (`should_wipe_catalog_on_auth_change`), and cache-origin computation — uses
+  the sync presence probes `models_fetch::stored_oauth_platforms` /
+  `stored_oauth_token_stubs` (auth.json scope scan; names only, no bearers).
+  All three must see the SAME enabled-platform set the real fetch enables, or
+  a claude-pro-max-only user boots onto the bundled Kimi table with an empty
+  picker. Managed catalog entries stamp `meta.provider` (platform display
+  name) for the client's `/model` picker; the picker itself lists the fetched
+  catalog, which is by construction the credentialed providers' models.
 - INFERENCE-AUTH CHOKEPOINT (security): `auth::credential_authority::CredentialAuthority`
   is the ONE authority answering "WHICH credential — if any — may ride this
   request?". It holds the session's effective `EndpointsConfig` and
