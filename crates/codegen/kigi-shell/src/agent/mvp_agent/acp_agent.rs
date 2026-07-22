@@ -221,7 +221,24 @@ impl acp::Agent for MvpAgent {
             has_cached_token,
             login_label: None,
         });
-        let auth_methods = built.methods;
+        let mut auth_methods = built.methods;
+        // Connected badges for the client's login picker: probe stored
+        // credentials once (auth.json scopes + resolved platform keys) and
+        // stamp `_meta.connected` on every method that already has one.
+        {
+            let store = crate::auth::read_auth_json(
+                &crate::util::kigi_home::kigi_home().join("auth.json"),
+            )
+            .unwrap_or_default();
+            let keys = crate::agent::models::PlatformApiKeys::resolve_from_effective_config();
+            let connected = auth_method::connected_method_ids(
+                has_cached_token,
+                has_external_api_key,
+                |scope| store.contains_key(scope),
+                |p| keys.key_for(p).is_some(),
+            );
+            auth_method::stamp_connected_meta(&mut auth_methods, &connected);
+        }
         kigi_log::unified_log::info(
             "auth: initialize() built auth_methods for ACP response",
             None,

@@ -64,6 +64,7 @@ pub(super) fn dispatch_switch_account(app: &mut AppView) -> Vec<Effect> {
     let request_seq = app.next_auth_request_seq;
     app.next_auth_request_seq += 1;
     app.auth_code_input.clear();
+    app.auth_in_flight_method = Some(method_id.clone());
     app.auth_state = AuthState::Authenticating {
         request_seq,
         handle: None,
@@ -178,6 +179,25 @@ pub(super) fn dispatch_login(app: &mut AppView) -> Vec<Effect> {
     dispatch_login_with(app, None)
 }
 
+/// `/login`: land on the provider picker (welcome `Pending` state) instead
+/// of auto-starting a flow. Connected providers show their badge; the user
+/// picks a row, which dispatches `LoginWith` / key entry as usual. From
+/// inside a session the current view is stashed exactly like
+/// [`dispatch_login`], so Esc/q (`CancelLogin`) returns to it.
+pub(super) fn dispatch_open_login_picker(app: &mut AppView) -> Vec<Effect> {
+    if !matches!(app.active_view, ActiveView::Welcome) {
+        app.auth_return_view = Some(app.active_view);
+        show_welcome(app);
+    }
+    // Drop any stale in-flight auth result and open a fresh picker.
+    app.next_auth_request_seq += 1;
+    app.auth_code_input.clear();
+    app.welcome_menu_index = None;
+    app.welcome_menu_scroll = 0;
+    app.auth_state = AuthState::Pending { error: None };
+    vec![]
+}
+
 /// Start an interactive login flow with an explicitly chosen method (a
 /// provider row on the login picker). `None` keeps the historical behavior:
 /// re-use the current method or resolve the first interactive one.
@@ -232,6 +252,7 @@ pub(super) fn dispatch_login_with(
     let request_seq = app.next_auth_request_seq;
     app.next_auth_request_seq += 1;
     app.auth_code_input.clear();
+    app.auth_in_flight_method = Some(method_id.clone());
     app.auth_state = AuthState::Authenticating {
         request_seq,
         handle: None,
@@ -265,6 +286,7 @@ pub(super) fn dispatch_cancel_login(app: &mut AppView) -> Vec<Effect> {
     app.auth_state = AuthState::Done;
     app.auth_show_raw_url = false;
     app.auth_code_input.clear();
+    app.auth_in_flight_method = None;
     restore_auth_return_view(app, return_view);
     // The user bailed out of re-auth — drop stashed prompts and strip the
     // stale re-auth prompt from scrollback (on all agents: the login may
@@ -345,6 +367,7 @@ pub(super) fn dispatch_submit_platform_api_key(app: &mut AppView, key: String) -
     if key.is_empty() {
         return vec![];
     }
+    app.auth_in_flight_method = Some(target.method_id());
     app.auth_state = AuthState::Authenticating {
         request_seq,
         handle: None,
@@ -356,6 +379,28 @@ pub(super) fn dispatch_submit_platform_api_key(app: &mut AppView, key: String) -
         target,
         key,
     }]
+}
+
+/// Stamp `_meta.connected` on the advertised method `id` (the TUI-side
+/// mirror of the shell's initialize-time stamping — see
+/// `kigi_shell::agent::auth_method::stamp_connected_meta`).
+fn mark_method_connected(
+    methods: &mut [agent_client_protocol::AuthMethod],
+    id: &agent_client_protocol::AuthMethodId,
+) {
+    use kigi_shell::agent::auth_method::CONNECTED_META_KEY;
+    for method in methods.iter_mut() {
+        if let agent_client_protocol::AuthMethod::Agent(agent) = method
+            && agent.id == *id
+        {
+            let mut meta = agent.meta.take().unwrap_or_default();
+            meta.insert(
+                CONNECTED_META_KEY.to_string(),
+                serde_json::Value::Bool(true),
+            );
+            agent.meta = Some(meta);
+        }
+    }
 }
 
 // TaskResult handlers.
@@ -376,6 +421,13 @@ pub(super) fn handle_auth_complete(
                 serde_json::from_value::<kigi_shell::auth::AuthMeta>(meta_val.clone())
         {
             app.apply_auth_meta(&auth_meta);
+        }
+
+        // The method that just authenticated is now connected — stamp the
+        // advertised-methods copy so a later /login picker shows its badge
+        // (initialize-time stamping only covers what was stored at startup).
+        if let Some(id) = app.auth_in_flight_method.take() {
+            mark_method_connected(&mut app.auth_methods, &id);
         }
 
         app.auth_state = AuthState::Done;

@@ -567,6 +567,10 @@ pub enum Action {
     /// first interactive method, which sent every provider row to the Kimi
     /// device flow.
     LoginWith(acp::AuthMethodId),
+    /// `/login`: show the provider picker (with connected badges) instead of
+    /// auto-starting a flow. The user picks a row; `LoginWith` / key entry
+    /// take it from there.
+    OpenLoginPicker,
     /// Cancel an in-progress login that was started from inside a session
     /// (`/login` or a 401 re-auth prompt) and return to the previous view.
     /// Distinct from `Quit`: abandoning a mid-session re-auth must not exit

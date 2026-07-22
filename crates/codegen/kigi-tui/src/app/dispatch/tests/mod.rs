@@ -141,6 +141,7 @@ fn test_app() -> AppView {
         welcome_tip_typing_dismissed: false,
         welcome_menu_index: None,
         welcome_menu_scroll: 0,
+        auth_in_flight_method: None,
         welcome_menu_rects: Vec::new(),
         welcome_import_banner_rect: None,
         last_mouse_pos: None,

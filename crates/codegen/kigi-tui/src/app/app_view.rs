@@ -329,6 +329,29 @@ impl PendingMenuItem {
             Self::Quit => "Quit",
         }
     }
+    /// Whether the shell advertised this row's method as already holding a
+    /// stored credential (`_meta.connected`, stamped at initialize and kept
+    /// fresh by the TUI after in-session logins). Drives the green
+    /// "connected" badge on the login picker.
+    pub fn connected(&self, auth_methods: &[acp::AuthMethod]) -> bool {
+        let id: &str = match self {
+            Self::Login {
+                method_id: Some(id),
+                ..
+            } => id.0.as_ref(),
+            Self::ApiKey { target, .. } => target.platform_id().as_str(),
+            _ => return false,
+        };
+        auth_methods
+            .iter()
+            .find(|m| m.id().0.as_ref() == id)
+            .and_then(|m| {
+                let meta = m.meta()?;
+                meta.get(kigi_shell::agent::auth_method::CONNECTED_META_KEY)?
+                    .as_bool()
+            })
+            .unwrap_or(false)
+    }
 }
 /// Build the welcome login-picker rows from the shell-advertised methods:
 /// every INTERACTIVE method — the OAuth device login plus the Moonshot
@@ -704,6 +727,10 @@ pub struct AppView {
     /// Login-picker menu viewport offset (minimal-scroll; fed back into the
     /// next render so the list only moves when the selection exits it).
     pub welcome_menu_scroll: usize,
+    /// The method an in-flight auth attempt targets. On `AuthComplete` this
+    /// method is stamped connected in `auth_methods` so a later `/login`
+    /// picker shows its badge without re-initializing the shell.
+    pub auth_in_flight_method: Option<acp::AuthMethodId>,
     /// Hit-test rects for welcome menu items (populated during render).
     pub welcome_menu_rects: Vec<ratatui::layout::Rect>,
     /// Hit-test rect for the import-claude banner on the welcome screen.
@@ -1016,6 +1043,7 @@ impl AppView {
             minimal_state: crate::minimal_api::MinimalState::default(),
             welcome_menu_index: None,
             welcome_menu_scroll: 0,
+            auth_in_flight_method: None,
             welcome_menu_rects: Vec::new(),
             welcome_import_banner_rect: None,
             last_mouse_pos: None,
@@ -2590,17 +2618,22 @@ fn handle_welcome_input(ev: &Event, ctx: &mut WelcomeInputCtx<'_>) -> InputOutco
                     }
                     return InputOutcome::Action(Action::QuitConfirmed);
                 }
+                // Esc closes a mid-session picker back to the session; on
+                // the startup picker there is nothing to go back to.
+                if key!(Esc).matches(key) && ctx.mid_session_login {
+                    return InputOutcome::Action(Action::CancelLogin);
+                }
                 let items = pending_menu_items(ctx.auth_methods, None);
                 if let Some(outcome) = handle_menu_nav(key, ctx.menu_index, items.len()) {
                     return outcome;
                 }
                 // 'l' keeps its muscle-memory meaning: the first (OAuth) row.
                 if key!('l').matches(key) {
-                    return dispatch_pending_menu_action(&items, 0);
+                    return dispatch_pending_menu_action(&items, 0, ctx.mid_session_login);
                 }
                 if key!(Enter).matches(key) {
                     let index = ctx.menu_index.filter(|i| *i < items.len()).unwrap_or(0);
-                    return dispatch_pending_menu_action(&items, index);
+                    return dispatch_pending_menu_action(&items, index, ctx.mid_session_login);
                 }
             }
             AuthState::Authenticating { .. } if *ctx.show_raw_url => {
@@ -2713,7 +2746,7 @@ fn handle_welcome_input(ev: &Event, ctx: &mut WelcomeInputCtx<'_>) -> InputOutco
                     {
                         if matches!(ctx.auth_state, AuthState::Pending { .. }) {
                             let items = pending_menu_items(ctx.auth_methods, None);
-                            return dispatch_pending_menu_action(&items, i);
+                            return dispatch_pending_menu_action(&items, i, ctx.mid_session_login);
                         }
                         if ctx.has_claude_import
                             && i == 0
@@ -2831,7 +2864,13 @@ fn handle_menu_nav(
 }
 /// Dispatch an action for a welcome login-picker row (not yet authenticated).
 /// Rows come from [`pending_menu_items`]: interactive methods + Quit.
-fn dispatch_pending_menu_action(items: &[PendingMenuItem], index: usize) -> InputOutcome {
+/// `mid_session` (a `/login` / re-auth picker over a live session) turns the
+/// Quit row into Cancel — closing the picker must not exit the app.
+fn dispatch_pending_menu_action(
+    items: &[PendingMenuItem],
+    index: usize,
+    mid_session: bool,
+) -> InputOutcome {
     match items.get(index) {
         // The row's own method id rides along — every provider must start
         // ITS OWN flow, not the first advertised (Kimi) one.
@@ -2845,6 +2884,7 @@ fn dispatch_pending_menu_action(items: &[PendingMenuItem], index: usize) -> Inpu
         Some(PendingMenuItem::ApiKey { target, .. }) => {
             InputOutcome::Action(Action::BeginPlatformKeyEntry(*target))
         }
+        Some(PendingMenuItem::Quit) if mid_session => InputOutcome::Action(Action::CancelLogin),
         Some(PendingMenuItem::Quit) => InputOutcome::Action(Action::Quit),
         None => InputOutcome::Unchanged,
     }
@@ -3188,6 +3228,7 @@ impl AppView {
                             flags: &flags_vec,
                             selected: self.welcome_menu_index,
                             menu_scroll: self.welcome_menu_scroll,
+                            mid_session_login: self.auth_return_view.is_some(),
                             has_claude_import: self.has_claude_import,
                             mouse_pos: self.last_mouse_pos,
                             session_picker: self.session_picker_entries.as_deref(),
@@ -4321,6 +4362,7 @@ pub(crate) mod tests {
             welcome_tip_typing_dismissed: false,
             welcome_menu_index: None,
             welcome_menu_scroll: 0,
+            auth_in_flight_method: None,
             welcome_menu_rects: Vec::new(),
             welcome_import_banner_rect: None,
             last_mouse_pos: None,
@@ -7213,7 +7255,7 @@ pub(crate) mod tests {
             (3, "github-copilot"),
             (4, "openai-codex"),
         ] {
-            let outcome = dispatch_pending_menu_action(&items, index);
+            let outcome = dispatch_pending_menu_action(&items, index, false);
             assert!(
                 matches!(
                     &outcome,

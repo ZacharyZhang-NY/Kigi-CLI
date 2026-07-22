@@ -1,8 +1,8 @@
 //! Top-level action router: maps actions and action results to handlers.
 use super::auth::{
     dispatch_begin_platform_key_entry, dispatch_cancel_login, dispatch_cancel_platform_key_entry,
-    dispatch_login, dispatch_login_with, dispatch_logout, dispatch_submit_auth_code,
-    dispatch_submit_platform_api_key, dispatch_switch_account,
+    dispatch_login, dispatch_login_with, dispatch_logout, dispatch_open_login_picker,
+    dispatch_submit_auth_code, dispatch_submit_platform_api_key, dispatch_switch_account,
 };
 use super::ctx::{
     active_agent_session_id, get_active_agent_mut, navigate_clearing_selection,
@@ -877,6 +877,7 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
         }
         Action::Login => dispatch_login(app),
         Action::LoginWith(method_id) => dispatch_login_with(app, Some(method_id)),
+        Action::OpenLoginPicker => dispatch_open_login_picker(app),
         Action::CancelLogin => dispatch_cancel_login(app),
         Action::SubmitAuthCode(code) => dispatch_submit_auth_code(app, code),
         Action::BeginPlatformKeyEntry(target) => dispatch_begin_platform_key_entry(app, target),

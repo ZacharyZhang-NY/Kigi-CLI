@@ -468,6 +468,10 @@ pub struct WelcomeRenderParams<'a> {
     /// scroll viewport; the frame's actual offset comes back in
     /// [`WelcomeRenderResult::menu_scroll`]).
     pub menu_scroll: usize,
+    /// True when the login flow was opened from inside a session (`/login`,
+    /// a 401 re-auth). The picker's last row then reads "Cancel" (return to
+    /// the session) instead of "Quit" (exit the app).
+    pub mid_session_login: bool,
     pub has_claude_import: bool,
     pub mouse_pos: Option<(u16, u16)>,
     pub session_picker: Option<&'a [SessionPickerEntry]>,
@@ -534,13 +538,28 @@ pub fn render_welcome(
 
     let mut result = match params.auth_state {
         AuthState::Pending { error } => {
-            // Login picker: one row per interactive method + Quit.
+            // Login picker: one row per interactive method + Quit. Rows whose
+            // method already holds a stored credential show the green
+            // "connected" badge in the key column instead of a shortcut.
             let items: Vec<PendingMenuItem> =
                 pending_menu_items(params.auth_methods, params.login_label);
             let menu: Vec<(&str, &str)> = items
                 .iter()
                 .enumerate()
-                .map(|(i, item)| (item.shortcut(i), item.label()))
+                .map(|(i, item)| {
+                    let key = if item.connected(params.auth_methods) {
+                        menu::CONNECTED_BADGE
+                    } else {
+                        item.shortcut(i)
+                    };
+                    // Mid-session the last row returns to the session; it
+                    // must not read like an app exit.
+                    let label = match item {
+                        PendingMenuItem::Quit if params.mid_session_login => "Cancel",
+                        _ => item.label(),
+                    };
+                    (key, label)
+                })
                 .collect();
             let msg = error.as_deref().map(|e| (e, theme.accent_error));
             let info = PromptInfo {
@@ -2088,6 +2107,7 @@ mod tests {
             flags: &[],
             selected: None,
             menu_scroll: 0,
+            mid_session_login: false,
             has_claude_import: false,
             mouse_pos: None,
             session_picker,
@@ -2222,6 +2242,44 @@ mod tests {
             !text.contains("Kimi Code (OAuth)"),
             "the viewport must actually scroll (first row off-screen):\n{text}"
         );
+    }
+
+    /// Rows whose method the shell stamped `_meta.connected` show the
+    /// "connected" badge in the key column; unconnected rows do not. The
+    /// mid-session picker's last row reads "Cancel", not "Quit".
+    #[test]
+    fn pending_menu_shows_connected_badge_and_mid_session_cancel() {
+        use kigi_shell::agent::auth_method::{
+            AuthMethodsBuildInputs, build_auth_methods, stamp_connected_meta,
+        };
+        let mut built = build_auth_methods(AuthMethodsBuildInputs {
+            has_external_api_key: false,
+            has_cached_token: false,
+            login_label: None,
+        });
+        stamp_connected_meta(
+            &mut built.methods,
+            &std::collections::HashSet::from(["kimi-code"]),
+        );
+        let auth = AuthState::Pending { error: None };
+        let trust = TrustState::Done;
+        let mut params = render_params(&auth, &trust, None);
+        params.auth_methods = &built.methods;
+
+        let text = render_done_text_h(&params, 40);
+        assert_eq!(
+            text.matches("connected").count(),
+            1,
+            "exactly the stamped method shows the badge:\n{text}"
+        );
+        assert!(!text.contains("Cancel"), "startup picker keeps Quit");
+
+        // Mid-session (/login over a live session): last row reads Cancel.
+        params.mid_session_login = true;
+        params.selected = Some(pending_menu_items(params.auth_methods, None).len() - 1);
+        let text = render_done_text_h(&params, 40);
+        assert!(text.contains("Cancel"), "{text}");
+        assert!(!text.contains("Quit"), "{text}");
     }
 
     /// An old/limited shell that advertises only `kimi-code` keeps the

@@ -437,6 +437,68 @@ pub fn platform_auth_method(platform: kigi_models::PlatformId) -> acp::AuthMetho
     )
 }
 
+/// `_meta` key advertised on auth methods that already hold a stored
+/// credential: the client's login picker renders these rows with a green
+/// "connected" badge. Display state only — NEVER an authorization input.
+pub const CONNECTED_META_KEY: &str = "connected";
+
+/// Which advertised method ids already hold a stored credential.
+///
+/// Pure given its inputs so it unit-tests without disk or env:
+/// - `has_cached_token` / `has_external_api_key` — the same flags
+///   `build_auth_methods` consumed,
+/// - `has_scope` — whether auth.json holds an entry at a scope key
+///   (subscription-OAuth sessions live at `oauth/<provider>`),
+/// - `has_platform_key` — whether an API-key platform resolves a key
+///   (env > auth.json > config; see `PlatformApiKeys`).
+pub fn connected_method_ids(
+    has_cached_token: bool,
+    has_external_api_key: bool,
+    has_scope: impl Fn(&str) -> bool,
+    has_platform_key: impl Fn(kigi_models::PlatformId) -> bool,
+) -> std::collections::HashSet<&'static str> {
+    let mut connected = std::collections::HashSet::new();
+    if has_cached_token {
+        connected.insert(KIMI_CODE_METHOD_ID);
+        connected.insert(CACHED_TOKEN_AUTH_METHOD_ID);
+    }
+    if has_external_api_key {
+        connected.insert(XAI_API_KEY_METHOD_ID);
+    }
+    for platform in kigi_models::PlatformId::ALL {
+        match platform.oauth() {
+            Some(oauth) if has_scope(oauth.scope_key) => {
+                connected.insert(platform.as_str());
+            }
+            None if !platform.uses_oauth() && has_platform_key(platform) => {
+                connected.insert(platform.as_str());
+            }
+            _ => {}
+        }
+    }
+    connected
+}
+
+/// Stamp [`CONNECTED_META_KEY`] onto every advertised method in `connected`.
+pub fn stamp_connected_meta(
+    methods: &mut [acp::AuthMethod],
+    connected: &std::collections::HashSet<&'static str>,
+) {
+    for method in methods.iter_mut() {
+        if !connected.contains(method.id().0.as_ref()) {
+            continue;
+        }
+        if let acp::AuthMethod::Agent(agent) = method {
+            let mut meta = agent.meta.take().unwrap_or_default();
+            meta.insert(
+                CONNECTED_META_KEY.to_string(),
+                serde_json::Value::Bool(true),
+            );
+            agent.meta = Some(meta);
+        }
+    }
+}
+
 /// Actionable error for a platform `authenticate` with no key configured.
 pub fn missing_platform_key_error(platform: kigi_models::PlatformId) -> String {
     match platform.api_key_env_names().first() {
@@ -1062,6 +1124,53 @@ mod tests {
         let _xai = EnvGuard::set(XAI_API_KEY_ENV_VAR, "grok-key");
         let _legacy = EnvGuard::set(LEGACY_XAI_API_KEY_ENV_VAR, "legacy-key");
         assert_eq!(read_xai_api_key_env().unwrap(), "house-key");
+    }
+
+    /// Connected-badge probing: the primary session marks kimi-code (and
+    /// cached_token), a stored `oauth/<provider>` scope marks that provider,
+    /// a resolvable platform key marks its API-key row — and nothing else.
+    #[test]
+    fn connected_method_ids_maps_credentials_to_method_ids() {
+        let connected = connected_method_ids(
+            true,
+            false,
+            |scope| scope == "oauth/claude-pro-max",
+            |p| p == kigi_models::PlatformId::DeepSeek,
+        );
+        assert!(connected.contains(KIMI_CODE_METHOD_ID));
+        assert!(connected.contains(CACHED_TOKEN_AUTH_METHOD_ID));
+        assert!(connected.contains("claude-pro-max"));
+        assert!(connected.contains("deepseek"));
+        assert!(!connected.contains("xai-grok"), "no stored grok session");
+        assert!(!connected.contains("openai"), "no openai key");
+        assert!(!connected.contains(XAI_API_KEY_METHOD_ID), "no house key");
+
+        // Nothing stored → nothing connected.
+        let none = connected_method_ids(false, false, |_| false, |_| false);
+        assert!(none.is_empty(), "{none:?}");
+    }
+
+    /// Stamping writes `_meta.connected: true` on exactly the connected
+    /// methods and leaves every other method's meta untouched.
+    #[test]
+    fn stamp_connected_meta_marks_only_connected_methods() {
+        let mut methods = build_auth_methods(default_inputs()).methods;
+        let connected = std::collections::HashSet::from(["claude-pro-max"]);
+        stamp_connected_meta(&mut methods, &connected);
+        for method in &methods {
+            let marked = method
+                .meta()
+                .as_ref()
+                .and_then(|m| m.get(CONNECTED_META_KEY))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            assert_eq!(
+                marked,
+                method.id().0.as_ref() == "claude-pro-max",
+                "only claude-pro-max may carry the badge, got it on {}",
+                method.id().0
+            );
+        }
     }
 
     /// Moonshot authenticate with no configured key: actionable error naming

@@ -506,3 +506,72 @@ fn login_with_unknown_method_fails_closed() {
         app.auth_state
     );
 }
+
+/// `/login` opens the provider picker (welcome `Pending`) instead of
+/// auto-starting a flow — and from inside a session it stashes the view
+/// (so Esc/q/Cancel return to it) without emitting any auth effect.
+#[test]
+fn open_login_picker_shows_picker_and_stashes_view() {
+    let mut app = test_app_with_agent();
+    assert_eq!(app.active_view, ActiveView::Agent(AgentId(0)));
+
+    let effects = dispatch(Action::OpenLoginPicker, &mut app);
+
+    assert!(effects.is_empty(), "the picker itself starts nothing");
+    assert_eq!(app.active_view, ActiveView::Welcome);
+    assert_eq!(app.auth_return_view, Some(ActiveView::Agent(AgentId(0))));
+    assert!(matches!(app.auth_state, AuthState::Pending { error: None }));
+}
+
+/// A successful login stamps `_meta.connected` on the method that just
+/// authenticated, so a later `/login` picker shows its green badge without
+/// re-initializing the shell.
+#[test]
+fn auth_complete_marks_the_authenticated_method_connected() {
+    use crate::app::app_view::pending_menu_items;
+
+    let mut app = test_app();
+    app.auth_state = AuthState::Pending { error: None };
+    app.auth_methods = kigi_shell::agent::auth_method::build_auth_methods(
+        kigi_shell::agent::auth_method::AuthMethodsBuildInputs {
+            has_external_api_key: false,
+            has_cached_token: false,
+            login_label: None,
+        },
+    )
+    .methods;
+
+    dispatch(
+        Action::LoginWith(acp::AuthMethodId::new("xai-grok")),
+        &mut app,
+    );
+    let seq = match &app.auth_state {
+        AuthState::Authenticating { request_seq, .. } => *request_seq,
+        other => panic!("expected Authenticating, got {other:?}"),
+    };
+    dispatch(
+        Action::TaskComplete(TaskResult::AuthComplete {
+            request_seq: seq,
+            meta: None,
+        }),
+        &mut app,
+    );
+
+    let items = pending_menu_items(&app.auth_methods, None);
+    let grok = items
+        .iter()
+        .find(|i| i.label().starts_with("xAI Grok"))
+        .expect("grok row");
+    assert!(
+        grok.connected(&app.auth_methods),
+        "the just-authenticated method must show as connected"
+    );
+    let kimi = items
+        .iter()
+        .find(|i| i.label().starts_with("Kimi Code"))
+        .expect("kimi row");
+    assert!(
+        !kimi.connected(&app.auth_methods),
+        "other methods must stay unmarked"
+    );
+}

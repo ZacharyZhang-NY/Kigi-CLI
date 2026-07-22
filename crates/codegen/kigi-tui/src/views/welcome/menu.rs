@@ -9,6 +9,11 @@ use crate::theme::Theme;
 
 use super::logo::logo_visual_width;
 
+/// Key-column badge for a login-picker row whose provider already holds a
+/// stored credential. Rendered green (content-based restyle, like the
+/// import row's `[x]`).
+pub(crate) const CONNECTED_BADGE: &str = "connected";
+
 /// Render the welcome menu rows as `label … shortcut`, padded within each row.
 ///
 /// The area is a viewport: when there are more items than rows, the window
@@ -117,8 +122,16 @@ pub fn render_menu(
         };
         buf.set_span(menu_centered.x, y, &Span::styled(*label, lstyle), label_len);
 
-        // Key shortcut flush with the right edge of the menu column.
-        let kstyle = if is_selected {
+        // Key shortcut flush with the right edge of the menu column. The
+        // "connected" badge renders green instead of the shortcut gray.
+        let kstyle = if *key == CONNECTED_BADGE {
+            let green = Style::default().fg(theme.accent_success);
+            if is_selected {
+                green.bg(theme.bg_highlight)
+            } else {
+                green
+            }
+        } else if is_selected {
             key_selected_style
         } else {
             key_style
