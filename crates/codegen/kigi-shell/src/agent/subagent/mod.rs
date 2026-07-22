@@ -982,9 +982,20 @@ fn resolve_model_override_to_config(
     } else {
         acp::ModelId::new(entry.info().model.clone())
     };
-    let session_key = ctx.auth.as_ref().map(|a| a.key.as_str());
+    // Resolve the child's session token by the OVERRIDE model's OWN platform,
+    // not the parent's primary auth: a grok (oauth-platform) override draws its
+    // pooled grok token or `None` — NEVER the primary Kimi session token (which
+    // `resolve_credentials` would otherwise stamp onto the child's api.x.ai
+    // credentials, leaking it in the logout-mid-session edge). A first-party /
+    // non-oauth override still resolves to the primary (byte-identical).
+    let managed_key = entry.info().id.as_deref().unwrap_or(model_id);
+    let session_key = crate::auth::oauth_registry::session_key_for_model(
+        &crate::util::kigi_home::kigi_home(),
+        managed_key,
+        Some(&ctx.auth_manager),
+    );
     let has_session_key = session_key.is_some();
-    let mut credentials = resolve_credentials(&entry, session_key);
+    let mut credentials = resolve_credentials(&entry, session_key.as_deref());
     credentials.auth_type = subagent_auth_type(Some(&entry), &ctx.auth_method_id);
     let resolved_auth_type = credentials.auth_type;
     let config = sampling_config_for_model(&entry, credentials, ctx.alpha_test_key.clone());

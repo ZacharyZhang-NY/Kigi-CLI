@@ -176,6 +176,7 @@ async fn handle_connection(ws: WebSocket, state: Arc<ServerState>, peer_addr: So
                         prefetch_models_blocking(
                             &agent_config.endpoints,
                             auth.as_ref(),
+                            &Default::default(),
                             fetch_auth,
                             &platform_keys,
                         )

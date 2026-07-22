@@ -4599,6 +4599,80 @@ reasoning_effort = "low"
         assert_eq!(resolved.base_url, "https://vendor.example/v1");
         assert_eq!(resolved.api_key.as_deref(), Some("vendor-key"));
     }
+    /// A primary Kimi manager holding a fixed in-memory bearer, standing in for
+    /// an aux caller's session. `TempDir` returned so the caller keeps it alive.
+    fn kimi_primary(key: &str) -> (tempfile::TempDir, std::sync::Arc<AuthManager>) {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = std::sync::Arc::new(AuthManager::new(dir.path(), KimiCodeConfig::default()));
+        manager.hot_swap(crate::auth::KimiAuth {
+            key: key.to_string(),
+            auth_mode: crate::auth::AuthMode::OAuth,
+            ..crate::auth::KimiAuth::test_default()
+        });
+        (dir, manager)
+    }
+    /// LEAK 1a (aux/summary model): the aux `session_key` is resolved by the aux
+    /// model's OWN platform (as `build_summary_client` / `resolve_aux_sampler_config`
+    /// now do). A grok (oauth-platform) aux model's resolved sampler `api_key` is
+    /// therefore grok's own token or `None` — NEVER the primary Kimi key — while a
+    /// first-party / non-oauth aux model still gets the primary (byte-identical).
+    #[tokio::test]
+    async fn aux_model_session_key_is_platform_scoped_never_leaking_kimi() {
+        let home = tempfile::tempdir().unwrap();
+        let (_kd, kimi) = kimi_primary("kimi-tok");
+        let endpoints = EndpointsConfig::default();
+        // A grok aux catalog entry (managed id → oauth platform), no own key.
+        let mut grok = test_model_entry("grok-4-latest", "https://api.x.ai/v1", None, None, None);
+        grok.info.id = Some("xai-grok/grok-4-latest".to_string());
+        let mut grok_catalog = IndexMap::new();
+        grok_catalog.insert("grok".to_string(), grok);
+        let grok_key = crate::auth::oauth_registry::session_key_for_model(
+            home.path(),
+            "xai-grok/grok-4-latest",
+            Some(&kimi),
+        );
+        let grok_cfg = resolve_aux_model_sampling_config(
+            "grok",
+            &grok_catalog,
+            &endpoints,
+            grok_key.as_deref(),
+            None,
+        );
+        assert_ne!(
+            grok_cfg.and_then(|c| c.api_key).as_deref(),
+            Some("kimi-tok"),
+            "a grok aux model must never receive the primary Kimi session token",
+        );
+        // A non-oauth aux catalog entry still resolves to the primary token.
+        let mut k2 = test_model_entry(
+            "kimi-k2-0905-preview",
+            "https://vendor/v1",
+            None,
+            None,
+            None,
+        );
+        k2.info.id = Some("moonshot-cn/kimi-k2".to_string());
+        let mut k2_catalog = IndexMap::new();
+        k2_catalog.insert("k2".to_string(), k2);
+        let k2_key = crate::auth::oauth_registry::session_key_for_model(
+            home.path(),
+            "moonshot-cn/kimi-k2",
+            Some(&kimi),
+        );
+        let k2_cfg = resolve_aux_model_sampling_config(
+            "k2",
+            &k2_catalog,
+            &endpoints,
+            k2_key.as_deref(),
+            None,
+        )
+        .expect("non-oauth aux resolves via the primary session token");
+        assert_eq!(
+            k2_cfg.api_key.as_deref(),
+            Some("kimi-tok"),
+            "a non-oauth aux model must still receive the primary session token",
+        );
+    }
     #[test]
     fn parses_model_api_key() {
         let raw_config: toml::Value = toml::from_str(

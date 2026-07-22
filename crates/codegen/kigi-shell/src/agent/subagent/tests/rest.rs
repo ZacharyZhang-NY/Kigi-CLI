@@ -2467,6 +2467,76 @@ async fn resolve_subagent_config_override_unknown_model_falls_through_to_inherit
     assert_eq!(config.model, "kigi-4.5");
     assert_eq!(model_id.0.as_ref(), "kigi-4.5");
 }
+/// Build an `Arc<AuthManager>` (primary Kimi) holding `key` as its live bearer.
+/// The `TempDir` is returned so the caller keeps it alive.
+fn kimi_primary_with_token(key: &str) -> (tempfile::TempDir, std::sync::Arc<crate::auth::AuthManager>) {
+    let dir = tempfile::tempdir().unwrap();
+    let manager = std::sync::Arc::new(crate::auth::AuthManager::new(
+        dir.path(),
+        crate::auth::KimiCodeConfig::default(),
+    ));
+    manager.hot_swap(crate::auth::KimiAuth {
+        key: key.to_string(),
+        auth_mode: crate::auth::AuthMode::OAuth,
+        ..crate::auth::KimiAuth::test_default()
+    });
+    (dir, manager)
+}
+/// LEAK 2 (subagent model-override): a grok (oauth-platform) override with a
+/// Kimi primary must NEVER receive the primary Kimi session token as its
+/// `api_key` — it draws grok's own pooled token (or `None`). Revert-to-red: the
+/// pre-fix code passed `ctx.auth` (Kimi) straight to `resolve_credentials`, so
+/// `config.api_key == "kimi-secret"` and this assertion fails.
+#[tokio::test]
+async fn subagent_override_grok_model_never_leaks_kimi_session_token() {
+    let (_kd, manager) = kimi_primary_with_token("kimi-secret");
+    let mut grok = test_model_entry("grok-4-latest");
+    grok.info.id = Some("xai-grok/grok-4-latest".to_string());
+    grok.info.base_url = "https://api.x.ai/v1".to_string();
+    let mut models = indexmap::IndexMap::new();
+    models.insert("grok".to_string(), grok);
+    let mut ctx = ctx_with_toggle(HashMap::new());
+    ctx.available_models = models;
+    ctx.auth = Some(crate::auth::KimiAuth {
+        key: "kimi-secret".to_string(),
+        auth_mode: crate::auth::AuthMode::OAuth,
+        ..crate::auth::KimiAuth::test_default()
+    });
+    ctx.auth_manager = manager;
+    let (config, _model_id) =
+        resolve_model_override_to_config("grok", &ctx).expect("grok override resolves to a config");
+    assert_ne!(
+        config.api_key.as_deref(),
+        Some("kimi-secret"),
+        "a grok override must never receive the primary Kimi session token",
+    );
+}
+/// Byte-identical guard: a non-oauth override with a Kimi primary still resolves
+/// to the primary session token — passes both before and after the fix (the
+/// non-oauth path is unchanged).
+#[tokio::test]
+async fn subagent_override_non_oauth_model_still_gets_primary_token() {
+    let (_kd, manager) = kimi_primary_with_token("kimi-secret");
+    let mut entry = test_model_entry("kimi-k2-0905-preview");
+    entry.info.id = Some("moonshot-cn/kimi-k2".to_string());
+    let mut models = indexmap::IndexMap::new();
+    models.insert("k2".to_string(), entry);
+    let mut ctx = ctx_with_toggle(HashMap::new());
+    ctx.available_models = models;
+    ctx.auth = Some(crate::auth::KimiAuth {
+        key: "kimi-secret".to_string(),
+        auth_mode: crate::auth::AuthMode::OAuth,
+        ..crate::auth::KimiAuth::test_default()
+    });
+    ctx.auth_manager = manager;
+    let (config, _model_id) =
+        resolve_model_override_to_config("k2", &ctx).expect("non-oauth override resolves to a config");
+    assert_eq!(
+        config.api_key.as_deref(),
+        Some("kimi-secret"),
+        "a non-oauth override must still receive the primary session token",
+    );
+}
 /// An unresolvable `AgentDefinition.model` pin (model absent from
 /// `available_models`) falls through to inherit the parent model.
 #[tokio::test]

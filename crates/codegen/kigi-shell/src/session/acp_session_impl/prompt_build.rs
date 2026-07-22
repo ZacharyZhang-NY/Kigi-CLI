@@ -624,12 +624,25 @@ impl SessionActor {
         let resolved_describe = self
             .resolve_aux_sampler_config(&self.image_description_model)
             .await;
-        let (describe_model, sampler_config) =
+        // LEAK 1b: only re-point the aux bearer_resolver when the aux model
+        // actually resolved (Some) — the `None` fallback yields the SESSION
+        // config, whose Kimi resolver must stay as-is.
+        let aux_resolved = resolved_describe.is_some();
+        let (describe_model, mut sampler_config) =
             crate::agent::config::finalize_image_describe_sampler_config(
                 resolved_describe,
                 &active_session_config,
                 Some(self.max_retries),
             );
+        // A grok (oauth-platform) image-describe model must not inherit the
+        // session (Kimi) bearer_resolver stamped by `finalize_*`; re-point it at
+        // grok's own manager. No-op for a first-party / non-oauth model.
+        if aux_resolved {
+            self.repoint_aux_bearer_resolver_for_oauth(
+                &mut sampler_config,
+                &self.image_description_model,
+            );
+        }
         let client = kigi_sampler::SamplingClient::new(sampler_config).map_err(|e| {
             acp::Error::internal_error().data(format!(
                 "failed to build image-describe sampling client: {e}"

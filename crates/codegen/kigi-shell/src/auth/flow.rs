@@ -67,6 +67,37 @@ pub async fn run_auth_flow(
     run_auth_flow_inner(auth_manager, kimi_code_config, reauth, false, channels).await
 }
 
+/// Login flow for a GENERIC device-code OAuth provider (xai-grok): use a valid
+/// cached session unless re-authing, otherwise run the generic device flow
+/// (persisting under the provider's own scope via `auth_manager`). Unlike the
+/// Kimi flow this does not run the silent-refresh dance — the device flow's
+/// `AuthManager::update` persists a fresh token set directly.
+pub async fn run_oauth_provider_flow(
+    auth_manager: &Arc<AuthManager>,
+    oauth: &'static kigi_models::OAuthConfig,
+    reauth: bool,
+    channels: Option<AuthChannels>,
+) -> anyhow::Result<(KimiAuth, bool)> {
+    tracing::info!(
+        scope_key = oauth.scope_key,
+        reauth,
+        "auth: starting generic oauth login"
+    );
+    if reauth {
+        auth_manager.clear()?;
+    }
+    if !reauth && let Some(auth) = auth_manager.current() {
+        tracing::info!(
+            scope_key = oauth.scope_key,
+            "auth: using cached oauth session"
+        );
+        return Ok((auth, false));
+    }
+    let mut channels = channels;
+    crate::auth::device_code::run_device_code_login_generic(oauth, auth_manager, &mut channels)
+        .await
+}
+
 async fn run_auth_flow_inner(
     auth_manager: &Arc<AuthManager>,
     _kimi_code_config: &KimiCodeConfig,

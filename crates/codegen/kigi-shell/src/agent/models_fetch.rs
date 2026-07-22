@@ -28,6 +28,44 @@ pub(crate) const DEFAULT_CONTEXT_WINDOW: u64 = 256_000;
 struct ModelsResponse {
     data: Vec<serde_json::Value>,
 }
+
+/// Session bearer tokens for the GENERIC device-code OAuth platforms
+/// (`platform.oauth().is_some()` — xai-grok today), resolved per provider from
+/// its own scope-keyed `AuthManager` (refreshed on expiry) before the blocking
+/// fetch. kimi-code is NOT here — it still rides the single `auth: &KimiAuth`.
+///
+/// SECURITY: values are access tokens — never logged, never persisted here.
+pub(crate) type OAuthSessionTokens = std::collections::BTreeMap<kigi_models::PlatformId, String>;
+
+/// Resolve session bearers for every generic device-code OAuth platform whose
+/// own `AuthManager` holds a usable (refreshed-on-expiry) session. Each
+/// platform resolves from ITS OWN scope (`oauth/xai`, …) — independent of the
+/// Kimi session. Providers without a stored session are simply absent. Only a
+/// non-secret count is logged.
+pub(crate) async fn resolve_generic_oauth_tokens(
+    kigi_home: &std::path::Path,
+) -> OAuthSessionTokens {
+    let mut tokens = OAuthSessionTokens::new();
+    for platform in kigi_models::PlatformId::ALL {
+        let Some(oauth) = platform.oauth() else {
+            continue;
+        };
+        let manager = std::sync::Arc::new(crate::auth::AuthManager::new_oauth_provider(
+            kigi_home, oauth,
+        ));
+        manager.configure_refresher();
+        if let Ok(auth) = manager.auth().await {
+            tokens.insert(platform, auth.key);
+        }
+    }
+    if !tokens.is_empty() {
+        tracing::info!(
+            count = tokens.len(),
+            "resolved generic oauth platform session tokens"
+        );
+    }
+    tokens
+}
 /// The models-fetch origin key for this endpoints/auth shape. Used as the
 /// models disk-cache origin: cached entries embed absolute `base_url`s from
 /// the backend(s) that served them, so a catalog fetched against one fetch
@@ -38,12 +76,13 @@ pub(crate) fn models_fetch_origin(
     endpoints: &crate::agent::config::EndpointsConfig,
     fetch_auth: crate::agent::models::ModelFetchAuth,
     has_oauth: bool,
+    oauth_tokens: &OAuthSessionTokens,
     platform_keys: &crate::agent::models::PlatformApiKeys,
 ) -> String {
     match fetch_auth {
         crate::agent::models::ModelFetchAuth::CustomEndpoint => endpoints.resolve_models_list_url(),
         crate::agent::models::ModelFetchAuth::Platforms => {
-            let parts: Vec<String> = enabled_platforms(has_oauth, platform_keys)
+            let parts: Vec<String> = enabled_platforms(has_oauth, oauth_tokens, platform_keys)
                 .into_iter()
                 .map(|p| format!("{}={}", p.as_str(), platform_models_url(p, endpoints)))
                 .collect();
@@ -53,14 +92,23 @@ pub(crate) fn models_fetch_origin(
 }
 /// The platforms with usable credentials, in registry order (kimi-code first
 /// so "default model = first list item" favors the subscription).
+///
+/// - kimi-code (`uses_oauth`, no `OAuthConfig`) is gated on the single Kimi
+///   session (`has_oauth`);
+/// - a generic device-code OAuth platform (`oauth().is_some()`, e.g. xai-grok)
+///   is gated on ITS OWN resolved session token (`oauth_tokens`);
+/// - an API-key platform is gated on a stored key.
 fn enabled_platforms(
     has_oauth: bool,
+    oauth_tokens: &OAuthSessionTokens,
     platform_keys: &crate::agent::models::PlatformApiKeys,
 ) -> Vec<kigi_models::PlatformId> {
     kigi_models::PlatformId::ALL
         .into_iter()
         .filter(|p| {
-            if p.uses_oauth() {
+            if p.oauth().is_some() {
+                oauth_tokens.contains_key(p)
+            } else if p.uses_oauth() {
                 has_oauth
             } else {
                 platform_keys.key_for(*p).is_some()
@@ -68,20 +116,30 @@ fn enabled_platforms(
         })
         .collect()
 }
-/// `{base}/models` for one platform. The subscription platform resolves its
-/// base through the endpoints config (`coding_api_base_url` override,
-/// else `KIGI_CODE_BASE_URL` / production default via kigi-env); the open
-/// platforms use their fixed bases.
+/// The inference/listing base for one platform's `/models` fetch:
+/// - kimi-code (`uses_oauth`, no `OAuthConfig`) → the Kimi subscription base
+///   via the endpoints config (`proxy_url`);
+/// - every other platform — API-key AND generic OAuth (xai-grok) — → its own
+///   registry `base_url()` (e.g. api.x.ai/v1).
+fn platform_fetch_base(
+    platform: kigi_models::PlatformId,
+    endpoints: &crate::agent::config::EndpointsConfig,
+) -> String {
+    if platform.uses_oauth() && platform.oauth().is_none() {
+        endpoints.proxy_url()
+    } else {
+        platform.base_url()
+    }
+}
+/// `{base}/models` for one platform (see [`platform_fetch_base`]).
 fn platform_models_url(
     platform: kigi_models::PlatformId,
     endpoints: &crate::agent::config::EndpointsConfig,
 ) -> String {
-    let base = if platform.uses_oauth() {
-        endpoints.proxy_url()
-    } else {
-        platform.base_url()
-    };
-    format!("{}/models", base.trim_end_matches('/'))
+    format!(
+        "{}/models",
+        platform_fetch_base(platform, endpoints).trim_end_matches('/')
+    )
 }
 /// Fetch result: model entries + optional etag from the subscription platform.
 pub struct FetchModelsResult {
@@ -106,6 +164,7 @@ pub struct FetchModelsResult {
 pub(crate) fn fetch_models_blocking(
     endpoints: &crate::agent::config::EndpointsConfig,
     auth: Option<&KimiAuth>,
+    oauth_tokens: &OAuthSessionTokens,
     fetch_auth: crate::agent::models::ModelFetchAuth,
     platform_keys: &crate::agent::models::PlatformApiKeys,
 ) -> Result<FetchModelsResult, BackendError> {
@@ -114,7 +173,7 @@ pub(crate) fn fetch_models_blocking(
             fetch_custom_endpoint_models_blocking(endpoints, auth)
         }
         crate::agent::models::ModelFetchAuth::Platforms => {
-            fetch_platform_models_blocking(endpoints, auth, platform_keys)
+            fetch_platform_models_blocking(endpoints, auth, oauth_tokens, platform_keys)
         }
     }
 }
@@ -173,9 +232,10 @@ fn fetch_custom_endpoint_models_blocking(
 fn fetch_platform_models_blocking(
     endpoints: &crate::agent::config::EndpointsConfig,
     auth: Option<&KimiAuth>,
+    oauth_tokens: &OAuthSessionTokens,
     platform_keys: &crate::agent::models::PlatformApiKeys,
 ) -> Result<FetchModelsResult, BackendError> {
-    let enabled = enabled_platforms(auth.is_some(), platform_keys);
+    let enabled = enabled_platforms(auth.is_some(), oauth_tokens, platform_keys);
     if enabled.is_empty() {
         return Err(BackendError::Auth(
             "No platform credentials: log in with `kigi login`, paste a platform API key in \
@@ -194,7 +254,14 @@ fn fetch_platform_models_blocking(
     // serves its own metadata (kimi/moonshot today).
     let enrichment = crate::agent::enrichment_fetch::load_enrichment_catalog(&enabled);
     for platform in &enabled {
-        let bearer = if platform.uses_oauth() {
+        let bearer = if platform.oauth().is_some() {
+            // Generic device-code OAuth platform (xai-grok): its OWN resolved
+            // session token — never the Kimi session.
+            oauth_tokens
+                .get(platform)
+                .expect("enabled_platforms gated on generic-oauth token presence")
+                .clone()
+        } else if platform.uses_oauth() {
             auth.map(|a| a.key.clone())
                 .expect("enabled_platforms gated on auth presence")
         } else {
@@ -211,7 +278,9 @@ fn fetch_platform_models_blocking(
                     "platform models fetch succeeded"
                 );
                 successes += 1;
-                if platform.uses_oauth() {
+                // The catalog etag tracks the Kimi subscription listing only
+                // (kimi-code: uses_oauth with no generic OAuthConfig).
+                if platform.uses_oauth() && platform.oauth().is_none() {
                     etag = platform_etag;
                 }
                 models.extend(platform_models);
@@ -383,11 +452,7 @@ fn fetch_one_platform_models(
             );
         }
     }
-    let base_url = if platform.uses_oauth() {
-        endpoints.proxy_url()
-    } else {
-        platform.base_url()
-    };
+    let base_url = platform_fetch_base(platform, endpoints);
     let models = filtered
         .into_iter()
         .map(|mut wire| {
@@ -835,7 +900,7 @@ mod tests {
             "sk-oai",
         );
         let result = tokio::task::spawn_blocking(move || {
-            fetch_platform_models_blocking(&endpoints, None, &keys)
+            fetch_platform_models_blocking(&endpoints, None, &Default::default(), &keys)
         })
         .await
         .unwrap()
@@ -983,7 +1048,7 @@ mod tests {
             "sk-ant",
         );
         let result = tokio::task::spawn_blocking(move || {
-            fetch_platform_models_blocking(&endpoints, None, &keys)
+            fetch_platform_models_blocking(&endpoints, None, &Default::default(), &keys)
         })
         .await
         .unwrap()
@@ -1095,7 +1160,7 @@ mod tests {
             "sk-ds",
         );
         let result = tokio::task::spawn_blocking(move || {
-            fetch_platform_models_blocking(&endpoints, None, &keys)
+            fetch_platform_models_blocking(&endpoints, None, &Default::default(), &keys)
         })
         .await
         .unwrap()
@@ -1193,7 +1258,7 @@ mod tests {
             "gsk-1",
         );
         let result = tokio::task::spawn_blocking(move || {
-            fetch_platform_models_blocking(&endpoints, None, &keys)
+            fetch_platform_models_blocking(&endpoints, None, &Default::default(), &keys)
         })
         .await
         .unwrap()
@@ -1277,7 +1342,7 @@ mod tests {
             "msk-1",
         );
         let result = tokio::task::spawn_blocking(move || {
-            fetch_platform_models_blocking(&endpoints, None, &keys)
+            fetch_platform_models_blocking(&endpoints, None, &Default::default(), &keys)
         })
         .await
         .unwrap()
@@ -1363,7 +1428,7 @@ mod tests {
             "fw-1",
         );
         let result = tokio::task::spawn_blocking(move || {
-            fetch_platform_models_blocking(&endpoints, None, &keys)
+            fetch_platform_models_blocking(&endpoints, None, &Default::default(), &keys)
         })
         .await
         .unwrap()
@@ -1471,7 +1536,7 @@ mod tests {
             "gk-1",
         );
         let result = tokio::task::spawn_blocking(move || {
-            fetch_platform_models_blocking(&endpoints, None, &keys)
+            fetch_platform_models_blocking(&endpoints, None, &Default::default(), &keys)
         })
         .await
         .unwrap()
@@ -1555,7 +1620,7 @@ mod tests {
             "or-1",
         );
         let result = tokio::task::spawn_blocking(move || {
-            fetch_platform_models_blocking(&endpoints, None, &keys)
+            fetch_platform_models_blocking(&endpoints, None, &Default::default(), &keys)
         })
         .await
         .unwrap()
@@ -1660,7 +1725,7 @@ mod tests {
             "tg-1",
         );
         let result = tokio::task::spawn_blocking(move || {
-            fetch_platform_models_blocking(&endpoints, None, &keys)
+            fetch_platform_models_blocking(&endpoints, None, &Default::default(), &keys)
         })
         .await
         .unwrap()
@@ -1753,7 +1818,7 @@ mod tests {
             "cb-1",
         );
         let result = tokio::task::spawn_blocking(move || {
-            fetch_platform_models_blocking(&endpoints, None, &keys)
+            fetch_platform_models_blocking(&endpoints, None, &Default::default(), &keys)
         })
         .await
         .unwrap()
@@ -1861,7 +1926,7 @@ mod tests {
             "nvapi-1",
         );
         let result = tokio::task::spawn_blocking(move || {
-            fetch_platform_models_blocking(&endpoints, None, &keys)
+            fetch_platform_models_blocking(&endpoints, None, &Default::default(), &keys)
         })
         .await
         .unwrap()
@@ -1955,7 +2020,7 @@ mod tests {
             "vg-1",
         );
         let result = tokio::task::spawn_blocking(move || {
-            fetch_platform_models_blocking(&endpoints, None, &keys)
+            fetch_platform_models_blocking(&endpoints, None, &Default::default(), &keys)
         })
         .await
         .unwrap()
@@ -2048,7 +2113,7 @@ mod tests {
             "xai-1",
         );
         let result = tokio::task::spawn_blocking(move || {
-            fetch_platform_models_blocking(&endpoints, None, &keys)
+            fetch_platform_models_blocking(&endpoints, None, &Default::default(), &keys)
         })
         .await
         .unwrap()
@@ -2139,7 +2204,7 @@ mod tests {
             "qtp-1",
         );
         let result = tokio::task::spawn_blocking(move || {
-            fetch_platform_models_blocking(&endpoints, None, &keys)
+            fetch_platform_models_blocking(&endpoints, None, &Default::default(), &keys)
         })
         .await
         .unwrap()
@@ -2221,7 +2286,7 @@ mod tests {
             "kc-1",
         );
         let result = tokio::task::spawn_blocking(move || {
-            fetch_platform_models_blocking(&endpoints, None, &keys)
+            fetch_platform_models_blocking(&endpoints, None, &Default::default(), &keys)
         })
         .await
         .unwrap()
@@ -2312,7 +2377,7 @@ mod tests {
             "zai-1",
         );
         let result = tokio::task::spawn_blocking(move || {
-            fetch_platform_models_blocking(&endpoints, None, &keys)
+            fetch_platform_models_blocking(&endpoints, None, &Default::default(), &keys)
         })
         .await
         .unwrap()
@@ -2402,7 +2467,7 @@ mod tests {
             "xm-1",
         );
         let result = tokio::task::spawn_blocking(move || {
-            fetch_platform_models_blocking(&endpoints, None, &keys)
+            fetch_platform_models_blocking(&endpoints, None, &Default::default(), &keys)
         })
         .await
         .unwrap()
@@ -2493,7 +2558,7 @@ mod tests {
             "mm-1",
         );
         let result = tokio::task::spawn_blocking(move || {
-            fetch_platform_models_blocking(&endpoints, None, &keys)
+            fetch_platform_models_blocking(&endpoints, None, &Default::default(), &keys)
         })
         .await
         .unwrap()
@@ -2991,6 +3056,125 @@ mod tests {
             "https://registry.acme.com/api/list-models"
         );
     }
+    /// xai-grok OAuth-cycle e2e (mock wire): the generic device-code OAuth
+    /// bearer (`grok-oauth-tok`, resolved from a stored `oauth/xai` session —
+    /// mocked here as the token map) fetches `GET {base}/models` against the
+    /// platform's OWN base (api.x.ai/v1 via its env), enriches from models.dev
+    /// "xai", restricts to tool-calling chat models, and keys each entry under
+    /// `xai-grok/<id>` with the Passthrough dialect — NOT the API-key `xai/`.
+    #[tokio::test(flavor = "multi_thread")]
+    #[serial_test::serial]
+    async fn xai_grok_oauth_listing_is_enriched_restricted_and_keyed() {
+        let platform_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/models"))
+            .and(wiremock::matchers::header(
+                "Authorization",
+                "Bearer grok-oauth-tok",
+            ))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({ "data": [
+                    { "id": "grok-4.5", "object": "model" },
+                    // enrichment-known but NOT tool-calling → dropped by restrict.
+                    { "id": "grok-2-image", "object": "model" }
+                ]}),
+            ))
+            .expect(1)
+            .mount(&platform_server)
+            .await;
+        let modelsdev_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/api.json"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({ "xai": { "models": {
+                    "grok-4.5": {
+                        "name": "Grok 4.5",
+                        "reasoning": true,
+                        "limit": {"context": 256000, "output": 64000},
+                        "tool_call": true
+                    },
+                    "grok-2-image": { "limit": {"context": 8192} }
+                }}}),
+            ))
+            .expect(1)
+            .mount(&modelsdev_server)
+            .await;
+        let cache_dir = tempfile::tempdir().unwrap();
+        let _base = kigi_test_support::EnvGuard::set(
+            kigi_models::XAI_GROK_BASE_URL_ENV,
+            platform_server.uri(),
+        );
+        let _mdev = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_URL_ENV,
+            format!("{}/api.json", modelsdev_server.uri()),
+        );
+        let _mdev_cache = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_CACHE_DIR_ENV,
+            cache_dir.path(),
+        );
+
+        let endpoints = crate::agent::config::EndpointsConfig::default();
+        let keys = crate::agent::models::PlatformApiKeys::default();
+        let mut tokens = OAuthSessionTokens::new();
+        tokens.insert(kigi_models::PlatformId::XaiGrok, "grok-oauth-tok".into());
+        let result = tokio::task::spawn_blocking(move || {
+            fetch_platform_models_blocking(&endpoints, None, &tokens, &keys)
+        })
+        .await
+        .unwrap()
+        .expect("fetch must succeed");
+
+        assert_eq!(
+            result
+                .models
+                .iter()
+                .map(|m| m.id.as_deref().unwrap_or_default())
+                .collect::<Vec<_>>(),
+            vec!["xai-grok/grok-4.5"],
+            "grok-2-image (enrichment-known, not tool-calling) must be dropped; \
+             the surviving model is keyed under xai-grok/ (not xai/)"
+        );
+        let entry = &result.models[0];
+        assert_eq!(entry.model, "grok-4.5");
+        assert_eq!(
+            entry.base_url,
+            platform_server.uri(),
+            "xai-grok fetches against its OWN base (its base env), not proxy_url"
+        );
+        assert_eq!(
+            entry.context_window.get(),
+            256_000,
+            "context window must come from models.dev \"xai\" enrichment"
+        );
+        assert_eq!(entry.max_completion_tokens, Some(64_000));
+        assert_eq!(
+            entry.api_backend,
+            crate::sampling::ApiBackend::ChatCompletions
+        );
+        assert_eq!(entry.name.as_deref(), Some("Grok 4.5"));
+        assert!(
+            entry.env_key.is_none(),
+            "an OAuth channel carries no api-key env"
+        );
+        assert!(
+            !entry.supported_in_api,
+            "subscription models require the OAuth session (not the public API)"
+        );
+        // Passthrough dialect (identical to the API-key xai wire).
+        let model_entry = crate::agent::config::ModelEntry::from_config_entry(entry);
+        let creds = crate::agent::config::ResolvedCredentials {
+            api_key: Some("grok-oauth-tok".into()),
+            base_url: entry.base_url.clone(),
+            auth_type: kigi_chat_state::AuthType::SessionToken,
+            auth_scheme: Default::default(),
+        };
+        let cfg = crate::agent::config::sampling_config_for_model(&model_entry, creds, None);
+        assert_eq!(
+            cfg.chat_compat,
+            kigi_sampling_types::ChatCompat::Passthrough
+        );
+    }
+
     /// INVARIANT: each platform's `/models` URL matches its registry base —
     /// kimi-code → the subscription proxy (config override respected, else the
     /// kigi-env default), moonshot platforms → their fixed bases — and the
@@ -3024,6 +3208,12 @@ mod tests {
             platform_models_url(kigi_models::PlatformId::OpenAi, &cfg),
             "https://api.openai.com/v1/models"
         );
+        // xai-grok is uses_oauth but carries an OAuthConfig → its OWN base
+        // (api.x.ai/v1), NOT the Kimi subscription proxy.
+        assert_eq!(
+            platform_models_url(kigi_models::PlatformId::XaiGrok, &cfg),
+            "https://api.x.ai/v1/models"
+        );
         // Proxy override re-points the subscription platform only.
         let proxied = EndpointsConfig::from_config_value(
             &toml::from_str(
@@ -3047,6 +3237,7 @@ mod tests {
             &cfg,
             ModelFetchAuth::Platforms,
             true,
+            &Default::default(),
             &PlatformApiKeys::default(),
         );
         assert_eq!(
@@ -3057,6 +3248,7 @@ mod tests {
             &cfg,
             ModelFetchAuth::Platforms,
             true,
+            &Default::default(),
             &crate::agent::models::PlatformApiKeys::test_keys(Some("sk-secret-cn"), None),
         );
         assert_ne!(
@@ -3082,6 +3274,7 @@ mod tests {
                 &custom,
                 ModelFetchAuth::CustomEndpoint,
                 false,
+                &Default::default(),
                 &PlatformApiKeys::default(),
             ),
             "https://models.acme.com/v1/models"

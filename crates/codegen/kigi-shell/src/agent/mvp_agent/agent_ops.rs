@@ -25,7 +25,16 @@ impl MvpAgent {
         primary: &SamplingConfig,
     ) -> Result<(OaiCompatClient, String), acp::Error> {
         let slug = self.resolve_session_summary_model();
-        let session_key = self.auth_manager.current_or_expired().map(|a| a.key.clone());
+        // Resolve the aux token by the summary model's OWN platform: a grok
+        // (oauth-platform) summary model draws its pooled grok token or `None`
+        // — NEVER the primary Kimi session token (which `resolve_credentials`
+        // would otherwise stamp onto an api.x.ai request). A first-party /
+        // non-oauth summary model still gets the primary (byte-identical).
+        let session_key = crate::auth::oauth_registry::session_key_for_model(
+            &crate::util::kigi_home::kigi_home(),
+            &slug,
+            Some(&self.auth_manager),
+        );
         let models = self.models_manager.models();
         let endpoints = self.models_manager.endpoints();
         let alpha_test_key = self.cfg.borrow().endpoints.alpha_test_key.clone();
@@ -514,6 +523,73 @@ impl MvpAgent {
             .and_then(|v| v.as_object().cloned());
         Ok(AuthenticateResponse::new().meta(meta))
     }
+    /// `authenticate(<generic-oauth platform id>)`: interactive device-code
+    /// login for a `uses_oauth` platform carrying an `OAuthConfig` (xai-grok).
+    ///
+    /// Uses a per-provider [`AuthManager`] scoped to the platform's `scope_key`
+    /// (NOT the primary Kimi manager) so the minted session is persisted under
+    /// its own `auth.json` scope, then triggers a catalog re-sync so the
+    /// platform's models appear (their bearer is resolved per-provider at fetch
+    /// / sampling time). The tokens are never logged.
+    pub(super) async fn authenticate_oauth_platform(
+        &self,
+        platform: kigi_models::PlatformId,
+        arguments: acp::AuthenticateRequest,
+    ) -> Result<AuthenticateResponse, acp::Error> {
+        let method_id = arguments.method_id.clone();
+        let oauth = platform
+            .oauth()
+            .expect("oauth_platform() guarantees a device-code OAuthConfig");
+        let auth_meta = AuthRequestMeta::from_json(arguments.meta.as_ref());
+        tracing::info!(
+            method = method_id.0.as_ref(),
+            headless = auth_meta.headless,
+            reauth = auth_meta.reauth,
+            "auth: generic oauth device login",
+        );
+        let kigi_home = crate::util::kigi_home::kigi_home();
+        let auth_manager =
+            std::sync::Arc::new(crate::auth::AuthManager::new_oauth_provider(&kigi_home, oauth));
+        auth_manager.configure_refresher();
+
+        let flow_result = if !auth_meta.headless {
+            let (url_tx, url_rx) = tokio::sync::oneshot::channel();
+            let (code_tx, code_rx) = tokio::sync::mpsc::channel(1);
+            *self.auth_code_tx.borrow_mut() = Some(code_tx);
+            *self.auth_url_rx.borrow_mut() = Some(url_rx);
+            let result = crate::auth::run_oauth_provider_flow(
+                &auth_manager,
+                oauth,
+                auth_meta.reauth,
+                Some(crate::auth::AuthChannels {
+                    url_tx: Some(url_tx),
+                    code_rx,
+                }),
+            )
+            .await;
+            *self.auth_code_tx.borrow_mut() = None;
+            *self.auth_url_rx.borrow_mut() = None;
+            result
+        } else {
+            crate::auth::run_oauth_provider_flow(&auth_manager, oauth, auth_meta.reauth, None).await
+        };
+
+        let (_auth, _did_auth) = flow_result.map_err(|e| {
+            emit_login_span(false, method_id.0.as_ref(), None, Some("login_flow_failed"));
+            let mut err = acp::Error::auth_required();
+            err.message = e.to_string();
+            err
+        })?;
+
+        // Do NOT stamp this token onto the shared sampling_config: it authorizes
+        // ONLY this platform's models (api.x.ai/v1), not the primary session.
+        // The catalog re-sync below resolves it per-provider.
+        self.set_auth_method(method_id.clone());
+        self.models_manager.on_auth_changed().await;
+        emit_login_span(true, method_id.0.as_ref(), None, None);
+        Ok(self.auth_response_with_meta())
+    }
+
     pub(crate) fn deployment_key(&self) -> Option<String> {
         self.cfg.borrow().endpoints.deployment_key.clone()
     }
@@ -593,16 +669,50 @@ impl MvpAgent {
         );
         Ok(entry.clone())
     }
+    /// Resolve the SESSION token for `model` by the model's OWN platform — the
+    /// single guard against the api_key-channel token leak.
+    ///
+    /// An oauth-platform model (xai-grok) draws its session token from ITS OWN
+    /// process-global pool manager (build-on-demand from the on-disk grok token,
+    /// proactively refreshed), INDEPENDENT of the primary `auth_method`; when
+    /// that provider has no stored session the token is `None` — NEVER the
+    /// primary Kimi key. Every other model (first-party / Kimi) uses the primary
+    /// session manager, and only under a session-based auth method —
+    /// byte-identical to the pre-fix path. SECURITY: the resolved token is never
+    /// logged.
+    fn session_token_for_model(&self, model: &ModelEntry) -> Option<crate::auth::KimiAuth> {
+        if let Some(oauth) = model
+            .info()
+            .id
+            .as_deref()
+            .and_then(kigi_models::parse_managed_model_key)
+            .and_then(|(platform, _)| platform.oauth())
+        {
+            return crate::auth::oauth_registry::global_manager_for(
+                &crate::util::kigi_home::kigi_home(),
+                oauth,
+            )
+            .current_or_expired();
+        }
+        if self.is_session_based_auth() {
+            self.auth_manager.current_or_expired()
+        } else {
+            None
+        }
+    }
     pub(crate) fn prepare_sampling_config_for_model(
         &self,
         model: &ModelEntry,
         origin_client: Option<crate::http::OriginClientInfo>,
     ) -> SamplingConfig {
-        let session = if self.is_session_based_auth() {
-            self.auth_manager.current_or_expired()
-        } else {
-            None
-        };
+        // Resolve the session token by the MODEL's platform, not the primary
+        // auth method: an oauth-platform model (xai-grok) uses its OWN
+        // pool-backed token (`None` — never the Kimi key — when the user has not
+        // logged into that provider), closing the api_key-channel leak where the
+        // primary Kimi session token was stamped onto a grok request. A
+        // first-party / Kimi model is unchanged. GUARANTEE: a grok model's
+        // api_key is its own grok token or `None`, never the primary Kimi key.
+        let session = self.session_token_for_model(model);
         let has_session_key = session.is_some();
         let mut credentials = resolve_credentials(
             model,

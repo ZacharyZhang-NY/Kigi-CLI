@@ -6894,28 +6894,33 @@ pub(crate) mod tests {
     #[test]
     fn pending_menu_items_lists_interactive_methods_plus_quit() {
         let items = pending_menu_items(&fresh_user_auth_methods(), None);
-        assert_eq!(items.len(), 26, "25 login rows + Quit, got {items:?}");
+        assert_eq!(items.len(), 27, "26 login rows + Quit, got {items:?}");
         assert!(
             matches!(&items[0], PendingMenuItem::Login { label } if label == "Kimi Code (OAuth)"),
             "row 0 must be the OAuth login, got {:?}",
             items[0]
         );
+        assert!(
+            matches!(&items[1], PendingMenuItem::Login { label } if label == "xAI Grok (subscription) (OAuth)"),
+            "row 1 must be the xai-grok OAuth login (interactive, after kimi-code), got {:?}",
+            items[1]
+        );
         assert_eq!(
-            items[1],
+            items[2],
             PendingMenuItem::ApiKey {
                 target: PlatformLogin(kigi_shell::models::PlatformId::MoonshotCn),
                 label: "Moonshot Open Platform (API key \u{b7} moonshot.cn)".into(),
             }
         );
         assert_eq!(
-            items[2],
+            items[3],
             PendingMenuItem::ApiKey {
                 target: PlatformLogin(kigi_shell::models::PlatformId::MoonshotAi),
                 label: "Moonshot Open Platform (API key \u{b7} moonshot.ai)".into(),
             }
         );
         assert_eq!(
-            items[3],
+            items[4],
             PendingMenuItem::ApiKey {
                 target: PlatformLogin(kigi_shell::models::PlatformId::OpenAi),
                 label: "OpenAI (API key)".into(),
@@ -6923,153 +6928,153 @@ pub(crate) mod tests {
             "new registry rows must appear in the picker with zero TUI changes"
         );
         assert_eq!(
-            items[4],
+            items[5],
             PendingMenuItem::ApiKey {
                 target: PlatformLogin(kigi_shell::models::PlatformId::Anthropic),
                 label: "Anthropic (API key)".into(),
             }
         );
         assert_eq!(
-            items[5],
+            items[6],
             PendingMenuItem::ApiKey {
                 target: PlatformLogin(kigi_shell::models::PlatformId::DeepSeek),
                 label: "DeepSeek (API key)".into(),
             }
         );
         assert_eq!(
-            items[6],
+            items[7],
             PendingMenuItem::ApiKey {
                 target: PlatformLogin(kigi_shell::models::PlatformId::Groq),
                 label: "Groq (API key)".into(),
             }
         );
         assert_eq!(
-            items[7],
+            items[8],
             PendingMenuItem::ApiKey {
                 target: PlatformLogin(kigi_shell::models::PlatformId::Mistral),
                 label: "Mistral (API key)".into(),
             }
         );
         assert_eq!(
-            items[8],
+            items[9],
             PendingMenuItem::ApiKey {
                 target: PlatformLogin(kigi_shell::models::PlatformId::Fireworks),
                 label: "Fireworks AI (API key)".into(),
             }
         );
         assert_eq!(
-            items[9],
+            items[10],
             PendingMenuItem::ApiKey {
                 target: PlatformLogin(kigi_shell::models::PlatformId::Google),
                 label: "Google Gemini (API key)".into(),
             }
         );
         assert_eq!(
-            items[10],
+            items[11],
             PendingMenuItem::ApiKey {
                 target: PlatformLogin(kigi_shell::models::PlatformId::OpenRouter),
                 label: "OpenRouter (API key)".into(),
             }
         );
         assert_eq!(
-            items[11],
+            items[12],
             PendingMenuItem::ApiKey {
                 target: PlatformLogin(kigi_shell::models::PlatformId::Together),
                 label: "Together AI (API key)".into(),
             }
         );
         assert_eq!(
-            items[12],
+            items[13],
             PendingMenuItem::ApiKey {
                 target: PlatformLogin(kigi_shell::models::PlatformId::Cerebras),
                 label: "Cerebras (API key)".into(),
             }
         );
         assert_eq!(
-            items[13],
+            items[14],
             PendingMenuItem::ApiKey {
                 target: PlatformLogin(kigi_shell::models::PlatformId::Nvidia),
                 label: "NVIDIA NIM (API key)".into(),
             }
         );
         assert_eq!(
-            items[14],
+            items[15],
             PendingMenuItem::ApiKey {
                 target: PlatformLogin(kigi_shell::models::PlatformId::Vercel),
                 label: "Vercel AI Gateway (API key)".into(),
             }
         );
         assert_eq!(
-            items[15],
+            items[16],
             PendingMenuItem::ApiKey {
                 target: PlatformLogin(kigi_shell::models::PlatformId::Xai),
                 label: "xAI (Grok) (API key)".into(),
             }
         );
         assert_eq!(
-            items[16],
+            items[17],
             PendingMenuItem::ApiKey {
                 target: PlatformLogin(kigi_shell::models::PlatformId::QwenTokenPlan),
                 label: "Qwen Token Plan (API key)".into(),
             }
         );
         assert_eq!(
-            items[17],
+            items[18],
             PendingMenuItem::ApiKey {
                 target: PlatformLogin(kigi_shell::models::PlatformId::QwenTokenPlanCn),
                 label: "Qwen Token Plan China (API key)".into(),
             }
         );
         assert_eq!(
-            items[18],
+            items[19],
             PendingMenuItem::ApiKey {
                 target: PlatformLogin(kigi_shell::models::PlatformId::KimiCoding),
                 label: "Kimi For Coding (API key)".into(),
             }
         );
         assert_eq!(
-            items[19],
+            items[20],
             PendingMenuItem::ApiKey {
                 target: PlatformLogin(kigi_shell::models::PlatformId::Zai),
                 label: "Z.AI (API key)".into(),
             }
         );
         assert_eq!(
-            items[20],
+            items[21],
             PendingMenuItem::ApiKey {
                 target: PlatformLogin(kigi_shell::models::PlatformId::ZaiCodingCn),
                 label: "Z.AI Coding China (API key)".into(),
             }
         );
         assert_eq!(
-            items[21],
+            items[22],
             PendingMenuItem::ApiKey {
                 target: PlatformLogin(kigi_shell::models::PlatformId::Xiaomi),
                 label: "Xiaomi MiMo (API key)".into(),
             }
         );
         assert_eq!(
-            items[22],
+            items[23],
             PendingMenuItem::ApiKey {
                 target: PlatformLogin(kigi_shell::models::PlatformId::XiaomiTokenPlanCn),
                 label: "Xiaomi Token Plan China (API key)".into(),
             }
         );
         assert_eq!(
-            items[23],
+            items[24],
             PendingMenuItem::ApiKey {
                 target: PlatformLogin(kigi_shell::models::PlatformId::Minimax),
                 label: "MiniMax (API key)".into(),
             }
         );
         assert_eq!(
-            items[24],
+            items[25],
             PendingMenuItem::ApiKey {
                 target: PlatformLogin(kigi_shell::models::PlatformId::MinimaxCn),
                 label: "MiniMax China (API key)".into(),
             }
         );
-        assert_eq!(items[25], PendingMenuItem::Quit);
+        assert_eq!(items[26], PendingMenuItem::Quit);
         // The non-interactive methods must never appear as rows.
         let byok = kigi_shell::agent::auth_method::build_auth_methods(
             kigi_shell::agent::auth_method::AuthMethodsBuildInputs {
@@ -7080,8 +7085,8 @@ pub(crate) mod tests {
         );
         assert_eq!(
             pending_menu_items(&byok.methods, None).len(),
-            26,
-            "xai.api_key / cached_token must not add rows"
+            27,
+            "xai.api_key / cached_token must not add rows (26 login rows + Quit)"
         );
     }
     /// Startup lands on the picker only when there is a real choice: the
@@ -7094,7 +7099,7 @@ pub(crate) mod tests {
         assert!(!login_picker_has_choice(&kimi_only));
         assert!(!login_picker_has_choice(&[]));
     }
-    /// With all three methods advertised, arrows+Enter select a Moonshot row
+    /// With all methods advertised, arrows+Enter select a Moonshot row
     /// and 'l' keeps selecting the first (OAuth) row.
     #[test]
     fn welcome_pending_arrows_select_moonshot_row() {
@@ -7102,7 +7107,9 @@ pub(crate) mod tests {
         app.auth_methods = fresh_user_auth_methods();
         app.auth_state = AuthState::Pending { error: None };
         app.welcome_prompt_focused = false;
-        // Down → row 0 (OAuth), Down → row 1 (moonshot-cn).
+        // Interactive OAuth logins come first: row 0 (kimi-code), row 1
+        // (xai-grok); the first API-key row (moonshot-cn) is now row 2.
+        app.handle_input(&key_event(KeyCode::Down, KeyModifiers::NONE));
         app.handle_input(&key_event(KeyCode::Down, KeyModifiers::NONE));
         app.handle_input(&key_event(KeyCode::Down, KeyModifiers::NONE));
         let outcome = app.handle_input(&key_event(KeyCode::Enter, KeyModifiers::NONE));

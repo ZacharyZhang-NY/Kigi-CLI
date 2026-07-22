@@ -385,6 +385,59 @@ impl AuthManager {
         )
     }
 
+    /// Build a manager for a GENERIC device-code OAuth provider (xai-grok),
+    /// scoped to `oauth.scope_key`. Unlike [`Self::new`] this path is
+    /// file-store only (no keyring — that is gated to the default Kimi install)
+    /// and ignores the Kimi-specific `KIGI_AUTH` inline-credential env; it
+    /// otherwise shares the same multi-scope `auth.json` (honoring
+    /// `KIGI_AUTH_PATH`). The refresher is selected from the scope by
+    /// [`super::refresh::build_refresher`].
+    pub(crate) fn new_oauth_provider(
+        kigi_home: &Path,
+        oauth: &'static kigi_models::OAuthConfig,
+    ) -> Self {
+        let scope = oauth.scope_key.to_owned();
+        let path = std::env::var("KIGI_AUTH_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| kigi_home.join("auth.json"));
+
+        let (auth, disk_state) = match read_auth_json(&path) {
+            Ok(map) => {
+                let found = lookup_auth(&map, &scope);
+                let state = if found.is_some() {
+                    DiskAuthState::Ok
+                } else {
+                    DiskAuthState::EntryMissing
+                };
+                (found, state)
+            }
+            Err(e) => {
+                let state = if e.kind() == std::io::ErrorKind::NotFound {
+                    DiskAuthState::FileMissing
+                } else {
+                    DiskAuthState::Unreadable
+                };
+                (None, state)
+            }
+        };
+        kigi_log::unified_log::info(
+            "AuthManager::new_oauth_provider",
+            None,
+            Some(serde_json::json!({
+                "scope": &scope,
+                "found": auth.is_some(),
+                "is_expired": auth.as_ref().map(is_expired),
+            })),
+        );
+        Self::assemble(
+            auth,
+            path,
+            scope,
+            KimiCodeConfig::default(),
+            Some(disk_state),
+        )
+    }
+
     /// Single field-assembly point for [`Self::new`]'s two construction paths
     /// (inline `KIGI_AUTH` vs. on-disk `auth.json`), which differ only in the
     /// threaded fields. One literal means a newly added field can't be silently
@@ -787,6 +840,13 @@ impl AuthManager {
 
     pub(crate) fn kimi_code_config(&self) -> &KimiCodeConfig {
         &self.kimi_code_config
+    }
+
+    /// The auth.json / keyring scope key this manager persists under
+    /// (`oauth/kimi-code` for Kimi, `oauth/xai` for xai-grok, …). Drives the
+    /// refresher selection in [`super::refresh::build_refresher`].
+    pub(crate) fn scope(&self) -> &str {
+        &self.scope
     }
 
     /// Handle notified after every successful token refresh.

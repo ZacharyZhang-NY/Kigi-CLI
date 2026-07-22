@@ -1,3 +1,4 @@
+mod generic_refresher;
 mod kimi_refresher;
 
 use std::sync::Arc;
@@ -6,6 +7,7 @@ use crate::auth::manager::AuthManager;
 pub(crate) use crate::auth::manager::RefreshReason;
 use crate::auth::model::KimiAuth;
 
+pub(crate) use generic_refresher::GenericDeviceRefresher;
 pub(crate) use kimi_refresher::KimiRefresher;
 
 /// Read-only view of `AuthManager` for refreshers. Enforces the
@@ -120,8 +122,20 @@ pub(crate) trait TokenRefresher: Send + Sync {
     async fn refresh(&self, reason: RefreshReason) -> RefreshOutcome;
 }
 
-/// Build the production refresher against `kigi_env::oauth_host()`.
+/// Build the production refresher for this manager's scope. A scope that maps
+/// to a generic device-code [`kigi_models::OAuthConfig`] (xai-grok) gets the
+/// [`GenericDeviceRefresher`]; every other scope — Kimi Code, whose registry
+/// `oauth` field is `None` by design — gets the bespoke [`KimiRefresher`]
+/// against `kigi_env::oauth_host()`.
 pub(crate) fn build_refresher(auth_manager: Arc<AuthManager>) -> Arc<dyn TokenRefresher> {
-    let snapshot: Arc<dyn AuthSnapshot> = auth_manager;
-    Arc::new(KimiRefresher::new(snapshot, kigi_env::oauth_host()))
+    match kigi_models::oauth_config_for_scope_key(auth_manager.scope()) {
+        Some(cfg) => {
+            let snapshot: Arc<dyn AuthSnapshot> = auth_manager;
+            Arc::new(GenericDeviceRefresher::new(snapshot, cfg))
+        }
+        None => {
+            let snapshot: Arc<dyn AuthSnapshot> = auth_manager;
+            Arc::new(KimiRefresher::new(snapshot, kigi_env::oauth_host()))
+        }
+    }
 }

@@ -114,7 +114,9 @@ pub struct BuiltAuthMethods {
 /// 1. `xai.api_key`     (if `has_external_api_key`)
 /// 2. `cached_token`    (if `has_cached_token`)
 /// 3. `kimi-code`        (the Kimi Code device login)
-/// 4. every API-key registry platform, in `PlatformId::ALL` order
+/// 4. every generic device-code OAuth login (`xai-grok`, …), in
+///    `PlatformId::ALL` order — interactive logins after `kimi-code`
+/// 5. every API-key registry platform, in `PlatformId::ALL` order
 ///    (`moonshot-cn`, `moonshot-ai`, …), always advertised
 ///
 /// The platform methods are for the INTERACTIVE login picker only: they come
@@ -162,6 +164,15 @@ pub fn build_auth_methods(inputs: AuthMethodsBuildInputs<'_>) -> BuiltAuthMethod
     }
 
     methods.push(kimi_code_auth_method(login_label));
+    // Generic device-code OAuth logins (xai-grok, …) are interactive logins
+    // too: advertise them right after kimi-code, BEFORE the API-key platforms,
+    // so they stay out of the `auth_methods.first()` startup-metadata slot yet
+    // ahead of the api-key picker rows.
+    for platform in kigi_models::PlatformId::ALL {
+        if platform.oauth().is_some() {
+            methods.push(oauth_platform_auth_method(platform));
+        }
+    }
     for platform in kigi_models::PlatformId::ALL {
         if !platform.uses_oauth() {
             methods.push(platform_auth_method(platform));
@@ -182,6 +193,9 @@ pub enum AuthMethodKind {
     KimiCode,
     /// Registry API-key platform login (method id = the platform id).
     ApiKeyPlatform(kigi_models::PlatformId),
+    /// Generic device-code OAuth platform login (method id = the platform id,
+    /// e.g. `xai-grok`). Interactive, like Kimi Code.
+    OAuthPlatform(kigi_models::PlatformId),
     Unknown,
 }
 
@@ -191,9 +205,12 @@ impl AuthMethodKind {
             XAI_API_KEY_METHOD_ID => Self::XaiApiKey,
             CACHED_TOKEN_AUTH_METHOD_ID => Self::CachedToken,
             KIMI_CODE_METHOD_ID => Self::KimiCode,
-            other => match platform_for_method_id_str(other) {
-                Some(platform) => Self::ApiKeyPlatform(platform),
-                None => Self::Unknown,
+            other => match kigi_models::PlatformId::parse(other) {
+                // A generic device-code OAuth platform (xai-grok).
+                Some(p) if p.oauth().is_some() => Self::OAuthPlatform(p),
+                // A non-OAuth API-key registry platform.
+                Some(p) if !p.uses_oauth() => Self::ApiKeyPlatform(p),
+                _ => Self::Unknown,
             },
         }
     }
@@ -206,13 +223,33 @@ impl AuthMethodKind {
     }
 
     /// `true` for session-based methods (cached_token, interactive login).
+    ///
+    /// `OAuthPlatform` (xai-grok) qualifies: it mints a refreshable device-code
+    /// session, so the per-turn refresh / 401-recovery gate must be ACTIVE for
+    /// it. This is correct ONLY because the session routes a model's
+    /// bearer/refresh/recovery to that model's OWN scope-keyed `AuthManager`
+    /// (see `SessionActor::auth_manager_for_model`) — the gate being active
+    /// wraps the grok manager for a grok turn, never the Kimi one.
     pub fn is_session_based(self) -> bool {
-        matches!(self, Self::CachedToken | Self::KimiCode)
+        matches!(
+            self,
+            Self::CachedToken | Self::KimiCode | Self::OAuthPlatform(_)
+        )
     }
 
-    /// Requires user interaction (device-code login in the browser).
+    /// Requires user interaction (device-code login in the browser). Both the
+    /// Kimi Code login and every generic device-code OAuth platform qualify.
     pub fn needs_interactive_login(self) -> bool {
-        matches!(self, Self::KimiCode)
+        matches!(self, Self::KimiCode | Self::OAuthPlatform(_))
+    }
+
+    /// The generic device-code OAuth platform behind this method, if any
+    /// (drives the `authenticate` dispatch to the generic device flow).
+    pub fn oauth_platform(self) -> Option<kigi_models::PlatformId> {
+        match self {
+            Self::OAuthPlatform(p) => Some(p),
+            _ => None,
+        }
     }
 
     pub fn auth_error_message(self) -> &'static str {
@@ -334,6 +371,16 @@ pub fn kimi_code_auth_method(label: Option<&str>) -> acp::AuthMethod {
             name.to_string(),
         )
         .description(Some(format!("Sign in with {name}"))),
+    )
+}
+
+/// A generic device-code OAuth platform's interactive login method (method id
+/// = the platform id, e.g. `xai-grok`; label from the spec's `login_label`).
+pub fn oauth_platform_auth_method(platform: kigi_models::PlatformId) -> acp::AuthMethod {
+    let name = platform.login_label();
+    acp::AuthMethod::Agent(
+        acp::AuthMethodAgent::new(acp::AuthMethodId::new(platform.as_str()), name.to_string())
+            .description(Some(format!("Sign in with {name}"))),
     )
 }
 
@@ -514,6 +561,73 @@ mod tests {
         );
     }
 
+    /// xai-grok is a generic device-code OAuth login: it classifies as an
+    /// `OAuthPlatform`, needs an interactive (browser) login, is NOT api-key,
+    /// is NOT an API-key registry platform, and is advertised right after
+    /// kimi-code among the interactive logins.
+    #[test]
+    fn xai_grok_is_an_interactive_oauth_login() {
+        let id = acp::AuthMethodId::new("xai-grok");
+        let kind = AuthMethodKind::from_id(&id);
+        assert_eq!(
+            kind,
+            AuthMethodKind::OAuthPlatform(kigi_models::PlatformId::XaiGrok)
+        );
+        assert!(
+            kind.needs_interactive_login(),
+            "xai-grok needs a browser login"
+        );
+        assert!(!kind.is_api_key(), "xai-grok is not an api-key method");
+        assert_eq!(
+            kind.oauth_platform(),
+            Some(kigi_models::PlatformId::XaiGrok)
+        );
+        // Never an API-key picker target (keeps it out of the paste-box path).
+        assert_eq!(platform_for_method_id(&id), None);
+        // Placement: immediately after kimi-code, before the api-key rows.
+        let built = build_auth_methods(default_inputs());
+        let ids = method_ids(&built);
+        let kimi_pos = ids.iter().position(|m| *m == KIMI_CODE_METHOD_ID).unwrap();
+        assert_eq!(
+            ids[kimi_pos + 1],
+            "xai-grok",
+            "xai-grok must be the interactive login right after kimi-code"
+        );
+        assert_eq!(
+            ids[kimi_pos + 2],
+            MOONSHOT_CN_METHOD_ID,
+            "the api-key rows follow the generic oauth logins"
+        );
+    }
+
+    /// A generic device-code OAuth platform (xai-grok) is SESSION-BASED: its
+    /// device-code session is refreshable, so the per-turn refresh / 401 gate
+    /// must be active for it (routing then sends the model's OWN manager). It
+    /// stays an interactive login and is NOT api-key-shaped.
+    #[test]
+    fn oauth_platform_is_session_based_and_refreshable() {
+        let id = acp::AuthMethodId::new("xai-grok");
+        let kind = AuthMethodKind::from_id(&id);
+        assert_eq!(
+            kind,
+            AuthMethodKind::OAuthPlatform(kigi_models::PlatformId::XaiGrok)
+        );
+        assert!(
+            kind.is_session_based(),
+            "OAuthPlatform must be session-based so the refresh/401 gate is active"
+        );
+        assert!(
+            is_session_based_method(&id),
+            "is_session_based_method(xai-grok) must be true"
+        );
+        // Session-based, yet still an interactive browser login and never
+        // api-key-shaped.
+        assert!(kind.needs_interactive_login());
+        assert!(!kind.is_api_key());
+        // The session-expired copy (not the api-key copy) is the right error.
+        assert_eq!(kind.auth_error_message(), AUTH_ERROR_SESSION_EXPIRED);
+    }
+
     /// The OAuth platform id must never resolve as an API-key platform
     /// method — `platform_for_method_id`'s `uses_oauth` filter is what keeps
     /// the generic `authenticate` arm from hijacking the device login.
@@ -606,6 +720,7 @@ mod tests {
             vec![
                 XAI_API_KEY_METHOD_ID,
                 KIMI_CODE_METHOD_ID,
+                "xai-grok",
                 MOONSHOT_CN_METHOD_ID,
                 MOONSHOT_AI_METHOD_ID,
                 "openai",
@@ -654,6 +769,7 @@ mod tests {
                 XAI_API_KEY_METHOD_ID,
                 CACHED_TOKEN_AUTH_METHOD_ID,
                 KIMI_CODE_METHOD_ID,
+                "xai-grok",
                 MOONSHOT_CN_METHOD_ID,
                 MOONSHOT_AI_METHOD_ID,
                 "openai",
@@ -695,6 +811,7 @@ mod tests {
             vec![
                 CACHED_TOKEN_AUTH_METHOD_ID,
                 KIMI_CODE_METHOD_ID,
+                "xai-grok",
                 MOONSHOT_CN_METHOD_ID,
                 MOONSHOT_AI_METHOD_ID,
                 "openai",
@@ -739,6 +856,7 @@ mod tests {
             method_ids(&built),
             vec![
                 KIMI_CODE_METHOD_ID,
+                "xai-grok",
                 MOONSHOT_CN_METHOD_ID,
                 MOONSHOT_AI_METHOD_ID,
                 "openai",

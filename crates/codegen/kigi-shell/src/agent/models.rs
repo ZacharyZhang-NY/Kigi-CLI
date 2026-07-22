@@ -321,6 +321,7 @@ impl ModelsManager {
                         &cfg.endpoints,
                         fetch_auth,
                         has_session,
+                        &Default::default(),
                         &platform_keys,
                     ),
                 )
@@ -1062,7 +1063,6 @@ impl ModelsManager {
     /// Build a `SamplingConfig` from the current model + auth state.
     pub fn sampling_config(&self) -> SamplingConfig {
         let config = self.inner.cfg.read().clone();
-        let auth_manager = self.inner.auth_manager.as_ref();
         let current_model_id = self.current_model_id();
         let all_models = self.models();
         let fallback;
@@ -1079,15 +1079,35 @@ impl ModelsManager {
             }
         };
 
-        let session_auth = auth_manager.current_or_expired();
-        let credentials =
-            resolve_credentials(current_model, session_auth.as_ref().map(|a| a.key.as_str()));
+        // Resolve the session bearer PER the current model's platform: a
+        // generic device-code OAuth platform (xai-grok) resolves from ITS OWN
+        // scope-keyed store — never the Kimi session. Kimi and every other
+        // model keep the primary manager's token (path byte-identical).
+        let session_key = self.session_key_for_catalog_key(current_model_id.0.as_ref());
+        let credentials = resolve_credentials(current_model, session_key.as_deref());
 
         sampling_config_for_model(
             current_model,
             credentials,
             config.endpoints.alpha_test_key.clone(),
         )
+    }
+
+    /// The session bearer for a model catalog key. Generic device-code OAuth
+    /// platforms (xai-grok) resolve from their own persisted scope; every other
+    /// key resolves from the primary (Kimi) `AuthManager`. Reads the persisted
+    /// token (refresh happens in the async catalog/refresh paths); never logs
+    /// it.
+    fn session_key_for_catalog_key(&self, catalog_key: &str) -> Option<String> {
+        if let Some((platform, _)) = kigi_models::parse_managed_model_key(catalog_key)
+            && let Some(oauth) = platform.oauth()
+        {
+            let kigi_home = crate::util::kigi_home::kigi_home();
+            return AuthManager::new_oauth_provider(&kigi_home, oauth)
+                .current_or_expired()
+                .map(|a| a.key);
+        }
+        self.inner.auth_manager.current_or_expired().map(|a| a.key)
     }
 
     /// Disk-cache origin key for this manager's current endpoints/auth shape
@@ -1100,10 +1120,15 @@ impl ModelsManager {
         let fetch_auth = *self.inner.fetch_auth.read();
         let has_oauth = self.inner.auth_manager.current_or_expired().is_some();
         let platform_keys = PlatformApiKeys::resolve(&platforms);
+        // The origin key encodes only enabled-platform NAMES + URLs (never
+        // tokens). Generic-oauth presence is reflected by the post-login
+        // `on_auth_changed` re-fetch; an empty map here keeps this sync path
+        // cheap (no per-provider AuthManager construction on the hot path).
         crate::agent::models_fetch::models_fetch_origin(
             &endpoints,
             fetch_auth,
             has_oauth,
+            &Default::default(),
             &platform_keys,
         )
     }
@@ -1155,8 +1180,21 @@ impl ModelsManager {
         let fetch_auth = *self.inner.fetch_auth.read();
         let platform_keys = PlatformApiKeys::resolve(&cfg.platforms);
         let auth = self.inner.auth_manager.auth().await.ok();
-        let outcome =
-            fetch_models_async(endpoints.clone(), auth, fetch_auth, platform_keys.clone()).await;
+        // Resolve each generic device-code OAuth platform's OWN session token
+        // (refreshed on expiry) from its own scope — independent of the Kimi
+        // session above.
+        let oauth_tokens = crate::agent::models_fetch::resolve_generic_oauth_tokens(
+            &crate::util::kigi_home::kigi_home(),
+        )
+        .await;
+        let outcome = fetch_models_async(
+            endpoints.clone(),
+            auth,
+            oauth_tokens.clone(),
+            fetch_auth,
+            platform_keys.clone(),
+        )
+        .await;
         if outcome.models.is_some() {
             return outcome.models;
         }
@@ -1173,7 +1211,12 @@ impl ModelsManager {
             return None;
         }
         let auth = self.inner.auth_manager.auth().await.ok();
-        let retry = fetch_models_async(endpoints, auth, fetch_auth, platform_keys).await;
+        let oauth_tokens = crate::agent::models_fetch::resolve_generic_oauth_tokens(
+            &crate::util::kigi_home::kigi_home(),
+        )
+        .await;
+        let retry =
+            fetch_models_async(endpoints, auth, oauth_tokens, fetch_auth, platform_keys).await;
         if retry.oauth_unauthorized {
             tracing::warn!("model catalog: still unauthorized after token refresh");
         }
@@ -1614,12 +1657,14 @@ impl ModelsFetchOutcome {
 pub(crate) fn prefetch_models_blocking(
     endpoints: &config::EndpointsConfig,
     auth: Option<&KimiAuth>,
+    oauth_tokens: &crate::agent::models_fetch::OAuthSessionTokens,
     fetch_auth: ModelFetchAuth,
     platform_keys: &PlatformApiKeys,
 ) -> Option<IndexMap<String, ModelEntry>> {
     prefetch_models_blocking_gated(
         endpoints,
         auth,
+        oauth_tokens,
         fetch_auth,
         platform_keys,
         crate::util::config::resolve_remote_fetch_enabled(),
@@ -1632,6 +1677,7 @@ pub(crate) fn prefetch_models_blocking(
 fn prefetch_models_blocking_gated(
     endpoints: &config::EndpointsConfig,
     auth: Option<&KimiAuth>,
+    oauth_tokens: &crate::agent::models_fetch::OAuthSessionTokens,
     fetch_auth: ModelFetchAuth,
     platform_keys: &PlatformApiKeys,
     remote_fetch_enabled: bool,
@@ -1643,6 +1689,7 @@ fn prefetch_models_blocking_gated(
         endpoints,
         fetch_auth,
         auth.is_some(),
+        oauth_tokens,
         platform_keys,
     );
     let cache = ModelsCacheManager::new();
@@ -1666,7 +1713,7 @@ fn prefetch_models_blocking_gated(
     }
 
     let _timer = crate::instrumentation_timer!("startup.fetch_models_blocking");
-    match fetch_models_blocking(endpoints, auth, fetch_auth, platform_keys) {
+    match fetch_models_blocking(endpoints, auth, oauth_tokens, fetch_auth, platform_keys) {
         Ok(FetchModelsResult {
             models,
             etag,
@@ -1826,6 +1873,10 @@ fn spawn_prefetch_thread(env: PrefetchEnv) -> EarlyPrefetchHandle {
         let models = prefetch_models_blocking(
             &env.endpoints,
             env.auth.as_ref(),
+            // Startup prefetch does not resolve generic-oauth (xai-grok)
+            // tokens; those platforms join on the first async catalog refresh
+            // (post-login `on_auth_changed` / periodic `spawn_fetch`).
+            &Default::default(),
             env.model_fetch_auth,
             &env.platform_keys,
         );
@@ -2215,6 +2266,7 @@ pub(crate) fn validate_selectable(
 pub(crate) async fn fetch_models_async(
     endpoints: config::EndpointsConfig,
     auth: Option<KimiAuth>,
+    oauth_tokens: crate::agent::models_fetch::OAuthSessionTokens,
     fetch_auth: ModelFetchAuth,
     platform_keys: PlatformApiKeys,
 ) -> ModelsFetchOutcome {
@@ -2222,6 +2274,7 @@ pub(crate) async fn fetch_models_async(
         prefetch_models_blocking_gated(
             &endpoints,
             auth.as_ref(),
+            &oauth_tokens,
             fetch_auth,
             &platform_keys,
             crate::util::config::resolve_remote_fetch_enabled(),
@@ -3950,6 +4003,7 @@ mod tests {
             crate::agent::models_fetch::fetch_models_blocking(
                 &endpoints,
                 Some(&auth),
+                &Default::default(),
                 ModelFetchAuth::Platforms,
                 &PlatformApiKeys::default(),
             )
@@ -4019,6 +4073,7 @@ mod tests {
             crate::agent::models_fetch::fetch_models_blocking(
                 &endpoints,
                 None,
+                &Default::default(),
                 ModelFetchAuth::Platforms,
                 &keys,
             )
@@ -4170,6 +4225,7 @@ mod tests {
         let outcome = prefetch_models_blocking_gated(
             &endpoints,
             Some(&auth),
+            &Default::default(),
             ModelFetchAuth::Platforms,
             &keys,
             true,
@@ -4185,6 +4241,7 @@ mod tests {
             &endpoints,
             ModelFetchAuth::Platforms,
             true,
+            &Default::default(),
             &keys,
         );
         let cache = ModelsCacheManager::new();
@@ -4200,6 +4257,7 @@ mod tests {
         let outcome = prefetch_models_blocking_gated(
             &endpoints,
             Some(&auth),
+            &Default::default(),
             ModelFetchAuth::Platforms,
             &keys,
             true,
@@ -4218,6 +4276,7 @@ mod tests {
         let outcome = prefetch_models_blocking_gated(
             &endpoints,
             Some(&auth),
+            &Default::default(),
             ModelFetchAuth::Platforms,
             &keys,
             true,
@@ -4272,6 +4331,7 @@ mod tests {
             &endpoints,
             ModelFetchAuth::Platforms,
             true,
+            &Default::default(),
             &PlatformApiKeys::test_keys(Some("sk"), None),
         );
         let cache = ModelsCacheManager::new();
@@ -4291,6 +4351,7 @@ mod tests {
         let outcome = prefetch_models_blocking_gated(
             &endpoints,
             Some(&auth),
+            &Default::default(),
             ModelFetchAuth::Platforms,
             &PlatformApiKeys::default(),
             true,

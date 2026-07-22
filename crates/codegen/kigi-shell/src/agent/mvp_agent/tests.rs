@@ -1158,6 +1158,72 @@ fn build_agent_with_auth(auth: crate::auth::KimiAuth) -> MvpAgent {
     let cfg = AgentConfig::default();
     MvpAgent::new(gateway, &cfg, auth_manager, None).expect("valid test config")
 }
+/// Regression (token-leak, Facet B via the api_key channel): under a
+/// session-based (Kimi) primary auth method, `prepare_sampling_config_for_model`
+/// must resolve the session token by the MODEL's platform — so a grok
+/// (oauth-platform) model NEVER carries the primary Kimi session key as its
+/// `api_key`, while a first-party Kimi model still does. Relies on the
+/// process-global OAuth pool (there is no per-session snapshot).
+///
+/// Reverting the fix (resolving the session token from the primary regardless of
+/// the model's platform) fails the grok assertion below — it would stamp the
+/// live Kimi key on a request bound for api.x.ai.
+#[tokio::test]
+#[serial_test::serial]
+async fn prepare_sampling_config_never_stamps_kimi_key_on_grok_model() {
+    use crate::agent::auth_method::{
+        CACHED_TOKEN_AUTH_METHOD_ID, HOUSE_API_KEY_ENV_VAR, LEGACY_XAI_API_KEY_ENV_VAR,
+        XAI_API_KEY_ENV_VAR,
+    };
+    use crate::agent::config::{EndpointsConfig, ModelEntry};
+    use kigi_test_support::EnvGuard;
+
+    const KIMI_KEY: &str = "kimi-session-secret-DO-NOT-LEAK";
+
+    // No ambient BYOK env key: a grok model with no stored oauth session then
+    // resolves to no api_key at all, rather than a global-key fallback that could
+    // mask the leak under test.
+    let _house = EnvGuard::unset(HOUSE_API_KEY_ENV_VAR);
+    let _xai = EnvGuard::unset(XAI_API_KEY_ENV_VAR);
+    let _legacy = EnvGuard::unset(LEGACY_XAI_API_KEY_ENV_VAR);
+
+    // Primary: a live Kimi session token under a session-based auth method.
+    let agent = build_agent_with_auth(crate::auth::KimiAuth {
+        key: KIMI_KEY.to_string(),
+        auth_mode: crate::auth::AuthMode::OAuth,
+        ..crate::auth::KimiAuth::test_default()
+    });
+    agent.set_auth_method(acp::AuthMethodId::new(CACHED_TOKEN_AUTH_METHOD_ID));
+
+    let endpoints = EndpointsConfig::default();
+
+    // First-party Kimi model (non-oauth platform): the primary session key IS
+    // its api_key — the byte-identical primary path, and proof the Kimi token is
+    // live (so it WOULD leak if mis-routed onto a grok request). This assertion
+    // also confirms the session-based primary path is active.
+    let mut kimi_model = ModelEntry::fallback("kimi-k2-0905-preview", &endpoints);
+    kimi_model.info.id = Some("moonshot-cn/kimi-k2-0905-preview".to_string());
+    assert!(!kimi_model.has_own_credentials());
+    let kimi_cfg = agent.prepare_sampling_config_for_model(&kimi_model, None);
+    assert_eq!(
+        kimi_cfg.api_key.as_deref(),
+        Some(KIMI_KEY),
+        "a first-party Kimi model must carry the primary session key (primary path unchanged)"
+    );
+
+    // xai-grok model (oauth platform): the session token resolves from its OWN
+    // pool-backed manager, INDEPENDENT of the Kimi primary — so its api_key can
+    // NEVER be the Kimi session key.
+    let mut grok_model = ModelEntry::fallback("grok-4-latest", &endpoints);
+    grok_model.info.id = Some("xai-grok/grok-4-latest".to_string());
+    assert!(!grok_model.has_own_credentials());
+    let grok_cfg = agent.prepare_sampling_config_for_model(&grok_model, None);
+    assert_ne!(
+        grok_cfg.api_key.as_deref(),
+        Some(KIMI_KEY),
+        "LEAK: a grok model must never carry the primary Kimi session key as api_key"
+    );
+}
 /// Regression: boot-time plugin discovery is deferred past ACP
 /// `initialize`, so the shared plugin registry starts empty.
 /// `resolve_mcp_servers` reads that snapshot to merge plugin-contributed

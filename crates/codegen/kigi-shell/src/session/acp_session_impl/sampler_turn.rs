@@ -103,6 +103,30 @@ where
         result
     }
 }
+/// Wraps an [`AuthManager`](crate::auth::AuthManager) as a sampler
+/// [`BearerResolver`](kigi_sampler::BearerResolver), resolving the live
+/// (current-or-expired) bearer at request time. Shared by
+/// [`SessionActor::reconstruct_full_config`] (the session model) and the
+/// aux-model bearer repoint ([`SessionActor::repoint_aux_bearer_resolver_for_oauth`])
+/// so both wrap ONE definition. SECURITY: the bearer is resolved per request
+/// and never logged.
+pub(crate) struct AuthManagerBearerResolver(pub(crate) std::sync::Arc<crate::auth::AuthManager>);
+impl std::fmt::Debug for AuthManagerBearerResolver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthManagerBearerResolver").finish()
+    }
+}
+impl kigi_sampler::BearerResolver for AuthManagerBearerResolver {
+    fn current_bearer(&self) -> Option<String> {
+        self.0.current_or_expired().map(|a| a.key)
+    }
+}
+/// Wrap `am` as a shared sampler bearer resolver.
+fn auth_manager_bearer_resolver(
+    am: std::sync::Arc<crate::auth::AuthManager>,
+) -> kigi_sampler::SharedBearerResolver {
+    std::sync::Arc::new(AuthManagerBearerResolver(am))
+}
 impl SessionActor {
     pub(super) async fn prepare_tool_definitions_timed(&self) -> (Vec<ToolDefinition>, u64) {
         let mcp_wait_start = std::time::Instant::now();
@@ -184,6 +208,76 @@ impl SessionActor {
         let auth_method = self.auth_method_id.load();
         SessionTokenAuthGate::new(auth_method.as_deref(), byok, base_url)
     }
+    /// The [`AuthManager`](crate::auth::AuthManager) that governs INFERENCE auth
+    /// for the model whose routing slug is `model` (the sampling config's
+    /// `model`). A generic device-code OAuth platform (xai-grok) routes to its
+    /// OWN scope-keyed manager from the process-global OAuth pool
+    /// ([`crate::auth::oauth_registry::manager_for_model`], built on demand from
+    /// the on-disk token); every other model routes to the primary Kimi
+    /// `auth_manager`.
+    ///
+    /// This is the single chokepoint that keeps a grok turn from ever sending
+    /// the Kimi bearer (Facet B) and gives it its own proactive-refresh + 401
+    /// recovery manager (Facet A). The pool is the single source of truth, so a
+    /// grok login that lands AFTER this session spawned is resolved on the next
+    /// grok turn (no frozen per-session snapshot). Cheap `Arc` clone. Kimi /
+    /// first-party path is byte-identical: a non-oauth model always resolves to
+    /// the primary.
+    ///
+    /// `None` when there is no governing manager: a BYOK / test session with no
+    /// primary. A grok model always resolves to its pooled manager (never the
+    /// Kimi primary); when the user has not logged into grok that manager simply
+    /// holds no token, so no Kimi bearer can leak.
+    pub(super) fn auth_manager_for_model(
+        &self,
+        model: &str,
+    ) -> Option<std::sync::Arc<crate::auth::AuthManager>> {
+        // `model` is the bare routing slug; recover the managed catalog key
+        // (`{platform}/{model}`) so the platform — and thus its OAuth scope — is
+        // unambiguous. A bare / config / unlisted model yields no managed key
+        // and resolves to the primary.
+        let managed_key = self.managed_key_for_model(model);
+        crate::auth::oauth_registry::manager_for_model(
+            &crate::util::kigi_home::kigi_home(),
+            managed_key.as_deref().unwrap_or(model),
+            self.auth_manager.as_ref(),
+        )
+    }
+    /// Recover the managed catalog key (`{platform}/{model}`) for a routing slug
+    /// from the live catalog. `None` for a bare / config / unlisted model.
+    fn managed_key_for_model(&self, model: &str) -> Option<String> {
+        let models = self.models_manager.models();
+        crate::agent::config::find_model_by_id(&models, model).and_then(|e| e.info().id.clone())
+    }
+    /// Whether the aux/session model `model` routes to a generic device-code
+    /// OAuth platform (xai-grok). The gate for re-pointing an aux model's
+    /// bearer_resolver away from the session (Kimi) resolver — a first-party /
+    /// non-oauth model returns `false` and keeps the stamped session resolver.
+    fn model_is_oauth_platform(&self, model: &str) -> bool {
+        let managed_key = self.managed_key_for_model(model);
+        kigi_models::parse_managed_model_key(managed_key.as_deref().unwrap_or(model))
+            .and_then(|(platform, _)| platform.oauth())
+            .is_some()
+    }
+    /// LEAK guard for the stamped aux paths (auto-mode classifier, image
+    /// describe). After [`crate::agent::config::stamp_session_local_sampler_fields`]
+    /// has copied the SESSION model's `bearer_resolver` onto an aux
+    /// `SamplerConfig`, re-point it at the AUX model's OWN platform manager when
+    /// the aux model is an oauth platform (xai-grok) — so a grok aux model never
+    /// inherits the live Kimi session bearer (→ api.x.ai). No-op for a
+    /// first-party / non-oauth aux model (keeps the stamped session resolver →
+    /// byte-identical). SECURITY: no token is logged.
+    pub(super) fn repoint_aux_bearer_resolver_for_oauth(
+        &self,
+        cfg: &mut kigi_sampler::SamplerConfig,
+        slug: &str,
+    ) {
+        if self.model_is_oauth_platform(slug)
+            && let Some(manager) = self.auth_manager_for_model(slug)
+        {
+            cfg.bearer_resolver = Some(auth_manager_bearer_resolver(manager));
+        }
+    }
     /// Emit a unified-log breadcrumb whenever the session-token refresh gate is
     /// evaluated with an **`Unknown`** per-model BYOK status on a session-based
     /// method — the condition that (pre-fix) silently demoted live sessions to
@@ -237,18 +331,6 @@ impl SessionActor {
                 }
             }
         }
-        #[allow(clippy::items_after_statements)]
-        struct AuthManagerBearerResolver(std::sync::Arc<crate::auth::AuthManager>);
-        impl std::fmt::Debug for AuthManagerBearerResolver {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.debug_struct("AuthManagerBearerResolver").finish()
-            }
-        }
-        impl kigi_sampler::BearerResolver for AuthManagerBearerResolver {
-            fn current_bearer(&self) -> Option<String> {
-                self.0.current_or_expired().map(|a| a.key)
-            }
-        }
         let cfg = self
             .chat_state_handle
             .get_sampling_config()
@@ -273,6 +355,16 @@ impl SessionActor {
             SessionTokenAuthGate::new(auth_method.as_deref(), model_facts.byok, &cfg.base_url);
         let use_bearer_resolver = gate.active();
         self.log_auth_gate_unknown("reconstruct_full_config", gate, &cfg.base_url);
+        // Resolve the bearer from the ACTIVE model's OWN manager: a grok model
+        // wraps the xai-grok manager, never the Kimi one (captured before
+        // `cfg.model` is moved into the struct below). `None` when the gate is
+        // inactive or the oauth provider has no manager (fail-fast, no Kimi
+        // fallback).
+        let inference_auth_manager = if use_bearer_resolver {
+            self.auth_manager_for_model(&cfg.model)
+        } else {
+            None
+        };
         let auth_scheme = model_facts.auth_scheme;
         let mut extra_headers = cfg.extra_headers;
         crate::agent::config::inject_url_derived_headers(
@@ -323,15 +415,7 @@ impl SessionActor {
             idle_timeout_secs: None,
             origin_client: self.origin_client.clone(),
             attribution_callback: self.attribution_callback.clone(),
-            bearer_resolver: if use_bearer_resolver {
-                self.auth_manager
-                    .as_ref()
-                    .map(|am| -> kigi_sampler::SharedBearerResolver {
-                        std::sync::Arc::new(AuthManagerBearerResolver(am.clone()))
-                    })
-            } else {
-                None
-            },
+            bearer_resolver: inference_auth_manager.map(auth_manager_bearer_resolver),
             supports_backend_search: self.supports_backend_search.get(),
             compactions_remaining: self.compactions_remaining.get(),
             compaction_at_tokens: self.compaction_at_tokens.get(),
@@ -461,10 +545,16 @@ impl SessionActor {
         slug: &str,
     ) -> Option<kigi_sampler::SamplerConfig> {
         let creds = self.chat_state_handle.get_credentials().await;
-        let session_key = self
-            .auth_manager
-            .as_ref()
-            .and_then(|am| am.current_or_expired().map(|a| a.key.clone()));
+        // Resolve the aux token by the aux model's OWN platform: a grok
+        // (oauth-platform) aux model draws its pooled grok token or `None` —
+        // NEVER the primary Kimi session token (which `resolve_credentials`
+        // would otherwise stamp onto an api.x.ai request). A first-party /
+        // non-oauth aux model still gets the primary (byte-identical).
+        let session_key = crate::auth::oauth_registry::session_key_for_model(
+            &crate::util::kigi_home::kigi_home(),
+            slug,
+            self.auth_manager.as_ref(),
+        );
         let models = self.models_manager.models();
         let endpoints = self.models_manager.endpoints();
         crate::agent::config::resolve_aux_model_sampling_config(
@@ -491,6 +581,10 @@ impl SessionActor {
             &active_session_config,
             Some(self.max_retries),
         );
+        // LEAK 1b: a grok aux classifier must not inherit the SESSION model's
+        // (Kimi) bearer_resolver stamped above; re-point it at grok's own
+        // manager (its pooled token, or None). No-op for a non-oauth aux.
+        self.repoint_aux_bearer_resolver_for_oauth(&mut cfg, slug);
         let model = cfg.model.clone();
         let client = kigi_sampler::SamplingClient::new(cfg)
             .map_err(|e| {
@@ -661,29 +755,40 @@ impl SessionActor {
                 )),
             );
         }
-        if auth_recovery_eligible && let Some(ref am) = self.auth_manager {
-            if am.try_recover_unauthorized().await {
-                tracing::info!(
+        // Recover via the ACTIVE model's OWN manager: a grok 401 recovers the
+        // xai-grok session via the xai-grok manager, never the Kimi one. For a
+        // Kimi / non-oauth model this resolves to the primary — byte-identical.
+        if auth_recovery_eligible {
+            let recovery_model = self
+                .chat_state_handle
+                .get_sampling_config()
+                .await
+                .map(|c| c.model)
+                .unwrap_or_default();
+            if let Some(am) = self.auth_manager_for_model(&recovery_model) {
+                if am.try_recover_unauthorized().await {
+                    tracing::info!(
+                        session_id = % self.session_info.id.0,
+                        "auth recovery: sampler 401, recovered, retrying"
+                    );
+                    kigi_log::unified_log::info(
+                        "auth recovery: sampler 401, recovered, retrying",
+                        Some(self.session_info.id.0.as_ref()),
+                        None,
+                    );
+                    self.prepare_sampler_for_turn().await;
+                    return Ok(SamplerFailureRecovery::RefreshAuthAndResubmit);
+                }
+                tracing::warn!(
                     session_id = % self.session_info.id.0,
-                    "auth recovery: sampler 401, recovered, retrying"
+                    "auth recovery: sampler 401, refresh failed"
                 );
-                kigi_log::unified_log::info(
-                    "auth recovery: sampler 401, recovered, retrying",
+                kigi_log::unified_log::warn(
+                    "auth recovery: sampler 401, refresh failed",
                     Some(self.session_info.id.0.as_ref()),
                     None,
                 );
-                self.prepare_sampler_for_turn().await;
-                return Ok(SamplerFailureRecovery::RefreshAuthAndResubmit);
             }
-            tracing::warn!(
-                session_id = % self.session_info.id.0,
-                "auth recovery: sampler 401, refresh failed"
-            );
-            kigi_log::unified_log::warn(
-                "auth recovery: sampler 401, refresh failed",
-                Some(self.session_info.id.0.as_ref()),
-                None,
-            );
         }
         if matches!(error.kind, SamplingErrorKind::IdleTimeout) {
             self.signals_handle().record_idle_timeout();
@@ -846,14 +951,17 @@ impl SessionActor {
     }
     /// Proactively refresh the auth token if near expiry.
     pub(super) async fn refresh_token_if_expired(&self) {
-        if let Some(ref am) = self.auth_manager {
+        let (model_id, base_url) = self
+            .chat_state_handle
+            .get_sampling_config()
+            .await
+            .map(|c| (c.model, c.base_url))
+            .unwrap_or_default();
+        // Refresh the ACTIVE model's OWN manager: a grok model refreshes the
+        // xai-grok token via the xai-grok manager, never the Kimi one. For a
+        // Kimi / non-oauth model this resolves to the primary — byte-identical.
+        if let Some(am) = self.auth_manager_for_model(&model_id) {
             let creds = self.chat_state_handle.get_credentials().await;
-            let (model_id, base_url) = self
-                .chat_state_handle
-                .get_sampling_config()
-                .await
-                .map(|c| (c.model, c.base_url))
-                .unwrap_or_default();
             if self.auth_gate(&model_id, &base_url).active()
                 && let Ok(key) = am.get_valid_token().await
             {
@@ -973,5 +1081,49 @@ impl SessionActor {
         }
         self.chat_state_handle
             .push_assistant_response(assistant_item);
+    }
+}
+#[cfg(test)]
+mod bearer_resolver_tests {
+    use super::AuthManagerBearerResolver;
+    use kigi_sampler::BearerResolver;
+
+    /// LEAK 1b: the shared `AuthManagerBearerResolver` resolves the LIVE bearer
+    /// of the manager it wraps. So an aux bearer_resolver built over grok's OWN
+    /// (oauth) pooled manager yields grok's token (or `None`) — NEVER the Kimi
+    /// session token that a Kimi-manager resolver would. The
+    /// `repoint_aux_bearer_resolver_for_oauth` fix wraps exactly this grok
+    /// manager for a grok aux model.
+    #[tokio::test]
+    async fn resolver_resolves_the_wrapped_manager_never_kimi() {
+        let dir = tempfile::tempdir().unwrap();
+        let kimi = std::sync::Arc::new(crate::auth::AuthManager::new(
+            dir.path(),
+            crate::auth::KimiCodeConfig::default(),
+        ));
+        kimi.hot_swap(crate::auth::KimiAuth {
+            key: "kimi-tok".to_string(),
+            auth_mode: crate::auth::AuthMode::OAuth,
+            ..crate::auth::KimiAuth::test_default()
+        });
+        // The Kimi-manager resolver yields the Kimi bearer.
+        assert_eq!(
+            AuthManagerBearerResolver(kimi.clone()).current_bearer(),
+            Some("kimi-tok".to_string()),
+        );
+        // The grok (oauth) pooled manager is distinct — its resolver never
+        // yields the Kimi bearer (grok's own token, or None).
+        let oauth = kigi_models::PlatformId::XaiGrok
+            .oauth()
+            .expect("xai-grok carries an OAuthConfig");
+        let grok = crate::auth::oauth_registry::global_manager_for(
+            &crate::util::kigi_home::kigi_home(),
+            oauth,
+        );
+        assert_ne!(
+            AuthManagerBearerResolver(grok).current_bearer(),
+            Some("kimi-tok".to_string()),
+            "a grok aux bearer_resolver must never resolve the Kimi session token",
+        );
     }
 }

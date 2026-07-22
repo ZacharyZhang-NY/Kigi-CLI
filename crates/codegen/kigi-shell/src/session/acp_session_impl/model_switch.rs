@@ -60,9 +60,12 @@ impl SessionActor {
                 stream_tool_calls: Some(sampling_config.stream_tool_calls),
             });
         let existing = self.chat_state_handle.get_credentials().await;
+        // Read the session bearer from the switched-to model's OWN manager: a
+        // grok model reads the xai-grok token (used only to classify the
+        // credential's auth_type here), never the Kimi one. Kimi / non-oauth
+        // models resolve to the primary — byte-identical.
         let session_key = self
-            .auth_manager
-            .as_ref()
+            .auth_manager_for_model(&sampling_config.model)
             .and_then(|am| am.current_or_expired().map(|a| a.key));
         self.chat_state_handle
             .update_credentials(kigi_chat_state::Credentials {

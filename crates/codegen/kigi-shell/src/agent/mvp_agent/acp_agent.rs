@@ -509,7 +509,13 @@ impl acp::Agent for MvpAgent {
                 Ok(self.auth_response_with_meta())
             }
             _ => {
-                if let Some(platform) =
+                if let Some(platform) = auth_method::AuthMethodKind::from_id(
+                    &arguments.method_id,
+                )
+                .oauth_platform()
+                {
+                    self.authenticate_oauth_platform(platform, arguments).await
+                } else if let Some(platform) =
                     auth_method::platform_for_method_id(&arguments.method_id)
                 {
                     self.authenticate_api_key_platform(

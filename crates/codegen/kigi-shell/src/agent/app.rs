@@ -178,7 +178,13 @@ async fn prefetch_models(agent_config: &AgentConfig) -> Option<IndexMap<String, 
 
     if auth.is_some() || endpoints.has_custom_endpoint() || platform_keys.any() {
         tokio::task::spawn_blocking(move || {
-            prefetch_models_blocking(&endpoints, auth.as_ref(), fetch_auth, &platform_keys)
+            prefetch_models_blocking(
+                &endpoints,
+                auth.as_ref(),
+                &Default::default(),
+                fetch_auth,
+                &platform_keys,
+            )
         })
         .await
         .ok()
@@ -621,6 +627,7 @@ pub async fn run_leader(
         crate::agent::models::prefetch_models_blocking(
             &endpoints_for_prefetch,
             auth_for_prefetch.as_ref(),
+            &Default::default(),
             fetch_auth_for_prefetch,
             &platform_keys_for_prefetch,
         )

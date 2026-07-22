@@ -13,14 +13,46 @@
 
 use std::sync::Arc;
 
-use crate::auth::kimi_oauth::{
-    DeviceAuthorization, DevicePollResult, poll_device_token, request_device_authorization,
-};
+use kigi_models::OAuthConfig;
+
+use crate::auth::kimi_oauth::{DeviceAuthorization, DevicePollResult};
 use crate::auth::{AuthChannels, AuthManager, AuthUrlInfo, AuthUrlMode, KimiAuth};
 
 /// Extra wait added to the poll interval when the server answers `slow_down`
 /// (OAuth-standard device-flow backpressure).
 const SLOW_DOWN_INCREMENT_SECS: u64 = 5;
+
+/// The wire behind a device-code login. The `Kimi` arm calls the bespoke Kimi
+/// Code wire (X-Msh headers, `/api/oauth/*`) verbatim — byte-identical to the
+/// pre-generalization path; the `Generic` arm drives a registry
+/// [`OAuthConfig`] provider (xai-grok) through [`crate::auth::oauth_device`].
+enum DeviceFlowBackend<'a> {
+    Kimi { host: &'a str },
+    Generic(&'a OAuthConfig),
+}
+
+impl DeviceFlowBackend<'_> {
+    async fn request(&self) -> anyhow::Result<DeviceAuthorization> {
+        match self {
+            Self::Kimi { host } => {
+                crate::auth::kimi_oauth::request_device_authorization(host).await
+            }
+            Self::Generic(cfg) => {
+                crate::auth::oauth_device::request_device_authorization(cfg).await
+            }
+        }
+    }
+    async fn poll(&self, device_code: &str) -> anyhow::Result<DevicePollResult> {
+        match self {
+            Self::Kimi { host } => {
+                crate::auth::kimi_oauth::poll_device_token(host, device_code).await
+            }
+            Self::Generic(cfg) => {
+                crate::auth::oauth_device::poll_device_token(cfg, device_code).await
+            }
+        }
+    }
+}
 
 /// Outcome of one full poll loop over a single device authorization.
 enum PollLoopOutcome {
@@ -41,10 +73,28 @@ pub async fn run_device_code_login_channels(
     auth_manager: &Arc<AuthManager>,
     channels: &mut Option<AuthChannels>,
 ) -> anyhow::Result<(KimiAuth, bool)> {
+    run_device_code_login_backend(DeviceFlowBackend::Kimi { host }, auth_manager, channels).await
+}
+
+/// Device-code login for a GENERIC [`OAuthConfig`] provider (xai-grok). Same
+/// TUI/CLI presentation as the Kimi login; only the wire differs.
+pub async fn run_device_code_login_generic(
+    oauth: &OAuthConfig,
+    auth_manager: &Arc<AuthManager>,
+    channels: &mut Option<AuthChannels>,
+) -> anyhow::Result<(KimiAuth, bool)> {
+    run_device_code_login_backend(DeviceFlowBackend::Generic(oauth), auth_manager, channels).await
+}
+
+async fn run_device_code_login_backend(
+    backend: DeviceFlowBackend<'_>,
+    auth_manager: &Arc<AuthManager>,
+    channels: &mut Option<AuthChannels>,
+) -> anyhow::Result<(KimiAuth, bool)> {
     let interactive_tui = channels.is_some();
     let mut channels = channels.take();
     loop {
-        let device_auth = request_device_authorization(host).await?;
+        let device_auth = backend.request().await?;
         let display_uri = device_auth.verification_uri_complete.clone();
 
         if interactive_tui {
@@ -62,7 +112,7 @@ pub async fn run_device_code_login_channels(
             prompt_on_stderr(&device_auth).await;
         }
 
-        match complete_device_code_login(host, &device_auth).await? {
+        match complete_device_code_login(&backend, &device_auth).await? {
             PollLoopOutcome::Done(auth) => {
                 let auth = auth_manager
                     .update(*auth)
@@ -112,7 +162,7 @@ async fn prompt_on_stderr(device_auth: &DeviceAuthorization) {
 /// Poll the token endpoint until the user approves, the device code expires
 /// (→ [`PollLoopOutcome::Restart`]), or the wire fails.
 async fn complete_device_code_login(
-    host: &str,
+    backend: &DeviceFlowBackend<'_>,
     device_auth: &DeviceAuthorization,
 ) -> anyhow::Result<PollLoopOutcome> {
     let mut poll_interval = std::time::Duration::from_secs(device_auth.interval.max(1) as u64);
@@ -120,7 +170,7 @@ async fn complete_device_code_login(
         // Sleep first: an immediate poll on a fresh code only returns
         // authorization_pending (and risks slow_down).
         tokio::time::sleep(poll_interval).await;
-        match poll_device_token(host, &device_auth.device_code).await? {
+        match backend.poll(&device_auth.device_code).await? {
             DevicePollResult::Success(auth) => {
                 tracing::info!("auth: device login authorized");
                 return Ok(PollLoopOutcome::Done(auth));

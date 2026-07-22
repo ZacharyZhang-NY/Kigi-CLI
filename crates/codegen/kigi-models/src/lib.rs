@@ -96,6 +96,53 @@ enum BaseUrlSource {
     },
 }
 
+/// Generic RFC-8628 device-code OAuth configuration carried by a `uses_oauth`
+/// platform whose login is the GENERIC device-code path (xai-grok today).
+///
+/// Kimi Code keeps its bespoke device flow (client id, `/api/oauth/*` paths,
+/// X-Msh device headers, `kigi_env::oauth_host()`); its `oauth` field stays
+/// `None`. All fields here are non-secret wire constants — the access/refresh
+/// tokens they mint are NEVER stored in this struct and never logged.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OAuthConfig {
+    /// OAuth client id sent on every device-authorization / token call.
+    pub client_id: &'static str,
+    /// Authorization-server origin (no trailing slash), e.g. `https://auth.x.ai`.
+    pub auth_host: &'static str,
+    /// Device-authorization path (POST), relative to `auth_host`.
+    pub device_path: &'static str,
+    /// Token path (POST) — used for BOTH the device grant and refresh.
+    pub token_path: &'static str,
+    /// OAuth scope string requested at device authorization.
+    pub scope: &'static str,
+    /// auth.json map key + keyring entry name for this provider's persisted
+    /// session (e.g. `oauth/xai`).
+    pub scope_key: &'static str,
+    /// A non-standard extra form field sent ONLY on the device-authorization
+    /// request (e.g. `("referrer", "kigi")`). `None` = no extra field.
+    pub extra_device_field: Option<(&'static str, &'static str)>,
+}
+
+/// xAI / Grok subscription device-code OAuth (ported from Pi
+/// `earendil-works/pi` `auth/oauth/xai.ts`).
+pub const XAI_OAUTH_CONFIG: OAuthConfig = OAuthConfig {
+    client_id: "b1a00492-073a-47ea-816f-4c329264a828",
+    auth_host: "https://auth.x.ai",
+    device_path: "/oauth2/device/code",
+    token_path: "/oauth2/token",
+    scope: "openid profile email offline_access grok-cli:access api:access",
+    scope_key: "oauth/xai",
+    extra_device_field: Some(("referrer", "kigi")),
+};
+
+/// The generic device-code OAuth config for a platform, or `None` for API-key
+/// platforms and for Kimi Code (whose bespoke flow uses no generic config).
+pub fn oauth_config_for_scope_key(scope_key: &str) -> Option<&'static OAuthConfig> {
+    PlatformId::ALL
+        .into_iter()
+        .find_map(|p| p.oauth().filter(|c| c.scope_key == scope_key))
+}
+
 /// One row of the platform registry. All per-platform data lives in these
 /// rows; [`PlatformId`] methods only read fields. Adding a platform touches
 /// exactly four sites in this file: the enum variant, the `ALL` entry, the
@@ -111,6 +158,11 @@ struct PlatformSpec {
     base_url: BaseUrlSource,
     /// True for OAuth-bearer subscription channels.
     uses_oauth: bool,
+    /// Generic device-code OAuth config, for a `uses_oauth` platform whose
+    /// login is the RFC-8628 device-code path (xai-grok). `None` for API-key
+    /// platforms AND for Kimi Code (whose bespoke device flow lives in
+    /// kigi-shell, not this generic config).
+    oauth: Option<&'static OAuthConfig>,
     /// Model-id prefixes admitted from this platform's `/models` listing.
     /// `None` = no filtering (listing served pre-filtered).
     allowed_model_prefixes: Option<&'static [&'static str]>,
@@ -166,6 +218,9 @@ const KIMI_CODE_SPEC: PlatformSpec = PlatformSpec {
     display_name: "Kimi Code",
     base_url: BaseUrlSource::KigiEnvCoding,
     uses_oauth: true,
+    // Kimi Code keeps its bespoke device flow (kigi-shell), not the generic
+    // OAuthConfig path — see architecture decision #1.
+    oauth: None,
     allowed_model_prefixes: None,
     api_key_envs: &[],
     vendor: "Kimi",
@@ -190,6 +245,7 @@ const MOONSHOT_CN_SPEC: PlatformSpec = PlatformSpec {
         default: "https://api.moonshot.cn/v1",
     },
     uses_oauth: false,
+    oauth: None,
     allowed_model_prefixes: Some(&["kimi-k"]),
     api_key_envs: &[MOONSHOT_CN_API_KEY_ENV, MOONSHOT_API_KEY_ENV],
     vendor: "Moonshot",
@@ -214,6 +270,7 @@ const MOONSHOT_AI_SPEC: PlatformSpec = PlatformSpec {
         default: "https://api.moonshot.ai/v1",
     },
     uses_oauth: false,
+    oauth: None,
     allowed_model_prefixes: Some(&["kimi-k"]),
     api_key_envs: &[MOONSHOT_AI_API_KEY_ENV, MOONSHOT_API_KEY_ENV],
     vendor: "Moonshot",
@@ -241,6 +298,7 @@ const OPENAI_SPEC: PlatformSpec = PlatformSpec {
         default: "https://api.openai.com/v1",
     },
     uses_oauth: false,
+    oauth: None,
     allowed_model_prefixes: None,
     api_key_envs: &["OPENAI_API_KEY"],
     vendor: "OpenAI",
@@ -270,6 +328,7 @@ const ANTHROPIC_SPEC: PlatformSpec = PlatformSpec {
         default: "https://api.anthropic.com/v1",
     },
     uses_oauth: false,
+    oauth: None,
     allowed_model_prefixes: None,
     api_key_envs: &["ANTHROPIC_API_KEY"],
     vendor: "Anthropic",
@@ -301,6 +360,7 @@ const DEEPSEEK_SPEC: PlatformSpec = PlatformSpec {
         default: "https://api.deepseek.com",
     },
     uses_oauth: false,
+    oauth: None,
     allowed_model_prefixes: None,
     api_key_envs: &["DEEPSEEK_API_KEY"],
     vendor: "DeepSeek",
@@ -328,6 +388,7 @@ const GROQ_SPEC: PlatformSpec = PlatformSpec {
         default: "https://api.groq.com/openai/v1",
     },
     uses_oauth: false,
+    oauth: None,
     allowed_model_prefixes: None,
     api_key_envs: &["GROQ_API_KEY"],
     vendor: "Groq",
@@ -357,6 +418,7 @@ const MISTRAL_SPEC: PlatformSpec = PlatformSpec {
         default: "https://api.mistral.ai/v1",
     },
     uses_oauth: false,
+    oauth: None,
     allowed_model_prefixes: None,
     api_key_envs: &["MISTRAL_API_KEY"],
     vendor: "Mistral",
@@ -390,6 +452,7 @@ const FIREWORKS_SPEC: PlatformSpec = PlatformSpec {
         default: "https://api.fireworks.ai/inference/v1",
     },
     uses_oauth: false,
+    oauth: None,
     allowed_model_prefixes: None,
     api_key_envs: &["FIREWORKS_API_KEY"],
     vendor: "Fireworks",
@@ -420,6 +483,7 @@ const GOOGLE_SPEC: PlatformSpec = PlatformSpec {
         default: "https://generativelanguage.googleapis.com/v1beta/openai",
     },
     uses_oauth: false,
+    oauth: None,
     allowed_model_prefixes: None,
     api_key_envs: &["GEMINI_API_KEY"],
     vendor: "Google",
@@ -450,6 +514,7 @@ const OPENROUTER_SPEC: PlatformSpec = PlatformSpec {
         default: "https://openrouter.ai/api/v1",
     },
     uses_oauth: false,
+    oauth: None,
     allowed_model_prefixes: None,
     api_key_envs: &["OPENROUTER_API_KEY"],
     vendor: "OpenRouter",
@@ -480,6 +545,7 @@ const TOGETHER_SPEC: PlatformSpec = PlatformSpec {
         default: "https://api.together.xyz/v1",
     },
     uses_oauth: false,
+    oauth: None,
     allowed_model_prefixes: None,
     api_key_envs: &["TOGETHER_API_KEY"],
     vendor: "Together",
@@ -510,6 +576,7 @@ const CEREBRAS_SPEC: PlatformSpec = PlatformSpec {
         default: "https://api.cerebras.ai/v1",
     },
     uses_oauth: false,
+    oauth: None,
     allowed_model_prefixes: None,
     api_key_envs: &["CEREBRAS_API_KEY"],
     vendor: "Cerebras",
@@ -542,6 +609,7 @@ const NVIDIA_SPEC: PlatformSpec = PlatformSpec {
         default: "https://integrate.api.nvidia.com/v1",
     },
     uses_oauth: false,
+    oauth: None,
     allowed_model_prefixes: None,
     api_key_envs: &["NVIDIA_API_KEY"],
     vendor: "NVIDIA",
@@ -574,6 +642,7 @@ const VERCEL_SPEC: PlatformSpec = PlatformSpec {
         default: "https://ai-gateway.vercel.sh/v1",
     },
     uses_oauth: false,
+    oauth: None,
     allowed_model_prefixes: None,
     api_key_envs: &["AI_GATEWAY_API_KEY"],
     vendor: "Vercel",
@@ -606,6 +675,7 @@ const XAI_SPEC: PlatformSpec = PlatformSpec {
         default: "https://api.x.ai/v1",
     },
     uses_oauth: false,
+    oauth: None,
     allowed_model_prefixes: None,
     // NOTE: `XAI_API_KEY` is ALSO read as a legacy fallback by the house BYOK
     // path (`read_xai_api_key_env`), whose primary env is now `KIGI_API_KEY`.
@@ -632,6 +702,41 @@ const XAI_SPEC: PlatformSpec = PlatformSpec {
     restrict_to_enriched: true,
 };
 
+/// Base-URL override for the xAI Grok subscription (OAuth) platform. Its own
+/// env (distinct from `KIGI_XAI_BASE_URL`) so a mock can target it
+/// independently of the API-key `xai` row.
+pub const XAI_GROK_BASE_URL_ENV: &str = "KIGI_XAI_GROK_BASE_URL";
+const XAI_GROK_SPEC: PlatformSpec = PlatformSpec {
+    id: "xai-grok",
+    display_name: "xAI (Grok subscription)",
+    // Same wire as the API-key `xai` row (api.x.ai/v1), but reached with an
+    // OAuth subscription bearer instead of an API key.
+    base_url: BaseUrlSource::EnvOr {
+        env: XAI_GROK_BASE_URL_ENV,
+        default: "https://api.x.ai/v1",
+    },
+    uses_oauth: true,
+    oauth: Some(&XAI_OAUTH_CONFIG),
+    allowed_model_prefixes: None,
+    // OAuth channel: no API key envs (the device-flow session is the bearer).
+    api_key_envs: &[],
+    vendor: "xAI",
+    console_host: Some("x.ai"),
+    login_label: Some("xAI Grok (subscription)"),
+    models_dev_id: Some("xai"),
+    // Same as XAI_SPEC: bare-id /v1/models, enrich from models.dev "xai",
+    // restrict to tool-calling chat models (drops the grok-imagine-* media
+    // generators).
+    wire_serves_metadata: false,
+    wire_api: PlatformWireApi::ChatCompletions,
+    listing: ListingDialect::OpenAi,
+    chat_compat: PlatformChatCompat::Passthrough,
+    key_header: PlatformKeyHeader::Bearer,
+    key_validation_path: None,
+    strip_listing_id_prefix: None,
+    restrict_to_enriched: true,
+};
+
 pub const QWEN_TOKEN_PLAN_BASE_URL_ENV: &str = "KIGI_QWEN_TOKEN_PLAN_BASE_URL";
 const QWEN_TOKEN_PLAN_SPEC: PlatformSpec = PlatformSpec {
     id: "qwen-token-plan",
@@ -641,6 +746,7 @@ const QWEN_TOKEN_PLAN_SPEC: PlatformSpec = PlatformSpec {
         default: "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
     },
     uses_oauth: false,
+    oauth: None,
     allowed_model_prefixes: None,
     api_key_envs: &["QWEN_TOKEN_PLAN_API_KEY"],
     vendor: "Alibaba",
@@ -672,6 +778,7 @@ const QWEN_TOKEN_PLAN_CN_SPEC: PlatformSpec = PlatformSpec {
         default: "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
     },
     uses_oauth: false,
+    oauth: None,
     allowed_model_prefixes: None,
     api_key_envs: &["QWEN_TOKEN_PLAN_CN_API_KEY"],
     vendor: "Alibaba",
@@ -698,6 +805,7 @@ const KIMI_CODING_SPEC: PlatformSpec = PlatformSpec {
     // Kimi thinking dialect applies verbatim.
     base_url: BaseUrlSource::KigiEnvCoding,
     uses_oauth: false,
+    oauth: None,
     allowed_model_prefixes: None,
     api_key_envs: &["KIMI_API_KEY"],
     vendor: "Kimi",
@@ -727,6 +835,7 @@ const ZAI_SPEC: PlatformSpec = PlatformSpec {
         default: "https://api.z.ai/api/coding/paas/v4",
     },
     uses_oauth: false,
+    oauth: None,
     allowed_model_prefixes: None,
     api_key_envs: &["ZAI_API_KEY"],
     vendor: "Z.AI",
@@ -756,6 +865,7 @@ const ZAI_CODING_CN_SPEC: PlatformSpec = PlatformSpec {
         default: "https://open.bigmodel.cn/api/coding/paas/v4",
     },
     uses_oauth: false,
+    oauth: None,
     allowed_model_prefixes: None,
     api_key_envs: &["ZAI_CODING_CN_API_KEY"],
     vendor: "Z.AI",
@@ -782,6 +892,7 @@ const XIAOMI_SPEC: PlatformSpec = PlatformSpec {
         default: "https://api.xiaomimimo.com/v1",
     },
     uses_oauth: false,
+    oauth: None,
     allowed_model_prefixes: None,
     api_key_envs: &["XIAOMI_API_KEY"],
     vendor: "Xiaomi",
@@ -810,6 +921,7 @@ const XIAOMI_TOKEN_PLAN_CN_SPEC: PlatformSpec = PlatformSpec {
         default: "https://token-plan-cn.xiaomimimo.com/v1",
     },
     uses_oauth: false,
+    oauth: None,
     allowed_model_prefixes: None,
     api_key_envs: &["XIAOMI_TOKEN_PLAN_CN_API_KEY"],
     vendor: "Xiaomi",
@@ -841,6 +953,7 @@ const MINIMAX_SPEC: PlatformSpec = PlatformSpec {
         default: "https://api.minimax.io/anthropic/v1",
     },
     uses_oauth: false,
+    oauth: None,
     allowed_model_prefixes: None,
     api_key_envs: &["MINIMAX_API_KEY"],
     vendor: "MiniMax",
@@ -871,6 +984,7 @@ const MINIMAX_CN_SPEC: PlatformSpec = PlatformSpec {
         default: "https://api.minimaxi.com/anthropic/v1",
     },
     uses_oauth: false,
+    oauth: None,
     allowed_model_prefixes: None,
     api_key_envs: &["MINIMAX_CN_API_KEY"],
     vendor: "MiniMax",
@@ -941,12 +1055,14 @@ pub enum PlatformId {
     Minimax,
     /// MiniMax, China (API key, Anthropic-compatible Messages).
     MinimaxCn,
+    /// xAI Grok subscription via device-code OAuth (same wire as `Xai`).
+    XaiGrok,
 }
 
 impl PlatformId {
     /// All platforms, in catalog precedence order: the subscription channel
     /// first so "default model = first list item" favors it when present.
-    pub const ALL: [PlatformId; 25] = [
+    pub const ALL: [PlatformId; 26] = [
         Self::KimiCode,
         Self::MoonshotCn,
         Self::MoonshotAi,
@@ -972,6 +1088,7 @@ impl PlatformId {
         Self::XiaomiTokenPlanCn,
         Self::Minimax,
         Self::MinimaxCn,
+        Self::XaiGrok,
     ];
 
     /// The registry row backing this platform (single source of per-platform
@@ -1003,6 +1120,7 @@ impl PlatformId {
             Self::XiaomiTokenPlanCn => &XIAOMI_TOKEN_PLAN_CN_SPEC,
             Self::Minimax => &MINIMAX_SPEC,
             Self::MinimaxCn => &MINIMAX_CN_SPEC,
+            Self::XaiGrok => &XAI_GROK_SPEC,
         }
     }
 
@@ -1032,6 +1150,14 @@ impl PlatformId {
     /// True for OAuth-bearer subscription channels.
     pub fn uses_oauth(self) -> bool {
         self.spec().uses_oauth
+    }
+
+    /// Generic device-code OAuth config for this platform, or `None` for
+    /// API-key platforms and for Kimi Code (bespoke flow). A `Some` here means
+    /// `uses_oauth()` is also true; the fetch/base-url routing treats these
+    /// providers as their own `base_url()` (not the Kimi `proxy_url()`).
+    pub fn oauth(self) -> Option<&'static OAuthConfig> {
+        self.spec().oauth
     }
 
     /// Model-id prefixes admitted from this platform's `/models` listing.
@@ -1764,6 +1890,49 @@ mod tests {
         assert_eq!(PlatformId::parse("not-a-platform"), None);
     }
 
+    /// xai-grok is the second refreshable-OAuth platform: it carries a generic
+    /// device-code `OAuthConfig` (Kimi Code carries `None`), reuses the xai
+    /// wire (models.dev "xai", restrict-to-enriched, Bearer, ChatCompletions),
+    /// and keys its models under `xai-grok/` — distinct from the API-key `xai`.
+    #[test]
+    fn xai_grok_is_a_generic_oauth_platform() {
+        let g = PlatformId::XaiGrok;
+        assert_eq!(g.as_str(), "xai-grok");
+        assert!(g.uses_oauth());
+        // The only two uses_oauth platforms; only xai-grok carries a config.
+        assert!(PlatformId::KimiCode.uses_oauth());
+        assert_eq!(PlatformId::KimiCode.oauth(), None);
+        let cfg = g
+            .oauth()
+            .expect("xai-grok carries a device-code OAuthConfig");
+        assert_eq!(cfg, &XAI_OAUTH_CONFIG);
+        assert_eq!(cfg.client_id, "b1a00492-073a-47ea-816f-4c329264a828");
+        assert_eq!(cfg.auth_host, "https://auth.x.ai");
+        assert_eq!(cfg.device_path, "/oauth2/device/code");
+        assert_eq!(cfg.token_path, "/oauth2/token");
+        assert_eq!(
+            cfg.scope,
+            "openid profile email offline_access grok-cli:access api:access"
+        );
+        assert_eq!(cfg.scope_key, "oauth/xai");
+        assert_eq!(cfg.extra_device_field, Some(("referrer", "kigi")));
+        // Scope-key lookup resolves the config (drives the generic refresher).
+        assert_eq!(
+            oauth_config_for_scope_key("oauth/xai"),
+            Some(&XAI_OAUTH_CONFIG)
+        );
+        assert_eq!(oauth_config_for_scope_key("oauth/kimi-code"), None);
+        // Reuses the xai wire, its OWN base env, and the models.dev "xai" keys.
+        assert_eq!(g.models_dev_id(), Some("xai"));
+        assert!(g.restrict_to_enriched());
+        assert_eq!(g.key_header(), PlatformKeyHeader::Bearer);
+        assert_eq!(g.wire_api(), PlatformWireApi::ChatCompletions);
+        assert_eq!(g.api_key_env_names(), &[] as &[&str]);
+        assert_eq!(g.managed_model_key("grok-4.5"), "xai-grok/grok-4.5");
+        let _guard = kigi_env::EnvVarGuard::set(XAI_GROK_BASE_URL_ENV, "https://mock.grok/v1");
+        assert_eq!(g.base_url(), "https://mock.grok/v1");
+    }
+
     /// A variant missing from `ALL` compiles fine (`ALL`'s length is a plain
     /// literal) but is silently unparseable and excluded from model sync.
     /// The exhaustive match below fails compilation when a variant is added,
@@ -1797,9 +1966,10 @@ mod tests {
                 PlatformId::XiaomiTokenPlanCn => 22,
                 PlatformId::Minimax => 23,
                 PlatformId::MinimaxCn => 24,
+                PlatformId::XaiGrok => 25,
             }
         }
-        const VARIANT_COUNT: usize = 25; // update together with `ordinal`
+        const VARIANT_COUNT: usize = 26; // update together with `ordinal`
         let mut seen: Vec<usize> = PlatformId::ALL.iter().map(|&p| ordinal(p)).collect();
         seen.sort_unstable();
         seen.dedup();

@@ -130,8 +130,9 @@ fn with_device_headers(
 }
 
 /// Defend against control characters / non-https redirects from a
-/// compromised or mis-configured OAuth host.
-fn validate_verification_uri(uri: &str) -> anyhow::Result<()> {
+/// compromised or mis-configured OAuth host. Shared with the generic
+/// device-code wire ([`super::oauth_device`]).
+pub(crate) fn validate_verification_uri(uri: &str) -> anyhow::Result<()> {
     if uri.chars().any(|c| c.is_ascii_control()) {
         anyhow::bail!("Server returned invalid verification URI");
     }
