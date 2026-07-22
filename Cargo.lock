@@ -6158,6 +6158,7 @@ version = "0.1.3"
 dependencies = [
  "assert_matches",
  "async-openai",
+ "base64",
  "indexmap",
  "kigi-compaction",
  "kigi-tools",

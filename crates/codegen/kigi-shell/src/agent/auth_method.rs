@@ -605,6 +605,11 @@ mod tests {
         );
         assert_eq!(
             ids[kimi_pos + 4],
+            "openai-codex",
+            "openai-codex is the next interactive OAuth login, after github-copilot"
+        );
+        assert_eq!(
+            ids[kimi_pos + 5],
             MOONSHOT_CN_METHOD_ID,
             "the api-key rows follow the generic oauth logins"
         );
@@ -756,6 +761,7 @@ mod tests {
                 "xai-grok",
                 "claude-pro-max",
                 "github-copilot",
+                "openai-codex",
                 MOONSHOT_CN_METHOD_ID,
                 MOONSHOT_AI_METHOD_ID,
                 "openai",
@@ -807,6 +813,7 @@ mod tests {
                 "xai-grok",
                 "claude-pro-max",
                 "github-copilot",
+                "openai-codex",
                 MOONSHOT_CN_METHOD_ID,
                 MOONSHOT_AI_METHOD_ID,
                 "openai",
@@ -851,6 +858,7 @@ mod tests {
                 "xai-grok",
                 "claude-pro-max",
                 "github-copilot",
+                "openai-codex",
                 MOONSHOT_CN_METHOD_ID,
                 MOONSHOT_AI_METHOD_ID,
                 "openai",
@@ -898,6 +906,7 @@ mod tests {
                 "xai-grok",
                 "claude-pro-max",
                 "github-copilot",
+                "openai-codex",
                 MOONSHOT_CN_METHOD_ID,
                 MOONSHOT_AI_METHOD_ID,
                 "openai",

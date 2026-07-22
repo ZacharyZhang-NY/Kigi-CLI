@@ -2119,6 +2119,10 @@ mod tests {
             "the github-copilot interactive OAuth login row must render: {text}"
         );
         assert!(
+            text.contains("ChatGPT Plus/Pro (Codex) (OAuth)"),
+            "the openai-codex interactive OAuth login row must render: {text}"
+        );
+        assert!(
             text.contains("Moonshot Open Platform (API key \u{b7} moonshot.cn)"),
             "{text}"
         );

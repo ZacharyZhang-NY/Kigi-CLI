@@ -893,6 +893,11 @@ async fn read_parent_sampling_config(
             // false, so the other ChatCompletions paths stay byte-identical.
             let github_copilot = kigi_models::parse_managed_model_key(ctx.model_id.0.as_ref())
                 .is_some_and(|(platform, _)| platform.sends_copilot_editor_headers());
+            // ChatGPT/Codex headers inherit from the parent model's platform
+            // (openai-codex → true); every other platform / BYOK → false, so the
+            // API-key openai Responses path stays byte-identical.
+            let openai_codex = kigi_models::parse_managed_model_key(ctx.model_id.0.as_ref())
+                .is_some_and(|(platform, _)| platform.sends_codex_responses_headers());
             let inherited = kigi_sampler::SamplerConfig {
                 api_key: creds.api_key,
                 base_url: cfg.base_url,
@@ -904,6 +909,7 @@ async fn read_parent_sampling_config(
                 auth_scheme,
                 anthropic_oauth,
                 github_copilot,
+                openai_codex,
                 chat_compat: cfg.chat_compat,
                 extra_headers,
                 context_window: cfg.context_window.get(),

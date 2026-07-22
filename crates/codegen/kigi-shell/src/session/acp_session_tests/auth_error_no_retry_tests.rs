@@ -851,6 +851,7 @@ async fn set_session_model_invalidates_byok_memo_for_same_model_id() {
                 auth_scheme: Default::default(),
                 anthropic_oauth: false,
                 github_copilot: false,
+                openai_codex: false,
                 extra_headers: Default::default(),
                 context_window: 256_000,
                 force_http1: false,

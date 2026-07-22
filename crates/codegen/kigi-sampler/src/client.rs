@@ -304,6 +304,9 @@ struct ClientDefaults {
     doom_loop_recovery: Option<kigi_sampling_types::DoomLoopRecoveryPolicy>,
     /// Claude Pro/Max OAuth Messages adaptation (see [`SamplerConfig`]).
     anthropic_oauth: bool,
+    /// ChatGPT/Codex Responses adaptation (see [`SamplerConfig`]). Gates the
+    /// per-request `chatgpt-account-id` header derived from the bearer JWT.
+    openai_codex: bool,
 }
 
 // =============================================================================
@@ -479,6 +482,24 @@ impl SamplingClient {
             );
         }
 
+        // ChatGPT/Codex Responses identity headers (openai-codex only). The
+        // Codex backend authorizes the OAuth bearer AND validates the Codex
+        // client identity. The static pieces (`originator`, `OpenAI-Beta`) ride
+        // every request; `chatgpt-account-id` is dynamic (derived per-request
+        // from the bearer JWT in `post()`), and `User-Agent` is set in the UA
+        // block below. Gated on `openai_codex` so API-key `openai` Responses
+        // requests stay byte-identical (`store: false` is the shared default).
+        if config.openai_codex {
+            headers.insert(
+                HeaderName::from_static("originator"),
+                HeaderValue::from_static(kigi_sampling_types::CODEX_ORIGINATOR),
+            );
+            headers.insert(
+                HeaderName::from_static("openai-beta"),
+                HeaderValue::from_static(kigi_sampling_types::CODEX_OPENAI_BETA),
+            );
+        }
+
         // Apply all extra headers verbatim. This is the single
         // injection point for proxy-auth headers and any other URL- or
         // environment-specific headers the session decides to set.
@@ -503,6 +524,8 @@ impl SamplingClient {
                 kigi_sampling_types::CLAUDE_CODE_USER_AGENT.to_string()
             } else if config.github_copilot {
                 kigi_sampling_types::COPILOT_USER_AGENT.to_string()
+            } else if config.openai_codex {
+                kigi_sampling_types::CODEX_USER_AGENT.to_string()
             } else {
                 match config.origin_client.as_ref() {
                     Some(origin) => user_agent_string_for(origin),
@@ -551,6 +574,7 @@ impl SamplingClient {
             stream_tool_calls: config.stream_tool_calls,
             doom_loop_recovery: config.doom_loop_recovery,
             anthropic_oauth: config.anthropic_oauth,
+            openai_codex: config.openai_codex,
         };
 
         Ok(Self {
@@ -589,6 +613,23 @@ impl SamplingClient {
                     }
                 }
             }
+        }
+        // ChatGPT/Codex `chatgpt-account-id` (openai-codex only): derive it
+        // STATELESSLY from the bearer that will actually ride this request (the
+        // resolver-fresh one just set, or the construction-time bearer in
+        // `default_headers`) by decoding its JWT claim. A refreshed token still
+        // carries the claim, so there is no persisted account-id field.
+        // openai-codex-gated → API-key `openai` never gets this header.
+        // SECURITY: the bearer and account id are never logged here.
+        if self.defaults.openai_codex
+            && let Some(bearer) = headers
+                .get(AUTHORIZATION)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.strip_prefix("Bearer "))
+            && let Some(account_id) = kigi_sampling_types::chatgpt_account_id_from_jwt(bearer)
+            && let Ok(v) = HeaderValue::from_str(&account_id)
+        {
+            headers.insert(HeaderName::from_static("chatgpt-account-id"), v);
         }
         {
             let auth_prefix = headers
@@ -699,6 +740,9 @@ impl SamplingClient {
             || lower.contains("apikey")
             || lower.contains("token")
             || lower.contains("secret")
+            // `chatgpt-account-id` (Codex) and any other account identifier: a
+            // stable per-user id that must never reach a log.
+            || lower.contains("account-id")
     }
 
     /// Format a single header for error messages, redacting sensitive values.
@@ -1990,6 +2034,7 @@ mod tests {
             auth_scheme: AuthScheme::Bearer,
             anthropic_oauth: false,
             github_copilot: false,
+            openai_codex: false,
             chat_compat: Default::default(),
             extra_headers: IndexMap::new(),
             context_window: 8192,
@@ -2148,6 +2193,29 @@ mod tests {
         );
     }
 
+    /// SECURITY REGRESSION: `chatgpt-account-id` (the Codex per-user account
+    /// identifier) must be redacted by the header loggers. It is not a token, so
+    /// the substring list has to name it explicitly — without this, one debug
+    /// request log would write the user's stable ChatGPT account id to disk.
+    #[test]
+    fn account_id_headers_are_redacted_from_logs() {
+        assert!(
+            SamplingClient::is_sensitive_header("chatgpt-account-id"),
+            "chatgpt-account-id must be treated as sensitive"
+        );
+        assert!(
+            SamplingClient::is_sensitive_header("ChatGPT-Account-Id"),
+            "redaction is case-insensitive"
+        );
+        let rendered = SamplingClient::format_header("chatgpt-account-id", "acct-abc-123");
+        assert!(
+            rendered.contains("[REDACTED]") && !rendered.contains("acct-abc-123"),
+            "the account id value must never appear verbatim, got {rendered:?}"
+        );
+        // Sanity: an ordinary header is still shown (redaction stays targeted).
+        assert!(!SamplingClient::is_sensitive_header("content-type"));
+    }
+
     /// REGRESSION: a plain ChatCompletions client (github-copilot OFF, standing
     /// in for groq) carries NONE of the Copilot editor headers and keeps the
     /// kigi User-Agent — every other ChatCompletions provider stays untouched.
@@ -2178,6 +2246,88 @@ mod tests {
                 .and_then(|v| v.to_str().ok())
                 .is_some_and(|ua| ua.starts_with("kigi/")),
             "groq keeps the kigi User-Agent"
+        );
+    }
+
+    // A JWT whose payload carries `["https://api.openai.com/auth"]
+    // ["chatgpt_account_id"] = "acct-test-42"` (alg=none; signature is cosmetic
+    // — the extractor only base64url-decodes the payload segment).
+    const CODEX_TEST_JWT: &str = "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdC10ZXN0LTQyIn0sInN1YiI6InVzZXItMSJ9.sig";
+
+    /// openai-codex Responses client (`openai_codex = true`): the STATIC codex
+    /// identity headers (`originator`, `OpenAI-Beta`, codex `User-Agent`) ride
+    /// `default_headers`, and a built `post()` request derives `chatgpt-account-
+    /// id` from the bearer JWT. The Responses body default keeps `store: false`.
+    #[test]
+    fn openai_codex_client_sends_codex_identity_headers() {
+        let mut config = minimal_config();
+        config.api_backend = ApiBackend::Responses;
+        config.openai_codex = true;
+        config.api_key = Some(CODEX_TEST_JWT.to_string());
+        let client = SamplingClient::new(config).expect("client builds");
+        let h = &client.default_headers;
+        assert_eq!(
+            h.get("originator").and_then(|v| v.to_str().ok()),
+            Some(kigi_sampling_types::CODEX_ORIGINATOR),
+            "codex must send originator: codex_cli_rs"
+        );
+        assert_eq!(
+            h.get("openai-beta").and_then(|v| v.to_str().ok()),
+            Some(kigi_sampling_types::CODEX_OPENAI_BETA),
+            "codex must opt into OpenAI-Beta: responses=experimental"
+        );
+        assert_eq!(
+            h.get(USER_AGENT).and_then(|v| v.to_str().ok()),
+            Some(kigi_sampling_types::CODEX_USER_AGENT),
+            "codex presents the codex User-Agent"
+        );
+        // The account id is derived PER REQUEST from the bearer JWT in post().
+        let req = client
+            .post("https://chatgpt.com/backend-api/codex/responses")
+            .build()
+            .expect("build request");
+        assert_eq!(
+            req.headers()
+                .get("chatgpt-account-id")
+                .and_then(|v| v.to_str().ok()),
+            Some("acct-test-42"),
+            "chatgpt-account-id must be decoded from the bearer JWT claim"
+        );
+    }
+
+    /// REGRESSION: an API-key `openai` Responses client (`openai_codex = false`)
+    /// carries NONE of the Codex identity headers — not the static ones and not
+    /// the per-request `chatgpt-account-id` — so its request stays byte-identical.
+    #[test]
+    fn api_key_openai_responses_client_has_no_codex_headers() {
+        let mut config = minimal_config();
+        config.api_backend = ApiBackend::Responses;
+        // openai_codex stays false (as it is for API-key openai). Even with a
+        // JWT-shaped key, no account-id header is derived.
+        config.api_key = Some(CODEX_TEST_JWT.to_string());
+        let client = SamplingClient::new(config).expect("client builds");
+        let h = &client.default_headers;
+        assert!(
+            h.get("originator").is_none(),
+            "openai must NOT send originator"
+        );
+        assert!(
+            h.get("openai-beta").is_none(),
+            "openai must NOT send the codex OpenAI-Beta"
+        );
+        assert!(
+            h.get(USER_AGENT)
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|ua| ua.starts_with("kigi/")),
+            "API-key openai keeps the kigi User-Agent"
+        );
+        let req = client
+            .post("https://api.openai.com/v1/responses")
+            .build()
+            .expect("build request");
+        assert!(
+            req.headers().get("chatgpt-account-id").is_none(),
+            "API-key openai must NOT send chatgpt-account-id (regression)"
         );
     }
 

@@ -283,6 +283,16 @@ impl SessionActor {
         kigi_models::parse_managed_model_key(managed_key.as_deref().unwrap_or(model))
             .is_some_and(|(platform, _)| platform.sends_copilot_editor_headers())
     }
+    /// Whether `model` routes to the ChatGPT/Codex Responses platform
+    /// (openai-codex) — the gate for the sampler's Codex identity headers
+    /// (`chatgpt-account-id` + originator + OpenAI-Beta). Every other model
+    /// returns `false`, keeping the API-key `openai` Responses request
+    /// byte-identical.
+    fn model_is_openai_codex(&self, model: &str) -> bool {
+        let managed_key = self.managed_key_for_model(model);
+        kigi_models::parse_managed_model_key(managed_key.as_deref().unwrap_or(model))
+            .is_some_and(|(platform, _)| platform.sends_codex_responses_headers())
+    }
     /// LEAK guard for the stamped aux paths (auto-mode classifier, image
     /// describe). After [`crate::agent::config::stamp_session_local_sampler_fields`]
     /// has copied the SESSION model's `bearer_resolver` onto an aux
@@ -394,6 +404,8 @@ impl SessionActor {
         let anthropic_oauth = self.model_is_anthropic_oauth(&cfg.model);
         // GitHub Copilot editor-identity headers for THIS turn's model.
         let github_copilot = self.model_is_github_copilot(&cfg.model);
+        // ChatGPT/Codex identity headers for THIS turn's model.
+        let openai_codex = self.model_is_openai_codex(&cfg.model);
         let auth_scheme = model_facts.auth_scheme;
         let mut extra_headers = cfg.extra_headers;
         crate::agent::config::inject_url_derived_headers(
@@ -436,6 +448,7 @@ impl SessionActor {
             auth_scheme,
             anthropic_oauth,
             github_copilot,
+            openai_codex,
             chat_compat: cfg.chat_compat,
             extra_headers,
             context_window: cfg.context_window.get(),

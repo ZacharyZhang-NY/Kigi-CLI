@@ -1,6 +1,9 @@
-//! Generic device-code token refresher: drives `POST {token_path}` with
-//! `grant_type=refresh_token` for any [`kigi_models::OAuthConfig`] provider
-//! (xai-grok today) through the [`TokenRefresher`] seam.
+//! Generic OAuth token refresher for any [`kigi_models::OAuthConfig`] provider,
+//! driven through the [`TokenRefresher`] seam. The wire call is selected by the
+//! config's `token_body`: form-encoded `grant_type=refresh_token` (xai-grok,
+//! openai-codex), JSON (claude-pro-max), or the GitHub Copilot copilot-token
+//! RE-MINT. Providers with `requires_chatgpt_account_id` additionally fail fast
+//! when the refreshed token drops the claim.
 //!
 //! Structurally identical to [`super::kimi_refresher::KimiRefresher`] — same
 //! sibling-adoption + post-401 grace — but the wire call goes through
@@ -118,6 +121,22 @@ impl TokenRefresher for GenericDeviceRefresher {
             }
         };
         match wire_result {
+            Ok(new_auth)
+                if self.cfg.requires_chatgpt_account_id
+                    && kigi_sampling_types::chatgpt_account_id_from_jwt(&new_auth.key)
+                        .is_none() =>
+            {
+                // FAIL FAST (never silently): the refreshed token carries no
+                // `chatgpt_account_id`, so every inference request would go out
+                // WITHOUT the required `chatgpt-account-id` header and draw an
+                // opaque backend 4xx. Surface it as a permanent failure so the
+                // user is told to re-login.
+                tracing::warn!(
+                    scope_key = self.cfg.scope_key,
+                    "auth: refreshed token is missing the chatgpt_account_id claim"
+                );
+                RefreshOutcome::permanent(RefreshTokenFailedReason::Other, Some(refresh_token))
+            }
             Ok(new_auth) => {
                 kigi_log::unified_log::info(
                     "auth.refresh.token_rotated",

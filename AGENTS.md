@@ -182,17 +182,50 @@ edges stay deterministic Rust. The harness appends a terminal
   - `OAuthFlow::DeviceCode` → `auth::oauth_device` (RFC-8628 device-code, plain
     kigi UA, no X-Msh headers). Provider: `xai-grok` (`scope_key oauth/xai`,
     base `api.x.ai/v1`, form token body, same wire as the API-key `xai` row).
-  - `OAuthFlow::PkceLocalhost { redirect_port }` → `auth::oauth_pkce`
-    (authorization-code + PKCE S256, `127.0.0.1:redirect_port/callback` loopback
-    with STRICT `state` validation + manual-paste fallback, JSON token body,
-    authorize host ≠ token host). Provider: `claude-pro-max` (`scope_key
-    oauth/claude-pro-max`, base `api.anthropic.com/v1`, Anthropic Messages +
-    listing wire reached with an OAuth `sk-ant-oat…` Bearer). Its Messages
-    requests take the OAuth adaptation — `anthropic-beta claude-code-…,oauth-…`
-    + `claude-cli` UA + `x-app cli` + the required "You are Claude Code…" system
-    prefix — gated on `SamplerConfig.anthropic_oauth` (claude-pro-max only), so
-    API-key `anthropic`/`minimax` Messages requests stay byte-identical. Its
-    `/v1/models` listing rides the same Bearer + oauth-beta headers.
+  - `OAuthFlow::PkceLocalhost { redirect_port, redirect_path }` →
+    `auth::oauth_pkce` (authorization-code + PKCE S256,
+    `127.0.0.1:redirect_port{redirect_path}` loopback with STRICT `state`
+    validation + manual-paste fallback, authorize host possibly ≠ token host).
+    The `token_body` selects the login dialect: `Json` = claude (`state ==
+    verifier`, JSON exchange carrying `state`), `Form` = codex (fresh-random
+    `state`, FORM exchange without `state` via `exchange_code_form`).
+    `OAuthConfig.authorize_extra` appends provider-only authorize params (empty
+    for all but codex). Providers:
+    - `claude-pro-max` (`scope_key oauth/claude-pro-max`, port 53692
+      `/callback`, JSON body, base `api.anthropic.com/v1`, Anthropic Messages +
+      listing wire reached with an OAuth `sk-ant-oat…` Bearer). Its Messages
+      requests take the OAuth adaptation — `anthropic-beta claude-code-…,oauth-…`
+      + `claude-cli` UA + `x-app cli` + the required "You are Claude Code…"
+      system prefix — gated on `SamplerConfig.anthropic_oauth` (claude-pro-max
+      only), so API-key `anthropic`/`minimax` Messages requests stay
+      byte-identical. Its `/v1/models` listing rides the same Bearer +
+      oauth-beta headers.
+    - `openai-codex` (ChatGPT Plus/Pro, `scope_key oauth/openai-codex`, port
+      1455 `/auth/callback`, FORM body, authorize+token host `auth.openai.com`,
+      client `app_EMoam…`, scope `openid profile email offline_access`, the 3
+      authorize-extra params `id_token_add_organizations`/
+      `codex_cli_simplified_flow`/`originator=codex_cli_rs`). Refresh is a plain
+      `refresh_token` FORM grant (the generic refresher's `Form` path →
+      `auth::oauth_device`). The minted `access_token` is a JWT; login FAILS
+      FAST unless it carries the `["https://api.openai.com/auth"]
+      ["chatgpt_account_id"]` claim (`chatgpt_account_id_from_jwt`) — that
+      account id is NOT persisted but re-derived STATELESSLY from the current
+      bearer at every request. INFERENCE reuses the EXISTING Responses wire
+      against base `chatgpt.com/backend-api/codex` (→ `{base}/responses`) with
+      a Codex-gated adaptation (`SamplerConfig.openai_codex` /
+      `PlatformId::sends_codex_responses_headers()`): headers
+      `chatgpt-account-id` (per-request from the JWT), `originator codex_cli_rs`,
+      `OpenAI-Beta responses=experimental`, a codex `User-Agent`; `store:false`
+      is the shared Responses default. API-key `openai` Responses requests carry
+      NONE of this (byte-identical). `reasoning.effort` carries the thinking
+      level (incl. the codex-only `ultra`). NO websocket, NO base_instructions.
+      CATALOG is HARDCODED (`PlatformId::hardcoded_catalog` →
+      `openai_codex_wire_models`, mapped through the SAME
+      `platform_wire_model_to_entry` output): exactly the 4 `visibility=list` &&
+      `supported_in_api=true` models (`gpt-5.6-sol/terra/luna`, `gpt-5.5`, ctx
+      272000, per-model efforts) — NO live `/models` fetch, NO codex-CLI /
+      `~/.codex` dependency; `gpt-5.3-codex-spark` (api=false) and
+      `gpt-5.4`/`gpt-5.4-mini`/`codex-auto-review` (hidden) are EXCLUDED.
   - `OAuthFlow::GithubDeviceCopilot` → `auth::github_copilot` (TWO-STAGE).
     Provider: `github-copilot` (`scope_key oauth/github-copilot`, base
     `api.individual.githubcopilot.com`, ChatCompletions wire). Stage 1 is an
@@ -222,7 +255,7 @@ edges stay deterministic Rust. The harness appends a terminal
     state and is unverifiable without a live Copilot account), not a silent gap.
   These are INTERACTIVE login rows advertised right after `kimi-code`
   (`AuthMethodKind::OAuthPlatform`, in `PlatformId::ALL` order: `xai-grok`,
-  `claude-pro-max`, `github-copilot`). The catalog fetch resolves each such platform's OWN session
+  `claude-pro-max`, `github-copilot`, `openai-codex`). The catalog fetch resolves each such platform's OWN session
   token (`resolve_generic_oauth_tokens`, refreshed on expiry) and routes
   `platform.oauth().is_some()` → `platform.base_url()` (kimi-code alone →
   `proxy_url()`). Tokens/codes/verifiers are NEVER logged.
@@ -233,8 +266,10 @@ edges stay deterministic Rust. The harness appends a terminal
   `parse_api_json` for bundled + runtime refresh; 24h cache
   `~/.kigi/models_dev_cache.json`). Wire values always win; enrichment
   never invents model availability. Canonical reasoning efforts:
-  none/minimal/low/medium/high/xhigh/max (`max` split from `xhigh`
-  2026-07; Kimi wire spells its top tier `max`, kimi_compat renames).
+  none/minimal/low/medium/high/xhigh/max/ultra (`max` split from `xhigh`
+  2026-07; `ultra` is codex-only, above `max`, surfaced only via a model's
+  server-declared effort menu; Kimi wire spells its top tier `max`, kimi_compat
+  renames).
 
 ## Milestones (PRD §8.3)
 

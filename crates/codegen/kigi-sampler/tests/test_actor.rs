@@ -80,6 +80,7 @@ fn test_config(base_url: String, model: &str) -> SamplerConfig {
         auth_scheme: Default::default(),
         anthropic_oauth: false,
         github_copilot: false,
+        openai_codex: false,
         chat_compat: Default::default(),
         extra_headers: IndexMap::new(),
         context_window: 128_000,

@@ -1,18 +1,24 @@
 //! Generic authorization-code + PKCE (S256) OAuth wire with a `127.0.0.1`
 //! loopback callback, driven by a registry [`kigi_models::OAuthConfig`] whose
-//! `flow` is [`OAuthFlow::PkceLocalhost`] (claude-pro-max today).
+//! `flow` is [`OAuthFlow::PkceLocalhost`] (claude-pro-max JSON + openai-codex
+//! FORM).
 //!
-//! Shape (Pi `earendil-works/pi` `auth/oauth/anthropic.ts`):
+//! Shape (Pi `earendil-works/pi` `auth/oauth/{anthropic,openai-codex}.ts`):
 //! - `verifier = base64url(32 random bytes)`; `challenge = base64url(SHA-256(
-//!   verifier))`; `state = verifier`.
+//!   verifier))`. `state` is `verifier` for claude ([`generate_pkce`]) or a
+//!   fresh-random value for codex ([`generate_pkce_random_state`]).
 //! - Browser opens `{auth_host}{device_path}?client_id&response_type=code&
-//!   scope&redirect_uri&state&code_challenge&code_challenge_method=S256`.
+//!   scope&redirect_uri&state&code_challenge&code_challenge_method=S256` plus any
+//!   `authorize_extra` params (codex only).
 //! - The code returns to a loopback listener on `127.0.0.1:{redirect_port}`
-//!   answering ONLY `/callback`, with STRICT `state` validation (a mismatch is
-//!   rejected — CSRF guard). A manual paste (redirect URL / `code#state` / bare
-//!   code) is accepted as a headless fallback.
-//! - Code → token exchange and refresh POST `{token_host}{token_path}` as JSON
-//!   (per `token_body`); the refresh token ROTATES.
+//!   answering ONLY `{redirect_path}` (claude `/callback`, codex
+//!   `/auth/callback`), with STRICT `state` validation (a mismatch is rejected —
+//!   CSRF guard). A manual paste (redirect URL / `code#state` / bare code) is
+//!   accepted as a headless fallback.
+//! - Code → token exchange POSTs `{token_host}{token_path}` as JSON
+//!   ([`exchange_code`], claude) or FORM ([`exchange_code_form`], codex; NO
+//!   `state` field). Refresh: claude JSON here ([`refresh_token`], rotating);
+//!   codex takes the generic device refresher's FORM path.
 //!
 //! SECURITY: the verifier, authorization code, access token, and refresh token
 //! are NEVER logged (only non-secret events: authorize URL requested, callback
@@ -34,16 +40,19 @@ const MAX_REFRESH_RETRIES: u32 = 3;
 /// HTTP statuses worth retrying a refresh for (parity with the device wire).
 const RETRYABLE_REFRESH_STATUSES: [u16; 5] = [429, 500, 502, 503, 504];
 
-/// PKCE secrets for one login attempt. `state == verifier` (Pi's convention:
-/// the state is the verifier, so a returned state binds the callback to this
-/// attempt AND doubles as the CSRF token).
+/// PKCE secrets for one login attempt. Two `state` conventions ship:
+/// [`generate_pkce`] sets `state == verifier` (Pi's/Claude's convention), while
+/// [`generate_pkce_random_state`] mints an INDEPENDENT random state (the OAuth
+/// standard, used by ChatGPT/Codex). Either way the state is validated on the
+/// callback as the CSRF guard.
 #[derive(Debug, Clone)]
 pub(crate) struct PkceCodes {
     /// `code_verifier` — the 43-char base64url secret, sent at token exchange.
     pub verifier: String,
     /// `code_challenge = base64url(SHA-256(verifier))`, sent at authorize.
     pub challenge: String,
-    /// `state` — equal to `verifier`; validated on the callback (CSRF guard).
+    /// `state` — the verifier itself, or an independent random value depending
+    /// on the provider's dialect; validated on the callback (CSRF guard).
     pub state: String,
 }
 
@@ -63,30 +72,51 @@ pub(crate) fn generate_pkce() -> PkceCodes {
     }
 }
 
-/// The loopback redirect URI for a PKCE-localhost provider.
-pub(crate) fn redirect_uri(redirect_port: u16) -> String {
-    format!("http://localhost:{redirect_port}/callback")
+/// Like [`generate_pkce`] but with an INDEPENDENT fresh-random `state` (16
+/// random bytes) instead of `state == verifier`. The ChatGPT/Codex flow uses a
+/// distinct state (the verifier never doubles as the CSRF token there), so the
+/// verifier stays out of the state carried on the loopback callback.
+pub(crate) fn generate_pkce_random_state() -> PkceCodes {
+    use rand::RngCore;
+    let mut raw = [0u8; 16];
+    rand::rng().fill_bytes(&mut raw);
+    let state = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw);
+    PkceCodes {
+        state,
+        ..generate_pkce()
+    }
+}
+
+/// The loopback redirect URI for a PKCE-localhost provider (claude `/callback`,
+/// codex `/auth/callback`).
+pub(crate) fn redirect_uri(redirect_port: u16, redirect_path: &str) -> String {
+    format!("http://localhost:{redirect_port}{redirect_path}")
 }
 
 /// Build the browser authorize URL:
 /// `{auth_host}{device_path}?client_id&response_type=code&scope&redirect_uri&
-/// state&code_challenge&code_challenge_method=S256`.
+/// state&code_challenge&code_challenge_method=S256` plus any config
+/// `authorize_extra` params (empty for every config but codex, so their URLs
+/// stay byte-identical).
 pub(crate) fn build_authorize_url(
     cfg: &OAuthConfig,
     redirect_uri: &str,
     pkce: &PkceCodes,
 ) -> String {
     let base = format!("{}{}", cfg.auth_host.trim_end_matches('/'), cfg.device_path);
-    let query = url::form_urlencoded::Serializer::new(String::new())
+    let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+    serializer
         .append_pair("client_id", cfg.client_id)
         .append_pair("response_type", "code")
         .append_pair("scope", cfg.scope)
         .append_pair("redirect_uri", redirect_uri)
         .append_pair("state", &pkce.state)
         .append_pair("code_challenge", &pkce.challenge)
-        .append_pair("code_challenge_method", "S256")
-        .finish();
-    format!("{base}?{query}")
+        .append_pair("code_challenge_method", "S256");
+    for (key, value) in cfg.authorize_extra {
+        serializer.append_pair(key, value);
+    }
+    format!("{base}?{}", serializer.finish())
 }
 
 /// `code` + `state` extracted from a callback (loopback query OR manual paste).
@@ -240,6 +270,52 @@ pub(crate) async fn exchange_code(
     Ok(tokens.into_auth())
 }
 
+/// Exchange an authorization `code` for a token set with a FORM body (codex):
+/// `{grant_type=authorization_code, client_id, code, code_verifier,
+/// redirect_uri}`. Unlike [`exchange_code`], the `state` is NOT sent in the
+/// token body (the ChatGPT/Codex token endpoint does not expect it). Asserts a
+/// `Form` config so a JSON provider can never silently mis-encode.
+pub(crate) async fn exchange_code_form(
+    cfg: &OAuthConfig,
+    code: &str,
+    pkce: &PkceCodes,
+    redirect_uri: &str,
+) -> anyhow::Result<KimiAuth> {
+    debug_assert!(
+        matches!(cfg.token_body, OAuthTokenBody::Form),
+        "PKCE form exchange expects a Form token body"
+    );
+    tracing::info!(
+        scope_key = cfg.scope_key,
+        "auth: exchanging code for token (pkce form)"
+    );
+    let resp = crate::http::shared_client()
+        .post(token_url(cfg))
+        .header("Accept", "application/json")
+        .form(&[
+            ("grant_type", CODE_GRANT_TYPE),
+            ("client_id", cfg.client_id),
+            ("code", code),
+            ("code_verifier", pkce.verifier.as_str()),
+            ("redirect_uri", redirect_uri),
+        ])
+        .send()
+        .await
+        .context("token exchange request failed")?;
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        tracing::warn!(%status, scope_key = cfg.scope_key, "auth: code exchange failed (pkce form)");
+        anyhow::bail!("Token exchange failed (HTTP {status}): {body}");
+    }
+    let tokens: TokenResponse = resp.json().await.context("malformed token payload")?;
+    tracing::info!(
+        scope_key = cfg.scope_key,
+        "auth: pkce form code exchange succeeded"
+    );
+    Ok(tokens.into_auth())
+}
+
 /// `POST {token_host}{token_path}` with `grant_type=refresh_token` (JSON body).
 /// Claude ROTATES the refresh token, so the caller MUST persist the returned
 /// one. Retries the retryable statuses / network errors with exponential
@@ -320,13 +396,16 @@ struct OAuthErrorBody {
 }
 
 /// Bind a loopback HTTP listener on `127.0.0.1:{redirect_port}` and wait for a
-/// single `GET /callback?code=…&state=…`, validating `state` STRICTLY against
-/// `expected_state` (mismatch → rejected). Returns the authorization code.
+/// single `GET {redirect_path}?code=…&state=…`, validating `state` STRICTLY
+/// against `expected_state` (mismatch → rejected). Returns the authorization
+/// code.
 ///
-/// The listener answers ONLY `/callback`; any other path gets 404. It binds
-/// `127.0.0.1` (never `0.0.0.0`), so no non-loopback host can reach it.
+/// The listener answers ONLY `redirect_path` (claude `/callback`, codex
+/// `/auth/callback`); any other path gets 404. It binds `127.0.0.1` (never
+/// `0.0.0.0`), so no non-loopback host can reach it.
 pub(crate) async fn await_loopback_code(
     redirect_port: u16,
+    redirect_path: &str,
     expected_state: &str,
 ) -> anyhow::Result<String> {
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", redirect_port))
@@ -335,10 +414,10 @@ pub(crate) async fn await_loopback_code(
     tracing::info!(port = redirect_port, "auth: pkce loopback listener bound");
     loop {
         let (stream, _peer) = listener.accept().await.context("loopback accept failed")?;
-        match handle_loopback_conn(stream, expected_state).await {
+        match handle_loopback_conn(stream, redirect_path, expected_state).await {
             LoopbackOutcome::Code(code) => return Ok(code),
             LoopbackOutcome::Rejected(err) => return Err(err),
-            // Not the /callback GET (favicon, health probe): keep listening.
+            // Not the callback GET (favicon, health probe): keep listening.
             LoopbackOutcome::Ignore => continue,
         }
     }
@@ -355,6 +434,7 @@ enum LoopbackOutcome {
 /// state is [`LoopbackOutcome::Rejected`] (the browser sees an error page).
 async fn handle_loopback_conn(
     mut stream: tokio::net::TcpStream,
+    redirect_path: &str,
     expected_state: &str,
 ) -> LoopbackOutcome {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -370,7 +450,7 @@ async fn handle_loopback_conn(
     let Some(request_line) = head.lines().next() else {
         return LoopbackOutcome::Ignore;
     };
-    // `GET /callback?code=…&state=… HTTP/1.1`
+    // `GET {redirect_path}?code=…&state=… HTTP/1.1`
     let mut parts = request_line.split_whitespace();
     let (Some(method), Some(target)) = (parts.next(), parts.next()) else {
         return LoopbackOutcome::Ignore;
@@ -380,7 +460,7 @@ async fn handle_loopback_conn(
         return LoopbackOutcome::Ignore;
     }
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
-    if path != "/callback" {
+    if path != redirect_path {
         let _ = write_http(&mut stream, 404, "Not Found").await;
         return LoopbackOutcome::Ignore;
     }
@@ -392,7 +472,7 @@ async fn handle_loopback_conn(
             let _ = write_http(
                 &mut stream,
                 200,
-                "Signed in to Claude Pro/Max. You can close this window and return to kigi.",
+                "Signed in. You can close this window and return to kigi.",
             )
             .await;
             let _ = stream.flush().await;
@@ -473,7 +553,7 @@ mod tests {
     #[test]
     fn authorize_url_has_state_and_s256_challenge() {
         let pkce = generate_pkce();
-        let redirect = redirect_uri(53692);
+        let redirect = redirect_uri(53692, "/callback");
         let url = build_authorize_url(&CLAUDE_OAUTH_CONFIG, &redirect, &pkce);
         let parsed = url::Url::parse(&url).expect("valid URL");
         assert_eq!(parsed.host_str(), Some("claude.ai"));
@@ -545,7 +625,10 @@ mod tests {
         let port = probe.local_addr().unwrap().port();
         drop(probe);
 
-        let server = tokio::spawn(async move { await_loopback_code(port, "the-real-state").await });
+        let server =
+            tokio::spawn(
+                async move { await_loopback_code(port, "/callback", "the-real-state").await },
+            );
         // Give the listener a moment to bind.
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         // Attacker callback: valid code, WRONG state.
@@ -567,7 +650,8 @@ mod tests {
         let port = probe.local_addr().unwrap().port();
         drop(probe);
 
-        let server = tokio::spawn(async move { await_loopback_code(port, "good-state").await });
+        let server =
+            tokio::spawn(async move { await_loopback_code(port, "/callback", "good-state").await });
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         let _ = reqwest::get(format!(
             "http://127.0.0.1:{port}/callback?code=auth-code-123&state=good-state"
@@ -622,9 +706,14 @@ mod tests {
             .await;
         let cfg = mock_cfg(host);
         let pkce = generate_pkce();
-        let auth = exchange_code(&cfg, "auth-code-xyz", &pkce, &redirect_uri(53692))
-            .await
-            .unwrap();
+        let auth = exchange_code(
+            &cfg,
+            "auth-code-xyz",
+            &pkce,
+            &redirect_uri(53692, "/callback"),
+        )
+        .await
+        .unwrap();
         assert_eq!(auth.key, "sk-ant-oat-new");
         assert_eq!(auth.refresh_token.as_deref(), Some("sk-ant-ort-new"));
         assert_eq!(auth.expires_in, Some(3600));
@@ -683,5 +772,133 @@ mod tests {
             }
             other => panic!("expected Unauthorized, got {other:?}"),
         }
+    }
+
+    // ── ChatGPT/Codex PKCE (openai-codex) ────────────────────────────────────
+
+    /// Codex PKCE uses an INDEPENDENT fresh-random state (NOT `state ==
+    /// verifier`) so the verifier never rides the callback.
+    #[test]
+    fn codex_pkce_state_is_independent_of_the_verifier() {
+        let pkce = generate_pkce_random_state();
+        assert_ne!(
+            pkce.state, pkce.verifier,
+            "codex state must be fresh-random, not the verifier"
+        );
+        assert!(!pkce.state.is_empty() && !pkce.verifier.is_empty());
+        // Challenge is still the S256 of the verifier.
+        let expect = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(Sha256::digest(pkce.verifier.as_bytes()));
+        assert_eq!(pkce.challenge, expect);
+        assert_ne!(
+            generate_pkce_random_state().state,
+            pkce.state,
+            "fresh state"
+        );
+    }
+
+    /// The codex authorize URL carries the PKCE state + S256 challenge AND the
+    /// three codex-only extra params, and targets `auth.openai.com/oauth/
+    /// authorize` with the `/auth/callback` redirect. The verifier never rides it.
+    #[test]
+    fn codex_authorize_url_has_state_challenge_and_three_extra_params() {
+        use kigi_models::CODEX_OAUTH_CONFIG;
+        let pkce = generate_pkce_random_state();
+        let redirect = redirect_uri(1455, "/auth/callback");
+        assert_eq!(redirect, "http://localhost:1455/auth/callback");
+        let url = build_authorize_url(&CODEX_OAUTH_CONFIG, &redirect, &pkce);
+        let parsed = url::Url::parse(&url).expect("valid URL");
+        assert_eq!(parsed.host_str(), Some("auth.openai.com"));
+        assert_eq!(parsed.path(), "/oauth/authorize");
+        let q: std::collections::HashMap<_, _> = parsed.query_pairs().into_owned().collect();
+        assert_eq!(
+            q.get("state").map(String::as_str),
+            Some(pkce.state.as_str())
+        );
+        assert_eq!(
+            q.get("code_challenge").map(String::as_str),
+            Some(pkce.challenge.as_str())
+        );
+        assert_eq!(
+            q.get("code_challenge_method").map(String::as_str),
+            Some("S256")
+        );
+        // The three codex-only extra params.
+        assert_eq!(
+            q.get("id_token_add_organizations").map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(
+            q.get("codex_cli_simplified_flow").map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(
+            q.get("originator").map(String::as_str),
+            Some("codex_cli_rs")
+        );
+        assert!(
+            !url.contains("code_verifier"),
+            "the verifier must not ride the authorize URL"
+        );
+    }
+
+    /// The claude authorize URL is UNCHANGED (no extra params) — its empty
+    /// `authorize_extra` keeps it byte-identical.
+    #[test]
+    fn claude_authorize_url_carries_no_extra_params() {
+        let pkce = generate_pkce();
+        let url = build_authorize_url(
+            &CLAUDE_OAUTH_CONFIG,
+            &redirect_uri(53692, "/callback"),
+            &pkce,
+        );
+        assert!(!url.contains("id_token_add_organizations"));
+        assert!(!url.contains("codex_cli_simplified_flow"));
+        assert!(!url.contains("originator"));
+    }
+
+    fn codex_mock_cfg(token_host: &'static str) -> OAuthConfig {
+        OAuthConfig {
+            token_host,
+            ..kigi_models::CODEX_OAUTH_CONFIG
+        }
+    }
+
+    /// Codex code→token exchange posts a FORM body carrying the grant + code +
+    /// verifier + redirect_uri, and NOTABLY NO `state` field (the codex token
+    /// endpoint does not expect it). Response materializes a `KimiAuth`.
+    #[tokio::test]
+    async fn codex_exchange_code_posts_form_without_state() {
+        use wiremock::matchers::{body_string_contains, header, method, path};
+        let server = MockServer::start().await;
+        let host: &'static str = Box::leak(server.uri().into_boxed_str());
+        Mock::given(method("POST"))
+            .and(path("/oauth/token"))
+            .and(header("content-type", "application/x-www-form-urlencoded"))
+            .and(body_string_contains("grant_type=authorization_code"))
+            .and(body_string_contains("code=codex-auth-code"))
+            .and(body_string_contains("code_verifier="))
+            .and(body_string_contains("redirect_uri="))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "codex-access-jwt",
+                "refresh_token": "codex-refresh",
+                "expires_in": 3600,
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let cfg = codex_mock_cfg(host);
+        let pkce = generate_pkce_random_state();
+        let auth = exchange_code_form(
+            &cfg,
+            "codex-auth-code",
+            &pkce,
+            "http://localhost:1455/auth/callback",
+        )
+        .await
+        .unwrap();
+        assert_eq!(auth.key, "codex-access-jwt");
+        assert_eq!(auth.refresh_token.as_deref(), Some("codex-refresh"));
+        assert_eq!(auth.expires_in, Some(3600));
     }
 }

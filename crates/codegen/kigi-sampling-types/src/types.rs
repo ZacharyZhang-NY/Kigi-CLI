@@ -913,6 +913,11 @@ pub enum ReasoningEffort {
     /// Messages both accept `xhigh` AND `max` as separate levels in 2026;
     /// the Kimi wire spells its top tier `max` with no `xhigh`).
     Max,
+    /// Codex-only top tier above `max` (the ChatGPT Codex backend exposes an
+    /// `ultra` reasoning effort on its flagship models). Reachable ONLY via a
+    /// model's server-declared effort menu (openai-codex); no built-in fallback
+    /// menu offers it, so other providers never emit it.
+    Ultra,
 }
 
 impl ReasoningEffort {
@@ -941,12 +946,15 @@ impl ReasoningEffort {
             Self::High => "high",
             Self::Xhigh => "xhigh",
             Self::Max => "max",
+            Self::Ultra => "ultra",
         }
     }
 
     /// Anthropic Messages API effort string; `None` for unsupported variants.
     /// `xhigh` and `max` are distinct levels on the 2026 Messages API (both
-    /// appear in `GET /v1/models` `capabilities.effort`).
+    /// appear in `GET /v1/models` `capabilities.effort`). `ultra` is codex-only
+    /// and never selected on an Anthropic model, but maps to its own string for
+    /// completeness (the Responses path writes effort via `as_str`, not this).
     pub fn to_messages_api(self) -> Option<&'static str> {
         match self {
             Self::None | Self::Minimal => None,
@@ -955,6 +963,7 @@ impl ReasoningEffort {
             Self::High => Some("high"),
             Self::Xhigh => Some("xhigh"),
             Self::Max => Some("max"),
+            Self::Ultra => Some("ultra"),
         }
     }
 }
@@ -977,8 +986,9 @@ impl std::str::FromStr for ReasoningEffort {
             "high" => Ok(Self::High),
             "xhigh" => Ok(Self::Xhigh),
             "max" => Ok(Self::Max),
+            "ultra" => Ok(Self::Ultra),
             _ => Err(format!(
-                "invalid reasoning effort: {s:?} (expected one of: none, minimal, low, medium, high, xhigh, max)"
+                "invalid reasoning effort: {s:?} (expected one of: none, minimal, low, medium, high, xhigh, max, ultra)"
             )),
         }
     }
@@ -1097,6 +1107,59 @@ pub const COPILOT_INTEGRATION_ID: &str = "vscode-chat";
 pub const COPILOT_API_VERSION: &str = "2026-06-01";
 /// `X-Initiator` value — sent ONLY on inference (`user`, per the spec).
 pub const COPILOT_INITIATOR: &str = "user";
+
+// ── ChatGPT/Codex (openai-codex) OAuth-inference headers ─────────────────────
+// The ChatGPT Codex backend authorizes an OAuth bearer AND validates the Codex
+// client identity. These ride the `/codex/responses` inference request ONLY.
+// openai-codex-GATED: no other Responses provider (API-key `openai`) sends them,
+// so their requests stay byte-identical. Values are non-secret wire constants
+// (ported from the official Codex CLI + Pi `api/openai-codex-responses.ts`).
+
+/// `originator` header identifying the Codex CLI client (matches the authorize
+/// `originator` param).
+pub const CODEX_ORIGINATOR: &str = "codex_cli_rs";
+/// `OpenAI-Beta` opt-in the Codex Responses endpoint requires.
+pub const CODEX_OPENAI_BETA: &str = "responses=experimental";
+/// `User-Agent` presented on the Codex path (overrides the default kigi UA,
+/// openai-codex-gated). The Codex backend does not strictly validate the UA
+/// string (Pi ships its own and it works), so this is a stable best-effort
+/// identity, not a pinned build.
+pub const CODEX_USER_AGENT: &str = "codex_cli_rs/0.104.0";
+/// JWT payload claim namespace carrying the ChatGPT account id.
+const CODEX_JWT_AUTH_CLAIM: &str = "https://api.openai.com/auth";
+
+/// Extract the `chatgpt_account_id` from a Codex OAuth access token (a JWT):
+/// base64url-decode the payload segment and read
+/// `["https://api.openai.com/auth"]["chatgpt_account_id"]`. Returns `None` when
+/// the token is not a well-formed JWT or the claim is missing/empty.
+///
+/// Used BOTH at login (fail-fast: a token without the claim is useless) and at
+/// inference (the header is derived STATELESSLY from the current bearer, so a
+/// refreshed token — which still carries the claim — needs no persisted field).
+///
+/// SECURITY: the token, its payload, and the returned account id are NEVER
+/// logged by this function or its callers.
+pub fn chatgpt_account_id_from_jwt(token: &str) -> Option<String> {
+    use base64::Engine;
+    // A JWT is exactly three dot-separated segments; anything else is not a
+    // token we can read (fail closed rather than decode a lookalike).
+    let mut segments = token.split('.');
+    let (_header, payload_b64, _signature) = (segments.next()?, segments.next()?, segments.next()?);
+    if segments.next().is_some() {
+        return None;
+    }
+    // JWT payloads are base64url without padding; be tolerant of either.
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload_b64)
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(payload_b64))
+        .ok()?;
+    let claims: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    let account_id = claims
+        .get(CODEX_JWT_AUTH_CLAIM)?
+        .get("chatgpt_account_id")?
+        .as_str()?;
+    (!account_id.is_empty()).then(|| account_id.to_string())
+}
 
 /// ChatCompletions request-body adaptation dialect. Providers disagree on
 /// how thinking rides an OpenAI-compatible body: Kimi wants
@@ -1633,6 +1696,86 @@ mod tests {
         assert_eq!(ReasoningEffort::Max.to_messages_api(), Some("max"));
     }
 
+    /// The codex-only `ultra` tier parses, serializes, and patches onto a
+    /// Responses body as `reasoning.effort = "ultra"` (the crux of surfacing a
+    /// codex model's full thinking menu). It is a DISTINCT level above `max`.
+    #[test]
+    fn reasoning_effort_ultra_is_a_distinct_codex_tier() {
+        assert_eq!(
+            "ultra".parse::<ReasoningEffort>().unwrap(),
+            ReasoningEffort::Ultra
+        );
+        assert_eq!(
+            "ULTRA".parse::<ReasoningEffort>().unwrap(),
+            ReasoningEffort::Ultra
+        );
+        assert_ne!(ReasoningEffort::Ultra, ReasoningEffort::Max);
+        assert_eq!(ReasoningEffort::Ultra.as_str(), "ultra");
+        let json = serde_json::to_string(&ReasoningEffort::Ultra).unwrap();
+        assert_eq!(json, "\"ultra\"");
+        assert_eq!(
+            serde_json::from_str::<ReasoningEffort>("\"ultra\"").unwrap(),
+            ReasoningEffort::Ultra
+        );
+        let mut body = serde_json::json!({ "model": "gpt-5.6-sol" });
+        patch_reasoning_effort(&mut body, Some(ReasoningEffort::Ultra));
+        assert_eq!(body["reasoning"]["effort"], "ultra");
+    }
+
+    /// The account id is decoded STATELESSLY from the bearer JWT payload's
+    /// `["https://api.openai.com/auth"]["chatgpt_account_id"]` claim; a token
+    /// without the claim (or not a JWT) yields `None` (login fails fast on it).
+    #[test]
+    fn chatgpt_account_id_extracted_from_jwt_claim() {
+        use base64::Engine;
+        let make_jwt = |payload: serde_json::Value| -> String {
+            let header =
+                base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(br#"{"alg":"none"}"#);
+            let body = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .encode(serde_json::to_vec(&payload).unwrap());
+            format!("{header}.{body}.sig")
+        };
+        let good = make_jwt(serde_json::json!({
+            "https://api.openai.com/auth": { "chatgpt_account_id": "acct-abc-123" },
+            "sub": "user-1"
+        }));
+        assert_eq!(
+            chatgpt_account_id_from_jwt(&good).as_deref(),
+            Some("acct-abc-123")
+        );
+        // Claim namespace present but no account id → None (fail-fast).
+        let no_account = make_jwt(serde_json::json!({
+            "https://api.openai.com/auth": { "user_id": "u" }
+        }));
+        assert_eq!(chatgpt_account_id_from_jwt(&no_account), None);
+        // Empty account id → None.
+        let empty = make_jwt(serde_json::json!({
+            "https://api.openai.com/auth": { "chatgpt_account_id": "" }
+        }));
+        assert_eq!(chatgpt_account_id_from_jwt(&empty), None);
+        // Not a JWT (no payload segment) → None.
+        assert_eq!(chatgpt_account_id_from_jwt("not-a-jwt"), None);
+        assert_eq!(chatgpt_account_id_from_jwt(""), None);
+        // A JWT is EXACTLY three segments: a lookalike with too few or too many
+        // is rejected outright rather than decoded (fail closed).
+        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
+            serde_json::to_vec(&serde_json::json!({
+                "https://api.openai.com/auth": { "chatgpt_account_id": "acct-abc-123" }
+            }))
+            .unwrap(),
+        );
+        assert_eq!(
+            chatgpt_account_id_from_jwt(&format!("hdr.{payload}")),
+            None,
+            "two segments is not a JWT"
+        );
+        assert_eq!(
+            chatgpt_account_id_from_jwt(&format!("hdr.{payload}.sig.extra")),
+            None,
+            "four segments is not a JWT"
+        );
+    }
+
     #[test]
     fn parse_canonical_effort_token_helper() {
         assert_eq!(
@@ -1797,7 +1940,8 @@ mod tests {
         );
         let bad_type = as_map(serde_json::json!({"reasoningEffort": 3}));
         assert_eq!(parse_reasoning_effort_meta(Some(&bad_type)), None);
-        let unknown = as_map(serde_json::json!({"reasoningEffort": "ULTRA"}));
+        // `ultra` is now a real codex tier; a genuinely-unknown token still None.
+        let unknown = as_map(serde_json::json!({"reasoningEffort": "MEGA"}));
         assert_eq!(parse_reasoning_effort_meta(Some(&unknown)), None);
     }
 

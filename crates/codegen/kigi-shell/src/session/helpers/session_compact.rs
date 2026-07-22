@@ -1592,6 +1592,7 @@ mod reasoning_compaction_regression_tests {
             auth_scheme: Default::default(),
             anthropic_oauth: false,
             github_copilot: false,
+            openai_codex: false,
             extra_headers: Default::default(),
             context_window: 256_000,
             force_http1: false,

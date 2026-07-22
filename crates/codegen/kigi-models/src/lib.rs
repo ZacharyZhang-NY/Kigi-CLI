@@ -107,8 +107,12 @@ pub enum OAuthFlow {
     DeviceCode,
     /// Authorization-code + PKCE (S256): browser hits `auth_host`+`device_path`
     /// (the authorize endpoint); the code returns to a `127.0.0.1:redirect_port`
-    /// loopback listener, then is exchanged at `token_host`+`token_path`.
-    PkceLocalhost { redirect_port: u16 },
+    /// loopback listener answering `redirect_path` (claude `/callback`, codex
+    /// `/auth/callback`), then is exchanged at `token_host`+`token_path`.
+    PkceLocalhost {
+        redirect_port: u16,
+        redirect_path: &'static str,
+    },
     /// GitHub Copilot two-stage flow (github-copilot): an RFC-8628 device flow
     /// on `auth_host` (github.com) mints the DURABLE GitHub token, which is then
     /// exchanged at `copilot_exchange` for the SHORT-LIVED copilot session
@@ -167,6 +171,11 @@ pub struct OAuthConfig {
     /// A non-standard extra form field sent ONLY on the device-authorization
     /// request (e.g. `("referrer", "kigi")`). `None` = no extra field.
     pub extra_device_field: Option<(&'static str, &'static str)>,
+    /// Extra query params appended ONLY to the `PkceLocalhost` browser authorize
+    /// URL (openai-codex's `id_token_add_organizations`, `codex_cli_simplified_
+    /// flow`, `originator`). Empty for every other config, so their authorize
+    /// URLs stay byte-identical.
+    pub authorize_extra: &'static [(&'static str, &'static str)],
     /// Interactive login mechanism (device-code vs PKCE-localhost).
     pub flow: OAuthFlow,
     /// Body encoding the token endpoint expects (form vs JSON).
@@ -178,6 +187,13 @@ pub struct OAuthConfig {
     /// "refresh". `None` for the standard flows (xai-grok, claude-pro-max),
     /// whose refresh is a plain `refresh_token` grant against `token_host`.
     pub copilot_exchange: Option<(&'static str, &'static str)>,
+    /// The access token MUST carry a `chatgpt_account_id` claim (openai-codex):
+    /// it becomes the `chatgpt-account-id` inference header, so a token without
+    /// it cannot authorize a request. Login AND every refresh fail fast when the
+    /// claim is absent. `false` everywhere else — this is an explicit provider
+    /// fact, NEVER inferred from the token-body encoding (a plain form-encoded
+    /// token endpoint is the OAuth norm and must not inherit this requirement).
+    pub requires_chatgpt_account_id: bool,
 }
 
 /// xAI / Grok subscription device-code OAuth (ported from Pi
@@ -191,9 +207,11 @@ pub const XAI_OAUTH_CONFIG: OAuthConfig = OAuthConfig {
     scope: "openid profile email offline_access grok-cli:access api:access",
     scope_key: "oauth/xai",
     extra_device_field: Some(("referrer", "kigi")),
+    authorize_extra: &[],
     flow: OAuthFlow::DeviceCode,
     token_body: OAuthTokenBody::Form,
     copilot_exchange: None,
+    requires_chatgpt_account_id: false,
 };
 
 /// Base-URL override for the Claude Pro/Max OAuth channel (dev/test escape
@@ -213,11 +231,14 @@ pub const CLAUDE_OAUTH_CONFIG: OAuthConfig = OAuthConfig {
     scope: "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload",
     scope_key: "oauth/claude-pro-max",
     extra_device_field: None,
+    authorize_extra: &[],
     flow: OAuthFlow::PkceLocalhost {
         redirect_port: 53692,
+        redirect_path: "/callback",
     },
     token_body: OAuthTokenBody::Json,
     copilot_exchange: None,
+    requires_chatgpt_account_id: false,
 };
 
 /// Base-URL override for the GitHub Copilot inference/listing channel
@@ -240,9 +261,49 @@ pub const COPILOT_OAUTH_CONFIG: OAuthConfig = OAuthConfig {
     scope: "read:user",
     scope_key: "oauth/github-copilot",
     extra_device_field: None,
+    authorize_extra: &[],
     flow: OAuthFlow::GithubDeviceCopilot,
     token_body: OAuthTokenBody::GithubCopilotExchange,
     copilot_exchange: Some(("https://api.github.com", "/copilot_internal/v2/token")),
+    requires_chatgpt_account_id: false,
+};
+
+/// Base-URL override for the ChatGPT/Codex OAuth inference channel (dev/test
+/// escape hatch). Production defaults to the ChatGPT Codex backend
+/// `https://chatgpt.com/backend-api/codex`; Kigi's Responses path posts to
+/// `{base}/responses`.
+pub const CODEX_BASE_URL_ENV: &str = "KIGI_CODEX_BASE_URL";
+
+/// ChatGPT/Codex subscription OAuth (authorization-code + PKCE S256, loopback
+/// callback on port 1455 path `/auth/callback`, FORM token body). Authoritative
+/// constants from the official Codex CLI + Pi `earendil-works/pi`
+/// `auth/oauth/openai-codex.ts`: authorize + token host `https://auth.openai.com`,
+/// the `codex_cli_simplified_flow` login client id, and the three authorize-only
+/// extra params. Unlike claude the `state` is fresh-random (NOT the verifier),
+/// and refresh is a plain `refresh_token` FORM grant (the generic device
+/// refresher's `Form` path). The minted `access_token` is a JWT carrying the
+/// `chatgpt_account_id` claim consumed at inference time.
+pub const CODEX_OAUTH_CONFIG: OAuthConfig = OAuthConfig {
+    client_id: "app_EMoamEEZ73f0CkXaXp7hrann",
+    auth_host: "https://auth.openai.com",
+    device_path: "/oauth/authorize",
+    token_host: "https://auth.openai.com",
+    token_path: "/oauth/token",
+    scope: "openid profile email offline_access",
+    scope_key: "oauth/openai-codex",
+    extra_device_field: None,
+    authorize_extra: &[
+        ("id_token_add_organizations", "true"),
+        ("codex_cli_simplified_flow", "true"),
+        ("originator", "codex_cli_rs"),
+    ],
+    flow: OAuthFlow::PkceLocalhost {
+        redirect_port: 1455,
+        redirect_path: "/auth/callback",
+    },
+    token_body: OAuthTokenBody::Form,
+    copilot_exchange: None,
+    requires_chatgpt_account_id: true,
 };
 
 /// The generic device-code OAuth config for a platform, or `None` for API-key
@@ -1184,6 +1245,41 @@ const GITHUB_COPILOT_SPEC: PlatformSpec = PlatformSpec {
     strip_listing_id_prefix: None,
 };
 
+const OPENAI_CODEX_SPEC: PlatformSpec = PlatformSpec {
+    id: "openai-codex",
+    display_name: "ChatGPT (Codex)",
+    // Kigi's Responses path posts to `{base}/responses`; the codex backend
+    // serves it at `.../codex/responses`, so the base carries the `/codex` tail.
+    base_url: BaseUrlSource::EnvOr {
+        env: CODEX_BASE_URL_ENV,
+        default: "https://chatgpt.com/backend-api/codex",
+    },
+    uses_oauth: true,
+    oauth: Some(&CODEX_OAUTH_CONFIG),
+    allowed_model_prefixes: None,
+    // OAuth channel: no API key envs (the PKCE session is the bearer).
+    api_key_envs: &[],
+    vendor: "OpenAI",
+    console_host: Some("chatgpt.com"),
+    login_label: Some("ChatGPT Plus/Pro (Codex)"),
+    // HARDCODED catalog (see `hardcoded_catalog`): NOT enriched from models.dev
+    // and NOT live-fetched — OpenAI exposes no stable public models endpoint for
+    // this backend.
+    models_dev_id: None,
+    // The catalog is compiled-in and already carries context/thinking metadata,
+    // so enrichment (and its network refresh) is skipped entirely.
+    wire_serves_metadata: true,
+    wire_api: PlatformWireApi::Responses,
+    // Unused: the catalog does NOT come from a live `/models` listing (the
+    // fetch path short-circuits to `hardcoded_catalog`).
+    listing: ListingDialect::OpenAi,
+    chat_compat: PlatformChatCompat::Passthrough,
+    key_header: PlatformKeyHeader::Bearer,
+    restrict_to_enriched: false,
+    key_validation_path: None,
+    strip_listing_id_prefix: None,
+};
+
 /// The platform registry. Platforms are compiled-in spec rows; there is no
 /// dynamic provider registration (PRD F2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -1246,12 +1342,16 @@ pub enum PlatformId {
     /// GitHub Copilot subscription via the two-stage device-code OAuth flow
     /// (ChatCompletions wire reached with the short-lived copilot token).
     GithubCopilot,
+    /// ChatGPT Plus/Pro subscription via PKCE-localhost OAuth against the
+    /// ChatGPT Codex backend (Responses wire reached with an OAuth bearer +
+    /// the `chatgpt-account-id` JWT claim). HARDCODED catalog, no live listing.
+    OpenaiCodex,
 }
 
 impl PlatformId {
     /// All platforms, in catalog precedence order: the subscription channel
     /// first so "default model = first list item" favors it when present.
-    pub const ALL: [PlatformId; 28] = [
+    pub const ALL: [PlatformId; 29] = [
         Self::KimiCode,
         Self::MoonshotCn,
         Self::MoonshotAi,
@@ -1280,6 +1380,7 @@ impl PlatformId {
         Self::XaiGrok,
         Self::ClaudeProMax,
         Self::GithubCopilot,
+        Self::OpenaiCodex,
     ];
 
     /// The registry row backing this platform (single source of per-platform
@@ -1314,6 +1415,7 @@ impl PlatformId {
             Self::XaiGrok => &XAI_GROK_SPEC,
             Self::ClaudeProMax => &CLAUDE_PRO_MAX_SPEC,
             Self::GithubCopilot => &GITHUB_COPILOT_SPEC,
+            Self::OpenaiCodex => &OPENAI_CODEX_SPEC,
         }
     }
 
@@ -1450,6 +1552,88 @@ impl PlatformId {
     pub fn sends_copilot_editor_headers(self) -> bool {
         matches!(self, Self::GithubCopilot)
     }
+
+    /// True ONLY for `openai-codex`: its `/responses` inference request must
+    /// carry the Codex identity headers (`chatgpt-account-id` from the bearer
+    /// JWT, `originator: codex_cli_rs`, `OpenAI-Beta: responses=experimental`, a
+    /// codex `User-Agent`). The sampler gates these on this predicate, so the
+    /// API-key `openai` Responses requests stay byte-identical.
+    pub fn sends_codex_responses_headers(self) -> bool {
+        matches!(self, Self::OpenaiCodex)
+    }
+
+    /// The compiled-in catalog for a platform that serves NO live `/models`
+    /// listing (openai-codex), or `None` when the catalog comes from the wire.
+    ///
+    /// openai-codex's 4 models are HARDCODED (read from the official Codex CLI's
+    /// `models_cache.json`, the `visibility=="list"` AND `supported_in_api==true`
+    /// set) because OpenAI exposes no stable public models endpoint for the
+    /// ChatGPT Codex backend. Each entry carries context window + per-model
+    /// selectable reasoning efforts (incl. the codex-only `xhigh`/`max`/`ultra`
+    /// tiers), so the fetch path maps them through the SAME
+    /// `platform_wire_model_to_entry` output as a live listing — no new type.
+    pub fn hardcoded_catalog(self) -> Option<Vec<WireModel>> {
+        match self {
+            Self::OpenaiCodex => Some(openai_codex_wire_models()),
+            _ => None,
+        }
+    }
+}
+
+/// One hardcoded openai-codex model as a [`WireModel`] (context 272000, thinking
+/// + image input, selectable efforts). `efforts` are the exact per-model
+/// supported tiers; `default` is the model's default effort.
+fn codex_wire_model(slug: &str, display_name: &str, efforts: &[&str], default: &str) -> WireModel {
+    WireModel {
+        id: slug.to_string(),
+        context_length: 272_000,
+        supports_reasoning: true,
+        supports_image_in: true,
+        supports_video_in: false,
+        display_name: Some(display_name.to_string()),
+        max_output_tokens: 0,
+        supports_thinking_type: None,
+        think_efforts: Some(WireThinkEfforts {
+            support: true,
+            valid_efforts: efforts.iter().map(|s| (*s).to_string()).collect(),
+            default_effort: Some(default.to_string()),
+        }),
+    }
+}
+
+/// The HARDCODED openai-codex catalog: exactly the 4 `visibility=="list"` AND
+/// `supported_in_api==true` models from the Codex CLI model cache. The
+/// `gpt-5.3-codex-spark` (supported_in_api=false → not served by /responses),
+/// `gpt-5.4`, `gpt-5.4-mini`, and `codex-auto-review` (visibility="hide") models
+/// are intentionally EXCLUDED — they would list-but-not-work or are not
+/// user-facing (fail-fast: never advertise a model the backend rejects).
+fn openai_codex_wire_models() -> Vec<WireModel> {
+    vec![
+        codex_wire_model(
+            "gpt-5.6-sol",
+            "GPT-5.6-Sol",
+            &["low", "medium", "high", "xhigh", "max", "ultra"],
+            "low",
+        ),
+        codex_wire_model(
+            "gpt-5.6-terra",
+            "GPT-5.6-Terra",
+            &["low", "medium", "high", "xhigh", "max", "ultra"],
+            "medium",
+        ),
+        codex_wire_model(
+            "gpt-5.6-luna",
+            "GPT-5.6-Luna",
+            &["low", "medium", "high", "xhigh", "max"],
+            "medium",
+        ),
+        codex_wire_model(
+            "gpt-5.5",
+            "GPT-5.5",
+            &["low", "medium", "high", "xhigh"],
+            "medium",
+        ),
+    ]
 }
 
 /// Split a managed catalog key `{platform_id}/{model_id}` back into its
@@ -2288,7 +2472,8 @@ mod tests {
         assert_eq!(
             cfg.flow,
             OAuthFlow::PkceLocalhost {
-                redirect_port: 53692
+                redirect_port: 53692,
+                redirect_path: "/callback",
             }
         );
         assert_eq!(cfg.token_body, OAuthTokenBody::Json);
@@ -2379,6 +2564,176 @@ mod tests {
         assert_eq!(g.base_url(), "https://mock.copilot");
     }
 
+    /// openai-codex is the ChatGPT/Codex PKCE-localhost OAuth platform: it
+    /// carries a `PkceLocalhost{1455, "/auth/callback"}` / FORM `OAuthConfig`
+    /// with the 3 authorize-extra params, speaks the Responses wire with a Bearer
+    /// OAuth token + the codex-headers gate, and is NOT models.dev-enriched (its
+    /// catalog is hardcoded).
+    #[test]
+    fn openai_codex_is_a_pkce_responses_oauth_platform() {
+        let c = PlatformId::OpenaiCodex;
+        assert_eq!(c.as_str(), "openai-codex");
+        assert!(c.uses_oauth());
+        assert!(
+            c.sends_codex_responses_headers(),
+            "openai-codex must gate the Codex identity headers"
+        );
+        // Every OTHER platform must NOT send the codex headers (regression).
+        for other in PlatformId::ALL {
+            if other != PlatformId::OpenaiCodex {
+                assert!(
+                    !other.sends_codex_responses_headers(),
+                    "{} must not send the codex responses headers",
+                    other.as_str()
+                );
+            }
+        }
+        let cfg = c.oauth().expect("openai-codex carries a PKCE OAuthConfig");
+        assert_eq!(cfg, &CODEX_OAUTH_CONFIG);
+        assert_eq!(cfg.client_id, "app_EMoamEEZ73f0CkXaXp7hrann");
+        assert_eq!(cfg.auth_host, "https://auth.openai.com");
+        assert_eq!(cfg.token_host, "https://auth.openai.com");
+        assert_eq!(cfg.device_path, "/oauth/authorize");
+        assert_eq!(cfg.token_path, "/oauth/token");
+        assert_eq!(cfg.scope, "openid profile email offline_access");
+        assert_eq!(cfg.scope_key, "oauth/openai-codex");
+        assert_eq!(
+            cfg.flow,
+            OAuthFlow::PkceLocalhost {
+                redirect_port: 1455,
+                redirect_path: "/auth/callback",
+            }
+        );
+        // FORM token body (refresh routes through the generic device refresher).
+        assert_eq!(cfg.token_body, OAuthTokenBody::Form);
+        assert_eq!(cfg.copilot_exchange, None);
+        // The 3 authorize-only extra params; claude/xai/copilot carry none.
+        assert_eq!(
+            cfg.authorize_extra,
+            &[
+                ("id_token_add_organizations", "true"),
+                ("codex_cli_simplified_flow", "true"),
+                ("originator", "codex_cli_rs"),
+            ]
+        );
+        assert_eq!(CLAUDE_OAUTH_CONFIG.authorize_extra, &[] as &[(&str, &str)]);
+        assert_eq!(XAI_OAUTH_CONFIG.authorize_extra, &[] as &[(&str, &str)]);
+        assert_eq!(COPILOT_OAUTH_CONFIG.authorize_extra, &[] as &[(&str, &str)]);
+        // The chatgpt_account_id requirement is an EXPLICIT per-provider fact,
+        // never inferred from the token-body encoding — a future form-encoded
+        // PKCE provider must not inherit ChatGPT's account-id gate. Enforced at
+        // COMPILE time: adding a provider that flips this fails the build.
+        const {
+            assert!(CODEX_OAUTH_CONFIG.requires_chatgpt_account_id);
+            assert!(!CLAUDE_OAUTH_CONFIG.requires_chatgpt_account_id);
+            assert!(!XAI_OAUTH_CONFIG.requires_chatgpt_account_id);
+            assert!(!COPILOT_OAUTH_CONFIG.requires_chatgpt_account_id);
+        }
+        assert_eq!(
+            oauth_config_for_scope_key("oauth/openai-codex"),
+            Some(&CODEX_OAUTH_CONFIG)
+        );
+        // Responses wire, Bearer, hardcoded (no models.dev id), own base.
+        assert_eq!(c.models_dev_id(), None);
+        assert_eq!(c.wire_api(), PlatformWireApi::Responses);
+        assert_eq!(c.key_header(), PlatformKeyHeader::Bearer);
+        assert_eq!(c.api_key_env_names(), &[] as &[&str]);
+        assert_eq!(c.managed_model_key("gpt-5.5"), "openai-codex/gpt-5.5");
+        assert_eq!(
+            c.base_url(),
+            "https://chatgpt.com/backend-api/codex",
+            "default codex base carries the /codex tail (→ /codex/responses)"
+        );
+        let _guard = kigi_env::EnvVarGuard::set(CODEX_BASE_URL_ENV, "https://mock.codex/codex");
+        assert_eq!(c.base_url(), "https://mock.codex/codex");
+    }
+
+    /// The HARDCODED openai-codex catalog is exactly the 4 supported+listed
+    /// models, keyed by slug, ctx 272000, each exposing its exact supported
+    /// efforts (incl. the codex-only `xhigh`/`max`/`ultra` tiers). The
+    /// list-but-broken / hidden models are absent. Every other platform serves
+    /// NO hardcoded catalog (its models come from the live wire).
+    #[test]
+    fn openai_codex_hardcoded_catalog_is_the_four_supported_models() {
+        let catalog = PlatformId::OpenaiCodex
+            .hardcoded_catalog()
+            .expect("openai-codex serves a hardcoded catalog");
+        let ids: Vec<&str> = catalog.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5"],
+            "exactly the 4 visibility=list AND supported_in_api=true models"
+        );
+        // Excluded: list-but-not-served + hidden models never appear.
+        for absent in [
+            "gpt-5.3-codex-spark",
+            "gpt-5.4",
+            "gpt-5.4-mini",
+            "codex-auto-review",
+        ] {
+            assert!(
+                !ids.contains(&absent),
+                "{absent} must be excluded from the hardcoded catalog"
+            );
+        }
+        for m in &catalog {
+            assert_eq!(m.context_length, 272_000, "{} ctx", m.id);
+            assert!(m.supports_reasoning && m.supports_image_in, "{} caps", m.id);
+            let caps = m.capabilities();
+            assert!(caps.contains(&ModelCapability::Thinking));
+            assert!(caps.contains(&ModelCapability::ImageIn));
+        }
+        // Per-model efforts (the crux of "their thinking method").
+        let efforts = |slug: &str| -> Vec<String> {
+            catalog
+                .iter()
+                .find(|m| m.id == slug)
+                .unwrap()
+                .think_efforts
+                .as_ref()
+                .unwrap()
+                .valid_efforts
+                .clone()
+        };
+        assert_eq!(
+            efforts("gpt-5.6-sol"),
+            ["low", "medium", "high", "xhigh", "max", "ultra"]
+        );
+        assert_eq!(
+            efforts("gpt-5.6-terra"),
+            ["low", "medium", "high", "xhigh", "max", "ultra"]
+        );
+        assert_eq!(
+            efforts("gpt-5.6-luna"),
+            ["low", "medium", "high", "xhigh", "max"]
+        );
+        assert_eq!(efforts("gpt-5.5"), ["low", "medium", "high", "xhigh"]);
+        // Default efforts per the model table.
+        let default = |slug: &str| -> Option<String> {
+            catalog
+                .iter()
+                .find(|m| m.id == slug)
+                .unwrap()
+                .think_efforts
+                .as_ref()
+                .unwrap()
+                .default_effort
+                .clone()
+        };
+        assert_eq!(default("gpt-5.6-sol").as_deref(), Some("low"));
+        assert_eq!(default("gpt-5.6-terra").as_deref(), Some("medium"));
+        // Only openai-codex has a hardcoded catalog; every wire platform is None.
+        for p in PlatformId::ALL {
+            if p != PlatformId::OpenaiCodex {
+                assert!(
+                    p.hardcoded_catalog().is_none(),
+                    "{} must not carry a hardcoded catalog",
+                    p.as_str()
+                );
+            }
+        }
+    }
+
     /// The Copilot `/models` filter keeps ONLY openai-completions-served,
     /// selectable, tool-calling models — dropping the claude-4.x/5.x (messages)
     /// and gpt-5/oswe/mai- (responses-only) ids AND the disabled / picker-off /
@@ -2464,9 +2819,10 @@ mod tests {
                 PlatformId::XaiGrok => 25,
                 PlatformId::ClaudeProMax => 26,
                 PlatformId::GithubCopilot => 27,
+                PlatformId::OpenaiCodex => 28,
             }
         }
-        const VARIANT_COUNT: usize = 28; // update together with `ordinal`
+        const VARIANT_COUNT: usize = 29; // update together with `ordinal`
         let mut seen: Vec<usize> = PlatformId::ALL.iter().map(|&p| ordinal(p)).collect();
         seen.sort_unstable();
         seen.dedup();

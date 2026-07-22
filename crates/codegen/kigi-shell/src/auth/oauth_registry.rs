@@ -153,6 +153,46 @@ mod tests {
             .expect("github-copilot carries an OAuthConfig")
     }
 
+    fn codex_oauth() -> &'static kigi_models::OAuthConfig {
+        kigi_models::PlatformId::OpenaiCodex
+            .oauth()
+            .expect("openai-codex carries an OAuthConfig")
+    }
+
+    /// An `openai-codex/<model>` turn resolves to the process-global pooled
+    /// openai-codex manager (its OWN `oauth/openai-codex` scope), NEVER the
+    /// primary Kimi manager — the same leak-safe routing as the other OAuth
+    /// platforms, and a DISTINCT pool entry from each. Fail-fast: even with a
+    /// Kimi primary, a codex turn never yields the Kimi bearer.
+    #[tokio::test]
+    async fn openai_codex_model_resolves_to_its_own_manager_not_kimi() {
+        let (_kd, kimi) = primary_with_token("kimi-tok");
+        let home = tempfile::tempdir().unwrap();
+        let resolved = manager_for_model(home.path(), "openai-codex/gpt-5.5", Some(&kimi))
+            .expect("openai-codex model resolves to its pooled manager");
+        assert!(
+            !Arc::ptr_eq(&resolved, &kimi),
+            "openai-codex must NOT resolve to the Kimi manager"
+        );
+        assert!(
+            Arc::ptr_eq(&resolved, &global_manager_for(home.path(), codex_oauth())),
+            "openai-codex must resolve to its OWN process-global pooled manager"
+        );
+        assert!(
+            !Arc::ptr_eq(&resolved, &global_manager_for(home.path(), copilot_oauth())),
+            "openai-codex and github-copilot must not share a pooled manager"
+        );
+        assert!(
+            !Arc::ptr_eq(&resolved, &global_manager_for(home.path(), claude_oauth())),
+            "openai-codex and claude-pro-max must not share a pooled manager"
+        );
+        assert_ne!(
+            session_key_for_model(home.path(), "openai-codex/gpt-5.5", Some(&kimi)),
+            Some("kimi-tok".to_string()),
+            "an openai-codex model must never receive the primary Kimi token"
+        );
+    }
+
     /// A `github-copilot/<model>` turn resolves to the process-global pooled
     /// github-copilot manager (its OWN `oauth/github-copilot` scope), NEVER the
     /// primary Kimi manager — the same leak-safe routing as xai-grok /

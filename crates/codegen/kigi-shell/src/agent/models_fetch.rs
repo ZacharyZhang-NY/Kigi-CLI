@@ -334,6 +334,19 @@ fn fetch_one_platform_models(
     bearer: &str,
     enrichment: &kigi_models::enrichment::EnrichmentCatalog,
 ) -> Result<(Vec<crate::agent::config::ModelEntryConfig>, Option<String>), BackendError> {
+    // A platform that serves NO live `/models` listing (openai-codex) delivers a
+    // HARDCODED catalog: short-circuit BEFORE any HTTP, mapping the compiled-in
+    // `WireModel`s through the SAME `platform_wire_model_to_entry` output a live
+    // listing produces (context window + per-model reasoning efforts). The
+    // bearer is unused here (login gates availability; no request is made).
+    if let Some(wire_models) = platform.hardcoded_catalog() {
+        let base_url = platform_fetch_base(platform, endpoints);
+        let models = wire_models
+            .into_iter()
+            .map(|wire| platform_wire_model_to_entry(platform, wire, &base_url))
+            .collect();
+        return Ok((models, None));
+    }
     let client = crate::http::shared_blocking_client();
     let url = match platform.listing() {
         kigi_models::ListingDialect::OpenAi => platform_models_url(platform, endpoints),
@@ -1398,6 +1411,104 @@ mod tests {
         assert!(
             !entry.supported_in_api,
             "subscription (uses_oauth) models require the OAuth session"
+        );
+    }
+
+    /// openai-codex fetch: the catalog is HARDCODED, so the fetch path
+    /// short-circuits BEFORE any HTTP — there is NO mock `/models` server, yet
+    /// the fetch returns exactly the 4 compiled-in models keyed
+    /// `openai-codex/<slug>` on the Responses backend, ctx 272000, each exposing
+    /// its exact reasoning efforts (incl. the codex-only `xhigh`/`max`/`ultra`).
+    /// A BOGUS base URL confirms no live `/models` request is attempted (it would
+    /// otherwise fail against an unroutable host).
+    #[tokio::test(flavor = "multi_thread")]
+    #[serial_test::serial]
+    async fn openai_codex_catalog_is_hardcoded_with_no_http_fetch() {
+        // Unroutable base: if the fetch path tried a live `/models` request it
+        // would error here; the hardcoded short-circuit ignores it for fetching.
+        let _base = kigi_test_support::EnvGuard::set(
+            kigi_models::CODEX_BASE_URL_ENV,
+            "http://127.0.0.1:1/codex",
+        );
+        let endpoints = crate::agent::config::EndpointsConfig::default();
+        // The session token merely marks openai-codex "enabled"; it is unused by
+        // the hardcoded path (no request rides it).
+        let mut oauth_tokens = OAuthSessionTokens::new();
+        oauth_tokens.insert(
+            kigi_models::PlatformId::OpenaiCodex,
+            "codex-session-tok".to_string(),
+        );
+        let keys = crate::agent::models::PlatformApiKeys::default();
+        let result = tokio::task::spawn_blocking(move || {
+            fetch_platform_models_blocking(&endpoints, None, &oauth_tokens, &keys)
+        })
+        .await
+        .unwrap()
+        .expect("openai-codex hardcoded catalog fetch must succeed with no HTTP");
+
+        assert_eq!(
+            result
+                .models
+                .iter()
+                .map(|m| m.id.as_deref().unwrap_or_default())
+                .collect::<Vec<_>>(),
+            vec![
+                "openai-codex/gpt-5.6-sol",
+                "openai-codex/gpt-5.6-terra",
+                "openai-codex/gpt-5.6-luna",
+                "openai-codex/gpt-5.5",
+            ],
+            "exactly the 4 hardcoded models, keyed openai-codex/<slug>"
+        );
+        // Excluded models never appear.
+        for absent in [
+            "openai-codex/gpt-5.3-codex-spark",
+            "openai-codex/gpt-5.4",
+            "openai-codex/gpt-5.4-mini",
+            "openai-codex/codex-auto-review",
+        ] {
+            assert!(
+                !result
+                    .models
+                    .iter()
+                    .any(|m| m.id.as_deref() == Some(absent)),
+                "{absent} must be absent from the hardcoded catalog"
+            );
+        }
+        let sol = &result.models[0];
+        assert_eq!(
+            sol.api_backend,
+            crate::sampling::ApiBackend::Responses,
+            "openai-codex speaks the Responses wire"
+        );
+        assert_eq!(sol.context_window.get(), 272_000);
+        assert_eq!(sol.name.as_deref(), Some("GPT-5.6-Sol"));
+        assert!(
+            !sol.supported_in_api,
+            "subscription (uses_oauth) models require the OAuth session"
+        );
+        assert!(sol.supports_reasoning_effort);
+        assert_eq!(
+            sol.reasoning_efforts
+                .iter()
+                .map(|o| o.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["low", "medium", "high", "xhigh", "max", "ultra"],
+            "sol exposes the full codex effort menu incl. ultra"
+        );
+        // gpt-5.5 tops out at xhigh (no max/ultra).
+        let five_five = result
+            .models
+            .iter()
+            .find(|m| m.id.as_deref() == Some("openai-codex/gpt-5.5"))
+            .unwrap();
+        assert_eq!(
+            five_five
+                .reasoning_efforts
+                .iter()
+                .map(|o| o.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["low", "medium", "high", "xhigh"]
         );
     }
 

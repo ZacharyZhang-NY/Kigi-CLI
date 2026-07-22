@@ -70,6 +70,14 @@ pub struct SamplerConfig {
     /// byte-identical.
     #[serde(default)]
     pub github_copilot: bool,
+    /// ChatGPT/Codex Responses adaptation (openai-codex only). When true the
+    /// `/codex/responses` request carries the Codex identity headers
+    /// (`chatgpt-account-id` derived per-request from the bearer JWT,
+    /// `originator: codex_cli_rs`, `OpenAI-Beta: responses=experimental`, a codex
+    /// `User-Agent`). Gated so the API-key `openai` Responses requests stay
+    /// byte-identical (`store: false` is already the shared Responses default).
+    #[serde(default)]
+    pub openai_codex: bool,
     /// Extra request headers applied verbatim. The sampler never inspects
     /// the URL to derive headers; callers (the session) inject proxy auth
     /// and other access headers here before constructing the config.
@@ -161,6 +169,7 @@ impl Default for SamplerConfig {
             auth_scheme: AuthScheme::default(),
             anthropic_oauth: false,
             github_copilot: false,
+            openai_codex: false,
             extra_headers: IndexMap::new(),
             context_window: 0,
             force_http1: false,

@@ -25,6 +25,7 @@ pub(crate) fn effort_description(level: ReasoningEffort) -> &'static str {
         ReasoningEffort::High => "Heavy reasoning",
         ReasoningEffort::Xhigh => "Extra-heavy reasoning",
         ReasoningEffort::Max => "Maximum reasoning",
+        ReasoningEffort::Ultra => "Ultra reasoning",
     }
 }
 

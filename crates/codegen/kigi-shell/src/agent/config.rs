@@ -4099,6 +4099,15 @@ pub fn sampling_config_for_model(
         .as_deref()
         .and_then(kigi_models::parse_managed_model_key)
         .is_some_and(|(platform, _)| platform.sends_copilot_editor_headers());
+    // ChatGPT/Codex Responses identity headers: a managed key whose platform is
+    // openai-codex drives the codex headers (`chatgpt-account-id` + originator +
+    // OpenAI-Beta) in the sampler. Gated here so API-key `openai` Responses
+    // requests stay byte-identical.
+    let openai_codex = info
+        .id
+        .as_deref()
+        .and_then(kigi_models::parse_managed_model_key)
+        .is_some_and(|(platform, _)| platform.sends_codex_responses_headers());
     SamplerConfig {
         api_key: credentials.api_key,
         model: model_name,
@@ -4110,6 +4119,7 @@ pub fn sampling_config_for_model(
         auth_scheme: credentials.auth_scheme,
         anthropic_oauth,
         github_copilot,
+        openai_codex,
         chat_compat,
         extra_headers,
         context_window: info.context_window.get(),

@@ -104,8 +104,18 @@ pub async fn run_oauth_provider_flow(
             )
             .await
         }
-        kigi_models::OAuthFlow::PkceLocalhost { redirect_port } => {
-            run_pkce_localhost_login(oauth, redirect_port, auth_manager, &mut channels).await
+        kigi_models::OAuthFlow::PkceLocalhost {
+            redirect_port,
+            redirect_path,
+        } => {
+            run_pkce_localhost_login(
+                oauth,
+                redirect_port,
+                redirect_path,
+                auth_manager,
+                &mut channels,
+            )
+            .await
         }
         kigi_models::OAuthFlow::GithubDeviceCopilot => {
             crate::auth::device_code::run_device_code_login_github_copilot(
@@ -118,23 +128,40 @@ pub async fn run_oauth_provider_flow(
     }
 }
 
-/// PKCE-localhost login (claude-pro-max): generate PKCE, present the browser
-/// authorize URL (TUI channel or stderr), open the browser, then await the code
-/// from EITHER the `127.0.0.1:{redirect_port}` loopback callback OR a manual
-/// paste (headless fallback). Exchange it at the token endpoint and persist.
+/// PKCE-localhost login (claude-pro-max JSON, openai-codex FORM): generate PKCE,
+/// present the browser authorize URL (TUI channel or stderr), open the browser,
+/// then await the code from EITHER the `127.0.0.1:{redirect_port}{redirect_path}`
+/// loopback callback OR a manual paste (headless fallback). Exchange it at the
+/// token endpoint and persist.
 ///
-/// SECURITY: the verifier / code / tokens are never logged; the loopback binds
-/// `127.0.0.1` only and validates `state` strictly.
+/// The `token_body` selects the wire dialect: `Json` is the claude path
+/// (`state == verifier`, JSON exchange carrying `state`); `Form` is the codex
+/// path (fresh-random `state`, FORM exchange WITHOUT `state`, then a FAIL-FAST
+/// check that the minted JWT carries a `chatgpt_account_id` — a token without it
+/// is useless for inference, so the login bails rather than persisting it).
+///
+/// SECURITY: the verifier / code / tokens / JWT / account id are never logged;
+/// the loopback binds `127.0.0.1` only and validates `state` strictly.
 async fn run_pkce_localhost_login(
     oauth: &'static kigi_models::OAuthConfig,
     redirect_port: u16,
+    redirect_path: &'static str,
     auth_manager: &Arc<AuthManager>,
     channels: &mut Option<AuthChannels>,
 ) -> anyhow::Result<(KimiAuth, bool)> {
     use crate::auth::oauth_pkce;
 
-    let pkce = oauth_pkce::generate_pkce();
-    let redirect = oauth_pkce::redirect_uri(redirect_port);
+    // The token-body encoding also selects the PKCE `state` convention: the JSON
+    // dialect is Claude's/Pi's `state == verifier`, while form-encoded endpoints
+    // (the OAuth norm) get an INDEPENDENT random state. A new form provider
+    // inheriting the standard random state is correct by default.
+    let uses_form_exchange = matches!(oauth.token_body, kigi_models::OAuthTokenBody::Form);
+    let pkce = if uses_form_exchange {
+        oauth_pkce::generate_pkce_random_state()
+    } else {
+        oauth_pkce::generate_pkce()
+    };
+    let redirect = oauth_pkce::redirect_uri(redirect_port, redirect_path);
     let authorize_url = oauth_pkce::build_authorize_url(oauth, &redirect, &pkce);
 
     let mut chans = channels.take();
@@ -148,7 +175,7 @@ async fn run_pkce_localhost_login(
         crate::auth::device_code::open_browser_detached(&authorize_url).await;
     } else {
         eprintln!();
-        eprintln!("To sign in to Claude Pro/Max, open this URL in your browser:");
+        eprintln!("To sign in, open this URL in your browser:");
         eprintln!();
         eprintln!("  {authorize_url}");
         eprintln!();
@@ -159,8 +186,24 @@ async fn run_pkce_localhost_login(
         eprintln!("Waiting for the sign-in to complete...");
     }
 
-    let code = await_pkce_code(redirect_port, &pkce, chans.as_mut()).await?;
-    let auth = oauth_pkce::exchange_code(oauth, &code, &pkce, &redirect).await?;
+    let code = await_pkce_code(redirect_port, redirect_path, &pkce, chans.as_mut()).await?;
+    let auth = if uses_form_exchange {
+        oauth_pkce::exchange_code_form(oauth, &code, &pkce, &redirect).await?
+    } else {
+        oauth_pkce::exchange_code(oauth, &code, &pkce, &redirect).await?
+    };
+    // FAIL FAST: an access token that yields no chatgpt_account_id cannot
+    // authorize inference (it becomes the `chatgpt-account-id` header) — bail
+    // rather than persist a dead session. Gated on the EXPLICIT provider fact,
+    // never on the token-body encoding.
+    if oauth.requires_chatgpt_account_id
+        && kigi_sampling_types::chatgpt_account_id_from_jwt(&auth.key).is_none()
+    {
+        anyhow::bail!(
+            "ChatGPT login did not return a usable account id \
+             (the access token is missing the chatgpt_account_id claim)"
+        );
+    }
     let auth = auth_manager
         .update(auth)
         .await
@@ -174,6 +217,7 @@ async fn run_pkce_localhost_login(
 /// arms (strict on the loopback, mismatch-rejecting on the paste).
 async fn await_pkce_code(
     redirect_port: u16,
+    redirect_path: &str,
     pkce: &crate::auth::oauth_pkce::PkceCodes,
     channels: Option<&mut AuthChannels>,
 ) -> anyhow::Result<String> {
@@ -181,7 +225,7 @@ async fn await_pkce_code(
     match channels {
         Some(ch) => {
             tokio::select! {
-                code = oauth_pkce::await_loopback_code(redirect_port, &pkce.state) => code,
+                code = oauth_pkce::await_loopback_code(redirect_port, redirect_path, &pkce.state) => code,
                 pasted = ch.code_rx.recv() => {
                     let pasted = pasted
                         .ok_or_else(|| anyhow::anyhow!("auth code channel closed before a code arrived"))?;
@@ -191,7 +235,7 @@ async fn await_pkce_code(
                 }
             }
         }
-        None => oauth_pkce::await_loopback_code(redirect_port, &pkce.state).await,
+        None => oauth_pkce::await_loopback_code(redirect_port, redirect_path, &pkce.state).await,
     }
 }
 
