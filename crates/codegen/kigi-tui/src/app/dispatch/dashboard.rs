@@ -1251,6 +1251,19 @@ pub(super) fn dispatch_dashboard_dispatch_slash(app: &mut AppView, text: String)
             }
             return vec![];
         }
+        // Required-args command submitted bare (`/model` + Enter): re-open
+        // the dispatch box in the args phase so the dropdown lists the
+        // choices — same "Blocks" contract as the session prompt path.
+        if !crate::slash::is_command_complete(trimmed.as_str(), reg) {
+            let reopened = format!("/{} ", invocation.token);
+            let models = app.models.clone();
+            if let Some(d) = app.dashboard.as_mut() {
+                d.dispatch.set_text(&reopened);
+                d.dispatch.set_cursor(reopened.len());
+                d.dispatch.refresh_slash(&models);
+            }
+            return vec![];
+        }
         if let Some(dashboard) = app.dashboard.as_mut() {
             // Records MRU and queues an off-thread persist internally.
             dashboard

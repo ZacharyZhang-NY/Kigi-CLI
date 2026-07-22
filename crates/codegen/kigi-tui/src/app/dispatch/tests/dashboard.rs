@@ -1270,6 +1270,38 @@ fn dashboard_slash_model_stages_pending_model() {
     );
 }
 
+/// `/model` + Enter (no args) on the dashboard re-opens the dispatch box in
+/// the args phase — dropdown listing the catalog — instead of toasting the
+/// usage error. Mirrors the session prompt path's "Blocks" contract.
+#[serial_test::serial(KIGI_AGENT_DASHBOARD)]
+#[test]
+fn dashboard_slash_model_no_args_reopens_the_picker() {
+    let mut app = test_app();
+    seed_model(
+        &mut app,
+        "claude-pro-max/claude-opus-4-8",
+        "Claude Opus 4.8",
+    );
+    open_dashboard(&mut app);
+    let effects = dispatch_dashboard_dispatch_slash(&mut app, "/model".into());
+    assert!(effects.is_empty());
+    let d = app.dashboard.as_ref().unwrap();
+    assert!(
+        d.error_toast.is_none(),
+        "no usage toast, got {:?}",
+        d.error_toast
+    );
+    assert_eq!(d.dispatch.text(), "/model ");
+    let snap = d.dispatch.slash_snapshot();
+    assert!(snap.open && !snap.cursor_in_command, "args-phase dropdown");
+    assert!(
+        snap.matches
+            .iter()
+            .any(|row| row.display.contains("Claude Opus 4.8")),
+        "the picker must list the catalog models"
+    );
+}
+
 /// A slash command that fails (`CommandResult::Error`) surfaces on
 /// the dashboard with the `✗` error prefix — command error strings
 /// carry no glyph of their own, and the feedback badge paints the

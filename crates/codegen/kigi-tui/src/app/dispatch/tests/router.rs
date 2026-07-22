@@ -434,14 +434,58 @@ fn slash_model_invalid_arg_produces_scrollback_error() {
     assert_eq!(app.agents[&id].scrollback.len(), initial_scrollback + 1);
     assert!(app.agents[&id].prompt.text().is_empty());
 }
+/// `/model` + Enter (required args missing) must NOT error into scrollback —
+/// it re-opens the prompt in the args phase so the existing dropdown lists
+/// the catalog (= the connected providers' models). This is the documented
+/// "Blocks" row of `is_command_complete`, which previously had no consumer.
 #[test]
-fn slash_model_no_args_produces_scrollback_error() {
+fn slash_model_no_args_reopens_the_model_picker() {
     let mut app = test_app_with_agent();
     let id = AgentId(0);
+    {
+        let agent = app.agents.get_mut(&id).unwrap();
+        let model_id = acp::ModelId::new(std::sync::Arc::from("claude-pro-max/claude-opus-4-8"));
+        agent.session.models.available.insert(
+            model_id.clone(),
+            acp::ModelInfo::new(model_id, "Claude Opus 4.8".to_string()),
+        );
+    }
     let initial_scrollback = app.agents[&id].scrollback.len();
     let effects = dispatch(Action::SendPrompt("/model".into()), &mut app);
     assert!(effects.is_empty());
-    assert_eq!(app.agents[&id].scrollback.len(), initial_scrollback + 1);
+    assert_eq!(
+        app.agents[&id].scrollback.len(),
+        initial_scrollback,
+        "no usage error may land in scrollback"
+    );
+    assert_eq!(
+        app.agents[&id].prompt.text(),
+        "/model ",
+        "the prompt must re-open in the args phase"
+    );
+    let snap = app.agents[&id].prompt.slash_snapshot();
+    assert!(snap.open, "the dropdown must be open");
+    assert!(
+        !snap.cursor_in_command,
+        "the dropdown must be in the ARGS phase, not command completion"
+    );
+    assert!(
+        snap.matches
+            .iter()
+            .any(|row| row.display.contains("Claude Opus 4.8")),
+        "the picker must list the catalog models, got {:?}",
+        snap.matches.iter().map(|r| &r.display).collect::<Vec<_>>()
+    );
+}
+
+/// The alias form `/m` + Enter blocks-and-reopens the same way.
+#[test]
+fn slash_model_alias_no_args_reopens_picker_too() {
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+    let effects = dispatch(Action::SendPrompt("/m".into()), &mut app);
+    assert!(effects.is_empty());
+    assert_eq!(app.agents[&id].prompt.text(), "/m ");
 }
 #[test]
 fn slash_hooks_opens_modal() {

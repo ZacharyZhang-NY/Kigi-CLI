@@ -331,6 +331,23 @@ pub(super) fn dispatch_send_prompt_inner(
         use crate::slash::command::{CommandExecCtx, CommandResult};
         use crate::slash::parse_invocation;
 
+        // A required-args command submitted bare (`/model` + Enter): don't
+        // run into its usage error — re-open the prompt in the args phase
+        // (`"/model "`) so the existing suggestion dropdown lists the
+        // choices. This is the documented "Blocks" row of
+        // [`crate::slash::is_command_complete`].
+        if let Some(invocation) = parse_invocation(trimmed)
+            && !crate::slash::is_command_complete(trimmed, agent.prompt.slash_controller.registry())
+        {
+            let reopened = format!("/{} ", invocation.token);
+            agent.prompt.set_text(&reopened);
+            // Cursor past the trailing space — that is the args-phase signal
+            // the suggestion controller keys on.
+            agent.prompt.set_cursor(reopened.len());
+            agent.prompt.refresh_slash(&agent.session.models);
+            return vec![];
+        }
+
         // Build execution context.
         let exec_result = {
             let mut ctx = CommandExecCtx {
