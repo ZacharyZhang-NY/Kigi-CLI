@@ -1,0 +1,85 @@
+name: Warm build cache
+
+# Release builds run on TAG refs, and GitHub Actions cache isolation only
+# lets a run restore caches created on its OWN ref or the DEFAULT branch.
+# No workflow ran on `main`, so every release compiled the whole workspace
+# cold on all five targets (~50 min wall clock, gated by Windows). This
+# workflow builds the same `release-dist` profile on `main` so tag builds
+# restore a warm default-branch cache.
+#
+# Triggers: dependency-affecting pushes to main (each release's version-bump
+# commit warms the cache for the NEXT release), a weekly refresh so the
+# cache never hits GitHub's 7-day unused-eviction, and manual dispatch.
+#
+# The setup steps mirror release.yml's build job (toolchain, target,
+# dotslash/protoc, rust-cache key) — keep them in lockstep, or the cache
+# key won't match and releases go back to cold builds.
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "rust-toolchain.toml"
+      - ".github/workflows/warm-cache.yml"
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: warm-cache
+  cancel-in-progress: true
+
+jobs:
+  warm:
+    name: warm (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-14
+          - target: x86_64-apple-darwin
+            os: macos-14
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          - target: x86_64-pc-windows-msvc
+            os: windows-2022
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain (rust-toolchain.toml)
+        run: rustup show
+
+      - name: Add build target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Install dotslash (protoc launcher)
+        run: cargo install dotslash --locked
+
+      - name: Install protoc (Windows PATH fallback)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $url = "https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-win64.zip"
+          Invoke-WebRequest -Uri $url -OutFile protoc.zip
+          Expand-Archive protoc.zip -DestinationPath "$env:USERPROFILE\protoc"
+          Add-Content $env:GITHUB_PATH "$env:USERPROFILE\protoc\bin"
+
+      # Same key as release.yml so tag builds restore this cache verbatim.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build kigi (release-dist)
+        run: cargo build --profile release-dist -p kigi-bin --locked --target ${{ matrix.target }}
