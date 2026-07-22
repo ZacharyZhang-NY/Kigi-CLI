@@ -150,6 +150,9 @@ fn detect_effort_phase(models: &ModelState, args_query: &str) -> Option<acp::Mod
 
 /// One row per logical model. Reasoning models get a trailing space in
 /// `insert_text` so the prompt widget chains into the effort sub-menu.
+/// The description column names the model's provider (shell-stamped
+/// `meta.provider` — the connected platform the model was fetched from)
+/// when the model carries no description of its own.
 fn build_model_items(models: &ModelState) -> Vec<ArgItem> {
     let current_id = models.current.as_ref();
     let mut items: Vec<ArgItem> = Vec::with_capacity(models.available.len());
@@ -172,11 +175,22 @@ fn build_model_items(models: &ModelState) -> Vec<ArgItem> {
             info.name.clone()
         };
 
+        let provider = info
+            .meta
+            .as_ref()
+            .and_then(|m| m.get("provider"))
+            .and_then(|v| v.as_str());
+        let description = match (info.description.as_deref(), provider) {
+            (Some(d), _) if !d.is_empty() => d.to_string(),
+            (_, Some(p)) => p.to_string(),
+            _ => String::new(),
+        };
+
         items.push(ArgItem {
             display,
             match_text: info.name.clone(),
             insert_text,
-            description: info.description.clone().unwrap_or_default(),
+            description,
         });
     }
     items
@@ -292,6 +306,37 @@ mod tests {
         // Plain model has no trailing space -- Enter commits immediately.
         let plain = items.iter().find(|i| i.match_text == "Kigi 4.5").unwrap();
         assert_eq!(plain.insert_text, "Kigi 4.5");
+    }
+
+    /// Rows for shell-managed platform models show their provider (stamped
+    /// `meta.provider`) in the description column, so the picker says which
+    /// connected provider each model belongs to. A model's own description
+    /// wins when present; entries without provider meta stay blank.
+    #[test]
+    fn model_rows_show_provider_in_description() {
+        let mut state = ModelState::default();
+
+        let claude_id = acp::ModelId::new(Arc::from("claude-pro-max/claude-opus-4-8"));
+        let mut meta = serde_json::Map::new();
+        meta.insert(
+            "provider".into(),
+            serde_json::Value::String("Claude Pro/Max".into()),
+        );
+        let claude =
+            acp::ModelInfo::new(claude_id.clone(), "Claude Opus 4.8".to_string()).meta(Some(meta));
+        state.available.insert(claude_id, claude);
+
+        let (plain_id, plain_info) = plain_model("my-custom", "My Custom");
+        state.available.insert(plain_id, plain_info);
+
+        let items = build_model_items(&state);
+        let claude_row = items
+            .iter()
+            .find(|i| i.match_text == "Claude Opus 4.8")
+            .unwrap();
+        assert_eq!(claude_row.description, "Claude Pro/Max");
+        let plain_row = items.iter().find(|i| i.match_text == "My Custom").unwrap();
+        assert_eq!(plain_row.description, "");
     }
 
     #[test]

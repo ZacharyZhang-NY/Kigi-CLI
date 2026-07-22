@@ -4229,6 +4229,21 @@ pub fn to_acp_model_info(
                     "agentType".to_string(),
                     serde_json::Value::String(info.agent_type.clone()),
                 );
+                // Provider display name for managed `{platform}/{model}`
+                // entries — lets the client's model picker say which
+                // connected provider each model belongs to. Absent for
+                // user-defined `[model.*]` entries (no known platform).
+                if let Some((platform, _)) = info
+                    .id
+                    .as_deref()
+                    .or(Some(key.as_str()))
+                    .and_then(kigi_models::parse_managed_model_key)
+                {
+                    map.insert(
+                        "provider".to_string(),
+                        serde_json::Value::String(platform.display_name().to_string()),
+                    );
+                }
                 if info.supports_reasoning_effort {
                     map.insert(
                         "supportsReasoningEffort".to_string(),
@@ -5925,6 +5940,49 @@ reasoning_effort = "low"
             "agentType should always be in meta, defaulting to DEFAULT_AGENT_TYPE"
         );
     }
+    /// Managed `{platform}/{model}` entries stamp `meta.provider` with the
+    /// platform's display name so the client's model picker can say which
+    /// connected provider each model belongs to. User-defined `[model.*]`
+    /// entries (no known platform prefix) stay provider-less.
+    #[test]
+    fn acp_model_meta_stamps_provider_for_managed_entries() {
+        let mut models = IndexMap::new();
+        let mut managed = test_model_entry(
+            "claude-opus-4-8",
+            "https://api.anthropic.com/v1",
+            None,
+            None,
+            None,
+        );
+        managed.info.id = Some("claude-pro-max/claude-opus-4-8".to_string());
+        models.insert("claude-pro-max/claude-opus-4-8".to_string(), managed);
+        models.insert(
+            "my-custom".to_string(),
+            test_model_entry("my-custom", "https://test.api/v1", None, None, None),
+        );
+
+        let acp_models = to_acp_model_info(&models);
+        let claude = acp_models
+            .get(&acp::ModelId::new(Arc::from(
+                "claude-pro-max/claude-opus-4-8",
+            )))
+            .unwrap();
+        assert_eq!(
+            claude.meta.as_ref().unwrap()["provider"],
+            kigi_models::PlatformId::ClaudeProMax.display_name(),
+        );
+        let custom = acp_models
+            .get(&acp::ModelId::new(Arc::from("my-custom")))
+            .unwrap();
+        assert!(
+            custom
+                .meta
+                .as_ref()
+                .is_none_or(|m| m.get("provider").is_none()),
+            "a user-defined entry carries no provider"
+        );
+    }
+
     #[test]
     fn acp_model_meta_emits_reasoning_effort_when_supported() {
         let mut models = IndexMap::new();
