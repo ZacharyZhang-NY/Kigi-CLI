@@ -2779,13 +2779,20 @@ pub fn default_model_entries(endpoints: &EndpointsConfig) -> IndexMap<String, Mo
 }
 /// Resolve a model against the available model map.
 /// Checks the map key (id) first, then falls back to a slug scan.
+///
+/// The slug scan takes the LAST match, exactly like the picker's
+/// [`crate::agent::models::resolve_catalog_key`]. Duplicate slugs across
+/// platforms are by design (`moonshot-cn` and `moonshot-ai` list the same ids;
+/// so do every API-key platform and its subscription-OAuth twin), and a
+/// first-match scan here made the auth layer resolve a DIFFERENT entry than the
+/// one the picker selected — the H5 slug collision. One direction, one answer.
 pub fn find_model_by_id<'a>(
     models: &'a IndexMap<String, ModelEntry>,
     model_id: &str,
 ) -> Option<&'a ModelEntry> {
     models
         .get(model_id)
-        .or_else(|| models.values().find(|m| m.model == model_id))
+        .or_else(|| models.values().rev().find(|m| m.model == model_id))
 }
 /// Whether the EFFECTIVE Auto-mode classifier model supports reasoning effort:
 /// the model actually routed to (`aux_model` when the aux sampler resolved) else
@@ -4643,14 +4650,22 @@ reasoning_effort = "low"
         });
         (dir, manager)
     }
-    /// LEAK 1a (aux/summary model): the aux `session_key` is resolved by the aux
-    /// model's OWN platform (as `build_summary_client` / `resolve_aux_sampler_config`
-    /// now do). A grok (oauth-platform) aux model's resolved sampler `api_key` is
-    /// therefore grok's own token or `None` — NEVER the primary Kimi key — while a
-    /// first-party / non-oauth aux model still gets the primary (byte-identical).
+    /// LEAK 1a (aux/summary model `api_key` channel): the aux `session_key` is
+    /// resolved by the aux model's OWN platform AND endpoint (as
+    /// `build_summary_client` / `resolve_aux_sampler_config` now do), so it is
+    /// never the primary Kimi key on a host that does not own it.
+    ///
+    /// - a grok (oauth-platform) aux model → grok's own pooled token or `None`;
+    /// - a `moonshot-cn` (API-key platform) aux model → NO session key at all
+    ///   (pre-fix it received `kimi-tok`, which `resolve_credentials` then
+    ///   stamped as the `api_key` on an `api.moonshot.cn` request);
+    /// - a `kimi-code` aux model → the primary, byte-identical.
+    ///
+    /// Revert-to-red: dropping the `platform_takes_session_credential` term
+    /// from `session_key_for_endpoint` makes the moonshot assertion see
+    /// `Some("kimi-tok")`.
     #[tokio::test]
     async fn aux_model_session_key_is_platform_scoped_never_leaking_kimi() {
-        let home = tempfile::tempdir().unwrap();
         let (_kd, kimi) = kimi_primary("kimi-tok");
         let endpoints = EndpointsConfig::default();
         // A grok aux catalog entry (managed id → oauth platform), no own key.
@@ -4658,9 +4673,9 @@ reasoning_effort = "low"
         grok.info.id = Some("xai-grok/grok-4-latest".to_string());
         let mut grok_catalog = IndexMap::new();
         grok_catalog.insert("grok".to_string(), grok);
-        let grok_key = crate::auth::oauth_registry::session_key_for_model(
-            home.path(),
-            "xai-grok/grok-4-latest",
+        let grok_key = crate::auth::oauth_registry::session_key_for_catalog_model(
+            &grok_catalog,
+            "grok",
             Some(&kimi),
         );
         let grok_cfg = resolve_aux_model_sampling_config(
@@ -4675,10 +4690,11 @@ reasoning_effort = "low"
             Some("kimi-tok"),
             "a grok aux model must never receive the primary Kimi session token",
         );
-        // A non-oauth aux catalog entry still resolves to the primary token.
+        // An API-key registry platform gets NO session key — the pre-fix
+        // behaviour handed it the primary Kimi token on api.moonshot.cn.
         let mut k2 = test_model_entry(
             "kimi-k2-0905-preview",
-            "https://vendor/v1",
+            "https://api.moonshot.cn/v1",
             None,
             None,
             None,
@@ -4686,23 +4702,43 @@ reasoning_effort = "low"
         k2.info.id = Some("moonshot-cn/kimi-k2".to_string());
         let mut k2_catalog = IndexMap::new();
         k2_catalog.insert("k2".to_string(), k2);
-        let k2_key = crate::auth::oauth_registry::session_key_for_model(
-            home.path(),
-            "moonshot-cn/kimi-k2",
+        assert_eq!(
+            crate::auth::oauth_registry::session_key_for_catalog_model(
+                &k2_catalog,
+                "k2",
+                Some(&kimi),
+            ),
+            None,
+            "LEAK: an API-key-platform aux model must receive no session token",
+        );
+        // The first-party subscription channel is byte-identical.
+        let mut kimi_code = test_model_entry(
+            "kimi-for-coding",
+            kigi_env::PRODUCTION_ENDPOINTS.coding_api_base_url,
+            None,
+            None,
+            None,
+        );
+        kimi_code.info.id = Some("kimi-code/kimi-for-coding".to_string());
+        let mut kimi_catalog = IndexMap::new();
+        kimi_catalog.insert("kimi-for-coding".to_string(), kimi_code);
+        let kimi_key = crate::auth::oauth_registry::session_key_for_catalog_model(
+            &kimi_catalog,
+            "kimi-for-coding",
             Some(&kimi),
         );
-        let k2_cfg = resolve_aux_model_sampling_config(
-            "k2",
-            &k2_catalog,
+        let kimi_cfg = resolve_aux_model_sampling_config(
+            "kimi-for-coding",
+            &kimi_catalog,
             &endpoints,
-            k2_key.as_deref(),
+            kimi_key.as_deref(),
             None,
         )
-        .expect("non-oauth aux resolves via the primary session token");
+        .expect("a kimi-code aux model resolves via the primary session token");
         assert_eq!(
-            k2_cfg.api_key.as_deref(),
+            kimi_cfg.api_key.as_deref(),
             Some("kimi-tok"),
-            "a non-oauth aux model must still receive the primary session token",
+            "the first-party subscription aux path must be byte-identical",
         );
     }
     #[test]

@@ -634,14 +634,12 @@ impl SessionActor {
                 &active_session_config,
                 Some(self.max_retries),
             );
-        // A grok (oauth-platform) image-describe model must not inherit the
-        // session (Kimi) bearer_resolver stamped by `finalize_*`; re-point it at
-        // grok's own manager. No-op for a first-party / non-oauth model.
+        // An image-describe model on another provider must not inherit the
+        // session (Kimi) bearer_resolver stamped by `finalize_*`: re-point it at
+        // an OAuth model's own manager, or clear it for an API-key-platform /
+        // third-party endpoint. No-op for the first-party subscription channel.
         if aux_resolved {
-            self.repoint_aux_bearer_resolver_for_oauth(
-                &mut sampler_config,
-                &self.image_description_model,
-            );
+            self.repoint_aux_bearer_resolver(&mut sampler_config, &self.image_description_model);
         }
         let client = kigi_sampler::SamplingClient::new(sampler_config).map_err(|e| {
             acp::Error::internal_error().data(format!(

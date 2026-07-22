@@ -135,7 +135,7 @@ use prompt_build::*;
 mod session_mode;
 use session_mode::*;
 #[path = "acp_session_impl/sampler_turn.rs"]
-mod sampler_turn;
+pub(crate) mod sampler_turn;
 use sampler_turn::*;
 #[path = "acp_session_impl/tool_dispatch.rs"]
 mod tool_dispatch;
@@ -1256,6 +1256,17 @@ mod rewind_synthetic_turn_tests;
 #[cfg(test)]
 #[path = "acp_session_tests/rewrite_zero_turn_prefix_tests.rs"]
 mod rewrite_zero_turn_prefix_tests;
+/// The same guard for the model→platform lookup (the dual-credential slug
+/// collision) and for the stamped aux/summary configs.
+#[cfg(test)]
+#[path = "acp_session_tests/session_bearer_leak_platform_tests.rs"]
+mod session_bearer_leak_platform_tests;
+/// LEAK guard: the primary Kimi subscription bearer must never ride a request
+/// to an API-key registry platform's host, while the subscription-OAuth
+/// platforms keep a live resolver from their OWN pooled manager.
+#[cfg(test)]
+#[path = "acp_session_tests/session_bearer_leak_tests.rs"]
+mod session_bearer_leak_tests;
 /// Pins the `SubagentFinished` usage-fold attribution gate.
 #[cfg(test)]
 #[path = "acp_session_tests/subagent_usage_fold_tests.rs"]

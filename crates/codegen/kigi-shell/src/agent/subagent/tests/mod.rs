@@ -3131,19 +3131,25 @@ fn fresh_tool_model_rejects_unavailable_exact_key_over_visible_slug_collision() 
         "validation must inspect the unavailable exact-key entry selected by execution"
     );
 }
+/// Validation must inspect the SAME slug-collision entry execution selects.
+/// Both go through `find_model_by_id`, whose slug scan takes the LAST match —
+/// aligned with the picker's `resolve_catalog_key` so the auth layer and the
+/// picker can never resolve different platforms for one slug (the H5 collision).
+/// So a blocked LAST entry must be rejected even though an available earlier one
+/// shares the slug.
 #[test]
-fn fresh_tool_model_rejects_unavailable_first_slug_collision() {
+fn fresh_tool_model_rejects_unavailable_last_slug_collision() {
     let mut models = indexmap::IndexMap::new();
-    let mut unavailable_first = test_model_entry("shared-routing-slug");
-    unavailable_first.info.user_selectable = false;
-    models.insert("blocked-first".to_string(), unavailable_first);
-    models.insert("visible-second".to_string(), test_model_entry("shared-routing-slug"));
+    models.insert("visible-first".to_string(), test_model_entry("shared-routing-slug"));
+    let mut unavailable_last = test_model_entry("shared-routing-slug");
+    unavailable_last.info.user_selectable = false;
+    models.insert("blocked-last".to_string(), unavailable_last);
     assert_eq!(
         super::handle_request::task_model_override_error(Some("shared-routing-slug"),
         ModelOverrideProvenance::Tool, false, & models, false,).as_deref(),
         Some("Unknown Task.model slug 'shared-routing-slug'. Valid model slugs: \
-                 visible-second. Omit `model` to inherit the parent model."),
-        "validation must inspect the first routing-slug entry selected by execution"
+                 visible-first. Omit `model` to inherit the parent model."),
+        "validation must inspect the last routing-slug entry selected by execution"
     );
 }
 #[test]

@@ -1003,16 +1003,22 @@ fn resolve_model_override_to_config(
     } else {
         acp::ModelId::new(entry.info().model.clone())
     };
-    // Resolve the child's session token by the OVERRIDE model's OWN platform,
-    // not the parent's primary auth: a grok (oauth-platform) override draws its
-    // pooled grok token or `None` — NEVER the primary Kimi session token (which
-    // `resolve_credentials` would otherwise stamp onto the child's api.x.ai
-    // credentials, leaking it in the logout-mid-session edge). A first-party /
-    // non-oauth override still resolves to the primary (byte-identical).
-    let managed_key = entry.info().id.as_deref().unwrap_or(model_id);
-    let session_key = crate::auth::oauth_registry::session_key_for_model(
-        &crate::util::kigi_home::kigi_home(),
-        managed_key,
+    // Resolve the child's session token by the OVERRIDE model's OWN platform
+    // AND endpoint, not the parent's primary auth: a grok (oauth-platform)
+    // override draws its pooled grok token or `None`, and an API-key registry
+    // platform / a third-party `[model.*]` host draws NOTHING — NEVER the
+    // primary Kimi session token, which `resolve_credentials` would otherwise
+    // stamp onto the child's api.x.ai / api.moonshot.cn credentials. The
+    // first-party subscription channel still resolves to the primary
+    // (byte-identical).
+    let session_key = crate::auth::oauth_registry::session_key_for_endpoint(
+        entry
+            .info()
+            .id
+            .as_deref()
+            .and_then(kigi_models::parse_managed_model_key)
+            .map(|(platform, _)| platform),
+        &entry.info().base_url,
         Some(&ctx.auth_manager),
     );
     let has_session_key = session_key.is_some();

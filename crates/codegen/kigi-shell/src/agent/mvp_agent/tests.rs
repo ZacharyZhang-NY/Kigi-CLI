@@ -1197,18 +1197,26 @@ async fn prepare_sampling_config_never_stamps_kimi_key_on_grok_model() {
 
     let endpoints = EndpointsConfig::default();
 
-    // First-party Kimi model (non-oauth platform): the primary session key IS
-    // its api_key — the byte-identical primary path, and proof the Kimi token is
+    // First-party SUBSCRIPTION model (kimi-code): the primary session key IS its
+    // api_key — the byte-identical primary path, and proof the Kimi token is
     // live (so it WOULD leak if mis-routed onto a grok request). This assertion
     // also confirms the session-based primary path is active.
-    let mut kimi_model = ModelEntry::fallback("kimi-k2-0905-preview", &endpoints);
-    kimi_model.info.id = Some("moonshot-cn/kimi-k2-0905-preview".to_string());
+    //
+    // This used to use `moonshot-cn/kimi-k2-0905-preview` and assert the SAME
+    // thing, which encoded the C1 defect: moonshot-cn is an API-key registry
+    // platform on `api.moonshot.cn`, NOT first-party, so "must carry the primary
+    // session key" was asserting the leak. `api_key_channel_leak_tests` now pins
+    // the opposite for every moonshot entry.
+    let mut kimi_model = ModelEntry::fallback("kimi-for-coding", &endpoints);
+    kimi_model.info.id = Some("kimi-code/kimi-for-coding".to_string());
+    kimi_model.info.base_url = kigi_env::PRODUCTION_ENDPOINTS.coding_api_base_url.to_string();
     assert!(!kimi_model.has_own_credentials());
     let kimi_cfg = agent.prepare_sampling_config_for_model(&kimi_model, None);
     assert_eq!(
         kimi_cfg.api_key.as_deref(),
         Some(KIMI_KEY),
-        "a first-party Kimi model must carry the primary session key (primary path unchanged)"
+        "the first-party subscription model must carry the primary session key \
+         (primary path unchanged)"
     );
 
     // xai-grok model (oauth platform): the session token resolves from its OWN
@@ -1280,6 +1288,9 @@ async fn ensure_plugin_registry_lazily_populates_snapshot() {
     );
 }
 mod subagent_spawn_context_tests;
+/// LEAK guard for the `api_key` channel (C1/C2), through the real
+/// `prepare_sampling_config_for_model` resolution path.
+mod api_key_channel_leak_tests;
 /// No load in flight and no session → the wait returns immediately
 /// (the caller then surfaces "unknown session id" exactly as before).
 #[tokio::test]

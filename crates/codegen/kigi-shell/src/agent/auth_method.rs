@@ -302,19 +302,67 @@ impl ModelByok {
 /// buffered token on every turn and 401s with `bad-credentials` until restart.
 /// It refreshes when `endpoint_is_first_party` — the request targets the
 /// first-party API, where sending the session token cannot leak to a
-/// third-party BYOK endpoint. A definite `NotByok` always refreshes (it only
-/// ever routes to the session endpoint); a definite `Byok` never does.
+/// third-party BYOK endpoint. A definite `NotByok` refreshes (within the
+/// session's own providers); a definite `Byok` never does.
+///
+/// `endpoint_takes_session_credential` ([`platform_takes_session_credential`])
+/// is the outer, non-negotiable guard and the reason the `NotByok` arm is safe:
+/// it is `false` for every API-key registry platform (deepseek, openai,
+/// anthropic, moonshot-*, …), whose models classify `NotByok` (they carry no
+/// `[model.*]` key) yet route to a THIRD-PARTY inference host while
+/// `oauth_registry::manager_for_model` falls through to the primary (Kimi)
+/// manager. Without this term the mainstream "session auth + API-key-platform
+/// model" configuration stamps the user's Kimi subscription bearer on every
+/// request to that host.
 pub fn session_token_auth_gate(
     is_session_based_method: bool,
     model_byok: ModelByok,
     endpoint_is_first_party: bool,
+    endpoint_takes_session_credential: bool,
 ) -> bool {
     is_session_based_method
+        && endpoint_takes_session_credential
         && match model_byok {
             ModelByok::NotByok => true,
             ModelByok::Byok => false,
             ModelByok::Unknown => endpoint_is_first_party,
         }
+}
+
+/// Whether a session bearer may EVER be stamped on a request routed to
+/// `platform` at `base_url` — i.e. whether the credential
+/// `oauth_registry::manager_for_model` resolves for such a model belongs to the
+/// host that receives it.
+///
+/// - a `uses_oauth` platform: `kimi-code` rides the PRIMARY session; each of the
+///   four subscription-OAuth platforms (claude-pro-max, openai-codex,
+///   github-copilot, xai-grok) rides its OWN pooled `AuthManager`. In both cases
+///   the resolved bearer belongs to the host being called, and mid-session
+///   refresh/401-recovery must stay live — so this is `true` even though those
+///   four have non-first-party base URLs.
+/// - every API-key registry platform: its credential is that platform's API key
+///   (resolved into the catalog entry), never a session bearer, and
+///   `manager_for_model` has no platform manager to route to. `false`.
+/// - `None` — a bare slug or a `[model.*]` config entry, which carries no
+///   platform at all — is decided by the ENDPOINT, never blanket-allowed: BYOK
+///   is `has_own_credentials()`, which probes `std::env::var` at call time, so a
+///   `[model.gpt-4o]` block with `base_url = "https://api.openai.com/v1"` and an
+///   unset / mistyped `env_key` classifies `NotByok` and would otherwise hand
+///   the Kimi subscription bearer to `api.openai.com`. Only the SESSION's own
+///   coding endpoint qualifies: [`crate::util::is_effective_coding_endpoint_url`]
+///   = the *effective* `KIGI_CODE_BASE_URL` deployment (so custom Kimi
+///   deployments keep the session bearer) plus loopback (local dev proxies and
+///   test mocks) plus the compiled production endpoint. Deliberately NOT
+///   `is_first_party_url`, which is production-only and would break every
+///   `KIGI_CODE_BASE_URL` deployment.
+pub fn platform_takes_session_credential(
+    platform: Option<kigi_models::PlatformId>,
+    base_url: &str,
+) -> bool {
+    match platform {
+        Some(platform) => platform.uses_oauth(),
+        None => crate::util::is_effective_coding_endpoint_url(base_url),
+    }
 }
 
 pub const AUTH_ERROR_SESSION_EXPIRED: &str =
@@ -683,15 +731,117 @@ mod tests {
 
     #[test]
     fn session_token_auth_gate_matrix() {
-        // Session method + NotByok → refresh.
-        assert!(session_token_auth_gate(true, ModelByok::NotByok, false));
+        // Session method + NotByok → refresh (endpoint takes the session cred).
+        assert!(session_token_auth_gate(
+            true,
+            ModelByok::NotByok,
+            false,
+            true
+        ));
         // Session method + Byok → never.
-        assert!(!session_token_auth_gate(true, ModelByok::Byok, true));
+        assert!(!session_token_auth_gate(true, ModelByok::Byok, true, true));
         // Session method + Unknown → only on first-party endpoints.
-        assert!(session_token_auth_gate(true, ModelByok::Unknown, true));
-        assert!(!session_token_auth_gate(true, ModelByok::Unknown, false));
+        assert!(session_token_auth_gate(
+            true,
+            ModelByok::Unknown,
+            true,
+            true
+        ));
+        assert!(!session_token_auth_gate(
+            true,
+            ModelByok::Unknown,
+            false,
+            true
+        ));
         // Non-session method → never.
-        assert!(!session_token_auth_gate(false, ModelByok::NotByok, true));
+        assert!(!session_token_auth_gate(
+            false,
+            ModelByok::NotByok,
+            true,
+            true
+        ));
+        // An endpoint that does not take the session credential (every API-key
+        // registry platform) is refused on EVERY arm — this is the outer guard
+        // that keeps the Kimi subscription bearer off third-party hosts.
+        for byok in [ModelByok::NotByok, ModelByok::Byok, ModelByok::Unknown] {
+            for first_party in [false, true] {
+                assert!(
+                    !session_token_auth_gate(true, byok, first_party, false),
+                    "byok={byok:?} first_party={first_party}: an API-key-platform \
+                     endpoint must never receive a session bearer"
+                );
+            }
+        }
+    }
+
+    /// The platform → "may a session bearer ride here?" classification.
+    /// `kimi-code` rides the PRIMARY session; the four subscription-OAuth
+    /// platforms ride their OWN pooled managers (so they keep a live
+    /// bearer_resolver despite non-first-party base URLs); every API-key
+    /// registry platform is refused, whatever the endpoint.
+    #[test]
+    fn platform_takes_session_credential_matrix() {
+        let first_party = kigi_env::PRODUCTION_ENDPOINTS.coding_api_base_url;
+        for id in [
+            "kimi-code",
+            "claude-pro-max",
+            "openai-codex",
+            "github-copilot",
+            "xai-grok",
+        ] {
+            let platform = kigi_models::PlatformId::parse(id).expect("known platform");
+            for url in [first_party, "https://api.anthropic.com/v1"] {
+                assert!(
+                    platform_takes_session_credential(Some(platform), url),
+                    "{id} rides a session credential (primary or its own pool)"
+                );
+            }
+        }
+        for platform in kigi_models::PlatformId::ALL {
+            if platform.uses_oauth() {
+                continue;
+            }
+            for url in [first_party, "https://api.deepseek.com/v1"] {
+                assert!(
+                    !platform_takes_session_credential(Some(platform), url),
+                    "{} is an API-key platform — no session bearer may ride to it",
+                    platform.as_str()
+                );
+            }
+        }
+    }
+
+    /// C2 regression: a platform-less model (a bare slug or a `[model.*]` entry)
+    /// is decided by the ENDPOINT, never blanket-allowed. A `[model.gpt-4o]`
+    /// block whose `env_key` is unset classifies `NotByok`, so before this the
+    /// `None` arm handed the Kimi subscription bearer to `api.openai.com`.
+    /// Custom `KIGI_CODE_BASE_URL` deployments and local dev proxies must still
+    /// keep it (that is why the predicate is not `is_first_party_url`).
+    #[test]
+    fn platform_less_model_takes_the_session_credential_only_on_its_own_endpoint() {
+        for url in [
+            kigi_env::PRODUCTION_ENDPOINTS.coding_api_base_url,
+            "http://127.0.0.1:8080/v1",
+            "http://localhost:3000/v1",
+            "http://[::1]:9000/v1",
+        ] {
+            assert!(
+                platform_takes_session_credential(None, url),
+                "{url} is the session's own endpoint (or a local proxy) — unchanged"
+            );
+        }
+        for url in [
+            "https://api.openai.com/v1",
+            "https://api.deepseek.com/v1",
+            "https://api.anthropic.com/v1",
+            "https://api.moonshot.cn/v1",
+            "",
+        ] {
+            assert!(
+                !platform_takes_session_credential(None, url),
+                "LEAK: {url} is a third-party host — no session bearer may ride there"
+            );
+        }
     }
 
     /// RAII guard restoring an env var on drop (panic-safe).

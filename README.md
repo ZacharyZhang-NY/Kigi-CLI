@@ -8,19 +8,14 @@
 autonomous, self-verifying agent loops — planned, parallelized,
 adversarially verified, and merged back, end to end.</p>
 
-**Kigi** started as an unofficial Kimi Code CLI community build, a
-terminal-based AI coding agent re-targeted at the Kimi Code subscription API,
-built on the Apache-2.0 sources of
-[xai-org/grok-build](https://github.com/xai-org/grok-build). It first shipped
-wired to Kimi Code and the Moonshot open platform. By request, it now works
-with 25 providers: OpenAI, Anthropic, Google, xAI, Groq, Cerebras, OpenRouter,
-MiniMax, Z.AI, Qwen, Xiaomi, and more. The full list is under
-[Providers and API keys](#providers-and-api-keys).
+**Kigi** is a coding agent that lives in your terminal. It reads the repo,
+writes the patch, runs the tests, and keeps going while you do something else.
+Full-screen, headless in CI with `-p`, or docked in your editor over ACP.
 
-It runs as a full-screen TUI that understands your codebase, edits files,
-executes shell commands, searches the web, and manages long-running tasks,
-interactively, headlessly for scripting/CI, or embedded in editors via the
-Agent Client Protocol (ACP).
+**Already paying for Claude Pro/Max, ChatGPT Plus/Pro, GitHub Copilot, or
+Grok? Sign in and use it.** No API key, no second bill. Rather bring your own
+key? OpenAI, Anthropic, Google, DeepSeek, Groq, Moonshot and
+[two dozen more](#providers-and-api-keys) are wired in.
 
 [Installation](#installation) ·
 [Graph engineering](#graph-engineering) ·
@@ -39,10 +34,6 @@ Agent Client Protocol (ACP).
 
 ## Installation
 
-Prebuilt single-file binaries for macOS (arm64/x86_64), Linux (arm64/x86_64),
-and Windows (x86_64) are published on
-[GitHub Releases](https://github.com/ZacharyZhang-NY/Kigi-CLI/releases):
-
 ```sh
 # macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/ZacharyZhang-NY/Kigi-CLI/main/install.sh | bash
@@ -54,24 +45,19 @@ irm https://raw.githubusercontent.com/ZacharyZhang-NY/Kigi-CLI/main/install.ps1 
 ```
 
 ```sh
-kigi --version   # kigi 0.1.1 … unofficial Kimi Code CLI community build
-kigi login       # sign in with your Kimi Code subscription (device-code flow)
-kigi             # start the TUI
+kigi login   # pick a provider, sign in
+kigi         # go
 ```
 
-The installer verifies every download against the release's `SHA256SUMS`,
-installs into `~/.kigi/bin/kigi` (`%USERPROFILE%\.kigi\bin\kigi.exe` on
-Windows), persists the PATH line for you, and **enables graph engineering
-by default** (`KIGI_GRAPH=1`; see [Graph engineering](#graph-engineering)
-to disable). Later releases arrive through the
-built-in self-updater (`kigi update`, gated by `KIGI_AUTO_UPDATE`), which
-pulls from the same GitHub Releases feed.
+Single file, no runtime. macOS and Linux on arm64/x86_64, Windows on x86_64,
+checksummed against the release's `SHA256SUMS`. `kigi update` handles upgrades.
 
 ## Graph engineering
 
-Kigi is the first CLI to ship *graph engineering* as a first-class command:
-where a loop drives one agent, a graph is the programmable organization
-connecting many.
+Every other agent runs a loop: think, act, repeat — one thread, one thing at a
+time. `/graph` runs a dependency graph instead. Work that doesn't block other
+work happens at the same time, in separate worktrees, and nothing merges until
+something else has tried to tear it apart.
 
 ```
 /graph <objective> [--budget <tokens>]   # decompose + run fully autonomously
@@ -81,49 +67,46 @@ connecting many.
 /graph clear                             # abandon the graph
 ```
 
-One `/graph <objective>` runs the whole closed loop: a planner subagent
-decomposes the objective into a validated dependency DAG; independent
-nodes fan out as parallel workers in isolated git worktrees, each gated
-by an adversarial verifier and merged back three-way; out-of-scope
-discoveries (`DISCOVERED:`) replan the graph append-only; a topology
-optimizer prunes false dependencies at plan boundaries; and a terminal
-verification node re-checks the *whole* objective before the graph
-completes. State follows your repo in `.kigi/graph.jsonl`, so a fresh
-session — or a teammate — can `/graph resume` where you left off.
+One command runs the whole thing, start to finish:
 
-The installer enables it by default. To disable:
+- A planner breaks your objective into a dependency DAG, then validates it.
+- Independent nodes fan out as parallel workers, each in its own git worktree.
+- Every node has to get past an adversarial verifier before it merges back.
+- Find something out of scope? Say `DISCOVERED:` and the graph replans —
+  append-only, so nothing already agreed on gets rewritten.
+- Between passes, a topology optimizer drops dependencies that were never real.
+- A final node re-checks the *whole* objective before the graph is allowed to
+  call itself done.
 
-```sh
-# macOS / Linux
-echo 'export KIGI_GRAPH=0' >> ~/.zshrc   # or ~/.bashrc / ~/.bash_profile
-```
+State lives in `.kigi/graph.jsonl`, next to your code. Close the laptop, come
+back tomorrow, `/graph resume`. A teammate can pick it up from the same file.
 
-```powershell
-# Windows PowerShell
-[Environment]::SetEnvironmentVariable('KIGI_GRAPH','0','User')
-```
-
-(One-off instead: `KIGI_GRAPH=0 kigi`.) Tuning knobs:
-`KIGI_GRAPH_CONCURRENCY` (parallel nodes, default 3),
-`KIGI_GRAPH_NODE_ROUNDS` (worker↔verifier rounds per node, default 3),
-`KIGI_GRAPH_REPLAN_CAP` (replan passes, default 3),
-`KIGI_GRAPH_OPTIMIZER=0` (disable the optimizer pass).
+On by default. `KIGI_GRAPH=0` turns it off; `KIGI_GRAPH_CONCURRENCY` (default
+3) controls how many nodes run at once.
 
 ## Providers and API keys
 
-Kigi ships a fixed registry of 25 platforms: the Kimi Code subscription plus
-24 API-key providers. There is no dynamic provider registration; each is a
-compiled-in spec.
+29 platforms ship compiled in: 5 you sign into, 24 you hand a key. Nothing is
+registered at runtime — if it's not in this list, it's not there.
 
-**Kimi Code** (the original target) uses subscription OAuth, not an API key:
+**Sign in with a subscription you already pay for.** Run `kigi login` and pick.
+Each provider's token is stored under its own key, and one provider's
+credentials are never sent to another.
 
-| Platform id | Base URL                         | Auth                                        |
-| ----------- | -------------------------------- | ------------------------------------------- |
-| `kimi-code` | `https://api.kimi.com/coding/v1` | Kimi Code subscription OAuth (`kigi login`) |
+| Platform id      | Provider                  | Sign-in                                     |
+| ---------------- | ------------------------- | ------------------------------------------- |
+| `kimi-code`      | Kimi Code (original target)| Subscription OAuth (device code)           |
+| `claude-pro-max` | Claude Pro/Max            | Subscription OAuth (browser, PKCE)          |
+| `openai-codex`   | ChatGPT Plus/Pro (Codex)  | Subscription OAuth (browser, PKCE)          |
+| `github-copilot` | GitHub Copilot            | Subscription OAuth (device code)            |
+| `xai-grok`       | xAI Grok                  | Subscription OAuth (device code)            |
 
-**API-key providers.** Set the provider's env var, or put the key in
-`~/.kigi/config.toml` under `[platforms.<id>]`. The environment wins, a
-platform-scoped name beats a generic one, and keys are never logged.
+You get whatever models your plan actually serves — the list is fetched at
+sign-in, not hardcoded. (ChatGPT/Codex is the exception: its backend publishes
+no model endpoint, so those four are compiled in.)
+
+**API-key providers.** Export the env var, or drop the key in
+`~/.kigi/config.toml`. Keys are never logged.
 
 | Provider                  | Platform id            | API key env                                     |
 | ------------------------- | ---------------------- | ----------------------------------------------- |
@@ -166,24 +149,11 @@ api_key = "sk-..."
 api_key = "xai-..."
 ```
 
-On login and on startup Kigi syncs each configured platform's model list
-from `GET {base}/models` and shows the merged catalog in the model picker
-(catalog keys are `{platform_id}/{model_id}`). Model metadata (context
-window, thinking levels) comes from the live listing when the provider
-serves it, otherwise from a bundled models.dev snapshot. Models that
-advertise selectable thinking levels (e.g. K3's `low`/`high`/`max`) expose
-them in `/model` and `/effort`. If the sync fails, the last cached catalog is
-used; with no cache, a small built-in fallback list applies. Model selection
-resolves as `--model` CLI flag > `KIGI_DEFAULT_MODEL` > `[models] default`
-in config.toml > server-delivered list > built-in fallback.
+Model lists sync on startup. Pick one with `/model`, set its thinking level
+with `/effort`.
 
-Each platform's base URL can be re-pointed for dev/test with
-`KIGI_<PLATFORM>_BASE_URL` (e.g. `KIGI_CODE_BASE_URL`,
-`KIGI_MOONSHOT_CN_BASE_URL`, `KIGI_OPENAI_BASE_URL`).
-
-The web `search`/`fetch` tools ride the Kimi Code subscription services and
-are present only on OAuth sessions. API-key-only sessions run without them,
-matching the official client.
+Web `search`/`fetch` need a Kimi Code subscription; API-key sessions run
+without them, same as the official client.
 
 ## Building from source
 
@@ -199,19 +169,15 @@ launcher at `bin/protoc`; install dotslash (`brew install dotslash` or
 
 ## Coexistence with the official Kimi CLI
 
-Kigi is not affiliated with Moonshot AI or xAI, and it coexists with the
-official `kimi` CLI on the same machine: independent binary name,
-independent config directory (`~/.kigi`), independent keyring credentials
-(service `kigi`), and a `KIGI_*` environment-variable namespace. Nothing
-the official client installs or stores is ever read at runtime or written.
-On first launch Kigi offers a **one-time, strictly read-only** import of
-your existing `~/.kimi` configuration (MCP servers, custom providers,
-default model) via `kigi import-kimi` — file contents and mtimes under
-`~/.kimi` are left untouched, verified by tests.
+Kigi started as an unofficial Kimi Code CLI — a community fork of
+[xai-org/grok-build](https://github.com/xai-org/grok-build), not affiliated
+with Moonshot AI or xAI. It keeps its own binary, its own `~/.kigi`, its own
+keyring entry, and its own `KIGI_*` env vars, and never touches what the
+official `kimi` CLI installed. `kigi import-kimi` copies your old config over
+once, read-only.
 
-Kigi is **zero-telemetry**: the only outbound connections are the
-inference/auth APIs you configure, GitHub Releases for updates, and MCP
-servers you add.
+**Zero telemetry.** It talks to the APIs you configured, GitHub Releases, and
+your own MCP servers. Nothing else.
 
 ## License
 

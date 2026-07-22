@@ -645,9 +645,15 @@ pub(crate) fn platform_wire_model_to_entry(
         inference_idle_timeout_secs: None,
         max_retries: None,
         hidden: false,
-        // Subscription models require the OAuth session; open-platform
-        // models are usable by API-key users.
-        supported_in_api: !platform.uses_oauth(),
+        // `supported_in_api: false` hides a model unless the PRIMARY session is
+        // an OAuth session (`ModelInfo::visible_for_auth`). Only `kimi-code`
+        // rides that primary session, so only it may be gated on it. Every
+        // other OAuth platform (claude-pro-max, openai-codex, github-copilot,
+        // xai-grok) carries its OWN pooled credential, and its models only
+        // enter the catalog once THAT provider is signed in — gating them on
+        // the Kimi session would hide every model from a user who signed in
+        // with only a Claude/ChatGPT/Copilot/Grok subscription.
+        supported_in_api: platform != kigi_models::PlatformId::KimiCode,
         supports_backend_search: false,
         compactions_remaining: None,
         compaction_at_tokens: None,
@@ -897,6 +903,16 @@ fn get_string_map(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Whether a freshly-fetched platform entry shows up in the picker for a
+    /// user whose PRIMARY session is NOT an OAuth session (`is_session_auth ==
+    /// false`): an API-key user, or — the case that made this a ship-blocker —
+    /// someone who signed in with ONLY a Claude Pro/Max, ChatGPT, Copilot, or
+    /// Grok subscription. `ModelInfo::visible_for_auth` is the picker's real
+    /// predicate (`agent/models.rs` → `available()`).
+    fn visible_to_non_primary_session_user(entry: &crate::agent::config::ModelEntryConfig) -> bool {
+        crate::agent::config::ModelEntry::from_config_entry(entry).visible_for_auth(false)
+    }
 
     /// OpenAI-cycle e2e (mock wire): a polluted bare-id `/models` listing +
     /// a models.dev refresh produce a catalog with ONLY chat models, enriched
@@ -1277,8 +1293,14 @@ mod tests {
             "enrichment fills the context window from models.dev anthropic"
         );
         assert!(
-            !opus.supported_in_api,
-            "subscription (uses_oauth) models require the OAuth session"
+            opus.supported_in_api,
+            "claude-pro-max carries its OWN pooled credential — it must NOT be \
+             gated on the primary (Kimi) session"
+        );
+        assert!(
+            visible_to_non_primary_session_user(opus),
+            "a Claude-Pro/Max-only user has no primary OAuth session; their \
+             models must still appear in the picker"
         );
     }
 
@@ -1409,8 +1431,14 @@ mod tests {
             "context window comes from models.dev github-copilot enrichment"
         );
         assert!(
-            !entry.supported_in_api,
-            "subscription (uses_oauth) models require the OAuth session"
+            entry.supported_in_api,
+            "github-copilot carries its OWN pooled credential — it must NOT be \
+             gated on the primary (Kimi) session"
+        );
+        assert!(
+            visible_to_non_primary_session_user(entry),
+            "a Copilot-only user has no primary OAuth session; their models \
+             must still appear in the picker"
         );
     }
 
@@ -1484,8 +1512,14 @@ mod tests {
         assert_eq!(sol.context_window.get(), 272_000);
         assert_eq!(sol.name.as_deref(), Some("GPT-5.6-Sol"));
         assert!(
-            !sol.supported_in_api,
-            "subscription (uses_oauth) models require the OAuth session"
+            sol.supported_in_api,
+            "openai-codex carries its OWN pooled credential — it must NOT be \
+             gated on the primary (Kimi) session"
+        );
+        assert!(
+            visible_to_non_primary_session_user(sol),
+            "a ChatGPT/Codex-only user has no primary OAuth session; their \
+             models must still appear in the picker"
         );
         assert!(sol.supports_reasoning_effort);
         assert_eq!(
@@ -3563,8 +3597,14 @@ mod tests {
             "an OAuth channel carries no api-key env"
         );
         assert!(
-            !entry.supported_in_api,
-            "subscription models require the OAuth session (not the public API)"
+            entry.supported_in_api,
+            "xai-grok carries its OWN pooled credential — it must NOT be gated \
+             on the primary (Kimi) session"
+        );
+        assert!(
+            visible_to_non_primary_session_user(entry),
+            "a Grok-only user has no primary OAuth session; their models must \
+             still appear in the picker"
         );
         // Passthrough dialect (identical to the API-key xai wire).
         let model_entry = crate::agent::config::ModelEntry::from_config_entry(entry);

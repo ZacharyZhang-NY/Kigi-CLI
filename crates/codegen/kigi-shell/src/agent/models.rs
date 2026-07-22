@@ -1917,6 +1917,51 @@ pub(crate) fn resolve_catalog_key(
         .map(|(key, _)| acp::ModelId::new(key.clone()))
 }
 
+/// The managed catalog key (`{platform}/{model}`) a routing slug belongs to.
+///
+/// H5: `SamplingConfig::model` is the BARE routing slug, never the catalog key,
+/// and duplicate slugs across platforms are BY DESIGN — the registry guarantees
+/// an API-key platform and its subscription-OAuth twin list the SAME ids
+/// (`xai`/`xai-grok`, `anthropic`/`claude-pro-max`, `openai`/`openai-codex`),
+/// and `PlatformId::ALL` orders every API-key platform FIRST. A slug scan
+/// therefore resolves the WRONG platform for a user holding both credentials:
+/// the OAuth twin loses its live `bearer_resolver` (no mid-session refresh → an
+/// unrecoverable 401 ~1h in), its Messages adaptation and its Copilot/Codex
+/// identity headers.
+///
+/// `current_key` — [`ModelsManager::current_model_id`], the catalog key the
+/// picker actually selected — is therefore authoritative whenever it names this
+/// slug. Anything else (aux models, subagent overrides, unlisted slugs) falls
+/// back to the picker's OWN lookup, [`resolve_catalog_key`], so the auth layer
+/// and the picker can never resolve different entries.
+pub(crate) fn managed_key_for_slug(
+    models: &IndexMap<String, ModelEntry>,
+    current_key: Option<&str>,
+    slug: &str,
+) -> Option<String> {
+    if let Some(entry) = current_key.and_then(|key| models.get(key))
+        && (entry.info.model == slug || current_key == Some(slug))
+    {
+        return entry.info.id.clone();
+    }
+    let key = resolve_catalog_key(models, &acp::ModelId::new(slug.to_string()))?;
+    models.get(key.0.as_ref())?.info.id.clone()
+}
+
+/// The registry platform a routing slug resolves to, via [`managed_key_for_slug`].
+/// `None` for a bare / `[model.*]` / unlisted model. Single definition shared by
+/// the session actor's inference-auth chokepoints and the aux/summary paths, so
+/// the gate, the manager and the wire adaptations can never disagree.
+pub(crate) fn platform_for_slug(
+    models: &IndexMap<String, ModelEntry>,
+    current_key: Option<&str>,
+    slug: &str,
+) -> Option<kigi_models::PlatformId> {
+    let key = managed_key_for_slug(models, current_key, slug);
+    kigi_models::parse_managed_model_key(key.as_deref().unwrap_or(slug))
+        .map(|(platform, _)| platform)
+}
+
 /// Catalog key for a persisted session model id, restricted to **selectable**
 /// entries. A selectable exact-key match wins (as in [`resolve_catalog_key`]);
 /// otherwise the last selectable entry whose routing slug matches `id`, so a
@@ -3666,6 +3711,52 @@ mod tests {
         info.supported_in_api = false;
         assert!(info.visible_for_auth(true));
         assert!(!info.visible_for_auth(false));
+    }
+
+    /// SHIP-BLOCKER regression: a user who signed in with ONLY a Claude Pro/Max
+    /// subscription has no PRIMARY (Kimi) session, so `is_session_auth()` is
+    /// false. Stamping `supported_in_api = !uses_oauth()` therefore hid every
+    /// one of their models — `available()` returned an empty picker and the
+    /// whole subscription-OAuth feature was dead for its target user. The
+    /// claude-pro-max entry must be visible with no primary session at all.
+    #[test]
+    fn claude_pro_max_only_user_sees_their_models_in_the_picker() {
+        let wire: kigi_models::WireModel =
+            serde_json::from_value(serde_json::json!({ "id": "claude-opus-4-8" }))
+                .expect("wire model fixture");
+        let entry_config = crate::agent::models_fetch::platform_wire_model_to_entry(
+            kigi_models::PlatformId::ClaudeProMax,
+            wire,
+            "https://api.anthropic.com/v1",
+        );
+        let entry = ModelEntry::from_config_entry(&entry_config);
+        let key = entry
+            .info
+            .id
+            .clone()
+            .expect("platform entries carry a managed catalog key");
+        assert_eq!(key, "claude-pro-max/claude-opus-4-8");
+        let mut catalog = IndexMap::new();
+        catalog.insert(key.clone(), entry);
+
+        // Empty home ⇒ the primary AuthManager holds no credential at all.
+        let home = tempfile::tempdir().expect("tempdir");
+        let mgr = ModelsManager::new(
+            None,
+            catalog,
+            acp::ModelId::new(Arc::from(key.clone())),
+            Arc::new(AuthManager::new(home.path(), KimiCodeConfig::default())),
+            config::Config::default(),
+        );
+        assert!(
+            !mgr.is_session_auth(),
+            "a claude-pro-max-only user has no PRIMARY (Kimi) OAuth session"
+        );
+        assert!(
+            mgr.available()
+                .contains_key(&acp::ModelId::new(Arc::from(key.clone()))),
+            "the claude-pro-max model must reach the picker without a primary session"
+        );
     }
 
     // ── duplicate model slug re-keying (A/B experiment "auto" alias) ──

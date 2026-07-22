@@ -487,21 +487,27 @@ fn session_token_auth_gate_truth_table() {
     use crate::agent::auth_method::{ModelByok, session_token_auth_gate as gate};
     // Non-session methods never refresh, regardless of BYOK status or endpoint.
     for fp in [false, true] {
-        assert!(!gate(false, ModelByok::NotByok, fp));
-        assert!(!gate(false, ModelByok::Byok, fp));
-        assert!(!gate(false, ModelByok::Unknown, fp));
-        // Session method: a definite classification ignores the endpoint —
-        // NotByok always refreshes (only ever routes to the session endpoint),
-        // a genuine per-model Byok never does.
-        assert!(gate(true, ModelByok::NotByok, fp));
-        assert!(!gate(true, ModelByok::Byok, fp));
+        assert!(!gate(false, ModelByok::NotByok, fp, true));
+        assert!(!gate(false, ModelByok::Byok, fp, true));
+        assert!(!gate(false, ModelByok::Unknown, fp, true));
+        // Session method on an endpoint that DOES take the session credential
+        // (kimi-code, an OAuth platform's own pool, or a bare / [model.*]
+        // model): a definite classification ignores the endpoint — NotByok
+        // refreshes, a genuine per-model Byok never does.
+        assert!(gate(true, ModelByok::NotByok, fp, true));
+        assert!(!gate(true, ModelByok::Byok, fp, true));
+        // …and an API-key registry platform endpoint is refused on every arm,
+        // first-party flag included: that is the leak guard.
+        assert!(!gate(true, ModelByok::NotByok, fp, false));
+        assert!(!gate(true, ModelByok::Byok, fp, false));
+        assert!(!gate(true, ModelByok::Unknown, fp, false));
     }
     // Session method + Unknown BYOK: refresh only against a first-party xAI
     // host, so a transiently-unclassifiable config can't demote a live session
     // (the stale-token 401 regression) yet the session token never leaks to a
     // third-party BYOK endpoint. This arm was unconditionally `false` pre-fix.
-    assert!(gate(true, ModelByok::Unknown, true));
-    assert!(!gate(true, ModelByok::Unknown, false));
+    assert!(gate(true, ModelByok::Unknown, true, true));
+    assert!(!gate(true, ModelByok::Unknown, false, true));
 }
 
 /// Pre-fix, the gate read `auth_type` and skipped recovery here, 401'ing every

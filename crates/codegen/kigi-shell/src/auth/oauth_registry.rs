@@ -13,11 +13,10 @@
 //! generic-oauth scope, each wired with the SAME lifecycle as the primary Kimi
 //! manager (`configure_refresher()` + `start_proactive_refresh()`) so the
 //! on-disk token stays fresh and a 401 recovers via the provider's own manager.
-//! Managers are built ON DEMAND: the first grok turn (or model switch) reads the
-//! on-disk token via [`global_manager_for`], so a login that lands AFTER a
-//! session spawned self-heals — there is no frozen per-session snapshot to go
-//! stale. [`manager_for_model`] routes a managed catalog key to the pool (oauth
-//! platform) or to the session's primary (everything else).
+//! Managers are built ON DEMAND from the on-disk token ([`global_manager_for`]),
+//! so a login landing AFTER a session spawned self-heals — no frozen per-session
+//! snapshot. [`manager_for_model`] routes a managed catalog key to the pool
+//! (oauth platform) or to the session's primary (everything else).
 //!
 //! SECURITY: access/refresh tokens and resolved bearers are NEVER logged here.
 
@@ -37,6 +36,31 @@ use crate::auth::AuthManager;
 fn oauth_manager_pool() -> &'static Mutex<HashMap<&'static str, Arc<AuthManager>>> {
     static POOL: OnceLock<Mutex<HashMap<&'static str, Arc<AuthManager>>>> = OnceLock::new();
     POOL.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// The kigi home every OAuth-pool call site resolves from. Single definition so
+/// the pool, the aux/summary token routing and the session's inference manager
+/// can never read different homes.
+///
+/// Production: [`crate::util::kigi_home::kigi_home`]. LIB TESTS: a
+/// process-lifetime `TempDir`, unconditionally — the pool is process-global and
+/// every manager it builds starts a never-cancelled proactive-refresh loop, so
+/// a unit test resolving the real `~/.kigi` would read the developer's stored
+/// OAuth tokens and, 60 s later, fire REAL refresh requests against them.
+/// Deliberately not a per-test opt-in that can be forgotten: `kigi_home()` is
+/// itself a `OnceLock` an earlier test has usually already resolved to the real
+/// home, so setting `KIGI_SHARE_DIR` in a test cannot pin it after the fact.
+pub(crate) fn pool_home() -> std::path::PathBuf {
+    #[cfg(test)]
+    {
+        static TEST_HOME: OnceLock<tempfile::TempDir> = OnceLock::new();
+        TEST_HOME
+            .get_or_init(|| tempfile::tempdir().expect("tempdir for the test OAuth pool"))
+            .path()
+            .to_path_buf()
+    }
+    #[cfg(not(test))]
+    crate::util::kigi_home::kigi_home()
 }
 
 /// Get-or-create the process-global manager for `oauth`, wiring the same
@@ -93,25 +117,68 @@ pub(crate) fn manager_for_model(
     primary.cloned()
 }
 
-/// The SESSION token (the raw bearer/key string) that governs INFERENCE auth
-/// for `managed_key`, resolved by the model's OWN platform. Thin wrapper over
-/// [`manager_for_model`] used by the aux-model and subagent-override wire paths
-/// so a `{platform}/{model}` key never receives the primary token of a
-/// DIFFERENT provider.
+/// The SESSION token (the raw bearer/key string) that may ride an INFERENCE
+/// request routed to `platform` at `base_url`. Used by the aux-model, summary
+/// and subagent-override wire paths, where the result is stamped straight into
+/// [`crate::agent::config::resolve_credentials`] as the request's `api_key`.
 ///
-/// A generic device-code OAuth platform (xai-grok) draws its token from ITS OWN
-/// pooled manager; when that provider has no stored session the result is
-/// `None` — NEVER the primary Kimi key. Every other key routes to `primary` and
-/// yields the primary's current-or-expired token, byte-identical to reading it
-/// directly. SECURITY: the resolved token is never logged.
-pub(crate) fn session_key_for_model(
-    kigi_home: &Path,
-    managed_key: &str,
+/// - a generic device-code OAuth platform (xai-grok, claude-pro-max,
+///   github-copilot, openai-codex) draws from ITS OWN pooled manager; when that
+///   provider has no stored session the result is `None` — never `primary`;
+/// - `kimi-code`, and a platform-less model whose endpoint IS the session's own
+///   coding endpoint (incl. a `KIGI_CODE_BASE_URL` deployment or a loopback
+///   proxy), yield the primary's current-or-expired token — byte-identical to
+///   reading it directly;
+/// - every API-key registry platform, and every `[model.*]` block pointed at a
+///   third-party host, yields `None`. Handing them `primary` put the user's
+///   Kimi subscription bearer on `api.deepseek.com` / `api.moonshot.cn` / …
+///   as the request's `api_key`.
+///
+/// SECURITY: the resolved token is never logged.
+pub(crate) fn session_key_for_endpoint(
+    platform: Option<kigi_models::PlatformId>,
+    base_url: &str,
     primary: Option<&Arc<AuthManager>>,
 ) -> Option<String> {
-    manager_for_model(kigi_home, managed_key, primary)
+    if let Some(oauth) = platform.and_then(kigi_models::PlatformId::oauth) {
+        return global_manager_for(&pool_home(), oauth)
+            .current_or_expired()
+            .map(|a| a.key);
+    }
+    if !crate::agent::auth_method::platform_takes_session_credential(platform, base_url) {
+        return None;
+    }
+    primary
         .and_then(|am| am.current_or_expired())
         .map(|a| a.key)
+}
+
+/// [`session_key_for_endpoint`] for the catalog model whose routing slug (or
+/// catalog key) is `slug`.
+///
+/// A slug absent from the catalog keeps the pre-registry behaviour: the aux
+/// resolver's Tier-2 fallback builds its entry against
+/// `EndpointsConfig::resolve_inference_base_url` (first-party), so the primary
+/// still governs.
+pub(crate) fn session_key_for_catalog_model(
+    models: &indexmap::IndexMap<String, crate::agent::config::ModelEntry>,
+    slug: &str,
+    primary: Option<&Arc<AuthManager>>,
+) -> Option<String> {
+    let Some(entry) = crate::agent::config::find_model_by_id(models, slug) else {
+        return primary
+            .and_then(|am| am.current_or_expired())
+            .map(|a| a.key);
+    };
+    let info = entry.info();
+    session_key_for_endpoint(
+        info.id
+            .as_deref()
+            .and_then(kigi_models::parse_managed_model_key)
+            .map(|(platform, _)| platform),
+        &info.base_url,
+        primary,
+    )
 }
 
 #[cfg(test)]
@@ -159,6 +226,20 @@ mod tests {
             .expect("openai-codex carries an OAuthConfig")
     }
 
+    /// `session_key_for_endpoint` for a managed catalog key, resolving the
+    /// platform and its base URL from the registry exactly as the catalog entry
+    /// would.
+    fn session_key_for_key(
+        managed_key: &str,
+        primary: Option<&Arc<AuthManager>>,
+    ) -> Option<String> {
+        let platform = kigi_models::parse_managed_model_key(managed_key).map(|(p, _)| p);
+        let base_url = platform
+            .map(kigi_models::PlatformId::base_url)
+            .unwrap_or_default();
+        session_key_for_endpoint(platform, &base_url, primary)
+    }
+
     /// An `openai-codex/<model>` turn resolves to the process-global pooled
     /// openai-codex manager (its OWN `oauth/openai-codex` scope), NEVER the
     /// primary Kimi manager — the same leak-safe routing as the other OAuth
@@ -187,7 +268,7 @@ mod tests {
             "openai-codex and claude-pro-max must not share a pooled manager"
         );
         assert_ne!(
-            session_key_for_model(home.path(), "openai-codex/gpt-5.5", Some(&kimi)),
+            session_key_for_key("openai-codex/gpt-5.5", Some(&kimi)),
             Some("kimi-tok".to_string()),
             "an openai-codex model must never receive the primary Kimi token"
         );
@@ -218,7 +299,7 @@ mod tests {
         // Fail-fast: even with a Kimi primary, a copilot turn never yields the
         // Kimi bearer — it draws from the copilot pool (its own token, or None).
         assert_ne!(
-            session_key_for_model(home.path(), "github-copilot/gpt-4.1", Some(&kimi)),
+            session_key_for_key("github-copilot/gpt-4.1", Some(&kimi)),
             Some("kimi-tok".to_string()),
             "a github-copilot model must never receive the primary Kimi token"
         );
@@ -256,9 +337,8 @@ mod tests {
     #[tokio::test]
     async fn session_key_for_claude_pro_max_is_never_the_kimi_primary() {
         let (_kd, kimi) = primary_with_token("kimi-tok");
-        let home = tempfile::tempdir().unwrap();
         assert_ne!(
-            session_key_for_model(home.path(), "claude-pro-max/claude-opus-4-8", Some(&kimi)),
+            session_key_for_key("claude-pro-max/claude-opus-4-8", Some(&kimi)),
             Some("kimi-tok".to_string()),
             "a claude-pro-max model must never receive the primary Kimi session token"
         );
@@ -342,20 +422,60 @@ mod tests {
         );
     }
 
-    /// `session_key_for_model`: a non-oauth / bare key yields the primary Kimi
-    /// token exactly as reading it directly would — byte-identical to the
-    /// pre-fix aux/override wire path (no runtime / pool touched).
+    /// `session_key_for_endpoint`: the endpoints that genuinely ride the
+    /// PRIMARY session — `kimi-code` (the subscription channel) and a
+    /// platform-less model routed at the session's own coding endpoint (a
+    /// `KIGI_CODE_BASE_URL` deployment or a loopback dev proxy) — yield the
+    /// primary token exactly as reading it directly would. No runtime / pool
+    /// touched.
     #[test]
-    fn session_key_for_non_oauth_is_the_primary_token() {
+    fn session_key_for_the_sessions_own_endpoint_is_the_primary_token() {
         let (_kd, kimi) = primary_with_token("kimi-tok");
-        let home = tempfile::tempdir().unwrap();
-        for key in ["moonshot-cn/kimi-k2", "kimi-k2-0905-preview"] {
+        assert_eq!(
+            session_key_for_key("kimi-code/kimi-for-coding", Some(&kimi)),
+            Some("kimi-tok".to_string()),
+            "kimi-code rides the primary session, unchanged"
+        );
+        for url in [
+            kigi_env::PRODUCTION_ENDPOINTS.coding_api_base_url,
+            "http://127.0.0.1:4000/v1",
+        ] {
             assert_eq!(
-                session_key_for_model(home.path(), key, Some(&kimi)),
+                session_key_for_endpoint(None, url, Some(&kimi)),
                 Some("kimi-tok".to_string()),
-                "{key} (non-oauth) must yield the primary token unchanged"
+                "{url}: a platform-less model on the session's own endpoint is unchanged"
             );
         }
+    }
+
+    /// LEAK guard (aux / summary / subagent-override `api_key` channel): an
+    /// API-key registry platform, and a `[model.*]` block pointed at a
+    /// third-party host, must yield NO session token. Handing them the primary
+    /// stamped the user's Kimi subscription bearer onto `api.moonshot.cn` /
+    /// `api.deepseek.com` as the request's `api_key` — the channel the
+    /// `bearer_resolver` guard alone does not close.
+    ///
+    /// Revert-to-red: dropping the `platform_takes_session_credential` term
+    /// from `session_key_for_endpoint` returns `Some("kimi-tok")` here.
+    #[test]
+    fn session_key_for_a_third_party_endpoint_is_never_the_primary_token() {
+        let (_kd, kimi) = primary_with_token("kimi-tok");
+        for key in [
+            "moonshot-cn/kimi-k2",
+            "deepseek/deepseek-chat",
+            "openai/gpt-5",
+        ] {
+            assert_eq!(
+                session_key_for_key(key, Some(&kimi)),
+                None,
+                "LEAK: {key} is an API-key platform — no session token may ride there"
+            );
+        }
+        assert_eq!(
+            session_key_for_endpoint(None, "https://api.openai.com/v1", Some(&kimi)),
+            None,
+            "LEAK: a [model.*] block on a third-party host gets no session token"
+        );
     }
 
     /// LEAK guard (aux-model + subagent-override token routing): a grok key with
@@ -365,15 +485,14 @@ mod tests {
     #[tokio::test]
     async fn session_key_for_grok_is_never_the_kimi_primary() {
         let (_kd, kimi) = primary_with_token("kimi-tok");
-        let home = tempfile::tempdir().unwrap();
         assert_ne!(
-            session_key_for_model(home.path(), "xai-grok/grok-4-latest", Some(&kimi)),
+            session_key_for_key("xai-grok/grok-4-latest", Some(&kimi)),
             Some("kimi-tok".to_string()),
             "a grok aux/override model must never receive the primary Kimi session token"
         );
         // Even with `None` primary the routing is unchanged: grok → pool, never a panic.
         assert_ne!(
-            session_key_for_model(home.path(), "xai-grok/grok-4-fast", None),
+            session_key_for_key("xai-grok/grok-4-fast", None),
             Some("kimi-tok".to_string()),
         );
     }

@@ -2511,14 +2511,48 @@ async fn subagent_override_grok_model_never_leaks_kimi_session_token() {
         "a grok override must never receive the primary Kimi session token",
     );
 }
-/// Byte-identical guard: a non-oauth override with a Kimi primary still resolves
-/// to the primary session token — passes both before and after the fix (the
-/// non-oauth path is unchanged).
+/// Byte-identical guard: an override on the SESSION's own first-party endpoint
+/// (the kimi-code subscription channel) still resolves to the primary session
+/// token — the primary path is unchanged.
 #[tokio::test]
-async fn subagent_override_non_oauth_model_still_gets_primary_token() {
+async fn subagent_override_first_party_model_still_gets_primary_token() {
+    let (_kd, manager) = kimi_primary_with_token("kimi-secret");
+    let mut entry = test_model_entry("kimi-for-coding");
+    entry.info.id = Some("kimi-code/kimi-for-coding".to_string());
+    entry.info.base_url = kigi_env::PRODUCTION_ENDPOINTS.coding_api_base_url.to_string();
+    let mut models = indexmap::IndexMap::new();
+    models.insert("kfc".to_string(), entry);
+    let mut ctx = ctx_with_toggle(HashMap::new());
+    ctx.available_models = models;
+    ctx.auth = Some(crate::auth::KimiAuth {
+        key: "kimi-secret".to_string(),
+        auth_mode: crate::auth::AuthMode::OAuth,
+        ..crate::auth::KimiAuth::test_default()
+    });
+    ctx.auth_manager = manager;
+    let (config, _model_id) = resolve_model_override_to_config("kfc", &ctx)
+        .expect("first-party override resolves to a config");
+    assert_eq!(
+        config.api_key.as_deref(),
+        Some("kimi-secret"),
+        "a first-party override must still receive the primary session token",
+    );
+}
+/// LEAK guard (C1, subagent-override `api_key` channel): an API-key registry
+/// platform override must NOT receive the parent's primary Kimi session token —
+/// `resolve_credentials` would stamp it as the child's `api_key` on
+/// `api.moonshot.cn`. This test previously asserted the opposite
+/// (`subagent_override_non_oauth_model_still_gets_primary_token`), which encoded
+/// the defect.
+///
+/// Revert-to-red: dropping the `platform_takes_session_credential` term from
+/// `oauth_registry::session_key_for_endpoint` makes `api_key` `Some("kimi-secret")`.
+#[tokio::test]
+async fn subagent_override_api_key_platform_never_gets_the_primary_token() {
     let (_kd, manager) = kimi_primary_with_token("kimi-secret");
     let mut entry = test_model_entry("kimi-k2-0905-preview");
     entry.info.id = Some("moonshot-cn/kimi-k2".to_string());
+    entry.info.base_url = "https://api.moonshot.cn/v1".to_string();
     let mut models = indexmap::IndexMap::new();
     models.insert("k2".to_string(), entry);
     let mut ctx = ctx_with_toggle(HashMap::new());
@@ -2529,12 +2563,12 @@ async fn subagent_override_non_oauth_model_still_gets_primary_token() {
         ..crate::auth::KimiAuth::test_default()
     });
     ctx.auth_manager = manager;
-    let (config, _model_id) =
-        resolve_model_override_to_config("k2", &ctx).expect("non-oauth override resolves to a config");
-    assert_eq!(
+    let (config, _model_id) = resolve_model_override_to_config("k2", &ctx)
+        .expect("an API-key-platform override still resolves to a config");
+    assert_ne!(
         config.api_key.as_deref(),
         Some("kimi-secret"),
-        "a non-oauth override must still receive the primary session token",
+        "LEAK: an API-key-platform override must never receive the primary Kimi session token",
     );
 }
 /// An unresolvable `AgentDefinition.model` pin (model absent from

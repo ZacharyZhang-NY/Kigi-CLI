@@ -25,17 +25,19 @@ impl MvpAgent {
         primary: &SamplingConfig,
     ) -> Result<(OaiCompatClient, String), acp::Error> {
         let slug = self.resolve_session_summary_model();
-        // Resolve the aux token by the summary model's OWN platform: a grok
-        // (oauth-platform) summary model draws its pooled grok token or `None`
-        // — NEVER the primary Kimi session token (which `resolve_credentials`
-        // would otherwise stamp onto an api.x.ai request). A first-party /
-        // non-oauth summary model still gets the primary (byte-identical).
-        let session_key = crate::auth::oauth_registry::session_key_for_model(
-            &crate::util::kigi_home::kigi_home(),
+        let models = self.models_manager.models();
+        // Resolve the aux token by the summary model's OWN platform AND
+        // endpoint: a grok (oauth-platform) summary model draws its pooled grok
+        // token or `None`, and an API-key registry platform draws NOTHING —
+        // NEVER the primary Kimi session token (which `resolve_credentials`
+        // would otherwise stamp onto an api.x.ai / api.deepseek.com request).
+        // The first-party subscription channel still gets the primary
+        // (byte-identical).
+        let session_key = crate::auth::oauth_registry::session_key_for_catalog_model(
+            &models,
             &slug,
             Some(&self.auth_manager),
         );
-        let models = self.models_manager.models();
         let endpoints = self.models_manager.endpoints();
         let alpha_test_key = self.cfg.borrow().endpoints.alpha_test_key.clone();
         let config = match crate::agent::config::resolve_aux_model_sampling_config(
@@ -47,7 +49,17 @@ impl MvpAgent {
         ) {
             Some(mut cfg) => {
                 cfg.attribution_callback = primary.attribution_callback.clone();
-                cfg.bearer_resolver = primary.bearer_resolver.clone();
+                // H4: the SESSION model's bearer_resolver must not ride to a
+                // summary model on a different provider —
+                // `SamplingClient::post` REPLACES the request's auth header
+                // from it, overwriting the summary model's own resolved key on
+                // ITS host. Route through the one aux-resolver decision.
+                cfg.bearer_resolver =
+                    crate::session::acp_session::sampler_turn::aux_bearer_resolver(
+                        primary.bearer_resolver.clone(),
+                        crate::agent::models::platform_for_slug(&models, None, &slug),
+                        &cfg.base_url,
+                    );
                 cfg.max_retries = primary.max_retries;
                 cfg
             }
@@ -669,30 +681,50 @@ impl MvpAgent {
         );
         Ok(entry.clone())
     }
-    /// Resolve the SESSION token for `model` by the model's OWN platform — the
-    /// single guard against the api_key-channel token leak.
+    /// Resolve the SESSION token for `model` by the model's OWN platform AND
+    /// endpoint — the single guard against the api_key-channel token leak.
     ///
-    /// An oauth-platform model (xai-grok) draws its session token from ITS OWN
-    /// process-global pool manager (build-on-demand from the on-disk grok token,
-    /// proactively refreshed), INDEPENDENT of the primary `auth_method`; when
-    /// that provider has no stored session the token is `None` — NEVER the
-    /// primary Kimi key. Every other model (first-party / Kimi) uses the primary
-    /// session manager, and only under a session-based auth method —
-    /// byte-identical to the pre-fix path. SECURITY: the resolved token is never
-    /// logged.
+    /// - an oauth-platform model (xai-grok, claude-pro-max, github-copilot,
+    ///   openai-codex) draws its session token from ITS OWN process-global pool
+    ///   manager (built on demand from the on-disk token, proactively
+    ///   refreshed), INDEPENDENT of the primary `auth_method`; when that
+    ///   provider has no stored session the token is `None` — NEVER the primary
+    ///   Kimi key;
+    /// - an endpoint that does not take a session credential at all
+    ///   ([`crate::agent::auth_method::platform_takes_session_credential`] —
+    ///   every API-key registry platform, and any `[model.*]` block pointed at a
+    ///   third-party host) gets `None`. This is C1: `resolve_credentials` takes
+    ///   the `else if let Some(key) = session_key` arm and sets
+    ///   `api_key = <Kimi bearer>` with the THIRD-PARTY `base_url`, which
+    ///   `SamplingClient` then builds into `Authorization: Bearer …`. It is
+    ///   reachable with ZERO configuration: `default_models.json` bundles
+    ///   `moonshot-cn/*` + `moonshot-ai/*` entries that a Kimi-subscription user
+    ///   sees on first launch / offline;
+    /// - the first-party subscription channel (kimi-code, a `KIGI_CODE_BASE_URL`
+    ///   deployment, a loopback proxy) uses the primary session manager, and
+    ///   only under a session-based auth method — byte-identical to the pre-fix
+    ///   path.
+    ///
+    /// SECURITY: the resolved token is never logged.
     fn session_token_for_model(&self, model: &ModelEntry) -> Option<crate::auth::KimiAuth> {
-        if let Some(oauth) = model
-            .info()
+        let info = model.info();
+        let platform = info
             .id
             .as_deref()
             .and_then(kigi_models::parse_managed_model_key)
-            .and_then(|(platform, _)| platform.oauth())
-        {
+            .map(|(platform, _)| platform);
+        if let Some(oauth) = platform.and_then(kigi_models::PlatformId::oauth) {
             return crate::auth::oauth_registry::global_manager_for(
-                &crate::util::kigi_home::kigi_home(),
+                &crate::auth::oauth_registry::pool_home(),
                 oauth,
             )
             .current_or_expired();
+        }
+        if !crate::agent::auth_method::platform_takes_session_credential(
+            platform,
+            &info.base_url,
+        ) {
+            return None;
         }
         if self.is_session_based_auth() {
             self.auth_manager.current_or_expired()
