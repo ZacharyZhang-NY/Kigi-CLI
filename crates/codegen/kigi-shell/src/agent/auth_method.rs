@@ -627,7 +627,9 @@ mod tests {
                 "zai",
                 "zai-coding-cn",
                 "xiaomi",
-                "xiaomi-token-plan-cn"
+                "xiaomi-token-plan-cn",
+                "minimax",
+                "minimax-cn"
             ]
         );
         assert_eq!(default_id(&built), Some(XAI_API_KEY_METHOD_ID));
@@ -673,7 +675,9 @@ mod tests {
                 "zai",
                 "zai-coding-cn",
                 "xiaomi",
-                "xiaomi-token-plan-cn"
+                "xiaomi-token-plan-cn",
+                "minimax",
+                "minimax-cn"
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -712,7 +716,9 @@ mod tests {
                 "zai",
                 "zai-coding-cn",
                 "xiaomi",
-                "xiaomi-token-plan-cn"
+                "xiaomi-token-plan-cn",
+                "minimax",
+                "minimax-cn"
             ]
         );
         assert_eq!(default_id(&built), Some(CACHED_TOKEN_AUTH_METHOD_ID));
@@ -754,7 +760,9 @@ mod tests {
                 "zai",
                 "zai-coding-cn",
                 "xiaomi",
-                "xiaomi-token-plan-cn"
+                "xiaomi-token-plan-cn",
+                "minimax",
+                "minimax-cn"
             ]
         );
         assert_eq!(default_id(&built), None);
@@ -1203,6 +1211,53 @@ mod tests {
         assert_eq!(
             err.message,
             "Invalid API key for xiaomi-token-plan-cn \u{2014} check your key on xiaomimimo.com"
+        );
+    }
+
+    /// MiniMax (global): Anthropic-compatible /models is x-api-key-gated (401
+    /// for a bad key) → validator. Confirms the XApiKey header path is used.
+    #[tokio::test]
+    #[serial]
+    async fn minimax_validates_against_models_and_rejects_bad_key() {
+        use wiremock::matchers::{header, method, path};
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(method("GET"))
+            .and(path("/models"))
+            .and(header("x-api-key", "mm-bad"))
+            .respond_with(wiremock::ResponseTemplate::new(401))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let _base = EnvGuard::set(kigi_models::MINIMAX_BASE_URL_ENV, &server.uri());
+        let err = authenticate_platform_api_key(kigi_models::PlatformId::Minimax, Some("mm-bad"))
+            .await
+            .expect_err("a 401 from /models must reject the key");
+        assert_eq!(
+            err.message,
+            "Invalid API key for minimax \u{2014} check your key on platform.minimax.io"
+        );
+    }
+
+    /// MiniMax (China): distinct base URL + console host.
+    #[tokio::test]
+    #[serial]
+    async fn minimax_cn_validates_against_models_and_rejects_bad_key() {
+        use wiremock::matchers::{method, path};
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(method("GET"))
+            .and(path("/models"))
+            .respond_with(wiremock::ResponseTemplate::new(401))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let _base = EnvGuard::set(kigi_models::MINIMAX_CN_BASE_URL_ENV, &server.uri());
+        let err =
+            authenticate_platform_api_key(kigi_models::PlatformId::MinimaxCn, Some("mm-cn-bad"))
+                .await
+                .expect_err("a 401 from /models must reject the key");
+        assert_eq!(
+            err.message,
+            "Invalid API key for minimax-cn \u{2014} check your key on platform.minimaxi.com"
         );
     }
 }

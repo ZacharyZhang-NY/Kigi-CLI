@@ -828,6 +828,65 @@ const XIAOMI_TOKEN_PLAN_CN_SPEC: PlatformSpec = PlatformSpec {
     restrict_to_enriched: true,
 };
 
+pub const MINIMAX_BASE_URL_ENV: &str = "KIGI_MINIMAX_BASE_URL";
+const MINIMAX_SPEC: PlatformSpec = PlatformSpec {
+    id: "minimax",
+    display_name: "MiniMax",
+    // Per Pi, MiniMax is driven through its Anthropic-compatible surface
+    // (baseUrl .../anthropic). Kigi appends bare paths, so the base carries
+    // the /v1 suffix: listing → .../anthropic/v1/models?limit=1000, inference
+    // → .../anthropic/v1/messages. Reuses the Anthropic Messages machinery.
+    base_url: BaseUrlSource::EnvOr {
+        env: MINIMAX_BASE_URL_ENV,
+        default: "https://api.minimax.io/anthropic/v1",
+    },
+    uses_oauth: false,
+    allowed_model_prefixes: None,
+    api_key_envs: &["MINIMAX_API_KEY"],
+    vendor: "MiniMax",
+    console_host: Some("platform.minimax.io"),
+    login_label: Some("MiniMax (API key)"),
+    models_dev_id: Some("minimax"),
+    // Anthropic listing (x-api-key + anthropic-version) serves the id list;
+    // enrichment fills context. Catalog is clean (7 MiniMax-M* chat models),
+    // so no restriction — and restrict=false keeps launch-day models that
+    // models.dev has not indexed yet.
+    wire_serves_metadata: false,
+    wire_api: PlatformWireApi::Messages,
+    listing: ListingDialect::Anthropic,
+    chat_compat: PlatformChatCompat::Passthrough,
+    key_header: PlatformKeyHeader::XApiKey,
+    // /anthropic/v1/models requires x-api-key (401 without), so it validates.
+    key_validation_path: None,
+    strip_listing_id_prefix: None,
+    restrict_to_enriched: false,
+};
+
+pub const MINIMAX_CN_BASE_URL_ENV: &str = "KIGI_MINIMAX_CN_BASE_URL";
+const MINIMAX_CN_SPEC: PlatformSpec = PlatformSpec {
+    id: "minimax-cn",
+    display_name: "MiniMax (China)",
+    base_url: BaseUrlSource::EnvOr {
+        env: MINIMAX_CN_BASE_URL_ENV,
+        default: "https://api.minimaxi.com/anthropic/v1",
+    },
+    uses_oauth: false,
+    allowed_model_prefixes: None,
+    api_key_envs: &["MINIMAX_CN_API_KEY"],
+    vendor: "MiniMax",
+    console_host: Some("platform.minimaxi.com"),
+    login_label: Some("MiniMax China (API key)"),
+    models_dev_id: Some("minimax-cn"),
+    wire_serves_metadata: false,
+    wire_api: PlatformWireApi::Messages,
+    listing: ListingDialect::Anthropic,
+    chat_compat: PlatformChatCompat::Passthrough,
+    key_header: PlatformKeyHeader::XApiKey,
+    key_validation_path: None,
+    strip_listing_id_prefix: None,
+    restrict_to_enriched: false,
+};
+
 /// The platform registry. Platforms are compiled-in spec rows; there is no
 /// dynamic provider registration (PRD F2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -878,12 +937,16 @@ pub enum PlatformId {
     Xiaomi,
     /// Xiaomi Token Plan, China (API key, OpenAI-compatible).
     XiaomiTokenPlanCn,
+    /// MiniMax, global (API key, Anthropic-compatible Messages).
+    Minimax,
+    /// MiniMax, China (API key, Anthropic-compatible Messages).
+    MinimaxCn,
 }
 
 impl PlatformId {
     /// All platforms, in catalog precedence order: the subscription channel
     /// first so "default model = first list item" favors it when present.
-    pub const ALL: [PlatformId; 23] = [
+    pub const ALL: [PlatformId; 25] = [
         Self::KimiCode,
         Self::MoonshotCn,
         Self::MoonshotAi,
@@ -907,6 +970,8 @@ impl PlatformId {
         Self::ZaiCodingCn,
         Self::Xiaomi,
         Self::XiaomiTokenPlanCn,
+        Self::Minimax,
+        Self::MinimaxCn,
     ];
 
     /// The registry row backing this platform (single source of per-platform
@@ -936,6 +1001,8 @@ impl PlatformId {
             Self::ZaiCodingCn => &ZAI_CODING_CN_SPEC,
             Self::Xiaomi => &XIAOMI_SPEC,
             Self::XiaomiTokenPlanCn => &XIAOMI_TOKEN_PLAN_CN_SPEC,
+            Self::Minimax => &MINIMAX_SPEC,
+            Self::MinimaxCn => &MINIMAX_CN_SPEC,
         }
     }
 
@@ -1219,16 +1286,24 @@ struct AnthropicSupported {
 /// order. `has_more: true` (impossible under `?limit=1000` for Anthropic's
 /// catalog size) warns rather than silently truncating.
 pub fn parse_anthropic_listing(json: &str) -> Result<Vec<WireModel>, serde_json::Error> {
-    let listing: AnthropicListing = serde_json::from_str(json)?;
-    if listing.has_more {
-        tracing::warn!(
-            fetched = listing.data.len(),
-            "anthropic /models reports more pages beyond limit=1000; \
-             listing may be incomplete"
-        );
-    }
-    Ok(listing
-        .data
+    // Sniff the top-level shape. Anthropic itself serves the {data:[...]}
+    // envelope, but Anthropic-COMPATIBLE surfaces (e.g. MiniMax's /anthropic
+    // endpoint) may serve a bare array — accept both so such a provider isn't
+    // silently emptied (mirrors `parse_openai_listing`'s tolerance).
+    let data: Vec<AnthropicModel> = if json.trim_start().starts_with('[') {
+        serde_json::from_str::<Vec<AnthropicModel>>(json)?
+    } else {
+        let listing: AnthropicListing = serde_json::from_str(json)?;
+        if listing.has_more {
+            tracing::warn!(
+                fetched = listing.data.len(),
+                "anthropic /models reports more pages beyond limit=1000; \
+                 listing may be incomplete"
+            );
+        }
+        listing.data
+    };
+    Ok(data
         .into_iter()
         .filter(|m| {
             let keep = !m.id.is_empty();
@@ -1597,6 +1672,27 @@ mod tests {
         );
     }
 
+    /// Anthropic-COMPATIBLE surfaces (e.g. MiniMax's /anthropic endpoint) may
+    /// serve a bare array instead of the `{data:[...]}` envelope; the parser
+    /// accepts both so such a provider isn't silently emptied. A bare object
+    /// (not an array, no `data`) still errors.
+    #[test]
+    fn anthropic_listing_accepts_envelope_and_bare_array() {
+        let envelope =
+            serde_json::json!({ "data": [ { "id": "MiniMax-M2.5", "max_input_tokens": 204_800 } ] })
+                .to_string();
+        let bare = serde_json::json!([ { "id": "MiniMax-M2.5", "max_input_tokens": 204_800 } ])
+            .to_string();
+        for json in [&envelope, &bare] {
+            let models = parse_anthropic_listing(json).expect("both shapes parse");
+            assert_eq!(models.len(), 1);
+            assert_eq!(models[0].id, "MiniMax-M2.5");
+            assert_eq!(models[0].context_length, 204_800);
+        }
+        // A bare object without `data` is still a contract violation.
+        assert!(parse_anthropic_listing(r#"{"foo":1}"#).is_err());
+    }
+
     /// The OpenAI listing parser accepts both the standard envelope and a
     /// bare top-level array (Together AI serves the bare form).
     #[test]
@@ -1699,9 +1795,11 @@ mod tests {
                 PlatformId::ZaiCodingCn => 20,
                 PlatformId::Xiaomi => 21,
                 PlatformId::XiaomiTokenPlanCn => 22,
+                PlatformId::Minimax => 23,
+                PlatformId::MinimaxCn => 24,
             }
         }
-        const VARIANT_COUNT: usize = 23; // update together with `ordinal`
+        const VARIANT_COUNT: usize = 25; // update together with `ordinal`
         let mut seen: Vec<usize> = PlatformId::ALL.iter().map(|&p| ordinal(p)).collect();
         seen.sort_unstable();
         seen.dedup();

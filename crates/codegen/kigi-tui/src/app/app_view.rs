@@ -6894,7 +6894,7 @@ pub(crate) mod tests {
     #[test]
     fn pending_menu_items_lists_interactive_methods_plus_quit() {
         let items = pending_menu_items(&fresh_user_auth_methods(), None);
-        assert_eq!(items.len(), 24, "23 login rows + Quit, got {items:?}");
+        assert_eq!(items.len(), 26, "25 login rows + Quit, got {items:?}");
         assert!(
             matches!(&items[0], PendingMenuItem::Login { label } if label == "Kimi Code (OAuth)"),
             "row 0 must be the OAuth login, got {:?}",
@@ -7055,7 +7055,21 @@ pub(crate) mod tests {
                 label: "Xiaomi Token Plan China (API key)".into(),
             }
         );
-        assert_eq!(items[23], PendingMenuItem::Quit);
+        assert_eq!(
+            items[23],
+            PendingMenuItem::ApiKey {
+                target: PlatformLogin(kigi_shell::models::PlatformId::Minimax),
+                label: "MiniMax (API key)".into(),
+            }
+        );
+        assert_eq!(
+            items[24],
+            PendingMenuItem::ApiKey {
+                target: PlatformLogin(kigi_shell::models::PlatformId::MinimaxCn),
+                label: "MiniMax China (API key)".into(),
+            }
+        );
+        assert_eq!(items[25], PendingMenuItem::Quit);
         // The non-interactive methods must never appear as rows.
         let byok = kigi_shell::agent::auth_method::build_auth_methods(
             kigi_shell::agent::auth_method::AuthMethodsBuildInputs {
@@ -7066,7 +7080,7 @@ pub(crate) mod tests {
         );
         assert_eq!(
             pending_menu_items(&byok.methods, None).len(),
-            24,
+            26,
             "xai.api_key / cached_token must not add rows"
         );
     }

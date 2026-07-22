@@ -2438,6 +2438,89 @@ mod tests {
         );
     }
 
+    /// MiniMax e2e: Pi drives MiniMax through its Anthropic-compatible surface,
+    /// so Kigi uses the Anthropic listing (x-api-key + anthropic-version,
+    /// ?limit=1000) + Messages wire. /anthropic/v1/models is minimal, so
+    /// enrichment supplies context; restrict=false keeps the clean MiniMax-M*
+    /// catalog; id round-trips under the minimax key.
+    #[tokio::test(flavor = "multi_thread")]
+    #[serial_test::serial]
+    async fn minimax_anthropic_listing_enriches_and_keys_under_platform() {
+        let platform_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/models"))
+            // x-api-key auth (Anthropic key header) must be present.
+            .and(wiremock::matchers::header("x-api-key", "mm-1"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                // Anthropic listing envelope; minimal (id only) → enrichment fills.
+                serde_json::json!({ "data": [
+                    { "id": "MiniMax-M2.5", "type": "model" }
+                ], "has_more": false }),
+            ))
+            .expect(1)
+            .mount(&platform_server)
+            .await;
+        let modelsdev_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/api.json"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({ "minimax": { "models": {
+                    "MiniMax-M2.5": {
+                        "limit": {"context": 204800, "output": 131072},
+                        "tool_call": true
+                    }
+                }}}),
+            ))
+            .expect(1)
+            .mount(&modelsdev_server)
+            .await;
+        let cache_dir = tempfile::tempdir().unwrap();
+        let _base = kigi_test_support::EnvGuard::set(
+            kigi_models::MINIMAX_BASE_URL_ENV,
+            platform_server.uri(),
+        );
+        let _mdev = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_URL_ENV,
+            format!("{}/api.json", modelsdev_server.uri()),
+        );
+        let _mdev_cache = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_CACHE_DIR_ENV,
+            cache_dir.path(),
+        );
+        let endpoints = crate::agent::config::EndpointsConfig::default();
+        let keys = crate::agent::models::PlatformApiKeys::test_single(
+            kigi_models::PlatformId::Minimax,
+            "mm-1",
+        );
+        let result = tokio::task::spawn_blocking(move || {
+            fetch_platform_models_blocking(&endpoints, None, &keys)
+        })
+        .await
+        .unwrap()
+        .expect("fetch must succeed");
+        assert_eq!(
+            result
+                .models
+                .iter()
+                .map(|m| m.id.as_deref().unwrap_or_default())
+                .collect::<Vec<_>>(),
+            vec!["minimax/MiniMax-M2.5"],
+            "the Anthropic-listed model is keyed under the minimax platform"
+        );
+        let entry = &result.models[0];
+        assert_eq!(
+            entry.context_window.get(),
+            204_800,
+            "context comes from enrichment (the wire listing carries none)"
+        );
+        assert_eq!(entry.max_completion_tokens, Some(131_072));
+        assert_eq!(entry.model, "MiniMax-M2.5");
+        assert_eq!(
+            kigi_models::parse_managed_model_key(entry.id.as_deref().unwrap()),
+            Some((kigi_models::PlatformId::Minimax, "MiniMax-M2.5")),
+        );
+    }
+
     #[test]
     fn get_env_keys_parses_strings_and_rejects_non_strings() {
         use crate::agent::config::EnvKeys;
