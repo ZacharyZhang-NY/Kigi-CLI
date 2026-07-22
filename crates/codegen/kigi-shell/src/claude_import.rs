@@ -670,10 +670,7 @@ fn write_import_marker(config_path: &Path) -> anyhow::Result<()> {
         let _ = std::fs::remove_file(&tmp);
         return Err(e.into());
     }
-    if let Err(e) = std::fs::rename(&tmp, config_path) {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(e.into());
-    }
+    crate::util::fs::replace_file(&tmp, config_path)?;
     Ok(())
 }
 
@@ -854,7 +851,7 @@ fn apply_items_to_config(config_path: &Path, items: &[ImportableItem]) -> anyhow
             std::fs::create_dir_all(parent)?;
         }
         std::fs::write(&tmp, &toml_str)?;
-        std::fs::rename(&tmp, config_path)?;
+        crate::util::fs::replace_file(&tmp, config_path)?;
         info!(
             path = %config_path.display(),
             count,
@@ -1204,7 +1201,7 @@ fn apply_hooks_to_dir(hooks_dir: &Path, items: &[ImportableItem]) -> anyhow::Res
         let json_str = serde_json::to_string_pretty(&root)?;
         let tmp = target.with_extension("json.tmp");
         std::fs::write(&tmp, &json_str)?;
-        std::fs::rename(&tmp, &target)?;
+        crate::util::fs::replace_file(&tmp, &target)?;
         info!(
             path = %target.display(),
             count,

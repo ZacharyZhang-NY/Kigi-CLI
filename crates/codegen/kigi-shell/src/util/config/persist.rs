@@ -88,7 +88,12 @@ pub async fn save_config(config: &Config) -> Result<()> {
     }
     let _ = prior_mode;
 
-    tokio::fs::rename(&tmp, &path).await?;
+    // Windows-safe replace (delete-first + retry on sharing violations) —
+    // a bare rename made `/model` persistence silently fail on Windows
+    // whenever AV/indexer/cloud-sync held config.toml open.
+    tokio::task::spawn_blocking(move || crate::util::fs::replace_file(&tmp, &path))
+        .await
+        .map_err(|e| anyhow::anyhow!("config replace task: {e}"))??;
     Ok(())
 }
 
@@ -138,11 +143,8 @@ pub(crate) fn atomic_write_string(path: &std::path::Path, content: &str) -> std:
     }
     let _ = prior_mode;
 
-    if let Err(e) = std::fs::rename(&tmp, path) {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(e);
-    }
-    Ok(())
+    // Windows-safe replace; cleans up the tmp file on failure itself.
+    crate::util::fs::replace_file(&tmp, path)
 }
 
 /// Merge `[toolset.ask_user_question]` into the root table. `[toolset]` is

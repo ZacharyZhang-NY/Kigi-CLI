@@ -895,7 +895,8 @@ impl GoalTracker {
         };
         let dest = goal_dir.join(name);
         let _ = std::fs::create_dir_all(&goal_dir);
-        if std::fs::rename(&src, &dest).is_ok() || copy_no_follow(&src, &dest).is_ok() {
+        if crate::util::fs::replace_file(&src, &dest).is_ok() || copy_no_follow(&src, &dest).is_ok()
+        {
             append_skeptic_reports(&scratch_root, &dest);
             o.last_classifier_details_path = Some(dest.to_string_lossy().into_owned());
         }

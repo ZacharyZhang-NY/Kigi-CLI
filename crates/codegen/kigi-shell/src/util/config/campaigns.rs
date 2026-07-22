@@ -114,9 +114,7 @@ fn dismiss_campaign_ids_at(
     let nonce = DISMISS_TMP_NONCE.fetch_add(1, Ordering::Relaxed);
     let tmp = path.with_extension(format!("json.{}.{}.tmp", std::process::id(), nonce));
     std::fs::write(&tmp, &json)?;
-    std::fs::rename(&tmp, &path).inspect_err(|_| {
-        let _ = std::fs::remove_file(&tmp);
-    })
+    crate::util::fs::replace_file(&tmp, &path)
 }
 
 /// `KIGI_CAMPAIGNS_OVERRIDE` JSON array replaces all sources (`[]` = none; beats

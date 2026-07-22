@@ -170,9 +170,7 @@ fn write_data_file_atomic(
     let json = serde_json::to_string_pretty(sessions)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     fs::write(tmp_path, json.as_bytes())?;
-    fs::rename(tmp_path, data_path).inspect_err(|_| {
-        let _ = fs::remove_file(tmp_path);
-    })
+    crate::util::fs::replace_file(tmp_path, data_path)
 }
 
 fn is_pid_alive(pid: u32) -> bool {

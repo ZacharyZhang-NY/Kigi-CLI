@@ -1147,7 +1147,7 @@ fn persist_chat_history_jsonl_sync(session_info: &SessionInfo, conversation: &[C
             buf.push(b'\n');
         }
         std::fs::File::create(&tmp_path)?.write_all(&buf)?;
-        std::fs::rename(&tmp_path, &final_path)?;
+        crate::util::fs::replace_file(&tmp_path, &final_path)?;
         Ok(())
     })();
     if let Err(e) = result {

@@ -367,7 +367,9 @@ pub async fn save_mcp_disabled_tools(server_name: &str, disabled_tools: &[String
         let _ = tokio::fs::create_dir_all(parent).await;
     }
     tokio::fs::write(&tmp, &toml_str).await?;
-    tokio::fs::rename(&tmp, &path).await?;
+    tokio::task::spawn_blocking(move || crate::util::fs::replace_file(&tmp, &path))
+        .await
+        .map_err(std::io::Error::other)??;
     Ok(())
 }
 
@@ -419,7 +421,9 @@ pub async fn save_mcp_server_enabled(server_name: &str, enabled: bool) -> Result
         let _ = tokio::fs::create_dir_all(parent).await;
     }
     tokio::fs::write(&tmp, &toml_str).await?;
-    tokio::fs::rename(&tmp, &path).await?;
+    tokio::task::spawn_blocking(move || crate::util::fs::replace_file(&tmp, &path))
+        .await
+        .map_err(std::io::Error::other)??;
     Ok(())
 }
 
@@ -476,7 +480,10 @@ pub async fn save_mcp_server_config_at(
         let _ = tokio::fs::create_dir_all(parent).await;
     }
     tokio::fs::write(&tmp, &toml_str).await?;
-    tokio::fs::rename(&tmp, &path).await?;
+    let dest = path.to_path_buf();
+    tokio::task::spawn_blocking(move || crate::util::fs::replace_file(&tmp, &dest))
+        .await
+        .map_err(std::io::Error::other)??;
     Ok(())
 }
 
@@ -553,7 +560,12 @@ pub async fn delete_mcp_server_config_at(
         let _ = tokio::fs::create_dir_all(parent).await;
     }
     tokio::fs::write(&tmp, &toml_str).await?;
-    tokio::fs::rename(&tmp, &path).await?;
+    {
+        let dest = path.to_path_buf();
+        tokio::task::spawn_blocking(move || crate::util::fs::replace_file(&tmp, &dest))
+            .await
+            .map_err(std::io::Error::other)??;
+    }
 
     // Clean up OAuth credentials for the deleted server.
     if let Ok(mut cred_store) = kigi_mcp::credentials::McpCredentialStore::load_default() {

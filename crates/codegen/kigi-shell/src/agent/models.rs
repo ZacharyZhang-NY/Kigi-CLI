@@ -1637,16 +1637,31 @@ impl ModelsCacheManager {
         }
     }
 
-    /// Sync; see `load_fresh` note.
+    /// Unique tmp suffix (PID + nanos) so concurrent writers never share an
+    /// inode (mirrors `util::config::persist`).
+    fn tmp_path(&self) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        self.path
+            .with_extension(format!("json.tmp.{}.{}", std::process::id(), nanos))
+    }
+
+    /// Sync; see `load_fresh` note. Best-effort, but NEVER silent: a failed
+    /// cache write leaves a stale catalog on disk, which on Windows (sharing
+    /// violations) previously diverged picker behavior with zero trace.
     fn atomic_write(&self, cache: &ModelsCache) {
         if let Some(parent) = self.path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        let tmp = self.path.with_extension("json.tmp");
-        if let Ok(json) = serde_json::to_vec_pretty(cache)
-            && std::fs::write(&tmp, &json).is_ok()
-        {
-            let _ = std::fs::rename(&tmp, &self.path);
+        let tmp = self.tmp_path();
+        let result = serde_json::to_vec_pretty(cache)
+            .map_err(std::io::Error::other)
+            .and_then(|json| std::fs::write(&tmp, &json))
+            .and_then(|()| crate::util::fs::replace_file(&tmp, &self.path));
+        if let Err(e) = result {
+            tracing::warn!(error = %e, path = %self.path.display(), "models cache write failed");
         }
     }
 
@@ -1654,12 +1669,25 @@ impl ModelsCacheManager {
         if let Some(parent) = self.path.parent() {
             let _ = tokio::fs::create_dir_all(parent).await;
         }
-        let tmp = self.path.with_extension("json.tmp");
-        let Ok(json) = serde_json::to_vec_pretty(cache) else {
-            return;
+        let tmp = self.tmp_path();
+        let json = match serde_json::to_vec_pretty(cache) {
+            Ok(json) => json,
+            Err(e) => {
+                tracing::warn!(error = %e, "models cache serialize failed");
+                return;
+            }
         };
-        if tokio::fs::write(&tmp, &json).await.is_ok() {
-            let _ = tokio::fs::rename(&tmp, &self.path).await;
+        let result = match tokio::fs::write(&tmp, &json).await {
+            Ok(()) => {
+                let dest = self.path.clone();
+                tokio::task::spawn_blocking(move || crate::util::fs::replace_file(&tmp, &dest))
+                    .await
+                    .unwrap_or_else(|e| Err(std::io::Error::other(e)))
+            }
+            Err(e) => Err(e),
+        };
+        if let Err(e) = result {
+            tracing::warn!(error = %e, path = %self.path.display(), "models cache write failed");
         }
     }
 }

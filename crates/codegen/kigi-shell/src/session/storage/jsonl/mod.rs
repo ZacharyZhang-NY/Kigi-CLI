@@ -13,6 +13,16 @@ use std::fs::OpenOptions;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use tokio::io::AsyncWriteExt;
+
+/// Commit `tmp` over `target` with the shared Windows-safe replace
+/// (`util::fs::replace_file`): a bare async rename silently lost session
+/// state — including the switched model — on Windows whenever AV/indexer
+/// held the destination open.
+async fn replace_file_async(tmp: PathBuf, target: PathBuf) -> io::Result<()> {
+    tokio::task::spawn_blocking(move || crate::util::fs::replace_file(&tmp, &target))
+        .await
+        .unwrap_or_else(|e| Err(io::Error::other(e)))
+}
 /// How the adapter resolves the session directory on disk.
 ///
 /// - `FromRoot` (default): computes `{root}/sessions/{urlencoded(cwd)}/{session_id}/`
@@ -289,7 +299,7 @@ impl JsonlStorageAdapter {
         }
         let tmp = path.with_extension("jsonl.tmp");
         tokio::fs::write(&tmp, &content).await?;
-        tokio::fs::rename(&tmp, &path).await
+        replace_file_async(tmp, path).await
     }
     fn read_jsonl<T: serde::de::DeserializeOwned>(&self, path: PathBuf) -> io::Result<Vec<T>> {
         if !path.exists() {
@@ -378,7 +388,7 @@ impl JsonlStorageAdapter {
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         let tmp = summary_path.with_extension("json.tmp");
         std::fs::write(&tmp, &bytes)?;
-        std::fs::rename(&tmp, &summary_path)
+        crate::util::fs::replace_file(&tmp, &summary_path)
     }
     fn read_summary_sync(&self, info: &Info) -> io::Result<Summary> {
         let path = self.summary_file(info);
@@ -1057,7 +1067,7 @@ impl StorageAdapter for JsonlStorageAdapter {
         let target = self.plan_mode_state_file(info);
         let tmp = target.with_extension("json.tmp");
         tokio::fs::write(&tmp, json).await?;
-        tokio::fs::rename(&tmp, &target).await
+        replace_file_async(tmp, target).await
     }
     async fn write_signals(
         &self,
@@ -1069,7 +1079,7 @@ impl StorageAdapter for JsonlStorageAdapter {
         let target = self.signals_file(info);
         let tmp = target.with_extension("json.tmp");
         tokio::fs::write(&tmp, signals_json).await?;
-        tokio::fs::rename(&tmp, &target).await
+        replace_file_async(tmp, target).await
     }
     async fn write_announcement_state(
         &self,
@@ -1081,7 +1091,7 @@ impl StorageAdapter for JsonlStorageAdapter {
         let target = self.announcement_state_file(info);
         let tmp = target.with_extension("json.tmp");
         tokio::fs::write(&tmp, json).await?;
-        tokio::fs::rename(&tmp, &target).await
+        replace_file_async(tmp, target).await
     }
     async fn write_goal_mode_state(
         &self,
@@ -1096,7 +1106,7 @@ impl StorageAdapter for JsonlStorageAdapter {
         }
         let tmp = target.with_extension("json.tmp");
         tokio::fs::write(&tmp, json).await?;
-        tokio::fs::rename(&tmp, &target).await
+        replace_file_async(tmp, target).await
     }
     async fn write_graph_mode_state(
         &self,
@@ -1119,7 +1129,7 @@ impl StorageAdapter for JsonlStorageAdapter {
         }
         let tmp = target.with_extension("json.tmp");
         tokio::fs::write(&tmp, json).await?;
-        tokio::fs::rename(&tmp, &target).await
+        replace_file_async(tmp, target).await
     }
     async fn load_session(&self, info: &Info) -> io::Result<PersistedData> {
         let summary = self.read_summary_sync(info)?;

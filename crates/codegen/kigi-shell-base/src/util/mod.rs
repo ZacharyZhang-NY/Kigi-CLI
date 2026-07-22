@@ -1,4 +1,5 @@
 pub mod event_id;
+pub mod fs;
 pub mod kigi_home;
 pub mod secure_file;
 pub mod tips;

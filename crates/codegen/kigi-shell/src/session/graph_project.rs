@@ -120,7 +120,7 @@ pub fn project(dir: &Path, state: &GraphOrchestration) -> std::io::Result<()> {
         f.write_all(&buf)?;
         f.sync_all()?;
     }
-    std::fs::rename(&tmp, &target)
+    crate::util::fs::replace_file(&tmp, &target)
 }
 
 /// Load the projected graph, `Ok(None)` when absent. Malformed content

@@ -90,7 +90,7 @@ pub fn save_import_state(state: &ImportState) -> std::io::Result<()> {
     // `claude_import_state.json.tmp` (the last extension is replaced).
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, &json)?;
-    std::fs::rename(&tmp, &path)?;
+    crate::util::fs::replace_file(&tmp, &path)?;
     Ok(())
 }
 

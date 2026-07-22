@@ -594,10 +594,10 @@ async fn write_patch_file_atomic(path: &Path, body: &str) -> std::io::Result<()>
         .unwrap_or("goal-classifier.patch");
     let tmp = dir.join(format!(".{file_name}.{}.tmp", uuid::Uuid::now_v7()));
     tokio::fs::write(&tmp, body).await?;
-    if let Err(err) = tokio::fs::rename(&tmp, path).await {
-        let _ = tokio::fs::remove_file(&tmp).await;
-        return Err(err);
-    }
+    let dest = path.to_path_buf();
+    tokio::task::spawn_blocking(move || crate::util::fs::replace_file(&tmp, &dest))
+        .await
+        .map_err(std::io::Error::other)??;
     Ok(())
 }
 

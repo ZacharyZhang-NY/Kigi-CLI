@@ -528,10 +528,7 @@ pub fn apply_at(plan: &KimiImportPlan, kigi_home: &Path) -> anyhow::Result<KimiA
             let _ = std::fs::remove_file(&tmp);
             return Err(e.into());
         }
-        if let Err(e) = std::fs::rename(&tmp, &config_path) {
-            let _ = std::fs::remove_file(&tmp);
-            return Err(e.into());
-        }
+        crate::util::fs::replace_file(&tmp, &config_path)?;
         info!(
             path = %config_path.display(),
             added = applied.total_added(),

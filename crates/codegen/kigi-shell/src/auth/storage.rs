@@ -430,17 +430,12 @@ fn write_store_to(path: &Path, auth_store: &AuthStore) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Atomic write: tmp + rename. Unix `rename(2)` replaces atomically;
-/// Windows `rename` requires removing the target first.
+/// Atomic write: tmp + Windows-safe replace (see `util::fs::replace_file`,
+/// which this site's inline delete-first pattern graduated into).
 fn write_auth_json_atomic(auth_file: &Path, auth_store: &AuthStore) -> std::io::Result<()> {
     let tmp = auth_file.with_extension(format!("json.{}.tmp", std::process::id()));
     write_store_to(&tmp, auth_store)?;
-    #[cfg(windows)]
-    {
-        let _ = std::fs::remove_file(auth_file);
-    }
-    std::fs::rename(&tmp, auth_file)?;
-    Ok(())
+    crate::util::fs::replace_file(&tmp, auth_file)
 }
 
 /// Non-atomic fallback: truncate and rewrite `auth.json` in place.

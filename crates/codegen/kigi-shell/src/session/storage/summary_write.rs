@@ -230,7 +230,10 @@ fn write_summary_atomic(summary_path: &Path, summary: &Summary) -> io::Result<()
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     let tmp = summary_path.with_extension("json.tmp");
     std::fs::write(&tmp, &bytes)?;
-    std::fs::rename(&tmp, summary_path)
+    // Windows-safe replace: this is the write that persists a session's
+    // CURRENT MODEL — a bare rename made a switched model silently revert
+    // on resume whenever AV/indexer held summary.json open on Windows.
+    crate::util::fs::replace_file(&tmp, summary_path)
 }
 
 #[cfg(test)]

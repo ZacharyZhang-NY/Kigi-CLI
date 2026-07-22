@@ -98,7 +98,7 @@ pub fn truncate_if_needed(cwd: &str) -> io::Result<()> {
         }
     }
 
-    std::fs::rename(temp_path, path)?;
+    crate::util::fs::replace_file(&temp_path, &path)?;
     Ok(())
 }
 
