@@ -109,6 +109,13 @@ pub enum OAuthFlow {
     /// (the authorize endpoint); the code returns to a `127.0.0.1:redirect_port`
     /// loopback listener, then is exchanged at `token_host`+`token_path`.
     PkceLocalhost { redirect_port: u16 },
+    /// GitHub Copilot two-stage flow (github-copilot): an RFC-8628 device flow
+    /// on `auth_host` (github.com) mints the DURABLE GitHub token, which is then
+    /// exchanged at `copilot_exchange` for the SHORT-LIVED copilot session
+    /// token. The github token is persisted as `refresh_token`; the copilot
+    /// token as `key`. GitHub's poll returns errors in a `200` body (not `4xx`),
+    /// so it drives a Copilot-specific poll, not the generic device wire.
+    GithubDeviceCopilot,
 }
 
 /// Body encoding a provider's token endpoint expects for the code-exchange and
@@ -120,6 +127,11 @@ pub enum OAuthTokenBody {
     Form,
     /// `application/json` (Claude PKCE wire).
     Json,
+    /// GitHub Copilot copilot-token re-mint (github-copilot): "refresh" is NOT
+    /// a `refresh_token` grant — it is a `GET copilot_internal/v2/token` bearing
+    /// the durable GitHub token (`refresh_token` field) + editor headers, which
+    /// re-mints the short-lived copilot token. Dispatched to the Copilot wire.
+    GithubCopilotExchange,
 }
 
 /// Generic OAuth configuration carried by a `uses_oauth` platform whose login
@@ -159,6 +171,13 @@ pub struct OAuthConfig {
     pub flow: OAuthFlow,
     /// Body encoding the token endpoint expects (form vs JSON).
     pub token_body: OAuthTokenBody,
+    /// Second-stage token-exchange endpoint `(host, path)` for the GitHub
+    /// Copilot two-stage flow (github-copilot): `("https://api.github.com",
+    /// "/copilot_internal/v2/token")`. The durable GitHub token is exchanged
+    /// here for the short-lived copilot token, at BOTH login and every re-mint
+    /// "refresh". `None` for the standard flows (xai-grok, claude-pro-max),
+    /// whose refresh is a plain `refresh_token` grant against `token_host`.
+    pub copilot_exchange: Option<(&'static str, &'static str)>,
 }
 
 /// xAI / Grok subscription device-code OAuth (ported from Pi
@@ -174,6 +193,7 @@ pub const XAI_OAUTH_CONFIG: OAuthConfig = OAuthConfig {
     extra_device_field: Some(("referrer", "kigi")),
     flow: OAuthFlow::DeviceCode,
     token_body: OAuthTokenBody::Form,
+    copilot_exchange: None,
 };
 
 /// Base-URL override for the Claude Pro/Max OAuth channel (dev/test escape
@@ -197,6 +217,32 @@ pub const CLAUDE_OAUTH_CONFIG: OAuthConfig = OAuthConfig {
         redirect_port: 53692,
     },
     token_body: OAuthTokenBody::Json,
+    copilot_exchange: None,
+};
+
+/// Base-URL override for the GitHub Copilot inference/listing channel
+/// (dev/test escape hatch). Production defaults to the individual-subscription
+/// endpoint `https://api.individual.githubcopilot.com`.
+pub const COPILOT_BASE_URL_ENV: &str = "KIGI_COPILOT_BASE_URL";
+
+/// GitHub Copilot subscription OAuth (two-stage device flow → copilot-token
+/// exchange). Authoritative constants from Pi `earendil-works/pi`
+/// `auth/oauth/github-copilot.ts`: the VS Code Copilot Chat public client id,
+/// the github.com device endpoints, and the `api.github.com/copilot_internal/
+/// v2/token` copilot-token exchange (Stage 2). The device flow mints the
+/// durable GitHub token; the exchange re-mints the short-lived copilot token.
+pub const COPILOT_OAUTH_CONFIG: OAuthConfig = OAuthConfig {
+    client_id: "Iv1.b507a08c87ecfe98",
+    auth_host: "https://github.com",
+    device_path: "/login/device/code",
+    token_host: "https://github.com",
+    token_path: "/login/oauth/access_token",
+    scope: "read:user",
+    scope_key: "oauth/github-copilot",
+    extra_device_field: None,
+    flow: OAuthFlow::GithubDeviceCopilot,
+    token_body: OAuthTokenBody::GithubCopilotExchange,
+    copilot_exchange: Some(("https://api.github.com", "/copilot_internal/v2/token")),
 };
 
 /// The generic device-code OAuth config for a platform, or `None` for API-key
@@ -1101,6 +1147,43 @@ const CLAUDE_PRO_MAX_SPEC: PlatformSpec = PlatformSpec {
     strip_listing_id_prefix: None,
 };
 
+const GITHUB_COPILOT_SPEC: PlatformSpec = PlatformSpec {
+    id: "github-copilot",
+    display_name: "GitHub Copilot",
+    base_url: BaseUrlSource::EnvOr {
+        env: COPILOT_BASE_URL_ENV,
+        default: "https://api.individual.githubcopilot.com",
+    },
+    uses_oauth: true,
+    oauth: Some(&COPILOT_OAUTH_CONFIG),
+    allowed_model_prefixes: None,
+    // OAuth channel: no API key envs (the copilot session is the bearer).
+    api_key_envs: &[],
+    vendor: "GitHub",
+    console_host: Some("github.com"),
+    login_label: Some("GitHub Copilot (subscription)"),
+    models_dev_id: Some("github-copilot"),
+    // Copilot /models serves availability flags (model_picker_enabled/policy/
+    // tool_calls), NOT context/thinking metadata — enrich from models.dev.
+    wire_serves_metadata: false,
+    // ChatCompletions ONLY: the catalog is filtered (see
+    // `parse_github_copilot_listing`) to the openai-completions-served models.
+    // The claude-4.x/5.x (messages) and gpt-5/oswe/mai- (responses-only) models
+    // this endpoint also lists are EXCLUDED — Kigi is one-wire-per-platform and
+    // per-model wire routing is deferred (documented limitation).
+    wire_api: PlatformWireApi::ChatCompletions,
+    // OpenAI-shape listing endpoint, but with Copilot-specific availability
+    // fields — parsed by `parse_github_copilot_listing`, gated on the platform.
+    listing: ListingDialect::OpenAi,
+    chat_compat: PlatformChatCompat::Passthrough,
+    key_header: PlatformKeyHeader::Bearer,
+    // The copilot listing filter + the wire-compat filter govern the catalog,
+    // NOT the enrichment membership (a live but enrichment-lagging model stays).
+    restrict_to_enriched: false,
+    key_validation_path: None,
+    strip_listing_id_prefix: None,
+};
+
 /// The platform registry. Platforms are compiled-in spec rows; there is no
 /// dynamic provider registration (PRD F2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -1160,12 +1243,15 @@ pub enum PlatformId {
     /// Claude Pro/Max subscription via PKCE-localhost OAuth (Anthropic Messages
     /// wire reached with an OAuth bearer instead of an API key).
     ClaudeProMax,
+    /// GitHub Copilot subscription via the two-stage device-code OAuth flow
+    /// (ChatCompletions wire reached with the short-lived copilot token).
+    GithubCopilot,
 }
 
 impl PlatformId {
     /// All platforms, in catalog precedence order: the subscription channel
     /// first so "default model = first list item" favors it when present.
-    pub const ALL: [PlatformId; 27] = [
+    pub const ALL: [PlatformId; 28] = [
         Self::KimiCode,
         Self::MoonshotCn,
         Self::MoonshotAi,
@@ -1193,6 +1279,7 @@ impl PlatformId {
         Self::MinimaxCn,
         Self::XaiGrok,
         Self::ClaudeProMax,
+        Self::GithubCopilot,
     ];
 
     /// The registry row backing this platform (single source of per-platform
@@ -1226,6 +1313,7 @@ impl PlatformId {
             Self::MinimaxCn => &MINIMAX_CN_SPEC,
             Self::XaiGrok => &XAI_GROK_SPEC,
             Self::ClaudeProMax => &CLAUDE_PRO_MAX_SPEC,
+            Self::GithubCopilot => &GITHUB_COPILOT_SPEC,
         }
     }
 
@@ -1351,6 +1439,16 @@ impl PlatformId {
     /// `ChatCompat`; meaningless for other backends).
     pub fn chat_compat(self) -> PlatformChatCompat {
         self.spec().chat_compat
+    }
+
+    /// True ONLY for `github-copilot`: its `/models` listing and every
+    /// `/chat/completions` inference request must carry the VS Code Copilot
+    /// editor-identity headers (User-Agent / Editor-Version /
+    /// Editor-Plugin-Version / Copilot-Integration-Id). The shell gates the
+    /// listing headers and the sampler gates the inference headers on this, so
+    /// every other ChatCompletions platform's request stays byte-identical.
+    pub fn sends_copilot_editor_headers(self) -> bool {
+        matches!(self, Self::GithubCopilot)
     }
 }
 
@@ -1673,6 +1771,128 @@ pub fn filter_allowed_models(platform: PlatformId, models: Vec<WireModel>) -> Ve
         .into_iter()
         .filter(|m| prefixes.iter().any(|p| m.id.starts_with(p)))
         .collect()
+}
+
+// ── GitHub Copilot listing adapter (github-copilot) ─────────────────────────
+
+/// A Copilot model id that routes to the anthropic-messages wire in Pi
+/// (`/^claude-(haiku|sonnet|opus)-[45]([.\-]|$)/`) — EXCLUDED from Kigi's
+/// ChatCompletions catalog. Matches `claude-{haiku,sonnet,opus}-` followed by a
+/// single `4`/`5` and then `.`, `-`, or end (so `claude-fable-5` is NOT a match
+/// and stays served; `claude-sonnet-45` is not a real family and does not match).
+fn is_copilot_messages_claude(id: &str) -> bool {
+    for family in ["claude-haiku-", "claude-sonnet-", "claude-opus-"] {
+        let Some(rest) = id.strip_prefix(family) else {
+            continue;
+        };
+        let mut chars = rest.chars();
+        if matches!(chars.next(), Some('4') | Some('5'))
+            && matches!(chars.next(), None | Some('.') | Some('-'))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// A Copilot model id served ONLY through the `/responses` endpoint in Pi
+/// (`gpt-5*` / `oswe*` / `mai-*`) — EXCLUDED from Kigi's ChatCompletions catalog.
+fn is_copilot_responses_only(id: &str) -> bool {
+    id.starts_with("gpt-5") || id.starts_with("oswe") || id.starts_with("mai-")
+}
+
+/// Whether a Copilot model id is served by the openai-completions wire — the
+/// ONLY wire Kigi's github-copilot platform speaks. Excludes the claude-4.x/5.x
+/// (messages) and gpt-5/oswe/mai- (responses-only) ids that would fail at
+/// inference on `/chat/completions` (documented per-model-routing limitation).
+pub fn is_copilot_completions_served(id: &str) -> bool {
+    !is_copilot_messages_claude(id) && !is_copilot_responses_only(id)
+}
+
+#[derive(serde::Deserialize)]
+struct CopilotListing {
+    /// No default: a 200 body without `data` is a contract violation and must
+    /// error like the OpenAI-shape branch, not yield an empty catalog.
+    data: Vec<CopilotListingModel>,
+}
+
+#[derive(serde::Deserialize)]
+struct CopilotListingModel {
+    id: String,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    model_picker_enabled: bool,
+    #[serde(default)]
+    policy: Option<CopilotPolicy>,
+    #[serde(default)]
+    capabilities: Option<CopilotCapabilities>,
+}
+
+#[derive(serde::Deserialize)]
+struct CopilotPolicy {
+    #[serde(default)]
+    state: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct CopilotCapabilities {
+    #[serde(default)]
+    supports: Option<CopilotSupports>,
+}
+
+#[derive(serde::Deserialize)]
+struct CopilotSupports {
+    /// Absent means "not declined" → allowed (Pi: `supports.tool_calls !==
+    /// false`). Only an explicit `false` drops the model.
+    #[serde(default)]
+    tool_calls: Option<bool>,
+}
+
+/// Parse the GitHub Copilot `GET {base}/models` response and apply BOTH filters
+/// (a Copilot quirk, gated on the platform):
+/// 1. availability — keep iff `model_picker_enabled == true` AND
+///    `policy.state != "disabled"` AND `capabilities.supports.tool_calls !=
+///    false` (Pi `isSelectableCopilotModel`);
+/// 2. wire-compat — keep iff the id is openai-completions-served (drops the
+///    claude-4.x/5.x messages models and the gpt-5/oswe/mai- responses-only
+///    models, which Kigi's single-wire platform cannot route).
+///
+/// Metadata (context window, thinking) is NOT served here — enrichment from
+/// models.dev "github-copilot" fills it downstream.
+pub fn parse_github_copilot_listing(json: &str) -> Result<Vec<WireModel>, serde_json::Error> {
+    let listing: CopilotListing = serde_json::from_str(json)?;
+    let kept = listing
+        .data
+        .into_iter()
+        .filter(|m| {
+            let picker_enabled = m.model_picker_enabled;
+            let policy_ok = m
+                .policy
+                .as_ref()
+                .and_then(|p| p.state.as_deref())
+                .is_none_or(|state| state != "disabled");
+            let tool_calls_ok = m
+                .capabilities
+                .as_ref()
+                .and_then(|c| c.supports.as_ref())
+                .and_then(|s| s.tool_calls)
+                != Some(false);
+            picker_enabled && policy_ok && tool_calls_ok && is_copilot_completions_served(&m.id)
+        })
+        .map(|m| WireModel {
+            id: m.id,
+            context_length: 0,
+            supports_reasoning: false,
+            supports_image_in: false,
+            supports_video_in: false,
+            display_name: m.name,
+            max_output_tokens: 0,
+            supports_thinking_type: None,
+            think_efforts: None,
+        })
+        .collect();
+    Ok(kept)
 }
 
 // ── Bundled offline fallback catalog ────────────────────────────────────────
@@ -2097,6 +2317,117 @@ mod tests {
         assert_eq!(c.base_url(), "https://mock.claude/v1");
     }
 
+    /// github-copilot is the two-stage device-code OAuth platform: it carries a
+    /// `GithubDeviceCopilot`/`GithubCopilotExchange` `OAuthConfig` with a
+    /// copilot-token exchange endpoint (Stage 2), speaks the ChatCompletions
+    /// wire with a Bearer copilot token + the editor-headers gate, enriches from
+    /// models.dev "github-copilot", and keys its models under `github-copilot/`.
+    #[test]
+    fn github_copilot_is_a_two_stage_oauth_platform() {
+        let g = PlatformId::GithubCopilot;
+        assert_eq!(g.as_str(), "github-copilot");
+        assert!(g.uses_oauth());
+        assert!(
+            g.sends_copilot_editor_headers(),
+            "github-copilot must gate the editor-identity headers"
+        );
+        // Every OTHER platform must NOT send the editor headers (regression).
+        for other in PlatformId::ALL {
+            if other != PlatformId::GithubCopilot {
+                assert!(
+                    !other.sends_copilot_editor_headers(),
+                    "{} must not send the copilot editor headers",
+                    other.as_str()
+                );
+            }
+        }
+        let cfg = g
+            .oauth()
+            .expect("github-copilot carries a two-stage OAuthConfig");
+        assert_eq!(cfg, &COPILOT_OAUTH_CONFIG);
+        assert_eq!(cfg.client_id, "Iv1.b507a08c87ecfe98");
+        assert_eq!(cfg.auth_host, "https://github.com");
+        assert_eq!(cfg.device_path, "/login/device/code");
+        assert_eq!(cfg.token_path, "/login/oauth/access_token");
+        assert_eq!(cfg.scope, "read:user");
+        assert_eq!(cfg.scope_key, "oauth/github-copilot");
+        assert_eq!(cfg.flow, OAuthFlow::GithubDeviceCopilot);
+        assert_eq!(cfg.token_body, OAuthTokenBody::GithubCopilotExchange);
+        assert_eq!(
+            cfg.copilot_exchange,
+            Some(("https://api.github.com", "/copilot_internal/v2/token")),
+            "the Stage-2 copilot-token exchange endpoint must be configured"
+        );
+        // xai/claude carry no copilot exchange (their refresh is a plain grant).
+        assert_eq!(XAI_OAUTH_CONFIG.copilot_exchange, None);
+        assert_eq!(CLAUDE_OAUTH_CONFIG.copilot_exchange, None);
+        // Scope-key lookup resolves the config (drives the generic refresher's
+        // Copilot re-mint dispatch).
+        assert_eq!(
+            oauth_config_for_scope_key("oauth/github-copilot"),
+            Some(&COPILOT_OAUTH_CONFIG)
+        );
+        // ChatCompletions wire, Bearer, models.dev "github-copilot", own base.
+        assert_eq!(g.models_dev_id(), Some("github-copilot"));
+        assert_eq!(g.wire_api(), PlatformWireApi::ChatCompletions);
+        assert_eq!(g.listing(), ListingDialect::OpenAi);
+        assert_eq!(g.key_header(), PlatformKeyHeader::Bearer);
+        assert_eq!(g.api_key_env_names(), &[] as &[&str]);
+        assert!(!g.restrict_to_enriched());
+        assert_eq!(g.managed_model_key("gpt-4.1"), "github-copilot/gpt-4.1");
+        let _guard = kigi_env::EnvVarGuard::set(COPILOT_BASE_URL_ENV, "https://mock.copilot");
+        assert_eq!(g.base_url(), "https://mock.copilot");
+    }
+
+    /// The Copilot `/models` filter keeps ONLY openai-completions-served,
+    /// selectable, tool-calling models — dropping the claude-4.x/5.x (messages)
+    /// and gpt-5/oswe/mai- (responses-only) ids AND the disabled / picker-off /
+    /// tool-call-declining ones — with the display name carried through.
+    #[test]
+    fn copilot_listing_filters_by_availability_and_wire_compat() {
+        let body = serde_json::json!({ "data": [
+            // KEPT: completions-served, picker on, no policy, tool_calls absent.
+            { "id": "gpt-4.1", "name": "GPT-4.1", "model_picker_enabled": true },
+            // KEPT: policy enabled + tool_calls true.
+            { "id": "gemini-3-flash-preview", "model_picker_enabled": true,
+              "policy": {"state": "enabled"},
+              "capabilities": {"supports": {"tool_calls": true}} },
+            // KEPT: claude-fable-5 is NOT a messages-routed claude family.
+            { "id": "claude-fable-5", "model_picker_enabled": true },
+            // DROPPED: claude-4.x → anthropic-messages wire.
+            { "id": "claude-opus-4-8", "model_picker_enabled": true },
+            // DROPPED: claude-5.x → anthropic-messages wire.
+            { "id": "claude-sonnet-5", "model_picker_enabled": true },
+            // DROPPED: gpt-5* → responses-only.
+            { "id": "gpt-5.2", "model_picker_enabled": true },
+            // DROPPED: mai-* → responses-only.
+            { "id": "mai-code-1", "model_picker_enabled": true },
+            // DROPPED: picker disabled.
+            { "id": "gpt-4o", "model_picker_enabled": false },
+            // DROPPED: policy disabled.
+            { "id": "kimi-k2.7-code", "model_picker_enabled": true,
+              "policy": {"state": "disabled"} },
+            // DROPPED: tool_calls explicitly false.
+            { "id": "text-embed", "model_picker_enabled": true,
+              "capabilities": {"supports": {"tool_calls": false}} }
+        ]})
+        .to_string();
+        let kept = parse_github_copilot_listing(&body).expect("valid listing");
+        let ids: Vec<&str> = kept.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["gpt-4.1", "gemini-3-flash-preview", "claude-fable-5"],
+            "only completions-served, selectable, tool-calling models survive"
+        );
+        assert_eq!(
+            kept[0].display_name.as_deref(),
+            Some("GPT-4.1"),
+            "the wire display name must carry through"
+        );
+        // A 200 body without `data` is a contract violation (never empty catalog).
+        assert!(parse_github_copilot_listing("{}").is_err());
+    }
+
     /// A variant missing from `ALL` compiles fine (`ALL`'s length is a plain
     /// literal) but is silently unparseable and excluded from model sync.
     /// The exhaustive match below fails compilation when a variant is added,
@@ -2132,9 +2463,10 @@ mod tests {
                 PlatformId::MinimaxCn => 24,
                 PlatformId::XaiGrok => 25,
                 PlatformId::ClaudeProMax => 26,
+                PlatformId::GithubCopilot => 27,
             }
         }
-        const VARIANT_COUNT: usize = 27; // update together with `ordinal`
+        const VARIANT_COUNT: usize = 28; // update together with `ordinal`
         let mut seen: Vec<usize> = PlatformId::ALL.iter().map(|&p| ordinal(p)).collect();
         seen.sort_unstable();
         seen.dedup();

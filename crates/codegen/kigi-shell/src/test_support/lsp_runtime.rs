@@ -47,6 +47,7 @@ pub(crate) fn ctx_with_toggle(toggle: HashMap<String, bool>) -> SubagentSpawnCon
             chat_compat: Default::default(),
             auth_scheme: Default::default(),
             anthropic_oauth: false,
+            github_copilot: false,
             extra_headers: Default::default(),
             context_window: 256_000,
             force_http1: false,

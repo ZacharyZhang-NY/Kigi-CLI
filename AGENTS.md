@@ -175,7 +175,8 @@ edges stay deterministic Rust. The harness appends a terminal
   scope-keyed `AuthManager::new_oauth_provider` +
   `refresh::GenericDeviceRefresher` (selected by `build_refresher` via
   `oauth_config_for_scope_key`; the refresher dispatches the refresh body by
-  `token_body`: form → `auth::oauth_device`, JSON → `auth::oauth_pkce`). Kimi
+  `token_body`: form → `auth::oauth_device`, JSON → `auth::oauth_pkce`,
+  `GithubCopilotExchange` → `auth::github_copilot` copilot-token re-mint). Kimi
   Code keeps `oauth: None` and its bespoke path unchanged. The interactive
   login is dispatched by `OAuthConfig.flow` (in `run_oauth_provider_flow`):
   - `OAuthFlow::DeviceCode` → `auth::oauth_device` (RFC-8628 device-code, plain
@@ -192,9 +193,36 @@ edges stay deterministic Rust. The harness appends a terminal
     prefix — gated on `SamplerConfig.anthropic_oauth` (claude-pro-max only), so
     API-key `anthropic`/`minimax` Messages requests stay byte-identical. Its
     `/v1/models` listing rides the same Bearer + oauth-beta headers.
-  Both are INTERACTIVE login rows advertised right after `kimi-code`
-  (`AuthMethodKind::OAuthPlatform`, in `PlatformId::ALL` order: `xai-grok` then
-  `claude-pro-max`). The catalog fetch resolves each such platform's OWN session
+  - `OAuthFlow::GithubDeviceCopilot` → `auth::github_copilot` (TWO-STAGE).
+    Provider: `github-copilot` (`scope_key oauth/github-copilot`, base
+    `api.individual.githubcopilot.com`, ChatCompletions wire). Stage 1 is an
+    RFC-8628 device flow on `github.com` (client `Iv1.b507a08c87ecfe98`, scope
+    `read:user`) whose errors ride a `200` body (not `4xx`) — it mints the
+    DURABLE github token. Stage 2 (`GET api.github.com/copilot_internal/v2/token`
+    with `copilot_exchange` + editor headers) re-mints the SHORT-LIVED copilot
+    token. Persisted as `KimiAuth.key = copilot token`, `refresh_token = github
+    token`, `expires_at = copilot expiry`; the "refresh" is a copilot-token
+    RE-MINT (GET, not a `refresh_token` grant). Every `/models` listing AND
+    `/chat/completions` request carries the VS Code editor-identity headers
+    (`User-Agent GitHubCopilotChat/…`, `Editor-Version`, `Editor-Plugin-Version`,
+    `Copilot-Integration-Id`; `+X-GitHub-Api-Version` on `/models`, `+X-Initiator
+    user` on inference) — gated on `SamplerConfig.github_copilot` /
+    `PlatformId::sends_copilot_editor_headers()` so every other ChatCompletions
+    provider stays byte-identical. WIRE-COMPAT SCOPE: Kigi is one-wire-per-
+    platform, so the catalog is FILTERED (`parse_github_copilot_listing`) to the
+    openai-completions-served models — keep iff `model_picker_enabled` &&
+    `policy.state != "disabled"` && `tool_calls != false` AND the id is NOT a
+    `claude-(haiku|sonnet|opus)-[45]` (anthropic-messages) or `gpt-5/oswe/mai-`
+    (responses-only) model. Those excluded models need per-model wire routing
+    (deferred, documented debt), NOT included lest they fail at inference.
+    KNOWN LIMITATION: Kigi does NOT port Pi's per-model policy-acceptance step
+    (`POST {base}/models/{id}/policy {state:"enabled"}`). A kept model whose
+    Copilot policy is unconfigured can list yet `403` at inference until the user
+    enables it once in GitHub's UI — a deliberate omission (it mutates account
+    state and is unverifiable without a live Copilot account), not a silent gap.
+  These are INTERACTIVE login rows advertised right after `kimi-code`
+  (`AuthMethodKind::OAuthPlatform`, in `PlatformId::ALL` order: `xai-grok`,
+  `claude-pro-max`, `github-copilot`). The catalog fetch resolves each such platform's OWN session
   token (`resolve_generic_oauth_tokens`, refreshed on expiry) and routes
   `platform.oauth().is_some()` → `platform.base_url()` (kimi-code alone →
   `proxy_url()`). Tokens/codes/verifiers are NEVER logged.

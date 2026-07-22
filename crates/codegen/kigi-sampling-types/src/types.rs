@@ -1076,6 +1076,28 @@ pub const CLAUDE_CODE_USER_AGENT: &str = "claude-cli/2.1.75";
 pub const CLAUDE_CODE_SYSTEM_PREFIX: &str =
     "You are Claude Code, Anthropic's official CLI for Claude.";
 
+// ── GitHub Copilot editor-identity headers ──────────────────────────────────
+// The VS Code Copilot Chat client identity. Copilot's proxy authorizes the
+// short-lived copilot token AND validates these editor headers, so they ride
+// the `copilot_internal/v2/token` exchange, the `/models` listing, and every
+// `/chat/completions` inference request. github-copilot-GATED: no other
+// platform sends them, so their requests stay byte-identical. Values are
+// non-secret wire constants (ported from Pi `api/github-copilot-headers.ts` +
+// `auth/oauth/github-copilot.ts`).
+
+/// `User-Agent` for the Copilot path (overrides the default kigi UA, OAuth-gated).
+pub const COPILOT_USER_AGENT: &str = "GitHubCopilotChat/0.35.0";
+/// `Editor-Version` — the host editor Copilot believes it is talking to.
+pub const COPILOT_EDITOR_VERSION: &str = "vscode/1.107.0";
+/// `Editor-Plugin-Version` — the Copilot Chat plugin build.
+pub const COPILOT_EDITOR_PLUGIN_VERSION: &str = "copilot-chat/0.35.0";
+/// `Copilot-Integration-Id` — the integration the token is scoped to.
+pub const COPILOT_INTEGRATION_ID: &str = "vscode-chat";
+/// `X-GitHub-Api-Version` — sent ONLY on the `/models` listing.
+pub const COPILOT_API_VERSION: &str = "2026-06-01";
+/// `X-Initiator` value — sent ONLY on inference (`user`, per the spec).
+pub const COPILOT_INITIATOR: &str = "user";
+
 /// ChatCompletions request-body adaptation dialect. Providers disagree on
 /// how thinking rides an OpenAI-compatible body: Kimi wants
 /// `thinking:{type,effort}`, DeepSeek wants

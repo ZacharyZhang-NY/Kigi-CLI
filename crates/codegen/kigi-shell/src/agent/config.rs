@@ -4091,6 +4091,14 @@ pub fn sampling_config_for_model(
             platform.oauth().is_some()
                 && platform.wire_api() == kigi_models::PlatformWireApi::Messages
         });
+    // GitHub Copilot editor-identity headers: a managed key whose platform is
+    // github-copilot drives the editor headers + X-Initiator in the sampler.
+    // Gated here so every other ChatCompletions platform stays byte-identical.
+    let github_copilot = info
+        .id
+        .as_deref()
+        .and_then(kigi_models::parse_managed_model_key)
+        .is_some_and(|(platform, _)| platform.sends_copilot_editor_headers());
     SamplerConfig {
         api_key: credentials.api_key,
         model: model_name,
@@ -4101,6 +4109,7 @@ pub fn sampling_config_for_model(
         api_backend,
         auth_scheme: credentials.auth_scheme,
         anthropic_oauth,
+        github_copilot,
         chat_compat,
         extra_headers,
         context_window: info.context_window.get(),

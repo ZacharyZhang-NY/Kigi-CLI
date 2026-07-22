@@ -359,6 +359,30 @@ fn fetch_one_platform_models(
                     .header("anthropic-version", kigi_sampling_types::ANTHROPIC_VERSION)
                     .header("anthropic-beta", kigi_sampling_types::ANTHROPIC_OAUTH_BETA);
             }
+            // GitHub Copilot /models needs the VS Code editor identity + the
+            // Copilot API version. github-copilot-GATED, so every other Bearer
+            // OpenAI-listing platform (xai-grok, api-key OpenAI rows) is
+            // byte-identical.
+            if platform.sends_copilot_editor_headers() {
+                req = req
+                    .header("User-Agent", kigi_sampling_types::COPILOT_USER_AGENT)
+                    .header(
+                        "Editor-Version",
+                        kigi_sampling_types::COPILOT_EDITOR_VERSION,
+                    )
+                    .header(
+                        "Editor-Plugin-Version",
+                        kigi_sampling_types::COPILOT_EDITOR_PLUGIN_VERSION,
+                    )
+                    .header(
+                        "Copilot-Integration-Id",
+                        kigi_sampling_types::COPILOT_INTEGRATION_ID,
+                    )
+                    .header(
+                        "X-GitHub-Api-Version",
+                        kigi_sampling_types::COPILOT_API_VERSION,
+                    );
+            }
             req
         }
         kigi_models::PlatformKeyHeader::XApiKey => client
@@ -378,6 +402,20 @@ fn fetch_one_platform_models(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
     let data = match platform.listing() {
+        // GitHub Copilot serves an OpenAI-shape listing with extra availability
+        // fields (model_picker_enabled/policy/tool_calls). Parse + filter it
+        // with the Copilot-specific adapter (keep only selectable, tool-calling,
+        // openai-completions-served ids). Platform-gated; every other OpenAi
+        // listing takes the plain path.
+        kigi_models::ListingDialect::OpenAi if platform.sends_copilot_editor_headers() => {
+            let body = response.text()?;
+            kigi_models::parse_github_copilot_listing(&body).map_err(|e| {
+                BackendError::RequestFailed {
+                    status: 200,
+                    body: format!("copilot listing parse failed: {e}"),
+                }
+            })?
+        }
         kigi_models::ListingDialect::OpenAi => {
             // Tolerant of both the {data:[...]} envelope and a bare array
             // (Together AI serves the bare form).
@@ -1227,6 +1265,138 @@ mod tests {
         );
         assert!(
             !opus.supported_in_api,
+            "subscription (uses_oauth) models require the OAuth session"
+        );
+    }
+
+    /// GitHub Copilot OAuth fetch e2e (mock wire): `GET /models` gated on the
+    /// Bearer COPILOT token + the VS Code editor headers + X-GitHub-Api-Version
+    /// returns a mix (a good completions model, a claude-4.x messages model, a
+    /// gpt-5 responses-only model, and a disabled model). The catalog keeps ONLY
+    /// the completions-served enabled tool-calling model, keyed `github-copilot/
+    /// <id>` on the ChatCompletions backend, enriched from models.dev
+    /// "github-copilot". The bearer is drawn from the copilot OAuth-session map,
+    /// never a Kimi session or an API key.
+    #[tokio::test(flavor = "multi_thread")]
+    #[serial_test::serial]
+    async fn github_copilot_oauth_listing_filters_and_keys_completions_models() {
+        let platform_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/models"))
+            // Bearer COPILOT token + the editor identity + the Copilot API
+            // version — the request MUST carry all of them or the mock 404s.
+            .and(wiremock::matchers::header(
+                "Authorization",
+                "Bearer copilot-session-tok",
+            ))
+            .and(wiremock::matchers::header(
+                "User-Agent",
+                "GitHubCopilotChat/0.35.0",
+            ))
+            .and(wiremock::matchers::header(
+                "Editor-Version",
+                "vscode/1.107.0",
+            ))
+            .and(wiremock::matchers::header(
+                "Copilot-Integration-Id",
+                "vscode-chat",
+            ))
+            .and(wiremock::matchers::header(
+                "X-GitHub-Api-Version",
+                "2026-06-01",
+            ))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({ "data": [
+                    // KEPT: completions-served, selectable, tool-calling.
+                    { "id": "gpt-4.1", "name": "GPT-4.1", "model_picker_enabled": true,
+                      "policy": {"state": "enabled"},
+                      "capabilities": {"supports": {"tool_calls": true}} },
+                    // DROPPED: claude-4.x → anthropic-messages wire (excluded).
+                    { "id": "claude-opus-4-8", "model_picker_enabled": true,
+                      "capabilities": {"supports": {"tool_calls": true}} },
+                    // DROPPED: gpt-5* → responses-only (excluded).
+                    { "id": "gpt-5.2", "model_picker_enabled": true,
+                      "capabilities": {"supports": {"tool_calls": true}} },
+                    // DROPPED: policy disabled.
+                    { "id": "gemini-3-flash-preview", "model_picker_enabled": true,
+                      "policy": {"state": "disabled"} }
+                ]}),
+            ))
+            .expect(1)
+            .mount(&platform_server)
+            .await;
+        let modelsdev_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/api.json"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({ "github-copilot": { "models": {
+                    "gpt-4.1": {
+                        "limit": {"context": 128000, "output": 16384},
+                        "tool_call": true
+                    }
+                }}}),
+            ))
+            .expect(1)
+            .mount(&modelsdev_server)
+            .await;
+        let cache_dir = tempfile::tempdir().unwrap();
+        let _base = kigi_test_support::EnvGuard::set(
+            kigi_models::COPILOT_BASE_URL_ENV,
+            platform_server.uri(),
+        );
+        let _mdev = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_URL_ENV,
+            format!("{}/api.json", modelsdev_server.uri()),
+        );
+        let _mdev_cache = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_CACHE_DIR_ENV,
+            cache_dir.path(),
+        );
+
+        let endpoints = crate::agent::config::EndpointsConfig::default();
+        // The listing bearer comes from the github-copilot OAuth-session map,
+        // never a Kimi session (auth=None) or an API key (keys empty).
+        let mut oauth_tokens = OAuthSessionTokens::new();
+        oauth_tokens.insert(
+            kigi_models::PlatformId::GithubCopilot,
+            "copilot-session-tok".to_string(),
+        );
+        let keys = crate::agent::models::PlatformApiKeys::default();
+        let result = tokio::task::spawn_blocking(move || {
+            fetch_platform_models_blocking(&endpoints, None, &oauth_tokens, &keys)
+        })
+        .await
+        .unwrap()
+        .expect("github-copilot oauth fetch must succeed");
+
+        assert_eq!(
+            result
+                .models
+                .iter()
+                .map(|m| m.id.as_deref().unwrap_or_default())
+                .collect::<Vec<_>>(),
+            vec!["github-copilot/gpt-4.1"],
+            "only the completions-served, enabled, tool-calling model survives \
+             (claude-4.x, gpt-5, and the disabled model are dropped)"
+        );
+        let entry = &result.models[0];
+        assert_eq!(
+            entry.api_backend,
+            crate::sampling::ApiBackend::ChatCompletions,
+            "github-copilot speaks the ChatCompletions wire"
+        );
+        assert_eq!(
+            entry.auth_scheme, None,
+            "OAuth Bearer entries carry no XApiKey auth scheme"
+        );
+        assert_eq!(entry.name.as_deref(), Some("GPT-4.1"));
+        assert_eq!(
+            entry.context_window.get(),
+            128_000,
+            "context window comes from models.dev github-copilot enrichment"
+        );
+        assert!(
+            !entry.supported_in_api,
             "subscription (uses_oauth) models require the OAuth session"
         );
     }

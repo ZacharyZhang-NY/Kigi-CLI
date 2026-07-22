@@ -14,7 +14,7 @@ use kigi_models::{OAuthConfig, OAuthTokenBody};
 use crate::auth::error::RefreshTokenFailedReason;
 use crate::auth::kimi_oauth::RefreshError;
 use crate::auth::manager::RefreshReason;
-use crate::auth::{oauth_device, oauth_pkce};
+use crate::auth::{github_copilot, oauth_device, oauth_pkce};
 
 use super::{AuthSnapshot, RefreshOutcome, TokenRefresher};
 
@@ -105,11 +105,17 @@ impl TokenRefresher for GenericDeviceRefresher {
         );
 
         // Refresh over the provider's token-body encoding: xai's endpoint is
-        // form-encoded (device wire); Claude's is JSON (PKCE wire). Both return
-        // the same `Result<KimiAuth, RefreshError>`.
+        // form-encoded (device wire); Claude's is JSON (PKCE wire); GitHub
+        // Copilot's "refresh" is a copilot-token RE-MINT — a `GET
+        // copilot_internal/v2/token` bearing the durable github token (the
+        // `refresh_token` field here), NOT a refresh_token grant. All three
+        // return the same `Result<KimiAuth, RefreshError>`.
         let wire_result = match self.cfg.token_body {
             OAuthTokenBody::Form => oauth_device::refresh_token(self.cfg, &refresh_token).await,
             OAuthTokenBody::Json => oauth_pkce::refresh_token(self.cfg, &refresh_token).await,
+            OAuthTokenBody::GithubCopilotExchange => {
+                github_copilot::remint_copilot_token(self.cfg, &refresh_token).await
+            }
         };
         match wire_result {
             Ok(new_auth) => {

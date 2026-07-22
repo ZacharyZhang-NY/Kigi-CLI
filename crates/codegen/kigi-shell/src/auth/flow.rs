@@ -107,6 +107,14 @@ pub async fn run_oauth_provider_flow(
         kigi_models::OAuthFlow::PkceLocalhost { redirect_port } => {
             run_pkce_localhost_login(oauth, redirect_port, auth_manager, &mut channels).await
         }
+        kigi_models::OAuthFlow::GithubDeviceCopilot => {
+            crate::auth::device_code::run_device_code_login_github_copilot(
+                oauth,
+                auth_manager,
+                &mut channels,
+            )
+            .await
+        }
     }
 }
 

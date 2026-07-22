@@ -454,6 +454,31 @@ impl SamplingClient {
             );
         }
 
+        // GitHub Copilot editor-identity headers (github-copilot only). Copilot's
+        // proxy validates the VS Code editor identity, so the ChatCompletions
+        // request MUST carry it. `User-Agent` is set in the UA block below (it
+        // would otherwise be overwritten); here we add the other three editor
+        // headers plus `X-Initiator: user`. Gated on `github_copilot` so every
+        // other ChatCompletions provider (groq, …) stays byte-identical.
+        if config.github_copilot {
+            headers.insert(
+                HeaderName::from_static("editor-version"),
+                HeaderValue::from_static(kigi_sampling_types::COPILOT_EDITOR_VERSION),
+            );
+            headers.insert(
+                HeaderName::from_static("editor-plugin-version"),
+                HeaderValue::from_static(kigi_sampling_types::COPILOT_EDITOR_PLUGIN_VERSION),
+            );
+            headers.insert(
+                HeaderName::from_static("copilot-integration-id"),
+                HeaderValue::from_static(kigi_sampling_types::COPILOT_INTEGRATION_ID),
+            );
+            headers.insert(
+                HeaderName::from_static("x-initiator"),
+                HeaderValue::from_static(kigi_sampling_types::COPILOT_INITIATOR),
+            );
+        }
+
         // Apply all extra headers verbatim. This is the single
         // injection point for proxy-auth headers and any other URL- or
         // environment-specific headers the session decides to set.
@@ -471,10 +496,13 @@ impl SamplingClient {
         // (PRD F3: auth is a plain bearer; kimi-cli sends only User-Agent
         // plus the OAuth device headers, src/kimi_cli/llm.py:317-323).
         {
-            // Claude Pro/Max OAuth path presents the claude-cli identity;
-            // every other path keeps the kigi User-Agent.
+            // Claude Pro/Max OAuth presents the claude-cli identity; GitHub
+            // Copilot presents the VS Code Copilot Chat identity; every other
+            // path keeps the kigi User-Agent.
             let ua_string = if config.anthropic_oauth {
                 kigi_sampling_types::CLAUDE_CODE_USER_AGENT.to_string()
+            } else if config.github_copilot {
+                kigi_sampling_types::COPILOT_USER_AGENT.to_string()
             } else {
                 match config.origin_client.as_ref() {
                     Some(origin) => user_agent_string_for(origin),
@@ -1961,6 +1989,7 @@ mod tests {
             api_backend: ApiBackend::ChatCompletions,
             auth_scheme: AuthScheme::Bearer,
             anthropic_oauth: false,
+            github_copilot: false,
             chat_compat: Default::default(),
             extra_headers: IndexMap::new(),
             context_window: 8192,
@@ -2082,6 +2111,73 @@ mod tests {
                 .and_then(|v| v.to_str().ok())
                 .is_some_and(|ua| ua.starts_with("kigi/")),
             "API-key anthropic keeps the kigi User-Agent"
+        );
+    }
+
+    /// GitHub Copilot ChatCompletions client (`github_copilot = true`) carries
+    /// the VS Code Copilot editor-identity headers + `X-Initiator: user` and
+    /// presents the Copilot User-Agent (overriding the kigi UA).
+    #[test]
+    fn github_copilot_client_sends_editor_identity_headers() {
+        let mut config = minimal_config();
+        config.github_copilot = true;
+        let client = SamplingClient::new(config).expect("client builds");
+        let h = &client.default_headers;
+        assert_eq!(
+            h.get(USER_AGENT).and_then(|v| v.to_str().ok()),
+            Some(kigi_sampling_types::COPILOT_USER_AGENT),
+            "Copilot presents the VS Code Copilot User-Agent"
+        );
+        assert_eq!(
+            h.get("editor-version").and_then(|v| v.to_str().ok()),
+            Some(kigi_sampling_types::COPILOT_EDITOR_VERSION)
+        );
+        assert_eq!(
+            h.get("editor-plugin-version").and_then(|v| v.to_str().ok()),
+            Some(kigi_sampling_types::COPILOT_EDITOR_PLUGIN_VERSION)
+        );
+        assert_eq!(
+            h.get("copilot-integration-id")
+                .and_then(|v| v.to_str().ok()),
+            Some(kigi_sampling_types::COPILOT_INTEGRATION_ID)
+        );
+        assert_eq!(
+            h.get("x-initiator").and_then(|v| v.to_str().ok()),
+            Some("user"),
+            "inference carries X-Initiator: user"
+        );
+    }
+
+    /// REGRESSION: a plain ChatCompletions client (github-copilot OFF, standing
+    /// in for groq) carries NONE of the Copilot editor headers and keeps the
+    /// kigi User-Agent — every other ChatCompletions provider stays untouched.
+    #[test]
+    fn plain_chat_completions_client_has_no_copilot_editor_headers() {
+        // github_copilot stays false (as it is for groq and every other
+        // ChatCompletions platform).
+        let client = SamplingClient::new(minimal_config()).expect("client builds");
+        let h = &client.default_headers;
+        assert!(
+            h.get("editor-version").is_none(),
+            "groq must NOT send Editor-Version"
+        );
+        assert!(
+            h.get("editor-plugin-version").is_none(),
+            "groq must NOT send Editor-Plugin-Version"
+        );
+        assert!(
+            h.get("copilot-integration-id").is_none(),
+            "groq must NOT send Copilot-Integration-Id"
+        );
+        assert!(
+            h.get("x-initiator").is_none(),
+            "groq must NOT send X-Initiator"
+        );
+        assert!(
+            h.get(USER_AGENT)
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|ua| ua.starts_with("kigi/")),
+            "groq keeps the kigi User-Agent"
         );
     }
 

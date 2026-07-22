@@ -2115,6 +2115,10 @@ mod tests {
             "the claude-pro-max interactive OAuth login row must render: {text}"
         );
         assert!(
+            text.contains("GitHub Copilot (subscription) (OAuth)"),
+            "the github-copilot interactive OAuth login row must render: {text}"
+        );
+        assert!(
             text.contains("Moonshot Open Platform (API key \u{b7} moonshot.cn)"),
             "{text}"
         );

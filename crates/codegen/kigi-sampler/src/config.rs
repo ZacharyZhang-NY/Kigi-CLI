@@ -62,6 +62,14 @@ pub struct SamplerConfig {
     /// API-key `anthropic` + `minimax` Messages requests stay byte-identical.
     #[serde(default)]
     pub anthropic_oauth: bool,
+    /// GitHub Copilot ChatCompletions adaptation (github-copilot only). When
+    /// true the request carries the VS Code Copilot editor-identity headers
+    /// (User-Agent `GitHubCopilotChat/…`, `Editor-Version`,
+    /// `Editor-Plugin-Version`, `Copilot-Integration-Id`) plus `X-Initiator:
+    /// user`. Gated so every other ChatCompletions provider (groq, …) stays
+    /// byte-identical.
+    #[serde(default)]
+    pub github_copilot: bool,
     /// Extra request headers applied verbatim. The sampler never inspects
     /// the URL to derive headers; callers (the session) inject proxy auth
     /// and other access headers here before constructing the config.
@@ -152,6 +160,7 @@ impl Default for SamplerConfig {
             api_backend: ApiBackend::default(),
             auth_scheme: AuthScheme::default(),
             anthropic_oauth: false,
+            github_copilot: false,
             extra_headers: IndexMap::new(),
             context_window: 0,
             force_http1: false,

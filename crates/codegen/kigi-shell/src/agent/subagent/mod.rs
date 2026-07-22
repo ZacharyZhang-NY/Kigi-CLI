@@ -888,6 +888,11 @@ async fn read_parent_sampling_config(
                     platform.oauth().is_some()
                         && platform.wire_api() == kigi_models::PlatformWireApi::Messages
                 });
+            // GitHub Copilot editor headers inherit from the parent model's
+            // platform (github-copilot → true); every other platform / BYOK →
+            // false, so the other ChatCompletions paths stay byte-identical.
+            let github_copilot = kigi_models::parse_managed_model_key(ctx.model_id.0.as_ref())
+                .is_some_and(|(platform, _)| platform.sends_copilot_editor_headers());
             let inherited = kigi_sampler::SamplerConfig {
                 api_key: creds.api_key,
                 base_url: cfg.base_url,
@@ -898,6 +903,7 @@ async fn read_parent_sampling_config(
                 api_backend: cfg.api_backend,
                 auth_scheme,
                 anthropic_oauth,
+                github_copilot,
                 chat_compat: cfg.chat_compat,
                 extra_headers,
                 context_window: cfg.context_window.get(),

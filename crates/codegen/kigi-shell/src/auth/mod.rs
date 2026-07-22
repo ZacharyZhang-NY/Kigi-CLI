@@ -5,6 +5,7 @@ pub(crate) mod device;
 pub mod device_code;
 pub mod error;
 mod flow;
+pub(crate) mod github_copilot;
 pub(crate) mod kimi_oauth;
 pub(crate) mod manager;
 mod model;

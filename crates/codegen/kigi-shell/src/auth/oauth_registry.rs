@@ -147,6 +147,43 @@ mod tests {
             .expect("claude-pro-max carries an OAuthConfig")
     }
 
+    fn copilot_oauth() -> &'static kigi_models::OAuthConfig {
+        kigi_models::PlatformId::GithubCopilot
+            .oauth()
+            .expect("github-copilot carries an OAuthConfig")
+    }
+
+    /// A `github-copilot/<model>` turn resolves to the process-global pooled
+    /// github-copilot manager (its OWN `oauth/github-copilot` scope), NEVER the
+    /// primary Kimi manager — the same leak-safe routing as xai-grok /
+    /// claude-pro-max, and a DISTINCT pool entry from either.
+    #[tokio::test]
+    async fn github_copilot_model_resolves_to_its_own_manager_not_kimi() {
+        let (_kd, kimi) = primary_with_token("kimi-tok");
+        let home = tempfile::tempdir().unwrap();
+        let resolved = manager_for_model(home.path(), "github-copilot/gpt-4.1", Some(&kimi))
+            .expect("github-copilot model resolves to its pooled manager");
+        assert!(
+            !Arc::ptr_eq(&resolved, &kimi),
+            "github-copilot must NOT resolve to the Kimi manager"
+        );
+        assert!(
+            Arc::ptr_eq(&resolved, &global_manager_for(home.path(), copilot_oauth())),
+            "github-copilot must resolve to its OWN process-global pooled manager"
+        );
+        assert!(
+            !Arc::ptr_eq(&resolved, &global_manager_for(home.path(), claude_oauth())),
+            "github-copilot and claude-pro-max must not share a pooled manager"
+        );
+        // Fail-fast: even with a Kimi primary, a copilot turn never yields the
+        // Kimi bearer — it draws from the copilot pool (its own token, or None).
+        assert_ne!(
+            session_key_for_model(home.path(), "github-copilot/gpt-4.1", Some(&kimi)),
+            Some("kimi-tok".to_string()),
+            "a github-copilot model must never receive the primary Kimi token"
+        );
+    }
+
     /// A `claude-pro-max/<model>` turn resolves to the process-global pooled
     /// claude-pro-max manager (its OWN `oauth/claude-pro-max` scope), NEVER the
     /// primary Kimi manager — the same leak-safe routing as xai-grok, and a

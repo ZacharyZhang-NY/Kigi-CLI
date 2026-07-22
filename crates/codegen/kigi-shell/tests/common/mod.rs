@@ -39,6 +39,7 @@ pub fn test_sampler_config(
         api_backend,
         auth_scheme: Default::default(),
         anthropic_oauth: false,
+        github_copilot: false,
         chat_compat: Default::default(),
         extra_headers: extra_headers
             .iter()

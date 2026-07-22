@@ -27,8 +27,15 @@ const SLOW_DOWN_INCREMENT_SECS: u64 = 5;
 /// pre-generalization path; the `Generic` arm drives a registry
 /// [`OAuthConfig`] provider (xai-grok) through [`crate::auth::oauth_device`].
 enum DeviceFlowBackend<'a> {
-    Kimi { host: &'a str },
+    Kimi {
+        host: &'a str,
+    },
     Generic(&'a OAuthConfig),
+    /// GitHub Copilot two-stage flow: the device authorization is the generic
+    /// one, but the token POLL reads GitHub's 200-body errors, and login
+    /// FINALIZES the durable github token into a copilot session token via the
+    /// Stage-2 exchange (see [`DeviceFlowBackend::finalize`]).
+    GithubCopilot(&'a OAuthConfig),
 }
 
 impl DeviceFlowBackend<'_> {
@@ -37,7 +44,7 @@ impl DeviceFlowBackend<'_> {
             Self::Kimi { host } => {
                 crate::auth::kimi_oauth::request_device_authorization(host).await
             }
-            Self::Generic(cfg) => {
+            Self::Generic(cfg) | Self::GithubCopilot(cfg) => {
                 crate::auth::oauth_device::request_device_authorization(cfg).await
             }
         }
@@ -49,6 +56,22 @@ impl DeviceFlowBackend<'_> {
             }
             Self::Generic(cfg) => {
                 crate::auth::oauth_device::poll_device_token(cfg, device_code).await
+            }
+            Self::GithubCopilot(cfg) => {
+                crate::auth::github_copilot::poll_github_device_token(cfg, device_code).await
+            }
+        }
+    }
+    /// Transform the device-grant credential before it is persisted. The Kimi
+    /// and generic flows persist the poll result verbatim; the GitHub Copilot
+    /// flow exchanges the durable github token (in `auth.key`) for the
+    /// short-lived copilot token, persisting BOTH (copilot as `key`, github as
+    /// `refresh_token`).
+    async fn finalize(&self, auth: KimiAuth) -> anyhow::Result<KimiAuth> {
+        match self {
+            Self::Kimi { .. } | Self::Generic(_) => Ok(auth),
+            Self::GithubCopilot(cfg) => {
+                crate::auth::github_copilot::exchange_copilot_token(cfg, &auth.key).await
             }
         }
     }
@@ -86,6 +109,23 @@ pub async fn run_device_code_login_generic(
     run_device_code_login_backend(DeviceFlowBackend::Generic(oauth), auth_manager, channels).await
 }
 
+/// GitHub Copilot two-stage login (github-copilot): the same device-flow
+/// presentation as the generic path, but the token poll reads GitHub's 200-body
+/// errors and the minted github token is finalized into a copilot session token
+/// before it is persisted (see [`DeviceFlowBackend::finalize`]).
+pub async fn run_device_code_login_github_copilot(
+    oauth: &OAuthConfig,
+    auth_manager: &Arc<AuthManager>,
+    channels: &mut Option<AuthChannels>,
+) -> anyhow::Result<(KimiAuth, bool)> {
+    run_device_code_login_backend(
+        DeviceFlowBackend::GithubCopilot(oauth),
+        auth_manager,
+        channels,
+    )
+    .await
+}
+
 async fn run_device_code_login_backend(
     backend: DeviceFlowBackend<'_>,
     auth_manager: &Arc<AuthManager>,
@@ -114,8 +154,12 @@ async fn run_device_code_login_backend(
 
         match complete_device_code_login(&backend, &device_auth).await? {
             PollLoopOutcome::Done(auth) => {
+                // Finalize before persisting: the GitHub Copilot flow exchanges
+                // the durable github token for the short-lived copilot token
+                // here; the Kimi / generic flows pass the credential through.
+                let auth = backend.finalize(*auth).await?;
                 let auth = auth_manager
-                    .update(*auth)
+                    .update(auth)
                     .await
                     .map_err(|e| anyhow::anyhow!("Failed to save credentials: {e}"))?;
                 return Ok((auth, true));
@@ -385,6 +429,100 @@ mod tests {
         assert!(
             started.elapsed() >= std::time::Duration::from_secs(6),
             "slow_down must bump the poll interval by {SLOW_DOWN_INCREMENT_SECS}s"
+        );
+    }
+
+    /// GitHub Copilot two-stage login e2e (mock wire): device authorization →
+    /// poll (pending → github token) → Stage-2 copilot-token exchange (Bearer
+    /// github token + editor headers → copilot token + expiry). The persisted
+    /// credential keys the COPILOT token, keeps the GITHUB token as
+    /// `refresh_token`, and carries the copilot expiry.
+    #[tokio::test]
+    async fn github_copilot_two_stage_login_persists_copilot_and_github() {
+        let server = MockServer::start().await;
+        let host: &'static str = Box::leak(server.uri().into_boxed_str());
+        let cfg = OAuthConfig {
+            auth_host: host,
+            token_host: host,
+            copilot_exchange: Some((host, "/copilot_internal/v2/token")),
+            ..kigi_models::COPILOT_OAUTH_CONFIG
+        };
+        // Stage 1a: device authorization (github.com/login/device/code).
+        Mock::given(method("POST"))
+            .and(path("/login/device/code"))
+            .and(body_string_contains("client_id=Iv1.b507a08c87ecfe98"))
+            .and(body_string_contains("scope=read"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "device_code": "gh-dev-1",
+                "user_code": "WDJB-MJHT",
+                "verification_uri": "https://github.com/login/device",
+                "expires_in": 900,
+                "interval": 0,
+            })))
+            .mount(&server)
+            .await;
+        // Stage 1b: token poll — GitHub returns errors AND success in a 200 body.
+        Mock::given(method("POST"))
+            .and(path("/login/oauth/access_token"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "error": "authorization_pending" })),
+            )
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/login/oauth/access_token"))
+            .and(body_string_contains("device_code=gh-dev-1"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "access_token": "gho_github_tok" })),
+            )
+            .mount(&server)
+            .await;
+        // Stage 2: copilot-token exchange (Bearer github token + editor headers).
+        let future = (chrono::Utc::now() + chrono::Duration::minutes(30)).timestamp();
+        Mock::given(method("GET"))
+            .and(path("/copilot_internal/v2/token"))
+            .and(wiremock::matchers::header(
+                "Authorization",
+                "Bearer gho_github_tok",
+            ))
+            .and(wiremock::matchers::header(
+                "Editor-Plugin-Version",
+                "copilot-chat/0.35.0",
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({ "token": "copilot-session-tok", "expires_at": future }),
+            ))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let dir = tempfile::tempdir().unwrap();
+        let mgr = auth_manager(&dir);
+        let mut channels = None;
+        let (auth, is_new) = run_device_code_login_github_copilot(&cfg, &mgr, &mut channels)
+            .await
+            .unwrap();
+        assert!(is_new);
+        assert_eq!(
+            auth.key, "copilot-session-tok",
+            "key = copilot session token"
+        );
+        assert_eq!(
+            auth.refresh_token.as_deref(),
+            Some("gho_github_tok"),
+            "the durable github token is persisted as refresh_token"
+        );
+        assert!(
+            auth.expires_at.is_some_and(|e| e > chrono::Utc::now()),
+            "the copilot expiry must be persisted"
+        );
+        assert_eq!(
+            mgr.current_or_expired().map(|a| a.key),
+            Some("copilot-session-tok".into()),
+            "login must land the copilot token in the manager cache"
         );
     }
 
