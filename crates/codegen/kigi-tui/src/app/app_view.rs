@@ -298,8 +298,12 @@ impl PlatformLogin {
 /// One row of the unauthenticated welcome menu (the login picker).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PendingMenuItem {
-    /// Interactive OAuth login (the existing `kimi-code` device flow).
+    /// Interactive OAuth login. `method_id` names the advertised method this
+    /// row starts (`kimi-code`, `xai-grok`, `claude-pro-max`, …) — `None`
+    /// only on the no-interactive-method fallback row, whose `Action::Login`
+    /// surfaces the proper error.
     Login {
+        method_id: Option<acp::AuthMethodId>,
         label: String,
     },
     /// Open-platform API-key entry.
@@ -321,7 +325,7 @@ impl PendingMenuItem {
     }
     pub fn label(&self) -> &str {
         match self {
-            Self::Login { label } | Self::ApiKey { label, .. } => label,
+            Self::Login { label, .. } | Self::ApiKey { label, .. } => label,
             Self::Quit => "Quit",
         }
     }
@@ -347,12 +351,14 @@ pub fn pending_menu_items(
             });
         } else if AuthMethodKind::from_id(method.id()).needs_interactive_login() {
             items.push(PendingMenuItem::Login {
+                method_id: Some(method.id().clone()),
                 label: format!("{} (OAuth)", method.name()),
             });
         }
     }
     if items.is_empty() {
         items.push(PendingMenuItem::Login {
+            method_id: None,
             label: format!("Login with {}", login_label.unwrap_or("kimi.com")),
         });
     }
@@ -2827,7 +2833,15 @@ fn handle_menu_nav(
 /// Rows come from [`pending_menu_items`]: interactive methods + Quit.
 fn dispatch_pending_menu_action(items: &[PendingMenuItem], index: usize) -> InputOutcome {
     match items.get(index) {
-        Some(PendingMenuItem::Login { .. }) => InputOutcome::Action(Action::Login),
+        // The row's own method id rides along — every provider must start
+        // ITS OWN flow, not the first advertised (Kimi) one.
+        Some(PendingMenuItem::Login {
+            method_id: Some(id),
+            ..
+        }) => InputOutcome::Action(Action::LoginWith(id.clone())),
+        Some(PendingMenuItem::Login {
+            method_id: None, ..
+        }) => InputOutcome::Action(Action::Login),
         Some(PendingMenuItem::ApiKey { target, .. }) => {
             InputOutcome::Action(Action::BeginPlatformKeyEntry(*target))
         }
@@ -6916,34 +6930,41 @@ pub(crate) mod tests {
         )
         .methods
     }
+    /// Assert an OAuth picker row carries BOTH its label and its own method
+    /// id — the id is what routes the flow to that provider (a row without
+    /// it fell back to the first advertised method: the Kimi device flow).
+    fn assert_login_row(item: &PendingMenuItem, method_id: &str, label: &str) {
+        match item {
+            PendingMenuItem::Login {
+                method_id: Some(id),
+                label: got,
+            } => {
+                assert_eq!(id.0.as_ref(), method_id, "row must route to its own method");
+                assert_eq!(got, label);
+            }
+            other => panic!("expected the {method_id} login row, got {other:?}"),
+        }
+    }
     #[test]
     fn pending_menu_items_lists_interactive_methods_plus_quit() {
         let items = pending_menu_items(&fresh_user_auth_methods(), None);
         assert_eq!(items.len(), 30, "29 login rows + Quit, got {items:?}");
-        assert!(
-            matches!(&items[0], PendingMenuItem::Login { label } if label == "Kimi Code (OAuth)"),
-            "row 0 must be the OAuth login, got {:?}",
-            items[0]
+        assert_login_row(&items[0], "kimi-code", "Kimi Code (OAuth)");
+        assert_login_row(&items[1], "xai-grok", "xAI Grok (subscription) (OAuth)");
+        assert_login_row(
+            &items[2],
+            "claude-pro-max",
+            "Claude Pro/Max (subscription) (OAuth)",
         );
-        assert!(
-            matches!(&items[1], PendingMenuItem::Login { label } if label == "xAI Grok (subscription) (OAuth)"),
-            "row 1 must be the xai-grok OAuth login (interactive, after kimi-code), got {:?}",
-            items[1]
+        assert_login_row(
+            &items[3],
+            "github-copilot",
+            "GitHub Copilot (subscription) (OAuth)",
         );
-        assert!(
-            matches!(&items[2], PendingMenuItem::Login { label } if label == "Claude Pro/Max (subscription) (OAuth)"),
-            "row 2 must be the claude-pro-max OAuth login (after xai-grok), got {:?}",
-            items[2]
-        );
-        assert!(
-            matches!(&items[3], PendingMenuItem::Login { label } if label == "GitHub Copilot (subscription) (OAuth)"),
-            "row 3 must be the github-copilot OAuth login (after claude-pro-max), got {:?}",
-            items[3]
-        );
-        assert!(
-            matches!(&items[4], PendingMenuItem::Login { label } if label == "ChatGPT Plus/Pro (Codex) (OAuth)"),
-            "row 4 must be the openai-codex OAuth login (after github-copilot), got {:?}",
-            items[4]
+        assert_login_row(
+            &items[4],
+            "openai-codex",
+            "ChatGPT Plus/Pro (Codex) (OAuth)",
         );
         assert_eq!(
             items[5],
@@ -7168,9 +7189,39 @@ pub(crate) mod tests {
             "Enter on the moonshot-cn row must open its key entry, got {outcome:?}"
         );
         // 'l' is muscle-memory for the first (OAuth) row regardless of the
-        // arrow selection.
+        // arrow selection — and it must carry that row's own method id.
         let outcome = app.handle_input(&key_event(KeyCode::Char('l'), KeyModifiers::NONE));
-        assert!(matches!(outcome, InputOutcome::Action(Action::Login)));
+        assert!(
+            matches!(
+                &outcome,
+                InputOutcome::Action(Action::LoginWith(id)) if id.0.as_ref() == "kimi-code"
+            ),
+            "'l' must start the kimi-code flow, got {outcome:?}"
+        );
+    }
+    /// Selecting a subscription-OAuth row must dispatch `LoginWith` carrying
+    /// THAT provider's method id. Regression: every Login row collapsed to
+    /// the id-less `Action::Login`, which resolved to the FIRST interactive
+    /// method — sending Grok/Claude/Copilot/Codex logins to kimi.com.
+    #[test]
+    fn welcome_pending_oauth_rows_route_to_their_own_provider() {
+        let items = pending_menu_items(&fresh_user_auth_methods(), None);
+        for (index, expected) in [
+            (0, "kimi-code"),
+            (1, "xai-grok"),
+            (2, "claude-pro-max"),
+            (3, "github-copilot"),
+            (4, "openai-codex"),
+        ] {
+            let outcome = dispatch_pending_menu_action(&items, index);
+            assert!(
+                matches!(
+                    &outcome,
+                    InputOutcome::Action(Action::LoginWith(id)) if id.0.as_ref() == expected
+                ),
+                "row {index} must dispatch LoginWith({expected}), got {outcome:?}"
+            );
+        }
     }
     #[test]
     fn welcome_api_key_entry_esc_returns_to_picker() {

@@ -562,6 +562,11 @@ pub enum Action {
     SwitchAccount,
     /// User pressed login on the welcome screen.
     Login,
+    /// User chose a specific OAuth provider row on the login picker. Routes
+    /// the flow to THAT advertised method — `Login` alone resolves to the
+    /// first interactive method, which sent every provider row to the Kimi
+    /// device flow.
+    LoginWith(acp::AuthMethodId),
     /// Cancel an in-progress login that was started from inside a session
     /// (`/login` or a 401 re-auth prompt) and return to the previous view.
     /// Distinct from `Quit`: abandoning a mid-session re-auth must not exit

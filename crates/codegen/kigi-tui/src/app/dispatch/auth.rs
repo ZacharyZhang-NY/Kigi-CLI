@@ -175,6 +175,44 @@ pub(super) fn strip_trailing_auth_error_blocks(agent: &mut AgentView) {
 /// restored once auth completes or is cancelled. Without this, `/login`
 /// with an external auth provider configured appeared to do nothing.
 pub(super) fn dispatch_login(app: &mut AppView) -> Vec<Effect> {
+    dispatch_login_with(app, None)
+}
+
+/// Start an interactive login flow with an explicitly chosen method (a
+/// provider row on the login picker). `None` keeps the historical behavior:
+/// re-use the current method or resolve the first interactive one.
+///
+/// The explicit id is resolved against the shell-advertised `auth_methods`
+/// and FAILS CLOSED when absent — silently falling back to the first method
+/// is exactly the bug that sent every provider row to the Kimi flow.
+pub(super) fn dispatch_login_with(
+    app: &mut AppView,
+    method_id: Option<agent_client_protocol::AuthMethodId>,
+) -> Vec<Effect> {
+    if let Some(id) = method_id {
+        let Some(method) = app.auth_methods.iter().find(|m| *m.id() == id) else {
+            app.auth_state = AuthState::Pending {
+                error: Some(format!("Login method not available: {}", id.0)),
+            };
+            return vec![];
+        };
+        // Mirror `find_interactive_login_method`: external auth providers
+        // start in Command mode, everything else Pending (the mode firms up
+        // when the auth URL arrives).
+        let is_provider = method
+            .meta()
+            .as_ref()
+            .and_then(|v| v.get("external_provider"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        app.login_label = Some(method.name().to_string());
+        app.login_method_id = Some(method.id().clone());
+        app.auth_start_mode = if is_provider {
+            AuthMode::Command
+        } else {
+            AuthMode::Pending
+        };
+    }
     ensure_login_method(app);
     let Some(method_id) = app.login_method_id.clone() else {
         app.auth_state = AuthState::Pending {

@@ -435,3 +435,74 @@ fn auth_complete_preserves_show_resolved_model_when_absent() {
 
     assert!(!app.show_resolved_model);
 }
+
+/// `LoginWith` must authenticate with EXACTLY the chosen method and adopt
+/// its label — even when a different method was resolved earlier.
+/// Regression: the picker collapsed every row to the id-less `Login`,
+/// which resolved to the first interactive method (kimi-code), so the
+/// Grok/Claude/Copilot/Codex rows all opened the Kimi device flow.
+#[test]
+fn login_with_routes_to_the_chosen_method() {
+    let mut app = test_app();
+    app.auth_state = AuthState::Pending { error: None };
+    app.auth_methods = kigi_shell::agent::auth_method::build_auth_methods(
+        kigi_shell::agent::auth_method::AuthMethodsBuildInputs {
+            has_external_api_key: false,
+            has_cached_token: false,
+            login_label: None,
+        },
+    )
+    .methods;
+    // A previous login resolved kimi-code; the explicit choice must win.
+    app.login_method_id = Some(acp::AuthMethodId::new("kimi-code"));
+    app.login_label = Some("Kimi Code".into());
+
+    let effects = dispatch(
+        Action::LoginWith(acp::AuthMethodId::new("claude-pro-max")),
+        &mut app,
+    );
+
+    let authenticated_with = effects.iter().find_map(|e| match e {
+        Effect::Authenticate { method_id, .. } => Some(method_id.0.to_string()),
+        _ => None,
+    });
+    assert_eq!(
+        authenticated_with.as_deref(),
+        Some("claude-pro-max"),
+        "the chosen provider's own method must ride the Authenticate effect"
+    );
+    assert_eq!(
+        app.login_method_id.as_ref().map(|id| id.0.as_ref()),
+        Some("claude-pro-max")
+    );
+    assert_eq!(
+        app.login_label.as_deref(),
+        Some("Claude Pro/Max (subscription)"),
+        "the picker label must follow the chosen method"
+    );
+    assert!(matches!(app.auth_state, AuthState::Authenticating { .. }));
+}
+
+/// A `LoginWith` id that is not among the shell-advertised methods fails
+/// closed with an error on the picker — silently falling back to the
+/// first method is exactly the routing bug this guards against.
+#[test]
+fn login_with_unknown_method_fails_closed() {
+    let mut app = test_app();
+    app.auth_state = AuthState::Pending { error: None };
+
+    let effects = dispatch(
+        Action::LoginWith(acp::AuthMethodId::new("no-such-provider")),
+        &mut app,
+    );
+
+    assert!(effects.is_empty(), "must not start any auth flow");
+    assert!(
+        matches!(
+            &app.auth_state,
+            AuthState::Pending { error: Some(e) } if e.contains("no-such-provider")
+        ),
+        "must surface the unknown method, got {:?}",
+        app.auth_state
+    );
+}
