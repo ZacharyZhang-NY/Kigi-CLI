@@ -34,7 +34,9 @@ import) or any `KIMI_*` env var.
   `~/.kigi` only. Its zero-network property is a contract.
 - The root `Cargo.toml` is hand-maintained (upstream's generator is not in
   this repo). Members sorted; versions inherited from
-  `workspace.package.version` (0.1.0).
+  `workspace.package.version` — the single source of truth for the release
+  version (`kigi_version::VERSION` derives from it; the release workflow
+  gates the `v*` tag against it).
 
 ## Layout
 
