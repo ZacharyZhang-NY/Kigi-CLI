@@ -66,6 +66,38 @@ pub(crate) async fn resolve_generic_oauth_tokens(
     }
     tokens
 }
+
+/// The generic device-code OAuth platforms with a STORED session scope in
+/// auth.json — the cheap sync companion to [`resolve_generic_oauth_tokens`]
+/// (no `AuthManager`, no refresh, no secrets read beyond scope presence).
+///
+/// Every place that reasons about the FETCH PLAN without resolving bearers
+/// (the prefetch arming gate, `on_auth_changed`'s wipe guard, cache-origin
+/// computation) must consult this, or a subscription-OAuth-only user (e.g.
+/// claude-pro-max with no Kimi session and no API key) is treated as
+/// credential-less: catalog wiped/never fetched, session stuck on the
+/// bundled Kimi table with an empty picker.
+pub(crate) fn stored_oauth_platforms(kigi_home: &std::path::Path) -> Vec<kigi_models::PlatformId> {
+    let Ok(store) = crate::auth::read_auth_json(&kigi_home.join("auth.json")) else {
+        return Vec::new();
+    };
+    kigi_models::PlatformId::ALL
+        .into_iter()
+        .filter(|p| p.oauth().is_some_and(|o| store.contains_key(o.scope_key)))
+        .collect()
+}
+
+/// Presence-only stand-in for [`OAuthSessionTokens`] in fetch-plan/origin
+/// computations. Values are EMPTY strings: cache origins encode enabled
+/// platform NAMES and URLs only ([`models_fetch_origin`]), and this map must
+/// never reach a request builder — real bearers come from
+/// [`resolve_generic_oauth_tokens`] on the fetch path itself.
+pub(crate) fn stored_oauth_token_stubs(kigi_home: &std::path::Path) -> OAuthSessionTokens {
+    stored_oauth_platforms(kigi_home)
+        .into_iter()
+        .map(|p| (p, String::new()))
+        .collect()
+}
 /// The models-fetch origin key for this endpoints/auth shape. Used as the
 /// models disk-cache origin: cached entries embed absolute `base_url`s from
 /// the backend(s) that served them, so a catalog fetched against one fetch
@@ -3724,6 +3756,81 @@ mod tests {
                 &PlatformApiKeys::default(),
             ),
             "https://models.acme.com/v1/models"
+        );
+    }
+
+    /// `stored_oauth_platforms` maps auth.json `oauth/<provider>` scopes to
+    /// their platforms — presence only, no AuthManager, no refresh. Missing
+    /// or empty auth.json → empty (self-cleaning TempDir).
+    #[test]
+    fn stored_oauth_platforms_reads_scopes_from_auth_json() {
+        let home = tempfile::tempdir().expect("tempdir");
+        assert!(
+            stored_oauth_platforms(home.path()).is_empty(),
+            "no auth.json → no stored oauth platforms"
+        );
+
+        let mut store = std::collections::BTreeMap::new();
+        store.insert(
+            "oauth/claude-pro-max".to_string(),
+            crate::auth::KimiAuth::test_default(),
+        );
+        // A platform API-key scope must NOT count as a stored OAuth session.
+        store.insert(
+            "deepseek".to_string(),
+            crate::auth::KimiAuth::test_default(),
+        );
+        std::fs::write(
+            home.path().join("auth.json"),
+            serde_json::to_string(&store).expect("serialize store"),
+        )
+        .expect("write auth.json");
+
+        assert_eq!(
+            stored_oauth_platforms(home.path()),
+            vec![kigi_models::PlatformId::ClaudeProMax],
+        );
+
+        // The stub map carries the same platform set with EMPTY values.
+        let stubs = stored_oauth_token_stubs(home.path());
+        assert_eq!(stubs.len(), 1);
+        assert_eq!(stubs[&kigi_models::PlatformId::ClaudeProMax], "");
+    }
+
+    /// The origin computed from presence-only stubs equals the origin the
+    /// fetch path computes from REAL resolved tokens — the whole point of
+    /// the stubs (a claude-inclusive cached catalog must load at startup).
+    #[test]
+    fn stub_origin_matches_real_token_origin() {
+        use crate::agent::config::EndpointsConfig;
+        use crate::agent::models::{ModelFetchAuth, PlatformApiKeys};
+        let cfg = EndpointsConfig::default();
+        let mut real = OAuthSessionTokens::new();
+        real.insert(
+            kigi_models::PlatformId::ClaudeProMax,
+            "live-bearer".to_string(),
+        );
+        let mut stubs = OAuthSessionTokens::new();
+        stubs.insert(kigi_models::PlatformId::ClaudeProMax, String::new());
+        let with_real = models_fetch_origin(
+            &cfg,
+            ModelFetchAuth::Platforms,
+            false,
+            &real,
+            &PlatformApiKeys::default(),
+        );
+        let with_stubs = models_fetch_origin(
+            &cfg,
+            ModelFetchAuth::Platforms,
+            false,
+            &stubs,
+            &PlatformApiKeys::default(),
+        );
+        assert_eq!(with_real, with_stubs);
+        assert!(with_real.contains("claude-pro-max="));
+        assert!(
+            !with_real.contains("live-bearer"),
+            "origin never embeds tokens"
         );
     }
 }

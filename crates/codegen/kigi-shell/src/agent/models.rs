@@ -334,7 +334,13 @@ impl ModelsManager {
                         &cfg.endpoints,
                         fetch_auth,
                         has_session,
-                        &Default::default(),
+                        // Presence-only stubs: the origin encodes enabled
+                        // platform NAMES, and it must match the fetch path's
+                        // (which enables stored subscription-OAuth platforms)
+                        // or their cached catalog never loads at startup.
+                        &crate::agent::models_fetch::stored_oauth_token_stubs(
+                            &crate::auth::oauth_registry::pool_home(),
+                        ),
                         &platform_keys,
                     ),
                 )
@@ -740,12 +746,15 @@ impl ModelsManager {
         self.inner.cache.invalidate();
         let fetch_auth = ModelFetchAuth::resolve(&config.endpoints);
         *self.inner.fetch_auth.write() = fetch_auth;
-        // With no session, no open-platform key, and no custom endpoint there
-        // is nothing to fetch from: wipe the previous identity's catalog.
-        if self.inner.auth_manager.current_or_expired().is_none()
-            && fetch_auth == ModelFetchAuth::Platforms
-            && !PlatformApiKeys::resolve(&config.platforms).any()
-        {
+        if should_wipe_catalog_on_auth_change(
+            self.inner.auth_manager.current_or_expired().is_some(),
+            fetch_auth,
+            PlatformApiKeys::resolve(&config.platforms).any(),
+            !crate::agent::models_fetch::stored_oauth_platforms(
+                &crate::auth::oauth_registry::pool_home(),
+            )
+            .is_empty(),
+        ) {
             self.clear();
             return;
         }
@@ -1153,14 +1162,17 @@ impl ModelsManager {
         let has_oauth = self.inner.auth_manager.current_or_expired().is_some();
         let platform_keys = PlatformApiKeys::resolve(&platforms);
         // The origin key encodes only enabled-platform NAMES + URLs (never
-        // tokens). Generic-oauth presence is reflected by the post-login
-        // `on_auth_changed` re-fetch; an empty map here keeps this sync path
-        // cheap (no per-provider AuthManager construction on the hot path).
+        // tokens). Stored subscription-OAuth platforms join via presence-only
+        // stubs (cheap auth.json scan — no per-provider AuthManager on this
+        // sync path) so this origin matches the fetch path's, which enables
+        // those platforms with real bearers.
         crate::agent::models_fetch::models_fetch_origin(
             &endpoints,
             fetch_auth,
             has_oauth,
-            &Default::default(),
+            &crate::agent::models_fetch::stored_oauth_token_stubs(
+                &crate::auth::oauth_registry::pool_home(),
+            ),
             &platform_keys,
         )
     }
@@ -1837,6 +1849,10 @@ fn resolve_prefetch_env_with_auth(auth: Option<KimiAuth>) -> Option<PrefetchEnv>
         auth,
         endpoints,
         PlatformApiKeys::resolve_from_effective_config(),
+        !crate::agent::models_fetch::stored_oauth_platforms(
+            &crate::auth::oauth_registry::pool_home(),
+        )
+        .is_empty(),
         crate::util::config::resolve_remote_fetch_enabled(),
     )
 }
@@ -1850,12 +1866,38 @@ fn resolve_prefetch_env_with_auth(auth: Option<KimiAuth>) -> Option<PrefetchEnv>
 /// or a `deployment_key` would re-arm the prefetch — and with it the
 /// deployment-config sync on the prefetch thread.
 ///
+/// Decision core of [`ModelsManager::on_auth_changed`]'s wipe guard, split
+/// from the disk probes so it is unit-testable: `true` = no fetch source
+/// exists, wipe the previous identity's catalog.
+///
+/// A stored subscription-OAuth session IS a fetch source (its platform
+/// passes `enabled_platforms`), so it vetoes the wipe even with no primary
+/// (Kimi) session and no API key. Regression: ignoring it meant a
+/// claude-pro-max-only login wiped the catalog and returned before the
+/// fetch — the session stayed on the bundled Kimi table with an empty
+/// picker ("unknown" model).
+fn should_wipe_catalog_on_auth_change(
+    has_primary_session: bool,
+    fetch_auth: ModelFetchAuth,
+    has_platform_keys: bool,
+    has_stored_oauth: bool,
+) -> bool {
+    !has_primary_session
+        && fetch_auth == ModelFetchAuth::Platforms
+        && !has_platform_keys
+        && !has_stored_oauth
+}
+
 /// PRD F2 acceptance: a moonshot API key alone (no subscription login) must
-/// arm the prefetch so the catalog syncs on startup.
+/// arm the prefetch so the catalog syncs on startup. Likewise a stored
+/// subscription-OAuth session alone (`has_stored_oauth`, e.g. a
+/// claude-pro-max login with no Kimi session): its models are the user's
+/// ONLY models, so the prefetch must run for them.
 fn resolve_prefetch_env_from_parts(
     auth: Option<KimiAuth>,
     endpoints: config::EndpointsConfig,
     platform_keys: PlatformApiKeys,
+    has_stored_oauth: bool,
     remote_fetch_enabled: bool,
 ) -> Option<PrefetchEnv> {
     if !remote_fetch_enabled {
@@ -1865,7 +1907,11 @@ fn resolve_prefetch_env_from_parts(
 
     let model_fetch_auth = ModelFetchAuth::resolve(&endpoints);
 
-    if auth.is_none() && !endpoints.has_custom_endpoint() && !platform_keys.any() {
+    if auth.is_none()
+        && !endpoints.has_custom_endpoint()
+        && !platform_keys.any()
+        && !has_stored_oauth
+    {
         return None;
     }
 
@@ -1910,13 +1956,25 @@ fn spawn_prefetch_thread(env: PrefetchEnv) -> EarlyPrefetchHandle {
         let mut timer = crate::instrumentation_timer!("startup.early_prefetch");
         let proxy_endpoint = env.endpoints.proxy_url();
         timer.with_field("endpoint", proxy_endpoint.as_str());
+        // Resolve each stored subscription-OAuth session's bearer (refreshed
+        // on expiry) so those platforms are part of the STARTUP fetch plan —
+        // otherwise a claude-pro-max-only user boots onto the bundled Kimi
+        // table until some later async refresh happens to run, and the cache
+        // origin (which encodes enabled platforms) never matches the
+        // async-path's claude-inclusive origin.
+        let oauth_tokens = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map(|rt| {
+                rt.block_on(crate::agent::models_fetch::resolve_generic_oauth_tokens(
+                    &crate::auth::oauth_registry::pool_home(),
+                ))
+            })
+            .unwrap_or_default();
         let models = prefetch_models_blocking(
             &env.endpoints,
             env.auth.as_ref(),
-            // Startup prefetch does not resolve generic-oauth (xai-grok)
-            // tokens; those platforms join on the first async catalog refresh
-            // (post-login `on_auth_changed` / periodic `spawn_fetch`).
-            &Default::default(),
+            &oauth_tokens,
             env.model_fetch_auth,
             &env.platform_keys,
         );
@@ -3730,14 +3788,21 @@ mod tests {
                 Some(KimiAuth::test_default()),
                 endpoints.clone(),
                 keys(Some("sk-cn"), None),
+                true,
                 false,
             )
             .is_none(),
             "session auth must not re-arm the prefetch when remote_fetch is off",
         );
         assert!(
-            resolve_prefetch_env_from_parts(None, endpoints, keys(Some("sk-cn"), None), false)
-                .is_none(),
+            resolve_prefetch_env_from_parts(
+                None,
+                endpoints,
+                keys(Some("sk-cn"), None),
+                false,
+                false
+            )
+            .is_none(),
             "platform key / custom endpoint must not re-arm it either",
         );
     }
@@ -3751,6 +3816,7 @@ mod tests {
             None,
             config::EndpointsConfig::default(),
             keys(None, Some("sk-ai")),
+            false,
             true,
         );
         assert!(
@@ -3762,11 +3828,61 @@ mod tests {
                 None,
                 config::EndpointsConfig::default(),
                 PlatformApiKeys::default(),
+                false,
                 true,
             )
             .is_none(),
             "no credentials and no custom endpoint must stay a no-prefetch launch",
         );
+    }
+
+    /// A stored subscription-OAuth session ALONE (claude-pro-max login, no
+    /// Kimi session, no API key) must arm the startup prefetch — its models
+    /// are the user's only models. Regression: the gate ignored stored OAuth
+    /// sessions, so such a user booted onto the bundled Kimi table.
+    #[test]
+    fn prefetch_env_resolves_with_stored_oauth_session_alone() {
+        assert!(
+            resolve_prefetch_env_from_parts(
+                None,
+                config::EndpointsConfig::default(),
+                PlatformApiKeys::default(),
+                true,
+                true,
+            )
+            .is_some(),
+            "a stored subscription-OAuth session alone must arm the model sync",
+        );
+    }
+
+    /// The `on_auth_changed` wipe guard: only the genuinely credential-less
+    /// shape wipes. A stored subscription-OAuth session vetoes the wipe —
+    /// the regression that left a claude-pro-max-only login with an empty
+    /// catalog and an "unknown" model.
+    #[test]
+    fn wipe_guard_spares_stored_oauth_sessions() {
+        use ModelFetchAuth::{CustomEndpoint, Platforms};
+        // No credential of any kind → wipe.
+        assert!(should_wipe_catalog_on_auth_change(
+            false, Platforms, false, false
+        ));
+        // A stored subscription-OAuth session alone → NO wipe (fetch runs).
+        assert!(!should_wipe_catalog_on_auth_change(
+            false, Platforms, false, true
+        ));
+        // Primary session / platform key / custom endpoint each veto too.
+        assert!(!should_wipe_catalog_on_auth_change(
+            true, Platforms, false, false
+        ));
+        assert!(!should_wipe_catalog_on_auth_change(
+            false, Platforms, true, false
+        ));
+        assert!(!should_wipe_catalog_on_auth_change(
+            false,
+            CustomEndpoint,
+            false,
+            false
+        ));
     }
 
     /// remote_fetch=false: an online catalog refresh is a no-op — nothing is
