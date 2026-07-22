@@ -145,6 +145,13 @@ pub enum SessionCommand {
     },
     SetSessionModel {
         sampling_config: kigi_sampler::SamplerConfig,
+        /// The catalog KEY the picker resolved (`{platform}/{model}` for a
+        /// registry model), which `sampling_config.model` — the bare routing
+        /// slug — cannot express when an API-key platform and its
+        /// subscription-OAuth twin list the same id. The session stores it as
+        /// its OWN selection instead of reading the process-global
+        /// `ModelsManager::current_model_id()` (H4).
+        catalog_key: Option<String>,
         use_concise: bool,
         /// When `false`, skip the system prompt rewrite (concise/default swap).
         /// Set to `false` for forked sessions so mid-session model switches

@@ -980,10 +980,21 @@ pub(crate) async fn spawn_session_actor(
         }
     };
     let doom_loop_recovery = effective_config.resolve_doom_loop_recovery();
+    let session_model_id_for_actor = session_model_id.clone();
     let session = Arc::new_cyclic(|weak: &std::sync::Weak<SessionActor>| SessionActor {
         session_info: session_info.clone(),
         auth_method_id,
         model_auth_facts: std::cell::RefCell::new(None),
+        // H4: seed the session's OWN selected catalog key from the model it was
+        // spawned with, resolved through the picker's lookup. Never the
+        // process-global `current_model_id()`. H-c: the rule lives in
+        // `selected_catalog_key_for_spawn` so it is covered by a test.
+        selected_catalog_key: std::cell::RefCell::new(
+            crate::agent::models::selected_catalog_key_for_spawn(
+                &models_manager.models(),
+                &session_model_id_for_actor,
+            ),
+        ),
         attribution_callback,
         auth_manager,
         state,

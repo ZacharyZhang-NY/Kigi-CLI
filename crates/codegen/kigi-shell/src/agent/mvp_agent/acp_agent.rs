@@ -330,10 +330,28 @@ impl acp::Agent for MvpAgent {
         );
         match arguments.method_id.0.as_ref() {
             auth_method::XAI_API_KEY_METHOD_ID => {
+                // C1: the SECOND writer of the shared `sampling_config.api_key`.
+                // The house `KIGI_API_KEY` is the user's own key for the
+                // session's own endpoint, so the stamp requires the authority to
+                // classify that endpoint `CredentialClass::Primary` — NOT merely
+                // "takes some session credential", which is also true on a
+                // subscription-OAuth platform's host, where this key has no
+                // business (the shared config is the subagent baseline and the
+                // unresolved-model fallback). The key is still persisted to
+                // auth.json either way; only the stamp is guarded.
+                let takes_house_key = self.shared_config_takes_house_key();
                 let mut sampling_config = self.sampling_config.borrow_mut();
                 if sampling_config.api_key.is_none() {
                     if let Ok(api_key) = auth_method::read_xai_api_key_env() {
-                        sampling_config.api_key = Some(api_key.clone());
+                        if takes_house_key {
+                            sampling_config.api_key = Some(api_key.clone());
+                        } else {
+                            tracing::debug!(
+                                model = sampling_config.model.as_str(),
+                                "auth: house api key withheld from the shared sampling config \
+                                 (its endpoint is not this session's own)"
+                            );
+                        }
                         if let Err(e) = crate::auth::store_api_key(
                             &crate::util::kigi_home::kigi_home(),
                             &api_key,
@@ -389,7 +407,7 @@ impl acp::Agent for MvpAgent {
                         ),
                     ),
                 );
-                let Some(auth) = self.auth_manager.current() else {
+                let Some(_auth) = self.auth_manager.current() else {
                     let message = if self.auth_manager.is_expired() {
                         "Session expired, re-authentication required"
                     } else {
@@ -408,9 +426,15 @@ impl acp::Agent for MvpAgent {
                         .await;
                 };
                 self.emit_settings_update_notification();
-                        {
-                    let mut sampling_config = self.sampling_config.borrow_mut();
-                    sampling_config.api_key = Some(auth.key);
+                // H2/C1: route the stamp through the ONE guard, which asks the
+                // authority which credential governs the shared config rather
+                // than being handed this one. That config may already point at
+                // a third-party model or at another provider's subscription
+                // host (it is the subagent baseline and the unresolved-model
+                // fallback), and `auth.key` authorizes only the session's own
+                // coding endpoint. The manager already holds this token, so the
+                // authority reads it back where it belongs.
+                if self.stamp_session_credential(true) {
                     tracing::debug!(
                         "auth: cached_token handler set api_key (SessionToken)"
                     );
@@ -484,9 +508,15 @@ impl acp::Agent for MvpAgent {
                         err.message = e.to_string();
                         err
                     })?;
-                {
-                    let mut sampling_config = self.sampling_config.borrow_mut();
-                    sampling_config.api_key = Some(auth.key.clone());
+                // C1: hot-swap FIRST, then let the authority read the fresh
+                // token back where it belongs. Nothing hand-carries `auth.key`
+                // to the shared config any more — the stamp is whatever
+                // credential governs that config's own model + endpoint, which
+                // for a session whose current model is another provider's
+                // subscription model is that provider's pooled token, and for a
+                // third-party host is nothing at all.
+                self.auth_manager.hot_swap(auth.clone());
+                if self.stamp_session_credential(true) {
                     tracing::debug!(
                         "auth: kimi.com/oidc handler set api_key (SessionToken)"
                     );
@@ -496,7 +526,6 @@ impl acp::Agent for MvpAgent {
                         None,
                     );
                 }
-                self.auth_manager.hot_swap(auth.clone());
                 self.emit_settings_update_notification();
                         self.set_auth_method(arguments.method_id.clone());
                 self.models_manager.on_auth_changed().await;

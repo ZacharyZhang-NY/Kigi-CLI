@@ -417,6 +417,21 @@ pub(crate) struct SessionActor {
     /// [`SessionActor::model_auth_facts`].
     pub(crate) model_auth_facts:
         std::cell::RefCell<Option<(String, crate::agent::config::ModelAuthFacts)>>,
+    /// The catalog KEY this session's model was selected by (`{platform}/{model}`
+    /// for a registry model), owned PER SESSION.
+    ///
+    /// H4: `SamplingConfig::model` is the bare routing slug, and duplicate slugs
+    /// across an API-key platform and its subscription-OAuth twin
+    /// (`xai`/`xai-grok`, `anthropic`/`claude-pro-max`, `openai`/`openai-codex`)
+    /// are BY DESIGN, so the slug alone cannot name the platform. This used to
+    /// be read from `ModelsManager::current_model_id()` — a single
+    /// PROCESS-GLOBAL cell that Leader mode never writes
+    /// (`agent/handlers/model_switch.rs`) and that is last-writer-wins across
+    /// concurrent sessions, so both collision directions resolved the wrong
+    /// platform: the subscription session lost its resolver (unrecoverable 401
+    /// ~1h in) and the API-key session got the pooled OAuth bearer stamped over
+    /// its own `sk-…` key. Written at spawn and on every `SetSessionModel`.
+    pub(crate) selected_catalog_key: std::cell::RefCell<Option<String>>,
     /// 401-attribution callback. Joined with the bearer the
     /// sampler sends on the wire to emit an `auth 401 attribution`
     /// event at each of the six `OaiCompatClient` 401 arms in

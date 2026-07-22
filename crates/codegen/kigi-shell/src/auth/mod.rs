@@ -1,5 +1,6 @@
 pub(crate) mod attribution;
 mod config;
+pub(crate) mod credential_authority;
 pub mod credential_provider;
 pub(crate) mod device;
 pub mod device_code;

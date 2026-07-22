@@ -16,6 +16,19 @@ use crate::sampling::SamplerConfig as SamplingConfig;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use kigi_sampling_types::{ReasoningEffort, ReasoningEffortOption};
 
+/// The agent-wide baseline sampling config together with the registry platform
+/// of the catalog entry it was BUILT from.
+///
+/// Returned as ONE value by [`ModelsManager::sampling_config`] so a holder
+/// cannot end up with the config but not the platform its credential was
+/// resolved against — the drift that made the login stamp guard answer about a
+/// model the config no longer represents (H-a).
+pub struct BaselineSamplingConfig {
+    pub config: SamplingConfig,
+    /// `None` for a bare / `[model.*]` entry.
+    pub platform: Option<kigi_models::PlatformId>,
+}
+
 // ── Auth method for model fetching ──────────────────────────────────────────
 
 /// How the model catalog is fetched (PRD F4). The old xAI tier-gated proxy
@@ -1060,8 +1073,17 @@ impl ModelsManager {
             .store(false, Ordering::Relaxed);
     }
 
-    /// Build a `SamplingConfig` from the current model + auth state.
-    pub fn sampling_config(&self) -> SamplingConfig {
+    /// Build the agent-wide baseline `SamplingConfig` from the current model +
+    /// auth state, together with the registry platform of the catalog entry it
+    /// was BUILT from.
+    ///
+    /// H-a: the platform is returned WITH the config, never re-derived later.
+    /// The shared config is built exactly once (`MvpAgent::with_models`) and
+    /// never rebuilt, while [`Self::current_model_id`] moves on every non-Leader
+    /// model switch and on catalog reselection — so a guard that re-resolved
+    /// `config.model` against the LIVE cell answers about a DIFFERENT entry as
+    /// soon as the two drift.
+    pub fn sampling_config(&self) -> BaselineSamplingConfig {
         let config = self.inner.cfg.read().clone();
         let current_model_id = self.current_model_id();
         let all_models = self.models();
@@ -1079,35 +1101,45 @@ impl ModelsManager {
             }
         };
 
-        // Resolve the session bearer PER the current model's platform: a
-        // generic device-code OAuth platform (xai-grok) resolves from ITS OWN
-        // scope-keyed store — never the Kimi session. Kimi and every other
-        // model keep the primary manager's token (path byte-identical).
-        let session_key = self.session_key_for_catalog_key(current_model_id.0.as_ref());
-        let credentials = resolve_credentials(current_model, session_key.as_deref());
-
-        sampling_config_for_model(
+        // H1: the session bearer comes from the ONE credential chokepoint,
+        // resolved against the CURRENT MODEL's own platform AND endpoint. This
+        // used to be a local re-derivation that fell through to
+        // `auth_manager.current_or_expired()` for every non-OAuth platform —
+        // byte-for-byte the round-1 defect, reachable with ZERO configuration
+        // (`default_models.json` bundles `moonshot-cn/*` entries a Kimi
+        // subscription user sees on first launch / offline, and this config is
+        // the `MvpAgent` baseline that seeds subagents and the
+        // unresolved-model fallback).
+        let credentials = resolve_credentials(
             current_model,
-            credentials,
-            config.endpoints.alpha_test_key.clone(),
-        )
+            self.credential_authority()
+                .credential_for_model(current_model)
+                .as_ref(),
+        );
+
+        BaselineSamplingConfig {
+            // The SAME entry the credential above was resolved against, so the
+            // config's guards ask about the model the config represents.
+            platform: crate::auth::credential_authority::entry_platform(current_model),
+            config: sampling_config_for_model(
+                current_model,
+                credentials,
+                config.endpoints.alpha_test_key.clone(),
+            ),
+        }
     }
 
-    /// The session bearer for a model catalog key. Generic device-code OAuth
-    /// platforms (xai-grok) resolve from their own persisted scope; every other
-    /// key resolves from the primary (Kimi) `AuthManager`. Reads the persisted
-    /// token (refresh happens in the async catalog/refresh paths); never logs
-    /// it.
-    fn session_key_for_catalog_key(&self, catalog_key: &str) -> Option<String> {
-        if let Some((platform, _)) = kigi_models::parse_managed_model_key(catalog_key)
-            && let Some(oauth) = platform.oauth()
-        {
-            let kigi_home = crate::util::kigi_home::kigi_home();
-            return AuthManager::new_oauth_provider(&kigi_home, oauth)
-                .current_or_expired()
-                .map(|a| a.key);
-        }
-        self.inner.auth_manager.current_or_expired().map(|a| a.key)
+    /// The credential chokepoint for this manager: the session's EFFECTIVE
+    /// endpoints (so a managed `[endpoints] coding_api_base_url` deployment is
+    /// recognised) plus the primary session manager, which the authority keeps
+    /// private.
+    pub(crate) fn credential_authority(
+        &self,
+    ) -> crate::auth::credential_authority::CredentialAuthority {
+        crate::auth::credential_authority::CredentialAuthority::new(
+            self.inner.cfg.read().endpoints.clone(),
+            Some(self.inner.auth_manager.clone()),
+        )
     }
 
     /// Disk-cache origin key for this manager's current endpoints/auth shape
@@ -1184,7 +1216,11 @@ impl ModelsManager {
         // (refreshed on expiry) from its own scope — independent of the Kimi
         // session above.
         let oauth_tokens = crate::agent::models_fetch::resolve_generic_oauth_tokens(
-            &crate::util::kigi_home::kigi_home(),
+            // M7: the SAME home the OAuth pool resolves from. Under `cargo
+            // test` that is a disposable path, so a catalog fetch can never
+            // read the developer's real `~/.kigi` tokens — nor fire a real
+            // refresh request against them via `configure_refresher()`.
+            &crate::auth::oauth_registry::pool_home(),
         )
         .await;
         let outcome = fetch_models_async(
@@ -1212,7 +1248,11 @@ impl ModelsManager {
         }
         let auth = self.inner.auth_manager.auth().await.ok();
         let oauth_tokens = crate::agent::models_fetch::resolve_generic_oauth_tokens(
-            &crate::util::kigi_home::kigi_home(),
+            // M7: the SAME home the OAuth pool resolves from. Under `cargo
+            // test` that is a disposable path, so a catalog fetch can never
+            // read the developer's real `~/.kigi` tokens — nor fire a real
+            // refresh request against them via `configure_refresher()`.
+            &crate::auth::oauth_registry::pool_home(),
         )
         .await;
         let retry =
@@ -1917,7 +1957,11 @@ pub(crate) fn resolve_catalog_key(
         .map(|(key, _)| acp::ModelId::new(key.clone()))
 }
 
-/// The managed catalog key (`{platform}/{model}`) a routing slug belongs to.
+/// The catalog ENTRY a routing slug resolves to. The single lookup behind both
+/// the managed key and the endpoint, so a caller can never take the platform
+/// from one entry and the `base_url` from another (M6: the aux path used to
+/// resolve the platform with `current_key` and the credential with a separate
+/// `find_model_by_id`).
 ///
 /// H5: `SamplingConfig::model` is the BARE routing slug, never the catalog key,
 /// and duplicate slugs across platforms are BY DESIGN — the registry guarantees
@@ -1929,37 +1973,138 @@ pub(crate) fn resolve_catalog_key(
 /// unrecoverable 401 ~1h in), its Messages adaptation and its Copilot/Codex
 /// identity headers.
 ///
-/// `current_key` — [`ModelsManager::current_model_id`], the catalog key the
-/// picker actually selected — is therefore authoritative whenever it names this
-/// slug. Anything else (aux models, subagent overrides, unlisted slugs) falls
-/// back to the picker's OWN lookup, [`resolve_catalog_key`], so the auth layer
-/// and the picker can never resolve different entries.
-pub(crate) fn managed_key_for_slug(
-    models: &IndexMap<String, ModelEntry>,
+/// `current_key` — the SESSION's own selected catalog key
+/// ([`crate::session::acp_session::SessionActor::selected_catalog_key`], seeded
+/// by [`selected_catalog_key_for_spawn`] and rewritten by `SetSessionModel`) —
+/// is therefore authoritative whenever it names this slug. It is NOT
+/// [`ModelsManager::current_model_id`]: that cell is process-global,
+/// last-writer-wins across concurrent sessions and never written at all in
+/// Leader mode (H4). Anything else (aux models, subagent overrides, unlisted
+/// slugs) falls back to the picker's OWN lookup, [`resolve_catalog_key`], so the
+/// auth layer and the picker can never resolve different entries.
+///
+/// The one caller that legitimately passes `current_model_id` is the SHARED
+/// `MvpAgent::sampling_config`, which `ModelsManager::sampling_config` builds
+/// from exactly that key — there the two lookups must agree (H-a).
+///
+/// (L: this rule used to be stated on a `managed_key_for_slug` wrapper that no
+/// caller needed once [`platform_for_slug`] resolved the entry itself. The
+/// crate-level `#![allow(dead_code)]` in `lib.rs` means an unused helper on a
+/// credential path raises no warning, so dead ones are deleted on sight rather
+/// than left as a second, unexercised way to answer the same question.)
+pub(crate) fn entry_for_slug<'a>(
+    models: &'a IndexMap<String, ModelEntry>,
     current_key: Option<&str>,
     slug: &str,
-) -> Option<String> {
+) -> Option<&'a ModelEntry> {
+    entry_for_slug_resolution(models, current_key, slug).map(|(entry, _)| entry)
+}
+
+/// [`entry_for_slug`] plus whether the SESSION's own selected catalog key is
+/// what resolved it. `false` means the entry came from the picker's slug scan —
+/// a resolution that is only a GUESS when the slug collides across platforms
+/// (H-b).
+fn entry_for_slug_resolution<'a>(
+    models: &'a IndexMap<String, ModelEntry>,
+    current_key: Option<&str>,
+    slug: &str,
+) -> Option<(&'a ModelEntry, bool)> {
     if let Some(entry) = current_key.and_then(|key| models.get(key))
         && (entry.info.model == slug || current_key == Some(slug))
     {
-        return entry.info.id.clone();
+        return Some((entry, true));
     }
     let key = resolve_catalog_key(models, &acp::ModelId::new(slug.to_string()))?;
-    models.get(key.0.as_ref())?.info.id.clone()
+    models.get(key.0.as_ref()).map(|entry| (entry, false))
 }
 
-/// The registry platform a routing slug resolves to, via [`managed_key_for_slug`].
+/// Whether `slug` is carried as a routing slug by catalog entries belonging to
+/// MORE THAN ONE platform — the dual-credential collision the registry creates
+/// BY DESIGN (`anthropic` + `claude-pro-max` both list `claude-opus-4-8`;
+/// likewise `xai`/`xai-grok`, `openai`/`openai-codex`).
+///
+/// An exact catalog-key match is never ambiguous: it names exactly one entry.
+fn slug_collides_across_platforms(models: &IndexMap<String, ModelEntry>, slug: &str) -> bool {
+    if models.contains_key(slug) {
+        return false;
+    }
+    let mut seen: Option<Option<kigi_models::PlatformId>> = None;
+    for entry in models.values().filter(|entry| entry.info.model == slug) {
+        let platform = crate::auth::credential_authority::entry_platform(entry);
+        match seen {
+            None => seen = Some(platform),
+            Some(first) if first == platform => {}
+            Some(_) => return true,
+        }
+    }
+    false
+}
+
+/// The registry platform a routing slug resolves to, via [`entry_for_slug`].
 /// `None` for a bare / `[model.*]` / unlisted model. Single definition shared by
 /// the session actor's inference-auth chokepoints and the aux/summary paths, so
 /// the gate, the manager and the wire adaptations can never disagree.
+///
+/// H-b — REFUSE RATHER THAN GUESS. When `current_key` does not name this slug
+/// (`None`, or stale after an `OverrideModelName` rename) the resolution falls
+/// through to [`resolve_catalog_key`]'s `.rev()` scan, whose LAST match is the
+/// subscription-OAuth twin because `PlatformId::ALL` orders every API-key
+/// platform first. Trusting that guess hands an API-KEY session the twin's
+/// POOLED bearer — `SamplingClient::post` REPLACES the user's own `sk-ant-…` on
+/// the wire — plus the OAuth Messages adaptation, which is precisely what H4
+/// exists to prevent. A collided slug the session did not disambiguate
+/// therefore resolves to NO platform, which the chokepoint then decides purely
+/// by the ENDPOINT: the OAuth host is not the session's coding endpoint, so no
+/// session credential, no resolver and no adaptation ride. First-party is
+/// untouched — a platform-less model and a `kimi-code` model take the identical
+/// endpoint arm.
 pub(crate) fn platform_for_slug(
     models: &IndexMap<String, ModelEntry>,
     current_key: Option<&str>,
     slug: &str,
 ) -> Option<kigi_models::PlatformId> {
-    let key = managed_key_for_slug(models, current_key, slug);
-    kigi_models::parse_managed_model_key(key.as_deref().unwrap_or(slug))
-        .map(|(platform, _)| platform)
+    let (key, disambiguated) = match entry_for_slug_resolution(models, current_key, slug) {
+        Some((entry, disambiguated)) => (entry.info.id.clone(), disambiguated),
+        None => (None, false),
+    };
+    let platform = kigi_models::parse_managed_model_key(key.as_deref().unwrap_or(slug))
+        .map(|(platform, _)| platform)?;
+    if platform.oauth().is_some() && !disambiguated && slug_collides_across_platforms(models, slug)
+    {
+        tracing::warn!(
+            slug,
+            platform = platform.as_str(),
+            "auth: routing slug collides across platforms and this session did not select \
+             one — refusing to guess the subscription-OAuth twin (no session credential)"
+        );
+        return None;
+    }
+    Some(platform)
+}
+
+/// The per-session selected catalog key (H4) a session spawned on
+/// `session_model_id` must record: the picker's OWN lookup, never the
+/// process-global [`ModelsManager::current_model_id`].
+///
+/// `session_model_id` is a catalog key on the `new_session` path (the picker's
+/// `current_model_id()`), so this is idempotent there. On `load_session` it is
+/// the RAW persisted `summary.current_model_id` (`acp_agent.rs`'s spawn call) —
+/// `resolve_catalog_key` runs LATER, on the model-state / availability path, not
+/// before the spawn — and after any `SetSessionModel` that persisted value is a
+/// BARE routing slug, because `handle_set_session_model` persists
+/// `sampling_config.model`. The slug branch below is therefore the live resume
+/// path, not a theoretical one: it resolves through the picker's OWN lookup, and
+/// for a slug that collides across platforms the `.rev()` last match is the
+/// resume default (H-b then applies to anything that lookup could not pin).
+///
+/// Named — rather than inlined at the spawn site — so it is reachable from a
+/// test: it is one of only two production writers of the field the whole
+/// model→platform rule keys on, and a wrong seed is silent (H-c).
+pub(crate) fn selected_catalog_key_for_spawn(
+    models: &IndexMap<String, ModelEntry>,
+    session_model_id: &acp::ModelId,
+) -> Option<String> {
+    resolve_catalog_key(models, session_model_id).map(|key| key.0.to_string())
 }
 
 /// Catalog key for a persisted session model id, restricted to **selectable**

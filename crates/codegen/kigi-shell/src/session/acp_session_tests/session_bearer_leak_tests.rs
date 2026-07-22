@@ -5,7 +5,7 @@
 //! `kimi-code` / any OAuth platform) + a selected API-key-platform model
 //! classifies `ModelByok::NotByok` (the model carries no `[model.*]` key), the
 //! pre-fix `session_token_auth_gate` returned `true` unconditionally on that
-//! arm, `auth_manager_for_model` fell through to the primary Kimi manager for a
+//! arm, the manager lookup fell through to the primary Kimi manager for a
 //! non-OAuth platform, and `SamplingClient::post` then REPLACED the correctly
 //! resolved provider key with the Kimi bearer on the wire.
 //!
@@ -21,11 +21,12 @@
 //! `bearer_resolver` drawn from their OWN pooled `AuthManager`, or they lose
 //! mid-session token refresh.
 //!
-//! STORAGE DISCIPLINE (H6): nothing here touches the developer's real `~/.kigi`
-//! and nothing hot-swaps the process-global OAuth pool. Under `cfg(test)`
-//! `oauth_registry::pool_home()` is a process-lifetime `TempDir`, so every
-//! pooled manager is empty — which is exactly what the assertions need (a live
-//! resolver that is provably NOT the Kimi one).
+//! STORAGE DISCIPLINE (H6/M8): nothing here touches the developer's real
+//! `~/.kigi` and nothing hot-swaps the process-global OAuth pool. Under
+//! `cfg(test)` `oauth_registry::pool_home()` is a per-process temp path that is
+//! never created, so every pooled manager is empty — exactly what the
+//! assertions need (a live resolver that is provably NOT the Kimi one) — and
+//! the binary leaves nothing behind.
 
 use super::support::*;
 use super::*;
@@ -106,9 +107,14 @@ pub(super) async fn actor_with_catalog(
         actor.models_manager.insert_test_entry(key, entry);
     }
     let selected_entry = selected_entry.expect("the selected key must be in the catalog");
-    actor
-        .models_manager
-        .set_current_model_id(acp::ModelId::new(selected.to_string()));
+    // H4: the SESSION owns its selection. The process-global
+    // `ModelsManager::current_model_id()` is deliberately left UNSET (it still
+    // names the startup default, which is not in this catalog) — exactly what
+    // Leader mode produces, since `agent/handlers/model_switch.rs` never calls
+    // `set_current_model_id` there, and what a second concurrent session on a
+    // colliding slug produces (last writer wins). Every assertion below
+    // therefore rides the per-session key, not the global cell.
+    *actor.selected_catalog_key.borrow_mut() = Some(selected.to_string());
 
     let slug = selected_entry.info().model.clone();
     actor
@@ -166,7 +172,7 @@ pub(super) async fn actor_on_managed_model(
 /// (`cached_token`) method with a live Kimi primary must send DeepSeek's own key
 /// — the Kimi subscription bearer must not appear anywhere in the request.
 ///
-/// Revert-to-red: dropping `endpoint_takes_session_credential` from
+/// Revert-to-red: dropping the `credential_class` conjunct from
 /// `session_token_auth_gate` puts `Bearer <KIMI_TOKEN>` on this request.
 #[tokio::test(flavor = "multi_thread")]
 async fn deepseek_turn_under_a_kimi_session_sends_no_kimi_bearer_on_the_wire() {
@@ -282,11 +288,12 @@ async fn api_key_platform_models_get_no_session_bearer_resolver() {
 /// C2 at the resolver channel: a `[model.*]` entry has NO platform
 /// (`info.id == None`), which used to be a blanket allow. Pointed at a
 /// third-party host it must get no session resolver; pointed at the session's
-/// own coding endpoint (a `KIGI_CODE_BASE_URL` deployment or a local dev proxy)
-/// it must keep one — that is why the predicate is not `is_first_party_url`.
+/// own coding endpoint (a config.toml `[endpoints] coding_api_base_url`
+/// deployment, a `KIGI_CODE_BASE_URL` override, or a local dev proxy) it must
+/// keep one — that is why the predicate is not `is_first_party_url`.
 ///
-/// Revert-to-red: making the `None` arm of `platform_takes_session_credential`
-/// return `true` again puts a Kimi resolver on the openai.com config.
+/// Revert-to-red: make `CredentialAuthority::is_session_coding_endpoint` return
+/// `true` unconditionally and a Kimi resolver lands on the openai.com config.
 #[tokio::test(flavor = "current_thread")]
 async fn config_model_entry_takes_a_session_resolver_only_on_its_own_endpoint() {
     let local = tokio::task::LocalSet::new();
@@ -343,21 +350,15 @@ async fn config_model_entry_takes_a_session_resolver_only_on_its_own_endpoint() 
         .await;
 }
 
-/// H5 — the slug collision. A user holding BOTH an xAI API key and a Grok
-/// subscription has `xai/grok-4.5` AND `xai-grok/grok-4.5` in one catalog, in
-/// `PlatformId::ALL` order (`Xai`(15) before `XaiGrok`(25)) and with the SAME
-/// routing slug. `cfg.model` is that bare slug, so the auth layer used to
-/// first-match the API-key entry: no bearer_resolver, no live refresh (the
-/// session dies ~1h in with an unrecoverable 401), and — for the Anthropic and
-/// Codex twins — the OAuth Messages adaptation and the Codex identity headers
-/// silently dropped.
+/// The Kimi / first-party subscription channel must be BYTE-IDENTICAL: the
+/// session model keeps its live bearer_resolver AND the pre-flight refresh
+/// still heals a stale buffered key. This is also what proves the Kimi bearer is
+/// live in every LEAK assertion in this module — it WOULD leak if the guard
+/// were missing.
 ///
-/// The catalog KEY the picker selected is now authoritative.
-///
-/// Revert-to-red: resolving the platform from `find_model_by_id(models, slug)`
-/// instead of `current_model_id` resolves `xai/grok-4.5` /
-/// `anthropic/claude-opus-4-8` / `openai/gpt-5.5-codex` and every assertion
-/// below fails.
+/// (L12: the slug-collision commentary that used to sit here belongs to the
+/// collision tests in `session_bearer_leak_platform_tests`, which is where its
+/// revert-to-red actually reproduces; on this first-party test it never could.)
 #[tokio::test(flavor = "current_thread")]
 async fn kimi_first_party_model_still_rides_the_primary_session_bearer() {
     let local = tokio::task::LocalSet::new();

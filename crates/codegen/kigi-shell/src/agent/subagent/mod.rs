@@ -1011,18 +1011,13 @@ fn resolve_model_override_to_config(
     // stamp onto the child's api.x.ai / api.moonshot.cn credentials. The
     // first-party subscription channel still resolves to the primary
     // (byte-identical).
-    let session_key = crate::auth::oauth_registry::session_key_for_endpoint(
-        entry
-            .info()
-            .id
-            .as_deref()
-            .and_then(kigi_models::parse_managed_model_key)
-            .map(|(platform, _)| platform),
-        &entry.info().base_url,
-        Some(&ctx.auth_manager),
-    );
+    let session_key = crate::auth::credential_authority::CredentialAuthority::new(
+        ctx.models_manager.endpoints(),
+        Some(ctx.auth_manager.clone()),
+    )
+    .credential_for_model(&entry);
     let has_session_key = session_key.is_some();
-    let mut credentials = resolve_credentials(&entry, session_key.as_deref());
+    let mut credentials = resolve_credentials(&entry, session_key.as_ref());
     credentials.auth_type = subagent_auth_type(Some(&entry), &ctx.auth_method_id);
     let resolved_auth_type = credentials.auth_type;
     let config = sampling_config_for_model(&entry, credentials, ctx.alpha_test_key.clone());

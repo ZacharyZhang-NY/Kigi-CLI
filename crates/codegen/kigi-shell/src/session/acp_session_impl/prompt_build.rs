@@ -624,23 +624,22 @@ impl SessionActor {
         let resolved_describe = self
             .resolve_aux_sampler_config(&self.image_description_model)
             .await;
-        // LEAK 1b: only re-point the aux bearer_resolver when the aux model
-        // actually resolved (Some) — the `None` fallback yields the SESSION
-        // config, whose Kimi resolver must stay as-is.
-        let aux_resolved = resolved_describe.is_some();
-        let (describe_model, mut sampler_config) =
+        // LEAK 1b: the aux bearer_resolver is decided at the chokepoint from the
+        // IMAGE-DESCRIBE model's own platform + endpoint and passed in
+        // explicitly, so an aux model on another provider can never inherit the
+        // session (Kimi) resolver and have its own key overwritten on the aux
+        // host. The `None` fallback yields the SESSION config verbatim, whose
+        // own resolver must stay as-is.
+        let describe_resolver = resolved_describe
+            .as_ref()
+            .map(|cfg| self.aux_bearer_resolver(&self.image_description_model, &cfg.base_url));
+        let (describe_model, sampler_config) =
             crate::agent::config::finalize_image_describe_sampler_config(
                 resolved_describe,
                 &active_session_config,
+                describe_resolver.flatten(),
                 Some(self.max_retries),
             );
-        // An image-describe model on another provider must not inherit the
-        // session (Kimi) bearer_resolver stamped by `finalize_*`: re-point it at
-        // an OAuth model's own manager, or clear it for an API-key-platform /
-        // third-party endpoint. No-op for the first-party subscription channel.
-        if aux_resolved {
-            self.repoint_aux_bearer_resolver(&mut sampler_config, &self.image_description_model);
-        }
         let client = kigi_sampler::SamplingClient::new(sampler_config).map_err(|e| {
             acp::Error::internal_error().data(format!(
                 "failed to build image-describe sampling client: {e}"

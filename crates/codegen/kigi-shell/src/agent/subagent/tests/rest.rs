@@ -2545,8 +2545,9 @@ async fn subagent_override_first_party_model_still_gets_primary_token() {
 /// (`subagent_override_non_oauth_model_still_gets_primary_token`), which encoded
 /// the defect.
 ///
-/// Revert-to-red: dropping the `platform_takes_session_credential` term from
-/// `oauth_registry::session_key_for_endpoint` makes `api_key` `Some("kimi-secret")`.
+/// Revert-to-red: make `CredentialAuthority::governing_manager`'s
+/// `Some(platform) => None` arm return `self.primary.clone()` and `api_key`
+/// becomes `Some("kimi-secret")`.
 #[tokio::test]
 async fn subagent_override_api_key_platform_never_gets_the_primary_token() {
     let (_kd, manager) = kimi_primary_with_token("kimi-secret");

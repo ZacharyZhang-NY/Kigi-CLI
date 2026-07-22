@@ -300,10 +300,10 @@ pub(super) async fn run_session(
                    SessionActor::maybe_start_running_task(session.clone(), completion_tx
                    .clone()). await; } SessionCommand::SessionMode { session_mode, responds_to }
                    => { session.handle_session_mode(session_mode). await; let _ = responds_to
-                   .send(()); } SessionCommand::SetSessionModel { sampling_config, use_concise,
-                   apply_prompt_override, skip_prompt_rewrite, auto_compact_threshold_percent,
-                   responds_to } => { let updated_model_id = session
-                   .handle_set_session_model(sampling_config, use_concise,
+                   .send(()); } SessionCommand::SetSessionModel { sampling_config, catalog_key,
+                   use_concise, apply_prompt_override, skip_prompt_rewrite,
+                   auto_compact_threshold_percent, responds_to } => { let updated_model_id =
+                   session.handle_set_session_model(sampling_config, catalog_key, use_concise,
                    apply_prompt_override, skip_prompt_rewrite, auto_compact_threshold_percent).
                    await; let _ = responds_to.send(updated_model_id); }
                    SessionCommand::RebuildAgentForDefinition { definition, responds_to } => {
@@ -319,11 +319,24 @@ pub(super) async fn run_session(
                    .signals_handle().set_primary_model(& model_name); cfg.model = model_name
                    .clone(); cfg.extra_headers.extend(extra_headers); if let Some(cw) =
                    context_window && session.compaction.context_window_override.is_none() { cfg
-                   .context_window = cw; } session.chat_state_handle
+                   .context_window = cw; } let override_base_url = cfg
+                   .base_url.clone(); session.chat_state_handle
                    .update_sampling_config(cfg); let existing = session.chat_state_handle
-                   .get_credentials(). await; if let Some(r) = crate
-                   ::agent::config::try_resolve_model_credentials(model_name.as_str(), existing
-                   .api_key.as_deref()) { session.chat_state_handle
+                   .get_credentials(). await;
+                   // H-c: the rename makes the session's own selected catalog
+                   // key stale unless it still names this model; a stale key is
+                   // exactly what the model→platform rule must not trust.
+                   session.retain_selected_catalog_key_for(& model_name);
+                   // The override model routes to the SAME endpoint the session
+                   // already had; ask the chokepoint whether that endpoint takes
+                   // a session credential rather than re-offering the key
+                   // already in chat state. The platform comes from the session's
+                   // OWN lookup so this and every later turn agree.
+                   let override_session_key = session.credential_authority()
+                   .credential_for(session.model_platform(model_name.as_str()), &
+                   override_base_url); if let Some(r) = crate
+                   ::agent::config::try_resolve_model_credentials(model_name.as_str(),
+                   override_session_key.as_ref()) { session.chat_state_handle
                    .update_credentials(kigi_chat_state::Credentials { api_key : r.api_key,
                    auth_type : r.auth_type, alpha_test_key : existing.alpha_test_key, }); } session.model_auth_facts
                    .replace(None); } } SessionCommand::GetCurrentModel { responds_to } => { let

@@ -34,7 +34,17 @@ pub fn random_f64() -> f64 {
 pub fn probabilistic_sample(rate: f64) -> bool {
     random_f64() < rate
 }
-fn matches_trusted_base_url(candidate: &str, trusted_base: &str) -> bool {
+/// True when `candidate` is `trusted_base` or a path below it, comparing
+/// scheme, host and effective port exactly (so suffix attacks such as
+/// `api.kimi.com.evil.example` never match).
+///
+/// Public because the credential chokepoint
+/// ([`kigi_shell::auth::credential_authority`](../../../kigi_shell/auth/credential_authority/index.html))
+/// must compare a request URL against the SESSION's effective endpoints
+/// (`[endpoints] coding_api_base_url` from config.toml, `models_base_url`, a
+/// platform's own registry host) — none of which the env-var-only predicates
+/// below can see.
+pub fn matches_trusted_base_url(candidate: &str, trusted_base: &str) -> bool {
     let Ok(candidate) = reqwest::Url::parse(candidate) else {
         return false;
     };

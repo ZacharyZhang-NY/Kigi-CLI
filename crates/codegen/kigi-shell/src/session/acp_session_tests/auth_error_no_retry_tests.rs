@@ -485,29 +485,44 @@ async fn no_legacy_hint_for_oidc_auth() {
 #[test]
 fn session_token_auth_gate_truth_table() {
     use crate::agent::auth_method::{ModelByok, session_token_auth_gate as gate};
+    use crate::auth::credential_authority::CredentialClass;
     // Non-session methods never refresh, regardless of BYOK status or endpoint.
+    // `Pooled` (an OAuth platform's own pool) and `Primary` (kimi-code, or a
+    // bare / [model.*] model on the session's own endpoint) behave identically
+    // here: each names a credential that IS refreshable on that host.
     for fp in [false, true] {
-        assert!(!gate(false, ModelByok::NotByok, fp, true));
-        assert!(!gate(false, ModelByok::Byok, fp, true));
-        assert!(!gate(false, ModelByok::Unknown, fp, true));
-        // Session method on an endpoint that DOES take the session credential
-        // (kimi-code, an OAuth platform's own pool, or a bare / [model.*]
-        // model): a definite classification ignores the endpoint — NotByok
-        // refreshes, a genuine per-model Byok never does.
-        assert!(gate(true, ModelByok::NotByok, fp, true));
-        assert!(!gate(true, ModelByok::Byok, fp, true));
-        // …and an API-key registry platform endpoint is refused on every arm,
-        // first-party flag included: that is the leak guard.
-        assert!(!gate(true, ModelByok::NotByok, fp, false));
-        assert!(!gate(true, ModelByok::Byok, fp, false));
-        assert!(!gate(true, ModelByok::Unknown, fp, false));
+        for class in [CredentialClass::Pooled, CredentialClass::Primary] {
+            assert!(!gate(false, ModelByok::NotByok, fp, class));
+            assert!(!gate(false, ModelByok::Byok, fp, class));
+            assert!(!gate(false, ModelByok::Unknown, fp, class));
+            // Session method on an endpoint that DOES take a session
+            // credential: a definite classification ignores the endpoint —
+            // NotByok refreshes, a genuine per-model Byok never does.
+            assert!(gate(true, ModelByok::NotByok, fp, class));
+            assert!(!gate(true, ModelByok::Byok, fp, class));
+        }
+        // …and an API-key registry platform endpoint (`CredentialClass::None`)
+        // is refused on every arm, first-party flag included: the leak guard.
+        assert!(!gate(true, ModelByok::NotByok, fp, CredentialClass::None));
+        assert!(!gate(true, ModelByok::Byok, fp, CredentialClass::None));
+        assert!(!gate(true, ModelByok::Unknown, fp, CredentialClass::None));
     }
     // Session method + Unknown BYOK: refresh only against a first-party xAI
     // host, so a transiently-unclassifiable config can't demote a live session
     // (the stale-token 401 regression) yet the session token never leaks to a
     // third-party BYOK endpoint. This arm was unconditionally `false` pre-fix.
-    assert!(gate(true, ModelByok::Unknown, true, true));
-    assert!(!gate(true, ModelByok::Unknown, false, true));
+    assert!(gate(
+        true,
+        ModelByok::Unknown,
+        true,
+        CredentialClass::Primary
+    ));
+    assert!(!gate(
+        true,
+        ModelByok::Unknown,
+        false,
+        CredentialClass::Primary
+    ));
 }
 
 /// Pre-fix, the gate read `auth_type` and skipped recovery here, 401'ing every
@@ -875,7 +890,7 @@ async fn set_session_model_invalidates_byok_memo_for_same_model_id() {
                 header_injector: None,
             };
             let _ = actor
-                .handle_set_session_model(cfg, false, false, true, 85)
+                .handle_set_session_model(cfg, None, false, false, true, 85)
                 .await;
 
             assert!(

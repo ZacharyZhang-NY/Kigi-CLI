@@ -1291,6 +1291,7 @@ mod subagent_spawn_context_tests;
 /// LEAK guard for the `api_key` channel (C1/C2), through the real
 /// `prepare_sampling_config_for_model` resolution path.
 mod api_key_channel_leak_tests;
+mod chokepoint_leak_tests;
 /// No load in flight and no session → the wait returns immediately
 /// (the caller then surfaces "unknown session id" exactly as before).
 #[tokio::test]

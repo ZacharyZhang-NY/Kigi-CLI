@@ -33,33 +33,27 @@ impl MvpAgent {
         // would otherwise stamp onto an api.x.ai / api.deepseek.com request).
         // The first-party subscription channel still gets the primary
         // (byte-identical).
-        let session_key = crate::auth::oauth_registry::session_key_for_catalog_model(
-            &models,
-            &slug,
-            Some(&self.auth_manager),
-        );
+        let authority = self.credential_authority();
+        let session_key = authority.credential_for_slug(&models, None, &slug);
         let endpoints = self.models_manager.endpoints();
         let alpha_test_key = self.cfg.borrow().endpoints.alpha_test_key.clone();
         let config = match crate::agent::config::resolve_aux_model_sampling_config(
             &slug,
             &models,
             &endpoints,
-            session_key.as_deref(),
+            session_key.as_ref(),
             alpha_test_key,
         ) {
             Some(mut cfg) => {
                 cfg.attribution_callback = primary.attribution_callback.clone();
-                // H4: the SESSION model's bearer_resolver must not ride to a
-                // summary model on a different provider —
-                // `SamplingClient::post` REPLACES the request's auth header
-                // from it, overwriting the summary model's own resolved key on
-                // ITS host. Route through the one aux-resolver decision.
+                // The SESSION model's bearer_resolver must not ride to a summary
+                // model on a different provider — `SamplingClient::post`
+                // REPLACES the request's auth header from it, overwriting the
+                // summary model's own resolved key on ITS host. The chokepoint
+                // resolves the resolver from the SUMMARY model's platform +
+                // endpoint instead; the session's is never even read.
                 cfg.bearer_resolver =
-                    crate::session::acp_session::sampler_turn::aux_bearer_resolver(
-                        primary.bearer_resolver.clone(),
-                        crate::agent::models::platform_for_slug(&models, None, &slug),
-                        &cfg.base_url,
-                    );
+                    self.summary_bearer_resolver(&models, &slug, &cfg.base_url);
                 cfg.max_retries = primary.max_retries;
                 cfg
             }
@@ -72,6 +66,36 @@ impl MvpAgent {
         let model = config.model.clone();
         let client = OaiCompatClient::new(config).map_err(map_sampling_err_to_acp)?;
         Ok((client, model))
+    }
+    /// The `bearer_resolver` the SESSION-SUMMARY client may carry — the SAME
+    /// rule the session actor's aux path applies
+    /// ([`crate::session::acp_session::sampler_turn::aux_bearer_resolver_for`]),
+    /// not a second copy of it.
+    ///
+    /// M3 completed: the aux path was gated on the session-token gate and this
+    /// one was not, so an api-key / house-key session whose
+    /// `[model.session-summary]` block carries its OWN `env_key` on the
+    /// session's own coding endpoint had that key REPLACED on the wire by the
+    /// primary bearer on every summary request. Named (rather than inlined
+    /// above) so the gate is reachable from a test — the ungated version stayed
+    /// green because the resolver is consumed by `OaiCompatClient::new`.
+    ///
+    /// Aux slugs are not the session's selection, so `current_key = None`
+    /// (H-b then refuses a collided slug rather than guessing its OAuth twin).
+    pub(super) fn summary_bearer_resolver(
+        &self,
+        models: &indexmap::IndexMap<String, ModelEntry>,
+        slug: &str,
+        base_url: &str,
+    ) -> Option<kigi_sampler::SharedBearerResolver> {
+        let auth_method = self.auth_method_id.load();
+        crate::session::acp_session::sampler_turn::aux_bearer_resolver_for(
+            &self.credential_authority(),
+            auth_method.as_deref(),
+            crate::agent::models::platform_for_slug(models, None, slug),
+            crate::agent::config::resolve_model_auth_facts(slug).byok,
+            base_url,
+        )
     }
     /// `true` for session-based ACP auth methods.
     fn is_session_based_auth(&self) -> bool {
@@ -559,7 +583,12 @@ impl MvpAgent {
             reauth = auth_meta.reauth,
             "auth: generic oauth device login",
         );
-        let kigi_home = crate::util::kigi_home::kigi_home();
+        // M4: the SAME home the pool reads from
+        // (`oauth_registry::pool_home()`), not `kigi_home()` directly —
+        // identical in production, but a login driven from a lib test would
+        // otherwise write into the developer's real `~/.kigi` while every
+        // inference-time lookup read the disposable test pool home.
+        let kigi_home = crate::auth::oauth_registry::pool_home();
         let auth_manager =
             std::sync::Arc::new(crate::auth::AuthManager::new_oauth_provider(&kigi_home, oauth));
         auth_manager.configure_refresher();
@@ -681,56 +710,44 @@ impl MvpAgent {
         );
         Ok(entry.clone())
     }
-    /// Resolve the SESSION token for `model` by the model's OWN platform AND
-    /// endpoint — the single guard against the api_key-channel token leak.
+    /// This agent's credential chokepoint: the EFFECTIVE endpoints (so a
+    /// managed `[endpoints] coding_api_base_url` deployment keeps the session
+    /// bearer — H3) plus the primary manager, which the authority keeps private.
+    pub(crate) fn credential_authority(
+        &self,
+    ) -> crate::auth::credential_authority::CredentialAuthority {
+        crate::auth::credential_authority::CredentialAuthority::new(
+            self.models_manager.endpoints(),
+            Some(self.auth_manager.clone()),
+        )
+    }
+    /// The SESSION credential for `model`, resolved by the model's OWN platform
+    /// AND endpoint at the chokepoint — the single guard against the
+    /// api_key-channel token leak (C1).
     ///
-    /// - an oauth-platform model (xai-grok, claude-pro-max, github-copilot,
-    ///   openai-codex) draws its session token from ITS OWN process-global pool
-    ///   manager (built on demand from the on-disk token, proactively
-    ///   refreshed), INDEPENDENT of the primary `auth_method`; when that
-    ///   provider has no stored session the token is `None` — NEVER the primary
-    ///   Kimi key;
-    /// - an endpoint that does not take a session credential at all
-    ///   ([`crate::agent::auth_method::platform_takes_session_credential`] —
-    ///   every API-key registry platform, and any `[model.*]` block pointed at a
-    ///   third-party host) gets `None`. This is C1: `resolve_credentials` takes
-    ///   the `else if let Some(key) = session_key` arm and sets
-    ///   `api_key = <Kimi bearer>` with the THIRD-PARTY `base_url`, which
-    ///   `SamplingClient` then builds into `Authorization: Bearer …`. It is
-    ///   reachable with ZERO configuration: `default_models.json` bundles
-    ///   `moonshot-cn/*` + `moonshot-ai/*` entries that a Kimi-subscription user
-    ///   sees on first launch / offline;
-    /// - the first-party subscription channel (kimi-code, a `KIGI_CODE_BASE_URL`
-    ///   deployment, a loopback proxy) uses the primary session manager, and
-    ///   only under a session-based auth method — byte-identical to the pre-fix
-    ///   path.
+    /// A subscription-OAuth model draws from ITS OWN pooled manager (`None`,
+    /// never the Kimi key, when that provider has no stored session). Every
+    /// API-key registry platform and every `[model.*]` block pointed at a
+    /// third-party host gets `None`: `resolve_credentials` would otherwise take
+    /// the `else if let Some(key) = session_key` arm and set
+    /// `api_key = <Kimi bearer>` with the THIRD-PARTY `base_url`, which
+    /// `SamplingClient` builds into `Authorization: Bearer …` — reachable with
+    /// ZERO configuration, since `default_models.json` bundles `moonshot-cn/*`
+    /// and `moonshot-ai/*` entries a Kimi-subscription user sees on first
+    /// launch / offline. The first-party subscription channel uses the primary,
+    /// and only under a session-based auth method — byte-identical.
     ///
     /// SECURITY: the resolved token is never logged.
-    fn session_token_for_model(&self, model: &ModelEntry) -> Option<crate::auth::KimiAuth> {
-        let info = model.info();
-        let platform = info
-            .id
-            .as_deref()
-            .and_then(kigi_models::parse_managed_model_key)
-            .map(|(platform, _)| platform);
-        if let Some(oauth) = platform.and_then(kigi_models::PlatformId::oauth) {
-            return crate::auth::oauth_registry::global_manager_for(
-                &crate::auth::oauth_registry::pool_home(),
-                oauth,
-            )
-            .current_or_expired();
-        }
-        if !crate::agent::auth_method::platform_takes_session_credential(
-            platform,
-            &info.base_url,
-        ) {
+    fn session_token_for_model(
+        &self,
+        model: &ModelEntry,
+    ) -> Option<crate::auth::credential_authority::SessionCredential> {
+        let is_primary_channel = crate::auth::credential_authority::entry_platform(model)
+            .is_none_or(|platform| platform.oauth().is_none());
+        if is_primary_channel && !self.is_session_based_auth() {
             return None;
         }
-        if self.is_session_based_auth() {
-            self.auth_manager.current_or_expired()
-        } else {
-            None
-        }
+        self.credential_authority().credential_for_model(model)
     }
     pub(crate) fn prepare_sampling_config_for_model(
         &self,
@@ -746,10 +763,7 @@ impl MvpAgent {
         // api_key is its own grok token or `None`, never the primary Kimi key.
         let session = self.session_token_for_model(model);
         let has_session_key = session.is_some();
-        let mut credentials = resolve_credentials(
-            model,
-            session.as_ref().map(|a| a.key.as_str()),
-        );
+        let mut credentials = resolve_credentials(model, session.as_ref());
         if !has_session_key && credentials.auth_type == kigi_chat_state::AuthType::ApiKey
             && !model.has_own_credentials() && self.is_session_based_auth()
         {
@@ -936,7 +950,8 @@ impl MvpAgent {
         models_manager: crate::agent::models::ModelsManager,
     ) -> Self {
         models_manager.set_gateway(gateway.clone());
-        let sampling_config = models_manager.sampling_config();
+        // H-a: the config AND the platform it was built from, from ONE call.
+        let baseline = models_manager.sampling_config();
         let storage_mode = cfg.storage_mode;
         let default_yolo_mode = cfg.default_yolo_mode;
         let default_auto_mode = cfg.default_auto_mode;
@@ -991,7 +1006,8 @@ impl MvpAgent {
             models_manager,
             cfg: RefCell::new(cfg.clone()),
             auth_method_id: crate::agent::auth_method::new_shared_auth_method_id(None),
-            sampling_config: RefCell::new(sampling_config),
+            sampling_config: RefCell::new(baseline.config),
+            sampling_config_platform: std::cell::Cell::new(baseline.platform),
             auth_manager,
             auth_code_tx: RefCell::new(None),
             auth_url_rx: RefCell::new(None),
@@ -1581,38 +1597,133 @@ impl MvpAgent {
         );
         (serde_json::json!({ "options" : config_options }), serde_json::json!(detail))
     }
+    /// The registry platform the SHARED `sampling_config` routes to: the one
+    /// captured WITH the config when it was built, never a fresh lookup.
+    ///
+    /// H-a: `ModelsManager::sampling_config` builds the shared config from the
+    /// catalog entry `current_model_id()` named AT THAT MOMENT, and the config
+    /// is never rebuilt. A guard that re-resolves `config.model` (the BARE
+    /// routing slug) against the LIVE cell therefore answers about a DIFFERENT
+    /// entry the moment the two drift — and they drift on every non-Leader model
+    /// switch (`handlers/model_switch.rs`) and on catalog reselection.
+    /// `entry_for_slug_resolution`'s `entry.info.model == slug` test then fails
+    /// and the resolution falls through to `resolve_catalog_key`'s `.rev()`
+    /// scan; `PlatformId::ALL` lists `kimi-code` first and its API-key twin
+    /// `kimi-coding` 19th, so the LAST match is the twin, which takes no session
+    /// credential. For a Kimi-subscription user who also has `KIMI_API_KEY` set,
+    /// a post-expiry `kigi login` then found no governing manager and — because
+    /// the stamp only overwrites on success — left the EXPIRED bearer in place:
+    /// every unresolved-model fallback and every subagent baseline turn 401'd
+    /// until restart.
+    fn shared_config_platform(&self) -> Option<kigi_models::PlatformId> {
+        self.sampling_config_platform.get()
+    }
+    /// H2/C1: stamp the shared `sampling_config`'s OWN governing session
+    /// credential — whatever the authority says that is for this config's model
+    /// and endpoint.
+    ///
+    /// The shared config is not inert: `resolve_sampling_config_for_model`
+    /// returns it verbatim whenever a model id fails to resolve, and
+    /// `SubagentSpawnContext` clones it as every subagent's baseline — so an
+    /// `api_key` stamped here reaches the wire against whatever `base_url` the
+    /// config carries. The login/seed sites used to stamp it unconditionally,
+    /// exactly the mistake `authenticate_oauth_platform` already documents ("Do
+    /// NOT stamp this token onto the shared sampling_config").
+    ///
+    /// C1: this function does NOT take a credential. The previous shape took
+    /// `key: String` — always the primary Kimi bearer — and guarded it with a
+    /// predicate asking whether **a** session credential may ride. For a
+    /// subscription-OAuth platform at its own host that is correctly `true`, but
+    /// the credential that may ride there is that platform's POOLED token: a
+    /// Claude Pro/Max user running `kigi login` stamped the Kimi subscription
+    /// bearer onto a config routed at `api.anthropic.com`. Asking
+    /// `credential_for` instead makes the question and the credential the same
+    /// object, so the pairing cannot be wrong — and there is no primary handle
+    /// here to hand-carry (M2).
+    ///
+    /// `overwrite = false` keeps the historical "only if missing" seeding
+    /// behaviour; the login handlers pass `true` because a fresh login must
+    /// replace a stale bearer, and they call this AFTER the manager holds the
+    /// new token so it is read back through the authority.
+    ///
+    /// SECURITY: the token is never logged.
+    pub(super) fn stamp_session_credential(&self, overwrite: bool) -> bool {
+        let (model, base_url) = {
+            let sampling_config = self.sampling_config.borrow();
+            if !overwrite && sampling_config.api_key.is_some() {
+                return false;
+            }
+            (
+                sampling_config.model.clone(),
+                sampling_config.base_url.clone(),
+            )
+        };
+        let platform = self.shared_config_platform();
+        let Some(credential) = self.credential_authority().credential_for(platform, &base_url)
+        else {
+            tracing::debug!(
+                model = model.as_str(),
+                "auth: no session credential governs the shared sampling config \
+                 (its model + endpoint take none, or the governing provider has no session)"
+            );
+            return false;
+        };
+        self.sampling_config.borrow_mut().api_key = Some(credential.expose().to_owned());
+        true
+    }
+    /// Whether the shared `sampling_config` may receive a credential that
+    /// authorizes only the SESSION's own first-party endpoint — the house
+    /// `KIGI_API_KEY` the `xai.api_key` login handler reads from the
+    /// environment, which the authority does not own and so cannot produce.
+    ///
+    /// The house key rides the [`CredentialClass::Primary`] channel and no
+    /// other. `Pooled` is deliberately excluded: a subscription-OAuth platform's
+    /// own host DOES take a session credential, but that credential is the
+    /// platform's pooled token, where the house key has no business (C1).
+    pub(super) fn shared_config_takes_house_key(&self) -> bool {
+        let base_url = self.sampling_config.borrow().base_url.clone();
+        matches!(
+            self.credential_authority()
+                .credential_class(self.shared_config_platform(), &base_url),
+            crate::auth::credential_authority::CredentialClass::Primary
+        )
+    }
     /// Seed the global sampling config with login auth when available.
     ///
-    /// Only sets the `api_key` if missing. Does NOT resolve `base_url` from
+    /// Only sets the `api_key` if missing, and only with the credential that
+    /// governs the config's own model + endpoint (see
+    /// [`Self::stamp_session_credential`]). Does NOT resolve `base_url` from
     /// `current_model_id` — that's deferred to session creation time to avoid
     /// cross-client contamination in leader mode (where `current_model_id` is
     /// shared mutable state).
     pub(super) fn seed_client_config_auth_if_available(&self) {
-        let mut sampling_config = self.sampling_config.borrow_mut();
-        if sampling_config.api_key.is_none() {
-            if let Some(auth) = self.auth_manager.current_or_expired() {
-                sampling_config.api_key = Some(auth.key);
-                tracing::debug!("auth: seed_client_config set auth (SessionToken)");
-                kigi_log::unified_log::debug(
-                    "auth: seed_client_config set auth (SessionToken)",
-                    None,
-                    None,
-                );
-            } else if !self
+        if self.sampling_config.borrow().api_key.is_some() {
+            return;
+        }
+        if self.stamp_session_credential(false) {
+            tracing::debug!("auth: seed_client_config set auth (SessionToken)");
+            kigi_log::unified_log::debug(
+                "auth: seed_client_config set auth (SessionToken)",
+                None,
+                None,
+            );
+            return;
+        }
+        // No credential was stamped. Only the total-absence case is worth
+        // warning about: a withheld-by-endpoint seed is the rule working.
+        if self.auth_manager.current_or_expired().is_none()
+            && !self
                 .models_manager
                 .models()
                 .values()
                 .any(|m| m.has_own_credentials())
-            {
-                tracing::warn!(
-                    "No credentials found: no login token and no model api_key/env_key"
-                );
-                kigi_log::unified_log::warn(
-                    "No credentials found: no login token and no model api_key/env_key",
-                    None,
-                    None,
-                );
-            }
+        {
+            tracing::warn!("No credentials found: no login token and no model api_key/env_key");
+            kigi_log::unified_log::warn(
+                "No credentials found: no login token and no model api_key/env_key",
+                None,
+                None,
+            );
         }
     }
     /// Allocate the next monotonic telemetry turn number for a session.
@@ -2334,12 +2445,34 @@ impl MvpAgent {
         }
         let (mut handle, agent_system_prompt, session_thread) = {
             let _timer = crate::instrumentation_timer!("session.spawn_actor_call");
-            let session_key = self.auth_manager.current_or_expired().map(|a| a.key);
+            // Classify the credential's auth_type against the bearer this
+            // model's endpoint would ACTUALLY receive, not the raw primary:
+            // an API-key-platform model has no session credential at all, and
+            // reading the primary here reported one.
+            //
+            // H-a: the platform is resolved with the SAME catalog key the
+            // actor about to be spawned seeds itself with
+            // (`selected_catalog_key_for_spawn`, spawn.rs), so this
+            // classification and every per-turn decision that session makes
+            // agree by construction instead of re-resolving the bare slug.
+            let models_for_key = self.models_manager.models();
+            let session_key = self.credential_authority().credential_for(
+                crate::agent::models::platform_for_slug(
+                    &models_for_key,
+                    crate::agent::models::selected_catalog_key_for_spawn(
+                        &models_for_key,
+                        &session_model_id,
+                    )
+                    .as_deref(),
+                    sampling_config.model.as_str(),
+                ),
+                &sampling_config.base_url,
+            );
             let credentials = kigi_chat_state::Credentials {
                 api_key: sampling_config.api_key.clone(),
                 auth_type: crate::agent::config::resolve_chat_state_auth_type(
                     sampling_config.model.as_str(),
-                    session_key.as_deref(),
+                    session_key.as_ref(),
                     self.auth_type(),
                 ),
                 alpha_test_key: self.alpha_test_key(),

@@ -1,5 +1,6 @@
 use crate::agent::auth_method::ModelByok;
 use crate::agent::models_fetch::DEFAULT_CONTEXT_WINDOW;
+use crate::auth::credential_authority::SessionCredential;
 use crate::auth::{AuthManager, KimiCodeConfig};
 use crate::{config::StorageMode, sampling::ApiBackend, tools::config::ShellToolsetConfig};
 use agent_client_protocol as acp;
@@ -3800,7 +3801,18 @@ pub(crate) fn first_own_credential(
 /// Priority: model api_key/env_key > session token > XAI_API_KEY.
 ///
 /// When `env_key` lists multiple names, the first set non-empty value is used.
-pub fn resolve_credentials(model: &ModelEntry, session_key: Option<&str>) -> ResolvedCredentials {
+///
+/// `session_key` is a [`SessionCredential`], NOT a bare string: the only way to
+/// obtain one is
+/// [`CredentialAuthority::credential_for`](crate::auth::credential_authority::CredentialAuthority::credential_for),
+/// which requires the request's `(platform, base_url)` and the session's
+/// effective endpoints. That is what makes the credential rule structural — a
+/// new call site cannot stamp an unsanctioned bearer here even by omission,
+/// because it cannot construct the value.
+pub(crate) fn resolve_credentials(
+    model: &ModelEntry,
+    session_key: Option<&SessionCredential>,
+) -> ResolvedCredentials {
     let info = model.info();
     let (api_key, base_url, auth_type) = if let Some(key) = model.own_credential() {
         (
@@ -3810,7 +3822,7 @@ pub fn resolve_credentials(model: &ModelEntry, session_key: Option<&str>) -> Res
         )
     } else if let Some(key) = session_key {
         (
-            Some(key.to_owned()),
+            Some(key.expose().to_owned()),
             info.base_url.clone(),
             kigi_chat_state::AuthType::SessionToken,
         )
@@ -3850,11 +3862,11 @@ pub fn resolve_credentials(model: &ModelEntry, session_key: Option<&str>) -> Res
 
 /// Try to resolve credentials for a model by loading the effective config.
 /// Returns `None` (with a warning) if config loading, parsing, or model
-/// lookup fails. `session_key` should only be passed when `auth_type` is
-/// `SessionToken` — callers must guard this.
-pub fn try_resolve_model_credentials(
+/// lookup fails. `session_key` is a [`SessionCredential`], so only a bearer the
+/// credential chokepoint cleared for this endpoint can reach the wire.
+pub(crate) fn try_resolve_model_credentials(
     model_id: &str,
-    session_key: Option<&str>,
+    session_key: Option<&SessionCredential>,
 ) -> Option<ResolvedCredentials> {
     let raw = crate::config::load_effective_config()
         .map_err(|e| tracing::warn!(error = % e, "config load failed for credential resolution"))
@@ -3928,11 +3940,11 @@ fn with_resolved_model<T>(model_id: &str, f: impl FnOnce(ModelLookup) -> T) -> T
 /// description, session summary, ...), resolved through the catalog so a
 /// `[model.*]` override redirects it to its own endpoint, credentials, and
 /// routing `model`. `None` → caller falls back to the active session's model.
-pub fn resolve_aux_model_sampling_config(
+pub(crate) fn resolve_aux_model_sampling_config(
     model_id: &str,
     models: &IndexMap<String, ModelEntry>,
     endpoints: &EndpointsConfig,
-    session_key: Option<&str>,
+    session_key: Option<&SessionCredential>,
     alpha_test_key: Option<String>,
 ) -> Option<SamplerConfig> {
     let catalog_entry = find_model_by_id(models, model_id).cloned();
@@ -3944,7 +3956,7 @@ pub fn resolve_aux_model_sampling_config(
         }
     }
     let xai_bearer = session_key
-        .map(|s| s.to_owned())
+        .map(|s| s.expose().to_owned())
         .or_else(|| crate::agent::auth_method::read_xai_api_key_env().ok())
         .or_else(|| endpoints.deployment_key.clone());
     if let Some(bearer) = xai_bearer {
@@ -4010,18 +4022,30 @@ pub fn resolve_aux_model_sampling_config(
 /// from the active session onto a routed aux `SamplerConfig` so a
 /// helper model keeps the session's auth/attribution. Shared by image-describe
 /// and the auto-mode classifier so the two can't drift.
-pub fn stamp_session_local_sampler_fields(
+/// Stamp the session-local fields onto a routed aux `SamplerConfig`.
+///
+/// `bearer_resolver` is an EXPLICIT parameter, not a copy of the session's:
+/// this helper used to clone `active_session_config.bearer_resolver`
+/// unconditionally and rely on every call site remembering to re-point it
+/// afterwards. `SamplingClient::post` REPLACES the request's auth header from
+/// the resolver, so a forgotten re-point overwrote the aux model's own key on
+/// the AUX host with the session bearer. Callers obtain the value from
+/// [`SessionActor::aux_bearer_resolver`](crate::session::acp_session::SessionActor)
+/// — the chokepoint — so "forgot to re-point" is no longer expressible.
+pub(crate) fn stamp_session_local_sampler_fields(
     cfg: &mut SamplerConfig,
     active_session_config: &SamplerConfig,
+    bearer_resolver: Option<kigi_sampler::SharedBearerResolver>,
     max_retries: Option<u32>,
 ) {
     cfg.attribution_callback = active_session_config.attribution_callback.clone();
-    cfg.bearer_resolver = active_session_config.bearer_resolver.clone();
+    cfg.bearer_resolver = bearer_resolver;
     cfg.max_retries = max_retries;
 }
-pub fn finalize_image_describe_sampler_config(
+pub(crate) fn finalize_image_describe_sampler_config(
     resolved_aux: Option<SamplerConfig>,
     active_session_config: &SamplerConfig,
+    bearer_resolver: Option<kigi_sampler::SharedBearerResolver>,
     max_retries: Option<u32>,
 ) -> (String, SamplerConfig) {
     match resolved_aux {
@@ -4029,6 +4053,7 @@ pub fn finalize_image_describe_sampler_config(
             stamp_session_local_sampler_fields(
                 &mut describe_cfg,
                 active_session_config,
+                bearer_resolver,
                 max_retries,
             );
             let model = describe_cfg.model.clone();
@@ -4043,9 +4068,9 @@ pub fn finalize_image_describe_sampler_config(
 /// Re-derive `auth_type` from the model's own credentials so BYOK env-key
 /// models stay on `ApiKey` even when a session token is present. Falls
 /// back to `fallback` when the model isn't in the on-disk catalog.
-pub fn resolve_chat_state_auth_type(
+pub(crate) fn resolve_chat_state_auth_type(
     model_id: &str,
-    session_key: Option<&str>,
+    session_key: Option<&SessionCredential>,
     fallback: kigi_chat_state::AuthType,
 ) -> kigi_chat_state::AuthType {
     try_resolve_model_credentials(model_id, session_key)
@@ -4184,23 +4209,6 @@ pub fn inject_url_derived_headers(
         }
     }
     let _ = (alpha_test_key, base_url);
-}
-pub fn resolve_model_to_sampling_config(
-    model_id: &str,
-    models: &IndexMap<String, ModelEntry>,
-    session_key: Option<&str>,
-    alpha_test_key: Option<String>,
-    fallback_entry: Option<ModelEntry>,
-) -> Option<SamplerConfig> {
-    let entry = find_model_by_id(models, model_id)
-        .cloned()
-        .or(fallback_entry)?;
-    let credentials = resolve_credentials(&entry, session_key);
-    Some(sampling_config_for_model(
-        &entry,
-        credentials,
-        alpha_test_key,
-    ))
 }
 pub fn to_acp_model_info(
     models: &IndexMap<String, ModelEntry>,
@@ -4598,7 +4606,7 @@ reasoning_effort = "low"
             model: "composer-session-model".into(),
             ..Default::default()
         };
-        let (model, cfg) = finalize_image_describe_sampler_config(None, &active, Some(3));
+        let (model, cfg) = finalize_image_describe_sampler_config(None, &active, None, Some(3));
         assert_eq!(model, "composer-session-model");
         assert_eq!(cfg.model, "composer-session-model");
         assert_ne!(cfg.model, "kigi");
@@ -4613,7 +4621,8 @@ reasoning_effort = "low"
             model: "kigi".into(),
             ..Default::default()
         };
-        let (model, cfg) = finalize_image_describe_sampler_config(Some(aux), &active, Some(7));
+        let (model, cfg) =
+            finalize_image_describe_sampler_config(Some(aux), &active, None, Some(7));
         assert_eq!(model, "kigi");
         assert_eq!(cfg.model, "kigi");
         assert_eq!(cfg.max_retries, Some(7));
@@ -4661,9 +4670,9 @@ reasoning_effort = "low"
     ///   stamped as the `api_key` on an `api.moonshot.cn` request);
     /// - a `kimi-code` aux model → the primary, byte-identical.
     ///
-    /// Revert-to-red: dropping the `platform_takes_session_credential` term
-    /// from `session_key_for_endpoint` makes the moonshot assertion see
-    /// `Some("kimi-tok")`.
+    /// Revert-to-red: make `CredentialAuthority::governing_manager`'s
+    /// `Some(platform) => None` arm return `self.primary.clone()` and the
+    /// moonshot assertion sees `Some("kimi-tok")`.
     #[tokio::test]
     async fn aux_model_session_key_is_platform_scoped_never_leaking_kimi() {
         let (_kd, kimi) = kimi_primary("kimi-tok");
@@ -4673,16 +4682,16 @@ reasoning_effort = "low"
         grok.info.id = Some("xai-grok/grok-4-latest".to_string());
         let mut grok_catalog = IndexMap::new();
         grok_catalog.insert("grok".to_string(), grok);
-        let grok_key = crate::auth::oauth_registry::session_key_for_catalog_model(
-            &grok_catalog,
-            "grok",
-            Some(&kimi),
+        let authority = crate::auth::credential_authority::CredentialAuthority::new(
+            endpoints.clone(),
+            Some(kimi.clone()),
         );
+        let grok_key = authority.credential_for_slug(&grok_catalog, None, "grok");
         let grok_cfg = resolve_aux_model_sampling_config(
             "grok",
             &grok_catalog,
             &endpoints,
-            grok_key.as_deref(),
+            grok_key.as_ref(),
             None,
         );
         assert_ne!(
@@ -4703,11 +4712,9 @@ reasoning_effort = "low"
         let mut k2_catalog = IndexMap::new();
         k2_catalog.insert("k2".to_string(), k2);
         assert_eq!(
-            crate::auth::oauth_registry::session_key_for_catalog_model(
-                &k2_catalog,
-                "k2",
-                Some(&kimi),
-            ),
+            authority
+                .credential_for_slug(&k2_catalog, None, "k2")
+                .map(|c| c.expose().to_owned()),
             None,
             "LEAK: an API-key-platform aux model must receive no session token",
         );
@@ -4722,16 +4729,12 @@ reasoning_effort = "low"
         kimi_code.info.id = Some("kimi-code/kimi-for-coding".to_string());
         let mut kimi_catalog = IndexMap::new();
         kimi_catalog.insert("kimi-for-coding".to_string(), kimi_code);
-        let kimi_key = crate::auth::oauth_registry::session_key_for_catalog_model(
-            &kimi_catalog,
-            "kimi-for-coding",
-            Some(&kimi),
-        );
+        let kimi_key = authority.credential_for_slug(&kimi_catalog, None, "kimi-for-coding");
         let kimi_cfg = resolve_aux_model_sampling_config(
             "kimi-for-coding",
             &kimi_catalog,
             &endpoints,
-            kimi_key.as_deref(),
+            kimi_key.as_ref(),
             None,
         )
         .expect("a kimi-code aux model resolves via the primary session token");
@@ -4870,7 +4873,8 @@ reasoning_effort = "low"
             if entry.api_base_url.is_none() {
                 continue;
             }
-            let session_creds = resolve_credentials(&entry, Some("tok"));
+            let session_creds =
+                resolve_credentials(&entry, Some(&SessionCredential::for_test("tok")));
             assert_eq!(
                 session_creds.base_url,
                 endpoints.proxy_url(),
@@ -5028,7 +5032,7 @@ reasoning_effort = "low"
         let mut model = test_model_entry("m", "https://inference.example/v1", None, None, None);
         model.env_key = Some(EnvKeys::new([primary, alias]));
         assert!(!model.has_own_credentials());
-        let creds = resolve_credentials(&model, Some("session-jwt"));
+        let creds = resolve_credentials(&model, Some(&SessionCredential::for_test("session-jwt")));
         assert_eq!(creds.auth_type, AuthType::SessionToken);
         assert_eq!(creds.api_key.as_deref(), Some("session-jwt"));
     }
@@ -5062,7 +5066,7 @@ reasoning_effort = "low"
         use kigi_chat_state::AuthType;
         let model = test_model_entry("m", "https://inference.example/v1", Some(""), None, None);
         assert!(!model.has_own_credentials());
-        let creds = resolve_credentials(&model, Some("session-jwt"));
+        let creds = resolve_credentials(&model, Some(&SessionCredential::for_test("session-jwt")));
         assert_eq!(creds.auth_type, AuthType::SessionToken);
         assert_eq!(creds.api_key.as_deref(), Some("session-jwt"));
     }
@@ -5091,10 +5095,10 @@ reasoning_effort = "low"
     fn resolve_credentials_sets_auth_type() {
         use kigi_chat_state::AuthType;
         let model = test_model_entry("m", "https://example.com/v1", None, None, None);
-        let creds = resolve_credentials(&model, Some("tok"));
+        let creds = resolve_credentials(&model, Some(&SessionCredential::for_test("tok")));
         assert_eq!(creds.auth_type, AuthType::SessionToken);
         let byok = test_model_entry("m", "https://example.com/v1", Some("key"), None, None);
-        let creds = resolve_credentials(&byok, Some("tok"));
+        let creds = resolve_credentials(&byok, Some(&SessionCredential::for_test("tok")));
         assert_eq!(creds.auth_type, AuthType::ApiKey);
     }
     /// Regression: BYOK env-var auth must stay ApiKey even when signed in,
@@ -5115,7 +5119,7 @@ reasoning_effort = "low"
             None,
         );
         assert!(model.has_own_credentials());
-        let creds = resolve_credentials(&model, Some("session-jwt"));
+        let creds = resolve_credentials(&model, Some(&SessionCredential::for_test("session-jwt")));
         assert_eq!(
             creds.auth_type,
             AuthType::ApiKey,
@@ -5140,8 +5144,11 @@ reasoning_effort = "low"
             None,
         );
         model.info.api_backend = ApiBackend::Messages;
-        let config =
-            sampling_config_for_model(&model, resolve_credentials(&model, Some("tok")), None);
+        let config = sampling_config_for_model(
+            &model,
+            resolve_credentials(&model, Some(&SessionCredential::for_test("tok"))),
+            None,
+        );
         assert_eq!(config.api_backend, ApiBackend::Messages);
         assert_eq!(config.auth_scheme, AuthScheme::Bearer);
         assert_eq!(config.api_key, Some("tok".to_string()));
@@ -6377,7 +6384,8 @@ reasoning_effort = "low"
         (cfg, resolved)
     }
     fn resolve_sampling(model: &ModelEntry, session_key: Option<&str>) -> SamplerConfig {
-        let credentials = resolve_credentials(model, session_key);
+        let session_key = session_key.map(SessionCredential::for_test);
+        let credentials = resolve_credentials(model, session_key.as_ref());
         sampling_config_for_model(model, credentials, None)
     }
     #[test]

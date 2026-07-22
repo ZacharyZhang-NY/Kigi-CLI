@@ -501,6 +501,19 @@ pub struct MvpAgent {
     /// only api_key is written here (same for all clients). Per-session base_url
     /// is resolved at session creation time in `new_session` / `load_session`.
     pub(crate) sampling_config: RefCell<SamplingConfig>,
+    /// The registry platform [`Self::sampling_config`] was BUILT from, captured
+    /// in the same `ModelsManager::sampling_config()` call that produced it.
+    ///
+    /// H-a: the shared config is built ONCE (`Self::with_models`) and never
+    /// rebuilt, but `ModelsManager::current_model_id()` moves on every
+    /// non-Leader model switch and on catalog reselection. Its guards
+    /// (`stamp_session_credential`, `shared_config_takes_house_key`)
+    /// therefore read THIS cell, never the live one: after a switch the live
+    /// cell names a different entry, and re-resolving the config's bare slug
+    /// against it fell through to `resolve_catalog_key`'s `.rev()` scan —
+    /// answering the API-key twin, which takes no session credential, so a
+    /// successful `kigi login` silently failed to replace the expired bearer.
+    pub(crate) sampling_config_platform: std::cell::Cell<Option<kigi_models::PlatformId>>,
     pub(crate) auth_manager: Arc<AuthManager>,
     pub(crate) models_manager: crate::agent::models::ModelsManager,
     /// Forwards pasted codes from `handle_auth_submit_code` to the auth flow.

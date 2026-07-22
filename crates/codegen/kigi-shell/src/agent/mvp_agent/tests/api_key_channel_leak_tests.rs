@@ -24,12 +24,12 @@ use crate::agent::config::{Config as AgentConfig, EndpointsConfig, EnvKeys, Mode
 use crate::auth::{AuthManager, AuthMode, KimiAuth, KimiCodeConfig};
 use kigi_test_support::EnvGuard;
 
-const KIMI_TOKEN: &str = "kimi-subscription-token-DO-NOT-LEAK";
+pub(super) const KIMI_TOKEN: &str = "kimi-subscription-token-DO-NOT-LEAK";
 
 /// Ambient BYOK env vars unset, so a model with no resolvable credential ends up
 /// with `api_key == None` rather than a global-key fallback that could mask the
 /// leak under test. Every test holding these must be `#[serial]`.
-fn without_ambient_byok_env() -> [EnvGuard; 3] {
+pub(super) fn without_ambient_byok_env() -> [EnvGuard; 3] {
     [
         EnvGuard::unset(HOUSE_API_KEY_ENV_VAR),
         EnvGuard::unset(XAI_API_KEY_ENV_VAR),
@@ -41,7 +41,7 @@ fn without_ambient_byok_env() -> [EnvGuard; 3] {
 /// Kimi subscription bearer — the mainstream configuration in which the leak
 /// fires. `(tempdir, agent)`; the tempdir is the auth store and is returned so
 /// the caller keeps it alive.
-fn kimi_session_agent() -> (tempfile::TempDir, MvpAgent) {
+pub(super) fn kimi_session_agent() -> (tempfile::TempDir, MvpAgent) {
     let dir = tempfile::tempdir().expect("tempdir");
     let auth_manager = std::sync::Arc::new(AuthManager::new(dir.path(), KimiCodeConfig::default()));
     auth_manager.hot_swap(KimiAuth {
@@ -65,7 +65,7 @@ fn kimi_session_agent() -> (tempfile::TempDir, MvpAgent) {
 
 /// A catalog entry as `resolve_model_list` builds one for a fetched registry
 /// model: managed catalog key, platform base URL, no credential of its own.
-fn platform_entry(catalog_key: &str, slug: &str, base_url: &str) -> ModelEntry {
+pub(super) fn platform_entry(catalog_key: &str, slug: &str, base_url: &str) -> ModelEntry {
     let mut entry = ModelEntry::fallback(slug, &EndpointsConfig::default());
     entry.info.id = Some(catalog_key.to_string());
     entry.info.base_url = base_url.to_string();
@@ -80,8 +80,9 @@ fn platform_entry(catalog_key: &str, slug: &str, base_url: &str) -> ModelEntry {
 /// `Authorization: Bearer <Kimi OAuth token>` to `api.moonshot.cn`, which is NOT
 /// first-party.
 ///
-/// Revert-to-red: dropping the `platform_takes_session_credential` guard from
-/// `session_token_for_model` makes every `api_key` below `Some(KIMI_TOKEN)`.
+/// Revert-to-red: make `CredentialAuthority::governing_manager`'s
+/// `Some(platform) => None` arm return `self.primary.clone()` and every `api_key`
+/// below becomes `Some(KIMI_TOKEN)`.
 #[tokio::test]
 #[serial_test::serial]
 async fn bundled_default_moonshot_models_never_carry_the_kimi_bearer() {
@@ -154,8 +155,8 @@ async fn api_key_platform_models_never_carry_the_kimi_bearer_as_api_key() {
 /// unset (or mistyped) `env_key` classifies the model NotByok and the Kimi
 /// bearer went to `api.openai.com` on BOTH channels.
 ///
-/// Revert-to-red: making the `None` arm of `platform_takes_session_credential`
-/// return `true` again makes `api_key` here `Some(KIMI_TOKEN)`.
+/// Revert-to-red: make `CredentialAuthority::is_session_coding_endpoint` return
+/// `true` unconditionally and `api_key` here becomes `Some(KIMI_TOKEN)`.
 #[tokio::test]
 #[serial_test::serial]
 async fn config_model_with_an_unset_env_key_never_carries_the_kimi_bearer() {

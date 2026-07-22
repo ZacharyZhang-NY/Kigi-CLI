@@ -192,9 +192,18 @@ pub(crate) async fn apply(
             model.map(|e| &e.info),
         )
     };
+    // H4: hand the session the catalog KEY the picker actually resolved. The
+    // slug in `model_sampling.model` cannot distinguish `xai/grok-*` from
+    // `xai-grok/grok-*` (duplicate ids across an API-key platform and its
+    // subscription-OAuth twin are by design), and the process-global
+    // `current_model_id()` below is not written at all in Leader mode.
+    let catalog_key =
+        crate::agent::models::resolve_catalog_key(&agent.models_manager.models(), &model_id)
+            .map(|k| k.0.to_string());
     let (tx, rx) = oneshot::channel();
     let _ = handle.cmd_tx.send(SessionCommand::SetSessionModel {
         sampling_config: model_sampling,
+        catalog_key,
         use_concise,
         apply_prompt_override,
         skip_prompt_rewrite: did_rebuild || model_unchanged,

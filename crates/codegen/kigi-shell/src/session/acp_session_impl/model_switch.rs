@@ -5,12 +5,18 @@ impl SessionActor {
     pub(super) async fn handle_set_session_model(
         &self,
         sampling_config: kigi_sampler::SamplerConfig,
+        catalog_key: Option<String>,
         use_concise: bool,
         apply_prompt_override: bool,
         skip_prompt_rewrite: bool,
         auto_compact_threshold_percent: u8,
     ) -> Result<acp::ModelId, acp::Error> {
         let model_id = acp::ModelId::new(sampling_config.model.clone());
+        // H4: record the picker's catalog KEY as this SESSION's own selection.
+        // `sampling_config.model` is the ambiguous bare slug; the key is what
+        // disambiguates an API-key platform from its subscription-OAuth twin,
+        // and it must never come from the process-global `current_model_id()`.
+        *self.selected_catalog_key.borrow_mut() = catalog_key;
         let new_context_window = self.compaction.context_window_override.unwrap_or_else(|| {
             std::num::NonZeroU64::new(sampling_config.context_window).unwrap_or_else(|| {
                 std::num::NonZeroU64::new(DEFAULT_CONTEXT_WINDOW)
@@ -64,15 +70,13 @@ impl SessionActor {
         // grok model reads the xai-grok token (used only to classify the
         // credential's auth_type here), never the Kimi one. Kimi / non-oauth
         // models resolve to the primary — byte-identical.
-        let session_key = self
-            .auth_manager_for_model(&sampling_config.model)
-            .and_then(|am| am.current_or_expired().map(|a| a.key));
+        let session_key = self.session_credential_for_model(&sampling_config.model);
         self.chat_state_handle
             .update_credentials(kigi_chat_state::Credentials {
                 api_key: sampling_config.api_key.clone(),
                 auth_type: crate::agent::config::resolve_chat_state_auth_type(
                     sampling_config.model.as_str(),
-                    session_key.as_deref(),
+                    session_key.as_ref(),
                     existing.auth_type,
                 ),
                 alpha_test_key: existing.alpha_test_key,

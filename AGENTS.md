@@ -259,40 +259,90 @@ edges stay deterministic Rust. The harness appends a terminal
   token (`resolve_generic_oauth_tokens`, refreshed on expiry) and routes
   `platform.oauth().is_some()` → `platform.base_url()` (kimi-code alone →
   `proxy_url()`). Tokens/codes/verifiers are NEVER logged.
-- INFERENCE-AUTH INVARIANT (security): a SESSION bearer may ride a request ONLY
-  when the endpoint's platform `uses_oauth()` — `kimi-code` (the primary
-  session) or one of the four subscription-OAuth platforms (their OWN pooled
-  `AuthManager` via `oauth_registry::manager_for_model`, which is why they keep
-  a live `bearer_resolver` and mid-session refresh despite non-first-party base
-  URLs). Every API-key registry platform is refused, because
-  `manager_for_model` falls through to the PRIMARY manager for a non-OAuth key
-  and `SamplingClient::post` REPLACES the request's auth header from the
-  resolver. A model with NO platform (a bare slug / `[model.*]` entry) is
-  decided by the ENDPOINT — `util::is_effective_coding_endpoint_url` (the
-  effective `KIGI_CODE_BASE_URL` deployment, loopback dev proxies, and the
-  compiled production endpoint), never a blanket allow: BYOK is
-  `has_own_credentials()`, which probes `std::env::var` at call time, so a
-  `[model.*]` block with an unset `env_key` classifies `NotByok`. Both are
-  `auth_method::platform_takes_session_credential(platform, base_url)`, the
-  single predicate enforced at BOTH channels that reach the wire — the
-  `bearer_resolver` (outer term of `auth_method::session_token_auth_gate`) and
-  the `api_key` (`MvpAgent::session_token_for_model`,
-  `oauth_registry::session_key_for_endpoint` for the aux / summary /
-  subagent-override paths, and `sampler_turn::aux_bearer_resolver` for the
-  stamped aux configs).
+- INFERENCE-AUTH CHOKEPOINT (security): `auth::credential_authority::CredentialAuthority`
+  is the ONE authority answering "WHICH credential — if any — may ride this
+  request?". It holds the session's effective `EndpointsConfig` and
+  its primary `AuthManager` PRIVATELY and answers only
+  `(platform, base_url)` questions: `credential_class` → `CredentialClass::{Pooled,
+  Primary, None}` (the outer term of `auth_method::session_token_auth_gate`),
+  `manager_for` (the governing manager
+  for refresh / 401 recovery), `credential_for` (the request's `api_key`) and
+  `bearer_resolver_for` (the aux/summary/session resolver). Do NOT re-derive this
+  rule anywhere else — three rounds of leaks came from exactly that.
+  The rule: a subscription-OAuth platform rides ITS OWN pooled `AuthManager` (so
+  it keeps a live `bearer_resolver` and mid-session refresh despite a
+  non-first-party base URL) and ONLY at its own `platform.base_url()` — a
+  `[model."claude-pro-max/x"]` override keeps `info.id` but can point `base_url`
+  anywhere. `kimi-code` and a platform-less model (a bare slug / `[model.*]`
+  entry) ride the PRIMARY session, and ONLY at the session's own effective coding
+  endpoint: `EndpointsConfig::proxy_url()` (which prefers `[endpoints]
+  coding_api_base_url` from **config.toml** — what the managed-config sync writes
+  — over `KIGI_CODE_BASE_URL`), `models_base_url`, loopback, or the compiled
+  production endpoint. Never a blanket allow: BYOK is `has_own_credentials()`,
+  which probes `std::env::var` at call time, so a `[model.*]` block with an unset
+  `env_key` classifies `NotByok`. Every API-key registry platform rides NOTHING.
+  STRUCTURAL ENFORCEMENT: the authority is the only producer of
+  `SessionCredential`, an opaque type with no production constructor, and every
+  API that stamps a session bearer onto a request (`resolve_credentials`,
+  `resolve_aux_model_sampling_config`, `try_resolve_model_credentials`,
+  `resolve_chat_state_auth_type`) takes
+  `Option<&SessionCredential>` rather than `Option<&str>` — a new call site
+  cannot express the leak. `stamp_session_local_sampler_fields` likewise takes the
+  aux `bearer_resolver` explicitly instead of copying the session's and relying on
+  the caller to re-point it, and `sampler_turn::aux_bearer_resolver_for` is the
+  ONE definition of the aux/summary resolver rule (the session actor and
+  `MvpAgent::build_summary_client` both call it; a private second copy is how the
+  summary client stayed ungated after M3). NEVER HAND-CARRY A CREDENTIAL TO A
+  GUARD (C1): "may **a** session credential ride here" is `true` for
+  a subscription-OAuth platform at its own host — where the credential that may
+  ride is that platform's POOLED token, never the primary. Ask
+  `credential_for(platform, base_url)` and stamp what it returns, so the question
+  and the credential are the same object; where you cannot (a credential the
+  authority does not own), MATCH on `credential_class` rather than reach for a
+  boolean. There is deliberately no second, similarly-named predicate to pick
+  wrongly. The shared `sampling_config.api_key`
+  (the subagent baseline and the unresolved-model fallback) has exactly TWO
+  production writers, both guarded by the authority:
+  `MvpAgent::stamp_session_credential` (the `cached_token` / `kimi.com/oidc`
+  login handlers and the `new_session` / `load_session` seed), which asks
+  `credential_for`; and the `xai.api_key` handler in `acp_agent.rs`, which stamps
+  the house `KIGI_API_KEY` read from the environment — a credential the authority
+  does not own — only when `credential_class` is `Primary`, the class the house
+  key rides and the one every OAuth platform's own host is NOT.
 - MODEL→PLATFORM LOOKUP (security): `SamplingConfig::model` is the BARE routing
   slug, and duplicate slugs across platforms are BY DESIGN — an API-key platform
   and its subscription-OAuth twin list identical ids (`xai`/`xai-grok`,
   `anthropic`/`claude-pro-max`, `openai`/`openai-codex`), with the API-key
   platform FIRST in `PlatformId::ALL`. The auth layer therefore resolves the
-  platform from the catalog KEY the picker selected
-  (`ModelsManager::current_model_id`), via
-  `agent::models::managed_key_for_slug`/`platform_for_slug`; anything else falls
-  back to the picker's own `resolve_catalog_key`, and
+  platform from the catalog KEY the picker selected, held PER SESSION in
+  `SessionActor::selected_catalog_key` (seeded at spawn by
+  `agent::models::selected_catalog_key_for_spawn`, rewritten by `SetSessionModel`,
+  CLEARED by `OverrideModelName` when the rename makes it stale), via
+  `agent::models::entry_for_slug`/`platform_for_slug`.
+  NEVER `ModelsManager::current_model_id()`: that cell is process-global,
+  last-writer-wins across concurrent sessions, and Leader mode never writes it at
+  all (`agent/handlers/model_switch.rs`). The shared `MvpAgent::sampling_config`
+  is BUILT from that cell — but ONCE, at startup, and never rebuilt, while the
+  cell moves on every non-Leader switch. Its guards therefore read
+  `MvpAgent::sampling_config_platform`, the platform captured WITH the config by
+  the same `ModelsManager::sampling_config()` call, never a fresh lookup against
+  the live cell: once the two drift, re-resolving the config's bare slug falls
+  through to `resolve_catalog_key`'s `.rev()` scan, answers the API-key twin, and
+  a post-expiry `kigi login` silently leaves the EXPIRED bearer in the config
+  that seeds every subagent (H-a). REFUSE RATHER THAN GUESS (H-b):
+  when the per-session key does not name the slug, `platform_for_slug` returns
+  `None` for a slug that collides across platforms rather than trusting
+  `resolve_catalog_key`'s `.rev()` last match — which is the subscription-OAuth
+  twin, so the guess hands an API-key session the pooled bearer that REPLACES its
+  own key on the wire. `None` then routes purely by the ENDPOINT, which for an
+  OAuth host means no credential, no resolver and no adaptation.
+  Anything else (aux models, subagent
+  overrides) falls back to the picker's own `resolve_catalog_key`, and
   `config::find_model_by_id`'s slug scan takes the LAST match so the two can
   never disagree. Resolving the wrong twin costs the OAuth platform its live
   `bearer_resolver` (unrecoverable 401 ~1h in), its Messages adaptation and its
-  Copilot/Codex identity headers.
+  Copilot/Codex identity headers — and hands the API-key twin's session a pooled
+  OAuth bearer stamped over the user's own key.
 - CATALOG VISIBILITY: `platform_wire_model_to_entry` stamps
   `supported_in_api = platform != KimiCode`. `ModelInfo::visible_for_auth`
   reads only the PRIMARY manager's auth mode, so gating the other OAuth
