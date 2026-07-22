@@ -168,6 +168,16 @@ edges stay deterministic Rust. The harness appends a terminal
   are built generically from advertised methods (`AuthMethodKind::
   ApiKeyPlatform`), so new registry rows appear in the picker with no TUI
   changes.
+- Every OAuth picker row carries ITS OWN method id (`PendingMenuItem::Login
+  { method_id }` → `Action::LoginWith`); an unknown id fails closed. The
+  id-less `Action::Login` (auto-login, 401 re-auth) resolves the first
+  interactive method. `/login` opens the picker (`Action::OpenLoginPicker`),
+  never a flow directly; mid-session its last row is Cancel, not Quit.
+- `_meta.connected` on an advertised method is DISPLAY state (green badge on
+  the picker): stamped at `initialize()` from stored credentials
+  (`connected_method_ids` + `stamp_connected_meta`), kept fresh TUI-side
+  after in-session logins (`auth_in_flight_method` → `AuthComplete`). It is
+  never an authorization input.
 - Refreshable-OAuth providers beyond Kimi Code use a GENERIC path, NOT Kimi's
   bespoke wire. A `uses_oauth` platform carrying `oauth: Some(&OAuthConfig)`
   (client id / auth host / start+token paths / `token_host` / `scope` /
