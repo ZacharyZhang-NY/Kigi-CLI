@@ -8,13 +8,17 @@
 autonomous, self-verifying agent loops — planned, parallelized,
 adversarially verified, and merged back, end to end.</p>
 
-**Kigi** is an unofficial Kimi Code CLI community build — a terminal-based
-AI coding agent re-targeted at the Kimi Code subscription API and the
-Moonshot open platform, built on the Apache-2.0 sources of
-[xai-org/grok-build](https://github.com/xai-org/grok-build).
+**Kigi** started as an unofficial Kimi Code CLI community build, a
+terminal-based AI coding agent re-targeted at the Kimi Code subscription API,
+built on the Apache-2.0 sources of
+[xai-org/grok-build](https://github.com/xai-org/grok-build). It first shipped
+wired to Kimi Code and the Moonshot open platform. By request, it now works
+with 25 providers: OpenAI, Anthropic, Google, xAI, Groq, Cerebras, OpenRouter,
+MiniMax, Z.AI, Qwen, Xiaomi, and more. The full list is under
+[Providers and API keys](#providers-and-api-keys).
 
 It runs as a full-screen TUI that understands your codebase, edits files,
-executes shell commands, searches the web, and manages long-running tasks —
+executes shell commands, searches the web, and manages long-running tasks,
 interactively, headlessly for scripting/CI, or embedded in editors via the
 Agent Client Protocol (ACP).
 
@@ -107,48 +111,79 @@ echo 'export KIGI_GRAPH=0' >> ~/.zshrc   # or ~/.bashrc / ~/.bash_profile
 
 ## Providers and API keys
 
-Kigi talks to a fixed three-platform registry:
+Kigi ships a fixed registry of 25 platforms: the Kimi Code subscription plus
+24 API-key providers. There is no dynamic provider registration; each is a
+compiled-in spec.
 
-| Platform id   | Base URL                         | Auth                        |
-| ------------- | -------------------------------- | --------------------------- |
-| `kimi-code`   | `https://api.kimi.com/coding/v1` | Kimi Code subscription OAuth (`kigi login`) |
-| `moonshot-cn` | `https://api.moonshot.cn/v1`     | Moonshot open-platform API key |
-| `moonshot-ai` | `https://api.moonshot.ai/v1`     | Moonshot open-platform API key |
+**Kimi Code** (the original target) uses subscription OAuth, not an API key:
 
-Moonshot API keys come from the environment or `~/.kigi/config.toml`
-(environment wins; values are never logged):
+| Platform id | Base URL                         | Auth                                        |
+| ----------- | -------------------------------- | ------------------------------------------- |
+| `kimi-code` | `https://api.kimi.com/coding/v1` | Kimi Code subscription OAuth (`kigi login`) |
+
+**API-key providers.** Set the provider's env var, or put the key in
+`~/.kigi/config.toml` under `[platforms.<id>]`. The environment wins, a
+platform-scoped name beats a generic one, and keys are never logged.
+
+| Provider                  | Platform id            | API key env                                     |
+| ------------------------- | ---------------------- | ----------------------------------------------- |
+| Moonshot (moonshot.cn)    | `moonshot-cn`          | `KIGI_MOONSHOT_CN_API_KEY` (or `KIGI_MOONSHOT_API_KEY`) |
+| Moonshot (moonshot.ai)    | `moonshot-ai`          | `KIGI_MOONSHOT_AI_API_KEY` (or `KIGI_MOONSHOT_API_KEY`) |
+| OpenAI                    | `openai`               | `OPENAI_API_KEY`                                |
+| Anthropic                 | `anthropic`            | `ANTHROPIC_API_KEY`                             |
+| DeepSeek                  | `deepseek`             | `DEEPSEEK_API_KEY`                              |
+| Groq                      | `groq`                 | `GROQ_API_KEY`                                  |
+| Mistral                   | `mistral`              | `MISTRAL_API_KEY`                               |
+| Fireworks AI              | `fireworks`            | `FIREWORKS_API_KEY`                             |
+| Google Gemini             | `google`               | `GEMINI_API_KEY`                                |
+| OpenRouter                | `openrouter`           | `OPENROUTER_API_KEY`                            |
+| Together AI               | `together`             | `TOGETHER_API_KEY`                              |
+| Cerebras                  | `cerebras`             | `CEREBRAS_API_KEY`                              |
+| NVIDIA NIM                | `nvidia`               | `NVIDIA_API_KEY`                                |
+| Vercel AI Gateway         | `vercel-ai-gateway`    | `AI_GATEWAY_API_KEY`                            |
+| xAI (Grok)                | `xai`                  | `XAI_API_KEY`                                   |
+| Qwen Token Plan           | `qwen-token-plan`      | `QWEN_TOKEN_PLAN_API_KEY`                       |
+| Qwen Token Plan (China)   | `qwen-token-plan-cn`   | `QWEN_TOKEN_PLAN_CN_API_KEY`                    |
+| Kimi For Coding           | `kimi-coding`          | `KIMI_API_KEY`                                  |
+| Z.AI                      | `zai`                  | `ZAI_API_KEY`                                   |
+| Z.AI Coding (China)       | `zai-coding-cn`        | `ZAI_CODING_CN_API_KEY`                         |
+| Xiaomi MiMo               | `xiaomi`               | `XIAOMI_API_KEY`                                |
+| Xiaomi Token Plan (China) | `xiaomi-token-plan-cn` | `XIAOMI_TOKEN_PLAN_CN_API_KEY`                  |
+| MiniMax                   | `minimax`              | `MINIMAX_API_KEY`                               |
+| MiniMax (China)           | `minimax-cn`           | `MINIMAX_CN_API_KEY`                            |
 
 ```sh
-export KIGI_MOONSHOT_API_KEY=sk-...     # applies to both open platforms
-export KIGI_MOONSHOT_CN_API_KEY=sk-...  # platform-scoped, beats the generic name
-export KIGI_MOONSHOT_AI_API_KEY=sk-...
+export OPENAI_API_KEY=sk-...
+export XAI_API_KEY=xai-...
 ```
 
 ```toml
 # ~/.kigi/config.toml
-[platforms.moonshot-cn]
+[platforms.openai]
 api_key = "sk-..."
 
-[platforms.moonshot-ai]
-api_key = "sk-..."
+[platforms.xai]
+api_key = "xai-..."
 ```
 
 On login and on startup Kigi syncs each configured platform's model list
 from `GET {base}/models` and shows the merged catalog in the model picker
-(catalog keys are `{platform_id}/{model_id}`). Models that advertise
-selectable thinking levels (e.g. K3's `low`/`high`/`max`) expose them in
-`/model` and `/effort`. If the sync fails, the last cached catalog is used;
-with no cache, a small built-in fallback list applies. Model selection
+(catalog keys are `{platform_id}/{model_id}`). Model metadata (context
+window, thinking levels) comes from the live listing when the provider
+serves it, otherwise from a bundled models.dev snapshot. Models that
+advertise selectable thinking levels (e.g. K3's `low`/`high`/`max`) expose
+them in `/model` and `/effort`. If the sync fails, the last cached catalog is
+used; with no cache, a small built-in fallback list applies. Model selection
 resolves as `--model` CLI flag > `KIGI_DEFAULT_MODEL` > `[models] default`
 in config.toml > server-delivered list > built-in fallback.
 
-`KIGI_CODE_BASE_URL` re-points the subscription platform (useful for
-testing); `KIGI_MOONSHOT_CN_BASE_URL` / `KIGI_MOONSHOT_AI_BASE_URL` are the
-equivalent dev/test overrides for the open platforms.
+Each platform's base URL can be re-pointed for dev/test with
+`KIGI_<PLATFORM>_BASE_URL` (e.g. `KIGI_CODE_BASE_URL`,
+`KIGI_MOONSHOT_CN_BASE_URL`, `KIGI_OPENAI_BASE_URL`).
 
 The web `search`/`fetch` tools ride the Kimi Code subscription services and
-are present only on OAuth sessions — API-key-only sessions run without
-them, matching the official client.
+are present only on OAuth sessions. API-key-only sessions run without them,
+matching the official client.
 
 ## Building from source
 
