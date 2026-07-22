@@ -595,6 +595,11 @@ mod tests {
         );
         assert_eq!(
             ids[kimi_pos + 2],
+            "claude-pro-max",
+            "claude-pro-max is the next interactive OAuth login, after xai-grok"
+        );
+        assert_eq!(
+            ids[kimi_pos + 3],
             MOONSHOT_CN_METHOD_ID,
             "the api-key rows follow the generic oauth logins"
         );
@@ -626,6 +631,29 @@ mod tests {
         assert!(!kind.is_api_key());
         // The session-expired copy (not the api-key copy) is the right error.
         assert_eq!(kind.auth_error_message(), AUTH_ERROR_SESSION_EXPIRED);
+    }
+
+    /// claude-pro-max classifies as an interactive OAuth login too (the
+    /// authenticate handler dispatches it to the PKCE-localhost flow by the
+    /// config's `flow`): session-based, needs a browser, never api-key, and
+    /// `oauth_platform()` returns ClaudeProMax.
+    #[test]
+    fn claude_pro_max_is_an_interactive_oauth_login() {
+        let id = acp::AuthMethodId::new("claude-pro-max");
+        let kind = AuthMethodKind::from_id(&id);
+        assert_eq!(
+            kind,
+            AuthMethodKind::OAuthPlatform(kigi_models::PlatformId::ClaudeProMax)
+        );
+        assert!(kind.needs_interactive_login());
+        assert!(kind.is_session_based());
+        assert!(!kind.is_api_key());
+        assert_eq!(
+            kind.oauth_platform(),
+            Some(kigi_models::PlatformId::ClaudeProMax)
+        );
+        // Never an API-key picker target (keeps it out of the paste-box path).
+        assert_eq!(platform_for_method_id(&id), None);
     }
 
     /// The OAuth platform id must never resolve as an API-key platform
@@ -721,6 +749,7 @@ mod tests {
                 XAI_API_KEY_METHOD_ID,
                 KIMI_CODE_METHOD_ID,
                 "xai-grok",
+                "claude-pro-max",
                 MOONSHOT_CN_METHOD_ID,
                 MOONSHOT_AI_METHOD_ID,
                 "openai",
@@ -770,6 +799,7 @@ mod tests {
                 CACHED_TOKEN_AUTH_METHOD_ID,
                 KIMI_CODE_METHOD_ID,
                 "xai-grok",
+                "claude-pro-max",
                 MOONSHOT_CN_METHOD_ID,
                 MOONSHOT_AI_METHOD_ID,
                 "openai",
@@ -812,6 +842,7 @@ mod tests {
                 CACHED_TOKEN_AUTH_METHOD_ID,
                 KIMI_CODE_METHOD_ID,
                 "xai-grok",
+                "claude-pro-max",
                 MOONSHOT_CN_METHOD_ID,
                 MOONSHOT_AI_METHOD_ID,
                 "openai",
@@ -857,6 +888,7 @@ mod tests {
             vec![
                 KIMI_CODE_METHOD_ID,
                 "xai-grok",
+                "claude-pro-max",
                 MOONSHOT_CN_METHOD_ID,
                 MOONSHOT_AI_METHOD_ID,
                 "openai",

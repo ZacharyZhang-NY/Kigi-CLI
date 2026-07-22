@@ -78,6 +78,7 @@ fn test_config(base_url: String, model: &str) -> SamplerConfig {
         top_p: None,
         api_backend: ApiBackend::ChatCompletions,
         auth_scheme: Default::default(),
+        anthropic_oauth: false,
         chat_compat: Default::default(),
         extra_headers: IndexMap::new(),
         context_window: 128_000,

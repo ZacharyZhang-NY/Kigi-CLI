@@ -345,9 +345,22 @@ fn fetch_one_platform_models(
     };
     tracing::info!(platform = platform.as_str(), url = %url, "fetching platform models");
     let request = match platform.key_header() {
-        kigi_models::PlatformKeyHeader::Bearer => client
-            .get(&url)
-            .header("Authorization", format!("Bearer {}", bearer)),
+        kigi_models::PlatformKeyHeader::Bearer => {
+            let mut req = client
+                .get(&url)
+                .header("Authorization", format!("Bearer {}", bearer));
+            // An Anthropic listing reached with a Bearer key is the OAuth
+            // channel (claude-pro-max): the /v1/models endpoint requires
+            // anthropic-version, and the OAuth bearer needs the oauth beta.
+            // The OpenAI-listing Bearer platforms (xai-grok, api-key OpenAI
+            // rows) add neither, so their requests stay byte-identical.
+            if platform.listing() == kigi_models::ListingDialect::Anthropic {
+                req = req
+                    .header("anthropic-version", kigi_sampling_types::ANTHROPIC_VERSION)
+                    .header("anthropic-beta", kigi_sampling_types::ANTHROPIC_OAUTH_BETA);
+            }
+            req
+        }
         kigi_models::PlatformKeyHeader::XApiKey => client
             .get(&url)
             .header("x-api-key", bearer)
@@ -1103,6 +1116,118 @@ mod tests {
             gap.capabilities
                 .contains(&kigi_models::ModelCapability::Thinking),
             "wire thinking capability must survive"
+        );
+    }
+
+    /// Claude Pro/Max OAuth fetch e2e (mock wire): `GET /v1/models?limit=1000`
+    /// gated on the OAuth `Authorization: Bearer` + the oauth `anthropic-beta`
+    /// (the OAuth listing contract) → anthropic listing → enriched from
+    /// models.dev "anthropic" → keyed `claude-pro-max/<id>` on the Messages
+    /// backend. The token is drawn from the claude-pro-max OAuth-session map,
+    /// NOT an x-api-key.
+    #[tokio::test(flavor = "multi_thread")]
+    #[serial_test::serial]
+    async fn claude_pro_max_oauth_listing_is_bearer_gated_and_keyed() {
+        let platform_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/models"))
+            .and(wiremock::matchers::query_param("limit", "1000"))
+            // OAuth listing: Bearer token + the oauth beta + anthropic-version.
+            // NO x-api-key header (that is the API-key `anthropic` path).
+            .and(wiremock::matchers::header(
+                "Authorization",
+                "Bearer sk-ant-oat-session",
+            ))
+            // The oauth beta is comma-joined; wiremock's exact `header` matcher
+            // splits on commas, so assert both tokens via the multi-valued form.
+            .and(wiremock::matchers::headers(
+                "anthropic-beta",
+                vec!["claude-code-20250219", "oauth-2025-04-20"],
+            ))
+            .and(wiremock::matchers::header(
+                "anthropic-version",
+                "2023-06-01",
+            ))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({ "data": [
+                    {
+                        "id": "claude-opus-4-8",
+                        "display_name": "Claude Opus 4.8",
+                        "type": "model"
+                    }
+                ], "has_more": false }),
+            ))
+            .expect(1)
+            .mount(&platform_server)
+            .await;
+        let modelsdev_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/api.json"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({ "anthropic": { "models": {
+                    "claude-opus-4-8": {
+                        "limit": {"context": 1000000, "output": 128000},
+                        "tool_call": true
+                    }
+                }}}),
+            ))
+            .expect(1)
+            .mount(&modelsdev_server)
+            .await;
+        let cache_dir = tempfile::tempdir().unwrap();
+        let _base = kigi_test_support::EnvGuard::set(
+            kigi_models::CLAUDE_OAUTH_BASE_URL_ENV,
+            platform_server.uri(),
+        );
+        let _mdev = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_URL_ENV,
+            format!("{}/api.json", modelsdev_server.uri()),
+        );
+        let _mdev_cache = kigi_test_support::EnvGuard::set(
+            crate::agent::enrichment_fetch::MODELS_DEV_CACHE_DIR_ENV,
+            cache_dir.path(),
+        );
+
+        let endpoints = crate::agent::config::EndpointsConfig::default();
+        // The listing bearer comes from the claude-pro-max OAuth-session map,
+        // never a Kimi session (auth=None) or an API key (keys empty).
+        let mut oauth_tokens = OAuthSessionTokens::new();
+        oauth_tokens.insert(
+            kigi_models::PlatformId::ClaudeProMax,
+            "sk-ant-oat-session".to_string(),
+        );
+        let keys = crate::agent::models::PlatformApiKeys::default();
+        let result = tokio::task::spawn_blocking(move || {
+            fetch_platform_models_blocking(&endpoints, None, &oauth_tokens, &keys)
+        })
+        .await
+        .unwrap()
+        .expect("claude-pro-max oauth fetch must succeed");
+
+        assert_eq!(result.models.len(), 1);
+        let opus = &result.models[0];
+        assert_eq!(
+            opus.id.as_deref(),
+            Some("claude-pro-max/claude-opus-4-8"),
+            "the entry must key under the claude-pro-max platform"
+        );
+        assert_eq!(
+            opus.api_backend,
+            crate::sampling::ApiBackend::Messages,
+            "claude-pro-max speaks the Messages wire"
+        );
+        assert_eq!(
+            opus.auth_scheme, None,
+            "OAuth Bearer entries carry no XApiKey auth scheme"
+        );
+        assert_eq!(
+            opus.context_window.get(),
+            1_000_000,
+            "enrichment fills the context window from models.dev anthropic"
+        );
+        assert!(
+            !opus.supported_in_api,
+            "subscription (uses_oauth) models require the OAuth session"
         );
     }
 

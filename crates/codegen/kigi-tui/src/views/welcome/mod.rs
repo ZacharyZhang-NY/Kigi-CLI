@@ -2107,6 +2107,14 @@ mod tests {
         let text = render_done_text_h(&params, 72);
         assert!(text.contains("Kimi Code (OAuth)"), "{text}");
         assert!(
+            text.contains("xAI Grok (subscription) (OAuth)"),
+            "the xai-grok interactive OAuth login row must render: {text}"
+        );
+        assert!(
+            text.contains("Claude Pro/Max (subscription) (OAuth)"),
+            "the claude-pro-max interactive OAuth login row must render: {text}"
+        );
+        assert!(
             text.contains("Moonshot Open Platform (API key \u{b7} moonshot.cn)"),
             "{text}"
         );

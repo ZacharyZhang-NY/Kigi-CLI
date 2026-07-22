@@ -55,6 +55,13 @@ pub struct SamplerConfig {
     pub api_backend: ApiBackend,
     #[serde(default)]
     pub auth_scheme: AuthScheme,
+    /// Claude Pro/Max OAuth adaptation (claude-pro-max only). When true the
+    /// Messages request carries the OAuth identity headers (`anthropic-beta`
+    /// oauth, `claude-cli` User-Agent, `x-app: cli`) and its system prompt is
+    /// prefixed with the required "You are Claude Code…" line. Gated so the
+    /// API-key `anthropic` + `minimax` Messages requests stay byte-identical.
+    #[serde(default)]
+    pub anthropic_oauth: bool,
     /// Extra request headers applied verbatim. The sampler never inspects
     /// the URL to derive headers; callers (the session) inject proxy auth
     /// and other access headers here before constructing the config.
@@ -144,6 +151,7 @@ impl Default for SamplerConfig {
             top_p: None,
             api_backend: ApiBackend::default(),
             auth_scheme: AuthScheme::default(),
+            anthropic_oauth: false,
             extra_headers: IndexMap::new(),
             context_window: 0,
             force_http1: false,

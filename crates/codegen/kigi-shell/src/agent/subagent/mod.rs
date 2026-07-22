@@ -880,6 +880,14 @@ async fn read_parent_sampling_config(
             let auth_scheme = crate::agent::config::try_resolve_model_credentials(&cfg.model, None)
                 .map(|r| r.auth_scheme)
                 .unwrap_or_default();
+            // Claude Pro/Max OAuth Messages adaptation inherits from the parent
+            // model's platform (claude-pro-max → true); every other platform,
+            // and BYOK, → false, so the API-key paths stay byte-identical.
+            let anthropic_oauth = kigi_models::parse_managed_model_key(ctx.model_id.0.as_ref())
+                .is_some_and(|(platform, _)| {
+                    platform.oauth().is_some()
+                        && platform.wire_api() == kigi_models::PlatformWireApi::Messages
+                });
             let inherited = kigi_sampler::SamplerConfig {
                 api_key: creds.api_key,
                 base_url: cfg.base_url,
@@ -889,6 +897,7 @@ async fn read_parent_sampling_config(
                 top_p: cfg.top_p,
                 api_backend: cfg.api_backend,
                 auth_scheme,
+                anthropic_oauth,
                 chat_compat: cfg.chat_compat,
                 extra_headers,
                 context_window: cfg.context_window.get(),

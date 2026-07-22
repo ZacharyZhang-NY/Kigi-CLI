@@ -96,8 +96,35 @@ enum BaseUrlSource {
     },
 }
 
-/// Generic RFC-8628 device-code OAuth configuration carried by a `uses_oauth`
-/// platform whose login is the GENERIC device-code path (xai-grok today).
+/// The interactive login mechanism a `uses_oauth` [`OAuthConfig`] provider
+/// drives. `DeviceCode` is the RFC-8628 device flow (xai-grok); `PkceLocalhost`
+/// is the authorization-code + PKCE (S256) flow with a loopback callback
+/// (Claude Pro/Max). Kimi Code carries neither (its bespoke flow lives in
+/// kigi-shell with `oauth: None`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OAuthFlow {
+    /// RFC-8628 device-code: POST `device_path`, poll `token_path`.
+    DeviceCode,
+    /// Authorization-code + PKCE (S256): browser hits `auth_host`+`device_path`
+    /// (the authorize endpoint); the code returns to a `127.0.0.1:redirect_port`
+    /// loopback listener, then is exchanged at `token_host`+`token_path`.
+    PkceLocalhost { redirect_port: u16 },
+}
+
+/// Body encoding a provider's token endpoint expects for the code-exchange and
+/// refresh POSTs. xAI's `/oauth2/token` is form-encoded; Claude's
+/// `/v1/oauth/token` is JSON.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OAuthTokenBody {
+    /// `application/x-www-form-urlencoded` (xai-grok device wire).
+    Form,
+    /// `application/json` (Claude PKCE wire).
+    Json,
+}
+
+/// Generic OAuth configuration carried by a `uses_oauth` platform whose login
+/// is the GENERIC device-code path (xai-grok) or the PKCE-localhost path
+/// (claude-pro-max).
 ///
 /// Kimi Code keeps its bespoke device flow (client id, `/api/oauth/*` paths,
 /// X-Msh device headers, `kigi_env::oauth_host()`); its `oauth` field stays
@@ -105,15 +132,22 @@ enum BaseUrlSource {
 /// tokens they mint are NEVER stored in this struct and never logged.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OAuthConfig {
-    /// OAuth client id sent on every device-authorization / token call.
+    /// OAuth client id sent on every authorize / token call.
     pub client_id: &'static str,
-    /// Authorization-server origin (no trailing slash), e.g. `https://auth.x.ai`.
+    /// Authorization-server origin (no trailing slash), e.g. `https://auth.x.ai`
+    /// (device) or `https://claude.ai` (PKCE authorize host).
     pub auth_host: &'static str,
-    /// Device-authorization path (POST), relative to `auth_host`.
+    /// Start-endpoint path (POST for `DeviceCode` device-authorization; the
+    /// browser authorize path for `PkceLocalhost`), relative to `auth_host`.
     pub device_path: &'static str,
-    /// Token path (POST) — used for BOTH the device grant and refresh.
+    /// Token-endpoint origin (no trailing slash). Equals `auth_host` for the
+    /// device wire; for Claude the token host (`https://platform.claude.com`)
+    /// differs from the authorize host (`https://claude.ai`).
+    pub token_host: &'static str,
+    /// Token path (POST) — used for BOTH the initial grant and refresh,
+    /// relative to `token_host`.
     pub token_path: &'static str,
-    /// OAuth scope string requested at device authorization.
+    /// OAuth scope string requested at authorization.
     pub scope: &'static str,
     /// auth.json map key + keyring entry name for this provider's persisted
     /// session (e.g. `oauth/xai`).
@@ -121,6 +155,10 @@ pub struct OAuthConfig {
     /// A non-standard extra form field sent ONLY on the device-authorization
     /// request (e.g. `("referrer", "kigi")`). `None` = no extra field.
     pub extra_device_field: Option<(&'static str, &'static str)>,
+    /// Interactive login mechanism (device-code vs PKCE-localhost).
+    pub flow: OAuthFlow,
+    /// Body encoding the token endpoint expects (form vs JSON).
+    pub token_body: OAuthTokenBody,
 }
 
 /// xAI / Grok subscription device-code OAuth (ported from Pi
@@ -129,10 +167,36 @@ pub const XAI_OAUTH_CONFIG: OAuthConfig = OAuthConfig {
     client_id: "b1a00492-073a-47ea-816f-4c329264a828",
     auth_host: "https://auth.x.ai",
     device_path: "/oauth2/device/code",
+    token_host: "https://auth.x.ai",
     token_path: "/oauth2/token",
     scope: "openid profile email offline_access grok-cli:access api:access",
     scope_key: "oauth/xai",
     extra_device_field: Some(("referrer", "kigi")),
+    flow: OAuthFlow::DeviceCode,
+    token_body: OAuthTokenBody::Form,
+};
+
+/// Base-URL override for the Claude Pro/Max OAuth channel (dev/test escape
+/// hatch). Production defaults to `https://api.anthropic.com/v1`.
+pub const CLAUDE_OAUTH_BASE_URL_ENV: &str = "KIGI_CLAUDE_OAUTH_BASE_URL";
+
+/// Claude Pro/Max subscription OAuth (authorization-code + PKCE S256, loopback
+/// callback). Authoritative constants from Pi `earendil-works/pi`
+/// `auth/oauth/anthropic.ts`: authorize host `https://claude.ai`, token host
+/// `https://platform.claude.com` (JSON body), public Claude Code client id.
+pub const CLAUDE_OAUTH_CONFIG: OAuthConfig = OAuthConfig {
+    client_id: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+    auth_host: "https://claude.ai",
+    device_path: "/oauth/authorize",
+    token_host: "https://platform.claude.com",
+    token_path: "/v1/oauth/token",
+    scope: "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload",
+    scope_key: "oauth/claude-pro-max",
+    extra_device_field: None,
+    flow: OAuthFlow::PkceLocalhost {
+        redirect_port: 53692,
+    },
+    token_body: OAuthTokenBody::Json,
 };
 
 /// The generic device-code OAuth config for a platform, or `None` for API-key
@@ -1001,6 +1065,42 @@ const MINIMAX_CN_SPEC: PlatformSpec = PlatformSpec {
     restrict_to_enriched: false,
 };
 
+/// Claude Pro/Max subscription via PKCE-localhost OAuth. Reaches
+/// `api.anthropic.com` with an OAuth `sk-ant-oat…` bearer (NOT an API key) —
+/// same Anthropic Messages + listing wire as the API-key `anthropic` row, plus
+/// the OAuth identity headers + "You are Claude Code" system prefix (gated on
+/// this platform's OAuth path in the sampler/fetch, so the API-key rows stay
+/// byte-identical).
+const CLAUDE_PRO_MAX_SPEC: PlatformSpec = PlatformSpec {
+    id: "claude-pro-max",
+    display_name: "Claude Pro/Max",
+    // WITH /v1 so listing → /v1/models and inference → /v1/messages, matching
+    // ANTHROPIC_SPEC's base handling.
+    base_url: BaseUrlSource::EnvOr {
+        env: CLAUDE_OAUTH_BASE_URL_ENV,
+        default: "https://api.anthropic.com/v1",
+    },
+    uses_oauth: true,
+    oauth: Some(&CLAUDE_OAUTH_CONFIG),
+    allowed_model_prefixes: None,
+    // OAuth channel: no API key envs (the PKCE session is the bearer).
+    api_key_envs: &[],
+    vendor: "Anthropic",
+    console_host: None,
+    login_label: Some("Claude Pro/Max (subscription)"),
+    models_dev_id: Some("anthropic"),
+    wire_serves_metadata: false,
+    wire_api: PlatformWireApi::Messages,
+    listing: ListingDialect::Anthropic,
+    // Passthrough is ignored for the Messages backend.
+    chat_compat: PlatformChatCompat::Passthrough,
+    // OAuth uses Authorization: Bearer, NOT x-api-key.
+    key_header: PlatformKeyHeader::Bearer,
+    restrict_to_enriched: false,
+    key_validation_path: None,
+    strip_listing_id_prefix: None,
+};
+
 /// The platform registry. Platforms are compiled-in spec rows; there is no
 /// dynamic provider registration (PRD F2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -1057,12 +1157,15 @@ pub enum PlatformId {
     MinimaxCn,
     /// xAI Grok subscription via device-code OAuth (same wire as `Xai`).
     XaiGrok,
+    /// Claude Pro/Max subscription via PKCE-localhost OAuth (Anthropic Messages
+    /// wire reached with an OAuth bearer instead of an API key).
+    ClaudeProMax,
 }
 
 impl PlatformId {
     /// All platforms, in catalog precedence order: the subscription channel
     /// first so "default model = first list item" favors it when present.
-    pub const ALL: [PlatformId; 26] = [
+    pub const ALL: [PlatformId; 27] = [
         Self::KimiCode,
         Self::MoonshotCn,
         Self::MoonshotAi,
@@ -1089,6 +1192,7 @@ impl PlatformId {
         Self::Minimax,
         Self::MinimaxCn,
         Self::XaiGrok,
+        Self::ClaudeProMax,
     ];
 
     /// The registry row backing this platform (single source of per-platform
@@ -1121,6 +1225,7 @@ impl PlatformId {
             Self::Minimax => &MINIMAX_SPEC,
             Self::MinimaxCn => &MINIMAX_CN_SPEC,
             Self::XaiGrok => &XAI_GROK_SPEC,
+            Self::ClaudeProMax => &CLAUDE_PRO_MAX_SPEC,
         }
     }
 
@@ -1899,7 +2004,7 @@ mod tests {
         let g = PlatformId::XaiGrok;
         assert_eq!(g.as_str(), "xai-grok");
         assert!(g.uses_oauth());
-        // The only two uses_oauth platforms; only xai-grok carries a config.
+        // Kimi Code is uses_oauth yet carries no generic config (bespoke flow).
         assert!(PlatformId::KimiCode.uses_oauth());
         assert_eq!(PlatformId::KimiCode.oauth(), None);
         let cfg = g
@@ -1931,6 +2036,65 @@ mod tests {
         assert_eq!(g.managed_model_key("grok-4.5"), "xai-grok/grok-4.5");
         let _guard = kigi_env::EnvVarGuard::set(XAI_GROK_BASE_URL_ENV, "https://mock.grok/v1");
         assert_eq!(g.base_url(), "https://mock.grok/v1");
+    }
+
+    /// claude-pro-max is the first PKCE-localhost OAuth platform: it carries a
+    /// PKCE `OAuthConfig` (authorize host ≠ token host, JSON token body), reuses
+    /// the Anthropic Messages + listing wire with a Bearer key header (OAuth,
+    /// NOT x-api-key), enriches from models.dev "anthropic", and keys its models
+    /// under `claude-pro-max/`.
+    #[test]
+    fn claude_pro_max_is_a_pkce_oauth_platform() {
+        let c = PlatformId::ClaudeProMax;
+        assert_eq!(c.as_str(), "claude-pro-max");
+        assert!(c.uses_oauth());
+        let cfg = c
+            .oauth()
+            .expect("claude-pro-max carries a PKCE OAuthConfig");
+        assert_eq!(cfg, &CLAUDE_OAUTH_CONFIG);
+        assert_eq!(cfg.client_id, "9d1c250a-e61b-44d9-88ed-5944d1962f5e");
+        // Authorize host ≠ token host (the distinguishing PKCE trait).
+        assert_eq!(cfg.auth_host, "https://claude.ai");
+        assert_eq!(cfg.device_path, "/oauth/authorize");
+        assert_eq!(cfg.token_host, "https://platform.claude.com");
+        assert_eq!(cfg.token_path, "/v1/oauth/token");
+        assert_eq!(
+            cfg.scope,
+            "org:create_api_key user:profile user:inference \
+             user:sessions:claude_code user:mcp_servers user:file_upload"
+        );
+        assert_eq!(cfg.scope_key, "oauth/claude-pro-max");
+        assert_eq!(cfg.extra_device_field, None);
+        assert_eq!(
+            cfg.flow,
+            OAuthFlow::PkceLocalhost {
+                redirect_port: 53692
+            }
+        );
+        assert_eq!(cfg.token_body, OAuthTokenBody::Json);
+        // xai stays the device-code / form contract — unaffected.
+        assert_eq!(XAI_OAUTH_CONFIG.flow, OAuthFlow::DeviceCode);
+        assert_eq!(XAI_OAUTH_CONFIG.token_body, OAuthTokenBody::Form);
+        assert_eq!(XAI_OAUTH_CONFIG.token_host, "https://auth.x.ai");
+        // Scope-key lookup resolves the config (drives the generic refresher).
+        assert_eq!(
+            oauth_config_for_scope_key("oauth/claude-pro-max"),
+            Some(&CLAUDE_OAUTH_CONFIG)
+        );
+        // Anthropic Messages + listing wire, reached with a Bearer OAuth token.
+        assert_eq!(c.models_dev_id(), Some("anthropic"));
+        assert!(!c.restrict_to_enriched());
+        assert_eq!(c.key_header(), PlatformKeyHeader::Bearer);
+        assert_eq!(c.wire_api(), PlatformWireApi::Messages);
+        assert_eq!(c.listing(), ListingDialect::Anthropic);
+        assert_eq!(c.api_key_env_names(), &[] as &[&str]);
+        assert_eq!(
+            c.managed_model_key("claude-opus-4-8"),
+            "claude-pro-max/claude-opus-4-8"
+        );
+        let _guard =
+            kigi_env::EnvVarGuard::set(CLAUDE_OAUTH_BASE_URL_ENV, "https://mock.claude/v1");
+        assert_eq!(c.base_url(), "https://mock.claude/v1");
     }
 
     /// A variant missing from `ALL` compiles fine (`ALL`'s length is a plain
@@ -1967,9 +2131,10 @@ mod tests {
                 PlatformId::Minimax => 23,
                 PlatformId::MinimaxCn => 24,
                 PlatformId::XaiGrok => 25,
+                PlatformId::ClaudeProMax => 26,
             }
         }
-        const VARIANT_COUNT: usize = 26; // update together with `ordinal`
+        const VARIANT_COUNT: usize = 27; // update together with `ordinal`
         let mut seen: Vec<usize> = PlatformId::ALL.iter().map(|&p| ordinal(p)).collect();
         seen.sort_unstable();
         seen.dedup();

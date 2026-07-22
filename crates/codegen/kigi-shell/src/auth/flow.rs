@@ -67,10 +67,11 @@ pub async fn run_auth_flow(
     run_auth_flow_inner(auth_manager, kimi_code_config, reauth, false, channels).await
 }
 
-/// Login flow for a GENERIC device-code OAuth provider (xai-grok): use a valid
-/// cached session unless re-authing, otherwise run the generic device flow
+/// Login flow for a GENERIC OAuth provider (xai-grok device-code,
+/// claude-pro-max PKCE-localhost): use a valid cached session unless re-authing,
+/// otherwise dispatch by `oauth.flow` to the device-code or PKCE-localhost login
 /// (persisting under the provider's own scope via `auth_manager`). Unlike the
-/// Kimi flow this does not run the silent-refresh dance — the device flow's
+/// Kimi flow this does not run the silent-refresh dance — the login's
 /// `AuthManager::update` persists a fresh token set directly.
 pub async fn run_oauth_provider_flow(
     auth_manager: &Arc<AuthManager>,
@@ -94,8 +95,96 @@ pub async fn run_oauth_provider_flow(
         return Ok((auth, false));
     }
     let mut channels = channels;
-    crate::auth::device_code::run_device_code_login_generic(oauth, auth_manager, &mut channels)
+    match oauth.flow {
+        kigi_models::OAuthFlow::DeviceCode => {
+            crate::auth::device_code::run_device_code_login_generic(
+                oauth,
+                auth_manager,
+                &mut channels,
+            )
+            .await
+        }
+        kigi_models::OAuthFlow::PkceLocalhost { redirect_port } => {
+            run_pkce_localhost_login(oauth, redirect_port, auth_manager, &mut channels).await
+        }
+    }
+}
+
+/// PKCE-localhost login (claude-pro-max): generate PKCE, present the browser
+/// authorize URL (TUI channel or stderr), open the browser, then await the code
+/// from EITHER the `127.0.0.1:{redirect_port}` loopback callback OR a manual
+/// paste (headless fallback). Exchange it at the token endpoint and persist.
+///
+/// SECURITY: the verifier / code / tokens are never logged; the loopback binds
+/// `127.0.0.1` only and validates `state` strictly.
+async fn run_pkce_localhost_login(
+    oauth: &'static kigi_models::OAuthConfig,
+    redirect_port: u16,
+    auth_manager: &Arc<AuthManager>,
+    channels: &mut Option<AuthChannels>,
+) -> anyhow::Result<(KimiAuth, bool)> {
+    use crate::auth::oauth_pkce;
+
+    let pkce = oauth_pkce::generate_pkce();
+    let redirect = oauth_pkce::redirect_uri(redirect_port);
+    let authorize_url = oauth_pkce::build_authorize_url(oauth, &redirect, &pkce);
+
+    let mut chans = channels.take();
+    if let Some(tx) = chans.as_mut().and_then(|c| c.url_tx.take()) {
+        // TUI: push the URL BEFORE opening the browser (never block the UI on a
+        // slow/headless browser launch).
+        let _ = tx.send(AuthUrlInfo {
+            url: authorize_url.clone(),
+            mode: AuthUrlMode::Device,
+        });
+        crate::auth::device_code::open_browser_detached(&authorize_url).await;
+    } else {
+        eprintln!();
+        eprintln!("To sign in to Claude Pro/Max, open this URL in your browser:");
+        eprintln!();
+        eprintln!("  {authorize_url}");
+        eprintln!();
+        if !crate::auth::device_code::open_browser_detached(&authorize_url).await {
+            eprintln!("  (Could not open the browser automatically — open the URL above.)");
+            eprintln!();
+        }
+        eprintln!("Waiting for the sign-in to complete...");
+    }
+
+    let code = await_pkce_code(redirect_port, &pkce, chans.as_mut()).await?;
+    let auth = oauth_pkce::exchange_code(oauth, &code, &pkce, &redirect).await?;
+    let auth = auth_manager
+        .update(auth)
         .await
+        .map_err(|e| anyhow::anyhow!("Failed to save credentials: {e}"))?;
+    Ok((auth, true))
+}
+
+/// Await the authorization code: the loopback callback is primary; when a TUI
+/// channel is present, a pasted code (redirect URL / `code#state` / bare code)
+/// is accepted concurrently as a headless fallback. State is validated in both
+/// arms (strict on the loopback, mismatch-rejecting on the paste).
+async fn await_pkce_code(
+    redirect_port: u16,
+    pkce: &crate::auth::oauth_pkce::PkceCodes,
+    channels: Option<&mut AuthChannels>,
+) -> anyhow::Result<String> {
+    use crate::auth::oauth_pkce;
+    match channels {
+        Some(ch) => {
+            tokio::select! {
+                code = oauth_pkce::await_loopback_code(redirect_port, &pkce.state) => code,
+                pasted = ch.code_rx.recv() => {
+                    let pasted = pasted
+                        .ok_or_else(|| anyhow::anyhow!("auth code channel closed before a code arrived"))?;
+                    let params = oauth_pkce::parse_manual_paste(&pasted)?;
+                    oauth_pkce::validate_pasted_state(&params, &pkce.state)?;
+                    Ok(params.code)
+                }
+            }
+        }
+        None => oauth_pkce::await_loopback_code(redirect_port, &pkce.state).await,
+    }
 }
 
 async fn run_auth_flow_inner(

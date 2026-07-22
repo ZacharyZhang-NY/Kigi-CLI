@@ -38,6 +38,7 @@ pub fn test_sampler_config(
         top_p: None,
         api_backend,
         auth_scheme: Default::default(),
+        anthropic_oauth: false,
         chat_compat: Default::default(),
         extra_headers: extra_headers
             .iter()

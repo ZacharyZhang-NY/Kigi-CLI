@@ -9,6 +9,7 @@ pub(crate) mod kimi_oauth;
 pub(crate) mod manager;
 mod model;
 pub(crate) mod oauth_device;
+pub(crate) mod oauth_pkce;
 pub(crate) mod oauth_registry;
 pub(crate) mod recovery;
 pub(crate) mod refresh;

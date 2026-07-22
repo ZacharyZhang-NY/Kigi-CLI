@@ -4079,6 +4079,18 @@ pub fn sampling_config_for_model(
             }
         })
         .unwrap_or_default();
+    // Claude Pro/Max OAuth Messages adaptation: a managed key whose platform is
+    // a generic-OAuth Messages provider (claude-pro-max) drives the OAuth
+    // identity headers + "You are Claude Code" system prefix in the sampler.
+    // Gated here so API-key anthropic/minimax (oauth None) stay byte-identical.
+    let anthropic_oauth = info
+        .id
+        .as_deref()
+        .and_then(kigi_models::parse_managed_model_key)
+        .is_some_and(|(platform, _)| {
+            platform.oauth().is_some()
+                && platform.wire_api() == kigi_models::PlatformWireApi::Messages
+        });
     SamplerConfig {
         api_key: credentials.api_key,
         model: model_name,
@@ -4088,6 +4100,7 @@ pub fn sampling_config_for_model(
         top_p,
         api_backend,
         auth_scheme: credentials.auth_scheme,
+        anthropic_oauth,
         chat_compat,
         extra_headers,
         context_window: info.context_window.get(),

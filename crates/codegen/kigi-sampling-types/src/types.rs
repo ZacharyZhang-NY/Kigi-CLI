@@ -1060,6 +1060,22 @@ pub fn normalize_effort_echo(value: &mut Value) {
 /// wires (Messages inference and the /v1/models listing).
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";
 
+/// `anthropic-beta` value for the Claude-Code OAuth (Pro/Max subscription)
+/// path — required on BOTH the Messages inference request and the `/v1/models`
+/// listing when the bearer is an OAuth `sk-ant-oat…` token. API-key Anthropic
+/// and MiniMax NEVER send this (their requests stay byte-identical).
+pub const ANTHROPIC_OAUTH_BETA: &str = "claude-code-20250219,oauth-2025-04-20";
+
+/// User-Agent kigi presents on the Claude-Code OAuth path (mirrors the
+/// official Claude Code CLI). OAuth-gated: unrelated to the default kigi UA.
+pub const CLAUDE_CODE_USER_AGENT: &str = "claude-cli/2.1.75";
+
+/// System-prompt prefix REQUIRED on the Claude-Code OAuth Messages path: the
+/// OAuth token is Claude-Code-scoped, so Anthropic rejects the request unless
+/// the system prompt's first block is exactly this line. OAuth-gated.
+pub const CLAUDE_CODE_SYSTEM_PREFIX: &str =
+    "You are Claude Code, Anthropic's official CLI for Claude.";
+
 /// ChatCompletions request-body adaptation dialect. Providers disagree on
 /// how thinking rides an OpenAI-compatible body: Kimi wants
 /// `thinking:{type,effort}`, DeepSeek wants

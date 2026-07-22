@@ -9,12 +9,12 @@
 
 use std::sync::Arc;
 
-use kigi_models::OAuthConfig;
+use kigi_models::{OAuthConfig, OAuthTokenBody};
 
 use crate::auth::error::RefreshTokenFailedReason;
 use crate::auth::kimi_oauth::RefreshError;
 use crate::auth::manager::RefreshReason;
-use crate::auth::oauth_device::{self};
+use crate::auth::{oauth_device, oauth_pkce};
 
 use super::{AuthSnapshot, RefreshOutcome, TokenRefresher};
 
@@ -104,7 +104,14 @@ impl TokenRefresher for GenericDeviceRefresher {
             "auth: sending refresh_token grant (generic oauth)"
         );
 
-        match oauth_device::refresh_token(self.cfg, &refresh_token).await {
+        // Refresh over the provider's token-body encoding: xai's endpoint is
+        // form-encoded (device wire); Claude's is JSON (PKCE wire). Both return
+        // the same `Result<KimiAuth, RefreshError>`.
+        let wire_result = match self.cfg.token_body {
+            OAuthTokenBody::Form => oauth_device::refresh_token(self.cfg, &refresh_token).await,
+            OAuthTokenBody::Json => oauth_pkce::refresh_token(self.cfg, &refresh_token).await,
+        };
+        match wire_result {
             Ok(new_auth) => {
                 kigi_log::unified_log::info(
                     "auth.refresh.token_rotated",

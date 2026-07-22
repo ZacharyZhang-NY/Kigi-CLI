@@ -1590,6 +1590,7 @@ mod reasoning_compaction_regression_tests {
             api_backend: ApiBackend::ChatCompletions,
             chat_compat: Default::default(),
             auth_scheme: Default::default(),
+            anthropic_oauth: false,
             extra_headers: Default::default(),
             context_window: 256_000,
             force_http1: false,

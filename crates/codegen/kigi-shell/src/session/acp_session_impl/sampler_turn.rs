@@ -259,6 +259,21 @@ impl SessionActor {
             .and_then(|(platform, _)| platform.oauth())
             .is_some()
     }
+    /// Whether `model` routes to the Claude Pro/Max OAuth-Messages platform
+    /// (claude-pro-max) — the gate for the sampler's OAuth Messages adaptation
+    /// (identity headers + "You are Claude Code" system prefix). A generic-OAuth
+    /// platform speaking the Messages wire; every other model (incl. xai-grok,
+    /// which is ChatCompletions) returns `false`, keeping the API-key Anthropic
+    /// / MiniMax Messages requests byte-identical.
+    fn model_is_anthropic_oauth(&self, model: &str) -> bool {
+        let managed_key = self.managed_key_for_model(model);
+        kigi_models::parse_managed_model_key(managed_key.as_deref().unwrap_or(model)).is_some_and(
+            |(platform, _)| {
+                platform.oauth().is_some()
+                    && platform.wire_api() == kigi_models::PlatformWireApi::Messages
+            },
+        )
+    }
     /// LEAK guard for the stamped aux paths (auto-mode classifier, image
     /// describe). After [`crate::agent::config::stamp_session_local_sampler_fields`]
     /// has copied the SESSION model's `bearer_resolver` onto an aux
@@ -365,6 +380,9 @@ impl SessionActor {
         } else {
             None
         };
+        // Claude Pro/Max OAuth Messages adaptation for THIS turn's model
+        // (captured before `cfg.model` is moved into the struct below).
+        let anthropic_oauth = self.model_is_anthropic_oauth(&cfg.model);
         let auth_scheme = model_facts.auth_scheme;
         let mut extra_headers = cfg.extra_headers;
         crate::agent::config::inject_url_derived_headers(
@@ -405,6 +423,7 @@ impl SessionActor {
             top_p: cfg.top_p,
             api_backend: cfg.api_backend,
             auth_scheme,
+            anthropic_oauth,
             chat_compat: cfg.chat_compat,
             extra_headers,
             context_window: cfg.context_window.get(),

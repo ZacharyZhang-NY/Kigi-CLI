@@ -198,8 +198,8 @@ async fn complete_device_code_login(
 /// Open `url` in the browser off-thread: `webbrowser::open` is synchronous and
 /// would stall the single-threaded TUI loop. Returns `true` on success so the
 /// caller can decide how to notify the user (eprintln on CLI, nothing on TUI
-/// where the URL is already rendered in the widget).
-async fn open_browser_detached(url: &str) -> bool {
+/// where the URL is already rendered in the widget). Shared with the PKCE flow.
+pub(super) async fn open_browser_detached(url: &str) -> bool {
     // Unit tests drive the full login flow against mock servers — their
     // fixture URLs must never reach a real browser.
     if cfg!(test) {

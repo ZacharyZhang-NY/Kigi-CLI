@@ -141,6 +141,52 @@ mod tests {
             .expect("xai-grok carries an OAuthConfig")
     }
 
+    fn claude_oauth() -> &'static kigi_models::OAuthConfig {
+        kigi_models::PlatformId::ClaudeProMax
+            .oauth()
+            .expect("claude-pro-max carries an OAuthConfig")
+    }
+
+    /// A `claude-pro-max/<model>` turn resolves to the process-global pooled
+    /// claude-pro-max manager (its OWN `oauth/claude-pro-max` scope), NEVER the
+    /// primary Kimi manager — the same leak-safe routing as xai-grok, and a
+    /// DISTINCT pool entry from the xai manager.
+    #[tokio::test]
+    async fn claude_pro_max_model_resolves_to_its_own_manager_not_kimi() {
+        let (_kd, kimi) = primary_with_token("kimi-tok");
+        let home = tempfile::tempdir().unwrap();
+        let resolved =
+            manager_for_model(home.path(), "claude-pro-max/claude-opus-4-8", Some(&kimi))
+                .expect("claude-pro-max model resolves to its pooled manager");
+        assert!(
+            !Arc::ptr_eq(&resolved, &kimi),
+            "claude-pro-max must NOT resolve to the Kimi manager"
+        );
+        assert!(
+            Arc::ptr_eq(&resolved, &global_manager_for(home.path(), claude_oauth())),
+            "claude-pro-max must resolve to its OWN process-global pooled manager"
+        );
+        // And it is a DIFFERENT manager than xai-grok's pooled one.
+        assert!(
+            !Arc::ptr_eq(&resolved, &global_manager_for(home.path(), xai_oauth())),
+            "claude-pro-max and xai-grok must not share a pooled manager"
+        );
+    }
+
+    /// Fail-fast (no Kimi fallback): a claude-pro-max key with a Kimi primary
+    /// never yields the Kimi session token — it draws from the claude pool (its
+    /// own token, or `None`), so the Kimi bearer can never reach api.anthropic.
+    #[tokio::test]
+    async fn session_key_for_claude_pro_max_is_never_the_kimi_primary() {
+        let (_kd, kimi) = primary_with_token("kimi-tok");
+        let home = tempfile::tempdir().unwrap();
+        assert_ne!(
+            session_key_for_model(home.path(), "claude-pro-max/claude-opus-4-8", Some(&kimi)),
+            Some("kimi-tok".to_string()),
+            "a claude-pro-max model must never receive the primary Kimi session token"
+        );
+    }
+
     /// A non-OAuth managed key (moonshot-cn/…) and an unprefixed bare id both
     /// route to the primary Kimi manager — the Kimi / first-party path is
     /// untouched and never consults the pool (no runtime needed).

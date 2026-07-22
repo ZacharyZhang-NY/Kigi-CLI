@@ -41,6 +41,35 @@ pub use kigi_sampling_types::ApiBackend;
 const AGENT_PRODUCT: &str = "kigi";
 const ANTHROPIC_DEFAULT_MAX_TOKENS: u32 = 128_000;
 
+/// Prepend the required Claude-Code system block to a Messages request's
+/// `system` field (Claude Pro/Max OAuth path). Anthropic inspects the FIRST
+/// system block, so the prefix is inserted as a distinct leading `text` block
+/// while preserving any caller-supplied prompt (string or block form).
+/// Idempotent: a leading block already equal to the prefix is not re-added.
+fn prepend_claude_code_system_prefix(system: &mut Option<messages::SystemParam>) {
+    use messages::{SystemParam, TextBlock};
+    let text_block = |text: String| TextBlock {
+        r#type: "text".to_string(),
+        text,
+        cache_control: None,
+    };
+    let mut blocks = match system.take() {
+        None => Vec::new(),
+        Some(SystemParam::Text(text)) => vec![text_block(text)],
+        Some(SystemParam::Blocks(blocks)) => blocks,
+    };
+    let already_present = blocks
+        .first()
+        .is_some_and(|b| b.text == kigi_sampling_types::CLAUDE_CODE_SYSTEM_PREFIX);
+    if !already_present {
+        blocks.insert(
+            0,
+            text_block(kigi_sampling_types::CLAUDE_CODE_SYSTEM_PREFIX.to_string()),
+        );
+    }
+    *system = Some(SystemParam::Blocks(blocks));
+}
+
 /// Parse the `Retry-After` response header as delta-seconds.
 /// Our inference backends only emit integer seconds (never HTTP-date),
 /// so we only handle that form. HTTP-dates silently return `None` and
@@ -273,6 +302,8 @@ struct ClientDefaults {
     chat_compat: kigi_sampling_types::ChatCompat,
     stream_tool_calls: bool,
     doom_loop_recovery: Option<kigi_sampling_types::DoomLoopRecoveryPolicy>,
+    /// Claude Pro/Max OAuth Messages adaptation (see [`SamplerConfig`]).
+    anthropic_oauth: bool,
 }
 
 // =============================================================================
@@ -398,6 +429,31 @@ impl SamplingClient {
             }
         }
 
+        // Claude Pro/Max OAuth identity headers (claude-pro-max only). The
+        // OAuth `sk-ant-oat…` bearer is Claude-Code-scoped, so Anthropic
+        // rejects the Messages request without the oauth beta + claude-cli
+        // identity. Gated on `anthropic_oauth` so API-key anthropic/minimax
+        // requests carry none of this and stay byte-identical. `Accept` is set
+        // per-request (text/event-stream for streams), so it is NOT added here.
+        if config.anthropic_oauth {
+            headers.insert(
+                HeaderName::from_static("anthropic-version"),
+                HeaderValue::from_static(kigi_sampling_types::ANTHROPIC_VERSION),
+            );
+            headers.insert(
+                HeaderName::from_static("anthropic-beta"),
+                HeaderValue::from_static(kigi_sampling_types::ANTHROPIC_OAUTH_BETA),
+            );
+            headers.insert(
+                HeaderName::from_static("x-app"),
+                HeaderValue::from_static("cli"),
+            );
+            headers.insert(
+                HeaderName::from_static("anthropic-dangerous-direct-browser-access"),
+                HeaderValue::from_static("true"),
+            );
+        }
+
         // Apply all extra headers verbatim. This is the single
         // injection point for proxy-auth headers and any other URL- or
         // environment-specific headers the session decides to set.
@@ -415,12 +471,18 @@ impl SamplingClient {
         // (PRD F3: auth is a plain bearer; kimi-cli sends only User-Agent
         // plus the OAuth device headers, src/kimi_cli/llm.py:317-323).
         {
-            let ua_string = match config.origin_client.as_ref() {
-                Some(origin) => user_agent_string_for(origin),
-                None => user_agent_string_for(&OriginClientInfo {
-                    product: AGENT_PRODUCT.to_string(),
-                    version: Some(agent_version()),
-                }),
+            // Claude Pro/Max OAuth path presents the claude-cli identity;
+            // every other path keeps the kigi User-Agent.
+            let ua_string = if config.anthropic_oauth {
+                kigi_sampling_types::CLAUDE_CODE_USER_AGENT.to_string()
+            } else {
+                match config.origin_client.as_ref() {
+                    Some(origin) => user_agent_string_for(origin),
+                    None => user_agent_string_for(&OriginClientInfo {
+                        product: AGENT_PRODUCT.to_string(),
+                        version: Some(agent_version()),
+                    }),
+                }
             };
             if let Ok(v) = HeaderValue::from_str(&ua_string) {
                 headers.insert(USER_AGENT, v);
@@ -460,6 +522,7 @@ impl SamplingClient {
             chat_compat: config.chat_compat,
             stream_tool_calls: config.stream_tool_calls,
             doom_loop_recovery: config.doom_loop_recovery,
+            anthropic_oauth: config.anthropic_oauth,
         };
 
         Ok(Self {
@@ -1344,6 +1407,15 @@ impl SamplingClient {
 
     /// Apply default configuration to a Messages API request.
     fn apply_message_defaults(&self, request: &mut MessagesRequestWrapper) -> Result<()> {
+        // Claude Pro/Max OAuth adaptation (claude-pro-max only): the OAuth
+        // token is Claude-Code-scoped, so the request MUST lead with the exact
+        // "You are Claude Code…" system block or Anthropic rejects it. Prepend
+        // it as a distinct first system block, preserving any caller prompt.
+        // Gated on `anthropic_oauth` so API-key anthropic/minimax are untouched.
+        if self.defaults.anthropic_oauth {
+            prepend_claude_code_system_prefix(&mut request.inner.system);
+        }
+
         // Apply model default if not specified
         if request.inner.model.is_empty() {
             request.inner.model = self.defaults.model.clone();
@@ -1888,6 +1960,7 @@ mod tests {
             top_p: None,
             api_backend: ApiBackend::ChatCompletions,
             auth_scheme: AuthScheme::Bearer,
+            anthropic_oauth: false,
             chat_compat: Default::default(),
             extra_headers: IndexMap::new(),
             context_window: 8192,
@@ -1940,6 +2013,130 @@ mod tests {
                 .is_none(),
             "XApiKey without the Messages backend must not grow the header"
         );
+    }
+
+    /// Claude Pro/Max OAuth Messages client (`anthropic_oauth = true`, Bearer,
+    /// Messages) carries the full OAuth identity: Bearer auth, anthropic-version,
+    /// the oauth `anthropic-beta`, `x-app: cli`, the claude-cli User-Agent, and
+    /// the direct-browser-access header.
+    #[test]
+    fn anthropic_oauth_messages_client_sends_oauth_identity_headers() {
+        let mut config = minimal_config();
+        config.api_key = Some("sk-ant-oat-secret".to_string());
+        config.auth_scheme = AuthScheme::Bearer;
+        config.api_backend = ApiBackend::Messages;
+        config.anthropic_oauth = true;
+        let client = SamplingClient::new(config).expect("client builds");
+        let h = &client.default_headers;
+        assert_eq!(
+            h.get(AUTHORIZATION).and_then(|v| v.to_str().ok()),
+            Some("Bearer sk-ant-oat-secret"),
+            "OAuth path rides Authorization: Bearer, never x-api-key"
+        );
+        assert!(
+            h.get("x-api-key").is_none(),
+            "OAuth path must not send x-api-key"
+        );
+        assert_eq!(
+            h.get("anthropic-version").and_then(|v| v.to_str().ok()),
+            Some(kigi_sampling_types::ANTHROPIC_VERSION)
+        );
+        assert_eq!(
+            h.get("anthropic-beta").and_then(|v| v.to_str().ok()),
+            Some(kigi_sampling_types::ANTHROPIC_OAUTH_BETA)
+        );
+        assert_eq!(h.get("x-app").and_then(|v| v.to_str().ok()), Some("cli"));
+        assert_eq!(
+            h.get(USER_AGENT).and_then(|v| v.to_str().ok()),
+            Some(kigi_sampling_types::CLAUDE_CODE_USER_AGENT)
+        );
+        assert_eq!(
+            h.get("anthropic-dangerous-direct-browser-access")
+                .and_then(|v| v.to_str().ok()),
+            Some("true")
+        );
+    }
+
+    /// REGRESSION: an API-key Anthropic Messages client (XApiKey, NOT oauth)
+    /// carries NONE of the OAuth identity — no anthropic-beta, no x-app, and
+    /// the kigi User-Agent — so the API-key path stays byte-identical.
+    #[test]
+    fn api_key_anthropic_messages_client_has_no_oauth_identity() {
+        let mut config = minimal_config();
+        config.auth_scheme = AuthScheme::XApiKey;
+        config.api_backend = ApiBackend::Messages;
+        // anthropic_oauth stays false.
+        let client = SamplingClient::new(config).expect("client builds");
+        let h = &client.default_headers;
+        assert!(
+            h.get("anthropic-beta").is_none(),
+            "API-key anthropic must NOT send the oauth beta"
+        );
+        assert!(
+            h.get("x-app").is_none(),
+            "API-key anthropic must NOT send x-app"
+        );
+        assert!(h.get("anthropic-dangerous-direct-browser-access").is_none());
+        assert!(
+            h.get(USER_AGENT)
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|ua| ua.starts_with("kigi/")),
+            "API-key anthropic keeps the kigi User-Agent"
+        );
+    }
+
+    /// The system-prompt prefix is prepended as a distinct leading `text`
+    /// block for each `system` shape (absent / string / blocks), preserving the
+    /// caller's prompt, and is idempotent (not stamped twice).
+    #[test]
+    fn claude_code_system_prefix_prepends_and_is_idempotent() {
+        use messages::{SystemParam, TextBlock};
+        let prefix = kigi_sampling_types::CLAUDE_CODE_SYSTEM_PREFIX;
+
+        // Absent system → a single prefix block.
+        let mut none = None;
+        prepend_claude_code_system_prefix(&mut none);
+        match none {
+            Some(SystemParam::Blocks(b)) => {
+                assert_eq!(b.len(), 1);
+                assert_eq!(b[0].text, prefix);
+            }
+            other => panic!("expected one prefix block, got {other:?}"),
+        }
+
+        // String system → [prefix, original].
+        let mut text = Some(SystemParam::Text("do the thing".into()));
+        prepend_claude_code_system_prefix(&mut text);
+        match text {
+            Some(SystemParam::Blocks(b)) => {
+                assert_eq!(b.len(), 2);
+                assert_eq!(b[0].text, prefix);
+                assert_eq!(b[1].text, "do the thing");
+            }
+            other => panic!("expected two blocks, got {other:?}"),
+        }
+
+        // Idempotent: a leading prefix block is not re-added.
+        let mut already = Some(SystemParam::Blocks(vec![
+            TextBlock {
+                r#type: "text".into(),
+                text: prefix.to_string(),
+                cache_control: None,
+            },
+            TextBlock {
+                r#type: "text".into(),
+                text: "tail".into(),
+                cache_control: None,
+            },
+        ]));
+        prepend_claude_code_system_prefix(&mut already);
+        match already {
+            Some(SystemParam::Blocks(b)) => {
+                assert_eq!(b.len(), 2, "prefix must not be duplicated");
+                assert_eq!(b[0].text, prefix);
+            }
+            other => panic!("expected unchanged blocks, got {other:?}"),
+        }
     }
 
     /// Verify the serialized shape of StreamingChatRequest matches the
