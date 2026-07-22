@@ -253,5 +253,7 @@ pub(super) fn render_hero_box(
         selected,
         mouse_pos,
         layout.hero_menu.width,
+        0,
     )
+    .0
 }

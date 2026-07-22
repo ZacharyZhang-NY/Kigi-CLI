@@ -695,6 +695,9 @@ pub struct AppView {
     pub(crate) minimal_state: crate::minimal_api::MinimalState,
     /// Currently highlighted menu item on the welcome screen (arrow keys / hover).
     pub welcome_menu_index: Option<usize>,
+    /// Login-picker menu viewport offset (minimal-scroll; fed back into the
+    /// next render so the list only moves when the selection exits it).
+    pub welcome_menu_scroll: usize,
     /// Hit-test rects for welcome menu items (populated during render).
     pub welcome_menu_rects: Vec<ratatui::layout::Rect>,
     /// Hit-test rect for the import-claude banner on the welcome screen.
@@ -1006,6 +1009,7 @@ impl AppView {
             pending_pager_ansi: false,
             minimal_state: crate::minimal_api::MinimalState::default(),
             welcome_menu_index: None,
+            welcome_menu_scroll: 0,
             welcome_menu_rects: Vec::new(),
             welcome_import_banner_rect: None,
             last_mouse_pos: None,
@@ -2747,6 +2751,24 @@ fn handle_welcome_input(ev: &Event, ctx: &mut WelcomeInputCtx<'_>) -> InputOutco
                     return InputOutcome::Changed;
                 }
             }
+            // Wheel on the login picker: move the selection (the menu
+            // viewport follows it). Clamped at the ends — a wheel must not
+            // wrap around like the arrow keys do.
+            MouseEventKind::ScrollDown | MouseEventKind::ScrollUp
+                if matches!(ctx.auth_state, AuthState::Pending { .. }) =>
+            {
+                let count = pending_menu_items(ctx.auth_methods, None).len();
+                let down = matches!(mouse.kind, MouseEventKind::ScrollDown);
+                let next = match (*ctx.menu_index, down) {
+                    (Some(i), true) => (i + 1).min(count.saturating_sub(1)),
+                    (Some(i), false) => i.saturating_sub(1),
+                    (None, _) => 0,
+                };
+                if *ctx.menu_index != Some(next) {
+                    *ctx.menu_index = Some(next);
+                    return InputOutcome::Changed;
+                }
+            }
             MouseEventKind::Moved => {
                 let mut new_index = None;
                 for (i, rect) in ctx.menu_rects.iter().enumerate() {
@@ -3151,6 +3173,7 @@ impl AppView {
                             model_name: &model_name,
                             flags: &flags_vec,
                             selected: self.welcome_menu_index,
+                            menu_scroll: self.welcome_menu_scroll,
                             has_claude_import: self.has_claude_import,
                             mouse_pos: self.last_mouse_pos,
                             session_picker: self.session_picker_entries.as_deref(),
@@ -3183,6 +3206,7 @@ impl AppView {
                             &mut self.session_picker_state,
                         );
                         self.welcome_menu_rects = result.menu_rects;
+                        self.welcome_menu_scroll = result.menu_scroll;
                         self.welcome_prompt_rect = result.prompt_rect;
                         self.welcome_import_banner_rect = result.import_banner_rect;
                         self.welcome_auth_url_rect = result.auth_url_rect;
@@ -4282,6 +4306,7 @@ pub(crate) mod tests {
             welcome_prompt_focused: false,
             welcome_tip_typing_dismissed: false,
             welcome_menu_index: None,
+            welcome_menu_scroll: 0,
             welcome_menu_rects: Vec::new(),
             welcome_import_banner_rect: None,
             last_mouse_pos: None,

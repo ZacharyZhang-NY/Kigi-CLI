@@ -10,7 +10,16 @@ use crate::theme::Theme;
 use super::logo::logo_visual_width;
 
 /// Render the welcome menu rows as `label … shortcut`, padded within each row.
-/// Returns the Rect for each item row (for hit-testing clicks and hover).
+///
+/// The area is a viewport: when there are more items than rows, the window
+/// scrolls minimally from `scroll` (the previous frame's offset) to keep
+/// `selected` visible, and a scrollbar marks the position. Minimal scroll —
+/// never re-centering — keeps rows stable under the mouse, so hover-select
+/// cannot shift the list it is pointing at. Returns one Rect per item,
+/// index-aligned for hit-testing (off-screen items get a zero Rect, which
+/// never hit-tests true), plus the offset actually used, which the caller
+/// feeds back next frame.
+#[allow(clippy::too_many_arguments)]
 pub fn render_menu(
     area: Rect,
     buf: &mut Buffer,
@@ -19,7 +28,8 @@ pub fn render_menu(
     selected: Option<usize>,
     mouse_pos: Option<(u16, u16)>,
     min_width_hint: u16,
-) -> Vec<Rect> {
+    scroll: usize,
+) -> (Vec<Rect>, usize) {
     let label_style = Style::default()
         .fg(theme.text_primary)
         .add_modifier(Modifier::BOLD);
@@ -52,12 +62,31 @@ pub fn render_menu(
     .flex(Flex::Center)
     .areas(area);
 
-    let mut rects = Vec::with_capacity(items.len());
-    for (y, (i, (key, label))) in (menu_centered.y..).zip(items.iter().enumerate()) {
-        if y >= menu_centered.y + menu_centered.height {
-            break;
+    let total = items.len();
+    let visible = menu_centered.height as usize;
+    let offset = if total > visible && visible > 0 {
+        let mut off = scroll.min(total - visible);
+        if let Some(sel) = selected {
+            if sel < off {
+                off = sel; // scroll up just enough
+            } else if sel >= off + visible {
+                off = sel + 1 - visible; // scroll down just enough
+            }
         }
+        off
+    } else {
+        0
+    };
 
+    let mut rects = vec![Rect::default(); total];
+    for (row, (i, (key, label))) in items
+        .iter()
+        .enumerate()
+        .skip(offset)
+        .take(visible)
+        .enumerate()
+    {
+        let y = menu_centered.y + row as u16;
         let is_selected = selected == Some(i);
         let key_width = key.len() as u16;
         let label_len = label.len() as u16;
@@ -68,7 +97,7 @@ pub fn render_menu(
             width: menu_centered.width,
             height: 1,
         };
-        rects.push(row_rect);
+        rects[i] = row_rect;
 
         // Fill row background when selected/hovered
         if is_selected {
@@ -133,5 +162,21 @@ pub fn render_menu(
         }
     }
 
-    rects
+    // Scrollbar just outside the menu column (clamped to the area) when the
+    // viewport is clipped. Same style as the pickers.
+    if total > visible && visible > 0 {
+        let sb_x =
+            (menu_centered.x + menu_centered.width).min(area.x + area.width.saturating_sub(1));
+        crate::render::scrollbar::render_scrollbar_styled(
+            buf,
+            Some(Rect::new(sb_x, menu_centered.y, 1, visible as u16)),
+            total as u16,
+            visible as u16,
+            offset as u16,
+            Style::default().bg(theme.bg_base),
+            Style::default().fg(theme.gray_dim).bg(theme.bg_base),
+        );
+    }
+
+    (rects, offset)
 }

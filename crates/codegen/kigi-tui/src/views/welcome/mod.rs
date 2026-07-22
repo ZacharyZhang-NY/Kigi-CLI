@@ -93,6 +93,10 @@ pub struct WelcomeRenderResult {
     pub auth_url_rect: Option<Rect>,
     /// Hit-test rect for the "show full URL" fallback link.
     pub auth_fallback_rect: Option<Rect>,
+    /// Login-picker menu scroll offset actually used this frame. Fed back
+    /// into [`WelcomeRenderParams::menu_scroll`] next frame so the viewport
+    /// only moves when the selection exits it (no jumpy re-centering).
+    pub menu_scroll: usize,
 }
 
 use hero_box::HERO_BOX_MIN_WIDTH;
@@ -213,6 +217,17 @@ impl WelcomeLayout {
         };
         let logo_gap = 1u16;
         let flex_gap = 1u16;
+        // The menu is the only unbounded row group. With more items than the
+        // content area holds, the constraint solver squeezes every `Length`
+        // above it — clipping the moon — and silently truncates the menu.
+        // Cap the menu to the rows genuinely left over; `render_menu`
+        // scrolls its items inside the capped viewport.
+        let menu_height = menu_height.min(
+            content_area
+                .height
+                .saturating_sub(top_pad + fixed_above + fixed_below + flex_gap)
+                .max(1),
+        );
         let [_, logo, _, _, error, menu, _, tip, _, prompt, _, version] = Layout::vertical([
             Constraint::Length(top_pad),
             Constraint::Length(logo_rows),
@@ -449,6 +464,10 @@ pub struct WelcomeRenderParams<'a> {
     pub model_name: &'a str,
     pub flags: &'a [PromptFlag<'a>],
     pub selected: Option<usize>,
+    /// Login-picker menu scroll offset from the previous frame (minimal-
+    /// scroll viewport; the frame's actual offset comes back in
+    /// [`WelcomeRenderResult::menu_scroll`]).
+    pub menu_scroll: usize,
     pub has_claude_import: bool,
     pub mouse_pos: Option<(u16, u16)>,
     pub session_picker: Option<&'a [SessionPickerEntry]>,
@@ -529,7 +548,7 @@ pub fn render_welcome(
                 flags: params.flags,
                 multiline: false,
             };
-            let (menu_rects, post_flush_escapes) = render_welcome_blocked(
+            let (menu_rects, menu_scroll, post_flush_escapes) = render_welcome_blocked(
                 content_area,
                 buf,
                 msg,
@@ -538,6 +557,7 @@ pub fn render_welcome(
                 Some((prompt, &info)),
                 h_margin,
                 params.compact,
+                params.menu_scroll,
             );
             WelcomeRenderResult {
                 cursor_pos: None,
@@ -548,6 +568,7 @@ pub fn render_welcome(
                 import_banner_rect: None,
                 auth_url_rect: None,
                 auth_fallback_rect: None,
+                menu_scroll,
             }
         }
         AuthState::Authenticating { auth_url, mode, .. } => {
@@ -572,6 +593,7 @@ pub fn render_welcome(
                 import_banner_rect: None,
                 auth_url_rect: url_rect,
                 auth_fallback_rect: fallback_rect,
+                menu_scroll: 0,
             }
         }
         // Folder-trust question: shown after auth, before any session is
@@ -626,7 +648,12 @@ fn render_welcome_blocked(
     prompt: Option<(&mut PromptWidget, &PromptInfo<'_>)>,
     h_margin: u16,
     compact: bool,
-) -> (Vec<Rect>, Option<crate::terminal::overlay::PostFlush>) {
+    menu_scroll: usize,
+) -> (
+    Vec<Rect>,
+    usize,
+    Option<crate::terminal::overlay::PostFlush>,
+) {
     let theme = Theme::current();
 
     let msg_height = if message.is_some() { 2u16 } else { 0u16 };
@@ -653,7 +680,16 @@ fn render_welcome_blocked(
     // Inset the menu the same as the input bar / post-auth menu so the actions
     // keep side spacing instead of touching the window edge on narrow terminals.
     let menu_area = inset_horizontal(layout.menu, prompt::prompt_inset(compact));
-    let menu_rects = render_menu(menu_area, buf, &theme, menu_items, selected, None, 0);
+    let (menu_rects, menu_scroll) = render_menu(
+        menu_area,
+        buf,
+        &theme,
+        menu_items,
+        selected,
+        None,
+        0,
+        menu_scroll,
+    );
 
     let post_flush_escapes = if let Some((prompt_widget, info)) = prompt {
         let [_, prompt_centered, _] = Layout::horizontal([
@@ -687,7 +723,7 @@ fn render_welcome_blocked(
         false,
         VersionBadgeMode::Full,
     );
-    (menu_rects, post_flush_escapes)
+    (menu_rects, menu_scroll, post_flush_escapes)
 }
 
 /// Render the folder-trust question. Mirrors [`render_welcome_blocked`]'s
@@ -749,7 +785,7 @@ fn render_welcome_trust(
     Paragraph::new(lines).render(layout.error, buf);
 
     let menu_area = inset_horizontal(layout.menu, prompt::prompt_inset(compact));
-    let menu_rects = render_menu(menu_area, buf, theme, &menu_items, selected, None, 0);
+    let (menu_rects, _) = render_menu(menu_area, buf, theme, &menu_items, selected, None, 0, 0);
 
     render_version_badge(
         layout.version,
@@ -1499,7 +1535,9 @@ fn render_welcome_done(
                 p.selected,
                 p.mouse_pos,
                 MENU_MIN_WIDTH,
-            ),
+                0,
+            )
+            .0,
             None,
         )
     };
@@ -1630,6 +1668,7 @@ fn render_welcome_done(
         import_banner_rect,
         auth_url_rect: None,
         auth_fallback_rect: None,
+        menu_scroll: 0,
     }
 }
 
@@ -2048,6 +2087,7 @@ mod tests {
             model_name: "test",
             flags: &[],
             selected: None,
+            menu_scroll: 0,
             has_claude_import: false,
             mouse_pos: None,
             session_picker,
@@ -2134,6 +2174,54 @@ mod tests {
         // Shortcut hints for muscle memory: `l` (first row) and `q` (Quit).
         assert!(text.contains('l'), "{text}");
         assert!(text.contains('q'), "{text}");
+    }
+
+    /// With one row per advertised platform the login picker outgrows a
+    /// normal terminal. The stacked layout must cap the menu to the rows
+    /// genuinely left over (never letting the constraint solver squeeze the
+    /// moon or the bottom chrome) and the menu must scroll its viewport to
+    /// keep the selected row visible.
+    #[test]
+    fn pending_menu_scrolls_and_never_clips_the_moon() {
+        use kigi_shell::agent::auth_method::{AuthMethodsBuildInputs, build_auth_methods};
+        let built = build_auth_methods(AuthMethodsBuildInputs {
+            has_external_api_key: false,
+            has_cached_token: false,
+            login_label: None,
+        });
+        let auth = AuthState::Pending { error: None };
+        let trust = TrustState::Done;
+        let mut params = render_params(&auth, &trust, None);
+        params.auth_methods = &built.methods;
+
+        // A realistic 40-row terminal: far too short for one row per method.
+        let text = render_done_text_h(&params, 40);
+        let braille_rows = text
+            .lines()
+            .filter(|l| l.chars().any(|c| ('\u{2800}'..='\u{28FF}').contains(&c)))
+            .count();
+        assert_eq!(
+            braille_rows, 10,
+            "the full moon must render whole, not squeezed:\n{text}"
+        );
+        assert!(
+            text.contains(kigi_version::VERSION),
+            "the version badge must survive the layout:\n{text}"
+        );
+
+        // The selection drives the viewport: selecting the last row (Quit)
+        // must scroll it into view — and scroll the first row out.
+        let items = pending_menu_items(params.auth_methods, None);
+        params.selected = Some(items.len() - 1);
+        let text = render_done_text_h(&params, 40);
+        assert!(
+            text.contains("Quit"),
+            "the selected row must be scrolled into view:\n{text}"
+        );
+        assert!(
+            !text.contains("Kimi Code (OAuth)"),
+            "the viewport must actually scroll (first row off-screen):\n{text}"
+        );
     }
 
     /// An old/limited shell that advertises only `kimi-code` keeps the
