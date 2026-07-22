@@ -32,6 +32,14 @@ import) or any `KIMI_*` env var.
 - **Observability is local**: `kigi-log` (unified session log, `--debug`
   firehose, subsystem file logs, opt-in instrumentation) writes under
   `~/.kigi` only. Its zero-network property is a contract.
+- **Atomic file replace goes through `util::fs::replace_file`** (tmp+rename
+  commit step; async callers wrap in `spawn_blocking`). Never inline a bare
+  `fs::rename` replace: Windows `MoveFileExW(REPLACE_EXISTING)` fails with a
+  sharing violation while AV/indexer/cloud-sync holds the destination open —
+  the "persists on macOS, silently doesn't on Windows" class (a /model
+  switch that never stuck). Plain rename stays correct only for true moves
+  whose destination doesn't pre-exist (worktree-pool markers, corrupt-file
+  backups). Write failures must at least `warn!` — never `let _ =`.
 - The root `Cargo.toml` is hand-maintained (upstream's generator is not in
   this repo). Members sorted; versions inherited from
   `workspace.package.version` — the single source of truth for the release
