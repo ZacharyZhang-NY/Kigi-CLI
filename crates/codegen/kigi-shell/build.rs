@@ -109,21 +109,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         t = asset_triple
     );
 
+    // Transient CDN hiccups (502/503/timeouts) are retried with backoff: a
+    // single flaky response must not kill a ~50-minute release build (it
+    // did — the v0.1.5 tag build failed on one 502). Genuine failures
+    // (404, offline) still error out with the offline-build hint.
     let bytes: Vec<u8> = {
-        let resp = reqwest::blocking::get(&url).map_err(|e| {
-            format!(
-                "Failed to download ripgrep: {}\nSet KIGI_SHELL_BUNDLE_RG_PATH to a local rg for offline builds.",
-                e
-            )
-        })?;
-        if !resp.status().is_success() {
-            return Err(format!(
-                "HTTP {} downloading ripgrep. Set KIGI_SHELL_BUNDLE_RG_PATH for offline builds.",
-                resp.status()
-            )
-            .into());
+        let mut last_err = String::new();
+        let mut bytes = None;
+        for (attempt, backoff_secs) in [0u64, 2, 8].into_iter().enumerate() {
+            if backoff_secs > 0 {
+                std::thread::sleep(std::time::Duration::from_secs(backoff_secs));
+            }
+            match reqwest::blocking::get(&url) {
+                Ok(resp) if resp.status().is_success() => match resp.bytes() {
+                    Ok(b) => {
+                        bytes = Some(b.to_vec());
+                        break;
+                    }
+                    Err(e) => last_err = format!("reading ripgrep body: {e}"),
+                },
+                Ok(resp) => {
+                    let status = resp.status();
+                    last_err = format!("HTTP {status} downloading ripgrep");
+                    // Only server-side/transient statuses are worth retrying.
+                    if !(status.is_server_error() || status.as_u16() == 429) {
+                        break;
+                    }
+                }
+                Err(e) => last_err = format!("Failed to download ripgrep: {e}"),
+            }
+            println!(
+                "cargo:warning=ripgrep download attempt {} failed: {last_err}",
+                attempt + 1
+            );
         }
-        resp.bytes()?.to_vec()
+        bytes.ok_or_else(|| {
+            format!("{last_err}. Set KIGI_SHELL_BUNDLE_RG_PATH for offline builds.")
+        })?
     };
 
     let gz = flate2::read::GzDecoder::new(&bytes[..]);
