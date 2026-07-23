@@ -319,15 +319,15 @@ impl BackendToolCallItem {
                 format!("[backend x_search] {}({})", ct.name, ct.input)
             }
             BackendToolKind::CodeInterpreter(ci) => {
+                // Char-boundary-safe preview: a byte slice (`&c[..100]`)
+                // panicked on CJK/emoji code, crashing every subsequent
+                // request build on every backend.
                 let code_preview = ci
                     .code
                     .as_deref()
-                    .map(|c| {
-                        if c.len() > 100 {
-                            format!("{}...", &c[..100])
-                        } else {
-                            c.to_string()
-                        }
+                    .map(|c| match c.char_indices().nth(100) {
+                        Some((byte_idx, _)) => format!("{}...", &c[..byte_idx]),
+                        None => c.to_string(),
                     })
                     .unwrap_or_default();
                 format!("[backend code_interpreter] {code_preview}")
@@ -9623,6 +9623,41 @@ mod tests {
     /// raw_output decompose-vs-passthrough split -- they are always
     /// passed through inline. We test that all BackendToolCall items
     /// survive serialization at their position.)
+    #[test]
+    /// `text_summary`'s code preview truncated at BYTE 100 (`&c[..100]`) —
+    /// a panic on any non-ASCII boundary (CJK/emoji in interpreted code).
+    /// One poisoned history item then crashed every subsequent request
+    /// build on every backend. Truncation must be char-boundary safe.
+    #[test]
+    fn code_interpreter_summary_truncates_multibyte_code_safely() {
+        let item = BackendToolCallItem {
+            kind: BackendToolKind::CodeInterpreter(rs::CodeInterpreterToolCall {
+                code: Some("统计".repeat(40)),
+                container_id: "cont_1".to_string(),
+                id: "ci_1".to_string(),
+                outputs: None,
+                status: rs::CodeInterpreterToolCallStatus::Completed,
+            }),
+        };
+        let summary = item.text_summary();
+        assert!(summary.starts_with("[backend code_interpreter] 统计"));
+        assert!(
+            summary.ends_with("..."),
+            "long code must truncate: {summary}"
+        );
+        // ASCII shorter than the cap stays whole.
+        let short = BackendToolCallItem {
+            kind: BackendToolKind::CodeInterpreter(rs::CodeInterpreterToolCall {
+                code: Some("print(1)".to_string()),
+                container_id: "cont_1".to_string(),
+                id: "ci_2".to_string(),
+                outputs: None,
+                status: rs::CodeInterpreterToolCallStatus::Completed,
+            }),
+        };
+        assert_eq!(short.text_summary(), "[backend code_interpreter] print(1)");
+    }
+
     #[test]
     fn backend_tool_call_position_stable() {
         let ws_a = ConversationItem::BackendToolCall(BackendToolCallItem {
