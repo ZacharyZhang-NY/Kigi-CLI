@@ -9681,15 +9681,6 @@ mod tests {
         assert_prefix_stable(&req2, &req3);
     }
 
-    /// `BackendToolCall` items round-trip through the wire as their
-    /// typed Item shape; their serialized position must be stable across
-    /// turns. (This is the structural analogue of the old
-    /// `test_backend_tool_call_skip_with_raw_output`: in the new model,
-    /// BackendToolCall items are never "skipped" because there is no
-    /// raw_output decompose-vs-passthrough split -- they are always
-    /// passed through inline. We test that all BackendToolCall items
-    /// survive serialization at their position.)
-    #[test]
     /// `text_summary`'s code preview truncated at BYTE 100 (`&c[..100]`) —
     /// a panic on any non-ASCII boundary (CJK/emoji in interpreted code).
     /// One poisoned history item then crashed every subsequent request
@@ -9724,6 +9715,14 @@ mod tests {
         assert_eq!(short.text_summary(), "[backend code_interpreter] print(1)");
     }
 
+    /// `BackendToolCall` items round-trip through the wire as their
+    /// typed Item shape; their serialized position must be stable across
+    /// turns. (This is the structural analogue of the old
+    /// `test_backend_tool_call_skip_with_raw_output`: in the new model,
+    /// BackendToolCall items are never "skipped" because there is no
+    /// raw_output decompose-vs-passthrough split -- they are always
+    /// passed through inline. We test that all BackendToolCall items
+    /// survive serialization at their position.)
     #[test]
     fn backend_tool_call_position_stable() {
         let ws_a = ConversationItem::BackendToolCall(BackendToolCallItem {
