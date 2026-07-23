@@ -2251,9 +2251,23 @@ fn conversation_item_to_input_items(item: &ConversationItem) -> Vec<rs::InputIte
         }
         ConversationItem::Reasoning(r) => {
             // Reasoning items round-trip back to the Responses API in their
-            // native typed form. `status` is output-only (the API rejects it
-            // on input), so strip it before emission; everything else
-            // (summary, content, encrypted_content, id) passes through.
+            // native typed form — but ONLY items the Responses API itself
+            // produced. A native item always carries a server-issued `rs_*`
+            // id; an EMPTY id marks a foreign item (Messages capture stores
+            // the Anthropic signature with id "", chat-completions and the
+            // stream-delta fallback synthesize with id "", legacy upgraders
+            // reconstruct with id ""), and the API rejects it outright:
+            // 400 "Invalid 'input[N].id': ''. Expected an ID that contains
+            // letters, numbers, underscores, or dashes". Foreign reasoning
+            // is unusable by a Responses provider anyway — drop it (the
+            // exact mirror of the Messages builder's
+            // `prune_replayed_thinking`).
+            if r.id.is_empty() {
+                return vec![];
+            }
+            // `status` is output-only (the API rejects it on input), so
+            // strip it before emission; everything else (summary, content,
+            // encrypted_content, id) passes through.
             let mut r = r.clone();
             r.status = None;
             vec![rs::InputItem::Item(rs::Item::Reasoning(r))]
@@ -4621,6 +4635,63 @@ mod tests {
         }
     }
 
+    /// The Responses API requires a server-issued id on every replayed
+    /// reasoning input item — an empty one 400s with "Invalid
+    /// 'input[N].id': ''" (observed on the Codex backend after a
+    /// cross-backend session switched to a GPT model). Empty-id reasoning
+    /// can only be foreign: Messages-captured (Anthropic signature,
+    /// id "") or chat-completions-synthesized (id "", no encrypted
+    /// content). Neither is usable by a Responses provider — drop them;
+    /// native `rs_*` items pass through untouched.
+    #[test]
+    fn responses_input_drops_reasoning_without_native_id() {
+        let req = ConversationRequest::from_items(vec![
+            ConversationItem::user("q1"),
+            // Messages-captured: Anthropic signature, empty id.
+            reasoning("claude thinking", Some("anthropic-sig")),
+            assistant_text("a1"),
+            ConversationItem::user("q2"),
+            // Chat-completions synthesized: empty id, nothing encrypted.
+            ConversationItem::Reasoning(synthesized_reasoning_item("kimi thinking")),
+            assistant_text("a2"),
+            ConversationItem::user("q3"),
+            // Native Responses item: server-issued id.
+            ConversationItem::Reasoning(rs::ReasoningItem {
+                id: "rs_native_1".to_string(),
+                summary: vec![],
+                content: None,
+                encrypted_content: Some("gAAAA-native".to_string()),
+                status: None,
+            }),
+            assistant_text("a3"),
+            ConversationItem::user("q4"),
+        ]);
+
+        let responses_req: rs::CreateResponse = (&req).into();
+        let json = serde_json::to_value(&responses_req).unwrap();
+        let reasoning_items: Vec<&serde_json::Value> = json["input"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|i| i.get("type").and_then(|t| t.as_str()) == Some("reasoning"))
+            .collect();
+        assert_eq!(
+            reasoning_items.len(),
+            1,
+            "only the native rs_* item may be replayed:\n{json:#}"
+        );
+        assert_eq!(reasoning_items[0]["id"], "rs_native_1");
+        assert_eq!(reasoning_items[0]["encrypted_content"], "gAAAA-native");
+        assert!(
+            !json["input"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|i| i.get("id").and_then(|v| v.as_str()) == Some("")),
+            "no input item may carry an empty id:\n{json:#}"
+        );
+    }
+
     #[test]
     fn test_encrypted_reasoning_included_in_responses_api_request() {
         // Test that when building a Responses API request, encrypted reasoning is included
@@ -4687,12 +4758,15 @@ mod tests {
 
     #[test]
     fn test_only_encrypted_reasoning_included_in_request() {
-        // Test that when there's only encrypted content (no visible summary),
-        // it's still included in the request
+        // Encrypted-only reasoning replays ONLY with a native (server-issued)
+        // id. An id-less encrypted blob is by construction FOREIGN (the
+        // Responses stream always captures the `rs_*` id; Messages capture
+        // stores the Anthropic signature with id "") and the API rejects
+        // empty ids — see `responses_input_drops_reasoning_without_native_id`.
         let req = ConversationRequest::from_items(vec![
             ConversationItem::user("Hello"),
             ConversationItem::Reasoning(rs::ReasoningItem {
-                id: String::new(),
+                id: "rs_hidden_1".to_string(),
                 summary: vec![],
                 content: None,
                 encrypted_content: Some("enc_hidden_thoughts".to_string()),
@@ -4725,6 +4799,7 @@ mod tests {
 
         assert_eq!(reasoning_items.len(), 1);
         let reasoning = reasoning_items[0];
+        assert_eq!(reasoning.id, "rs_hidden_1");
 
         // Encrypted content should be present
         assert_eq!(
