@@ -472,7 +472,12 @@ async fn responses_upgrade_roundtrips_reconstructed_reasoning_as_typed_input() {
             "\n",
             r#"{"type":"user","content":[{"type":"text","text":"q1"}]}"#,
             "\n",
-            r#"{"type":"assistant","content":"a1","reasoning":{"text":"legacy kigi reasoning","encrypted":"ENC_BLOB_xyz","id":"rs_kigibuild_legacy"},"model_id":"kigi"}"#,
+            // model_id matches the test client's request model: this test
+            // covers the SAME-MODEL continuation (the byte-stable
+            // SGLang-prefix path). A mismatched model_id is the provenance
+            // gate's territory (`transform_items_for_responses`) and drops
+            // the reasoning by design.
+            r#"{"type":"assistant","content":"a1","reasoning":{"text":"legacy kigi reasoning","encrypted":"ENC_BLOB_xyz","id":"rs_kigibuild_legacy"},"model_id":"test-model"}"#,
             "\n",
         ),
     )

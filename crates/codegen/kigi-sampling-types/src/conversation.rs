@@ -2188,12 +2188,84 @@ impl From<&ConversationRequest> for rs::CreateResponse {
 /// so they appear inline in the same order the model originally emitted —
 /// which is what lets the server-side prefix KV-cache hit on repeat turns.
 fn build_responses_input(req: &ConversationRequest) -> rs::InputParam {
-    let items: Vec<rs::InputItem> = req
-        .items
+    let transformed = transform_items_for_responses(&req.items, req.model.as_deref());
+    let items: Vec<rs::InputItem> = transformed
         .iter()
         .flat_map(conversation_item_to_input_items)
         .collect();
     rs::InputParam::Items(items)
+}
+
+/// Provenance gate for the Responses input (the Pi `transform-messages`
+/// pattern): opaque provider-issued items replay verbatim only when the
+/// turn that produced them ran on the SAME model this request targets.
+///
+/// Each `[Reasoning | BackendToolCall]* Assistant` run carries its
+/// provenance in `AssistantItem::model_id`. On a confirmed mismatch
+/// (both sides known, different — a mid-session `/model` switch or a
+/// cross-backend history):
+/// - `Reasoning` siblings are DROPPED — their encrypted payloads are
+///   scoped to the issuing model (OpenAI documents encrypted content as
+///   model-bound; foreign backends' blobs are undecryptable outright);
+/// - `BackendToolCall` items are DEMOTED to a synthetic assistant text
+///   summary — exactly the downgrade the Messages and ChatCompletions
+///   builders already perform — because their typed shapes carry
+///   provider-issued ids and tool names the target never declared
+///   (e.g. a grok `x_search` CustomToolCall replayed to codex).
+///
+/// Same-model runs, unknown provenance (pre-provenance histories with
+/// `model_id: None`), and trailing orphans pass through verbatim — that
+/// byte-stability is what lets the server-side prefix KV-cache hit.
+fn transform_items_for_responses(
+    items: &[ConversationItem],
+    target_model: Option<&str>,
+) -> Vec<ConversationItem> {
+    let Some(target) = target_model else {
+        return items.to_vec();
+    };
+    let mut out: Vec<ConversationItem> = Vec::with_capacity(items.len());
+    // Pending run of opaque siblings awaiting their Assistant carrier.
+    let mut run_start: usize = 0;
+    for item in items {
+        match item {
+            ConversationItem::Reasoning(_) | ConversationItem::BackendToolCall(_) => {
+                out.push(item.clone());
+            }
+            ConversationItem::Assistant(a) => {
+                let foreign = a
+                    .model_id
+                    .as_deref()
+                    .is_some_and(|producer| producer != target);
+                if foreign {
+                    // Rewrite the pending run in place.
+                    let mut rewritten: Vec<ConversationItem> = Vec::new();
+                    for pending in out.drain(run_start..) {
+                        match pending {
+                            ConversationItem::Reasoning(_) => {}
+                            ConversationItem::BackendToolCall(b) => {
+                                rewritten.push(ConversationItem::Assistant(AssistantItem {
+                                    content: b.text_summary().into(),
+                                    tool_calls: vec![],
+                                    model_id: a.model_id.clone(),
+                                    model_fingerprint: None,
+                                    reasoning_effort: None,
+                                }));
+                            }
+                            other => rewritten.push(other),
+                        }
+                    }
+                    out.extend(rewritten);
+                }
+                out.push(item.clone());
+                run_start = out.len();
+            }
+            other => {
+                out.push(other.clone());
+                run_start = out.len();
+            }
+        }
+    }
+    out
 }
 
 /// Walk a serialized Responses API request body and inject the
@@ -4649,6 +4721,93 @@ mod tests {
             let back: ConversationItem = serde_json::from_str(&json).expect("Should deserialize");
             assert_eq!(std::mem::discriminant(&item), std::mem::discriminant(&back));
         }
+    }
+
+    /// Provenance gate: a turn produced by a DIFFERENT model must not
+    /// replay its opaque items to this request's target — Reasoning
+    /// (model-bound encrypted payloads) is dropped, BackendToolCall
+    /// (provider-issued ids + undeclared tool shapes, e.g. grok x_search
+    /// → codex) is demoted to the same text summary the other builders
+    /// emit. Same-model and unknown-provenance turns stay byte-verbatim
+    /// (KV-cache stability).
+    #[test]
+    fn responses_input_gates_foreign_turns_by_provenance() {
+        let custom_call: rs::CustomToolCall = serde_json::from_value(serde_json::json!({
+            "call_id": "xs_1",
+            "id": "ct_1",
+            "input": "{\"q\":\"news\"}",
+            "name": "x_search",
+        }))
+        .expect("custom tool call fixture");
+        let x_search = ConversationItem::BackendToolCall(BackendToolCallItem {
+            kind: BackendToolKind::XSearch(custom_call),
+        });
+        let foreign_assistant = ConversationItem::Assistant(AssistantItem {
+            content: "grok says hi".into(),
+            tool_calls: vec![],
+            model_id: Some("grok-4".to_string()),
+            model_fingerprint: None,
+            reasoning_effort: None,
+        });
+        let native_assistant = ConversationItem::Assistant(AssistantItem {
+            content: "codex says hi".into(),
+            tool_calls: vec![],
+            model_id: Some("gpt-5.2-codex".to_string()),
+            model_fingerprint: None,
+            reasoning_effort: None,
+        });
+        let mut req = ConversationRequest::from_items(vec![
+            ConversationItem::user("q1"),
+            // Foreign turn: grok reasoning + x_search + assistant.
+            ConversationItem::Reasoning(rs::ReasoningItem {
+                id: "rs_grok_1".to_string(),
+                summary: vec![],
+                content: None,
+                encrypted_content: Some("grok-blob".to_string()),
+                status: None,
+            }),
+            x_search,
+            foreign_assistant,
+            ConversationItem::user("q2"),
+            // Native turn: same model as the request target.
+            ConversationItem::Reasoning(rs::ReasoningItem {
+                id: "rs_codex_1".to_string(),
+                summary: vec![],
+                content: None,
+                encrypted_content: Some("codex-blob".to_string()),
+                status: None,
+            }),
+            native_assistant,
+            ConversationItem::user("q3"),
+        ]);
+        req.model = Some("gpt-5.2-codex".to_string());
+
+        let json = serde_json::to_value(rs::CreateResponse::from(&req)).unwrap();
+        let input = json["input"].as_array().unwrap();
+
+        // Foreign reasoning + x_search gone; the summary text survives.
+        assert!(
+            !input.iter().any(|i| i["id"] == "rs_grok_1"),
+            "foreign reasoning must be dropped:\n{json:#}"
+        );
+        assert!(
+            !input.iter().any(|i| i["type"] == "custom_tool_call"),
+            "foreign backend tool call must not replay typed:\n{json:#}"
+        );
+        assert!(
+            input.iter().any(|i| i["role"] == "assistant"
+                && i["content"]
+                    .as_str()
+                    .is_some_and(|c| c.contains("[backend x_search]"))),
+            "foreign backend tool call demoted to text summary:\n{json:#}"
+        );
+        // Native reasoning verbatim.
+        assert!(
+            input
+                .iter()
+                .any(|i| i["id"] == "rs_codex_1" && i["encrypted_content"] == "codex-blob"),
+            "native reasoning must replay verbatim:\n{json:#}"
+        );
     }
 
     /// Both Anthropic Messages and the Responses API enforce
