@@ -220,7 +220,14 @@ edges stay deterministic Rust. The harness appends a terminal
       system prefix — gated on `SamplerConfig.anthropic_oauth` (claude-pro-max
       only), so API-key `anthropic`/`minimax` Messages requests stay
       byte-identical. Its `/v1/models` listing rides the same Bearer +
-      oauth-beta headers.
+      oauth-beta headers. THINKING REPLAY (`prune_replayed_thinking`,
+      all Messages requests): Anthropic validates every replayed
+      `thinking` block (signature model-bound, non-empty required), so
+      only the final assistant message's signed thinking is replayed and
+      only while its tool loop is open (request ends on the tool
+      results); everything else — unsigned cross-backend history, `tco_*`
+      Responses blobs, stale-model blocks — is stripped, or the request
+      400s "Invalid `signature` in `thinking` block".
     - `openai-codex` (ChatGPT Plus/Pro, `scope_key oauth/openai-codex`, port
       1455 `/auth/callback`, FORM body, authorize+token host `auth.openai.com`,
       client `app_EMoam…`, scope `openid profile email offline_access`, the 3
@@ -237,9 +244,15 @@ edges stay deterministic Rust. The harness appends a terminal
       `PlatformId::sends_codex_responses_headers()`): headers
       `chatgpt-account-id` (per-request from the JWT), `originator codex_cli_rs`,
       `OpenAI-Beta responses=experimental`, a codex `User-Agent`; `store:false`
-      is the shared Responses default. API-key `openai` Responses requests carry
-      NONE of this (byte-identical). `reasoning.effort` carries the thinking
-      level (incl. the codex-only `ultra`). NO websocket, NO base_instructions.
+      is the shared Responses default. BODY adaptation
+      (`adapt_body_for_codex_backend`, same gate): the backend 400s
+      `role:system` input ("System messages are not allowed") — system items
+      are hoisted into the top-level `instructions` field — and stateless
+      reasoning replay requires `include:["reasoning.encrypted_content"]`.
+      API-key `openai` Responses requests carry NONE of this
+      (byte-identical, pinned by a control wire test). `reasoning.effort`
+      carries the thinking level (incl. the codex-only `ultra`). NO
+      websocket, NO base_instructions.
       CATALOG is HARDCODED (`PlatformId::hardcoded_catalog` →
       `openai_codex_wire_models`, mapped through the SAME
       `platform_wire_model_to_entry` output): exactly the 4 `visibility=list` &&
