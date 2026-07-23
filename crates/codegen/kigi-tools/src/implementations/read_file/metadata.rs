@@ -23,7 +23,7 @@ pub(crate) fn is_pdf_magic(bytes: &[u8]) -> bool {
     bytes.len() >= 5 && bytes[..5] == *PDF_MAGIC
 }
 
-/// Infer file metadata (MIME type, extension) from raw bytes using magic-byte inspection.
+/// Infer file metadata from raw bytes via magic-byte inspection.
 pub fn bytes_to_metadata(file_bytes: &[u8]) -> Result<FileMetadata, kigi_tool_runtime::ToolError> {
     let size = file_bytes.len();
     let data = infer::get(file_bytes).ok_or_else(|| {

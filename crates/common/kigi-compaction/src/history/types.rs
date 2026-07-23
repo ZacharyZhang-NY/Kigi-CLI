@@ -2,11 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Strategy for how conversation compaction is performed.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum CompactionStrategy {
-    /// Send all turns to the LLM in one shot (original behaviour).
+    /// Send all turns to the LLM in one shot.
     #[default]
     Basic,
     /// Divide turns into ≤ `dnc_chunk_token_limit` chunks, compact each,

@@ -150,8 +150,8 @@ async fn throttled_client_bounds_the_flood() {
     );
     let client = ().serve(transport).await.expect("handshake against fake server should succeed");
 
-    // Checkpoint: backoff must engage early (instant, instant, 0.5s => 3-4
-    // GETs by 1.2s; an unthrottled client would be in the hundreds).
+    // The schedule is instant, instant, 0.5s, so 1.2s allows 3-4 GETs; an
+    // unthrottled client would be in the hundreds by now.
     tokio::time::sleep(Duration::from_millis(1200)).await;
     let early = gets.load(Ordering::Relaxed);
     assert!(

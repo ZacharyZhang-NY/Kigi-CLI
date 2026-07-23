@@ -13,10 +13,6 @@ use crate::scrollback::table_geometry::{CellRef, TableGeometry};
 use crate::scrollback::types::SelectionBoundary;
 use crate::theme::Theme;
 
-// ---------------------------------------------------------------------------
-// Auto-scroll types
-// ---------------------------------------------------------------------------
-
 /// Direction for drag auto-scroll.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AutoScrollDirection {
@@ -991,7 +987,6 @@ pub(crate) fn reconstruct_full_selection_text_with_boundaries(
         };
         let width = cols.end.saturating_sub(cols.start);
 
-        // Determine column slice for this line.
         let col_range = if start_bl == end_bl {
             let s = min(drag.anchor.col_within_range, drag.head.col_within_range);
             let e = max(drag.anchor.col_within_range, drag.head.col_within_range).saturating_add(1);
@@ -1044,9 +1039,7 @@ fn rect_contains(rect: Rect, col: u16, row: u16) -> bool {
         && row < rect.y.saturating_add(rect.height)
 }
 
-// ---------------------------------------------------------------------------
 // Word / URL boundary detection (for double-click selection)
-// ---------------------------------------------------------------------------
 
 /// All printable ASCII punctuation except underscore, matching tmux's
 /// `word-separators` default from `options-table.c`.
@@ -1398,9 +1391,7 @@ mod tests {
         assert_eq!(right.col_within_range, 3);
     }
 
-    // -----------------------------------------------------------------------
     // hit_test_nearest_in_range tests
-    // -----------------------------------------------------------------------
 
     /// One selectable line for the nearest-in-range fixtures.
     fn nearest_line(
@@ -1750,7 +1741,8 @@ mod tests {
         // The anchor (block_line_idx=9) is now off-screen. During autoscroll
         // the resolver misses there and the caller keeps the previous head
         // (pinned by active_drag_motion_miss_keeps_previous_head).
-        let new_head = head; // head was at block_line_idx=5
+        // head was at block_line_idx=5
+        let new_head = head;
 
         let scrolled_drag = ActiveTextDrag {
             anchor,
@@ -1779,9 +1771,7 @@ mod tests {
         assert!(!text.contains("line nine"), "off-screen line not in model");
     }
 
-    // -----------------------------------------------------------------------
     // word_boundaries_at_col tests
-    // -----------------------------------------------------------------------
 
     /// Shorthand for tests using the default tmux separator set.
     fn wb(text: &str, col: u16) -> Range<u16> {
@@ -1815,7 +1805,8 @@ mod tests {
     fn word_boundaries_underscore_joins_words() {
         // "foo_bar" → all Word class
         assert_eq!(wb("foo_bar", 0), 0..7);
-        assert_eq!(wb("foo_bar", 3), 0..7); // on '_'
+        // on '_'
+        assert_eq!(wb("foo_bar", 3), 0..7);
         assert_eq!(wb("foo_bar", 6), 0..7);
     }
 
@@ -1871,8 +1862,10 @@ mod tests {
         // so they are Word class (matching tmux). Each occupies 2 display cols.
         // "a\u{754c}b" → all Word class → 0..4
         assert_eq!(wb("a\u{754c}b", 0), 0..4);
-        assert_eq!(wb("a\u{754c}b", 1), 0..4); // first col of wide char
-        assert_eq!(wb("a\u{754c}b", 2), 0..4); // second col of wide char
+        // first col of wide char
+        assert_eq!(wb("a\u{754c}b", 1), 0..4);
+        // second col of wide char
+        assert_eq!(wb("a\u{754c}b", 2), 0..4);
         assert_eq!(wb("a\u{754c}b", 3), 0..4);
     }
 
@@ -1991,9 +1984,7 @@ mod tests {
         assert_eq!(word_boundaries_at_col("user@host", 0, seps), 0..9);
     }
 
-    // -----------------------------------------------------------------------
     // strip_trailing_url_punctuation tests
-    // -----------------------------------------------------------------------
 
     #[test]
     fn strip_trailing_no_punctuation() {
@@ -2079,9 +2070,7 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------------
     // url_range_at_col tests
-    // -----------------------------------------------------------------------
 
     #[test]
     fn url_range_simple_https() {
@@ -2225,14 +2214,13 @@ mod tests {
         let url = url_range_at_col(text, 6);
         assert!(url.is_some());
         // On plain word → url_range returns None, word_boundaries takes over
-        let non_url_col = 36; // inside "this_word"
+        // inside "this_word"
+        let non_url_col = 36;
         assert_eq!(url_range_at_col(text, non_url_col), None);
         assert_eq!(wb(text, non_url_col), 34..43);
     }
 
-    // -----------------------------------------------------------------------
     // selected_cols_for_endpoints tests
-    // -----------------------------------------------------------------------
 
     fn make_test_line(
         block_line_idx: usize,
@@ -2378,9 +2366,7 @@ mod tests {
         assert_eq!(via_wrapper, Some(0..20));
     }
 
-    // -----------------------------------------------------------------------
     // render_persistent_selection_overlay tests
-    // -----------------------------------------------------------------------
 
     /// Marker foreground: test themes quantize to no color, so the
     /// highlight takes its reverse-video path (a modifier change).
@@ -2714,7 +2700,7 @@ mod tests {
         assert_eq!(hit.col_within_range, 2);
     }
 
-    // ── Table-aware selection ────────────────────────────────────────────
+    // Table-aware selection
 
     const TABLE_LINES: &[&str] = &[
         "┌─────────┬────────┐",
@@ -2817,7 +2803,8 @@ mod tests {
     #[test]
     fn resolve_kind_dead_zone_and_hysteresis() {
         let geom = table_geometry();
-        let anchor = table_hit(3, 3); // Name/Alice cell
+        // Name/Alice cell
+        let anchor = table_hit(3, 3);
         let cell = SelectionKind::TableCell;
         // Junction column (10), own padding (9), and the neighbor's padding
         // (11) keep the cell selection — no escalation on a small overshoot.

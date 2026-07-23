@@ -1,7 +1,7 @@
 //! Prompt-queue dispatch: the server-authoritative immediate-send routing
 //! helpers, optimistic queue echoes, the local drip-feed drain
 //! ([`maybe_drain_queue`]), the turn-start shim, and the queue-interject
-//! action arm. Split out of `dispatch.rs` verbatim (pure code motion).
+//! action arm.
 
 use super::ctx::{active_agent_session_id, with_active_agent};
 use super::interject::record_interject_prompt_history;
@@ -155,7 +155,6 @@ pub(super) fn drain_prompt_state_to_last_queued(agent: &mut AgentView) {
 
 /// Prepend `<system-reminder>` framing to a cron prompt for the model.
 ///
-/// Delegates to the shared implementation in `kigi_tools::reminders`.
 /// The UI shows the raw `prompt` text via `RenderBlock::cron_prompt`; this
 /// wrapped version is only sent to the model via `Effect::SendPrompt` so
 /// the model knows the message is a scheduled task execution, not a human.
@@ -166,12 +165,6 @@ fn format_cron_prompt(prompt: &str, task_id: &str, human_schedule: &str) -> Stri
 /// Try to send the next queued entry (prompt, command, bash, or cron) if the agent is idle.
 ///
 /// Called after enqueue operations and task completions to advance the queue.
-///
-/// Branches on `QueueEntryKind`:
-/// - **Prompt**: pushes user prompt block to scrollback, starts turn, returns `Effect::SendPrompt`
-/// - **Command**: starts command, returns the appropriate `Effect` (e.g., `Effect::Compact`)
-/// - **BashCommand**: starts turn (no user block), returns `Effect::SendBashCommand`
-/// - **Cron**: pushes cron prompt block to scrollback, starts turn, returns `Effect::SendPrompt`
 pub(crate) fn maybe_drain_queue(agent: &mut AgentView) -> Vec<Effect> {
     use crate::app::agent::QueueEntryKind;
     use crate::unified_log as ulog;
@@ -224,7 +217,6 @@ pub(crate) fn maybe_drain_queue(agent: &mut AgentView) -> Vec<Effect> {
         return vec![];
     };
 
-    // Block drain if the user is editing the front prompt.
     if let PromptMode::EditingQueued { id, .. } = &agent.prompt_mode
         && agent
             .session
@@ -333,14 +325,12 @@ pub(crate) fn maybe_drain_queue(agent: &mut AgentView) -> Vec<Effect> {
             }
             agent.turn_started_at = Some(Instant::now());
 
-            // Scroll to the new prompt and engage follow mode.
             let prompt_idx = agent.scrollback.len().saturating_sub(1);
             agent.scrollback.set_selected(Some(prompt_idx));
             agent.scrollback.scroll_to_entry_top(prompt_idx);
             agent.scrollback.enable_follow_with_preserve();
 
             if let Some(mut blocks) = queued.wire_blocks {
-                // Skill injection: send structured blocks.
                 // Annotate the first text block's meta with the display text
                 // so the pager can reconstruct the clean prompt on session
                 // restore (replay). Without this, replay shows the raw skill
@@ -369,7 +359,6 @@ pub(crate) fn maybe_drain_queue(agent: &mut AgentView) -> Vec<Effect> {
                     prompt_id,
                 }]
             } else if !queued.images.is_empty() {
-                // Image-bearing prompt: build text + image content blocks.
                 // Pass the session cwd so orphan `[Image #N: <path>]`
                 // placeholders (paste from a previous session, etc.)
                 // can be recovered from disk via the shared helper.
@@ -387,7 +376,6 @@ pub(crate) fn maybe_drain_queue(agent: &mut AgentView) -> Vec<Effect> {
                     prompt_id,
                 }]
             } else {
-                // Normal prompt: send text as-is.
                 vec![Effect::SendPrompt {
                     agent_id,
                     session_id,
@@ -417,7 +405,6 @@ pub(crate) fn maybe_drain_queue(agent: &mut AgentView) -> Vec<Effect> {
             agent.session.current_prompt_id = Some(prompt_id.clone());
             agent.turn_started_at = Some(Instant::now());
 
-            // Engage follow mode so streaming output scrolls into view.
             agent.scrollback.enable_follow_with_preserve();
 
             vec![Effect::SendBashCommand {
@@ -600,8 +587,8 @@ pub(crate) fn apply_turn_start_shim(
     // turn the leader drained into the running slot: if THIS client originated
     // it (its own queued/immediate prompt), it drives it; otherwise it is
     // viewing a turn another client drives, so `attached_as_viewer` must flip
-    // back to true even if this pane has sent prompts before (the flag is no
-    // longer a one-way latch) — that drives `handle_prompt_complete` + the
+    // back to true even if this pane has sent prompts before (the flag is
+    // not a one-way latch) — that drives `handle_prompt_complete` + the
     // viewer chrome correctly.
     let adopted_from_other_client = !agent.is_self_originated_prompt(&prompt_id);
     // Sticky pin + still-armed send-now expect (not cleared on adopt — the
@@ -851,8 +838,6 @@ mod tests {
         );
         assert!(out.ends_with("do stuff"));
     }
-
-    // ── Drain-blocking tests ───────────────────────────────────────────
 
     #[test]
     fn drain_blocked_when_editing_front_prompt() {
@@ -1785,7 +1770,7 @@ mod tests {
         enqueue_local(&mut app, id, "p2");
         enqueue_local(&mut app, id, "p3");
         enqueue_local(&mut app, id, "p4");
-        assert_eq!(app.agents[&id].session.queue_len(), 3); // p2, p3, p4
+        assert_eq!(app.agents[&id].session.queue_len(), 3);
 
         // End turn for p1 → sets Idle → maybe_drain_queue pops p2 → Running again.
         // Queue is now: p3, p4.
@@ -1804,7 +1789,7 @@ mod tests {
         // End turn for p2 → should NOT drain p3 (being edited).
         let effects = dispatch(end_turn(), &mut app);
         assert!(effects.is_empty(), "drain should be blocked: {effects:?}");
-        assert_eq!(app.agents[&id].session.queue_len(), 2); // p3, p4
+        assert_eq!(app.agents[&id].session.queue_len(), 2);
 
         // Simulate user saving edited text.
         app.agents

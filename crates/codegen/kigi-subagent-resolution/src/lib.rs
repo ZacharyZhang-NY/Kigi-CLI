@@ -1,8 +1,8 @@
 //! Subagent configuration resolution crate.
 //!
-//! Extracts the pure-logic "resolution" phase of subagent spawning from
-//! `kigi-shell` into a reusable library. Given a spawn request and a
-//! resolution context (roles, personas, parent state), this crate resolves:
+//! The pure-logic "resolution" phase of subagent spawning. Given a spawn
+//! request and a resolution context (roles, personas, parent state), this
+//! crate resolves:
 //!
 //! - Effective runtime config (model, persona, capability mode, isolation)
 //!   via precedence: explicit override > role > persona > parent.
@@ -10,20 +10,16 @@
 //! - Role prompt file loading.
 //! - Resume identity validation (type/persona match checks; model is soft-ignored).
 //!
-//! This crate has no dependency on session, coordinator, or transport types.
-//! Designed to be consumed by local hosts (e.g. `kigi-shell`) and any
-//! future remote spawn path that only needs pure resolution logic.
+//! Nothing here may depend on session, coordinator, or transport types: local
+//! hosts (e.g. `kigi-shell`) and any remote spawn path must both be able to
+//! consume it.
 //!
-//! ## Planned composition API
-//!
-//! Future work may add a higher-level composition helper once shell call sites
-//! are refactored onto this crate:
-//!
-//! - `resolve_subagent_spec()` composition function
-//! - `SubagentSpec`, `ResolveSubagentRequest`, `ResolutionContext` boundary types
-//! - Optional deps for `AgentDefinition` lookup and worktree creation
-//! - Model override resolution chain (global > per-type > role > parent)
-//! - Capability mode filtering (delegates to `SubagentCapabilityMode::filter_tool_config()`)
+//! TODO: add a `resolve_subagent_spec()` composition entry point once shell
+//! call sites move onto this crate. It needs `SubagentSpec` /
+//! `ResolveSubagentRequest` / `ResolutionContext` boundary types, optional deps
+//! for `AgentDefinition` lookup and worktree creation, the global > per-type >
+//! role > parent model override chain, and capability mode filtering via
+//! `SubagentCapabilityMode::filter_tool_config()`.
 
 pub mod config;
 pub mod context;

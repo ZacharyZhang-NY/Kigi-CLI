@@ -41,7 +41,7 @@ impl DisplayRefreshProbeResult {
     }
 }
 
-/// Once per process. Infallible; never panics.
+/// Probes once per process. Infallible; never panics.
 pub fn probe_display_refresh() -> DisplayRefreshProbeResult {
     static CACHE: OnceLock<DisplayRefreshProbeResult> = OnceLock::new();
     *CACHE.get_or_init(probe_uncached)
@@ -78,7 +78,8 @@ fn probe_inner() -> (Option<u32>, DisplayRefreshSource, &'static str) {
     decide(is_ssh, wsl, os, display, platform_hz)
 }
 
-/// Pure matrix used by production and tests; inject only the platform result.
+/// Pure decision matrix; the platform result is injected so tests can drive
+/// every branch without a display.
 fn decide(
     is_ssh: bool,
     is_wsl: bool,
@@ -157,6 +158,8 @@ fn probe_macos() -> Result<u32, &'static str> {
     Err("unsupported")
 }
 
+/// Any fallback added here must stay thread-safe: no AppKit/NSScreen, which is
+/// main-thread only.
 #[cfg(target_os = "macos")]
 unsafe fn macos_main_display_refresh_hz() -> Result<u32, &'static str> {
     type CgDisplayModeRef = *mut core::ffi::c_void;
@@ -178,11 +181,10 @@ unsafe fn macos_main_display_refresh_hz() -> Result<u32, &'static str> {
     }
     let rate = unsafe { CGDisplayModeGetRefreshRate(mode) };
     unsafe { CGDisplayModeRelease(mode) };
-    // 0.0 is documented indeterminate for some LCD/VRR panels — skip, not error.
-    // Future primary-display fallback must be thread-safe; no AppKit/NSScreen here.
     if !rate.is_finite() || rate < 0.0 {
         return Err("error");
     }
+    // 0.0 is documented indeterminate for some LCD/VRR panels — skip, not error.
     if rate == 0.0 {
         return Err("indeterminate");
     }
@@ -256,9 +258,8 @@ unsafe fn windows_primary_display_refresh_hz() -> Result<u32, &'static str> {
 mod tests {
     use super::*;
 
-    /// Real OS path smoke: must not panic (FFI wrapped + fail-closed).
-    /// Outcome may be ok/skipped/error depending on host; we only require
-    /// process survival and a valid outcome token.
+    /// Exercises the real OS path, whose outcome depends on the host machine,
+    /// so only process survival and a valid outcome token can be asserted.
     #[test]
     fn probe_display_refresh_never_panics() {
         let r = probe_display_refresh();

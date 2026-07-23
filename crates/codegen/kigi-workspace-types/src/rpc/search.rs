@@ -5,9 +5,7 @@ use serde_json::Value;
 
 use super::WorkspaceRpc;
 
-// =========================================================================
 // Content search (`workspace.ripgrep`)
-// =========================================================================
 
 fn default_respect_gitignore() -> bool {
     true
@@ -90,9 +88,7 @@ pub struct ContentSearchData {
     pub truncated: bool,
 }
 
-// =========================================================================
 // Fuzzy file search (`workspace.fuzzy_*`)
-// =========================================================================
 
 /// Client ID structure for routing notifications across relay instances.
 /// (Duplicated here for Phase 1 independence from shell extensions.)

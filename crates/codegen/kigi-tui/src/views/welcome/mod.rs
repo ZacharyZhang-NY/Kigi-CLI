@@ -202,7 +202,8 @@ impl WelcomeLayout {
         let gap_after_logo = if error_height > 0 { 1 } else { 0 };
         let tip_gap = if tip_height > 0 { 1u16 } else { 0 };
         let fixed_below = Self::fixed_below(tip_height);
-        let fixed_above = logo_rows + 1 + gap_after_logo + error_height; // +1 for gap after logo
+        // +1 for gap after logo
+        let fixed_above = logo_rows + 1 + gap_after_logo + error_height;
         // Compute top_pad using the *default* menu height (4 items = 7 rows) so
         // the logo position stays constant regardless of picker/focus state.
         let top_pad = if compact {
@@ -231,7 +232,8 @@ impl WelcomeLayout {
         let [_, logo, _, _, error, menu, _, tip, _, prompt, _, version] = Layout::vertical([
             Constraint::Length(top_pad),
             Constraint::Length(logo_rows),
-            Constraint::Length(logo_gap), // gap after logo
+            // gap after logo
+            Constraint::Length(logo_gap),
             Constraint::Length(gap_after_logo),
             Constraint::Length(error_height),
             Constraint::Length(menu_height),
@@ -240,7 +242,8 @@ impl WelcomeLayout {
             Constraint::Length(tip_gap),
             Constraint::Length(PROMPT_HEIGHT),
             Constraint::Length(VERSION_GAP),
-            Constraint::Length(1), // version
+            // version
+            Constraint::Length(1),
         ])
         .areas(content_area);
         Self {
@@ -867,7 +870,8 @@ fn auth_copy_line(theme: &Theme) -> Line<'static> {
 /// Number of physical rows the header + blank occupy before the copy line.
 fn auth_copy_preceding_rows(header: &str, inner_width: u16) -> u16 {
     let header_rows = (header.len() as u16).div_ceil(inner_width);
-    header_rows + 1 // header + blank
+    // header + blank
+    header_rows + 1
 }
 
 /// Number of physical rows the copy line occupies when wrapped.
@@ -955,7 +959,8 @@ fn render_raw_url_mode(
     let url_lines = auth_url
         .map(|u| (u.len() as u16).div_ceil(full_width))
         .unwrap_or(0);
-    let msg_height = 1 + 1 + url_lines; // hint + blank + URL
+    // hint + blank + URL
+    let msg_height = 1 + 1 + url_lines;
     let [_, logo_area, _, msg_area, _, hint_area, _] = Layout::vertical([
         Constraint::Length(top_pad),
         Constraint::Length(logo_line_count),
@@ -969,7 +974,6 @@ fn render_raw_url_mode(
 
     render_logo(logo_area, buf, theme, content_area.height);
 
-    // Render hint above the URL.
     let hint = Line::from(Span::styled(
         "Select the URL below with your mouse and copy manually.",
         Style::default().fg(theme.gray),
@@ -993,7 +997,8 @@ fn render_raw_url_mode(
     // inject leading spaces into the selection).
     if let Some(url) = auth_url {
         let url_style = Style::default().fg(theme.accent_user);
-        let url_y = msg_area.y + 2; // after hint + blank
+        // after hint + blank
+        let url_y = msg_area.y + 2;
         // Control characters are skipped below to prevent terminal escape
         // injection, so measure the URL without them.
         let url_len = url.chars().filter(|c| !c.is_control()).count() as u16;
@@ -1031,7 +1036,8 @@ fn render_raw_url_mode(
     let hints = Line::from(hint_spans).alignment(Alignment::Center);
     Paragraph::new(hints).render(hint_area, buf);
 
-    (None, None) // no click rects — mouse capture is disabled
+    // no click rects — mouse capture is disabled
+    (None, None)
 }
 
 /// Which "browser opened, now waiting" arm to render; owns the header,
@@ -1081,7 +1087,8 @@ fn render_browser_status_arm(
     let header_rows = (header.len() as u16).div_ceil(inner_width);
     let code_extra = if user_code.is_some() {
         let caption_rows = (DEVICE_CODE_CAPTION.len() as u16).div_ceil(inner_width);
-        1 + 1 + 1 + caption_rows // blank + code + blank + caption
+        // blank + code + blank + caption
+        1 + 1 + 1 + caption_rows
     } else {
         0
     };
@@ -1090,15 +1097,20 @@ fn render_browser_status_arm(
     } else {
         0
     };
-    let msg_height = header_rows + code_extra + copy_extra + 1 + 1; // blank + waiting
+    // blank + waiting
+    let msg_height = header_rows + code_extra + copy_extra + 1 + 1;
 
     let [_, logo_area, _, msg_area, _, hint_area, _] = Layout::vertical([
         Constraint::Length(top_pad),
         Constraint::Length(logo_line_count),
-        Constraint::Length(2),          // gap
-        Constraint::Length(msg_height), // status message
-        Constraint::Min(1),             // gap
-        Constraint::Length(1),          // hints
+        // gap
+        Constraint::Length(2),
+        // status message
+        Constraint::Length(msg_height),
+        // gap
+        Constraint::Min(1),
+        // hints
+        Constraint::Length(1),
         Constraint::Min(0),
     ])
     .areas(content_area);
@@ -1195,19 +1207,24 @@ fn render_welcome_authenticating(
             let [_, logo_area, _, msg_area, _, prompt_area, _, hint_area, _] = Layout::vertical([
                 Constraint::Length(top_pad),
                 Constraint::Length(logo_line_count),
-                Constraint::Length(1),          // gap
-                Constraint::Length(msg_height), // instruction + copy prompt
-                Constraint::Min(1),             // gap
-                Constraint::Length(5),          // prompt box
-                Constraint::Length(1),          // gap
-                Constraint::Length(1),          // hints
+                // gap
+                Constraint::Length(1),
+                // instruction + copy prompt
+                Constraint::Length(msg_height),
+                // gap
+                Constraint::Min(1),
+                // prompt box
+                Constraint::Length(5),
+                // gap
+                Constraint::Length(1),
+                // hints
+                Constraint::Length(1),
                 Constraint::Min(0),
             ])
             .areas(content_area);
 
             render_logo(logo_area, buf, theme, content_area.height);
 
-            // Instruction text
             let mut lines: Vec<Line> = Vec::new();
             if auth_url.is_some() {
                 lines.push(
@@ -1286,12 +1303,18 @@ fn render_welcome_authenticating(
             let [_, logo_area, _, msg_area, _, prompt_area, _, hint_area, _] = Layout::vertical([
                 Constraint::Length(top_pad),
                 Constraint::Length(logo_line_count),
-                Constraint::Length(1),          // gap
-                Constraint::Length(msg_height), // instruction
-                Constraint::Min(1),             // gap
-                Constraint::Length(5),          // prompt box
-                Constraint::Length(1),          // gap
-                Constraint::Length(1),          // hints
+                // gap
+                Constraint::Length(1),
+                // instruction
+                Constraint::Length(msg_height),
+                // gap
+                Constraint::Min(1),
+                // prompt box
+                Constraint::Length(5),
+                // gap
+                Constraint::Length(1),
+                // hints
+                Constraint::Length(1),
                 Constraint::Min(0),
             ])
             .areas(content_area);
@@ -1430,13 +1453,15 @@ fn render_welcome_done(
     let hint_height = p.startup_warnings.first().map_or(0u16, |w| {
         let msg_lines = w.message.lines().count() as u16;
         let action_line = if w.action.is_some() { 1 } else { 0 };
-        msg_lines + action_line + 1 // +1 for buffer spacing
+        // +1 for buffer spacing
+        msg_lines + action_line + 1
     });
     let has_update_tip = p.pending_update_version.is_some();
     let has_resume_tip = !has_update_tip && p.foreign_resume_hint.is_some();
     let tip_height = if !show_picker {
         if has_update_tip || has_resume_tip {
-            1u16 // update/resume tips are short, always 1 row
+            // update/resume tips are short, always 1 row
+            1u16
         } else if let Some(tip_text) = p.tip {
             let inset = prompt::prompt_inset(welcome_compact);
             let tip_width = content_area.width.saturating_sub(inset * 2);
@@ -1486,7 +1511,8 @@ fn render_welcome_done(
         if p.session_picker_loading {
             1
         } else {
-            (picker_count as u16).min(15) + 3 // +3 for title + search + gap
+            // +3 for title + search + gap
+            (picker_count as u16).min(15) + 3
         }
     } else {
         0
@@ -1746,7 +1772,8 @@ pub(crate) fn render_session_picker(
     let filtered_indices =
         crate::app::app_view::filter_session_entries(ctx.sessions, filter_query, ctx.source_filter);
 
-    let content_width = area.width; // approximate for truncation
+    // approximate for truncation
+    let content_width = area.width;
     let built = build_session_entry_data(entries_data, &filtered_indices, ctx.state, content_width);
 
     // Build PickerEntry refs that borrow from `built`.
@@ -2309,13 +2336,17 @@ mod tests {
             &mut buf,
             &theme,
             logo_line_count(area.height),
-            None, // auth_url — none in key-entry mode
+            // auth_url — none in key-entry mode
+            None,
             AuthMode::ApiKeyEntry(crate::app::app_view::PlatformLogin(
                 kigi_shell::models::PlatformId::MoonshotCn,
             )),
-            "",    // auth_code_input
-            false, // clipboard_copied
-            false, // show_raw_url
+            // auth_code_input
+            "",
+            // clipboard_copied
+            false,
+            // show_raw_url
+            false,
         );
 
         let text = buffer_text(&buf);
@@ -2615,7 +2646,8 @@ mod tests {
         let (result, non_sel) =
             build_grouped_picker_entries(&entries, &indices, &built, &fields_vecs, &state, None);
 
-        assert_eq!(result.len(), 3); // 1 header + 2 rows
+        // 1 header + 2 rows
+        assert_eq!(result.len(), 3);
         assert!(non_sel[0]);
         assert!(!non_sel[1]);
         assert!(!non_sel[2]);
@@ -2976,9 +3008,12 @@ mod tests {
             logo_line_count(area.height),
             Some(url),
             AuthMode::Device,
-            "",    // auth_code_input — unused in device mode
-            false, // clipboard_copied
-            false, // show_raw_url
+            // auth_code_input — unused in device mode
+            "",
+            // clipboard_copied
+            false,
+            // show_raw_url
+            false,
         );
 
         let text = buffer_text(&buf);
@@ -3032,7 +3067,8 @@ mod tests {
             AuthMode::Device,
             "",
             false,
-            true, // show_raw_url
+            // show_raw_url
+            true,
         );
 
         let text = buffer_text(&buf);
@@ -3058,7 +3094,8 @@ mod tests {
             AuthMode::Device,
             "",
             false,
-            true, // show_raw_url
+            // show_raw_url
+            true,
         );
 
         let text = buffer_text(&buf);
@@ -3095,7 +3132,8 @@ mod tests {
             AuthMode::Device,
             "",
             false,
-            true, // show_raw_url
+            // show_raw_url
+            true,
         );
 
         let text = buffer_text(&buf);
@@ -3132,9 +3170,12 @@ mod tests {
             logo_line_count(area.height),
             Some(url),
             AuthMode::Command,
-            "",    // auth_code_input — unused
-            false, // clipboard_copied
-            false, // show_raw_url
+            // auth_code_input — unused
+            "",
+            // clipboard_copied
+            false,
+            // show_raw_url
+            false,
         );
 
         let text = buffer_text(&buf);

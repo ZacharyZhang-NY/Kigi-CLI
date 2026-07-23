@@ -9,8 +9,7 @@
 //! / [`InterCompactionObserver`](crate::inter_compaction::InterCompactionObserver).
 //!
 //! Emission points are part of the behavior contract: the kigi observer
-//! preserves the pre-migration `CompactionAttempt`/`CompactionRetryDegraded`
-//! semantics byte-for-byte.
+//! preserves `CompactionAttempt` / `CompactionRetryDegraded` semantics.
 
 use std::time::Duration;
 
@@ -34,14 +33,13 @@ pub enum FullReplaceAttemptOutcome<'a> {
     /// The cleaned summary seed was too short to carry the conversation's task
     /// state; retried like a transient failure.
     Degenerate {
-        /// Raw model summary text (still captured for offline inspection).
+        /// Captured for offline inspection even when too short to keep.
         summary: &'a str,
         /// Whether the orchestrator will retry after this attempt.
         will_retry: bool,
     },
     /// The sampler returned an error.
     Failure {
-        /// Rendered error message.
         message: &'a str,
         /// Whether re-sending the *same* input cannot help (auth / schema /
         /// size). Transient failures (timeout / stream blip / 5xx) are `false`.

@@ -61,7 +61,7 @@ static BUNDLED: LazyLock<EnrichmentCatalog> = LazyLock::new(|| {
         .expect("enrichment_snapshot.json: invalid JSON (regenerate via script)")
 });
 
-// ── Raw models.dev api.json shape (parse-only) ──────────────────────────────
+// Raw models.dev api.json shape (parse-only)
 
 #[derive(serde::Deserialize)]
 struct RawProvider {

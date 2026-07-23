@@ -73,7 +73,8 @@ impl Iterator for UpdatesIterator {
     fn next(&mut self) -> Option<Self::Item> {
         self.line_buffer.clear();
         match self.reader.read_line(&mut self.line_buffer) {
-            Ok(0) => None, // EOF
+            // EOF
+            Ok(0) => None,
             Ok(_) => {
                 let line = self.line_buffer.trim();
                 if line.is_empty() {
@@ -332,7 +333,7 @@ pub struct CopySessionOptions {
     /// summary so the prompt-facing cwd survives session restore/reload.
     pub prompt_display_cwd: Option<String>,
 
-    // ── Generic fork extensions (used by subagent + worktree forks) ──
+    // Generic fork extensions (used by subagent + worktree forks).
     /// Override `session_kind` in the forked summary. Defaults to `"fork"`.
     /// Subagent resume sets `"subagent_resume"`.
     pub session_kind: Option<String>,
@@ -1233,10 +1234,6 @@ pub(crate) fn filter_delta_replay_lines(contents: &str) -> Vec<&str> {
     filter_rewind_lines(live)
 }
 
-// ============================================================================
-// Selective prompt-extraction parser
-// ============================================================================
-
 /// An event yielded by [`PromptExtractIterator`].
 ///
 /// Each event represents the minimal information extracted from one
@@ -1323,7 +1320,8 @@ impl Iterator for PromptExtractIterator {
         loop {
             self.line_buffer.clear();
             match std::io::BufRead::read_line(&mut self.reader, &mut self.line_buffer) {
-                Ok(0) => return None, // EOF
+                // EOF
+                Ok(0) => return None,
                 Err(_) => return Some(PromptExtractEvent::NotUserMessage),
                 Ok(_) => {}
             }
@@ -1622,10 +1620,6 @@ pub fn collect_tool_metadata(iter: impl Iterator<Item = io::Result<SessionUpdate
     meta
 }
 
-// ---------------------------------------------------------------------------
-// Selective serde structs — only the fields we care about
-// ---------------------------------------------------------------------------
-
 /// Peek inside ACP or xAI `params` to read the `update.sessionUpdate` tag and
 /// any fields relevant to `user_message_chunk` or `rewind_marker`.
 ///
@@ -1745,15 +1739,9 @@ pub(crate) fn parse_prompt_extract_event(line: &str) -> PromptExtractEvent {
     PromptExtractEvent::NotUserMessage
 }
 
-// ============================================================================
-// Tests
-// ============================================================================
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // ── helpers ──────────────────────────────────────────────────────────────
 
     /// Wrap an ACP notification as the envelope stored in updates.jsonl.
     fn acp_envelope(session_update_json: &str) -> String {
@@ -1768,8 +1756,6 @@ mod tests {
             r#"{{"timestamp":1,"method":"_kigi/session/update","params":{{"sessionId":"s","update":{session_update_json}}}}}"#
         )
     }
-
-    // ── parse_prompt_extract_event unit tests ─────────────────────────────────
 
     #[test]
     fn acp_user_text_chunk_yields_user_text() {
@@ -1793,8 +1779,8 @@ mod tests {
             parse_prompt_extract_event(&line),
             PromptExtractEvent::user_text("multi\nline \"quoted\" caf\u{e9}")
         );
-        // An escaped bash command now parses too and must be excluded by the
-        // bash_command predicate (it used to be excluded by the parse failure).
+        // An escaped bash command parses successfully, so it must be excluded
+        // via the bash_command predicate rather than a parse failure.
         let bash = acp_envelope(
             r#"{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"! echo \"hi\"","_meta":{"bash_command":"echo \"hi\""}}}"#,
         );
@@ -1880,7 +1866,7 @@ mod tests {
     }
 
     /// Empty string — the iterator skips blanks, but a direct call must still
-    /// classify conservatively (the parser always yields an event now).
+    /// classify conservatively (the parser always yields an event).
     #[test]
     fn empty_string_yields_not_user() {
         assert_eq!(
@@ -1920,8 +1906,6 @@ mod tests {
             PromptExtractEvent::NotUserMessage
         );
     }
-
-    // ── PromptExtractIterator integration tests via tempfile ──────────────────
 
     use std::io::Write as _;
 
@@ -2321,8 +2305,6 @@ mod tests {
         assert_eq!(texts, vec!["P0", "phantom", "P1", "after"]);
     }
 
-    // ── filter_rewind_lines tests ────────────────────────────────────────────
-
     #[test]
     fn filter_rewind_removes_dead_branch() {
         let u1 = acp_envelope(
@@ -2449,8 +2431,6 @@ mod tests {
         assert!(result[2].contains("final"));
     }
 
-    // ── prepare_replay_lines tests ───────────────────────────────────────────
-
     /// Envelope with _meta at the params level (where the real agent puts it).
     fn acp_envelope_with_meta(session_update_json: &str, meta_json: &str) -> String {
         format!(
@@ -2491,7 +2471,8 @@ mod tests {
 
         let prepared = prepare_replay_lines(&raw, Some("nonexistent"));
         assert_eq!(prepared.lines.len(), 1);
-        assert!(prepared.mark_replay); // fallback to full replay
+        // fallback to full replay
+        assert!(prepared.mark_replay);
     }
 
     /// A resolved cursor is refused when the tail contains an eventId-less
@@ -2581,8 +2562,6 @@ mod tests {
         let prepared = prepare_replay_lines(&raw, None);
         assert_eq!(prepared.max_event_seq, None);
     }
-
-    // ── available_commands_update skip (T1) + single-pass equivalence ─────────
 
     #[test]
     fn acu_line_detection_exact_and_no_false_positive() {
@@ -2769,7 +2748,8 @@ mod tests {
         let prepared = prepare_replay_lines(&raw, None);
         assert_eq!(prepared.lines, reference);
         assert_eq!(prepared.total_live, reference.len());
-        assert_eq!(prepared.last_tokens, 11); // last kept line carrying tokens
+        // last kept line carrying tokens
+        assert_eq!(prepared.last_tokens, 11);
     }
 
     /// The prompt-extract fast-reject must not be fooled by lines that merely
@@ -2941,8 +2921,10 @@ mod tests {
         assert!(!prepared.mark_replay);
         assert_eq!(prepared.lines.len(), 1);
         assert!(prepared.lines[0].contains("a1"));
-        assert_eq!(prepared.last_tokens, 12); // last token-bearing survivor
-        assert_eq!(prepared.total_live, 2); // ACU-free survivors: u1, a1
+        // last token-bearing survivor
+        assert_eq!(prepared.last_tokens, 12);
+        // ACU-free survivors: u1, a1
+        assert_eq!(prepared.total_live, 2);
     }
 
     /// The delta-replay helper (shared with the initial path) drops blanks + ACUs
@@ -3058,8 +3040,6 @@ mod tests {
         );
     }
 
-    // ── collect_assistant_text / collect_tool_metadata tests ──────────────────
-
     #[test]
     fn collect_assistant_text_extracts_chunks() {
         let lines = vec![
@@ -3081,8 +3061,10 @@ mod tests {
     #[test]
     fn collect_assistant_text_caps_at_100k() {
         // Two 60k chunks with non-ASCII, separator, and truncation
-        let chunk1 = "x".repeat(60_000) + "café"; // 60k + 5 bytes (café is 5 UTF-8 bytes)
-        let chunk2 = "日本語".repeat(20_000); // 60k bytes (3 bytes per char)
+        // chunk1: 60k + 5 bytes (café is 5 UTF-8 bytes)
+        let chunk1 = "x".repeat(60_000) + "café";
+        // chunk2: 60k bytes (3 bytes per char)
+        let chunk2 = "日本語".repeat(20_000);
         let lines = vec![
             acp_envelope(&format!(
                 r#"{{"sessionUpdate":"agent_message_chunk","content":{{"type":"text","text":"{chunk1}"}}}}"#

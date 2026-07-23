@@ -211,7 +211,8 @@ async fn real_exit_plan_mode_disconnect_keeps_awaiting_persisted() {
                 while let Some(msg) = gateway_rx.recv().await {
                     match msg {
                         kigi_acp_lib::AcpClientMessage::ExtMethod(args) => {
-                            drop(args); // no response -> "unable to receive response"
+                            // no response -> "unable to receive response"
+                            drop(args);
                             break;
                         }
                         kigi_acp_lib::AcpClientMessage::SessionNotification(args) => {
@@ -257,8 +258,8 @@ async fn real_exit_plan_mode_disconnect_keeps_awaiting_persisted() {
 }
 
 /// Headless / no UI client wired: the reverse-request can't be delivered, so
-/// `exit_plan_mode` falls through and executes (original behavior) — verified by
-/// `prepare_tool_call` returning a prepared call rather than Cancelled.
+/// `exit_plan_mode` falls through and executes — verified by `prepare_tool_call`
+/// returning a prepared call rather than Cancelled.
 #[tokio::test(flavor = "current_thread")]
 async fn real_exit_plan_mode_no_client_executes_tool() {
     let local = tokio::task::LocalSet::new();
@@ -311,7 +312,8 @@ async fn request_plan_approval_keeps_flag_when_client_disconnects() {
                 while let Some(msg) = gateway_rx.recv().await {
                     match msg {
                         kigi_acp_lib::AcpClientMessage::ExtMethod(args) => {
-                            drop(args); // no response -> ext_method sees Err
+                            // no response -> ext_method sees Err
+                            drop(args);
                             break;
                         }
                         kigi_acp_lib::AcpClientMessage::SessionNotification(args) => {
@@ -378,7 +380,8 @@ async fn request_plan_approval_future_drop_clears_flag() {
                 _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {}
             }
             assert!(actor.plan_mode.lock().is_awaiting_plan_approval());
-            drop(fut); // turn cancelled -> guard runs
+            // turn cancelled -> guard runs
+            drop(fut);
 
             assert!(
                 !actor.plan_mode.lock().is_awaiting_plan_approval(),

@@ -92,7 +92,7 @@ mod tests {
         }
     }
 
-    // ── Matching cases ───────────────────────────────────────────
+    // Matching cases
 
     #[test]
     fn matching_type_no_persona() {
@@ -131,7 +131,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    // ── Mismatching cases ────────────────────────────────────────
+    // Mismatching cases
 
     #[test]
     fn type_mismatch_rejected() {
@@ -168,7 +168,7 @@ mod tests {
         ));
     }
 
-    // ── Validation order ─────────────────────────────────────────
+    // Validation order
 
     #[test]
     fn type_mismatch_checked_before_persona() {

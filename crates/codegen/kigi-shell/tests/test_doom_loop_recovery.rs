@@ -63,9 +63,7 @@ fn responses_request_count(server: &MockInferenceServer) -> usize {
         .count()
 }
 
-// ---------------------------------------------------------------------------
 // Trigger parsing (live)
-// ---------------------------------------------------------------------------
 
 /// Mid-stream check frames populate `doom_loop_signals`, deduplicated across
 /// the cumulative re-sends, with the label grammar fully parsed.
@@ -283,9 +281,7 @@ async fn disabled_policy_leaves_terminal_field_unparsed() {
     assert!(response.assistant_text().contains("an answer"));
 }
 
-// ---------------------------------------------------------------------------
 // Recovery contract (the acceptance spec for the resample behavior)
-// ---------------------------------------------------------------------------
 
 /// A confident signal (`tail_repetition:8@thinking` at the default
 /// `max_threshold` 8) on a completed turn is resampled once: two requests,
@@ -512,9 +508,7 @@ async fn doomed_then_reasoning_only_empty_coexist() {
     assert!(response.doom_loop_signals.is_empty());
 }
 
-// ---------------------------------------------------------------------------
 // Headless lifecycle lane
-// ---------------------------------------------------------------------------
 
 /// `[doom_loop_recovery] enabled = true` in `config.toml` reaches the wire
 /// through the real binary: the session TURN request (marked by
@@ -529,7 +523,8 @@ async fn doomed_then_reasoning_only_empty_coexist() {
 /// cargo test -p kigi-shell --test test_doom_loop_recovery -- --ignored
 /// ```
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+// requires pre-built binary; run with --ignored
+#[ignore]
 async fn headless_config_enables_doom_loop_check_header() {
     let models = vec![MockModelEntry::new(MODEL).with_api_backend("responses")];
     let server = MockInferenceServer::start_with_models(models)

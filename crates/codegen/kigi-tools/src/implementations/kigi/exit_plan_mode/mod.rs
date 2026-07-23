@@ -1,23 +1,9 @@
-//! `ExitPlanMode` tool — new architecture (`Tool` trait).
+//! `ExitPlanMode` tool: signals that the agent has finished planning.
 //!
-//! Signals that the agent has finished planning and is ready for the user to
-//! review and approve the plan. The tool reads the plan file from disk (it does
-//! NOT accept plan content as input) and surfaces it via:
-//!
-//! 1. A `PlanModeExited` **notification** sent to the gateway/client, carrying
-//!    the plan content so the client can present it for user approval.
-//! 2. A structured **`ExitPlanModeOutput`** returned to the model, containing
-//!    the plan content (or an empty-plan message).
-//!
-//! The actual approval flow (yes/no with feedback, context clear, mode
-//! transition) happens on the client side — this tool just says "I'm done,
-//! here's the plan."
-//!
-//! ## Plan File
-//!
-//! The plan file path defaults to `.kigi/plan.md` relative to the session
-//! `Cwd`. The tool reads it via the `FileSystem` resource (the same async FS
-//! abstraction used by `ReadFile` and `SearchReplace`).
+//! The plan is read from disk (path defaults to `.kigi/plan.md` relative to the
+//! session `Cwd`) and surfaced both as a `PlanModeExited` notification and as
+//! the structured output returned to the model. The approval flow itself
+//! (yes/no with feedback, context clear, mode transition) lives on the client.
 
 pub mod types;
 
@@ -29,23 +15,12 @@ use crate::types::requirements::{Expr, ToolRequirement};
 use crate::types::resources::{FileSystem, NotificationHandle, require_plan_file_path};
 use crate::types::tool::{ToolKind, ToolNamespace};
 
-/// Input for the `ExitPlanMode` tool.
-///
-/// Empty object — the plan is read from the plan file on disk, NOT passed as
-/// a parameter. This ensures the user sees exactly what was written to disk,
-/// preventing divergence between the model's in-context plan and the actual
-/// file content.
+/// Deliberately empty: the plan is read from disk rather than passed in, so the
+/// user sees exactly what was written and the model's in-context plan cannot
+/// diverge from the file.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct ExitPlanModeInput {}
 
-/// `ExitPlanMode` tool.
-///
-/// Reads the plan file from disk and signals to the orchestration layer that
-/// the agent is done planning. The client receives a `PlanModeExited`
-/// notification with the plan content and is responsible for presenting the
-/// approval UI.
-///
-/// Params: `()` — no per-tool configuration.
 #[derive(Debug, Default)]
 pub struct ExitPlanModeTool;
 
@@ -123,7 +98,6 @@ impl kigi_tool_runtime::Tool for ExitPlanModeTool {
 
             let (plan_path, plan_file_path_display) = require_plan_file_path(&res)?;
 
-            // Read the plan file from disk via the FileSystem abstraction.
             let content = if let Some(fs) = res.get::<FileSystem>() {
                 match fs.0.read_file(&plan_path).await {
                     Ok(bytes) => {
@@ -137,7 +111,6 @@ impl kigi_tool_runtime::Tool for ExitPlanModeTool {
                     Err(_) => None,
                 }
             } else {
-                // Fallback: try tokio::fs if no FileSystem resource is available.
                 match tokio::fs::read_to_string(&plan_path).await {
                     Ok(text) if !text.trim().is_empty() => Some(text),
                     _ => None,
@@ -147,7 +120,6 @@ impl kigi_tool_runtime::Tool for ExitPlanModeTool {
             (plan_file_path_display, content)
         };
 
-        // Notify the gateway / client.
         {
             let res = resources.lock().await;
             if let Some(handle) = res.get::<NotificationHandle>() {
@@ -263,7 +235,6 @@ mod tests {
                 assert!(message.contains("start coding"));
                 assert!(plan_content.contains("Do thing A"));
                 assert!(plan_content.contains("Do thing B"));
-                // Cwd fallback now displays the resolved absolute path (shared resolver).
                 assert!(plan_file_path.ends_with(".kigi/plan.md"));
             }
             other => panic!("Expected PlanReady, got {:?}", other),
@@ -404,8 +375,6 @@ mod tests {
         assert!(prompt.contains(".kigi/plan.md"));
         assert!(prompt.contains("## Plan:"));
     }
-
-    // -- PlanFilePath resource tests --
 
     #[tokio::test]
     async fn reads_from_plan_file_path_resource() {

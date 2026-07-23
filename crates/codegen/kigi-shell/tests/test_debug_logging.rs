@@ -134,7 +134,8 @@ async fn read_session_firehose_when_ready(path: &Path, client: &KigiStdioClient)
 /// headless `kigi -p` client is near-silent, so its lazily-opened firehose may
 /// legitimately stay empty here — file existence is intentionally not asserted.
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+// requires pre-built binary; run with --ignored
+#[ignore]
 async fn debug_flag_enables_firehose_without_crashing() {
     let server = MockInferenceServer::start()
         .await
@@ -151,7 +152,8 @@ async fn debug_flag_enables_firehose_without_crashing() {
 
 /// Without `--debug` (and no firehose env), no firehose files are written.
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+// requires pre-built binary; run with --ignored
+#[ignore]
 async fn no_debug_flag_writes_no_debug_dir() {
     let server = MockInferenceServer::start()
         .await
@@ -175,7 +177,8 @@ async fn no_debug_flag_writes_no_debug_dir() {
 /// `init_tracing_simple("agent")` path the spawned leader uses, so it covers
 /// leader capture deterministically without a flaky detached process.
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+// requires pre-built binary; run with --ignored
+#[ignore]
 async fn agent_session_writes_named_session_file() {
     with_local_set(|| async {
         let server = MockInferenceServer::start()
@@ -224,7 +227,8 @@ async fn agent_session_writes_named_session_file() {
 /// per-session file has first-party content (would FAIL pre-fix), and that
 /// sampling/instrumentation are NOT enabled by `--debug`.
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+// requires pre-built binary; run with --ignored
+#[ignore]
 async fn debug_flag_master_switch_enables_firehose() {
     with_local_set(|| async {
         let server = MockInferenceServer::start()
@@ -274,7 +278,8 @@ async fn debug_flag_master_switch_enables_firehose() {
 /// `--debug-file <path>` writes one explicit file and bypasses per-session
 /// routing entirely (no `~/.kigi/debug/` files created).
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+// requires pre-built binary; run with --ignored
+#[ignore]
 async fn debug_file_flag_writes_single_file_and_bypasses_routing() {
     let server = MockInferenceServer::start()
         .await
@@ -309,7 +314,8 @@ async fn debug_file_flag_writes_single_file_and_bypasses_routing() {
 
 /// `KIGI_LOG_FILE=<path>` (no `--debug`) writes that exact file (back-compat).
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+// requires pre-built binary; run with --ignored
+#[ignore]
 async fn kigi_log_file_explicit_path_is_written() {
     let server = MockInferenceServer::start()
         .await

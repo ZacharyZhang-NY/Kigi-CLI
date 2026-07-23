@@ -1,20 +1,16 @@
 use std::ops::Range;
 
-/// Status of a turn in the conversation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TurnStatus {
-    /// Turn is currently running (agent is responding).
+    /// Agent is currently responding.
     #[default]
     Running,
-    /// Turn completed successfully.
     Completed,
-    /// Turn failed (error occurred).
     Failed,
-    /// Turn was cancelled by user.
+    /// Cancelled by the user.
     Cancelled,
 }
 
-/// Navigation direction for block selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum NavDirection {
     /// Moving down (j key) - should show top of block first.
@@ -31,34 +27,27 @@ pub struct Turn {
     pub prompt_index: usize,
     /// Index past the last entry (exclusive, like Range).
     pub end_index: usize,
-    /// Current status.
     pub status: TurnStatus,
 }
 
 impl Turn {
-    /// Get the range of entry indices in this turn.
     pub fn range(&self) -> Range<usize> {
         self.prompt_index..self.end_index
     }
 
-    /// Number of entries in this turn.
     pub fn len(&self) -> usize {
         self.end_index - self.prompt_index
     }
 
-    /// Whether this turn is empty.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 }
 
-/// How the scrollback is displayed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ViewMode {
-    /// Show all turns in a single timeline.
     #[default]
     AllTurns,
-    /// Show only a single turn.
     SingleTurn,
 }
 

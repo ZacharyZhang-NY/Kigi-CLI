@@ -11,47 +11,22 @@ pub const CHECK_SKILL_MD: &str = include_str!("../skills/check-work/SKILL.md");
 /// a bundled skill).
 pub const BEST_OF_N_SKILL_MD: &str = include_str!("../skills/best-of-n/SKILL.md");
 
-/// Legacy bundled skill names (renamed or removed).
-///
-/// These directories under `~/.kigi/skills/` will be deleted on startup
-/// (during bundled file extraction). This ensures that when a bundled
-/// skill is renamed (e.g. `check` → `check-work`), the old slash command
-/// does not linger on users' machines after an upgrade.
-///
-/// Important behavior:
-/// - Deletion happens **early** in `extract_bundled_files`, before we write
-///   any current bundled skills.
-/// - We **never** delete a name that is currently present in `BUNDLED_SKILLS`
-///   (see `remove_legacy_bundled_skills`).
-///
-/// This means:
-/// - If you later re-introduce a skill with a name that is still in this
-///   legacy list (e.g. you ship a new "check" skill years later), the legacy
-///   cleanup will **skip** it and the new skill will be created normally.
-/// - The legacy list is a "delete old user copies of names we no longer ship",
-///   not a permanent blacklist.
-///
-/// Lifecycle / maintenance:
-/// - Add an old name here when you rename/remove a bundled skill.
-/// - Once the directory is gone on a user's machine, further checks are
-///   cheap no-ops.
-/// - You do **not** have to remove entries immediately. It is safe to leave
-///   them for many releases.
-/// - After the rename has had time to propagate, you **may** clean old
-///   strings out of this list for hygiene.
+/// Names of bundled skills that were renamed or removed. Their directories
+/// under `~/.kigi/skills/` are deleted early in `extract_bundled_files` so an
+/// old slash command (e.g. `/check` after the rename to `/check-work`) does
+/// not linger after an upgrade. A name still present in `BUNDLED_SKILLS` is
+/// never deleted, so a skill name can be safely re-introduced without first
+/// removing its legacy entry.
 const LEGACY_BUNDLED_SKILL_NAMES: &[&str] =
     &["check", "best-of-n", "docx", "pptx", "xlsx", "imagine"];
 
-/// All bundled skill SKILL.md files. Single source of truth used by both
-/// the full extraction path (version bump) and the missing-file fast path
-/// (same version). Adding a new skill here is all that's needed.
+/// All bundled skill SKILL.md files. Single source of truth for both the
+/// full extraction path (version bump) and the missing-file fast path
+/// (same version).
 ///
-/// When renaming a bundled skill (e.g. "check" → "check-work"), also add the
-/// old name to `LEGACY_BUNDLED_SKILL_NAMES` so `remove_legacy_bundled_skills`
-/// will clean up the old directory on user machines on the next upgrade.
-///
-/// See the docs on `LEGACY_BUNDLED_SKILL_NAMES` for the full lifecycle
-/// (including when it is safe/optional to remove old entries later).
+/// When renaming a bundled skill, also add the old name to
+/// `LEGACY_BUNDLED_SKILL_NAMES` so `remove_legacy_bundled_skills` cleans up
+/// the old directory on the next upgrade.
 const BUNDLED_SKILLS: &[(&str, &str)] = &[
     ("help", HELP_SKILL_MD),
     ("create-skill", CREATE_SKILL_MD),
@@ -60,11 +35,10 @@ const BUNDLED_SKILLS: &[(&str, &str)] = &[
 ];
 
 /// True when a discovered skill is the copy `extract_bundled_files` wrote to
-/// `<kigi_home>/skills/<name>/SKILL.md`. Exact-path (not prefix) so a
-/// user-authored skill that reuses a bundled name — even elsewhere under
-/// `<kigi_home>/skills/` — is never labeled bundled. Lives beside the
-/// extraction code so the target layout and this predicate move together.
-/// Used by inspect, which otherwise sees extracted copies as user skills.
+/// `<kigi_home>/skills/<name>/SKILL.md`. Matches the exact path, not a prefix,
+/// so a user-authored skill that reuses a bundled name is never labeled
+/// bundled. Used by inspect, which otherwise sees extracted copies as user
+/// skills.
 pub(crate) fn is_extracted_bundled_skill(
     name: &str,
     path: &std::path::Path,
@@ -96,10 +70,8 @@ fn resolve_skill_content(name: &str, raw: &str, kigi_home: &std::path::Path) -> 
 /// always cleaned up first so that old slash commands disappear after
 /// a rename (e.g. the previous `/check` after the move to `/check-work`).
 pub fn extract_bundled_files(kigi_home: &std::path::Path) {
-    // Always remove legacy/renamed bundled skills first (e.g. the old
-    // `check` directory after the rename to `check-work`). This runs on
-    // every startup so users get cleaned up even without hitting a
-    // version-bump marker change.
+    // Runs before the version check so renamed skills are cleaned up on
+    // every startup, not only on a version bump.
     remove_legacy_bundled_skills(kigi_home);
 
     let version = kigi_version::VERSION;
@@ -128,7 +100,6 @@ pub fn extract_bundled_files(kigi_home: &std::path::Path) {
         }
     }
 
-    // Skill SKILL.md files.
     for &(name, raw) in BUNDLED_SKILLS {
         let skill_dir = kigi_home.join("skills").join(name);
         let _ = std::fs::create_dir_all(&skill_dir);
@@ -156,15 +127,8 @@ fn extract_missing_skills(kigi_home: &std::path::Path) {
     }
 }
 
-/// Remove directories for legacy/renamed bundled skills (e.g. old `check`
-/// after it was renamed to `check-work`).
-///
-/// Called on every startup from `extract_bundled_files`. Safe and idempotent.
-///
-/// Key guarantees (see `LEGACY_BUNDLED_SKILL_NAMES` docs for details):
-/// - If a name is still present in `BUNDLED_SKILLS`, we deliberately skip
-///   deletion. This allows safe re-use of a skill name in the future.
-/// - If the target directory no longer exists, this is a trivial no-op.
+/// Delete directories for renamed/removed bundled skills. Runs on every
+/// startup; idempotent. A name still in `BUNDLED_SKILLS` is never deleted.
 fn remove_legacy_bundled_skills(kigi_home: &std::path::Path) {
     remove_legacy_skills(kigi_home, LEGACY_BUNDLED_SKILL_NAMES, BUNDLED_SKILLS);
 }
@@ -176,9 +140,8 @@ fn remove_legacy_skills(
     bundled_skills: &[(&str, &str)],
 ) {
     for name in legacy_names {
-        // Safety: Never delete a name that we are currently shipping.
-        // This protects against re-introducing a skill name that still has
-        // an entry in the legacy list.
+        // Never delete a name currently shipped in `bundled_skills`, so a
+        // re-introduced skill name can keep its legacy entry.
         if bundled_skills.iter().any(|(n, _)| *n == *name) {
             continue;
         }
@@ -245,8 +208,6 @@ mod tests {
             );
         }
 
-        // Legacy skill directories must have been removed (the key part of
-        // supporting renames like check → check-work without leaving orphans).
         for name in ["check", "best-of-n", "docx", "pptx", "xlsx", "imagine"] {
             assert!(
                 !home.join(format!("skills/{name}")).exists(),
@@ -304,10 +265,6 @@ mod tests {
         assert!(help.user_invocable);
     }
 
-    // ---------------------------------------------------------------------
-    // Tests for legacy bundled skill removal (the rename migration system)
-    // ---------------------------------------------------------------------
-
     #[test]
     fn remove_legacy_deletes_old_skill_when_not_currently_shipped() {
         let tmp = tempfile::tempdir().unwrap();
@@ -362,7 +319,7 @@ mod tests {
         std::fs::create_dir_all(home.join("skills/another-legacy")).unwrap();
         std::fs::write(home.join("skills/another-legacy/SKILL.md"), "old2").unwrap();
 
-        // Current bundled skills include one name that used to be legacy
+        // One currently-bundled name is also listed as legacy.
         let current: &[(&str, &str)] = &[("another-legacy", "now shipping again")];
 
         // Legacy list contains both the truly removed one and the reintroduced one

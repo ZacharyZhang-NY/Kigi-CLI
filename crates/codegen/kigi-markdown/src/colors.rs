@@ -165,7 +165,7 @@ pub fn set_color_level(level: ColorLevel) -> Result<(), ColorLevel> {
 /// Convert an `anstyle::Color` to the appropriate level based on terminal support.
 ///
 /// This will downgrade colors as needed:
-/// - TrueColor terminals: pass through unchanged
+/// - TrueColor terminals: pass through `unchanged`
 /// - 256-color terminals: RGB colors are converted to closest ANSI 256 color
 /// - Basic terminals: colors are converted to closest ANSI 16 color
 /// - No color: returns None
@@ -234,22 +234,26 @@ mod tests {
 
         // Medium gray
         let result = rgb_to_ansi256(RgbColor(128, 128, 128));
-        assert!(result.index() >= 232); // Should be in grayscale range
+        // Should be in grayscale range
+        assert!(result.index() >= 232);
     }
 
     #[test]
     fn test_rgb_to_ansi256_colors() {
         // Pure red
         let result = rgb_to_ansi256(RgbColor(255, 0, 0));
-        assert_eq!(result.index(), 196); // Bright red in the cube
+        // Bright red in the cube
+        assert_eq!(result.index(), 196);
 
         // Pure green
         let result = rgb_to_ansi256(RgbColor(0, 255, 0));
-        assert_eq!(result.index(), 46); // Bright green in the cube
+        // Bright green in the cube
+        assert_eq!(result.index(), 46);
 
         // Pure blue
         let result = rgb_to_ansi256(RgbColor(0, 0, 255));
-        assert_eq!(result.index(), 21); // Bright blue in the cube
+        // Bright blue in the cube
+        assert_eq!(result.index(), 21);
     }
 
     #[test]

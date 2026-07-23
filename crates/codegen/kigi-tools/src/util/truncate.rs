@@ -1,12 +1,9 @@
 use std::borrow::Cow;
 
-/// Default wrap width for soft-wrapping (used by bash, task_output).
 pub const DEFAULT_SOFT_WRAP_WIDTH: usize = 2_000;
 
-/// Default preview shown before a truncation footer.
 pub const PREVIEW_SIZE: usize = 2_000;
 
-/// Marker appended by `truncate_str_with_marker` when content is cut.
 pub(crate) const TRUNCATION_MARKER: &str = "…";
 
 /// Truncate a line to at most `max_chars` characters, respecting UTF-8 boundaries.
@@ -185,7 +182,7 @@ pub fn ceil_char_boundary(s: &str, index: usize) -> usize {
 
 /// Estimate the number of tokens in a string using the bytes/4 heuristic.
 /// Thin wrapper around [`kigi_token_estimation::estimate_tokens`] preserving
-/// the historical `usize` return type used by tool-side callers
+/// the `usize` return type used by tool-side callers
 /// (`read_file`, `attach_file`, `inspect`, `compaction` file gates).
 pub fn estimate_tokens(s: &str) -> usize {
     kigi_token_estimation::estimate_tokens(s) as usize
@@ -282,13 +279,11 @@ pub fn truncate_middle(s: &str, max_chars: usize) -> String {
     let front_count = remaining / 2;
     let back_count = remaining - front_count;
 
-    // Front: first `front_count` chars.
     let front_end = s
         .char_indices()
         .nth(front_count)
         .map(|(i, _)| i)
         .unwrap_or(s.len());
-    // Back: last `back_count` chars.
     let back_start = if char_count <= back_count {
         0
     } else {
@@ -336,8 +331,6 @@ pub fn truncate_lines_to_char_budget(content: &str, budget: usize) -> (String, b
 mod tests {
     use super::*;
 
-    // ---- estimate_tokens ----
-
     #[test]
     fn estimate_tokens_empty() {
         assert_eq!(estimate_tokens(""), 0);
@@ -358,8 +351,6 @@ mod tests {
     fn estimate_tokens_large() {
         assert_eq!(estimate_tokens(&"x".repeat(20_000)), 5_000);
     }
-
-    // ---- truncate_line ----
 
     #[test]
     fn truncate_short_line_borrowed() {
@@ -393,11 +384,10 @@ mod tests {
 
     #[test]
     fn truncate_multibyte_char_count_under() {
-        let line = "é".repeat(1_999); // 2 bytes each, 1 char each
+        // 2 bytes each, 1 char each
+        let line = "é".repeat(1_999);
         assert!(matches!(truncate_line(&line, 2_000), Cow::Borrowed(_)));
     }
-
-    // ---- soft_wrap_line ----
 
     #[test]
     fn wrap_short_line_borrowed() {
@@ -418,7 +408,7 @@ mod tests {
         let line = "a".repeat(5_000);
         let r = soft_wrap_line(&line, 2_000);
         let lines: Vec<&str> = r.split('\n').collect();
-        assert_eq!(lines.len(), 3); // 2000 + 2000 + 1000
+        assert_eq!(lines.len(), 3);
         assert_eq!(lines[0].len(), 2_000);
         assert_eq!(lines[1].len(), 2_000);
         assert_eq!(lines[2].len(), 1_000);
@@ -432,8 +422,6 @@ mod tests {
         assert_eq!(lines[0].chars().count(), 2_000);
         assert_eq!(lines[1].chars().count(), 1_000);
     }
-
-    // ---- truncate_str ----
 
     #[test]
     fn truncate_str_returns_original_when_fits() {
@@ -470,8 +458,6 @@ mod tests {
         assert_eq!(truncate_str("日本語", 0), "");
     }
 
-    // ---- truncate_str_with_marker ----
-
     #[test]
     fn truncate_with_marker_exact_boundary_no_marker() {
         // len == max_bytes: still fits, no marker.
@@ -500,8 +486,6 @@ mod tests {
         // Result is valid UTF-8 (3 chars: 日, 本, …).
         assert_eq!(r.chars().count(), 3);
     }
-
-    // ---- truncate_with_preview ----
 
     #[test]
     fn truncate_with_preview_short_output_unchanged() {
@@ -555,15 +539,13 @@ mod tests {
         assert!(!result.contains("full content"));
     }
 
-    // ---- soft_wrap_lines ----
-
     #[test]
     fn wrap_lines_mixed() {
         let text = format!("short\n{}\nanother", "x".repeat(5_000));
         let result = soft_wrap_lines(&text, 2_000);
         let lines: Vec<&str> = result.split('\n').collect();
         assert_eq!(lines[0], "short");
-        assert_eq!(lines[1].len(), 2_000); // first chunk of wrapped line
+        assert_eq!(lines[1].len(), 2_000);
         assert_eq!(lines[4], "another");
         // Total content preserved
         let unwrapped: String = result.chars().filter(|c| *c != '\n').collect();
@@ -577,8 +559,6 @@ mod tests {
         assert_eq!(soft_wrap_lines("hello", 2_000), "hello");
     }
 
-    // ---- truncate_front_and_back ----
-
     #[test]
     fn front_and_back_short_string_not_truncated() {
         let (result, truncated) = truncate_front_and_back("hello world", 100);
@@ -591,8 +571,8 @@ mod tests {
         let s = "a".repeat(100);
         let (result, truncated) = truncate_front_and_back(&s, 20);
         assert!(truncated);
-        assert!(result.starts_with("aaaaaaaaaa")); // first 10
-        assert!(result.ends_with("aaaaaaaaaa")); // last 10
+        assert!(result.starts_with("aaaaaaaaaa"));
+        assert!(result.ends_with("aaaaaaaaaa"));
         assert!(result.contains("... (output truncated) ..."));
     }
 
@@ -603,8 +583,6 @@ mod tests {
         assert_eq!(result, s);
         assert!(!truncated);
     }
-
-    // ---- truncate_lines_to_char_budget ----
 
     #[test]
     fn lines_budget_short_content_not_truncated() {
@@ -630,8 +608,6 @@ mod tests {
         assert!(truncated);
         assert!(result.contains("character budget"));
     }
-
-    // ---- floor_char_boundary / ceil_char_boundary ----
 
     #[test]
     fn floor_boundary_ascii() {
@@ -669,8 +645,6 @@ mod tests {
         assert_eq!(ceil_char_boundary("hi", 100), 2);
     }
 
-    // ---- truncate_middle ----
-
     #[test]
     fn truncate_middle_short_string_unchanged() {
         assert_eq!(truncate_middle("hello", 10), "hello");
@@ -700,7 +674,6 @@ mod tests {
 
     #[test]
     fn truncate_middle_respects_budget() {
-        // Example: 50_000 chars at 12_000 limit.
         let s = "a".repeat(50_000);
         let result = truncate_middle(&s, 12_000);
         assert_eq!(

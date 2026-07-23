@@ -86,7 +86,6 @@ pub fn apply_mutation(lines: &mut Vec<String>, mutation: &Mutation) -> MutationR
                 lines.insert(idx + i, line.clone());
             }
 
-            // Lines before idx: unchanged. Lines at idx and above: shifted.
             let outcomes = (0..orig_len)
                 .map(|i| {
                     if i < idx {
@@ -210,8 +209,6 @@ pub fn apply_mutation(lines: &mut Vec<String>, mutation: &Mutation) -> MutationR
     }
 }
 
-/// Generate an "insert lines above" mutation: insert `count` boilerplate
-/// lines before `before_idx`.
 pub fn gen_insert_above(before_idx: usize, count: usize) -> Mutation {
     let lines: Vec<String> = (0..count)
         .map(|i| format!("// inserted line {i}"))
@@ -219,12 +216,10 @@ pub fn gen_insert_above(before_idx: usize, count: usize) -> Mutation {
     Mutation::InsertLines { before_idx, lines }
 }
 
-/// Generate a "delete lines" mutation.
 pub fn gen_delete(start_idx: usize, count: usize) -> Mutation {
     Mutation::DeleteLines { start_idx, count }
 }
 
-/// Generate a local token edit on a single line.
 pub fn gen_token_edit(line_idx: usize, new_content: &str) -> Mutation {
     Mutation::EditLine {
         line_idx,
@@ -232,7 +227,6 @@ pub fn gen_token_edit(line_idx: usize, new_content: &str) -> Mutation {
     }
 }
 
-/// Generate a formatter-style re-indentation.
 pub fn gen_reindent(line_idx: usize, new_indent: &str) -> Mutation {
     Mutation::ReindentLine {
         line_idx,
@@ -240,7 +234,6 @@ pub fn gen_reindent(line_idx: usize, new_indent: &str) -> Mutation {
     }
 }
 
-/// Generate a range rewrite replacing `start_idx..end_idx` with new content.
 pub fn gen_range_rewrite(start_idx: usize, end_idx: usize, new_lines: &[&str]) -> Mutation {
     Mutation::RangeRewrite {
         start_idx,
@@ -249,7 +242,6 @@ pub fn gen_range_rewrite(start_idx: usize, end_idx: usize, new_lines: &[&str]) -
     }
 }
 
-/// Generate a boilerplate-insertion mutation: insert repeated identical lines.
 pub fn gen_boilerplate_insert(before_idx: usize, line: &str, count: usize) -> Mutation {
     Mutation::InsertLines {
         before_idx,
@@ -281,7 +273,6 @@ mod tests {
         assert!(lines[2].contains("inserted line 1"));
         assert_eq!(lines[3], "    let x = 1;");
         assert_eq!(result.line_delta, 2);
-        // Line 0 unchanged, lines 1-4 shifted by +2.
         assert_eq!(result.outcomes[0], LineOutcome::Unchanged);
         assert_eq!(result.outcomes[1], LineOutcome::Shifted { new_idx: 3 });
         assert_eq!(result.outcomes[4], LineOutcome::Shifted { new_idx: 6 });
@@ -290,12 +281,12 @@ mod tests {
     #[test]
     fn insert_at_end() {
         let mut lines = sample_lines();
-        let m = gen_insert_above(100, 1); // past end → clamped
+        // past end → clamped
+        let m = gen_insert_above(100, 1);
         let result = apply_mutation(&mut lines, &m);
         assert_eq!(lines.len(), 6);
         assert!(lines[5].contains("inserted line 0"));
         assert_eq!(result.line_delta, 1);
-        // All original lines unchanged (insert was at end).
         assert!(result.outcomes.iter().all(|o| *o == LineOutcome::Unchanged));
     }
 
@@ -317,9 +308,10 @@ mod tests {
     #[test]
     fn delete_past_end_clamped() {
         let mut lines = sample_lines();
-        let m = gen_delete(3, 100); // tries to delete 100 from idx 3
+        let m = gen_delete(3, 100);
         let result = apply_mutation(&mut lines, &m);
-        assert_eq!(lines.len(), 3); // only deleted 2 (indices 3,4)
+        // only deleted 2 (indices 3,4)
+        assert_eq!(lines.len(), 3);
         assert_eq!(result.line_delta, -2);
         assert_eq!(result.outcomes[3], LineOutcome::Deleted);
         assert_eq!(result.outcomes[4], LineOutcome::Deleted);
@@ -339,7 +331,8 @@ mod tests {
     #[test]
     fn reindent_line() {
         let mut lines = sample_lines();
-        let m = gen_reindent(1, "        "); // double indent
+        // double indent
+        let m = gen_reindent(1, "        ");
         let result = apply_mutation(&mut lines, &m);
         assert_eq!(lines[1], "        let x = 1;");
         assert_eq!(result.line_delta, 0);
@@ -351,7 +344,8 @@ mod tests {
         let mut lines = sample_lines();
         let m = gen_range_rewrite(1, 3, &["    let z = 42;"]);
         let result = apply_mutation(&mut lines, &m);
-        assert_eq!(lines.len(), 4); // 5 - 2 removed + 1 added
+        // 5 - 2 removed + 1 added
+        assert_eq!(lines.len(), 4);
         assert_eq!(lines[1], "    let z = 42;");
         assert_eq!(lines[2], "    println!(\"{x} {y}\");");
         assert_eq!(result.line_delta, -1);
@@ -371,7 +365,6 @@ mod tests {
         assert_eq!(lines[2], "// boilerplate");
         assert_eq!(lines[3], "fn main() {");
         assert_eq!(result.line_delta, 3);
-        // All original lines shifted by +3.
         assert_eq!(result.outcomes[0], LineOutcome::Shifted { new_idx: 3 });
         assert_eq!(result.outcomes[4], LineOutcome::Shifted { new_idx: 7 });
     }
@@ -385,7 +378,8 @@ mod tests {
             &["    let a = 1;", "    let b = 2;", "    let c = 3;"],
         );
         let result = apply_mutation(&mut lines, &m);
-        assert_eq!(lines.len(), 7); // 5 - 1 removed + 3 added
+        // 5 - 1 removed + 3 added
+        assert_eq!(lines.len(), 7);
         assert_eq!(result.line_delta, 2);
         assert_eq!(result.outcomes[1], LineOutcome::Deleted);
         assert_eq!(result.outcomes[2], LineOutcome::Shifted { new_idx: 4 });

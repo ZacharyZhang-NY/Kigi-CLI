@@ -1,7 +1,6 @@
 pub fn try_extract_concatenated_json_objects(arguments: &str) -> Option<Vec<serde_json::Value>> {
     let trimmed = arguments.trim();
 
-    // Quick check: must start with '{'.
     if !trimmed.starts_with('{') {
         return None;
     }

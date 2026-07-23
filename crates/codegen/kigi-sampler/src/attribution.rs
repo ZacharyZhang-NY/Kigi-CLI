@@ -6,7 +6,7 @@
 //! the live token from its auth source and the server still rejected
 //! it" buckets.
 //!
-//! `kigi-sampler` is intentionally decoupled from `kigi-shell`
+//! `kigi-sampler` is deliberately decoupled from `kigi-shell`
 //! (no shell types, no logging crate, no auth-manager dependency). The
 //! caller wires an implementation of [`Auth401AttributionCallback`]
 //! into [`crate::SamplerConfig::attribution_callback`]; the sampler

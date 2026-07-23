@@ -137,10 +137,6 @@ impl AgentView {
         }
     }
     /// Mouse handler for the rewind overlay. `Moved` moves the cursor
-    /// (`selected` for picker, `active_idx` for radio phases) and syncs
-    /// the scrollback preview on the picker. `Down(Left)` either
-    /// dispatches a synthesized key (radio) or `PickerSelect` (picker).
-    /// Mouse handler for the rewind overlay. `Moved` moves the cursor
     /// to the row under the pointer; `Down(Left)` moves the cursor then
     /// activates that row (Enter-equivalent). Geometry comes from
     /// `rewind_row_at`, which mirrors `render_rewind_overlay`'s layout.

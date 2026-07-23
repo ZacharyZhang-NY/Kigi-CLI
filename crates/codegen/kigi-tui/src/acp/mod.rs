@@ -54,7 +54,6 @@ pub struct AcpConnection {
     pub rx: AcpClientRx,
     /// Available models and current selection.
     pub models: ModelState,
-    /// Whether the agent is a kigi-shell instance.
     pub is_kigi_shell: bool,
     /// Auth methods advertised by the agent.
     pub auth_methods: Vec<acp::AuthMethod>,
@@ -147,7 +146,6 @@ pub struct ConnectFlags {
 /// This is the main entry point for establishing an ACP connection.
 /// After this returns, the agent is ready to create sessions and receive prompts.
 pub async fn connect(cancel: &CancellationToken, flags: ConnectFlags) -> Result<AcpConnection> {
-    // Load agent config from disk
     let raw_config = kigi_shell::config::load_effective_config()
         .map_err(|e| anyhow::anyhow!("Failed to load config: {}", e))?;
     let mut agent_config = AgentConfig::new_from_toml_cfg(&raw_config)
@@ -181,13 +179,11 @@ pub async fn connect(cancel: &CancellationToken, flags: ConnectFlags) -> Result<
 
     apply_config_writes(&flags);
 
-    // Spawn the agent
     let memory_config = agent_config.memory_config.clone();
     let spawned = spawn::spawn_kigi_shell(agent_config, cancel, memory_config).await?;
     let auth_manager = spawned.auth_manager.clone();
     let (tx, rx) = (spawned.channel.tx, spawned.channel.rx);
 
-    // Initialize
     let (
         models,
         is_kigi_shell,
@@ -198,7 +194,6 @@ pub async fn connect(cancel: &CancellationToken, flags: ConnectFlags) -> Result<
         session_recap_available,
     ) = initialize(&tx, &flags).await?;
 
-    // Determine whether interactive login is needed.
     let (needs_login, login_label, login_method_id, auth_start_mode) =
         startup_auth_metadata(&auth_methods);
 
@@ -482,7 +477,6 @@ async fn initialize(
 
     let resp: acp::InitializeResponse = acp_send(req, tx).await?;
 
-    // Check if this is a kigi-shell agent
     let is_kigi_shell = resp
         .meta
         .as_ref()
@@ -490,7 +484,6 @@ async fn initialize(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    // Parse model state from response meta
     let models: ModelState = resp
         .meta
         .as_ref()
@@ -566,7 +559,8 @@ pub fn startup_auth_metadata(
         return (false, None, None, AuthStartMode::Pending);
     }
 
-    let method = first_method.unwrap(); // safe: needs_login == true implies first_method.is_some()
+    // safe: needs_login == true implies first_method.is_some()
+    let method = first_method.unwrap();
     let login_label = Some(method.name().to_string());
     let login_method_id = Some(method.id().clone());
 
@@ -812,8 +806,6 @@ mod tests {
         assert!(!parse_session_recap_available(meta.as_object()));
     }
 
-    // ── startup_auth_metadata ──────────────────────────────────────
-
     fn make_auth_method(id: &str, name: &str, meta: Option<serde_json::Value>) -> acp::AuthMethod {
         let mut agent = acp::AuthMethodAgent::new(acp::AuthMethodId::new(id), name.to_string());
         if let Some(m) = meta.and_then(|v| v.as_object().cloned()) {
@@ -1000,8 +992,6 @@ mod tests {
         let (_, _, _, mode) = startup_auth_metadata(&methods);
         assert_eq!(mode, AuthStartMode::Pending);
     }
-
-    // ── unsupported_leader_flags ──────────────────────────────────
 
     #[test]
     fn unsupported_leader_flags_empty_when_none_set() {

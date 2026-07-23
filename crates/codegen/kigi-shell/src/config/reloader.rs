@@ -32,20 +32,17 @@ pub enum ConfigUpdate {
     /// [`Self::ProjectMcpServersChanged`] instead so the reload can
     /// be narrowed to matching cwds.
     ///
-    /// Deliberately kept as a unit variant.
-    /// Adding a payload here would force pattern-match updates across
-    /// (`<cwd>/.kigi/config.toml`, `<cwd>/.mcp.json`, or
-    /// `mvp_agent`, `app`, `session/handle`, etc.
+    /// Deliberately a unit variant — a payload would force pattern-match
+    /// updates across `mvp_agent`, `app`, `session/handle`, etc.
     McpServersChanged,
-    /// A **project-scoped** MCP config file changed
-    /// `<cwd>/.claude.json`). Agent should reload MCP only for
-    /// sessions whose cwd matches `cwd` (or sits beneath it).
+    /// A **project-scoped** MCP config file (`<cwd>/.kigi/config.toml`,
+    /// `<cwd>/.mcp.json`, or `<cwd>/.claude.json`) changed. Agent should
+    /// reload MCP only for sessions whose cwd matches `cwd` (or sits
+    /// beneath it).
     ///
-    /// Strictly additive to [`Self::McpServersChanged`] — the unit
-    /// variant continues to fire for global-config edits. The two
-    /// cases are split so per-project reloads don't
-    /// kigi process sharing the home dir). The agent should consult the cache
-    /// thrash unrelated sessions.
+    /// Additive to [`Self::McpServersChanged`] — the unit variant still
+    /// fires for global-config edits. The two cases are split so
+    /// per-project reloads don't thrash unrelated sessions.
     ProjectMcpServersChanged {
         /// The project root whose `.kigi/`, `.mcp.json`, or
         /// `.claude.json` file was edited. Sessions whose cwd equals
@@ -64,11 +61,10 @@ pub enum ConfigUpdate {
     /// its model list (BYOK models added/removed, default or surprise changed).
     ModelsChanged,
     /// `~/.kigi/models_cache.json` was rewritten on disk (possibly by another
-    /// via `ModelsManager::reload_from_disk_cache`, which content-dedupes
-    /// self-writes (`persist` / `renew_ttl`) before applying. No payload —
-    /// validation (TTL, version, auth method) requires `ModelsManager` state
-    /// drop redundant `ProjectMcpServersChanged` dispatches on
-    /// the reloader doesn't have.
+    /// kigi process sharing the home dir). No payload — validation (TTL,
+    /// version, auth method) requires `ModelsManager` state the reloader
+    /// doesn't have. The agent forwards to `ModelsManager::reload_from_disk_cache`,
+    /// which content-dedupes self-writes (`persist` / `renew_ttl`) before applying.
     ModelsCacheChanged,
     /// Updated UI settings — agent broadcasts `kigi/config_changed` to IPC clients.
     Ui {
@@ -84,9 +80,9 @@ pub enum ConfigUpdate {
 pub struct ConfigReloader {
     last_auth_key_hash: u64,
     last_global_config: toml::Value,
-    /// Per-cwd content hash of the project MCP config files, used to
-    /// to diff (the dedup lives in `ModelsManager::reload_from_disk_cache`),
-    /// mtime-only touches (see `hash_project_mcp_config`).
+    /// Per-cwd content hash of the project MCP config files, used to drop
+    /// redundant `ProjectMcpServersChanged` dispatches on mtime-only touches
+    /// (see `hash_project_mcp_config`).
     last_project_mcp_hashes: HashMap<PathBuf, u64>,
     kigi_home: PathBuf,
     auth_scope: String,
@@ -153,11 +149,6 @@ impl ConfigReloader {
             let has_project_config = batch
                 .iter()
                 .any(|e| matches!(e, ConfigChangeEvent::ProjectConfigChanged { .. }));
-            // `~/.claude.json` is loaded by every
-            // session (it does NOT live in a project root), so its
-            // reload must broadcast through the legacy unit
-            // `McpServersChanged` arm. Routing it through the per-
-            // cwd variant would silently miss sessions outside `$HOME`.
             let has_home_claude_json = batch
                 .iter()
                 .any(|e| matches!(e, ConfigChangeEvent::HomeClaudeJsonChanged));
@@ -166,11 +157,6 @@ impl ConfigReloader {
                 .any(|e| matches!(e, ConfigChangeEvent::ModelsCacheChanged));
             let has_config = has_global_config || has_project_config;
 
-            // Collect the unique cwds whose project
-            // files changed so we can emit one
-            // `ConfigUpdate::ProjectMcpServersChanged { cwd }` per
-            // project root (rather than the legacy unit
-            // `McpServersChanged` that swept every session).
             let project_cwds = collect_project_cwds(&batch);
 
             if has_auth {
@@ -214,42 +200,27 @@ impl ConfigReloader {
                 }
             }
 
-            // NB: the legacy fall-through that emitted a unit
-            // `McpServersChanged` for any project `.mcp.json` /
-            // `.claude.json` change is replaced by the
-            // per-cwd fan-out below — `collect_project_cwds` already
-            // includes every `McpConfigChanged` path in `project_cwds`,
-            // so a separate emit here would double-dispatch. Global
-            // `[mcp_servers]` edits are dispatched inside `reload_config`.
-
-            // Home-level `~/.claude.json` must
-            // broadcast to every session through the unit variant —
-            // sessions outside `$HOME` would otherwise be silently
-            // skipped by the per-cwd `cwd_matches` filter.
+            // `~/.claude.json` is read by every session, so its reload must
+            // broadcast; the per-cwd filter would skip sessions outside `$HOME`.
             if has_home_claude_json {
                 info!("~/.claude.json change detected — broadcasting MCP reload");
                 let _ = self.config_update_tx.send(ConfigUpdate::McpServersChanged);
             }
 
-            // Pass-through (no toml diff possible here): the
-            // content-vs-in-memory dedup happens in
+            // Pass-through: no toml to diff here; the content dedup happens in
             // `ModelsManager::reload_from_disk_cache`.
             if has_models_cache {
                 debug!("models_cache.json change detected — forwarding to agent");
                 let _ = self.config_update_tx.send(ConfigUpdate::ModelsCacheChanged);
             }
 
-            // Fan out one
-            // `ProjectMcpServersChanged { cwd }` per affected project
-            // root. The legacy unit `McpServersChanged` above stays
-            // for global-config edits — both variants can fire in the
-            // same tick (e.g. `~/.kigi/config.toml` AND
-            // `<cwd>/.mcp.json` edited together).
+            // One `ProjectMcpServersChanged { cwd }` per affected project root.
+            // Both variants can fire in the same tick (e.g. `~/.kigi/config.toml`
+            // and `<cwd>/.mcp.json` edited together).
             for cwd in project_cwds {
-                // Skip the dispatch when the project config bytes are
-                // unchanged (the watcher fires on mtime-only touches).
-                // On any uncertainty we dispatch; see
-                // `hash_project_mcp_config`.
+                // Skip the dispatch when the config bytes are unchanged (the
+                // watcher fires on mtime-only touches). On any uncertainty
+                // `hash_project_mcp_config` returns `None` and we dispatch.
                 let new_hash = hash_project_mcp_config(&cwd);
                 let unchanged = match (new_hash, self.last_project_mcp_hashes.get(&cwd)) {
                     (Some(new), Some(&prev)) => new == prev,
@@ -315,11 +286,8 @@ impl ConfigReloader {
     }
 
     fn reload_config(&mut self) -> anyhow::Result<()> {
-        // `has_project_config` parameter dropped —
-        // project-scoped reloads are dispatched via
-        // `ProjectMcpServersChanged { cwd }` in the caller's
-        // `collect_project_cwds` fan-out, so this function only
-        // needs to diff the global toml.
+        // Diffs only the global toml; project-scoped reloads go through the
+        // caller's `collect_project_cwds` fan-out.
         let new_global = match crate::config::load_from_disk() {
             Ok(v) => v,
             Err(e) => {
@@ -328,13 +296,6 @@ impl ConfigReloader {
             }
         };
 
-        // MCP servers — compare [mcp_servers] table in the **global**
-        // config (`~/.kigi/config.toml`) via toml::Value. Project-
-        // scoped changes (`<cwd>/.kigi/config.toml`,
-        // `<cwd>/.mcp.json`) are dispatched separately via
-        // `ConfigUpdate::ProjectMcpServersChanged { cwd }` (see
-        // `collect_project_cwds`) so they don't sweep
-        // unrelated sessions.
         let old_mcp_table = self.last_global_config.get("mcp_servers");
         let new_mcp_table = new_global.get("mcp_servers");
         let mcp_changed = old_mcp_table != new_mcp_table;
@@ -343,7 +304,6 @@ impl ConfigReloader {
             let _ = self.config_update_tx.send(ConfigUpdate::McpServersChanged);
         }
 
-        // Memory config
         let old_mem = crate::config::MemoryConfig::resolve(
             self.experimental_memory,
             self.no_memory,
@@ -363,7 +323,6 @@ impl ConfigReloader {
                 .send(ConfigUpdate::Memory(Box::new(new_mem)));
         }
 
-        // Skills config
         let old_skills = parse_skills_config(&self.last_global_config);
         let new_skills = parse_skills_config(&new_global);
         if old_skills != new_skills {
@@ -371,7 +330,6 @@ impl ConfigReloader {
             let _ = self.config_update_tx.send(ConfigUpdate::Skills(new_skills));
         }
 
-        // Compat config ([compat] vendor toggles)
         let old_compat = parse_compat_config(&self.last_global_config);
         let new_compat = parse_compat_config(&new_global);
         if old_compat != new_compat {
@@ -381,8 +339,7 @@ impl ConfigReloader {
                 .send(ConfigUpdate::Compat(Box::new(new_compat)));
         }
 
-        // Models — compare [model] (BYOK entries) and [models] (default, surprise) tables.
-        // Use toml::Value comparison (covers all fields including nested model entries).
+        // `[model]` = BYOK entries, `[models]` = default/surprise — two distinct tables.
         let old_model_table = self.last_global_config.get("model");
         let new_model_table = new_global.get("model");
         let old_models_table = self.last_global_config.get("models");
@@ -392,7 +349,6 @@ impl ConfigReloader {
             let _ = self.config_update_tx.send(ConfigUpdate::ModelsChanged);
         }
 
-        // UI fields (theme, yolo, fork_secondary_model)
         let old_ui = extract_ui_fields(&self.last_global_config);
         let new_ui = extract_ui_fields(&new_global);
         if old_ui != new_ui {
@@ -410,18 +366,9 @@ impl ConfigReloader {
 }
 
 /// Derive the unique project cwds whose files were touched in this
-/// debounce window. Used to fan out one
+/// debounce window, to fan out one
 /// [`ConfigUpdate::ProjectMcpServersChanged`] per project root rather
-/// than one legacy `McpServersChanged` that reloads every active
-/// session.
-///
-/// Path-to-cwd mapping:
-///
-/// | `ConfigChangeEvent`        | path shape              | cwd               |
-/// |----------------------------|-------------------------|-------------------|
-/// | `ProjectConfigChanged`     | `<cwd>/.kigi/config.toml` | `<cwd>`           |
-/// | `McpConfigChanged`         | `<cwd>/.mcp.json`         | `<cwd>`           |
-/// | `McpConfigChanged`         | `<cwd>/.claude.json`      | `<cwd>`           |
+/// than one `McpServersChanged` that reloads every active session.
 ///
 /// Order-preserving de-dup (a `Vec` rather than a `HashSet`) so the
 /// downstream emit order is deterministic in tests.
@@ -473,13 +420,16 @@ fn hash_project_mcp_config(cwd: &Path) -> Option<u64> {
         f.to_string_lossy().hash(&mut hasher);
         match std::fs::read(f) {
             Ok(bytes) => {
-                1u8.hash(&mut hasher); // present
+                // present
+                1u8.hash(&mut hasher);
                 bytes.hash(&mut hasher);
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                0u8.hash(&mut hasher); // absent
+                // absent
+                0u8.hash(&mut hasher);
             }
-            Err(_) => return None, // can't read confidently → dispatch
+            // can't read confidently → dispatch
+            Err(_) => return None,
         }
     }
     Some(hasher.finish())
@@ -604,7 +554,7 @@ mod tests {
         reloader.reload_auth().unwrap();
         let update = rx.try_recv().expect("should send Auth update");
         assert!(
-            matches!(update, ConfigUpdate::Auth(a) if a.key == "new-key"), // a is Box<KimiAuth>, Deref coercion
+            matches!(update, ConfigUpdate::Auth(a) if a.key == "new-key"),
             "should contain new key"
         );
     }
@@ -690,9 +640,8 @@ mod tests {
         );
     }
 
-    /// `ModelsCacheChanged` is a pure pass-through: the reloader has no toml
-    /// so the event must surface as `ConfigUpdate::ModelsCacheChanged`
-    /// (walked to the git root by the loaders), not just files directly
+    /// `ModelsCacheChanged` is a pure pass-through: the reloader has no toml to
+    /// diff, so the event must surface as `ConfigUpdate::ModelsCacheChanged`
     /// without touching auth or config state.
     #[tokio::test]
     async fn reloader_forwards_models_cache_changed() {
@@ -819,9 +768,7 @@ mod tests {
     }
 
     /// The hash must reflect ancestor `.kigi/config.toml` and `.mcp.json`
-    /// under `cwd` — otherwise an ancestor edit would be wrongly
-    /// must be a distinct variant from the unit `McpServersChanged`
-    /// suppressed.
+    /// under `cwd` — otherwise an ancestor edit would be wrongly suppressed.
     #[test]
     fn hash_project_mcp_config_covers_ancestors() {
         let tmp = tempfile::TempDir::new().unwrap();
@@ -964,11 +911,10 @@ command = "/bin/test"
         assert_ne!(a.get("mcp_servers"), b.get("mcp_servers"));
     }
 
-    /// `ConfigUpdate::ProjectMcpServersChanged { cwd }`
-    /// so the two paths route through different match arms in
-    /// `app.rs`. Guards against an accidental merge that would force
-    /// fan-out — it must NOT contribute a cwd to
-    /// per-cwd reloads through the legacy sweep-all-sessions arm.
+    /// `ConfigUpdate::ProjectMcpServersChanged { cwd }` must be a distinct
+    /// variant from the unit `McpServersChanged` so the two paths route
+    /// through different match arms in `app.rs`. Guards against an accidental
+    /// merge that would force per-cwd reloads through the sweep-all-sessions arm.
     #[test]
     fn project_variant_dispatches_separately() {
         let cwd = PathBuf::from("/tmp/proj-x");
@@ -994,11 +940,10 @@ command = "/bin/test"
     }
 
     /// `HomeClaudeJsonChanged` is **not** part of the per-cwd
-    /// `collect_project_cwds` (otherwise sessions outside `$HOME`
-    /// would be silently skipped). The reloader broadcasts it via
-    /// the unit `McpServersChanged` variant; this test locks that
-    /// `ProjectConfigChanged` (`<cwd>/.kigi/config.toml`) and
-    /// invariant at the helper layer.
+    /// `collect_project_cwds` (otherwise sessions outside `$HOME` would be
+    /// silently skipped). The reloader broadcasts it via the unit
+    /// `McpServersChanged` variant; this test locks that invariant at the
+    /// helper layer.
     #[test]
     fn collect_project_cwds_excludes_home_claude_json() {
         let batch = vec![
@@ -1014,10 +959,9 @@ command = "/bin/test"
         assert_eq!(cwds, vec![PathBuf::from("/repo/x")]);
     }
 
-    /// `collect_project_cwds` extracts `<cwd>` from
-    /// `McpConfigChanged` (`<cwd>/.mcp.json`), de-duplicates while
-    /// `McpConfigChanged` (`<cwd>/.mcp.json`), de-duplicates while
-    /// preserving order.
+    /// `collect_project_cwds` extracts `<cwd>` from `ProjectConfigChanged`
+    /// (`<cwd>/.kigi/config.toml`) and `McpConfigChanged` (`<cwd>/.mcp.json`),
+    /// de-duplicates while preserving order.
     #[test]
     fn collect_project_cwds_dedupes_and_extracts() {
         let batch = vec![

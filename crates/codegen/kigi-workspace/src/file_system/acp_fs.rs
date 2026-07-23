@@ -7,12 +7,10 @@ pub struct AcpSessionFs {
     root: PathBuf,
     gateway: GatewaySender,
     session_id: acp::SessionId,
-    /// When set, any path under `display_cwd` is rewritten to `root` before
-    /// being sent to the extension.  This is the defense-in-depth guard for
-    /// AB overlay isolation: if a tool accidentally passes the display path
-    /// (e.g., `/testbed/project/foo.rs`) instead of the overlay path
-    /// (`~/.kigi/worktrees/.../b-overlay/foo.rs`), the adapter rewrites it
-    /// so the extension reads/writes to the correct overlay location.
+    /// Defense-in-depth guard for AB overlay isolation: the model sees
+    /// `display_cwd` (e.g. `/testbed/project`) but the extension must act on
+    /// `root` (`~/.kigi/worktrees/.../b-overlay`), so any path under
+    /// `display_cwd` is rebased onto `root` before the request goes out.
     display_cwd: Option<PathBuf>,
 }
 
@@ -26,18 +24,11 @@ impl AcpSessionFs {
         }
     }
 
-    /// Set the display CWD for path rewriting.
-    ///
-    /// When AB FS isolation is active, the model sees `display_cwd`
-    /// (e.g., `/testbed/project`) but writes should go to `root`
-    /// (the overlay path).  Any path under `display_cwd` is rewritten
-    /// to the equivalent path under `root`.
     pub fn with_display_cwd(mut self, display_cwd: PathBuf) -> Self {
         self.display_cwd = Some(display_cwd);
         self
     }
 
-    /// Rewrite a display path to the overlay path if needed.
     fn resolve_path(&self, path: &Path) -> PathBuf {
         if let Some(ref display) = self.display_cwd
             && let Ok(suffix) = path.strip_prefix(display)
@@ -106,8 +97,7 @@ impl AsyncFileSystem for AcpSessionFs {
     }
 
     async fn delete_file(&self, path: &Path) -> Result<(), FsError> {
-        // ACP protocol doesn't support file deletion yet
-        // For now, we'll log a warning and return Ok (no-op)
+        // ACP has no deletion request, so the best we can do is surface it loudly.
         tracing::warn!(?path, "ACP filesystem does not support file deletion");
         Err(FsError::Other(
             "File deletion not supported via ACP".to_string(),
@@ -119,12 +109,11 @@ impl AsyncFileSystem for AcpSessionFs {
 mod tests {
     use super::*;
 
-    // resolve_path only uses self.root and self.display_cwd — extract
-    // the logic into a standalone test helper that doesn't need a gateway.
+    // resolve_path only reads root and display_cwd, but constructing an
+    // AcpSessionFs needs a live gateway; this mirrors its logic instead.
     fn test_resolve(root: &str, display_cwd: Option<&str>, input: &str) -> PathBuf {
         let root = PathBuf::from(root);
         let display = display_cwd.map(PathBuf::from);
-        // Inline the same logic as resolve_path
         if let Some(ref display) = display
             && let Ok(suffix) = Path::new(input).strip_prefix(display)
         {

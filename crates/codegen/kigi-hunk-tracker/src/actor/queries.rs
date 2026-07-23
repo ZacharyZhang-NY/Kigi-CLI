@@ -15,7 +15,6 @@ use crate::types::{
 use super::HunkTrackerActor;
 
 impl HunkTrackerActor {
-    /// Get all hunks.
     pub(super) fn get_all_hunks(&self) -> Vec<Arc<Hunk>> {
         self.file_states
             .values()

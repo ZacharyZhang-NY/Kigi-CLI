@@ -58,7 +58,6 @@ use crate::auth::{AuthManager, TOKEN_TTL, token_suffix};
 #[cfg(test)]
 static EMIT_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// Read the test-only emit counter.
 #[cfg(test)]
 pub(crate) fn test_emit_count() -> u64 {
     EMIT_COUNT.load(std::sync::atomic::Ordering::SeqCst)
@@ -341,7 +340,7 @@ pub(crate) fn record_auth_401(
     EMIT_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 }
 
-/// Pure (no I/O) computation of the attribution payload. Extracted
+/// Pure (no I/O) computation of the attribution payload, kept separate
 /// from [`record_auth_401`] so unit tests can assert each field
 /// directly without reaching into `unified_log`'s file writer or the
 /// tracing layer.
@@ -467,8 +466,6 @@ mod tests {
             payload_field(&payload, "current_key_prefix"),
             "567890abcdef"
         );
-        // mint_age_seconds: should be small and non-negative for a
-        // freshly-created auth.
         let mint = payload_field(&payload, "mint_age_seconds")
             .as_i64()
             .unwrap();
@@ -476,8 +473,6 @@ mod tests {
             (0..5).contains(&mint),
             "mint_age_seconds should be 0-5 sec for a freshly-created auth, got {mint}"
         );
-        // expires_at_seconds_from_now: should be just under 1 hour
-        // (3600s), with a tolerance for elapsed time during the test.
         let expires = payload_field(&payload, "expires_at_seconds_from_now")
             .as_i64()
             .unwrap();
@@ -543,7 +538,6 @@ mod tests {
 
         let payload = compute_attribution_payload(&am, "Test.legacy", Some("k"));
 
-        // mint_age_seconds: ~60.
         let mint = payload_field(&payload, "mint_age_seconds")
             .as_i64()
             .unwrap();
@@ -551,8 +545,6 @@ mod tests {
             (60..=70).contains(&mint),
             "mint_age_seconds should be ~60 for a 60s-old auth, got {mint}"
         );
-        // expires_at_seconds_from_now: TOKEN_TTL minus 60s = roughly
-        // 30 * 86400 - 60 = 2_591_940. Tolerate ~10s drift.
         let expires = payload_field(&payload, "expires_at_seconds_from_now")
             .as_i64()
             .unwrap();

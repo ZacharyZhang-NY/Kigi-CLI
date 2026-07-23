@@ -42,8 +42,8 @@ pub struct BeforeTurnPayload {
     /// Whether the session is in YOLO / auto-approve mode.
     #[serde(default)]
     pub yolo_mode: bool,
-    // ── Extended fields (workspace mirrors these into `events.jsonl`);
-    // all `#[serde(default)]` for old-shell / old-workspace interop. ──
+    // Extended fields (workspace mirrors these into `events.jsonl`);
+    // all `#[serde(default)]` for old shell / old workspace interop.
     /// Mirrors `Event::TurnStarted::conversation_message_count`.
     #[serde(default)]
     pub conversation_message_count: usize,
@@ -86,7 +86,6 @@ impl Default for BeforeTurnPayload {
 pub struct AfterTurnPayload {
     /// Same turn counter as the preceding `before_turn`.
     pub turn_number: u64,
-    /// High-level outcome of the turn.
     pub outcome: TurnHookOutcome,
     /// Wall-clock duration of the turn in milliseconds.
     pub duration_ms: u64,
@@ -128,7 +127,6 @@ pub enum TurnHookOutcome {
     Completed,
     /// Turn was cancelled by the user (Ctrl+C / abort).
     Cancelled,
-    /// Turn ended due to an error.
     Error,
 }
 
@@ -152,9 +150,7 @@ pub enum TurnHookRequest {
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum InjectionRole {
-    /// Append as a system turn.
     System,
-    /// Append as a developer turn.
     Developer,
     /// Append as a user turn (e.g. a `<system-reminder>`-wrapped message).
     User,
@@ -164,9 +160,7 @@ pub enum InjectionRole {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HookInjection {
-    /// Role to append the content as.
     pub role: InjectionRole,
-    /// Verbatim turn content.
     pub content: String,
 }
 
@@ -188,10 +182,8 @@ pub enum TurnControl {
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HookReply {
-    /// Turns to append before the next sampling step, in order.
     #[serde(default)]
     pub injections: Vec<HookInjection>,
-    /// Optional loop-control override.
     #[serde(default)]
     pub control: TurnControl,
     /// Artifact-handling ack for a [`TurnHookRequest::After`] request; `None`

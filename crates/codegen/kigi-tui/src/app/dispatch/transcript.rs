@@ -12,7 +12,6 @@ use agent_client_protocol as acp;
 /// Copy the selected block's content to the system clipboard.
 ///
 /// Respects the block's raw/pretty mode for markdown content.
-/// Shows a toast notification on theExtensionsTab
 pub(super) fn dispatch_copy_block_content(app: &mut AppView) {
     with_active_agent(app, |agent| {
         let Some(idx) = agent.scrollback.selected() else {
@@ -254,7 +253,6 @@ pub(super) fn dispatch_open_block_viewer(app: &mut AppView) {
             return;
         }
 
-        // Try to create a normal viewer for the selected block type.
         let viewer = match &entry.block {
             RenderBlock::Thinking(_) | RenderBlock::AgentMessage(_) => {
                 BlockViewerPane::for_markdown(entry.id, entry)

@@ -34,7 +34,6 @@ async fn agent_type_mismatch_yes_starts_new_session() {
         .inject_keys(b"/model cursor-model\r")
         .expect("type model switch");
 
-    // Wait for the modal.
     harness
         .wait_for_text("requires starting a new session", Duration::from_secs(15))
         .expect("modal appeared");

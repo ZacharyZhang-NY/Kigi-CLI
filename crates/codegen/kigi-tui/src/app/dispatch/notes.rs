@@ -58,16 +58,18 @@ pub(super) fn dispatch_send_remember_note(app: &mut AppView, text: String) -> Ve
 
     let Some(session_id) = agent.session.session_id.clone() else {
         // No session — open modal with raw content only (no LLM rewrite).
+        // no session → no LLM rewrite, Tab disabled; nonce unused since no
+        // rewrite is in flight
         agent.active_modal = Some(ActiveModal::RememberNoteReview {
             raw_content: trimmed.clone(),
-            enhanced_content: None, // no session → no LLM rewrite, Tab disabled
+            enhanced_content: None,
             showing_enhanced: false,
             scroll: 0,
             window: crate::views::modal_window::ModalWindowState::new(),
             cached_lines: None,
             cwd,
             agent_id: id,
-            rewrite_nonce: 0, // no rewrite in flight, nonce unused
+            rewrite_nonce: 0,
         });
         return vec![];
     };
@@ -148,7 +150,6 @@ fn extract_session_context(agent: &AgentView) -> String {
     let mut user_prompts: Vec<String> = Vec::new();
     let mut file_paths: Vec<String> = Vec::new();
 
-    // Walk scrollback entries in reverse to collect recent context.
     let len = agent.scrollback.len();
     for i in (0..len).rev() {
         let Some(entry) = agent.scrollback.entry(i) else {
@@ -186,7 +187,6 @@ fn extract_session_context(agent: &AgentView) -> String {
             },
             _ => {}
         }
-        // Stop early once we have enough context.
         if user_prompts.len() >= 5 && file_paths.len() >= 20 {
             break;
         }
@@ -194,15 +194,12 @@ fn extract_session_context(agent: &AgentView) -> String {
 
     let mut parts: Vec<String> = Vec::new();
 
-    // CWD
     parts.push(format!("CWD: {}", agent.session.cwd.display()));
 
-    // Git branch
     if let Some(ref branch) = agent.current_branch {
         parts.push(format!("Branch: {branch}"));
     }
 
-    // Recent prompts (chronological order)
     if !user_prompts.is_empty() {
         user_prompts.reverse();
         parts.push("Recent prompts:".to_string());

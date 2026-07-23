@@ -1,32 +1,26 @@
 //! kigi compaction configuration.
 //!
-//! Holds the [`FullReplaceConfig`] tunables struct (mirroring
+//! Tunables and defaults only; trigger *wiring* (pre-sampling checks,
+//! preflight overflow, model-switch, suppression) stays per-host. Mirrors
 //! [`IntraCompactionConfig`](crate::intra_compaction::IntraCompactionConfig) /
 //! [`InterCompactionConfig`](crate::inter_compaction::InterCompactionConfig),
-//! which also live in their module's `config.rs`) plus the shared default
-//! values. Trigger *wiring* (pre-sampling checks, preflight overflow,
-//! model-switch, suppression) stays per-host.
+//! which also live in their module's `config.rs`.
 
-/// Default auto-compact threshold (% of context window) when no other source
-/// (env var, user config, remote per-model/global flags) sets it. Shared by
-/// kigi and Kigi chat (~85% trigger on both sides).
+/// Applies only when no other source (env var, user config, remote
+/// per-model/global flags) sets it. Shared by kigi and Kigi chat.
 pub const DEFAULT_AUTO_COMPACT_THRESHOLD_PERCENT: u8 = 85;
 
-/// Minimum character count for a cleaned summary seed.
-///
-/// kigi retries when the cleaned summary is shorter than this — the
-/// smallest healthy prod summary observed was ~3,242 chars; anything under
-/// 500 is treated as degenerate and retried like a transient failure.
+/// A cleaned summary shorter than this is treated as degenerate and retried
+/// like a transient failure. The smallest healthy prod summary observed was
+/// ~3,242 chars, so 500 is a wide margin below anything legitimate.
 pub const MIN_SUMMARY_SEED_CHARS: usize = 500;
 
-/// Tunables for the full-replace pass.
 #[derive(Debug, Clone)]
 pub struct FullReplaceConfig {
-    /// Total LLM attempts (first try + retries) on transient failures.
+    /// First try + retries, counted together.
     pub max_attempts: u32,
-    /// Delay between transient retries.
     pub retry_delay_secs: u64,
-    /// End-to-end timeout for each compaction LLM call.
+    /// Applies per attempt, not to the whole retry loop.
     pub sampling_timeout_secs: u64,
 }
 

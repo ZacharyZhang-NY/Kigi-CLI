@@ -69,7 +69,6 @@ impl TextMatcher {
         &self.regex
     }
 
-    /// Whether `haystack` contains a match.
     pub fn is_match(&self, haystack: &str) -> bool {
         self.regex.is_match(haystack)
     }

@@ -109,7 +109,7 @@ struct TraceEvent<'a> {
     version: Option<&'a str>,
 }
 
-// ─── Seams (installed by the composition-root binary) ────────────────────
+// Seams (installed by the composition-root binary)
 
 static STATS_PROVIDER: OnceLock<fn() -> Option<AllocatorStats>> = OnceLock::new();
 static DUMP_PROVIDER: OnceLock<fn() -> String> = OnceLock::new();
@@ -135,7 +135,7 @@ pub fn install_threshold_hook(hook: fn(&Path, u64)) {
     let _ = THRESHOLD_HOOK.set(hook);
 }
 
-// ─── Process memory sampling ──────────────────────────────────────────────
+// Process memory sampling
 
 /// Cross-platform process memory gauges. Fields are `None` where the
 /// platform offers no cheap equivalent.
@@ -254,7 +254,7 @@ mod imp {
     }
 }
 
-// ─── Threshold state (pure; unit-tested) ──────────────────────────────────
+// Threshold state (pure; unit-tested)
 
 /// Exactly-once-per-growth-cycle threshold buckets. A bucket fires when the
 /// footprint reaches it while armed, then stays disarmed until the footprint
@@ -268,7 +268,8 @@ struct Thresholds {
 impl Thresholds {
     fn new(first_bytes: u64, count: usize) -> Self {
         let mut buckets = Vec::with_capacity(count);
-        let mut b = first_bytes.max(64 << 20); // floor: 64 MiB
+        // Floor: 64 MiB.
+        let mut b = first_bytes.max(64 << 20);
         for _ in 0..count {
             buckets.push(b);
             b = b.saturating_mul(2);
@@ -292,9 +293,10 @@ impl Thresholds {
     }
 }
 
-// ─── Sink ──────────────────────────────────────────────────────────────────
+// Sink
 
-const ROTATE_BYTES_DEFAULT: u64 = 4 << 20; // 4 MiB, then one .1 rotation.
+// 4 MiB, then one .1 rotation.
+const ROTATE_BYTES_DEFAULT: u64 = 4 << 20;
 static DUMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
 struct Sink {
@@ -343,7 +345,8 @@ impl Sink {
                 .open(&self.path)
             {
                 Ok(f) => *guard = Some(f),
-                Err(_) => return, // Tracing must never break the pager.
+                // Tracing must never break the pager.
+                Err(_) => return,
             }
         }
         if let Some(f) = guard.as_mut()
@@ -509,7 +512,7 @@ pub(crate) fn record_purge(
     });
 }
 
-// ─── Startup ───────────────────────────────────────────────────────────────
+// Startup
 
 /// Env: disable with `KIGI_MEMTRACE=0|false|off`.
 fn enabled_by_env() -> bool {
@@ -555,7 +558,8 @@ pub fn start(dir: PathBuf) {
             Err(p) => p.into_inner(),
         };
         if guard.is_some() {
-            return; // Already started.
+            // Already started.
+            return;
         }
         let start_ts = now_ms() / 1000;
         let path = dir.join(format!("{start_ts}-{}.jsonl", std::process::id()));
@@ -599,7 +603,7 @@ pub fn start(dir: PathBuf) {
         });
 }
 
-// ─── Test support ──────────────────────────────────────────────────────────
+// Test support
 
 #[cfg(test)]
 pub(crate) mod test_support {
@@ -630,7 +634,8 @@ pub(crate) mod test_support {
         *guard = Some(std::sync::Arc::new(Sink::new(
             path,
             rotate_bytes,
-            u64::MAX >> 1, // never fire thresholds unless a test asks
+            // Never fire thresholds unless a test asks.
+            u64::MAX >> 1,
         )));
         SinkGuard(prev)
     }
@@ -646,7 +651,8 @@ mod tests {
 
     #[test]
     fn thresholds_fire_once_and_rearm_after_halving() {
-        let mut t = Thresholds::new(1 << 30, 3); // 1 GiB, 2 GiB, 4 GiB
+        // 1 GiB, 2 GiB, 4 GiB.
+        let mut t = Thresholds::new(1 << 30, 3);
         assert!(t.observe(512 << 20).is_empty(), "below first bucket");
         assert_eq!(t.observe(1 << 30), vec![1 << 30], "first crossing fires");
         assert!(

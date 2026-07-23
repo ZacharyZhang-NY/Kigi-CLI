@@ -48,17 +48,9 @@ fn assistant_with_tool_call(text: &str, name: &str, args: &str) -> ConversationI
     })
 }
 
-/// Build an `AssistantItem` with arbitrary `reasoning`, `content`,
-/// and `tool_calls` for the `[assistant reasoning]` test coverage.
-/// Trivially-defaulted fields (`raw_output`, `model_id`,
-/// `model_fingerprint`) are filled with `None` so each test stays a
-/// one-liner.
-/// Build `[Reasoning(text), Assistant(content, tool_calls)]` as the
-/// reasoning-as-sibling equivalent of the old
-/// `AssistantItem { reasoning, content, tool_calls }` literal. When
-/// `reasoning_text` is empty, no Reasoning item is emitted (callers
-/// who want an encrypted-only sibling should build that variant
-/// inline).
+/// Builds `[Reasoning(text), Assistant(content, tool_calls)]`. When
+/// `reasoning_text` is empty, no Reasoning item is emitted (callers who want
+/// an encrypted-only sibling build that variant inline).
 fn assistant_with_reasoning_items(
     reasoning_text: &str,
     content: &str,
@@ -346,8 +338,6 @@ fn flatten_drops_reasoning_when_include_reasoning_is_false() {
 
 #[test]
 fn flatten_keeps_reasoning_when_include_reasoning_is_true() {
-    // Sibling of `flatten_drops_reasoning_when_include_reasoning_is_false`:
-    // same item, opposite flag → reasoning line IS emitted.
     let items = assistant_with_reasoning_items(
         "plan: read first",
         "ok",
@@ -377,8 +367,6 @@ fn synthetic_user_text(
         ..Default::default()
     })
 }
-
-// ── laziness_window_start coverage ────────────────────────────
 
 #[test]
 fn window_keeps_last_user_prompt_even_when_30_tool_calls_follow_it() {
@@ -482,7 +470,7 @@ fn window_ignores_synthetic_user_items_when_pinning() {
     // are synthesised by the runtime, not typed by the user.
     // They MUST NOT count toward `min_user_turns`.
     use kigi_sampling_types::SyntheticReason;
-    let mut items = vec![user_text("real user prompt")]; // idx 0
+    let mut items = vec![user_text("real user prompt")];
     for _ in 0..29 {
         items.push(assistant_text("tool work"));
     }
@@ -650,7 +638,6 @@ fn log_line_serializes_to_expected_jsonl_shape() {
     let line = sample_line();
     let json = serde_json::to_string(&line).expect("serialize");
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("re-parse");
-    // Top-level keys present.
     for key in [
         "timestamp",
         "session_id",

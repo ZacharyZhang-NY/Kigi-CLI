@@ -5,35 +5,27 @@
 //! gates, the preflight overflow check, and every client renderer use to talk
 //! about context-window usage.
 
-/// Bytes per token under the rough character-based heuristic.
 pub const BYTES_PER_TOKEN: u64 = 4;
 
-/// Per-image approximate token cost when summing
-/// low-resolution image patches.
+/// Approximate cost of one image, as the sum of its low-resolution patches.
 pub const IMAGE_TOKEN_ESTIMATE: u64 = 765;
 
-/// Bytes/4 estimate of a string's token count.
 #[inline]
 pub fn estimate_tokens(s: &str) -> u64 {
     (s.len() as u64) / BYTES_PER_TOKEN
 }
 
-/// Inverse of [`estimate_tokens`]: convert a token budget into a character
-/// budget. Used by skill discovery to size text passages against the model's
-/// context window.
+/// Inverse of [`estimate_tokens`].
 #[inline]
 pub fn estimate_chars(tokens: u64) -> u64 {
     tokens.saturating_mul(BYTES_PER_TOKEN)
 }
 
-/// Token estimate for `image_count` images at [`IMAGE_TOKEN_ESTIMATE`] each.
 #[inline]
 pub fn estimate_image_tokens(image_count: u64) -> u64 {
     image_count.saturating_mul(IMAGE_TOKEN_ESTIMATE)
 }
 
-/// Usage percentage as `f64`, clamped to `100.0`. Returns `0.0` when
-/// `total == 0`.
 #[inline]
 pub fn usage_percentage(used: u64, total: u64) -> f64 {
     if total == 0 {
@@ -43,19 +35,13 @@ pub fn usage_percentage(used: u64, total: u64) -> f64 {
     }
 }
 
-/// Usage percentage rounded to `u8`, clamped to `100`.
 #[inline]
 pub fn usage_percentage_u8(used: u64, total: u64) -> u8 {
     usage_percentage(used, total).round() as u8
 }
 
-/// Integer-arithmetic (truncating) usage percentage, clamped to `100`.
-///
-/// Differs from [`usage_percentage_u8`] in two ways: no `f64` round-trip,
-/// and the result is **truncated** (not rounded).
-///
-/// Returns `u8` because the result is bounded to `100`. Saturates on
-/// overflow via `saturating_mul`.
+/// Unlike [`usage_percentage_u8`], the result is **truncated**, not rounded,
+/// and no `f64` round-trip is involved.
 #[inline]
 pub fn usage_percentage_truncated_u8(used: u64, total: u64) -> u8 {
     used.saturating_mul(100)
@@ -63,17 +49,14 @@ pub fn usage_percentage_truncated_u8(used: u64, total: u64) -> u8 {
         .map_or(0, |pct| pct.min(100) as u8)
 }
 
-/// `total - used`, saturating at zero. The "free" portion of the context
-/// window for `/context` rendering.
 #[inline]
 pub fn free_tokens(total: u64, used: u64) -> u64 {
     total.saturating_sub(used)
 }
 
-/// True when `used >= context_window * threshold_percent / 100`. Returns
-/// `false` for `context_window == 0` so callers do not have to special-case
-/// missing windows. Computed in integer arithmetic to match the existing
-/// auto-compact gate semantics.
+/// A zero `context_window` means "window unknown" and yields `false`, so
+/// callers need not special-case it. The comparison is scaled by 100 rather
+/// than divided so the gate fires exactly at the threshold.
 #[inline]
 pub fn exceeds_threshold(used: u64, context_window: u64, threshold_percent: u8) -> bool {
     if context_window == 0 {
@@ -82,9 +65,8 @@ pub fn exceeds_threshold(used: u64, context_window: u64, threshold_percent: u8) 
     used.saturating_mul(100) >= context_window.saturating_mul(threshold_percent as u64)
 }
 
-/// True when `used * 100 >= context_window * threshold_percent - headroom * 100`,
-/// the scaled form of [`exceeds_threshold`] minus a token headroom.
-/// Returns `false` for `context_window == 0`.
+/// [`exceeds_threshold`] with the trigger point pulled `headroom` tokens
+/// earlier.
 #[inline]
 pub fn exceeds_threshold_with_headroom(
     used: u64,
@@ -145,9 +127,7 @@ mod tests {
         assert_eq!(usage_percentage_u8(150, 100), 100);
     }
 
-    /// Half-boundary contract — locks rounding direction. `85 / 200 = 0.425`
-    /// becomes `42.5%` which rounds half-up to `43`. The truncating helper
-    /// returns `42` for the same input (see `usage_percentage_truncated_u8`).
+    /// Pins the direction of half-way rounding: `42.5%` must land on `43`.
     #[test]
     fn usage_percentage_u8_rounds_half_up() {
         assert_eq!(usage_percentage_u8(85, 200), 43);
@@ -160,14 +140,11 @@ mod tests {
         assert_eq!(usage_percentage_truncated_u8(0, 0), 0);
         assert_eq!(usage_percentage_truncated_u8(50, 100), 50);
         assert_eq!(usage_percentage_truncated_u8(150, 100), 100);
-        // Large values do not overflow because we use saturating_mul.
         assert_eq!(usage_percentage_truncated_u8(u64::MAX, 1), 100);
     }
 
-    /// Truncation contract — distinguishes this helper from
-    /// `usage_percentage_u8`, which rounds. Locks in that
-    /// `exceeds_threshold(used, cw, p)` and
-    /// `usage_percentage_truncated_u8(used, cw) >= p` agree.
+    /// Truncation is what keeps `exceeds_threshold(used, cw, p)` in agreement
+    /// with `usage_percentage_truncated_u8(used, cw) >= p`.
     #[test]
     fn usage_percentage_truncated_u8_truncates_does_not_round() {
         // 85 / 200 = 0.425, truncated -> 42 (rounded would be 43).
@@ -191,23 +168,19 @@ mod tests {
         assert!(!exceeds_threshold(50, 0, 85));
     }
 
-    /// Strict-boundary contract — pin the `>=` semantics. At cw=1000,
-    /// pct=85, `850 * 100 == 1000 * 85` so the gate must fire at exactly
-    /// 850 tokens. This is one token earlier than the legacy `>` gate
-    /// (`total > cw * pct / 100` which fired at 851).
+    /// Pins the `>=` semantics: at cw=1000 pct=85, `850 * 100 == 1000 * 85`,
+    /// so the gate must fire at exactly 850 tokens and not one later.
     #[test]
     fn exceeds_threshold_fires_on_strict_boundary() {
         assert!(exceeds_threshold(850, 1000, 85));
         assert!(!exceeds_threshold(849, 1000, 85));
-        // 1000 * 85 / 100 = 850, so 850 is the new strict boundary.
-        // Same shape at the other commonly-configured threshold (95%):
+        // Same shape at the other commonly-configured threshold (95%).
         assert!(exceeds_threshold(950, 1000, 95));
         assert!(!exceeds_threshold(949, 1000, 95));
     }
 
-    /// Property: with `headroom == 0` the helper agrees with
-    /// [`exceeds_threshold`] across a representative grid of inputs,
-    /// including the non-round windows where floor-divide drifts.
+    /// The grid deliberately includes non-round windows, where a floor-divide
+    /// formulation would drift away from [`exceeds_threshold`].
     #[test]
     fn exceeds_threshold_with_headroom_zero_headroom_matches_exceeds_threshold() {
         for cw in [0_u64, 1, 50, 100, 101, 1024, 100_000, 128_001, 1_000_001] {

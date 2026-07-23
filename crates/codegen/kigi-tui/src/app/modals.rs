@@ -98,7 +98,6 @@ impl AgentView {
         use crate::views::modal::ActiveModal;
         use crate::views::modal_window::{self as mw, ModalWindowOutcome};
 
-        // Peek at the modal type to decide dispatch strategy.
         let Some(ref mut modal) = self.active_modal else {
             return InputOutcome::Changed;
         };
@@ -112,7 +111,6 @@ impl AgentView {
                 | ActiveModal::SessionPicker { .. }
                 | ActiveModal::DocPicker { .. }
         ) {
-            // Extract window state for handle_modal_key.
             let (window, query_empty, esc_clears) = match modal {
                 ActiveModal::CommandPalette { window, state, .. } => {
                     (window, state.query.is_empty(), true)
@@ -140,7 +138,6 @@ impl AgentView {
             let outcome = mw::handle_modal_key(window, key, &chrome_cfg);
             match outcome {
                 ModalWindowOutcome::CloseRequested => {
-                    // If query non-empty and esc_clears_query: clear query first.
                     if esc_clears && !query_empty {
                         match modal {
                             ActiveModal::CommandPalette { state, .. } => {
@@ -451,7 +448,7 @@ impl AgentView {
                 self.active_modal = None;
                 return InputOutcome::Changed;
             }
-            _ => return InputOutcome::Changed, // consume, ignore
+            _ => return InputOutcome::Changed,
         };
 
         // Take the modal so we can match on it and modify self.
@@ -634,7 +631,6 @@ impl AgentView {
             ActiveModal::CommandPalette {
                 entries: _, state, ..
             } => {
-                // Build filtered entries for count and non-selectable indices.
                 let filtered = crate::views::modal::filter_palette_entries(&state.query);
                 let non_sel: Vec<bool> = filtered
                     .iter()
@@ -870,7 +866,6 @@ impl AgentView {
 
                 let query_before = state.query.clone();
 
-                // Build grouped mapping using shared helper (now with content).
                 // Pin the current session's repo group using the live agent cwd.
                 let current_repo = crate::views::session_picker::repo_name_from_cwd(
                     &self.session.cwd.to_string_lossy(),
@@ -906,7 +901,8 @@ impl AgentView {
                     title: Some("Resume session"),
                     show_search_hint: true,
                     expandable: true,
-                    esc_clears_query: false, // Esc returns to palette or closes
+                    // Esc returns to palette or closes.
+                    esc_clears_query: false,
                     shortcuts: Some(crate::views::picker::picker_shortcuts()),
                     pending_hint: None,
                     non_selectable: &non_sel,
@@ -1179,7 +1175,6 @@ impl AgentView {
             ..
         }) = &mut self.active_modal
         {
-            // Filter entries based on search query
             let filtered: Vec<_> = if state.query.is_empty() {
                 entries.iter().enumerate().collect()
             } else {
@@ -1239,7 +1234,6 @@ impl AgentView {
                 search_only_on_slash: false,
                 vim_normal_first: crate::appearance::cache::load_vim_mode(),
             };
-            // Handle input
             match handle_picker_input(ev, state, entry_count, &config) {
                 PickerOutcome::Selected(i) => {
                     if let Some((orig_idx, _)) = filtered.get(i)
@@ -1315,7 +1309,6 @@ impl AgentView {
                     | ActiveModal::RememberNoteReview { .. }
             )
         ) {
-            // Extract window for handle_modal_mouse.
             let window = match self.active_modal.as_mut() {
                 Some(ActiveModal::CommandPalette { window, .. }) => window,
                 Some(ActiveModal::ArgPicker { window, .. }) => window,
@@ -1367,7 +1360,6 @@ impl AgentView {
                                 ..
                             },
                         ) => {
-                            // Restore previous command palette from snapshot.
                             self.active_modal = Some(ActiveModal::CommandPalette {
                                 entries: snap.entries,
                                 state: snap.state,
@@ -1607,9 +1599,9 @@ impl AgentView {
                 },
             ];
 
-            // EditConfirm has no draw arm and is no longer armed anywhere (the
-            // dirty pane-switch lock blocks instead) — arming it would capture
-            // all input invisibly.
+            // EditConfirm has no draw arm: the dirty pane-switch lock blocks
+            // that flow instead, so arming EditConfirm here would capture all
+            // input with nothing rendered to show it.
             if let modal::ActiveModal::CommandPalette {
                 entries: _,
                 state,
@@ -1648,7 +1640,6 @@ impl AgentView {
                     })
                     .collect();
                 let compact = self.scrollback.appearance().prompt.compact;
-                // Surface `i search` in the footer when vim nav mode is active.
                 mw::push_vim_nav_search_hint(&mut picker_shortcuts, state.search_active);
                 let modal_config = ModalWindowConfig {
                     title: "Commands",
@@ -1718,7 +1709,6 @@ impl AgentView {
                     })
                     .collect();
                 let compact = self.scrollback.appearance().prompt.compact;
-                // Surface `i search` in the footer when vim nav mode is active.
                 mw::push_vim_nav_search_hint(&mut picker_shortcuts, state.search_active);
                 let modal_config = ModalWindowConfig {
                     title,
@@ -1826,7 +1816,6 @@ impl AgentView {
                     }
                     shortcuts
                 };
-                // Surface `i search` in the footer when vim nav mode is active.
                 if pending_delete.is_none() {
                     mw::push_vim_nav_search_hint(&mut session_shortcuts, state.search_active);
                 }
@@ -1880,7 +1869,6 @@ impl AgentView {
                         );
                         state.filter_area = Some(filter_rect);
                     }
-                    // Divider — spans full inner width.
                     let sep_y = content_area.y + 1;
                     if sep_y < content_area.y + content_area.height {
                         picker::render_divider(
@@ -2474,7 +2462,8 @@ mod session_picker_delete_tests {
         let mut agent = make_agent();
         agent.app_chat_mode = true;
         let mut e = entry("conv-content-1");
-        e.summary = "Quarterly roadmap notes".into(); // no "hit" in the title
+        // Title has no "hit" in it.
+        e.summary = "Quarterly roadmap notes".into();
         e.source = "conversation".into();
         open_picker(&mut agent, vec![e]);
         if let Some(ActiveModal::SessionPicker {

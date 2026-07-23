@@ -1969,9 +1969,7 @@ mod tests {
         );
     }
 
-    // ──────────────────────────────────────────────────────────────────────
     // needs_update — channel/upgrade/downgrade semantics
-    // ──────────────────────────────────────────────────────────────────────
 
     #[test]
     fn test_needs_update_matrix() {
@@ -2107,9 +2105,7 @@ mod tests {
         );
     }
 
-    // ──────────────────────────────────────────────────────────────────────
     // installer_allows_downgrade
-    // ──────────────────────────────────────────────────────────────────────
 
     #[test]
     fn test_installer_allows_downgrade_internal_only() {
@@ -2120,9 +2116,7 @@ mod tests {
         assert!(!installer_allows_downgrade("homebrew"));
     }
 
-    // ──────────────────────────────────────────────────────────────────────
     // atomic_symlink_swap
-    // ──────────────────────────────────────────────────────────────────────
 
     #[cfg(unix)]
     #[tokio::test]
@@ -2360,9 +2354,7 @@ mod tests {
         );
     }
 
-    // ──────────────────────────────────────────────────────────────────────
     // cleanup_old_downloads
-    // ──────────────────────────────────────────────────────────────────────
 
     /// Backdate a file's mtime past [`STALE_TMP_AGE`] so cleanup treats it
     /// as an abandoned download / genuinely old binary.
@@ -2609,9 +2601,7 @@ mod tests {
         assert!(!d.join("kigi-0.1.139-macos-aarch64").exists());
     }
 
-    // ──────────────────────────────────────────────────────────────────────
     // reinstall_hint / manual_install_cmd
-    // ──────────────────────────────────────────────────────────────────────
 
     #[test]
     fn test_reinstall_hint_points_at_repo_install_script() {
@@ -2634,9 +2624,7 @@ mod tests {
         assert_eq!(reinstall_hint(""), hint);
     }
 
-    // ──────────────────────────────────────────────────────────────────────
     // Asset naming: targets → release asset names
-    // ──────────────────────────────────────────────────────────────────────
 
     #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -2687,9 +2675,7 @@ mod tests {
         }
     }
 
-    // ──────────────────────────────────────────────────────────────────────
     // SHA256SUMS parsing
-    // ──────────────────────────────────────────────────────────────────────
 
     #[test]
     fn test_expected_sha256_for_parses_sha256sum_format() {
@@ -2753,9 +2739,7 @@ mod tests {
         );
     }
 
-    // ──────────────────────────────────────────────────────────────────────
     // Archive extraction (Unix: tar.gz)
-    // ──────────────────────────────────────────────────────────────────────
 
     #[cfg(not(windows))]
     fn make_tar_gz(entries: &[(&str, &[u8])]) -> Vec<u8> {
@@ -2813,9 +2797,7 @@ mod tests {
         assert!(extract_kigi_binary(&archive, &out).await.is_err());
     }
 
-    // ──────────────────────────────────────────────────────────────────────
     // UpdateStatus serialization (camelCase contract for --json clients)
-    // ──────────────────────────────────────────────────────────────────────
 
     fn make_status() -> UpdateStatus {
         UpdateStatus {
@@ -2907,9 +2889,7 @@ mod tests {
         assert!(!json.contains('\n'), "must be single line: {json}");
     }
 
-    // ──────────────────────────────────────────────────────────────────────
     // print_update_status — both code paths must not panic or error.
-    // ──────────────────────────────────────────────────────────────────────
 
     #[test]
     fn test_print_update_status_all_shapes_return_ok() {
@@ -2943,17 +2923,16 @@ mod tests {
         .unwrap();
     }
 
-    // ──────────────────────────────────────────────────────────────────────
     // UpdateRunMode
-    // ──────────────────────────────────────────────────────────────────────
 
     #[test]
     fn test_update_run_mode_is_copy_clone_debug() {
         // The ergonomic Copy/Clone/Debug derives must not regress: we pass
         // `run_mode` by value through several layers.
         let m1 = UpdateRunMode::Blocking;
-        let m2 = m1; // Copy
-        let m3 = m1; // Copy again, m1 not moved
+        let m2 = m1;
+        // Copy again, m1 not moved
+        let m3 = m1;
         assert!(matches!(m1, UpdateRunMode::Blocking));
         assert!(matches!(m2, UpdateRunMode::Blocking));
         assert!(matches!(m3, UpdateRunMode::Blocking));
@@ -2961,9 +2940,7 @@ mod tests {
         let _ = format!("{:?}", UpdateRunMode::NonBlocking);
     }
 
-    // ──────────────────────────────────────────────────────────────────────
     // Constants — lock them in so silent renames are caught.
-    // ──────────────────────────────────────────────────────────────────────
 
     #[test]
     fn test_user_facing_constants_are_stable() {
@@ -2984,14 +2961,12 @@ mod tests {
         }
     }
 
-    // ──────────────────────────────────────────────────────────────────────
     // env_installer — env-var based, must run serially.
     //
     // Resolution order (matches function body):
     //   1. KIGI_INSTALLER (internal; anything else → None)
     //   2. KIGI_MANAGED_BY_INTERNAL → internal
     //   3. None
-    // ──────────────────────────────────────────────────────────────────────
 
     /// Snapshot every installer-related env var so the test can clear them
     /// at start and restore them at end.
@@ -3072,9 +3047,7 @@ mod tests {
         assert_eq!(env_installer(), Some("internal"));
     }
 
-    // ──────────────────────────────────────────────────────────────────────
     // windows_replace_exe — runs only on Windows CI
-    // ──────────────────────────────────────────────────────────────────────
 
     #[cfg(windows)]
     #[tokio::test]

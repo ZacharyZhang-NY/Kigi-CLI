@@ -1,9 +1,8 @@
 //! Integration tests using the public API only. Each test exercises the
 //! real OS watcher against a `tempfile`-rooted fake git repo.
 //!
-//! These can be flaky on some CI runners where FS events aren't reliably
-//! delivered (matches the existing pattern in `watcher.rs` integration
-//! tests). Marked `#[ignore]` for now; run locally with
+//! The watcher-driven tests are `#[ignore]`d because some CI runners do not
+//! reliably deliver FS events. Run them locally with
 //! `cargo test --test integration -- --ignored`.
 
 use std::fs;
@@ -224,8 +223,8 @@ async fn source_emits_completed_with_head_change_on_sl_goto() {
     .await
     .unwrap();
 
-    // Move the working-copy parent (p1) before releasing wlock, then release.
-    // `read_head` reads the new p1 on demand when the wlock-removal is processed.
+    // `read_head` reads p1 on demand when the wlock removal is processed, so
+    // p1 must move before the release for the change to be observed.
     fs::write(temp.path().join(".sl/dirstate"), sl_dirstate(0x22)).unwrap();
     fs::remove_file(&wlock).unwrap();
 
@@ -251,9 +250,7 @@ async fn shared_dedupes_by_directory() {
     let temp = TempDir::new().unwrap();
     let path = temp.path().to_path_buf();
 
-    // First call creates the watcher; subsequent calls for the same canonical
-    // directory hand back clones of the *same* source rather than opening a
-    // new OS watch. Skip gracefully where the OS denies watches (CI limits).
+    // Skip gracefully where the OS denies watches (CI descriptor limits).
     let Ok(a) = kigi_fsnotify::shared(path.clone(), FsConfig::default()) else {
         eprintln!("skipping: OS watcher unavailable (resource limit?)");
         return;
@@ -267,7 +264,6 @@ async fn shared_dedupes_by_directory() {
         "second shared() must clone the existing source, not create a new one"
     );
 
-    // The reuse must be counted as a cache hit (no new OS watcher created).
     let after = kigi_fsnotify::stats();
     assert_eq!(
         after.reused_total - before.reused_total,
@@ -280,7 +276,6 @@ async fn shared_dedupes_by_directory() {
     );
     assert!(after.live_watchers >= 1, "the shared watcher must be live");
 
-    // A different directory gets its own independent watcher (a real miss).
     let other = TempDir::new().unwrap();
     let c = kigi_fsnotify::shared(other.path().to_path_buf(), FsConfig::default()).unwrap();
     assert!(!Arc::ptr_eq(&a, &c), "different dirs must not share");
@@ -290,8 +285,7 @@ async fn shared_dedupes_by_directory() {
         "a new directory must create a new watcher"
     );
 
-    // Once the last sharer drops, the registry entry is reclaimed and a later
-    // request rebuilds a fresh source (exercises the recreate-after-drop path).
+    // Dropping the last sharer must reclaim the registry entry.
     drop(a);
     drop(b);
     let d = kigi_fsnotify::shared(path, FsConfig::default()).unwrap();
@@ -340,7 +334,6 @@ async fn shared_watcher_scaling_demo() {
         "  before sharing this needed {SESSIONS} OS watchers; after sharing it needs {created}."
     );
 
-    // One real OS watch for the whole fleet; the rest are cache hits.
     assert_eq!(created, 1, "all sessions on one cwd share a single watcher");
     assert_eq!(reused, (SESSIONS - 1) as u64);
     assert!(after.live_watchers >= 1);

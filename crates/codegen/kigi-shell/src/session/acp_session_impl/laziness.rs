@@ -56,11 +56,9 @@ pub(crate) enum LazinessSuppressReason {
     NotGoalMode,
 }
 
-/// Pure helper — build a `LazinessDebugLogLine` from the captured
-/// per-fire metadata and a classifier outcome. Extracted so the
-/// JSON-line shape stays unit-testable without a `SessionActor`.
-/// Consumes `meta` so its `String` + `Vec` fields move into the
-/// output line (no clones on the per-fire hot path).
+/// Pure so the JSON-line shape stays unit-testable without a
+/// `SessionActor`. Consumes `meta` so its `String` + `Vec` fields
+/// move into the output line rather than clone on the per-fire path.
 pub(crate) fn build_laziness_debug_line(
     meta: LazinessFireMeta,
     model_id: &str,
@@ -132,10 +130,9 @@ pub(crate) fn build_laziness_debug_line(
     }
 }
 
-/// Pure helper — given a parsed classifier output and the production
-/// min-confidence threshold, classify what production WOULD have done.
-/// Extracted so the JSON-line shape can be unit-tested without a
-/// SessionActor.
+/// Classify what production WOULD have done for this parsed output at
+/// the given min-confidence threshold. Pure so it can be unit-tested
+/// without a `SessionActor`.
 pub(crate) fn classify_debug_decision(
     parsed: &ClassifierOutput,
     min_confidence: f32,
@@ -673,7 +670,6 @@ impl SessionActor {
             Ok(p) => p,
             Err(parse_err) => {
                 let parse_error_detail = parse_err.to_string();
-                // Truncate raw to 200 chars for offline analysis.
                 let snippet: String = raw_text.chars().take(200).collect();
                 tracing::debug!(
                     error = %parse_error_detail,

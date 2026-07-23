@@ -1498,27 +1498,18 @@ impl DashboardState {
     /// agent/subagent no longer exists is silently dropped. Avoids edge
     /// case 20 (a pinned row whose agent was deleted).
     ///
-    /// Also clears an in-flight `rename` whose row
-    /// disappeared (parent closed, subagent finished, etc.), so a
-    /// Commit-Enter doesn't silently drop the draft on a phantom row.
-    ///
-    /// Extends the gc to `peek`, `hovered_row`, and
-    /// `last_click`. The previous version only cleared `pinned`,
-    /// `reorder`, `rename`, and `selected`. A stale `peek` would
-    /// render cached content for a dead row; a stale `last_click`
-    /// could trigger a double-click "attach" against whatever new
-    /// row took the cell.
-    ///
-    /// Drop the "Row no longer exists; rename
-    /// cancelled" toast on stale rename. The toast fired on every
-    /// dashboard open if a row was closed externally, surprising the
-    /// user (they hadn't done anything since). The clear itself is
-    /// preserved — silently clearing the rename matches the silent
-    /// gc on `pinned` / `reorder` / `selected` / `peek` /
-    /// `hovered_row` / `last_click`. the earlier invariant ("Commit
-    /// Enter can't dispatch against a phantom row") is preserved
-    /// because the renamed row can't render the overlay if it's
-    /// gone, so Enter can't reach the commit path.
+    /// Also silently clears `rename`, `peek`, `hovered_row`, and
+    /// `last_click` when their row disappeared (parent closed, subagent
+    /// finished, etc.):
+    /// - A stale `rename` is cleared without a "Row no longer exists;
+    ///   rename cancelled" toast, so a row closed elsewhere doesn't
+    ///   surprise the user with a toast on the next dashboard open.
+    ///   Commit-Enter still can't dispatch against a phantom row, because
+    ///   the renamed row can't render the overlay once it's gone.
+    /// - A stale `peek` would otherwise render cached content for a dead
+    ///   row.
+    /// - A stale `last_click` could trigger a double-click "attach"
+    ///   against whatever new row took the cell.
     pub fn gc_stale_refs(&mut self, alive: &dyn Fn(&DashboardRowId) -> bool) {
         self.pinned.retain(|id| alive(id));
         self.reorder.retain(|id| alive(id));
@@ -2516,7 +2507,7 @@ impl DashboardState {
                     .as_ref()
                     .is_some_and(|p| p.reject_option == selected);
             match (key.code, selected) {
-                // ── No option selected → navigate agents / open ──
+                // No option selected: navigate agents / open.
                 (KeyCode::Up, None) => {
                     return Some(InputOutcome::Action(Action::DashboardSelectPrev));
                 }
@@ -2542,7 +2533,7 @@ impl DashboardState {
                             .unwrap_or(InputOutcome::Unchanged),
                     );
                 }
-                // ── Option selected → move within options (spill at edges) ──
+                // Option selected: move within options (spill at edges).
                 (KeyCode::Up, Some(0)) => {
                     return Some(InputOutcome::Action(Action::DashboardSelectPrev));
                 }
@@ -2882,11 +2873,11 @@ impl DashboardState {
         // (the early return at the top of this function), so by the time
         // execution reaches here the peek panel is guaranteed closed.
 
-        // ── Ctrl+V / Cmd+V paste ────────────────────────────────────────
-        // Read the pbpaste text once and route through the shared deferred
-        // paste pipeline: a file path wins synchronously, else the clipboard
-        // image/file-url probe defers off the event loop. Mirrors `AgentView`
-        // — without this, Ctrl+V on the dashboard did nothing useful.
+        // Ctrl+V / Cmd+V paste: read the pbpaste text once and route through
+        // the shared deferred paste pipeline: a file path wins synchronously,
+        // else the clipboard image/file-url probe defers off the event loop.
+        // Mirrors `AgentView` — without this, Ctrl+V on the dashboard did
+        // nothing useful.
         if crate::input::key::is_paste_key(key) {
             let clipboard_text = crate::app::actions::ClipboardTextRead::from_result(
                 crate::clipboard::system_clipboard_read_text(),
@@ -2894,11 +2885,10 @@ impl DashboardState {
             return self.handle_paste_key_deferred(clipboard_text, /* peek */ false);
         }
 
-        // ── @-file-search intercept ─────────────────────────────────────
-        // The dispatch input offers a session-less `@` context picker
-        // rooted at the pager's launch cwd. While its dropdown is
-        // visible, the prompt widget owns Up/Down/Tab/Enter/Esc — route
-        // the key there BEFORE the dashboard's row-nav / Enter / Esc
+        // @-file-search intercept: the dispatch input offers a session-less
+        // `@` context picker rooted at the pager's launch cwd. While its
+        // dropdown is visible, the prompt widget owns Up/Down/Tab/Enter/Esc
+        // — route the key there BEFORE the dashboard's row-nav / Enter / Esc
         // handlers, mirroring `agent_view::handle_prompt_key`.
         if self.dispatch.file_search_visible() {
             match self.dispatch.handle_key(key) {
@@ -4112,9 +4102,8 @@ impl DashboardState {
         if let Some(sel) = self.selected.as_ref()
             && !selectable.iter().any(|r| r.id == *sel)
         {
-            // The previously selected row was filtered out / closed
-            // / lost its parent. Drop the cursor — re-selecting is
-            // the user's job.
+            // The selected row was filtered out / closed / lost its
+            // parent. Drop the cursor — re-selecting is the user's job.
             self.selected = None;
         }
     }
@@ -4292,10 +4281,6 @@ fn handle_rename_key(draft: &mut RenameDraft, key: &KeyEvent) -> InputOutcome {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Filter parser (edge case 11)
-// ---------------------------------------------------------------------------
-
 /// Parse a filter expression from the dispatch input.
 ///
 /// Rules per edge case 11:
@@ -4366,10 +4351,6 @@ pub fn parse_row_state_token(s: &str) -> Option<RowState> {
         _ => None,
     }
 }
-
-// ---------------------------------------------------------------------------
-// Persistence I/O
-// ---------------------------------------------------------------------------
 
 /// Read the persisted `[dashboard].enabled` flag (defaults to `true`).
 ///
@@ -4582,10 +4563,6 @@ fn parse_persist_key_list(item: &toml_edit::Item) -> Vec<PersistedRowId> {
         })
         .collect()
 }
-
-// ---------------------------------------------------------------------------
-// Helper: relative path display
-// ---------------------------------------------------------------------------
 
 /// Compact a `Path` for display against `$HOME`, returning a `String`.
 ///
@@ -5333,10 +5310,6 @@ mod tests {
         );
     }
 
-    // ---------------------------------------------------------------
-    // handle_key tests (Esc cascade, Enter routing).
-    // ---------------------------------------------------------------
-
     fn make_state_with_selection() -> DashboardState {
         let mut s = DashboardState::new();
         s.selected = Some(DashboardRowId::TopLevel(AgentId(0)));
@@ -5724,7 +5697,8 @@ mod tests {
             p.options = vec![("a".into(), "A".into()), ("other".into(), "Other".into())];
             p.reject_option = Some(1);
             p.selected_option = Some(1);
-            p.request_id = None; // Ask tool (not a permission)
+            // Ask tool (not a permission).
+            p.request_id = None;
         }
         let reg = crate::actions::ActionRegistry::defaults();
         let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
@@ -5910,7 +5884,8 @@ mod tests {
         let mut state = state_with_open_peek();
         let reg = crate::actions::ActionRegistry::defaults();
         state.peek_reply.set_text("a draft");
-        state.peek.as_mut().unwrap().focused = false; // Tab → row nav
+        // Tab → row nav.
+        state.peek.as_mut().unwrap().focused = false;
         assert!(matches!(
             state.handle_key(&KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), &reg),
             InputOutcome::Action(Action::DashboardSelectNext)
@@ -6388,7 +6363,8 @@ mod tests {
             ("__other__".into(), "Other".into()),
         ];
         f.reject_option = Some(2);
-        f.request_id = None; // ← marks it as an ask question, not a permission
+        // Marks it as an ask question, not a permission.
+        f.request_id = None;
         state.peek = Some(super::super::peek::PeekPanelState::new(
             DashboardRowId::TopLevel(AgentId(0)),
             f,
@@ -7010,12 +6986,6 @@ mod tests {
         }
     }
 
-    // -----------------------------------------------------------------
-    // Reconciled dispatch-input features: slash commands, Alt+Enter
-    // multiline, vim-gated j/k, and paste — layered on top of the
-    // reply-mode / search-mode base.
-    // -----------------------------------------------------------------
-
     /// A `/command` Enter routes through the session-less slash
     /// dispatcher instead of becoming a new session's prompt.
     #[test]
@@ -7421,7 +7391,8 @@ mod tests {
         let mut state = DashboardState::new();
         assert!(state.new_agent_button_focused);
         state.dispatch.set_text("fix the bug");
-        state.list_focused = true; // e.g. after an Esc blur
+        // e.g. after an Esc blur.
+        state.list_focused = true;
         match state.handle_key(&key, &reg) {
             InputOutcome::Action(Action::DashboardDispatch { text, attach }) => {
                 assert_eq!(text, "fix the bug");
@@ -7808,7 +7779,6 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------
     // The clipboard raster/file-url probe (osascript) + image decode +
     // session persist run OFF the event loop. A paste that would probe
     // enqueues a `ProbeClipboardAttachment` effect and returns without an
@@ -7816,7 +7786,6 @@ mod tests {
     // attaches later via `complete_clipboard_attachment_paste`. Snapshot /
     // support are faked via the test-only seam; plain text with no
     // raster stays fully synchronous (no defer).
-    // -----------------------------------------------------------------
 
     fn probe_image_data() -> crate::clipboard::ImageData {
         crate::clipboard::ImageData {
@@ -8252,7 +8221,8 @@ mod tests {
     /// instead of inserting into the now-hidden reply buffer.
     #[test]
     fn completion_peek_dropped_when_panel_closed() {
-        let mut state = DashboardState::new(); // no peek open
+        // No peek open.
+        let mut state = DashboardState::new();
         state.paste_probe_in_flight = 1;
         let completion = state.complete_clipboard_attachment_paste(
             completion_ctx(None, true),
@@ -8279,7 +8249,8 @@ mod tests {
     /// instead of replying to the newly peeked agent.
     #[test]
     fn completion_peek_dropped_when_row_changed() {
-        let mut state = state_with_open_peek(); // peeks TopLevel(AgentId(0))
+        // Peeks TopLevel(AgentId(0)).
+        let mut state = state_with_open_peek();
         state.paste_probe_in_flight = 1;
         state.deferred_peek_send = Some(DeferredPeekSend {
             row: DashboardRowId::TopLevel(AgentId(0)),
@@ -8418,7 +8389,8 @@ mod tests {
     /// draft stays in the widget.
     #[test]
     fn stashed_peek_reply_dropped_when_question_active() {
-        let mut state = state_with_open_peek(); // peeks TopLevel(AgentId(0))
+        // Peeks TopLevel(AgentId(0)).
+        let mut state = state_with_open_peek();
         state.peek_reply.set_text("please look");
         state.deferred_peek_send = Some(DeferredPeekSend {
             row: DashboardRowId::TopLevel(AgentId(0)),
@@ -8443,12 +8415,6 @@ mod tests {
             "the draft stays in the widget for after the question"
         );
     }
-
-    // -----------------------------------------------------------------
-    // `/` literal + `Ctrl+/` search mode (replaces the old `/`→filter
-    // behaviour that silently swallowed prompts starting with a
-    // filter prefix).
-    // -----------------------------------------------------------------
 
     /// `/` types a literal slash into the prompt — it no longer
     /// enters a filter mode. (Filtering moved to `Ctrl+/`.)
@@ -8690,7 +8656,8 @@ mod tests {
         let click = MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
             column: 10,
-            row: 5, // inside BOTH dropdown and row_rects
+            // Inside BOTH dropdown and row_rects.
+            row: 5,
             modifiers: crossterm::event::KeyModifiers::NONE,
         };
         let outcome = state.handle_mouse(&click);
@@ -9171,7 +9138,8 @@ mod tests {
             ]),
             mode: crate::views::shortcuts_help::ShortcutsHelpMode::Browse,
         });
-        modal.state.selected = 1; // first registry-backed hint
+        // First registry-backed hint.
+        modal.state.selected = 1;
         state.shortcuts_modal = Some(modal);
 
         let snapshot = |s: &DashboardState| {
@@ -9765,10 +9733,6 @@ mod tests {
         assert_eq!(s.viewport_offset, 5);
     }
 
-    // -----------------------------------------------------------------
-    // Mouse wheel decoupled from selection
-    // -----------------------------------------------------------------
-
     /// `handle_scroll` flags `manual_scroll_active` so the next
     /// `clamp_viewport` knows to skip the snap-to-selection
     /// pull-back.
@@ -9885,8 +9849,6 @@ mod tests {
         assert!(!super::super::dashboard_enabled());
         unsafe { std::env::remove_var("KIGI_AGENT_DASHBOARD") };
     }
-
-    // ── Location picker ─────────────────────────────────────────────
 
     fn location_candidate(path: &str, label: &str) -> LocationCandidate {
         LocationCandidate {
@@ -10046,8 +10008,10 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn location_path_completion_tags_symlinked_worktree() {
-        let real = tempfile::tempdir().unwrap(); // the real worktree target
-        let parent = tempfile::tempdir().unwrap(); // the dir we list
+        // The real worktree target.
+        let real = tempfile::tempdir().unwrap();
+        // The dir we list.
+        let parent = tempfile::tempdir().unwrap();
         std::os::unix::fs::symlink(real.path(), parent.path().join("link")).unwrap();
 
         // Index keyed by the real (canonical) path, as the worktree DB is.

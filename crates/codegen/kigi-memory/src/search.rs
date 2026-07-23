@@ -460,7 +460,7 @@ mod tests {
 
         let config = MemorySearchConfig {
             max_results: 3,
-            min_score: 0.0, // accept all
+            min_score: 0.0,
             ..Default::default()
         };
 
@@ -562,9 +562,7 @@ mod tests {
         assert!(results[0].score > 0.0, "score should be positive");
     }
 
-    // -----------------------------------------------------------------------
     // Temporal decay unit tests
-    // -----------------------------------------------------------------------
 
     #[test]
     fn test_is_evergreen_source() {
@@ -589,8 +587,9 @@ mod tests {
 
     #[test]
     fn test_evergreen_sources_never_decay() {
-        let now = 86400 * 365; // 1 year
-        let created = 0; // created at epoch
+        let now = 86400 * 365;
+        // created at epoch
+        let created = 0;
         let half_life = Some(30.0);
 
         assert_eq!(
@@ -606,7 +605,8 @@ mod tests {
     #[test]
     fn test_session_chunks_decay_with_half_life() {
         let half_life = Some(30.0);
-        let now = 86400 * 30; // 30 days after epoch
+        // 30 days after epoch
+        let now = 86400 * 30;
         let created = 0;
 
         let multiplier = temporal_decay_multiplier("session", created, now, half_life);
@@ -620,7 +620,7 @@ mod tests {
     #[test]
     fn test_decay_at_two_half_lives() {
         let half_life = Some(30.0);
-        let now = 86400 * 60; // 60 days
+        let now = 86400 * 60;
         let created = 0;
 
         let multiplier = temporal_decay_multiplier("session", created, now, half_life);
@@ -634,7 +634,8 @@ mod tests {
     fn test_fresh_session_chunk_no_decay() {
         let half_life = Some(30.0);
         let now = 1_000_000;
-        let created = now; // just created
+        // just created
+        let created = now;
 
         let multiplier = temporal_decay_multiplier("session", created, now, half_life);
         assert!(
@@ -658,7 +659,8 @@ mod tests {
     #[test]
     fn test_future_created_at_no_negative_age() {
         let now = 1_000_000;
-        let created = now + 86400; // 1 day in the future (clock skew)
+        // 1 day in the future (clock skew)
+        let created = now + 86400;
         let half_life = Some(30.0);
 
         let multiplier = temporal_decay_multiplier("session", created, now, half_life);
@@ -726,9 +728,7 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------------
     // PR-8: access-frequency boost tests
-    // -----------------------------------------------------------------------
 
     /// A chunk with access_count > 0 scores higher than an identical chunk
     /// with access_count = 0, all else equal.
@@ -871,9 +871,7 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------------
     // PR: scoring normalization fix tests
-    // -----------------------------------------------------------------------
 
     /// FTS-only results (no vector search) should score well above a
     /// reasonable min_score threshold (e.g., 0.3). Before the fix,
@@ -1067,9 +1065,7 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------------
     // Empty-template filter + score clamp tests
-    // -----------------------------------------------------------------------
 
     /// The auto-generated global MEMORY.md stub, written verbatim by
     /// `MemoryStorage::ensure_initialized` (storage.rs), including the trailing
@@ -1253,7 +1249,8 @@ mod tests {
         );
 
         let config = MemorySearchConfig {
-            min_score: 0.0, // accept all by score, so only the filter can exclude
+            // accept all by score, so only the filter can exclude
+            min_score: 0.0,
             ..Default::default()
         };
 

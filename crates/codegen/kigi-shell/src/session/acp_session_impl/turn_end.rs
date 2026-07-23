@@ -15,16 +15,10 @@ impl SessionActor {
     /// are unchanged.  It only emits a transient (non-persisted) `Plan`
     /// notification where `in_progress` entries are mapped to `completed`
     /// for display.
-    ///
-    /// Uses the canonical `plan_entry_from_todo_item` helper to preserve
-    /// cancelled metadata, priorities, and other semantics.
-    ///
-    /// No-op if no `in_progress` items exist.
     pub(super) async fn emit_turn_end_plan_cleanup(&self) {
         use crate::tools::todo::{TodoState, TodoStatus, plan_entry_from_todo_item};
         use kigi_tools::types::resources::State;
 
-        // Read the current TodoState (no mutation).
         let (entries, stale_count) = {
             let res = self
                 .agent
@@ -33,7 +27,7 @@ impl SessionActor {
                 .read_resource::<State<TodoState>>()
                 .await;
             let Some(state) = res else {
-                return; // No todo state at all.
+                return;
             };
 
             let stale_count = state
@@ -45,9 +39,6 @@ impl SessionActor {
                 return;
             }
 
-            // Build plan entries with in_progress → completed for display.
-            // Uses the canonical `plan_entry_from_todo_item` helper to
-            // preserve cancelled metadata, priority, and other semantics.
             let entries: Vec<_> = state
                 .0
                 .todo_items()
@@ -231,8 +222,6 @@ impl SessionActor {
         if broadcast_queue {
             self.broadcast_queue_changed(&state);
         }
-        // Note: Auto-compact is now handled inline during process_conversation_turn,
-        // so we no longer need to queue it here after turn completion.
 
         // If the user toggled plan mode off while this turn was in-flight
         // (state == ExitPending), complete the deferred exit now that the

@@ -13,9 +13,8 @@ use super::types::{ScheduledTask, SchedulerCommand, SchedulerError, SchedulerSta
 
 const MAX_SCHEDULED_TASKS: usize = 50;
 
-/// Build a `ScheduledTaskCreated` payload from a task. Shared between the
-/// live `SchedulerCommand::Create` path and the post-restore re-announce so
-/// the wire format stays in lockstep.
+/// Shared between the live `SchedulerCommand::Create` path and the post-restore
+/// re-announce so the wire format stays in lockstep.
 fn task_created_payload(task: &ScheduledTask) -> ScheduledTaskCreated {
     ScheduledTaskCreated {
         task_id: task.id.clone(),
@@ -450,14 +449,12 @@ mod tests {
             .unwrap();
         reply_rx.await.unwrap().unwrap();
 
-        // Drain ScheduledTaskCreated.
         let notif = tokio::time::timeout(Duration::from_secs(2), notif_rx.recv())
             .await
             .expect("created")
             .expect("channel open");
         assert!(matches!(notif, ToolNotification::ScheduledTaskCreated(_)));
 
-        // First fire.
         let notif = tokio::time::timeout(Duration::from_secs(2), notif_rx.recv())
             .await
             .expect("first fire")
@@ -600,7 +597,6 @@ mod tests {
         }
         assert!(notif_rx.try_recv().is_err());
 
-        // All fired missed one-shots are pruned from state.
         let res = shared.lock().await;
         let remaining = res
             .get::<State<SchedulerState>>()
@@ -643,7 +639,6 @@ mod tests {
         cancel_token.cancel();
         handle.await.expect("actor should complete");
 
-        // Collect all ScheduledTaskRemoved notifications.
         let mut removed_ids = Vec::new();
         while let Ok(notif) = notif_rx.try_recv() {
             if let ToolNotification::ScheduledTaskRemoved(r) = notif {

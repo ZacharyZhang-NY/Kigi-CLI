@@ -1,7 +1,6 @@
-//! Shared event queue for the push path: producers enqueue out-of-band events;
-//! readers drain the ones relevant to them at hook points. Internally
-//! synchronized and `Arc`-shared (clones share one queue), mirroring
-//! [`crate::buffer::InterjectionBuffer`].
+//! Shared push-path event queue: producers enqueue; readers drain at hook
+//! points. Internally synchronized and `Arc`-shared (clones share one queue),
+//! matching [`crate::buffer::InterjectionBuffer`].
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -31,12 +30,11 @@ impl<E> EventQueue<E> {
         }
     }
 
-    /// Producer hook: record an event for later draining.
     pub fn push(&self, event: E) {
         self.lock().push(event);
     }
 
-    /// Push, then drop the oldest events so at most `max` remain.
+    /// Push, then drop oldest entries so length stays ≤ `max`.
     pub fn push_capped(&self, event: E, max: usize) {
         let mut q = self.lock();
         q.push(event);
@@ -54,8 +52,7 @@ impl<E> EventQueue<E> {
         self.lock().is_empty()
     }
 
-    /// Remove and return events matching `take`, retaining the rest. FIFO order
-    /// is preserved in both the returned and retained sets.
+    /// Remove matching events; keep the rest. Both sets stay FIFO.
     pub fn drain_matching(&self, take: impl Fn(&E) -> bool) -> Vec<E> {
         let mut q = self.lock();
         let (matched, kept): (Vec<E>, Vec<E>) =
@@ -64,12 +61,10 @@ impl<E> EventQueue<E> {
         matched
     }
 
-    /// Remove and return all events, leaving the queue empty (FIFO order).
     pub fn drain_all(&self) -> Vec<E> {
         std::mem::take(&mut *self.lock())
     }
 
-    /// Discard all events.
     pub fn clear(&self) {
         self.lock().clear();
     }
@@ -80,7 +75,7 @@ impl<E> EventQueue<E> {
 }
 
 impl<E: Clone> EventQueue<E> {
-    /// Clone of the current events, for inspection without draining.
+    /// Snapshot without draining.
     pub fn snapshot(&self) -> Vec<E> {
         self.lock().clone()
     }

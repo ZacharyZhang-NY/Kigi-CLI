@@ -382,7 +382,8 @@ async fn hook_receives_env_vars() {
     // Verify env vars were received.
     let output = std::fs::read_to_string(&output_file).unwrap();
     assert!(output.contains("EVENT=pre_tool_use"), "output: {output}");
-    assert!(output.contains("NAME="), "output: {output}"); // auto-generated name
+    // auto-generated name
+    assert!(output.contains("NAME="), "output: {output}");
     assert!(output.contains("SESSION=sess-456"), "output: {output}");
 }
 

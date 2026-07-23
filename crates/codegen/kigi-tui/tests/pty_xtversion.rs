@@ -224,7 +224,6 @@ async fn unknown_brand_malformed_reply_is_discarded() {
         "pager never emitted the XTVERSION query for an unknown terminal"
     );
 
-    // Unterminated DCS reply: a stalled fragment the filter must drop.
     harness
         .inject_keys(b"\x1bP>|PtyHarnessTerm 9.9")
         .expect("inject malformed reply");

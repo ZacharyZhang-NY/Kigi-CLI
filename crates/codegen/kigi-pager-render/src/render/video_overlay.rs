@@ -12,8 +12,6 @@ use ratatui::widgets::{Block, BorderType, Borders, Widget};
 use crate::prompt_images::VideoViewerState;
 use crate::render::safe_buf::SafeBuf;
 
-/// Render the video viewer popup chrome. Returns the popup `Rect`,
-/// or `None` if the area is too small.
 pub fn render_video_overlay(
     buf: &mut Buffer,
     area: Rect,
@@ -28,7 +26,6 @@ pub fn render_video_overlay(
 
     crate::render::color::dim_area(buf, area, bg, 0.5);
 
-    // 90% centered popup.
     let popup_width = ((area.width as u32 * 90) / 100)
         .max(28)
         .min(area.width as u32) as u16;
@@ -49,7 +46,6 @@ pub fn render_video_overlay(
         .style(Style::default().bg(bg))
         .render(popup_rect, buf);
 
-    // Title centered in top border.
     let title = match viewer.title {
         Some(ref name) => format!(
             " {} ({}\u{00d7}{}) ",
@@ -68,13 +64,11 @@ pub fn render_video_overlay(
     let tx = popup_rect.x + (popup_rect.width.saturating_sub(tw)) / 2;
     buf.set_span_safe(tx, popup_rect.y, &Span::styled(&title, title_style), tw);
 
-    // Progress bar on the bottom border row.
     render_progress_bar(buf, popup_rect, viewer, text_fg, border_fg, bg);
 
     Some(popup_rect)
 }
 
-/// Render the progress bar on the popup's bottom border row.
 fn render_progress_bar(
     buf: &mut Buffer,
     popup_rect: Rect,

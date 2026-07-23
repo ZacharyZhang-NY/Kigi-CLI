@@ -1,8 +1,4 @@
-//! Version-specific behavior modules for `read_file`.
-//!
-//! - `legacy_0_4_10`: generic error messages, no gitignore enforcement,
-//!   legacy marker for reminder suppression.
-//! - Current behavior remains in `read_file/mod.rs` (structured error
-//!   variants, gitignore enforcement, confusable reminders).
+//! Version-specific behavior modules for `read_file`. Legacy policy lives in
+//! `legacy_0_4_10`; current behavior stays in `read_file/mod.rs`.
 
 pub(crate) mod legacy_0_4_10;

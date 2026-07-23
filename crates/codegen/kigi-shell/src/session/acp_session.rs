@@ -404,7 +404,6 @@ pub(crate) struct SubagentSpawnInfo {
     pub description: String,
     pub subagent_type: String,
 }
-/// Phase 3: Post-flight handling after dispatch (inline in execute_tool_calls for now).
 pub(crate) struct SessionActor {
     pub(crate) session_info: SessionInfo,
     /// Shared live handle to the current ACP auth method. Normal sessions hold a
@@ -423,14 +422,14 @@ pub(crate) struct SessionActor {
     /// H4: `SamplingConfig::model` is the bare routing slug, and duplicate slugs
     /// across an API-key platform and its subscription-OAuth twin
     /// (`xai`/`xai-grok`, `anthropic`/`claude-pro-max`, `openai`/`openai-codex`)
-    /// are BY DESIGN, so the slug alone cannot name the platform. This used to
-    /// be read from `ModelsManager::current_model_id()` — a single
-    /// PROCESS-GLOBAL cell that Leader mode never writes
-    /// (`agent/handlers/model_switch.rs`) and that is last-writer-wins across
-    /// concurrent sessions, so both collision directions resolved the wrong
-    /// platform: the subscription session lost its resolver (unrecoverable 401
-    /// ~1h in) and the API-key session got the pooled OAuth bearer stamped over
-    /// its own `sk-…` key. Written at spawn and on every `SetSessionModel`.
+    /// are BY DESIGN, so the slug alone cannot name the platform. A
+    /// PROCESS-GLOBAL cell like `ModelsManager::current_model_id()` cannot
+    /// serve this: Leader mode never writes it
+    /// (`agent/handlers/model_switch.rs`) and it is last-writer-wins across
+    /// concurrent sessions, so both collision directions resolve the wrong
+    /// platform — the subscription session loses its resolver (unrecoverable
+    /// 401 ~1h in) and the API-key session gets the pooled OAuth bearer stamped
+    /// over its own `sk-…` key. Written at spawn and on every `SetSessionModel`.
     pub(crate) selected_catalog_key: std::cell::RefCell<Option<String>>,
     /// 401-attribution callback. Joined with the bearer the
     /// sampler sends on the wire to emit an `auth 401 attribution`
@@ -462,7 +461,6 @@ pub(crate) struct SessionActor {
     /// Consolidated MCP state (configs, clients, init status) protected by a single lock.
     /// This ensures atomicity when updating configs or checking initialization status.
     pub(crate) mcp_state: Arc<TokioMutex<McpState>>,
-    /// MCP initialization strategy
     pub(crate) mcp_strategy: McpInitStrategy,
     /// Actor-based chat state handle — manages conversation, tokens, timing, and persistence.
     /// Also stores credentials (api_key, optional extra access key,
@@ -475,7 +473,7 @@ pub(crate) struct SessionActor {
     /// read it synchronously to surface `NeedsInput`. Mutated by
     /// `PendingInteractionGuard` at each reverse-request site. Never persisted.
     pub(crate) pending_interactions: crate::session::pending_interaction::PendingInteractions,
-    /// Gates product analytics, not trace uploads. Resolved at spawn as
+    /// Gates product analytics, not trace uploads.
     pub(crate) supports_backend_search: std::cell::Cell<bool>,
     pub(crate) compactions_remaining:
         std::cell::Cell<Option<kigi_sampling_types::CompactionsRemaining>>,
@@ -503,11 +501,9 @@ pub(crate) struct SessionActor {
     /// child's request prefix byte-identical to the parent for radix cache reuse.
     /// `None` for all non-fork (and summarized-fork) sessions.
     pub(crate) forked_tool_override: Option<Vec<ToolSpec>>,
-    /// Compaction configuration and runtime state.
     pub(crate) compaction: super::compaction_config::CompactionConfig,
     /// Memory subsystem: storage, flush config, injection state, telemetry.
     pub(crate) memory: super::memory_state::SessionMemory,
-    /// Telemetry counters for session summary.
     pub(crate) session_start: std::time::Instant,
     /// Per-chunk idle timeout for inference streaming. If no SSE chunk is received
     /// within this duration, the stream is aborted with a non-retryable error.
@@ -543,7 +539,7 @@ pub(crate) struct SessionActor {
     /// Feedback manager for signal tracking and feedback request heuristics
     pub(crate) feedback_manager: Arc<FeedbackManager>,
     /// The fully-built Agent: owns the ToolBridge, system prompt, policies,
-    /// and the AgentDefinition. Replaces the old `tool_bridge` + `agent_definition` fields.
+    /// and the AgentDefinition.
     /// Wrapped in `RefCell` for mid-session mutation (skill refresh, prompt regen).
     /// Safe: session actor is single-threaded (LocalSet), no concurrent access.
     pub(crate) agent: std::cell::RefCell<kigi_agent::Agent>,
@@ -710,8 +706,8 @@ pub(crate) struct SessionActor {
     /// goal_use_current_model_only`) resolved at actor build. When `true`,
     /// every `/goal` role inherits the current model. `goal_role_models`
     /// already reflects it (planner/strategist `InheritCurrent`, empty pool),
-    /// but the skeptic panel also checks this flag directly so a
-    /// previously-frozen `skeptic_model_assignment` is overridden too — an
+    /// but the skeptic panel also checks this flag directly so an
+    /// already-frozen `skeptic_model_assignment` is overridden too — an
     /// instant rollback even for an already-frozen goal.
     pub(crate) goal_use_current_model_only: bool,
     /// Resolved per-goal classifier run cap (number of
@@ -946,7 +942,6 @@ pub(crate) struct SessionActor {
     pub(crate) laziness_debug_log: Option<std::sync::Arc<std::path::Path>>,
 }
 impl SessionActor {
-    /// Get the signals handle for tracking session events.
     fn signals_handle(&self) -> SessionSignalsHandle {
         self.feedback_manager.signals_handle()
     }
@@ -972,7 +967,6 @@ impl SessionActor {
             .filter(|m| !m.is_empty())
             .unwrap_or_else(|| "unknown".to_string())
     }
-    /// Build a hook run context for dispatching hook events.
     fn session_id_string(&self) -> String {
         self.session_info.id.0.to_string()
     }
@@ -1073,7 +1067,6 @@ impl SessionActor {
             tracing::warn!(?e, "flush_replay_actor failed");
         }
     }
-    /// Send a feedback request notification to the client.
     async fn send_feedback_notification(&self, request: crate::session::feedback::FeedbackRequest) {
         self.send_xai_notification(XaiSessionUpdate::FeedbackRequest(request.into()))
             .await;
@@ -1452,8 +1445,8 @@ impl Drop for TurnMetrics {
 #[path = "acp_session_tests/auth_error_no_retry_tests.rs"]
 mod auth_error_no_retry_tests;
 /// Regression coverage for the auto-wake suppression sweep + shutdown
-/// drain. These exercise the helpers added to fix the trailing
-/// `<system-reminder>` chat history bug.
+/// drain that guard against the trailing `<system-reminder>` chat history
+/// bug.
 #[cfg(test)]
 #[path = "acp_session_tests/auto_wake_suppression_tests.rs"]
 mod auto_wake_suppression_tests;

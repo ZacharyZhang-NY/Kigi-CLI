@@ -4,8 +4,7 @@
 //! `GET {coding_api_base_url}/usages` with the OAuth Bearer token, parsed into
 //! display rows (`{usage: {...}, limits: [{detail, window, ...}]}` payload
 //! shape). The TUI renders the rows as label + remaining-quota bar +
-//! reset hint. The xAI credits/auto-topup surface this file used to serve is
-//! gone with the xAI proxy.
+//! reset hint.
 
 use agent_client_protocol as acp;
 use serde::{Deserialize, Serialize};

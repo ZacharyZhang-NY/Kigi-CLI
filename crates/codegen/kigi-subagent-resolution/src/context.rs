@@ -22,11 +22,13 @@ const MAX_VERBATIM_TURNS: usize = 3;
 /// strips a related (but different) tag set for compaction.
 const FORK_NOISE_TAGS: &[&str] = &[
     "system-reminder",
-    "system_reminder", // Cursor wire format uses underscore
+    // Cursor wire format uses underscore
+    "system_reminder",
     "user_info",
     "git_status",
     "project_layout",
-    "attached_files", // Alternate-agent file context; child reads files itself
+    // Alternate-agent file context; child reads files itself
+    "attached_files",
 ];
 
 /// Normalize a forked parent conversation into the shape:
@@ -56,7 +58,7 @@ pub fn normalize_forked_context(items: Vec<ConversationItem>) -> (Vec<Conversati
     // Collect non-system items as the parent context to render.
     let parent_items: Vec<&ConversationItem> = items
         .iter()
-        .skip(1) // skip System
+        .skip(1)
         .filter(|i| !matches!(i, ConversationItem::System(_)))
         .collect();
 
@@ -135,7 +137,8 @@ fn count_complete_turns(items: &[&ConversationItem]) -> Vec<usize> {
         if i >= items.len() || !matches!(items[i], ConversationItem::Assistant(_)) {
             break;
         }
-        i += 1; // skip past Assistant
+        // skip past Assistant
+        i += 1;
         // Consume the post-assistant run: ToolResults plus interleaved
         // Reasoning / BackendToolCall siblings, until the next User/Assistant.
         while i < items.len()
@@ -374,7 +377,8 @@ fn render_summary(out: &mut String, items: &[&ConversationItem]) {
 fn truncate_str(s: &str, max_chars: usize) -> &str {
     match s.char_indices().nth(max_chars) {
         Some((byte_offset, _)) => &s[..byte_offset],
-        None => s, // string has <= max_chars characters
+        // string has <= max_chars characters
+        None => s,
     }
 }
 
@@ -716,8 +720,8 @@ mod tests {
         let refs: Vec<&ConversationItem> = items.iter().collect();
         let turns = count_complete_turns(&refs);
         assert_eq!(turns.len(), 2);
-        assert_eq!(turns[0], 2); // after A1
-        assert_eq!(turns[1], 4); // after A2
+        assert_eq!(turns[0], 2);
+        assert_eq!(turns[1], 4);
     }
 
     #[test]
@@ -733,7 +737,8 @@ mod tests {
         let refs: Vec<&ConversationItem> = items.iter().collect();
         let turns = count_complete_turns(&refs);
         assert_eq!(turns.len(), 2);
-        assert_eq!(turns[0], 4); // after 2 tool results
+        // after 2 tool results
+        assert_eq!(turns[0], 4);
         assert_eq!(turns[1], 6);
     }
 
@@ -742,7 +747,8 @@ mod tests {
         let items = [
             user_item("U1"),
             assistant_item("A1"),
-            user_item("U2"), // trailing User with no Assistant
+            // trailing User with no Assistant
+            user_item("U2"),
         ];
         let refs: Vec<&ConversationItem> = items.iter().collect();
         let turns = count_complete_turns(&refs);
@@ -765,8 +771,10 @@ mod tests {
         let refs: Vec<&ConversationItem> = items.iter().collect();
         let turns = count_complete_turns(&refs);
         assert_eq!(turns.len(), 2);
-        assert_eq!(turns[0], 3); // after reasoning + A1
-        assert_eq!(turns[1], 6); // after reasoning + A2
+        // after reasoning + A1
+        assert_eq!(turns[0], 3);
+        // after reasoning + A2
+        assert_eq!(turns[1], 6);
     }
 
     #[test]
@@ -797,14 +805,14 @@ mod tests {
     #[test]
     fn truncate_str_multibyte_emoji() {
         // Each emoji is 4 bytes. Truncating at 2 chars should yield 2 emojis (8 bytes).
-        let s = "\u{1F600}\u{1F601}\u{1F602}\u{1F603}"; // 4 emojis
+        let s = "\u{1F600}\u{1F601}\u{1F602}\u{1F603}";
         assert_eq!(truncate_str(s, 2), "\u{1F600}\u{1F601}");
     }
 
     #[test]
     fn truncate_str_multibyte_cjk() {
         // CJK chars are 3 bytes each. Truncating at 3 chars should yield 3 chars (9 bytes).
-        let s = "\u{4F60}\u{597D}\u{4E16}\u{754C}"; // 4 CJK chars
+        let s = "\u{4F60}\u{597D}\u{4E16}\u{754C}";
         assert_eq!(truncate_str(s, 3), "\u{4F60}\u{597D}\u{4E16}");
     }
 
@@ -813,7 +821,7 @@ mod tests {
         assert_eq!(strip_fork_noise(""), "");
     }
 
-    // --- strip_xml_block tests ---
+    // strip_xml_block tests
 
     #[test]
     fn strip_xml_block_removes_system_reminder() {
@@ -866,7 +874,7 @@ mod tests {
         assert_eq!(result, input);
     }
 
-    // --- strip_skill_instructions tests ---
+    // strip_skill_instructions tests
 
     #[test]
     fn strip_skill_instructions_preserves_command_metadata() {
@@ -906,7 +914,7 @@ mod tests {
         assert_eq!(result, "prefix </command-args>");
     }
 
-    // --- collapse_blank_lines tests ---
+    // collapse_blank_lines tests
 
     #[test]
     fn collapse_blank_lines_reduces_runs() {
@@ -922,7 +930,7 @@ mod tests {
         assert_eq!(result, input);
     }
 
-    // --- strip_fork_noise integration tests ---
+    // strip_fork_noise integration tests
 
     #[test]
     fn strip_fork_noise_strips_user_info() {
@@ -1017,7 +1025,7 @@ This is a very long skill body with many lines of instructions.\n\n\
         assert!(!result.contains("**ARGUMENTS:**"));
     }
 
-    // --- normalize_forked_context integration tests ---
+    // normalize_forked_context integration tests
 
     #[test]
     fn normalize_forked_context_empty_after_strip() {

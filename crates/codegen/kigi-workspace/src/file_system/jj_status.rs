@@ -6,7 +6,6 @@ use std::process::Command;
 
 use crate::file_system::FsError;
 
-/// jj template: change ID, commit ID, description, bookmarks.
 const JJ_LOG_TEMPLATE: &str = r#"separate("\n",
   "Change: " ++ change_id.shortest(8),
   "Commit: " ++ commit_id.shortest(8),
@@ -18,7 +17,7 @@ const JJ_LOG_TEMPLATE: &str = r#"separate("\n",
     "")
 )"#;
 
-/// Compact jj status for the system prompt (~1k chars max).
+/// Truncated to roughly 1k chars so the prompt budget stays bounded.
 pub async fn jj_status(working_directory: impl Into<PathBuf>) -> Result<String, FsError> {
     let working_directory = working_directory.into();
     tokio::task::spawn_blocking(move || jj_status_impl(&working_directory))
@@ -64,7 +63,8 @@ fn jj_status_impl(cwd: &Path) -> Result<String, FsError> {
     Ok(out)
 }
 
-/// Run a jj command synchronously, returning trimmed stdout or `None` on failure.
+/// `--ignore-working-copy` keeps this read-only: without it jj snapshots the
+/// working copy into a new commit as a side effect of the query.
 fn run_jj(cwd: &Path, args: &[&str]) -> Option<String> {
     let mut cmd = Command::new("jj");
     cmd.arg("--ignore-working-copy")

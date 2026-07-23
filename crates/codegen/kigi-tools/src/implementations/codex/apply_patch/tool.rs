@@ -20,8 +20,6 @@ use super::errors::ParseError;
 use super::parser::{self, Hunk};
 use super::{apply, errors::ApplyPatchError};
 
-// ─── Description ─────────────────────────────────────────────────────
-
 /// Tool description derived from the codex `apply_patch_tool_instructions.md`.
 const DESCRIPTION: &str = r#"Use the `apply_patch` tool to edit files.
 Your patch language is a stripped‑down, file‑oriented diff format designed to be easy to parse and safe to apply. You can think of it as a high‑level envelope:
@@ -92,8 +90,6 @@ It is important to remember:
 - File references can only be relative, NEVER ABSOLUTE.
 "#;
 
-// ─── Input ───────────────────────────────────────────────────────────
-
 /// Input for the `apply_patch` tool.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct ApplyPatchInput {
@@ -101,15 +97,10 @@ pub struct ApplyPatchInput {
     pub patch: String,
 }
 
-// ─── Tool ────────────────────────────────────────────────────────────
-
-/// ApplyPatch tool — applies multi-file patches in the codex patch format.
 #[derive(Debug, Default)]
 pub struct ApplyPatchTool;
 
-// ─── Internal types ──────────────────────────────────────────────────
-
-/// A computed file change — all content determined in-memory, ready to write.
+/// A change whose content is fully resolved in memory, ready to write.
 enum FileChange {
     Add {
         path: PathBuf,
@@ -132,9 +123,6 @@ enum FileChange {
     },
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────
-
-/// Create parent directories for a file path if they don't exist.
 async fn ensure_parent_dirs(path: &std::path::Path) -> Result<(), kigi_tool_runtime::ToolError> {
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
@@ -149,8 +137,8 @@ async fn ensure_parent_dirs(path: &std::path::Path) -> Result<(), kigi_tool_runt
     Ok(())
 }
 
-/// Compute all file changes in memory without writing anything.
-/// Returns an error string if any hunk can't be applied.
+/// Resolves every hunk against the filesystem without writing, so a patch that
+/// fails partway through leaves nothing on disk.
 async fn compute_all_changes(
     cwd: &std::path::Path,
     fs: &Arc<dyn AsyncFileSystem>,
@@ -215,7 +203,6 @@ async fn compute_all_changes(
     Ok(changes)
 }
 
-/// Read a file via AsyncFileSystem and convert to String.
 async fn read_file_as_string(
     fs: &Arc<dyn AsyncFileSystem>,
     path: &std::path::Path,
@@ -224,7 +211,6 @@ async fn read_file_as_string(
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
-/// Build the codex-style summary string.
 fn build_summary(results: &[ApplyPatchFileResult]) -> String {
     let mut out = String::from("Success. Updated the following files:\n");
     for r in results {
@@ -232,14 +218,13 @@ fn build_summary(results: &[ApplyPatchFileResult]) -> String {
             "added" => "A",
             "deleted" => "D",
             "moved" => "M",
-            _ => "M", // "modified"
+            // "modified"
+            _ => "M",
         };
         let _ = writeln!(out, "{prefix} {}", r.path.display());
     }
     out
 }
-
-// ─── Tests ───────────────────────────────────────────────────────────
 
 impl crate::types::tool_metadata::ToolMetadata for ApplyPatchTool {
     fn kind(&self) -> ToolKind {
@@ -307,7 +292,6 @@ impl kigi_tool_runtime::Tool for ApplyPatchTool {
         }
         let tool_call_id = ctx.call_id.as_str().to_owned();
 
-        // ── Phase 1: Parse ───────────────────────────────────────
         let parsed = match parser::parse_patch(&input.patch) {
             Ok(p) => p,
             Err(e) => {
@@ -328,19 +312,16 @@ impl kigi_tool_runtime::Tool for ApplyPatchTool {
             ));
         }
 
-        // ── Phase 2: Compute all changes in memory (no writes yet) ───
         let changes = match compute_all_changes(&cwd, &fs, &parsed.hunks).await {
             Ok(c) => c,
             Err(msg) => return Ok(ApplyPatchOutput::ApplicationError(msg)),
         };
 
-        // ── Phase 3: Apply all changes (write to filesystem) ─────
         let mut file_results = Vec::new();
 
         for change in &changes {
             match change {
                 FileChange::Add { path, content } => {
-                    // Create parent directories if needed.
                     ensure_parent_dirs(path).await?;
                     fs.write_file(path, content.as_bytes()).await.map_err(|e| {
                         kigi_tool_runtime::ToolError::execution(
@@ -428,7 +409,6 @@ impl kigi_tool_runtime::Tool for ApplyPatchTool {
                     original_content,
                     new_content,
                 } => {
-                    // Create parent dirs for destination.
                     ensure_parent_dirs(dest_path).await?;
                     fs.write_file(dest_path, new_content.as_bytes())
                         .await
@@ -445,7 +425,8 @@ impl kigi_tool_runtime::Tool for ApplyPatchTool {
                         )
                     })?;
 
-                    // Notify destination (new file at new location).
+                    // A move surfaces as two notifications: a creation at the
+                    // destination and a deletion at the source.
                     notification_handle.send_file_written(FileWritten {
                         tool_call_id: tool_call_id.clone(),
                         absolute_path: dest_path.clone(),
@@ -453,7 +434,6 @@ impl kigi_tool_runtime::Tool for ApplyPatchTool {
                         previous_content: None,
                         is_new_file: true,
                     });
-                    // Notify source (deleted).
                     notification_handle.send_file_written(FileWritten {
                         tool_call_id: tool_call_id.clone(),
                         absolute_path: source_path.clone(),
@@ -473,7 +453,6 @@ impl kigi_tool_runtime::Tool for ApplyPatchTool {
             }
         }
 
-        // ── Phase 4: Build summary ───────────────────────────────
         let tool_output_for_prompt = build_summary(&file_results);
 
         Ok(ApplyPatchOutput::Success {
@@ -492,7 +471,6 @@ mod tests {
     use crate::types::tool_metadata::test_ctx;
     use tempfile::TempDir;
 
-    /// Set up Resources with real filesystem for tests.
     fn test_resources(cwd: &std::path::Path) -> Resources {
         let mut resources = Resources::new();
         resources.insert(Cwd(cwd.to_path_buf()));
@@ -501,7 +479,6 @@ mod tests {
         resources
     }
 
-    /// Build a runtime `ToolCallContext` with the given shared resources.
     fn make_input(patch: &str) -> ApplyPatchInput {
         ApplyPatchInput {
             patch: patch.to_string(),
@@ -511,8 +488,6 @@ mod tests {
     fn wrap_patch(body: &str) -> String {
         format!("*** Begin Patch\n{body}\n*** End Patch")
     }
-
-    // ── Add file ─────────────────────────────────────────────────
 
     #[tokio::test]
     async fn add_file_creates_with_correct_content() {
@@ -542,8 +517,6 @@ mod tests {
         }
     }
 
-    // ── Delete file ──────────────────────────────────────────────
-
     #[tokio::test]
     async fn delete_file_removes_file() {
         let tmp = TempDir::new().unwrap();
@@ -572,8 +545,6 @@ mod tests {
             other => panic!("Expected Success, got: {other:?}"),
         }
     }
-
-    // ── Update file ──────────────────────────────────────────────
 
     #[tokio::test]
     async fn update_file_modifies_content() {
@@ -605,8 +576,6 @@ mod tests {
         }
     }
 
-    // ── Move file ────────────────────────────────────────────────
-
     #[tokio::test]
     async fn move_file_renames_and_modifies() {
         let tmp = TempDir::new().unwrap();
@@ -634,8 +603,6 @@ mod tests {
             other => panic!("Expected Success, got: {other:?}"),
         }
     }
-
-    // ── Multiple files in one patch ──────────────────────────────
 
     #[tokio::test]
     async fn multiple_files_in_one_patch() {
@@ -675,8 +642,6 @@ mod tests {
         }
     }
 
-    // ── Parse error ──────────────────────────────────────────────
-
     #[tokio::test]
     async fn parse_error_returns_no_changes() {
         let tmp = TempDir::new().unwrap();
@@ -700,8 +665,6 @@ mod tests {
         }
     }
 
-    // ── Application error ────────────────────────────────────────
-
     #[tokio::test]
     async fn application_error_on_missing_lines() {
         let tmp = TempDir::new().unwrap();
@@ -724,8 +687,6 @@ mod tests {
             other => panic!("Expected ApplicationError, got: {other:?}"),
         }
     }
-
-    // ── Empty patch ──────────────────────────────────────────────
 
     #[tokio::test]
     async fn empty_patch_returns_empty_patch_output() {

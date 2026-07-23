@@ -67,7 +67,7 @@ const MARKER_PREFIX: &str = "MARKER-";
 /// off-screen while the tail is in flight (witness for "still streaming").
 pub const STREAM_END_SENTINEL: &str = "STREAMDONE";
 
-/// Unique numbered marker line (`MARKER-0042`), zero-padded so no marker is
+/// Unique numbered marker line (`MARKER-0042`), zero-`padded` so no marker is
 /// a substring of another within a [`marker_response`] transcript.
 pub fn marker_line(n: usize) -> String {
     format!("{MARKER_PREFIX}{n:04}")

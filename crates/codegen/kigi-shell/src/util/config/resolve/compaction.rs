@@ -134,9 +134,13 @@ mod compaction_wall_clock_budget_tests {
     // Assumes KIGI_COMPACTION_WALL_CLOCK_SECS is unset in the test env.
     #[test]
     fn default_global_disable_and_no_clamp() {
-        assert_eq!(resolve(None), 300); // client default
-        assert_eq!(resolve(Some(450)), 450); // server global wins
-        assert_eq!(resolve(Some(0)), 0); // 0 explicitly disables (no clamp)
-        assert_eq!(resolve(Some(5)), 5); // low values pass through (warned, not clamped)
+        // client default
+        assert_eq!(resolve(None), 300);
+        // server global wins
+        assert_eq!(resolve(Some(450)), 450);
+        // 0 explicitly disables (no clamp)
+        assert_eq!(resolve(Some(0)), 0);
+        // low values pass through (warned, not clamped)
+        assert_eq!(resolve(Some(5)), 5);
     }
 }

@@ -425,7 +425,8 @@ fn managed_config_stale_at(home: Option<&Path>, identity: &ServingIdentity) -> b
         return false;
     };
     let Some(cache) = read_managed_config_cache(home) else {
-        return true; // no marker → never synced → stale
+        // no marker → never synced → stale
+        return true;
     };
     if cache_unusable_for(&cache, home, identity) {
         return true;

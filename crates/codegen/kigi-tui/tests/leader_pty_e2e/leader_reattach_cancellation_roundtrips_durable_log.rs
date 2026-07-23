@@ -40,8 +40,7 @@ async fn leader_reattach_cancellation_roundtrips_durable_log() {
         .expect("A welcome");
     a.inject_keys(format!("{PROMPT}\r").as_bytes())
         .expect("A submit turn");
-    // Wait until the turn is clearly streaming (sentinel visible); this also
-    // closes the leader's rewind window so cancel is not confused with rewind.
+    // Also closes the leader's rewind window, so cancel is not confused with rewind.
     a.wait_for_text(&turn_sentinel(1), STREAM_TIMEOUT)
         .expect("A turn streaming");
 

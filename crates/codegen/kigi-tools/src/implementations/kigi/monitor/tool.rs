@@ -119,7 +119,8 @@ impl kigi_tool_runtime::Tool for MonitorTool {
                     "1".to_string(),
                 )]),
                 timeout: if resolved_timeout == 0 {
-                    Duration::from_secs(86400 * 365) // long-running (until kill or session end)
+                    // long-running (until kill or session end)
+                    Duration::from_secs(86400 * 365)
                 } else {
                     Duration::from_millis(resolved_timeout)
                 },
@@ -160,8 +161,6 @@ impl kigi_tool_runtime::Tool for MonitorTool {
         });
 
         // Spawn the stdout processing pipeline.
-        // Reads the output file, processes lines through the rate limiter,
-        // and emits MonitorEvent notifications.
         let pipeline_task_id = task_id.clone();
         let pipeline_description = description.clone();
         // Weak handle: the pipeline must not keep the session's terminal backend
@@ -188,7 +187,8 @@ impl kigi_tool_runtime::Tool for MonitorTool {
                 &pipeline_notif,
                 &pipeline_output_file,
                 pipeline_kill_name,
-                0, // fresh pipeline — read from start
+                // fresh pipeline — read from start
+                0,
             )
             .await;
         });
@@ -263,7 +263,6 @@ pub(crate) async fn run_monitor_pipeline(
             break;
         };
 
-        // Check if the task is still running.
         let snapshot = terminal.get_task(task_id).await;
         let completed = snapshot.is_none() || snapshot.as_ref().is_some_and(|s| s.completed);
 
@@ -275,7 +274,6 @@ pub(crate) async fn run_monitor_pipeline(
         }
         let owner_session_id = snapshot_owner.or_else(|| last_owner.clone());
 
-        // Read new output from the file.
         let new_bytes = read_new_bytes(output_file, &mut last_read_offset).await;
         if !new_bytes.is_empty() {
             let lines = line_processor.push(&new_bytes);
@@ -294,7 +292,6 @@ pub(crate) async fn run_monitor_pipeline(
         }
 
         if completed {
-            // Flush any remaining partial line.
             if let Some(remaining) = line_processor.flush() {
                 process_event(
                     task_id,
@@ -349,7 +346,8 @@ async fn read_new_bytes(path: &std::path::Path, offset: &mut u64) -> Vec<u8> {
     }
 
     let to_read = (file_len - *offset) as usize;
-    let mut buf = vec![0u8; to_read.min(1024 * 1024)]; // cap single read at 1MB
+    // cap single read at 1MB
+    let mut buf = vec![0u8; to_read.min(1024 * 1024)];
     let Ok(n) = file.read(&mut buf).await else {
         return Vec::new();
     };
@@ -471,7 +469,6 @@ mod tests {
             .await;
         });
 
-        // The monitor is running and visible.
         tokio::time::sleep(Duration::from_millis(300)).await;
         assert!(
             backend.get_task(&task_id).await.is_some(),

@@ -44,12 +44,10 @@ pub fn validate_compaction_text(
     text_content: &str,
     strategy: &CompactionStrategy,
 ) -> Result<(), CompactionValidationError> {
-    // 1. Non-empty text content
     if text_content.trim().is_empty() {
         return Err(CompactionValidationError::EmptyContent);
     }
 
-    // 2. DnC: validate chunk_summary tags are balanced
     if matches!(strategy, CompactionStrategy::DivideAndConquer) {
         let open_count = text_content.matches("<chunk_summary").count();
         let close_count = text_content.matches("</chunk_summary>").count();

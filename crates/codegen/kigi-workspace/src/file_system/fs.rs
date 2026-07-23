@@ -46,9 +46,7 @@ pub fn bytes_to_string(file_bytes: Vec<u8>) -> Result<String, FsError> {
     String::from_utf8(file_bytes).map_err(|e| FsError::Other(e.to_string()))
 }
 
-// ============================================================================
 // AsyncFsWrapper - Generic wrapper that accepts any path type
-// ============================================================================
 
 /// A wrapper around `AsyncFileSystem` that accepts any path type implementing `ToAbsPath`.
 ///
@@ -129,14 +127,12 @@ impl AsyncFsWrapper {
         }
     }
 
-    /// Write data to a file.
     pub async fn write_file<P: ToAbsPath>(&self, path: P, data: &[u8]) -> Result<(), FsError> {
         self.inner
             .write_file(&path.to_abs_path(self.root()), data)
             .await
     }
 
-    /// Delete a file.
     pub async fn delete_file<P: ToAbsPath>(&self, path: P) -> Result<(), FsError> {
         self.inner.delete_file(&path.to_abs_path(self.root())).await
     }

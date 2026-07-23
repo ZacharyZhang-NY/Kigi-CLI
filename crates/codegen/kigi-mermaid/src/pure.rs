@@ -6,9 +6,6 @@ use mermaid_to_svg::{MermaidTheme as EngineTheme, render_mermaid_to_svg};
 use crate::{MermaidEngine, MermaidError, MermaidTheme, RenderParams, RenderedDiagram};
 
 /// The default, offline, pure-Rust engine.
-///
-/// Uses the vendored dagre-based layout engine to produce an SVG, then
-/// rasterizes it with the crate's hardened [`crate::rasterize`] pipeline.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct PureRustEngine;
 
@@ -26,18 +23,17 @@ impl MermaidEngine for PureRustEngine {
     }
 }
 
-/// Mermaid source -> SVG (the layout half). A free function (no engine state) so
-/// the SVG can be tested directly and reused by [`MermaidEngine::render`].
+/// Mermaid source -> SVG (the layout half). A free function, not a method, so
+/// the SVG can be asserted on directly in tests.
 ///
-/// The engine returns an error for unparseable or unsupported diagram types; the
-/// caller degrades any error to the code-block fallback (see
-/// [`crate::render_checked`]).
+/// Errors here (unparseable source, unsupported diagram type) are not fatal: the
+/// caller degrades them to the code-block fallback via [`crate::render_checked`].
 fn build_svg(source: &str, theme: MermaidTheme) -> Result<String, MermaidError> {
     let engine_theme = theme_for(theme);
     render_mermaid_to_svg(source, Some(&engine_theme)).map_err(map_engine_error)
 }
 
-/// Map the vendored engine's error taxonomy onto ours, preserving the
+/// Map the vendored engine's errors onto ours, preserving the
 /// parse/layout/unsupported split so observability stays honest.
 fn map_engine_error(e: mermaid_to_svg::MermaidError) -> MermaidError {
     use mermaid_to_svg::MermaidError as E;
@@ -52,10 +48,10 @@ fn map_engine_error(e: mermaid_to_svg::MermaidError) -> MermaidError {
 
 /// Map [`MermaidTheme`] to a vendored-engine [`EngineTheme`].
 ///
-/// Only the diagram surface is overridden, to the crate's single-source-of-truth
-/// surface color ([`crate::LIGHT_SURFACE`] / [`crate::DARK_SURFACE`]) so the
-/// painted SVG background blends with the terminal scrollback surface the PNG
-/// sits on; the rest of each preset's palette is used as-is.
+/// Only the surface is overridden — to the crate's single-source-of-truth color
+/// ([`crate::LIGHT_SURFACE`] / [`crate::DARK_SURFACE`]) so the painted SVG
+/// background blends with the terminal scrollback the PNG sits on. The rest of
+/// each preset's palette is used as-is.
 fn theme_for(theme: MermaidTheme) -> EngineTheme {
     match theme {
         MermaidTheme::Light => {
@@ -128,13 +124,10 @@ mod tests {
         );
     }
 
-    /// A cyclic flowchart whose back-edge (`Attempts -->|No| Enter`) routes back
-    /// up into the cycle — the tricky case for flowchart edge routing. Every one
-    /// of the eight edges must keep its arrowhead, and no node may be dropped by
-    /// the cycle.
+    /// The back-edge (`Attempts -->|No| Enter`) routes back up into the cycle,
+    /// the tricky case for flowchart edge routing.
     #[test]
     fn cyclic_login_flow_renders_with_arrowheads() {
-        // Eight directed edges; each must emit exactly one arrowhead marker.
         const EDGE_COUNT: usize = 8;
         let source = "flowchart TD\n\
             Start([User visits login page]) --> Enter[Enter username & password]\n\
@@ -146,15 +139,13 @@ mod tests {
             Attempts -->|No| Enter\n\
             Validate -->|Yes| Session[Create session]";
         let svg = build_svg(source, MermaidTheme::Light).expect("cyclic flow renders");
-        // Pin the invariant to the edges: exactly one `marker-end="url(#arrowhead)"`
-        // per edge, so a dropped/detached back-edge arrowhead fails (a whole-doc
-        // "contains arrow" substring check would pass even with one missing).
+        // Count rather than substring-match: a whole-document "contains an
+        // arrowhead" check would still pass with the back-edge arrowhead gone.
         let arrowheads = svg.matches(r#"marker-end="url(#arrowhead)""#).count();
         assert_eq!(
             arrowheads, EDGE_COUNT,
             "every flowchart edge must carry an arrowhead marker",
         );
-        // All node labels survive layout (no node dropped by the cycle).
         for label in [
             "Enter username",
             "Submit credentials",
@@ -169,8 +160,6 @@ mod tests {
 
     #[test]
     fn light_and_dark_render_to_different_pixels() {
-        // Stronger than an SVG-string diff: render both themes at identical
-        // params and assert the encoded pixels actually differ.
         let engine = PureRustEngine::new();
         let light = engine
             .render(
@@ -203,8 +192,6 @@ mod tests {
 
     #[test]
     fn theme_for_overrides_surface_per_theme() {
-        // The diagram background is the crate's surface single-source-of-truth so
-        // the PNG blends with the terminal scrollback surface.
         assert_eq!(
             theme_for(MermaidTheme::Light).background,
             crate::LIGHT_SURFACE.to_hex()
@@ -219,10 +206,8 @@ mod tests {
         );
     }
 
-    /// Untrusted input must never panic — `render_checked` would surface a panic
-    /// as `MermaidError::Panic`, which we assert against. Unparseable input may
-    /// legitimately return other errors (which degrade to the code-block
-    /// fallback), but never a panic.
+    /// Only `MermaidError::Panic` is forbidden: garbage input may legitimately
+    /// return other errors, which degrade to the code-block fallback.
     #[test]
     fn garbage_input_never_panics() {
         let engine = PureRustEngine::new();
@@ -251,7 +236,6 @@ mod tests {
     #[test]
     fn engine_error_taxonomy_maps_every_arm() {
         use mermaid_to_svg::MermaidError as E;
-        // Parse family: malformed source, bad direction, bad node shape.
         for parse in [
             E::ParseError {
                 line: 1,
@@ -265,7 +249,6 @@ mod tests {
                 "expected Parse mapping",
             );
         }
-        // Layout family: dot generation + SVG render failures.
         for layout in [
             E::DotGenerationError("x".into()),
             E::RenderError("x".into()),
@@ -275,7 +258,6 @@ mod tests {
                 "expected Layout mapping",
             );
         }
-        // Unsupported diagram type is its own category.
         assert!(matches!(
             map_engine_error(E::UnsupportedDiagramType("x".into())),
             MermaidError::Unsupported(_)

@@ -1,11 +1,5 @@
-//! ReadFile — new-architecture implementation.
-//!
-//! Reuses the core logic (`extract_file_content_lines`, `bytes_to_metadata`,
-//! constants) from the old `implementations::read_file` module.
-//! State:
-//! - Notifications emitted via `NotificationHandle` from Resources.
-//!
-//! Reminders are NOT implemented here (Phase 5).
+//! ReadFile tool. Shares core helpers (`extract_file_content_lines`,
+//! `bytes_to_metadata`, constants) with `implementations::read_file`.
 use crate::implementations::read_file::{
     handle_pdf, is_pdf_file, raw_text_to_file_content, run_document_extraction,
 };
@@ -23,7 +17,6 @@ use crate::types::tool::{ToolKind, ToolNamespace};
 use std::sync::LazyLock;
 mod versions;
 use crate::types::schema::KigiIntegerSchema;
-/// Configuration for the ReadFile tool, stored as `Params<ReadFileParams>` in Resources.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReadFileParams {
@@ -91,15 +84,11 @@ async fn handle_pptx(
     .await
 }
 /// Extract text from a PPTX file (zip + DrawingML text runs).
-///
-/// Returns line-numbered text via the shared `raw_text_to_file_content`
-/// helper.
 fn extract_pptx_text(file_bytes: Vec<u8>) -> Result<ReadFileOutput, String> {
     let text = crate::implementations::read_file::pptx::extract_pptx_text_from_bytes(&file_bytes)
         .map_err(|e| format!("Failed to extract text from PPTX: {e}"))?;
     Ok(raw_text_to_file_content(text))
 }
-/// Description for default toolset (full/non-concise)
 pub(crate) const DESCRIPTION_FULL: &str = r#"Read a file.
 
 Usage:
@@ -180,7 +169,6 @@ pub struct ExtractedContent {
     pub content: String,
     /// Concise format: identical to content (kept for backward compatibility)
     pub content_concise: String,
-    /// Raw unformatted content
     pub raw_output: String,
     /// Base64 images captured per-line before truncation. Plumbed through
     /// `FileContent.extracted_images` and turned into multimodal
@@ -540,11 +528,6 @@ pub(crate) async fn run_read_file(
         extracted_images,
     }))
 }
-/// New-architecture `ReadFile` tool.
-///
-/// Params: `()` — no per-tool configuration.
-///
-/// Notifications: Emits `FileRead` via `NotificationHandle`.
 #[derive(Default, Debug)]
 pub struct ReadFileTool;
 impl crate::types::tool_metadata::ToolMetadata for ReadFileTool {
@@ -666,7 +649,6 @@ mod tests {
     use crate::types::tool_metadata::test_ctx;
     use std::sync::Arc;
     use tempfile::TempDir;
-    /// Set up Resources with real filesystem for tests.
     fn test_resources(cwd: &std::path::Path) -> Resources {
         let mut resources = Resources::new();
         resources.insert(Cwd(cwd.to_path_buf()));
@@ -1014,10 +996,9 @@ mod tests {
         assert_eq!(extracted.content_concise, "1→1\n2\n3\n");
         assert_eq!(extracted.raw_output, "1\n2\r\n3\n");
     }
-    /// Regression: a long single-line base64 URI used to be cut
-    /// mid-payload by the (since-removed) per-line clip and re-emitted as
-    /// a corrupt vision token. Pin that the full payload is captured
-    /// byte-equal.
+    /// Regression: a long single-line base64 URI must be captured
+    /// byte-equal, not clipped mid-payload and re-emitted as a corrupt
+    /// vision token.
     #[test]
     fn extract_captures_long_inline_base64_image_before_truncation() {
         let payload = "A".repeat(50_000);
@@ -1624,8 +1605,8 @@ pub fn verify(req: &HttpRequest) -> Result<Claims, Error> {
         }
     }
     /// Wrapper-level user-visible message: prefix matches the caller's
-    /// `"Could not embed image in conversation: ..."` and the legacy
-    /// "Image too large to embed..." is no longer used.
+    /// `"Could not embed image in conversation: ..."`, not the legacy
+    /// "Image too large to embed..." form.
     #[test]
     fn compress_oversized_garbage_user_message_is_non_legacy() {
         let bytes = vec![0u8; MAX_IMAGE_PAYLOAD_BYTES + 4096];
@@ -2122,9 +2103,9 @@ pub fn verify(req: &HttpRequest) -> Result<Claims, Error> {
     }
     /// Regression for the "death spiral" incident: a single-line
     /// ~49.5KB JSON payload must be readable in full with default config.
-    /// The old 2000-char per-line clip made such files unreadable by
-    /// construction (bash output and MCP results are byte-capped too), so the
-    /// model could never load a payload it needed to re-emit as tool input.
+    /// A per-line clip would make such files unreadable by construction
+    /// (bash output and MCP results are byte-capped too), so the model
+    /// could never load a payload it needed to re-emit as tool input.
     #[tokio::test]
     async fn single_line_payload_reads_in_full_by_default() {
         let tmp = TempDir::new().unwrap();

@@ -15,7 +15,6 @@ use tracing::{Level, info};
 
 use kigi_fast_worktree::{BtrfsMode, IgnoredFilesMode, WorkingTreeMode, WorktreeBuilder};
 
-/// CLI enum for BTRFS mode selection
 #[derive(Clone, Debug, Default, ValueEnum)]
 enum CliBtrfsMode {
     /// Auto-detect: use BTRFS snapshot if source is on a BTRFS subvolume
@@ -98,7 +97,6 @@ enum Commands {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Initialize tracing
     let level = if cli.verbose {
         Level::DEBUG
     } else {
@@ -167,7 +165,7 @@ fn main() -> Result<()> {
             println!("  Path:   {}", result.worktree_path.display());
             println!("  Commit: {}", &result.commit[..12]);
 
-            // For snapshot methods (btrfs/overlay), files_copied will be 0
+            // Snapshot methods (btrfs/overlay) copy nothing, so files_copied is 0.
             if result.unignored_copy.files_copied > 0 {
                 println!(
                     "  Files:  {} copied, {} dirs",

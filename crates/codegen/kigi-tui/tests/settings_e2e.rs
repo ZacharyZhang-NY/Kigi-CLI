@@ -21,9 +21,7 @@ use kigi_tui::views::settings_modal::{
     handle_settings_mouse,
 };
 
-// ---------------------------------------------------------------------------
 // Compile-time exhaustive matrix
-// ---------------------------------------------------------------------------
 
 /// Every setting exercised by this file. Must stay in sync with
 /// `SettingsRegistry::defaults().all()`.
@@ -101,9 +99,7 @@ fn matrix_is_subset_of_registry() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 fn make_state() -> SettingsModalState {
     SettingsModalState::new(
@@ -276,9 +272,7 @@ fn assert_set_bool_action(outcome: SettingsKeyOutcome, key: &str, expected: bool
     }
 }
 
-// ---------------------------------------------------------------------------
 // Modal lifecycle — F2 / Esc / Ctrl+,
-// ---------------------------------------------------------------------------
 
 #[test]
 fn f2_closes_modal_from_any_browse_position() {
@@ -334,9 +328,7 @@ fn esc_in_filter_mode_exits_filter_not_modal() {
     assert!(matches!(s.mode, SettingsModalMode::Browse));
 }
 
-// ---------------------------------------------------------------------------
 // Per-setting keyboard paths
-// ---------------------------------------------------------------------------
 
 #[test]
 fn space_on_compact_mode_dispatches_typed_setter() {
@@ -505,9 +497,7 @@ fn mouse_click_on_contextual_hints_group_opens_sub_sheet_and_toggles_child() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Per-setting MOUSE paths (keyboard ↔ mouse parity)
-// ---------------------------------------------------------------------------
 
 /// Lay out enough row_rects so that `handle_settings_mouse` can resolve
 /// a click to the desired row index. We bypass the renderer here because
@@ -666,10 +656,11 @@ fn mouse_click_at_row_edge_on_focused_row_toggles() {
     let mut s = make_state();
     synth_rects(&mut s);
     let row_y = row_idx_for(&s, "compact_mode") as u16;
+    // 70 is far right, but still within list_area width=80.
     let outcome = handle_settings_mouse(
         &mut s,
         MouseEventKind::Down(crossterm::event::MouseButton::Left),
-        70, // far right, within list_area width=80
+        70,
         row_y,
     );
     assert_set_bool_action(outcome, "compact_mode", true);
@@ -693,10 +684,11 @@ fn mouse_click_on_header_is_a_no_op() {
 fn mouse_click_outside_list_is_a_no_op() {
     let mut s = make_state();
     synth_rects(&mut s);
+    // 100 is outside list_area (width=80).
     let outcome = handle_settings_mouse(
         &mut s,
         MouseEventKind::Down(crossterm::event::MouseButton::Left),
-        100, // outside list_area (width=80)
+        100,
         0,
     );
     assert!(matches!(outcome, SettingsKeyOutcome::Unchanged));
@@ -753,9 +745,7 @@ fn mouse_scroll_up_returns_selection_to_first() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Filter mode
-// ---------------------------------------------------------------------------
 
 /// Filter mode accepts chars into `state.query` and must never leak
 /// an `Action`.
@@ -969,11 +959,11 @@ fn filter_backspace_broadens_visible_set() {
     // Empty the query out — now everything is visible. We pop one at
     // a time and check at each step that the cache regenerates
     // (rather than just shrinks).
-    let _ = handle_settings_key(&mut s, &press(KeyCode::Backspace)); // → "sta"
+    let _ = handle_settings_key(&mut s, &press(KeyCode::Backspace));
     assert_eq!(s.query, "sta");
-    let _ = handle_settings_key(&mut s, &press(KeyCode::Backspace)); // → "st"
+    let _ = handle_settings_key(&mut s, &press(KeyCode::Backspace));
     assert_eq!(s.query, "st");
-    let _ = handle_settings_key(&mut s, &press(KeyCode::Backspace)); // → "s"
+    let _ = handle_settings_key(&mut s, &press(KeyCode::Backspace));
     assert_eq!(s.query, "s");
     // "s" matches multiple settings (compact_mode via "messages" in
     // its description, show_timestamps via "show"/"timestamps",
@@ -1063,9 +1053,7 @@ fn filter_with_multiple_matches_navigates_between_settings() {
     assert_eq!(after_pop_keys, vec!["simple_mode"]);
 }
 
-// ---------------------------------------------------------------------------
 // Filter mode — Enter commits with preserved query
-// ---------------------------------------------------------------------------
 
 /// Enter in FilterFocused exits filter focus and preserves the query.
 #[test]
@@ -1171,9 +1159,7 @@ fn filter_pageup_pagedown_navigates_in_filter_mode() {
     assert_eq!(s.selected, compact_idx);
 }
 
-// ---------------------------------------------------------------------------
 // Filter mode — g/G filter-aware navigation
-// ---------------------------------------------------------------------------
 
 /// `g` lands on the first selectable row (not a header).
 #[test]
@@ -1255,9 +1241,7 @@ fn shift_g_jumps_to_last_filtered_row_under_active_filter() {
     assert!(matches!(outcome, SettingsKeyOutcome::Unchanged));
 }
 
-// ---------------------------------------------------------------------------
 // Selection stability
-// ---------------------------------------------------------------------------
 
 /// Filter keeps selection when the focused row remains visible.
 #[test]
@@ -1276,9 +1260,7 @@ fn filter_keeps_selection_when_currently_selected_row_remains_visible() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Multi-word AND semantics
-// ---------------------------------------------------------------------------
 
 /// One unmatched word in a multi-word query empties the result (AND).
 #[test]
@@ -1318,9 +1300,7 @@ fn filter_and_semantics_narrow_strictly() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Mouse parity under active filter
-// ---------------------------------------------------------------------------
 
 /// Lay out `row_rects` for filtered state — only visible rows get rects.
 fn synth_rects_filtered(state: &mut SettingsModalState) {
@@ -1396,9 +1376,7 @@ fn mouse_click_at_filtered_out_row_position_is_no_op() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Filter-rebuild timing — cache stability
-// ---------------------------------------------------------------------------
 
 /// `filtered_indices()` is a stable borrow, not regenerated per call.
 #[test]
@@ -1428,9 +1406,7 @@ fn filter_cache_pointer_changes_on_query_mutation() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Render with filter — translation + "No matches"
-// ---------------------------------------------------------------------------
 
 /// `scroll_offset` stays within `filtered_indices()` bounds under filter.
 #[test]
@@ -1499,9 +1475,7 @@ fn render_no_matches_placeholder_includes_query() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // PickingEnum / EditingValue Esc routing
-// ---------------------------------------------------------------------------
 
 /// Esc in `PickingEnum` returns to Browse.
 #[test]
@@ -1533,9 +1507,7 @@ fn esc_in_editing_value_mode_returns_to_browse() {
     assert!(matches!(s.mode, SettingsModalMode::Browse));
 }
 
-// ---------------------------------------------------------------------------
 // Registry contracts
-// ---------------------------------------------------------------------------
 
 /// Pins which keys belong to each SettingKind.
 #[test]
@@ -1845,9 +1817,7 @@ fn setting_value_variants_are_distinct() {
     assert_ne!(s, i);
 }
 
-// ---------------------------------------------------------------------------
 // KeyEventKind filtering
-// ---------------------------------------------------------------------------
 
 /// Release events are dropped (kitty-keyboard protocol parity).
 #[test]
@@ -1916,9 +1886,7 @@ fn repeat_j_navigation_is_processed() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // d-key reset-to-default
-// ---------------------------------------------------------------------------
 
 /// `d` dispatches `Action::OpenResetConfirm` on the focused row.
 #[test]
@@ -1998,9 +1966,7 @@ fn d_key_on_header_row_is_unchanged() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Mouse hit-rect edge cases
-// ---------------------------------------------------------------------------
 
 /// Click with empty `row_rects` (partial render) is a no-op.
 #[test]
@@ -2043,9 +2009,7 @@ fn scroll_down_at_last_row_is_unchanged() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Stub tests — `#[ignore] + unimplemented!()` until wired up.
-// ---------------------------------------------------------------------------
 
 /// Multi-word AND filter narrows to matching settings + section headers.
 #[test]
@@ -2440,13 +2404,11 @@ fn pr4_picker_dispatches_each_theme_settings_action_variant() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Mouse-path coverage for the new Enum settings.
 // The `every_registered_setting_is_exercised`
 // test's docstring promises "keyboard test + mouse test" per
 // registered key. Earlier only keyboard tests shipped for the 3 new
 // enums; these tests close that gap.
-// ---------------------------------------------------------------------------
 
 /// Clicking on an Enum row in Browse mode selects it without firing
 /// any Action — Enum rows require an explicit Enter to open the
@@ -2532,7 +2494,6 @@ fn pr4_mouse_click_in_theme_picker_is_no_op() {
     assert!(matches!(s.mode, SettingsModalMode::PickingEnum { .. }));
 }
 
-// ---------------------------------------------------------------------------
 // `multiline_mode` (first PAGER-owned setting)
 //
 // Unlike the SHARED bools (which round-trip through
@@ -2544,7 +2505,6 @@ fn pr4_mouse_click_in_theme_picker_is_no_op() {
 //
 // These tests mirror the keyboard + mouse coverage promised by
 // `ALL_SETTINGS_EXERCISED` — same rigor as `compact_mode` et al.
-// ---------------------------------------------------------------------------
 
 /// Keyboard Space on the multiline row dispatches the typed setter
 /// with the inverted snapshot value (default false → true). The modal
@@ -2656,9 +2616,7 @@ fn pr5_multiline_mode_renders_under_editor_category() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // permission_mode (security-relevant Enum, no preview)
-// ---------------------------------------------------------------------------
 
 /// `permission_mode` lives under the `Agent` section.
 #[test]
@@ -2989,9 +2947,7 @@ fn pr6_search_yolo_matches_permission_mode() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Mouse path tests for permission_mode (keyboard ↔ mouse parity)
-// ---------------------------------------------------------------------------
 
 /// First click on unselected `permission_mode` row only selects.
 #[test]
@@ -3088,9 +3044,7 @@ fn pr6_mouse_click_on_permission_mode_indicator_opens_picker_in_one_click() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // permission_mode 3-state tests (default/ask/always-approve)
-// ---------------------------------------------------------------------------
 
 /// Picking "Default" dispatches `SetPermissionMode(Default)`.
 #[test]
@@ -3379,14 +3333,12 @@ fn pr11_permission_mode_kind_is_always_approve_projection() {
 // (dispatch_confirm_reset_setting_reset_dispatches_typed_setter_for_*
 // + dispatch_confirm_reset_setting_cancel_preserves_modal_state).
 
-// ---------------------------------------------------------------------------
 // Render-side tests for the reset-confirm overlay.
 //
 // These tests assert that the rendered buffer contains the
 // confirmation prompt text + breadcrumb + y/n shortcuts. Without
 // them, a future change that breaks the overlay's rendering layer
 // would silently regress to "user can't see the dialog".
-// ---------------------------------------------------------------------------
 
 /// User-feedback follow-up: the reset-confirm overlay applies a
 /// uniform "being reset" dim style to **every cell** of the focused
@@ -3606,7 +3558,6 @@ fn docs_footer_renders_for_browse_and_picker() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // User-feedback follow-up: expandable rows + restart pill on
 // expand/edit.
 //
@@ -3614,7 +3565,6 @@ fn docs_footer_renders_for_browse_and_picker() {
 // label line; Left/`h` collapses it. Multiple rows can be expanded
 // simultaneously. The "restart" pill renders only while the row is
 // expanded (change-time feedback is the toast's job).
-// ---------------------------------------------------------------------------
 
 /// Helper: render the modal into a sized buffer and return the full
 /// rendered text as a single newline-joined string. Used by the
@@ -3734,8 +3684,8 @@ fn restart_pill_visible_when_expanded() {
 
 /// Edited value (differs from registered default) but collapsed:
 /// NO pill. A collapsed non-default row showing it forever misreads
-/// as "restart pending" — the exact repro a user hit with a
-/// previously-set Off value in a fresh session.
+/// as "restart pending" — the exact repro a user hit with an Off
+/// value carried over from an earlier session.
 #[test]
 fn restart_pill_hidden_when_edited_but_collapsed() {
     use kigi_shell::agent::config::UiConfig;
@@ -3775,10 +3725,10 @@ fn expanded_description_wraps_to_modal_width() {
     // cols. Expand and check that the entire description text is
     // present in the buffer.
     //
-    // **Width.** The `→ expand` shortcut was added to the
-    // Browse footer which can push the footer onto an extra line
-    // at narrower widths; we render at 80 cols to keep the full
-    // wrapped description visible.
+    // **Width.** The `→ expand` shortcut in the Browse footer can
+    // push the footer onto an extra line at narrower widths; we
+    // render at 80 cols to keep the full wrapped description
+    // visible.
     navigate_to(&mut s, "permission_mode");
     let _ = handle_settings_key(&mut s, &press(KeyCode::Right));
 
@@ -3958,9 +3908,7 @@ fn reset_confirm_prompt_helper_builds_well_formed_string_for_every_setting() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // String + Int editor + validators
-// ---------------------------------------------------------------------------
 
 /// Int stepper: Enter opens, Up/Down/Left/Right step+clamp, Enter commits.
 #[test]
@@ -4261,10 +4209,9 @@ fn pr15_int_stepper_rejects_text_input_keys() {
         KeyCode::Char('5'),
         KeyCode::Char('a'),
         KeyCode::Char('-'),
-        // Extended reject-set.
-        KeyCode::Char(' '), // Space (the Bool-toggle key in Browse mode)
-        KeyCode::Char('+'), // Plus (would be a naïve numpad expectation)
-        KeyCode::Char('.'), // Decimal point
+        KeyCode::Char(' '),
+        KeyCode::Char('+'),
+        KeyCode::Char('.'),
         KeyCode::Backspace,
         KeyCode::Delete,
         KeyCode::Home,
@@ -4376,9 +4323,7 @@ fn pr8_default_model_and_max_thoughts_width_defaults_roundtrip() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // default_selected_permission (Agent Enum, no preview — SHELL-owned, persists)
-// ---------------------------------------------------------------------------
 
 /// `default_selected_permission` lives under `Agent` and is SHELL-owned.
 #[test]
@@ -4555,9 +4500,7 @@ fn default_selected_permission_picker_esc_does_not_dispatch_action() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Mouse path tests for default_selected_permission
-// ---------------------------------------------------------------------------
 
 /// First click on unselected row only selects.
 #[test]
@@ -4644,7 +4587,6 @@ fn default_selected_permission_mouse_click_on_indicator_opens_picker_in_one_clic
     }
 }
 
-// ---------------------------------------------------------------------------
 // `plan_mode` (Agent-category Enum, PAGER-owned + ACP-mediated,
 // supports_preview: false)
 //
@@ -4659,7 +4601,6 @@ fn default_selected_permission_mouse_click_on_indicator_opens_picker_in_one_clic
 // `session/set_mode` request that mutates per-agent state and gates
 // tool dispatch. Per-keystroke preview would either fire N round-trips
 // per nav OR commit on every keystroke. Both are unacceptable.
-// ---------------------------------------------------------------------------
 
 /// `plan_mode` lives under the `Agent` section:
 /// pins the category against drift.
@@ -4922,12 +4863,10 @@ fn pr10_plan_mode_choices_use_canonical_strings() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Mouse path tests for plan_mode (keyboard ↔ mouse parity).
 //
 // Mirrors the permission_mode / coding_data_sharing mouse tests. Every
 // keyboard interaction has a mouse equivalent.
-// ---------------------------------------------------------------------------
 
 /// First mouse-click on a DIFFERENT (non-selected) `plan_mode` row
 /// only SELECTS the row (no picker entry, no Action). Mirrors the
@@ -5017,7 +4956,6 @@ fn pr10_mouse_click_on_plan_mode_indicator_opens_picker_in_one_click() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // `render_mermaid` (SHELL-owned Enum, Appearance).
 //
 // Unlike `plan_mode` (PAGER-owned, snapshot-seeded), `render_mermaid` is
@@ -5030,7 +4968,6 @@ fn pr10_mouse_click_on_plan_mode_indicator_opens_picker_in_one_click() {
 //
 // These tests honor the `ALL_SETTINGS_EXERCISED` contract — keyboard AND
 // mouse coverage, same rigor as `plan_mode` / `coding_data_sharing`.
-// ---------------------------------------------------------------------------
 
 /// `render_mermaid` lives under `Appearance` and is SHELL-owned (persisted to
 /// `[ui].render_mermaid`). Pins the category + owner against drift.
@@ -5202,10 +5139,8 @@ fn render_mermaid_choices_use_canonical_strings() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Mouse path tests for render_mermaid (keyboard ↔ mouse
 // parity). Mirrors the plan_mode mouse tests.
-// ---------------------------------------------------------------------------
 
 /// First mouse-click on a DIFFERENT (non-selected) `render_mermaid` row only
 /// SELECTS the row (no picker entry, no Action).
@@ -5284,11 +5219,9 @@ fn mouse_click_on_render_mermaid_indicator_opens_picker_in_one_click() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // screen_mode (SHELL Enum, Appearance, restart_required, no preview).
 // Catalog [fullscreen, minimal]; product default when unset is fullscreen.
 // Session-only switches stay on /minimal and /fullscreen (do not write config).
-// ---------------------------------------------------------------------------
 
 /// Enter on the `screen_mode` row opens the picker seeded at the product
 /// default `fullscreen` (UiConfig.screen_mode is None → canonical fullscreen).
@@ -5426,11 +5359,9 @@ fn mouse_click_on_screen_mode_indicator_opens_picker_in_one_click() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // hunk_tracker_mode (SHELL Enum, Advanced, restart_required, no preview).
 // Catalog [agent_only, all_dirty, off]; `disabled` aliases `off` at parse
 // time. Mirrors the render_mermaid enum tests (keyboard ↔ mouse parity).
-// ---------------------------------------------------------------------------
 
 /// Enter on the `hunk_tracker_mode` row opens the picker seeded at the
 /// default `agent_only`.
@@ -5560,9 +5491,7 @@ fn mouse_click_on_hunk_tracker_mode_indicator_opens_picker_in_one_click() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // CLI batch: show_tips, auto_update (SHELL Bool, restart_required)
-// ---------------------------------------------------------------------------
 
 /// Space-toggle on `show_tips` dispatches typed setter.
 #[test]
@@ -5678,9 +5607,7 @@ fn pr13_cli_batch_settings_are_discoverable_via_search() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // fork_secondary_model (DynamicEnum, restart_required: false)
-// ---------------------------------------------------------------------------
 
 /// `fork_secondary_model` lives under Models.
 #[test]
@@ -5784,9 +5711,7 @@ fn pr14_model_family_settings_are_discoverable_via_search() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // vim_mode (scrollback navigation) — PAGER-owned, paired with simple_mode
-// ---------------------------------------------------------------------------
 
 /// Keyboard Space on the vim_mode row dispatches the typed setter
 /// with the inverted snapshot value (default false → true). Same
@@ -5880,12 +5805,10 @@ fn simple_mode_label_distinguishes_input_from_scrollback() {
     assert!(vim.keywords.contains(&"vim"));
 }
 
-// ---------------------------------------------------------------------------
 // keep_text_selection — SHELL-owned Mouse Enum (`flash` | `hold`)
 //
 // Mirrors `render_mermaid`: `supports_preview: false`, Enter opens picker,
 // commit dispatches `Action::SetKeepTextSelection(TextSelection)`.
-// ---------------------------------------------------------------------------
 
 #[test]
 fn keep_text_selection_renders_under_mouse_shell_owned() {
@@ -6115,9 +6038,7 @@ fn keep_text_selection_hold_snapshot_seeds_picker_at_hold() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // scroll_speed — SHELL-owned Int under Mouse, no preview
-// ---------------------------------------------------------------------------
 
 /// Int stepper open/step/commit for scroll_speed. Defaults to 50;
 /// mid-range policy: Up/Down ±1, Left/Right ±5.
@@ -6202,10 +6123,8 @@ fn scroll_speed_renders_under_mouse_shell_owned_bounds_1_to_100() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // scroll_mode — SHELL-owned Mouse Enum (`auto` | `wheel` | `trackpad`),
 // no preview (mirrors keep_text_selection).
-// ---------------------------------------------------------------------------
 
 #[test]
 fn scroll_mode_renders_under_mouse_shell_owned_no_preview() {
@@ -6296,9 +6215,7 @@ fn mouse_click_on_selected_scroll_mode_row_opens_picker() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // scroll_lines — SHELL-owned Int under Mouse (1-10), no preview
-// ---------------------------------------------------------------------------
 
 #[test]
 fn scroll_lines_renders_under_mouse_shell_owned_bounds_1_to_10() {
@@ -6378,9 +6295,7 @@ fn scroll_lines_mouse_click_opens_editor() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // invert_scroll — SHELL-owned Bool (Mouse, default false)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn invert_scroll_space_dispatches_typed_setter() {
@@ -6442,9 +6357,7 @@ fn invert_scroll_renders_under_mouse_shell_owned_default_false() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // display_refresh_auto_cadence — SHELL-owned Bool (Appearance, default false)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn display_refresh_auto_cadence_space_dispatches_typed_setter() {
@@ -6531,9 +6444,7 @@ fn display_refresh_auto_cadence_defaults_roundtrip_via_current_value_for() {
     assert_eq!(value, SettingValue::Bool(true));
 }
 
-// ---------------------------------------------------------------------------
 // show_thinking_blocks — SHELL-owned Bool (Appearance, default true)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn show_thinking_blocks_space_dispatches_typed_setter() {
@@ -6637,9 +6548,7 @@ fn show_thinking_blocks_renders_under_appearance_category_shell_owned() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // prompt_suggestions — SHELL-owned Bool (Editor, default true)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn prompt_suggestions_space_dispatches_typed_setter() {
@@ -6743,9 +6652,7 @@ fn prompt_suggestions_renders_under_editor_category_shell_owned() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // respect_manual_folds — PAGER-owned Bool
-// ---------------------------------------------------------------------------
 
 #[test]
 fn respect_manual_folds_space_dispatches_typed_setter() {
@@ -6820,9 +6727,7 @@ fn respect_manual_folds_renders_under_appearance_category_pager_owned() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // group_tool_verbs — SHELL-owned Bool (Appearance, default true)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn group_tool_verbs_space_dispatches_typed_setter() {
@@ -6923,9 +6828,7 @@ fn group_tool_verbs_renders_under_appearance_category_shell_owned() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // collapsed_edit_blocks — SHELL-owned Bool (Appearance, default false)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn collapsed_edit_blocks_space_dispatches_typed_setter() {

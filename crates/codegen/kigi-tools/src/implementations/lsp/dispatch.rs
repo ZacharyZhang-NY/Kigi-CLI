@@ -24,8 +24,6 @@ use super::format::{
 use super::manager::LspManager;
 use super::{LspError, file_uri, text_document_position};
 
-// ── Public adapter ──────────────────────────────────────────────────────
-
 #[derive(Debug, Clone)]
 enum StartupState {
     NotStarted,
@@ -199,7 +197,6 @@ impl super::LspBackend for LspBackendAdapter {
                 }
             }
         };
-        // Lock dropped — dispatch on cloned socket(s).
         dispatch_on_sockets(input, sockets).await
     }
 
@@ -255,7 +252,6 @@ impl super::LspBackend for LspBackendAdapter {
         let notified = notify.notified();
         let _ = tokio::time::timeout(std::time::Duration::from_millis(1000), notified).await;
 
-        // Collect diagnostics from all clients for the requested paths.
         let mgr = self.lsp_manager.lock().await;
         let mut results = Vec::new();
         for path in paths {
@@ -303,8 +299,6 @@ impl super::LspBackend for LspBackendAdapter {
     }
 }
 
-// ── Internal types ──────────────────────────────────────────────────────
-
 enum DispatchSockets {
     One(async_lsp::ServerSocket),
     All(Vec<async_lsp::ServerSocket>),
@@ -348,9 +342,7 @@ where
 
 /// Distinguishes validation errors (missing params) from LSP protocol errors.
 enum DispatchError {
-    /// Missing or invalid input parameters.
     Validation(String),
-    /// LSP request failed or timed out.
     Lsp(LspError),
 }
 
@@ -365,8 +357,6 @@ impl From<LspError> for DispatchError {
         Self::Lsp(e)
     }
 }
-
-// ── Router ──────────────────────────────────────────────────────────────
 
 async fn dispatch_on_sockets(input: &LspToolInput, sockets: DispatchSockets) -> LspToolResult {
     use super::LspOperation;
@@ -393,8 +383,6 @@ async fn dispatch_on_sockets(input: &LspToolInput, sockets: DispatchSockets) -> 
         DispatchSockets::All(sockets) => dispatch_workspace_symbols(input, sockets).await,
     }
 }
-
-// ── Per-operation helpers ───────────────────────────────────────────────
 
 /// Handles both GoToDefinition and GoToImplementation (same params/response shape).
 async fn dispatch_goto(
@@ -527,8 +515,6 @@ async fn dispatch_workspace_symbols(
         ok_result(format_symbols(&all_symbols))
     }
 }
-
-// ── Response converters ─────────────────────────────────────────────────
 
 fn parse_goto_response(response: Option<GotoDefinitionResponse>) -> Vec<Location> {
     match response {

@@ -119,7 +119,8 @@ pub(super) fn compute_hero_box(
         Constraint::Length(gap_after_error),
         Constraint::Length(error_height),
         Constraint::Length(hero_box_height),
-        Constraint::Min(1), // flex gap
+        // flex gap
+        Constraint::Min(1),
         Constraint::Length(tip_height),
         Constraint::Length(tip_gap),
         Constraint::Length(PROMPT_HEIGHT),

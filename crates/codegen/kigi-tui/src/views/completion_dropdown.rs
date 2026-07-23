@@ -34,7 +34,8 @@ pub fn dropdown_height(state: &CompletionDropdownState) -> u16 {
         return 0;
     }
     let item_rows = (state.items.len() as u16).min(MAX_VISIBLE_ROWS);
-    1 + item_rows // separator + items
+    // separator + items
+    1 + item_rows
 }
 
 /// Compute the scroll offset so the selected row stays centred.
@@ -269,7 +270,8 @@ mod tests {
             ],
             ..Default::default()
         };
-        assert_eq!(dropdown_height(&state), 3); // 1 separator + 2 items
+        // 1 separator + 2 items
+        assert_eq!(dropdown_height(&state), 3);
     }
 
     #[test]
@@ -404,7 +406,8 @@ mod tests {
         assert!(!state.open);
         assert_eq!(state.selected, 0);
         assert!(state.hovered.is_none());
-        assert_eq!(state.generation, 5); // generation preserved
+        // generation preserved
+        assert_eq!(state.generation, 5);
         assert!(state.items.is_empty());
         // Anchor left in place (inert without items); the next landing
         // overwrites it atomically with the new items.

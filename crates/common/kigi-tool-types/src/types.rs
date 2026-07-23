@@ -8,39 +8,28 @@ use crate::ext::Extensions;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct ToolDescription {
-    /// Tool name (e.g. "web_search", "read_file") that is called by
-    /// the model.
     pub name: String,
 
-    /// Optional namespace grouping (e.g. "github", "slack").
-    /// None for xAI native tools.
+    /// Namespace grouping (e.g. "github", "slack"). `None` for native tools.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub namespace: Option<String>,
 
-    /// Display name (e.g. "Web Search") can be shown to the model.
-    /// If absent, derive the title from 'name'.
+    /// Human display title; when absent, derive from `name`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
 
-    /// Description of the tool.
     pub description: String,
 
-    /// Raw JSON Schema describing the tool's arguments.
+    /// JSON Schema for tool arguments.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arguments_schema: Option<Value>,
 
-    /// High-level tool kind (stable snake_case, e.g. "read"), set by the tool
-    /// server so consumers can group tools by kind. `None` if undeclared.
+    /// Stable snake_case kind (e.g. "read") for grouping; `None` if undeclared.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
 
-    /// Metadata attached by downstream libraries to support
-    /// custom tool behavior. NOT serialized and NOT sent over
-    /// the wire.
-    ///
-    /// Note: 'Extensions' always compares as equal (it carries opaque
-    /// runtime data), so 'ToolDescription's derived 'PartialEq' ignores
-    /// this field. See 'Extensions' for details.
+    /// Opaque runtime metadata — not serialized, not on the wire.
+    /// `Extensions` always compares equal, so derived `PartialEq` ignores this.
     #[serde(skip)]
     pub extra: Extensions,
 }
@@ -63,7 +52,6 @@ impl ToolDescription {
         self
     }
 
-    /// Set the high-level tool kind (snake_case string, e.g. "read").
     pub fn with_kind(mut self, kind: impl Into<String>) -> Self {
         self.kind = Some(kind.into());
         self
@@ -74,7 +62,6 @@ impl ToolDescription {
         self
     }
 
-    /// Attach the raw JSON Schema for this tool's arguments.
     pub fn with_arguments_schema(mut self, schema: impl Into<Value>) -> Self {
         self.arguments_schema = Some(schema.into());
         self
@@ -94,8 +81,6 @@ impl ToolDescription {
             .unwrap_or_default()
     }
 
-    /// Returns the raw JSON Schema for the tool's arguments if one was
-    /// attached via [`Self::with_arguments_schema`].
     pub fn arguments_schema(&self) -> Option<&Value> {
         self.arguments_schema.as_ref()
     }
@@ -160,14 +145,11 @@ impl fmt::Display for ToolDescription {
     }
 }
 
-/// A single argument for a tool.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct ToolArgument {
-    /// Argument name (e.g. "file_path").
     pub name: String,
 
-    /// Human-readable description of the argument.
     pub description: String,
 
     /// Type of the argument. Accepts both a single JSON Schema type
@@ -179,12 +161,10 @@ pub struct ToolArgument {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schema: Option<serde_json::Value>,
 
-    /// Whether the argument is required.
     /// Defaults to true. Omitted from JSON when true.
     #[serde(default = "default_true", skip_serializing_if = "is_true")]
     pub required: bool,
 
-    /// Default value for the argument.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<Value>,
 
@@ -241,7 +221,6 @@ impl ToolArgument {
         self
     }
 
-    /// Set a default value for this argument.
     pub fn with_default(mut self, default: impl Into<Value>) -> Self {
         self.default = Some(default.into());
         self
@@ -276,7 +255,6 @@ impl ToolArgument {
     }
 }
 
-/// Type of a tool argument.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ArgumentType {
@@ -347,15 +325,11 @@ impl fmt::Display for ArgumentType {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum SchemaType {
-    /// A single type, e.g. "string".
     Single(ArgumentType),
-    /// Multiple types, e.g. ["string", "null"].
     Multiple(Vec<ArgumentType>),
 }
 
 impl SchemaType {
-    /// Parse a JSON Schema "type" value (string or array) into a
-    /// `SchemaType`.
     pub fn from_value(v: &serde_json::Value) -> Self {
         if let Some(s) = v.as_str() {
             return ArgumentType::from_schema_type(s)
@@ -404,7 +378,6 @@ impl SchemaType {
         }
     }
 
-    /// Whether the type list contains a specific `ArgumentType`.
     pub fn contains(&self, ty: ArgumentType) -> bool {
         match self {
             Self::Single(t) => *t == ty,
@@ -442,7 +415,6 @@ impl SchemaType {
         }
     }
 
-    /// Return the JSON Schema `"type"` representation.
     pub fn to_schema_value(&self) -> serde_json::Value {
         match self {
             Self::Single(t) => serde_json::Value::String(t.as_str().to_owned()),
@@ -500,7 +472,6 @@ fn is_true(v: &bool) -> bool {
     *v
 }
 
-// -- Helpers
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidationError {
     pub field: String,
@@ -515,22 +486,18 @@ impl fmt::Display for ValidationError {
 
 impl std::error::Error for ValidationError {}
 
-/// Wrapper around multiple ValidationError.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidationErrors(pub Vec<ValidationError>);
 
 impl ValidationErrors {
-    /// Iterate over the individual errors.
     pub fn iter(&self) -> std::slice::Iter<'_, ValidationError> {
         self.0.iter()
     }
 
-    /// Number of validation errors.
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
-    /// Returns true if there are no errors.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -588,10 +555,6 @@ fn validate_identifier(field: &str, value: &str, errors: &mut Vec<ValidationErro
     }
 }
 
-// ============================================================================
-// Tests
-// ============================================================================
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -643,8 +606,6 @@ mod tests {
         assert!(!ArgumentType::String.is_composite());
         assert!(!ArgumentType::Null.is_composite());
     }
-
-    // -- SchemaType -----------------------------------------------------------
 
     #[test]
     fn schema_type_single_serde_roundtrip() {
@@ -752,17 +713,14 @@ mod tests {
 
     #[test]
     fn schema_type_primitive_composite_multiple() {
-        // All primitive → is_primitive=true, is_composite=false
         let nullable_string = SchemaType::Multiple(vec![ArgumentType::String, ArgumentType::Null]);
         assert!(nullable_string.is_primitive());
         assert!(!nullable_string.is_composite());
 
-        // Any composite → is_primitive=false, is_composite=true
         let nullable_array = SchemaType::Multiple(vec![ArgumentType::Array, ArgumentType::Null]);
         assert!(!nullable_array.is_primitive());
         assert!(nullable_array.is_composite());
 
-        // Mixed primitive + composite
         let mixed = SchemaType::Multiple(vec![ArgumentType::String, ArgumentType::Object]);
         assert!(!mixed.is_primitive());
         assert!(mixed.is_composite());
@@ -915,7 +873,6 @@ mod tests {
         assert_eq!(tool.to_input_schema(), raw);
     }
 
-    /// Without a raw schema, `to_input_schema` returns an empty object schema.
     #[test]
     fn description_to_input_schema_empty_when_no_raw() {
         let tool = ToolDescription::new("echo", "Echo a string");
@@ -1042,7 +999,6 @@ mod tests {
         tool.namespace = Some(String::new());
 
         let errors = tool.validate().unwrap_err();
-        // empty tool name + empty namespace = 2
         assert!(errors.len() >= 2);
     }
 }

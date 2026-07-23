@@ -29,18 +29,16 @@ pub enum ReadMediaKind {
     Pdf { pages: usize },
 }
 
-/// Read file tool call.
 #[derive(Debug, Clone)]
 pub struct ReadToolCallBlock {
-    /// Path to the file being read.
     pub path: String,
     /// Line range if specified: [start, end] (1-based, inclusive).
     pub line_range: Option<LineRange>,
     /// Error message if the tool call failed (None = success).
     pub error: Option<String>,
-    /// When the tool started running (Phase 2: time tracking).
+    /// When the tool started running.
     pub started_at: Option<std::time::Instant>,
-    /// Elapsed time in ms after completion (Phase 2: time tracking).
+    /// Elapsed time in ms after completion.
     pub elapsed_ms: Option<i64>,
     /// Raw file content (unformatted). `None` for errors, images, PDFs.
     pub content: Option<String>,
@@ -53,8 +51,6 @@ pub struct ReadToolCallBlock {
 }
 
 impl ReadToolCallBlock {
-    /// Create a new read block.
-    ///
     /// Pre-completed blocks have no meaningful local timing — `started_at`
     /// is `None`. Timing is only set for blocks that enter a running UI
     /// state (via `set_last_running(true)` in `ScrollbackState`).
@@ -72,26 +68,22 @@ impl ReadToolCallBlock {
         }
     }
 
-    /// Set line range.
     pub fn with_line_range(mut self, range: LineRange) -> Self {
         self.line_range = Some(range);
         self
     }
 
-    /// Set file content and total line count.
     pub fn with_content(mut self, content: String, total_lines: usize) -> Self {
         self.content = Some(content);
         self.total_lines = Some(total_lines);
         self
     }
 
-    /// Set error (marks as failed).
     pub fn with_error(mut self, error: impl Into<String>) -> Self {
         self.error = Some(error.into());
         self
     }
 
-    /// Check if successful (no error).
     pub fn is_success(&self) -> bool {
         self.error.is_none()
     }
@@ -112,7 +104,7 @@ impl ReadToolCallBlock {
         self.skill_name().is_some()
     }
 
-    /// Set error (mutable) — compute elapsed time if not already set (Phase 2).
+    /// Compute elapsed time if not already set, then store the error.
     pub fn set_error(&mut self, error: Option<String>) {
         if self.elapsed_ms.is_none()
             && let Some(start) = self.started_at
@@ -135,7 +127,6 @@ impl ReadToolCallBlock {
         }
     }
 
-    /// Get elapsed time in ms (Phase 2).
     pub fn elapsed_ms(&self) -> Option<i64> {
         match self.elapsed_ms {
             Some(ms) => Some(ms),

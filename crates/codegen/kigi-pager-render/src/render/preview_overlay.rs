@@ -17,9 +17,7 @@ use ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
 use super::line_utils::{truncate_line, truncate_str};
 use super::safe_buf::SafeBuf;
 
-// ---------------------------------------------------------------------------
 // PreviewStyle — configurable colors
-// ---------------------------------------------------------------------------
 
 /// Visual styling for the preview overlay.
 #[derive(Debug, Clone, Copy)]
@@ -43,9 +41,7 @@ impl PreviewStyle {
     }
 }
 
-// ---------------------------------------------------------------------------
 // PreviewConfig — layout configuration
-// ---------------------------------------------------------------------------
 
 /// Layout configuration for the preview overlay.
 #[derive(Debug, Clone)]
@@ -89,9 +85,7 @@ impl Default for PreviewConfig {
     }
 }
 
-// ---------------------------------------------------------------------------
 // render_preview_overlay — main rendering function
-// ---------------------------------------------------------------------------
 
 /// Render a multiline preview overlay.
 ///
@@ -129,7 +123,8 @@ pub fn render_preview_overlay(
     // Calculate content layout
     let needs_dots = total > config.preview_lines * 2;
     let content_lines: usize = if needs_dots {
-        config.preview_lines * 2 + 1 // top + dots + bottom
+        // top + dots + bottom
+        config.preview_lines * 2 + 1
     } else {
         total
     };
@@ -255,7 +250,7 @@ fn render_line(buf: &mut Buffer, x: u16, y: u16, width: u16, line: &str, style: 
 }
 
 /// Paint the hint into the bottom border row, left-aligned after the
-/// corner and one dash, padded with a space on each side so the text
+/// corner and one dash, `padded` with a space on each side so the text
 /// stands off the dashes: `╰─ enter to expand ────╯`. The corners and
 /// one dash per side are never overwritten. Skipped entirely when the
 /// box is too narrow for readable text.
@@ -283,9 +278,7 @@ fn render_border_hint(buf: &mut Buffer, box_area: Rect, hint: &Line<'static>, bg
     buf.set_line_safe(box_area.x + 2, y, &Line::from(spans), box_area.width - 4);
 }
 
-// ---------------------------------------------------------------------------
 // Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -293,9 +286,12 @@ mod tests {
 
     fn test_style() -> PreviewStyle {
         PreviewStyle::new(
-            Color::Indexed(234), // grayscale 28  — dark bg
-            Color::Indexed(189), // (215,215,255) — light text
-            Color::Indexed(60),  //  (95,95,135)  — dim border
+            // grayscale 28  — dark bg
+            Color::Indexed(234),
+            // (215,215,255) — light text
+            Color::Indexed(189),
+            // (95,95,135)  — dim border
+            Color::Indexed(60),
         )
     }
 
@@ -317,7 +313,8 @@ mod tests {
         let mut buf = Buffer::empty(Rect::new(0, 0, 10, 3));
         let result = render_preview_overlay(
             &mut buf,
-            Rect::new(0, 0, 10, 3), // below min_height=5
+            // below min_height=5
+            Rect::new(0, 0, 10, 3),
             "hello\nworld",
             test_style(),
             PreviewConfig::default(),
@@ -435,7 +432,7 @@ mod tests {
         );
         assert!(result.is_some());
         let rect = result.unwrap();
-        assert_eq!(rect.width, 50); // 100 * 0.5 = 50
+        assert_eq!(rect.width, 50);
     }
 
     #[test]

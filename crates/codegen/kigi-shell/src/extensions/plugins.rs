@@ -18,7 +18,6 @@ struct ListRequest {
     session_id: String,
 }
 
-/// Convert a `LoadedPlugin` to a `PluginInfo` DTO.
 pub fn loaded_plugin_to_info(plugin: &kigi_agent::plugins::LoadedPlugin) -> PluginInfo {
     use kigi_agent::plugins::discovery::PluginScope as AgentScope;
 
@@ -74,7 +73,6 @@ pub fn loaded_plugin_to_info(plugin: &kigi_agent::plugins::LoadedPlugin) -> Plug
     }
 }
 
-/// Map the agent-side origin to the wire DTO.
 fn origin_to_dto(origin: &kigi_agent::plugins::PluginOrigin) -> PluginOrigin {
     use kigi_agent::plugins::PluginOrigin as AgentOrigin;
     match origin {
@@ -104,7 +102,6 @@ fn marketplace_source_label(origin: &PluginOrigin) -> Option<String> {
         PluginOrigin::MarketplaceInstall {
             git_url: Some(url), ..
         } => {
-            // Derive short name from URL: "https://github.com/obra/superpowers.git" → "obra/superpowers"
             let label = url
                 .trim_end_matches(".git")
                 .rsplit("://")
@@ -160,12 +157,12 @@ pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
             super::to_ext_response(result)
         }
         "kigi/plugins/notify-updates" => {
-            // Broadcast a PluginUpdatesInstalled notification to the session.
             #[derive(serde::Deserialize)]
             #[serde(rename_all = "camelCase")]
             struct NotifyUpdatesRequest {
                 session_id: String,
-                updates: Vec<(String, String, String)>, // (name, old_ver, new_ver)
+                // (name, old_ver, new_ver)
+                updates: Vec<(String, String, String)>,
             }
             let req: NotifyUpdatesRequest = super::parse_params(args)?;
             let sid = acp::SessionId::new(req.session_id);

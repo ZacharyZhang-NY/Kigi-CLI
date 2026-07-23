@@ -23,9 +23,9 @@ use crate::auth::{AuthChannels, AuthManager, AuthUrlInfo, AuthUrlMode, KimiAuth}
 const SLOW_DOWN_INCREMENT_SECS: u64 = 5;
 
 /// The wire behind a device-code login. The `Kimi` arm calls the bespoke Kimi
-/// Code wire (X-Msh headers, `/api/oauth/*`) verbatim — byte-identical to the
-/// pre-generalization path; the `Generic` arm drives a registry
-/// [`OAuthConfig`] provider (xai-grok) through [`crate::auth::oauth_device`].
+/// Code wire (X-Msh headers, `/api/oauth/*`) verbatim; the `Generic` arm
+/// drives a registry [`OAuthConfig`] provider (xai-grok) through
+/// [`crate::auth::oauth_device`].
 enum DeviceFlowBackend<'a> {
     Kimi {
         host: &'a str,
@@ -280,7 +280,8 @@ mod tests {
             "verification_uri": "https://www.kimi.com/code/authorize_device",
             "verification_uri_complete": "https://www.kimi.com/code/authorize_device?user_code=WXYZ-6789",
             "expires_in": 1800,
-            "interval": 0, // floored to 1s by the poll loop
+            // floored to 1s by the poll loop
+            "interval": 0,
         })
     }
 

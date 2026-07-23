@@ -11,7 +11,6 @@ use crate::theme::Theme;
 /// Status bar showing context information.
 ///
 /// Displays: token count, current turn, view mode, etc.
-/// Respects layout: first 3 cols and last 2 cols are empty.
 pub struct StatusBar<'a> {
     /// Left-aligned content (e.g., "Context: 5.2k tokens")
     pub left: &'a str,
@@ -31,13 +30,11 @@ impl<'a> StatusBar<'a> {
         }
     }
 
-    /// Add center content.
     pub fn center(mut self, text: &'a str) -> Self {
         self.center = Some(text);
         self
     }
 
-    /// Add right content.
     pub fn right(mut self, text: &'a str) -> Self {
         self.right = Some(text);
         self
@@ -52,8 +49,6 @@ impl Widget for StatusBar<'_> {
 
         let theme = Theme::current();
 
-        // Layout: outer block already has 2-char horizontal padding
-        // No additional margins needed
         let left_margin = 0u16;
         let right_margin = 0u16;
         let content_x = area.x + left_margin;
@@ -65,14 +60,11 @@ impl Widget for StatusBar<'_> {
 
         let style = Style::default().fg(theme.gray).bg(theme.bg_base);
 
-        // Fill background (the whole row)
         buf.set_style(area, Style::default().bg(theme.bg_base));
 
-        // Left content
         let left_span = Span::styled(self.left, style);
         buf.set_span(content_x, area.y, &left_span, content_width);
 
-        // Center content (if fits)
         if let Some(center) = self.center {
             let center_width = center.len() as u16;
             let center_x = content_x + (content_width.saturating_sub(center_width)) / 2;
@@ -82,7 +74,6 @@ impl Widget for StatusBar<'_> {
             }
         }
 
-        // Right content
         if let Some(right) = self.right {
             let right_width = right.len() as u16;
             let right_x = content_x + content_width.saturating_sub(right_width);

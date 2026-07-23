@@ -1,9 +1,8 @@
 use super::support::*;
 use super::*;
 use kigi_agent::prompt::user_message::UserMessageTemplate;
-/// Helper: build an actor with `mcp_state` pre-loaded with the given
-/// configs and a translated init-progress state. Reuses
-/// `create_test_actor` then drives the typed transitions to match
+/// Build an actor with `mcp_state` pre-loaded with the given configs and a
+/// translated init-progress state, driving the typed transitions to match
 /// the `(initialized, initializing_servers)` shape callers express.
 ///
 /// Mapping:

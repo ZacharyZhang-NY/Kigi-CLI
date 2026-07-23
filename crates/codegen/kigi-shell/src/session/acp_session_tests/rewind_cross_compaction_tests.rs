@@ -182,8 +182,6 @@ async fn run_files_only_bound_scenario() {
     snap.prompt_texts = vec!["P0".into(), "P1".into()];
     actor.chat_state_handle.restore_snapshot(snap);
 
-    // Out-of-range FilesOnly: exempt → reverts nothing (no snapshots) but
-    // succeeds.
     let oor = actor
         .handle_rewind(RewindRequest {
             target_prompt_index: 5,
@@ -198,7 +196,6 @@ async fn run_files_only_bound_scenario() {
     );
     assert!(oor.reverted_files.is_empty());
 
-    // In-range FilesOnly also succeeds.
     let in_range = actor
         .handle_rewind(RewindRequest {
             target_prompt_index: 1,
@@ -212,7 +209,6 @@ async fn run_files_only_bound_scenario() {
         "in-range FilesOnly must succeed: {in_range:?}"
     );
 
-    // ConversationOnly is still bounded by the chat-state index.
     let convo = actor
         .handle_rewind(RewindRequest {
             target_prompt_index: 5,
@@ -244,7 +240,6 @@ async fn run_file_counts_scenario() {
     let actor = create_test_actor(0, 200_000, 80, gateway_tx, persistence_tx).await;
 
     let cwd = Path::new("/tmp");
-    // Prompt 0 has two distinct file snapshots; prompt 1 has one.
     actor
         .file_state_tracker
         .add_before_snapshot_for_prompt(0, Path::new("/tmp/a.rs"), cwd, Some("a".into()))
@@ -342,12 +337,9 @@ async fn run_clears_marker_scenario() {
     ];
     snap.prompt_index = 7;
     snap.prompt_texts = (0..7).map(|i| format!("P{i}")).collect();
-    // The session believes it holds a compaction summary from prompt 5.
     snap.last_compaction_prompt_index = Some(5);
     actor.chat_state_handle.restore_snapshot(snap);
 
-    // Rewind to prompt 3 — before the compaction point (5), so the summary is
-    // dropped from the rebuilt conversation and the marker must be cleared.
     let resp = actor
         .handle_rewind(RewindRequest {
             target_prompt_index: 3,

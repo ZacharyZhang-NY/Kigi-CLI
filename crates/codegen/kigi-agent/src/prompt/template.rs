@@ -149,7 +149,7 @@ mod tests {
             .expect("codex template render failed")
     }
 
-    // ── Variable substitution ───────────────────────────────────────
+    // Variable substitution
 
     #[test]
     fn test_variable_substitution_tool_kind() {
@@ -171,7 +171,7 @@ mod tests {
         assert_eq!(result, "OS: macos, Shell: /bin/zsh");
     }
 
-    // ── Conditionals ────────────────────────────────────────────────
+    // Conditionals
 
     #[test]
     fn test_conditional_tool_present() {
@@ -205,7 +205,7 @@ mod tests {
         assert_eq!(result, "Use {{ literal_braces }} in prose.");
     }
 
-    // ── Tool name overrides ─────────────────────────────────────────
+    // Tool name overrides
 
     #[test]
     fn test_tool_name_override() {
@@ -225,7 +225,7 @@ mod tests {
         assert_eq!(result, "Use view_file and Edit.");
     }
 
-    // ── Base template rendering ─────────────────────────────────────
+    // Base template rendering
 
     #[test]
     fn test_base_template_renders() {
@@ -355,7 +355,7 @@ mod tests {
         );
     }
 
-    // ── Required sections regression ────────────────────────────────
+    // Required sections regression
 
     #[test]
     fn test_base_template_contains_required_sections() {
@@ -380,7 +380,7 @@ mod tests {
         );
     }
 
-    // ── Mid-session mode switching ──────────────────────────────────
+    // Mid-session mode switching
 
     #[test]
     fn test_mid_session_switch_concise_to_full() {
@@ -430,7 +430,7 @@ mod tests {
         );
     }
 
-    // ── Determinism ─────────────────────────────────────────────────
+    // Determinism
 
     #[test]
     fn test_prompt_deterministic_across_renders() {
@@ -451,7 +451,7 @@ mod tests {
         assert_eq!(a, b, "Full mode rendering must be deterministic");
     }
 
-    // ── Disabled tools ──────────────────────────────────────────────
+    // Disabled tools
 
     #[test]
     fn test_disabled_tools_omit_sections() {
@@ -469,11 +469,11 @@ mod tests {
         );
     }
 
-    // ── Memory section ──────────────────────────────────────────────
+    // Memory section
 
     #[test]
     fn test_memory_enabled_does_not_render_memory_section() {
-        // The <memory> section was removed from the minimal base prompt.
+        // The <memory> section is absent from the minimal base prompt.
         // Even when the memory tools are registered AND memory_enabled=true,
         // the trimmed template must not render a memory section. (Complements
         // test_memory_disabled_omits_memory_section, which covers the default.)
@@ -514,7 +514,7 @@ mod tests {
         );
     }
 
-    // ── Web search disabled ─────────────────────────────────────────
+    // Web search disabled
 
     #[test]
     fn test_web_search_disabled_renders_without_crash() {
@@ -534,7 +534,7 @@ mod tests {
         );
     }
 
-    // ── Apply-patch template rendering ───────────────────────────────────
+    // Apply-patch template rendering
 
     #[test]
     fn test_apply_patch_template_renders() {
@@ -634,9 +634,9 @@ mod tests {
         assert_eq!(a, b, "Subagent template rendering must be deterministic");
     }
 
-    // ── Task completion discipline ─────────────────────────────────
+    // Task completion discipline
     //
-    // The `<task_completion_discipline>` block was removed from both
+    // The `<task_completion_discipline>` block is absent from both
     // base and subagent templates. These tests pin the deletion so the
     // block doesn't accidentally come back, and so the runtime TodoGate
     // doesn't start firing reminders that reference a non-existent
@@ -681,7 +681,7 @@ mod tests {
         assert_template_size_under(&prompt, "subagent");
     }
 
-    // ── Guard invariant ─────────────────────────────────────────────
+    // Guard invariant
     // Every `${{ tools.by_kind.X }}` must sit inside a `${%- if ... %}`
     // whose condition requires X (contains `tools.by_kind.X` at a word
     // boundary, with no top-level ` or `). If violated, X could render
@@ -770,12 +770,12 @@ mod tests {
         assert_guards(&apply_patch_template(), "apply_patch_prompt.md");
     }
 
-    // ── Combination sweep ───────────────────────────────────────────
+    // Combination sweep
     // Belt-and-braces: renders the base template across tool-kind subsets
     // and asserts no raw template tokens leak. The static guard test above
     // is the authoritative check; this one just catches syntax drift.
 
-    // ── is_non_interactive gating ──────────────────────────────────
+    // is_non_interactive gating
     // Headless / SDK / stdio / generic-ACP sessions have no human typing
     // into a TUI prompt, so the `! <command>` shell-prefix tip and the
     // `<user_guide>` TUI pointer are noise. Those sections must drop out
@@ -783,7 +783,7 @@ mod tests {
 
     #[test]
     fn interactive_renders_shell_prefix_tip_and_user_guide() {
-        // The `! <command>` shell-prefix tip was removed from the minimal
+        // The `! <command>` shell-prefix tip is absent from the minimal
         // prompt. The <user_guide> block still renders for interactive
         // sessions only, so that's what we assert here.
         let mut p = default_placeholders();

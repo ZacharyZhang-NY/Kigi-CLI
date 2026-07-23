@@ -50,8 +50,6 @@ pub mod mcp_methods {
 use crate::agent::MvpAgent;
 use crate::session::mcp_servers::{MCP_TOOL_NAME_DELIMITER, McpClient, McpServerName, McpState};
 
-// ── Wire types: mcp/list ────────────────────────────────────────────
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpListRequest {
@@ -155,8 +153,6 @@ pub struct McpToolEntry {
     pub enabled: bool,
 }
 
-// ── Wire types: mcp/call ────────────────────────────────────────────
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpCallRequest {
@@ -188,8 +184,6 @@ pub struct McpContentBlock {
     pub text: String,
 }
 
-// ── Internal types (not serialized to wire) ─────────────────────────
-
 #[derive(Debug, Clone, Default)]
 pub struct McpStatusSnapshot {
     pub configs: Vec<acp::McpServer>,
@@ -203,8 +197,6 @@ pub struct McpClientStatus {
     pub status: McpSessionStatus,
     pub tools: Vec<McpToolEntry>,
 }
-
-// ── Notification: mcp/servers_updated ────────────────────────────────
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -312,8 +304,6 @@ pub async fn notify_servers_updated(
     }
 }
 
-// ── Dispatch ────────────────────────────────────────────────────────
-
 /// Inbound `kigi/mcp/*` methods this agent services, resolved from the wire string.
 ///
 /// Single source of truth for forward-method routing: [`handle`] maps each variant to
@@ -364,9 +354,6 @@ pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     }
 }
 
-// ── Catalog (shared by mcp/list and InitializeResponse._meta) ───────
-
-/// Extract URL from an MCP server (HTTP/SSE only, None for Stdio).
 fn mcp_server_url(server: &acp::McpServer) -> Option<&str> {
     match server {
         acp::McpServer::Http(acp::McpServerHttp { url, .. })
@@ -384,7 +371,6 @@ pub fn build_mcp_catalog(local_servers: &[acp::McpServer]) -> Vec<McpServerEntry
     let mut servers: Vec<McpServerEntry> = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
-    // Local servers (HTTP or Stdio)
     for server in local_servers {
         let name = crate::session::mcp_servers::mcp_server_name(server).to_string();
         if seen.insert(name.clone()) {
@@ -442,8 +428,6 @@ fn disabled_server_placeholder_entry(name: &str) -> McpServerEntry {
         }),
     }
 }
-
-// ── Session-level operations (called via SessionCommand) ────────────
 
 /// Build session MCP status: which servers are enabled, healthy, and what tools they expose.
 /// Clones state under lock then releases — does not hold lock across awaits.
@@ -530,7 +514,6 @@ pub async fn build_mcp_status(
                 })
                 .collect();
 
-            // Include disabled tools from stashed registrations.
             for (qname, desc) in &disabled_regs {
                 if qname.starts_with(&prefix) {
                     let unqualified = qname.strip_prefix(&prefix).unwrap_or(qname).to_string();
@@ -592,7 +575,6 @@ async fn ensure_agent_pool_initialized(mcp_state: &Arc<TokioMutex<McpState>>) {
             return;
         }
         if state.is_initializing() {
-            // Another call is initializing — wait and retry.
             drop(state);
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             continue;
@@ -734,8 +716,6 @@ pub async fn call_mcp_tool(
     })
 }
 
-// ── mcp/list handler ────────────────────────────────────────────────
-
 async fn handle_list(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     let req = parse_params::<McpListRequest>(args)?;
 
@@ -797,7 +777,6 @@ async fn handle_list(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
         let catalog_names: std::collections::HashSet<String> =
             servers.iter().map(|s| s.name.clone()).collect();
 
-        // Annotate catalog entries with session state.
         for entry in &mut servers {
             let enabled = snapshot
                 .configs
@@ -852,8 +831,6 @@ async fn handle_list(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     }
     to_ext_response(Ok(McpListResponse { servers }))
 }
-
-// ── mcp/call handler ────────────────────────────────────────────────
 
 async fn handle_call(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     let req = parse_params::<McpCallRequest>(args)?;
@@ -992,12 +969,6 @@ pub async fn read_mcp_resource(
 
     Ok(McpReadResourceResponse { contents })
 }
-
-// ── McpResourceProvider bridge ───────────────────────────────────────
-//
-// Implements the `McpResourceProvider` trait from kigi-tools so that
-// `ListMcpResources` / `FetchMcpResource` tools can access MCP
-// servers without depending on `kigi-mcp` directly.
 
 /// Bridge from `McpState` to the `McpResourceProvider` trait.
 ///
@@ -1145,8 +1116,6 @@ impl kigi_tools::types::resources::McpResourceProvider for McpStateResourceProvi
     }
 }
 
-// ── Auth status / trigger ────────────────────────────────────────────
-
 #[derive(serde::Deserialize)]
 struct McpAuthStatusRequest {
     session_id: String,
@@ -1208,8 +1177,6 @@ async fn handle_auth_trigger(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtRes
         }
     }
 }
-
-// ── mcp/toggle handler ───────────────────────────────────────────────
 
 #[derive(serde::Deserialize)]
 struct McpToggleRequest {
@@ -1294,8 +1261,6 @@ async fn handle_toggle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     to_ext_response(Ok(McpToggleResponse { ok: true }))
 }
 
-// ── mcp/toggle_tool handler ─────────────────────────────────────────
-
 #[derive(serde::Deserialize)]
 struct McpToggleToolRequest {
     session_id: String,
@@ -1320,8 +1285,6 @@ async fn handle_toggle_tool(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResu
     to_ext_response(Ok(McpToggleResponse { ok: true }))
 }
 
-// ── mcp/upsert handler ──────────────────────────────────────────────
-
 #[derive(serde::Deserialize)]
 struct McpUpsertRequest {
     session_id: String,
@@ -1334,12 +1297,10 @@ async fn handle_upsert(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     let req = parse_params::<McpUpsertRequest>(args)?;
     let acp_id = acp::SessionId::new(req.session_id.clone());
 
-    // Persist to config.toml first.
     crate::util::config::save_mcp_server_config(&req.server_name, &req.config)
         .await
         .map_err(|e| acp::Error::internal_error().data(e.to_string()))?;
 
-    // Build the ACP server config for live addition.
     let server_config = req
         .config
         .to_acp_mcp_server(&req.server_name)
@@ -1358,8 +1319,6 @@ async fn handle_upsert(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     to_ext_response(Ok(McpToggleResponse { ok: true }))
 }
 
-// ── mcp/delete handler ──────────────────────────────────────────────
-
 #[derive(serde::Deserialize)]
 struct McpDeleteRequest {
     session_id: String,
@@ -1370,7 +1329,6 @@ async fn handle_delete(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     let req = parse_params::<McpDeleteRequest>(args)?;
     let acp_id = acp::SessionId::new(req.session_id.clone());
 
-    // Verify the server exists in local config (not managed).
     let existed = crate::util::config::delete_mcp_server_config(&req.server_name)
         .await
         .map_err(|e| acp::Error::internal_error().data(e.to_string()))?;
@@ -1382,7 +1340,6 @@ async fn handle_delete(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
         )));
     }
 
-    // Live teardown: disable the server in the running session.
     let handle = agent
         .get_session_handle(&acp_id)
         .ok_or_else(|| acp::Error::invalid_params().data("session not found"))?;
@@ -1463,12 +1420,10 @@ mod tests {
             ],
         };
         let json = serde_json::to_value(&resp).unwrap();
-        // [0] local HTTP
         assert_eq!(json["servers"][0]["source"], "local");
         assert_eq!(json["servers"][0]["type"], "http");
         assert_eq!(json["servers"][0]["url"], "https://mcp.linear.app");
         assert!(json["servers"][0].get("session").is_none());
-        // [1] local Stdio
         assert_eq!(json["servers"][1]["source"], "local");
         assert_eq!(json["servers"][1]["type"], "stdio");
         assert_eq!(json["servers"][1]["command"], "/usr/bin/mcp-filesystem");

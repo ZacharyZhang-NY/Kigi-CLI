@@ -11,7 +11,6 @@ use crate::render::osc8::LinkOverlay;
 use crate::scrollback::text_selection::ResolvedSelectionModel;
 use crate::theme::Theme;
 
-/// Box drawing characters for selection border.
 mod border_chars {
     pub const TOP_LEFT: char = '┌';
     pub const TOP_RIGHT: char = '┐';
@@ -97,12 +96,10 @@ pub struct ScrollInfo {
 }
 
 impl RenderOutput {
-    /// Create empty render output.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Create render output with a selection box.
     pub fn with_selection_box(selection_box: SelectionBox) -> Self {
         Self {
             selection_box: Some(selection_box),
@@ -115,7 +112,6 @@ impl RenderOutput {
         }
     }
 
-    /// Add scroll info to the output.
     pub fn with_scroll_info(mut self, scroll_info: ScrollInfo) -> Self {
         self.scroll_info = Some(scroll_info);
         self
@@ -123,7 +119,6 @@ impl RenderOutput {
 }
 
 impl SelectionBox {
-    /// Create a new selection box with the given inner area and style.
     pub fn new(inner_area: Rect, style: Style) -> Self {
         Self {
             inner_area,
@@ -136,13 +131,11 @@ impl SelectionBox {
         }
     }
 
-    /// Set whether the top is clipped (no top corners).
     pub fn with_top_clipped(mut self, clipped: bool) -> Self {
         self.top_clipped = clipped;
         self
     }
 
-    /// Set whether the bottom is clipped (no bottom corners).
     pub fn with_bottom_clipped(mut self, clipped: bool) -> Self {
         self.bottom_clipped = clipped;
         self
@@ -208,7 +201,6 @@ impl SelectionBox {
         let y_top = area.y;
         let y_bottom = area.y + area.height.saturating_sub(1);
 
-        // Draw side borders
         for y in y_top..=y_bottom {
             let is_first_row = y == y_top;
             let is_last_row = y == y_bottom;
@@ -229,7 +221,6 @@ impl SelectionBox {
             }
         }
 
-        // Draw top corners (if not clipped and there's room)
         if !self.top_clipped && y_top > 0 {
             let corner_y = y_top - 1;
             if let Some(cell) = buf.cell_mut((left_x, corner_y)) {
@@ -253,7 +244,6 @@ impl SelectionBox {
             }
         }
 
-        // Draw bottom corners (if not clipped)
         if !self.bottom_clipped {
             let corner_y = y_bottom + 1;
             if let Some(cell) = buf.cell_mut((left_x, corner_y)) {
@@ -284,7 +274,6 @@ mod tests {
         assert_eq!(buf.cell((0, 1)).unwrap().symbol(), "┌");
         assert_eq!(buf.cell((9, 1)).unwrap().symbol(), "┐");
 
-        // Check side borders at y=2..=5 (all solid, not clipped)
         for y in 2..=5 {
             assert_eq!(buf.cell((0, y)).unwrap().symbol(), "│");
             assert_eq!(buf.cell((9, y)).unwrap().symbol(), "│");
@@ -304,21 +293,17 @@ mod tests {
 
         selection.render(&mut buf);
 
-        // Top corners should NOT be drawn
         assert_ne!(buf.cell((0, 1)).unwrap().symbol(), "┌");
         assert_ne!(buf.cell((9, 1)).unwrap().symbol(), "┐");
 
-        // First row (y=2) should have DASHED borders
         assert_eq!(buf.cell((0, 2)).unwrap().symbol(), "┆");
         assert_eq!(buf.cell((9, 2)).unwrap().symbol(), "┆");
 
-        // Middle rows should have solid borders
         for y in 3..=5 {
             assert_eq!(buf.cell((0, y)).unwrap().symbol(), "│");
             assert_eq!(buf.cell((9, y)).unwrap().symbol(), "│");
         }
 
-        // Bottom corners should be drawn
         assert_eq!(buf.cell((0, 6)).unwrap().symbol(), "└");
     }
 
@@ -331,21 +316,17 @@ mod tests {
 
         selection.render(&mut buf);
 
-        // Top corners should be drawn
         assert_eq!(buf.cell((0, 1)).unwrap().symbol(), "┌");
         assert_eq!(buf.cell((9, 1)).unwrap().symbol(), "┐");
 
-        // First rows should have solid borders
         for y in 2..=4 {
             assert_eq!(buf.cell((0, y)).unwrap().symbol(), "│");
             assert_eq!(buf.cell((9, y)).unwrap().symbol(), "│");
         }
 
-        // Last row (y=5) should have DASHED borders
         assert_eq!(buf.cell((0, 5)).unwrap().symbol(), "┆");
         assert_eq!(buf.cell((9, 5)).unwrap().symbol(), "┆");
 
-        // Bottom corners should NOT be drawn
         assert_ne!(buf.cell((0, 6)).unwrap().symbol(), "└");
         assert_ne!(buf.cell((9, 6)).unwrap().symbol(), "┘");
     }
@@ -360,21 +341,17 @@ mod tests {
 
         selection.render(&mut buf);
 
-        // No corners should be drawn
         assert_ne!(buf.cell((0, 1)).unwrap().symbol(), "┌");
         assert_ne!(buf.cell((0, 6)).unwrap().symbol(), "└");
 
-        // First row (y=2) should have DASHED borders
         assert_eq!(buf.cell((0, 2)).unwrap().symbol(), "┆");
         assert_eq!(buf.cell((9, 2)).unwrap().symbol(), "┆");
 
-        // Middle rows should have solid borders
         for y in 3..=4 {
             assert_eq!(buf.cell((0, y)).unwrap().symbol(), "│");
             assert_eq!(buf.cell((9, y)).unwrap().symbol(), "│");
         }
 
-        // Last row (y=5) should have DASHED borders
         assert_eq!(buf.cell((0, 5)).unwrap().symbol(), "┆");
         assert_eq!(buf.cell((9, 5)).unwrap().symbol(), "┆");
     }
@@ -394,7 +371,6 @@ mod tests {
         assert_eq!(buf.cell((0, 3)).unwrap().symbol(), "┆");
         assert_eq!(buf.cell((9, 3)).unwrap().symbol(), "┆");
 
-        // No corners
         assert_ne!(buf.cell((0, 2)).unwrap().symbol(), "┌");
         assert_ne!(buf.cell((0, 4)).unwrap().symbol(), "└");
     }
@@ -413,7 +389,6 @@ mod tests {
         assert_eq!(buf.cell((0, 3)).unwrap().symbol(), "┆");
         assert_eq!(buf.cell((9, 3)).unwrap().symbol(), "┆");
 
-        // Bottom corners should be drawn
         assert_eq!(buf.cell((0, 4)).unwrap().symbol(), "└");
         assert_eq!(buf.cell((9, 4)).unwrap().symbol(), "┘");
     }
@@ -427,12 +402,10 @@ mod tests {
 
         selection.render(&mut buf);
 
-        // Side borders at y=0..=3 (all solid, not clipped)
         for y in 0..=3 {
             assert_eq!(buf.cell((0, y)).unwrap().symbol(), "│");
         }
 
-        // Bottom corners at y=4
         assert_eq!(buf.cell((0, 4)).unwrap().symbol(), "└");
     }
 }

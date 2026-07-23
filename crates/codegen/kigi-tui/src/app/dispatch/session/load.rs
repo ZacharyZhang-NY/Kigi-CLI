@@ -495,16 +495,6 @@ pub(in crate::app::dispatch) fn reanchor_grouped_selection<T>(
     }
     state.selected = sel;
 }
-/// Trigger a deep content search when the session picker query changes.
-///
-/// Any query of 2+ chars searches content — title matches never suppress
-/// it. Forced (Ctrl+/) searches fire immediately; keystrokes otherwise
-/// coalesce through [`Effect::DebounceSessionSearch`], whose expiry runs
-/// the search only if its seq is still current. Shorter queries clear the
-/// content results.
-///
-/// Checks the active agent's modal first; if no modal session picker
-/// exists, falls back to the welcome-screen picker state.
 pub(in crate::app::dispatch) fn dispatch_cycle_session_source_filter(
     app: &mut AppView,
 ) -> Vec<Effect> {
@@ -544,6 +534,16 @@ pub(in crate::app::dispatch) fn dispatch_cycle_session_source_filter(
     }
     vec![]
 }
+/// Trigger a deep content search when the session picker query changes.
+///
+/// Any query of 2+ chars searches content — title matches never suppress
+/// it. Forced (Ctrl+/) searches fire immediately; keystrokes otherwise
+/// coalesce through [`Effect::DebounceSessionSearch`], whose expiry runs
+/// the search only if its seq is still current. Shorter queries clear the
+/// content results.
+///
+/// Checks the active agent's modal first; if no modal session picker
+/// exists, falls back to the welcome-screen picker state.
 pub(in crate::app::dispatch) fn dispatch_trigger_deep_search(
     app: &mut AppView,
     force: bool,

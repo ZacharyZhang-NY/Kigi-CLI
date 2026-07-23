@@ -23,26 +23,21 @@ use crate::appearance::LayoutConfig;
 /// not as part of this layout. Scrollbar is handled separately.
 #[derive(Debug, Clone)]
 pub struct HorizontalLayout {
-    /// Accent line column.
     pub accent: Rect,
-    /// Left padding area (between accent and content).
     pub left_padding: Rect,
-    /// Main content area.
     pub content: Rect,
-    /// Right padding area.
     pub right_padding: Rect,
 }
 
 impl HorizontalLayout {
-    /// Accent width is always 1.
     pub const ACCENT: u16 = 1;
 
-    /// Create layout for the given area with config values.
     pub fn new(area: Rect, config: &LayoutConfig) -> Self {
         let [accent, left_padding, content, right_padding] = Layout::horizontal([
             Constraint::Length(Self::ACCENT),
             Constraint::Length(config.block_pad_left),
-            Constraint::Min(1), // Content takes remaining space
+            // Content takes remaining space
+            Constraint::Min(1),
             Constraint::Length(config.block_pad_right),
         ])
         .areas(area);
@@ -60,7 +55,6 @@ impl HorizontalLayout {
         Self::new(area, &LayoutConfig::default())
     }
 
-    /// Total chrome width for a given config.
     pub fn chrome_width(config: &LayoutConfig) -> u16 {
         Self::ACCENT + config.block_pad_left + config.block_pad_right
     }
@@ -81,12 +75,10 @@ impl HorizontalLayout {
         }
     }
 
-    /// Get the accent column area.
     pub fn accent_area(&self) -> Rect {
         self.accent
     }
 
-    /// Get the content width (for BlockContext).
     pub fn content_width(&self) -> u16 {
         self.content.width
     }
@@ -104,10 +96,9 @@ impl HorizontalLayout {
     ///
     /// Returns the area where selection borders should be drawn.
     pub fn selection_area(&self) -> Rect {
-        // Selection extends 1 column left of accent into outer padding
-        // and 1 column right of entry into gap_left area
         let x = self.accent.x.saturating_sub(1);
-        let width = self.entry_content_area().width + 2; // +1 left, +1 right
+        // +1 left, +1 right
+        let width = self.entry_content_area().width + 2;
 
         Rect {
             x,
@@ -155,16 +146,13 @@ mod tests {
         let area = Rect::new(0, 0, 80, 10);
         let layout = HorizontalLayout::new(area, &config);
 
-        // Check widths
         assert_eq!(layout.accent.width, 1);
         assert_eq!(layout.left_padding.width, config.block_pad_left);
         assert_eq!(layout.right_padding.width, config.block_pad_right);
 
-        // Content should be 80 - chrome
         let chrome = HorizontalLayout::chrome_width(&config);
         assert_eq!(layout.content.width, 80 - chrome);
 
-        // All have same height
         assert_eq!(layout.accent.height, 10);
         assert_eq!(layout.content.height, 10);
     }
@@ -177,9 +165,7 @@ mod tests {
 
         let entry_area = layout.entry_content_area();
 
-        // Entry area starts at accent column
         assert_eq!(entry_area.x, layout.accent.x);
-        // Width includes accent + left_pad + content + right_pad
         assert_eq!(
             entry_area.width,
             1 + config.block_pad_left + layout.content.width + config.block_pad_right
@@ -198,7 +184,6 @@ mod tests {
         assert_eq!(row_layout.accent.height, 3);
         assert_eq!(row_layout.content.y, 5);
         assert_eq!(row_layout.content.height, 3);
-        // X positions should be unchanged
         assert_eq!(row_layout.accent.x, layout.accent.x);
         assert_eq!(row_layout.content.x, layout.content.x);
     }
@@ -212,11 +197,8 @@ mod tests {
 
         let selection = layout.selection_area();
 
-        // Selection area should extend 1 column LEFT of accent into outer padding
         assert_eq!(selection.x, layout.accent.x - 1);
-        // Width should be entry_content_area width + 2 (1 left, 1 right)
         assert_eq!(selection.width, layout.entry_content_area().width + 2);
-        // Y and height same as accent
         assert_eq!(selection.y, layout.accent.y);
         assert_eq!(selection.height, layout.accent.height);
     }
@@ -232,7 +214,6 @@ mod tests {
 
         // Selection at edge should saturate at x=0 (no underflow)
         assert_eq!(selection.x, 0);
-        // Width is entry width + 2
         assert_eq!(selection.width, layout.entry_content_area().width + 2);
     }
 }

@@ -45,8 +45,6 @@ fn all_user_message_blobs(content: &ContentController) -> Vec<String> {
         .collect()
 }
 
-/// Mid-turn queue via Enter, then empty Enter cancels the running turn and
-/// runs that row as the next turn (cancel-and-send).
 pub async fn assert_empty_enter_force_sends_top_queued() -> Result<()> {
     let content = ContentController::start()
         .await
@@ -79,13 +77,11 @@ pub async fn assert_empty_enter_force_sends_top_queued() -> Result<()> {
         .context("queued text visible")?;
 
     harness.inject_keys(b"\r").context("empty Enter send-now")?;
-    // Cancel-and-send: the shell cancels turn 1 (its held completion is
-    // irrelevant — the abort wins) and promotes the row to run as turn 2.
-    // Release the gate so any completion race resolves rather than hangs.
+    // Release the gate so a completion racing the abort resolves rather than
+    // hangs.
     content.release_agent_completions();
-    // The promoted row renders as a standard user prompt block ("❯ " prefix
-    // distinguishes the committed block from the prefix-less queue row) with
-    // the new turn's reply below it.
+    // The "❯ " prefix distinguishes the committed prompt block from the
+    // prefix-less queue row.
     harness
         .wait_for_text(
             "\u{276F} please also check the logs",
@@ -96,8 +92,6 @@ pub async fn assert_empty_enter_force_sends_top_queued() -> Result<()> {
         .wait_for_text("TURNTWO", Duration::from_secs(40))
         .context("promoted turn reply")?;
 
-    // A send-now cancel is silent: no "Turn cancelled by user" marker may
-    // appear between the partial turn-1 output and the promoted prompt.
     if harness.contains_text("Turn cancelled by user") {
         bail!(
             "send-now cancel must not render a cancelled marker\n{}",

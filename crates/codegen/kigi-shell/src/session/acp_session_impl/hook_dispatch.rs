@@ -3,7 +3,6 @@
 
 use super::*;
 
-/// Map a turn result to the hub protocol's `TurnHookOutcome`.
 pub(super) fn turn_result_to_hook_outcome(
     result: &Result<TurnOutcome, acp::Error>,
 ) -> kigi_tool_protocol::turn_hook::TurnHookOutcome {
@@ -176,7 +175,6 @@ impl SessionActor {
         .await;
     }
 
-    /// Returns the resolved workspace root for hook envelopes.
     pub(super) fn hook_workspace_root(&self) -> String {
         self.hook_resolved_workspace_root.clone()
     }

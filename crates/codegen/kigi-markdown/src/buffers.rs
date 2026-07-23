@@ -1,7 +1,4 @@
 //! Reusable buffers and internal data types for markdown parsing and rendering.
-//!
-//! This module contains all the intermediate data structures used by
-//! MarkdownHighlighter during parsing and rendering.
 
 use std::ops::Range;
 
@@ -9,7 +6,6 @@ use anstyle::Style as AnsiStyle;
 use ratatui::text::{Line, Span};
 use syntect::highlighting::Style as SyntectStyle;
 
-/// A range of text with optional styling.
 #[derive(Debug, Clone)]
 pub struct Highlight {
     pub style: Option<AnsiStyle>,
@@ -18,12 +14,11 @@ pub struct Highlight {
 
 /// Syntax-highlighted code block replacement.
 ///
-/// Stores the raw highlighted spans per line (intermediate representation).
-/// This allows rendering to either ANSI strings or ratatui Lines on demand.
+/// Spans are kept in their intermediate form so the block can be rendered to
+/// either ANSI strings or ratatui Lines on demand.
 #[derive(Debug, Clone)]
 pub struct Replace {
-    /// Raw highlighted spans per line: Vec<(style, text)>.
-    /// Each inner Vec represents one line of the code block.
+    /// One inner Vec per line of the code block.
     pub highlighted: Vec<Vec<(SyntectStyle, String)>>,
     /// Source byte range this replaces.
     pub range: Range<usize>,
@@ -37,7 +32,6 @@ pub struct Replace {
 pub struct LinkTarget {
     /// Source byte range of the *link text* (not the full `[text](url)` span).
     pub source_range: Range<usize>,
-    /// Destination URL.
     pub url: String,
     /// Monotonically increasing identifier assigned during parsing.
     pub id: u32,
@@ -118,12 +112,10 @@ impl StyledCell {
         Self { spans: Vec::new() }
     }
 
-    /// Get plain text content (for width calculation).
     pub fn plain_text(&self) -> String {
         self.spans.iter().map(|s| s.text.as_str()).collect()
     }
 
-    /// Clear the cell content.
     pub fn clear(&mut self) {
         self.spans.clear();
     }
@@ -134,15 +126,10 @@ impl StyledCell {
 pub struct TableState {
     /// Column alignments from the table header.
     pub alignments: Vec<pulldown_cmark::Alignment>,
-    /// Header row cells.
     pub header: Vec<StyledCell>,
-    /// Body rows (each row is a Vec of styled cells).
     pub rows: Vec<Vec<StyledCell>>,
-    /// Current row being built.
     pub current_row: Vec<StyledCell>,
-    /// Current cell content being accumulated.
     pub current_cell: StyledCell,
-    /// Current style state for the cell.
     pub cell_bold: bool,
     pub cell_italic: bool,
     pub cell_code: bool,
@@ -151,7 +138,6 @@ pub struct TableState {
     /// is set produce link-tagged `CellSpan`s so the table renderer can
     /// apply link styling and emit `HyperlinkTarget`s.
     pub cell_link: Option<(String, u32)>,
-    /// Whether we're in the header section.
     pub in_header: bool,
     /// Source byte range of the entire table.
     pub range: Range<usize>,
@@ -194,11 +180,9 @@ impl TableState {
 /// `HyperlinkTarget`.
 #[derive(Debug, Clone)]
 pub struct TableHyperlink {
-    /// Index within `TableReplace::styled_lines`.
     pub line_offset: usize,
-    /// Column range (display cells) on that line.
+    /// Column range in display cells, not bytes.
     pub column_range: Range<usize>,
-    /// Destination URL.
     pub url: String,
     /// Stable identifier shared with the paragraph link path.
     pub id: u32,
@@ -245,7 +229,6 @@ pub struct MermaidReplace {
     pub range: Range<usize>,
 }
 
-/// Calculate the display width of a string (accounting for Unicode).
 pub fn unicode_display_width(s: &str) -> usize {
     use unicode_width::UnicodeWidthStr;
     s.width()
@@ -287,8 +270,10 @@ pub enum RenderEventKind {
     Mermaid = 3,
 }
 
-/// Render event: marks where a highlight/replace/table starts or ends.
-/// Derives Ord for sorting by (pos, kind, index, is_end).
+/// Marks where a highlight/replace/table starts or ends.
+///
+/// Field order is load-bearing: the derived `Ord` sorts the event queue by
+/// (pos, kind, index, is_end).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RenderEvent {
     pub pos: usize,
@@ -301,22 +286,8 @@ pub struct RenderEvent {
 ///
 /// All vectors are cleared (keeping capacity) between renders, eliminating
 /// allocation overhead in the streaming hot path.
-///
-/// # Buffer Categories
-///
-/// **Parse output buffers** - populated during `run()`, read-only during `render()`:
-/// - `highlights`: Style ranges for inline formatting
-/// - `replaces`: Syntax-highlighted code blocks
-/// - `transforms`: Character substitutions (e.g., bullets)
-/// - `untagged_code_ranges`: Code blocks without language tags
-/// - `table_replaces`: Formatted table replacements
-///
-/// **Render scratch buffers** - temporary storage during `render()`:
-/// - `render_events`: Sorted event queue for the render loop
-/// - `current_spans`: Building current line's spans
-/// - `active_highlights`: Stack of active highlight indices
 pub struct MarkdownBuffers {
-    // Parse output buffers (written by run(), read by render())
+    // Parse output buffers: written by run(), read-only during render().
     pub highlights: Vec<Highlight>,
     pub replaces: Vec<Replace>,
     pub transforms: Vec<Transform>,
@@ -327,7 +298,7 @@ pub struct MarkdownBuffers {
     /// Closed fenced code blocks, in document order (see [`CodeBlockMeta`]).
     pub code_blocks: Vec<CodeBlockMeta>,
 
-    // Render scratch buffers (used only during render())
+    // Render scratch buffers: used only during render().
     pub render_events: Vec<RenderEvent>,
     pub current_spans: Vec<Span<'static>>,
     pub active_highlights: Vec<usize>,

@@ -64,7 +64,6 @@ impl SlashCommand for TerminalSetupCommand {
 
         let mut out = String::new();
 
-        // -- Environment --
         out.push_str("Environment\n");
         out.push_str(&format!("  terminal     {}\n", ctx.brand));
         if let Some(v) = crate::terminal::xtversion::detected() {
@@ -122,7 +121,6 @@ impl SlashCommand for TerminalSetupCommand {
             out.push_str(&format!("  newline      Alt+Enter ({detail})\n"));
         }
 
-        // -- Clipboard --
         out.push_str("\nClipboard routes\n");
         out.push_str(&format!(
             "  native       {}  (tool: {})\n",
@@ -142,7 +140,6 @@ impl SlashCommand for TerminalSetupCommand {
             crate::clipboard::wayland_data_control_label()
         ));
 
-        // -- Diagnostics --
         if warnings.is_empty() {
             out.push_str("\nNo issues found.\n");
         } else {

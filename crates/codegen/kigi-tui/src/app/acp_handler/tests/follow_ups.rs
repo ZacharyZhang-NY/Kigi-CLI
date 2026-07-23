@@ -30,7 +30,6 @@
             .session
             .current_prompt_id = Some("p1".into());
 
-        // Active turn (p1) chips applied via the wire.
         assert!(handle_ext_notification(
             &follow_ups_ext_with_prompt("resp-1", "p1", &["a"]),
             &mut app
@@ -39,7 +38,6 @@
         app.agents.get_mut(&AgentId(0)).unwrap().clear_follow_ups();
         assert!(app.agents[&AgentId(0)].follow_ups.is_none());
 
-        // (a) Re-delivery of the active turn re-renders.
         assert!(
             handle_ext_notification(
                 &follow_ups_ext_with_prompt("resp-1", "p1", &["a"]),
@@ -56,7 +54,6 @@
             "resp-1"
         );
 
-        // Adopt a new turn p2; clear.
         app.agents
             .get_mut(&AgentId(0))
             .unwrap()
@@ -64,7 +61,6 @@
             .current_prompt_id = Some("p2".into());
         app.agents.get_mut(&AgentId(0)).unwrap().clear_follow_ups();
 
-        // (b) Prior turn (p1) replay must NOT revive.
         assert!(
             !handle_ext_notification(
                 &follow_ups_ext_with_prompt("resp-1", "p1", &["a"]),
@@ -199,7 +195,6 @@
         let affected = handle_ext_notification(&follow_ups_ext(&big, &["x"]), &mut app);
         assert!(!affected, "an oversized response_id must be rejected");
         assert!(app.agents[&AgentId(0)].follow_ups.is_none());
-        // A sane-length id still works.
         let ok = "r".repeat(super::MAX_RESPONSE_ID_LEN);
         assert!(handle_ext_notification(
             &follow_ups_ext(&ok, &["x"]),

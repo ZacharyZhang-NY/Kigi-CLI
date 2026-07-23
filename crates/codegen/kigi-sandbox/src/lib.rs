@@ -60,11 +60,9 @@ struct GlobalSandboxState {
     logger: SandboxLogger,
     applied: bool,
 }
-/// Whether child subprocesses should have network blocked via seccomp.
 pub fn should_restrict_child_network() -> bool {
     RESTRICT_CHILD_NETWORK.load(Ordering::Relaxed)
 }
-/// Whether bash commands should be auto-approved when the sandbox is active.
 pub fn should_auto_allow_bash() -> bool {
     AUTO_ALLOW_BASH.load(Ordering::Relaxed) && is_active()
 }
@@ -75,7 +73,6 @@ pub fn set_auto_allow_bash(enabled: bool) {
 pub fn set_configured_profile(name: impl Into<String>) {
     let _ = CONFIGURED_PROFILE.set(name.into());
 }
-/// Resolved sandbox profile from startup, or `None` if `set_configured_profile` was never called.
 pub fn configured_profile_name() -> Option<&'static str> {
     CONFIGURED_PROFILE.get().map(|s| s.as_str())
 }
@@ -83,15 +80,13 @@ pub fn configured_profile_name() -> Option<&'static str> {
 pub fn is_active() -> bool {
     SANDBOX.get().is_some_and(|s| s.applied)
 }
-/// The active sandbox profile name, or `None` if sandbox is not applied.
 pub fn profile_name() -> Option<&'static str> {
     SANDBOX
         .get()
         .filter(|s| s.applied)
         .map(|s| s.profile.as_str())
 }
-/// Log a sandbox violation. Immediately flushed to disk.
-/// No-op if sandbox is not active.
+/// Log a sandbox violation, flushing it to disk immediately.
 pub fn log_violation(target: &str, operation: &str) {
     if let Some(state) = SANDBOX.get() {
         state.logger.log(SandboxEvent::fs_violation(
@@ -102,7 +97,6 @@ pub fn log_violation(target: &str, operation: &str) {
         let _ = state.logger.flush_to_disk();
     }
 }
-/// Flush sandbox events to disk. No-op if not initialized.
 pub fn flush() {
     if let Some(state) = SANDBOX.get()
         && let Err(e) = state.logger.flush_to_disk()
@@ -110,7 +104,6 @@ pub fn flush() {
         tracing::warn!(error = % e, "Failed to flush sandbox events to disk");
     }
 }
-/// Violation metrics, or `None` if sandbox is not active.
 pub fn metrics() -> Option<&'static SandboxMetrics> {
     SANDBOX.get().map(|s| s.logger.metrics())
 }
@@ -122,7 +115,6 @@ pub struct SandboxManager {
     applied: bool,
 }
 impl SandboxManager {
-    /// Create a sandbox manager. Does not apply until `apply()` is called.
     pub fn new(profile: ProfileName, _workspace: &Path) -> Self {
         let net_restricted = profile.restricts_network();
         Self {
@@ -210,24 +202,19 @@ impl SandboxManager {
             applied: self.applied,
         });
     }
-    /// Check whether the current platform supports sandboxing.
     #[cfg(all(feature = "enforce", unix))]
     pub fn support_info() -> nono::SupportInfo {
         Sandbox::support_info()
     }
-    /// Whether the sandbox was successfully applied.
     pub fn is_applied(&self) -> bool {
         self.applied
     }
-    /// Whether child subprocesses should have network blocked.
     pub fn restrict_child_network(&self) -> bool {
         self.applied && self.net_restricted
     }
-    /// The active profile name.
     pub fn profile(&self) -> &ProfileName {
         &self.profile
     }
-    /// Access the sandbox event logger (before `install()`).
     pub fn logger(&self) -> &SandboxLogger {
         &self.logger
     }
@@ -480,7 +467,7 @@ pub fn bwrap_reexec_for_profile(
 mod tests {
     use super::*;
     use serial_test::serial;
-    /// Save, set/remove, and auto-restore an env var on drop.
+    /// Restores the previous value of the env var on drop.
     struct EnvGuard {
         key: &'static str,
         prev: Option<String>,
@@ -612,8 +599,8 @@ mod tests {
         set_configured_profile("read-only");
         assert_eq!(configured_profile_name(), Some("read-only"));
     }
-    /// Create a temp workspace whose `.kigi/sandbox.toml` contains `toml_body`.
-    /// Returns the workspace path (caller removes it).
+    /// Returns a workspace whose `.kigi/sandbox.toml` holds `toml_body`; the
+    /// caller is responsible for removing it.
     #[cfg(all(feature = "enforce", unix))]
     fn temp_workspace_with_sandbox_toml(tag: &str, toml_body: &str) -> PathBuf {
         let nanos = std::time::SystemTime::now()
@@ -626,9 +613,8 @@ mod tests {
         std::fs::write(kigi.join("sandbox.toml"), toml_body).unwrap();
         ws
     }
-    /// Create a temp workspace defining a `denytest` profile (extends `workspace`)
-    /// with the given `deny` list. `deny_toml` is the raw TOML array body
-    /// (e.g. `"\".env\""`).
+    /// Defines a `denytest` profile extending `workspace`. `deny_toml` is the
+    /// raw TOML array body, e.g. `"\".env\""`.
     #[cfg(all(feature = "enforce", unix))]
     fn temp_workspace_with_deny(tag: &str, deny_toml: &str) -> PathBuf {
         temp_workspace_with_sandbox_toml(

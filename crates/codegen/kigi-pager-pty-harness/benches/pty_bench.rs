@@ -135,7 +135,8 @@ async fn run() -> Result<ExitCode> {
 
         let res = scenario.run(&mut harness, &content).await;
 
-        // Best-effort cleanup regardless of scenario outcome.
+        // Cleanup runs regardless of scenario outcome, so failures are reported
+        // below rather than leaking a live PTY.
         let _ = harness.quit();
 
         match res {
@@ -160,7 +161,6 @@ async fn run() -> Result<ExitCode> {
         }
     }
 
-    // Emit JSON to stdout for downstream consumption.
     let json = serde_json::to_string_pretty(&results).context("serialize results")?;
     println!("{json}");
 

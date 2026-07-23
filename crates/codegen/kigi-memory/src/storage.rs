@@ -408,8 +408,8 @@ impl MemoryStorage {
     ///
     /// Deletes MEMORY.md, sessions/, index.sqlite, and any other workspace files.
     /// The directory will be recreated on next session start via `ensure_initialized()`.
-    /// Returns `Ok(true)` if the directory existed and was removed, `Ok(false)` if
-    /// it didn't exist.
+    /// Returns `Ok(true)` if the directory existed and this call removed it,
+    /// `Ok(false)` if it didn't exist.
     pub fn clear_workspace(&self) -> std::io::Result<bool> {
         match std::fs::remove_dir_all(&self.workspace_dir) {
             Ok(()) => {
@@ -426,8 +426,8 @@ impl MemoryStorage {
     /// Does not remove the global memory directory itself (other workspaces may
     /// have subdirectories there). The file will be recreated on next session
     /// start via `ensure_initialized()`.
-    /// Returns `Ok(true)` if the file existed and was removed, `Ok(false)` if
-    /// it didn't exist.
+    /// Returns `Ok(true)` if the file existed and this call removed it,
+    /// `Ok(false)` if it didn't exist.
     pub fn clear_global(&self) -> std::io::Result<bool> {
         let path = self.global_memory_file();
         match std::fs::remove_file(&path) {
@@ -1035,9 +1035,7 @@ mod tests {
         assert!(content.contains("## Second"), "appended content present");
     }
 
-    // -----------------------------------------------------------------------
     // normalize_memory_content tests
-    // -----------------------------------------------------------------------
 
     #[test]
     fn test_normalize_single_line() {
@@ -1114,9 +1112,7 @@ mod tests {
         assert_eq!(result, "## First line\n\nSecond line\nThird line");
     }
 
-    // -----------------------------------------------------------------------
     // append_to_memory tests
-    // -----------------------------------------------------------------------
 
     #[test]
     fn test_append_to_memory_workspace_empty_file() {
@@ -1217,9 +1213,7 @@ mod tests {
         assert!(!workspace_dir.join("MEMORY.md").exists());
     }
 
-    // -----------------------------------------------------------------------
     // clear_workspace / clear_global tests
-    // -----------------------------------------------------------------------
 
     #[test]
     fn test_clear_workspace_removes_directory() {
@@ -1304,9 +1298,7 @@ mod tests {
         assert!(after.contains("Project Memory"));
     }
 
-    // -----------------------------------------------------------------------
     // normalize_remote_url tests
-    // -----------------------------------------------------------------------
 
     #[test]
     fn test_normalize_ssh_url() {
@@ -1380,9 +1372,7 @@ mod tests {
         assert_eq!(https, ssh_scheme);
     }
 
-    // -----------------------------------------------------------------------
     // extract_repo_identity tests
-    // -----------------------------------------------------------------------
 
     #[test]
     fn test_extract_repo_identity_from_current_repo() {
@@ -1438,9 +1428,7 @@ mod tests {
         assert_eq!(parts[0].len(), 8, "hash suffix should be 8 hex chars");
     }
 
-    // -----------------------------------------------------------------------
     // is_ephemeral_cwd tests
-    // -----------------------------------------------------------------------
 
     #[test]
     fn test_ephemeral_linux_tmp() {
@@ -1575,9 +1563,7 @@ mod tests {
         assert!(!storage.is_ephemeral());
     }
 
-    // -----------------------------------------------------------------------
     // gc tests
-    // -----------------------------------------------------------------------
 
     fn set_dir_mtime_days_ago(dir: &Path, days: u64) {
         let t =
@@ -1788,9 +1774,7 @@ mod tests {
         assert!(!other.exists());
     }
 
-    // -----------------------------------------------------------------------
     // is_empty_workspace / is_older_than unit tests
-    // -----------------------------------------------------------------------
 
     #[test]
     fn test_is_empty_workspace_no_sessions_dir() {

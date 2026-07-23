@@ -1,4 +1,4 @@
-//! `run_terminal_cmd` (Bash) tool — new architecture (`Tool` trait).
+//! `run_terminal_cmd` (Bash) tool.
 //!
 //! Executes bash commands in a persistent shell session with optional timeout.
 //! Supports both foreground (blocking) and background (returns task_id) execution.
@@ -118,10 +118,6 @@ fn terminal_notification_base(notif: &ToolNotification) -> Option<&BashNotificat
     }
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Params
-// ───────────────────────────────────────────────────────────────────────────
-
 /// Configuration for the bash tool, stored as `Params<BashParams>` in Resources.
 ///
 /// All fields are optional — `None` means "use the built-in default".
@@ -149,8 +145,8 @@ pub struct BashParams {
     /// This never bounds background tasks: `timeout: 0` / omitted in background
     /// mode always resolves to `Duration::MAX` regardless of this value (the
     /// model owns their lifetime via the background-task tooling; the terminal
-    /// backend's own hard cap is the only backstop). Unset reproduces prior
-    /// behavior with a 5-minute foreground default.
+    /// backend's own hard cap is the only backstop). Unset means a 5-minute
+    /// foreground default.
     #[serde(default)]
     pub max_timeout_secs: Option<f64>,
     /// Max output chars. None → DEFAULT_TOOL_OUTPUT_CHARS (20k).
@@ -239,10 +235,6 @@ impl crate::types::resources::ResourceType for BashParams {
     }
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Input
-// ───────────────────────────────────────────────────────────────────────────
-
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -288,10 +280,6 @@ pub struct BashToolInput {
     pub is_background: bool,
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Output
-// ───────────────────────────────────────────────────────────────────────────
-
 /// The bash tool can produce either a foreground result or a background task handle.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(tag = "type")]
@@ -319,10 +307,6 @@ impl From<BashToolOutput> for crate::types::output::ToolOutput {
         }
     }
 }
-
-// ───────────────────────────────────────────────────────────────────────────
-// DEFAULT prompt formatting
-// ───────────────────────────────────────────────────────────────────────────
 
 use crate::util::truncate::format_bytes;
 
@@ -442,10 +426,6 @@ pub(crate) fn format_default_prompt(bash: &BashOutput) -> String {
     }
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Constants
-// ───────────────────────────────────────────────────────────────────────────
-
 // Default upper bound for model-provided *foreground* command timeouts when
 // `BashParams.max_timeout_secs` is unset: a transport-safe **5 minutes**.
 // Consumers that want longer opt in per session via `max_timeout_secs` — in
@@ -454,14 +434,14 @@ pub(crate) fn format_default_prompt(bash: &BashOutput) -> String {
 // ceiling; background tasks (`timeout: 0` / omitted in background mode) are
 // always unbounded regardless of this value — the model owns their lifetime via
 // the background-task tooling. Absolute safety clamp for configured maxes: 10h.
-pub(crate) const DEFAULT_MAX_TIMEOUT_MS: u64 = 300_000; // 5 minutes
+pub(crate) const DEFAULT_MAX_TIMEOUT_MS: u64 = 300_000;
 const ABSOLUTE_MAX_TIMEOUT_MS: u64 = 36_000_000;
 /// Default short FG block before auto-bg when auto_background_on_timeout is on.
 /// Matches terminal `FOREGROUND_BLOCK_BUDGET`.
 ///
-/// Currently used by tests / `effective_auto_bg_wait_ms` (description follow-up);
-/// production runtime uses the terminal backend default when budget is unset.
-#[allow(dead_code)] // description follow-up + tests (not yet model-facing)
+/// Only tests and `effective_auto_bg_wait_ms` read it; the production runtime
+/// uses the terminal backend default when the budget is unset.
+#[allow(dead_code)]
 pub(crate) const DEFAULT_FOREGROUND_BLOCK_BUDGET_MS: u64 = 15_000;
 
 /// Internal version discriminant for run_terminal_cmd.
@@ -488,10 +468,6 @@ impl BashVersion {
         self == Self::Legacy0_4_10
     }
 }
-
-// ───────────────────────────────────────────────────────────────────────────
-// Background operator detection
-// ───────────────────────────────────────────────────────────────────────────
 
 /// Detects only a trailing `&` (after trimming), excluding `&&` and `>&`.
 ///
@@ -643,7 +619,8 @@ fn ends_with_wait_builtin(command: &str) -> bool {
 /// The heredoc *body* is consumed separately by `skip_heredoc_body`.
 fn parse_heredoc_start(chars: &[char], start: usize) -> Option<(String, bool, usize)> {
     let len = chars.len();
-    let mut i = start + 2; // skip `<<`
+    // Skip `<<`.
+    let mut i = start + 2;
 
     // `<<-` strips leading tabs from the body and the closing delimiter.
     let strip_tabs = i < len && chars[i] == '-';
@@ -656,8 +633,9 @@ fn parse_heredoc_start(chars: &[char], start: usize) -> Option<(String, bool, us
         i += 1;
     }
 
+    // No delimiter word.
     if i >= len || chars[i] == '\n' {
-        return None; // no delimiter
+        return None;
     }
 
     let delimiter: String;
@@ -668,11 +646,13 @@ fn parse_heredoc_start(chars: &[char], start: usize) -> Option<(String, bool, us
         while i < len && chars[i] != '\'' {
             i += 1;
         }
+        // Unclosed quote.
         if i >= len {
-            return None; // unclosed quote
+            return None;
         }
         delimiter = chars[d_start..i].iter().collect();
-        i += 1; // skip closing quote
+        // Skip the closing quote.
+        i += 1;
     } else if chars[i] == '"' {
         // Double-quoted delimiter: << "WORD"
         i += 1;
@@ -732,14 +712,15 @@ fn skip_heredoc_body(chars: &[char], start: usize, delimiter: &str, strip_tabs: 
         };
 
         if check == delimiter {
+            // Skip the `\n` after the delimiter.
             if i < len {
-                i += 1; // skip the `\n` after the delimiter
+                i += 1;
             }
             return i;
         }
 
         if i < len {
-            i += 1; // skip `\n`
+            i += 1;
         }
     }
 
@@ -760,13 +741,12 @@ fn contains_background_operator(command: &str) -> bool {
     while i < len {
         let ch = chars[i];
 
-        // ── Backslash escape (honoured everywhere except inside single quotes) ──
+        // A backslash escape is honoured everywhere except inside single quotes.
         if ch == '\\' && !in_single_quote {
-            i += 2; // skip the escaped character
+            i += 2;
             continue;
         }
 
-        // ── Quote tracking ──
         if ch == '\'' && !in_double_quote {
             in_single_quote = !in_single_quote;
             i += 1;
@@ -780,7 +760,7 @@ fn contains_background_operator(command: &str) -> bool {
 
         // Newline: if heredocs are pending, skip their bodies.
         if ch == '\n' && !in_single_quote && !in_double_quote && !pending_heredocs.is_empty() {
-            i += 1; // skip the newline
+            i += 1;
             for (delim, strip_tabs) in pending_heredocs.drain(..) {
                 i = skip_heredoc_body(&chars, i, &delim, strip_tabs);
             }
@@ -837,10 +817,6 @@ fn contains_background_operator(command: &str) -> bool {
 
     false
 }
-// ───────────────────────────────────────────────────────────────────────────
-// Self-matching pkill/pgrep detection
-// ───────────────────────────────────────────────────────────────────────────
-
 /// Matches a `pkill` / `pgrep` invocation at a command-word position with a
 /// `-f`-bearing flag bundle (short cluster `-X*fX*` or long `--full`) and
 /// captures the command word plus the first positional argument (the
@@ -958,14 +934,14 @@ fn self_matching_pkill_pattern(command: &str) -> Option<SelfMatchingPkill> {
 }
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
-const BACKGROUND_TIMEOUT: Duration = Duration::from_secs(86400); // 24 hours
+const BACKGROUND_TIMEOUT: Duration = Duration::from_secs(86400);
 
 /// Max time a *non-backgroundable* foreground command may block the turn. Such
 /// a command has only its requested `timeout` (up to 10h), so a long timeout
 /// would wedge the turn; we clamp and kill at this cap instead. Backgroundable
 /// commands use the terminal's `FOREGROUND_BLOCK_BUDGET` instead. Long work
 /// should use `background: true`. Env override: `KIGI_MAX_FOREGROUND_BLOCK_MS`.
-const MAX_FOREGROUND_BLOCK: Duration = Duration::from_secs(300); // 5 minutes
+const MAX_FOREGROUND_BLOCK: Duration = Duration::from_secs(300);
 
 fn max_foreground_block() -> Duration {
     std::env::var("KIGI_MAX_FOREGROUND_BLOCK_MS")
@@ -985,10 +961,6 @@ fn clamp_foreground_block(
     timeout.min(max_block.max(config_timeout))
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Bare `echo "<msg>"` detection (for statistics + hints in kigi bash)
-// ───────────────────────────────────────────────────────────────────────────
-
 /// Tracks usage of bare `echo "<msg>"` (and close variants) inside the bash tool.
 ///
 /// These are often used by the model as a substitute for direct output or
@@ -999,16 +971,6 @@ struct BareEchoHintState {
     call_count: usize,
 }
 
-/// Returns true for simple "bare echo" commands whose primary purpose appears
-/// to be emitting a short literal message (as opposed to scripting, logging
-/// with complex formatting, or part of a larger pipeline).
-///
-/// Heuristics (conservative to start):
-/// - Starts with `echo` (possibly with output-control flags -n/-e/-E).
-/// - Followed by what looks like a single message token (quoted or bare).
-/// - No shell metacharacters indicating chaining, redirection, substitution,
-///   or complex post-processing after the message.
-///
 /// Check whether `rest` (the portion after the command name and any flags)
 /// is a simple narration message with no shell metacharacters.
 ///
@@ -1075,7 +1037,6 @@ fn is_bare_printf(command: &str) -> bool {
         return false;
     }
     let rest = after_prefix.trim_start();
-    // printf -v var ... is variable assignment, not narration.
     if rest.starts_with("-v") || rest.starts_with("--") {
         return false;
     }
@@ -1136,8 +1097,6 @@ mod bare_echo_tests {
         assert!(!is_bare_echo("echotool"));
     }
 
-    // ── is_bare_printf tests ──
-
     #[test]
     fn printf_simple() {
         assert!(is_bare_printf(r#"printf "hello\n""#));
@@ -1172,12 +1131,6 @@ mod bare_echo_tests {
     }
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Tool implementation
-// ───────────────────────────────────────────────────────────────────────────
-
-/// Bash tool — new architecture.
-///
 /// Executes bash commands via the `Terminal` backend. Supports foreground
 /// (blocking) and background (returns task_id) execution modes.
 #[derive(Debug, Default)]
@@ -1321,8 +1274,8 @@ impl BashTool {
     /// backend's documented default (15s) for this helper — the real process
     /// still honors `KIGI_FOREGROUND_BLOCK_BUDGET_MS` via `None` on the request.
     ///
-    /// Not yet used in model-facing descriptions (historical auto-bg copy only).
-    #[allow(dead_code)] // description follow-up + unit tests
+    /// Not used in model-facing descriptions; only unit tests read it.
+    #[allow(dead_code)]
     pub(crate) fn effective_auto_bg_wait_ms(params: &BashParams) -> Option<u64> {
         if !Self::auto_background_on_timeout_enabled(params) {
             return None;
@@ -1356,9 +1309,7 @@ impl BashTool {
                     // `timeout: 0` is always unbounded, so this note is
                     // unconditional.
                     let bg_zero = "`timeout: 0` in background mode disables the wrapper timeout entirely; the task runs until it exits or is killed via the kill task tool.";
-                    // Keep main-style auto-bg wording (no FG-budget ms advertised).
-                    // Follow-up: surface effective_auto_bg_wait_ms / FG budget here
-                    // once we deliberately change model-facing copy.
+                    // Auto-bg wording does not advertise the FG block budget ms.
                     let desc = if auto_bg {
                         format!(
                             "Optional timeout in milliseconds (max {max_ms}). Default: {default_ms}. If not specified, commands exceeding the default timeout will be automatically backgrounded. {bg_zero}"
@@ -1394,8 +1345,8 @@ impl BashTool {
             Some(desc) => desc,
             None => Self::default_description_template(background_enabled),
         };
-        // Template only interpolates max/default timeout numbers + auto_bg flag.
-        // Do not advertise FG block budget ms here yet (follow-up PR).
+        // Template only interpolates max/default timeout numbers + auto_bg flag,
+        // never the FG block budget ms.
         let extras = serde_json::json!({
             "auto_background_on_timeout": auto_bg,
             "max_timeout_ms": Self::effective_max_timeout_ms(params),
@@ -1419,9 +1370,8 @@ impl BashTool {
     }
 
     fn default_description_template_enabled() -> &'static str {
-        // NOTE: auto-bg wording is intentionally the historical main copy (no
-        // FG-block-budget ms). Runtime auto-bg uses min(timeout, FG budget);
-        // advertising that wait is a separate description PR.
+        // The auto-bg wording intentionally omits the FG block budget ms, even
+        // though runtime auto-bg waits min(timeout, FG budget).
         r#"Run a ${%- if is_windows %} shell command${%- else %} bash command${%- endif %} and return its output.
 
 Usage notes:
@@ -1788,7 +1738,6 @@ impl kigi_tool_runtime::Tool for BashTool {
         let cwd = crate::types::tool_metadata::resolve_cwd(&ctx, &resources).await?;
         let tool_call_id = ctx.call_id.clone();
 
-        // --- Read resources ---
         let (backend, session_folder, env, notification_handle, owner_session_id) = {
             let res = resources.lock().await;
             (
@@ -1809,7 +1758,6 @@ impl kigi_tool_runtime::Tool for BashTool {
             None => notification_handle,
         };
 
-        // Read params
         let params = resources
             .lock()
             .await
@@ -1824,7 +1772,6 @@ impl kigi_tool_runtime::Tool for BashTool {
             .output_byte_limit
             .unwrap_or(DEFAULT_TOOL_OUTPUT_CHARS);
 
-        // Use truncation config override if available
         let output_byte_limit = resources
             .lock()
             .await
@@ -1835,7 +1782,6 @@ impl kigi_tool_runtime::Tool for BashTool {
             })
             .unwrap_or(config_output_byte_limit);
 
-        // --- Validate: reject commands that use `&` as a background operator ---
         let version = BashVersion::from_contract(
             crate::types::tool_metadata::behavior_version(&ctx).as_deref(),
         );
@@ -1878,7 +1824,6 @@ impl kigi_tool_runtime::Tool for BashTool {
             return Err(kigi_tool_runtime::ToolError::invalid_arguments(message));
         }
 
-        // --- Validate: reject self-matching pkill/pgrep -f <pat> ---
         // `pkill -f` matches the wrapper bash's full argv (which contains
         // the literal pattern), causing the wrapper to SIGTERM itself
         // before the rest of the script runs. Reject obvious cases at
@@ -1904,21 +1849,18 @@ impl kigi_tool_runtime::Tool for BashTool {
             ));
         }
 
-        // --- Prefix ---
         let command = Self::get_prefixed_command(&params.cmd_prefix, &input.command);
 
-        // No command-wrapping is performed here today; `display_command` is
+        // No command-wrapping is performed here; `display_command` is
         // populated only by tools that intentionally surface a friendlier form
         // to the model (e.g. the monitor tool). Bash commands run as-is.
         let display_command: Option<String> = None;
 
-        // --- Route to foreground or background ---
         let output_file = session_folder
             .join("terminal")
             .join(format!("{}.log", tool_call_id.as_str()));
 
         if input.is_background {
-            // ─── Background execution ───
             // Force unbuffered Python stdout so output reaches files and
             // pipes in real time rather than buffering ~8 KB.
             let mut env = env;
@@ -1969,7 +1911,6 @@ impl kigi_tool_runtime::Tool for BashTool {
             let bg_output_file = handle.output_file;
             let bg_pid = handle.pid;
 
-            // Send backgrounded notification
             let base = BashNotificationBase {
                 tool_call_id: tool_call_id.as_str().to_owned(),
                 command: input.command.clone(),
@@ -2010,7 +1951,6 @@ impl kigi_tool_runtime::Tool for BashTool {
                 pid: bg_pid,
             }))
         } else {
-            // ─── Foreground execution ───
             let timeout = Self::resolve_effective_timeout_for_params(
                 input.timeout,
                 false,
@@ -2037,18 +1977,11 @@ impl kigi_tool_runtime::Tool for BashTool {
                 notification_handle: notification_handle.clone(),
                 tool_call_id: tool_call_id.as_str().to_owned(),
                 display_command,
-                // Honour `auto_background_on_timeout` regardless of
-                // whether the model supplied an explicit `timeout`.
-                // The previous gate (`input.timeout.is_none()`) hard-
-                // timed out commands with explicit timeouts even when
-                // the session had opted into auto-bg behavior.
-                // The relaxed semantics matter here:
-                // every Shell call carries an explicit `block_until_ms`
-                // and the harness's observed behavior is to auto-background
-                // past that deadline rather than kill the process.
-                // Backwards compatible because
-                // `auto_background_on_timeout` defaults to `false`;
-                // existing kigi callers that never opted in are
+                // Honour `auto_background_on_timeout` even when the model
+                // supplied an explicit `timeout`: every Shell call carries an
+                // explicit `block_until_ms`, and the harness auto-backgrounds
+                // past that deadline rather than killing the process. The flag
+                // defaults to `false`, so callers that never opt in are
                 // unaffected.
                 auto_background_on_timeout: Self::auto_background_on_timeout_enabled(&params),
                 foreground_block_budget: Self::effective_foreground_block_budget(&params),
@@ -2070,7 +2003,7 @@ impl kigi_tool_runtime::Tool for BashTool {
                 }
             };
 
-            // ─── Backgrounded (user Ctrl+G or auto-timeout): return BackgroundTaskStarted ───
+            // Backgrounded (user Ctrl+G or auto-timeout): return BackgroundTaskStarted.
             let auto_backgrounded = result.signal.as_deref() == Some("auto_backgrounded");
             if auto_backgrounded || result.signal.as_deref() == Some("backgrounded") {
                 let base = BashNotificationBase {
@@ -2131,7 +2064,6 @@ impl kigi_tool_runtime::Tool for BashTool {
                 }));
             }
 
-            // Send completion notification
             let base = BashNotificationBase {
                 tool_call_id: tool_call_id.as_str().to_owned(),
                 command: input.command.clone(),
@@ -2172,9 +2104,8 @@ impl kigi_tool_runtime::Tool for BashTool {
             };
             bash.output_for_prompt = format_default_prompt(&bash);
 
-            // Bare `echo "<msg>"` usage (common model anti-pattern for "just output something").
-            // We tag it for statistics (kigi backend) and can surface an educational
-            // hint on repeated use.
+            // Bare `echo "<msg>"` is a common model anti-pattern for "just
+            // output something"; tag it for statistics and repeated-use hints.
             bash.was_bare_echo = is_bare_echo(&bash.command) || is_bare_printf(&bash.command);
             if bash.was_bare_echo {
                 let mut res = resources.lock().await;
@@ -2207,10 +2138,6 @@ impl kigi_tool_runtime::Tool for BashTool {
         }
     }
 }
-
-// ───────────────────────────────────────────────────────────────────────────
-// Tests
-// ───────────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -2296,7 +2223,8 @@ mod tests {
     // requested `timeout`.
     #[test]
     fn foreground_block_clamps_explicit_long_timeout() {
-        let cfg = DEFAULT_TIMEOUT; // 120s session default
+        // 120s session default.
+        let cfg = DEFAULT_TIMEOUT;
         let cap = MAX_FOREGROUND_BLOCK;
         // 10h explicit timeout → clamped to the cap.
         assert_eq!(
@@ -2315,8 +2243,6 @@ mod tests {
             big_cfg,
         );
     }
-
-    // ─── Mock terminal ───
 
     /// Configurable mock terminal backend for testing.
     ///
@@ -2457,8 +2383,6 @@ mod tests {
         }
     }
 
-    // ─── Test helpers ───
-
     fn make_resources(mock: MockTerminal) -> Resources {
         make_resources_with_params(mock, BashParams::default())
     }
@@ -2473,7 +2397,6 @@ mod tests {
         resources.insert(NotificationHandle(ToolNotificationHandle::noop()));
         resources.insert(Params(params));
 
-        // Add TemplateRenderer with default mappings for background hint and validation
         let execute_params =
             HashMap::from([("is_background".to_string(), "is_background".to_string())]);
         let bg_params = HashMap::from([("task_id".to_string(), "task_id".to_string())]);
@@ -2521,8 +2444,6 @@ mod tests {
         }
     }
 
-    // ─── Streaming (BashTool::execute) test scaffolding ───
-    //
     // `test_ctx` stamps `WorkspaceViewerContext { stream_tool_progress:
     // true }` by default, so these tests exercise the streaming path.
 
@@ -2579,8 +2500,6 @@ mod tests {
         }
     }
 
-    // ─── Streaming tests ───
-
     /// Deterministic regression guard for Key Decision 6 (delta math keyed off
     /// the monotonic `total_bytes`, not buffer length). Exercises the common
     /// suffix-slice case, the no-new-bytes case, the post-truncation shrinking
@@ -2636,7 +2555,8 @@ mod tests {
     fn bash_output_chunk_progress_caps_oversized_delta() {
         // Multi-byte chars (`€` = 3 bytes) ensure the cap lands mid-char so we
         // exercise the char-boundary back-off, not just a clean byte cut.
-        let payload_str = "€".repeat(7_000); // 21_000 bytes, well over the cap.
+        // 21_000 bytes, well over the cap.
+        let payload_str = "€".repeat(7_000);
         let total = payload_str.len();
         assert!(total > MAX_PROGRESS_DELTA_BYTES);
         let chunk = BashOutputChunk {
@@ -2966,8 +2886,6 @@ mod tests {
         }
     }
 
-    // ─── Tests ───
-
     #[tokio::test]
     async fn foreground_command_success() {
         let resources = make_resources(MockTerminal::success("hello world\n", 0));
@@ -3010,7 +2928,8 @@ mod tests {
         match result {
             BashToolOutput::Foreground(bash) => {
                 assert!(bash.timed_out);
-                assert_eq!(bash.exit_code, -1); // no exit code when timed out
+                // No exit code when timed out.
+                assert_eq!(bash.exit_code, -1);
             }
             BashToolOutput::Background(_) => panic!("Expected foreground output"),
         }
@@ -3110,8 +3029,7 @@ mod tests {
         let resources = make_resources_reject_bg_op(MockTerminal::success("", 0));
         let tool = BashTool;
 
-        // Previously this would pass because the old check only looked at
-        // trailing `&`. Now the parser detects mid-command `&` too.
+        // The parser detects a mid-command `&`, not just a trailing one.
         let result = kigi_tool_runtime::Tool::run(
             &tool,
             test_ctx(resources.into_shared()),
@@ -3202,9 +3120,8 @@ mod tests {
     }
 
     /// Enabled-background `&` rejection must name the real param resolved from
-    /// the template (`is_background`), never a blank "set =true". Regression: the
-    /// template previously used the non-existent `params.execute.background` key,
-    /// which resolved to "".
+    /// the template (`is_background`), never a blank "set =true". Regression
+    /// guard: the non-existent `params.execute.background` key resolves to "".
     #[cfg(unix)]
     #[tokio::test]
     async fn background_operator_rejection_names_is_background_param() {
@@ -3229,7 +3146,6 @@ mod tests {
 
     #[tokio::test]
     async fn cmd_prefix_prepended() {
-        // We can test this via the static helper
         assert_eq!(
             BashTool::get_prefixed_command(&Some("source ~/.bashrc".to_string()), "ls"),
             "source ~/.bashrc && ls"
@@ -3296,10 +3212,6 @@ mod tests {
             BashToolOutput::Foreground(_) => panic!("Expected background output"),
         }
     }
-
-    // -----------------------------------------------------------------------
-    // format_default_prompt tests
-    // -----------------------------------------------------------------------
 
     fn make_bash_output(exit_code: i32, output: &str) -> BashOutput {
         let mut bash = BashOutput {
@@ -3456,15 +3368,11 @@ mod tests {
         );
     }
 
-    // ─── contains_background_operator unit tests ───
-
     mod background_operator_tests {
         use super::super::{
             command_has_bash_background_operator, contains_background_operator,
             contains_unwaited_background_operator,
         };
-
-        // ── Should detect (true) ──
 
         #[test]
         fn trailing_ampersand() {
@@ -3526,8 +3434,6 @@ mod tests {
             // `cmd > out.txt &` — redirect then background
             assert!(contains_background_operator("cmd > out.txt &"));
         }
-
-        // ── Should NOT detect (false) ──
 
         #[test]
         fn no_ampersand() {
@@ -3616,8 +3522,6 @@ mod tests {
             assert!(!contains_background_operator("\"\\&\""));
         }
 
-        // ── Mixed cases ──
-
         #[test]
         fn logical_and_then_background() {
             // `echo a && sleep 10 &` — the trailing `&` IS a background op.
@@ -3635,8 +3539,6 @@ mod tests {
             // The middle `&` is outside quotes, the others are inside.
             assert!(contains_background_operator("echo '&' & echo \"&\""));
         }
-
-        // ── contains_unwaited_background_operator (combined check) ──
 
         #[test]
         fn unwaited_trailing_ampersand_rejected() {
@@ -3700,7 +3602,7 @@ mod tests {
             assert!(contains_unwaited_background_operator("sleep 600 & await"));
         }
 
-        // ── Heredoc: `&` inside heredoc bodies must not be detected ──
+        // A `&` inside a heredoc body must not be detected.
 
         #[test]
         fn heredoc_single_quoted_delimiter() {
@@ -3819,8 +3721,6 @@ mod tests {
         }
     }
 
-    // ─── resolve_effective_timeout unit tests ───
-
     mod resolve_effective_timeout_tests {
         use super::super::{BashParams, BashTool, DEFAULT_MAX_TIMEOUT_MS, DEFAULT_TIMEOUT};
         use std::time::Duration;
@@ -3878,7 +3778,8 @@ mod tests {
             assert_eq!(
                 BashTool::resolve_effective_timeout_for_params(
                     Some(20 * 60 * 1_000),
-                    true, // background
+                    // background
+                    true,
                     super::super::BACKGROUND_TIMEOUT,
                     &params,
                 ),
@@ -3981,8 +3882,6 @@ mod tests {
             );
         }
     }
-
-    // ─── FG block budget + schema description unit tests ───
 
     mod foreground_block_budget_tests {
         use super::*;
@@ -4172,16 +4071,12 @@ mod tests {
         }
     }
 
-    // ─── self_matching_pkill_pattern unit tests ───
-
     mod self_matching_pkill_tests {
         use super::super::self_matching_pkill_pattern;
 
         fn hit(command: &str) -> Option<(&'static str, String)> {
             self_matching_pkill_pattern(command).map(|h| (h.cmd, h.pattern))
         }
-
-        // ── Should detect (Some) ──
 
         #[test]
         fn pkill_then_run_self() {
@@ -4230,8 +4125,6 @@ mod tests {
                 Some(("pkill", "./server".into())),
             );
         }
-
-        // ── Should NOT detect (None) ──
 
         #[test]
         fn pkill_alone_no_later_reference() {
@@ -4303,8 +4196,6 @@ mod tests {
         }
     }
 
-    // ─── Legacy trailing-only `&` detection ───
-
     mod legacy_trailing_ampersand {
         use super::*;
 
@@ -4344,8 +4235,6 @@ mod tests {
             assert!(!has_trailing_background_operator("echo hello"));
         }
     }
-
-    // ─── PowerShell `&` detection + remediation ───
 
     mod powershell_background_check {
         use super::*;
@@ -4399,8 +4288,6 @@ mod tests {
             assert!(!powershell_has_trailing_background("echo a 2>&1;"));
         }
     }
-
-    // ─── Shell-aware gate decision (pure, all platforms) ───
 
     mod gate_decision {
         use super::*;
@@ -4526,8 +4413,6 @@ mod tests {
         }
     }
 
-    // ─── Versioned `&` detection integration ───
-
     mod versioned_background_check {
         use super::*;
 
@@ -4621,8 +4506,6 @@ mod tests {
         }
     }
 
-    // ─── Description template shell-awareness tests ───
-    //
     // Exercises the `${%- if has_unix_utilities %}` branch — fix for
     // `'grep' is not recognized` on PowerShell / cmd.exe. We can't
     // toggle the host shell from a unit test, so we render the template

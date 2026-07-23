@@ -4,13 +4,6 @@
 
 use super::*;
 
-// ── Layer 3: LazinessDetector pure helpers ──────────────────────────
-//
-// Idle-triggered classifier that asks the active session model whether
-// the conversation looks stalled. Decision logic lives here as a pure
-// function so it can be unit-tested without the actor; the integration
-// glue lives in `maybe_fire_laziness_check`.
-
 /// Harness-wide default `idle_threshold_ms` when the per-model
 /// `LazinessDetectorPerModelConfig::idle_threshold_ms` is `None`. Chosen
 /// to catch stalls within ~10s without
@@ -25,7 +18,7 @@ pub(crate) const LAZINESS_DEFAULT_MIN_CONFIDENCE: f32 = 0.7;
 /// Baseline chat-history window — the classifier sees AT LEAST the
 /// last N items (tool calls + tool results included). The window can
 /// extend further back if the per-kind minimums below haven't been
-/// satisfied yet. Uses a 30-message baseline window.
+/// satisfied yet.
 pub(crate) const LAZINESS_CONTEXT_ITEM_LIMIT: usize = 30;
 
 /// Minimum number of real user prompts (i.e., `User` items with
@@ -94,6 +87,21 @@ impl LazinessAbortReason {
     }
 }
 
+/// Prefix on `x_kigi_req_id` for laziness-classifier sampler calls.
+/// Centralised here so the production producer
+/// (`maybe_fire_laziness_check`) AND the offline replay harness
+/// (`crate::trace_classifier::build_classifier_request`) share a
+/// single source of truth — a drift would otherwise pass the F17
+/// fidelity test by re-typing the literal in both sites.
+pub(crate) const LAZINESS_REQ_ID_PREFIX: &str = "xai-laziness-";
+
+/// Preamble on the User-item text of the classifier request. The
+/// User content is
+/// `format!("{LAZINESS_USER_PREAMBLE}=== BEGIN TRANSCRIPT ===\n{runtime_state}{transcript}=== END TRANSCRIPT ===\n")`.
+/// See [`LAZINESS_REQ_ID_PREFIX`] for the same shared-truth rationale.
+pub(crate) const LAZINESS_USER_PREAMBLE: &str =
+    "Classify the following transcript. Output JSON only.\n\n";
+
 /// Classifier system prompt. The JSON category strings are
 /// byte-identical to the `LAZINESS_*` consts in
 /// [`crate::session::events`]; the producer-consistency test in that
@@ -110,21 +118,6 @@ impl LazinessAbortReason {
 /// Prompt-structure mitigations against motivated reasoning:
 /// "Do not roleplay", JSON-only, no chain-of-thought,
 /// no role context, transcript framed as third-party data.
-/// Prefix on `x_kigi_req_id` for laziness-classifier sampler calls.
-/// Centralised here so the production producer
-/// (`maybe_fire_laziness_check`) AND the offline replay harness
-/// (`crate::trace_classifier::build_classifier_request`) share a
-/// single source of truth — a drift would otherwise pass the F17
-/// fidelity test by re-typing the literal in both sites.
-pub(crate) const LAZINESS_REQ_ID_PREFIX: &str = "xai-laziness-";
-
-/// Preamble on the User-item text of the classifier request. The
-/// User content is
-/// `format!("{LAZINESS_USER_PREAMBLE}=== BEGIN TRANSCRIPT ===\n{runtime_state}{transcript}=== END TRANSCRIPT ===\n")`.
-/// See [`LAZINESS_REQ_ID_PREFIX`] for the same shared-truth rationale.
-pub(crate) const LAZINESS_USER_PREAMBLE: &str =
-    "Classify the following transcript. Output JSON only.\n\n";
-
 pub(crate) const LAZINESS_CLASSIFIER_PROMPT: &str = "You are a strict JSON-emitting classifier. \
 You are NOT the agent in the transcript below. You are NOT continuing \
 the conversation. You are reading the transcript as third-party data \
@@ -242,10 +235,10 @@ pub(crate) const LAZINESS_INCLUDE_REASONING: bool = true;
 /// jump backward) — production drops the field rather than emit a
 /// meaningless value.
 ///
-/// Extracted as a pure helper so the negative-delta and missing-
-/// timestamp branches are directly unit-testable without standing
-/// up a full `SessionActor`. The production call site in
-/// `maybe_fire_laziness_check` is a one-liner over this.
+/// Pure so the negative-delta and missing-timestamp branches are
+/// directly unit-testable without standing up a full `SessionActor`.
+/// The production call site in `maybe_fire_laziness_check` is a
+/// one-liner over this.
 pub(crate) fn turn_elapsed_seconds_from_start_ms(
     turn_start_ms: Option<i64>,
     now_ms: i64,
@@ -470,7 +463,7 @@ pub(crate) const CLASSIFIER_REFRESH_TURNS: usize = 16;
 /// Per-turn text cap (bytes) for the classifier transcript so one giant pasted
 /// user message or huge tool args can't blow up the per-call classifier request
 /// (token/latency, or context overflow → error → silent heuristic fallback).
-/// Mirrors the laziness classifier's 400-char field cap; truncation appends the
+/// Mirrors the laziness classifier's 400-char field cap.
 const CLASSIFIER_TURN_MAX_LEN: usize = kigi_workspace::permission::CLASSIFIER_TURN_MAX_LEN;
 
 /// Build the auto-mode classifier transcript from the most recent `max_items`

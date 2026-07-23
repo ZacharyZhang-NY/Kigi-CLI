@@ -106,7 +106,8 @@ fn run_clear(storage: &MemoryStorage, targets: &[ClearTarget], skip_confirm: boo
                 cleared = true;
                 println!("  Cleared: {}", t.label);
             }
-            Ok(false) => {} // nothing to clear for this scope
+            // Nothing to clear for this scope.
+            Ok(false) => {}
             Err(e) => {
                 errors.push(format!("{}: {e}", t.label));
             }

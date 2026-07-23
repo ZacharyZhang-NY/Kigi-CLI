@@ -137,7 +137,7 @@ fn build_style() -> MarkdownStyle {
         inline_code_outer: fg(theme.md_code).dimmed().hidden(),
         // Selection-side bar detection (kigi-tui scrollback/blocks/
         // quote_bar.rs quote_bar_style) mirrors this exact style; its
-        // end-to-end tests fail if this line changes.
+        // end-to-end tests fail if this line drifts.
         blockquote_outer: fg(theme.md_muted).dimmed(),
         task_checked: fg(theme.md_task_checked),
         task_unchecked: fg(theme.md_task_unchecked).dimmed(),

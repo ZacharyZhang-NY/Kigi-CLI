@@ -59,7 +59,7 @@ pub fn indexed_to_rgb(index: u8) -> (u8, u8, u8) {
 /// ramp (232–255), returning whichever has the smallest squared Euclidean
 /// distance.
 pub fn nearest_indexed(r: u8, g: u8, b: u8) -> u8 {
-    // --- nearest in the 6×6×6 color cube (16–231) ---
+    // nearest in the 6×6×6 color cube (16–231)
     let ri = nearest_cube_channel(r);
     let gi = nearest_cube_channel(g);
     let bi = nearest_cube_channel(b);
@@ -73,7 +73,7 @@ pub fn nearest_indexed(r: u8, g: u8, b: u8) -> u8 {
         CUBE_VALUES[bi as usize],
     );
 
-    // --- nearest in the grayscale ramp (232–255) ---
+    // nearest in the grayscale ramp (232–255)
     // Ramp values: 8, 18, 28, …, 238  (24 entries)
     let lum = (r as u16 + g as u16 + b as u16) / 3;
     let gray_step = if lum <= 3 {
@@ -131,7 +131,7 @@ fn color_to_rgb(color: Color) -> Option<(u8, u8, u8)> {
 ///
 /// Useful when downstream code must produce RGB for *every* color value
 /// — e.g. progress-bar gradients that lerp across named breakpoints, or
-/// OSC 12 cursor-color updates that must emit an RGB triple regardless
+/// OSC 12 cursor-color writes that must emit an RGB triple regardless
 /// of terminal color depth.
 ///
 /// Named-color RGB matches the xterm 16-color palette used by
@@ -166,11 +166,10 @@ pub fn resolve_to_rgb(color: Color) -> Option<(u8, u8, u8)> {
 /// Blend a single color channel: lerp from base toward original based on opacity.
 ///
 /// - `opacity = 0.0`: returns `base` (fully faded)
-/// - `opacity = 1.0`: returns `original` (no change)
+/// - `opacity = 1.0`: returns `original` (Unchanged)
 #[inline]
 pub fn blend_channel(base: u8, original: u8, opacity: f32) -> u8 {
     // result = base + (original - base) * opacity
-    //        = base * (1 - opacity) + original * opacity
     let result = base as f32 * (1.0 - opacity) + original as f32 * opacity;
     result.round() as u8
 }
@@ -178,7 +177,7 @@ pub fn blend_channel(base: u8, original: u8, opacity: f32) -> u8 {
 /// Blend a color toward a base color based on opacity.
 ///
 /// - `opacity = 0.0`: returns `base` (fully faded)
-/// - `opacity = 1.0`: returns `original` (no change)
+/// - `opacity = 1.0`: returns `original` (Unchanged)
 ///
 /// Supports both `Color::Rgb` and `Color::Indexed` colors (indexed colors are
 /// converted to their RGB equivalents for blending). When either input is
@@ -212,9 +211,9 @@ pub fn blend_color(base: Color, original: Color, opacity: f32) -> Option<Color> 
 /// its colors toward the background.
 ///
 /// - `opacity = 0.0`: fully faded to base color
-/// - `opacity = 1.0`: no change (original colors)
+/// - `opacity = 1.0`: Unchanged (original colors)
 ///
-/// Named ANSI colors are left unchanged.
+/// Named ANSI colors are left `unchanged`.
 pub fn blend_line(line: Line<'static>, base: Color, opacity: f32) -> Line<'static> {
     let blended_spans: Vec<Span<'static>> = line
         .spans
@@ -239,9 +238,9 @@ pub fn blend_line(line: Line<'static>, base: Color, opacity: f32) -> Line<'stati
 /// explicitly colored text.
 ///
 /// - `opacity = 0.0`: fully faded to base color
-/// - `opacity = 1.0`: no change (original colors)
+/// - `opacity = 1.0`: Unchanged (original colors)
 ///
-/// Named ANSI colors are left unchanged.
+/// Named ANSI colors are left `unchanged`.
 pub fn blend_line_with_default(
     line: Line<'static>,
     base: Color,
@@ -269,10 +268,10 @@ pub fn blend_line_with_default(
 /// This blends both foreground and background colors of each cell toward
 /// `base_color` based on `opacity`:
 /// - `opacity = 0.0`: fully faded (cells become base_color)
-/// - `opacity = 1.0`: no change
+/// - `opacity = 1.0`: Unchanged
 ///
 /// Both RGB and Indexed colors are blended; named ANSI colors (Color::Red, etc.)
-/// are left unchanged since their RGB values are terminal-dependent.
+/// are left `unchanged` since their RGB values are terminal-dependent.
 pub fn fade_region(buf: &mut Buffer, area: Rect, base_color: Color, opacity: f32) {
     blend_area(
         buf,
@@ -285,10 +284,10 @@ pub fn fade_region(buf: &mut Buffer, area: Rect, base_color: Color, opacity: f32
 /// Blend fg and/or bg of every cell in an area toward target colors.
 ///
 /// Each parameter is `Option<(target, opacity)>`:
-/// - `None`: leave that channel unchanged
+/// - `None`: leave that channel `unchanged`
 /// - `Some((target, opacity))`: blend toward `target` at `opacity`
 ///   - `opacity = 0.0`: fully target (original gone)
-///   - `opacity = 1.0`: no change (original kept)
+///   - `opacity = 1.0`: Unchanged (original kept)
 ///
 /// Both RGB and Indexed colors are blended; named ANSI color cells are skipped.
 pub fn blend_area(
@@ -383,7 +382,8 @@ mod tests {
         // opacity = 0.5: halfway between
         assert_eq!(blend_channel(0, 100, 0.5), 50);
         assert_eq!(blend_channel(100, 200, 0.5), 150);
-        assert_eq!(blend_channel(0, 255, 0.5), 128); // 127.5 rounds to 128
+        // 127.5 rounds to 128
+        assert_eq!(blend_channel(0, 255, 0.5), 128);
     }
 
     #[test]
@@ -403,7 +403,7 @@ mod tests {
         let faded = blend_color(base, original, 0.0);
         assert_eq!(faded, Some(Color::Rgb(0, 0, 0)));
 
-        // No change
+        // Unchanged
         let unchanged = blend_color(base, original, 1.0);
         assert_eq!(unchanged, Some(Color::Rgb(100, 150, 200)));
 
@@ -415,8 +415,10 @@ mod tests {
     #[test]
     fn test_blend_color_indexed_returns_indexed() {
         // Both indexed → result is indexed (quantized back to 256-color palette)
-        let base = Color::Indexed(232); // near-black (8, 8, 8)
-        let original = Color::Indexed(255); // near-white (238, 238, 238)
+        // near-black (8, 8, 8)
+        let base = Color::Indexed(232);
+        // near-white (238, 238, 238)
+        let original = Color::Indexed(255);
 
         let half = blend_color(base, original, 0.5).unwrap();
         assert!(matches!(half, Color::Indexed(_)));
@@ -433,7 +435,8 @@ mod tests {
     #[test]
     fn test_blend_color_mixed_returns_indexed() {
         let rgb = Color::Rgb(100, 100, 100);
-        let indexed = Color::Indexed(5); // magenta (128, 0, 128)
+        // magenta (128, 0, 128)
+        let indexed = Color::Indexed(5);
 
         // Mixed: indexed base + rgb original → Indexed result (quantized)
         let result = blend_color(indexed, rgb, 0.5);
@@ -483,8 +486,8 @@ mod tests {
 
         // Check cells are faded
         if let Some(cell) = buf.cell((0, 0)) {
-            assert_eq!(cell.fg, Color::Rgb(100, 100, 100)); // 200 * 0.5
-            assert_eq!(cell.bg, Color::Rgb(25, 25, 25)); // 50 * 0.5
+            assert_eq!(cell.fg, Color::Rgb(100, 100, 100));
+            assert_eq!(cell.bg, Color::Rgb(25, 25, 25));
         }
     }
 
@@ -507,14 +510,14 @@ mod tests {
         // Only fade a 2x2 region in the middle
         fade_region(&mut buf, Rect::new(1, 1, 2, 2), base, 0.0);
 
-        // Corner should be unchanged
+        // Corner should be `unchanged`
         assert_eq!(buf.cell((0, 0)).unwrap().fg, Color::Rgb(100, 100, 100));
 
         // Middle should be fully faded
         assert_eq!(buf.cell((1, 1)).unwrap().fg, Color::Rgb(0, 0, 0));
         assert_eq!(buf.cell((2, 2)).unwrap().fg, Color::Rgb(0, 0, 0));
 
-        // Other corner unchanged
+        // Other corner `unchanged`
         assert_eq!(buf.cell((3, 3)).unwrap().fg, Color::Rgb(100, 100, 100));
     }
 
@@ -535,7 +538,7 @@ mod tests {
 
         // fg blended to 50%
         assert_eq!(buf.cell((0, 0)).unwrap().fg, Color::Rgb(100, 50, 0));
-        // bg unchanged
+        // bg `unchanged`
         assert_eq!(buf.cell((0, 0)).unwrap().bg, Color::Rgb(10, 10, 10));
     }
 
@@ -554,7 +557,7 @@ mod tests {
         let target = Color::Rgb(0, 0, 0);
         blend_area(&mut buf, Rect::new(0, 0, 2, 1), None, Some((target, 0.5)));
 
-        // fg unchanged
+        // fg `unchanged`
         assert_eq!(buf.cell((0, 0)).unwrap().fg, Color::Rgb(200, 200, 200));
         // bg blended to 50%
         assert_eq!(buf.cell((0, 0)).unwrap().bg, Color::Rgb(50, 50, 50));
@@ -611,7 +614,8 @@ mod tests {
     fn test_blend_area_named_color_skipped() {
         let mut buf = Buffer::empty(Rect::new(0, 0, 1, 1));
         if let Some(cell) = buf.cell_mut((0, 0)) {
-            cell.set_fg(Color::Red); // named color — blend_color returns None
+            // named color — blend_color returns None
+            cell.set_fg(Color::Red);
             cell.set_bg(Color::Red);
         }
 
@@ -622,7 +626,7 @@ mod tests {
             Some((Color::Rgb(0, 0, 0), 0.5)),
         );
 
-        // Named colors should be unchanged (blend_color returns None for them)
+        // Named colors should be `unchanged` (blend_color returns None for them)
         assert_eq!(buf.cell((0, 0)).unwrap().fg, Color::Red);
         assert_eq!(buf.cell((0, 0)).unwrap().bg, Color::Red);
     }
@@ -631,12 +635,14 @@ mod tests {
     fn test_blend_area_indexed_colors_blended() {
         let mut buf = Buffer::empty(Rect::new(0, 0, 1, 1));
         if let Some(cell) = buf.cell_mut((0, 0)) {
-            cell.set_fg(Color::Indexed(255)); // near-white grayscale
+            // near-white grayscale
+            cell.set_fg(Color::Indexed(255));
             cell.set_bg(Color::Indexed(255));
         }
 
         // Blend toward black (indexed 232 = #080808, but we use indexed 16 = #000000)
-        let target = Color::Indexed(16); // black in the color cube
+        // black in the color cube
+        let target = Color::Indexed(16);
         blend_area(
             &mut buf,
             Rect::new(0, 0, 1, 1),

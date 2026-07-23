@@ -53,7 +53,7 @@ pub enum HunkAction {
         /// Hunk to reject.
         hunk_id: HunkId,
     },
-    /// Revert a previously-accepted hunk back to the baseline.
+    /// Revert an already-accepted hunk back to the baseline.
     Revert {
         /// Hunk to revert.
         hunk_id: HunkId,

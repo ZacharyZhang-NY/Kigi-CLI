@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-/// Bearer prefix length shared across crate boundaries.
 pub const SENT_BEARER_PREFIX_LEN: usize = 12;
 
 /// Which tool endpoint produced the 401.
@@ -19,19 +18,15 @@ impl ToolConsumer {
     }
 }
 
-/// 401 attribution callback. Shell wires this to emit telemetry.
+/// Implemented by the shell, which turns these events into telemetry.
 pub trait Auth401AttributionCallback: Send + Sync + std::fmt::Debug {
     /// `sent_bearer_prefix` is truncated to [`SENT_BEARER_PREFIX_LEN`]
     /// before crossing this boundary. `None` = no bearer was sent.
     fn record_401(&self, consumer: ToolConsumer, sent_bearer_prefix: Option<&str>);
 }
 
-/// Shared, cheap-to-clone alias for the attribution callback.
 pub type SharedAttributionCallback = Arc<dyn Auth401AttributionCallback>;
 
-/// Record a 401 attribution event if a callback is wired. Truncates
-/// the bearer to [`SENT_BEARER_PREFIX_LEN`] before crossing the
-/// trait boundary.
 pub(crate) fn emit_401(
     callback: Option<&SharedAttributionCallback>,
     consumer: ToolConsumer,
@@ -43,14 +38,11 @@ pub(crate) fn emit_401(
     }
 }
 
-/// Truncate a bearer string to the first [`SENT_BEARER_PREFIX_LEN`]
-/// characters. Used by tool clients before passing the bearer across
-/// the [`Auth401AttributionCallback`] boundary.
+/// Truncate a bearer to [`SENT_BEARER_PREFIX_LEN`] bytes.
 ///
-/// Bearer tokens are ASCII (per the `Authorization` header grammar)
-/// so the byte index is always a char boundary; this function uses
-/// `String::truncate` which would otherwise panic on a non-boundary
-/// cut.
+/// `String::truncate` panics when the cut is not a char boundary; bearer
+/// tokens are ASCII per the `Authorization` header grammar, so every byte
+/// index is a boundary.
 pub(crate) fn truncate_to_prefix(mut bearer: String) -> String {
     bearer.truncate(SENT_BEARER_PREFIX_LEN.min(bearer.len()));
     bearer

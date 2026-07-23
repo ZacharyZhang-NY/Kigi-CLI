@@ -238,7 +238,7 @@ impl Navigator {
     ///
     /// # Arguments
     /// * `file_path` - Path to the file
-    /// * `row` - 1-indexed line number  
+    /// * `row` - 1-indexed line number
     /// * `col` - 1-indexed column number
     /// * `include_definition` - Whether to include the definition location in results
     ///
@@ -388,8 +388,8 @@ fn is_identifier_like(node: &tree_sitter::Node<'_>) -> bool {
             | "field_identifier"
             | "shorthand_property_identifier"
             | "shorthand_property_identifier_pattern"
-            | "attribute"           // Python
-            | "package_identifier" // Go
+            | "attribute"
+            | "package_identifier"
     )
 }
 

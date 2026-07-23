@@ -48,7 +48,8 @@ mod tests {
     fn unknown_id_falls_back_to_default() {
         assert_eq!(SessionMode::from_id("browser_use"), SessionMode::Default);
         assert_eq!(SessionMode::from_id(""), SessionMode::Default);
-        assert_eq!(SessionMode::from_id("PLAN"), SessionMode::Default); // case-sensitive
+        // case-sensitive
+        assert_eq!(SessionMode::from_id("PLAN"), SessionMode::Default);
     }
 
     #[test]

@@ -12,9 +12,9 @@ use crate::common::*;
 #[ignore]
 async fn minimal_committed_content_survives_overlay_grow() {
     let content = ContentController::start().await.expect("start content");
-    // Sentinel on the first rendered row; 80 code-block rows overflow the screen
-    // so the head reaches native scrollback (prose would reflow to fit on screen
-    // and never scroll — see `tall_response`).
+    // 80 code-block rows overflow the screen, pushing the sentinel line into
+    // scrollback (prose would reflow to fit on screen and never scroll —
+    // see `tall_response`).
     content.set_response(tall_response(MOCK_RESPONSE_SENTINEL, 80));
 
     let mut harness = spawn_minimal(&content);

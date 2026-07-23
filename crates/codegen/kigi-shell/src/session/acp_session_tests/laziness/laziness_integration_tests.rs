@@ -1,26 +1,23 @@
-//! End-to-end tests for `maybe_fire_laziness_check`. Drive the
-//! actor against a non-listening `http://localhost` base URL —
-//! the unified path now uses `prepare_chat_completion().conversation_collect()`,
-//! which surfaces the connection failure as the
-//! `ClassifierError` abort. Observe state mutations + the
-//! per-test `events.jsonl`.
+//! End-to-end tests for `maybe_fire_laziness_check`. Drive the actor
+//! against a non-listening `http://localhost` base URL, so
+//! `prepare_chat_completion().conversation_collect()` surfaces the
+//! connection failure as the `ClassifierError` abort. Observe state
+//! mutations and the per-test `events.jsonl`.
 //!
-//! Tests that depend on a *successful* classifier response are
-//! out of scope here — they'd require a real `SamplerActor`
-//! responding with a stubbed verdict, which is heavyweight. The
-//! happy-path classifier→nudge dispatch is covered by the unit
-//! tests on `evaluate_laziness` and `build_laziness_nudge`. The
-//! integration coverage here pins the actor-level orchestration:
-//! enabled/disabled gating, the two generation-counter abort
-//! arms, idle re-check, sampler-error pathway, and reset-on-switch.
+//! Tests that depend on a *successful* classifier response are out of
+//! scope here — they'd require a real `SamplerActor` responding with a
+//! stubbed verdict, which is heavyweight. The happy-path
+//! classifier→nudge dispatch is covered by the unit tests on
+//! `evaluate_laziness` and `build_laziness_nudge`. The integration
+//! coverage here pins the actor-level orchestration: enabled/disabled
+//! gating, the two generation-counter abort arms, idle re-check,
+//! sampler-error pathway, and reset-on-switch.
 use super::support::*;
 use super::*;
 use crate::agent::config::{LazinessDetectorPerModelConfig, ModelInfo};
 
-/// Build a minimal `ModelEntry` configured for laziness detection
-/// with the supplied opt-in flags. Uses `ModelInfo::fallback`
-/// (the same path the production code falls back to for unknown
-/// model ids) so the test entry mirrors a realistic catalog row.
+/// Uses `ModelInfo::fallback` — the same path production takes for
+/// unknown model ids — so the test entry mirrors a realistic catalog row.
 fn detector_entry(
     enabled: bool,
     max_nudges: u32,
@@ -42,14 +39,10 @@ fn detector_entry(
     }
 }
 
-/// Construct a test actor with the events.jsonl rerouted into a
-/// tempdir and `current_model_id` pointing at a per-model config
-/// supplied by the caller. The actor's sampling config uses a
-/// `http://localhost` base URL with nothing listening, so
-/// `prepare_chat_completion().conversation_collect()` fails with
-/// a connect error — sufficient to exercise every abort/idle path.
-/// Returns the actor wrapped in `Arc` and the owned tempdir (so
-/// the file outlives the actor).
+/// The sampling config points at a non-listening `http://localhost`, so
+/// `prepare_chat_completion().conversation_collect()` fails with a connect
+/// error — enough to exercise every abort/idle path. The returned tempdir
+/// owns `events.jsonl` and must outlive the actor.
 async fn make_laziness_actor(
     detector: LazinessDetectorPerModelConfig,
 ) -> (Arc<SessionActor>, tempfile::TempDir) {
@@ -60,9 +53,8 @@ async fn make_laziness_actor(
         tokio::sync::mpsc::unbounded_channel::<PersistenceMsg>();
     let mut actor = create_test_actor(0, 256_000, 85, gateway_tx, persistence_tx).await;
     actor.events = crate::session::events::EventTracker::new(tmp.path());
-    // Install the test model into the catalog and point the
-    // current id at it. `insert_test_entry` is gated on
-    // `#[cfg(test)]` so it does NOT leak into release builds.
+    // `insert_test_entry` is gated on `#[cfg(test)]`, so it never leaks
+    // into release builds.
     let mut entry = detector_entry(false, 0, None);
     entry.info.laziness_detector = detector;
     actor
@@ -101,13 +93,11 @@ async fn disabled_detector_is_a_no_op() {
             })
             .await;
             SessionActor::maybe_fire_laziness_check(actor.clone()).await;
-            drop(Arc::try_unwrap(actor).ok().unwrap()); // flush events.jsonl
+            // Dropping the actor flushes events.jsonl.
+            drop(Arc::try_unwrap(actor).ok().unwrap());
             let log = events_log(&tmp);
-            // Tightened to a single substring check so
-            // a future `laziness_nudge_fired` (or any other
-            // `laziness_*` event variant) is also caught. The
-            // original predicate enumerated specific event types
-            // and silently missed Nudge.
+            // Substring check on `laziness_` catches every `laziness_*`
+            // event variant, including future ones.
             assert!(
                 !log.contains("laziness_"),
                 "disabled detector must not emit any laziness_* events:\n{log}"
@@ -121,8 +111,7 @@ async fn user_input_bump_during_idle_wait_aborts_with_user_input() {
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async {
-            // Short idle threshold so the test completes quickly;
-            // the abort is the focus, not the duration.
+            // Short idle threshold; the abort during the wait is the focus.
             let (actor, tmp) = make_laziness_actor(LazinessDetectorPerModelConfig {
                 enabled: true,
                 max_nudges_per_session: 1,
@@ -217,9 +206,8 @@ async fn turn_start_ms_chain_feeds_turn_elapsed_seconds_helper() {
                 "no turn_start_ms recorded ⇒ field is dropped",
             );
 
-            // Now record a turn-start 5 seconds in the past
-            // (mirroring `process_conversation_turn`'s call to
-            // `record_turn_start` at turn top).
+            // Record a turn-start 5s in the past, mirroring
+            // `process_conversation_turn`'s `record_turn_start` at turn top.
             let started_ms = chrono::Utc::now().timestamp_millis() - 5_000;
             actor.chat_state_handle.record_turn_start(started_ms);
             // Drain the chat-state command queue so the actor has
@@ -360,18 +348,15 @@ async fn idle_recheck_after_sleep_short_circuits_silently() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn laziness_abort_check_detects_bumps_between_snapshot_and_recheck() {
-    // Contract: a generation bump that lands
-    // between the function-entry snapshot and any later re-check
-    // (idle-wait poll, sampler-call poll, OR the final
-    // state-lock-guarded re-check inside `maybe_fire_laziness_check`)
-    // must surface as the corresponding `LazinessAbortReason`.
-    // Renamed from `final_locked_block_abort_check_runs_under_lock`:
-    // the helper itself is lock-independent — only
-    // its production caller invokes it inside the locked block. To
-    // make the test honest about that contract, the final check
-    // below ALSO acquires `state.lock().await` before invoking the
-    // helper, so a future helper change that introduces a state
-    // dependency would surface as a deadlock here.
+    // Contract: a generation bump that lands between the function-entry
+    // snapshot and any later re-check (idle-wait poll, sampler-call poll,
+    // or the final state-lock-guarded re-check inside
+    // `maybe_fire_laziness_check`) must surface as the corresponding
+    // `LazinessAbortReason`. The helper itself is lock-independent — only
+    // its production caller invokes it inside the locked block. The final
+    // check below also acquires `state.lock().await` before invoking the
+    // helper, so a future helper change that introduces a state dependency
+    // surfaces as a deadlock here.
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async {
@@ -384,9 +369,7 @@ async fn laziness_abort_check_detects_bumps_between_snapshot_and_recheck() {
             })
             .await;
             let snap = actor.laziness_abort_snapshot();
-            // No bump yet → no abort detected.
             assert!(actor.laziness_abort_check(snap).is_none());
-            // Bump user_input → abort detected.
             actor
                 .user_input_generation
                 .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
@@ -394,15 +377,10 @@ async fn laziness_abort_check_detects_bumps_between_snapshot_and_recheck() {
                 actor.laziness_abort_check(snap),
                 Some(LazinessAbortReason::UserInput)
             );
-            // Reset snapshot. Bump model_switch → abort detected.
             let snap2 = actor.laziness_abort_snapshot();
             actor
                 .models_manager
                 .set_current_model_id(acp::ModelId::new("yet-another-model"));
-            // Invoke the helper UNDER the state lock — mirrors the
-            // production call site inside `maybe_fire_laziness_check`'s
-            // final injection block and pins that the helper has no
-            // hidden state-lock dependency (otherwise this deadlocks).
             let _state_guard = actor.state.lock().await;
             assert_eq!(
                 actor.laziness_abort_check(snap2),
@@ -518,21 +496,15 @@ async fn user_input_generation_bumped_only_on_real_prompts() {
         .await;
 }
 
-/// Helper: attach a `laziness_debug_log` to an existing actor.
-/// Sole production caller threads a `PathBuf` through
-/// `SessionActor::new`; tests can patch the field directly.
-///
-/// **Test-only**: this bypasses the production construction path.
-/// Any new invariant added to `SessionActor::new` around
-/// `laziness_debug_log` (e.g. file creation, permission checks)
-/// MUST be mirrored here or these tests will silently diverge
-/// from prod behaviour.
+/// Patches `laziness_debug_log` directly, bypassing the production
+/// construction path (the sole production caller threads a `PathBuf`
+/// through `SessionActor::new`). Any new invariant `SessionActor::new`
+/// enforces around `laziness_debug_log` (file creation, permission
+/// checks) MUST be mirrored here or these tests silently diverge from prod.
 fn arm_debug_log(actor: &mut SessionActor, path: std::path::PathBuf) {
     actor.laziness_debug_log = Some(std::sync::Arc::from(path.as_path()));
 }
 
-/// Build an actor with the dev flag armed at `<tmp>/debug.jsonl`.
-/// Returns `(actor, tmp, log_path)`.
 async fn make_debug_actor(
     detector: LazinessDetectorPerModelConfig,
 ) -> (Arc<SessionActor>, tempfile::TempDir, std::path::PathBuf) {
@@ -607,12 +579,11 @@ async fn debug_mode_fires_classifier_even_with_per_model_enable_false() {
         .await;
 }
 
-/// Dev-flag contract gate 2: the long-idle-threshold must be
-/// bypassed when `laziness_debug_log = Some(_)`. Configures a
-/// 60-second threshold and asserts the call returns within 200ms
-/// — proving the `idle_threshold = ZERO` branch was taken.
-/// Prevents a future change that drops the `if debug_mode` guard
-/// around `Duration::ZERO`.
+/// Dev-flag contract gate 2: the long idle threshold must be bypassed
+/// when `laziness_debug_log = Some(_)`. Configures a 60-second threshold
+/// and asserts the call returns within 2s — proving the
+/// `idle_threshold = ZERO` branch was taken. Prevents a future change
+/// that drops the `if debug_mode` guard around `Duration::ZERO`.
 #[tokio::test(flavor = "current_thread")]
 async fn debug_mode_bypasses_idle_wait() {
     let local = tokio::task::LocalSet::new();
@@ -668,7 +639,8 @@ async fn debug_mode_writes_log_and_does_not_inject_synthetic_turn() {
     local
         .run_until(async {
             let (actor, _tmp, log_path) = make_debug_actor(LazinessDetectorPerModelConfig {
-                enabled: true, // belt-and-suspenders: debug should fire either way
+                // belt-and-suspenders: debug fires regardless of `enabled`
+                enabled: true,
                 max_nudges_per_session: 5,
                 idle_threshold_ms: None,
                 min_confidence: None,

@@ -18,7 +18,6 @@ pub(crate) fn handle_ask_user_question(
         AskUserQuestionExtRequest, AskUserQuestionExtResponse,
     };
 
-    // Parse the typed request from the ext-method params.
     let ext_req: AskUserQuestionExtRequest = match serde_json::from_str(ext.request.params.get()) {
         Ok(r) => r,
         Err(e) => {
@@ -54,7 +53,6 @@ pub(crate) fn handle_ask_user_question(
         return false;
     };
 
-    // If a question is already active, cancel it before replacing.
     if let Some(mut old_qv) = agent.question_view.take() {
         agent.turn_paused_duration += old_qv.opened_at.elapsed();
         tracing::warn!(
@@ -89,7 +87,6 @@ pub(crate) fn handle_ask_user_question(
         }
     }
 
-    // Stash the current prompt and create the question view.
     agent.question_view = Some(QuestionViewState::with_response_tx(
         ext_req.tool_call_id,
         ext_req.questions,
@@ -98,7 +95,6 @@ pub(crate) fn handle_ask_user_question(
         ext_req.mode,
     ));
 
-    // Clear prompt for question interaction.
     agent.prompt.set_text("");
 
     // Stamp the "last activity" anchor so the
@@ -131,7 +127,6 @@ pub(super) fn handle_exit_plan_mode(
 ) -> bool {
     use crate::views::plan_approval_view::{ExitPlanModeExtRequest, PlanApprovalViewState};
 
-    // 1. Parse typed request from raw JSON params.
     let params: ExitPlanModeExtRequest = match serde_json::from_str(ext.request.params.get()) {
         Ok(r) => r,
         Err(e) => {
@@ -146,7 +141,7 @@ pub(super) fn handle_exit_plan_mode(
         }
     };
 
-    // 2. Route by the request's session id (like `session/update`), so a
+    // Route by the request's session id (like `session/update`), so a
     // plan-approval raised by a BACKGROUND session lands on its own view even
     // when the user isn't currently focused on it — rather than failing.
     let Some(id) = interaction_target_agent(app, &params.session_id) else {

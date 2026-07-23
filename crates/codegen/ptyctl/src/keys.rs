@@ -45,7 +45,8 @@ fn parse_to_events(input: &str) -> Result<Vec<KeyEvent>> {
             // Try to parse a special key notation.
             let start_pos: String = chars.clone().collect();
             if let Some(end) = start_pos.find('>') {
-                let notation = &start_pos[1..end]; // between < and >
+                // between < and >
+                let notation = &start_pos[1..end];
                 // Consume chars including the >.
                 for _ in 0..=end {
                     chars.next();

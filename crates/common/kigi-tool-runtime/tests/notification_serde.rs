@@ -390,7 +390,6 @@ fn noop_handle_does_not_panic_or_record() {
     handle.send_lsp_ready(LspServerReady {
         server_name: "x".into(),
     });
-    // No assertion needed — the handle drops sends silently.
 }
 
 #[test]

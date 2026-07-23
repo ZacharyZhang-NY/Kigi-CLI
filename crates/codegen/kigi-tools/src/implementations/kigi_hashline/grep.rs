@@ -20,10 +20,8 @@ use super::anchor::split_lines;
 use super::config::HashlineSchemeParams;
 use super::scheme::{Anchor, AnchorScheme};
 
-/// Default timeout for anchor injection (seconds).
 const DEFAULT_ANCHOR_TIMEOUT_SECS: u64 = 60;
 
-/// Get cached anchors or generate and cache them for a single invocation.
 async fn get_or_generate<'a>(
     cache: &'a mut HashMap<PathBuf, Vec<Anchor>>,
     path: &Path,
@@ -152,7 +150,6 @@ Usage:
 - Only use 'type' or 'glob' when certain of the file type
 - Results are capped; truncated results show "at least" counts"#;
 
-/// `hashline_grep` — searches with anchor-annotated results.
 #[derive(Debug, Default)]
 pub struct HashlineGrepTool;
 
@@ -237,7 +234,6 @@ impl kigi_tool_runtime::Tool for HashlineGrepTool {
 
         let output_mode = input.output_mode.clone().unwrap_or(OutputMode::Content);
 
-        // Delegate to standard GrepTool for ripgrep execution.
         let grep = GrepTool;
         let cwd = crate::types::tool_metadata::resolve_cwd(&ctx, &resources).await?;
         let call_id = kigi_tool_protocol::ToolCallId::new_v7();
@@ -253,7 +249,6 @@ impl kigi_tool_runtime::Tool for HashlineGrepTool {
                 )
             })?;
 
-        // Inject anchors only for content mode.
         if matches!(output_mode, OutputMode::Content) && result.exit_code == 0 {
             let cwd = crate::types::tool_metadata::resolve_cwd(&ctx, &resources).await?;
             let (fs, scheme) = {
@@ -369,7 +364,6 @@ mod tests {
 
         let fs = Arc::new(LocalFs);
 
-        // Simulate ripgrep output for "let" search.
         let rg_output = format!(
             "<workspace_result workspace_path=\"{}\">\n\
              Found 2 matching lines\n\
@@ -450,14 +444,12 @@ mod tests {
         let result = inject_anchors(rg_output.as_bytes(), tmp.path(), &*fs, &*scheme).await;
         let output = String::from_utf8_lossy(&result);
 
-        // Context line should use '-' separator after the anchor.
         let line_2 = output.lines().find(|l| l.starts_with('2')).unwrap();
         assert!(
             line_2.contains('-'),
             "context line should keep '-': {line_2}"
         );
 
-        // Match line should use ':' separator after the anchor.
         let line_3 = output.lines().find(|l| l.starts_with('3')).unwrap();
         // Count colons: line:local:context:content = 3 colons with ':'
         let colon_count = line_3.matches(':').count();
@@ -476,7 +468,6 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let fs = Arc::new(LocalFs);
 
-        // File doesn't exist — anchors can't be generated.
         let rg_output = format!(
             "<workspace_result workspace_path=\"{}\">\n\
              Found 1 matching lines\n\
@@ -490,7 +481,6 @@ mod tests {
         let result = inject_anchors(rg_output.as_bytes(), tmp.path(), &*fs, &*scheme).await;
         let output = String::from_utf8_lossy(&result);
 
-        // Should fall through without anchors — original line preserved.
         assert!(output.contains("5:some content"));
     }
 
@@ -552,7 +542,6 @@ mod tests {
         let result = inject_anchors(rg_output.as_bytes(), tmp.path(), &*fs, &*scheme).await;
         let output = String::from_utf8_lossy(&result);
 
-        // No numbered lines → no anchor injection. Output should be unchanged.
         assert!(output.contains("src/main.rs"));
         assert!(output.contains("src/lib.rs"));
         assert!(
@@ -570,7 +559,6 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let fs = Arc::new(LocalFs);
 
-        // count output: "file:N" format.
         let rg_output = format!(
             "<workspace_result workspace_path=\"{}\">\n\
              src/main.rs:5\n\
@@ -619,7 +607,6 @@ mod tests {
         let result = inject_anchors(rg_output.as_bytes(), tmp.path(), &*fs, &*scheme).await;
         let output = String::from_utf8_lossy(&result);
 
-        // All 4 lines should be anchored (same file, same cache entry).
         let anchored_count = output
             .lines()
             .filter(|l| l.starts_with(|c: char| c.is_ascii_digit()))
@@ -725,7 +712,6 @@ mod tests {
         std::fs::write(tmp.path().join("big.rs"), "match\n".repeat(100)).unwrap();
 
         let fs = Arc::new(LocalFs);
-        // Simulate truncated output with "... [N lines truncated]" marker.
         let mut rg_lines = String::new();
         for i in 1..=10 {
             rg_lines.push_str(&format!("{i}:match\n"));
@@ -744,11 +730,8 @@ mod tests {
         let result = inject_anchors(rg_output.as_bytes(), tmp.path(), &*fs, &*scheme).await;
         let output = String::from_utf8_lossy(&result);
 
-        // Truncation marker should be preserved.
         assert!(output.contains("... [at least 90 lines truncated] ..."));
-        // The wrapper should be intact.
         assert!(output.contains("</workspace_result>"));
-        // Visible lines should be anchored.
         let anchored = output
             .lines()
             .filter(|l| l.starts_with(|c: char| c.is_ascii_digit()))

@@ -1,9 +1,8 @@
 //! `CodexListDirTool` — paginated, depth-limited, BFS directory listing.
 //!
-//! This is a faithful port of `codex-rs/core/src/tools/handlers/list_dir.rs`.
-//! It does NOT respect `.gitignore`, does NOT exclude hidden files, and requires
-//! absolute paths. See the plan document for the full diff vs the kigi
-//! `ListDirTool`.
+//! Ported from `codex-rs/core/src/tools/handlers/list_dir.rs`. Unlike the kigi
+//! `ListDirTool`, it does not respect `.gitignore`, does not exclude hidden
+//! files, and requires absolute paths.
 
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
@@ -12,20 +11,12 @@ use crate::types::output::{ListDirContent, ListDirOutput};
 use crate::types::requirements::Expr;
 use crate::types::tool::{ToolKind, ToolNamespace};
 
-// ─── Constants ──────────────────────────────────────────────────────
-
-/// Maximum length (in bytes) for a single entry name before truncation.
 const MAX_ENTRY_LENGTH: usize = 500;
 
-/// Number of spaces per depth level for indentation.
 const INDENTATION_SPACES: usize = 2;
-
-// ─── Description ────────────────────────────────────────────────────
 
 const DESCRIPTION: &str =
     "Lists entries in a local directory with 1-indexed entry numbers and simple type labels.";
-
-// ─── Input ──────────────────────────────────────────────────────────
 
 fn default_offset() -> usize {
     1
@@ -56,17 +47,14 @@ pub struct CodexListDirInput {
     pub depth: usize,
 }
 
-// ─── Internal types ─────────────────────────────────────────────────
-
 #[derive(Clone)]
 struct DirEntry {
-    /// Full relative path from the listing root (used for sorting).
+    /// Full relative path from the listing root; the sort key.
     name: String,
-    /// Just the file/directory component name (used for display).
+    /// Only the final path component.
     display_name: String,
-    /// Depth level (0 = root's direct children).
+    /// 0 for the root's direct children.
     depth: usize,
-    /// Entry type.
     kind: DirEntryKind,
 }
 
@@ -80,10 +68,9 @@ enum DirEntryKind {
 
 impl From<&std::fs::FileType> for DirEntryKind {
     fn from(ft: &std::fs::FileType) -> Self {
-        // Check is_symlink() FIRST — on Unix, a symlink to a directory has
-        // both is_symlink() and is_dir() true when the file_type is obtained
-        // via tokio::fs::DirEntry::file_type() (which follows symlinks).
-        // Codex checks symlink first so these are rendered with `@`, not `/`.
+        // Symlink must be tested first: on Unix a symlink to a directory
+        // answers true to both `is_symlink()` and `is_dir()`, and codex renders
+        // such an entry with `@` rather than `/`.
         if ft.is_symlink() {
             DirEntryKind::Symlink
         } else if ft.is_dir() {
@@ -96,15 +83,10 @@ impl From<&std::fs::FileType> for DirEntryKind {
     }
 }
 
-// ─── Tool ───────────────────────────────────────────────────────────
-
 /// Codex-namespace list_dir tool — paginated, depth-limited directory listing.
 #[derive(Debug, Default)]
 pub struct CodexListDirTool;
 
-// ─── Core BFS logic ─────────────────────────────────────────────────
-
-/// Orchestrator: collect entries via BFS → sort → paginate → format.
 async fn list_dir_slice(
     dir_path: &Path,
     offset: usize,
@@ -116,30 +98,28 @@ async fn list_dir_slice(
         .await
         .map_err(|e| format!("Failed to read directory: {e}"))?;
 
-    // Sort by full relative path (slash-normalized), case-sensitive.
+    // Slash-normalized and case-sensitive, matching codex.
     entries.sort_unstable_by(|a, b| a.name.cmp(&b.name));
 
-    // Empty directory is a valid success case, not an error.
+    // An empty directory is a success case, not an error.
     if entries.is_empty() {
         return Ok(Vec::new());
     }
 
     let total = entries.len();
 
-    // offset is 1-indexed
+    // offset is 1-indexed.
     let start_index = offset - 1;
     if start_index >= total {
         return Err("offset exceeds directory entry count".to_string());
     }
 
-    // Compute end index, saturating to avoid overflow with large limits.
     let end_index = start_index.saturating_add(limit).min(total);
     let page = &entries[start_index..end_index];
 
     let mut lines: Vec<String> = page.iter().map(format_entry_line).collect();
 
-    // Overflow message when more entries exist beyond the page.
-    // Use capped_limit (actual number of entries returned) to match codex behavior.
+    // Codex reports the page size actually returned, not the requested limit.
     if end_index < total {
         let capped_limit = end_index - start_index;
         lines.push(format!("More than {} entries found", capped_limit));
@@ -148,15 +128,12 @@ async fn list_dir_slice(
     Ok(lines)
 }
 
-/// BFS walker using `tokio::fs::read_dir`.
-///
 /// Collects entries breadth-first up to `max_depth` levels. Directories
 /// beyond the depth limit are listed but not descended into.
 ///
-/// Uses `PathBuf` for the relative prefix (matching codex's `prefix: &Path`
-/// + `prefix.join(&file_name)`). The raw `PathBuf` is kept for recursion so
-///   that subdirectory prefixes are never affected by `format_entry_name`
-///   truncation or normalization.
+/// The prefix carried through the queue is the raw joined path, never the
+/// formatted name, so that `format_entry_name` truncation and separator
+/// normalization cannot leak into deeper prefixes.
 async fn collect_entries(
     dir_path: &Path,
     relative_prefix: &Path,
@@ -164,7 +141,7 @@ async fn collect_entries(
     max_depth: usize,
     entries: &mut Vec<DirEntry>,
 ) -> Result<(), std::io::Error> {
-    // Queue items: (absolute path, raw relative prefix, depth)
+    // (absolute path, raw relative prefix, depth)
     let mut queue: VecDeque<(PathBuf, PathBuf, usize)> = VecDeque::new();
     queue.push_back((
         dir_path.to_path_buf(),
@@ -175,8 +152,7 @@ async fn collect_entries(
     while let Some((abs_path, rel_prefix, depth)) = queue.pop_front() {
         let mut read_dir = tokio::fs::read_dir(&abs_path).await?;
 
-        // Collect children first so we can sort them.
-        // Each item: (DirEntry, absolute path, raw relative path for recursion)
+        // (entry, absolute path, raw relative path for the next level)
         let mut children: Vec<(DirEntry, PathBuf, PathBuf)> = Vec::new();
         while let Some(entry) = read_dir.next_entry().await? {
             let file_type = entry.file_type().await?;
@@ -185,9 +161,8 @@ async fn collect_entries(
             let raw_name = entry.file_name();
             let display_name = format_entry_component(&raw_name);
 
-            // Build the raw relative path using Path::join (matches codex).
             let entry_relative_path = rel_prefix.join(&raw_name);
-            // The sort key is the formatted (slash-normalized, truncated) name.
+            // Sorting is done on the formatted name, not the raw path.
             let name = format_entry_name(&entry_relative_path.to_string_lossy());
 
             children.push((
@@ -202,16 +177,13 @@ async fn collect_entries(
             ));
         }
 
-        // Sort children by relative path for deterministic ordering.
+        // Sort children so the traversal order is deterministic.
         children.sort_unstable_by(|a, b| a.0.name.cmp(&b.0.name));
 
         for (dir_entry, child_abs_path, child_raw_rel) in children {
             let is_dir = dir_entry.kind == DirEntryKind::Directory;
             entries.push(dir_entry);
 
-            // Descend into directories if we haven't reached max depth.
-            // Pass the raw relative path (not the formatted name) as the
-            // prefix for the next level, matching codex behavior.
             if is_dir && depth + 1 < max_depth {
                 queue.push_back((child_abs_path, child_raw_rel, depth + 1));
             }
@@ -221,7 +193,6 @@ async fn collect_entries(
     Ok(())
 }
 
-/// Format a single entry line: `"{indent}{display_name}{suffix}"`.
 fn format_entry_line(entry: &DirEntry) -> String {
     let indent = " ".repeat(entry.depth * INDENTATION_SPACES);
     let suffix = match entry.kind {
@@ -233,25 +204,22 @@ fn format_entry_line(entry: &DirEntry) -> String {
     format!("{}{}{}", indent, entry.display_name, suffix)
 }
 
-/// Normalize path separators (backslash → forward slash) and truncate.
+/// Normalizes backslashes to forward slashes, then truncates.
 fn format_entry_name(path: &str) -> String {
     let normalized = path.replace('\\', "/");
     take_at_char_boundary(&normalized, MAX_ENTRY_LENGTH).to_string()
 }
 
-/// Truncate an `OsStr` file name component at `MAX_ENTRY_LENGTH` bytes.
 fn format_entry_component(name: &std::ffi::OsStr) -> String {
     let s = name.to_string_lossy();
     take_at_char_boundary(&s, MAX_ENTRY_LENGTH).to_string()
 }
 
-/// Truncate a string at a char boundary, returning at most `max_bytes` bytes.
+/// Yields at most `max_bytes` bytes, cut back to a char boundary.
 fn take_at_char_boundary(s: &str, max_bytes: usize) -> &str {
     let end = crate::util::floor_char_boundary(s, max_bytes);
     &s[..end]
 }
-
-// ─── Tests ──────────────────────────────────────────────────────────
 
 impl crate::types::tool_metadata::ToolMetadata for CodexListDirTool {
     fn kind(&self) -> ToolKind {
@@ -358,12 +326,9 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    // ── Unit tests (core logic) ─────────────────────────────────
-
     #[tokio::test]
     async fn lists_directory_entries() {
         let tmp = TempDir::new().unwrap();
-        // Create files and dirs.
         std::fs::write(tmp.path().join("file.txt"), "content").unwrap();
         std::fs::create_dir(tmp.path().join("subdir")).unwrap();
         #[cfg(unix)]
@@ -371,7 +336,6 @@ mod tests {
 
         let result = list_dir_slice(tmp.path(), 1, 25, 2).await.unwrap();
 
-        // Should contain file.txt, subdir/, and on unix: link@
         let joined = result.join("\n");
         assert!(joined.contains("file.txt"), "missing file.txt in: {joined}");
         assert!(joined.contains("subdir/"), "missing subdir/ in: {joined}");
@@ -396,7 +360,6 @@ mod tests {
         std::fs::create_dir_all(&subsub).unwrap();
         std::fs::write(subsub.join("deep.txt"), "").unwrap();
 
-        // depth=1: only top-level entries (the dir "a" but not its children)
         let depth1 = list_dir_slice(tmp.path(), 1, 100, 1).await.unwrap();
         let joined1 = depth1.join("\n");
         assert!(joined1.contains("a/"), "should see dir a/");
@@ -406,7 +369,6 @@ mod tests {
             "should NOT see deep.txt at depth 1"
         );
 
-        // depth=2: top-level + children of a
         let depth2 = list_dir_slice(tmp.path(), 1, 100, 2).await.unwrap();
         let joined2 = depth2.join("\n");
         assert!(joined2.contains("a/"), "should see dir a/");
@@ -416,7 +378,6 @@ mod tests {
             "should NOT see deep.txt at depth 2"
         );
 
-        // depth=3: everything
         let depth3 = list_dir_slice(tmp.path(), 1, 100, 3).await.unwrap();
         let joined3 = depth3.join("\n");
         assert!(joined3.contains("a/"), "should see dir a/");
@@ -434,7 +395,6 @@ mod tests {
         std::fs::write(tmp.path().join("a.txt"), "").unwrap();
         std::fs::write(tmp.path().join("b.txt"), "").unwrap();
 
-        // First page: limit=2, should get a.txt, b.txt + overflow message
         let page1 = list_dir_slice(tmp.path(), 1, 2, 1).await.unwrap();
         assert!(page1[0].contains("a.txt"), "first entry should be a.txt");
         assert!(page1[1].contains("b.txt"), "second entry should be b.txt");
@@ -443,7 +403,6 @@ mod tests {
             "should have overflow message"
         );
 
-        // Second page: offset=3 → c.txt only, no overflow
         let page2 = list_dir_slice(tmp.path(), 3, 2, 1).await.unwrap();
         assert_eq!(page2.len(), 1, "second page should have 1 entry");
         assert!(page2[0].contains("c.txt"), "should be c.txt");
@@ -454,7 +413,6 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         std::fs::write(tmp.path().join("only.txt"), "").unwrap();
 
-        // usize::MAX as limit should not panic
         let result = list_dir_slice(tmp.path(), 1, usize::MAX, 1).await.unwrap();
         assert_eq!(result.len(), 1);
         assert!(result[0].contains("only.txt"));
@@ -463,7 +421,6 @@ mod tests {
     #[tokio::test]
     async fn indicates_truncated_results() {
         let tmp = TempDir::new().unwrap();
-        // Create 40 files
         for i in 0..40 {
             std::fs::write(tmp.path().join(format!("file_{:03}.txt", i)), "").unwrap();
         }
@@ -485,12 +442,9 @@ mod tests {
         std::fs::write(tmp.path().join("a.txt"), "").unwrap();
         std::fs::write(tmp.path().join("m.txt"), "").unwrap();
 
-        // limit=2, offset=2 → should get m.txt (2nd sorted entry)
         let result = list_dir_slice(tmp.path(), 2, 1, 1).await.unwrap();
         assert!(result[0].contains("m.txt"), "offset=2 should land on m.txt");
     }
-
-    // ── Tool integration tests ──────────────────────────────────
 
     #[tokio::test]
     async fn tool_lists_directory() {
@@ -654,7 +608,6 @@ mod tests {
         let result = list_dir_slice(tmp.path(), 1, 25, 2).await.unwrap();
         assert!(result.is_empty(), "empty dir should return empty vec");
 
-        // Also verify the tool-level wrapper returns Content, not Error.
         let tool = CodexListDirTool;
         let ctx = kigi_tool_runtime::ToolCallContext::default();
         let input = CodexListDirInput {

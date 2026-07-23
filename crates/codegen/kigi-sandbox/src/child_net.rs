@@ -15,7 +15,8 @@ pub unsafe fn install_child_network_filter() -> std::io::Result<()> {
 
     const SECCOMP_RET_ALLOW: u32 = 0x7fff_0000;
     const SECCOMP_RET_ERRNO: u32 = 0x0005_0000;
-    const EPERM_VAL: u32 = 1; // libc::EPERM
+    // libc::EPERM
+    const EPERM_VAL: u32 = 1;
 
     macro_rules! bpf_stmt {
         ($code:expr, $k:expr) => {
@@ -39,7 +40,8 @@ pub unsafe fn install_child_network_filter() -> std::io::Result<()> {
         };
     }
 
-    const NR_OFFSET: u32 = 0; // seccomp_data.nr offset
+    // seccomp_data.nr offset
+    const NR_OFFSET: u32 = 0;
 
     let blocked_syscalls: &[i64] = &[
         SYS_connect,
@@ -54,24 +56,22 @@ pub unsafe fn install_child_network_filter() -> std::io::Result<()> {
     let mut filter: Vec<sock_filter> = Vec::new();
     let total_checks = blocked_syscalls.len();
 
-    // 1. Load syscall number
     filter.push(bpf_stmt!(BPF_LD | BPF_W | BPF_ABS, NR_OFFSET));
 
-    // 2. Check each blocked syscall
     for (i, &syscall) in blocked_syscalls.iter().enumerate() {
         let remaining = total_checks - i - 1;
         filter.push(bpf_jump!(
             BPF_JMP | BPF_JEQ | BPF_K,
             syscall,
-            remaining as u8 + 1, // match: jump to ERRNO
-            0                    // no match: check next
+            // match: jump to ERRNO
+            remaining as u8 + 1,
+            // no match: check next
+            0
         ));
     }
 
-    // 3. Default: ALLOW
     filter.push(bpf_stmt!(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
 
-    // 4. Blocked: ERRNO(EPERM)
     filter.push(bpf_stmt!(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM_VAL));
 
     let prog = sock_fprog {

@@ -143,9 +143,7 @@ pub fn parse_arguments_from_schema_lossy(schema: &serde_json::Value) -> Vec<Tool
         .collect()
 }
 
-// ---------------------------------------------------------------------------
 // $ref / $defs / anyOf / oneOf resolution
-// ---------------------------------------------------------------------------
 
 /// Resolve type info from a property, following `$ref` → `$defs` and
 /// `anyOf` patterns that schemars generates for Rust enums and
@@ -263,7 +261,6 @@ fn extract_enum_from_def(
     (Some(arg_type), Some(values), first_value)
 }
 
-/// Infer the [`ArgumentType`] from a sample enum value.
 fn infer_arg_type(sample: &Option<Value>) -> ArgumentType {
     match sample {
         Some(Value::String(_)) => ArgumentType::String,
@@ -273,10 +270,6 @@ fn infer_arg_type(sample: &Option<Value>) -> ArgumentType {
         _ => ArgumentType::String,
     }
 }
-
-// ============================================================================
-// Tests
-// ============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -464,8 +457,6 @@ mod tests {
         assert!(args[0].arg_type.contains(ArgumentType::Integer));
     }
 
-    // -- $ref / $defs / anyOf resolution ----------------------------------------
-
     #[test]
     fn parse_schema_any_of_ref_resolves_enum() {
         // schemars pattern for `Option<MyEnum>` with oneOf-style defs.
@@ -593,7 +584,7 @@ mod tests {
 
     #[test]
     fn parse_schema_no_defs_still_works() {
-        // Properties with no $ref/$defs should work exactly as before.
+        // Properties with no $ref/$defs still parse normally.
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
@@ -610,8 +601,6 @@ mod tests {
         assert_eq!(args[0].allowed_values, vec!["x", "y"]);
         assert_eq!(args[0].default, Some(serde_json::json!("x")));
     }
-
-    // -- numeric constraints --------------------------------------------------
 
     #[test]
     fn parse_schema_numeric_constraints() {

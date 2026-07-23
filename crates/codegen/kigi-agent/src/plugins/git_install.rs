@@ -561,7 +561,7 @@ pub struct UpdateResult {
 
 /// Status of an update attempt.
 pub enum UpdateStatus {
-    /// Repo was updated successfully.
+    /// Repo updated successfully.
     Updated(UpdateResult),
     /// Repo is pinned to a tag or commit — no automatic update.
     Pinned { ref_name: String },
@@ -633,7 +633,7 @@ pub fn update_repo(repo_key: &str, repo: &InstalledRepo) -> Result<UpdateStatus,
             let new_commit = read_head_commit(repo_path);
             let changed = old_commit.as_deref() != new_commit.as_deref();
 
-            // Re-discover plugins (new ones may have been added)
+            // Re-discover plugins: the pull may bring new ones
             let plugins = discover_plugins_in_dir(repo_path, subdir.as_deref())?;
 
             Ok(UpdateStatus::Updated(UpdateResult {

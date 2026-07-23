@@ -258,18 +258,22 @@ mod mcp_startup_timeout_tests {
     #[test]
     fn precedence_requirements_env_config_remote_default() {
         assert_eq!(r(None, None, None, None), DEFAULT_MCP_STARTUP_TIMEOUT_SECS);
-        assert_eq!(r(Some(5), Some(6), Some(7), Some(8)), 5); // requirements highest
-        assert_eq!(r(None, Some(6), Some(7), Some(8)), 6); // env
-        assert_eq!(r(None, None, Some(7), Some(8)), 7); // config
-        assert_eq!(r(None, None, None, Some(8)), 8); // remote
+        // requirements highest
+        assert_eq!(r(Some(5), Some(6), Some(7), Some(8)), 5);
+        // env
+        assert_eq!(r(None, Some(6), Some(7), Some(8)), 6);
+        // config
+        assert_eq!(r(None, None, Some(7), Some(8)), 7);
+        // remote
+        assert_eq!(r(None, None, None, Some(8)), 8);
     }
 }
 
-// ── MCP max output bytes (inline tool-result cap) ───────────────────────────
+// MCP max output bytes (inline tool-result cap).
 //
 // Full multi-tier resolve lives only here (shell can read config/requirements).
-// Tools holds a single effective atomic: we resolve once on apply and push the
-// result via `set_mcp_max_output_bytes` so free-function truncation sees it.
+// Tools holds a single effective atomic: resolved once on apply and pushed via
+// `set_mcp_max_output_bytes` so free-function truncation sees it.
 
 /// Default MCP tool-result inline cap (bytes).
 pub const DEFAULT_MAX_MCP_OUTPUT_BYTES: usize = kigi_tools::MCP_MAX_OUTPUT_BYTES;
@@ -318,7 +322,8 @@ pub fn resolve_max_mcp_output_bytes(remote: Option<u64>) -> usize {
     resolve_max_mcp_output_bytes_precedence(
         requirements,
         kigi_tools::mcp_max_output_bytes_from_env(),
-        None, // project tier needs a cwd — see resolve_max_mcp_output_bytes_for_cwd
+        // project tier needs a cwd — see resolve_max_mcp_output_bytes_for_cwd
+        None,
         config,
         remote_usize,
     )
@@ -400,11 +405,16 @@ mod max_mcp_output_bytes_tests {
             r(None, None, None, None, None),
             DEFAULT_MAX_MCP_OUTPUT_BYTES
         );
-        assert_eq!(r(Some(1), Some(2), Some(9), Some(3), Some(4)), 1); // requirements highest
-        assert_eq!(r(None, Some(2), Some(9), Some(3), Some(4)), 2); // env beats project
-        assert_eq!(r(None, None, Some(9), Some(3), Some(4)), 9); // project beats user config
-        assert_eq!(r(None, None, None, Some(3), Some(4)), 3); // user config beats remote
-        assert_eq!(r(None, None, None, None, Some(4)), 4); // remote beats default
+        // requirements highest
+        assert_eq!(r(Some(1), Some(2), Some(9), Some(3), Some(4)), 1);
+        // env beats project
+        assert_eq!(r(None, Some(2), Some(9), Some(3), Some(4)), 2);
+        // project beats user config
+        assert_eq!(r(None, None, Some(9), Some(3), Some(4)), 9);
+        // user config beats remote
+        assert_eq!(r(None, None, None, Some(3), Some(4)), 3);
+        // remote beats default
+        assert_eq!(r(None, None, None, None, Some(4)), 4);
     }
 
     #[test]

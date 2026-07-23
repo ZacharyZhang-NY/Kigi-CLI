@@ -55,7 +55,6 @@ pub(crate) fn image_blocks(
 /// system reacting to a completed background task / subagent.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PromptOrigin {
-    /// A normal user-initiated prompt.
     User,
     /// Auto-wake prompt injected when a background terminal task completed.
     TaskCompleted {
@@ -91,7 +90,6 @@ pub enum PromptOrigin {
     PlanResume,
 }
 impl PromptOrigin {
-    /// Parse a prompt_id string into a `PromptOrigin`.
     pub fn from_prompt_id(prompt_id: &str) -> Self {
         if let Some(task_id) = prompt_id.strip_prefix("task-completed-") {
             Self::TaskCompleted {
@@ -254,22 +252,19 @@ mod tests {
         );
     }
 }
-/// Client-requested fs notification mode (was kigi_fsnotify::FsNotifyMode).
-/// Determines whether the session sends an initial file index to the client
-/// or just streams raw file events.
+/// Client-requested fs notification mode. Determines whether the session
+/// sends an initial file index to the client or just streams raw file events.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub enum ClientFsMode {
     #[default]
     Events,
     Index,
 }
-/// Client-side fs notification config: fs source settings + mode.
 #[derive(Debug, Clone, Default)]
 pub struct ClientFsConfig {
     pub fs: FsConfig,
     pub mode: ClientFsMode,
 }
-/// Share session request/response types
 /// Proxy config for the session registry client.
 /// Shared between `acp_session` (slash commands) and `persistence` (title generation).
 #[derive(Clone)]

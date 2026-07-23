@@ -10,8 +10,6 @@ use kigi_file_utils::events::EventWriter;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-// Shared per-role model override + spawn-and-retry-once fail-open wrapper
-
 /// Every `/goal` role (planner, strategist, each verifier skeptic) spawns its
 /// subagent as `general-purpose`. The role's configured `agent_type` selects
 /// only the HARNESS (system prompt + toolset flavor),
@@ -142,8 +140,6 @@ where
     F: FnMut(Option<String>, Option<String>, String) -> Fut,
     Fut: std::future::Future<Output = Result<String, E>>,
 {
-    // Inherit path: single attempt on the current model + session harness; move
-    // the prompt.
     if !override_.is_explicit() {
         return spawn(None, None, prompt.primary).await;
     }
@@ -172,8 +168,6 @@ where
     spawn(None, None, prompt.fallback).await
 }
 
-// Constants
-
 /// Telemetry value on `GoalPlannerFired`. Does not cap user-initiated
 /// `/goal resume` retries, which re-run the planner unbounded.
 pub(crate) const GOAL_PLANNER_MAX_RUNS: u32 = 1;
@@ -187,8 +181,6 @@ const GOAL_PLANNER_SUBAGENT_TYPE: &str = GOAL_ROLE_SUBAGENT_TYPE;
 const GOAL_PLANNER_SUBAGENT_DESCRIPTION: &str = "goal plan writer";
 
 const GOAL_PLANNER_PROMPT_TEMPLATE: &str = include_str!("templates/goal_planner_prompt.md");
-
-// Outcome + spawner abstraction
 
 /// Result of one planner attempt. `Planned` carries the path the
 /// planner wrote (always the input `plan_file`). `FailClosed` carries
@@ -242,15 +234,11 @@ impl std::fmt::Display for SpawnError {
     }
 }
 
-// Terminal-token parse
-
 /// Accepts only the literal `Done` (after trim). A malformed token isn't
 /// fatal on its own — the runner gates on the plan file's presence.
 pub(crate) fn parse_terminal_response(text: &str) -> bool {
     text.trim() == "Done"
 }
-
-// Production spawner
 
 pub(crate) struct ChannelSpawner {
     pub(crate) event_tx: tokio::sync::mpsc::UnboundedSender<
@@ -346,8 +334,6 @@ impl ChannelSpawner {
     }
 }
 
-// Runner
-
 pub(crate) struct GoalPlannerInputs<'a> {
     pub objective: &'a str,
     pub context: &'a str,
@@ -396,8 +382,6 @@ pub(crate) async fn run_goal_planner(
 
     let plan_file_str = inputs.plan_file.to_string_lossy();
     let with_plan_file = GOAL_PLANNER_PROMPT_TEMPLATE.replace("{PLAN_FILE}", &plan_file_str);
-    // Render once per toolset: `primary` for the resolved toolset, `fallback`
-    // for the default/parent toolset the explicit-pair retry falls back to.
     let render = |tool_names: &RoleToolNames| -> String {
         let rendered = tool_names.apply(&with_plan_file);
         let mut full = String::with_capacity(rendered.len() + inputs.objective.len() + 256);
@@ -487,8 +471,6 @@ fn record_fail_closed(
     GoalPlannerOutcome::FailClosed { reason, latency_ms }
 }
 
-// Tests
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -552,9 +534,9 @@ mod tests {
 
     #[test]
     fn planner_template_cursor_render_names_the_web_search_tool() {
-        // The previously-broken case: on the alternate toolset the web
-        // tool is named "WebSearch", so the planner prompt must render THAT —
-        // otherwise the weak model never reaches for it and plans from memory.
+        // On the alternate toolset the web tool is named "WebSearch", so the
+        // planner prompt must render THAT — otherwise the weak model never
+        // reaches for it and plans from memory.
         let rendered = RoleToolNames::from_summary(&summary_with(&[
             (ToolKind::WebSearch, "WebSearch"),
             (ToolKind::WebFetch, "WebFetch"),
@@ -1178,8 +1160,6 @@ mod tests {
             "planner prompt must instruct the `{{SCRATCH}}` placeholder",
         );
     }
-
-    // ── RoleSpawnOverride + spawn-and-retry-once wrapper ─────
 
     use std::sync::atomic::{AtomicUsize, Ordering};
 

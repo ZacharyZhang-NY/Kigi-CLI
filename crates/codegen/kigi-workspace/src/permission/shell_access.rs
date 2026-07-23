@@ -258,7 +258,8 @@ fn runs_in_current_shell(cmd: Node<'_>) -> bool {
     let mut node = cmd;
     loop {
         if node.next_sibling().is_some_and(|s| s.kind() == "&") {
-            return false; // backgrounded subshell
+            // backgrounded subshell
+            return false;
         }
         let Some(parent) = node.parent() else {
             return true;
@@ -297,7 +298,7 @@ fn cwd_poison_positions(root: Node<'_>, src: &str) -> Vec<usize> {
     positions
 }
 
-/// Whether an operand at `at` runs after a cwd change, so it can't be pinned.
+/// Whether an operand at `at` runs after a cwd shift, so it can't be pinned.
 fn cwd_unpinned_before(positions: &[usize], at: usize) -> bool {
     positions.iter().any(|&p| p < at)
 }
@@ -371,7 +372,7 @@ fn shell_node_arg(node: Node<'_>, src: &str) -> Option<ArgText> {
 }
 
 /// Every `command` node (incl. nested) as `(start_byte, words, ambiguous)`, in
-/// source order. `start_byte` orders invocations against cwd-change positions.
+/// source order. `start_byte` orders invocations against cwd-shift positions.
 fn shell_command_invocations(root: Node<'_>, src: &str) -> Vec<(usize, Vec<String>, bool)> {
     let mut found: Vec<(usize, Vec<String>, bool)> = Vec::new();
     let mut stack = vec![root];
@@ -528,7 +529,7 @@ fn special_file_operands(program: &str, words: &[String]) -> Vec<(String, ShellF
             })
             .collect(),
         // `--output`/`-o` write the output file. (`git`'s `-O` is a READ
-        // order-file, NOT a write, so it is intentionally excluded.)
+        // order-file, NOT a write, so it is deliberately excluded.)
         "sort" | "go" | "git" => shell_output_flag_values(words)
             .map(|output| (output.to_owned(), ShellFileMode::Write))
             .collect(),
@@ -1094,18 +1095,25 @@ mod tests {
         let policy = compiled(vec![file_rule(
             RuleAction::Deny,
             ToolFilter::Read,
-            "/repo-b/.env", // path-scoped: matching would need the untracked cd target
+            // path-scoped: matching would need the untracked cd target
+            "/repo-b/.env",
         )]);
         let session = std::path::Path::new("/repo-a");
         for cmd in [
-            "cd /repo-b && cat .env",                 // cd in the current shell
-            "pushd /repo-b; cat .env",                // pushd is never folded
-            "if true; then cd /repo-b; fi; cat .env", // conditional cd
-            "env -C /repo-b cat .env",                // env chdir wrapper
+            // cd in the current shell
+            "cd /repo-b && cat .env",
+            // pushd is never folded
+            "pushd /repo-b; cat .env",
+            "if true; then cd /repo-b; fi; cat .env",
+            // env chdir wrapper
+            "env -C /repo-b cat .env",
             "env --chdir=/repo-b cat .env",
-            "/usr/bin/env -C /repo-b cat .env", // path-qualified env
-            "env FOO=1 -C /repo-b cat .env",    // chdir after an assignment
-            "cd /repo-b && echo x > .env",      // redirect operand too
+            // path-qualified env
+            "/usr/bin/env -C /repo-b cat .env",
+            // chdir after an assignment
+            "env FOO=1 -C /repo-b cat .env",
+            // redirect operand too
+            "cd /repo-b && echo x > .env",
         ] {
             assert!(
                 matches!(
@@ -1142,7 +1150,7 @@ mod tests {
         }
     }
 
-    /// A `cd` in a pipeline/subshell/backgrounded `&` doesn't change a sibling's
+    /// A `cd` in a pipeline/subshell/backgrounded `&` does not alter a sibling's
     /// cwd, so their reads resolve against the original cwd, not the `cd` target.
     #[test]
     fn shell_cd_does_not_scope_across_pipe_subshell_or_background() {
@@ -1153,9 +1161,12 @@ mod tests {
             "/work/secret.env",
         )]);
         for cmd in [
-            "cd /elsewhere | cat secret.env",  // pipeline segment: own subshell
-            "(cd /elsewhere); cat secret.env", // subshell ended with `;`
-            "cd /elsewhere & cat secret.env",  // backgrounded cd
+            // pipeline segment: own subshell
+            "cd /elsewhere | cat secret.env",
+            // subshell ended with `;`
+            "(cd /elsewhere); cat secret.env",
+            // backgrounded cd
+            "cd /elsewhere & cat secret.env",
         ] {
             assert!(
                 matches!(
@@ -1328,10 +1339,13 @@ mod tests {
             "**/.env",
         )]);
         for cmd in [
-            "rg secret",      // no path: searches cwd
-            "ack secret",     // no path
-            "rg secret .",    // directory operand
-            "rg secret src/", // directory operand
+            // no path: searches cwd
+            "rg secret",
+            "ack secret",
+            // directory operand
+            "rg secret .",
+            // directory operand
+            "rg secret src/",
             "ag secret .",
         ] {
             assert!(
@@ -1373,7 +1387,7 @@ mod tests {
     /// `[permission]` tier. Tool mapping: `Read`→Read, `Write`/`Edit`→Edit, `Bash`→Bash.
     fn enterprise_requirements_policy() -> CompiledPolicy {
         compiled(vec![
-            // ── ask = [...] ──
+            // ask = [...]
             bash_rule(RuleAction::Ask, "kubectl *"),
             bash_rule(RuleAction::Ask, "terraform apply *"),
             bash_rule(RuleAction::Ask, "aws *"),
@@ -1383,10 +1397,10 @@ mod tests {
             bash_rule(RuleAction::Ask, "security *"),
             bash_rule(RuleAction::Ask, "op *"),
             file_rule(RuleAction::Ask, ToolFilter::Read, "**/secrets/**"),
-            file_rule(RuleAction::Ask, ToolFilter::Edit, "**/secrets/**"), // Write(..)
-            file_rule(RuleAction::Ask, ToolFilter::Edit, "**/secrets/**"), // Edit(..)
+            file_rule(RuleAction::Ask, ToolFilter::Edit, "**/secrets/**"),
+            file_rule(RuleAction::Ask, ToolFilter::Edit, "**/secrets/**"),
             file_rule(RuleAction::Ask, ToolFilter::Read, "**/Library/Mail/**"),
-            // ── deny = [...] ──
+            // deny = [...]
             bash_rule(RuleAction::Deny, "rm -rf *"),
             bash_rule(RuleAction::Deny, "sudo *"),
             bash_rule(RuleAction::Deny, "su *"),
@@ -1416,23 +1430,23 @@ mod tests {
                 ToolFilter::Read,
                 "**/Library/Keychains/**",
             ),
-            file_rule(RuleAction::Deny, ToolFilter::Edit, "**/.env*"), // Write(..)
-            file_rule(RuleAction::Deny, ToolFilter::Edit, "**/.ssh/**"), // Write(..)
-            file_rule(RuleAction::Deny, ToolFilter::Edit, "**/*.pem"), // Write(..)
-            file_rule(RuleAction::Deny, ToolFilter::Edit, "**/*.key"), // Write(..)
-            file_rule(RuleAction::Deny, ToolFilter::Edit, "**/*.p12"), // Write(..)
-            file_rule(RuleAction::Deny, ToolFilter::Edit, "**/.internal-deploy/**"), // Write(..)
-            file_rule(RuleAction::Deny, ToolFilter::Edit, "**/terraform.tfstate"), // Write(..)
+            file_rule(RuleAction::Deny, ToolFilter::Edit, "**/.env*"),
+            file_rule(RuleAction::Deny, ToolFilter::Edit, "**/.ssh/**"),
+            file_rule(RuleAction::Deny, ToolFilter::Edit, "**/*.pem"),
+            file_rule(RuleAction::Deny, ToolFilter::Edit, "**/*.key"),
+            file_rule(RuleAction::Deny, ToolFilter::Edit, "**/*.p12"),
+            file_rule(RuleAction::Deny, ToolFilter::Edit, "**/.internal-deploy/**"),
+            file_rule(RuleAction::Deny, ToolFilter::Edit, "**/terraform.tfstate"),
             file_rule(
                 RuleAction::Deny,
                 ToolFilter::Edit,
                 "**/terraform.tfstate.backup",
-            ), // Write(..)
+            ),
             file_rule(
                 RuleAction::Deny,
                 ToolFilter::Edit,
                 "**/Library/Keychains/**",
-            ), // Write(..)
+            ),
             file_rule(RuleAction::Deny, ToolFilter::Edit, "**/.env"),
             file_rule(RuleAction::Deny, ToolFilter::Edit, "**/.env.*"),
         ])
@@ -1606,10 +1620,10 @@ mod tests {
 
         let policy = enterprise_requirements_policy();
         let matrix: &[(&str, Vector, Expect)] = &[
-            // ── file-read tool: real sentinel files (setup.sh) ──
+            // file-read tool: real sentinel files (setup.sh)
             ("read .env", ReadTool(".env"), Deny),
-            ("read .env.staging", ReadTool(".env.staging"), Deny), // **/.env.*
-            ("read src/server.pem", ReadTool("src/server.pem"), Deny), // **/*.pem
+            ("read .env.staging", ReadTool(".env.staging"), Deny),
+            ("read src/server.pem", ReadTool("src/server.pem"), Deny),
             (
                 "read terraform.tfstate",
                 ReadTool("terraform.tfstate"),
@@ -1619,10 +1633,10 @@ mod tests {
                 "read secrets/api_key.txt",
                 ReadTool("secrets/api_key.txt"),
                 Ask,
-            ), // **/secrets/**
+            ),
             ("read README.md (neg)", ReadTool("README.md"), Allowed),
             ("read src/main.py (neg)", ReadTool("src/main.py"), Allowed),
-            // ── file-read tool: every remaining deny/ask glob in the policy ──
+            // file-read tool: every remaining deny/ask glob in the policy
             ("read *.key", ReadTool("config/id_rsa.key"), Deny),
             ("read *.p12", ReadTool("cert.p12"), Deny),
             ("read *.pfx", ReadTool("cert.pfx"), Deny),
@@ -1657,17 +1671,18 @@ mod tests {
                 ReadTool("Library/Mail/Inbox.mbox"),
                 Ask,
             ),
-            // ── file-read tool: lookalike negatives (must NOT match) ──
+            // file-read tool: lookalike negatives (must NOT match)
             ("read key.pem.txt (neg)", ReadTool("key.pem.txt"), Allowed),
             (
                 "read my.env.example (neg)",
                 ReadTool("my.env.example"),
                 Allowed,
             ),
-            // ── write/edit tool: Write(..)/Edit(..) denies + secrets ask ──
+            // write/edit tool: Write(..)/Edit(..) denies + secrets ask
             ("edit .env", EditTool(".env"), Deny),
-            ("edit .env.local", EditTool(".env.local"), Deny), // **/.env* and **/.env.*
-            ("edit src/server.pem", EditTool("src/server.pem"), Deny), // Write(**/*.pem)
+            ("edit .env.local", EditTool(".env.local"), Deny),
+            // Write(**/*.pem)
+            ("edit src/server.pem", EditTool("src/server.pem"), Deny),
             ("edit *.key", EditTool("config/id_rsa.key"), Deny),
             ("edit *.p12", EditTool("cert.p12"), Deny),
             (
@@ -1696,13 +1711,13 @@ mod tests {
             ("edit *.pfx (no write rule)", EditTool("cert.pfx"), Allowed),
             ("edit README.md (neg)", EditTool("README.md"), Allowed),
             ("edit src/main.py (neg)", EditTool("src/main.py"), Allowed),
-            // ── bash command rules: deny set ──
+            // bash command rules: deny set
             ("bash rm -rf", Bash("rm -rf /tmp/x"), Deny),
             ("bash sudo", Bash("sudo apt-get update"), Deny),
             ("bash su", Bash("su - root"), Deny),
             // ssh to *.corp.example is deny even though `ssh *` is ask (deny wins).
             ("bash ssh corp-example", Bash("ssh prod.corp.example"), Deny),
-            // ── bash command rules: ask set ──
+            // bash command rules: ask set
             ("bash kubectl", Bash("kubectl get pods -A"), Ask),
             (
                 "bash terraform apply",
@@ -1719,10 +1734,10 @@ mod tests {
                 Ask,
             ),
             ("bash op", Bash("op read op://vault/item"), Ask),
-            // ── bash command rules: negatives ──
+            // bash command rules: negatives
             ("bash ls (neg)", Bash("ls -la"), Allowed),
             ("bash git status (neg)", Bash("git status"), Allowed),
-            // ── shell file-access gate: readers / redirects / substitutions ──
+            // shell file-access gate: readers / redirects / substitutions
             ("sh cat .env", Shell("cat .env"), Deny),
             ("sh cat .env.staging", Shell("cat .env.staging"), Deny),
             ("sh cat src/server.pem", Shell("cat src/server.pem"), Deny),
@@ -1733,30 +1748,33 @@ mod tests {
             ),
             ("sh grep FAKE .env", Shell("grep FAKE .env"), Deny),
             ("sh base64 .env", Shell("base64 .env"), Deny),
-            ("sh cat 0<.env", Shell("cat 0<.env"), Deny), // fd-prefixed read redirect
-            ("sh cat<.env", Shell("cat<.env"), Deny),     // glued read redirect
-            ("sh cat $(echo .env)", Shell("cat $(echo .env)"), Ask), // unpinnable substitution
+            // fd-prefixed read redirect
+            ("sh cat 0<.env", Shell("cat 0<.env"), Deny),
+            // glued read redirect
+            ("sh cat<.env", Shell("cat<.env"), Deny),
+            // unpinnable substitution
+            ("sh cat $(echo .env)", Shell("cat $(echo .env)"), Ask),
             (
                 "sh diff <(cat .env)",
                 Shell("diff <(cat .env) /dev/null"),
                 Deny,
-            ), // process sub
-            ("sh cat subdir/../.env", Shell("cat subdir/../.env"), Deny), // `..` traversal
+            ),
+            ("sh cat subdir/../.env", Shell("cat subdir/../.env"), Deny),
             ("sh cat .ssh/id_rsa", Shell("cat .ssh/id_rsa"), Deny),
-            // ── shell file-access gate: writers (file must stay unchanged) ──
-            ("sh echo > .env", Shell("echo HACKED > .env"), Deny), // write redirect
+            // shell file-access gate: writers (file must stay unchanged)
+            ("sh echo > .env", Shell("echo HACKED > .env"), Deny),
             (
                 "sh sed -ni .env",
                 Shell("sed -ni s/FAKE/HACKED/ .env"),
                 Deny,
-            ), // in-place sed
-            ("sh tee .env", Shell("printf HACKED | tee .env"), Deny), // pipe into tee
+            ),
+            ("sh tee .env", Shell("printf HACKED | tee .env"), Deny),
             (
                 "sh echo > tfstate",
                 Shell("echo x > terraform.tfstate"),
                 Deny,
             ),
-            // ── shell file-access gate: secrets ask + negatives ──
+            // shell file-access gate: secrets ask + negatives
             (
                 "sh cat secrets/api_key.txt",
                 Shell("cat secrets/api_key.txt"),

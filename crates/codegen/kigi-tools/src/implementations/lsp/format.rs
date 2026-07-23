@@ -17,7 +17,8 @@ pub fn flatten_document_symbols(
     out: &mut Vec<SymbolInformation>,
 ) {
     for sym in symbols {
-        #[allow(deprecated)] // container_name is deprecated but still the LSP way
+        // container_name is deprecated but still the LSP way
+        #[allow(deprecated)]
         out.push(SymbolInformation {
             name: sym.name.clone(),
             kind: sym.kind,

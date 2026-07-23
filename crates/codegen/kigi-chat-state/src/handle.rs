@@ -34,7 +34,7 @@ impl ChatStateHandle {
         Self { cmd_tx }
     }
 
-    // ═══ Fire-and-forget mutations ═══
+    // Fire-and-forget mutations
 
     /// Push a user message into the conversation.
     pub fn push_user_message(&self, item: ConversationItem) {
@@ -238,7 +238,6 @@ impl ChatStateHandle {
             .send(ChatStateCommand::UpdateCredentials { credentials });
     }
 
-    /// Restore from a snapshot.
     pub fn restore_snapshot(&self, snapshot: ChatStateSnapshot) {
         let _ = self
             .cmd_tx
@@ -280,7 +279,7 @@ impl ChatStateHandle {
             .send(ChatStateCommand::RepairDanglingAfterHarnessHalt { class });
     }
 
-    // ═══ Async queries (via oneshot) ═══
+    // Async queries (via oneshot)
 
     /// Send a query to the actor and await the reply.
     ///
@@ -419,7 +418,6 @@ impl ChatStateHandle {
         .unwrap_or(0)
     }
 
-    /// Get sampling config.
     pub async fn get_sampling_config(&self) -> Option<SamplingConfig> {
         self.query("GetSamplingConfig", |reply| {
             ChatStateCommand::GetSamplingConfig { reply }
@@ -501,7 +499,6 @@ impl ChatStateHandle {
         .unwrap_or_default()
     }
 
-    /// Check if auto-compact is needed.
     pub async fn check_auto_compact_needed(
         &self,
         threshold_percent: u8,
@@ -516,7 +513,7 @@ impl ChatStateHandle {
         .flatten()
     }
 
-    // ═══ Narrow targeted queries ═══
+    // Narrow targeted queries
 
     /// Get the number of items in the conversation.
     ///

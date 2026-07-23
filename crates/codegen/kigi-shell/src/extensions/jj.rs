@@ -52,7 +52,6 @@ pub async fn try_handle(
             })
         }
 
-        // Operations that don't apply to jj
         "kigi/git/checkout" => Some(Err(acp::Error::invalid_params()
             .data("checkout is not supported in jj repos; use `jj new` or `jj edit`"))),
         "kigi/git/stash" => Some(Err(acp::Error::invalid_params()

@@ -147,7 +147,7 @@ pub fn load_enabled_disabled_plugins(path: &Path) -> (Vec<String>, Vec<String>) 
     parse_enabled_disabled_plugins(&json)
 }
 
-// ── Compat known_marketplaces.json ────────────────────────────────────
+// Compat known_marketplaces.json
 
 /// Entry in `~/.claude/plugins/known_marketplaces.json`.
 #[derive(serde::Deserialize)]

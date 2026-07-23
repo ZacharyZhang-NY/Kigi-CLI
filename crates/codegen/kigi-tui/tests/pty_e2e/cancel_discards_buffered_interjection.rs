@@ -2,13 +2,11 @@
 #[allow(unused_imports)]
 use super::common::*;
 
-/// 22. **Send-now delivery vs. explicit cancel.** (Historical name: the chord
-/// used to buffer a same-turn interjection that a cancel could discard.)
-/// The chord is now cancel-and-send: text + Ctrl+Enter mid-stream silently
-/// cancels the running turn and delivers the text as its OWN next turn (no
-/// interjection preamble on the wire). A later explicit Ctrl+C still renders
-/// its "Turn cancelled by user" marker — the consumed send-now expectation
-/// must never suppress a real user cancel.
+/// 22. **Send-now delivery vs. explicit cancel.** Text + Ctrl+Enter mid-stream
+/// silently cancels the running turn and delivers the text as its OWN next
+/// turn (no interjection preamble on the wire). A later explicit Ctrl+C still
+/// renders its "Turn cancelled by user" marker — the consumed send-now
+/// expectation must never suppress a real user cancel.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore]
 async fn cancel_discards_buffered_interjection() {

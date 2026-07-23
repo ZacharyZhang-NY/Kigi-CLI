@@ -9,8 +9,6 @@ use serde::Serialize;
 
 use crate::session::mcp_servers;
 
-// ── Report types ────────────────────────────────────────────────
-
 #[derive(Debug, Serialize)]
 pub struct ConfigSourceStatus {
     pub path: String,
@@ -83,8 +81,6 @@ pub struct DoctorReport {
     pub healthy_count: usize,
     pub failing_count: usize,
 }
-
-// ── Server discovery ────────────────────────────────────────────
 
 struct DiscoveredServer {
     server: agent_client_protocol::McpServer,
@@ -236,8 +232,6 @@ fn discover_servers(cwd: &Path) -> (Vec<ConfigSourceStatus>, Vec<DiscoveredServe
     (sources, servers)
 }
 
-// ── Check functions ─────────────────────────────────────────────
-
 fn resolve_command(command: &str) -> Option<String> {
     let path = std::path::Path::new(command);
     if path.is_absolute() {
@@ -361,8 +355,6 @@ fn format_mcp_error(label: &str, err: &mcp_servers::McpError) -> Check {
     }
 }
 
-// ── Per-server orchestration ────────────────────────────────────
-
 fn describe_server(server: &agent_client_protocol::McpServer) -> (String, String) {
     (
         mcp_servers::mcp_transport_str(server).to_string(),
@@ -429,8 +421,6 @@ async fn check_server(
         healthy,
     }
 }
-
-// ── Entry point ─────────────────────────────────────────────────
 
 /// `kigi mcp auth <name>` (kimi-cli `mcp auth` parity): start the named
 /// remote server with interactive OAuth — the browser flow opens when the
@@ -589,8 +579,6 @@ pub async fn run_doctor(cwd: &Path, name_filter: Option<&str>) -> DoctorReport {
         failing_count,
     }
 }
-
-// ── Human-readable output ───────────────────────────────────────
 
 pub fn print_report(report: &DoctorReport) {
     println!();

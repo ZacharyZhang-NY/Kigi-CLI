@@ -538,7 +538,6 @@
         });
     }
 
-    /// Live spawn: meta prompt without updates.jsonl still injects the task once.
     #[test]
     fn subagent_spawn_live_injects_meta_prompt_once_without_updates() {
         with_replay_disk_home(|home| {

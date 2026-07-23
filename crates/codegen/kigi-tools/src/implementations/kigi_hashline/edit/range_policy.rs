@@ -1,11 +1,5 @@
-//! Stateless range-size policy for hashline edit safety.
-//!
-//! Classifies edit ranges by size and produces tiered warnings:
-//! - Small (≤5 lines): no warning
-//! - Medium (6–20 lines): caution
-//! - Large (>20 lines): stronger caution
-//!
-//! No session state — purely a function of the requested range.
+//! Stateless range-size policy for hashline edit safety: classify an edit
+//! range by line count and emit a tiered caution warning.
 
 const SMALL_MAX: usize = 5;
 const MEDIUM_MAX: usize = 20;
@@ -29,7 +23,6 @@ impl RangeSize {
     }
 }
 
-/// Evaluate a range edit and return a warning for medium or large ranges.
 pub fn range_warning(start: usize, end: usize) -> Option<String> {
     let count = end.saturating_sub(start);
     match RangeSize::classify(count) {

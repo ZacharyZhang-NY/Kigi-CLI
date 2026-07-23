@@ -6,7 +6,7 @@
 //!   return `CommandResult::Action(action)` and let the dispatch layer handle it.
 //! - `CommandResult` has additional variants: `Action`, `QueueCommand`, `PassThrough`.
 //! - Trait methods return `&str` (not `&'static str`) to support ACP-sourced commands.
-//! - `args_required()` added for the two-bit completeness model.
+//! - `args_required()` distinguishes the two-bit completeness model.
 //! - `validate_args()` intentionally omitted in phase 1 (folded into `run()`).
 
 use crate::acp::model_state::ModelState;

@@ -21,18 +21,11 @@ use crate::types::tool::ToolKind;
 use crate::types::tool::ToolNamespace;
 use crate::types::tool_io::ToolInput;
 
-// ─── Constants ──────────────────────────────────────────────────────
-
-/// Default maximum number of lines returned per read.
 const DEFAULT_READ_LIMIT: u32 = 2000;
 
-/// Maximum character length per line before truncation.
 const MAX_LINE_LENGTH: usize = 2000;
 
-/// Maximum bytes of text content returned per read (50 KB).
 const MAX_BYTES: usize = 50 * 1024;
-
-// ─── Description ────────────────────────────────────────────────────
 
 const DESCRIPTION: &str = r#"Reads a file from the local filesystem. You can access any file directly by using this tool.
 Assume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.
@@ -50,8 +43,6 @@ Usage:
 - You can call multiple tools in a single response. It is always better to speculatively read multiple potentially useful files in parallel.
 - You will regularly be asked to read screenshots. If the user provides a path to a screenshot, ALWAYS use this tool to view the file at the path. This tool will work with all temporary file paths.
 - If you read a file that exists but has empty contents you will receive a system reminder warning in place of file contents."#;
-
-// ─── Input ──────────────────────────────────────────────────────────
 
 /// Input for the opencode `read` tool.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
@@ -91,9 +82,6 @@ impl From<ReadInput> for ToolInput {
     }
 }
 
-// ─── Tool ───────────────────────────────────────────────────────────
-
-/// OpenCode `read` tool — reads files, directories, images, and PDFs.
 #[derive(Debug, Default)]
 pub struct ReadTool;
 
@@ -150,7 +138,6 @@ impl kigi_tool_runtime::Tool for ReadTool {
         use crate::types::tool_metadata::{resolve_cwd, shared_resources};
         let resources = shared_resources(&ctx)?;
 
-        // ── Validate offset ─────────────────────────────────────────
         if let Some(offset) = input.offset
             && offset < 1
         {
@@ -159,7 +146,6 @@ impl kigi_tool_runtime::Tool for ReadTool {
             ));
         }
 
-        // ── Resolve path (single lock acquisition) ─────────────────
         let cwd = resolve_cwd(&ctx, &resources).await?;
         let (display_cwd, fs) = {
             let res = resources.lock().await;
@@ -170,7 +156,6 @@ impl kigi_tool_runtime::Tool for ReadTool {
         let resolved = resolve_model_path(&cwd, display_cwd.as_deref(), &input.file_path);
         let path = crate::util::fs::canonicalize_with_timeout(resolved).await;
 
-        // ── Stat the path ───────────────────────────────────────────
         let metadata = match tokio::fs::metadata(&path).await {
             Ok(m) => m,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -184,23 +169,16 @@ impl kigi_tool_runtime::Tool for ReadTool {
             }
         };
 
-        // ═══════════════════════════════════════════════════════════
-        // BRANCH A: DIRECTORY
-        // ═══════════════════════════════════════════════════════════
         if metadata.is_dir() {
             return Ok(read_directory(&path, input.offset, input.limit).await);
         }
 
-        // ═══════════════════════════════════════════════════════════
-        // BRANCH B: IMAGE / PDF
-        // ═══════════════════════════════════════════════════════════
         let extension = path
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("")
             .to_lowercase();
 
-        // Read the file bytes for all remaining branches.
         let file_bytes = match fs.read_file(&path).await {
             Ok(bytes) => bytes,
             Err(e) => {
@@ -212,9 +190,8 @@ impl kigi_tool_runtime::Tool for ReadTool {
             }
         };
 
-        // Check for images via magic-byte detection. Route through
-        // compression — raw bytes (truncated or non-endpoint formats)
-        // must never reach the conversation.
+        // Route image bytes through compression: raw bytes (truncated or
+        // non-endpoint formats) must never reach the conversation.
         if let Ok(meta) = crate::implementations::kigi::read_file::bytes_to_metadata(&file_bytes)
             && meta.is_image()
         {
@@ -237,9 +214,6 @@ impl kigi_tool_runtime::Tool for ReadTool {
             }));
         }
 
-        // ═══════════════════════════════════════════════════════════
-        // BRANCH C: BINARY CHECK
-        // ═══════════════════════════════════════════════════════════
         if crate::util::binary::is_binary(&extension, &file_bytes) {
             return Ok(ReadFileOutput::FileReadError(format!(
                 "Cannot read binary file: {}",
@@ -247,9 +221,6 @@ impl kigi_tool_runtime::Tool for ReadTool {
             )));
         }
 
-        // ═══════════════════════════════════════════════════════════
-        // BRANCH D: TEXT FILE
-        // ═══════════════════════════════════════════════════════════
         let file_content = String::from_utf8_lossy(&file_bytes).into_owned();
         let total_lines = if file_content.is_empty() {
             0
@@ -259,9 +230,9 @@ impl kigi_tool_runtime::Tool for ReadTool {
 
         let limit = input.limit.unwrap_or(DEFAULT_READ_LIMIT) as usize;
         let offset = input.offset.unwrap_or(1) as usize;
-        let start = offset.saturating_sub(1); // 0-indexed
+        // 0-indexed
+        let start = offset.saturating_sub(1);
 
-        // Validate offset against file size.
         if total_lines > 0 && start >= total_lines {
             return Ok(ReadFileOutput::FileReadError(format!(
                 "Offset {} is out of range for this file ({} lines)",
@@ -269,7 +240,6 @@ impl kigi_tool_runtime::Tool for ReadTool {
             )));
         }
 
-        // Collect lines with byte-cap and line-limit.
         let mut raw_lines: Vec<String> = Vec::new();
         let mut byte_count: usize = 0;
         let mut truncated_by_bytes = false;
@@ -282,10 +252,9 @@ impl kigi_tool_runtime::Tool for ReadTool {
 
             if raw_lines.len() >= limit {
                 has_more_lines = true;
-                continue; // keep counting total lines
+                continue;
             }
 
-            // Truncate long lines.
             let line = if line_text.len() > MAX_LINE_LENGTH {
                 format!(
                     "{}... (line truncated to {} chars)",
@@ -296,7 +265,8 @@ impl kigi_tool_runtime::Tool for ReadTool {
                 line_text.to_string()
             };
 
-            let line_byte_len = line.len() + if raw_lines.is_empty() { 0 } else { 1 }; // +1 for newline separator
+            // +1 for newline separator
+            let line_byte_len = line.len() + if raw_lines.is_empty() { 0 } else { 1 };
             if byte_count + line_byte_len > MAX_BYTES {
                 truncated_by_bytes = true;
                 has_more_lines = true;
@@ -307,7 +277,6 @@ impl kigi_tool_runtime::Tool for ReadTool {
             byte_count += line_byte_len;
         }
 
-        // Format output with line numbers: "{lineNum}: {content}"
         let mut content_lines = String::new();
         for (i, line) in raw_lines.iter().enumerate() {
             let line_num = offset + i;
@@ -317,7 +286,6 @@ impl kigi_tool_runtime::Tool for ReadTool {
             let _ = write!(&mut content_lines, "{}: {}", line_num, line);
         }
 
-        // Build the XML-wrapped output.
         let last_read_line = if raw_lines.is_empty() {
             offset
         } else {
@@ -361,8 +329,6 @@ impl kigi_tool_runtime::Tool for ReadTool {
         }))
     }
 }
-
-// ─── Helpers ────────────────────────────────────────────────────────
 
 /// Read a directory and return a formatted listing wrapped in XML tags.
 async fn read_directory(
@@ -488,8 +454,6 @@ async fn not_found_with_suggestions(path: &std::path::Path) -> ReadFileOutput {
         ))
     }
 }
-
-// ─── Tests ──────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -711,7 +675,6 @@ mod tests {
         assert_eq!(input.offset, Some(5));
         assert_eq!(input.limit, Some(100));
 
-        // Serializes back to camelCase
         let serialized = serde_json::to_string(&input).unwrap();
         assert!(serialized.contains("filePath"));
         assert!(!serialized.contains("file_path"));
@@ -750,7 +713,6 @@ mod tests {
         match result {
             ReadFileOutput::ImageContent(img) => {
                 assert_eq!(img.mime_type, "image/png");
-                // The base64 data must be non-empty and decode back to our bytes.
                 let decoded = general_purpose::STANDARD.decode(&img.data).unwrap();
                 assert_eq!(decoded, png_bytes);
             }
@@ -841,8 +803,8 @@ mod tests {
         let file_path = canonical_tmp.join("big.txt");
 
         // Each line is ~100 bytes; we need >50 KB = 51200 bytes total.
-        let line = "A".repeat(99); // 99 chars + newline = 100 bytes per line
-        let num_lines = 600; // 600 * 100 = 60_000 bytes, well over 50KB
+        let line = "A".repeat(99);
+        let num_lines = 600;
         let content: String = (0..num_lines)
             .map(|_| line.as_str())
             .collect::<Vec<_>>()
@@ -1033,7 +995,6 @@ mod tests {
                     "Expected mime_type containing 'pdf', got: {}",
                     img.mime_type,
                 );
-                // Verify the base64 data decodes back to our bytes.
                 let decoded = general_purpose::STANDARD.decode(&img.data).unwrap();
                 assert_eq!(decoded, &[0xDE, 0xAD, 0xBE, 0xEF, 0x42, 0x42]);
             }
@@ -1047,7 +1008,6 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let canonical_tmp = dunce::canonicalize(tmp.path()).unwrap();
 
-        // Create a real directory and a symlink pointing to it.
         std::fs::create_dir(canonical_tmp.join("real_dir")).unwrap();
         std::os::unix::fs::symlink(
             canonical_tmp.join("real_dir"),
@@ -1089,7 +1049,6 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let canonical_tmp = dunce::canonicalize(tmp.path()).unwrap();
 
-        // Create 20 files named a01.txt .. a20.txt.
         for i in 1..=20 {
             std::fs::write(canonical_tmp.join(format!("a{:02}.txt", i)), "").unwrap();
         }
@@ -1118,7 +1077,6 @@ mod tests {
                 assert!(fc.content.contains("a05.txt"), "Expected a05.txt");
                 assert!(fc.content.contains("a06.txt"), "Expected a06.txt");
                 assert!(fc.content.contains("a07.txt"), "Expected a07.txt");
-                // Should NOT contain entries outside the window.
                 assert!(
                     !fc.content.contains("a04.txt"),
                     "a04.txt should not be shown"
@@ -1137,7 +1095,6 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let canonical_tmp = dunce::canonicalize(tmp.path()).unwrap();
 
-        // Create a file that should be suggested.
         std::fs::write(canonical_tmp.join("test.txt"), "content").unwrap();
 
         let tool = ReadTool;
@@ -1174,8 +1131,8 @@ mod tests {
     #[test]
     fn is_binary_30_percent_threshold() {
         // Exactly 30 non-printable out of 100 bytes → ratio = 0.30, NOT > 0.3 → not binary.
-        let mut at_threshold: Vec<u8> = vec![0x01; 30]; // non-printable (< 9)
-        at_threshold.extend(vec![b'A'; 70]); // printable
+        let mut at_threshold: Vec<u8> = vec![0x01; 30];
+        at_threshold.extend(vec![b'A'; 70]);
         assert_eq!(at_threshold.len(), 100);
         assert!(
             !is_binary("", &at_threshold),
@@ -1213,7 +1170,6 @@ mod tests {
             .unwrap();
         match result {
             ReadFileOutput::FileContent(fc) => {
-                // Verify XML structure.
                 assert!(
                     fc.content.starts_with("<path>"),
                     "Output should start with '<path>', got: {}",
@@ -1232,7 +1188,6 @@ mod tests {
                     "Output should end with '</content>', got tail: {}",
                     &fc.content[fc.content.len().saturating_sub(30)..],
                 );
-                // Verify line number format: "N: content".
                 assert!(
                     fc.content.contains("1: first line"),
                     "Expected '1: first line' in output",

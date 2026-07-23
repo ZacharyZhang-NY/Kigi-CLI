@@ -52,9 +52,7 @@ pub enum ToolErrorWire {
     #[error("behavior_version unsupported")]
     BehaviorVersionUnsupported { tool_id: ToolId, requested: String },
 
-    /// Render-card budget exceeded for the current session. `card_id`
-    /// carries the offending render-card identifier when known; `reason`
-    /// is a free-form human-readable explanation.
+    /// Render-card budget exceeded for the current session.
     #[error("render limited for {tool_id}: {reason}")]
     RenderLimited {
         tool_id: ToolId,
@@ -74,10 +72,9 @@ pub enum ToolErrorWire {
     Internal {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         request_id: Option<RequestId>,
-        /// Bounded, human-readable cause of the internal error. Optional for
-        /// wire compatibility with older peers; producers SHOULD populate it
-        /// (truncated at the producer) so receivers can distinguish failure
-        /// modes without correlating server logs.
+        /// Optional for wire compatibility with older peers; producers SHOULD
+        /// populate it (truncated at the producer) so receivers can distinguish
+        /// failure modes without correlating server logs.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         detail: Option<String>,
     },

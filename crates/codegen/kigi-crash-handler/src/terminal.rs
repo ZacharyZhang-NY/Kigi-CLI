@@ -3,14 +3,12 @@
 //! See <https://invisible-island.net/xterm/ctlseqs/ctlseqs.html> (DEC
 //! Private Mode Reset / "Mouse Tracking" section) for the full spec.
 
-// -----------------------------------------------------------------------
 // Canonical list of DEC private modes we enable.
 //
 // Every mode the pager enables must appear here so that *all* teardown
 // paths (normal exit, panic hook, signal handler) disable the same set.
 //
 //   Mode    Purpose                                          Enabled by
-//   ----    -------                                          ----------
 //   ?1000   Normal mouse tracking (X11 press/release)        EnableMouseCapture
 //   ?1002   Button-event mouse tracking (cell-motion held)   EnableMouseCapture
 //   ?1003   All-motion mouse tracking (any movement)         EnableMouseCapture
@@ -22,7 +20,6 @@
 //   ?1049   Alternate screen buffer                          EnterAlternateScreen
 //   ?2026   Synchronized update                              BeginSynchronizedUpdate
 //   CSI<u   Kitty keyboard protocol pop                      PushKeyboardEnhancementFlags
-// -----------------------------------------------------------------------
 
 /// Raw CSI sequences to disable every mouse-tracking mode the pager enables
 /// (`?1000/?1002/?1003/?1015/?1006`) — the mouse subset of [`MOUSE_PASTE_RESET`],
@@ -53,7 +50,7 @@ pub const RESTORE_SEQ: &[u8] =
 pub fn restore_in_signal_handler() {
     unsafe {
         libc::write(
-            2, // stderr
+            2,
             RESTORE_SEQ.as_ptr() as *const libc::c_void,
             RESTORE_SEQ.len(),
         );

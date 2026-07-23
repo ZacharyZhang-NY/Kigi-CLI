@@ -26,8 +26,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-// Constants
-
 /// Default per-goal classifier run cap. A sane local default; the stall
 /// early-exit ([`crate::session::goal_tracker::GOAL_CLASSIFIER_STALL_THRESHOLD`])
 /// is the primary, cheaper stop for stuck loops, so this cap is a
@@ -207,7 +205,7 @@ pub(crate) enum GoalClassifierOutcome {
 #[async_trait::async_trait]
 pub(crate) trait GoalClassifierSpawner: Send + Sync {
     /// Spawn under `id` and return the terminal response when the subagent
-    /// finishes. `resume_from`, when `Some`, names a previously-completed
+    /// finishes. `resume_from`, when `Some`, names an already-completed
     /// subagent session whose transcript / tool-state / model the new
     /// child inherits (used to resume skeptic 0 across attempts).
     async fn spawn_classifier(
@@ -365,8 +363,6 @@ pub(crate) fn validate_details_path_in_root(
     Ok(())
 }
 
-// Terminal-token parse
-
 /// Parse an adversarial skeptic's terminal response. `Refuted`
 /// ⇒ `Some(true)`, `Not Refuted` ⇒ `Some(false)`. The JSON verdict
 /// file is authoritative when present; the terminal token is the
@@ -434,10 +430,6 @@ pub(crate) async fn capture_git_baseline(workspace_root: &Path) -> Option<String
     }
     Some(sha)
 }
-
-// Trace-only recording for harness-spawned subagents
-
-// Production spawner — wraps the subagent coordinator channel
 
 /// Production spawner. Sends a `SubagentEvent::Spawn` to the session's
 /// coordinator and awaits the result on a fresh oneshot. The parent model
@@ -2331,8 +2323,6 @@ fn parse_prompt_path(prompt: &str, marker: &str, suffix: &str) -> Option<String>
     Some(tail[..end + suffix.len()].to_string())
 }
 
-// Tests
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2897,10 +2887,14 @@ mod tests {
         // (skeptic 1 only) → needed = cold_count/2 + 1 = 1/2 + 1 = 1.
         // Index 0 is `votes[0]`.
         for (rs, expected) in [
-            (vec![false, false], true), // cold s1 not-refuted → 1 ≥ 1
-            (vec![false, true], false), // s0 clears but cold s1 refuted → 0
-            (vec![true, false], true),  // s0 refuted (excluded), cold s1 clears
-            (vec![true, true], false),  // cold s1 refuted → 0
+            // cold s1 not-refuted → 1 ≥ 1
+            (vec![false, false], true),
+            // s0 clears but cold s1 refuted → 0
+            (vec![false, true], false),
+            // s0 refuted (excluded), cold s1 clears
+            (vec![true, false], true),
+            // cold s1 refuted → 0
+            (vec![true, true], false),
         ] {
             assert_aggregate(&rs, expected, "N=2");
         }
@@ -2911,9 +2905,12 @@ mod tests {
         // N=3 (variant-C): strict majority of the 2-member cold panel
         // (skeptics 1, 2) → needed = 2/2 + 1 = 2. Skeptic 0 never counts.
         for (rs, expected) in [
-            (vec![false, false, false], true), // cold s1,s2 not-refuted → 2 ≥ 2
-            (vec![false, false, true], false), // cold not-refuted = 1 (only s1) < 2
-            (vec![false, true, true], false),  // cold not-refuted = 0
+            // cold s1,s2 not-refuted → 2 ≥ 2
+            (vec![false, false, false], true),
+            // cold not-refuted = 1 (only s1) < 2
+            (vec![false, false, true], false),
+            // cold not-refuted = 0
+            (vec![false, true, true], false),
             (vec![true, true, true], false),
         ] {
             assert_aggregate(&rs, expected, "N=3");
@@ -2925,10 +2922,14 @@ mod tests {
         // N=4 (variant-C): strict majority of the 3-member cold panel
         // (skeptics 1, 2, 3) → needed = 3/2 + 1 = 2. Skeptic 0 excluded.
         for (rs, expected) in [
-            (vec![false, false, false, false], true), // cold not-refuted = 3 ≥ 2
-            (vec![false, false, false, true], true),  // cold not-refuted = 2 (s1,s2)
-            (vec![false, false, true, true], false),  // cold not-refuted = 1 (s1) < 2
-            (vec![false, true, true, true], false),   // cold not-refuted = 0
+            // cold not-refuted = 3 ≥ 2
+            (vec![false, false, false, false], true),
+            // cold not-refuted = 2 (s1,s2)
+            (vec![false, false, false, true], true),
+            // cold not-refuted = 1 (s1) < 2
+            (vec![false, false, true, true], false),
+            // cold not-refuted = 0
+            (vec![false, true, true, true], false),
             (vec![true, true, true, true], false),
         ] {
             assert_aggregate(&rs, expected, "N=4");
@@ -2991,7 +2992,8 @@ mod tests {
         // The bar is a strict majority of the COLD panel by SIZE, so it holds
         // with skeptic 0 absent: a 2-member cold panel needs 2/2 (a
         // `total`-based ⌈2/2⌉=1 would slip to a plurality).
-        let votes = [skeptic(1, false), skeptic(2, true)]; // s0 absent; 1 of 2 cold refuted
+        // s0 absent; 1 of 2 cold refuted
+        let votes = [skeptic(1, false), skeptic(2, true)];
         let (refuted, total, achieved) = aggregate_skeptic_verdicts(&votes);
         assert_eq!((refuted, total), (1, 2));
         assert!(
@@ -3313,7 +3315,8 @@ mod tests {
     /// dumped verbatim, and no rendered line exceeds `read_file`'s per-line cap.
     #[test]
     fn panel_details_does_not_dump_giant_single_line_evidence() {
-        let huge_evidence = "x".repeat(2548); // single line, as in the trace.
+        // single line, as in the trace.
+        let huge_evidence = "x".repeat(2548);
         let r = refuter(0, SkepticConfidence::High, &huge_evidence, None);
         let results = [r];
 
@@ -3414,7 +3417,8 @@ mod tests {
     #[tokio::test]
     async fn read_skeptic_verdict_writes_json_fallback_when_file_missing() {
         let dir = tempfile::tempdir().unwrap();
-        let details = dir.path().join("skeptic-0.md"); // never created.
+        // never created.
+        let details = dir.path().join("skeptic-0.md");
         let verdict = dir.path().join("verdict-0.json");
         tokio::fs::write(
             &verdict,
@@ -4444,8 +4448,6 @@ mod tests {
             self
         }
     }
-
-    // ── expand_skeptic_assignment (round-robin, resume-stable) ───────
 
     fn pair(model: &str) -> crate::util::config::GoalRoleModel {
         crate::util::config::GoalRoleModel {
@@ -5992,8 +5994,6 @@ mod tests {
         assert_eq!(r.value, GOAL_CLASSIFIER_MAX_RUNS_MIN);
         assert_eq!(r.source, ConfigSource::Config);
     }
-
-    // ── Strategist-every (N) resolution ──────────────────────────────
 
     #[test]
     #[serial]

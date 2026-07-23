@@ -76,7 +76,7 @@ fn sequence_diagram_with_activations_renders_to_png() {
 
 /// Regression: a class diagram using quoted cardinalities, stereotypes,
 /// generics, and the full relation set must render instead of erroring
-/// (previously failed with "Unrecognized classDiagram line" on
+/// (earlier failed with "Unrecognized classDiagram line" on
 /// `Owner "1" o-- "0..*" Animal`).
 #[test]
 fn class_diagram_with_cardinalities_renders() {
@@ -149,7 +149,7 @@ fn long_identifier_node_labels_survive_intact_in_svg() {
 
 /// A categorical-x-axis xychart with two `line` series must render to a decodable
 /// PNG through the full `[Open Image]` path (source -> SVG -> raster), on both
-/// themes. The categorical x-axis (no `-->`) previously failed to open.
+/// themes. The categorical x-axis (no `-->`) earlier failed to open.
 #[test]
 fn categorical_xychart_with_two_series_renders_to_png() {
     const SOURCE: &str = "xychart-beta\n    \

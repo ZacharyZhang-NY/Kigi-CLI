@@ -1,11 +1,10 @@
-//! Steps compaction — prompt content for compacting accumulated step
-//! turns (tool calls + assistant responses) within a single agent turn.
+//! Prompt content for compacting accumulated step turns (tool calls +
+//! assistant responses) within a single agent turn.
 //!
-//! Parallel to [`crate::history`] (the history-compaction content): this is the
-//! *steps* side. The orchestration that uses it lives in
-//! [`crate::intra_compaction`] (the `Steps` target / `StepsOnly` mode), and the
+//! Parallel to [`crate::history`], the history-compaction content. The
+//! orchestration that uses it lives in [`crate::intra_compaction`], and the
 //! turn selection it shares with the History target is the crate-root
-//! [`select`](crate::select) primitive (not steps-specific).
+//! [`select`](crate::select) primitive.
 
 pub mod prompt;
 

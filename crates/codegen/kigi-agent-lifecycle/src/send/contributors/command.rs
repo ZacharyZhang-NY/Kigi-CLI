@@ -10,7 +10,8 @@ pub struct CommandSpec {
 /// A parsed `/name args` invocation. The host owns parsing and routes it to the command's one owner.
 pub struct CommandInvocation<'a> {
     pub name: &'a str,
-    pub args: &'a str, // Whitespace-trimmed; empty for a bare `/name`.
+    // Whitespace-trimmed; empty for a bare `/name`.
+    pub args: &'a str,
 }
 
 /// What a handled command does to the turn; rejections travel as the `Err` reason.

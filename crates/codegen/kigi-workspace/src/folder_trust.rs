@@ -105,7 +105,7 @@ pub fn decide_inputs_with_interactive(
         // (its own git2 discover), and `repo_configs_present` → `RepoDirChain::resolve`
         // discovers the same repo again. Collapsing the two would mean threading the
         // resolved root into key derivation (rippling `workspace_key` repo-wide) — out
-        // of scope; NOT the redundant discovers this change already removed.
+        // of scope; NOT the redundant discovers the shared dir-chain already removed.
         repo_configs_present: repo_configs_present(cwd),
         is_interactive,
         // An over-broad key (home / fs-root / non-absolute) can never be recorded
@@ -260,7 +260,7 @@ pub fn repo_config_kinds(cwd: &Path) -> Vec<&'static str> {
 fn collect_repo_config_kinds(cwd: &Path, first_only: bool) -> Vec<&'static str> {
     // Resolve the git root + cwd→root dir chain ONCE and reuse it across the
     // git2-based marker checks below: this gate does 1 git2 discover + 1 git2
-    // walk (+ the settings-compat path's own cheap `.git`-existence walk, intentionally separate —
+    // walk (+ the settings-compat path's own cheap `.git`-existence walk, deliberately separate —
     // see its check). Each walker used to run its own git2 discover + walk (~5
     // discovers), and on a non-git dir each discover walks to the filesystem root
     // — wasteful anywhere, and Windows taxes every such syscall 10-100x.
@@ -680,7 +680,7 @@ mod tests {
     fn repo_config_kinds_matches_gate_and_reports_all_kinds() {
         // SSOT guard: `repo_config_kinds` (full scan) must agree with the gate
         // (`repo_configs_present == !repo_config_kinds(..).is_empty()`) AND report
-        // the kinds the single-source refactor added — `plugins` via
+        // the kinds the single-source scan reports — `plugins` via
         // `[plugins].paths`, `claude` via `.claude/settings.json`, `agents` via
         // `.kigi/agents` — even when launched from a SUBDIR (the cwd→git-root walk
         // that `first_only` shares). Guards against silent drift between the two.
@@ -841,7 +841,8 @@ mod tests {
         let _home = EnvVarGuard::set("KIGI_SHARE_DIR", home.path());
         let _unset = EnvVarGuard::unset(kigi_version::TEST_VERSION_ENV);
         if option_env!("KIGI_VERSION").is_some() {
-            return; // a release-stamped test binary is not a local build
+            // a release-stamped test binary is not a local build
+            return;
         }
         let tmp = repo_tmp();
         let key = workspace_key(tmp.path());
@@ -880,7 +881,7 @@ mod tests {
     #[test]
     fn revoke_folder_trust_store_persists_untrust_for_trusted_folder() {
         // The store half of revoke, tested directly (not just via the shell
-        // wrapper): a previously-trusted folder reports was_trusted=true AND gets
+        // wrapper): an already-trusted folder reports was_trusted=true AND gets
         // an explicit `set_untrusted` persisted, so it is untrusted on reload.
         // KIGI_SHARE_DIR-isolated so the seed/deny hit a temp store, not the real file.
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());

@@ -58,6 +58,8 @@ impl EnvVarGuard {
     /// returning a guard that restores the original on drop.
     pub fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
         let original = std::env::var_os(key);
+        // SAFETY: single-threaded test execution for this guard's callers;
+        // no concurrent env access races with the mutation.
         unsafe {
             std::env::set_var(key, value);
         }
@@ -66,6 +68,7 @@ impl EnvVarGuard {
 }
 impl Drop for EnvVarGuard {
     fn drop(&mut self) {
+        // SAFETY: single-threaded test execution; see `set` above.
         unsafe {
             if let Some(value) = &self.original {
                 std::env::set_var(self.key, value);

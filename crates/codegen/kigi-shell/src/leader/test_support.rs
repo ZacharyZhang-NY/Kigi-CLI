@@ -106,7 +106,6 @@ async fn serve_client(
     cancel: &CancellationToken,
 ) {
     let (mut reader, mut writer) = tokio::io::split(stream);
-    /// A `Registered` with `client_id: 1` and the given shape.
     fn registered(
         ready: bool,
         versions: &FakeVersions,

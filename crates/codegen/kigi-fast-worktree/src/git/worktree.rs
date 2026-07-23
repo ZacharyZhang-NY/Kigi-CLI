@@ -1,12 +1,9 @@
-//! Git worktree operations.
-
 use std::path::Path;
 
 use anyhow::{Context, Result};
 
 use crate::git::checkout::git_command;
 
-/// Create a git worktree with `--no-checkout`. Blocking.
 pub(crate) fn worktree_add_no_checkout(source: &Path, dest: &str, git_ref: &str) -> Result<()> {
     let output = git_command()
         .current_dir(source)

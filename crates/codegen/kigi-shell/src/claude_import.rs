@@ -1,9 +1,4 @@
-// claude_import.rs
 // Scans Claude settings and generates TOML patches for .kigi/config.toml.
-//
-// This module reuses the existing discovery and parsing functions from
-// claude_compat.rs and util/config.rs. It does NOT modify the runtime
-// Claude compat layer — that continues to work as before.
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -18,8 +13,6 @@ use kigi_workspace::permission::claude_settings::{
 };
 use kigi_workspace::permission::rules::parse_permission_rule;
 use kigi_workspace::permission::types::{PatternMode, PermissionRule, RuleAction, ToolFilter};
-
-// Types
 
 /// Scope for an import operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,7 +71,6 @@ impl ImportPlan {
         self.global_items.len() + self.project_items.len()
     }
 
-    /// Whether there's nothing to import.
     pub fn is_empty(&self) -> bool {
         self.global_items.is_empty() && self.project_items.is_empty()
     }
@@ -112,7 +104,6 @@ impl ImportPlan {
 fn format_item_summary(items: &[ImportableItem]) -> String {
     let mut out = String::new();
 
-    // Permission rules
     let perms: Vec<_> = items
         .iter()
         .filter_map(|i| match i {
@@ -156,7 +147,6 @@ fn format_item_summary(items: &[ImportableItem]) -> String {
         }
     }
 
-    // Env vars
     let envs: Vec<_> = items
         .iter()
         .filter_map(|i| match i {
@@ -181,7 +171,6 @@ fn format_item_summary(items: &[ImportableItem]) -> String {
         }
     }
 
-    // MCP servers
     let mcps: Vec<_> = items
         .iter()
         .filter_map(|i| match i {
@@ -196,7 +185,6 @@ fn format_item_summary(items: &[ImportableItem]) -> String {
         }
     }
 
-    // Hooks
     let hooks: Vec<_> = items
         .iter()
         .filter_map(|i| match i {
@@ -224,7 +212,6 @@ fn format_item_summary(items: &[ImportableItem]) -> String {
         }
     }
 
-    // Path entries
     let paths_iter = items.iter().filter_map(|i| match i {
         ImportableItem::PathEntry { kind, path } => Some((*kind, path)),
         _ => None,
@@ -321,8 +308,6 @@ fn extract_hooks_from_settings_file(path: &Path) -> Vec<ImportableItem> {
     items
 }
 
-// Scanner
-
 /// Scan all Claude settings sources and build an import plan.
 ///
 /// Discovers:
@@ -352,7 +337,6 @@ pub fn scan_importable_settings(cwd: &Path) -> ImportPlan {
             &mut plan.project_items
         };
 
-        // Permission rules.
         if let Some(perms) = settings.permissions {
             for (action, entries) in [
                 (RuleAction::Allow, perms.allow),
@@ -375,7 +359,6 @@ pub fn scan_importable_settings(cwd: &Path) -> ImportPlan {
             }
         }
 
-        // Environment variables.
         if let Some(env) = settings.env {
             for (key, value) in env {
                 target.push(ImportableItem::EnvVar { key, value });
@@ -483,8 +466,6 @@ fn scan_mcp_json_servers(cwd: &Path, plan: &mut ImportPlan) {
     }
 }
 
-// Repo Root Discovery
-
 /// Find the git repo root for project config writes.
 ///
 /// Uses `git2::Repository::discover` (matching `config/mod.rs:find_project_configs`)
@@ -496,14 +477,10 @@ pub fn find_project_root(cwd: &Path) -> PathBuf {
         .unwrap_or_else(|| cwd.to_path_buf())
 }
 
-// Import Marker (Read Side)
-//
-// The marker `[claude_compat] imported = true` in `~/.kigi/config.toml` is
-// the signal that runtime fallback paths should stop reading `.claude/`.
-// The reader infrastructure lives here in the base layer so that gates
-// added in subsequent layers (hooks, paths, perms) can all consult the
-// same cached marker. The writer (`mark_claude_imported`) lives in the
-// runtime-cutoff layer that activates the gates.
+// The marker `[claude_compat] imported = true` in `~/.kigi/config.toml`
+// signals that runtime fallback paths should stop reading `.claude/`. Every
+// gate (hooks, paths, perms) consults the same cached marker; the writer is
+// `mark_claude_imported`.
 
 /// Cached result of [`is_claude_import_marked`]. See its doc for the
 /// caching rationale and trade-offs.
@@ -590,8 +567,8 @@ pub fn expand_home(s: &str) -> std::path::PathBuf {
 /// debugging which subsystem stopped reading `.claude/`).
 ///
 /// Call sites are runtime fallback paths in `claude_compat.rs`,
-/// `util/config.rs`, `util/hooks.rs`, and `agent/config.rs` that previously
-/// read `.claude/`.
+/// `util/config.rs`, `util/hooks.rs`, and `agent/config.rs` that fall back
+/// to reading `.claude/`.
 pub fn is_claude_import_marked_with_log(gate_name: &'static str) -> bool {
     static LOGGED: OnceLock<()> = OnceLock::new();
     let marked = is_claude_import_marked();
@@ -689,7 +666,6 @@ pub fn mark_claude_imported() -> anyhow::Result<()> {
     refresh_marker_cache(true);
     Ok(())
 }
-// TOML Patch Writer
 
 /// Apply an import plan by writing TOML patches to the appropriate config files.
 ///
@@ -802,7 +778,6 @@ fn apply_items_to_config(config_path: &Path, items: &[ImportableItem]) -> anyhow
 
     let mut count = 0usize;
 
-    // Group items by type.
     let mut permissions: Vec<&PermissionRule> = Vec::new();
     let mut env_vars: Vec<(&str, &str)> = Vec::new();
     let mut mcp_servers: Vec<(&str, &McpServerConfig)> = Vec::new();
@@ -844,7 +819,6 @@ fn apply_items_to_config(config_path: &Path, items: &[ImportableItem]) -> anyhow
     }
 
     if count > 0 {
-        // Atomic write: write to .tmp, then rename.
         let toml_str = toml::to_string_pretty(&root)?;
         let tmp = config_path.with_extension("toml.tmp");
         if let Some(parent) = config_path.parent() {
@@ -879,7 +853,6 @@ fn merge_permissions(
 
     let mut count = 0;
 
-    // Group rules by action.
     let mut allow_rules: Vec<String> = Vec::new();
     let mut deny_rules: Vec<String> = Vec::new();
     let mut ask_rules: Vec<String> = Vec::new();
@@ -909,7 +882,6 @@ fn merge_permissions(
             .as_array_mut()
             .ok_or_else(|| anyhow::anyhow!("permission.{key} is not an array"))?;
 
-        // Collect existing strings for dedup.
         let existing_set: std::collections::HashSet<String> = existing
             .iter()
             .filter_map(|v| v.as_str().map(|s| s.to_string()))
@@ -946,7 +918,6 @@ fn format_rule_string(rule: &PermissionRule) -> String {
     };
 
     match (&rule.pattern, &rule.tool) {
-        // Catch-all: any tool, no pattern → "*".
         (None, ToolFilter::Any) => "*".to_string(),
         (Some(pat), ToolFilter::Any) => pat.clone(),
         (None, _) => tool_name.to_string(),
@@ -975,7 +946,6 @@ fn merge_env_vars(table: &mut TomlMap<String, TomlValue>, vars: &[(&str, &str)])
 
     let mut count = 0;
     for (key, value) in vars {
-        // Don't overwrite existing entries.
         if !env_table.contains_key(*key) {
             env_table.insert(key.to_string(), TomlValue::String(value.to_string()));
             count += 1;
@@ -998,7 +968,6 @@ fn merge_mcp_servers(
 
     let mut count = 0;
     for (name, config) in servers {
-        // Don't overwrite existing server entries.
         if !mcp_table.contains_key(*name) {
             let serialized = toml::Value::try_from(*config)
                 .map_err(|e| anyhow::anyhow!("failed to serialize MCP server {name}: {e}"))?;
@@ -1067,7 +1036,6 @@ fn apply_hooks_to_dir(hooks_dir: &Path, items: &[ImportableItem]) -> anyhow::Res
 
     let target = hooks_dir.join("imported-from-claude.json");
 
-    // Read existing JSON if present.
     let mut root: serde_json::Value = match std::fs::read_to_string(&target) {
         Ok(s) => serde_json::from_str(&s).unwrap_or_else(|e| {
             warn!(
@@ -1121,8 +1089,7 @@ fn apply_hooks_to_dir(hooks_dir: &Path, items: &[ImportableItem]) -> anyhow::Res
         //
         // Invariant: `extract_hooks_from_settings_file` filters empty matcher
         // strings to `None`, so the existing-matcher comparison only needs to
-        // distinguish `None` from `Some(s)`; we no longer need a defensive
-        // `(Some(""), None)` arm.
+        // distinguish `None` from `Some(s)`.
         let mut updated = false;
         for g in groups.iter_mut() {
             let existing_matcher = g.get("matcher").and_then(|v| v.as_str());
@@ -1240,7 +1207,6 @@ mod tests {
 
     #[test]
     fn format_rule_any_none_is_star() {
-        // Catch-all rule: Any tool, no pattern → "*".
         let rule = PermissionRule {
             action: RuleAction::Allow,
             tool: ToolFilter::Any,
@@ -1274,13 +1240,11 @@ mod tests {
 
     #[test]
     fn format_rule_round_trip() {
-        // Parse a Claude rule, format it back, and verify it produces the same rule.
         let original = "Bash(npm run build)";
         let parsed = parse_permission_rule(original, RuleAction::Allow).unwrap();
         let formatted = format_rule_string(&parsed);
         assert_eq!(formatted, original);
 
-        // Round-trip the formatted string.
         let reparsed = parse_permission_rule(&formatted, RuleAction::Allow).unwrap();
         assert_eq!(parsed.tool, reparsed.tool);
         assert_eq!(parsed.pattern, reparsed.pattern);
@@ -1299,7 +1263,6 @@ mod tests {
     #[test]
     fn merge_permissions_dedup() {
         let mut table = TomlMap::new();
-        // Pre-populate with one existing rule.
         let mut perm = TomlMap::new();
         perm.insert(
             "allow".to_string(),
@@ -1321,7 +1284,6 @@ mod tests {
         };
 
         let count = merge_permissions(&mut table, &[&rule_existing, &rule_new]).unwrap();
-        // Only the new rule should be added (existing is deduped).
         assert_eq!(count, 1);
 
         let arr = table["permission"]["allow"].as_array().unwrap();
@@ -1344,7 +1306,6 @@ mod tests {
             &mut table,
             &[("EXISTING", "new_value"), ("NEW_VAR", "value")],
         );
-        // Only NEW_VAR should be added.
         assert_eq!(count, 1);
 
         let env_table = table["env"].as_table().unwrap();
@@ -1451,9 +1412,6 @@ mod tests {
             unsafe { std::env::remove_var("_KIGI_CLAUDE_MARKER_OVERRIDE") };
         }
     }
-
-    /// RAII guard that removes an env var on drop, preventing leaks when
-    /// an assertion panics before manual cleanup.
 
     #[test]
     fn extract_hooks_basic_command() {

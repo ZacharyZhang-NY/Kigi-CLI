@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 use super::config::LspServerConfig;
 use super::manager::DiagnosticsSummary;
 
-/// LSP configuration passed from shell. Same pattern as `WebSearchConfig`.
 #[derive(Debug, Clone, Default)]
 pub enum LspConfig {
     #[default]
@@ -25,9 +24,6 @@ pub struct LspToolResult {
     pub is_error: bool,
 }
 
-/// Trait object interface for LSP operations.
-///
-/// Implemented by `LspBackendAdapter` which wraps `LspManager`.
 #[async_trait::async_trait]
 pub trait LspBackend: Send + Sync + 'static {
     fn ensure_started_background(&self);
@@ -50,7 +46,6 @@ pub trait LspBackend: Send + Sync + 'static {
     async fn read_diagnostics(&self, paths: &[std::path::PathBuf]) -> Vec<FileDiagnosticEntry>;
 }
 
-/// A single diagnostic entry returned by `LspBackend::read_diagnostics`.
 #[derive(Debug, Clone)]
 pub struct DiagnosticEntry {
     pub severity: DiagnosticSeverityLevel,

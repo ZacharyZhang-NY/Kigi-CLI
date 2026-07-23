@@ -13,8 +13,6 @@ fn last_system_text(app: &AppView) -> String {
     }
 }
 
-// ── /usage dispatch tests ───────────────────────────────────
-
 #[test]
 fn show_usage_returns_fetch_usage_effect() {
     let mut app = test_app_with_agent();

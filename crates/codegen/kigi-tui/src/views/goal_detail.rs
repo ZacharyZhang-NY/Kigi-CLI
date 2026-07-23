@@ -42,10 +42,6 @@ fn per_model_row_count(models: &[(String, u64)]) -> u16 {
     (shown + overflow) as u16
 }
 
-// ---------------------------------------------------------------------------
-// Token budget color
-// ---------------------------------------------------------------------------
-
 /// Choose the progress bar fill color based on usage percentage.
 fn budget_color(pct: f32, theme: &Theme) -> Color {
     if pct > 0.80 {
@@ -73,10 +69,6 @@ fn format_elapsed(ms: u64) -> String {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Status label
-// ---------------------------------------------------------------------------
-
 fn status_label(goal: &GoalDisplayState) -> (&'static str, Color, String) {
     let theme = Theme::current();
     match goal.status {
@@ -90,10 +82,6 @@ fn status_label(goal: &GoalDisplayState) -> (&'static str, Color, String) {
         GoalDisplayStatus::Complete => ("Complete", theme.accent_success, String::new()),
     }
 }
-
-// ---------------------------------------------------------------------------
-// Wrapping helpers — pause-message reason block
-// ---------------------------------------------------------------------------
 
 /// Wrap a string into rows of at most `width` terminal columns.
 ///
@@ -200,7 +188,8 @@ fn truncate_to_width(text: &str, budget: usize) -> String {
     if UnicodeWidthStr::width(text) <= budget {
         return text.to_owned();
     }
-    let target = budget.saturating_sub(1); // room for ellipsis
+    // Room for the ellipsis.
+    let target = budget.saturating_sub(1);
     let mut out = String::new();
     let mut w = 0usize;
     for ch in text.chars() {
@@ -246,10 +235,6 @@ fn sanitize_title(s: &str) -> String {
 fn format_pause_reason(msg: &str) -> String {
     format!("Reason: {}", strip_control_chars(msg, true))
 }
-
-// ---------------------------------------------------------------------------
-// Public render
-// ---------------------------------------------------------------------------
 
 /// True when the goal carries at least one signal from the
 /// completion classifier — gates rendering of the modal's
@@ -407,7 +392,8 @@ pub fn goal_detail_area(screen: Rect, goal: &GoalDisplayState, todos: &[TodoItem
         0
     };
     let todo_lines = if todos.is_empty() {
-        1u16 // "No progress items yet"
+        // "No progress items yet"
+        1u16
     } else {
         let item_count = todos.len().min(MAX_TODO_DISPLAY) as u16;
         let overflow = if todos.len() > MAX_TODO_DISPLAY {
@@ -415,7 +401,8 @@ pub fn goal_detail_area(screen: Rect, goal: &GoalDisplayState, todos: &[TodoItem
         } else {
             0
         };
-        1 + item_count + overflow // header + items + optional "+N more"
+        // header + items + optional "+N more"
+        1 + item_count + overflow
     };
     let subagent_lines = if goal.current_subagent_role.is_some() {
         // blank + role line, plus the detail line ONLY when there's a live
@@ -438,7 +425,8 @@ pub fn goal_detail_area(screen: Rect, goal: &GoalDisplayState, todos: &[TodoItem
         0
     };
     let history_lines = if goal.last_event.is_some() {
-        3u16 // blank + header + event line
+        // blank + header + event line
+        3u16
     } else {
         0
     };
@@ -539,12 +527,14 @@ pub fn render_goal_detail(
     } else {
         String::new()
     };
-    let title_cols = close_x.saturating_sub(area.x + 3) as usize; // 1-col gap before [✗]
+    // 1-col gap before [✗].
+    let title_cols = close_x.saturating_sub(area.x + 3) as usize;
+    // Leading + trailing space around the objective text.
     let objective_budget = title_cols
         .saturating_sub(unicode_width::UnicodeWidthStr::width(
             spinner_prefix.as_str(),
         ))
-        .saturating_sub(2); // leading + trailing space
+        .saturating_sub(2);
     let cleaned = sanitize_title(&goal.objective);
     let objective = if cleaned.is_empty() {
         "Active Goal".to_owned()
@@ -583,7 +573,6 @@ pub fn render_goal_detail(
     let x = inner.x + 1;
     let w = inner.width.saturating_sub(2);
 
-    // ── Status line ──
     let (status_text, status_color, phase_text) = status_label(goal);
     let mut status_spans = vec![
         Span::styled("Status: ", Style::default().fg(theme.gray)),
@@ -608,7 +597,6 @@ pub fn render_goal_detail(
         return Some(close_rect);
     }
 
-    // ── Pause hint (only for any paused variant) ──
     if goal.status.is_paused() {
         let hint = format!(
             "Status: {} \u{2014} type /goal resume to continue",
@@ -627,8 +615,6 @@ pub fn render_goal_detail(
         }
     }
 
-    // ── Reason block (only when paused AND pause_message is set) ──
-    //
     // Double-gate on `is_paused()`: the shell clears `pause_message` on
     // every transition out of a paused state, but defending against a
     // stale value on the wire is cheap and means a future shell bug
@@ -651,7 +637,6 @@ pub fn render_goal_detail(
         }
     }
 
-    // ── Budget / tokens line with optional progress bar ──
     let tokens_str =
         format_tokens_compact(goal.live_tokens_used(context_used, active_subagent_tokens));
     let elapsed_str = format_elapsed(goal.live_elapsed_ms());
@@ -686,7 +671,6 @@ pub fn render_goal_detail(
         return Some(close_rect);
     }
 
-    // Progress bar — only when a budget is set.
     if has_budget {
         let bar_w = w.min(30);
         let fg = budget_color(pct, &theme);
@@ -708,14 +692,12 @@ pub fn render_goal_detail(
         return Some(close_rect);
     }
 
-    // ── Blank separator ──
     y += 1;
 
     if y >= inner.y + inner.height {
         return Some(close_rect);
     }
 
-    // ── Progress section (todo items) ──
     if todos.is_empty() {
         buf.set_line_safe(
             x,
@@ -784,7 +766,6 @@ pub fn render_goal_detail(
         return Some(close_rect);
     }
 
-    // ── Active subagent metrics (with a leading blank separator) ──
     if let Some(ref role) = goal.current_subagent_role {
         // Leading blank — budgeted in `subagent_lines` (renders only with the block).
         y += 1;
@@ -811,7 +792,6 @@ pub fn render_goal_detail(
         y += 1;
 
         if y < inner.y + inner.height {
-            // Subagent detail line.
             let mut detail_parts: Vec<String> = Vec::new();
             if let Some(tok) = goal.live_subagent_tokens {
                 detail_parts.push(format!(
@@ -887,9 +867,7 @@ pub fn render_goal_detail(
         return Some(close_rect);
     }
 
-    // ── Completion review (only when classifier has run at least once) ──
     if has_classifier_activity(goal) {
-        // Blank separator.
         y += 1;
         if y >= inner.y + inner.height {
             return Some(close_rect);
@@ -968,7 +946,6 @@ pub fn render_goal_detail(
         return Some(close_rect);
     }
 
-    // ── Recent history (with a leading blank separator) ──
     if goal.last_event.is_some() {
         // Leading blank — budgeted in `history_lines` (renders only with the block).
         y += 1;
@@ -1012,7 +989,6 @@ pub fn render_goal_detail(
         }
     }
 
-    // ── Commands hint ──
     if y < inner.y + inner.height {
         let hint_style = Style::default().fg(theme.gray_dim);
         buf.set_line_safe(
@@ -1028,10 +1004,6 @@ pub fn render_goal_detail(
 
     Some(close_rect)
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -1565,7 +1537,8 @@ mod tests {
         // display width (not bytes); the full id must not appear and the
         // ellipsis marker must be present.
         let long_id = "x".repeat(200);
-        let cjk_id = "宽".repeat(120); // each glyph is 2 display columns
+        // Each glyph is 2 display columns.
+        let cjk_id = "宽".repeat(120);
         let mut goal = make_goal();
         goal.live_tokens_by_model = vec![(long_id.clone(), 12_000), (cjk_id.clone(), 8_000)];
         // render_to_text renders at width 100; mirror that exactly so the
@@ -1960,8 +1933,6 @@ mod tests {
         }
     }
 
-    // -- Todo rendering tests -----------------------------------------------
-
     fn make_todo(content: &str, status: TodoStatus) -> TodoItem {
         TodoItem {
             content: content.to_owned(),
@@ -2068,13 +2039,12 @@ mod tests {
         assert!(result.ends_with('\u{2026}'));
     }
 
-    // -- objective in the modal title ---------------------------------------
-
     #[test]
     fn modal_title_renders_objective() {
         // The objective must appear in the modal title (top border) so the
         // user can see which goal is running — not a static placeholder.
-        let goal = make_goal(); // objective = "Implement dark mode"
+        // objective = "Implement dark mode"
+        let goal = make_goal();
         let text = render_to_text(&goal);
         assert!(
             text.contains("Implement dark mode"),
@@ -2109,7 +2079,8 @@ mod tests {
         // can't overflow the title columns into the close button / border;
         // the close button must survive.
         let mut goal = make_goal();
-        goal.objective = "宽".repeat(120); // 240 display columns
+        // 240 display columns.
+        goal.objective = "宽".repeat(120);
         let screen = Rect::new(0, 0, 100, 40);
         let mut buf = ratatui::buffer::Buffer::empty(screen);
         let area = goal_detail_area(screen, &goal, &[]);
@@ -2125,8 +2096,6 @@ mod tests {
             "the close button must still render alongside a wide title"
         );
     }
-
-    // -- commands hint must not be clipped ----------------------------------
 
     #[test]
     fn commands_hint_visible_without_subagent_or_history() {
@@ -2159,8 +2128,6 @@ mod tests {
         );
     }
 
-    // -- details path existence check ---------------------------------------
-
     #[test]
     fn classifier_details_display_handles_missing_present_and_none() {
         // Existence is a precomputed bool, so the display is pure: no path →
@@ -2180,7 +2147,8 @@ mod tests {
     fn modal_details_row_shows_unavailable_for_missing_file() {
         // A reported path whose cached existence is false (fail-open may not
         // have written it) must render "(unavailable)" not a dangling path.
-        let mut goal = make_goal(); // make_goal default: last_classifier_details_exists = false
+        // make_goal default: last_classifier_details_exists = false
+        let mut goal = make_goal();
         goal.last_classifier_verdict = Some(GoalClassifierVerdict::Achieved);
         goal.last_classifier_details_path = Some("/no/such/path/zzz-details.md".into());
         let text = render_to_text(&goal);
@@ -2193,8 +2161,6 @@ mod tests {
             "the dangling path must not render, got:\n{text}"
         );
     }
-
-    // -- Attempts em-dash branch --------------------------------------------
 
     #[test]
     fn modal_attempts_shows_em_dash_when_classifier_active_without_counts() {
@@ -2214,8 +2180,6 @@ mod tests {
             "empty counter must fall back to an em-dash, got:\n{text}"
         );
     }
-
-    // -- Recent-History humanization ----------------------------------------
 
     #[test]
     fn humanize_goal_event_maps_wire_vocabulary() {
@@ -2343,8 +2307,6 @@ mod tests {
         }
     }
 
-    // -- title control-char / boundary handling -----------------------------
-
     #[test]
     fn modal_title_collapses_control_chars_to_one_row() {
         // A newline in the objective must be collapsed to a space so the whole
@@ -2362,7 +2324,8 @@ mod tests {
     #[test]
     fn modal_title_blank_objective_falls_back_to_active_goal() {
         let mut goal = make_goal();
-        goal.objective = "  \n\t  ".into(); // whitespace/control only
+        // whitespace/control only
+        goal.objective = "  \n\t  ".into();
         let text = render_to_text(&goal);
         assert!(
             text.contains("Active Goal"),
@@ -2377,7 +2340,8 @@ mod tests {
         // One column over → truncated with the ellipsis.
         assert_eq!(truncate_to_width("abcde", 4), "abc\u{2026}");
         // Zero-width combining marks don't consume the budget.
-        let combining = "a\u{0301}b\u{0301}"; // 2 display columns
+        // 2 display columns.
+        let combining = "a\u{0301}b\u{0301}";
         assert_eq!(
             unicode_width::UnicodeWidthStr::width(combining),
             2,
@@ -2387,8 +2351,6 @@ mod tests {
         // Degenerate budget 0 → just the ellipsis (no codepoint dropped silently).
         assert_eq!(truncate_to_width("x", 0), "\u{2026}");
     }
-
-    // -- subagent / classifier height combos --------------------------------
 
     #[test]
     fn subagent_just_spawned_budgets_no_detail_row() {

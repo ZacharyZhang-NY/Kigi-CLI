@@ -26,10 +26,6 @@ use crate::input::key::KeyShortcut;
 use crate::views::picker::{PickerConfig, PickerOutcome, PickerState, handle_picker_input};
 use crate::views::shortcuts_bar::HintItem;
 
-// ---------------------------------------------------------------------------
-// Data
-// ---------------------------------------------------------------------------
-
 /// Key for pattern-A inline expand state (`expanded_ids`).
 ///
 /// Registry rows use [`ExpandKey::Action`]; display-only rows that ship
@@ -69,10 +65,6 @@ impl ShortcutsHelpEntry {
         matches!(self, Self::SectionHeader { .. })
     }
 }
-
-// ---------------------------------------------------------------------------
-// Modal state construction
-// ---------------------------------------------------------------------------
 
 /// Category display order and labels for the cheatsheet.
 const CATEGORY_ORDER: &[(Category, &str)] = &[
@@ -303,10 +295,6 @@ pub fn build_initial_picker_state(entries: &[ShortcutsHelpEntry]) -> PickerState
     }
 }
 
-// ---------------------------------------------------------------------------
-// Search filtering
-// ---------------------------------------------------------------------------
-
 /// Filter ShortcutsHelp entries by search query.
 ///
 /// Returns the original-index list of entries that pass the filter.
@@ -428,10 +416,6 @@ fn hint_description(h: &HintItem) -> String {
         })
 }
 
-// ---------------------------------------------------------------------------
-// Shared helpers
-// ---------------------------------------------------------------------------
-
 fn selected_original_entry<'a>(
     filtered: &[usize],
     entries: &'a [ShortcutsHelpEntry],
@@ -467,10 +451,6 @@ fn picker_config(non_sel: &[bool]) -> PickerConfig<'_> {
         vim_normal_first: crate::appearance::cache::load_vim_mode(),
     }
 }
-
-// ---------------------------------------------------------------------------
-// Input dispatch
-// ---------------------------------------------------------------------------
 
 /// Outcome of an input event delivered to the cheatsheet modal.
 ///
@@ -980,10 +960,6 @@ pub fn handle_mouse(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Modal rendering + chrome integration
-// ---------------------------------------------------------------------------
-
 /// Footer hints painted along the bottom border of the cheatsheet
 /// modal. Identical visual vocabulary for the agent view and the
 /// dashboard so muscle memory ports across surfaces.
@@ -1412,10 +1388,6 @@ pub fn handle_modal_key(
         ShortcutsHelpOutcome::Unchanged => ModalKeyOutcome::Unchanged,
     }
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -2100,8 +2072,6 @@ mod tests {
         assert_eq!(state.selected, 1, "selected should land on first Hint");
     }
 
-    // ── handle_input tests ───────────────────────────────────────
-
     fn make_key(code: crossterm::event::KeyCode) -> crossterm::event::KeyEvent {
         crossterm::event::KeyEvent::new(code, crossterm::event::KeyModifiers::NONE)
     }
@@ -2114,7 +2084,7 @@ mod tests {
             hint("nav", key!('j')),
         ];
         let mut state = build_initial_picker_state(&entries);
-        state.selected = 0; // select the header
+        state.selected = 0;
         (entries, state)
     }
 
@@ -2155,7 +2125,7 @@ mod tests {
         // Pseudo/legacy hints have no action_id — Enter does not close or open detail.
         let entries = vec![header("Nav", 0, 1), hint("send", key!(Enter))];
         let mut state = build_initial_picker_state(&entries);
-        state.selected = 1; // select the hint
+        state.selected = 1;
         let mut mode = browse_mode();
         let result = handle_input(
             &make_key(crossterm::event::KeyCode::Enter),
@@ -2876,8 +2846,6 @@ mod tests {
         assert_eq!(type_j, ShortcutsHelpOutcome::Changed);
         assert_eq!(state.query, "j", "printables must type in active search");
     }
-
-    // ── vim_mode tests ───────────────────────────────────────────
 
     #[test]
     fn vim_mode_jk_navigate_without_starting_search() {

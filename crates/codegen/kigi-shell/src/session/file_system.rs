@@ -13,7 +13,6 @@ pub struct FsListParams {
     pub limit: usize,
     /// Pagination offset applied after the dirs-first sort (default 0).
     pub offset: u64,
-    // WalkBuilder options
     pub include_hidden: bool,
     pub follow_symlinks: bool,
     pub respect_git_ignore: bool,

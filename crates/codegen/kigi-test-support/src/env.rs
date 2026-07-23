@@ -20,8 +20,7 @@ pub struct EnvGuard {
 }
 
 impl EnvGuard {
-    /// Set `key` to `value` for the guard's lifetime. Accepts `&str`, `&Path`,
-    /// `String`, etc. via `AsRef<OsStr>`.
+    /// Set `key` to `value` for the guard's lifetime.
     pub fn set(key: &'static str, value: impl AsRef<OsStr>) -> Self {
         let prior = std::env::var_os(key);
         // SAFETY: callers are `#[serial]`, so no other thread touches the env.
@@ -29,7 +28,6 @@ impl EnvGuard {
         Self { key, prior }
     }
 
-    /// Unset `key` for the guard's lifetime.
     pub fn unset(key: &'static str) -> Self {
         let prior = std::env::var_os(key);
         // SAFETY: see [`EnvGuard::set`].
@@ -95,7 +93,8 @@ fn ensure_local_kigi_binary(binary: &Path) {
     );
 }
 
-/// Resolve kigi binary: `KIGI_BINARY` env (CI) or a locally built `kigi-tui` binary.
+/// Resolve the kigi binary, building `kigi-tui` on demand if neither
+/// `KIGI_BINARY` (CI) nor cargo's own path points at an existing file.
 pub fn kigi_binary() -> PathBuf {
     if let Ok(path) = std::env::var("KIGI_BINARY") {
         let p = PathBuf::from(path);
@@ -137,7 +136,7 @@ pub fn git_workdir() -> TempDir {
     }
 
     run_git(&["init"], path);
-    // Configure git user for commits (required in CI where no global config exists)
+    // CI has no global git identity, so commits need one configured here.
     run_git(&["config", "user.email", "test@test.com"], path);
     run_git(&["config", "user.name", "Test"], path);
 

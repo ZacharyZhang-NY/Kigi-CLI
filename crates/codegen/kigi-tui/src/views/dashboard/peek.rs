@@ -1182,10 +1182,6 @@ pub fn extract_first_user_message(agent: &AgentView) -> Option<String> {
 /// message had MORE than `count` non-empty lines — so the renderer can
 /// show a `…` continuation marker only when there's genuinely more.
 /// Returns `(vec![], false)` when the agent hasn't streamed any text.
-///
-/// This is the multi-line successor to the old single-line
-/// `extract_last_agent_message`: the peek panel now surfaces up to 3
-/// lines of the last response instead of just the first.
 pub fn extract_last_agent_lines(agent: &AgentView, count: usize) -> (Vec<String>, bool) {
     use crate::scrollback::block::RenderBlock;
     use crate::views::session_title::sanitize_display_text;
@@ -1232,10 +1228,9 @@ pub fn extract_last_agent_lines(agent: &AgentView, count: usize) -> (Vec<String>
 /// Extract the last `count` short text descriptions from the given
 /// agent view's scrollback.
 ///
-/// No more `format!("{:?}", entry.block)`, which leaked
-/// Rust Debug output (variant tags, struct field names, escaped
-/// strings — and worst of all the head of bash commands containing
-/// credentials).
+/// Never project via `format!("{:?}", entry.block)`: that leaks Rust
+/// Debug output (variant tags, struct field names, escaped strings —
+/// and worst of all the head of bash commands containing credentials).
 ///
 /// Every projected string is run through
 /// `strip_ansi_escapes::strip_str` so embedded `\x1b[...]` sequences
@@ -2047,7 +2042,8 @@ mod tests {
                 reject_option: None,
             },
         );
-        panel.selected_option = Some(1); // highlight the 2nd option
+        // Highlight the 2nd option.
+        panel.selected_option = Some(1);
         let mut reply = test_reply();
         let _ = render_peek_panel(
             &mut buf,
@@ -2098,7 +2094,8 @@ mod tests {
             },
         );
         panel.selected_option = Some(1);
-        panel.focused = false; // Tab → row nav
+        // Tab → row nav.
+        panel.focused = false;
         let mut reply = test_reply();
         let _ = render_peek_panel(
             &mut buf,
@@ -2152,7 +2149,8 @@ mod tests {
                 reject_option: Some(1),
             },
         );
-        panel.selected_option = Some(1); // highlight the reject option
+        // Highlight the reject option.
+        panel.selected_option = Some(1);
         let mut reply = test_reply();
         reply.set_text("do it differently");
         let res = render_peek_panel(
@@ -2214,7 +2212,8 @@ mod tests {
                 reject_option: Some(1),
             },
         );
-        panel.selected_option = Some(1); // highlight the "Other" row
+        // Highlight the "Other" row.
+        panel.selected_option = Some(1);
         let mut reply = test_reply();
         let _ = render_peek_panel(
             &mut buf,

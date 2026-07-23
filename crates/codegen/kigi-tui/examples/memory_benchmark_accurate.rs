@@ -1,7 +1,5 @@
 //! Accurate memory benchmark for SubagentInfo Arc<str> optimization.
 //!
-//! This benchmark uses dhat for heap profiling to accurately measure memory usage.
-//!
 //! Run with: cargo run --release --example memory_benchmark_accurate
 
 // Illustrative mock structs whose fields exist to model memory layout; not all
@@ -11,7 +9,6 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-/// Simulate SubagentInfo with String fields (before optimization)
 #[derive(Clone)]
 struct SubagentInfoString {
     subagent_id: String,
@@ -25,7 +22,6 @@ struct SubagentInfoString {
     tools_used: Vec<String>,
 }
 
-/// Simulate SubagentInfo with Arc<str> fields (after optimization)
 #[derive(Clone)]
 struct SubagentInfoArc {
     subagent_id: Arc<str>,
@@ -83,7 +79,6 @@ fn create_arc_info(
 fn main() {
     println!("=== SubagentInfo Memory Benchmark (Accurate) ===\n");
 
-    // Test 1: Clone performance - the most impactful optimization
     println!("--- Clone Performance (1,000,000 clones) ---");
     let iterations = 1_000_000;
 
@@ -110,7 +105,6 @@ fn main() {
     );
     println!();
 
-    // Test 2: Memory with shared strings (realistic scenario)
     println!("--- Memory with Shared Strings (1000 subagents) ---");
     println!("Scenario: 1000 subagents sharing subagent_type, model, persona, status");
 
@@ -118,7 +112,6 @@ fn main() {
     let shared_models = ["kigi-3", "kigi-3-mini"];
     let shared_personas = ["researcher", "analyst", "reviewer"];
 
-    // Create string-based infos
     let mut string_infos: Vec<SubagentInfoString> = Vec::with_capacity(1000);
     for i in 0..1000 {
         let st = shared_types[i % shared_types.len()];
@@ -127,7 +120,6 @@ fn main() {
         string_infos.push(create_string_info(i, st, m, p));
     }
 
-    // Create Arc-based infos (with string sharing)
     let mut arc_infos: Vec<SubagentInfoArc> = Vec::with_capacity(1000);
     for i in 0..1000 {
         let st = shared_types[i % shared_types.len()];
@@ -136,8 +128,6 @@ fn main() {
         arc_infos.push(create_arc_info(i, st, m, p));
     }
 
-    // Calculate memory
-    // For String: each instance has its own copy
     let string_mem: usize = string_infos
         .iter()
         .map(|info| {
@@ -154,7 +144,6 @@ fn main() {
         .sum();
 
     // For Arc<str>: shared strings are stored once
-    // Count unique strings
     let mut unique_types = std::collections::HashSet::new();
     let mut unique_models = std::collections::HashSet::new();
     let mut unique_personas = std::collections::HashSet::new();
@@ -177,26 +166,30 @@ fn main() {
         }
     }
 
-    // Arc<str> memory: unique strings + Arc overhead per reference
     let shared_string_mem: usize = unique_types.iter().map(|s| s.len()).sum::<usize>()
         + unique_models.iter().map(|s| s.len()).sum::<usize>()
         + unique_personas.iter().map(|s| s.len()).sum::<usize>()
         + unique_statuses.iter().map(|s| s.len()).sum::<usize>()
         + unique_tools.iter().map(|s| s.len()).sum::<usize>();
 
-    // Per-instance memory for unique fields + Arc overhead
     let per_instance_mem: usize = arc_infos
         .iter()
         .map(|info| {
-            info.subagent_id.len() + 16 + // Arc overhead
-        info.child_session_id.len() + 16 +
-        info.description.len() + 16 +
-        16 + // subagent_type Arc (shared)
-        info.persona.as_ref().map_or(0, |_| 16) + // Arc overhead
-        info.role.as_ref().map_or(0, |_| 16) +
-        info.model.as_ref().map_or(0, |_| 16) +
-        info.status.as_ref().map_or(0, |_| 16) +
-        info.tools_used.len() * 16
+            // Unique fields add their bytes plus a 16-byte Arc pointer; shared
+            // fields contribute only the pointer, their bytes counted once in
+            // shared_string_mem.
+            info.subagent_id.len()
+                + 16
+                + info.child_session_id.len()
+                + 16
+                + info.description.len()
+                + 16
+                + 16
+                + info.persona.as_ref().map_or(0, |_| 16)
+                + info.role.as_ref().map_or(0, |_| 16)
+                + info.model.as_ref().map_or(0, |_| 16)
+                + info.status.as_ref().map_or(0, |_| 16)
+                + info.tools_used.len() * 16
         })
         .sum();
 
@@ -222,7 +215,6 @@ fn main() {
     );
     println!();
 
-    // Test 3: HashMap key performance
     println!("--- HashMap Key Performance (100,000 lookups) ---");
     let iterations = 100_000;
 
@@ -256,7 +248,6 @@ fn main() {
     println!("Arc<str> key lookup time: {:?}", arc_lookup_time);
     println!();
 
-    // Summary
     println!("=== Summary ===");
     println!("Arc<str> optimization provides:");
     println!(

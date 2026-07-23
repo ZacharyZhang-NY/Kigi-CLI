@@ -15,7 +15,6 @@ use anyhow::{Context, Result};
 /// ```
 #[derive(Debug, Clone)]
 pub struct MountEntry {
-    /// Mount ID.
     #[allow(dead_code)]
     pub mount_id: u32,
     /// Parent mount ID.
@@ -243,7 +242,7 @@ pub fn is_fuse_mount(entries: &[MountEntry], path: &Path) -> bool {
     })
 }
 
-// ── Internal helpers ─────────────────────────────────────────────────────
+// Internal helpers
 
 /// Parse a single mountinfo line.
 fn parse_line(line: &str) -> Option<MountEntry> {

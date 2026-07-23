@@ -91,8 +91,6 @@ pub const MANAGED_TOOLS: &[&str] = &[
     "Kigi:get_task_output",
 ];
 
-// Helper constant for concise registry entries.
-//
 // `V_CURRENT` is a moving alias — its metadata fields are empty because
 // `"current"` changes meaning over time. Stable canonical versions use
 // per-tool legacy constants with tool-specific metadata.
@@ -191,7 +189,8 @@ pub const TOOL_VERSION_REGISTRY: &[ToolVersionEntry] = &[
     },
     ToolVersionEntry {
         fq_tool_id: "Kigi:grep",
-        versions: &[V_CURRENT], // Managed but no legacy implementation.
+        // Managed but no legacy implementation.
+        versions: &[V_CURRENT],
     },
     ToolVersionEntry {
         fq_tool_id: "Kigi:kill_task",
@@ -261,12 +260,10 @@ pub fn is_legacy_contract(contract_version: Option<&str>) -> bool {
     contract_version == Some("legacy-0.4.10")
 }
 
-/// Look up a preset (bundle) by name.
 pub fn lookup_preset(name: &str) -> Option<&'static PresetEntry> {
     PRESETS.iter().find(|p| p.name == name)
 }
 
-/// Check whether a fully-qualified tool ID is version-managed.
 pub fn is_version_managed(fq_tool_id: &str) -> bool {
     MANAGED_TOOLS.contains(&fq_tool_id)
 }
@@ -358,13 +355,11 @@ pub fn resolve_version_with_warnings(
     fq_tool_id: &str,
     per_tool_override: Option<&str>,
 ) -> Result<VersionResolution, String> {
-    // Validate the preset exists.
     let preset = lookup_preset(preset_name)
         .ok_or_else(|| format!("unknown behavior_preset: \"{preset_name}\""))?;
 
     let mut warnings = Vec::new();
 
-    // Check preset lifecycle.
     match preset.lifecycle {
         BehaviorLifecycle::RemovalCandidate => {
             return Err(format!(
@@ -378,7 +373,8 @@ pub fn resolve_version_with_warnings(
                 preset_name
             );
             warnings.push(VersionWarning {
-                fq_tool_id: String::new(), // bundle-level warning
+                // bundle-level warning
+                fq_tool_id: String::new(),
                 deprecated_version: preset_name.to_string(),
                 replacement: "current".to_string(),
                 message: format!(
@@ -390,14 +386,12 @@ pub fn resolve_version_with_warnings(
         BehaviorLifecycle::Active => {}
     }
 
-    // If a per-tool override is given for an unmanaged tool, reject it.
     if per_tool_override.is_some() && !is_version_managed(fq_tool_id) {
         return Err(format!(
             "behavior_version override not allowed for unmanaged tool \"{fq_tool_id}\""
         ));
     }
 
-    // Unmanaged tools → None (no contract version).
     if !is_version_managed(fq_tool_id) {
         return Ok(VersionResolution {
             contract_version: None,
@@ -405,7 +399,6 @@ pub fn resolve_version_with_warnings(
         });
     }
 
-    // Per-tool override wins if present.
     if let Some(override_version) = per_tool_override {
         let (version, mut tool_warnings) = validate_and_resolve(fq_tool_id, override_version)?;
         warnings.append(&mut tool_warnings);
@@ -415,7 +408,6 @@ pub fn resolve_version_with_warnings(
         });
     }
 
-    // Check preset tool_defaults for this tool.
     let tool_defaults: HashMap<&str, &str> = preset.tool_defaults.iter().copied().collect();
     if let Some(&version) = tool_defaults.get(fq_tool_id) {
         let (version, mut tool_warnings) = validate_and_resolve(fq_tool_id, version)?;
@@ -426,7 +418,6 @@ pub fn resolve_version_with_warnings(
         });
     }
 
-    // Fallback: "current" for managed tools not yet in preset defaults.
     Ok(VersionResolution {
         contract_version: Some("current".to_string()),
         warnings,
@@ -501,21 +492,18 @@ mod tests {
 
     #[test]
     fn legacy_preset_resolves_ported_tool() {
-        // run_terminal_cmd is ported — resolves to "legacy-0.4.10".
         let v = resolve_version("legacy-0.4.10", "Kigi:run_terminal_cmd", None).unwrap();
         assert_eq!(v, Some("legacy-0.4.10".to_string()));
     }
 
     #[test]
     fn legacy_preset_falls_back_to_current_for_unported_tool() {
-        // grep is managed but has no legacy-0.4.10 preset entry — falls back to "current".
         let v = resolve_version("legacy-0.4.10", "Kigi:grep", None).unwrap();
         assert_eq!(v, Some("current".to_string()));
     }
 
     #[test]
     fn legacy_preset_resolves_all_ported_tools() {
-        // All 6 ported tools should resolve to "legacy-0.4.10" under the legacy preset.
         for fq_id in &[
             "Kigi:run_terminal_cmd",
             "Kigi:read_file",
@@ -580,7 +568,6 @@ mod tests {
 
     #[test]
     fn concise_namespace_not_managed() {
-        // KigiConcise tools should NOT be version-managed.
         assert!(!is_version_managed("KigiConcise:run_terminal_cmd"));
         let v = resolve_version("current", "KigiConcise:run_terminal_cmd", None).unwrap();
         assert_eq!(v, None);
@@ -594,11 +581,8 @@ mod tests {
         assert!(is_version_managed("Kigi:list_dir"));
         assert!(is_version_managed("Kigi:grep"));
         assert!(is_version_managed("Kigi:kill_task"));
-        // Not managed:
         assert!(!is_version_managed("Kigi:todo_write"));
     }
-
-    // ─── Warning behavior tests ───
 
     #[test]
     fn active_version_produces_no_warning() {
@@ -623,13 +607,9 @@ mod tests {
 
     #[test]
     fn deprecated_version_produces_tool_warning() {
-        // Test the deprecated path directly via validate_and_resolve.
-        // We can't mutate the static registry, so we call the internal function
-        // which checks per-tool lifecycle from the registry.
-        // For this test, we need a version that IS in the registry.
-        // Since all current versions are Active, we test the code path by
-        // calling validate_and_resolve on an Active version and verifying
-        // no warning, then documenting the contract.
+        // No registry version is Deprecated, so that branch can't be hit
+        // directly. Exercise the Active (no-warning) path and the not-found
+        // error path as the closest reachable proxies.
         let (version, warnings) = validate_and_resolve("Kigi:run_terminal_cmd", "current").unwrap();
         assert_eq!(version, Some("current".to_string()));
         assert!(
@@ -637,8 +617,6 @@ mod tests {
             "Active version should produce no warning"
         );
 
-        // Verify the Deprecated branch structure is reachable:
-        // validate_and_resolve for a version not in registry → Err
         let err = validate_and_resolve("Kigi:grep", "legacy-0.4.10").unwrap_err();
         assert!(err.contains("is not supported"), "got: {err}");
     }
@@ -684,8 +662,6 @@ mod tests {
             "error should list supported versions, got: {err}"
         );
     }
-
-    // ─── Catalog consistency invariants ───
 
     #[test]
     fn invariant_1_managed_tools_have_registry_entries() {
@@ -818,8 +794,6 @@ mod tests {
         }
     }
 
-    // ─── Preset smoke tests ───
-
     #[test]
     fn all_active_presets_resolve_all_managed_tools() {
         for preset in PRESETS {
@@ -861,8 +835,6 @@ mod tests {
         }
     }
 
-    // ─── Typed helper tests ───
-
     #[test]
     fn is_legacy_contract_detects_legacy() {
         assert!(is_legacy_contract(Some("legacy-0.4.10")));
@@ -870,8 +842,6 @@ mod tests {
         assert!(!is_legacy_contract(None));
         assert!(!is_legacy_contract(Some("unknown")));
     }
-
-    // ─── Metadata tests ───
 
     #[test]
     fn current_version_has_empty_metadata() {
@@ -906,7 +876,6 @@ mod tests {
 
     #[test]
     fn legacy_summaries_are_tool_specific() {
-        // Tools with different legacy behavior must have different summaries.
         assert_ne!(
             V_LEGACY_BASH.summary, V_LEGACY_READ_FILE.summary,
             "bash and read_file have different legacy behavior"
@@ -919,7 +888,6 @@ mod tests {
             V_LEGACY_BASH.summary, V_LEGACY_KILL_TASK.summary,
             "bash and kill_task have different legacy behavior"
         );
-        // kill_task and task_output share the same legacy behavior (not-found wording)
         assert_eq!(
             V_LEGACY_KILL_TASK.summary, V_LEGACY_TASK_OUTPUT.summary,
             "kill_task and task_output share the same legacy behavior"

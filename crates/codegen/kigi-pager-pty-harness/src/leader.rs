@@ -2,14 +2,10 @@
 //! inspection of the durable session log so reattach tests can assert on
 //! what actually persisted.
 //!
-//! Every other leader test is single-client/single-leader; [`LeaderCluster`]
-//! is the missing abstraction for "one leader, several pager clients sharing
-//! its session". One [`ContentController`] gives one shared `$HOME` (hence one
-//! elected leader) plus a fixed leader socket beneath its `KIGI_SHARE_DIR`; clients
+//! One [`ContentController`] gives one shared `$HOME` (hence one elected
+//! leader) plus a fixed leader socket beneath its `KIGI_SHARE_DIR`; clients
 //! spawn with the `--leader`/`--leader-socket` flags so they all attach to the
-//! SAME leader. It also exposes the leader's durable `updates.jsonl` log so a
-//! reattach test can assert on the persisted, replayable turn-completion
-//! records — the genuine end-to-end signal behind durable turn completion.
+//! SAME leader.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -29,8 +25,6 @@ pub struct LeaderCluster {
 }
 
 impl LeaderCluster {
-    /// Start the cluster: one [`ContentController`] (one shared `$HOME` =>
-    /// one leader) and a fixed leader socket under its `KIGI_SHARE_DIR`.
     pub async fn start(rows: u16, cols: u16) -> Result<Self> {
         let content = ContentController::start()
             .await
@@ -50,21 +44,19 @@ impl LeaderCluster {
         })
     }
 
-    /// Spawn the leader-electing client (`--leader --leader-socket <S>` plus
-    /// `extra_args`); it starts a fresh session and brings up the leader.
+    /// Spawn the client that starts a fresh session and brings up the leader.
     pub fn spawn_leader(&self, extra_args: &[&str]) -> Result<PtyHarness> {
         self.spawn_client(&[], extra_args)
     }
 
     /// Attach another client that resumes the shared session through the SAME
-    /// leader (`--leader --leader-socket <S> --resume` plus `extra_args`).
+    /// leader.
     pub fn attach(&self, extra_args: &[&str]) -> Result<PtyHarness> {
         self.spawn_client(&["--resume"], extra_args)
     }
 
-    /// Spawn a client wired to the shared leader socket. `mode_args` carries
-    /// the per-role flag (`--resume` for attachers); `extra_args` is the
-    /// caller's.
+    /// `mode_args` carries the per-role flag (`--resume` for attachers);
+    /// `extra_args` is the caller's.
     fn spawn_client(&self, mode_args: &[&str], extra_args: &[&str]) -> Result<PtyHarness> {
         let socket = self.socket.to_str().context("socket path is utf-8")?;
         let mut args: Vec<&str> = vec!["--leader", "--leader-socket", socket];
@@ -74,22 +66,18 @@ impl LeaderCluster {
             .context("spawn pager client on shared leader")
     }
 
-    /// The shared content controller (mock inference server + sandbox env).
     pub fn content(&self) -> &ContentController {
         &self.content
     }
 
-    /// The cluster's sessions root: `KIGI_SHARE_DIR/sessions` (layout below is
-    /// `sessions/<encoded-cwd>/<session-id>/updates.jsonl`).
+    /// Root of `sessions/<encoded-cwd>/<session-id>/updates.jsonl`.
     fn sessions_dir(&self) -> PathBuf {
         self.content.home().join(".kigi").join("sessions")
     }
 
-    /// The session-update payload of every record across every `updates.jsonl`
-    /// under the cluster's [`sessions_dir`](Self::sessions_dir) — i.e. the
-    /// `params.update` object of each persisted envelope line, so a caller can
-    /// match on its `sessionUpdate` tag directly. Scans ALL sessions under the
-    /// cluster (fine for the single-session clusters these tests build).
+    /// The `params.update` payload of every record across every
+    /// `updates.jsonl` under the cluster, so a caller can match on the
+    /// `sessionUpdate` tag directly.
     ///
     /// Infallible by design: a file that vanishes mid-walk, or whose appended
     /// tail tore across a multi-byte UTF-8 boundary (so `read_to_string`
@@ -99,7 +87,6 @@ impl LeaderCluster {
         collect_updates_files(&self.sessions_dir(), &mut files);
         let mut out = Vec::new();
         for file in files {
-            // Skip a vanished file or a torn multi-byte tail; the next poll retries.
             if let Ok(text) = std::fs::read_to_string(&file) {
                 out.extend(parse_update_payloads(&text));
             }
@@ -107,10 +94,8 @@ impl LeaderCluster {
         out
     }
 
-    /// Poll [`session_updates`](Self::session_updates) until a record with
-    /// `sessionUpdate == "turn_completed"` appears, returning that (inner)
-    /// update payload, or error on timeout. Scans ALL sessions under the
-    /// cluster (fine for the single-session clusters these tests build).
+    /// Poll [`session_updates`](Self::session_updates) until a
+    /// `turn_completed` record appears, or error on timeout.
     pub fn wait_for_turn_completed(&self, timeout: Duration) -> Result<Value> {
         let deadline = Instant::now() + timeout;
         loop {
@@ -140,18 +125,14 @@ impl LeaderCluster {
     }
 }
 
-/// Whether a session-update payload is a `turn_completed` terminal.
 fn is_turn_completed(update: &Value) -> bool {
     update.get("sessionUpdate").and_then(Value::as_str) == Some("turn_completed")
 }
 
-/// Parse the `params.update` payload out of each non-blank line of an
-/// `updates.jsonl` body, assuming the enveloped on-disk shape current sessions
-/// always write (`{..,"params":{"update":{..}}}`). A line that is blank, fails
-/// to parse (a torn trailing line that is still valid UTF-8), or carries no
-/// `params.update` is skipped — never failing the batch. (A torn *multi-byte*
-/// tail instead fails the file read upstream, skipping the whole file for that
-/// poll; see [`LeaderCluster::session_updates`].)
+/// Parse the `params.update` payload out of each line of an `updates.jsonl`
+/// body, whose on-disk shape is `{..,"params":{"update":{..}}}`. A line that is
+/// blank, fails to parse (a torn trailing line that is still valid UTF-8), or
+/// carries no `params.update` is skipped rather than failing the batch.
 fn parse_update_payloads(text: &str) -> Vec<Value> {
     text.lines()
         .filter_map(|line| {

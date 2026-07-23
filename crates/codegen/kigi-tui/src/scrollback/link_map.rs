@@ -21,8 +21,6 @@ pub struct VisibleLink {
 }
 
 impl VisibleLink {
-    /// Check whether screen position `(col, row)` falls inside any of
-    /// this link's row segments.
     pub fn contains(&self, col: u16, row: u16) -> bool {
         self.rects
             .iter()
@@ -45,12 +43,10 @@ pub struct VisibleLinkMap {
 }
 
 impl VisibleLinkMap {
-    /// Find the link at a given screen position, if any.
     pub fn link_at(&self, col: u16, row: u16) -> Option<&VisibleLink> {
         self.links.iter().find(|link| link.contains(col, row))
     }
 
-    /// Whether this map is stale relative to the current scrollback generation.
     pub fn is_stale(&self, current_generation: u64) -> bool {
         self.generation != current_generation
     }
@@ -117,13 +113,12 @@ impl VisibleLinkMap {
         }
     }
 
-    /// Truncate to the first `n` links (used to drop previously-appended
-    /// overlay links before re-appending for the current frame).
+    /// Truncate to the first `n` links (used to drop overlay links appended
+    /// earlier this frame before re-appending).
     pub fn truncate(&mut self, n: usize) {
         self.links.truncate(n);
     }
 
-    /// Number of links currently in the map.
     pub fn len(&self) -> usize {
         self.links.len()
     }
@@ -200,7 +195,6 @@ mod tests {
         map.rebuild(1, &overlay, vec![]);
 
         assert_eq!(map.links().len(), 1);
-        // Hit inside the link
         let hit = map.link_at(15, 5);
         assert!(hit.is_some());
         assert_eq!(&*hit.unwrap().url, "https://example.com");
@@ -247,7 +241,8 @@ mod tests {
     fn zero_width_links_are_skipped() {
         let mut map = VisibleLinkMap::default();
         let overlay = make_overlay(vec![
-            (0, 5, 5, "https://zero-width.com", None), // col_start == col_end
+            // col_start == col_end
+            (0, 5, 5, "https://zero-width.com", None),
             (0, 5, 10, "https://valid.com", None),
         ]);
         map.rebuild(1, &overlay, vec![]);
@@ -267,12 +262,10 @@ mod tests {
         map.rebuild(1, &overlay, citations);
         assert_eq!(map.links().len(), 2);
 
-        // Markdown link
         let hit = map.link_at(3, 0);
         assert!(hit.is_some());
         assert_eq!(&*hit.unwrap().url, "https://md-link.com");
 
-        // Citation link
         let hit = map.link_at(15, 10);
         assert!(hit.is_some());
         assert_eq!(&*hit.unwrap().url, "https://citation.com");
@@ -313,14 +306,11 @@ mod tests {
         ]);
         map.rebuild(1, &overlay, vec![]);
 
-        // Should be 1 logical link with 2 rects
         assert_eq!(map.links().len(), 1);
         assert_eq!(map.links()[0].rects.len(), 2);
         assert_eq!(&*map.links()[0].url, "https://wrapped.com");
 
-        // Hit on first row segment
         assert!(map.link_at(15, 3).is_some());
-        // Hit on second row segment
         assert!(map.link_at(5, 4).is_some());
         // Miss between segments (wrong col on row 4)
         assert!(map.link_at(20, 4).is_none());

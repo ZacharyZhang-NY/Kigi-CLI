@@ -70,7 +70,6 @@ impl Position {
         self.character
     }
 
-    /// Get the byte offset.
     pub fn byte_offset(&self) -> usize {
         self.byte_offset
     }
@@ -80,7 +79,6 @@ impl Position {
         self.byte_offset
     }
 
-    /// Set the byte offset.
     pub fn set_byte_offset(&mut self, byte_offset: usize) {
         self.byte_offset = byte_offset;
     }
@@ -120,7 +118,6 @@ impl Position {
         }
     }
 
-    /// Move to the next line.
     pub fn move_to_next_line(mut self) -> Self {
         self.line += 1;
         self.character = 0;
@@ -188,12 +185,10 @@ impl Range {
         Self::for_tree_node(node)
     }
 
-    /// Get the start position.
     pub fn start_position(&self) -> Position {
         self.start_position
     }
 
-    /// Get the end position.
     pub fn end_position(&self) -> Position {
         self.end_position
     }
@@ -208,12 +203,10 @@ impl Range {
         &self.end_position
     }
 
-    /// Set the start position.
     pub fn set_start_position(&mut self, position: Position) {
         self.start_position = position;
     }
 
-    /// Set the end position.
     pub fn set_end_position(&mut self, position: Position) {
         self.end_position = position;
     }

@@ -23,7 +23,6 @@ pub struct BtwBlock {
 }
 
 impl BtwBlock {
-    /// Create a btw block from the question and response text.
     pub fn new(question: impl Into<String>, response: impl Into<String>) -> Self {
         Self {
             question: question.into(),
@@ -31,7 +30,6 @@ impl BtwBlock {
         }
     }
 
-    /// Access the underlying markdown content.
     pub fn content(&self) -> &MarkdownContent {
         &self.content
     }

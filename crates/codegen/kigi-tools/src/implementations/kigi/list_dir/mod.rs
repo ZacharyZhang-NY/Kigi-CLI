@@ -1,23 +1,17 @@
-//! `list_dir` tool — new architecture (`Tool` trait).
+//! `list_dir` tool — directory listing.
 //!
-//! This is the new-architecture implementation of the directory listing tool.
-//! It reads `Cwd` from `Resources` and `max_output_chars` from its own
-//! `Params<ListDirParams>` instead of receiving them via `ToolContext`.
+//! Seeds depth-1 children (capped at `MAX_SEED_ITEMS`) before the budgeted deep
+//! walk so a fat early sibling cannot starve later top-level dirs
+//! (`MAX_GLOBAL_ITEMS` applies only to depth ≥ 2), then BFS-expands dirs within
+//! the char budget. When either the seed or the walk hits its item limit, the
+//! agent-visible cutoff notice is emitted.
 //!
-//! Seeds depth-1 children (capped at `MAX_SEED_ITEMS`) before the budgeted deep walk
-//! so a fat early sibling cannot starve later top-level dirs (`MAX_GLOBAL_ITEMS`
-//! applies only to depth ≥ 2). Then BFS-expands dirs within the char budget
-//! (`continue` on fat dirs). When either seed or walk hits its item limit, the
-//! agent-visible cutoff notice is emitted (copy unchanged from `main`).
+//! Partial-output case: when the walk truncates, a sibling surfaced by the seed
+//! may be listed by name only while its descendants are absent, because the walk
+//! cap was exhausted inside an earlier sibling.
 //!
-//! Partial-output case: when `walk_truncated` is true, a sibling surfaced by the
-//! seed may be listed by name only while its descendants are absent (the walk cap
-//! was exhausted inside an earlier sibling). The agent-visible notice copy is
-//! intentionally left identical to `main`; this behavior is documented in the
-//! CHANGELOG rather than via new model-facing wording.
-//!
-//! Under `legacy-0.4.10`, the old depth-threshold algorithm is used instead
-//! (see `versions::legacy_0_4_10` module).
+//! Under contract version `legacy-0.4.10` the depth-threshold algorithm in
+//! `versions::legacy_0_4_10` runs instead.
 mod versions;
 use crate::types::output::{ListDirContent, ListDirOutput};
 #[allow(unused_imports)]
@@ -42,20 +36,15 @@ pub struct ListDirInput {
 #[serde(deny_unknown_fields)]
 pub struct ListDirParams {
     /// BFS expansion stops when this budget would be exceeded.
-    /// Defaults to `DEFAULT_MAX_OUTPUT_CHARS` (10,000) to match the Python
+    /// Defaults to `DEFAULT_MAX_OUTPUT_CHARS`.
     pub max_output_chars: Option<usize>,
 }
 crate::register_resource!("kigi", "ListDir", ListDirParams);
-/// Exact historical invalid-directory message for `list_dir` in legacy-0.4.10.
-///
-/// Historical fixture captured from an earlier (0.4.10) revision of this tool.
-///
-/// Historical 0.4.10 collapsed nonexistent paths, file paths, and other
-/// invalid-directory failures into the same generic message.
+/// Contract version `legacy-0.4.10` collapses nonexistent paths, file paths and
+/// every other invalid-directory failure into this one generic message.
 fn render_legacy_list_dir_error(path: &Path) -> String {
     format!("Error: {} is not a valid directory", path.display())
 }
-/// Internal version discriminant for list_dir.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ListDirVersion {
     Current,
@@ -72,9 +61,8 @@ impl ListDirVersion {
         self == Self::Legacy0_4_10
     }
 }
-/// Compute the path shown in the list_dir tool result header.
 /// Special-cases `list_dir(".")`, `list_dir("")`, and `list_dir("./foo")` so the
-/// output does not contain ugly "/./" components (e.g. `/workspace/./`).
+/// result header does not contain "/./" components (e.g. `/workspace/./`).
 fn compute_display_path(display_base: &std::path::Path, target: &str) -> std::path::PathBuf {
     let t = target.trim().trim_start_matches("./");
     if t.is_empty() || t == "." {
@@ -85,7 +73,6 @@ fn compute_display_path(display_base: &std::path::Path, target: &str) -> std::pa
 }
 #[derive(Debug, Default)]
 pub struct ListDirTool;
-/// Default character budget for directory listing output.
 /// Matches the Python SWE tool's `lim_characters` default.
 const DEFAULT_MAX_OUTPUT_CHARS: usize = 10_000;
 /// Show top-N extension buckets in collapsed-directory summary lines.
@@ -109,8 +96,8 @@ fn root_truncation_notice(renderer: Option<&TemplateRenderer>) -> String {
 const MAX_GLOBAL_ITEMS: usize = 100_000;
 /// Cap on depth-1 seed entries so a pathological flat root (millions of direct
 /// children) cannot fully materialize into `DirNode` before the char budget truncates.
-/// Independent in role from `MAX_GLOBAL_ITEMS`, but pinned equal to it (see guard below) so
-/// the cutoff notice's shared count stays correct whichever cap triggers truncation.
+/// Independent in role from `MAX_GLOBAL_ITEMS`, but pinned equal to it (see the guard
+/// below) so the cutoff notice's shared count stays correct whichever cap triggers.
 const MAX_SEED_ITEMS: usize = 100_000;
 const _: () = assert!(MAX_SEED_ITEMS == MAX_GLOBAL_ITEMS);
 #[derive(Debug, Default)]
@@ -222,7 +209,6 @@ impl DirNode {
             self.subtree.add_ext(&ext);
         }
     }
-    /// Sort files and subdirs case-insensitively, recursively.
     fn sort_recursive(&mut self) {
         self.files.sort_by_key(|a| a.to_ascii_lowercase());
         self.subdirs.sort_by_key(|a| a.to_ascii_lowercase());
@@ -254,7 +240,6 @@ impl DirNode {
         }
         (self.depth + 1) * 2 + s.len() + 1
     }
-    /// Render this node's children, recursing into expanded child nodes.
     fn render_expanded(&self, top_k: usize) -> String {
         let mut out = String::new();
         for name in self.all_subitems_sorted() {
@@ -266,7 +251,7 @@ impl DirNode {
         }
         out
     }
-    /// Render subtree: expanded nodes show children, collapsed show summary.
+    /// Expanded nodes render their children; collapsed nodes render a summary line.
     fn render_subtree(&self, top_k: usize) -> String {
         if self.is_expanded {
             return self.render_expanded(top_k);
@@ -428,7 +413,6 @@ fn navigate_mut<'a>(root: &'a mut DirNode, path: &[String]) -> Option<&'a mut Di
     }
     Some(node)
 }
-/// Render as many root items as fit within budget, then append truncation notice.
 fn render_truncated_root(root: &DirNode, max_chars: usize, top_k: usize, notice: &str) -> String {
     let mut out = String::new();
     let mut remaining = max_chars;

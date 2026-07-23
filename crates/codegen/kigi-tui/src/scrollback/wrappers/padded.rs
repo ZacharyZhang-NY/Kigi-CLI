@@ -24,7 +24,6 @@ pub struct Padded<'a, T> {
 }
 
 impl<'a, T> Padded<'a, T> {
-    /// Create a new padded wrapper.
     pub fn new(inner: &'a T, left: u16, right: u16) -> Self {
         Self {
             inner,
@@ -48,7 +47,6 @@ impl<'a, T> Padded<'a, T> {
 
 impl<T: Renderable> Renderable for Padded<'_, T> {
     fn desired_height(&self, width: u16) -> u16 {
-        // Padding takes left + right columns
         let content_width = width.saturating_sub(self.left + self.right);
         self.inner.desired_height(content_width)
     }
@@ -58,7 +56,6 @@ impl<T: Renderable> Renderable for Padded<'_, T> {
             return;
         }
 
-        // Fill background if specified
         if let Some(bg) = self.bg {
             let bg_style = Style::default().bg(bg);
             for y in area.y..area.y + area.height {
@@ -70,7 +67,6 @@ impl<T: Renderable> Renderable for Padded<'_, T> {
             }
         }
 
-        // Split horizontally: [left pad] [content] [right pad]
         let [_left_area, content_area, _right_area] = Layout::horizontal([
             Constraint::Length(self.left),
             Constraint::Min(0),
@@ -78,7 +74,6 @@ impl<T: Renderable> Renderable for Padded<'_, T> {
         ])
         .areas(area);
 
-        // Render inner content
         if content_area.width > 0 {
             self.inner.render(content_area, buf);
         }
@@ -91,7 +86,6 @@ mod tests {
     use pretty_assertions::assert_eq;
     use ratatui::style::Color;
 
-    /// Simple test content that renders as fixed height.
     struct TestContent {
         height: u16,
         text: &'static str,
@@ -117,7 +111,6 @@ mod tests {
         };
         let padded = Padded::new(&content, 2, 1);
 
-        // Width 80 -> content gets 77 (80 - 2 - 1)
         assert_eq!(padded.desired_height(80), 3);
     }
 
@@ -129,8 +122,6 @@ mod tests {
         };
         let padded = Padded::standard(&content);
 
-        // Standard is 2 left, 1 right
-        // Width 10 -> content gets 7
         assert_eq!(padded.desired_height(10), 1);
     }
 
@@ -163,7 +154,6 @@ mod tests {
         let mut buf = Buffer::empty(area);
         padded.render(area, &mut buf);
 
-        // All cells should have blue background
         for x in 0..5 {
             let cell = buf.cell((x, 0)).unwrap();
             assert_eq!(cell.bg, Color::Blue);

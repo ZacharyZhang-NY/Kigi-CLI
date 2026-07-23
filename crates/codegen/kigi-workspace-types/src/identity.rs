@@ -20,12 +20,10 @@ use std::fmt;
 pub struct SessionId(pub(crate) String);
 
 impl SessionId {
-    /// Construct a new session id from any string-like value.
     pub fn new(id: impl Into<String>) -> Self {
         Self(id.into())
     }
 
-    /// Borrow the wrapped string.
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -55,12 +53,10 @@ impl From<&str> for SessionId {
 pub struct ToolCallId(pub(crate) String);
 
 impl ToolCallId {
-    /// Construct a new tool call id from any string-like value.
     pub fn new(id: impl Into<String>) -> Self {
         Self(id.into())
     }
 
-    /// Borrow the wrapped string.
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -94,12 +90,10 @@ impl From<&str> for ToolCallId {
 pub struct HunkId(pub(crate) String);
 
 impl HunkId {
-    /// Construct a new hunk id from any string-like value.
     pub fn new(id: impl Into<String>) -> Self {
         Self(id.into())
     }
 
-    /// Borrow the wrapped string.
     pub fn as_str(&self) -> &str {
         &self.0
     }

@@ -19,7 +19,6 @@ pub async fn run(harness: &mut PtyHarness, content: &ContentController) -> Resul
     // 1. Prime the mock server with a large markdown response.
     content.set_response(long_markdown_response(LINES));
 
-    // 2. Wait for the pager's splash screen.
     wait_for_welcome(harness).await?;
 
     // 3. Submit a prompt so the mock inference server returns the big response.

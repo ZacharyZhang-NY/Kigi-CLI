@@ -166,6 +166,7 @@ pub fn list(conn: &Connection, filter: &ListFilter) -> Result<Vec<WorktreeRecord
     }
     sql.push_str(" ORDER BY created_at DESC");
 
+    // Push order must match the ?N numbering handed out by the clauses above.
     let mut params: Vec<&dyn rusqlite::types::ToSql> = Vec::with_capacity(idx);
     if let Some(ref s) = status_str {
         params.push(s);

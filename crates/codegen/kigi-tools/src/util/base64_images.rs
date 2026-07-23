@@ -564,7 +564,8 @@ mod tests {
 
     #[test]
     fn strip_pdf_size_calculation() {
-        let pdf_b64 = payload(12288); // 12288 * 3/4 / 1024 = 9 KB
+        // 12288 * 3/4 / 1024 = 9 KB
+        let pdf_b64 = payload(12288);
         let input = format!("data:application/pdf;base64,{pdf_b64} end");
         let result = strip_pdf_data_uris(&input).unwrap();
         assert!(result.contains("[PDF attachment removed \u{2014} 9 KB]"));
@@ -763,8 +764,6 @@ mod tests {
                 .contains("[image content will be provided separately]")
         );
     }
-
-    // ─── try_extract_base64_images tests ──────────────────────────────
 
     #[test]
     fn try_extract_no_images_returns_none() {

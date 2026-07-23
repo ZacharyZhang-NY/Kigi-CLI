@@ -116,7 +116,7 @@ impl ChatStateActor {
     /// Dispatch a command to the appropriate mutation or query handler.
     fn handle_command(&mut self, cmd: ChatStateCommand) {
         match cmd {
-            // ═══ Mutations ═══
+            // Mutations
             ChatStateCommand::PushUserMessage { item } => {
                 self.push_user_message(item);
             }
@@ -240,7 +240,7 @@ impl ChatStateActor {
                 self.repair_dangling_after_harness_halt(class);
             }
 
-            // ═══ Queries ═══
+            // Queries
             //
             // Read queries are pure reads — repair only at write boundaries:
             // `ChatState::new()` (startup) and `push_user_message()` (new turn).
@@ -318,7 +318,7 @@ impl ChatStateActor {
                 self.truncate_to_prompt_index(target_prompt_index);
                 self.state.turn_capture = None;
                 self.state.prompt_usage = None;
-                // `harness_trace_buffer` / `harness_trace_turns` intentionally
+                // `harness_trace_buffer` / `harness_trace_turns` deliberately
                 // survive a rewind: the goal planner / verifier subagents
                 // genuinely ran, so their sealed trace turns stay uploadable as
                 // siblings even when the live turn that triggered them is undone.
@@ -358,7 +358,7 @@ impl ChatStateActor {
                 let _ = reply.send(std::mem::take(&mut self.state.harness_trace_turns));
             }
 
-            // ─── Narrow targeted queries ──────────────────────────────────
+            // Narrow targeted queries
             ChatStateCommand::GetConversationLen { reply } => {
                 let _ = reply.send(self.get_conversation_len());
             }

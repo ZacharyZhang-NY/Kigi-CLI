@@ -304,8 +304,6 @@ mod tests {
         }
     }
 
-    // --- Title composition tests ---
-
     #[test]
     fn kigi_only_produces_just_kigi() {
         let cfg = config_with_items(vec![TitleItem::Kigi]);
@@ -572,8 +570,6 @@ mod tests {
         assert_eq!(mgr.last_title, "Thinking - kigi");
     }
 
-    // --- Action Required blinking ---
-
     #[test]
     fn action_required_visible_on_first_tick() {
         let cfg = config_with_items(vec![TitleItem::ActionRequired, TitleItem::Kigi]);
@@ -598,7 +594,8 @@ mod tests {
         let mut mgr = TitleManager::new(&cfg);
         let state = TitleState {
             has_pending_permissions: true,
-            focused: false, // unfocused → should blink
+            // unfocused, so ActionRequired should blink
+            focused: false,
             ..idle_state()
         };
 
@@ -638,8 +635,6 @@ mod tests {
         assert_eq!(mgr.last_title, "kigi");
     }
 
-    // --- Dedup (no-op when unchanged) ---
-
     #[test]
     fn dedup_skips_emission_when_unchanged() {
         let cfg = config_with_items(vec![TitleItem::Kigi]);
@@ -655,8 +650,6 @@ mod tests {
         assert_eq!(mgr.last_title, title_before);
     }
 
-    // --- Empty items list ---
-
     #[test]
     fn empty_items_produces_kigi_fallback() {
         let cfg = config_with_items(vec![]);
@@ -664,8 +657,6 @@ mod tests {
         mgr.update(&idle_state());
         assert_eq!(mgr.last_title, "kigi");
     }
-
-    // --- Model item ---
 
     #[test]
     fn model_item_shown_when_present() {
@@ -687,8 +678,6 @@ mod tests {
         assert_eq!(mgr.last_title, "kigi");
     }
 
-    // --- Cwd item ---
-
     #[test]
     fn cwd_shows_last_component() {
         let cfg = config_with_items(vec![TitleItem::Cwd, TitleItem::Kigi]);
@@ -700,8 +689,6 @@ mod tests {
         mgr.update(&state);
         assert_eq!(mgr.last_title, "my-project - kigi");
     }
-
-    // --- TurnTimer item ---
 
     #[test]
     fn turn_timer_shown_when_above_one_second() {
@@ -726,8 +713,6 @@ mod tests {
         mgr.update(&state);
         assert_eq!(mgr.last_title, "kigi");
     }
-
-    // --- Truncation ---
 
     #[test]
     fn long_session_name_truncated_with_ellipsis() {
@@ -756,8 +741,6 @@ mod tests {
         assert_eq!(mgr.last_title, "short");
     }
 
-    // --- Reset ---
-
     #[test]
     fn reset_clears_state_and_emits_kigi() {
         let cfg = config_with_items(vec![TitleItem::SessionName, TitleItem::Kigi]);
@@ -777,8 +760,6 @@ mod tests {
         assert_eq!(mgr.tick_count, 0);
     }
 
-    // --- Full default config integration ---
-
     #[test]
     fn default_config_active_turn_with_permissions() {
         let cfg = default_config();
@@ -788,7 +769,8 @@ mod tests {
             session_name: Some("my-session"),
             activity: Some(&activity),
             has_pending_permissions: true,
-            focused: false, // unfocused → should blink per original test
+            // unfocused, so ActionRequired should blink
+            focused: false,
             ..idle_state()
         };
 
@@ -822,8 +804,6 @@ mod tests {
         mgr.update(&idle_state());
         assert_eq!(mgr.last_title, "kigi");
     }
-
-    // --- Multi-item combinations ---
 
     #[test]
     fn all_items_present_in_order() {

@@ -260,7 +260,6 @@ mod tests {
         let created = load_or_create_device_id(&path).unwrap();
         assert_eq!(created.len(), 32, "uuid4 hex is 32 chars: {created:?}");
         assert!(created.chars().all(|c| c.is_ascii_hexdigit()));
-        // Second call reads the same id back.
         let reread = load_or_create_device_id(&path).unwrap();
         assert_eq!(created, reread);
         #[cfg(unix)]

@@ -120,22 +120,18 @@ pub async fn flush_blocking() {
     let _ = kigi_acp_lib::acp_send(notification, tx).await;
 }
 
-/// Log an info-level entry.
 pub fn info(msg: &str, sid: Option<&str>, ctx: Option<serde_json::Value>) {
     push_entry(LogLevel::Info, msg, sid, ctx);
 }
 
-/// Log a warn-level entry.
 pub fn warn(msg: &str, sid: Option<&str>, ctx: Option<serde_json::Value>) {
     push_entry(LogLevel::Warn, msg, sid, ctx);
 }
 
-/// Log an error-level entry.
 pub fn error(msg: &str, sid: Option<&str>, ctx: Option<serde_json::Value>) {
     push_entry(LogLevel::Error, msg, sid, ctx);
 }
 
-/// Log a debug-level entry.
 pub fn debug(msg: &str, sid: Option<&str>, ctx: Option<serde_json::Value>) {
     push_entry(LogLevel::Debug, msg, sid, ctx);
 }

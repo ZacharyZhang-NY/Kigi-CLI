@@ -14,9 +14,7 @@ use crate::copy::CopyStats;
 pub use crate::copy::DirtyFilesReport;
 use crate::copy::ParallelCopyConfig;
 
-// ============================================================================
 // BtrfsDelegate – delegate privileged btrfs ops to an external service
-// ============================================================================
 
 /// Result from a delegated btrfs snapshot creation.
 #[derive(Debug, Clone)]
@@ -64,7 +62,7 @@ pub trait BtrfsDelegate: Send + Sync {
         anyhow::bail!("overlay mount delegation not supported by this delegate")
     }
 
-    /// Unmount an overlay worktree previously mounted via [`Self::mount_overlay`]
+    /// Unmount an overlay worktree that was mounted via [`Self::mount_overlay`]
     /// (in the caller's mount namespace).
     fn unmount_overlay(&self, target: &Path) -> Result<()> {
         let _ = target;
@@ -353,7 +351,7 @@ impl WorktreeBuilder {
     /// modes when the source is on a BTRFS subvolume. This method is only
     /// needed to *force* or *disable* that auto-detection.
     pub fn btrfs_mode(self, mode: BtrfsMode) -> Self {
-        // BtrfsMode is now handled inside execute.rs based on CreationMode.
+        // BtrfsMode is handled inside execute.rs based on CreationMode.
         // This method is kept for backward compatibility with the CLI.
         tracing::warn!(
             ?mode,
@@ -665,7 +663,8 @@ fn remove_worktree_from_disk(
                 worktree_path.display()
             ))?;
         }
-        Err(_) => {} // nothing at the path
+        // nothing at the path
+        Err(_) => {}
     }
 
     // Deregister: remove the `.git/worktrees/<name>/` directory.
@@ -995,7 +994,8 @@ fn try_btrfs_remove(
     // Case 2 & 3: Check if the worktree path is a btrfs subvolume.
     let btrfs_info = match btrfs::is_btrfs_subvolume(worktree_path) {
         Ok(Some(info)) => info,
-        Ok(None) => return Ok(None), // Not a btrfs subvolume, fall back
+        // Not a btrfs subvolume, fall back
+        Ok(None) => return Ok(None),
         Err(e) => {
             tracing::debug!(
                 path = %worktree_path.display(),
@@ -1672,7 +1672,7 @@ pub mod gc {
                 }
                 // Dry run: count the candidate without touching disk or DB. Skip
                 // a missing path — a real run sweeps it to dead first, so it's
-                // already counted in dead_removed (don't double-count here).
+                // already counted in `dead_removed` (don't double-count here).
                 if opts.dry_run {
                     if path.exists() {
                         report.expired_removed += 1;
@@ -2652,7 +2652,7 @@ mod tests {
             super_options: String::new(),
         }];
 
-        // `snapshot_path` is intentionally never created, so the privileged
+        // `snapshot_path` is deliberately never created, so the privileged
         // `btrfs subvolume delete` is gated out (btrfs is unavailable in CI; real
         // subvolume deletion is exercised only on a btrfs-capable host). The
         // discriminating signals here are the metadata + dir cleanup.
@@ -2705,7 +2705,7 @@ mod tests {
             super_options: String::new(),
         }];
 
-        // NOTE: `snapshot_path` is intentionally never created here, so the
+        // NOTE: `snapshot_path` is deliberately never created here, so the
         // privileged `btrfs subvolume delete` is gated out (btrfs is unavailable
         // in CI). This test covers the symlink-vs-dir branch selection and the
         // symlink + metadata cleanup; the real subvolume deletion is exercised
@@ -2962,7 +2962,7 @@ mod tests {
                 head_commit: None,
                 session_id: None,
                 creator_pid: Some(my_pid),
-                created_at: 1, // very old
+                created_at: 1,
                 last_accessed_at: None,
                 status: crate::db::WorktreeStatus::Alive,
                 metadata: None,
@@ -2972,7 +2972,7 @@ mod tests {
             // sweep_dead will mark it dead (path doesn't exist),
             // but gc with max_age should still check liveness for expiry.
             // Since the path doesn't exist, sweep_dead marks it dead first,
-            // then dead_removed cleans it. Let's use a real existing path instead.
+            // then `dead_removed` cleans it. Let's use a real existing path instead.
             let dir = tmp.path().join("real-wt");
             std::fs::create_dir(&dir).unwrap();
             let mut record2 = record.clone();
@@ -2983,7 +2983,8 @@ mod tests {
             let report = gc::gc_worktrees(
                 &db,
                 &gc::GcOptions {
-                    max_age_secs: Some(0), // everything is expired
+                    // everything is expired
+                    max_age_secs: Some(0),
                     force: false,
                     dry_run: false,
                 },
@@ -3028,7 +3029,8 @@ mod tests {
             )
             .unwrap();
 
-            assert_eq!(report.dead_removed, 1); // counted as would-be-removed
+            // counted as would-be-removed
+            assert_eq!(report.dead_removed, 1);
             // Dry run must NOT mutate: the record is still present AND still
             // Alive (it was never swept to Dead).
             let all = db
@@ -3059,8 +3061,8 @@ mod tests {
                 git_ref: None,
                 head_commit: None,
                 session_id: None,
-                creator_pid: Some(std::process::id()), // our own PID
-                created_at: 1,                         // very old
+                creator_pid: Some(std::process::id()),
+                created_at: 1,
                 last_accessed_at: None,
                 status: crate::db::WorktreeStatus::Alive,
                 metadata: None,
@@ -3138,8 +3140,10 @@ mod tests {
                 git_ref: None,
                 head_commit: None,
                 session_id: None,
-                creator_pid: None, // no liveness guard: isolate the age logic
-                created_at: 1,     // both are old by creation time
+                // no liveness guard: isolate the age logic
+                creator_pid: None,
+                // both are old by creation time
+                created_at: 1,
                 last_accessed_at: None,
                 status: crate::db::WorktreeStatus::Alive,
                 metadata: None,
@@ -3147,14 +3151,16 @@ mod tests {
             db.register(&crate::db::WorktreeRecord {
                 id: "fresh".to_string(),
                 path: fresh.clone(),
-                last_accessed_at: Some(i64::MAX), // touched within the window
+                // touched within the window
+                last_accessed_at: Some(i64::MAX),
                 ..base.clone()
             })
             .unwrap();
             db.register(&crate::db::WorktreeRecord {
                 id: "stale".to_string(),
                 path: stale.clone(),
-                last_accessed_at: Some(1), // never re-touched
+                // never re-touched
+                last_accessed_at: Some(1),
                 ..base
             })
             .unwrap();
@@ -3199,8 +3205,10 @@ mod tests {
                 git_ref: None,
                 head_commit: None,
                 session_id: None,
-                creator_pid: None, // creator gone: only the CWD guard can protect it
-                created_at: 1,     // very old → expired
+                // creator gone: only the CWD guard can protect it
+                creator_pid: None,
+                // very old → expired
+                created_at: 1,
                 last_accessed_at: None,
                 status: crate::db::WorktreeStatus::Alive,
                 metadata: None,
@@ -3267,8 +3275,9 @@ mod tests {
                 git_ref: None,
                 head_commit: None,
                 session_id: None,
-                creator_pid: None, // no liveness guard
-                created_at: 1,     // very old
+                // no liveness guard
+                creator_pid: None,
+                created_at: 1,
                 last_accessed_at: None,
                 status: crate::db::WorktreeStatus::Alive,
                 metadata: None,
@@ -3300,7 +3309,7 @@ mod tests {
         fn gc_dry_run_missing_and_expired_counted_once() {
             // A record that is Alive, has a MISSING path, AND is expired must be
             // counted EXACTLY once (a real run sweeps it to dead and unregisters
-            // it before the expired loop). It belongs to dead_removed, not both.
+            // it before the expired loop). It belongs to `dead_removed`, not both.
             let tmp = tempfile::TempDir::new().unwrap();
             let db = db_at(&tmp);
 
@@ -3315,7 +3324,8 @@ mod tests {
                 head_commit: None,
                 session_id: None,
                 creator_pid: None,
-                created_at: 1, // very old → expired
+                // very old → expired
+                created_at: 1,
                 last_accessed_at: None,
                 status: crate::db::WorktreeStatus::Alive,
                 metadata: None,
@@ -3344,7 +3354,7 @@ mod tests {
 
         #[test]
         fn gc_expired_failed_removal_keeps_record() {
-            // When the expired worktree can't be removed, expired_removed must
+            // When the expired worktree can't be removed, `expired_removed` must
             // NOT be counted and the DB record must survive (so it stays
             // visible to a later gc).
             let tmp = tempfile::TempDir::new().unwrap();
@@ -3520,7 +3530,8 @@ mod tests {
                 head_commit: None,
                 session_id: None,
                 creator_pid: None,
-                created_at: 1, // very old → expired
+                // very old → expired
+                created_at: 1,
                 last_accessed_at: None,
                 status: crate::db::WorktreeStatus::Alive,
                 metadata: None,

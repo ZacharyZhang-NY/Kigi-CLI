@@ -226,7 +226,7 @@ mod tests {
     }
 
     /// Settle expiry emits exactly one Completed comparing the first pick's
-    /// pre-op HEAD against the final HEAD (head_changed spans the merged op).
+    /// pre-op HEAD against the final HEAD (`head_changed` spans the merged op).
     #[test]
     fn settling_expiry_emits_completed_spanning_merged_op() {
         let now = Instant::now();
@@ -300,7 +300,7 @@ mod tests {
     }
 
     /// Regression: timer-arm `drive()` must report Started so the consumer's
-    /// `in_op` flag flips; otherwise FilesChanged events skip buffering.
+    /// `in_op` flag flips; otherwise `FilesChanged` events skip buffering.
     #[test]
     fn cooldown_to_locked_when_lock_reappears_at_timer_fire() {
         let now = Instant::now();

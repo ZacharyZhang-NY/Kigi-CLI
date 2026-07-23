@@ -178,7 +178,6 @@ impl Widget for ShortcutsBar<'_> {
             .bg(theme.bg_base)
             .remove_modifier(Modifier::BOLD | Modifier::DIM);
 
-        // If pending confirmation, show only "press again to {label}"
         if let Some(pending) = &self.pending_confirmation {
             let key_text = pending.shortcut.display();
             let label = format!("press again to {}", pending.label);
@@ -197,7 +196,8 @@ impl Widget for ShortcutsBar<'_> {
             let action_span = Span::styled(&label, action_style);
             let action_width = label.width() as u16;
             buf.set_span(x, area.y, &action_span, action_width);
-            let _ = x + action_width; // suppress unused
+            // suppress unused
+            let _ = x + action_width;
             return;
         }
 
@@ -209,7 +209,6 @@ impl Widget for ShortcutsBar<'_> {
 
         let mut x = area.x;
 
-        // Build the effective hint list (compact-aware).
         let effective = compute_effective_hints(self.hints, self.compact.as_ref());
 
         for (i, hint) in effective.iter().enumerate() {
@@ -248,7 +247,6 @@ impl Widget for ShortcutsBar<'_> {
             x += action_width;
         }
 
-        // Right-aligned text (team name etc.)
         if let Some(text) = self.right_text {
             let right_style = Style::default().fg(theme.gray).bg(theme.bg_base);
             let display = format!("{text} ");
@@ -326,7 +324,8 @@ mod tests {
             help_hint: Some(help),
         };
         let out = compute_effective_hints(&hints, Some(&cfg));
-        assert_eq!(out.len(), 3); // 2 + help
+        // 2 + help
+        assert_eq!(out.len(), 3);
         assert_eq!(out[0].label, "a");
         assert_eq!(out[1].label, "b");
         assert_eq!(out[2].label, "shortcuts");

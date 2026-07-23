@@ -1,33 +1,22 @@
-//! Local feedback data types.
-//!
-//! Formerly the wire contract with the deleted xAI cli-chat-proxy feedback
-//! backend; now these types only back the LOCAL feedback records persisted in
-//! the session store and the heuristics that decide when to solicit feedback.
-//! The only remaining network surface is the Kimi Code `POST {base}/feedback`
-//! call in [`crate::agent::feedback_client`], which sends a small flat JSON
-//! body — none of these types go over the wire anymore, so the proxy-only
-//! null-column fields (experiment/comparison/preference plumbing) are gone.
+//! Local feedback data types backing the feedback records persisted in the
+//! session store and the heuristics that decide when to solicit feedback. The
+//! only network surface is the Kimi Code `POST {base}/feedback` call in
+//! [`crate::agent::feedback_client`], which sends a small flat JSON body.
 
 use serde::{Deserialize, Deserializer, Serialize};
 
 pub use kigi_shared::session::FeedbackTerminalInfo;
 
-/// Type of client submitting feedback.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ClientType {
-    /// Terminal/CLI agent
     #[default]
     Agent,
-    /// Terminal UI
     Tui,
-    /// Web interface
     Web,
-    /// IDE extension (VS Code, JetBrains, etc.)
     Extension,
-    /// Remote workspace / hosted agent client (wire value `nebula`).
+    /// Remote workspace / hosted agent client.
     Nebula,
-    /// Desktop (Electron app)
     Desktop,
 }
 
@@ -44,22 +33,15 @@ impl std::fmt::Display for ClientType {
     }
 }
 
-/// Type of feedback being submitted.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FeedbackType {
-    /// Numeric rating only
     #[default]
     Rating,
-    /// Free-form text only
     Text,
-    /// Both rating and text
     RatingWithText,
-    /// Model preference comparison
     ModelPreference,
-    /// Bug report
     BugReport,
-    /// Feature request
     FeatureRequest,
 }
 
@@ -76,15 +58,11 @@ impl std::fmt::Display for FeedbackType {
     }
 }
 
-/// Type of rating scale used.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RatingType {
-    /// Thumbs up/down (-1, 0, 1)
     Thumbs,
-    /// Star rating (1-5)
     Stars,
-    /// Net Promoter Score (0-10)
     Nps,
 }
 
@@ -98,19 +76,13 @@ impl std::fmt::Display for RatingType {
     }
 }
 
-/// Context type for what the feedback is about.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ContextType {
-    /// Feedback about a specific message
     Message,
-    /// Feedback about the overall session/conversation
     Session,
-    /// Feedback about a specific feature
     Feature,
-    /// Feedback about tool usage
     ToolUse,
-    /// General feedback
     General,
 }
 
@@ -126,27 +98,17 @@ impl std::fmt::Display for ContextType {
     }
 }
 
-/// Type of feedback mode requested.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FeedbackMode {
-    /// Thumbs up/down
     Thumbs,
-    /// Star rating (1-5)
     Stars,
-    /// Free-form text
     Text,
-    /// Thumbs up/down with optional text comment
     ThumbsText,
-    /// Star rating with optional text comment
     StarsText,
-    /// Model comparison
     Comparison,
-    /// Multi-question survey
     Survey,
-    /// Net Promoter Score (0-10)
     Nps,
-    /// NPS with optional text comment
     NpsText,
 }
 
@@ -166,7 +128,6 @@ impl std::fmt::Display for FeedbackMode {
     }
 }
 
-/// Parse a feedback mode string to FeedbackMode enum.
 pub fn parse_feedback_mode_str(s: &str) -> FeedbackMode {
     match s {
         "thumbs" => FeedbackMode::Thumbs,
@@ -247,20 +208,15 @@ where
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FeedbackSubmission {
-    /// Session ID this feedback is for
     pub session_id: String,
 
-    /// Type of client submitting feedback
     pub client_type: ClientType,
 
-    /// Type of feedback being submitted
     pub feedback_type: FeedbackType,
 
-    /// Turn number within the session (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub turn_number: Option<i64>,
 
-    /// Rating type (if applicable)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rating_type: Option<RatingType>,
 
@@ -271,11 +227,9 @@ pub struct FeedbackSubmission {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rating_value: Option<i32>,
 
-    /// Free-form feedback text
     #[serde(skip_serializing_if = "Option::is_none")]
     pub feedback_text: Option<String>,
 
-    /// Feedback categories (e.g., ["accuracy", "speed", "helpfulness"])
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub feedback_categories: Vec<String>,
 
@@ -295,27 +249,21 @@ pub struct FeedbackSubmission {
     )]
     pub model_fingerprint: Option<String>,
 
-    /// Context type for the feedback
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_type: Option<ContextType>,
 
-    /// Feedback request ID (set when responding to a solicited request)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_id: Option<String>,
 
-    /// Client version
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_version: Option<String>,
 
-    /// Shell (kigi-shell) version
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shell_version: Option<String>,
 
-    /// Additional metadata as JSON
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
 
-    /// Last user message at feedback time.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -323,7 +271,6 @@ pub struct FeedbackSubmission {
     )]
     pub last_user_message: Option<String>,
 
-    /// Last assistant response at feedback time.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -331,15 +278,12 @@ pub struct FeedbackSubmission {
     )]
     pub last_assistant_message: Option<String>,
 
-    /// Per-tool call counts for the rated turn.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tool_outcomes: Vec<FeedbackToolOutcome>,
 
-    /// Session working directory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_cwd: Option<String>,
 
-    /// Number of compactions in the session.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compaction_count: Option<i64>,
 
@@ -347,15 +291,12 @@ pub struct FeedbackSubmission {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_window_usage: Option<u8>,
 
-    /// Raw context tokens used at feedback time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_tokens_used: Option<u64>,
 
-    /// Raw model context window token limit at feedback time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_window_tokens: Option<u64>,
 
-    /// Terminal environment snapshot at feedback time (brand, multiplexer, SSH, etc.).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub terminal_info: Option<FeedbackTerminalInfo>,
 }
@@ -402,49 +343,32 @@ pub struct FeedbackToolOutcome {
     pub failures: u32,
 }
 
-/// Configuration for a single feedback tier.
-///
-/// Each tier has specific thresholds and conditions that must be met
-/// for feedback to be requested at that tier.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct TierConfig {
-    /// Whether this tier is enabled
     pub enabled: bool,
     /// Sample rate (0.0 to 1.0, e.g., 0.0005 = 0.05%)
     pub sample_rate: f64,
-    /// Minimum turns required to trigger
     pub min_turns: i64,
-    /// Minimum tool calls required (Tier 1 & 2)
     #[serde(default)]
     pub min_tool_calls: i64,
-    /// Minimum compactions required (Tier 1 & 2)
     #[serde(default)]
     pub min_compactions: i64,
-    /// Minimum errors required (Tier 2 only)
     #[serde(default)]
     pub min_errors: i64,
-    /// Whether cancellations disqualify this tier (Tier 1)
     #[serde(default)]
     pub no_cancellations: bool,
-    /// Whether cancellation is required (Tier 3)
     #[serde(default)]
     pub requires_cancellation: bool,
-    /// Whether revert is required (Tier 3)
     #[serde(default)]
     pub requires_revert: bool,
-    /// Whether at least one of cancellation/revert is required (Tier 3)
     #[serde(default)]
     pub requires_recovery: bool,
-    /// Feedback mode to use when this tier triggers
     pub feedback_mode: FeedbackMode,
-    /// Whether feedback requests from this tier are dismissible (non-intrusive)
     #[serde(default = "default_true")]
     pub dismissible: bool,
-    /// Prompt text shown to users when this tier's feedback is requested
     #[serde(default)]
     pub prompt: String,
-    /// Max times this tier can trigger per session (0 = unlimited)
     #[serde(default = "default_one")]
     pub max_triggers: i32,
 }
@@ -470,122 +394,81 @@ impl Default for TierConfig {
     }
 }
 
-/// Configuration for feedback heuristics.
-///
-/// Formerly fetched from the proxy backend; now purely local — the built-in
-/// [`Default`] is the only production source, kept as a struct so tests and
-/// future config surfaces can tune the tiers.
+/// Configuration for feedback heuristics. The built-in [`Default`] is the only
+/// production source; the struct exists so tests and future config surfaces can
+/// tune the tiers.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct FeedbackHeuristicsConfig {
-    /// Unique configuration identifier
     pub config_id: String,
-    /// Configuration version (monotonically increasing)
     pub config_version: i64,
 
-    // === Global Settings ===
-    /// Master enable/disable switch for all feedback collection
     pub enabled: bool,
-    /// Minimum seconds between feedback requests (cooldown period)
     #[serde(default = "default_cooldown_seconds")]
     pub cooldown_seconds: i64,
-    /// Maximum feedback requests per session
     #[serde(default = "default_max_requests")]
     pub max_requests_per_session: i64,
 
-    // === Tier 1: Standard Engagement ===
-    /// Whether Tier 1 is enabled
     #[serde(default = "default_true")]
     pub tier1_enabled: bool,
-    /// Sample rate for Tier 1 (0.0-1.0)
     #[serde(default = "default_tier1_sample_rate")]
     pub tier1_sample_rate: f64,
-    /// Minimum turns for Tier 1
     #[serde(default = "default_tier1_min_turns")]
     pub tier1_min_turns: i64,
-    /// Minimum tool calls for Tier 1
     #[serde(default = "default_tier1_min_tool_calls")]
     pub tier1_min_tool_calls: i64,
-    /// Minimum compactions for Tier 1
     #[serde(default = "default_tier1_min_compactions")]
     pub tier1_min_compactions: i64,
-    /// Whether Tier 1 requires no cancellations
     #[serde(default = "default_true")]
     pub tier1_no_cancellations: bool,
-    /// Feedback mode for Tier 1
     #[serde(default = "default_feedback_mode_thumbs")]
     pub tier1_feedback_mode: String,
-    /// Whether Tier 1 feedback requests are dismissible
     #[serde(default = "default_true")]
     pub tier1_dismissible: bool,
-    /// Prompt text shown to users when Tier 1 feedback is requested
     #[serde(default = "default_tier1_prompt")]
     pub tier1_prompt: String,
-    /// Max times Tier 1 can trigger per session (0 = unlimited)
     #[serde(default = "default_one")]
     pub tier1_max_triggers: i32,
 
-    // === Tier 2: Complex Session with Recovery ===
-    /// Whether Tier 2 is enabled
     #[serde(default = "default_true")]
     pub tier2_enabled: bool,
-    /// Sample rate for Tier 2 (0.0-1.0)
     #[serde(default = "default_tier2_sample_rate")]
     pub tier2_sample_rate: f64,
-    /// Minimum turns for Tier 2
     #[serde(default = "default_tier2_min_turns")]
     pub tier2_min_turns: i64,
-    /// Minimum tool calls for Tier 2
     #[serde(default = "default_tier2_min_tool_calls")]
     pub tier2_min_tool_calls: i64,
-    /// Minimum compactions for Tier 2
     #[serde(default = "default_tier2_min_compactions")]
     pub tier2_min_compactions: i64,
-    /// Minimum errors for Tier 2
     #[serde(default = "default_tier2_min_errors")]
     pub tier2_min_errors: i64,
-    /// Feedback mode for Tier 2
     #[serde(default = "default_feedback_mode_thumbs_text")]
     pub tier2_feedback_mode: String,
-    /// Whether Tier 2 feedback requests are dismissible
     #[serde(default = "default_true")]
     pub tier2_dismissible: bool,
-    /// Prompt text shown to users when Tier 2 feedback is requested
     #[serde(default = "default_tier2_prompt")]
     pub tier2_prompt: String,
-    /// Max times Tier 2 can trigger per session (0 = unlimited)
     #[serde(default = "default_one")]
     pub tier2_max_triggers: i32,
 
-    // === Tier 3: Recovery from Friction ===
-    /// Whether Tier 3 is enabled
     #[serde(default = "default_true")]
     pub tier3_enabled: bool,
-    /// Sample rate for Tier 3 (0.0-1.0)
     #[serde(default = "default_tier3_sample_rate")]
     pub tier3_sample_rate: f64,
-    /// Minimum turns for Tier 3
     #[serde(default = "default_tier3_min_turns")]
     pub tier3_min_turns: i64,
-    /// Whether Tier 3 requires at least one cancellation
     #[serde(default)]
     pub tier3_requires_cancellation: bool,
-    /// Whether Tier 3 requires at least one revert
     #[serde(default)]
     pub tier3_requires_revert: bool,
-    /// Whether Tier 3 requires recovery (cancellation OR revert)
     #[serde(default = "default_true")]
     pub tier3_requires_recovery: bool,
-    /// Feedback mode for Tier 3
     #[serde(default = "default_feedback_mode_stars_text")]
     pub tier3_feedback_mode: String,
-    /// Whether Tier 3 feedback requests are dismissible
     #[serde(default = "default_true")]
     pub tier3_dismissible: bool,
-    /// Prompt text shown to users when Tier 3 feedback is requested
     #[serde(default = "default_tier3_prompt")]
     pub tier3_prompt: String,
-    /// Max times Tier 3 can trigger per session (0 = unlimited)
     #[serde(default = "default_one")]
     pub tier3_max_triggers: i32,
 }
@@ -598,7 +481,6 @@ impl Default for FeedbackHeuristicsConfig {
             enabled: true,
             cooldown_seconds: 300,
             max_requests_per_session: 3,
-            // Tier 1
             tier1_enabled: true,
             tier1_sample_rate: 0.0005,
             tier1_min_turns: 10,
@@ -609,7 +491,6 @@ impl Default for FeedbackHeuristicsConfig {
             tier1_dismissible: true,
             tier1_prompt: default_tier1_prompt(),
             tier1_max_triggers: 1,
-            // Tier 2
             tier2_enabled: true,
             tier2_sample_rate: 0.0002,
             tier2_min_turns: 15,
@@ -620,7 +501,6 @@ impl Default for FeedbackHeuristicsConfig {
             tier2_dismissible: true,
             tier2_prompt: default_tier2_prompt(),
             tier2_max_triggers: 1,
-            // Tier 3
             tier3_enabled: true,
             tier3_sample_rate: 0.0001,
             tier3_min_turns: 20,
@@ -636,7 +516,6 @@ impl Default for FeedbackHeuristicsConfig {
 }
 
 impl FeedbackHeuristicsConfig {
-    /// Get the Tier 1 configuration as a TierConfig.
     pub fn tier1_config(&self) -> TierConfig {
         TierConfig {
             enabled: self.tier1_enabled,
@@ -656,7 +535,6 @@ impl FeedbackHeuristicsConfig {
         }
     }
 
-    /// Get the Tier 2 configuration as a TierConfig.
     pub fn tier2_config(&self) -> TierConfig {
         TierConfig {
             enabled: self.tier2_enabled,
@@ -676,7 +554,6 @@ impl FeedbackHeuristicsConfig {
         }
     }
 
-    /// Get the Tier 3 configuration as a TierConfig.
     pub fn tier3_config(&self) -> TierConfig {
         TierConfig {
             enabled: self.tier3_enabled,

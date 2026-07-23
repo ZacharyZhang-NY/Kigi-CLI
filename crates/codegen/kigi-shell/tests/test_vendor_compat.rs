@@ -120,12 +120,11 @@ async fn run_scenario(env: &[(&str, &str)]) -> String {
     bodies.join("\n---\n")
 }
 
-// ── Skills ──────────────────────────────────────────────────────────────────
-
 /// Defaults (all vendors on): kigi + cursor-vendor + claude-vendor skills present; the
 /// denylisted vendor builtin `shell` is dropped.
 #[tokio::test]
-#[ignore] // requires pre-built binary
+// requires pre-built binary
+#[ignore]
 async fn vendor_compat_defaults_include_vendor_skills_but_drop_denylisted() {
     with_local_set(|| async {
         let body = run_scenario(&[]).await;
@@ -151,7 +150,8 @@ async fn vendor_compat_defaults_include_vendor_skills_but_drop_denylisted() {
 
 /// `KIGI_CURSOR_SKILLS_ENABLED=false` drops the cursor-vendor skill; kigi stays.
 #[tokio::test]
-#[ignore] // requires pre-built binary
+// requires pre-built binary
+#[ignore]
 async fn vendor_compat_cursor_skills_disabled() {
     with_local_set(|| async {
         let body = run_scenario(&[("KIGI_CURSOR_SKILLS_ENABLED", "false")]).await;
@@ -171,7 +171,8 @@ async fn vendor_compat_cursor_skills_disabled() {
 
 /// `KIGI_CLAUDE_SKILLS_ENABLED=false` drops the claude-vendor skill; kigi stays.
 #[tokio::test]
-#[ignore] // requires pre-built binary
+// requires pre-built binary
+#[ignore]
 async fn vendor_compat_claude_skills_disabled() {
     with_local_set(|| async {
         let body = run_scenario(&[("KIGI_CLAUDE_SKILLS_ENABLED", "false")]).await;
@@ -187,11 +188,10 @@ async fn vendor_compat_claude_skills_disabled() {
     .await;
 }
 
-// ── Rules + AGENTS.md ────────────────────────────────────────────────────────
-
 /// Defaults: all rules and AGENTS.md surfaces are present.
 #[tokio::test]
-#[ignore] // requires pre-built binary
+// requires pre-built binary
+#[ignore]
 async fn vendor_compat_rules_and_agents_present_by_default() {
     with_local_set(|| async {
         let body = run_scenario(&[]).await;
@@ -215,11 +215,10 @@ async fn vendor_compat_rules_and_agents_present_by_default() {
     .await;
 }
 
-// ── Per-cell toggles (rules + agents) ────────────────────────────────────────
-
 /// `KIGI_CURSOR_RULES_ENABLED=false` drops cursor-vendor rules; claude-vendor rules stay.
 #[tokio::test]
-#[ignore] // requires pre-built binary
+// requires pre-built binary
+#[ignore]
 async fn vendor_compat_cursor_rules_disabled() {
     with_local_set(|| async {
         let body = run_scenario(&[("KIGI_CURSOR_RULES_ENABLED", "false")]).await;
@@ -237,7 +236,8 @@ async fn vendor_compat_cursor_rules_disabled() {
 
 /// `KIGI_CLAUDE_RULES_ENABLED=false` drops claude-vendor rules; cursor-vendor rules stay.
 #[tokio::test]
-#[ignore] // requires pre-built binary
+// requires pre-built binary
+#[ignore]
 async fn vendor_compat_claude_rules_disabled() {
     with_local_set(|| async {
         let body = run_scenario(&[("KIGI_CLAUDE_RULES_ENABLED", "false")]).await;
@@ -255,7 +255,8 @@ async fn vendor_compat_claude_rules_disabled() {
 
 /// `KIGI_CURSOR_AGENTS_ENABLED=false` drops cursor-vendor AGENTS.md; claude-vendor stays.
 #[tokio::test]
-#[ignore] // requires pre-built binary
+// requires pre-built binary
+#[ignore]
 async fn vendor_compat_cursor_agents_disabled() {
     with_local_set(|| async {
         let body = run_scenario(&[("KIGI_CURSOR_AGENTS_ENABLED", "false")]).await;
@@ -273,7 +274,8 @@ async fn vendor_compat_cursor_agents_disabled() {
 
 /// `KIGI_CLAUDE_AGENTS_ENABLED=false` drops claude-vendor AGENTS.md; cursor-vendor stays.
 #[tokio::test]
-#[ignore] // requires pre-built binary
+// requires pre-built binary
+#[ignore]
 async fn vendor_compat_claude_agents_disabled() {
     with_local_set(|| async {
         let body = run_scenario(&[("KIGI_CLAUDE_AGENTS_ENABLED", "false")]).await;
@@ -289,12 +291,11 @@ async fn vendor_compat_claude_agents_disabled() {
     .await;
 }
 
-// ── Cross-vendor combinations ────────────────────────────────────────────────
-
 /// All cursor-vendor compat OFF: cursor skills, rules, and AGENTS.md all absent;
 /// all claude-vendor surfaces unaffected.
 #[tokio::test]
-#[ignore] // requires pre-built binary
+// requires pre-built binary
+#[ignore]
 async fn vendor_compat_all_cursor_disabled() {
     with_local_set(|| async {
         let body = run_scenario(&[
@@ -318,7 +319,8 @@ async fn vendor_compat_all_cursor_disabled() {
 /// All claude-vendor compat OFF: claude skills, rules, and AGENTS.md all absent;
 /// all cursor-vendor surfaces unaffected.
 #[tokio::test]
-#[ignore] // requires pre-built binary
+// requires pre-built binary
+#[ignore]
 async fn vendor_compat_all_claude_disabled() {
     with_local_set(|| async {
         let body = run_scenario(&[
@@ -341,7 +343,8 @@ async fn vendor_compat_all_claude_disabled() {
 
 /// All vendor compat OFF: only kigi-native skill survives.
 #[tokio::test]
-#[ignore] // requires pre-built binary
+// requires pre-built binary
+#[ignore]
 async fn vendor_compat_all_vendors_disabled() {
     with_local_set(|| async {
         let body = run_scenario(&[

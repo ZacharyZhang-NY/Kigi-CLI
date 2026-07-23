@@ -546,8 +546,6 @@ mod tests {
         );
     }
 
-    // --- Progress bar (OSC 9;4) tests ---
-
     fn make_title_state(is_busy: bool) -> title::TitleState<'static> {
         title::TitleState {
             session_name: None,
@@ -704,8 +702,6 @@ mod tests {
         svc.flush_idle_state(&make_title_state(false));
         assert!(!svc.is_progress_active());
     }
-
-    // --- Permission notification rate-limiting tests ---
 
     #[test]
     fn permission_suppression_lifecycle() {

@@ -1,20 +1,11 @@
 //! Render [Mermaid](https://mermaid.js.org/) diagram source to a rasterized PNG,
 //! behind a swappable [`MermaidEngine`] trait.
 //!
-//! This crate is a self-contained, pure-library building block: it turns Mermaid
-//! diagram text into PNG bytes with no Node, no headless browser, and no network.
-//! It isolates the layout engine and the SVG raster stack behind our own audited
-//! boundary so the rest of the CLI can swap engines or fall back to a code block
-//! without caring how a diagram is produced.
-//!
-//! # Pipeline
-//!
-//! 1. A [`MermaidEngine`] turns Mermaid source into an SVG and rasterizes it.
-//!    The default engine ([`PureRustEngine`]) uses the vendored, dagre-based
-//!    `mermaid-to-svg` for layout, then [`rasterize`].
-//! 2. [`rasterize`] converts SVG to PNG with `resvg`/`usvg`/`tiny-skia`,
-//!    configured with **no remote/file resolvers** and a **bundled font** so it
-//!    is safe over untrusted input and deterministic across machines.
+//! Rendering needs no Node, no headless browser, and no network: a
+//! [`MermaidEngine`] lays a diagram out as SVG, then [`rasterize`] converts it
+//! to PNG with `resvg`/`usvg`/`tiny-skia`, configured with **no remote/file
+//! resolvers** and a **bundled font** so it is safe over untrusted input and
+//! deterministic across machines.
 //!
 //! # Untrusted input and crash isolation
 //!
@@ -27,8 +18,7 @@
 //! pager renders each diagram in a short-lived child process (see
 //! [`run_with_timeout`] and the pager's `mermaid_worker`), so a panic or runaway
 //! render is contained to the child and the wall-clock timeout is a real,
-//! killable process kill. This crate provides both the in-process engine and the
-//! subprocess spawn/timeout/reap building blocks that child uses.
+//! killable process kill.
 //!
 //! # Example
 //!
@@ -58,10 +48,8 @@ pub use subprocess::{SubprocessError, run_with_timeout};
 
 use std::sync::Arc;
 
-/// Which color scheme a diagram should be rendered for.
-///
-/// Mapped from the pager's theme by the caller; only the light/dark split is
-/// relevant to diagram rendering.
+/// Which color scheme a diagram should be rendered for. Callers collapse the
+/// pager's theme down to this light/dark split.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MermaidTheme {
     /// Light surfaces with dark text (e.g. `KigiDay`).
@@ -71,18 +59,17 @@ pub enum MermaidTheme {
     Dark,
 }
 
-/// Default opaque surface colors. Single source of truth, shared by the raster
+/// Single source of truth for the surface colors, shared by the raster
 /// background ([`MermaidTheme::surface_background`]) and the vendored engine's
 /// theme background (`pure::theme_for`, via [`Rgba::to_hex`]).
 pub(crate) const LIGHT_SURFACE: Rgba = Rgba::new(0xFA, 0xFA, 0xFA, 0xFF);
 pub(crate) const DARK_SURFACE: Rgba = Rgba::new(0x18, 0x18, 0x1B, 0xFF);
 
 impl MermaidTheme {
-    /// The default opaque surface color a diagram blends into for this theme.
-    ///
-    /// Used as the raster background when the caller does not supply an explicit
-    /// [`RenderParams::background`]; chosen to approximate a typical terminal
-    /// scrollback surface so the PNG sits flush with the grid.
+    /// The default opaque surface color a diagram blends into for this theme,
+    /// used when the caller supplies no explicit [`RenderParams::background`].
+    /// Chosen to approximate a typical terminal scrollback surface so the PNG
+    /// sits flush with the grid.
     pub fn surface_background(self) -> Rgba {
         match self {
             MermaidTheme::Light => LIGHT_SURFACE,
@@ -118,14 +105,10 @@ impl Rgba {
 
 /// Parameters controlling a single diagram render.
 ///
-/// Mirrors the sizing model: [`target_width_px`](Self::target_width_px)
-/// is the primary size driver (already HiDPI-oversampled by the caller),
-/// [`max_height_px`](Self::max_height_px) clamps tall diagrams, and
-/// [`scale`](Self::scale) is the fallback oversample used only when
-/// `target_width_px == 0`. [`min_width_px`](Self::min_width_px) raises the scale
-/// so small diagrams still rasterize wide enough for OS viewers. The default
-/// config is **target-width-driven** (`target_width_px` non-zero), so the default
-/// `scale` is inert.
+/// [`target_width_px`](Self::target_width_px) is the primary size driver
+/// (already HiDPI-oversampled by the caller) and [`scale`](Self::scale) is the
+/// fallback oversample consulted only when it is `0`. The default config is
+/// target-width-driven, so the default `scale` is inert.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RenderParams {
     /// Color scheme to render for.
@@ -211,7 +194,6 @@ mod tests {
         let light = MermaidTheme::Light.surface_background();
         let dark = MermaidTheme::Dark.surface_background();
         assert_ne!(light, dark, "light and dark must map to different surfaces");
-        // Light surface is brighter than dark on every channel; both opaque.
         assert!(light.r > dark.r && light.g > dark.g && light.b > dark.b);
         assert_eq!(light.a, 0xFF);
         assert_eq!(dark.a, 0xFF);
@@ -220,16 +202,12 @@ mod tests {
     #[test]
     fn rgba_to_hex_is_opaque_rrggbb() {
         assert_eq!(Rgba::new(0x12, 0xAB, 0xCD, 0xFF).to_hex(), "#12ABCD");
-        // Alpha is ignored.
         assert_eq!(Rgba::new(0, 0, 0, 0).to_hex(), "#000000");
-        // The shared dark surface const renders to the hex the dark theme uses.
         assert_eq!(DARK_SURFACE.to_hex(), "#18181B");
     }
 
     #[test]
     fn default_params_are_target_width_driven() {
-        // Exercises the real default path: target_width_px (1024) drives output
-        // width regardless of `scale`. Engine-agnostic, runs in the default build.
         let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50" viewBox="0 0 100 50"><rect width="10" height="10" fill="#0000ff"/></svg>"##;
         let out = rasterize(svg, &RenderParams::default()).expect("render");
         assert_eq!(
@@ -245,7 +223,6 @@ mod tests {
         assert_send_sync(&engine);
     }
 
-    /// The default engine renders a real PNG and never panics on valid input.
     #[test]
     fn default_engine_renders_valid_input() {
         let engine = default_engine();

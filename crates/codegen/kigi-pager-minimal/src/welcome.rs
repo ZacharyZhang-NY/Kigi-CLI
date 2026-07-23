@@ -1,16 +1,11 @@
 //! Minimal-mode welcome card.
 //!
-//! Minimal skips the full-screen welcome view entirely, so the start of a
-//! session is otherwise invisible — you land straight at the prompt. To make a
-//! fresh session obvious (and on `/new` / `Ctrl+N`), this commits a compact,
-//! rounded card once into native scrollback: the braille logo, the version, the
-//! cwd, the model, and a one-line hint. It mirrors the full-TUI hero box's style
-//! (rounded dim border + logo) without its menu/onboarding.
-//!
-//! It is printed via [`kigi_ratatui_inline::Terminal::insert_before`] — the same
-//! one-shot mechanism the commit pipeline uses — gated on an `AppView` flag set
-//! at session creation, so it prints exactly once per session and re-prints when
-//! a new session starts.
+//! Minimal skips the full-screen welcome view, so a fresh session would
+//! otherwise be invisible — you land straight at the prompt. This commits a
+//! compact rounded card (logo, version, cwd, model, hint) into native
+//! scrollback via [`kigi_ratatui_inline::Terminal::insert_before`], gated on an
+//! `AppView` flag set at session creation and on `/new`, so it prints exactly
+//! once per session.
 
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -21,8 +16,6 @@ use kigi_tui::app::app_view::{ActiveView, AppView};
 use kigi_tui::minimal_api;
 use kigi_tui::theme::Theme;
 
-/// Commit the welcome card when one is pending (set at session start / `/new`).
-///
 /// Called at the top of the minimal draw, before `commit_active`, so the card
 /// lands above the first conversation block in native scrollback.
 pub fn maybe_commit_welcome(app: &mut AppView, terminal: &mut PagerTerminal) {
@@ -30,20 +23,16 @@ pub fn maybe_commit_welcome(app: &mut AppView, terminal: &mut PagerTerminal) {
         return;
     }
     let width = terminal.viewport_area().width;
-    // Too narrow to draw a bordered card — leave the flag set and retry next
+    // Too narrow for a bordered card — leave the flag pending and retry next
     // frame (e.g. during an initial 0-width probe).
     if width < 8 {
         return;
     }
-    // NB: the pending flag is cleared only after the `insert_before` at the
-    // bottom SUCCEEDS — clearing it up front meant a failed insert silently
-    // dropped the card forever (bugbot). A failed frame retries next draw.
 
-    // Reset the live viewport to the TOP of the screen and clear what's visible,
-    // so the welcome card commits at row 0 and the app "owns" the window. The
-    // viewport is not bottom-pinned, so subsequent commits flow downward from
-    // here. Pre-existing native scrollback is untouched — scrolling up still
-    // shows whatever was there before.
+    // Move the live viewport to row 0 and clear it so the card commits at the
+    // top and the app owns the window; the viewport is not bottom-pinned, so
+    // later commits flow downward from here. Pre-existing native scrollback is
+    // untouched.
     let live_h = terminal.viewport_area().height;
     terminal.set_viewport_area(ratatui::layout::Rect {
         x: 0,
@@ -68,7 +57,6 @@ pub fn maybe_commit_welcome(app: &mut AppView, terminal: &mut PagerTerminal) {
         _ => (app.cwd.display().to_string(), None),
     };
 
-    // Info lines below the logo: title + version, cwd, optional model, hint.
     let mut info: Vec<Line<'static>> = Vec::new();
     info.push(Line::from(vec![
         Span::styled(
@@ -91,13 +79,14 @@ pub fn maybe_commit_welcome(app: &mut AppView, terminal: &mut PagerTerminal) {
     info.push(Line::from(Span::styled("/help for commands", theme.dim())));
 
     let logo_lines = minimal_api::compact_logo_line_count();
-    // logo (+ a blank separator row) when present, then the info lines, wrapped
-    // in a border with one row of vertical padding top and bottom.
+    // The logo carries a blank separator row when present.
     let logo_block = if logo_lines > 0 { logo_lines + 1 } else { 0 };
+    // Two border rows, one padding row above, the logo block, the info lines,
+    // one padding row below.
     let height = 2 + 1 + logo_block + info.len() as u16 + 1;
 
-    // RGB themes: blend a soft border. Terminal-native (both Reset): fall
-    // through to Reset so the terminal default fg draws the chrome.
+    // Terminal-native themes carry no RGB to blend, so the border falls back to
+    // the theme's own dim gray and the terminal default fg draws the chrome.
     let border_color = kigi_tui::render::color::blend_color(theme.bg_base, theme.gray_dim, 0.45)
         .unwrap_or(theme.gray_dim);
 
@@ -131,12 +120,10 @@ pub fn maybe_commit_welcome(app: &mut AppView, terminal: &mut PagerTerminal) {
         }
     });
     if inserted.is_err() {
-        // Terminal write failed — keep the flag pending so the card retries on
-        // the next frame instead of being dropped forever.
+        // Keep the flag pending so a failed terminal write retries on the next
+        // frame instead of dropping the card forever.
         return;
     }
     minimal_api::set_minimal_welcome_pending(app, false);
-    // Trailing gap, matching every committed block, so the first conversation
-    // block is separated from the card.
     super::commit::insert_gap(terminal);
 }

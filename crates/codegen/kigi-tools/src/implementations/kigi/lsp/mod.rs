@@ -1,7 +1,6 @@
 //! `lsp` tool - code intelligence via language servers.
 //!
-//! Implementation is in `implementations::lsp`. This module provides the
-//! `LspTool` (Tool trait impl) under the `Kigi` namespace.
+//! The `Tool` trait wrapper; the backend dispatch lives in `implementations::lsp`.
 
 use std::sync::Arc;
 

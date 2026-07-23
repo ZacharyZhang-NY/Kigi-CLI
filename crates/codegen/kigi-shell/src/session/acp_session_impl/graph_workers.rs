@@ -28,8 +28,6 @@ use super::SessionActor;
 const WORKER_PROMPT_TEMPLATE: &str = include_str!("../templates/graph_node_worker_prompt.md");
 const VERIFIER_PROMPT_TEMPLATE: &str = include_str!("../templates/graph_node_verifier_prompt.md");
 
-// Terminal-contract parsing
-
 /// The worker's parsed claim, from the trailing `NODE_RESULT:` line.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum WorkerClaim {
@@ -136,9 +134,7 @@ pub(crate) fn parse_node_verdict(output: &str) -> NodeVerdict {
     }
 }
 
-/// Line-anchored `DISCOVERED:` items outside fenced blocks. The
-/// placeholder filter (`<`) drops template echoes ("<one-line
-/// description …>") a child may parrot back.
+/// Line-anchored `DISCOVERED:` items outside fenced blocks.
 pub(crate) fn parse_discovered_lines(output: &str) -> Vec<String> {
     strip_fenced_blocks(output)
         .lines()
@@ -155,8 +151,6 @@ pub(crate) fn parse_discovered_lines(output: &str) -> Vec<String> {
         .map(str::to_owned)
         .collect()
 }
-
-// Spawner seam (mockable in tests)
 
 pub(crate) struct WorkerSpawnSpec {
     pub prompt: String,
@@ -264,8 +258,6 @@ impl GraphWorkerSpawner for GraphWorkerChannelSpawner {
         let _ = ack.await;
     }
 }
-
-// Per-node bounded closed loop
 
 #[derive(Debug)]
 pub(crate) struct NodeRunReport {
@@ -454,7 +446,6 @@ pub(crate) async fn run_node_to_verdict(
                 let verify_spec = WorkerSpawnSpec {
                     prompt: verifier_prompt(node_objective, &summary),
                     description: format!("graph node verifier ({node_id})"),
-                    // The verifier inspects the worker's worktree.
                     cwd: worktree_path.clone(),
                     isolation_worktree: false,
                     resume_from: None,
@@ -534,8 +525,6 @@ async fn git_head(dir: &std::path::Path) -> Option<String> {
         .success()
         .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
-
-// SessionActor integration
 
 impl SessionActor {
     /// Production worker spawner wired to this session's coordinator.
@@ -883,9 +872,12 @@ mod tests {
         let mut bg = outcome("");
         bg.backgrounded = true;
         let replies = std::collections::VecDeque::from(vec![
-            bg,                                     // round 1: budget overrun
-            outcome("NODE_RESULT: done\nfinished"), // round 2: worker done
-            outcome("NODE_VERDICT: achieved"),      // round 2: verifier
+            // round 1: budget overrun
+            bg,
+            // round 2: worker done
+            outcome("NODE_RESULT: done\nfinished"),
+            // round 2: verifier
+            outcome("NODE_VERDICT: achieved"),
         ]);
         // Keep a concrete handle for assertions; hand the trait object in.
         let mock = Arc::new(MockSpawner {
@@ -934,9 +926,12 @@ mod tests {
             worktree_path: None,
         };
         let replies = std::collections::VecDeque::from(vec![
-            failed,                                 // round 1: in-band failure
-            outcome("NODE_RESULT: done\nfinished"), // round 2: worker (fresh, isolated)
-            outcome("NODE_VERDICT: achieved"),      // round 2: verifier
+            // round 1: in-band failure
+            failed,
+            // round 2: worker (fresh, isolated)
+            outcome("NODE_RESULT: done\nfinished"),
+            // round 2: verifier
+            outcome("NODE_VERDICT: achieved"),
         ]);
         let mock = Arc::new(MockSpawner {
             replies: std::sync::Mutex::new(replies),

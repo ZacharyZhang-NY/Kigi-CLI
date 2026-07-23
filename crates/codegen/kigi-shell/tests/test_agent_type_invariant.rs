@@ -40,6 +40,7 @@ fn invalidate_models_cache(home: &std::path::Path) {
 }
 /// Start a mock server with two models:
 /// - `default-model`: no agent_type (→ defaults to "kigi")
+/// - `cursor-model`: agent_type "cursor"
 async fn dual_model_server() -> MockInferenceServer {
     MockInferenceServer::start_with_models(vec![
         MockModelEntry::new("default-model"),

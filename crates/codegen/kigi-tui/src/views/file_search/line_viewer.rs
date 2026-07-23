@@ -32,8 +32,6 @@ use crate::views::list_pane::{
 
 use kigi_ratatui_textarea::ElementId;
 
-// ── Line item ───────────────────────────────────────────────────────────
-
 /// A single source line for the line viewer.
 ///
 /// In normal mode, each item has one `content` line (syntax-highlighted source).
@@ -273,8 +271,6 @@ impl ListItem for SourceLine {
     }
 }
 
-// ── Comment lines ─────────────────────────────────────────────────────
-
 /// An inline review comment displayed between source lines.
 pub struct CommentLine {
     pub comment_id: u64,
@@ -421,8 +417,6 @@ impl ListItem for CommentLine {
     }
 }
 
-// ── Plan viewer item ──────────────────────────────────────────────────
-
 /// A viewer item: either a source line or an inline review comment.
 pub enum PlanViewerItem {
     Source(Box<SourceLine>),
@@ -522,8 +516,6 @@ impl ListItem for PlanViewerItem {
         }
     }
 }
-
-// ── Viewer state ────────────────────────────────────────────────────────
 
 /// What kind of content the line viewer is showing.
 ///
@@ -772,7 +764,8 @@ impl LineViewerState {
         };
 
         let prefix_width = digit_count(source_line_count(content).max(1)) + 1;
-        let scrollbar_width = SCROLLBAR_TOTAL_COLS as usize; // gap + track
+        // gap + track
+        let scrollbar_width = SCROLLBAR_TOTAL_COLS as usize;
         let content_width = (width as usize)
             .saturating_sub(prefix_width)
             .saturating_sub(scrollbar_width);
@@ -851,7 +844,8 @@ impl LineViewerState {
         if let Some(range) = self.initial_scroll_range.take() {
             let vp = height as usize;
             let total = self.lines.len();
-            let pad = 3usize; // inner padding (lines of context above/below)
+            // inner padding (lines of context above/below)
+            let pad = 3usize;
 
             if total <= vp {
                 // Entire file fits — no scrolling needed.
@@ -982,8 +976,6 @@ impl LineViewerState {
         }
     }
 }
-
-// ── Syntax highlighting ─────────────────────────────────────────────────
 
 /// Build syntax-highlighted source lines from file content.
 fn build_source_lines(path: &Path, content: &str) -> Vec<SourceLine> {
@@ -1160,8 +1152,6 @@ fn digit_count(n: usize) -> usize {
     }
 }
 
-// ── Rendering helpers ───────────────────────────────────────────────────
-
 /// Build a single review-footer shortcut button styled to match the
 /// shortcut hints in `modal_window::render_modal_shortcuts`:
 /// bold key in the primary text color + dim label, with a
@@ -1298,7 +1288,8 @@ pub fn render_line_viewer(
             &rel_path_str,
             line_range.as_deref(),
             theme,
-            false, // no @ prefix in viewer title
+            // no @ prefix in viewer title
+            false,
         );
         // Add bg to all spans (title sits on the border).
         for span in &mut title.spans {
@@ -1334,13 +1325,14 @@ pub fn render_line_viewer(
     let mut right_edge = popup_area.x + popup_area.width - 1;
 
     if !viewer.feedback_active() {
-        let close_text = crate::glyphs::ballot_x(); // ✗ (ASCII on legacy ConHost)
+        // ✗ (ASCII on legacy ConHost)
+        let close_text = crate::glyphs::ballot_x();
         // Label is `[✗] ` (trailing space, no leading space). The
         // fullscreen button's label has no trailing space when the
         // close is visible, so the two buttons abut flush as `[↗][✗]`,
         // tucked under the top-right corner with one space inside the
         // frame on each side: ` [↗][✗] `.
-        let close_w: u16 = 4; // "[✗] "
+        let close_w: u16 = 4;
         if popup_area.width > close_w + 2 {
             let close_x = right_edge - close_w;
             let close_style = if viewer.close_hovered {
@@ -1370,7 +1362,8 @@ pub fn render_line_viewer(
     // `[↗][✗]`. When the close is hidden (plan-review mode) the
     // fullscreen keeps its trailing space so it doesn't crowd the
     // corner `╮`.
-    let fs_icon = crate::glyphs::enlarge(); // ↗ (ASCII on legacy ConHost)
+    // ↗ (ASCII on legacy ConHost)
+    let fs_icon = crate::glyphs::enlarge();
     let close_visible = viewer.close_button_area.is_some();
     let (fs_label, fs_w): (String, u16) = if close_visible {
         (format!(" [{fs_icon}]"), 4)
@@ -1541,7 +1534,8 @@ pub fn render_line_viewer(
         let badge_style = Style::default().fg(theme.accent_plan).bg(theme.bg_base);
 
         let separator = "  |  ";
-        let sep_w: u16 = 5; // separator is fixed-width ASCII; matches modal_window.rs:565
+        // separator is fixed-width ASCII; matches modal_window.rs:565
+        let sep_w: u16 = 5;
         let sep_style = Style::default().fg(theme.gray_dim).bg(theme.bg_base);
 
         // Total width: [action] + (sep + revise)? + sep + comment[badge?] + (sep + quit)?

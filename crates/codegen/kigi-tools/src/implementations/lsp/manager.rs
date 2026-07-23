@@ -254,7 +254,6 @@ impl LspManager {
         }
     }
 
-    /// Pure data collection — reads from clients and pending state without mutation.
     fn collect_pending_diagnostics(&self) -> CollectedDiagnostics {
         let mut result = CollectedDiagnostics::default();
 
@@ -274,7 +273,8 @@ impl LspManager {
                     continue;
                 };
                 server_had_diagnostics = true;
-                let display_path = uri.strip_prefix("file://").unwrap_or(uri); // Unix-only
+                // Unix-only
+                let display_path = uri.strip_prefix("file://").unwrap_or(uri);
                 let mut has_header = false;
 
                 for d in diags {
@@ -308,10 +308,8 @@ impl LspManager {
     }
 
     /// Auto-open file if needed, return cloned socket for lock-free dispatch.
-    /// Single resolve — no double lookup.
     pub async fn socket_for_file(&mut self, path: &Path) -> Option<async_lsp::ServerSocket> {
         let (server_name, lang_id) = super::config::resolve_server(&self.servers, path)?;
-        // Auto-open if not yet tracked.
         let needs_open = self
             .clients
             .get(&server_name)

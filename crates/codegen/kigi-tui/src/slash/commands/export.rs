@@ -106,7 +106,6 @@ fn list_path_completions(cwd: &Path, query: &str) -> Vec<ArgItem> {
         (parent.to_path_buf(), prefix.to_string())
     };
 
-    // Resolve relative paths against cwd.
     let resolved = if dir_to_list.is_relative() {
         cwd.join(&dir_to_list)
     } else {
@@ -148,7 +147,7 @@ fn list_path_completions(cwd: &Path, query: &str) -> Vec<ArgItem> {
         }
     }
 
-    // Sort: directories first, then alphabetical. Truncate after sort.
+    // Directories first, then alphabetical.
     items.sort_by(|a, b| {
         let a_dir = a.display.ends_with('/');
         let b_dir = b.display.ends_with('/');

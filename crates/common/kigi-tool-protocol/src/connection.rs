@@ -2,8 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Role of a WebSocket connection. The computer hub uses this to decide
-/// which methods are valid on a given socket.
+/// Role of a WebSocket connection; the computer hub decides from it which
+/// methods are valid on a given socket.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConnectionKind {
@@ -12,9 +12,6 @@ pub enum ConnectionKind {
 }
 
 /// How the computer hub exposes the registered tool set to the model.
-///
-/// `Concise` carries a configurable meta-tool pair so callers can choose
-/// the model-facing names of the search/invoke meta-tools per session.
 ///
 /// Wire form is adjacently tagged on `mode`: `Full` serialises as
 /// `{"mode": "full"}` (an object, not a bare string), and `Concise` as

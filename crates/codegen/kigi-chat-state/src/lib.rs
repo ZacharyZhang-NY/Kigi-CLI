@@ -1,8 +1,7 @@
 //! kigi-chat-state — Actor-based chat state management for xAI agents.
 //!
-//! This crate extracts conversation state management from `kigi-shell`'s
-//! `acp_session.rs` into a standalone actor. It follows the same actor pattern
-//! as `kigi-hunk-tracker`:
+//! Holds the conversation state driven by `kigi-shell`'s `acp_session.rs`,
+//! following the same actor pattern as `kigi-hunk-tracker`:
 //!
 //! ```text
 //! ┌────────────────┐                  ┌──────────────────────────────────────┐
@@ -35,7 +34,6 @@ pub mod persistence;
 pub mod types;
 pub mod usage;
 
-// Re-export main types for convenience
 pub use actor::ChatStateActor;
 pub use actor::state::{
     estimate_conversation_tokens, estimate_item_tokens, estimate_messages_tokens,

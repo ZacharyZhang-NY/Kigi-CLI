@@ -53,8 +53,6 @@ impl fmt::Display for PathNotFoundHint {
 
 /// Build hints for a path-not-found error.
 ///
-/// Returns [`PathNotFoundHint`].
-///
 /// `path` is the resolved (real) filesystem path that failed.
 /// `display_cwd` is the model-facing working directory (for the CWD note).
 #[tracing::instrument(name = "fs.path_not_found_hint", skip_all)]
@@ -220,8 +218,6 @@ mod tests {
     // Display formatting). Broader integration fixtures live in
     // tests/path_suggestions_production.rs.
 
-    // ── CWD note ──────────────────────────────────────────────────────
-
     #[tokio::test]
     async fn cwd_note_always_present() {
         let tmp = TempDir::new().unwrap();
@@ -234,8 +230,6 @@ mod tests {
         assert!(hint.suggestion.is_none());
         assert!(hint.similar.is_empty());
     }
-
-    // ── "dropped repo folder" detection ───────────────────────────────
 
     #[tokio::test]
     async fn dropped_repo_folder_detected() {
@@ -294,8 +288,6 @@ mod tests {
         assert!(hint.similar.is_empty());
     }
 
-    // ── similar-name scan (internal invariants) ───────────────────────
-
     #[tokio::test]
     async fn similar_name_multi_match() {
         let tmp = TempDir::new().unwrap();
@@ -345,8 +337,6 @@ mod tests {
             hint.similar
         );
     }
-
-    // ── Display formatting ────────────────────────────────────────────
 
     #[test]
     fn display_with_suggestion() {

@@ -317,8 +317,6 @@ mod tests {
     use super::*;
     use crate::config::PromptSuggestModelPin as Pin;
 
-    // -- effective_suggest_model ---------------------------------------------
-
     #[test]
     fn effective_model_default_requires_catalog() {
         // No pin, no hint: the built-in default fires only when this shell's
@@ -384,8 +382,6 @@ mod tests {
             Some("custom-model")
         );
     }
-
-    // -- sanitize_suggestion ------------------------------------------------
 
     #[test]
     fn sanitize_accepts_short_imperative() {
@@ -474,8 +470,6 @@ mod tests {
         );
     }
 
-    // -- build_transcript ---------------------------------------------------
-
     fn user(text: &str) -> ConversationItem {
         ConversationItem::user(text.to_owned())
     }
@@ -483,8 +477,6 @@ mod tests {
     fn assistant(text: &str) -> ConversationItem {
         ConversationItem::assistant(text.to_owned())
     }
-
-    // -- is_repeat_of_user_message -------------------------------------------
 
     #[test]
     fn repeat_filter_rejects_verbatim_past_prompt() {

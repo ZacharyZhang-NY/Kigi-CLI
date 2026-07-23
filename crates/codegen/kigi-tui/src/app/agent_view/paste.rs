@@ -263,10 +263,6 @@ impl AgentView {
             crate::wrap_clipboard_image::WrapImagePaste::NoImage => InputOutcome::Unchanged,
         })
     }
-    /// Parse a paste payload as one or more drop-style file paths and
-    /// route each entry: image paths become `[Image #N]` chips, non-image
-    /// paths get inserted as decoded absolute path text.
-    ///
     /// Route a popup pane's `Event::Paste(text)` through the drop
     /// classifier and fall back to a plain text paste into the shared
     /// prompt buffer. Used by the plan-feedback, permission-followup,
@@ -297,16 +293,9 @@ impl AgentView {
     /// `"file://{png} file://{txt}"` → `[Image #N] {canon_txt} `;
     /// `"file://{txt} file://{png}"` → `{canon_txt} [Image #N] `.
     ///
-    /// **Size guard**: payloads ≥ `DROP_CLASSIFIER_MAX_BYTES`
-    /// short-circuit to `None`. The early-return lives inside this
-    /// function (not at each call site) so every paste arm — the
-    /// main Prompt bracketed-paste arm, the four popup `Event::Paste`
-    /// arms (plan-feedback, permission-followup, plan-approval,
-    /// question-view), and the Cmd+V `handle_paste_key_deferred` path
-    /// (clipboard-text, plus deferred file-urls on completion) — gets the
-    /// guard uniformly. Real drag-and-drop payloads (one or more
-    /// `file://` URLs) are at most a few KB; anything ≥ 10 MB is a
-    /// log/code paste and not worth iterating line-by-line.
+    /// **Size guard**: payloads ≥ `DROP_CLASSIFIER_MAX_BYTES` short-circuit
+    /// to `None`. The early-return lives here, not at each call site, so every
+    /// paste arm gets the guard uniformly.
     pub(super) fn try_handle_dropped_paths_paste(
         &mut self,
         text: &str,
@@ -1544,10 +1533,9 @@ pub(super) mod paste_key_tests {
         assert!(agent.ephemeral_tip.is_active());
         assert_eq!(counts.get("t_seen"), Some(&1));
     }
-    /// `note_terminal_size` keeps the draw-path semantics it replaced:
-    /// Kitty IDs are invalidated only on an actual size change, the
-    /// `(0, 0)` pre-first-draw state never counts as a resize, and every
-    /// re-measure clears the resize-event staleness flag.
+    /// `note_terminal_size` invariants: Kitty IDs are invalidated only on an
+    /// actual size change, the `(0, 0)` pre-first-draw state never counts as a
+    /// resize, and every re-measure clears the resize-event staleness flag.
     #[test]
     fn note_terminal_size_invalidates_kitty_ids_only_on_change() {
         let mut agent = make_agent();
@@ -1881,8 +1869,8 @@ pub(super) mod paste_key_tests {
         );
         assert_eq!(embedded.items.width, prompt.width);
     }
-    /// The tool-media inline-image path (`build_inline_media_escapes`, still live
-    /// for tool calls) transmits the bytes (`a=t`) before placing them (`a=p`) on
+    /// The tool-media inline-image path (`build_inline_media_escapes`, used for
+    /// tool calls) transmits the bytes (`a=t`) before placing them (`a=p`) on
     /// the first paint, then places only (no re-transmit) on a later frame for
     /// the same path — a place-without-transmit would render blank.
     #[test]
@@ -1978,7 +1966,6 @@ pub(super) mod paste_key_tests {
         assert!(agent.inline_video.is_none());
         assert!(agent.take_inline_media_clear_escapes().is_none());
     }
-    /// An agent with no placements has nothing to clear.
     #[test]
     fn take_inline_media_clear_escapes_none_when_no_placements() {
         let mut agent = make_agent();

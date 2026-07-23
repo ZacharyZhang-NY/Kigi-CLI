@@ -282,14 +282,12 @@ fn direction_flip_closes_previous_stream() {
     let _ = state.on_scroll_event_at(base + Duration::from_millis(2), ScrollDirection::Up, config);
     let _ = state.on_scroll_event_at(base + Duration::from_millis(3), ScrollDirection::Up, config);
 
-    // Direction flip should close the previous stream
     let update = state.on_scroll_event_at(
         base + Duration::from_millis(4),
         ScrollDirection::Down,
         config,
     );
 
-    // Should have at least 1 line from the new direction
     assert!(update.lines >= 0);
 }
 
@@ -1188,9 +1186,6 @@ fn multiplexed_sessions_use_conservative_profile_regardless_of_brand() {
     );
     assert_eq!(overridden.events_per_tick, 5);
 }
-
-// ── User-facing scroll settings (scroll_mode / invert_scroll /
-//    scroll_lines) — override plumbing + forced-mode pricing ──────────────
 
 /// The settings caches assemble into overrides and reach the config through
 /// `from_terminal_context`: forced mode, inverted direction, and the single

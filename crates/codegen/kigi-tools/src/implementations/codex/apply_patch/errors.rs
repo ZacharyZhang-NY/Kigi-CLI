@@ -4,7 +4,6 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-/// Errors encountered while parsing a patch.
 #[derive(Debug, PartialEq, Clone, Error)]
 pub enum ParseError {
     #[error("invalid patch: {0}")]
@@ -13,10 +12,8 @@ pub enum ParseError {
     InvalidHunkError { message: String, line_number: usize },
 }
 
-/// Errors encountered while applying a parsed patch to file contents.
 #[derive(Debug, Error)]
 pub enum ApplyPatchError {
-    /// The patch text could not be parsed.
     #[error(transparent)]
     Parse(#[from] ParseError),
 
@@ -24,9 +21,8 @@ pub enum ApplyPatchError {
     #[error("{0}")]
     ComputeReplacements(String),
 
-    /// An I/O error occurred while reading or writing a file.
-    /// Stored as a string so that the type remains `PartialEq`-friendly in
-    /// tests (std::io::Error is not PartialEq).
+    /// The underlying `std::io::Error` is flattened into strings so that this
+    /// enum can implement `PartialEq` for tests.
     #[error("{context}: {message}")]
     Io {
         context: String,

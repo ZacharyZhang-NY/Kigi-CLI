@@ -11,7 +11,6 @@ use super::common::*;
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore]
 async fn file_path_with_space_emits_full_osc8_hyperlink() {
-    // Synthetic macOS app-bundle path with a space in the final segment.
     const PATH_PREFIX: &str = "/Users/alice/src/app/release/mac-arm64/Demo";
     const FULL_PATH: &str = "/Users/alice/src/app/release/mac-arm64/Demo App.app";
     // file:// URL percent-encodes the space; this is what OSC 8 must carry.

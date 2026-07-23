@@ -85,7 +85,8 @@ async fn bash_full_output_double_click_fold_pty() {
         "double-click must collapse the ! block; got:\n{}",
         harness.screen_contents()
     );
-    harness.update(Duration::from_millis(500)); // let the multi-click window lapse
+    // Let the multi-click window lapse.
+    harness.update(Duration::from_millis(500));
     harness
         .inject_keys(dbl.as_bytes())
         .expect("double-click to expand");

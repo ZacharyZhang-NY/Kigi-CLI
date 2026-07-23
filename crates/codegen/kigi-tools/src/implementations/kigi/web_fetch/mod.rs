@@ -1,4 +1,4 @@
-//! `web_fetch` tool — client-side URL fetching with improved HTML-to-markdown
+//! `web_fetch` tool — client-side URL fetching with HTML-to-markdown
 //! conversion and SSRF protection.
 //!
 //! Fetches a URL via `reqwest`, converts HTML to markdown via `htmd` (with
@@ -21,10 +21,6 @@ pub use config::WebFetchParams;
 pub use domain::{DomainMatcher, domain_from_url};
 pub use error::WebFetchError;
 
-// ───────────────────────────────────────────────────────────────────────────
-// Config enum (feature flag gating)
-// ───────────────────────────────────────────────────────────────────────────
-
 /// Configuration for the `web_fetch` tool.
 ///
 /// When `Enabled`, the tool is registered and a `WebFetchClient` is injected
@@ -34,13 +30,11 @@ pub enum WebFetchConfig {
     #[default]
     Disabled,
     Enabled {
-        /// Runtime parameters (allowed_domains, proxy_endpoint, timeouts, etc.)
         params: WebFetchParams,
     },
 }
 
 impl WebFetchConfig {
-    /// Returns `true` when the config is the `Enabled` variant.
     pub fn is_enabled(&self) -> bool {
         matches!(self, Self::Enabled { .. })
     }
@@ -51,20 +45,11 @@ use crate::types::requirements::{Expr, ToolRequirement};
 use crate::types::resources::SessionFolder;
 use crate::types::tool::{ToolKind, ToolNamespace};
 
-// ───────────────────────────────────────────────────────────────────────────
-// Input
-// ───────────────────────────────────────────────────────────────────────────
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct WebFetchInput {
-    /// The URL to fetch content from.
     #[schemars(description = "The URL to fetch content from.")]
     pub url: String,
 }
-
-// ───────────────────────────────────────────────────────────────────────────
-// Tool
-// ───────────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Default)]
 pub struct WebFetchTool;

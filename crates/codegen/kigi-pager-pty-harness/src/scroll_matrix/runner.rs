@@ -68,7 +68,6 @@ const COMPLETION_TIMEOUT: Duration = Duration::from_secs(30);
 /// streaming preamble plus its post-gesture tail drain — finishes in ~20s.
 const CELL_HARD_CAP: Duration = Duration::from_secs(60);
 
-/// `tier` label for [`CellReport`].
 fn tier_label(tier: Tier) -> &'static str {
     match tier {
         Tier::Curated => "curated",
@@ -145,7 +144,6 @@ fn panic_message(err: tokio::task::JoinError) -> String {
     }
 }
 
-/// Everything [`run_cell`] needs from a completed (non-aborted) cell body.
 struct CellRun {
     outcomes: Vec<(InvariantId, InvariantResult)>,
     streams: usize,
@@ -311,11 +309,9 @@ fn check_screen(
     InvariantResult::Pass
 }
 
-/// XPASS row detail: the actionable half of the xfail contract.
 const XPASS_DETAIL: &str = "expected to violate (xfail) but PASSED — the pinned bug got fixed \
                             or the cell rotted; promote the invariant out of the xfail set";
 
-/// Classify evaluated invariants into per-row statuses and the cell verdict.
 /// Precedence: any `Fail` (non-xfail violation) fails the cell; else any
 /// `XPass` fails it (fixed/rotted xfail must be promoted, not absorbed);
 /// else any `XFail` marks the expected failure; else `Pass`.
@@ -370,8 +366,8 @@ mod tests {
         }
     }
 
-    /// The wire bytes of the shared wheel position, pinned to the
-    /// `40;12` encoding documented on `WHEEL_ROW`/`WHEEL_COL`.
+    /// Pins the wire bytes to the `40;12` encoding documented on
+    /// `WHEEL_ROW`/`WHEEL_COL`.
     #[test]
     fn sgr_report_encodes_one_based_wire_coords() {
         assert_eq!(sgr_wheel_report(64), "\x1b[<64;40;12M");
@@ -382,9 +378,7 @@ mod tests {
     fn clamped_travel_models_bottom_pin_and_top_clamp() {
         // G7's shape: down-deliveries at the pin don't move, the up tail does.
         assert_eq!(simulate_clamped_travel(300, [10, -7]), -7);
-        // Up then partially back down: net movement, no clamp involved.
         assert_eq!(simulate_clamped_travel(300, [-5, 3]), -2);
-        // Pure down at the pin stays put.
         assert_eq!(simulate_clamped_travel(300, [10]), 0);
         // Down past the pin then up: the overshoot must not bank as credit.
         assert_eq!(simulate_clamped_travel(300, [25, -4]), -4);
@@ -422,13 +416,11 @@ mod tests {
     fn classify_precedence_fail_over_xpass_over_xfail_over_pass() {
         use InvariantId::{Cap, NoDrop, Ord, SmoothCoast};
 
-        // All pass, nothing xfailed → Pass.
         let (status, rows) = classify(&[(Ord, InvariantResult::Pass)], &[]);
         assert_eq!(status, CellStatus::Pass);
         assert_eq!(rows[0].status, InvariantStatus::Pass);
         assert_eq!(rows[0].id, "I-ORD");
 
-        // The declared bug violates, everything else passes → XFail.
         let jerk = [
             (Ord, InvariantResult::Pass),
             (SmoothCoast, violated("coast")),
@@ -439,7 +431,7 @@ mod tests {
         assert_eq!(rows[1].status, InvariantStatus::XFail);
         assert_eq!(rows[1].detail.as_deref(), Some("coast"));
 
-        // One xfail row passing flips the cell to XPass (fixed-bug tripwire)…
+        // One xfail row passing flips the cell to XPass: the fixed-bug tripwire.
         let half_fixed = [
             (SmoothCoast, InvariantResult::Pass),
             (NoDrop, violated("dropped 74")),
@@ -448,7 +440,7 @@ mod tests {
         assert_eq!(status, CellStatus::XPass);
         assert!(rows[0].detail.as_deref().unwrap().contains("promote"));
 
-        // …but any non-xfail violation dominates everything.
+        // A non-xfail violation dominates everything.
         let broken = [
             (Cap, violated("flushed 40 exceeds cap 25")),
             (SmoothCoast, InvariantResult::Pass),

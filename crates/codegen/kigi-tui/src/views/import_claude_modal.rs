@@ -31,7 +31,6 @@ const SHORTCUT_ID_SELECT_NONE: usize = 1;
 const SHORTCUT_ID_CONFIRM: usize = 2;
 const SHORTCUT_ID_CANCEL: usize = 3;
 
-/// State for the import-claude modal.
 pub struct ImportClaudeModalState {
     /// The full plan as scanned from `.claude/` sources.
     pub plan: ImportPlan,
@@ -92,7 +91,8 @@ enum Row {
     Item {
         scope: Scope,
         item_index: usize,
-        flat_index: usize, // index into `selected`
+        /// Index into `selected`.
+        flat_index: usize,
     },
     /// Blank spacer.
     Blank,
@@ -319,7 +319,7 @@ impl ImportClaudeModalState {
                             .then(|| section_key.clone())
                     }
                     Row::TypeHeader { section_key, .. } => {
-                        let indicator_start = area.x + 2; // indent=2
+                        let indicator_start = area.x + 2;
                         (column >= indicator_start && column < indicator_start + 2)
                             .then(|| section_key.clone())
                     }
@@ -986,7 +986,7 @@ fn render_item_line<'a>(
     let label = format_item_label(item);
     let label_style = with_bg(Style::default().fg(theme.text_primary), focused, theme);
     // Items live under TypeHeaders (indent 2) under ScopeHeaders (indent 0).
-    // Indent items at 4 spaces total so they visually nest below their group.
+    // Indent items at 6 spaces total so they visually nest below their group.
     Line::from(vec![
         Span::raw("      "),
         Span::styled("[", bracket_style),
@@ -1236,9 +1236,9 @@ mod tests {
     }
 
     /// Regression: clicking on an item row with the mouse must toggle that
-    /// item's selection. After the inline-shortcut refactor, the handler
-    /// now consults `state.shortcuts` first; verify a click on a row that
-    /// is NOT a shortcut still falls through to the row-toggle path.
+    /// item's selection. The chrome handler consults `state.shortcuts`
+    /// first; verify a click on a row that is NOT a shortcut still falls
+    /// through to the row-toggle path.
     #[test]
     fn mouse_click_on_item_row_toggles() {
         use crossterm::event::{MouseButton, MouseEventKind};
@@ -1258,7 +1258,7 @@ mod tests {
             .expect("sample plan has items");
         // With scroll_offset=0 the item appears at content_area.y + item_row_index.
         let click_y = m.content_area.unwrap().y + item_row_index as u16;
-        let click_x = m.content_area.unwrap().x + 5; // anywhere in the row
+        let click_x = m.content_area.unwrap().x + 5;
         // Capture initial selection state for that item.
         let flat_idx = match &rows[item_row_index] {
             Row::Item { flat_index, .. } => *flat_index,
@@ -1287,7 +1287,7 @@ mod tests {
         // First row is the Global ScopeHeader (sample_plan has Global items).
         let rows = build_rows(&m.plan, &m.cwd, &m.collapsed);
         assert!(matches!(rows.first(), Some(Row::ScopeHeader { .. })));
-        let click_y = m.content_area.unwrap().y; // top row
+        let click_y = m.content_area.unwrap().y;
         let click_x = m.content_area.unwrap().x + 5;
         // All items start selected.
         assert!(m.selected.iter().all(|&s| s));

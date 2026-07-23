@@ -175,12 +175,9 @@ pub fn compute_layout_with_dispatch(
     } else {
         1
     };
-    // Standalone peek rect retired. Peek now renders
-    // INSIDE the dispatch rect (which grows when `peek_visible`,
-    // computed above). Kept as a zero-height field for ABI compat
-    // with the existing call sites that still destructure
-    // `layout.peek`; the field can be removed in a follow-up
-    // cleanup.
+    // Peek renders INSIDE the dispatch rect (which grows when
+    // `peek_visible`, computed above); this field stays zero-height so
+    // call sites that still destructure `layout.peek` keep compiling.
     let peek_h: u16 = 0;
     let remaining = area.height.saturating_sub(
         top_margin_h
@@ -235,7 +232,7 @@ pub fn compute_layout_with_dispatch(
     };
     y += header_gap_h;
 
-    // Polish — inset the list by LIST_OUTER_HPAD on each side so the
+    // Inset the list by LIST_OUTER_HPAD on each side so the
     // row content and group header rules have side breathing room.
     // The outer columns stay painted bg_base by the area-wide fill in
     // render_dashboard. Mirrors the dispatch inset pattern but with a
@@ -470,7 +467,7 @@ mod tests {
         assert_eq!(layout.list.width, area.width - LIST_OUTER_HPAD * 2);
     }
 
-    /// Polish — the list rect is inset by LIST_OUTER_HPAD cols on each
+    /// The list rect is inset by LIST_OUTER_HPAD cols on each
     /// side so row content (markers, rules, text) has breathing room
     /// and doesn't touch the terminal edges. The outer columns remain
     /// bg_base (painted by the top-level area fill).
@@ -674,9 +671,8 @@ mod tests {
         assert_eq!(layout.peek.height, 0);
     }
 
-    /// The standalone peek rect was retired (peek now
-    /// renders INSIDE the dispatch box). The peek rect is always
-    /// zero-height; what changes when `peek_visible == true` is
+    /// Peek renders INSIDE the dispatch box, so the peek rect is
+    /// always zero-height; what changes when `peek_visible == true` is
     /// the dispatch rect, which grows from 3 to 5 rows to host
     /// the peek's status + reply input.
     #[test]

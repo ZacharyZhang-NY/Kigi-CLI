@@ -1,14 +1,9 @@
 //! Subagent role and persona configuration types.
 //!
-//! These are the canonical definitions for `SubagentRole`, `SubagentPersona`,
-//! and `PersonaIOField`. The shell re-exports them via
-//! `kigi_shell::config::{SubagentRole, SubagentPersona, PersonaIOField}`.
-//!
-//! Methods that remain in `kigi-shell` (on `SubagentsConfig`):
-//! - `discover_personas()` / `discover_roles()` — filesystem discovery
-//!   coupled to the shell's config resolution pipeline.
-//! - `resolve()` — config layering (CLI > env > TOML > remote) is
-//!   shell-specific. This crate receives already-resolved maps.
+//! These are the canonical definitions; the shell re-exports them via
+//! `kigi_shell::config`. Filesystem discovery and config layering
+//! (CLI > env > TOML > remote) stay in `kigi-shell` on `SubagentsConfig` —
+//! this crate only ever sees already-resolved maps.
 
 use kigi_tools::implementations::skills::discovery::extract_first_paragraph;
 use std::path::PathBuf;
@@ -17,38 +12,29 @@ use serde::Deserialize;
 
 /// A declarative subagent role definition from config.
 ///
-/// Roles provide named presets that callers can reference via the
-/// `subagent_type` field in the task tool. Each role can specify
-/// a default capability mode, model override, and custom prompt.
+/// Roles are named presets callers reference via the `subagent_type` field in
+/// the task tool. Every default here can be overridden per-spawn.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(default)]
 pub struct SubagentRole {
-    /// Human-readable description of what this role does.
     pub description: String,
-    /// Default capability mode for agents using this role.
     /// One of: "read-only", "read-write", "execute", "all".
-    /// Can be overridden per-spawn via `capability_mode` in the task tool.
     #[serde(default)]
     pub default_capability_mode: Option<String>,
-    /// Model override for this role. If set, agents using this role
-    /// default to this model unless the spawn-time `model` override
-    /// is provided.
     #[serde(default)]
     pub model: Option<String>,
-    /// Default reasoning effort for this role (e.g. "low", "medium", "high").
-    /// Can be overridden per-spawn via `reasoning_effort` in the task tool.
+    /// One of: "low", "medium", "high".
     #[serde(default)]
     pub reasoning_effort: Option<String>,
-    /// Path to a prompt/instruction file (relative to workspace root).
     /// Loaded at spawn time and prepended to the child's prompt as a
     /// `<role-instructions>` block.
     #[serde(default)]
     pub prompt_file: Option<String>,
-    /// Default isolation mode ("none" or "worktree").
+    /// One of: "none", "worktree".
     #[serde(default)]
     pub default_isolation: Option<String>,
-    /// Base directory for resolving relative `prompt_file` references.
-    /// Set to the parent dir of the source `.toml` file during discovery.
+    /// Base directory for resolving a relative `prompt_file`: the parent dir
+    /// of the source `.toml`, filled in during discovery.
     #[serde(skip)]
     pub source_dir: Option<PathBuf>,
 }
@@ -61,60 +47,49 @@ pub struct SubagentRole {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(default)]
 pub struct SubagentPersona {
-    /// Inline instruction text applied as a persona layer.
     pub instructions: Option<String>,
-    /// Optional short description shown in persona summaries.
-    /// Falls back to first-paragraph extraction from `instructions`.
+    /// When absent, summaries fall back to the first paragraph of
+    /// `instructions`.
     pub description: Option<String>,
-    /// Path to an instruction file (relative to workspace root).
-    /// Content is loaded at spawn time and merged with `instructions`.
-    /// If both are set, `instructions` is prepended before file content.
+    /// Loaded at spawn time and merged with `instructions`, which is prepended
+    /// before the file content when both are set.
     pub instructions_file: Option<String>,
-    /// Declared inputs this persona expects. The parent agent reads these
-    /// to know what file paths or context to provide in the prompt.
     #[serde(default)]
     pub inputs: Vec<PersonaIOField>,
-    /// Declared outputs this persona produces. The parent agent reads
-    /// these to know what artifacts to expect and pass to the next agent.
     #[serde(default)]
     pub outputs: Vec<PersonaIOField>,
-    /// Default isolation mode when this persona is used.
+    /// One of: "none", "worktree".
     #[serde(default)]
     pub default_isolation: Option<String>,
-    /// Model override when this persona is used.
     #[serde(default)]
     pub model: Option<String>,
-    /// Default reasoning effort for this persona (e.g. "low", "medium", "high").
+    /// One of: "low", "medium", "high".
     #[serde(default)]
     pub reasoning_effort: Option<String>,
-    /// Base directory for resolving relative file references.
-    /// Set to the parent dir of the source `.toml` file during discovery.
-    /// When `None`, relative paths resolve against the workspace cwd.
+    /// Base directory for resolving relative file references: the parent dir
+    /// of the source `.toml`, filled in during discovery. When `None`,
+    /// relative paths resolve against the workspace cwd.
     #[serde(skip)]
     pub source_dir: Option<PathBuf>,
-    /// Absolute path to the source file this persona was loaded from.
-    /// Populated during discovery; `None` for inline config personas.
+    /// Absolute path of the source file, filled in during discovery. `None`
+    /// for personas declared inline in config.
     #[serde(skip)]
     pub source_path: Option<String>,
 }
 
 /// A declared input or output for a persona.
 ///
-/// Enables the parent agent to discover what a persona needs (inputs)
-/// and what it produces (outputs) without hardcoded knowledge of the
-/// persona's protocol.
+/// Lets the parent agent discover what a persona needs and what it produces
+/// without hardcoded knowledge of the persona's protocol.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PersonaIOField {
-    /// Short identifier (e.g. "review_file", "summary_file").
     pub name: String,
-    /// What kind of artifact: "file", "text", etc.
+    /// Kind of artifact: "file", "text", etc.
     #[serde(default = "PersonaIOField::default_io_type")]
     pub io_type: String,
-    /// Whether this input/output is required.
     #[serde(default)]
     pub required: bool,
-    /// Human-readable description shown in the task tool help.
     pub description: String,
 }
 
@@ -125,8 +100,8 @@ impl PersonaIOField {
 }
 
 impl SubagentPersona {
-    /// Render a human-readable summary of this persona's IO contract
-    /// for inclusion in the task tool description.
+    /// Renders this persona's IO contract as Markdown for the task tool
+    /// description.
     pub fn render_io_summary(&self, name: &str) -> String {
         let fallback;
         let desc = if let Some(d) = self.description.as_deref().filter(|s| !s.trim().is_empty()) {

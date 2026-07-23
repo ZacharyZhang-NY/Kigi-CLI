@@ -120,7 +120,7 @@ pub enum ConfigChangeEvent {
 /// would walk `node_modules/`, `target/`, `.git/`, etc. and blow through
 /// `fs.inotify.max_user_watches` on large repos. Use [`Self::watch_path`]
 /// to register additional cwds at runtime when new sessions open in
-/// previously-unwatched directories.
+/// not-yet-watched directories.
 pub struct ConfigFileWatcher {
     debouncer: Debouncer<AccessFilteredWatcher>,
     /// Project cwds currently registered (via [`Self::start`]'s `cwd`
@@ -138,7 +138,7 @@ impl ConfigFileWatcher {
     ///
     /// `cwd`, when `Some`, adds two non-recursive watches: `<cwd>/` and
     /// `<cwd>/.kigi/`. Use [`Self::watch_path`] later to register additional
-    /// project cwds for sessions that open in previously-unwatched
+    /// project cwds for sessions that open in not-yet-watched
     /// directories.
     pub fn start(
         kigi_home: &Path,
@@ -242,8 +242,7 @@ impl ConfigFileWatcher {
             }
         }
 
-        // Add the two narrow non-recursive cwd watches
-        // promoted to first-class watch targets. Both are non-fatal —
+        // Add the two narrow non-recursive cwd watches. Both are non-fatal —
         // a missing directory just means the corresponding files don't
         // exist yet and will be picked up by `watch_path` on the next
         // session that opens in this cwd.
@@ -310,7 +309,7 @@ impl ConfigFileWatcher {
     }
 
     /// Remove the two non-recursive watches (`<cwd>/` and
-    /// `<cwd>/.kigi/`) previously registered for `cwd` via
+    /// `<cwd>/.kigi/`) registered for `cwd` via
     /// [`Self::start`] / [`Self::watch_path`].
     ///
     /// Best-effort and idempotent: a `cwd` that was never registered
@@ -628,7 +627,8 @@ mod tests {
         let watched = watch_skill_subdirs(&mut debouncer, global);
         assert!(watched >= 1, "should watch the <dir>/skills subdir");
         wait_ms(150);
-        while rx.try_recv().is_ok() {} // drain startup noise
+        // drain startup noise
+        while rx.try_recv().is_ok() {}
 
         // Editing a SKILL.md under the unwatched worktrees/ subtree must NOT fire.
         fs::write(wt_skill.join("SKILL.md"), "# beta v2").unwrap();
@@ -692,7 +692,8 @@ mod tests {
             ConfigFileWatcher::start(tmp.path(), &[], None, Some(Duration::from_millis(50)))
                 .expect("watcher should start");
         wait_ms(150);
-        while rx.try_recv().is_ok() {} // drain any startup noise
+        // drain any startup noise
+        while rx.try_recv().is_ok() {}
 
         // Simulate what the leader does on every reload: read the watched
         // files. Repeatedly, to defeat any incidental coalescing.

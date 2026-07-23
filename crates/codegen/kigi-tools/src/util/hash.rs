@@ -87,7 +87,6 @@ mod tests {
 
     #[test]
     fn fnv1a_32_empty() {
-        // FNV-1a of empty input is the offset basis.
         assert_eq!(fnv1a_32(b""), FNV_OFFSET);
     }
 
@@ -112,7 +111,6 @@ mod tests {
 
     #[test]
     fn line_hash_whitespace_normalization_indentation() {
-        // Different indentation → same hash.
         let a = line_hash("    let x = 1;");
         let b = line_hash("  let x = 1;");
         let c = line_hash("\tlet x = 1;");
@@ -131,7 +129,6 @@ mod tests {
 
     #[test]
     fn line_hash_whitespace_normalization_internal_collapse() {
-        // Multiple internal spaces collapse to one.
         let a = line_hash("let x = 1;");
         let b = line_hash("let  x  =  1;");
         assert_eq!(a, b);
@@ -139,7 +136,6 @@ mod tests {
 
     #[test]
     fn line_hash_preserves_token_boundaries() {
-        // "return x" vs "returnx" must differ.
         let a = line_hash("return x");
         let b = line_hash("returnx");
         assert_ne!(a, b);
@@ -147,7 +143,6 @@ mod tests {
 
     #[test]
     fn line_hash_empty_line() {
-        // Empty and whitespace-only lines should hash the same.
         let a = line_hash("");
         let b = line_hash("   ");
         let c = line_hash("\t\t");

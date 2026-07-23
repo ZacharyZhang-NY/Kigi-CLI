@@ -650,7 +650,8 @@ fn signed_cache_compromised_respects_signed_opt_out() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
     let (kp, pubkey) = test_keypair();
-    let p = payload(); // fail_closed = false
+    // fail_closed = false
+    let p = payload();
     write_policy(home, &p);
     write_sidecar(home, &sign(&kp, &p)).unwrap();
 

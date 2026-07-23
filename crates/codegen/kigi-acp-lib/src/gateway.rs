@@ -613,7 +613,8 @@ mod tests {
                     })
                     .collect();
 
-                // Gate-open point; then concurrent producer emits live updates.
+                // Phase 2: a concurrent producer emits live updates while the
+                // replay completions are still draining.
                 let live_sender = sender.clone();
                 let producer = tokio::task::spawn_local(async move {
                     for i in 0..LIVE {
@@ -624,15 +625,14 @@ mod tests {
                     }
                 });
 
-                // Drain replay completions while producer runs.
                 for rx in completions {
                     let _ = rx.await;
                 }
 
-                // Mark response boundary.
                 log.borrow_mut().push("RESPONSE".into());
 
-                // Let producer and gateway finish remaining live updates.
+                // Give the producer and the gateway loop room to flush the
+                // remaining live updates before inspecting the log.
                 let _ = producer.await;
                 for _ in 0..LIVE + 5 {
                     tokio::task::yield_now().await;
@@ -644,7 +644,6 @@ mod tests {
                     .position(|s| s == "RESPONSE")
                     .expect("RESPONSE marker must be in the log");
 
-                // (1) Delta notifications are all present and before RESPONSE.
                 for i in 0..DELTA {
                     let tag = format!("delta-{i}");
                     let pos = log
@@ -657,7 +656,6 @@ mod tests {
                     );
                 }
 
-                // (2) Delta notifications preserve enqueue order.
                 let delta_positions: Vec<usize> = (0..DELTA)
                     .map(|i| log.iter().position(|s| s == &format!("delta-{i}")).unwrap())
                     .collect();
@@ -670,7 +668,6 @@ mod tests {
                     );
                 }
 
-                // (3) No live updates are lost.
                 for i in 0..LIVE {
                     let tag = format!("live-{i}");
                     assert!(
@@ -679,7 +676,6 @@ mod tests {
                     );
                 }
 
-                // (4) Live updates do not precede replay delta.
                 let last_delta = *delta_positions.last().unwrap();
                 for i in 0..LIVE {
                     let tag = format!("live-{i}");

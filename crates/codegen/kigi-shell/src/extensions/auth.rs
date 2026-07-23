@@ -74,7 +74,6 @@ fn handle_set_api_key(args: &acp::ExtRequest) -> ExtResult {
         .map_err(|e| acp::Error::internal_error().data(e.to_string()))
 }
 
-/// Handle auth code submission from TUI.
 fn handle_submit_code(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     #[derive(Deserialize)]
     struct SubmitCodeParams {

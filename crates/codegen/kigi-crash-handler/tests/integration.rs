@@ -33,7 +33,7 @@ fn run_scenario(scenario: &str, crash_dir: &Path) -> (std::process::ExitStatus, 
     )
 }
 
-// ── Subprocess entry point ──────────────────────────────────────────────
+// Subprocess entry point
 
 /// This test is `#[ignore]`d so it only runs when invoked as a subprocess
 /// by the parent test via `run_scenario`. The `CRASH_TEST_SCENARIO` env
@@ -43,7 +43,8 @@ fn run_scenario(scenario: &str, crash_dir: &Path) -> (std::process::ExitStatus, 
 fn subprocess_entry() {
     let scenario = match std::env::var("CRASH_TEST_SCENARIO") {
         Ok(s) => s,
-        Err(_) => return, // not a subprocess invocation
+        // not a subprocess invocation
+        Err(_) => return,
     };
     let crash_dir = std::env::var("CRASH_TEST_DIR").expect("CRASH_TEST_DIR");
     let crash_dir = std::path::PathBuf::from(crash_dir);
@@ -138,7 +139,7 @@ fn subprocess_entry() {
     }
 }
 
-// ── Parent test cases ───────────────────────────────────────────────────
+// Parent test cases
 
 #[test]
 fn handler_does_not_interfere_with_tokio_runtime() {

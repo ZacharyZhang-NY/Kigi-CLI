@@ -31,7 +31,7 @@ use kigi_markdown::{
 };
 use kigi_ratatui_textarea::{TextArea, TextAreaState};
 
-// ── Tokyo Night Storm palette (matches kigi-tui) ──────────────────────
+// Tokyo Night Storm palette (matches kigi-tui)
 
 #[path = "playground_common.rs"]
 mod playground_common;
@@ -39,7 +39,7 @@ use playground_common::{get_syntect, md_style};
 
 const MD_STYLE: MarkdownStyle = md_style(anstyle::Style::new());
 
-// ── Compute minimum render width ─────────────────────────────────────────────
+// Compute minimum render width
 
 /// Minimum width = 4k + 1, where k = number of table columns.
 /// Columns = max(`|` count per line) - 1  (the outer pipes are borders).
@@ -58,7 +58,7 @@ fn min_render_width(source: &str) -> usize {
     }
 }
 
-// ── Render helpers ───────────────────────────────────────────────────────────
+// Render helpers
 
 /// One-shot full render at a given width.
 fn render_full(source: &str, width: usize) -> Vec<Line<'static>> {
@@ -84,7 +84,7 @@ fn render_streaming(source: &str, width: usize) -> Vec<Line<'static>> {
     renderer.view().lines.to_vec()
 }
 
-// ── App state ────────────────────────────────────────────────────────────────
+// App state
 
 const DEFAULT_MARKDOWN: &str = "\
 | A | B | C |
@@ -145,7 +145,7 @@ impl App {
     }
 }
 
-// ── Main ─────────────────────────────────────────────────────────────────────
+// Main
 
 fn main() -> io::Result<()> {
     // Terminal setup
@@ -164,14 +164,14 @@ fn main() -> io::Result<()> {
             let ev = event::read()?;
 
             match &ev {
-                // ── Global: Ctrl-Q quits from anywhere ──
+                // Global: Ctrl-Q quits from anywhere
                 Event::Key(KeyEvent {
                     code: KeyCode::Char('q'),
                     modifiers: KeyModifiers::CONTROL,
                     ..
                 }) => break,
 
-                // ── Focused: defocus on Esc or Tab ──
+                // Focused: defocus on Esc or Tab
                 Event::Key(KeyEvent {
                     code: KeyCode::Esc | KeyCode::Tab,
                     ..
@@ -179,7 +179,7 @@ fn main() -> io::Result<()> {
                     app.textarea_focused = false;
                 }
 
-                // ── Unfocused: quit on q, Ctrl-C, Ctrl-D ──
+                // Unfocused: quit on q, Ctrl-C, Ctrl-D
                 Event::Key(KeyEvent {
                     code: KeyCode::Char('q'),
                     ..
@@ -190,7 +190,7 @@ fn main() -> io::Result<()> {
                     ..
                 }) if !app.textarea_focused => break,
 
-                // ── Unfocused: Space or Enter to re-focus ──
+                // Unfocused: Space or Enter to re-focus
                 Event::Key(KeyEvent {
                     code: KeyCode::Char(' ') | KeyCode::Enter,
                     ..
@@ -198,7 +198,7 @@ fn main() -> io::Result<()> {
                     app.textarea_focused = true;
                 }
 
-                // ── Unfocused: width controls ──
+                // Unfocused: width controls
                 Event::Key(KeyEvent {
                     code: KeyCode::Char('h') | KeyCode::Left,
                     ..
@@ -224,13 +224,13 @@ fn main() -> io::Result<()> {
                     app.adjust_width(5);
                 }
 
-                // ── Focused: forward keys to textarea, live re-render ──
+                // Focused: forward keys to textarea, live re-render
                 Event::Key(key) if app.textarea_focused => {
                     app.textarea.input(*key);
                     app.rerender();
                 }
 
-                // ── Focused: forward mouse to textarea ──
+                // Focused: forward mouse to textarea
                 Event::Mouse(mouse) if app.textarea_focused => {
                     app.textarea
                         .handle_mouse(*mouse, app.textarea_area, app.textarea_state);
@@ -248,7 +248,7 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
-// ── Drawing ──────────────────────────────────────────────────────────────────
+// Drawing
 
 fn draw(f: &mut ratatui::Frame, app: &mut App) {
     let size = f.area();
@@ -259,7 +259,8 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
     // to the textarea.
 
     let render_w = app.render_width as u16;
-    let full_height = wrapped_line_count(&app.full_lines, render_w).max(1) + 2; // +2 for border
+    // +2 for border
+    let full_height = wrapped_line_count(&app.full_lines, render_w).max(1) + 2;
     let stream_height = wrapped_line_count(&app.streaming_lines, render_w).max(1) + 2;
 
     // Detect mismatches between full and streaming
@@ -281,7 +282,7 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
     ])
     .split(size);
 
-    // ── Header ──
+    // Header
     let focus_indicator = if app.textarea_focused {
         Span::styled(
             " EDITING ",
@@ -339,7 +340,7 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
     ]);
     f.render_widget(header, chunks[0]);
 
-    // ── Textarea ──
+    // Textarea
     let border_color = if app.textarea_focused {
         Color::Green
     } else {
@@ -367,11 +368,11 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
         f.set_cursor_position((cx, cy));
     }
 
-    // ── Full render panel ──
+    // Full render panel
     let full_title = format!(" full: {} ", app.render_width);
     render_panel(f, chunks[2], &full_title, &app.full_lines, render_w, false);
 
-    // ── Streaming render panel ──
+    // Streaming render panel
     let stream_title = format!(" stream: {} ", app.render_width);
     render_panel(
         f,
@@ -403,7 +404,8 @@ fn wrapped_line_count(lines: &[Line<'_>], width: u16) -> u16 {
             if display_w == 0 {
                 1u16
             } else {
-                display_w.div_ceil(w) as u16 // ceil division
+                // ceil division
+                display_w.div_ceil(w) as u16
             }
         })
         .sum()

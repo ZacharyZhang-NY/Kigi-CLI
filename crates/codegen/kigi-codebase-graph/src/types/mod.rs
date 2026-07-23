@@ -113,7 +113,8 @@ impl FileMeta {
                 let current = Self::from_metadata(&meta);
                 *self != current
             }
-            Err(_) => true, // File deleted or inaccessible
+            // File deleted or inaccessible
+            Err(_) => true,
         }
     }
 }

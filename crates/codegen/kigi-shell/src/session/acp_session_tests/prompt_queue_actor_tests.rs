@@ -79,7 +79,6 @@ async fn two_enqueues_drain_fifo_and_stale_edit_is_noop() {
         .run_until(async {
             let (actor, mut gateway_rx) = build_actor().await;
 
-            // p1 then p2 (arrival order).
             {
                 let mut state = actor.state.lock().await;
                 state.pending_inputs.push_back(user_item("p1", "A"));
@@ -89,7 +88,6 @@ async fn two_enqueues_drain_fifo_and_stale_edit_is_noop() {
                 assert_eq!(ids(&actor.build_queue_wire(&state)), vec!["p1", "p2"]);
             }
 
-            // Agent drains the front (FIFO) — simulate turn-completion pop.
             {
                 let mut state = actor.state.lock().await;
                 let drained = state.pending_inputs.pop_front().unwrap();
@@ -98,28 +96,24 @@ async fn two_enqueues_drain_fifo_and_stale_edit_is_noop() {
                 assert_eq!(ids(&actor.build_queue_wire(&state)), vec!["p2"]);
             }
 
-            // Edit against drained p1 → no-op + rebroadcast of [p2].
             actor.handle_remove_queued_prompt("p1", 0, None).await;
             {
                 let state = actor.state.lock().await;
                 assert_eq!(ids(&actor.build_queue_wire(&state)), vec!["p2"]);
             }
 
-            // Stale-version edit against live p2 → no-op.
             actor.handle_remove_queued_prompt("p2", 99, None).await;
             {
                 let state = actor.state.lock().await;
                 assert_eq!(ids(&actor.build_queue_wire(&state)), vec!["p2"]);
             }
 
-            // Correct-version remove → empties the queue.
             actor.handle_remove_queued_prompt("p2", 0, None).await;
             {
                 let state = actor.state.lock().await;
                 assert!(actor.build_queue_wire(&state).is_empty());
             }
 
-            // The final broadcast must reflect the empty queue.
             let mut last: Option<crate::session::prompt_queue::QueueChanged> = None;
             while let Ok(msg) = gateway_rx.try_recv() {
                 if let kigi_acp_lib::AcpClientMessage::ExtNotification(args) = msg
@@ -231,14 +225,12 @@ async fn edit_queued_prompt_replaces_text_and_bumps_version() {
                 "last_editor recorded"
             );
 
-            // Underlying prompt_blocks was rebuilt with the new text.
             assert_eq!(item.prompt_blocks.len(), 1);
             match &item.prompt_blocks[0] {
                 acp::ContentBlock::Text(t) => assert_eq!(t.text, "edited"),
                 other => panic!("expected text block, got {other:?}"),
             }
 
-            // The wire projection also reflects the new state.
             let wire = actor.build_queue_wire(&state);
             assert_eq!(wire.len(), 1);
             assert_eq!(wire[0].text, "edited");
@@ -306,7 +298,6 @@ async fn edit_queued_prompt_missing_id_is_noop() {
                 .iter()
                 .find_map(|i| i.queue_meta.as_ref().filter(|m| m.id == "p1"))
                 .expect("p1 still in queue");
-            // p1 untouched.
             assert_eq!(meta.text, "text for p1");
             assert_eq!(meta.version, 0);
             assert!(meta.last_editor.is_none());
@@ -407,7 +398,6 @@ async fn clear_queue_resolves_cleared_rpcs_cancelled() {
 
             actor.handle_clear_queue(Some("A")).await;
 
-            // a1 (owned by A) was cleared → its RPC resolves Cancelled.
             let a1_result = a1_rx.await.expect("cleared prompt RPC must be resolved");
             assert!(
                 matches!(
@@ -421,7 +411,6 @@ async fn clear_queue_resolves_cleared_rpcs_cancelled() {
                 "cleared queued prompt must report RemovedFromQueue"
             );
 
-            // b1 (owned by B) stays queued → its RPC is still pending.
             let state = actor.state.lock().await;
             assert_eq!(ids(&actor.build_queue_wire(&state)), vec!["b1"]);
             drop(b1_rx);
@@ -442,7 +431,6 @@ async fn interject_queued_prompt_noop_without_running_turn() {
                 let mut state = actor.state.lock().await;
                 state.pending_inputs.push_back(user_item("p1", "A"));
             }
-            // current_prompt_id is None → no turn running.
 
             actor
                 .handle_interject_queued_prompt("p1", 0, None, None)
@@ -479,7 +467,6 @@ async fn interject_queued_prompt_stale_version_noop() {
                 .lock()
                 .expect("current_prompt_id mutex poisoned") = Some("running".into());
 
-            // Version 99 != live version 0 → no-op.
             actor
                 .handle_interject_queued_prompt("p1", 99, None, None)
                 .await;
@@ -519,7 +506,6 @@ async fn interject_after_cancel_does_nothing_and_keeps_prompt_queued() {
 
             actor.cancel_running_task(true, false, false, None).await;
 
-            // p1 would start next; the interject lands in the gap where no turn runs yet.
             actor
                 .handle_interject_queued_prompt("p1", 0, None, None)
                 .await;
@@ -536,7 +522,6 @@ async fn interject_after_cancel_does_nothing_and_keeps_prompt_queued() {
             );
             drop(state);
 
-            // The interject no-op still rebroadcasts so clients reconcile.
             let mut saw_broadcast = false;
             while let Ok(msg) = gateway_rx.try_recv() {
                 if let kigi_acp_lib::AcpClientMessage::ExtNotification(args) = msg
@@ -567,7 +552,6 @@ async fn interject_queued_prompt_with_new_text_no_running_turn_saves_edit() {
                     .push(acp::ContentBlock::Image(test_image_content()));
                 state.pending_inputs.push_back(item);
             }
-            // current_prompt_id is None → no turn running.
 
             actor
                 .handle_interject_queued_prompt("p1", 0, None, Some("EDITED text"))

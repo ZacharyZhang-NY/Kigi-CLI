@@ -80,7 +80,6 @@ fn token_styled_line(
 /// Block displaying a user's prompt.
 #[derive(Debug, Clone)]
 pub struct UserPromptBlock {
-    /// The user's input text.
     pub text: String,
     /// Whether this was a bash command (! prefix).
     pub is_bash: bool,
@@ -136,7 +135,8 @@ impl UserPromptBlock {
         let token_end = first_line
             .find(char::is_whitespace)
             .unwrap_or(first_line.len());
-        #[allow(clippy::single_range_in_vec_init)] // field is multi-range capable
+        // field is multi-range capable
+        #[allow(clippy::single_range_in_vec_init)]
         let skill_token_ranges = if token_end > 0 {
             vec![0..token_end]
         } else {
@@ -279,7 +279,6 @@ impl UserPromptBlock {
         let ellipsis = " \u{2026}";
         let ellipsis_width = 2;
 
-        // Available width for text content (after prefix/indent)
         let base_content_width = (width as usize).saturating_sub(prefix_width).max(1);
 
         let mut all_lines: Vec<BlockLine> = Vec::new();
@@ -288,7 +287,6 @@ impl UserPromptBlock {
 
         for (logical_idx, line_text) in logical_lines.iter().enumerate() {
             if line_text.is_empty() {
-                // Empty line - just show prefix/indent
                 let indent = " ".repeat(prefix_width);
                 let line = if logical_idx == 0 {
                     Line::from(vec![Span::styled(prefix.to_string(), prefix_style)])
@@ -296,8 +294,9 @@ impl UserPromptBlock {
                     Line::from(vec![Span::styled(indent, prefix_style)])
                 };
                 let block_line = with_band(BlockLine {
+                    // empty content range past prefix
                     selectable: if has_visible_prefix {
-                        Selectable::Spans(1..1) // empty content range past prefix
+                        Selectable::Spans(1..1)
                     } else {
                         Selectable::All
                     },
@@ -311,7 +310,6 @@ impl UserPromptBlock {
                 if let Some(max) = max_lines
                     && all_lines.len() >= max
                 {
-                    // There's more content if we haven't processed all logical lines
                     let has_more = logical_idx + 1 < total_logical;
                     if has_more {
                         // Add ellipsis to last line
@@ -326,7 +324,6 @@ impl UserPromptBlock {
                 continue;
             }
 
-            // Wrap this line's content.
             let content_line = if self.skill_token_ranges.is_empty() {
                 Line::from(Span::styled(line_text.to_string(), text_style))
             } else {
@@ -359,10 +356,8 @@ impl UserPromptBlock {
                 let indent: String = " ".repeat(prefix_width);
                 let line_prefix = if is_first_line { prefix } else { &indent };
 
-                // Check if this will be the last allowed line
                 let will_be_last = max_lines.is_some_and(|max| all_lines.len() + 1 == max);
 
-                // Check if there's more content after this line
                 let has_more_wrapped = wrap_idx + 1 < wrapped_count;
                 let has_more_logical = logical_idx + 1 < total_logical;
                 let has_more = has_more_wrapped || has_more_logical;
@@ -389,7 +384,6 @@ impl UserPromptBlock {
                         .next()
                         .unwrap_or_else(Line::default);
 
-                    // Build final line with prefix, content, and ellipsis
                     let mut spans = vec![Span::styled(line_prefix.to_string(), prefix_style)];
                     spans.extend(final_content.spans.into_iter().map(|s| Span {
                         content: s.content.to_string().into(),
@@ -398,7 +392,8 @@ impl UserPromptBlock {
                     spans.push(Span::styled(ellipsis.to_string(), text_style));
 
                     let content_start = if has_visible_prefix { 1 } else { 0 };
-                    let content_end = spans.len() - 1; // exclude ellipsis
+                    // exclude ellipsis
+                    let content_end = spans.len() - 1;
                     let block_line = with_band(BlockLine {
                         content: Line::from(spans),
                         selectable: if content_start < content_end {
@@ -414,7 +409,6 @@ impl UserPromptBlock {
                     return all_lines;
                 }
 
-                // Normal line (not truncated)
                 let mut spans = vec![Span::styled(line_prefix.to_string(), prefix_style)];
                 spans.extend(wrapped_line.spans.into_iter().map(|s| Span {
                     content: s.content.to_string().into(),
@@ -443,7 +437,6 @@ impl UserPromptBlock {
             }
         }
 
-        // Handle empty text
         if all_lines.is_empty() {
             all_lines.push(with_band(BlockLine {
                 content: Line::from(Span::styled(prefix.trim().to_string(), prefix_style)),
@@ -481,7 +474,8 @@ impl BlockContent for UserPromptBlock {
     }
 
     fn accent_background(&self, _ctx: &BlockContext) -> bool {
-        true // fill accent column with block bg so it matches content
+        // fill accent column with block bg so it matches content
+        true
     }
 
     fn background(&self, ctx: &BlockContext) -> BlockBackground {
@@ -595,7 +589,8 @@ mod tests {
     fn test_ellipsis_fits_within_width() {
         // Create a prompt that wraps to exactly fill lines
         let block = UserPromptBlock::new("aaaa bbbb cccc dddd eeee ffff");
-        let width = 15; // Narrow width to force wrapping
+        // Narrow width to force wrapping
+        let width = 15;
         let lines = block.wrap_prompt_lines(width, Some(2), true, false);
 
         assert_eq!(lines.len(), 2);
@@ -672,8 +667,6 @@ mod tests {
         assert_eq!(line1[1].style.fg, Some(theme.text_primary));
     }
 
-    // --- Mid-text skill token styling (with_skill_tokens) ---
-
     #[test]
     fn mid_text_token_only_token_is_teal() {
         let text = "great /pr-workflow all good now";
@@ -734,15 +727,21 @@ mod tests {
 
     #[test]
     fn invalid_token_ranges_are_dropped() {
-        let text = "héllo /model now"; // 'é' is 2 bytes: "/model" = 7..13
+        // 'é' is 2 bytes: "/model" = 7..13
+        let text = "héllo /model now";
         let block = UserPromptBlock::with_skill_tokens(
             text,
             vec![
-                2..3,   // not a char boundary (inside 'é')
-                40..50, // out of bounds
-                9..9,   // empty
-                7..13,  // valid token
-                10..15, // overlaps the kept 7..13
+                // not a char boundary (inside 'é')
+                2..3,
+                // out of bounds
+                40..50,
+                // empty
+                9..9,
+                // valid token
+                7..13,
+                // overlaps the kept 7..13
+                10..15,
             ],
         );
         assert_eq!(block.skill_token_ranges, vec![7..13]);
@@ -768,8 +767,6 @@ mod tests {
         let theme = Theme::current();
         assert_eq!(lines[0].content.spans[1].style.fg, Some(theme.text_primary));
     }
-
-    // --- Token styling across soft-wrap and collapsed truncation ---
 
     /// Concatenated content of a line's skill-accent spans.
     fn teal_text(line: &Line, theme: &Theme) -> String {
@@ -851,7 +848,8 @@ mod tests {
 
         assert_eq!(lines.len(), 3);
         assert!(line_text(&lines[0].content).starts_with(crate::glyphs::prompt_arrow()));
-        assert!(line_text(&lines[1].content).starts_with("  ")); // continuation indent
+        // continuation indent
+        assert!(line_text(&lines[1].content).starts_with("  "));
         assert!(line_text(&lines[2].content).starts_with("  "));
     }
 
@@ -920,8 +918,6 @@ mod tests {
             assert_ne!(prefix_span.style.fg, Some(theme.gray_dim));
         }
     }
-
-    // --- Selection metadata tests ---
 
     #[test]
     fn test_prompt_lines_have_selection_range() {
@@ -1020,8 +1016,6 @@ mod tests {
         }
     }
 
-    // --- Fold behavior tests ---
-
     #[test]
     fn test_short_prompt_not_foldable() {
         let block = UserPromptBlock::new("hello");
@@ -1045,8 +1039,9 @@ mod tests {
 
     #[test]
     fn test_long_single_line_is_foldable() {
-        // A single line long enough to wrap past 3 visual lines at 60-char width
-        let long_line = "a ".repeat(120); // 240 chars → 4 visual lines at 60
+        // A single line long enough to wrap past 3 visual lines at 60-char width:
+        // 240 chars → 4 visual lines at 60
+        let long_line = "a ".repeat(120);
         let block = UserPromptBlock::new(long_line);
         assert!(block.is_foldable());
         assert_eq!(block.default_display_mode(), DisplayMode::Collapsed);
@@ -1054,8 +1049,9 @@ mod tests {
 
     #[test]
     fn test_short_single_line_not_foldable() {
-        // A single line that fits in 3 visual lines at 60-char width
-        let short_line = "a ".repeat(60); // 120 chars → 2 visual lines at 60
+        // A single line that fits in 3 visual lines at 60-char width:
+        // 120 chars → 2 visual lines at 60
+        let short_line = "a ".repeat(60);
         let block = UserPromptBlock::new(short_line);
         assert!(!block.is_foldable());
     }

@@ -52,7 +52,6 @@ struct SearchResponse {
     search_results: Vec<SearchResult>,
 }
 
-/// A minimal, purpose-built HTTP client for the Kimi search service.
 #[derive(Clone)]
 pub struct WebSearchClient {
     http: reqwest::Client,
@@ -106,8 +105,6 @@ impl WebSearchClient {
         })
     }
 
-    /// Wire a 401-attribution callback into this client. Idempotent;
-    /// safe to call before or after the first request.
     pub fn with_attribution_callback(
         mut self,
         callback: Option<SharedAttributionCallback>,

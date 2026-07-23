@@ -112,7 +112,7 @@ const POLL_INTERVAL: Duration = Duration::from_secs(5);
 #[cfg(test)]
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
-/// Watches for system appearance changes via polling.
+/// Watches for system appearance shifts via polling.
 ///
 /// The spawned polling task only reads system state and sends via
 /// `watch::channel` — it never mutates `theme_cache::CURRENT` or `AUTO_MODE`.
@@ -155,7 +155,7 @@ impl SystemAppearanceWatcher {
         })
     }
 
-    /// Wait for the next appearance change.
+    /// Wait for the next appearance shift.
     pub async fn changed(&mut self) -> Result<(), watch::error::RecvError> {
         self.rx.changed().await
     }
@@ -173,7 +173,7 @@ impl Drop for SystemAppearanceWatcher {
     }
 }
 
-// -- Test support ----------------------------------------------------------
+// Test support
 
 #[cfg(any(test, feature = "test-support"))]
 use std::sync::Mutex;
@@ -306,7 +306,7 @@ mod tests {
         let _ = detect();
     }
 
-    // -- SystemAppearanceWatcher -----------------------------------------
+    // SystemAppearanceWatcher
 
     #[tokio::test]
     async fn start_if_auto_returns_none_when_not_auto() {
@@ -347,7 +347,8 @@ mod tests {
     }
 
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)] // Deliberate: theme_cache::test_lock() serializes mock access.
+    // Deliberate: theme_cache::test_lock() serializes mock access.
+    #[allow(clippy::await_holding_lock)]
     async fn watcher_detects_appearance_change() {
         let _guard = theme_cache::test_lock()
             .lock()
@@ -356,10 +357,10 @@ mod tests {
         let mut watcher = SystemAppearanceWatcher::start_if_auto(true).unwrap();
         assert_eq!(watcher.current(), Some(SystemAppearance::Dark));
 
-        // Change the mock appearance.
+        // Set the mock appearance.
         set_mock(Some(SystemAppearance::Light));
 
-        // Wait for the watcher to detect the change (polls every 50ms in tests).
+        // Wait for the watcher to detect the shift (polls every 50ms in tests).
         tokio::time::timeout(std::time::Duration::from_secs(2), watcher.changed())
             .await
             .expect("timed out waiting for change")
@@ -370,7 +371,8 @@ mod tests {
     }
 
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)] // Deliberate: theme_cache::test_lock() serializes mock access.
+    // Deliberate: theme_cache::test_lock() serializes mock access.
+    #[allow(clippy::await_holding_lock)]
     async fn watcher_does_not_send_when_unchanged() {
         let _guard = theme_cache::test_lock()
             .lock()
@@ -378,11 +380,11 @@ mod tests {
         set_mock(Some(SystemAppearance::Dark));
         let mut watcher = SystemAppearanceWatcher::start_if_auto(true).unwrap();
 
-        // Wait longer than the poll interval — no change should occur.
+        // Wait longer than the poll interval — Unchanged should occur.
         let result =
             tokio::time::timeout(std::time::Duration::from_millis(200), watcher.changed()).await;
 
-        // Should timeout because appearance didn't change.
+        // Should timeout because appearance stayed the same.
         assert!(
             result.is_err(),
             "expected timeout — no change should be emitted"
@@ -392,16 +394,17 @@ mod tests {
     }
 
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)] // Deliberate: theme_cache::test_lock() serializes mock access.
+    // Deliberate: theme_cache::test_lock() serializes mock access.
+    #[allow(clippy::await_holding_lock)]
     async fn watcher_detects_recovery_from_failure() {
         let _guard = theme_cache::test_lock()
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        set_mock(None); // Initially detection fails
+        // Initially detection fails
+        set_mock(None);
         let mut watcher = SystemAppearanceWatcher::start_if_auto(true).unwrap();
         assert_eq!(watcher.current(), None);
 
-        // Now detection succeeds.
         set_mock(Some(SystemAppearance::Dark));
 
         tokio::time::timeout(std::time::Duration::from_secs(2), watcher.changed())

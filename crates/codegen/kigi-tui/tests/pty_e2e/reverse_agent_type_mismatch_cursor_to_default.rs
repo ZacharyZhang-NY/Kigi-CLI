@@ -1,4 +1,3 @@
-// Per-test-case module for the `pty_e2e` integration test crate.
 #[allow(unused_imports)]
 use super::common::*;
 
@@ -20,7 +19,6 @@ async fn reverse_agent_type_mismatch_cursor_to_default() {
 
     let binary = pager_binary().expect("resolve pager binary");
 
-    // Start with a model as default via --model flag.
     let mut harness = PtyHarness::spawn_with_content(
         &binary,
         DEFAULT_ROWS,
@@ -47,7 +45,6 @@ async fn reverse_agent_type_mismatch_cursor_to_default() {
         .inject_keys(b"/model default-model\r")
         .expect("type model switch");
 
-    // The question modal should appear.
     harness
         .wait_for_text("requires starting a new session", Duration::from_secs(15))
         .expect("agent type mismatch modal should appear for reverse direction");

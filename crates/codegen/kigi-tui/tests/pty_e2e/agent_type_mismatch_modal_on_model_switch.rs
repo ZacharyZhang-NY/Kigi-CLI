@@ -34,7 +34,6 @@ async fn agent_type_mismatch_modal_on_model_switch() {
         .inject_keys(b"/model cursor-model\r")
         .expect("type model switch");
 
-    // The question modal should appear.
     harness
         .wait_for_text("requires starting a new session", Duration::from_secs(15))
         .expect("agent type mismatch modal should appear");

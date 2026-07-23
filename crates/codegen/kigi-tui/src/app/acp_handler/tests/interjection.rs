@@ -64,7 +64,6 @@
             assert_eq!(count_parked(agent), 0, "no marker on screen");
         }
 
-        // A task completing in the still-parked window must stay silent.
         handle_ext_notification(
             &make_task_completed_notif("sess-park", "t10", "sleep 10", Some(0)),
             &mut app,
@@ -101,7 +100,6 @@
             assert!(agent.renders_parked());
         }
 
-        // sleep 10 exits → full marker with "2 commands still running."
         handle_ext_notification(
             &make_task_completed_notif("sess-park", "t10", "sleep 10", Some(0)),
             &mut app,
@@ -111,12 +109,10 @@
             &make_task_completed_notif("sess-park", "t10", "sleep 10", Some(0)),
             &mut app,
         );
-        // sleep 15 exits → full marker with "1 command still running."
         handle_ext_notification(
             &make_task_completed_notif("sess-park", "t15", "sleep 15", Some(0)),
             &mut app,
         );
-        // sleep 20 exits → nothing left; no "0 commands" line.
         handle_ext_notification(
             &make_task_completed_notif("sess-park", "t20", "sleep 20", Some(0)),
             &mut app,
@@ -438,7 +434,6 @@
             ),
             &mut app,
         );
-        // Only the initial parked marker — no countdown re-push.
         let agent = app.agents.get_mut(&AgentId(0)).unwrap();
         assert_eq!(parked_marker_messages(agent).len(), 1);
     }
@@ -464,8 +459,6 @@
         let agent = app.agents.get_mut(&AgentId(0)).unwrap();
         assert!(parked_marker_messages(agent).is_empty());
     }
-
-    // -- imminent waits do not park (awaited work already finished) ----------
 
     /// Waiting on a task that already completed: no marker, slot stays free.
     #[test]
@@ -715,9 +708,9 @@
 
     #[test]
     fn interjection_notification_pushes_block_to_matching_session() {
-        // Multi-client fix: an interjection typed in one pane is broadcast by
-        // the shell as kigi/session/interjection; EVERY attached pane (incl.
-        // the originator, which no longer pushes a local block) renders it.
+        // An interjection typed in one pane is broadcast by the shell as
+        // kigi/session/interjection; every attached pane — including the
+        // originator — renders it from the broadcast rather than a local push.
         let mut app = make_app_with_agent("sess-view");
         let affected =
             handle_ext_notification(&interjection_ext("sess-view", "also add tests"), &mut app);
@@ -746,8 +739,6 @@
 
     #[test]
     fn interjection_notification_renders_for_a_viewer() {
-        // A viewer (attached_as_viewer) watching another client's session must
-        // also render interjections broadcast for that session.
         let mut app = make_app_with_agent("sess-view");
         app.agents.get_mut(&AgentId(0)).unwrap().attached_as_viewer = true;
         let affected =

@@ -87,7 +87,6 @@ mod tests {
 
     #[test]
     fn test_ext_method_result_serialization() {
-        // Success case
         let data = TestData {
             nodes: vec!["test".to_string()],
             truncated: false,
@@ -95,7 +94,6 @@ mod tests {
         let success: ExtMethodResult<TestData> = ExtMethodResult::from_result::<String>(Ok(data));
         let json = serde_json::to_value(&success).unwrap();
 
-        // Should have "result" field
         assert!(
             json.get("result").is_some(),
             "Success case should have 'result' field"
@@ -116,12 +114,10 @@ mod tests {
             serde_json::to_string_pretty(&success).unwrap()
         );
 
-        // Error case
         let error: ExtMethodResult<TestData> =
             ExtMethodResult::from_result::<&str>(Err("test error"));
         let json = serde_json::to_value(&error).unwrap();
 
-        // Should have "result": null and "error" field
         assert!(
             json.get("result").is_some(),
             "Error case should have 'result' field"

@@ -10,10 +10,6 @@ use crate::types::tool::{ToolKind, ToolNamespace};
 
 pub use kigi_tools_api::slash_commands::UPDATE_GOAL_TOOL_NAME;
 
-// ---------------------------------------------------------------------------
-// Input schema
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct UpdateGoalInput {
     #[serde(
@@ -38,9 +34,7 @@ pub struct UpdateGoalInput {
     pub blocked_reason: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
 // Channel types — inserted into Resources, read by SessionActor
-// ---------------------------------------------------------------------------
 
 /// Outcome of an `update_goal` call as delivered by the session actor.
 #[derive(Debug)]
@@ -120,7 +114,7 @@ pub enum RejectReason {
     /// `harness_no_ack` "dropped the response channel" error).
     HarnessDisabled,
     /// Reserved for strict-mode eviction surfacing; not currently
-    /// constructed (the new design acks evicted entries as
+    /// constructed (the design acks evicted entries as
     /// `DeferredToTurnEnd` at their own defer time).
     PendingQueueEvicted,
     /// The goal auto-paused mid-drain (cap, stall/no_progress, or
@@ -178,10 +172,6 @@ impl std::fmt::Debug for GoalUpdateHandle {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Output
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct UpdateGoalOutput {
     pub success: bool,
@@ -189,10 +179,6 @@ pub struct UpdateGoalOutput {
 }
 
 impl kigi_tool_runtime::ToolOutput for UpdateGoalOutput {}
-
-// ---------------------------------------------------------------------------
-// Tool implementation
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Default)]
 pub struct UpdateGoalTool;

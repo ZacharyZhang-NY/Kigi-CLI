@@ -43,7 +43,6 @@ async fn minimal_new_session_keeps_history_and_resets() {
         harness.scrollback_text()
     );
 
-    // `/new` → fresh session: commits a second welcome card and resets the frontier.
     inject_keys_paced(&mut harness, b"/new");
     harness.inject_keys(b"\r").expect("submit /new");
 
@@ -59,14 +58,12 @@ async fn minimal_new_session_keeps_history_and_resets() {
         harness.full_text()
     );
 
-    // Prior turn's committed lines remain in native scrollback (not wiped).
     assert!(
         harness.contains_full_text(&turn_sentinel(1)),
         "prior turn must remain in native scrollback after /new\nfull:\n{}",
         harness.full_text()
     );
 
-    // A fresh turn streams in the new session.
     content.set_response(format!("{} new session payload.", turn_sentinel(2)));
     harness
         .inject_keys(b"hi\r")

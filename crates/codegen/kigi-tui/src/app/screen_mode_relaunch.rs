@@ -841,8 +841,6 @@ mod tests {
         );
     }
 
-    // ── effective_minimal_preference ─────────────────────────────────────
-
     #[test]
     fn preference_cli_flag_beats_config_and_legacy() {
         // `--minimal` wins over a config fullscreen and vice versa.

@@ -1,31 +1,27 @@
 //! Shadow `find`→`bfs` and `grep`→`ugrep` when those binaries resolve.
 //!
-//! Per-tool enable state (default on) is resolved by the host via the shared
-//! config helper `kigi-shell::util::config::resolve_search_tools_enabled`
-//! (requirements > env `KIGI_TOOLS_FIND_BFS` / `KIGI_TOOLS_GREP_UGREP` (+
-//! `KIGI_FIND_BFS` / `KIGI_GREP_UGREP` aliases, `DISABLE_EMBEDDED_SEARCH_TOOLS`
-//! master) > `[toolset.bash]` config.toml > managed > default), baked into the
+//! Per-tool enable state (default on) is resolved by the host via
+//! `kigi-shell::util::config::resolve_search_tools_enabled` (requirements > env
+//! `KIGI_TOOLS_FIND_BFS` / `KIGI_TOOLS_GREP_UGREP` (+ `KIGI_FIND_BFS` /
+//! `KIGI_GREP_UGREP` aliases, `DISABLE_EMBEDDED_SEARCH_TOOLS` master) >
+//! `[toolset.bash]` config.toml > managed > default), baked into the
 //! `LocalTerminalBackend` as a [`SearchShadowConfig`] and passed to
-//! [`search_injection`] per command. The enable state lives on the backend (not
-//! a process-global): a subagent that reuses the parent's backend inherits the
-//! parent's shadows instead of clobbering a shared static. This module no longer
-//! parses the flags itself.
+//! [`search_injection`] per command.
 //!
-//! Resolve (host side, memoized): env override if a regular file → bundled binary
-//! (release builds, self-extracted to `~/.kigi/vendor/<name>-<ver>-<target>`) →
-//! `~/.kigi/vendor/{name}` if a regular file → `which` on the agent `$PATH`.
-//! Env/vendor only require `is_file()` as a lenient hint (no `--version` probe).
-//! This memoized path is only a *hint*: the injected shadow re-resolves at
-//! **call time** — it uses the hint when it's still *executable* (`[ -x ]`), else
-//! `command -v {bin}` on the live shell `PATH` (which includes login/rc additions
-//! the agent process may lack), else falls back to the OS `{name}`. So a removed
-//! or non-executable binary self-heals to OS `find`/`grep`, and a binary
-//! reachable only through the login shell is still found.
+//! Host-side resolution (memoized) is only a *hint*: env override if a regular
+//! file → bundled binary (release builds, self-extracted to
+//! `~/.kigi/vendor/<name>-<ver>-<target>`) → `~/.kigi/vendor/{name}` if a
+//! regular file → `which` on the agent `$PATH`. The injected shadow re-resolves
+//! at **call time**, trusting the hint only while it is *executable* (`[ -x ]`),
+//! else `command -v {bin}` on the live shell `PATH` (which includes login/rc
+//! additions the agent process may lack), else the OS `{name}`. So a deleted or
+//! non-executable binary self-heals to OS `find`/`grep`, and a binary reachable
+//! only through the login shell is still found.
 //!
-//! Inject is **always** non-empty on Unix callers: either install a shadow
-//! function (which tags itself with a `__kigi_shadow_{name}` marker) or a
-//! marker-gated `unalias`+`unset -f` that drops *only* a prior harness shadow —
-//! never a user-defined `find`/`grep` function replayed from the snapshot.
+//! Inject is **always** non-empty on Unix callers: either a shadow function
+//! (which tags itself with a `__kigi_shadow_{name}` marker) or a marker-gated
+//! `unalias`+`unset -f` that drops *only* a prior harness shadow — never a
+//! user-defined `find`/`grep` function replayed from the snapshot.
 
 use super::SearchShadowConfig;
 use std::path::{Path, PathBuf};
@@ -69,22 +65,13 @@ const UGREP_BYTES: &[u8] = include_bytes!(concat!(
 ));
 
 /// Oneline inject for shell wrappers; always ends with `"; "`.
-///
-/// `cfg` is the backend's resolved per-tool enable state (see module docs); it
-/// is passed in per command rather than read from a process-global so subagents
-/// sharing a backend can't clobber each other's shadows.
 pub fn search_injection(cfg: SearchShadowConfig) -> String {
     build_injection(cfg.find_bfs, cfg.grep_ugrep, resolved_tools())
 }
 
-/// Compose the inject from per-tool enable flags + resolved binaries. An enabled
-/// tool installs a self-resolving shadow (the memoized `tools` path is only a
-/// fast-path hint; the shadow re-resolves at call time and falls back to the OS
-/// binary — see [`shell_function`]). A disabled tool emits a marker-gated
-/// `restore` that drops only a prior harness shadow. Kept pure (flags/tools
-/// passed in) so tests need no process-global env mutation — that is UB against
-/// the `shell_state` integration tests that read env / spawn children
-/// concurrently.
+/// Flags and tools are parameters rather than globals so tests need no
+/// process-global env mutation — that is UB against the `shell_state`
+/// integration tests, which read env and spawn children concurrently.
 fn build_injection(find_on: bool, grep_on: bool, tools: &ResolvedTools) -> String {
     let find = if find_on {
         shell_function("find", "bfs", tools.bfs.as_deref(), &[])
@@ -99,11 +86,11 @@ fn build_injection(find_on: bool, grep_on: bool, tools: &ResolvedTools) -> Strin
     format!("{find}; {grep}; ")
 }
 
-/// Drop a *previously installed harness* shadow so command-word `{name}` uses the
-/// OS binary again. Gated on the `__kigi_shadow_{name}` marker that
-/// [`shell_function`] sets, so a user-defined `{name}` function replayed from the
-/// shell snapshot is left intact — only the harness's own shadow is removed.
-/// `set -u`/`set -e` safe and idempotent (`unset -f` is bash + zsh).
+/// Drop a harness shadow so command-word `{name}` reaches the OS binary again.
+/// Gated on the `__kigi_shadow_{name}` marker that [`shell_function`] sets, so a
+/// user-defined `{name}` function replayed from the shell snapshot survives —
+/// only the harness's own shadow goes. `set -u`/`set -e` safe and idempotent
+/// (`unset -f` is bash + zsh).
 fn restore_command(name: &str) -> String {
     format!(
         "if [ -n \"${{__kigi_shadow_{name}-}}\" ]; then \
@@ -128,7 +115,7 @@ fn resolved_tools() -> &'static ResolvedTools {
 }
 
 /// Write embedded `bytes` to `~/.kigi/vendor/<versioned_name>` (chmod 755) on
-/// first use and return the path; reused on later runs. Versioned so bumping the
+/// first use; later runs reuse it. The version in the name means bumping the
 /// bundled version writes a fresh file instead of reusing a stale one.
 #[cfg(any(bundle_bfs, bundle_ugrep))]
 fn extract_bundled(versioned_name: &str, bytes: &[u8]) -> std::io::Result<PathBuf> {
@@ -164,7 +151,6 @@ fn extract_bundled(versioned_name: &str, bytes: &[u8]) -> std::io::Result<PathBu
     Ok(dest)
 }
 
-/// Path to the bundled `bfs` (extracted on first use), or `None` when not bundled.
 fn bundled_bfs() -> Option<PathBuf> {
     #[cfg(bundle_bfs)]
     {
@@ -185,7 +171,6 @@ fn bundled_bfs() -> Option<PathBuf> {
     }
 }
 
-/// Path to the bundled `ugrep` (extracted on first use), or `None` when not bundled.
 fn bundled_ugrep() -> Option<PathBuf> {
     #[cfg(bundle_ugrep)]
     {
@@ -215,11 +200,10 @@ fn resolve_tool(bin_name: &str, env_override: &str, bundled: Option<PathBuf>) ->
     )
 }
 
-/// Resolution order: explicit env path → bundled (self-extracted) →
-/// `~/.kigi/vendor/<bin>` → `which`. Env and vendor only require `is_file()` here
-/// (a lenient hint, no `+x` probe) so an odd-permission copy still resolves; the
-/// injected shadow gates on `[ -x ]` at call time and falls back to the OS binary
-/// if the hint isn't executable, so a non-exec path can't hard-fail `find`/`grep`.
+/// Env and vendor candidates only need `is_file()` — no `+x` probe — so an
+/// odd-permission copy still resolves as a hint; the injected shadow gates on
+/// `[ -x ]` at call time and reaches the OS binary when the hint isn't
+/// executable, so a non-exec path can't hard-fail `find`/`grep`.
 fn resolve_tool_from(
     env_path: Option<PathBuf>,
     bundled: Option<PathBuf>,
@@ -251,22 +235,14 @@ fn bash_safe_quote(s: &str) -> String {
 
 /// Oneline `name() { … }` for `-c` inject — a *self-resolving* shadow.
 ///
-/// At call time it picks the binary: the host-resolved `preferred` path
-/// (bundled/env/vendor/which) when that file still exists, else `command -v
-/// {bin_name}` on the live shell `PATH` (which carries login/rc additions the
-/// agent process may not have), else it falls back to the OS `{name}`. This keeps
-/// the fast hard-coded path for the common case while self-healing when the
-/// binary was removed (revalidation) or is only reachable through the shell's
-/// richer `PATH`.
-///
-/// `exec -a` runs inside a subshell so a top-level call can't replace the wrapper
-/// shell (it must survive to dump state); a call already inside a subshell
-/// (`BASH_SUBSHELL > 0`, bash) execs directly to skip a fork. `${ZSH_VERSION-}`
-/// keeps the probe `set -u`-safe (a bare `$ZSH_VERSION` aborts bash under
-/// nounset). `exec -a` gives the binary the `find`/`grep` argv0 (ps display +
-/// ugrep grep-personality) in both bash and zsh. The trailing
+/// `exec -a` runs inside a subshell so a top-level call can't replace the
+/// wrapper shell, which must survive to dump state; a call already inside a
+/// subshell (`BASH_SUBSHELL > 0`, bash) execs directly to skip a fork. `exec -a`
+/// also gives the binary the `find`/`grep` argv0 (ps display + ugrep
+/// grep-personality) in both bash and zsh. `${ZSH_VERSION-}` keeps the probe
+/// `set -u`-safe — a bare `$ZSH_VERSION` aborts bash under nounset. The trailing
 /// `__kigi_shadow_{name}=1` marks this as a harness shadow so `restore_command`
-/// only ever removes our own function — never a user's.
+/// only ever drops our own function, never a user's.
 fn shell_function(
     name: &str,
     bin_name: &str,
@@ -284,16 +260,15 @@ fn shell_function(
             format!("{} ", qargs.join(" "))
         }
     };
-    // `local __kigi_bin` is re-resolved every call. The host hint is trusted
-    // only when it's *executable* (`[ -x ]`, not just `[ -f ]`): the resolver
-    // accepts any regular file as a hint, but `exec` needs `+x`, so a non-exec
-    // hint must fall through rather than hard-fail with no OS fallback. Then
-    // `command -v` on the live shell PATH (returns an executable), else the OS
-    // binary. `|| __kigi_bin=''` keeps the lookup `set -e`-safe (a failed
-    // `command -v` would otherwise abort the function under errexit). The OS
-    // fallback uses `command {name}` to bypass this function. `{prepend}` is
-    // empty for find, the ugrep default flags for grep (and is omitted from the
-    // OS fallback, which gets the original args).
+    // `__kigi_bin` re-resolves on every call. The host hint counts only while
+    // *executable* (`[ -x ]`, not just `[ -f ]`): the resolver accepts any
+    // regular file as a hint, but `exec` needs `+x`, so a non-exec hint must
+    // fall through rather than hard-fail with no OS fallback. Then `command -v`
+    // on the live shell PATH, else the OS binary via `command {name}`, which
+    // bypasses this function. `|| __kigi_bin=''` keeps the lookup `set -e`-safe:
+    // a failed `command -v` would otherwise abort the function under errexit.
+    // `{prepend}` is empty for find and the ugrep default flags for grep; the OS
+    // fallback omits it and gets the original args.
     format!(
         "unalias {name} 2>/dev/null || true; \
          {name}() {{ \
@@ -314,7 +289,6 @@ fn shell_function(
 mod tests {
     use super::*;
 
-    /// Both binaries resolved, for `build_injection` shape tests.
     fn both_tools() -> ResolvedTools {
         ResolvedTools {
             bfs: Some(PathBuf::from("/tmp/bfs")),
@@ -326,28 +300,23 @@ mod tests {
     fn shell_function_shape() {
         let fn_body = shell_function("find", "bfs", Some(Path::new("/tmp/bfs")), &[]);
         assert!(fn_body.contains("unalias find"));
-        // Preferred path is the fast-path hint; the shadow execs `$__kigi_bin`.
         assert!(fn_body.contains("local __kigi_bin=/tmp/bfs"));
         assert!(fn_body.contains("exec -a find \"$__kigi_bin\" \"$@\""));
-        // Hint is trusted only when executable (`[ -x ]`, not `[ -f ]`), so a
-        // non-exec hint falls through instead of hard-failing exec.
+        // `[ -f ]` would hard-fail exec on a non-executable hint.
         assert!(fn_body.contains("[ -x \"$__kigi_bin\" ]"));
         assert!(!fn_body.contains("[ -f \"$__kigi_bin\" ]"));
-        // Self-heal: live-PATH lookup + OS fallback.
         assert!(fn_body.contains("command -v bfs"));
         assert!(fn_body.contains("command find \"$@\""));
         assert!(fn_body.contains("BASH_SUBSHELL > 0"));
         assert!(fn_body.contains("(exec -a find"));
-        // Marker so `restore_command` only removes our own shadow.
         assert!(fn_body.contains("__kigi_shadow_find=1"));
-        // set -u-safe zsh probe (a bare $ZSH_VERSION aborts bash under nounset).
+        // A bare `$ZSH_VERSION` aborts bash under nounset.
         assert!(fn_body.contains("${ZSH_VERSION-}"));
         assert!(!fn_body.contains("[[ -n $ZSH_VERSION ]]"));
     }
 
     #[test]
     fn shell_function_unresolved_uses_empty_hint() {
-        // No host-resolved path → empty hint, relies on live-PATH `command -v`.
         let fn_body = shell_function("find", "bfs", None, &[]);
         assert!(fn_body.contains("local __kigi_bin=''"));
         assert!(fn_body.contains("command -v bfs"));
@@ -380,7 +349,6 @@ mod tests {
     #[test]
     fn restore_command_is_marker_gated() {
         let r = restore_command("find");
-        // Only removes the harness shadow when our marker is set.
         assert!(r.contains("if [ -n \"${__kigi_shadow_find-}\" ]"));
         assert!(r.contains("unalias find"));
         assert!(r.contains("unset -f find"));
@@ -389,7 +357,6 @@ mod tests {
 
     #[test]
     fn config_default_is_both_on() {
-        // Standalone/no-host backends default to shadowing both tools.
         let cfg = SearchShadowConfig::default();
         assert!(cfg.find_bfs);
         assert!(cfg.grep_ugrep);
@@ -397,8 +364,6 @@ mod tests {
 
     #[test]
     fn build_injection_off_emits_marker_gated_restore_not_function() {
-        // Disabled tools emit a marker-gated restore so a stale harness shadow
-        // from a prior snapshot is dropped, but a user function is left intact.
         let inject = build_injection(false, false, &both_tools());
         assert!(inject.ends_with("; "));
         assert!(inject.contains("if [ -n \"${__kigi_shadow_find-}\" ]"));
@@ -420,8 +385,7 @@ mod tests {
 
     #[test]
     fn build_injection_enabled_unresolved_still_self_heals() {
-        // Enabled but no host-resolved path → still install a self-resolving
-        // shadow (live-PATH `command -v` + OS fallback), never a bare restore.
+        // No host-resolved path must still yield a shadow, not a bare restore.
         let tools = ResolvedTools {
             bfs: None,
             ugrep: None,
@@ -431,16 +395,14 @@ mod tests {
         assert!(inject.contains("grep()"));
         assert!(inject.contains("command -v bfs"));
         assert!(inject.contains("command -v ugrep"));
-        // OS fallback present; not a marker-gated restore.
         assert!(inject.contains("command find \"$@\""));
         assert!(!inject.contains("if [ -n \"${__kigi_shadow_find-}\" ]"));
     }
 
     #[test]
     fn injection_always_nonempty_and_trailing_sep() {
-        // Structural invariants that hold regardless of host flags/binaries:
-        // never empty (so a stale snapshot shadow is always overwritten) and a
-        // trailing `"; "` separator before the user command.
+        // Never empty regardless of flags, so a stale snapshot shadow is always
+        // overwritten; trailing `"; "` separates it from the user command.
         for cfg in [
             SearchShadowConfig {
                 find_bfs: true,
@@ -477,7 +439,6 @@ mod tests {
             perms.set_mode(0o644);
             std::fs::set_permissions(&bin, perms).unwrap();
         }
-        // Bundled + vendor intentionally absent so the env override is what wins.
         let got = resolve_tool_from(
             Some(bin.clone()),
             None,
@@ -506,7 +467,6 @@ mod tests {
             std::fs::write(p, b"x").unwrap();
         }
 
-        // env override beats everything.
         assert_eq!(
             resolve_tool_from(
                 Some(envp.clone()),
@@ -517,12 +477,10 @@ mod tests {
             .as_deref(),
             Some(envp.as_path())
         );
-        // bundled beats the manual vendor copy.
         assert_eq!(
             resolve_tool_from(None, Some(bundled.clone()), vendor.clone(), "bfs").as_deref(),
             Some(bundled.as_path())
         );
-        // vendor used when neither env nor bundled is present.
         assert_eq!(
             resolve_tool_from(None, None, vendor.clone(), "bfs").as_deref(),
             Some(vendor.as_path())
@@ -536,9 +494,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Only compiled when the binaries are actually bundled (release pipeline, or
-    /// `KIGI_TOOLS_BUNDLE_{BFS,UGREP}_PATH` at build time). Verifies the embedded
-    /// bytes self-extract under `~/.kigi/vendor` and the extracted `bfs` runs.
+    /// Only compiles in the release pipeline, or when
+    /// `KIGI_TOOLS_BUNDLE_{BFS,UGREP}_PATH` is set at build time.
     #[cfg(all(bundle_bfs, bundle_ugrep))]
     #[test]
     fn bundled_binaries_extract_and_run() {

@@ -299,7 +299,6 @@ mod tests {
         assert!(db.get(&wt_a.to_string_lossy()).unwrap().is_some());
         assert!(db.get(&wt_b.to_string_lossy()).unwrap().is_some());
 
-        // Idempotent: a second rebuild finds both already tracked, skips neither.
         let report2 = rebuild_worktree_db(&db, kigi_home).unwrap();
         assert_eq!(report2.registered, 0);
         assert_eq!(report2.already_tracked, 2);

@@ -1,11 +1,8 @@
 use super::support::*;
 use super::*;
 use tokio::sync::mpsc;
-/// Test that `last_api_request_at` is recorded and used for idle detection.
-///
-/// The `maybe_refresh_model_metadata_on_resume` method checks this timestamp
-/// to decide whether to proactively refresh model metadata from cli-chat-proxy.
-/// This test verifies the timestamp recording and idle detection logic.
+/// `last_api_request_at` feeds `maybe_refresh_model_metadata_on_resume`'s idle
+/// detection; this checks the timestamp recording and threshold in isolation.
 #[tokio::test(flavor = "current_thread")]
 async fn test_last_api_request_at_idle_detection() {
     let local = tokio::task::LocalSet::new();
@@ -40,11 +37,8 @@ async fn test_last_api_request_at_idle_detection() {
         })
         .await;
 }
-/// End-to-end test for `maybe_refresh_model_metadata_on_resume`.
-///
-/// Simulates a session idle for >10 minutes, then verifies the function
-/// fetches `/models`, parses the response, and updates `context_window`
-/// and `max_completion_tokens` in the sampling config.
+/// End-to-end: after >10 min idle, `maybe_refresh_model_metadata_on_resume`
+/// fetches `/models` and updates `context_window` and `max_completion_tokens`.
 #[tokio::test(flavor = "current_thread")]
 async fn test_e2e_idle_resume_refreshes_model_metadata() {
     use axum::routing::get;
@@ -338,7 +332,6 @@ async fn test_e2e_idle_resume_refreshes_model_metadata() {
         })
         .await;
 }
-/// Verify `maybe_refresh_model_metadata_on_resume` is a no-op when idle < 10 min.
 #[tokio::test(flavor = "current_thread")]
 async fn test_idle_resume_noop_when_not_idle_enough() {
     let local = tokio::task::LocalSet::new();

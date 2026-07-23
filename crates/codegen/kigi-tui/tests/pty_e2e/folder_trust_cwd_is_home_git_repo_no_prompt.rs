@@ -31,8 +31,6 @@ async fn folder_trust_cwd_is_home_git_repo_no_prompt() {
     )
     .expect("spawn pager");
 
-    // Normal welcome boots; the trust question never appears (unrecordable key =>
-    // Trusted), so the session can proceed and never re-prompts.
     harness
         .wait_for_text(WELCOME_SCREEN_SENTINEL, WELCOME_TIMEOUT)
         .expect("normal welcome renders");

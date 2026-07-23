@@ -9,7 +9,7 @@ pub struct AcpTerminalRunner {
 }
 
 #[async_trait::async_trait]
-// Terminal release on cancel is now handled by kill_and_release_all_for_session()
+// Terminal release on cancel is handled by kill_and_release_all_for_session()
 // in cancel_running_task() — see acp_session.rs.
 impl AsyncTerminalRunner for AcpTerminalRunner {
     async fn run(&self, request: TerminalRunRequest) -> Result<TerminalRunResult, TerminalError> {
@@ -42,7 +42,6 @@ impl AsyncTerminalRunner for AcpTerminalRunner {
             .await
             .map_err(|e| TerminalError::Other(e.to_string()))?;
 
-        // notify the client about the terminal
         let notification = acp::SessionNotification::new(
             session_id.clone(),
             acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate::new(

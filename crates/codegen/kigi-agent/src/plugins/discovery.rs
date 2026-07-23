@@ -21,7 +21,7 @@ use sha2::{Digest, Sha256};
 use super::manifest::{ManifestLoadResult, PluginManifest, load_manifest, name_from_dirname};
 use super::trust::TrustStore;
 
-// ── Public types ──────────────────────────────────────────────────────
+// Public types
 
 /// Where a plugin was discovered from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -204,12 +204,12 @@ impl DiscoveryConfig {
     }
 }
 
-// ── Discovery entry point ─────────────────────────────────────────────
+// Discovery entry point
 
 /// User plugin directories in priority order: `$KIGI_SHARE_DIR/plugins` then
 /// `~/.claude/plugins`.
 ///
-/// Unlike agent discovery, plugins are intentionally NOT discovered from a
+/// Unlike agent discovery, plugins are deliberately NOT discovered from a
 /// legacy `~/.kigi/plugins`: plugin trust, persisted plugin-data, and install
 /// paths all resolve under `kigi_home()`, so a plugin scanned from the legacy
 /// tree would appear untrusted and lose its persisted state. Keeping plugins on
@@ -483,7 +483,7 @@ pub fn discover_plugins(
     candidates
 }
 
-// ── Internal helpers ──────────────────────────────────────────────────
+// Internal helpers
 
 /// Scan a plugins parent directory (e.g. `~/.kigi/plugins/`) and collect
 /// each subdirectory as a plugin candidate.
@@ -510,7 +510,8 @@ fn scan_plugin_dir(
 
     let mut subdirs: Vec<PathBuf> = entries
         .filter_map(|e| e.ok())
-        .filter(|e| e.path().is_dir()) // follows symlinks
+        // follows symlinks
+        .filter(|e| e.path().is_dir())
         .map(|e| e.path())
         .collect();
 
@@ -787,7 +788,7 @@ fn resolve_name_conflicts(candidates: &mut Vec<DiscoveredPlugin>) {
     }
 }
 
-// ── Compat installed_plugins.json types ───────────────────────────────
+// Compat installed_plugins.json types
 
 /// Compat `installed_plugins.json` format.
 #[derive(serde::Deserialize)]
@@ -1351,7 +1352,7 @@ mod tests {
         let parts: Vec<&str> = id.0.split('/').collect();
         assert_eq!(parts.len(), 3);
         assert_eq!(parts[0], "user");
-        assert_eq!(parts[1].len(), 8); // 8 hex chars
+        assert_eq!(parts[1].len(), 8);
         assert_eq!(parts[2], "my-plugin");
     }
 

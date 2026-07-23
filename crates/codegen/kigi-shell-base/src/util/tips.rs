@@ -60,7 +60,7 @@ pub fn pick_and_advance(tips: &[String], kigi_home: &Path) -> Option<String> {
 mod tests {
     use super::*;
 
-    // ── pick_and_advance ──────────────────────────────────────────────────────
+    // pick_and_advance
 
     #[test]
     fn empty_list_returns_none() {
@@ -98,9 +98,11 @@ mod tests {
     fn cursor_persists_across_calls() {
         let dir = tempfile::tempdir().unwrap();
         let tips = vec!["x".to_string(), "y".to_string()];
-        pick_and_advance(&tips, dir.path()); // cursor → 1
+        // cursor → 1
+        pick_and_advance(&tips, dir.path());
         assert_eq!(load_cursor(dir.path()), 1);
-        pick_and_advance(&tips, dir.path()); // cursor → 2
+        // cursor → 2
+        pick_and_advance(&tips, dir.path());
         assert_eq!(load_cursor(dir.path()), 2);
     }
 
@@ -119,9 +121,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // Start with 3 tips, advance cursor to 3
         let tips3 = vec!["a".to_string(), "b".to_string(), "c".to_string()];
-        pick_and_advance(&tips3, dir.path()); // cursor 0 → 1
-        pick_and_advance(&tips3, dir.path()); // cursor 1 → 2
-        pick_and_advance(&tips3, dir.path()); // cursor 2 → 3
+        // cursor 0 → 1
+        pick_and_advance(&tips3, dir.path());
+        // cursor 1 → 2
+        pick_and_advance(&tips3, dir.path());
+        // cursor 2 → 3
+        pick_and_advance(&tips3, dir.path());
 
         // remote settings pushes a 5-tip list; cursor=3, 3%5=3 → "d"
         let tips5 = vec![
@@ -134,7 +139,7 @@ mod tests {
         assert_eq!(pick_and_advance(&tips5, dir.path()).as_deref(), Some("d"));
     }
 
-    // ── load_cursor / save_cursor ─────────────────────────────────────────────
+    // load_cursor / save_cursor
 
     #[test]
     fn load_cursor_returns_zero_for_corrupt_file() {

@@ -3,8 +3,7 @@
 //! Two pieces stay here:
 //! - The [`instrumentation_timer!`] macro, because it's `#[macro_export]`-ed
 //!   from this crate and call sites spell it `crate::instrumentation_timer!`
-//!   (i.e. `kigi_shell::instrumentation_timer!`). Keeping the macro here
-//!   means downstream callers don't need to be edited.
+//!   (i.e. `kigi_shell::instrumentation_timer!`).
 //! - [`finalize_and_exit`], because shell needs to log a terminal exit event
 //!   and flush instrumentation before the process exits.
 
@@ -17,8 +16,6 @@ pub use kigi_log::instrumentation::{
 /// Final cleanup before terminating the process.
 ///
 /// Logs an exit event, flushes instrumentation guards, and exits with `code`.
-///
-/// Stays in shell so callers can keep calling `kigi_shell::instrumentation::finalize_and_exit`.
 pub fn finalize_and_exit(code: i32) -> ! {
     let signal_name = match code {
         130 => "SIGINT",
@@ -42,8 +39,6 @@ pub fn finalize_and_exit(code: i32) -> ! {
 /// Macro stays in shell so `$crate` continues to resolve to `kigi_shell`
 /// for the 12+ existing call sites that spell it as
 /// `crate::instrumentation_timer!(...)` or `kigi_shell::instrumentation_timer!(...)`.
-/// The macro body delegates to types and functions in
-/// `kigi_log::instrumentation`.
 #[macro_export]
 macro_rules! instrumentation_timer {
     ($name:literal) => {{

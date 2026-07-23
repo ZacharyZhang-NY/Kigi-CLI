@@ -9,9 +9,7 @@ use tracing::{debug, warn};
 use crate::permission::rules::parse_permission_rule;
 use crate::permission::types::{PermissionConfig, RuleAction};
 
-// ═════════════════════════════════════════════════════════════════════════════
 // Settings Types (Claude JSON subset)
-// ═════════════════════════════════════════════════════════════════════════════
 
 /// Subset of `.claude/settings.json` we care about.
 #[derive(Debug, Default, Deserialize)]
@@ -257,7 +255,7 @@ fn extract_string_array(value: Option<&serde_json::Value>) -> (Vec<String>, Vec<
 /// become their string representation. Null, array, and object values are
 /// skipped with warnings.
 ///
-/// Note: nulls are intentionally skipped rather than coerced to the literal
+/// Note: nulls are deliberately skipped rather than coerced to the literal
 /// `"null"` — setting an env var to `"null"` is rarely useful and more likely a
 /// user mistake.
 fn extract_string_map(
@@ -324,9 +322,7 @@ impl JsonTypeName for serde_json::Value {
     }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // Discovery
-// ═════════════════════════════════════════════════════════════════════════════
 
 // TODO(follow-up): The discovery logic here (find_claude_settings_paths,
 // collect_project_claude_paths, find_repo_root) is local to this module.
@@ -443,9 +439,7 @@ fn find_repo_root(start: &Path) -> Option<PathBuf> {
     }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // Environment Variables
-// ═════════════════════════════════════════════════════════════════════════════
 
 /// Load merged environment variables from Claude settings files, gating the
 /// repo-tree `.claude/settings.json` `env` on `project_trusted`.
@@ -498,13 +492,11 @@ pub fn load_claude_env_with_project(cwd: &Path, project_trusted: bool) -> HashMa
     merged
 }
 
-// =============================================================================
 // Phase 2 cutoff marker
-// =============================================================================
 //
 // `kigi-shell::claude_import` writes the marker. We re-implement a small
 // reader here because the gate consumers live in this crate and can't depend
-// on shell (it would create a cycle). Caching is intentionally omitted; if
+// on shell (it would create a cycle). Caching is deliberately omitted; if
 // this becomes a hotspot we can lift it into a shared crate.
 
 /// True when the user marked Claude settings imported (`[claude_compat].imported`

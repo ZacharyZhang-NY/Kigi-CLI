@@ -16,8 +16,6 @@ fn cfg_enabled(cap: u32) -> LazinessDetectorPerModelConfig {
     }
 }
 
-// ── JSON parser ─────────────────────────────────────────────────
-
 #[test]
 fn parse_classifier_output_clean_json() {
     let raw = r#"{"category":"stalled_narration","confidence":0.92,"evidence":"prose without tool call"}"#;
@@ -29,9 +27,9 @@ fn parse_classifier_output_clean_json() {
 
 #[test]
 fn parse_classifier_output_stalled_false_completion_round_trips() {
-    // Wire-format pin for the new category: the prompt schema
-    // advertises `stalled_false_completion`, so the parser must
-    // accept it and map to `LazinessCategory::StalledFalseCompletion`.
+    // Wire-format pin: the prompt schema advertises
+    // `stalled_false_completion`, so the parser must accept it and
+    // map to `LazinessCategory::StalledFalseCompletion`.
     let raw = r#"{"category":"stalled_false_completion","confidence":0.88,"evidence":"final message claims make test ran but no tool_call appears."}"#;
     let parsed = parse_classifier_output(raw).expect("stalled_false_completion parses");
     assert_eq!(parsed.category, LazinessCategory::StalledFalseCompletion);
@@ -121,10 +119,10 @@ fn parse_classifier_output_huge_finite_number_is_out_of_range() {
     // 1e20 toward 1.0 is caught.
     let raw = r#"{"category":"stalled_narration","confidence":1e20,"evidence":"x"}"#;
     let err = parse_classifier_output(raw).expect_err("huge confidence rejected");
-    // `f32::from(1e20)` is `+inf` (1e20 > f32::MAX ≈ 3.4e38… wait,
-    // 1e20 IS within f32 range — but it's well outside [0,1].
-    // We accept either finite-and-huge or +inf as both are valid
-    // representations of "the model emitted something absurd".
+    // 1e20 is within f32 range, so it parses as a finite value well
+    // outside [0,1]; the assert accepts either finite-and-huge or
+    // +inf, both valid signals that the model emitted something
+    // absurd.
     assert!(
         matches!(err, ClassifierParseError::ConfidenceOutOfRange(c) if (c.is_infinite() && c.is_sign_positive()) || (c.is_finite() && c > 1e10)),
         "expected ConfidenceOutOfRange with huge or +inf value, got {err:?}",
@@ -143,13 +141,13 @@ fn parse_classifier_output_brace_extract_handles_literal_braces_in_evidence() {
 
 #[test]
 fn parse_classifier_output_bad_first_pass_does_not_short_circuit_when_other_passes_converge() {
-    // Honest scope of this test: the new chain
+    // Honest scope of this test: the parse chain
     // accumulates bad-confidence sightings instead of
     // short-circuiting on the first one. When every pass
     // converges on the SAME object (input is just a bare bad
     // JSON object — strict, fence-strip, and brace-extract all
     // either skip or land on it), the user-visible diagnostic is
-    // identical to the old short-circuit design. Constructing a
+    // identical whether or not it short-circuits. Constructing a
     // case where the passes DISAGREE on which slice to parse is
     // structurally hard (brace-extract takes the first balanced
     // `{…}` which is what strict tries to parse on; fence-strip
@@ -177,8 +175,6 @@ fn parse_classifier_output_strict_unparseable_then_brace_extract_recovers() {
     assert!((parsed.confidence - 0.91).abs() < 1e-6);
     assert_eq!(parsed.evidence, "good");
 }
-
-// ── evaluate_laziness ───────────────────────────────────────────
 
 fn output(category: LazinessCategory, confidence: f32) -> ClassifierOutput {
     ClassifierOutput {
@@ -324,16 +320,13 @@ fn evaluate_laziness_session_counter_at_cap_returns_cap_exhausted() {
     ));
 }
 
-// ── nudge text builder ──────────────────────────────────────────
-
 #[test]
 fn build_laziness_nudge_quotes_rule_by_name_per_category() {
     // Each stalled_* variant quotes the correct
-    // `<task_completion_discipline>` rule. Asserts long,
-    // unique-per-variant phrases — the bare "Rule N" substring
-    // checks were dropped so a hypothetical
-    // future "Rule 11" or copy-paste accident that includes
-    // "(formerly Rule 1)" no longer slips through.
+    // `<task_completion_discipline>` rule. The asserts pin long,
+    // unique-per-variant phrases rather than a bare "Rule N"
+    // substring, so a future "Rule 11" or a stale reference to an
+    // old rule number cannot slip through.
     let n = build_laziness_nudge(LazinessCategory::StalledNarration, "ev1", None);
     assert!(
         n.contains("don't narrate progress in prose"),
@@ -385,8 +378,6 @@ fn build_laziness_nudge_quotes_rule_by_name_per_category() {
     );
     assert!(n.contains("ev4"));
 }
-
-// ── turn_elapsed_seconds_from_start_ms ─────────────────────────
 
 #[test]
 fn turn_elapsed_seconds_from_start_ms_returns_none_when_start_absent() {

@@ -252,7 +252,7 @@ async fn bench_cell(
     let mut harness = spawn_ready(binary, rows, cols, &content, surface)?;
 
     // Image mode keeps one PNG on the pasteboard for the whole cell (the
-    // pager re-reads the unchanged clipboard on every Ctrl+V).
+    // pager re-reads the `unchanged` clipboard on every Ctrl+V).
     let tmp = tempfile::tempdir().context("tempdir for the clipboard PNG")?;
     if mode == Mode::Image {
         let png = write_fixture_png(tmp.path())?;

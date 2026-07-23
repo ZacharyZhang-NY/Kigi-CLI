@@ -65,7 +65,8 @@ fn signed_verdict_does_not_skip_deploy_key_fingerprint() {
     // opted-in cache.
     assert!(managed_policy_compromised_decision(
         SignedVerdict::Trusted,
-        true, // deploy-key fingerprint mismatch
+        // deploy-key fingerprint mismatch
+        true,
         Some(&opted_in),
         home,
         &dkey("fp-local")

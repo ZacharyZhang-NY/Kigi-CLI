@@ -24,8 +24,10 @@ const VIGNETTE: f32 = 0.11;
 pub(super) struct FrameBuffer {
     pub w: usize,
     pub h: usize,
-    pub pixels: Vec<u8>, // RGB8, row-major
-    zbuf: Vec<f32>,      // per-column wall depth
+    // RGB8, row-major
+    pub pixels: Vec<u8>,
+    // per-column wall depth
+    zbuf: Vec<f32>,
     /// Per-column wall strip bounds `[top, bottom)` in screen rows, written
     /// by `draw_walls` and read by `draw_floor_ceiling` to skip the pixels
     /// walls already cover (avoids texturing them twice).
@@ -33,7 +35,7 @@ pub(super) struct FrameBuffer {
     wall_bottom: Vec<i32>,
     /// Scratch for painter's-order sprite sorting, reused across frames.
     sprite_order: Vec<(usize, f32)>,
-    /// Separable vignette factors, rebuilt on dimension change.
+    /// Separable vignette factors, rebuilt on dimension shift.
     vig_x: Vec<f32>,
     vig_y: Vec<f32>,
 }
@@ -369,7 +371,8 @@ impl Renderer {
             let tx = inv_det * (dir_y * rel_x - dir_x * rel_y);
             let ty = inv_det * (-plane_y * rel_x + plane_x * rel_y);
             if ty <= 0.08 {
-                continue; // behind or on top of the camera
+                // behind or on top of the camera
+                continue;
             }
 
             let sprite = match imp.visual() {
@@ -411,7 +414,8 @@ impl Renderer {
 
             for sx in x0.max(0)..x1.min(w as i32) {
                 if fb.zbuf[sx as usize] <= ty {
-                    continue; // occluded by a wall
+                    // occluded by a wall
+                    continue;
                 }
                 let u = (sx as f32 - x0 as f32) / (x1 - x0).max(1) as f32;
                 for sy in y0.max(0)..y1.min(h as i32) {
@@ -520,9 +524,7 @@ fn draw_contact_shadow(
     }
 }
 
-// -------------------------------------------------------------------------
 // Title / end screens: animated fire + 5x7 pixel text
-// -------------------------------------------------------------------------
 
 /// The classic PSX-style fire effect: a cellular automaton on a coarse
 /// grid, upscaled at draw time. Heat values 0..=36 index a fire palette.
@@ -557,8 +559,9 @@ impl FireSim {
             for x in 0..self.w {
                 let src = y * self.w + x;
                 let r = self.rng.next_u32();
-                let decay = (r & 1) as i32; // cool by 0 or 1
-                let drift = (r >> 2) % 3; // 0, 1, 2 → left, stay, right
+                let decay = (r & 1) as i32;
+                // 0, 1, 2 → left, stay, right
+                let drift = (r >> 2) % 3;
                 let dst_x = (x as i32 + drift as i32 - 1).rem_euclid(self.w as i32) as usize;
                 let dst = (y - 1) * self.w + dst_x;
                 self.heat[dst] = (self.heat[src] as i32 - decay).max(0) as u8;
@@ -696,7 +699,7 @@ mod tests {
         let renderer = Renderer::new();
         let mut game = Game::new();
         // Move all imps far behind the player so none are visible, render,
-        // then put one directly in front and confirm pixels change.
+        // then put one directly in front and confirm pixels differ.
         for imp in &mut game.imps {
             imp.x = game.player.x - 8.0;
             imp.y = game.player.y;

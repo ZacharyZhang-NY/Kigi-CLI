@@ -40,8 +40,6 @@ struct RewindPointsRequest {
     #[serde(alias = "sessionId")]
     session_id: String,
 }
-/// Look up a `SessionHandle` by id string, or return a `resource_not_found`
-/// `acp::Error`. Used by both arms below.
 fn lookup_session(agent: &MvpAgent, session_id: String) -> Result<SessionHandle, acp::Error> {
     agent
         .sessions

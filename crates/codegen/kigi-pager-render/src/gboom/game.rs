@@ -44,8 +44,10 @@ const IMP_RADIUS: f32 = 0.30;
 /// hold timer ([`HOLD_WINDOW`]); while it's positive, velocity eases toward
 /// a steady target. A constant target while held means speed doesn't
 /// sawtooth with the OS key-repeat cadence, yet releasing glides to a stop.
-const MOVE_SPEED: f32 = 3.3; // tiles/s while a move key is held
-const TURN_SPEED: f32 = 2.2; // rad/s (~125°/s) while a turn key is held
+// tiles/s while a move key is held
+const MOVE_SPEED: f32 = 3.3;
+// rad/s (~125°/s) while a turn key is held
+const TURN_SPEED: f32 = 2.2;
 /// Velocity-smoothing time constants (seconds). Small = snappy response
 /// with just enough ramp to read as momentum rather than teleporting.
 const MOVE_ACCEL_TAU: f32 = 0.08;
@@ -78,7 +80,8 @@ const IMP_BITE_DAMAGE: i32 = 7;
 pub(super) struct Map {
     pub w: usize,
     pub h: usize,
-    cells: Vec<u8>, // 0 = floor, 1..=4 = wall texture id
+    // 0 = floor, 1..=4 = wall texture id
+    cells: Vec<u8>,
 }
 
 impl Map {
@@ -166,7 +169,6 @@ impl Map {
     }
 }
 
-/// Player state.
 pub(super) struct Player {
     pub x: f32,
     pub y: f32,
@@ -330,7 +332,8 @@ impl Game {
                         y: center.1,
                         hp: IMP_HP,
                         state: ImpState::Idle,
-                        anim: (x * 7 + y * 13) as f32 * 0.1, // desync walk cycles
+                        // desync walk cycles
+                        anim: (x * 7 + y * 13) as f32 * 0.1,
                         attack_cooldown: 0.0,
                     }),
                     _ => {}
@@ -728,7 +731,8 @@ mod tests {
         assert!(game.imps[0].hp < hp_before, "first shot must connect");
 
         for _ in 0..20 {
-            game.step(FIRE_COOLDOWN + 0.01); // let cooldown lapse
+            // let cooldown lapse
+            game.step(FIRE_COOLDOWN + 0.01);
             game.queue_fire();
             game.step(0.016);
             if !game.imps[0].alive() {
@@ -807,7 +811,7 @@ mod tests {
         // and then stay there — no sawtooth.
         let mut game = Game::new();
         // Aim down an open stretch so walls don't cap velocity.
-        game.player.angle = std::f32::consts::FRAC_PI_2; // +y
+        game.player.angle = std::f32::consts::FRAC_PI_2;
         let dt = 1.0 / 30.0;
         for _ in 0..40 {
             game.press(Control::Forward);
@@ -837,13 +841,14 @@ mod tests {
         // on press (release-aware) keeps it moving without repeats.
         let mut game = Game::new();
         game.set_release_aware(true);
-        game.player.angle = 0.0; // facing +x
+        game.player.angle = 0.0;
         game.press(Control::Forward);
         game.press(Control::TurnLeft);
 
         let angle0 = game.player.angle;
         for _ in 0..30 {
-            game.step(1.0 / 30.0); // no further presses
+            // no further presses
+            game.step(1.0 / 30.0);
         }
         assert!(
             game.player.vel_forward > 1.0,
@@ -893,7 +898,8 @@ mod tests {
             let mut game = Game::new();
             game.player.angle = std::f32::consts::FRAC_PI_2;
             let dt = 1.0 / 60.0;
-            let mut since_repeat = repeat_interval; // press on the first frame
+            // press on the first frame
+            let mut since_repeat = repeat_interval;
             // Run 2s of simulation, pressing every `repeat_interval`.
             for _ in 0..120 {
                 since_repeat += dt;
@@ -905,8 +911,9 @@ mod tests {
             }
             game.player.vel_forward
         }
-        let fast = sustained_speed(0.03); // ~33 Hz
-        let slow = sustained_speed(0.12); // ~8 Hz, still under HOLD_WINDOW
+        let fast = sustained_speed(0.03);
+        // ~8 Hz, still under HOLD_WINDOW
+        let slow = sustained_speed(0.12);
         assert!((fast - MOVE_SPEED).abs() < 0.1, "fast cadence: {fast}");
         assert!(
             (fast - slow).abs() < 0.25,

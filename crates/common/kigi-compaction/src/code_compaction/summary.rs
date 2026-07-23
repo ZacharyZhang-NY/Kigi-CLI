@@ -1,7 +1,5 @@
 //! Summary output cleaning and carrier formatting.
 //!
-//! Moved verbatim from `kigi-chat-state`'s `compaction_utils`. Covers:
-//!
 //! - cleaning the compaction model's raw output ([`format_compact_summary`]),
 //! - the kigi continuation carrier ([`format_compact_summary_content`]),
 //! - the canonical `<user_query>` wrapping ([`wrap_user_query`]).
@@ -19,15 +17,15 @@
 pub fn format_compact_summary(summary: &str) -> String {
     let mut result = summary.to_string();
 
-    // 1. Remove leading <analysis>…</analysis> drafting block(s). A block is
-    //    only stripped when it is a genuinely LEADING scratchpad: top-level
-    //    (before any <summary>) or immediately after the <summary> open modulo
-    //    whitespace (nested). An <analysis> quoted mid-body — after real
-    //    sections, e.g. a section-6 instruction echo — is NOT leading and is
-    //    left for step 3 to neutralize, so neither a balanced body quote
-    //    spanning sections nor an unclosed one ever deletes real content. The
-    //    loop peels successive leading blocks should the model emit more than
-    //    one.
+    // Strip leading <analysis>…</analysis> drafting blocks only when they are
+    // genuinely LEADING scratchpad: top-level (before any <summary>) or
+    // immediately after the <summary> open modulo whitespace (nested). An
+    // <analysis> quoted mid-body — after real sections, e.g. a section-6
+    // instruction echo — is NOT leading and is left for
+    // `neutralize_compaction_control_tokens` to defuse, so neither a balanced
+    // body quote spanning sections nor an unclosed one ever deletes real
+    // content. The loop peels successive leading blocks if the model emits more
+    // than one.
     while let Some(start) = result.find("<analysis>") {
         let is_leading = match result.find("<summary>") {
             Some(sp) => start < sp || result[sp + "<summary>".len()..start].trim().is_empty(),
@@ -53,12 +51,13 @@ pub fn format_compact_summary(summary: &str) -> String {
         }
     }
 
-    // 2. Convert the outer <summary>…</summary> to "Summary:\n{inner}", keeping
-    //    any text outside the wrapper. `rfind` matches the outer close, so a
-    //    literal "</summary>" echoed in the body does not truncate the summary;
-    //    `end > start` guards a malformed "</summary> … <summary>" order. Leading
-    //    scratchpad inside the block is peeled (see `strip_leading_scratchpad`);
-    //    a body echo that quotes the instruction is left for step 3 to defuse.
+    // Convert outer <summary>…</summary> to "Summary:\n{inner}", keeping text
+    // outside the wrapper. `rfind` matches the outer close so a literal
+    // "</summary>" echoed in the body does not truncate; `end > start` guards a
+    // malformed "</summary> … <summary>" order. Leading scratchpad inside the
+    // block is peeled (see `strip_leading_scratchpad`); a body echo that quotes
+    // the instruction is left for `neutralize_compaction_control_tokens` to
+    // defuse.
     if let Some(start) = result.find("<summary>")
         && let Some(end) = result.rfind("</summary>")
         && end > start
@@ -69,8 +68,8 @@ pub fn format_compact_summary(summary: &str) -> String {
         result = format!("{before}Summary:\n{inner}{after}");
     }
 
-    // 3. Defuse any compaction-control tokens still echoed inside the body so the
-    //    seed can't prime the next turn to re-emit a <summary> block.
+    // Defuse any compaction-control tokens still echoed inside the body so the
+    // seed can't prime the next turn to re-emit a <summary> block.
     result = neutralize_compaction_control_tokens(&result);
 
     // Collapse excessive blank lines (3+ newlines → 2)
@@ -84,13 +83,14 @@ pub fn format_compact_summary(summary: &str) -> String {
 /// Peel leading drafting scratchpad off an extracted `<summary>` block.
 ///
 /// A markdown "**Analysis**"-style header has no opening `<analysis>` tag for
-/// step 1 to catch; it ends at an orphan `</analysis>`. Everything up to and
-/// including the *last* `</analysis>` is dropped, so a scratchpad that itself
-/// quotes `</analysis>` mid-reasoning is still removed whole. The peel is
-/// skipped when the block already starts with a numbered section — including a
-/// markdown-decorated one like `## 1.` or `**1.**` — so a `</analysis>` merely
-/// echoed inside a real section never truncates the summary. Any leftover
-/// leading `<summary>` wrapper is then unwrapped.
+/// the leading-block peel in [`format_compact_summary`] to catch; it ends at an
+/// orphan `</analysis>`. Everything up to and including the *last*
+/// `</analysis>` is dropped, so a scratchpad that itself quotes `</analysis>`
+/// mid-reasoning is still removed whole. The peel is skipped when the block
+/// already starts with a numbered section — including a markdown-decorated one
+/// like `## 1.` or `**1.**` — so a `</analysis>` merely echoed inside a real
+/// section never truncates the summary. Any leftover leading `<summary>`
+/// wrapper is then unwrapped.
 fn strip_leading_scratchpad(inner: &str) -> String {
     let mut s = inner.trim();
     let lead = s.trim_start_matches(['#', '*', '-', '>', ' ', '\t']);

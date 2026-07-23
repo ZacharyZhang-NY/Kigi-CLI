@@ -367,7 +367,6 @@ fn aggregate(
     (ghost, completions)
 }
 
-/// Determines whether AI suggestions can be skipped based on history quality.
 pub(crate) fn should_skip_ai(history_matches: &[RankedSuggestion], prefix: &str) -> bool {
     if history_matches.is_empty() {
         return false;
@@ -400,8 +399,6 @@ mod tests {
             truncated: false,
         }
     }
-
-    // --- aggregate ---
 
     #[test]
     fn aggregate_sorts_by_descending_priority() {
@@ -491,8 +488,6 @@ mod tests {
         assert_eq!(ghost.suffix, " commit --amend");
     }
 
-    // --- should_skip_ai ---
-
     #[test]
     fn skip_ai_returns_false_for_empty_history() {
         assert!(!should_skip_ai(&[], "git"));
@@ -527,7 +522,6 @@ mod tests {
             ranked(4, SuggestionSource::History, false, "b"),
             ranked(3, SuggestionSource::History, false, "c"),
         ];
-        // empty prefix + 3 matches: !prefix.is_empty() is false, len >= 3 is true → false AND true → false
         assert!(!should_skip_ai(&m, ""));
     }
 
@@ -540,8 +534,6 @@ mod tests {
         assert!(!should_skip_ai(&m, ""));
     }
 
-    // --- context ---
-
     #[test]
     fn context_clamps_cursor_to_len() {
         let ctx = SuggestContext::new("abc".into(), 100, "/tmp".into());
@@ -551,9 +543,11 @@ mod tests {
 
     #[test]
     fn context_adjusts_to_char_boundary() {
-        let text = "caf\u{00e9}"; // "cafe" with e-acute (2 bytes for e-acute)
+        // "cafe" ending in e-acute, which is 2 bytes (so the string is 5 bytes).
+        let text = "caf\u{00e9}";
         assert_eq!(text.len(), 5);
-        let ctx = SuggestContext::new(text.into(), 4, "/tmp".into()); // middle of 2-byte e-acute
+        // Cursor 4 is the middle of the 2-byte e-acute.
+        let ctx = SuggestContext::new(text.into(), 4, "/tmp".into());
         assert_eq!(ctx.prefix(), "caf");
     }
 

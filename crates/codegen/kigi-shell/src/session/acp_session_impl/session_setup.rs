@@ -3,7 +3,6 @@
 //! refresh.
 use super::*;
 impl SessionActor {
-    /// `true` for session-based ACP auth methods.
     fn is_session_based_auth(&self) -> bool {
         self.auth_method_id
             .load()
@@ -194,8 +193,6 @@ impl SessionActor {
         }
         skill_count
     }
-    /// Send `AvailableCommandsUpdate` to the client.
-    ///
     /// Reads the current slash-command skill list from the tools layer
     /// (`SkillManager`), NOT from `PromptContext`.
     pub(super) async fn send_available_commands_update(&self) {
@@ -238,9 +235,6 @@ impl SessionActor {
     /// `Discovery` reminders (skills found mid-session via tool
     /// navigation into directories the baseline hadn't seen) are kept
     /// for both harnesses; the preamble cannot list those.
-    ///
-    /// Tag selection for skill reminders. Centralized here so new call sites
-    /// cannot accidentally drift the gating or tag selection.
     pub(super) fn wrap_skill_reminder(
         &self,
         effects: &kigi_tools::types::skill_discovery_tracker::SkillUpdateEffects,
@@ -266,10 +260,6 @@ impl SessionActor {
     ///
     /// Slash command data is read from `bridge.slash_skills()`.
     /// `PromptContext` is not involved. The system prompt is not mutated.
-    ///
-    /// Apply skill update effects: inject a system-reminder and refresh
-    /// slash commands. Both default and compat agents receive mid-session
-    /// discovery reminders.
     pub(super) async fn apply_skill_update_effects(
         &self,
         effects: kigi_tools::types::skill_discovery_tracker::SkillUpdateEffects,

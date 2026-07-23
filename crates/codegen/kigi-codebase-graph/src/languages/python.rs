@@ -1,5 +1,3 @@
-//! Python language configuration.
-
 use crate::languages::types::TSLanguageConfig;
 
 pub fn python_lang() -> TSLanguageConfig {
@@ -12,7 +10,6 @@ pub fn python_lang() -> TSLanguageConfig {
             "variable".to_owned(),
             "module".to_owned(),
         ]],
-        // Python definitions query
         r#"
         ; Class definitions
         (class_definition

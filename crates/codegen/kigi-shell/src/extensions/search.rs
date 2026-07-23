@@ -266,7 +266,6 @@ mod tests {
         let json = r#"{"sessionId": "session-123", "cwd": "/path/to/project"}"#;
         let req: FuzzyOpenRequest = serde_json::from_str(json).unwrap();
 
-        // Both should be present - cwd takes precedence in resolve_cwd
         assert!(req.session_id.is_some());
         assert_eq!(req.cwd, Some("/path/to/project".to_string()));
     }
@@ -321,7 +320,6 @@ mod tests {
 
     #[test]
     fn test_fuzzy_open_request_with_meta() {
-        // Test that FuzzyOpenRequest correctly deserializes _meta.clientId
         // This is what the relay injects into the request
         let json = r#"{
             "cwd": "/path/to/project",

@@ -61,7 +61,6 @@ pub struct ListPane<'a, T: ListItem> {
 }
 
 impl<'a, T: ListItem> ListPane<'a, T> {
-    /// Create a new `ListPane` widget borrowing the given items.
     pub fn new(items: &'a [T]) -> Self {
         Self {
             items,
@@ -70,13 +69,11 @@ impl<'a, T: ListItem> ListPane<'a, T> {
         }
     }
 
-    /// Set whether this pane has keyboard focus.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
         self
     }
 
-    /// Set the visual style for selection/highlight overlays.
     pub fn style(mut self, style: ListPaneStyle) -> Self {
         self.style = style;
         self
@@ -124,16 +121,13 @@ impl<T: ListItem> StatefulWidget for ListPane<'_, T> {
         let scaled_total = (total_height / scale) as u16;
         let scaled_offset = (state.scroll_offset() / scale) as u16;
 
-        // Split area for scrollbar if content overflows.
         let (content_area, scrollbar_area) = maybe_split_for_scrollbar(list_area, scaled_total);
 
         // Store scrollbar area for click/scroll hit-testing.
         state.set_scrollbar_area(scrollbar_area);
 
-        // Render items into the content area.
         self.render_items(content_area, buf, state);
 
-        // Render corner overlay indicators.
         render_corner_indicators(content_area, buf, state, &self.style);
 
         // Render "Copied!" toast (bottom-right corner, briefly after y-copy).
@@ -153,7 +147,6 @@ impl<T: ListItem> StatefulWidget for ListPane<'_, T> {
             }
         }
 
-        // Render scrollbar with style colors.
         let track_style = Style::default().bg(self.style.scrollbar_bg);
         let thumb_style = Style::default()
             .fg(self.style.scrollbar_fg)
@@ -239,7 +232,6 @@ impl<T: ListItem> ListPane<'_, T> {
         }
     }
 
-    /// Render the visible items into the content area.
     fn render_items(&self, area: Rect, buf: &mut Buffer, state: &ListPaneState) {
         let visible = state.visible_range();
         if visible.is_empty() {
@@ -271,7 +263,6 @@ impl<T: ListItem> ListPane<'_, T> {
             // How many rows to skip at the top of this item (only for the first item).
             let skip = if vi == first_vi { skip_rows } else { 0 };
 
-            // How many rows of this item are actually visible.
             let visible_h = item_h.saturating_sub(skip);
             let rows_available = viewport_bottom.saturating_sub(cursor_y);
             let rows_to_render = visible_h.min(rows_available);
@@ -295,7 +286,6 @@ impl<T: ListItem> ListPane<'_, T> {
             // If partially visible (skip > 0 or truncated at bottom), render
             // into a scratch area and blit the visible portion.
             if skip == 0 && rows_to_render == item_h {
-                // Fast path: render directly into buf.
                 let item_area = Rect {
                     x: area.x,
                     y: cursor_y,
@@ -315,7 +305,6 @@ impl<T: ListItem> ListPane<'_, T> {
                     item.render(item_area, buf, is_selected, self.focused);
                 }
             } else {
-                // Slow path: render into a temp buffer, then blit the visible rows.
                 let full_area = Rect {
                     x: 0,
                     y: 0,
@@ -356,11 +345,10 @@ impl<T: ListItem> ListPane<'_, T> {
                 }
             }
 
-            // --- Post-pass 1: Selection background overlay ---
-            // Patches only the bg of each cell, preserving fg, content, and
-            // modifiers.  Applied after item render so items don't need to
-            // know about selection colors.
-            // Shown when focused, or when `show_selection_when_unfocused` is set.
+            // Selection background overlay: patches only the bg of each cell,
+            // preserving fg, content, and modifiers. Applied after item render
+            // so items don't need to know about selection colors. Shown when
+            // focused, or when `show_selection_when_unfocused` is set.
             let show_sel = self.focused || state.show_selection_when_unfocused();
             if is_selected && show_sel {
                 // Use different bg for visual range vs cursor line.
@@ -381,10 +369,10 @@ impl<T: ListItem> ListPane<'_, T> {
                 buf.set_style(sel_area, Style::default().bg(bg));
             }
 
-            // --- Post-pass 2: Match highlight overlay ---
-            // Invert (REVERSED) the cells covering each match of the active
-            // query.  Gated on `show_highlights` so callers can suppress the
-            // overlay (e.g. after accepting a filter, where every line matches).
+            // Match highlight overlay: inverts (REVERSED) the cells covering
+            // each match of the active query. Gated on `show_highlights` so
+            // callers can suppress the overlay (e.g. after accepting a
+            // filter, where every line matches).
             if state.show_highlights
                 && let Some(matcher) = state.matcher()
             {
@@ -402,11 +390,11 @@ impl<T: ListItem> ListPane<'_, T> {
                 );
             }
 
-            // --- Post-pass 3: Truncation ellipsis ---
-            // If the item's full wrapped height exceeds its allocated layout
-            // height, place "…" on the last rendered row.  This only triggers
-            // in NoWrap mode (where item_h == 1 regardless of content length).
-            // Viewport clipping does NOT trigger this — only true text truncation.
+            // Truncation ellipsis: if the item's full wrapped height exceeds
+            // its allocated layout height, place "…" on the last rendered
+            // row. This only triggers in NoWrap mode (where item_h == 1
+            // regardless of content length). Viewport clipping does NOT
+            // trigger this — only true text truncation.
             if item.desired_height(area.width) > item_h && rows_to_render > 0 {
                 let last_y = cursor_y + rows_to_render - 1;
                 render_truncation_ellipsis(buf, last_y, area.x, area.width);
@@ -416,10 +404,6 @@ impl<T: ListItem> ListPane<'_, T> {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Truncation ellipsis
-// ---------------------------------------------------------------------------
 
 /// Place a `…` at the end of text on row `y` to indicate truncation.
 ///
@@ -435,7 +419,8 @@ fn render_truncation_ellipsis(buf: &mut Buffer, y: u16, x_start: u16, width: u16
         return;
     }
 
-    let x_end = x_start + width; // exclusive
+    // exclusive
+    let x_end = x_start + width;
 
     // Find rightmost non-space cell.
     let mut last_text_x: Option<u16> = None;
@@ -447,9 +432,12 @@ fn render_truncation_ellipsis(buf: &mut Buffer, y: u16, x_start: u16, width: u16
     }
 
     let (ellipsis_x, donor_x) = match last_text_x {
-        Some(x) if x + 1 < x_end => (x + 1, x), // append after text, inherit from text
-        Some(x) => (x, x),                      // replace last char, keep its style
-        None => return,                         // entire row is blank
+        // append after text, inherit from text
+        Some(x) if x + 1 < x_end => (x + 1, x),
+        // replace last char, keep its style
+        Some(x) => (x, x),
+        // entire row is blank
+        None => return,
     };
 
     // Inherit fg from the donor cell, preserve bg of the target cell.
@@ -458,10 +446,6 @@ fn render_truncation_ellipsis(buf: &mut Buffer, y: u16, x_start: u16, width: u16
     cell.set_symbol("…");
     cell.fg = fg;
 }
-
-// ---------------------------------------------------------------------------
-// Corner overlay indicators
-// ---------------------------------------------------------------------------
 
 /// Render single-character corner indicators for scroll position / follow mode.
 ///
@@ -505,7 +489,6 @@ fn render_corner_indicators(
                     buf[(pos.0 - 1, pos.1)].set_symbol(" ");
                 }
             }
-            // Indicator: set symbol + fg, preserve bg
             buf[pos].set_symbol(symbol);
             buf[pos].fg = fg;
             buf[pos].modifier = ratatui::style::Modifier::empty();
@@ -528,10 +511,6 @@ fn render_corner_indicators(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Input bar rendering
-// ---------------------------------------------------------------------------
-
 /// Render the bottom bar: active input bar or accepted matcher status.
 ///
 /// When the input bar is open: left-aligned editable `search: ` or `filter: ` + textarea.
@@ -549,7 +528,6 @@ fn render_bottom_bar(
         return;
     }
 
-    // Background for the entire bar row.
     buf.set_style(area, Style::default().bg(style.input_bar_bg));
 
     if let Some(mode) = state.input_mode() {
@@ -590,16 +568,11 @@ fn render_bottom_bar(
             .bg(style.input_bar_bg)
             .add_modifier(Modifier::DIM);
 
-        // Right-align.
         let x = area.x.saturating_add(area.width.saturating_sub(status_w));
         let status_line = Line::from(Span::styled(status, dim_style));
         buf.set_line_safe(x, area.y, &status_line, area.width);
     }
 }
-
-// ===========================================================================
-// Tests
-// ===========================================================================
 
 #[cfg(test)]
 mod tests {
@@ -663,7 +636,8 @@ mod tests {
         }
 
         fn search_text_col_offset(&self) -> u16 {
-            1 // prefix ">" or " "
+            // prefix ">" or " "
+            1
         }
     }
 
@@ -732,7 +706,6 @@ mod tests {
         let area = Rect::new(0, 0, 20, 3);
         state.prepare_layout(&items, area.width, area.height);
 
-        // Scroll down by 5.
         state.scroll_down(5);
 
         let mut buf = Buffer::empty(area);
@@ -783,7 +756,6 @@ mod tests {
         let mut state = ListPaneState::new(WrapMode::NoWrap, false);
         let area = Rect::new(0, 0, 20, 5);
 
-        // Filter to items containing "alph".
         state.set_filter(Some(FilterMatcher::substring("alph")));
         state.prepare_layout(&items, area.width, area.height);
 
@@ -803,7 +775,8 @@ mod tests {
         // Text "hello" (6 chars with prefix " ") in a 20-char-wide area,
         // so the "…" should be appended at position 6.
         let items = vec![
-            RenderTestItem::new(0, "hello").with_height(3), // would be 3 lines tall
+            // would be 3 lines tall
+            RenderTestItem::new(0, "hello").with_height(3),
         ];
         let mut state = ListPaneState::new(WrapMode::NoWrap, false);
         let area = Rect::new(0, 0, 20, 5);
@@ -861,8 +834,6 @@ mod tests {
         );
         assert_eq!(row, ">short");
     }
-
-    // -- Match highlight tests ------------------------------------------------
 
     #[test]
     fn highlight_match_inverts_correct_cells() {
@@ -1000,7 +971,7 @@ mod tests {
         StatefulWidget::render(pane, area, &mut buf, &mut state);
 
         // Find where "tool" appears visually in the buffer.
-        // The match is at byte offset 32 in the plain text.
+        // The match is at byte offset 33 in the plain text.
         let byte_pos = text.find("tool").unwrap();
         assert_eq!(byte_pos, 33);
 
@@ -1248,10 +1219,6 @@ mod tests {
         );
     }
 
-    // =========================================================================
-    // Long line wrapping bug regression tests
-    // =========================================================================
-
     /// A content-based test item (uses the framework's wrapping).
     #[derive(Debug)]
     struct ContentTestItem {
@@ -1303,10 +1270,6 @@ mod tests {
         }
         s
     }
-
-    // =========================================================================
-    // Long line wrapping regression tests
-    // =========================================================================
 
     #[test]
     fn long_line_desired_height_is_accurate() {
@@ -1585,10 +1548,6 @@ mod tests {
         );
     }
 
-    // =========================================================================
-    // Scrollbar width mismatch bug (regression tests for the fix)
-    // =========================================================================
-
     #[test]
     fn scrollbar_width_mismatch_bug_repro() {
         // BUG REPRODUCTION: Documents the scrollbar width mismatch issue.
@@ -1728,7 +1687,8 @@ mod tests {
         let mut items = vec![
             RenderTestItem::new(0, "row-0"),
             RenderTestItem::new(1, "row-1"),
-            RenderTestItem::new(2, "zzz"), // filtered out
+            // filtered out
+            RenderTestItem::new(2, "zzz"),
             RenderTestItem::new(3, "row-3"),
             RenderTestItem::new(4, "row-4"),
         ];

@@ -123,7 +123,7 @@ define_methods! {
     ToolServerGetStatus => "tool_server.get_status",
     ToolServerEvict => "tool_server.evict",
 
-    // ── Session lifecycle ───────────────────────────────────────────
+    // Session lifecycle
 
     /// Full tool snapshot for a session (server → hub). Idempotent:
     /// re-sending replaces the tool set; the hub diffs and emits

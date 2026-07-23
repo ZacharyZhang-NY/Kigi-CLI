@@ -29,10 +29,7 @@ pub struct BaselineSamplingConfig {
     pub platform: Option<kigi_models::PlatformId>,
 }
 
-// ── Auth method for model fetching ──────────────────────────────────────────
-
-/// How the model catalog is fetched (PRD F4). The old xAI tier-gated proxy
-/// fetch is gone; there are exactly two shapes now.
+/// How the model catalog is fetched (PRD F4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ModelFetchAuth {
     /// Fixed platform registry: `kimi-code` via the F1 OAuth bearer plus the
@@ -44,7 +41,6 @@ pub(crate) enum ModelFetchAuth {
 }
 
 impl ModelFetchAuth {
-    /// Custom endpoint when configured, else the platform registry.
     pub(crate) fn resolve(endpoints: &config::EndpointsConfig) -> Self {
         if endpoints.has_custom_endpoint() {
             Self::CustomEndpoint
@@ -214,7 +210,6 @@ struct Inner {
     /// time) or `reselect_current_model_if_missing` (subsequent).
     /// Reset in `clear()` for identity changes.
     has_fetched_real_catalog: RwLock<bool>,
-    // ── Owned context for self-contained refresh ────────────────
     auth_manager: Arc<AuthManager>,
     cfg: RwLock<config::Config>,
     fetch_auth: RwLock<ModelFetchAuth>,
@@ -241,10 +236,8 @@ struct Inner {
     ///    `maybe_fire_laziness_check`'s polling loop to detect a
     ///    switch that occurred during the idle wait or sampler call.
     ///
-    /// `watch::Sender` natively fans out to every subscriber, so this
-    /// replaces the previous `RwLock<Vec<Arc<Notify>>>` listener
-    /// registry — no manual fan-out, no listener-leak risk, no
-    /// `unregister` API to maintain.
+    /// `watch::Sender` natively fans out to every subscriber — no manual
+    /// fan-out, no listener-leak risk, no `unregister` API to maintain.
     model_switch_watch: tokio::sync::watch::Sender<u64>,
 }
 
@@ -295,8 +288,7 @@ impl ModelsManager {
     /// Subscribe to model-switch events. Returns a `watch::Receiver`
     /// carrying the monotonic generation counter. `.changed()` only
     /// resolves on switches that occur **after** subscription, so
-    /// there is no stored-permit hazard (the bug that motivated
-    /// replacing the previous `Arc<Notify>` design).
+    /// there is no stored-permit hazard.
     pub fn subscribe_model_switch(&self) -> tokio::sync::watch::Receiver<u64> {
         self.inner.model_switch_watch.subscribe()
     }
@@ -468,8 +460,6 @@ impl ModelsManager {
         // pre-init).
         self.notify_models_updated();
     }
-
-    // ── Accessors ───────────────────────────────────────────────────
 
     pub fn models(&self) -> IndexMap<String, ModelEntry> {
         self.inner.models.read().clone()
@@ -704,8 +694,6 @@ impl ModelsManager {
         *self.inner.has_fetched_real_catalog.read()
     }
 
-    // ── Mutations ───────────────────────────────────────────────────
-
     fn rebuild(&self, cfg: &config::Config, prefetched: Option<IndexMap<String, ModelEntry>>) {
         *self.inner.models.write() =
             resolve_model_catalog(cfg, prefetched, &PlatformApiKeys::resolve(&cfg.platforms));
@@ -779,7 +767,8 @@ impl ModelsManager {
                 // Deliberate no-fetch state, not a failure: no warn-class log.
                 tracing::debug!("model catalog: bundled defaults in use (remote_fetch disabled)");
             }
-            self.rebuild(&config, None); // first-time only: no fetched catalog, use bundled defaults
+            // first-time only: no fetched catalog, use bundled defaults
+            self.rebuild(&config, None);
             self.reselect_current_model_if_missing(&config);
 
             // Schedule background retries so we recover once the network is
@@ -794,7 +783,6 @@ impl ModelsManager {
         self.notify_models_updated();
     }
 
-    /// Notify clients about the current model catalog.
     fn notify_models_updated(&self) {
         let available = self.available();
         let current = self.current_model_id();
@@ -899,7 +887,7 @@ impl ModelsManager {
         }
 
         // Recompute the prompt-block flag (mirrors `apply_refresh_result`) so
-        // a corrective external cache write unlatches a previously latched
+        // a corrective external cache write unlatches an
         // "allowlist excludes everything" state instead of keeping prompts
         // blocked against a stale catalog.
         let excludes_all = allowlist_matches_nothing(&cfg, &self.inner.models.read());
@@ -1111,9 +1099,9 @@ impl ModelsManager {
         };
 
         // H1: the session bearer comes from the ONE credential chokepoint,
-        // resolved against the CURRENT MODEL's own platform AND endpoint. This
-        // used to be a local re-derivation that fell through to
-        // `auth_manager.current_or_expired()` for every non-OAuth platform —
+        // resolved against the CURRENT MODEL's own platform AND endpoint. A
+        // local re-derivation that fell through to
+        // `auth_manager.current_or_expired()` for every non-OAuth platform is
         // byte-for-byte the round-1 defect, reachable with ZERO configuration
         // (`default_models.json` bundles `moonshot-cn/*` entries a Kimi
         // subscription user sees on first launch / offline, and this config is
@@ -1448,8 +1436,6 @@ impl ModelsManager {
     }
 }
 
-// ── Refresh strategy ────────────────────────────────────────────────────────
-
 /// How to resolve the model list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RefreshStrategy {
@@ -1460,8 +1446,6 @@ pub enum RefreshStrategy {
     /// Use cache if fresh, otherwise fetch.
     OnlineIfUncached,
 }
-
-// ── Disk cache ──────────────────────────────────────────────────────────────
 
 const MODELS_CACHE_FILE: &str = "models_cache.json";
 const CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(300);
@@ -1650,7 +1634,7 @@ impl ModelsCacheManager {
 
     /// Sync; see `load_fresh` note. Best-effort, but NEVER silent: a failed
     /// cache write leaves a stale catalog on disk, which on Windows (sharing
-    /// violations) previously diverged picker behavior with zero trace.
+    /// violations) diverged picker behavior with zero trace.
     fn atomic_write(&self, cache: &ModelsCache) {
         if let Some(parent) = self.path.parent() {
             let _ = std::fs::create_dir_all(parent);
@@ -1691,8 +1675,6 @@ impl ModelsCacheManager {
         }
     }
 }
-
-// ── Fetch ───────────────────────────────────────────────────────────────────
 
 /// Build the prefetched model map from a flat list of entries.
 ///
@@ -1885,15 +1867,6 @@ fn resolve_prefetch_env_with_auth(auth: Option<KimiAuth>) -> Option<PrefetchEnv>
     )
 }
 
-/// Decision core of [`resolve_prefetch_env_with_auth`], split from the config
-/// loading so the gate is unit-testable.
-///
-/// `remote_fetch_enabled = false` wins over every credential shape AND over
-/// `has_custom_endpoint()` (which otherwise forces the prefetch to run): the
-/// explicit off switch must hold even when a stray login, a platform API key,
-/// or a `deployment_key` would re-arm the prefetch — and with it the
-/// deployment-config sync on the prefetch thread.
-///
 /// Decision core of [`ModelsManager::on_auth_changed`]'s wipe guard, split
 /// from the disk probes so it is unit-testable: `true` = no fetch source
 /// exists, wipe the previous identity's catalog.
@@ -2072,12 +2045,6 @@ pub(crate) fn resolve_catalog_key(
 /// The one caller that legitimately passes `current_model_id` is the SHARED
 /// `MvpAgent::sampling_config`, which `ModelsManager::sampling_config` builds
 /// from exactly that key — there the two lookups must agree (H-a).
-///
-/// (L: this rule used to be stated on a `managed_key_for_slug` wrapper that no
-/// caller needed once [`platform_for_slug`] resolved the entry itself. The
-/// crate-level `#![allow(dead_code)]` in `lib.rs` means an unused helper on a
-/// credential path raises no warning, so dead ones are deleted on sight rather
-/// than left as a second, unexercised way to answer the same question.)
 pub(crate) fn entry_for_slug<'a>(
     models: &'a IndexMap<String, ModelEntry>,
     current_key: Option<&str>,
@@ -2709,7 +2676,6 @@ mod tests {
     #[tokio::test]
     async fn refresh_if_new_etag_skips_when_same() {
         let mgr = test_manager();
-        // Set initial etag
         *mgr.inner.etag.write() = Some("\"abc123\"".to_string());
 
         // Same etag — should be a no-op (etag stays the same)
@@ -3078,8 +3044,6 @@ mod tests {
             .collect()
     }
 
-    // ── auth-change refresh: has_fetched_real_catalog flag ─────────────
-
     #[test]
     fn first_apply_refresh_reselects_default_model() {
         let mgr = test_manager();
@@ -3152,8 +3116,6 @@ mod tests {
             "failed refresh must not flip has_fetched_real_catalog"
         );
     }
-
-    // ── apply_config: honor changed preferred model from config ────────
 
     #[test]
     fn apply_config_honors_new_preferred_model() {
@@ -3267,8 +3229,6 @@ mod tests {
         );
     }
 
-    // ── end-to-end: auth refresh + config reload compose correctly ───
-
     #[test]
     fn auth_refresh_then_config_reload_preserves_user_model() {
         let mgr = test_manager();
@@ -3297,8 +3257,6 @@ mod tests {
         mgr.apply_config(new_cfg);
         assert_eq!(mgr.current_model_id().0.as_ref(), "kigi-4");
     }
-
-    // ── disk-cache hot-reload (external models_cache.json writes) ────
 
     fn test_cache_manager(dir: &std::path::Path) -> ModelsCacheManager {
         ModelsCacheManager {
@@ -3539,8 +3497,6 @@ mod tests {
         assert!(!mgr.models().contains_key("kigi-legacy"));
     }
 
-    // ── clear() resets has_fetched_real_catalog ──────────────────────
-
     #[test]
     fn clear_resets_has_fetched_real_catalog() {
         let mgr = test_manager();
@@ -3610,12 +3566,14 @@ mod tests {
         let mut cfg = config::Config::default();
         cfg.models.default = Some("alpha".to_string());
         mgr.apply_refresh_result(&cfg, Some(make_prefetched(&["alpha", "beta"])), None);
-        *mgr.inner.cfg.write() = cfg.clone(); // old_preferred = "alpha"
+        // old_preferred = "alpha"
+        *mgr.inner.cfg.write() = cfg.clone();
         assert_eq!(mgr.current_model_id().0.as_ref(), "alpha");
 
         let mut new_cfg = config::Config::default();
         new_cfg.models.default = Some("beta".to_string());
-        new_cfg.models.default_is_campaign_driven = true; // campaign overriding
+        // campaign overriding
+        new_cfg.models.default_is_campaign_driven = true;
         mgr.apply_config(new_cfg);
         assert_eq!(
             mgr.current_model_id().0.as_ref(),
@@ -3693,8 +3651,6 @@ mod tests {
             "a CLI pref miss must not detour through pre_campaign_default"
         );
     }
-
-    // ── ModelFetchAuth::resolve + PlatformApiKeys tests ─────────────
 
     use kigi_test_support::EnvGuard;
     use serial_test::serial;
@@ -3799,8 +3755,6 @@ mod tests {
         );
         assert!(dbg.contains("true") && dbg.contains("false"));
     }
-
-    // ── remote_fetch gate: resolve_prefetch_env_from_parts ───────────
 
     /// remote_fetch=false must return `None` against every re-arming shape at
     /// once — session auth, a moonshot platform key, AND a custom models
@@ -3942,8 +3896,6 @@ mod tests {
         );
     }
 
-    // ── supported_in_api tests ──────────────────────────────────────
-
     #[test]
     fn default_model_skips_oauth_only_for_api_key_users() {
         let cfg = config::Config::default();
@@ -4047,8 +3999,6 @@ mod tests {
             "the claude-pro-max model must reach the picker without a primary session"
         );
     }
-
-    // ── duplicate model slug re-keying (A/B experiment "auto" alias) ──
 
     fn make_entry_config(model: &str, name: Option<&str>) -> config::ModelEntryConfig {
         make_entry_config_with_id(None, model, name)
@@ -4174,8 +4124,6 @@ mod tests {
         assert_eq!(map.len(), 1);
         assert!(map.contains_key("kigi"));
     }
-
-    // ── persisted model id → catalog key (session resume) ─────────────
 
     #[test]
     fn resolve_catalog_key_maps_routing_slug_to_config_key() {
@@ -4324,8 +4272,6 @@ mod tests {
             })
             .collect()
     }
-
-    // ── PRD F2/F4 wiremock suite ─────────────────────────────────────
 
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};

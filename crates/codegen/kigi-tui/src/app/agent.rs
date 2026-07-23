@@ -52,7 +52,6 @@ pub struct QueuedPrompt {
     pub id: u64,
     /// The prompt text (or command text, e.g. "/compact").
     pub text: String,
-    /// Whether this is a prompt or a slash command.
     pub kind: QueueEntryKind,
     /// Optional separate payload for the wire. When `Some`, this is sent
     /// instead of `text`. Used for skill injection where the display
@@ -117,10 +116,6 @@ impl QueuedPrompt {
 /// which execute immediately without going through the queue or agent.
 ///
 /// Each variant carries the data needed for execution and display.
-/// Using an enum instead of a String gives us:
-/// - Type safety (can't misspell command names)
-/// - Variant-specific data (e.g., `/model` would carry target model)
-/// - Proper rendering per command type
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentCommand {
     /// `/compact` — compact conversation history.
@@ -163,7 +158,6 @@ pub const BG_TASK_MAX_STDOUT: usize = 10 * 1024 * 1024;
 /// How long to wait for a kill response before auto-clearing `pending_kill`
 /// so the user can retry. Applied to both bg tasks and subagents.
 pub const PENDING_KILL_TIMEOUT_SECS: u64 = 10;
-/// Status of a background task.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BgTaskStatus {
     /// Currently running.

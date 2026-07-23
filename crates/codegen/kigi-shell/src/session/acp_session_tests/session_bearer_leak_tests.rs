@@ -1,13 +1,13 @@
 //! LEAK GUARD (bearer_resolver channel): the primary (Kimi) subscription bearer
 //! must never be stamped on a request to a host that does not own it.
 //!
-//! Chain the guard closes: a session-based ACP method (`cached_token` /
-//! `kimi-code` / any OAuth platform) + a selected API-key-platform model
-//! classifies `ModelByok::NotByok` (the model carries no `[model.*]` key), the
-//! pre-fix `session_token_auth_gate` returned `true` unconditionally on that
-//! arm, the manager lookup fell through to the primary Kimi manager for a
-//! non-OAuth platform, and `SamplingClient::post` then REPLACED the correctly
-//! resolved provider key with the Kimi bearer on the wire.
+//! The leak path this guard closes: a session-based ACP method (`cached_token`
+//! / `kimi-code` / any OAuth platform) plus a selected API-key-platform model
+//! classifies `ModelByok::NotByok` (the model carries no `[model.*]` key); with
+//! `session_token_auth_gate` admitting that arm unconditionally, the manager
+//! lookup falls through to the primary Kimi manager for a non-OAuth platform,
+//! and `SamplingClient::post` replaces the correctly resolved provider key with
+//! the Kimi bearer on the wire.
 //!
 //! The `api_key` half of the same defect (the config never even gets the
 //! provider key, because `resolve_credentials` stamps the session token) is
@@ -286,11 +286,11 @@ async fn api_key_platform_models_get_no_session_bearer_resolver() {
 }
 
 /// C2 at the resolver channel: a `[model.*]` entry has NO platform
-/// (`info.id == None`), which used to be a blanket allow. Pointed at a
-/// third-party host it must get no session resolver; pointed at the session's
-/// own coding endpoint (a config.toml `[endpoints] coding_api_base_url`
-/// deployment, a `KIGI_CODE_BASE_URL` override, or a local dev proxy) it must
-/// keep one — that is why the predicate is not `is_first_party_url`.
+/// (`info.id == None`). Pointed at a third-party host it must get no session
+/// resolver; pointed at the session's own coding endpoint (a config.toml
+/// `[endpoints] coding_api_base_url` deployment, a `KIGI_CODE_BASE_URL`
+/// override, or a local dev proxy) it must keep one — that is why the predicate
+/// is not `is_first_party_url`.
 ///
 /// Revert-to-red: make `CredentialAuthority::is_session_coding_endpoint` return
 /// `true` unconditionally and a Kimi resolver lands on the openai.com config.
@@ -301,7 +301,8 @@ async fn config_model_entry_takes_a_session_resolver_only_on_its_own_endpoint() 
         .run_until(async {
             for base_url in ["https://api.openai.com/v1", "https://api.deepseek.com/v1"] {
                 let mut info = ModelInfo::fallback("gpt-4o");
-                info.id = None; // a `[model.gpt-4o]` block
+                // a `[model.gpt-4o]` block
+                info.id = None;
                 info.base_url = base_url.to_string();
                 let entry = ModelEntry {
                     info,
@@ -355,10 +356,6 @@ async fn config_model_entry_takes_a_session_resolver_only_on_its_own_endpoint() 
 /// still heals a stale buffered key. This is also what proves the Kimi bearer is
 /// live in every LEAK assertion in this module — it WOULD leak if the guard
 /// were missing.
-///
-/// (L12: the slug-collision commentary that used to sit here belongs to the
-/// collision tests in `session_bearer_leak_platform_tests`, which is where its
-/// revert-to-red actually reproduces; on this first-party test it never could.)
 #[tokio::test(flavor = "current_thread")]
 async fn kimi_first_party_model_still_rides_the_primary_session_bearer() {
     let local = tokio::task::LocalSet::new();
@@ -398,10 +395,10 @@ async fn kimi_first_party_model_still_rides_the_primary_session_bearer() {
         .await;
 }
 
-/// The persistence half of the defect: `refresh_token_if_expired` used to write
-/// the Kimi session token into `chat_state` `creds.api_key` for ANY
-/// session-method turn, from where it propagated to subagents and aux configs.
-/// A deepseek turn must leave the provider key untouched.
+/// The persistence half of the defect: for a session-method turn,
+/// `refresh_token_if_expired` must not write the Kimi session token into
+/// `chat_state` `creds.api_key`, from where it would propagate to subagents and
+/// aux configs. A deepseek turn must leave the provider key untouched.
 ///
 /// M7 rides along: a registry-platform model must not fall into
 /// `reload_api_key_from_config` at all (a `load_effective_config()` disk read

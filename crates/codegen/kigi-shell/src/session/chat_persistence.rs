@@ -1,7 +1,6 @@
-//! Production `ChatPersistence` implementation backed by the existing persistence channel.
-//!
-//! Wraps an `mpsc::UnboundedSender<PersistenceMsg>` and translates
-//! `ChatPersistence` trait calls into the appropriate `PersistenceMsg` variants.
+//! Production `ChatPersistence` backed by the session persistence channel:
+//! wraps an `mpsc::UnboundedSender<PersistenceMsg>` and translates
+//! `ChatPersistence` trait calls into `PersistenceMsg` variants.
 
 use kigi_chat_state::ChatPersistence;
 use kigi_sampling_types::ConversationItem;
@@ -9,18 +8,11 @@ use tokio::sync::mpsc;
 
 use super::persistence::PersistenceMsg;
 
-/// Production `ChatPersistence` that sends to the existing session persistence channel.
-///
-/// Translates:
-/// - `persist_message` → `PersistenceMsg::Chat`
-/// - `replace_history` → `PersistenceMsg::ReplaceChatHistory`
-/// - `flush` → `PersistenceMsg::Flush`
 pub struct ChannelChatPersistence {
     tx: mpsc::UnboundedSender<PersistenceMsg>,
 }
 
 impl ChannelChatPersistence {
-    /// Create a new `ChannelChatPersistence` wrapping the given persistence channel.
     pub fn new(tx: mpsc::UnboundedSender<PersistenceMsg>) -> Self {
         Self { tx }
     }

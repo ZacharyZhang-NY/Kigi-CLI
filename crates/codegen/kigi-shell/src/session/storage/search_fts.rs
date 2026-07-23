@@ -39,7 +39,7 @@ pub struct SessionDoc {
     pub last_indexed_offset: u64,
 }
 
-/// State of a previously indexed session, returned by
+/// State of an already-indexed session, returned by
 /// [`SessionSearchIndex::get_session_index_state`].
 #[derive(Debug, Clone)]
 pub struct SessionIndexState {
@@ -100,7 +100,6 @@ impl SessionSearchIndex {
         // busy_timeout + journal pragma live in the helper (see JournalMode::open).
         let db = journal_mode.open(db_path)?;
 
-        // Check existing schema version
         let stored_version: Option<String> = db
             .query_row(
                 "SELECT value FROM meta WHERE key = 'session_search_schema_version'",
@@ -155,7 +154,6 @@ impl SessionSearchIndex {
             );
         }
 
-        // Create tables + content-synced FTS5 with auto-sync triggers
         db.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS meta (
@@ -280,7 +278,6 @@ impl SessionSearchIndex {
         Ok(())
     }
 
-    /// Remove a session document from the index.
     pub fn delete_doc(&self, session_id: &str) -> Result<(), rusqlite::Error> {
         self.db.execute(
             "DELETE FROM session_docs WHERE session_id = ?1",
@@ -340,7 +337,6 @@ impl SessionSearchIndex {
         Ok(())
     }
 
-    /// Read a value from the `meta` key-value table.
     pub fn get_meta(&self, key: &str) -> Result<Option<String>, rusqlite::Error> {
         self.db
             .query_row(

@@ -19,7 +19,6 @@ struct CwdParams {
 pub struct SkillsAddRequest {
     /// Path to add (directory or SKILL.md file). Supports `~` expansion.
     pub path: String,
-    /// Working directory for skill discovery context.
     #[serde(default)]
     pub cwd: Option<String>,
 }
@@ -31,11 +30,9 @@ pub struct SkillsAddResponse {
     pub added_count: usize,
     /// Total number of skills loaded across all sources.
     pub total: usize,
-    /// The path that was added to config.
     pub path: String,
     /// Full updated skill list after reload.
     pub skills: Vec<SkillInfo>,
-    /// Human-readable message.
     pub message: String,
 }
 
@@ -44,7 +41,6 @@ pub struct SkillsAddResponse {
 pub struct SkillsRemoveRequest {
     /// Path to remove from config paths.
     pub path: String,
-    /// Working directory for skill discovery context.
     #[serde(default)]
     pub cwd: Option<String>,
 }
@@ -52,11 +48,9 @@ pub struct SkillsRemoveRequest {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillsRemoveResponse {
-    /// The path that was removed.
     pub path: String,
     /// Full updated skill list after reload.
     pub skills: Vec<SkillInfo>,
-    /// Human-readable message.
     pub message: String,
 }
 
@@ -65,18 +59,15 @@ pub struct SkillsRemoveResponse {
 pub struct SkillsResetResponse {
     /// Full updated skill list after reload.
     pub skills: Vec<SkillInfo>,
-    /// Human-readable message.
     pub message: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillsToggleRequest {
-    /// Skill name to toggle.
     pub name: String,
     /// Whether to enable (`true`) or disable (`false`) the skill.
     pub enabled: bool,
-    /// Working directory for skill discovery context.
     #[serde(default)]
     pub cwd: Option<String>,
 }
@@ -84,14 +75,12 @@ pub struct SkillsToggleRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillsListRequest {
-    /// Working directory for skill discovery context.
     pub cwd: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillsListResponse {
-    /// All discovered skills.
     pub skills: Vec<SkillInfo>,
 }
 
@@ -102,11 +91,8 @@ pub struct SkillsConfigResponse {
     pub paths: Vec<String>,
     /// Ignored paths from `[skills].ignore`.
     pub ignore: Vec<String>,
-    /// Total loaded skill count.
     pub total_skills: usize,
-    /// Human-readable summary.
     pub message: String,
-    /// Full updated skill list.
     pub skills: Vec<SkillInfo>,
 }
 
@@ -156,8 +142,6 @@ fn resolve_skill_path(raw: &str, cwd: &str) -> String {
         PathBuf::from(raw)
     };
 
-    // If already absolute, canonicalize to resolve `..` etc.
-    // If relative, join with cwd first.
     let absolute = if expanded.is_absolute() {
         expanded
     } else {

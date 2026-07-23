@@ -9,7 +9,6 @@
 use crate::app::actions::Action;
 use crate::slash::command::{CommandExecCtx, CommandResult, SlashCommand};
 
-/// List background tasks, subagents, and scheduled tasks.
 pub struct TasksCommand;
 
 impl SlashCommand for TasksCommand {

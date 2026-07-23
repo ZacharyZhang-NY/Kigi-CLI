@@ -2,7 +2,7 @@
 #[allow(unused_imports)]
 use super::common::*;
 
-// ── Reproduction: horizontal resize must not lose the scroll position ─────
+// Reproduction: horizontal resize must not lose the scroll position.
 //
 // Bug: when the user has scrolled UP into kigi's scrollback (NOT pinned to the
 // bottom / not following) and the terminal is resized HORIZONTALLY, kigi loses
@@ -243,7 +243,7 @@ async fn resize_preserves_scroll_position() {
         before.0
     );
 
-    // ── Resize the WIDTH only (rows unchanged) and let prepare_layout rebuild
+    // Resize the WIDTH only (rows unchanged) and let prepare_layout rebuild
     // the wrapped row map at the new width.
     harness
         .resize(DEFAULT_ROWS, NARROW_COLS)
@@ -260,7 +260,7 @@ async fn resize_preserves_scroll_position() {
         "pager rendered 'panicked' during resize\nscreen:\n{screen_after}"
     );
 
-    // ── The reproduction assertion: the marker must still be visible AND at
+    // The reproduction assertion: the marker must still be visible AND at
     // ~the same viewport row after a width-only resize.
     let (after_row, _) = locate_screen_text(&screen_after, MARKER).unwrap_or_else(|| {
         panic!(

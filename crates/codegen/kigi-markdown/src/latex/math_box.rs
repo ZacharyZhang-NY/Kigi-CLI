@@ -124,7 +124,7 @@ impl MathBox {
                 self.lines.push(String::new());
             }
         }
-        // Place the box rows, left-padded to the attach column.
+        // Place the box rows, left-`padded` to the attach column.
         for (i, row) in rows.iter().enumerate() {
             let target = self.anchor - box_anchor + i;
             let line = &mut self.lines[target];

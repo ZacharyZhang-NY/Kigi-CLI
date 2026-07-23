@@ -10,7 +10,6 @@ pub const SCHEDULER_DELETE_TOOL_NAME: &str = "scheduler_delete";
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct SchedulerDeleteInput {
-    /// The scheduled task ID to cancel.
     #[schemars(description = "The task ID to cancel (from scheduler_create output)")]
     pub id: String,
 }

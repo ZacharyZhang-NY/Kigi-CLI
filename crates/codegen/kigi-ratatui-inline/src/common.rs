@@ -28,7 +28,6 @@ pub trait TerminalLike {
     /// Reset the back buffer without clearing the screen
     fn reset_back_buffer(&mut self);
 
-    /// Set the viewport area
     fn set_viewport_area(&mut self, area: Rect);
 
     /// Get a mutable reference to the writer

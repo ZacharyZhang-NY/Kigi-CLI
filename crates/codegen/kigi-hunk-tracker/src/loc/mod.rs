@@ -17,9 +17,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
-// ---------------------------------------------------------------------------
 // Enums
-// ---------------------------------------------------------------------------
 
 /// Who authored a change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,7 +63,7 @@ pub enum EventType {
     Added,
     /// An existing hunk's content changed in place.
     Updated,
-    /// A hunk was removed. `lines_added` / `lines_removed` are negated
+    /// Removal of an existing hunk. `lines_added` / `lines_removed` are negated
     /// so that `SUM` zeroes out the hunk's accumulated contribution.
     Removed,
 }
@@ -80,9 +78,7 @@ impl std::fmt::Display for EventType {
     }
 }
 
-// ---------------------------------------------------------------------------
 // HunkRecord
-// ---------------------------------------------------------------------------
 
 /// A single LOC attribution record derived from a [`Hunk`].
 ///
@@ -126,7 +122,7 @@ pub struct HunkRecord {
     pub source_type: Option<SourceType>,
     /// Whether this is a new hunk or an in-place update.
     pub event_type: EventType,
-    /// Why the hunk was removed. Only set for [`EventType::Removed`] records.
+    /// Reason for the removal. Only set for [`EventType::Removed`] records.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub removal_reason: Option<HunkRemovalReason>,
 }
@@ -201,9 +197,7 @@ impl HunkRecord {
     }
 }
 
-// ---------------------------------------------------------------------------
 // HunkRecordWriter
-// ---------------------------------------------------------------------------
 
 /// Trait for persisting [`HunkRecord`]s.
 ///
@@ -279,9 +273,7 @@ impl HunkRecordWriter for JsonlHunkRecordWriter {
     }
 }
 
-// ---------------------------------------------------------------------------
 // LocAggregate (channel-based bridge to signals)
-// ---------------------------------------------------------------------------
 
 /// Lightweight aggregate update emitted by the LOC sink for consumption by
 /// an external bridge (e.g., the signals system in `kigi-shell`).
@@ -290,7 +282,7 @@ impl HunkRecordWriter for JsonlHunkRecordWriter {
 /// The bridge task translates them into `SignalEvent` variants.
 #[derive(Debug, Clone)]
 pub enum LocAggregate {
-    /// Lines were added or changed (from HunkAdded or HunkContentChanged).
+    /// New or modified lines (from `HunkAdded` or `HunkContentChanged`).
     LinesChanged {
         author_type: AuthorType,
         lines_added: i64,
@@ -305,9 +297,7 @@ pub enum LocAggregate {
     },
 }
 
-// ---------------------------------------------------------------------------
 // Sink configuration
-// ---------------------------------------------------------------------------
 
 /// Context passed to the LOC sink at spawn time.
 pub struct LocSinkContext {
@@ -322,9 +312,7 @@ pub struct LocSinkContext {
     pub aggregate_tx: Option<mpsc::UnboundedSender<LocAggregate>>,
 }
 
-// ---------------------------------------------------------------------------
 // run_loc_sink
-// ---------------------------------------------------------------------------
 
 /// Consume [`HunkEvent`]s and write LOC attribution records.
 ///
@@ -344,7 +332,7 @@ pub async fn run_loc_sink(
     ctx: LocSinkContext,
     cancellation_token: tokio_util::sync::CancellationToken,
 ) {
-    // Accumulated (lines_added, lines_removed) per hunk_id.
+    // Accumulated (`lines_added`, `lines_removed`) per hunk_id.
     // Used to emit negating records when hunks are rejected/superseded.
     let mut acc: HashMap<HunkId, (i64, i64)> = HashMap::new();
 
@@ -383,7 +371,7 @@ async fn handle_event(
     match event {
         HunkEvent::HunkAdded { path: _, ref hunk } => {
             // For new hunks, the hunk's own source is the correct attribution.
-            // lines_added/lines_removed are the full counts (no prior state).
+            // `lines_added`/`lines_removed` are the full counts (no prior state).
             let record = HunkRecord::from_hunk(
                 hunk,
                 &ctx.session_id,

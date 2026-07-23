@@ -1,7 +1,8 @@
 fn main() {
     kigi_proto_build::configure()
         .type_attribute(
-            ".", // match every message & enum
+            // match every message & enum
+            ".",
             "#[derive(serde::Serialize, serde::Deserialize)]",
         )
         // ToolConfigEntry is embedded in external JSON contracts

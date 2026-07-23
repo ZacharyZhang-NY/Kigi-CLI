@@ -48,8 +48,6 @@ const MEASURE_TIME: Duration = Duration::from_secs(3);
 const MEASURE_TIME_HEAVY: Duration = Duration::from_secs(5);
 const RENDER_WIDTH: u16 = 120;
 
-// ── Fixtures ────────────────────────────────────────────────────────────────
-
 struct Fixture {
     _dir: TempDir,
     path: PathBuf,
@@ -170,8 +168,6 @@ fn make_hunk_at(file_lines: &[&str], close_i: usize) -> Option<DiffHunk> {
     }
 }
 
-// ── Non-product prefix baseline ─────────────────────────────────────────────
-
 fn own_ranges(ranges: Vec<(SyntectStyle, &str)>) -> Vec<(SyntectStyle, String)> {
     ranges.into_iter().map(|(s, t)| (s, t.to_owned())).collect()
 }
@@ -233,8 +229,6 @@ fn estimate_style_map_bytes(map: &HashMap<usize, Vec<(ratatui::style::Style, Str
     bytes
 }
 
-// ── Bench groups ────────────────────────────────────────────────────────────
-
 fn configure_fast(group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>) {
     group
         .sample_size(SAMPLE_SIZE)
@@ -287,7 +281,6 @@ fn bench_matrix(c: &mut Criterion) {
     let config = DiffRenderConfig::default();
     let syntect = get_syntect();
 
-    // ── 500L + prefix (own heavy config) ────────────────────────────────────
     {
         let fx = gen_python_fixture(500, 8);
         let file_lines: Vec<&str> = fx.file_text.lines().collect();
@@ -308,7 +301,6 @@ fn bench_matrix(c: &mut Criterion) {
         group.finish();
     }
 
-    // ── 10kL session (no prefix) ────────────────────────────────────────────
     {
         let fx = gen_python_fixture(10_000, 40);
         let styles = compute_file_scoped_styles(fx.path(), &fx.file_text, &fx.hunks)

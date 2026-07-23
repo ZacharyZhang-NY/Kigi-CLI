@@ -77,7 +77,7 @@ const ENABLE_ALWAYS_APPROVE_LABEL: &str =
 ///
 /// Note: the pager's `default_selected_permission` + sticky "last used"
 /// cursor logic (see `DefaultSelectedPermission` + `enqueue_permission`)
-/// deliberately skips this option via `is_enable_always_approve_option`
+/// Deliberately skips this option via `is_enable_always_approve_option`
 /// when a configured or last-used preselection is in play. When neither is
 /// set, the cursor preselects THIS option explicitly (also via
 /// `is_enable_always_approve_option`, not by index 0).
@@ -225,7 +225,7 @@ pub fn mcp_tool_display_name(tool_name: &str, server_prefix: Option<&str>) -> St
 /// or scrollback blocks that store the wire name verbatim). Splits on
 /// the (validated-at-construction) `MCP_TOOL_NAME_DELIMITER`: if the
 /// split succeeds the name is formatted as `"(Server) Action"` with
-/// each segment title-cased; otherwise the input is returned unchanged
+/// each segment title-cased; otherwise the input is returned `unchanged`
 /// (no title-casing — the input may be a bash command, file path, or
 /// other non-MCP text that the caller mustn't mangle).
 pub fn mcp_pretty_name_if_qualified(name: &str) -> String {
@@ -1292,7 +1292,7 @@ mod tests {
             "(Linear) List Issues"
         );
         // Non-qualified input (e.g. a bash command, file path, or any
-        // string without `__`) is returned UNCHANGED — must not
+        // string without `__`) is returned `UNCHANGED` — must not
         // title-case or mangle non-MCP strings.
         assert_eq!(mcp_pretty_name_if_qualified("read_file"), "read_file");
         assert_eq!(mcp_pretty_name_if_qualified("cargo test"), "cargo test");
@@ -1314,9 +1314,7 @@ mod tests {
         assert_eq!(mcp_titleize_segment(""), "");
     }
 
-    // ------------------------------------------------------------------
     // "Enable always-approve mode" option (prepended for TUI/Pager/Desktop)
-    // ------------------------------------------------------------------
 
     fn enable_always_approve_id() -> acp::PermissionOptionId {
         acp::PermissionOptionId::new(ENABLE_ALWAYS_APPROVE_OPTION_ID)
@@ -1486,7 +1484,7 @@ mod tests {
         );
     }
 
-    // ── events.jsonl emission ─────────────────────────────────
+    // events.jsonl emission
 
     #[test]
     fn tool_name_for_access_pins_canonical_names() {
@@ -1567,7 +1565,8 @@ mod tests {
         let writer = EventWriter::open(dir.path());
 
         let (tx, rx) = mpsc::unbounded_channel();
-        drop(rx); // channel closed → request_permission errors immediately
+        // channel closed → request_permission errors immediately
+        drop(rx);
         let gateway = GatewaySender::new(tx);
 
         let prompter = AcpPrompter::new(

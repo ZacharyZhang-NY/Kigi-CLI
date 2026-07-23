@@ -14,7 +14,6 @@ use crate::appearance::permission_cursor::DefaultSelectedPermission;
 use kigi_shell::agent::config::UiConfig;
 use kigi_tools::implementations::kigi::ask_user_question;
 
-// ---------------------------------------------------------------------------
 // Int bounds for `max_thoughts_width`.
 //
 // Stored as `u16` in `UiConfig`, exposed as `i64` for registry uniformity.
@@ -28,14 +27,12 @@ pub(crate) const MAX_THOUGHTS_WIDTH_MAX: i64 = 500;
 /// definition and the live-wrap-preview gate in the int stepper.
 pub(crate) const MAX_THOUGHTS_WIDTH_KEY: &str = "max_thoughts_width";
 
-// ---------------------------------------------------------------------------
 // Theme choice catalogs.
 //
 // Canonical names MUST match `ThemeKind::display_name()`.
 // Shared by `theme`, `auto_dark_theme`, and `auto_light_theme`;
 // auto-* sub-pickers drop "auto" to avoid circular reference.
 // Bounded by `MAX_PICKER_CHOICES`.
-// ---------------------------------------------------------------------------
 
 /// Full theme catalog including the "auto" meta-variant. Used by `theme` only.
 const THEME_CHOICES: &[EnumChoice] = &[
@@ -72,7 +69,6 @@ const THEME_CHOICES: &[EnumChoice] = &[
     },
 ];
 
-// ---------------------------------------------------------------------------
 // Permission-mode catalog.
 //
 // Persisted values map onto runtime flags:
@@ -89,7 +85,6 @@ const THEME_CHOICES: &[EnumChoice] = &[
 // (2) `EnumChoice` here, (3) `set_yolo_mode_inner` update,
 // (4) `load_permission_mode` arm, (5) tests. `Plan` is excluded —
 // it lives on its own `plan_mode` setting.
-// ---------------------------------------------------------------------------
 
 // Choice order: safe → classifier → unsafe (Default → Ask → Auto → Always approve).
 // "Always approve" at the end creates a speed bump against
@@ -119,21 +114,6 @@ const PERMISSION_MODE_CHOICES: &[EnumChoice] = &[
     },
 ];
 
-// ---------------------------------------------------------------------------
-// Plan-mode catalog.
-//
-// PAGER-owned, per-session, ACP-mediated via `session/set_mode`.
-// NOT persisted to config.toml — resets every session start.
-//
-// Uses `on`/`off` canonical strings (not the shell's `plan`/`default`
-// wire ids). `Ask` mode is intentionally not exposed here — it's
-// only reachable via Shift+Tab.
-//
-// `supports_preview: false` — toggling fires an ACP request that
-// gates tool dispatch. Commit on Enter only.
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
 // Default-selected-permission catalog.
 //
 // Persisted to `[ui].default_selected_permission` in config.toml. Controls
@@ -147,8 +127,7 @@ const PERMISSION_MODE_CHOICES: &[EnumChoice] = &[
 //
 // `supports_preview: false` — permission prompts aren't open in the modal
 // background, so there's no live preview surface.
-// ---------------------------------------------------------------------------
-
+//
 // Order matches the live permission prompt rendering (YOLO -> always-allow
 // -> allow-once -> reject) so the picker mirrors what the user sees on the
 // real prompt.
@@ -178,6 +157,17 @@ const DEFAULT_SELECTED_PERMISSION_CHOICES: &[EnumChoice] = &[
     },
 ];
 
+// Plan-mode catalog.
+//
+// PAGER-owned, per-session, ACP-mediated via `session/set_mode`.
+// NOT persisted to config.toml — resets every session start.
+//
+// Uses `on`/`off` canonical strings (not the shell's `plan`/`default`
+// wire ids). `Ask` mode is intentionally not exposed here — it's
+// only reachable via Shift+Tab.
+//
+// `supports_preview: false` — toggling fires an ACP request that
+// gates tool dispatch. Commit on Enter only.
 const PLAN_MODE_CHOICES: &[EnumChoice] = &[
     EnumChoice {
         canonical: "off",
@@ -191,13 +181,11 @@ const PLAN_MODE_CHOICES: &[EnumChoice] = &[
     },
 ];
 
-// ---------------------------------------------------------------------------
 // Mermaid-rendering catalog.
 //
 // SHELL-owned: persisted to `[ui].render_mermaid`, with a pager-side
 // process-wide cache mirror (`appearance::cache::*_render_mermaid`) for the
 // render hot path. Canonicals match `RenderMermaid::as_canonical`.
-// ---------------------------------------------------------------------------
 
 const RENDER_MERMAID_CHOICES: &[EnumChoice] = &[
     EnumChoice {
@@ -468,7 +456,6 @@ pub fn default_settings() -> Vec<SettingMeta> {
             restart_required: false,
             hidden_in_minimal: false,
         },
-        // --- theme + auto themes ---------------------------------------------
         SettingMeta {
             key: "theme",
             category: SettingCategory::Appearance,
@@ -1204,7 +1191,7 @@ pub fn default_settings() -> Vec<SettingMeta> {
             restart_required: false,
             hidden_in_minimal: false,
         },
-        // ── TodoGate (runtime turn-end backstop) ──────────────────────
+        // TodoGate (runtime turn-end backstop):
         //
         // Only the CLI flag (`--todo-gate`) is wired. Settings-modal
         // entries for `[reminder.todo_gate]` are deferred — the modal

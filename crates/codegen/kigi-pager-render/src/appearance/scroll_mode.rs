@@ -6,10 +6,9 @@
 //! `ScrollInputMode` when building its scroll config; this crate only owns
 //! the persisted value type and its cache.
 
-/// Scroll input classification preference: auto-detect or force one kind.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub enum ScrollMode {
-    /// Detect wheel vs trackpad per stream from event timing. Default.
+    /// Detect wheel vs trackpad per stream from event timing.
     #[default]
     Auto,
     /// Always treat scroll input as a mouse wheel (fixed lines per tick).
@@ -28,7 +27,6 @@ impl ScrollMode {
         }
     }
 
-    /// Parse a canonical string, returning `None` for unrecognized input.
     pub fn from_canonical(value: &str) -> Option<Self> {
         match value {
             "auto" => Some(Self::Auto),
@@ -52,8 +50,8 @@ mod tests {
 
     #[test]
     fn junk_and_case_variants_are_rejected() {
-        // Strict parse: unknown disk/env values must fall back to the default
-        // at the caller (cache seed), never panic or mis-map.
+        // Parsing is strict so a stray disk/env value falls back to the
+        // default at the caller (cache seed) rather than mis-mapping.
         for junk in ["", "Auto", "WHEEL", "track pad", "mouse", "1"] {
             assert_eq!(ScrollMode::from_canonical(junk), None, "{junk:?}");
         }

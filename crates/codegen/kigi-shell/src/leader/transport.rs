@@ -53,8 +53,7 @@ mod windows_impl {
     }
 
     impl LeaderStream {
-        /// Connect to a listener at `path`. The path is translated to a
-        /// named-pipe name and `ClientOptions::open` is used.
+        /// Connect to a listener at `path`.
         pub async fn connect<P: AsRef<Path>>(path: P) -> io::Result<Self> {
             use tokio::net::windows::named_pipe::ClientOptions;
 

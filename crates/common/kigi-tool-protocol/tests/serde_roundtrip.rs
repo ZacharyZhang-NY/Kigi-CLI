@@ -1002,9 +1002,9 @@ fn session_lifecycle_payloads_round_trip() {
 fn attach_route_round_trips_snake_case_and_tolerates_unknown() {
     assert_eq!(roundtrip(&AttachRoute::Local), json!("local"));
     assert_eq!(roundtrip(&AttachRoute::Remote), json!("remote"));
-    // "restored" was removed with restore-on-activity; old hubs may still send
-    // it, and it must fall into the tolerant `Unknown` bucket like any other
-    // retired/newer value.
+    // "restored" is a retired restore-on-activity route; old hubs may still
+    // send it, and it must fall into the tolerant `Unknown` bucket like any
+    // other retired/newer value.
     let parsed: AttachRoute =
         serde_json::from_value(json!("restored")).expect("tolerant parse of retired value");
     assert_eq!(parsed, AttachRoute::Unknown);

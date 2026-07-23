@@ -1,10 +1,9 @@
 //! Sampling error types.
 //!
-//! The canonical error types now live in `kigi_sampling_types::error`.
-//! This module re-exports them and adds `map_sampling_err_to_acp` which
-//! depends on `agent_client_protocol::Error` (a kigi-shell dependency).
+//! The canonical error types live in `kigi_sampling_types::error`. This module
+//! re-exports them and adds `map_sampling_err_to_acp`, which depends on
+//! `agent_client_protocol::Error` (a kigi-shell dependency).
 
-// Re-export everything from the standalone crate.
 pub use kigi_sampling_types::error::*;
 
 use agent_client_protocol as acp;
@@ -51,7 +50,6 @@ pub fn rate_limited_user_message(is_api_key_auth: bool) -> &'static str {
 }
 
 /// Map a `SamplingError` to an ACP `Error` for client-facing responses.
-/// This stays in kigi-shell because it depends on `agent_client_protocol::Error`.
 pub fn map_sampling_err_to_acp(err: SamplingError) -> acp::Error {
     use reqwest::StatusCode;
     match err {
@@ -339,7 +337,6 @@ mod tests {
         assert!(RATE_LIMITED_USER_MESSAGE_OAUTH.contains("official Kimi CLI"));
         assert!(RATE_LIMITED_USER_MESSAGE_OAUTH.contains("same subscription quota"));
         assert!(RATE_LIMITED_USER_MESSAGE_OAUTH.contains(kigi_env::upgrade_page_url()));
-        // API-key copy points at the Moonshot platform, not the subscription.
         assert!(RATE_LIMITED_USER_MESSAGE_API_KEY.contains("Moonshot"));
         assert!(!RATE_LIMITED_USER_MESSAGE_API_KEY.contains("subscription quota"));
     }
@@ -459,7 +456,6 @@ mod tests {
             }
         }
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
-        // Restore original state.
         unsafe {
             std::env::remove_var("KIGI_API_KEY");
             std::env::remove_var("XAI_API_KEY");

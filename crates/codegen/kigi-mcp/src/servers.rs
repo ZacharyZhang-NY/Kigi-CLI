@@ -106,7 +106,7 @@ pub fn sanitize_descriptor_segment(s: &str) -> String {
 pub struct McpConfigDiff {
     /// Server names that are new or had their config changed.
     pub added: Vec<McpServerName>,
-    /// Server names that were removed or had their config changed (old instance torn down).
+    /// Server names no longer present, or whose config changed (old instance torn down).
     pub removed: Vec<McpServerName>,
     /// Server names whose config is identical — clients kept alive.
     pub retained: Vec<McpServerName>,
@@ -567,7 +567,7 @@ impl McpState {
     }
 
     /// Diff-based config update: only tears down servers whose config changed
-    /// or were removed, keeps healthy unchanged servers alive.
+    /// or dropped out of the new list, keeps healthy unchanged servers alive.
     ///
     /// Returns `None` if configs are identical (no work needed), or `Some(diff)`
     /// describing which servers to add/remove.
@@ -984,7 +984,8 @@ pub(crate) fn mcp_servers_equal(a: &[acp::McpServer], b: &[acp::McpServer]) -> b
     // Compare JSON serializations
     match (serde_json::to_string(a), serde_json::to_string(b)) {
         (Ok(a_json), Ok(b_json)) => a_json == b_json,
-        _ => false, // If serialization fails, assume not equal
+        // If serialization fails, assume not equal
+        _ => false,
     }
 }
 
@@ -1303,7 +1304,8 @@ impl McpTool {
             .and_then(|ui| ui.get("visibility"))
             .and_then(|v| v.as_array())
             .map(|arr| arr.iter().any(|s| s.as_str() == Some("model")))
-            .unwrap_or(true); // default: visible to model
+            // default: visible to model
+            .unwrap_or(true);
 
         Some(McpToolRegistration {
             name: qualified_name,
@@ -1964,7 +1966,8 @@ where
         loop {
             let mut line = Vec::new();
             match self.read.read_until(b'\n', &mut line).await {
-                Ok(0) => return None, // genuine end-of-stream
+                // genuine end-of-stream
+                Ok(0) => return None,
                 Ok(_) => {}
                 Err(e) => {
                     tracing::debug!(
@@ -2492,11 +2495,11 @@ pub struct McpClient {
     /// has been updated. See [`ClientState`] for the single-flight
     /// invariant this preserves.
     ///
-    /// Replaces the previous fail-fast
-    /// `McpError::ClientError("MCP client already initializing")` branch
-    /// which leaked into model-visible tool results whenever the model's
-    /// first tool dispatch raced the session actor's background
-    /// `get_tool_registrations` handshake.
+    /// Parking here rather than failing fast keeps an
+    /// `McpError::ClientError("MCP client already initializing")` out of
+    /// model-visible tool results when the model's first tool dispatch
+    /// races the session actor's background `get_tool_registrations`
+    /// handshake.
     init_done: Notify,
     startup_timeout_sec: u64,
     tool_timeout_sec: u64,
@@ -3494,7 +3497,7 @@ impl McpClient {
 
     /// Wire a sender for [`McpClientEvent`]s emitted by this client.
     ///
-    /// Mutates the shared slot synchronously. All previously-cloned
+    /// Mutates the shared slot synchronously. All already-cloned
     /// references (the [`KigiClientHandler`] handed to
     /// `client.serve`, the [`crate::liveness::spawn_transport_liveness`]
     /// task) read through the same Arc, so this is observed
@@ -4618,7 +4621,8 @@ mod tests {
         // Same configs should return false
         let changed = state.update_configs(configs.clone());
         assert!(!changed);
-        assert_eq!(state.generation, 0); // Generation should not change
+        // Generation should not change
+        assert_eq!(state.generation, 0);
     }
 
     #[test]
@@ -4630,7 +4634,8 @@ mod tests {
         let new_configs = vec![make_stdio_server("test2", "/bin/test2")];
         let changed = state.update_configs(new_configs);
         assert!(changed);
-        assert_eq!(state.generation, 1); // Generation should increment
+        // Generation should increment
+        assert_eq!(state.generation, 1);
     }
 
     #[test]
@@ -4986,7 +4991,8 @@ mod tests {
 
         state.cancel_init();
         assert!(!state.is_initializing());
-        assert!(!state.is_initialized()); // Should NOT be marked as initialized
+        // Should NOT be marked as initialized
+        assert!(!state.is_initialized());
     }
 
     #[test]
@@ -5472,7 +5478,7 @@ mod tests {
         assert!(Arc::ptr_eq(c1, c2));
     }
 
-    // ── owned/shared split behavioral tests ─────────────────────────
+    // owned/shared split behavioral tests
 
     #[test]
     fn test_get_client_owned_overrides_shared() {
@@ -5728,7 +5734,7 @@ mod tests {
         assert!(tool.into_registration().is_none());
     }
 
-    // ── is_retriable_transport_error tests ───────────────────────────
+    // is_retriable_transport_error tests
 
     #[test]
     fn test_is_retriable_transport_closed() {
@@ -6289,7 +6295,7 @@ mod tests {
         );
     }
 
-    // ── new_http stores http_config tests ────────────────────────────
+    // new_http stores http_config tests
 
     #[test]
     fn test_new_http_stores_http_config() {
@@ -6314,7 +6320,7 @@ mod tests {
         assert!(client.http_config.is_none());
     }
 
-    // ── http_headers_match / refresh_managed_clients guard tests ─────
+    // http_headers_match / refresh_managed_clients guard tests
 
     #[test]
     fn http_headers_match_compares_full_set_order_insensitively() {
@@ -6453,7 +6459,7 @@ mod tests {
         assert!(after.http_headers_match(&fresh));
     }
 
-    // ── reset_transport tests ────────────────────────────────────────
+    // reset_transport tests
 
     #[tokio::test]
     async fn test_reset_transport_succeeds_for_http_client() {
@@ -6640,8 +6646,10 @@ mod tests {
         // its duplex ends. The next `call_tool` therefore observes a real
         // `ServiceError::TransportClosed`.
         async fn dead_service() -> McpService {
-            let (client_read, server_write) = tokio::io::duplex(64 * 1024); // server -> client
-            let (server_read, client_write) = tokio::io::duplex(64 * 1024); // client -> server
+            // server -> client
+            let (client_read, server_write) = tokio::io::duplex(64 * 1024);
+            // client -> server
+            let (server_read, client_write) = tokio::io::duplex(64 * 1024);
             tokio::spawn(async move {
                 let mut reader = BufReader::new(server_read);
                 let mut writer = server_write;
@@ -6915,7 +6923,8 @@ mod tests {
             expose_image_base64: Some(true),
             ..Default::default()
         };
-        let meta = McpServerMetaConfig::default(); // expose_image_base64 = None
+        // expose_image_base64 = None
+        let meta = McpServerMetaConfig::default();
         assert!(McpClient::load_expose_image_base64(
             Some(&overrides),
             Some(&meta)
@@ -6946,10 +6955,8 @@ mod tests {
         assert!(!client_default.expose_image_base64());
     }
 
-    // ------------------------------------------------------------------
     // ensure_initialized single-flight + Notify behavior (regression
     // suite for the "MCP client already initializing" doom-loop).
-    // ------------------------------------------------------------------
 
     /// `ensure_initialized` on a stub (no transport) must surface a
     /// clear, actionable configuration error — never the legacy
@@ -7183,7 +7190,7 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
         match &*client.state.lock().await {
-            ClientState::Pending(_) => {} // expected
+            ClientState::Pending(_) => {}
             other => panic!(
                 "expected Pending after holder abort + drop guard, found {}",
                 state_label(other)
@@ -7299,7 +7306,7 @@ mod tests {
         }
     }
 
-    // -- is_healthy / state_kind --------------------------------------
+    // is_healthy / state_kind
     //
     // These tests cover the cheap, non-blocking predicate. They focus
     // on the state-machine inspection: any
@@ -7395,7 +7402,7 @@ mod tests {
         );
     }
 
-    // -- KigiClientHandler --------------------------------------
+    // KigiClientHandler
     //
     // The handler's notification routing is the only behavior worth
     // unit-testing here; `get_info` is a literal `info.clone()` and

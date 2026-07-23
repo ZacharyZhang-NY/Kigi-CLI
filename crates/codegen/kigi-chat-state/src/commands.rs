@@ -37,7 +37,7 @@ impl std::error::Error for RepairHistoryBlocked {}
 
 /// Commands sent to the ChatStateActor via mpsc channel.
 pub enum ChatStateCommand {
-    // ═══ Mutations (fire-and-forget) ═══
+    // Mutations (fire-and-forget)
     /// Push a user message into the conversation.
     PushUserMessage { item: ConversationItem },
 
@@ -64,7 +64,7 @@ pub enum ChatStateCommand {
     RecordTokenUsage { total_tokens: u64 },
 
     /// Stash the per-turn `TokenUsage` from the most recent model response.
-    /// Overwrites any previously stashed value.
+    /// Overwrites any earlier stashed value.
     RecordLastTurnUsage { usage: TokenUsage },
 
     RecordModelCallUsage {
@@ -176,7 +176,7 @@ pub enum ChatStateCommand {
     /// Repair dangling tool calls after a harness-initiated halt.
     RepairDanglingAfterHarnessHalt { class: &'static str },
 
-    // ═══ Queries (request/response via oneshot) ═══
+    // Queries (request/response via oneshot)
     /// Build a ConversationRequest ready to send to the API.
     /// Clones the conversation, prunes old tool results, repairs dangling
     /// tool calls, injects memory reminder, and assembles the request.
@@ -280,7 +280,7 @@ pub enum ChatStateCommand {
         reply: oneshot::Sender<Vec<Vec<ConversationItem>>>,
     },
 
-    // ═══ Narrow targeted queries (avoid full-conversation clone) ═══
+    // Narrow targeted queries (avoid full-conversation clone)
     /// Get the number of items in the conversation.
     /// Cheaper than `GetConversation` when only the length is needed.
     GetConversationLen { reply: oneshot::Sender<usize> },

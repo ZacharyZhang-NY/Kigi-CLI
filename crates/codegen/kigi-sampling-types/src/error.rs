@@ -298,8 +298,8 @@ impl From<serde_json::Error> for SamplingError {
 /// This is the only error format the Kimi chat/completions endpoint emits —
 /// the same shape the official client parses via the OpenAI SDK
 /// (kimi-cli packages/kosong/src/kosong/chat_provider/openai_common.py:83-87
-/// maps `openai.APIStatusError` → status + message). The old xAI proxy's
-/// flat `{"code": "...", "error": "..."}` format was removed with the proxy.
+/// maps `openai.APIStatusError` → status + message). The old xAI proxy and
+/// its flat `{"code": "...", "error": "..."}` format are gone.
 #[derive(Debug, Deserialize)]
 struct ErrorResponse {
     error: ErrorBody,
@@ -452,7 +452,7 @@ mod tests {
 
     #[test]
     fn event_stream_error_is_retryable() {
-        // Verify the existing contract hasn't changed — EventStreamError is retryable.
+        // Verify the existing contract still holds — EventStreamError is retryable.
         let err = SamplingError::EventStreamError("connection reset".into());
         assert!(err.is_retryable());
     }

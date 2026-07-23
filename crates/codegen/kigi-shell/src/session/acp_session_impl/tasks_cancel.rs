@@ -115,7 +115,6 @@ impl<T> TaskSlot<T> {
         }
     }
 
-    /// Abort any pending task and store the new one.
     pub(crate) fn arm(&self, handle: tokio::task::JoinHandle<T>) {
         if let Some(old) = self.handle.take() {
             old.abort();
@@ -123,12 +122,10 @@ impl<T> TaskSlot<T> {
         self.handle.set(Some(handle));
     }
 
-    /// Take the pending task handle (e.g. to await its result).
     pub(crate) fn take(&self) -> Option<tokio::task::JoinHandle<T>> {
         self.handle.take()
     }
 
-    /// Abort and drop any pending task (e.g. because a new turn started).
     pub(crate) fn cancel(&self) {
         if let Some(old) = self.handle.take() {
             old.abort();
@@ -349,10 +346,7 @@ impl SessionActor {
             //   user's next queued prompt) and rebroadcasts `kigi/queue/changed`.
             //   The cancelling client does not pull any prompt back into its
             //   input — the server queue is the single source of truth for what
-            //   runs next. Previously every cancel did `std::mem::take`,
-            //   discarding the whole queue server-side; because no broadcast
-            //   followed, clients kept a stale mirror and the queue only visibly
-            //   vanished on the next prompt's (now-empty) broadcast.
+            //   runs next.
             //
             // The in-flight turn is always `pending_inputs.front()`
             // (`maybe_start_running_task` promotes the front WITHOUT popping it;
@@ -580,11 +574,10 @@ impl SessionActor {
                     total_tokens,
                     turn_snapshot: None,
                     completion_kind: PromptCompletionKind::Cancelled {
-                        // Previously hard-coded `None`, which dropped the
-                        // category on the abort path so `streaming_partial.json`
-                        // recorded a bare `"cancelled"`. Carry `MidTurnAbort`
-                        // so the partial's `reason` and any downstream consumer
-                        // match what `emit_turn_ended` wrote to `events.jsonl`.
+                        // Carry `MidTurnAbort` so the partial's `reason` and any
+                        // downstream consumer match what `emit_turn_ended` wrote
+                        // to `events.jsonl`; `None` here would drop the category
+                        // and record a bare `"cancelled"`.
                         category: Some(crate::session::events::CancellationCategory::MidTurnAbort),
                         // Thread the trigger on the running turn only (idx 0);
                         // MvpAgent stamps it on the `PromptResponse` `_meta`.

@@ -10,18 +10,14 @@ pub(super) fn route_bg_task_stdout(
 ) -> bool {
     let tc_id = tcu.tool_call_id.0.to_string();
 
-    // Check if this tool_call_id maps to a bg task
     let task_id = match session.bg_tool_call_to_task.get(&tc_id) {
         Some(tid) => tid.clone(),
         None => return false,
     };
 
-    // Extract stdout from the raw_output BashOutput
     if let Some(ref raw_output) = tcu.fields.raw_output {
         // The shell sends full cumulative output buffer — just overwrite.
-        // Check for BashOutput type
         if raw_output.get("type").and_then(|v| v.as_str()) == Some("Bash") {
-            // Try output_for_prompt first (pre-stripped string)
             let stdout =
                 if let Some(s) = raw_output.get("output_for_prompt").and_then(|v| v.as_str()) {
                     s.to_string()
@@ -33,7 +29,8 @@ pub(super) fn route_bg_task_stdout(
                         .collect();
                     String::from_utf8_lossy(&bytes).into_owned()
                 } else {
-                    return true; // Consumed but no extractable output
+                    // Consumed but no extractable output
+                    return true;
                 };
 
             // Capture the shell-side `truncated` flag — once true, it stays
@@ -59,7 +56,8 @@ pub(super) fn route_bg_task_stdout(
         }
     }
 
-    true // Consumed — don't pass to tracker
+    // Consumed — don't pass to tracker
+    true
 }
 
 /// Handle `kigi/task_backgrounded` — a bash command transitioned to background.
@@ -72,13 +70,11 @@ pub(super) fn route_bg_task_stdout(
 /// entry's running state is cleared. Otherwise a fresh `BgTask` block
 /// is pushed.
 pub(super) fn handle_task_backgrounded(notif: &acp::ExtNotification, app: &mut AppView) -> bool {
-    // Parse the SessionNotification envelope
     let Ok(session_notif) = serde_json::from_str::<SessionNotification>(notif.params.get()) else {
         tracing::warn!("Failed to parse kigi/task_backgrounded");
         return false;
     };
 
-    // Extract TaskBackgrounded fields
     let (tool_call_id, task_id, command, cwd, output_file, monitor_description, notif_description) =
         match session_notif.update {
             XaiSessionUpdate::TaskBackgrounded {
@@ -153,8 +149,8 @@ pub(super) fn handle_task_backgrounded(notif: &acp::ExtNotification, app: &mut A
         .or_else(|| non_blank(notif_description))
         .or_else(|| non_blank(deferred_description));
 
-    // Create central bg task state (description may still be filled from the
-    // Execute block on demotion before we insert into the map).
+    // description stays None here; it may still be filled from the Execute
+    // block on demotion before we insert into the map.
     let mut bg_task = BgTaskState {
         task_id: task_id.clone(),
         tool_call_id: tool_call_id.clone(),
@@ -503,7 +499,7 @@ pub(super) fn handle_git_head_changed(notif: &acp::ExtNotification, app: &mut Ap
         return false;
     };
 
-    // Find the agent by ACP session id (not local AgentId) and update its git display cache
+    // Match by ACP session id, not local AgentId.
     if let Some(agent) = app.agents.values_mut().find(|a| {
         a.session
             .session_id
@@ -549,7 +545,6 @@ pub(super) fn handle_git_head_changed(notif: &acp::ExtNotification, app: &mut Ap
 }
 
 pub(super) fn handle_task_completed(notif: &acp::ExtNotification, app: &mut AppView) -> bool {
-    // The payload is a SessionNotification wrapping TaskCompleted { task_snapshot }
     let Ok(session_notif) = serde_json::from_str::<SessionNotification>(notif.params.get()) else {
         tracing::warn!("Failed to parse kigi/task_completed");
         return false;
@@ -579,7 +574,6 @@ pub(super) fn handle_task_completed(notif: &acp::ExtNotification, app: &mut AppV
         "Background task completed"
     );
 
-    // Determine success once, reused for both bg_task status and scrollback block.
     let success = exit_code == Some(0) || (exit_code.is_none() && signal.is_none());
 
     // Synthetic completion emitted by the agent's cold-load reconciliation
@@ -594,7 +588,6 @@ pub(super) fn handle_task_completed(notif: &acp::ExtNotification, app: &mut AppV
         return false;
     };
 
-    // Compute elapsed duration from the bg task state (if we have it).
     // Prefer the human description for "Task completed/failed: …" labels
     // (same as "Task started"), falling back to the raw command only when
     // no description was supplied.

@@ -23,10 +23,8 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 
-/// Maximum time (ms) between consecutive clicks to count as a multi-click.
 const MULTI_CLICK_TIMEOUT_MS: u128 = 300;
 
-/// Maximum selected text length shown in event log before truncating.
 const MAX_DISPLAY_TEXT_LEN: usize = 60;
 
 /// Playground highlight TTL (`hold`/`word_select` → 0; flash → 500ms for visibility).
@@ -305,16 +303,21 @@ fn main() -> io::Result<()> {
 fn draw(f: &mut ratatui::Frame, app: &mut App) {
     let area = f.area();
     let chunks = Layout::vertical([
-        Constraint::Length(5),  // info + help
-        Constraint::Length(3),  // last mouse event
-        Constraint::Length(3),  // selection hit test
-        Constraint::Length(3),  // persistent selection state
-        Constraint::Length(14), // scrollback
-        Constraint::Min(1),     // event log
+        // info + help
+        Constraint::Length(5),
+        // last mouse event
+        Constraint::Length(3),
+        // selection hit test
+        Constraint::Length(3),
+        // persistent selection state
+        Constraint::Length(3),
+        // scrollback
+        Constraint::Length(14),
+        // event log
+        Constraint::Min(1),
     ])
     .split(area);
 
-    // -- Info / help panel --
     let dbl_click = double_click_action_label();
     let info = Paragraph::new(vec![
         Line::from(Span::styled(
@@ -329,7 +332,6 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
     .block(Block::default().borders(Borders::ALL).title("info"));
     f.render_widget(info, chunks[0]);
 
-    // -- Scrollback render --
     let scrollback_area = chunks[4];
     app.scrollback
         .prepare_layout(scrollback_area.width, scrollback_area.height);
@@ -357,7 +359,6 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
         }
     }
 
-    // Render selection overlays.
     if let Some(sel) = &sb_output.selection_box {
         sel.render(f.buffer_mut());
     }
@@ -365,7 +366,6 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
         render_persistent_selection_overlay(&app.last_selection_model, ps, None, f.buffer_mut());
     }
 
-    // -- Last mouse event panel --
     let last_mouse = app.last_mouse.as_deref().unwrap_or("(no mouse event yet)");
     let last_mouse_para = Paragraph::new(last_mouse).wrap(Wrap { trim: false }).block(
         Block::default()
@@ -374,7 +374,6 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
     );
     f.render_widget(last_mouse_para, chunks[1]);
 
-    // -- Hit test panel --
     let hit = app.last_mouse.as_ref().and_then(|mouse| {
         let parts: Vec<&str> = mouse.split_whitespace().collect();
         let col = parts
@@ -420,7 +419,6 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
     );
     f.render_widget(hit_para, chunks[2]);
 
-    // -- Persistent selection state panel --
     let sel_text = match &app.persistent_selection {
         Some(ps) => {
             let origin = match ps.origin {
@@ -448,7 +446,6 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
     );
     f.render_widget(sel_para, chunks[3]);
 
-    // -- Event log --
     let lines: Vec<Line<'static>> = app.events.iter().map(|e| Line::from(e.clone())).collect();
     let log = Paragraph::new(lines)
         .wrap(Wrap { trim: false })

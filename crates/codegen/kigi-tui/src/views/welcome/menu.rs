@@ -73,9 +73,11 @@ pub fn render_menu(
         let mut off = scroll.min(total - visible);
         if let Some(sel) = selected {
             if sel < off {
-                off = sel; // scroll up just enough
+                // scroll up just enough
+                off = sel;
             } else if sel >= off + visible {
-                off = sel + 1 - visible; // scroll down just enough
+                // scroll down just enough
+                off = sel + 1 - visible;
             }
         }
         off

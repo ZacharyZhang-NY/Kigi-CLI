@@ -30,16 +30,8 @@ use kigi_tool_types::{SubagentCompletedOutput, SubagentIsolationMode, TaskToolIn
 /// the first subagent is depth 1. Subagents cannot spawn further subagents.
 pub const MAX_SUBAGENT_DEPTH: u32 = 1;
 
-// ───────────────────────────────────────────────────────────────────────────
-// Tool implementation
-// ───────────────────────────────────────────────────────────────────────────
-
 #[derive(Debug, Default)]
 pub struct TaskTool;
-
-// ───────────────────────────────────────────────────────────────────────────
-// Tests
-// ───────────────────────────────────────────────────────────────────────────
 
 impl crate::types::tool_metadata::ToolMetadata for TaskTool {
     fn kind(&self) -> ToolKind {
@@ -117,7 +109,6 @@ impl kigi_tool_runtime::Tool for TaskTool {
         use crate::types::tool_metadata::shared_resources;
         let resources = shared_resources(&ctx)?;
 
-        // 1. Depth check
         let (depth, backend, model_validator, parent_session_id, parent_prompt_id) = {
             let res = resources.lock().await;
 
@@ -201,7 +192,6 @@ impl kigi_tool_runtime::Tool for TaskTool {
                      but not both.",
                 ));
             }
-            // Non-existent path alongside worktree — clear it so worktree wins.
             tracing::debug!(
                 cwd = %cwd.as_deref().unwrap_or(""),
                 "clearing non-existent cwd path because isolation=worktree is set"
@@ -211,7 +201,6 @@ impl kigi_tool_runtime::Tool for TaskTool {
             cwd
         };
 
-        // Validate that cwd points to an existing directory (skip when resuming).
         if let Some(ref cwd_path) = cwd
             && resume_from.is_none()
         {
@@ -226,8 +215,8 @@ impl kigi_tool_runtime::Tool for TaskTool {
             }
         }
 
-        // 2. Eager validation — catch unknown / disabled / not-allowed
-        //    types before the fire-and-forget background spawn.
+        // Eager validation — catch unknown / disabled / not-allowed
+        // types before the fire-and-forget background spawn.
         match backend
             .backend()
             .validate_type(&input.subagent_type, &parent_session_id)
@@ -284,7 +273,6 @@ impl kigi_tool_runtime::Tool for TaskTool {
             }
         }
 
-        // 3. Build the subagent request
         let id = input
             .task_id
             .clone()
@@ -321,7 +309,7 @@ impl kigi_tool_runtime::Tool for TaskTool {
             result_tx,
         };
 
-        // 4. Background mode: fire-and-forget via backend.spawn().
+        // Background mode: fire-and-forget via backend.spawn().
         // Coordinator stores the result for TaskOutputTool polling.
         // Both transport errors and coordinator rejections are logged so
         // late failures (worktree creation, etc.) remain visible.
@@ -368,10 +356,9 @@ impl kigi_tool_runtime::Tool for TaskTool {
             ));
         }
 
-        // 5. Blocking mode (default): spawn via backend and await result
         let result = backend.backend().spawn(request).await?;
 
-        // 5b. The await budget expired and the coordinator auto-backgrounded the
+        // The await budget expired and the coordinator auto-backgrounded the
         // still-running child — return a task_id to poll, like the background
         // branch above (the result arrives via auto-wake or a later poll).
         if result.backgrounded {
@@ -397,7 +384,6 @@ impl kigi_tool_runtime::Tool for TaskTool {
             ));
         }
 
-        // 6. Return result
         if result.success {
             let resume_from_hint = result.subagent_id.clone();
             let persona_hint: Option<String> = None;
@@ -498,7 +484,7 @@ mod tests {
         let (backend, _rx) = make_backend();
         let mut resources = Resources::new();
         resources.insert(backend);
-        resources.insert(SubagentDepthCounter(MAX_SUBAGENT_DEPTH)); // at limit
+        resources.insert(SubagentDepthCounter(MAX_SUBAGENT_DEPTH));
         resources.insert(SessionIdResource("test-session".to_string()));
         resources.insert(CurrentPromptIdResource("prompt-123".to_string()));
 
@@ -531,7 +517,7 @@ mod tests {
         let (backend, _rx) = make_backend();
         let mut resources = Resources::new();
         resources.insert(backend);
-        resources.insert(SubagentDepthCounter(1)); // first-level subagent
+        resources.insert(SubagentDepthCounter(1));
         resources.insert(SessionIdResource("child-session".to_string()));
         resources.insert(CurrentPromptIdResource("prompt-456".to_string()));
 
@@ -604,7 +590,6 @@ mod tests {
         let tool = TaskTool;
         let shared = resources.into_shared();
 
-        // Spawn a task that will handle the request
         let handle = tokio::spawn(async move {
             let request = unwrap_spawn(rx.recv().await.unwrap());
             assert_eq!(request.subagent_type, "explore");
@@ -663,7 +648,7 @@ mod tests {
         let (backend, mut rx) = make_backend();
         let mut resources = Resources::new();
         resources.insert(backend);
-        resources.insert(SubagentDepthCounter(0)); // top-level session
+        resources.insert(SubagentDepthCounter(0));
         resources.insert(SessionIdResource("parent-session".to_string()));
         resources.insert(CurrentPromptIdResource("prompt-123".to_string()));
 
@@ -719,7 +704,6 @@ mod tests {
         let tool = TaskTool;
         let shared = resources.into_shared();
 
-        // Spawn a task that drops the result_tx without sending
         let handle = tokio::spawn(async move {
             let request = unwrap_spawn(rx.recv().await.unwrap());
             drop(request.result_tx);
@@ -771,7 +755,7 @@ mod tests {
         let result = kigi_tool_runtime::Tool::run(
             &TaskTool,
             test_ctx(resources.into_shared()),
-            task_input("general-purpose", false), // blocking mode
+            task_input("general-purpose", false),
         )
         .await
         .expect("auto-backgrounded blocking spawn returns Ok");
@@ -1135,8 +1119,6 @@ mod tests {
         assert!(capture_rx.try_recv().is_err(), "must fire exactly once");
     }
 
-    // ── Runtime overrides serde tests ─────────────────
-
     #[test]
     fn runtime_overrides_parse() {
         let input: TaskToolInput = serde_json::from_str(
@@ -1274,8 +1256,6 @@ mod tests {
         }
     }
 
-    // -- Isolation mode tests --
-
     #[test]
     fn isolation_defaults_to_none() {
         let input: TaskToolInput =
@@ -1336,8 +1316,6 @@ mod tests {
             assert_eq!(serde_json::to_value(mode).unwrap(), expected, "{mode:?}");
         }
     }
-
-    // -- Capability mode enforcement tests --
 
     fn tc(id: &str, kind: crate::types::tool::ToolKind) -> crate::registry::types::ToolConfig {
         let mut c = crate::registry::types::ToolConfig::from_id(id);
@@ -1443,8 +1421,6 @@ mod tests {
             "tools without kind preserved"
         );
     }
-
-    // ── resume_from tests ────────────────────────────────────────────
 
     #[test]
     fn task_tool_input_has_no_fork_context_field() {
@@ -1681,8 +1657,6 @@ mod tests {
             }
         }
     }
-
-    // ── cwd tests ────────────────────────────────────────────────────
 
     #[test]
     fn cwd_defaults_to_none() {
@@ -2269,8 +2243,6 @@ mod tests {
             other => panic!("Expected SubagentCompleted, got {:?}", other),
         }
     }
-
-    // ── model override tests ─────────────────────────────────────
 
     #[tokio::test]
     async fn model_threads_to_runtime_overrides() {

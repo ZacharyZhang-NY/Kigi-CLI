@@ -215,7 +215,8 @@ mod tests {
             called: Default::default(),
             outcome: ok_diagram,
         };
-        let src = "12345678"; // exactly 8 bytes
+        // exactly 8 bytes
+        let src = "12345678";
         let limits = RenderLimits {
             max_source_bytes: 8,
         };

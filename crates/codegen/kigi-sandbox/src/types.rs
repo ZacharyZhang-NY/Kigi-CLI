@@ -4,14 +4,13 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// A recorded sandbox event for telemetry and debugging.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SandboxEvent {
     pub timestamp: DateTime<Utc>,
     pub event_type: SandboxEventType,
     pub profile: String,
 
-    // Context fields — present on ProfileApplied/ApplyFailed
+    // Only ProfileApplied and ApplyFailed carry these.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -27,7 +26,6 @@ pub struct SandboxEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deny_paths: Option<Vec<String>>,
 
-    // Violation/error fields
     #[serde(skip_serializing_if = "Option::is_none")]
     pub operation: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -61,7 +59,6 @@ impl SandboxEvent {
         }
     }
 
-    /// Create a "profile applied" event with full context.
     pub fn profile_applied(
         profile: &str,
         workspace: &std::path::Path,
@@ -108,7 +105,6 @@ impl SandboxEvent {
         event
     }
 
-    /// Create an "apply failed" event with context.
     pub fn apply_failed(
         profile: &str,
         workspace: &std::path::Path,
@@ -130,7 +126,6 @@ impl SandboxEvent {
         event
     }
 
-    /// Create a filesystem violation event.
     pub fn fs_violation(profile: &str, target: &str, operation: &str) -> Self {
         let mut event = Self::base(SandboxEventType::FsViolation, profile);
         event.operation = Some(operation.to_string());
@@ -138,7 +133,6 @@ impl SandboxEvent {
         event
     }
 
-    /// Create a network violation event.
     pub fn net_violation(profile: &str, target: &str) -> Self {
         let mut event = Self::base(SandboxEventType::NetViolation, profile);
         event.operation = Some("connect".to_string());
@@ -157,7 +151,6 @@ pub enum SandboxEventType {
     BypassDenied,
 }
 
-/// Counters for sandbox activity, used for telemetry dashboards.
 #[derive(Debug, Default)]
 pub struct SandboxMetrics {
     pub fs_violations: AtomicU64,

@@ -1,4 +1,3 @@
-// claude_import_state.rs
 // Tracks what Claude settings have been imported/dismissed so we don't re-prompt.
 //
 // State is persisted to `~/.kigi/claude_import_state.json`.
@@ -13,8 +12,6 @@ use sha2::{Digest, Sha256};
 use tracing::{debug, warn};
 
 use kigi_workspace::permission::claude_settings::find_claude_settings_paths;
-
-// Types
 
 /// Persistent import state, loaded from / saved to `~/.kigi/claude_import_state.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,14 +45,11 @@ impl Default for ImportState {
     }
 }
 
-// Persistence
-
-/// Path to the import state file.
 fn state_path() -> PathBuf {
     crate::util::kigi_home::kigi_home().join("claude_import_state.json")
 }
 
-/// Load the import state from disk. Returns default if missing or unreadable.
+/// Returns default if the state file is missing or unreadable.
 pub fn load_import_state() -> ImportState {
     let path = state_path();
     match std::fs::read_to_string(&path) {
@@ -79,7 +73,7 @@ pub fn load_import_state() -> ImportState {
     }
 }
 
-/// Save the import state to disk (atomic write via tmp + rename).
+/// Atomic write via a tmp file + rename.
 pub fn save_import_state(state: &ImportState) -> std::io::Result<()> {
     let path = state_path();
     if let Some(parent) = path.parent() {
@@ -94,8 +88,6 @@ pub fn save_import_state(state: &ImportState) -> std::io::Result<()> {
     Ok(())
 }
 
-// Hash Computation
-
 /// Compute a SHA-256 hash over the contents of all Claude settings files for a
 /// given set of paths. Files that don't exist or can't be read are skipped.
 ///
@@ -107,7 +99,6 @@ fn compute_settings_hash(paths: &[PathBuf]) -> String {
         .filter_map(|p| std::fs::read(p).ok().map(|content| (p, content)))
         .collect();
 
-    // Sort by path for determinism.
     existing.sort_by(|a, b| a.0.cmp(b.0));
 
     let mut hasher = Sha256::new();
@@ -142,8 +133,6 @@ fn compute_global_hash() -> (String, Vec<PathBuf>) {
 /// Uses `dirs::home_dir()` to match the home directory resolution used by
 /// the scanner in `claude_import.rs`.
 fn compute_project_hash(cwd: &Path) -> (String, Vec<PathBuf>) {
-    // Use find_claude_settings_paths but filter to only project-level paths
-    // (exclude global ~/.claude/ paths).
     let all_paths = find_claude_settings_paths(cwd);
     let home = dirs::home_dir();
 
@@ -179,8 +168,6 @@ fn compute_project_hash(cwd: &Path) -> (String, Vec<PathBuf>) {
     (hash, all)
 }
 
-// Change Detection
-
 /// Check if any Claude settings files have changed since the last import/dismiss.
 ///
 /// Returns `true` if:
@@ -190,7 +177,6 @@ fn compute_project_hash(cwd: &Path) -> (String, Vec<PathBuf>) {
 pub fn has_new_changes(cwd: &Path) -> bool {
     let state = load_import_state();
 
-    // Check global scope.
     let (global_hash, global_paths) = compute_global_hash();
     let global_files_exist = global_paths.iter().any(|p| p.exists());
     if global_files_exist {
@@ -211,7 +197,6 @@ pub fn has_new_changes(cwd: &Path) -> bool {
         }
     }
 
-    // Check project scope.
     let (project_hash, project_paths) = compute_project_hash(cwd);
     let project_files_exist = project_paths.iter().any(|p| p.exists());
     if project_files_exist {
@@ -235,8 +220,6 @@ pub fn has_new_changes(cwd: &Path) -> bool {
 
     false
 }
-
-// State Updates
 
 fn now_rfc3339() -> String {
     chrono::Utc::now().to_rfc3339()
@@ -287,12 +270,10 @@ mod tests {
         std::fs::write(&f1, r#"{"allow": ["Bash"]}"#).unwrap();
         std::fs::write(&f2, r#"{"env": {"FOO": "bar"}}"#).unwrap();
 
-        // Same order.
         let h1 = compute_settings_hash(&[f1.clone(), f2.clone()]);
         let h2 = compute_settings_hash(&[f1.clone(), f2.clone()]);
         assert_eq!(h1, h2, "same order should produce same hash");
 
-        // Reversed order should also produce the same hash (sorted internally).
         let h3 = compute_settings_hash(&[f2.clone(), f1.clone()]);
         assert_eq!(
             h1, h3,
@@ -328,7 +309,6 @@ mod tests {
 
     #[test]
     fn compute_settings_hash_empty_input() {
-        // No paths at all should produce a deterministic hash.
         let h1 = compute_settings_hash(&[]);
         let h2 = compute_settings_hash(&[]);
         assert_eq!(h1, h2, "empty input should produce same hash");

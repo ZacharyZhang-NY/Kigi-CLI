@@ -3,7 +3,7 @@
 //! Provides escape-sequence helpers for rendering images inside the
 //! existing preview overlay. The text-fallback path in
 //! [`crate::render::image_overlay`] remains the primary preview; this
-//! module adds pixel-level rendering for supported terminals.
+//! module provides pixel-level rendering for supported terminals.
 //!
 //! # Supported protocols
 //!
@@ -27,9 +27,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::{TerminalName, terminal_context};
 
-// -------------------------------------------------------------------------
 // Graphics protocol detection
-// -------------------------------------------------------------------------
 
 /// Graphics protocol supported by the current terminal.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -187,9 +185,7 @@ pub fn protocol_for_brand(brand: TerminalName, is_windows: bool) -> GraphicsProt
     }
 }
 
-// -------------------------------------------------------------------------
 // Kitty graphics protocol
-// -------------------------------------------------------------------------
 
 /// Shared placement ID; every renderer must coordinate through [`super::overlay`].
 pub(super) const KITTY_PLACEMENT_ID: u32 = 1;
@@ -434,9 +430,7 @@ pub fn clear_kitty_image(image_id: u32) -> String {
     format!("\x1b_Ga=d,d=i,i={},q=2\x1b\\", image_id)
 }
 
-// -------------------------------------------------------------------------
 // iTerm2 inline images protocol
-// -------------------------------------------------------------------------
 
 /// Build an iTerm2 inline image escape sequence.
 ///
@@ -452,9 +446,7 @@ pub fn render_iterm2_image(image_data: &[u8], cols: u16, rows: u16) -> String {
     )
 }
 
-// -------------------------------------------------------------------------
 // Shared overlay helpers
-// -------------------------------------------------------------------------
 
 /// Build the full escape-sequence string to render image data at a cell
 /// position using the provided graphics protocol.
@@ -506,7 +498,8 @@ pub(super) fn build_overlay_image_escapes_for_protocol(
                 KITTY_PLACEMENT_ID,
                 cols,
                 rows,
-                1, // above text (modal overlays)
+                // above text (modal overlays)
+                1,
             ));
         }
         GraphicsProtocol::ITerm2 => {
@@ -643,9 +636,7 @@ pub fn fit_image_to_cells(img_w: u32, img_h: u32, max_cols: u16, max_rows: u16) 
     }
 }
 
-// =========================================================================
 // Tests
-// =========================================================================
 
 #[cfg(test)]
 mod tests;

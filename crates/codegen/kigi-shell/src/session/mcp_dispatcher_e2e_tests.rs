@@ -52,9 +52,7 @@ struct E2eActions {
     pushes: RefCell<Vec<McpServerStatusPayload>>,
     /// Servers configured as HTTP/SSE (for `is_http_server_configured`).
     http_configured: RefCell<HashSet<String>>,
-    /// Scripted `reset_http_client` outcomes, per server.
     reset_outcomes: RefCell<HashMap<String, VecDeque<Result<(), String>>>>,
-    /// Recorded `reset_http_client` calls.
     reset_calls: RefCell<Vec<String>>,
     shutdown: SharedShutdownState,
     /// Shared `McpState` so a scripted-`Ok` `respawn_stdio` can mirror
@@ -212,7 +210,6 @@ async fn settle() {
     }
 }
 
-/// Pre-populate `owned_clients` with stub clients for `names`.
 async fn seed_clients(state: &Arc<TokioMutex<McpState>>, names: &[&str]) {
     let mut guard = state.lock().await;
     for n in names {
@@ -285,7 +282,8 @@ async fn e2e_crash_recovers_drops_client_then_restart_succeeds() {
 
             send_transport_closed(&tx, &mcp_state, "svr").await;
             tokio::task::yield_now().await;
-            tokio::time::advance(PAST_WINDOW).await; // close window: drop + flush + schedule
+            // Close window: drop + flush + schedule.
+            tokio::time::advance(PAST_WINDOW).await;
             settle().await;
 
             // After the window closes (but before the backoff fires) the
@@ -295,7 +293,8 @@ async fn e2e_crash_recovers_drops_client_then_restart_succeeds() {
                 "TransportClosed must drop the dead client from owned_clients",
             );
 
-            tokio::time::advance(Duration::from_secs(1)).await; // BACKOFF[0]
+            // BACKOFF[0].
+            tokio::time::advance(Duration::from_secs(1)).await;
             settle().await;
 
             // The scripted-Ok respawn mirrors production by re-inserting
@@ -711,7 +710,8 @@ async fn e2e_server_disabled_mid_backoff_emits_disabled_no_respawn() {
 
             send_transport_closed(&tx, &mcp_state, "svr").await;
             tokio::task::yield_now().await;
-            tokio::time::advance(PAST_WINDOW).await; // schedule restart
+            // Schedule restart.
+            tokio::time::advance(PAST_WINDOW).await;
             settle().await;
 
             // Toggle the server off BEFORE the first 1s backoff fires.
@@ -853,7 +853,8 @@ async fn e2e_flapping_server_restarts_on_each_crash_cycle() {
                 // Each cycle: client is up, then the transport dies.
                 send_transport_closed(&tx, &mcp_state, "flappy").await;
                 tokio::task::yield_now().await;
-                tokio::time::advance(PAST_WINDOW).await; // drop + flush + schedule
+                // Drop + flush + schedule.
+                tokio::time::advance(PAST_WINDOW).await;
                 settle().await;
 
                 assert!(
@@ -865,7 +866,8 @@ async fn e2e_flapping_server_restarts_on_each_crash_cycle() {
                     "cycle {cycle}: a crash is never an intentional teardown",
                 );
 
-                tokio::time::advance(Duration::from_secs(1)).await; // BACKOFF[0] → respawn
+                // BACKOFF[0] → respawn.
+                tokio::time::advance(Duration::from_secs(1)).await;
                 settle().await;
 
                 assert_eq!(
@@ -1013,7 +1015,8 @@ async fn e2e_auto_restart_disabled_drops_client_but_schedules_nothing() {
 
             send_transport_closed(&tx, &mcp_state, "svr").await;
             tokio::task::yield_now().await;
-            tokio::time::advance(PAST_WINDOW).await; // drop + flush, no schedule
+            // Drop + flush, no schedule.
+            tokio::time::advance(PAST_WINDOW).await;
             settle().await;
             // Advance well past the first backoff to prove nothing was
             // scheduled to fire later.
@@ -1181,7 +1184,8 @@ async fn e2e_http_transport_closed_recovers_in_place_not_evicted() {
 
             send_transport_closed(&tx, &mcp_state, "http-mcp-server").await;
             tokio::task::yield_now().await;
-            tokio::time::advance(PAST_WINDOW).await; // close window
+            // Close window.
+            tokio::time::advance(PAST_WINDOW).await;
             settle().await;
 
             assert!(

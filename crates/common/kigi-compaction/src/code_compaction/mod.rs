@@ -9,17 +9,6 @@
 //! [`intra_compaction`](crate::intra_compaction) (tail-keep, per-step) and
 //! [`inter_compaction`](crate::inter_compaction) (chunked, between-turn).
 //!
-//! Layout (mirroring
-//! [`intra_compaction`](crate::intra_compaction) /
-//! [`inter_compaction`](crate::inter_compaction)):
-//!
-//! - **Policy & content**: [`prompt`] (summarization prompt), [`summary`]
-//!   (summary cleaning + carrier), [`failure`] (deterministic-vs-transient
-//!   classification), [`config`] (tunables + trigger/seed defaults).
-//! - **Algorithm**: [`assemble`] (full-replace history rebuild).
-//! - **Orchestration**: [`compact`]
-//!   (`build prompt → sample → clean → assemble`).
-//!
 //! Host-specific concerns (triggers, transport, persistence/replay, state
 //! commit, metrics observer) stay in the product host (for example
 //! `kigi-shell`).

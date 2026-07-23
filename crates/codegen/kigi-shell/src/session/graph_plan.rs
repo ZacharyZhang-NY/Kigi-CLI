@@ -143,7 +143,6 @@ fn fnv1a32_hex(s: &str) -> String {
     format!("{hash:08x}")
 }
 
-/// Canonical node id for a planner slug.
 pub(crate) fn node_id_for_slug(slug: &str) -> String {
     format!("gn-{}", fnv1a32_hex(slug))
 }
@@ -1142,7 +1141,8 @@ mod tests {
     #[test]
     fn optimizer_rejects_touching_immutable_nodes() {
         let existing = opt_state();
-        let a = node_id_for_slug("a"); // Achieved — immutable
+        // Achieved — immutable.
+        let a = node_id_for_slug("a");
         for json in [
             serde_json::json!({"ops": [{"op": "remove_dep", "node": a.clone(), "dep": "x"}]}),
             serde_json::json!({"ops": [{"op": "reorder", "order": [a.clone()]}]}),

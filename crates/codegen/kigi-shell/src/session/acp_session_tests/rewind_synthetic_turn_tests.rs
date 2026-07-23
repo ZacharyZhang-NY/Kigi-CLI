@@ -67,7 +67,6 @@ async fn run_rewind_over_synthetic_turn(mark_turn_starts: bool) {
     snap.last_compaction_prompt_index = None;
     actor.chat_state_handle.restore_snapshot(snap);
 
-    // Rewind to prompt #2 — "restore state before P2 ran".
     let resp = actor
         .handle_rewind(RewindRequest {
             target_prompt_index: 2,
@@ -322,7 +321,6 @@ async fn rewind_twice_narrows_history_each_time() {
             );
             assert_eq!(actor.chat_state_handle.get_prompt_index().await, 1);
 
-            // Picker after two rewinds offers exactly turn 0.
             let points = actor.get_rewind_points().await;
             let indices: Vec<usize> = points
                 .rewind_points

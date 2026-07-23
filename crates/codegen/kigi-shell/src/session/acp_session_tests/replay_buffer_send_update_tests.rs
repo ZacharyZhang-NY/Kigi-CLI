@@ -310,8 +310,7 @@ async fn send_update_buffers_streaming_chunks_and_flush_sends_merged_notificatio
 ///
 /// Without the flush, the tail of a long reasoning stream sitting in the
 /// buffer when the user hits Ctrl+C never reaches disk before
-/// `copy_session_dir_to_memory` reads `updates.jsonl`. This test
-/// exercises the exact code added to both match arms.
+/// `copy_session_dir_to_memory` reads `updates.jsonl`.
 #[tokio::test(flavor = "current_thread")]
 async fn cancel_and_copyfile_handlers_flush_buffered_chunks_to_persistence() {
     let local = tokio::task::LocalSet::new();
@@ -1135,8 +1134,8 @@ fn streaming_capture_appender_respects_byte_cap() {
 /// + finalize + terminal-failure path is the unique seam here; the struct tests
 /// in `streaming_capture.rs` and `same_prompt_restart_accumulates_segments_via_handler`
 /// already pin the fold-don't-wipe accumulation, so this asserts only the
-/// segment count/order and `empty_reason`. Two generations suffice — before the
-/// fix the slot was wiped on each same-turn `StreamStarted`, leaving one. This
+/// segment count/order and `empty_reason`. Two generations suffice — the bug
+/// wiped the slot on each same-turn `StreamStarted`, leaving one. This
 /// simulates the events a reasoning-only doomloop produces; it does not drive
 /// the sampler classifier (the mock-HTTP test covers that).
 #[tokio::test(start_paused = true)]

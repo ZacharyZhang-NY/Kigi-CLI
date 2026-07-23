@@ -148,9 +148,7 @@ impl ChatStateActor {
     }
 }
 
-// ============================================================================
 // Pruning (standalone functions, no actor state needed)
-// ============================================================================
 
 /// Check whether pruning should run based on context utilization.
 ///
@@ -208,9 +206,7 @@ pub(crate) fn prune_conversation(conversation: &mut [ConversationItem], config: 
     }
 }
 
-// ============================================================================
 // Image size-gated compaction (request-copy only)
-// ============================================================================
 
 /// Replaces an inline image evicted to keep the request body under the proxy's
 /// 50 MB limit. Phrased so the model treats the image as gone rather than
@@ -376,7 +372,7 @@ fn conversation_body_bytes(conversation: &[ConversationItem]) -> usize {
 /// always retain the newest images, an image only transitions image →
 /// placeholder as *newer/larger* payloads push the body past the limit, never
 /// placeholder → image within a stable prefix. (Token compaction removes old
-/// turns wholesale and can free room to restore a previously-evicted image,
+/// turns wholesale and can free room to restore an earlier-evicted image,
 /// but that already rewrites the prefix and invalidates the server-side prompt
 /// cache, so the restore is free.)
 ///
@@ -450,19 +446,17 @@ pub(crate) fn compact_images_to_byte_budget(
     }
 }
 
-// ============================================================================
 // Memory reminder injection
-// ============================================================================
 
 use crate::types::MEMORY_CONTEXT_OPEN_TAG;
 
 /// Upsert a memory reminder into the conversation's system message.
 ///
-/// If the first item is a `System` message, any previously injected memory
-/// reminder section is replaced in-place; otherwise the reminder is appended.
+/// If the first item is a `System` message, any existing memory reminder
+/// section is replaced in-place; otherwise the reminder is appended.
 /// If no system message exists, a new `System` item is prepended.
 ///
-/// Returns `true` when the conversation was changed.
+/// Returns `true` when the conversation changed.
 pub(super) fn inject_memory_reminder(items: &mut Vec<ConversationItem>, reminder: &str) -> bool {
     let reminder = reminder.trim();
     if reminder.is_empty() {
@@ -505,9 +499,7 @@ fn upsert_memory_reminder_text(system_prompt: &mut std::sync::Arc<str>, reminder
     }
 }
 
-// ============================================================================
 // String helpers
-// ============================================================================
 
 fn safe_char_slice(s: &str, start: usize, count: usize) -> String {
     s.chars().skip(start).take(count).collect()
@@ -529,9 +521,12 @@ mod tests {
     fn should_prune_gating() {
         use std::num::NonZeroU64;
         let cw = NonZeroU64::new(10000).unwrap();
-        assert!(!should_prune(1000, cw)); // 10%
-        assert!(should_prune(6000, cw)); // 60%
-        assert!(!should_prune(5000, cw)); // 50% exact (> not >=)
+        // 10%
+        assert!(!should_prune(1000, cw));
+        // 60%
+        assert!(should_prune(6000, cw));
+        // 50% exact (> not >=)
+        assert!(!should_prune(5000, cw));
     }
 
     #[test]
@@ -558,7 +553,8 @@ mod tests {
             assert!(sys.content.contains("Remember: user likes rust"));
             assert!(sys.content.starts_with("You are helpful."));
         }
-        assert_eq!(items.len(), 2); // no new item added
+        // no new item added
+        assert_eq!(items.len(), 2);
     }
 
     #[test]
@@ -569,7 +565,7 @@ mod tests {
         assert!(matches!(&items[0], ConversationItem::System(_)));
     }
 
-    // -- image size-gated compaction tests --
+    // image size-gated compaction tests
 
     /// A user message with a small fixed inline image.
     fn user_with_image(text: &str) -> ConversationItem {
@@ -661,8 +657,10 @@ mod tests {
         // dropping a *batch* of the oldest, not just the one image needed to
         // clear the trigger. This is the hysteresis that keeps the prefix
         // cache-warm for the following turns.
-        let img_bytes = 1_000_000usize; // ~1 MB url each
-        let n = (IMAGE_COMPACT_TRIGGER_BYTES / img_bytes) + 2; // body just over trigger
+        // ~1 MB url each
+        let img_bytes = 1_000_000usize;
+        // body just over trigger
+        let n = (IMAGE_COMPACT_TRIGGER_BYTES / img_bytes) + 2;
         let mut conv: Vec<ConversationItem> = (0..n)
             .map(|i| user_with_image_of_bytes(&format!("i{i}"), img_bytes))
             .collect();
@@ -726,7 +724,7 @@ mod tests {
         assert!(has_placeholder(&conv[0]));
     }
 
-    // -- conversation_body_bytes tests --
+    // conversation_body_bytes tests
 
     #[test]
     fn conversation_body_bytes_empty_is_json_array() {
@@ -777,7 +775,7 @@ mod tests {
         assert!(conversation_body_bytes(&conv) >= IMAGE_COMPACT_TRIGGER_BYTES);
     }
 
-    // -- edge cases: exactness, boundaries, ordering --
+    // edge cases: exactness, boundaries, ordering
 
     #[test]
     fn body_bytes_parity_multi_image_unicode_escaping() {

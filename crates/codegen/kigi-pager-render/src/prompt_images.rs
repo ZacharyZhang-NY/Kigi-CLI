@@ -20,9 +20,7 @@ use kigi_ratatui_textarea::ElementId;
 /// regressions from a single user's session capture.
 pub const PROMPT_IMAGES_TRACING_TARGET: &str = "prompt_images";
 
-// -------------------------------------------------------------------------
 // Scrollable image viewer state
-// -------------------------------------------------------------------------
 
 /// State for a modal image viewer.
 ///
@@ -223,9 +221,7 @@ pub fn load_image_data(path: &std::path::Path) -> ImageLoadResult {
     })
 }
 
-// -------------------------------------------------------------------------
 // Video viewer state
-// -------------------------------------------------------------------------
 
 /// Target frames per second for terminal video playback.
 const VIDEO_FPS: f64 = 10.0;
@@ -543,9 +539,7 @@ fn parse_fraction(s: &str) -> Option<f64> {
     }
 }
 
-// -------------------------------------------------------------------------
 // Inline media info (for scrollback inline rendering)
-// -------------------------------------------------------------------------
 
 /// Metadata for inline media rendering in the scrollback.
 /// Returned by blocks that want to display media inline.
@@ -762,9 +756,7 @@ impl PromptImagePreviewPreparation {
     }
 }
 
-// -------------------------------------------------------------------------
 // Display helpers
-// -------------------------------------------------------------------------
 
 /// Build the buffer text for an image chip.
 ///
@@ -782,9 +774,7 @@ pub fn extension_for_mime(mime: &str) -> &'static str {
     mime_to_extension(mime)
 }
 
-// -------------------------------------------------------------------------
 // Reconciliation
-// -------------------------------------------------------------------------
 
 /// Remove entries from `images` whose `element_id` is not present in
 /// `live_ids`.
@@ -798,7 +788,7 @@ pub fn reconcile(images: &mut Vec<PastedImage>, live_ids: &HashSet<ElementId>) {
             return true;
         }
         // Clean up temp-file-only staged images for removed chips.
-        // Session-persisted files are intentionally left as orphans in v1.
+        // Session-persisted files are deliberately left as orphans in v1.
         cleanup_temp_file(img);
         false
     });
@@ -836,16 +826,15 @@ pub fn clear(images: &mut Vec<PastedImage>, image_counter: &mut usize) {
 /// is acceptable in v1).
 pub fn cleanup_temp_file(img: &PastedImage) {
     if img.session_image_path.is_some() {
-        return; // already persisted to session dir, leave it
+        // already persisted to session dir, leave it
+        return;
     }
     if let Some(ref path) = img.staged_temp_path {
         let _ = std::fs::remove_file(path);
     }
 }
 
-// -------------------------------------------------------------------------
 // Construction from file path
-// -------------------------------------------------------------------------
 
 /// Image file extensions recognized when a pasted path is checked.
 ///
@@ -1116,7 +1105,7 @@ pub enum DroppedPath {
 /// Predicate order: cheap anchor/`file://` checks run first; the
 /// (relatively) more expensive [`read_image_at_path`] file-read +
 /// magic-byte sniff runs only for tokens that pass the gate. Bare
-/// cwd-relative image filenames are intentionally NOT intercepted —
+/// cwd-relative image filenames are deliberately NOT intercepted —
 /// drag-and-drop / Finder-paste always emit absolute paths or
 /// `file://` URLs, never `foo.png`-style relative refs.
 ///
@@ -1294,9 +1283,7 @@ pub fn try_read_image_from_path(text: &str) -> Option<PastedImage> {
     }
 }
 
-// -------------------------------------------------------------------------
 // Construction from clipboard data
-// -------------------------------------------------------------------------
 
 /// Build a `PastedImage` from raw clipboard [`ImageData`].
 ///
@@ -1317,9 +1304,7 @@ pub fn from_clipboard_data(data: &crate::clipboard::ImageData) -> PastedImage {
     }
 }
 
-// -------------------------------------------------------------------------
 // Session image persistence
-// -------------------------------------------------------------------------
 
 /// Persist image bytes into the session `images/` directory.
 ///
@@ -1398,11 +1383,9 @@ pub fn session_mermaid_dir(
     Some(kigi_shared::session::session_dir(&info).join("mermaid"))
 }
 
-// -------------------------------------------------------------------------
 // Image loading for send
-// -------------------------------------------------------------------------
 
-const MAX_SEND_BYTES: usize = 50_000_000; // 50 MB
+const MAX_SEND_BYTES: usize = 50_000_000;
 
 /// Load image bytes from a `PastedImage` (in-memory or from disk).
 /// Returns `None` if the image cannot be loaded or exceeds [`MAX_SEND_BYTES`].
@@ -1449,9 +1432,7 @@ pub fn load_for_send(img: &PastedImage) -> Option<(Vec<u8>, String)> {
     Some((raw_bytes, img.mime_type.clone()))
 }
 
-// -------------------------------------------------------------------------
 // ACP content block construction
-// -------------------------------------------------------------------------
 
 /// Build ACP `ContentBlock` values from prompt text and attached images,
 /// with an optional fallback that re-loads orphan
@@ -1614,7 +1595,8 @@ fn resolve_orphan_placeholders(
 
     for ph in &placeholders {
         if attached_numbers.contains(&ph.display_number) {
-            continue; // PastedImage already supplies these bytes.
+            // PastedImage already supplies these bytes.
+            continue;
         }
         match kigi_shared::placeholder_images::load_placeholder_image(&ph.path, allowed) {
             Ok(loaded) => {
@@ -1707,9 +1689,7 @@ fn collapse_strip_seam(text: &mut String, start: usize, end: usize) {
     }
 }
 
-// -------------------------------------------------------------------------
 // Scrollback image references
-// -------------------------------------------------------------------------
 
 /// An image file referenced in scrollback content via `![alt](path)` markdown
 /// or a bare absolute path. Validated on construction: path must exist, have a
@@ -1841,9 +1821,7 @@ pub fn extract_image_refs(text: &str) -> Vec<ScrollbackImageRef> {
     refs
 }
 
-// -------------------------------------------------------------------------
 // Scrollback video references
-// -------------------------------------------------------------------------
 
 const VIDEO_EXTENSIONS: &[&str] = &["mp4", "webm", "mov", "avi", "mkv"];
 
@@ -1927,9 +1905,7 @@ pub fn extract_video_refs(text: &str) -> Vec<ScrollbackVideoRef> {
     refs
 }
 
-// =========================================================================
 // Tests
-// =========================================================================
 
 #[cfg(test)]
 mod tests {
@@ -1979,7 +1955,7 @@ mod tests {
         }
     }
 
-    // ----- display_text ---------------------------------------------------
+    // display_text
 
     #[test]
     fn display_text_format() {
@@ -1988,7 +1964,7 @@ mod tests {
         assert_eq!(display_text(10), "[Image #10]");
     }
 
-    // ----- extension_for_mime ---------------------------------------------
+    // extension_for_mime
 
     #[test]
     fn extension_for_known_mimes() {
@@ -2120,7 +2096,7 @@ mod tests {
         assert!(res.is_err(), "expected write to read-only dir to fail");
     }
 
-    // ----- shell_unescape -------------------------------------------------
+    // shell_unescape
 
     #[test]
     fn shell_unescape_spaces() {
@@ -2153,7 +2129,7 @@ mod tests {
         assert_eq!(shell_unescape(r"path\\name"), r"path\name");
     }
 
-    // ----- shell_unescape / Windows-path round-trip ----------------------
+    // shell_unescape / Windows-path round-trip
     //
     // `\` is a path separator on Windows, not a shell escape. The
     // unescape must skip Windows-looking inputs or it would collapse
@@ -2209,7 +2185,7 @@ mod tests {
         );
     }
 
-    // ----- try_read_image_from_path ----------------------------------------
+    // try_read_image_from_path
 
     #[test]
     fn try_read_image_with_escaped_parens() {
@@ -2246,8 +2222,7 @@ mod tests {
         assert!(result.unwrap().source_path.is_some());
     }
 
-    // ----- single-file resilience (drop with trailing whitespace / quotes /
-    //       file:// URLs) ---------------------------------------------------
+    // single-file resilience: drop with trailing whitespace / quotes / file:// URLs
 
     /// Writes a real PNG at `path`. Helper to keep the multi-file tests tidy.
     fn write_png(path: &std::path::Path, w: u32, h: u32) {
@@ -2308,7 +2283,7 @@ mod tests {
         assert!(try_read_image_from_path(&pasted).is_some());
     }
 
-    // ----- file:// URL parsing -------------------------------------------
+    // file:// URL parsing
 
     #[test]
     fn try_read_image_file_url() {
@@ -2357,7 +2332,7 @@ mod tests {
         assert!(try_read_image_from_path(&pasted).is_some());
     }
 
-    // ----- multi-file drop -----------------------------------------------
+    // multi-file drop
 
     /// Non-image paths are canonicalized before insertion.
     fn canon(p: &std::path::Path) -> PathBuf {
@@ -2490,7 +2465,7 @@ mod tests {
         );
     }
 
-    // ----- negatives — must not auto-attach ------------------------------
+    // negatives — must not auto-attach
 
     #[test]
     fn free_prose_containing_slash_returns_empty() {
@@ -2527,7 +2502,7 @@ mod tests {
         assert!(try_read_images_from_paste("line one\nline two").is_empty());
     }
 
-    // ----- additional edge cases ----
+    // additional edge cases
 
     #[test]
     fn bash_mode_prefix_not_treated_as_image() {
@@ -2576,7 +2551,8 @@ mod tests {
     fn newline_wins_space_inside_line_not_split() {
         let dir = tempfile::tempdir().unwrap();
         let a = dir.path().join("a.png");
-        let bc = dir.path().join("b.png c.png"); // a single file with a space in its name
+        // a single file with a space in its name
+        let bc = dir.path().join("b.png c.png");
         let other = dir.path().join("d.png");
         write_png(&a, 2, 2);
         write_png(&bc, 2, 2);
@@ -2610,7 +2586,7 @@ mod tests {
         assert!(try_read_image_from_path(&pasted).is_some());
     }
 
-    // ----- file:// URL edge cases ----------------------------
+    // file:// URL edge cases
 
     #[test]
     fn file_url_with_localhost_host() {
@@ -2651,7 +2627,7 @@ mod tests {
         assert!(try_read_image_from_path(&pasted).is_some());
     }
 
-    // ----- multi-file space-separated mixed file:// + bare ---
+    // multi-file space-separated mixed file:// + bare
 
     #[test]
     fn multi_file_space_separated_file_url_then_bare() {
@@ -2777,7 +2753,7 @@ mod tests {
         assert!(try_read_image_from_path(pasted).is_none());
     }
 
-    // ----- try_read_dropped_paths -----------------------------------------
+    // try_read_dropped_paths
 
     fn dropped_paths(text: &str) -> Vec<DroppedPath> {
         try_read_dropped_paths(text)
@@ -3226,7 +3202,7 @@ mod tests {
     /// pipeline when inserted as text. Reject these at parse time
     /// so the prompt never sees them.
     ///
-    /// The gate is intentionally narrow (NUL, CR, LF) — TAB and
+    /// The gate is deliberately narrow (NUL, CR, LF) — TAB and
     /// other low-control bytes are legal in Unix filenames and the
     /// TUI's text path renders them fine.
     #[test]
@@ -3250,7 +3226,7 @@ mod tests {
         );
     }
 
-    /// HEIC/HEIF/AVIF/ICO are intentionally NOT in `IMAGE_EXTENSIONS`
+    /// HEIC/HEIF/AVIF/ICO are deliberately NOT in `IMAGE_EXTENSIONS`
     /// — the inline overlay doesn't render them, so we fall through
     /// to NonImage path text instead of falsely promoting a chip.
     #[test]
@@ -3271,7 +3247,7 @@ mod tests {
         }
     }
 
-    /// SVG is intentionally NOT in `IMAGE_EXTENSIONS` (XML/text
+    /// SVG is deliberately NOT in `IMAGE_EXTENSIONS` (XML/text
     /// formats aren't sniffed as images and the inline overlay does
     /// not render SVG). An `.svg` drop must fall through to NonImage
     /// so the user gets a path string they can pass to the agent.
@@ -3402,7 +3378,7 @@ mod tests {
 
     #[test]
     fn try_read_images_from_paste_equals_image_filtered_dropped_paths() {
-        // `try_read_images_from_paste` is now a thin filter over
+        // `try_read_images_from_paste` is a thin filter over
         // `try_read_dropped_paths`. Lock in the delegation invariant
         // for several input shapes so a regression that diverges
         // only in one shape (e.g. the empty-paste case) would still
@@ -3624,7 +3600,7 @@ mod tests {
         }
     }
 
-    // ----- reconcile ------------------------------------------------------
+    // reconcile
 
     #[test]
     fn reconcile_keeps_live_images() {
@@ -3668,7 +3644,7 @@ mod tests {
         assert!(images.is_empty());
     }
 
-    // ----- clear ----------------------------------------------------------
+    // clear
 
     #[test]
     fn clear_resets_images_and_counter() {
@@ -3681,7 +3657,7 @@ mod tests {
         assert_eq!(counter, 0);
     }
 
-    // ----- persist_to_session ------------------------------------------------
+    // persist_to_session
 
     #[test]
     fn persist_writes_file_and_clears_bytes() {
@@ -3750,12 +3726,13 @@ mod tests {
     #[test]
     fn persist_fails_without_bytes() {
         let dir = tempfile::tempdir().unwrap();
-        let mut img = make_image(1, 1); // encoded_bytes is None
+        // encoded_bytes is None
+        let mut img = make_image(1, 1);
         let result = persist_to_session(&mut img, dir.path());
         assert!(result.is_err());
     }
 
-    // ----- persist_to_session path ownership --------------------------------
+    // persist_to_session path ownership
 
     #[test]
     fn persist_clipboard_image_keeps_source_path_none() {
@@ -3773,7 +3750,8 @@ mod tests {
             dimensions: Some((100, 80)),
             byte_len: png.len(),
             encoded_bytes: Some(Arc::from(png)),
-            source_path: None, // clipboard paste — no original path
+            // clipboard paste — no original path
+            source_path: None,
             staged_temp_path: None,
             session_image_path: None,
             preview: PromptImagePreview::default(),
@@ -3826,7 +3804,7 @@ mod tests {
         );
     }
 
-    // ----- from_clipboard_data -----------------------------------------------
+    // from_clipboard_data
 
     #[test]
     fn from_clipboard_data_populates_fields() {
@@ -3875,7 +3853,7 @@ mod tests {
         assert_eq!(img.encoded_bytes.as_deref(), Some(data.data.as_slice()));
     }
 
-    // ----- test PNG helper --------------------------------------------------
+    // test PNG helper
 
     /// Generate a valid minimal PNG of the given dimensions.
     fn make_test_png(width: u32, height: u32) -> Vec<u8> {
@@ -3918,7 +3896,7 @@ mod tests {
         }
     }
 
-    // ----- load_for_send ------------------------------------------------
+    // load_for_send
 
     #[test]
     fn load_small_image_passes_through() {
@@ -3948,7 +3926,7 @@ mod tests {
             mime_type: "image/png".into(),
             dimensions: Some((50, 50)),
             byte_len: png.len(),
-            encoded_bytes: None, // bytes released
+            encoded_bytes: None,
             source_path: None,
             staged_temp_path: None,
             session_image_path: Some(path),
@@ -3960,11 +3938,12 @@ mod tests {
 
     #[test]
     fn load_returns_none_for_missing_data() {
-        let img = make_image(1, 1); // no bytes, no file
+        // no bytes, no file
+        let img = make_image(1, 1);
         assert!(load_for_send(&img).is_none());
     }
 
-    // ----- build_content_blocks_with_workspace --------------------------------
+    // build_content_blocks_with_workspace
 
     fn build_blocks_no_workspace(
         text: String,
@@ -4108,7 +4087,8 @@ mod tests {
 
     #[test]
     fn build_blocks_skips_missing_image() {
-        let img = make_image(1, 1); // no bytes, no file path
+        // no bytes, no file path
+        let img = make_image(1, 1);
         let blocks = build_blocks_no_workspace("text".into(), vec![img]);
         // Only the text block; image was skipped.
         assert_eq!(blocks.len(), 1);
@@ -4116,14 +4096,14 @@ mod tests {
 
     #[test]
     fn build_blocks_one_bad_one_good() {
-        let bad = make_image(1, 1); // no bytes
+        let bad = make_image(1, 1);
         let good = make_real_image(50, 50);
         let blocks = build_blocks_no_workspace("text".into(), vec![bad, good]);
         // Text + 1 good image; bad image skipped.
         assert_eq!(blocks.len(), 2);
     }
 
-    // ----- Orphan placeholder fallback ----------------------------------
+    // Orphan placeholder fallback
     //
     // These tests go through `build_content_blocks_with_prefixes` with
     // an explicit hermetic prefix list, so they do NOT read the
@@ -4165,7 +4145,7 @@ mod tests {
             .decode(&ic.data)
             .expect("data must be valid base64");
         assert_eq!(decoded, on_disk);
-        // Placeholder anchor stays but the path is now stripped — the
+        // Placeholder anchor stays but the path is stripped — the
         // image is already attached inline, so the model has no reason
         // to call `Read` on the path (and the path component would
         // tempt it to). The bracketed `[Image #N]` form preserves the
@@ -4324,7 +4304,7 @@ mod tests {
         );
     }
 
-    // ----- TUI aggregate-cap injectable variant + tests -----------------
+    // TUI aggregate-cap injectable variant + tests
     //
     // Mirrors the server-side
     // `recover_orphan_placeholders_with_prefixes_and_caps` tests so a
@@ -4422,7 +4402,7 @@ mod tests {
     /// **Text-side contract.** Aggregate-cap breach is a `break`
     /// path in `resolve_orphan_placeholders`, not a per-image
     /// `Err` path. Only `Err`-path failures strip the placeholder
-    /// text; cap-breach intentionally **leaves the placeholder
+    /// text; cap-breach deliberately **leaves the placeholder
     /// text intact** because the load itself succeeded (the file
     /// is valid, just doesn't fit in the budget). The test pins
     /// both halves of this contract: no image block AND
@@ -4452,7 +4432,7 @@ mod tests {
         // breach (cap-breach is a `break` path, not a load `Err`).
         // Pinning the preservation half of the contract.
         //
-        // Phase 2 path-strip update: the bracketed anchor
+        // Phase 2 path-strip behaviour: the bracketed anchor
         // `[Image #N]` survives, but the `: <path>` component is
         // stripped uniformly across every surviving placeholder. The
         // model can still see *where* in the prose the image was
@@ -4470,7 +4450,7 @@ mod tests {
         );
     }
 
-    // ----- T8: cleanup and lifecycle edge cases ------------------------------
+    // T8: cleanup and lifecycle edge cases
 
     #[test]
     fn clear_deletes_staged_temp_file() {
@@ -4488,7 +4468,8 @@ mod tests {
             encoded_bytes: None,
             source_path: None,
             staged_temp_path: Some(tmp_path.clone()),
-            session_image_path: None, // not yet persisted to session
+            // not yet persisted to session
+            session_image_path: None,
             preview: PromptImagePreview::default(),
         }];
         let mut counter = 1;
@@ -4578,7 +4559,7 @@ mod tests {
         );
     }
 
-    // ----- ScrollbackImageRef ------------------------------------------------
+    // ScrollbackImageRef
 
     #[test]
     fn scrollback_ref_from_valid_image_path() {
@@ -4634,7 +4615,7 @@ mod tests {
         assert!(ScrollbackImageRef::from_path("/nonexistent/image.png").is_none());
     }
 
-    // ----- extract_image_refs ------------------------------------------------
+    // extract_image_refs
 
     #[test]
     fn extract_markdown_image_ref() {
@@ -4714,7 +4695,7 @@ mod tests {
         assert!(refs.is_empty());
     }
 
-    // ----- open_from_path ----------------------------------------------------
+    // open_from_path
 
     #[test]
     fn open_from_path_valid_image() {
@@ -4751,7 +4732,7 @@ mod tests {
         );
     }
 
-    // ----- open_from_path_deferred -------------------------------------------
+    // open_from_path_deferred
 
     #[test]
     fn deferred_open_starts_in_loading_state() {

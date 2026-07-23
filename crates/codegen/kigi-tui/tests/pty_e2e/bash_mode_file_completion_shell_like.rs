@@ -100,7 +100,7 @@ async fn bash_mode_file_completion_shell_like() {
         .wait_for_text(MOCK_RESPONSE_SENTINEL, Duration::from_secs(30))
         .expect("session ready");
 
-    // ── Leg 1: Tab fills the common prefix, second Tab opens the list ───
+    // Leg 1: Tab fills the common prefix, second Tab opens the list.
     harness
         .inject_keys(b"!cat al")
         .expect("type bash prefix with shared-prefix candidates");
@@ -127,7 +127,7 @@ async fn bash_mode_file_completion_shell_like() {
     harness.inject_keys(b"\x1b").expect("Esc closes dropdown");
     harness.inject_keys(b"\x15").expect("Ctrl+U clears draft");
 
-    // ── Leg 2: quoted dropdown → dir accept → drill-down insta-accept ───
+    // Leg 2: quoted dropdown, dir accept, drill-down insta-accept.
     harness
         .inject_keys(b"cat \"no")
         .expect("type quoted prefix");
@@ -155,7 +155,7 @@ async fn bash_mode_file_completion_shell_like() {
         .wait_for_text("Notes Archive/inner_note.txt\"", Duration::from_secs(10))
         .expect("single inner candidate accepted immediately, quote closed");
 
-    // ── The completed command actually RUNS through the real shell ──────
+    // The completed command actually runs through the real shell.
     harness.inject_keys(b"\r").expect("Enter runs the command");
     harness
         .wait_for_text(INNER_SENTINEL, Duration::from_secs(30))

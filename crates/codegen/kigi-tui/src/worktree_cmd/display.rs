@@ -5,7 +5,6 @@ use super::{DbStats, GcReport, RebuildReport};
 use kigi_fast_worktree::WorktreeRecord;
 use kigi_shell::session::worktree::META_KEY_LABEL;
 
-/// Extract the label from a worktree record's metadata JSON.
 fn extract_label(rec: &WorktreeRecord) -> &str {
     rec.metadata
         .as_ref()

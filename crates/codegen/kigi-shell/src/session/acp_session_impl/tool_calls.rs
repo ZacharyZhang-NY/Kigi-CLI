@@ -7,8 +7,6 @@
 //! the parent module's private helpers.
 use super::*;
 use futures::StreamExt;
-/// Whether a tool name is an MCP `create_pull_request` (qualified
-/// `server__create_pull_request` or bare).
 fn is_mcp_create_pull_request(tool_name: &str) -> bool {
     match crate::session::mcp_servers::parse_mcp_tool_name(tool_name) {
         Some((_, tool)) => tool == "create_pull_request",
@@ -102,7 +100,6 @@ pub(super) enum PlanFileRead {
     Absent,
     Unreadable,
 }
-/// Classify a plan-file read result into present / absent / unreadable.
 pub(super) fn classify_plan_file_read(result: Result<String, std::io::Error>) -> PlanFileRead {
     match result {
         Ok(text) if !text.trim().is_empty() => PlanFileRead::Present(text),
@@ -147,7 +144,7 @@ pub(super) enum PlanEditGate {
 ///
 /// - **Compat-toolset `Write`/`StrReplace`**: any markdown
 ///   file is editable in plan mode (plan docs are written with these
-///   same tools); everything else is rejected. Pre-existing behavior.
+///   same tools); everything else is rejected.
 /// - **Compat-toolset `Delete`** is **not** on the markdown carve-out: it maps to
 ///   `AccessKind::Edit` and is plan-file-only (same as kigi edits). Deleting
 ///   an arbitrary `.md` in plan mode must not pass.
@@ -233,9 +230,8 @@ fn revise_plan_message(feedback: &str) -> String {
         format!("The user wants to revise the plan. The user said:\n{feedback}")
     }
 }
-/// What the resume re-park does with the user's decision. Extracted
-/// from `resume_plan_approval` so the branch logic is unit-testable without
-/// driving a real turn.
+/// What the resume re-park does with the user's decision — a standalone value
+/// so the resume branch logic is unit-testable without driving a real turn.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum ResumeAction {
     /// Approved: leave plan mode and start an implement turn (Agent mode).
@@ -983,7 +979,7 @@ impl SessionActor {
                 perm_start,
             );
             let wait_ms = perm_start.elapsed().as_millis() as u64;
-            // Stable snake_case decision labels (match the old wire enum).
+            // Stable snake_case decision labels.
             let decision_outcome = match &decision {
                 Decision::Allow | Decision::Ask => "allow",
                 Decision::Reject(_) | Decision::PolicyDeny(_) => "deny",
@@ -2041,9 +2037,8 @@ impl SessionActor {
     /// Handle a hard tool execution error (dispatch/validation failure).
     ///
     /// Emits the failed tool_result to the client and records failure signals.
-    /// Tool failures are not fed to the doom-loop detector (error-count streaks
-    /// were removed), so this never warns/terminates and returns no deferred
-    /// follow-ups today.
+    /// Tool failures are not fed to the doom-loop detector, so this never
+    /// warns/terminates and returns no deferred follow-ups today.
     pub(super) async fn handle_tool_error(
         &self,
         tool_call_id: &acp::ToolCallId,

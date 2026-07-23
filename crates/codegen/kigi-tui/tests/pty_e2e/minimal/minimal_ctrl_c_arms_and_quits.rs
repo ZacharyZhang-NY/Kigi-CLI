@@ -14,7 +14,7 @@ async fn minimal_ctrl_c_arms_and_quits() {
     let mut harness = spawn_minimal(&content);
     wait_minimal_ready(&mut harness);
 
-    // First Ctrl+C (CSI legacy ETX). Arms quit + shows the hint under the prompt.
+    // \x03 is the legacy ETX byte for Ctrl+C.
     harness.inject_keys(b"\x03").expect("inject Ctrl+C");
     harness
         .wait_for_text("again to quit", Duration::from_secs(5))
@@ -25,7 +25,6 @@ async fn minimal_ctrl_c_arms_and_quits() {
             )
         });
 
-    // Second Ctrl+C within the confirm window exits the process.
     harness.inject_keys(b"\x03").expect("inject Ctrl+C again");
     let code = harness.wait_exit_code(Duration::from_secs(5));
     assert!(

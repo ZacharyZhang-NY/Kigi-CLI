@@ -9,7 +9,6 @@ pub use crate::tool_taxonomy::{CanonicalToolMeta, ToolIdentity};
 use crate::types::tool_io::ToolInput;
 use crate::types::tool_metadata::ToolMetadata;
 use serde::Serialize;
-/// Resolve [`ToolIdentity`] from a tool's registered metadata.
 pub fn tool_identity_of(metadata: &dyn ToolMetadata) -> ToolIdentity {
     let kind = metadata.kind();
     ToolIdentity {

@@ -51,7 +51,7 @@ use crate::views::rewind::RewindState;
 use crate::views::session_picker::{SessionEntryData, SourceFilter};
 use crate::views::suggestion_controller::SuggestionController;
 
-// ── Consolidated minimal-mode state (AppView::minimal_state) ─────────────────
+// Consolidated minimal-mode state (AppView::minimal_state)
 //
 // Minimal's private per-session state, consolidated into a single field on the
 // central `AppView` instead of several loose `pub` fields. Default-empty and
@@ -105,22 +105,18 @@ pub(crate) struct MinimalState {
     pub(crate) committed_plan_tool_call_id: Option<String>,
 }
 
-/// `AppView::minimal_state.show_todos`.
 pub fn minimal_show_todos(app: &AppView) -> bool {
     app.minimal_state.show_todos
 }
 
-/// `AppView::minimal_state.welcome_pending`.
 pub fn minimal_welcome_pending(app: &AppView) -> bool {
     app.minimal_state.welcome_pending
 }
 
-/// `AppView::minimal_state.welcome_pending` (write).
 pub fn set_minimal_welcome_pending(app: &mut AppView, on: bool) {
     app.minimal_state.welcome_pending = on;
 }
 
-/// `AppView::minimal_state.pending_expand` (read).
 pub fn minimal_pending_expand(app: &AppView) -> &[EntryId] {
     &app.minimal_state.pending_expand
 }
@@ -137,7 +133,7 @@ pub fn requeue_minimal_pending_expand(app: &mut AppView, mut ids: Vec<EntryId>) 
     app.minimal_state.pending_expand = ids;
 }
 
-// ── Incremental /transcript build ────────────────────────────────────────────
+// Incremental /transcript build
 
 /// Arm the incremental minimal `/transcript` build from the active agent's
 /// conversation. No-op when a build is already running (the in-flight one
@@ -197,7 +193,6 @@ pub fn minimal_transcript_progress(app: &AppView) -> Option<(usize, usize)> {
         .map(|b| (b.next, b.ids.len()))
 }
 
-/// `AppView::minimal_state.committed_plan_tool_call_id` (read).
 pub fn minimal_committed_plan_id(app: &AppView) -> Option<&str> {
     app.minimal_state.committed_plan_tool_call_id.as_deref()
 }
@@ -264,24 +259,20 @@ pub fn minimal_ctrl_o_opens_transcript(app: &AppView) -> bool {
     )
 }
 
-/// `AppView::minimal_state.committed_plan_tool_call_id` (write).
 pub fn set_minimal_committed_plan_id(app: &mut AppView, id: Option<String>) {
     app.minimal_state.committed_plan_tool_call_id = id;
 }
 
-// ── AgentView field accessors ────────────────────────────────────────────────
+// AgentView field accessors
 
-/// `AgentView::last_activity` (read).
 pub fn last_activity(v: &AgentView) -> Option<&TurnActivity> {
     v.last_activity.as_ref()
 }
 
-/// `AgentView::last_activity` (write).
 pub fn set_last_activity(v: &mut AgentView, val: Option<TurnActivity>) {
     v.last_activity = val;
 }
 
-/// `AgentView::extensions_modal`.
 pub fn extensions_modal(v: &AgentView) -> Option<&ExtensionsModalState> {
     v.extensions_modal.as_ref()
 }
@@ -293,7 +284,6 @@ pub fn extensions_modal_mut(v: &mut AgentView) -> Option<&mut ExtensionsModalSta
     v.extensions_modal.as_mut()
 }
 
-/// `AgentView::question_view`.
 pub fn question_view(v: &AgentView) -> Option<&QuestionViewState> {
     v.question_view.as_ref()
 }
@@ -303,37 +293,30 @@ pub fn question_view_mut(v: &mut AgentView) -> Option<&mut QuestionViewState> {
     v.question_view.as_mut()
 }
 
-/// `AgentView::hovered_question_item`.
 pub fn hovered_question_item(v: &AgentView) -> Option<usize> {
     v.hovered_question_item
 }
 
-/// `AgentView::hovered_permission_item`.
 pub fn hovered_permission_item(v: &AgentView) -> Option<usize> {
     v.hovered_permission_item
 }
 
-/// `AgentView::plan_mode_active`.
 pub fn plan_mode_active(v: &AgentView) -> bool {
     v.plan_mode_active
 }
 
-/// `AgentView::plan_mode_pending`.
 pub fn plan_mode_pending(v: &AgentView) -> Option<bool> {
     v.plan_mode_pending
 }
 
-/// `AgentView::mcp_init_progress`.
 pub fn mcp_init_progress(v: &AgentView) -> Option<&McpInitProgress> {
     v.mcp_init_progress.as_ref()
 }
 
-/// `AgentView::plan_approval_view`.
 pub fn plan_approval_view(v: &AgentView) -> Option<&PlanApprovalViewState> {
     v.plan_approval_view.as_ref()
 }
 
-/// `AgentView::cancel_turn_view`.
 pub fn cancel_turn_view(v: &AgentView) -> Option<&CancelTurnViewState> {
     v.cancel_turn_view.as_ref()
 }
@@ -344,14 +327,12 @@ pub fn cancel_turn_buttons_mut(v: &mut AgentView) -> &mut Vec<Rect> {
     &mut v.cancel_turn_buttons
 }
 
-/// `AgentView::rewind_state`.
 pub fn rewind_state(v: &AgentView) -> Option<&RewindState> {
     v.rewind_state.as_ref()
 }
 
-// ── AgentView method wrappers ────────────────────────────────────────────────
+// AgentView method wrappers
 
-/// [`AgentView::resolve_turn_activity`].
 pub fn resolve_turn_activity(v: &AgentView) -> Option<TurnActivity> {
     v.resolve_turn_activity()
 }
@@ -364,17 +345,14 @@ pub fn renders_parked(v: &AgentView) -> bool {
     v.renders_parked()
 }
 
-/// [`AgentView::held_queue_count`].
 pub fn held_queue_count(v: &AgentView) -> usize {
     v.held_queue_count()
 }
 
-/// [`AgentView::held_queue_top_sendable`].
 pub fn held_queue_top_sendable(v: &AgentView) -> bool {
     v.held_queue_top_sendable()
 }
 
-/// [`AgentView::sync_pending_user_input_marks`].
 pub fn sync_pending_user_input_marks(v: &mut AgentView) {
     v.sync_pending_user_input_marks();
 }
@@ -390,19 +368,17 @@ pub fn draw_active_modal(
     v.draw_active_modal(area, buf, theme, compact);
 }
 
-/// [`AgentView::drain_blocked`].
 pub fn drain_blocked(v: &AgentView) -> bool {
     v.drain_blocked()
 }
 
-// ── PromptWidget accessors ───────────────────────────────────────────────────
+// PromptWidget accessors
 
-/// `PromptWidget::suggestions`.
 pub fn prompt_suggestions(pw: &PromptWidget) -> &SuggestionController {
     &pw.suggestions
 }
 
-// ── Dropdown chrome ──────────────────────────────────────────────────────────
+// Dropdown chrome
 
 /// Lay out the inline dropdown chrome and return the item area rect
 /// (`DropdownChrome::items`), or `None` when it doesn't fit. Wraps
@@ -436,7 +412,7 @@ pub fn dropdown_chrome_items(
     .map(|chrome| chrome.items)
 }
 
-// ── MCP picker rows ──────────────────────────────────────────────────────────
+// MCP picker rows
 
 /// Build the MCP-servers picker rows, returning `(labels, group_keys,
 /// data_indices)`. Wraps [`crate::views::extensions_modal::build_mcp_servers_picker_rows`];
@@ -458,7 +434,6 @@ pub fn build_mcp_picker_rows(
     (rows.labels, rows.group_keys, rows.data_indices)
 }
 
-/// [`crate::views::extensions_modal::mcp_section_children_hidden`].
 pub fn mcp_section_children_hidden(
     collapsed_sections: &HashSet<String>,
     section_key: &str,
@@ -471,24 +446,20 @@ pub fn mcp_section_children_hidden(
     )
 }
 
-/// [`McpServerDisplayStatus::theme_color`].
 pub fn mcp_status_theme_color(status: &McpServerDisplayStatus, theme: &Theme) -> Color {
     status.theme_color(theme)
 }
 
-/// [`McpServerDisplayStatus::label`].
 pub fn mcp_status_label(status: &McpServerDisplayStatus) -> &'static str {
     status.label()
 }
 
-// ── Session picker builders ──────────────────────────────────────────────────
+// Session picker builders
 
-/// [`crate::views::session_picker::repo_name_from_cwd`].
 pub fn repo_name_from_cwd(cwd: &str) -> String {
     crate::views::session_picker::repo_name_from_cwd(cwd)
 }
 
-/// [`crate::views::session_picker::filter_session_entries`].
 pub fn filter_session_entries(
     entries: Option<&[SessionPickerEntry]>,
     query: &str,
@@ -497,7 +468,6 @@ pub fn filter_session_entries(
     crate::views::session_picker::filter_session_entries(entries, query, source_filter)
 }
 
-/// [`crate::views::session_picker::build_session_entry_data`].
 pub fn build_session_entry_data(
     entries_data: &[SessionPickerEntry],
     filtered_indices: &[usize],
@@ -512,7 +482,6 @@ pub fn build_session_entry_data(
     )
 }
 
-/// [`crate::views::session_picker::build_grouped_picker_entries`].
 pub fn build_grouped_picker_entries<'a>(
     entries_data: &'a [SessionPickerEntry],
     filtered_indices: &[usize],
@@ -531,19 +500,17 @@ pub fn build_grouped_picker_entries<'a>(
     )
 }
 
-// ── Welcome logo ─────────────────────────────────────────────────────────────
+// Welcome logo
 
-/// [`crate::views::welcome::logo::compact_logo_line_count`].
 pub fn compact_logo_line_count() -> u16 {
     crate::views::welcome::logo::compact_logo_line_count()
 }
 
-/// [`crate::views::welcome::logo::render_compact_logo`].
 pub fn render_compact_logo(area: Rect, buf: &mut Buffer, theme: &Theme) {
     crate::views::welcome::logo::render_compact_logo(area, buf, theme);
 }
 
-// ── Scrollback committed frontier (minimal-mode commit bookkeeping) ──────────
+// Scrollback committed frontier (minimal-mode commit bookkeeping)
 //
 // The `committed` marker lives on `ScrollbackEntry` so it survives
 // `shift_remove`/`remove_from`; the scan cursor + expand ring
@@ -558,71 +525,59 @@ pub fn is_committed(sb: &ScrollbackState, entry: &ScrollbackEntry) -> bool {
     sb.is_committed(entry.id)
 }
 
-/// [`ScrollbackState::commit_scan_cursor`].
 pub fn commit_scan_cursor(sb: &ScrollbackState) -> usize {
     sb.commit_scan_cursor()
 }
 
-/// [`ScrollbackState::set_commit_scan_cursor`].
 pub fn set_commit_scan_cursor(sb: &mut ScrollbackState, cursor: usize) {
     sb.set_commit_scan_cursor(cursor);
 }
 
-/// [`ScrollbackState::mark_committed`].
 pub fn mark_committed(sb: &mut ScrollbackState, index: usize) {
     sb.mark_committed(index);
 }
 
-/// [`ScrollbackState::record_committed_for_expand`].
 pub fn record_committed_for_expand(sb: &mut ScrollbackState, id: EntryId) {
     sb.record_committed_for_expand(id);
 }
 
-// ── Test-only surface (minimal's unit tests, via the test-only helpers) ──
+// Test-only surface (minimal's unit tests, via the test-only helpers)
 
-/// [`crate::app::agent_view::test_agent_view`].
 #[cfg(any(test, feature = "test-support"))]
 pub fn test_agent_view(session_id: Option<&str>, cwd: std::path::PathBuf) -> AgentView {
     crate::app::agent_view::test_agent_view(session_id, cwd)
 }
 
-/// Test-only setter for `AgentView::extensions_modal`.
 #[cfg(any(test, feature = "test-support"))]
 pub fn set_extensions_modal(v: &mut AgentView, val: Option<ExtensionsModalState>) {
     v.extensions_modal = val;
 }
 
-/// Test-only setter for `AgentView::question_view`.
 #[cfg(any(test, feature = "test-support"))]
 pub fn set_question_view(v: &mut AgentView, val: Option<QuestionViewState>) {
     v.question_view = val;
 }
 
-/// Test-only setter for `AgentView::plan_mode_active`.
 #[cfg(any(test, feature = "test-support"))]
 pub fn set_plan_mode_active(v: &mut AgentView, on: bool) {
     v.plan_mode_active = on;
 }
 
-/// Test-only setter for `AgentView::plan_mode_pending`.
 #[cfg(any(test, feature = "test-support"))]
 pub fn set_plan_mode_pending(v: &mut AgentView, val: Option<bool>) {
     v.plan_mode_pending = val;
 }
 
-/// Test-only mutable access to `PromptWidget::suggestions`.
 #[cfg(any(test, feature = "test-support"))]
 pub fn prompt_suggestions_mut(pw: &mut PromptWidget) -> &mut SuggestionController {
     &mut pw.suggestions
 }
 
-/// Test-only setter for `AgentSession`'s yolo mode.
 #[cfg(any(test, feature = "test-support"))]
 pub fn set_yolo_mode_for_test(session: &mut AgentSession, on: bool) {
     session.set_yolo_mode_for_test(on);
 }
 
-/// Test-only setter for `AgentSession`'s auto mode.
 #[cfg(any(test, feature = "test-support"))]
 pub fn set_auto_mode_for_test(session: &mut AgentSession, on: bool) {
     session.set_auto_mode_for_test(on);

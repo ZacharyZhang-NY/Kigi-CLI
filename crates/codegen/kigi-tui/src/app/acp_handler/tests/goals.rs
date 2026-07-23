@@ -45,11 +45,6 @@
                 "last_event": "verify_started",
                 "last_event_detail": "round 2 of 3",
                 "last_event_timestamp": "2026-05-24T00:00:00Z",
-                // Field absent on today's `SessionUpdate::GoalUpdated` — simulates
-                // a future shell adding a new wire field. With trailing `..` in
-                // the destructure and no `deny_unknown_fields` on the variant,
-                // this must parse and the pager must still produce a
-                // GoalDisplayState mapped from the known subset.
                 "future_field_for_pr5": "ignored-by-todays-pager"
             }
         });
@@ -107,7 +102,6 @@
             Some("2026-05-24T00:00:00Z")
         );
         assert_eq!(goal.pause_message, None);
-        // Classifier fields default to `None` / `false` when absent.
         assert_eq!(goal.classifier_runs_attempted, None);
         assert_eq!(goal.classifier_max_runs, None);
         assert_eq!(goal.last_classifier_verdict, None);
@@ -177,8 +171,6 @@
             "transition to Complete pushes one e2e marker with the goal's total time",
         );
 
-        // A repeat Complete update (e.g. a late notification) must not
-        // duplicate the marker.
         send(&mut app, "complete", 620_000);
         assert_eq!(
             goal_markers(&app).len(),
@@ -238,7 +230,6 @@
             "chip cleared on cleared status"
         );
 
-        // A stale late update for the cleared goal must not resurrect it.
         let affected = send_goal_update(&mut app, "g1", "complete", 5_000);
         assert!(
             app.agents.get(&AgentId(0)).unwrap().goal_state.is_none(),
@@ -268,7 +259,6 @@
         // the prior goal's carried elapsed floor.
         let mut app = make_app_with_agent("sess-A");
         send_goal_update(&mut app, "g1", "active", 10_000);
-        // Switch directly to a different goal with a small elapsed base.
         send_goal_update(&mut app, "g2", "active", 500);
         let elapsed = app
             .agents
@@ -290,7 +280,6 @@
         // on receipt into the cached bool (no per-frame stat).
         let mut app = make_app_with_agent("sess-A");
 
-        // A real on-disk path → cached exists = true.
         let f = tempfile::NamedTempFile::new().unwrap();
         let real_path = f.path().to_string_lossy().into_owned();
         let mut update = goal_update_value("g1", "active", 0);
@@ -312,7 +301,6 @@
             Some(real_path.as_str())
         );
 
-        // A missing path → cached exists = false (modal renders "(unavailable)").
         let mut update = goal_update_value("g1", "active", 0);
         update["last_classifier_details_path"] = serde_json::json!("/no/such/details-xyz.md");
         dispatch_goal_update(&mut app, update);
@@ -336,9 +324,7 @@
         // be omitted from the wire payload and must surface as `None` in
         // the destructured arm — i.e. the pager keeps mapping the known
         // subset cleanly when the shell-side struct grows or when an
-        // older shell omits newer optional fields. Drop a handful of
-        // optional keys from the payload and assert they materialise as
-        // `None` on the resulting `GoalDisplayState`.
+        // older shell omits newer optional fields.
         let mut app = make_app_with_agent("sess-A");
 
         let raw_payload = serde_json::json!({
@@ -349,26 +335,14 @@
                 "objective": "minimal payload",
                 "status": "active",
                 "phase": "idle",
-                // token_budget omitted — Option<i64> must default to None.
                 "tokens_used": 0,
                 "elapsed_ms": 0,
                 "total_deliverables": 0,
                 "completed_deliverables": 0,
-                // current_deliverable_idx omitted — Option<u32> -> None.
-                // current_deliverable_title omitted — Option<String> -> None.
-                // current_subagent_role omitted — Option<String> -> None.
                 "total_worker_rounds": 0,
                 "total_verify_rounds": 0,
                 "token_baseline": 0,
                 "finished_subagent_tokens": 0,
-                // live_subagent_tokens omitted — Option<u64> -> None.
-                // live_context_pct omitted — Option<u8> -> None.
-                // live_turn_count omitted — Option<u32> -> None.
-                // live_tool_call_count omitted — Option<u32> -> None.
-                // last_event omitted — Option<String> -> None.
-                // last_event_detail omitted — Option<String> -> None.
-                // last_event_timestamp omitted — Option<String> -> None.
-                // pause_message omitted — Option<String> -> None.
             }
         });
         let raw = serde_json::value::to_raw_value(&raw_payload).unwrap();
@@ -391,7 +365,6 @@
             .as_ref()
             .expect("GoalUpdated must populate goal_state even with all Option fields omitted");
 
-        // Required fields landed as sent.
         assert_eq!(goal.goal_id, "g-min");
         assert_eq!(goal.objective, "minimal payload");
         assert_eq!(goal.status, GoalDisplayStatus::Active);
@@ -405,9 +378,6 @@
         assert_eq!(goal.token_baseline, 0);
         assert_eq!(goal.finished_subagent_tokens, 0);
 
-        // Every omitted Option<T> wire field must surface as None — this
-        // is the property that keeps the destructure stable as the shell
-        // grows additive optional fields.
         assert_eq!(goal.token_budget, None, "token_budget");
         assert_eq!(goal.current_deliverable_id, None, "current_deliverable_id");
         assert_eq!(

@@ -1,10 +1,4 @@
 //! Tool wire-protocol types.
-//!
-//! Identifier newtypes, registration payloads, capabilities, hook events,
-//! handshake messages, the JSON-RPC 2.0 envelope and method catalog, the
-//! `ToolErrorWire` / `ToolOutputWire` / `WireToolNotification` wire enums,
-//! every method's `params` / `result` payload struct, and the numeric ↔
-//! string error-code mapping.
 
 #![forbid(unsafe_code)]
 

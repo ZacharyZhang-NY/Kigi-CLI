@@ -4,7 +4,7 @@
 //! instead of branching on brand. The classification depends on the
 //! current `HostOs`, queried internally — today only macOS rows are
 //! populated. Extend [`KeyboardCapabilities`] with new fields (paste
-//! protocol, focus reporting, custom escapes) instead of adding more
+//! protocol, focus reporting, custom escapes) instead of stacking more
 //! `match self.brand` sites scattered through the pager.
 
 use super::TerminalName;
@@ -84,7 +84,7 @@ impl KeyboardCapabilities {
 /// Classify keyboard capabilities for a given `(brand, os, display_server)`.
 ///
 /// Today the table is populated only for macOS; other OSes return the
-/// default (all-`Unknown`). When a Linux/Windows probe lands, add a
+/// default (all-`Unknown`). When a Linux/Windows probe lands, include a
 /// per-OS arm here rather than forking the function.
 pub fn keyboard_capabilities(brand: TerminalName) -> KeyboardCapabilities {
     match HostOs::current() {

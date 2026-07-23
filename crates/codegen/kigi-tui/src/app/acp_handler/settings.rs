@@ -140,7 +140,7 @@ pub(super) fn handle_settings_update(notif: &acp::ExtNotification, app: &mut App
     // shell always publishes this field from its live remote tier, so None
     // means remote settings cleared it (or an older shell that cannot deliver the
     // remote tier at all) — either way resolving without a remote value is
-    // correct, and it reverts a previously cached remote enable back to the
+    // correct, and it reverts a cached remote enable back to the
     // local/default (off) resolution instead of leaving Some(true) stuck
     // until restart.
     let remote = kigi_shell::util::config::RemoteSettings {

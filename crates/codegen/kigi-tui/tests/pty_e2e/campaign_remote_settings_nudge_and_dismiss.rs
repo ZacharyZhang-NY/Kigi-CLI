@@ -60,7 +60,7 @@ async fn campaign_remote_settings_nudge_and_dismiss() {
         PtyHarness::new(&binary, DEFAULT_ROWS, DEFAULT_COLS, &[], &env_refs).expect("spawn pager")
     };
 
-    // ── Phase 1+2: the campaign applies to a new session; a pick dismisses. ──
+    // Phase 1+2: the campaign applies to a new session; a pick dismisses.
     {
         let mut h = spawn();
         h.wait_for_text(WELCOME_SCREEN_SENTINEL, WELCOME_TIMEOUT)
@@ -100,7 +100,7 @@ async fn campaign_remote_settings_nudge_and_dismiss() {
         h.quit().expect("clean quit");
     }
 
-    // ── Phase 3: reboot against the SAME settings → the config model wins. ──
+    // Phase 3: reboot against the SAME settings → the config model wins.
     {
         let mut h = spawn();
         h.wait_for_text(WELCOME_SCREEN_SENTINEL, WELCOME_TIMEOUT)

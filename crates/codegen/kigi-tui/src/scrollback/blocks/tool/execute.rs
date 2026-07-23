@@ -14,20 +14,17 @@ use crate::theme::Theme;
 
 const EXECUTE_STDOUT_RANGE_BASE: u16 = 1;
 
-/// Execute tool call - runs a shell command.
 #[derive(Debug, Clone)]
 pub struct ExecuteToolCallBlock {
     /// Full command that was run (search / copy_meta / export source of truth).
     pub command: String,
     /// Error message if the command failed (None = success).
     pub error: Option<String>,
-    /// Optional description of what the command does.
     pub description: Option<String>,
-    /// The terminal output. Streamed incrementally.
+    /// Streamed incrementally.
     pub output: Option<String>,
-    /// When the tool started running (Phase 2: time tracking).
     pub started_at: Option<std::time::Instant>,
-    /// Elapsed time in ms after completion (Phase 2: time tracking).
+    /// Elapsed time in ms, set once the command finishes.
     pub elapsed_ms: Option<i64>,
     /// Whether this is a user-initiated bash-mode (`!`) command.
     /// Streams as a truncated live tail, expands to full output on finish.
@@ -54,25 +51,21 @@ impl ExecuteToolCallBlock {
         }
     }
 
-    /// Set error (marks as failed).
     pub fn with_error(mut self, error: impl Into<String>) -> Self {
         self.error = Some(error.into());
         self
     }
 
-    /// Set description.
     pub fn with_description(mut self, desc: impl Into<String>) -> Self {
         self.description = Some(desc.into());
         self
     }
 
-    /// Set output.
     pub fn with_output(mut self, output: impl Into<String>) -> Self {
         self.output = Some(output.into());
         self
     }
 
-    /// Push streaming output chunk.
     pub fn push_output(&mut self, chunk: &str) {
         match &mut self.output {
             Some(o) => o.push_str(chunk),
@@ -93,7 +86,7 @@ impl ExecuteToolCallBlock {
         }
     }
 
-    /// Set error (mutable) — compute elapsed time if not already set (Phase 2).
+    /// Sets error; also computes elapsed time from `started_at` if not already set.
     pub fn set_error(&mut self, error: Option<String>) {
         if self.elapsed_ms.is_none()
             && let Some(start) = self.started_at
@@ -103,12 +96,11 @@ impl ExecuteToolCallBlock {
         self.error = error;
     }
 
-    /// Check if successful (no error).
     pub fn is_success(&self) -> bool {
         self.error.is_none()
     }
 
-    /// Get elapsed time in ms. Returns current elapsed if still running, or stored value if finished (Phase 2).
+    /// Returns current elapsed if still running, or the stored value once finished.
     pub fn elapsed_ms(&self) -> Option<i64> {
         match self.elapsed_ms {
             Some(ms) => Some(ms),
@@ -118,9 +110,7 @@ impl ExecuteToolCallBlock {
         }
     }
 
-    /// Get copyable text for this block (stdout output).
-    ///
-    /// Returns the output string if available, or empty string if no output.
+    /// Copyable text: rendered stdout output, or empty string if none.
     pub fn copy_text(&self) -> String {
         self.output
             .as_deref()
@@ -312,7 +302,8 @@ impl ExecuteToolCallBlock {
         // multi-line command display use `push_command_soft_wrap`).
         let title_owned;
         let title = if title.trim().is_empty() {
-            "\u{2026}" // …
+            // "\u{2026}" is the ellipsis character "…".
+            "\u{2026}"
         } else if title.contains('\n') {
             title_owned = title.replace('\n', " ");
             title_owned.as_str()
@@ -332,7 +323,7 @@ impl ExecuteToolCallBlock {
 
     /// Header lines for the execute block (description-first when a description exists).
     ///
-    /// Without description (unchanged):
+    /// Without description:
     /// - Shell: `$ command`
     /// - Label: `Run [(user) ]command`
     ///
@@ -530,7 +521,8 @@ impl ExecuteToolCallBlock {
             width,
             extra_indent,
             false,
-            true, // include $ command when expanded/truncated
+            // include $ command when expanded/truncated
+            true,
         );
 
         if self.output.is_none()
@@ -566,11 +558,9 @@ impl ExecuteToolCallBlock {
                 word_wrap_lines_with_joiners(styled_lines, width.saturating_sub(2).max(20));
             let total = wrapped.len();
 
-            // Apply truncation if specified and content exceeds limits
             if let Some((first, last)) = truncate {
                 let threshold = first + last;
                 if total > threshold {
-                    // First N lines: stdout range base
                     for (wrapped_line, joiner) in wrapped.iter().zip(joiners.iter()).take(first) {
                         lines.push(
                             BlockLine::styled(wrapped_line.clone())
@@ -584,7 +574,7 @@ impl ExecuteToolCallBlock {
                         BlockLine::separator(Line::from(Span::styled("\u{2026}", theme.muted())))
                             .with_panel_background(theme.bg_dark),
                     );
-                    // Last M lines: range base + 1 (distinct from first chunk)
+                    // Distinct selection range from the first chunk (range base + 1).
                     for (wrapped_line, joiner) in
                         wrapped.iter().zip(joiners.iter()).skip(total - last)
                     {
@@ -596,7 +586,6 @@ impl ExecuteToolCallBlock {
                         );
                     }
                 } else {
-                    // Content fits, show all with same range
                     for (wrapped_line, joiner) in wrapped.into_iter().zip(joiners) {
                         lines.push(
                             BlockLine::styled(wrapped_line)
@@ -607,7 +596,6 @@ impl ExecuteToolCallBlock {
                     }
                 }
             } else {
-                // No truncation, show all with same range
                 for (wrapped_line, joiner) in wrapped.into_iter().zip(joiners) {
                     lines.push(
                         BlockLine::styled(wrapped_line)
@@ -671,7 +659,8 @@ impl BlockContent for ExecuteToolCallBlock {
                     content_width,
                     0,
                     true,
-                    false, // hide command when description is the title
+                    // hide command when description is the title
+                    false,
                 );
                 BlockOutput { lines }
             }
@@ -918,7 +907,8 @@ mod tests {
             false,
             40,
             0,
-            false, // expanded: soft-wrap
+            // expanded: soft-wrap
+            false,
             true,
         );
         assert!(
@@ -969,7 +959,8 @@ mod tests {
         assert_eq!(headers.len(), 2);
         let title = line_text(&headers[0].0);
         assert_eq!(title, "Run (user) List files");
-        assert_eq!(headers[0].1, 2); // "Run " + "(user) "
+        // "Run " + "(user) "
+        assert_eq!(headers[0].1, 2);
     }
 
     #[test]

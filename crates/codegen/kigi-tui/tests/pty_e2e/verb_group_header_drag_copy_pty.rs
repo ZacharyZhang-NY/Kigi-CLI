@@ -43,7 +43,8 @@ fn drag_copy(harness: &mut PtyHarness, needle: &str) -> String {
 /// PTY: drag-copy on a verb-group header yields the aggregated label — folded
 /// AND expanded — and on the expanded slot the header row and member 0's row
 /// are independent targets: dragging the member's path never drags the header
-/// label along (the two rows previously shared one selectable range).
+/// label along (regression guard: the two rows must not share one
+/// selectable range).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "PTY e2e; run the owning pty_e2e_* Cargo test with --ignored (see Cargo.toml)"]
 async fn verb_group_header_drag_copy_pty() {

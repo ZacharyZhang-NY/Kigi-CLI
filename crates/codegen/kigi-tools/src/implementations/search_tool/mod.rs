@@ -61,7 +61,6 @@ fn hash_value<H: std::hash::Hash>(val: &H) -> u64 {
     hasher.finish()
 }
 
-/// Build fingerprints for a set of server summaries.
 pub fn fingerprint_servers(
     servers: &[crate::types::tool_index::ServerSummary],
 ) -> std::collections::HashMap<String, ServerFingerprint> {
@@ -100,8 +99,8 @@ pub fn build_server_reminder(
 
 /// Build a delta system-reminder noting only what changed.
 ///
-/// `old` is the previously-announced fingerprint map; `new_summaries` is the
-/// current server list. Returns `None` if nothing changed.
+/// `old` is the fingerprint map from the last announcement; `new_summaries`
+/// is the current server list. Returns `None` if nothing changed.
 pub fn build_delta_reminder(
     old: &std::collections::HashMap<String, ServerFingerprint>,
     new_summaries: &[crate::types::tool_index::ServerSummary],
@@ -272,7 +271,6 @@ impl kigi_tool_runtime::Tool for SearchTool {
         let limit = input.limit.unwrap_or(5) as usize;
         let snapshot = tool_index.search_snapshot(&input.query, limit);
 
-        // Event: search_tool.search (telemetry — before grouping)
         let all_results_json: Vec<serde_json::Value> = snapshot
             .results
             .iter()
@@ -420,8 +418,6 @@ mod tests {
         );
     }
 
-    // -- truncate_description tests --
-
     #[test]
     fn truncate_short_description_unchanged() {
         let short = "A short description";
@@ -454,8 +450,6 @@ mod tests {
             MAX_MCP_DESCRIPTION_LENGTH,
         );
     }
-
-    // -- build_server_reminder tests --
 
     #[test]
     fn reminder_no_servers_returns_none() {
@@ -547,8 +541,6 @@ mod tests {
         let text = build_server_reminder(&servers).unwrap();
         assert!(text.contains(TRUNCATION_SUFFIX), "got: {text}");
     }
-
-    // -- delta reminder tests --
 
     #[test]
     fn delta_no_change_returns_none() {
@@ -679,8 +671,6 @@ mod tests {
         let f2 = fingerprint_servers(&servers);
         assert_eq!(f1, f2);
     }
-
-    // -- hash_value stability tests (FNV-1a) --
 
     #[test]
     fn hash_value_deterministic() {

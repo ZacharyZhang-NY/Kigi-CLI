@@ -189,7 +189,6 @@ pub fn collect_startup_warnings(
         ));
     }
 
-    // Byobu-on-screen: best-effort warning, no further tmux-specific checks.
     if ctx.byobu == Some(ByobuBackend::Screen) {
         warnings.push(TerminalWarning::new(
             WarningCategory::ByobuScreen,
@@ -218,10 +217,8 @@ pub fn collect_startup_warnings(
         ));
     }
 
-    // Resolve tmux config path once for all tmux-related warnings below.
     let config_path = ctx.tmux_config_path();
 
-    // tmux-backed clipboard and DCS passthrough checks.
     if ctx.is_tmux_backed() {
         let clipboard_warnings = diagnose_clipboard_with_query(query, &config_path);
         warnings.extend(clipboard_warnings);
@@ -699,18 +696,12 @@ fn tmux_option_exists(option: &str) -> bool {
 pub(crate) use crate::terminal::parse_tmux_show_option_output;
 pub(crate) use crate::terminal::tmux_show_option;
 
-// ===========================================================================
-// Tests
-// ===========================================================================
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::terminal::{
         ByobuBackend, MultiplexerKind, TerminalContext, TerminalName, TmuxClientMeta,
     };
-
-    // -- Deterministic TmuxOptionQuery fixture --------------------------------
 
     /// A fake [`TmuxOptionQuery`] that returns pre-configured values without
     /// touching the tmux subprocess. Use this in all diagnostic tests to avoid
@@ -758,8 +749,6 @@ mod tests {
             }
         }
     }
-
-    // -- Test context builders ------------------------------------------------
 
     fn plain_terminal_ctx() -> TerminalContext {
         TerminalContext {
@@ -824,10 +813,6 @@ mod tests {
             ..Default::default()
         }
     }
-
-    // =====================================================================
-    // diagnose_clipboard_from_values: pure clipboard logic
-    // =====================================================================
 
     #[test]
     fn clipboard_all_good_modern_tmux() {
@@ -915,10 +900,6 @@ mod tests {
         assert_eq!(w[0].config_path.as_deref(), Some("~/.byobu/.tmux.conf"));
     }
 
-    // =====================================================================
-    // diagnose_wayland_data_control: pure Wayland clipboard logic
-    // =====================================================================
-
     #[test]
     fn wayland_no_data_control_warns() {
         let w = diagnose_wayland_data_control(true, false, true).expect("must warn");
@@ -950,12 +931,6 @@ mod tests {
         assert!(diagnose_wayland_data_control(false, true, true).is_none());
     }
 
-    // =====================================================================
-    // collect_startup_warnings: full integration
-    // =====================================================================
-
-    // -- Plain terminal: no warnings ------------------------------------------
-
     #[test]
     fn plain_terminal_no_warnings() {
         let ctx = plain_terminal_ctx();
@@ -963,8 +938,6 @@ mod tests {
         let w = collect_startup_warnings(&ctx, &query, false, true);
         assert!(w.is_empty(), "Plain terminal should produce no warnings");
     }
-
-    // -- Healthy tmux: no warnings --------------------------------------------
 
     #[test]
     fn healthy_tmux_fullscreen_no_warnings() {
@@ -981,8 +954,6 @@ mod tests {
         let w = collect_startup_warnings(&ctx, &query, false, false);
         assert!(w.is_empty(), "Healthy tmux inline should be quiet");
     }
-
-    // -- tmux clipboard misconfiguration --------------------------------------
 
     #[test]
     fn tmux_clipboard_off_warns() {
@@ -1023,8 +994,6 @@ mod tests {
         assert_eq!(w[0].category, WarningCategory::Clipboard);
         assert_eq!(w[1].category, WarningCategory::DcsPassthrough);
     }
-
-    // -- tmux control mode ----------------------------------------------------
 
     #[test]
     fn tmux_control_mode_inline_warns_degraded() {
@@ -1071,8 +1040,6 @@ mod tests {
         assert!(categories.contains(&WarningCategory::Clipboard));
     }
 
-    // -- Byobu-on-tmux -------------------------------------------------------
-
     #[test]
     fn byobu_tmux_healthy_no_warnings() {
         let ctx = byobu_tmux_ctx();
@@ -1094,8 +1061,6 @@ mod tests {
         assert_eq!(w[0].config_path.as_deref(), Some("~/.byobu/.tmux.conf"));
     }
 
-    // -- Byobu-on-screen ------------------------------------------------------
-
     #[test]
     fn byobu_screen_warns_best_effort() {
         let ctx = byobu_screen_ctx();
@@ -1115,12 +1080,9 @@ mod tests {
             ..FakeTmuxQuery::healthy_modern()
         };
         let w = collect_startup_warnings(&ctx, &query, false, true);
-        // Only the ByobuScreen warning, no clipboard/DCS warnings.
         assert_eq!(w.len(), 1);
         assert_eq!(w[0].category, WarningCategory::ByobuScreen);
     }
-
-    // -- Plain screen (no Byobu) ----------------------------------------------
 
     #[test]
     fn plain_screen_no_warnings() {
@@ -1133,8 +1095,6 @@ mod tests {
         );
     }
 
-    // -- Zellij ---------------------------------------------------------------
-
     #[test]
     fn zellij_no_warnings() {
         let ctx = zellij_ctx();
@@ -1145,8 +1105,6 @@ mod tests {
             "Zellij should not show tmux or Byobu warnings"
         );
     }
-
-    // -- Apple Terminal (unsupported OSC 52) ----------------------------------
 
     // Note: the Apple Terminal warning is gated on `is_remote_session()` which
     // reads ambient env vars. In CI / local dev, SSH_CONNECTION is typically
@@ -1189,8 +1147,6 @@ mod tests {
         }
     }
 
-    // -- Multi-warning coalescing ---------------------------------------------
-
     #[test]
     fn tmux_clipboard_and_dcs_both_warn() {
         let ctx = plain_tmux_ctx();
@@ -1220,8 +1176,6 @@ mod tests {
         assert!(categories.contains(&WarningCategory::Clipboard));
         assert!(categories.contains(&WarningCategory::DcsPassthrough));
     }
-
-    // -- Query unavailable: tmux server unreachable ---------------------------
 
     #[test]
     fn tmux_query_unavailable_produces_no_clipboard_warnings() {
@@ -1262,18 +1216,10 @@ mod tests {
         assert!(w.is_empty());
     }
 
-    // -- tmux_option_exists: deterministic known-bad option --------------------
-
     #[test]
     fn tmux_option_exists_returns_false_for_nonexistent_option() {
         assert!(!tmux_option_exists("nonexistent-option-xyz"));
     }
-
-    // =====================================================================
-    // Extended diagnostic matrix (final hardening)
-    // =====================================================================
-
-    // -- Non-standard option values trigger warnings --------------------------
 
     #[test]
     fn clipboard_disabled_string_is_flagged() {
@@ -1290,11 +1236,8 @@ mod tests {
         assert_eq!(w[0].category, WarningCategory::DcsPassthrough);
     }
 
-    // -- Zellij produces no tmux-specific warnings ----------------------------
-
     #[test]
     fn zellij_fullscreen_active_no_warnings() {
-        // Zellij with fullscreen_active=true: no tmux warnings should appear.
         let ctx = zellij_ctx();
         let query = FakeTmuxQuery::healthy_modern();
         let w = collect_startup_warnings(&ctx, &query, false, true);
@@ -1321,8 +1264,6 @@ mod tests {
         );
     }
 
-    // -- Plain terminal with bad tmux options: no warnings --------------------
-
     #[test]
     fn plain_terminal_with_bad_tmux_options_still_quiet() {
         let ctx = plain_terminal_ctx();
@@ -1338,8 +1279,6 @@ mod tests {
         );
     }
 
-    // -- Plain screen with bad tmux options: no warnings ----------------------
-
     #[test]
     fn plain_screen_with_bad_tmux_options_no_warnings() {
         let ctx = plain_screen_ctx();
@@ -1353,8 +1292,6 @@ mod tests {
             "Plain screen should not produce tmux-specific warnings"
         );
     }
-
-    // -- WezTerm without the Kitty keyboard protocol ---------------------------
 
     fn wezterm_ctx() -> TerminalContext {
         TerminalContext {
@@ -1484,8 +1421,6 @@ mod tests {
         assert!(wezterm_kitty_keyboard_warning(&ctx, false, Some("WezTerm 20240203")).is_none());
     }
 
-    // -- assemble_startup_warnings: banner ordering ----------------------------
-
     fn clipboard_banner() -> crate::startup::StartupWarning {
         crate::startup::StartupWarning {
             severity: crate::startup::WarningSeverity::Warning,
@@ -1571,8 +1506,6 @@ mod tests {
         assert!(out[1].message.contains("sandbox profile"));
     }
 
-    // -- Warning ordering: clipboard before DCS --------------------------------
-
     #[test]
     fn warning_order_clipboard_then_dcs() {
         let ctx = plain_tmux_ctx();
@@ -1600,8 +1533,6 @@ mod tests {
         assert_eq!(w[1].category, WarningCategory::Clipboard);
     }
 
-    // -- Byobu-tmux DCS passthrough uses Byobu config path --------------------
-
     #[test]
     fn byobu_tmux_dcs_passthrough_uses_byobu_config_path() {
         let ctx = byobu_tmux_ctx();
@@ -1615,8 +1546,6 @@ mod tests {
         assert_eq!(w[0].config_path.as_deref(), Some("~/.byobu/.tmux.conf"));
     }
 
-    // -- Byobu-screen ignores control mode flag (no tmux to be in control mode)
-
     #[test]
     fn byobu_screen_ignores_control_mode_flag() {
         let ctx = byobu_screen_ctx();
@@ -1626,8 +1555,6 @@ mod tests {
         assert_eq!(w.len(), 1);
         assert_eq!(w[0].category, WarningCategory::ByobuScreen);
     }
-
-    // -- Byobu-tmux with all issues: complete coalesced set -------------------
 
     #[test]
     fn byobu_tmux_all_issues_fullscreen() {
@@ -1647,8 +1574,6 @@ mod tests {
             assert_eq!(warning.config_path.as_deref(), Some("~/.byobu/.tmux.conf"));
         }
     }
-
-    // -- tmux extended-keys off warning ---------------------------------------
 
     fn extended_keys_ctx(base: TerminalContext, val: Option<&str>) -> TerminalContext {
         TerminalContext {
@@ -1707,8 +1632,6 @@ mod tests {
         assert_no_extended_keys_warning(Some("on"));
         assert_no_extended_keys_warning(Some("always"));
     }
-
-    // -- summarize_warnings allow-list -----------------------------------------
 
     #[test]
     fn summarize_warnings_surfaces_extended_keys_off() {
@@ -1784,8 +1707,6 @@ mod tests {
         assert!(summarize_warnings_inner(&warnings, false).is_none());
     }
 
-    // -- parse_tmux_show_option_output (pure helper) --------------------------
-
     #[test]
     fn parse_tmux_show_option_output_success_cases() {
         assert_eq!(
@@ -1815,10 +1736,6 @@ mod tests {
         // Subprocess failure ignores stdout entirely.
         assert_eq!(parse_tmux_show_option_output(false, b"on"), None);
     }
-
-    // =====================================================================
-    // collect_notification_warnings
-    // =====================================================================
 
     use crate::notifications::NotificationCondition;
     use crate::notifications::protocol::NotificationProtocol;
@@ -1980,7 +1897,8 @@ mod tests {
 
     #[test]
     fn notification_focus_tracking_no_warning_for_supported_terminal() {
-        let ctx = plain_terminal_ctx(); // Ghostty supports focus tracking
+        // Ghostty supports focus tracking.
+        let ctx = plain_terminal_ctx();
         let query = FakeTmuxQuery::healthy_modern();
         let w = collect_notification_warnings(
             &ctx,
@@ -2089,8 +2007,6 @@ mod tests {
         assert!(!supports_focus_tracking(TerminalName::Unknown));
         assert!(!supports_focus_tracking(TerminalName::Otty));
     }
-
-    // -- Color / theme rows + LimitedColorSupport warnings --------------------
 
     #[test]
     fn format_color_env_line_uses_canonical_level_label() {

@@ -277,7 +277,6 @@ fn execute_create_worktree_dispatch(plan: WorktreePlan) -> Result<CreateWorktree
                 }
             }
 
-            // 2. Try BTRFS snapshot (O(1), no file copies)
             #[cfg(target_os = "linux")]
             {
                 match try_btrfs_worktree(&plan) {
@@ -293,7 +292,6 @@ fn execute_create_worktree_dispatch(plan: WorktreePlan) -> Result<CreateWorktree
                 }
             }
 
-            // 3. Fall back to file-by-file copy
             #[cfg(target_os = "linux")]
             if !skipped_reasons.is_empty() {
                 tracing::info!(
@@ -502,8 +500,10 @@ fn execute_overlay_worktree(
     Ok(CreateWorktreeResult {
         worktree_path: plan.dest,
         commit,
-        copy_stats: CopyStats::default(), // 0 files copied!
-        ignored_stats: None,              // overlay includes everything
+        // 0 files copied!
+        copy_stats: CopyStats::default(),
+        // overlay includes everything
+        ignored_stats: None,
         dirty_files_report: None,
     })
 }
@@ -760,9 +760,12 @@ fn execute_btrfs_worktree(
     Ok(CreateWorktreeResult {
         worktree_path: plan.dest,
         commit,
-        copy_stats: CopyStats::default(), // No files copied - instant snapshot!
-        ignored_stats: None,              // Snapshot includes everything
-        dirty_files_report: None,         // Not tracked for BTRFS snapshots
+        // No files copied - instant snapshot!
+        copy_stats: CopyStats::default(),
+        // Snapshot includes everything
+        ignored_stats: None,
+        // Not tracked for BTRFS snapshots
+        dirty_files_report: None,
     })
 }
 
@@ -897,7 +900,8 @@ fn execute_copy_worktree(plan: WorktreePlan) -> Result<CreateWorktreeResult> {
                 num_workers: effective_ignored_parallelism,
                 channel_buffer,
                 skip_files: Some(Arc::new(already_copied)),
-                respect_gitignore: false, // We want all files.
+                // We want all files.
+                respect_gitignore: false,
                 skip_patterns,
             };
 

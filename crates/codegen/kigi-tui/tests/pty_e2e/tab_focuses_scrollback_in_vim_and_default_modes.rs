@@ -22,7 +22,6 @@ async fn assert_tab_focuses_scrollback(content: &ContentController) {
         .wait_for_text(MOCK_RESPONSE_SENTINEL, Duration::from_secs(30))
         .expect("turn rendered");
 
-    // Prompt owns keys before Tab.
     assert!(
         !harness.contains_text("Space:prompt"),
         "precondition: prompt should be focused before Tab\nscreen:\n{}",

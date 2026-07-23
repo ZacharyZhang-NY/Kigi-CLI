@@ -130,7 +130,7 @@ impl Tool for UnencodableTool {
     }
 }
 
-// ── Tool with custom ToolOutput (non-empty) ──────────────────
+// Tool with custom ToolOutput (non-empty)
 
 /// Output that provides its own model-facing content blocks. The blanket
 /// impl must forward these as-is rather than filling in the JSON fallback.
@@ -201,7 +201,6 @@ async fn tool_dyn_preserves_custom_model_output() {
                     {"type": "image", "mime_type": "image/png", "data": "base64data"},
                 ]})
             );
-            // Custom model output preserved verbatim — no JSON fallback.
             assert_eq!(typed.model_output.len(), 2);
             assert_eq!(
                 typed.model_output[0],
@@ -238,8 +237,7 @@ async fn tool_dyn_blanket_encodes_terminal_output() {
         ToolStreamItem::Terminal(Ok(typed)) => {
             assert_eq!(typed.tool_id, tid("blocking_echo"));
             assert_eq!(typed.value, json!({"text": "hi"}));
-            // EchoOutput uses the default ToolOutput which
-            // serialises self to a JSON text block (MCP-compliant).
+            // Default ToolOutput serialises self to a JSON text block (MCP).
             assert_eq!(typed.model_output.len(), 1);
             assert_eq!(
                 typed.model_output[0],
@@ -283,7 +281,7 @@ async fn tool_dyn_blanket_passes_progress_through() {
 #[tokio::test]
 async fn tool_dyn_invalid_args_become_invalid_arguments_terminal() {
     let tool: ArcTool = Arc::new(BlockingEcho);
-    // `text` is required and must be a string — `null` fails serde.
+    // `text` is required and must be a string.
     let mut stream = tool
         .execute(ToolCallContext::default(), json!({"text": null}))
         .await;
@@ -314,9 +312,7 @@ async fn tool_dyn_unencodable_output_becomes_execution_terminal() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // ToolFamily
-// ---------------------------------------------------------------------------
 
 /// Backend-flavoured echo. Two variants share the `echo` tool id and only
 /// differ in the prefix attached to the output text — enough to assert
@@ -437,9 +433,7 @@ async fn tool_family_default_variant_name_defaults_to_none() {
     assert!(family.default_variant_name().is_none());
 }
 
-// ---------------------------------------------------------------------------
 // Object safety / ergonomic checks
-// ---------------------------------------------------------------------------
 
 #[test]
 fn tool_dyn_is_object_safe_in_arc_and_box() {
@@ -455,8 +449,7 @@ fn tool_family_is_object_safe_in_arc_and_box() {
 
 #[test]
 fn arc_tool_alias_holds_heterogeneous_tools() {
-    // The whole point of `ArcTool` — many typed `Tool` impls collapse
-    // into one container shape via the blanket impl.
+    // ArcTool: many typed Tool impls collapse into one container via the blanket.
     let tools: Vec<ArcTool> = vec![Arc::new(BlockingEcho), Arc::new(StreamingEcho)];
     assert_eq!(tools.len(), 2);
     let ids: Vec<_> = tools.iter().map(|t| t.id()).collect();
@@ -484,8 +477,7 @@ fn _compile_time_blanket_check() {
     let tool = StreamingEcho;
     _accepts_dyn(&tool);
 
-    // The trait objects themselves must be `Send + Sync` so they can be
-    // shared across tasks without further bounds at the call site.
+    // Trait objects are Send + Sync for sharing across tasks.
     fn _is_send_sync<T: Send + Sync + ?Sized>() {}
     _is_send_sync::<dyn ToolDyn>();
     _is_send_sync::<dyn ToolFamily>();

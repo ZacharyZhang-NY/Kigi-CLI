@@ -3,7 +3,6 @@
 use crate::app::actions::Action;
 use crate::slash::command::{CommandExecCtx, CommandResult, SlashCommand};
 
-/// Exit the current session and return to the welcome screen.
 pub struct HomeCommand;
 
 impl SlashCommand for HomeCommand {

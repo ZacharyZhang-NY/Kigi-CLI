@@ -1,5 +1,4 @@
 //! Code-navigation eligibility gating and codebase-index management for [`MvpAgent`].
-//! Co-located child of `mvp_agent` (`use super::*`).
 
 use super::*;
 
@@ -41,10 +40,11 @@ impl MvpAgent {
         Some((handle, was_newly_started))
     }
 
-    /// Core eligibility check — pure function that accepts explicit client
-    /// context rather than reading global agent state.
+    /// Core eligibility check — takes client type and capability as explicit
+    /// arguments instead of the last-initialize global fields, so it is correct
+    /// under leader mode.
     ///
-    /// This is the single place that applies all four gates.  Call it via
+    /// The single place that applies all four gates.  Call it via
     /// [`code_nav_eligibility_for_request`] (leader-mode safe) or
     /// [`code_nav_eligibility`] (global state, non-leader use only).
     pub(super) fn code_nav_eligibility_inner(
@@ -55,7 +55,6 @@ impl MvpAgent {
     ) -> Result<(), CodeNavEligibility> {
         use crate::agent::config::CodebaseIndexingSetting;
 
-        // Gate 1: client type
         if !matches!(client_type, ClientType::KigiWeb) {
             tracing::info!(
                 client_type = ?client_type,
@@ -66,7 +65,6 @@ impl MvpAgent {
             return Err(CodeNavEligibility::ClientNotWeb);
         }
 
-        // Gate 2: capability advertised
         if !code_nav_enabled {
             tracing::info!(
                 gate = "capability",
@@ -76,7 +74,6 @@ impl MvpAgent {
             return Err(CodeNavEligibility::CapabilityNotAdvertised);
         }
 
-        // Gate 3: config
         let setting = self.cfg.borrow().features.codebase_indexing.clone();
         if let CodebaseIndexingSetting::Enabled(false) = &setting {
             tracing::info!(
@@ -87,7 +84,6 @@ impl MvpAgent {
             return Err(CodeNavEligibility::DisabledByConfig);
         }
 
-        // Gate 4: git root / config globs
         let git_root = kigi_workspace::session::git::find_git_root_from_path(cwd).ok();
         match &setting {
             CodebaseIndexingSetting::Enabled(true) => {
@@ -113,7 +109,8 @@ impl MvpAgent {
                     return Err(CodeNavEligibility::DisabledByConfig);
                 }
             }
-            CodebaseIndexingSetting::Enabled(false) => {} // handled above
+            // Enabled(false) already returned above.
+            CodebaseIndexingSetting::Enabled(false) => {}
         }
 
         Ok(())
@@ -128,7 +125,8 @@ impl MvpAgent {
     /// called once per connection; the global fields on `MvpAgent` reflect
     /// only the **last** client to call `initialize()`.
     ///
-    /// Falls back to global agent state when no session_id is given.
+    /// Rejects with `SessionRequired` when no `session_id` is given or the
+    /// session is unknown, rather than falling back to global state.
     pub fn code_nav_eligibility_for_request(
         &self,
         session_id: Option<&acp::SessionId>,
@@ -214,7 +212,6 @@ impl MvpAgent {
         }
 
         let target = git_root.unwrap_or_else(|| cwd.to_path_buf());
-        // get_or_create returns the authoritative (handle, was_newly_started) pair.
         // Log only on actual first spawn so reuse requests are not misleadingly
         // labelled as "starting".
         let (handle, was_newly_started) = self.get_or_create_codebase_index(target.clone());
@@ -250,8 +247,6 @@ impl MvpAgent {
         self.codebase_indexes.lock().get_or_create(cwd)
     }
 
-    /// Get an existing codebase index for the given cwd.
-    /// Returns None if no index exists for this cwd.
     pub fn get_codebase_index(
         &self,
         cwd: &std::path::Path,

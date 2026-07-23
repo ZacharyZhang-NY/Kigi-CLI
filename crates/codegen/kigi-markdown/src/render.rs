@@ -1546,7 +1546,8 @@ mod tests {
             true,
             &mut buffers,
             None,
-            Some(30), // narrow enough to force wrapping in column B
+            // narrow enough to force wrapping in column B
+            Some(30),
         );
 
         // Find the lines that contain "abc" — they should have a styled span
@@ -1587,7 +1588,8 @@ mod tests {
             true,
             &mut buffers,
             None,
-            Some(20), // narrow enough to force wrapping around the em-dash
+            // narrow enough to force wrapping around the em-dash
+            Some(20),
         );
         let text = lines_to_text(&output.lines);
         let all_text: String = text.join("");
@@ -1628,7 +1630,8 @@ mod tests {
         let md = "| A | B |\n|---|---|\n| x | y |\n| w | z |\n\n";
 
         let table_start_line = 0usize;
-        let table_source_lines = 4usize; // header + separator + 2 rows
+        // header + separator + 2 rows
+        let table_source_lines = 4usize;
 
         let (output, _) = render_markdown_ratatui_full(md, test_style::STYLE, true, None);
 
@@ -1694,7 +1697,8 @@ mod tests {
             Some(30),
         );
 
-        let table_source_lines = 3; // header + separator + 1 row
+        // header + separator + 1 row
+        let table_source_lines = 3;
         for (i, &src_line) in output.line_source_map.iter().enumerate() {
             assert!(
                 src_line < table_source_lines,
@@ -2428,7 +2432,7 @@ mod math_tests {
 
     #[test]
     fn paren_inline_math_in_table_cell_renders_unicode() {
-        // `\(…\)` inside a table cell must convert. Previously the
+        // `\(…\)` inside a table cell must convert. Historically the
         // backslash-form scanner was disabled inside tables, leaving raw TeX.
         // Normalization rewrites `\(…\)` → `$…$` before parsing, so the existing
         // in-cell `$` path converts it.

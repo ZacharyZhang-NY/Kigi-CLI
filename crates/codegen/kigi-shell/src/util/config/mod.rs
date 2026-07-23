@@ -20,7 +20,7 @@ pub use load::*;
 pub use mcp::*;
 pub use permissions::*;
 pub use persist::*;
-// `remote` extracted to the `kigi-config-types` crate (dependency inversion);
+// `remote` lives in the `kigi-config-types` crate (dependency inversion);
 // re-exported so `crate::util::config::{RemoteSettings, GoalRoleModel}` keep working.
 pub use kigi_config_types::{
     CampaignOverride, ContextualHintsRemote, DisplayRefreshSettings, DoomLoopRecoverySettings,

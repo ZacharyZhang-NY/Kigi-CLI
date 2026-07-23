@@ -52,7 +52,8 @@ impl IndexOperation {
     /// Whether this operation requires exclusive access.
     pub fn is_exclusive(&self) -> bool {
         match self {
-            Self::Load => false, // Shared/read access
+            // Shared/read access
+            Self::Load => false,
             Self::Save | Self::Build | Self::BackgroundRefresh => true,
         }
     }
@@ -77,8 +78,10 @@ impl std::fmt::Display for IndexOperation {
 /// In-memory lock state for same-process deduplication.
 struct InMemoryLockState {
     operation: IndexOperation,
-    readers: usize,  // Count for shared locks
-    exclusive: bool, // Whether an exclusive lock is held
+    // Count for shared locks
+    readers: usize,
+    // Whether an exclusive lock is held
+    exclusive: bool,
 }
 
 /// Global registry of in-memory locks (same process).
@@ -299,7 +302,6 @@ fn try_acquire_in_memory_lock(workspace: &Path, operation: IndexOperation) -> bo
     true
 }
 
-/// Release an in-memory lock.
 fn release_in_memory_lock(workspace: &Path, operation: IndexOperation) {
     // Use entry API for atomic check-and-modify
     if let dashmap::mapref::entry::Entry::Occupied(mut entry) =
@@ -439,7 +441,6 @@ mod tests {
         // Drop first lock
         drop(guard1);
 
-        // Now second should succeed
         let guard3 = try_lock(workspace, IndexOperation::Build);
         assert!(guard3.is_acquired());
     }
@@ -490,7 +491,6 @@ mod tests {
         // Drop shared lock
         drop(guard1);
 
-        // Now exclusive should succeed
         let guard3 = try_lock(workspace, IndexOperation::Build);
         assert!(guard3.is_acquired());
     }

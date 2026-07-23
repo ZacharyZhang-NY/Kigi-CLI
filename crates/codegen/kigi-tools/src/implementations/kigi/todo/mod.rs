@@ -1,9 +1,5 @@
-//! TodoWrite — new-architecture implementation.
-//!
-//! Reuses the core logic (`validate_no_duplicate_ids`, `apply_replace`,
-//! `apply_merge`, `summarize_todo_state`) from the old `implementations::todo`
-//! module. State is stored as `State<TodoState>` in Resources instead of
-//! `ToolState.todo_state`.
+//! `TodoWrite` tool: the model-maintained task list, persisted as
+//! `State<TodoState>` in Resources.
 
 use std::fmt::Write;
 
@@ -72,7 +68,6 @@ pub(crate) fn apply_replace(
 pub(crate) fn apply_merge(state: &mut TodoState, updates: &[TodoUpdate]) -> Result<(), TodoError> {
     for u in updates {
         if state.update(&u.id, u.content.as_deref(), u.status) {
-            // Existing item – partial update succeeded, content was optional.
             continue;
         }
         let content = if u.has_no_content() {
@@ -252,7 +247,7 @@ pub struct TodoWriteInput {
     pub todos: Vec<TodoUpdate>,
 }
 
-/// New-architecture `TodoWrite` tool.
+/// `TodoWrite` tool.
 ///
 /// State: `State<TodoState>` — persisted across calls via Resources serde.
 /// Params: `()` — no per-tool configuration.
@@ -368,8 +363,6 @@ mod tests {
     use crate::types::resources::Resources;
     use crate::types::tool_metadata::test_ctx;
 
-    // -- Helpers --
-
     fn make_update(id: &str, content: Option<&str>, status: Option<TodoStatus>) -> TodoUpdate {
         TodoUpdate {
             id: id.to_owned(),
@@ -385,8 +378,6 @@ mod tests {
             other => panic!("expected TodosUpdated, got {other:?}"),
         }
     }
-
-    // -- Tests --
 
     #[test]
     fn name_and_description() {
@@ -419,7 +410,6 @@ mod tests {
         assert!(output.summary_for_prompt.contains("Task A"));
         assert!(output.summary_for_prompt.contains("Task B"));
 
-        // State persists in Resources
         let res = shared.lock().await;
         let state = res.get::<State<TodoState>>().unwrap();
         assert_eq!(state.0.todo_items().count(), 2);
@@ -431,7 +421,6 @@ mod tests {
         let resources = Resources::new();
         let shared = resources.into_shared();
 
-        // Seed initial state
         let input1 = TodoWriteInput {
             merge: false,
             todos: vec![make_update(
@@ -444,7 +433,6 @@ mod tests {
             .await
             .unwrap();
 
-        // Replace with new
         let input2 = TodoWriteInput {
             merge: false,
             todos: vec![make_update(
@@ -469,7 +457,6 @@ mod tests {
         let resources = Resources::new();
         let shared = resources.into_shared();
 
-        // Create initial items
         let input1 = TodoWriteInput {
             merge: false,
             todos: vec![
@@ -481,7 +468,6 @@ mod tests {
             .await
             .unwrap();
 
-        // Merge: mark item 1 completed (no content), add item 3
         let input2 = TodoWriteInput {
             merge: true,
             todos: vec![
@@ -496,7 +482,6 @@ mod tests {
         );
         assert_eq!(output.todos.len(), 3);
 
-        // Item 1 content preserved, status updated
         let item1 = output
             .todos
             .iter()
@@ -510,7 +495,6 @@ mod tests {
         let tool = TodoWriteTool;
         let resources = Resources::new();
 
-        // Merge into empty state — should not error
         let input = TodoWriteInput {
             merge: true,
             todos: vec![make_update("explore", None, Some(TodoStatus::Completed))],
@@ -521,7 +505,6 @@ mod tests {
                 .unwrap(),
         );
         assert_eq!(output.todos.len(), 1);
-        // Id used as fallback content
         assert_eq!(output.todos[0].content, "explore");
         assert_eq!(output.todos[0].status, TodoStatus::Completed);
     }
@@ -580,7 +563,6 @@ mod tests {
                 .unwrap(),
         );
 
-        // state field should match what's in Resources
         assert!(!output.state.is_empty());
         assert_eq!(output.state.todo_items().count(), 1);
     }
@@ -591,7 +573,6 @@ mod tests {
         let mut resources = Resources::new();
         resources.register_state::<TodoState>();
 
-        // Create some state
         let input = TodoWriteInput {
             merge: false,
             todos: vec![
@@ -604,7 +585,6 @@ mod tests {
             .await
             .unwrap();
 
-        // Serialize
         let res = shared.lock().await;
         let snapshot = res.serialize();
         let state_map = snapshot.get("state").unwrap();
@@ -613,7 +593,6 @@ mod tests {
             "TodoState should serialize under 'kigi.Todo'"
         );
 
-        // Deserialize into fresh Resources
         let mut resources2 = Resources::new();
         resources2.register_state::<TodoState>();
         let data: std::collections::HashMap<
@@ -622,7 +601,6 @@ mod tests {
         > = serde_json::from_value(snapshot).unwrap();
         resources2.load_from(data);
 
-        // Verify state was restored
         let restored = resources2.get::<State<TodoState>>().unwrap();
         assert_eq!(restored.0.todo_items().count(), 2);
         let items: Vec<_> = restored.0.todo_items().collect();
@@ -656,8 +634,6 @@ mod tests {
             .unwrap_or_else(|| panic!("item {id} not found in state"))
     }
 
-    // ── replace (merge=false) ────────────────────────────────────────
-
     #[test]
     fn replace_without_content_falls_back_to_id() {
         let mut state = TodoState::default();
@@ -669,7 +645,7 @@ mod tests {
         apply_replace(&mut state, &updates).unwrap();
 
         let item = get_item(&state, "build_project");
-        assert_eq!(item.content, "build_project"); // id used as fallback
+        assert_eq!(item.content, "build_project");
         assert_eq!(item.status, TodoStatus::Pending);
     }
 
@@ -709,12 +685,9 @@ mod tests {
         )];
         apply_replace(&mut state, &updates).unwrap();
 
-        // Old item is gone.
         assert!(!state.todo_items_with_ids().any(|(id, _)| *id == "old"));
         assert_eq!(get_item(&state, "new").content, "New task");
     }
-
-    // ── merge (merge=true) ───────────────────────────────────────────
 
     #[test]
     fn merge_existing_item_status_only() {
@@ -725,7 +698,7 @@ mod tests {
 
         let item = get_item(&state, "1");
         assert_eq!(item.status, TodoStatus::Completed);
-        assert_eq!(item.content, "Build the project"); // unchanged
+        assert_eq!(item.content, "Build the project");
     }
 
     #[test]
@@ -767,7 +740,7 @@ mod tests {
         apply_merge(&mut state, &updates).unwrap();
 
         let item = get_item(&state, "explore_codebase");
-        assert_eq!(item.content, "explore_codebase"); // id used as fallback
+        assert_eq!(item.content, "explore_codebase");
         assert_eq!(item.status, TodoStatus::Completed);
     }
 
@@ -799,23 +772,19 @@ mod tests {
     fn merge_mixed_existing_and_new() {
         let mut state = seed_state(&[("exist", "Existing task", TodoStatus::InProgress)]);
         let updates = vec![
-            // Update existing — content omitted, just flip status.
             make_update("exist", None, Some(TodoStatus::Completed)),
-            // Brand-new item — content required.
             make_update("fresh", Some("New task"), Some(TodoStatus::Pending)),
         ];
         apply_merge(&mut state, &updates).unwrap();
 
         let existing = get_item(&state, "exist");
         assert_eq!(existing.status, TodoStatus::Completed);
-        assert_eq!(existing.content, "Existing task"); // preserved
+        assert_eq!(existing.content, "Existing task");
 
         let fresh = get_item(&state, "fresh");
         assert_eq!(fresh.content, "New task");
         assert_eq!(fresh.status, TodoStatus::Pending);
     }
-
-    // ── duplicate id validation ──────────────────────────────────────
 
     #[test]
     fn duplicate_ids_rejected_unit() {
@@ -836,8 +805,6 @@ mod tests {
         validate_no_duplicate_ids(&updates).unwrap();
     }
 
-    // ── regression: missing merge=true auto-upgrade ────────────────────
-
     #[tokio::test]
     async fn missing_merge_flag_auto_upgrades_when_status_only() {
         // Regression: status-only update without merge=true must not wipe content.
@@ -845,7 +812,6 @@ mod tests {
         let resources = Resources::new();
         let shared = resources.into_shared();
 
-        // Create todos with content
         let input1 = TodoWriteInput {
             merge: false,
             todos: vec![
@@ -858,9 +824,8 @@ mod tests {
             .await
             .unwrap();
 
-        // Status-only update without merge=true
         let input2 = TodoWriteInput {
-            merge: false, // model forgot merge: true
+            merge: false,
             todos: vec![
                 make_update("1", None, Some(TodoStatus::Completed)),
                 make_update("2", None, Some(TodoStatus::Completed)),
@@ -873,7 +838,6 @@ mod tests {
                 .unwrap(),
         );
 
-        // Content must be preserved, not replaced with id fallback.
         assert_eq!(output.todos.len(), 3);
         assert_eq!(output.todos[0].content, "Explore codebase");
         assert_eq!(output.todos[0].status, TodoStatus::Completed);
@@ -883,8 +847,6 @@ mod tests {
         assert_eq!(output.todos[2].status, TodoStatus::InProgress);
     }
 
-    // ── regression: merge with null content should never error ────────
-
     #[test]
     fn merge_after_replace_status_update_with_null_content() {
         // Reproduces the exact scenario from the bug report:
@@ -892,7 +854,6 @@ mod tests {
         // 2. Merge updates 2 items with content=null, status changed
         let mut state = TodoState::default();
 
-        // Step 1: replace (merge=false)
         let initial = vec![
             make_update(
                 "explore_codebase",
@@ -912,14 +873,12 @@ mod tests {
         ];
         apply_replace(&mut state, &initial).unwrap();
 
-        // Step 2: merge (merge=true) — content=null, just status changes
         let updates = vec![
             make_update("explore_codebase", None, Some(TodoStatus::Completed)),
             make_update("analyze_and_propose", None, Some(TodoStatus::InProgress)),
         ];
         apply_merge(&mut state, &updates).unwrap();
 
-        // Statuses flipped, content preserved from step 1.
         assert_eq!(
             get_item(&state, "explore_codebase").status,
             TodoStatus::Completed
@@ -936,14 +895,11 @@ mod tests {
             get_item(&state, "analyze_and_propose").content,
             "Analyze current SQLite min version"
         );
-        // Third item unchanged.
         assert_eq!(
             get_item(&state, "implementation").status,
             TodoStatus::Pending
         );
     }
-
-    // ── regression: empty-string content must not wipe existing content ──
 
     #[test]
     fn merge_existing_item_empty_string_content_preserves_original() {
@@ -954,7 +910,7 @@ mod tests {
 
         let item = get_item(&state, "1");
         assert_eq!(item.status, TodoStatus::Completed);
-        assert_eq!(item.content, "Build the project"); // unchanged
+        assert_eq!(item.content, "Build the project");
     }
 
     #[test]

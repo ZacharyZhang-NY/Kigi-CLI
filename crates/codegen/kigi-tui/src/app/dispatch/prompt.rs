@@ -27,11 +27,6 @@ pub(super) fn consume_chat_kind(app: &mut AppView) -> bool {
     app.chat_mode || pending
 }
 
-/// Enqueue a prompt and try to drain immediately.
-///
-/// The prompt is always pushed to the queue first. If the agent is idle
-/// (and has a session), `maybe_drain_queue` pops the front prompt and
-/// sends it in the same dispatch call — no deferred ticks.
 /// Start (if needed) and submit the initial prompt from `kigi "<prompt>"`.
 ///
 /// Shared by the TUI startup path (already authenticated) and the post-login
@@ -104,7 +99,6 @@ pub(super) fn dispatch_show_undo_tip(app: &mut AppView) -> Vec<Effect> {
     let Some(agent) = app.agents.get_mut(&id) else {
         return vec![];
     };
-    // Shows and increments the per-session count in place (no disk write).
     // Emit the impression only when the tip actually took the slot (mirrors
     // the `tip.shown` gate), so gated no-ops and TTL refreshes don't count.
     agent.show_ephemeral_tip(
@@ -149,7 +143,6 @@ pub(super) fn dispatch_show_plan_nudge(app: &mut AppView) -> Vec<Effect> {
     let Some(agent) = app.agents.get_mut(&id) else {
         return vec![];
     };
-    // Shows and increments the per-session count in place (no disk write).
     // Impression counts only on a real show (see `dispatch_show_undo_tip`).
     agent.show_ephemeral_tip(
         crate::tips::plan_nudge::plan_nudge_tip(),
@@ -322,8 +315,6 @@ pub(super) fn dispatch_send_prompt_inner(
 
     let mut effects = Vec::new();
 
-    // ── Registry-based slash command execution ─────────────────────
-    // If the text starts with `/`, run it through the slash registry.
     // The registry resolves builtins, ACP-advertised commands, and
     // unknown commands uniformly. Dispatch is the SOLE execution owner.
     // `literal` (chip click) skips this so chip text is never a command.
@@ -348,7 +339,6 @@ pub(super) fn dispatch_send_prompt_inner(
             return vec![];
         }
 
-        // Build execution context.
         let exec_result = {
             let mut ctx = CommandExecCtx {
                 models: &agent.session.models,
@@ -416,8 +406,7 @@ pub(super) fn dispatch_send_prompt_inner(
             }
         };
 
-        // Map CommandResult to pager behavior. (MRU persistence is queued
-        // off-thread inside `record_command_use` above.)
+        // MRU persistence is queued off-thread inside `record_command_use` above.
         match exec_result {
             CommandResult::Handled | CommandResult::HandledNoOp => {
                 if consume_input {
@@ -523,7 +512,7 @@ pub(super) fn dispatch_send_prompt_inner(
         }
         return dispatch(Action::Quit, app);
     } else {
-        // ── Server-authoritative immediate send (plain prompt only) ──
+        // Server-authoritative immediate send (plain prompt only).
         // A plain prompt typed while a turn is RUNNING is sent to the agent
         // immediately instead of being held in the local drip-feed queue. The
         // agent appends it to its authoritative `pending_inputs` (no concurrent
@@ -541,7 +530,7 @@ pub(super) fn dispatch_send_prompt_inner(
         // suggestions: clear the visible chips here — INSIDE the send/enqueue
         // path, after the `reconnect_pending` and active-agent early-return
         // guards — so the chips are cleared ONLY when the suggestion actually
-        // sends/enqueues. Placing it before those guards (the prior fix) cleared
+        // sends/enqueues. Placing it before those guards cleared
         // the chips even when `reconnect_pending` aborted with a toast and no
         // send, losing both the chips and the submit. This single clear covers
         // BOTH the immediate-send and enqueue subpaths below; `clear_follow_ups`
@@ -763,7 +752,7 @@ pub(super) fn dispatch_send_bash_command(app: &mut AppView, command: String) -> 
         agent.session.prompt_history.truncate(200);
     }
 
-    // ── Server-authoritative immediate send for bash while running ──
+    // Server-authoritative immediate send for bash while running.
     // A bash command typed while a turn is RUNNING is sent to the agent
     // immediately (it's already a `session/prompt` with bash meta) and echoed
     // into the shared queue with `kind="bash"`. On `running_prompt_id`

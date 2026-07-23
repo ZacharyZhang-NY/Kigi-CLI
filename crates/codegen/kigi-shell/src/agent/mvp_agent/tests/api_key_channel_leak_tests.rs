@@ -150,7 +150,7 @@ async fn api_key_platform_models_never_carry_the_kimi_bearer_as_api_key() {
 }
 
 /// C2, the `[model.*]` repro. A `[model.gpt-4o]` block has `info.id == None`, so
-/// it has no platform at all — which used to be a blanket allow. BYOK is
+/// it has no platform at all — the blanket-allow gap the guard closes. BYOK is
 /// `has_own_credentials()`, which probes `std::env::var` AT CALL TIME, so an
 /// unset (or mistyped) `env_key` classifies the model NotByok and the Kimi
 /// bearer went to `api.openai.com` on BOTH channels.
@@ -165,7 +165,8 @@ async fn config_model_with_an_unset_env_key_never_carries_the_kimi_bearer() {
     let (_dir, agent) = kimi_session_agent();
 
     let mut entry = ModelEntry::fallback("gpt-4o", &EndpointsConfig::default());
-    entry.info.id = None; // a `[model.gpt-4o]` config block
+    // a `[model.gpt-4o]` config block
+    entry.info.id = None;
     entry.info.base_url = "https://api.openai.com/v1".to_string();
     entry.env_key = Some(EnvKeys::single("OPENAI_API_KEY_TYPO"));
     assert!(

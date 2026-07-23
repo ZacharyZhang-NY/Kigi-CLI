@@ -37,7 +37,7 @@ use kigi_ratatui_textarea::{
     TextElementEventKind,
 };
 
-// ── Element kinds ──
+// Element kinds
 
 const KIND_PASTE: ElementKind = ElementKind(1);
 const KIND_FILE_REF: ElementKind = ElementKind(2);
@@ -45,7 +45,7 @@ const KIND_FILE_REF: ElementKind = ElementKind(2);
 /// Maximum number of file search results shown in the dropdown.
 const MAX_RESULTS: usize = 8;
 
-// ── System clipboard provider ──
+// System clipboard provider
 
 /// Clipboard backed by `arboard` — copies/pastes to/from system clipboard.
 #[derive(Debug)]
@@ -63,9 +63,7 @@ impl ClipboardProvider for ArboardClipboard {
     }
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // File search
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// A single fuzzy-matched file result.
 struct SearchResult {
@@ -241,9 +239,7 @@ fn compute_file_search_context(
     })
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Line select mode (file preview + line range picking)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 #[derive(Clone, Copy, PartialEq)]
 enum SelectionState {
@@ -259,8 +255,10 @@ enum SelectionState {
 struct LineSelectMode {
     file_path: String,
     lines: Vec<String>,
-    cursor_line: usize, // 0-indexed
-    scroll_top: usize,  // 0-indexed first visible line
+    // 0-indexed
+    cursor_line: usize,
+    // 0-indexed first visible line
+    scroll_top: usize,
     viewport_height: usize,
     goto_buf: String,
     selection: SelectionState,
@@ -377,7 +375,7 @@ fn sorted(a: usize, b: usize) -> (usize, usize) {
     if a <= b { (a, b) } else { (b, a) }
 }
 
-// ── File-ref helpers ──
+// File-ref helpers
 
 /// Parse element text like `@foo.rs:123-456` into (path, optional range).
 fn parse_file_ref(element_text: &str) -> (&str, Option<RangeInclusive<usize>>) {
@@ -430,9 +428,7 @@ fn build_file_ref_display(path: &str, range: Option<&RangeInclusive<usize>>) -> 
     Line::from(spans)
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // App
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// Result of processing an input event.
 enum EventResult {
@@ -483,7 +479,7 @@ impl DemoApp {
         }
     }
 
-    // ── Event handling ──
+    // Event handling
 
     fn handle_event(&mut self, event: Event) -> EventResult {
         match event {
@@ -728,12 +724,12 @@ impl DemoApp {
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> EventResult {
-        // ── Line select mode takes ALL keys ──
+        // Line select mode takes ALL keys
         if self.line_select.is_some() {
             return self.handle_line_select_key(key);
         }
 
-        // ── Global quit / clear ──
+        // Global quit / clear
         match key {
             KeyEvent {
                 code: KeyCode::Esc, ..
@@ -769,7 +765,7 @@ impl DemoApp {
             _ => {}
         }
 
-        // ── File search key interception (when dropdown is visible) ──
+        // File search key interception (when dropdown is visible)
         if self.fs_active && self.file_search.is_visible() {
             match key {
                 // ':' during file search → confirm file + open line select
@@ -814,11 +810,12 @@ impl DemoApp {
                     self.file_search.move_selection(1);
                     return EventResult::Redraw;
                 }
-                _ => {} // fall through to textarea
+                // fall through to textarea
+                _ => {}
             }
         }
 
-        // ── ':' / Tab / Enter when cursor is on a file-ref element → open line select ──
+        // ':' / Tab / Enter when cursor is on a file-ref element → open line select
         if matches!(
             key,
             KeyEvent {
@@ -836,7 +833,7 @@ impl DemoApp {
             return EventResult::Redraw;
         }
 
-        // ── 'i' on any element → inline it; Tab/Enter on paste element → inline ──
+        // 'i' on any element → inline it; Tab/Enter on paste element → inline
         if let Some(elem) = self.textarea.element_at_cursor() {
             let is_i = matches!(
                 key,
@@ -867,7 +864,7 @@ impl DemoApp {
             }
         }
 
-        // ── Pass key to textarea, then recompute file search ──
+        // Pass key to textarea, then recompute file search
 
         // Undo / Redo — intercept before passing to textarea.input().
         match key {
@@ -957,7 +954,7 @@ impl DemoApp {
         EventResult::Redraw
     }
 
-    // ── Line select entry / handling / confirm ──
+    // Line select entry / handling / confirm
 
     fn enter_line_select_from_search(&mut self) {
         // First, confirm the file search (create element).
@@ -996,7 +993,6 @@ impl DemoApp {
         self.fs_active = false;
         self.file_search.clear();
 
-        // Now open line select.
         if let Some(mode) = LineSelectMode::open(path.clone(), id) {
             self.status =
                 format!("{path} | j/k ↕ | C-u/C-d ½pg | f/b pg | v sel | Enter ok | Esc cancel");
@@ -1362,14 +1358,14 @@ impl DemoApp {
         }
     }
 
-    // ── Rendering ──
+    // Rendering
 
     fn render(&mut self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> {
         terminal.draw(|f| {
             let area = f.area();
 
             if self.line_select.is_some() {
-                // ── Line select layout: preview + hints + prompt + status ──
+                // Line select layout: preview + hints + prompt + status
                 let [preview_area, hints_area, prompt_outer, status_area] = Layout::vertical([
                     Constraint::Min(5),
                     Constraint::Length(1),
@@ -1394,7 +1390,7 @@ impl DemoApp {
                 ]));
                 status.render(status_area, f.buffer_mut());
             } else {
-                // ── Normal layout ──
+                // Normal layout
                 let info_rows: u16 = 16;
                 let fs_rows = if self.fs_active {
                     self.file_search.dropdown_height()
@@ -1440,7 +1436,7 @@ impl DemoApp {
                 status.render(status_area, f.buffer_mut());
             }
 
-            // ── Cursor management (inside draw) ──
+            // Cursor management (inside draw)
             //
             // By calling set_cursor_position inside the draw closure,
             // ratatui emits show_cursor + set_cursor_position WITHOUT
@@ -1527,7 +1523,8 @@ impl DemoApp {
 
         let total = mode.total_lines();
         let gutter_width = total.to_string().len();
-        let code_start_col = inner.x + gutter_width as u16 + 1; // +1 for separator
+        // +1 for separator
+        let code_start_col = inner.x + gutter_width as u16 + 1;
         let code_width = inner.width.saturating_sub(gutter_width as u16 + 1);
 
         // Styles.
@@ -1545,7 +1542,8 @@ impl DemoApp {
                 break;
             }
             let y = inner.y + row as u16;
-            let line_num = line_idx + 1; // 1-indexed for display
+            // 1-indexed for display
+            let line_num = line_idx + 1;
 
             // Determine line style.
             let is_cursor = line_idx == mode.cursor_line;

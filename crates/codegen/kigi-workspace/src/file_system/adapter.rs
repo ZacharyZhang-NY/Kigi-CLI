@@ -1,11 +1,3 @@
-//! AcpFsAdapter: implements `kigi-tools::AsyncFileSystem` using ACP gateway calls.
-//!
-//! This adapter enables file tool execution over ACP (remote filesystem).
-//! It translates kigi-tools' `AsyncFileSystem` trait into ACP protocol calls:
-//!   `read_file()` → read_text_file
-//!   `write_file()` → write_text_file
-//!   `delete_file()` → not supported by ACP (returns error)
-//!
 //! Mirrors the pattern of `AcpTerminalAdapter` for terminal execution.
 
 use std::path::Path;
@@ -14,11 +6,9 @@ use agent_client_protocol as acp;
 use kigi_acp_lib::AcpAgentGatewaySender as GatewaySender;
 use kigi_tools::computer::types::{AsyncFileSystem, ComputerError};
 
-/// Wraps kigi-shell's ACP gateway to satisfy kigi-tools' AsyncFileSystem.
-///
-/// When a client advertises `clientCapabilities.fs.readTextFile` and `writeTextFile`,
-/// file operations from tools (read_file, search_replace, etc.) are routed through
-/// the ACP gateway back to the client instead of hitting the local disk directly.
+/// Used when a client advertises `clientCapabilities.fs.readTextFile` and
+/// `writeTextFile`: tool file operations are then routed back to the client over
+/// the gateway instead of hitting the local disk.
 pub struct AcpFsAdapter {
     gateway: GatewaySender,
     session_id: acp::SessionId,
@@ -63,7 +53,7 @@ impl AsyncFileSystem for AcpFsAdapter {
     }
 
     async fn delete_file(&self, path: &Path) -> Result<(), ComputerError> {
-        // ACP protocol doesn't support file deletion yet
+        // ACP has no deletion request, so the best we can do is surface it loudly.
         tracing::warn!(?path, "ACP filesystem does not support file deletion");
         Err(ComputerError::io("File deletion not supported via ACP"))
     }

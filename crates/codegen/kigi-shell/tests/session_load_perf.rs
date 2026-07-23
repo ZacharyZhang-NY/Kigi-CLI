@@ -37,8 +37,6 @@ use kigi_shell::session::storage::{
 };
 use kigi_workspace::session::file_state::{FileSnapshot, FlexiblePath, RewindPoint};
 
-// ───────────────────────── size knobs ─────────────────────────
-
 /// Generation parameters. Defaults produce a session large enough that the
 /// per-phase costs are clearly measurable (tens of MB) while still finishing
 /// in a few seconds. Scale up via env to approach a real heavy session.
@@ -81,8 +79,6 @@ impl GenOpts {
     }
 }
 
-// ───────────────────────── filler ─────────────────────────
-
 /// Deterministic, non-trivially-compressible-ish filler of `n` bytes. Uses a
 /// rotating word list so serde has real strings to allocate (not one repeated
 /// byte), matching the cost profile of real prose/code content.
@@ -101,8 +97,6 @@ fn filler(n: usize) -> String {
     s.truncate(n);
     s
 }
-
-// ───────────────────────── update synthesis ─────────────────────────
 
 fn sid(session_id: &str) -> acp::SessionId {
     acp::SessionId::new(session_id.to_string())
@@ -202,8 +196,6 @@ fn generate_rewind_jsonl(path: &Path, opts: &GenOpts) {
     std::fs::write(path, out).expect("write rewind_points.jsonl");
 }
 
-// ───────────────────────── session setup ─────────────────────────
-
 /// Find `<root>/sessions/<enc-cwd>/<id>` without depending on the (internal)
 /// cwd encoder: scan the one level of cwd dirs for a child named `<id>`.
 fn locate_session_dir(root: &Path, id: &str) -> PathBuf {
@@ -223,7 +215,6 @@ fn locate_session_dir(root: &Path, id: &str) -> PathBuf {
     );
 }
 
-/// Recursively copy a directory tree.
 fn copy_tree(src: &Path, dst: &Path) {
     std::fs::create_dir_all(dst).unwrap();
     for entry in std::fs::read_dir(src).unwrap().flatten() {
@@ -369,8 +360,6 @@ fn print_kind_breakdown(label: &str, stats: &KindStats) {
     }
 }
 
-// ───────────────────────── TEST 1: phase breakdown ─────────────────────────
-
 /// Attribute the pre-render load cost to its real phases using the exact
 /// production functions, isolating rewind-point load from everything else.
 ///
@@ -405,14 +394,14 @@ async fn phase_breakdown_real_functions() {
         .await
         .expect("load_session_without_updates");
     let full_load_light = t.elapsed();
-    // load_light no longer reads rewind_points.jsonl (deferred/lazy), so 0 by
-    // construction — `PersistedDataLight` has no rewind field.
+    // load_light does not read rewind_points.jsonl (rewind load is deferred/lazy);
+    // `PersistedDataLight` has no rewind field, so this is 0 by construction.
     let light_rewind_in_load = 0usize;
     drop(light);
 
-    // Lazy rewind path (T2): the deferred cost moved here. The picker only needs
-    // a cheap metadata scan; an actual rewind triggers the full content load.
-    // Both read the same file that `load_light` no longer touches.
+    // Lazy rewind path (T2): the picker only needs a cheap metadata scan; an
+    // actual rewind triggers the full content load. Both read the same file
+    // that `load_light` does not touch.
     use kigi_workspace::session::file_state::FileStateTracker;
     let t = Instant::now();
     let lazy_metas = FileStateTracker::with_lazy_source(rewind_path.clone())
@@ -503,8 +492,6 @@ fn generate_or_restore_rewind(path: &Path, opts: &GenOpts) {
     }
     generate_rewind_jsonl(path, opts);
 }
-
-// ───────────────────────── TEST 2: true e2e ─────────────────────────
 
 use std::cell::RefCell;
 use std::rc::Rc;

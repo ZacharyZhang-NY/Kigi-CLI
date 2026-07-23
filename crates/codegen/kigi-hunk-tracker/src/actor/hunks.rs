@@ -97,7 +97,8 @@ impl HunkTrackerActor {
             if let Some(best_match) = find_matching_old_hunk(new_hunk, &old_hunks) {
                 // Skip if this old hunk was already claimed by another new hunk
                 if claimed_old_ids.contains(&best_match.id) {
-                    continue; // new_hunk keeps its new ID
+                    // new_hunk keeps its new ID
+                    continue;
                 }
 
                 claimed_old_ids.insert(best_match.id.clone());

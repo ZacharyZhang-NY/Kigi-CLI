@@ -61,7 +61,7 @@ impl SessionNotification {
     /// Returns true if this notification can be merged with `prev`'s pending slot based on their timestamps.
     pub(crate) fn is_in_timestamp_window(&self, prev: &Self, max_duration_ms: u64) -> bool {
         match (prev.agent_timestamp_ms(), self.agent_timestamp_ms()) {
-            // ACP events have timestamps, so we can window-check.
+            // Both sides carry agentTimestampMs, so we can window-check.
             (Some(prev_ts), Some(incoming_ts)) => incoming_ts <= prev_ts + max_duration_ms,
             // Either side missing the agentTimestampMs meta means we can't window-check.
             _ => true,

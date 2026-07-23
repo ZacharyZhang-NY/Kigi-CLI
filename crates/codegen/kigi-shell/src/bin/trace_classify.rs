@@ -13,11 +13,6 @@
 //!       [--include-reasoning true] \
 //!       [--kigi-home <path>]
 //!
-//! The binary name is `trace_classify` (underscore) — that's the file
-//! name in `src/bin/`, which cargo's auto-discovery uses verbatim.
-//! The task brief calls it `trace-classify` (hyphen) in prose; the
-//! canonical CLI invocation is the underscore form.
-//!
 //! Each JSONL line carries the per-turn gate decision, the parsed
 //! classifier verdict (or the abort/parse error if the call failed),
 //! and the inputs that drove them.
@@ -61,7 +56,7 @@ struct Cli {
     /// Override the LazinessDetector min-confidence threshold (default
     /// matches production's `LAZINESS_DEFAULT_MIN_CONFIDENCE`). Must
     /// be a finite float in `[0.0, 1.0]`. Use this to mirror a
-    /// per-model override from the production models catalog. (F6/N5)
+    /// per-model override from the production models catalog.
     #[arg(long, value_parser = validate_min_confidence)]
     min_confidence: Option<f32>,
 

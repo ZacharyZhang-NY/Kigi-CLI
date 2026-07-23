@@ -6,7 +6,6 @@
 /// keys `/loop` availability on this name.
 pub const SCHEDULER_CREATE_TOOL_NAME: &str = "scheduler_create";
 
-/// Usage hint shown when `/loop` is invoked with no arguments.
 pub fn loop_usage_message() -> &'static str {
     "Usage: /loop [interval] <prompt>\n\
      Example: /loop 30m check deploy status\n\
@@ -14,11 +13,9 @@ pub fn loop_usage_message() -> &'static str {
      Tell me how often it should run (e.g. 30m, 1 hour, every 2 days)."
 }
 
-/// Build the model instruction that `/loop` expands into for `args`.
-///
 /// The model, not brittle host parsing, turns the request into the
 /// `scheduler_create` interval, accepting every natural phrasing and erroring
-/// on bad input rather than silently defaulting. See [`loop_usage_message`].
+/// on bad input rather than silently defaulting.
 pub fn loop_schedule_instruction(args: &str) -> String {
     format!(
         "# /loop -- schedule a recurring prompt\n\n\

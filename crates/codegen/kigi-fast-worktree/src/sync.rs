@@ -95,7 +95,7 @@ pub struct SyncReport {
     /// Whether dirty sync was skipped because pre-computed state was empty.
     pub dirty_skipped: bool,
 
-    // ── Per-phase timing (milliseconds) ─────────────────────────────────
+    // Per-phase timing (milliseconds)
     /// Time to resolve HEAD commits on source + worktree (gix).
     pub head_resolve_ms: u64,
     /// Time for `git reset --hard` (0 if HEAD didn't move).
@@ -1310,14 +1310,12 @@ mod tests {
         );
     }
 
-    // ========================================================================
     // skip_clean=true tests (pool path)
     //
     // The worktree pool calls sync_worktree_opts(copy_dirty, skip_clean=true)
     // because pool worktrees are known-clean (freshly created or just
     // released). These tests verify that commits, dirty files, and untracked
     // files are correctly replicated through that code path.
-    // ========================================================================
 
     #[test]
     fn test_skip_clean_commit_replication() {
@@ -1513,7 +1511,7 @@ mod tests {
 
         let worktree = create_linked_worktree(&source, "wt1");
 
-        // --- First sync: source advanced ---
+        // First sync: source advanced
         std::fs::write(source.join("file.txt"), "v2").unwrap();
         git_commit_all(&source, "second");
 
@@ -1525,7 +1523,7 @@ mod tests {
             "v2"
         );
 
-        // --- Simulate release: reset --hard + clean (what the pool does) ---
+        // Simulate release: reset --hard + clean (what the pool does)
         Command::new("git")
             .current_dir(&worktree)
             .args(["reset", "--hard"])
@@ -1537,7 +1535,7 @@ mod tests {
             .output()
             .unwrap();
 
-        // --- Second sync: source advanced again with dirty state ---
+        // Second sync: source advanced again with dirty state
         std::fs::write(source.join("file.txt"), "v3").unwrap();
         git_commit_all(&source, "third");
         std::fs::write(source.join("file.txt"), "v3-dirty").unwrap();
@@ -1666,7 +1664,7 @@ mod tests {
         );
     }
 
-    // ── sync_from_precomputed tests ──
+    // sync_from_precomputed tests
 
     #[test]
     fn test_sync_from_precomputed_none_skips_dirty() {

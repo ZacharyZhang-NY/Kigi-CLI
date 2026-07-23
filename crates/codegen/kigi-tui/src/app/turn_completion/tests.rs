@@ -67,7 +67,6 @@ fn one_stop_group() -> Vec<(String, Vec<crate::scrollback::blocks::tool::HookRun
     )]
 }
 
-/// Stop-hook groups attached to the last session-event marker.
 fn last_marker_groups(sb: &ScrollbackState) -> Option<usize> {
     (0..sb.len())
         .rev()
@@ -379,7 +378,7 @@ fn driver_rearm_same_pid_preserves_received_at() {
     assert_eq!(first, second);
 }
 
-// ── EndLine snapshots: work suffix + between-turns status window ──
+// EndLine snapshots: work suffix + between-turns status window.
 
 use crate::scrollback::blocks::EndWork;
 
@@ -410,7 +409,6 @@ fn insert_bg_task(agent: &mut AgentView, task_id: &str, is_monitor: bool) {
     );
 }
 
-/// The newest session-event marker block.
 fn last_marker_block(agent: &AgentView) -> &SessionEventBlock {
     (0..agent.scrollback.len())
         .rev()
@@ -502,7 +500,7 @@ fn marker_snapshot_never_mutates() {
     );
 }
 
-// ── Send-now cancel marker suppression (viewer finalize rail) ────────
+// Send-now cancel marker suppression (viewer finalize rail).
 
 /// A viewer finalizing a `send_now`-stamped `cancelled` terminal pushes no marker.
 #[test]

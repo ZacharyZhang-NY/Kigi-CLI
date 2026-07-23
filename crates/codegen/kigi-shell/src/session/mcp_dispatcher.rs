@@ -106,9 +106,8 @@ pub enum McpServerStatus {
 ///
 /// `RestartSucceeded` / `RestartFailed` are reserved for the
 /// auto-restart path. `Initialized` is emitted for the first-time
-/// `Ready` transition out of `ensure_initialized` — distinguishing
-/// a brand-new handshake from a successful re-handshake (`Ready →
-/// restart_succeeded` was the wire before).
+/// `Ready` transition out of `ensure_initialized`, distinguishing
+/// a brand-new handshake from a successful re-handshake.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum McpServerStatusReason {
@@ -172,10 +171,6 @@ pub fn classify_source(_name: &str) -> McpServerSource {
 /// server stays in the set until something re-emits `Ready`, which
 /// for a permanently-removed server never happens. That's the
 /// intended behavior: a removed server is gone.
-///
-/// (An earlier draft of this struct documented a 5 s grace timer;
-/// that timer was never wired. The doc has been updated to match
-/// the actual semantics.)
 #[derive(Default)]
 pub struct ShutdownState {
     shutting_down: HashSet<McpServerName>,
@@ -339,11 +334,9 @@ fn insert_event(win: &mut CoalescedWindow, ev: McpClientEvent) {
 /// second half of the coalescing key.
 ///
 /// `ConfigDiff` is fanned out by [`insert_event`] before ever
-/// reaching this function, so it's truly unreachable here. The
-/// explicit panic replaces the previous silent
-/// `→ ConfigAdded` fallback with an explicit panic — a future
-/// caller that hands a `ConfigDiff` in directly will see the
-/// failure immediately instead of producing wrong coalescing keys.
+/// reaching this function, so it's unreachable here: a future
+/// caller that hands a `ConfigDiff` in directly gets an explicit
+/// panic rather than a silently wrong coalescing key.
 fn kind_of(ev: &McpClientEvent) -> McpClientEventKind {
     match ev {
         McpClientEvent::TransportClosed { .. } => McpClientEventKind::TransportClosed,
@@ -450,24 +443,22 @@ pub fn flush_window(
     shutdown: &SharedShutdownState,
     gateway: &kigi_acp_lib::AcpAgentGatewaySender,
 ) {
-    // Recover from poisoning rather than cascade-panicking: `flush_window`
-    // now does non-trivial work under this lock, and a single panic while
-    // holding it would otherwise turn every future restart-task check and
-    // dispatcher window into a panic. The `HashSet` state remains coherent
-    // across a panic (no half-updated invariant), so `into_inner()` is safe.
+    // Recover from poisoning rather than cascade-panicking: a single panic
+    // while holding this lock would otherwise turn every future restart-task
+    // check and dispatcher window into a panic. The `HashSet` state remains
+    // coherent across a panic (no half-updated invariant), so `into_inner()`
+    // is safe.
     let mut shutdown_guard = shutdown.lock().unwrap_or_else(|e| e.into_inner());
     for (key, event) in buf {
         let (server, kind) = &key;
-        // ONLY `ConfigRemoved` marks `shutting_down`.
-        //
-        // Pre-fix, `TransportClosed` also marked the set, but
-        // `run_dispatcher` then immediately fed every
-        // `TransportClosed` key into `maybe_schedule_restart`, whose
-        // first guard rail short-circuits on `is_in_shutting_down`.
-        // Net effect: every stdio crash was self-classified as an
-        // intentional shutdown and auto-restart never fired in
-        // production. The mark must signal user intent (config
-        // removed / toggled off), not transport death.
+        // ONLY `ConfigRemoved` marks `shutting_down`. `TransportClosed`
+        // must not: `run_dispatcher` feeds every `TransportClosed` key
+        // into `maybe_schedule_restart`, whose first guard rail
+        // short-circuits on `is_in_shutting_down` — marking on transport
+        // death would self-classify every stdio crash as an intentional
+        // shutdown and auto-restart would never fire. The mark must
+        // signal user intent (config removed / toggled off), not
+        // transport death.
         //
         // `Ready` clears the mark — a server that just successfully
         // (re-)handshook is back; future events on this server
@@ -854,9 +845,7 @@ mod tests {
 
     /// Contract: `ConfigDiff` is fanned out per-server, and the
     /// post-fan-out values are the dedicated
-    /// `McpClientEvent::ConfigAdded` / `ConfigRemoved` variants —
-    /// NOT the fake `Ready` / `TransportClosed` placeholders the
-    /// earlier draft stored.
+    /// `McpClientEvent::ConfigAdded` / `ConfigRemoved` variants.
     #[tokio::test(start_paused = true)]
     async fn config_diff_fans_out_per_server() {
         let (tx, mut rx) = unbounded_channel::<McpClientEvent>();
@@ -1296,8 +1285,10 @@ mod tests {
     fn recoverable_http_servers_excludes_stdio_and_disabled() {
         let configs = vec![
             http_cfg("http-mcp-server"),
-            http_cfg("admin_off"),    // disabled
-            stdio_cfg("local_stdio"), // stdio
+            // disabled
+            http_cfg("admin_off"),
+            // stdio
+            stdio_cfg("local_stdio"),
         ];
         let disabled: HashSet<String> = ["admin_off".to_string()].into_iter().collect();
         let got = recoverable_http_servers(&configs, &disabled);
@@ -1342,24 +1333,16 @@ mod tests {
         );
     }
 
-    // ── Integration test: end-to-end run_dispatcher
-    //    with restart_actions wired. Pre-fix, `flush_window` marked
-    //    `shutting_down` on every `TransportClosed`, which then
-    //    short-circuited `maybe_schedule_restart` and caused
-    //    auto-restart to never fire in production. This test drives a
-    //    real `run_dispatcher` task end-to-end and — critically —
-    //    wires the production `SharedShutdownState`
-    //    into the test mock's `is_in_shutting_down` so the dispatcher
-    //    ↔ actions binding is genuinely exercised. Pre-fix flush
-    //    semantics would mark `"svr"` in the shared state, the mock
-    //    would observe it, and the test would FAIL — closing the
-    //    real regression loop.
+    // Integration test: end-to-end run_dispatcher with restart_actions
+    // wired. Wires the production `SharedShutdownState` into the test
+    // mock's `is_in_shutting_down`, so the dispatcher's `flush_window`
+    // mutations and the restart gate's reads are genuinely exercised
+    // end-to-end rather than through independent stubs.
 
     /// Construct an `AcpAgentGatewaySender` whose receiver half is
     /// dropped immediately. All `forward_fire_and_forget` calls
     /// silently no-op. Suitable only for tests that don't assert on
-    /// wire payloads (renamed from `dummy_gateway`
-    /// to make the discard semantics explicit at the call site).
+    /// wire payloads.
     fn discard_gateway() -> kigi_acp_lib::AcpAgentGatewaySender {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         kigi_acp_lib::AcpAgentGatewaySender::new(tx)
@@ -1423,15 +1406,11 @@ mod tests {
     /// End-to-end: a `TransportClosed` event flowing through
     /// `run_dispatcher` schedules a `respawn_stdio` call.
     ///
-    /// The mock's `is_in_shutting_down` reads
-    /// from the same `SharedShutdownState` the dispatcher mutates.
-    /// Pre-C1-fix, the dispatcher's `flush_window` would mark
-    /// `"svr"` on `TransportClosed`, the mock would observe `true`,
-    /// `maybe_schedule_restart` would short-circuit with
-    /// `reason=shutting_down`, and `respawn_calls` would stay
-    /// empty — making this test FAIL. With the fix, only
-    /// `ConfigRemoved` marks the set, the mock observes `false` for
-    /// `"svr"`, and the restart task fires.
+    /// The mock's `is_in_shutting_down` reads from the same
+    /// `SharedShutdownState` the dispatcher mutates, so this exercises
+    /// the real dispatcher <-> restart-gate binding: only `ConfigRemoved`
+    /// marks the set, so a bare `TransportClosed` must not short-circuit
+    /// the restart.
     ///
     /// Uses `start_paused` + explicit
     /// `tokio::time::advance` instead of a 1500 ms wall-clock sleep.
@@ -1468,7 +1447,8 @@ mod tests {
                     std::path::PathBuf::from("."),
                 ));
 
-                // Send the event the C1 bug suppressed.
+                // TransportClosed for the configured stdio server; must
+                // schedule a restart.
                 tx.send(McpClientEvent::TransportClosed {
                     server: "svr".to_string(),
                     client_id: 1,
@@ -1594,10 +1574,9 @@ mod tests {
             .await;
     }
 
-    /// Direct mark-semantics: `flush_window` only marks
-    /// `shutting_down` on `ConfigRemoved`, never on `TransportClosed`
-    /// Stand-alone regression guard
-    /// complementing the end-to-end test above.
+    /// Direct mark-semantics: `flush_window` marks `shutting_down`
+    /// only on `ConfigRemoved`, never on `TransportClosed`.
+    /// Complements the end-to-end test above.
     #[tokio::test]
     async fn flush_window_marks_shutting_down_only_on_config_removed() {
         let shutdown = new_shutdown_state();

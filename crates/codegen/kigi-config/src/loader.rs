@@ -84,7 +84,6 @@ pub fn load_from_disk() -> std::io::Result<toml::Value> {
     load_user_config_layer(user_kigi_home().as_deref(), "config.toml")
 }
 
-/// Managed config filename, shared by the loaders in this module.
 pub const MANAGED_CONFIG_FILENAME: &str = "managed_config.toml";
 
 pub fn load_managed_config() -> std::io::Result<toml::Value> {
@@ -111,7 +110,6 @@ pub fn load_system_managed_config() -> std::io::Result<toml::Value> {
     Ok(v)
 }
 
-/// One managed-config layer: the parsed TOML and the file it came from.
 #[derive(Debug, Clone)]
 pub struct ManagedConfigLayer {
     pub value: toml::Value,
@@ -377,7 +375,6 @@ pub struct CampaignsState {
     pub dismissed_ids: Vec<String>,
 }
 
-/// Path to `$KIGI_SHARE_DIR/campaigns_state.json` under `home`.
 pub fn campaigns_state_path(home: &std::path::Path) -> std::path::PathBuf {
     home.join(CAMPAIGNS_STATE_FILE)
 }

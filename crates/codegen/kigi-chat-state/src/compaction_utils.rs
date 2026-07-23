@@ -299,7 +299,7 @@ pub fn extract_last_user_query(conversation: &[ConversationItem]) -> Option<Stri
         .map(|item| extract_user_query(&item.text_content()))
         .filter(|q| !q.is_empty())
 }
-/// The continuation prompt added to the conversation after auto-compaction.
+/// The continuation prompt appended to the conversation after auto-compaction.
 ///
 /// Stored here (rather than only in `kigi-shell`) so that query-extraction
 /// helpers in this crate can recognise and exclude it from "real user prompt"
@@ -666,7 +666,7 @@ pub fn format_compact_summary(summary: &str) -> String {
 /// A markdown "**Analysis**"-style header has no opening `<analysis>` tag for
 /// step 1 to catch; it ends at an orphan `</analysis>`. Everything up to and
 /// including the *last* `</analysis>` is dropped, so a scratchpad that itself
-/// quotes `</analysis>` mid-reasoning is still removed whole. The peel is
+/// quotes `</analysis>` mid-reasoning is still stripped whole. The peel is
 /// skipped when the block already starts with a numbered section — including a
 /// markdown-decorated one like `## 1.` or `**1.**` — so a `</analysis>` merely
 /// echoed inside a real section never truncates the summary. Any leftover

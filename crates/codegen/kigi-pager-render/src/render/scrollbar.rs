@@ -76,7 +76,7 @@ pub const SCROLLBAR_TOTAL_COLS: u16 = SCROLLBAR_GAP_COLS + SCROLLBAR_TRACK_COLS;
 /// Layout:
 /// - `content_area`: original area minus [`SCROLLBAR_TOTAL_COLS`] on the right
 /// - `scrollbar_area`: the last column of the original area (1 cell wide)
-/// - The column between them is the "gap" (left intentionally blank)
+/// - The column between them is the "gap" (left deliberately blank)
 ///
 /// Returns `(content_area, None)` when the terminal is too narrow.
 ///
@@ -126,7 +126,8 @@ pub fn needs_scrollbar(total_lines: u16, viewport_lines: u16) -> bool {
 }
 
 /// Whether the view is at the bottom (following mode position).
-#[allow(dead_code)] // Useful helper, kept for future use
+// Useful helper, kept for future use
+#[allow(dead_code)]
 pub fn is_at_bottom(total_lines: u16, viewport_lines: u16, offset: u16) -> bool {
     let max_offset = total_lines.saturating_sub(viewport_lines);
     offset >= max_offset
@@ -384,7 +385,8 @@ mod tests {
 
         // Content overflows (20 > 10) - should reserve scrollbar space
         let (content, scrollbar) = maybe_split_for_scrollbar(area, 20);
-        assert_eq!(content.width, 38); // Reduced by 2 for gap + scrollbar track
+        // Reduced by 2 for gap + scrollbar track
+        assert_eq!(content.width, 38);
         assert!(scrollbar.is_some());
     }
 
@@ -394,24 +396,29 @@ mod tests {
 
         // Content fits (5 <= 10) - should give full width to content
         let (content, scrollbar) = maybe_split_for_scrollbar(area, 5);
-        assert_eq!(content.width, 40); // Full width
+        assert_eq!(content.width, 40);
         assert!(scrollbar.is_none());
     }
 
     #[test]
     fn test_needs_scrollbar() {
-        assert!(needs_scrollbar(100, 10)); // Content > viewport
-        assert!(!needs_scrollbar(10, 10)); // Content == viewport
-        assert!(!needs_scrollbar(5, 10)); // Content < viewport
+        // Content > viewport
+        assert!(needs_scrollbar(100, 10));
+        // Content == viewport
+        assert!(!needs_scrollbar(10, 10));
+        // Content < viewport
+        assert!(!needs_scrollbar(5, 10));
     }
 
     #[test]
     fn test_is_at_bottom() {
         // total=100, viewport=10 -> max_offset=90
-        assert!(is_at_bottom(100, 10, 90)); // At bottom
-        assert!(is_at_bottom(100, 10, 95)); // Past bottom (clamped)
-        assert!(!is_at_bottom(100, 10, 89)); // One line above bottom
-        assert!(!is_at_bottom(100, 10, 0)); // At top
+        assert!(is_at_bottom(100, 10, 90));
+        // Past bottom (clamped)
+        assert!(is_at_bottom(100, 10, 95));
+        // One line above bottom
+        assert!(!is_at_bottom(100, 10, 89));
+        assert!(!is_at_bottom(100, 10, 0));
     }
 
     #[test]

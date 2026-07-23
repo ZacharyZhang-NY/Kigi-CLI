@@ -21,7 +21,6 @@ use kigi_workspace::session::file_state::FileStateTracker;
 pub struct NotificationBridgeConfig {
     /// ACP gateway for sending streaming updates to TUI
     pub gateway: GatewaySender,
-    /// ACP session ID
     pub session_id: acp::SessionId,
     /// Hunk tracker for recording agent writes
     pub hunk_tracker_handle: HunkTrackerHandle,
@@ -148,7 +147,6 @@ async fn handle_notification(
 ) {
     match notification {
         ToolNotification::BashOutputChunk(chunk) => {
-            // Compute output and output_delta based on incremental mode.
             let (output, output_delta) = if config.incremental_bash_output {
                 let prev_offset = offsets.get(&chunk.base.tool_call_id).copied().unwrap_or(0);
                 let full = &chunk.base.output;
@@ -166,7 +164,6 @@ async fn handle_notification(
                 (chunk.base.output.clone(), None)
             };
 
-            // Build a ToolOutput::Bash from the chunk for the TUI to parse
             let bash_output = ToolOutput::Bash(BashOutput {
                 output_for_prompt: BashOutput::make_output_for_prompt(&String::from_utf8_lossy(
                     &chunk.base.output,
@@ -185,7 +182,6 @@ async fn handle_notification(
                 was_bare_echo: false,
             });
 
-            // Send ACP ToolCallUpdate with InProgress status for TUI streaming
             let update = acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate::new(
                 acp::ToolCallId::new(chunk.base.tool_call_id.clone()),
                 acp::ToolCallUpdateFields::new()
@@ -204,7 +200,6 @@ async fn handle_notification(
             let _ = config.persistence_tx.send(PersistenceMsg::Update(
                 crate::session::storage::SessionUpdate::Acp(Box::new(notification.clone())),
             ));
-            // Only forward to the client if the gateway gate is open.
             if config
                 .gateway_enabled
                 .load(std::sync::atomic::Ordering::Relaxed)
@@ -214,7 +209,6 @@ async fn handle_notification(
         }
 
         ToolNotification::BashExecutionComplete(complete) => {
-            // Clean up offset tracking for this tool call.
             offsets.remove(&complete.base.tool_call_id);
             tracing::debug!(
                 tool_call_id = %complete.base.tool_call_id,
@@ -435,7 +429,6 @@ async fn handle_notification(
                     });
             }
 
-            // When a task is complete send notifications to the client so it can act on it
             let mut notification = crate::extensions::notification::SessionNotification {
                 session_id: config.session_id.clone(),
                 update: crate::extensions::notification::SessionUpdate::TaskCompleted {

@@ -97,7 +97,8 @@ fn normalize_mistral_tool_call_ids(body: &mut Value) {
         let mut h = hash;
         while out.len() < LEN {
             out.push(digits[(h % 36) as usize] as char);
-            h = h / 36 + 1; // +1 keeps the stream from collapsing to zeros
+            // +1 keeps the stream from collapsing to zeros
+            h = h / 36 + 1;
         }
         out
     }
@@ -588,7 +589,7 @@ mod tests {
         );
 
         // Canonical `max` (what the K3 menu token parses to since the
-        // ReasoningEffort::Max split) passes through unchanged.
+        // ReasoningEffort::Max split) passes through `unchanged`.
         let mut body = json!({ "model": "k3", "reasoning_effort": "max" });
         adapt_chat_completions_body(&mut body);
         assert_eq!(

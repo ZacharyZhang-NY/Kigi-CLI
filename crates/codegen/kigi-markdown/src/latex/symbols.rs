@@ -1,4 +1,10 @@
 //! Character and symbol mapping tables.
+//!
+//! In the `map_math*` alphabets the explicit letter arms come first on
+//! purpose: those letters were encoded as Letterlike Symbols before the
+//! contiguous Mathematical Alphanumeric blocks existed, so their block slots
+//! are unassigned and the arithmetic arms below would yield a reserved
+//! codepoint.
 
 pub(super) fn to_superscript(c: char) -> Option<char> {
     Some(match c {

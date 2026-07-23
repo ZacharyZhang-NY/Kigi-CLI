@@ -38,7 +38,6 @@ async fn undo_tip_session_cap_blocks_fourth_show() {
         );
     }
 
-    // Fourth wipe: the in-memory count is at the cap (3) → gated, no banner.
     wipe_substantial_draft(&mut harness);
     harness.update(Duration::from_millis(1000));
     assert!(

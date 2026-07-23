@@ -32,7 +32,7 @@ pub trait ToAbsPath {
 
 /// Convert an absolute path to relative by stripping the root prefix.
 ///
-/// Returns the path unchanged if not under `root`. For strict validation,
+/// Returns the path `unchanged` if not under `root`. For strict validation,
 /// use [`RelPathBuf::from_absolute`] instead.
 pub fn to_relative_path(root: &Path, abs_path: &Path) -> PathBuf {
     abs_path

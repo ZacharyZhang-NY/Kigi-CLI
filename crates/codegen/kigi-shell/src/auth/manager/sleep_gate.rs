@@ -156,8 +156,8 @@ impl SleepGate {
         // Stale gate (missed/late wake). `sleep_straddle` = the monotonic clock
         // is still under the bound but real (wall-clock) time is not: the
         // machine slept through the gate without delivering a wake event. This
-        // is precisely the case the wall-clock arm was added to catch, so
-        // surface it explicitly to confirm the fix firing in the field.
+        // is precisely the case the wall-clock arm exists to catch, so surface
+        // it explicitly to confirm it fires in the field.
         let sleep_straddle = mono < SLEEP_GATE_MAX;
         *self.raised_at.write() = None;
         kigi_log::unified_log::info(

@@ -1244,7 +1244,7 @@ mod tests {
             let old = now_ms() - SESSION_IDLE_PRUNE_MS - 1000;
             session.idle_since_ms.store(old, Ordering::Relaxed);
         }
-        // Prune should remove the session and its call_to_session entries.
+        // Prune should drop the session and its call_to_session entries.
         t.known_sessions();
         assert!(!t.sessions.contains_key("stale"));
         // Verify call_to_session was cleaned (no dangling entries).
@@ -1449,7 +1449,7 @@ mod tests {
         );
     }
 
-    // ── events.jsonl emission ─────────────────────────────────
+    // events.jsonl emission
 
     /// Build a tracker whose event sink points at a fresh tempdir, with the
     /// `events.jsonl` writer for `session` pre-opened (as turn-start would do).

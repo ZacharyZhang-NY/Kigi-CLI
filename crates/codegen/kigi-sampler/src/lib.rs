@@ -1,20 +1,11 @@
 //! kigi-sampler - Actor-based sampling layer for the Kimi inference APIs.
 //!
-//! This crate extracts the HTTP streaming + retry logic out of
-//! `kigi-shell`'s session actor into a standalone, reusable
-//! component built on the same actor pattern as `kigi-hunk-tracker`.
-//!
 //! ## Layered API
 //!
 //! - **Layer 1**: [`client::SamplingClient`] returns raw chunk streams.
 //! - **Layer 2**: [`stream`] transforms raw streams into [`SamplingEvent`]s.
 //! - **Layer 3**: [`SamplerHandle`] manages concurrent requests with retry,
 //!   cancellation, and event-based coordination via the actor.
-//!
-//! The type skeleton, the pure retry / metrics / client logic, the
-//! Layer-2 stream transforms ([`stream_chat_completions`],
-//! [`stream_responses`], [`stream_messages`], [`collect_response`]),
-//! and the actor with its per-request task tie these layers together.
 
 pub mod actor;
 pub mod attribution;
@@ -32,7 +23,6 @@ mod shared_http;
 pub mod stream;
 pub mod types;
 
-// Public re-exports — the API surface consumers see.
 pub use actor::SamplerActor;
 pub use attribution::{
     Auth401AttributionCallback, SENT_BEARER_PREFIX_LEN, SamplingConsumer, SharedAttributionCallback,

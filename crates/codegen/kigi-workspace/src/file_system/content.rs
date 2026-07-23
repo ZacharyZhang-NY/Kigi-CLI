@@ -21,7 +21,6 @@ pub struct ContentSearchParams {
     pub respect_gitignore: bool,
 }
 
-/// Batch of results sent during streaming search.
 #[derive(Debug, Clone, Default)]
 pub struct ContentSearchBatch {
     pub files: Vec<ContentMatchFile>,
@@ -127,8 +126,9 @@ fn parse_file_path_from_json(root: &Path, json: &serde_json::Value) -> Option<St
     Some(root.join(normalized).to_string_lossy().to_string())
 }
 
-/// Streaming content search with batched status notifications.
-/// Set `cancel` to true to abort the search early.
+/// `on_status` fires at most every [`BATCH_INTERVAL_MS`] with the files matched
+/// since the last call, then once more with `done`. Set `cancel` to true to
+/// abort the search early.
 pub async fn content_search_streaming<F>(
     root: &Path,
     params: &ContentSearchParams,

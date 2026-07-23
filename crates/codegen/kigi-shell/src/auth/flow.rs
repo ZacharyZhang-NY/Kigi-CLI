@@ -405,7 +405,6 @@ pub async fn ensure_authenticated(
     let kigi_home = kigi_home::kigi_home();
     let auth_manager = Arc::new(AuthManager::new(&kigi_home, kimi_code_config.clone()));
 
-    // If not re-authing, accept any valid cached credential.
     if !reauth && let Some(auth) = auth_manager.current() {
         return Ok(auth);
     }
@@ -586,8 +585,6 @@ mod tests {
         });
         assert!(expired_refreshable_session(&mgr).is_none());
     }
-
-    // ── run_auth_flow: expired path with persisted token ─────────────
 
     /// When the in-memory token is expired but the store has a valid token,
     /// run_auth_flow should return the stored token without interactive login.

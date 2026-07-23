@@ -93,7 +93,6 @@ pub fn re_encode_under_limit(
         let img: &DynamicImage = &scaled;
         let (w, h) = (img.width(), img.height());
 
-        // --- PNG candidate ---------------------------------------------------
         let png_candidate = {
             let mut buf = Vec::new();
             img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
@@ -102,7 +101,6 @@ pub fn re_encode_under_limit(
                 .map(|_| buf)
         };
 
-        // --- JPEG candidate (best quality that fits) -------------------------
         let jpeg_candidate = params.quality_steps.iter().find_map(|&quality| {
             let mut buf = Vec::new();
             let mut enc = JpegEncoder::new_with_quality(&mut buf, quality);
@@ -110,7 +108,6 @@ pub fn re_encode_under_limit(
             (buf.len() <= params.max_bytes).then_some(buf)
         });
 
-        // --- Pick the smaller candidate --------------------------------------
         match (png_candidate, jpeg_candidate) {
             (Some(png), Some(jpeg)) => {
                 if png.len() <= jpeg.len() {
@@ -193,8 +190,6 @@ mod tests {
     fn does_not_upscale_images_smaller_than_the_side_cap() {
         // 1280x960 is already under the test's 1568px side cap. Re-encoding
         // must NOT enlarge it — output dimensions must never exceed the input.
-        // (Regression: the resize previously scaled small images up to
-        // `max_side_px`.)
         let img = noise(1280, 960);
         let (_bytes, w, h, _mime) =
             re_encode_under_limit(&img, &params(5_000_000, 1568, u64::MAX)).unwrap();

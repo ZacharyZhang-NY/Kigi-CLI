@@ -2,27 +2,15 @@
 //!
 //! Ported verbatim from `codex-rs/apply-patch/src/seek_sequence.rs`.
 //!
-//! Attempts to find a sequence of `pattern` lines within `lines` beginning at
-//! or after `start`.  Matches are attempted with decreasing strictness:
-//!
-//! 1. **Exact match**
-//! 2. **rstrip** — ignore trailing whitespace
-//! 3. **trim** — ignore leading and trailing whitespace
-//! 4. **Unicode normalise** — normalise common Unicode punctuation to ASCII
-//!    equivalents (typographic dashes → `-`, smart quotes → `'`/`"`, etc.)
+//! The whole input is rescanned once per pass, in decreasing order of
+//! strictness, so an exact match anywhere in the file always wins over a
+//! whitespace- or punctuation-insensitive match earlier in the file.
 
-/// Find `pattern` within `lines` starting at `start`.
+/// Returns the index in `lines` where `pattern` starts, or `None`.
 ///
-/// When `eof` is `true`, the search begins at the end of the file (so that
-/// patterns intended to match file endings are applied at the end), falling
-/// back to searching from `start` if needed.
-///
-/// Returns the starting index of the match, or `None` if not found.
-///
-/// # Edge cases
-///
-/// - Empty `pattern` → returns `Some(start)` (no-op match).
-/// - `pattern.len() > lines.len()` → returns `None`.
+/// When `eof` is `true` the search window begins at the last position where
+/// `pattern` could still fit, so patterns anchored to the end of a file match
+/// their final occurrence rather than the first.
 pub fn seek_sequence(
     lines: &[String],
     pattern: &[String],
@@ -33,8 +21,6 @@ pub fn seek_sequence(
         return Some(start);
     }
 
-    // When the pattern is longer than the available input there is no
-    // possible match.
     if pattern.len() > lines.len() {
         return None;
     }
@@ -45,14 +31,14 @@ pub fn seek_sequence(
         start
     };
 
-    // ── Pass 1: exact match ──────────────────────────────────────────
+    // Pass 1: exact.
     for i in search_start..=lines.len().saturating_sub(pattern.len()) {
         if lines[i..i + pattern.len()] == *pattern {
             return Some(i);
         }
     }
 
-    // ── Pass 2: rstrip match ─────────────────────────────────────────
+    // Pass 2: ignoring trailing whitespace.
     for i in search_start..=lines.len().saturating_sub(pattern.len()) {
         let mut ok = true;
         for (p_idx, pat) in pattern.iter().enumerate() {
@@ -66,7 +52,7 @@ pub fn seek_sequence(
         }
     }
 
-    // ── Pass 3: trim both sides ──────────────────────────────────────
+    // Pass 3: ignoring leading and trailing whitespace.
     for i in search_start..=lines.len().saturating_sub(pattern.len()) {
         let mut ok = true;
         for (p_idx, pat) in pattern.iter().enumerate() {
@@ -80,10 +66,9 @@ pub fn seek_sequence(
         }
     }
 
-    // ── Pass 4: Unicode normalise ────────────────────────────────────
-    // Normalise common Unicode punctuation to ASCII equivalents so that
-    // diffs authored with plain ASCII characters can still be applied to
-    // source files that contain typographic dashes / quotes, etc.
+    // Pass 4: normalising Unicode punctuation to ASCII, so that a diff
+    // authored with plain ASCII still applies to a source file containing
+    // typographic dashes, smart quotes, or exotic spaces.
     fn normalise(s: &str) -> String {
         s.trim()
             .chars()
@@ -119,8 +104,6 @@ pub fn seek_sequence(
 
     None
 }
-
-// ─── Tests ───────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -177,9 +160,8 @@ mod tests {
 
     #[test]
     fn test_unicode_normalise_matches_typographic_dashes() {
-        // Line contains EN DASH (\u{2013}).
+        // \u{2013} is EN DASH.
         let lines = to_vec(&["hello \u{2013} world"]);
-        // Pattern uses plain ASCII dash.
         let pattern = to_vec(&["hello - world"]);
         assert_eq!(seek_sequence(&lines, &pattern, 0, false), Some(0));
     }

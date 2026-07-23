@@ -264,7 +264,8 @@ pub fn spawn_worker() -> (Sender<MermaidJob>, Receiver<MermaidResult>) {
                         outcome,
                     };
                     if result_tx.send(result).is_err() {
-                        return; // Receiver dropped — the view is gone.
+                        // Receiver dropped — the view is gone.
+                        return;
                     }
                 }
             }
@@ -822,7 +823,8 @@ fn write_png_atomic(path: &Path, png: &[u8]) -> std::io::Result<()> {
 /// `spawn_blocking` at session load), never per render.
 pub fn sweep_session_cache(dir: &Path, max_bytes: u64) {
     let Ok(read_dir) = std::fs::read_dir(dir) else {
-        return; // No cache dir yet — nothing to sweep.
+        // No cache dir yet — nothing to sweep.
+        return;
     };
 
     // (modified_time, size, path) for each PNG; corrupt files are deleted now.
@@ -2094,7 +2096,7 @@ mod tests {
         assert_ne!(dark_out, light_out, "distinct per-theme files");
     }
 
-    // -- View-side lazy glue (hermetic per-test cache dir) -------------------
+    // View-side lazy glue (hermetic per-test cache dir).
     //
     // These drive the click → render → poll → action path through a real
     // `AgentView` whose on-disk cache dir is a private tempdir, which the unit

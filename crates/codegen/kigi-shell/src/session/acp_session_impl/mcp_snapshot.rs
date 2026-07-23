@@ -235,21 +235,13 @@ impl SessionActor {
         );
     }
 
-    /// Re-register MCP tools onto a freshly-built `ToolBridge` after a
-    /// zero-turn harness rebuild.
+    /// Re-register MCP tools from existing clients onto a freshly-built
+    /// `ToolBridge` after a zero-turn harness rebuild.
     ///
-    /// Snapshots the live MCP `Client` connections from `mcp_state` and
-    /// (eventually) re-walks each client's `list_tools` to mirror its
-    /// tool registrations onto the new bridge. Best-effort: per-server
-    /// failures are logged but do not abort the rebuild.
-    ///
-    /// Re-register MCP tools from existing clients onto the rebuilt bridge.
-    ///
-    /// Iterates over all connected MCP clients, calls `list_tools` on each
-    /// to obtain tool registrations, and registers them on the new bridge.
-    /// Errors on individual servers are logged but don't abort the process.
-    /// After re-registration, refreshes the tool metadata snapshot so
-    /// `search_tool` returns accurate results.
+    /// Snapshots the live MCP clients from `mcp_state` and re-walks each
+    /// client's `list_tools` to mirror its registrations onto the new
+    /// bridge. Best-effort: per-server failures are logged but do not
+    /// abort the rebuild.
     pub(super) async fn re_register_mcp_tools_on_rebuilt_bridge(&self) {
         // Snapshot server names + client Arcs to avoid holding the lock
         // across async list_tools calls.

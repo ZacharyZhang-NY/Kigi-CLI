@@ -46,16 +46,16 @@ pub struct GitStatus {
     /// Repository root (absolute path as a string).
     #[serde(default)]
     pub root: String,
-    /// Files with staged changes (relative to repo root).
+    /// Files with staged entries (relative to repo root).
     #[serde(default)]
     pub staged: Vec<String>,
-    /// Files with unstaged changes.
+    /// Files with unstaged entries.
     #[serde(default)]
     pub unstaged: Vec<String>,
     /// Untracked files (only populated when [`GitStatusOpts::include_untracked`] is set).
     #[serde(default)]
     pub untracked: Vec<String>,
-    /// Whether the working tree is clean (no staged/unstaged changes).
+    /// Whether the working tree is clean (no staged/unstaged entries).
     #[serde(default)]
     pub clean: bool,
     /// Detected VCS kind.
@@ -72,7 +72,7 @@ pub struct GitDiffArgs {
     /// Optional path filter.
     #[serde(default)]
     pub paths: Vec<String>,
-    /// Whether to include staged changes only.
+    /// Whether to include staged entries only.
     #[serde(default)]
     pub staged: bool,
 }

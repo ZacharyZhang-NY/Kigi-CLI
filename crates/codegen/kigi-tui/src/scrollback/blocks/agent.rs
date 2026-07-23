@@ -52,7 +52,6 @@ impl AgentMessageBlock {
         }
     }
 
-    /// Push a streaming chunk of markdown text.
     pub fn push_chunk(&mut self, chunk: &str) {
         self.content.push_chunk(chunk);
     }
@@ -62,7 +61,6 @@ impl AgentMessageBlock {
         self.content.push_chunk_deferred(chunk);
     }
 
-    /// Get the source markdown text.
     pub fn text(&self) -> String {
         self.content.text()
     }
@@ -99,7 +97,6 @@ impl AgentMessageBlock {
         &self.content
     }
 
-    /// Mutable access to the underlying markdown content.
     pub fn content_mut(&mut self) -> &mut MarkdownContent {
         &mut self.content
     }
@@ -375,8 +372,6 @@ mod tests {
             "link pre-wrap line {link_line} must still map to the link row, got {mapped_text:?}",
         );
     }
-
-    // -- diagram affordance rows ---------------------------------------------
 
     mod affordances {
         use super::*;

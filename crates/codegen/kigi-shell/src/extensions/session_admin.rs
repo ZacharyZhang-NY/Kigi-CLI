@@ -51,9 +51,6 @@ pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     }
 }
 
-// session/rename
-
-/// Handles renaming a session.
 async fn handle_session_rename(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -81,7 +78,6 @@ async fn handle_session_rename(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtR
 
     let session_id = acp::SessionId::new(Arc::from(req.session_id.as_str()));
 
-    // Find the session info, scoping to cwd if provided
     let summaries = list_summaries(req.cwd.as_deref())
         .await
         .map_err(|e| acp::Error::internal_error().data(format!("failed to list sessions: {e}")))?;
@@ -95,7 +91,6 @@ async fn handle_session_rename(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtR
 
     let info = summary.info.clone();
 
-    // Update the session title in local storage
     let storage = JsonlStorageAdapter::default();
     storage
         .update_session_title(&info, req.title.clone())
@@ -104,13 +99,10 @@ async fn handle_session_rename(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtR
             acp::Error::internal_error().data(format!("failed to update session title: {e}"))
         })?;
 
-    // Update session search index with new title
     crate::session::storage::search::notify_session_updated(&info.id.to_string(), &info.cwd);
 
-    // Send a SessionSummaryGenerated notification so the TUI updates its title
     notify_session_title(agent, session_id, &req.title).await;
 
-    // Hook 2: update session replica with summary (fire-and-forget)
     if let Some(client) = agent.session_registry_client() {
         let sid = req.session_id.to_string();
         let title = Some(req.title.clone());
@@ -133,8 +125,6 @@ async fn handle_session_rename(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtR
     to_raw_response(&serde_json::json!({ "success": true }))
 }
 
-/// Notify connected clients of a session's new title via
-/// `SessionSummaryGenerated`.
 async fn notify_session_title(agent: &MvpAgent, session_id: acp::SessionId, title: &str) {
     use crate::extensions::notification::{SessionNotification, SessionUpdate};
 
@@ -152,9 +142,6 @@ async fn notify_session_title(agent: &MvpAgent, session_id: acp::SessionId, titl
     }
 }
 
-// session/delete
-
-/// Delete a session from history.
 async fn handle_session_delete(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -194,8 +181,6 @@ async fn handle_session_delete(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtR
 
     to_raw_response(&serde_json::json!({ "success": true }))
 }
-
-// session/update_mcp_servers
 
 async fn handle_update_mcp_servers(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     #[derive(Deserialize)]
@@ -252,8 +237,6 @@ async fn handle_update_mcp_servers(agent: &MvpAgent, args: &acp::ExtRequest) -> 
         .map_err(|e| acp::Error::internal_error().data(e.to_string()))
 }
 
-// internal/reload_skills
-
 /// Reload skills for ALL active sessions. Called by the skills file watcher
 /// (via ACP injection from `app.rs`) when `SKILL.md` files change.
 fn handle_reload_skills(agent: &MvpAgent) -> ExtResult {
@@ -267,8 +250,6 @@ fn handle_reload_skills(agent: &MvpAgent) -> ExtResult {
         .to_ext_response()
         .map_err(|e| acp::Error::internal_error().data(e.to_string()))
 }
-
-// internal/reload_all_mcp_servers
 
 /// Reload MCP servers for ALL active sessions. Called by the config
 /// hot-reload watcher when `[mcp_servers]` changes in config.toml.
@@ -325,8 +306,6 @@ async fn handle_reload_all_mcp_servers(agent: &MvpAgent) -> ExtResult {
         .to_ext_response()
         .map_err(|e| acp::Error::internal_error().data(e.to_string()))
 }
-
-// internal/reload_project_mcp_servers
 
 /// Reload MCP servers for sessions whose `cwd` matches (or sits beneath)
 /// the project root passed in `params.cwd`. Called by the config
@@ -419,8 +398,6 @@ fn cwd_matches(session_cwd: &std::path::Path, target_cwd: &std::path::Path) -> b
     session_cwd == target_cwd || session_cwd.starts_with(target_cwd)
 }
 
-// internal/reload_models
-
 /// Re-resolve the agent model list from config.toml. Called by the config
 /// hot-reload watcher when `[model.*]` or `[models]` changes.
 ///
@@ -470,8 +447,6 @@ fn handle_reload_models(agent: &MvpAgent) -> ExtResult {
         .map_err(|e| acp::Error::internal_error().data(e.to_string()))
 }
 
-// internal/reload_models_cache
-
 /// Hot-reload the model catalog from `~/.kigi/models_cache.json` after an
 /// external write detected by the config watcher.
 ///
@@ -488,8 +463,6 @@ fn handle_reload_models_cache(agent: &MvpAgent) -> ExtResult {
         .to_ext_response()
         .map_err(|e| acp::Error::internal_error().data(e.to_string()))
 }
-
-// plugins/reload
 
 async fn handle_plugins_reload(agent: &MvpAgent) -> ExtResult {
     // Rebuild the shared registry so future/new sessions clone the latest.
@@ -521,8 +494,6 @@ async fn handle_plugins_reload(agent: &MvpAgent) -> ExtResult {
 
     super::to_ext_response(Ok(serde_json::json!({"ok": true})))
 }
-
-// commands/list
 
 async fn handle_commands_list(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     let req: crate::session::slash_commands::ListCommandsRequest = parse_params(args)?;
@@ -582,8 +553,6 @@ async fn handle_commands_list(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtRe
         serde_json::value::to_raw_value(&response)?,
     )))
 }
-
-// session/fork
 
 async fn handle_session_fork(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     use crate::session::fork::{ForkSessionRequest, fork_session};

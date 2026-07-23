@@ -1,5 +1,8 @@
-//! Config-value resolution leaf types and per-model laziness config,
-//! extracted from kigi-shell for dependency inversion.
+//! Config-value resolution leaf types and per-model laziness config.
+//!
+//! They live outside kigi-shell so crates below it (kigi-memory,
+//! kigi-shared, kigi-workspace) can share them without depending on the
+//! shell.
 
 use kigi_config::env_bool;
 
@@ -18,7 +21,6 @@ pub enum ConfigSource {
     Default,
 }
 
-/// A resolved config value with its source for diagnostics.
 #[derive(Debug, Clone)]
 pub struct Resolved<T> {
     pub value: T,
@@ -156,9 +158,8 @@ pub struct LazinessDetectorPerModelConfig {
     pub min_confidence: Option<f32>,
     /// When `Some(true)` (or `None` — the default), the classifier sees
     /// the assistant's plain-text reasoning as `[assistant reasoning]`
-    /// lines. `Some(false)` drops them (the pre-2026-05 behavior).
-    /// `None` defers to the harness default (`LAZINESS_INCLUDE_REASONING`,
-    /// currently `true`).
+    /// lines; `Some(false)` drops them. `None` defers to the harness
+    /// default (`LAZINESS_INCLUDE_REASONING`, currently `true`).
     #[serde(default)]
     pub include_reasoning: Option<bool>,
 }

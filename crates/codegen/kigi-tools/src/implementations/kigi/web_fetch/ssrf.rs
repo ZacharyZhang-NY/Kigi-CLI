@@ -46,7 +46,6 @@ pub(crate) fn is_blocked_ip(ip: &IpAddr) -> bool {
             if octets[0] == 100 && (64..=127).contains(&octets[1]) {
                 return true;
             }
-            // 0.0.0.0 — unspecified address.
             if v4.is_unspecified() {
                 return true;
             }
@@ -57,7 +56,6 @@ pub(crate) fn is_blocked_ip(ip: &IpAddr) -> bool {
             if v6.is_loopback() {
                 return false;
             }
-            // :: — unspecified.
             if v6.is_unspecified() {
                 return true;
             }
@@ -88,7 +86,6 @@ pub(crate) async fn check_ssrf(url: &Url) -> Result<(), WebFetchError> {
             host: String::new(),
         })?;
 
-    // If the host is already a literal IP, check it directly.
     if let Ok(ip) = host.parse::<IpAddr>() {
         if is_blocked_ip(&ip) {
             return Err(WebFetchError::SsrfBlocked {
@@ -99,7 +96,6 @@ pub(crate) async fn check_ssrf(url: &Url) -> Result<(), WebFetchError> {
         return Ok(());
     }
 
-    // DNS resolution.
     let port = url.port_or_known_default().unwrap_or(443);
     let addr_str = format!("{host}:{port}");
     let addrs: Vec<std::net::SocketAddr> = tokio::net::lookup_host(&addr_str)
@@ -128,8 +124,6 @@ pub(crate) async fn check_ssrf(url: &Url) -> Result<(), WebFetchError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // ── IPv4 blocking ───────────────────────────────────────────────────
 
     #[test]
     fn blocks_rfc1918_10x() {
@@ -185,8 +179,6 @@ mod tests {
         assert!(!is_blocked_ip(&"142.250.80.46".parse().unwrap()));
     }
 
-    // ── IPv6 ────────────────────────────────────────────────────────────
-
     #[test]
     fn blocks_ipv6_link_local() {
         assert!(is_blocked_ip(&"fe80::1".parse().unwrap()));
@@ -210,8 +202,6 @@ mod tests {
     fn allows_ipv4_mapped_ipv6_public() {
         assert!(!is_blocked_ip(&"::ffff:8.8.8.8".parse::<IpAddr>().unwrap()));
     }
-
-    // ── check_ssrf integration ──────────────────────────────────────────
 
     #[tokio::test]
     async fn ssrf_blocks_ip_literal_private() {

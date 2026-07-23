@@ -48,11 +48,8 @@ async fn minimal_ctrl_o_send_now_queued_apple_terminal() {
         .wait_for_text("1 queued", Duration::from_secs(10))
         .expect("queue indicator");
 
-    // Empty composer + queue: Ctrl+O must yield to send-now, not transcript.
-    // Cancel-and-send: the shell silently cancels turn 1 (its held completion
-    // is irrelevant — the abort wins) and the row commits as a standard "❯ "
-    // prompt block for its own turn. Turn 1 is still gated open here, so the
-    // queued row cannot have promoted FIFO.
+    // Turn 1 is still gated open here, so the queued row cannot have
+    // promoted FIFO — this exercises the cancel-and-send path specifically.
     harness.inject_keys(CTRL_O).expect("Ctrl+O send-now");
     // Generous deadline: with turn 1 gated open there is no promotion race
     // left to mask — this wait is pure render latency, which under heavy

@@ -100,7 +100,6 @@ mod tests {
     #[test]
     fn emit_noop_for_unsupported_terminal() {
         let ctx = ctx_for(TerminalName::Kitty);
-        // Should not panic or write anything meaningful.
         emit_progress(ProgressState::Indeterminate, &ctx);
         emit_progress(ProgressState::Clear, &ctx);
     }
@@ -130,7 +129,6 @@ mod tests {
             term_program_version: Some("3.6.0".into()),
             ..Default::default()
         };
-        // Should not panic; tmux passthrough wrapping is exercised.
         emit_progress(ProgressState::Indeterminate, &ctx);
         emit_progress(ProgressState::Clear, &ctx);
     }
@@ -154,8 +152,6 @@ mod tests {
             "clear sequence should be wrapped with ESC bytes doubled"
         );
     }
-
-    // --- build_progress_escape tests ---
 
     #[test]
     fn build_returns_none_for_unsupported_brand() {

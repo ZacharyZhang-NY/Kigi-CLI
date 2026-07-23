@@ -14,5 +14,4 @@ pub use pdf::{
     run_document_extraction,
 };
 
-// Internal helpers still used only inside this crate.
 pub(crate) use pdf::{handle_pdf, raw_text_to_file_content};

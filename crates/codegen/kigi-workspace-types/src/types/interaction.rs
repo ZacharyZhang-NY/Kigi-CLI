@@ -14,17 +14,11 @@
 use serde::{Deserialize, Serialize};
 
 /// A single question in an `ask_user_question` invocation.
-///
-/// Wire-only data: pure strings + a bool. The runtime crate is
-/// responsible for any UI rendering or option-validation logic.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserQuestion {
-    /// The complete question text shown to the user.
     pub question: String,
-    /// Available options the user can select from.
     #[serde(default)]
     pub options: Vec<UserQuestionOption>,
-    /// If true, the user can pick more than one option.
     #[serde(default)]
     pub multi_select: bool,
 }
@@ -35,8 +29,6 @@ pub struct UserQuestionOption {
     /// Display text for this option (the value the user sees and
     /// selects).
     pub label: String,
-    /// Explanation of what this option means or what will happen if
-    /// chosen.
     #[serde(default)]
     pub description: String,
     /// Optional preview content (mockup, code snippet, etc.) rendered

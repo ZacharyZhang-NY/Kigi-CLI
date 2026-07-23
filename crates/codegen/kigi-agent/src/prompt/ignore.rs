@@ -4,7 +4,6 @@ use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use std::path::{Path, PathBuf};
 
 pub fn build_gitignore(repo_root: Option<&Path>) -> Option<Gitignore> {
-    // No repo root → no gitignore rules to apply.
     let root = repo_root?;
     let mut builder = GitignoreBuilder::new(root);
 

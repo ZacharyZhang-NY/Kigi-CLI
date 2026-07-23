@@ -33,7 +33,6 @@ pub fn load_servers_with_plugins_sourced(
     let user_path = crate::util::kigi_home::kigi_home().join("lsp.json");
     let project_path = cwd.join(".kigi").join("lsp.json");
 
-    // User-level servers
     let mut servers: BTreeMap<String, (LspServerConfig, ConfigSource)> = load_file(&user_path)
         .into_iter()
         .map(|(name, cfg)| {
@@ -49,7 +48,6 @@ pub fn load_servers_with_plugins_sourced(
         })
         .collect();
 
-    // Project-level overrides
     for (name, cfg) in load_file(&project_path) {
         servers.insert(
             name,
@@ -62,7 +60,6 @@ pub fn load_servers_with_plugins_sourced(
         );
     }
 
-    // Plugin file-based configs
     for (i, lsp_path) in plugin_lsp_paths.iter().enumerate() {
         let pname = plugin_names.get(i).copied().unwrap_or("unknown");
         for (name, cfg) in load_file(lsp_path) {
@@ -78,7 +75,6 @@ pub fn load_servers_with_plugins_sourced(
         }
     }
 
-    // Plugin inline configs
     for (i, inline) in plugin_inline_lsp.iter().enumerate() {
         let pname = inline_plugin_names.get(i).copied().unwrap_or("unknown");
         match serde_json::from_value::<BTreeMap<String, LspServerConfig>>((*inline).clone()) {

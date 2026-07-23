@@ -55,7 +55,8 @@ pub fn resize_purge_rerender<T: TerminalLike>(terminal: &mut T, history: &str) -
         .as_bytes()
         .iter()
         .filter(|&&c| c == b'\n')
-        .take(size.height.into()) // Only count up to screen height for efficiency
+        // Only count up to screen height for efficiency
+        .take(size.height.into())
         .count() as u16;
 
     // Re-output the entire scrollback history
@@ -191,14 +192,16 @@ mod tests {
     #[test]
     fn test_viewport_resize_shrink() {
         let mut terminal = MockTerminal::new(80, 25, 5);
-        let original_y = terminal.viewport_area.y; // Should be 20 (25-5)
+        // Should be 20 (25-5)
+        let original_y = terminal.viewport_area.y;
 
         // Shrink viewport from 5 to 3 (always anchors at top)
         resize_viewport_height(&mut terminal, 3).unwrap();
 
-        // Check viewport was updated - y should stay the same
+        // Check viewport reflects resize - y should stay the same
         assert_eq!(terminal.viewport_area.height, 3);
-        assert_eq!(terminal.viewport_area.y, original_y); // Should still be 20
+        // Should still be 20
+        assert_eq!(terminal.viewport_area.y, original_y);
 
         // Should have cleared once
         assert_eq!(terminal.clear_count, 1);
@@ -216,13 +219,14 @@ mod tests {
 
         // Check that it expanded down (kept same y)
         assert_eq!(terminal.viewport_area.height, 5);
-        assert_eq!(terminal.viewport_area.y, 20); // Should stay at 20
+        // Should stay at 20
+        assert_eq!(terminal.viewport_area.y, 20);
         assert_eq!(terminal.clear_count, 1);
 
-        // Now expand more - should hit bottom and push content up
         resize_viewport_height(&mut terminal, 6).unwrap();
         assert_eq!(terminal.viewport_area.height, 6);
-        assert_eq!(terminal.viewport_area.y, 19); // Should move up to 19
+        // Should move up to 19
+        assert_eq!(terminal.viewport_area.y, 19);
         assert_eq!(terminal.clear_count, 2);
     }
 
@@ -255,7 +259,8 @@ mod tests {
     #[test]
     fn test_resize_purge_rerender_empty_history() {
         let mut terminal = MockTerminal::new(80, 25, 3);
-        terminal.viewport_area.y = 22; // Bottom position
+        // Bottom position
+        terminal.viewport_area.y = 22;
 
         // Test with empty history
         resize_purge_rerender(&mut terminal, "").unwrap();
@@ -269,7 +274,8 @@ mod tests {
     #[test]
     fn test_resize_purge_rerender_small_history() {
         let mut terminal = MockTerminal::new(80, 25, 3);
-        terminal.viewport_area.y = 22; // Bottom position
+        // Bottom position
+        terminal.viewport_area.y = 22;
 
         // Test with small history (just a few lines)
         let history = "Line 1\r\nLine 2\r\nLine 3\r\n";
@@ -285,7 +291,8 @@ mod tests {
     #[test]
     fn test_resize_purge_rerender_full_screen_history() {
         let mut terminal = MockTerminal::new(80, 25, 3);
-        terminal.viewport_area.y = 22; // Bottom position
+        // Bottom position
+        terminal.viewport_area.y = 22;
 
         // Create history with more lines than screen height
         let mut history = String::new();
@@ -296,18 +303,21 @@ mod tests {
         resize_purge_rerender(&mut terminal, &history).unwrap();
 
         // With full screen of content, viewport should be at bottom
-        assert_eq!(terminal.viewport_area.y, 25 - 3); // screen_height - viewport_height
+        // screen_height - viewport_height
+        assert_eq!(terminal.viewport_area.y, 25 - 3);
         assert_eq!(terminal.viewport_area.height, 3);
         assert_eq!(terminal.clear_count, 1);
     }
 
     #[test]
     fn test_resize_purge_rerender_with_wrapped_lines() {
-        let mut terminal = MockTerminal::new(40, 10, 2); // Narrow terminal
+        // Narrow terminal
+        let mut terminal = MockTerminal::new(40, 10, 2);
         terminal.viewport_area.y = 8;
 
         // Create a line that will wrap
-        let long_line = "A".repeat(100); // Will wrap to ~3 lines on 40-column terminal
+        // Will wrap to ~3 lines on 40-column terminal
+        let long_line = "A".repeat(100);
         let history = format!("{}\r\nShort line\r\n", long_line);
 
         resize_purge_rerender(&mut terminal, &history).unwrap();

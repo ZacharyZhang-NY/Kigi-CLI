@@ -1968,7 +1968,6 @@ async fn list_sessions_recent_skips_corrupt_summary() {
     assert_eq!(recent.len(), 1);
     assert_eq!(recent[0].info.id, acp::SessionId::new("good"));
 }
-/// Helper: set the mtime of a file to a specific chrono DateTime.
 fn set_mtime(path: &std::path::Path, time: chrono::DateTime<chrono::Utc>) {
     use std::time::{Duration, UNIX_EPOCH};
     let secs = time.timestamp() as u64;
@@ -2719,10 +2718,10 @@ async fn append_update_terminates_torn_trailing_line() {
 /// End-to-end resume-path regression for the incident: a live session
 /// whose `chat_history.jsonl` contains a merged record (crash mid-append,
 /// then log-and-continue appended the next record onto the partial line)
-/// must still load via `load_session_without_updates` — previously this
-/// returned InvalidData ("expected `,` or `}` at line 1 column N"),
-/// surfacing to the user as "Couldn't load session: … FS_OTHER" and
-/// permanently bricking the session.
+/// must still load via `load_session_without_updates` instead of failing
+/// with InvalidData ("expected `,` or `}` at line 1 column N"), which
+/// surfaced to the user as "Couldn't load session: … FS_OTHER" and
+/// permanently bricked the session.
 #[tokio::test]
 async fn load_session_without_updates_survives_merged_chat_line() {
     let temp_dir = TempDir::new().unwrap();

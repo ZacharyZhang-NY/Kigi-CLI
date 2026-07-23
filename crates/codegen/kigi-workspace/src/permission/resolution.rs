@@ -299,9 +299,7 @@ fn managed_config_permissions(
         .collect()
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // Fallback Resolver
-// ═════════════════════════════════════════════════════════════════════════════
 
 /// Resolve permission config, merging native Kigi and Claude sources.
 /// Evaluation is order-independent (deny > ask > allow); merge order affects
@@ -707,9 +705,7 @@ fn resolve_claude_settings_inner(
     ))
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // managed-settings.json
-// ═════════════════════════════════════════════════════════════════════════════
 
 use std::sync::OnceLock;
 
@@ -1384,9 +1380,7 @@ fn normalize_git_url(url: &str) -> String {
     url.to_lowercase().trim_end_matches(".git").to_string()
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // Tests
-// ═════════════════════════════════════════════════════════════════════════════
 
 #[cfg(test)]
 mod tests {
@@ -1399,7 +1393,7 @@ mod tests {
     use crate::ENV_TEST_LOCK as ENV_LOCK;
 
     // The crate-shared generic env-var guard (one definition in `lib.rs`),
-    // aliased here so the existing `EnvVarGuard::set/unset` call sites are unchanged.
+    // aliased here so the existing `EnvVarGuard::set/unset` call sites are `unchanged`.
     use crate::TestEnvGuard as EnvVarGuard;
 
     /// Only `Deny` rules on read-capable tools (Read/Grep/Any) become grep
@@ -1416,9 +1410,11 @@ mod tests {
             rule(RuleAction::Deny, ToolFilter::Read, "**/.env"),
             rule(RuleAction::Deny, ToolFilter::Any, "**/*.pem"),
             rule(RuleAction::Deny, ToolFilter::Grep, "**/secret.txt"),
-            rule(RuleAction::Deny, ToolFilter::Edit, "**/.env"), // write-only: excluded
-            rule(RuleAction::Allow, ToolFilter::Read, "src/**"), // allow: excluded
-            rule(RuleAction::Ask, ToolFilter::Read, "**/secrets/**"), // ask: excluded
+            // write-only: excluded
+            rule(RuleAction::Deny, ToolFilter::Edit, "**/.env"),
+            // allow: excluded
+            rule(RuleAction::Allow, ToolFilter::Read, "src/**"),
+            rule(RuleAction::Ask, ToolFilter::Read, "**/secrets/**"),
         ]);
         assert_eq!(
             deny_read_globs_from_config(&config),
@@ -1628,9 +1624,7 @@ mod tests {
         assert_eq!(settings.default_mode, Some("acceptEdits".to_string()));
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
     // Phase 4: Integration / Precedence Tests
-    // ═══════════════════════════════════════════════════════════════════════
 
     /// Integration test: end-to-end flow from .claude/settings.json file
     /// through load -> into_config -> verify rules are produced.
@@ -1760,9 +1754,7 @@ mod tests {
         );
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
     // defaultMode + resolve_claude_permissions tests
-    // ═══════════════════════════════════════════════════════════════════════
 
     #[test]
     fn default_mode_accept_edits_produces_allow_edit_rule() {
@@ -1854,9 +1846,7 @@ mod tests {
         assert_eq!(cfg.rules[1].tool, ToolFilter::Edit);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
     // Environment variable loading tests
-    // ═══════════════════════════════════════════════════════════════════════
 
     #[test]
     fn load_settings_with_env() {
@@ -2018,7 +2008,7 @@ mod tests {
         );
     }
 
-    // ── requirements.toml / managed-settings.json permission tests ────
+    // requirements.toml / managed-settings.json permission tests
 
     #[test]
     fn parse_toml_compact_deny_rules() {
@@ -2114,7 +2104,7 @@ mod tests {
         assert!(result.is_none());
     }
 
-    // ── managed-settings.json tests ──────────────────────────────────
+    // managed-settings.json tests
 
     #[test]
     fn parse_managed_settings_json_end_to_end() {
@@ -2310,12 +2300,13 @@ mod tests {
         let ms = parse_managed_settings_json(&json, path);
         let al = &ms.mcp_allowlist;
 
-        // All four previously fell through the literal glob (fail-open).
+        // All four earlier fell through the literal glob (fail-open).
         for bypass in [
-            "https://mcp-gateway.example.net:443/mcp", // explicit port
-            "http://mcp-gateway.example.net/mcp",      // scheme swap
-            "https://mcp-gateway.example.net",         // path-less host
-            "https://mcp-gateway.example.net./mcp",    // trailing-dot FQDN
+            "https://mcp-gateway.example.net:443/mcp",
+            "http://mcp-gateway.example.net/mcp",
+            "https://mcp-gateway.example.net",
+            // trailing-dot FQDN
+            "https://mcp-gateway.example.net./mcp",
         ] {
             assert!(!al.is_http_allowed(bypass), "must be denied: {bypass}");
         }
@@ -2407,7 +2398,7 @@ mod tests {
         );
     }
 
-    // ── serverName MCP policy matching ───────────────────────────────
+    // serverName MCP policy matching
 
     fn http_named(name: &str, url: &str) -> agent_client_protocol::McpServer {
         agent_client_protocol::McpServer::Http(
@@ -2618,9 +2609,7 @@ mod tests {
         assert!(!al.is_url_allowed("git@evil.com:ACME/repo.git"));
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
     // Bare tool name parsing tests
-    // ═══════════════════════════════════════════════════════════════════════
 
     #[test]
     fn parse_bare_bash_tool_name() {
@@ -2665,9 +2654,7 @@ mod tests {
         assert_eq!(rule.pattern, Some("npm test".to_string()));
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
     // Cross-file permission merging tests
-    // ═══════════════════════════════════════════════════════════════════════
 
     #[test]
     fn merge_permissions_across_project_and_global_settings() {
@@ -2877,9 +2864,7 @@ mod tests {
         assert!(path.ends_with(".claude/settings.json"));
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
     // bypassPermissions defaultMode tests
-    // ═══════════════════════════════════════════════════════════════════════
 
     #[test]
     fn bypass_permissions_produces_catch_all_allow() {
@@ -3095,7 +3080,7 @@ mod tests {
     }
 
     /// The native `[ui] disable_bypass_permissions_mode` key locks when true
-    /// (default false). `permission_mode` is intentionally not a lock key.
+    /// (default false). `permission_mode` is deliberately not a lock key.
     #[test]
     fn disable_bypass_permissions_mode_locks_when_true() {
         let p = Path::new("test-requirements.toml");
@@ -4000,9 +3985,7 @@ mod tests {
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
     // Additional tool prefix tests
-    // ═══════════════════════════════════════════════════════════════════════
 
     #[test]
     fn parse_glob_tool_prefix() {
@@ -4030,9 +4013,7 @@ mod tests {
         assert_eq!(rule.tool, ToolFilter::Edit);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
     // Escaped parentheses tests
-    // ═══════════════════════════════════════════════════════════════════════
 
     #[test]
     fn parse_escaped_parens_in_content() {
@@ -4050,9 +4031,7 @@ mod tests {
         assert_eq!(rule.pattern, Some(r"echo test\nvalue".to_string()));
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
     // Bash(*) and Bash() normalization tests
-    // ═══════════════════════════════════════════════════════════════════════
 
     #[test]
     fn bash_star_is_tool_wide() {

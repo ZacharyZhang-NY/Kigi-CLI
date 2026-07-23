@@ -18,10 +18,6 @@ use crate::app::agent_view::AgentView;
 use crate::app::app_view::{ActiveView, AppView, TrustState};
 use agent_client_protocol as acp;
 
-// ---------------------------------------------------------------------------
-// Agent Dashboard dispatchers
-// ---------------------------------------------------------------------------
-
 /// Build a `DashboardState` from the persisted layout (pins / reorder /
 /// grouping), loading + caching `app.dashboard_persisted` on first use. Used
 /// both to materialize the real dashboard and to compute a correct cycle order
@@ -120,24 +116,14 @@ pub(super) fn dispatch_open_dashboard(app: &mut AppView) -> Vec<Effect> {
         return vec![];
     }
     // Edge case 24: idempotent toggle — opening from the dashboard view
-    // itself just closes.
-    //
-    // Ctrl+\ is now a single-shot toggle between the
-    // agent view and the dashboard view. The previous design used
-    // Ctrl+\ as a 3-state cascade (open dashboard → close popup →
-    // exit dashboard) which fought the user's mental model of
-    // "Ctrl+\ flips views". With auto-attach landing a popup on every
-    // open, the close-popup step would have eaten the user's expected
-    // exit press. Now Ctrl+\ always exits when already in the
-    // dashboard; closing the popup-only stays bound to Esc inside the
-    // popup mouse/key cascade.
+    // itself just closes. Ctrl+\ is a single-shot flip between the agent
+    // view and the dashboard; closing a popup-only stays bound to Esc.
     if matches!(app.active_view, ActiveView::AgentDashboard) {
         return dispatch_exit_dashboard(app);
     }
-    // Preserve in-memory state across reopen.
-    // `app.dashboard.is_some()` means we've previously initialised
-    // it; preserve the user's filter / dispatch text / hover /
-    // selection. Otherwise seed from persisted state.
+    // Preserve in-memory state across reopen: `app.dashboard.is_some()`
+    // means it was already initialised, so keep the user's filter /
+    // dispatch text / hover / selection. Otherwise seed from persisted state.
     if app.dashboard.is_none() {
         ensure_dashboard_state(app);
     } else if let Some(d) = app.dashboard.as_mut() {
@@ -167,30 +153,13 @@ pub(super) fn dispatch_open_dashboard(app: &mut AppView) -> Vec<Effect> {
             agent.worktree_label = info.worktree_label;
         }
     }
-    // The previous "auto-attach popup overlay" path
-    // showed BOTH the dashboard (as a top banner) AND the focused
-    // agent (as a bottom popup) on every `/dashboard` open. The
-    // stacked layout was confusing — the user couldn't tell which
-    // view owned the prompt, and the popup's keybindings (Enter
-    // to send, etc.) had subtle input-routing bugs. Dashboard
-    // open now shows ONLY the dashboard; pressing Enter on a row
-    // switches the whole view to the agent's fullscreen view
-    // (handled in `dispatch_dashboard_attach`).
-    //
     // Always open in NEW-SESSION mode: focus the `[+ New Agent]` button
-    // (no row selected) so typing a prompt + Enter dispatches a brand
-    // new agent. Reply mode is opt-in — the user navigates (↑/↓ or j/k)
-    // or clicks a row to select it, which arms "reply to that agent".
-    //
-    // Previously the dashboard pre-seeded `selected` to the agent the
-    // user came from, which silently armed reply mode: a prompt typed
-    // right after opening went to the old agent instead of spawning a
-    // new one, AND the reply path never clears `selected`, so EVERY
-    // subsequent dispatch kept replying to the same agent — the user
-    // got "stuck to the same agent" and couldn't quickly dispatch new
-    // sessions. New-session is the dashboard's primary gesture, so it is
-    // the default; reply stays one explicit selection away.
-    //
+    // (no row selected) so typing a prompt + Enter dispatches a brand new
+    // agent. Reply mode is opt-in — the user navigates (↑/↓ or j/k) or
+    // clicks a row to select it, which arms "reply to that agent".
+    // Pre-seeding `selected` would silently arm reply mode, and because the
+    // reply path never clears `selected`, trap every subsequent dispatch on
+    // the same agent.
     configure_dashboard_state(app);
     app.active_view = ActiveView::AgentDashboard;
     // Outside leader mode there is no live leader roster to poll, so the
@@ -204,9 +173,9 @@ pub(super) fn dispatch_open_dashboard(app: &mut AppView) -> Vec<Effect> {
     vec![]
 }
 
-/// Helper: produce a closure that answers "does this DashboardRowId
-/// still exist in `agents`?". Static lifetime not possible (closures
-/// borrow), so callers pass `&app.agents`.
+/// Produce a closure that answers "does this DashboardRowId still exist
+/// in `agents`?". Static lifetime not possible (closures borrow), so
+/// callers pass `&app.agents`.
 fn dashboard_alive_fn(
     agents: &indexmap::IndexMap<AgentId, AgentView>,
 ) -> impl Fn(&crate::views::dashboard::DashboardRowId) -> bool + '_ {
@@ -233,7 +202,7 @@ pub(super) fn dispatch_exit_dashboard(app: &mut AppView) -> Vec<Effect> {
     if let Some(d) = app.dashboard.as_mut() {
         d.close_popup();
     }
-    // Return to either Welcome or the most recently active agent.
+    // Return to an agent view, or Welcome when none remain.
     if let Some(id) = app.agents.keys().next().copied() {
         app.active_view = ActiveView::Agent(id);
         surface_yolo_launch_block_notice(app, id);
@@ -256,9 +225,9 @@ pub(super) fn dispatch_dashboard_attach(
     // straight to the agent because `active_view = Agent(id)`, so
     // Enter/Shift+Tab/etc. all work as in any regular agent view.
     //
-    // Attaching re-targets the overlay — an overlay stop-confirm armed
-    // on a previously attached agent (legacy popup row-click path
-    // reaches here without a key press) must not follow the user in.
+    // Attaching re-targets the overlay — an overlay stop-confirm armed on
+    // the agent attached before this (legacy popup row-click path reaches
+    // here without a key press) must not follow the user in.
     clear_pending_overlay_stop(app);
     match id {
         DashboardRowId::TopLevel(agent_id) => {
@@ -279,9 +248,6 @@ pub(super) fn dispatch_dashboard_attach(
                 // section cursor / button focus are cleared — exactly one
                 // cursor target stays active.
                 d.focus_row(DashboardRowId::TopLevel(agent_id));
-                // Signal session-overlay mode: render the agent
-                // wrapped in the bordered frame with cycle/close
-                // affordances at the top right.
                 d.attached_agent = Some(agent_id);
             }
             app.active_view = ActiveView::Agent(agent_id);
@@ -375,10 +341,8 @@ pub(super) fn dispatch_dashboard_attach(
     vec![]
 }
 
-/// Exit the dashboard's session-overlay: dismiss the bordered
-/// chrome and return to the dashboard view. Mirrors the popup
-/// `[✗]` close from the older design but applied to the new
-/// fullscreen-with-frame layout.
+/// Exit the dashboard's session-overlay: dismiss the bordered chrome and
+/// return to the dashboard view.
 pub(super) fn dispatch_dashboard_overlay_exit(app: &mut AppView) -> Vec<Effect> {
     if let Some(d) = app.dashboard.as_mut() {
         d.close_popup();
@@ -552,9 +516,6 @@ pub(super) fn dispatch_dashboard_toggle_auto_approve(app: &mut AppView) -> Vec<E
         return vec![];
     }
 
-    // Temporarily borrow active_view so `set_yolo_mode` targets
-    // the dashboard's selected agent rather than whichever view
-    // is currently active. Restored before returning.
     let saved_view = app.active_view;
     app.active_view = ActiveView::Agent(agent_id);
     let effects = set_yolo_mode(app, new);
@@ -1078,18 +1039,13 @@ pub(super) fn dispatch_dashboard_dispatch(
     }
 
     // The dashboard's dispatch input ALWAYS spawns a new session — it is
-    // never a reply target. A row being selected is purely the overview
-    // navigation cursor (Enter on it OPENS the agent); it must not turn
-    // the input into "reply to that agent". Conflating the two trapped
-    // the user: navigating to a row (vim j/k) flipped the input to
-    // "Reply to <agent>" and there was no obvious way back to spawning a
-    // new session. To converse with an existing agent, open it (navigate
-    // + Enter, or click) and reply inside its own view.
+    // never a reply target. A selected row is purely the overview navigation
+    // cursor (Enter on it OPENS the agent); it must not turn the input into
+    // "reply to that agent". To converse with an existing agent, open it and
+    // reply inside its own view.
     //
-    // New-session path.
-    //
-    // Return the new AgentId from the inner constructor
-    // so we don't have to rely on `app.agents.last()`.
+    // Return the new AgentId from the inner constructor rather than relying
+    // on `app.agents.last()`.
     //
     // Carry the dashboard's staged model / plan-mode (set via `/model` and
     // `/plan`) onto the new session: the model id seeds `CreateSession`, and
@@ -1238,7 +1194,7 @@ pub(super) fn dispatch_dashboard_dispatch_slash(app: &mut AppView, text: String)
         // Registered but not offered on this surface (session-scoped
         // hidden from the dropdown, or non-dashboard `dashboard_only`):
         // error toast — never spawn a session whose first prompt is the
-        // slash text (that was worse than the old loud Action toasts).
+        // slash text.
         if !dashboard
             .dispatch
             .slash_controller
@@ -1496,20 +1452,6 @@ pub(super) fn apply_pending_dispatch_config(
     }
 }
 
-/// Send or queue a reply typed into the peek panel's `❯ reply` input.
-///
-/// The reply is enqueued on the row's owning top-level agent and then
-/// [`maybe_drain_queue`] decides the rest: an **idle** agent sends it
-/// immediately (a turn starts), a **mid-turn** agent keeps it queued so
-/// it drains after the current turn finishes. This is the same queue /
-/// drain pipeline the agent view's own prompt input uses, so the two
-/// surfaces behave identically.
-///
-/// Subagent rows can't be replied to (they're driven by their parent),
-/// so they surface a toast and leave the peek open.
-///
-/// `attach` (Ctrl+S) additionally walks into the agent's detail
-/// view, mirroring the dispatch input's send+open affordance.
 /// Cycle the PEEKED agent's live mode (Normal → Plan → Always-Approve →
 /// Normal), the peek-panel counterpart to `DashboardCycleMode`. Reuses
 /// the shared cycle body `dispatch_cycle_mode_and_sync` by temporarily
@@ -1558,6 +1500,20 @@ pub(super) fn dispatch_dashboard_peek_cycle_mode(app: &mut AppView) -> Vec<Effec
     effects
 }
 
+/// Send or queue a reply typed into the peek panel's `❯ reply` input.
+///
+/// The reply is enqueued on the row's owning top-level agent and then
+/// [`maybe_drain_queue`] decides the rest: an **idle** agent sends it
+/// immediately (a turn starts), a **mid-turn** agent keeps it queued so
+/// it drains after the current turn finishes. This is the same queue /
+/// drain pipeline the agent view's own prompt input uses, so the two
+/// surfaces behave identically.
+///
+/// Subagent rows can't be replied to (they're driven by their parent),
+/// so they surface a toast and leave the peek open.
+///
+/// `attach` (Ctrl+S) additionally walks into the agent's detail
+/// view, mirroring the dispatch input's send+open affordance.
 pub(super) fn dispatch_dashboard_peek_reply(
     app: &mut AppView,
     row: crate::views::dashboard::DashboardRowId,
@@ -1630,8 +1586,6 @@ pub(super) fn dispatch_dashboard_peek_reply(
     }
     let effects = maybe_drain_queue(agent);
 
-    // Clear the reply draft now that it's been accepted, and drop any
-    // stale error toast.
     if let Some(d) = app.dashboard.as_mut() {
         d.clear_peek_reply();
         d.error_toast = None;
@@ -1794,10 +1748,6 @@ pub(super) fn dispatch_dashboard_stop(app: &mut AppView) -> Vec<Effect> {
                 return vec![];
             };
             let now = Instant::now();
-            // `t.elapsed()` is the idiomatic Instant API
-            // for "how long since this Instant". Behaviour identical
-            // to `now.duration_since(*t)` when `t <= now`, which is
-            // the only case the dispatcher constructs.
             let already_confirming = app
                 .dashboard
                 .as_ref()
@@ -2015,7 +1965,7 @@ pub(super) fn dispatch_dashboard_reorder(app: &mut AppView, up: bool) -> Vec<Eff
                 d.reorder.swap(i, i + 1);
             }
             Some(_) => {
-                // Already at the bottom — append to end.
+                // Already at the bottom — nothing to move.
             }
             None => {
                 d.reorder.push(sel);
@@ -2055,7 +2005,6 @@ pub(super) fn dispatch_dashboard_permission_select(
     request_id: usize,
     option_id: acp::PermissionOptionId,
 ) -> Vec<Effect> {
-    // Determine the owning AgentId.
     let target_id = match &row {
         crate::views::dashboard::DashboardRowId::TopLevel(id) => *id,
         crate::views::dashboard::DashboardRowId::Subagent { parent, .. } => *parent,

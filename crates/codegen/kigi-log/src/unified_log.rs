@@ -26,14 +26,12 @@ pub fn set_version(ver: &str) {
 
 pub const LOG_DIR: &str = "logs";
 const LOG_FILE: &str = "unified.jsonl";
-pub const MAX_SIZE: u64 = 5 * 1024 * 1024; // 5 MB
+pub const MAX_SIZE: u64 = 5 * 1024 * 1024;
 
 /// ACP method name for unified log notifications.
 pub const LOG_METHOD: &str = "kigi/log";
 
-// ---------------------------------------------------------------------------
 // Log entry types
-// ---------------------------------------------------------------------------
 
 /// Log level for a unified log entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display, Serialize, Deserialize)]
@@ -126,9 +124,7 @@ pub struct ClientLogEntry {
     pub ctx: Option<serde_json::Value>,
 }
 
-// ---------------------------------------------------------------------------
 // Writer
-// ---------------------------------------------------------------------------
 
 struct LogWriter {
     file: File,
@@ -228,9 +224,7 @@ pub fn trim_file(path: &std::path::Path) {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Public API
-// ---------------------------------------------------------------------------
 
 /// Return a new timestamp string in the unified log format.
 fn now_ts() -> String {
@@ -315,7 +309,7 @@ pub fn snapshot_log() -> Option<Vec<u8>> {
     {
         let _ = w.file.flush();
     }
-    // Lock released intentionally — snapshot is approximate.
+    // Lock released deliberately — snapshot is approximate.
     match fs::read(&path) {
         Ok(data) if !data.is_empty() => Some(data),
         _ => None,

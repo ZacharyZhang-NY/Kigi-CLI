@@ -36,13 +36,16 @@ pub enum PrCreationSource {
 pub(crate) fn sample_rss_bytes() -> u64 {
     #[cfg(unix)]
     {
+        // SAFETY: `rusage` is a plain-old-data struct; a zeroed value is a
+        // valid (if meaningless) instance until `getrusage` fills it in.
         unsafe {
             let mut usage: libc::rusage = std::mem::zeroed();
             if libc::getrusage(libc::RUSAGE_SELF, &mut usage) == 0 {
                 let rss = (usage.ru_maxrss).max(0) as u64;
                 #[cfg(target_os = "linux")]
                 {
-                    rss * 1024 // Linux reports in kB
+                    // Linux reports in kB.
+                    rss * 1024
                 }
                 #[cfg(not(target_os = "linux"))]
                 {
@@ -193,7 +196,6 @@ pub struct SessionSignalsDelta {
     /// `None` when no token usage was reported (e.g. old client or no inference).
     pub thinking_tokens: Option<u32>,
 
-    // === LOC Attribution Deltas ===
     pub delta_agent_lines_added: i64,
     pub delta_agent_lines_removed: i64,
     pub delta_agent_lines_added_reverted: i64,
@@ -206,7 +208,6 @@ pub struct SessionSignalsDelta {
     pub delta_human_files_touched: i64,
     pub delta_total_files_touched: i64,
 
-    // === Git/PR Metric Deltas ===
     pub delta_git_commits: i64,
     pub delta_prs_created: i64,
     pub delta_prs_merged: i64,
@@ -224,7 +225,6 @@ pub struct SessionSignalsDelta {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct SessionSignals {
-    // === Turn/Message Counts ===
     /// Number of user prompts/turns in this session
     pub turn_count: u32,
     /// Number of user messages sent
@@ -232,13 +232,11 @@ pub struct SessionSignals {
     /// Number of assistant messages received
     pub assistant_message_count: u32,
 
-    // === Error/Failure Counts ===
     /// Number of errors encountered (general errors including sampling)
     pub error_count: u32,
     /// Number of tool failures (subset of errors, specific to tools)
     pub tool_failure_count: u32,
 
-    // === User Behavior Signals ===
     /// Number of user cancellations (Ctrl+C during agent work)
     pub cancellation_count: u32,
     /// Number of consecutive cancellations (resets when a turn completes)
@@ -249,7 +247,6 @@ pub struct SessionSignals {
     #[serde(default)]
     pub has_reverted: bool,
 
-    // === Context/Compaction ===
     /// Number of conversation compactions performed
     pub compaction_count: u32,
     /// Cumulative total tokens across all compactions (sum of tokens_before each compaction)
@@ -261,14 +258,12 @@ pub struct SessionSignals {
     /// Raw model context window token limit
     pub context_window_tokens: u64,
 
-    // === Tool Usage ===
     /// Number of tool calls executed
     pub tool_call_count: u32,
     /// Distinct tools that have been used in this session
     #[serde(default)]
     pub tools_used: Vec<String>,
 
-    // === Model Usage ===
     /// Distinct models that have been used in this session
     #[serde(default)]
     pub models_used: Vec<String>,
@@ -276,17 +271,14 @@ pub struct SessionSignals {
     #[serde(default)]
     pub primary_model_id: Option<String>,
 
-    // === Edit & Retry ===
     /// Number of edit-and-retry actions (user rewinds and submits a different prompt)
     pub edit_and_retry_count: u32,
 
-    // === Bash tool patterns (kigi) ===
     /// Number of times the bash tool was used for a bare `echo "<msg>"` (or close
     /// variant). Tracked for usage statistics.
     #[serde(default)]
     pub bash_bare_echo_count: u32,
 
-    // === Git/PR Metrics ===
     /// Number of successful `git commit` statements observed in bash tool calls.
     #[serde(default)]
     pub git_commit_count: u32,
@@ -297,7 +289,6 @@ pub struct SessionSignals {
     #[serde(default)]
     pub pr_merged_count: u32,
 
-    // === Inference Idle Timeout ===
     /// Number of inference idle timeout events in this session.
     #[serde(default)]
     pub inference_idle_timeouts: u32,
@@ -321,21 +312,17 @@ pub struct SessionSignals {
     #[serde(default)]
     pub inference_idle_timeout_configured_secs: Option<u64>,
 
-    // === Ratings ===
     /// Number of positive ratings (thumbs-up / stars >= 4)
     pub positive_ratings: u32,
     /// Number of negative ratings (thumbs-down / stars <= 2)
     pub negative_ratings: u32,
 
-    // === Engagement ===
     /// Number of long pauses between turns (idle > 60 s)
     pub long_pauses_count: u32,
 
-    // === Session Metadata ===
     /// Session duration in seconds (updated on each sync)
     pub session_duration_seconds: u64,
 
-    // === Latency Metrics ===
     /// Average time to first token in milliseconds (across all turns)
     pub avg_time_to_first_token_ms: u64,
     /// Average total response time in milliseconds (across all turns)
@@ -347,7 +334,6 @@ pub struct SessionSignals {
     /// Total number of responses measured for latency
     pub latency_sample_count: u32,
 
-    // === Inter-Token Latency (ITL) Metrics ===
     /// Session-level ITL p50 in milliseconds (computed from TDigest)
     pub itl_p50_ms: Option<u64>,
     /// Session-level ITL p99 in milliseconds (computed from TDigest)
@@ -361,7 +347,6 @@ pub struct SessionSignals {
     /// Number of responses measured for ITL
     pub itl_sample_count: u32,
 
-    // === LOC Attribution ===
     /// Gross lines added by agent (monotonic, only increases)
     #[serde(default)]
     pub agent_lines_added: i64,
@@ -396,7 +381,6 @@ pub struct SessionSignals {
     #[serde(default)]
     pub total_files_touched: u32,
 
-    // === Internal ITL state (not serialized over the wire) ===
     /// TDigest for session-level percentile computation
     #[serde(skip)]
     pub itl_digest: Option<TDigest>,
@@ -407,7 +391,6 @@ pub struct SessionSignals {
     #[serde(skip)]
     pub itl_interval_count: u64,
 
-    // === Observability ===
     /// Peak resident set size in bytes (monotonically increasing)
     #[serde(default)]
     pub peak_rss_bytes: u64,
@@ -417,13 +400,11 @@ pub struct SessionSignals {
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum SignalEvent {
-    // === Turn/Message Events ===
     /// Increment turn count (user submitted a prompt)
     IncrementTurn,
     /// Record an assistant message (response completed)
     RecordAssistantMessage,
 
-    // === Tool Events ===
     /// Record a tool call with the tool name
     RecordToolCall(String),
     /// Record a tool success with the tool name
@@ -433,12 +414,10 @@ pub enum SignalEvent {
     /// Record a tool execution duration
     RecordToolDuration { tool_name: String, duration_ms: u64 },
 
-    // === Error Events ===
     /// Record a general error (sampling, network, etc.)
     /// Optionally carries an error type string (e.g. "timeout", "rate_limit", "tool_error").
     RecordError { error_type: Option<String> },
 
-    // === User Behavior Events ===
     /// Record a cancellation (user pressed Ctrl+C)
     RecordCancellation,
     /// Record a regeneration request
@@ -472,13 +451,11 @@ pub enum SignalEvent {
         inference_idle_timeout_configured_secs: u64,
     },
 
-    // === Rating Events ===
     /// Record a positive rating (thumbs-up / stars >= 4)
     RecordPositiveRating,
     /// Record a negative rating (thumbs-down / stars <= 2)
     RecordNegativeRating,
 
-    // === Context Events ===
     /// Record a compaction, including the token count before compaction.
     RecordCompaction { tokens_before: u64 },
     /// Update context window usage
@@ -487,13 +464,11 @@ pub enum SignalEvent {
         context_window: u64,
     },
 
-    // === Model Events ===
     /// Record model usage
     RecordModelUsage(String),
     /// Set the primary model ID
     SetPrimaryModel(String),
 
-    // === Latency Events ===
     /// Record latency for a response (time to first token and total response time in ms)
     RecordLatency {
         time_to_first_token_ms: u64,
@@ -508,7 +483,6 @@ pub enum SignalEvent {
         reasoning_tokens: u32,
     },
 
-    // === LOC Attribution Events ===
     /// Record a LOC change (lines added/removed by agent or human).
     RecordLocChange {
         is_agent: bool,
@@ -522,7 +496,6 @@ pub enum SignalEvent {
         lines_removed_reverted: i64,
     },
 
-    // === Turn Delta Events ===
     /// Take a turn-end snapshot and compute delta from previous turn end.
     /// Returns the delta snapshot for sending to the backend.
     TakeTurnEndSnapshot(oneshot::Sender<TurnDeltaSnapshot>),
@@ -532,7 +505,6 @@ pub enum SignalEvent {
     /// Bare echo/printf command executed via the bash tool.
     RecordBareEcho,
 
-    // === Git/PR Metric Events ===
     /// Successful `git commit` statement in a bash tool call.
     RecordGitCommit,
     /// PR created via bash `gh pr create` or an MCP create_pull_request tool.
@@ -540,7 +512,6 @@ pub enum SignalEvent {
     /// Successful `gh pr merge` statement in a bash tool call.
     RecordPrMerged,
 
-    // === Control Events ===
     /// Seed initial counts from persisted data (for session resume)
     SeedCounts {
         user_message_count: u32,
@@ -587,8 +558,6 @@ impl Default for SessionSignalsHandle {
 }
 
 impl SessionSignalsHandle {
-    // === Turn/Message Methods ===
-
     /// Increment the turn count (called when user submits a prompt).
     /// This also increments user_message_count.
     pub fn increment_turn(&self) {
@@ -604,8 +573,6 @@ impl SessionSignalsHandle {
     pub fn record_turn_complete(&self) {
         let _ = self.tx.send(SignalEvent::RecordTurnComplete);
     }
-
-    // === Tool Methods ===
 
     /// Record a tool call.
     pub fn record_tool_call(&self, tool_name: impl Into<String>) {
@@ -641,8 +608,6 @@ impl SessionSignalsHandle {
         let _ = self.tx.send(SignalEvent::RecordBareEcho);
     }
 
-    // === Git/PR Metric Methods ===
-
     /// Record a successful `git commit` statement from a bash tool call.
     pub fn record_git_commit(&self) {
         let _ = self.tx.send(SignalEvent::RecordGitCommit);
@@ -658,8 +623,6 @@ impl SessionSignalsHandle {
         let _ = self.tx.send(SignalEvent::RecordPrMerged);
     }
 
-    // === Error Methods ===
-
     /// Record a general error.
     pub fn record_error(&self) {
         let _ = self.tx.send(SignalEvent::RecordError { error_type: None });
@@ -671,8 +634,6 @@ impl SessionSignalsHandle {
             error_type: Some(error_type.into()),
         });
     }
-
-    // === User Behavior Methods ===
 
     /// Record a cancellation (user pressed Ctrl+C).
     pub fn record_cancellation(&self) {
@@ -728,8 +689,6 @@ impl SessionSignalsHandle {
         let _ = self.tx.send(SignalEvent::MarkReverted);
     }
 
-    // === Rating Methods ===
-
     /// Record a positive rating (thumbs-up / stars >= 4).
     pub fn record_positive_rating(&self) {
         let _ = self.tx.send(SignalEvent::RecordPositiveRating);
@@ -739,8 +698,6 @@ impl SessionSignalsHandle {
     pub fn record_negative_rating(&self) {
         let _ = self.tx.send(SignalEvent::RecordNegativeRating);
     }
-
-    // === Context Methods ===
 
     /// Record a compaction with the token count before compaction.
     pub fn record_compaction(&self, tokens_before: u64) {
@@ -757,8 +714,6 @@ impl SessionSignalsHandle {
         });
     }
 
-    // === Model Methods ===
-
     /// Record model usage (adds to models_used list if not already present).
     pub fn record_model_usage(&self, model_id: impl Into<String>) {
         let _ = self.tx.send(SignalEvent::RecordModelUsage(model_id.into()));
@@ -768,8 +723,6 @@ impl SessionSignalsHandle {
     pub fn set_primary_model(&self, model_id: impl Into<String>) {
         let _ = self.tx.send(SignalEvent::SetPrimaryModel(model_id.into()));
     }
-
-    // === Seeding Methods ===
 
     /// Seed initial counts from persisted conversation data.
     ///
@@ -812,8 +765,6 @@ impl SessionSignalsHandle {
         }
     }
 
-    // === Latency Methods ===
-
     /// Record latency metrics for a response.
     ///
     /// - `time_to_first_token_ms`: Time from request start to first token received
@@ -851,8 +802,6 @@ impl SessionSignalsHandle {
         });
     }
 
-    // === Turn Delta Methods ===
-
     /// Take a turn-end snapshot and compute delta from previous turn end.
     ///
     /// Called once per completed user turn (after all tool-call rounds finish).
@@ -869,8 +818,6 @@ impl SessionSignalsHandle {
         self.tx.send(SignalEvent::TakeTurnEndSnapshot(tx)).ok()?;
         rx.await.ok()
     }
-
-    // === Control Methods ===
 
     /// Get a snapshot of current signals.
     ///
@@ -905,8 +852,6 @@ impl SessionSignalsHandle {
         }
         rx.await.unwrap_or(false)
     }
-
-    // === LOC Attribution Methods ===
 
     /// Record a LOC change from the LOC sink bridge.
     pub fn record_loc_change(
@@ -970,7 +915,6 @@ pub struct SessionSignalsActor {
     /// Threshold for considering a pause as "long" (default: 60 seconds)
     long_pause_threshold: Duration,
 
-    // === Turn Delta State ===
     /// Snapshot of signals at the previous turn end (for delta computation).
     /// `None` before the first turn-end snapshot is taken.
     previous_turn_snapshot: Option<SessionSignals>,
@@ -1008,7 +952,6 @@ pub struct SessionSignalsActor {
     /// Preserved across turn resets for feedback notifications.
     last_completed_turn_tool_outcomes: Vec<ToolOutcome>,
 
-    // === LOC Attribution state ===
     /// Distinct files touched by agent (for dedup)
     agent_files_set: HashSet<std::path::PathBuf>,
     /// Distinct files touched by human (for dedup)
@@ -1108,7 +1051,6 @@ impl SessionSignalsActor {
     pub async fn run(mut self) {
         while let Some(event) = self.rx.recv().await {
             match event {
-                // === Turn/Message Events ===
                 SignalEvent::IncrementTurn => {
                     // Detect long pauses (> threshold since last turn)
                     if let Some(last) = self.last_turn_time
@@ -1150,7 +1092,6 @@ impl SessionSignalsActor {
                         Some(inference_idle_timeout_configured_secs);
                 }
 
-                // === Tool Events ===
                 SignalEvent::RecordToolCall(tool_name) => {
                     self.signals.tool_call_count += 1;
                     // Track per-turn tool usage (includes repeats)
@@ -1169,7 +1110,8 @@ impl SessionSignalsActor {
                 }
                 SignalEvent::RecordToolFailure(tool_name) => {
                     self.signals.tool_failure_count += 1;
-                    self.signals.error_count += 1; // Tool failures also count as errors
+                    // Tool failures also count as errors.
+                    self.signals.error_count += 1;
                     // Track per-tool failure for this turn
                     let entry = self
                         .tool_outcomes_this_turn
@@ -1190,7 +1132,6 @@ impl SessionSignalsActor {
                     self.signals.bash_bare_echo_count += 1;
                 }
 
-                // === Git/PR Metric Events ===
                 SignalEvent::RecordGitCommit => {
                     self.signals.git_commit_count += 1;
                 }
@@ -1201,7 +1142,6 @@ impl SessionSignalsActor {
                 SignalEvent::RecordPrMerged => {
                     self.signals.pr_merged_count += 1;
                 }
-                // === Error Events ===
                 SignalEvent::RecordError { error_type } => {
                     self.signals.error_count += 1;
                     if let Some(et) = error_type {
@@ -1209,7 +1149,6 @@ impl SessionSignalsActor {
                     }
                 }
 
-                // === User Behavior Events ===
                 SignalEvent::RecordCancellation => {
                     self.signals.cancellation_count += 1;
                     self.signals.consecutive_cancellations += 1;
@@ -1224,7 +1163,6 @@ impl SessionSignalsActor {
                     self.signals.has_reverted = true;
                 }
 
-                // === Rating Events ===
                 SignalEvent::RecordPositiveRating => {
                     self.signals.positive_ratings += 1;
                 }
@@ -1232,7 +1170,6 @@ impl SessionSignalsActor {
                     self.signals.negative_ratings += 1;
                 }
 
-                // === Context Events ===
                 SignalEvent::RecordCompaction { tokens_before } => {
                     self.signals.compaction_count += 1;
                     self.signals.total_tokens_before_compaction += tokens_before;
@@ -1247,7 +1184,6 @@ impl SessionSignalsActor {
                     self.signals.context_window_tokens = context_window;
                 }
 
-                // === Model Events ===
                 SignalEvent::RecordModelUsage(model_id) => {
                     if self.models_set.insert(model_id.clone()) {
                         self.signals.models_used.push(model_id);
@@ -1261,7 +1197,6 @@ impl SessionSignalsActor {
                     }
                 }
 
-                // === Latency Events ===
                 SignalEvent::RecordLatency {
                     time_to_first_token_ms,
                     total_response_time_ms,
@@ -1303,7 +1238,6 @@ impl SessionSignalsActor {
                     *self.turn_thinking_tokens.get_or_insert(0) += reasoning_tokens;
                 }
 
-                // === LOC Attribution Events ===
                 SignalEvent::RecordLocChange {
                     is_agent,
                     lines_added,
@@ -1341,7 +1275,6 @@ impl SessionSignalsActor {
                     // stay at 0 to avoid publishing misleading partial data.
                 }
 
-                // === Turn Delta Events ===
                 SignalEvent::TakeTurnEndSnapshot(respond_to) => {
                     // Reconcile PR-create attribution now that every event of the
                     // turn has been processed (same channel, FIFO): parallel tool
@@ -1399,9 +1332,11 @@ impl SessionSignalsActor {
                         delta_successful_tool_uses: delta_tool_calls - delta_tool_failures,
                         consecutive_cancellations: self.signals.consecutive_cancellations,
                         error_types_this_turn: std::mem::take(&mut self.error_types_this_turn),
-                        tools_this_turn: Vec::new(),      // filled below
-                        tools_this_turn_truncated: false, // filled below
-                        tool_outcomes_this_turn: Vec::new(), // filled below
+                        // tools_this_turn, tools_this_turn_truncated, and
+                        // tool_outcomes_this_turn are filled in below.
+                        tools_this_turn: Vec::new(),
+                        tools_this_turn_truncated: false,
+                        tool_outcomes_this_turn: Vec::new(),
                         tool_durations_this_turn: std::mem::take(
                             &mut self.tool_durations_this_turn,
                         ),
@@ -1498,7 +1433,6 @@ impl SessionSignalsActor {
                     let _ = respond_to.send(self.last_completed_turn_tool_outcomes.clone());
                 }
 
-                // === Control Events ===
                 SignalEvent::SeedCounts {
                     user_message_count,
                     assistant_message_count,
@@ -1808,7 +1742,7 @@ mod tests {
         handle.increment_turn();
         handle.record_tool_call("read_file");
         handle.record_tool_call("search_replace");
-        handle.record_tool_call("read_file"); // Duplicate tool
+        handle.record_tool_call("read_file");
         handle.record_error();
         handle.record_compaction(5_000);
         handle.record_cancellation();
@@ -1817,13 +1751,13 @@ mod tests {
         let snapshot = handle.snapshot().await.unwrap();
 
         assert_eq!(snapshot.turn_count, 2);
-        assert_eq!(snapshot.user_message_count, 2); // Incremented with turn
+        assert_eq!(snapshot.user_message_count, 2);
         assert_eq!(snapshot.tool_call_count, 3);
         assert_eq!(snapshot.error_count, 1);
         assert_eq!(snapshot.compaction_count, 1);
         assert_eq!(snapshot.cancellation_count, 1);
         assert_eq!(snapshot.consecutive_cancellations, 1);
-        assert_eq!(snapshot.tools_used.len(), 2); // Only unique tools
+        assert_eq!(snapshot.tools_used.len(), 2);
 
         // Shutdown
         handle.shutdown();
@@ -1894,8 +1828,8 @@ mod tests {
         handle.record_turn_complete();
 
         let snapshot = handle.snapshot().await.unwrap();
-        assert_eq!(snapshot.cancellation_count, 3); // Total unchanged
-        assert_eq!(snapshot.consecutive_cancellations, 0); // Reset
+        assert_eq!(snapshot.cancellation_count, 3);
+        assert_eq!(snapshot.consecutive_cancellations, 0);
 
         // New cancellation starts counting again
         handle.record_cancellation();
@@ -1916,7 +1850,7 @@ mod tests {
 
         let snapshot = handle.snapshot().await.unwrap();
         assert_eq!(snapshot.tool_failure_count, 2);
-        assert_eq!(snapshot.error_count, 2); // Tool failures also count as errors
+        assert_eq!(snapshot.error_count, 2);
 
         handle.shutdown();
         actor_handle.await.unwrap();
@@ -1936,7 +1870,7 @@ mod tests {
 
         // Record additional model usage
         handle.record_model_usage("kigi-4");
-        handle.record_model_usage("kigi-3"); // Duplicate
+        handle.record_model_usage("kigi-3");
 
         let snapshot = handle.snapshot().await.unwrap();
         assert_eq!(snapshot.models_used.len(), 2);
@@ -2017,7 +1951,7 @@ mod tests {
 
         let snapshot = handle.snapshot().await.unwrap();
         // Duration tracking works (u64 so always >= 0)
-        assert!(snapshot.session_duration_seconds < 100); // Sanity check - not hours old
+        assert!(snapshot.session_duration_seconds < 100);
 
         handle.shutdown();
         actor_handle.await.unwrap();
@@ -2101,7 +2035,7 @@ mod tests {
         handle.increment_turn();
         handle.record_tool_call("read_file");
         handle.record_tool_call("search_replace");
-        handle.record_tool_call("read_file"); // repeat
+        handle.record_tool_call("read_file");
         handle.record_assistant_message();
         handle.record_latency(150, 2500);
 
@@ -2120,7 +2054,7 @@ mod tests {
         assert_eq!(snap.delta.last_total_response_time_ms, Some(2500));
         // New fields
         assert_eq!(snap.delta.delta_long_pauses, 0);
-        assert_eq!(snap.delta.delta_successful_tool_uses, 3); // 3 calls, 0 failures
+        assert_eq!(snap.delta.delta_successful_tool_uses, 3);
         assert_eq!(snap.delta.consecutive_cancellations, 0);
         assert!(snap.delta.error_types_this_turn.is_empty());
         // No explicit success/failure signals sent, so tool_outcomes should be empty
@@ -2143,7 +2077,7 @@ mod tests {
             time_to_first_token_ms: Some(150),
             time_to_last_byte_ms: 2500,
             chunk_count: 20,
-            itl_intervals_ms: vec![30, 30, 30], // 3 intervals, all 30ms
+            itl_intervals_ms: vec![30, 30, 30],
             itl_p50_ms: Some(30),
             itl_p99_ms: Some(30),
             itl_max_ms: Some(30),
@@ -2175,7 +2109,6 @@ mod tests {
         let (handle, actor) = SessionSignalsActor::new();
         let actor_handle = tokio::spawn(actor.run());
 
-        // === Turn 1 ===
         handle.increment_turn();
         handle.record_tool_call("read_file");
         handle.record_tool_call("bash");
@@ -2187,23 +2120,22 @@ mod tests {
         assert_eq!(snap1.delta.turn_number, 1);
         assert_eq!(snap1.delta.delta_tool_calls, 2);
         assert_eq!(snap1.delta.delta_errors, 1);
-        assert_eq!(snap1.delta.delta_successful_tool_uses, 2); // 2 calls, 0 failures
+        assert_eq!(snap1.delta.delta_successful_tool_uses, 2);
         assert_eq!(snap1.delta.tools_this_turn.len(), 2);
         assert_eq!(snap1.delta.error_types_this_turn, vec!["timeout"]);
 
-        // === Turn 2 ===
         handle.increment_turn();
         handle.record_tool_call("search_replace");
-        handle.record_tool_failure("search_replace"); // 1 tool failure (also increments error_count)
+        handle.record_tool_failure("search_replace");
         handle.record_assistant_message();
         handle.record_latency(200, 3000);
 
         let snap2 = handle.take_turn_end_snapshot().await.unwrap();
         assert_eq!(snap2.delta.turn_number, 2);
-        assert_eq!(snap2.delta.delta_tool_calls, 1); // only 1 this turn
-        assert_eq!(snap2.delta.delta_errors, 1); // tool failure counted as error
+        assert_eq!(snap2.delta.delta_tool_calls, 1);
+        assert_eq!(snap2.delta.delta_errors, 1);
         assert_eq!(snap2.delta.delta_tool_failures, 1);
-        assert_eq!(snap2.delta.delta_successful_tool_uses, 0); // 1 call - 1 failure
+        assert_eq!(snap2.delta.delta_successful_tool_uses, 0);
         assert_eq!(snap2.delta.delta_assistant_messages, 1);
         assert_eq!(snap2.delta.tools_this_turn, vec!["search_replace"]);
         assert_eq!(snap2.delta.last_time_to_first_token_ms, Some(200));
@@ -2213,9 +2145,8 @@ mod tests {
         // Cumulative should reflect both turns
         assert_eq!(snap2.current.turn_count, 2);
         assert_eq!(snap2.current.tool_call_count, 3);
-        assert_eq!(snap2.current.error_count, 2); // 1 typed error + 1 tool failure
+        assert_eq!(snap2.current.error_count, 2);
 
-        // === Turn 3: empty turn (no tool calls, no errors) ===
         handle.increment_turn();
         handle.record_assistant_message();
 
@@ -2225,7 +2156,7 @@ mod tests {
         assert_eq!(snap3.delta.delta_errors, 0);
         assert_eq!(snap3.delta.delta_successful_tool_uses, 0);
         assert_eq!(snap3.delta.tools_this_turn, Vec::<String>::new());
-        assert_eq!(snap3.delta.last_time_to_first_token_ms, None); // no latency recorded
+        assert_eq!(snap3.delta.last_time_to_first_token_ms, None);
 
         handle.shutdown();
         actor_handle.await.unwrap();
@@ -2373,16 +2304,16 @@ mod tests {
         handle.increment_turn();
         // Mix of typed and untyped errors
         handle.record_error_typed("timeout");
-        handle.record_error(); // untyped — doesn't add to error_types_this_turn
+        handle.record_error();
         handle.record_error_typed("rate_limit");
         handle.record_assistant_message();
 
         let snap = handle.take_turn_end_snapshot().await.unwrap();
-        assert_eq!(snap.delta.delta_errors, 3); // all 3 count
+        assert_eq!(snap.delta.delta_errors, 3);
         assert_eq!(
             snap.delta.error_types_this_turn,
             vec!["timeout", "rate_limit"]
-        ); // only typed ones
+        );
 
         handle.shutdown();
         actor_handle.await.unwrap();
@@ -2457,22 +2388,22 @@ mod tests {
         // Turn 1: one response with completion and reasoning tokens
         handle.increment_turn();
         handle.record_assistant_message();
-        handle.record_token_usage(500, 200); // 500 completion, 200 reasoning → 300 response
+        handle.record_token_usage(500, 200);
 
         let snap1 = handle.take_turn_end_snapshot().await.unwrap();
-        assert_eq!(snap1.delta.response_tokens, Some(300)); // 500 - 200
+        assert_eq!(snap1.delta.response_tokens, Some(300));
         assert_eq!(snap1.delta.thinking_tokens, Some(200));
 
         // Turn 2: multi-round tool use — two responses accumulate
         handle.increment_turn();
         handle.record_tool_call("bash");
-        handle.record_token_usage(100, 50); // first response: 50 response + 50 thinking
+        handle.record_token_usage(100, 50);
         handle.record_assistant_message();
-        handle.record_token_usage(400, 0); // second response: 400 response, 0 thinking
+        handle.record_token_usage(400, 0);
 
         let snap2 = handle.take_turn_end_snapshot().await.unwrap();
-        assert_eq!(snap2.delta.response_tokens, Some(450)); // (100-50) + (400-0)
-        assert_eq!(snap2.delta.thinking_tokens, Some(50)); // 50 + 0
+        assert_eq!(snap2.delta.response_tokens, Some(450));
+        assert_eq!(snap2.delta.thinking_tokens, Some(50));
 
         // Turn 3: no token usage recorded — should be None (not Some(0))
         handle.increment_turn();
@@ -2491,11 +2422,12 @@ mod tests {
         let (handle, actor) = SessionSignalsActor::new();
         let actor_handle = tokio::spawn(actor.run());
 
-        // Seed counts as if resuming a session with prior tool usage and models
+        // Seed counts as if resuming a session with prior tool usage and models.
+        // Args: user messages, assistant messages, tool calls.
         handle.seed_counts(
-            5,  // user messages
-            4,  // assistant messages
-            12, // tool calls
+            5,
+            4,
+            12,
             vec![
                 "read_file".to_string(),
                 "bash".to_string(),
@@ -2524,16 +2456,16 @@ mod tests {
         assert!(snapshot.models_used.contains(&"kigi-4".to_string()));
 
         // After seeding, new tool calls should accumulate correctly
-        handle.record_tool_call("bash"); // existing tool
-        handle.record_tool_call("grep"); // new tool
-        handle.record_model_usage("kigi-3"); // existing model
-        handle.record_model_usage("kigi-4.5"); // new model
+        handle.record_tool_call("bash");
+        handle.record_tool_call("grep");
+        handle.record_model_usage("kigi-3");
+        handle.record_model_usage("kigi-4.5");
 
         let snapshot = handle.snapshot().await.unwrap();
-        assert_eq!(snapshot.tool_call_count, 14); // 12 + 2
-        assert_eq!(snapshot.tools_used.len(), 4); // bash not duplicated, grep added
+        assert_eq!(snapshot.tool_call_count, 14);
+        assert_eq!(snapshot.tools_used.len(), 4);
         assert!(snapshot.tools_used.contains(&"grep".to_string()));
-        assert_eq!(snapshot.models_used.len(), 3); // kigi-3 not duplicated, kigi-5 added
+        assert_eq!(snapshot.models_used.len(), 3);
         assert!(snapshot.models_used.contains(&"kigi-4.5".to_string()));
 
         handle.shutdown();
@@ -2547,7 +2479,7 @@ mod tests {
         let actor_handle1 = tokio::spawn(actor1.run());
 
         // Simulate several turns with diverse signals
-        handle1.increment_turn(); // turn 1
+        handle1.increment_turn();
         handle1.record_tool_call("bash");
         handle1.record_tool_call("read_file");
         handle1.record_tool_failure("bash");
@@ -2568,13 +2500,13 @@ mod tests {
             attempts: 0,
         });
 
-        handle1.increment_turn(); // turn 2
+        handle1.increment_turn();
         handle1.record_tool_call("search_replace");
         handle1.record_cancellation();
         handle1.record_assistant_message();
         handle1.record_model_usage("kigi-4");
 
-        handle1.increment_turn(); // turn 3
+        handle1.increment_turn();
         handle1.record_tool_call("bash");
         handle1.record_assistant_message();
 
@@ -2593,13 +2525,13 @@ mod tests {
         assert_eq!(snapshot.assistant_message_count, 3);
         assert_eq!(snapshot.tool_call_count, 4);
         assert_eq!(snapshot.tool_failure_count, 1);
-        assert_eq!(snapshot.error_count, 2); // 1 tool failure (counted as error) + 1 explicit error
+        assert_eq!(snapshot.error_count, 2);
         assert_eq!(snapshot.cancellation_count, 1);
         assert_eq!(snapshot.tools_used.len(), 3);
         assert_eq!(snapshot.models_used.len(), 2);
         assert_eq!(snapshot.latency_sample_count, 2);
-        assert_eq!(snapshot.avg_time_to_first_token_ms, 150); // (100+200)/2
-        assert_eq!(snapshot.avg_response_time_ms, 1500); // (1000+2000)/2
+        assert_eq!(snapshot.avg_time_to_first_token_ms, 150);
+        assert_eq!(snapshot.avg_response_time_ms, 1500);
         assert_eq!(snapshot.min_time_to_first_token_ms, 100);
         assert_eq!(snapshot.max_time_to_first_token_ms, 200);
         // ITL stats from phase 1 should be present
@@ -2612,7 +2544,7 @@ mod tests {
             "itl_p99_ms should be set after recording ITL data"
         );
         assert_eq!(snapshot.itl_max_ms, Some(50));
-        assert_eq!(snapshot.itl_mean_ms, Some(30)); // (10+20+30+40+50)/5
+        assert_eq!(snapshot.itl_mean_ms, Some(30));
         assert_eq!(snapshot.total_chunk_count, 6);
         assert_eq!(snapshot.itl_sample_count, 1);
 
@@ -2672,7 +2604,7 @@ mod tests {
         // This is the exact scenario the kigi-critique bug describes: the
         // TakeTurnEndSnapshot handler calls update_session_itl_percentiles()
         // which must NOT wipe persisted ITL p50/p99 when itl_digest is None.
-        handle2.increment_turn(); // turn 4 (no ITL data recorded this turn)
+        handle2.increment_turn();
         handle2.record_assistant_message();
         let delta_snap_no_itl = handle2.take_turn_end_snapshot().await.unwrap();
         let after_empty_turn = handle2.snapshot().await.unwrap();
@@ -2691,10 +2623,10 @@ mod tests {
         assert_eq!(delta_snap_no_itl.delta.last_itl_p50_ms, None);
 
         // Phase 3: Verify subsequent signals accumulate correctly after restore
-        handle2.increment_turn(); // turn 5
-        handle2.record_tool_call("grep"); // new tool
-        handle2.record_tool_call("bash"); // existing tool (should dedup)
-        handle2.record_model_usage("kigi-3"); // existing model (should dedup)
+        handle2.increment_turn();
+        handle2.record_tool_call("grep");
+        handle2.record_tool_call("bash");
+        handle2.record_model_usage("kigi-3");
         handle2.record_error();
         handle2.record_assistant_message();
 
@@ -2705,11 +2637,11 @@ mod tests {
         assert_eq!(after_turn.turn_count, 5);
         assert_eq!(after_turn.user_message_count, 5);
         assert_eq!(after_turn.assistant_message_count, 5);
-        assert_eq!(after_turn.tool_call_count, 6); // 4 + 2
-        assert_eq!(after_turn.error_count, 3); // 2 + 1
-        assert_eq!(after_turn.tools_used.len(), 4); // bash not duplicated, grep added
+        assert_eq!(after_turn.tool_call_count, 6);
+        assert_eq!(after_turn.error_count, 3);
+        assert_eq!(after_turn.tools_used.len(), 4);
         assert!(after_turn.tools_used.contains(&"grep".to_string()));
-        assert_eq!(after_turn.models_used.len(), 2); // kigi-3 not duplicated
+        assert_eq!(after_turn.models_used.len(), 2);
         // Latency: (100+200+300)/3 = 200
         assert_eq!(after_turn.latency_sample_count, 3);
         assert_eq!(after_turn.avg_time_to_first_token_ms, 200);
@@ -2719,9 +2651,9 @@ mod tests {
         let delta_snap = handle2.take_turn_end_snapshot().await.unwrap();
         // Delta should only reflect turn 5, not all 5 turns
         assert_eq!(delta_snap.delta.turn_number, 5);
-        assert_eq!(delta_snap.delta.delta_tool_calls, 2); // only the 2 new calls
-        assert_eq!(delta_snap.delta.delta_errors, 1); // only the 1 new error
-        assert_eq!(delta_snap.delta.delta_tool_failures, 0); // no new failures
+        assert_eq!(delta_snap.delta.delta_tool_calls, 2);
+        assert_eq!(delta_snap.delta.delta_errors, 1);
+        assert_eq!(delta_snap.delta.delta_tool_failures, 0);
 
         // session_duration should be >= the restored value (not reset to 0)
         assert!(after_turn.session_duration_seconds >= snapshot.session_duration_seconds);
@@ -2729,10 +2661,6 @@ mod tests {
         handle2.shutdown();
         actor_handle2.await.unwrap();
     }
-
-    // =========================================================================
-    // LOC Attribution Tests
-    // =========================================================================
 
     #[tokio::test]
     async fn test_loc_change_accumulates_correctly() {
@@ -2752,12 +2680,12 @@ mod tests {
         // Agent: 10+5=15 added, 0+2=2 removed
         assert_eq!(snap.agent_lines_added, 15);
         assert_eq!(snap.agent_lines_removed, 2);
-        assert_eq!(snap.agent_files_touched, 2); // a.rs, b.rs
+        assert_eq!(snap.agent_files_touched, 2);
 
         // Human: 3+7=10 added, 0+1=1 removed
         assert_eq!(snap.human_lines_added, 10);
         assert_eq!(snap.human_lines_removed, 1);
-        assert_eq!(snap.human_files_touched, 2); // a.rs, c.rs
+        assert_eq!(snap.human_files_touched, 2);
 
         // Total files: a.rs, b.rs, c.rs = 3
         assert_eq!(snap.total_files_touched, 3);
@@ -2888,8 +2816,6 @@ mod tests {
         handle.shutdown();
         actor_handle.await.unwrap();
     }
-
-    // === Tracing signal event tests ===
 
     #[tokio::test]
     async fn test_idle_timeout_counter() {

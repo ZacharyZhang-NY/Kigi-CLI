@@ -68,7 +68,8 @@ fn unregister_by_id() {
 
     assert!(db.unregister("a").unwrap());
     assert!(db.get("a").unwrap().is_none());
-    assert!(!db.unregister("a").unwrap()); // second call returns false
+    // second call returns false
+    assert!(!db.unregister("a").unwrap());
 }
 
 #[test]
@@ -629,7 +630,7 @@ fn network_mode_uses_fresh_per_host_truncate_db() {
 
     let db = WorktreeDb::open_at_with_journal_mode(&path, JournalMode::Truncate).unwrap();
     assert_eq!(journal_mode(&db), "truncate");
-    // Fresh per-host DB: legacy rows are intentionally not visible.
+    // Fresh per-host DB: legacy rows are deliberately not visible.
     assert!(db.get("wt-legacy").unwrap().is_none());
     db.register(&make_record("wt-nfs", "/tmp/wt-nfs", WorktreeKind::Manual))
         .unwrap();

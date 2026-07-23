@@ -66,7 +66,6 @@ fn effort_label(effort: ReasoningEffort) -> String {
 }
 
 /// The built-in session-picker modes used when the model has no server list.
-/// Reproduces the historical five rows and their labels.
 pub(crate) fn legacy_session_effort_options() -> Vec<ReasoningEffortOption> {
     SELECTABLE_REASONING_EFFORTS
         .iter()

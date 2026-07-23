@@ -1,6 +1,6 @@
 use super::*;
 
-// -- terminal_name_from_term_program (existing coverage) ------------------
+// terminal_name_from_term_program (existing coverage)
 
 #[test]
 fn test_terminal_name_from_term_program() {
@@ -89,7 +89,7 @@ fn otty_skips_kitty_keyboard_like_unknown() {
     assert!(ctx.shift_enter_unavailable());
 }
 
-// -- detect_terminal_brand_from_env (pure) --------------------------------
+// detect_terminal_brand_from_env (pure)
 
 #[test]
 fn brand_ghostty_from_term_program() {
@@ -187,10 +187,11 @@ fn brand_vte_from_vte_version() {
 #[test]
 fn brand_terminator_from_term_program() {
     let env = env_from(&[("TERM_PROGRAM", "terminator")]);
+    // WHY: canonical per detect-terminal
     assert_eq!(
         detect_terminal_brand_from_env(&env),
         TerminalName::Terminator
-    ); // WHY: canonical per detect-terminal
+    );
 }
 
 #[test]
@@ -198,7 +199,8 @@ fn terminator_vte_version_interaction() {
     let env = env_from(&[("TERM_PROGRAM", "terminator"), ("VTE_VERSION", "8200")]);
     let ctx = build_terminal_context_from_env(&env);
     assert_eq!(ctx.brand, TerminalName::Terminator);
-    assert!(ctx.is_vte_based()); // WHY: helper covers version + brand
+    // WHY: helper covers version + brand
+    assert!(ctx.is_vte_based());
 }
 
 #[test]
@@ -221,10 +223,11 @@ fn terminator_over_ssh() {
 fn terminator_focus_tracking() {
     let env = env_from(&[("TERM_PROGRAM", "terminator")]);
     let ctx = build_terminal_context_from_env(&env);
+    // supports focus like VTE
     assert!(!matches!(
         ctx.brand,
         TerminalName::AppleTerminal | TerminalName::Unknown
-    )); // supports focus like VTE
+    ));
     assert!(ctx.is_vte_based());
 }
 
@@ -244,16 +247,18 @@ fn brand_unknown_empty_env() {
     assert_eq!(detect_terminal_brand_from_env(&env), TerminalName::Unknown);
 }
 
-// -- refine_unknown_brand_for_host ---------------------------------------
+// refine_unknown_brand_for_host
 
 #[test]
 fn refine_unknown_brand_defaults_to_wt_only_on_windows() {
     use super::TerminalName::{Unknown, VsCode, WindowsTerminal};
     use crate::host::HostOs::{Linux, Windows};
     let cases = [
-        (Unknown, Windows, WindowsTerminal), // DefTerm handoff: no WT_SESSION
+        // DefTerm handoff: no WT_SESSION
+        (Unknown, Windows, WindowsTerminal),
         (Unknown, Linux, Unknown),
-        (VsCode, Windows, VsCode), // never override a positively detected brand
+        // never override a positively detected brand
+        (VsCode, Windows, VsCode),
     ];
     for (brand, host, expected) in cases {
         assert_eq!(refine_unknown_brand_for_host(brand, host), expected);
@@ -301,7 +306,7 @@ fn mouse_reporting_leaks_only_for_jetbrains_on_windows() {
     assert!(!mouse_reporting_leaks(TerminalName::Kitty, HostOs::Windows));
 }
 
-// -- detect_byobu_from_env ------------------------------------------------
+// detect_byobu_from_env
 
 #[test]
 fn byobu_tmux_explicit_backend() {
@@ -342,7 +347,7 @@ fn no_byobu_markers_returns_none() {
     assert_eq!(detect_byobu_from_env(&env), None);
 }
 
-// -- detect_multiplexer_from_env ------------------------------------------
+// detect_multiplexer_from_env
 
 #[test]
 fn mux_plain_tmux() {
@@ -416,7 +421,7 @@ fn mux_tmux_nested_inside_cmux_wins() {
     assert_eq!(detect_multiplexer_from_env(&env), MultiplexerKind::Tmux);
 }
 
-// -- ambiguous marker precedence ------------------------------------------
+// ambiguous marker precedence
 
 #[test]
 fn tmux_beats_zellij_when_both_set() {
@@ -447,7 +452,7 @@ fn byobu_tmux_explicit_with_sty_stays_tmux() {
     assert_eq!(detect_multiplexer_from_env(&env), MultiplexerKind::Tmux);
 }
 
-// -- detect_tmux_meta_from_env --------------------------------------------
+// detect_tmux_meta_from_env
 
 #[test]
 fn tmux_meta_populated() {
@@ -470,7 +475,7 @@ fn tmux_meta_empty_outside_tmux() {
     assert_eq!(meta, TmuxClientMeta::default());
 }
 
-// -- build_terminal_context_from_env (integration) ------------------------
+// build_terminal_context_from_env (integration)
 
 #[test]
 fn context_plain_terminal() {
@@ -598,9 +603,7 @@ fn context_empty_env_values_ignored() {
     assert_eq!(ctx.multiplexer, MultiplexerKind::Undetected);
 }
 
-// =====================================================================
 // determine_alt_screen_policy: fullscreen policy matrix
-// =====================================================================
 
 fn plain_ctx() -> TerminalContext {
     TerminalContext {
@@ -660,7 +663,7 @@ fn byobu_screen_ctx() -> TerminalContext {
     }
 }
 
-// -- Alt-screen policy matrix (all modes × contexts × CLI override) -------
+// Alt-screen policy matrix (all modes × contexts × CLI override)
 
 #[derive(Debug)]
 struct AltScreenCase {
@@ -900,7 +903,7 @@ fn alt_screen_policy_matrix() {
     }
 }
 
-// -- Windows Terminal context integration ---------------------------------
+// Windows Terminal context integration
 
 #[test]
 fn context_windows_terminal() {
@@ -911,13 +914,11 @@ fn context_windows_terminal() {
     assert!(!ctx.is_ssh);
 }
 
-// -- Terminal brand detection edge cases -----------------------------------
+// Terminal brand detection edge cases
 
-// =====================================================================
 // Extended environment matrix (final hardening)
-// =====================================================================
 
-// -- Byobu-screen: auto keeps fullscreen (screen is not auto-disabled) ----
+// Byobu-screen: auto keeps fullscreen (screen is not auto-disabled)
 
 #[test]
 fn auto_byobu_screen_is_fullscreen() {
@@ -935,7 +936,7 @@ fn auto_byobu_screen_is_fullscreen() {
     ));
 }
 
-// -- Terminal brand detection edge cases -----------------------------------
+// Terminal brand detection edge cases
 
 #[test]
 fn brand_vscode_from_term_program() {
@@ -978,7 +979,7 @@ fn brand_term_program_takes_precedence_over_other_vars() {
     assert_eq!(detect_terminal_brand_from_env(&env), TerminalName::Ghostty);
 }
 
-// -- IDE family detection (VS Code forks / xterm.js embeds) ---------------
+// IDE family detection (VS Code forks / xterm.js embeds)
 
 #[test]
 fn brand_cursor_from_cursor_trace_id() {
@@ -1054,7 +1055,7 @@ fn brand_vscode_from_askpass_without_term_program() {
     assert_eq!(detect_terminal_brand_from_env(&env), TerminalName::VsCode);
 }
 
-// -- Zellij detection from ZELLIJ_VERSION (no ZELLIJ or SESSION_NAME) -----
+// Zellij detection from ZELLIJ_VERSION (no ZELLIJ or SESSION_NAME)
 
 #[test]
 fn mux_zellij_not_from_version_only() {
@@ -1067,7 +1068,7 @@ fn mux_zellij_not_from_version_only() {
     );
 }
 
-// -- Byobu inference edge cases -------------------------------------------
+// Byobu inference edge cases
 
 #[test]
 fn byobu_unknown_backend_string_with_tmux() {
@@ -1088,7 +1089,7 @@ fn byobu_unknown_backend_no_mux_returns_none() {
     assert_eq!(detect_byobu_from_env(&env), None);
 }
 
-// -- Context-level edge cases ---------------------------------------------
+// Context-level edge cases
 
 #[test]
 fn context_sty_takes_screen_when_no_tmux_or_zellij() {
@@ -1137,9 +1138,7 @@ fn context_is_byobu_returns_false_without_byobu_markers() {
     assert!(!build_terminal_context_from_env(&env).is_byobu());
 }
 
-// =====================================================================
 // parse_tmux_major_minor: version string parsing
-// =====================================================================
 
 #[test]
 fn parse_tmux_version_standard() {
@@ -1186,9 +1185,7 @@ fn parse_tmux_version_no_minor() {
     assert_eq!(parse_tmux_major_minor("tmux 3"), None);
 }
 
-// =====================================================================
 // parse_semver_major_minor: TERM_PROGRAM_VERSION parsing
-// =====================================================================
 
 #[test]
 fn parse_semver_standard() {
@@ -1220,7 +1217,6 @@ fn parse_semver_major_only() {
     assert_eq!(parse_semver_major_minor("3"), None);
 }
 
-// =====================================================================
 // graphics_protocol_skip_reason
 
 #[test]
@@ -1243,7 +1239,6 @@ fn graphics_protocol_skip_reason_plain_kitty() {
 }
 
 // kitty_skip_reason: Kitty keyboard protocol skip-reason matrix
-// =====================================================================
 
 #[test]
 fn kitty_skip_vscode() {
@@ -1466,9 +1461,7 @@ fn kitty_skip_vte_brand() {
     assert_eq!(ctx.kitty_skip_reason(), Some("vte"));
 }
 
-// =====================================================================
 // shift_enter_unavailable: VTE version gating for Shift+Enter
-// =====================================================================
 //
 // VTE 0.82.0 (= VTE_VERSION 8200) is the first release containing the
 // Kitty keyboard protocol; earlier versions cannot distinguish
@@ -1550,7 +1543,8 @@ fn shift_enter_available_kkp_terminals() {
     ] {
         let ctx = TerminalContext {
             brand,
-            env_brand: brand, // lockstep with brand (no Windows refinement)
+            // lockstep with brand (no Windows refinement)
+            env_brand: brand,
             ..Default::default()
         };
         assert!(
@@ -1738,7 +1732,7 @@ fn ctrl_dot_unreliable_on_unknown_no_multiplexer() {
     assert!(ctx.ctrl_dot_unreliable());
 }
 
-// -- tmux extended-keys interaction with kitty_skip_reason ---------------
+// tmux extended-keys interaction with kitty_skip_reason
 
 fn extended_keys_ctx(version: &str, extended_keys: Option<&str>) -> TerminalContext {
     TerminalContext {
@@ -1803,9 +1797,7 @@ fn kitty_skip_vte_takes_precedence_over_tmux_old() {
     assert_eq!(ctx.kitty_skip_reason(), Some("vte"));
 }
 
-// =====================================================================
 // JetBrains JediTerm detection
-// =====================================================================
 
 #[test]
 fn brand_jetbrains_from_terminal_emulator() {

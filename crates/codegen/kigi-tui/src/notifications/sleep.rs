@@ -71,7 +71,8 @@ impl SleepInhibitor {
         let result = unsafe {
             IOPMAssertionCreateWithName(
                 assertion_type.as_concrete_TypeRef(),
-                255, // kIOPMAssertionLevelOn
+                // kIOPMAssertionLevelOn
+                255,
                 reason.as_concrete_TypeRef(),
                 &mut assertion_id,
             )
@@ -150,8 +151,6 @@ impl Drop for SleepInhibitor {
         self.release();
     }
 }
-
-// -- macOS IOKit FFI ---------------------------------------------------------
 
 #[cfg(target_os = "macos")]
 use core_foundation::base::TCFType;
@@ -264,7 +263,6 @@ mod tests {
         let inhibitor = SleepInhibitor::new(true);
         inhibitor.inhibit();
         if inhibitor.active.get() {
-            // Grab the pid before release.
             let pid = inhibitor.child.borrow().as_ref().map(|c| c.id());
             assert!(pid.is_some());
             inhibitor.release();

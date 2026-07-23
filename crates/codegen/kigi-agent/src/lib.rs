@@ -1,6 +1,5 @@
 //! Agent builder, definition parsing, and system prompt assembly.
 //!
-//! This crate extracts a first-class `Agent` type from `kigi-shell`.
 //! An `Agent` bundles tools, system prompt, system-reminder policy,
 //! compaction policy, and model configuration into a single, portable
 //! object that any host can consume.

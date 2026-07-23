@@ -15,16 +15,12 @@
         let result = handle_scheduled_task_inject_prompt(&notif, &mut app);
         assert!(result);
 
-        // Agent should now be in TurnRunning (drain happened, prompt was sent).
         let agent = app.agents.get(&AgentId(0)).unwrap();
         assert!(agent.session.state.is_turn_running());
         assert!(agent.session.pending_prompts.is_empty());
 
-        // Scrollback should have a cron prompt block.
         assert!(!agent.scrollback.is_empty());
 
-        // pending_effects should contain a SendPromptBlocks with system-reminder framing,
-        // displayText/displayAsCron meta, and a scheduler-fired- prompt_id prefix.
         match &app.pending_effects[0] {
             Effect::SendPromptBlocks {
                 blocks, prompt_id, ..
@@ -54,10 +50,9 @@
         // The leader routes `kigi/scheduled_task_inject_prompt` to the SINGLE
         // session driver, so any client that receives it IS the driver and must
         // enqueue + run it — even one that attached via `session/load`
-        // (`attached_as_viewer == true`). Previously this handler latched on
-        // `attached_as_viewer` and skipped, which stranded the cron loop with no
-        // output whenever the designated driver was an attacher (the sticky-flag
-        // bug). Pin the corrected behavior: the inject drives the turn.
+        // (`attached_as_viewer == true`). Gating the inject on that flag would
+        // strand the cron loop with no output when the designated driver is an
+        // attacher (the sticky-flag bug): the inject must drive the turn.
         let mut app = make_app_with_agent("sess-1");
         app.agents.get_mut(&AgentId(0)).unwrap().attached_as_viewer = true;
 
@@ -110,7 +105,6 @@
 
         let result = handle_scheduled_task_inject_prompt(&notif, &mut app);
         assert!(!result);
-        // Nothing should be enqueued.
         let agent = app.agents.get(&AgentId(0)).unwrap();
         assert!(agent.session.pending_prompts.is_empty());
     }
@@ -126,7 +120,6 @@
 
         let result = handle_scheduled_task_inject_prompt(&notif, &mut app);
         assert!(!result);
-        // Agent should still be idle, nothing enqueued.
         let agent = app.agents.get(&AgentId(0)).unwrap();
         assert!(agent.session.state.is_idle());
     }
@@ -134,7 +127,6 @@
     #[test]
     fn inject_prompt_busy_agent_enqueues_without_draining() {
         let mut app = make_app_with_agent("sess-1");
-        // Make the agent busy.
         let agent = app.agents.get_mut(&AgentId(0)).unwrap();
         agent.session.state = AgentState::TurnRunning;
 
@@ -147,14 +139,12 @@
         let result = handle_scheduled_task_inject_prompt(&notif, &mut app);
         assert!(result);
 
-        // Prompt should be queued but not drained (agent was busy).
         let agent = app.agents.get(&AgentId(0)).unwrap();
         assert_eq!(agent.session.pending_prompts.len(), 1);
         assert_eq!(
             agent.session.pending_prompts[0].kind,
             crate::app::agent::QueueEntryKind::Cron
         );
-        // No effects produced (drain was a no-op since agent was busy).
         assert!(app.pending_effects.is_empty());
     }
 
@@ -185,7 +175,6 @@
             1
         );
 
-        // A re-fire of the same task while it is still queued must not pile up.
         assert!(handle_scheduled_task_inject_prompt(
             &make_inject_notif(&payload),
             &mut app
@@ -212,7 +201,6 @@
             "humanSchedule": "every 1m",
         });
 
-        // First fire on an idle agent drains into a running cron turn.
         assert!(handle_scheduled_task_inject_prompt(
             &make_inject_notif(&payload),
             &mut app
@@ -221,7 +209,6 @@
         assert!(agent.session.state.is_turn_running());
         assert!(agent.session.pending_prompts.is_empty());
 
-        // A re-fire while that same loop turn is running must be skipped, not queued.
         assert!(handle_scheduled_task_inject_prompt(
             &make_inject_notif(&payload),
             &mut app
@@ -379,7 +366,6 @@
     #[test]
     fn fired_updates_correct_agent_when_active_view_differs() {
         let mut app = make_app_two_agents();
-        // Seed a known task on agent 0.
         {
             let agent0 = app.agents.get_mut(&AgentId(0)).unwrap();
             agent0.session.scheduled_tasks.insert(
@@ -411,7 +397,6 @@
             "non-active agent mutation should not trigger redraw"
         );
 
-        // Agent 0's next_fire_at must be updated.
         let agent0 = app.agents.get(&AgentId(0)).unwrap();
         let info = agent0.session.scheduled_tasks.get("task-owner").unwrap();
         assert_eq!(
@@ -420,7 +405,6 @@
             "next_fire_at must update on the owning agent, not the active one"
         );
 
-        // Agent 1 must be completely untouched.
         let agent1 = app.agents.get(&AgentId(1)).unwrap();
         assert!(
             agent1.session.scheduled_tasks.is_empty(),
@@ -460,7 +444,6 @@
     #[test]
     fn deleted_removes_from_correct_agent_when_active_view_differs() {
         let mut app = make_app_two_agents();
-        // Seed task on agent 0.
         {
             let agent0 = app.agents.get_mut(&AgentId(0)).unwrap();
             agent0.session.scheduled_tasks.insert(

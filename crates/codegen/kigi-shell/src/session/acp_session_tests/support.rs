@@ -1,6 +1,6 @@
 use super::*;
-/// Wrap `id` in a shared auth-method handle for `SessionActor` test literals
-/// (the field is now a shared live handle, not an owned id).
+/// Wrap `id` in a shared auth-method handle for `SessionActor` test literals,
+/// whose field is a shared live handle rather than an owned id.
 pub(crate) fn test_auth_method_id(id: &str) -> crate::agent::auth_method::SharedAuthMethodId {
     crate::agent::auth_method::new_shared_auth_method_id(Some(acp::AuthMethodId::new(id)))
 }

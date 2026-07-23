@@ -1,25 +1,17 @@
-//! SQL schema constants for the memory index.
-//!
-//! The index uses three tables:
-//! - `meta` — key-value metadata (embedding dimensions, schema version)
-//! - `chunks` — indexed text chunks with blake3 content hashes
-//! - `chunks_fts` — contentless FTS5 virtual table for BM25 keyword search
-//!
-//! When sqlite-vec is available, a fourth table is created:
-//! - `chunks_vec` — vec0 virtual table for KNN vector search
+//! SQL schema for the memory index: `meta` key-value settings, `chunks` text
+//! with blake3 content hashes, a contentless FTS5 `chunks_fts` for BM25
+//! keyword search, and — only when sqlite-vec loaded — a vec0 `chunks_vec`
+//! for KNN vector search.
 
-/// Schema version. Bump when making breaking schema changes that require
-/// dropping and recreating tables.
+/// Bump on a breaking change that requires dropping and recreating tables.
 pub const SCHEMA_VERSION: u32 = 1;
 
-/// Generate the SQL schema for the memory index.
+/// `dimensions` sizes the `chunks_vec` embedding column; when `vec_available`
+/// is false that table is omitted entirely.
 ///
-/// `dimensions` controls the embedding vector size for `chunks_vec`.
-/// If `vec_available` is false, the `chunks_vec` table is not created.
-///
-/// Connection pragmas (busy_timeout, journal_mode) are applied on the open
-/// path (`kigi_sqlite_journal::JournalMode::open`) — the journal mode depends
-/// on the database's filesystem.
+/// Connection pragmas (busy_timeout, journal_mode) deliberately live on the
+/// open path (`kigi_sqlite_journal::JournalMode::open`) instead of here,
+/// because the journal mode depends on the database's filesystem.
 pub fn schema_sql(dimensions: usize, vec_available: bool) -> String {
     let mut sql = r#"
 CREATE TABLE IF NOT EXISTS meta (
@@ -62,10 +54,8 @@ INSERT OR IGNORE INTO meta(key, value) VALUES ('reindex_claim', '');
     sql
 }
 
-/// SQL to insert or update an embedding dimension record in the meta table.
 pub const UPSERT_META_SQL: &str = "INSERT OR REPLACE INTO meta(key, value) VALUES (?1, ?2)";
 
-/// SQL to query a meta value by key.
 pub const GET_META_SQL: &str = "SELECT value FROM meta WHERE key = ?1";
 
 #[cfg(test)]

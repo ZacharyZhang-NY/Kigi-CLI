@@ -442,7 +442,7 @@ async fn event_loop(
 ) {
     let mut state = LockState::Idle;
     let mut stale_warn = StaleWarn::default();
-    // Baseline for the next op's head_changed: the head last observed while
+    // Baseline for the next op's `head_changed`: the head last observed while
     // no op was running. Fast ops complete their whole lock cycle inside one
     // debounce batch, so the batch-time head is already post-op; this keeps
     // the pre-op value.
@@ -539,16 +539,16 @@ fn process_event(
     }
     // Accepted race: if a settle expires while the next op's lock event is
     // still in the debounce window, the baseline recorded here is already
-    // that op's post-op head, so its Completed can read head_changed:false.
-    // Self-healing: buffered FilesChanged force the consumer's rebuild, and
+    // that op's post-op head, so its Completed can read `head_changed`:false.
+    // Self-healing: buffered `FilesChanged` force the consumer's rebuild, and
     // the hunk refresh has its own head_oid/index-mtime check.
     if matches!(state, LockState::Idle | LockState::Cooldown { .. }) {
         *last_idle_head = head_now;
     }
 
-    // While in_op: suppress GitMetaChanged (one wake on Completed, not N).
+    // While in_op: suppress `GitMetaChanged` (one wake on Completed, not N).
     // Settling is in_op — the inter-cycle HEAD moves of a merged op must not
-    // leak as meta wakes — but not in_cooldown: FilesChanged keeps flowing
+    // leak as meta wakes — but not in_cooldown: `FilesChanged` keeps flowing
     // during Locked/Settling (consumer buffers); Cooldown drops it.
     let in_op = matches!(
         state,
@@ -1078,9 +1078,7 @@ mod tests {
         );
     }
 
-    // ========================================================================
     // Sapling (`.sl`) — the existing VCS-agnostic lock machine, fed `.sl` facts.
-    // ========================================================================
 
     /// Two distinct 20-byte working-copy parents (p1) for head-change tests.
     const SL_P1_A: [u8; 20] = [0x11; 20];
@@ -1221,7 +1219,7 @@ mod tests {
         assert!(!lock_present(&VcsDirs::default()));
 
         // Degraded: a present `.sl` with an unreadable dirstate stays Some("|")
-        // (head_changed:false path), not the no-repo None branch.
+        // (`head_changed`:false path), not the no-repo None branch.
         let degraded = make_fake_sl_repo_no_lock();
         std::fs::remove_file(degraded.path().join(".sl/dirstate")).unwrap();
         assert_eq!(read_head(&sl_vcs(&degraded)), Some("|".to_string()));
@@ -1282,7 +1280,7 @@ mod tests {
     #[test]
     fn workspace_file_surfaces_when_root_under_unrelated_sl_ancestor() {
         // A watch root under an unrelated `.sl` ancestor must not suppress its
-        // workspace files: a normal file still surfaces as FilesChanged.
+        // workspace files: a normal file still surfaces as `FilesChanged`.
         let vcs = VcsDirs {
             git_dir: None,
             sl_dir: Some(PathBuf::from("/x/.sl/proj/.sl")),
@@ -1415,7 +1413,7 @@ mod tests {
             cd(),
             &out_tx,
         );
-        // Exact: only Started (no stray FilesChanged from the wlock path).
+        // Exact: only Started (no stray `FilesChanged` from the wlock path).
         assert_eq!(collect_events(&mut rx), vec![FsEvent::GitOperationStarted]);
 
         // p1 moves while wlock is held, then wlock is released; Completed

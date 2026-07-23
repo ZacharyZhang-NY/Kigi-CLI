@@ -1,10 +1,7 @@
 //! Location of the local subagent-content cache (`~/.kigi/bundled/`).
 //!
-//! Formerly this module managed a synced bundle of personas/roles/agents/
-//! skills fetched from the xAI cli-chat-proxy (`GET /v1/subagents/bundle`).
-//! That backend is gone; the directory remains a passive, locally-populated
-//! content root that role/persona discovery scans (see
-//! `config::resolve_*` discovery in `config/mod.rs`).
+//! A passive, locally-populated content root that role/persona discovery
+//! scans (see `config::resolve_*` discovery in `config/mod.rs`).
 
 use std::path::PathBuf;
 

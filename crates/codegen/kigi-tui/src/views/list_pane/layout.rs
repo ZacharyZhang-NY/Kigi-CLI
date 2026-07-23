@@ -41,10 +41,6 @@ pub enum ListLayoutCache {
 }
 
 impl ListLayoutCache {
-    // -----------------------------------------------------------------------
-    // Constructors
-    // -----------------------------------------------------------------------
-
     /// Create a fixed-height cache for `count` items (all height 1).
     pub fn fixed(count: usize) -> Self {
         Self::FixedHeight { count }
@@ -90,10 +86,6 @@ impl ListLayoutCache {
             }
         }
     }
-
-    // -----------------------------------------------------------------------
-    // Queries
-    // -----------------------------------------------------------------------
 
     /// Total height in visual lines.
     pub fn total_height(&self) -> usize {
@@ -146,15 +138,15 @@ impl ListLayoutCache {
             }
             Self::Variable { prefix_sums, .. } => {
                 if prefix_sums.len() <= 1 {
-                    return None; // empty
+                    return None;
                 }
                 // Binary search: find the largest i such that prefix_sums[i] <= y.
                 // partition_point returns the first index where prefix_sums[i] > y,
                 // so we subtract 1.
                 let pos = prefix_sums.partition_point(|&s| s <= y);
                 let idx = pos.saturating_sub(1);
-                // Clamp to valid item range
-                let max_idx = prefix_sums.len() - 2; // last valid item index
+                // Clamp to valid item range: last valid item index.
+                let max_idx = prefix_sums.len() - 2;
                 Some(idx.min(max_idx))
             }
         }
@@ -168,10 +160,6 @@ impl ListLayoutCache {
         }
     }
 }
-
-// ===========================================================================
-// Tests
-// ===========================================================================
 
 #[cfg(test)]
 mod tests {
@@ -257,7 +245,8 @@ mod tests {
         assert_eq!(cache.virtual_y(0), 0);
         assert_eq!(cache.item_at_y(0), Some(0));
         assert_eq!(cache.item_at_y(4), Some(0));
-        assert_eq!(cache.item_at_y(5), Some(0)); // clamped
+        // Clamped.
+        assert_eq!(cache.item_at_y(5), Some(0));
     }
 
     #[test]

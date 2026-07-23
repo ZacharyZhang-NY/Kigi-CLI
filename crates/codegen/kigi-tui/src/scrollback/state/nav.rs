@@ -36,7 +36,6 @@ fn response_anchor_in_range(
 impl ScrollbackState {
     // Turn Navigation
 
-    /// Rebuild turn index from entries.
     pub(super) fn rebuild_turns(&mut self) {
         self.turns.clear();
         let mut current_start: Option<usize> = None;
@@ -60,11 +59,11 @@ impl ScrollbackState {
             self.turns.push(Turn {
                 prompt_index: start,
                 end_index: self.entries.len(),
-                status: TurnStatus::Running, // Last turn may still be active
+                // Last turn may still be active
+                status: TurnStatus::Running,
             });
         }
 
-        // Update current_turn
         self.current_turn = if self.turns.is_empty() {
             None
         } else if let Some(sel) = self.selected {
@@ -74,29 +73,24 @@ impl ScrollbackState {
         };
     }
 
-    /// Find which turn contains a given entry index.
     pub fn turn_containing(&self, entry_index: usize) -> Option<usize> {
         self.turns
             .iter()
             .position(|t| entry_index >= t.prompt_index && entry_index < t.end_index)
     }
 
-    /// Get current turn index.
     pub fn current_turn(&self) -> Option<usize> {
         self.current_turn
     }
 
-    /// Get total number of turns.
     pub fn turn_count(&self) -> usize {
         self.turns.len()
     }
 
-    /// Get a turn by index.
     pub fn turn(&self, index: usize) -> Option<&Turn> {
         self.turns.get(index)
     }
 
-    /// Get all turns.
     pub fn turns(&self) -> &[Turn] {
         &self.turns
     }
@@ -163,7 +157,6 @@ impl ScrollbackState {
     /// If we're before the first turn (e.g., at system messages), jumps to the first turn.
     /// Otherwise jumps to the next turn.
     pub fn next_turn(&mut self) -> bool {
-        // If no turns exist, nothing to do
         if self.turns.is_empty() {
             return false;
         }
@@ -194,14 +187,13 @@ impl ScrollbackState {
     /// If already on a prompt, jumps to the previous turn's prompt.
     /// If at first turn's prompt and pre-turn exists with selectable entries, jumps there.
     pub fn prev_turn(&mut self) -> bool {
-        // If no turns exist, nothing to do
         if self.turns.is_empty() {
             return false;
         }
 
-        // Check if we're currently in pre-turn (current_turn is None)
         if self.current_turn.is_none() {
-            return false; // Already at pre-turn, can't go further back
+            // Already at pre-turn, can't go further back
+            return false;
         }
 
         let current = self.current_turn.unwrap();
@@ -227,7 +219,8 @@ impl ScrollbackState {
                 let range = 0..current_turn.prompt_index;
                 let first_selectable = self.find_first_selectable_in_range(range);
                 if first_selectable.is_none() {
-                    return false; // No selectable entries in pre-turn
+                    // No selectable entries in pre-turn
+                    return false;
                 }
                 self.current_turn = None;
                 if self.view_mode == ViewMode::SingleTurn {
@@ -240,10 +233,10 @@ impl ScrollbackState {
                 }
                 return true;
             }
-            return false; // No pre-turn, already at first turn's prompt
+            // No pre-turn, already at first turn's prompt
+            return false;
         }
 
-        // Go to previous turn's prompt
         self.activate_turn(current - 1);
         true
     }
@@ -350,7 +343,6 @@ impl ScrollbackState {
         false
     }
 
-    /// Set status of the last turn.
     pub fn set_last_turn_status(&mut self, status: TurnStatus) {
         if let Some(turn) = self.turns.last_mut() {
             turn.status = status;
@@ -359,7 +351,6 @@ impl ScrollbackState {
 
     // Scrolling
 
-    /// Scroll up by n rows.
     pub fn scroll_up(&mut self, rows: u16) {
         self.scroll_offset = self.scroll_offset.saturating_sub(rows as usize);
         self.follow_mode = false;
@@ -461,22 +452,19 @@ impl ScrollbackState {
         self.scroll_down(self.viewport_height / 2);
     }
 
-    /// Go to top.
     pub fn goto_top(&mut self) {
         self.scroll_offset = 0;
         self.follow_mode = false;
         let range = self.visible_entry_range();
         if !range.is_empty() {
-            // Find first selectable entry
             self.selected = self.find_first_selectable_in_range(range);
             self.sync_current_turn();
         }
         self.bump_generation();
     }
 
-    /// Go to bottom.
     pub fn goto_bottom(&mut self) {
-        // Set scroll to bottom - fills screen with content, last entry at very bottom
+        // Fills screen with content, last entry at very bottom.
         let max_offset = self
             .total_height
             .saturating_sub(self.viewport_height as usize);
@@ -491,14 +479,12 @@ impl ScrollbackState {
 
         let range = self.visible_entry_range();
         if !range.is_empty() {
-            // Find last selectable entry
             self.selected = self.find_last_selectable_in_range(range);
             self.sync_current_turn();
         }
         self.bump_generation();
     }
 
-    /// Toggle follow mode.
     pub fn toggle_follow(&mut self) {
         self.follow_mode = !self.follow_mode;
         if self.follow_mode {
@@ -534,7 +520,6 @@ impl ScrollbackState {
         self.follow_preserve_scroll = true;
     }
 
-    /// Check if follow mode is enabled.
     pub fn is_follow_mode(&self) -> bool {
         self.follow_mode
     }
@@ -604,10 +589,10 @@ impl ScrollbackState {
             .scroll
             .min_scroll_lines(self.viewport_height) as usize;
 
-        // Get visible range - positions are RELATIVE to this range
+        // Positions below are RELATIVE to this range.
         let visible_range = self.visible_entry_range();
         if !visible_range.contains(&selected_idx) {
-            return; // Selected entry not in visible range, nothing to do
+            return;
         }
 
         // Stay O(viewport): only an OFF-viewport selection (the path that scrolls)
@@ -640,30 +625,24 @@ impl ScrollbackState {
         let entry_height = cache.entries[selected_idx].height;
         let entry_bottom = entry_y + entry_height as usize;
 
-        // Build prompt descriptors relative to visible range (for sticky layout)
         let relative_prompts = self.build_relative_prompt_descriptors(cache, &visible_range);
 
-        // Compute sticky header at current scroll position
         let sticky =
             compute_sticky_layout(self.scroll_offset, self.viewport_height, &relative_prompts);
         let header_height = sticky.header_screen_rows();
 
-        // Content area bounds
         let content_top = self.scroll_offset + header_height as usize;
         let viewport_bottom = self.scroll_offset + self.viewport_height as usize;
 
-        // Effective bounds with margin
         let effective_top = content_top + top_margin;
         let effective_bottom = viewport_bottom.saturating_sub(bottom_margin);
 
-        // Check if entry is fully visible (with margin)
         let is_fully_visible = entry_y >= effective_top && entry_bottom <= effective_bottom;
 
         if is_fully_visible {
-            return; // No scroll needed
+            return;
         }
 
-        // Check if entry fits in viewport content area
         let content_height = self.viewport_height.saturating_sub(header_height);
         let entry_fits = entry_height <= content_height;
 
@@ -727,7 +706,6 @@ impl ScrollbackState {
             let actual_scroll = self.scroll_offset.abs_diff(old_scroll);
 
             if actual_scroll > 0 && actual_scroll < min_scroll {
-                // Scroll more to meet minimum
                 let max_scroll = self
                     .total_height
                     .saturating_sub(self.viewport_height as usize);
@@ -763,8 +741,9 @@ impl ScrollbackState {
             .iter()
             .filter(|p| visible_range.contains(&p.entry_idx))
             .map(|p| PromptDescriptor {
-                entry_idx: p.entry_idx, // Keep absolute index for lookup
-                y_virtual: p.y_virtual.saturating_sub(base_y), // Relative Y
+                // entry_idx stays absolute (for lookup); y_virtual is made relative.
+                entry_idx: p.entry_idx,
+                y_virtual: p.y_virtual.saturating_sub(base_y),
                 full_height: p.full_height,
                 min_height: p.min_height,
                 sticky: p.sticky,
@@ -805,7 +784,8 @@ impl ScrollbackState {
             let content_top_at_target = target_scroll + header_at_target as usize;
 
             if entry_y >= content_top_at_target {
-                break; // Entry would be visible at this scroll position
+                // Entry would be visible at this scroll position
+                break;
             }
 
             // Need to scroll up more to account for header
@@ -840,7 +820,6 @@ impl ScrollbackState {
             return None;
         }
 
-        // Ensure layout cache is valid
         self.ensure_layout_cache(self.last_width);
         // Measure the target exactly first (settle only re-pins top/bottom, never
         // an arbitrary target). Measuring above is safe: callers consume the
@@ -1132,14 +1111,22 @@ mod tests {
     #[test]
     fn test_response_anchor_trailing_run_skips_interleaved_messages() {
         let mut state = ScrollbackState::new();
-        state.push_block(user_block("Q1")); // 0
-        state.push_block(agent_block("Let me look out loud")); // 1 - mid-turn speak
-        state.push_block(tool_block("ls")); // 2
-        state.push_block(agent_block("Found it, checking more")); // 3 - mid-turn speak
-        state.push_block(tool_block("cat")); // 4
-        state.push_block(agent_block("Final answer part 1")); // 5 - trailing run start
-        state.push_block(agent_block("Final answer part 2")); // 6
-        state.push_block(RenderBlock::system("turn done")); // 7 - doesn't break the run
+        // 0
+        state.push_block(user_block("Q1"));
+        // 1 - mid-turn speak
+        state.push_block(agent_block("Let me look out loud"));
+        // 2
+        state.push_block(tool_block("ls"));
+        // 3 - mid-turn speak
+        state.push_block(agent_block("Found it, checking more"));
+        // 4
+        state.push_block(tool_block("cat"));
+        // 5 - trailing run start
+        state.push_block(agent_block("Final answer part 1"));
+        // 6
+        state.push_block(agent_block("Final answer part 2"));
+        // 7 - doesn't break the run
+        state.push_block(RenderBlock::system("turn done"));
         state.prepare_layout(80, 6);
 
         // The anchor is the trailing run's first message, not a mid-turn one
@@ -1150,9 +1137,12 @@ mod tests {
     #[test]
     fn test_streaming_response_real_path() {
         let mut state = ScrollbackState::new();
-        state.push_block(user_block("Q1")); // 0
-        state.push_block(tool_block("ls")); // 1
-        let id = state.start_streaming_agent(); // 2
+        // 0
+        state.push_block(user_block("Q1"));
+        // 1
+        state.push_block(tool_block("ls"));
+        // 2
+        let id = state.start_streaming_agent();
         state.prepare_layout(80, 6);
 
         // Empty streaming placeholder doesn't qualify
@@ -1175,7 +1165,8 @@ mod tests {
         let mut state = ScrollbackState::new();
         state.push_block(user_block("Q1"));
         state.push_block(agent_block("Working on it"));
-        state.push_block(tool_block("cargo build")); // still running
+        // still running
+        state.push_block(tool_block("cargo build"));
         state.prepare_layout(80, 6);
 
         assert!(!state.prev_response());
@@ -1196,12 +1187,18 @@ mod tests {
     #[test]
     fn test_response_navigation_walks_anchor_offsets() {
         let mut state = ScrollbackState::new();
-        state.push_block(user_block("Q1")); // 0
-        state.push_block(tall_agent_block()); // 1
-        state.push_block(user_block("Q2")); // 2
-        state.push_block(tool_block("cat")); // 3 - tool-only turn, skipped
-        state.push_block(user_block("Q3")); // 4
-        state.push_block(tall_agent_block()); // 5
+        // 0
+        state.push_block(user_block("Q1"));
+        // 1
+        state.push_block(tall_agent_block());
+        // 2
+        state.push_block(user_block("Q2"));
+        // 3 - tool-only turn, skipped
+        state.push_block(tool_block("cat"));
+        // 4
+        state.push_block(user_block("Q3"));
+        // 5
+        state.push_block(tall_agent_block());
         state.prepare_layout(80, 6);
 
         // J at the follow-mode bottom is a no-op (no anchor top below)
@@ -1241,11 +1238,14 @@ mod tests {
     #[test]
     fn test_next_response_snaps_current_turn_from_work_region() {
         let mut state = ScrollbackState::new();
-        state.push_block(user_block("Q1")); // 0
+        // 0
+        state.push_block(user_block("Q1"));
+        // 1-6
         for i in 0..6 {
-            state.push_block(tool_block(&format!("tool {i}"))); // 1-6
+            state.push_block(tool_block(&format!("tool {i}")));
         }
-        state.push_block(tall_agent_block()); // 7
+        // 7
+        state.push_block(tall_agent_block());
         state.prepare_layout(80, 6);
         state.scroll_to_entry_top(3);
 
@@ -1266,10 +1266,12 @@ mod tests {
     #[test]
     fn test_prompt_queued_mid_stream_response_reachable() {
         let mut state = ScrollbackState::new();
-        state.push_block(user_block("Q1")); // 0
-        let id = state.start_streaming_agent(); // 1
-        // Queued prompt closes the streaming turn while its message is empty
-        state.push_block(user_block("Q2")); // 2
+        // 0
+        state.push_block(user_block("Q1"));
+        // 1
+        let id = state.start_streaming_agent();
+        // 2 - queued prompt closes the streaming turn while its message is empty
+        state.push_block(user_block("Q2"));
         state.prepare_layout(80, 6);
         assert!(!state.prev_response());
 
@@ -1286,10 +1288,14 @@ mod tests {
     #[test]
     fn test_response_navigation_single_turn_mode() {
         let mut state = ScrollbackState::new();
-        state.push_block(user_block("Q1")); // 0
-        state.push_block(agent_block("A1")); // 1
-        state.push_block(user_block("Q2")); // 2
-        state.push_block(tall_agent_block()); // 3
+        // 0
+        state.push_block(user_block("Q1"));
+        // 1
+        state.push_block(agent_block("A1"));
+        // 2
+        state.push_block(user_block("Q2"));
+        // 3
+        state.push_block(tall_agent_block());
         state.view_mode = ViewMode::SingleTurn;
         state.prepare_layout(80, 6);
 
@@ -1325,7 +1331,8 @@ mod tests {
         assert_eq!(state.scroll_offset, 60);
 
         state.goto_bottom();
-        assert_eq!(state.scroll_offset, 80); // 100 - 20
+        // 100 - 20
+        assert_eq!(state.scroll_offset, 80);
         assert!(state.is_follow_mode());
 
         state.goto_top();
@@ -1333,11 +1340,11 @@ mod tests {
         assert!(!state.is_follow_mode());
     }
 
-    // Overscroll → follow contract (changed from the original double-hit
-    // shape): a scroll-down that is ALREADY clamped at the bottom re-engages
-    // follow on the FIRST event — there is no flag-arming intermediate tick.
-    // A scroll-down that lands at the bottom (moved real rows) still never
-    // engages, preserving the fast-scroll landing protection.
+    // Overscroll → follow contract: a scroll-down that is ALREADY clamped at
+    // the bottom re-engages follow on the FIRST event — there is no
+    // flag-arming intermediate tick. A scroll-down that lands at the bottom
+    // (moved real rows) still never engages, preserving the fast-scroll
+    // landing protection.
 
     #[test]
     fn clamped_scroll_down_at_bottom_engages_follow_on_first_event() {
@@ -1366,7 +1373,8 @@ mod tests {
         let mut state = ScrollbackState::new();
         state.total_height = 100;
         state.viewport_height = 20;
-        state.scroll_up(1); // exit follow (offset stays 0)
+        // Exit follow (offset stays 0).
+        state.scroll_up(1);
         state.scroll_offset = 50;
 
         // Clamped 50 → 80: real rows moved, so this is a landing, not an
@@ -1776,9 +1784,8 @@ mod tests {
         let at_second_line = state.scroll_offset();
 
         // The second logical line sits past every wrapped row of the first, so
-        // the reveal scrolls more than a single row down. With the old logical-
-        // index nudge the delta would be exactly 1; mapping through the wrapped
-        // output makes it the wrapped-row count of line 0.
+        // the reveal scrolls more than a single row down: mapping through the
+        // wrapped output yields the wrapped-row count of line 0.
         let delta = at_second_line.saturating_sub(at_first_line);
         assert!(
             delta > 1,
@@ -1825,7 +1832,7 @@ mod tests {
             .set_display_mode(DisplayMode::Expanded);
 
         // Logical line 0 maps past the two non-selectable header rows. Thinking
-        // has no vpad, so the old "count every hard break" logic returned 0 here.
+        // has no vpad, so naively counting hard breaks would misreport 0 here.
         let row0 = state.rendered_row_offset_within_entry(think_idx, 0);
         assert!(
             row0 >= 2,

@@ -1,15 +1,8 @@
 //! Memory system tracing target and optional file-based logging layer.
 //!
-//! Provides a dedicated tracing target (`xai_memory`) with an optional
-//! file logger that writes to `~/.kigi/logs/memory.log`.
-//!
-//! ## When to use
-//!
-//! Use `tracing::info!(target: memory_log::TARGET, ...)` at memory system
-//! lifecycle points — config resolution, storage init, flush, search, etc.
-//! These events are always emitted (zero cost when the layer is absent).
-//!
-//! ## Enabling (debug builds)
+//! Emit events with `tracing::info!(target: memory_log::TARGET, ...)` at memory
+//! system lifecycle points — config resolution, storage init, flush, search.
+//! They are always emitted, at zero cost when the layer is absent.
 //!
 //! ```bash
 //! # build with memory logging enabled, then:
@@ -63,9 +56,7 @@ mod inner {
         }
     }
 
-    /// Build the memory log layer.
-    ///
-    /// Writes to `~/.kigi/logs/memory.log`. Filters to `xai_memory=trace`.
+    /// Writes to `~/.kigi/logs/memory.log`, filtered to `xai_memory=trace`.
     /// Set `KIGI_MEMORY_LOG=0` to disable, `KIGI_MEMORY_LOG=/path` to redirect.
     pub fn layer<S>() -> Option<impl Layer<S>>
     where

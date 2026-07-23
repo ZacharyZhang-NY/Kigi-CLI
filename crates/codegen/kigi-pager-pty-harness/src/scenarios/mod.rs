@@ -21,7 +21,6 @@ pub mod resize_storm;
 pub mod scroll_stress;
 pub mod streaming_render;
 
-/// Enumerates every benchmark scenario that can be dispatched by name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, ValueEnum, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Scenario {
@@ -40,7 +39,6 @@ pub enum Scenario {
 }
 
 impl Scenario {
-    /// Every scenario, in dispatch order.
     pub const ALL: &'static [Scenario] = &[
         Scenario::ScrollStress,
         Scenario::StreamingRender,
@@ -62,7 +60,6 @@ impl Scenario {
         }
     }
 
-    /// Dispatch to the scenario implementation.
     pub async fn run(
         self,
         harness: &mut PtyHarness,
@@ -79,11 +76,10 @@ impl Scenario {
     }
 }
 
-/// Wait for the pager to render the initial welcome screen. All scenarios
-/// that prompt / stream content rely on the pager being past startup.
+/// Scenarios that prompt or stream content require the pager to be past startup.
 pub(crate) async fn wait_for_welcome(harness: &mut PtyHarness) -> Result<()> {
-    // Menu label on the normal welcome (and gate menus): capital Q — see
-    // `kigi-tui` `views/welcome/mod.rs` (`"Quit"` in `render_menu`).
+    // Capital-Q menu label appears on the normal welcome and on gate menus — see
+    // `render_menu` in `kigi-tui` `views/welcome/mod.rs`.
     harness
         .wait_for_text("Quit", Duration::from_secs(15))
         .map_err(|e| anyhow::anyhow!("pager failed to reach welcome screen: {e}"))

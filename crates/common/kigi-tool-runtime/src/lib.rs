@@ -1,10 +1,7 @@
 //! Unified tool runtime contract.
 //!
-//! Single home for the `Tool` trait, `ToolDispatch`, `ToolError`,
-//! `ToolNotification`, `ToolSearchIndex`, `ToolCallContext`, `ToolStream`,
-//! the in-process `LocalRegistry`, and the helper constructors that build
-//! well-formed streams. Adapters for individual tool sources re-export
-//! from here so every tool author sees the same surface.
+//! Adapters for individual tool sources re-export from here so every tool
+//! author sees the same surface.
 
 #![forbid(unsafe_code)]
 

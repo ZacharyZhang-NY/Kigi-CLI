@@ -9,7 +9,7 @@
 //! client advertises the capability until the desktop UI ships — so this is
 //! inert by default even with the feature flag on. The TUI/headless clients never
 //! advertise it (they self-gate trust client-side), so they are never
-//! double-prompted. Co-located child of `mvp_agent` (`use super::*`).
+//! double-prompted.
 //!
 //! Post-grant reload scope: MCP, plugins, and each session's own project hooks
 //! are hot-reloaded in place — for EVERY session sharing the granted workspace

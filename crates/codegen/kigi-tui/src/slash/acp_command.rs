@@ -7,7 +7,7 @@
 //! Skill commands (those with `meta.path` + `meta.scope`) are handled
 //! client-side: pager reads the SKILL.md, applies substitutions, and
 //! sends structured prompt blocks directly. Non-skill ACP commands
-//! pass through to the shell as before.
+//! pass through to the shell.
 
 use agent_client_protocol as acp;
 use kigi_tools::implementations::skills::types::SkillScope;
@@ -69,7 +69,7 @@ impl SlashCommand for AcpSlashCommand {
             return CommandResult::Error(format!("Malformed skill metadata for /{}", self.name));
         }
 
-        // Non-skill ACP commands: pass through to the shell as before.
+        // Non-skill ACP commands: pass through to the shell.
         if self.skill_path.is_none() || self.skill_scope.is_none() {
             let text = if args.trim().is_empty() {
                 format!("/{}", self.name)
@@ -79,8 +79,6 @@ impl SlashCommand for AcpSlashCommand {
             return CommandResult::PassThrough(text);
         }
 
-        // --- Pass skill through to the shell for expansion ---
-        //
         // The shell's slash_commands::resolve() handles skill detection,
         // SKILL.md loading, substitution, and assembly of the
         // <user_query> + <skill_information> format. The pager just
@@ -267,8 +265,6 @@ mod tests {
         }
     }
 
-    // -- run() tests --
-
     fn make_skill_cmd(name: &str, path: &str, scope: &str) -> AcpSlashCommand {
         AcpSlashCommand {
             name: name.to_string(),
@@ -332,8 +328,8 @@ mod tests {
 
     #[test]
     fn run_missing_file_passes_through_to_shell() {
-        // The pager no longer reads SKILL.md — it passes through to the shell.
-        // A missing file still produces InjectSkill with the raw `/skill args` text.
+        // The pager doesn't read SKILL.md itself; it passes the raw text through
+        // to the shell, so a missing file still produces InjectSkill.
         let cmd = make_skill_cmd("commit", "/nonexistent/path/SKILL.md", "local");
         let mut ctx = make_exec_ctx();
         let result = cmd.run(&mut ctx, "fix bug");
@@ -486,8 +482,8 @@ mod tests {
 
     #[test]
     fn run_skill_substitutes_skill_dir() {
-        // The pager no longer does substitutions — it passes through to the shell.
-        // This test verifies the pass-through behavior.
+        // Despite the name, the pager performs no substitution here — it
+        // passes the raw `/skill args` text through to the shell.
         let cmd = make_skill_cmd("config", "/some/path/SKILL.md", "local");
         let mut ctx = make_exec_ctx();
         let result = cmd.run(&mut ctx, "");

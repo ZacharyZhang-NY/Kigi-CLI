@@ -56,7 +56,7 @@ pub struct HyperlinkCapabilities {
     pub id_param: bool,
     /// Which URL schemes the terminal handles.
     pub scheme_filter: SchemeFilter,
-    /// Whether the terminal supports OSC 22 cursor-shape changes
+    /// Whether the terminal supports OSC 22 cursor-shape shifts
     /// (e.g. switching to a hand/pointer cursor on link hover).
     pub osc22_cursor: bool,
     /// Whether the terminal handles link hover styling natively (so our
@@ -197,7 +197,7 @@ pub fn hyperlink_capabilities(brand: TerminalName) -> HyperlinkCapabilities {
     }
 }
 
-// ── OSC 22 cursor-shape commands ──────────────────────────────────────
+// OSC 22 cursor-shape commands
 //
 // These wrap raw OSC 22 sequences as crossterm `Command`s so call sites
 // can use `crossterm::execute!` / `queue!` instead of manual byte writes.

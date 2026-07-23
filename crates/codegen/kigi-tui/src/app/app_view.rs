@@ -35,7 +35,6 @@ impl NewWorktreeDialogState {
             label_input: String::new(),
         }
     }
-    /// Handle a key event. Returns the dialog outcome.
     pub fn handle_key(&mut self, key: &crossterm::event::KeyEvent) -> NewWorktreeDialogOutcome {
         use crossterm::event::{KeyCode, KeyModifiers};
         if key.modifiers.contains(KeyModifiers::CONTROL)
@@ -1248,7 +1247,7 @@ impl AppView {
     }
     /// Reconcile the shared prompt queue for a session from a
     /// `kigi/queue/changed` broadcast. The broadcast is
-    /// authoritative: it fully replaces the previously-known queue for that
+    /// authoritative: it fully replaces the last-known queue for that
     /// session. An empty list clears the entry.
     ///
     /// Returns `(old_id, new_id)` for echoes retired via the kind+text

@@ -138,7 +138,6 @@ fn extract_drawingml_text(xml: &str) -> Result<String, String> {
             }
             Ok(Event::End(ref e)) => match e.local_name().as_ref() {
                 b"t" => in_text_run = false,
-                // End of paragraph: line break.
                 b"p" if !text.is_empty() && !text.ends_with('\n') => text.push('\n'),
                 _ => {}
             },

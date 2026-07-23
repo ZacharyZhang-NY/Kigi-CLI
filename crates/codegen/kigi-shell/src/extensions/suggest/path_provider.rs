@@ -87,8 +87,6 @@ fn filter_executables(
     results
 }
 
-// --- PATH cache ---
-
 struct PathCacheInner {
     executables: Vec<String>,
     updated_at: Instant,
@@ -185,8 +183,6 @@ fn scan_path_from(path_var: &str) -> Vec<String> {
 mod tests {
     use super::*;
 
-    // --- extract_command_token ---
-
     fn cmd(prefix: &str) -> Option<(usize, String)> {
         extract_command_token(prefix).map(|t| (t.start, t.value))
     }
@@ -225,8 +221,8 @@ mod tests {
         assert_eq!(cmd("   "), None);
     }
 
-    /// A separator inside quotes is data, not a command position — the old
-    /// naive segment scan offered executables inside quoted strings.
+    /// A separator inside quotes is data, not a command position — a naive
+    /// segment scan would offer executables inside quoted strings.
     #[test]
     fn none_inside_quoted_data() {
         assert_eq!(cmd("echo \"x | gr"), None);
@@ -238,8 +234,6 @@ mod tests {
         assert_eq!(cmd("-gr"), None);
         assert_eq!(cmd("> lo"), None);
     }
-
-    // --- filter_executables ---
 
     fn tok(prefix: &str) -> CurrentToken {
         parse_current_token(prefix)
@@ -325,8 +319,6 @@ mod tests {
         let results = filter_executables(&tok("\"gr"), (0, 3), &exes);
         assert_eq!(results[0].insert_text, "\"grep\"");
     }
-
-    // --- scan_path_from ---
 
     #[test]
     fn scan_nonexistent_dir() {

@@ -146,11 +146,14 @@ mod tests {
     #[test]
     fn timeline_entries_one_per_turn_in_order() {
         let mut state = ScrollbackState::new();
-        state.push_block(stub_block("session banner")); // 0: pre-turn
-        state.push_block(user_block("first question")); // 1
-        state.push_block(agent_block("first answer")); // 2
-        state.push_block(user_block("second question")); // 3
-        state.push_block(tool_block("ls")); // 4
+        // Entry 0: pre-turn.
+        state.push_block(stub_block("session banner"));
+        // Entry 1: this turn's prompt.
+        state.push_block(user_block("first question"));
+        state.push_block(agent_block("first answer"));
+        // Entry 3: this turn's prompt.
+        state.push_block(user_block("second question"));
+        state.push_block(tool_block("ls"));
         state.prepare_layout(80, 10);
 
         let entries = state.timeline_entries();
@@ -180,12 +183,12 @@ mod tests {
     #[test]
     fn active_turn_tracks_viewport_top() {
         let mut state = ScrollbackState::new();
-        state.push_block(user_block("Q1")); // 0
-        state.push_block(tall_agent_block()); // 1
-        state.push_block(user_block("Q2")); // 2
-        state.push_block(tall_agent_block()); // 3
-        state.push_block(user_block("Q3")); // 4
-        state.push_block(tall_agent_block()); // 5
+        state.push_block(user_block("Q1"));
+        state.push_block(tall_agent_block());
+        state.push_block(user_block("Q2"));
+        state.push_block(tall_agent_block());
+        state.push_block(user_block("Q3"));
+        state.push_block(tall_agent_block());
         state.prepare_layout(80, 6);
 
         state.goto_top();
@@ -202,8 +205,8 @@ mod tests {
     fn active_turn_stays_top_anchored_at_the_bottom() {
         // A screenful of short trailing turns: even at the bottom the
         // active turn is the one owning the top row (the web-timeline
-        // rule) — never a newest-turn clamp, whose one-step-off-bottom
-        // highlight leap and stuck-▲ chevron this replaced.
+        // rule), not a newest-turn clamp — a clamp causes a one-step-off-
+        // bottom highlight leap and a stuck-▲ chevron.
         let mut state = ScrollbackState::new();
         state.push_block(user_block("Q1"));
         state.push_block(tall_agent_block());
@@ -218,7 +221,8 @@ mod tests {
         assert!(at_bottom < 6, "top-anchored, not the newest: {at_bottom}");
 
         // Nudging off the bottom moves the highlight at most one boundary
-        // (the old clamp leapt from the newest turn to the top-anchored one).
+        // — a newest-turn clamp would leap straight from the newest turn to
+        // the top-anchored one.
         state.scroll_up(1);
         let nudged = state.active_turn_for_viewport().expect("still in a turn");
         assert!(
@@ -312,9 +316,9 @@ mod tests {
 
     #[test]
     fn down_chevron_enters_trailing_turns_at_the_bottom() {
-        // Reported bug: a cluster of short turns fills the final screenful,
-        // leaving ▼ dim at the bottom even though clicking those ticks jumped
-        // to them. ▼ now targets the next turn — the same turn a tick click
+        // A cluster of short turns fills the final screenful: ▼ must not
+        // dim at the bottom, since clicking the ticks directly still jumps
+        // to them. ▼ targets the next turn — the same turn a tick click
         // resolves to (both go through jump_to_turn).
         let mut state = ScrollbackState::new();
         state.push_block(user_block("Q1"));

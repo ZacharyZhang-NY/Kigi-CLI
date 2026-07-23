@@ -168,7 +168,7 @@ async fn render_text_resource(
 /// Render a diff citation as `<diff_contents>`.
 ///
 /// The text is passed through verbatim (no line-number rewriting) since it
-/// represents a change, not a file snapshot.
+/// represents a delta, not a file snapshot.
 async fn render_diff_resource(
     text_resource: &agent_client_protocol::TextResourceContents,
 ) -> Option<String> {

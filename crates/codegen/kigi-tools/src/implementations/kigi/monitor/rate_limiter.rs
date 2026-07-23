@@ -23,7 +23,7 @@ impl TokenBucket {
         }
     }
 
-    /// Try to consume one token. Returns true if a token was available.
+    /// Consumes one token, refilling first. Returns false when the bucket is empty.
     pub fn try_consume(&mut self) -> bool {
         let now = Instant::now();
         let elapsed = now.duration_since(self.last_refill);
@@ -41,10 +41,9 @@ impl TokenBucket {
     }
 }
 
-/// Tracks rate-limit suppression state and auto-kill logic.
-///
-/// Used alongside `TokenBucket` to detect sustained overload and generate
-/// catch-up notices when the rate subsides.
+/// Tracks suppression state next to a `TokenBucket`: detects sustained
+/// overload, generates catch-up notices when the rate subsides, and
+/// triggers auto-kill.
 #[derive(Default)]
 pub struct SuppressionTracker {
     pub suppressed_count: u64,
@@ -118,7 +117,6 @@ impl SuppressionTracker {
                 self.suppression_start = Some(Instant::now());
             }
 
-            // Check auto-kill threshold.
             if let Some(start) = self.suppression_start {
                 let elapsed = start.elapsed();
                 if elapsed > Duration::from_millis(AUTO_KILL_THRESHOLD_MS) {
@@ -161,7 +159,6 @@ impl MonitorRateLimiter {
         self
     }
 
-    /// Process an event. Returns the rate limit decision.
     pub fn process_event(&mut self, description: &str) -> RateLimitOutcome {
         let available = self.bucket.try_consume();
         self.suppression.process(available, description)
@@ -187,20 +184,19 @@ mod tests {
 
     #[test]
     fn bucket_refills_after_interval() {
-        let mut bucket = TokenBucket::new(10, 50); // 50ms for test speed
+        let mut bucket = TokenBucket::new(10, 50);
         for _ in 0..10 {
             bucket.try_consume();
         }
         assert!(!bucket.try_consume());
         std::thread::sleep(Duration::from_millis(60));
-        assert!(bucket.try_consume()); // one token refilled
+        assert!(bucket.try_consume());
     }
 
     #[test]
     fn bucket_does_not_exceed_capacity() {
         let mut bucket = TokenBucket::new(3, 50);
-        std::thread::sleep(Duration::from_millis(200)); // enough for many refills
-        // Should be capped at 3
+        std::thread::sleep(Duration::from_millis(200));
         assert!(bucket.try_consume());
         assert!(bucket.try_consume());
         assert!(bucket.try_consume());
@@ -218,13 +214,11 @@ mod tests {
     #[test]
     fn catch_up_notice_on_recovery() {
         let mut tracker = SuppressionTracker::new();
-        // Suppress some events
         tracker.process(false, "test");
         tracker.process(false, "test");
         tracker.process(false, "test");
         assert_eq!(tracker.suppressed_count, 3);
 
-        // Now a token is available
         let outcome = tracker.process(true, "test");
         match outcome {
             RateLimitOutcome::Allowed { catch_up_notice } => {
@@ -259,14 +253,12 @@ mod tests {
     #[test]
     fn combined_rate_limiter() {
         let mut rl = MonitorRateLimiter::new(3, 2000);
-        // First 3 events pass
         for _ in 0..3 {
             assert!(matches!(
                 rl.process_event("test"),
                 RateLimitOutcome::Allowed { .. }
             ));
         }
-        // 4th is suppressed
         assert!(matches!(
             rl.process_event("test"),
             RateLimitOutcome::Suppressed

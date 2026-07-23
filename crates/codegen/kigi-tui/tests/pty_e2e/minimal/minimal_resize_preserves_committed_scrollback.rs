@@ -24,7 +24,6 @@ async fn minimal_resize_preserves_committed_scrollback() {
         .inject_keys(format!("{PROMPT}\r").as_bytes())
         .expect("submit prompt");
 
-    // Precondition: the committed head must be in native scrollback first.
     let deadline = Instant::now() + Duration::from_secs(40);
     while Instant::now() < deadline && !harness.scrollback_text().contains(MOCK_RESPONSE_SENTINEL) {
         harness.update(Duration::from_millis(100));
@@ -56,7 +55,6 @@ async fn minimal_resize_preserves_committed_scrollback() {
         harness.full_text()
     );
 
-    // The prompt is still functional: a second turn streams after the resize.
     content.set_response(format!("{} after resize.", turn_sentinel(2)));
     harness
         .inject_keys(b"again\r")

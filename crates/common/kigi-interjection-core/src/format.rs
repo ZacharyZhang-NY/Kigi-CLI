@@ -1,4 +1,4 @@
-/// Truncation threshold, matching the shell's large-prompt limit.
+/// Truncation threshold; matches the shell's large-prompt limit.
 pub const LARGE_PROMPT_THRESHOLD: usize = 25_000;
 
 /// Wrap a user message in the canonical `<user_query>` envelope.
@@ -10,9 +10,9 @@ pub fn user_query(user_message: &str) -> String {
     )
 }
 
-/// Wrap interjection text as a synthetic user message with a mid-turn note.
-/// No deferral instruction: the model decides how to weigh it against
-/// in-flight work. Output is byte-identical to the shell's historical format.
+/// Frame interjection text as a synthetic mid-turn user message.
+/// No deferral instruction — the model weighs it against in-flight work.
+/// Byte-identical to the shell's historical format.
 pub fn format_interjection(text: String) -> String {
     let truncated = if text.len() > LARGE_PROMPT_THRESHOLD {
         let end = text

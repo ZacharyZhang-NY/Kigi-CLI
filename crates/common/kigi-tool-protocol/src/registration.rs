@@ -14,9 +14,8 @@ pub enum TransportKind {
     Remote,
 }
 
-/// A single tool's wire description plus optional schema and capability
-/// metadata. The `tool_id` is **not** stored explicitly — it is derived
-/// from `description.{namespace, name}` via [`Self::derive_tool_id`].
+/// The `tool_id` is **not** carried explicitly — it is derived from
+/// `description.{namespace, name}` via [`Self::derive_tool_id`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolDescriptionWithSchema {
     pub description: kigi_tool_types::ToolDescription,
@@ -29,8 +28,6 @@ pub struct ToolDescriptionWithSchema {
 }
 
 impl ToolDescriptionWithSchema {
-    /// Derive the canonical `ToolId`.
-    ///
     /// Namespaced descriptions render as `"{namespace}:{name}"`; otherwise
     /// the bare `name`. The result is run through [`ToolId::new`], so an
     /// invalid name or namespace surfaces as an [`IdError`].
@@ -69,8 +66,7 @@ pub struct ToolRegistration {
     /// enforces this at register-tool time and rejects mismatches with
     /// `InvalidRequest`.
     pub tool_id: ToolId,
-    /// Per-tool session set. See struct doc-comment for the
-    /// `None` / `Some(vec![])` / `Some(vec![...])` semantics.
+    /// See the struct doc-comment for the three-state semantics.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sessions: Option<Vec<SessionId>>,
     pub user_id: UserId,
@@ -95,9 +91,6 @@ pub struct ToolRegistration {
 }
 
 impl ToolRegistration {
-    /// Derive the canonical `ToolId` from `description.{namespace, name}`.
-    /// The `tool_id` payload field MUST equal this value; the IC service
-    /// router enforces the invariant at register-tool time.
     pub fn derive_tool_id(&self) -> Result<ToolId, IdError> {
         match &self.description.namespace {
             Some(ns) => ToolId::new(format!("{ns}:{}", self.description.name)),
@@ -110,17 +103,12 @@ impl ToolRegistration {
 /// `sessions` value; per-tool outcomes are reported individually via
 /// [`RegistrationOutcome`].
 ///
-/// `sessions` follows the same three-state semantics as
-/// [`ToolRegistration::sessions`]: `None` means "no change" (preserves
-/// existing per-tool session bindings on a re-register), `Some(vec![])`
-/// means "unbind every session for every tool in this batch", and
-/// `Some(vec![...])` means "replace each tool's session set with
-/// exactly these ids".
+/// `sessions` follows the three-state semantics documented on
+/// [`ToolRegistration`], applied to every tool in the batch.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolServerRegistration {
     pub server_id: ServerId,
-    /// Per-batch session set. See struct doc-comment for `None` /
-    /// `Some(vec![])` / `Some(vec![...])` semantics.
+    /// See the struct doc-comment for the three-state semantics.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sessions: Option<Vec<SessionId>>,
     pub user_id: UserId,

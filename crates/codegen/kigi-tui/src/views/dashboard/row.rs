@@ -1258,10 +1258,9 @@ mod tests {
         assert_eq!(rows[1].state, RowState::Working);
         assert_eq!(rows[2].state, RowState::Idle);
     }
-    /// Renamed from `sort_deterministic_with_equal_keys`.
-    /// The original name implied a tiebreak guarantee that
-    /// `sort_cluster_key` does NOT provide; documents the actual
-    /// behavioural contract: idempotent on identical inputs.
+    /// `sort_cluster_key` does not guarantee a full tiebreak by itself;
+    /// this asserts the weaker contract it does provide: idempotent on
+    /// identical inputs.
     #[test]
     fn sort_is_idempotent_for_identical_inputs() {
         let now = SystemTime::now();
@@ -1737,9 +1736,8 @@ mod tests {
         AgentView::new(session, ScrollbackState::new())
     }
     /// An idle local agent with no last message has a BLANK second line —
-    /// the model is no longer used as a fallback there (it now shows in
-    /// the peek panel's bottom-border badge for the selected row, keeping
-    /// the list uncluttered).
+    /// the model appears in the peek panel's bottom-border badge for the
+    /// selected row instead, keeping the list uncluttered.
     #[test]
     fn idle_local_agent_without_message_has_blank_secondary() {
         let agent = make_idle_agent_with_model(Some("kigi-4.5"));

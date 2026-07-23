@@ -11,9 +11,7 @@ pub enum HookDecision {
 
 /// HTTP-specific execution details for scrollback enrichment.
 ///
-/// Populated only for `"http"` handler type hooks. Carries the target
-/// URL, HTTP status, and a short preview of the response body so that
-/// scrollback annotations can display them.
+/// Populated only for `"http"` handler type hooks.
 #[derive(Debug, Clone)]
 pub struct HttpInfo {
     /// The URL that was POSTed to.
@@ -39,8 +37,7 @@ pub struct HttpInfo {
     ///
     /// [`url`]: HttpInfo::url
     pub raw_url: Option<String>,
-    /// HTTP status code (e.g. 200, 500). `None` if the request never
-    /// completed (timeout, connection error).
+    /// `None` if the request never completed (timeout, connection error).
     pub status: Option<u16>,
     /// Short preview of the response body (truncated to ~200 chars).
     /// `None` if no body was read (e.g. non-blocking hooks, timeouts).
@@ -50,11 +47,9 @@ pub struct HttpInfo {
 /// The outcome of a single hook execution.
 #[derive(Debug)]
 pub enum HookRunResult {
-    /// Hook executed successfully.
     Success {
         hook_name: String,
         elapsed: Duration,
-        /// HTTP details, populated only for `"http"` handler type hooks.
         http_info: Option<HttpInfo>,
     },
     /// Hook was skipped because it is disabled.
@@ -64,7 +59,6 @@ pub enum HookRunResult {
         hook_name: String,
         error: String,
         elapsed: Duration,
-        /// HTTP details, populated only for `"http"` handler type hooks.
         http_info: Option<HttpInfo>,
     },
 }

@@ -247,7 +247,8 @@ mod tests {
             trace_id,
             span_id,
             TraceFlags::SAMPLED,
-            true, // is_remote
+            // is_remote
+            true,
             TraceState::default(),
         );
 

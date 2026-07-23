@@ -18,7 +18,6 @@ pub enum DeployError {
     FailedPrecondition,
 }
 impl DeployError {
-    /// Every kind, for exhaustive iteration in tests.
     pub const ALL: [DeployError; 15] = [
         Self::UrlConflict,
         Self::UrlModeration,

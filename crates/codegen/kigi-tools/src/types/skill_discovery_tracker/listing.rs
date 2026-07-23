@@ -136,8 +136,6 @@ impl<'a> SkillEntry<'a> {
         }
     }
 
-    // ── Budgeted XML rendering (kigi build harness) ─────────────
-
     /// Render as an `<agent_skill>` XML row with description and when_to_use
     /// truncated to their budgets. When `when_to_use` is present it follows the
     /// description after an em-dash: `description — Use when: trigger phrases`.
@@ -179,8 +177,6 @@ impl<'a> SkillEntry<'a> {
             base
         }
     }
-
-    // ── XML rendering ────────────────────────────────────────────
 
     /// Render as an XML `<agent_skill>` row with the full description.
     ///
@@ -269,8 +265,6 @@ impl<'a> SkillListing<'a> {
         ))
     }
 
-    // ── Budgeted XML rendering (kigi build harness) ─────────────
-
     /// Render as XML within `budget` bytes using the three-tier strategy:
     /// 1. Full descriptions (each capped at `MAX_LISTING_COMBINED_BYTES`).
     /// 2. Proportionally shortened descriptions.
@@ -349,8 +343,6 @@ impl<'a> SkillListing<'a> {
         }
         out
     }
-
-    // ── Vendor-compat XML rendering ──────────────────────────────
 
     /// Render as verbatim XML, returning `None` if empty.
     ///
@@ -678,14 +670,10 @@ mod tests {
         )
     }
 
-    // ── Edge cases: skill count ──────────────────────────────────
-
     #[test]
     fn no_skills_returns_none() {
         assert!(announce(&[], 8_000).is_none());
     }
-
-    // ── "Use when" label de-duplication ───────────────────────────
 
     #[test]
     fn use_when_label_not_duplicated_for_embedded_triggers() {
@@ -745,8 +733,6 @@ mod tests {
         // Punctuation right after the connective is still a valid boundary.
         assert_eq!(strip_leading_trigger_prefix("Use when: doing X"), "doing X");
     }
-
-    // ── Discovery filter (is_listable) ────────────────────────────
 
     fn plugin_skill(name: &str, desc: &str) -> SkillInfo {
         SkillInfo {
@@ -906,8 +892,8 @@ mod tests {
         assert!(!text.contains("**Authors:**"), "list leaked:\n{text}");
         // Clean derived descriptions: first prose paragraph wins, else heading,
         // else name; authored shown.
-        assert!(text.contains("Reference Guide")); // heading-table: no prose -> heading
-        assert!(text.contains("Summary prose here.")); // heading-list: prose beats the H1 title
+        assert!(text.contains("Reference Guide"));
+        assert!(text.contains("Summary prose here."));
         assert!(
             !text.contains("Quarterly Report"),
             "H1 title leaked as desc:\n{text}"
@@ -920,8 +906,6 @@ mod tests {
             "plugin without description leaked:\n{text}"
         );
     }
-
-    // ── verbatim mode ─────────────────────────
 
     /// Regression: the compat body is description-only, with rows separated
     /// by a blank line. The skill name must NOT appear as a prefix in the
@@ -1055,8 +1039,6 @@ mod tests {
             "must not have closing tag: {text}"
         );
     }
-
-    // ── budgeted mode: kigi build harness (budgeted XML) ───────────
 
     /// 200 skills must fit within the default budget.
     #[test]
@@ -1216,10 +1198,9 @@ mod tests {
             .map(|i| skill(&format!("skill-{i:03}"), "Short description."))
             .collect();
         let text = announce(&skills, DEFAULT_CHAR_BUDGET).unwrap();
-        assert!(text.len() <= DEFAULT_CHAR_BUDGET + 50); // allow small slack for overflow line
+        // allow small slack for overflow line
+        assert!(text.len() <= DEFAULT_CHAR_BUDGET + 50);
     }
-
-    // ── Tier 1: full descriptions ────────────────────────────────
 
     #[test]
     fn tier1_full_descriptions_when_within_budget() {
@@ -1264,8 +1245,6 @@ mod tests {
         );
     }
 
-    // ── Tier 2: shortened descriptions ──────────────────────────
-
     #[test]
     fn tier2_shortens_descriptions_to_fit_budget() {
         // 20 skills with 200-char descriptions. Budget tight enough to force tier 2.
@@ -1295,8 +1274,6 @@ mod tests {
         assert!(text.len() <= budget + 50);
     }
 
-    // ── Tier 3: names-only ───────────────────────────────────────
-
     #[test]
     fn tier3_names_only_under_extreme_budget() {
         let skills: Vec<SkillInfo> = (0..50)
@@ -1306,7 +1283,8 @@ mod tests {
         // No descriptions or paths -- names only.
         assert!(!text.contains(": Y"));
         assert!(!text.contains("Absolute path:"));
-        assert!(text.len() <= 500); // 400 + slack for overflow line
+        // 400 + slack for overflow line
+        assert!(text.len() <= 500);
     }
 
     #[test]
@@ -1334,8 +1312,6 @@ mod tests {
         assert!(text.contains("- b"));
     }
 
-    // ── Custom tool name ─────────────────────────────────────────
-
     #[test]
     fn header_does_not_reference_skill_tool() {
         let skills = [skill("commit", "Commit staged changes.")];
@@ -1354,8 +1330,6 @@ mod tests {
         assert!(!text.contains("invoke_skill tool"));
         assert!(!text.contains("Skill tool"));
     }
-
-    // ── extract_trigger_suffix ─────────────────────────────────
 
     #[test]
     fn extract_no_prefix_returns_none() {
@@ -1450,8 +1424,6 @@ mod tests {
         assert!(triggers.contains("Triggers on"));
     }
 
-    // ── Extraction wiring in format_announcement ──────────────
-
     #[test]
     fn format_announcement_extracts_triggers_renders_use_when() {
         let skills = [skill(
@@ -1540,8 +1512,6 @@ mod tests {
         );
     }
 
-    // ── Extraction wiring in format_announcement_xml ─────────
-
     #[test]
     fn xml_budgeted_extracts_triggers_from_description() {
         let skills = [skill(
@@ -1613,8 +1583,6 @@ mod tests {
             "explicit wtu should be concatenated: {text}"
         );
     }
-
-    // ── Use when: line rendering ──────────────────────────────
 
     #[test]
     fn format_renders_use_when_line_with_explicit_when_to_use() {
@@ -1724,8 +1692,6 @@ mod tests {
         assert!(text.contains("Use when:"));
         assert!(text.len() <= budget);
     }
-
-    // ── XML em-dash separator and proportional budgets ──────
 
     #[test]
     fn xml_budgeted_em_dash_separator_with_explicit_when_to_use() {

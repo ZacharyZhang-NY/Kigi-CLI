@@ -48,7 +48,6 @@ fn out_of_range_returns_none() {
 
 #[test]
 fn no_assistant_yet_returns_user_only() {
-    // q2 has no assistant response yet.
     let conv = vec![
         ConversationItem::user("q1"),
         ConversationItem::assistant("a1"),

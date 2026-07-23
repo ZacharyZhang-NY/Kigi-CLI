@@ -10,9 +10,7 @@
 
 use serde::{Deserialize, Serialize};
 
-// ---------------------------------------------------------------------------
 // Enums
-// ---------------------------------------------------------------------------
 
 /// Plugin scope.
 ///
@@ -177,9 +175,7 @@ pub enum OutcomeStatus {
     Unsupported,
 }
 
-// ---------------------------------------------------------------------------
 // Hook types
-// ---------------------------------------------------------------------------
 
 /// A single hook's metadata for display in the pager.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -189,7 +185,6 @@ pub struct HookInfo {
     pub name: String,
     /// Event type this hook runs on.
     pub event: HookEvent,
-    /// Handler type.
     pub handler_type: HookHandlerType,
     /// Raw matcher pattern from config (for display). None = matches all tools.
     /// Maps from `HookSpec.configured_matcher` (not the compiled regex).
@@ -219,9 +214,7 @@ pub struct HooksListResponse {
     pub load_errors: Vec<String>,
 }
 
-// ---------------------------------------------------------------------------
 // Plugin types
-// ---------------------------------------------------------------------------
 
 /// A single plugin's metadata for display in the pager.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -281,9 +274,7 @@ pub struct PluginsListResponse {
     pub plugins: Vec<PluginInfo>,
 }
 
-// ---------------------------------------------------------------------------
 // MCP server types
-// ---------------------------------------------------------------------------
 
 /// Source of an MCP server configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -339,9 +330,7 @@ pub struct McpServersListResponse {
     pub servers: Vec<McpServerInfo>,
 }
 
-// ---------------------------------------------------------------------------
 // Plugin component inventory (from marketplace catalogs)
-// ---------------------------------------------------------------------------
 
 const MAX_COMPONENT_NAME_CHARS: usize = 120;
 const MAX_COMPONENT_DESC_CHARS: usize = 120;
@@ -509,9 +498,7 @@ impl PluginComponents {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Action types
-// ---------------------------------------------------------------------------
 
 /// Request wrapper for `kigi/hooks/action`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -607,9 +594,7 @@ pub struct ActionOutcome {
     pub requires_restart: bool,
 }
 
-// ---------------------------------------------------------------------------
 // Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -1093,9 +1078,7 @@ mod tests {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Marketplace types (wire format for kigi/marketplace/* ACP endpoints)
-// ---------------------------------------------------------------------------
 
 /// Response for `kigi/marketplace/list`.
 #[derive(Debug, Clone, Serialize, Deserialize)]

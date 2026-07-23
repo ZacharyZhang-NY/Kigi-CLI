@@ -270,7 +270,6 @@ impl ServeArgs {
             .unwrap_or_else(|| generate_random_key(12))
     }
 }
-/// Generate a random alphanumeric key of the given length.
 fn generate_random_key(len: usize) -> String {
     let raw = uuid::Uuid::new_v4().to_string().replace('-', "");
     raw.chars().cycle().take(len).collect()
@@ -678,7 +677,6 @@ pub enum ResumeTarget {
     None,
 }
 impl PagerArgs {
-    /// Parse CLI arguments and apply `--cwd` if provided.
     pub fn parse_and_apply_cwd() -> anyhow::Result<Self> {
         let bin_name = std::env::args()
             .next()

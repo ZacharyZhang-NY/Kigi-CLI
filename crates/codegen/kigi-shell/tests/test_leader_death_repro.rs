@@ -32,7 +32,8 @@ use kigi_test_support::*;
 /// THE repro. Kill the shared leader with SIGKILL while two clients are
 /// connected; both must recover their sessions on the re-elected leader.
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+// requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_leader_sigkill_clients_recover_sessions() {
     tokio::task::LocalSet::new()
         .run_until(async {
@@ -41,7 +42,7 @@ async fn test_leader_sigkill_clients_recover_sessions() {
             let home = tempfile::tempdir().unwrap();
             std::fs::create_dir_all(home.path().join(".kigi")).unwrap();
 
-            // ── Phase 1: two clients, one leader, two sessions ────────────
+            // Phase 1: two clients, one leader, two sessions.
             let client_a = LeaderStdioClient::spawn(&server, workdir.path(), home.path()).await;
             client_a.initialize().await;
             let session_a = client_a.create_session(workdir.path()).await;
@@ -72,7 +73,7 @@ async fn test_leader_sigkill_clients_recover_sessions() {
             assert_ne!(leader_pid, client_a.child.id().unwrap_or(0));
             assert_ne!(leader_pid, client_b.child.id().unwrap_or(0));
 
-            // ── Phase 2: SIGKILL the leader (simulated crash) ─────────────
+            // Phase 2: SIGKILL the leader (simulated crash).
             let base_a = client_a.notification_count();
             let base_b = client_b.notification_count();
             eprintln!("killing leader pid {leader_pid}");
@@ -80,7 +81,7 @@ async fn test_leader_sigkill_clients_recover_sessions() {
                 libc::kill(leader_pid as i32, libc::SIGKILL);
             }
 
-            // ── Phase 3: clients must re-elect a leader and reconnect ─────
+            // Phase 3: clients must re-elect a leader and reconnect.
             let new_pid = wait_for_new_leader(home.path(), leader_pid, Duration::from_secs(60))
                 .await
                 .unwrap_or_else(|| {
@@ -100,7 +101,7 @@ async fn test_leader_sigkill_clients_recover_sessions() {
                 wait_for_replay_notifications(&client_b, base_b, Duration::from_secs(60)).await;
             eprintln!("replay evidence: A={a_reconnected} B={b_reconnected}");
 
-            // ── Phase 4: prompts on the ORIGINAL session IDs must work ────
+            // Phase 4: prompts on the ORIGINAL session IDs must work.
             let res_a = client_a.prompt(&session_a, "after crash A").await;
             let res_b = client_b.prompt(&session_b, "after crash B").await;
 
@@ -127,7 +128,8 @@ async fn test_leader_sigkill_clients_recover_sessions() {
 /// Single-client variant: kill -9 the leader, the lone client must re-elect
 /// and restore. Narrower failure surface than the two-client test.
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+// requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_leader_sigkill_single_client_recovers() {
     tokio::task::LocalSet::new()
         .run_until(async {
@@ -185,7 +187,8 @@ async fn test_leader_sigkill_single_client_recovers() {
 /// re-elected leader — restoring only the most recent one left the other
 /// failing with "unknown session id".
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+// requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_leader_sigkill_multi_session_client_recovers_all_sessions() {
     tokio::task::LocalSet::new()
         .run_until(async {
@@ -228,7 +231,6 @@ async fn test_leader_sigkill_multi_session_client_recovers_all_sessions() {
                 });
             wait_for_replay_notifications(&client, base, Duration::from_secs(60)).await;
 
-            // BOTH sessions must work on the new leader.
             let res_one = client.prompt(&session_one, "after crash one").await;
             let res_two = client.prompt(&session_two, "after crash two").await;
             assert!(
@@ -254,7 +256,8 @@ async fn test_leader_sigkill_multi_session_client_recovers_all_sessions() {
 /// it once the session is restored — not silently drop it (which left the
 /// client's request hanging forever).
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+// requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_prompt_sent_during_outage_is_delivered_after_recovery() {
     tokio::task::LocalSet::new()
         .run_until(async {

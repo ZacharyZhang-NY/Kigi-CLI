@@ -18,7 +18,6 @@ use kigi_sandbox::{ProfileName, SandboxManager};
 use std::path::Path;
 
 fn main() {
-    // Parse profile from args (default: workspace).
     let profile_name = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "workspace".to_string());
@@ -28,7 +27,6 @@ fn main() {
         std::process::exit(1);
     });
 
-    // Check platform support before applying
     let support = SandboxManager::support_info();
     println!(
         "Platform support: {}",
@@ -47,7 +45,6 @@ fn main() {
     println!("\nProfile:      {profile}");
     println!("Workspace:    {}", workspace.display());
 
-    // Apply the sandbox
     println!("\n--- Applying sandbox ---");
     let mut sandbox = SandboxManager::new(profile, &workspace);
     match sandbox.apply(&workspace) {
@@ -68,39 +65,40 @@ fn main() {
         sandbox.restrict_child_network()
     );
 
-    // Test operations
     println!("\n--- Testing filesystem operations ---\n");
 
-    // Test 1: Read CWD (should always work)
+    // Nothing below asserts; each comment is the outcome the operator should
+    // see on stdout for the profile named.
+
+    // Always allowed.
     test_read("Read CWD", &workspace);
 
-    // Test 2: Read /tmp (should work for workspace/read-only)
+    // Allowed for workspace/read-only.
     test_read("Read /tmp", Path::new("/tmp"));
 
-    // Test 3: Read home directory (should work for workspace/read-only, blocked for strict)
+    // Allowed for workspace/read-only, blocked for strict.
     if let Some(home) = dirs::home_dir() {
         test_read("Read ~/", &home);
     }
 
-    // Test 4: Write to CWD (should work for workspace/strict, blocked for read-only)
+    // Allowed for workspace/strict, blocked for read-only.
     let test_file = workspace.join(".sandbox-test-write");
     test_write("Write to CWD", &test_file);
-    // Clean up
     let _ = std::fs::remove_file(&test_file);
 
-    // Test 5: Write to /tmp (should work for workspace/strict, blocked for read-only)
+    // Allowed for workspace/strict, blocked for read-only.
     let tmp_test = Path::new("/tmp/.kigi-sandbox-test");
     test_write("Write to /tmp", tmp_test);
     let _ = std::fs::remove_file(tmp_test);
 
-    // Test 6: Write outside workspace (should be blocked for all active profiles)
+    // Blocked for all active profiles.
     if let Some(home) = dirs::home_dir() {
         let outside = home.join(".sandbox-test-blocked");
         test_write("Write to ~/", &outside);
         let _ = std::fs::remove_file(&outside);
     }
 
-    // Test 7: Read ~/.ssh (a custom profile's `deny` list could block this)
+    // A custom profile's `deny` list could block this.
     if let Some(home) = dirs::home_dir() {
         let ssh = home.join(".ssh");
         if ssh.exists() {
@@ -108,7 +106,6 @@ fn main() {
         }
     }
 
-    // Summary
     println!("\n--- Sandbox event log ---");
     let events = sandbox.logger().take_events();
     for event in &events {

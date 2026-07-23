@@ -51,7 +51,6 @@
         let mut app = make_app_with_agent("sess-dedup");
         let id = AgentId(0);
 
-        // First event applies (active agent → affected==true) and sets highwater.
         let a1 = handle(
             make_agent_chunk_with_event("sess-dedup", "hello", "p1", Some("sess-dedup-5")),
             &mut app,
@@ -59,7 +58,6 @@
         assert!(a1, "first event must apply");
         assert_eq!(app.agents[&id].last_applied_event_seq, Some(5));
 
-        // Exact duplicate eventId → dropped (not affected), highwater unchanged.
         let a2 = handle(
             make_agent_chunk_with_event("sess-dedup", "hello", "p1", Some("sess-dedup-5")),
             &mut app,
@@ -67,7 +65,6 @@
         assert!(!a2, "a duplicate eventId must be dropped");
         assert_eq!(app.agents[&id].last_applied_event_seq, Some(5));
 
-        // Stale lower eventId → dropped.
         let a3 = handle(
             make_agent_chunk_with_event("sess-dedup", "hello", "p1", Some("sess-dedup-3")),
             &mut app,
@@ -75,7 +72,6 @@
         assert!(!a3, "a lower (already-passed) eventId must be dropped");
         assert_eq!(app.agents[&id].last_applied_event_seq, Some(5));
 
-        // New higher eventId → applies, highwater advances.
         let a4 = handle(
             make_agent_chunk_with_event("sess-dedup", "world", "p1", Some("sess-dedup-9")),
             &mut app,
@@ -83,7 +79,6 @@
         assert!(a4, "a new (higher) eventId must apply");
         assert_eq!(app.agents[&id].last_applied_event_seq, Some(9));
 
-        // No eventId (older shell) → always applies; highwater untouched.
         let a5 = handle(
             make_agent_chunk_with_event("sess-dedup", "again", "p1", None),
             &mut app,
@@ -101,7 +96,6 @@
     fn replayed_history_with_event_id_resets_does_not_break_resume() {
         let mut app = make_app_with_agent("sess-resume");
         let id = AgentId(0);
-        // Replay arrives inside a `session/load` window.
         app.agents.get_mut(&id).unwrap().session.loading_replay = true;
 
         // eventIds climb (5, 9) then reset below the peak (2, 4): resumed twice.
@@ -125,7 +119,6 @@
             Some("sess-resume-4"),
             "the reconnect cursor follows the last APPLIED event id, replay included"
         );
-        // SessionLoaded completes the window.
         app.agents.get_mut(&id).unwrap().session.loading_replay = false;
 
         assert!(
@@ -228,13 +221,10 @@
             agent.begin_session_reload(1);
         }
 
-        // Partial replay lands before the load fails...
         assert!(!handle(
             replay_chunk("sess-rc", "h1", "sess-rc-1"),
             &mut app
         ));
-        // ...along with live post-cursor traffic on BOTH streams, advancing
-        // both highwaters inside the doomed staging.
         let _ = handle(
             make_agent_chunk_with_event("sess-rc", "live tail", "p9", Some("sess-rc-40")),
             &mut app,
@@ -303,7 +293,6 @@
             agent.begin_session_reload(1);
         }
 
-        // Post-cursor tail arrives as LIVE updates (no isReplay).
         assert!(!handle(
             make_agent_chunk_with_event("sess-rc", "tail", "p2", Some("sess-rc-4")),
             &mut app,
@@ -375,12 +364,10 @@
                 1,
                 "gen-1 partial replay is discarded; gen-2 staging holds only the placeholder"
             );
-            // Finalizing the dead gen-1 window is rejected.
             assert!(!agent.finish_session_reload(1, true));
             assert!(agent.session.loading_replay);
         }
 
-        // Gen-2 load fails → the ORIGINAL transcript comes back.
         let agent = app.agents.get_mut(&id).unwrap();
         assert!(agent.finish_session_reload(2, false));
         assert!(scrollback_has_system_text(agent, "pre-outage content"));
@@ -401,7 +388,6 @@
             agent
                 .scrollback
                 .push_block(RenderBlock::system("pre-outage content"));
-            // In-flight fresh-view load: open batch + placeholder + replay flag.
             agent.scrollback.begin_batch();
             let pid = agent
                 .scrollback
@@ -468,7 +454,6 @@
         );
         app.agents.get_mut(&id).unwrap().begin_session_reload(1);
 
-        // Replayed Plan overwrites the (fresh) live pane during the window.
         let _ = handle(
             plan_update_msg("sess-todo", &["replayed-task"], Some("sess-todo-2"), true),
             &mut app,
@@ -494,7 +479,6 @@
         );
         app.agents.get_mut(&id).unwrap().begin_session_reload(1);
 
-        // A LIVE tail Plan applied in-window is newer than the stash.
         let _ = handle(
             plan_update_msg("sess-todo", &["tail-task"], Some("sess-todo-2"), false),
             &mut app,
@@ -544,7 +528,6 @@
         assert_eq!(app.agents[&id].scrollback.len(), 1);
         assert_eq!(app.agents[&id].last_applied_xai_event_seq, Some(10));
 
-        // Exact re-delivery: dropped, nothing re-applied, cursor unchanged.
         assert!(!handle_ext_notification(
             &xai_model_switch_notif("sess-xdup", "sess-xdup-10"),
             &mut app
@@ -559,7 +542,6 @@
             Some("sess-xdup-10")
         );
 
-        // A newer event still applies.
         assert!(handle_ext_notification(
             &xai_model_switch_notif("sess-xdup", "sess-xdup-11"),
             &mut app
@@ -603,7 +585,6 @@
             "an unhandled xAI update must not advance the dedup highwater"
         );
 
-        // An applied kind (ModelAutoSwitched) advances both.
         assert!(handle_ext_notification(
             &xai_model_switch_notif("sess-ig", "sess-ig-8"),
             &mut app
@@ -759,7 +740,6 @@
             Some("sess-cur-5")
         );
 
-        // Duplicate (deduped) — cursor unchanged.
         assert!(!handle(
             make_agent_chunk_with_event("sess-cur", "a", "p1", Some("sess-cur-5")),
             &mut app,
@@ -810,7 +790,6 @@
         let mut app = make_app_with_agent("sess-xai");
         let id = AgentId(0);
 
-        // Replay-stamped with no load in flight → dropped, nothing pushed.
         let replay_meta = serde_json::json!({ "isReplay": true, "eventId": "sess-xai-7" });
         assert!(!handle_ext_notification(
             &model_switch_notif(Some(replay_meta.clone())),
@@ -822,8 +801,6 @@
             assert!(agent.last_seen_event_id.is_none());
         }
 
-        // Same update inside a reload window → applied and marks the window
-        // as full-replay (finishing keeps the staged state, drops the stash).
         {
             let agent = app.agents.get_mut(&id).unwrap();
             agent
@@ -875,7 +852,6 @@
             agent.begin_session_reload(1);
         }
 
-        // Replayed spawn, no finish (mirrors a mid-subagent reconnect replay).
         let payload = SessionNotification {
             session_id: acp::SessionId::new("sess-sub"),
             update: test_subagent_spawned("sess-sub", "child-sub"),
@@ -905,8 +881,6 @@
             "the child view exists and is tracked"
         );
 
-        // A live child delta after the swap still renders into the child view:
-        // pager-side routing is intact when the leader delivers it.
         let child_len_before = app.agents[&id].subagent_views["child-sub"].scrollback.len();
         let _ = handle(
             make_agent_chunk_with_event("child-sub", "child live text", "p-child", None),
@@ -929,7 +903,6 @@
         let mut app = make_app_with_agent("sess-ctx");
         let id = AgentId(0);
 
-        // Fresh live delta: high eventId, high token count.
         let _ = handle(
             make_token_notification_with_event("sess-ctx", 500_000, "sess-ctx-20"),
             &mut app,
@@ -940,7 +913,6 @@
         );
         assert_eq!(app.agents[&id].last_applied_event_seq, Some(20));
 
-        // Stale historical replay delta: lower eventId (deduped), lower tokens.
         let _ = handle(
             make_token_notification_with_event("sess-ctx", 120_000, "sess-ctx-7"),
             &mut app,
@@ -950,7 +922,6 @@
             Some(500_000),
             "a deduped stale delta must not regress context_used to its lower value"
         );
-        // Highwater unchanged by the deduped event.
         assert_eq!(app.agents[&id].last_applied_event_seq, Some(20));
     }
 
@@ -961,10 +932,8 @@
     fn reconnect_finalize_reload_skips_adoption_when_terminal_in_replay() {
         let mut app = make_app_with_agent("sess-1");
         let id = AgentId(0);
-        // Open a reconnect reload window (enters the replay window, clean set).
         app.agents.get_mut(&id).unwrap().begin_session_reload(1);
 
-        // The running turn's terminal arrives in the reconnect replay → recorded.
         let _ = handle_ext_notification(
             &xai_turn_completed_notif("sess-1", "p-run", "end_turn", true),
             &mut app,
@@ -999,7 +968,6 @@
             seed_models(agent, "kigi-3", &["kigi-3", "kigi-4"]);
         }
 
-        // Unknown model → ignored → both markers untouched.
         assert!(!handle_ext_notification(
             &model_changed_ext_with_event("sess-1", "kigi-99-unknown", "sess-1-7"),
             &mut app
@@ -1013,7 +981,6 @@
             "an ignored ModelChanged must not advance the dedup highwater"
         );
 
-        // Known model → applied → both markers advance.
         assert!(handle_ext_notification(
             &model_changed_ext_with_event("sess-1", "kigi-4", "sess-1-8"),
             &mut app

@@ -6,7 +6,6 @@ pub enum AuthError {
     #[error("Not logged in. Run `kigi login`.")]
     NotLoggedIn,
 
-    /// Token expired and no refresh authority available.
     #[error("Token expired. Run `kigi login` to re-authenticate.")]
     TokenExpiredNoRefresh,
 
@@ -14,7 +13,6 @@ pub enum AuthError {
     #[error("Authentication rejected by server. Run `kigi login` to re-authenticate.")]
     ServerRejectedNoRecovery,
 
-    /// All recovery strategies exhausted.
     #[error("Auth recovery exhausted; re-authentication required.")]
     RecoveryExhausted,
 

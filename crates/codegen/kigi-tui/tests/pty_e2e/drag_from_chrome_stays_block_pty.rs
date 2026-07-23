@@ -9,9 +9,8 @@ const CHROMEHOLD_BOTTOM: &str = "CHROMEHOLD_BOTTOM";
 
 /// PTY: a mouse-down on a blank row INSIDE a block's area whose drag never
 /// touches selectable text stays a whole-block drag: release copies the
-/// whole message (both paragraphs), exactly as before the deferred-anchor
-/// latch existed. Covers the never-enter branch the anchor-on-entry
-/// conversion must not disturb.
+/// whole message (both paragraphs). Covers the never-enter branch that
+/// anchor-on-entry must not disturb.
 ///
 /// `SSH_CONNECTION` forces the OSC 52 clipboard route for readback.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

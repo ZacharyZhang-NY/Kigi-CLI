@@ -83,7 +83,7 @@ impl BenchResults {
     }
 }
 
-// ── Baseline comparison ────────────────────────────────────────────────────
+// Baseline comparison
 
 /// Regression threshold: fail if a scenario's p99 frame time grows by more
 /// than this fraction (0.15 = 15%). Matches the RFC's proposal.

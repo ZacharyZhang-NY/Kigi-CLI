@@ -52,7 +52,6 @@ impl StringId {
         Self(id)
     }
 
-    /// Get the raw u32 value.
     #[inline]
     pub const fn as_u32(self) -> u32 {
         self.0
@@ -209,7 +208,6 @@ impl StringInterner {
         self.offsets.is_empty()
     }
 
-    /// Total bytes used by the arena.
     #[inline]
     pub fn arena_bytes(&self) -> usize {
         self.arena.len()
@@ -271,7 +269,7 @@ impl StringInterner {
     ///
     /// After a bulk build the arena and offsets Vecs may hold up to 2× their
     /// actual content due to doubling growth.  Calling this reclaims that
-    /// wasted heap.  The lookup table is intentionally left unshrunk because
+    /// wasted heap.  The lookup table is deliberately left unshrunk because
     /// it benefits from load-factor headroom.
     ///
     /// This is an internal maintenance hook called by `ScopeGraphIndex::compact()`.
@@ -313,7 +311,7 @@ mod tests {
 
         let id1 = interner.intern("src");
         let id2 = interner.intern("lib");
-        let id3 = interner.intern("src"); // duplicate
+        let id3 = interner.intern("src");
 
         assert_eq!(id1, id3);
         assert_ne!(id1, id2);
@@ -348,7 +346,8 @@ mod tests {
         // Invalid UTF-8
         let invalid_utf8: &[u8] = &[0x80, 0x81, 0x82];
         let id2 = interner.intern_bytes(invalid_utf8);
-        assert_eq!(interner.get(id2), None); // Not valid UTF-8
+        // Not valid UTF-8
+        assert_eq!(interner.get(id2), None);
         assert_eq!(interner.get_bytes(id2), Some(invalid_utf8));
 
         // Duplicate bytes return same ID

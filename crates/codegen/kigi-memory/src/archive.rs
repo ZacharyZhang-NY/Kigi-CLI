@@ -7,7 +7,6 @@ use anyhow::{Context, Result};
 
 use super::MemoryStorage;
 
-/// Build a `memory.tar.gz` archive with session logs and MEMORY.md files.
 pub fn build_memory_archive(storage: &MemoryStorage) -> Result<Vec<u8>> {
     use flate2::Compression;
     use flate2::write::GzEncoder;
@@ -16,7 +15,6 @@ pub fn build_memory_archive(storage: &MemoryStorage) -> Result<Vec<u8>> {
     let enc = GzEncoder::new(buf, Compression::default());
     let mut ar = tar::Builder::new(enc);
 
-    // Session logs
     let sessions_dir = storage.workspace_dir().join("sessions");
     if sessions_dir.is_dir() {
         for entry in std::fs::read_dir(&sessions_dir)
@@ -32,7 +30,6 @@ pub fn build_memory_archive(storage: &MemoryStorage) -> Result<Vec<u8>> {
         }
     }
 
-    // MEMORY.md files
     let global_mem = storage.global_memory_file();
     if global_mem.is_file() {
         ar.append_path_with_name(&global_mem, "global/MEMORY.md")

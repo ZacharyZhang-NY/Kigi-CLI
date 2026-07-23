@@ -58,7 +58,6 @@ impl RequirementsSource {
     }
 }
 
-/// One requirements layer: the parsed TOML and where it came from.
 #[derive(Debug, Clone)]
 pub struct RequirementsLayer {
     pub value: toml::Value,
@@ -171,7 +170,6 @@ pub(crate) fn mdm_requirements_value() -> Option<toml::Value> {
     )
 }
 
-/// Errors from validating requirements layers at startup.
 #[derive(Debug, thiserror::Error)]
 pub enum RequirementsError {
     #[error(

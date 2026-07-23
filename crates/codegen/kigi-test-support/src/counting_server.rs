@@ -1,6 +1,6 @@
-//! Minimal connection-counting HTTP/1.1 server for wire-level tests that need
-//! to assert TCP connection reuse (e.g. shared-client pooling): it counts
-//! accepted connections and records each request's header block.
+//! Minimal keep-alive HTTP/1.1 server for wire-level tests that assert TCP
+//! connection reuse (e.g. shared-client pooling): it counts accepted
+//! connections and records each request's header block.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -8,8 +8,7 @@ use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
-/// Minimal keep-alive HTTP/1.1 server: counts accepted connections and
-/// records each request's header block.
+/// Returns the base URL, the accepted-connection count, and the header blocks.
 pub async fn spawn_counting_server() -> (String, Arc<AtomicUsize>, Arc<Mutex<Vec<String>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base_url = format!("http://{}/v1", listener.local_addr().unwrap());

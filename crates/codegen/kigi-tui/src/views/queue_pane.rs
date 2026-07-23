@@ -31,10 +31,6 @@ pub(crate) fn visible_held_server_row(
     id != running_id && id != send_now_id && !painted_pending.contains_key(key)
 }
 
-// ---------------------------------------------------------------------------
-// QueuedPromptEntry — ListItem wrapper around QueuedPrompt
-// ---------------------------------------------------------------------------
-
 /// Where a rendered queue row originates, which determines how an edit
 /// (delete / reorder) is routed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,7 +107,6 @@ pub fn kind_from_wire(kind: &str) -> QueueEntryKind {
 impl QueuedPromptEntry {
     /// Create a new entry from a `QueuedPrompt` and its current position.
     pub fn new(prompt: &QueuedPrompt, position: usize) -> Self {
-        // Show first non-empty line, trimmed.
         let first_line = prompt
             .text
             .lines()
@@ -193,7 +188,6 @@ impl QueuedPromptEntry {
         let theme = Theme::current();
         let extra_lines = line_count.saturating_sub(1);
 
-        // Build the suffix for multiline prompts: " (+N lines)" or " (+1 line)"
         let suffix = if extra_lines > 0 {
             if extra_lines == 1 {
                 " (+1 line)".to_string()
@@ -205,8 +199,6 @@ impl QueuedPromptEntry {
         };
         let suffix_width = suffix.width();
 
-        // Determine how much space we have for the first line content.
-        // Reserve space for the suffix if multiline.
         let content_max_width = max_width.map(|w| {
             if extra_lines > 0 {
                 w.saturating_sub(suffix_width)
@@ -238,8 +230,8 @@ impl QueuedPromptEntry {
                 // Slash commands: `/command` in magenta, args (if any) in bright gray.
                 let trimmed = first_line.trim();
 
-                // For commands, we need to be smarter about truncation.
-                // Truncate the whole thing first, then split.
+                // Truncate the whole thing first, then split into cmd/args,
+                // so a truncated command keeps a coherent boundary.
                 let truncated = if let Some(max_w) = content_max_width {
                     truncate_str(trimmed, max_w)
                 } else {
@@ -332,10 +324,6 @@ impl ListItem for QueuedPromptEntry {
     }
 }
 
-// ---------------------------------------------------------------------------
-// QueuePane — self-contained pane owning entries, state, and rendering
-// ---------------------------------------------------------------------------
-
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -420,7 +408,8 @@ impl QueuePane {
         let config = ListPaneConfig {
             follow_enabled: false,
             wrap_toggle_enabled: false,
-            search_enabled: false, // Queue is small, no search needed
+            // Queue is small, no search needed.
+            search_enabled: false,
             copy_enabled: true,
             show_selection_when_unfocused: false,
             visual_select_enabled: false,
@@ -446,8 +435,6 @@ impl QueuePane {
             last_inner: None,
         }
     }
-
-    // -- Data management -----------------------------------------------------
 
     /// Rebuild the queue rows from the **union** of the local drip-feed queue
     /// (`local`) and the server-authoritative shared queue (`server`), tagging
@@ -555,8 +542,6 @@ impl QueuePane {
         }
         (self.entries.len() as u16).clamp(1, MAX_QUEUE_HEIGHT)
     }
-
-    // -- Input handling ------------------------------------------------------
 
     /// Handle a key event when the queue pane is focused.
     ///
@@ -738,7 +723,7 @@ impl QueuePane {
     }
 
     /// Clear the `[Interject]` hover (mouse left the queue pane). Returns
-    /// `true` if it was previously hovered (caller should redraw).
+    /// `true` if a row was hovered before this call (caller should redraw).
     pub fn clear_send_now_hover(&mut self) -> bool {
         if self.hovered_send_now_id.is_some() {
             self.hovered_send_now_id = None;
@@ -762,7 +747,7 @@ impl QueuePane {
     }
 
     /// Clear the hovered row (mouse left the queue pane). Returns `true` if a
-    /// row was previously hovered (caller should redraw).
+    /// row was hovered before this call (caller should redraw).
     pub fn clear_row_hover(&mut self) -> bool {
         if self.hovered_row_id.is_some() {
             self.hovered_row_id = None;
@@ -785,8 +770,6 @@ impl QueuePane {
         let idx = self.list_state.layout().item_at_y(vy)?;
         self.entries.get(idx).map(|e| e.id)
     }
-
-    // -- Rendering -----------------------------------------------------------
 
     /// Compute the inner content area for the queue rows.
     ///
@@ -841,11 +824,11 @@ impl QueuePane {
             return;
         }
 
-        // Rebuild styled content with proper width for truncation.
-        // Account for prefix width: "#N " where N is the position (1-based).
-        // Max position determines prefix width: #1-#9 = 3 chars, #10-#99 = 4 chars, etc.
+        // Rebuild styled content with proper width for truncation. Reserve
+        // prefix width for "#N ", which grows with the number of digits in
+        // the highest position (#1-#9 = 3 chars, #10-#99 = 4 chars, etc.).
         let max_pos = self.entries.len();
-        let prefix_width = 2 + digit_count(max_pos); // "#" + digits + " "
+        let prefix_width = 2 + digit_count(max_pos);
         let content_width = (inner.width as usize).saturating_sub(prefix_width);
         for entry in &mut self.entries {
             entry.rebuild_styled_for_width(content_width as u16);
@@ -987,10 +970,6 @@ impl QueuePane {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 /// Count the number of decimal digits in a number.
 fn digit_count(n: usize) -> usize {
     if n == 0 {
@@ -999,10 +978,6 @@ fn digit_count(n: usize) -> usize {
         (n as f64).log10().floor() as usize + 1
     }
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -1316,7 +1291,8 @@ mod tests {
         let styled = QueuedPromptEntry::build_styled("first line", 2, QueueEntryKind::Prompt, None);
         let text: String = styled.spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(text.contains("(+1 line)"));
-        assert!(!text.contains("lines)")); // Should be singular
+        // Should be singular.
+        assert!(!text.contains("lines)"));
     }
 
     #[test]
@@ -1345,7 +1321,8 @@ mod tests {
             "hello world",
             10,
             QueueEntryKind::Prompt,
-            Some(15), // " (+9 lines)" is 11 chars, leaving 4 for content
+            // " (+9 lines)" is 11 chars, leaving 4 for content.
+            Some(15),
         );
         let text: String = styled.spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(text.contains("(+9 lines)"));
@@ -1358,8 +1335,6 @@ mod tests {
         assert!(text.contains("/help"));
         assert!(text.contains("(+2 lines)"));
     }
-
-    // -- Bash command queue pane tests --
 
     #[test]
     fn test_bash_command_has_bang_prefix() {
@@ -1381,8 +1356,6 @@ mod tests {
         assert!(text.starts_with("! "));
         assert!(text.contains("(+2 lines)"));
     }
-
-    // -- Cron queue pane tests --
 
     #[test]
     fn test_cron_has_recycle_prefix() {
@@ -1428,8 +1401,6 @@ mod tests {
         assert!(text.starts_with("! "));
         // Total should fit within width (prefix "! " is 2 chars, content truncated to 13)
     }
-
-    // -- Action-button rendering (hover + layout) ----------------------------
 
     /// The `[Interject]` and `[cancel]` buttons render flush against each other
     /// so the queued message behind the row can't leak through a seam between

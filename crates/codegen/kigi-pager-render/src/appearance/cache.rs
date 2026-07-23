@@ -22,7 +22,7 @@ use super::render_mermaid::RenderMermaid;
 use super::scroll_mode::ScrollMode;
 use super::text_selection::TextSelection;
 
-// -- Defaults (asserted in tests to match UiConfig::default()) --------------
+// Defaults (asserted in tests to match UiConfig::default())
 
 const COMPACT_DEFAULT: bool = false;
 const TIMESTAMPS_DEFAULT: bool = true;
@@ -52,7 +52,7 @@ const SCROLL_LINES_UNSET: u8 = 0;
 const SCROLL_LINES_MIN: u8 = 1;
 const SCROLL_LINES_MAX: u8 = 10;
 
-// -- Compact mode ------------------------------------------------------------
+// Compact mode
 
 thread_local! {
     static COMPACT_CURRENT: Cell<bool> = const { Cell::new(COMPACT_DEFAULT) };
@@ -75,13 +75,13 @@ pub fn load() -> bool {
     COMPACT_CURRENT.with(|c| c.get())
 }
 
-/// Replace cached `compact_mode` (optimistic update or rollback).
+/// Replace cached `compact_mode` (optimistic write or rollback).
 pub fn set(enabled: bool) {
     COMPACT_CURRENT.with(|c| c.set(enabled));
     COMPACT_LOADED.with(|l| l.set(true));
 }
 
-// -- Timestamps --------------------------------------------------------------
+// Timestamps
 
 thread_local! {
     static TIMESTAMPS_CURRENT: Cell<bool> = const { Cell::new(TIMESTAMPS_DEFAULT) };
@@ -108,7 +108,7 @@ pub fn set_timestamps(enabled: bool) {
     TIMESTAMPS_LOADED.with(|l| l.set(true));
 }
 
-// -- Timeline sidebar ----------------------------------------------------------
+// Timeline sidebar
 
 thread_local! {
     static TIMELINE_CURRENT: Cell<bool> = const { Cell::new(TIMELINE_DEFAULT) };
@@ -135,7 +135,7 @@ pub fn set_show_timeline(enabled: bool) {
     TIMELINE_LOADED.with(|l| l.set(true));
 }
 
-// -- Simple mode --------------------------------------------------------------
+// Simple mode
 
 thread_local! {
     static SIMPLE_MODE_CURRENT: Cell<bool> = const { Cell::new(SIMPLE_MODE_DEFAULT) };
@@ -162,7 +162,7 @@ pub fn set_simple_mode(enabled: bool) {
     SIMPLE_MODE_LOADED.with(|l| l.set(true));
 }
 
-// -- Vim mode (scrollback) ---------------------------------------------------
+// Vim mode (scrollback)
 
 thread_local! {
     static VIM_MODE_CURRENT: Cell<bool> = const { Cell::new(VIM_MODE_DEFAULT) };
@@ -197,7 +197,7 @@ pub fn set_vim_mode(enabled: bool) {
     VIM_MODE_LOADED.with(|l| l.set(true));
 }
 
-// -- Show thinking blocks ----------------------------------------------------
+// Show thinking blocks
 
 thread_local! {
     static SHOW_THINKING_BLOCKS_CURRENT: Cell<bool> =
@@ -228,7 +228,7 @@ pub fn set_show_thinking_blocks(enabled: bool) {
     SHOW_THINKING_BLOCKS_LOADED.with(|l| l.set(true));
 }
 
-// -- Group tool verbs ---------------------------------------------------------
+// Group tool verbs
 
 thread_local! {
     static GROUP_TOOL_VERBS_CURRENT: Cell<bool> =
@@ -259,7 +259,7 @@ pub fn set_group_tool_verbs(enabled: bool) {
     GROUP_TOOL_VERBS_LOADED.with(|l| l.set(true));
 }
 
-// -- Collapsed edit blocks -----------------------------------------------------
+// Collapsed edit blocks
 
 thread_local! {
     static COLLAPSED_EDIT_BLOCKS_CURRENT: Cell<bool> =
@@ -292,7 +292,7 @@ pub fn set_collapsed_edit_blocks(enabled: bool) {
     COLLAPSED_EDIT_BLOCKS_LOADED.with(|l| l.set(true));
 }
 
-// -- Prompt suggestions (tab autocomplete) -----------------------------------
+// Prompt suggestions (tab autocomplete)
 
 thread_local! {
     static PROMPT_SUGGESTIONS_CURRENT: Cell<bool> =
@@ -324,7 +324,7 @@ pub fn set_prompt_suggestions(enabled: bool) {
     PROMPT_SUGGESTIONS_LOADED.with(|l| l.set(true));
 }
 
-// -- keep_text_selection (`flash` | `hold`) ----------------------------------
+// keep_text_selection (`flash` | `hold`)
 
 thread_local! {
     static KEEP_TEXT_SELECTION_CURRENT: Cell<TextSelection> =
@@ -350,7 +350,7 @@ pub fn set_keep_text_selection(value: TextSelection) {
     KEEP_TEXT_SELECTION_LOADED.with(|l| l.set(true));
 }
 
-// -- Scroll speed ------------------------------------------------------------
+// Scroll speed
 
 thread_local! {
     static SCROLL_SPEED_CURRENT: Cell<u8> = const { Cell::new(SCROLL_SPEED_DEFAULT) };
@@ -383,7 +383,7 @@ pub fn set_scroll_speed(speed: u8) {
     SCROLL_SPEED_LOADED.with(|l| l.set(true));
 }
 
-// -- Scroll mode (auto | wheel | trackpad) -----------------------------------
+// Scroll mode (auto | wheel | trackpad)
 
 thread_local! {
     static SCROLL_MODE_CURRENT: Cell<ScrollMode> = const { Cell::new(SCROLL_MODE_DEFAULT) };
@@ -418,7 +418,7 @@ pub fn set_scroll_mode(value: ScrollMode) {
     SCROLL_MODE_LOADED.with(|l| l.set(true));
 }
 
-// -- Invert scroll ------------------------------------------------------------
+// Invert scroll
 
 thread_local! {
     static INVERT_SCROLL_CURRENT: Cell<bool> = const { Cell::new(INVERT_SCROLL_DEFAULT) };
@@ -453,7 +453,7 @@ pub fn set_invert_scroll(enabled: bool) {
     INVERT_SCROLL_LOADED.with(|l| l.set(true));
 }
 
-// -- Scroll lines ------------------------------------------------------------
+// Scroll lines
 
 thread_local! {
     static SCROLL_LINES_CURRENT: Cell<u8> = const { Cell::new(SCROLL_LINES_UNSET) };
@@ -494,7 +494,7 @@ pub fn set_scroll_lines(lines: u8) {
     SCROLL_LINES_LOADED.with(|l| l.set(true));
 }
 
-// -- Render mermaid (auto | on | off) ---------------------------------------
+// Render mermaid (auto | on | off)
 
 thread_local! {
     static RENDER_MERMAID_CURRENT: Cell<RenderMermaid> = const { Cell::new(RenderMermaid::Auto) };
@@ -531,13 +531,13 @@ fn render_mermaid_from_config_str(value: Option<&str>) -> RenderMermaid {
         .unwrap_or_default()
 }
 
-/// Replace cached `render_mermaid` (optimistic update from the settings modal).
+/// Replace cached `render_mermaid` (optimistic write from the settings modal).
 pub fn set_render_mermaid(value: RenderMermaid) {
     RENDER_MERMAID_CURRENT.with(|c| c.set(value));
     RENDER_MERMAID_LOADED.with(|l| l.set(true));
 }
 
-// -- Prime + read path ------------------------------------------------------
+// Prime + read path
 
 /// Seed all caches from the live `UiConfig` at startup so subsequent
 /// `load*()` calls never hit disk on the render hot path.
@@ -643,7 +643,7 @@ fn load_str_from_effective_config(key: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-// -- Tests -------------------------------------------------------------------
+// Tests
 
 #[cfg(test)]
 mod tests {
@@ -915,7 +915,7 @@ mod tests {
     #[test]
     fn caches_are_independent() {
         std::thread::spawn(|| {
-            // ── compact independent (the other two stay true) ──
+            // compact independent (the other two stay true)
             set(false);
             set_timestamps(true);
             set_simple_mode(true);
@@ -929,7 +929,7 @@ mod tests {
                 "simple_mode must NOT toggle when compact changed"
             );
 
-            // ── timestamps independent ──
+            // timestamps independent
             set(true);
             set_timestamps(false);
             set_simple_mode(true);
@@ -940,7 +940,7 @@ mod tests {
                 "simple_mode must NOT toggle when timestamps changed"
             );
 
-            // ── simple_mode independent ──
+            // simple_mode independent
             set(true);
             set_timestamps(true);
             set_simple_mode(false);

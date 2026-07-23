@@ -9,16 +9,10 @@ use ratatui::text::{Line, Span};
 
 use super::list_pane::ListItem;
 
-// ---------------------------------------------------------------------------
-// TodoPaneStyle — per-status colors
-// ---------------------------------------------------------------------------
-
 /// Visual style for each todo status.
 #[derive(Debug, Clone, Copy)]
 pub struct TodoStatusStyle {
-    /// Color for the status icon.
     pub icon_fg: Color,
-    /// Style for the content text.
     pub text_style: Style,
 }
 
@@ -61,10 +55,6 @@ impl Default for TodoPaneStyle {
     }
 }
 
-// ---------------------------------------------------------------------------
-// TodoListEntry — ListItem wrapper around TodoItem
-// ---------------------------------------------------------------------------
-
 /// A `TodoItem` wrapped for display in a `ListPane`.
 ///
 /// Caches the styled `Line` for `content()` and generates a status-icon
@@ -73,16 +63,13 @@ impl Default for TodoPaneStyle {
 pub struct TodoListEntry {
     /// Unique ID (index in the todo list, or a stable ID from the model).
     pub id: u64,
-    /// The canonical todo item.
     pub item: TodoItem,
     /// Cached styled content line.
     styled: Line<'static>,
-    /// The style to use for this entry's status.
     status_style: TodoStatusStyle,
 }
 
 impl TodoListEntry {
-    /// Create a new entry from a `TodoItem`.
     pub fn new(id: u64, item: TodoItem, style: &TodoPaneStyle) -> Self {
         let status_style = match item.status {
             TodoStatus::Pending => style.pending,
@@ -99,7 +86,6 @@ impl TodoListEntry {
         }
     }
 
-    /// Status icon for the current status.
     fn icon(&self) -> &'static str {
         match self.item.status {
             TodoStatus::Pending => "□",
@@ -132,10 +118,6 @@ impl ListItem for TodoListEntry {
     }
 }
 
-// ---------------------------------------------------------------------------
-// TodoPane — self-contained pane owning items, state, and rendering
-// ---------------------------------------------------------------------------
-
 use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, MouseEventKind};
@@ -148,10 +130,6 @@ use crate::theme::ThemeKind;
 
 use super::list_pane::{ListPane, ListPaneConfig, ListPaneState, ListPaneStyle, WrapMode};
 use super::overlay::OverlayState;
-
-// ---------------------------------------------------------------------------
-// TodoCounts — aggregate status counts for the badge
-// ---------------------------------------------------------------------------
 
 /// Counts of todo items by status.
 ///
@@ -222,7 +200,8 @@ pub struct TodoPane {
     pub overlay: OverlayState,
     /// Previous counts snapshot for flash-on-change detection.
     prev_counts: TodoCounts,
-    /// When the badge flash animation expires (500ms after a count change).
+    /// When the badge flash animation expires (`BADGE_FLASH_DURATION` after
+    /// a count change).
     badge_flash_until: Option<Instant>,
     /// Last theme kind seen — used to detect theme switches and restyle.
     last_theme: ThemeKind,
@@ -264,9 +243,6 @@ impl TodoPane {
         }
     }
 
-    // -- Data management -----------------------------------------------------
-
-    /// Read-only access to the current todo items.
     pub fn todos(&self) -> &[TodoItem] {
         &self.todos
     }
@@ -287,7 +263,6 @@ impl TodoPane {
         self.todos = items;
     }
 
-    /// Compute status counts from a list of items.
     fn compute_counts(items: &[TodoItem]) -> TodoCounts {
         let mut c = TodoCounts::default();
         for item in items {
@@ -306,7 +281,6 @@ impl TodoPane {
         self.prev_counts
     }
 
-    /// Whether the badge flash animation is currently active.
     pub fn badge_flash_active(&self) -> bool {
         self.badge_flash_until.is_some_and(|t| Instant::now() < t)
     }
@@ -414,8 +388,6 @@ impl TodoPane {
         }
     }
 
-    // -- Input handling ------------------------------------------------------
-
     /// Handle a key event when the todo pane is focused.
     ///
     /// Returns `true` if the event was consumed.
@@ -457,8 +429,6 @@ impl TodoPane {
             .handle_mouse_event(kind, col, row, area, &self.entries)
     }
 
-    // -- Rendering -----------------------------------------------------------
-
     /// Compute the inner content area with horizontal padding matching
     /// the scrollback's `HorizontalLayout` (accent + block_pad_left on
     /// the left, block_pad_right on the right).
@@ -497,7 +467,6 @@ impl TodoPane {
         self.rebuild_entries();
         let inner = Self::content_area(area, layout_cfg);
         if self.entries.is_empty() {
-            // Empty state: placeholder message in muted style.
             if inner.height > 0 && inner.width > 0 {
                 let msg = empty_placeholder_message(self.todos.is_empty(), self.counts());
                 let theme = crate::theme::Theme::current();

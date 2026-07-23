@@ -23,8 +23,6 @@ const DATA_FILENAME: &str = "active_sessions.json";
 const LOCK_FILENAME: &str = "active_sessions.lock";
 const TMP_FILENAME: &str = "active_sessions.json.tmp";
 
-// -- Public API (delegates to `_in` variants with default kigi home) --------
-
 /// Register a session as active (idempotent by session_id).
 pub fn register(session: ActiveSession) -> io::Result<()> {
     register_in(&crate::util::kigi_home::kigi_home(), session)
@@ -45,8 +43,6 @@ pub fn try_unregister(session_id: &acp::SessionId) -> io::Result<bool> {
 pub fn collect_crashed() -> io::Result<Vec<ActiveSession>> {
     collect_crashed_in(&crate::util::kigi_home::kigi_home())
 }
-
-// -- Injectable-root variants (`_in`) for testing ---------------------------
 
 pub fn register_in(root: &Path, session: ActiveSession) -> io::Result<()> {
     with_locked_state(root, |sessions| {
@@ -80,8 +76,6 @@ pub fn list_in(root: &Path) -> io::Result<Vec<ActiveSession>> {
     let data_path = root.join(DATA_FILENAME);
     read_data_file(&data_path)
 }
-
-// -- Internal: locked read-modify-write -------------------------------------
 
 fn with_locked_state<F, R>(root: &Path, mutate: F) -> io::Result<R>
 where

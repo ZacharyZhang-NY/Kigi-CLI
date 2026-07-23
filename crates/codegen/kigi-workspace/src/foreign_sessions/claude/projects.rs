@@ -9,6 +9,8 @@ pub(super) fn scoped_project_dirs(config_dir: &Path, cwd: &Path) -> Vec<PathBuf>
     if let Ok(repository) = git2::Repository::discover(cwd) {
         if let Some(workdir) = repository.workdir() {
             paths.push(dunce::canonicalize(workdir).unwrap_or_else(|_| workdir.to_path_buf()));
+            // A linked worktree has its own gitdir distinct from the shared
+            // commondir, whose parent is the main worktree.
             if repository.path() != repository.commondir()
                 && let Some(main_workdir) = repository.commondir().parent()
             {

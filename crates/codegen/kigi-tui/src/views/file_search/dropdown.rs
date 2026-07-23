@@ -76,8 +76,6 @@ pub fn render_dropdown(buf: &mut Buffer, area: Rect, file_search: &FileSearchSta
         );
     }
 
-    // ── Scrollbar ───────────────────────────────────────────────────────
-
     if needs_scrollbar {
         let scrollbar_area = Rect {
             x: area.x + area.width - 1,
@@ -105,7 +103,8 @@ pub fn dropdown_height(file_search: &FileSearchState, max_rows: u16) -> u16 {
         return 0;
     }
     let result_rows = (file_search.result_count() as u16).min(max_rows);
-    1 + result_rows // separator + results
+    // separator + results
+    1 + result_rows
 }
 
 /// Non-selected prefix — same width as the arrow, just spaces.
@@ -147,7 +146,6 @@ fn render_fuzzy_item(
         Modifier::empty()
     };
 
-    // Fill the row with background.
     for col in x..x + width {
         if let Some(cell) = buf.cell_mut((col, y)) {
             cell.set_char(' ');
@@ -176,15 +174,12 @@ fn render_fuzzy_item(
         }
     }
 
-    // Styles: primary FG for text (not dimmed), BLUE for match chars.
-    // Selected rows get bold via the modifier.
     let match_style = Style::default()
         .fg(embed.map_or(theme.fuzzy_accent, |e| e.fg(theme.fuzzy_accent)))
         .bg(row_bg)
         .add_modifier(bold);
     let normal_style = Style::default().fg(text_fg).bg(row_bg).add_modifier(bold);
 
-    // Render path characters after prefix, with match highlighting.
     let mut indices = &item.indices[..];
     let mut col = x + PREFIX_WIDTH;
     let max_col = x + width;
@@ -208,7 +203,6 @@ fn render_fuzzy_item(
 
         let style = if is_match { match_style } else { normal_style };
 
-        // Write the character.
         let ch_str = &path[byte_idx..byte_idx + ch.len_utf8()];
         if let Some(cell) = buf.cell_mut((col, y)) {
             cell.set_symbol(ch_str);
@@ -226,7 +220,6 @@ fn render_fuzzy_item(
         col += ch_width;
     }
 
-    // In dir mode, append '/' after the path.
     if dir_mode
         && col < max_col
         && let Some(cell) = buf.cell_mut((col, y))

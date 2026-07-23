@@ -68,8 +68,8 @@ pub(super) fn dispatch_cancel_turn(app: &mut AppView) -> Vec<Effect> {
         // response may have been lost in transit. Re-send instead of silently
         // no-opping (cancel is idempotent on the agent), so Ctrl+C / palette
         // CancelTurn is never a dead key on a stuck "Cancelling…" spinner.
-        // Skips the subagent panel — that
-        // choice was already made (or defaulted) on the first cancel.
+        // Skips the subagent panel — that choice was already made (or
+        // defaulted) on the first cancel.
         if agent.session.state.is_cancelling() {
             let Some(session_id) = agent.session.session_id.clone() else {
                 return vec![];
@@ -502,7 +502,6 @@ pub(super) fn dispatch_demote_to_background(app: &mut AppView) -> Vec<Effect> {
     let Some(session_id) = agent.session.session_id.clone() else {
         return vec![];
     };
-    // Get the tool_call_id of the currently running execute tool
     let Some(tool_call_id) = agent
         .session
         .tracker

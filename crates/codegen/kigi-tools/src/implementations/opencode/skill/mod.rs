@@ -13,8 +13,6 @@ use crate::types::requirements::{Expr, ToolRequirement};
 use crate::types::resources::{AvailableSkills, SharedResources};
 use crate::types::tool::{ToolKind, ToolNamespace};
 
-// ─── Description ─────────────────────────────────────────────────────
-
 const DESCRIPTION: &str = r#"Load a specialized skill that provides domain-specific instructions and workflows.
 
 When you recognize that a task matches one of the available skills listed below, use this tool to load the full skill instructions.
@@ -38,17 +36,11 @@ ${%- else %}
 ${%- endif %}
 </available_skills>"#;
 
-// ─── Input ───────────────────────────────────────────────────────────
-
-/// Input for the OpenCode `skill` tool.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct SkillInput {
-    /// The name of the skill to invoke
     #[schemars(description = "The name of the skill to invoke")]
     pub name: String,
 }
-
-// ─── ToolInput conversions (via Dynamic variant) ─────────────────────
 
 impl TryFrom<crate::types::tool_io::ToolInput> for SkillInput {
     type Error = String;
@@ -70,8 +62,6 @@ impl From<SkillInput> for crate::types::tool_io::ToolInput {
     }
 }
 
-// ─── Tool ────────────────────────────────────────────────────────────
-
 /// OpenCode skill tool — loads specialized skill instructions into the conversation.
 #[derive(Debug, Default)]
 pub struct SkillTool;
@@ -79,11 +69,9 @@ pub struct SkillTool;
 /// Result of looking up a skill by name.
 #[derive(Debug)]
 enum FindSkillResult<'a> {
-    /// Exactly one match found.
     Found(&'a SkillInfo),
     /// Multiple skills share the same short name -- caller must use a qualified name.
     Ambiguous(Vec<String>),
-    /// No skill matched.
     NotFound,
 }
 
@@ -96,7 +84,7 @@ enum FindSkillResult<'a> {
 /// `Ambiguous` with the qualified names so the caller can ask for
 /// disambiguation instead of silently picking first-match.
 fn find_skill<'a>(name: &str, skills: &'a [SkillInfo]) -> FindSkillResult<'a> {
-    // First try exact match with fully qualified name -- always unambiguous.
+    // A fully-qualified name matches at most one skill.
     if let Some(skill) = skills
         .iter()
         .find(|s| s.enabled && format_skill_name(s) == name)
@@ -104,7 +92,6 @@ fn find_skill<'a>(name: &str, skills: &'a [SkillInfo]) -> FindSkillResult<'a> {
         return FindSkillResult::Found(skill);
     }
 
-    // Short-name lookup: collect all matching skills (only enabled ones).
     let matches: Vec<&SkillInfo> = skills
         .iter()
         .filter(|s| s.enabled && s.name == name)
@@ -147,7 +134,6 @@ async fn list_skill_files(skill: &SkillInfo, limit: usize) -> Vec<String> {
             break;
         }
         let path = entry.path();
-        // Skip the SKILL.md file itself.
         if path
             .file_name()
             .is_some_and(|n| n.eq_ignore_ascii_case("SKILL.md"))
@@ -189,8 +175,6 @@ fn format_output(skill: &SkillInfo, content: &str, files: &[String]) -> String {
     out.push_str("</skill_content>");
     out
 }
-
-// ─── Tests ───────────────────────────────────────────────────────────
 
 impl crate::types::tool_metadata::ToolMetadata for SkillTool {
     fn kind(&self) -> ToolKind {
@@ -255,7 +239,6 @@ impl kigi_tool_runtime::Tool for SkillTool {
                 .unwrap_or_default();
         }
 
-        // ── Look up the skill ────────────────────────────────────────
         let skill = match find_skill(&input.name, &available_skills) {
             FindSkillResult::Found(s) => s.clone(),
             FindSkillResult::Ambiguous(qualified) => {
@@ -296,7 +279,6 @@ impl kigi_tool_runtime::Tool for SkillTool {
             }
         };
 
-        // ── Load the skill content ───────────────────────────────────
         let content = match load_skill_content(&skill).await {
             Ok(c) => c,
             Err(e) => {
@@ -310,10 +292,8 @@ impl kigi_tool_runtime::Tool for SkillTool {
             }
         };
 
-        // ── List bundled files (up to 10) ────────────────────────────
         let files = list_skill_files(&skill, 10).await;
 
-        // ── Build output ─────────────────────────────────────────────
         let output = format_output(&skill, &content, &files);
 
         Ok(SkillOutput {
@@ -420,7 +400,6 @@ mod tests {
             make_test_skill("commit", SkillScope::User, "/path/user"),
         ];
 
-        // Short name "commit" matches two scopes -- should be Ambiguous.
         let result = find_skill("commit", &skills);
         match result {
             FindSkillResult::Ambiguous(qualified) => {
@@ -438,7 +417,6 @@ mod tests {
             make_test_skill("commit", SkillScope::User, "/path/user"),
         ];
 
-        // Qualified names still resolve unambiguously.
         assert!(matches!(
             find_skill("local:commit", &skills),
             FindSkillResult::Found(s) if s.path == "/path/local"
@@ -565,8 +543,9 @@ mod tests {
     }
 
     /// Regression: the OpenCode skill tool's body must reach the model via the
-    /// normal tool result (`to_prompt_format()`). It was previously dropped
-    /// because OpenCode registers the skill tool without a follow-up handler.
+    /// normal tool result (`to_prompt_format()`). OpenCode registers the skill
+    /// tool without a follow-up handler, so a body delivered only through such a
+    /// handler would never reach the model.
     #[tokio::test]
     async fn skill_body_reaches_prompt_format() {
         use crate::types::output::ToolOutput;
@@ -722,9 +701,7 @@ mod tests {
 
         assert!(output.success);
         let msg = output.skill_message.unwrap();
-        // Body content is present.
         assert!(msg.contains("Run the deploy pipeline."));
-        // Frontmatter delimiters and keys are stripped.
         assert!(!msg.contains("---"));
         assert!(!msg.contains("tags: [ops]"));
         assert!(!msg.contains("description: Deploy to prod"));
@@ -756,25 +733,18 @@ mod tests {
         assert!(output.success);
         let msg = output.skill_message.unwrap();
 
-        // Must open with <skill_content name="fmt">
         assert!(msg.starts_with("<skill_content name=\"fmt\">\n"));
-        // Must have # Skill: fmt header
         assert!(msg.contains("# Skill: fmt\n"));
-        // Must contain the body content
         assert!(msg.contains("Format the code."));
-        // Must have Base directory line
         assert!(msg.contains(&format!(
             "Base directory for this skill: file://{}",
             tmp.path().display()
         )));
-        // Must have <skill_files> block
         assert!(msg.contains("<skill_files>\n"));
-        // Must list the bundled file
         assert!(msg.contains(&format!(
             "<file>{}</file>",
             tmp.path().join("fmt.sh").display()
         )));
-        // Must close with </skill_content>
         assert!(msg.ends_with("</skill_content>"));
     }
 
@@ -843,7 +813,6 @@ mod tests {
 
         assert!(output.success);
         let msg = output.skill_message.unwrap();
-        // <skill_files> block must be present but contain no <file> entries.
         assert!(msg.contains("<skill_files>"));
         assert!(msg.contains("</skill_files>"));
         assert!(!msg.contains("<file>"));
@@ -853,7 +822,6 @@ mod tests {
     async fn empty_skill_content() {
         let tmp = TempDir::new().unwrap();
         let skill_path = tmp.path().join("SKILL.md");
-        // SKILL.md with only frontmatter — body after stripping is empty.
         std::fs::write(&skill_path, "---\nname: empty\ndescription: nothing\n---\n").unwrap();
 
         let mut resources = Resources::new();
@@ -874,7 +842,6 @@ mod tests {
         .await
         .unwrap();
 
-        // Should succeed gracefully even with no body content.
         assert!(output.success);
         assert_eq!(output.tool_result, "Loaded skill: empty");
         assert!(output.error.is_none());
@@ -883,7 +850,6 @@ mod tests {
         assert!(msg.contains("<skill_content name=\"empty\">"));
         assert!(msg.contains("# Skill: empty"));
         assert!(msg.contains("</skill_content>"));
-        // No frontmatter keys leaked into output.
         assert!(!msg.contains("description: nothing"));
     }
 
@@ -897,7 +863,6 @@ mod tests {
         )
         .unwrap();
 
-        // Create 15 extra files in the skill directory.
         for i in 1..=15 {
             std::fs::write(
                 tmp.path().join(format!("file{i:02}.txt")),

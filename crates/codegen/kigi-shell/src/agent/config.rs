@@ -994,7 +994,7 @@ pub struct StorageConfig {
 ///
 /// These supplement the built-in scan locations (`.kigi/skills/`,
 /// `.agents/skills/`, `~/.kigi/skills/`). They're written by `/import-claude`
-/// to preserve previously-discovered Claude directories after the runtime
+/// to preserve already-discovered Claude directories after the runtime
 /// `.claude/` cutoff (see `[claude_compat] imported`).
 ///
 /// Example:
@@ -4015,28 +4015,17 @@ pub(crate) fn resolve_aux_model_sampling_config(
     );
     None
 }
-/// Finalize image-describe model + sampler config for user attachments.
-/// Shared so the aux resolve happy path and the
-/// `None` fallback cannot diverge between those entry points.
-///
-/// On aux resolve `Some`, stamp session-local fields (attribution, bearer,
-/// retries) onto the helper config. On `None`, fall back to the active session model and
-/// full config (not forcing `image_description_model` onto the agent endpoint, which 404s
-/// on BYOK / non-proxy routes for internal slugs).
 /// Stamp the session-local fields (attribution, bearer resolver, retries)
 /// from the active session onto a routed aux `SamplerConfig` so a
 /// helper model keeps the session's auth/attribution. Shared by image-describe
 /// and the auto-mode classifier so the two can't drift.
-/// Stamp the session-local fields onto a routed aux `SamplerConfig`.
 ///
 /// `bearer_resolver` is an EXPLICIT parameter, not a copy of the session's:
-/// this helper used to clone `active_session_config.bearer_resolver`
-/// unconditionally and rely on every call site remembering to re-point it
-/// afterwards. `SamplingClient::post` REPLACES the request's auth header from
-/// the resolver, so a forgotten re-point overwrote the aux model's own key on
-/// the AUX host with the session bearer. Callers obtain the value from
+/// `SamplingClient::post` REPLACES the request's auth header from the
+/// resolver, so handing it the session bearer would overwrite the aux
+/// model's own key on the AUX host. Callers obtain the value from
 /// [`SessionActor::aux_bearer_resolver`](crate::session::acp_session::SessionActor)
-/// — the chokepoint — so "forgot to re-point" is no longer expressible.
+/// — the chokepoint that keeps the two hosts' credentials from crossing.
 pub(crate) fn stamp_session_local_sampler_fields(
     cfg: &mut SamplerConfig,
     active_session_config: &SamplerConfig,
@@ -4047,6 +4036,14 @@ pub(crate) fn stamp_session_local_sampler_fields(
     cfg.bearer_resolver = bearer_resolver;
     cfg.max_retries = max_retries;
 }
+/// Finalize image-describe model + sampler config for user attachments.
+/// Shared so the aux resolve happy path and the
+/// `None` fallback cannot diverge between those entry points.
+///
+/// On aux resolve `Some`, stamp session-local fields (attribution, bearer,
+/// retries) onto the helper config. On `None`, fall back to the active session model and
+/// full config (not forcing `image_description_model` onto the agent endpoint, which 404s
+/// on BYOK / non-proxy routes for internal slugs).
 pub(crate) fn finalize_image_describe_sampler_config(
     resolved_aux: Option<SamplerConfig>,
     active_session_config: &SamplerConfig,
@@ -5985,7 +5982,8 @@ reasoning_effort = "low"
     fn byok_custom_entries_default_to_passthrough_except_house_endpoint() {
         let make_cfg = |base_url: &str| {
             let entry_cfg = ModelEntryConfig {
-                id: None, // BYOK: no managed platform key
+                // BYOK: no managed platform key
+                id: None,
                 model: "my-custom-model".to_string(),
                 base_url: base_url.to_string(),
                 name: None,

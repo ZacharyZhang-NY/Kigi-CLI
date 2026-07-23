@@ -77,7 +77,7 @@ impl Agent {
         }
     }
 
-    // ── From definition ──────────────────────────────────────────────
+    // From definition
 
     /// Agent name (unique identifier).
     pub fn name(&self) -> &str {
@@ -99,14 +99,12 @@ impl Agent {
         &self.definition.permission_mode
     }
 
-    /// Completion requirement, if any.
     pub fn completion_requirement(&self) -> Option<&CompletionRequirement> {
         self.definition.completion_requirement.as_ref()
     }
 
-    // ── Session-level ────────────────────────────────────────────────
+    // Session-level
 
-    /// The rendered system prompt.
     pub fn system_prompt(&self) -> &str {
         &self.system_prompt
     }
@@ -123,12 +121,10 @@ impl Agent {
         &self.tool_bridge
     }
 
-    /// Compaction policy.
     pub fn compaction_policy(&self) -> &CompactionPolicy {
         &self.compaction_policy
     }
 
-    /// Reminder policy.
     pub fn reminder_policy(&self) -> &ReminderPolicy {
         &self.reminder_policy
     }
@@ -216,7 +212,7 @@ impl Agent {
     /// Does NOT rebuild the tool registry or re-render prompts.
     /// Used for mid-session mode switching.
     pub async fn update_policies_from_definition(&self, _def: &AgentDefinition) {
-        // TODO: completion requirements and retry configs are now part of
+        // TODO: completion requirements and retry configs are part of
         // ToolServerConfig and handled at registry finalization time.
         // Mid-session policy updates are not yet supported in the new architecture.
     }

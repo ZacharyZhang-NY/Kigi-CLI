@@ -30,9 +30,7 @@ async fn replace_file_async(tmp: PathBuf, target: PathBuf) -> io::Result<()> {
 ///   Used for subagent child sessions whose files live under the parent's session dir.
 #[derive(Clone)]
 enum SessionDirMode {
-    /// Existing behavior: root + sessions/{cwd}/{id}/
     FromRoot(PathBuf),
-    /// New: use this directory directly (for subagent children).
     Explicit(PathBuf),
 }
 /// JSONL-based storage adapter (legacy format)
@@ -319,7 +317,6 @@ impl JsonlStorageAdapter {
         }
         Ok(items)
     }
-    /// Append a session update to the updates.jsonl file, wrapping it in an envelope with timestamp.
     async fn append_update_to_file(
         &self,
         path: PathBuf,
@@ -605,7 +602,6 @@ impl JsonlStorageAdapter {
         .map_err(io::Error::other)?
     }
 }
-/// Transform session ID in a SessionUpdate
 fn transform_session_id_in_update(
     update: super::SessionUpdate,
     new_id: &acp::SessionId,

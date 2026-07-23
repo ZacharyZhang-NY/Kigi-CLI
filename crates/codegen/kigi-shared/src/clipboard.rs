@@ -469,9 +469,7 @@ pub fn is_containerized_without_display() -> bool {
     false
 }
 
-// ---------------------------------------------------------------------------
 // macOS unified attachments `osascript` stdout parsing (pure, no I/O)
-// ---------------------------------------------------------------------------
 
 #[cfg(any(target_os = "macos", test))]
 mod attachments_protocol {
@@ -546,9 +544,7 @@ mod attachments_protocol {
     }
 }
 
-// ---------------------------------------------------------------------------
 // macOS: subprocess-based clipboard (no AppKit linkage)
-// ---------------------------------------------------------------------------
 #[cfg(target_os = "macos")]
 mod platform {
     use std::process::{Command, Stdio};
@@ -557,7 +553,7 @@ mod platform {
     use super::attachments_protocol::{FURL_MARKER, IMAGE_MARKER, parse_attachments_output};
     use super::{ClipboardAttachments, ImageData};
 
-    // -- Fast pasteboard probes (NSPasteboard via lazy dlopen) -------------
+    // Fast pasteboard probes (NSPasteboard via lazy dlopen)
     //
     // These deliberately do NOT use `objc2-app-kit`: that crate emits a
     // `#[link]` against AppKit, and linking AppKit is exactly what this
@@ -575,7 +571,7 @@ mod platform {
         *LOADED.get_or_init(|| {
             let path = c"/System/Library/Frameworks/AppKit.framework/AppKit";
             // SAFETY: dlopen with a constant NUL-terminated path; the handle
-            // is intentionally leaked (AppKit stays loaded for the process).
+            // is deliberately leaked (AppKit stays loaded for the process).
             let handle = unsafe { libc::dlopen(path.as_ptr(), libc::RTLD_LAZY) };
             !handle.is_null()
         })
@@ -602,7 +598,7 @@ mod platform {
     /// probes — and AppKit reached via a bare `dlopen` (no NSApplication)
     /// is NOT safe against concurrent pasteboard messaging (parallel probe
     /// smoke tests crash with SIGSEGV/SIGABRT). The invariant is therefore
-    /// now held by lock: every native pasteboard entry point takes this
+    /// held by lock: every native pasteboard entry point takes this
     /// mutex for the duration of its autoreleasepool.
     static PASTEBOARD_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
 
@@ -1164,9 +1160,7 @@ mod platform {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Linux / Windows: arboard with CLI-tool fallback on Linux
-// ---------------------------------------------------------------------------
 #[cfg(not(target_os = "macos"))]
 mod platform {
     use super::ImageData;
@@ -1185,7 +1179,7 @@ mod platform {
     /// No AppKit to pre-warm off-macOS.
     pub(super) fn clipboard_prewarm() {}
 
-    // -- arboard helpers (the in-process leg on all non-macOS platforms) ------
+    // arboard helpers (the in-process leg on all non-macOS platforms)
 
     /// Run `f` on a named worker thread and wait up to `deadline` for its
     /// result. `Err(Timeout)` abandons the worker (it stays parked on the
@@ -1369,7 +1363,7 @@ mod platform {
         })
     }
 
-    // -- Linux CLI tools ------------------------------------------------------
+    // Linux CLI tools
     //
     // arboard is built with `wayland-data-control`: on compositors exposing the
     // data-control protocol (probe: `wayland_data_control_supported`) it sets
@@ -1429,7 +1423,8 @@ mod platform {
         write_text: &["xsel", "--clipboard", "--input"],
         read_text: &["xsel", "--clipboard", "--output"],
         read_primary: Some(&["xsel", "--primary", "--output"]),
-        write_png: None, // xsel doesn't support typed clipboard
+        // xsel doesn't support typed clipboard
+        write_png: None,
         read_png: None,
     };
 
@@ -1928,7 +1923,7 @@ mod platform {
         reads_wayland_selection && !(data_control && arboard_ok)
     }
 
-    // -- Public API ----------------------------------------------------------
+    // Public API
 
     pub fn get_text() -> anyhow::Result<Option<String>> {
         let mut arboard_error = None;
@@ -2719,9 +2714,7 @@ mod tests {
         assert_eq!(got.as_deref(), Some(sentinel.as_str()));
     }
 
-    // -----------------------------------------------------------------------
     // wait_with_deadline (real child processes; unix `sleep`)
-    // -----------------------------------------------------------------------
 
     #[cfg(unix)]
     fn spawn_sleep(seconds: &str) -> std::process::Child {
@@ -2759,9 +2752,7 @@ mod tests {
         assert!(child.try_wait().expect("child reaped").is_some());
     }
 
-    // -----------------------------------------------------------------------
     // spool_for_stdin (unlink-then-read contract)
-    // -----------------------------------------------------------------------
 
     /// The two contracts callers rely on: the returned fd stays readable after
     /// the temp file is unlinked on return, and a payload well past the
@@ -2776,9 +2767,7 @@ mod tests {
         assert_eq!(read_back, payload);
     }
 
-    // -----------------------------------------------------------------------
     // OSC 52 sequence construction (pure; base64("hi") == "aGk=")
-    // -----------------------------------------------------------------------
 
     #[test]
     fn osc52_sequence_plain() {
@@ -2793,9 +2782,7 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------------
     // MIME detection from magic bytes
-    // -----------------------------------------------------------------------
 
     #[test]
     fn mime_from_bytes_png() {
@@ -2844,9 +2831,7 @@ mod tests {
         assert_eq!(mime_from_bytes(b"\x00\x01"), "application/octet-stream");
     }
 
-    // -----------------------------------------------------------------------
     // MIME to extension mapping
-    // -----------------------------------------------------------------------
 
     #[test]
     fn mime_to_extension_known() {
@@ -2864,9 +2849,7 @@ mod tests {
         assert_eq!(mime_to_extension("text/plain"), "bin");
     }
 
-    // -----------------------------------------------------------------------
     // Linux RGBA-to-PNG encoding (only compiled on non-macOS)
-    // -----------------------------------------------------------------------
 
     #[cfg(not(target_os = "macos"))]
     mod linux_encoding {
@@ -2905,9 +2888,7 @@ mod tests {
         }
     }
 
-    // -----------------------------------------------------------------------
     // macOS unified attachments osascript stdout protocol (pure parsing)
-    // -----------------------------------------------------------------------
 
     mod attachments_protocol_tests {
         use super::super::attachments_protocol::{
@@ -2918,9 +2899,7 @@ mod tests {
             format!("{FURL_MARKER}\n{furl_body}\n{IMAGE_MARKER}\nIMAGE:{image}")
         }
 
-        // -----------------------------------------------------------
         // parse_osascript_furl_output: deterministic parsing surface
-        // -----------------------------------------------------------
 
         #[test]
         fn parse_furl_empty_inputs_are_none() {
@@ -2971,9 +2950,7 @@ mod tests {
             );
         }
 
-        // -----------------------------------------------------------
         // parse_attachments_output: unified osascript stdout protocol
-        // -----------------------------------------------------------
 
         #[test]
         fn parse_attachments_none_none() {
@@ -3078,9 +3055,7 @@ mod tests {
         }
     }
 
-    // -----------------------------------------------------------------------
     // macOS extension helper
-    // -----------------------------------------------------------------------
 
     #[cfg(target_os = "macos")]
     mod macos_helpers {
@@ -3095,12 +3070,11 @@ mod tests {
         }
     }
 
-    // -----------------------------------------------------------------------
     // get_image returns Ok(None) when no image is on the clipboard
-    // -----------------------------------------------------------------------
 
     #[test]
-    #[ignore] // requires real clipboard access
+    // requires real clipboard access
+    #[ignore]
     fn get_image_text_only_clipboard() {
         // Put text on the clipboard, then check that get_image returns None.
         set_text("just text").expect("set_text failed");
@@ -3111,9 +3085,7 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------------
     // Fast-probe type-list classification (clipboard_image_snapshot)
-    // -----------------------------------------------------------------------
 
     fn types<'a>(list: &'a [&'static [u8]]) -> impl Iterator<Item = &'static [u8]> + 'a {
         list.iter().copied()
@@ -3160,9 +3132,7 @@ mod tests {
         assert!(!image_pasteable_from_types(types(&[])));
     }
 
-    // -----------------------------------------------------------------------
     // Native paste-time read type selection (native_image_type_from_types)
-    // -----------------------------------------------------------------------
 
     /// The native read requests raster types in the osascript coercion
     /// order — PNG first, TIFF, then JPEG — regardless of advertised order.

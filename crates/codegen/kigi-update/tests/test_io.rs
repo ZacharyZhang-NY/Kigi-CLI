@@ -29,9 +29,7 @@ fn reset() {
     reset_home();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // write_version_cache
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 #[serial]
@@ -130,10 +128,8 @@ async fn write_version_cache_records_recent_timestamp() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // is_version_cache_fresh — exercised via the public re-export. Each scenario
 // writes the file directly so we can control the timestamp.
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Write a `KigiVersion`-shaped JSON file with an arbitrary timestamp.
 fn write_cache_with_timestamp(version: &str, ts: time::OffsetDateTime) {
@@ -217,9 +213,7 @@ async fn version_cache_missing_file_is_not_fresh() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // version.json wire format — the on-disk file is read by every kigi launch.
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 #[serial]
@@ -276,12 +270,10 @@ async fn write_version_cache_idempotent_for_same_version() {
     assert_eq!(v1["version"], "0.1.180");
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // get_installed_kigi_version env override
 //
 // The function honors `KIGI_TEST_VERSION` for testing. We exercise it
 // via the public re-export only — no private items leaked.
-// ─────────────────────────────────────────────────────────────────────────────
 //
 // Note: `get_installed_kigi_version` is not re-exported from `lib.rs`, but
 // it's `pub` from `version` module and accessible via `version::`.

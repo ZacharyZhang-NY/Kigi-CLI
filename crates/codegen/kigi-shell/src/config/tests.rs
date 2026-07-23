@@ -110,12 +110,10 @@ fn with_env_var_opt<T>(name: &str, value: Option<&str>, f: impl FnOnce() -> T) -
     }
     result.unwrap_or_else(|p| std::panic::resume_unwind(p))
 }
-/// Run `f` with KIGI_MEMORY explicitly unset.
 fn without_kigi_memory<T>(f: impl FnOnce() -> T) -> T {
     let _guard = MEMORY_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     with_env_var_opt("KIGI_MEMORY", None, f)
 }
-/// Run `f` with KIGI_MEMORY set to a specific value.
 fn with_kigi_memory<T>(value: &str, f: impl FnOnce() -> T) -> T {
     let _guard = MEMORY_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     with_env_var_opt("KIGI_MEMORY", Some(value), f)
@@ -346,10 +344,8 @@ fn memory_config_defaults_are_correct() {
         assert_eq!(mem.dream.check_interval_secs, None);
     });
 }
-/// `debounce_ms` was a dead field on `MemoryWatcherConfig` that was never
-/// read by any watcher or search path.  Verify that existing TOML config
-/// files that contain `debounce_ms` are still parsed without error
-/// (unknown fields are silently ignored by serde default).
+/// A TOML config carrying the legacy `debounce_ms` key must still parse:
+/// serde silently ignores fields absent from `MemoryWatcherConfig`.
 #[test]
 fn memory_config_watcher_debounce_ms_in_toml_is_silently_ignored() {
     without_kigi_memory(|| {
@@ -961,12 +957,10 @@ max_results = 8
 }
 /// Mutex to serialize tests that touch the KIGI_SUBAGENTS env var.
 static SUBAGENTS_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-/// Run `f` with KIGI_SUBAGENTS explicitly unset.
 fn without_kigi_subagents<T>(f: impl FnOnce() -> T) -> T {
     let _guard = SUBAGENTS_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     with_env_var_opt("KIGI_SUBAGENTS", None, f)
 }
-/// Run `f` with KIGI_SUBAGENTS set to a specific value.
 fn with_kigi_subagents<T>(value: &str, f: impl FnOnce() -> T) -> T {
     let _guard = SUBAGENTS_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     with_env_var_opt("KIGI_SUBAGENTS", Some(value), f)

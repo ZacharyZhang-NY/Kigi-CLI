@@ -822,8 +822,6 @@ mod tests {
         assert_eq!(prewrap_end_rows(&out.lines), vec![1, 3, 4]);
     }
 
-    // -- theme mapping + cache filename --------------------------------------
-
     #[test]
     fn theme_is_dark_maps_kigiday_to_light_only() {
         assert!(

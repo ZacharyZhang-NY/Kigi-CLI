@@ -7,32 +7,23 @@ use crate::config::HookSpec;
 use crate::event::HookEventEnvelope;
 use crate::result::{HookDecision, HttpInfo};
 
-/// Context passed to any hook runner for environment setup.
 pub struct RunContext<'a> {
     pub session_id: &'a str,
     pub workspace_root: &'a str,
 }
 
-/// Result of running a single hook (any handler type).
 #[derive(Debug)]
 pub enum HookRunnerResult {
-    /// Hook ran and produced a decision (for blocking hooks).
     Decision(HookDecision),
-    /// Hook ran successfully (for non-blocking hooks).
     Success,
-    /// Hook failed — caller should fail-open.
+    /// Callers must fail open on this variant: a broken hook never blocks the
+    /// session.
     Failed(String),
 }
 
-/// Bundle returned by each runner: the result, wall-clock duration, and
-/// optional HTTP metadata for enriched scrollback logging.
+/// Result, wall-clock duration, and HTTP metadata for scrollback enrichment.
 pub type HookRunOutput = (HookRunnerResult, Duration, Option<HttpInfo>);
 
-/// Run a hook using the appropriate handler for its type.
-///
-/// Dispatches to `command::run_command_hook()` or `http::run_http_hook()`
-/// based on `spec.handler_type`. Returns the result, elapsed duration, and
-/// optional HTTP metadata for scrollback enrichment.
 pub async fn run_hook(
     spec: &HookSpec,
     envelope: &HookEventEnvelope,

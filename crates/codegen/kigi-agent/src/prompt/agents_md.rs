@@ -239,7 +239,7 @@ mod tests {
         git2::Repository::init(path).unwrap();
     }
 
-    // ── find_agent_files unit tests ─────────────────────────────────
+    // find_agent_files unit tests
 
     #[test]
     fn find_agent_files_finds_agents_md() {
@@ -320,7 +320,7 @@ mod tests {
         assert!(files[1].to_string_lossy().contains("style.md"));
     }
 
-    // ── format_agents_md_section tests ──────────────────────────────
+    // format_agents_md_section tests
 
     #[test]
     fn format_agents_md_section_empty_returns_none() {
@@ -370,7 +370,7 @@ mod tests {
         );
     }
 
-    // ── Feature 2: Workspace user AGENTS.md via read_agents_config ───
+    // Feature 2: Workspace user AGENTS.md via read_agents_config
 
     #[tokio::test]
     async fn read_agents_config_includes_workspace_user_agents_md() {
@@ -537,7 +537,7 @@ mod tests {
         assert!(!section.contains("globs:"));
     }
 
-    // ── .claude/CLAUDE.md integration tests ─────────────────────────
+    // .claude/CLAUDE.md integration tests
 
     #[tokio::test]
     async fn read_agents_config_discovers_claude_subdir_claude_md() {

@@ -1,8 +1,7 @@
 //! Strongly-typed notification metadata.
 //!
-//! Parses the `_meta` JSON from `SessionNotification` into a struct with
-//! typed fields.  All fields are `Option` — gracefully degrades when
-//! kigi-shell hasn't been updated or meta is absent.
+//! Parses the `_meta` JSON from `SessionNotification` into typed fields that
+//! gracefully degrade when kigi-shell hasn't been updated or meta is absent.
 
 use serde::{Deserialize, Serialize};
 

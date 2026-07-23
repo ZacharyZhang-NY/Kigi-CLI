@@ -1,15 +1,12 @@
-//! Bazel runfiles helpers for locating test data.
+//! Bazel runfiles helpers for test data.
 //!
-//! Under `bazel test`, source files and test data are accessed via the
-//! *runfiles* tree.  Under `cargo test`, `CARGO_MANIFEST_DIR` provides
-//! the crate root.  The [`crate_root!`] macro abstracts over both.
+//! Under `bazel test`, data lives in the runfiles tree; under `cargo test`,
+//! `CARGO_MANIFEST_DIR` is the crate root. [`crate_root!`] covers both.
 
 use std::path::PathBuf;
 
-/// Try to resolve a runfiles path to an absolute directory.
-///
-/// Returns `Some(path)` when running under Bazel (with the `bazel` feature
-/// enabled) and the runfiles entry exists, `None` otherwise.
+/// Resolve a runfiles path to an absolute directory when the `bazel` feature
+/// is on and the entry exists; otherwise `None`.
 pub fn try_resolve_runfiles(_path: &str) -> Option<PathBuf> {
     #[cfg(feature = "bazel")]
     {
@@ -22,11 +19,8 @@ pub fn try_resolve_runfiles(_path: &str) -> Option<PathBuf> {
     }
 }
 
-/// Resolve the crate root directory, working under both `bazel test` and
-/// `cargo test`.
-///
-/// Under Bazel the path is resolved via runfiles; under Cargo it falls back
-/// to `CARGO_MANIFEST_DIR`.
+/// Crate root under both `bazel test` (runfiles) and `cargo test`
+/// (`CARGO_MANIFEST_DIR`).
 ///
 /// # Example
 ///

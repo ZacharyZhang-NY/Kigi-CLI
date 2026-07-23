@@ -98,7 +98,8 @@ async fn scroll_up_from_follow_bottom_then_back_down() -> Result<()> {
         }
     }
     // Wheel over mid-screen scrollback (1-indexed SGR coords).
-    harness.inject_keys(&sgr_scroll(64, 15, 40, 50))?; // 64 = wheel up
+    // 64 = wheel up
+    harness.inject_keys(&sgr_scroll(64, 15, 40, 50))?;
     harness.update(Duration::from_millis(200));
     harness.update(Duration::from_millis(300));
     let mid = harness.screen_contents();
@@ -126,7 +127,8 @@ async fn scroll_up_from_follow_bottom_then_back_down() -> Result<()> {
             bail!("pager exited while PageDown scrolling");
         }
     }
-    harness.inject_keys(&sgr_scroll(65, 15, 40, 50))?; // 65 = wheel down
+    // 65 = wheel down
+    harness.inject_keys(&sgr_scroll(65, 15, 40, 50))?;
     harness.update(Duration::from_millis(200));
     harness.update(Duration::from_millis(400));
     let back_bottom = harness.screen_contents();

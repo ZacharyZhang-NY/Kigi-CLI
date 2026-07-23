@@ -114,7 +114,7 @@ impl LanguageRegistry {
     /// Compute a hash of all tree-sitter queries across all languages.
     ///
     /// This is used to detect when queries change, which should trigger
-    /// a rebuild of the index even if file contents haven't changed.
+    /// a rebuild of the index even if file contents are `unchanged`.
     ///
     /// The hash is computed by:
     /// 1. Sorting languages by their primary ID for deterministic ordering

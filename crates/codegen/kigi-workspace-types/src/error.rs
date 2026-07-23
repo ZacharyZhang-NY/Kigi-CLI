@@ -245,7 +245,6 @@ pub enum IoKind {
     ResourceBusy,
     /// Executable file is busy.
     ExecutableFileBusy,
-    /// Deadlock.
     Deadlock,
     /// Crosses devices.
     CrossesDevices,
@@ -255,11 +254,9 @@ pub enum IoKind {
     InvalidFilename,
     /// Argument list too long.
     ArgumentListTooLong,
-    /// Interrupted.
     Interrupted,
     /// Unexpected end of file.
     UnexpectedEof,
-    /// Unsupported.
     Unsupported,
     /// Out of memory.
     OutOfMemory,

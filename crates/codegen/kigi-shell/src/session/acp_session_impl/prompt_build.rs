@@ -3,16 +3,6 @@
 //! payload preparation.
 #![allow(clippy::items_after_test_module)]
 use super::*;
-/// Partition the AGENTS.md / Claude.md / `.kigi/rules/*.md` files returned
-/// by `read_agents_config_with_paths` into "workspace" (cwd / repo root /
-/// extra workspace user dir) and "user" (`~/.kigi/`, `~/.claude/`,
-/// `~/.kigi/bundled/`) buckets, mirroring the split between
-/// `<always_applied_workspace_rules>` and `<user_rules>`.
-/// Normalize a free-form name (e.g. an MCP server identifier) into a
-/// single safe filesystem segment.
-///
-/// Replaces anything outside `[A-Za-z0-9._-]` with `_` so the result is a
-/// portable directory name on macOS/Linux.
 /// Whether `url` is an `http://` or `https://` URL — i.e. a remote URL the
 /// upstream API can fetch directly. `file://` and other local schemes are
 /// rejected by the API and must be inlined as a `data:` URL instead.
@@ -25,10 +15,6 @@ pub(super) fn is_remote_image_url(url: &str) -> bool {
 /// `file://` and other local schemes return 400. Inline bytes win when
 /// present (the canonical payload); `uri` is forwarded directly only
 /// when it is a remote URL with no inline bytes available.
-///
-/// Extracted so production and the regression tests assert against the
-/// same selector — a future change to the production rule cannot drift
-/// past the tests.
 pub(super) fn pick_user_image_url(image: &agent_client_protocol::ImageContent) -> String {
     if let Some(uri) = image.uri.as_deref()
         && image.data.is_empty()
@@ -39,6 +25,11 @@ pub(super) fn pick_user_image_url(image: &agent_client_protocol::ImageContent) -
         format!("data:{};base64,{}", image.mime_type, image.data)
     }
 }
+/// Partition the AGENTS.md / Claude.md / `.kigi/rules/*.md` files returned
+/// by `read_agents_config_with_paths` into "workspace" (cwd / repo root /
+/// extra workspace user dir) and "user" (`~/.kigi/`, `~/.claude/`,
+/// `~/.kigi/bundled/`) buckets, mirroring the split between
+/// `<always_applied_workspace_rules>` and `<user_rules>`.
 fn partition_rules_by_scope(
     files: Vec<kigi_agent::prompt::agents_md::AgentConfigFile>,
 ) -> (
@@ -190,10 +181,10 @@ const LARGE_QUERY_BUDGET_PERCENT: usize = 80;
 const BOUNDED_TAIL_BUDGET: usize = 4_000;
 /// Bytes reserved for skill instructions (own budget, not crowded out by the query).
 pub(super) const SKILL_INLINE_BUDGET: usize = 4_000;
-/// Marker between the head and tail of an elided block. Single source of truth.
+/// Marker between the head and tail of an elided block.
 pub(super) const ELISION_MARKER: &str =
     "\n\n…[middle truncated — full text in the offloaded file]…\n\n";
-/// Stable marker opening the offload notice. Single source of truth (for a future strip-on-re-read).
+/// Stable marker opening the offload notice.
 pub(super) const OFFLOAD_NOTICE_MARKER: &str = "[Full request offloaded to file]";
 /// In-band notice that REPLACES the offload notice when the full request could
 /// not be persisted to the session file (write error or task-join failure).
@@ -428,9 +419,9 @@ impl SessionActor {
         };
         ctx.render(&bridge).await
     }
-    /// Gather VCS root + status with the same 2s timeout used by the legacy
-    /// `construct_user_message` path. Returns `(root, status)` -- either may
-    /// be `None` if VCS is absent or the lookup timed out.
+    /// Gather VCS root + status, bounded by a 5s timeout. Returns
+    /// `(root, status)` -- either may be `None` if VCS is absent or the
+    /// lookup timed out.
     async fn gather_vcs_for_prefix(
         &self,
         cwd: &std::path::Path,
@@ -459,7 +450,8 @@ impl SessionActor {
         };
         (root, status)
     }
-    /// `None` twin: descriptor materialization is unavailable in this build.
+    /// Stub: per-server descriptor materialization is unavailable in this
+    /// build, so there is no descriptors root.
     fn workspace_mcps_root(_cwd: &std::path::Path) -> Option<std::path::PathBuf> {
         None
     }
@@ -530,7 +522,6 @@ impl SessionActor {
     /// when it fits, else bounded head+tail (trailing question survives).
     ///
     /// Returns `(assembled_message, Some(local_path))` when truncated, or `(assembled, None)`.
-    /// Includes skill information in the assembled prompt.
     pub(super) async fn maybe_truncate_large_prompt_with_skills(
         &self,
         context: String,
@@ -582,7 +573,6 @@ impl SessionActor {
         }
     }
     /// Add a followup message from the permission panel as a user turn in the conversation.
-    /// This sends the message to the scrollback and adds it to the conversation context.
     pub(super) async fn add_followup_message_as_user_turn(&self, message: &str) {
         self.inject_synthetic_user_message(
             message,

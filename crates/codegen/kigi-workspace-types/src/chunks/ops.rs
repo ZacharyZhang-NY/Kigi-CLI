@@ -22,9 +22,7 @@ use crate::types::{
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum OpsChunk {
-    // ------------------------------------------------------------------
     // Unary VCS responses
-    // ------------------------------------------------------------------
     /// Response to `WorkspaceOpsRequest::GitStatus`.
     GitStatus(GitStatus),
     /// Response to `WorkspaceOpsRequest::GitDiff`.
@@ -35,9 +33,7 @@ pub enum OpsChunk {
     /// workspace is not a git repo.
     GitMetadata(Option<GitMetadata>),
 
-    // ------------------------------------------------------------------
     // Unary discovery / read responses
-    // ------------------------------------------------------------------
     /// Response to `WorkspaceOpsRequest::ListHunks`.
     Hunks(Vec<Hunk>),
     /// Response to `WorkspaceOpsRequest::DiscoverSkills`.
@@ -67,9 +63,7 @@ pub enum OpsChunk {
     /// `RefreshPlugins` accepted, ...).
     Ack,
 
-    // ------------------------------------------------------------------
     // Streaming responses
-    // ------------------------------------------------------------------
     /// One match for `WorkspaceOpsRequest::FuzzySearch` (zero or more).
     FuzzyMatch(FuzzyMatch),
     /// One hit for `WorkspaceOpsRequest::Ripgrep` (zero or more before

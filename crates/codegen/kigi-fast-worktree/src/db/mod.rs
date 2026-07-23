@@ -138,7 +138,7 @@ impl WorktreeDb {
             .with_context(|| format!("failed to open worktree DB: {}", path.display()))?;
         let db = Self { conn };
         db.set_journal_mode(journal_mode)?;
-        // Normal statement timeout, now that the conversion budget is done.
+        // Normal statement timeout, because the conversion budget is done.
         db.conn
             .busy_timeout(std::time::Duration::from_millis(5000))?;
         db.init_schema()?;

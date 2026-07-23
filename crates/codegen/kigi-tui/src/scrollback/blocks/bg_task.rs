@@ -36,7 +36,6 @@ pub enum BgTaskKind {
 /// Enter / Ctrl-F opens block viewer with stdout from the central store.
 #[derive(Debug, Clone)]
 pub struct BgTaskBlock {
-    /// The command that was run.
     pub command: String,
     /// Background task ID (for looking up stdout in central store).
     pub task_id: String,
@@ -47,7 +46,6 @@ pub struct BgTaskBlock {
 }
 
 impl BgTaskBlock {
-    /// Create a "Task started" block.
     pub fn started(command: impl Into<String>, task_id: impl Into<String>) -> Self {
         Self {
             command: command.into(),
@@ -57,7 +55,6 @@ impl BgTaskBlock {
         }
     }
 
-    /// Create a "Task completed" block.
     pub fn completed(
         command: impl Into<String>,
         task_id: impl Into<String>,
@@ -71,7 +68,6 @@ impl BgTaskBlock {
         }
     }
 
-    /// Create a "Task failed" block.
     pub fn failed(
         command: impl Into<String>,
         task_id: impl Into<String>,

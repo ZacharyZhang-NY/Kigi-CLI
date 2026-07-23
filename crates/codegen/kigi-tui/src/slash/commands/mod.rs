@@ -135,7 +135,6 @@ mod tests {
     use crate::slash::command::{CommandExecCtx, CommandResult};
     use crate::slash::registry::CommandRegistry;
     use agent_client_protocol as acp;
-    /// Build a ModelState with two models for testing.
     fn sample_models() -> ModelState {
         let mut models = ModelState::default();
         let id_fast = acp::ModelId::new(Arc::from("kigi-4.5"));

@@ -28,7 +28,6 @@ use super::SearchShadowConfig;
 #[cfg(unix)]
 use super::shell_state;
 
-/// Result of spawning a shell command (persistent or plain).
 struct SpawnResult {
     child: tokio::process::Child,
     process_group: crate::util::ProcessGroup,
@@ -41,17 +40,15 @@ const DEFAULT_NOTIFICATION_INTERVAL_MS: u64 = 100;
 const COMMAND_CHANNEL_SIZE: usize = 32;
 /// How long to keep completed background tasks in memory before eviction.
 /// The output file on disk persists for the session lifetime.
-const COMPLETED_TASK_TTL: Duration = Duration::from_secs(300); // 5 minutes
-/// SIGTERM → SIGKILL grace period. Uses a 1-second grace.
+const COMPLETED_TASK_TTL: Duration = Duration::from_secs(300);
+/// SIGTERM → SIGKILL grace period.
 const SIGTERM_GRACE: Duration = Duration::from_secs(1);
-/// Maximum lifetime for a background task. After this, the actor
-/// will gracefully kill it. Set to 10 hours to support long
-/// background monitor and bash runs.
+/// Maximum lifetime for a background task; the actor kills it once exceeded.
+/// 10 hours, so long background monitor and bash runs survive.
 const BACKGROUND_MAX_RUNTIME: Duration = Duration::from_secs(36_000);
 /// Max time an *auto-backgroundable* foreground command blocks the turn before
 /// it's moved to the background (kept running, never killed), independent of its
-/// requested `timeout`. A short second timer for the auto-background budget.
-/// Env override: `KIGI_FOREGROUND_BLOCK_BUDGET_MS`.
+/// requested `timeout`. Env override: `KIGI_FOREGROUND_BLOCK_BUDGET_MS`.
 const FOREGROUND_BLOCK_BUDGET: Duration = Duration::from_secs(15);
 
 fn foreground_block_budget_from_env() -> Duration {
@@ -66,7 +63,7 @@ fn foreground_block_budget_from_env() -> Duration {
 /// size analogue of [`BACKGROUND_MAX_RUNTIME`], stopping an unbounded writer
 /// (`yes`, a runaway log) from filling the disk. Env override:
 /// `KIGI_MAX_OUTPUT_FILE_BYTES`.
-const MAX_OUTPUT_FILE_BYTES: u64 = 5 * 1024 * 1024 * 1024; // 5 GiB
+const MAX_OUTPUT_FILE_BYTES: u64 = 5 * 1024 * 1024 * 1024;
 
 fn output_file_cap_from_env() -> u64 {
     std::env::var("KIGI_MAX_OUTPUT_FILE_BYTES")
@@ -79,24 +76,21 @@ fn output_file_cap_from_env() -> u64 {
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 /// Max bytes retained in the output file after process exit. Truncated
 /// so `to_task_snapshot` / `read_file` don't materialize huge strings.
-const MAX_RETAINED_OUTPUT_FILE_BYTES: u64 = 64 * 1024 * 1024; // 64 MiB
-/// Maximum number of completed-task tombstones to keep. When exceeded,
-/// the oldest entries are evicted. Each tombstone is lightweight (metadata
-/// only, no output), so 100 entries is ~10 KB.
+const MAX_RETAINED_OUTPUT_FILE_BYTES: u64 = 64 * 1024 * 1024;
+/// Maximum number of completed-task tombstones to keep; the oldest entries are
+/// evicted past this. Each tombstone is metadata only (no output), ~10 KB total.
 const MAX_COMPLETED_TASK_SNAPSHOTS: usize = 100;
 
 fn notification_interval() -> Duration {
     Duration::from_millis(DEFAULT_NOTIFICATION_INTERVAL_MS)
 }
 
-/// Exit status of a terminal process
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ExitStatus {
     pub exit_code: Option<i32>,
     pub signal: Option<String>,
 }
 
-/// Commands that can be sent to the LocalTerminalActor
 enum TerminalCommand {
     /// Foreground: spawn process, block until exit or timeout, reply with result.
     Run {
@@ -117,7 +111,6 @@ enum TerminalCommand {
         reply: oneshot::Sender<Option<TaskSnapshot>>,
     },
 
-    /// Kill a background task.
     Kill {
         task_id: String,
         reply: oneshot::Sender<KillOutcome>,
@@ -126,26 +119,22 @@ enum TerminalCommand {
     /// Kill foregrounded processes. Called on turn cancellation.
     KillForegroundCommands,
 
-    /// Move a foreground command to background by tool_call_id.
     /// Unblocks the completion waiter with signal="backgrounded".
     BackgroundForeground {
         tool_call_id: String,
         reply: oneshot::Sender<bool>,
     },
 
-    /// Wait for a background task to finish, with optional timeout.
     WaitForCompletion {
         task_id: String,
         timeout: Option<Duration>,
         reply: oneshot::Sender<Option<TaskSnapshot>>,
     },
 
-    /// List all known background tasks.
     ListTasks {
         reply: oneshot::Sender<Vec<TaskSnapshot>>,
     },
 
-    /// Query the persistent shell's current working directory.
     GetShellCwd {
         reply: oneshot::Sender<Option<PathBuf>>,
     },
@@ -154,12 +143,11 @@ enum TerminalCommand {
         cwd: PathBuf,
     },
 
-    /// Kill all running foreground processes owned by a specific session.
     KillForegroundCommandsByOwner {
         owner_session_id: String,
     },
 
-    /// Kill all running background tasks owned by a specific session.
+    /// Kills only the session's *background* tasks.
     KillTasksByOwner {
         owner_session_id: String,
         reply: oneshot::Sender<()>,
@@ -179,10 +167,6 @@ enum TerminalCommand {
         reply: oneshot::Sender<()>,
     },
 }
-
-// ============================================================================
-// Per-process state (for each running command)
-// ============================================================================
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BackgroundStatus {
@@ -215,9 +199,7 @@ impl BackgroundReason {
     }
 }
 
-/// State for a single running process
 struct ProcessState {
-    /// The child process
     child: tokio::process::Child,
     /// Process-tree teardown handle, shared (`Arc`) with the process-global
     /// `ProcessScope` so the TUI exit paths can reap it if this actor never runs
@@ -239,44 +221,35 @@ struct ProcessState {
     /// Once the total char count exceeds the limit, the first half of the
     /// budget is frozen here and only the tail is kept in `output_buffer`.
     front_buffer: Option<Vec<u8>>,
-    /// Whether output was truncated
     truncated: bool,
-    /// Total bytes written to file (before truncation)
+    /// Total bytes written to file, before any truncation.
     total_bytes: usize,
-    /// Exit status once process completes
     exit_status: Option<ExitStatus>,
-    /// Whether process was backgrounded and how
     bg_status: BackgroundStatus,
-    /// Waiters for this process to complete (foreground only)
+    /// Foreground only.
     completion_waiters: Vec<oneshot::Sender<Result<TerminalRunResult, ComputerError>>>,
-    /// Configuration
     output_byte_limit: usize,
     timeout: Duration,
     /// When auto_bg_on_timeout: max FG block before auto-bg (per-request or backend default).
     foreground_block_budget: Duration,
     start_time: Instant,
-    /// Path to output file (always written to)
+    /// Every byte of output lands here, even for foreground commands.
     output_file: PathBuf,
-    /// Open file handle for incremental writes
     file_handle: Option<File>,
-    /// The command that was executed (may be isolation-wrapped)
+    /// The command as executed (may be isolation-wrapped).
     command: String,
-    /// Original user command before isolation wrapping (for display)
+    /// Original user command before isolation wrapping, for display.
     display_command: Option<String>,
-    /// Working directory where command was run
     cwd: String,
-    /// Wall-clock start time (for TaskSnapshot)
+    /// Wall-clock counterpart to `start_time`, for `TaskSnapshot`.
     start_wall_time: std::time::SystemTime,
-    /// When the process completed (for TTL-based eviction of background tasks)
+    /// Drives TTL-based eviction of background tasks.
     completed_at: Option<Instant>,
-    /// Wall-clock end time (for TaskSnapshot duration calculation)
+    /// Wall-clock counterpart to `completed_at`, for `TaskSnapshot` durations.
     end_wall_time: Option<std::time::SystemTime>,
 
-    /// Notification handle for streaming output chunks.
     notification_handle: ToolNotificationHandle,
-    /// Tool call ID for correlating notifications with the tool invocation.
     tool_call_id: String,
-    /// Task kind: bash or monitor.
     kind: crate::computer::types::TaskKind,
     /// Monotonic `total_bytes` at the time of the last chunk notification.
     /// Used to detect "new output since last tick" — only send a chunk
@@ -358,7 +331,6 @@ impl ProcessState {
         }
         let half = self.output_byte_limit / 2;
 
-        // Capture the front half once — on the first truncation.
         if self.front_buffer.is_none() {
             let front_end = s
                 .char_indices()
@@ -368,7 +340,6 @@ impl ProcessState {
             self.front_buffer = Some(s[..front_end].as_bytes().to_vec());
         }
 
-        // Keep only the last `half` chars in the tail buffer.
         let tail_start_char = char_count.saturating_sub(half);
         let tail_start_byte = s
             .char_indices()
@@ -395,8 +366,6 @@ impl ProcessState {
         self.start_time.elapsed() > self.timeout
     }
 
-    /// Build a snapshot of this process's current state.
-    /// Uses async I/O to read output from disk for completed background tasks.
     async fn to_task_snapshot(&self, task_id: &str) -> TaskSnapshot {
         // For completed background tasks, the in-memory buffer is cleared to free
         // memory. Fall back to reading from the output file (non-blocking).
@@ -423,8 +392,6 @@ impl ProcessState {
             cwd: self.cwd.clone(),
             start_time: self.start_wall_time,
             end_time: if self.exit_status.is_some() {
-                // Use the recorded wall-clock end time if available,
-                // otherwise fall back to now (process just completed this tick).
                 Some(
                     self.end_wall_time
                         .unwrap_or_else(std::time::SystemTime::now),
@@ -446,10 +413,6 @@ impl ProcessState {
     }
 }
 
-// ============================================================================
-// Actor
-// ============================================================================
-
 /// Waiter registered by WaitForCompletion commands.
 /// Instead of blocking the actor loop, we store the reply sender and deadline,
 /// then check on each poll tick whether to fire it.
@@ -458,12 +421,9 @@ struct CompletionWaiter {
     deadline: Instant,
 }
 
-/// The actor that owns all terminal state and processes commands
 struct LocalTerminalActor {
-    /// Command receiver
     cmd_rx: mpsc::Receiver<TerminalCommand>,
 
-    /// Cancellation token for graceful shutdown
     cancel_token: CancellationToken,
 
     /// Reaper for spawned child trees. Each spawned process enrolls its
@@ -473,10 +433,10 @@ struct LocalTerminalActor {
     /// their own to avoid latching the global.
     scope: crate::util::ProcessScope,
 
-    /// Active processes: task_id -> ProcessState
+    /// task_id -> live process state.
     processes: HashMap<String, ProcessState>,
 
-    /// task_id -> list of waiters registered by WaitForCompletion commands
+    /// task_id -> waiters registered by WaitForCompletion commands.
     completion_waiters: HashMap<String, Vec<CompletionWaiter>>,
 
     /// Lightweight snapshots of completed background tasks that were evicted
@@ -502,10 +462,9 @@ struct LocalTerminalActor {
     /// are moved into this cgroup so their memory is bounded.
     _cgroup_guard: CgroupGuard,
 
-    /// Memory-high monitor — polls for memory pressure events from the cgroup.
+    /// Polls for memory pressure events from the cgroup.
     memory_monitor: MemoryMonitor,
 
-    /// Whether persistent shell state is enabled.
     persistent_shell: bool,
 
     /// Per-backend `find`→`bfs` / `grep`→`ugrep` shadow enable state, resolved
@@ -630,22 +589,17 @@ impl LocalTerminalActor {
         self.ensure_persistent_shell_initialized(cwd).await;
 
         let shell_state = self.shell_state.as_ref().unwrap();
-        // When the persistent shell already tracks a
-        // model-set cwd (the model ran a `cd`), honor it unconditionally.
-        // The bash tool always populates `request.working_directory` with
-        // the workspace's resolved Cwd, even when no per-call override is
-        // intended; treating that as "explicit override and reset" was the
-        // bug that made `cd` not persist across consecutive Shell calls.
+        // The shell's own tracked cwd always wins, so there is never an override.
+        // The bash tool populates `request.working_directory` with the workspace's
+        // resolved Cwd even when no per-call override is intended; honoring that as
+        // an explicit override resets the model's `cd` on every Shell call.
         //
-        // Per-call working_directory overrides arrive through the
-        // shell adapter, which prefixes a subshell `(cd <wd> &&
-        // …)` to the command string — that mechanism is local to a single
-        // call and does NOT mutate the parent shell's `$PWD`, so we never
-        // need to surface it as a `cwd_override` here.
+        // Genuine per-call overrides arrive through the shell adapter, which
+        // prefixes a subshell `(cd <wd> && …)` to the command string — local to one
+        // call, and it does not mutate the parent shell's `$PWD`.
         let cwd_override: Option<&std::path::Path> = None;
-        // Silence the unused-binding lint on the inbound `cwd` parameter:
-        // it's still threaded into `spawn_command` (the non-persistent
-        // fallback path) below.
+        // `cwd` is unused on this path; the non-persistent path in `spawn_command`
+        // still needs it, so it stays in the signature.
         let _ = cwd;
         let prep = shell_state
             .prepare_command(command, cwd_override, self.search_shadows)
@@ -659,9 +613,8 @@ impl LocalTerminalActor {
             .stderr(Stdio::piped())
             .kill_on_drop(true);
 
-        // Apply SHELL_ENV_OVERRIDES (TERM=dumb, NO_COLOR, KIGI_AGENT=1, etc.)
-        // + request env + pager env. Agent marker is re-applied last so request
-        // env cannot clear it.
+        // Overrides (TERM=dumb, NO_COLOR, KIGI_AGENT=1, …), then request env, then
+        // pager env. The agent marker is applied last so request env cannot clear it.
         cmd.envs(shell_state::shell_env_overrides());
 
         for (key, value) in env {
@@ -697,7 +650,7 @@ impl LocalTerminalActor {
             tracing::debug!("Failed to attach persistent-shell child to ProcessGroup: {e}");
         }
 
-        // Write prior snapshot to fd 3 (state input pipe) in a background task.
+        // fd 3 is the state input pipe.
         let snapshot = shell_state.snapshot.clone();
         tokio::spawn(async move {
             if let Err(e) =
@@ -707,7 +660,7 @@ impl LocalTerminalActor {
             }
         });
 
-        // Read new dump from fd 4 (state output pipe) in a background task.
+        // fd 4 is the state output pipe.
         let dump_handle =
             tokio::spawn(
                 async move { shell_state::read_dump_from_pipe(prep.state_out_read).await },
@@ -720,7 +673,6 @@ impl LocalTerminalActor {
         })
     }
 
-    /// Main actor loop
     async fn run(mut self) {
         let mut ticker = tokio::time::interval(notification_interval());
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -732,25 +684,21 @@ impl LocalTerminalActor {
                 // when poll_all_processes was slow (e.g. drain timeouts).
                 biased;
 
-                // Check for cancellation
                 _ = self.cancel_token.cancelled() => {
                     self.shutdown_all().await;
                     break;
                 }
 
-                // Handle incoming commands
                 cmd = self.cmd_rx.recv() => {
                     match cmd {
                         Some(cmd) => self.handle_command(cmd).await,
                         None => {
-                            // Channel closed, all senders dropped
                             self.shutdown_all().await;
                             break;
                         }
                     }
                 }
 
-                // Periodic maintenance: check timeouts, read output, etc.
                 // Gated on live processes: the actor exists for the whole
                 // session lifetime, and an idle session must not wake 10x/sec
                 // to poll an empty map (one actor per open session/tab adds
@@ -875,8 +823,7 @@ impl LocalTerminalActor {
         request: TerminalRunRequest,
         reply: oneshot::Sender<Result<TerminalRunResult, ComputerError>>,
     ) {
-        // Generate an internal ID — foreground callers never see this; the reply
-        // goes back on the oneshot channel.
+        // Foreground callers never see this id; the reply goes back on the oneshot.
         let internal_id = uuid::Uuid::now_v7().to_string();
 
         let SpawnResult {
@@ -901,7 +848,6 @@ impl LocalTerminalActor {
             tracing::debug!("Failed to add pid {pid} to cgroup (non-fatal): {e}");
         }
 
-        // Open output file for writing (create parent dirs if needed)
         let file_handle = match open_output_file(&request.output_file).await {
             Ok(file) => Some(file),
             Err(e) => {
@@ -982,10 +928,10 @@ impl LocalTerminalActor {
         // exit watcher's snapshot carries the flag.
         process.explicitly_killed = true;
 
-        // Kill the process and finalize its state in one shot.
         let outcome = kill_and_finalize(process).await;
 
-        // Resolve completion waiters immediately, so callers blocked on wait_for_completion() unblock right away.
+        // Resolve waiters here so callers blocked on wait_for_completion() unblock
+        // without waiting for the next poll tick.
         if let Some(waiters) = self.completion_waiters.remove(terminal_id) {
             let snapshot = match self.processes.get(terminal_id) {
                 Some(p) => Some(p.to_task_snapshot(terminal_id).await),
@@ -999,8 +945,6 @@ impl LocalTerminalActor {
         outcome
     }
 
-    /// Handle a background execution request.
-    /// Spawns the process, registers it under a generated task_id, and replies immediately.
     async fn handle_run_background(
         &mut self,
         request: TerminalRunRequest,
@@ -1029,7 +973,6 @@ impl LocalTerminalActor {
             tracing::debug!("Failed to add pid {pid} to cgroup (non-fatal): {e}");
         }
 
-        // Open output file for writing (create parent dirs if needed)
         let file_handle = match open_output_file(&request.output_file).await {
             Ok(file) => Some(file),
             Err(e) => {
@@ -1042,7 +985,7 @@ impl LocalTerminalActor {
             }
         };
 
-        // Generate task_id — the actor owns the identity
+        // The actor owns task identity; callers only ever receive it.
         let task_id = uuid::Uuid::now_v7().to_string();
 
         let process_state = ProcessState {
@@ -1056,7 +999,7 @@ impl LocalTerminalActor {
             bg_status: BackgroundStatus::Backgrounded {
                 reason: BackgroundReason::Explicit,
             },
-            completion_waiters: vec![], // no foreground waiter
+            completion_waiters: vec![],
             output_byte_limit: request.output_byte_limit,
             timeout: request.timeout,
             // Unused for already-backgrounded tasks; keep a defined value.
@@ -1084,8 +1027,8 @@ impl LocalTerminalActor {
             // Detach the dump reader so its result is discarded (the task
             // continues independently until EOF or DUMP_READ_TIMEOUT).
             state_dump_handle: if self.persistent_shell {
-                // Still spawn with the state wrapping (so bg commands inherit
-                // the session env), but discard the dump reader.
+                // The spawn still carries the state wrapping so bg commands
+                // inherit the session env; only the dump reader is discarded.
                 drop(state_dump_handle);
                 None
             } else {
@@ -1094,11 +1037,9 @@ impl LocalTerminalActor {
             owner_session_id: request.owner_session_id.clone(),
         };
 
-        // Store under task_id — this is the key that get_task/kill_task will use
         let pid = process_state.child.id();
         self.processes.insert(task_id.clone(), process_state);
 
-        // Reply immediately
         let _ = reply.send(Ok(BackgroundHandle {
             task_id,
             output_file: request.output_file,
@@ -1115,14 +1056,11 @@ impl LocalTerminalActor {
         reply: oneshot::Sender<Option<TaskSnapshot>>,
     ) {
         let Some(process) = self.processes.get_mut(&task_id) else {
-            // Check completed snapshots (task already evicted from processes).
-            // Mark `block_waited=true` in-place so any downstream consumer
-            // (e.g. list_tasks, get_task) reflects that the model awaited
-            // the result. Without this, a late-arriving wait would not
-            // imprint the flag on the tombstone, leaving auto-wake noise
-            // suppressed only on this one reply. Imprint only when the
-            // waiter actually receives the reply — a dropped receiver
-            // (cancelled turn) means the model never saw the result.
+            // The task is already evicted from `processes`, so serve the tombstone
+            // and imprint `block_waited=true` on it in place, so other readers
+            // (list_tasks, get_task) also see that the model awaited the result.
+            // Imprint only when the waiter actually receives the reply — a dropped
+            // receiver (cancelled turn) means the model never saw it.
             let snapshot = self.completed_task_snapshots.get(&task_id).map(|s| {
                 let mut s = s.clone();
                 s.block_waited = true;
@@ -1157,7 +1095,6 @@ impl LocalTerminalActor {
             return;
         }
 
-        // Register as a completion waiter and return control to the actor loop.
         let timeout = timeout.unwrap_or(Duration::from_secs(30));
         self.completion_waiters
             .entry(task_id)
@@ -1166,15 +1103,11 @@ impl LocalTerminalActor {
                 reply,
                 deadline: Instant::now() + timeout,
             });
-
-        // Return immediately — actor loop resumes processing other commands.
     }
 
-    /// Poll all processes for output and completion
     async fn poll_all_processes(&mut self) {
-        // 0a. Check if the memory monitor detected a memory.high breach.
-        //     If so, kill the *newest* running foreground process (kill the
-        //     most recent command first).
+        // 0a. On a memory.high breach, kill the newest running process — the
+        //     most recent command is the likeliest culprit.
         if let Some(event) = self.memory_monitor.try_recv() {
             tracing::warn!(
                 memory_current = event.memory_current,
@@ -1182,7 +1115,6 @@ impl LocalTerminalActor {
                 "Memory high threshold breached — killing newest running process"
             );
 
-            // Find the newest running (non-exited) process by start_time.
             let newest_id = self
                 .processes
                 .iter()
@@ -1333,7 +1265,8 @@ impl LocalTerminalActor {
                 .processes
                 .get(&task_id)
                 .map(|p| p.exit_status.is_some())
-                .unwrap_or(true); // process gone = treat as completed
+                // A process that is gone counts as completed.
+                .unwrap_or(true);
 
             if completed && let Some(waiters) = self.completion_waiters.remove(&task_id) {
                 let snapshot = match self.processes.get(&task_id) {
@@ -1381,7 +1314,6 @@ impl LocalTerminalActor {
                 }
             }
         }
-        // Remove empty waiter lists
         self.completion_waiters.retain(|_, v| !v.is_empty());
 
         // Clear block_waited for tasks where all waiters timed out without
@@ -1395,8 +1327,7 @@ impl LocalTerminalActor {
             }
         }
 
-        // 3. Set completed_at and clear output buffer for completed background tasks
-        // First pass: mark completed and clear buffers, collect IDs for notification
+        // 3. Set completed_at and clear output buffer for completed background tasks.
         let mut newly_completed: Vec<String> = Vec::new();
         for (task_id, process) in self.processes.iter_mut() {
             if process.exit_status.is_some()
@@ -1412,13 +1343,11 @@ impl LocalTerminalActor {
                 newly_completed.push(task_id.clone());
             }
         }
-        // Second pass: send completion notifications (requires async file read).
-        //
         // The `block_waited` gate that suppresses the redundant auto-wake
         // synthetic prompt for awaited tasks lives in
         // `tools/notification_bridge.rs` (the `TaskCompleted` arm checks
         // `task_snapshot.block_waited` before the auto-wake injection
-        // branch — see the comment there). This pass must still fire
+        // branch — see the comment there). This loop must still fire
         // `send_task_complete` unconditionally for newly-completed
         // background tasks so the pager UI, persistence, and
         // `AutoWakeDeliveredIds` bookkeeping all still get the snapshot.
@@ -1437,10 +1366,11 @@ impl LocalTerminalActor {
             .iter()
             .filter(|(_, p)| {
                 if p.exit_status.is_none() {
-                    return false; // still running, keep
+                    return false;
                 }
+                // Foreground processes have already replied to their caller.
                 if !p.bg_status.is_backgrounded() {
-                    return true; // foreground, already replied, evict
+                    return true;
                 }
                 // Backgrounded + completed: evict after TTL
                 matches!(p.completed_at, Some(t) if t.elapsed() >= self.completed_task_ttl)
@@ -1502,16 +1432,13 @@ impl LocalTerminalActor {
         // output once it exits.
         if process.exit_status.is_some() {
             if process.drained {
-                // Already drained — nothing left to do for this process.
                 return;
             }
             match process.child.try_wait() {
                 Ok(None) => {
-                    // Process was told to die but is still running — escalate to SIGKILL
                     send_sigkill_to_group(process);
                 }
                 Ok(Some(_)) => {
-                    // Process finally exited — drain any remaining output
                     drain_remaining_output(process).await;
                     process.flush_and_truncate_output_file().await;
                     process.drained = true;
@@ -1525,20 +1452,13 @@ impl LocalTerminalActor {
             return;
         }
 
-        // ── Non-blocking reads ──────────────────────────────────────────
-        //
-        // Read all *currently available* bytes from stdout and stderr using
-        // non-blocking `poll_read`.  This avoids the old 10 ms timeout-per-
-        // stream approach which cost 20 ms per process even when idle —
-        // with N processes that compounded to N×20 ms per tick, easily
-        // exceeding the 100 ms tick interval and delaying file writes.
-        //
-        // Data from both streams is collected into `new_bytes`, then written
-        // to the output file in a single batch + flush at the end.
+        // Both streams are read with non-blocking `poll_read`, taking only what is
+        // available right now. A timeout-per-stream read costs that timeout per
+        // process on every tick even when idle, which for N processes overruns the
+        // 100 ms tick interval and delays the output-file writes.
 
         let mut new_bytes: Vec<u8> = Vec::new();
 
-        // Read all available stdout (non-blocking)
         let mut stdout_eof = false;
         if let Some(stdout) = process.child.stdout.as_mut() {
             loop {
@@ -1555,12 +1475,11 @@ impl LocalTerminalActor {
                         stdout_eof = true;
                         break;
                     }
-                    None => break, // No data available right now — move on
+                    None => break,
                 }
             }
         }
 
-        // Read all available stderr (non-blocking)
         let mut stderr_eof = false;
         if let Some(stderr) = process.child.stderr.as_mut() {
             loop {
@@ -1577,7 +1496,7 @@ impl LocalTerminalActor {
                         stderr_eof = true;
                         break;
                     }
-                    None => break, // No data available right now — move on
+                    None => break,
                 }
             }
         }
@@ -1596,10 +1515,6 @@ impl LocalTerminalActor {
         // Truncate in-memory buffer if needed (file has full output)
         process.maybe_truncate();
 
-        // Send output chunk notification if there's new output since last tick.
-        // This happens every ~100ms (the actor's tick interval).
-        // If the handle is noop(), send() silently drops — no performance cost.
-        //
         // Keyed off the monotonic `total_bytes` (not `output_buffer.len()`):
         // after `maybe_truncate` freezes the front half and keeps only the
         // shrinking tail, a length-based gate would go false and stay false,
@@ -1639,7 +1554,6 @@ impl LocalTerminalActor {
             return;
         }
 
-        // Check for timeout.
         if process.is_timed_out() && process.exit_status.is_none() {
             if matches!(
                 process.bg_status,
@@ -1651,7 +1565,6 @@ impl LocalTerminalActor {
                 return;
             }
 
-            // Default: kill the process on timeout.
             send_sigterm_to_group(process);
             process.exit_status = Some(ExitStatus {
                 exit_code: None,
@@ -1664,14 +1577,12 @@ impl LocalTerminalActor {
             return;
         }
 
-        // Check if process exited (both streams at EOF or process exited)
         let process_done = stdout_eof && stderr_eof;
         match process.child.try_wait() {
             Ok(Some(status)) => {
-                // Process exited — drain any remaining stdout/stderr that arrived
-                // after the timeout-based reads above. This fixes a race where fast
-                // commands (e.g. `python3 -c "print('x')"`) exit before their pipe
-                // buffers are read, resulting in empty output.
+                // Drain what arrived after the reads above: fast commands (e.g.
+                // `python3 -c "print('x')"`) exit before their pipe buffers are
+                // read, and without this drain their output comes back empty.
                 drain_remaining_output(process).await;
 
                 process.exit_status = Some(extract_exit_status(status));
@@ -1766,9 +1677,8 @@ impl LocalTerminalActor {
             if let Some(process) = self.processes.get_mut(id) {
                 send_sigkill_to_group(process);
 
-                // Wait for the child to actually exit so the kernel reclaims
-                // its memory.  Bounded to 5 s — SIGKILL is unconditional so
-                // this should resolve almost instantly in practice.
+                // Bounded at 5 s; SIGKILL is unconditional so this resolves
+                // almost instantly in practice.
                 let _ =
                     tokio::time::timeout(std::time::Duration::from_secs(5), process.child.wait())
                         .await;
@@ -1795,7 +1705,6 @@ impl LocalTerminalActor {
             }
         }
 
-        // Remove dead foreground entries
         for id in &fg_ids {
             self.processes.remove(id);
         }
@@ -1967,14 +1876,8 @@ impl LocalTerminalActor {
     }
 }
 
-// ============================================================================
-// Handle (public API)
-// ============================================================================
-
-/// Handle to interact with the terminal actor.
-///
-/// This is the public API that implements `TerminalBackend`.
-/// It sends commands to the actor via channels - no mutex locks needed.
+/// Handle to the terminal actor: the public `TerminalBackend` implementation,
+/// which reaches the actor's state only by sending commands over a channel.
 #[derive(Clone)]
 pub struct LocalTerminalBackend {
     cmd_tx: mpsc::Sender<TerminalCommand>,
@@ -1982,37 +1885,28 @@ pub struct LocalTerminalBackend {
 }
 
 impl LocalTerminalBackend {
-    /// Create a new LocalTerminalBackend and spawn the actor task.
-    ///
-    /// The actor runs in a spawned task and processes commands from the channel.
-    /// If `memory_config` is provided, a cgroupv2 memory limit is enforced on
-    /// all spawned commands (Linux only; silently degrades to no-op elsewhere).
+    /// Spawns the actor task that owns all terminal state.
     pub fn new() -> Self {
         Self::new_inner(None, false, false, SearchShadowConfig::default())
     }
 
-    /// Create a new LocalTerminalBackend with persistent shell state.
-    ///
-    /// When enabled, environment variables, working directory, functions, aliases,
-    /// and shell options persist across command invocations. The user's login shell
-    /// (bash or zsh) is detected and its rc files are loaded once on first command.
+    /// Environment variables, working directory, functions, aliases, and shell
+    /// options persist across command invocations. The user's login shell (bash or
+    /// zsh) is detected and its rc files are loaded once on the first command.
     pub fn with_persistent_shell() -> Self {
         Self::new_inner(None, false, true, SearchShadowConfig::default())
     }
 
-    /// Create a new LocalTerminalBackend with cgroup memory limits.
-    ///
     /// See [`CgroupMemoryConfig`] for details on the soft/hard limit model.
     pub fn with_memory_limit(config: CgroupMemoryConfig) -> Self {
         Self::new_inner(Some(config), false, false, SearchShadowConfig::default())
     }
 
-    /// Create a new LocalTerminalBackend with both memory limits and persistent shell.
     pub fn with_memory_limit_and_persistent_shell(config: CgroupMemoryConfig) -> Self {
         Self::new_inner(Some(config), false, true, SearchShadowConfig::default())
     }
 
-    /// Create a new LocalTerminalBackend using spawn_local (for single-threaded runtimes).
+    /// Runs the actor on `spawn_local`, for single-threaded runtimes.
     ///
     /// `search_shadows` is the host-resolved `find`→`bfs` / `grep`→`ugrep` enable
     /// state, baked into this backend (see [`SearchShadowConfig`]).
@@ -2020,15 +1914,12 @@ impl LocalTerminalBackend {
         Self::new_inner(None, true, false, search_shadows)
     }
 
-    /// Create a new LocalTerminalBackend using spawn_local with persistent shell.
-    ///
     /// `search_shadows` is the host-resolved `find`→`bfs` / `grep`→`ugrep` enable
     /// state, baked into this backend (see [`SearchShadowConfig`]).
     pub fn new_local_with_persistent_shell(search_shadows: SearchShadowConfig) -> Self {
         Self::new_inner(None, true, true, search_shadows)
     }
 
-    /// Create a new LocalTerminalBackend using spawn_local with memory limits.
     pub fn new_local_with_memory_limit(config: CgroupMemoryConfig) -> Self {
         Self::new_inner(Some(config), true, false, SearchShadowConfig::default())
     }
@@ -2053,7 +1944,6 @@ impl LocalTerminalBackend {
         )
     }
 
-    /// Create a backend with a custom completed-task TTL (for testing).
     #[cfg(test)]
     pub(crate) fn new_with_completed_task_ttl(ttl: Duration) -> Self {
         Self::new_with_ttl(
@@ -2068,7 +1958,6 @@ impl LocalTerminalBackend {
         )
     }
 
-    /// Backend with a custom foreground budget (test-only).
     #[cfg(test)]
     pub(crate) fn new_with_foreground_budget(budget: Duration) -> Self {
         Self::new_with_ttl(
@@ -2083,7 +1972,6 @@ impl LocalTerminalBackend {
         )
     }
 
-    /// Backend with a custom output-file size cap (test-only).
     #[cfg(test)]
     pub(crate) fn new_with_output_cap(output_file_cap: u64) -> Self {
         Self::new_with_ttl(
@@ -2378,18 +2266,12 @@ impl TerminalBackend for LocalTerminalBackend {
     }
 }
 
-// ============================================================================
-// Helper functions
-// ============================================================================
-
 /// Non-blocking read: returns `Some(Ok(n))` if data is available,
 /// `Some(Err(e))` on I/O error, `Some(Ok(0))` on EOF, or `None` if
 /// no data is ready right now.
 ///
 /// Uses `Waker::noop()` — safe because the actor runs a periodic
 /// polling loop and doesn't need wake-up notifications from the pipe.
-/// This eliminates the 10 ms timeout-per-read that previously caused
-/// O(N × 20 ms) per-tick overhead for N processes.
 fn try_read_nonblocking(
     reader: &mut (impl tokio::io::AsyncRead + Unpin),
     buf: &mut [u8],
@@ -2500,16 +2382,14 @@ async fn drain_remaining_output(process: &mut ProcessState) {
 async fn graceful_kill_and_wait(process: &mut ProcessState) {
     send_sigterm_to_group(process);
 
-    // Wait up to SIGTERM_GRACE (1s) for graceful exit
     if tokio::time::timeout(SIGTERM_GRACE, process.child.wait())
         .await
         .is_ok()
     {
         drain_remaining_output(process).await;
-        return; // exited cleanly
+        return;
     }
 
-    // Escalate to SIGKILL
     send_sigkill_to_group(process);
 
     // Wait for reap — bounded at 5s. SIGKILL is unconditional so this
@@ -2555,10 +2435,10 @@ async fn kill_and_finalize(process: &mut ProcessState) -> KillOutcome {
             finalize_process(process, None).await;
             return KillOutcome::AlreadyExited;
         }
-        Ok(None) => {} // still running, proceed to kill
+        // Still running, proceed to kill.
+        Ok(None) => {}
     }
 
-    // Two-phase kill: SIGTERM → 1s grace → SIGKILL (bounded waits)
     graceful_kill_and_wait(process).await;
 
     // The child is reaped now, so drop the scope's reaping handle immediately
@@ -2581,7 +2461,6 @@ async fn kill_and_finalize(process: &mut ProcessState) -> KillOutcome {
     KillOutcome::Killed
 }
 
-/// Set exit_status, flush the output file, and notify foreground waiters.
 async fn finalize_process(process: &mut ProcessState, status: Option<std::process::ExitStatus>) {
     if process.exit_status.is_some() {
         return;
@@ -2607,7 +2486,6 @@ async fn finalize_process(process: &mut ProcessState, status: Option<std::proces
 /// Open an output file for writing, creating parent directories if needed.
 #[tracing::instrument(name = "fs.open_output_file", skip_all)]
 async fn open_output_file(path: &std::path::Path) -> std::io::Result<File> {
-    // Create parent directories if they don't exist
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
@@ -2738,7 +2616,7 @@ fn spawn_shell_command(
             // detach_from_tty() handles both session and process group creation.
             .kill_on_drop(true);
 
-        // Apply env vars from the request (e.g., .envrc, color vars, ACP-provided vars).
+        // Request env carries .envrc, color vars, ACP-provided vars.
         cmd.envs(shell_state::shell_env_overrides());
         for (key, value) in env {
             cmd.env(key, value);
@@ -2870,10 +2748,6 @@ fn extract_exit_status(status: std::process::ExitStatus) -> ExitStatus {
     ExitStatus { exit_code, signal }
 }
 
-// ============================================================================
-// Tests
-// ============================================================================
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2881,7 +2755,6 @@ mod tests {
     use std::path::PathBuf;
 
     fn make_request(command: &str) -> TerminalRunRequest {
-        // Use a unique temp file for each test
         let output_file = std::env::temp_dir().join(format!(
             "terminal-test-{}-{}.out",
             std::process::id(),
@@ -3282,7 +3155,8 @@ mod tests {
             std::env::temp_dir().join(format!("terminal-test-size-{}.out", std::process::id()));
 
         let request = TerminalRunRequest {
-            command: "yes".to_string(), // floods stdout forever
+            // `yes` floods stdout forever.
+            command: "yes".to_string(),
             working_directory: PathBuf::from("/tmp"),
             env: HashMap::new(),
             // Long timeout: the SIZE guard, not the timeout, must fire.
@@ -3441,10 +3315,6 @@ mod tests {
         // Cleanup
         let _ = tokio::fs::remove_file(&output_file).await;
     }
-
-    // -----------------------------------------------------------------------
-    // BashOutputChunk streaming tests
-    // -----------------------------------------------------------------------
 
     #[tokio::test]
     async fn chunk_notifications_sent_during_execution() {
@@ -3772,10 +3642,6 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------------
-    // CS2: Graceful kill tests
-    // -----------------------------------------------------------------------
-
     #[tokio::test]
     async fn test_timeout_uses_sigterm_then_sigkill() {
         // Run a command with a short timeout. Verify the result has timed_out == true
@@ -3803,10 +3669,6 @@ mod tests {
         assert!(result.timed_out);
         assert_eq!(result.signal.as_deref(), Some("timeout"));
     }
-
-    // -----------------------------------------------------------------------
-    // CS3: Output drain tests
-    // -----------------------------------------------------------------------
 
     #[tokio::test]
     #[ignore = "flaky: output buffer sometimes not flushed before kill completes"]
@@ -3930,10 +3792,6 @@ mod tests {
         assert_eq!(DRAIN_TIMEOUT, Duration::from_secs(2));
     }
 
-    // -----------------------------------------------------------------------
-    // CS4: Background guardrails tests
-    // -----------------------------------------------------------------------
-
     #[tokio::test]
     async fn test_sigterm_grace_is_one_second() {
         // Static assertion: guard against someone changing the constant
@@ -3945,10 +3803,6 @@ mod tests {
         // Static assertion: guard against accidental changes
         assert_eq!(BACKGROUND_MAX_RUNTIME, Duration::from_secs(36_000));
     }
-
-    // -----------------------------------------------------------------------
-    // CS1: Process group tests (pre-existing)
-    // -----------------------------------------------------------------------
 
     #[tokio::test]
     #[ignore = "flaky: pgrep sees sleep processes from other sandbox co-tenants"]
@@ -4161,10 +4015,6 @@ mod tests {
         });
     }
 
-    // ================================================================
-    // Persistent shell tests
-    // ================================================================
-
     #[tokio::test]
     async fn test_persistent_shell_cd_persists() {
         let backend = LocalTerminalBackend::with_persistent_shell();
@@ -4338,10 +4188,6 @@ mod tests {
             .expect("wait_for_completion should return evicted task");
         assert!(snap_wait.completed);
     }
-
-    // -----------------------------------------------------------------------
-    // Auto-wake suppression tests (TOCTOU race fixes)
-    // -----------------------------------------------------------------------
 
     /// Fix 3 — when wait_for_completion is called AFTER the task was
     /// evicted from `processes` (snapshot-only branch), the returned
@@ -4534,10 +4380,6 @@ mod tests {
              the completion — auto-wake would be redundant"
         );
     }
-
-    // -----------------------------------------------------------------------
-    // Owner-scoped kill and reparent tests
-    // -----------------------------------------------------------------------
 
     /// Helper: create a request owned by a specific session.
     fn make_owned_request(command: &str, owner: &str) -> TerminalRunRequest {

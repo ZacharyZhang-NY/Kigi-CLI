@@ -1,31 +1,20 @@
-//! `AskUserQuestion` tool — new architecture (`Tool` trait).
+//! `AskUserQuestion` tool.
 //!
-//! Interactive Q&A tool that presents the user with structured questions and
-//! option sets. In plan mode it serves as the **interview mechanism** — the
-//! agent clarifies requirements, disambiguates approaches, and gets user input
-//! on design decisions before finalizing the plan. Outside plan mode it is a
-//! general-purpose tool for gathering user preferences during implementation.
+//! Presents the user with structured questions and option sets. In plan mode
+//! it is the interview mechanism the agent uses to clarify requirements before
+//! finalizing a plan; outside plan mode it gathers preferences during
+//! implementation.
 //!
-//! ## How It Works
+//! Flow: the tool hands a [`UserQuestionRequest`] to the session-owned
+//! coordinator in `kigi-shell` over an mpsc channel, emits a
+//! `UserQuestionAsked` notification for observers, then blocks on a oneshot
+//! until the coordinator's ACP `ext_method` round-trip with the client
+//! resolves (or the wait budget elapses).
 //!
-//! 1. The agent calls `AskUserQuestion` with an array of structured questions
-//!    (each with options, optional preview, optional multi_select).
-//! 2. The tool sends a `UserQuestionAsked` **notification** to the gateway/client
-//!    carrying the full question payload as JSON.
-//! 3. The tool returns `AskUserQuestionOutput::QuestionsSent` to the model as
-//!    an immediate confirmation.
-//! 4. The client presents the question UI, collects user answers, and injects
-//!    them back into the conversation as the tool result. This client-side
-//!    round-trip is handled by the orchestration layer, not by this tool.
-//!
-//! ## Plan-Mode Interview Actions
-//!
-//! When called during plan mode, the client can present two extra buttons:
-//! - **"Respond to agent"** — partial answers, agent reformulates questions
-//! - **"Finish plan interview"** — agent stops asking, proceeds with what it has
-//!
-//! These are client-side behaviors that produce different tool-result strings;
-//! the tool itself is identical in and out of plan mode.
+//! In plan mode the client offers two extra actions — "Chat about this"
+//! (partial answers, agent reformulates) and "Skip interview" (agent proceeds
+//! with what it has). Those only change the tool-result text; the tool itself
+//! behaves identically in and out of plan mode.
 
 pub mod format;
 pub mod types;
@@ -42,37 +31,27 @@ use crate::types::requirements::{Expr, ToolRequirement};
 use crate::types::resources::{NotificationHandle, SharedResources};
 use crate::types::tool::{ToolKind, ToolNamespace};
 
-/// Migration fallback: when `true`, a missing `UserQuestionSender` falls
-/// back to the old fire-and-forget `QuestionsSent` behavior with a warning.
-/// Set to `false` (or delete entirely) once the shell coordinator is wired
-/// up in TS-03 and confirmed working.
+/// TODO: set to `false` and drop [`AskUserQuestionTool::fallback_fire_and_forget`]
+/// once the shell coordinator (TS-03) is wired up. While `true`, a missing
+/// `UserQuestionSender` degrades to fire-and-forget `QuestionsSent` instead of
+/// failing the tool call.
 const MIGRATION_FALLBACK: bool = true;
 
-/// Default max time to wait for the user to answer the questionnaire (all
-/// questions in this tool call share one timer): 30 minutes. On expiry the
-/// tool returns the same skipped/cancel text as a user dismiss
-/// (`CANCEL_TEXT`), not a tool failure.
-///
-/// The shell resolves `[toolset.ask_user_question]` across its config tiers
-/// and injects the result as [`AskUserQuestionParams`]; when no resolved
-/// params are injected, `KIGI_ASK_USER_QUESTION_TIMEOUT_SECS` (positive
-/// integer seconds) still overrides this default directly —
-/// e.g. `KIGI_ASK_USER_QUESTION_TIMEOUT_SECS=8` for tests / TUI repro.
+/// Default wait budget for one questionnaire. On expiry the tool returns the
+/// same text as a user dismiss (`CANCEL_TEXT`), not a tool failure.
 pub const RESPONSE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30 * 60);
 
 /// Default for `timeout_enabled` across every resolver tier and settings
-/// surface: the questionnaire timer is armed unless something disarms it.
-/// Single source — the shell resolver's `.default(...)` and the pager's
-/// settings registry both anchor on this const.
+/// surface. Single source — the shell resolver's `.default(...)` and the
+/// pager's settings registry both anchor on this const.
 pub const DEFAULT_ASK_USER_QUESTION_TIMEOUT_ENABLED: bool = true;
 
-/// Env var: override [`RESPONSE_TIMEOUT`] with a duration in **seconds**.
+/// Env var overriding [`RESPONSE_TIMEOUT`], in **seconds**.
 pub const RESPONSE_TIMEOUT_ENV: &str = "KIGI_ASK_USER_QUESTION_TIMEOUT_SECS";
 
-/// Parse the [`RESPONSE_TIMEOUT_ENV`] override (positive integer seconds).
-/// Invalid or non-positive values are warned and treated as unset. Single
-/// source for this parse — the shell's env tier calls it too, so the two
-/// resolutions can't drift.
+/// Invalid or non-positive values are warned about and treated as unset.
+/// Single source for this parse — the shell's env tier calls it too, so the
+/// two resolutions can't drift.
 pub fn response_timeout_env_secs() -> Option<u64> {
     let raw = std::env::var(RESPONSE_TIMEOUT_ENV).ok()?;
     match raw.trim().parse::<u64>() {
@@ -88,29 +67,28 @@ pub fn response_timeout_env_secs() -> Option<u64> {
     }
 }
 
-/// Effective wait budget for one questionnaire (env override or default).
+/// Env override if set, otherwise [`RESPONSE_TIMEOUT`].
 pub fn response_timeout() -> std::time::Duration {
     response_timeout_env_secs()
         .map(std::time::Duration::from_secs)
         .unwrap_or(RESPONSE_TIMEOUT)
 }
 
-/// Runtime-configurable parameters for the `ask_user_question` tool,
-/// injected via `Params<AskUserQuestionParams>` in `SharedResources`.
+/// Runtime-configurable parameters, injected via
+/// `Params<AskUserQuestionParams>` in `SharedResources`.
 ///
 /// The shell resolves `[toolset.ask_user_question]` across requirements >
 /// env > user `config.toml` > managed > remote feature config and injects the
-/// concrete result. All fields are optional — `None` means "unset", which
-/// preserves the legacy env→default budget, so registry consumers that never
-/// resolve config (workspace toolset) keep today's behavior.
+/// concrete result. Every field is optional, and `None` means "unset" — that
+/// falls back to the env→default budget, so registry consumers that never
+/// resolve config (workspace toolset) still get a sane timeout.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AskUserQuestionParams {
     /// `Some(false)` disarms the questionnaire timer entirely (wait forever
     /// for an answer). `None`/`Some(true)` keep the timer armed.
     #[serde(default)]
     pub timeout_enabled: Option<bool>,
-    /// Wait budget in seconds when the timer is armed (positive integer).
-    /// `None` falls back to the env override / [`RESPONSE_TIMEOUT`].
+    /// Positive integer; `None` falls back to [`response_timeout`].
     #[serde(default)]
     pub timeout_secs: Option<u64>,
 }
@@ -118,7 +96,7 @@ pub struct AskUserQuestionParams {
 crate::register_resource!("kigi", "AskUserQuestion", AskUserQuestionParams);
 
 impl AskUserQuestionParams {
-    /// Effective wait budget: `Some(duration)` = bounded, `None` = wait forever.
+    /// `Some(duration)` = bounded wait, `None` = wait forever.
     pub fn wait_budget(&self) -> Option<std::time::Duration> {
         if !self
             .timeout_enabled
@@ -144,23 +122,19 @@ impl AskUserQuestionParams {
 /// A single option within a question.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct QuestionOption {
-    /// Option text shown to the user; a few words at most.
     #[schemars(description = "Option text shown to the user. A few words at most.")]
     pub label: String,
 
-    /// What picking this option means or implies.
     #[schemars(description = "What picking this option means or implies.")]
     pub description: String,
 
-    /// Optional content shown while the option is focused — mockups, code
-    /// snippets, anything the user should compare. Single-select only.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(
         description = "Optional content shown while the option is focused — mockups, code snippets, anything the user should compare. Single-select questions only."
     )]
     pub preview: Option<String>,
 
-    /// Opaque id; hidden from the model. Kigi callers leave it `None`.
+    /// Opaque id, hidden from the model. Kigi callers leave it `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
     pub id: Option<String>,
@@ -170,17 +144,14 @@ pub struct QuestionOption {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Question {
-    /// The question to ask, phrased as a full question.
     #[schemars(description = "The question to ask, phrased as a full question.")]
     pub question: String,
 
-    /// The choices for this question.
     #[schemars(description = "The choices for this question.")]
     pub options: Vec<QuestionOption>,
 
-    /// Let the user pick more than one option (default false).
-    // Model-facing schema name is snake_case (`multi_select`); deserialize also
-    // accepts the legacy/ACP `multiSelect` so the shared `Question` type stays
+    // The model-facing schema name is snake_case (`multi_select`), but
+    // deserialization also accepts `multiSelect` so this shared type stays
     // wire-compatible with the camelCase ACP ext_method.
     #[serde(
         default,
@@ -193,40 +164,28 @@ pub struct Question {
     )]
     pub multi_select: Option<bool>,
 
-    /// See `QuestionOption.id`. Hidden from the JSON schema.
+    /// See `QuestionOption::id`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
     pub id: Option<String>,
 }
 
-/// Input for the `AskUserQuestion` tool.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct AskUserQuestionInput {
-    /// The questions to ask, each with its own options. At least one question
-    /// is required.
     #[schemars(description = "The questions to ask, each with its own options.")]
     pub questions: Vec<Question>,
 
-    /// Internal flag: when `true`, the tool result is formatted in the
-    /// alternate shape (referenced by id, not label).
-    /// Skipped on the wire and from the JSON schema so the model never
-    /// sees or controls this field.
+    /// Formats the tool result keyed by option id rather than label. Skipped
+    /// on the wire and from the JSON schema so the model never sees or
+    /// controls it.
     #[serde(default, skip)]
     #[schemars(skip)]
     pub use_id_keyed_format: bool,
 }
 
-/// `AskUserQuestion` tool.
-///
-/// Blocks inside `run()` until the user responds or the configured wait
-/// budget elapses for the whole questionnaire (default [`RESPONSE_TIMEOUT`],
-/// 30 minutes). Sends a request over an in-process mpsc channel to a
-/// session-owned coordinator (in kigi-shell), which performs an ACP
-/// `ext_method` round-trip to the client/pager. The response is sent back
-/// over a oneshot channel and formatted into the model-visible tool result.
-///
-/// Params: [`AskUserQuestionParams`] — timeout policy resolved by the shell
-/// across its config tiers; unset fields keep the legacy env→default budget.
+/// `run()` blocks until the user responds or the wait budget elapses for the
+/// whole questionnaire, and the timeout policy comes from
+/// [`AskUserQuestionParams`].
 #[derive(Debug, Default)]
 pub struct AskUserQuestionTool;
 
@@ -259,12 +218,9 @@ impl crate::types::tool_metadata::ToolMetadata for AskUserQuestionTool {
 }
 
 impl AskUserQuestionTool {
-    /// Fire-and-forget fallback used during migration when
-    /// `UserQuestionSender` is not yet injected by the shell.
-    ///
-    /// This preserves the old behavior: send a notification, return
-    /// `QuestionsSent`. Remove this method when `MIGRATION_FALLBACK` is
-    /// set to `false`.
+    /// Fallback for when the shell has not injected a `UserQuestionSender`:
+    /// send the notification and return `QuestionsSent` without waiting for an
+    /// answer. Gated on [`MIGRATION_FALLBACK`].
     async fn fallback_fire_and_forget(
         &self,
         input: &AskUserQuestionInput,
@@ -363,7 +319,6 @@ impl kigi_tool_runtime::Tool for AskUserQuestionTool {
             });
         }
 
-        // ── Step 1: Validate unique question text ───────────────────────
         {
             let mut seen = std::collections::HashSet::new();
             for q in &input.questions {
@@ -376,7 +331,6 @@ impl kigi_tool_runtime::Tool for AskUserQuestionTool {
             }
         }
 
-        // ── Step 2: Obtain UserQuestionSender ───────────────────────────
         let sender = {
             let res = resources.lock().await;
             res.get::<UserQuestionSender>().cloned()
@@ -401,10 +355,8 @@ impl kigi_tool_runtime::Tool for AskUserQuestionTool {
             }
         };
 
-        // ── Step 3: Create oneshot ──────────────────────────────────────
         let (result_tx, result_rx) = tokio::sync::oneshot::channel();
 
-        // ── Step 4: Send UserQuestionRequest ────────────────────────────
         let request = types::UserQuestionRequest {
             tool_call_id: ctx.call_id.as_str().to_owned(),
             questions: input.questions.clone(),
@@ -418,7 +370,6 @@ impl kigi_tool_runtime::Tool for AskUserQuestionTool {
             ));
         }
 
-        // ── Step 5: Emit UserQuestionAsked + read the wait budget ───────
         let wait = {
             let questions_json = serde_json::to_value(&input.questions)
                 .unwrap_or_else(|_| serde_json::Value::Array(vec![]));
@@ -429,8 +380,6 @@ impl kigi_tool_runtime::Tool for AskUserQuestionTool {
                     questions_json,
                 });
             }
-            // Shell-injected params win; absent or unset fields keep the legacy
-            // env→default budget so non-shell registry consumers are unchanged.
             res.get::<crate::types::resources::Params<AskUserQuestionParams>>()
                 .map(|p| p.0)
                 .unwrap_or_default()
@@ -442,11 +391,10 @@ impl kigi_tool_runtime::Tool for AskUserQuestionTool {
             "Asked user questions, blocking for response"
         );
 
-        // ── Step 6: Block on the oneshot result (whole batch, one timer) ─
-        // A single pending-decision timeout covers the questionnaire, not per
-        // question: N questions in one call share one wait.
-        // A `None` budget (`timeout_enabled = false`) runs the same await with
-        // no timer, normalized into the timed shape so one match handles both.
+        // One timer covers the whole questionnaire, not each question: N
+        // questions in one call share a single wait. A `None` budget
+        // (`timeout_enabled = false`) awaits with no timer at all, wrapped in
+        // the timed shape so one match arm handles both.
         let outcome = match wait {
             Some(dur) => tokio::time::timeout(dur, result_rx).await,
             None => Ok(result_rx.await),
@@ -465,17 +413,16 @@ impl kigi_tool_runtime::Tool for AskUserQuestionTool {
                     timeout_secs = ?wait.map(|d| d.as_secs()),
                     "User question timed out; continuing without answers"
                 );
-                // Drop the oneshot receiver on return. The shell coordinator
-                // races `result_tx.closed()` against ACP so it unblocks and
-                // can open the next questionnaire (stale UI is cancelled when
-                // a new ext_method arrives). Same model text as cancel.
+                // Returning drops the oneshot receiver. The shell coordinator
+                // races `result_tx.closed()` against ACP, so it unblocks and
+                // can open the next questionnaire; stale UI is dismissed when
+                // the new ext_method arrives.
                 return Ok(AskUserQuestionOutput::UserAnswered {
                     message: format::CANCEL_TEXT.to_string(),
                 });
             }
         };
 
-        // ── Step 7: Map result to formatter or error ────────────────────
         match result {
             Ok(UserQuestionResponse::Accepted {
                 answers,
@@ -550,8 +497,6 @@ mod tests {
         }
     }
 
-    /// Create resources with a UserQuestionSender injected.
-    /// Returns (shared_resources, rx) where rx receives UserQuestionRequests.
     fn resources_with_sender() -> (
         SharedResources,
         mpsc::UnboundedReceiver<types::UserQuestionRequest>,
@@ -562,7 +507,6 @@ mod tests {
         (resources.into_shared(), rx)
     }
 
-    /// Like [`resources_with_sender`], with shell-resolved params injected.
     fn resources_with_sender_and_params(
         params: AskUserQuestionParams,
     ) -> (
@@ -575,8 +519,6 @@ mod tests {
         resources.insert(crate::types::resources::Params(params));
         (resources.into_shared(), rx)
     }
-
-    // ── Basic tool metadata tests ────────────────────────────────────────
 
     #[test]
     fn tool_name_and_description() {
@@ -654,8 +596,6 @@ mod tests {
         let input: AskUserQuestionInput = serde_json::from_value(json).unwrap();
         assert_eq!(input.questions[0].multi_select, Some(true));
     }
-
-    // ── Migration fallback tests (no UserQuestionSender) ─────────────────
 
     #[tokio::test]
     async fn fallback_ask_single_question() {
@@ -744,8 +684,6 @@ mod tests {
         }
     }
 
-    // ── Validation tests ─────────────────────────────────────────────────
-
     #[tokio::test]
     async fn validate_duplicate_question_text() {
         let resources = Resources::new();
@@ -769,8 +707,6 @@ mod tests {
         assert!(msg.contains("Duplicate question text"), "got: {msg}");
         assert!(msg.contains("Same question?"), "got: {msg}");
     }
-
-    // ── Blocking round-trip tests ────────────────────────────────────────
 
     #[tokio::test]
     async fn blocking_round_trip_accepted() {
@@ -848,9 +784,8 @@ mod tests {
         }
     }
 
-    /// Whole questionnaire (multi-question batch) shares one 6-minute timer.
-    /// No `Params` injected — pins the legacy env→default budget for
-    /// consumers that never resolve `[toolset.ask_user_question]`.
+    /// No `Params` injected, which pins the env→default budget for consumers
+    /// that never resolve `[toolset.ask_user_question]`.
     #[tokio::test(start_paused = true)]
     async fn blocking_times_out_after_default_budget_for_batch() {
         let (shared, mut rx) = resources_with_sender();
@@ -878,7 +813,7 @@ mod tests {
 
         let request = rx.recv().await.expect("should receive request");
         assert_eq!(request.questions.len(), 2);
-        // Advance past the *effective* budget (honors env override if set).
+        // The effective budget, so the test still passes under an env override.
         let wait = response_timeout();
         tokio::time::advance(wait + std::time::Duration::from_secs(1)).await;
 
@@ -913,7 +848,7 @@ mod tests {
         });
 
         let request = rx.recv().await.expect("should receive request");
-        // Stay well under the effective timeout (env override or default budget).
+        // Stay well under the effective budget, whatever an env override made it.
         let advance = response_timeout()
             .checked_div(6)
             .unwrap_or(std::time::Duration::from_secs(1))
@@ -939,14 +874,10 @@ mod tests {
         }
     }
 
-    // ── Configured timeout params tests ──────────────────────────────────
-
-    /// Unset params reproduce the legacy env→default budget; `timeout_enabled
-    /// = false` disarms the timer; `0` never means "wait forever".
     #[test]
     fn wait_budget_mapping() {
         // Compared against `response_timeout()` rather than the raw constant so
-        // the assertions pin the legacy delegation and hold under a dev's env override.
+        // the assertions pin the delegation and hold under a dev's env override.
         assert_eq!(
             AskUserQuestionParams::default().wait_budget(),
             Some(response_timeout()),
@@ -973,8 +904,6 @@ mod tests {
         );
     }
 
-    /// A short shell-resolved budget fires with the same silent-skip text as
-    /// a user dismiss.
     #[tokio::test(start_paused = true)]
     async fn short_params_timeout_fires_with_cancel_text() {
         let (shared, mut rx) = resources_with_sender_and_params(AskUserQuestionParams {
@@ -1012,8 +941,6 @@ mod tests {
         }
     }
 
-    /// `timeout_enabled = false` waits arbitrarily long — an answer far past
-    /// the default budget still succeeds instead of timing out.
     #[tokio::test(start_paused = true)]
     async fn timeout_disabled_waits_beyond_default_budget() {
         let (shared, mut rx) = resources_with_sender_and_params(AskUserQuestionParams {
@@ -1061,8 +988,6 @@ mod tests {
             other => panic!("Expected UserAnswered, got {:?}", other),
         }
     }
-
-    // ── Failure path tests ───────────────────────────────────────────────
 
     #[tokio::test]
     async fn channel_drop_returns_error() {

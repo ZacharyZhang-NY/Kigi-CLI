@@ -520,7 +520,8 @@ mod tests {
     async fn oversize_artifact_is_invalid_with_cap_in_reason() {
         let (_tmp, target) = tmp_graph_file("oversize");
         let mut body = vec![b'x'; (MAX_GRAPH_JSON_BYTES as usize) + 1];
-        body[0] = b'{'; // content is irrelevant; the size gate fires first
+        // Content is irrelevant; the size gate fires first.
+        body[0] = b'{';
         let spawner = MockSpawner {
             response: MockReply::Done,
             body: Some(body),

@@ -11,7 +11,7 @@ pub const MAX_PAYLOAD_SIZE: usize = 128 * 1024;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HookEventName {
-    // ── Session lifecycle ───────────────────────────────────────
+    // Session lifecycle
     SessionStart,
     SessionEnd,
     /// Fires when an agent turn ends (completed, cancelled, or error).
@@ -19,7 +19,7 @@ pub enum HookEventName {
     /// Fires when the turn ends due to an API error. Output and exit code are ignored.
     StopFailure,
 
-    // ── Tool events ─────────────────────────────────────────────
+    // Tool events
     PreToolUse,
     PostToolUse,
     /// Fires after a tool call fails (throws an error).
@@ -27,13 +27,13 @@ pub enum HookEventName {
     /// Fires when a tool call is denied by the permission system.
     PermissionDenied,
 
-    // ── User / notification events ──────────────────────────────
+    // User / notification events
     /// Fires when the user submits a prompt.
     UserPromptSubmit,
     /// Fires when a notification is sent (e.g., permission prompt, idle).
     Notification,
 
-    // ── Subagent events ─────────────────────────────────────────
+    // Subagent events
     /// Fires when a subagent is spawned.
     SubagentStart,
     /// Fires when a subagent completes.
@@ -41,7 +41,7 @@ pub enum HookEventName {
     /// Alias for SubagentStop (kept for backward compatibility).
     SubagentEnd,
 
-    // ── Compaction events ───────────────────────────────────────
+    // Compaction events
     /// Fires before context compaction.
     PreCompact,
     /// Fires after context compaction completes.
@@ -176,7 +176,7 @@ pub struct HookEventEnvelope {
 #[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
 pub enum HookPayload {
-    // ── Session lifecycle ───────────────────────────────────────
+    // Session lifecycle
     SessionStart {
         source: String,
         #[serde(rename = "modelId", skip_serializing_if = "Option::is_none")]
@@ -198,7 +198,7 @@ pub enum HookPayload {
         error: String,
     },
 
-    // ── Tool events ─────────────────────────────────────────────
+    // Tool events
     PreToolUse {
         /// The tool the model invoked. For the meta-dispatch tools (`use_tool`
         /// and the external MCP-call tool) this is the resolved underlying tool
@@ -265,7 +265,7 @@ pub enum HookPayload {
         tool_input_truncated: bool,
     },
 
-    // ── User / notification events ──────────────────────────────
+    // User / notification events
     /// Fires when the user submits a prompt.
     UserPromptSubmit {
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -284,7 +284,7 @@ pub enum HookPayload {
         level: Option<String>,
     },
 
-    // ── Subagent events ─────────────────────────────────────────
+    // Subagent events
     /// Fires when a subagent is spawned.
     SubagentStart {
         #[serde(rename = "subagentId")]
@@ -308,7 +308,7 @@ pub enum HookPayload {
         duration_ms: Option<u64>,
     },
 
-    // ── Compaction events ───────────────────────────────────────
+    // Compaction events
     PreCompact {
         /// "manual" or "auto".
         source: String,
@@ -407,7 +407,8 @@ mod tests {
             (HookEventName::PermissionDenied, "permission_denied"),
             (HookEventName::SubagentStart, "subagent_start"),
             (HookEventName::SubagentStop, "subagent_stop"),
-            (HookEventName::SubagentEnd, "subagent_stop"), // alias collapses
+            // alias collapses
+            (HookEventName::SubagentEnd, "subagent_stop"),
             (HookEventName::PreCompact, "pre_compact"),
             (HookEventName::PostCompact, "post_compact"),
         ];

@@ -2,8 +2,6 @@
 #[allow(unused_imports)]
 use super::common::*;
 
-// ── Auto-compact: the top padding row disappears on tiny terminals ─────────
-//
 // The default layout reserves a blank top padding row (`outer_vpad`) above the
 // status bar. When the terminal is `AUTO_COMPACT_MAX_ROWS` (20) or shorter,
 // the render-value compact flag is derived ON (auto-compact) and the padding

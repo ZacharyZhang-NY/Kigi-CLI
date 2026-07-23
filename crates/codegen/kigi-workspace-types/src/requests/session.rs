@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 use crate::identity::SessionId;
 use crate::types::AgentSessionConfig;
 
-/// Top-level session-lifecycle RPC.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum SessionLifecycleRequest {
@@ -21,7 +20,6 @@ pub enum SessionLifecycleRequest {
     ApplyWorktree(SessionId),
     /// Mark the start of a prompt. Response: `SessionChunk::Ack`.
     BeginPrompt {
-        /// Session id.
         session: SessionId,
         /// Monotonically increasing prompt index.
         ///
@@ -31,7 +29,6 @@ pub enum SessionLifecycleRequest {
     },
     /// Mark the end of a prompt. Response: `SessionChunk::Ack`.
     EndPrompt {
-        /// Session id.
         session: SessionId,
         /// Prompt index that just finished.
         idx: u64,
@@ -39,7 +36,6 @@ pub enum SessionLifecycleRequest {
     /// Rewind a session to a target prompt index. Response:
     /// `SessionChunk::RewindResult`.
     Rewind {
-        /// Session id.
         session: SessionId,
         /// Target prompt index (0 = beginning).
         target: u64,

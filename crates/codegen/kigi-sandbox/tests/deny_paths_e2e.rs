@@ -134,7 +134,8 @@ fn assert_write_denied(label: &str, path: &Path) {
 fn assert_rename_bypass_blocked(label: &str, path: &Path, workspace: &Path) {
     let name = path.file_name().unwrap().to_string_lossy();
     let moved = workspace.join(format!("exfil-{name}"));
-    let _ = fs::rename(path, &moved); // expected to fail; bytes must not leak
+    // expected to fail; bytes must not leak
+    let _ = fs::rename(path, &moved);
     match fs::read_to_string(&moved) {
         Ok(c) if c.contains(MARKER) => {
             eprintln!("FAIL: {label} rename bypass exposed MARKER");
@@ -160,7 +161,7 @@ fn profile_from_env() -> kigi_sandbox::ProfileName {
     kigi_sandbox::ProfileName::Custom(std::env::var(PROFILE_ENV).expect(PROFILE_ENV))
 }
 
-// ── Subprocess entry point ──────────────────────────────────────────────
+// Subprocess entry point
 
 /// `#[ignore]`d — only runs when invoked by the parent test via `run_scenario`.
 #[test]
@@ -186,7 +187,8 @@ fn subprocess_entry() {
             match kigi_sandbox::bwrap_reexec_for_profile(&profile_from_env(), workspace) {
                 Some(mut cmd) => {
                     use std::os::unix::process::CommandExt;
-                    let err = cmd.exec(); // returns only if exec failed
+                    // returns only if exec failed
+                    let err = cmd.exec();
                     eprintln!("bwrap re-exec failed: {err}");
                     std::process::exit(2);
                 }
@@ -280,7 +282,7 @@ fn subprocess_entry() {
     }
 }
 
-// ── Parent test cases ───────────────────────────────────────────────────
+// Parent test cases
 
 /// Drive one deny case end-to-end: define a custom profile whose `deny` list is
 /// `deny_entries` (exact paths and/or globs), create each `target` (with the
@@ -418,7 +420,8 @@ fn deny_exact_paths_block_read_write_rename() {
         &[".env", "src/server.pem", "secretdir"],
         &[".env", "src/server.pem", "secretdir/inner.pem"],
         &["readable.txt"],
-        &[], // exact paths have no runtime/post-launch coverage to assert
+        // exact paths have no runtime/post-launch coverage to assert
+        &[],
     );
 }
 

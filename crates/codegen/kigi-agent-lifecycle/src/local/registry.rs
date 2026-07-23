@@ -6,7 +6,6 @@ use crate::local::contributors::{
     LocalTurnLifecycleContributor,
 };
 
-/// Mutable registry used while hosts register typed runtime contributions.
 #[derive(Default)]
 pub struct LocalExtensionRegistryBuilder {
     turn_lifecycle_contributors: Vec<Rc<dyn LocalTurnLifecycleContributor>>,
@@ -67,7 +66,6 @@ impl LocalExtensionRegistryBuilder {
     }
 }
 
-/// Immutable typed registry produced after extensions are installed.
 #[derive(Default)]
 pub struct LocalExtensionRegistry {
     turn_lifecycle_contributors: Vec<Rc<dyn LocalTurnLifecycleContributor>>,
@@ -94,7 +92,6 @@ impl LocalExtensionRegistry {
         &self.command_contributors
     }
 
-    /// The one contributor owning `name`, or `None` when no extension advertised it.
     pub fn command_handler(&self, name: &str) -> Option<&Rc<dyn LocalCommandContributor>> {
         self.command_handlers.get(name)
     }

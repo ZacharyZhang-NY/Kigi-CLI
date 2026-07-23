@@ -165,7 +165,6 @@ impl AgentView {
             return false;
         };
 
-        // Scroll the active scrollback.
         let scrollback = if let Some(ref child_id) = self.active_subagent {
             if let Some(child) = self.subagent_views.get_mut(child_id) {
                 &mut child.scrollback
@@ -826,7 +825,6 @@ impl AgentView {
                 }
             }
 
-            // Find the content width from the resolved model's visible block geometry.
             let content_width = self
                 .last_scrollback_selection_model
                 .visible_block_content_width(idx)
@@ -998,7 +996,7 @@ impl AgentView {
                 }
             }
             2 if is_prompt => {
-                // Edit in place; bash/cron keep the old fold behavior.
+                // Edit in place; bash/cron fall back to fold + scroll-to-top.
                 if !self.enter_inline_edit(idx) {
                     if foldable {
                         self.scrollback.toggle_fold_selected();
@@ -1679,9 +1677,7 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------------
     // reclamp_drag_head_post_render tests
-    // -----------------------------------------------------------------------
 
     fn mouse_down(col: u16, row: u16) -> MouseEvent {
         MouseEvent {
@@ -1882,9 +1878,7 @@ mod tests {
         assert_eq!(drag.head.block_line_idx, 3, "btw rebuild moves the head");
     }
 
-    // -----------------------------------------------------------------------
     // anchor_content_width snapshot tests
-    // -----------------------------------------------------------------------
 
     /// The linear copy resolves the anchor entry's lines with the drag-start
     /// width snapshot when the block is gone from `visible_blocks` (scrolled
@@ -1967,7 +1961,7 @@ mod tests {
 
     /// Resolver miss at promotion (the anchor's range vanished from the
     /// frame between press and threshold): the head collapses to the
-    /// anchor — the live successor of the deleted clamp-to-anchor helper.
+    /// anchor.
     #[test]
     fn promotion_miss_collapses_head_to_anchor() {
         let mut agent = make_agent();
@@ -1987,8 +1981,7 @@ mod tests {
     }
 
     /// Resolver miss mid-drag (the range scrolled fully out): the head
-    /// keeps its previous position instead of jumping — the live successor
-    /// of the deleted keep-previous-head helper.
+    /// keeps its previous position instead of jumping.
     #[test]
     fn active_drag_motion_miss_keeps_previous_head() {
         let mut agent = make_agent();
@@ -2131,9 +2124,7 @@ mod tests {
         assert!(agent.reconstruct_drag_copy(&no_snapshot).is_none());
     }
 
-    // -----------------------------------------------------------------------
     // deferred text-press (anchor on entry into text) tests
-    // -----------------------------------------------------------------------
 
     fn mouse_up(col: u16, row: u16) -> MouseEvent {
         MouseEvent {
@@ -2686,9 +2677,7 @@ mod tests {
         assert!(agent2.deferred_text_press.is_none());
     }
 
-    // -----------------------------------------------------------------------
     // drag-autoscroll bounce tests (tick + reclamp interplay)
-    // -----------------------------------------------------------------------
 
     /// Agent over real scrollback content taller than its viewport (30
     /// one-line messages through the real layout; pane rows 0-9, prompt at

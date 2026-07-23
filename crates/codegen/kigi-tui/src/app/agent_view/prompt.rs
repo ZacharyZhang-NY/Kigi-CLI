@@ -60,15 +60,6 @@ impl AgentView {
         history
     }
 
-    /// Prompt-focused key handling.
-    ///
-    /// Routes through the action registry FIRST for mapped actions (SendPrompt,
-    /// FocusScrollback, etc.), then falls through to the widget for text editing.
-    /// Agent-level and global actions are handled by the caller after this
-    /// returns Unchanged.
-    ///
-    /// **Exception**: when the file search dropdown is visible, the widget gets
-    /// first shot at Tab/Enter/Esc/arrows (for navigation and acceptance).
     /// Test-only wrapper around the private `handle_prompt_key` using a
     /// **non–VS Code** pinned registry so host `TERM_PROGRAM` cannot change
     /// InterjectPrompt / OpenExtensions chords under test.
@@ -89,6 +80,15 @@ impl AgentView {
         self.handle_prompt_key(key, registry, false)
     }
 
+    /// Prompt-focused key handling.
+    ///
+    /// Routes through the action registry FIRST for mapped actions (SendPrompt,
+    /// FocusScrollback, etc.), then falls through to the widget for text editing.
+    /// Agent-level and global actions are handled by the caller after this
+    /// returns Unchanged.
+    ///
+    /// **Exception**: when the file search dropdown is visible, the widget gets
+    /// first shot at Tab/Enter/Esc/arrows (for navigation and acceptance).
     // `pub(super)`: also called by `AppView::minimal_key_intercept` to route
     // Apple Terminal's Ctrl+O interject chord straight to the prompt path —
     // minimal's prompt is conceptually always focused, but `active_pane` can be
@@ -110,7 +110,7 @@ impl AgentView {
         // focus back from the /btw panel (its scroll keys are consumed earlier).
         self.btw_focused = false;
 
-        // ── History panel intercept (modal) ─────────────────────────────
+        // History panel intercept (modal).
         // Must run before the file-search / slash intercepts: a populated
         // entry can end on an `@` token (or start with `/`), and the
         // dropdown state derived from that text would otherwise steal the
@@ -119,7 +119,7 @@ impl AgentView {
             return self.handle_history_search_key(key);
         }
 
-        // ── File search intercept ───────────────────────────────────────
+        // File search intercept.
         // When the @-completion dropdown is visible, the widget handles
         // Tab (accept), Enter (accept), Esc (dismiss), and arrow keys
         // BEFORE the action registry gets them. Otherwise Tab would
@@ -127,7 +127,6 @@ impl AgentView {
         if self.prompt.file_search_visible() {
             match self.prompt.handle_key(key) {
                 PromptEvent::Edited => {
-                    // Check if the prompt wants to open a line viewer.
                     if let Some(req) = self.prompt.pending_viewer_request.take() {
                         self.open_line_viewer(&req.path, req.initial_range);
                     }
@@ -137,11 +136,12 @@ impl AgentView {
                     }
                     return InputOutcome::Changed;
                 }
-                PromptEvent::Ignored => {} // fall through to normal routing
+                // Fall through to normal routing.
+                PromptEvent::Ignored => {}
             }
         }
 
-        // ── Slash dropdown intercept ────────────────────────────────────
+        // Slash dropdown intercept.
         // When the slash completion dropdown is open, intercept navigation
         // and accept keys BEFORE the action registry. Completion changes
         // text only — it does NOT execute commands.
@@ -165,13 +165,11 @@ impl AgentView {
                 return InputOutcome::Changed;
             }
             match key.code {
-                // Up / Ctrl-P: move selection up.
                 KeyCode::Up => {
                     self.prompt.slash_move_selection(-1);
                     self.prompt.slash_preview_current_selection();
                     return InputOutcome::Changed;
                 }
-                // Down / Ctrl-N: move selection down.
                 KeyCode::Down => {
                     self.prompt.slash_move_selection(1);
                     self.prompt.slash_preview_current_selection();
@@ -187,13 +185,11 @@ impl AgentView {
                     self.prompt.slash_preview_current_selection();
                     return InputOutcome::Changed;
                 }
-                // Tab: accept completion (text only, no execute).
                 KeyCode::Tab => {
                     self.prompt.slash_commit_preview();
                     self.prompt.accept_slash_completion(&self.session.models);
                     return InputOutcome::Changed;
                 }
-                // Esc: close dropdown, revert any live preview.
                 KeyCode::Esc => {
                     self.prompt.slash_cancel_preview();
                     self.prompt.slash_close();
@@ -253,7 +249,7 @@ impl AgentView {
             }
         }
 
-        // ── Completion dropdown intercept ────────────────────────────────
+        // Completion dropdown intercept.
         // Priority 4-5 in the Tab chain: when the completion dropdown is
         // open, handle navigation/accept/dismiss. When closed, Tab in bash
         // mode is terminal-like completion (always on, no env gate).
@@ -348,7 +344,7 @@ impl AgentView {
             }
         }
 
-        // ── Predicted-next-prompt ghost (tab autocomplete) ──────────────
+        // Predicted-next-prompt ghost (tab autocomplete).
         // Tab or Right arrow accepts the suggestion (the ghost only renders
         // with the cursor at end-of-text, where Right is otherwise a no-op —
         // same convention as fish/zsh autosuggestions); Esc on an empty
@@ -867,9 +863,8 @@ impl AgentView {
                 .map(str::to_owned)
             {
                 self.prompt.history_search.deactivate();
-                // Detect `! ` prefix to restore bash mode. Refined: only reset to Normal
-                // if currently in Bash (preserve Remember if active). The ! prefix
-                // restore only applies when not in Remember.
+                // A `! ` entry restores Bash mode, except in Remember mode,
+                // which is preserved. A non-`!` entry in Bash resets to Normal.
                 if self.prompt_input_mode != PromptInputMode::Remember
                     && let Some(cmd) = text.strip_prefix("! ")
                 {
@@ -881,7 +876,6 @@ impl AgentView {
                 } else {
                     self.prompt.set_text(&text);
                 }
-                // Move cursor to end of text.
                 let len = self.prompt.textarea.text().len();
                 self.prompt.textarea.set_cursor(len);
                 // Drop the recomputed `@`-completion context (same
@@ -1122,7 +1116,7 @@ mod combined_prompt_history_tests {
     }
 
     /// THIS SESSION's prompts (scrollback blocks) outrank the fetched
-    /// fetched history: the fetch races the shell-side append of a
+    /// history: the fetch races the shell-side append of a
     /// fresh session's first prompts, so scrollback is the authoritative
     /// "newest" source and a just-sent prompt is always recalled first.
     #[test]
@@ -1142,9 +1136,12 @@ mod combined_prompt_history_tests {
         assert_eq!(
             texts(&agent),
             [
-                "just sent", // this session, newest first
-                "ten",       // this session (fetched dup ignored)
-                "seventeen", // fetched history follows
+                // this session, newest first
+                "just sent",
+                // this session (fetched dup ignored)
+                "ten",
+                // fetched history follows
+                "seventeen",
                 "sixteen",
                 "fifteen",
             ]
@@ -1169,7 +1166,8 @@ mod combined_prompt_history_tests {
             texts(&agent),
             [
                 "scrollback_only_new",
-                "  shared  ", // trim-keyed dedup: scrollback variant wins
+                // trim-keyed dedup: scrollback variant wins
+                "  shared  ",
                 "scrollback_only_old",
                 "fetched_only",
             ]

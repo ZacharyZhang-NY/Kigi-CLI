@@ -315,7 +315,7 @@ mod tests {
         );
     }
 
-    // ── Limit / latency invariants ──────────────────────────────────────────
+    // Limit / latency invariants
 
     /// A backlog drains in exactly `ceil(new / cap)` calls — no extra round-trips.
     #[test]
@@ -383,7 +383,8 @@ mod tests {
     /// UTF-8 backoff loses at most 3 bytes, so frames stay within 3 of the cap.
     #[test]
     fn utf8_backoff_stays_within_three_bytes_of_cap() {
-        let cap = 7usize; // splits a 4-byte char -> backs off to 4 (cap - 3)
+        // Cap 7 splits a 4-byte char; backoff yields 4 (cap - 3).
+        let cap = 7usize;
         let spec = spec_with(Some(cap as u32));
         let data = "😀😀😀😀".as_bytes();
         let total = data.len() as u64;
@@ -408,7 +409,8 @@ mod tests {
     fn gap_with_cap_paces_surviving_tail_and_terminates() {
         let spec = spec_with(Some(4));
         let tail = b"abcdefgh";
-        let total = 1000u64; // only 8 of 1000 bytes survived in the tail
+        // Only 8 of 1000 bytes survive in the tail.
+        let total = 1000u64;
         let mut last = 0;
         let mut ticks = 0usize;
         let mut emitted = 0usize;

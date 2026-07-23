@@ -18,9 +18,7 @@ use crate::types::{
     Usage,
 };
 
-// ============================================================================
 // Core Conversation Types
-// ============================================================================
 
 /// A single item in a conversation - the unified internal representation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,7 +67,7 @@ pub struct SystemItem {
 /// without parsing message text.
 ///
 /// Serialized as a lowercase string (e.g. `"auto_continue"`).
-/// Unknown variants (from future clients or removed historical tags such as
+/// Unknown variants (from future clients or retired historical tags such as
 /// `"doom_loop_warning"`) deserialize as [`SyntheticReason::Unknown`]
 /// so old clients can still read sessions written by newer versions.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -265,7 +263,6 @@ pub struct AssistantItem {
 pub struct ToolResultItem {
     /// ID of the tool call this is responding to
     pub tool_call_id: String,
-    /// The result content
     pub content: Arc<str>,
     /// Inline images associated with this tool result (e.g. from `read_file`
     /// on an image/PDF). When non-empty, the API conversion layers embed
@@ -351,9 +348,7 @@ pub enum BackendToolKind {
     CodeInterpreter(rs::CodeInterpreterToolCall),
 }
 
-// ============================================================================
 // Content Parts
-// ============================================================================
 
 /// A part of message content - text, image, etc.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -365,9 +360,7 @@ pub enum ContentPart {
     Image { url: Arc<str> },
 }
 
-// ============================================================================
 // Reasoning Content
-// ============================================================================
 
 /// Reasoning/thinking content from the model.
 /// Structured to support both plain text (chat completions) and
@@ -449,9 +442,7 @@ impl ReasoningContent {
     }
 }
 
-// ============================================================================
 // Tool Definitions and Calls
-// ============================================================================
 
 /// A tool call made by the assistant that the client must execute locally.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -512,9 +503,7 @@ impl From<ToolDefinition> for ToolSpec {
     }
 }
 
-// ============================================================================
 // Conversation Request
-// ============================================================================
 
 /// A complete conversation request that can be sent to either API.
 #[derive(Debug, Clone, Default)]
@@ -601,9 +590,7 @@ pub enum ConversationToolChoice {
     Function(String),
 }
 
-// ============================================================================
 // Conversation Response
-// ============================================================================
 
 /// Why the model stopped generating.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -776,7 +763,7 @@ impl ConversationResponse {
 
     /// Reasoning siblings that precede the trailing `Assistant`, in order.
     /// Used by streaming consumers and the empty-response retry logic that
-    /// previously inspected `AssistantItem.reasoning`.
+    /// once inspected `AssistantItem.reasoning`.
     pub fn reasoning_items(&self) -> impl Iterator<Item = &rs::ReasoningItem> {
         self.items.iter().filter_map(|item| match item {
             ConversationItem::Reasoning(r) => Some(r),
@@ -848,9 +835,7 @@ impl ConversationResponse {
     }
 }
 
-// ============================================================================
 // ConversationItem Constructors
-// ============================================================================
 
 impl ConversationItem {
     /// Create a system message
@@ -1166,10 +1151,8 @@ impl ConversationItem {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Shared-compaction L1 bridge: `CompactionItem` / `CompactionItemFactory`
 // for `ConversationItem`
-// ---------------------------------------------------------------------------
 //
 // Part of the Kigi Compaction unification. Lets the shared, transport-agnostic
 // engine in `crates/common/kigi-compaction` operate over kigi's
@@ -1549,9 +1532,7 @@ impl ConversationItem {
     }
 }
 
-// ============================================================================
 // Conversion: ConversationItem <-> ChatRequestMessage
-// ============================================================================
 
 impl From<ChatRequestMessage> for ConversationItem {
     fn from(msg: ChatRequestMessage) -> Self {
@@ -1686,7 +1667,7 @@ fn sanitize_tool_arguments(id: &str, name: &str, arguments: Arc<str>) -> Arc<str
 /// Convert a single non-`Reasoning` [`ConversationItem`] into the
 /// chat-completions wire format.
 ///
-/// `Reasoning` is intentionally unsupported: it has no single-item Chat
+/// `Reasoning` is deliberately unsupported: it has no single-item Chat
 /// Completions equivalent (the wire format only carries `reasoning_content`
 /// *on the following assistant message*, which a single item can't see).
 /// Callers that need reasoning folded in must either use
@@ -1821,7 +1802,7 @@ pub fn conversation_item_to_chat_message(item: ConversationItem) -> ChatRequestM
 /// intervening user turn) are dropped. This is the canonical
 /// `ConversationItem` → `ChatRequestMessage` conversion for the
 /// chat-completions backend; it attaches reasoning to the right assistant
-/// turn (there is intentionally no public single-item conversion, since a
+/// turn (there is deliberately no public single-item conversion, since a
 /// lone `Reasoning` item has no chat-completions equivalent).
 pub fn conversation_to_chat_messages(items: Vec<ConversationItem>) -> Vec<ChatRequestMessage> {
     let mut out: Vec<ChatRequestMessage> = Vec::with_capacity(items.len());
@@ -1912,9 +1893,7 @@ pub fn conversation_to_chat_messages(items: Vec<ConversationItem>) -> Vec<ChatRe
     out
 }
 
-// ============================================================================
 // Conversion: ChatResponseMessage -> ConversationItem
-// ============================================================================
 
 impl From<ChatResponseMessage> for ConversationItem {
     fn from(msg: ChatResponseMessage) -> Self {
@@ -1950,9 +1929,7 @@ impl From<ChatResponseMessage> for ConversationItem {
     }
 }
 
-// ============================================================================
 // Conversion: rs::Response (Responses API) -> ConversationItem
-// ============================================================================
 
 /// Convert a Responses API `Response` into a flat ordered list of
 /// `ConversationItem`s, mirroring the shape of `response.output`.
@@ -2066,9 +2043,7 @@ pub fn response_to_conversation_items(response: rs::Response) -> Vec<Conversatio
     items
 }
 
-// ============================================================================
 // Conversion: ConversationRequest -> ChatCompletionRequest
-// ============================================================================
 
 const STRUCTURED_OUTPUT_SCHEMA_NAME: &str = "structured_output";
 
@@ -2139,9 +2114,7 @@ impl From<ConversationRequest> for ChatCompletionRequest {
     }
 }
 
-// ============================================================================
 // Conversion: ConversationRequest -> CreateResponse (Responses API)
-// ============================================================================
 
 impl From<&ConversationRequest> for rs::CreateResponse {
     fn from(req: &ConversationRequest) -> Self {
@@ -2562,9 +2535,7 @@ pub fn extra_raw_tools(hosted_tools: &[HostedTool]) -> Vec<serde_json::Value> {
     raw
 }
 
-// ============================================================================
 // ConversationRequest Builder
-// ============================================================================
 
 impl ConversationRequest {
     /// Create a new empty conversation request
@@ -2585,31 +2556,26 @@ impl ConversationRequest {
         self.items.push(item);
     }
 
-    /// Set the model
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = Some(model.into());
         self
     }
 
-    /// Set tools
     pub fn with_tools(mut self, tools: Vec<ToolSpec>) -> Self {
         self.tools = tools;
         self
     }
 
-    /// Set tool choice
     pub fn with_tool_choice(mut self, choice: ConversationToolChoice) -> Self {
         self.tool_choice = Some(choice);
         self
     }
 
-    /// Set temperature
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         self.temperature = Some(temperature);
         self
     }
 
-    /// Set max output tokens
     pub fn with_max_output_tokens(mut self, max_tokens: u32) -> Self {
         self.max_output_tokens = Some(max_tokens);
         self
@@ -2866,9 +2832,7 @@ pub fn transform_conversation_cwd(
     }
 }
 
-// ============================================================================
 // Conversation Repair
-// ============================================================================
 
 /// Why a tool call ended up dangling — controls the synthetic-result wording.
 ///
@@ -2878,7 +2842,7 @@ pub fn transform_conversation_cwd(
 /// failure as terminal.
 ///
 /// A `PostProcessingFailed` variant existed in an earlier revision for
-/// a mid-turn tool post-processing error path. It is now intentionally
+/// a mid-turn tool post-processing error path. It is deliberately
 /// absent because that path no longer returns `Err` between
 /// `tool_completed` and `push_tool_result` — every error mode is
 /// degraded inline. The variant would have shipped without any
@@ -3101,9 +3065,7 @@ pub fn dedup_duplicate_tool_results(conversation: &mut Vec<ConversationItem>) ->
     total_removed
 }
 
-// ============================================================================
 // Anthropic Messages API Conversion
-// ============================================================================
 
 /// Convert a ConversationRequest to Anthropic MessagesRequest.
 /// Normalize a tool-call id to the `[A-Za-z0-9_-]+` charset both Anthropic
@@ -3138,7 +3100,7 @@ const ANTHROPIC_IMAGE_MEDIA_TYPES: [&str; 4] =
 /// `(media_type, data)`.
 ///
 /// `None` for anything Anthropic would reject — non-base64 data URIs
-/// (previously leaked as `ImageSource::Url` carrying a `data:` payload:
+/// (which once leaked as `ImageSource::Url` carrying a `data:` payload:
 /// url sources must be http(s) → 400), media types outside the raster
 /// whitelist (`image/svg+xml` → 400), and param-carrying headers
 /// (`data:image/webp;name=x;base64,…` yields media type
@@ -3399,7 +3361,7 @@ pub fn build_messages_request(req: &ConversationRequest) -> crate::messages::Mes
         ConversationToolChoice::Auto => ToolChoiceParam::Auto,
         ConversationToolChoice::Required => ToolChoiceParam::Any,
         ConversationToolChoice::Function(name) => ToolChoiceParam::Tool { name: name.clone() },
-        ConversationToolChoice::None => ToolChoiceParam::Auto, // default
+        ConversationToolChoice::None => ToolChoiceParam::Auto,
     });
 
     let effort = req
@@ -3442,7 +3404,8 @@ pub fn build_messages_request(req: &ConversationRequest) -> crate::messages::Mes
         temperature: req.temperature,
         top_p: req.top_p,
         top_k: None,
-        stream: None, // Set by caller
+        // Set by caller
+        stream: None,
         stop_sequences: None,
         thinking,
         output_config,
@@ -3551,7 +3514,8 @@ impl From<crate::messages::MessagesResponse> for ConversationItem {
                 }
                 // Thinking dropped — see doc comment above.
                 ContentBlock::Thinking { .. } => {}
-                _ => {} // Image, ToolResult not expected in assistant responses
+                // Image, ToolResult not expected in assistant responses
+                _ => {}
             }
         }
 
@@ -3565,9 +3529,7 @@ impl From<crate::messages::MessagesResponse> for ConversationItem {
     }
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 #[cfg(test)]
 mod compaction_item_bridge_tests {
@@ -3764,7 +3726,7 @@ mod tests {
         let back: ConversationItem = chat_msg.into();
         assert_eq!(back.text_content(), "Hello!");
 
-        // Assistant message (reasoning is now a sibling, not a field;
+        // Assistant message (reasoning is a sibling, not a field;
         // single-item conversion produces None for reasoning_content. The
         // `conversation_to_chat_messages` helper is what carries reasoning
         // through; tested separately).
@@ -4224,9 +4186,7 @@ mod tests {
         assert_eq!(b.reasoning_effort, Some(crate::ReasoningEffort::Xhigh));
     }
 
-    // ============================================================================
     // Tool Calls Roundtrip Tests
-    // ============================================================================
 
     #[test]
     fn test_tool_calls_roundtrip_to_chat_request() {
@@ -4325,9 +4285,7 @@ mod tests {
         assert_eq!(chat_msg.model_id, Some("kigi-3".to_string()));
     }
 
-    // ============================================================================
     // Responses API Tool Conversion Tests
-    // ============================================================================
 
     #[test]
     fn test_tool_calls_to_responses_api() {
@@ -4444,9 +4402,7 @@ mod tests {
         assert_eq!(fco_items[1].call_id, "call_2");
     }
 
-    // ============================================================================
     // Encrypted Reasoning Tests
-    // ============================================================================
 
     #[test]
     fn test_reasoning_content_from_text() {
@@ -4679,7 +4635,8 @@ mod tests {
             output: vec![
                 rs::OutputItem::Reasoning(rs::ReasoningItem {
                     id: "reasoning_only_enc".to_string(),
-                    summary: vec![], // Empty summary
+                    // Empty summary
+                    summary: vec![],
                     content: None,
                     encrypted_content: Some("enc_only_encrypted_no_visible_summary".to_string()),
                     status: Some(rs::OutputStatus::Completed),
@@ -4753,7 +4710,7 @@ mod tests {
 
     #[test]
     fn test_conversation_item_with_sibling_reasoning_serialization() {
-        // Reasoning is now a sibling variant — round-trip both items
+        // Reasoning is a sibling variant — round-trip both items
         // through serde and confirm they survive.
         let reasoning_item = ConversationItem::Reasoning(rs::ReasoningItem {
             id: "reasoning_1".to_string(),
@@ -4780,7 +4737,7 @@ mod tests {
     }
 
     /// Anthropic image sources: base64 only for whitelisted raster types;
-    /// url sources http(s) only. Previously a non-base64 `data:` URI rode
+    /// url sources http(s) only. Historically a non-base64 `data:` URI rode
     /// as `ImageSource::Url` (400), `image/svg+xml` passed the media type
     /// through (400), and a param-carrying header produced
     /// `"image/webp;name=x"` (400). Rejected images degrade to a SHORT
@@ -5090,7 +5047,7 @@ mod tests {
         let req = ConversationRequest::from_items(vec![
             ConversationItem::system("You are helpful"),
             ConversationItem::user("What is 2+2?"),
-            // Previous reasoning + assistant: reasoning is now a sibling.
+            // Previous reasoning + assistant: reasoning is a sibling.
             ConversationItem::Reasoning(rs::ReasoningItem {
                 id: "r1".to_string(),
                 summary: vec![rs::SummaryPart::SummaryText(rs::SummaryTextContent {
@@ -5207,7 +5164,8 @@ mod tests {
         // Test that when there's no reasoning, no reasoning item is added
         let req = ConversationRequest::from_items(vec![
             ConversationItem::user("Hello"),
-            ConversationItem::assistant("Hi!"), // No reasoning
+            // No reasoning
+            ConversationItem::assistant("Hi!"),
         ]);
 
         let responses_req: rs::CreateResponse = (&req).into();
@@ -5223,9 +5181,7 @@ mod tests {
         assert!(reasoning_items.is_empty(), "Should have no reasoning items");
     }
 
-    // ============================================================================
     // ConversationRequest with Tools Tests
-    // ============================================================================
 
     #[test]
     fn test_conversation_request_with_tools_to_chat_completion() {
@@ -5312,9 +5268,7 @@ mod tests {
         assert_eq!(def.function.description, Some("Does something".to_string()));
     }
 
-    // ============================================================================
     // ConversationToolChoice Tests
-    // ============================================================================
 
     fn make_test_tool() -> ToolSpec {
         ToolSpec {
@@ -5417,9 +5371,7 @@ mod tests {
         assert!(chat_req.tools.is_none());
     }
 
-    // ============================================================================
     // Edge Cases Tests
-    // ============================================================================
 
     #[test]
     fn test_empty_content() {
@@ -5482,7 +5434,8 @@ mod tests {
         }];
 
         let user = ConversationItem::user_with_parts(parts);
-        assert_eq!(user.text_content(), ""); // No text content
+        // No text content
+        assert_eq!(user.text_content(), "");
     }
 
     #[test]
@@ -6488,18 +6441,23 @@ mod tests {
         // Truncating at 4 would land inside the second char — must walk back to 3.
         let s = "路径";
         assert_eq!(s.len(), 6);
-        assert_eq!(truncate_bytes(s, 4), "路"); // only 3 bytes fit
-        assert_eq!(truncate_bytes(s, 3), "路"); // exact boundary
-        assert_eq!(truncate_bytes(s, 6), s); // full string
-        assert_eq!(truncate_bytes(s, 100), s); // larger than string
-        assert_eq!(truncate_bytes(s, 0), ""); // zero
+        // only 3 bytes fit
+        assert_eq!(truncate_bytes(s, 4), "路");
+        // exact boundary
+        assert_eq!(truncate_bytes(s, 3), "路");
+        assert_eq!(truncate_bytes(s, 6), s);
+        // larger than string
+        assert_eq!(truncate_bytes(s, 100), s);
+        assert_eq!(truncate_bytes(s, 0), "");
 
         // Emoji (4-byte): truncating at 5 must back up to 4.
         let e = "🎉!";
-        assert_eq!(e.len(), 5); // 4 + 1
+        // 4 + 1
+        assert_eq!(e.len(), 5);
         assert_eq!(truncate_bytes(e, 5), "🎉!");
         assert_eq!(truncate_bytes(e, 4), "🎉");
-        assert_eq!(truncate_bytes(e, 3), ""); // 3 < 4, walks back to 0
+        // 3 < 4, walks back to 0
+        assert_eq!(truncate_bytes(e, 3), "");
     }
 
     /// sanitize_tool_arguments must not panic when arguments contain non-ASCII
@@ -6508,7 +6466,8 @@ mod tests {
     fn test_sanitize_non_ascii_args_preview_does_not_panic() {
         // Build a string where the 200-byte boundary lands inside a CJK char.
         // Each '文' is 3 bytes → 67 × 3 = 201 bytes; byte 200 is inside the 67th char.
-        let filler = "文".repeat(70); // > 200 bytes
+        // > 200 bytes
+        let filler = "文".repeat(70);
         let bad_args = format!("{{\"old_string\": \"{filler}\"}}");
         // The outer JSON is valid but contains non-ASCII; force the warning path
         // by making the JSON invalid.
@@ -6542,26 +6501,25 @@ mod tests {
 
     #[test]
     fn test_large_tool_result() {
-        let large_output = "x".repeat(100_000); // 100KB of output
+        // 100KB of output
+        let large_output = "x".repeat(100_000);
         let tool_result = ConversationItem::tool_result("call_1", &large_output);
 
         let chat_msg = conversation_item_to_chat_message(tool_result);
         assert_eq!(chat_msg.text_content().len(), 100_000);
     }
 
-    // ============================================================================
     // conversation_truncate_for_prompt Tests
-    // ============================================================================
 
     #[test]
     fn test_truncate_for_prompt_basic() {
         let conversation = vec![
             ConversationItem::system("System"),
-            ConversationItem::user("User 1"), // prompt 0
+            ConversationItem::user("User 1"),
             ConversationItem::assistant("Asst 1"),
-            ConversationItem::user("User 2"), // prompt 1
+            ConversationItem::user("User 2"),
             ConversationItem::assistant("Asst 2"),
-            ConversationItem::user("User 3"), // prompt 2
+            ConversationItem::user("User 3"),
         ];
 
         // Keep up to and including prompt 0 (first user message)
@@ -6578,7 +6536,7 @@ mod tests {
     fn test_truncate_for_prompt_with_tool_calls() {
         let conversation = vec![
             ConversationItem::system("System"),
-            ConversationItem::user("User 1"), // prompt 0
+            ConversationItem::user("User 1"),
             ConversationItem::assistant_tool_calls(vec![ToolCall {
                 id: "call_1".into(),
                 name: "bash".to_string(),
@@ -6586,7 +6544,7 @@ mod tests {
             }]),
             ConversationItem::tool_result("call_1", "result"),
             ConversationItem::assistant("Done"),
-            ConversationItem::user("User 2"), // prompt 1
+            ConversationItem::user("User 2"),
         ];
 
         // Keep up to prompt 0
@@ -6689,7 +6647,7 @@ mod tests {
             ConversationItem::user("<user_info>preamble</user_info>"),
             ConversationItem::user("P0"),
             ConversationItem::assistant("A0"),
-            ConversationItem::task_completed("Background task abc completed"), // turn 1
+            ConversationItem::task_completed("Background task abc completed"),
             ConversationItem::assistant("A1"),
             ConversationItem::user("P2"),
             ConversationItem::assistant("A2"),
@@ -6711,10 +6669,12 @@ mod tests {
             ConversationItem::system("System"),
             ConversationItem::user("<user_info>preamble</user_info>"),
             ConversationItem::user("P0"),
-            ConversationItem::interjection("also do this"), // mid-turn
+            // mid-turn
+            ConversationItem::interjection("also do this"),
             ConversationItem::assistant("A0"),
-            ConversationItem::scheduler_fired("loop fired"), // turn 1
-            ConversationItem::system_reminder("reminder"),   // mid-turn
+            ConversationItem::scheduler_fired("loop fired"),
+            // mid-turn
+            ConversationItem::system_reminder("reminder"),
             ConversationItem::assistant("A1"),
             ConversationItem::user("P2"),
         ];
@@ -6854,9 +6814,7 @@ mod tests {
         }
     }
 
-    // ============================================================================
     // transform_conversation_cwd Tests
-    // ============================================================================
 
     #[test]
     fn test_transform_cwd_in_system_message() {
@@ -6957,9 +6915,7 @@ mod tests {
         }
     }
 
-    // ============================================================================
     // transform_conversation_cwd Tool Call & Edge Case Tests
-    // ============================================================================
 
     #[test]
     fn test_transform_cwd_transforms_tool_call_arguments() {
@@ -7333,9 +7289,7 @@ mod tests {
         }
     }
 
-    // ============================================================================
     // ConversationResponse Tests
-    // ============================================================================
 
     #[test]
     fn test_conversation_response_is_empty() {
@@ -7542,7 +7496,8 @@ mod tests {
             stop_reason: Some(StopReason::Stop),
             usage: None,
             cost_usd_ticks: None,
-            message_chunks_emitted: 0, // only reasoning chunks were streamed
+            // only reasoning chunks were streamed
+            message_chunks_emitted: 0,
             doom_loop_signals: Vec::new(),
             stop_message: None,
         };
@@ -7571,9 +7526,7 @@ mod tests {
         assert!(response.fallback_text().is_none());
     }
 
-    // ============================================================================
     // StopReason Conversion Tests
-    // ============================================================================
 
     #[test]
     fn test_stop_reason_from_finish_reason() {
@@ -7593,9 +7546,7 @@ mod tests {
         );
     }
 
-    // ============================================================================
     // Builder Pattern Tests
-    // ============================================================================
 
     #[test]
     fn test_conversation_request_builder() {
@@ -7654,9 +7605,7 @@ mod tests {
         assert_matches!(user, ConversationItem::User(_));
     }
 
-    // ============================================================================
     // Serialization Tests
-    // ============================================================================
 
     #[test]
     fn test_conversation_item_serialization() {
@@ -7705,9 +7654,7 @@ mod tests {
         assert_eq!(back.encrypted.as_deref(), Some("enc_data"));
     }
 
-    // ====================================================================
     // repair_dangling_tool_calls tests
-    // ====================================================================
 
     fn assistant_with_calls(calls: &[(&str, &str)]) -> ConversationItem {
         ConversationItem::Assistant(AssistantItem {
@@ -7906,7 +7853,6 @@ mod tests {
             assert_eq!(tr.tool_call_id, "c1");
         });
         assert_matches!(&conv[2], ConversationItem::User(_));
-        // Second call: nothing to repair
         assert_eq!(
             repair_dangling_tool_calls(&mut conv, DanglingToolCallReason::UserCancelled),
             0
@@ -8064,9 +8010,7 @@ mod tests {
         );
     }
 
-    // ====================================================================
     // dedup_duplicate_tool_results tests
-    // ====================================================================
 
     #[test]
     fn test_dedup_no_duplicates() {
@@ -8091,7 +8035,8 @@ mod tests {
             ConversationItem::tool_result("c1", "exit: 0\nreal output here"),
         ];
         assert_eq!(dedup_duplicate_tool_results(&mut conv), 1);
-        assert_eq!(conv.len(), 2); // assistant + 1 tool_result
+        // assistant + 1 tool_result
+        assert_eq!(conv.len(), 2);
         assert_matches!(&conv[1], ConversationItem::ToolResult(tr) => {
             assert_eq!(tr.tool_call_id, "c1");
             assert!(tr.content.contains("real output here"));
@@ -8107,7 +8052,8 @@ mod tests {
             ConversationItem::tool_result("c1", "real content"),
         ];
         assert_eq!(dedup_duplicate_tool_results(&mut conv), 1);
-        assert_eq!(conv.len(), 3); // assistant + 2 tool_results
+        // assistant + 2 tool_results
+        assert_eq!(conv.len(), 3);
         // c1 should be the real content (last occurrence)
         let c1_results: Vec<_> = conv
             .iter()
@@ -8153,7 +8099,8 @@ mod tests {
             ConversationItem::tool_result("c2", "fresh"),
         ];
         assert_eq!(dedup_duplicate_tool_results(&mut conv), 2);
-        assert_eq!(conv.len(), 5); // 2 assistants + 2 tool_results + 1 user
+        // 2 assistants + 2 tool_results + 1 user
+        assert_eq!(conv.len(), 5);
         assert_matches!(&conv[1], ConversationItem::ToolResult(tr) => {
             assert_eq!(tr.tool_call_id, "c1");
             assert_eq!(tr.content.as_ref(), "new");
@@ -8173,12 +8120,11 @@ mod tests {
         ];
         assert_eq!(dedup_duplicate_tool_results(&mut conv), 1);
         assert_eq!(conv.len(), 2);
-        // Second run should be a no-op.
         assert_eq!(dedup_duplicate_tool_results(&mut conv), 0);
         assert_eq!(conv.len(), 2);
     }
 
-    // ========== strip_images tests ==========
+    // strip_images tests
 
     #[test]
     fn test_strip_images_removes_user_images() {
@@ -8192,7 +8138,8 @@ mod tests {
 
         // Verify image was replaced with placeholder text
         if let ConversationItem::User(user) = &req.items[0] {
-            assert_eq!(user.content.len(), 2); // original text + replaced image
+            // original text + replaced image
+            assert_eq!(user.content.len(), 2);
             assert_matches!(&user.content[1], ContentPart::Text { text } => {
                 assert!(text.contains("image removed"));
             });
@@ -8295,7 +8242,7 @@ mod tests {
         assert_eq!(stripped, 3);
     }
 
-    // ── Tool result with images tests ──────────────────────────────────────────
+    // Tool result with images tests
 
     #[test]
     fn test_tool_result_with_images_to_responses_api() {
@@ -8544,7 +8491,7 @@ mod tests {
         }
     }
 
-    // ── SyntheticReason tests ─────────────────────────────────────────────────
+    // SyntheticReason tests
 
     /// Real user messages must have `synthetic_reason = None`.
     #[test]
@@ -8624,9 +8571,7 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------------
     // user_meta / CompactionMeta tests
-    // -----------------------------------------------------------------------
 
     #[test]
     fn user_meta_tagged_correctly() {
@@ -8972,7 +8917,6 @@ mod tests {
         assert_eq!(StopReason::ContentFilter.as_str(), "content_filter");
     }
 
-    // ============================================================================
     // Reasoning-as-sibling regression tests
     //
     // These pin the invariants that motivated this refactor:
@@ -8993,7 +8937,6 @@ mod tests {
     // 4. `patch_reasoning_text_types` injects the `type: "reasoning_text"`
     //    discriminator on nested `content[]` items that async-openai's
     //    derived Serialize omits.
-    // ============================================================================
 
     #[test]
     fn multi_tco_reasoning_items_round_trip_as_siblings() {
@@ -9418,9 +9361,7 @@ mod tests {
         );
     }
 
-    // ========================================================================
     // upgrade_legacy_reasoning — legacy in-memory reconstruction
-    // ========================================================================
     //
     // Three legacy on-disk shapes that the on-read upgrader must lift to
     // sibling Reasoning / BackendToolCall items:
@@ -9791,7 +9732,6 @@ mod tests {
         }
     }
 
-    // ========================================================================
     // KV Cache Invariant Tests (adapted to sibling-Reasoning)
     //
     // These tests enforce prefix stability and correct turn ordering for the
@@ -9811,7 +9751,6 @@ mod tests {
     // / `extract_raw_input_items` / `splice_raw_input_items` tests are
     // structurally obsolete and are not ported; the invariants they pinned
     // are preserved here in a backend-shape-agnostic form.
-    // ========================================================================
 
     /// Helper: build a sibling Reasoning item with the given id, summary
     /// text, and optional encrypted_content. This replaces the old
@@ -9935,7 +9874,7 @@ mod tests {
     /// sibling, each reasoning must appear at its own interleaved
     /// position -- NOT all bunched at the end. This is the exact bug
     /// class caused by the earlier placeholder design,
-    /// now structurally impossible because reasoning lives in the
+    /// structurally impossible because reasoning lives in the
     /// `Vec<ConversationItem>` directly.
     #[test]
     fn build_responses_input_multi_turn_reasoning_ordering() {

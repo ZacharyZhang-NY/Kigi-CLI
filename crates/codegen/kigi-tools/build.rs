@@ -1,7 +1,8 @@
-//! Build script for bundling ripgrep for the kigi-tools crate.
+//! Embeds the search-tool binaries the crate self-extracts at runtime.
 //!
-//! - If `KIGI_TOOLS_BUNDLE_RG_PATH` is set, always bundle it
-//! - Otherwise, only bundle in release builds
+//! ripgrep is auto-downloaded for release builds; any tool can also be
+//! supplied out-of-band through `KIGI_TOOLS_BUNDLE_<NAME>_PATH`, which forces
+//! bundling regardless of profile or target.
 use std::env;
 use std::fs;
 use std::io;
@@ -19,9 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Bundle a prebuilt **static** search-tool binary (`bfs`/`ugrep`) when
-/// `KIGI_TOOLS_BUNDLE_<NAME>_PATH` points at one (supplied by the release
-/// pipeline). Emits
+/// Bundle a prebuilt **static** `bfs`/`ugrep` binary, emitting
 /// `cfg(bundle_<name>)` so the crate's `include_bytes!` + self-extract engages.
 ///
 /// No auto-download (unlike ripgrep): bfs/ugrep publish no prebuilt static
@@ -35,11 +34,12 @@ fn bundle_search_tool(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let override_env = format!("KIGI_TOOLS_BUNDLE_{name_uc}_PATH");
     println!("cargo:rerun-if-env-changed={override_env}");
-    // Always declare the cfg so `#[cfg(bundle_<name>)]` is lint-clean when unset.
+    // Declared unconditionally so `#[cfg(bundle_<name>)]` stays lint-clean on
+    // the paths that never emit it.
     println!("cargo:rustc-check-cfg=cfg(bundle_{name})");
 
     // The consumer (`embedded_search_tools`) is `#[cfg(unix)]`, so embedding on a
-    // Windows target is dead weight — skip (mirrors the ripgrep Windows skip).
+    // Windows target is dead weight.
     if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         return Ok(());
     }
@@ -61,40 +61,34 @@ fn bundle_search_tool(
     Ok(())
 }
 
-/// Download + embed ripgrep. Unchanged behavior; split out of `main` so the new
-/// search-tool bundling runs regardless of ripgrep's early returns.
+/// Download + embed ripgrep. Kept out of `main` so its early returns do not
+/// skip the other search tools.
 fn bundle_rg() -> Result<(), Box<dyn std::error::Error>> {
-    // Only bundle in release builds to avoid slowing down cargo check.
     println!("cargo:rerun-if-env-changed=KIGI_TOOLS_BUNDLE_RG_PATH");
-    // Declare our custom cfg to the compiler so cfg(bundle_rg) is recognized by lints
     println!("cargo:rustc-check-cfg=cfg(bundle_rg)");
 
     let gen_dir = PathBuf::from(env::var("OUT_DIR")?).join("bundle-rg");
     fs::create_dir_all(&gen_dir)?;
 
-    // Decide whether to bundle: path override OR release build
+    // Debug builds skip the download so `cargo check` stays fast.
     let path_override = env::var("KIGI_TOOLS_BUNDLE_RG_PATH").ok();
     let is_release = env::var("PROFILE").as_deref() == Ok("release");
     if path_override.is_none() && !is_release {
         return Ok(());
     }
 
-    // Skip auto-bundling on Windows: ripgrep ships .zip on Windows (not
-    // .tar.gz) and we have no zip-extraction path. Returning here BEFORE
-    // emitting `cargo:rustc-cfg=bundle_rg` keeps include_bytes! macros gated
-    // on cfg(bundle_rg) compiled-out, so the runtime falls back to `rg` on
-    // PATH. Users install ripgrep separately (winget / scoop). An explicit
-    // KIGI_TOOLS_BUNDLE_RG_PATH still bundles regardless of target.
+    // ripgrep ships .zip on Windows and there is no zip-extraction path here.
+    // Returning BEFORE emitting `cargo:rustc-cfg=bundle_rg` compiles out the
+    // gated `include_bytes!`, so the runtime falls back to `rg` on PATH
+    // (installed separately via winget / scoop).
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if target_os == "windows" && path_override.is_none() {
         return Ok(());
     }
 
-    // Expose cfg so the crate can include the bundled bytes.
     println!("cargo:rustc-cfg=bundle_rg");
     println!("cargo:rustc-env=KIGI_TOOLS_RG_VER={}", RG_VER);
 
-    // If a local rg binary is provided, copy it directly (skips target check).
     if let Some(path) = path_override {
         let dest = gen_dir.join(format!("rg-{}-override.bin", RG_VER));
         println!("cargo:rustc-env=KIGI_TOOLS_RG_TARGET=override");
@@ -108,7 +102,6 @@ fn bundle_rg() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // Determine supported ripgrep asset triple for auto-download.
     let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     let asset_triple = match (target_os.as_str(), target_arch.as_str()) {
         ("macos", "aarch64") => "aarch64-apple-darwin",

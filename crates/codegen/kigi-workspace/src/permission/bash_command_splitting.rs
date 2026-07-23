@@ -336,7 +336,7 @@ pub(crate) fn wrapper_has_chdir(words: &[String]) -> bool {
 
 /// Simple shell-like splitter that:
 /// - splits on whitespace (outside of quotes)
-/// - handles single and double quotes, removing the quotes
+/// - handles single and double quotes, stripping the quotes
 /// - handles backslash escapes in a basic way
 fn sh_split_simple(s: &str) -> Vec<String> {
     let mut result = Vec::new();
@@ -525,7 +525,7 @@ fn parse_plain_command_from_node(cmd: Node, src: &str) -> Option<PlainCommand> {
     })
 }
 
-// ── Display soft-breaks (permission UI / formatting) ─────────────────
+// Display soft-breaks (permission UI / formatting)
 
 /// Node kinds whose descendants are payload text, not shell control flow.
 /// Operators that appear only as *characters* inside these are not real
@@ -679,7 +679,7 @@ pub fn range_fully_inside(start: usize, end: usize, ranges: &[(usize, usize)]) -
 /// breaks that fall strictly inside the line.
 ///
 /// When there are no applicable breaks, returns a single-element vec with
-/// `line` unchanged.
+/// `line` `unchanged`.
 pub fn split_physical_line_at_soft_breaks<'a>(
     line: &'a str,
     line_start: usize,
@@ -975,7 +975,7 @@ mod tests {
         assert_eq!(primary_command_from_script(sleep_only), None);
     }
 
-    // ── soft_break_offsets_after_operators ────────────────────────────
+    // soft_break_offsets_after_operators
 
     /// Helper: operators present at soft-break points (suffix of each prefix).
     fn break_operator_suffixes(script: &str) -> Vec<String> {
@@ -1149,7 +1149,7 @@ mod tests {
     #[test]
     fn soft_break_nested_command_sub_still_sees_outer_list() {
         // Operators inside $() may or may not be soft-breaks depending on
-        // whether we treat command_substitution as payload. We intentionally
+        // whether we treat command_substitution as payload. We deliberately
         // still allow breaks inside $() (they're real shell ops for that
         // subshell) — only string/heredoc/comment are payload. Assert outer
         // list op is present either way.

@@ -34,7 +34,8 @@ const CANONICAL_FIXTURES: &[&str] = &[
 #[derive(Debug, Deserialize)]
 struct Fixture {
     name: String,
-    #[allow(dead_code)] // human-readable; surfaced only on assertion failure
+    // human-readable; surfaced only on assertion failure
+    #[allow(dead_code)]
     description: String,
     turns: Vec<Turn>,
 }
@@ -42,7 +43,8 @@ struct Fixture {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum Turn {
-    #[allow(dead_code)] // user turns are walked but never gate-evaluated
+    // user turns are walked but never gate-evaluated
+    #[allow(dead_code)]
     User(UserTurn),
     Assistant(AssistantTurn),
 }
@@ -57,7 +59,8 @@ struct UserTurn {
 #[derive(Debug, Deserialize)]
 struct AssistantTurn {
     turn_index: usize,
-    #[allow(dead_code)] // present for fixture clarity; the gate does not consult it
+    // present for fixture clarity; the gate does not consult it
+    #[allow(dead_code)]
     tool_calls_emitted: Vec<serde_json::Value>,
     todo_state_after_turn: Vec<TodoSnapshot>,
     backing_task_count: usize,
@@ -70,7 +73,8 @@ struct AssistantTurn {
 
 #[derive(Debug, Deserialize)]
 struct TodoSnapshot {
-    #[allow(dead_code)] // id is preserved for fixture readability
+    // id is preserved for fixture readability
+    #[allow(dead_code)]
     id: String,
     status: TodoStatus,
     content: String,

@@ -6,10 +6,6 @@ use agent_client_protocol as acp;
 use kigi_shell::agent::config::UiConfig;
 use kigi_tools::implementations::kigi::ask_user_question;
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 /// Stable identity for a setting. The string id matches the `UiConfig`
 /// serde field name (for SHELL/SHARED settings) and is the canonical key
 /// referenced by tests, telemetry, and registry lookups.
@@ -338,10 +334,6 @@ impl PagerLocalSnapshot {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Registry
-// ---------------------------------------------------------------------------
-
 /// Process-wide settings registry. Built in `main` and stored on
 /// `AppView::settings_registry: Arc<SettingsRegistry>`.
 #[derive(Debug, Clone)]
@@ -371,7 +363,6 @@ impl SettingsRegistry {
         &self.entries
     }
 
-    /// Look up a setting by key.
     pub fn find(&self, key: SettingKey) -> Option<&SettingMeta> {
         self.entries.iter().find(|m| m.key == key)
     }
@@ -432,10 +423,6 @@ fn build_search_haystack(m: &SettingMeta) -> String {
     }
     s
 }
-
-// ---------------------------------------------------------------------------
-// Snapshot reads — the one place that maps SettingKey → live field.
-// ---------------------------------------------------------------------------
 
 /// Read the current value of `key` from `UiConfig` (SHELL/SHARED) or
 /// pager snapshot (PAGER-owned). Returns `None` for unknown keys.
@@ -630,10 +617,6 @@ pub fn default_value_for(meta: &SettingMeta) -> SettingValue {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -795,7 +778,6 @@ mod tests {
                          cfg.models.default at session start",
                     );
                 }
-                // max_thoughts_width: `u16` widened to `i64`.
                 ("max_thoughts_width", SettingKind::Int { default, .. }) => {
                     assert_eq!(
                         *default, ui.max_thoughts_width as i64,
@@ -814,7 +796,6 @@ mod tests {
                          (matches auto_update.rs's `.unwrap_or(true)`)"
                     );
                 }
-                // vim_mode: Option<bool>; None → false.
                 ("vim_mode", SettingKind::Bool { default }) => {
                     assert_eq!(
                         *default,
@@ -822,7 +803,6 @@ mod tests {
                         "vim_mode default drifts from UiConfig::default()"
                     );
                 }
-                // remember_tool_approvals: Option<bool>; None → false.
                 ("remember_tool_approvals", SettingKind::Bool { default }) => {
                     assert_eq!(
                         *default,
@@ -840,7 +820,6 @@ mod tests {
                          shared resolver const in kigi-tools"
                     );
                 }
-                // show_thinking_blocks: Option<bool>; None → true (client default).
                 ("show_thinking_blocks", SettingKind::Bool { default }) => {
                     assert_eq!(
                         *default,
@@ -848,7 +827,6 @@ mod tests {
                         "show_thinking_blocks default drifts from UiConfig::default()"
                     );
                 }
-                // group_tool_verbs: Option<bool>; None → true (client default).
                 ("group_tool_verbs", SettingKind::Bool { default }) => {
                     assert_eq!(
                         *default,
@@ -866,7 +844,6 @@ mod tests {
                     );
                     assert!(!*default, "collapsed_edit_blocks must default OFF");
                 }
-                // prompt_suggestions: Option<bool>; None → true (client default).
                 ("prompt_suggestions", SettingKind::Bool { default }) => {
                     assert_eq!(
                         *default,
@@ -882,7 +859,6 @@ mod tests {
                     };
                     assert_eq!(*default, expected);
                 }
-                // hunk_tracker_mode: Option<String>; None → "agent_only".
                 ("hunk_tracker_mode", SettingKind::Enum { default, .. }) => {
                     assert_eq!(
                         ui.hunk_tracker_mode, None,
@@ -906,7 +882,6 @@ mod tests {
                     );
                     assert_eq!(*default, "fullscreen");
                 }
-                // render_mermaid: Option<String>; None → "auto".
                 ("render_mermaid", SettingKind::Enum { default, .. }) => {
                     assert_eq!(
                         ui.render_mermaid, None,
@@ -923,7 +898,6 @@ mod tests {
                         "render_mermaid default drifts from UiConfig::default()",
                     );
                 }
-                // scroll_speed: Option<u8>; None → 50.
                 ("scroll_speed", SettingKind::Int { default, .. }) => {
                     assert_eq!(
                         *default,
@@ -943,7 +917,6 @@ mod tests {
                         "scroll_mode default drifts from UiConfig::default()",
                     );
                 }
-                // invert_scroll: Option<bool>; None → false.
                 ("invert_scroll", SettingKind::Bool { default }) => {
                     assert_eq!(
                         *default,
@@ -951,7 +924,6 @@ mod tests {
                         "invert_scroll default drifts from UiConfig::default()"
                     );
                 }
-                // display_refresh.auto_cadence_enabled: Option<bool>; None → false.
                 ("display_refresh_auto_cadence", SettingKind::Bool { default }) => {
                     assert_eq!(
                         *default,

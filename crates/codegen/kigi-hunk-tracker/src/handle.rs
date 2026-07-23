@@ -68,7 +68,6 @@ impl HunkTrackerHandle {
             .send(HunkTrackerCommand::HandleFileDeleted { path });
     }
 
-    /// Refresh git dirty cache.
     pub fn refresh_git_dirty_cache(&self) {
         let _ = self.cmd_tx.send(HunkTrackerCommand::RefreshGitDirtyCache);
     }
@@ -140,7 +139,6 @@ impl HunkTrackerHandle {
         reply_rx.await.unwrap_or_else(|_| Ok(vec![]))
     }
 
-    /// Get all hunks.
     pub async fn get_all_hunks(&self) -> Vec<Arc<Hunk>> {
         let (reply_tx, reply_rx) = oneshot::channel();
         let _ = self
@@ -169,7 +167,6 @@ impl HunkTrackerHandle {
         reply_rx.await.unwrap_or_default()
     }
 
-    /// Get hunks by source.
     pub async fn get_hunks_by_source(&self, source: HunkSourceFilter) -> Vec<Arc<Hunk>> {
         let (reply_tx, reply_rx) = oneshot::channel();
         let _ = self.cmd_tx.send(HunkTrackerCommand::GetHunksBySource {
@@ -293,7 +290,7 @@ impl HunkTrackerHandle {
         reply_rx.await.ok()
     }
 
-    /// Restore a previously snapshotted state. Replaces all current file
+    /// Restore a earlier snapshotted state. Replaces all current file
     /// states, turn index, and session stats in the actor.
     ///
     /// This is fire-and-forget — doesn't wait for processing.

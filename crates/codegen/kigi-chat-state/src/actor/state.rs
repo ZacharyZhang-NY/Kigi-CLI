@@ -137,7 +137,7 @@ pub(crate) struct ChatState {
     /// Opaque credential secrets (api key, optional extra auth, client version).
     /// Stored opaquely — the actor never interprets them.
     pub credentials: Credentials,
-    /// Bytes/4 estimate of tokens added since the last `record_token_usage`.
+    /// Bytes/4 estimate of tokens accumulated since the last `record_token_usage`.
     /// Used by `check_preflight_overflow` to detect context window overflows
     /// between model responses.
     pub estimated_tokens_since_model: u64,
@@ -304,7 +304,8 @@ mod tests {
     fn new_state_has_correct_defaults() {
         let state = ChatState::new(vec![], test_sampling_config());
         assert_eq!(state.prompt_index, 0);
-        assert_eq!(state.total_tokens, 0); // empty conversation → 0
+        // empty conversation → 0
+        assert_eq!(state.total_tokens, 0);
         assert!(state.conversation.is_empty());
         assert!(state.agent_edited_paths.is_empty());
         assert!(state.prompt_texts.is_empty());
@@ -333,7 +334,8 @@ mod tests {
             ConversationItem::tool_result("call-1", "w".repeat(4000).as_str()),
         ];
         let state = ChatState::new(items, test_sampling_config());
-        assert_eq!(state.total_tokens, 4000); // 4 * (4000/4)
+        // 4 * (4000/4)
+        assert_eq!(state.total_tokens, 4000);
     }
 
     #[test]

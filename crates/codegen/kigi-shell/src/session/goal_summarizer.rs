@@ -22,8 +22,6 @@ use kigi_file_utils::events::EventWriter;
 use std::path::Path;
 use std::sync::Arc;
 
-// Constants
-
 /// Same general-purpose inventory the other goal roles use; the read-only
 /// capability mode (set on the spawn) narrows it to inspect-only tools. A
 /// configured `agent_type` selects the HARNESS, not this subagent type.
@@ -39,8 +37,6 @@ const GOAL_SUMMARIZER_PROMPT_TEMPLATE: &str = include_str!("templates/goal_summa
 /// char-boundary-safe). Sits well above a compliant summary — it only clips a
 /// model that ignores the prompt's word cap.
 const GOAL_SUMMARIZER_SUMMARY_MAX_CHARS: usize = 1200;
-
-// Outcome + spawner abstraction
 
 /// Result of the one summarizer attempt. `Summarized` carries the closing
 /// summary text the caller surfaces to the user. `FailOpen` carries the reason
@@ -77,8 +73,6 @@ pub(crate) trait GoalSummarizerSpawner: Send + Sync {
         prompt: RoleRenderedPrompt,
     ) -> Result<String, SpawnError>;
 }
-
-// Production spawner
 
 pub(crate) struct ChannelSpawner {
     pub(crate) event_tx: tokio::sync::mpsc::UnboundedSender<
@@ -176,8 +170,6 @@ impl ChannelSpawner {
         Ok(result.output.to_string())
     }
 }
-
-// Runner
 
 pub(crate) struct GoalSummarizerInputs<'a> {
     pub objective: &'a str,
@@ -305,8 +297,6 @@ fn record_fail_open(
     });
     GoalSummarizerOutcome::FailOpen { reason, latency_ms }
 }
-
-// Tests
 
 #[cfg(test)]
 mod tests {

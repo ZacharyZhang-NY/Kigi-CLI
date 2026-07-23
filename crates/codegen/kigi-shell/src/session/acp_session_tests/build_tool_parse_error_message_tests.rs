@@ -11,36 +11,30 @@ use super::*;
 #[test]
 fn test_malformed_json_includes_original_args_and_position() {
     let bad_args = r#"{"file_path": "/testbed/cxx_polynomial/include/emsr/remez.h", "old_string": "", new_string": "content"}"#;
-    // bad_args is ~100 chars, well under MAX_ARGS_IN_ERROR.
     let err: kigi_tool_runtime::ToolError = serde_json::from_str::<serde_json::Value>(bad_args)
         .unwrap_err()
         .into();
 
     let msg = build_tool_parse_error_message("search_replace", &err, bad_args);
 
-    // Must contain the original arguments.
     assert!(
         msg.contains(bad_args),
         "error message must contain original arguments; got:\n{msg}"
     );
-    // Must flag that the arguments contain invalid JSON.
     assert!(
         msg.contains("invalid JSON"),
         "error message must mention invalid JSON; got:\n{msg}"
     );
-    // Must include the char-position hint from serde_json (line 1 column 81 / char 80).
     assert!(
         msg.contains("column 81") || msg.contains("char 80"),
         "error message must include the parse-error position; got:\n{msg}"
     );
-    // Must tell the model to fix and retry.
     assert!(
         msg.contains("fix") || msg.contains("retry"),
         "error message must guide the model to fix and retry; got:\n{msg}"
     );
 }
 
-/// Valid JSON arguments must NOT trigger the "invalid JSON" note.
 #[test]
 fn test_valid_json_no_invalid_json_note() {
     let good_args = r#"{"file_path": "/foo.rs", "old_string": "a", "new_string": "b"}"#;
@@ -60,7 +54,6 @@ fn test_valid_json_no_invalid_json_note() {
     );
 }
 
-/// Empty arguments must not panic and must not add noise.
 #[test]
 fn test_empty_arguments_no_extra_content() {
     let err =
@@ -72,10 +65,8 @@ fn test_empty_arguments_no_extra_content() {
     assert!(!msg.contains("invalid JSON"));
 }
 
-/// Arguments longer than MAX_ARGS_IN_ERROR must be truncated with a marker.
 #[test]
 fn test_long_arguments_are_truncated() {
-    // Build an argument string longer than MAX_ARGS_IN_ERROR.
     let long_value = "x".repeat(MAX_ARGS_IN_ERROR + 500);
     let long_args = format!(r#"{{"key": "{long_value}"}}"#);
     assert!(long_args.len() > MAX_ARGS_IN_ERROR);
@@ -84,13 +75,11 @@ fn test_long_arguments_are_truncated() {
         kigi_tool_runtime::ToolError::invalid_arguments("missing field `file_path`".to_string());
     let msg = build_tool_parse_error_message("search_replace", &err, &long_args);
 
-    // The message must be capped — the full args must NOT appear verbatim.
     assert!(
         !msg.contains(&long_args),
         "long arguments must be truncated; message length: {}",
         msg.len()
     );
-    // A truncation marker must be present.
     assert!(
         msg.contains("(truncated)"),
         "truncation marker must appear in message"
@@ -116,13 +105,10 @@ fn test_truncate_bytes_non_ascii() {
         s.is_char_boundary(t.len()),
         "result must end on a char boundary"
     );
-    assert_eq!(t, "日"); // only the first char (3 bytes) fits before byte 5
+    assert_eq!(t, "日");
 
-    // Exact boundary is fine.
     assert_eq!(truncate_bytes(s, 3), "日");
-    // Longer than string returns the whole string.
     assert_eq!(truncate_bytes(s, 100), s);
-    // Zero max returns empty.
     assert_eq!(truncate_bytes(s, 0), "");
 }
 
@@ -137,9 +123,7 @@ fn test_non_ascii_arguments_truncated_safely() {
     assert!(long_args.len() > MAX_ARGS_IN_ERROR);
 
     let err = kigi_tool_runtime::ToolError::invalid_arguments("missing field".to_string());
-    // Must not panic.
     let msg = build_tool_parse_error_message("search_replace", &err, &long_args);
     assert!(msg.contains("(truncated)"));
-    // The prefix in the message must be valid UTF-8 (implicit — String is always UTF-8).
     assert!(!msg.is_empty());
 }

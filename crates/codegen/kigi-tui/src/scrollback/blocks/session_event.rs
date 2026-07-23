@@ -683,7 +683,8 @@ impl BlockContent for SessionEventBlock {
     }
 
     fn has_vpad(&self, _ctx: &BlockContext) -> bool {
-        false // Compact like SystemMessageBlock
+        // Compact like SystemMessageBlock.
+        false
     }
 
     fn has_raw_mode(&self) -> bool {

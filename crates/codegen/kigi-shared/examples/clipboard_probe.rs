@@ -1,9 +1,8 @@
-//! Reproducible harness for benchmarking clipboard attachment reads
-//! (the paste hot path).
+//! Benchmark harness for the clipboard paste hot path.
 //!
-//! Runs one `get_attachments()` — the same unified probe the pager's paste
-//! pipeline executes — and prints the outcome plus wall time. Benchmark the
-//! native in-process read against the `osascript` fallback with hyperfine:
+//! Runs the same `get_attachments()` probe the pager's paste pipeline executes
+//! and prints the outcome plus wall time. Compare the native in-process read
+//! against the `osascript` fallback with hyperfine:
 //!
 //! ```text
 //! # put an image on the pasteboard first, e.g.:

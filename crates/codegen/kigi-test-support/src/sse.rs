@@ -1,15 +1,12 @@
-//! SSE stream generators for mock inference endpoints.
-//!
-//! These produce the exact wire format that the kigi sampling client expects,
-//! validated against the real sampling client.
+//! SSE stream generators for mock inference endpoints, producing the exact
+//! wire format the real kigi sampling client parses.
 
 use axum::response::sse::Event;
 use serde_json::json;
 
 use crate::scripted::SseEvent;
 
-/// Generate Anthropic Messages SSE events: one text block streamed as a
-/// single delta, terminated by a `message_delta` carrying `stop_reason`.
+/// Anthropic Messages: one text block streamed as a single delta.
 pub fn messages_api_events(text: &str, model: &str, stop_reason: &str) -> Vec<Event> {
     vec![
         Event::default().data(
@@ -43,30 +40,27 @@ pub fn messages_api_events(text: &str, model: &str, stop_reason: &str) -> Vec<Ev
     ]
 }
 
-/// Generate ChatCompletions SSE events that stream `text` word-by-word
-/// (whitespace-collapsing; use [`chat_completion_events_exact`] when the
-/// receiver must reconstruct `text` byte-for-byte).
+/// Streams `text` word-by-word, collapsing whitespace runs; use
+/// [`chat_completion_events_exact`] when the receiver must reconstruct `text`
+/// byte-for-byte.
 pub fn chat_completion_events(text: &str, model: &str) -> Vec<Event> {
     chat_completion_events_from_deltas(&space_prefixed_deltas(text.split_whitespace()), model)
 }
 
 /// Like [`chat_completion_events`] but byte-exact: concatenating the deltas
-/// reproduces `text` byte-for-byte (newlines and whitespace runs preserved).
-/// Fenced code blocks (mermaid etc.) need their newlines to parse as a block,
-/// which `split_whitespace` would destroy.
+/// reproduces `text` byte-for-byte. Fenced code blocks (mermaid etc.) need
+/// their newlines to parse as a block, which `split_whitespace` destroys.
 pub fn chat_completion_events_exact(text: &str, model: &str) -> Vec<Event> {
     chat_completion_events_from_deltas(&chat_completion_deltas(text), model)
 }
 
-/// Split `text` into deltas that reconstruct it byte-for-byte: the first
-/// carries no leading space; each subsequent one is ` {word}` (split on
-/// single spaces only, so newlines/tabs stay inside the words).
+/// Splits on single spaces only, so newlines and tabs stay inside the words
+/// and concatenating the deltas reconstructs `text` byte-for-byte.
 fn chat_completion_deltas(text: &str) -> Vec<String> {
     space_prefixed_deltas(text.split(' '))
 }
 
-/// Shape words into chat deltas: first word bare, each subsequent one ` {word}`
-/// — the source iterator decides collapsing (echo) vs byte-exact (fixed).
+/// The caller's iterator decides collapsing (echo) vs byte-exact (fixed).
 fn space_prefixed_deltas<'a>(words: impl Iterator<Item = &'a str>) -> Vec<String> {
     words
         .enumerate()
@@ -119,7 +113,6 @@ fn chat_completion_events_from_deltas(deltas: &[String], model: &str) -> Vec<Eve
         events.push(Event::default().data(chunk.to_string()));
     }
 
-    // Usage chunk
     events.push(
         Event::default().data(
             json!({
@@ -141,9 +134,9 @@ fn chat_completion_events_from_deltas(deltas: &[String], model: &str) -> Vec<Eve
     events
 }
 
-/// Generate Responses API SSE events that stream `text` word-by-word
-/// (whitespace-collapsing; use [`responses_api_events_exact`] when the
-/// receiver must reconstruct `text` byte-for-byte).
+/// Streams `text` word-by-word, collapsing whitespace runs; use
+/// [`responses_api_events_exact`] when the receiver must reconstruct `text`
+/// byte-for-byte.
 pub fn responses_api_events(text: &str, model: &str) -> Vec<Event> {
     let deltas: Vec<String> = text
         .split_whitespace()
@@ -153,7 +146,7 @@ pub fn responses_api_events(text: &str, model: &str) -> Vec<Event> {
 }
 
 /// Like [`responses_api_events`] but byte-exact: concatenating the deltas
-/// reproduces `text` byte-for-byte (newlines and whitespace runs preserved).
+/// reproduces `text` byte-for-byte.
 pub fn responses_api_events_exact(text: &str, model: &str) -> Vec<Event> {
     responses_api_events_from_deltas(&responses_api_deltas(text), text, model)
 }
@@ -170,7 +163,6 @@ fn responses_api_events_from_deltas(deltas: &[String], text: &str, model: &str) 
     let mut events = Vec::new();
     let mut seq = 0;
 
-    // response.created
     events.push(
         Event::default().data(
             json!({
@@ -190,7 +182,6 @@ fn responses_api_events_from_deltas(deltas: &[String], text: &str, model: &str) 
     );
     seq += 1;
 
-    // Text deltas
     for chunk in deltas {
         events.push(
             Event::default().data(
@@ -208,7 +199,6 @@ fn responses_api_events_from_deltas(deltas: &[String], text: &str, model: &str) 
         seq += 1;
     }
 
-    // response.completed
     events.push(
         Event::default().data(
             json!({
@@ -247,22 +237,19 @@ fn responses_api_events_from_deltas(deltas: &[String], text: &str, model: &str) 
     events
 }
 
-/// Generate Responses API SSE events for a reasoning-only completion: the
-/// model streams reasoning summary deltas and finishes with a `reasoning`
-/// output item but NO message / output-text and no tool call. The shell's
-/// collector synthesizes an empty assistant, so the response classifies as
-/// `EmptyReason::ReasoningOnly` — the trigger that makes the sampler resample
-/// (the model doomloop).
+/// Reasoning-only completion: reasoning summary deltas and a `reasoning`
+/// output item, with no message, output text or tool call.
+/// `response_to_conversation_items` appends an empty assistant, yielding
+/// `[Reasoning, Assistant("")]`, so the turn classifies as
+/// `EmptyReason::ReasoningOnly` and the sampler resamples (the model doomloop).
 ///
-/// Returns [`SseEvent`]s (not axum `Event`s) for direct use with
-/// [`crate::ScriptedResponse::sse`] / `enqueue_response`: reasoning-only is a
-/// scripted scenario, not an echo/fixed response mode, so it is not wired into
-/// the `mock_server` mode handlers.
+/// Returns [`SseEvent`]s rather than axum `Event`s because this is a scripted
+/// scenario ([`crate::ScriptedResponse::sse`] / `enqueue_response`), not an
+/// echo/fixed response mode wired into the `mock_server` handlers.
 pub fn responses_api_reasoning_only_events(reasoning: &str, model: &str) -> Vec<SseEvent> {
     let mut events = Vec::new();
     let mut seq = 0;
 
-    // response.created
     events.push(SseEvent::data(
         json!({
             "type": "response.created",
@@ -280,7 +267,6 @@ pub fn responses_api_reasoning_only_events(reasoning: &str, model: &str) -> Vec<
     ));
     seq += 1;
 
-    // Reasoning summary deltas — the only content the model streams.
     for word in reasoning.split_whitespace() {
         events.push(SseEvent::data(
             json!({
@@ -296,9 +282,6 @@ pub fn responses_api_reasoning_only_events(reasoning: &str, model: &str) -> Vec<
         seq += 1;
     }
 
-    // response.completed: a single `reasoning` output item carrying the full
-    // summary and NO message item. `response_to_conversation_items` appends an
-    // empty assistant, yielding `[Reasoning, Assistant("")]` → reasoning_only.
     events.push(SseEvent::data(
         json!({
             "type": "response.completed",
@@ -333,14 +316,10 @@ pub fn responses_api_reasoning_only_events(reasoning: &str, model: &str) -> Vec<
     events
 }
 
-/// Generate Responses API SSE events for a completion that streams reasoning
-/// summary deltas FIRST and then a normal text answer: the shape a
+/// Reasoning summary deltas first, then a normal text answer: the shape a
 /// reasoning-capable model produces on an ordinary turn. `response.completed`
-/// carries both output items (`reasoning` + `message`), so the collector
-/// yields `[Reasoning, Assistant(text)]` — a full, non-empty turn.
-///
-/// Returns [`SseEvent`]s for direct use with [`crate::ScriptedResponse::sse`]
-/// / `enqueue_response`, mirroring [`responses_api_reasoning_only_events`].
+/// carries both output items, so the collector yields
+/// `[Reasoning, Assistant(text)]` — a full, non-empty turn.
 pub fn responses_api_reasoning_and_text_events(
     reasoning: &str,
     text: &str,
@@ -349,7 +328,6 @@ pub fn responses_api_reasoning_and_text_events(
     let mut events = Vec::new();
     let mut seq = 0;
 
-    // response.created
     events.push(SseEvent::data(
         json!({
             "type": "response.created",
@@ -367,7 +345,6 @@ pub fn responses_api_reasoning_and_text_events(
     ));
     seq += 1;
 
-    // Reasoning summary deltas stream before any answer text.
     for word in reasoning.split_whitespace() {
         events.push(SseEvent::data(
             json!({
@@ -383,7 +360,6 @@ pub fn responses_api_reasoning_and_text_events(
         seq += 1;
     }
 
-    // Then the visible answer.
     for word in text.split_whitespace() {
         events.push(SseEvent::data(
             json!({
@@ -399,7 +375,6 @@ pub fn responses_api_reasoning_and_text_events(
         seq += 1;
     }
 
-    // response.completed with BOTH items: reasoning + the assistant message.
     events.push(SseEvent::data(
         json!({
             "type": "response.completed",
@@ -448,14 +423,12 @@ pub fn responses_api_reasoning_and_text_events(
 }
 
 /// SSE `event:` name and payload `type` of the non-standard doom-loop check
-/// event (`kigi_sampling_types::DOOM_LOOP_CHECK_EVENT_TYPE`). Hardcoded
-/// like every other wire string in this file; the shell integration tests
-/// pin the two spellings against each other by absorbing built frames
-/// through the real client.
+/// event, duplicating `kigi_sampling_types::DOOM_LOOP_CHECK_EVENT_TYPE` like
+/// every other wire string here; the shell integration tests pin the two
+/// spellings against each other by absorbing built frames through the real
+/// client.
 const DOOM_LOOP_CHECK_EVENT: &str = "response.doom_loop_check";
 
-/// One named `response.doom_loop_check` frame carrying the (cumulative)
-/// trigger set, in the inference API's wire shape.
 fn doom_loop_check_frame(triggers: &[&str], seq: u64) -> SseEvent {
     SseEvent::with_event(
         DOOM_LOOP_CHECK_EVENT,
@@ -469,11 +442,11 @@ fn doom_loop_check_frame(triggers: &[&str], seq: u64) -> SseEvent {
 }
 
 /// Inject `doom_loop_check.triggers` into a turn's terminal
-/// `response.completed` object — the single home for terminal-field emission,
-/// the dual of the mid-stream [`doom_loop_check_frame`]. Composes over any
-/// turn builder (re-serialization may reorder JSON keys; clients and shape
-/// tests parse, never byte-compare, these frames). Panics when the turn has
-/// no completed frame: every builder emits one, so a miss is a script bug.
+/// `response.completed` object — the dual of the mid-stream
+/// [`doom_loop_check_frame`]. Composes over any turn builder; re-serialization
+/// may reorder JSON keys, which is safe because clients and shape tests parse
+/// these frames rather than byte-compare them. Every builder emits a completed
+/// frame, so a miss is a script bug.
 fn with_terminal_doom_loop_field(mut events: Vec<SseEvent>, triggers: &[&str]) -> Vec<SseEvent> {
     let patched = events.iter_mut().any(|e| {
         if e.data == "[DONE]" {
@@ -496,16 +469,12 @@ fn with_terminal_doom_loop_field(mut events: Vec<SseEvent>, triggers: &[&str]) -
     events
 }
 
-/// Generate Responses API SSE events for a server-detected doom loop: a
-/// reasoning-only stream (the doomed signature — the model loops in its
-/// thinking and never answers) followed by named `response.doom_loop_check`
-/// frames re-sent with the growing **cumulative** trigger set (one frame per
-/// prefix of `triggers`, mirroring how the server re-emits as new triggers
-/// appear), and a terminal `response.completed` whose response object carries
-/// the full set under `doom_loop_check.triggers`.
-///
-/// Returns [`SseEvent`]s for direct use with [`crate::ScriptedResponse::sse`]
-/// / `enqueue_response`, mirroring [`responses_api_reasoning_only_events`].
+/// Server-detected doom loop: a reasoning-only stream (the doomed signature —
+/// the model loops in its thinking and never answers) followed by named
+/// `response.doom_loop_check` frames carrying the growing **cumulative**
+/// trigger set (one frame per prefix of `triggers`, mirroring how the server
+/// re-emits as new triggers appear), and a terminal `response.completed` whose
+/// response object carries the full set under `doom_loop_check.triggers`.
 pub fn responses_api_doom_loop_check_events(
     triggers: &[&str],
     reasoning: &str,
@@ -524,10 +493,9 @@ pub fn responses_api_doom_loop_check_events(
     with_terminal_doom_loop_field(events, triggers)
 }
 
-/// Generate Responses API SSE events for an ordinary reasoning + text turn
-/// (mirroring [`responses_api_reasoning_and_text_events`]) whose terminal
-/// `response.completed` object carries `doom_loop_check.triggers` with NO
-/// mid-stream check frame — the terminal-only copy of the signal.
+/// An ordinary reasoning + text turn whose terminal `response.completed`
+/// object carries `doom_loop_check.triggers` with NO mid-stream check frame —
+/// the terminal-only copy of the signal.
 pub fn responses_api_doom_loop_terminal_only_events(
     triggers: &[&str],
     reasoning: &str,
@@ -543,8 +511,8 @@ pub fn responses_api_doom_loop_terminal_only_events(
 /// Splice ONE named `response.doom_loop_check` frame with an arbitrary
 /// `data:` payload — a byte-exact wire fixture or a malformed variant — into
 /// an otherwise-normal reasoning + text turn, right after `response.created`.
-/// The payload's own `sequence_number` (if any) is its business; clients
-/// never validate sequence continuity.
+/// The payload's own `sequence_number` (if any) is its business: clients never
+/// validate sequence continuity.
 pub fn responses_api_with_doom_loop_frame(
     check_frame_data: &str,
     reasoning: &str,
@@ -559,16 +527,11 @@ pub fn responses_api_with_doom_loop_frame(
     events
 }
 
-/// Generate Responses API SSE events for a turn that streams reasoning
-/// summary deltas FIRST and then issues one `function_call` — the shape a
-/// reasoning-capable model produces when it thinks before its first tool
-/// call. `response.completed` carries both output items (`reasoning` +
-/// `function_call`) and no message, so the collector yields
-/// `[Reasoning, ToolCall]` (tool calls keep the turn non-empty — no
-/// `EmptyReason::ReasoningOnly` resample).
-///
-/// Returns [`SseEvent`]s for direct use with [`crate::ScriptedResponse::sse`]
-/// / `enqueue_response`, mirroring [`responses_api_reasoning_only_events`].
+/// Reasoning summary deltas first, then one `function_call` — the shape a
+/// reasoning-capable model produces when it thinks before its first tool call.
+/// `response.completed` carries both output items and no message, so the
+/// collector yields `[Reasoning, ToolCall]`; the tool call keeps the turn
+/// non-empty, so there is no `EmptyReason::ReasoningOnly` resample.
 pub fn responses_api_reasoning_then_tool_call_events(
     reasoning: &str,
     call_id: &str,
@@ -579,7 +542,6 @@ pub fn responses_api_reasoning_then_tool_call_events(
     let mut events = Vec::new();
     let mut seq = 0;
 
-    // response.created
     events.push(SseEvent::data(
         json!({
             "type": "response.created",
@@ -597,7 +559,6 @@ pub fn responses_api_reasoning_then_tool_call_events(
     ));
     seq += 1;
 
-    // Reasoning summary deltas stream before the tool call.
     for word in reasoning.split_whitespace() {
         events.push(SseEvent::data(
             json!({
@@ -613,7 +574,6 @@ pub fn responses_api_reasoning_then_tool_call_events(
         seq += 1;
     }
 
-    // Then the tool invocation.
     events.push(SseEvent::data(
         json!({
             "type": "response.function_call_arguments.delta",
@@ -626,7 +586,6 @@ pub fn responses_api_reasoning_then_tool_call_events(
     ));
     seq += 1;
 
-    // response.completed: the reasoning item plus the function_call item.
     events.push(SseEvent::data(
         json!({
             "type": "response.completed",
@@ -746,11 +705,9 @@ pub fn chat_completions_reasoning_then_tool_call_events(
 mod tests {
     use super::*;
 
-    /// Both byte-exact delta encoders must reconstruct a multi-line response
-    /// (incl. a ```mermaid fence) byte-for-byte. This is load-bearing:
-    /// `split_whitespace` would collapse the fence's newlines onto one line,
-    /// so a client would never parse it as a code block and diagram detection
-    /// would silently fail.
+    /// Load-bearing: `split_whitespace` would collapse the fence's newlines
+    /// onto one line, so a client would never parse it as a code block and
+    /// diagram detection would silently fail.
     #[test]
     fn deltas_reconstruct_multiline_response_byte_for_byte() {
         let text = "Here is a flow:\n\n```mermaid\nflowchart TD\n  A --> B\n  B --> C\n```\n\nDone rendering.\n";
@@ -758,8 +715,6 @@ mod tests {
         assert_eq!(chat_completion_deltas(text).concat(), text);
         assert_eq!(responses_api_deltas(text).concat(), text);
 
-        // The reconstruction preserves the fence as a real, newline-delimited
-        // code block (the property diagram detection depends on).
         assert!(
             chat_completion_deltas(text)
                 .concat()
@@ -767,8 +722,6 @@ mod tests {
         );
     }
 
-    /// Multiple consecutive spaces and a trailing newline survive too (no
-    /// `split_whitespace`-style collapsing).
     #[test]
     fn deltas_preserve_runs_of_whitespace() {
         let text = "a  b\tc\n";
@@ -776,21 +729,16 @@ mod tests {
         assert_eq!(responses_api_deltas(text).concat(), text);
     }
 
-    /// Shape guard for the reasoning-only builder: parse each event back to JSON
-    /// and assert the structural tags/fields the shell collector keys on — at
-    /// least one `response.reasoning_summary_text.delta` carrying text, no
-    /// `response.output_text.delta`, and a `response.completed` whose output
-    /// holds a `reasoning` item (with summary text) and no `message` item,
-    /// terminated by `[DONE]`. A full round-trip through `rs::ResponseStreamEvent`
-    /// would pin the async-openai types directly, but that crate is not a
-    /// dependency here; the integration test deserializes these events through
-    /// the real client, covering the wire contract end-to-end.
+    /// Structural shape guard only: a round-trip through
+    /// `rs::ResponseStreamEvent` would pin the async-openai types directly,
+    /// but that crate is not a dependency here. The shell integration test
+    /// deserializes these events through the real client, covering the wire
+    /// contract end-to-end.
     #[test]
     fn reasoning_only_events_carry_reasoning_and_no_output_text() {
         let events = responses_api_reasoning_only_events("alpha beta gamma", "m");
         assert_eq!(events.last().map(|e| e.data.as_str()), Some("[DONE]"));
 
-        // Parse every non-terminal event into JSON and key off the `type` tag.
         let parsed: Vec<serde_json::Value> = events
             .iter()
             .filter(|e| e.data != "[DONE]")
@@ -841,10 +789,6 @@ mod tests {
         );
     }
 
-    /// Shape guard for the reasoning+text builder: reasoning summary deltas
-    /// stream before the output-text deltas, and `response.completed` carries
-    /// BOTH a `reasoning` item and a `message` item, terminated by `[DONE]` —
-    /// the ordinary reasoning-model turn (never `EmptyReason::ReasoningOnly`).
     #[test]
     fn reasoning_and_text_events_carry_both_items() {
         let events = responses_api_reasoning_and_text_events("alpha beta", "the answer", "m");
@@ -860,7 +804,6 @@ mod tests {
             .map(|v| v["type"].as_str().expect("each event has a type tag"))
             .collect();
 
-        // Reasoning streams strictly before the visible answer.
         let first_reasoning = types
             .iter()
             .position(|t| *t == "response.reasoning_summary_text.delta")
@@ -893,11 +836,6 @@ mod tests {
         );
     }
 
-    /// Shape guard for the reasoning+tool-call builder: reasoning summary
-    /// deltas stream before the function-call args delta, no output text
-    /// anywhere, and `response.completed` carries a `reasoning` item plus a
-    /// `function_call` item (no `message`), terminated by `[DONE]` — the
-    /// think-then-call turn whose tool call keeps it non-empty.
     #[test]
     fn reasoning_then_tool_call_events_carry_reasoning_and_function_call() {
         let events = responses_api_reasoning_then_tool_call_events(
@@ -919,7 +857,6 @@ mod tests {
             .map(|v| v["type"].as_str().expect("each event has a type tag"))
             .collect();
 
-        // Reasoning streams strictly before the tool invocation; no text.
         let first_reasoning = types
             .iter()
             .position(|t| *t == "response.reasoning_summary_text.delta")
@@ -958,10 +895,6 @@ mod tests {
         );
     }
 
-    /// Shape guard for the Chat Completions twin: `reasoning_content` deltas
-    /// stream first, then exactly one `tool_calls` delta carrying the call
-    /// id/name/arguments, then a `finish_reason: "tool_calls"` chunk, with no
-    /// visible `content` anywhere, terminated by `[DONE]`.
     #[test]
     fn chat_reasoning_then_tool_call_events_carry_reasoning_then_tool_call() {
         let events = chat_completions_reasoning_then_tool_call_events(
@@ -1010,10 +943,6 @@ mod tests {
         );
     }
 
-    /// Shape guard for the doom-loop builder: one NAMED check frame per
-    /// cumulative prefix of `triggers` (each frame re-sends every trigger so
-    /// far), a reasoning-only output (no message item — the doomed
-    /// signature), and the terminal response object carrying the full set.
     #[test]
     fn doom_loop_check_events_send_growing_named_frames_and_terminal_field() {
         let events = responses_api_doom_loop_check_events(
@@ -1058,9 +987,6 @@ mod tests {
         );
     }
 
-    /// Shape guard for the terminal-only variant: no named check frame
-    /// anywhere; the completed response carries both output items (the turn
-    /// is a normal answer) plus `doom_loop_check.triggers`.
     #[test]
     fn doom_loop_terminal_only_events_carry_field_without_mid_stream_frame() {
         let events = responses_api_doom_loop_terminal_only_events(
@@ -1089,9 +1015,6 @@ mod tests {
         assert!(output.iter().any(|o| o["type"] == "reasoning"));
     }
 
-    /// Shape guard for the splice helper: the named frame lands right after
-    /// `response.created` with the caller's payload byte-for-byte (this is
-    /// how byte-exact fixtures and malformed variants ride a normal turn).
     #[test]
     fn with_doom_loop_frame_splices_payload_verbatim() {
         let payload = r#"{"type":"response.doom_loop_check","doom_loop_check":{"triggers":42}}"#;

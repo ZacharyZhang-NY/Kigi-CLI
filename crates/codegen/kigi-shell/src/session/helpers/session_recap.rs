@@ -272,7 +272,7 @@ pub(crate) fn clean_recap_text(raw: &str) -> String {
         let cut = floor_char_boundary(&out, RECAP_MAX_CHARS);
         out.truncate(cut);
         out = out.trim_end().to_string();
-        out.push('\u{2026}'); // …
+        out.push('\u{2026}');
     }
 
     out
@@ -522,8 +522,6 @@ mod tests {
         );
     }
 
-    // ---- budget_recap_items ------------------------------------------------
-
     /// Recompute the prompt budget the helper uses, for end-state assertions.
     fn recap_prompt_budget(context_window: u64) -> u64 {
         (context_window.min(RECAP_CONTEXT_WINDOW_CAP) * RECAP_BUDGET_THRESHOLD_PERCENT / 100)
@@ -588,7 +586,8 @@ mod tests {
             ConversationItem::system("sys"),
             ConversationItem::user("q1"),
             ConversationItem::assistant("a1"),
-            ConversationItem::user("d".repeat(40_000)), // ~10k est tokens
+            // ~10k est tokens
+            ConversationItem::user("d".repeat(40_000)),
             ConversationItem::assistant("a2"),
             ConversationItem::user("recent q"),
         ];
@@ -637,10 +636,13 @@ mod tests {
         // the recent user turn is what survives the front-trim.
         let conv = vec![
             ConversationItem::system("sys"),
-            ConversationItem::user("c".repeat(40_000)), // oldest real user, dropped
-            ConversationItem::user("what changed in the parser?"), // most-recent real user
+            // oldest real user, dropped
+            ConversationItem::user("c".repeat(40_000)),
+            // most-recent real user turn
+            ConversationItem::user("what changed in the parser?"),
             ConversationItem::assistant_tool_calls(vec![mk_tool_call("c9", "{}")]),
-            ConversationItem::tool_result("c9", "t".repeat(40_000)), // trailing run, > budget
+            // trailing run, > budget
+            ConversationItem::tool_result("c9", "t".repeat(40_000)),
         ];
         let out = budget_recap_items(conv, "system-reminder", false, 8_000);
 

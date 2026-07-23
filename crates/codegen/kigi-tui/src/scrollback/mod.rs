@@ -28,7 +28,6 @@ pub mod text_selection;
 pub mod types;
 pub mod wrappers;
 
-// Re-exports for convenience
 pub use block::{BlockContent, RenderBlock};
 pub use blocks::{
     AgentMessageBlock, SystemMessageBlock, ThinkingBlock, ToolCallBlock, UserPromptBlock,

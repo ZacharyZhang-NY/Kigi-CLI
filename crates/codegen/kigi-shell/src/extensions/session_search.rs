@@ -22,7 +22,6 @@ use super::ExtResult;
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchSessionsRequest {
-    /// The search query string.
     pub query: String,
     /// Optional workspace directory to scope results to.
     #[serde(default)]
@@ -67,7 +66,6 @@ pub struct SearchSessionHit {
     pub snippet: Option<String>,
 }
 
-/// Route `kigi/session/search` extension method calls.
 pub async fn handle(args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
         "kigi/session/search" => {
@@ -92,7 +90,6 @@ pub async fn handle(args: &acp::ExtRequest) -> ExtResult {
     }
 }
 
-/// Convert the internal response to the ACP-facing response.
 fn to_response(resp: SessionSearchResponse) -> SearchSessionsResponse {
     SearchSessionsResponse {
         results: resp

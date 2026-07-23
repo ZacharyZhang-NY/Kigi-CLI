@@ -3,11 +3,8 @@
 //! into the JSON shape emitted by `LoadSession` on `_meta.codeRestore`.
 use kigi_workspace::session::git::{CheckoutSessionOutcome, RestoreKind, build_restore_decision};
 use serde_json::Value;
-/// Build the `codeRestore` JSON meta, or `None` when no restore should
-/// be reported (no checkout AND no archive applied). The shared
-/// [`build_restore_decision`] is the source of truth; this function
-/// only adapts the result into the wire JSON shape used by the
-/// non-worktree path.
+/// Build the `codeRestore` JSON meta for the non-worktree path, or `None`
+/// when no restore should be reported (no checkout AND no archive applied).
 pub(crate) fn build_code_restore_meta(
     target_sha: &str,
     outcome: &CheckoutSessionOutcome,

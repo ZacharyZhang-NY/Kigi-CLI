@@ -87,7 +87,7 @@ impl JournalMode {
 
     /// The path actually opened for `db_path` under this mode.
     ///
-    /// `Wal` (local): unchanged. `Truncate` (network): a per-host sibling
+    /// `Wal` (local): `unchanged`. `Truncate` (network): a per-host sibling
     /// (`worktrees.db` → `worktrees.h-<host>.db`). Journal mode is a
     /// database-wide property, so a live pre-fix binary on a peer host (or
     /// this host) can flip a *shared* DB back to WAL at any time and our
@@ -97,9 +97,9 @@ impl JournalMode {
     /// hazard — holds by construction. These DBs are all rebuildable
     /// indexes/caches, so each host starting fresh is acceptable.
     ///
-    /// Idempotent (an already-suffixed path is returned unchanged) so
+    /// Idempotent (an already-suffixed path is returned `unchanged`) so
     /// callers may pre-resolve the path for sidecar file operations. Falls
-    /// back to `db_path` unchanged (still TRUNCATE) if no hostname is
+    /// back to `db_path` `unchanged` (still TRUNCATE) if no hostname is
     /// available.
     pub fn effective_db_path(self, db_path: &Path) -> PathBuf {
         if self != Self::Truncate {
@@ -115,7 +115,7 @@ impl JournalMode {
             return db_path.to_path_buf();
         };
         let tag = format!(".h-{host}");
-        // Idempotent: pre-resolved paths pass through unchanged.
+        // Idempotent: pre-resolved paths pass through `unchanged`.
         if name.ends_with(&tag) || name.contains(&format!("{tag}.")) {
             return db_path.to_path_buf();
         }
@@ -294,11 +294,13 @@ fn is_network_fs_magic(f_type: u64) -> bool {
     const V9FS_MAGIC: u64 = 0x0102_1997;
     const CODA_SUPER_MAGIC: u64 = 0x7375_7245;
     const AFS_SUPER_MAGIC: u64 = 0x5346_414F;
-    const AFS_FS_MAGIC: u64 = 0x6B41_4653; // in-kernel kAFS client
+    // in-kernel kAFS client
+    const AFS_FS_MAGIC: u64 = 0x6B41_4653;
     const CEPH_SUPER_MAGIC: u64 = 0x00C3_6400;
     const LUSTRE_SUPER_MAGIC: u64 = 0x0BD0_0BD0;
     const GFS2_MAGIC: u64 = 0x0116_1970;
-    const GPFS_SUPER_MAGIC: u64 = 0x4750_4653; // "GPFS" (Spectrum Scale)
+    // "GPFS" (Spectrum Scale)
+    const GPFS_SUPER_MAGIC: u64 = 0x4750_4653;
     const OCFS2_SUPER_MAGIC: u64 = 0x7461_636F;
     // WekaFS: parallel filesystem sometimes used for network-mounted home
     // directories. Its magic is not in linux/magic.h — the value is confirmed
@@ -474,21 +476,21 @@ mod tests {
     #[test]
     fn network_magics_classify_as_network() {
         for magic in [
-            0x6969u64,   // NFS
-            0x517B,      // SMB
-            0xFE53_4D42, // SMB2
-            0xFF53_4D42, // CIFS
-            0x0102_1997, // 9p
-            0x7375_7245, // CODA
-            0x5346_414F, // AFS
-            0x6B41_4653, // kAFS
-            0x00C3_6400, // CEPH
-            0x0BD0_0BD0, // Lustre
-            0x0116_1970, // GFS2
-            0x4750_4653, // GPFS
-            0x7461_636F, // OCFS2
-            0x1803_1977, // wekafs
-            0x6573_5546, // FUSE
+            0x6969u64,
+            0x517B,
+            0xFE53_4D42,
+            0xFF53_4D42,
+            0x0102_1997,
+            0x7375_7245,
+            0x5346_414F,
+            0x6B41_4653,
+            0x00C3_6400,
+            0x0BD0_0BD0,
+            0x0116_1970,
+            0x4750_4653,
+            0x7461_636F,
+            0x1803_1977,
+            0x6573_5546,
         ] {
             assert!(is_network_fs_magic(magic), "magic {magic:#x}");
         }
@@ -497,12 +499,13 @@ mod tests {
     #[test]
     fn local_magics_classify_as_local() {
         for magic in [
-            0xEF53u64,   // ext2/3/4
-            0x0102_1994, // tmpfs
-            0x9123_683E, // btrfs
-            0x5846_5342, // XFS
-            0x794C_7630, // overlayfs
-            0x2FC1_2FC1, // zfs
+            // ext2/3/4
+            0xEF53u64,
+            0x0102_1994,
+            0x9123_683E,
+            0x5846_5342,
+            0x794C_7630,
+            0x2FC1_2FC1,
             0x0,
         ] {
             assert!(!is_network_fs_magic(magic), "magic {magic:#x}");

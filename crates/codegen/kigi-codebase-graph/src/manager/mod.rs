@@ -1,4 +1,4 @@
-//! Index management: building, caching, locking, and updating.
+//! Index management: building, caching, and workspace locking.
 
 mod builder;
 pub mod cache;

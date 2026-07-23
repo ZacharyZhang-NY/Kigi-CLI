@@ -126,8 +126,6 @@ fn end_to_end_normalized_conversation_shape() {
     assert_eq!(prefix_len, 2);
     assert!(prefix_len < conv.len(), "prefix should not cover the task");
 }
-/// Verify that the task prompt (not background context) would be the
-/// cached prompt text in the session pipeline.
 #[test]
 fn cached_prompt_text_is_task_not_background() {
     use kigi_sampling_types::conversation::ConversationItem;
@@ -162,7 +160,6 @@ fn cached_prompt_text_is_task_not_background() {
         "background should be the inherited context"
     );
 }
-/// Verify extract_last_real_user_query would return the task.
 #[test]
 fn last_user_message_is_task_after_normalization() {
     use kigi_sampling_types::conversation::ConversationItem;
@@ -286,7 +283,6 @@ fn compaction_preserves_inherited_prefix() {
         bg_count, 1, "should have exactly one background_context after compaction"
     );
 }
-/// Verify that compaction with prefix_len=0 (non-forked) passes through unchanged.
 #[test]
 fn compaction_no_prefix_passes_through() {
     use kigi_sampling_types::conversation::ConversationItem;
@@ -623,7 +619,6 @@ fn subagent_worktree_snapshot_gate_defaults_off() {
     let ctx = ctx_with_toggle(std::collections::HashMap::new());
     assert!(! ctx.resolve_subagent_worktree_snapshot_enabled());
 }
-/// Remote remote settings value enables the gate when no local override exists.
 #[test]
 fn subagent_worktree_snapshot_gate_remote_enables() {
     let mut ctx = ctx_with_toggle(std::collections::HashMap::new());
@@ -649,7 +644,6 @@ fn subagent_worktree_snapshot_gate_local_overrides_remote() {
         "local [features] subagent_worktree_snapshot=false must override remote enable"
     );
 }
-/// Local config alone enables the gate (the per-deployment rollout lever).
 #[test]
 fn subagent_worktree_snapshot_gate_local_enables() {
     let mut config = crate::agent::config::Config::default();
@@ -2380,7 +2374,7 @@ async fn resolve_subagent_inherits_parent_model_without_pins() {
 /// An explicit `[subagents.models]` pin routes the subagent to that
 /// model regardless of the parent model — both a light parent
 /// (`kigi-4.5`) and a custom parent (`composer-2-fast`)
-/// honor the pin identically now that the heavy-model gate is gone.
+/// honor the pin identically.
 #[tokio::test]
 async fn resolve_subagent_config_override_pin_applies_for_any_parent() {
     use kigi_agent::config::ModelOverride;
@@ -2541,9 +2535,7 @@ async fn subagent_override_first_party_model_still_gets_primary_token() {
 /// LEAK guard (C1, subagent-override `api_key` channel): an API-key registry
 /// platform override must NOT receive the parent's primary Kimi session token —
 /// `resolve_credentials` would stamp it as the child's `api_key` on
-/// `api.moonshot.cn`. This test previously asserted the opposite
-/// (`subagent_override_non_oauth_model_still_gets_primary_token`), which encoded
-/// the defect.
+/// `api.moonshot.cn`.
 ///
 /// Revert-to-red: make `CredentialAuthority::governing_manager`'s
 /// `Some(platform) => None` arm return `self.primary.clone()` and `api_key`

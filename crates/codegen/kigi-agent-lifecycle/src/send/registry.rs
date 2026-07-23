@@ -5,7 +5,6 @@ use crate::send::contributors::{
     CommandContributor, SessionLifecycleContributor, TurnInputContributor, TurnLifecycleContributor,
 };
 
-/// Mutable registry used while hosts register typed runtime contributions.
 #[derive(Default)]
 pub struct ExtensionRegistryBuilder {
     turn_lifecycle_contributors: Vec<Arc<dyn TurnLifecycleContributor>>,
@@ -38,8 +37,8 @@ impl ExtensionRegistryBuilder {
         self.command_contributors.push(contributor);
     }
 
-    /// Routes each advertised command to its one owner. Duplicate names are a composition bug:
-    /// first registration wins, panics in debug builds, logs in release.
+    /// Two extensions advertising one command name is a composition bug, so it trips a
+    /// `debug_assert`; release builds keep the first registration and log the loser.
     pub fn build(self) -> ExtensionRegistry {
         let mut command_handlers: HashMap<String, Arc<dyn CommandContributor>> = HashMap::new();
         for contributor in &self.command_contributors {
@@ -63,7 +62,6 @@ impl ExtensionRegistryBuilder {
     }
 }
 
-/// Immutable typed registry produced after extensions are installed.
 #[derive(Default)]
 pub struct ExtensionRegistry {
     turn_lifecycle_contributors: Vec<Arc<dyn TurnLifecycleContributor>>,
@@ -90,7 +88,6 @@ impl ExtensionRegistry {
         &self.command_contributors
     }
 
-    /// The one contributor owning `name`, or `None` when no extension advertised it.
     pub fn command_handler(&self, name: &str) -> Option<&Arc<dyn CommandContributor>> {
         self.command_handlers.get(name)
     }

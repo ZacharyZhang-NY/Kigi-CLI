@@ -138,7 +138,8 @@ fn isolate_process_stdin() -> Option<std::fs::File> {
     use std::os::windows::io::FromRawHandle as _;
 
     // Win32 constants (inlined to avoid a dependency).
-    const STD_INPUT_HANDLE: u32 = 0xFFFF_FFF6; // (DWORD)-10
+    // (DWORD)-10
+    const STD_INPUT_HANDLE: u32 = 0xFFFF_FFF6;
     const DUPLICATE_SAME_ACCESS: u32 = 0x0000_0002;
     const GENERIC_READ: u32 = 0x8000_0000;
     const FILE_SHARE_READ: u32 = 0x0000_0001;
@@ -186,7 +187,8 @@ fn isolate_process_stdin() -> Option<std::fs::File> {
             process,
             &mut duplicate,
             0,
-            0, // not inheritable
+            // not inheritable
+            0,
             DUPLICATE_SAME_ACCESS,
         ) == 0
         {

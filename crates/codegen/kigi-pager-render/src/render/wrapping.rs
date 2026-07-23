@@ -114,7 +114,8 @@ pub(crate) fn byte_offset_to_display_col(text: &str, byte_offset: usize) -> usiz
 /// forward. If a future change to the wrapping pipeline breaks this
 /// invariant, consider switching to a two-stage approach that mirrors
 /// `word_wrap_line_with_joiners` exactly.
-#[allow(clippy::single_range_in_vec_init)] // intentional: single range = full text, no wrapping
+// intentional: single range = full text, no wrapping
+#[allow(clippy::single_range_in_vec_init)]
 pub fn wrap_byte_ranges_matching(text: &str, width: usize) -> Vec<Range<usize>> {
     if width == 0 || text.is_empty() {
         return vec![0..text.len()];
@@ -362,7 +363,7 @@ fn is_table_line(line: &Line<'_>) -> bool {
 /// this wrap layer re-injecting the prefix spans (with their styles) on
 /// continuation rows, so keep the two shapes in agreement.
 fn blockquote_prefix_len(flat: &str) -> usize {
-    const BAR_BYTES: usize = '\u{2502}'.len_utf8(); // 3
+    const BAR_BYTES: usize = '\u{2502}'.len_utf8();
     let mut len = 0;
     let mut chars = flat.chars();
     while let Some('\u{2502}') = chars.next() {
@@ -1187,14 +1188,15 @@ mod tests {
         }
     }
 
-    // -- byte_range_to_row_cols tests -----------------------------------------
+    // byte_range_to_row_cols tests
 
     #[test]
     fn highlight_single_row_match() {
         // "hello world" on one row (no wrapping).
         let text = "hello world";
-        let ranges = vec![0..11]; // one row, full text
-        let segments = byte_range_to_row_cols(text, &ranges, 6..11); // "world"
+        // one row, full text
+        let ranges = vec![0..11];
+        let segments = byte_range_to_row_cols(text, &ranges, 6..11);
         assert_eq!(
             segments,
             vec![HighlightSegment {
@@ -1306,8 +1308,9 @@ mod tests {
         // Byte layout: a(1) b(1) —(3) c(1) d(1) = 7 bytes total.
         // Display:     a(0) b(1) —(2) c(3) d(4) = 5 display columns.
         let text = "ab\u{2014}cd";
-        assert_eq!(text.len(), 7); // 2 + 3 + 2 bytes
-        let ranges = vec![0..7]; // one row
+        // 2 + 3 + 2 bytes
+        assert_eq!(text.len(), 7);
+        let ranges = vec![0..7];
         // Match "cd" = bytes 5..7, display cols 3..5.
         let segments = byte_range_to_row_cols(text, &ranges, 5..7);
         assert_eq!(
@@ -1340,7 +1343,7 @@ mod tests {
         );
     }
 
-    // -- Table line detection / no-wrap tests ----------------------------------
+    // Table line detection / no-wrap tests
 
     #[test]
     fn table_line_box_drawing_not_wrapped() {
@@ -1362,14 +1365,15 @@ mod tests {
         assert_eq!(joiners, vec![None]);
     }
 
-    /// Regression: a table row narrower than the content width must be padded
+    /// Regression: a table row narrower than the content width must be `padded`
     /// so the app owns every column (otherwise a wide-glyph width disagreement
     /// strands a ghost cell).
     #[test]
     fn table_row_padded_to_content_width() {
         use unicode_width::UnicodeWidthStr;
 
-        let line = Line::from("│ Status  │ Note      │"); // 23 display columns
+        // 23 display columns
+        let line = Line::from("│ Status  │ Note      │");
         assert_eq!(concat_line(&line).width(), 23);
 
         let content_width = 40;
@@ -1390,7 +1394,7 @@ mod tests {
 
     /// Faithful repro: a body row with an emoji-presentation sequence
     /// (`⚠\u{FE0F}`) and an em-dash — the glyphs that desynced the cursor — must
-    /// be padded to exactly the content width.
+    /// be `padded` to exactly the content width.
     #[test]
     fn table_row_with_emoji_and_em_dash_fills_content_width() {
         use unicode_width::UnicodeWidthStr;

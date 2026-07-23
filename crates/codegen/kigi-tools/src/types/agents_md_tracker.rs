@@ -84,23 +84,19 @@ async fn normalize(path: &Path) -> PathBuf {
 pub struct AgentsMdTracker {
     /// Directories we've already scanned for AGENTS.md.
     /// Prevents redundant stat() calls on repeated accesses to the same subtree.
-    /// All entries are canonicalized via `normalize()`.
     checked_dirs: HashSet<PathBuf>,
 
     /// AGENTS.md file paths that were part of the initial system prompt injection
     /// (seeded by AgentBuilder at session start from agents_md.rs discovery).
     /// We never remind about these — the agent already has them.
-    /// All entries are canonicalized via `normalize()`.
     initial_discovery: HashSet<PathBuf>,
 
     /// AGENTS.md file paths we've already reminded the agent about.
     /// Each file gets at most one reminder per session (or compaction cycle).
-    /// All entries are canonicalized via `normalize()`.
     reminded: HashSet<PathBuf>,
 
     /// Upper bound for walking. We never walk above the git root.
     /// If None, walking is disabled (no git repo found).
-    /// Canonicalized via `normalize()` on insertion.
     git_root: Option<PathBuf>,
 
     /// Gitignore rules for the repo. Discovered AGENTS.md files that match
@@ -187,13 +183,9 @@ impl AgentsMdTracker {
 
         let git_root = match &self.git_root {
             Some(root) => root.clone(),
-            None => return vec![], // No git repo → no discovery
+            None => return vec![],
         };
 
-        // Determine starting directory:
-        // - If target is a directory, start from it
-        // - If target is a file, start from its parent
-        //
         // We check the raw path first (before normalization) because
         // normalize() on a non-existent file returns it as-is, making
         // is_dir() return false for existing directories passed with
@@ -206,7 +198,8 @@ impl AgentsMdTracker {
         .await
         {
             Ok(Ok(m)) => m.is_dir(),
-            Ok(Err(_)) => false, // stat error (e.g. not found) — treat as file
+            // stat error (e.g. not found) — treat as file
+            Ok(Err(_)) => false,
             Err(_elapsed) => {
                 tracing::warn!(
                     path = %target_path.display(),
@@ -233,7 +226,6 @@ impl AgentsMdTracker {
         // should succeed.
         let start_dir = normalize(&raw_start_dir).await;
 
-        // Verify the start dir is within the git root
         if !start_dir.starts_with(&git_root) {
             return vec![];
         }
@@ -247,32 +239,26 @@ impl AgentsMdTracker {
         let agent_filenames = self.compat.agent_filenames();
         let rules_dirs = self.compat.rules_dirs();
 
-        // Walk up from start_dir to git_root, bounded by MAX_WALK_DEPTH
         let mut current = Some(start_dir.as_path());
         let mut depth = 0;
         while let Some(dir) = current {
-            // Stop if we've gone above git root.
             if !dir.starts_with(&git_root) {
                 break;
             }
 
-            // Stop if we've walked too deep
             if depth >= MAX_WALK_DEPTH {
                 break;
             }
             depth += 1;
 
-            // Skip if already checked.
             let dir_buf = dir.to_path_buf();
             if !self.checked_dirs.contains(&dir_buf) {
                 self.checked_dirs.insert(dir_buf.clone());
 
-                // Check for AGENTS.md files in this directory.
                 // Each exists() check goes through the tokio blocking pool
                 // with a timeout. On the first timeout we abort the entire
                 // walk — a single hung stat means the filesystem is
                 // unresponsive and continuing would just pile up timeouts.
-                // `agent_filenames` is computed once above the walk.
                 for filename in &agent_filenames {
                     let agents_path = dir.join(filename);
                     let stat_result =
@@ -280,7 +266,6 @@ impl AgentsMdTracker {
                             .await;
 
                     if stat_result.is_err() {
-                        // Timeout — filesystem unresponsive, bail out
                         tracing::warn!(
                             path = %agents_path.display(),
                             "check_path: exists() timed out, aborting walk"
@@ -291,7 +276,6 @@ impl AgentsMdTracker {
                     let file_exists = stat_result.ok().and_then(|r| r.ok()).is_some();
 
                     if file_exists {
-                        // Canonicalize the discovered path for consistent lookups
                         let canonical_agents = normalize(&agents_path).await;
                         if !self.is_ignored(&canonical_agents)
                             && !self.initial_discovery.contains(&canonical_agents)
@@ -303,9 +287,6 @@ impl AgentsMdTracker {
                     }
                 }
 
-                // Check for rules files in .kigi/rules/, .claude/rules/, and
-                // .cursor/rules/ subdirectories (vendor-compat paths).
-                // `rules_dirs` is computed once above the walk.
                 for rules_subdir in &rules_dirs {
                     let rules_dir = dir.join(rules_subdir);
                     let stat_result =
@@ -328,7 +309,6 @@ impl AgentsMdTracker {
                         continue;
                     }
 
-                    // Read directory entries (blocking, with timeout).
                     let read_result = tokio::time::timeout(FS_SYSCALL_TIMEOUT, async {
                         tokio::fs::read_dir(&rules_dir).await
                     })
@@ -373,7 +353,6 @@ impl AgentsMdTracker {
                 }
             }
 
-            // Stop at git root
             if dir == git_root.as_path() {
                 break;
             }
@@ -410,7 +389,6 @@ impl AgentsMdTracker {
         &self.reminded
     }
 
-    /// Check if a path is gitignored.
     fn is_ignored(&self, path: &Path) -> bool {
         let Some(ref gi) = self.gitignore else {
             return false;
@@ -425,7 +403,6 @@ mod tests {
     use ignore::gitignore::GitignoreBuilder;
     use std::fs;
 
-    /// Create a Gitignore from patterns for testing.
     fn build_test_gitignore(root: &Path, patterns: &[&str]) -> Gitignore {
         let mut builder = GitignoreBuilder::new(root);
         for pattern in patterns {
@@ -806,8 +783,6 @@ mod tests {
         assert!(results[0].to_str().unwrap().contains("frontend"));
     }
 
-    // ── Rules directory discovery tests ─────────────────────────────
-
     #[tokio::test]
     async fn check_path_discovers_claude_rules_dir() {
         let tmp = tempfile::tempdir().unwrap();
@@ -857,8 +832,6 @@ mod tests {
         assert!(second.is_empty(), "Rules should not be reminded twice");
     }
 
-    // ── AGENT_SUBDIRS discovery tests ───────────────────────────────
-
     #[tokio::test]
     async fn check_path_discovers_claude_subdir_claude_md() {
         let tmp = tempfile::tempdir().unwrap();
@@ -884,8 +857,6 @@ mod tests {
             results
         );
     }
-
-    // ── compat gating + byte-for-byte parity ───────────────
 
     /// Pin that the all-on compat helpers reproduce the legacy constants
     /// exactly (same entries, same order). If either drifts, the

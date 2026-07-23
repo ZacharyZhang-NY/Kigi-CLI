@@ -16,7 +16,6 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Adjacent-tagged notification wire wrapper.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "shape", content = "value", rename_all = "snake_case")]
 pub enum WireToolNotification {
@@ -72,9 +71,8 @@ pub const fn known_notification_kinds() -> &'static [&'static str] {
 }
 
 /// Reject custom notification kinds whose name shadows a known PascalCase
-/// variant. Runs at notification-emit time; an empty `kind` is accepted
-/// here (the producer is responsible for validating that the field is
-/// non-empty).
+/// variant. An empty `kind` is accepted here; the producer is responsible
+/// for validating that the field is non-empty.
 pub fn check_custom_kind(kind: &str) -> Result<(), KnownVariantCollision> {
     if KNOWN_NOTIFICATION_KINDS.contains(&kind) {
         Err(KnownVariantCollision {

@@ -153,7 +153,8 @@ fn resolve_bind_mount_source(target: &Path) -> Result<Option<PathBuf>> {
         }
 
         // Found our mount point
-        let root = parts[3]; // The root within the filesystem
+        // The root within the filesystem
+        let root = parts[3];
         let fstype_idx = parts.iter().position(|&p| p == "-").map(|i| i + 1);
 
         if let Some(fstype_idx) = fstype_idx {
@@ -664,7 +665,7 @@ mod tests {
         );
     }
 
-    // ─── Unit tests for resolve_via_subvol_mount ─────────────────────────
+    // Unit tests for resolve_via_subvol_mount
 
     #[test]
     fn test_resolve_via_subvol_mount_exact_match() {

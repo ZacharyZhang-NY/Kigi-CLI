@@ -211,14 +211,22 @@ mod tests {
         // suffix, and zero-valued tokens. Each must fall through to the model
         // with no host-side cadence.
         for input in [
-            "5x do x",                    // bad suffix
-            "5 do x",                     // no suffix
-            "m do x",                     // too short / no digits
-            "55mm do x",                  // multi-char suffix
-            "0m do x",                    // zero value (tool would reject)
-            "0s do x",                    // zero value
-            "abc do x",                   // alphabetic
-            "99999999999999999999m do x", // overflows u64 -> parse Err branch
+            // bad suffix
+            "5x do x",
+            // no suffix
+            "5 do x",
+            // too short / no digits
+            "m do x",
+            // multi-char suffix
+            "55mm do x",
+            // zero value (tool would reject)
+            "0m do x",
+            // zero value
+            "0s do x",
+            // alphabetic
+            "abc do x",
+            // overflows u64 -> parse Err branch
+            "99999999999999999999m do x",
         ] {
             let (interval, prompt) = parse_loop_args(input);
             assert_eq!(interval, None, "input {input:?} must not yield a token");
@@ -228,7 +236,7 @@ mod tests {
 
     #[test]
     fn natural_language_intervals_are_not_defaulted_host_side() {
-        // The host no longer parses natural-language intervals or substitutes a
+        // The host does not parse natural-language intervals or substitute a
         // default — these all fall through to the model with no interval token.
         for input in [
             "every 30 minutes do x",

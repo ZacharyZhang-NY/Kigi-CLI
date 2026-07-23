@@ -768,8 +768,7 @@ async fn split_surfaces_normal_completions_with_no_goal() {
     let surfaced: Vec<&str> = surface.iter().map(|n| n.source.task_id()).collect();
     assert_eq!(surfaced, vec!["bg-1", "bg-2"]);
 }
-/// Blanket gate ON (goal Active/Complete) drops everything — the existing
-/// behavior is preserved.
+/// Blanket gate ON (goal Active/Complete) drops everything.
 #[tokio::test(flavor = "current_thread")]
 async fn split_blanket_gate_drops_all() {
     let goal_turn = std::collections::HashSet::new();

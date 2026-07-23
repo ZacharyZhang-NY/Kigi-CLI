@@ -225,7 +225,7 @@ impl AgentView {
     /// Two modes:
     /// - **Navigation**: j/k move cursor, Space toggles, Enter advances or
     ///   edits freeform, h/l/[/] cycle questions, 1-9/a-f jump+toggle,
-    ///   n next, s skip, Shift-X kill (only explicit way to dismiss).
+    ///   Shift-X kill (only explicit way to dismiss).
     /// - **InputMode**: all keys go to the prompt widget; Esc exits input mode.
     pub(super) fn handle_question_key(&mut self, key: &KeyEvent) -> InputOutcome {
         use crate::views::question_view::{QuestionFocus, QuestionSelection};
@@ -837,7 +837,6 @@ impl AgentView {
             _ => InputOutcome::Changed,
         }
     }
-    /// Apply a scroll delta to the question view options.
     pub(super) fn apply_question_scroll(&mut self, delta: i32) {
         let Some(ref mut qv) = self.question_view else {
             return;
@@ -1006,8 +1005,7 @@ impl AgentView {
         )
         .filter(|&idx| !qv.no_freeform || idx < question.options.len())
     }
-    /// Save the current prompt text into `per_question_freeform[active_tab]`
-    /// and load the text for the new `active_tab` into the prompt widget.
+    /// Save the current prompt text into `per_question_freeform[active_tab]`.
     /// Call this BEFORE changing `active_tab`.
     fn swap_question_freeform(&mut self) {
         let Some(ref mut qv) = self.question_view else {
@@ -1035,7 +1033,7 @@ impl AgentView {
     ///
     /// Restores the original prompt text that was stashed when the question
     /// view opened, so typed "additional context" doesn't leak into the
-    /// main prompt. Also clears any stashed (tab-hidden) question view.
+    /// main prompt.
     fn dismiss_question_view(&mut self) {
         if let Some(qv) = self.question_view.take() {
             self.turn_paused_duration += qv.opened_at.elapsed();
@@ -1130,9 +1128,6 @@ impl AgentView {
         InputOutcome::Changed
     }
     /// Map a screen position to a permission option index.
-    ///
-    /// Uses the prompt area and permission chrome height to determine which
-    /// option row the mouse is over. Returns `None` if outside the options.
     pub(super) fn permission_item_at(&self, _col: u16, row: u16) -> Option<usize> {
         let perm = self.permission_queue.front()?;
         let prompt_area = self.pane_areas.prompt;
@@ -1156,8 +1151,6 @@ impl AgentView {
             None
         }
     }
-    /// Clean up question-related visual state after the question view is
-    /// dismissed (submit, cancel, or replacement).
     fn cleanup_question_state(&mut self) {
         self.hovered_question_item = None;
         self.question_scrollbar_dragging = false;

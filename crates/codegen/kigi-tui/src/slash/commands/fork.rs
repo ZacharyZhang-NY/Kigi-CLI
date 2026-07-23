@@ -140,8 +140,6 @@ mod tests {
     use super::*;
     use crate::acp::model_state::ModelState;
 
-    // -- parse_fork_args ---------------------------------------------------
-
     #[test]
     fn parse_empty_returns_none_directive_and_no_override() {
         let parsed = parse_fork_args("").expect("empty args parse");
@@ -254,8 +252,6 @@ mod tests {
         assert_eq!(parsed.worktree_override, Some(true));
         assert_eq!(parsed.directive.as_deref(), Some("investigate"));
     }
-
-    // -- ForkCommand SlashCommand impl ------------------------------------
 
     fn make_ctx(models: &ModelState) -> CommandExecCtx<'_> {
         let bundle = Box::leak(Box::new(crate::app::bundle::BundleState::default()));

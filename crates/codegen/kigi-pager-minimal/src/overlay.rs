@@ -26,7 +26,7 @@
 //! shrink path keeps the top fixed, so the prompt simply moves back up. No
 //! explicit bottom re-anchoring is needed (or wanted).
 //!
-//! `set_viewport_height` early-returns when the height is unchanged, so steady
+//! `set_viewport_height` early-returns when the height is `unchanged`, so steady
 //! state is a no-op.
 //!
 //! [`Terminal::set_viewport_height`]: kigi_ratatui_inline::Terminal::set_viewport_height
@@ -125,7 +125,8 @@ fn app_modal_target(base: u16, ceiling: u16) -> u16 {
 fn modal_target(tail_h: u16, modal_h: u16, base: u16, ceiling: u16) -> u16 {
     tail_h
         .saturating_add(modal_h)
-        .saturating_add(1) // status row between the tail and the modal
+        // status row between the tail and the modal
+        .saturating_add(1)
         .max(base)
         .min(ceiling)
         .max(3)
@@ -139,7 +140,7 @@ fn modal_target(tail_h: u16, modal_h: u16, base: u16, ceiling: u16) -> u16 {
 /// scrolls committed content into scrollback and closing it leaves **no blank
 /// band** — and only scrolls when the growth would overflow the screen bottom.
 /// As blocks commit, `insert_before` pushes the viewport down naturally; once it
-/// reaches the bottom, further commits scroll. A no-op when height is unchanged.
+/// reaches the bottom, further commits scroll. A no-op when height is `unchanged`.
 pub fn sync_viewport(app: &mut AppView, terminal: &mut PagerTerminal) {
     let term_h = terminal.last_known_area().height;
     if term_h < 3 {
@@ -305,7 +306,7 @@ fn compute_target(app: &mut AppView, term_h: u16, width: u16) -> u16 {
 fn content_target(tail_h: u16, todos_h: u16, overlay_h: u16, prompt_h: u16, ceiling: u16) -> u16 {
     tail_h
         .saturating_add(todos_h)
-        .saturating_add(1) // status row
+        .saturating_add(1)
         .saturating_add(overlay_h)
         .saturating_add(prompt_h)
         .clamp(2, ceiling)
@@ -343,12 +344,14 @@ pub fn render(
         buf,
         item_count,
         item_rows,
-        None, // no inline prompt area; anchor straight below `prompt_area`
+        // no inline prompt area; anchor straight below `prompt_area`
+        None,
         prompt_area,
         viewport_area,
         layout_cfg,
         compact,
-        true, // minimal: anchor the dropdown *below* the input bar
+        // minimal: anchor the dropdown *below* the input bar
+        true,
         theme,
     ) else {
         return;
@@ -381,7 +384,7 @@ pub fn render(
     }
 }
 
-// ─────────────────────────── modal overlays (PR10) ───────────────────────────
+// modal overlays (PR10)
 //
 // Unlike the prompt-anchored dropdowns above, these modals *replace* the prompt:
 // they occupy the bottom region and the user interacts with them directly. Keys
@@ -530,7 +533,7 @@ pub fn render_modal(
     }
 }
 
-// ─────────────────────────── app-modals (PR13 / PR15) ────────────────────────
+// app-modals (PR13 / PR15)
 //
 // A second family of overlays lives in `AgentView::active_modal` (the full-TUI
 // `ActiveModal` enum) rather than the per-feature fields the [`Modal`]s above
@@ -869,7 +872,8 @@ mod tests {
     /// editor rows over the question list.
     #[test]
     fn question_editor_render_cap_matches_reserved_cap() {
-        let screen_h = 40u16; // cap = 13
+        // cap = 13
+        let screen_h = 40u16;
         let content_w = 80usize;
         let cap = question_editor_cap(screen_h);
         assert_eq!(cap, 13);
@@ -949,7 +953,8 @@ mod tests {
         minimal_api::prompt_suggestions_mut(&mut pw).dropdown.items =
             vec![completion_item(), completion_item(), completion_item()];
         assert_eq!(active(&pw, 80), Some((Kind::Completion, 3)));
-        assert_eq!(overlay_rows(&pw, 80), 5); // 3 items + 2 borders
+        // 3 items + 2 borders
+        assert_eq!(overlay_rows(&pw, 80), 5);
     }
 
     #[test]
@@ -967,7 +972,8 @@ mod tests {
     #[test]
     fn empty_open_dropdown_reports_nothing() {
         let mut pw = PromptWidget::new();
-        minimal_api::prompt_suggestions_mut(&mut pw).dropdown.open = true; // open but no items
+        // open but no items
+        minimal_api::prompt_suggestions_mut(&mut pw).dropdown.open = true;
         assert_eq!(overlay_rows(&pw, 80), 0);
         assert!(active(&pw, 80).is_none());
     }
@@ -977,12 +983,16 @@ mod tests {
         // Viewport = tail + todos + status(1) + overlay + prompt — no base
         // floor, so the prompt sits right after the conversation. Idle (tail 0,
         // empty prompt) is just status + prompt.
-        assert_eq!(content_target(0, 0, 0, 1, 40), 2); // status + 1-row prompt
-        assert_eq!(content_target(0, 3, 0, 1, 40), 5); // + 3 todo rows
-        assert_eq!(content_target(0, 3, 5, 2, 40), 11); // + overlay(5) + 2-row prompt
+        // status + 1-row prompt
+        assert_eq!(content_target(0, 0, 0, 1, 40), 2);
+        // + 3 todo rows
+        assert_eq!(content_target(0, 3, 0, 1, 40), 5);
+        // + overlay(5) + 2-row prompt
+        assert_eq!(content_target(0, 3, 5, 2, 40), 11);
         // The streaming tail grows the viewport (no fixed empty gap while
         // "thinking": tail 0 → just status + prompt).
-        assert_eq!(content_target(6, 0, 0, 1, 40), 8); // tail(6) + status + prompt
+        // tail(6) + status + prompt
+        assert_eq!(content_target(6, 0, 0, 1, 40), 8);
         // Floored at 2 (status + prompt) and capped at the screen ceiling.
         assert_eq!(content_target(0, 0, 0, 0, 40), 2);
         assert_eq!(content_target(50, 0, 0, 0, 20), 20);

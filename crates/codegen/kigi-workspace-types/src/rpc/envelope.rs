@@ -28,8 +28,6 @@ pub struct RpcError {
 }
 
 impl RpcError {
-    /// Whether this error is a [`TURN_ACTIVE`] rejection, retryable at the
-    /// turn boundary.
     pub fn is_turn_active(&self) -> bool {
         self.code == TURN_ACTIVE
     }

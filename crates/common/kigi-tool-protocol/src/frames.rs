@@ -18,7 +18,7 @@ use crate::{
     output_wire::ToolOutputWire,
 };
 
-// ── Tool call params / result / progress ─────────────────────────────────
+// Tool call params / result / progress
 
 /// `tool.call` (harness → service) and `tool_call_request` (service →
 /// tool_server) share the same params shape; `tool_call_id` is preserved
@@ -59,7 +59,7 @@ pub struct ToolCallResult {
     pub chat_completion_output: Option<serde_json::Value>,
 }
 
-// ── Trace donation ────────────────────────────────────────────────────────
+// Trace donation
 
 /// Hub rejects oversized batches wholesale; donors chunk before encoding.
 pub const MAX_SPANS_PER_DONATION: usize = 512;
@@ -77,7 +77,7 @@ pub struct TracesDonateParams {
     pub otlp_request: String,
 }
 
-// ── Log donation ──────────────────────────────────────────────────────────
+// Log donation
 
 /// Hub rejects oversized batches wholesale; donors chunk before encoding.
 /// The 1 MiB [`MAX_DONATION_BYTES`] decoded-size cap is the real bound; this
@@ -94,7 +94,7 @@ pub struct LogsDonateParams {
     pub otlp_request: String,
 }
 
-// ── Metric donation ───────────────────────────────────────────────────────
+// Metric donation
 
 /// Hub rejects oversized batches wholesale; donors chunk before encoding.
 /// Secondary guard alongside the 1 MiB [`MAX_DONATION_BYTES`] decoded-size cap.
@@ -189,7 +189,7 @@ pub struct SystemNotifyParams {
     pub request_id: Option<String>,
 }
 
-// ── Registration frames ──────────────────────────────────────────────────
+// Registration frames
 
 /// `register_tool` params — single-tool sugar over `register_server`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -217,7 +217,7 @@ pub struct UnregisterServerParams {
     pub server_id: ServerId,
 }
 
-// ── Per-tool session binding ───────────────────────────────────────────────
+// Per-tool session binding
 
 /// `bind_tool_session` params — add `session_id` to a registered tool's
 /// per-tool session set.
@@ -229,7 +229,6 @@ pub struct UnregisterServerParams {
 /// typically omitted on connection-control frames.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BindToolSessionParams {
-    /// The tool whose session set is being mutated.
     pub tool_id: ToolId,
     /// The session id to add to the tool's session set. Must already
     /// be in the connection's bound-session set.
@@ -249,7 +248,7 @@ pub struct BindToolSessionParams {
 ///   `ServerError::ToolBindingConflict` (-32600) so the contended caller
 ///   sees a wire-level error frame with a dedicated code instead of a
 ///   quietly-buried ack outcome — mirroring it would re-introduce the
-///   `UnknownTool`-overload ambiguity the dedicated code was added to fix.
+///   `UnknownTool`-overload ambiguity the dedicated code exists to fix.
 /// - `SessionNotBound` is router-injected by the per-frame envelope
 ///   pre-check (the connection's bound-session set is router state, not
 ///   registry state) and never originates from the registry call.
@@ -285,7 +284,6 @@ pub struct BindToolSessionAck {
 /// the calling-frame routing scope and serves a different concept.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UnbindToolSessionParams {
-    /// The tool whose session set is being mutated.
     pub tool_id: ToolId,
     /// The session id to remove from the tool's session set.
     pub session_id: SessionId,
@@ -309,7 +307,7 @@ pub struct UnbindToolSessionAck {
     pub outcome: ToolSessionUnbindOutcome,
 }
 
-// ── Server discovery + binding ────────────────────────────────────────────
+// Server discovery + binding
 
 /// `servers.list` params — discover available tool servers for the
 /// authenticated user.
@@ -345,7 +343,6 @@ pub struct ServersListResult {
 pub struct ServerBindParams {
     /// Which tool server to bind (its server_id from `servers.list`).
     pub server_id: ServerId,
-    /// The harness session to bind tools to.
     pub session_id: SessionId,
 }
 
@@ -355,12 +352,12 @@ pub struct ServerBindParams {
 pub enum ServerBindOutcome {
     /// Tools successfully bound to the session.
     Bound,
-    /// Tools were already bound to this session.
+    /// Tools already bound to this session.
     AlreadyBound,
     /// No server with this server_id found.
     ServerNotFound,
-    /// A server was located and the bind forwarded, but it did not complete:
-    /// the ack timed out, the transport send/delivery failed, or the ack was
+    /// Server found and bind forwarded, but bind did not complete:
+    /// ack timed out, transport send/delivery failed, or ack was
     /// malformed or an explicit error. Distinct from `ServerNotFound`, which
     /// means no such server is registered.
     Unavailable,
@@ -393,7 +390,7 @@ pub struct ServerUnbindAck {
     pub outcome: ServerUnbindOutcome,
 }
 
-// ── List & search ────────────────────────────────────────────────────────
+// List & search
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolsListParams {
@@ -432,7 +429,7 @@ pub struct ToolsSearchResultBody {
     pub is_ready: bool,
 }
 
-// ── Session lifecycle ────────────────────────────────────────────────────
+// Session lifecycle
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionOpenParams {
@@ -467,9 +464,8 @@ pub struct SessionOpenResult {}
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionBindServerParams {
     pub server_id: ServerId,
-    /// Working directory for the session. The tool server creates a
-    /// session rooted at this path. When absent, the server's default
-    /// CWD is used.
+    /// Working directory for the session. When absent, the tool server's
+    /// default CWD is used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
     /// Opaque metadata passed through to the tool server (sandbox_id,
@@ -543,7 +539,7 @@ pub enum AttachRoute {
     Unknown,
 }
 
-// ── Simplified lifecycle ─────────────────────────────────────────────────
+// Simplified lifecycle
 
 /// `serve` params (server → hub). Full tool snapshot for a session.
 ///
@@ -558,13 +554,12 @@ pub struct ServeParams {
 /// Reply to [`ServeParams`].
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ServeResult {
-    /// Number of tools accepted (informational).
     #[serde(default)]
     pub accepted: usize,
-    /// Tool IDs that were added relative to the previous snapshot.
+    /// Tool IDs added relative to the previous snapshot.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub added: Vec<ToolId>,
-    /// Tool IDs that were removed relative to the previous snapshot.
+    /// Tool IDs removed relative to the previous snapshot.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub removed: Vec<ToolId>,
 }
@@ -606,7 +601,7 @@ pub struct SessionBindResult {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionUnbindParams {}
 
-// ── Subscriptions ────────────────────────────────────────────────────────
+// Subscriptions
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SubscribeNotificationsParams {
@@ -673,11 +668,11 @@ pub struct UnsubscribeNotificationsParams {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UnsubscribeOutcome {
-    /// Subscription was present and was removed.
+    /// Subscription was present and the service removed it.
     Unsubscribed,
     /// Subscription was not present; no-op.
     NotSubscribed,
-    /// Subscription was removed by the service because the subscriber's
+    /// The service removed the subscription because the subscriber's
     /// outbound mpsc was full or dropped during fan-out.
     Evicted,
 }
@@ -690,7 +685,7 @@ pub struct UnsubscribeAck {
     pub subscription_id: String,
 }
 
-// ── Hooks ────────────────────────────────────────────────────────────────
+// Hooks
 
 /// `hook` frame body, routed in both directions through the hub: harness →
 /// tool-server for forward hooks (e.g. `Cancel`, `SessionEnded`), and
@@ -813,7 +808,7 @@ pub struct HookReplyFrame {
     pub result: serde_json::Value,
 }
 
-// ── Service → harness pushes ─────────────────────────────────────────────
+// Service → harness pushes
 
 /// `tools_changed` body — the active tool set for `session_id` changed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -827,7 +822,7 @@ pub struct ToolsChanged {
     pub updated: Vec<ToolId>,
 }
 
-// ── Tool server status lifecycle ──────────────────────────────────────
+// Tool server status lifecycle
 
 /// Lifecycle status of a tool server connection.
 ///
@@ -937,7 +932,7 @@ pub enum ToolServerDisconnectReason {
     ConnectionLost,
 }
 
-// ── Heartbeat ────────────────────────────────────────────────────────────
+// Heartbeat
 //
 // PingFrame / PongFrame carry a `method` discriminator on the wire so
 // any receiver (hub or SDK) can route them through a method-based demux.
@@ -975,7 +970,7 @@ impl PongFrame {
     }
 }
 
-// -- Custom Serialize: always includes `"method"` on the wire. -----------
+// Custom Serialize: always includes `"method"` on the wire.
 
 impl serde::Serialize for PingFrame {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
@@ -997,7 +992,7 @@ impl serde::Serialize for PongFrame {
     }
 }
 
-// -- Custom Deserialize: accepts with or without `method` for compat. ----
+// Custom Deserialize: accepts with or without `method` for compat.
 
 impl<'de> serde::Deserialize<'de> for PingFrame {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
@@ -1068,8 +1063,6 @@ mod tests {
         ToolCallId::new_v7()
     }
 
-    // ── HookFrame constructors ──────────────────────────────────────
-
     #[test]
     fn hook_cancel_sets_tool_and_call_ids() {
         let hook = HookFrame::cancel(sid(), tid(), cid());
@@ -1122,8 +1115,6 @@ mod tests {
         let back: HookFrame = serde_json::from_value(json).expect("deserialize");
         assert_eq!(hook, back);
     }
-
-    // ── ToolNotificationFrame constructors ───────────────────────────
 
     #[test]
     fn notification_custom_sets_wire_shape() {
@@ -1187,8 +1178,6 @@ mod tests {
         assert_eq!(back, params);
     }
 
-    // ── Donation params ────────────────────────────────────────────
-
     #[test]
     fn logs_donate_params_round_trips() {
         let params = super::LogsDonateParams {
@@ -1210,8 +1199,6 @@ mod tests {
         let back: super::MetricsDonateParams = serde_json::from_value(json).expect("deserialize");
         assert_eq!(back, params);
     }
-
-    // ── ToolServerStatusPayload ────────────────────────────────────
 
     #[test]
     fn tool_server_lifecycle_status_serde_snake_case() {
@@ -1469,8 +1456,6 @@ mod tests {
         let back: ToolNotificationFrame = serde_json::from_value(json).expect("deserialize");
         assert_eq!(frame, back);
     }
-
-    // ── hook_id backward-compat ─────────────────────────────────────
 
     #[test]
     fn hook_frame_missing_hook_id_deserializes_as_none() {

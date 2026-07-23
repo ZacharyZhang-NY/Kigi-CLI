@@ -17,7 +17,7 @@ const IFACE: &str = "org.freedesktop.login1.Manager";
 
 /// Linux listener handle.
 ///
-/// There is intentionally no clean stop: the worker thread parks on a blocking
+/// There is deliberately no clean stop: the worker thread parks on a blocking
 /// logind signal iterator, which cannot be interrupted without a signal
 /// arriving, so dropping this neither joins nor cancels it. The thread (and its
 /// D-Bus connection + sleep-delay inhibitor fd) live until process exit. That

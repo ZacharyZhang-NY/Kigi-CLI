@@ -39,10 +39,14 @@ async fn reasoning_efforts_fallback_menu_matches_builtin() {
         .expect("built-in xhigh row");
     let screen = harness.screen_contents();
     for description in [
-        "Maximum reasoning",         // xhigh
-        "Heavy reasoning",           // high
-        "Balanced reasoning",        // medium
-        "Faster, lighter reasoning", // low
+        // xhigh
+        "Maximum reasoning",
+        // high
+        "Heavy reasoning",
+        // medium
+        "Balanced reasoning",
+        // low
+        "Faster, lighter reasoning",
     ] {
         assert!(
             screen.contains(description),

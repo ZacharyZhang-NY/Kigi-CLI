@@ -1,7 +1,5 @@
-//! `CodexReadFileTool` — Tool trait implementation for the codex read_file format.
-//!
-//! Reads files via `AsyncFileSystem` and produces output in the codex
-//! `L{n}: {content}` format. Supports both slice mode and indentation mode.
+//! `CodexReadFileTool` — reads files in the codex `L{n}: {content}` format,
+//! in either slice or indentation mode.
 
 use std::path::PathBuf;
 
@@ -13,13 +11,9 @@ use crate::types::tool::{ToolKind, ToolNamespace};
 
 use super::{indentation, slice};
 
-// ─── Description ─────────────────────────────────────────────────────
-
 /// Tool description — word-for-word copy from codex `create_read_file_tool()` in
 /// `codex-rs/core/src/tools/spec.rs` (line 1233).
 const DESCRIPTION: &str = "Reads a local file with 1-indexed line numbers, supporting slice and indentation-aware block modes.";
-
-// ─── Input ───────────────────────────────────────────────────────────
 
 /// Input for the codex `read_file` tool.
 ///
@@ -118,13 +112,8 @@ impl Default for IndentationArgs {
     }
 }
 
-// ─── Tool ────────────────────────────────────────────────────────────
-
-/// Codex read_file tool — reads files in the codex `L{n}: {content}` format.
 #[derive(Debug, Default)]
 pub struct CodexReadFileTool;
-
-// ─── Tests ───────────────────────────────────────────────────────────
 
 impl crate::types::tool_metadata::ToolMetadata for CodexReadFileTool {
     fn kind(&self) -> ToolKind {
@@ -179,12 +168,10 @@ impl kigi_tool_runtime::Tool for CodexReadFileTool {
         use crate::types::tool_metadata::shared_resources;
         let resources = shared_resources(&ctx)?;
 
-        // 1. Validate. Codex raises here, but we surface these as a structured
-        // `FileReadError` (a model-facing error) instead of a hard `Err`, so
-        // otherwise-benign validation failures (empty/short files, relative
-        // paths) do not surface as tool-execution failures.
-        // `FileReadError` rides the structured-output path and maps cleanly to
-        // `ReadFileErrorTypes::FILE_READ_ERROR`.
+        // Codex raises on these, but we return a structured `FileReadError`
+        // (which maps to `ReadFileErrorTypes::FILE_READ_ERROR`) instead of a
+        // hard `Err`, so benign failures — empty/short files, relative paths,
+        // out-of-range offsets — reach the model rather than aborting the call.
         if input.offset == 0 {
             return Ok(ReadFileOutput::FileReadError(
                 "offset must be a 1-indexed line number".to_string(),
@@ -202,7 +189,6 @@ impl kigi_tool_runtime::Tool for CodexReadFileTool {
             ));
         }
 
-        // 2. Read file via AsyncFileSystem.
         let fs;
         {
             fs = resources.lock().await.require::<FileSystem>()?.0.clone();
@@ -217,8 +203,6 @@ impl kigi_tool_runtime::Tool for CodexReadFileTool {
             }
         };
 
-        // 3. Branch on mode. Out-of-range / empty-file reads return a structured
-        // `FileReadError` (see note above) instead of a hard `Err`.
         let collected = match input.mode {
             ReadMode::Slice => match slice::read_slice(&file_bytes, input.offset, input.limit) {
                 Ok(lines) => lines,
@@ -240,15 +224,12 @@ impl kigi_tool_runtime::Tool for CodexReadFileTool {
             }
         };
 
-        // 4. Build formatted output (L{n}: {content} lines joined by \n).
         let content = collected.join("\n");
 
-        // 5. Build raw_output — the unformatted file content for the read
-        // range. This matches the kigi ReadFileTool semantics where
-        // raw_output is the actual file text without line-number prefixes.
+        // Kigi's `ReadFileTool` semantics: `raw_output` is the file text with
+        // no line-number prefixes.
         let raw_output = String::from_utf8_lossy(&file_bytes).into_owned();
 
-        // 6. Compute total lines.
         let total_lines = file_bytes.iter().filter(|&&b| b == b'\n').count()
             + if file_bytes.last() != Some(&b'\n') && !file_bytes.is_empty() {
                 1
@@ -256,7 +237,6 @@ impl kigi_tool_runtime::Tool for CodexReadFileTool {
                 0
             };
 
-        // 7. Return.
         Ok(ReadFileOutput::FileContent(FileContent {
             content,
             content_concise: None,
@@ -280,7 +260,6 @@ mod tests {
     use std::sync::Arc;
     use tempfile::TempDir;
 
-    /// Set up Resources with real filesystem for tests.
     fn test_resources(cwd: &std::path::Path) -> Resources {
         let mut resources = Resources::new();
         resources.insert(Cwd(cwd.to_path_buf()));
@@ -288,9 +267,6 @@ mod tests {
         resources.insert(NotificationHandle(ToolNotificationHandle::noop()));
         resources
     }
-
-    /// Build a runtime `ToolCallContext` with the given shared resources.
-    // ── Slice mode tests ─────────────────────────────────────────
 
     #[tokio::test]
     async fn slice_reads_requested_range() {
@@ -337,8 +313,6 @@ mod tests {
             indentation: None,
         };
 
-        // Out-of-range reads are surfaced as a structured `FileReadError` (a
-        // model-facing error), not a hard `Err`.
         let result = kigi_tool_runtime::Tool::run(&tool, test_ctx(shared.clone()), input)
             .await
             .unwrap();
@@ -352,9 +326,8 @@ mod tests {
 
     #[tokio::test]
     async fn empty_file_returns_read_error() {
-        // An empty file has 0 lines, so the default offset=1 is out of range.
-        // Codex treats this as a read error; we surface it as a structured
-        // FileReadError instead of a hard Err.
+        // An empty file has 0 lines, so even the default offset=1 is out of
+        // range.
         let tmp = TempDir::new().unwrap();
         let file_path = tmp.path().join("empty.txt");
         std::fs::write(&file_path, "").unwrap();
@@ -437,8 +410,6 @@ mod tests {
         }
     }
 
-    // ── Indentation mode tests ───────────────────────────────────
-
     #[tokio::test]
     async fn indentation_mode_captures_block() {
         let tmp = TempDir::new().unwrap();
@@ -480,13 +451,8 @@ mod tests {
         }
     }
 
-    // ── Validation tests ─────────────────────────────────────────
-
     #[tokio::test]
     async fn indentation_anchor_past_eof_returns_read_error() {
-        // Indentation-mode range errors flow through the same read_block match
-        // arm as slice mode, so they must also surface as a structured
-        // FileReadError rather than a hard Err.
         let tmp = TempDir::new().unwrap();
         let file_path = tmp.path().join("code.py");
         std::fs::write(&file_path, "def foo():\n    x = 1\n").unwrap();

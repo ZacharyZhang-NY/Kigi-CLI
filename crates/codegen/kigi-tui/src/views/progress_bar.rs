@@ -138,10 +138,9 @@ mod tests {
     fn test_partial_block() {
         let area = Rect::new(0, 0, 10, 1);
         let mut buf = Buffer::empty(area);
-        // 25% of 4 cells = 1 full block (8 eighths). Actually 0.25*4*8 = 8 = 1 full.
-        // Let's use 12.5% of 4 cells = 0.125*4*8 = 4 eighths = half block on cell 0
+        // 0.125 * 4 * 8 = 4 eighths = half block on cell 0.
         render_progress_bar(&mut buf, 0, 0, 4, 0.125, Color::White, Color::Black);
-        assert_eq!(buf[(0, 0)].symbol(), "▌"); // 4/8 = half
+        assert_eq!(buf[(0, 0)].symbol(), "▌");
         assert_eq!(buf[(1, 0)].symbol(), " ");
     }
 
@@ -164,7 +163,8 @@ mod tests {
         // The two glyph tables must share the same index domain so call
         // sites can swap them without branching on the host.
         assert_eq!(BLOCKS.len(), SHADES.len());
-        assert_eq!(BLOCKS[0], SHADES[0]); // both empty
-        assert_eq!(BLOCKS[8], SHADES[8]); // both full block
+        // Index 0 is empty, index 8 is the full block, in both tables.
+        assert_eq!(BLOCKS[0], SHADES[0]);
+        assert_eq!(BLOCKS[8], SHADES[8]);
     }
 }

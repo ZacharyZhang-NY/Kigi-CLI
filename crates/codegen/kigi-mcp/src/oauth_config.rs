@@ -5,10 +5,8 @@
 
 use std::collections::HashMap;
 
-/// OAuth configuration extracted from an MCP server's config.
-///
-/// Travels alongside `acp::McpServer` (which can't be extended since it's
-/// an external crate type). Keyed by server name in [`McpOAuthConfigMap`].
+/// Travels alongside `acp::McpServer` rather than inside it, because that is an
+/// external crate type and can't carry extra fields.
 #[derive(Debug, Clone, Default)]
 pub struct McpOAuthConfig {
     pub client_id: Option<String>,
@@ -23,5 +21,5 @@ impl McpOAuthConfig {
     }
 }
 
-/// Per-server OAuth configuration map, keyed by MCP server name.
+/// Keyed by MCP server name.
 pub type McpOAuthConfigMap = HashMap<String, McpOAuthConfig>;

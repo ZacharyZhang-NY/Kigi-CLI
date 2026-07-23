@@ -3,7 +3,6 @@
 //! block keeps access to `MvpAgent`'s private fields.
 use super::*;
 impl MvpAgent {
-    /// Ask a live session actor to shut down.
     pub(crate) fn request_session_shutdown(&self, id: &acp::SessionId) {
         if let Some(handle) = self.sessions.borrow().get(id) {
             let _ = handle.cmd_tx.send(SessionCommand::Shutdown);
@@ -46,7 +45,7 @@ impl MvpAgent {
         self.session_live_state.borrow_mut().remove(id);
     }
     /// Get-or-create the per-session prompt-intake lock (see
-    /// [`Self::prompt_intake_locks`]). Cheap clone of the shared `Rc`.
+    /// [`Self::prompt_intake_locks`]).
     pub(super) fn prompt_intake_lock(
         &self,
         id: &acp::SessionId,
@@ -64,13 +63,11 @@ impl MvpAgent {
         self.finalize_session_replica(id);
         self.remove_session_terminal(id, SessionLiveState::Completed);
     }
-    /// Record the coarse lifecycle state for a session.
     pub(super) fn set_session_live_state(&self, id: &acp::SessionId, state: SessionLiveState) {
         self.session_live_state
             .borrow_mut()
             .insert(id.clone(), state);
     }
-    /// Read the recorded lifecycle state for a session (test observability).
     #[cfg(test)]
     pub(super) fn session_live_state_for(&self, id: &acp::SessionId) -> Option<SessionLiveState> {
         self.session_live_state.borrow().get(id).copied()
@@ -188,8 +185,6 @@ impl MvpAgent {
             _ => RosterActivity::Idle,
         }
     }
-    /// Build a single roster entry for a resident session, or `None` if it is
-    /// not currently resident.
     pub(super) fn resident_roster_entry(
         &self,
         id: &acp::SessionId,
@@ -224,7 +219,6 @@ impl MvpAgent {
             origin: crate::agent::roster::RosterOrigin::Local,
         })
     }
-    /// Snapshot all resident sessions as roster entries (synchronous; no disk).
     pub(super) fn resident_roster_entries(&self) -> Vec<crate::agent::roster::RosterEntry> {
         let ids: Vec<acp::SessionId> = self.sessions.borrow().keys().cloned().collect();
         ids.iter()
@@ -243,7 +237,6 @@ impl MvpAgent {
         self.cache_resident_titles(&entries);
         entries
     }
-    /// Refresh `resident_roster_titles` from the freshly-built roster.
     pub(super) fn cache_resident_titles(&self, entries: &[crate::agent::roster::RosterEntry]) {
         *self.resident_roster_titles.borrow_mut() = entries
             .iter()
@@ -265,8 +258,7 @@ impl MvpAgent {
     /// Reap a session whose **resident** actor thread exited unexpectedly
     /// (panic / load failure). Demotes it to `DeadFailed`, emits the roster
     /// delta, and removes it WITHOUT finalize — the conversation persists on
-    /// disk and stays resumable (reaping a dead actor is harmless;
-    /// it demotes to Dormant).
+    /// disk and stays resumable.
     pub(super) fn reap_dead_session(&self, id: &acp::SessionId) {
         self.remove_session_terminal(id, SessionLiveState::DeadFailed);
     }

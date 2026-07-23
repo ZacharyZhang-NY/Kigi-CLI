@@ -24,7 +24,6 @@ pub struct IntraCompactionTrigger {
     pub step: u32,
 }
 
-/// Result of a successful compaction.
 #[derive(Debug, Clone)]
 pub struct IntraCompactionResult {
     /// Sum of tokens in the turns that were compacted.

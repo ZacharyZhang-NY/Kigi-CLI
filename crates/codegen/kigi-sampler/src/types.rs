@@ -6,19 +6,16 @@ use serde::{Deserialize, Serialize};
 
 /// Unique identifier for a sampling request.
 ///
-/// Wraps a `String` so callers can pass an externally-assigned ID
-/// (e.g., a session-assigned UUID) or generate a fresh random one via
-/// [`RequestId::random`].
+/// The inner type is `String` rather than a `Uuid` so callers can carry an
+/// externally-assigned ID, such as a session-assigned one.
 #[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RequestId(String);
 
 impl RequestId {
-    /// Generate a fresh random request ID backed by a UUIDv4.
     pub fn random() -> Self {
         Self(uuid::Uuid::new_v4().to_string())
     }
 
-    /// Borrow the underlying string slice.
     pub fn as_str(&self) -> &str {
         &self.0
     }

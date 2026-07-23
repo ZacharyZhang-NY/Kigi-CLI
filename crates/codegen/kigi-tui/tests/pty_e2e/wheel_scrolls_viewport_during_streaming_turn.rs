@@ -4,7 +4,7 @@ use super::common::*;
 #[allow(unused_imports)]
 use super::scroll::*;
 
-// ── Regression: streaming must not starve wheel input ─────────────────────
+// Regression: streaming must not starve wheel input.
 //
 // User complaint: "can't scroll while it's streaming". The event loop's
 // `select!` is `biased` with the ACP arm above the input arm, and the ACP
@@ -14,13 +14,11 @@ use super::scroll::*;
 // `input_rx.is_empty()` and bounds its inner drain, so buffered input is
 // serviced within one bounded ACP batch.
 //
-// This test drives a turn that is still visibly streaming (paced deltas +
-// a held completion gate) and wheels up mid-stream, asserting the viewport
-// moved BEFORE the turn completed. Determinism does not lean on wall-clock:
-// the mock's completion gate holds the turn's terminal SSE event until the
-// test releases it, so "the stream had not completed when movement was
-// observed" is true by construction; the on-screen witnesses (status label,
-// last-chunk sentinel) are content-ordering assertions on top of that.
+// Determinism does not lean on wall-clock: the mock's completion gate holds
+// the turn's terminal SSE event until the test releases it, so "the stream
+// had not completed when movement was observed" is true by construction;
+// the on-screen witnesses (status label, last-chunk sentinel) are
+// content-ordering assertions on top of that.
 //
 // Honest scope note: a PTY test cannot force `acp_rx` to be continuously
 // non-empty at the exact instant wheel reports land (that interleaving is

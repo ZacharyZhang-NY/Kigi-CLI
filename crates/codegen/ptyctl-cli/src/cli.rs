@@ -172,7 +172,7 @@ pub enum Commands {
         #[arg(long, group = "condition")]
         gone: Option<String>,
 
-        /// Wait until the screen has been unchanged for this many milliseconds
+        /// Wait until the screen has been `unchanged` for this many milliseconds
         #[arg(long, value_name = "MS", group = "condition")]
         stable_ms: Option<u64>,
 

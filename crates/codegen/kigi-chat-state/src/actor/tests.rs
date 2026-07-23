@@ -91,9 +91,7 @@ impl TestHarness {
     }
 }
 
-// ============================================================================
 // Lifecycle tests
-// ============================================================================
 
 #[tokio::test]
 async fn actor_spawns_and_shuts_down_via_cancellation() {
@@ -121,9 +119,7 @@ async fn actor_shuts_down_when_all_handles_dropped() {
     tokio::time::sleep(Duration::from_millis(50)).await;
 }
 
-// ============================================================================
 // Mutation tests
-// ============================================================================
 
 #[tokio::test]
 async fn push_user_message_appends_and_persists() {
@@ -319,9 +315,10 @@ async fn estimated_tokens_tracks_tool_result_delta() {
         .push_tool_result(ConversationItem::tool_result("call-1", "x".repeat(4000)));
 
     let estimated = h.handle.get_estimated_total_tokens().await;
-    assert_eq!(estimated, 101_000); // 100K model-reported + 1K delta
+    // 100K model-reported + 1K delta
+    assert_eq!(estimated, 101_000);
 
-    // model-reported total_tokens is unchanged
+    // model-reported total_tokens is `unchanged`
     let actual = h.handle.get_total_tokens().await;
     assert_eq!(actual, 100_000);
 }
@@ -359,7 +356,7 @@ async fn estimated_tokens_tracks_synthetic_user_message_delta() {
         "expected ~1.1M tokens estimated, got {estimated}",
     );
 
-    // model-reported `total_tokens` is unchanged — only the delta moved.
+    // model-reported `total_tokens` is `unchanged` — only the delta moved.
     assert_eq!(h.handle.get_total_tokens().await, 100_000);
 }
 
@@ -451,7 +448,7 @@ async fn replace_conversation_persists_and_emits_reset() {
     h.handle.push_user_message(ConversationItem::user("b"));
 
     // Drain the two Message records
-    let _ = h.handle.get_conversation().await; // sync point
+    let _ = h.handle.get_conversation().await;
     h.drain_persistence();
 
     let new_items = vec![ConversationItem::system("compacted")];
@@ -721,9 +718,7 @@ async fn restore_snapshot_restores_all_fields() {
     assert_eq!(tokens, 500);
 }
 
-// ============================================================================
 // Query tests
-// ============================================================================
 
 #[tokio::test]
 async fn get_conversation_returns_current_state() {
@@ -765,7 +760,8 @@ async fn replace_system_head_noop_when_head_matches_modulo_newline() {
         ConversationItem::system("same\n"),
         ConversationItem::user("hi"),
     ]);
-    let _ = h.drain_persistence(); // clear any seed writes
+    // clear any seed writes
+    let _ = h.drain_persistence();
     let changed = h.handle.replace_system_head("same").await;
     assert_eq!(
         changed,
@@ -878,9 +874,7 @@ async fn check_auto_compact_triggers_at_threshold() {
     assert_eq!(t.utilization_percent, 86);
 }
 
-// ============================================================================
 // Edge-case / integration tests
-// ============================================================================
 
 #[tokio::test]
 async fn record_agent_edited_path_deduplicates() {
@@ -974,19 +968,19 @@ async fn truncate_removes_items_after_target_prompt_index() {
     // Build 3 turns: system + 3x (user + assistant)
     h.handle.push_user_message(ConversationItem::system("sys"));
     h.handle.push_user_message(ConversationItem::user("q1"));
-    h.handle.increment_prompt_index(); // 1
+    h.handle.increment_prompt_index();
     h.handle.cache_prompt_text("q1".to_string());
     h.handle
         .push_assistant_response(ConversationItem::assistant("a1"));
 
     h.handle.push_user_message(ConversationItem::user("q2"));
-    h.handle.increment_prompt_index(); // 2
+    h.handle.increment_prompt_index();
     h.handle.cache_prompt_text("q2".to_string());
     h.handle
         .push_assistant_response(ConversationItem::assistant("a2"));
 
     h.handle.push_user_message(ConversationItem::user("q3"));
-    h.handle.increment_prompt_index(); // 3
+    h.handle.increment_prompt_index();
     h.handle.cache_prompt_text("q3".to_string());
     h.handle
         .push_assistant_response(ConversationItem::assistant("a3"));
@@ -1000,7 +994,8 @@ async fn truncate_removes_items_after_target_prompt_index() {
     h.handle.truncate_to_prompt_index(1).await;
 
     let conv = h.handle.get_conversation().await;
-    assert_eq!(conv.len(), 3); // sys + q1 + a1
+    // sys + q1 + a1
+    assert_eq!(conv.len(), 3);
     let idx = h.handle.get_prompt_index().await;
     assert_eq!(idx, 1);
 
@@ -1032,7 +1027,8 @@ async fn truncate_to_zero_keeps_only_system() {
     h.handle.truncate_to_prompt_index(0).await;
 
     let conv = h.handle.get_conversation().await;
-    assert_eq!(conv.len(), 1); // just "sys"
+    // just "sys"
+    assert_eq!(conv.len(), 1);
     assert!(matches!(&conv[0], ConversationItem::System(_)));
     assert_eq!(h.handle.get_prompt_index().await, 0);
 }
@@ -1040,7 +1036,7 @@ async fn truncate_to_zero_keeps_only_system() {
 #[tokio::test]
 async fn truncate_is_noop_when_already_at_target() {
     let mut h = TestHarness::new();
-    h.handle.increment_prompt_index(); // 1
+    h.handle.increment_prompt_index();
 
     let _ = h.handle.get_prompt_index().await;
     h.drain_events();
@@ -1056,9 +1052,7 @@ async fn truncate_is_noop_when_already_at_target() {
     assert!(events.is_empty());
 }
 
-// ============================================================================
 // Snapshot/restore comprehensive tests
-// ============================================================================
 
 #[tokio::test]
 async fn snapshot_restore_preserves_all_fields() {
@@ -1139,9 +1133,7 @@ async fn with_initial_conversation_preserves_items() {
     assert_eq!(conv.len(), 2);
 }
 
-// ============================================================================
 // BuildConversationRequest tests
-// ============================================================================
 
 #[tokio::test]
 async fn build_request_includes_all_messages() {
@@ -1234,7 +1226,8 @@ async fn build_request_injects_memory_when_no_system() {
         .await
         .unwrap();
 
-    assert_eq!(request.items.len(), 2); // new System + original User
+    // new System + original User
+    assert_eq!(request.items.len(), 2);
     assert!(matches!(&request.items[0], ConversationItem::System(_)));
 }
 
@@ -1341,11 +1334,12 @@ async fn build_request_does_not_mutate_actor_state() {
         .await
         .unwrap();
 
-    // Actor's own conversation should be unchanged
+    // Actor's own conversation should be `unchanged`
     let conv = h.handle.get_conversation().await;
     assert_eq!(conv.len(), 2);
     if let ConversationItem::System(ref sys) = conv[0] {
-        assert_eq!(sys.content.as_ref(), "sys"); // no memory injected into original
+        // no memory injected into original
+        assert_eq!(sys.content.as_ref(), "sys");
     }
 }
 
@@ -1424,9 +1418,7 @@ async fn build_request_with_multiple_tool_calls_and_results() {
     assert_eq!(request.items.len(), 6);
 }
 
-// ============================================================================
 // Parallel tool calls with mixed accept/reject
-// ============================================================================
 
 /// Simulates the exact sequence that `kigi-shell`'s `execute_tool_calls`
 /// produces when the model emits 3 parallel tool calls and:
@@ -1451,7 +1443,7 @@ async fn parallel_tool_calls_accept_first_reject_second_skip_third() {
 
     let h = TestHarness::new();
 
-    // ── Turn setup ──────────────────────────────────────────────────────
+    // Turn setup
     // System prompt
     h.handle.push_user_message(ConversationItem::system(
         "You are a helpful coding assistant.",
@@ -1464,7 +1456,7 @@ async fn parallel_tool_calls_accept_first_reject_second_skip_third() {
 
     h.handle.increment_prompt_index();
 
-    // ── Model response: 3 parallel tool calls ───────────────────────────
+    // Model response: 3 parallel tool calls
     // The model's single assistant message contains all 3 tool calls.
     // In the real code, this is built from the streaming response and pushed
     // via `push_assistant_response`.
@@ -1493,7 +1485,7 @@ async fn parallel_tool_calls_accept_first_reject_second_skip_third() {
     });
     h.handle.push_assistant_response(assistant_with_tools);
 
-    // ── Tool execution results (simulating execute_tool_calls) ──────────
+    // Tool execution results (simulating execute_tool_calls)
 
     // Tool #1: read_file — user accepted, tool executed successfully
     h.handle.push_tool_result(ConversationItem::tool_result(
@@ -1517,7 +1509,7 @@ async fn parallel_tool_calls_accept_first_reject_second_skip_third() {
         "Tool execution cancelled due to earlier permission rejection for tool `run_terminal_cmd`",
     ));
 
-    // ── Verify the conversation state ───────────────────────────────────
+    // Verify the conversation state
     let conv = h.handle.get_conversation().await;
 
     // Expected: System + User + Assistant(3 calls) + 3 ToolResults = 6 items
@@ -1731,9 +1723,7 @@ async fn parallel_tool_calls_with_rejection_persists_all_items() {
     );
 }
 
-// ============================================================================
 // Race condition: cancellation mid-tool-execution → dangling calls on reload
-// ============================================================================
 
 /// Simulates the race condition where:
 ///   1. Model emits 3 parallel tool calls (single assistant message)
@@ -1972,9 +1962,7 @@ async fn all_tool_calls_dangling_after_crash() {
     assert_eq!(request.items.len(), 6);
 }
 
-// ============================================================================
 // Live-session cancellation: user cancels mid-tool-execution (no restart)
-// ============================================================================
 
 /// Simulates an in-session abort where:
 ///   1. Model emits 3 parallel tool calls → assistant pushed to conversation
@@ -1984,7 +1972,7 @@ async fn all_tool_calls_dangling_after_crash() {
 ///
 /// This is different from the reload scenario: `ChatState::new` doesn't run
 /// again because the actor is still alive. The fix is that `push_user_message`
-/// now calls `repair_dangling_tool_calls` before appending the new user
+/// calls `repair_dangling_tool_calls` before appending the new user
 /// message, so the conversation is cleaned up in-place.
 #[tokio::test]
 async fn live_cancel_before_any_tool_execution_repairs_on_next_user_message() {
@@ -1992,14 +1980,14 @@ async fn live_cancel_before_any_tool_execution_repairs_on_next_user_message() {
 
     let h = TestHarness::new();
 
-    // ── Turn 1: normal conversation ─────────────────────────────────────
+    // Turn 1: normal conversation
     h.handle
         .push_user_message(ConversationItem::system("You are a helpful assistant."));
     h.handle.push_user_message(ConversationItem::user("Hello"));
     h.handle
         .push_assistant_response(ConversationItem::assistant("Hi! How can I help?"));
 
-    // ── Turn 2: model wants 3 tool calls, user cancels immediately ──────
+    // Turn 2: model wants 3 tool calls, user cancels immediately
     h.handle
         .push_user_message(ConversationItem::user("Read, edit, and test everything"));
 
@@ -2023,7 +2011,7 @@ async fn live_cancel_before_any_tool_execution_repairs_on_next_user_message() {
             },
         ]));
 
-    // *** USER CANCELS HERE (Ctrl+C) ***
+    // USER CANCELS HERE (Ctrl+C)
     // The tokio task is aborted. execute_tool_calls never ran.
     // Zero ToolResult items pushed. The conversation has dangling calls.
 
@@ -2127,7 +2115,7 @@ async fn live_cancel_after_partial_tool_results_repairs_remaining() {
         "file contents here",
     ));
 
-    // *** USER CANCELS HERE — tool #2 and #3 never executed ***
+    // USER CANCELS HERE — tool #2 and #3 never executed
 
     // User types a new prompt
     h.handle.push_user_message(ConversationItem::user(
@@ -2178,7 +2166,6 @@ async fn live_cancel_after_partial_tool_results_repairs_remaining() {
 }
 
 // Turn message capture tests
-// ============================================================================
 
 #[tokio::test]
 async fn turn_capture_collects_all_message_types() {
@@ -2537,7 +2524,6 @@ async fn turn_capture_survives_integrity_repair_prefix_shrink() {
     // Capture starts after the 7-item prefix: turn_start_offset == 7.
     h.handle.begin_turn_capture();
 
-    // First turn item lands while the prefix duplicates are still present.
     h.handle
         .push_assistant_response(ConversationItem::assistant("turn-1"));
 
@@ -2636,9 +2622,7 @@ async fn turn_capture_survives_persisted_memory_reminder_prepend() {
     ));
 }
 
-// ============================================================================
 // Narrow targeted query tests
-// ============================================================================
 
 #[tokio::test]
 async fn get_conversation_len_empty() {
@@ -2795,7 +2779,7 @@ async fn get_conversation_item_at_does_not_mutate_state() {
     assert_eq!(conv.len(), 2);
 }
 
-// ── Multimodal regression tests for get_first_user_text() ────────────────────
+// Multimodal regression tests for get_first_user_text()
 
 /// Confirms that `get_first_user_text()` returns `None` when the first content
 /// part of the first user message is an image (not text). This preserves the
@@ -2805,7 +2789,6 @@ async fn get_first_user_text_image_first_returns_none() {
     use kigi_sampling_types::{ContentPart, UserItem};
 
     let h = TestHarness::new();
-    // First message: image-only user message (no text part)
     h.handle.push_user_message(ConversationItem::User(UserItem {
         content: vec![ContentPart::Image {
             url: "data:image/png;base64,abc".into(),
@@ -2865,7 +2848,7 @@ async fn get_first_user_text_text_then_image_returns_text() {
     assert_eq!(text.as_deref(), Some("look at this"));
 }
 
-// ── Tests for GetLastUserQueryText, GetConversationCounts, GetSystemMessage ───
+// Tests for GetLastUserQueryText, GetConversationCounts, GetSystemMessage
 
 #[tokio::test]
 async fn get_last_user_query_text_empty_conversation() {
@@ -2935,18 +2918,17 @@ async fn get_system_message_returns_first_system() {
     assert!(matches!(sys, ConversationItem::System(s) if s.content.as_ref() == "You are helpful."));
 }
 
-// ============================================================================
 // Subagent bootstrap regression tests
 //
 // These verify that `replace_conversation` correctly syncs the system prompt
 // into a ChatStateActor that was spawned before the prompt was built — the
 // exact sequence used by `spawn_session_actor` for subagents.
-// ============================================================================
 
 #[tokio::test]
 async fn fresh_subagent_bootstrap_has_system_message_after_replace() {
     // Simulate a fresh (non-forked) subagent: actor starts with an empty conversation.
-    let h = TestHarness::new(); // spawns with vec![]
+    // spawns with vec![]
+    let h = TestHarness::new();
 
     // At this point the actor has no system message, mirroring the bug.
     assert!(h.handle.get_system_message().await.is_none());
@@ -3005,9 +2987,7 @@ async fn forked_subagent_bootstrap_replaces_parent_system_message() {
     assert_eq!(conv.len(), 3);
 }
 
-// ============================================================================
 // In-memory retained pruning tests (PR3)
-// ============================================================================
 
 /// Helper: push N complete turns (user + assistant + tool-result) so the
 /// conversation grows to a predictable length.
@@ -3165,8 +3145,10 @@ async fn prune_retained_bounds_long_session_footprint() {
     use crate::persistence::MockChatPersistence;
     use crate::types::PruningConfig;
 
-    const TURNS: usize = 50; // enough turns to clear many old tool results
-    const CONTENT_LEN: usize = 50_000; // 50 KB per tool result
+    // enough turns to clear many old tool results
+    const TURNS: usize = 50;
+    // 50 KB per tool result
+    const CONTENT_LEN: usize = 50_000;
     const PLACEHOLDER_LEN: usize = "[Tool result omitted — too old]".len();
 
     let (mock, _rx) = MockChatPersistence::new();
@@ -3324,7 +3306,8 @@ async fn prune_retained_synthetic_user_does_not_advance_age() {
     // Three real turns, each with a large tool result.
     for i in 0..3usize {
         handle.push_user_message(ConversationItem::user(format!("real q{i}")));
-        handle.increment_prompt_index(); // prompt_index = i+1
+        // prompt_index = i+1
+        handle.increment_prompt_index();
         handle.push_assistant_response(ConversationItem::assistant(format!("a{i}")));
         handle.push_tool_result(ConversationItem::tool_result(
             format!("call_{i}"),
@@ -3339,7 +3322,8 @@ async fn prune_retained_synthetic_user_does_not_advance_age() {
 
     // Fourth real turn starts: prompt_index → 4, pruning fires inside push_user_message.
     handle.push_user_message(ConversationItem::user("real q3"));
-    handle.increment_prompt_index(); // prompt_index = 4
+    // prompt_index = 4
+    handle.increment_prompt_index();
 
     // Sync
     let conv = handle.get_conversation().await;
@@ -3616,7 +3600,6 @@ async fn context_window_downgrade_triggers_auto_compact() {
         "api_backend must not change"
     );
 
-    // Now auto-compact sees the 128k window and fires
     let trigger = h.handle.check_auto_compact_needed(85).await;
     assert!(
         trigger.is_some(),
@@ -3633,14 +3616,13 @@ async fn context_window_downgrade_triggers_auto_compact() {
     );
 }
 
-// ============================================================================
 // KV Cache Prefix Stability Tests
 //
 // These test `build_conversation_request()` output prefix stability through
 // the full pipeline -- pruning, memory injection, image pruning, snapshot
 // restore. Prefix stability within a compaction epoch is the invariant that
 // keeps the inference engine's prefix / KV cache hitting. The sibling-Reasoning refactor
-// deleted the placeholder/splice machinery these tests previously had to work
+// deleted the placeholder/splice machinery these tests earlier had to work
 // around.
 //
 // These target the refactored sibling-Reasoning shape:
@@ -3649,7 +3631,6 @@ async fn context_window_downgrade_triggers_auto_compact() {
 //   - Reasoning lives as `ConversationItem::Reasoning(rs::ReasoningItem)`
 //     siblings; the From<&ConversationRequest> for rs::CreateResponse impl
 //     emits them inline in `input` order.
-// ============================================================================
 
 /// Serialize a ConversationRequest using only the public
 /// `From<&ConversationRequest> for rs::CreateResponse` trait impl.
@@ -4049,8 +4030,6 @@ async fn prefix_stable_after_image_pruning() {
 
     // Image stripping mutates the old user turn's content, so full
     // byte-level prefix stability cannot hold at that item. We verify:
-    //   1. System prompt preserved
-    //   2. Items grew
     //   3. Text items appear in the same relative order
     let body1 = serialize_via_public_api(&req1);
     let body2 = serialize_via_public_api(&req2);
@@ -4164,7 +4143,8 @@ async fn prefix_stable_after_tool_result_pruning() {
     h.handle
         .push_tool_result(ConversationItem::tool_result("c2", "y".repeat(500)));
     h.handle.push_user_message(ConversationItem::user("q3"));
-    h.handle.record_token_usage(6000); // > 50% of 10k context
+    // > 50% of 10k context
+    h.handle.record_token_usage(6000);
 
     let req2 = h
         .handle
@@ -4319,9 +4299,7 @@ async fn prefix_stable_after_session_resume() {
     );
 }
 
-// ============================================================================
 // Out-of-band history repair (kigi/session/repair)
-// ============================================================================
 
 /// Bricked-session shape: an orphaned tool result survives load (the eager
 /// repairs only fix dangling calls) and 400s on every request. The

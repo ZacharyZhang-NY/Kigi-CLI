@@ -1,5 +1,4 @@
-//! Worktree-pool configuration value type, extracted from kigi-shell
-//! (config dependency inversion).
+//! Worktree-pool configuration value type.
 
 use serde::{Deserialize, Serialize};
 
@@ -18,27 +17,23 @@ use serde::{Deserialize, Serialize};
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PoolConfig {
-    /// Whether the pool is enabled at all.
-    /// Can be set to false to disable pooling regardless of repo size.
-    /// Default: true (auto-detect based on file_count_threshold)
+    /// When false, pooling is off regardless of repo size; otherwise
+    /// `file_count_threshold` decides.
     #[serde(default = "default_true")]
     pub enabled: bool,
 
-    /// Number of worktrees to keep ready in the pool.
-    /// 2 is the minimum useful value when forks need parallel worktrees.
-    /// Default: 2
+    /// Number of worktrees to keep ready. 2 is the minimum useful value when
+    /// forks need parallel worktrees.
     #[serde(default = "default_pool_size")]
     pub pool_size: usize,
 
-    /// Minimum number of tracked files for the pool to activate.
-    /// Below this threshold, on-demand creation is fast enough.
-    /// Default: 50_000
+    /// Minimum number of tracked files for the pool to activate. Below this,
+    /// on-demand creation is fast enough.
     #[serde(default = "default_file_count_threshold")]
     pub file_count_threshold: usize,
 
-    /// Number of threads to use for worktree creation when populating the pool.
-    /// This can speed up pool population on large repos, but also increases resource usage.
-    /// Default: 3.
+    /// Threads used to populate the pool. Higher values speed up population on
+    /// large repos at the cost of more concurrent resource use.
     #[serde(default = "default_pool_parallelism")]
     pub parallelism: usize,
 }

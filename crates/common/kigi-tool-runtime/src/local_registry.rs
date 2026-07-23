@@ -38,14 +38,12 @@ impl std::fmt::Debug for LocalRegistry {
 }
 
 impl LocalRegistry {
-    /// Construct an empty registry.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Register a typed [`Tool`] implementation by value. Subsequent
-    /// registrations of the same id replace the previous handle and
-    /// return the displaced handle for inspection / drop ordering.
+    /// Register a typed [`Tool`] by value. A later registration of the
+    /// same id replaces the previous handle and returns it.
     pub fn register<T>(&self, tool: T) -> Option<ArcTool>
     where
         T: Tool + 'static,
@@ -53,7 +51,7 @@ impl LocalRegistry {
         self.register_arc(Arc::new(tool))
     }
 
-    /// Register a typed [`Tool`] implementation already wrapped in `Arc`.
+    /// Register a typed [`Tool`] already wrapped in `Arc`.
     pub fn register_arc<T>(&self, tool: Arc<T>) -> Option<ArcTool>
     where
         T: Tool + 'static,
@@ -64,47 +62,41 @@ impl LocalRegistry {
 
     /// Register a type-erased [`ToolDyn`](crate::tool::ToolDyn) directly.
     ///
-    /// Use this for inherently dynamic tools (e.g. MCP tools retrieved
-    /// from a registry as `Arc<dyn ToolDyn>`) where the concrete type
-    /// is not available. For native tools with a concrete type, prefer
-    /// [`register`](Self::register).
+    /// Use for inherently dynamic tools (e.g. MCP tools as
+    /// `Arc<dyn ToolDyn>`) where the concrete type is unavailable. For
+    /// native tools with a concrete type, prefer [`register`](Self::register).
     pub fn register_dyn(&self, tool: ArcTool) -> Option<ArcTool> {
         let id = tool.id();
         self.entries.write().insert(id, tool)
     }
 
-    /// Resolve `tool_id` to its in-process handle, if registered.
-    /// Returns a clone of the handle so the caller can dispatch without
-    /// holding the lock across an await point.
+    /// Resolve `tool_id` to its in-process handle, if registered. Returns
+    /// a clone so the caller can dispatch without holding the lock across
+    /// an await point.
     pub fn find(&self, tool_id: &ToolId) -> Option<ArcTool> {
         self.entries.read().get(tool_id).cloned()
     }
 
-    /// Drop the handle bound to `tool_id`. Returns `true` iff a
-    /// matching entry was removed.
+    /// Drop the handle bound to `tool_id`. Returns `true` iff a matching
+    /// entry was found and removed.
     pub fn unregister(&self, tool_id: &ToolId) -> bool {
         self.entries.write().shift_remove(tool_id).is_some()
     }
 
-    /// Number of tools currently registered.
     pub fn len(&self) -> usize {
         self.entries.read().len()
     }
 
-    /// `true` iff no tools are registered.
     pub fn is_empty(&self) -> bool {
         self.entries.read().is_empty()
     }
 
-    /// `true` iff `tool_id` is currently registered.
     pub fn contains(&self, tool_id: &ToolId) -> bool {
         self.entries.read().contains_key(tool_id)
     }
 
-    /// Descriptions of registered tools filtered by `should_list`.
-    ///
-    /// Returns descriptions in **insertion order** — the order tools
-    /// were registered — so the caller sees the same ordering as the
+    /// Descriptions of registered tools filtered by `should_list`, in
+    /// **insertion order**, so the caller sees the same ordering as the
     /// config-defined tool list.
     pub fn list_tools(&self, ctx: &ListToolsContext) -> Vec<ToolDescription> {
         self.entries

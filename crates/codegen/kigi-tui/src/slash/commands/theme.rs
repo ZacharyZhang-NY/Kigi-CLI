@@ -168,8 +168,6 @@ mod tests {
         assert!(!ThemeCommand.available_in_minimal());
     }
 
-    // -- suggest_args ---------------------------------------------------------
-
     #[test]
     fn suggest_args_prepends_auto_option() {
         with_test_env(|| {
@@ -276,8 +274,6 @@ mod tests {
             }
         });
     }
-
-    // -- run (dispatches Action::SetTheme) ------------------------------------
 
     /// `/theme <name>` returns `Action::SetTheme(<canonical>)` —
     /// the dispatcher handles in-memory state + disk write + toast.
@@ -408,8 +404,6 @@ mod tests {
         });
     }
 
-    // -- preview_arg ----------------------------------------------------------
-
     #[test]
     fn preview_auto_applies_resolved_theme() {
         with_test_env(|| {
@@ -447,9 +441,7 @@ mod tests {
         });
     }
 
-    // -- cancel_preview -------------------------------------------------------
-
-    /// `cancel_preview` restores the previously-applied theme.
+    /// `cancel_preview` restores the theme that was applied before the preview.
     #[test]
     fn cancel_preview_restores_previous_kind() {
         with_test_env(|| {
@@ -483,8 +475,6 @@ mod tests {
             );
         });
     }
-
-    // -- error handling -------------------------------------------------------
 
     #[test]
     fn run_unknown_lists_auto_in_available() {

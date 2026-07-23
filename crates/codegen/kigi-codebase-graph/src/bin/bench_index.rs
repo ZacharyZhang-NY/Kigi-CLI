@@ -21,7 +21,6 @@ fn main() {
         std::process::exit(1);
     };
 
-    // First, verify all queries compile
     println!("Verifying query compilation...");
     let registry = LanguageRegistry::new();
     for ext in &["ts", "tsx", "js", "jsx", "rs", "go", "py"] {

@@ -3,8 +3,8 @@
 //! Copies essential git internal files using reflink (CoW) when supported,
 //! skipping transient state, lock files, and stale worktree registrations.
 //!
-//! The `objects/` directory (often the largest subtree) is copied in parallel
-//! using a thread pool for better throughput on SSDs.
+//! The tree is walked once to enumerate entries, then the copies are sharded
+//! across scoped threads for throughput on SSDs.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -13,7 +13,6 @@ use anyhow::{Context, Result};
 
 use crate::copy::cow::clone_file;
 
-/// Statistics from copying the `.git/` directory.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct GitDirCopyStats {
     pub files_copied: u64,
@@ -27,9 +26,7 @@ pub(crate) struct GitDirCopyStats {
 /// These are either transient state (merge/rebase in-progress markers) or
 /// linked-worktree metadata that would be stale in the copy.
 const SKIP_TOP_LEVEL: &[&str] = &[
-    // Linked worktree registrations — stale in a standalone copy
     "worktrees",
-    // Transient HEAD-like state files
     "FETCH_HEAD",
     "ORIG_HEAD",
     "MERGE_HEAD",
@@ -38,11 +35,9 @@ const SKIP_TOP_LEVEL: &[&str] = &[
     "REBASE_HEAD",
     "AUTO_MERGE",
     "BISECT_LOG",
-    // In-progress multi-step operation state
     "sequencer",
     "rebase-merge",
     "rebase-apply",
-    // GC state
     "gc.log",
     // fsmonitor daemon state — a host-local Unix-domain IPC socket
     // (`fsmonitor--daemon.ipc`, which cannot be reflinked/copied) plus its
@@ -52,27 +47,16 @@ const SKIP_TOP_LEVEL: &[&str] = &[
     "fsmonitor--daemon.ipc",
 ];
 
-/// A work item for the parallel copy pool.
 struct CopyWork {
     source: PathBuf,
     dest: PathBuf,
 }
 
-/// Copy `.git/` directory contents using CoW, skipping unnecessary entries.
+/// Build a standalone git repository's `.git/` at `dest_git` by selectively
+/// copying from `source_git`, using reflink (CoW) where the filesystem
+/// supports it and falling back to a regular copy otherwise.
 ///
-/// Creates a standalone git repository's `.git/` at `dest_git` by selectively
-/// copying from `source_git`. Files are copied using reflink (CoW) when the
-/// filesystem supports it, falling back to regular copy otherwise.
-///
-/// The `objects/` subtree is copied in parallel (it's typically the largest
-/// part and has no ordering dependencies). Other top-level entries are copied
-/// sequentially.
-///
-/// Skips:
-/// - Lock files (`*.lock`) at any depth
-/// - Stale worktree registrations (`worktrees/`)
-/// - Transient state files (`MERGE_HEAD`, `CHERRY_PICK_HEAD`, etc.)
-/// - In-progress rebase/cherry-pick state (`sequencer/`, `rebase-merge/`)
+/// Lock files at any depth and the [`SKIP_TOP_LEVEL`] entries are left behind.
 pub(crate) fn copy_git_dir(source_git: &Path, dest_git: &Path) -> Result<GitDirCopyStats> {
     copy_git_dir_with_workers(source_git, dest_git, num_cpus::get())
 }
@@ -95,8 +79,6 @@ fn copy_git_dir_with_workers(
     let symlinks_copied = AtomicU64::new(0);
     let entries_skipped = AtomicU64::new(0);
 
-    // First pass: collect work items for parallel copy.
-    // We collect all (source, dest) pairs, then process them in parallel.
     let mut work_items: Vec<CopyWork> = Vec::new();
     collect_work_recursive(
         source_git,
@@ -107,7 +89,6 @@ fn copy_git_dir_with_workers(
         &entries_skipped,
     )?;
 
-    // Process file copies in parallel using scoped threads.
     let num_workers = max_workers.min(work_items.len().max(1));
 
     if num_workers <= 1 || work_items.len() < 64 {
@@ -182,10 +163,9 @@ fn copy_git_dir_with_workers(
     Ok(stats)
 }
 
-/// Recursively collect work items (files/symlinks to copy), creating directories eagerly.
-///
-/// Directories are created immediately (they must exist before files are written),
-/// but file copies are deferred to the work list for parallel processing.
+/// Walk `source`, creating every directory eagerly (they must exist before the
+/// copy workers write into them) while deferring files and symlinks to
+/// `work_items` for parallel copying.
 fn collect_work_recursive(
     source: &Path,
     dest: &Path,
@@ -230,7 +210,6 @@ fn collect_work_recursive(
                 entries_skipped,
             )?;
         } else if file_type.is_file() || file_type.is_symlink() {
-            // Regular file or symlink — add to work list.
             work_items.push(CopyWork {
                 source: source_path,
                 dest: dest_path,
@@ -249,14 +228,12 @@ fn collect_work_recursive(
     Ok(())
 }
 
-/// Copy a single file or symlink entry.
 fn copy_single_entry(
     source_path: &Path,
     dest_path: &Path,
     files_copied: &AtomicU64,
     symlinks_copied: &AtomicU64,
 ) -> Result<()> {
-    // Check if it's a symlink by querying symlink metadata.
     let metadata = std::fs::symlink_metadata(source_path)
         .with_context(|| format!("failed to stat {}", source_path.display()))?;
 
@@ -301,13 +278,10 @@ fn copy_single_entry(
     Ok(())
 }
 
-/// Decide whether to skip a `.git/` entry based on its name and depth.
 fn should_skip(name: &str, depth: usize) -> bool {
-    // Skip lock files at any depth
     if name.ends_with(".lock") {
         return true;
     }
-    // Skip known top-level entries
     if depth == 0 && SKIP_TOP_LEVEL.contains(&name) {
         return true;
     }
@@ -325,7 +299,6 @@ mod tests {
         let source_git = temp.path().join("source/.git");
         let dest_git = temp.path().join("dest/.git");
 
-        // Create a minimal .git structure
         std::fs::create_dir_all(source_git.join("objects/pack")).unwrap();
         std::fs::create_dir_all(source_git.join("refs/heads")).unwrap();
         std::fs::write(source_git.join("HEAD"), "ref: refs/heads/main\n").unwrap();
@@ -539,7 +512,6 @@ mod tests {
 
         let err = copy_git_dir_with_workers(&source_git, &dest_git, 4)
             .expect_err("a failed .git/ entry copy must propagate as an error");
-        // The error names the failing entry, not some unrelated setup failure.
         let chain = format!("{err:#}");
         assert!(
             chain.contains("obj0"),

@@ -51,7 +51,7 @@ async fn campaign_nudges_default_until_dismissed_by_model_pick() {
         PtyHarness::new(&binary, DEFAULT_ROWS, DEFAULT_COLS, &[], &env_refs).expect("spawn pager")
     };
 
-    // ── Phase 1: a fresh boot shows the campaign model, not the config one. ──
+    // Phase 1: a fresh boot shows the campaign model, not the config one.
     {
         let mut h = spawn(&campaign_env);
         h.wait_for_text(CAMPAIGN_MODEL, WELCOME_TIMEOUT)
@@ -69,7 +69,7 @@ async fn campaign_nudges_default_until_dismissed_by_model_pick() {
         h.quit().expect("clean quit");
     }
 
-    // ── Phase 2: a session + explicit `/model` pick dismisses the campaign. ──
+    // Phase 2: a session + explicit `/model` pick dismisses the campaign.
     {
         let mut h = spawn(&campaign_env);
         h.wait_for_text(CAMPAIGN_MODEL, WELCOME_TIMEOUT)
@@ -102,7 +102,7 @@ async fn campaign_nudges_default_until_dismissed_by_model_pick() {
         h.quit().expect("clean quit");
     }
 
-    // ── Phase 3: reboot with the SAME campaign env -> the config model wins. ──
+    // Phase 3: reboot with the SAME campaign env -> the config model wins.
     {
         let mut h = spawn(&campaign_env);
         h.wait_for_text(CONFIG_MODEL, WELCOME_TIMEOUT)

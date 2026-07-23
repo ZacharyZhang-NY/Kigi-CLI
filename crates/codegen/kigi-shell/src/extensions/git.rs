@@ -3,7 +3,7 @@
 //! Routing: prefers explicit `gitRoot`, falls back to session lookup via `sessionId`.
 //! Business logic delegated to `session::git::*` pure functions.
 //!
-//! **Phase 4 design note**: Git/JJ functions (`git_cli`, `status`,
+//! Git/JJ functions (`git_cli`, `status`,
 //! `detect_vcs_kind`, `find_git_root_from_path`, etc.) are stateless
 //! utilities that take a `&Path` and shell out to `git`/`jj`. They do
 //! not access workspace state and therefore remain direct calls rather
@@ -27,8 +27,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Instant;
-/// Global cache for git status results, keyed by git_root path.
-/// This provides caching at the extension API layer while keeping git::status pure.
+/// Git status results keyed by `git_root`, cached at the extension layer to keep `git::status` pure.
 static GIT_STATUS_CACHE: std::sync::LazyLock<Mutex<HashMap<PathBuf, GitStatusCacheEntry>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 struct GitStatusCacheEntry {
@@ -46,8 +45,7 @@ impl GitStatusCacheEntry {
             && self.cached_at.elapsed() < GIT_STATUS_CACHE_TTL
     }
 }
-/// Invalidate the git status cache for a given git_root.
-/// Should be called after any mutation operation (stage, unstage, discard, commit).
+/// Call after any mutation (stage, unstage, discard, commit) to drop the cached status for `git_root`.
 fn invalidate_status_cache(git_root: &PathBuf) {
     let mut cache = GIT_STATUS_CACHE.lock();
     cache.remove(git_root);
@@ -234,7 +232,6 @@ pub struct GitCurrentCommitRequest {
     #[serde(default)]
     pub git_root: Option<String>,
 }
-/// Request for kigi/git/checkout_commit extension method.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitCheckoutCommitRequest {
@@ -242,12 +239,10 @@ pub struct GitCheckoutCommitRequest {
     pub session_id: Option<acp::SessionId>,
     #[serde(default)]
     pub git_root: Option<String>,
-    /// Commit hash or ref to checkout.
     pub commit: String,
     #[serde(default)]
     pub stash_if_dirty: bool,
 }
-/// Resolve git_root from explicit value or session lookup via [`WorkspaceOps`].
 async fn resolve_git_root(
     agent: &MvpAgent,
     ops: &kigi_workspace::WorkspaceOps,

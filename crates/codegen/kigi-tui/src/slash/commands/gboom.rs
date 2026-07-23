@@ -17,7 +17,6 @@ impl SlashCommand for GboomCommand {
     }
 
     fn description(&self) -> &str {
-        // Never shown: the command is hidden from the dropdown.
         "Hidden easter egg"
     }
 
@@ -25,7 +24,6 @@ impl SlashCommand for GboomCommand {
         "/gboom"
     }
 
-    /// Easter egg: typeable, never listed.
     fn visible(&self, _ctx: &AppCtx) -> bool {
         false
     }

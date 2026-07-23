@@ -98,8 +98,6 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    // ── SessionEvent round-trip tests ────────────────────────────────
-
     #[test]
     fn turn_started_round_trip() {
         let event = SessionEvent::TurnStarted {
@@ -226,8 +224,6 @@ mod tests {
         }
     }
 
-    // ── #[serde(other)] backward-compat ─────────────────────────────
-
     #[test]
     fn unknown_event_type_deserializes_as_unknown() {
         let v = json!({ "event_type": "some_future_event", "extra": 123 });
@@ -241,8 +237,6 @@ mod tests {
         let event: SessionEvent = serde_json::from_value(v).unwrap();
         assert_eq!(event, SessionEvent::Unknown);
     }
-
-    // ── ToolCallOutcome serialization ───────────────────────────────
 
     #[test]
     fn tool_call_outcome_snake_case() {
@@ -259,8 +253,6 @@ mod tests {
         }
     }
 
-    // ── SessionPhase serialization ──────────────────────────────────
-
     #[test]
     fn session_phase_snake_case() {
         for (variant, expected) in [
@@ -276,8 +268,6 @@ mod tests {
             assert_eq!(back, variant);
         }
     }
-
-    // ── Forward-compat: inner enum Unknown ──────────────────────────
 
     #[test]
     fn tool_call_outcome_unknown_variant_on_future_value() {
@@ -327,15 +317,11 @@ mod tests {
         );
     }
 
-    // ── Unknown variant serialization ───────────────────────────────
-
     #[test]
     fn unknown_variant_serializes_as_expected() {
         let v = serde_json::to_value(SessionEvent::Unknown).unwrap();
         assert_eq!(v, json!({"event_type": "unknown"}));
     }
-
-    // ── Extra/unknown fields on known variants ──────────────────────
 
     #[test]
     fn extra_fields_ignored_on_known_variant() {
@@ -356,8 +342,6 @@ mod tests {
         );
     }
 
-    // ── Negative: missing required fields ───────────────────────────
-
     #[test]
     fn turn_ended_missing_required_field_rejected() {
         let v = json!({
@@ -370,8 +354,6 @@ mod tests {
         });
         assert!(serde_json::from_value::<SessionEvent>(v).is_err());
     }
-
-    // ── Boundary values ─────────────────────────────────────────────
 
     #[test]
     fn turn_number_zero_and_max() {

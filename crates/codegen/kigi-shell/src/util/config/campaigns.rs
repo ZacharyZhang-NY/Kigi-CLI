@@ -28,7 +28,7 @@ static DISMISS_TMP_NONCE: AtomicU64 = AtomicU64::new(0);
 static REMOTE_CAMPAIGN_CACHE: RwLock<Vec<CampaignEntry>> = RwLock::new(Vec::new());
 
 /// Seed the process-global remote campaign cache. A `None` settings value (e.g.
-/// a failed fetch) is a no-op so it can't clobber a previously-seeded cache;
+/// a failed fetch) is a no-op so it can't clobber an already-seeded cache;
 /// `Some` with zero campaigns legitimately clears it (campaigns withdrawn).
 pub fn set_remote_campaigns_from_settings(remote: Option<&RemoteSettings>) {
     let Some(remote) = remote else {
@@ -74,8 +74,9 @@ fn dismiss_campaign_ids_at(
     let _guard = DISMISS_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let path = campaigns_state_path(home);
     // Cross-process advisory lock over the read-modify-write: in leader mode
-    // several kigi processes share `$KIGI_SHARE_DIR`; the in-process mutex alone would
-    // let them lose-update the set. Best-effort; a lock failure still proceeds.
+    // several kigi processes share `$KIGI_SHARE_DIR`, and the in-process mutex
+    // alone would allow them to lose-update the set. Best-effort; a lock
+    // failure still proceeds.
     let lock = std::fs::OpenOptions::new()
         .create(true)
         .truncate(false)
@@ -327,7 +328,7 @@ fn apply_campaign_fields(
 pub fn sync_campaign_fields(cfg: &mut crate::agent::config::Config) {
     let remote = remote_campaigns_from_settings(cfg.remote_settings.as_ref());
     // Seed the process-global cache from the parse we already did (skip on `None`
-    // so a failed fetch can't clobber a previously-seeded cache).
+    // so a failed fetch can't clobber an already-seeded cache).
     if cfg.remote_settings.is_some() {
         set_remote_campaigns(remote.clone());
     }

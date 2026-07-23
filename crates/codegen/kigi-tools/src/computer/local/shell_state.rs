@@ -19,10 +19,6 @@ use command_fds::FdMapping;
 use nix::libc;
 use tokio::io::AsyncReadExt;
 
-// ============================================================================
-// Marker constants
-// ============================================================================
-
 const BASH_STATE_START_MARKER: &str = "__KIGI_BASH_STATE_START__";
 const BASH_STATE_END_MARKER: &str = "__KIGI_BASH_STATE_END__";
 const ZSH_STATE_START_MARKER: &str = "__KIGI_ZSH_STATE_START__";
@@ -32,12 +28,11 @@ const ZSH_STATE_END_MARKER: &str = "__KIGI_ZSH_STATE_END__";
 /// from the actual state dump on stdout.
 const INIT_STATE_MARKER: &str = "__KIGI_INIT_STATE_MARKER__";
 
-/// Maximum time to wait for a shell state init (login shell + rc files).
 const INIT_TIMEOUT: Duration = Duration::from_secs(15);
 
-/// Maximum time to wait for the dump reader task after the child process exits.
-/// Uses a 5s close timeout. If a background process inherits fd 4,
-/// the reader would hang forever without this.
+/// Cap on the dump reader task after the child process exits: a background
+/// process that inherited fd 4 keeps the pipe open, so the reader would
+/// otherwise wait forever.
 const DUMP_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Environment overrides applied to every agent terminal / persistent shell spawn.
@@ -56,9 +51,8 @@ pub fn shell_env_overrides() -> HashMap<String, String> {
     ])
 }
 
-/// Returns the sudo alias injection string if `SUDO_ASKPASS` is configured.
-/// When set, `alias sudo='sudo -A'` makes any `sudo` in the user's command
-/// use the askpass helper instead of blocking on tty input.
+/// Aliasing `sudo` to `sudo -A` makes any `sudo` in the user's command use the
+/// askpass helper instead of blocking on tty input. Empty when no helper is set.
 fn sudo_alias_injection() -> String {
     match std::env::var("SUDO_ASKPASS") {
         Ok(val) if !val.is_empty() => "alias sudo='sudo -A'; ".to_string(),
@@ -66,12 +60,8 @@ fn sudo_alias_injection() -> String {
     }
 }
 
-// ============================================================================
-// Dump scripts (embedded as const strings)
-// ============================================================================
-
-/// Bash state dump script. Captures env vars, POSIX options, bash options,
-/// functions, and aliases as base64-encoded replayable shell snippets.
+/// Captures env vars, POSIX options, bash options, functions, and aliases as
+/// base64-encoded replayable shell snippets.
 const DUMP_BASH_STATE_SCRIPT: &str = r##"
 dump_bash_state() {
   set -euo pipefail
@@ -125,8 +115,8 @@ dump_bash_state() {
 }
 "##;
 
-/// Zsh state dump script. Captures env vars, zsh options, functions, and aliases
-/// as base64-encoded replayable shell snippets.
+/// Captures env vars, zsh options, functions, and aliases as base64-encoded
+/// replayable shell snippets.
 const DUMP_ZSH_STATE_SCRIPT: &str = r##"
 function dump_zsh_state() {
   emulate -L zsh -o errreturn -o pipefail
@@ -175,10 +165,6 @@ function dump_zsh_state() {
 }
 "##;
 
-// ============================================================================
-// Shell kind
-// ============================================================================
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShellKind {
     Bash,
@@ -195,9 +181,8 @@ impl ShellKind {
     }
 
     /// Resolved absolute path to the shell binary. Falls back from `$SHELL` →
-    /// `which` → common dirs → `/bin/<name>`. Result is cached process-wide
-    /// in `kigi_config::shell::unix_shell_path`. See that function for
-    /// the full cascade. Returns `&'static str`.
+    /// `which` → common dirs → `/bin/<name>`, cached process-wide in
+    /// `kigi_config::shell::unix_shell_path`; see that function for the full cascade.
     pub fn binary_path(&self) -> &'static str {
         let kind = match self {
             Self::Bash => kigi_config::shell::UnixShellKind::Bash,
@@ -243,10 +228,6 @@ impl ShellKind {
     }
 }
 
-// ============================================================================
-// ShellState
-// ============================================================================
-
 /// Persistent shell state: a serialized snapshot that can be replayed to restore
 /// env vars, cwd, functions, aliases, and shell options in a fresh shell process.
 #[derive(Debug, Clone)]
@@ -255,7 +236,6 @@ pub struct ShellState {
     pub cwd: PathBuf,
     /// Replayable shell script (everything after the cwd line, minus markers).
     pub snapshot: String,
-    /// Which shell produced this state.
     pub shell: ShellKind,
 }
 
@@ -271,8 +251,6 @@ impl ShellState {
         let dump_script = shell.dump_script();
         let dump_fn = shell.dump_function_name();
 
-        // Build the one-liner: define the dump function, print a marker (to separate
-        // login noise from our output), then call the dump function.
         let script = format!("{dump_script} builtin printf '{INIT_STATE_MARKER}\\n'; {dump_fn}");
 
         let args: Vec<&str> = match shell {
@@ -301,7 +279,7 @@ impl ShellState {
 
         let mut full_output = String::new();
         if let Some(ref mut stdout) = child.stdout {
-            // Apply init timeout to prevent hangs from slow rc files (e.g. network mounts).
+            // Slow rc files (e.g. on network mounts) must not hang the init.
             match tokio::time::timeout(INIT_TIMEOUT, stdout.read_to_string(&mut full_output)).await
             {
                 Ok(Ok(_)) => {}
@@ -320,7 +298,6 @@ impl ShellState {
 
         let _ = child.wait().await;
 
-        // Extract output after our marker (skip MOTD, bashrc echo, etc.)
         let snapshot_raw = parse_after_marker(&full_output, INIT_STATE_MARKER);
 
         match parse_dump(shell, snapshot_raw) {
@@ -330,7 +307,6 @@ impl ShellState {
                 shell,
             }),
             None => {
-                // Dump failed or was killed — use empty state with the given cwd.
                 tracing::warn!("shell state init: dump markers missing, using empty state");
                 Ok(Self {
                     cwd: cwd.to_path_buf(),
@@ -367,21 +343,17 @@ impl ShellState {
         let sudo_inject = sudo_alias_injection();
         let search_inject = super::embedded_search_tools::search_injection(search_shadows);
 
-        // Create two OS pipes: one for state-in (fd 3), one for state-out (fd 4).
-        // os_pipe() creates fds with O_CLOEXEC (atomically on Linux,
-        // best-effort on macOS) so concurrent forks can't leak them.
+        // One pipe for state-in (fd 3), one for state-out (fd 4).
         let (state_in_read, state_in_write) = os_pipe()?;
         let (state_out_read, state_out_write) = os_pipe()?;
 
-        // Ensure the parent-only ends have CLOEXEC (redundant on Linux
-        // where os_pipe uses pipe2, but needed as a safety net on macOS
-        // where pipe+fcntl has a small race window).
+        // Redundant on Linux where os_pipe uses pipe2, but a safety net on macOS
+        // where pipe+fcntl leaves a small race window.
         set_cloexec(&state_in_write)?;
         set_cloexec(&state_out_read)?;
-        // The child-bound ends (state_in_read, state_out_write) also have
-        // CLOEXEC from os_pipe(). This is fine: fd_mappings uses dup2()
-        // which clears CLOEXEC on the target fd (3/4), so the child keeps
-        // them across exec. The originals are closed on exec by CLOEXEC.
+        // The child-bound ends (state_in_read, state_out_write) carry CLOEXEC too.
+        // That is fine: fd_mappings uses dup2(), which clears CLOEXEC on the target
+        // fd (3/4), so the child keeps those across exec while the originals close.
 
         // The wrapper command:
         // 1. Read prior snapshot from fd 3, eval it (restores env/funcs/aliases/opts)
@@ -390,18 +362,16 @@ impl ShellState {
         // 4. Exit with the user command's exit code
         let wrapper = match self.shell {
             ShellKind::Bash => format!(
-                // Merge the user command's stderr into its
-                // stdout via `2>&1` so the captured byte stream preserves
-                // chronological write order. Without this, the bash tool's
-                // separate stdout/stderr pipes (each read in lockstep)
-                // emit all-of-stdout-then-all-of-stderr in a single poll
-                // tick, so a command like `echo X 1>&2 && echo Y` shows
-                // up as `Y\nX\n` instead of the chronological `X\nY\n`.
-                // Shell-level diagnostics (eval syntax errors, etc.) still
-                // land on the outer shell's stderr — those are unaffected.
-                // Re-export KIGI_AGENT=1 after snapshot eval so agent-definition
-                // selectors (or other values) from prior shells cannot clear the
-                // agent sentinel (process env alone is insufficient).
+                // `2>&1` merges the user command's stderr into its stdout so the
+                // captured byte stream preserves chronological write order. With
+                // separate stdout/stderr pipes read in lockstep, a single poll tick
+                // emits all-of-stdout-then-all-of-stderr, so `echo X 1>&2 && echo Y`
+                // surfaces as `Y\nX\n` instead of `X\nY\n`. Shell-level diagnostics
+                // (eval syntax errors, etc.) still land on the outer shell's stderr.
+                //
+                // KIGI_AGENT=1 is re-exported after the snapshot eval so values from
+                // prior shells cannot clear the agent sentinel; process env alone is
+                // insufficient because the snapshot replays over it.
                 "{dump_script} \
                  snap=$(command cat <&3) && builtin shopt -s extglob && builtin eval -- \"$snap\" && \
                  {{ builtin set +u 2>/dev/null || true; \
@@ -488,7 +458,6 @@ pub struct PreparedCommand {
     /// or `/run/current-system/sw/bin/bash` on NixOS). See
     /// [`ShellKind::binary_path`] for the resolution cascade.
     pub binary: String,
-    /// Full argument list for the shell.
     pub args: Vec<String>,
     /// Fd mappings to pass to `CommandFdExt::fd_mappings()`.
     pub fd_mappings: Vec<FdMapping>,
@@ -496,15 +465,10 @@ pub struct PreparedCommand {
     pub state_in_write: OwnedFd,
     /// Read end of the state-output pipe. Caller reads the new dump from here after exit.
     pub state_out_read: OwnedFd,
-    /// Working directory for the child process.
     pub cwd: PathBuf,
 }
 
-// ============================================================================
-// Helpers
-// ============================================================================
-
-/// Create an OS pipe, returning `(read_end, write_end)` as `OwnedFd`.
+/// Returns `(read_end, write_end)`.
 ///
 /// On Linux, uses `nix::unistd::pipe2(O_CLOEXEC)` to atomically set
 /// close-on-exec, eliminating the race window between `pipe()` and
@@ -515,31 +479,25 @@ pub struct PreparedCommand {
 /// in 10.15 but `nix`'s cfg gate hasn't caught up). Falls back to
 /// `pipe()` + `fcntl(FD_CLOEXEC)` with a best-effort race window.
 fn os_pipe() -> std::io::Result<(OwnedFd, OwnedFd)> {
-    // Linux: atomic O_CLOEXEC via pipe2.
     #[cfg(target_os = "linux")]
     {
         nix::unistd::pipe2(nix::fcntl::OFlag::O_CLOEXEC)
             .map_err(|e| std::io::Error::from_raw_os_error(e as i32))
     }
 
-    // macOS (and other non-Linux Unix): pipe() + fcntl best-effort.
     #[cfg(not(target_os = "linux"))]
     {
         let (read_fd, write_fd) =
             nix::unistd::pipe().map_err(|e| std::io::Error::from_raw_os_error(e as i32))?;
-        // Best-effort CLOEXEC — small race window on macOS between pipe()
-        // and these fcntl calls, but unavoidable without pipe2.
         let _ = set_cloexec(&read_fd);
         let _ = set_cloexec(&write_fd);
         Ok((read_fd, write_fd))
     }
 }
 
-/// Set FD_CLOEXEC on a file descriptor so it is NOT inherited by child processes.
-///
-/// This is critical for pipe fds that should stay parent-only: without CLOEXEC,
-/// the child inherits both ends of a pipe after fork, preventing EOF from being
-/// signaled when the parent closes its end.
+/// Critical for pipe fds that must stay parent-only: without FD_CLOEXEC the child
+/// inherits both ends of the pipe after fork, so closing the parent's end never
+/// signals EOF.
 fn set_cloexec(fd: &OwnedFd) -> std::io::Result<()> {
     let raw = fd.as_raw_fd();
     let flags = unsafe { libc::fcntl(raw, libc::F_GETFD) };
@@ -566,13 +524,13 @@ fn parse_dump(shell: ShellKind, raw: &str) -> Option<(PathBuf, String)> {
         return None;
     }
 
-    // Strip markers
     let without_markers = &raw[start_line.len()..raw.len() - end_line.len()];
 
-    // First line is $PWD
+    // The dump's first line is $PWD.
     let newline_pos = without_markers.find('\n')?;
     let cwd = &without_markers[..newline_pos];
-    let rest = &without_markers[newline_pos..]; // includes the leading \n
+    // Keeps the leading \n.
+    let rest = &without_markers[newline_pos..];
 
     Some((PathBuf::from(cwd), rest.to_string()))
 }
@@ -598,35 +556,32 @@ pub async fn write_snapshot_to_pipe(snapshot: &str, fd: OwnedFd) -> std::io::Res
         std::mem::forget(fd);
         file.write_all(data.as_bytes())?;
         file.flush()?;
-        drop(file); // closes the fd → child sees EOF on its read end
+        // Closing the fd is what makes the child see EOF on its read end.
+        drop(file);
         Ok(())
     })
     .await
     .map_err(std::io::Error::other)?
 }
 
-/// Read the full dump output from the state-out pipe with a timeout.
-///
-/// If a background process inherits fd 4, the pipe never closes and the reader
-/// hangs. The timeout (5s close timeout) prevents this from
-/// blocking the actor loop forever. On timeout, returns whatever was read so far
-/// (which is typically empty, so marker validation will fail and prior state is kept).
+/// On timeout, returns whatever was read so far — typically empty, so marker
+/// validation fails and the caller keeps the prior state.
 pub async fn read_dump_from_pipe(fd: OwnedFd) -> std::io::Result<String> {
-    // Read until either of the END markers appears, *not* until EOF.
+    // Read until either END marker appears, *not* until EOF.
     //
     // When the user's command backgrounds a subprocess (`cmd &`), the bg
     // shell inherits fd 4 (the dump pipe's write-end) and keeps it open
     // until *it* exits. The parent shell finishes its dump and exits, but
-    // the kernel doesn't close the read-end's EOF until every write-end
+    // the kernel signals EOF on the read-end only once every write-end
     // holder closes theirs. Without marker-driven termination we'd block
-    // on `read_to_string` for the entire bg lifetime, hit the 5s safety
+    // on `read_to_string` for the entire bg lifetime, hit the safety
     // timeout, and discard the (perfectly complete) dump — which manifests
     // as `cd` / function / alias state silently failing to persist after
     // any command that backgrounds something. (See harness scenarios
     // "State persistence after backgrounded command" and the cd-roundtrip
     // tests for shell state persistence parity.)
     //
-    // We additionally cap on `DUMP_READ_TIMEOUT` so a shell that crashed
+    // `DUMP_READ_TIMEOUT` additionally caps the wait so a shell that crashed
     // before emitting the END marker doesn't wedge the actor.
     match tokio::time::timeout(
         DUMP_READ_TIMEOUT,
@@ -639,13 +594,12 @@ pub async fn read_dump_from_pipe(fd: OwnedFd) -> std::io::Result<String> {
             loop {
                 let n = file.read(&mut chunk)?;
                 if n == 0 {
-                    // EOF: every write-end holder closed fd 4 (the
-                    // expected path when no bg subprocess was spawned).
+                    // EOF: every write-end holder closed fd 4, the expected
+                    // path when no bg subprocess was spawned.
                     break;
                 }
                 buf.push_str(&String::from_utf8_lossy(&chunk[..n]));
-                // Either marker suffices; we accept whichever shell the
-                // child happens to be (bash vs zsh).
+                // Either marker suffices; the child may be bash or zsh.
                 if buf.contains(BASH_STATE_END_MARKER) || buf.contains(ZSH_STATE_END_MARKER) {
                     break;
                 }
@@ -666,10 +620,6 @@ pub async fn read_dump_from_pipe(fd: OwnedFd) -> std::io::Result<String> {
         }
     }
 }
-
-// ============================================================================
-// Tests
-// ============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -753,18 +703,14 @@ mod tests {
         assert_eq!(result, output);
     }
 
-    /// Returns true iff a usable bash binary exists at the resolved path.
-    /// Used to gate integration tests so they're skipped (rather than failing)
-    /// on systems where bash isn't installed (e.g. minimal containers).
-    /// On NixOS the resolver returns the nix-store / profile path, so this
-    /// guard works there too.
+    /// Gates the integration tests so they skip, rather than fail, on systems
+    /// without bash (e.g. minimal containers). The resolved path works on NixOS
+    /// too, where it points into the nix store / profile.
     fn bash_available() -> bool {
         std::path::Path::new(ShellKind::Bash.binary_path()).exists()
     }
 
-    /// Returns true iff a usable zsh binary exists at the resolved path.
-    /// Mirrors [`bash_available`] so zsh integration tests skip (rather than
-    /// fail) on systems without zsh installed.
+    /// Mirrors [`bash_available`] for the zsh integration tests.
     fn zsh_available() -> bool {
         std::path::Path::new(ShellKind::Zsh.binary_path()).exists()
     }
@@ -822,15 +768,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_init_bash() {
-        // Integration test: actually runs bash and captures state.
-        // Skip in environments without bash.
         if !bash_available() {
             return;
         }
         let cwd = std::env::current_dir().unwrap();
         let state = ShellState::init(ShellKind::Bash, &cwd).await.unwrap();
         assert!(state.cwd.is_absolute());
-        // The snapshot should contain at least some env var exports
         assert!(
             state.snapshot.contains("kigi_snap_") || state.snapshot.is_empty(),
             "snapshot should contain encoded blocks or be empty: {:?}",
@@ -842,14 +785,12 @@ mod tests {
     async fn test_prepare_command_and_roundtrip() {
         use command_fds::CommandFdExt;
 
-        // Integration test: prepare a command, spawn it, verify state roundtrip.
         if !bash_available() {
             return;
         }
         let cwd = std::env::current_dir().unwrap();
         let mut state = ShellState::init(ShellKind::Bash, &cwd).await.unwrap();
 
-        // Run "export KIGI_TEST_VAR=hello" and capture the new state
         let prep = state
             .prepare_command(
                 "export KIGI_TEST_VAR=hello",
@@ -869,19 +810,17 @@ mod tests {
         cmd.fd_mappings(prep.fd_mappings).unwrap();
 
         let child = cmd.spawn().unwrap();
-        // Drop cmd to release the FdMapping OwnedFds held in its pre_exec closure.
-        // Without this, the parent keeps the write-end of the state-out pipe open,
-        // and the read task never sees EOF.
+        // Releases the FdMapping OwnedFds held in cmd's pre_exec closure. Otherwise
+        // the parent keeps the write-end of the state-out pipe open and the read
+        // task never sees EOF.
         drop(cmd);
 
-        // Write snapshot to fd 3
         let snapshot = state.snapshot.clone();
         let write_handle =
             tokio::spawn(
                 async move { write_snapshot_to_pipe(&snapshot, prep.state_in_write).await },
             );
 
-        // Read new dump from fd 4
         let read_handle =
             tokio::spawn(async move { read_dump_from_pipe(prep.state_out_read).await });
 
@@ -896,8 +835,8 @@ mod tests {
             "dump should have valid markers, got: {:?}",
             &dump[..dump.len().min(500)]
         );
-        // The snapshot contains base64-encoded env vars, so the variable name
-        // won't appear in plaintext. Verify the dump was valid and non-empty.
+        // Env vars are base64-encoded in the snapshot, so the variable name never
+        // appears in plaintext; a valid non-empty dump is all we can assert.
         assert!(
             !state.snapshot.is_empty(),
             "snapshot should be non-empty after a successful command"
@@ -905,7 +844,8 @@ mod tests {
         assert!(state.cwd.is_absolute(), "cwd should be absolute");
     }
 
-    /// Helper: run a command against a ShellState, update state, return (exit_code, stdout).
+    /// Runs a command against a ShellState, updates the state, and returns
+    /// `(exit_code, stdout)`.
     async fn run_command(state: &mut ShellState, command: &str) -> (i32, String) {
         use command_fds::CommandFdExt;
 
@@ -953,11 +893,10 @@ mod tests {
         let cwd = std::env::current_dir().unwrap();
         let mut state = ShellState::init(ShellKind::Bash, &cwd).await.unwrap();
 
-        // cd to /tmp (macOS resolves to /private/tmp via symlink)
+        // macOS resolves /tmp to /private/tmp via symlink.
         let (code, _) = run_command(&mut state, "cd /tmp").await;
         assert_eq!(code, 0);
 
-        // Next command should see the resolved /tmp as cwd
         let (code, stdout) = run_command(&mut state, "pwd").await;
         assert_eq!(code, 0);
         let actual_pwd = stdout.trim();
@@ -976,11 +915,9 @@ mod tests {
         let cwd = std::env::current_dir().unwrap();
         let mut state = ShellState::init(ShellKind::Bash, &cwd).await.unwrap();
 
-        // Export a variable
         let (code, _) = run_command(&mut state, "export MY_TEST_VAR=persistent_value").await;
         assert_eq!(code, 0);
 
-        // Next command should see it
         let (code, stdout) = run_command(&mut state, "echo $MY_TEST_VAR").await;
         assert_eq!(code, 0);
         assert_eq!(stdout.trim(), "persistent_value");
@@ -1079,11 +1016,9 @@ mod tests {
         let cwd = std::env::current_dir().unwrap();
         let mut state = ShellState::init(ShellKind::Bash, &cwd).await.unwrap();
 
-        // Define a function
         let (code, _) = run_command(&mut state, "greet() { echo \"hello $1\"; }").await;
         assert_eq!(code, 0);
 
-        // Call it in the next command
         let (code, stdout) = run_command(&mut state, "greet world").await;
         assert_eq!(code, 0);
         assert_eq!(stdout.trim(), "hello world");
@@ -1097,13 +1032,11 @@ mod tests {
         let cwd = std::env::current_dir().unwrap();
         let mut state = ShellState::init(ShellKind::Bash, &cwd).await.unwrap();
 
-        // Define an alias
         let (code, _) = run_command(&mut state, "alias ll='ls -la'").await;
         assert_eq!(code, 0);
 
-        // Verify the alias survives by checking the dump itself (base64-encoded).
-        // We can't check plaintext in the snapshot since it's base64, but we can
-        // verify the snapshot is valid and non-empty (alias was captured in the dump).
+        // The alias is base64-encoded inside the snapshot, so only its presence as
+        // a non-empty dump can be asserted here.
         assert!(
             !state.snapshot.is_empty(),
             "snapshot should be non-empty after alias"
@@ -1163,15 +1096,13 @@ mod tests {
         let cwd = std::env::current_dir().unwrap();
         let mut state = ShellState::init(ShellKind::Bash, &cwd).await.unwrap();
 
-        // Set up some state
         let (_, _) = run_command(&mut state, "export SURVIVE_TEST=yes").await;
         let prev_cwd = state.cwd.clone();
 
-        // Run a failing command — state should still update (dump runs regardless)
+        // The dump runs regardless of the command's exit code.
         let (code, _) = run_command(&mut state, "false").await;
         assert_ne!(code, 0);
 
-        // Previous state should still be there
         assert_eq!(state.cwd, prev_cwd);
         let (_, stdout) = run_command(&mut state, "echo $SURVIVE_TEST").await;
         assert_eq!(stdout.trim(), "yes");

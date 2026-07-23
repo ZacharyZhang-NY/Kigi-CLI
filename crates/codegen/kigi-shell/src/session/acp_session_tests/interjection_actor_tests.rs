@@ -3,7 +3,6 @@
 use super::support::*;
 use super::*;
 
-/// Send-now of an image-bearing queued prompt keeps its `ContentBlock::Image`s on the promoted row.
 #[tokio::test]
 async fn queue_send_now_keeps_prompt_block_images_on_promoted_row() {
     let local = tokio::task::LocalSet::new();
@@ -52,9 +51,6 @@ async fn queue_send_now_keeps_prompt_block_images_on_promoted_row() {
         .await;
 }
 
-/// Draining an image-bearing interjection injects structured
-/// `ContentPart::Image` parts (base64 data URL) on the synthetic user
-/// message, preserving `SyntheticReason::Interjection`.
 #[tokio::test]
 async fn drain_interjection_with_images_attaches_image_parts() {
     let local = tokio::task::LocalSet::new();
@@ -100,9 +96,6 @@ async fn drain_interjection_with_images_attaches_image_parts() {
         .await;
 }
 
-/// The drain strips `[Image #N: <path>]` → `[Image #N]` before the text
-/// reaches the model — same gate as the prompt path. Covers raw text from
-/// legacy clients AND the queue-interject harvest (raw `queue_meta.text`).
 #[tokio::test]
 async fn drain_interjection_strips_placeholder_paths_from_text() {
     let local = tokio::task::LocalSet::new();
@@ -130,10 +123,6 @@ async fn drain_interjection_strips_placeholder_paths_from_text() {
         .await;
 }
 
-/// Draining an interjection whose text is a skill slash invocation appends
-/// the loaded `<skill_information>` envelope after the wrapped
-/// `<user_query>` — send-now of a queued `/skill` row (and a typed `/skill`
-/// interjection) must not reach the model unexpanded.
 #[tokio::test]
 async fn drain_interjection_expands_skill_slash_reference() {
     let local = tokio::task::LocalSet::new();
@@ -209,8 +198,6 @@ async fn drain_interjection_expands_skill_slash_reference() {
         .await;
 }
 
-/// `format_interjection`'s large-prompt truncation applies to the TEXT only —
-/// image data rides structurally and is never truncated or inlined.
 #[tokio::test]
 async fn drain_interjection_truncation_never_touches_image_data() {
     let local = tokio::task::LocalSet::new();
@@ -250,9 +237,6 @@ async fn drain_interjection_truncation_never_touches_image_data() {
         .await;
 }
 
-/// An interjection converted to a fallback prompt turn lands FRONT of the
-/// queue (send-now beats queued-for-later), carries the text + image blocks,
-/// and uses the persist-only `interject-fallback-` prompt-id prefix.
 #[tokio::test]
 async fn interjection_fallback_prompt_queues_front_with_prefix() {
     let local = tokio::task::LocalSet::new();
@@ -358,7 +342,6 @@ async fn flush_stranded_interjections_converts_to_front_prompts_in_order() {
         .await;
 }
 
-/// An empty buffer flushes to nothing (no phantom turns).
 #[tokio::test]
 async fn flush_stranded_interjections_noop_when_empty() {
     let local = tokio::task::LocalSet::new();
@@ -371,8 +354,8 @@ async fn flush_stranded_interjections_noop_when_empty() {
         .await;
 }
 
-/// Review fix: front placement never displaces a pinned running front — the
-/// fallback item lands right behind it when a promotion raced the check.
+/// Front placement never displaces a pinned running front — the fallback item
+/// lands right behind it when a promotion raced the check.
 #[tokio::test]
 async fn fallback_prompt_lands_behind_running_front() {
     let local = tokio::task::LocalSet::new();
@@ -410,8 +393,6 @@ async fn fallback_prompt_lands_behind_running_front() {
         .await;
 }
 
-/// A fallback prompt turn created while plan mode is active must not escape
-/// the plan gate: it carries `PromptMode::Plan`.
 #[tokio::test]
 async fn fallback_prompt_respects_active_plan_mode() {
     let local = tokio::task::LocalSet::new();

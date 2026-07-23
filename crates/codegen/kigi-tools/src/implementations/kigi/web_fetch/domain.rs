@@ -10,10 +10,6 @@ use url::Url;
 
 use crate::types::output::WebFetchOutput;
 
-// ───────────────────────────────────────────────────────────────────────────
-// Domain normalization
-// ───────────────────────────────────────────────────────────────────────────
-
 /// Canonical form for domain comparison: trim whitespace, strip trailing
 /// slashes and dots, remove `www.` prefix, and lowercase.
 pub fn normalize_domain(raw: &str) -> String {
@@ -21,10 +17,6 @@ pub fn normalize_domain(raw: &str) -> String {
     let s = s.strip_prefix("www.").unwrap_or(s);
     s.to_lowercase()
 }
-
-// ───────────────────────────────────────────────────────────────────────────
-// Precomputed host entry
-// ───────────────────────────────────────────────────────────────────────────
 
 /// What a single host is allowed to serve.
 #[derive(Debug, Clone)]
@@ -35,10 +27,6 @@ enum HostEntry {
     /// Each prefix is normalized (leading `/`, no trailing `/`, lowercased).
     PathPrefixes(Vec<String>),
 }
-
-// ───────────────────────────────────────────────────────────────────────────
-// DomainMatcher
-// ───────────────────────────────────────────────────────────────────────────
 
 /// Precomputed domain allowlist. Built once from the raw allowlist entries,
 /// provides O(1) host lookup + small linear scan over path prefixes.
@@ -153,10 +141,6 @@ pub fn domain_from_url(raw_url: &str) -> Option<String> {
         .and_then(|u| u.host_str().map(normalize_domain))
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Tests
-// ───────────────────────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,8 +148,6 @@ mod tests {
     fn url(s: &str) -> Url {
         Url::parse(s).unwrap()
     }
-
-    // ── normalize_domain ─────────────────────────────────────────────────
 
     #[test]
     fn normalize_strips_www_and_trailing_dot() {
@@ -176,8 +158,6 @@ mod tests {
     fn normalize_trims_whitespace() {
         assert_eq!(normalize_domain("  docs.rs  "), "docs.rs");
     }
-
-    // ── Host-only entries ────────────────────────────────────────────────
 
     #[test]
     fn allows_listed_domain() {
@@ -218,8 +198,6 @@ mod tests {
         let m = DomainMatcher::new(&["react.dev".into()]);
         assert!(m.check(&url("https://react.dev./learn")).is_none());
     }
-
-    // ── Path-scoped entries ──────────────────────────────────────────────
 
     #[test]
     fn path_scoped_allows_matching_path() {
@@ -287,8 +265,6 @@ mod tests {
         assert!(m.check(&url("https://example.com/anything")).is_none());
     }
 
-    // ── Multiple path prefixes per host ──────────────────────────────────
-
     #[test]
     fn multiple_path_prefixes_per_host() {
         let m = DomainMatcher::new(&["github.com/org-a".into(), "github.com/org-b".into()]);
@@ -313,8 +289,6 @@ mod tests {
         let m = DomainMatcher::new(&["github.com/docs".into(), "github.com".into()]);
         assert!(m.check(&url("https://github.com/anything")).is_none());
     }
-
-    // ── Model URL variants ───────────────────────────────────────────────
 
     #[test]
     fn model_url_variants() {
@@ -353,8 +327,6 @@ mod tests {
         );
         assert!(m.check(&url("https://93.184.216.34/page")).is_some());
     }
-
-    // ── domain_from_url ─────────────────────────────────────────────────
 
     #[test]
     fn domain_from_url_extracts_and_normalizes() {

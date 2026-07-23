@@ -394,7 +394,6 @@ pub(crate) fn handle(msg: AcpClientMessage, app: &mut AppView) -> bool {
                             // the turn is current.
                             agent.flush_pending_follow_ups(notif_pid);
                         }
-                        // Detect plan mode transitions from tool call completions.
                         plan_mode_modal_refresh_needed |=
                             detect_plan_mode_change(&notif.request.update, agent);
 

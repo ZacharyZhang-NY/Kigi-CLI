@@ -4,9 +4,9 @@ use crate::common::*;
 
 /// Minimal mode paints the welcome card edge-to-edge (no outer horizontal pad).
 /// The live region's status / prompt / info rows and committed user+agent blocks
-/// must share that left edge — previously they sat at `block_pad_left + accent`
-/// (= 3 columns of blank gutter), which looked misaligned against the welcome
-/// box. Assert every non-blank visible row either is welcome-card chrome
+/// must share that left edge — a `block_pad_left + accent` offset (3 columns
+/// of blank gutter) reads as misaligned against the welcome box. Assert every
+/// non-blank visible row either is welcome-card chrome
 /// (border / logo interior) or starts at column 0.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore]
@@ -56,8 +56,8 @@ async fn minimal_flush_left_no_hpad() {
     );
 
     // Slash menu: typing a command prefix opens the dropdown below the prompt.
-    // Its rows must be flush-left too — previously the panel sat at the layout
-    // hpad and the item rows one further column in (`❯ /transcript` at col 3).
+    // Its rows must be flush-left too — a panel at the layout hpad with item
+    // rows one further column in (`❯ /transcript` at col 3) is misaligned.
     harness
         .inject_keys(b"/tra")
         .expect("type slash command prefix");
@@ -78,7 +78,7 @@ async fn minimal_flush_left_no_hpad() {
 
     // Permission modal: a scripted `run_terminal_command` tool call (no --yolo)
     // opens the prompt-replacing permission modal. Its rows must be flush-left
-    // too — previously the whole modal sat at the layout hpad (2 columns in).
+    // too — the modal must not sit at the layout hpad (2 columns in).
     // The accent `┃` paints the modal's first column, so a correct row has zero
     // leading spaces.
     content.set_response("PERMISSION_SETTLED — turn finished after the allow.");
@@ -133,8 +133,8 @@ async fn minimal_flush_left_no_hpad() {
 
 /// For each `needle`, find the first screen line containing it and assert that
 /// line has no leading ASCII spaces (flush-left). Welcome-card rows start with
-/// box-drawing chars at col 0 already; this targets the previously-padded
-/// live/committed content.
+/// box-drawing chars at col 0 already; this targets live/committed content
+/// that must not carry a leading pad.
 fn assert_flush_left_live_rows(screen: &str, needles: &[&str], phase: &str) {
     for needle in needles {
         let line = screen

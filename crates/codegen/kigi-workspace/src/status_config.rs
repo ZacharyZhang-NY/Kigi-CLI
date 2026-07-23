@@ -8,7 +8,7 @@
 use std::str::FromStr;
 use std::time::Duration;
 
-// ── Default timing/threshold values ──────────────────────────────────────
+// Default timing/threshold values
 // Single source of truth for the `StatusConfig::default()` values and the
 // documented fallbacks for each `KIGI_WORKSPACE_*` env var.
 

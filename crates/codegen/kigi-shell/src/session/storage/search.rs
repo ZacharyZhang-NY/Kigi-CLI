@@ -62,7 +62,7 @@ impl Default for BootstrapConfig {
         Self {
             max_concurrent: 4,
             per_session_timeout: Duration::from_secs(30),
-            max_file_size: 30 * 1024 * 1024, // 30 MB
+            max_file_size: 30 * 1024 * 1024,
         }
     }
 }
@@ -222,7 +222,6 @@ impl SearchIndexManager {
         let _ = self.tx.send(SearchManagerCmd::BootstrapOnce { root });
     }
 
-    /// Get current bootstrap progress status.
     pub fn status(&self) -> SearchIndexStatus {
         SearchIndexStatus {
             bootstrapping: self.progress.bootstrapping.load(Ordering::Relaxed),
@@ -233,7 +232,6 @@ impl SearchIndexManager {
         }
     }
 
-    /// Queue an index update for a single session.
     pub fn enqueue(&self, root: PathBuf, session_id: String, cwd: String) {
         let key = SessionSearchKey { session_id, cwd };
         let _ = self.tx.send(SearchManagerCmd::Enqueue {
@@ -515,7 +513,6 @@ async fn upsert_session(
 ) -> io::Result<UpsertOutcome> {
     // Single-pass direct file I/O: bypass StorageAdapter and open updates.jsonl
     // once, extracting prompts, assistant text, and tool metadata in one pass.
-    // Reduces I/O by 3x vs the old 3-call pattern.
     let (content, bytes_read) = if let Some(updates_path) = storage.updates_file_path(info) {
         tokio::task::spawn_blocking(move || {
             collect_all_indexable_content_single_pass(&updates_path)
@@ -532,7 +529,6 @@ async fn upsert_session(
     tokio::task::spawn_blocking(move || {
         let index = SessionSearchIndex::open_or_create(&db_path).map_err(sqlite_to_io_error)?;
 
-        // Skip if content hasn't changed
         if let Ok(Some(existing_hash)) = index.get_content_hash(&doc.session_id)
             && existing_hash == doc.content_hash
         {
@@ -739,7 +735,6 @@ async fn reindex_all(root_dir: &Path, storage: &dyn StorageAdapter) -> io::Resul
         });
     }
 
-    // Drain the JoinSet — wait for all tasks to complete
     while let Some(result) = join_set.join_next().await {
         if let Err(e) = result {
             tracing::warn!(error = %e, "session indexing task panicked");
@@ -786,14 +781,12 @@ async fn reindex_all(root_dir: &Path, storage: &dyn StorageAdapter) -> io::Resul
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Zero-copy peek structs for single-pass content collection
+// Zero-copy peek structs for single-pass content collection.
 //
 // Text-bearing fields are `Cow`, not `&str`: serde cannot borrow `&str` from
 // JSON strings containing escapes (\n, \", \\, \uXXXX), so borrowing would
 // error and silently drop the message from the index. Discriminant-only
 // fields (never escaped) stay `&'a str` for the zero-copy fast path.
-// ---------------------------------------------------------------------------
 
 /// Selective peek for assistant text extraction (agent_message_chunk content.text).
 #[derive(serde::Deserialize)]
@@ -861,9 +854,6 @@ struct ToolLocationPeek<'a> {
 /// zero-copy `RawLinePeek` discriminant, and extracts only the fields
 /// needed for search indexing. Never materializes full
 /// `acp::SessionNotification` objects.
-///
-/// Replaces the old 3-call pattern (`load_prompts_only` + `load_assistant_text`
-/// + `load_tool_metadata`), reducing I/O by 3x and deserialization cost significantly.
 fn collect_all_indexable_content_single_pass(updates_path: &Path) -> io::Result<(String, u64)> {
     let file = match std::fs::File::open(updates_path) {
         Ok(f) => f,
@@ -940,7 +930,7 @@ fn collect_all_indexable_content_single_pass(updates_path: &Path) -> io::Result<
         // Control events (rewind markers) come from xAI extensions
         // ("_kigi/session/update"). Dispatch on source first, then tag.
         if !is_xai {
-            // ── ACP content events ──────────────────────────────────
+            // ACP content events
             match tag {
                 Some(t) if t == *USER_MESSAGE_CHUNK => {
                     flush_assistant(&mut current_assistant, &mut assistant_texts);
@@ -1050,7 +1040,7 @@ fn collect_all_indexable_content_single_pass(updates_path: &Path) -> io::Result<
                 }
             }
         } else {
-            // ── xAI control events ──────────────────────────────────
+            // xAI control events
             match tag {
                 Some(t) if t == *REWIND_MARKER => {
                     flush_assistant(&mut current_assistant, &mut assistant_texts);
@@ -1369,9 +1359,8 @@ mod tests {
         assert_eq!(doc.content_hash, doc2.content_hash);
     }
 
-    // ── helpers for single-pass tests ──────────────────────────────────────
+    // helpers for single-pass tests
 
-    /// Write an updates.jsonl temp file from envelope strings.
     fn write_updates_jsonl(lines: &[String]) -> tempfile::NamedTempFile {
         use std::io::Write as _;
         let mut f = tempfile::NamedTempFile::new().unwrap();
@@ -1393,7 +1382,7 @@ mod tests {
         )
     }
 
-    // ── single-pass content collection tests ─────────────────────────────
+    // single-pass content collection tests
 
     #[test]
     fn test_single_pass_extracts_user_prompts() {
@@ -1695,7 +1684,7 @@ mod tests {
         assert_eq!(doc2.title, "session summary");
     }
 
-    // ── bootstrap config tests ─────────────────────────────────────────────
+    // bootstrap config tests
 
     #[test]
     fn test_bootstrap_config_defaults() {
@@ -1705,7 +1694,7 @@ mod tests {
         assert_eq!(config.max_file_size, 30 * 1024 * 1024);
     }
 
-    // ── should_skip_session tests ──────────────────────────────────────────
+    // should_skip_session tests
 
     #[test]
     fn test_should_skip_session_large_file() {
@@ -1745,7 +1734,7 @@ mod tests {
         ));
     }
 
-    // ── progress and status tests ──────────────────────────────────────────
+    // progress and status tests
 
     #[test]
     fn test_bootstrap_progress_extended_defaults() {
@@ -1773,7 +1762,7 @@ mod tests {
         assert!(json.contains("\"bootstrapping\":true"));
     }
 
-    // ── single-pass bytes_read tests ───────────────────────────────────────
+    // single-pass bytes_read tests
 
     #[test]
     fn test_single_pass_reports_bytes_read() {
@@ -1794,7 +1783,7 @@ mod tests {
         );
     }
 
-    // ── delta indexing tests ───────────────────────────────────────────────
+    // delta indexing tests
 
     /// Append new lines to an existing updates.jsonl file and return the
     /// byte offset where the new content starts.
@@ -1928,7 +1917,7 @@ mod tests {
         }
     }
 
-    // ── bootstrap_once eager flag tests ────────────────────────────────────
+    // bootstrap_once eager flag tests
     // NOTE: SEARCH_INDEX_MANAGER is a process-wide singleton, so tests
     // that depend on the `bootstrapping` flag transitioning to `false`
     // are racy when run in parallel (another test's bootstrap_once()
@@ -1962,7 +1951,7 @@ mod tests {
         assert!(resp.results.is_empty());
     }
 
-    // ── bootstrap freshness recheck tests ──────────────────────────────────
+    // bootstrap freshness recheck tests
     // These test the free functions directly (per-tmp-root DB state), not the
     // global SEARCH_INDEX_MANAGER, whose `bootstrapping` flag is process-wide
     // and racy across parallel tests (see NOTE above).

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 pub struct FileReference {
     /// The raw reference token (e.g. `"@docs/AGENTS.md"`).
     pub raw: String,
-    /// Optional already-resolved absolute path (as a string).
+    /// Optional already-resolved absolute path.
     #[serde(default)]
     pub absolute_path: Option<String>,
 }
@@ -20,7 +20,7 @@ pub struct FileReference {
 pub struct ResolvedFile {
     /// Original reference text from the user.
     pub reference: String,
-    /// Absolute path (as a string).
+    /// Absolute path.
     #[serde(default)]
     pub path: String,
     /// Whether the path was resolved successfully.

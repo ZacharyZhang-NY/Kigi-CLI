@@ -25,7 +25,6 @@ use super::kimi_oauth::{
 
 const DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const REFRESH_GRANT_TYPE: &str = "refresh_token";
-/// Refresh retry budget over the retryable statuses / network blips.
 const MAX_REFRESH_RETRIES: u32 = 3;
 /// HTTP statuses worth retrying a refresh for (kimi-cli parity).
 const RETRYABLE_REFRESH_STATUSES: [u16; 5] = [429, 500, 502, 503, 504];
@@ -58,8 +57,6 @@ fn oauth_url(host: &str, path: &str) -> String {
     format!("{}{path}", host.trim_end_matches('/'))
 }
 
-/// The device-authorization form fields: `client_id`, `scope`, and the
-/// optional non-standard `extra_device_field`.
 fn device_form(cfg: &OAuthConfig) -> Vec<(&'static str, &'static str)> {
     let mut form = vec![("client_id", cfg.client_id), ("scope", cfg.scope)];
     if let Some((name, value)) = cfg.extra_device_field {
@@ -257,8 +254,6 @@ mod tests {
     use wiremock::matchers::{body_string_contains, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    /// An OAuthConfig pointed at a mock server (copies XAI's client_id/scope/
-    /// paths but overrides the host).
     fn mock_cfg(host: &'static str) -> OAuthConfig {
         OAuthConfig {
             auth_host: host,
@@ -308,8 +303,6 @@ mod tests {
         assert_eq!(auth.expires_in, Some(900));
     }
 
-    /// A response with only `verification_uri` (no `_complete`) still yields a
-    /// valid display URI.
     #[tokio::test]
     async fn device_authorization_falls_back_to_verification_uri() {
         let server = MockServer::start().await;

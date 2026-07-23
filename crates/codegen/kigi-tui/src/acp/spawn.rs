@@ -1,7 +1,7 @@
 //! Agent spawning — creates the agent process and ACP channels.
 //!
-//! Simplified to only support KigiShell (in-process) mode.
-//! Subprocess and remote modes can be added later if needed.
+//! Only KigiShell (in-process) mode is supported; subprocess and remote modes
+//! can be added later if needed.
 
 use std::rc::Rc;
 use std::thread;
@@ -25,14 +25,12 @@ pub struct SpawnedAgent {
     pub _thread_handle: thread::JoinHandle<Result<()>>,
     pub channel: AcpClientChannel,
     pub cancel: CancellationToken,
-    /// The agent's `AuthManager`, shared so pager-side consumers
-    /// channel) resolve the same refreshing bearer as chat traffic.
+    /// The agent's `AuthManager`, shared so pager-side consumers resolve the
+    /// same refreshing bearer as chat traffic.
     pub auth_manager: std::sync::Arc<AuthManager>,
 }
 
 /// Spawn a KigiShell agent in a background thread.
-///
-/// Returns the ACP client channel for communication and a cancellation token.
 pub async fn spawn_kigi_shell(
     agent_config: AgentConfig,
     cancel: &CancellationToken,
@@ -82,7 +80,6 @@ pub async fn spawn_kigi_shell(
         })
     };
 
-    // Spawn the agent thread with direct dispatch
     let handle = spawn_agent_thread_direct(spawn_fn, acp_agent, agent_cancel.clone())?;
 
     Ok(SpawnedAgent {
@@ -113,12 +110,10 @@ fn spawn_agent_thread_direct(
                 let client_tx = channel.tx.clone();
                 let agent_rc = spawn_agent(client_tx)?;
 
-                // Direct dispatch: RPC requests go straight to the agent
                 let gw_rx = AcpGatewayReceiver::new(channel.rx, agent_rc).with_tracing(true);
                 tokio::task::spawn_local(gw_rx.run());
                 tokio::task::yield_now().await;
 
-                // Keep running until cancelled
                 cancel.cancelled().await;
                 anyhow::Result::Ok(())
             })

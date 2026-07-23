@@ -373,7 +373,6 @@ fn authenticating_seq(app: &AppView) -> u64 {
         ref other => panic!("expected Authenticating, got {other:?}"),
     }
 }
-/// Extract text from the last system message in an agent's scrollback.
 fn last_system_text(app: &AppView, id: AgentId) -> String {
     system_text_from_end(app, id, 0)
 }
@@ -648,8 +647,6 @@ fn open_session_picker_with(
         pending_delete: None,
     });
 }
-/// Toast strings match the expected format and contain on/off
-/// status.
 fn read_toast(app: &AppView) -> String {
     let agent = app.agents.get(&AgentId(0)).expect("agent must exist");
     agent
@@ -748,7 +745,6 @@ fn agent_scrollback_len(app: &AppView) -> usize {
     app.agents.get(&AgentId(0)).unwrap().scrollback.len()
 }
 use crate::scrollback::blocks::UserPromptBlock;
-/// Helper: open the dashboard against an existing `app`.
 fn open_dashboard(app: &mut AppView) {
     let _ = dispatch_open_dashboard(app);
 }
@@ -792,12 +788,10 @@ fn dashboard_row_order(app: &AppView) -> Vec<crate::views::dashboard::DashboardR
 /// Build a synthetic `PermissionViewState` with the given id and
 /// options. Pushes it to the agent's permission_queue.
 ///
-/// Returns the response receiver so tests can verify
-/// the response was actually `send`'d through the oneshot. The
-/// previous version dropped the receiver (`_rx`), which let
-/// "happy-path" tests assert the queue was popped but masked
-/// regressions where the pop happened without the corresponding
-/// send.
+/// Returns the response receiver so tests can verify the response
+/// was actually `send`'d through the oneshot — a dropped receiver
+/// would let "happy-path" tests assert the queue was popped while
+/// masking regressions where the pop happens without a send.
 fn push_synthetic_permission(
     agent: &mut crate::app::agent_view::AgentView,
     id: usize,

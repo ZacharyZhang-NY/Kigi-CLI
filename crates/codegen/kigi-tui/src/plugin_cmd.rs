@@ -18,8 +18,6 @@ use kigi_agent::plugins::install_registry::{InstallKind, InstallRegistry};
 use kigi_agent::plugins::manifest::{ManifestLoadResult, PluginManifest, load_manifest};
 use kigi_shell::plugin::{self, RepoUpdateOutcome, UninstallError};
 
-// ── JSON output types ───────────────────────────────────────────────
-
 /// Typed entry for `kigi plugin list --json`. The `status` field is a stable
 /// discriminator for machine consumers.
 #[derive(Serialize)]
@@ -33,8 +31,6 @@ enum PluginEntry {
         source: String,
     },
 }
-
-// ── CLI arg definitions ─────────────────────────────────────────────
 
 #[derive(Debug, clap::Args, Clone)]
 pub struct PluginArgs {
@@ -114,8 +110,6 @@ pub enum PluginCommand {
     },
 }
 
-// ── Helpers ─────────────────────────────────────────────────────────
-
 fn kind_label(kind: &InstallKind) -> String {
     match kind {
         InstallKind::Git { url, .. } => format!("git: {url}"),
@@ -156,8 +150,6 @@ fn trust_prompt(subject: &str, source_arg: &str) -> String {
     )
 }
 
-// ── Top-level dispatch ──────────────────────────────────────────────
-
 pub async fn run(args: PluginArgs) -> Result<()> {
     match args.command {
         PluginCommand::List { json } => cmd_list(json),
@@ -180,8 +172,6 @@ pub async fn run(args: PluginArgs) -> Result<()> {
         } => cmd_tag(&path, push, force, dry_run),
     }
 }
-
-// ── Plugin subcommands ──────────────────────────────────────────────
 
 fn cmd_list(json: bool) -> Result<()> {
     let registry = InstallRegistry::load();

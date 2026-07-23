@@ -91,7 +91,6 @@ pub struct TerminalModes {
     pub origin: bool,
     /// Cursor is visible.
     pub show_cursor: bool,
-    /// Insert mode.
     pub insert: bool,
     /// LF/NL mode (linefeed also does carriage return).
     pub linefeed_newline: bool,

@@ -24,38 +24,50 @@ const fn rgb(r: u8, g: u8, b: u8) -> Color {
 mod palette {
     use super::*;
 
-    // ── Backgrounds ─────────────────────────────────────────────────────
-    pub const BG: Color = rgb(10, 10, 10); //  #0a0a0a — Night (terminal bg)
-    pub const BG_DARK: Color = rgb(12, 12, 12); //  #0c0c0c — darkest
-    pub const BG_STORM_DARK: Color = rgb(17, 17, 17); //  #111111 — dark bg
-    pub const BG_STORM: Color = rgb(20, 20, 20); //  #141414 — main bg
-    pub const BG_HIGHLIGHT: Color = rgb(36, 36, 36); //  #242424 — highlight bg
+    // Backgrounds
+    // #0a0a0a — Night (terminal bg)
+    pub const BG: Color = rgb(10, 10, 10);
+    // #0c0c0c — darkest
+    pub const BG_DARK: Color = rgb(12, 12, 12);
+    // #111111 — dark bg
+    pub const BG_STORM_DARK: Color = rgb(17, 17, 17);
+    // #141414 — main bg
+    pub const BG_STORM: Color = rgb(20, 20, 20);
+    // #242424 — highlight bg
+    pub const BG_HIGHLIGHT: Color = rgb(36, 36, 36);
 
-    // ── Text / grays ────────────────────────────────────────────────────
-    pub const FG: Color = rgb(225, 225, 225); // #e1e1e1 — primary text
-    pub const FG_DARK: Color = rgb(200, 200, 200); // #c8c8c8 — secondary text
-    pub const FG_GUTTER: Color = rgb(65, 65, 65); //  #414141 — dim
-    pub const COMMENT: Color = rgb(108, 108, 108); //  #6c6c6c — muted
-    pub const DARK3: Color = rgb(90, 90, 90); //  #5a5a5a — medium gray
-    pub const DARK5: Color = rgb(120, 120, 120); // #787878 — bright gray
+    // Text / grays
+    // #e1e1e1 — primary text
+    pub const FG: Color = rgb(225, 225, 225);
+    // #c8c8c8 — secondary text
+    pub const FG_DARK: Color = rgb(200, 200, 200);
+    pub const FG_GUTTER: Color = rgb(65, 65, 65);
+    // #6c6c6c — muted
+    pub const COMMENT: Color = rgb(108, 108, 108);
+    // #5a5a5a — medium gray
+    pub const DARK3: Color = rgb(90, 90, 90);
+    // #787878 — bright gray
+    pub const DARK5: Color = rgb(120, 120, 120);
 
-    // ── Accent colors (TokyoNight Night) ─────────────────────────────────
-    pub const BLUE: Color = rgb(122, 162, 247); // #7aa2f7
-    pub const BLUE0: Color = rgb(61, 89, 161); // #3d59a1
-    pub const BLUE1: Color = rgb(58, 149, 171); // #3A95AB
-    pub const CYAN: Color = rgb(125, 207, 255); // #7dcfff
-    pub const GREEN: Color = rgb(158, 206, 106); // #9ece6a
-    pub const GREEN1: Color = rgb(115, 218, 202); // #73daca
-    pub const MAGENTA: Color = rgb(187, 154, 247); // #bb9af7
-    pub const ORANGE: Color = rgb(255, 158, 100); // #ff9e64
-    pub const PURPLE: Color = rgb(157, 124, 216); // #9d7cd8
-    pub const RED: Color = rgb(247, 118, 142); // #f7768e
-    pub const RED1: Color = rgb(219, 75, 75); // #db4b4b
-    pub const TEAL: Color = rgb(26, 188, 156); // #1abc9c
-    pub const YELLOW: Color = rgb(224, 175, 104); // #e0af68
+    // Accent colors (TokyoNight Night)
+    pub const BLUE: Color = rgb(122, 162, 247);
+    pub const BLUE0: Color = rgb(61, 89, 161);
+    pub const BLUE1: Color = rgb(58, 149, 171);
+    pub const CYAN: Color = rgb(125, 207, 255);
+    pub const GREEN: Color = rgb(158, 206, 106);
+    pub const GREEN1: Color = rgb(115, 218, 202);
+    pub const MAGENTA: Color = rgb(187, 154, 247);
+    pub const ORANGE: Color = rgb(255, 158, 100);
+    pub const PURPLE: Color = rgb(157, 124, 216);
+    pub const RED: Color = rgb(247, 118, 142);
+    pub const RED1: Color = rgb(219, 75, 75);
+    pub const TEAL: Color = rgb(26, 188, 156);
+    pub const YELLOW: Color = rgb(224, 175, 104);
 
-    pub const RED_DARK: Color = rgb(66, 14, 20); // #420e14 — quantizes to 256-color red, not gray
-    pub const GREEN_DARK: Color = rgb(6, 56, 6); // #063806 — quantizes to 256-color green, not gray
+    // #420e14 — quantizes to 256-color red, not gray
+    pub const RED_DARK: Color = rgb(66, 14, 20);
+    // #063806 — quantizes to 256-color green, not gray
+    pub const GREEN_DARK: Color = rgb(6, 56, 6);
 }
 use palette::*;
 
@@ -68,7 +80,8 @@ impl Theme {
         Self {
             bg_base: BG_STORM,
             bg_light: BG_HIGHLIGHT,
-            bg_dark: rgb(28, 28, 28), // lighter than bg_base for visible code blocks
+            // lighter than bg_base for visible code blocks
+            bg_dark: rgb(28, 28, 28),
             bg_highlight: BG_HIGHLIGHT,
             bg_hover: rgb(44, 44, 44),
             bg_terminal: BG,
@@ -86,7 +99,8 @@ impl Theme {
             text_primary: FG,
             text_secondary: FG_DARK,
 
-            gray_dim: rgb(88, 88, 88), // #585858 — slightly brighter than FG_GUTTER
+            // #585858 — slightly brighter than FG_GUTTER
+            gray_dim: rgb(88, 88, 88),
             gray: COMMENT,
             gray_bright: DARK5,
 
@@ -97,17 +111,22 @@ impl Theme {
 
             fuzzy_accent: BLUE,
 
-            accent_plan: rgb(255, 219, 141), // #FFDB8D — golden
+            // #FFDB8D — golden
+            accent_plan: rgb(255, 219, 141),
 
-            accent_verify: rgb(187, 154, 247), // #bb9af7 — violet
+            // #bb9af7 — violet
+            accent_verify: rgb(187, 154, 247),
 
-            accent_feedback: GREEN1, // #73daca
+            accent_feedback: GREEN1,
 
-            accent_remember: Color::Rgb(139, 195, 74), // #8BC34A — Material Design light green
+            // #8BC34A — Material Design light green
+            accent_remember: Color::Rgb(139, 195, 74),
 
             selection_border: rgb(60, 60, 65),
-            prompt_border: rgb(50, 50, 55), // #323237 — dimmer prompt chrome
-            prompt_border_active: rgb(80, 80, 88), // #505058 — brighter when focused
+            // #323237 — dimmer prompt chrome
+            prompt_border: rgb(50, 50, 55),
+            // #505058 — brighter when focused
+            prompt_border_active: rgb(80, 80, 88),
             hover_border: rgb(30, 30, 34),
 
             accent_model: TEAL,
@@ -134,19 +153,21 @@ impl Theme {
             md_heading_h2_mod: Modifier::BOLD,
             md_heading_h3: PURPLE,
             md_heading_h3_mod: Modifier::BOLD,
-            md_heading_h4: DARK5, // bright gray
+            md_heading_h4: DARK5,
             md_heading_h4_mod: Modifier::BOLD,
-            md_heading_h5: COMMENT, // medium gray
+            md_heading_h5: COMMENT,
             md_heading_h5_mod: Modifier::BOLD,
-            md_heading_h6: DARK3, // medium gray, unbold
+            // medium gray, unbold
+            md_heading_h6: DARK3,
             md_heading_h6_mod: Modifier::empty(),
             md_code: BLUE1,
             md_task_checked: GREEN,
-            md_task_unchecked: FG_DARK, // text_secondary
+            md_task_unchecked: FG_DARK,
             md_muted: COMMENT,
             md_code_bg: rgb(28, 28, 28),
             md_text: FG_DARK,
-            link_fg: rgb(122, 166, 218), // #7aa6da -- soft blue for dark bg
+            // #7aa6da -- soft blue for dark bg
+            link_fg: rgb(122, 166, 218),
         }
     }
 }

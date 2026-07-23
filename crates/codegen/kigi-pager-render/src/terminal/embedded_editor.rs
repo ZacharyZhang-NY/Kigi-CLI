@@ -31,7 +31,7 @@ pub enum EmbeddedEditor {
 /// [`EmbeddedEditor::Emacs`]; else `None`. Empty values are treated as absent
 /// (matching the sibling `detect_*_from_env` detectors via `env_get`).
 ///
-/// Adding a new env marker here requires extending
+/// Including a new env marker here requires extending
 /// `HOST_TERMINAL_ENV_VARS` in `kigi-pager-pty-harness/src/pty.rs`
 /// (test-env hygiene).
 pub fn embedded_editor_from_env(env: &HashMap<String, String>) -> Option<EmbeddedEditor> {

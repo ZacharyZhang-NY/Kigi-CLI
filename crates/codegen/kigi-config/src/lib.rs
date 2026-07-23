@@ -25,8 +25,6 @@ pub mod signed_policy;
 mod validation;
 pub mod version_overrides;
 
-// Only the cross-crate campaign surface is re-exported at the root; the rest stays
-// reachable via the `pub mod` paths for in-crate use without widening the API.
 pub use campaigns::{
     CampaignEntry, CampaignOverrides, filter_active_campaigns, ids_touching_paths,
 };

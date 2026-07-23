@@ -1,5 +1,3 @@
-//! Session forking functionality
-//!
 //! Forks a saved session to a new working directory with a new session ID.
 //! This creates new session files but does not start the session.
 
@@ -42,37 +40,30 @@ pub struct ForkSessionResponse {
     pub chat_messages_copied: usize,
     pub updates_copied: usize,
     pub plan_state_copied: bool,
-    /// The working directory of the new forked session
     pub new_cwd: String,
-    /// The parent session ID (source session that was forked)
     pub parent_session_id: String,
-    /// The model ID of the forked session (may differ from source if overridden)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_model_id: Option<String>,
 }
 
-/// Generate a forked session ID.
-///
-/// Uses a plain UUIDv7 -- no prefix or source embedding. This keeps IDs
-/// a constant 36 chars regardless of how many fork rounds occur.
+/// Generate a forked session ID: a plain UUIDv7 with no prefix or source
+/// embedding, so IDs stay a constant 36 chars regardless of how many fork
+/// rounds occur.
 fn generate_fork_session_id(_source_id: &str) -> String {
     uuid::Uuid::now_v7().to_string()
 }
 
-/// Fork a saved session to a new working directory.
 pub async fn fork_session(request: ForkSessionRequest) -> io::Result<ForkSessionResponse> {
     let t0 = std::time::Instant::now();
 
     let root_dir = kigi_home();
     let storage = JsonlStorageAdapter::with_root(root_dir.clone());
 
-    // Build source and target Info
     let source_info = Info {
         id: acp::SessionId::new(request.source_session_id.clone()),
         cwd: request.source_cwd.clone(),
     };
 
-    // Use client-provided session ID or generate one
     let new_session_id = request
         .new_session_id
         .clone()
@@ -83,7 +74,6 @@ pub async fn fork_session(request: ForkSessionRequest) -> io::Result<ForkSession
         cwd: request.new_cwd.clone(),
     };
 
-    // Copy session data with parent tracking.
     // Runs on the blocking thread pool so concurrent fork copies can execute
     // truly in parallel (on a LocalSet, async copy_session_data serializes
     // because the sync disk I/O blocks the single-threaded runtime).
@@ -170,8 +160,8 @@ mod tests {
     fn test_generate_fork_session_id_constant_length() {
         // Forking from already-forked sessions should produce same-length IDs
         let id1 = generate_fork_session_id("019c43b5-c4ae-7190-b058-693e24669ba9");
-        let id2 = generate_fork_session_id(&id1); // fork of fork
-        let id3 = generate_fork_session_id(&id2); // fork of fork of fork
+        let id2 = generate_fork_session_id(&id1);
+        let id3 = generate_fork_session_id(&id2);
 
         assert_eq!(id1.len(), 36);
         assert_eq!(id2.len(), 36);

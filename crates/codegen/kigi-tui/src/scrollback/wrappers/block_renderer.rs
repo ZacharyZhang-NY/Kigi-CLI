@@ -105,7 +105,8 @@ impl<B: BlockContent> Renderable for BlockRenderer<'_, B> {
         let has_vpad = self.block.has_vpad(&ctx);
 
         let content_height = output.len() as u16;
-        let vpad = if has_vpad { 2 } else { 0 }; // top + bottom
+        // top + bottom
+        let vpad = if has_vpad { 2 } else { 0 };
 
         content_height + vpad
     }
@@ -120,10 +121,8 @@ impl<B: BlockContent> Renderable for BlockRenderer<'_, B> {
         let has_vpad = self.block.has_vpad(&ctx);
         let block_bg = self.block.background(&ctx);
 
-        // Resolve background color
         let bg_color = self.resolve_background(block_bg);
 
-        // Fill background if specified
         if let Some(bg) = bg_color {
             let bg_style = Style::default().bg(bg);
             for y in area.y..area.y + area.height {
@@ -143,13 +142,11 @@ impl<B: BlockContent> Renderable for BlockRenderer<'_, B> {
             row += 1;
         }
 
-        // Content lines
         for line in &output.lines {
             if row >= max_row {
                 break;
             }
 
-            // Apply line-specific background if set
             // Respects bg_start_col for partial background
             if let Some(line_bg) = line.background {
                 let bg_x = area.x + line.bg_start_col;
@@ -160,13 +157,11 @@ impl<B: BlockContent> Renderable for BlockRenderer<'_, B> {
                 }
             }
 
-            // Render the line content
             buf.set_line_safe(area.x, row, &line.content, area.width);
             row += 1;
         }
 
         // Bottom vpad (empty row) - just skip, background already applied
-        // (no explicit rendering needed)
     }
 }
 
@@ -212,7 +207,6 @@ mod tests {
         let mut buf = Buffer::empty(area);
         renderer.render(area, &mut buf);
 
-        // All cells should have red background
         for y in 0..3 {
             for x in 0..10 {
                 assert_eq!(buf.cell((x, y)).unwrap().bg, Color::Red);

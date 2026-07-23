@@ -1,4 +1,3 @@
-// Per-test-case module for the `pty_e2e` integration test crate.
 #[allow(unused_imports)]
 use super::common::*;
 
@@ -8,7 +7,6 @@ use super::common::*;
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore]
 async fn same_agent_type_switch_no_modal() {
-    // Both models have no agent_type → both use kigi harness.
     let content = ContentController::start_with_models(vec![
         MockModel::new("model-a"),
         MockModel::new("model-b"),
@@ -34,14 +32,12 @@ async fn same_agent_type_switch_no_modal() {
         .wait_for_text(MOCK_RESPONSE_SENTINEL, Duration::from_secs(30))
         .expect("response rendered");
 
-    // Switch to model-b (same agent type).
     harness
         .inject_keys(b"/model model-b\r")
         .expect("type model switch");
 
-    // Should switch normally — look for the model name in status bar
-    // (bottom-right). The toast "✓ Default model: model-b" may be
-    // transient, so check for "model-b" anywhere on screen.
+    // The toast "✓ Default model: model-b" may be transient, so check for
+    // "model-b" anywhere on screen (e.g. the status bar) instead.
     harness
         .wait_for_text("model-b", Duration::from_secs(15))
         .expect("model-b visible on screen after switch");

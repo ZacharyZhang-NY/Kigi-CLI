@@ -4,7 +4,8 @@ use super::common::*;
 #[allow(unused_imports)]
 use super::scroll::*;
 
-// ── Regression: wheel-path cap — a misclassified flood must not teleport ──
+// Regression: wheel-path cap — a misclassified flood must not teleport
+// the viewport.
 //
 // The parent capped only confirmed-trackpad flushes; wheel and Unknown
 // streams flushed their whole backlog in one 16ms slot on the assumption

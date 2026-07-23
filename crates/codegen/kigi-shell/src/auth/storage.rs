@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use super::model::{API_KEY_SCOPE, AuthMode, AuthStore, KimiAuth, lookup_auth};
 
-// ── System-keyring storage for the Kimi Code OAuth session ─────────────
+// System-keyring storage for the Kimi Code OAuth session.
 //
 // PRD F1: the OAuth token set lives in the system keyring (service `kigi`,
 // entry `oauth/kimi-code`); when the keyring is unavailable we fall back to
@@ -111,7 +111,6 @@ fn keyring_entry() -> Result<&'static keyring::Entry, keyring::Error> {
     }
 }
 
-/// Read the session credential from the system keyring.
 #[cfg(any(target_os = "macos", windows))]
 pub(crate) fn keyring_read_session() -> KeyringRead {
     if !keyring_enabled() {
@@ -145,7 +144,6 @@ pub(crate) fn keyring_read_session() -> KeyringRead {
     KeyringRead::Unavailable
 }
 
-/// Write the session credential to the system keyring.
 #[cfg(any(target_os = "macos", windows))]
 pub(crate) fn keyring_write_session(auth: &KimiAuth) -> anyhow::Result<()> {
     anyhow::ensure!(keyring_enabled(), "keyring storage disabled");
@@ -386,8 +384,8 @@ fn write_auth_json_with(
                 "auth: disk full during atomic write, falling back to in-place write"
             );
             // Must reach unified.jsonl: a silent in-memory-only credential
-            // (the prior behavior) leaves sibling processes with a stale
-            // refresh token and no record of why. Surface it loudly.
+            // leaves sibling processes with a stale refresh token and no
+            // record of why. Surface it loudly.
             kigi_log::unified_log::warn(
                 "auth: disk full, falling back to non-atomic in-place write",
                 None,
@@ -430,8 +428,7 @@ fn write_store_to(path: &Path, auth_store: &AuthStore) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Atomic write: tmp + Windows-safe replace (see `util::fs::replace_file`,
-/// which this site's inline delete-first pattern graduated into).
+/// Atomic write: tmp + Windows-safe replace (see `util::fs::replace_file`).
 fn write_auth_json_atomic(auth_file: &Path, auth_store: &AuthStore) -> std::io::Result<()> {
     let tmp = auth_file.with_extension(format!("json.{}.tmp", std::process::id()));
     write_store_to(&tmp, auth_store)?;
@@ -447,8 +444,8 @@ fn write_auth_json_atomic(auth_file: &Path, auth_store: &AuthStore) -> std::io::
 ///
 /// Truncation is destructive, so the prior bytes are snapshotted first and
 /// restored best-effort if the rewrite fails partway — a failed fallback
-/// must not leave an empty/torn file where a parseable (if stale) credential
-/// used to be. A partial file that survives (because even the restore failed)
+/// must not leave an empty/torn file in place of a parseable (if stale)
+/// credential. A partial file that survives (because even the restore failed)
 /// is healed on the next read via [`read_auth_json_or_empty_recovering_corrupt`].
 fn write_auth_json_in_place(auth_file: &Path, auth_store: &AuthStore) -> std::io::Result<()> {
     write_auth_json_in_place_with(auth_file, auth_store, write_store_to)
@@ -719,7 +716,8 @@ mod write_fallback_tests {
     /// old content, as `open_secure_file` does) and then fails partway — the
     /// torn-write case the rollback must recover from.
     fn fake_truncate_then_fail(path: &Path, _: &AuthStore) -> std::io::Result<()> {
-        crate::util::secure_file::open_secure_file(path)?; // truncates to 0 bytes
+        // `open_secure_file` truncates to 0 bytes.
+        crate::util::secure_file::open_secure_file(path)?;
         Err(std::io::Error::from(std::io::ErrorKind::StorageFull))
     }
 
@@ -778,7 +776,7 @@ mod write_fallback_tests {
 
     /// A fallback write that truncates then fails must roll back to the prior
     /// bytes instead of leaving an empty/torn file — otherwise a second
-    /// disk-full failure would destroy a previously-valid credential.
+    /// disk-full failure would destroy the still-valid credential.
     #[test]
     fn in_place_restores_prior_bytes_on_failure() {
         let dir = tempfile::tempdir().unwrap();

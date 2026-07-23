@@ -221,7 +221,6 @@ where
 {
     let start = Instant::now();
 
-    // 1. Read the whole conversation (history ++ accumulated steps).
     let source_turns = stream_proc.get_all_turns_for_compaction().await;
     if source_turns.is_empty() {
         return Err(IntraCompactionError::NothingToCompact);
@@ -243,27 +242,22 @@ where
         "[IntraCompaction] starting full replace"
     );
 
-    // 2. Summarize the whole conversation through kigi's shared core.
-    //    FullReplace always uses the shared summarizer (it *is* the
-    //    `code_compaction` path); `policy.summarizer` is ignored for this mode.
+    // FullReplace always uses the shared summarizer (it *is* the
+    // `code_compaction` path); `policy.summarizer` is ignored for this mode.
     let summary_text = sample_shared_summary_with_retries(sampler, &source_turns, policy).await?;
 
-    // 2b. Preserve in-flight active agent state (e.g. running sub-agents) across
-    //     the compaction. FullReplace drops the working tail, so append the
-    //     harness-supplied `<system-reminder>` (verbatim ids) to the summary so
-    //     the model can keep polling/cancelling them. Empty/None → no change.
-    //     Shared with Kigi chat inter-compaction via `append_reminder_block` so
-    //     both inject the reminder into the summary text identically, before the
-    //     reduction guard below counts it.
+    // FullReplace drops the working tail — append harness-supplied
+    // `<system-reminder>` (verbatim ids) so in-flight sub-agents stay
+    // pollable/cancellable. Empty/None → no change. Shared with inter via
+    // `append_reminder_block` so both inject before the reduction guard counts it.
     let summary_text = crate::append_reminder_block(summary_text, active_reminder);
 
-    // 3. Build the replacement developer turn. Snapshot the summary as a
-    //    cheap-to-clone `Arc<str>` before moving the owned text into the item.
+    // Snapshot summary as cheap-to-clone `Arc<str>` before moving text into the item.
     let summary: Arc<str> = Arc::from(summary_text.as_str());
     let compaction_turn = T::compaction_summary_item(summary_text);
     let tokens_after = token_counter.count_item_tokens(&compaction_turn);
 
-    // 4. Guard: don't apply if compaction didn't help.
+    // Don't apply if compaction didn't help.
     if tokens_before > 0
         && tokens_after > (tokens_before as f64 * policy.max_reduction_ratio) as u32
     {
@@ -280,7 +274,6 @@ where
         });
     }
 
-    // 5. Commit: replace the entire conversation with the single summary turn.
     let turns_compacted = source_turns.len();
     stream_proc
         .replace_with_compaction(
@@ -441,9 +434,8 @@ where
 {
     let start = Instant::now();
 
-    // 1. Read source turns for this target. `FullReplace` never reaches
-    //    `compact_one_pass` — it has a dedicated `apply_full_replace_compaction`
-    //    (no tail-keep), so the orchestrator only routes `Steps`/`History` here.
+    // `FullReplace` never reaches here — dedicated `apply_full_replace_compaction`
+    // (no tail-keep); only `Steps`/`History` are routed here.
     let source_turns = match target {
         CompactionTarget::Steps => stream_proc.get_accumulated_turns_for_compaction().await,
         CompactionTarget::History => stream_proc.get_history_turns_for_compaction().await,
@@ -459,7 +451,6 @@ where
         .map(|t| token_counter.count_item_tokens(t))
         .collect();
 
-    // 2. Choose split point.
     let target_tokens =
         (trigger.context_window as u64 * policy.target_threshold_percent as u64 / 100) as u32;
     let plan = select_turns_to_compact(
@@ -483,12 +474,11 @@ where
         "[IntraCompaction] starting"
     );
 
-    // 3a. For `History` target, split prior `<kigi_user_queries>` blocks
-    //     out of any prior compaction summary items before sampling — same
-    //     primitive inter-compaction uses, so the LLM never sees
-    //     `<kigi_user_queries>` and won't re-emit it (which would snowball
-    //     with our explicit preamble across re-compactions). `Steps` target
-    //     has no user-queries semantics and skips this entirely.
+    // For `History`, split prior `<kigi_user_queries>` out of prior compaction
+    // summary items before sampling — same primitive inter uses, so the LLM
+    // never sees `<kigi_user_queries>` and won't re-emit it (which would
+    // snowball with our explicit preamble). `Steps` has no user-queries
+    // semantics and skips this.
     let (turns_for_llm, prior_user_queries) = match target {
         CompactionTarget::History => {
             let separated = separate_prior_user_queries(&turns_to_compact);
@@ -500,34 +490,29 @@ where
         }
     };
 
-    // 3b. Sample the summary. The *summarization algorithm* is switchable via
-    //     `policy.summarizer`; everything around it — tail selection, the
-    //     reduction guard, the prefix-replace commit, the Steps/History modes,
-    //     and the `<kigi_user_queries>` preamble below — stays intra's.
+    // Summarization algorithm is switchable via `policy.summarizer`; tail
+    // selection, reduction guard, commit, Steps/History modes, and the
+    // `<kigi_user_queries>` preamble stay intra's.
     let summary_text = match policy.summarizer {
-        // Previous intra algorithm: per-target prompt, bounded retry, and NO
-        // output cleaning — the raw model text flows straight to the preamble.
+        // Legacy: per-target prompt, bounded retry, no output cleaning —
+        // raw model text flows straight to the preamble.
         IntraSummarizer::Legacy => {
             let prompt = build_prompt_for_target(target)?;
             let timeout = Duration::from_secs(policy.sampling_timeout_secs);
             sample_compaction_with_retries(sampler, &turns_for_llm, &prompt, timeout, policy)
                 .await?
         }
-        // New (default): kigi's shared summarization core from
-        // `code_compaction` — `build_summary_prompt` + degenerate-reject +
-        // `format_compact_summary` cleaning — run intra-locally.
+        // Shared: `code_compaction` core — `build_summary_prompt` +
+        // degenerate-reject + `format_compact_summary` cleaning.
         IntraSummarizer::Shared => {
             sample_shared_summary_with_retries(sampler, &turns_for_llm, policy).await?
         }
     };
 
-    // 3c. For `History` target, prepend a `<kigi_user_queries>` preamble so
-    //     the original user messages + attachment refs survive the
-    //     summarization. Carries forward both prior (from earlier
-    //     compactions) and current (from this round's `User` turns) via
-    //     the same `assemble_user_queries_preamble` helper that inter
-    //     uses. (Legacy feeds the raw summary text here; Shared feeds the
-    //     already-cleaned summary.)
+    // For `History`, prepend `<kigi_user_queries>` so original user messages
+    // + attachment refs survive. Carries prior (earlier compactions) and
+    // current (`User` turns) via the same `assemble_user_queries_preamble`
+    // helper as inter. Legacy feeds raw summary text; Shared feeds cleaned.
     let final_summary_text = match target {
         CompactionTarget::History => {
             // Current user queries come from `turns_to_compact` (the
@@ -549,16 +534,13 @@ where
         }
     };
 
-    // 4. Build the replacement item. Carries category metadata so that
-    //    subsequent compaction passes (inter or intra) treat it as
-    //    already-compacted content. Snapshot the (possibly large) summary as a
-    //    cheap-to-clone `Arc<str>` for the result before moving the owned text
-    //    into the item.
+    // Replacement item carries category metadata so later passes treat it as
+    // already-compacted. Snapshot large summary as `Arc<str>` before move.
     let summary: Arc<str> = Arc::from(final_summary_text.as_str());
     let compaction_turn = T::compaction_summary_item(final_summary_text);
     let tokens_after = token_counter.count_item_tokens(&compaction_turn);
 
-    // 5. Guard: don't apply if compaction didn't help.
+    // Don't apply if compaction didn't help.
     if plan.tokens_to_compact > 0
         && tokens_after > (plan.tokens_to_compact as f64 * policy.max_reduction_ratio) as u32
     {
@@ -575,9 +557,7 @@ where
         });
     }
 
-    // 6. Commit the LLM-produced summary into parser state. The trait
-    //    method dispatches internally on `target` (Steps view vs History
-    //    view) and rebuilds any derived state (e.g. SglangEngine).
+    // Trait method dispatches on `target` and rebuilds derived state (e.g. SglangEngine).
     stream_proc
         .replace_with_compaction(target, plan.split_idx, compaction_turn)
         .await?;
@@ -676,7 +656,7 @@ where
     .await
     {
         // kigi returns the raw summary and cleans it in its assembler;
-        // intra has no assembler, so it cleans here (pre-refactor behavior).
+        // intra has no assembler, so it cleans here.
         Ok(SampledSummary { summary, .. }) => Ok(format_compact_summary(&summary)),
         Err(SampleRetryError::Empty { .. }) => Err(IntraCompactionError::EmptyResponse),
         Err(SampleRetryError::Failure {
@@ -853,8 +833,6 @@ mod tests {
         }
     }
 
-    // ── Legacy summarizer: error mapping ──
-
     #[test]
     fn compaction_sample_error_to_intra_maps_timeout() {
         let intra = compaction_sample_error_to_intra(CompactionSampleError::Timeout {
@@ -930,8 +908,6 @@ mod tests {
             CompactionSampleError::EmptyResponse
         )));
     }
-
-    // ── generic orchestrator over a pure mock item ─────────────────────
 
     /// Mock item: a `(role, text)` pair with deterministic token counting.
     #[derive(Debug, Clone)]
@@ -1097,8 +1073,7 @@ mod tests {
     fn enabled_policy() -> IntraCompactionConfig {
         IntraCompactionConfig {
             enabled: true,
-            // These tests exercise the steps (tail-keep) path; pin the mode so
-            // they stay independent of the crate default (now `FullReplace`).
+            // Steps (tail-keep) path; pin mode independent of FullReplace default.
             mode: IntraCompactionMode::StepsOnly,
             trigger_threshold_percent: 85,
             target_threshold_percent: 50,
@@ -1138,7 +1113,6 @@ mod tests {
 
     #[tokio::test]
     async fn compact_replaces_turns_on_success_and_notifies_observer() {
-        // 6 turns × 500 tokens (2000 chars / 4); ctx 1000, target 50% → 500
         // → keep the newest 1 turn, compact the oldest 5 (2500 tokens). The
         // summary must be non-degenerate (>= 500 cleaned chars) for the shared
         // sampler to accept it, yet still pass the reduction guard (≤ 2000).
@@ -1321,8 +1295,6 @@ mod tests {
         assert!(matches!(result, Err(IntraCompactionError::Apply(_))));
     }
 
-    // ── FullReplace mode (default): whole-conversation replace ────────
-
     fn full_replace_policy() -> IntraCompactionConfig {
         IntraCompactionConfig {
             mode: IntraCompactionMode::FullReplace,
@@ -1332,7 +1304,6 @@ mod tests {
 
     #[tokio::test]
     async fn full_replace_compacts_whole_conversation_and_notifies_observer() {
-        // 6 turns × 500 tokens (2000 chars / 4) = 3000 tokens. FullReplace
         // summarizes *all* of them (no tail-keep) into one developer turn.
         let turns: Vec<_> = (0..6).map(|_| MockItem::user(&"x".repeat(2000))).collect();
         let sp = MockStreamProc::with_turns(turns);
@@ -1355,7 +1326,7 @@ mod tests {
         assert_eq!(r.turns_compacted, 6);
         assert!(!r.summary.is_empty());
         assert_eq!(sampler.call_count(), 1);
-        // The mock now holds only the single summary turn.
+        // Mock holds only the single summary turn.
         assert_eq!(sp.turns.lock().unwrap().len(), 1);
         // Observer recorded a `FullReplace` success (drives the
         // `target="full_replace"` metric).
@@ -1423,7 +1394,6 @@ mod tests {
 
     #[tokio::test]
     async fn full_replace_skips_below_min_compactable_tokens() {
-        // 2 turns × 1 token = 2 tokens, below `min_compactable_tokens`.
         let turns: Vec<_> = (0..2).map(|_| MockItem::user("x")).collect();
         let sp = MockStreamProc::with_turns(turns);
         let sampler = MockSampler::returns(&long_summary());
@@ -1441,8 +1411,6 @@ mod tests {
         assert_eq!(sampler.call_count(), 0, "LLM should not be called");
         assert!(!sp.was_applied());
     }
-
-    // ── Shared summarizer (default): direct helper coverage ───────────
 
     #[tokio::test]
     async fn shared_summarizer_rejects_degenerate_then_errors() {
@@ -1511,12 +1479,10 @@ mod tests {
         assert!(!cleaned.contains("<summary>"), "tags must be neutralized");
     }
 
-    // ── Legacy summarizer: end-to-end switch ──────────────────────────
-
     #[tokio::test]
     async fn legacy_summarizer_accepts_short_uncleaned_summary() {
-        // Legacy has no degenerate floor and does NO cleaning: a short raw
-        // summary is accepted verbatim (would be rejected under `Shared`).
+        // Legacy has no degenerate floor and does no cleaning: a short raw
+        // summary is accepted verbatim (rejected under `Shared`).
         let turns: Vec<_> = (0..6).map(|_| MockItem::user(&"x".repeat(400))).collect();
         let sp = MockStreamProc::with_turns(turns);
         let sampler = MockSampler::returns("compacted summary");

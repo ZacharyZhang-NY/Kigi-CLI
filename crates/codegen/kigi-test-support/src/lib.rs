@@ -6,19 +6,10 @@
     dead_code
 )]
 //! Shared test utilities for kigi crates: mock inference server, SSE
-//! generators, ACP stdio client, headless runner, env sandbox.
+//! generators, ACP stdio clients, headless runner, env sandbox.
 //!
-//! Provides:
-//! - [`MockInferenceServer`] — Mock /v1/chat/completions + /v1/responses with request logging
-//! - [`KigiStdioClient`] — ACP client that drives `kigi agent stdio` as a subprocess
-//! - [`RawStdioClient`] — raw-wire ACP driver for bytes the typed client can't
-//!   produce (Foundation `\/` methods, string UUID ids)
-//! - [`leader::LeaderStdioClient`] — ACP client that drives `kigi agent --leader stdio` (unix)
-//! - [`run_headless`] — Run `kigi -p` against the mock server and capture output
-//! - [`git_workdir`] — Create a temp directory with git repo (forces libgit2 init)
-//! - [`kigi_binary`] — Resolve the kigi binary path (KIGI_BINARY env or cargo_bin)
-//! - [`spawn_counting_server`] — Connection-counting HTTP/1.1 server for wire/pooling tests
-//! - [`uds_proxy::UdsProxy`] — Frame-aware fault-injection proxy for leader IPC sockets (unix)
+//! [`RawStdioClient`] complements [`KigiStdioClient`] for wire bytes the typed
+//! client cannot produce (Foundation `\/` methods, string UUID ids).
 pub mod acp_client;
 pub mod counting_server;
 pub mod env;

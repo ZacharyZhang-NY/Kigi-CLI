@@ -64,7 +64,7 @@ pub fn matches_trusted_base_url(candidate: &str, trusted_base: &str) -> bool {
         && path_matches
 }
 /// True for subscription coding-API URLs (the compiled production endpoint;
-/// deliberately NOT the env-overridable [`kigi_env::coding_api_base_url`] so a
+/// Deliberately NOT the env-overridable [`kigi_env::coding_api_base_url`] so a
 /// runtime override can't widen this trust set).
 pub fn is_production_coding_api_url(url: &str) -> bool {
     matches_trusted_base_url(url, kigi_env::PRODUCTION_ENDPOINTS.coding_api_base_url)

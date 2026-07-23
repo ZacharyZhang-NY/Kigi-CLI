@@ -190,7 +190,7 @@ mod tests {
         assert!(!is_binary(empty));
     }
 
-    // === TooLarge / bounded read tests (SF-2) ===
+    // TooLarge / bounded read tests (SF-2)
 
     #[test]
     fn test_classify_bytes_too_large() {
@@ -237,7 +237,7 @@ mod tests {
         );
     }
 
-    // === LFS pointer tests ===
+    // LFS pointer tests
 
     #[test]
     fn test_is_lfs_pointer_valid() {
@@ -310,7 +310,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("huge_binary.bin");
         let mut data = vec![0xFFu8; MAX_TRACKED_TEXT_BYTES * 10];
-        data[50] = 0; // null byte in prefix
+        // null byte in prefix
+        data[50] = 0;
         std::fs::write(&path, &data).unwrap();
         let state = read_file_bounded(&path).await;
         // Size > limit means TooLarge (bounded read guarantee - no full allocation)

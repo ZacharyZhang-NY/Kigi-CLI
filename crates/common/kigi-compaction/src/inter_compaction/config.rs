@@ -16,13 +16,11 @@ use crate::history::types::CompactionStrategy;
 pub struct InterCompactionConfig {
     /// The agent/scheduler name to use for the compaction model.
     ///
-    /// NOTE: model routing is host policy — kept here only because
-    /// service configs deserialize this struct as-is; slated to move to the
-    /// per-harness policy split in a later phase.
+    /// Model routing is host policy — kept here because service configs
+    /// deserialize this struct as-is.
     pub compaction_model_name: String,
     /// End-to-end timeout for the compaction sampling in seconds.
     pub sampling_timeout_secs: u64,
-    /// Which compaction strategy to use.
     pub compaction_strategy: CompactionStrategy,
     /// [DivideAndConquer] Max tokens per chunk before sending to the LLM.
     /// (Basic strategy ignores this and emits a single chunk.)

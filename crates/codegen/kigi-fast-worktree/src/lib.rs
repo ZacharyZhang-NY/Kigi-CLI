@@ -52,11 +52,10 @@ pub use sync::{SourceDirtyState, SyncReport, WorktreeSync, collect_source_dirty_
 #[cfg(target_os = "linux")]
 pub use worktree::execute::cleanup_snapshot_git_state;
 
-/// Count the number of tracked files in a git repository's index.
+/// Count the tracked files in a git repository's index.
 ///
-/// Reads the index header via `gix`, which contains the entry count — this
-/// is an O(1) read (no directory walk). Useful for deciding whether a repo
-/// is large enough to benefit from worktree pooling.
+/// Reads the entry count out of the index header via `gix`, so this is an
+/// O(1) read with no directory walk.
 pub fn count_tracked_files(repo_path: &std::path::Path) -> anyhow::Result<usize> {
     let repo = gix::discover(repo_path)
         .map_err(|e| anyhow::anyhow!("failed to discover git repo: {e}"))?;

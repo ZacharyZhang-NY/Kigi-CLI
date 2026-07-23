@@ -107,8 +107,6 @@ pub struct CancelSubagentResponse {
     pub outcome: Option<SubagentCancelOutcomeDto>,
 }
 
-// ── Subagent list_running DTOs ────────────────────────────────────────────
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ListRunningSubagentsRequest {
@@ -161,8 +159,6 @@ impl From<ResolvedRunningSubagent> for SubagentLiveSnapshotDto {
     }
 }
 
-// ── Subagent get DTOs ────────────────────────────────────────────────────
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GetSubagentRequest {
@@ -194,7 +190,7 @@ struct SubagentSnapshotDto {
     started_at_epoch_ms: u64,
     duration_ms: u64,
     status: String,
-    // ── Running fields (present only when status == "running") ────
+    // Running fields, present only when status == "running".
     #[serde(skip_serializing_if = "Option::is_none")]
     turn_count: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -209,7 +205,7 @@ struct SubagentSnapshotDto {
     tools_used: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error_count: Option<u32>,
-    // ── Completed fields ─────────────────────────────────────────
+    // Completed fields.
     #[serde(skip_serializing_if = "Option::is_none")]
     output: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -218,12 +214,12 @@ struct SubagentSnapshotDto {
     turns: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     worktree_path: Option<String>,
-    // ── Failed / Cancelled fields ────────────────────────────────
+    // Failed / Cancelled fields.
     #[serde(skip_serializing_if = "Option::is_none")]
     failure_error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     cancel_reason: Option<String>,
-    // ── Fork/resume provenance ─────────────────────────────────
+    // Fork/resume provenance.
     #[serde(skip_serializing_if = "Option::is_none")]
     fork_context_source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -313,8 +309,6 @@ impl SubagentSnapshotDto {
     }
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────
-
 fn parse<T: serde::de::DeserializeOwned>(args: &acp::ExtRequest) -> Result<T, acp::Error> {
     serde_json::from_str(args.params.get())
         .map_err(|e| acp::Error::invalid_params().data(format!("invalid params: {e}")))
@@ -352,8 +346,6 @@ pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     }
 }
 
-// ── Scheduler DTOs ────────────────────────────────────────────────────
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DeleteScheduledTaskRequest {
@@ -368,7 +360,6 @@ struct DeleteScheduledTaskResponse {
     deleted: bool,
 }
 
-/// Handle `kigi/scheduler/*` extension methods.
 pub async fn handle_scheduler(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
         "kigi/scheduler/delete" => {
@@ -386,7 +377,6 @@ pub async fn handle_scheduler(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtRe
     }
 }
 
-/// Handle `kigi/subagent/*` extension methods.
 pub async fn handle_subagent(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
         "kigi/subagent/cancel" => {
@@ -547,8 +537,6 @@ mod tests {
         let json = serde_json::to_value(&resp).expect("should serialize");
         assert_eq!(json["subagents"], serde_json::json!([]));
     }
-
-    // ── SubagentSnapshotDto serialization tests ────────────────────────
 
     #[test]
     fn snapshot_dto_running_serializes_with_progress_fields() {
@@ -782,8 +770,6 @@ mod tests {
         assert!(req.timeout_ms.is_none());
     }
 
-    // ── Polling control-flow tests ──────────────────────────────────────
-
     #[test]
     fn block_true_with_completed_snapshot_returns_immediately() {
         // When block=true but the snapshot is already completed,
@@ -955,8 +941,6 @@ mod tests {
         assert_eq!(json["resumedFrom"], "source-agent-id");
         assert_eq!(json["forkParentPromptId"], "prompt-5");
     }
-
-    // ── kigi/subagent/cancel outcome wire DTO ──────────────────────────
 
     #[test]
     fn subagent_cancel_outcome_dto_maps_from_coordinator_outcome() {

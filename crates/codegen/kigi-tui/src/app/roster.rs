@@ -126,12 +126,10 @@ mod tests {
     /// pager recovers the session.
     ///
     /// This reproduces the production bug: the agent wraps the payload in a
-    /// `{ "result": { "sessions": [...] } }` envelope, and the pager's first
-    /// parse attempt used to be a direct `from_str::<RosterListResponse>` that
-    /// silently succeeded with an EMPTY roster (the `naive` assertion below).
-    /// Before the fix `parse_roster_list_response` used that same direct parse
-    /// first, so this test FAILED (0 sessions); after the fix it unwraps
-    /// `result` first and PASSES.
+    /// `{ "result": { "sessions": [...] } }` envelope, and a direct
+    /// `from_str::<RosterListResponse>` on that envelope silently succeeds
+    /// with an EMPTY roster (the `naive` assertion below), since `sessions`
+    /// is `#[serde(default)]` and never finds a top-level key to populate.
     #[test]
     fn roster_list_response_survives_result_envelope() {
         use kigi_shell::agent::roster as agent;

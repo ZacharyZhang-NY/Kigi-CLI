@@ -252,7 +252,8 @@ impl PromptStyle {
 
     /// Info block height: rows reserved for the bottom divider line.
     pub fn info_block(&self, has_info: bool) -> u16 {
-        if has_info { 1 } else { 0 } // bottom divider only
+        // Bottom divider only.
+        if has_info { 1 } else { 0 }
     }
 
     /// Mode-tinted accent: the override (e.g. plan mode) when set,
@@ -420,8 +421,8 @@ pub struct PromptWidget {
     /// Last input delta for the flight recorder (read by AgentView after handle_key).
     pub(crate) last_input_delta: crate::input_log::LastInputDelta,
     /// Live preview state for slash commands that support it.
-    /// Stores the display text of the previously-active value so we can
-    /// revert on Esc. `None` = no preview in progress.
+    /// Stores the display text of the value active before the preview began,
+    /// so Esc can revert to it. `None` = no preview in progress.
     pub(crate) slash_preview_original: Option<String>,
 
     /// Shell command suggestion controller (ghost text + progressive matching).
@@ -434,7 +435,6 @@ pub struct PromptWidget {
     /// bash/remember/feedback input modes, or while editing a queued prompt.
     pub(crate) prompt_suggestion_active: bool,
 
-    // -- Image paste state ---------------------------------------------------
     /// Images attached to the current prompt.
     pub images: Vec<PastedImage>,
     /// Images removed during undo that can be restored on redo.
@@ -600,8 +600,6 @@ impl PromptWidget {
         self.suggestions.clear_ghost();
     }
 
-    // -- Predicted-next-prompt suggestion (tab autocomplete) -----------------
-
     /// The prompt-suggestion ghost to render for the current text, if the
     /// per-frame gate is open and no other completion UI owns the row.
     /// Requires the cursor at end-of-text so the ghost visually continues
@@ -650,8 +648,6 @@ impl PromptWidget {
     pub fn try_progressive_match(&mut self, new_text: &str) -> bool {
         self.suggestions.try_progressive_match(new_text)
     }
-
-    // -- Completion dropdown ------------------------------------------------
 
     /// Whether the completion dropdown is currently open.
     pub fn completion_dropdown_open(&self) -> bool {
@@ -931,8 +927,6 @@ impl PromptWidget {
         self.update_file_search_context();
     }
 
-    // -- Slash command state sync -------------------------------------------
-
     /// Refresh the slash snapshot from current text + cursor.
     ///
     /// Called by `AgentView` after every `PromptEvent::Edited`.
@@ -1176,8 +1170,6 @@ impl PromptWidget {
         }
     }
 
-    // -- Slash preview -------------------------------------------------------
-
     /// Trigger live preview for the currently selected slash arg suggestion.
     ///
     /// Called after `slash_move_selection` when the dropdown is in the args
@@ -1238,8 +1230,6 @@ impl PromptWidget {
     pub fn slash_commit_preview(&mut self) {
         self.slash_preview_original = None;
     }
-
-    // -- File search --------------------------------------------------------
 
     /// Poll the file search daemon for new results. Returns `true` if changed.
     pub fn poll_file_search(&mut self) -> bool {
@@ -1496,7 +1486,6 @@ impl PromptWidget {
         // Reset flight recorder delta (overwritten if key reaches textarea).
         self.last_input_delta = crate::input_log::LastInputDelta::default();
 
-        // ── File search key handling (when dropdown is visible) ─────────
         if self.file_search.is_visible() {
             match self.handle_file_search_key(key) {
                 FileSearchKeyResult::Handled => return PromptEvent::Edited,
@@ -1529,7 +1518,6 @@ impl PromptWidget {
             }
         }
 
-        // ── Ctrl-L / : on element → open line viewer ────────────────────
         // Ctrl-L when cursor is on or adjacent to a file ref element,
         // or ':' typed right at element boundary → open viewer.
         if key!('l', CONTROL).matches(key)
@@ -1553,8 +1541,6 @@ impl PromptWidget {
             return PromptEvent::Edited;
         }
         // Not at element boundary — fall through to type ':' normally.
-
-        // ── Normal key handling ─────────────────────────────────────────
 
         // Newline: Shift-Enter or Alt-Enter
         if key!(Enter, SHIFT).matches(key) || key!(Enter, ALT).matches(key) {
@@ -1650,8 +1636,7 @@ impl PromptWidget {
             return PromptEvent::Edited;
         }
 
-        // Everything else: delegate to textarea.
-        // Track whether it actually changed anything.
+        // Delegate to textarea, tracking whether it actually changed anything.
         let old_text = self.textarea.text().to_owned();
         let old_cursor = self.textarea.cursor();
         let old_has_selection = self.textarea.selection_range().is_some();
@@ -1699,34 +1684,27 @@ impl PromptWidget {
         }
     }
 
-    // ── File search key dispatch ────────────────────────────────────────
-
     /// Handle navigation/selection keys when the file search dropdown is visible.
     fn handle_file_search_key(&mut self, key: &KeyEvent) -> FileSearchKeyResult {
         if key!(Up).matches(key)
             || key!('p', CONTROL).matches(key)
             || key!('k', CONTROL).matches(key)
         {
-            // Navigation: up.
             self.file_search.move_selection(-1);
             FileSearchKeyResult::Handled
         } else if key!(Down).matches(key)
             || key!('n', CONTROL).matches(key)
             || key!('j', CONTROL).matches(key)
         {
-            // Navigation: down.
             self.file_search.move_selection(1);
             FileSearchKeyResult::Handled
         } else if key!(PageUp).matches(key) || key!('u', CONTROL).matches(key) {
-            // Page up.
             self.file_search.page_move(-1, 8);
             FileSearchKeyResult::Handled
         } else if key!(PageDown).matches(key) || key!('d', CONTROL).matches(key) {
-            // Page down.
             self.file_search.page_move(1, 8);
             FileSearchKeyResult::Handled
         } else if key!(Tab).matches(key) || key!(Enter).matches(key) {
-            // Accept.
             if file_search_has_selection(&self.file_search) {
                 FileSearchKeyResult::Accepted
             } else {
@@ -1768,10 +1746,8 @@ impl PromptWidget {
                 FileSearchKeyResult::PassThrough
             }
         } else if key!(Esc).matches(key) {
-            // Dismiss.
             FileSearchKeyResult::Dismissed
         } else {
-            // Everything else: pass through to normal handling.
             FileSearchKeyResult::PassThrough
         }
     }
@@ -2169,8 +2145,6 @@ impl PromptWidget {
         PromptEvent::Edited
     }
 
-    // ── Image chip support ──────────────────────────────────────────
-
     /// Maximum number of image chips allowed in a single prompt (v1).
     pub const IMAGE_CAP: usize = 10;
 
@@ -2347,7 +2321,6 @@ impl PromptWidget {
             new_stash.sort_by_key(|img| img.display_number);
             let evict_count = new_stash.len() - stash_cap;
             for img in new_stash.drain(..evict_count) {
-                // stash eviction
                 crate::prompt_images::cleanup_temp_file(&img);
             }
         }
@@ -2811,11 +2784,11 @@ impl PromptWidget {
             for x in area.x..area.x + area.width {
                 if let Some(cell) = buf.cell_mut((x, div_y)) {
                     let ch = if x == left_x {
-                        '\u{256d}' // ╭
+                        '\u{256d}'
                     } else if x == right_x {
-                        '\u{256e}' // ╮
+                        '\u{256e}'
                     } else {
-                        '\u{2500}' // ─
+                        '\u{2500}'
                     };
                     cell.set_char(ch);
                     cell.set_style(div_style);
@@ -2871,7 +2844,6 @@ impl PromptWidget {
             );
         }
 
-        // TextArea content
         let ta_area = Rect {
             x: text_area_rect.x + prefix_w,
             y: text_area_rect.y,
@@ -2984,7 +2956,6 @@ impl PromptWidget {
             (snap.active, snap.inline_ghost.is_some())
         };
 
-        // Placeholder text when empty and unfocused
         if self.textarea.text().is_empty() && ta_area.width > 0 && !style.focused {
             let placeholder = style.placeholder_override.unwrap_or("Build anything");
             buf.set_string(
@@ -3002,11 +2973,11 @@ impl PromptWidget {
             let right_x = area.x + area.width.saturating_sub(1);
             for y in text_area_rect.y..text_area_rect.y + text_area_rect.height {
                 if let Some(cell) = buf.cell_mut((left_x, y)) {
-                    cell.set_char('\u{2502}'); // │
+                    cell.set_char('\u{2502}');
                     cell.set_style(div_style);
                 }
                 if let Some(cell) = buf.cell_mut((right_x, y)) {
-                    cell.set_char('\u{2502}'); // │
+                    cell.set_char('\u{2502}');
                     cell.set_style(div_style);
                 }
             }
@@ -3024,11 +2995,11 @@ impl PromptWidget {
             for x in area.x..area.x + area.width {
                 if let Some(cell) = buf.cell_mut((x, div_y)) {
                     let ch = if x == left_x {
-                        '\u{2570}' // ╰
+                        '\u{2570}'
                     } else if x == right_x {
-                        '\u{256f}' // ╯
+                        '\u{256f}'
                     } else {
-                        '\u{2500}' // ─
+                        '\u{2500}'
                     };
                     cell.set_char(ch);
                     cell.set_style(div_style);
@@ -3235,8 +3206,8 @@ impl PromptWidget {
             let right_w = right_line.width() as u16;
             let left_line = Line::from(left_spans);
             let left_w = (left_line.width() as u16).min(area.width.saturating_sub(right_w + 1));
-            // Right-align both parts: [left][gap][right]
-            let total_w = left_w + 1 + right_w; // 1 for gap
+            // Right-align both parts: [left][gap][right]. +1 accounts for the gap.
+            let total_w = left_w + 1 + right_w;
             let x = area.x + area.width.saturating_sub(total_w);
             buf.set_line_safe(x, area.y, &left_line, left_w);
             let rx = area.x + area.width.saturating_sub(right_w);
@@ -3272,8 +3243,6 @@ fn parse_line_range(s: &str) -> Option<std::ops::Range<usize>> {
         if line > 0 { Some(line..line + 1) } else { None }
     }
 }
-
-// ── Element display helpers ────────────────────────────────────────────
 
 /// Build the styled display `Line` for a file reference element.
 ///

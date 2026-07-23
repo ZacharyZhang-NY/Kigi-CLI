@@ -149,7 +149,6 @@ pub enum IndexCommand {
     BackgroundRefresh {
         /// Files that need reindexing (stale or new)
         stale_files: Vec<String>,
-        /// Files that were deleted
         deleted_files: Vec<String>,
     },
     /// Get the number of indexed files (lightweight, no clone)
@@ -330,7 +329,7 @@ impl IndexManagerHandle {
         self.command_tx.send(IndexCommand::Shutdown)
     }
 
-    // ========== Async Query APIs ==========
+    // Async Query APIs
 
     /// Go to definition at the given position (async).
     ///
@@ -417,7 +416,7 @@ impl IndexManagerHandle {
         Ok(rx.await.expect("IndexManager dropped before responding"))
     }
 
-    // ========== Blocking Query APIs ==========
+    // Blocking Query APIs
 
     /// Go to definition at the given position (blocking).
     pub fn goto_definition_blocking(
@@ -518,7 +517,6 @@ impl IndexManagerConfig {
         }
     }
 
-    /// Set the cache path.
     pub fn with_cache_path(mut self, path: PathBuf) -> Self {
         self.cache_path = Some(path);
         self
@@ -1349,12 +1347,12 @@ fn background_index_refresh(
             if cached_meta.is_stale(path_ref) {
                 // Check if file exists or is deleted
                 if path_ref.exists() {
-                    Some((Some(path.clone()), None)) // Stale
+                    Some((Some(path.clone()), None))
                 } else {
-                    Some((None, Some(path.clone()))) // Deleted
+                    Some((None, Some(path.clone())))
                 }
             } else {
-                None // Up to date
+                None
             }
         })
         .fold(
@@ -1391,8 +1389,10 @@ fn background_index_refresh(
     let registry = crate::languages::LanguageRegistry::new();
 
     let new_files: Vec<String> = ignore::WalkBuilder::new(&root_path)
-        .hidden(true) // Skip hidden files/dirs
-        .git_ignore(true) // Respect .gitignore
+        // Skip hidden files/dirs
+        .hidden(true)
+        // Respect .gitignore
+        .git_ignore(true)
         .git_global(true)
         .git_exclude(true)
         .build()
@@ -1530,7 +1530,7 @@ impl CoalescedEvents {
 
     fn add(&mut self, event: FileEvent) {
         // Renames are special: they carry two paths. Process the "to" path
-        // as Created (it needs indexing) and the "from" as Removed.
+        // as `Created` (it needs indexing) and the "from" as `Removed`.
         if event.kind == FileEventKind::Renamed && event.paths.len() >= 2 {
             self.insert(event.paths[0].clone(), FileEventKind::Removed);
             self.insert(event.paths[1].clone(), FileEventKind::Created);
@@ -1551,11 +1551,11 @@ impl CoalescedEvents {
             Entry::Occupied(mut e) => {
                 let prev = *e.get();
                 match (prev, kind) {
-                    // Created/Modified then Removed → cancel both
+                    // `Created`/`Modified` then `Removed` → cancel both
                     (FileEventKind::Created | FileEventKind::Modified, FileEventKind::Removed) => {
                         e.remove();
                     }
-                    // Removed then Created/Modified → file replaced, treat as Created
+                    // `Removed` then `Created`/`Modified` → file replaced, treat as `Created`
                     (FileEventKind::Removed, FileEventKind::Created | FileEventKind::Modified) => {
                         e.insert(FileEventKind::Created);
                     }
@@ -1649,8 +1649,10 @@ fn is_identifier_like(node: &tree_sitter::Node<'_>) -> bool {
         || kind == "field_identifier"
         || kind == "shorthand_property_identifier"
         || kind == "shorthand_property_identifier_pattern"
-        || kind == "attribute" // Python
-        || kind == "package_identifier" // Go
+        // Python
+        || kind == "attribute"
+        // Go
+        || kind == "package_identifier"
 }
 
 #[cfg(test)]
@@ -1830,7 +1832,8 @@ mod tests {
         let dir = tempdir().unwrap();
         let file_path = dir.path().join("huge.rs");
         // Write a file larger than MAX_INDEXABLE_FILE_SIZE
-        let content = "fn a() {}\n".repeat(600_000); // ~6MB
+        // ~6MB
+        let content = "fn a() {}\n".repeat(600_000);
         fs::write(&file_path, &content).unwrap();
 
         let config = IndexManagerConfig::new(dir.path().to_path_buf())
@@ -1891,7 +1894,8 @@ mod tests {
         fs::write(dir.path().join("binary.rs"), &binary).unwrap();
 
         // Oversized file — should be skipped
-        let big = "fn big() {}\n".repeat(500_000); // ~6MB
+        // ~6MB
+        let big = "fn big() {}\n".repeat(500_000);
         fs::write(dir.path().join("huge.rs"), &big).unwrap();
 
         let index = IndexBuilder::new().build(dir.path()).unwrap();
@@ -1930,12 +1934,13 @@ mod tests {
 
         let stats = handle.get_stats().unwrap();
         assert_eq!(stats.files, 1);
-        assert!(stats.definitions >= 2); // hello + world
+        // hello + world
+        assert!(stats.definitions >= 2);
 
         handle.shutdown().unwrap();
     }
 
-    // ========== CoalescedEvents tests ==========
+    // CoalescedEvents tests
 
     #[test]
     fn test_coalesce_create_then_remove_cancels() {
@@ -2003,7 +2008,7 @@ mod tests {
         let mut c = CoalescedEvents::new();
         c.add(FileEvent::renamed("/a.rs".into(), "/b.rs".into()));
         c.add(FileEvent::removed("/b.rs".into()));
-        // /a.rs should still be Removed, /b.rs Created+Removed = cancelled
+        // /a.rs should still be `Removed`, /b.rs `Created`+`Removed` = cancelled
         assert_eq!(c.events.len(), 1);
         assert_eq!(c.events[&PathBuf::from("/a.rs")], FileEventKind::Removed);
     }
@@ -2013,7 +2018,7 @@ mod tests {
         let mut c = CoalescedEvents::new();
         c.add(FileEvent::renamed("/a.rs".into(), "/b.rs".into()));
         c.add(FileEvent::modified("/b.rs".into()));
-        // /a.rs Removed, /b.rs Created+Modified → Modified (last writer wins)
+        // /a.rs `Removed`, /b.rs `Created`+`Modified` → `Modified` (last writer wins)
         assert_eq!(c.events.len(), 2);
         assert_eq!(c.events[&PathBuf::from("/a.rs")], FileEventKind::Removed);
         assert_eq!(c.events[&PathBuf::from("/b.rs")], FileEventKind::Modified);

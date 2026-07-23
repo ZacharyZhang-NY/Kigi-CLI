@@ -1,7 +1,6 @@
 use super::*;
 impl SessionActor {
-    /// Wait for MCP tools to be initialized.
-    /// If initialization is in progress by another task, this will poll until complete.
+    /// If initialization is in progress by another task, polls until complete.
     pub(super) async fn wait_for_mcp_initialized(&self) {
         loop {
             {
@@ -584,7 +583,7 @@ impl SessionActor {
     /// matching the post-handshake state produced by
     /// [`Self::ensure_mcp_tools_initialized`] for a fresh server.
     ///
-    /// Tools that were previously registered against this server
+    /// Tools already registered against this server
     /// remain in `ToolBridge` and resolve transparently through
     /// `McpTool::mcp_state` — there's no per-tool re-registration
     /// step. `tools/list_changed` notifications from the respawned
@@ -1265,7 +1264,7 @@ impl SessionActor {
                             } else {
                                 e.error_category()
                             };
-                            // Stable snake_case error labels (match the old wire enum).
+                            // Stable snake_case error labels kept for wire compatibility.
                             let error_type_label = match error_cat {
                                 kigi_file_utils::events::McpErrorCategory::AuthRequired => "auth",
                                 kigi_file_utils::events::McpErrorCategory::Timeout => "timeout",

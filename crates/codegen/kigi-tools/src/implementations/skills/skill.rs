@@ -5,36 +5,26 @@
 
 use crate::implementations::skills::types::SkillInfo;
 
-/// Input for the Skill tool
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct SkillInput {
-    /// The name of the skill to invoke (e.g., "commit", "review-pr", or fully qualified "user:commit")
     #[schemars(description = "The name of the skill to invoke")]
     pub skill: String,
 
-    /// Optional arguments to pass to the skill
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(description = "Optional arguments to pass to the skill")]
     pub args: Option<String>,
 }
 
-/// Output from the Skill tool
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct SkillOutput {
-    /// Whether the skill was successfully resolved
     pub success: bool,
     /// Brief fallback message, used as the tool result when there is no skill body.
     pub tool_result: String,
-    /// The skill's display name
     pub skill_name: String,
     /// The formatted skill content, delivered to the model as the tool result.
     pub skill_message: Option<String>,
-    /// Error message if the skill failed to load
     pub error: Option<String>,
 }
-
-// Old `SkillToolImpl` + `impl Tool` deleted.
-// New implementation is in `kigi/skill/`.
 
 /// Build the formatted skill message shown to the model.
 ///
@@ -53,9 +43,6 @@ pub struct SkillOutput {
 /// {body}
 /// </skill>
 /// ```
-///
-/// Used on both the invocation path (skill tool, slash expansion) and
-/// preloading paths (agent definitions) — no separate instruct prefix.
 pub fn build_skill_message(skill: &SkillInfo, content: &str) -> String {
     format!(
         "<skill name=\"{}\" description=\"{}\" path=\"{}\">\n{}\n</skill>",
@@ -66,7 +53,7 @@ pub fn build_skill_message(skill: &SkillInfo, content: &str) -> String {
 /// Build a `<skill>` block for user-invoked skill expansion.
 ///
 /// Used in the `<skill_information>` envelope when skills are expanded
-/// at prompt-assembly time (the new zero-round-trip path). Includes the
+/// at prompt-assembly time (the zero-round-trip path). Includes the
 /// `args` attribute so the model knows what arguments were provided.
 ///
 /// ```text
@@ -135,8 +122,6 @@ pub fn build_skill_information(skill_blocks: &[String], refs: &[SkillRef<'_>]) -
     out
 }
 
-/// Instruction prefix prepended to skill messages on the invocation path.
-///
 /// Format a skill name with its scope prefix (e.g. `"user:commit"`).
 pub fn format_skill_name(skill: &SkillInfo) -> String {
     // Plugin skills use "plugin-name:skill-name" so skills from different
@@ -215,7 +200,6 @@ fn extract_command_args(text: &str) -> Option<&str> {
     if args.is_empty() { None } else { Some(args) }
 }
 
-/// Escape XML special characters
 #[cfg(test)]
 fn escape_xml(s: &str) -> String {
     s.replace('&', "&amp;")
@@ -314,13 +298,11 @@ pub fn apply_substitutions(content: &mut String, args: Option<&str>, ctx: &Subst
         *content = result;
     }
 
-    // $ARGUMENTS (full string)
     if content.contains("$ARGUMENTS") {
         *content = content.replace("$ARGUMENTS", args_str);
         args_substituted = true;
     }
 
-    // ${SKILL_DIR} and compat alias ${CLAUDE_SKILL_DIR}
     if let Some(dir) = ctx.skill_dir {
         if content.contains("${SKILL_DIR}") {
             *content = content.replace("${SKILL_DIR}", dir);
@@ -330,7 +312,6 @@ pub fn apply_substitutions(content: &mut String, args: Option<&str>, ctx: &Subst
         }
     }
 
-    // ${SESSION_ID} and compat alias ${CLAUDE_SESSION_ID}
     if let Some(sid) = ctx.session_id {
         if content.contains("${SESSION_ID}") {
             *content = content.replace("${SESSION_ID}", sid);
@@ -757,8 +738,6 @@ Step 2: Check for bugs.
         assert_eq!(message, expected);
     }
 
-    // ── apply_substitutions ─────────────────────────────────────────
-
     #[test]
     fn test_substitutions_arguments_full() {
         let mut content = "Run: $ARGUMENTS".to_string();
@@ -848,8 +827,6 @@ Step 2: Check for bugs.
         assert_eq!(content, "# Commit\n\nDo the commit.");
     }
 
-    // ── Compat aliases ──────────────────────────────────────────────
-
     #[test]
     fn test_claude_skill_dir_alias() {
         let mut content = "Config at ${CLAUDE_SKILL_DIR}/config.json".to_string();
@@ -891,8 +868,6 @@ Step 2: Check for bugs.
         );
         assert_eq!(content, "Session: abc-123");
     }
-
-    // ── plugin root/data substitution ───────────────────────────────
 
     #[test]
     fn test_plugin_root_and_data_substitution() {
@@ -984,8 +959,6 @@ Step 2: Check for bugs.
         assert_eq!(content, "Run /plugins/vdc/tool.py --flag");
     }
 
-    // ── >9 indexed arguments ────────────────────────────────────────
-
     #[test]
     fn test_more_than_10_indexed_args() {
         let mut content = "Arg 12: $12".to_string();
@@ -997,8 +970,6 @@ Step 2: Check for bugs.
         );
         assert_eq!(content, "Arg 12: the-twelfth");
     }
-
-    // ── Mixed variables ─────────────────────────────────────────────
 
     #[test]
     fn test_mixed_arguments_and_skill_dir() {
@@ -1052,8 +1023,6 @@ Step 2: Check for bugs.
         );
         assert_eq!(content, "Run: deploy (cost: $100)");
     }
-
-    // ── extract_skill_display_text ──────────────────────────────────
 
     #[test]
     fn extract_skill_with_args() {
@@ -1156,8 +1125,6 @@ Step 2: Check for bugs.
         assert_eq!(extract_skill_display_text(input), None);
     }
 
-    // ── build_skill_block ───────────────────────────────────────────
-
     #[test]
     fn test_build_skill_block_with_args() {
         let block = build_skill_block("commit", "fix typo", "# Commit\n\nMake a commit.");
@@ -1181,8 +1148,6 @@ Review code.
 </skill>";
         assert_eq!(block, expected);
     }
-
-    // ── build_skill_information ─────────────────────────────────────
 
     #[test]
     fn test_build_skill_information_single() {
@@ -1245,7 +1210,6 @@ Review code.
             },
         ];
         let result = build_skill_information(&blocks, &refs);
-        // The path should appear only once in <skills_referenced>.
         assert_eq!(
             result
                 .matches("<skill name=\"art\" path=\"/skills/art/SKILL.md\"/>")
@@ -1262,8 +1226,6 @@ Review code.
         let result = build_skill_information(&[], &[]);
         assert_eq!(result, "");
     }
-
-    // ── resolve_skill_internal_links ────────────────────────────────
 
     #[test]
     fn resolve_internal_links_blocks_path_traversal() {

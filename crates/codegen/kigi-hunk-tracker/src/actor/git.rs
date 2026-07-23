@@ -415,7 +415,8 @@ impl HunkTrackerActor {
                 }
                 result.content
             }
-            Err(_) => missing_content(), // spawn_blocking was cancelled or panicked
+            // spawn_blocking was cancelled or panicked
+            Err(_) => missing_content(),
         }
     }
 

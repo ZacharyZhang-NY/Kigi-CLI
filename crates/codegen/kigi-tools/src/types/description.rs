@@ -3,21 +3,10 @@
 //! Tool descriptions often reference other tool names (e.g., "Use `read_file`
 //! before editing"). When tool names are randomized for the model, these
 //! references must be updated to use the model-facing names.
-//!
-//! This module provides:
-//! - `make_desc_env()` — MiniJinja environment with custom `${{ }}`/`${%  %}`
-//!   delimiters to avoid collisions with literal `{{ }}` in descriptions.
-//! - `DescriptionContext` — maps tool/param names for template resolution.
-//! - `resolve_description()` — renders a template with tool/param names,
-//!   handling disabled tools via conditional sections.
 
 use std::collections::HashMap;
 
 /// Context for resolving tool description templates.
-///
-/// - `tools`: canonical name → `Some(model_facing_name)` if enabled, `None` if disabled.
-/// - `params`: canonical tool name → { canonical param → model_facing param }.
-/// - `skills`: available skills for the skill tool description.
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct DescriptionContext {
     /// Canonical tool name → `Some(model_facing_name)` (enabled) or `None` (disabled).
@@ -27,11 +16,6 @@ pub struct DescriptionContext {
 }
 
 /// Create a MiniJinja environment with custom delimiters.
-///
-/// Delimiters:
-/// - Variables: `${{ }}` (e.g., `${{ tools.read_file }}`)
-/// - Blocks: `${%  %}` (e.g., `${%- if tools.grep %}...${%- endif %}`)
-/// - Comments: `${#  #}` (e.g., `${# explanation #}`)
 ///
 /// This avoids collisions with literal `{{ }}` that appear frequently in
 /// tool descriptions (e.g., JSON examples, Rust generics).
@@ -158,7 +142,6 @@ mod tests {
         // This has invalid syntax: ${%- if without endif
         let template = "${%- if %}broken";
         let result = resolve_description(template, &ctx);
-        // Should fall back to raw template
         assert_eq!(result, template);
     }
 
@@ -222,7 +205,8 @@ ${% endif %}";
     fn mixed_conditionals_and_substitutions() {
         let ctx = ctx_with_tools(&[
             ("read_file", Some("Read")),
-            ("grep", None), // disabled
+            // disabled
+            ("grep", None),
         ]);
         let template = "Always use ${{ tools.read_file }}.${%- if tools.grep %} Also use ${{ tools.grep }}.${%- endif %}";
         let result = resolve_description(template, &ctx);

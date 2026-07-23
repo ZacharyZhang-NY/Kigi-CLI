@@ -56,7 +56,6 @@ impl AgentView {
             }
         });
     }
-    /// Return the URL of the currently highlighted link, if any.
     pub fn highlighted_link_url(&self) -> Option<&str> {
         self.highlighted_link_idx
             .and_then(|idx| self.visible_link_map.links().get(idx))
@@ -208,7 +207,6 @@ mod link_click_tests {
         agent.pane_areas.scrollback = area;
         agent.active_pane = AgentPane::Scrollback;
     }
-    /// Add a link to the visible_link_map covering (col_start..col_end, row).
     fn add_visible_link(agent: &mut AgentView, row: u16, col_start: u16, col_end: u16, url: &str) {
         let mut overlay = LinkOverlay::new();
         overlay.push(OverlayLink {
@@ -936,7 +934,7 @@ mod link_click_tests {
         assert!(agent.inline_edit.is_some(), "Enter must start inline edit");
     }
     /// Bash prompts are not inline-editable: Enter falls through to the
-    /// registry (OpenBlockViewer) exactly as before.
+    /// registry (OpenBlockViewer).
     #[test]
     fn enter_on_selected_bash_prompt_falls_through() {
         let mut agent = make_agent();
@@ -954,8 +952,6 @@ mod link_click_tests {
             "expected fall-through to OpenBlockViewer, got {outcome:?}"
         );
     }
-    /// Double-click on a user prompt enters inline edit mode (replacing the
-    /// old fold-toggle for editable prompts).
     #[test]
     fn double_click_on_user_prompt_enters_inline_edit() {
         let mut agent = make_agent();

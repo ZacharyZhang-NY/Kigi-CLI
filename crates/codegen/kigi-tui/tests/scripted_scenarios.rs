@@ -241,7 +241,6 @@ async fn scripted_path_space_hyperlink() {
     );
 }
 
-/// Count Kitty APC action tokens in raw PTY bytes.
 fn count_kitty_actions(raw: &[u8]) -> (usize, usize, usize) {
     let text = String::from_utf8_lossy(raw);
     let mut transmit_display = 0usize;

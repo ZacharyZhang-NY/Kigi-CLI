@@ -285,7 +285,7 @@ impl MemoryBackend for MemoryBackendImpl {
             Box::new(std::io::Error::other(e.to_string()))
         })?;
 
-        // ── Sync phase 1: reindex dirty files, collect chunks needing embeddings ──
+        // Sync phase 1: reindex dirty files, collect chunks needing embeddings
         let mut reindex_chunks: Vec<(String, String)> = Vec::new();
         let mut needs_release = false;
         if let Some(ref watcher) = self.watcher
@@ -313,7 +313,7 @@ impl MemoryBackend for MemoryBackendImpl {
             }
         }
 
-        // ── Async phase: embed missing chunks (no &index borrow) ──
+        // Async phase: embed missing chunks (no &index borrow)
         let provider = self.make_embedding_provider().await;
         if !reindex_chunks.is_empty()
             && let Some(ref provider) = provider
@@ -345,7 +345,7 @@ impl MemoryBackend for MemoryBackendImpl {
             index.release_claim();
         }
 
-        // ── Sync phase 2: FTS search ──
+        // Sync phase 2: FTS search
         let mut search_config = self.search_config.clone();
         search_config.max_results = max_results;
         search_config.min_score = min_score as f32;
@@ -369,7 +369,7 @@ impl MemoryBackend for MemoryBackendImpl {
 
         let vec_available = index.vec_available() && provider.is_some();
 
-        // ── Async phase: embed query for vector search (no &index borrow) ──
+        // Async phase: embed query for vector search (no &index borrow)
         let query_embedding = if vec_available {
             if let Some(ref provider) = provider {
                 match provider.embed_batch(&[query]).await {
@@ -389,7 +389,7 @@ impl MemoryBackend for MemoryBackendImpl {
             None
         };
 
-        // ── Sync phase 3: vector search + scoring + merge (borrows &index) ──
+        // Sync phase 3: vector search + scoring + merge (borrows &index)
         let results = super::search::hybrid_search_merge(
             &index,
             fts_results,
@@ -607,7 +607,7 @@ mod factory_tests {
         let stored = backend.search_config_for_test();
 
         // None of these are overridden by the caller in search() — they must
-        // survive the factory path unchanged.
+        // survive the factory path `unchanged`.
         assert_eq!(stored.max_results, 7);
         assert!(stored.mmr.enabled, "MMR enabled must be stored");
         assert!(
@@ -688,7 +688,8 @@ mod factory_tests {
         };
         // watcher.is_some() reflects whether startup succeeded.
         // (On environments without inotify/FSEvents this may be None; skip rather than fail.)
-        let _ = params_with_watcher.watcher.is_some(); // just verify it compiles
+        // just verify it compiles
+        let _ = params_with_watcher.watcher.is_some();
 
         // Failure path: non-existent directory → watcher must return None.
         let missing = tmp.path().join("does_not_exist");
@@ -808,7 +809,8 @@ mod factory_tests {
         let params = MemoryBackendParams {
             embed_config: Some(MemoryEmbeddingConfig::default()),
             embed_base_url: "http://localhost".to_string(),
-            embed_api_key: None, // no key → provider cannot be created
+            // no key → provider cannot be created
+            embed_api_key: None,
             ..make_params_fts_only("test-embed-no-key")
         };
         let backend = MemoryBackendImpl::from_session_params(storage, &params);
@@ -882,7 +884,7 @@ mod factory_tests {
             "global memory dir must not exist before initialization"
         );
 
-        // --- Wrong ordering (watcher before init) ---
+        // Wrong ordering (watcher before init)
         // The watcher returns None because the directory does not exist.
         let watcher_before_init = crate::watcher::MemoryFileWatcher::start(&global);
         assert!(
@@ -890,7 +892,7 @@ mod factory_tests {
             "watcher must fail (None) when directory does not exist yet"
         );
 
-        // --- Correct ordering (init, then watcher) ---
+        // Correct ordering (init, then watcher)
         // After ensure_initialized the directories and MEMORY.md templates exist.
         storage.ensure_initialized().unwrap();
 

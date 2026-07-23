@@ -2,7 +2,6 @@
 
 use crate::implementations::kigi::search_replace::{SearchReplaceInput, run_search_replace};
 
-/// Concise description — no read-before-edit enforcement, simplified formatting guidance.
 const DESCRIPTION_CONCISE: &str = r#"Replace an exact string in a file.
 
 - Do not include the "LINE_NUMBER→" prefixes from file reads in ${{ params.edit.old_string }} or ${{ params.edit.new_string }}; keep the exact indentation.

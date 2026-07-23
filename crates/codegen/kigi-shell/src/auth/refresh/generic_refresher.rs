@@ -253,7 +253,6 @@ mod tests {
         }
     }
 
-    /// A successful refresh rotates the token via the generic wire.
     #[tokio::test]
     async fn refresh_success_returns_rotated_token() {
         let server = MockServer::start().await;

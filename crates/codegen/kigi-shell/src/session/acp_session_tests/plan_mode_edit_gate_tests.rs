@@ -1,14 +1,13 @@
 //! Plan-mode edit gate through the real `prepare_tool_call` path: plan mode
 //! is read-only except the plan file in EVERY permission mode. The fixture's
-//! `PermissionHandle::allow_all()` is the always-approve worst case — before
-//! the gate, it silently approved any edit in plan mode (the "yolo edits in
-//! plan mode" bug); these tests pin that the gate rejects
-//! BEFORE the permission layer can auto-approve.
+//! `PermissionHandle::allow_all()` is the always-approve worst case; without the
+//! gate it would silently approve any edit in plan mode (the "yolo edits in plan
+//! mode" bug). These tests pin that the gate rejects BEFORE the permission layer
+//! can auto-approve.
 use super::support::*;
 use super::*;
 /// Build an actor whose toolset parses kigi `search_replace` plus the plan
-/// tools (so `${{ tools.by_kind.exit_plan }}` resolves in the rejection
-/// message), with a gateway drain answering session notifications.
+/// tools, with a gateway drain answering session notifications.
 async fn build_gate_actor() -> SessionActor {
     use kigi_tools::implementations::kigi::enter_plan_mode::EnterPlanModeTool;
     use kigi_tools::implementations::kigi::exit_plan_mode::ExitPlanModeTool;
@@ -78,7 +77,7 @@ async fn tool_result_text(actor: &SessionActor, call_id: &str) -> String {
 }
 /// The headline: plan mode Active + allow-all permissions (the always-approve
 /// worst case) still rejects a kigi edit outside the plan file, without ever
-/// reaching the permission layer, and steers the model to `exit_plan_mode`.
+/// reaching the permission layer.
 #[tokio::test(flavor = "current_thread")]
 async fn plan_mode_rejects_kigi_edit_outside_plan_file_despite_allow_all_permissions() {
     let local = tokio::task::LocalSet::new();

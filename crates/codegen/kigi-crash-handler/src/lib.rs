@@ -38,31 +38,23 @@ pub use symbolicate::ResolvedFrame;
 
 const MAX_HISTORY: usize = 5;
 
-/// Configuration for the crash handler.
 pub struct CrashHandlerConfig {
-    /// Application version string (e.g. "0.1.169-alpha.2").
     pub app_version: String,
-    /// Directory where crash dumps are written.
     /// Created if it does not exist.
     pub crash_dir: PathBuf,
 }
 
-/// Information about a crash from the previous session.
 #[derive(Debug)]
 pub struct CrashReport {
-    /// Human-readable signal name (e.g. "SIGBUS (Bus error)").
     pub signal_name: &'static str,
     /// The `si_code` from `siginfo_t`.
     pub si_code: i32,
-    /// The faulting memory address.
     pub faulting_address: u64,
-    /// Unix timestamp of the crash.
+    /// Unix seconds.
     pub timestamp: u64,
     /// Application version at crash time.
     pub app_version: String,
-    /// Symbolicated backtrace frames.
     pub backtrace: Vec<ResolvedFrame>,
-    /// Path to the saved human-readable crash report.
     pub report_path: PathBuf,
 }
 
@@ -121,14 +113,12 @@ pub fn check_previous_crash(crash_dir: &Path) -> Option<CrashReport> {
     let frames = symbolicate::resolve_frames(&blob);
     let report_text = symbolicate::format_report(&blob, &frames);
 
-    // Write the human-readable report.
     let report_path = crash_dir.join("last-crash-report.txt");
     let _ = std::fs::write(&report_path, &report_text);
 
-    // Archive to history/ (keep last MAX_HISTORY).
     archive_report(crash_dir, &report_text, blob.timestamp);
 
-    // Remove the binary blob so it's not re-processed.
+    // Remove the binary blob so the next startup does not report it again.
     let _ = std::fs::remove_file(&crash_file);
 
     Some(CrashReport {
@@ -149,7 +139,9 @@ fn archive_report(crash_dir: &Path, report_text: &str, timestamp: u64) {
     let filename = format!("crash-{}.txt", timestamp);
     let _ = std::fs::write(history_dir.join(&filename), report_text);
 
-    // Prune old reports beyond MAX_HISTORY.
+    // `crash-<unix seconds>.txt` names are fixed width for the foreseeable
+    // future, so lexicographic order is chronological order and the oldest
+    // reports sort to the front.
     if let Ok(mut entries) = std::fs::read_dir(&history_dir) {
         let mut files: Vec<PathBuf> = entries
             .by_ref()

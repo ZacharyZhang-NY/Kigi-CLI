@@ -1,5 +1,3 @@
-//! JavaScript/JSX language configuration.
-
 use crate::languages::types::TSLanguageConfig;
 
 pub fn js_lang() -> TSLanguageConfig {

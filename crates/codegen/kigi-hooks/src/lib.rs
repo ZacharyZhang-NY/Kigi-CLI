@@ -1,13 +1,9 @@
-//! # kigi-hooks
-//!
 //! Runtime hook system for Kigi — file-based discovery, command execution,
 //! and policy enforcement.
 //!
-//! ## Overview
-//!
-//! This crate provides a minimal hooks system for Kigi. Hooks are discovered
-//! from dedicated directories (`~/.kigi/hooks/` and `<git-worktree-root>/.kigi/hooks/`),
-//! defined in JSON files (compatible settings format), and executed as child processes.
+//! Hooks are discovered from dedicated directories (`~/.kigi/hooks/` and
+//! `<git-worktree-root>/.kigi/hooks/`), defined in JSON files (compatible
+//! settings format), and executed as child processes.
 //!
 //! ## v0 scope
 //!

@@ -370,7 +370,7 @@ impl WorkspaceSession {
     ///
     /// TOOL-STATE CAVEAT: the outgoing toolset is not flushed here, so an
     /// in-process rebuild can drop up to one debounce window (≤500 ms) of
-    /// unpersisted state. Intentionally not "fixed" with a flush-before-rebuild:
+    /// unpersisted state. Deliberately not "fixed" with a flush-before-rebuild:
     /// tool `call()` does not hold `update_lock`, so a concurrent call would
     /// still race. Restart/snapshot scenarios are unaffected.
     pub(crate) fn replace(
@@ -486,7 +486,7 @@ pub struct WorkspaceShared {
     pub(crate) session_event_writers:
         Arc<dashmap::DashMap<String, kigi_file_utils::events::EventWriter>>,
     /// `(path, size, mtime_ms) → sha256` memo for the client-facing
-    /// `workspace.client_fs_*` ops, so unchanged files hash once per
+    /// `workspace.client_fs_*` ops, so `unchanged` files hash once per
     /// workspace instead of per stat/read.
     /// Test-only seam: runs after the toolset re-resolve returns and before
     /// the post-resolve turn re-check / install in

@@ -89,7 +89,6 @@ impl LocalDef {
         &src[self.range.start_byte()..self.range.end_byte()]
     }
 
-    /// Get the scope range.
     pub fn scope_range(&self) -> &Range {
         &self.scope.range
     }

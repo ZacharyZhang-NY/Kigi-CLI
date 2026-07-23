@@ -155,7 +155,8 @@ impl AgentActivity {
             }
 
             if signaled.iter().all(|(_, tx)| tx.is_closed()) {
-                return; // nothing to flush, or all actors exited
+                // nothing to flush, or all actors exited
+                return;
             }
             if tokio::time::Instant::now() >= deadline {
                 for (id, tx) in &signaled {

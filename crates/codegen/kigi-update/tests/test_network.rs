@@ -26,9 +26,7 @@ fn tag_json(tag: &str) -> serde_json::Value {
     serde_json::json!({ "tag_name": tag, "draft": false, "prerelease": false, "assets": [] })
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Happy-path tests (fast, no retries triggered).
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn latest_release_returns_version_on_success() {
@@ -217,10 +215,8 @@ async fn base_url_trailing_slash_is_tolerated() {
     assert_eq!(release.version().unwrap(), "0.1.181");
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Retry behavior — these tests intentionally exercise the 1s+2s+4s backoff,
+// Retry behavior — these tests deliberately exercise the 1s+2s+4s backoff,
 // so each takes up to ~7 seconds. They run in parallel.
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn latest_release_retries_on_5xx_then_succeeds() {
@@ -320,10 +316,8 @@ async fn latest_release_connection_refused_is_retried_and_returns_error() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // download_silent — same body shape as download_with_progress but no
 // progress bar to capture.
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn download_silent_writes_body_to_dest() {
@@ -540,10 +534,8 @@ async fn download_silent_to_nonexistent_parent_dir_fails() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // download_with_progress — same contract; covers the spinner path
 // (no Content-Length) and the progress-bar path (with Content-Length).
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn download_with_progress_writes_body_with_content_length() {
@@ -604,10 +596,8 @@ async fn download_with_progress_atomic_rename() {
     assert!(!dest.with_extension("tmp").exists());
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Parallel byte-range path — exercises the HEAD + 206 Partial Content code path
 // in download_silent / download_with_progress for files >= 16 MiB.
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Wiremock responder for `GET` that honors `Range: bytes=A-B` with `206`.
 /// Without a Range header it returns the full body with `200`.

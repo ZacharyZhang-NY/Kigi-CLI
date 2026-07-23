@@ -1,6 +1,5 @@
 //! Stub surface when the deploy feature is off.
 
-/// Placeholder config — deploy is unavailable in this build.
 #[derive(Debug, Clone, Default)]
 pub enum AppBuilderDeployerConfig {
     #[default]

@@ -51,10 +51,8 @@ pub struct MatchSpan {
 /// Statistics emitted as `OpsChunk::RipgrepDone`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RipgrepStats {
-    /// Total files matched.
     #[serde(default)]
     pub files_matched: u32,
-    /// Total lines matched.
     #[serde(default)]
     pub lines_matched: u32,
     /// Whether the match limit was hit.

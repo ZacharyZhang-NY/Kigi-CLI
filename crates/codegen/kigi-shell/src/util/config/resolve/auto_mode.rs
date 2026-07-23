@@ -11,8 +11,7 @@ pub(crate) const ENV_AUTO_PERMISSION_MODE: &str = "KIGI_AUTO_PERMISSION_MODE";
 #[cfg(test)]
 pub(crate) static AUTO_PERMISSION_MODE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// Extract the `[auto_mode] enabled` gate from one TOML layer (the local opt-in
-/// that replaced `[features] auto_permission_mode`).
+/// Extract the `[auto_mode] enabled` gate from one TOML layer.
 fn auto_permission_mode_from_toml(v: Option<&TomlValue>) -> Option<bool> {
     v?.get("auto_mode")?.get("enabled")?.as_bool()
 }

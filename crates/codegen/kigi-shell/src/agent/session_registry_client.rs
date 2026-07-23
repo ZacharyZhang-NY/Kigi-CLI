@@ -9,10 +9,8 @@ use anyhow::{Context, Result};
 use reqwest::RequestBuilder;
 use serde::{Deserialize, Serialize};
 
-// ============================================================================
 // Request / response types (local — not in cli-chat-proxy since these
 // are only used by the agent, not consumed by other crates)
-// ============================================================================
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,7 +33,7 @@ pub struct RegisterRequest {
     pub device_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_session_id: Option<String>,
-    // --- Subagent-specific fields (optional, backward-compatible) ---
+    // Subagent-specific fields (optional, backward-compatible).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_kind: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -66,10 +64,6 @@ pub struct UpdateRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub restorable_turn_number: Option<i32>,
 }
-
-// ============================================================================
-// Response types
-// ============================================================================
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -131,10 +125,6 @@ pub struct DownloadResponse {
     pub file: String,
     pub turn: i32,
 }
-
-// ============================================================================
-// Client
-// ============================================================================
 
 #[derive(Clone)]
 pub struct SessionRegistryClient {
@@ -387,7 +377,7 @@ impl SessionRegistryClient {
 mod tests {
     use super::*;
 
-    // ── UpdateRequest wire shapes ────────────────────────────────────────────
+    // UpdateRequest wire shapes.
     //
     // The writer split relies on two distinct update payloads being sent at
     // different times:
@@ -495,7 +485,7 @@ mod tests {
         assert!(json.get("device_id").is_none());
     }
 
-    // ── SessionRecord backward compatibility ─────────────────────────────────
+    // SessionRecord backward compatibility.
     //
     // Older servers do not include `restorable_turn_number` in their response.
     // The field is `#[serde(default)]` so it must deserialize as `None` when

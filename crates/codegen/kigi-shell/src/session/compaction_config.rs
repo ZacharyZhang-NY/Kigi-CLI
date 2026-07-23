@@ -109,7 +109,6 @@ impl PrefireState {
         self.cache.replace(Some(cache));
     }
 
-    /// Take the cache, leaving `None`.
     pub fn take(&self) -> Option<AsyncCompactionCache> {
         self.cache.borrow_mut().take()
     }

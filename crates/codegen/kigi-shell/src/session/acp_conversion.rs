@@ -25,9 +25,7 @@ use kigi_tools::types::output::{
 /// client UI should instead see the original project path (the `display_cwd`).
 #[derive(Clone, Debug)]
 pub struct PathRewriter {
-    /// The real worktree path (what tools actually see).
     real_cwd: String,
-    /// The display path (what the client UI should see).
     display_cwd: String,
 }
 
@@ -90,7 +88,6 @@ impl PathRewriter {
     }
 }
 
-/// Rewrite a string if a rewriter is present, otherwise return it unchanged.
 pub(crate) fn maybe_rewrite(rewriter: Option<&PathRewriter>, text: String) -> String {
     match rewriter {
         Some(rw) => rw.rewrite(&text),
@@ -98,7 +95,6 @@ pub(crate) fn maybe_rewrite(rewriter: Option<&PathRewriter>, text: String) -> St
     }
 }
 
-/// Rewrite a path if a rewriter is present, otherwise return it unchanged.
 fn maybe_rewrite_path(rewriter: Option<&PathRewriter>, path: PathBuf) -> PathBuf {
     match rewriter {
         Some(rw) => rw.rewrite_path(&path),
@@ -298,9 +294,6 @@ pub fn acp_tool_update(
                 .status(Some(acp::ToolCallStatus::Completed))
                 .raw_output(raw_output_json(output, rewriter)),
         )),
-        // Web fetch output is converted to text content for the model.
-        // Success (Content) → Completed; errors (DomainNotAllowed, CrossHostRedirect) → Failed.
-        // This matches the pattern used by ReadFile, ListDir, and SearchReplace.
         ToolOutput::WebFetch(web_fetch_output) => {
             use kigi_tools::types::output::WebFetchOutput;
             let status = match web_fetch_output {
@@ -534,8 +527,7 @@ pub fn acp_tool_update(
                 .raw_output(raw_output_json(output, rewriter)),
         )),
         ToolOutput::SubagentCompleted(sub) => {
-            // Text includes resume handle for discoverability + meta for TUI.
-            // Shared with the chat-bidi server via `to_model_text` so both
+            // `to_model_text` is shared with the chat-bidi server so both
             // surfaces present a completed subagent identically.
             let content = Some(vec![acp::ToolCallContent::from(acp::ContentBlock::Text(
                 acp::TextContent::new(sub.to_model_text()),
@@ -642,7 +634,6 @@ pub fn acp_plan_update(output: &ToolOutput) -> Option<acp::Plan> {
                 .collect();
             Some(acp::Plan::new(entries))
         }
-        // Error variants (DuplicateId, etc.) don't produce Plan updates.
         _ => None,
     }
 }
@@ -690,19 +681,18 @@ fn build_apply_patch_edit_details(
             let old_string = old_lines[region_start..old_end].join("\n");
             let new_string = new_lines[region_start..new_end].join("\n");
 
-            // Context before: up to CONTEXT_LINES lines before the change.
             let ctx_before_start = region_start.saturating_sub(CONTEXT_LINES);
             let context_before = old_lines[ctx_before_start..region_start].join("\n");
 
-            // Context after: up to CONTEXT_LINES lines after the change.
             let ctx_after_end = (old_end + CONTEXT_LINES).min(old_lines.len());
             let context_after = old_lines[old_end..ctx_after_end].join("\n");
 
             details.push(SearchReplaceEditDetail {
                 old_string,
-                old_line: region_start + 1, // 1-based
+                // `old_line`/`new_line` are 1-based
+                old_line: region_start + 1,
                 new_string,
-                new_line: region_start + 1, // 1-based
+                new_line: region_start + 1,
                 context_before,
                 context_after,
                 line_prefix: String::new(),
@@ -884,7 +874,6 @@ mod tests {
             extracted_images: Vec::new(),
         }));
         let json = raw_output_json(&output, None).unwrap();
-        // Verify it deserializes back into the same type
         let round_tripped: ToolOutput = serde_json::from_value(json).unwrap();
         match round_tripped {
             ToolOutput::ReadFile(ReadFileOutput::FileContent(fc)) => {
@@ -915,8 +904,6 @@ mod tests {
             other => panic!("expected Text content, got {other:?}"),
         }
 
-        // ToolOutput::Text wraps TextOutput { text: String }, which serde can
-        // serialize with internal tagging. raw_output carries the JSON.
         assert!(update.fields.raw_output.is_some());
     }
 
@@ -935,7 +922,6 @@ mod tests {
             other => panic!("Expected ListDir, got {:?}", other),
         }
     }
-    // --- PathRewriter tests ---
 
     #[test]
     fn test_path_rewriter_new_returns_none_when_same() {
@@ -1116,8 +1102,6 @@ mod tests {
         );
         assert!(raw_str.contains("/testbed/myproject/src/lib.rs"));
     }
-
-    // ── URL-encoded path rewriting ─────────────────────────────────
 
     #[test]
     fn test_rewrite_handles_url_encoded_paths() {

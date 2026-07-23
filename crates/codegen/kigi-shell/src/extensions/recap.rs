@@ -48,8 +48,6 @@ pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
         );
     };
 
-    // Fire-and-forget: the recap is emitted later as a SessionRecap
-    // notification. We only ack that the request was accepted.
     let _ = session
         .cmd_tx
         .send(SessionCommand::Recap { auto: req.auto });

@@ -143,7 +143,7 @@ pub struct SamplingErrorInfo {
 
 /// Coarse-grained classification of a sampling failure.
 ///
-/// Intentionally narrow — context-window-exceeded does NOT have its own
+/// Deliberately narrow — context-window-exceeded does NOT have its own
 /// variant because the sampler cannot reliably detect it (it lacks
 /// tracked token counts). Context-window errors arrive as
 /// `Api { status: 400, .. }` with model metadata; the session inspects

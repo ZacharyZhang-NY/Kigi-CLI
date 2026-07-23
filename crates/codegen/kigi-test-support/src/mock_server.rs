@@ -35,7 +35,6 @@ pub struct LogEntry {
     pub method: String,
     pub path: String,
     pub body: Option<Value>,
-    /// Value of the `Authorization` header, if present.
     pub authorization: Option<String>,
     /// Request headers (lowercase names, arrival order), captured on the
     /// inference POST endpoints; the GET endpoints log an empty list.
@@ -90,13 +89,11 @@ type ScriptQueues = Arc<std::sync::Mutex<HashMap<String, VecDeque<ScriptedRespon
 /// A model entry for the mock `/v1/models` endpoint.
 #[derive(Debug, Clone)]
 pub struct MockModelEntry {
-    /// Model ID (e.g. `"test-model"`).
     pub id: String,
-    /// Optional agent type (e.g. `"cursor"`).
-    /// Emitted as `agentType` inside `_meta` when set.
+    /// Emitted as `agentType` inside `_meta` when set (e.g. `"cursor"`).
     pub agent_type: Option<String>,
-    /// Optional API backend (e.g. `"messages"`). Emitted as `apiBackend`
-    /// when set; absent means the shell's default backend.
+    /// Emitted as `apiBackend` when set (e.g. `"messages"`); absent means the
+    /// shell's default backend.
     pub api_backend: Option<String>,
     /// Emitted as `supportsBackendSearch` when true.
     pub supports_backend_search: bool,
@@ -251,7 +248,6 @@ fn paced_events(
             if let Some(d) = delay {
                 tokio::time::sleep(d).await;
             }
-            // Hold the terminal event until the gate is released.
             if idx == last_idx
                 && let Some(gate) = gate.as_deref()
             {
@@ -273,7 +269,6 @@ pub struct StorageUpload {
     pub size: usize,
     /// Request body when `size <= 256 KiB`; empty for larger payloads.
     pub body: Vec<u8>,
-    /// `Authorization` header value as sent (e.g. `Bearer …`).
     pub authorization: Option<String>,
 }
 
@@ -384,7 +379,6 @@ impl MockInferenceServer {
                 .unwrap();
         });
 
-        // Wait for server readiness — try connecting instead of a fixed sleep.
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
         while tokio::net::TcpStream::connect(addr).await.is_err() {
             if tokio::time::Instant::now() >= deadline {
@@ -546,7 +540,6 @@ impl MockInferenceServer {
             .any(|e| e.path.contains("responses"))
     }
 
-    /// Number of `POST /v1/messages` requests received so far.
     pub fn messages_request_count(&self) -> usize {
         self.log
             .entries
@@ -557,7 +550,6 @@ impl MockInferenceServer {
             .count()
     }
 
-    /// Format the request log for diagnostic output on test failures.
     pub fn request_log_summary(&self) -> String {
         let entries = self.log.entries.lock().unwrap();
         if entries.is_empty() {
@@ -571,7 +563,6 @@ impl MockInferenceServer {
             .join("\n")
     }
 
-    /// Get the system prompt from the most recent inference request.
     pub fn last_system_prompt(&self) -> Option<String> {
         let entries = self.log.entries.lock().unwrap();
         entries
@@ -579,15 +570,15 @@ impl MockInferenceServer {
             .rev()
             .find(|e| e.path.contains("chat/completions") || e.path.contains("responses"))
             .and_then(|e| e.body.as_ref())
+            // Chat completions carries the system prompt as the first message;
+            // the Responses API carries it in `instructions` instead.
             .and_then(|body| {
-                // Chat completions format: messages[0].content (system message)
                 body.get("messages")
                     .and_then(|m| m.as_array())
                     .and_then(|msgs| msgs.first())
                     .and_then(|msg| msg.get("content"))
                     .and_then(|c| c.as_str())
                     .map(String::from)
-                    // Responses API format: instructions field
                     .or_else(|| {
                         body.get("instructions")
                             .and_then(|s| s.as_str())
@@ -1115,7 +1106,6 @@ mod tests {
     const MERMAID_TEXT: &str =
         "Here is a flow:\n\n```mermaid\nflowchart TD\n  A --> B\n```\n\nDone.\n";
 
-    /// Payloads of all `data:` lines in an SSE body, minus the `[DONE]` marker.
     fn sse_data_payloads(body: &str) -> Vec<String> {
         body.lines()
             .filter_map(|l| l.strip_prefix("data:"))
@@ -1124,7 +1114,6 @@ mod tests {
             .collect()
     }
 
-    /// Concatenation of all chat-completion content deltas in an SSE body.
     fn chat_stream_text(body: &str) -> String {
         sse_data_payloads(body)
             .iter()
@@ -1140,7 +1129,6 @@ mod tests {
             .collect()
     }
 
-    /// Concatenation of all responses-API output_text deltas in an SSE body.
     fn responses_stream_text(body: &str) -> String {
         sse_data_payloads(body)
             .iter()
@@ -1150,7 +1138,6 @@ mod tests {
             .collect()
     }
 
-    /// Concatenation of all Anthropic Messages text deltas in an SSE body.
     fn messages_stream_text(body: &str) -> String {
         sse_data_payloads(body)
             .iter()
@@ -1184,7 +1171,7 @@ mod tests {
         let body = post_chat(&server, "ping pong").await.text().await.unwrap();
         assert_eq!(chat_stream_text(&body), "Echo: ping pong");
 
-        // Echo mode keeps its historical whitespace-collapsing semantics.
+        // Echo mode collapses whitespace by design; only fixed mode is exact.
         let body = post_chat(&server, "a  b\nc").await.text().await.unwrap();
         assert_eq!(chat_stream_text(&body), "Echo: a b c");
     }
@@ -1337,8 +1324,8 @@ mod tests {
         assert_eq!(resp.status(), 401);
     }
 
-    /// Scripted response headers reach the client (the phase-2 script format's
-    /// named consumer: 429 + Retry-After error injection).
+    /// Scripted headers must reach the client: 429 + `Retry-After` injection
+    /// depends on them.
     #[tokio::test]
     async fn scripted_response_headers_reach_the_client() {
         let server = MockInferenceServer::start().await.unwrap();

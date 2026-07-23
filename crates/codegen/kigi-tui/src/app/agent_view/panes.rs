@@ -8,10 +8,6 @@ use crate::key;
 use crate::scrollback::ScrollbackSearchState;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 impl AgentView {
-    /// Scrollback-focused key handling.
-    ///
-    /// When the block viewer is open, routes keys to the viewer.
-    /// Otherwise, uses ActionRegistry for keybinding lookup.
     pub(super) fn handle_scrollback_key(
         &mut self,
         key: &KeyEvent,
@@ -248,7 +244,6 @@ impl AgentView {
         }
         changed
     }
-    /// Scroll the current search match into view via `reveal_entry_line`.
     fn reveal_current_search_match(&mut self) {
         let target = self
             .scrollback_search
@@ -261,10 +256,6 @@ impl AgentView {
             self.scrollback.reveal_entry_line(idx, line);
         }
     }
-    /// Todo-pane-focused key handling.
-    ///
-    /// Routes structural keys through the shared overlay handler, then
-    /// content keys through `TodoPane::handle_key`.
     pub(super) fn handle_todo_key(
         &mut self,
         key: &KeyEvent,
@@ -300,7 +291,6 @@ impl AgentView {
             InputOutcome::Unchanged
         }
     }
-    /// Bg-task-pane-focused key handling.
     pub(super) fn handle_bg_tasks_key(
         &mut self,
         key: &KeyEvent,
@@ -431,7 +421,6 @@ impl AgentView {
             InputOutcome::Unchanged
         }
     }
-    /// Subagent-pane-focused key handling.
     pub(super) fn handle_catalog_key(
         &mut self,
         key: &KeyEvent,

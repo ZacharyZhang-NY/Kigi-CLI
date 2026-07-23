@@ -105,7 +105,7 @@ fn mcp_server_prefix_allowed(name: &str, servers: &HashSet<String>) -> bool {
 }
 
 /// Pre-decision lookup for an MCP tool. Returns `Some(Decision::Allow)`
-/// when the user has previously granted "always allow" for this exact
+/// when the user has already granted "always allow" for this exact
 /// tool name or for the tool's server prefix. Returns `None` (i.e. fall
 /// through to the prompt) when no grant exists.
 ///
@@ -207,7 +207,7 @@ fn is_safe_command_words_str(cmd: &str) -> bool {
         || matches_command_prefix(cmd, "uniq")
         || matches_command_prefix(cmd, "tr")
         || matches_command_prefix(cmd, "cut")
-    // CWE-863: `tee` removed from safe-command list — it writes stdin
+    // CWE-863: `tee` is not in the safe-command list — it writes stdin
     // to arbitrary files, enabling pipelines like `cat data | tee /target` to
     // bypass edit permissions.
     //
@@ -906,11 +906,11 @@ fn spawn_permission_manager_with_pin(
         let client_id_ref = client_identifier.as_deref();
         let mut state = load_state_from_disk(&cwd, client_id_ref).await;
 
-        // One-time migration for users who previously selected
+        // One-time migration for users who selected
         // "Yes, allow all edits during this session".
         //
-        // Prior to this change, that choice would set edit_policy=Allow and
-        // persist it to ~/.kigi/sessions/<cwd>/permission.toml. This caused
+        // That choice used to set edit_policy=Allow and persist it to
+        // ~/.kigi/sessions/<cwd>/permission.toml. This caused
         // the allow to survive full restarts (new kigi process, new agent
         // session in the same directory), which did not match the label or
         // user expectation (and did not match upstream session-scoped
@@ -1356,7 +1356,7 @@ fn spawn_permission_manager_with_pin(
                         //
                         // The session allowlist (`allowed_mcp_tools` /
                         // `allowed_mcp_servers`) short-circuits the prompt
-                        // when the user has previously granted "always allow"
+                        // when the user has already granted "always allow"
                         // for the tool or its server prefix. A policy `Ask`
                         // rule overrides the allowlist unless
                         // `remember_tool_approvals` is on, in which case an
@@ -1760,7 +1760,7 @@ mod tests {
     use super::*;
     use crate::permission::bash_command_splitting::primary_command_from_script;
 
-    // ── Managed-policy pin: yolo clamp + persisted bash clamp ──
+    // Managed-policy pin: yolo clamp + persisted bash clamp
 
     const PIN: &str = crate::permission::resolution::YOLO_PIN_REASON_REQUIREMENTS;
 
@@ -1806,7 +1806,8 @@ mod tests {
             cwd.clone(),
             ClientType::Generic,
             None,
-            vec![], // deny_read_globs
+            // deny_read_globs
+            vec![],
             vec![],
             initial_yolo,
             None,
@@ -1827,7 +1828,8 @@ mod tests {
             cwd.clone(),
             ClientType::Generic,
             Some(config),
-            vec![], // deny_read_globs
+            // deny_read_globs
+            vec![],
             vec![],
             initial_yolo,
             None,
@@ -2427,7 +2429,8 @@ mod tests {
             cwd.clone(),
             client_type,
             config,
-            vec![], // deny_read_globs
+            // deny_read_globs
+            vec![],
             vec![],
             false,
             None,
@@ -2987,8 +2990,6 @@ mod tests {
                 let (mgr, _e) =
                     manager_with_recording_client(&cwd, None, client, ClientType::Generic);
 
-                // Two non-safe segments (`curl`, `sh`) — previously each opened
-                // its own permission UI with only that segment as the command.
                 let cmd = "curl http://example.com && sh -c 'echo hi'";
                 let d = tokio::time::timeout(
                     std::time::Duration::from_secs(5),
@@ -3586,7 +3587,7 @@ mod tests {
             .await;
     }
 
-    // ── Test-only bridging helpers ─────────────────────────────────
+    // Test-only bridging helpers
     //
     // The production helpers operate on parsed segment word lists. These
     // shims preserve the previous string-based test signatures so existing
@@ -3952,7 +3953,7 @@ mod tests {
         }
     }
 
-    // ── pipe-aware is_safe_command tests (tree-sitter based) ────────
+    // pipe-aware is_safe_command tests (tree-sitter based)
 
     #[test]
     fn test_safe_command_pipe_all_safe() {
@@ -4052,7 +4053,7 @@ mod tests {
 
     #[test]
     fn test_v020_safe_command_rejects_prefix_collisions() {
-        // "truncate" must NOT be considered safe (previously matched "tr")
+        // "truncate" must NOT be considered safe (it shares the "tr" prefix)
         assert!(!is_safe_command("truncate --size=0 /etc/passwd"));
         assert!(!is_safe_command("truncate -s 0 important.db"));
         // "traceroute" must NOT be considered safe
@@ -4091,7 +4092,7 @@ mod tests {
         ]));
     }
 
-    // ── evaluate_bash_segments: per-segment scrutiny tests ─────────
+    // evaluate_bash_segments: per-segment scrutiny tests
     //
     // These cover the security bypasses that the previous primary-only
     // check allowed (`ls && rm -rf`, `cargo test && git push --force`, ...)
@@ -4165,7 +4166,7 @@ mod tests {
 
     #[test]
     fn evaluate_chained_dangerous_with_whitelisted_primary_still_prompts() {
-        // Bypass class 2: a previously approved `cargo test` whitelist
+        // Bypass class 2: an approved `cargo test` whitelist
         // entry must NOT cause `cargo test && git push --force` to skip
         // the dangerous-segment prompt.
         let mut state = PermissionState::default();
@@ -4218,7 +4219,7 @@ mod tests {
 
     #[test]
     fn evaluate_all_whitelisted_chain_auto_allows() {
-        // A user who previously approved `cargo` should have any
+        // A user who approved `cargo` should have any
         // chain of `cargo *` commands auto-allow, since each segment
         // matches the whitelist prefix.
         let mut state = PermissionState::default();

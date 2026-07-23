@@ -13,15 +13,12 @@ pub use kigi_tools_api::slash_commands::{
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct SchedulerCreateInput {
-    /// Interval string: "5m", "2h", "1d", etc.
     #[schemars(description = "Interval between executions, e.g. \"5m\", \"2h\", \"1d\"")]
     pub interval: String,
 
-    /// The prompt to run on each fire.
     #[schemars(description = "The prompt text to execute on each scheduled fire")]
     pub prompt: String,
 
-    /// Whether the task recurs. Default true.
     #[serde(
         default = "default_true",
         deserialize_with = "crate::types::schema::deserialize_lenient_bool"
@@ -31,7 +28,6 @@ pub struct SchedulerCreateInput {
     )]
     pub recurring: bool,
 
-    /// Whether the task persists across sessions. Default false (session-only).
     #[serde(
         default,
         deserialize_with = "crate::types::schema::deserialize_lenient_option_bool"
@@ -39,9 +35,8 @@ pub struct SchedulerCreateInput {
     #[schemars(description = "Whether the task persists across sessions. Default: false")]
     pub durable: Option<bool>,
 
-    /// Whether to fire immediately on creation. Default false (wait for the
-    /// first interval — a "scheduled" task should not run on creation unless
-    /// explicitly asked to).
+    /// Default false: a "scheduled" task should not run on creation unless
+    /// explicitly asked to.
     #[serde(
         default,
         deserialize_with = "crate::types::schema::deserialize_lenient_bool"

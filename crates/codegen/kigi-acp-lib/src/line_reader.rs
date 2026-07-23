@@ -126,7 +126,7 @@ impl AsyncRead for LineBufferedRead {
                 Poll::Ready(Ok(n))
             }
             Poll::Ready(Some(Err(e))) => Poll::Ready(Err(e)),
-            Poll::Ready(None) => Poll::Ready(Ok(0)), // EOF
+            Poll::Ready(None) => Poll::Ready(Ok(0)),
             Poll::Pending => Poll::Pending,
         }
     }
@@ -146,7 +146,7 @@ async fn read_line_capped(
         let (consumed, done) = {
             let available = reader.fill_buf().await?;
             if available.is_empty() {
-                return Ok(buf.len()); // EOF
+                return Ok(buf.len());
             }
             match available.iter().position(|&b| b == b'\n') {
                 Some(pos) => {
@@ -283,15 +283,12 @@ mod tests {
             let mut reader = LineBufferedRead::spawn_local(source);
             let mut small_buf = [0u8; 3];
 
-            // First read: "abc"
             let n = reader.read(&mut small_buf).await.unwrap();
             assert_eq!(&small_buf[..n], b"abc");
 
-            // Second read: "def"
             let n = reader.read(&mut small_buf).await.unwrap();
             assert_eq!(&small_buf[..n], b"def");
 
-            // Third read: "\n"
             let n = reader.read(&mut small_buf).await.unwrap();
             assert_eq!(&small_buf[..n], b"\n");
 

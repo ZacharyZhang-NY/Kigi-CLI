@@ -2838,8 +2838,8 @@ mod tests {
             assert!(s.search_active, "{code:?} must activate Agents-tab search");
         }
     }
-    /// Personas symmetry: both `/` and `i` activate the shared search (the
-    /// Personas tab now answers `/` too, matching the Agents tab).
+    /// Personas symmetry: both `/` and `i` activate the shared search,
+    /// matching the Agents tab.
     #[test]
     fn personas_tab_slash_and_i_activate_search() {
         for code in [KeyCode::Char('/'), KeyCode::Char('i')] {

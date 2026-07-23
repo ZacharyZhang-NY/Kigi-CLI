@@ -88,6 +88,11 @@ pub struct OurFrame<'a> {
     pub(crate) count: usize,
 }
 
+// `OurFrame` mirrors ratatui's `Frame` field for field so that construction
+// is possible at all: every `Frame` field is private to ratatui. The
+// transmute is sound only while the two layouts stay identical, which the
+// size assertion checks weakly — a field reorder of equal-sized fields would
+// slip through, so re-verify these against ratatui on every version bump.
 impl<'a> From<OurFrame<'a>> for Frame<'a> {
     fn from(value: OurFrame<'a>) -> Self {
         assert_eq!(
@@ -167,7 +172,6 @@ where
     current: usize,
     /// Whether the cursor is currently hidden
     hidden_cursor: bool,
-    /// Viewport
     viewport: Viewport,
     /// Area of the viewport
     viewport_area: Rect,
@@ -278,7 +282,7 @@ where
             buffer: self.current_buffer_mut(),
             count,
         }
-        .into() // HACK
+        .into()
     }
 
     /// Gets the current buffer as a mutable reference.
@@ -955,14 +959,14 @@ where
             buffer_height -= to_draw;
         }
 
-        // There is now enough room on the screen for the remaining buffer plus the viewport,
+        // There is enough room on the screen for the remaining buffer plus the viewport,
         // though we may still need to scroll up some of the existing text first. It's possible
         // that by this point we've drained the buffer, but we may still need to scroll up to make
         // room for the viewport.
         //
         // We want to scroll up the exact amount that will leave us completely filling the screen.
         // However, it's possible that the viewport didn't start on the bottom of the screen and
-        // the added lines weren't enough to push it all the way to the bottom. We deal with this
+        // the extra lines weren't enough to push it all the way to the bottom. We deal with this
         // case by just ensuring that our scroll amount is non-negative.
         //
         // We want:
@@ -1165,8 +1169,8 @@ fn diff_large<'a>(prev: &Buffer, next: &'a Buffer) -> Vec<(u16, u16, &'a Cell)> 
     updates
 }
 
-/// Like [`diff_large`] but a cell is also considered changed when its hyperlink
-/// changed between the previous and current frame (even if the glyph/style is
+/// Like [`diff_large`] but a cell is also considered dirty when its hyperlink
+/// differs between the prior and current frame (even if the glyph/style is
 /// identical). This is what makes OSC 8 links participate in the frame diff:
 /// adding, removing, or retargeting a link forces the affected cells to be
 /// rewritten so the terminal's link state stays in sync.
@@ -1301,7 +1305,7 @@ fn compute_inline_size<B: Backend>(
 }
 
 impl<B: Backend> Terminal<B> {
-    /// HACK: this is added
+    /// HACK: this exists
     pub fn viewport_area(&self) -> Rect {
         self.viewport_area
     }
@@ -1378,7 +1382,7 @@ mod inline_resize_tests {
     }
 
     /// Shrinking must also track the terminal and must not position the viewport
-    /// off-screen (which previously panicked the strict `TestBackend` buffer and
+    /// off-screen (which earlier panicked the strict `TestBackend` buffer and
     /// would leave a real terminal's UI invisible/garbled).
     #[test]
     fn inline_full_height_shrinks_with_terminal() {

@@ -87,7 +87,7 @@ async fn bracketed_ime_paste_skips_clipboard_image_linux() {
         harness
     }
 
-    // ── Otty: IME-style bracketed paste, image-only clipboard → no image ──
+    // Otty: IME-style bracketed paste, image-only clipboard → no image.
     let mut harness = spawn_on_dashboard(&base_env, &[("TERM_PROGRAM", "otty")]);
     harness
         .inject_keys(format!("\x1b[200~{IME_PAYLOAD}\x1b[201~").as_bytes())
@@ -102,7 +102,7 @@ async fn bracketed_ime_paste_skips_clipboard_image_linux() {
         harness.screen_contents()
     );
 
-    // ── Otty (positive control): payload == clipboard caption → image ──
+    // Otty (positive control): payload == clipboard caption → image.
     std::fs::write(&text_file, CAPTION.as_bytes()).expect("genuine-paste clipboard text");
     harness
         .inject_keys(format!("\x1b[200~{CAPTION}\x1b[201~").as_bytes())
@@ -120,8 +120,8 @@ async fn bracketed_ime_paste_skips_clipboard_image_linux() {
     );
     harness.quit().expect("clean quit");
 
-    // ── No TERM_PROGRAM (any other terminal): historical behavior intact —
-    //    the same mismatched bracketed payload still attaches the image ──
+    // No TERM_PROGRAM (any other terminal): historical behavior intact —
+    // the same mismatched bracketed payload still attaches the image.
     std::fs::write(&text_file, b"").expect("reset clipboard text");
     let mut harness = spawn_on_dashboard(&base_env, &[]);
     harness

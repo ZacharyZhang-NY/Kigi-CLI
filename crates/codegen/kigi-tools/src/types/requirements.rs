@@ -148,7 +148,6 @@ impl ToolRequirement {
     /// ```
     pub fn eval(&self, ctx: &EvalContext) -> bool {
         match self {
-            // "Is tool `namespace:id` enabled, and do its params satisfy if_params?"
             ToolRequirement::Tool {
                 namespace,
                 id,
@@ -161,8 +160,6 @@ impl ToolRequirement {
                         .is_none_or(|expr| expr.eval(&|pr| pr.check(t.params)))
             }),
 
-            // "Is there any enabled tool of this kind, and do its params
-            //  satisfy if_params?"
             ToolRequirement::ToolKind { kind, if_params } => ctx.tools.iter().any(|t| {
                 kind.eval(&|k| &t.kind == k)
                     && if_params
@@ -170,8 +167,6 @@ impl ToolRequirement {
                         .is_none_or(|expr| expr.eval(&|pr| pr.check(t.params)))
             }),
 
-            // "If MY params satisfy condition, check requirement.
-            //  If condition is false → vacuously true (no requirement)."
             ToolRequirement::IfParams {
                 condition,
                 requirement,
@@ -184,7 +179,6 @@ impl ToolRequirement {
                 }
             }
 
-            // "Does a tool of this kind have a visible input param with this name?"
             ToolRequirement::InputParam { kind, param } => ctx.tools.iter().any(|t| {
                 kind.eval(&|k| &t.kind == k)
                     && t.input_schema

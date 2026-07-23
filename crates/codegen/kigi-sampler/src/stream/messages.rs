@@ -241,7 +241,8 @@ pub fn stream_messages<'a>(
                             arguments_delta: None,
                         };
                     }
-                    _ => {} // Image / ToolResult are not expected in assistant streams.
+                    // Image / ToolResult are not expected in assistant streams.
+                    _ => {}
                 },
 
                 MessageStreamEvent::ContentBlockDelta { index, delta } => {
@@ -460,7 +461,7 @@ pub fn stream_messages<'a>(
             return;
         }
 
-        // ── Build the final response ─────────────────────────────────
+        // Build the final response
         let model_id = final_model.unwrap_or_default();
         // Match the OAI Responses convention: prompt_tokens = full prompt, cached_prompt_tokens = cache hits only.
         let total_prompt_tokens = final_input_tokens

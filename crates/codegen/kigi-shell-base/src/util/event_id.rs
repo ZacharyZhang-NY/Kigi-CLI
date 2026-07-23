@@ -1,26 +1,12 @@
-//! Event ID generation for session notifications.
-//!
-//! Provides a globally unique event ID format `{session_id}-{counter}` that is
-//! used for deduplication in the relay. The counter is monotonically increasing
-//! across the entire agent process, ensuring event IDs are always comparable.
+//! Event IDs of the form `{session_id}-{counter}`, used for deduplication in
+//! the relay. The counter is shared by every session in the agent process and
+//! only ever increases, so the relay can order ids numerically by parsing the
+//! counter suffix.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Global counter for event ID generation.
-/// Shared across all sessions to ensure monotonically increasing IDs.
 static EVENT_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// Generates a unique event ID for correlation across agent/relay/client.
-///
-/// Format: `{session_id}-{counter}` where counter is a monotonically increasing
-/// global counter. This format allows the relay to compare event IDs numerically
-/// by extracting the counter suffix.
-///
-/// # Arguments
-/// * `session_id` - The session ID to include in the event ID
-///
-/// # Returns
-/// A unique event ID string in the format `{session_id}-{counter}`
 pub fn generate_event_id(session_id: &str) -> String {
     let count = EVENT_COUNTER.fetch_add(1, Ordering::SeqCst);
     format!("{}-{}", session_id, count)
@@ -91,16 +77,13 @@ mod tests {
     fn test_generate_event_id_format() {
         let id = generate_event_id("test-session-123");
         assert!(id.starts_with("test-session-123-"));
-        // Should end with a valid number
         let _counter: u64 = id.rsplit('-').next().unwrap().parse().unwrap();
     }
 
     #[test]
     fn ensure_event_counter_at_least_only_raises() {
-        // Re-seeding to a high floor makes the next id continue past it — this
-        // is what keeps `--resume` from minting ids below the replayed maximum.
-        // Uses a very high floor so concurrent tests (which only ever raise the
-        // shared counter via fetch_add/fetch_max) cannot push it back down.
+        // The floor is huge so concurrent tests sharing the process-global
+        // counter cannot drift above it and invalidate the assertions.
         ensure_event_counter_at_least(5_000_000);
         let counter1: u64 = generate_event_id("sess")
             .rsplit('-')
@@ -113,7 +96,6 @@ mod tests {
             "next id must be at/above the seeded floor, got {counter1}"
         );
 
-        // A lower floor is a no-op (fetch_max never decreases the counter).
         ensure_event_counter_at_least(1);
         let counter2: u64 = generate_event_id("sess")
             .rsplit('-')
@@ -129,7 +111,6 @@ mod tests {
 
     #[test]
     fn ensure_event_id_meta_stamps_none_and_merges_existing() {
-        // None meta: a fresh object with eventId + timestamp is created.
         let mut meta = None;
         ensure_event_id_meta("sess-x", &mut meta);
         let obj = meta.as_ref().unwrap();
@@ -140,7 +121,6 @@ mod tests {
         );
         assert!(obj["agentTimestampMs"].is_i64());
 
-        // Existing meta without eventId: fields are merged, not replaced.
         let mut meta = serde_json::json!({ "custom": true }).as_object().cloned();
         ensure_event_id_meta("sess-x", &mut meta);
         let obj = meta.as_ref().unwrap();
@@ -173,7 +153,6 @@ mod tests {
         let counter2: u64 = id2.rsplit('-').next().unwrap().parse().unwrap();
         let counter3: u64 = id3.rsplit('-').next().unwrap().parse().unwrap();
 
-        // Counters should be monotonically increasing
         assert!(counter2 > counter1);
         assert!(counter3 > counter2);
     }

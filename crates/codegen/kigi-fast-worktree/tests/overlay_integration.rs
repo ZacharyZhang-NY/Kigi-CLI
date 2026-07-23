@@ -30,7 +30,7 @@ use kigi_fast_worktree::{
     remove_worktree,
 };
 
-// ── Test infrastructure ──────────────────────────────────────────────────
+// Test infrastructure
 
 /// Parsed overlay environment, or `None` when the FUSE+overlay+btrfs
 /// stack is not available (CI, local laptop, hosts without the stack).
@@ -234,8 +234,6 @@ fn force_unmount(path: &Path) {
     }
 }
 
-// ── 1. Overlay = FUSE + btrfs subvolume ──────────────────────────────────
-
 /// Verify detection: the source repo's overlay has a FUSE lower and btrfs upper.
 #[test]
 fn test_detect_fuse_overlay_on_source_repo() {
@@ -424,8 +422,6 @@ fn test_overlay_mount_fuse_lower_btrfs_upper() {
     let _ = std::fs::remove_dir_all(&worktrees_dir);
 }
 
-// ── 2. Worktree = FUSE + snapshot ────────────────────────────────────────
-
 /// Create a worktree via `WorktreeBuilder` on the overlay source repo and
 /// verify it produced a valid git worktree with zero files copied (overlay
 /// snapshot path).
@@ -460,13 +456,11 @@ fn test_worktree_builder_uses_overlay_snapshot() {
         result.unignored_copy.files_copied
     );
 
-    // 3. Commit should be non-empty.
     assert!(
         !result.commit.is_empty(),
         "worktree should have a HEAD commit"
     );
 
-    // 4. Worktree should be a valid git repo.
     let status = std::process::Command::new("git")
         .current_dir(&result.worktree_path)
         .args(["rev-parse", "--git-dir"])
@@ -477,7 +471,6 @@ fn test_worktree_builder_uses_overlay_snapshot() {
         "worktree should be a valid git repo"
     );
 
-    // 5. Worktree should have repo files.
     assert!(
         result.worktree_path.join(".git").exists(),
         "worktree should have .git"
@@ -633,8 +626,6 @@ fn test_overlay_worktree_git_status() {
     let _ = remove_worktree(&result.worktree_path);
 }
 
-// ── 3. Manual cleanup ────────────────────────────────────────────────────
-
 /// `remove_worktree` on an overlay worktree should unmount + delete snapshot.
 #[test]
 fn test_remove_worktree_cleans_overlay() {
@@ -725,7 +716,6 @@ fn test_cleanup_worktrees_in_removes_overlay_worktrees() {
     assert!(r_a.worktree_path.exists());
     assert!(r_b.worktree_path.exists());
 
-    // Now clean up via cleanup_worktrees_in on the parent dir that contains .git
     // The worktrees have .git so cleanup_worktrees_in should find them.
     let report: CleanupReport = cleanup_worktrees_in(&cleanup_dir);
 
@@ -813,7 +803,7 @@ fn test_cleanup_orphaned_overlay_snapshots() {
         "orphaned metadata should be deleted after cleanup"
     );
 
-    // Note: report.removed counts ALL orphans cleaned up, which may include
+    // Note: `report.removed` tallies ALL orphans cleaned up, which may include
     // orphans from other tests or previous runs. We just verify our snapshot is gone.
 }
 

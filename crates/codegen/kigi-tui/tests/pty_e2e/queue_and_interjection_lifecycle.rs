@@ -82,7 +82,6 @@ async fn queue_and_interjection_lifecycle() {
         .wait_for_text("STEPTHREE", Duration::from_secs(90))
         .expect("steps 5-7: I1 then P2 drained through to the final reply");
 
-    // The send-now cancel of turn 1 is silent.
     assert!(
         !harness.contains_text("Turn cancelled by user"),
         "send-now cancel must not render a cancelled marker\nscreen:\n{}",

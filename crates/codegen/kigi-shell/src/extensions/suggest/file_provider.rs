@@ -127,8 +127,6 @@ fn is_path_like(s: &str) -> bool {
     s.contains('/') || s == "~"
 }
 
-// ── Directory/prefix split + `~`/`$VAR` expansion (listing only) ────────
-
 struct SplitToken<'a> {
     /// Expanded directory to list (absolute, or joined onto the cwd).
     list_dir: PathBuf,
@@ -253,8 +251,6 @@ fn expand_vars(s: &str, plain: &[bool], lookup: impl Fn(&str) -> Option<String>)
     out.push_str(rest);
     out
 }
-
-// ── Matching + ranking ──────────────────────────────────────────────────
 
 struct ScoredEntry {
     name: String,
@@ -398,8 +394,6 @@ fn ci_starts_with(name: &str, prefix_lower: &str) -> bool {
 mod tests {
     use super::*;
 
-    // --- extract_file_context (completion decision) ---
-
     #[test]
     fn context_file_cmd_with_arg() {
         let tok = extract_file_context("cat foo").unwrap();
@@ -463,8 +457,6 @@ mod tests {
         assert!(extract_file_context("> lo").is_some());
     }
 
-    // --- is_path_like ---
-
     #[test]
     fn path_like_matrix() {
         assert!(is_path_like("/usr/bin"));
@@ -478,8 +470,6 @@ mod tests {
         assert!(!is_path_like(".."));
         assert!(!is_path_like("~user"));
     }
-
-    // --- split_token + expansion ---
 
     fn no_vars(_: &str) -> Option<String> {
         None
@@ -669,8 +659,6 @@ mod tests {
         assert_eq!(expand_vars(s, &plain, lookup), "$HOME//home/me");
     }
 
-    // --- file_command_boost ---
-
     #[test]
     fn boost_for_known_file_commands_only() {
         assert_eq!(file_command_boost(Some("cat")), FILE_CMD_BOOST);
@@ -695,8 +683,6 @@ mod tests {
         // Multibyte fold: uppercase e-acute lowers to the 2-byte e-acute.
         assert!(ci_starts_with("\u{c9}tude", "\u{e9}t"));
     }
-
-    // --- list_ranked_entries ---
 
     #[tokio::test]
     async fn rank_exact_then_ci_prefix_then_fuzzy() {
@@ -858,8 +844,6 @@ mod tests {
         assert!(truncated);
         assert_eq!(entries.len(), MAX_RESULTS);
     }
-
-    // --- end-to-end via suggest() ---
 
     fn ctx(text: &str, cwd: &Path) -> SuggestContext {
         SuggestContext::new(

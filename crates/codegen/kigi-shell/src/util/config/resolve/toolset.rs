@@ -440,11 +440,16 @@ mod ask_user_question_timeout_tests {
         let d = kigi_tools::implementations::kigi::ask_user_question::RESPONSE_TIMEOUT.as_secs();
         let r = resolve_ask_user_question_timeout_secs_from_tiers;
         assert_eq!(r(None, None, None, None, None), d);
-        assert_eq!(r(Some(1), Some(2), Some(3), Some(4), Some(5)), 1); // requirements highest
-        assert_eq!(r(None, Some(2), Some(3), Some(4), Some(5)), 2); // env
-        assert_eq!(r(None, None, Some(3), Some(4), Some(5)), 3); // user config
-        assert_eq!(r(None, None, None, Some(4), Some(5)), 4); // managed
-        assert_eq!(r(None, None, None, None, Some(5)), 5); // remote
+        // requirements highest
+        assert_eq!(r(Some(1), Some(2), Some(3), Some(4), Some(5)), 1);
+        // env
+        assert_eq!(r(None, Some(2), Some(3), Some(4), Some(5)), 2);
+        // user config
+        assert_eq!(r(None, None, Some(3), Some(4), Some(5)), 3);
+        // managed
+        assert_eq!(r(None, None, None, Some(4), Some(5)), 4);
+        // remote
+        assert_eq!(r(None, None, None, None, Some(5)), 5);
     }
 
     #[test]
@@ -516,14 +521,17 @@ mod tests {
         let req: TomlValue = toml::from_str("[toolset.bash]\nfind_bfs = true\n").unwrap();
         let managed: TomlValue = toml::from_str("[toolset.bash]\ngrep_ugrep = false\n").unwrap();
         let (find, grep) = resolve_search_tools_enabled(Some(&req), Some(&user), Some(&managed));
-        assert!(find); // requirements `true` beats user `false`
-        assert!(grep); // user `true` beats managed `false`
+        // requirements `true` beats user `false`
+        assert!(find);
+        // user `true` beats managed `false`
+        assert!(grep);
     }
 
     #[test]
     fn resolve_search_tool_enabled_precedence() {
         // args: disable, requirement, env, config, managed
-        assert!(resolve_search_tool_enabled(None, None, None, None, None)); // default on
+        // default on
+        assert!(resolve_search_tool_enabled(None, None, None, None, None));
         // Org requirement wins outright — even over the user DISABLE kill-switch.
         assert!(resolve_search_tool_enabled(
             Some(true),

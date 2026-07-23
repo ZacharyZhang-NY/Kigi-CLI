@@ -34,14 +34,22 @@
 /// (b) almost always produced by accidental rich-text auto-correction rather
 /// than deliberate content authoring.
 pub const CONFUSABLE_MAP: &[(char, &str)] = &[
-    ('\u{201C}', "\""),  // " left double quotation mark
-    ('\u{201D}', "\""),  // " right double quotation mark
-    ('\u{2018}', "'"),   // ' left single quotation mark
-    ('\u{2019}', "'"),   // ' right single quotation mark
-    ('\u{2014}', "--"),  // — em-dash
-    ('\u{2013}', "-"),   // – en-dash
-    ('\u{2026}', "..."), // … horizontal ellipsis
-    ('\u{00A0}', " "),   // non-breaking space
+    // left double quotation mark
+    ('\u{201C}', "\""),
+    // right double quotation mark
+    ('\u{201D}', "\""),
+    // left single quotation mark
+    ('\u{2018}', "'"),
+    // right single quotation mark
+    ('\u{2019}', "'"),
+    // em-dash
+    ('\u{2014}', "--"),
+    // en-dash
+    ('\u{2013}', "-"),
+    // horizontal ellipsis
+    ('\u{2026}', "..."),
+    // non-breaking space
+    ('\u{00A0}', " "),
 ];
 
 /// A single detected confusable character with its location metadata.
@@ -49,7 +57,6 @@ pub const CONFUSABLE_MAP: &[(char, &str)] = &[
 pub struct ConfusableHit {
     /// Byte offset of the confusable character in the source string.
     pub byte_offset: usize,
-    /// The Unicode character that was detected.
     pub unicode_char: char,
     /// The ASCII replacement string from [`CONFUSABLE_MAP`].
     pub ascii_replacement: &'static str,
@@ -215,8 +222,6 @@ pub fn build_offset_map(s: &str) -> (String, Vec<usize>) {
 mod tests {
     use super::*;
 
-    // ── CONFUSABLE_MAP coverage ─────────────────────────────────────────
-
     #[test]
     fn normalize_left_double_quote() {
         assert_eq!(normalize_confusables("\u{201C}hello"), "\"hello");
@@ -257,8 +262,6 @@ mod tests {
         assert_eq!(normalize_confusables("hello\u{00A0}world"), "hello world");
     }
 
-    // ── Identity / passthrough ──────────────────────────────────────────
-
     #[test]
     fn normalize_pure_ascii_is_identity() {
         let ascii = "The quick brown fox jumps over the lazy dog. 0123456789 !@#$%^&*()";
@@ -276,8 +279,6 @@ mod tests {
         let s = "hello 🌍 世界";
         assert_eq!(normalize_confusables(s), s);
     }
-
-    // ── has_confusables ─────────────────────────────────────────────────
 
     #[test]
     fn has_confusables_false_for_ascii() {
@@ -304,8 +305,6 @@ mod tests {
         assert!(has_confusables("a\u{2014}b"));
     }
 
-    // ── detect_confusables ──────────────────────────────────────────────
-
     #[test]
     fn detect_returns_empty_for_ascii() {
         assert!(detect_confusables("plain text").is_empty());
@@ -316,7 +315,7 @@ mod tests {
         let hits = detect_confusables("say \u{201C}hi\u{201D}");
         assert_eq!(hits.len(), 2);
 
-        assert_eq!(hits[0].byte_offset, 4); // "say " is 4 bytes
+        assert_eq!(hits[0].byte_offset, 4);
         assert_eq!(hits[0].unicode_char, '\u{201C}');
         assert_eq!(hits[0].ascii_replacement, "\"");
         assert_eq!(hits[0].line_number, 1);
@@ -333,9 +332,9 @@ mod tests {
         let s = "line one\nline\u{00A0}two\nline \u{201C}three\u{201D}\n";
         let hits = detect_confusables(s);
         assert_eq!(hits.len(), 3);
-        assert_eq!(hits[0].line_number, 2); // NBSP on line 2
-        assert_eq!(hits[1].line_number, 3); // left quote on line 3
-        assert_eq!(hits[2].line_number, 3); // right quote on line 3
+        assert_eq!(hits[0].line_number, 2);
+        assert_eq!(hits[1].line_number, 3);
+        assert_eq!(hits[2].line_number, 3);
     }
 
     #[test]
@@ -345,7 +344,8 @@ mod tests {
         let hits = detect_confusables(s);
         assert_eq!(hits.len(), 2);
         assert_eq!(hits[0].byte_offset, 0);
-        assert_eq!(hits[1].byte_offset, 3); // em-dash is 3 bytes
+        // em-dash is 3 bytes
+        assert_eq!(hits[1].byte_offset, 3);
     }
 
     #[test]
@@ -359,8 +359,6 @@ mod tests {
         assert_eq!(hits[1].byte_offset, 8);
         assert_eq!(hits[1].unicode_char, '\u{2019}');
     }
-
-    // ── build_offset_map ────────────────────────────────────────────────
 
     #[test]
     fn offset_map_pure_ascii() {
@@ -397,7 +395,7 @@ mod tests {
         let (normalized, map) = build_offset_map(s);
         assert_eq!(normalized, "\"hi\"");
         assert_eq!(normalized.len(), 4);
-        assert_eq!(map.len(), 5); // 4 bytes + sentinel
+        assert_eq!(map.len(), 5);
 
         // Byte 0 of normalized ('"') maps to byte 0 of original ('\u{201C}' start)
         assert_eq!(map[0], 0);
@@ -419,13 +417,13 @@ mod tests {
         let s = "a\u{2014}b";
         let (normalized, map) = build_offset_map(s);
         assert_eq!(normalized, "a--b");
-        assert_eq!(map.len(), 5); // 4 bytes + sentinel
+        assert_eq!(map.len(), 5);
 
-        assert_eq!(map[0], 0); // 'a' → 'a'
-        assert_eq!(map[1], 1); // first '-' → start of em-dash
-        assert_eq!(map[2], 1); // second '-' → start of em-dash
-        assert_eq!(map[3], 4); // 'b' → 'b'
-        assert_eq!(map[4], 5); // sentinel
+        assert_eq!(map[0], 0);
+        assert_eq!(map[1], 1);
+        assert_eq!(map[2], 1);
+        assert_eq!(map[3], 4);
+        assert_eq!(map[4], 5);
     }
 
     #[test]
@@ -436,13 +434,13 @@ mod tests {
         let s = "\u{2026}";
         let (normalized, map) = build_offset_map(s);
         assert_eq!(normalized, "...");
-        assert_eq!(map.len(), 4); // 3 bytes + sentinel
+        assert_eq!(map.len(), 4);
 
         // All three dots map to the start of the original ellipsis character.
         assert_eq!(map[0], 0);
         assert_eq!(map[1], 0);
         assert_eq!(map[2], 0);
-        assert_eq!(map[3], 3); // sentinel
+        assert_eq!(map[3], 3);
     }
 
     #[test]
@@ -453,12 +451,12 @@ mod tests {
         let s = "a\u{00A0}b";
         let (normalized, map) = build_offset_map(s);
         assert_eq!(normalized, "a b");
-        assert_eq!(map.len(), 4); // 3 bytes + sentinel
+        assert_eq!(map.len(), 4);
 
-        assert_eq!(map[0], 0); // 'a'
-        assert_eq!(map[1], 1); // ' ' maps to NBSP start
-        assert_eq!(map[2], 3); // 'b'
-        assert_eq!(map[3], 4); // sentinel
+        assert_eq!(map[0], 0);
+        assert_eq!(map[1], 1);
+        assert_eq!(map[2], 3);
+        assert_eq!(map[3], 4);
     }
 
     #[test]
@@ -467,16 +465,16 @@ mod tests {
         // '🌍' is U+1F30D, 4 bytes in UTF-8.
         let s = "a🌍b";
         let (normalized, map) = build_offset_map(s);
-        assert_eq!(normalized, s); // no confusables → identical
+        assert_eq!(normalized, s);
         // 'a'=1 byte, '🌍'=4 bytes, 'b'=1 byte → 6 bytes + sentinel
         assert_eq!(map.len(), 7);
-        assert_eq!(map[0], 0); // 'a'
-        assert_eq!(map[1], 1); // '🌍' byte 0
-        assert_eq!(map[2], 2); // '🌍' byte 1
-        assert_eq!(map[3], 3); // '🌍' byte 2
-        assert_eq!(map[4], 4); // '🌍' byte 3
-        assert_eq!(map[5], 5); // 'b'
-        assert_eq!(map[6], 6); // sentinel
+        assert_eq!(map[0], 0);
+        assert_eq!(map[1], 1);
+        assert_eq!(map[2], 2);
+        assert_eq!(map[3], 3);
+        assert_eq!(map[4], 4);
+        assert_eq!(map[5], 5);
+        assert_eq!(map[6], 6);
     }
 
     #[test]
@@ -508,12 +506,10 @@ mod tests {
         let s = "\u{2013}";
         let (normalized, map) = build_offset_map(s);
         assert_eq!(normalized, "-");
-        assert_eq!(map.len(), 2); // 1 byte + sentinel
-        assert_eq!(map[0], 0); // '-' maps to start of en-dash
-        assert_eq!(map[1], 3); // sentinel = original len
+        assert_eq!(map.len(), 2);
+        assert_eq!(map[0], 0);
+        assert_eq!(map[1], 3);
     }
-
-    // ── Compound / integration scenarios ────────────────────────────────
 
     #[test]
     fn normalize_multiple_confusables_one_line() {
@@ -540,8 +536,6 @@ mod tests {
         assert_eq!(from_map, from_normalize);
     }
 
-    // ── Consumer-contract tests ─────────────────────────────────────────
-    //
     // These tests simulate the exact pattern that the normalized-fallback
     // matcher will use: find a substring in the normalized text,
     // remap the span back to the original via offset_map, and verify that

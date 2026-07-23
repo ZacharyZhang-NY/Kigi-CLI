@@ -218,7 +218,7 @@ impl TrustStore {
             .contains_key(canonical.to_string_lossy().as_ref())
     }
 
-    // ── Internal ──────────────────────────────────────────────────────
+    // Internal
 
     /// Shared write path for [`Self::set_trusted`] / [`Self::set_untrusted`].
     ///
@@ -234,7 +234,7 @@ impl TrustStore {
     ///    rather than clobbered (lost-update fix);
     /// 3. insert the record and persist atomically;
     /// 4. only on success commit the new document to memory — on any
-    ///    lock/persist error `self.doc` is left unchanged.
+    ///    lock/persist error `self.doc` is left `unchanged`.
     fn record_decision(&mut self, workspace_key: &Path, trusted: bool) -> io::Result<()> {
         let canonical = canonicalize_or_owned(workspace_key);
         if is_unsafe_trust_root(&canonical) {
@@ -281,7 +281,7 @@ impl TrustStore {
         );
 
         // Commit to memory only after a successful durable write, so a failure
-        // leaves the in-memory store unchanged.
+        // leaves the in-memory store `unchanged`.
         Self::persist_doc(path, &doc)?;
         self.doc = doc;
         Ok(())
@@ -641,7 +641,7 @@ mod tests {
     fn migrate_legacy_hook_trust_is_noop_when_file_absent() {
         let tmp = tempfile::tempdir().unwrap();
         let store_path = tmp.path().join(TRUST_FILE_NAME);
-        let legacy = tmp.path().join("trusted-hook-projects"); // never created
+        let legacy = tmp.path().join("trusted-hook-projects");
 
         let mut store = TrustStore::load_from(store_path);
         let migrated = migrate_legacy_hook_trust_in(&legacy, &mut store);
@@ -684,7 +684,8 @@ mod tests {
         // `persist_failure_leaves_memory_unchanged`, robust even when run as root).
         let tmp = tempfile::tempdir().unwrap();
         let store_path = tmp.path().join(TRUST_FILE_NAME);
-        std::fs::create_dir_all(&store_path).unwrap(); // store path is a dir, not a file
+        // store path is a dir, not a file
+        std::fs::create_dir_all(&store_path).unwrap();
         let project = tmp.path().join("repo");
         std::fs::create_dir_all(&project).unwrap();
         let project_key = canonicalize_or_owned(&project);
@@ -954,7 +955,8 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let store_path = tmp.path().join(TRUST_FILE_NAME);
         let Some(home) = dirs::home_dir() else {
-            return; // no home dir in this environment; nothing to assert
+            // no home dir in this environment; nothing to assert
+            return;
         };
 
         let mut store = TrustStore::load_from(store_path.clone());
@@ -1112,7 +1114,8 @@ mod tests {
         // A hand-edited / migrated `[folders."<home>"]` record must not trust
         // repos under $HOME — the read side ignores it, matching set_trusted.
         let Some(home) = dirs::home_dir() else {
-            return; // no home dir in this environment; nothing to assert
+            // no home dir in this environment; nothing to assert
+            return;
         };
         let canonical_home = canonicalize_or_owned(&home);
         let tmp = tempfile::tempdir().unwrap();
@@ -1255,10 +1258,11 @@ mod tests {
         // rename in persist fails (renaming a file over a directory). This is
         // robust even when tests run as root (a chmod 0o500 dir would be
         // bypassed by root), and it exercises the invariant: on a write error
-        // the in-memory doc is left unchanged (memory-before-persist fix).
+        // the in-memory doc is left `unchanged` (memory-before-persist fix).
         let tmp = tempfile::tempdir().unwrap();
         let store_path = tmp.path().join(TRUST_FILE_NAME);
-        std::fs::create_dir_all(&store_path).unwrap(); // store path is a dir, not a file
+        // store path is a dir, not a file
+        std::fs::create_dir_all(&store_path).unwrap();
         let repo = tmp.path().join("repo");
         std::fs::create_dir_all(&repo).unwrap();
         let key = canonicalize_or_owned(&repo);
@@ -1416,7 +1420,7 @@ mod tests {
         );
     }
 
-    // ── workspace_key registry collapse (kigi-managed worktrees) ─────────
+    // workspace_key registry collapse (kigi-managed worktrees)
 
     // Crate-shared env lock + env guards bundled as ONE value so the env restores
     // before the lock releases by struct field order (see lib.rs), regardless of

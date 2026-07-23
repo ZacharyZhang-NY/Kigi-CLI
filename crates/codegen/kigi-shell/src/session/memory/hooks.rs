@@ -87,7 +87,6 @@ pub fn on_session_end(
     let real_queries =
         crate::session::helpers::session_compact::extract_real_user_queries(conversation);
 
-    // Gate: skip sessions with too few real user prompts.
     if real_queries.len() < MIN_USER_MESSAGES {
         tracing::debug!(
             real_count = real_queries.len(),
@@ -97,7 +96,6 @@ pub fn on_session_end(
         return SessionEndResult::Skipped;
     }
 
-    // Gate: skip sessions whose real queries are too brief in aggregate.
     let total_bytes: usize = real_queries.iter().map(|q| q.len()).sum();
     if total_bytes < MIN_TOTAL_QUERY_BYTES {
         tracing::debug!(
@@ -114,10 +112,8 @@ pub fn on_session_end(
     let slug = slugify(first_real_query, 30);
     let slug = if slug.is_empty() { "session" } else { &slug };
 
-    // Generate a lightweight summary from conversation metadata (no LLM).
     let summary = generate_metadata_summary(conversation, &real_queries);
 
-    // Write to daily session log.
     let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
     match storage.write_daily_log(&date, slug, session_id, &summary, false) {
         Ok(path) => {
@@ -160,7 +156,6 @@ pub(crate) fn generate_metadata_summary(
         .filter(|item| matches!(item, ConversationItem::ToolResult(_)))
         .count();
 
-    // ── Assemble summary ─────────────────────────────────────────────────────
     let mut summary = String::new();
     summary.push_str("## Session Summary\n\n");
     summary.push_str(&format!(
@@ -238,10 +233,6 @@ mod tests {
         MemoryStorage::with_paths(global, workspace)
     }
 
-    // -----------------------------------------------------------------------
-    // Existing behaviour tests (updated for new signatures / semantics)
-    // -----------------------------------------------------------------------
-
     #[test]
     fn test_on_session_end_skips_short_sessions() {
         let tmp = TempDir::new().unwrap();
@@ -300,7 +291,6 @@ mod tests {
             "should write summary, got {result:?}"
         );
 
-        // Verify file was created.
         let files = storage.list_memory_files().unwrap();
         let session_files: Vec<_> = files
             .iter()
@@ -382,10 +372,6 @@ mod tests {
         assert!(summary.contains("first question"));
     }
 
-    // -----------------------------------------------------------------------
-    // Real-user-query extraction tests
-    // -----------------------------------------------------------------------
-
     /// `save_on_end = false` always skips — even for a long conversation.
     #[test]
     fn test_on_session_end_save_on_end_false_skips() {
@@ -431,9 +417,11 @@ mod tests {
         // The conversation has 2 User items, but the first is metadata-only
         // and the second is a real query.  Only 1 real prompt → still skipped.
         let conv = vec![
-            make_metadata_only(), // synthetic, no <user_query>
+            // synthetic, no <user_query>
+            make_metadata_only(),
             make_assistant("hi"),
-            make_user("help me with something"), // 1 real prompt
+            // 1 real prompt
+            make_user("help me with something"),
             make_assistant("sure"),
         ];
 
@@ -529,8 +517,9 @@ mod tests {
     /// auto-compaction must not be counted as a real user message, and must not
     /// appear in session-end topics.
     ///
-    /// This is the key regression test for the correctness fix: we use the
-    /// real stored text, not just the `"__auto_continue__"` request-id sentinel.
+    /// Uses the real stored prompt text rather than just the
+    /// `"__auto_continue__"` request-id sentinel, since that's what
+    /// old sessions actually contain after auto-compaction.
     #[test]
     fn test_actual_auto_continue_prompt_excluded() {
         use crate::session::helpers::session_compact::AUTO_CONTINUE_PROMPT;
@@ -567,7 +556,8 @@ mod tests {
 
         // Build a query that is > 100 chars when byte-counted but the 100th byte
         // falls inside a multi-byte sequence (emoji are 4 bytes each).
-        let emoji_query = "🦀".repeat(30); // 30 × 4 = 120 bytes, but 30 chars
+        // 30 × 4 = 120 bytes, but 30 chars.
+        let emoji_query = "🦀".repeat(30);
         assert!(emoji_query.len() > 100, "precondition: > 100 bytes");
 
         let conv = vec![
@@ -612,10 +602,6 @@ mod tests {
             "auto-continue sentinels must not count toward the real-message gate"
         );
     }
-
-    // -----------------------------------------------------------------------
-    // Summary format tests
-    // -----------------------------------------------------------------------
 
     /// Summary only contains Session Summary and Topics Discussed — no
     /// Tools Used or Files Touched sections (those are low-value noise).

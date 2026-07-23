@@ -1,4 +1,4 @@
-//! `web_search` tool — new architecture (`Tool` trait).
+//! `web_search` tool.
 //!
 //! Calls the Kimi search service (PRD F5; kimi-cli `tools/web/search.py`
 //! parity). Reads the pre-constructed `WebSearchClient` from Resources
@@ -9,10 +9,6 @@ use crate::implementations::web_search::client::WebSearchClient;
 use crate::types::output::WebSearchOutput;
 use crate::types::requirements::{Expr, ToolRequirement};
 use crate::types::tool::{ToolKind, ToolNamespace};
-
-// ───────────────────────────────────────────────────────────────────────────
-// Input
-// ───────────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct WebSearchInput {
@@ -36,10 +32,6 @@ pub struct WebSearchInput {
 /// kimi-cli search.py `Params.limit` default / bounds (default=5, ge=1, le=20).
 const DEFAULT_LIMIT: u8 = 5;
 const MAX_LIMIT: u8 = 20;
-
-// ───────────────────────────────────────────────────────────────────────────
-// Tool implementation
-// ───────────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Default)]
 pub struct WebSearchTool;

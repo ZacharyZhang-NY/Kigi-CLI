@@ -261,7 +261,7 @@ pub fn stream_responses<'a>(
                 }
 
                 // Continuation chunk for a streaming FunctionCall's args.
-                // Drop silently if no preceding OutputItemAdded mapped.
+                // Drop silently if no preceding `OutputItemAdded` mapped.
                 ResponseStreamEvent::ResponseFunctionCallArgumentsDelta(args_event) => {
                     let delta = args_event.delta;
                     if !delta.is_empty()
@@ -323,7 +323,7 @@ pub fn stream_responses<'a>(
                     return;
                 }
 
-                // ── Backend-hosted tool lifecycle events ────────────
+                // Backend-hosted tool lifecycle events
                 // These tools are executed server-side by the agentic
                 // sampler. We emit progress events so the shell/pager
                 // can show status to the user.
@@ -406,7 +406,7 @@ pub fn stream_responses<'a>(
             }
         }
 
-        // ── Build the final response ─────────────────────────────────
+        // Build the final response
         let mut response = match final_response {
             Some(r) => r,
             None => {
@@ -437,7 +437,7 @@ pub fn stream_responses<'a>(
         // (`deserialize_response_event`) has already rewritten
         // `u.total_tokens` to `context_details.input + output` when
         // the backend emits it; on older deployments the wire
-        // value passes through unchanged.
+        // value passes through `unchanged`.
         let usage = response.usage.as_ref().map(|u| TokenUsage {
             prompt_tokens: u.input_tokens,
             completion_tokens: u.output_tokens,
@@ -501,7 +501,8 @@ pub fn stream_responses<'a>(
             cost_usd_ticks,
             message_chunks_emitted: message_chunk_count,
             doom_loop_signals,
-            stop_message: None, // not reported on the Responses API
+            // not reported on the Responses API
+            stop_message: None,
         };
 
         yield SamplingEvent::Completed {
@@ -848,7 +849,7 @@ mod tests {
 
     #[tokio::test]
     async fn function_call_args_delta_without_added_event_is_dropped() {
-        // ArgumentsDelta with no preceding OutputItemAdded has no
+        // ArgumentsDelta with no preceding `OutputItemAdded` has no
         // output_index → tool_index mapping; drop silently.
         let events: Vec<Result<rs::ResponseStreamEvent, SamplingError>> = vec![
             Ok(function_call_args_delta_event(7, "{\"oops\":1}")),

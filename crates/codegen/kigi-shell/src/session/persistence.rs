@@ -55,19 +55,13 @@ use serde::{Deserialize, Serialize};
 pub struct BtwEntry {
     /// Unique ID for this side question.
     pub btw_session_id: String,
-    /// The parent session ID.
     pub parent_session_id: String,
-    /// When the question was asked.
     pub asked_at: DateTime<Utc>,
-    /// The user's question.
     pub question: String,
     /// The model's response (empty if failed).
     pub answer: String,
-    /// Model used.
     pub model: String,
-    /// Whether the request succeeded.
     pub success: bool,
-    /// Error message if failed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
@@ -170,8 +164,10 @@ mod feedback_tests {
 
         let json = serde_json::to_string(&entry).unwrap();
         assert!(json.contains(r#""type":"user_feedback""#));
-        assert!(!json.contains("dismissed")); // skip_serializing_if = is_false
-        assert!(!json.contains("requestId")); // skip_serializing_if = Option::is_none
+        // skip_serializing_if = is_false
+        assert!(!json.contains("dismissed"));
+        // skip_serializing_if = Option::is_none
+        assert!(!json.contains("requestId"));
 
         let parsed: LocalFeedbackEntry = serde_json::from_str(&json).unwrap();
         let LocalFeedbackEntry::UserFeedback(ref uf) = parsed;
@@ -219,7 +215,8 @@ mod feedback_tests {
 
         let json = serde_json::to_string(&entry).unwrap();
         assert!(json.contains(r#""dismissed":true"#));
-        assert!(!json.contains("submission")); // skip_serializing_if = Option::is_none
+        // skip_serializing_if = Option::is_none
+        assert!(!json.contains("submission"));
 
         let parsed: LocalFeedbackEntry = serde_json::from_str(&json).unwrap();
         let LocalFeedbackEntry::UserFeedback(ref uf) = parsed;
@@ -229,7 +226,6 @@ mod feedback_tests {
 
     #[test]
     fn test_feedback_jsonl_multi_line_roundtrip() {
-        // Simulate multiple entries written to a JSONL file
         let entries = vec![
             LocalFeedbackEntry::UserFeedback(UserFeedbackEntry {
                 submitted_at: chrono::Utc::now(),
@@ -251,7 +247,6 @@ mod feedback_tests {
             }),
         ];
 
-        // Serialize to JSONL
         let mut jsonl = String::new();
         for entry in &entries {
             let line = serde_json::to_string(entry).unwrap();
@@ -259,7 +254,6 @@ mod feedback_tests {
             jsonl.push('\n');
         }
 
-        // Deserialize each line
         let parsed: Vec<LocalFeedbackEntry> = jsonl
             .lines()
             .filter(|l| !l.is_empty())
@@ -270,7 +264,6 @@ mod feedback_tests {
         assert!(matches!(parsed[0], LocalFeedbackEntry::UserFeedback(_)));
         assert!(matches!(parsed[1], LocalFeedbackEntry::UserFeedback(_)));
 
-        // Verify the dismiss entry
         let LocalFeedbackEntry::UserFeedback(ref uf) = parsed[1];
         assert!(uf.dismissed);
         assert!(uf.solicited);
@@ -308,7 +301,6 @@ pub enum PersistenceMsg {
     PlanState(TodoState),
     /// Plan mode lifecycle state to persist
     PlanModeState(crate::session::plan_mode::PlanModeSnapshot),
-    /// A rewind point to persist
     RewindPoint(RewindPoint),
     /// Truncate rewind points from a specific prompt index (inclusive).
     /// Syncs the persisted file with the in-memory FileStateTracker after rewind.
@@ -329,7 +321,6 @@ pub enum PersistenceMsg {
         next_trace_turn: u64,
         request_id: Option<String>,
     },
-    /// Persist a snapshot of the session signals.
     Signals(SessionSignals),
     /// Persist announcement tracking state (MCP + skill announcement dedup).
     AnnouncementState(crate::session::announcement_state::AnnouncementState),
@@ -410,7 +401,7 @@ fn session_exists_for_cwd_in_root(session_id: &str, cwd: &str, sessions_root: &P
     is_persisted_session_dir(&session_path)
 }
 
-/// Find the local child session id that was previously restored from `remote_session_id`
+/// Find the local child session id that was already restored from `remote_session_id`
 /// in the given `cwd`.
 ///
 /// When a remote session is restored, a new local child is created with
@@ -435,7 +426,7 @@ pub fn find_local_child_for_remote(remote_session_id: &str, cwd: &str) -> Option
 ///
 /// Checks in order:
 ///   1. `session_id` exists directly under `cwd` → returns it as-is.
-///   2. A previously restored child of `session_id` exists → returns the child ID.
+///   2. An already-restored child of `session_id` exists → returns the child ID.
 ///   3. Neither found → returns `None` (caller should restore from remote).
 pub fn resolve_local_session(session_id: &str, cwd: &str) -> Option<String> {
     if session_exists_for_cwd(session_id, cwd) {
@@ -467,7 +458,7 @@ pub struct ResolvedLocalSession {
 ///
 /// The first cwd in `candidate_cwds` should be the exact current cwd so it
 /// gets priority. For each candidate, checks both direct session existence
-/// and previously-restored children.
+/// and already-restored children.
 ///
 /// Returns `None` when no local match exists in any candidate.
 pub fn resolve_local_session_for_repo(
@@ -1240,8 +1231,6 @@ mod generated_title_tests {
         assert_eq!(summary.git_root_dir.as_deref(), Some("/home/user/myrepo"));
     }
 
-    // ── display_title direct tests ──────────────────────────────────────
-
     #[test]
     fn display_title_returns_generated_title_when_set() {
         let mut summary = Summary::new(
@@ -1285,8 +1274,6 @@ mod generated_title_tests {
         summary.generated_title = None;
         assert_eq!(summary.display_title(), "session summary fallback");
     }
-
-    // ── title_is_manual / manual_title_opt ──────────────────────────────
 
     #[test]
     fn title_is_manual_round_trips_through_json() {
@@ -1993,11 +1980,9 @@ pub(crate) async fn new(
     let root_dir = kigi_home();
     let storage: Box<dyn StorageAdapter> = Box::new(JsonlStorageAdapter::with_root(root_dir));
 
-    // Initialize session in storage
     let mut summary = storage.init_session(info, model_id.clone()).await?;
     touch_worktree_for_session(info).await;
 
-    // Update model if different
     if summary.current_model_id != model_id {
         storage.update_current_model(info, &model_id).await?;
         summary.current_model_id = model_id;
@@ -2797,7 +2782,6 @@ mod find_summary_by_session_id_tests {
     fn skips_malformed_summary() {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().join("sessions");
-        // Write invalid JSON
         let dir = root.join("cwd1").join("bad-session");
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("summary.json"), b"not-json").unwrap();
@@ -3262,7 +3246,6 @@ mod find_local_child_tests {
         let cwd = "/project";
         let encoded = crate::util::kigi_home::encode_cwd_dirname(cwd);
 
-        // Older child — earlier timestamp.
         let old_dir = root.join(&encoded).join("old-child");
         fs::create_dir_all(&old_dir).unwrap();
         fs::write(
@@ -3271,7 +3254,6 @@ mod find_local_child_tests {
         )
         .unwrap();
 
-        // Newer child — later timestamp.
         let new_dir = root.join(&encoded).join("new-child");
         fs::create_dir_all(&new_dir).unwrap();
         fs::write(
@@ -3500,7 +3482,6 @@ mod repo_wide_resolution_tests {
         let exact_cwd = "/repo/main";
         let other_cwd = "/repo/worktree-1";
 
-        // Session only exists in other_cwd
         setup_session(&root, other_cwd, "sess-B");
 
         let result =
@@ -3539,7 +3520,6 @@ mod repo_wide_resolution_tests {
         let exact_cwd = "/repo/main";
         let other_cwd = "/repo/worktree-2";
 
-        // Restored child only in other_cwd
         setup_child_session(&root, other_cwd, "restored-child", "remote-sess");
 
         let result =

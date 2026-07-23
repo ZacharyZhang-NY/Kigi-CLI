@@ -1,9 +1,7 @@
 //! `CodexGrepFilesTool` — file-path-only regex search via ripgrep.
 //!
-//! This is a faithful port of `codex-rs/core/src/tools/handlers/grep_files.rs`.
-//! It returns **file paths only** (`--files-with-matches`), sorted by
-//! modification time. See the plan document for the full diff vs the
-//! kigi `GrepTool`.
+//! Faithful port of `codex-rs/core/src/tools/handlers/grep_files.rs`: returns
+//! file paths only (`--files-with-matches`), sorted by modification time.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -19,18 +17,12 @@ use crate::types::requirements::Expr;
 use crate::types::resources::Cwd;
 use crate::types::tool::{ToolKind, ToolNamespace};
 
-// ─── Constants ──────────────────────────────────────────────────────
-
 const DEFAULT_LIMIT: usize = 100;
 const MAX_LIMIT: usize = 2000;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 
-// ─── Description ────────────────────────────────────────────────────
-
 const DESCRIPTION: &str =
     "Finds files whose contents match the pattern and lists them by modification time.";
-
-// ─── Input ──────────────────────────────────────────────────────────
 
 fn default_limit() -> usize {
     DEFAULT_LIMIT
@@ -55,10 +47,6 @@ pub struct CodexGrepFilesInput {
     pub limit: usize,
 }
 
-// ─── Tool ───────────────────────────────────────────────────────────
-
-/// Codex-namespace grep_files tool — file-path-only regex search.
-///
 /// Shares `ToolKind::Search` with the kigi `GrepTool`. These tools are
 /// namespace-exclusive — consumers enable either `Kigi` or `Codex` search,
 /// never both simultaneously. This follows the same pattern as
@@ -67,10 +55,6 @@ pub struct CodexGrepFilesInput {
 #[derive(Debug, Default)]
 pub struct CodexGrepFilesTool;
 
-// ─── rg execution ───────────────────────────────────────────────────
-
-/// Run `rg --files-with-matches` and return matching file paths.
-///
 /// Direct port from `codex-rs/core/src/tools/handlers/grep_files.rs`.
 async fn run_rg_search(
     pattern: &str,
@@ -114,8 +98,6 @@ async fn run_rg_search(
     }
 }
 
-/// Parse newline-separated file paths from rg stdout.
-///
 /// Direct port from `codex-rs/core/src/tools/handlers/grep_files.rs`.
 fn parse_results(stdout: &[u8], limit: usize) -> Vec<String> {
     let mut results = Vec::new();
@@ -135,8 +117,6 @@ fn parse_results(stdout: &[u8], limit: usize) -> Vec<String> {
     }
     results
 }
-
-// ─── Tests ──────────────────────────────────────────────────────────
 
 impl crate::types::tool_metadata::ToolMetadata for CodexGrepFilesTool {
     fn kind(&self) -> ToolKind {
@@ -193,7 +173,6 @@ impl kigi_tool_runtime::Tool for CodexGrepFilesTool {
 
         let cwd = crate::types::tool_metadata::resolve_cwd(&ctx, &resources).await?;
 
-        // Validation (exact codex rules)
         let pattern = input.pattern.trim().to_string();
         if pattern.is_empty() {
             return Ok(CodexGrepFilesOutput::Error(
@@ -208,7 +187,6 @@ impl kigi_tool_runtime::Tool for CodexGrepFilesTool {
 
         let limit = input.limit.min(MAX_LIMIT);
 
-        // Resolve search path
         let search_path = match &input.path {
             Some(p) if !p.is_empty() => {
                 let p = PathBuf::from(p);
@@ -217,7 +195,6 @@ impl kigi_tool_runtime::Tool for CodexGrepFilesTool {
             _ => cwd.clone(),
         };
 
-        // Verify path exists
         if let Err(err) = tokio::fs::metadata(&search_path).await {
             return Ok(CodexGrepFilesOutput::Error(format!(
                 "unable to access `{}`: {err}",
@@ -225,7 +202,6 @@ impl kigi_tool_runtime::Tool for CodexGrepFilesTool {
             )));
         }
 
-        // Clean up include glob
         let include = input.include.as_deref().map(str::trim).and_then(|v| {
             if v.is_empty() {
                 None
@@ -234,7 +210,6 @@ impl kigi_tool_runtime::Tool for CodexGrepFilesTool {
             }
         });
 
-        // Run rg
         let results = run_rg_search(&pattern, include.as_deref(), &search_path, limit, &cwd).await;
 
         match results {
@@ -260,7 +235,6 @@ mod tests {
     use std::process::Command as StdCommand;
     use tempfile::TempDir;
 
-    /// Build a runtime `ToolCallContext` with the given resources.
     fn test_ctx(cwd: &Path) -> kigi_tool_runtime::ToolCallContext {
         let mut resources = Resources::new();
         resources.insert(Cwd(cwd.to_path_buf()));
@@ -275,9 +249,6 @@ mod tests {
             .map(|output| output.status.success())
             .unwrap_or(false)
     }
-
-    /// Build a runtime `ToolCallContext` with the given resources.
-    // ── Unit tests (parse_results) ──────────────────────────────
 
     #[test]
     fn parses_basic_results() {
@@ -315,8 +286,6 @@ mod tests {
         let parsed = parse_results(stdout, 10);
         assert!(parsed.is_empty());
     }
-
-    // ── Integration tests (run_rg_search) ───────────────────────
 
     #[tokio::test]
     async fn run_search_returns_results() {
@@ -379,8 +348,6 @@ mod tests {
             .unwrap();
         assert!(results.is_empty());
     }
-
-    // ── Tool-level tests ────────────────────────────────────────
 
     #[tokio::test]
     async fn tool_reports_empty_pattern_error() {
@@ -532,7 +499,8 @@ mod tests {
             pattern: "needle".to_string(),
             include: None,
             path: None,
-            limit: 5000, // exceeds MAX_LIMIT (2000)
+            // exceeds MAX_LIMIT (2000)
+            limit: 5000,
         };
 
         let result = kigi_tool_runtime::Tool::run(&tool, test_ctx(tmp.path()), input)

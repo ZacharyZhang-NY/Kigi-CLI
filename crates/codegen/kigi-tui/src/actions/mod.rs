@@ -134,15 +134,11 @@ pub enum ActionId {
 pub enum When {
     /// Global — checked at the app level after all views.
     Always,
-    /// Only when prompt pane is focused.
     PromptFocused,
-    /// Only when scrollback pane is focused.
     ScrollbackFocused,
     /// Agent-level — checked after pane routing, before global.
     AgentScreen,
-    /// Only on the welcome screen.
     WelcomeScreen,
-    /// Only when the Agent Dashboard view is focused.
     DashboardFocused,
     /// Only inside the dashboard's session overlay (a dashboard-spawned agent
     /// rendered fullscreen). Distinguishes the detail-view shortcuts (back to
@@ -175,13 +171,10 @@ pub struct ActionDef {
     /// Optional man-style help for the shortcuts cheatsheet detail/expand UI.
     /// Consumers should fall back to `description` when this is `None`.
     pub long_help: Option<&'static str>,
-    /// Default key binding
     pub default_key: KeyShortcut,
     /// Optional second key binding (e.g., j/k both shown as "j/k:nav")
     pub alt_keys: Vec<KeyShortcut>,
-    /// Category for grouping
     pub category: Category,
-    /// When this action is available
     pub context: When,
     /// Priority for shortcuts bar. None = don't show. Some(0) = highest priority.
     pub hint_priority: Option<u8>,
@@ -212,7 +205,6 @@ pub struct ActionRegistry {
 }
 
 impl ActionRegistry {
-    /// Create a registry with the given action definitions.
     pub fn new(actions: Vec<ActionDef>) -> Self {
         Self { actions }
     }
@@ -375,7 +367,6 @@ impl ActionRegistry {
         None
     }
 
-    /// Find an action definition by ID.
     pub fn find(&self, id: ActionId) -> Option<&ActionDef> {
         self.actions.iter().find(|d| d.id == id)
     }
@@ -642,16 +633,16 @@ mod tests {
             registry.lookup(&ctrl_m, When::PromptFocused),
             Some(ActionId::ToggleMultiline)
         );
-        // Former mouse-toggle dual bindings removed from scrollback.
+        // F9 is unbound on scrollback and agent.
         assert_eq!(registry.lookup(&f9, When::ScrollbackFocused), None);
         assert_eq!(registry.lookup(&f9, When::AgentScreen), None);
-        // Ctrl+Shift+M is no longer the voice chord — it resolves to nothing.
+        // Ctrl+Shift+M is unbound.
         assert_eq!(
             registry.lookup(&ctrl_shift_m, When::ScrollbackFocused),
             None
         );
         assert_eq!(registry.lookup(&ctrl_shift_m, When::Always), None);
-        // Ctrl+Space is no longer bound (the voice chord was removed).
+        // Ctrl+Space is unbound.
         assert_eq!(registry.lookup(&ctrl_space, When::Always), None);
         assert_eq!(registry.lookup(&ctrl_space, When::AgentScreen), None);
         let f8 = KeyEvent::new(KeyCode::F(8), KeyModifiers::NONE);

@@ -10,10 +10,6 @@ use crate::extensions::notification::{
 use crate::session::goal_tracker::{GoalOrchestration, GoalPhase, GoalStatus, GoalTracker};
 use crate::session::persistence::PersistenceMsg;
 
-// ---------------------------------------------------------------------------
-// GoalNotifySender — fire-and-forget notification sender
-// ---------------------------------------------------------------------------
-
 /// Lightweight notification sender for goal progress updates.
 ///
 /// Used by `SessionActor` to emit `GoalUpdated` notifications when the

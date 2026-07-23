@@ -125,7 +125,6 @@ async fn verb_group_fold_expand_collapse_pty() {
         "edit must stay a standalone separator row\nscreen:\n{}",
         harness.screen_contents()
     );
-    // Members of a folded run are hidden.
     assert!(
         !harness.contains_text("a2.txt"),
         "folded member must be hidden\nscreen:\n{}",

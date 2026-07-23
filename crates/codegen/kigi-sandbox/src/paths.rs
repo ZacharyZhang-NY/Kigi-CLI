@@ -8,14 +8,14 @@
 use std::path::Path;
 use std::path::PathBuf;
 
-// ── Kigi state directory ────────────────────────────────────────────────────
+// Kigi state directory
 
 /// Kigi state directory — always writable (`$KIGI_SHARE_DIR` or `~/.kigi`).
 pub(crate) fn kigi_home() -> PathBuf {
     kigi_config::kigi_home()
 }
 
-// ── Device files & directories ──────────────────────────────────────────────
+// Device files & directories
 
 /// Device files that need write access for normal tool operation.
 ///
@@ -27,22 +27,30 @@ pub(crate) fn kigi_home() -> PathBuf {
 /// `/dev/pts` is a directory (PTY slaves on Linux) so it uses `allow_path`.
 #[cfg(all(feature = "enforce", unix))]
 pub(crate) const DEVICE_FILES: &[&str] = &[
-    "/dev/null",    // output sink — used by virtually every CLI tool
-    "/dev/zero",    // zero source — used by memory allocators
-    "/dev/random",  // entropy — used by crypto/TLS
-    "/dev/urandom", // entropy — used by crypto/TLS
-    "/dev/tty",     // controlling terminal — used by git, ssh, gpg
-    "/dev/ptmx",    // PTY allocation — used by terminal spawning
-    "/dev/fd",      // file descriptor access (symlink to /proc/self/fd on Linux)
+    // output sink — used by virtually every CLI tool
+    "/dev/null",
+    // zero source — used by memory allocators
+    "/dev/zero",
+    // entropy — used by crypto/TLS
+    "/dev/random",
+    // entropy — used by crypto/TLS
+    "/dev/urandom",
+    // controlling terminal — used by git, ssh, gpg
+    "/dev/tty",
+    // PTY allocation — used by terminal spawning
+    "/dev/ptmx",
+    // file descriptor access (symlink to /proc/self/fd on Linux)
+    "/dev/fd",
 ];
 
 /// Device directories that need write access.
 #[cfg(all(feature = "enforce", unix))]
 pub(crate) const DEVICE_DIRS: &[&str] = &[
-    "/dev/pts", // PTY slaves (Linux)
+    // PTY slaves (Linux)
+    "/dev/pts",
 ];
 
-// ── Temporary directories ───────────────────────────────────────────────────
+// Temporary directories
 
 /// Temporary directories that need write access.
 ///
@@ -77,7 +85,7 @@ pub(crate) fn temp_writable_paths() -> Vec<PathBuf> {
     paths
 }
 
-// ── Essential writable paths ────────────────────────────────────────────────
+// Essential writable paths
 
 /// Writable directory paths for profiles that allow workspace writes (workspace, devbox, strict).
 /// Device files are handled separately via `allow_file` in `to_capability_set_with_config`.

@@ -14,14 +14,12 @@ pub struct PromptBlockMeta {
 }
 
 impl PromptBlockMeta {
-    /// Create meta for a direct bash command.
     pub fn bash(command: impl Into<String>) -> Self {
         Self {
             bash_command: Some(command.into()),
         }
     }
 
-    /// Try to parse from a freeform `_meta` map.
     pub fn from_value(value: &agent_client_protocol::Meta) -> Option<Self> {
         serde_json::from_value(serde_json::Value::Object(value.clone())).ok()
     }

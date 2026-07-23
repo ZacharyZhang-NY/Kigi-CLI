@@ -20,9 +20,9 @@ pub const MAX_SKILL_WALK_DEPTH: usize = 5;
 
 /// Subdirectory names that contain skill definitions.
 ///
-/// `skills` is the standard layout (`.kigi/skills/`, `.claude/skills/`,
-/// `.cursor/skills/`). The product-specific `skills-cursor/` layout is no
-/// longer scanned — it pulled vendor default skills into Kigi sessions.
+/// Only `skills` (the standard `.kigi/skills/`, `.claude/skills/`,
+/// `.cursor/skills/` layout) is scanned. The product-specific `skills-cursor/`
+/// layout is excluded because it pulls vendor default skills into Kigi sessions.
 const SKILL_SUBDIRS: &[&str] = &["skills"];
 
 /// Cursor ships these default skills in `~/.cursor/skills-cursor/`
@@ -836,9 +836,8 @@ pub fn parse_skill_files(skill_files: Vec<(PathBuf, SkillScope)>) -> Vec<SkillIn
 /// `[skills] ignore` to hide a path. Compat loaders likewise load project
 /// `.claude/commands` even when ignored.
 ///
-/// `.cursor/` is intentionally NOT scanned in this dynamic path — it never was
-/// historically, and preserving that keeps default behavior byte-for-byte. The
-/// `.cursor` skills toggle only governs the startup discovery dir list.
+/// `.cursor/` is intentionally NOT scanned in this dynamic path; the `.cursor`
+/// skills toggle only governs the startup discovery dir list.
 ///
 /// Returns raw `SkillInfo` without surface-specific filtering.
 /// Ordering: deepest-first so deeper local skills take precedence.
@@ -1014,7 +1013,8 @@ mod tests {
                 "description: |\n",
                 "  Real block description.\n",
                 "tags: a\n",
-                "  nested: b\n", // indented under a scalar -> YAML fails -> recovery path
+                // indented under a scalar -> YAML fails -> recovery path
+                "  nested: b\n",
                 "---\n",
                 "\n",
                 "Body paragraph wins.\n",
@@ -1036,12 +1036,14 @@ mod tests {
                 "name: at\n",
                 "description: Real desc.\n",
                 "allowed-tools: [Bash, Edit]\n",
-                "  bad: indent\n", // forces YAML failure -> recovery path
+                // forces YAML failure -> recovery path
+                "  bad: indent\n",
                 "---\n\nBody.\n",
             ),
         );
         assert_eq!(skill.description, "Real desc.");
-        assert!(skill.allowed_tools.is_none()); // not mangled from the broken list
+        // not mangled from the broken list
+        assert!(skill.allowed_tools.is_none());
     }
 
     #[test]
@@ -1054,7 +1056,8 @@ mod tests {
                 "---\n",
                 "name: ic\n",
                 "description: Does X # internal note\n",
-                "  Use when: y\n", // indented -> YAML fails -> recovery path
+                // indented -> YAML fails -> recovery path
+                "  Use when: y\n",
                 "---\n\nBody.\n",
             ),
         );
@@ -1121,7 +1124,8 @@ mod tests {
         );
         assert_eq!(skill.description, "Deploy: push to prod");
         assert_eq!(skill.when_to_use.as_deref(), Some("trig"));
-        assert!(!skill.user_invocable); // only literal `true` is true; `yes` → false
+        // only literal `true` is true; `yes` → false
+        assert!(!skill.user_invocable);
         assert_eq!(
             skill.allowed_tools,
             Some(vec!["bash".into(), "grep".into()])
@@ -1251,7 +1255,8 @@ description: Create a git commit
         let parsed = parse_skill_frontmatter(&content, None).unwrap();
         let wtu = parsed.when_to_use.unwrap();
         assert_eq!(wtu.chars().count(), MAX_DESCRIPTION_LEN);
-        assert!(wtu.len() > MAX_DESCRIPTION_LEN); // byte length exceeds char-count cap
+        // byte length exceeds char-count cap
+        assert!(wtu.len() > MAX_DESCRIPTION_LEN);
     }
 
     #[test]
@@ -1374,8 +1379,6 @@ model: test-model
         assert_eq!(skills[0].name, "narrate-crash-video");
     }
 
-    // ── skills-cursor removal ──────────────────────────────
-
     #[test]
     fn skill_subdirs_no_longer_includes_skills_cursor() {
         assert_eq!(SKILL_SUBDIRS, &["skills"]);
@@ -1386,7 +1389,7 @@ model: test-model
     fn find_skill_paths_ignores_skills_cursor_layout() {
         let tmp = tempfile::tempdir().unwrap();
         let cursor_dir = tmp.path().join(".cursor");
-        // Cursor product layout: scanned no longer.
+        // Cursor product layout: not scanned.
         let legacy = cursor_dir.join("skills-cursor").join("babysit");
         std::fs::create_dir_all(&legacy).unwrap();
         std::fs::write(legacy.join("SKILL.md"), "---\nname: babysit\n---\n").unwrap();
@@ -1406,8 +1409,6 @@ model: test-model
             "skills-cursor layout must no longer be scanned: {strs:?}"
         );
     }
-
-    // ── vendor-default skill denylist ──────────────────────
 
     #[test]
     fn is_vendor_default_skill_matches_builtins_under_vendor_dir() {
@@ -1501,8 +1502,6 @@ model: test-model
         let skills = parse_skill_files(vec![(cursor_skill.join("SKILL.md"), SkillScope::User)]);
         assert_eq!(skills.len(), 1, "user cursor skill must be kept");
     }
-
-    // ── discover_skills_for_paths vendor gating ────────────
 
     #[test]
     fn discover_skills_for_paths_gates_claude_dir() {

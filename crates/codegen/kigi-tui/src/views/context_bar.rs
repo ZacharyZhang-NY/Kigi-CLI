@@ -13,10 +13,6 @@ use ratatui::text::{Line, Span};
 use super::progress_bar::progress_bar_spans;
 use crate::theme::Theme;
 
-// ---------------------------------------------------------------------------
-// Formatting utilities
-// ---------------------------------------------------------------------------
-
 /// Format a percentage as a fixed-width 5-char string.
 ///
 /// - `< 10`:  `"X.XX%"` (e.g. `"0.00%"`, `"5.12%"`)
@@ -52,10 +48,6 @@ pub fn fmt_tokens(n: u64) -> String {
         format!("{}M", n / 1_000_000)
     }
 }
-
-// ---------------------------------------------------------------------------
-// Color blending
-// ---------------------------------------------------------------------------
 
 /// A breakpoint for color blending: at `pct` percent, the bar color is `color`.
 #[derive(Debug, Clone, Copy)]
@@ -146,23 +138,13 @@ fn color_to_rgb(c: Color) -> (u8, u8, u8) {
     crate::render::color::resolve_to_rgb(c).unwrap_or((198, 198, 198))
 }
 
-// ---------------------------------------------------------------------------
-// Status bar separator
-// ---------------------------------------------------------------------------
-
 /// The separator character between status bar items.
 pub const SEPARATOR: &str = "│";
-
-// ---------------------------------------------------------------------------
-// Context bar line builder
-// ---------------------------------------------------------------------------
 
 /// Width of the percentage field on hover (`fmt_pct5` always returns 5 chars).
 const PCT_WIDTH: u16 = 5;
 /// Width of the gap between the progress bar and the percentage on hover.
 const BAR_PCT_GAP: u16 = 1;
-
-// BAR_BG removed — use theme.bg_highlight directly (already quantized).
 
 /// Build the context usage bar as a `Line<'static>`.
 ///
@@ -243,10 +225,6 @@ pub fn context_bar_line_for_session(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -261,7 +239,7 @@ mod tests {
     #[test]
     fn test_fmt_pct5_10_to_99() {
         assert_eq!(fmt_pct5(10.0), "10.0%");
-        assert_eq!(fmt_pct5(20.16), "20.2%"); // rounds
+        assert_eq!(fmt_pct5(20.16), "20.2%");
         assert_eq!(fmt_pct5(99.9), "99.9%");
     }
 
@@ -289,7 +267,7 @@ mod tests {
     #[test]
     fn test_fmt_tokens_thousands() {
         assert_eq!(fmt_tokens(1_200), "1.2K");
-        assert_eq!(fmt_tokens(9_960), "10.0K"); // rounds up
+        assert_eq!(fmt_tokens(9_960), "10.0K");
         assert_eq!(fmt_tokens(9_940), "9.9K");
         assert_eq!(fmt_tokens(12_000), "12K");
         assert_eq!(fmt_tokens(123_000), "123K");

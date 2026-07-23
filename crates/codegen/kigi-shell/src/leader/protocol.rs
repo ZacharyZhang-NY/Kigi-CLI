@@ -5,7 +5,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use crate::cpu_profile::{ControlError, ProfileArtifactFormat};
 
-const MAX_MESSAGE_SIZE: u32 = 64 * 1024 * 1024; // 64MB
+const MAX_MESSAGE_SIZE: u32 = 64 * 1024 * 1024;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProtocolError {
@@ -73,22 +73,14 @@ where
 }
 
 /// Unique identifier for a connected client.
-///
-/// Each client gets a unique ID when connecting to the leader server.
-/// IDs are monotonically increasing and wrap around at u64::MAX.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ClientId(pub u64);
 
 impl ClientId {
-    /// Generate a new unique client ID.
-    ///
-    /// Uses an atomic counter that wraps around at u64::MAX.
-    /// While collisions are theoretically possible after 2^64 IDs,
-    /// this is practically impossible in real-world usage.
     pub fn new() -> Self {
         use std::sync::atomic::{AtomicU64, Ordering};
         static COUNTER: AtomicU64 = AtomicU64::new(1);
-        // Use wrapping_add to handle overflow gracefully
+        // Never yield 0: the counter starts at 1 and skips it on wraparound.
         let id = COUNTER.fetch_add(1, Ordering::Relaxed);
         Self(if id == 0 {
             COUNTER.fetch_add(1, Ordering::Relaxed)
@@ -109,16 +101,12 @@ impl Default for ClientId {
 #[serde(rename_all = "snake_case")]
 pub enum ClientMode {
     /// Stdio mode (kigi agent stdio, kigi -p) - uses local IPC.
-    /// Client sends/receives ACP messages directly via IPC.
     Stdio,
 }
 
-/// Client capabilities reported during registration.
-///
-/// These capabilities are used by the leader to customize behavior for each client,
-/// such as injecting settings into session requests.
 pub const LEADER_PROTOCOL_VERSION: u32 = 1;
 
+/// Client capabilities reported during registration.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ClientCapabilities {
     /// Auto-approve all tool executions without confirmation (YOLO mode).
@@ -264,7 +252,6 @@ pub enum ControlPayload {
 pub enum ClientMessage {
     Register {
         client_type: String,
-        /// Client mode determines how leader handles this client's communication
         mode: ClientMode,
         #[serde(default)]
         capabilities: ClientCapabilities,
@@ -281,14 +268,6 @@ pub enum ClientMessage {
 }
 
 /// Reason for a planned leader shutdown, sent with [`ServerMessage::ShuttingDown`].
-///
-/// ## Runtime status
-///
-/// | Variant | Emitted today? | Notes |
-/// |---------|---------------|-------|
-/// | `AutoUpdate` | **Yes** — when `run_auto_update_checker` triggers shutdown | |
-/// | `Manual` | **Yes** — default for SIGTERM, test cancellation, all other paths | |
-/// | `IdleTimeout` | **No** — reserved for a future idle-timeout feature | |
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ShutdownReason {
@@ -445,7 +424,6 @@ mod tests {
     async fn rejects_oversized_messages() {
         let (mut client, mut server) = duplex(1024);
 
-        // Write a length header claiming a huge message
         client
             .write_all(&(MAX_MESSAGE_SIZE + 1).to_be_bytes())
             .await
@@ -601,8 +579,6 @@ mod tests {
         assert_eq!(unique.len(), 100);
     }
 
-    // --- ShuttingDown / ShutdownReason tests ---
-
     #[tokio::test]
     async fn shutting_down_message_roundtrip() {
         let (mut client, mut server) = duplex(1024);
@@ -634,7 +610,6 @@ mod tests {
         let manual = serde_json::to_string(&ShutdownReason::Manual).unwrap();
         assert_eq!(manual, "\"manual\"");
 
-        // Verify deserialization
         let parsed: ShutdownReason = serde_json::from_str("\"auto_update\"").unwrap();
         assert_eq!(parsed, ShutdownReason::AutoUpdate);
     }

@@ -184,9 +184,9 @@ fn stashed_model_keeps_model_when_unsupported() {
 
 #[test]
 fn effort_max_rejected_when_model_offers_no_max() {
-    // Since the Xhigh/Max split, "max" is its own canonical level — a model
-    // whose menu has no max-valued option rejects it with the offered list
-    // (previously the parse alias silently rode it onto the xhigh option).
+    // "max" is its own canonical level, distinct from "xhigh": a model
+    // whose menu has no max-valued option rejects it with the offered
+    // list rather than falling back to the xhigh option.
     let models = models_with_current(true);
     let out = take_deferred_model_switch(None, &models, Some("max"));
     assert_eq!(

@@ -25,7 +25,6 @@ pub enum FileEvent {
 
     /// A file was renamed/moved.
     Renamed {
-        /// Original path.
         from: PathBuf,
         /// New path.
         to: PathBuf,
@@ -49,7 +48,8 @@ impl FileEvent {
             FileEvent::Created { .. } => true,
             FileEvent::Modified { .. } => true,
             FileEvent::Deleted { .. } => false,
-            FileEvent::Renamed { .. } => false, // Only path update needed
+            // Only path update needed
+            FileEvent::Renamed { .. } => false,
         }
     }
 

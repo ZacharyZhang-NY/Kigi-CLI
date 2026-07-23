@@ -10,7 +10,7 @@ const CTRL_BACKSLASH: &[u8] = b"\x1b[92;5u";
 /// Attach the (only) agent row as a session overlay from the dashboard list.
 /// Down clamps at the last focusable, so three Downs land on the row regardless
 /// of the current cursor (fresh open = New Agent button; after a back-out =
-/// previously-selected row); Enter then attaches the peeked row. Waits until the
+/// the row selected before it); Enter then attaches the peeked row. Waits until the
 /// overlay is up: the dashboard list ("+ New Agent") is gone and the agent's
 /// transcript (MOCKRESPONSE) is shown.
 fn attach_overlay(h: &mut PtyHarness) {

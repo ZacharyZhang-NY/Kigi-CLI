@@ -1,9 +1,6 @@
 use super::support::create_test_actor;
 use super::*;
 
-/// Test that PromptContext can round-trip through JSON serialization,
-/// matching the save/load format used by `save_prompt_context` and
-/// `load_prompt_context`.
 #[test]
 fn test_json_round_trip() {
     let ctx = kigi_agent::PromptContext {
@@ -16,10 +13,9 @@ fn test_json_round_trip() {
     assert_eq!(loaded.version, 1);
 }
 
-/// Test that PromptContext survives a JSON write-to-disk / read-from-disk
-/// cycle with field-level fidelity. This exercises serde + filesystem I/O
-/// but not the `save_prompt_context`/`load_prompt_context` wrappers (which
-/// depend on `kigi_home()` and `SessionInfo` path encoding).
+/// Exercises serde + filesystem I/O directly, not the
+/// `save_prompt_context`/`load_prompt_context` wrappers, which depend on
+/// `kigi_home()` and `SessionInfo` path encoding.
 #[test]
 fn test_json_round_trip_via_filesystem() {
     let tmp = tempfile::tempdir().unwrap();
@@ -28,12 +24,10 @@ fn test_json_round_trip_via_filesystem() {
 
     let ctx = kigi_agent::PromptContext::default();
 
-    // Write directly (mimicking save_prompt_context's logic)
     let path = session_dir.join(PROMPT_CONTEXT_FILENAME);
     let json = serde_json::to_string_pretty(&ctx).unwrap();
     std::fs::write(&path, &json).unwrap();
 
-    // Read back
     let read_json = std::fs::read_to_string(&path).unwrap();
     let loaded: kigi_agent::PromptContext = serde_json::from_str(&read_json).unwrap();
 
@@ -61,7 +55,6 @@ fn test_system_prompt_write_and_read() {
 #[test]
 fn test_system_prompt_is_plain_text_not_json() {
     let prompt = "You are a Kigi subagent.";
-    // system_prompt.txt is raw text, NOT JSON-encoded.
     assert!(!prompt.starts_with('"'), "must not be JSON-quoted");
     assert!(!prompt.starts_with('{'), "must not be JSON object");
 }
@@ -72,7 +65,6 @@ fn test_canonical_artifacts_coexist() {
     let session_dir = tmp.path().join("session-artifacts");
     std::fs::create_dir_all(&session_dir).unwrap();
 
-    // Write both canonical artifacts.
     let prompt = "You are a test subagent.";
     let ctx = kigi_agent::PromptContext {
         ..Default::default()
@@ -85,7 +77,6 @@ fn test_canonical_artifacts_coexist() {
     )
     .unwrap();
 
-    // Both files exist and are independently readable.
     assert!(session_dir.join(SYSTEM_PROMPT_FILENAME).exists());
     assert!(session_dir.join(PROMPT_CONTEXT_FILENAME).exists());
 
@@ -99,8 +90,6 @@ fn test_canonical_artifacts_coexist() {
     assert_eq!(read_ctx.version, 1);
 }
 
-/// Core invariant: `system_prompt.txt` must match the first System
-/// entry in `chat_history.jsonl`.
 #[test]
 fn test_system_prompt_matches_chat_history_system_message() {
     let tmp = tempfile::tempdir().unwrap();
@@ -109,10 +98,8 @@ fn test_system_prompt_matches_chat_history_system_message() {
 
     let system_prompt = "You are a Kigi subagent.\n\n<tool_calling>\n...";
 
-    // Write system_prompt.txt (same string used for chat_history).
     std::fs::write(session_dir.join(SYSTEM_PROMPT_FILENAME), system_prompt).unwrap();
 
-    // Simulate chat_history.jsonl first entry.
     let entry = serde_json::json!({ "role": "system", "content": system_prompt });
     std::fs::write(
         session_dir.join("chat_history.jsonl"),
@@ -120,7 +107,6 @@ fn test_system_prompt_matches_chat_history_system_message() {
     )
     .unwrap();
 
-    // Verify byte-identity.
     let file_prompt = std::fs::read_to_string(session_dir.join(SYSTEM_PROMPT_FILENAME)).unwrap();
     let chat_json = std::fs::read_to_string(session_dir.join("chat_history.jsonl")).unwrap();
     let first_line: serde_json::Value =
@@ -133,7 +119,6 @@ fn test_system_prompt_matches_chat_history_system_message() {
     );
 }
 
-/// Test that missing file gracefully returns None (simulating old sessions).
 #[test]
 fn test_missing_file_deserializes_as_none() {
     let tmp = tempfile::tempdir().unwrap();
@@ -144,7 +129,6 @@ fn test_missing_file_deserializes_as_none() {
     assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::NotFound);
 }
 
-/// Test that corrupt JSON gracefully returns a deserialization error.
 #[test]
 fn test_corrupt_json_returns_error() {
     let tmp = tempfile::tempdir().unwrap();
@@ -155,8 +139,6 @@ fn test_corrupt_json_returns_error() {
     let result: Result<kigi_agent::PromptContext, _> = serde_json::from_str(&json);
     assert!(result.is_err(), "corrupt JSON should fail to deserialize");
 }
-
-// ── Canonical artifact load tests ───────────────────────────────────
 
 #[test]
 fn test_load_system_prompt_returns_content_when_present() {
@@ -233,9 +215,8 @@ fn test_load_prompt_context_returns_none_for_corrupt_json() {
     );
 }
 
-// ── Large-prompt truncation: maybe_truncate_large_prompt_with_skills ────
-//
-// Oversized prompts are offloaded to an owner-only file; the bounding logic is
+// Large-prompt truncation for `maybe_truncate_large_prompt_with_skills`:
+// oversized prompts are offloaded to an owner-only file; the bounding logic is
 // the pure `build_truncated_prompt_message` helper, tested directly below.
 
 // Distinctive markers so head/middle/tail are individually assertable.
@@ -246,7 +227,6 @@ fn fake_prompt_path() -> std::path::PathBuf {
     std::path::PathBuf::from("/tmp/kigi-test-home/sessions/cwd/sid/prompts/prompt_0.txt")
 }
 
-/// `truncate_bytes_suffix` keeps a char-boundary-safe suffix (multibyte-safe).
 #[test]
 fn truncate_bytes_suffix_is_utf8_safe() {
     assert_eq!(truncate_bytes_suffix("hello", 5), "hello");
@@ -259,7 +239,6 @@ fn truncate_bytes_suffix_is_utf8_safe() {
     assert!(std::str::from_utf8(out.as_bytes()).is_ok());
 }
 
-/// `bound_head_tail`: input when it fits, else head+marker+tail within budget.
 #[test]
 fn bound_head_tail_boundary_and_utf8() {
     // At budget → unchanged (`<=`).
@@ -274,16 +253,14 @@ fn bound_head_tail_boundary_and_utf8() {
         out.len()
     );
     assert!(out.contains(ELISION_MARKER));
-    // Multibyte: no panic, within budget.
-    let mb = "🎉".repeat(5_000); // 20_000 bytes
+    // Multibyte (20_000 bytes): no panic, within budget.
+    let mb = "🎉".repeat(5_000);
     let out_mb = bound_head_tail(&mb, 8_000);
     assert!(out_mb.len() <= 8_000);
     assert!(out_mb.starts_with('🎉'));
     assert!(out_mb.ends_with('🎉'));
 }
 
-/// (a) Oversized query: the bounded message keeps a HEAD and a TAIL (trailing
-/// question survives), elides the middle; full body never inlined.
 #[test]
 fn build_truncated_keeps_query_head_and_tail() {
     let path = fake_prompt_path();
@@ -328,7 +305,6 @@ fn build_truncated_keeps_query_head_and_tail() {
     );
 }
 
-/// (b) Large context + small query: query intact, context truncated.
 #[test]
 fn build_truncated_preserves_small_query_truncates_context() {
     let path = fake_prompt_path();
@@ -350,7 +326,7 @@ fn build_truncated_preserves_small_query_truncates_context() {
     assert!(message.len() <= TRUNCATED_PROMPT_PREFIX_SIZE);
 }
 
-/// Both query and context oversized (the 80/20 split arm): both bounded, neither full body inlined.
+/// The 80/20 split arm: both query and context bounded, neither body inlined.
 #[test]
 fn build_truncated_both_oversized_keeps_bounded_heads() {
     let path = fake_prompt_path();
@@ -390,7 +366,8 @@ fn build_truncated_both_oversized_keeps_bounded_heads() {
     );
 }
 
-/// Compat-harness ordering: context + notice first, query block last.
+/// Compat-harness (`cursor = true`) ordering: context + notice first, query
+/// block last.
 #[test]
 fn build_truncated_cursor_ordering() {
     let path = fake_prompt_path();
@@ -420,7 +397,8 @@ fn build_truncated_cursor_ordering() {
     assert!(message.len() <= TRUNCATED_PROMPT_PREFIX_SIZE);
 }
 
-/// Skills survive inline even when the query is oversized (own reservation).
+/// Skills have their own inline budget reservation, so they survive even when
+/// the query is oversized.
 #[test]
 fn build_truncated_preserves_skill_information() {
     let path = fake_prompt_path();
@@ -443,12 +421,10 @@ fn build_truncated_preserves_skill_information() {
     assert!(message.len() <= TRUNCATED_PROMPT_PREFIX_SIZE);
 }
 
-/// A skill over `SKILL_INLINE_BUDGET` is bounded head+tail; full body not inlined.
 #[test]
 fn build_truncated_bounds_oversized_skill_head_and_tail() {
     let path = fake_prompt_path();
     let query = "short query".to_string();
-    // Skill well over the 4 KB budget, with distinct head/tail markers.
     let skills = format!(
         "SKILLHEAD_TOKEN {} SKILLTAIL_TOKEN",
         "S".repeat(SKILL_INLINE_BUDGET * 2)
@@ -479,12 +455,12 @@ fn build_truncated_bounds_oversized_skill_head_and_tail() {
     assert!(message.len() <= TRUNCATED_PROMPT_PREFIX_SIZE);
 }
 
-/// Multibyte query + context: bounding must not panic, stays within budget.
 #[test]
 fn build_truncated_multibyte_no_panic() {
     let path = fake_prompt_path();
-    let query = "路".repeat(LARGE_PROMPT_THRESHOLD); // 3 bytes each → oversized
-    let context = "🎉".repeat(LARGE_PROMPT_THRESHOLD); // 4 bytes each → oversized
+    // "路" is 3 bytes and "🎉" is 4 bytes each, so both exceed the byte threshold.
+    let query = "路".repeat(LARGE_PROMPT_THRESHOLD);
+    let context = "🎉".repeat(LARGE_PROMPT_THRESHOLD);
     let full = crate::session::prompt_parser::ParsedPrompt::assemble_parts_with_skills(
         &context, &query, "", false,
     );
@@ -495,7 +471,6 @@ fn build_truncated_multibyte_no_panic() {
     assert!(message.contains(OFFLOAD_NOTICE_MARKER));
 }
 
-/// The offload notice reports bytes, the marker, the path, and `read_file`.
 #[test]
 fn build_offload_notice_reports_bytes_marker_and_path() {
     let path = fake_prompt_path();
@@ -506,13 +481,11 @@ fn build_offload_notice_reports_bytes_marker_and_path() {
     assert!(notice.contains("read_file"));
 }
 
-// ── Method gate + call-site wiring (hermetic) ───────────────────────────
-//
-// `kigi_home()` is a process-wide `OnceLock`, so the real async method is
-// only exercised for the no-offload gate; the offload + fallback wiring is
-// covered via the injected-writer seam.
+// `kigi_home()` is a process-wide `OnceLock`, so the real async method is only
+// exercised for the no-offload gate; the offload + fallback wiring is covered
+// via the injected-writer seam.
 
-/// Threshold gate: a prompt exactly at `LARGE_PROMPT_THRESHOLD` is returned unchanged, no file.
+/// A prompt exactly at `LARGE_PROMPT_THRESHOLD` is returned unchanged, no file.
 #[tokio::test(flavor = "current_thread")]
 async fn maybe_truncate_at_threshold_returns_unchanged_no_file() {
     let local = tokio::task::LocalSet::new();
@@ -543,8 +516,9 @@ async fn maybe_truncate_at_threshold_returns_unchanged_no_file() {
         .await;
 }
 
-/// Call-site wiring (injected-writer seam): success → bounded message + `Some(path)`;
-/// write failure → the SAME bounded message + `None` (never the oversized original).
+/// Injected-writer seam: success returns the bounded message + `Some(path)`; a
+/// write failure returns the bounded excerpt with the notice rewritten + `None`,
+/// never the oversized original.
 #[test]
 fn write_offload_and_build_wires_offload_and_fallback() {
     let temp = tempfile::tempdir().unwrap();
@@ -626,8 +600,8 @@ fn write_offload_and_build_wires_offload_and_fallback() {
     );
 }
 
-/// `strip_offload_notice` swaps the exact file-referencing notice for the no-file
-/// failure notice, and is a no-op when the notice is absent (defensive).
+/// `strip_offload_notice` swaps the file-referencing notice for the no-file
+/// failure notice, and is a no-op when the notice is absent.
 #[test]
 fn strip_offload_notice_swaps_notice_for_no_file_text() {
     let path = fake_prompt_path();
@@ -657,8 +631,9 @@ fn strip_offload_notice_swaps_notice_for_no_file_text() {
     );
 }
 
-/// Compat-harness ordering puts the notice MID-message (before the trailing query block);
-/// a write failure must strip it in place without discarding that query block.
+/// Compat-harness ordering puts the notice mid-message, before the trailing
+/// query block; a write failure must strip it in place without discarding that
+/// query block.
 #[test]
 fn write_offload_failure_strips_cursor_midmessage_notice() {
     let temp = tempfile::tempdir().unwrap();

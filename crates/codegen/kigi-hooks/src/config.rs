@@ -277,7 +277,8 @@ pub fn parse_hook_file(content: &str, file_path: &Path) -> (Vec<HookSpec>, Vec<H
     // Step 2: extract only the "hooks" key. If absent, the file has no hooks.
     let hooks_value = match top_level.get("hooks") {
         Some(v) => v.clone(),
-        None => return (specs, errors), // No hooks key — not an error, just no hooks.
+        // No hooks key — not an error, just no hooks.
+        None => return (specs, errors),
     };
 
     let hooks_map: HooksMap = match HooksMap::from_value(hooks_value) {
@@ -517,7 +518,8 @@ mod tests {
         assert_eq!(s.event, HookEventName::PreToolUse);
         assert!(s.matcher.is_some());
         assert!(s.enabled);
-        assert_eq!(s.timeout_ms, 2000); // 2 seconds → 2000 ms
+        // 2 seconds → 2000 ms
+        assert_eq!(s.timeout_ms, 2000);
         assert_eq!(s.command, Some(PathBuf::from("bin/check.sh")));
     }
 
@@ -554,7 +556,8 @@ mod tests {
         }"#;
         let (specs, errors) = parse_hook_file(json, Path::new("/tmp/test.json"));
         assert!(errors.is_empty());
-        assert!(specs[0].matcher.is_none()); // empty string → None → match all
+        // empty string → None → match all
+        assert!(specs[0].matcher.is_none());
     }
 
     #[test]
@@ -1072,7 +1075,7 @@ mod tests {
         );
     }
 
-    /// `matcher` is intentionally NOT env-expanded. A
+    /// `matcher` is deliberately NOT env-expanded. A
     /// matcher with `$VAR` must store the literal `$VAR` (anchored as
     /// part of the regex by `HookMatcher::new`). A future contributor
     /// adding "completeness" here would break regex semantics.

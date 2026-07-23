@@ -21,8 +21,6 @@ use kigi_tools::computer::types::{
 };
 use kigi_tools::notification::types::ToolNotificationHandle;
 
-// ── Tracked task state ───────────────────────────────────────────────
-
 struct TrackedTask {
     command: String,
     display_command: Option<String>,
@@ -84,8 +82,6 @@ impl TrackedTask {
 }
 
 type TaskMap = Arc<Mutex<HashMap<String, TrackedTask>>>;
-
-// ── Exit watcher ─────────────────────────────────────────────────────
 
 /// Spawned per background task. Blocks on `WaitForTerminalExitRequest`,
 /// then fetches final output, emits `TaskCompleted`, and releases the
@@ -169,8 +165,6 @@ async fn watch_for_exit(
         .await;
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────
-
 /// Poll `TerminalOutputRequest` at 500ms intervals until `exit_status` is
 /// present, a deadline is hit, or 60 consecutive gateway errors occur.
 /// Returns `true` when an exit was detected.
@@ -247,8 +241,6 @@ fn parse_exit(status: &Option<acp::TerminalExitStatus>) -> (Option<i32>, Option<
         None => (None, None),
     }
 }
-
-// ── Adapter ──────────────────────────────────────────────────────────
 
 /// Wraps kigi-shell's ACP gateway to satisfy kigi-tools' TerminalBackend.
 pub struct AcpTerminalAdapter {

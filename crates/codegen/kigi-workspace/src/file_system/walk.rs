@@ -158,9 +158,7 @@ pub(super) fn build_glob_overrides(
     })
 }
 
-// =========================================================================
 // Paginated listing
-// =========================================================================
 
 /// One listed node in neutral form (no wire serialization). Consumers map
 /// this to their own node shape.
@@ -265,9 +263,7 @@ pub fn list_directory_paged(abs_dir: &Path, opts: ListOptions<'_>, max_collect: 
     }
 }
 
-// =========================================================================
 // Ranged, binary-safe reads
-// =========================================================================
 
 /// A read chunk in the requested transfer encoding.
 pub enum ChunkPayload {

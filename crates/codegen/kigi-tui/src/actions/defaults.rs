@@ -35,7 +35,6 @@ pub fn default_actions(mouse_reporting_toggle_enabled: bool) -> Vec<ActionDef> {
     let ctrl_dot_unreliable = ctrl_dot_unreliable();
 
     let mut actions = vec![
-        // ── Navigation (scrollback) ─────────────────────────────────
         ActionDef {
             id: ActionId::SelectNext,
             label: "nav",
@@ -222,7 +221,6 @@ pub fn default_actions(mouse_reporting_toggle_enabled: bool) -> Vec<ActionDef> {
             requires_confirmation: false,
             long_help: None,
         },
-        // ── View (scrollback) ───────────────────────────────────────
         ActionDef {
             id: ActionId::Collapse,
             label: "fold",
@@ -309,7 +307,6 @@ pub fn default_actions(mouse_reporting_toggle_enabled: bool) -> Vec<ActionDef> {
                 "Switches the selected entry between rendered markdown and its raw source text.\nUse it to copy exact markdown, inspect a link target, or see formatting the renderer hides.\nPress again to return to the rendered view.",
             ),
         },
-        // ── Block content ────────────────────────────────────────────
         ActionDef {
             id: ActionId::CopyBlockContent,
             label: "copy",
@@ -318,7 +315,8 @@ pub fn default_actions(mouse_reporting_toggle_enabled: bool) -> Vec<ActionDef> {
             alt_keys: vec![],
             category: Category::ConversationAction,
             context: When::ScrollbackFocused,
-            hint_priority: None, // shown dynamically when block supports copy
+            // shown dynamically when block supports copy
+            hint_priority: None,
             hint_key_display: None,
             requires_confirmation: false,
             long_help: Some(
@@ -355,7 +353,6 @@ pub fn default_actions(mouse_reporting_toggle_enabled: bool) -> Vec<ActionDef> {
                 "Opens the selected block in a focused, scrollable full-screen viewer.\nBest for long tool output, large files, or code you want to read away from the surrounding transcript.\nEsc returns to the conversation.",
             ),
         },
-        // ── Link navigation ─────────────────────────────────────────
         ActionDef {
             id: ActionId::OpenNextLink,
             label: "link",
@@ -382,7 +379,6 @@ pub fn default_actions(mouse_reporting_toggle_enabled: bool) -> Vec<ActionDef> {
             requires_confirmation: false,
             long_help: None,
         },
-        // ── Scrollback (contextual — block-type-dependent) ────────────
         ActionDef {
             id: ActionId::Rewind,
             label: "rewind",
@@ -413,7 +409,6 @@ pub fn default_actions(mouse_reporting_toggle_enabled: bool) -> Vec<ActionDef> {
                 "Terminates the background task owned by the selected task block (e.g. a long shell command sent to the background).\nReach for it to stop a runaway or no-longer-needed process.\nApplies only to a live task; finished ones are unaffected.",
             ),
         },
-        // ── Essentials ────────────────────────────────────────────────
         ActionDef {
             id: ActionId::SendPrompt,
             label: "send",
@@ -486,7 +481,6 @@ pub fn default_actions(mouse_reporting_toggle_enabled: bool) -> Vec<ActionDef> {
                 "Steps the session mode: Normal -> Plan -> Always-Approve -> Normal.\nPlan keeps the agent planning first and writes no files; Always-Approve runs every tool call without asking.\nCtrl+O toggles auto-approve directly.",
             ),
         },
-        // ── Panes (agent-level — toggle side panes) ─────────────────
         ActionDef {
             id: ActionId::ToggleTodos,
             label: "todos",
@@ -595,12 +589,8 @@ pub fn default_actions(mouse_reporting_toggle_enabled: bool) -> Vec<ActionDef> {
                 "Detaches the running turn so it keeps working in the background while you read, queue prompts, or start something else.\nTrack and resume it from the tasks pane (Ctrl+B).\nOnly meaningful while a turn is actually running.",
             ),
         },
-        // ── Prompt ───────────────────────────────────────────────────
         ActionDef {
             id: ActionId::InterjectPrompt,
-            // "send now" label: Enter queues a follow-up while a turn runs;
-            // this chord is cancel-and-send — stop the current turn and run
-            // the message as the next one ("send now").
             label: "send now",
             description: "Send now while running (cancels the current turn)",
             default_key: if in_apple_terminal {
@@ -661,7 +651,6 @@ pub fn default_actions(mouse_reporting_toggle_enabled: bool) -> Vec<ActionDef> {
                 "Runs a shell command without leaving the chat: type ! at the start of an empty prompt, then the command.\nThe command output is captured into the scrollback.\nDelete the leading ! to go back to a normal prompt.",
             ),
         },
-        // ── Agent ────────────────────────────────────────────────────
         ActionDef {
             id: ActionId::ToggleYolo,
             label: "yolo",
@@ -808,8 +797,6 @@ pub fn default_actions(mouse_reporting_toggle_enabled: bool) -> Vec<ActionDef> {
         });
     }
 
-    // Agent Dashboard ----------------------------------------------------
-    //
     // The `Ctrl+\` entry point AND every in-dashboard shortcut are registered
     // here. They all share the dedicated `Category::Dashboard` section so the
     // cheatsheet groups them under a single "Dashboard" header instead of
@@ -930,11 +917,10 @@ pub fn default_actions(mouse_reporting_toggle_enabled: bool) -> Vec<ActionDef> {
             id: ActionId::DashboardToggleGrouping,
             label: "group",
             description: "Toggle row grouping",
-            // `Ctrl+G` ("group"). `Ctrl+S` was reassigned to the peek /
-            // dispatch "send + open" chord so `Shift+Enter` could be
-            // freed for newline insertion. (`Ctrl+G` is also bound to
-            // `SendToBackground`, but that lives in `When::AgentScreen`,
-            // a context that never overlaps the dashboard.)
+            // `Ctrl+G` ("group"). `Ctrl+S` is the peek / dispatch "send + open"
+            // chord, so it is unavailable here. (`Ctrl+G` is also bound to
+            // `SendToBackground`, but that lives in `When::AgentScreen`, a
+            // context that never overlaps the dashboard.)
             default_key: key!('g', CONTROL),
             alt_keys: vec![],
             category: Category::Dashboard,
@@ -1041,9 +1027,7 @@ pub fn default_actions(mouse_reporting_toggle_enabled: bool) -> Vec<ActionDef> {
                 "Toggles auto-approve (YOLO) for the selected agent right from the dashboard, without attaching to it.\nWhile on, that agent runs every tool call with no per-action confirmation.\nThe per-session equivalent is Ctrl+O inside a session.",
             ),
         },
-        // Open the location picker — a floating modal to change the
-        // working directory new dashboard sessions spawn in. Ctrl+L
-        // ("location") is free under `DashboardFocused` (it only binds
+        // Ctrl+L ("location") is free under `DashboardFocused` (it only binds
         // OpenExtensions under `AgentScreen`, a different context).
         ActionDef {
             id: ActionId::DashboardOpenLocationPicker,
@@ -1060,11 +1044,8 @@ pub fn default_actions(mouse_reporting_toggle_enabled: bool) -> Vec<ActionDef> {
                 "Opens a picker to set the working directory that newly dispatched dashboard agents run in.\nLaunch agents against a different repo or folder without leaving the dashboard.\nAffects new dispatches only, not agents already running.",
             ),
         },
-        // Toggle worktree-dispatch mode. Ctrl+W ("worktree") arms the next
-        // dashboard-dispatched session to spawn in a fresh git worktree; the
-        // dispatcher gates it on the cwd being a git repo. Free under
-        // `DashboardFocused` (Ctrl+W only binds the overlay-exit fallback
-        // under `DashboardOverlay`, a different context).
+        // Ctrl+W ("worktree") is free under `DashboardFocused` (it only binds
+        // the overlay-exit fallback under `DashboardOverlay`, a different context).
         ActionDef {
             id: ActionId::DashboardToggleWorktree,
             label: "worktree",

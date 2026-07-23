@@ -21,7 +21,6 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::net::{UnixListener, UnixStream};
 use tokio_util::sync::CancellationToken;
 
-/// Which pump direction a [`FaultPlan`] applies to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FaultDirection {
     #[default]
@@ -99,8 +98,6 @@ pub struct UdsProxy {
 }
 
 impl UdsProxy {
-    /// Bind `proxy_path` and forward each accepted connection to
-    /// `upstream_path`, applying `plan` per connection.
     pub async fn spawn(
         proxy_path: impl Into<PathBuf>,
         upstream_path: impl AsRef<Path>,
@@ -144,7 +141,6 @@ impl UdsProxy {
         self.handle.clone()
     }
 
-    /// Stop accepting and sever active connections.
     pub fn shutdown(&self) {
         self.handle.sever_now();
         self.cancel.cancel();
@@ -327,7 +323,6 @@ mod tests {
         Ok(body)
     }
 
-    /// Upstream that echoes every frame back to the sender.
     fn spawn_echo_upstream(path: PathBuf) {
         let listener = UnixListener::bind(&path).unwrap();
         tokio::spawn(async move {
@@ -397,7 +392,6 @@ mod tests {
         client_write_frame(&mut client, b"second").await;
         client_write_frame(&mut client, b"third").await;
 
-        // The echo of "second" never arrives; "third" comes straight after "first".
         assert_eq!(client_read_frame(&mut client).await.unwrap(), b"first");
         assert_eq!(client_read_frame(&mut client).await.unwrap(), b"third");
     }
@@ -444,7 +438,7 @@ mod tests {
         client_write_frame(&mut client, b"never-delivered").await;
 
         // The upstream got 2 bytes of a length prefix and then a close, so it
-        // echoes nothing; the client's next read observes the sever.
+        // echoes nothing and the client's next read observes the sever.
         let read = client_read_frame(&mut client).await;
         assert!(
             read.is_err(),

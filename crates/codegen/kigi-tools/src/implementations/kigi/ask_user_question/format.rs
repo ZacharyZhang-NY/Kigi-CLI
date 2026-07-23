@@ -1,10 +1,8 @@
 //! Formatting functions for AskUserQuestion tool results.
 //!
 //! Each function produces the **exact** model-visible string for one of the
-//! four user-action paths.
-//!
-//! The tests below pin the exact output strings and serve as the
-//! source-of-truth specification.
+//! four user-action paths: A accepted, B chat about this, C skip interview,
+//! D cancel. The tests below pin those strings and are the source of truth.
 
 use std::collections::HashMap;
 
@@ -13,32 +11,25 @@ use indexmap::IndexMap;
 use super::Question;
 use super::types::QuestionAnnotation;
 
-// ── Path D: Cancel ──────────────────────────────────────────────────────
-
 /// Tool result text when the user cancels / dismisses the question UI.
 ///
 /// Cancel is a normal user decision, not a tool failure, so this is a
 /// purpose-built message rather than a generic permission-denial string.
 pub const CANCEL_TEXT: &str = "User declined to answer the questions. Continue with the task using your best judgment, or ask different questions.";
 
-// ── Path A: Accepted ────────────────────────────────────────────────────
-
 /// Format the tool result for Path A (user accepted and submitted answers).
-///
-/// Produces the accepted-answers tool result:
 ///
 /// ```text
 /// User has answered your questions: "<q>"="<label>" ..., "<q>"="<label>" .... You can now continue with the user's answers in mind.
 /// ```
 ///
-/// Rules:
-/// - Only answered questions appear (unanswered are omitted by the caller).
+/// Wire-format expectations:
+/// - Unanswered questions are omitted by the caller, so `answers` holds only
+///   answered ones.
 /// - Multi-select: each selected label is its own `Vec` element on the
 ///   wire; this function joins them with `, ` at format time.
 /// - Freeform-only: a single-element vec containing `"Other"`, free text
 ///   in `annotations[q].notes`.
-/// - Preview is appended only when present in annotations.
-/// - Notes are appended only when present in annotations.
 /// - Questions/labels are interpolated raw (no escaping).
 pub fn format_accepted_tool_result(
     answers: &IndexMap<String, Vec<String>>,
@@ -71,8 +62,6 @@ pub fn format_accepted_tool_result(
     )
 }
 
-// ── Alternate id-keyed tool-result formatting ────
-
 /// Format the tool result in the alternate id-keyed shape (Path A).
 ///
 /// Answers are keyed by **id**, one question per line, with no trailing
@@ -84,28 +73,15 @@ pub fn format_accepted_tool_result(
 /// Question <qid>: Selected option(s) <oid>(, <oid>)*
 /// ```
 ///
-/// Examples:
-///
-/// - Single question, single-select:
-///   `User questions responses:\nQuestion demo_pick: Selected option(s) a`
-/// - Three questions, last with `allow_multiple: true` (one selection):
-///   `User questions responses:\nQuestion q1: Selected option(s) tea\nQuestion q2: Selected option(s) code\nQuestion q3: Selected option(s) tests`
-///
-/// Multi-select labels arrive as separate `Vec` elements; this function
-/// joins their resolved ids with `, ` (`Selected option(s) a, b, c`).
-/// The multi-select join shape is exercised by the test below.
-///
 /// `input_questions` carries both `id` and the option `label`/`id` map
 /// so we can resolve the answer values (which arrive label-keyed from
-/// the client) back to the option ids.
+/// the client) back to the option ids. It also fixes the output order;
+/// questions missing from `answers` are skipped.
 ///
 /// `annotations` carries per-question freeform notes (the text the user
 /// typed when picking the freeform "Other" path or dismissing). When no
 /// option labels resolve to ids and `notes` is non-empty, the result is
 /// `Question <qid>: <raw_text>` (no `Selected option(s)` prefix).
-///
-/// Question order follows `input_questions`. Unanswered questions are
-/// omitted -- only answered questions appear in the result.
 pub fn format_id_keyed_accepted_tool_result(
     input_questions: &[super::Question],
     answers: &IndexMap<String, Vec<String>>,
@@ -116,10 +92,9 @@ pub fn format_id_keyed_accepted_tool_result(
         .filter_map(|q| {
             let qid = q.id.as_ref()?;
             let labels = answers.get(&q.question)?;
-            // Each selected label is its own `Vec` element (the wire
-            // format no longer joins labels with `", "`), so we look each
-            // one up directly. No splitting, no ambiguity around labels
-            // that contain commas or share substrings with other labels.
+            // Each selected label is its own `Vec` element, so each is looked
+            // up whole: labels containing `", "` or sharing a substring with
+            // another label cannot be mismatched.
             let oids: Vec<&str> = labels
                 .iter()
                 .filter_map(|label| {
@@ -130,8 +105,8 @@ pub fn format_id_keyed_accepted_tool_result(
                 })
                 .collect();
             if oids.is_empty() {
-                // Freeform / dismissed: emit the raw text from the freeform
-                // input directly after `Question <qid>: `.
+                // Freeform or dismissed: the typed text stands in for an
+                // option id.
                 let notes = annotations
                     .as_ref()
                     .and_then(|m| m.get(&q.question))
@@ -159,12 +134,7 @@ pub fn format_id_keyed_accepted_tool_result(
     )
 }
 
-// ── Path B: Chat about this (plan mode) ─────────────────────────────────
-
 /// Format the tool result for Path B ("Chat about this" / respond-to-agent).
-///
-/// Iterates ALL original questions. Answered questions show their label;
-/// unanswered questions show "(No answer provided)".
 ///
 /// Whitespace is intentional:
 /// - Lines 2-4 and "Questions asked:" have 4-space indentation.
@@ -197,11 +167,10 @@ pub fn format_chat_about_this(
     )
 }
 
-// ── Path C: Skip interview (plan mode) ──────────────────────────────────
-
 /// Format the tool result for Path C ("Skip interview and plan immediately").
 ///
-/// Same per-question format as Path B, but different header and NO indentation.
+/// Same per-question format as Path B, but a different header and no
+/// indentation.
 pub fn format_skip_interview(
     questions: &[Question],
     partial_answers: &HashMap<String, String>,
@@ -227,14 +196,10 @@ pub fn format_skip_interview(
     )
 }
 
-// ── Tests ────────────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
     use super::super::QuestionOption;
     use super::*;
-
-    // -- Helpers --
 
     fn make_question(text: &str, labels: &[&str]) -> Question {
         Question {
@@ -252,8 +217,6 @@ mod tests {
             id: None,
         }
     }
-
-    // ── Path A: format_accepted_tool_result ──────────────────────────────
 
     #[test]
     fn format_accepted_single_no_annotations() {
@@ -316,7 +279,6 @@ mod tests {
 
     #[test]
     fn format_accepted_freeform_only() {
-        // Freeform-only: label is "Other", typed text in annotations.notes
         let mut answers = IndexMap::new();
         answers.insert("Which database?".to_string(), vec!["Other".to_string()]);
 
@@ -369,11 +331,8 @@ mod tests {
 
     #[test]
     fn format_accepted_partial() {
-        // Only answered questions appear. Unanswered questions are omitted by the caller
-        // (the answers IndexMap simply doesn't contain them).
         let mut answers = IndexMap::new();
         answers.insert("Which database?".to_string(), vec!["Redis".to_string()]);
-        // "Which framework?" is unanswered => not in the map
 
         let result = format_accepted_tool_result(&answers, &None);
         assert_eq!(
@@ -382,11 +341,6 @@ mod tests {
         );
     }
 
-    // ── Alternate id-keyed formatter tests ────────────────────
-    //
-    // Pin both result strings (single question and three questions) so any
-    // drift in the formatter trips a deterministic failure. Update the
-    // literal strings deliberately if the wire format ever changes.
     fn id_keyed_q(qid: &str, prompt: &str, opts: &[(&str, &str)]) -> super::super::Question {
         super::super::Question {
             question: prompt.to_string(),
@@ -477,9 +431,6 @@ mod tests {
 
     #[test]
     fn format_id_keyed_multi_select_inferred_csv() {
-        // Multi-select with multiple selections joins option ids with ", "
-        // at format time. Each selected label arrives as its own Vec
-        // element (the wire format no longer joins them).
         let questions = vec![id_keyed_q(
             "q3",
             "What do you lean on before a push? (pick any)",
@@ -528,12 +479,8 @@ mod tests {
         assert_eq!(result, "User questions responses:");
     }
 
-    /// Freeform/dismiss:
-    /// when the user dismisses or types freeform text instead of picking
-    /// an option, the wire format emits the raw text directly after
-    /// `Question <qid>: ` with NO `Selected option(s)` prefix. The pager
-    /// sends `answers["..."] = ["Other"]` plus the typed text in
-    /// `annotations[q].notes`; the formatter falls through to the notes.
+    /// The pager sends `answers["..."] = ["Other"]` plus the typed text in
+    /// `annotations[q].notes`, which is what makes the notes fallback fire.
     #[test]
     fn format_id_keyed_freeform_dismissal_uses_notes_without_selected_prefix() {
         let questions = vec![id_keyed_q(
@@ -562,9 +509,8 @@ mod tests {
         );
     }
 
-    /// Freeform with no notes (just `["Other"]` and no annotation) is
-    /// indistinguishable from a no-answer to the formatter, so the
-    /// question is dropped (matching the `oids.is_empty()` branch).
+    /// Freeform with no notes is indistinguishable from a no-answer to the
+    /// formatter, so the question is dropped.
     #[test]
     fn format_id_keyed_freeform_without_notes_is_dropped() {
         let questions = vec![id_keyed_q("q1", "Pick", &[("a", "A")])];
@@ -576,7 +522,6 @@ mod tests {
 
     #[test]
     fn format_accepted_special_chars() {
-        // Quotes and newlines in labels appear verbatim (no escaping)
         let mut answers = IndexMap::new();
         answers.insert(
             "Which \"option\"?".to_string(),
@@ -589,8 +534,6 @@ mod tests {
             "User has answered your questions: \"Which \"option\"?\"=\"Option with\nnewline\". You can now continue with the user's answers in mind."
         );
     }
-
-    // ── Path B: format_chat_about_this ───────────────────────────────────
 
     #[test]
     fn format_chat_about_this_mixed() {
@@ -639,8 +582,6 @@ The user wants to clarify these questions.
         assert!(result.contains("- \"Q2?\"\n  (No answer provided)"));
     }
 
-    // ── Path C: format_skip_interview ────────────────────────────────────
-
     #[test]
     fn format_skip_interview_all_answered() {
         let questions = vec![
@@ -683,23 +624,17 @@ Questions asked and answers provided:
 
     #[test]
     fn format_skip_interview_no_indentation() {
-        // Path C has NO indentation on any header lines (unlike Path B)
         let questions = vec![make_question("Q?", &["A"])];
         let result = format_skip_interview(&questions, &HashMap::new());
 
-        // First line has no leading spaces
         let first_line = result.lines().next().unwrap();
         assert!(!first_line.starts_with(' '));
 
-        // Second line has no leading spaces
         let second_line = result.lines().nth(1).unwrap();
         assert!(!second_line.starts_with(' '));
 
-        // "Questions asked" line has no leading spaces
         assert!(result.contains("\nQuestions asked and answers provided:\n"));
     }
-
-    // ── Path D: CANCEL_TEXT ─────────────────────────────────────────────
 
     #[test]
     fn format_cancel() {

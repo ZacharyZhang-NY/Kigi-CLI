@@ -1,8 +1,6 @@
 #![cfg_attr(rustfmt, rustfmt::skip)]
     use super::*;
 
-    // ── derive_child_cwd ─────────────────────────────────────────────
-
     #[test]
     fn derive_child_cwd_uses_child_cwd_from_info() {
         let parent_cwd = PathBuf::from("/parent/cwd");
@@ -89,7 +87,6 @@
         );
         assert!(child_view.is_worktree);
         assert_eq!(child_view.main_repo.as_deref(), Some("main-repo"));
-        // Parent must not be affected.
         assert!(parent.current_branch.is_none());
         assert!(!parent.is_worktree);
     }

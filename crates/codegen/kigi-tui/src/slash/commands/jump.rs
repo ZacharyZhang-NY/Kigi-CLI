@@ -68,7 +68,6 @@ mod tests {
 
     #[test]
     fn not_available_in_minimal() {
-        // Native terminal scrollback replaces in-app scrolling in minimal.
         assert!(!JumpCommand.available_in_minimal());
     }
 }

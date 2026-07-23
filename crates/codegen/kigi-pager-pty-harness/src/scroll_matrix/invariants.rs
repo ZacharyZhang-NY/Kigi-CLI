@@ -463,7 +463,7 @@ mod tests {
     use super::super::log::{group_streams, parse_jsonl_str};
     use super::*;
 
-    // ── JSONL fixture builders ─────────────────────────────────────────
+    // JSONL fixture builders
     // Raw strings through parse_jsonl_str so every fixture also exercises
     // the wire schema (same stance as log.rs's producer-shaped constants).
 
@@ -498,7 +498,8 @@ mod tests {
         kind: &str,
         events: (u64, u64),
         accel_avg: (f32, Option<f64>),
-        lines: (f32, i64, i64, i64), // desired, applied_total, flushed, backlog_after
+        // desired, applied_total, flushed, backlog_after
+        lines: (f32, i64, i64, i64),
         msf: Option<f64>,
         dropped: Option<i64>,
     ) -> String {
@@ -710,7 +711,8 @@ mod tests {
     fn cfg_rejects_echo_profile_mismatch() {
         assert!(check(InvariantId::Cfg, &C1, &canonical()).is_pass());
         let mut fixture = canonical();
-        fixture[0] = start(0.0, 0.0, "auto", 6.0); // speed echo ≠ expected 1.0
+        // speed echo ≠ expected 1.0
+        fixture[0] = start(0.0, 0.0, "auto", 6.0);
         assert_violated(check(InvariantId::Cfg, &C1, &fixture), "speed");
         let expected_wheel = ExpectedProfile {
             mode: "wheel",

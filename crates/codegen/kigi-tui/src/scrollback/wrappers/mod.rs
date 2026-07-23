@@ -43,7 +43,6 @@ mod tests {
     use ratatui::layout::Rect;
     use ratatui::style::Color;
 
-    /// Test that wrappers can be composed together.
     #[test]
     fn test_wrapper_composition() {
         let block = StubBlock::new("Hello", Color::Blue);
@@ -57,7 +56,6 @@ mod tests {
         // Padded: takes 3 columns (2+1), height unchanged
         assert_eq!(padded.desired_height(80), 3);
 
-        // Render and verify structure
         let area = Rect::new(0, 0, 20, 3);
         let mut buf = Buffer::empty(area);
         padded.render(area, &mut buf);

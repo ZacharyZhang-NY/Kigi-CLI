@@ -1,12 +1,10 @@
 //! Minimal-mode todo panel: the persistent list shown directly above the prompt
 //! while a turn has todos.
 //!
-//! It auto-hides once every todo is done (so a finished list doesn't linger),
-//! unless pinned open with `Ctrl+T` ([`todo_panel_visible`]). The overlay host
-//! sizes the idle viewport with [`todo_panel_height`] so the prompt sits right
-//! after the panel; [`draw_live`](super::live::draw_live) paints it with
-//! [`todo_panel_lines`] + [`render_todo_panel`]. Mirrors the full-TUI `TodoPane`
-//! glyphs/colors without its interactive chrome.
+//! It auto-hides once every todo is done, unless pinned open with `Ctrl+T`
+//! ([`todo_panel_visible`]). The overlay host sizes the idle viewport with
+//! [`todo_panel_height`] so the prompt sits right after the panel. Mirrors the
+//! full-TUI `TodoPane` glyphs/colors without its interactive chrome.
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -20,11 +18,10 @@ use kigi_tui::theme::Theme;
 /// `Ctrl+T` expands past it.
 pub(super) const MAX_TODO_ROWS: u16 = 8;
 
-/// Whether the todo panel should render this frame. Hidden when there are no
-/// todos, or when every todo is finished (so a completed list doesn't linger —
-/// nit: "still showing old TODOs on every turn even though all are complete").
-/// A new turn that creates fresh pending todos re-shows it immediately. `force`
-/// (Ctrl+T) pins it visible regardless, e.g. to review a finished list.
+/// Hidden when every todo is finished, so a completed list does not linger
+/// across turns; a new turn creating fresh pending todos re-shows it
+/// immediately. `force` (Ctrl+T) pins it visible regardless, e.g. to review a
+/// finished list.
 pub(super) fn todo_panel_visible(
     agent: &kigi_tui::app::agent_view::AgentView,
     force: bool,
@@ -41,23 +38,21 @@ pub(super) fn todo_panel_visible(
         .any(|t| matches!(t.status, TodoStatus::Pending | TodoStatus::InProgress))
 }
 
-/// Rows the todo panel will occupy (0 when hidden — see [`todo_panel_visible`] —
-/// or there are no todos), capped at [`MAX_TODO_ROWS`]. The overlay host uses
-/// this to size the idle viewport to exactly its content so the prompt sits
-/// right after the committed conversation (no bottom-pin, no gap).
+/// Rows the panel will occupy, capped at [`MAX_TODO_ROWS`] unless `force`. The
+/// overlay host uses this to size the idle viewport to exactly its content so
+/// the prompt sits right after the committed conversation (no bottom-pin, no
+/// gap).
 pub(super) fn todo_panel_height(agent: &kigi_tui::app::agent_view::AgentView, force: bool) -> u16 {
     if !todo_panel_visible(agent, force) {
         return 0;
     }
     let len = agent.todo.todos().len() as u16;
-    // Ctrl+T (force) expands the full list (clamped to the screen by the caller);
-    // otherwise cap at `MAX_TODO_ROWS` with a `+N more` overflow row.
+    // The forced full list is clamped to the screen by the caller.
     if force { len } else { len.min(MAX_TODO_ROWS) }
 }
 
-/// Render the persistent todo panel into `area` (one line per item). Background
-/// is reset so the panel inherits the terminal's own background (transparency),
-/// matching the rest of the minimal live region.
+/// The background is reset so the panel inherits the terminal's own background
+/// (transparency), matching the rest of the minimal live region.
 pub(super) fn render_todo_panel(
     buf: &mut Buffer,
     area: Rect,
@@ -74,10 +69,8 @@ pub(super) fn render_todo_panel(
     }
 }
 
-/// Build the persistent todo-panel lines (status glyph + content per item),
-/// shown directly above the prompt while there are todos. Capped to `max_rows`
-/// (the last row becomes `… +N more` on overflow). Empty when there are no
-/// todos. Mirrors the full-TUI `TodoPane`'s glyphs/colors.
+/// Capped to `max_rows`, where the last row becomes `… +N more` on overflow.
+/// Mirrors the full-TUI `TodoPane`'s glyphs/colors.
 pub(super) fn todo_panel_lines(
     agent: &kigi_tui::app::agent_view::AgentView,
     max_rows: u16,
@@ -117,8 +110,7 @@ pub(super) fn todo_panel_lines(
             };
             let content = truncate_chars(t.content.lines().next().unwrap_or("").trim(), 64);
             // No leading pad: the caller places the panel at the shared
-            // live-region left edge (`live::live_left_inset` = 0, flush-left),
-            // so the glyph
+            // live-region left edge (`live::live_left_inset` = 0), so the glyph
             // column lines up with committed `◆` bullets and the prompt `❯`.
             Line::from(vec![
                 Span::styled(format!("{glyph} "), style),
@@ -129,8 +121,8 @@ pub(super) fn todo_panel_lines(
 
     if overflow {
         let remaining = todos.len() - shown;
-        // When collapsed, advertise the chord that expands the full list; when
-        // already forced open (still overflowing a tiny screen) drop the hint.
+        // Once already forced open (still overflowing a tiny screen) the expand
+        // chord is useless, so drop the hint.
         let label = if force {
             format!("\u{2026} +{remaining} more")
         } else {
@@ -141,7 +133,6 @@ pub(super) fn todo_panel_lines(
     lines
 }
 
-/// Truncate `s` to at most `max` characters, appending `…` when shortened.
 fn truncate_chars(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         return s.to_string();
@@ -169,7 +160,6 @@ mod tests {
         }
     }
 
-    /// Plain text of a rendered line (span contents concatenated).
     fn line_text(line: &Line<'_>) -> String {
         line.spans.iter().map(|s| s.content.as_ref()).collect()
     }
@@ -178,17 +168,14 @@ mod tests {
     fn todo_panel_visibility_auto_hides_when_work_is_done() {
         use kigi_tui::app::agent::AgentState;
         let mut a = agent();
-        // No todos → hidden.
         assert!(!todo_panel_visible(&a, false));
 
-        // At least one unfinished todo → shown.
         a.todo.update_todos(vec![
             todo("done", TodoStatus::Completed),
             todo("doing", TodoStatus::InProgress),
         ]);
         assert!(todo_panel_visible(&a, false));
 
-        // All completed + idle → auto-hidden (don't linger forever).
         a.todo.update_todos(vec![
             todo("a", TodoStatus::Completed),
             todo("b", TodoStatus::Completed),
@@ -198,15 +185,13 @@ mod tests {
             "auto-hide once every todo is done and the turn is idle"
         );
 
-        // …and stays hidden even while a turn is actively running, so a previous
-        // turn's finished list never lingers at the start of the next turn.
+        // A previous turn's finished list must not linger into the next turn.
         a.session.state = AgentState::TurnRunning;
         assert!(
             !todo_panel_visible(&a, false),
             "all-complete list hides even mid-turn"
         );
 
-        // The Ctrl+T force-show pin overrides the auto-hide.
         a.session.state = AgentState::Idle;
         assert!(
             todo_panel_visible(&a, true),
@@ -217,7 +202,7 @@ mod tests {
     #[test]
     fn todo_panel_empty_when_no_todos() {
         assert!(todo_panel_lines(&agent(), 8, false).is_empty());
-        // …and empty when the cap is zero, regardless of todos.
+        // Also empty when the row cap is zero, regardless of todos.
         let mut a = agent();
         a.todo.update_todos(vec![todo("x", TodoStatus::Pending)]);
         assert!(todo_panel_lines(&a, 0, false).is_empty());
@@ -255,7 +240,7 @@ mod tests {
         );
         let lines = todo_panel_lines(&agent, 4, false);
         assert_eq!(lines.len(), 4, "capped to max_rows");
-        // 3 items + a "+7 more" overflow row (10 total, 3 shown), with a hint.
+        // 10 todos, 3 shown, so the 4th row is the "+7 more" overflow marker.
         assert!(
             line_text(&lines[3]).contains("+7 more"),
             "got: {:?}",

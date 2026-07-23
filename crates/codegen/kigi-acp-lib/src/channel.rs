@@ -78,7 +78,8 @@ mod acp_send_failure_tests {
     #[tokio::test]
     async fn send_failed_when_receiver_dropped_before_send() {
         let (tx, rx) = mpsc::unbounded_channel::<AcpAgentMessage>();
-        drop(rx); // no peer listening -> enqueue fails
+        // no peer listening -> enqueue fails
+        drop(rx);
         let err = acp_send(ext_request(), &tx).await.unwrap_err();
         assert_eq!(
             acp_channel_failure(&err),

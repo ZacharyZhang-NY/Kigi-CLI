@@ -1,5 +1,3 @@
-//! Mock file system implementation for testing.
-
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -8,7 +6,6 @@ use tokio::sync::RwLock;
 use crate::computer::types::{AsyncFileSystem, ComputerError};
 
 /// In-memory file system for testing.
-/// Thread-safe and async-compatible.
 pub struct MockFs {
     files: Arc<RwLock<HashMap<PathBuf, Vec<u8>>>>,
 }
@@ -20,14 +17,12 @@ impl Default for MockFs {
 }
 
 impl MockFs {
-    /// Create a new empty mock file system.
     pub fn new() -> Self {
         Self {
             files: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
-    /// Set a file's contents directly (for test setup).
     pub async fn set_file(&self, path: impl AsRef<Path>, content: &[u8]) {
         self.files
             .write()
@@ -35,17 +30,14 @@ impl MockFs {
             .insert(path.as_ref().to_path_buf(), content.to_vec());
     }
 
-    /// Get a file's contents directly (for test assertions).
     pub async fn get_file(&self, path: impl AsRef<Path>) -> Option<Vec<u8>> {
         self.files.read().await.get(path.as_ref()).cloned()
     }
 
-    /// Check if a file exists.
     pub async fn exists(&self, path: impl AsRef<Path>) -> bool {
         self.files.read().await.contains_key(path.as_ref())
     }
 
-    /// List all files in the mock filesystem.
     pub async fn list_files(&self) -> Vec<PathBuf> {
         self.files.read().await.keys().cloned().collect()
     }
@@ -84,15 +76,12 @@ mod tests {
     async fn test_mock_fs_read_write() {
         let fs = MockFs::new();
 
-        // File doesn't exist initially
         assert!(fs.read_file(Path::new("/test.txt")).await.is_err());
 
-        // Write a file
         fs.write_file(Path::new("/test.txt"), b"hello world")
             .await
             .unwrap();
 
-        // Read it back
         let content = fs.read_file(Path::new("/test.txt")).await.unwrap();
         assert_eq!(content, b"hello world");
     }

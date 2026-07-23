@@ -181,7 +181,6 @@ struct ReplayState {
     /// The prompt index we're trying to reach.
     target: usize,
 
-    /// Accumulated conversation items.
     conversation: Vec<ConversationItem>,
 
     /// Current prompt counter (how many user turns we've seen).
@@ -203,7 +202,6 @@ struct ReplayState {
     /// Partial text accumulator for the current agent message.
     current_agent_text: String,
 
-    /// Whether there's a pending agent message to flush.
     has_pending_agent: bool,
 
     /// When set, the replay is operating "after" a loaded checkpoint.
@@ -403,7 +401,6 @@ impl ReplayState {
                 self.original_user_info = file.original_user_info.clone();
             }
 
-            // Replace accumulated conversation with the compacted history.
             self.conversation = file.compacted_history;
             // Checkpoints predate this binary's validation (or the API's
             // current validators), so heal them like the jsonl loader does
@@ -434,7 +431,6 @@ impl ReplayState {
                 "Replay: loaded compaction checkpoint"
             );
 
-            // If the auto-continue prompt was recorded, add it as a user turn.
             if let Some(ref ac) = info.auto_continue {
                 self.conversation
                     .push(ConversationItem::user(ac.prompt_text.clone()));
@@ -831,7 +827,8 @@ mod tests {
             make_agent_update("s1", "R1"),
             make_user_update("s1", "P2"),
             make_agent_update("s1", "R2"),
-            make_rewind_marker(1), // keep P0 only
+            // keep P0 only
+            make_rewind_marker(1),
             make_user_update("s1", "P1_prime"),
             make_agent_update("s1", "R1_prime"),
         ];

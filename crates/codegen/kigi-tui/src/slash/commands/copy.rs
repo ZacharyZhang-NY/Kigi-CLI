@@ -153,7 +153,6 @@ mod tests {
 
     #[test]
     fn not_available_in_minimal() {
-        // Native terminal selection replaces the in-app copy path in minimal.
         assert!(!CopyCommand.available_in_minimal());
     }
 }

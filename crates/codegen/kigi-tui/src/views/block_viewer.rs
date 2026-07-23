@@ -4,7 +4,6 @@
 //! Provides ListPane-based navigation, search, visual-select, and copy.
 //!
 //! Supports thinking/agent message blocks (markdown content).
-//! Execute and edit viewers will be added in later phases.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
 use kigi_workspace::permission::mcp_titleize_segment;
@@ -26,10 +25,6 @@ use crate::views::list_pane::{
 };
 use crate::views::modal_window::ModalWindowState;
 use crate::views::shortcuts_bar::HintItem;
-
-// ---------------------------------------------------------------------------
-// ContentLine — generic ListItem for the viewer
-// ---------------------------------------------------------------------------
 
 /// A single line of content displayed in the block viewer's ListPane.
 #[derive(Clone)]
@@ -81,10 +76,6 @@ impl ListItem for ContentLine {
     }
 }
 
-// ---------------------------------------------------------------------------
-// DiffLineMeta — per-item diff metadata for edit viewer patch copy
-// ---------------------------------------------------------------------------
-
 /// Metadata for a single diff line, stored parallel to `items` in the edit viewer.
 pub struct DiffLineMeta {
     pub tag: similar::ChangeTag,
@@ -92,10 +83,6 @@ pub struct DiffLineMeta {
     pub lo: usize,
     pub ln: usize,
 }
-
-// ---------------------------------------------------------------------------
-// BlockViewerPane
-// ---------------------------------------------------------------------------
 
 /// What kind of block content the viewer is showing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,13 +118,10 @@ pub enum ViewerKind {
 pub struct BlockViewerPane {
     /// Which scrollback entry we are viewing.
     pub entry_id: EntryId,
-    /// What kind of content.
     pub kind: ViewerKind,
     /// ListPane state (scroll, selection, search, follow).
     pub list_state: ListPaneState,
-    /// Visual style for the ListPane.
     list_style: ListPaneStyle,
-    /// Content items for the ListPane.
     items: Vec<ContentLine>,
     /// Cached content area from last render (for mouse hit-testing).
     last_content_area: Rect,
@@ -304,7 +288,6 @@ impl BlockViewerPane {
         let items = Self::build_execute_items(exec.output.as_deref(), &theme);
         let last_output_len = exec.output.as_ref().map_or(0, |o| o.len());
 
-        // Dark background style for terminal output
         let list_style = ListPaneStyle {
             uniform_visual_bg: true,
             ..ListPaneStyle::default()
@@ -322,7 +305,8 @@ impl BlockViewerPane {
             copy_meta_pending: false,
             copy_content_pending: false,
             diff_meta: Vec::new(),
-            last_generation: last_output_len as u64, // reuse generation field for output length
+            // Reuse the generation field for output length.
+            last_generation: last_output_len as u64,
             was_running: entry.is_running,
             bg_task_id: None,
             last_theme: Theme::current_kind(),
@@ -887,8 +871,8 @@ impl BlockViewerPane {
         // Block-owned dispatch so the viewer paints the same highlight phase
         // (incl. the file-scoped upgrade) as the scrollback output.
         let rendered = edit.render_diff_lines(
-            theme, 500, // wide width — NoWrap mode
-            &config,
+            theme, 500, &config,
+            /* wide width — NoWrap mode */
         );
 
         // Build a flat list of DiffLine references from all hunks, interleaving
@@ -897,7 +881,7 @@ impl BlockViewerPane {
         let mut meta_source: Vec<Option<&crate::diff::DiffLine>> = Vec::new();
         for (i, hunk) in edit.hunks.iter().enumerate() {
             if i > 0 && !config.hunk_separator.is_empty() {
-                meta_source.push(None); // separator line
+                meta_source.push(None);
             }
             for diff_line in hunk {
                 meta_source.push(Some(diff_line));
@@ -1086,14 +1070,11 @@ impl BlockViewerPane {
         hints
     }
 
-    // -- Input handling ------------------------------------------------------
-
     /// Check if a key is a close signal (Esc/q/Ctrl-F).
     ///
     /// Separated from `handle_key` so the caller can close the viewer
     /// before routing the key (avoids borrow conflicts).
     pub fn is_close_key(&self, key: &KeyEvent) -> bool {
-        // Ctrl-F: close viewer (toggle off)
         if key.code == KeyCode::Char('f') && key.modifiers.contains(KeyModifiers::CONTROL) {
             return true;
         }
@@ -1173,7 +1154,6 @@ impl BlockViewerPane {
         out.push_str(&format!("--- a/{path}\n"));
         out.push_str(&format!("+++ b/{path}\n"));
 
-        // Collect non-None entries in the range
         let entries: Vec<&DiffLineMeta> = range
             .filter_map(|i| self.diff_meta.get(i).and_then(|m| m.as_ref()))
             .collect();
@@ -1679,8 +1659,6 @@ fn line_display_width_u16(line: &Line<'_>) -> u16 {
 }
 
 impl BlockViewerPane {
-    // -- Rendering -----------------------------------------------------------
-
     /// Render the viewer content into the given area (provided by modal chrome).
     ///
     /// `content_area` is the inner content rect returned by `render_modal_window`.

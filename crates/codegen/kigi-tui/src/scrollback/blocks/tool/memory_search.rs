@@ -317,7 +317,6 @@ fn shorten_path(path: &str) -> &str {
 pub fn parse_memory_results(output: &str) -> Vec<MemoryResult> {
     let mut results = Vec::new();
 
-    // Split on "### Result " markers
     for section in output.split("### Result ") {
         // Skip the preamble ("Found N memory result(s):\n")
         if !section.starts_with(|c: char| c.is_ascii_digit()) {
@@ -365,7 +364,6 @@ pub fn parse_memory_results(output: &str) -> Vec<MemoryResult> {
             }
         }
 
-        // Extract snippet between ``` markers
         let full = section;
         if let Some(code_start) = full.find("```\n") {
             let after_start = &full[code_start + 4..];

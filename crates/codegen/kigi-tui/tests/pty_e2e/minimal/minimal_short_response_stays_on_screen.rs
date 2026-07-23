@@ -40,26 +40,22 @@ async fn minimal_short_response_stays_on_screen() {
 
     let rows = DEFAULT_ROWS;
 
-    // 1) The short response is on the visible screen …
     assert!(
         harness.screen_contents().contains(MOCK_RESPONSE_SENTINEL),
         "short response must stay on the visible screen\nscreen:\n{}",
         harness.screen_contents()
     );
-    // 2) … and was NOT force-pushed into native scrollback. Content-anchored: a
-    //    response that fits stays put; only content taller than the screen scrolls
-    //    (proven separately by `minimal_commits_response_to_scrollback`).
+    // Content-anchored: a response that fits stays put; only content taller than
+    // the screen scrolls (proven separately by `minimal_commits_response_to_scrollback`).
     assert!(
         !harness.scrollback_text().contains(MOCK_RESPONSE_SENTINEL),
         "short response must not be pushed into scrollback\nscrollback:\n{}",
         harness.scrollback_text()
     );
 
-    // 3) The prompt sits directly after the (short) conversation, HIGH on the
-    //    screen, with the rest of the window left blank below it — NOT pinned to
-    //    the bottom with a big gap above (the regression). The cursor is always
-    //    on the focused prompt, so its row is the robust signal: bottom-pin puts
-    //    it near `rows - 1`; content-anchored keeps it in the upper portion.
+    // The cursor is always on the focused prompt, so its row is the robust
+    // signal: bottom-pin would put it near `rows - 1`; content-anchored keeps
+    // it in the upper portion, directly after the short conversation.
     let (cursor_row, _cursor_col) = harness.cursor_position();
     assert!(
         cursor_row < rows - 12,
@@ -68,10 +64,8 @@ async fn minimal_short_response_stays_on_screen() {
         harness.screen_contents()
     );
 
-    // 4) Nothing is rendered near the bottom of the screen: the last non-blank
-    //    row (the prompt's info bar) is well above the last row. Found explicitly
-    //    (not via trailing padding) so the check is independent of how the
-    //    emulator represents empty rows.
+    // Find the last non-blank row explicitly (not via trailing padding) so the
+    // check is independent of how the emulator represents empty rows.
     let screen = harness.screen_contents();
     let last_non_blank = screen
         .lines()

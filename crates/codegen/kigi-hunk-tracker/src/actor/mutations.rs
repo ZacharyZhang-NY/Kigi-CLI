@@ -29,7 +29,7 @@ use super::state::{FileContentState, FileHunkState};
 /// of truth for the string.
 pub const REFRESH_SCAN_LOG_PREFIX: &str = "refresh_all_baselines: completed in";
 
-/// Log-line prefix for the unchanged-git-state skip path of
+/// Log-line prefix for the `unchanged`-git-state skip path of
 /// [`HunkTrackerActor::refresh_all_baselines`] (no scan ran).
 pub const REFRESH_SKIP_LOG_PREFIX: &str = "refresh_all_baselines: git state unchanged";
 
@@ -37,7 +37,7 @@ pub const REFRESH_SKIP_LOG_PREFIX: &str = "refresh_all_baselines: git state unch
 ///
 /// Git-stored content typically has exactly one trailing newline appended.
 /// We strip only one to avoid falsely treating files with meaningful trailing
-/// whitespace as clean. Bare `\r` (classic Mac) is intentionally out of scope.
+/// whitespace as clean. Bare `\r` (classic Mac) is deliberately out of scope.
 fn strip_single_trailing_newline(content: &str) -> &str {
     content
         .strip_suffix("\r\n")
@@ -67,7 +67,8 @@ impl HunkTrackerActor {
 
         // Classify current content into FileContentState (single classification, cloned for file_states)
         let current_state = classify_string(content.clone());
-        let current_state_for_hunks = current_state.clone(); // Used by recompute_hunks below
+        // Used by recompute_hunks below
+        let current_state_for_hunks = current_state.clone();
 
         // Binary or TooLarge content: still track as an agent file (so
         // `get_all_tracked_paths` reports it for worktree replication)
@@ -132,7 +133,7 @@ impl HunkTrackerActor {
                 },
             );
 
-            // Emit FileAdded event
+            // Emit `FileAdded` event
             self.send_event(HunkEvent::FileAdded {
                 path: path.clone(),
                 is_agent_file: true,
@@ -277,7 +278,8 @@ impl HunkTrackerActor {
                 path.clone(),
                 FileHunkState {
                     baseline,
-                    current_content: missing_content(), // Will be set by recompute_hunks
+                    // Will be set by recompute_hunks
+                    current_content: missing_content(),
                     hunks: vec![],
                     is_agent_file: false,
                     baseline_accepted: false,
@@ -311,7 +313,7 @@ impl HunkTrackerActor {
                 (FileContentState::Symlink, FileContentState::Symlink) => true,
                 // Symlink on disk vs Full(target) in HEAD (or vice versa):
                 // git stores symlinks as plain text blobs, so the types
-                // differ even when the file is unchanged. Consult dirty cache.
+                // differ even when the file is `unchanged`. Consult dirty cache.
                 (FileContentState::Symlink, FileContentState::Full(_))
                 | (FileContentState::Full(_), FileContentState::Symlink) => {
                     let rel = path.strip_prefix(&self.working_dir).unwrap_or(&path);
@@ -367,7 +369,8 @@ impl HunkTrackerActor {
             // `rm foo.txt` on a committed file).
             let baseline = self.read_baseline(&path).await;
             if matches!(baseline, FileContentState::Missing) {
-                return; // Not in HEAD either, nothing to track
+                // Not in HEAD either, nothing to track
+                return;
             }
 
             // Seed file_states with baseline and Missing current content.
@@ -427,7 +430,7 @@ impl HunkTrackerActor {
             // Clear hunks since baseline == current
             let old_hunks = std::mem::take(&mut state.hunks);
 
-            // Remove from turn_index and emit removed events for all hunks
+            // Drop from turn_index and emit `Removed` events for all hunks
             for hunk in old_hunks {
                 if let Some(prompt_index) = hunk.source.prompt_index()
                     && let Some(set) = self.turn_index.get_mut(&prompt_index)
@@ -455,7 +458,7 @@ impl HunkTrackerActor {
     /// - Re-read baseline from the new HEAD
     /// - Re-read current content from disk
     /// - Recompute hunks
-    /// - Drop files that are now clean (baseline == current, not agent files)
+    /// - Drop files that are clean (baseline == current, not agent files)
     pub(super) async fn refresh_all_baselines(&mut self) {
         self.refresh_all_baselines_except(&HashSet::new()).await;
     }
@@ -572,7 +575,7 @@ impl HunkTrackerActor {
             state.current_content = new_current;
             state.baseline_accepted = false;
 
-            // Check if file is now clean (baseline == current).
+            // Check if file is clean (baseline == current).
             // For Full states, compare text (ignoring trailing newline).
             // For non-diffable states (Binary/TooLarge/LFS): consult the git
             // dirty cache (refreshed above) — if git says the file is clean,
@@ -601,7 +604,7 @@ impl HunkTrackerActor {
                 }
                 // Symlink on disk vs Full(target) in HEAD (or vice versa):
                 // git stores symlinks as plain text blobs, so the types
-                // differ even when the file is unchanged. Consult dirty cache.
+                // differ even when the file is `unchanged`. Consult dirty cache.
                 (FileContentState::Symlink, FileContentState::Full(_))
                 | (FileContentState::Full(_), FileContentState::Symlink) => {
                     let rel = path.strip_prefix(&self.working_dir).unwrap_or(&path);
@@ -698,7 +701,7 @@ impl HunkTrackerActor {
 
             for path in non_agent_paths {
                 if let Some(state) = self.file_states.remove(&path) {
-                    // Remove from turn_index and emit removed events for all hunks
+                    // Drop from turn_index and emit `Removed` events for all hunks
                     for hunk in state.hunks {
                         if let Some(prompt_index) = hunk.source.prompt_index()
                             && let Some(set) = self.turn_index.get_mut(&prompt_index)

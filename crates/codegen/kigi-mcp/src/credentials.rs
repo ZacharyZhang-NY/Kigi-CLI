@@ -124,7 +124,8 @@ impl McpCredentialStore {
                 }
                 let err = std::io::Error::last_os_error();
                 if err.kind() == std::io::ErrorKind::Interrupted {
-                    continue; // Retry on EINTR.
+                    // Retry on EINTR.
+                    continue;
                 }
                 // Lock failed for another reason — fall back to non-atomic insert.
                 self.insert_rmcp(server_name, server_url, creds);

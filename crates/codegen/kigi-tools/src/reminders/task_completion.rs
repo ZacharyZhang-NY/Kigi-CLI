@@ -40,7 +40,6 @@ const MAX_INLINE_COMPLETION_BYTES: usize = 4_000;
 #[derive(Clone, Debug, Default)]
 pub struct AutoWakeDeliveredIds(pub Arc<std::sync::Mutex<HashSet<String>>>);
 impl AutoWakeDeliveredIds {
-    /// Insert an ID into the delivered set.
     pub fn insert(&self, id: String) {
         self.0.lock().unwrap_or_else(|e| e.into_inner()).insert(id);
     }
@@ -59,7 +58,6 @@ impl AutoWakeDeliveredIds {
             .unwrap_or_else(|e| e.into_inner())
             .contains(id)
     }
-    /// Drain all IDs from the set, returning them.
     pub fn drain(&self) -> Vec<String> {
         let mut guard = self.0.lock().unwrap_or_else(|e| e.into_inner());
         guard.drain().collect()
@@ -186,7 +184,6 @@ pub fn format_monitor_completion(task: &TaskSnapshot, task_output_name: Option<&
         dur = task.duration_secs(),
     )
 }
-/// Warn the model about other background tasks that are still running.
 fn format_running_tasks_warning(running: &[&TaskSnapshot], kill_task_name: Option<&str>) -> String {
     use std::fmt::Write as _;
     let n = running.len();
@@ -498,22 +495,6 @@ pub fn format_between_turn_bash_completions(
     }
     buf
 }
-/// Extract task / subagent IDs whose completion the model already
-/// learned about from this tool result. Used by:
-/// - `TaskCompletionReminder::collect_reminders` to suppress the
-///   per-tool-call `<system-reminder>` for the same ID.
-/// - `kigi-shell`'s `SessionActor` to sweep matching synthetic
-///   auto-wake prompts and notifications out of `pending_inputs` /
-///   `pending_notifications` (closes the TOCTOU race that produces
-///   trailing `<system-reminder>` items in `chat_history.jsonl`).
-///
-/// Centralising this here means the two consumer surfaces cannot drift:
-/// both call the same function, and the exhaustive `match` below
-/// forces every new `ToolOutput` variant to opt in or out at compile
-/// time.
-///
-/// Returns borrowed `&str` slices (no allocation) — the strings live in
-/// `output` for the duration of the call.
 /// Extract the subagent UUID from the body of a Task-tool-formatted
 /// text output. The shape is exactly:
 ///
@@ -538,6 +519,22 @@ fn task_text_agent_id(text: &str) -> Option<&str> {
         .unwrap_or(after.len());
     if end == 0 { None } else { Some(&after[..end]) }
 }
+/// Extract task / subagent IDs whose completion the model already
+/// learned about from this tool result. Used by:
+/// - `TaskCompletionReminder::collect_reminders` to suppress the
+///   per-tool-call `<system-reminder>` for the same ID.
+/// - `kigi-shell`'s `SessionActor` to sweep matching synthetic
+///   auto-wake prompts and notifications out of `pending_inputs` /
+///   `pending_notifications` (closes the TOCTOU race that produces
+///   trailing `<system-reminder>` items in `chat_history.jsonl`).
+///
+/// Centralising this here means the two consumer surfaces cannot drift:
+/// both call the same function, and the exhaustive `match` below
+/// forces every new `ToolOutput` variant to opt in or out at compile
+/// time.
+///
+/// Returns borrowed `&str` slices (no allocation) — the strings live in
+/// `output` for the duration of the call.
 pub fn consumed_completion_ids(output: &ToolOutput) -> Vec<&str> {
     let mut ids = Vec::new();
     if let ToolOutput::Text(t) = output

@@ -35,23 +35,16 @@ pub struct TaskSnapshot {
     pub task_id: TaskId,
     /// Internal tool_call_id for terminal registry lookup
     pub tool_call_id: String,
-    /// The command that was executed
     pub command: String,
-    /// Working directory where command was run
     pub cwd: String,
-    /// Wall-clock start time
     pub start_time: DateTime<Utc>,
-    /// Wall-clock end time (set when task completes)
     pub end_time: Option<DateTime<Utc>>,
     /// In-memory output (may be truncated if > output_byte_limit)
     pub output: String,
     /// Path to full output file on disk
     pub output_file: PathBuf,
-    /// Whether in-memory output was truncated
     pub truncated: bool,
-    /// Exit code if completed
     pub exit_code: Option<i32>,
-    /// Signal name if terminated by signal
     pub signal: Option<String>,
     /// Whether task has completed (exited or was killed)
     pub completed: bool,
@@ -76,7 +69,6 @@ impl TaskSnapshot {
 struct TaskEntry {
     /// The task snapshot (protected by RwLock for concurrent reads)
     snapshot: RwLock<TaskSnapshot>,
-    /// Notifier for waiters when task completes
     exit_notify: Arc<Notify>,
 }
 
@@ -88,13 +80,10 @@ struct TaskEntry {
 /// - Session cleanup automatically cleans up tasks
 /// - No global state pollution between agents
 pub struct BackgroundTaskRegistry {
-    /// Map from task_id -> entry
     tasks: Mutex<HashMap<TaskId, Arc<TaskEntry>>>,
-    /// Maximum number of concurrent tasks
     max_tasks: usize,
 }
 
-/// Default maximum number of concurrent background tasks per session
 const DEFAULT_MAX_BACKGROUND_TASKS: usize = 10;
 
 impl Default for BackgroundTaskRegistry {
@@ -104,7 +93,6 @@ impl Default for BackgroundTaskRegistry {
 }
 
 impl BackgroundTaskRegistry {
-    /// Create a new registry with default max tasks limit.
     pub fn new() -> Self {
         Self {
             tasks: Mutex::new(HashMap::new()),
@@ -127,7 +115,6 @@ impl BackgroundTaskRegistry {
     pub async fn register(&self, snapshot: TaskSnapshot) -> Result<(), String> {
         let mut tasks = self.tasks.lock().await;
 
-        // Cleanup completed tasks if at capacity
         if tasks.len() >= self.max_tasks {
             tasks.retain(|_, entry| {
                 // Keep if not completed (check synchronously via try_read)
@@ -155,9 +142,6 @@ impl BackgroundTaskRegistry {
         Ok(())
     }
 
-    /// Get current snapshot of a task.
-    ///
-    /// Returns `None` if task_id is not found.
     pub async fn get(&self, task_id: &str) -> Option<TaskSnapshot> {
         let tasks = self.tasks.lock().await;
         let entry = tasks.get(task_id)?;
@@ -192,14 +176,10 @@ impl BackgroundTaskRegistry {
                 snapshot.signal = signal;
                 snapshot.end_time = Some(Utc::now());
             }
-            // Notify all waiters that task has completed
             entry.exit_notify.notify_waiters();
         }
     }
 
-    /// Wait for task completion with optional timeout.
-    ///
-    /// Returns the task snapshot after completion or timeout.
     /// Returns `None` if task_id is not found.
     pub async fn wait_for_completion(
         &self,
@@ -236,16 +216,12 @@ impl BackgroundTaskRegistry {
         Some(entry.snapshot.read().await.clone())
     }
 
-    /// Get a cloneable notification handle for a specific task.
-    ///
     /// Used by multi-wait to select across multiple task exit notifications.
-    /// Returns `None` if the task is not registered.
     pub async fn get_exit_notify(&self, task_id: &str) -> Option<Arc<Notify>> {
         let tasks = self.tasks.lock().await;
         tasks.get(task_id).map(|e| Arc::clone(&e.exit_notify))
     }
 
-    /// List all tasks in the registry.
     pub async fn list(&self) -> Vec<TaskSnapshot> {
         let tasks = self.tasks.lock().await;
         let mut result = Vec::with_capacity(tasks.len());
@@ -280,8 +256,6 @@ pub fn get_task_output_path(session_id: &str, task_id: &str) -> PathBuf {
     std::fs::create_dir_all(&tasks_dir).ok();
     tasks_dir.join(format!("{}.log", task_id))
 }
-
-// ── Background task manifest for session resume ──
 
 const MANIFEST_FILENAME: &str = "background_tasks_manifest.json";
 
@@ -468,7 +442,6 @@ mod tests {
             .unwrap();
         registry.mark_completed("test-1", Some(0), None).await;
 
-        // Should return immediately since already completed
         let got = registry
             .wait_for_completion("test-1", Some(Duration::from_millis(100)))
             .await
@@ -484,13 +457,13 @@ mod tests {
             .await
             .unwrap();
 
-        // Start waiting with short timeout
         let got = registry
             .wait_for_completion("test-1", Some(Duration::from_millis(50)))
             .await
             .unwrap();
 
-        // Should return with incomplete status (timed out)
+        // wait_for_completion returns Some with completed=false on timeout,
+        // not None.
         assert!(!got.completed);
     }
 
@@ -504,7 +477,6 @@ mod tests {
 
         let registry_clone = registry.clone();
 
-        // Spawn task to complete after short delay
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(50)).await;
             registry_clone
@@ -512,7 +484,6 @@ mod tests {
                 .await;
         });
 
-        // Wait for completion
         let got = registry
             .wait_for_completion("test-1", Some(Duration::from_secs(5)))
             .await
@@ -526,7 +497,6 @@ mod tests {
     async fn test_max_tasks_limit() {
         let registry = BackgroundTaskRegistry::with_max_tasks(2);
 
-        // Register up to limit
         registry
             .register(make_test_snapshot("task-1"))
             .await
@@ -536,7 +506,6 @@ mod tests {
             .await
             .unwrap();
 
-        // Third should fail
         let result = registry.register(make_test_snapshot("task-3")).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Maximum background tasks"));
@@ -555,16 +524,14 @@ mod tests {
             .await
             .unwrap();
 
-        // Mark first as completed
         registry.mark_completed("task-1", Some(0), None).await;
 
-        // Now third should succeed (completed task cleaned up)
+        // Registering at capacity triggers cleanup of completed tasks first.
         registry
             .register(make_test_snapshot("task-3"))
             .await
             .unwrap();
 
-        // Verify task-1 was cleaned up
         assert!(registry.get("task-1").await.is_none());
         assert!(registry.get("task-3").await.is_some());
     }
@@ -602,8 +569,6 @@ mod tests {
         registry.mark_completed("task-1", Some(0), None).await;
         assert_eq!(registry.active_count().await, 1);
     }
-
-    // ── Manifest tests ──
 
     fn make_manifest_entry(task_id: &str, secs_ago: u64) -> BackgroundTaskManifestEntry {
         BackgroundTaskManifestEntry {

@@ -333,8 +333,6 @@ mod shell_suggestion_key_tests {
         );
     }
 
-    // -- always-on Tab fetch (no KIGI_SUGGESTIONS) --------------------------
-
     /// Tab in bash mode with no fetched candidates fires a deterministic
     /// fetch — no env flag, no AI, dropdown-scale limit.
     #[test]
@@ -431,8 +429,6 @@ mod shell_suggestion_key_tests {
             "normal-mode Tab must not fetch completions"
         );
     }
-
-    // -- terminal-like Tab (single-candidate accept / common-prefix fill) --
 
     /// Exactly one token candidate: Tab accepts it immediately — no
     /// dropdown flash — and the accept re-fetch keeps the pipeline alive.
@@ -652,9 +648,9 @@ mod shell_suggestion_key_tests {
             .count()
     }
 
-    /// BugBot: a Fill whose range clips a paste chip used to no-op the
-    /// write and STILL kick a refetch — every Tab spun fill+refetch with no
-    /// draft change. The declined fill now degrades to opening the
+    /// BugBot: a Fill whose range clips a paste chip no-ops the write yet
+    /// would still kick a refetch — every Tab would spin fill+refetch with
+    /// no draft change. The declined fill degrades to opening the
     /// dropdown: candidates visible, nothing fetched, chip intact, and the
     /// second Tab rides the normal open-dropdown handling.
     #[test]
@@ -705,11 +701,11 @@ mod shell_suggestion_key_tests {
     }
 
     /// BugBot sibling hole: the OPEN-dropdown accept (Tab/Enter/mouse all
-    /// share the helper) used to consume the candidates and close before
-    /// the write path declined the chip-clipping splice — leaving nothing.
-    /// The probe now makes it an honest no-op: nothing consumed, dropdown
-    /// up, chip/draft/generation untouched, no kick — and Enter must not
-    /// fall through to send.
+    /// share the helper) would consume the candidates and close before the
+    /// write path declined the chip-clipping splice — leaving nothing. The
+    /// probe makes it an honest no-op: nothing consumed, dropdown up,
+    /// chip/draft/generation untouched, no kick — and Enter must not fall
+    /// through to send.
     #[test]
     fn dropdown_accept_clipping_paste_chip_keeps_candidates() {
         let (mut agent, text) = chip_agent(vec![
@@ -795,8 +791,6 @@ mod shell_suggestion_key_tests {
             "dir accept must kick a fresh fetch for the drill-down"
         );
     }
-
-    // -- Bash-mode gating of the as-you-type pipeline ------------------------
 
     /// Typing in the normal (chat) prompt never fires the suggest pipeline;
     /// the same keystroke in bash mode debounces a request.

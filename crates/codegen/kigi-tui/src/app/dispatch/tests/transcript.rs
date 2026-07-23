@@ -195,8 +195,8 @@ fn open_block_viewer_uses_markdown_viewer_for_agent_message_with_image_ref() {
 
     assert!(effects.is_empty());
     let agent = app.agents.get(&id).unwrap();
-    // Agent messages with image refs now open the normal markdown viewer
-    // (inline media rendering moved to the tool call block).
+    // Agent messages with image refs open the normal markdown viewer;
+    // inline media rendering happens in the tool call block.
     assert!(agent.block_viewer.is_some());
 }
 
@@ -230,15 +230,15 @@ fn open_block_viewer_opens_image_only_blocks_natively() {
     let _guard = set_protocol_for_test(GraphicsProtocol::Kitty);
     let effects = dispatch(Action::OpenBlockViewer, &mut app);
 
-    // Generated media now opens in the OS-native viewer (fire-and-forget),
-    // so neither the in-app block viewer nor image viewer is shown.
+    // Generated media opens in the OS-native viewer (fire-and-forget);
+    // neither the in-app block viewer nor image viewer is shown.
     assert!(effects.is_empty());
     let agent = app.agents.get(&id).unwrap();
     assert!(agent.block_viewer.is_none());
     assert!(agent.image_viewer.is_none());
 }
 
-// -- Plugins tab: group-collapse seeding on PluginsListLoaded --------------
+// Plugins tab: group-collapse seeding on PluginsListLoaded
 
 fn plugins_list_response() -> kigi_hooks_plugins_types::PluginsListResponse {
     use crate::views::extensions_modal::test_plugin_info;

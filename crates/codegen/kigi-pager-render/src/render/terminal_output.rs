@@ -258,7 +258,6 @@ fn first_param(params: &Params, default: u16) -> u16 {
     }
 }
 
-/// Map a 0-7 ANSI color index to a named ratatui color.
 fn ansi16(n: u16) -> Color {
     match n {
         0 => Color::Black,
@@ -272,7 +271,6 @@ fn ansi16(n: u16) -> Color {
     }
 }
 
-/// Map a 0-7 bright ANSI color index to a named ratatui color.
 fn ansi16_bright(n: u16) -> Color {
     match n {
         0 => Color::DarkGray,

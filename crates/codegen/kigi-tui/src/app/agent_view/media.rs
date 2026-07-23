@@ -12,9 +12,6 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 
 impl AgentView {
-    // -- Image viewer input --------------------------------------------------
-
-    /// Handle a key event in the image viewer modal.
     pub(super) fn handle_image_viewer_key(&mut self, key: &KeyEvent) -> InputOutcome {
         use crossterm::event::KeyCode;
 
@@ -24,9 +21,7 @@ impl AgentView {
 
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => {
-                // Clear the Kitty image before closing.
-                // Old code bypassed STDERR_OUTPUT_LOCK which could interleave
-                // mid-frame. Safe to revert: content is valid escapes, not raw text.
+                // Kitty images outlive the dropped viewer state; clear before close.
                 kigi_shell::util::with_locked_stderr(|stderr| {
                     let clear = PostFlush::from(overlay::clear_kitty());
                     let _ = clear.write_to(stderr);
@@ -42,8 +37,6 @@ impl AgentView {
         }
         InputOutcome::Changed
     }
-
-    // -- Inline media rendering -----------------------------------------------
 
     /// Build Kitty/iTerm2 escape sequences for an inline media placement.
     pub(super) fn build_inline_media_escapes(
@@ -85,7 +78,6 @@ impl AgentView {
         let mut transmit_esc = String::new();
 
         if needs_transmit {
-            // Load bytes from disk (or use cached bytes if available).
             if !self.inline_media_cache.contains_key(path) {
                 let bytes = if placement.info.is_video {
                     let (frame_bytes, _, _) = crate::prompt_images::extract_poster_frame(path)?;
@@ -184,8 +176,6 @@ impl AgentView {
                 screen_rect: rect,
                 source,
             } = aff;
-            // The transient `rendering…` hint shows only while an on-click render
-            // for this diagram is in flight.
             let rendering = self.diagram_is_rendering(&source);
             let row = affordance_row(rendering);
             // A segment is drawn only if it fits wholly within the row width
@@ -194,7 +184,6 @@ impl AgentView {
             let fits =
                 |col: u16, label: &str| col + UnicodeWidthStr::width(label) as u16 <= rect.width;
 
-            // Leading dim, non-clickable `◇ mermaid` label.
             let (label_col, label_text) = row.label;
             if fits(label_col, label_text) {
                 buf.set_string_safe(
@@ -245,7 +234,6 @@ impl AgentView {
                 }
             }
 
-            // Trailing dim `rendering…` hint after the buttons (not clickable).
             if let Some((col, status)) = row.status
                 && fits(col, status)
             {
@@ -259,13 +247,10 @@ impl AgentView {
         }
     }
 
-    /// Whether the diagram with `source` has an on-click render in flight (drives
-    /// the affordance row's transient `rendering…` hint).
     fn diagram_is_rendering(&self, source: &str) -> bool {
         self.mermaid_is_rendering(source)
     }
 
-    /// Get or allocate a Kitty image ID for the given media path.
     fn get_or_alloc_media_id(&mut self, path: &std::path::Path) -> u32 {
         if let Some(&id) = self.inline_media_ids.get(path) {
             return id;
@@ -401,7 +386,6 @@ impl AgentView {
     /// path, restarts from the beginning. Frames are extracted via ffmpeg in
     /// a background thread so the UI never blocks.
     pub(crate) fn start_inline_video_playback(&mut self, path: &std::path::Path) {
-        // If already loaded for this path, just restart.
         if let Some(ref mut video) = self.inline_video
             && video.path == path
         {
@@ -410,7 +394,6 @@ impl AgentView {
             video.last_frame_time = std::time::Instant::now();
             return;
         }
-        // Extract frames in a background thread to avoid blocking the UI.
         let path_owned = path.to_path_buf();
         let (tx, rx) = std::sync::mpsc::channel();
         self.video_load_rx = Some(rx);
@@ -430,8 +413,6 @@ impl AgentView {
             let _ = tx.send(result);
         });
     }
-
-    // -- Inline media click handling -----------------------------------------
 
     /// Handle a click on inline media buttons. Returns `Some(InputOutcome)` if
     /// the click was consumed, `None` to fall through to normal handling.
@@ -456,7 +437,6 @@ impl AgentView {
             return Some(InputOutcome::Changed);
         }
 
-        // [Play] button or video poster → start/restart inline playback.
         let play_target = self
             .inline_media_hits
             .play_buttons
@@ -469,7 +449,6 @@ impl AgentView {
             return Some(InputOutcome::Changed);
         }
 
-        // [Copy] button → copy image to clipboard (async).
         if let Some((_, path)) = self
             .inline_media_hits
             .copy_image_buttons
@@ -486,7 +465,6 @@ impl AgentView {
             return Some(InputOutcome::Changed);
         }
 
-        // Click on filepath line → copy path to clipboard.
         if let Some((_, path)) = self
             .inline_media_hits
             .filepath_areas
@@ -498,9 +476,8 @@ impl AgentView {
             return Some(InputOutcome::Changed);
         }
 
-        // Mermaid affordance row → render-on-click (Open/Copy path) or copy
-        // source. Resolve the kind + source index first so the `mermaid_buttons`
-        // borrow ends before the `&mut self` dispatch below.
+        // Resolve the kind + source index first so the `mermaid_buttons` borrow
+        // ends before the `&mut self` dispatch below.
         let mermaid_hit = self
             .inline_media_hits
             .mermaid_buttons
@@ -552,9 +529,6 @@ impl AgentView {
         }
     }
 
-    // -- Video viewer input --------------------------------------------------
-
-    /// Handle a key event in the video viewer modal.
     pub(super) fn handle_video_viewer_key(&mut self, key: &KeyEvent) -> InputOutcome {
         use crossterm::event::KeyCode;
 
@@ -564,7 +538,7 @@ impl AgentView {
 
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => {
-                // Clear the Kitty image before closing.
+                // Kitty images outlive the dropped viewer state; clear before close.
                 kigi_shell::util::with_locked_stderr(|stderr| {
                     let clear = PostFlush::from(overlay::clear_kitty());
                     let _ = clear.write_to(stderr);
@@ -588,17 +562,13 @@ impl AgentView {
         InputOutcome::Changed
     }
 
-    // -- /gboom easter egg input ------------------------------------------------
-
-    /// Handle a key event in the `/gboom` game modal.
     pub(super) fn handle_gboom_key(&mut self, key: &KeyEvent) -> InputOutcome {
         let Some(ref mut gboom) = self.gboom else {
             return InputOutcome::Unchanged;
         };
         match gboom.handle_key(key) {
             crate::gboom::GboomKeyOutcome::Close => {
-                // Clear the kitty image before closing (same as the video
-                // viewer) so no stale frame lingers in the cell grid.
+                // Kitty images outlive the dropped game state; clear before close.
                 kigi_shell::util::with_locked_stderr(|stderr| {
                     let clear = PostFlush::from(overlay::clear_kitty());
                     let _ = clear.write_to(stderr);

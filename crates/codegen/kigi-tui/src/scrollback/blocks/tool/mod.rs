@@ -58,12 +58,11 @@ pub struct LineRange {
 }
 
 impl LineRange {
-    /// Create a new line range.
     pub fn new(start: usize, end: usize) -> Self {
         Self { start, end }
     }
 
-    /// Format as "(start:end)" for display.
+    /// Format as "start:end" for display.
     pub fn display(&self) -> String {
         format!("{}:{}", self.start, self.end)
     }

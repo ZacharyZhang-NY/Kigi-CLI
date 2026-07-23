@@ -41,7 +41,6 @@ async fn zero_turn_model_switch_no_modal() {
         );
     }
 
-    // No modal should appear.
     assert!(
         !harness.contains_text("requires starting a new session"),
         "modal should NOT appear for zero-turn switch\nscreen:\n{}",

@@ -66,7 +66,6 @@ async fn verify_bashq_claim2_force_interject() {
         .inject_keys(CTRL_ENTER)
         .expect("send the selected bash row now");
 
-    // Send-now: the row executes as real bash NOW, as its own turn.
     harness
         .wait_for_text("CLAIMTWO_FS_OK", Duration::from_secs(30))
         .expect("queued bash executed via send-now");

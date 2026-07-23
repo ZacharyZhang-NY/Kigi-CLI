@@ -338,7 +338,6 @@ async fn build_report(cwd: &Path) -> InspectReport {
         list_skills(cwd, &plugin_registry, &skills_config),
     );
 
-    // Attach local compatibility status to each discovered vendor entry.
     for entry in &mut instructions {
         entry.compatibility_status =
             instruction_compat_status(&entry.vendor, &entry.file_type, &external_compat);
@@ -651,7 +650,6 @@ fn list_hooks(
         })
         .collect();
 
-    // Plugin hooks
     for p in discovered_plugins {
         if !p.trusted {
             continue;
@@ -973,7 +971,6 @@ fn list_config_sources(cwd: &Path) -> ConfigSources {
         }
     }
 
-    // User managed
     if let Some(home) = crate::config::user_kigi_home() {
         let p = home.join("managed_config.toml");
         if let Some((path_s, note)) = describe_config_file(&p) {
@@ -1715,8 +1712,6 @@ mod tests {
                 .is_some_and(|r| !r.is_empty())
         );
     }
-
-    // ── skill source mapping (skill_entry_source) ─────────────────────────
 
     fn skill_fixture(name: &str, path: &str, scope: SkillScope) -> SkillInfo {
         SkillInfo {

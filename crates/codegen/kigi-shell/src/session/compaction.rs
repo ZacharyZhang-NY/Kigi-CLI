@@ -1,10 +1,7 @@
 //! Compaction methods for `SessionActor`.
 //!
-//! This module contains all compaction-related methods: manual `/compact`,
-//! auto-compact threshold checks, inline auto-compact with auto-continue,
-//! error-recovery compaction, preflight overflow detection, and checkpoint
-//! persistence. These methods form a second `impl SessionActor` block that
-//! lives alongside the primary one in `acp_session.rs`.
+//! These form a second `impl SessionActor` block alongside the primary one in
+//! `acp_session.rs`.
 use super::SessionActor;
 use super::is_project_instructions;
 use crate::agent::models_fetch::DEFAULT_CONTEXT_WINDOW;
@@ -438,7 +435,6 @@ impl SessionActor {
         Some(out)
     }
 }
-/// Trigger info for auto-compact decisions.
 pub(crate) struct AutoCompactTriggerInfo {
     pub tokens_used: u64,
     pub context_window: u64,
@@ -591,8 +587,6 @@ impl SessionActor {
             span.record("detail", tracing::field::display(detail));
         }
     }
-    /// Runs the compact operation over here which compresses the current conversation
-    /// and helps with saving the context for the model
     #[tracing::instrument(
         name = "session.compact",
         skip_all,
@@ -1678,8 +1672,6 @@ impl SessionActor {
         }
         Ok(())
     }
-    /// Check if auto-compact should be triggered based on context window usage.
-    /// Returns Some(AutoCompactTriggerInfo) if threshold is reached, None otherwise.
     pub(crate) fn should_auto_compact(
         &self,
         total_tokens: u64,

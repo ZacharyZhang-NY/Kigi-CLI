@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 /// Input for the `hashline_edit` tool.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HashlineEditInput {
-    /// Path to the file to edit.
     #[schemars(description = "The path of the file to edit.")]
     pub file_path: String,
 

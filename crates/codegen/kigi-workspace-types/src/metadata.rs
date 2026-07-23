@@ -123,7 +123,6 @@ impl Metadata {
         self.0.len()
     }
 
-    /// Whether the map is empty.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }

@@ -97,7 +97,6 @@ async fn minimal_transcript_expands_collapsed_thinking() {
             )
         });
 
-    // And the inline TUI survives the suspend/restore round trip.
     harness
         .wait_for_text(MINIMAL_IDLE_SENTINEL, Duration::from_secs(10))
         .expect("inline TUI restored after the pager exited");

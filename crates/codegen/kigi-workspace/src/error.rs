@@ -4,7 +4,7 @@ use crate::capability::CapabilityMode;
 
 /// Errors surfaced by the workspace public API.
 ///
-/// `#[non_exhaustive]` so adding new variants is a non-breaking change.
+/// `#[non_exhaustive]` so introducing new variants is a non-breaking extension.
 /// Tests should match on variants rather than scrape the `Display` text.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]

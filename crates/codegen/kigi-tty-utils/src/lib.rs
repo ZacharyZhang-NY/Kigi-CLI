@@ -42,9 +42,7 @@ use std::io;
 mod process_scope;
 pub use process_scope::{ProcessScope, global_process_scope};
 
-// ---------------------------------------------------------------------------
 // TTY detach — pre_exec building block
-// ---------------------------------------------------------------------------
 
 /// Detach from the controlling TTY by starting a new session.
 ///
@@ -83,9 +81,7 @@ pub fn detach_from_tty() -> io::Result<()> {
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
 // tokio::process::Command wrapper
-// ---------------------------------------------------------------------------
 
 /// Detach a `tokio::process::Command` from the parent's controlling TTY/console.
 ///
@@ -108,9 +104,7 @@ pub fn detach_command(cmd: &mut tokio::process::Command) {
     }
 }
 
-// ---------------------------------------------------------------------------
 // std::process::Command wrapper
-// ---------------------------------------------------------------------------
 
 /// Detach a `std::process::Command` from the parent's controlling TTY/console.
 ///
@@ -138,9 +132,7 @@ pub fn detach_std_command(cmd: &mut std::process::Command) {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Process group lifecycle
-// ---------------------------------------------------------------------------
 
 /// Configure a command so the spawned child becomes the leader of a new
 /// process group.
@@ -367,9 +359,7 @@ impl Drop for ProcessGroup {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Environment variable helpers
-// ---------------------------------------------------------------------------
 
 /// Returns environment variables that prevent CLI tools from launching any
 /// interactive program that would block waiting for user input — pagers,
@@ -450,9 +440,7 @@ fn noop_cmd() -> &'static str {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Stderr redirection — shield TUI output from C-library noise
-// ---------------------------------------------------------------------------
 
 /// The dup'd stderr fd that writes to the real terminal. Set once by
 /// [`redirect_native_stderr`]. Stored as [`OwnedFd`](std::os::unix::io::OwnedFd)
@@ -492,7 +480,8 @@ pub fn redirect_native_stderr() {
         // at process start.
         let duped = unsafe { libc::dup(2) };
         if duped < 0 {
-            return; // best-effort; don't crash
+            // best-effort; don't crash
+            return;
         }
 
         // Store the duped fd (as OwnedFd) before redirecting.
@@ -718,7 +707,7 @@ mod tests {
         assert_eq!(env.get("GPG_TTY"), Some(&String::new()));
     }
 
-    // ── stderr redirect integration tests ────────────────────────
+    // stderr redirect integration tests
     //
     // The redirect/dup/restore cycle mutates process-global state
     // (fd 2 and a `OnceLock`), so the full flow runs in a subprocess
@@ -770,7 +759,8 @@ mod tests {
     #[test]
     fn stderr_redirect_roundtrip_body() {
         if std::env::var("__XAI_STDERR_REDIRECT_SUBPROCESS").is_err() {
-            return; // skip when not invoked as subprocess
+            // skip when not invoked as subprocess
+            return;
         }
 
         use std::io::Write;
@@ -832,7 +822,8 @@ mod tests {
         new_process_group(&mut cmd);
 
         let mut group = ProcessGroup::new().expect("create ProcessGroup");
-        #[allow(clippy::disallowed_methods)] // test: exercises ProcessGroup directly
+        // test: exercises ProcessGroup directly
+        #[allow(clippy::disallowed_methods)]
         let mut child = cmd.spawn().expect("spawn child");
         group.attach(&child).expect("attach child to group");
 
@@ -866,7 +857,8 @@ mod tests {
         new_process_group(&mut cmd);
 
         let mut group = ProcessGroup::new().expect("create ProcessGroup");
-        #[allow(clippy::disallowed_methods)] // test: exercises ProcessGroup + grandchild kill
+        // test: exercises ProcessGroup + grandchild kill
+        #[allow(clippy::disallowed_methods)]
         let mut child = cmd.spawn().expect("spawn leader");
         group.attach(&child).expect("attach leader to group");
 

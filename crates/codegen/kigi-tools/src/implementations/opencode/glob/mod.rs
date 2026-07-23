@@ -19,14 +19,10 @@ use crate::types::resources::{
 use crate::types::tool::{ToolKind, ToolNamespace};
 use crate::types::tool_io::ToolInput;
 
-// ─── Constants ──────────────────────────────────────────────────────
-
 const RESULT_LIMIT: usize = 100;
 
 /// Hard cap on bytes read from ripgrep's stdout (5 MB).
 const MAX_STDOUT_BYTES: usize = 5_000_000;
-
-// ─── Description ────────────────────────────────────────────────────
 
 const DESCRIPTION: &str = r#"Lists files and directories in a given path.
 
@@ -34,8 +30,6 @@ Other details:
     - The result does not display dot-files and dot-directories.
     - Respects .gitignore patterns (files/directories ignored by git are not shown).
     - Large directories are summarized with file counts and extension breakdowns instead of listing all files."#;
-
-// ─── Input ──────────────────────────────────────────────────────────
 
 /// Input for the `glob` tool.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
@@ -66,19 +60,14 @@ impl From<GlobInput> for ToolInput {
     }
 }
 
-// ─── Output ─────────────────────────────────────────────────────────
-
-/// Structured output for the `glob` tool.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GlobOutput {
-    /// Pre-formatted text for the model prompt.
     pub tool_output_for_prompt: String,
     /// Number of files included in `entries` (capped at `RESULT_LIMIT`).
     pub count: usize,
     /// Total files matched by ripgrep before the cap. May exceed `count`.
     /// When `truncated_by_bytes` was hit this is a lower bound.
     pub total_count: usize,
-    /// Whether results were truncated at the limit.
     pub truncated: bool,
     /// Absolute paths of matched files included in `count`, sorted by mtime
     /// descending. Empty when `count == 0`.
@@ -98,9 +87,6 @@ impl From<GlobOutput> for ToolOutput {
     }
 }
 
-// ─── Tool ───────────────────────────────────────────────────────────
-
-/// Glob tool — lists files matching a glob pattern, sorted by mtime.
 #[derive(Debug, Default)]
 pub struct GlobTool;
 
@@ -160,15 +146,12 @@ impl kigi_tool_runtime::Tool for GlobTool {
             .get::<DisplayCwd>()
             .map(|d| d.0.clone());
 
-        // ── Resolve search directory ────────────────────────────
         let search_dir = resolve_model_path(
             &cwd,
             display_cwd.as_deref(),
             &input.path.clone().unwrap_or_default(),
         );
 
-        // ── Build ripgrep command ───────────────────────────────
-        //   rg --files --glob='!.git/*' --hidden --glob=<pattern> <search_dir>
         let rg_exec = rg_path();
         let mut cmd = Command::new(rg_exec);
         cmd.arg("--files")
@@ -198,7 +181,6 @@ impl kigi_tool_runtime::Tool for GlobTool {
             }
         };
 
-        // ── Read stdout with byte cap ───────────────────────────
         let mut stdout_buf = Vec::with_capacity(MAX_STDOUT_BYTES.min(65_536));
         let mut truncated_by_bytes = false;
         if let Some(mut stdout_pipe) = child.stdout.take() {
@@ -234,7 +216,6 @@ impl kigi_tool_runtime::Tool for GlobTool {
 
         let _ = child.wait().await;
 
-        // ── Parse file paths from stdout ────────────────────────
         let stdout = String::from_utf8_lossy(&stdout_buf);
         let mut truncated = truncated_by_bytes;
 
@@ -278,10 +259,8 @@ impl kigi_tool_runtime::Tool for GlobTool {
             });
         }
 
-        // ── Sort by mtime descending (most recent first) ────────
         entries.sort_by_key(|entry| std::cmp::Reverse(entry.mtime_ms));
 
-        // ── Format output ───────────────────────────────────────
         let count = entries.len();
         let cwd_for_display = display_cwd_or_cwd(&cwd, display_cwd.as_deref());
         let entry_paths: Vec<String> = entries
@@ -420,7 +399,6 @@ mod tests {
 
         // Create files with slight time gaps so mtime differs.
         std::fs::write(tmp.path().join("old.txt"), "old\n").unwrap();
-        // Touch a second file after a small delay.
         std::thread::sleep(std::time::Duration::from_millis(50));
         std::fs::write(tmp.path().join("new.txt"), "new\n").unwrap();
 
@@ -439,7 +417,6 @@ mod tests {
         .unwrap();
 
         assert_eq!(output.count, 2);
-        // "new.txt" should appear before "old.txt" in the output.
         let new_pos = output.tool_output_for_prompt.find("new.txt").unwrap();
         let old_pos = output.tool_output_for_prompt.find("old.txt").unwrap();
         assert!(
@@ -493,13 +470,11 @@ mod tests {
         assert_eq!(input.pattern, "**/*.ts");
         assert_eq!(input.path.as_deref(), Some("src"));
 
-        // Minimal — path omitted
         let json_min = r#"{"pattern":"*.rs"}"#;
         let input_min: GlobInput = serde_json::from_str(json_min).unwrap();
         assert_eq!(input_min.pattern, "*.rs");
         assert!(input_min.path.is_none());
 
-        // Round-trip through serde_json::Value
         let value = serde_json::to_value(&input).unwrap();
         let back: GlobInput = serde_json::from_value(value).unwrap();
         assert_eq!(back.pattern, "**/*.ts");
@@ -535,7 +510,6 @@ mod tests {
     #[tokio::test]
     async fn empty_directory() {
         let tmp = TempDir::new().unwrap();
-        // Directory exists but contains no files.
 
         let tool = GlobTool;
         let resources = test_resources(tmp.path());
@@ -582,7 +556,8 @@ mod tests {
     #[tokio::test]
     async fn missing_cwd_resource() {
         let tool = GlobTool;
-        let resources = Resources::new(); // No Cwd inserted
+        // No Cwd inserted
+        let resources = Resources::new();
 
         let result = kigi_tool_runtime::Tool::run(
             &tool,
@@ -685,15 +660,12 @@ mod tests {
             .expect("git must be available");
         assert!(status.success(), "git init failed");
 
-        // Ignore an entire directory via .gitignore.
         std::fs::write(tmp.path().join(".gitignore"), "ignored_dir/\n").unwrap();
 
-        // Create an ignored directory with a .txt file inside it.
         let ignored = tmp.path().join("ignored_dir");
         std::fs::create_dir(&ignored).unwrap();
         std::fs::write(ignored.join("secret.txt"), "should be ignored\n").unwrap();
 
-        // Create a non-ignored .txt file.
         std::fs::write(tmp.path().join("visible.txt"), "should be found\n").unwrap();
 
         let tool = GlobTool;

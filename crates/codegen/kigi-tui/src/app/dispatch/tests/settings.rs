@@ -126,10 +126,10 @@ fn toggle_vim_mode_propagates_to_open_subagent_views() {
     );
 }
 /// `/vim-mode` must toggle vim from the DASHBOARD too (not just an
-/// agent view) — previously it early-returned unless an agent was
-/// active, so it was a silent no-op and the overview's j/k never
-/// turned on. Turning vim ON also focuses the overview so j/k
-/// navigate immediately; turning it OFF returns focus to the input.
+/// agent view) — an early return without an active agent would make
+/// this a silent no-op and the overview's j/k would never turn on.
+/// Turning vim ON also focuses the overview so j/k navigate
+/// immediately; turning it OFF returns focus to the input.
 #[serial_test::serial(KIGI_AGENT_DASHBOARD)]
 #[test]
 fn toggle_vim_mode_works_on_dashboard_and_focuses_overview() {
@@ -776,11 +776,9 @@ fn refresh_open_settings_modals_updates_reset_confirm_settings_state() {
         _ => panic!("expected ResetSettingsConfirm still active"),
     }
 }
-/// The
-/// dispatch-arm bail-out path is verified directly via
-/// `#[should_panic]` in debug mode rather than the previous
-/// `if cfg!(debug_assertions) { return; }` placebo which gave
-/// debug-mode CI no coverage of the routing-bug bail-out.
+/// The dispatch-arm bail-out path is verified directly via
+/// `#[should_panic]` in debug mode, giving debug-mode CI real
+/// coverage of the routing-bug bail-out.
 #[test]
 #[cfg(debug_assertions)]
 #[should_panic(expected = "OpenResetConfirm dispatched without an open Settings modal")]

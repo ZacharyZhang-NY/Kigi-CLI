@@ -31,7 +31,6 @@ impl std::str::FromStr for WorktreeType {
         }
     }
 }
-/// Summary of source worktree's dirty state
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DirtyStateSummary {
@@ -42,7 +41,6 @@ pub struct DirtyStateSummary {
     pub has_partially_staged: bool,
     pub skipped_dirs: Vec<String>,
 }
-/// Summary of changes copied to the new worktree
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CopiedChangesSummary {
@@ -52,7 +50,6 @@ pub struct CopiedChangesSummary {
     pub deletions_applied: u32,
     pub warnings: Vec<String>,
 }
-/// Copy mode for worktree creation
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum WorktreeCopyMode {
@@ -75,7 +72,6 @@ pub struct CreateWorktreeRequest {
     /// If not specified, defaults to HEAD of the source repository.
     #[serde(default)]
     pub git_ref: Option<String>,
-    /// Whether to copy ignored files in the background after creation
     #[serde(default)]
     pub copy_ignored_in_background: bool,
     /// Patterns to skip when copying ignored files (e.g., "*.log", ".cache/**")
@@ -160,7 +156,6 @@ pub struct RemoveWorktreeResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resolved_path: Option<String>,
 }
-/// Response from creating a worktree from another worktree.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateWorktreeFromWorktreeResponse {

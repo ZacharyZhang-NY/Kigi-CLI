@@ -122,7 +122,6 @@ pub(super) fn compressed_entry(
         compressed_height: 1018,
     }
 }
-/// Most recent `SessionEvent` pushed to the scrollback, if any.
 pub(super) fn last_session_event(sb: &ScrollbackState) -> Option<SessionEvent> {
     (0..sb.len())
         .rev()
@@ -160,7 +159,6 @@ pub(super) fn interjection_broadcast(
         ),
     )
 }
-/// A Running background task registered on the agent's root session.
 pub(super) fn insert_running_task(agent: &mut AgentView, task_id: &str, command: &str) {
     agent
         .session
@@ -363,7 +361,6 @@ pub(super) fn queue_changed_ext(session_id: &str, ids: &[&str]) -> acp::ExtNotif
         std::sync::Arc::from(serde_json::value::to_raw_value(&params).unwrap()),
     )
 }
-/// Build a `kigi/queue/changed` notification carrying `runningPromptId`.
 pub(super) fn queue_changed_running(
     session_id: &str,
     ids: &[&str],
@@ -407,7 +404,6 @@ pub(super) fn app_with_running_p1_and_stashed_b1() -> AppView {
     assert!(app.pending_running_adoptions.contains_key(& AgentId(0)));
     app
 }
-/// Drive a live Execute tool_call `session/update` through the full handler.
 pub(super) fn send_tool_call_update(
     app: &mut AppView,
     prompt_id: &str,
@@ -438,7 +434,6 @@ pub(super) fn send_tool_call_update(
         app,
     );
 }
-/// Dispatch an `Ok(EndTurn)` PromptResponse for `prompt_id`.
 pub(super) fn prompt_response(app: &mut AppView, prompt_id: &str) {
     use crate::app::actions::{Action, TaskResult};
     crate::app::dispatch::dispatch(
@@ -567,7 +562,6 @@ pub(super) fn make_token_notification_message(
     })
 }
 use crate::scrollback::block::RenderBlock;
-/// Build an `AgentMessageChunk` notification carrying `text` for `session_id`.
 pub(super) fn make_agent_chunk_message(
     session_id: &str,
     text: &str,
@@ -584,7 +578,6 @@ pub(super) fn make_agent_chunk_message(
         response_tx: tx,
     })
 }
-/// `AgentMessageChunk` with `promptId`/`isReplay` + optional `eventId`.
 pub(super) fn make_agent_chunk_meta(
     session_id: &str,
     text: &str,
@@ -613,7 +606,6 @@ pub(super) fn make_agent_chunk_meta(
         response_tx: tx,
     })
 }
-/// `promptId`-tagged chunk (no `eventId`) — drives the viewer live-delta path.
 pub(super) fn make_agent_chunk_message_with_prompt(
     session_id: &str,
     text: &str,
@@ -622,7 +614,6 @@ pub(super) fn make_agent_chunk_message_with_prompt(
 ) -> AcpClientMessage {
     make_agent_chunk_meta(session_id, text, prompt_id, None, is_replay)
 }
-/// Live (`isReplay=false`) chunk with an optional `eventId`, for dedup tests.
 pub(super) fn make_agent_chunk_with_event(
     session_id: &str,
     text: &str,
@@ -631,7 +622,6 @@ pub(super) fn make_agent_chunk_with_event(
 ) -> AcpClientMessage {
     make_agent_chunk_meta(session_id, text, prompt_id, event_id, false)
 }
-/// Replay-marked chunk with an eventId, as `session/load` emits.
 pub(super) fn replay_chunk(
     session_id: &str,
     text: &str,
@@ -650,7 +640,6 @@ pub(super) fn scrollback_has_system_text(agent: &mut AgentView, needle: &str) ->
             )
         })
 }
-/// `Plan` update message with the given entry contents.
 pub(super) fn plan_update_msg(
     session_id: &str,
     entries: &[&str],
@@ -715,8 +704,6 @@ pub(super) fn xai_unhandled_notif(
         std::sync::Arc::from(serde_json::value::to_raw_value(&payload).unwrap()),
     )
 }
-/// Build an `agent_message_chunk` notification carrying both `totalTokens`
-/// and an explicit `eventId`, for context/dedup interaction tests.
 pub(super) fn make_token_notification_with_event(
     session_id: &str,
     total_tokens: u64,
@@ -741,7 +728,6 @@ pub(super) fn make_token_notification_with_event(
         response_tx: tx,
     })
 }
-/// Build an `kigi/session/prompt_complete` ext-notification for `session_id`.
 pub(super) fn prompt_complete_ext(session_id: &str) -> acp::ExtNotification {
     let raw = serde_json::value::to_raw_value(
             &serde_json::json!({ "sessionId" : session_id, "stopReason" : "end_turn", }),
@@ -749,12 +735,9 @@ pub(super) fn prompt_complete_ext(session_id: &str) -> acp::ExtNotification {
         .unwrap();
     acp::ExtNotification::new("kigi/session/prompt_complete", std::sync::Arc::from(raw))
 }
-/// Insert a fresh agent at `id` with an optional pre-assigned session id.
 pub(super) fn insert_agent(app: &mut AppView, id: AgentId, session_id: Option<&str>) {
     app.agents.insert(id, make_agent(session_id));
 }
-/// Build an `kigi/session/prompt_complete` ext-notification with an explicit
-/// `stopReason` and optional `agentResult`.
 pub(super) fn prompt_complete_ext_with_reason(
     session_id: &str,
     stop_reason: &str,
@@ -872,7 +855,6 @@ pub(super) fn xai_wake_turn_completed_notif(
         std::sync::Arc::from(serde_json::value::to_raw_value(&payload).unwrap()),
     )
 }
-/// The newest turn-marker block on the agent's scrollback.
 pub(super) fn last_marker_block(
     sb: &ScrollbackState,
 ) -> &crate::scrollback::blocks::SessionEventBlock {
@@ -884,8 +866,6 @@ pub(super) fn last_marker_block(
         })
         .expect("a turn-end marker must exist")
 }
-/// Build a `HookExecution` update (one successful run) on the
-/// `kigi/session/update` rail, optionally stamped `isReplay`.
 /// `prompt_id == None` models pre-attribution shells.
 pub(super) fn xai_hook_execution_notif_for_prompt(
     session_id: &str,
@@ -932,7 +912,6 @@ pub(super) fn count_lifecycle_blocks(
         })
         .count()
 }
-/// Stop-hook groups on the last turn-terminal session-event marker, if any.
 pub(super) fn last_marker_stop_hook_groups(
     sb: &crate::scrollback::state::ScrollbackState,
 ) -> Option<usize> {
@@ -945,7 +924,6 @@ pub(super) fn last_marker_stop_hook_groups(
             _ => None,
         })
 }
-/// Work-only status lines ("N … still running") pushed as system rows.
 pub(super) fn work_status_lines(sb: &ScrollbackState) -> Vec<String> {
     (0..sb.len())
         .filter_map(|i| match sb.get(i).map(|e| &e.block) {
@@ -970,12 +948,10 @@ pub(super) fn seed_two_bg_tasks_and_announce(app: &mut AppView, session_id: &str
     );
     app.agents.get_mut(&AgentId(0)).unwrap().end_work_announced = true;
 }
-/// Build an `kigi/session/interjection` ext-notification (no id).
 pub(super) fn interjection_ext(session_id: &str, text: &str) -> acp::ExtNotification {
     interjection_ext_with_id(session_id, text, None)
 }
-/// Build an `kigi/session/interjection` ext-notification with an optional
-/// `interjectionId` (the originator-dedup key).
+/// `interjectionId` is the originator-dedup key.
 pub(super) fn interjection_ext_with_id(
     session_id: &str,
     text: &str,
@@ -988,7 +964,6 @@ pub(super) fn interjection_ext_with_id(
     let raw = serde_json::value::to_raw_value(&payload).unwrap();
     acp::ExtNotification::new("kigi/session/interjection", std::sync::Arc::from(raw))
 }
-/// Text of the most recent user prompt block in scrollback, if any.
 /// Interjections render as standard user prompt blocks.
 pub(super) fn last_interjection_text(sb: &ScrollbackState) -> Option<String> {
     (0..sb.len())
@@ -1008,7 +983,6 @@ pub(super) fn switch_active_to(app: &mut AppView, id: AgentId) {
         crate::app::dispatch::SwitchCause::Picker,
     );
 }
-/// Concatenate the text of every `AgentMessage` block in this view's scrollback.
 pub(super) fn agent_message_text(view: &AgentView) -> String {
     let mut out = String::new();
     for i in 0..view.scrollback.len() {
@@ -1020,7 +994,6 @@ pub(super) fn agent_message_text(view: &AgentView) -> String {
     }
     out
 }
-/// Build a `Plan` notification with one entry per `entries` string.
 pub(super) fn make_plan_message(session_id: &str, entries: &[&str]) -> AcpClientMessage {
     let (tx, _rx) = tokio::sync::oneshot::channel();
     let plan_entries = entries
@@ -1040,7 +1013,6 @@ pub(super) fn make_plan_message(session_id: &str, entries: &[&str]) -> AcpClient
         response_tx: tx,
     })
 }
-/// Build an `AvailableCommandsUpdate` notification with the given command names.
 pub(super) fn make_commands_update_message(
     session_id: &str,
     names: &[&str],
@@ -1061,8 +1033,6 @@ pub(super) fn make_commands_update_message(
         response_tx: tx,
     })
 }
-/// Build a `ToolCallUpdate` notification carrying a Bash `raw_output`
-/// chunk for `tool_call_id`. Used to drive the bg-task stdout route.
 pub(super) fn make_bash_stdout_message(
     session_id: &str,
     tool_call_id: &str,
@@ -1090,7 +1060,6 @@ pub(super) fn make_bash_stdout_message(
         response_tx: tx,
     })
 }
-/// Build an `ExtNotification` envelope for `kigi/session_notification`.
 pub(super) fn make_ext_session_notification(
     session_id: &str,
     update: XaiSessionUpdate,
@@ -1101,7 +1070,6 @@ pub(super) fn make_ext_session_notification(
         update,
     )
 }
-/// Build an `ExtNotification` envelope with an explicit xAI session method.
 pub(super) fn make_ext_session_notification_with_method(
     session_id: &str,
     method: &str,
@@ -1179,7 +1147,6 @@ pub(super) fn test_subagent_progress(
         error_count: 0,
     }
 }
-/// Snapshot of subagent state after SubagentSpawned for method-parity tests.
 pub(super) struct SubagentSpawnSnapshot {
     description: String,
     subagent_type: String,
@@ -1210,7 +1177,6 @@ pub(super) fn snapshot_after_subagent_spawn(
         scrollback_entry_id: info.scrollback_entry_id,
     }
 }
-/// Snapshot after SubagentFinished for method-parity tests.
 pub(super) struct SubagentFinishSnapshot {
     finished: bool,
     status: Option<String>,
@@ -1427,8 +1393,6 @@ pub(super) fn dispatch_goal_update(
         app,
     )
 }
-/// Build + dispatch a `GoalUpdated` for `sess-A` with the given id /
-/// status / elapsed; returns whether the notification requested a redraw.
 pub(super) fn send_goal_update(
     app: &mut AppView,
     goal_id: &str,
@@ -1437,8 +1401,6 @@ pub(super) fn send_goal_update(
 ) -> bool {
     dispatch_goal_update(app, goal_update_value(goal_id, status, elapsed_ms))
 }
-/// Build a minimal `RequestPermission` message that carries `session_id`
-/// and one `AllowOnce` option.
 pub(super) fn make_permission_message(
     session_id: &str,
 ) -> (
@@ -1543,8 +1505,6 @@ pub(super) fn make_replayed_task_backgrounded_notif(
     let raw = serde_json::value::to_raw_value(&notif).unwrap();
     acp::ExtNotification::new("kigi/session/update", std::sync::Arc::from(raw))
 }
-/// Register a pending Execute tool call in the tracker and send an InProgress
-/// update to create the scrollback entry. Returns the agent for further use.
 pub(super) fn setup_pending_execute_tool(app: &mut AppView, tc_id: &str) {
     let agent = app.agents.get_mut(&AgentId(0)).unwrap();
     let meta = crate::acp::meta::NotificationMeta::default();
@@ -1568,7 +1528,6 @@ pub(super) fn setup_pending_execute_tool(app: &mut AppView, tc_id: &str) {
     );
     agent.session.tracker.handle_update(update, &meta, &mut agent.scrollback);
 }
-/// Send a late InProgress update with is_background=true to trigger late bg detection.
 pub(super) fn send_late_bg_detection(app: &mut AppView, tc_id: &str) {
     use serde_json::json;
     use kigi_tools::types::output::{BashOutput, ToolOutput};
@@ -1728,9 +1687,7 @@ pub(super) fn make_reasoning_models_update_notif(
     acp::ExtNotification::new("kigi/models/update", std::sync::Arc::from(raw))
 }
 /// Seed a session's model catalog with the given ids and mark
-/// `current_model_id` as the active one (must be in the list). Used by
-/// the `ModelChanged` broadcast tests to set up a starting state that
-/// the simulated remote/local switch then transitions away from.
+/// `current_model_id` as the active one (must be in the list).
 pub(super) fn seed_models(agent: &mut AgentView, current: &str, available: &[&str]) {
     for id in available {
         let model_id = acp::ModelId::new(std::sync::Arc::from(*id));
@@ -1796,7 +1753,6 @@ pub(super) fn make_current_mode_update(mode_id: &str) -> acp::SessionUpdate {
         acp::CurrentModeUpdate::new(acp::SessionModeId::new(mode_id)),
     )
 }
-/// Helper: build an `kigi/mcp/init_progress` notification.
 pub(super) fn make_mcp_init_progress_notif(
     total: u32,
     connected: u32,
@@ -1865,8 +1821,6 @@ pub(super) fn make_servers_updated_notif() -> acp::ExtNotification {
     let raw = serde_json::value::to_raw_value(&payload).unwrap();
     acp::ExtNotification::new("kigi/mcp/servers_updated", std::sync::Arc::from(raw))
 }
-/// Real post-handshake / auth-recovery wire shape:
-/// `McpToolsChanged { sessionId, serverName, tools }`.
 pub(super) fn make_tools_changed_notif_post_h2(
     session_id: &str,
 ) -> acp::ExtNotification {
@@ -1886,8 +1840,6 @@ pub(super) fn make_tools_changed_notif_pre_h2() -> acp::ExtNotification {
     let raw = serde_json::value::to_raw_value(&payload).unwrap();
     acp::ExtNotification::new("kigi/mcp/tools_changed", std::sync::Arc::from(raw))
 }
-/// Real `mcp_initialized` wire shape:
-/// `{ sessionId, mcpToolCount, elapsedMs }`.
 pub(super) fn make_mcp_initialized_notif(session_id: &str) -> acp::ExtNotification {
     let payload = serde_json::json!(
         { "sessionId" : session_id, "mcpToolCount" : 12_u64, "elapsedMs" : 250_u64, }
@@ -1895,7 +1847,6 @@ pub(super) fn make_mcp_initialized_notif(session_id: &str) -> acp::ExtNotificati
     let raw = serde_json::value::to_raw_value(&payload).unwrap();
     acp::ExtNotification::new("kigi/mcp_initialized", std::sync::Arc::from(raw))
 }
-/// Helper: `init_progress` notification carrying an explicit sessionId.
 pub(super) fn make_mcp_init_progress_notif_for(
     total: u32,
     connected: u32,
@@ -1909,7 +1860,6 @@ pub(super) fn make_mcp_init_progress_notif_for(
         .unwrap();
     acp::ExtNotification::new("kigi/mcp/init_progress", std::sync::Arc::from(raw))
 }
-/// Helper: `mcp_initialized` notification for a specific sessionId.
 pub(super) fn make_mcp_initialized_notif_for(session_id: &str) -> acp::ExtNotification {
     let raw = serde_json::value::to_raw_value(
             &serde_json::json!(

@@ -75,13 +75,13 @@ fn test_rewind_marker_truncates_dead_branch() {
             agent_chunk("R1"),
             user_chunk("P2-old"),
             agent_chunk("R2-old"),
-            rewind_marker(1), // rewind to before P1, keeps P0 only
+            // rewind to before index 1: keeps P0, drops P1 and P2-old
+            rewind_marker(1),
             user_chunk("P1-new"),
             agent_chunk("R1-new"),
         ],
     );
     let prompts = SessionActor::load_user_prompts_from_updates(&path).unwrap();
-    // rewind(1) removes P1 and P2-old, next prompt becomes new P1
     assert_eq!(prompts, vec!["P0", "P1-new"]);
 }
 
@@ -97,16 +97,17 @@ fn test_multiple_rewind_markers() {
             agent_chunk("R1"),
             user_chunk("P2"),
             agent_chunk("R2"),
-            rewind_marker(1), // rewind to before P1: keeps P0
+            // rewind to before index 1: keeps P0
+            rewind_marker(1),
             user_chunk("P1v2"),
             agent_chunk("R1v2"),
-            rewind_marker(0), // rewind to before P0: keeps nothing
+            // rewind to before index 0: keeps nothing
+            rewind_marker(0),
             user_chunk("P0v3"),
             agent_chunk("R0v3"),
         ],
     );
     let prompts = SessionActor::load_user_prompts_from_updates(&path).unwrap();
-    // rewind(1) keeps P0, rewind(0) clears all, P0v3 becomes new P0
     assert_eq!(prompts, vec!["P0v3"]);
 }
 

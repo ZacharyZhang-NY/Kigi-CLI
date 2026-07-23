@@ -38,10 +38,6 @@ use crate::types::resources::{
 };
 use crate::types::tool::{ToolKind, ToolNamespace};
 
-// ───────────────────────────────────────────────────────────────────────────
-// Description
-// ───────────────────────────────────────────────────────────────────────────
-
 const DESCRIPTION: &str = r#"Performs exact string replacements in files.
 
 Usage:
@@ -53,15 +49,10 @@ Usage:
 - To create a new file, set ${{ params.edit.old_string }} to an empty string.
 - Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked."#;
 
-// ───────────────────────────────────────────────────────────────────────────
-// Input
-// ───────────────────────────────────────────────────────────────────────────
-
 /// Input for the opencode `edit` tool.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct EditInput {
-    /// The path to the file to modify. Can be relative to the workspace or absolute.
     #[schemars(description = "The path to the file to modify.")]
     pub file_path: String,
 
@@ -69,11 +60,9 @@ pub struct EditInput {
     #[schemars(description = "The text to replace")]
     pub old_string: String,
 
-    /// The replacement text (must differ from old_string).
     #[schemars(description = "The text to replace it with (must be different from old_string)")]
     pub new_string: String,
 
-    /// When true, replace every occurrence of `old_string` (default false).
     #[serde(
         default,
         deserialize_with = "crate::types::schema::deserialize_lenient_option_bool"
@@ -81,10 +70,6 @@ pub struct EditInput {
     #[schemars(description = "Replace all occurrences of old_string (default false)")]
     pub replace_all: Option<bool>,
 }
-
-// ───────────────────────────────────────────────────────────────────────────
-// ToolInput conversions (via Dynamic variant)
-// ───────────────────────────────────────────────────────────────────────────
 
 impl TryFrom<crate::types::tool_io::ToolInput> for EditInput {
     type Error = String;
@@ -106,11 +91,6 @@ impl From<EditInput> for crate::types::tool_io::ToolInput {
     }
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Tool
-// ───────────────────────────────────────────────────────────────────────────
-
-/// OpenCode `edit` tool — performs exact string replacements in files.
 #[derive(Debug, Default)]
 pub struct EditTool;
 
@@ -191,10 +171,8 @@ impl kigi_tool_runtime::Tool for EditTool {
 
         let replace_all = input.replace_all.unwrap_or(false);
 
-        // Resolve the model-provided path.
         let path = resolve_model_path(&cwd, display_cwd.as_deref(), &input.file_path);
 
-        // ── Validate input ──────────────────────────────────────────
         if path.is_dir() {
             return Ok(SearchReplaceOutput::InvalidInput(
                 "File path is a directory".to_owned(),
@@ -206,7 +184,6 @@ impl kigi_tool_runtime::Tool for EditTool {
             ));
         }
 
-        // ── Route to creation or replacement ────────────────────────
         if input.old_string.is_empty() {
             handle_new_file_creation(&input, &fs, &notification_handle, &tool_call_id, &path).await
         } else {
@@ -224,11 +201,6 @@ impl kigi_tool_runtime::Tool for EditTool {
     }
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Helpers
-// ───────────────────────────────────────────────────────────────────────────
-
-/// Create parent directories for a file path if they don't exist.
 async fn ensure_parent_dirs(path: &std::path::Path) -> Result<(), kigi_tool_runtime::ToolError> {
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
@@ -243,7 +215,6 @@ async fn ensure_parent_dirs(path: &std::path::Path) -> Result<(), kigi_tool_runt
     Ok(())
 }
 
-/// Handle new file creation when `old_string` is empty.
 async fn handle_new_file_creation(
     input: &EditInput,
     fs: &Arc<dyn AsyncFileSystem>,
@@ -251,7 +222,6 @@ async fn handle_new_file_creation(
     tool_call_id: &str,
     path: &std::path::Path,
 ) -> Result<SearchReplaceOutput, kigi_tool_runtime::ToolError> {
-    // Check if file already exists and is non-empty.
     let file_exists = match fs.read_file(path).await {
         Ok(bytes) => !bytes.is_empty(),
         Err(_) => false,
@@ -263,10 +233,8 @@ async fn handle_new_file_creation(
         ));
     }
 
-    // Create parent directories if needed.
     ensure_parent_dirs(path).await?;
 
-    // Write the new file.
     fs.write_file(path, input.new_string.as_bytes())
         .await
         .map_err(|e| {
@@ -276,7 +244,6 @@ async fn handle_new_file_creation(
             )
         })?;
 
-    // Emit FileWritten notification.
     notification_handle.send_file_written(FileWritten {
         tool_call_id: tool_call_id.to_string(),
         absolute_path: path.to_path_buf(),
@@ -285,7 +252,6 @@ async fn handle_new_file_creation(
         is_new_file: true,
     });
 
-    // Build output.
     let snippet = input
         .new_string
         .split_inclusive('\n')
@@ -325,7 +291,6 @@ async fn handle_new_file_creation(
     ))
 }
 
-/// Handle replacement in an existing file.
 async fn handle_replacement(
     input: &EditInput,
     resources: SharedResources,
@@ -335,7 +300,6 @@ async fn handle_replacement(
     path: &std::path::Path,
     replace_all: bool,
 ) -> Result<SearchReplaceOutput, kigi_tool_runtime::ToolError> {
-    // Read current file content.
     let bytes = match fs.read_file(path).await {
         Ok(bytes) => bytes,
         Err(_) if !path.exists() => {
@@ -353,7 +317,6 @@ async fn handle_replacement(
     };
     let old_text = String::from_utf8_lossy(&bytes).into_owned();
 
-    // Find all match positions.
     let positions: Vec<usize> = old_text
         .match_indices(&input.old_string)
         .map(|(index, _)| index)
@@ -382,14 +345,12 @@ async fn handle_replacement(
         )));
     }
 
-    // Select which positions to replace.
     let replace_positions = if replace_all {
         &positions[..]
     } else {
         &positions[..1]
     };
 
-    // Perform the replacement using the shared helpers.
     let (new_text, new_positions) = replace_using_positions(
         &old_text,
         replace_positions,
@@ -397,7 +358,6 @@ async fn handle_replacement(
         &input.new_string,
     );
 
-    // Write the updated file.
     fs.write_file(path, new_text.as_bytes())
         .await
         .map_err(|e| {
@@ -407,7 +367,6 @@ async fn handle_replacement(
             )
         })?;
 
-    // Emit FileWritten notification.
     notification_handle.send_file_written(FileWritten {
         tool_call_id: tool_call_id.to_string(),
         absolute_path: path.to_path_buf(),
@@ -416,7 +375,6 @@ async fn handle_replacement(
         is_new_file: false,
     });
 
-    // Build edit details using shared helpers.
     let edits = build_edit_details(
         &new_text,
         &input.old_string,
@@ -425,7 +383,6 @@ async fn handle_replacement(
         CONTEXT_LINES,
     );
 
-    // Build output message.
     let (tool_output_for_prompt, tool_output_for_prompt_concise) = if new_positions.len() == 1 {
         let (snippet, _, _) = render_snippet(
             &new_text,
@@ -466,14 +423,6 @@ async fn handle_replacement(
     ))
 }
 
-// Note: `replace_at_positions`, `render_snippet`, and `build_edit_details`
-// are imported from `kigi::search_replace::helpers` — shared across
-// both the kigi and opencode edit tools.
-
-// ───────────────────────────────────────────────────────────────────────────
-// Tests
-// ───────────────────────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -483,7 +432,6 @@ mod tests {
     use crate::notification::types::ToolNotificationHandle;
     use tempfile::TempDir;
 
-    /// Set up Resources with a real filesystem for tests.
     fn test_resources(cwd: &std::path::Path) -> Resources {
         use crate::types::template_renderer::TemplateRenderer;
         use crate::types::tool::ToolKind;
@@ -515,8 +463,6 @@ mod tests {
         }
     }
 
-    // ── Tool metadata ───────────────────────────────────────────────
-
     #[test]
     fn tool_id_and_kind() {
         use crate::types::tool_metadata::ToolMetadata;
@@ -535,8 +481,6 @@ mod tests {
                 .contains("exact string replacements")
         );
     }
-
-    // ── Input deserialization ───────────────────────────────────────
 
     #[test]
     fn input_deserializes_camel_case() {
@@ -564,8 +508,6 @@ mod tests {
         assert_eq!(input.file_path, "test.txt");
         assert_eq!(input.replace_all, None);
     }
-
-    // ── Validation ──────────────────────────────────────────────────
 
     #[tokio::test]
     async fn rejects_same_old_new() {
@@ -607,8 +549,6 @@ mod tests {
         }
     }
 
-    // ── Basic replacement ───────────────────────────────────────────
-
     #[tokio::test]
     async fn basic_replacement() {
         let tmp = TempDir::new().unwrap();
@@ -634,8 +574,6 @@ mod tests {
         }
     }
 
-    // ── New file creation ───────────────────────────────────────────
-
     #[tokio::test]
     async fn new_file_creation() {
         let tmp = TempDir::new().unwrap();
@@ -656,8 +594,6 @@ mod tests {
             other => panic!("Expected EditsApplied, got {:?}", other),
         }
     }
-
-    // ── File already exists (non-empty) ─────────────────────────────
 
     #[tokio::test]
     async fn file_already_exists_nonempty() {
@@ -680,8 +616,6 @@ mod tests {
         }
     }
 
-    // ── File not found ──────────────────────────────────────────────
-
     #[tokio::test]
     async fn file_not_found() {
         let tmp = TempDir::new().unwrap();
@@ -700,8 +634,6 @@ mod tests {
             other => panic!("Expected FileNotFound, got {:?}", other),
         }
     }
-
-    // ── No match found ──────────────────────────────────────────────
 
     #[tokio::test]
     async fn no_match_found() {
@@ -724,8 +656,6 @@ mod tests {
             other => panic!("Expected NoMatchesFound, got {:?}", other),
         }
     }
-
-    // ── Multiple matches without replace_all ────────────────────────
 
     #[tokio::test]
     async fn multiple_matches_without_replace_all() {
@@ -790,8 +720,6 @@ mod tests {
         }
     }
 
-    // ── Replace all ─────────────────────────────────────────────────
-
     #[tokio::test]
     async fn replace_all_mode() {
         let tmp = TempDir::new().unwrap();
@@ -824,8 +752,6 @@ mod tests {
         }
     }
 
-    // ── Multi-line replacement ────────────────────────────────────
-
     #[tokio::test]
     async fn multi_line_replacement() {
         let tmp = TempDir::new().unwrap();
@@ -849,8 +775,6 @@ mod tests {
         }
     }
 
-    // ── Replacement at end of file ────────────────────────────────
-
     #[tokio::test]
     async fn replacement_at_end_of_file() {
         let tmp = TempDir::new().unwrap();
@@ -873,8 +797,6 @@ mod tests {
         }
     }
 
-    // ── Replacement with different line count ─────────────────────
-
     #[tokio::test]
     async fn replacement_different_line_count() {
         let tmp = TempDir::new().unwrap();
@@ -883,7 +805,6 @@ mod tests {
         let tool = EditTool;
         let resources = test_resources(tmp.path());
 
-        // Replace 1 line with 3 lines.
         let input = make_input(
             "test.txt",
             "old_line\n",
@@ -905,8 +826,6 @@ mod tests {
         }
     }
 
-    // ── New file with nested directories ──────────────────────────
-
     #[tokio::test]
     async fn new_file_nested_directories() {
         let tmp = TempDir::new().unwrap();
@@ -925,14 +844,11 @@ mod tests {
                 assert!(nested_path.exists(), "Nested file should exist");
                 let content = std::fs::read_to_string(&nested_path).unwrap();
                 assert_eq!(content, "nested content\n");
-                // Parent directories should have been created.
                 assert!(tmp.path().join("a/b/c").is_dir());
             }
             other => panic!("Expected EditsApplied, got {:?}", other),
         }
     }
-
-    // ── Snippet in output ─────────────────────────────────────────
 
     #[tokio::test]
     async fn snippet_in_output() {
@@ -949,7 +865,6 @@ mod tests {
 
         match result {
             SearchReplaceOutput::EditsApplied(applied) => {
-                // Output should contain line-numbered snippet with → separator.
                 assert!(
                     applied.tool_output_for_prompt.contains('→'),
                     "Snippet should contain arrow separator, got: {}",
@@ -963,8 +878,6 @@ mod tests {
             other => panic!("Expected EditsApplied, got {:?}", other),
         }
     }
-
-    // ── Replace-all with three occurrences ────────────────────────
 
     #[tokio::test]
     async fn replace_all_three_occurrences() {
@@ -998,18 +911,14 @@ mod tests {
         }
     }
 
-    // ── Empty existing file with old_string="" creates ────────────
-
     #[tokio::test]
     async fn empty_file_with_empty_old_creates() {
         let tmp = TempDir::new().unwrap();
-        // Create an empty file.
         std::fs::write(tmp.path().join("empty.txt"), "").unwrap();
 
         let tool = EditTool;
         let resources = test_resources(tmp.path());
 
-        // old_string="" on an empty file should succeed (treated as creation).
         let input = make_input("empty.txt", "", "new content\n");
         let result = kigi_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
             .await
@@ -1025,8 +934,6 @@ mod tests {
         }
     }
 
-    // ── Relative path resolution ──────────────────────────────────
-
     #[tokio::test]
     async fn relative_path_resolution() {
         let tmp = TempDir::new().unwrap();
@@ -1037,7 +944,6 @@ mod tests {
         let tool = EditTool;
         let resources = test_resources(tmp.path());
 
-        // Pass a relative path — should resolve against Cwd.
         let input = make_input("src/lib.rs", "fn main() {}", "fn main() { /* edited */ }");
         let result = kigi_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
             .await
@@ -1053,8 +959,6 @@ mod tests {
         }
     }
 
-    // ── Edit details populated ──────────────────────────────────
-
     #[tokio::test]
     async fn edit_details_populated() {
         let tmp = TempDir::new().unwrap();
@@ -1064,7 +968,6 @@ mod tests {
         let tool = EditTool;
         let resources = test_resources(tmp.path());
 
-        // Replace the middle line.
         let input = make_input("test.txt", "line3\n", "REPLACED\n");
         let result = kigi_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
             .await
@@ -1093,8 +996,6 @@ mod tests {
             other => panic!("Expected EditsApplied, got {:?}", other),
         }
     }
-
-    // ── Notification sent ───────────────────────────────────────
 
     // Notification verification requires a capturing handle not available
     // in unit tests. Covered at integration layer.

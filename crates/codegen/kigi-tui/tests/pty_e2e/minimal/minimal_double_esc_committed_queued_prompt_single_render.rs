@@ -60,9 +60,8 @@ async fn minimal_double_esc_committed_queued_prompt_single_render() {
         harness.full_text()
     );
 
-    // Cancel the promoted turn pre-first-token. The committed block forces
-    // the standard cancel path (rewind skipped): marker renders, composer
-    // stays empty, and the prompt count does NOT grow.
+    // Cancel pre-first-token, while the committed block is still the only
+    // copy on screen.
     harness.inject_keys(keys::CTRL_C).expect("Ctrl+C cancel");
     harness
         .wait_for_full_text("Turn cancelled by user", Duration::from_secs(15))

@@ -117,8 +117,7 @@ impl AgentView {
     ///
     /// Known transient: when a subagent is fullscreen (`active_subagent.is_some()`),
     /// draw returns early and the child renders its own bar; Current on the parent
-    /// still reflects parent context (documented limitation, pre-existing before
-    /// this change).
+    /// still reflects parent context (documented limitation).
     pub fn current_shortcut_hints(&self, registry: &ActionRegistry) -> Vec<HintItem> {
         use crate::views::shortcuts_bar::HintItem;
         if let Some(ref viewer) = self.block_viewer {
@@ -221,8 +220,7 @@ impl AgentView {
             self.normal_pane_hints(registry)
         }
     }
-    /// Shared "normal pane" hints: flag computation + `build_hints` + queue hint.
-    /// Single source of truth for the two former duplicated blocks in
+    /// Shared "normal pane" hints. Single source of truth for
     /// `current_shortcut_hints` and `draw`.
     fn normal_pane_hints(&self, registry: &ActionRegistry) -> Vec<HintItem> {
         let fold_label = self.selected_fold_label();
@@ -366,13 +364,6 @@ impl AgentView {
         }
         hints
     }
-    /// Render the agent view into the given area.
-    ///
-    /// Thin orchestrator: computes layout, then calls shared widgets and
-    /// agent-specific overlay helpers in sequence. Each component takes
-    /// only the state it needs — no arg threading.
-    ///
-    /// Returns cursor position if the prompt is focused (for terminal cursor).
     /// Render a fullscreen subagent view — replaces the ENTIRE parent view.
     ///
     /// Draws:

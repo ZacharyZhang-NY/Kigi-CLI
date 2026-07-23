@@ -8,9 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use super::WorkspaceRpc;
 
-// =========================================================================
 // Service-level file I/O
-// =========================================================================
 
 /// A single file entry to write.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -143,12 +141,10 @@ pub struct GetFilesRes {
     pub results: Vec<GetFileResult>,
 }
 
-// =========================================================================
 // Filesystem extension ops (`workspace.fs_*`)
-// =========================================================================
 
 // Response types — serde shapes match the shell's `session::file_system`
-// types byte-for-byte so the ACP wire contract is unchanged.
+// types byte-for-byte so the ACP wire contract is `unchanged`.
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -303,9 +299,7 @@ impl WorkspaceRpc for FsDeleteFileReq {
     type Response = ();
 }
 
-// =========================================================================
 // Client-facing read-only fs ops (`workspace.client_fs_*`)
-// =========================================================================
 //
 // Distinct from the shell-facing `workspace.fs_*` ops above: every `path`
 // is workspace-root-relative (not absolute), timestamps are `mtimeMs`
@@ -331,7 +325,6 @@ pub const CLIENT_FS_READ_FILE_METHOD: &str = "workspace.client_fs_read_file";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum FsNodeType {
-    /// A directory.
     Directory,
     /// A regular file (or anything that is not a directory).
     File,
@@ -464,7 +457,6 @@ impl WorkspaceRpc for ClientFsStatReq {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClientFsStatRes {
-    /// Whether the path exists.
     pub exists: bool,
     /// Node kind, when the path exists.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -566,7 +558,7 @@ mod tests {
     #[test]
     fn fs_read_file_req_defaults_are_legacy_full_read() {
         // Absent offset/length/encoding ⇒ whole-file read with the
-        // unchanged wire contract; max_bytes defaults to 1 MiB and is
+        // `unchanged` wire contract; max_bytes defaults to 1 MiB and is
         // only consulted on ranged reads.
         let req: FsReadFileReq =
             serde_json::from_value(serde_json::json!({ "path": "a.txt" })).unwrap();

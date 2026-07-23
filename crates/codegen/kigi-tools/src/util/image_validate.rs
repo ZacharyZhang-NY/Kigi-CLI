@@ -143,7 +143,8 @@ pub fn jpeg_reaches_eoi(bytes: &[u8]) -> bool {
         match marker {
             // Not a marker (stuffed/stray `FF00`): keep scanning.
             0x00 => {}
-            0xD9 => return true, // EOI
+            // EOI
+            0xD9 => return true,
             // Standalone markers without a length field.
             0x01 | 0xD0..=0xD7 => {}
             0xDA => {
@@ -504,7 +505,6 @@ mod tests {
         ));
     }
 
-    /// Random non-image bytes → `Unsupported`.
     #[test]
     fn random_bytes_rejected_as_unsupported() {
         let bytes = b"not an image at all, just plain text data";
@@ -527,7 +527,6 @@ mod tests {
         );
     }
 
-    /// Truncated PNG → `Truncated`.
     #[test]
     fn truncated_png_pinned_as_truncated() {
         let mut bytes = png_bytes(64, 64);
@@ -642,7 +641,6 @@ mod tests {
         assert!(!needs_endpoint_transcode(b"not an image"));
     }
 
-    /// GIF/BMP/TIFF/ICO need client-side PNG conversion.
     #[test]
     fn needs_endpoint_transcode_true_for_gif_bmp_tiff_ico() {
         assert!(needs_endpoint_transcode(&gif_bytes(4, 4)));
@@ -694,7 +692,6 @@ mod tests {
         );
     }
 
-    /// Already-large inputs are not upscaled further.
     #[test]
     fn transcode_to_endpoint_png_leaves_large_gif_dimensions() {
         let png = transcode_to_endpoint_png(&gif_bytes(200, 150))
@@ -752,8 +749,6 @@ mod tests {
             "corrupt GIF must be Some(Err), got {result:?}"
         );
     }
-
-    // ─── jpeg_reaches_eoi / png_structurally_valid structural walks ─────────
 
     /// Noisy JPEG whose entropy stream is long enough to cut mid-scan.
     fn noisy_jpeg(w: u32, h: u32) -> Vec<u8> {
@@ -833,7 +828,8 @@ mod tests {
     fn jpeg_reaches_eoi_rejects_degenerate_inputs() {
         assert!(!jpeg_reaches_eoi(&[]));
         assert!(!jpeg_reaches_eoi(&[0xFF]));
-        assert!(!jpeg_reaches_eoi(&[0xFF, 0xD8])); // bare SOI
+        // bare SOI
+        assert!(!jpeg_reaches_eoi(&[0xFF, 0xD8]));
         assert!(!jpeg_reaches_eoi(b"not a jpeg"));
         // Segment length running past the end of the buffer.
         assert!(!jpeg_reaches_eoi(&[
@@ -850,13 +846,20 @@ mod tests {
     fn jpeg_reaches_eoi_scans_through_restart_markers() {
         #[rustfmt::skip]
         let full: Vec<u8> = vec![
-            0xFF, 0xD8,                                     // SOI
-            0xFF, 0xDD, 0x00, 0x04, 0x00, 0x02,             // DRI, interval 2
-            0xFF, 0xDA, 0x00, 0x08, 1, 2, 3, 4, 5, 6,       // SOS header
-            0x12, 0x34, 0xFF, 0x00, 0x56,                   // entropy + stuffed FF
-            0xFF, 0xD0, 0x78, 0x9A,                         // RST0, more entropy
-            0xFF, 0xD1, 0xBC,                               // RST1, more entropy
-            0xFF, 0xD9,                                     // EOI
+            // SOI
+            0xFF, 0xD8,
+            // DRI, interval 2
+            0xFF, 0xDD, 0x00, 0x04, 0x00, 0x02,
+            // SOS header
+            0xFF, 0xDA, 0x00, 0x08, 1, 2, 3, 4, 5, 6,
+            // entropy + stuffed FF
+            0x12, 0x34, 0xFF, 0x00, 0x56,
+            // RST0, more entropy
+            0xFF, 0xD0, 0x78, 0x9A,
+            // RST1, more entropy
+            0xFF, 0xD1, 0xBC,
+            // EOI
+            0xFF, 0xD9,
         ];
         assert!(jpeg_reaches_eoi(&full));
         for cut in 3..full.len() {
@@ -873,15 +876,22 @@ mod tests {
     fn jpeg_reaches_eoi_walks_multiple_scans() {
         #[rustfmt::skip]
         let full: Vec<u8> = vec![
-            0xFF, 0xD8,                                     // SOI
-            0xFF, 0xDA, 0x00, 0x08, 1, 2, 3, 4, 5, 6,       // SOS 1
-            0x11, 0x22, 0xFF, 0x00, 0x33,                   // entropy 1
-            0xFF, 0xDA, 0x00, 0x08, 1, 2, 3, 4, 5, 6,       // SOS 2
-            0x44, 0x55,                                     // entropy 2
-            0xFF, 0xD9,                                     // EOI
+            // SOI
+            0xFF, 0xD8,
+            // SOS 1
+            0xFF, 0xDA, 0x00, 0x08, 1, 2, 3, 4, 5, 6,
+            // entropy 1
+            0x11, 0x22, 0xFF, 0x00, 0x33,
+            // SOS 2
+            0xFF, 0xDA, 0x00, 0x08, 1, 2, 3, 4, 5, 6,
+            // entropy 2
+            0x44, 0x55,
+            // EOI
+            0xFF, 0xD9,
         ];
         assert!(jpeg_reaches_eoi(&full));
-        let cut = full.len() - 3; // inside entropy 2
+        // inside entropy 2
+        let cut = full.len() - 3;
         assert!(!jpeg_reaches_eoi(&full[..cut]));
     }
 

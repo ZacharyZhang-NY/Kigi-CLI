@@ -1,10 +1,8 @@
 //! File operation lock manager — serializes concurrent file operations.
 //!
-//!   diagnostics for each file. Multiple reads for *different* paths can proceed
-//!   concurrently; reads for the *same* path are serialized.
-//! - **Exclusive lock** (`wait_for_exclusive_lock`): used by `Write` and
-//!   `StrReplace` before mutating files. Blocks all per-path locks and
-//!   vice-versa.
+//! A per-path lock (`wait_for_lock`) lets operations on *different* paths run
+//! concurrently while serializing those on the *same* path. An exclusive lock
+//! (`wait_for_exclusive_lock`) blocks all per-path locks and vice-versa.
 //!
 //! The queue is FIFO with priority inversion avoidance: per-path waiters
 //! will not jump ahead of a queued exclusive waiter, preventing writer
@@ -14,7 +12,6 @@ use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use tokio::sync::{Mutex, oneshot};
 
-/// Shared file operation lock manager stored in tool shared resources.
 #[derive(Clone)]
 pub struct FileOperationLockManager {
     inner: Arc<Mutex<LockInner>>,
@@ -47,12 +44,7 @@ impl FileOperationLockManager {
         }
     }
 
-    /// Acquire a per-path lock. Blocks if:
-    /// - An exclusive lock is active, OR
-    /// - The same path is already locked, OR
-    /// - An exclusive waiter is ahead in the queue.
-    ///
-    /// Returns a guard that releases the lock on drop.
+    /// Acquire a per-path lock; the returned guard releases it on drop.
     pub async fn wait_for_lock(&self, path: &str) -> FileOperationLockGuard {
         let rx = {
             let mut inner = self.inner.lock().await;
@@ -74,7 +66,8 @@ impl FileOperationLockManager {
         };
 
         if let Some(rx) = rx {
-            // Wait for our turn (ignore error — sender dropped means lock manager was dropped).
+            // A send error means the manager was dropped, so there is no lock
+            // left to wait for.
             let _ = rx.await;
         }
 
@@ -84,10 +77,7 @@ impl FileOperationLockManager {
         }
     }
 
-    /// Acquire an exclusive lock. Blocks until all per-path locks are released
-    /// and no other exclusive lock is active.
-    ///
-    /// Returns a guard that releases the lock on drop.
+    /// Acquire an exclusive lock; the returned guard releases it on drop.
     pub async fn wait_for_exclusive_lock(&self) -> FileOperationLockGuard {
         let rx = {
             let mut inner = self.inner.lock().await;
@@ -125,7 +115,6 @@ enum LockKind {
     Exclusive,
 }
 
-/// RAII guard that releases the lock when dropped.
 pub struct FileOperationLockGuard {
     manager: FileOperationLockManager,
     kind: LockKind,
@@ -135,7 +124,7 @@ impl Drop for FileOperationLockGuard {
     fn drop(&mut self) {
         let manager = self.manager.clone();
         let kind = std::mem::replace(&mut self.kind, LockKind::Exclusive);
-        // Use `spawn` to release asynchronously — `drop` can't be async.
+        // `drop` cannot be async, so release on a spawned task.
         tokio::spawn(async move {
             let mut inner = manager.inner.lock().await;
             match kind {
@@ -158,11 +147,9 @@ impl LockInner {
             .any(|w| matches!(w, QueuedWaiter::Exclusive { .. }))
     }
 
-    /// Process the wait queue, granting locks to eligible waiters.
-    ///
-    /// If a waiter's receiver has been dropped (task cancelled), the send
-    /// will fail. In that case, we undo the lock grant and continue to the
-    /// next waiter. This prevents phantom locks from cancelled tool calls.
+    /// A failing send means the waiter's receiver is gone (its tool call was
+    /// cancelled); the grant is undone and the next waiter tried, so cancelled
+    /// calls cannot leave phantom locks behind.
     fn process_queue(&mut self) {
         while let Some(front) = self.wait_queue.front() {
             match front {
@@ -173,12 +160,10 @@ impl LockInner {
                     if let Some(QueuedWaiter::Exclusive { tx }) = self.wait_queue.pop_front() {
                         self.exclusive_lock_active = true;
                         if tx.send(()).is_err() {
-                            // Receiver dropped (cancelled) — undo the grant.
                             self.exclusive_lock_active = false;
                             continue;
                         }
                     }
-                    // Exclusive lock granted — stop processing.
                     break;
                 }
                 QueuedWaiter::File { path, .. } => {
@@ -189,7 +174,6 @@ impl LockInner {
                     if let Some(QueuedWaiter::File { tx, .. }) = self.wait_queue.pop_front() {
                         self.locked_files.insert(path.clone());
                         if tx.send(()).is_err() {
-                            // Receiver dropped (cancelled) — undo the grant.
                             self.locked_files.remove(&path);
                             continue;
                         }
@@ -218,7 +202,7 @@ mod tests {
             order2.lock().await.push("2-acquired");
         });
 
-        // Give spawned task time to queue.
+        // Let the spawned task reach the queue before the guard is released.
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         order.lock().await.push("1-releasing");
         drop(guard1);
@@ -233,7 +217,6 @@ mod tests {
         let mgr = FileOperationLockManager::new();
         let _guard_a = mgr.wait_for_lock("a.ts").await;
 
-        // Different path should acquire immediately.
         let mgr2 = mgr.clone();
         let handle = tokio::spawn(async move {
             let _guard_b = mgr2.wait_for_lock("b.ts").await;

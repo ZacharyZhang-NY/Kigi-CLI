@@ -89,8 +89,6 @@ fn rank_history_matches(
     results
 }
 
-// --- Cross-CWD cache ---
-
 struct CrossCwdCache {
     prompts: Vec<String>,
     updated_at: Instant,
@@ -172,8 +170,6 @@ fn scan_cross_cwd_prompts() -> Vec<String> {
 
     prompts
 }
-
-// --- Shell history cache ---
 
 struct ShellHistoryCache {
     commands: Vec<String>,
@@ -286,7 +282,6 @@ fn load_bash_history(path: &std::path::Path) -> Vec<String> {
             Err(_) => continue,
         };
         let trimmed = line.trim();
-        // Skip empty lines and HISTTIMEFORMAT timestamp markers (`#1700000000`)
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
@@ -357,7 +352,6 @@ fn load_fish_history(path: &std::path::Path) -> Vec<String> {
             Ok(l) => l,
             Err(_) => continue,
         };
-        // Fish history entries start with "- cmd: "
         if let Some(cmd) = line.strip_prefix("- cmd: ") {
             let cmd = cmd.trim();
             if !cmd.is_empty() {
@@ -496,8 +490,6 @@ mod tests {
         assert_eq!(results[1].insert_text, "grep foo");
     }
 
-    // --- Shell history priority ordering ---
-
     #[test]
     fn shell_history_ranked_between_local_and_cross_cwd() {
         let local = vec!["git push origin main".into()];
@@ -521,8 +513,6 @@ mod tests {
         let texts: Vec<&str> = results.iter().map(|r| r.insert_text.as_str()).collect();
         assert_eq!(texts, &["ls -la", "ls -lh"]);
     }
-
-    // --- Bash history parsing ---
 
     #[test]
     fn parse_bash_history_basic() {
@@ -598,8 +588,6 @@ mod tests {
         assert!(commands.is_empty());
     }
 
-    // --- Zsh history parsing ---
-
     #[test]
     fn parse_zsh_history_extended_format() {
         let mut f = NamedTempFile::new().unwrap();
@@ -663,8 +651,6 @@ mod tests {
         // The command includes everything after the first `;`
         assert_eq!(commands, &["echo foo; echo bar"]);
     }
-
-    // --- Fish history parsing ---
 
     #[test]
     fn parse_fish_history_basic() {

@@ -3,9 +3,7 @@
 //! Shared between the shell (serializer) and the pager/desktop/VS Code
 //! (deserializer) so both sides stay in sync.
 
-/// ACP `ext_method` request payload (shell coordinator sends to client/pager).
-///
-/// Serialized as `camelCase` for the ACP JSON-RPC wire format.
+/// Request payload the shell coordinator sends to the client/pager.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExitPlanModeExtRequest {
@@ -14,7 +12,7 @@ pub struct ExitPlanModeExtRequest {
     pub plan_content: Option<String>,
 }
 
-/// ACP `ext_method` response payload (client/pager returns to shell coordinator).
+/// Response payload the client/pager returns to the shell coordinator.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ExitPlanModeExtResponse {
     /// `"approved"`, `"cancelled"`, or `"abandoned"`.
@@ -39,7 +37,6 @@ mod tests {
         assert!(json.get("sessionId").is_some());
         assert!(json.get("toolCallId").is_some());
         assert!(json.get("planContent").is_some());
-        // Must NOT contain snake_case keys
         assert!(json.get("session_id").is_none());
         assert!(json.get("tool_call_id").is_none());
         assert!(json.get("plan_content").is_none());

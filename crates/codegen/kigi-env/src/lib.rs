@@ -5,7 +5,6 @@
 //! Each value resolves as an env-var override when set, else the compiled
 //! production default.
 
-/// The complete set of first-party endpoints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KigiEndpoints {
     /// Kimi Code subscription inference API (OpenAI chat/completions compatible).
@@ -40,26 +39,18 @@ fn resolve(var: &str, compiled: &'static str) -> String {
     }
 }
 
-/// Subscription inference base URL: `KIGI_CODE_BASE_URL` override when set,
-/// else the compiled production endpoint.
 pub fn coding_api_base_url() -> String {
     resolve(CODE_BASE_URL_ENV, PRODUCTION_ENDPOINTS.coding_api_base_url)
 }
 
-/// OAuth host: `KIGI_OAUTH_HOST` override when set, else the compiled
-/// production endpoint.
 pub fn oauth_host() -> String {
     resolve(OAUTH_HOST_ENV, PRODUCTION_ENDPOINTS.oauth_host)
 }
 
-/// GitHub Releases API endpoint for the self-updater:
-/// `KIGI_UPDATE_BASE_URL` override when set, else the compiled production
-/// endpoint. The updater's channel/rollback semantics layer on top of it.
 pub fn update_base_url() -> String {
     resolve(UPDATE_BASE_URL_ENV, PRODUCTION_ENDPOINTS.update_base_url)
 }
 
-/// Subscription upgrade page shown in rate-limit and upsell surfaces.
 pub fn upgrade_page_url() -> &'static str {
     PRODUCTION_ENDPOINTS.upgrade_page_url
 }
@@ -70,8 +61,8 @@ fn env_lock() -> std::sync::MutexGuard<'static, ()> {
     ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner())
 }
 
-/// RAII env-var override for tests: constructors snapshot the prior value
-/// under [`ENV_LOCK`], `Drop` restores it, panics included.
+/// RAII env-var override for tests: the constructors snapshot the prior value
+/// under [`ENV_LOCK`] and `Drop` restores it, panics included.
 pub struct EnvVarGuard {
     key: &'static str,
     prev: Option<String>,
@@ -101,7 +92,7 @@ impl EnvVarGuard {
         }
     }
 
-    /// Update the value while still holding the env lock.
+    /// Overwrite the value without releasing [`ENV_LOCK`].
     pub fn set_value(&self, value: &str) {
         unsafe { std::env::set_var(self.key, value) };
     }

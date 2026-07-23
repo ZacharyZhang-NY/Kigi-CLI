@@ -18,7 +18,6 @@ pub async fn run(harness: &mut PtyHarness, _content: &ContentController) -> Resu
     harness.reset_timing();
 
     let start = Instant::now();
-    // Oscillate between a narrow and a wide layout.
     for i in 0..RESIZES {
         let (rows, cols) = if i % 2 == 0 { (35, 100) } else { (55, 160) };
         harness.resize(rows, cols)?;

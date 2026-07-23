@@ -287,8 +287,6 @@ async fn drive_round(actor: &SessionActor) {
     actor.drain_goal_updates(0, DrainPurpose::TurnEnd).await;
 }
 
-// ── Fires once on a real Achieved verdict, goal completes ────────────
-
 #[tokio::test(flavor = "current_thread")]
 #[serial]
 async fn summarizer_fires_on_real_achieved_and_completes() {
@@ -323,8 +321,6 @@ async fn summarizer_fires_on_real_achieved_and_completes() {
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
 
-// ── The summary TEXT is actually surfaced to the user ───────────────
-
 /// Pins that the summary reaches the user as an `AgentMessageChunk` — not just
 /// that `GoalSummarizerCompleted` fired. Deleting the
 /// `send_slash_command_output(&summary)` call must fail THIS test.
@@ -354,8 +350,6 @@ async fn summarizer_surfaces_summary_text_to_user() {
         .await;
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
-
-// ── Surfacing starts a NEW message block (fresh stream boundary) ─────
 
 /// The closing summary must render as its own block, not glued to the model's
 /// last turn message. Surfacing bumps `stream_start_ms`, the boundary the
@@ -399,8 +393,6 @@ async fn summarizer_surfacing_bumps_stream_start_for_new_block() {
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
 
-// ── Exactly once: a second completion against the Complete goal no-ops ─
-
 #[tokio::test(flavor = "current_thread")]
 #[serial]
 async fn summarizer_fires_exactly_once_per_achievement() {
@@ -430,8 +422,6 @@ async fn summarizer_fires_exactly_once_per_achievement() {
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
 
-// ── Does NOT fire on NotAchieved (goal stays Active) ─────────────────
-
 #[tokio::test(flavor = "current_thread")]
 #[serial]
 async fn summarizer_does_not_fire_on_not_achieved() {
@@ -458,8 +448,6 @@ async fn summarizer_does_not_fire_on_not_achieved() {
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
 
-// ── Does NOT fire on Blocked (goal pauses) ──────────────────────────
-
 #[tokio::test(flavor = "current_thread")]
 #[serial]
 async fn summarizer_does_not_fire_on_blocked() {
@@ -482,8 +470,6 @@ async fn summarizer_does_not_fire_on_blocked() {
         .await;
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
-
-// ── Does NOT fire when the cap pauses the round ─────────────────────
 
 #[tokio::test(flavor = "current_thread")]
 #[serial]
@@ -511,8 +497,6 @@ async fn summarizer_does_not_fire_on_cap_pause() {
         .await;
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
-
-// ── Does NOT fire on the infra FailOpenAchieved path (non-confounded) ─
 
 /// Drives `FailOpenAchieved` WITH a coordinator present so the assertion is
 /// non-confounded: if the summarizer were (wrongly) invoked from the
@@ -573,8 +557,6 @@ async fn summarizer_does_not_fire_on_fail_open_achieved() {
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
 
-// ── Fail-open: a summarizer failure still completes the goal ─────────
-
 #[tokio::test(flavor = "current_thread")]
 #[serial]
 async fn summarizer_failure_is_fail_open_goal_still_completes() {
@@ -605,8 +587,6 @@ async fn summarizer_failure_is_fail_open_goal_still_completes() {
         .await;
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
-
-// ── Kill-switch: disabled flag ⇒ no summarizer spawn ────────────────
 
 #[tokio::test(flavor = "current_thread")]
 #[serial]

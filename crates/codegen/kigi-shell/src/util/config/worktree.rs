@@ -193,7 +193,6 @@ default = "kigi-code-fast-1"
 worktree_type = "invalid"
 "#;
         let root: TomlValue = toml::from_str(toml_str).unwrap();
-        // Invalid values should fall back to default
         assert_eq!(worktree_type_from_toml(&root), WorktreeType::Linked);
     }
 
@@ -297,8 +296,6 @@ worktree_type = "invalid"
         );
     }
 
-    // === restore_code config tests ===
-
     #[test]
     fn test_restore_code_from_toml_present_true() {
         let root: TomlValue = toml::from_str("[cli]\nrestore_code = true").unwrap();
@@ -374,6 +371,4 @@ worktree_type = "invalid"
         };
         assert!(!resolve_restore_code(&root, Some(&remote)));
     }
-
-    // === minimum_version tests ===
 }

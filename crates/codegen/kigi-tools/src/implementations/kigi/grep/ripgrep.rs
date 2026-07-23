@@ -35,11 +35,10 @@ fn resolve_bundled_rg() -> std::io::Result<PathBuf> {
     Ok(p)
 }
 
-/// Get the path to the ripgrep executable.
+/// Path to the ripgrep executable.
 ///
-/// In release builds with bundling enabled, this extracts the bundled ripgrep
-/// binary to ~/.kigi/vendor/ and returns that path.
-/// Otherwise, assumes `rg` is in PATH.
+/// With bundling enabled this extracts the embedded binary to `~/.kigi/vendor/`
+/// on first call; otherwise it falls back to `rg` on PATH.
 pub fn rg_path() -> PathBuf {
     static RG_EXEC: OnceLock<PathBuf> = OnceLock::new();
     RG_EXEC
@@ -50,14 +49,12 @@ pub fn rg_path() -> PathBuf {
             }
             #[cfg(not(bundle_rg))]
             {
-                // RG_BIN_PATH: explicit override (tests / packaging can set this).
                 if let Ok(p) = std::env::var("RG_BIN_PATH") {
                     return PathBuf::from(p);
                 }
-                // Some hermetic test runners set RUNFILES_DIR and ship rg as a
-                // data dependency rather than on PATH. Scan for a directory
-                // entry containing "ripgrep_hermetic" and prefer arch-scoped
-                // paths when present.
+                // Hermetic test runners set RUNFILES_DIR and ship rg as a data
+                // dependency rather than on PATH, under a directory whose name
+                // contains "ripgrep_hermetic".
                 if let Ok(rf) = std::env::var("RUNFILES_DIR") {
                     let base = PathBuf::from(rf);
                     if let Ok(entries) = std::fs::read_dir(&base) {

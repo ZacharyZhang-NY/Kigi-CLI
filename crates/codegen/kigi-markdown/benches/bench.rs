@@ -8,12 +8,10 @@ use kigi_markdown::{
     MarkdownStyle, StreamingMarkdownRenderer, Syntect, render_markdown_ratatui_full,
 };
 
-/// Default style for benchmarking.
 fn default_style() -> MarkdownStyle {
     MarkdownStyle::default()
 }
 
-/// Create syntect highlighter for benchmarking.
 fn create_syntect() -> Syntect {
     Syntect::new(include_bytes!("../assets/tokyo-night.tmTheme"))
 }
@@ -94,7 +92,6 @@ This is *some <a href="https://google.com">inline html</a> block*.
     });
 }
 
-/// Generate a markdown document with multiple blocks for streaming simulation.
 fn generate_streaming_content(num_blocks: usize) -> String {
     let mut content = String::new();
     for i in 0..num_blocks {
@@ -129,7 +126,7 @@ fn generate_streaming_content(num_blocks: usize) -> String {
     content
 }
 
-/// Benchmark streaming with full re-render on each token (O(N²) baseline).
+/// O(N²) baseline: a full re-render on every token.
 fn bench_streaming_full_rerender(c: &mut Criterion) {
     let mut group = c.benchmark_group("streaming");
     let syntect = create_syntect();
@@ -164,11 +161,9 @@ fn bench_streaming_full_rerender(c: &mut Criterion) {
     group.finish();
 }
 
-/// Generate a hyperlink-heavy markdown document.
-///
-/// Each block contains 4 inline links and 1 autolink so the renderer's
-/// link-translation path is exercised on most rendered lines.  Designed
-/// to surface O(lines * link_targets) costs in `translate_link_targets`.
+/// Each block carries 4 inline links and 1 autolink, so most rendered lines hit
+/// the link-translation path — surfacing O(lines * link_targets) costs in
+/// `translate_link_targets`.
 fn generate_hyperlink_content(num_blocks: usize) -> String {
     let mut content = String::new();
     for i in 0..num_blocks {
@@ -189,11 +184,8 @@ fn generate_hyperlink_content(num_blocks: usize) -> String {
     content
 }
 
-/// Benchmark a single full render of a hyperlink-heavy document.
-///
-/// Surfaces the cost of the parse-time `link_targets` collection plus the
-/// post-render translation step.  Pair with `bench_render_markdown` to see
-/// the link-translation overhead in isolation.
+/// Parse-time `link_targets` collection plus the post-render translation step.
+/// Pair with `bench_render_markdown` to isolate the link-translation overhead.
 fn bench_render_markdown_hyperlinks(c: &mut Criterion) {
     let syntect = create_syntect();
     let mut group = c.benchmark_group("render_markdown_hyperlinks");
@@ -219,10 +211,8 @@ fn bench_render_markdown_hyperlinks(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark incremental streaming of a hyperlink-heavy document.
-///
-/// Exercises `rerender_tail` repeatedly, which calls the link-translation
-/// path on the unfrozen tail every push.
+/// `rerender_tail` runs the link-translation path over the unfrozen tail on
+/// every push.
 fn bench_streaming_hyperlinks_incremental(c: &mut Criterion) {
     let mut group = c.benchmark_group("streaming_hyperlinks");
     let syntect = create_syntect();
@@ -251,7 +241,7 @@ fn bench_streaming_hyperlinks_incremental(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark streaming with incremental renderer (O(N) target).
+/// O(N) target against the `bench_streaming_full_rerender` baseline.
 fn bench_streaming_incremental(c: &mut Criterion) {
     let mut group = c.benchmark_group("streaming");
     let syntect = create_syntect();
@@ -280,12 +270,10 @@ fn bench_streaming_incremental(c: &mut Criterion) {
     group.finish();
 }
 
-/// Generate a math-heavy markdown document.
-///
-/// Each block exercises all four delimiter forms (`$...$`, `$$...$$`,
-/// `\(...\)`, `\[...\]`) plus the expensive converter paths: scripts,
-/// fractions, roots, symbol lookups, alphabets, and multi-row environments
-/// (aligned / pmatrix / cases) that go through the MathBox 2D layout.
+/// Each block covers all four delimiter forms (`$...$`, `$$...$$`, `\(...\)`,
+/// `\[...\]`) plus the expensive converter paths: scripts, fractions, roots,
+/// symbol lookups, alphabets, and the multi-row environments (aligned / pmatrix
+/// / cases) that go through the MathBox 2D layout.
 fn generate_math_content(num_blocks: usize) -> String {
     let mut content = String::new();
     for i in 0..num_blocks {
@@ -311,10 +299,8 @@ fn generate_math_content(num_blocks: usize) -> String {
     content
 }
 
-/// Benchmark a single full render of a math-heavy document.
-///
-/// Surfaces the cost of the LaTeX → Unicode converter plus the parse-time
-/// `\(...\)` / `\[...\]` source scans and block replacements.
+/// The LaTeX → Unicode converter plus the parse-time `\(...\)` / `\[...\]`
+/// source scans and block replacements.
 fn bench_render_markdown_math(c: &mut Criterion) {
     let syntect = create_syntect();
     let mut group = c.benchmark_group("render_markdown_math");
@@ -340,11 +326,8 @@ fn bench_render_markdown_math(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark incremental streaming of a math-heavy document.
-///
-/// Exercises the streaming hot path the `MAX_MATH_SOURCE_LEN` guard
-/// protects: every push re-renders the unfrozen tail, re-running the math
-/// scans and conversions on it.
+/// The hot path the `MAX_MATH_SOURCE_LEN` guard protects: every push re-renders
+/// the unfrozen tail, re-running the math scans and conversions over it.
 fn bench_streaming_math_incremental(c: &mut Criterion) {
     let mut group = c.benchmark_group("streaming_math");
     let syntect = create_syntect();
@@ -373,7 +356,7 @@ fn bench_streaming_math_incremental(c: &mut Criterion) {
     group.finish();
 }
 
-/// Generate a document with plain URLs in prose (no markdown link syntax).
+/// Bare URLs in prose, with no markdown link syntax to pick them up.
 fn generate_plain_url_content(num_blocks: usize) -> String {
     let mut content = String::new();
     for i in 0..num_blocks {
@@ -384,12 +367,8 @@ fn generate_plain_url_content(num_blocks: usize) -> String {
     content
 }
 
-/// Benchmark streaming + finish() of a plain-URL-heavy document.
-///
-/// Exercises the `detect_plain_urls` scan, which after the multi-line-URL
-/// fix runs inside both `rerender_tail` (every `push_and_render`) and
-/// `finish()`.  Bench numbers from this point forward are not comparable
-/// to historical runs that measured the prior `finish()`-only path.
+/// The `detect_plain_urls` scan runs inside both `rerender_tail` (on every
+/// `push_and_render`) and `finish()`, so this measures both.
 fn bench_streaming_plain_urls_incremental(c: &mut Criterion) {
     let mut group = c.benchmark_group("streaming_plain_urls");
     let syntect = create_syntect();
@@ -416,11 +395,9 @@ fn bench_streaming_plain_urls_incremental(c: &mut Criterion) {
     group.finish();
 }
 
-/// Generate a realistic nested YAML document of roughly `num_lines` lines.
-///
-/// Produces nested keys, lists, and scalars (the kind of config an LLM streams
-/// into a single fenced block) so the syntect highlighter does real work per
-/// line rather than trivial whitespace.
+/// Nested keys, lists, and scalars — the kind of config an LLM streams into a
+/// single fenced block — so the syntect highlighter does real work per line
+/// rather than trivial whitespace.
 fn generate_yaml_lines(num_lines: usize) -> Vec<String> {
     let mut lines = Vec::with_capacity(num_lines);
     let mut i = 0usize;
@@ -450,13 +427,11 @@ fn generate_yaml_lines(num_lines: usize) -> Vec<String> {
     lines
 }
 
-/// Benchmark streaming a SINGLE open ```yaml fenced block line-by-line WITHOUT
-/// ever closing the fence.
-///
+/// A single yaml fence that is opened and never closed, streamed line by line.
 /// This reproduces the UI-freeze pathology: while the fence is open the block
 /// never checkpoints, so every `push_and_render` re-highlights the whole tail.
-/// With the incremental open-code cache, per-line cost should stay roughly flat
-/// in block size instead of growing linearly (overall O(N) instead of O(N²)).
+/// The open-code cache should keep per-line cost roughly flat in block size
+/// instead of growing linearly (overall O(N) instead of O(N²)).
 fn bench_streaming_open_yaml_incremental(c: &mut Criterion) {
     let mut group = c.benchmark_group("streaming_open_yaml");
     let syntect = create_syntect();
@@ -464,16 +439,12 @@ fn bench_streaming_open_yaml_incremental(c: &mut Criterion) {
     for num_lines in [100, 500, 1081] {
         let lines = generate_yaml_lines(num_lines);
 
-        // Only the cache-on path ships; the parameter is just the line count
-        // (no A/B baseline here — the no-cache baseline was measured ad hoc and
-        // is not committed).
         group.bench_with_input(
             BenchmarkId::from_parameter(num_lines),
             &lines,
             |b, lines| {
                 b.iter(|| {
                     let mut renderer = StreamingMarkdownRenderer::new(default_style(), true);
-                    // Open the fence but never close it.
                     renderer.push_and_render("```yaml\n", Some(&syntect));
                     let mut total_lines = 0;
                     for line in lines.iter() {
@@ -497,7 +468,6 @@ fn bench_streaming_open_yaml_incremental(c: &mut Criterion) {
 fn generate_fence_in_list_content(trailing_words: usize) -> String {
     let mut s = String::new();
     s.push_str("Here is where you're stuck:\n\n");
-    // Two list items embedding closed scala fences (the pathological shape).
     for i in 0..2 {
         s.push_str(&format!(
             "- **[File{i}.scala:{}](https://example.com/f{i})** (domain)\n  \
@@ -513,7 +483,6 @@ fn generate_fence_in_list_content(trailing_words: usize) -> String {
             100 + i,
         ));
     }
-    // Continued streaming within the same (never-closing) list context.
     for w in 0..trailing_words {
         if w % 12 == 0 {
             s.push_str("\n- item: ");

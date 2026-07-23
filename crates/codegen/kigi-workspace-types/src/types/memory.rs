@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 pub struct MemoryChunk {
     /// Stable identifier (typically the memory entry's hash or path).
     pub id: String,
-    /// Content body.
     #[serde(default)]
     pub content: String,
     /// Optional source path the chunk was derived from.

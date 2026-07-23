@@ -176,14 +176,12 @@ fn main() {
     }
 }
 
-/// Get the effective cache path - use custom if provided, otherwise default.
 fn effective_cache_path(repo_path: &Path, custom_cache: Option<&Path>) -> PathBuf {
     custom_cache
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| get_cache_path(repo_path))
 }
 
-/// Load index from cache or build if necessary.
 fn load_or_build_index(repo_path: &Path, cache_path: &Path) -> ScopeGraphIndex {
     if let Ok(index) = load_index(cache_path) {
         println!("Loaded index from cache: {}", cache_path.display());
@@ -204,7 +202,6 @@ fn load_or_build_index(repo_path: &Path, cache_path: &Path) -> ScopeGraphIndex {
         files, defs, refs, elapsed
     );
 
-    // Save to cache
     if let Err(e) = save_index(cache_path, &index) {
         println!("Warning: Failed to save cache: {}", e);
     } else {
@@ -260,7 +257,6 @@ fn cmd_definition(
     let navigator = Navigator::new(index);
 
     let result = match (file, row, col, symbol) {
-        // Position-based lookup
         (Some(file_path), Some(r), Some(c), _) => {
             let abs_path = if file_path.is_absolute() {
                 file_path
@@ -276,7 +272,6 @@ fn cmd_definition(
                 }
             }
         }
-        // Symbol-based lookup
         (_, _, _, Some(sym)) => navigator.goto_definition_by_name(&sym, None),
         _ => {
             println!("Error: Must provide either --file, --row, --col OR --symbol");
@@ -310,7 +305,6 @@ fn cmd_references(
     let navigator = Navigator::new(index);
 
     let result = match (file, row, col, symbol) {
-        // Position-based lookup
         (Some(file_path), Some(r), Some(c), _) => {
             let abs_path = if file_path.is_absolute() {
                 file_path
@@ -326,7 +320,6 @@ fn cmd_references(
                 }
             }
         }
-        // Symbol-based lookup
         (_, _, _, Some(sym)) => navigator.goto_references_by_name(&sym, None, include_definition),
         _ => {
             println!("Error: Must provide either --file, --row, --col OR --symbol");
@@ -361,7 +354,6 @@ fn cmd_stats(path: &Path, custom_cache: Option<&Path>) {
     println!("  References:     {}", refs);
     println!("  Aliases:        {}", index.alias_count());
 
-    // Top symbols by reference count
     let ref_counts = index.top_referenced_symbols(10);
 
     println!("\nTop 10 most referenced symbols:");

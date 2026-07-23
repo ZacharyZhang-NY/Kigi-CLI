@@ -2,7 +2,6 @@ use crate::implementations::kigi::bash::BashError;
 use crate::implementations::kigi::todo::TodoError;
 use crate::implementations::kigi::web_fetch::WebFetchError;
 
-/// Error type for SearchReplace tool operations.
 #[derive(thiserror::Error, Debug)]
 pub enum SearchReplaceError {
     #[error("File not found: {0}")]
@@ -15,7 +14,6 @@ pub enum SearchReplaceError {
     InvalidUtf8(String),
 }
 
-//
 // These impls let tool code use `?` directly on domain errors without going
 // through any intermediary enum.
 

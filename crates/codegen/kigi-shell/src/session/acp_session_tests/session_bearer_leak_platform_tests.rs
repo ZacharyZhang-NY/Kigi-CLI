@@ -858,7 +858,8 @@ async fn first_party_aux_resolver_honours_the_session_gate() {
             let coding_host = kigi_env::PRODUCTION_ENDPOINTS.coding_api_base_url;
             let aux_slug = "kigi-aux";
             let mut info = crate::agent::config::ModelInfo::fallback(aux_slug);
-            info.id = None; // a `[model.kigi-aux]` block, not a registry entry
+            // a `[model.kigi-aux]` block, not a registry entry
+            info.id = None;
             info.base_url = coding_host.to_string();
             let aux_entry = crate::agent::config::ModelEntry {
                 info,
@@ -938,8 +939,6 @@ async fn first_party_aux_resolver_honours_the_session_gate() {
 ///       `endpoint_is_first_party`, which is `false` for every
 ///       subscription-OAuth host — the session loses its `bearer_resolver` and
 ///       401s unrecoverably ~1h in, the failure L13 exists to prevent.
-///
-/// Round 3's deleted `repoint_aux_bearer_resolver` never touched the memo.
 ///
 /// Revert-to-red (production, compiles): make `SessionActor::aux_bearer_resolver`
 /// call `self.model_auth_facts(slug)` instead of `self.aux_model_auth_facts(slug)`

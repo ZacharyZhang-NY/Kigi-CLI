@@ -183,10 +183,6 @@ pub(super) fn active_contexts_for_pane(pane: ActivePane) -> Vec<crate::actions::
 ///
 /// This will grow as we add more panes (tasks, review files, etc.).
 pub type AgentPane = ActivePane;
-/// Per-agent view-model.
-///
-/// Owns both business state (session, entries) and UI state (scroll,
-/// selection, pane focus). See module docs for future split plans.
 /// MCP server initialization progress, received from the shell.
 #[derive(Debug, Clone)]
 pub struct McpInitProgress {
@@ -254,11 +250,9 @@ impl HitArea {
         self.hovered = new;
         changed
     }
-    /// Check if a position is inside the rect.
     pub fn contains(&self, col: u16, row: u16) -> bool {
         self.rect.is_some_and(|r| r.contains((col, row).into()))
     }
-    /// Set the rect (called during render).
     pub fn set(&mut self, rect: Option<Rect>) {
         self.rect = rect;
     }
@@ -266,7 +260,6 @@ impl HitArea {
     pub fn set_unless_dropdown(&mut self, rect: Option<Rect>, dropdown_open: bool) {
         self.set(if dropdown_open { None } else { rect });
     }
-    /// Clear rect and hover.
     pub fn clear(&mut self) {
         self.rect = None;
         self.hovered = false;
@@ -641,7 +634,7 @@ pub struct AgentView {
     /// [`Self::self_originated_prompt_ids`] in the ACP gate / turn-start shim:
     /// a client that has driven a turn can still go on to VIEW a turn another
     /// client drives (e.g. a `/loop` cron, or a plain prompt typed in another
-    /// pane), so this flag is no longer a one-way latch.
+    /// pane), so this flag is not a one-way latch.
     pub attached_as_viewer: bool,
     /// Prompt ids of turns THIS client originated (sent to the agent as the
     /// turn driver). The ACP gate consults this to keep `attached_as_viewer`
@@ -694,7 +687,6 @@ pub struct AgentView {
     pub active_pane: AgentPane,
     /// Current mode of the prompt widget (normal vs editing a queued prompt).
     pub prompt_mode: PromptMode,
-    /// Current special prompt input mode (Normal/Bash/Feedback/Remember).
     pub prompt_input_mode: PromptInputMode,
     /// Multiline input mode: swap Enter (insert newline) and Shift+Enter (send).
     /// Toggled by `Ctrl+M` or `/multiline`. Not persisted across sessions.
@@ -992,9 +984,8 @@ pub struct AgentView {
     /// so switching between images is a cheap re-place (~80 bytes) instead
     /// of a full re-transmit. ID 1 is reserved for modal overlays.
     pub(crate) inline_media_ids: std::collections::HashMap<std::path::PathBuf, u32>,
-    /// Paths whose iTerm2 inline data has already been emitted this placement
-    /// cycle. Avoids re-sending full base64 image data every TUI frame.
-    /// Last iTerm2 placement per path — re-emit when `screen_rect` changes.
+    /// Last iTerm2 placement rect per path. Avoids re-sending full base64 image
+    /// data every TUI frame; re-emitted only when a path's `screen_rect` changes.
     pub(crate) inline_media_iterm_emitted:
         std::collections::HashMap<std::path::PathBuf, ratatui::layout::Rect>,
     /// Counter for allocating the next Kitty image ID.
@@ -1176,8 +1167,8 @@ pub struct AgentView {
     /// cancel falls back to that UI/config field, then the prompt panel.
     pub(crate) cancel_subagents_preference: Option<bool>,
     /// What gesture triggered the pending turn-cancel (Ctrl+C / mouse; Esc
-    /// only via the cancel-retry path while TurnCancelling — a bare Esc no
-    /// longer starts a cancel).
+    /// only via the cancel-retry path while TurnCancelling — a bare Esc does
+    /// not start a cancel).
     /// Set by the key/mouse handler, consumed by `do_cancel_turn` / the
     /// cancel-retry path so `session/cancel` carries `_meta.cancelTrigger`.
     pub(crate) cancel_trigger_hint: Option<crate::app::actions::CancelTrigger>,
@@ -1364,7 +1355,7 @@ pub struct AgentView {
     pub(crate) follow_up_seen: HashMap<String, u64>,
     /// Monotonic generation assigned to the next newly-accepted `response_id`.
     /// The ordering key for newest-wins: a fresh id takes the next value (the
-    /// new high-water), so every previously-seen id is strictly lower.
+    /// new high-water), so every already-seen id is strictly lower.
     pub(crate) follow_up_next_gen: u64,
     /// Stamped `kigi/follow_ups` that arrived for a turn that is NOT yet the
     /// currently-adopted one, keyed by `promptId`. Ext notifications and

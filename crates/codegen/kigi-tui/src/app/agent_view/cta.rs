@@ -56,7 +56,7 @@ impl AgentView {
     /// (newest-response-wins).
     ///
     /// Monotonic accept-the-newer: a never-seen `response_id` is strictly newer
-    /// than any previously accepted one, so it supersedes the shown chips; a
+    /// than any earlier-accepted one, so it supersedes the shown chips; a
     /// re-delivery of an already-accepted (hence older) response is ignored, so
     /// a buffer-replay or duplicate cannot clobber the newest chips on any
     /// turn-boundary path, with no reliance on a clear being wired there and no

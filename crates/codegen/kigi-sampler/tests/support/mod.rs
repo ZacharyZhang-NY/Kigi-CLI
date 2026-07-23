@@ -16,8 +16,9 @@ pub fn test_config(base_url: &str, api_key: &str) -> SamplerConfig {
     }
 }
 
-/// Drive one POST through the client; the canned `{}` body is not a valid
-/// completion, but only the wire-level request matters here.
+/// Drive one POST through the client. The response is discarded: the counting
+/// server never returns a valid completion, and only the wire-level request
+/// matters here.
 pub async fn send_one(client: &SamplingClient) {
     let request = ConversationRequest {
         items: vec![ConversationItem::User(UserItem {

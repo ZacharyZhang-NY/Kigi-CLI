@@ -100,7 +100,6 @@ mod tests {
         let second = client.get_or_rebuild().unwrap();
         let second_ptr = Arc::as_ptr(&second);
 
-        // After invalidation, we should get a different client instance.
         assert_ne!(first_ptr, second_ptr);
     }
 
@@ -110,7 +109,6 @@ mod tests {
             proxy_endpoint: Some("https://proxy.corp.example.com".into()),
             ..Default::default()
         };
-        // Should succeed — reqwest accepts the proxy URL.
         let client = HttpClient::new(&params);
         assert!(client.is_ok());
     }

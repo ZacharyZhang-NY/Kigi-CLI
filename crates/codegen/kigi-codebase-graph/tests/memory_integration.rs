@@ -80,9 +80,7 @@ fn create_binary_files(dir: &Path, count: usize, size: usize) {
     }
 }
 
-// =========================================================================
 // Tests
-// =========================================================================
 
 #[test]
 #[serial_test::serial]
@@ -221,11 +219,14 @@ fn test_builder_skips_binary_and_oversized_in_bulk() {
     let root = dir.path();
 
     // Mix of valid, binary, and oversized files
-    create_rust_files(root, 100, 5); // 100 valid files
-    create_binary_files(root, 50, 10_000); // 50 binary files
+    // 100 valid files
+    create_rust_files(root, 100, 5);
+    // 50 binary files
+    create_binary_files(root, 50, 10_000);
 
     // One oversized file
-    let big = "fn x() {}\n".repeat(600_000); // ~6MB
+    // ~6MB
+    let big = "fn x() {}\n".repeat(600_000);
     fs::write(root.join("oversized.rs"), &big).unwrap();
     drop(big);
 
@@ -234,7 +235,8 @@ fn test_builder_skips_binary_and_oversized_in_bulk() {
 
     // Only the 100 valid files should be indexed
     assert_eq!(files, 100);
-    assert!(defs >= 500); // 100 files × 5 defs
+    // 100 files × 5 defs
+    assert!(defs >= 500);
 }
 
 /// Measure RSS growth from a single `get_snapshot()` call on a representative index.
@@ -248,7 +250,8 @@ fn test_builder_skips_binary_and_oversized_in_bulk() {
 fn test_single_snapshot_rss() {
     let dir = tempdir().unwrap();
     let root = dir.path();
-    create_rust_files(root, 500, 10); // 500 files, 5 000 defs
+    // 500 files, 5 000 defs
+    create_rust_files(root, 500, 10);
 
     let config = IndexManagerConfig::new(root.to_path_buf())
         .without_cache_load()
@@ -353,7 +356,8 @@ fn test_repeated_snapshots_rss_bounded() {
 fn test_fresh_build_rss() {
     let dir = tempdir().unwrap();
     let root = dir.path();
-    create_rust_files(root, 500, 10); // 500 files, 5 000 defs
+    // 500 files, 5 000 defs
+    create_rust_files(root, 500, 10);
 
     let rss_before = rss_mb();
 
@@ -451,7 +455,8 @@ fn test_cache_load_rss() {
 fn test_build_batch_size_produces_correct_index() {
     let dir = tempdir().unwrap();
     let root = dir.path();
-    create_rust_files(root, 200, 5); // 200 files, 1 000 defs
+    // 200 files, 1 000 defs
+    create_rust_files(root, 200, 5);
 
     // Build with a very small batch size (10 files per merge batch)
     let batched = IndexBuilder::new()
@@ -587,9 +592,7 @@ fn test_build_batch_peak_rss_is_bounded() {
     assert_eq!(b_refs, u_refs, "reference count must match");
 }
 
-// =============================================================================
 // Structural compaction tests
-// =============================================================================
 
 /// Verify that an index survives a save/load round-trip after compact().
 ///
@@ -601,7 +604,8 @@ fn test_build_batch_peak_rss_is_bounded() {
 fn test_compact_then_save_load_roundtrip() {
     let dir = tempdir().unwrap();
     let root = dir.path();
-    create_rust_files(root, 50, 4); // 50 files, 200 defs
+    // 50 files, 200 defs
+    create_rust_files(root, 50, 4);
 
     // build() calls compact() internally via build_fast()
     let original = IndexBuilder::new().build(root).unwrap();

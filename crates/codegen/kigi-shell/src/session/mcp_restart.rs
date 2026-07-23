@@ -642,7 +642,7 @@ pub fn forward_status(
     gateway.forward_fire_and_forget(acp::ExtNotification::new(SERVER_STATUS_METHOD, raw.into()));
 }
 
-// ── telemetry helpers (tracing-as-metrics; see module doc § Telemetry) ──
+// telemetry helpers (tracing-as-metrics; see module doc § Telemetry)
 
 fn record_attempted(server: &str, attempt: usize) {
     tracing::info!(
@@ -665,8 +665,8 @@ fn record_skipped(server: &str, reason: SkipReason) {
     );
 }
 
-// ── in-place HTTP recovery metrics (kept separate from auto_restart.* so
-//    on-call can distinguish stdio respawn from HTTP transport reset) ──
+// in-place HTTP recovery metrics (kept separate from auto_restart.* so
+// on-call can distinguish stdio respawn from HTTP transport reset)
 
 fn record_http_recovery_attempted(server: &str) {
     tracing::info!(target: "metrics.mcp.http_recovery.attempted", server = %server);

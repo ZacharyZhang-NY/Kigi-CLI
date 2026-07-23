@@ -23,7 +23,8 @@ use kigi_test_support::*;
 /// Every global `[models]` default is accepted, and the wire-observable
 /// `extra_headers` reaches the inference request with no per-model block in play.
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+// requires pre-built binary; run with --ignored
+#[ignore]
 async fn global_models_config_reaches_inference_request() {
     let server = MockInferenceServer::start()
         .await

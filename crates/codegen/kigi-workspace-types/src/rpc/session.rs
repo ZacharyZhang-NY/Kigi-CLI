@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 
 use super::WorkspaceRpc;
 
-/// Begin tracking file state for a prompt.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BeginPromptReq {
     pub session_id: String,
@@ -17,7 +16,6 @@ impl WorkspaceRpc for BeginPromptReq {
     type Response = ();
 }
 
-/// End tracking file state for a prompt (captures after-snapshots).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EndPromptReq {
     pub session_id: String,
@@ -41,7 +39,6 @@ impl WorkspaceRpc for RewindToReq {
     type Response = FileRewindResponse;
 }
 
-/// Type of external modification detected during file rewind.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConflictType {
@@ -50,14 +47,12 @@ pub enum ConflictType {
     ModifiedExternally,
 }
 
-/// A single conflict detected during file rewind.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileRewindConflict {
     pub path: String,
     pub conflict_type: ConflictType,
 }
 
-/// Response returned by `workspace.rewind_to` RPC.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileRewindResponse {
     pub success: bool,

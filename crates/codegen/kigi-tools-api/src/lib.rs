@@ -6,7 +6,6 @@
 
 #![allow(clippy::derive_partial_eq_without_eq)]
 
-/// Generated protobuf types.
 pub mod pb {
     include!(concat!(env!("OUT_DIR"), "/kigi.tools.v1.rs"));
 }
@@ -14,84 +13,24 @@ pub mod pb {
 pub mod config_validation;
 pub mod slash_commands;
 
-// Re-export commonly used types at the crate root for convenience
 pub use pb::{
-    // Agent types
-    AgentCompletionRequirement,
-    AgentToolExecConfig,
-    AgentToolRetryConfig,
-    // Request/response types
-    ClearToolOverrideRequest,
-    ClearToolOverrideResponse,
-    DisableToolRequest,
-    DisableToolResponse,
-    EnableToolRequest,
-    EnableToolResponse,
-    // Enums
-    ErrorCode,
-    ExecuteToolRequest,
-    ExecuteToolResponse,
-    ExecutionMetadata,
-    ExecutionOptions,
-    FinalizeAgentRequest,
-    FinalizeAgentResponse,
-    FinalizeConfigValidationDetails,
-    FinalizeConfigViolation,
-    // Tool server config (finalize-time)
-    FinalizeToolServerConfigRequest,
-    FinalizeToolServerConfigResponse,
-    GetAgentInfoRequest,
-    GetAgentInfoResponse,
-    GetCompletionStateRequest,
-    GetCompletionStateResponse,
-    GetSystemPromptRequest,
-    GetSystemPromptResponse,
-    GetSystemRemindersRequest,
-    GetSystemRemindersResponse,
-    GetToolInfoRequest,
-    GetToolOptionsRequest,
-    GetToolOptionsResponse,
-    // Tool state
-    GetToolStateRequest,
-    GetToolStateResponse,
-    // Truncation config
-    GetTruncationConfigRequest,
-    GetTruncationConfigResponse,
-    ListToolsRequest,
-    ListToolsResponse,
-    // Output format specs
-    OutputFieldSpec,
-    OutputFormat,
-    OutputFormatSpec,
-    ResetCompletionStateRequest,
-    ResetCompletionStateResponse,
-    ResetToolOptionsRequest,
-    ResetToolOptionsResponse,
-    SetSystemRemindersRequest,
-    SetSystemRemindersResponse,
-    SetToolOptionsRequest,
-    SetToolOptionsResponse,
-    SetToolOverrideRequest,
-    SetToolOverrideResponse,
-    SetTruncationConfigRequest,
-    SetTruncationConfigResponse,
-    // Streaming types
-    StreamDataChunk,
-    StreamDataKind,
-    StreamFinalResult,
-    // Capability/metadata types
-    ToolCapabilities,
-    ToolCategory,
-    // Per-tool config entry
-    ToolConfigEntry,
-    ToolError,
-    ToolInfo,
-    ToolSource,
-    ToolStreamChunk,
-    ToolSuccess,
-    TruncationConfig,
-    // Version lifecycle warnings
-    VersionWarning,
+    AgentCompletionRequirement, AgentToolExecConfig, AgentToolRetryConfig,
+    ClearToolOverrideRequest, ClearToolOverrideResponse, DisableToolRequest, DisableToolResponse,
+    EnableToolRequest, EnableToolResponse, ErrorCode, ExecuteToolRequest, ExecuteToolResponse,
+    ExecutionMetadata, ExecutionOptions, FinalizeAgentRequest, FinalizeAgentResponse,
+    FinalizeConfigValidationDetails, FinalizeConfigViolation, FinalizeToolServerConfigRequest,
+    FinalizeToolServerConfigResponse, GetAgentInfoRequest, GetAgentInfoResponse,
+    GetCompletionStateRequest, GetCompletionStateResponse, GetSystemPromptRequest,
+    GetSystemPromptResponse, GetSystemRemindersRequest, GetSystemRemindersResponse,
+    GetToolInfoRequest, GetToolOptionsRequest, GetToolOptionsResponse, GetToolStateRequest,
+    GetToolStateResponse, GetTruncationConfigRequest, GetTruncationConfigResponse,
+    ListToolsRequest, ListToolsResponse, OutputFieldSpec, OutputFormat, OutputFormatSpec,
+    ResetCompletionStateRequest, ResetCompletionStateResponse, ResetToolOptionsRequest,
+    ResetToolOptionsResponse, SetSystemRemindersRequest, SetSystemRemindersResponse,
+    SetToolOptionsRequest, SetToolOptionsResponse, SetToolOverrideRequest, SetToolOverrideResponse,
+    SetTruncationConfigRequest, SetTruncationConfigResponse, StreamDataChunk, StreamDataKind,
+    StreamFinalResult, ToolCapabilities, ToolCategory, ToolConfigEntry, ToolError, ToolInfo,
+    ToolSource, ToolStreamChunk, ToolSuccess, TruncationConfig, VersionWarning,
 };
 
 /// Default client-facing tool name derived from a namespaced tool id.
@@ -109,9 +48,7 @@ pub fn default_client_name(id: &str) -> &str {
     id.split(':').nth(1).unwrap_or(id)
 }
 
-/// Convert ToolCategory enum to a string representation.
 impl ToolCategory {
-    /// Get the string representation of the category.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Unspecified => "unspecified",

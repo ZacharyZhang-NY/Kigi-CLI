@@ -16,7 +16,6 @@ use base64::engine::general_purpose::STANDARD;
 use serde::de::{self, Deserializer, SeqAccess, Visitor};
 use serde::ser::Serializer;
 
-/// Serialize a byte slice as a base64 string.
 pub fn serialize<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
@@ -24,8 +23,6 @@ where
     serializer.serialize_str(&STANDARD.encode(bytes))
 }
 
-/// Deserialize `Vec<u8>` from either a base64 string (new form) or an integer
-/// array (legacy form).
 pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
 where
     D: Deserializer<'de>,
@@ -33,7 +30,6 @@ where
     deserializer.deserialize_any(BytesVisitor)
 }
 
-/// Accepts both a base64 string and a legacy integer array.
 struct BytesVisitor;
 
 impl<'de> Visitor<'de> for BytesVisitor {

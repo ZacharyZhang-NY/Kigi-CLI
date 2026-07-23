@@ -40,8 +40,10 @@ async fn folder_trust_question_renders_and_accept_persists_grant() {
     // but the dispatch chokepoint must still refuse to create a session while
     // trust is Pending. Two presses (NewSession requires confirmation) must
     // leave us on the trust question, NOT in a session.
-    harness.inject_keys(b"\x0e").expect("inject Ctrl+N"); // arm
-    harness.inject_keys(b"\x0e").expect("inject Ctrl+N"); // confirm
+    // arm
+    harness.inject_keys(b"\x0e").expect("inject Ctrl+N");
+    // confirm
+    harness.inject_keys(b"\x0e").expect("inject Ctrl+N");
     harness.update(Duration::from_millis(400));
     assert!(
         harness.contains_text(TRUST_QUESTION_SENTINEL),

@@ -23,7 +23,6 @@ pub(crate) struct WorkerCtx {
 }
 
 pub(crate) fn run_worker(rx: crossbeam::channel::Receiver<CopyEntry>, ctx: WorkerCtx) {
-    // Track created directories to avoid redundant mkdir calls.
     let mut created_dirs: HashSet<PathBuf> = HashSet::new();
 
     for entry in rx {
@@ -59,7 +58,8 @@ fn process_entry(
     issues: &std::sync::Mutex<Vec<String>>,
     file_metadata: &DashMap<PathBuf, Metadata>,
 ) -> bool {
-    // Ensure parent directory exists.
+    // `created_dirs.insert` yields false for a parent this worker already made,
+    // short-circuiting the chain so the mkdir syscall is skipped.
     if let Some(parent) = dst.parent()
         && !parent.as_os_str().is_empty()
         && created_dirs.insert(parent.to_path_buf())
@@ -116,7 +116,6 @@ fn process_entry(
             Ok(()) => {
                 files_copied.fetch_add(1, Ordering::Relaxed);
 
-                // Collect file metadata for index updates
                 if let Ok(metadata) = std::fs::metadata(dst) {
                     file_metadata.insert(entry.rel_path.clone(), metadata);
                 }

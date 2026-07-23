@@ -85,7 +85,6 @@ pub fn resolve_tips(
     let usr = user.and_then(tips_from_toml);
     let mgd = managed.and_then(tips_from_toml);
 
-    // Priority: requirements > remote > user > managed.
     merge_tips(req, usr, mgd, remote_tips)
 }
 

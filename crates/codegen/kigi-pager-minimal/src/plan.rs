@@ -8,7 +8,7 @@
 //! controls — approve / revise / keep planning — plus the feedback input when
 //! revising. Nothing of the plan body is drawn under the prompt.
 //!
-//! Input routing is unchanged: while `line_viewer.is_some()` the agent's input
+//! Input routing is `unchanged`: while `line_viewer.is_some()` the agent's input
 //! handler already routes keys to `handle_line_viewer_key` (Preview focus:
 //! `a` approve / `s`/`Tab` revise / `q` keep planning) and `handle_plan_feedback_key`
 //! (Prompt focus: type feedback, `Enter` send, `Esc` back). Minimal keeps the
@@ -102,7 +102,8 @@ pub fn maybe_commit_plan(app: &mut AppView) {
     };
 
     if minimal_api::minimal_committed_plan_id(app) == Some(tool_call_id.as_str()) {
-        return; // already emitted this plan
+        // already emitted this plan
+        return;
     }
 
     // Mark the plan as emitted only when the block was actually pushed: the
@@ -151,7 +152,7 @@ pub fn render(
     // header (1) · controls (1) · input (0/1)
     let controls_y = (area.y + area.height).saturating_sub(1 + input_h);
 
-    // ── header ──
+    // header
     let has_plan = minimal_api::plan_approval_view(agent)
         .map(|p| p.has_plan)
         .unwrap_or(false);
@@ -170,7 +171,7 @@ pub fn render(
         area.width,
     );
 
-    // ── controls hint ──
+    // controls hint
     let has_content = minimal_api::plan_approval_view(agent)
         .map(|p| !p.comments.is_empty())
         .unwrap_or(false)
@@ -199,7 +200,7 @@ pub fn render(
         area.width,
     );
 
-    // ── feedback input (revise mode) ──
+    // feedback input (revise mode)
     if input_h > 0 {
         let row = Rect {
             x: area.x,

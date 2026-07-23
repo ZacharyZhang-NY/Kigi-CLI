@@ -1,13 +1,9 @@
 //! Markdown styling types.
-//!
-//! This module provides the `MarkdownStyle` struct which defines colors and
-//! effects for all markdown elements.
 
 use anstyle::{Effects, Style};
 
 use crate::colors::adapt_style;
 
-/// Table border characters for rendering tables in pretty mode.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct TableBorders {
     chars: [char; 11],
@@ -42,7 +38,8 @@ impl TableBorders {
         Self { chars }
     }
 
-    // Short names (used in table formatting)
+    // Every character is reachable under two names: a terse one for dense
+    // table-formatting expressions and a spelled-out one for everything else.
     pub const fn h(&self) -> char {
         self.chars[Self::H]
     }
@@ -77,7 +74,6 @@ impl TableBorders {
         self.chars[Self::X]
     }
 
-    // Long names (for readability)
     pub const fn horizontal(&self) -> char {
         self.chars[Self::H]
     }
@@ -121,9 +117,8 @@ impl Default for TableBorders {
 
 /// Style configuration for markdown rendering.
 ///
-/// Each field controls the styling for a specific markdown element.
-/// The `_inner` variants are applied to the content, while `_outer` variants
-/// are applied to the syntax markers (which are hidden in pretty mode).
+/// `_inner` variants style an element's content; `_outer` variants style its
+/// syntax markers, which pretty mode hides.
 #[derive(Copy, Clone, Default, Debug, PartialEq, Eq, Hash)]
 pub struct MarkdownStyle {
     pub heading_inner: [Style; 6],
@@ -161,9 +156,8 @@ pub struct MarkdownStyle {
 }
 
 impl MarkdownStyle {
-    /// Adapt all styles for the terminal's color capabilities.
-    ///
-    /// This downgrades RGB colors to 256-color or 16-color as needed.
+    /// Downgrade every style's RGB colors to 256-color or 16-color to match
+    /// the terminal's capabilities.
     pub fn adapt(self) -> Self {
         Self {
             heading_inner: [
@@ -210,8 +204,8 @@ impl MarkdownStyle {
     }
 }
 
-/// Check if ALL active styles have HIDDEN effect.
-/// Used in pretty mode to determine if text should be skipped.
+/// Pretty mode skips a span when every style covering it is HIDDEN. An empty
+/// style set is not hidden.
 pub(crate) fn all_hidden(styles: impl IntoIterator<Item = Option<Style>>) -> bool {
     let mut has_any = false;
     let mut all_are_hidden = true;
@@ -230,11 +224,15 @@ pub(crate) fn all_hidden(styles: impl IntoIterator<Item = Option<Style>>) -> boo
 }
 
 /// Merge multiple styles into one for rendering.
-/// Strips HIDDEN from final output - it's a semantic marker, not a visual style.
+///
+/// HIDDEN is a semantic marker rather than a visual effect, so it never
+/// reaches the output: a style that raised it contributes nothing at all, and
+/// a trailing HIDDEN is dropped from the result.
 pub(crate) fn merge_styles(styles: impl IntoIterator<Item = Option<Style>>) -> Style {
     let mut out = Style::new();
     let mut prev = Style::new();
     for style in styles {
+        // Rewind past a style that raised HIDDEN before folding in the next one.
         if out.get_effects().contains(Effects::HIDDEN) {
             out = prev;
         } else {
@@ -265,13 +263,12 @@ pub(crate) fn merge_styles(styles: impl IntoIterator<Item = Option<Style>>) -> S
     out.effects(out.get_effects().remove(Effects::HIDDEN))
 }
 
-// Simple default style for testing (no colors, just effects)
 #[cfg(any(test, fuzzing))]
 pub mod test_style {
     use super::MarkdownStyle;
     use anstyle::Style;
 
-    /// A minimal style for testing with no colors.
+    /// Effects only, no colors, so assertions compare stable escape sequences.
     pub const STYLE: MarkdownStyle = MarkdownStyle {
         heading_inner: [Style::new().bold(); 6],
         heading_outer: [Style::new().dimmed().hidden(); 6],

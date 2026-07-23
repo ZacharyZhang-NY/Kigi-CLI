@@ -216,7 +216,8 @@ impl ScrollbackState {
     pub fn new() -> Self {
         Self {
             entries: IndexMap::new(),
-            next_id: 1, // Start at 1 so 0 can be a sentinel
+            // Start at 1 so 0 can be a sentinel.
+            next_id: 1,
             running: HashSet::new(),
             flashing: Vec::new(),
             dirty_heights: HashSet::new(),
@@ -1086,7 +1087,7 @@ impl ScrollbackState {
         self.bump_content_generation();
     }
 
-    // ── Minimal-mode committed frontier ──────────────────────────────────
+    // Minimal-mode committed frontier.
     //
     // These support `crate::minimal`'s commit pipeline (print finalized blocks
     // into native scrollback). The authoritative state is the `committed`
@@ -2498,7 +2499,8 @@ mod tests {
         let id2 = state.push_block(bash_block());
         state.set_last_running(true);
         if let Some(e) = state.get_by_id_mut(id2) {
-            e.display_mode = DisplayMode::Collapsed; // manual fold
+            // manual fold
+            e.display_mode = DisplayMode::Collapsed;
         }
         state.finish_running(id2);
         assert_eq!(
@@ -2508,7 +2510,7 @@ mod tests {
         );
     }
 
-    // ── Animation gating: off-screen running entries must not redraw ────
+    // Animation gating: off-screen running entries must not redraw.
 
     /// A running entry scrolled far out of the viewport must not demand
     /// animation ticks or redraws — the wave accent can't be seen, and
@@ -2603,7 +2605,7 @@ mod tests {
         );
     }
 
-    // ── Off-screen render-cache eviction ─────────────────────────────────
+    // Off-screen render-cache eviction.
 
     /// Entries far outside the viewport lose their cached render output
     /// (the dominant long-session allocation); entries in the keep zone and
@@ -2794,20 +2796,24 @@ mod tests {
         state.push_block(user_block("Q2"));
         state.push_block(stub_block("A2"));
 
-        assert_eq!(state.current_turn(), Some(1)); // Last turn by default
+        // Last turn by default.
+        assert_eq!(state.current_turn(), Some(1));
 
         assert!(state.prev_turn());
         assert_eq!(state.current_turn(), Some(0));
-        assert_eq!(state.selected(), Some(0)); // Jumped to turn 0's prompt
+        // Jumped to turn 0's prompt.
+        assert_eq!(state.selected(), Some(0));
 
         assert!(state.next_turn());
         assert_eq!(state.current_turn(), Some(1));
-        assert_eq!(state.selected(), Some(2)); // Jumped to turn 1's prompt
+        // Jumped to turn 1's prompt.
+        assert_eq!(state.selected(), Some(2));
 
         // At last turn, l re-activates it (scrolls prompt to top)
         assert!(state.next_turn());
         assert_eq!(state.current_turn(), Some(1));
-        assert_eq!(state.selected(), Some(2)); // Still on turn 1's prompt
+        // Still on turn 1's prompt.
+        assert_eq!(state.selected(), Some(2));
     }
 
     #[test]

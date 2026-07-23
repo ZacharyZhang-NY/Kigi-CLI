@@ -43,7 +43,7 @@ const CWD_GIT_CACHE_CAP: usize = 64;
 /// Called from [`crate::app::acp_handler::handle_git_head_changed`], which
 /// also updates the agent's own `current_branch` / `is_worktree` /
 /// `main_repo` fields directly. The worktree label isn't carried by the
-/// notification (and is immutable for a path), so any previously-resolved
+/// notification (and is immutable for a path), so any already-resolved
 /// label is preserved. `is_worktree` is derived from `main_repo`, matching
 /// how [`compute_cwd_git_info`] populates the cache.
 pub fn update_from_notification(dir: &Path, branch: Option<&str>, main_repo: Option<String>) {
@@ -170,7 +170,7 @@ fn spawn_cwd_git_refresh(cwd: PathBuf) {
 ///
 /// A successful probe (`Some`) replaces the entry. A `None` means either
 /// "not a git repo" OR a transient libgit2 discovery failure — the two are
-/// indistinguishable here — so we preserve any previously-resolved value
+/// indistinguishable here — so we preserve any already-resolved value
 /// rather than clobbering it with an empty (honoring
 /// [`compute_cwd_git_info`]'s contract). A fresh `cwd` with no prior entry
 /// still records the `None`, which is correct for a genuine non-repo. The
@@ -330,9 +330,11 @@ fn decide_branch_icon(nerd_fonts: Option<&str>, host: HostOs, brand: TerminalNam
     const POWERLINE: &str = "\u{e0a0}";
     // Windows console fonts lack `⎇`, so use `≡` (also in the legacy CP437 font).
     let fallback = if host == HostOs::Windows {
-        "\u{2261}" // ≡
+        // ≡
+        "\u{2261}"
     } else {
-        "\u{2387}" // ⎇
+        // ⎇
+        "\u{2387}"
     };
 
     if decide_nerd_fonts(nerd_fonts, host, brand) {
@@ -412,7 +414,7 @@ mod tests {
         assert_eq!(cache.len(), CWD_GIT_CACHE_CAP);
     }
 
-    /// A `None` refresh result must preserve a previously-resolved value (a
+    /// A `None` refresh result must preserve an already-resolved value (a
     /// transient libgit2 discovery failure must not blank the branch), while
     /// a fresh cwd with no prior entry still records the `None` (genuine
     /// non-repo). Either way the timestamp advances.
@@ -447,8 +449,10 @@ mod tests {
     }
 
     const POWERLINE: &str = "\u{e0a0}";
-    const ALT_KEY: &str = "\u{2387}"; // ⎇
-    const WIN_FALLBACK: &str = "\u{2261}"; // ≡
+    // ⎇
+    const ALT_KEY: &str = "\u{2387}";
+    // ≡
+    const WIN_FALLBACK: &str = "\u{2261}";
 
     #[test]
     fn windows_default_avoids_powerline_and_alt_key() {

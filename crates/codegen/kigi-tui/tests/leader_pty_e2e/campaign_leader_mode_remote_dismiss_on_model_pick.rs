@@ -77,7 +77,7 @@ async fn campaign_leader_mode_remote_dismiss_on_model_pick() {
             .unwrap_or(false)
     };
 
-    // ── Phase 1+2: nudge on a new session; a pick records the dismissal in
+    // Phase 1+2: nudge on a new session; a pick records the dismissal in
     // the TUI process. Retries fresh TUI spawns (same leader) so a missed
     // 2s prefetch window on a loaded runner can't wedge the test.
     let mut recorded = false;
@@ -116,7 +116,7 @@ async fn campaign_leader_mode_remote_dismiss_on_model_pick() {
         "leader-mode TUI must record the remote campaign dismissal in {state_path:?}"
     );
 
-    // ── Phase 3: the dismissal is durable and the pick is persisted. The
+    // Phase 3: the dismissal is durable and the pick is persisted. The
     // user's choice must be in config.toml (campaign value never laundered
     // in), and the dismissed id on disk is what every future resolution —
     // leader or not — filters on (`dismissed_id_is_dropped_from_override`

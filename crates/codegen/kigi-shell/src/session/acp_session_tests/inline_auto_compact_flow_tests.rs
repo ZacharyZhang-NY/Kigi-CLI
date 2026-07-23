@@ -14,7 +14,6 @@ impl AsyncTerminalRunner for DummyTerminal {
         Err(TerminalError::Other("dummy terminal".into()))
     }
 }
-/// Create a minimal SessionActor for testing auto-compact logic.
 async fn create_test_actor(
     total_tokens: u64,
     context_window: u64,
@@ -239,7 +238,6 @@ async fn create_test_actor(
         workspace_ops: kigi_workspace::WorkspaceOps::for_test(),
     }
 }
-/// Test that should_auto_compact returns correct trigger info.
 #[tokio::test(flavor = "current_thread")]
 async fn test_should_auto_compact_triggers_at_threshold() {
     let local = tokio::task::LocalSet::new();
@@ -259,7 +257,6 @@ async fn test_should_auto_compact_triggers_at_threshold() {
         })
         .await;
 }
-/// Test that should_auto_compact does NOT trigger below threshold.
 #[tokio::test(flavor = "current_thread")]
 async fn test_should_auto_compact_below_threshold() {
     let local = tokio::task::LocalSet::new();
@@ -275,7 +272,6 @@ async fn test_should_auto_compact_below_threshold() {
         })
         .await;
 }
-/// Test check_auto_compact_needed uses state values.
 #[tokio::test(flavor = "current_thread")]
 async fn test_check_auto_compact_needed_uses_state() {
     let local = tokio::task::LocalSet::new();
@@ -292,10 +288,9 @@ async fn test_check_auto_compact_needed_uses_state() {
         })
         .await;
 }
-/// Test that overriding context_window on the sampling config changes
-/// auto-compact behavior. This validates the A/B fork fix: forked sessions
-/// must use the new model's context window, not the source session's.
-/// Without this, auto-compact fires at the wrong threshold.
+/// Guards the A/B fork fix: forked sessions must use the new model's context
+/// window, not the source session's. Without this, auto-compact fires at the
+/// wrong threshold.
 #[tokio::test(flavor = "current_thread")]
 async fn test_context_window_override_affects_auto_compact() {
     let local = tokio::task::LocalSet::new();
@@ -320,8 +315,6 @@ async fn test_context_window_override_affects_auto_compact() {
         })
         .await;
 }
-/// Test the reverse direction: overriding to a smaller context window
-/// should make auto-compact trigger sooner.
 #[tokio::test(flavor = "current_thread")]
 async fn test_context_window_override_to_smaller_triggers_compact() {
     let local = tokio::task::LocalSet::new();
@@ -346,9 +339,6 @@ async fn test_context_window_override_to_smaller_triggers_compact() {
         })
         .await;
 }
-/// Response-header downgrade guard: `handle_model_metadata_update`
-/// must reject a smaller context_window from response headers but
-/// accept a larger one.
 #[tokio::test(flavor = "current_thread")]
 async fn test_response_header_context_window_downgrade_rejected() {
     let local = tokio::task::LocalSet::new();
@@ -717,8 +707,6 @@ async fn test_is_flushing_suppresses_auto_compact() {
         })
         .await;
 }
-/// Test that `force_compact` triggers auto-compact even below threshold,
-/// and is consumed (reset to false) after a single use.
 #[tokio::test(flavor = "current_thread")]
 async fn test_force_compact_triggers_below_threshold() {
     let local = tokio::task::LocalSet::new();
@@ -752,11 +740,9 @@ async fn test_force_compact_triggers_below_threshold() {
         })
         .await;
 }
-/// Unit test of the `compare_exchange` atomic pattern used in
-/// `run_memory_flush` to prevent concurrent flushes. Tests the
-/// acquire/reject/release/re-acquire cycle on a standalone `AtomicBool`
-/// (not a full `SessionActor` integration test — constructing one
-/// requires a sampling client, persistence channel, etc.).
+/// Exercises the `compare_exchange` guard from `run_memory_flush` on a
+/// standalone `AtomicBool` rather than a full `SessionActor`: constructing
+/// one requires a sampling client, persistence channel, etc.
 #[test]
 fn test_is_flushing_compare_exchange_prevents_double_entry() {
     let is_flushing = std::sync::atomic::AtomicBool::new(false);
@@ -1019,11 +1005,6 @@ async fn test_dream_check_timeout_from_config() {
         })
         .await;
 }
-/// Test that `last_api_request_at` is recorded and used for idle detection.
-///
-/// The `maybe_refresh_model_metadata_on_resume` method checks this timestamp
-/// to decide whether to proactively refresh model metadata from cli-chat-proxy.
-/// This test verifies the timestamp recording and idle detection logic.
 #[tokio::test(flavor = "current_thread")]
 async fn test_last_api_request_at_idle_detection() {
     let local = tokio::task::LocalSet::new();
@@ -1181,11 +1162,6 @@ async fn test_compact_on_error_no_trigger_when_tokens_within_new_window() {
         })
         .await;
 }
-/// End-to-end test for `maybe_refresh_model_metadata_on_resume`.
-///
-/// Simulates a session idle for >10 minutes, then verifies the function
-/// fetches `/models`, parses the response, and updates `context_window`
-/// and `max_completion_tokens` in the sampling config.
 #[tokio::test(flavor = "current_thread")]
 async fn test_e2e_idle_resume_refreshes_model_metadata() {
     use axum::routing::get;
@@ -1481,7 +1457,6 @@ async fn test_e2e_idle_resume_refreshes_model_metadata() {
         })
         .await;
 }
-/// Verify `maybe_refresh_model_metadata_on_resume` is a no-op when idle < 10 min.
 #[tokio::test(flavor = "current_thread")]
 async fn test_idle_resume_noop_when_not_idle_enough() {
     let local = tokio::task::LocalSet::new();
@@ -1529,8 +1504,6 @@ async fn test_compact_on_error_noop_without_model_metadata() {
         })
         .await;
 }
-/// A fresh session emits `x-compactions-remaining: 1`; once the chat-state
-/// reflects a compaction, the next reconstructed config emits `0`.
 #[tokio::test(flavor = "current_thread")]
 async fn compactions_remaining_header_flips_after_compaction() {
     use kigi_sampling_types::CompactionsRemaining;
@@ -1569,8 +1542,6 @@ async fn compactions_remaining_header_flips_after_compaction() {
         })
         .await;
 }
-/// `Fixed(n)` sends the constant `n` and never flips: the header stays put
-/// across a compaction, unlike the dynamic 1->0 variant.
 #[tokio::test(flavor = "current_thread")]
 async fn compactions_remaining_fixed_does_not_flip_after_compaction() {
     use kigi_sampling_types::CompactionsRemaining;
@@ -1648,7 +1619,6 @@ async fn compaction_at_tokens_header_flips_after_compaction() {
         })
         .await;
 }
-/// `Fixed(n)` sends the exact constant; the default (`None`) never emits the header.
 #[tokio::test(flavor = "current_thread")]
 async fn compaction_at_tokens_fixed_and_disabled() {
     use kigi_sampling_types::CompactionAtTokens;

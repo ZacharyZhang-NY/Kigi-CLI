@@ -49,7 +49,6 @@ impl ScrollDebugHud {
         Self { enabled: env_on }
     }
 
-    /// Whether the HUD is currently enabled.
     pub fn enabled(&self) -> bool {
         self.enabled
     }

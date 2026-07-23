@@ -46,8 +46,10 @@ type IoServiceInterestCallback = extern "C" fn(
 
 #[link(name = "CoreFoundation", kind = "framework")]
 unsafe extern "C" {
-    static kCFRunLoopCommonModes: *const c_void; // CFRunLoopMode (CFStringRef)
-    static kCFRunLoopDefaultMode: *const c_void; // CFRunLoopMode (CFStringRef)
+    // CFRunLoopMode (CFStringRef)
+    static kCFRunLoopCommonModes: *const c_void;
+    // CFRunLoopMode (CFStringRef)
+    static kCFRunLoopDefaultMode: *const c_void;
     fn CFRunLoopGetCurrent() -> *mut c_void;
     fn CFRunLoopRunInMode(
         mode: *const c_void,
@@ -274,7 +276,7 @@ extern "C" fn power_callback(
     if let Some(event) = event {
         // For sleep-bound messages the ack is sent only *after* the callback
         // returns: a `WillSleep` handler may block (bounded) waiting for an
-        // in-flight token refresh to finish, which intentionally delays the
+        // in-flight token refresh to finish, which deliberately delays the
         // `IOAllowPowerChange` and holds off the suspend. IOKit allows ~30 s
         // per phase before forcing sleep, so a bounded wait is safe. See the
         // `kigi_system_power` crate-level callback contract.

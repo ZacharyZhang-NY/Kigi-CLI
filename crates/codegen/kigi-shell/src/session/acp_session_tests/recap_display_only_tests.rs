@@ -73,7 +73,6 @@ async fn queue_input_user_prompt_bumps_recap_epoch() {
         .await;
 }
 
-/// Synthetic auto-wake must not cancel an in-flight recap.
 #[tokio::test(flavor = "current_thread")]
 async fn queue_input_synthetic_does_not_bump_recap_epoch() {
     let local = tokio::task::LocalSet::new();
@@ -110,7 +109,6 @@ async fn queue_input_synthetic_does_not_bump_recap_epoch() {
         .await;
 }
 
-/// Production commit branch: epoch bump mid-flight → no watermark, in-flight cleared.
 #[tokio::test(flavor = "current_thread")]
 async fn try_commit_recap_cancelled_clears_in_flight_without_watermark() {
     let local = tokio::task::LocalSet::new();
@@ -143,7 +141,6 @@ async fn try_commit_recap_cancelled_clears_in_flight_without_watermark() {
         .await;
 }
 
-/// Live epoch commits watermark and clears in-flight (emit path may proceed).
 #[tokio::test(flavor = "current_thread")]
 async fn try_commit_recap_live_advances_watermark() {
     let local = tokio::task::LocalSet::new();
@@ -165,7 +162,6 @@ async fn try_commit_recap_live_advances_watermark() {
         .await;
 }
 
-/// Auto cancel is silent; manual cancel emits SessionRecapUnavailable.
 #[tokio::test(flavor = "current_thread")]
 async fn drop_recap_after_cancel_auto_silent_manual_unavailable() {
     let local = tokio::task::LocalSet::new();
@@ -204,7 +200,6 @@ async fn drop_recap_after_cancel_auto_silent_manual_unavailable() {
         .await;
 }
 
-/// Drain whether a `SessionRecap` update was emitted.
 fn drained_session_recap(rx: &mut tokio::sync::mpsc::UnboundedReceiver<PersistenceMsg>) -> bool {
     let mut saw = false;
     while let Ok(msg) = rx.try_recv() {
@@ -220,7 +215,6 @@ fn drained_session_recap(rx: &mut tokio::sync::mpsc::UnboundedReceiver<Persisten
     saw
 }
 
-/// Auto recap below `MIN_TURNS_FOR_AUTO_RECAP` is a no-op and display-only.
 #[tokio::test(flavor = "current_thread")]
 async fn auto_recap_below_min_turns_is_noop_and_display_only() {
     let local = tokio::task::LocalSet::new();
@@ -296,8 +290,6 @@ async fn manual_recap_never_mutates_conversation() {
         .await;
 }
 
-/// Drain the persistence channel and report whether a `SessionRecapUnavailable`
-/// xAI update was emitted.
 fn drained_recap_unavailable(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<PersistenceMsg>,
 ) -> bool {
@@ -486,7 +478,6 @@ async fn manual_recap_over_budget_trims_persisted_request_and_is_display_only() 
 
             actor.handle_recap(false).await;
 
-            // Display-only: the conversation is byte-identical afterwards.
             let after = actor.chat_state_handle.get_conversation().await;
             assert_eq!(
                 serde_json::to_string(&before).unwrap(),
@@ -558,14 +549,17 @@ fn over_budget_recap_serializes_to_well_formed_messages_request() {
     // survives the trim.
     let conv = vec![
         ConversationItem::system("you are a coding agent"),
-        ConversationItem::user("o".repeat(60_000)), // oldest, dropped by trim
+        // oldest, dropped by trim
+        ConversationItem::user("o".repeat(60_000)),
         mk_reasoning("r1"),
         ConversationItem::assistant_tool_calls(vec![mk_call("c1")]),
         ConversationItem::tool_result("c1", "fn main() {}"),
-        ConversationItem::assistant("done reading the parser"), // non-tool barrier
+        // non-tool barrier
+        ConversationItem::assistant("done reading the parser"),
         ConversationItem::user("what did you change?"),
-        ConversationItem::assistant_tool_calls(vec![mk_call("c2")]), // trailing run
-        ConversationItem::tool_result("c2", "z".repeat(40_000)),     // trailing run
+        // trailing run
+        ConversationItem::assistant_tool_calls(vec![mk_call("c2")]),
+        ConversationItem::tool_result("c2", "z".repeat(40_000)),
     ];
 
     // kigi backend => strip_reasoning=false; the over-budget branch strips anyway.
@@ -575,8 +569,6 @@ fn over_budget_recap_serializes_to_well_formed_messages_request() {
 
     assert!(msg.system.is_some(), "system prompt must be preserved");
 
-    // Flatten every content block across all messages (each message's content is
-    // a `Blocks` vec here).
     let all_blocks: Vec<ContentBlock> = msg
         .messages
         .iter()
@@ -586,7 +578,6 @@ fn over_budget_recap_serializes_to_well_formed_messages_request() {
         })
         .collect();
 
-    // Reasoning stripped: no thinking block anywhere.
     assert!(
         !all_blocks
             .iter()

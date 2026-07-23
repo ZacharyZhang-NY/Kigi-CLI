@@ -195,8 +195,6 @@ fn resolve_shell(shell: Option<&str>) -> String {
 /// the same; only the live outer→inner resize is not forwarded (see
 /// [`crate::pty_wrap::run_wrapped_command`]).
 fn should_wrap() -> bool {
-    // PTY wrapping requires native pseudo-terminal APIs (Unix openpty / Windows
-    // ConPTY), both of which `portable-pty` supports.
     if !cfg!(any(unix, windows)) {
         return false;
     }

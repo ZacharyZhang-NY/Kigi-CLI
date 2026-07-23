@@ -31,15 +31,7 @@ use super::list_pane::{
 };
 use super::overlay::OverlayState;
 
-// ---------------------------------------------------------------------------
-// Spinner
-// ---------------------------------------------------------------------------
-
 const SPINNER_DIVISOR: u64 = 4;
-
-// ---------------------------------------------------------------------------
-// Shell command syntax highlighting (used by other modules too)
-// ---------------------------------------------------------------------------
 
 /// Highlight a shell command string into styled spans.
 ///
@@ -116,10 +108,6 @@ fn dim_spans(spans: &[Span<'static>], blend_factor: f32) -> Vec<Span<'static>> {
         .collect()
 }
 
-// ---------------------------------------------------------------------------
-// Line count badge formatting
-// ---------------------------------------------------------------------------
-
 /// Format an stdout line count as a compact `(N)` badge with SI scaling.
 ///
 /// Returns an empty string for `0` so callers can treat that as "no badge".
@@ -160,10 +148,6 @@ fn format_line_count_badge(count: usize, truncated: bool) -> String {
     format!("({}M{suffix})", count / 1_000_000)
 }
 
-// ---------------------------------------------------------------------------
-// TaskEntryId — identifies which entry a button belongs to
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TaskEntryId {
     BgTask(String),
@@ -202,10 +186,6 @@ impl GroupKind {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// TaskEntry — unified entry for the combined list
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
 pub enum TaskEntry {
@@ -560,7 +540,6 @@ impl TaskEntry {
         TaskEntry::Header { group, styled }
     }
 
-    /// Which collapsible group this entry belongs to.
     fn group_kind(&self) -> GroupKind {
         match self {
             TaskEntry::Agent { .. } => GroupKind::Subagents,
@@ -651,10 +630,6 @@ impl ListItem for TaskEntry {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// TasksPane
-// ---------------------------------------------------------------------------
 
 /// Temporary data for the overlay pass (avoids borrowing entries during mutation).
 enum OverlayEntryData {
@@ -793,8 +768,6 @@ impl TasksPane {
         }
     }
 
-    // -- Data sync -----------------------------------------------------------
-
     /// Sync entries from bg tasks, subagent sessions, and scheduled tasks.
     pub fn sync(
         &mut self,
@@ -817,7 +790,6 @@ impl TasksPane {
 
         self.items.clear();
 
-        // Add bg task items
         for task in bg_tasks.values() {
             if self.show_done || task.status == BgTaskStatus::Running {
                 self.items
@@ -825,14 +797,13 @@ impl TasksPane {
             }
         }
 
-        // Add subagent items
         for info in subagents.values() {
             if self.show_done || info.is_running() {
                 self.items.push(TaskEntry::from_subagent(info));
             }
         }
 
-        // Add scheduled task items (always "running")
+        // Scheduled tasks have no "done" state, so they're never filtered by `show_done`.
         for info in scheduled.values() {
             self.items.push(TaskEntry::from_scheduled(
                 info,
@@ -898,7 +869,6 @@ impl TasksPane {
                 .retain(|g| present[g.order() as usize]);
         }
 
-        // Build the display list: group headers + (non-collapsed) items.
         self.rebuild_entries();
 
         // Count running for edge detection. Replay-restored bg tasks are
@@ -1016,8 +986,6 @@ impl TasksPane {
             + scheduled.len()
     }
 
-    // -- Visibility ----------------------------------------------------------
-
     pub fn show_done(&self) -> bool {
         self.show_done
     }
@@ -1057,8 +1025,6 @@ impl TasksPane {
         (count as u16).min(max).max(1) + bar
     }
 
-    // -- Tick ----------------------------------------------------------------
-
     pub fn tick(&mut self) -> bool {
         self.tick += 1;
         self.entries.iter().any(|e| e.is_running())
@@ -1071,8 +1037,6 @@ impl TasksPane {
     pub fn needs_tick(&self) -> bool {
         self.entries.iter().any(|e| e.is_running())
     }
-
-    // -- Input handling ------------------------------------------------------
 
     pub fn handle_key(&mut self, key: &KeyEvent) -> bool {
         if crate::key!('h').matches(key) && self.list_state.input_mode().is_none() {
@@ -1104,13 +1068,11 @@ impl TasksPane {
             .handle_mouse_event(kind, col, row, area, &self.entries)
     }
 
-    /// Get the selected entry (if any).
     pub fn selected_entry(&self) -> Option<&TaskEntry> {
         let sel = self.list_state.selected_index()?;
         self.entries.get(sel)
     }
 
-    /// Get the task_id if the selected entry is a BgTask.
     pub fn selected_task_id(&self) -> Option<&str> {
         match self.selected_entry()? {
             TaskEntry::BgTask { task_id, .. } => Some(task_id),
@@ -1118,7 +1080,6 @@ impl TasksPane {
         }
     }
 
-    /// Get the subagent_id if the selected entry is an Agent.
     pub fn selected_subagent_id(&self) -> Option<&str> {
         match self.selected_entry()? {
             TaskEntry::Agent { subagent_id, .. } => Some(subagent_id),
@@ -1126,7 +1087,6 @@ impl TasksPane {
         }
     }
 
-    /// Get the child_session_id if the selected entry is an Agent.
     pub fn selected_child_session_id(&self) -> Option<&str> {
         match self.selected_entry()? {
             TaskEntry::Agent {
@@ -1135,8 +1095,6 @@ impl TasksPane {
             _ => None,
         }
     }
-
-    // -- Rendering -----------------------------------------------------------
 
     fn content_area(area: Rect, layout_cfg: &LayoutConfig) -> Rect {
         let pad_left = HorizontalLayout::ACCENT + layout_cfg.block_pad_left;
@@ -1405,7 +1363,6 @@ impl TasksPane {
         };
         let lines_w = lines_text.width() as u16;
 
-        // Clear overlay area to prevent label text bleeding through.
         let right_text_w = right_text.width() as u16;
         let bg_kill_w: u16 = if task.status == BgTaskStatus::Running {
             3
@@ -1532,7 +1489,6 @@ impl TasksPane {
 
         buf.set_span(area.x, y, &Span::styled(icon, icon_style), 2);
 
-        // Clear overlay area to prevent label text bleeding through.
         let badge = format_context_badge(info);
         let model_text = info
             .model
@@ -2251,9 +2207,9 @@ mod tests {
     #[test]
     fn render_loop_row_truncates_before_kill_button() {
         // A non-scrollable loop row with a long prompt must truncate before
-        // the `[✗]` kill button — nothing may render to its right. Regression:
-        // the scrollbar-padding column used to be filled with label text when
-        // the list wasn't scrollable, bleeding one cell past `[✗]`.
+        // the `[✗]` kill button — nothing may render to its right. Regression
+        // guard: on a non-scrollable list the scrollbar-padding column must
+        // stay empty, or label text bleeds one cell past `[✗]`.
         let mut pane = TasksPane::new();
         pane.overlay.show();
 
@@ -2458,7 +2414,8 @@ mod tests {
         bg_tasks.insert("m1".into(), mon);
 
         let mut subagents = HashMap::new();
-        subagents.insert("cs-1".into(), make_info()); // running subagent
+        // running subagent
+        subagents.insert("cs-1".into(), make_info());
 
         pane.sync(
             &bg_tasks,
@@ -2585,7 +2542,8 @@ mod tests {
         let mut bg_tasks = std::collections::BTreeMap::new();
         bg_tasks.insert("t1".into(), make_bg_task("t1", "ls", BgTaskStatus::Running));
         let mut subagents = HashMap::new();
-        subagents.insert("cs-1".into(), make_info()); // running subagent
+        // running subagent
+        subagents.insert("cs-1".into(), make_info());
 
         pane.sync(
             &bg_tasks,
@@ -3026,7 +2984,8 @@ mod tests {
     fn scheduled_unicode_prompt_safe_no_panic() {
         let mut pane = TasksPane::new();
         let mut scheduled = HashMap::new();
-        let unicode_prompt = "测试emoji🚀".repeat(20); // multi-byte >60 bytes
+        // multi-byte >60 bytes
+        let unicode_prompt = "测试emoji🚀".repeat(20);
         scheduled.insert(
             "uni".into(),
             make_scheduled_info("uni", "every 1s", &unicode_prompt, None),

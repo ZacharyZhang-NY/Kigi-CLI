@@ -19,14 +19,9 @@ use crate::agent::mvp_agent::{CodeNavEligibility, MvpAgent};
 use agent_client_protocol as acp;
 use serde::{Deserialize, Serialize};
 
-/// Record a structured telemetry event at the end of a code-nav handler call.
-///
-/// This is called once per request with the method name, triggering session,
-/// cwd, whether the index was newly spawned or reused, and total elapsed time.
-/// These fields make it possible to:
-///  - identify first-use latency (newly spawned + high elapsed_ms)
-///  - identify reuse latency (reused + low elapsed_ms)
-///  - attribute slowness to index startup vs query processing
+/// Emitted once per request. The `index_newly_started` and `elapsed_ms` fields
+/// together separate first-use latency (index startup) from reuse latency and
+/// from query-processing time.
 fn log_code_nav_telemetry(
     method: &str,
     session_id: Option<&acp::SessionId>,
@@ -45,8 +40,6 @@ fn log_code_nav_telemetry(
 }
 
 type ExtResult = Result<acp::ExtResponse, acp::Error>;
-
-// ========== Request Types ==========
 
 /// Position-based query request (for goto-definition, goto-references).
 /// Position parameters are 1-indexed (matching editor display).
@@ -80,7 +73,6 @@ pub struct FindSymbolRequest {
     pub session_id: Option<acp::SessionId>,
     /// Working directory (optional when session_id is provided).
     pub cwd: Option<String>,
-    /// Symbol name to search for
     pub symbol: String,
     /// Optional context file path for ranking results
     pub context_path: Option<String>,
@@ -98,15 +90,12 @@ pub struct StatusRequest {
     pub cwd: Option<String>,
 }
 
-// ========== Response Types ==========
-
 /// Response for goto-definition and goto-references queries.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CodeNavResponse {
     /// The symbol that was queried
     pub symbol: String,
-    /// List of locations where the symbol was found
     pub locations: Vec<SymbolLocation>,
 }
 
@@ -166,8 +155,6 @@ pub struct StatusResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file_count: Option<usize>,
 }
-
-// ========== Handler ==========
 
 /// Handle code navigation extension methods.
 ///
@@ -303,7 +290,6 @@ pub async fn handle(
                 .map_err(|e| acp::Error::invalid_params().data(format!("invalid params: {e}")))?;
             let cwd = resolve_cwd(agent, req.cwd.clone(), req.session_id.as_ref())?;
 
-            // Check eligibility for the status response.
             let (eligible, reason, indexed, file_count) = match agent
                 .code_nav_eligibility_for_request(req.session_id.as_ref(), &cwd)
             {
@@ -387,7 +373,6 @@ fn ensure_eligible_and_started(
     if let Err(reason) = agent.code_nav_eligibility_for_request(session_id, cwd) {
         return Err(eligibility_error(reason));
     }
-    // Start the index if not already running (lazy creation).
     let was_newly_started = agent
         .start_codebase_index_for_code_nav(session_id, cwd)
         .map(|(_, was_new)| was_new)
@@ -395,20 +380,16 @@ fn ensure_eligible_and_started(
     Ok(was_newly_started)
 }
 
-// ========== Helper Functions ==========
-
 /// Resolve cwd from session_id or direct cwd parameter.
 fn resolve_cwd(
     agent: &MvpAgent,
     cwd: Option<String>,
     session_id: Option<&acp::SessionId>,
 ) -> Result<PathBuf, acp::Error> {
-    // Prefer direct cwd if provided
     if let Some(cwd_str) = cwd {
         return Ok(PathBuf::from(cwd_str));
     }
 
-    // Fall back to session's cwd
     if let Some(sid) = session_id
         && let Some(session_cwd) = agent.get_session_cwd(sid)
     {

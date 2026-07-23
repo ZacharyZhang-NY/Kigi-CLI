@@ -28,7 +28,6 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tracing::debug;
-/// Convert a UTC millisecond timestamp to local time.
 fn utc_ms_to_local(ms: i64) -> DateTime<Local> {
     chrono::Utc
         .timestamp_millis_opt(ms)
@@ -36,22 +35,14 @@ fn utc_ms_to_local(ms: i64) -> DateTime<Local> {
         .map(|utc| utc.with_timezone(&Local))
         .unwrap_or_else(Local::now)
 }
-/// What the agent is currently doing within a turn.
-///
-/// Derived from the tracker's internal state by [`AcpUpdateTracker::activity()`].
-/// Used by the turn status line widget to show context-appropriate indicators.
-///
-/// Note: `Idle` here means "the tracker has no in-flight work". The caller
-/// should check `TurnState` to distinguish true idle (no turn) from waiting
-/// (turn started, but no chunks received yet).
 /// Why a turn is open but nothing is streaming right now.
 ///
-/// Replaces the old single, opaque "Waiting…" placeholder: instead of treating
-/// the absence of activity as one undifferentiated state, the turn-status line
-/// names *what* the agent is blocked on. Resolved partly by the tracker (the
-/// blocking tool waits it suppresses — see [`AcpUpdateTracker::activity`]) and
-/// partly at the view boundary (`Model`/`Subagent`, which need turn-state and
-/// the subagent registry the tracker doesn't own).
+/// Rather than treating the absence of activity as one undifferentiated
+/// "Waiting…" state, the turn-status line names *what* the agent is blocked on.
+/// Resolved partly by the tracker (the blocking tool waits it suppresses — see
+/// [`AcpUpdateTracker::activity`]) and partly at the view boundary
+/// (`Model`/`Subagent`, which need turn-state and the subagent registry the
+/// tracker doesn't own).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WaitingReason {
     /// Waiting for the model to (re)start streaming — the first token after the
@@ -183,7 +174,7 @@ pub enum TurnActivity {
         reason: String,
     },
     /// Turn is open but nothing is streaming; `reason` says what we're waiting
-    /// on. Replaces the implicit "no activity == generic Waiting…" placeholder.
+    /// on.
     Waiting(WaitingReason),
 }
 impl TurnActivity {
@@ -1404,8 +1395,8 @@ fn extract_skill_header_command(text: &str) -> Option<String> {
 /// 2. `SessionNotification._meta.promptId` classified via
 ///    [`PromptOrigin::from_prompt_id`]
 ///
-/// Legacy fallback (pre-meta sessions only): bare auto-wake text that used to
-/// be gated by the system-reminder prefix. Cron is handled earlier by
+/// Legacy fallback (pre-meta sessions only): bare auto-wake text gated by the
+/// system-reminder prefix. Cron is handled earlier by
 /// [`extract_cron_prompt_body`].
 fn user_message_hidden_from_scrollback(
     chunk: &acp::ContentChunk,
@@ -2000,7 +1991,6 @@ fn tool_call_title(tc: &acp::ToolCall) -> Cow<'_, str> {
         Cow::Borrowed(&tc.title)
     }
 }
-/// Extract text content from a ContentBlock.
 fn extract_text_from_content(content: &acp::ContentBlock) -> String {
     match content {
         acp::ContentBlock::Text(t) => t.text.clone(),
@@ -2863,9 +2853,9 @@ mod tests {
     }
     /// Regression test: two turns should create separate agent message entries.
     ///
-    /// Previously, handle_user_message() didn't reset current_agent_msg,
-    /// so the second turn's agent message chunks got appended to the first
-    /// turn's entry, producing concatenated text.
+    /// Without resetting current_agent_msg in handle_user_message(), the second
+    /// turn's agent message chunks append to the first turn's entry, producing
+    /// concatenated text.
     #[test]
     fn two_turns_separate_agent_messages() {
         crate::appearance::cache::set_show_thinking_blocks(true);
@@ -3767,8 +3757,8 @@ mod tests {
     /// 2. ToolCallUpdate in-progress with kind=search, title="fn main", rawInput
     /// 3. ToolCallUpdate completed with rawOutput containing GrepSearchOutput
     ///
-    /// This was broken: kind from in-progress update was lost, so the completed
-    /// block rendered as "Other" with no search results.
+    /// Without carrying the kind from the in-progress update, the completed
+    /// block renders as "Other" with no search results.
     #[test]
     fn test_search_tool_call_flow() {
         use kigi_tools::types::output::{GrepFileMatch, GrepLineMatch, GrepSearchOutput};
@@ -4836,7 +4826,7 @@ mod tests {
         assert_eq!(tracker.activity(), None);
     }
     /// The blocking bg-plumbing tools are kept out of scrollback but the turn
-    /// IS blocked on them — `activity()` must name the wait instead of the old
+    /// IS blocked on them — `activity()` must name the wait instead of a
     /// generic `None` (→ "Waiting…"). Task-output tools only advertise once
     /// raw_input proves them blocking (`timeout_ms > 0`); before that the
     /// wait is not shown (display mirrors interject eligibility).

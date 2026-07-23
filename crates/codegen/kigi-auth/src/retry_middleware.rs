@@ -1,5 +1,4 @@
 //! `reqwest-middleware` layer: stamps auth headers and retries on 401.
-//! Gated behind the `middleware` cargo feature.
 
 use std::sync::Arc;
 
@@ -52,6 +51,8 @@ impl Middleware for AuthRetryMiddleware {
         if resp.status() != StatusCode::UNAUTHORIZED || self.max_retries == 0 {
             return Ok(resp);
         }
+        // Streaming bodies do not clone, so such requests cannot be replayed
+        // and the 401 stands.
         let Some(backup) = backup else {
             return Ok(resp);
         };
@@ -154,7 +155,7 @@ mod tests {
         m.assert_async().await;
     }
 
-    /// Simulates a real auth manager: starts with stale token, refresh swaps to fresh.
+    /// Starts with a stale token; refresh swaps in the fresh one.
     struct SimulatedAuthManager {
         token: Mutex<Option<String>>,
         fresh_token: String,

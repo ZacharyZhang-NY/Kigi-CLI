@@ -367,6 +367,9 @@ fn rule_matches_read_path(
     read_path: &Path,
 ) -> bool {
     match &rule.kind {
+        // An always-apply rule at the workspace root applies everywhere and so
+        // has no read scope; only a nested one is a reminder, and only for
+        // reads beneath its own directory.
         CursorRuleKind::Global => {
             rule.scope_dir != workspace_root && read_path.starts_with(&rule.scope_dir)
         }

@@ -1,16 +1,15 @@
-//! Validation of [`ToolConfigEntry`](crate::ToolConfigEntry) fields,
-//! shared so the backend's save-time check cannot drift from what the
-//! tools server enforces at finalize/bind. Errors carry the offending input
-//! so callers can render gRPC violations without re-parsing.
+//! Validation of [`ToolConfigEntry`](crate::ToolConfigEntry) fields, shared so
+//! the backend's save-time check cannot drift from what the tools server
+//! enforces at finalize/bind. Errors carry the offending input so callers can
+//! render gRPC violations without re-parsing.
 
 use kigi_tool_protocol::ToolId;
 use serde_json::{Map, Value};
 
-/// Why a [`ToolConfigEntry`](crate::ToolConfigEntry) is invalid.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToolConfigEntryErrorKind {
-    /// Not valid JSON. Includes an explicitly-set empty string: proto3
-    /// `optional` tracks presence, so `Some("")` is rejected, not unset.
+    /// An explicitly-set empty string lands here rather than being treated as
+    /// unset: proto3 `optional` tracks presence, so `Some("")` is a real value.
     ParamsJsonParse { error: String, raw: String },
     /// Valid JSON but not an object.
     ParamsJsonNotObject { value: Value },
@@ -18,7 +17,6 @@ pub enum ToolConfigEntryErrorKind {
     NameOverrideInvalid { name: String, error: String },
 }
 
-/// Validation error for one entry in a tool-config list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolConfigEntryError {
     pub index: usize,
@@ -27,7 +25,7 @@ pub struct ToolConfigEntryError {
 }
 
 impl ToolConfigEntryError {
-    /// Request field path of the failing field, e.g. `tools[3].params_json`.
+    /// gRPC request field path of the failing field, e.g. `tools[3].params_json`.
     pub fn field_path(&self) -> String {
         match self.kind {
             ToolConfigEntryErrorKind::ParamsJsonParse { .. }
@@ -68,8 +66,7 @@ impl std::fmt::Display for ToolConfigEntryError {
 
 impl std::error::Error for ToolConfigEntryError {}
 
-/// Parse and validate a `params_json`, returning the decoded object (or
-/// `None` when unset). `index`/`tool_id` are only used for error reporting.
+/// `index` and `tool_id` are used only for error reporting.
 pub fn parse_params_json(
     index: usize,
     tool_id: &str,
@@ -96,8 +93,7 @@ pub fn parse_params_json(
     }
 }
 
-/// Validates a `name_override` against the `ToolId` charset/length contract,
-/// mirroring [`parse_params_json`] as the shared source of truth.
+/// Enforces the `ToolId` charset/length contract on a `name_override`.
 pub fn validate_name_override(
     index: usize,
     tool_id: &str,
@@ -118,9 +114,7 @@ pub fn validate_name_override(
 }
 
 /// Returns the first entry whose `id` is not in `allowed_ids`, as
-/// `(index, id)`, or `None` when all ids are allowed.
-///
-/// Pure so backend save-time validation and any future consumer share one rule.
+/// `(index, id)`.
 pub fn first_unknown_tool_id<'a>(
     entries: &'a [crate::ToolConfigEntry],
     allowed_ids: &std::collections::HashSet<String>,

@@ -38,7 +38,6 @@ pub async fn collect_response(
                 response, metrics, ..
             } => return Ok((*response, metrics)),
             SamplingEvent::Failed { error, .. } => return Err(error),
-            // Drop intermediate events; this is a buffered collector.
             _ => {}
         }
     }

@@ -202,7 +202,6 @@ fn jsonrpc_id_round_trips_to_request_id_correlator() {
     let envelope_id = JsonRpcId::from_request_id(&original);
     assert_eq!(envelope_id.as_request_id().unwrap(), original);
 
-    // Numeric ids are stringified.
     let nid = JsonRpcId::Number(7);
     assert_eq!(nid.as_request_id().unwrap().as_str(), "7");
 }
@@ -234,10 +233,9 @@ fn full_call_envelope_serialises_to_expected_shape() {
     assert_eq!(v["params"]["tool_call_id"], json!("call_xyz"));
 }
 
-/// The envelope-level `session_id` and an inner `params.session_id` (e.g.
-/// on `ToolsListParams`) are independent keys in the wire JSON tree.
-/// This test pins that invariant so a refactor that accidentally
-/// collapses the two layers (e.g. via `#[serde(flatten)]`) fails loudly.
+/// The envelope-level `session_id` and an inner `params.session_id` are
+/// independent keys in the wire JSON tree; a refactor that collapses the two
+/// layers (e.g. via `#[serde(flatten)]`) must fail here.
 #[test]
 fn envelope_session_id_and_inner_params_session_id_are_distinct_layers() {
     use kigi_tool_protocol::{ToolDefinitionMode, ToolsListParams};

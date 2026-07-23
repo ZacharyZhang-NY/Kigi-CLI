@@ -513,7 +513,7 @@ pub fn cleanup_orphaned_overlay_snapshots() -> crate::api::CleanupReport {
     report
 }
 
-// ── Internal helpers ─────────────────────────────────────────────────────
+// Internal helpers
 
 /// Mount overlayfs using `libc::mount()` syscall.
 fn mount_overlay(lower: &Path, upper: &Path, work: &Path, target: &Path) -> Result<()> {

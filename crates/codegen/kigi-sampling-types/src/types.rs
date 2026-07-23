@@ -2,9 +2,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::num::NonZeroU64;
 
-// ============================================================================
 // TraceContext — cloneable, type-erased context for request tracing
-// ============================================================================
 
 /// Object-safe trait for opaque tracing context attached to requests.
 ///
@@ -105,7 +103,7 @@ pub struct ChatCompletionRequest {
     pub x_kigi_user_id: Option<String>,
 
     /// Optional opaque tracing context (e.g., where to persist the finalized request payload).
-    /// This is intentionally not serialized or deserialized.
+    /// This is deliberately not serialized or deserialized.
     /// Consumers downcast via `trace.as_ref().unwrap().as_any().downcast_ref::<T>()`.
     #[serde(skip)]
     pub trace: Option<Box<dyn TraceContext>>,
@@ -670,7 +668,7 @@ pub struct CompletionTokensDetails {
     #[serde(default)]
     pub rejected_prediction_tokens: u32,
 }
-// ============ Streaming types ============
+// Streaming types
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChatCompletionChunk {
@@ -1098,7 +1096,6 @@ pub fn adapt_body_for_codex_backend(body: &mut Value) {
         body["instructions"] = Value::String(instructions);
     }
 
-    // 2. Request replayable encrypted reasoning.
     let include = body
         .as_object_mut()
         .map(|obj| obj.entry("include").or_insert_with(|| Value::Array(vec![])));
@@ -1167,7 +1164,7 @@ pub const CLAUDE_CODE_USER_AGENT: &str = "claude-cli/2.1.75";
 pub const CLAUDE_CODE_SYSTEM_PREFIX: &str =
     "You are Claude Code, Anthropic's official CLI for Claude.";
 
-// ── GitHub Copilot editor-identity headers ──────────────────────────────────
+// GitHub Copilot editor-identity headers
 // The VS Code Copilot Chat client identity. Copilot's proxy authorizes the
 // short-lived copilot token AND validates these editor headers, so they ride
 // the `copilot_internal/v2/token` exchange, the `/models` listing, and every
@@ -1189,7 +1186,7 @@ pub const COPILOT_API_VERSION: &str = "2026-06-01";
 /// `X-Initiator` value — sent ONLY on inference (`user`, per the spec).
 pub const COPILOT_INITIATOR: &str = "user";
 
-// ── ChatGPT/Codex (openai-codex) OAuth-inference headers ─────────────────────
+// ChatGPT/Codex (openai-codex) OAuth-inference headers
 // The ChatGPT Codex backend authorizes an OAuth bearer AND validates the Codex
 // client identity. These ride the `/codex/responses` inference request ONLY.
 // openai-codex-GATED: no other Responses provider (API-key `openai`) sends them,
@@ -1487,7 +1484,7 @@ pub struct SamplingConfig {
     pub stream_tool_calls: Option<bool>,
 }
 
-// ============ Responses API wrapper ============
+// Responses API wrapper
 
 /// Wrapper around `async_openai::types::responses::CreateResponse` that adds
 /// custom header fields for xAI request tracking, similar to
@@ -1567,7 +1564,7 @@ impl From<crate::rs::CreateResponse> for CreateResponseWrapper {
     }
 }
 
-// ============ Messages API wrapper ============
+// Messages API wrapper
 
 /// Wrapper around `MessagesRequest` that adds custom header fields for xAI
 /// request tracking, analogous to `CreateResponseWrapper`.
@@ -2125,7 +2122,7 @@ mod tests {
         );
         let bad_type = as_map(serde_json::json!({"reasoningEffort": 3}));
         assert_eq!(parse_reasoning_effort_meta(Some(&bad_type)), None);
-        // `ultra` is now a real codex tier; a genuinely-unknown token still None.
+        // `ultra` is a real codex tier; a genuinely-unknown token still None.
         let unknown = as_map(serde_json::json!({"reasoningEffort": "MEGA"}));
         assert_eq!(parse_reasoning_effort_meta(Some(&unknown)), None);
     }

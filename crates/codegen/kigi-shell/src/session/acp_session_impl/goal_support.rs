@@ -6,7 +6,6 @@ use super::*;
 
 /// Number of consecutive non-completing goal-mode turns before the goal
 /// auto-pauses with `GoalPauseReason::BackOff`. See `handle_turn_end`.
-/// Compile-time constant for v1; remote tunability is a deferred follow-up.
 pub(super) const GOAL_CONTINUATION_BACKOFF_THRESHOLD: u32 = 3;
 
 impl DrainSource {
@@ -188,7 +187,6 @@ pub(super) fn render_goal_plan_block(plan_path: &std::path::Path, names: &GoalTo
          empty path renders a dangling `Plan:` line that the model \
          cannot follow",
     );
-    // Column-0 single-line `Plan: <abs>` contract — see fn docs.
     GOAL_PLAN_BLOCK_TEMPLATE
         .replace("{PLAN_PATH}", &plan_path.display().to_string())
         .replace("{TODO_TOOL}", &names.todo)
@@ -235,13 +233,11 @@ pub(super) const GOAL_CONTINUATION_BAIL_PREFACE: &str = "You appear to be stoppi
 /// Render the shared goal-rules template with tool names and
 /// site-specific blocks substituted in.
 ///
-/// The template is the slim current form: verification is owned by
-/// the harness (the adversarial skeptic panel in `goal_classifier.rs`),
-/// so this body only carries TRACKING / WORKING / VERIFY / TEST
-/// guidance and the `{GOAL_TOOL}` completion contract. No per-goal
-/// verdict-file path is substituted — `{VERIFIER_ID}` no longer
-/// appears in the template; `verifier_id` continues to anchor
-/// harness-owned skeptic verdict files inside `goal_classifier.rs`.
+/// Verification is owned by the harness (the adversarial skeptic panel
+/// in `goal_classifier.rs`), so this body only carries TRACKING /
+/// WORKING / VERIFY / TEST guidance and the `{GOAL_TOOL}` completion
+/// contract. No per-goal verdict-file path is substituted; `verifier_id`
+/// anchors harness-owned skeptic verdict files inside `goal_classifier.rs`.
 ///
 /// `block_recap` and `goal_state` are inserted verbatim — pass an
 /// empty string to omit either section. The trailing newline of the
@@ -251,10 +247,6 @@ pub(super) const GOAL_CONTINUATION_BAIL_PREFACE: &str = "You appear to be stoppi
 ///
 /// `plan_path` `Some` folds the plan-aware preamble into the same block as
 /// the discipline; `None` renders the no-plan block byte-for-byte unchanged.
-///
-/// Legacy artifacts (the deleted COMPLETION AUDIT / canonical
-/// verifier blocks / `{VERIFIER_ID}` placeholder) are pinned absent
-/// by `goal_rules_template_drops_all_legacy_verifier_artifacts`.
 pub(super) fn render_goal_rules(
     objective: &str,
     names: &GoalToolNames,
@@ -701,8 +693,10 @@ mod fold_tokens_by_model_tests {
     fn mixed_models_sum_marginals_sorted_desc() {
         let records = vec![
             rec(Some("g1"), 0, 100, Some("kigi-3")),
-            rec(Some("g1"), 100, 500, Some("kigi-4")), // marginal 400
-            rec(Some("g1"), 0, 50, Some("kigi-3")),    // kigi-3 total 150
+            // marginal 400
+            rec(Some("g1"), 100, 500, Some("kigi-4")),
+            // kigi-3 total 150
+            rec(Some("g1"), 0, 50, Some("kigi-3")),
         ];
         let out = fold_tokens_by_model(&records, "g1", "cur");
         assert_eq!(
@@ -735,7 +729,8 @@ mod fold_tokens_by_model_tests {
     fn single_distinct_model_collapses_to_one_entry() {
         let records = vec![
             rec(Some("g1"), 0, 100, Some("kigi-4")),
-            rec(Some("g1"), 0, 200, None), // folds under current = kigi-4
+            // folds under current = kigi-4
+            rec(Some("g1"), 0, 200, None),
         ];
         let out = fold_tokens_by_model(&records, "g1", "kigi-4");
         assert_eq!(out, vec![("kigi-4".to_owned(), 300)]);

@@ -17,7 +17,6 @@ pub(crate) struct FetchCache {
     max_entries: usize,
 }
 
-/// Simple cache that holds N completed fetch requests on a TTL.
 impl FetchCache {
     pub(crate) fn new(ttl: Duration, max_entries: usize) -> Self {
         Self {
@@ -43,7 +42,6 @@ impl FetchCache {
             return;
         }
         if self.entries.len() >= self.max_entries {
-            // Evict oldest entry.
             let oldest_key = self
                 .entries
                 .iter()

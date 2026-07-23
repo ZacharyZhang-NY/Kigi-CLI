@@ -66,7 +66,6 @@ fn multiple_completions_batched_with_poll_tool() {
     ];
     let result = format_between_turn_completions(&completions, Some("get_task_output"));
     assert!(result.starts_with("While you were idle, 3 background subagents completed:\n"));
-    // All three entries should appear
     assert!(result.contains("subagent_id: a."));
     assert!(result.contains("subagent_id: b."));
     assert!(result.contains("subagent_id: c."));

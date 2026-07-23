@@ -1,25 +1,21 @@
 //! Index caching for fast loading.
 //!
-//! Uses a custom binary format with magic bytes "SGIX" for the new interned format.
-//! Automatically detects and skips legacy bincode format (returns error so caller can rebuild).
+//! The on-disk format is a custom binary layout tagged with the magic bytes
+//! "SGIX". Caches written by the earlier bincode format are detected and
+//! rejected rather than parsed, so the caller rebuilds from source.
 
 use std::path::Path;
 
 use crate::scope_graph::ScopeGraphIndex;
 
-/// Default cache file name.
 pub const CACHE_FILE_NAME: &str = ".goto_index.bin";
 
-/// Error type for cache operations.
 #[derive(Debug)]
 pub enum CacheError {
-    /// IO error.
     IoError(std::io::Error),
-    /// Serialization error.
     SerializeError(String),
-    /// Deserialization error.
     DeserializeError(String),
-    /// Legacy format detected (caller should rebuild).
+    /// A bincode-era cache was found; the caller is expected to rebuild.
     LegacyFormat,
 }
 
@@ -42,19 +38,14 @@ impl From<std::io::Error> for CacheError {
     }
 }
 
-/// Result type for cache operations.
 pub type Result<T> = std::result::Result<T, CacheError>;
 
-/// Get the default cache path for a repository.
 pub fn get_cache_path(root_path: &Path) -> std::path::PathBuf {
     root_path.join(CACHE_FILE_NAME)
 }
 
-/// Load an index from cache.
-///
-/// Uses the new binary format with magic bytes "SGIX".
-/// Returns `CacheError::LegacyFormat` if the file uses the old bincode format,
-/// signaling to the caller that a rebuild is needed.
+/// Returns `CacheError::LegacyFormat` for a bincode-format cache, signaling to
+/// the caller that a rebuild is needed.
 pub fn load_index(cache_path: &Path) -> Result<ScopeGraphIndex> {
     if !cache_path.exists() {
         return Err(CacheError::IoError(std::io::Error::new(
@@ -63,11 +54,10 @@ pub fn load_index(cache_path: &Path) -> Result<ScopeGraphIndex> {
         )));
     }
 
-    // Use ScopeGraphIndex::load which handles format detection
     match ScopeGraphIndex::load(cache_path) {
         Ok(Some(index)) => Ok(index),
+        // `Ok(None)` is how the loader reports a legacy-format file.
         Ok(None) => {
-            // None means legacy format was detected
             tracing::info!(
                 cache_path = %cache_path.display(),
                 "Legacy cache format detected, will rebuild"
@@ -78,15 +68,12 @@ pub fn load_index(cache_path: &Path) -> Result<ScopeGraphIndex> {
     }
 }
 
-/// Save an index to cache using the new binary format.
 pub fn save_index(cache_path: &Path, index: &ScopeGraphIndex) -> Result<()> {
     index.save(cache_path).map_err(CacheError::IoError)
 }
 
-/// Save an index to cache asynchronously (in a background thread).
-///
-/// Returns immediately and spawns a thread to do the actual saving.
-/// Useful for saving the index without blocking the main thread.
+/// Saves on a detached thread: the caller gets no join handle and no result,
+/// so a failed write is only visible in the logs.
 pub fn save_index_async(cache_path: std::path::PathBuf, index: ScopeGraphIndex) {
     std::thread::spawn(move || {
         if let Err(e) = save_index(&cache_path, &index) {
@@ -95,12 +82,11 @@ pub fn save_index_async(cache_path: std::path::PathBuf, index: ScopeGraphIndex) 
     });
 }
 
-/// Check if a cache exists and return its metadata.
 pub fn cache_exists(cache_path: &Path) -> bool {
     cache_path.exists()
 }
 
-/// Get cache file size in bytes.
+/// Size of the cache file in bytes, or `None` if it cannot be stat'd.
 pub fn cache_size(cache_path: &Path) -> Option<u64> {
     std::fs::metadata(cache_path).ok().map(|m| m.len())
 }

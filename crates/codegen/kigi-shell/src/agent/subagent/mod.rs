@@ -43,7 +43,7 @@ pub(crate) enum InitialContextSource {
     New,
     /// Parent history as `<background_context>` (harness-only chat-prefix fork).
     Forked,
-    /// Resumed from a previously completed peer subagent. The child inherits
+    /// Resumed from a completed peer subagent. The child inherits
     /// the source's raw transcript, tool state, and model. System prompt and
     /// prompt context are freshly rendered from the current agent definition.
     Resumed,
@@ -211,7 +211,6 @@ pub(crate) struct SubagentSpawnContext {
     /// Resolved config for the deploy service.
     pub app_builder_deployer_config:
         kigi_tools::implementations::kigi::deploy_app::AppBuilderDeployerConfig,
-    /// Whether the write_file tool is enabled.
     pub write_file_enabled: bool,
     /// Whether goal mode (`/goal`) is enabled.
     pub goal_enabled: bool,
@@ -423,7 +422,7 @@ impl SubagentSpawnContext {
     /// session-level config, so it is resolved from the same tiers as the
     /// parent (requirements/env/user/managed from disk; remote from the
     /// parent's snapshot) and follows the session into subagents. Bash stays
-    /// on tool defaults, as before that knob existed.
+    /// on tool defaults.
     pub fn resolve_tool_params_json(
         &self,
     ) -> crate::session::agent_rebuild::ResolvedToolParamsJson {
@@ -619,7 +618,6 @@ pub(crate) async fn resolve_snapshot(lookup: Option<SnapshotLookup>) -> Option<S
         }
     }
 }
-/// Check whether a resolved snapshot is still in the `Running` state.
 pub(crate) fn is_running(snap: &SubagentSnapshot) -> bool {
     matches!(
         snap.status,
@@ -2208,7 +2206,6 @@ fn emit_subagent_notification(
         gateway.forward_fire_and_forget(ext_notification);
     }
 }
-/// Progress notification emission interval.
 const PROGRESS_PUBLISH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
 /// Change signature for the progress-publisher dedupe:
 /// `(turn_count, tool_call_count, context_usage_pct, error_count, tokens_used)`.

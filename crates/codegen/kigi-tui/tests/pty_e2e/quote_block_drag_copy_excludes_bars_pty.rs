@@ -166,7 +166,6 @@ async fn quote_block_drag_copy_excludes_bars_pty() {
         "quote content cells should carry the selection highlight"
     );
 
-    // Release to finish the drag and copy.
     harness
         .inject_keys(sgr_mouse(0, bravo_row, bravo_end, 'm').as_bytes())
         .expect("release drag");

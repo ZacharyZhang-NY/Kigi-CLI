@@ -34,7 +34,8 @@ const SIGINT_CANARY: &str = "SIGINTCANARY7";
 const ACK: &str = "ACKSENTINEL";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore] // opt-in: spawns the real pager binary in a PTY (CI runs with --ignored)
+// opt-in: spawns the real pager binary in a PTY (CI runs with --ignored)
+#[ignore]
 async fn prompt_history_durable_after_double_ctrl_c_and_recallable_on_resume() {
     run().await.expect("prompt-history durable-quit e2e");
 }
@@ -43,7 +44,8 @@ async fn prompt_history_durable_after_double_ctrl_c_and_recallable_on_resume() {
 /// same graceful quit: the prompt stays durable and the process exits 0.
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore] // opt-in: spawns the real pager binary in a PTY (CI runs with --ignored)
+// opt-in: spawns the real pager binary in a PTY (CI runs with --ignored)
+#[ignore]
 async fn prompt_history_durable_after_real_sigint_graceful_quit() {
     run_sigint().await.expect("sigint graceful-quit e2e");
 }
@@ -197,7 +199,8 @@ fn submit_and_settle(
     pager
         .wait_for_text(ACK, Duration::from_secs(30))
         .context("turn response rendered")?;
-    pager.update(Duration::from_millis(1000)); // let the short turn finish (idle)
+    // let the short turn finish (idle)
+    pager.update(Duration::from_millis(1000));
     Ok(pager)
 }
 

@@ -13,10 +13,9 @@ use super::search_fts::SessionSearchIndex;
 const META_KEY_LAST_BOOTSTRAP: &str = "last_bootstrap_at";
 
 /// Read `last_bootstrap_at` from the sqlite meta table, preserving read
-/// failures, so callers
-/// can tell "marker genuinely absent" apart from "could not read the DB"
-/// (transient busy/locked/I/O). A missing DB file is a true absence, not an
-/// error.
+/// failures, so callers can tell "marker genuinely absent" apart from "could
+/// not read the DB" (transient busy/locked/I/O). A missing DB file is a true
+/// absence, not an error.
 pub fn try_read_last_bootstrap_at(db_path: &Path) -> Result<Option<i64>, String> {
     if !db_path.exists() {
         return Ok(None);
@@ -38,8 +37,6 @@ pub fn write_last_bootstrap_at(db_path: &Path) -> io::Result<()> {
         .map_err(|e| io::Error::other(e.to_string()))
 }
 
-// Tests
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -49,13 +46,10 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let db_path = tmp.path().join("session_search.sqlite");
 
-        // Before writing, should be None
         assert_eq!(try_read_last_bootstrap_at(&db_path).unwrap(), None);
 
-        // Create DB and write timestamp
         write_last_bootstrap_at(&db_path).unwrap();
 
-        // Should now have a reasonable timestamp
         let ts = try_read_last_bootstrap_at(&db_path).unwrap().unwrap();
         let now = chrono::Utc::now().timestamp();
         assert!(

@@ -154,7 +154,7 @@ pub struct PluginManifest {
     #[serde(default)]
     pub keywords: Vec<String>,
 
-    // ── Component path overrides (supplement convention dirs) ──────
+    // Component path overrides (supplement convention dirs)
     #[serde(default)]
     pub skills: Option<PathOrPaths>,
     #[serde(default)]
@@ -247,7 +247,7 @@ impl PluginManifest {
 
     /// Log informational messages about manifest features.
     ///
-    /// Called during discovery. Inline hooks and MCP servers are now
+    /// Called during discovery. Inline hooks and MCP servers are
     /// fully supported; this method logs when they are detected.
     pub fn warn_unsupported_features(&self, plugin_name: &str) {
         if self.inline_hooks().is_some() {
@@ -287,7 +287,7 @@ fn resolve_dirs(
     }
 }
 
-// ── Manifest loading ──────────────────────────────────────────────────
+// Manifest loading
 
 /// Manifest search order within a plugin directory.
 const MANIFEST_PATHS: &[&str] = &[
@@ -375,7 +375,7 @@ pub fn normalize_inline_mcp_servers(value: &serde_json::Value) -> serde_json::Va
     serde_json::json!({ "mcpServers": inner })
 }
 
-// ── Errors ────────────────────────────────────────────────────────────
+// Errors
 
 #[derive(Debug, thiserror::Error)]
 pub enum ManifestError {
@@ -530,7 +530,8 @@ mod tests {
         );
         assert_eq!(
             name_from_dirname(Path::new("/path/to/---")),
-            None // all hyphens after trim
+            // all hyphens after trim
+            None
         );
     }
 

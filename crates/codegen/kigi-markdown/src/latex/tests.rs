@@ -29,10 +29,10 @@ fn subscripts_map_to_unicode() {
 
 #[test]
 fn script_fallback_uses_parens() {
-    // φ has no superscript form → fall back to ^(...)
+    // Greek letters have no superscript forms; a multi-char run falls back to
+    // ^(...) while a lone char keeps the bare marker.
     assert_eq!(inline("x^{\\alpha\\beta}"), "x^(αβ)");
     assert_eq!(inline("x^\\alpha"), "x^α");
-    // Single unmappable subscript char.
     assert_eq!(inline("a_q"), "a_q");
 }
 

@@ -227,7 +227,7 @@ mod links {
         // A small inline viewport near the bottom of the screen, grown to full
         // height, must scroll the rows it will cover up into native scrollback
         // (append_lines) instead of overwriting them. Regression guard for the
-        // previously-commented-out scroll_up in set_viewport_height's grow path
+        // earlier-commented-out scroll_up in set_viewport_height's grow path
         // (the overlay host depends on this in minimal mode).
         let mut t = Terminal::with_options(
             RecordingBackend::default(),

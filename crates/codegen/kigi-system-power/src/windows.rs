@@ -1,8 +1,6 @@
 //! Windows system sleep/wake via `PowerRegisterSuspendResumeNotification`
 //! with a `DEVICE_NOTIFY_CALLBACK` recipient — no hidden window or message
 //! loop required (Windows 8+).
-//!
-//! NOTE: this module only compiles when targeting Windows.
 
 use std::os::raw::c_void;
 
@@ -29,8 +27,6 @@ struct Context {
 }
 
 pub(crate) struct Listener {
-    // Registration handle from `PowerRegisterSuspendResumeNotification`
-    // (a `*mut c_void`; cast to `HPOWERNOTIFY` for unregister).
     handle: *mut c_void,
     // Kept alive (and freed in `Drop`) because the OS holds a raw pointer to it.
     ctx: *mut Context,
@@ -70,6 +66,8 @@ impl Listener {
 
 impl Drop for Listener {
     fn drop(&mut self) {
+        // SAFETY: unregistering first guarantees the OS can no longer invoke
+        // the callback, so freeing `ctx` afterwards cannot race a live call.
         unsafe {
             PowerUnregisterSuspendResumeNotification(self.handle as HPOWERNOTIFY);
             drop(Box::from_raw(self.ctx));
@@ -82,14 +80,14 @@ unsafe extern "system" fn power_callback(
     event_type: u32,
     _setting: *const c_void,
 ) -> u32 {
-    // Safe: `context` is the live `Context` we registered with.
+    // SAFETY: `context` is the `Context` pointer we registered with, and the
+    // registration is unregistered before that box is freed.
     let ctx = unsafe { &*(context as *const Context) };
     match event_type {
         PBT_APMSUSPEND => (ctx.callback)(PowerEvent::WillSleep),
         // A single resume can deliver both PBT_APMRESUMEAUTOMATIC and
-        // PBT_APMRESUMESUSPEND, so `DidWake` may fire twice per wake. That is
-        // fine and intentional: lowering the sleep gate is idempotent, so a
-        // duplicate wake is harmless — do not try to "dedupe" this later.
+        // PBT_APMRESUMESUSPEND, so `DidWake` fires twice per wake. Intentional:
+        // lowering the sleep gate is idempotent, so do not "dedupe" this.
         PBT_APMRESUMEAUTOMATIC | PBT_APMRESUMESUSPEND => (ctx.callback)(PowerEvent::DidWake),
         _ => {}
     }

@@ -6,11 +6,10 @@
 
 use std::time::{Duration, Instant};
 
-// Use `vte` re-exported from `alacritty_terminal` (via ptyctl) instead of
-// a separate direct dependency.
+// `vte` is re-exported by `alacritty_terminal` (pulled in via ptyctl), so no
+// direct dependency on it is needed.
 use alacritty_terminal::vte;
 
-/// Timing data for a single rendered frame.
 #[derive(Debug, Clone)]
 pub struct FrameTiming {
     /// Wall-clock duration from BeginSynchronizedUpdate to EndSynchronizedUpdate.
@@ -19,11 +18,6 @@ pub struct FrameTiming {
     pub chars: usize,
 }
 
-/// Parses raw PTY output for synchronized-update frame boundaries and
-/// records per-frame timing data.
-///
-/// Composes a `vte::Parser` with an internal `FrameTimingHandler` that
-/// implements `vte::Perform`.
 pub struct FrameTimingParser {
     vte_parser: vte::Parser,
     handler: FrameTimingHandler,
@@ -37,22 +31,20 @@ impl FrameTimingParser {
         }
     }
 
-    /// Feed raw PTY output bytes, parsing for frame boundaries.
     pub fn feed(&mut self, bytes: &[u8]) {
         self.vte_parser.advance(&mut self.handler, bytes);
     }
 
-    /// Return all recorded frame timings.
     pub fn timings(&self) -> &[FrameTiming] {
         &self.handler.timings
     }
 
-    /// Return the total number of completed frames.
+    /// Counts only frames whose end marker has been seen; a frame still open
+    /// is not included.
     pub fn frame_count(&self) -> u64 {
         self.handler.timings.len() as u64
     }
 
-    /// Reset all recorded timing data.
     pub fn reset(&mut self) {
         self.handler.timings.clear();
         self.handler.frame_start = None;
@@ -66,7 +58,6 @@ impl Default for FrameTimingParser {
     }
 }
 
-/// Internal VTE `Perform` implementation that detects frame boundaries.
 struct FrameTimingHandler {
     frame_start: Option<Instant>,
     timings: Vec<FrameTiming>,
@@ -91,7 +82,8 @@ impl vte::Perform for FrameTimingHandler {
         _ignore: bool,
         action: char,
     ) {
-        // Only interested in CSI ? <param> h/l (private mode set/reset).
+        // Synchronized-update markers are private modes, so anything without
+        // the `?` intermediate cannot be one.
         if intermediates != b"?" {
             return;
         }
@@ -104,12 +96,10 @@ impl vte::Perform for FrameTimingHandler {
         if param_val == 2026 {
             match action {
                 'h' => {
-                    // BeginSynchronizedUpdate: frame starts.
                     self.frame_start = Some(Instant::now());
                     self.current_frame_chars = 0;
                 }
                 'l' => {
-                    // EndSynchronizedUpdate: frame ends.
                     if let Some(start) = self.frame_start.take() {
                         self.timings.push(FrameTiming {
                             duration: start.elapsed(),

@@ -277,7 +277,7 @@ fn handle_connection(
     let range = parse_range(&request);
     let addr = stream.local_addr().unwrap();
 
-    // ── Metadata routes ─────────────────────────────────────────────────────
+    // Metadata routes
     if path == "/releases/latest" {
         let latest = state.lock().unwrap().latest.clone();
         let body = release_json(&addr, &latest);
@@ -290,7 +290,7 @@ fn handle_connection(
         return;
     }
 
-    // ── Asset routes: /dl/{version}/{name} ──────────────────────────────────
+    // Asset routes: /dl/{version}/{name}
     let Some(rest) = path.strip_prefix("/dl/") else {
         write_simple_response(&mut stream, "404 Not Found", b"not found", is_head);
         return;
@@ -330,7 +330,7 @@ fn handle_connection(
         return;
     }
 
-    // ── Archive body with corruption modes ──────────────────────────────────
+    // Archive body with corruption modes
     // Count only body-serving GETs; the parallel path's HEAD probe is excluded.
     if !is_head {
         gets.fetch_add(1, Ordering::Relaxed);

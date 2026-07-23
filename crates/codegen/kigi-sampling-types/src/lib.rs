@@ -2,7 +2,7 @@
 //!
 //! This crate contains the API-agnostic conversation types, chat completion
 //! request/response types, streaming types, and error types used across the
-//! xAI agent stack.  It intentionally contains **no I/O** (no HTTP clients,
+//! xAI agent stack.  It deliberately contains **no I/O** (no HTTP clients,
 //! no file system access) so it can be depended on by downstream crates
 //! (e.g., `kigi-chat-state`) without pulling in the full `kigi-shell`.
 

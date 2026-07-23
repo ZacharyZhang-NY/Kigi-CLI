@@ -55,7 +55,6 @@ pub fn remap_schema_properties(
 
     let mut schema = schema.clone();
 
-    // Remap keys in "properties"
     if let Some(serde_json::Value::Object(props)) = schema.get("properties").cloned() {
         let mut new_props = serde_json::Map::new();
         for (key, value) in props {
@@ -65,7 +64,6 @@ pub fn remap_schema_properties(
         schema["properties"] = serde_json::Value::Object(new_props);
     }
 
-    // Remap entries in "required" array
     if let Some(serde_json::Value::Array(items)) = schema.get("required").cloned() {
         let new_items: Vec<serde_json::Value> = items
             .into_iter()
@@ -153,12 +151,10 @@ mod tests {
             ("new_string".to_string(), "replace_with".to_string()),
         ]);
         let result = remap_schema_properties(&schema, &param_map);
-        // Properties remapped
         assert!(result["properties"]["find"].is_object());
         assert!(result["properties"]["replace_with"].is_object());
         assert!(result["properties"]["file_path"].is_object());
         assert!(result["properties"].get("old_string").is_none());
-        // Required array remapped
         let required: Vec<String> = result["required"]
             .as_array()
             .unwrap()

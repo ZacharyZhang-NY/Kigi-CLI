@@ -60,7 +60,6 @@ pub struct RequestMessage<T> {
 }
 
 impl<T> RequestMessage<T> {
-    /// Construct a new request with empty metadata and no deadline.
     pub fn new(message: T) -> Self {
         Self {
             message,
@@ -69,14 +68,12 @@ impl<T> RequestMessage<T> {
         }
     }
 
-    /// Builder: attach metadata.
     #[must_use]
     pub fn with_metadata(mut self, metadata: Metadata) -> Self {
         self.metadata = metadata;
         self
     }
 
-    /// Builder: set the absolute deadline.
     #[must_use]
     pub fn with_deadline(mut self, deadline: DateTime<Utc>) -> Self {
         self.deadline = Some(deadline);

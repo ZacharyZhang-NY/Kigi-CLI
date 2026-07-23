@@ -12,10 +12,6 @@ use indexmap::IndexMap;
 use crate::app::app_view::SessionPickerEntry;
 use crate::views::picker::{PickerEntry, PickerField, PickerRow, PickerState};
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
 /// Offset added to content-hit indices in the picker `expanded` set so
 /// they don't collide with fuzzy-entry indices.
 pub const CONTENT_EXPAND_OFFSET: usize = 100_000;
@@ -67,10 +63,6 @@ fn order_repo_groups(groups: &mut IndexMap<&str, Vec<usize>>, current_repo: Opti
     }
 }
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 /// Which underlying data a picker position maps to.
 #[derive(Debug, Clone)]
 pub enum PickerItem {
@@ -116,10 +108,6 @@ impl SessionPickerLanes {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Source filter
-// ---------------------------------------------------------------------------
 
 /// Filter session entries by native, remote, or external source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -287,10 +275,6 @@ fn selectable_fallback<T>(map: &[Option<T>], preferred: usize) -> Option<usize> 
         .or_else(|| (0..preferred).rev().find(|index| map[*index].is_some()))
 }
 
-// ---------------------------------------------------------------------------
-// Filtering
-// ---------------------------------------------------------------------------
-
 /// Case-insensitive substring match (callers pass a pre-lowercased query).
 ///
 /// Deliberately not an ordered-chars subsequence match: that matched so
@@ -347,10 +331,6 @@ pub(crate) fn filter_session_entries(
         .map(|(i, _)| i)
         .collect()
 }
-
-// ---------------------------------------------------------------------------
-// Entry map building
-// ---------------------------------------------------------------------------
 
 /// Build a flat list of picker items from fuzzy + content results,
 /// deduplicating content hits that already appear in the fuzzy list.
@@ -418,7 +398,8 @@ pub(crate) fn build_entry_map(
             }
             order_repo_groups(&mut groups, current_repo);
             for (_repo, members) in &groups {
-                map.push(None); // repo group header
+                // repo group header
+                map.push(None);
                 for &orig_idx in members {
                     map.push(Some(PickerItem::Fuzzy {
                         original_index: orig_idx,
@@ -453,7 +434,8 @@ pub(crate) fn build_entry_map(
                 && content_loading
                 && !query.trim().is_empty());
         if show_content_header {
-            map.push(None); // content header
+            // content header
+            map.push(None);
         }
         for hit_idx in content_items {
             map.push(Some(PickerItem::Content { hit_index: hit_idx }));
@@ -478,20 +460,18 @@ pub(crate) fn build_entry_map(
         let mut map = Vec::with_capacity(virtual_list.len() + usize::from(has_header));
         for (i, item) in virtual_list.into_iter().enumerate() {
             if has_header && i == fuzzy_count {
-                map.push(None); // content header
+                // content header
+                map.push(None);
             }
             map.push(Some(item));
         }
         if has_header && content_count == 0 {
-            map.push(None); // loading header with no results yet
+            // loading header with no results yet
+            map.push(None);
         }
         map
     }
 }
-
-// ---------------------------------------------------------------------------
-// Session entry data building
-// ---------------------------------------------------------------------------
 
 /// Build owned rendering data for each session entry in the filtered list.
 ///
@@ -582,8 +562,6 @@ pub(crate) fn build_grouped_picker_entries<'a>(
     state: &PickerState,
     current_repo: Option<&str>,
 ) -> (Vec<PickerEntry<'a>>, Vec<bool>) {
-    // Group filtered entries by repo_name, sort alphabetically, then pin the
-    // current working directory's repo group to the top.
     let mut groups: IndexMap<&str, Vec<usize>> = IndexMap::new();
     for (fi, &orig_idx) in filtered_indices.iter().enumerate() {
         let repo = entries_data[orig_idx].repo_name.as_str();
@@ -597,12 +575,10 @@ pub(crate) fn build_grouped_picker_entries<'a>(
     // Track the grouped position (including headers) to correctly compute selection.
     let mut grouped_pos: usize = 0;
     for (repo_name, member_indices) in &groups {
-        // Insert a non-selectable header for this repo group.
         non_selectable.push(true);
         result.push(PickerEntry::Header { label: repo_name });
         grouped_pos += 1;
 
-        // Insert each session row indented under the header.
         for &fi in member_indices {
             let b = &built[fi];
             let fields = &fields_vecs[fi];
@@ -629,10 +605,6 @@ pub(crate) fn build_grouped_picker_entries<'a>(
 
     (result, non_selectable)
 }
-
-// ---------------------------------------------------------------------------
-// Content search helpers
-// ---------------------------------------------------------------------------
 
 /// Build owned rendering data for content search (deep search) result rows.
 ///
@@ -732,10 +704,6 @@ pub(crate) fn build_content_header_label(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Utilities
-// ---------------------------------------------------------------------------
-
 /// Format a timestamp as a human-readable relative time.
 pub(crate) fn format_time_ago(dt: chrono::DateTime<chrono::Utc>) -> String {
     let now = chrono::Utc::now();
@@ -755,10 +723,6 @@ pub(crate) fn format_time_ago(dt: chrono::DateTime<chrono::Utc>) -> String {
     // Right-align to fixed width so the column doesn't jump
     format!("{:>8}", raw)
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -1235,10 +1199,12 @@ mod tests {
         assert_eq!(all, vec![0, 1, 2, 3, 4, 5]);
 
         let local = filter_session_entries(Some(&entries), "", SourceFilter::Local);
-        assert_eq!(local, vec![0, 2]); // local + both
+        // local + both
+        assert_eq!(local, vec![0, 2]);
 
         let remote = filter_session_entries(Some(&entries), "", SourceFilter::Remote);
-        assert_eq!(remote, vec![1, 2]); // remote + both
+        // remote + both
+        assert_eq!(remote, vec![1, 2]);
 
         let external = filter_session_entries(Some(&entries), "", SourceFilter::External);
         assert_eq!(external, vec![3, 4, 5]);
@@ -1332,12 +1298,14 @@ mod tests {
         );
         // repo-a header + s0 + repo-b header + s2 = 4
         assert_eq!(map.len(), 4);
-        assert!(map[0].is_none()); // repo-a header
+        // repo-a header
+        assert!(map[0].is_none());
         assert!(matches!(
             map[1],
             Some(PickerItem::Fuzzy { original_index: 0 })
         ));
-        assert!(map[2].is_none()); // repo-b header
+        // repo-b header
+        assert!(map[2].is_none());
         assert!(matches!(
             map[3],
             Some(PickerItem::Fuzzy { original_index: 2 })
@@ -1354,12 +1322,14 @@ mod tests {
             None,
         );
         assert_eq!(map.len(), 4);
-        assert!(map[0].is_none()); // repo-a header
+        // repo-a header
+        assert!(map[0].is_none());
         assert!(matches!(
             map[1],
             Some(PickerItem::Fuzzy { original_index: 1 })
         ));
-        assert!(map[2].is_none()); // repo-b header
+        // repo-b header
+        assert!(map[2].is_none());
         assert!(matches!(
             map[3],
             Some(PickerItem::Fuzzy { original_index: 2 })

@@ -1,7 +1,6 @@
 //! Background persistence for tool state.
 //!
-//! [`ResourcesPersistence`] persists `Resources` state (the new architecture).
-//! Old `ToolStatePersistence` and `PersistenceLayer` have been deleted.
+//! [`ResourcesPersistence`] persists `Resources` state.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -10,25 +9,17 @@ use crate::types::resources::Resources;
 
 /// Background persistence for `Resources` state/params.
 ///
-/// Same pattern as `ToolStatePersistence` — debounced background writes with
-/// atomic rename. Takes a `serde_json::Value` from `Resources::serialize()`
-/// and writes it to disk. On load, parses the JSON and feeds it to
-/// `Resources::load_from()`.
-///
-/// This replaces the old `ToolStatePersistence` pipeline for the new
-/// architecture. During migration both coexist; once all tools are migrated,
-/// `ToolStatePersistence` will be deleted.
+/// Debounced background writes with atomic rename. Takes a `serde_json::Value`
+/// from `Resources::serialize()` and writes it to disk. On load, parses the
+/// JSON and feeds it to `Resources::load_from()`.
 pub struct ResourcesPersistence {
-    /// Path to the JSON file where Resources state is persisted
     state_path: PathBuf,
-    /// Channel to send serialized state to the background writer
     tx: tokio::sync::mpsc::UnboundedSender<ResourcesPersistenceCommand>,
 }
 
 enum ResourcesPersistenceCommand {
-    /// Write this serialized Resources value to disk
     Save(serde_json::Value),
-    /// Flush pending writes and notify when done
+    /// Flush pending writes and notify when done via the oneshot.
     Flush(tokio::sync::oneshot::Sender<()>),
 }
 
@@ -100,7 +91,6 @@ impl ResourcesPersistence {
         let _ = self.tx.send(ResourcesPersistenceCommand::Save(snapshot));
     }
 
-    /// Path to the persisted state file.
     pub fn state_path(&self) -> &std::path::Path {
         &self.state_path
     }
@@ -203,15 +193,9 @@ impl ResourcesPersistence {
     }
 }
 
-// Old `PersistenceLayer` / `PersistenceRunner` deleted.
-// ToolState persistence replaced by Resources persistence via `ResourcesPersistence`.
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // ResourcesPersistence tests
-    // -----------------------------------------------------------------------
 
     use crate::types::resources::{Resources, State, WebCitationCounter};
 
@@ -222,26 +206,21 @@ mod tests {
 
         let persistence = ResourcesPersistence::new(state_path);
 
-        // Build resources with registered state types
         let mut resources = Resources::new();
         resources.register_state::<WebCitationCounter>();
 
-        // Populate WebCitationCounter
         {
             let counter = resources.get_or_default::<State<WebCitationCounter>>();
             counter.counter = 7;
         }
 
-        // Save and flush
         persistence.save(&resources);
         persistence.flush().await;
 
-        // Load into fresh resources (with same registrations)
         let mut restored = Resources::new();
         restored.register_state::<WebCitationCounter>();
         assert!(persistence.load(&mut restored));
 
-        // Verify WebCitationCounter roundtripped
         let counter = restored.get::<State<WebCitationCounter>>().unwrap();
         assert_eq!(counter.counter, 7);
     }
@@ -307,7 +286,6 @@ mod tests {
         done.store(true, Ordering::Relaxed);
         reader.await.unwrap();
 
-        // Final state is intact and reflects the last write.
         let content = std::fs::read_to_string(&state_path).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
         assert!(parsed["state"]["kigi.WebCitation"].is_object());
@@ -330,11 +308,9 @@ mod tests {
         persistence.save(&resources);
         persistence.flush().await;
 
-        // File should exist with correct structure
         assert!(state_path.exists());
         let content = std::fs::read_to_string(&state_path).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
-        // Should have "state" category with "kigi.WebCitation" key
         assert!(parsed["state"]["kigi.WebCitation"].is_object());
     }
 }

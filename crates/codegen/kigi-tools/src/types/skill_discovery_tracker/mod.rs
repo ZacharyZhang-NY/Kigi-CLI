@@ -248,22 +248,18 @@ fn render_listing(
 }
 
 impl SkillManager {
-    /// Create a new tracker with no state.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Set the client-facing name of the skill tool.
     pub fn set_skill_tool_name(&mut self, name: String) {
         self.skill_tool_name = Some(name);
     }
 
-    /// Set the client-facing name of the read tool.
     pub fn set_read_tool_name(&mut self, name: String) {
         self.read_tool_name = Some(name);
     }
 
-    /// Enable XML formatting for skill announcements.
     pub fn set_xml_format(&mut self, enabled: bool) {
         self.use_xml_format = enabled;
     }
@@ -503,12 +499,10 @@ impl SkillManager {
         }
     }
 
-    /// Get the current dynamically discovered skills.
     pub fn discovered_skills(&self) -> &[SkillInfo] {
         &self.discovered_skills
     }
 
-    /// Get the current startup skills baseline.
     pub fn startup_skills(&self) -> &[SkillInfo] {
         &self.startup_skills
     }
@@ -537,7 +531,6 @@ impl SkillManager {
         self.discovered_canonical_paths.clear();
         self.checked_dirs.clear();
         self.announced_names.clear();
-        // Re-hide every conditional skill on /clear.
         let startup = std::mem::take(&mut self.startup_skills);
         self.startup_skills = self.conditional.rehide(startup);
         self.pending = Some(PendingKind::BaselineChange);
@@ -819,7 +812,7 @@ mod tests {
             None,
         );
         tracker.add_discovered(vec![make_skill("dyn", "/d/SKILL.md")]);
-        let _ = tracker.take_pending_reconciliation(); // drain
+        let _ = tracker.take_pending_reconciliation();
 
         tracker.on_clear();
         assert!(tracker.discovered_skills().is_empty());
@@ -858,7 +851,7 @@ mod tests {
     fn compaction_preserves_discovered_skills() {
         let mut tracker = SkillManager::new();
         tracker.add_discovered(vec![make_skill("alpha", "/a/SKILL.md")]);
-        let _ = tracker.take_pending_reconciliation(); // drain
+        let _ = tracker.take_pending_reconciliation();
 
         tracker.on_compaction();
         assert_eq!(tracker.discovered_skills().len(), 1);
@@ -879,7 +872,7 @@ mod tests {
             None,
         );
         tracker.add_discovered(vec![make_skill("dyn", "/d/SKILL.md")]);
-        let _ = tracker.take_pending_reconciliation(); // drain
+        let _ = tracker.take_pending_reconciliation();
 
         tracker.on_compaction();
 
@@ -918,7 +911,7 @@ mod tests {
         let mut tracker = SkillManager::new();
         tracker.checked_dirs.insert(PathBuf::from("/d"));
         tracker.add_discovered(vec![make_skill("dyn", "/d/SKILL.md")]);
-        let _ = tracker.take_pending_reconciliation(); // drain
+        let _ = tracker.take_pending_reconciliation();
 
         tracker.on_compaction();
         assert!(tracker.checked_dirs.is_empty(), "checked_dirs cleared");
@@ -944,7 +937,7 @@ mod tests {
             None,
             None,
         );
-        let _ = tracker.take_pending_reconciliation(); // drain startup
+        let _ = tracker.take_pending_reconciliation();
 
         tracker.update_startup_baseline(vec![make_skill("new", "/new/SKILL.md")]);
         let r = tracker.take_pending_reconciliation().unwrap();
@@ -973,7 +966,7 @@ mod tests {
             None,
             None,
         );
-        let _ = tracker.take_pending_reconciliation(); // drain startup
+        let _ = tracker.take_pending_reconciliation();
 
         // Replace with the exact same path — should NOT queue a pending.
         tracker.update_startup_baseline(vec![make_skill("s1", "/s/SKILL.md")]);
@@ -995,7 +988,7 @@ mod tests {
             None,
         );
         tracker.add_discovered(vec![make_skill("dyn", "/d/SKILL.md")]);
-        let _ = tracker.take_pending_reconciliation(); // drain discovery
+        let _ = tracker.take_pending_reconciliation();
 
         tracker.update_startup_baseline(vec![make_skill("new-startup", "/ns/SKILL.md")]);
         let r = tracker.take_pending_reconciliation().unwrap();
@@ -1013,15 +1006,13 @@ mod tests {
         let _ = tracker.take_pending_reconciliation();
 
         tracker.on_clear();
-        let _ = tracker.take_pending_reconciliation(); // drain clear
+        let _ = tracker.take_pending_reconciliation();
 
         tracker.add_discovered(vec![make_skill("new", "/new/SKILL.md")]);
         assert!(tracker.take_pending_reconciliation().is_some());
         assert_eq!(tracker.discovered_skills().len(), 1);
         assert_eq!(tracker.discovered_skills()[0].name, "new");
     }
-
-    // ── Architecture invariant tests ──────────────────────────────
 
     #[test]
     fn seed_produces_system_reminder_not_prompt_mutation() {
@@ -1190,8 +1181,6 @@ mod tests {
         assert_eq!(discovery.effects.kind, SkillUpdateKind::Discovery);
     }
 
-    // ── Display-path rewriting tests ─────────────────────────────
-
     #[test]
     fn display_cwd_rewrites_announcement_paths() {
         let mut mgr = SkillManager::new();
@@ -1233,8 +1222,6 @@ mod tests {
         assert!(text.contains("/real/path"));
     }
 
-    // ── /clear + startup visibility tests ─────────────────────────
-
     #[test]
     fn on_clear_then_drain_produces_startup_listing() {
         // After /clear, draining the pending must produce a system-reminder
@@ -1249,10 +1236,10 @@ mod tests {
             None,
             None,
         );
-        let _ = mgr.take_pending_reconciliation(); // drain initial
+        let _ = mgr.take_pending_reconciliation();
 
         mgr.add_discovered(vec![make_skill("dyn", "/d/SKILL.md")]);
-        let _ = mgr.take_pending_reconciliation(); // drain discovery
+        let _ = mgr.take_pending_reconciliation();
 
         mgr.on_clear();
         let r = mgr.take_pending_reconciliation().unwrap();
@@ -1276,7 +1263,7 @@ mod tests {
             None,
             None,
         );
-        let _ = mgr.take_pending_reconciliation(); // drain seed
+        let _ = mgr.take_pending_reconciliation();
 
         mgr.on_clear();
         let r = mgr.take_pending_reconciliation().unwrap();
@@ -1284,15 +1271,14 @@ mod tests {
         assert!(r.effects.system_reminder.is_some());
     }
 
-    // ── Budget-cap tests ────────────────────────────────────────
-
     #[test]
     fn budget_cap_truncates_long_descriptions() {
         let mut mgr = SkillManager::new();
         let skills: Vec<SkillInfo> = (0..50)
             .map(|i| {
                 let mut s = make_skill(&format!("skill-{i}"), &format!("/s/{i}/SKILL.md"));
-                s.description = "A".repeat(300); // 300 chars each, well over budget
+                // 300 chars each, well over budget
+                s.description = "A".repeat(300);
                 s
             })
             .collect();
@@ -1348,8 +1334,6 @@ mod tests {
         assert!(text.contains("desc for commit"));
         assert!(text.contains("desc for review"));
     }
-
-    // ── XML format mode tests ───────────────────────────────────
 
     #[test]
     fn xml_format_produces_agent_skill_tags_with_envelope() {
@@ -1428,8 +1412,6 @@ mod tests {
             "default format should not contain XML tags: {text}"
         );
     }
-
-    // ── Session resume (restore_announced_names) tests ───────────
 
     #[test]
     fn restore_then_seed_produces_no_pending() {
@@ -1514,8 +1496,6 @@ mod tests {
             "old skill should not be re-announced: {text}"
         );
     }
-
-    // ── listing_snapshot ─────────────────────────────────────────
 
     #[test]
     fn listing_snapshot_renders_full_set_without_mutating_announce_state() {

@@ -5,7 +5,7 @@
 //! counters/histograms in the harness crate)
 //! without the shared crate depending on a metrics backend. Emission points
 //! and label values are part of the behavior contract — Kigi chat's
-//! observer preserves them byte-for-byte.
+//! observer preserves them exactly.
 
 use std::time::Duration;
 

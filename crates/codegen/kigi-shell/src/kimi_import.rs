@@ -1,4 +1,3 @@
-// kimi_import.rs
 // One-time, READ-ONLY import of the official kimi-cli configuration (PRD F7).
 //
 // Sources (shapes ported from kimi-cli 1.49.0):
@@ -27,8 +26,6 @@ use tracing::{debug, info};
 
 use crate::util::config::{McpConfig, McpServerConfig, McpServerTransportConfig};
 use kigi_models::PlatformId;
-
-// Types
 
 /// A kimi-cli model entry that maps to a kigi `[model.<alias>]` custom entry
 /// (non-built-in provider).
@@ -125,8 +122,6 @@ impl KimiImportPlan {
     }
 }
 
-// kimi-cli config.toml wire shapes (subset we import)
-
 #[derive(Debug, Deserialize)]
 struct KimiConfigToml {
     #[serde(default)]
@@ -186,8 +181,6 @@ fn url_host(url: &str) -> Option<&str> {
     let end = rest.find(['/', ':', '?']).unwrap_or(rest.len());
     Some(&rest[..end])
 }
-
-// Scanner
 
 /// The official kimi-cli share dir. Hardcoded — `KIMI_SHARE_DIR` is
 /// deliberately NOT consulted (PRD F7).
@@ -346,8 +339,6 @@ pub fn has_pending_kimi_import() -> bool {
     }
 }
 
-// Applier
-
 /// Result of applying a [`KimiImportPlan`].
 #[derive(Debug, Default)]
 pub struct KimiApplied {
@@ -374,7 +365,6 @@ impl KimiApplied {
             + usize::from(self.default_model_set.is_some())
     }
 
-    /// Human-readable result summary.
     pub fn summary(&self) -> String {
         let mut out = format!("Imported into {}:\n", self.config_path.display());
         if !self.mcp_added.is_empty() {
@@ -547,13 +537,10 @@ pub fn apply_at(plan: &KimiImportPlan, kigi_home: &Path) -> anyhow::Result<KimiA
     Ok(applied)
 }
 
-// One-Time Marker
-
 /// Marker file under the kigi home recording that the one-time kimi import
 /// ran (successfully applied OR found nothing). Presence = done.
 const KIMI_IMPORT_MARKER_FILE: &str = "kimi_import_done";
 
-/// Path of the marker under the user's kigi home.
 pub fn kimi_import_marker_path() -> PathBuf {
     crate::util::kigi_home::kigi_home().join(KIMI_IMPORT_MARKER_FILE)
 }
@@ -712,14 +699,12 @@ api_key = "sk-or-secret"
         assert_eq!(m.api_key.as_deref(), Some("sk-or-secret"));
         assert_eq!(m.context_window, Some(128_000));
 
-        // The kimi-platform model is skipped, mapped to its managed key.
         assert_eq!(
             plan.skipped_builtin,
             vec![("k2".to_string(), "kimi-code/kimi-for-coding".to_string())]
         );
         assert_eq!(plan.default_model.as_deref(), Some("my-openai"));
 
-        // Secrets never surface in the human-facing summary.
         let summary = plan.summary();
         assert!(!summary.contains("sk-or-secret"), "summary leaked api key");
         assert!(summary.contains("my-openai"));

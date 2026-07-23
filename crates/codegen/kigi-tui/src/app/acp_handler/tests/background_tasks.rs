@@ -6,8 +6,7 @@
     /// background `monitor`/bash task (`TaskBackgrounded`) must restore into
     /// `bg_tasks` on a resumed / second terminal — not be dropped by the
     /// default match arm — so the idle "watching" status line and the Tasks pane
-    /// match the originating terminal. (Before this routing only subagents
-    /// survived resume.)
+    /// match the originating terminal.
     #[test]
     fn ext_session_update_replay_restores_bg_task() {
         let mut app = make_app_with_agent("sess-1");
@@ -129,7 +128,6 @@
         setup_pending_execute_tool(&mut app, tc_id);
         send_late_bg_detection(&mut app, tc_id);
 
-        // Tool should be in BOTH pending_tools and bg_deferred_tools
         let agent = app.agents.get(&AgentId(0)).unwrap();
         assert!(agent.session.tracker.pending_tool_entry_id(tc_id).is_some());
         assert!(agent.session.tracker.bg_deferred_tools.contains_key(tc_id));
@@ -260,14 +258,12 @@
         assert!(changed);
 
         let agent = app.agents.get(&AgentId(0)).unwrap();
-        // Parent scrollback must NOT have the bg task block.
         assert_eq!(agent.scrollback.len(), 0, "parent scrollback must be empty");
         assert!(
             agent.session.bg_tasks.is_empty(),
             "parent session must not have the bg task"
         );
 
-        // Child view must have the bg task.
         let child = agent.subagent_views.get("child-sess").unwrap();
         assert_eq!(child.scrollback.len(), 1);
         assert!(child.session.bg_tasks.contains_key("task-child-1"));
@@ -403,25 +399,21 @@
     fn task_completed_routes_to_child_session() {
         let mut app = make_app_with_parent_and_child("parent-sess", "child-sess");
 
-        // First, background a task on the child.
         let bg_notif =
             make_task_backgrounded_notif("child-sess", "tc-child-2", "task-child-2", "echo hi");
         handle_task_backgrounded(&bg_notif, &mut app);
 
-        // Now complete it.
         let notif = make_task_completed_notif("child-sess", "task-child-2", "echo hi", Some(0));
         let changed = handle_task_completed(&notif, &mut app);
         assert!(changed);
 
         let agent = app.agents.get(&AgentId(0)).unwrap();
-        // Parent must NOT have a completion block.
         assert_eq!(
             agent.scrollback.len(),
             0,
             "parent scrollback must not have completion block"
         );
 
-        // Child must have both the started and completed blocks.
         let child = agent.subagent_views.get("child-sess").unwrap();
         assert_eq!(child.scrollback.len(), 2, "child: started + completed");
         let bg = child.session.bg_tasks.get("task-child-2").unwrap();
@@ -432,7 +424,6 @@
     fn task_completed_root_still_routes_to_parent() {
         let mut app = make_app_with_parent_and_child("parent-sess", "child-sess");
 
-        // Background and complete a task on the parent.
         let bg_notif =
             make_task_backgrounded_notif("parent-sess", "tc-root-2", "task-root-2", "echo root");
         handle_task_backgrounded(&bg_notif, &mut app);
@@ -510,7 +501,6 @@
     fn monitor_event_root_still_routes_to_parent() {
         let mut app = make_app_with_parent_and_child("parent-sess", "child-sess");
 
-        // Background a task on the parent.
         let bg_notif =
             make_task_backgrounded_notif("parent-sess", "tc-root-3", "task-root-3", "tail -f");
         handle_task_backgrounded(&bg_notif, &mut app);
@@ -560,7 +550,6 @@
     fn task_completed_child_inactive_returns_false_but_mutates_state() {
         let mut app = make_app_with_parent_and_child("parent-sess", "child-sess");
 
-        // Background a task on the child first.
         let bg_notif = make_task_backgrounded_notif(
             "child-sess",
             "tc-compl-inact",
@@ -569,7 +558,6 @@
         );
         handle_task_backgrounded(&bg_notif, &mut app);
 
-        // Now switch away.
         let other = make_agent(Some("other-sess"));
         app.agents.insert(AgentId(1), other);
         crate::app::dispatch::switch_to_agent(

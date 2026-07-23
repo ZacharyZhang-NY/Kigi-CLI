@@ -85,13 +85,11 @@ impl ToolCallContext {
         }
     }
 
-    /// Delegate to `self.extensions.insert()`.
     pub fn insert<T: Send + Sync + 'static>(&mut self, value: T) -> &mut Self {
         self.extensions.insert(value);
         self
     }
 
-    /// Delegate to `self.extensions.get()`.
     pub fn get<T: Send + Sync + 'static>(&self) -> Option<Arc<T>> {
         self.extensions.get::<T>()
     }
@@ -129,9 +127,8 @@ pub struct BehaviorVersion(pub String);
 #[derive(Clone, Debug)]
 pub struct TraceContext(pub String);
 
-/// Session ID context — identifies which hub session this call belongs to.
-/// Used by multi-session tool servers to dispatch to the correct
-/// per-session state.
+/// Session ID — which hub session this call belongs to.
+/// Multi-session tool servers dispatch to the matching per-session state.
 #[derive(Clone, Debug)]
 pub struct SessionContext(pub String);
 
@@ -141,11 +138,10 @@ pub struct SessionContext(pub String);
 #[derive(Clone, Debug)]
 pub struct Cancellation(pub tokio_util::sync::CancellationToken);
 
-/// Per-user feature-flag bag attached as a [`ToolCallContext`] extension.
-/// Dispatcher resolves; tools read. Default = "off" for every field so an
-/// absent extension never accidentally opts a feature in. Extend by
-/// adding fields with safe defaults; new fields need `#[serde(default)]`
-/// so older `session.bind` payloads stay deserializable.
+/// Per-user feature-flag bag on [`ToolCallContext`]. Dispatcher resolves;
+/// tools read. Default is off for every field so an absent extension never
+/// opts a feature in. New fields need `#[serde(default)]` so older
+/// `session.bind` payloads stay deserializable.
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct WorkspaceViewerContext {
     /// When `true`, `BashTool` emits `bash_output_chunk` Progress frames.

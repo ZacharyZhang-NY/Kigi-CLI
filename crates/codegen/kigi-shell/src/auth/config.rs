@@ -13,14 +13,11 @@ use serde::{Deserialize, Serialize};
 pub const KIMI_CODE_OAUTH_SCOPE: &str = "oauth/kimi-code";
 
 /// Auth configuration block (`[kimi_code_config]` in the agent config).
-/// Currently empty: the OAuth host and client id are fixed by the
-/// environment crate.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct KimiCodeConfig {}
 
 impl KimiCodeConfig {
-    /// The persisted-credential scope key for this configuration.
     pub fn auth_scope(&self) -> String {
         KIMI_CODE_OAUTH_SCOPE.to_owned()
     }

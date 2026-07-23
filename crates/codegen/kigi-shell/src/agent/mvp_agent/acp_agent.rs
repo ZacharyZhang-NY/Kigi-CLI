@@ -1,13 +1,9 @@
 #![cfg_attr(rustfmt, rustfmt::skip)]
 #![allow(unused_imports)]
 //! [`acp::Agent`] trait implementation for [`MvpAgent`].
-//! Co-located child of `mvp_agent` (`use super::*`).
 use super::*;
 #[async_trait::async_trait(?Send)]
 impl acp::Agent for MvpAgent {
-    /// In the meta, we provide
-    ///   - model_state: the model state, useful for the client to display available models and the default model.
-    ///
     /// SINGLE-CALL INVARIANT: this method is the sole writer of
     /// `self.auth_method_id` during initialization. It is called exactly once
     /// per agent process by the ACP server before any session-creating
@@ -527,7 +523,7 @@ impl acp::Agent for MvpAgent {
                     })?;
                 // C1: hot-swap FIRST, then let the authority read the fresh
                 // token back where it belongs. Nothing hand-carries `auth.key`
-                // to the shared config any more — the stamp is whatever
+                // to the shared config — the stamp is whatever
                 // credential governs that config's own model + endpoint, which
                 // for a session whose current model is another provider's
                 // subscription model is that provider's pooled token, and for a
@@ -890,8 +886,7 @@ impl acp::Agent for MvpAgent {
             Some(serde_json::json!({ "cwd" : cwd.as_str() })),
         );
         let models = if is_chat_kind {
-            // The kimi.com chat-mode model picker was removed with the xAI
-            // proxy; a chat-kind session has no managed catalog to offer.
+            // A chat-kind session has no managed catalog to offer.
             chat_new_session_model_state(
                 acp::SessionModelState::new(acp::ModelId::from(String::new()), Vec::new()),
                 session_initial_model

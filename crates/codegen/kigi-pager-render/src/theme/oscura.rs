@@ -19,38 +19,53 @@ const fn rgb(r: u8, g: u8, b: u8) -> Color {
 mod palette {
     use super::*;
 
-    // -- backgrounds (OKLCH hue 265 backgrounds, OKLCH hue 265) -------
-    pub const BASE: Color = rgb(3, 3, 4); // #030304  oklch(0.1 0.005 265)
-    pub const SURFACE: Color = rgb(4, 5, 7); // #040507  oklch(0.115 0.005 265)
-    pub const ELEVATED: Color = rgb(15, 18, 22); // #0F1216  oklch(0.18 0.01 265)
-    pub const PANEL: Color = rgb(4, 4, 6); // #040406  oklch(0.11 0.006 265)
+    // backgrounds (OKLCH hue 265 backgrounds, OKLCH hue 265)
+    // #030304  oklch(0.1 0.005 265)
+    pub const BASE: Color = rgb(3, 3, 4);
+    // #040507  oklch(0.115 0.005 265)
+    pub const SURFACE: Color = rgb(4, 5, 7);
+    // #0F1216  oklch(0.18 0.01 265)
+    pub const ELEVATED: Color = rgb(15, 18, 22);
+    // #040406  oklch(0.11 0.006 265)
+    pub const PANEL: Color = rgb(4, 4, 6);
 
-    // -- text (neutral, no color cast) ----------------------------------------
-    pub const TEXT: Color = rgb(228, 228, 228); // #E4E4E4  oklch(0.92 0 0)
-    pub const TEXT_DIM: Color = rgb(190, 190, 190); // #BEBEBE  oklch(0.8 0 0)
+    // text (neutral, no color cast)
+    // #E4E4E4  oklch(0.92 0 0)
+    pub const TEXT: Color = rgb(228, 228, 228);
+    // #BEBEBE  oklch(0.8 0 0)
+    pub const TEXT_DIM: Color = rgb(190, 190, 190);
 
-    // -- muted text (slight blue-purple tint) ---------------------------------
-    pub const MUTED: Color = rgb(129, 134, 143); // #81868F  oklch(0.62 0.015 260)
-    pub const SUBTLE: Color = rgb(94, 100, 108); // #5E646C  oklch(0.5 0.015 260)
+    // muted text (slight blue-purple tint)
+    // #81868F  oklch(0.62 0.015 260)
+    pub const MUTED: Color = rgb(129, 134, 143);
+    // #5E646C  oklch(0.5 0.015 260)
+    pub const SUBTLE: Color = rgb(94, 100, 108);
 
-    // -- semantic colors (from desktop action tokens) -------------------------
-    pub const GOLD: Color = rgb(235, 217, 110); // #EBD96E  oklch(0.88 0.13 100)
-    pub const RED: Color = rgb(220, 90, 100); // #DC5A64  muted rose-red
-    pub const TEAL: Color = rgb(80, 180, 140); // #50B48C  softened teal
-    pub const AMBER: Color = rgb(241, 189, 0); // #F1BD00  oklch(0.82 0.18 90)
+    // semantic colors (from desktop action tokens)
+    // #EBD96E  oklch(0.88 0.13 100)
+    pub const GOLD: Color = rgb(235, 217, 110);
+    // #DC5A64  muted rose-red
+    pub const RED: Color = rgb(220, 90, 100);
+    // #50B48C  softened teal
+    pub const TEAL: Color = rgb(80, 180, 140);
+    // #F1BD00  oklch(0.82 0.18 90)
+    pub const AMBER: Color = rgb(241, 189, 0);
 
-    // -- purple accent ramp (the "purple hints") ------------------------------
-    pub const PURPLE: Color = rgb(155, 126, 206); // #9B7ECE — signature purple
-    pub const PURPLE_DIM: Color = rgb(110, 90, 154); // #6E5A9A — muted purple
-    pub const PURPLE_BRIGHT: Color = rgb(196, 167, 231); // #C4A7E7 — vivid lavender
+    // purple accent ramp (the "purple hints")
+    // #9B7ECE — signature purple
+    pub const PURPLE: Color = rgb(155, 126, 206);
+    // #6E5A9A — muted purple
+    pub const PURPLE_DIM: Color = rgb(110, 90, 154);
+    // #C4A7E7 — vivid lavender
+    pub const PURPLE_BRIGHT: Color = rgb(196, 167, 231);
 
-    // -- cyan (for running indicators, links) ---------------------------------
-    pub const CYAN: Color = rgb(125, 207, 223); // #7DCFDF
+    // cyan (for running indicators, links)
+    pub const CYAN: Color = rgb(125, 207, 223);
 
-    // -- highlight ramp (purple-tinted grays for UI chrome) -------------------
-    pub const HIGHLIGHT_LOW: Color = rgb(18, 16, 28); // #12101C
-    pub const HIGHLIGHT_MED: Color = rgb(36, 32, 52); // #242034
-    pub const HIGHLIGHT_HIGH: Color = rgb(52, 48, 72); // #343048
+    // highlight ramp (purple-tinted grays for UI chrome)
+    pub const HIGHLIGHT_LOW: Color = rgb(18, 16, 28);
+    pub const HIGHLIGHT_MED: Color = rgb(36, 32, 52);
+    pub const HIGHLIGHT_HIGH: Color = rgb(52, 48, 72);
 }
 use palette::*;
 
@@ -94,7 +109,8 @@ impl Theme {
 
             accent_feedback: TEAL,
 
-            accent_remember: rgb(139, 195, 74), // #8BC34A — Material Design light green
+            // #8BC34A — Material Design light green
+            accent_remember: rgb(139, 195, 74),
 
             selection_border: HIGHLIGHT_HIGH,
             hover_border: HIGHLIGHT_MED,

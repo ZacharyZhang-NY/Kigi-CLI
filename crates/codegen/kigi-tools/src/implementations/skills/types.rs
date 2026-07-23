@@ -79,7 +79,6 @@ pub struct SkillInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<std::collections::HashMap<String, String>>,
     pub path: String,
-    /// Scope/priority of the skill
     pub scope: SkillScope,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config_source: Option<crate::types::config_source::ConfigSource>,

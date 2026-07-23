@@ -143,10 +143,9 @@ pub fn render_dropdown(
         content_w
     };
 
-    // Compute aligned label column width across all items.
     let label_col_w = compute_label_column_w(items, row_w.saturating_sub(PREFIX_W));
 
-    // Build flat line list (multi-line descriptions produce multiple lines per item).
+    // Multi-line descriptions produce multiple lines per item.
     let (flat_lines, item_starts) =
         build_flat_lines(items, selected, hovered, label_col_w, row_w, theme);
 
@@ -191,7 +190,6 @@ pub fn render_dropdown(
         buf.set_line_safe(area.x, y, line, row_w as u16);
     }
 
-    // ── Scrollbar ───────────────────────────────────────────────────────
     if needs_scrollbar {
         // Intersect with the frame buffer so a resize race cannot paint past
         // `buf.area` (same failure mode as item rows).
@@ -307,14 +305,12 @@ fn build_item_lines(
     let label_w = label.width();
     let padding = label_col_w.saturating_sub(label_w);
 
-    // Build per-character spans for the label with fuzzy highlight.
     let label_spans = build_highlighted_spans(&label, &item.indices, normal_style, match_style);
 
     // Description column indent (prefix + label + gap).
     let desc_indent = PREFIX_W + label_col_w + LABEL_DESC_GAP;
     let desc_w = total_w.saturating_sub(desc_indent).max(1);
 
-    // Word-wrap description into lines of `desc_w` width.
     let desc_lines = if item.description.is_empty() {
         Vec::new()
     } else {
@@ -409,7 +405,6 @@ fn simple_word_wrap(text: &str, width: usize) -> Vec<String> {
         return vec![text.to_string()];
     }
     let mut lines = Vec::new();
-    // Normalize: collapse newlines into spaces.
     let normalized = text.replace('\n', " ");
     let mut remaining = normalized.as_str();
     while !remaining.is_empty() {
@@ -431,7 +426,6 @@ fn simple_word_wrap(text: &str, width: usize) -> Vec<String> {
                     last_space = Some(i);
                 }
             }
-            // Prefer word boundary; fall back to hard break at width.
             last_space.map(|i| i + 1).unwrap_or_else(|| {
                 remaining
                     .char_indices()

@@ -34,7 +34,7 @@ pub fn list_trusted_projects_with_file(trust_file: &Path) -> std::io::Result<Vec
         .collect())
 }
 
-// ── Hook enable/disable ─────────────────────────────────────────────────
+// Hook enable/disable
 
 /// Check whether a hook is disabled by name.
 ///
@@ -65,7 +65,8 @@ pub fn disable_hook(hook_name: &str) -> Result<(), String> {
 
 fn disable_hook_with_file(hook_name: &str, file: &Path) -> Result<(), String> {
     if is_hook_disabled_with_file(hook_name, file) {
-        return Ok(()); // Already disabled.
+        // Already disabled.
+        return Ok(());
     }
     if let Some(parent) = file.parent() {
         let _ = std::fs::create_dir_all(parent);

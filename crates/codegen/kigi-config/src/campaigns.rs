@@ -59,7 +59,6 @@ pub fn build_campaign_entries(
             tracing::warn!(layer, "campaigns: entry missing id; skipped");
             continue;
         };
-        // Skip no-op entries (id only, no fields to overlay).
         if entry.patch.is_empty() {
             continue;
         }
@@ -180,8 +179,8 @@ mod tests {
 
     #[test]
     fn apply_highest_priority_wins_on_leaf_conflict() {
-        // Two *distinct* ids both set models.default; the higher-priority source
-        // (earlier in the merged list) must win the leaf.
+        // Two *distinct* ids both set models.default, so dedup by id does not
+        // apply and the leaf conflict is settled by apply order alone.
         let req = [CampaignEntry {
             id: "req".into(),
             patch: models_default_patch("from-req"),
@@ -200,8 +199,6 @@ mod tests {
 
     #[test]
     fn build_campaign_entries_skips_missing_id() {
-        // A `None` id and a whitespace-only id are both dropped (with a warn);
-        // only the entry carrying a real id survives.
         let taken = vec![
             ConfigOverrideEntry {
                 meta: CampaignMeta { id: None },
@@ -236,9 +233,8 @@ mod tests {
             let entries = take_campaign_entries(&mut layer, "user");
             assert_eq!(entries.len(), 1);
             assert_eq!(entries[0].id, "c1");
-            // The id key (either spelling) must be consumed by the meta, never
-            // land in the patch — a leaked key would deep-merge a junk top-level
-            // `id` into every effective config.
+            // A leaked id key would deep-merge a junk top-level `id` into every
+            // effective config.
             assert!(
                 entries[0].patch.get("id").is_none()
                     && entries[0].patch.get("campaign_id").is_none(),
@@ -273,7 +269,6 @@ mod tests {
     #[test]
     fn effective_config_honors_dismiss() {
         use crate::loader::ConfigLayers;
-        // A dismissed campaign id stops overriding; the user's stored value returns.
         let mut layers = ConfigLayers {
             user: parse("[models]\ndefault = \"user-old\"\n"),
             ..Default::default()

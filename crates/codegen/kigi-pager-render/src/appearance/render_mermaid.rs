@@ -2,7 +2,7 @@
 //!
 //! Fenced ` ```mermaid ` blocks are rendered inline as Unicode box-drawing art
 //! by the markdown renderer. This setting controls the full-fidelity affordance
-//! row layered beneath that art: `auto`/`on` add the clickable row
+//! row layered beneath that art: `auto`/`on` include the clickable row
 //! (`◇ mermaid [Open Image] [Copy Image Path] [Copy Source]`); `off` shows the
 //! inline art alone. The PNG render engine is always compiled in, and the PNG is
 //! never drawn as an inline image (it opens in the OS viewer), so the treatment

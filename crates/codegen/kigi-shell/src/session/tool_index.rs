@@ -80,7 +80,6 @@ pub struct ToolMetadata {
     pub server_name: String,
     /// Search/display tool name.
     pub tool_name: String,
-    /// Tool description.
     pub description: String,
     /// Parameter names from input schema.
     pub parameters: Vec<String>,
@@ -674,7 +673,7 @@ mod tests {
         assert_eq!(summaries[0].description.as_deref(), Some("No tools yet"));
     }
 
-    // -- exact match tests --
+    // exact match tests
 
     #[test]
     fn search_exact_qualified_name() {
@@ -790,7 +789,7 @@ mod tests {
         // without knowing the qualified name
     }
 
-    // -- e2e tests with real Grafana + Mattermost tool data --
+    // e2e tests with real Grafana + Mattermost tool data
 
     /// Build a realistic tool index matching a production MCP environment
     /// with Grafana and Mattermost servers.
@@ -1086,7 +1085,7 @@ mod tests {
         assert_eq!(snap.total_hidden_tools, total);
     }
 
-    // -- split_identifier unit tests --
+    // split_identifier unit tests
 
     #[test]
     fn split_empty() {
@@ -1190,7 +1189,7 @@ mod tests {
         );
     }
 
-    // -- normalize_query unit tests --
+    // normalize_query unit tests
 
     #[test]
     fn normalize_plain_english_passthrough() {
@@ -1258,7 +1257,7 @@ mod tests {
         // Extra tokens are subsets of what's already there, won't hurt BM25
     }
 
-    // -- MCP name format coverage --
+    // MCP name format coverage
     //
     // Real MCP qualified names follow the pattern `{server}__{tool}` where
     // server and tool names independently use different conventions:
@@ -1361,7 +1360,7 @@ mod tests {
         ]
     }
 
-    // ── Exact match: qualified names ────────────────────────────────
+    // Exact match: qualified names
 
     #[test]
     fn fmt_exact_simple_snake() {
@@ -1450,7 +1449,7 @@ mod tests {
         assert_eq!(snap.results[0].tool_name, "my-server__listProjects");
     }
 
-    // ── Exact match: bare tool names ────────────────────────────────
+    // Exact match: bare tool names
 
     #[test]
     fn fmt_bare_snake_case() {
@@ -1492,7 +1491,7 @@ mod tests {
         assert_eq!(snap.results[0].tool_name, "jira__fetch");
     }
 
-    // ── Exact match: case insensitivity across formats ──────────────
+    // Exact match: case insensitivity across formats
 
     #[test]
     fn fmt_case_insensitive_qualified_kebab_pascal() {
@@ -1521,7 +1520,7 @@ mod tests {
         assert_eq!(snap.results[0].tool_name, "linear__getIssueDetails");
     }
 
-    // ── Whitespace handling ─────────────────────────────────────────
+    // Whitespace handling
 
     #[test]
     fn fmt_leading_trailing_whitespace() {
@@ -1539,7 +1538,7 @@ mod tests {
         assert_eq!(snap.results[0].tool_name, "linear__save_issue");
     }
 
-    // ── Server name alone should NOT exact match ────────────────────
+    // Server name alone should NOT exact match
 
     #[test]
     fn fmt_server_name_only_falls_through() {
@@ -1580,7 +1579,7 @@ mod tests {
         }
     }
 
-    // ── Nonexistent qualified names fall through to BM25 ────────────
+    // Nonexistent qualified names fall through to BM25
 
     #[test]
     fn fmt_wrong_server_prefix_falls_through() {
@@ -1607,7 +1606,7 @@ mod tests {
         );
     }
 
-    // ── Needle-in-haystack: production-scale index ──────────────────
+    // Needle-in-haystack: production-scale index
     //
     // Realistic fixture with ~55 tools across 5 servers (Slack 17,
     // Notion 14, Grafana 9, Linear 8, GitHub 7). Tests that BM25
@@ -1625,7 +1624,7 @@ mod tests {
         };
 
         vec![
-            // ── kigi_com_slack (17 tools) ───────────────────────────
+            // kigi_com_slack (17 tools)
             tool(
                 "kigi_com_slack__slack_create_canvas",
                 "kigi_com_slack",
@@ -1745,7 +1744,7 @@ mod tests {
                 "Update the content of an existing Slack canvas",
                 &["canvas_id", "content"],
             ),
-            // ── notion (14 tools) ───────────────────────────────────
+            // notion (14 tools)
             tool(
                 "notion__notion-create-comment",
                 "notion",
@@ -1844,7 +1843,7 @@ mod tests {
                 "Update a view configuration for a Notion database",
                 &["view_id"],
             ),
-            // ── grafana-ai (9 tools) ────────────────────────────────
+            // grafana-ai (9 tools)
             tool(
                 "grafana-ai__SearchDashboards",
                 "grafana-ai",
@@ -1908,7 +1907,7 @@ mod tests {
                 "Get panel queries from a Grafana dashboard. Returns an array of panel queries with title, query expression, and datasource info.",
                 &["uid"],
             ),
-            // ── linear (8 tools) ────────────────────────────────────
+            // linear (8 tools)
             tool(
                 "linear__save_issue",
                 "linear",
@@ -1965,7 +1964,7 @@ mod tests {
                 "Get information about a Linear user",
                 &["id"],
             ),
-            // ── github (7 tools) ────────────────────────────────────
+            // github (7 tools)
             tool(
                 "github__create_pull_request",
                 "github",
@@ -2032,7 +2031,7 @@ mod tests {
         );
     }
 
-    // ── Needle-in-haystack: exact match still works at scale ────────
+    // Needle-in-haystack: exact match still works at scale
 
     #[test]
     fn haystack_exact_qualified_name() {
@@ -2072,7 +2071,7 @@ mod tests {
         assert_eq!(snap.results[0].tool_name, "grafana-ai__SearchDashboards");
     }
 
-    // ── Needle-in-haystack: BM25 fuzzy queries ──────────────────────
+    // Needle-in-haystack: BM25 fuzzy queries
 
     #[test]
     fn haystack_bm25_search_slack_public() {
@@ -2185,7 +2184,7 @@ mod tests {
         );
     }
 
-    // ── Disambiguation: similar tools rank correctly ────────────────
+    // Disambiguation: similar tools rank correctly
 
     #[test]
     fn haystack_disambiguate_search_public_vs_private() {
@@ -2233,9 +2232,9 @@ mod tests {
         );
     }
 
-    // ── Scale: total_hidden_tools correct ───────────────────────────
+    // Scale: total_hidden_tools correct
 
-    // ── Non-exact identifier queries (query normalization) ─────────
+    // Non-exact identifier queries (query normalization)
 
     #[test]
     fn haystack_wrong_server_prefix_finds_tool() {
@@ -2334,7 +2333,7 @@ mod tests {
         assert_eq!(snap.total_hidden_tools, expected);
     }
 
-    // ── Score comparison: before / after each rule ───────────────────
+    // Score comparison: before / after each rule
     //
     // Measures BM25 scores for the same queries under four configs:
     //   baseline       = old to_document (only _ split) + raw query

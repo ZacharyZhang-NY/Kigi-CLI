@@ -1,15 +1,13 @@
 //! Object-safe `ToolDispatch` trait — the runtime contract for handling tool calls.
 //!
-//! `Tool` itself is not object-safe (it carries associated `Args` /
-//! `Output` types), so implementations expose a JSON-typed surface and rely on
-//! per-tool adapters to encode/decode at the boundary. The default
-//! `call_terminal` impl drains the stream so the common "I just want the
-//! result" path doesn't have to depend on `futures` internals.
+//! `Tool` itself is not object-safe (associated `Args` / `Output` types), so
+//! implementations expose a JSON-typed surface and rely on per-tool adapters
+//! to encode/decode at the boundary. The default `call_terminal` impl drains
+//! the stream so callers that only need the result avoid `futures` internals.
 //!
-//! This crate is upstream of every concrete impl. Doc-comments here describe
-//! trait semantics in terms of "the runtime" or "the implementation" —
-//! concrete dispatch routers live downstream and are intentionally not named
-//! here.
+//! This crate is upstream of every concrete impl. Docs here describe trait
+//! semantics in terms of "the runtime" or "the implementation" — concrete
+//! dispatch routers live downstream and are intentionally not named here.
 
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -23,7 +21,7 @@ use crate::tool::{ToolStream, ToolStreamItem, TypedToolOutput};
 
 /// Object-safe tool dispatch interface.
 ///
-/// Implementations route the `tool_id` to the correct tool, decode `args`
+/// Implementations route `tool_id` to the correct tool, decode `args`
 /// against the tool's typed `Args`, and return the streaming result as
 /// [`TypedToolOutput`] — preserving model-facing content blocks and
 /// optional chat-completion metadata end-to-end. Raw `Value` only appears
@@ -39,14 +37,12 @@ pub trait ToolDispatch: Send + Sync {
         ctx: ToolCallContext,
     ) -> ToolStream<TypedToolOutput>;
 
-    /// Drain the stream and return only the terminal result. Useful for
-    /// callers that don't care about progress chunks.
+    /// Drain the stream and return only the terminal result.
     ///
-    /// Default impl pulls items off the stream and discards `Progress`
-    /// items; the first `Terminal` short-circuits. A stream that ends
-    /// without a `Terminal` is a protocol violation by the implementation;
-    /// the default surfaces this as `ToolError::Custom { code:
-    /// "stream_no_terminal", ... }`.
+    /// Default impl discards `Progress` items and short-circuits on the
+    /// first `Terminal`. A stream that ends without a `Terminal` is a
+    /// protocol violation; the default surfaces
+    /// `ToolError::Custom { code: "stream_no_terminal", ... }`.
     async fn call_terminal(
         &self,
         tool_id: ToolId,

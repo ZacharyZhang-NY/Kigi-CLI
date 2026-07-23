@@ -11,10 +11,7 @@ use crate::identity::ToolCallId;
 /// One incremental tool output frame (e.g. bash stdout).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolOutputChunk {
-    /// Tool call this output belongs to.
     pub call_id: ToolCallId,
-    /// Output stream identifier (`"stdout"` or `"stderr"` are the
-    /// most common values).
     #[serde(default)]
     pub stream: String,
     /// Raw bytes from the tool. Encoded as a standard (RFC 4648)
@@ -58,14 +55,11 @@ pub enum ToolProgress {
     },
     /// Free-form status string (e.g. `"installing dependencies"`).
     Status {
-        /// Tool call this progress is for.
         call_id: ToolCallId,
-        /// Status message.
         message: String,
     },
     /// Quantitative progress (used for downloads / installs).
     Percent {
-        /// Tool call this progress is for.
         call_id: ToolCallId,
         /// Completed fraction in `[0.0, 1.0]`.
         fraction: f32,
@@ -75,18 +69,13 @@ pub enum ToolProgress {
 /// Terminal result emitted as exactly one `ToolChunk::Final` per call.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolCallResult {
-    /// Tool call this result belongs to.
     pub call_id: ToolCallId,
-    /// Process / tool exit code (0 = success).
     #[serde(default)]
     pub exit_code: i32,
-    /// Optional human-readable summary.
     #[serde(default)]
     pub summary: String,
-    /// Optional JSON-encoded structured result (tool-defined).
     #[serde(default)]
     pub output_json: String,
-    /// Whether the call was cancelled (rather than finishing naturally).
     #[serde(default)]
     pub cancelled: bool,
 }
@@ -94,24 +83,16 @@ pub struct ToolCallResult {
 /// Tool definition surfaced via `ToolChunk::Definitions`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolDef {
-    /// Stable tool name (e.g. `"read_file"`).
     pub name: String,
-    /// Human-readable description (often shown in tool listings).
     #[serde(default)]
     pub description: String,
-    /// JSON Schema for the tool's input arguments.
     #[serde(default)]
     pub input_schema_json: String,
-    /// Whether invocations require explicit user permission.
     #[serde(default)]
     pub requires_permission: bool,
 }
 
 /// Module-private base64 codec for `ToolOutputChunk::bytes`.
-///
-/// Uses the `base64` crate's standard (RFC 4648) engine. The raw
-/// `Vec<u8>` field would otherwise serialize as a JSON array of
-/// integers, which is wasteful for byte streams.
 mod bytes_as_base64 {
     use base64::Engine;
     use base64::engine::general_purpose::STANDARD;
@@ -162,15 +143,12 @@ mod tests {
             at: DateTime::<Utc>::default(),
         };
         let json = serde_json::to_string(&chunk).unwrap();
-        // snake_case field names (matches gRPC field convention).
         assert!(json.contains("\"call_id\""), "got {json}");
         assert!(!json.contains("\"callId\""), "got {json}");
     }
 
     #[test]
     fn tool_output_chunk_at_defaults_to_epoch() {
-        // Omitted `at` field should deserialize to `DateTime::default()`,
-        // not `Utc::now()`.
         let json = r#"{"call_id":"c1","stream":"stdout","bytes":""}"#;
         let chunk: ToolOutputChunk = serde_json::from_str(json).unwrap();
         assert_eq!(chunk.at, DateTime::<Utc>::default());

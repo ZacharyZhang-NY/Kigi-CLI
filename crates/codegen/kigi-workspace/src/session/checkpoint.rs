@@ -20,12 +20,10 @@ use std::collections::{HashMap, HashSet};
 /// - `None` — a turn hook (`on_before_turn`/`on_after_turn`).
 /// - `Some(idx)` — a rewind RPC arm (`begin_prompt`/`end_prompt`).
 pub(crate) enum TurnBoundary {
-    /// Turn start.
     Start {
         prompt_index: Option<usize>,
         turn_number: u64,
     },
-    /// Turn end.
     End {
         prompt_index: Option<usize>,
         turn_number: u64,
@@ -82,7 +80,6 @@ impl TurnBoundary {
 /// a blob written before a later field existed still deserializes (field `None`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RewindCheckpoint {
-    /// The prompt this checkpoint belongs to.
     pub prompt_index: usize,
     /// Filesystem before/after snapshots for the prompt.
     pub fs: RewindPoint,
@@ -225,7 +222,7 @@ impl WorkspaceHandle {
     /// Keyed on `prompt_index`: turn hooks (`None`) drive activity; rewind RPC
     /// arms (`Some`) drive rewind capture (FS, plus git/hunks when their flags
     /// are on). `workspace_rewind_all_outcomes` also finalizes the open FS
-    /// checkpoint on non-`Completed` turn-ends (gap #2).
+    /// checkpoint on non-`Completed` turn-ends.
     pub(crate) async fn on_turn_boundary(&self, session_id: &str, boundary: TurnBoundary) {
         match boundary {
             TurnBoundary::Start {

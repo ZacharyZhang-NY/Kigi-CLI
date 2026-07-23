@@ -78,12 +78,6 @@ pub(super) fn handle_mcp_init_progress(notif: &acp::ExtNotification, app: &mut A
 pub(super) fn handle_mcp_tools_changed(notif: &acp::ExtNotification, app: &mut AppView) -> bool {
     let method = notif.method.as_ref();
 
-    // Both `kigi/mcp_initialized` and (newer shell)
-    // `kigi/mcp/tools_changed` carry `sessionId`. Route by it so a
-    // background agent's notification updates *its* state — not
-    // whichever agent is foregrounded. Unknown and subagent (child)
-    // sessions are dropped; a missing sessionId falls back to the
-    // active agent (legacy shells).
     #[derive(serde::Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct Payload {
@@ -127,7 +121,7 @@ pub(super) fn handle_mcp_tools_changed(notif: &acp::ExtNotification, app: &mut A
     }
 
     // Modal refresh: schedule a debounced refetch for the OWNING agent
-    // (routed by sessionId — was active_view), per-agent coalesced.
+    // (routed by sessionId), per-agent coalesced.
     let modal_open = app
         .agents
         .get(&id)
@@ -149,11 +143,9 @@ pub(super) fn handle_mcp_tools_changed(notif: &acp::ExtNotification, app: &mut A
     redraw
 }
 
-/// Per-agent coalescing test for [`Effect::FetchMcpsList`].
-/// An earlier approach used `matches!(e, FetchMcpsList { .. })`
-/// which collapsed across agents — a pending fetch on agent A would
-/// drop the push for agent B. Now we key on `agent_id` so each
-/// agent's refetch is independently debounced.
+/// Per-agent coalescing test for [`Effect::FetchMcpsList`]. Keyed on
+/// `agent_id` so a pending fetch on agent A does not drop the push for
+/// agent B; each agent's refetch is independently debounced.
 pub(super) fn agent_has_pending_mcps_fetch(app: &AppView, agent_id: AgentId) -> bool {
     app.pending_effects.iter().any(|e| {
         matches!(
@@ -243,9 +235,7 @@ pub(super) fn handle_mcp_server_status(notif: &acp::ExtNotification, app: &mut A
     // `Option<serde_json::Value>` (always `null` today;
     // reserved). If the value is present but not an array of
     // `McpToolEntry`-isomorphic objects we drop ONLY the tools
-    // update and still apply the status — the previous strict
-    // typing would have dropped the whole push on any shape
-    // mismatch.
+    // update and still apply the status.
     let new_tools = payload.tools.and_then(|raw| {
         match serde_json::from_value::<Vec<McpToolEntry>>(raw) {
             Ok(entries) => Some(
@@ -279,12 +269,11 @@ pub(super) fn handle_mcp_server_status(notif: &acp::ExtNotification, app: &mut A
 /// on config reload (`crates/codegen/kigi-shell/src/agent/mvp_agent.rs`
 /// → `notify_servers_updated`). The shell's
 /// `McpServersUpdated` wire shape (`{ mcpServers: [...] }`) is
-/// intentionally session-agnostic by design
-/// An attempt to route by
-/// `sessionId` therefore always fell back to `app.active_view` and
-/// re-created the multi-agent bug.
+/// intentionally session-agnostic by design. Routing by `sessionId`
+/// would therefore always fall back to `app.active_view` and
+/// reintroduce the multi-agent bug.
 ///
-/// Routing now correctly broadcasts: every agent with an open
+/// Routing broadcasts: every agent with an open
 /// extensions modal gets a per-agent debounced [`Effect::FetchMcpsList`].
 /// Per-agent coalescing keeps a second push from displacing an
 /// in-flight fetch on the same agent. Agents without an open modal

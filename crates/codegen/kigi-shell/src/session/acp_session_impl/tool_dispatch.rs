@@ -4,10 +4,9 @@
 
 use super::*;
 
-/// Number of output lines to show in final bash mode output summary
 const BASH_MODE_FINAL_OUTPUT_LINES: usize = 10;
 
-/// Phase 2: dispatch a tool call through [`WorkspaceOps::call_tool`].
+/// Dispatch a tool call through [`WorkspaceOps::call_tool`].
 ///
 /// Agent sessions always use local workspace ops (in-process toolset).
 pub(super) async fn dispatch_tool(
@@ -134,7 +133,6 @@ pub(crate) const HTTP_STATUS_DETAILS_KEY: &str = "status";
 
 impl SessionActor {
     /// Extract bash command from prompt blocks if present in meta.
-    /// Returns Some(command) if the prompt is a direct bash command, None otherwise.
     pub(super) fn extract_bash_command(prompt_blocks: &[acp::ContentBlock]) -> Option<String> {
         use crate::extensions::prompt_meta::PromptBlockMeta;
         for block in prompt_blocks {
@@ -148,7 +146,6 @@ impl SessionActor {
         None
     }
 
-    /// Handle a direct bash command from bash mode.
     /// Runs the command with streaming output and sends updates to the TUI.
     pub(super) async fn handle_direct_bash_command(
         &self,
@@ -158,7 +155,6 @@ impl SessionActor {
     ) -> PromptTurnResult {
         tracing::info!("Handling direct bash command");
 
-        // Send user message chunks to scrollback (so user sees their command)
         let model_id = self.current_model_id().await;
         let user_chunk_meta = serde_json::json!({ "modelId": model_id })
             .as_object()
@@ -177,7 +173,6 @@ impl SessionActor {
                 ))));
         }
 
-        // Persist the user message for session history
         let _ = self
             .notifications
             .persistence_tx
@@ -185,10 +180,7 @@ impl SessionActor {
                 prompt_blocks.to_vec(),
             )));
 
-        // Run the bash command with streaming enabled
         let tool_call_id = acp::ToolCallId::from(format!("bash-mode-{}", uuid::Uuid::new_v4()));
-
-        // Send initial ToolCall to register with TUI
 
         use kigi_tools::types::ToolInput;
         // Use the stripped command as description so pager chrome shows the
@@ -235,14 +227,14 @@ impl SessionActor {
             cwd: self.tool_context.cwd.clone(),
             env: self.tool_context.session_env.as_ref().clone(),
             timeout: DEFAULT_TIMEOUT,
-            output_byte_limit: 1_048_576, // 1 MiB
-            stream: true,                 // Enable streaming for bash mode
-            output_file: None,            // No file logging for interactive bash mode
+            // 1 MiB
+            output_byte_limit: 1_048_576,
+            stream: true,
+            output_file: None,
         };
 
         let result = self.tool_context.terminal.run(request).await;
 
-        // Format the output
         let (output, exit_code, timed_out, signal) = match result {
             Ok(res) => (
                 res.combined_output,
@@ -253,8 +245,6 @@ impl SessionActor {
             Err(e) => (format!("Error running command: {}", e), -1, false, None),
         };
 
-        // Create final summary with last N lines
-        // Format: "... (X lines)\nlast\nfew\nlines"
         let lines: Vec<&str> = output.lines().collect();
         let total_lines = lines.len();
         let displayed_output = if total_lines > BASH_MODE_FINAL_OUTPUT_LINES {
@@ -267,7 +257,6 @@ impl SessionActor {
 
         let is_backgrounded = signal.as_deref() == Some("backgrounded");
 
-        // Build the final response text with output summary and exit code
         let mut response_text = displayed_output.clone();
         if is_backgrounded {
             response_text.push_str("\n\n[command running in background]");
@@ -279,7 +268,6 @@ impl SessionActor {
             response_text.push_str(&format!("\n\n[exit code: {}]", exit_code));
         }
 
-        // Send final tool call update
         // For backgrounded commands, don't mark as completed/failed - let the background task do that
         if !is_backgrounded {
             let final_status = if exit_code == 0 && signal.is_none() {
@@ -314,19 +302,11 @@ impl SessionActor {
             .await;
         }
 
-        // NOTE: The redundant AgentMessageChunk summary that was previously
-        // sent here has been removed. The execute block already contains the
-        // full command output — sending it again as an agent message created
-        // a noisy duplicate scrollback entry. Old sessions that have it will
-        // still replay fine; new sessions are cleaner.
-
-        // Build a single user message for chat history that includes command, output, and exit code
         let user_message = format!(
             "I executed a terminal command: `{}`\n\nOutput:\n```\n{}\n```\n\n[exit code: {}]",
             command, displayed_output, exit_code
         );
 
-        // Add to chat history as a user message only
         self.chat_state_handle
             .push_user_message(ConversationItem::user(&user_message));
 
@@ -338,11 +318,6 @@ impl SessionActor {
         ok_end_turn(total_tokens, None)
     }
 }
-
-// ── Tool argument error formatting ─────────────────────────────────────
-
-// Re-use the UTF-8-safe truncation helper from kigi-sampling-types rather
-// than duplicating it here (R3).
 
 /// Maximum bytes of `raw_arguments` included in a parse-error tool_result.
 ///
@@ -385,8 +360,7 @@ pub(super) fn build_tool_parse_error_message(
         return msg;
     }
 
-    // Append the original arguments (capped) so the model knows what it sent.
-    // Use truncate_bytes to avoid panicking on a multi-byte UTF-8 boundary.
+    // truncate_bytes avoids panicking on a multi-byte UTF-8 boundary.
     msg.push_str("\n\nYour original arguments:\n");
     let prefix = truncate_bytes(raw_arguments, MAX_ARGS_IN_ERROR);
     msg.push_str(prefix);
@@ -394,8 +368,6 @@ pub(super) fn build_tool_parse_error_message(
         msg.push_str("\n... (truncated)");
     }
 
-    // If the arguments string is not valid JSON, surface the exact position
-    // of the syntax error so the model can fix it directly.
     // Use `IgnoredAny` — we only need the error, not a DOM.
     if let Err(json_err) = serde_json::from_str::<serde::de::IgnoredAny>(raw_arguments) {
         msg.push_str(&format!(

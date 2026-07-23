@@ -1,5 +1,5 @@
-//! Conversation history compaction — shared selection/assembly logic for compacting
-//! prior conversation turns into a summary.
+//! Shared selection/assembly logic for compacting prior conversation turns
+//! into a summary.
 //!
 //! Everything here is generic over [`CompactionItem`](crate::CompactionItem)
 //! / [`CompactionItemBuilder`](crate::CompactionItemBuilder) or pure

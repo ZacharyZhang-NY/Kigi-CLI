@@ -45,10 +45,8 @@ pub(crate) fn to_creation_mode(t: WorktreeType) -> kigi_fast_worktree::CreationM
     }
 }
 
-// ============================================================================
 // Btrfs delegate factory -- injected by binaries that link a concrete
 // snapshot helper delegate
-// ============================================================================
 
 /// Process-global factory producing the btrfs delegate, if any.
 ///
@@ -87,9 +85,7 @@ fn get_head_commit(repo: &Repository) -> Result<String> {
     Ok(commit.id().to_string())
 }
 
-// ============================================================================
 // In-progress tracking
-// ============================================================================
 
 // Process-local, best-effort dedup of duplicate async spawns within one process —
 // NOT a cross-process lock: in proxy mode `prepare` (hub) and creation (shell) are
@@ -121,9 +117,7 @@ pub async fn mark_worktree_complete(session_id: &str) {
     worktree_registry().lock().await.remove(session_id);
 }
 
-// ============================================================================
 // Background Copy Infrastructure
-// ============================================================================
 
 /// Default parallelism config for background tasks.
 /// This will leave some cores free in case foreground tasks are handled.
@@ -346,9 +340,7 @@ pub async fn run_background_ignored_copy<N: WorktreeNotificationSender>(
     }
 }
 
-// ============================================================================
 // Request / Response types
-// ============================================================================
 
 fn default_copy_mode() -> WorktreeCopyMode {
     WorktreeCopyMode::Dirty
@@ -362,7 +354,7 @@ pub struct PrepareWorktreeResult {
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "status")]
 pub enum WorktreeStatus {
-    // === EXISTING VARIANTS (unchanged for backward compatibility) ===
+    // EXISTING VARIANTS (unchanged for backward compatibility)
     #[serde(rename = "progress")]
     Progress {
         #[serde(rename = "sessionId")]
@@ -392,7 +384,7 @@ pub enum WorktreeStatus {
         message: String,
     },
 
-    // === NEW VARIANTS (additive -- old clients ignore unknown status values) ===
+    // NEW VARIANTS (additive -- old clients ignore unknown status values)
     /// Emitted when analyzing the source worktree for dirty state
     #[serde(rename = "analyzing")]
     Analyzing {
@@ -427,7 +419,7 @@ pub enum WorktreeStatus {
         current_file: Option<String>,
     },
 
-    // === BACKGROUND IGNORED FILE COPY VARIANTS ===
+    // BACKGROUND IGNORED FILE COPY VARIANTS
     /// Background ignored file copy started
     #[serde(rename = "copyingIgnored")]
     CopyingIgnored {
@@ -476,9 +468,7 @@ pub trait WorktreeNotificationSender {
     async fn send_worktree_status(&self, progress: WorktreeStatus);
 }
 
-// ============================================================================
 // Human-Readable Worktree Naming
-// ============================================================================
 
 /// Maximum length for a sanitized label.
 pub const MAX_LABEL_LEN: usize = 64;
@@ -614,9 +604,7 @@ pub fn resolve_label_collision(base_dir: &Path, label: &str) -> String {
     auto_label()
 }
 
-// ============================================================================
 // Worktree Base Directory Resolution
-// ============================================================================
 
 /// Resolve the kigi home for worktree paths via the **same** resolver used for
 /// `worktrees.db` (`kigi_fast_worktree::resolve_kigi_home`), so checkout dirs and
@@ -761,9 +749,7 @@ pub fn touch_worktree_for_cwd(cwd: &str) {
     }
 }
 
-// ============================================================================
 // Worktree Lifecycle: Create
-// ============================================================================
 
 pub async fn prepare_worktree_creation(req: &CreateWorktreeRequest) -> PrepareWorktreeResult {
     let source_path = Path::new(&req.source_path);
@@ -1113,9 +1099,7 @@ pub async fn create_worktree_streaming<N: WorktreeNotificationSender>(
     }
 }
 
-// ============================================================================
 // Remove Worktree
-// ============================================================================
 
 pub async fn remove_worktree(
     req: &RemoveWorktreeRequest,
@@ -1346,9 +1330,7 @@ async fn snapshot_and_remove_subagent_worktree(
     Ok(snapshot_ref)
 }
 
-// ============================================================================
 // Create Worktree from Existing Worktree (Fork Flow)
-// ============================================================================
 
 /// Request to create a new worktree from an existing worktree.
 /// Used during session forking to create a copy of another worktree's state.
@@ -1968,9 +1950,7 @@ pub async fn create_worktree_from_worktree_sync(
     })
 }
 
-// ============================================================================
 // Apply Worktree
-// ============================================================================
 
 #[derive(Debug)]
 struct ApplyContext {
@@ -2192,9 +2172,7 @@ pub async fn apply_worktree(req: &ApplyWorktreeRequest) -> Result<ApplyWorktreeR
     }
 }
 
-// ============================================================================
 // Jujutsu workspace isolation
-// ============================================================================
 
 use crate::session::git::{jj_cli, jj_cli_mut};
 
@@ -2291,9 +2269,7 @@ pub async fn remove_jj_workspace(workspace_path: &str) -> Result<()> {
     Ok(())
 }
 
-// ============================================================================
 // Resume / Rehydrate types (types only -- impl stays in shell)
-// ============================================================================
 
 /// Request to resume an existing session in a fresh worktree.
 ///
@@ -2376,9 +2352,7 @@ pub struct RehydrateSessionResponse {
     pub warnings: Vec<String>,
 }
 
-// ============================================================================
 // Worktree Management / DB
-// ============================================================================
 
 use kigi_fast_worktree::{
     DbStats, GcOptions, GcReport, ListFilter, WorktreeDb, WorktreeKind, WorktreeRecord,
@@ -2466,9 +2440,7 @@ pub fn resolve_worktree_by_id_or_path(id_or_path: &str) -> Result<Option<std::pa
     if p.exists() { Ok(Some(p)) } else { Ok(None) }
 }
 
-// ============================================================================
 // Repo-wide candidate enumeration (for worktree resume)
-// ============================================================================
 
 /// Build a deduplicated, deterministically-ordered list of candidate cwds
 /// for the same repository as `current_cwd`.
@@ -2575,7 +2547,7 @@ mod tests {
         assert_eq!(cfg.agent_connect_timeout, Duration::from_secs(5));
     }
 
-    // ── snapshot_and_remove_subagent_worktree ────────────────────────────
+    // snapshot_and_remove_subagent_worktree
 
     /// Run a git command in `dir` and return trimmed stdout (test-only helper).
     fn git_out(dir: &Path, args: &[&str]) -> String {
@@ -2751,7 +2723,7 @@ mod tests {
         );
     }
 
-    // ── worktree_record_for_cwd / touch_worktree_for_cwd ─────────────────
+    // worktree_record_for_cwd / touch_worktree_for_cwd
 
     // Crate-shared env lock + env guards bundled as ONE value so the env
     // restores before the lock releases by struct field order (see lib.rs),

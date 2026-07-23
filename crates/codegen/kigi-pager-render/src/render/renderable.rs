@@ -57,9 +57,7 @@ impl<'a> From<Box<dyn Renderable + 'a>> for RenderableItem<'a> {
     }
 }
 
-// ============================================================================
 // Standard Implementations
-// ============================================================================
 
 /// Unit type renders as nothing (0 height).
 impl Renderable for () {

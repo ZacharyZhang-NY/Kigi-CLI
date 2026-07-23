@@ -74,14 +74,13 @@ pub fn select_turns_to_compact<T: CompactionItem>(
         return None;
     }
 
-    // Step 1: Walk backward, sum "keep" tokens until target is reached.
-    // Find the highest split_idx such that sum(item_token_counts[split_idx..]) ≤ target_tokens.
+    // Highest split_idx such that sum(item_token_counts[split_idx..]) ≤ target_tokens.
     let mut kept = 0u32;
-    let mut split_idx = total; // start with "compact nothing", will move down
+    // Start with "compact nothing", walk down.
+    let mut split_idx = total;
     for i in (0..total).rev() {
         let count = item_token_counts[i];
         if kept.saturating_add(count) > target_tokens {
-            // Adding this item would exceed the budget — split here.
             split_idx = i + 1;
             break;
         }
@@ -94,7 +93,6 @@ pub fn select_turns_to_compact<T: CompactionItem>(
         return None;
     }
 
-    // Step 2: Snap the split forward to a safe boundary.
     let safe_split_idx = snap_to_safe_boundary(items, split_idx);
 
     // After snapping forward we might have eaten everything.
@@ -102,7 +100,6 @@ pub fn select_turns_to_compact<T: CompactionItem>(
         return None;
     }
 
-    // Step 3: Compute tokens to compact and check the minimum.
     let tokens_to_compact: u32 = item_token_counts[..safe_split_idx]
         .iter()
         .copied()
@@ -131,7 +128,6 @@ fn snap_to_safe_boundary<T: CompactionItem>(items: &[T], candidate: usize) -> us
         return total;
     }
 
-    // If candidate is not a tool-result item, no snap needed.
     if !items[candidate].is_tool_result() {
         return candidate;
     }
@@ -214,7 +210,8 @@ mod tests {
             MockItem::user(),
             MockItem::assistant(),
         ];
-        let counts = vec![40, 30, 20, 10]; // keep last two (sum 30)
+        // keep last two (sum 30)
+        let counts = vec![40, 30, 20, 10];
         let plan = select_turns_to_compact(&counts, &items, 30, 5).expect("should split");
         assert_eq!(plan.split_idx, 2);
         assert_eq!(plan.tokens_to_compact, 70);
@@ -235,7 +232,8 @@ mod tests {
         let items = vec![
             MockItem::user(),
             MockItem::assistant(),
-            MockItem::assistant(), // pretend this had tool_requests
+            // pretend this had tool_requests
+            MockItem::assistant(),
             MockItem::tool(),
             MockItem::tool(),
             MockItem::assistant(),
@@ -256,7 +254,8 @@ mod tests {
         let items = vec![
             MockItem::user(),
             MockItem::assistant(),
-            MockItem::user(), // safe split here
+            // safe split here
+            MockItem::user(),
             MockItem::assistant(),
         ];
         let counts = vec![50, 50, 10, 10];

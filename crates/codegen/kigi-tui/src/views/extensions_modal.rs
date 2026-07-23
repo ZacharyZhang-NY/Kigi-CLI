@@ -335,10 +335,6 @@ pub fn prev_visible_hook(
     None
 }
 
-// ---------------------------------------------------------------------------
-// Tab enum
-// ---------------------------------------------------------------------------
-
 /// Which tab is active in the hooks/plugins modal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExtensionsTab {
@@ -382,10 +378,6 @@ impl ExtensionsTab {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Status filter
-// ---------------------------------------------------------------------------
-
 /// Filter items by enabled/disabled status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StatusFilter {
@@ -420,10 +412,6 @@ impl StatusFilter {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Button actions
-// ---------------------------------------------------------------------------
 
 /// What a button does when activated (clicked or keyboard shortcut).
 #[derive(Debug, Clone)]
@@ -1360,9 +1348,6 @@ fn longest_common_prefix(strings: &[String]) -> String {
         .map(|(a, _)| a)
         .collect()
 }
-// ---------------------------------------------------------------------------
-// Word boundary helpers (for readline-style editing in modal input fields)
-// ---------------------------------------------------------------------------
 
 /// Byte offset of the start of the previous word.
 ///
@@ -1556,10 +1541,6 @@ fn parse_mcp_add_fields(name: &str, url_or_cmd: &str) -> Option<ButtonAction> {
     })
 }
 
-// ---------------------------------------------------------------------------
-// State
-// ---------------------------------------------------------------------------
-
 /// Per-tab data fetching lifecycle.
 #[derive(Debug)]
 pub enum TabDataState<T> {
@@ -1574,8 +1555,7 @@ pub enum TabDataState<T> {
 /// State for the hooks/plugins modal popup.
 pub struct ExtensionsModalState {
     /// Shared modal window chrome state (close button, tabs, footer
-    /// shortcuts, popup area). Replaces the former `last_popup_area`,
-    /// `tab_areas`, `close_button_area`, `close_hovered` fields.
+    /// shortcuts, popup area).
     pub window: ModalWindowState,
     /// Currently active tab (source of truth).
     ///
@@ -1650,7 +1630,7 @@ pub struct ExtensionsModalState {
     /// Status filter for the skills tab.
     pub skills_filter: StatusFilter,
     /// Unified picker state for tabs managed by `render_picker_content`.
-    /// Search query and search_active live here (previously duplicated).
+    /// Search query and search_active live here.
     pub picker_state: picker::PickerState,
     /// Maps picker entry index → original data index (for action dispatch).
     /// Rebuilt every render. `None` for headers or error entries.
@@ -1765,10 +1745,6 @@ impl ExtensionsModalState {
         self.picker_state.hovered = None;
     }
 
-    /// Whether a group header at picker index `sel` with the given
-    /// `group_key` is currently expanded (children visible).
-    ///
-    /// The answer depends on the active tab: Hooks use
     /// Seed the all-collapsed default for plugin source groups exactly once.
     ///
     /// Called from both plugin-data delivery channels (list fetch and the
@@ -1782,6 +1758,10 @@ impl ExtensionsModalState {
         self.plugins_groups_seeded = true;
     }
 
+    /// Whether a group header at picker index `sel` with the given
+    /// `group_key` is currently expanded (children visible).
+    ///
+    /// The answer depends on the active tab: Hooks use
     /// `hooks_collapsed_groups`, Plugins use `plugins_collapsed_groups`,
     /// and other tabs use `picker_state.expanded`.
     pub fn is_group_expanded(&self, sel: usize, group_key: &str) -> bool {
@@ -1789,7 +1769,7 @@ impl ExtensionsModalState {
 
         match self.active_tab {
             // During active search we force all hook groups open so matches
-            // inside previously-collapsed groups are visible.
+            // inside collapsed groups are still visible.
             ExtensionsTab::Hooks => searching || !self.hooks_collapsed_groups.contains(group_key),
             ExtensionsTab::Plugins => {
                 searching || !self.plugins_collapsed_groups.contains(group_key)
@@ -1904,10 +1884,10 @@ pub fn build_entry_non_selectable(
     entry_is_header.to_vec()
 }
 
-/// MCP section labels are now keyboard-selectable, so no rows need the
+/// MCP section labels are keyboard-selectable, so no rows need the
 /// "non-selectable but clickable" treatment. Kept as a function so callers
-/// can continue to pass a slice to the picker without per-call allocation
-/// changes; the returned mask is all `false`.
+/// can pass a slice to the picker without per-call allocation changes;
+/// the returned mask is all `false`.
 pub fn build_entry_non_selectable_clickable(entry_group_keys: &[Option<String>]) -> Vec<bool> {
     vec![false; entry_group_keys.len()]
 }
@@ -2087,10 +2067,6 @@ pub fn derive_source_label(source_dir: &str) -> (String, bool) {
     (display, true)
 }
 
-// ---------------------------------------------------------------------------
-// Entry builders — convert tab data into Vec<PickerEntry> for render_picker
-// ---------------------------------------------------------------------------
-
 /// Data needed to build entries for a tab. Avoids borrow conflicts with state.
 struct SkillsEntryData {
     /// (skill_index, is_name_match)
@@ -2194,10 +2170,6 @@ fn build_plugin_fields(plugin: &kigi_hooks_plugins_types::PluginInfo) -> Vec<Str
     components
 }
 
-// ---------------------------------------------------------------------------
-// Rendering
-// ---------------------------------------------------------------------------
-
 /// Render the hooks/plugins modal popup as a centered overlay.
 ///
 /// Uses the shared [`ModalWindow`](super::modal_window) for chrome
@@ -2264,7 +2236,6 @@ pub fn render_extensions_modal(
     // Rebuild the entry list *before* footer action labels so Space
     // enable/disable can use this frame's mapping (passed as locals to
     // `action_key_footer_desc_for_mapping`), not last frame's filter/tab/query.
-    // ── Build PickerEntry list for current tab ──
     // We build owned data here and reference it for the picker.
     let mut entry_labels: Vec<String> = Vec::new();
     let mut entry_right_labels: Vec<String> = Vec::new();
@@ -2380,7 +2351,8 @@ pub fn render_extensions_modal(
                         entry_desc_lines.push(vec![]);
                         entry_summary_lines.push(vec![]);
                         entry_fields.push(vec![]);
-                        entry_is_header.push(false); // group header, but selectable
+                        // Group header, but selectable.
+                        entry_is_header.push(false);
                         entry_dimmed.push(false);
                         entry_indent.push(0);
                         entry_data_indices.push(None);
@@ -2478,8 +2450,9 @@ pub fn render_extensions_modal(
                         entry_desc_lines.push(vec![]);
                         entry_summary_lines.push(vec![]);
                         entry_fields.push(vec![]);
-                        entry_is_header.push(false); // group header, but selectable
-                        entry_dimmed.push(false); // headers
+                        // Group header, but selectable.
+                        entry_is_header.push(false);
+                        entry_dimmed.push(false);
                         entry_indent.push(0);
                         entry_data_indices.push(None);
                         entry_group_keys.push(Some(source_dir.clone()));
@@ -2928,7 +2901,8 @@ pub fn render_extensions_modal(
             &theme,
             &state.picker_state.query,
             search_active_render,
-            true, // show_search_hint
+            // show_search_hint
+            true,
             state.picker_state.query_cursor,
             Some(theme.bg_base),
         );
@@ -3059,11 +3033,13 @@ pub fn render_extensions_modal(
     // handle_picker_input (used for content-level events) works.
     let filter_rect = state.picker_state.filter_area;
     state.picker_state.hit_areas = Some(picker::PickerHitAreas {
-        close_button: Rect::default(), // handled by ModalWindow
+        // handled by ModalWindow
+        close_button: Rect::default(),
         search_bar: search_bar_rect,
         item_rects,
         entry_indices,
-        tab_rects: vec![], // handled by ModalWindow
+        // handled by ModalWindow
+        tab_rects: vec![],
         filter_rect,
     });
     state.entry_data_indices = entry_data_indices;
@@ -3309,7 +3285,8 @@ fn render_input_form(buf: &mut Buffer, area: Rect, input: &ModalInput, theme: &T
     // (top border + content + bottom border).
     let field_count = input.fields.len() as u16;
     const ROWS_PER_FIELD: u16 = 4;
-    let separators = field_count.saturating_sub(1); // 1 blank row between fields
+    // 1 blank row between fields.
+    let separators = field_count.saturating_sub(1);
     let form_rows = field_count * ROWS_PER_FIELD + separators;
     // Reserve room for an inline error row when present (1 spacer + 1 line).
     let error_rows: u16 = if input.error.is_some() { 2 } else { 0 };
@@ -3434,7 +3411,8 @@ fn render_input_form(buf: &mut Buffer, area: Rect, input: &ModalInput, theme: &T
             }
         }
 
-        cur_y += 3; // top border + content + bottom border
+        // top border + content + bottom border
+        cur_y += 3;
 
         // Blank separator between fields (skip after last field).
         if fi + 1 < input.fields.len() {
@@ -3498,7 +3476,7 @@ mod tests {
             Some("mcp-tools:0".into()),
             None,
         ]);
-        // Sections are now keyboard-selectable, so clicks go through the
+        // Sections are keyboard-selectable, so clicks go through the
         // normal Selected → toggle_fold path; no row needs the
         // non-selectable-but-clickable treatment.
         assert_eq!(mask, vec![false, false, false]);
@@ -3817,8 +3795,6 @@ mod tests {
         assert_eq!(state.selected_mcp_tool(), None);
     }
 
-    // ── fuzzy_matches ────────────────────────────────────────────────
-
     #[test]
     fn fuzzy_matches_empty_query_matches_everything() {
         assert!(fuzzy_matches("anything", ""));
@@ -3828,22 +3804,24 @@ mod tests {
     fn fuzzy_matches_substring() {
         assert!(fuzzy_matches("rust-check", "check"));
         assert!(fuzzy_matches("rust-check", "rust"));
-        assert!(fuzzy_matches("Rust-Check", "check")); // case insensitive
+        // case insensitive
+        assert!(fuzzy_matches("Rust-Check", "check"));
     }
 
     #[test]
     fn fuzzy_matches_subsequence() {
-        assert!(fuzzy_matches("rust-check", "rc")); // r...c
-        assert!(fuzzy_matches("frontend-design", "fd")); // f...d
+        // r...c
+        assert!(fuzzy_matches("rust-check", "rc"));
+        // f...d
+        assert!(fuzzy_matches("frontend-design", "fd"));
     }
 
     #[test]
     fn fuzzy_matches_rejects_non_matching() {
         assert!(!fuzzy_matches("hello", "xyz"));
-        assert!(!fuzzy_matches("abc", "abdc")); // query longer than would match
+        // query longer than would match
+        assert!(!fuzzy_matches("abc", "abdc"));
     }
-
-    // ── Skills search: substring-only, title-first ordering ─────────
 
     fn make_skill(name: &str, desc: &str) -> kigi_tools::implementations::skills::types::SkillInfo {
         kigi_tools::implementations::skills::types::SkillInfo {
@@ -3913,9 +3891,12 @@ mod tests {
     #[test]
     fn skills_search_title_matches_first() {
         let skills = [
-            make_skill("some-tool", "Run lint check"), // desc match only
-            make_skill("check", "Run lint check"),     // name match
-            make_skill("rust-check", "Rust pre-push checks"), // name match
+            // desc match only
+            make_skill("some-tool", "Run lint check"),
+            // name match
+            make_skill("check", "Run lint check"),
+            // name match
+            make_skill("rust-check", "Rust pre-push checks"),
         ];
         let query = "check";
         let query_lower = query.to_lowercase();
@@ -3945,8 +3926,6 @@ mod tests {
         assert!(!matches[2].1, "third result should be a desc-only match");
     }
 
-    // ── Hooks: search forces groups expanded ─────────────────────────
-
     #[test]
     fn hooks_collapsed_groups_ignored_during_search() {
         let mut collapsed = std::collections::HashSet::new();
@@ -3962,8 +3941,6 @@ mod tests {
         let is_collapsed_with_query = collapsed.contains("global/hooks") && query.is_empty();
         assert!(!is_collapsed_with_query);
     }
-
-    // ── Skills: plugin skills appear in filter results ─────────────
 
     fn make_plugin_skill(
         name: &str,
@@ -4027,7 +4004,8 @@ mod tests {
         ];
         let result = filter_and_sort_skills(&skills, "hello", StatusFilter::All);
         assert_eq!(result.matches.len(), 1);
-        assert_eq!(result.matches[0].0, 1); // index of hello
+        // index of hello
+        assert_eq!(result.matches[0].0, 1);
     }
 
     #[test]
@@ -4042,8 +4020,6 @@ mod tests {
         assert_eq!(by_name.matches.len(), 1);
     }
 
-    // ── Skills: selection clamping after filter ──────────────────────
-
     #[test]
     fn skills_selection_clamped_after_filter() {
         // User had selected index 10, but after filtering only 3 match.
@@ -4053,7 +4029,8 @@ mod tests {
         if match_count > 0 {
             selected = selected.min(match_count - 1);
         }
-        assert_eq!(selected, 2); // clamped to last valid index
+        // clamped to last valid index
+        assert_eq!(selected, 2);
     }
 
     #[test]
@@ -4067,8 +4044,6 @@ mod tests {
         assert_eq!(selected, 0);
     }
 
-    // ── Plugin fixtures ─────────────────────────────────────────────
-
     fn make_plugin(name: &str) -> kigi_hooks_plugins_types::PluginInfo {
         test_plugin_info(name, None)
     }
@@ -4079,8 +4054,6 @@ mod tests {
     ) -> kigi_hooks_plugins_types::PluginInfo {
         test_plugin_info(name, Some(origin))
     }
-
-    // ── StatusFilter unit tests ─────────────────────────────────────
 
     #[test]
     fn status_filter_next_cycles() {
@@ -4214,8 +4187,6 @@ mod tests {
         }
     }
 
-    // ── Tab navigation ──────────────────────────────────────────────
-
     #[test]
     fn tab_next_wraps_around() {
         assert_eq!(ExtensionsTab::Hooks.next(), ExtensionsTab::Plugins);
@@ -4237,8 +4208,6 @@ mod tests {
         assert_eq!(ExtensionsTab::ALL.len(), 4);
     }
 
-    // ── Modal state init ────────────────────────────────────────────
-
     #[test]
     fn modal_state_starts_loading() {
         let state = ExtensionsModalState::new(ExtensionsTab::McpServers);
@@ -4254,8 +4223,6 @@ mod tests {
         assert!(state.skills_expanded.is_empty());
         assert_eq!(state.skills_selected, 0);
     }
-
-    // ── Bracketed paste ─────────────────────────────────────────────
 
     fn single_field_input(prefix: &str) -> ModalInput {
         ModalInput::from_specs(
@@ -4359,7 +4326,8 @@ mod tests {
     fn apply_paste_targets_focused_field_in_multi_field() {
         let mut state = ExtensionsModalState::new(ExtensionsTab::McpServers);
         let mut input = mcp_add_input();
-        input.focused = 0; // URL field (first in the new order)
+        // URL field
+        input.focused = 0;
         state.input = Some(input);
         assert!(state.apply_paste("https://example.com"));
         let fields = &state.input.as_ref().unwrap().fields;
@@ -4383,13 +4351,11 @@ mod tests {
         assert_eq!(input.fields.len(), 2);
         assert!(input.fields[0].text.is_empty());
         assert!(input.fields[1].text.is_empty());
-        // New order: [URL (required), Name (optional)].
+        // Field order: [URL (required), Name (optional)].
         assert!(input.fields[0].required);
         assert!(!input.fields[1].required);
         assert_eq!(input.focused, 0);
     }
-
-    // ── Word boundary helpers ───────────────────────────────────────
 
     #[test]
     fn prev_word_boundary_basic() {
@@ -4448,8 +4414,6 @@ mod tests {
         assert_eq!(prev_word_boundary("a   b", 3), 0);
     }
 
-    // ── delete_word_backward ────────────────────────────────────────
-
     fn make_field(text: &str, cursor: usize) -> ModalInputField {
         ModalInputField {
             label: String::new(),
@@ -4483,8 +4447,6 @@ mod tests {
         assert_eq!(f.text, "hello");
         assert_eq!(f.cursor, 0);
     }
-
-    // ── build_action_from_input / parse_mcp_add_fields ──────────────
 
     // Field order in submission: [URL / Command, Name]. URL is required.
 
@@ -4562,8 +4524,6 @@ mod tests {
         let texts = vec!["foo".into()];
         assert!(build_action_from_input("unknown", &texts).is_none());
     }
-
-    // ── Key dispatch (ModalInput::handle_key) ───────────────────────
 
     fn key_event(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
         KeyEvent::new(code, modifiers)
@@ -4657,7 +4617,7 @@ mod tests {
     #[test]
     fn handle_key_submit_succeeds() {
         let mut input = mcp_add_input();
-        // URL is the first (required) field in the new order.
+        // URL is the first (required) field.
         input.fields[0].text = "https://example.com".into();
         let result = input.handle_key(&key_event(KeyCode::Enter, KeyModifiers::NONE));
         assert!(matches!(result, ModalInputOutcome::Submit { .. }));
@@ -4673,8 +4633,6 @@ mod tests {
         input.handle_key(&key_event(KeyCode::End, KeyModifiers::NONE));
         assert_eq!(input.fields[0].cursor, 5);
     }
-
-    // ── Hook helpers with StatusFilter ───────────────────────────────
 
     fn make_hook(
         name: &str,
@@ -4697,9 +4655,9 @@ mod tests {
     #[test]
     fn next_visible_hook_filter_enabled() {
         let hooks = vec![
-            make_hook("a", "/src", true),  // disabled
-            make_hook("b", "/src", false), // enabled
-            make_hook("c", "/src", true),  // disabled
+            make_hook("a", "/src", true),
+            make_hook("b", "/src", false),
+            make_hook("c", "/src", true),
         ];
         let collapsed = std::collections::HashSet::new();
         // From index 0, next enabled hook is index 1.
@@ -4717,9 +4675,9 @@ mod tests {
     #[test]
     fn prev_visible_hook_filter_enabled() {
         let hooks = vec![
-            make_hook("a", "/src", false), // enabled
-            make_hook("b", "/src", true),  // disabled
-            make_hook("c", "/src", false), // enabled
+            make_hook("a", "/src", false),
+            make_hook("b", "/src", true),
+            make_hook("c", "/src", false),
         ];
         let collapsed = std::collections::HashSet::new();
         // From index 2, prev enabled hook is index 0.
@@ -4737,9 +4695,9 @@ mod tests {
     #[test]
     fn next_visible_hook_filter_disabled() {
         let hooks = vec![
-            make_hook("a", "/src", false), // enabled
-            make_hook("b", "/src", true),  // disabled
-            make_hook("c", "/src", false), // enabled
+            make_hook("a", "/src", false),
+            make_hook("b", "/src", true),
+            make_hook("c", "/src", false),
         ];
         let collapsed = std::collections::HashSet::new();
         // From index 0, next disabled hook is index 1.
@@ -4770,8 +4728,8 @@ mod tests {
     #[test]
     fn next_visible_hook_filter_across_groups() {
         let hooks = vec![
-            make_hook("a", "/src1", true),  // disabled, group 1
-            make_hook("b", "/src2", false), // enabled, group 2
+            make_hook("a", "/src1", true),
+            make_hook("b", "/src2", false),
         ];
         let collapsed = std::collections::HashSet::new();
         // With Enabled filter, hook 0 is excluded. Only hook 1 is in groups.
@@ -4785,9 +4743,9 @@ mod tests {
     #[test]
     fn build_hook_groups_respects_filter() {
         let hooks = vec![
-            make_hook("a", "/src", false),   // enabled
-            make_hook("b", "/src", true),    // disabled
-            make_hook("c", "/other", false), // enabled
+            make_hook("a", "/src", false),
+            make_hook("b", "/src", true),
+            make_hook("c", "/other", false),
         ];
         let groups = build_hook_groups(&hooks, StatusFilter::Enabled, "");
         // Two groups: /src with [0], /other with [2]. Hook 1 excluded.
@@ -4821,8 +4779,6 @@ mod tests {
         }
         count
     }
-
-    // ── Plugins: origin grouping ─────────────────────────────────────
 
     fn plugins_modal_state(
         plugins: Vec<kigi_hooks_plugins_types::PluginInfo>,

@@ -176,7 +176,7 @@ impl AgentSessionConfig {
         }
     }
 }
-/// WARNING: `tool_config` is intentionally redacted from `Debug` output
+/// WARNING: `tool_config` is deliberately redacted from `Debug` output
 /// because `ToolServerConfig.tools[*].params` may contain credentials.
 impl std::fmt::Debug for AgentSessionConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

@@ -9,7 +9,7 @@ use crate::resume::ResumeValidationError;
 pub enum ContextSource {
     /// Fresh session with no inherited history.
     New,
-    /// Resumed from a previously completed peer subagent. The child inherits
+    /// Resumed from a earlier completed peer subagent. The child inherits
     /// the source's raw transcript, tool state, and model. System prompt and
     /// prompt context are freshly rendered.
     Resumed,

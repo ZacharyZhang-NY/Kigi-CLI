@@ -31,8 +31,8 @@ fn build_marked_line(line_num: usize, content: &str) -> String {
 fn generate_test_line(line_num: usize, terminal_width: usize) -> String {
     let i = line_num - 1;
     let mut line = match i % 3 {
-        0 => lipsum(4),  // Short line
-        1 => lipsum(40), // Long line
+        0 => lipsum(4),
+        1 => lipsum(40),
         2 => {
             // Unicode string with ANSI colors and hyperlink for testing
             let unicode_with_ansi = "\x1b[31m😀\u{200D}\x1b[0m\x1b[32mé\x1b[0m中\u{0300}\x1b[34mX\x1b[0m\x1b]8;;https://example.com\x1b\\H\x1b]8;;\x1b\\";
@@ -80,7 +80,8 @@ fn colorize_content(content: &str, color: CColor) -> String {
         CColor::Magenta | CColor::DarkMagenta => 35,
         CColor::Cyan | CColor::DarkCyan => 36,
         CColor::White | CColor::Grey | CColor::DarkGrey => 37,
-        _ => 37, // Default to white for RGB or other colors
+        // Default to white for RGB or other colors
+        _ => 37,
     };
     format!("\x1b[{}m{}\x1b[0m", color_code, content)
 }
@@ -240,7 +241,8 @@ fn main() -> Result<()> {
     ];
 
     let mut line_num = 1;
-    let mut scrollback_history = String::new(); // has crlf-s instead of lf-s
+    // has crlf-s instead of lf-s
+    let mut scrollback_history = String::new();
 
     loop {
         match poll_for_key_or_animation(&spinner)? {

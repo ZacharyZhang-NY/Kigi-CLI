@@ -77,7 +77,7 @@ pub const INDEX_HEADER: &str = "# Compaction Segment Index\n\n\
      | Segment | File | Turns | Approx bytes | Keywords |\n\
      |---|---|---|---|---|\n";
 
-/// Zero-padded segment number, e.g. `007`. The single source of the pad width.
+/// Zero-`padded` segment number, e.g. `007`. The single source of the pad width.
 fn segment_label(index: u64) -> String {
     format!("{index:03}")
 }
@@ -724,7 +724,7 @@ mod tests {
         assert_eq!(classify_compaction_path("compaction/notes.md"), None);
     }
 
-    // --- Parity with the Python implementation's own test vectors (compaction_utils_test.py) ---
+    // Parity with the Python implementation's own test vectors (compaction_utils_test.py)
 
     /// Keyword extraction: the Python `TestExtractKeywords` vectors (bare `8.`
     /// headers, stopword filtering, dedup, no-section-8 fallback) plus our

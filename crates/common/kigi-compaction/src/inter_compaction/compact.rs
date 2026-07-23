@@ -70,8 +70,7 @@ pub struct ChunkedCompactionOutput {
 /// attachment refs). `conversation_id` / `response_id` are threaded
 /// through for log correlation only.
 ///
-/// Observer events (the Kigi chat observer maps them to the
-/// pre-unification metrics):
+/// Observer events:
 /// - [`InterCompactionObserver::on_recompaction`] when prior-compaction
 ///   summary items are found.
 /// - [`InterCompactionObserver::on_chunk_count`] — chunk count after
@@ -111,7 +110,6 @@ pub async fn sample_compaction_chunked<T: CompactionItemBuilder + Send + Sync>(
         "[InterCompaction] starting chunked compaction"
     );
 
-    // Step 1 — filter.
     let filtered = filter_turns_for_inter_compaction(turns);
     info!(
         conversation_id = %conversation_id,
@@ -127,14 +125,13 @@ pub async fn sample_compaction_chunked<T: CompactionItemBuilder + Send + Sync>(
         )));
     }
 
-    // Step 2 — split prior `<kigi_user_queries>` out of every prior
-    // compaction summary item. The LLM never sees them (it would re-emit
-    // them verbatim and snowball across rounds); they are reattached to
-    // the final summary via `assemble_user_queries_preamble`. Shared with
-    // intra-compaction's `History` target.
+    // Split prior `<kigi_user_queries>` out of every prior compaction summary.
+    // The LLM never sees them (it would re-emit them and snowball across
+    // rounds); they are reattached via `assemble_user_queries_preamble`.
+    // Shared with intra-compaction's `History` target.
     let separated = separate_prior_user_queries(&filtered);
 
-    // Step 3 — chunk + flush over the LLM-safe item list.
+    // Chunk + flush over the LLM-safe item list.
     let mut compactable: Vec<T> = Vec::new();
     let mut chunk_tokens: u32 = 0;
     let mut chunk_outputs: Vec<LlmCompactionOutput> = Vec::new();
@@ -193,7 +190,7 @@ pub async fn sample_compaction_chunked<T: CompactionItemBuilder + Send + Sync>(
         );
     }
 
-    // Step 4a — combine summaries.
+    // Combine summaries.
     let preamble =
         assemble_user_queries_preamble(separated.prior_user_queries, current_user_queries);
     let mut combined = preamble;
@@ -203,14 +200,11 @@ pub async fn sample_compaction_chunked<T: CompactionItemBuilder + Send + Sync>(
         combined.push_str("\n</chunk_summary>\n\n");
     }
 
-    // Step 4b — combine thinking-channel output.
     let mut combined_analysis = String::new();
     for (i, output) in chunk_outputs.iter().enumerate() {
         combined_analysis.push_str(&wrap_chunk_analysis(i, &output.thinking));
     }
 
-    // Record chunk count after assembly so dashboards see the same timing
-    // they saw pre-unification (where this lived inside DnC).
     observer.on_chunk_count(chunk_outputs.len());
 
     info!(

@@ -11,7 +11,6 @@ use axum::response::{IntoResponse, Response};
 use futures_util::stream;
 use serde_json::Value;
 
-/// One SSE event as data: optional `event:` name plus the `data:` payload.
 #[derive(Debug, Clone)]
 pub struct SseEvent {
     pub event: Option<String>,
@@ -19,7 +18,6 @@ pub struct SseEvent {
 }
 
 impl SseEvent {
-    /// Event with a `data:` payload only.
     pub fn data(data: impl Into<String>) -> Self {
         Self {
             event: None,
@@ -27,7 +25,6 @@ impl SseEvent {
         }
     }
 
-    /// Event with an `event:` name and a `data:` payload.
     pub fn with_event(event: impl Into<String>, data: impl Into<String>) -> Self {
         Self {
             event: Some(event.into()),
@@ -36,12 +33,11 @@ impl SseEvent {
     }
 }
 
-/// Body of a [`ScriptedResponse`].
 #[derive(Debug, Clone)]
 pub enum ScriptedBody {
     Json(Value),
     Sse(Vec<SseEvent>),
-    /// Raw body bytes, served verbatim (byte-controllable malformed SSE etc.).
+    /// Served verbatim, so the caller controls every byte (malformed SSE etc.).
     Raw(String),
 }
 
@@ -56,7 +52,6 @@ pub struct ScriptedResponse {
 }
 
 impl ScriptedResponse {
-    /// 200 SSE response built from an event list.
     pub fn sse(events: Vec<SseEvent>) -> Self {
         Self {
             status: 200,
@@ -65,7 +60,6 @@ impl ScriptedResponse {
         }
     }
 
-    /// JSON body with the given status.
     pub fn json(status: u16, body: Value) -> Self {
         Self {
             status,
@@ -74,7 +68,6 @@ impl ScriptedResponse {
         }
     }
 
-    /// Raw text body with the given status.
     pub fn text(status: u16, body: impl Into<String>) -> Self {
         Self {
             status,
@@ -93,10 +86,9 @@ impl ScriptedResponse {
         }
     }
 
-    /// Render to HTTP with SSE events paced by `delay` (sleep before each
-    /// event, mirroring the fixed/echo `paced_events` pacing) so
-    /// `set_chunk_delay` also holds scripted turns open. `None` streams
-    /// instantly. Non-SSE bodies ignore the delay.
+    /// SSE events are paced by sleeping `delay` before each one, mirroring the
+    /// fixed/echo `paced_events` pacing so `set_chunk_delay` also holds
+    /// scripted turns open. `None` streams instantly; non-SSE bodies ignore it.
     pub(crate) fn into_response_paced(self, delay: Option<std::time::Duration>) -> Response {
         use futures_util::StreamExt as _;
         let mut resp = match self.body {

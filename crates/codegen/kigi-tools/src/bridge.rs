@@ -1,10 +1,5 @@
-//! ToolBridge: adapter that wraps `kigi-tools`'s `ToolRegistry` and
-//! exposes it through a session layer.
-//!
-//! The bridge:
-//! 1. Owns a `ToolRegistry` with all built-in tools registered
-//! 2. Dispatches tool calls via `call_new_tool()`
-//! 3. Manages tool definitions, enable/disable, name overrides
+//! Adapter that owns a finalized `ToolRegistry` and exposes tool dispatch,
+//! definitions and tracker state to the session layer.
 
 use std::sync::Arc;
 
@@ -23,16 +18,11 @@ use crate::types::resources::{OwnerSessionId, State, Terminal};
 use crate::types::template_renderer::TemplateRenderer;
 use crate::types::tool::ToolKind;
 
-/// Result of executing a tool through the bridge.
-///
-/// Carries all the data the session needs to:
-/// 1. Send ACP notifications (from `output`)
-/// 2. Build the model prompt (from `prompt_text`)
 #[derive(Debug)]
 pub struct ToolBridgeResult {
     /// Clean tool output — for JSON serialization, ACP conversion, hunk tracking.
     pub output: ToolOutput,
-    /// Prompt-ready text — with system reminders appended.
+    /// Same output with system reminders appended, for the model prompt.
     pub prompt_text: String,
 }
 
@@ -45,17 +35,14 @@ impl From<ToolRunResult> for ToolBridgeResult {
     }
 }
 
-/// Bridges the `ToolRegistry` into a session layer.
-///
-/// Owns the registry and dispatches tool calls via `call_new_tool()`.
-/// All state lives in `Resources` on the registry — no separate `ToolState`.
+/// All tool state lives in `Resources` on the registry — there is no separate
+/// `ToolState`.
 ///
 /// # Cancellation Safety
 ///
-/// The `terminal` field is stored separately from the registry lock to enable
-/// cancellation during tool execution. When a bash command is running, the
-/// registry lock is held by `call()`. If the user cancels, `kill_foreground_commands()`
-/// needs to access the terminal without blocking on the lock.
+/// `terminal` is held here as well as in the registry: while a bash command
+/// runs, `call()` holds the registry lock, and `kill_foreground_commands()`
+/// must reach the terminal without blocking on it.
 #[derive(Clone)]
 pub struct ToolBridge {
     registry: Arc<FinalizedToolset>,
@@ -98,15 +85,10 @@ impl ToolBridge {
         self.registry.tool_definitions()
     }
 
-    /// Returns the client-facing name of the tool registered with the given
-    /// `ToolKind`, if any. Looks up the kind->name map populated by
-    /// `FinalizedToolset` from each tool's `kind()`. Useful for "does this
-    /// agent have a way to do X?" checks where the X is identified by kind
-    /// rather than by namespaced id.
-    ///
-    /// Example: `tool_for_kind(ToolKind::BackgroundTaskAction)` returns
-    /// `Some("get_task_output")` for the kigi agent and `None` for
-    /// agents that do not register a tool of that kind.
+    /// Client-facing name of the tool registered with the given `ToolKind`,
+    /// for "does this agent have a way to do X?" checks where X is identified
+    /// by kind rather than by namespaced id. `None` when no registered tool
+    /// has that kind.
     pub async fn tool_for_kind(&self, kind: ToolKind) -> Option<String> {
         self.registry
             .resources
@@ -116,26 +98,21 @@ impl ToolBridge {
             .and_then(|r| r.tool_for_kind(kind).map(str::to_string))
     }
 
-    /// [`ToolKind`] for a registered tool by client-facing name, or
-    /// `None` for unknown names. Sync — uses the registry's
-    /// `RwLock::read`.
+    /// [`ToolKind`] for a registered tool by client-facing name, or `None` for
+    /// unknown names. Name matching is exact and case-sensitive.
     pub fn tool_kind(&self, tool_name: &str) -> Option<ToolKind> {
         self.registry.get_tool_metadata(tool_name).map(|m| m.kind())
     }
 
-    /// Get only built-in tool definitions (exclude MCP tools).
     pub async fn tool_definitions_builtins_only(&self) -> Vec<ToolDefinition> {
         self.registry.tool_definitions_builtins_only()
     }
 
-    /// Render a prompt template through [`TemplateRenderer`] with extra
-    /// agent-specific context fields.
+    /// The template may mix `${{ tools.by_kind.* }}`, resolved from the
+    /// finalized registry, with caller-provided fields such as
+    /// `${{ os_name }}` supplied in `placeholders`.
     ///
-    /// The template can use both `${{ tools.by_kind.* }}` (resolved from
-    /// the finalized tool registry) and caller-provided fields like
-    /// `${{ os_name }}`, `${{ memory_enabled }}`, etc.
-    ///
-    /// Returns `None` if the renderer is not yet available.
+    /// `None` when the renderer is not yet available.
     pub async fn render_prompt(
         &self,
         template: &str,
@@ -181,11 +158,6 @@ impl ToolBridge {
         self.registry.unregister_tool_by_name(name)
     }
 
-    /// Access the underlying `FinalizedToolset`.
-    ///
-    /// Used by `WorkspaceOps::bind_local_session` to install the agent's
-    /// toolset on the workspace session so local-mode tool calls dispatch
-    /// through the workspace.
     pub fn toolset(&self) -> Arc<FinalizedToolset> {
         Arc::clone(&self.registry)
     }
@@ -211,10 +183,8 @@ impl ToolBridge {
             .await
     }
 
-    /// Seed the AGENTS.md tracker.
-    ///
     /// `compat` gates which rules dirs and agent filenames runtime discovery
-    /// scans. Defaults to all-on at the caller for historical behavior.
+    /// scans; callers default it to all-on.
     pub async fn seed_agents_md(
         &self,
         initial_paths: Vec<std::path::PathBuf>,
@@ -233,10 +203,8 @@ impl ToolBridge {
         }
     }
 
-    /// Restore announced skill names from persisted state.
-    ///
-    /// Must be called BEFORE `seed_skill_discovery()` so that `seed()`
-    /// sees non-empty `announced_names` and skips the BaselineChange pending.
+    /// Must run BEFORE `seed_skill_discovery()` so that `seed()` sees
+    /// non-empty `announced_names` and skips the BaselineChange pending.
     pub async fn restore_announced_skill_names(&self, names: std::collections::HashSet<String>) {
         let registry = &*self.registry;
         let mut res = registry.resources.lock().await;
@@ -244,7 +212,6 @@ impl ToolBridge {
         tracker.restore_announced_names(names);
     }
 
-    /// Get the current set of announced skill names (for persistence).
     pub async fn get_announced_skill_names(&self) -> std::collections::HashSet<String> {
         let registry = &*self.registry;
         let res = registry.resources.lock().await;
@@ -264,13 +231,12 @@ impl ToolBridge {
             .and_then(|t| t.listing_snapshot())
     }
 
-    /// Seed the SkillDiscoveryTracker with session context and startup skills.
+    /// Must run at session start so the `SkillDiscoveryReminder` can discover
+    /// skills in subdirectories.
     ///
-    /// Must be called at session start so the `SkillDiscoveryReminder` can
-    /// discover skills in subdirectories.
-    /// `display_cwd`: If set (forked sessions), skill paths in
-    /// model-visible announcements are rewritten from real cwd to this
-    /// value. Runtime invocation uses the real path.
+    /// `display_cwd`: when set (forked sessions), skill paths in model-visible
+    /// announcements are rewritten from the real cwd to this value. Runtime
+    /// invocation still uses the real path.
     pub async fn seed_skill_discovery(
         &self,
         cwd: Option<std::path::PathBuf>,
@@ -283,8 +249,8 @@ impl ToolBridge {
     ) {
         let registry = &*self.registry;
         let mut res = registry.resources.lock().await;
-        // Resolve client-facing tool names from the template renderer
-        // so listing headers and descriptions use the correct (possibly randomized) names.
+        // Listing headers and descriptions must use the client-facing names,
+        // which may be randomized per session.
         let renderer = res.get::<TemplateRenderer>();
         let skill_tool_name = renderer.and_then(|r| r.render("${{ tools.by_kind.skill }}").ok());
         let read_tool_name = renderer.and_then(|r| r.render("${{ tools.by_kind.read }}").ok());
@@ -306,10 +272,8 @@ impl ToolBridge {
         );
     }
 
-    /// Enable XML formatting for mid-session skill announcements.
-    ///
-    /// When set, `take_pending()` produces `<agent_skill>` XML rows instead of
-    /// markdown, matching the startup `<agent_skills>` preamble format.
+    /// When enabled, `take_pending()` produces `<agent_skill>` XML rows
+    /// instead of markdown, matching the startup `<agent_skills>` preamble.
     pub async fn set_skill_listing_xml_format(&self, enabled: bool) {
         let registry = &*self.registry;
         let mut res = registry.resources.lock().await;
@@ -341,8 +305,8 @@ impl ToolBridge {
         }
     }
 
-    /// Clear `announced_names` and `checked_dirs` so skills get re-announced
-    /// and re-discovered after compaction.
+    /// Clears `announced_names` and `checked_dirs` so skills are re-announced
+    /// and re-discovered after compaction drops them from the conversation.
     pub async fn on_skill_discovery_compaction(&self) {
         let registry = &*self.registry;
         let mut res = registry.resources.lock().await;
@@ -352,8 +316,8 @@ impl ToolBridge {
         }
     }
 
-    /// Full reset of skill discovery state for /clear.
-    /// Startup baseline is preserved; a pending reconciliation is queued.
+    /// Full reset of skill discovery state for /clear: the startup baseline
+    /// survives and a pending reconciliation is queued.
     pub async fn on_skill_discovery_clear(&self) {
         let registry = &*self.registry;
         let mut res = registry.resources.lock().await;
@@ -363,8 +327,8 @@ impl ToolBridge {
         }
     }
 
-    /// Replace the startup baseline (plugin reload).
-    /// Dynamic discoveries are preserved; a pending reconciliation is queued.
+    /// Replace the startup baseline on plugin reload: dynamic discoveries
+    /// survive and a pending reconciliation is queued.
     pub async fn update_skill_baseline(
         &self,
         new_skills: Vec<crate::implementations::skills::types::SkillInfo>,
@@ -377,17 +341,12 @@ impl ToolBridge {
         }
     }
 
-    /// Apply any pending skill updates.
+    /// Applies a pending change (discovery, baseline update, /clear) by
+    /// writing the runtime projection into `AvailableSkills` and handing back
+    /// the conversation/UI side-effects for the session to execute:
+    /// system-reminder injection, slash command refresh, prompt finalization.
     ///
-    /// If the tracker has a pending change (discovery, baseline update, /clear),
-    /// this method:
-    /// 1. Computes runtime and display projections internally.
-    /// 2. Writes the runtime projection into `AvailableSkills` in Resources.
-    /// 3. Returns `SkillUpdateEffects` with conversation/UI side-effects
-    ///    for the session to execute (system-reminder injection, slash
-    ///    command refresh, prompt finalization).
-    ///
-    /// Returns `None` if nothing changed.
+    /// `None` when nothing is pending.
     pub async fn apply_pending_skill_update(
         &self,
     ) -> Option<crate::types::skill_discovery_tracker::SkillUpdateEffects> {
@@ -396,17 +355,16 @@ impl ToolBridge {
         let tracker = res.get_mut::<crate::types::skill_discovery_tracker::SkillManager>()?;
         let (runtime_skills, effects) = tracker.take_pending()?;
 
-        // Write the runtime projection directly -- the shell never sees this.
+        // The runtime projection stays inside Resources; the shell only ever
+        // sees the effects returned below.
         res.insert(crate::types::resources::AvailableSkills(runtime_skills));
 
         Some(effects)
     }
 
-    /// Get the current display-deduped skill list for slash commands.
-    ///
-    /// Returns the combined (startup + discovered) list with canonical-path
-    /// and name dedup applied. This is the authoritative source for slash
-    /// command advertisement — PromptContext is NOT used.
+    /// Combined startup + discovered skills with canonical-path and name
+    /// dedup applied. Authoritative source for slash command advertisement —
+    /// `PromptContext` is NOT used for it.
     pub async fn slash_skills(&self) -> Vec<crate::implementations::skills::types::SkillInfo> {
         let registry = &*self.registry;
         let res = registry.resources.lock().await;
@@ -415,7 +373,6 @@ impl ToolBridge {
             .unwrap_or_default()
     }
 
-    /// Get the paths that have been reminded about.
     pub async fn agents_md_reminded_paths(&self) -> std::collections::HashSet<std::path::PathBuf> {
         let registry = &*self.registry;
         let result;
@@ -431,11 +388,9 @@ impl ToolBridge {
         result
     }
 
-    /// Set the stable display path for forked sessions.
-    ///
-    /// Inserts [`DisplayCwd`] into the tool registry's [`Resources`] so that
-    /// tools can use [`resolve_model_path`] and [`display_cwd_or_cwd`] to
-    /// rewrite model-provided paths and format output paths correctly.
+    /// Stable display path for forked sessions. Tools read the inserted
+    /// [`DisplayCwd`] through `resolve_model_path` / `display_cwd_or_cwd` to
+    /// rewrite model-provided paths and format output paths.
     pub async fn set_display_cwd(&self, display_cwd: std::path::PathBuf) {
         let registry = &*self.registry;
         registry
@@ -445,8 +400,7 @@ impl ToolBridge {
             .insert(crate::types::resources::DisplayCwd(display_cwd));
     }
 
-    /// List all known background tasks from the terminal backend.
-    /// Used for context compaction to include task state in summaries.
+    /// Feeds context compaction, which folds task state into summaries.
     pub async fn list_background_tasks(&self) -> Vec<crate::computer::types::TaskSnapshot> {
         if let Some(terminal) = &self.terminal {
             terminal.list_tasks().await
@@ -455,14 +409,12 @@ impl ToolBridge {
         }
     }
 
-    /// Kill all foreground terminal commands.
     pub async fn kill_foreground_commands(&self) {
         if let Some(terminal) = &self.terminal {
             terminal.kill_foreground_commands().await;
         }
     }
 
-    /// Kill all running foreground processes owned by a specific session.
     pub async fn kill_foreground_commands_by_owner(&self, owner_session_id: &str) {
         if let Some(terminal) = &self.terminal {
             terminal
@@ -471,15 +423,14 @@ impl ToolBridge {
         }
     }
 
-    /// Kill all running background tasks.
     pub async fn kill_all_background_tasks(&self) {
         if let Some(terminal) = &self.terminal {
             terminal.kill_all_background_tasks().await;
         }
     }
 
-    /// Kill all running background tasks owned by a specific session.
-    /// Used during subagent teardown on a shared terminal backend.
+    /// Owner-scoped so subagent teardown spares the tasks of other sessions
+    /// sharing the terminal backend.
     pub async fn kill_all_background_tasks_by_owner(&self, owner_session_id: &str) {
         if let Some(terminal) = &self.terminal {
             terminal
@@ -488,7 +439,6 @@ impl ToolBridge {
         }
     }
 
-    /// Reparent notification handles for tasks owned by `old_owner_session_id`.
     pub async fn reparent_notifications(
         &self,
         old_owner_session_id: &str,
@@ -496,7 +446,8 @@ impl ToolBridge {
         new_handle: crate::notification::types::ToolNotificationHandle,
     ) {
         if let Some(terminal) = &self.terminal {
-            // Weak anchored by this bridge's backend `Arc` (lives as long as the session).
+            // Weak, so the reparented notifications cannot keep the backend
+            // alive past the session that owns this `Arc`.
             let backend_weak = std::sync::Arc::downgrade(terminal);
             terminal
                 .reparent_notifications(
@@ -509,27 +460,19 @@ impl ToolBridge {
         }
     }
 
-    /// Read a typed resource from the registry.
-    ///
-    /// Returns `None` if the resource type has never been inserted.
-    /// The resource is cloned so no lock is held after this returns.
+    /// `None` if the resource type has never been inserted. The resource is
+    /// cloned so no lock is held once this returns.
     pub async fn read_resource<T: Clone + Send + Sync + 'static>(&self) -> Option<T> {
         self.registry.resources.lock().await.get::<T>().cloned()
     }
-    /// Get the shared resources handle for direct access.
-    /// Used by the skill reconciliation helper which needs to update
-    /// `AvailableSkills` in the Resources directly.
     pub async fn shared_resources(&self) -> crate::types::resources::SharedResources {
         self.registry.resources.clone()
     }
 
-    /// Insert a typed resource into the registry's `Resources`.
-    /// Used by the host session to inject `ToolIndex` for search_tool.
     pub async fn update_resource<T: Send + Sync + 'static>(&self, resource: T) {
         let _ = self.registry.update_resource(resource).await;
     }
 
-    /// Kill any background task
     pub async fn kill_background_task(
         &self,
         task_id: &str,
@@ -571,7 +514,6 @@ impl ToolBridge {
         })
     }
 
-    /// Move a foreground command to background by tool_call_id.
     /// Returns `true` if a matching foreground process was found and unblocked.
     pub async fn background_foreground_command(&self, tool_call_id: &str) -> bool {
         if let Some(terminal) = &self.terminal {
@@ -581,7 +523,8 @@ impl ToolBridge {
         }
     }
 
-    /// Gives the output of all terminal tasks which are managed by the tool bridge
+    /// `None` when this bridge has no terminal backend at all, as opposed to
+    /// an empty task list.
     pub async fn list_tasks(&self) -> Option<Vec<TaskSnapshot>> {
         if let Some(terminal) = &self.terminal {
             Some(terminal.list_tasks().await)
@@ -590,9 +533,9 @@ impl ToolBridge {
         }
     }
 
-    /// Drain newly-completed bash background tasks not yet reported.
-    /// Marks returned tasks in [`ReportedTaskCompletions`] to prevent
-    /// duplicate reminders from [`TaskCompletionReminder`].
+    /// Drain newly-completed bash background tasks not yet reported. Returned
+    /// tasks are marked in [`ReportedTaskCompletions`] so
+    /// [`TaskCompletionReminder`] does not report them a second time.
     pub async fn drain_between_turn_bash_completions(&self) -> Vec<TaskSnapshot> {
         let tasks = match self.list_tasks().await {
             Some(t) => t,
@@ -610,11 +553,9 @@ impl ToolBridge {
 
         let mut res = self.registry.resources.lock().await;
         // Subagents share the parent's terminal backend, so `list_tasks()`
-        // returns tasks owned by other sessions. Scope the between-turn
-        // "While you were idle, … background task completed" drain to tasks
-        // this session owns, mirroring the per-tool-call
-        // `TaskCompletionReminder` filter — otherwise a parent (or sibling)
-        // bash task that finished mid-subagent-turn leaks its completion
+        // also returns tasks owned by other sessions; without the owner scope
+        // a parent or sibling bash task finishing mid-subagent-turn leaks its
+        // "While you were idle, … background task completed"
         // `<system-reminder>` into the subagent's conversation. The owner
         // filter runs before `mark_reported` so the owning session still
         // reports the task on its own next turn.
@@ -627,11 +568,9 @@ impl ToolBridge {
             .collect()
     }
 
-    /// Construct a minimal bridge for tests. Has no tools registered.
-    ///
-    /// Bypasses `ToolRegistryBuilder::finalize()` entirely so this can
-    /// be called from sync `#[test]` functions that lack a tokio runtime.
-    /// (`finalize()` spawns background tasks via `tokio::spawn`.)
+    /// Minimal bridge with no tools registered. Bypasses
+    /// `ToolRegistryBuilder::finalize()`, which `tokio::spawn`s background
+    /// tasks, so sync `#[test]` functions without a runtime can call it.
     pub fn for_test() -> Self {
         let toolset = FinalizedToolset::empty_for_test();
         Self {
@@ -703,9 +642,8 @@ mod tests {
         let bridge = ToolBridge::for_test();
         let toolset = bridge.toolset();
 
-        // PascalCase + kigi's snake_case in one registry
-        // to exercise the lookup on the literal name strings each
-        // namespace ships.
+        // PascalCase and snake_case in one registry, to exercise the lookup on
+        // the literal name strings each namespace ships.
         register_fixture(&toolset, "Write", ToolKind::Write, "fixture_write");
         register_fixture(
             &toolset,
@@ -730,12 +668,8 @@ mod tests {
         );
 
         assert_eq!(bridge.tool_kind("not_a_registered_tool"), None);
-        // Exact client-name lookup is case-sensitive.
         assert_eq!(bridge.tool_kind("write"), None);
     }
-
-    // ── drain_between_turn_bash_completions owner scoping (the "While you
-    //    were idle, … background task completed" path) ──
 
     #[derive(Debug)]
     struct MockTerminal {

@@ -10,9 +10,8 @@ use super::agent::AgentId;
 use crate::scrollback::entry::EntryId;
 use agent_client_protocol as acp;
 use kigi_shell::sampling::types::ReasoningEffort;
-/// Typed error for model switch failures. Replaces the raw `String` in
-/// `TaskResult::SwitchModelComplete` so dispatch can match on the variant
-/// instead of parsing strings.
+/// Typed error for model switch failures: lets dispatch match on the
+/// variant instead of parsing an error string.
 #[derive(Debug, Clone)]
 pub enum SwitchModelError {
     /// The target model requires a different agent harness than the
@@ -36,7 +35,6 @@ pub enum SwitchModelError {
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum Action {
-    /// Quit the application.
     Quit,
     /// Restart the binary to pick up a downloaded update.
     QuitForUpdate,
@@ -217,9 +215,7 @@ pub enum Action {
         /// live on [`Effect::QueueInterject`].
         new_text: Option<String>,
     },
-    /// Focus the prompt pane.
     FocusPrompt,
-    /// Focus the scrollback pane (leave prompt).
     FocusScrollback,
     /// Clear the prompt (history-aware). Armed by idle Esc double-press via
     /// [`super::app_view::InputOutcome::ArmPending`] (no ActionDef; not a keybinding).
@@ -229,39 +225,26 @@ pub enum Action {
     /// `/` goes to the prompt) reach the same search as the vim `/` key.
     /// Carries the optional `/find <word>` argument to pre-fill the bar.
     OpenScrollbackSearch(Option<String>),
-    /// Select next entry in scrollback.
     SelectNext,
-    /// Select previous entry.
     SelectPrev,
-    /// Jump to next turn boundary.
     NextTurn,
-    /// Jump to previous turn boundary.
     PrevTurn,
-    /// Jump to next assistant response.
     NextResponse,
-    /// Jump to previous assistant response.
     PrevResponse,
     /// Scroll up by N lines.
     ScrollUp(u16),
     /// Scroll down by N lines.
     ScrollDown(u16),
-    /// Go to top of scrollback.
     GotoTop,
-    /// Go to bottom of scrollback.
     GotoBottom,
-    /// Half page up.
     HalfPageUp,
-    /// Half page down.
     HalfPageDown,
-    /// Full page up.
     PageUp,
-    /// Full page down.
     PageDown,
     /// Collapse selected entry (no-op if already collapsed or not foldable).
     Collapse,
     /// Expand selected entry (no-op if already expanded or not foldable).
     Expand,
-    /// Toggle fold on selected entry.
     ToggleFold,
     /// Smart expand/collapse all: expand all if any collapsed, else collapse all.
     ToggleExpandAll,
@@ -771,7 +754,7 @@ pub enum Action {
     /// Exit the dashboard's session-overlay (the bordered
     /// `[Prev] [Next] [✗]` chrome wrapped around an attached
     /// agent view). Returns to the dashboard with the cursor on
-    /// the previously attached row. Bound to Esc / Ctrl+\\ /
+    /// the row that was attached. Bound to Esc / Ctrl+\\ /
     /// `[✗]` click inside the overlay.
     DashboardOverlayExit,
     /// Cycle the dashboard's session-overlay to the previous
@@ -1064,11 +1047,6 @@ impl PlanModeKind {
         if b { Self::On } else { Self::Off }
     }
 }
-/// Async side effect produced by [`super::dispatch::dispatch`].
-///
-/// The event loop spawns these into a `JoinSet`. When they complete,
-/// the result is wrapped in [`TaskResult`] and fed back through
-/// `Action::TaskComplete`.
 /// What user gesture triggered a turn cancel. Recorded on `session/cancel`'s
 /// `_meta.cancelTrigger` so the agent's `mid_turn_abort` telemetry can tell
 /// ESC from Ctrl+C (and a mouse click on the cancel button) apart. Free-form
@@ -1285,6 +1263,11 @@ pub enum ProbedAttachment {
     /// The attachment probe task failed or timed out.
     ProbeFailed,
 }
+/// Async side effect produced by [`super::dispatch::dispatch`].
+///
+/// The event loop spawns these into a `JoinSet`. When they complete,
+/// the result is wrapped in [`TaskResult`] and fed back through
+/// `Action::TaskComplete`.
 #[derive(Debug)]
 pub enum Effect {
     /// Create a new ACP session.
@@ -2085,8 +2068,7 @@ pub enum TaskResult {
     /// A send-now `session/prompt` RPC failed at the transport/RPC layer —
     /// the prompt never reached the shell's queue. Carries the payload so
     /// dispatch can requeue it locally (the producer already consumed the
-    /// composer/queue row, so dropping it would silently lose the message —
-    /// the same contract the removed `InterjectFailed` requeue had).
+    /// composer/queue row, so dropping it would silently lose the message).
     SendPromptNowFailed {
         agent_id: AgentId,
         session_id: acp::SessionId,

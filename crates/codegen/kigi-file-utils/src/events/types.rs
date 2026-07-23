@@ -339,7 +339,7 @@ pub enum Event {
         pattern: &'static str,
     },
 
-    // ── MCP Diagnostics ──────────────────────────────────────────
+    // MCP Diagnostics
     McpConfigResolved {
         servers: Vec<McpConfigServer>,
         disabled: Vec<String>,

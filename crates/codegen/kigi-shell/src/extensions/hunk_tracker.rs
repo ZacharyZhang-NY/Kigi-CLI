@@ -21,10 +21,6 @@ use kigi_workspace::workspace_ops::{
     HunkGetSessionSummaryReq, HunkSingleActionReq, HunkTurnActionReq,
 };
 
-// ═══════════════════════════════════════════════════════════════════════
-// Request Types
-// ═══════════════════════════════════════════════════════════════════════
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetHunksRequest {
@@ -50,7 +46,8 @@ pub struct HunkActionRequest {
     #[serde(default)]
     pub session_id: Option<acp::SessionId>,
     pub hunk_id: String,
-    pub action: String, // "accept" | "reject"
+    // "accept" | "reject"
+    pub action: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -59,7 +56,8 @@ pub struct FileActionRequest {
     #[serde(default)]
     pub session_id: Option<acp::SessionId>,
     pub path: String,
-    pub action: String, // "accept" | "reject"
+    // "accept" | "reject"
+    pub action: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -68,7 +66,8 @@ pub struct TurnActionRequest {
     #[serde(default)]
     pub session_id: Option<acp::SessionId>,
     pub prompt_index: usize,
-    pub action: String, // "accept" | "reject"
+    // "accept" | "reject"
+    pub action: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -76,7 +75,8 @@ pub struct TurnActionRequest {
 pub struct AllActionRequest {
     #[serde(default)]
     pub session_id: Option<acp::SessionId>,
-    pub action: String, // "accept" | "reject"
+    // "accept" | "reject"
+    pub action: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -86,16 +86,11 @@ pub struct GetSummaryRequest {
     pub session_id: Option<acp::SessionId>,
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// Response Types
-// ═══════════════════════════════════════════════════════════════════════
-
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetHunksResponse {
     pub hunks: Vec<Arc<Hunk>>,
 
-    // === Explicit content status (new fields) ===
     /// Baseline content with explicit status - only present when requesting a specific path
     #[serde(skip_serializing_if = "Option::is_none")]
     pub baseline: Option<FileContentView>,
@@ -103,7 +98,6 @@ pub struct GetHunksResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub current: Option<FileContentView>,
 
-    // === Legacy fields for backward compatibility ===
     /// Baseline content (git HEAD) - legacy, use `baseline.content` instead
     #[serde(skip_serializing_if = "Option::is_none")]
     pub baseline_content: Option<String>,
@@ -144,10 +138,6 @@ pub struct ActionResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub affected_count: Option<usize>,
 }
-
-// ═══════════════════════════════════════════════════════════════════════
-// Helper Functions
-// ═══════════════════════════════════════════════════════════════════════
 
 /// Bridge the workspace RPC's lean wire response type back to the
 /// hunk-tracker's `FileContentEntry`: the RPC returns the wire type while the
@@ -207,7 +197,6 @@ impl HunkTrackerContext {
         path.to_path_buf()
     }
 
-    /// Rewrite paths in a list of hunks for display.
     fn rewrite_hunks(&self, hunks: Vec<Arc<Hunk>>) -> Vec<Arc<Hunk>> {
         if self.display_cwd.is_none() {
             return hunks;
@@ -219,7 +208,6 @@ impl HunkTrackerContext {
                 if new_path == h.path {
                     return h;
                 }
-                // Clone the hunk with the rewritten path
                 Arc::new(Hunk {
                     path: new_path,
                     id: h.id.clone(),
@@ -236,7 +224,6 @@ impl HunkTrackerContext {
     }
 }
 
-/// Get the hunk tracker context for the given session.
 fn get_hunk_tracker(
     agent: &MvpAgent,
     session_id: Option<&acp::SessionId>,
@@ -256,8 +243,6 @@ fn get_hunk_tracker(
     })
 }
 
-/// Compute file summaries from hunks.
-///
 /// `staged_paths` contains the absolute paths of files staged in the git index.
 fn compute_file_summaries(
     hunks: &[Arc<Hunk>],
@@ -287,7 +272,6 @@ fn compute_file_summaries(
             .map(|t| t.lines().count())
             .unwrap_or(0);
 
-        // Mark as agent file if any hunk is from agent
         if hunk.source.is_agent_edit() {
             entry.is_agent_file = true;
         }
@@ -298,24 +282,16 @@ fn compute_file_summaries(
     files
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// Main Handler
-// ═══════════════════════════════════════════════════════════════════════
-
 pub async fn handle(
     agent: &MvpAgent,
     ops: &kigi_workspace::WorkspaceOps,
     args: &acp::ExtRequest,
 ) -> ExtResult {
     match args.method.as_ref() {
-        // ───────────────────────────────────────────────────────────────
-        // Queries
-        // ───────────────────────────────────────────────────────────────
         "kigi/hunk-tracker/get-hunks" => {
             let req = parse_params::<GetHunksRequest>(args)?;
             let ctx = get_hunk_tracker(agent, req.session_id.as_ref())?;
 
-            // If path is specified, use get_file_hunk_data to get hunks + content together
             let (hunks, baseline, current, baseline_content, current_content) =
                 if let Some(path) = req.path {
                     let data = ctx.handle.get_file_hunk_data(PathBuf::from(path)).await;
@@ -330,7 +306,6 @@ pub async fn handle(
                     (ctx.handle.get_all_hunks().await, None, None, None, None)
                 };
 
-            // Filter by source if specified
             let hunks = match req.source.as_deref() {
                 Some("agent") => hunks
                     .into_iter()
@@ -340,10 +315,9 @@ pub async fn handle(
                     .into_iter()
                     .filter(|h| h.source.is_external())
                     .collect(),
-                _ => hunks, // "all" or unspecified
+                _ => hunks,
             };
 
-            // Rewrite worktree paths to display paths for client UI
             let hunks = ctx.rewrite_hunks(hunks);
 
             to_ext_response(Ok(GetHunksResponse {
@@ -363,7 +337,6 @@ pub async fn handle(
             let staged_paths = ctx.handle.get_staged_files().await;
             // Rewrite paths before computing summaries so file paths are stable
             let hunks = ctx.rewrite_hunks(hunks);
-            // Rewrite staged paths for display (worktree → display path)
             let staged_paths: HashSet<PathBuf> =
                 staged_paths.iter().map(|p| ctx.display_path(p)).collect();
             let files = compute_file_summaries(&hunks, &staged_paths);
@@ -375,8 +348,6 @@ pub async fn handle(
             let req = parse_params::<GetFilesRequest>(args)?;
 
             let sid = req.session_id.as_ref().map(|s| s.0.as_ref());
-            // The RPC returns the lean wire type; bridge it back to the
-            // hunk-tracker type so the ACP response shape is unchanged.
             let mut files: Vec<FileContentEntry> = ops
                 .dispatch(&HunkGetAllFileContentsReq {}, sid)
                 .await
@@ -384,7 +355,6 @@ pub async fn handle(
                 .into_iter()
                 .map(file_content_entry_from_wire)
                 .collect();
-            // Post-dispatch: rewrite worktree paths to display paths for client UI
             if let Some(ctx) = req
                 .session_id
                 .as_ref()
@@ -409,9 +379,6 @@ pub async fn handle(
             to_ext_response(Ok(result))
         }
 
-        // ───────────────────────────────────────────────────────────────
-        // Single Hunk Action
-        // ───────────────────────────────────────────────────────────────
         "kigi/hunk-tracker/hunk-action" => {
             let req = parse_params::<HunkActionRequest>(args)?;
 
@@ -445,9 +412,6 @@ pub async fn handle(
             }
         }
 
-        // ───────────────────────────────────────────────────────────────
-        // Bulk Actions
-        // ───────────────────────────────────────────────────────────────
         "kigi/hunk-tracker/file-action" => {
             let req = parse_params::<FileActionRequest>(args)?;
 
@@ -701,19 +665,10 @@ mod tests {
         let files = compute_file_summaries(&hunks, &staged);
 
         assert_eq!(files.len(), 2);
-        // a.txt is staged
         assert!(files[0].staged);
-        // b.txt is not staged
         assert!(!files[1].staged);
     }
 
-    // =========================================================================
-    // GetHunksResponse Serialization Tests
-    // =========================================================================
-    // These tests verify that the ACP get-hunks response correctly serializes
-    // the new explicit status fields (baseline, current) alongside legacy fields.
-
-    /// GetHunksResponse serializes Full status with all fields
     #[test]
     fn get_hunks_response_serializes_full_status() {
         let baseline_text = "baseline content\n";
@@ -729,7 +684,6 @@ mod tests {
 
         let json = serde_json::to_value(&response).unwrap();
 
-        // Verify baseline view fields
         let baseline = json.get("baseline").expect("baseline should be present");
         assert_eq!(baseline.get("status").unwrap().as_str().unwrap(), "full");
         assert_eq!(
@@ -741,7 +695,6 @@ mod tests {
             baseline_text
         );
 
-        // Verify current view fields
         let current = json.get("current").expect("current should be present");
         assert_eq!(current.get("status").unwrap().as_str().unwrap(), "full");
         assert_eq!(
@@ -749,7 +702,6 @@ mod tests {
             current_text
         );
 
-        // Verify legacy fields
         assert_eq!(
             json.get("baselineContent").unwrap().as_str().unwrap(),
             baseline_text
@@ -760,7 +712,6 @@ mod tests {
         );
     }
 
-    /// GetHunksResponse serializes Missing status
     #[test]
     fn get_hunks_response_serializes_missing_status() {
         let response = GetHunksResponse {
@@ -773,17 +724,14 @@ mod tests {
 
         let json = serde_json::to_value(&response).unwrap();
 
-        // Verify baseline is Missing (no content or byteLen)
         let baseline = json.get("baseline").expect("baseline should be present");
         assert_eq!(baseline.get("status").unwrap().as_str().unwrap(), "missing");
         assert!(baseline.get("content").is_none());
         assert!(baseline.get("byteLen").is_none());
 
-        // Legacy baseline_content should be absent (skipped when None)
         assert!(json.get("baselineContent").is_none());
     }
 
-    /// GetHunksResponse serializes Binary status with byte_len
     #[test]
     fn get_hunks_response_serializes_binary_status() {
         let response = GetHunksResponse {
@@ -796,19 +744,16 @@ mod tests {
 
         let json = serde_json::to_value(&response).unwrap();
 
-        // Verify baseline is Binary
         let baseline = json.get("baseline").expect("baseline should be present");
         assert_eq!(baseline.get("status").unwrap().as_str().unwrap(), "binary");
         assert_eq!(baseline.get("byteLen").unwrap().as_u64().unwrap(), 1024);
         assert!(baseline.get("content").is_none());
 
-        // Verify current is Binary
         let current = json.get("current").expect("current should be present");
         assert_eq!(current.get("status").unwrap().as_str().unwrap(), "binary");
         assert_eq!(current.get("byteLen").unwrap().as_u64().unwrap(), 2048);
     }
 
-    /// GetHunksResponse serializes TooLarge status with byte_len
     #[test]
     fn get_hunks_response_serializes_too_large_status() {
         let response = GetHunksResponse {
@@ -821,7 +766,6 @@ mod tests {
 
         let json = serde_json::to_value(&response).unwrap();
 
-        // Verify baseline is TooLarge
         let baseline = json.get("baseline").expect("baseline should be present");
         assert_eq!(
             baseline.get("status").unwrap().as_str().unwrap(),
@@ -833,7 +777,6 @@ mod tests {
         );
         assert!(baseline.get("content").is_none());
 
-        // Verify current is TooLarge
         let current = json.get("current").expect("current should be present");
         assert_eq!(current.get("status").unwrap().as_str().unwrap(), "tooLarge");
         assert_eq!(
@@ -842,7 +785,6 @@ mod tests {
         );
     }
 
-    /// GetHunksResponse omits baseline/current when None (get-all-hunks case)
     #[test]
     fn get_hunks_response_omits_none_fields() {
         let response = GetHunksResponse {
@@ -861,18 +803,15 @@ mod tests {
 
         let json = serde_json::to_value(&response).unwrap();
 
-        // baseline, current, baselineContent, currentContent should all be absent
         assert!(json.get("baseline").is_none());
         assert!(json.get("current").is_none());
         assert!(json.get("baselineContent").is_none());
         assert!(json.get("currentContent").is_none());
 
-        // hunks should still be present
         assert!(json.get("hunks").is_some());
         assert_eq!(json.get("hunks").unwrap().as_array().unwrap().len(), 1);
     }
 
-    /// FileContentView default is Missing status
     #[test]
     fn file_content_view_default_is_missing() {
         let view = FileContentView::default();
@@ -882,11 +821,6 @@ mod tests {
         assert!(view.content.is_none());
     }
 
-    // =========================================================================
-    // GetAllFileContentsResponse Serialization Tests
-    // =========================================================================
-
-    /// GetAllFileContentsResponse serializes with all fields using camelCase
     #[test]
     fn get_all_file_contents_response_serializes_correctly() {
         use kigi_hunk_tracker::FileContentEntry;
@@ -910,7 +844,6 @@ mod tests {
         assert!(f.get("isAgentFile").unwrap().as_bool().unwrap());
         assert!(!f.get("staged").unwrap().as_bool().unwrap());
 
-        // Baseline
         let baseline = f.get("baseline").unwrap();
         assert_eq!(baseline.get("status").unwrap().as_str().unwrap(), "full");
         assert_eq!(
@@ -918,7 +851,6 @@ mod tests {
             "old content\n"
         );
 
-        // Current
         let current = f.get("current").unwrap();
         assert_eq!(current.get("status").unwrap().as_str().unwrap(), "full");
         assert_eq!(
@@ -927,7 +859,6 @@ mod tests {
         );
     }
 
-    /// GetAllFileContentsResponse handles missing baseline (new file)
     #[test]
     fn get_all_file_contents_response_missing_baseline() {
         use kigi_hunk_tracker::FileContentEntry;
@@ -953,7 +884,6 @@ mod tests {
         assert!(baseline.get("byteLen").is_none());
     }
 
-    /// GetAllFileContentsResponse handles binary files
     #[test]
     fn get_all_file_contents_response_binary_file() {
         use kigi_hunk_tracker::FileContentEntry;
@@ -981,7 +911,6 @@ mod tests {
         assert_eq!(current.get("byteLen").unwrap().as_u64().unwrap(), 2048);
     }
 
-    /// GetAllFileContentsResponse returns empty files array when no tracked files
     #[test]
     fn get_all_file_contents_response_empty() {
         let response = GetAllFileContentsResponse { files: vec![] };
@@ -991,7 +920,6 @@ mod tests {
         assert!(files.is_empty());
     }
 
-    /// GetAllFileContentsResponse with multiple files preserves all entries
     #[test]
     fn get_all_file_contents_response_multiple_files() {
         use kigi_hunk_tracker::FileContentEntry;
@@ -1019,11 +947,9 @@ mod tests {
         let files = json.get("files").unwrap().as_array().unwrap();
         assert_eq!(files.len(), 2);
 
-        // First file: agent, staged
         assert!(files[0].get("isAgentFile").unwrap().as_bool().unwrap());
         assert!(files[0].get("staged").unwrap().as_bool().unwrap());
 
-        // Second file: not agent, not staged
         assert!(!files[1].get("isAgentFile").unwrap().as_bool().unwrap());
         assert!(!files[1].get("staged").unwrap().as_bool().unwrap());
     }

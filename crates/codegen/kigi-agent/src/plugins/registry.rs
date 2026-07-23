@@ -301,7 +301,7 @@ impl PluginRegistry {
     }
 }
 
-// ── Shared handle for cross-thread reload ─────────────────────────────
+// Shared handle for cross-thread reload
 
 /// Thread-safe handle for plugin registry lifecycle.
 ///
@@ -456,7 +456,7 @@ impl SharedPluginRegistryHandle {
     }
 }
 
-// ── Component counting helpers ────────────────────────────────────────
+// Component counting helpers
 
 /// Collect the SKILL.md paths that load from the given skill dirs.
 ///
@@ -793,9 +793,11 @@ mod tests {
             &["enabled-plugin".to_string()],
         );
 
-        assert_eq!(reg.len(), 2); // Both in registry
+        // Both in registry
+        assert_eq!(reg.len(), 2);
         let active = reg.active_plugins();
-        assert_eq!(active.len(), 1); // Only enabled one is active
+        // Only enabled one is active
+        assert_eq!(active.len(), 1);
         assert_eq!(active[0].name, "enabled-plugin");
 
         // Disabled one is in list but marked disabled
@@ -876,9 +878,12 @@ mod tests {
 
         let reg = PluginRegistry::from_discovered(plugins, &[], &[]);
         let list = reg.list();
-        assert_eq!(list[0].name, "alpha"); // CliOverride = 0
-        assert_eq!(list[1].name, "beta"); // Project = 1
-        assert_eq!(list[2].name, "zebra"); // User = 2
+        // CliOverride = 0
+        assert_eq!(list[0].name, "alpha");
+        // Project = 1
+        assert_eq!(list[1].name, "beta");
+        // User = 2
+        assert_eq!(list[2].name, "zebra");
     }
 
     #[test]
@@ -935,7 +940,7 @@ mod tests {
         assert_eq!(reg.mcp_server_owner("my-server"), Some("mcp-plugin"));
     }
 
-    // ── Combined disabled + untrusted scenarios ─────────────────
+    // Combined disabled + untrusted scenarios
 
     #[test]
     fn disabled_project_plugin_excluded_from_active_and_enabled() {
@@ -961,7 +966,7 @@ mod tests {
 
         let bad = reg.get("bad-plugin").unwrap();
         assert!(!bad.enabled);
-        // trusted is now propagated from discovery (was false for Project scope)
+        // trusted is propagated from discovery (was false for Project scope)
         assert!(!bad.trusted);
     }
 
@@ -1166,7 +1171,7 @@ mod tests {
         assert_eq!(config.disabled.len(), 2);
     }
 
-    // ── Security: trust propagation from discovery ──────────────
+    // Security: trust propagation from discovery
 
     #[test]
     fn untrusted_project_plugin_excluded_from_active_even_when_enabled() {
@@ -1174,12 +1179,14 @@ mod tests {
         // pre-populated enabledPlugins) but NOT trusted. It must NOT
         // appear in active_plugins() so its hooks never fire.
         let plugins = vec![
-            make_discovered("malicious", PluginScope::Project, false), // untrusted
+            // untrusted
+            make_discovered("malicious", PluginScope::Project, false),
         ];
         let reg = PluginRegistry::from_discovered(
             plugins,
             &[],
-            &["malicious".to_string()], // attacker got it into enabled list
+            // attacker got it into enabled list
+            &["malicious".to_string()],
         );
 
         // Plugin is enabled but not trusted

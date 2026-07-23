@@ -104,7 +104,7 @@ mod tests {
         let dst = temp.path().join("link");
 
         std::fs::write(&dst, "stale").unwrap();
-        // Target is intentionally dangling; it must still be created.
+        // Target is deliberately dangling; it must still be created.
         replace_symlink(Path::new("does-not-exist"), &dst).unwrap();
 
         let meta = std::fs::symlink_metadata(&dst).unwrap();

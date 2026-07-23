@@ -259,7 +259,7 @@ fn open_sqlite_transaction_with_journal_mode(
     // non-symlink final file are validated above; adversarial swap-and-restore
     // races are outside this scanner's local-user threat model. Only local WAL
     // reaches this direct read-only/query-only open; its native coordination may
-    // still update SHM read marks despite scanner SQL making no logical writes.
+    // still touch SHM read marks despite scanner SQL making no logical writes.
     let connection = Connection::open_with_flags(
         &opened.path,
         OpenFlags::SQLITE_OPEN_READ_ONLY

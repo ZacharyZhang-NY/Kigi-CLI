@@ -16,9 +16,6 @@ pub(super) fn yolo_toggle_report(was: bool, actual: bool) -> Option<bool> {
 #[cfg(test)]
 mod yolo_toggle_report_tests {
     use super::yolo_toggle_report;
-    /// A pin-clamped enable (requested ON but actual stays OFF) reports no
-    /// change, so no spurious "turned on" event/telemetry is emitted. Real
-    /// flips report the actual new state.
     #[test]
     fn reports_actual_state_change_only() {
         assert_eq!(yolo_toggle_report(false, false), None);

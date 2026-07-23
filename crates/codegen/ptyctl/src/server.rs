@@ -67,7 +67,7 @@ pub struct WaitParams {
     pub regex: Option<String>,
     /// Wait until this text is absent from the screen.
     pub gone: Option<String>,
-    /// Wait until the grid has been unchanged for this many milliseconds.
+    /// Wait until the grid has been `unchanged` for this many milliseconds.
     pub stable_ms: Option<u64>,
     /// Timeout in milliseconds (default 10000, capped at 120000).
     pub timeout_ms: Option<u64>,
@@ -265,7 +265,7 @@ async fn handle_stop(State(state): State<AppState>) -> Json<serde_json::Value> {
     Json(serde_json::json!({"ok": true}))
 }
 
-// -- Scrollback --
+// Scrollback
 
 async fn handle_scrollback(
     State(state): State<AppState>,
@@ -280,7 +280,7 @@ async fn handle_scrollback(
     }))
 }
 
-// -- WebSocket streaming --
+// WebSocket streaming
 
 /// Upgrade an HTTP request to a WebSocket connection.
 async fn handle_ws_upgrade(

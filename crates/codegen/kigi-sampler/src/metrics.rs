@@ -188,7 +188,8 @@ mod tests {
         let chunks: Vec<Instant> = (0..11)
             .scan(100u64, |acc, i| {
                 let t = *acc;
-                *acc += (i + 1) * 10; // intervals: 10, 20, 30, ...
+                // intervals: 10, 20, 30, ...
+                *acc += (i + 1) * 10;
                 Some(offset(start, t))
             })
             .collect();

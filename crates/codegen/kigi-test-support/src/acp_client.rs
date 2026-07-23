@@ -1,9 +1,6 @@
-//! ACP stdio clients for testing kigi sessions end-to-end: the typed
-//! [`KigiStdioClient`] (`agent-client-protocol::ClientSideConnection` —
-//! authentication, session lifecycle, permissions, notification streaming) and
-//! the raw-wire [`RawStdioClient`] (verbatim JSON-RPC lines for shapes the
-//! typed client can't produce), plus the shared subprocess spawn/stderr-capture
-//! plumbing used by every harness in this crate.
+//! ACP stdio clients for driving `kigi agent stdio` end-to-end: the typed
+//! [`KigiStdioClient`] and the raw-wire [`RawStdioClient`], which emits
+//! verbatim JSON-RPC lines for shapes the typed client cannot produce.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -20,12 +17,10 @@ use crate::headless::stderr_tail;
 use crate::mock_server::MockInferenceServer;
 use crate::process::spawn_piped_with_stderr_capture;
 
-/// Spawn `kigi agent stdio` with the canonical hermetic test env: the sandbox
-/// from [`test_env_cmd_tokio`] plus the debug-logging kill-list, so the
-/// hermeticity setup exists exactly once for the typed ([`KigiStdioClient`])
-/// and raw ([`RawStdioClient`]) harnesses. `leading_args` go before the
-/// `agent stdio` subcommand (global flags); `extra_env` is applied after the
-/// kill-list so a test can still set e.g. `KIGI_DEBUG_LOG=1` explicitly.
+/// Spawn `kigi agent stdio` with the hermetic test env. `leading_args` go
+/// before the `agent stdio` subcommand (global flags); `extra_env` is applied
+/// after the debug-logging kill-list so a test can still set e.g.
+/// `KIGI_DEBUG_LOG=1` explicitly.
 fn spawn_agent_process(
     server: &MockInferenceServer,
     cwd: &Path,
@@ -40,9 +35,8 @@ fn spawn_agent_process(
         .args(["agent", "stdio"])
         .current_dir(cwd);
     test_env_cmd_tokio(&mut cmd, &server.url(), home);
-    // Hermetic firehose env: clear inherited debug-logging knobs so a test
-    // controls logging only via `extra_env` / `leading_args` (mirrors the
-    // headless `debug_cmd`).
+    // Clear inherited debug-logging knobs so a test controls logging only via
+    // `extra_env` / `leading_args`.
     for k in [
         "KIGI_DEBUG_LOG",
         "KIGI_LOG_FILE",
@@ -64,7 +58,7 @@ struct TextCapture {
     notification_count: AtomicU32,
 }
 
-/// ACP client impl: auto-approves permissions, captures text chunks.
+/// ACP client that auto-approves every permission request.
 struct TestAcpClient {
     capture: Arc<TextCapture>,
 }
@@ -75,7 +69,6 @@ impl acp::Client for TestAcpClient {
         &self,
         args: acp::RequestPermissionRequest,
     ) -> acp::Result<acp::RequestPermissionResponse> {
-        // Auto-approve: pick AllowOnce if available, otherwise first option.
         let outcome = args
             .options
             .iter()
@@ -107,10 +100,9 @@ impl acp::Client for TestAcpClient {
     }
 }
 
-/// Drives `kigi agent stdio` via the ACP protocol over pipes.
-///
-/// Handles the full lifecycle: spawn → initialize → authenticate → session → prompt.
-/// Child process is killed on drop.
+/// Drives `kigi agent stdio` via the ACP protocol over pipes: spawn →
+/// initialize → authenticate → session → prompt. The child process is killed
+/// on drop.
 pub struct KigiStdioClient {
     conn: acp::ClientSideConnection,
     _child: tokio::process::Child,
@@ -130,8 +122,7 @@ impl KigiStdioClient {
     }
 
     /// Like [`spawn_with_home`] but applies extra environment variables to the
-    /// child process (after the standard test env). Used by tests that toggle
-    /// behavior via env vars (e.g. the vendor-compat suite).
+    /// child process, after the standard test env.
     pub async fn spawn_with_home_and_env(
         server: &MockInferenceServer,
         cwd: &Path,
@@ -142,8 +133,8 @@ impl KigiStdioClient {
     }
 
     /// Like [`spawn_with_home_and_env`] but also prepends `leading_args` before
-    /// the `agent stdio` subcommand. Used to drive top-level global flags (e.g.
-    /// `--debug`) so a test can exercise the flag's master switch, not just env.
+    /// the `agent stdio` subcommand, so a test can exercise top-level global
+    /// flags such as `--debug` rather than only their env equivalents.
     pub async fn spawn_with_home_env_and_args(
         server: &MockInferenceServer,
         cwd: &Path,
@@ -237,7 +228,6 @@ impl KigiStdioClient {
         resp.session_id
     }
 
-    /// Create a session with a specific model pre-selected.
     pub async fn create_session_with_model(&self, cwd: &Path, model_id: &str) -> acp::SessionId {
         let resp = self
             .conn
@@ -255,7 +245,6 @@ impl KigiStdioClient {
         resp.session_id
     }
 
-    /// Switch model on an existing session via the typed ACP `session/set_model`.
     pub async fn set_model(
         &self,
         session_id: &acp::SessionId,
@@ -301,7 +290,6 @@ impl KigiStdioClient {
         self.home.take().expect("test home already taken")
     }
 
-    /// Return the home directory path (for cache invalidation between phases).
     pub fn home_path(&self) -> &std::path::Path {
         self.home.as_ref().expect("test home already taken").path()
     }
@@ -401,7 +389,7 @@ impl KigiStdioClient {
 /// Exists for wire shapes the typed [`KigiStdioClient`] (`ClientSideConnection`,
 /// integer ids) can never produce — e.g. Xcode's Swift/Foundation `JSONEncoder`
 /// output: escaped-slash methods (`"session\/prompt"`) and string UUID request
-/// ids. Child process is killed on drop.
+/// ids. The child process is killed on drop.
 pub struct RawStdioClient {
     stdin: tokio::process::ChildStdin,
     stdout: tokio::io::BufReader<tokio::process::ChildStdout>,
@@ -431,7 +419,7 @@ impl RawStdioClient {
         String::from_utf8_lossy(&self.stderr.lock().unwrap()).into_owned()
     }
 
-    /// Write `line` verbatim followed by `\n`, and flush.
+    /// Write `line` verbatim — no re-encoding — followed by `\n`, then flush.
     pub async fn send_line(&mut self, line: &str) {
         use tokio::io::AsyncWriteExt as _;
 
@@ -444,13 +432,13 @@ impl RawStdioClient {
     }
 
     /// Read stdout lines until the response to `id` arrives (no `method` key +
-    /// exact string-id match) — returning IS the id-echo assertion: an id
-    /// echoed with different bytes or as a different JSON type never matches
-    /// and surfaces in the timeout diagnostics instead. Notifications are
-    /// skipped; any agent→client request is refused with a JSON-RPC error so a
-    /// turn can never hang on this capability-less client. On timeout the
-    /// panic reports how much non-matching traffic was seen (0 = true
-    /// silence, the acp-0.6 escaped-method symptom) plus the last few lines.
+    /// exact string-id match). Returning IS the id-echo assertion: an id echoed
+    /// with different bytes or as a different JSON type never matches and
+    /// surfaces in the timeout diagnostics instead. Any agent→client request is
+    /// refused with a JSON-RPC error so a turn can never hang on this
+    /// capability-less client. The timeout panic reports how much non-matching
+    /// traffic was seen — 0 means true silence, the acp-0.6 escaped-method
+    /// symptom.
     pub async fn response_for_id(
         &mut self,
         id: &str,
@@ -504,7 +492,7 @@ impl RawStdioClient {
 }
 
 /// Record a non-matching line for [`RawStdioClient::response_for_id`]'s timeout
-/// diagnostics: bump the count, keep the last 3 lines (truncated).
+/// diagnostics.
 fn push_skipped_tail(skipped: &mut usize, tail: &mut Vec<String>, line: &str) {
     *skipped += 1;
     if tail.len() == 3 {

@@ -31,7 +31,6 @@ pub struct ThinkingBlock {
     started_at: Option<std::time::Instant>,
 }
 impl ThinkingBlock {
-    /// Create a new thinking block with complete text.
     pub fn new(text: impl Into<String>) -> Self {
         Self {
             content: MarkdownContent::new(text),
@@ -40,7 +39,6 @@ impl ThinkingBlock {
         }
     }
 
-    /// Create an empty block for streaming.
     pub fn streaming() -> Self {
         Self {
             content: MarkdownContent::streaming(),
@@ -67,7 +65,6 @@ impl ThinkingBlock {
         }
     }
 
-    /// Push a streaming chunk of markdown text.
     pub fn push_chunk(&mut self, chunk: &str) {
         self.content.push_chunk(chunk);
     }
@@ -84,9 +81,6 @@ impl ThinkingBlock {
     /// not the server-reported delta.
     pub fn finish(&mut self) {
         self.content.finish();
-        // Freeze local elapsed if no server time has been set.
-        // The local timer (started_at → now) captures the full duration
-        // from block creation to finish, which is what the user perceives.
         if self.elapsed_time_ms.is_none()
             && let Some(start) = self.started_at
         {
@@ -94,7 +88,6 @@ impl ThinkingBlock {
         }
     }
 
-    /// Get the source text.
     pub fn text(&self) -> String {
         self.content.text()
     }
@@ -112,8 +105,6 @@ impl ThinkingBlock {
         }
     }
 
-    /// Set the elapsed time (in milliseconds).
-    ///
     /// When set, the collapsed view will show "Thought for Xs".
     pub fn set_elapsed_time_ms(&mut self, time_ms: Option<i64>) {
         self.elapsed_time_ms = time_ms;
@@ -129,7 +120,6 @@ impl ThinkingBlock {
         &self.content
     }
 
-    /// Mutable access to the underlying markdown content.
     pub fn content_mut(&mut self) -> &mut MarkdownContent {
         &mut self.content
     }
@@ -146,7 +136,6 @@ impl ThinkingBlock {
         }
     }
 
-    /// Format elapsed time for display.
     fn format_time(&self) -> Option<String> {
         self.elapsed_time_ms.map(|ms| {
             let secs = ms as f64 / 1000.0;
@@ -259,7 +248,6 @@ impl ThinkingBlock {
 
             let total = wrapped.lines.len();
             if total <= n {
-                // Content fits within N lines, show all (with blending)
                 let output = BlockOutput {
                     lines: wrapped
                         .lines
@@ -280,15 +268,12 @@ impl ThinkingBlock {
                 return self.maybe_prepend_header(output, ctx);
             }
 
-            // Build truncated output: "…" + last N lines
             let theme = Theme::current();
             let mut output_lines = Vec::with_capacity(n + 1);
 
-            // Ellipsis line
             let ellipsis = Line::from(Span::styled("…", theme.muted()));
             output_lines.push(ellipsis.into());
 
-            // Last N lines (with blending)
             for i in (total - n)..total {
                 output_lines.push(Self::thinking_body_line(
                     &wrapped.lines[i],
@@ -383,9 +368,9 @@ impl BlockContent for ThinkingBlock {
     /// This means collapsed thinking shows gray bullet, running thinking syncs with accent.
     fn bullet(&self, ctx: &BlockContext) -> Option<AccentStyle> {
         if ctx.is_running {
-            self.accent(ctx) // sync bullet with accent animation when running
+            self.accent(ctx)
         } else {
-            None // default gray/primary
+            None
         }
     }
 

@@ -44,12 +44,10 @@ fn current_keep_set() -> Vec<String> {
         .collect()
 }
 
-/// Whether any of `platforms` needs enrichment at all.
 pub(crate) fn any_platform_needs_enrichment(platforms: &[kigi_models::PlatformId]) -> bool {
     platforms.iter().any(|p| !p.wire_serves_metadata())
 }
 
-/// The registry's models.dev provider ids (the refresh filter).
 fn registry_models_dev_ids() -> BTreeSet<&'static str> {
     kigi_models::PlatformId::ALL
         .into_iter()
@@ -206,7 +204,7 @@ mod tests {
     /// Wire-served-only platform sets never trigger IO — and never force the
     /// bundled parse (empty owned catalog; the merge branch is gated off).
     /// Kimi/Moonshot users therefore keep a zero-egress, zero-cache fetch
-    /// path even now that enrichment-needing platforms (OpenAI) exist.
+    /// path even though enrichment-needing platforms (OpenAI) exist.
     #[test]
     fn wire_served_platforms_get_empty_catalog_without_io() {
         let wire_served = [
@@ -217,7 +215,7 @@ mod tests {
         assert!(!any_platform_needs_enrichment(&wire_served));
         let catalog = load_enrichment_catalog(&wire_served);
         assert!(catalog.is_empty());
-        // The full registry now DOES need enrichment (OpenAI is
+        // The full registry DOES need enrichment (OpenAI is
         // wire_serves_metadata=false) — the fast path must not hide that.
         assert!(any_platform_needs_enrichment(&kigi_models::PlatformId::ALL));
     }

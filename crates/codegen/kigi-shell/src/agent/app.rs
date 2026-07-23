@@ -41,10 +41,6 @@ use indexmap::IndexMap;
 pub struct LeaderAutoUpdateConfig {
     /// Interval between update checks (default: 1 hour).
     pub check_interval: Duration,
-    /// Async function that checks for, downloads, and installs an update.
-    /// Returns `true` if the update was installed successfully and the leader
-    /// should shut down. Returns `false` to stay alive (no update, or download
-    /// failed).
     pub check_fn:
         Box<dyn Fn() -> Pin<Box<dyn std::future::Future<Output = bool> + Send>> + Send + Sync>,
 }
@@ -55,8 +51,6 @@ pub struct LeaderAutoUpdateConfig {
 /// download request timeout (20 minutes) so the leader does not abandon a
 /// transfer that is still within the HTTP client's budget. If the call takes
 /// longer than this, we abandon the attempt and retry on the next interval.
-/// The select! with the cancellation token ensures the loop remains
-/// responsive to shutdown signals even while waiting.
 const AUTO_UPDATE_CHECK_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 
 /// How long the auto-update shutdown waits for session actors to flush
@@ -98,8 +92,8 @@ const MAX_AUTO_UPDATE_BUSY_DEFERRALS: u32 = 24;
 /// and a timeout so that a stalled download cannot block the loop from
 /// responding to shutdown signals.
 ///
-/// This is extracted as a standalone function so it can be unit-tested
-/// independently from the full leader infrastructure.
+/// A standalone function so it can be unit-tested independently from the full
+/// leader infrastructure.
 pub(crate) async fn run_auto_update_checker(
     config: LeaderAutoUpdateConfig,
     agent_busy: Arc<AtomicBool>,
@@ -120,9 +114,6 @@ pub(crate) async fn run_auto_update_checker(
 
         info!("Leader auto-update: running update check");
 
-        // Run check_fn inside a select! with cancellation and a timeout so a
-        // stalled network call cannot block the loop from responding to shutdown.
-        // The check_fn may include a binary download, so the timeout is generous.
         let update_installed = tokio::select! {
             biased;
             _ = cancel.cancelled() => break,
@@ -226,15 +217,14 @@ fn spawn_agent_local(
 /// `kigi/...` extension method, for injection into the agent's inbound ACP
 /// stream by the leader's own watcher tasks (config hot-reload, skills).
 ///
-/// The wire method is written **`_`-prefixed** (`_kigi/internal/...`):
+/// The wire method must be written `_`-prefixed (`_kigi/internal/...`):
 /// `agent-client-protocol`'s inbound decoder routes a non-built-in method to
 /// `ext_method` only when it carries the `_` extension prefix and rejects
-/// bare custom methods with `-32601 method_not_found`. These injections were
-/// historically sent un-prefixed, so every watcher-driven hot-reload
-/// (models, skills, MCP servers) was silently rejected at decode — the
-/// watcher-side "change detected" logs fired but the reload handlers never
-/// ran. Keep `method` here as the un-prefixed name; the prefix is a wire
-/// detail added in one place.
+/// bare custom methods with `-32601 method_not_found`. Without the prefix
+/// every watcher-driven hot-reload (models, skills, MCP servers) is silently
+/// rejected at decode — the watcher-side "change detected" logs fire but the
+/// reload handlers never run. Keep `method` here as the un-prefixed name; the
+/// prefix is a wire detail applied in one place.
 fn internal_reload_request_line(id: &str, method: &str, params: serde_json::Value) -> String {
     let msg = serde_json::json!({
         "jsonrpc": "2.0",
@@ -419,11 +409,6 @@ pub async fn run_stdio_agent(
 ///      error — login is deferred to ACP.
 /// 7. `ready_tx.send(true)` — unblocks ACP forwarding in the IPC server.
 /// 8. LocalSet: agent, IPC↔agent bridges, config watcher.
-///
-/// # Arguments
-///
-/// * `agent_config` - The agent configuration
-/// * `no_exit_on_disconnect` - If true, the leader will not exit when all clients disconnect
 pub async fn run_leader(
     agent_config: &AgentConfig,
     no_exit_on_disconnect: bool,
@@ -476,11 +461,11 @@ pub async fn run_leader(
         Err(e) => return Err(anyhow::anyhow!("Failed to check leader lock: {}", e)),
     };
 
-    // ── Phase 1: Clean up stale socket ────────────────────────────────────────
+    // Phase 1: Clean up stale socket
     lock.cleanup_socket()?;
     info!("Leader server starting");
 
-    // ── Phase 2: Create all channels + readiness watch ────────────────────────
+    // Phase 2: Create all channels + readiness watch
     //
     // All channels are created here so the IPC server can start receiving
     // client connections immediately, before auth/prefetch begin.
@@ -526,7 +511,7 @@ pub async fn run_leader(
         leader_binary_version: kigi_version::VERSION.to_string(),
     });
 
-    // ── Phase 3: Bind socket and start IPC server (BEFORE auth/prefetch) ──────
+    // Phase 3: Bind socket and start IPC server (BEFORE auth/prefetch)
     //
     // Starting the server here means connect_or_spawn sees the socket in < 100 ms
     // regardless of how long auth + model prefetch take. The `ready_rx` gate inside
@@ -550,7 +535,8 @@ pub async fn run_leader(
             agent_activity_for_server,
             ready_rx,
             shutdown_tx_for_server,
-            None, // use LEADER_VERSION constant
+            // None: use the LEADER_VERSION constant.
+            None,
             control_state,
         )
         .await
@@ -559,7 +545,7 @@ pub async fn run_leader(
         }
     });
 
-    // ── Phase 4: Wait for socket to appear (fast: < 100 ms now) ──────────────
+    // Phase 4: Wait for socket to appear (fast: < 100 ms)
     let socket_ready_deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
     while !crate::leader::listener_is_ready(&socket_path) {
         if tokio::time::Instant::now() >= socket_ready_deadline {
@@ -572,7 +558,7 @@ pub async fn run_leader(
     }
     debug!("IPC socket created");
 
-    // ── Phase 5: Lock handoff ─────────────────────────────────────────────────
+    // Phase 5: Lock handoff
     //
     // (a) lock_already_held=true: We acquired the lock at startup. Keep it.
     // (b) lock_already_held=false: spawner holds lock, waiting for our socket.
@@ -609,7 +595,7 @@ pub async fn run_leader(
         }
     };
 
-    // ── Phase 6: Auth + model prefetch ───────────────────────────────────────
+    // Phase 6: Auth + model prefetch
     //
     // The IPC server is already accepting connections. Clients that send ACP
     // messages during this window receive a `leader_starting` error and can retry.
@@ -635,14 +621,14 @@ pub async fn run_leader(
     .await
     .unwrap_or(None);
 
-    // ── Phase 7: Signal readiness ─────────────────────────────────────────────
+    // Phase 7: Signal readiness
     //
     // Unblocks ACP forwarding inside the IPC server. From this point on, client
     // ACP messages are forwarded to the agent as normal.
     let _ = ready_tx.send(true);
     info!("Leader ready: auth and model prefetch complete, ACP forwarding enabled");
 
-    // ── Phase 8: LocalSet — agent, bridges, config watcher ───────────────────
+    // Phase 8: LocalSet — agent, bridges, config watcher
 
     let local_set = tokio::task::LocalSet::new();
     let mut agent_config_for_spawn = agent_config.clone();
@@ -672,13 +658,10 @@ pub async fn run_leader(
     let models_manager_for_agent = shared_models_manager.clone();
     let models_manager_for_config = shared_models_manager;
 
-    // Resolve `mcp.recursive_config_watch`
-    // ONCE here, before the channel is created, so a kill-switch
-    // value of `false` skips channel construction entirely. Previously
-    // the channel was always created and `tx` always installed on
-    // the agent; the drain task only ran when the flag was on, so
-    // every `notify_session_cwd_for_watch` call leaked a `PathBuf`
-    // into a never-drained channel.
+    // Resolve `mcp.recursive_config_watch` once here, before the channel is
+    // created, so a kill-switch value of `false` skips channel construction
+    // entirely. Otherwise every `notify_session_cwd_for_watch` call would leak
+    // a `PathBuf` into a channel whose drain task never runs.
     let recursive_config_watch_enabled = {
         let user_cfg = crate::config::load_from_disk().ok();
         let requirements = crate::agent::config::read_requirements_toml();
@@ -691,19 +674,17 @@ pub async fn run_leader(
 
     local_set
         .run_until(async move {
-            // Channel for fanning new session cwds from
-            // the agent (each `spawn_and_register_session` call) into
-            // the leader's `ConfigFileWatcher::watch_path`. Both ends
-            // live inside the `LocalSet` so neither needs `Send`. The
-            // tx is installed on the agent before `AgentSideConnection`
-            // moves it; the rx is drained by a small task spawned
-            // alongside the watcher below.
+            // Channel for fanning new session cwds from the agent (each
+            // `spawn_and_register_session` call) into the leader's
+            // `ConfigFileWatcher::watch_path`. Both ends live inside the
+            // `LocalSet` so neither needs `Send`. The tx is installed on the
+            // agent before `AgentSideConnection` moves it; the rx is drained by
+            // a small task spawned alongside the watcher below.
             //
-            // Only create the channel when the kill-
-            // switch is `true`. With the flag off,
-            // `notify_session_cwd_for_watch` becomes a no-op (no
-            // `tx` installed) and no memory leaks regardless of how
-            // many sessions spawn over the leader's lifetime.
+            // Only create the channel when the kill-switch is `true`. With the
+            // flag off, `notify_session_cwd_for_watch` becomes a no-op (no `tx`
+            // installed) and no memory leaks regardless of how many sessions
+            // spawn over the leader's lifetime.
             let (config_watcher_path_tx, config_watcher_path_rx_opt) =
                 if recursive_config_watch_enabled {
                     let (tx, rx) = mpsc::unbounded_channel::<std::path::PathBuf>();
@@ -823,12 +804,10 @@ pub async fn run_leader(
             let (config_update_tx, mut config_update_rx) =
                 mpsc::unbounded_channel::<crate::config::reloader::ConfigUpdate>();
 
-            // `mcp.recursive_config_watch` (default
-            // `true`) was resolved above (before the async block) so
-            // the per-session-cwd channel could be gated. The
-            // watcher passes `Some(cwd)` here only when the flag is
-            // on. When disabled, behavior reverts to the prior
-            // default: only explicit `extra_paths` are watched (kill
+            // `mcp.recursive_config_watch` (default `true`) was resolved above,
+            // before the async block, so the per-session-cwd channel could be
+            // gated. The watcher passes `Some(cwd)` here only when the flag is
+            // on; when disabled, only explicit `extra_paths` are watched (kill
             // switch for the rollout).
             let watcher_cwd = recursive_config_watch_enabled.then_some(cwd_for_watcher.as_path());
 
@@ -839,19 +818,16 @@ pub async fn run_leader(
                     watcher_cwd,
                     None,
                 ) {
-                // Share ownership between the leader's
-                // long-lived binding and the per-cwd dynamic
-                // registration drain task. `Rc<RefCell<>>` is safe
-                // because both ends live inside the leader's
-                // `LocalSet` — the watcher type is not `Sync`-needed.
+                // Share ownership between the leader's long-lived binding and
+                // the per-cwd dynamic registration drain task. `Rc<RefCell<>>`
+                // is safe because both ends live inside the leader's `LocalSet`
+                // — the watcher type is not `Sync`-needed.
                 let watcher = std::rc::Rc::new(std::cell::RefCell::new(watcher));
 
-                // Dynamic registration drain. Lives only
-                // when the recursive_config_watch flag is on AND the
-                // OS watcher started. With the flag
-                // off the channel itself was never created, so
-                // there's no rx to drain and no `PathBuf` ever
-                // queued (no leak).
+                // Dynamic registration drain. Lives only when the
+                // recursive_config_watch flag is on AND the OS watcher started.
+                // With the flag off the channel itself is never created, so
+                // there's no rx to drain and no `PathBuf` ever queued (no leak).
                 if let Some(mut rx) = config_watcher_path_rx.take() {
                     let cancel_for_drain = cancel_clone.clone();
                     let watcher_for_drain = watcher.clone();
@@ -945,14 +921,11 @@ pub async fn run_leader(
                             }
                         }
                         ConfigUpdate::ProjectMcpServersChanged { cwd } => {
-                            // Scope the reload to
-                            // sessions whose cwd matches `cwd` (or is
-                            // a descendant). The actual filtering
-                            // happens in
-                            // `handle_reload_project_mcp_servers`
-                            // (extensions/session_admin.rs) — this
-                            // arm just injects the ACP method with
-                            // the cwd as a param.
+                            // Scope the reload to sessions whose cwd matches
+                            // `cwd` (or is a descendant). The actual filtering
+                            // happens in `handle_reload_project_mcp_servers`
+                            // (extensions/session_admin.rs) — this arm just
+                            // injects the ACP method with the cwd as a param.
                             info!(
                                 cwd = %cwd.display(),
                                 "project MCP config change detected — reloading matching sessions"
@@ -1170,10 +1143,12 @@ mod tests {
 
     #[tokio::test]
     async fn auto_update_defers_when_agent_busy() {
-        let agent_busy = Arc::new(AtomicBool::new(true)); // agent is processing a prompt
+        // agent is processing a prompt
+        let agent_busy = Arc::new(AtomicBool::new(true));
         let cancel = CancellationToken::new();
 
-        let config = delayed_update_config(0); // always returns true
+        // always returns true
+        let config = delayed_update_config(0);
 
         let cancel_clone = cancel.clone();
         let checker = tokio::spawn(run_auto_update_checker(
@@ -1229,7 +1204,8 @@ mod tests {
 
     #[tokio::test]
     async fn auto_update_cancels_after_agent_becomes_idle() {
-        let agent_busy = Arc::new(AtomicBool::new(true)); // agent processing initially
+        // agent processing initially
+        let agent_busy = Arc::new(AtomicBool::new(true));
         let cancel = CancellationToken::new();
 
         // Update is always available, but agent is busy initially
@@ -1299,7 +1275,8 @@ mod tests {
         let call_count = Arc::new(AtomicU32::new(0));
         let call_count_clone = call_count.clone();
 
-        let agent_busy = Arc::new(AtomicBool::new(true)); // agent busy, so it defers
+        // agent busy, so it defers
+        let agent_busy = Arc::new(AtomicBool::new(true));
         let cancel = CancellationToken::new();
 
         let config = LeaderAutoUpdateConfig {
@@ -1308,7 +1285,8 @@ mod tests {
                 let cc = call_count_clone.clone();
                 Box::pin(async move {
                     cc.fetch_add(1, Ordering::Relaxed);
-                    true // update always available, but won't cancel because agent is busy
+                    // update always available, but won't cancel because agent is busy
+                    true
                 })
             }),
         };
@@ -1381,13 +1359,15 @@ mod tests {
     /// pending interaction, or live subagent).
     #[tokio::test]
     async fn auto_update_defers_when_agent_activity_busy() {
-        let agent_busy = Arc::new(AtomicBool::new(false)); // IPC view: idle
+        // IPC view: idle
+        let agent_busy = Arc::new(AtomicBool::new(false));
         let activity = crate::agent::activity::AgentActivity::default();
         // Agent view: a subagent is running (e.g. spawned by a relay prompt).
         activity.subagent_gauge().store(1, Ordering::Relaxed);
         let cancel = CancellationToken::new();
 
-        let config = always_config(true); // update always "installed"
+        // update always "installed"
+        let config = always_config(true);
 
         let cancel_clone = cancel.clone();
         let checker = tokio::spawn(run_auto_update_checker(
@@ -1423,7 +1403,8 @@ mod tests {
         activity.subagent_gauge().store(1, Ordering::Relaxed);
         let cancel = CancellationToken::new();
 
-        let config = always_config(true); // update always "installed"
+        // update always "installed"
+        let config = always_config(true);
 
         // 10ms interval × (24 deferrals + 1) ≈ 250ms — well within timeout.
         tokio::time::timeout(
@@ -1500,7 +1481,8 @@ mod tests {
         let cancel = CancellationToken::new();
         let (shutdown_tx, mut shutdown_rx) = watch::channel(crate::leader::ShutdownReason::Manual);
 
-        let config = always_config(true); // update always available
+        // update always available
+        let config = always_config(true);
 
         tokio::time::timeout(
             Duration::from_secs(2),
@@ -1517,8 +1499,9 @@ mod tests {
 
         assert!(cancel.is_cancelled(), "cancel token should be triggered");
 
-        // The shutdown_tx must have been updated to AutoUpdate before cancel fired.
-        shutdown_rx.mark_changed(); // ensure borrow sees latest value
+        // The shutdown_tx must carry AutoUpdate before the cancel fired.
+        // ensure borrow sees latest value
+        shutdown_rx.mark_changed();
         assert_eq!(
             *shutdown_rx.borrow(),
             crate::leader::ShutdownReason::AutoUpdate,

@@ -52,7 +52,8 @@ enum GridLine {
     Other,
 }
 
-const BAR: char = '\u{2502}'; // │
+// │
+const BAR: char = '\u{2502}';
 
 /// Chars permitted before a grid's left edge: indentation and blockquote
 /// bars (`│ `-prefixed tables render inside quotes with fully selectable
@@ -80,10 +81,14 @@ fn grapheme_cols(text: &str) -> impl Iterator<Item = (u16, char)> + '_ {
 /// indentation/blockquote prefix. Returns the junction columns (corners
 /// included) and the row family, or `None` when the line is not a border row.
 fn parse_border_row(text: &str) -> Option<(Vec<u16>, BorderKind)> {
-    let (kind, mid, close) = ('\u{250C}', '\u{252C}', '\u{2510}'); // ┌ ┬ ┐
-    let (dkind, dmid, dclose) = ('\u{251C}', '\u{253C}', '\u{2524}'); // ├ ┼ ┤
-    let (bkind, bmid, bclose) = ('\u{2514}', '\u{2534}', '\u{2518}'); // └ ┴ ┘
-    const H: char = '\u{2500}'; // ─
+    // ┌ ┬ ┐
+    let (kind, mid, close) = ('\u{250C}', '\u{252C}', '\u{2510}');
+    // ├ ┼ ┤
+    let (dkind, dmid, dclose) = ('\u{251C}', '\u{253C}', '\u{2524}');
+    // └ ┴ ┘
+    let (bkind, bmid, bclose) = ('\u{2514}', '\u{2534}', '\u{2518}');
+    // ─
+    const H: char = '\u{2500}';
 
     let mut junctions: Vec<u16> = Vec::new();
     let mut family: Option<BorderKind> = None;
@@ -585,7 +590,8 @@ mod tests {
         let broken: &[&str] = &[
             "┌─────┬─────┐",
             "│ A   │ B   │",
-            "├────────┼──┤", // misaligned divider
+            // misaligned divider
+            "├────────┼──┤",
             "│ one │ two │",
             "└─────┴─────┘",
         ];

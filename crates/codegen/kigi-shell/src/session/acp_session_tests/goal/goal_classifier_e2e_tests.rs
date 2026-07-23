@@ -31,11 +31,11 @@ const ENV_FLAG: &str = "KIGI_GOAL_CLASSIFIER";
 /// Constructors mirror the verification-stage contract: each
 /// `achieved`-flavoured `Response` writes a `refuted: false` JSON
 /// verdict + returns `Not Refuted`; `not_achieved` writes
-/// `refuted: true` + returns `Refuted`. Method names are preserved
-/// from the legacy single-classifier era to keep the test cluster
-/// readable across the refactor — the lone-skeptic config
-/// (`goal_verifier_skeptic_count = 1` in `create_test_actor`)
-/// makes the aggregate verdict match the constructor name.
+/// `refuted: true` + returns `Refuted`. The method names describe
+/// the aggregate goal-tracker verdict, not a single skeptic's vote:
+/// the lone-skeptic config (`goal_verifier_skeptic_count = 1` in
+/// `create_test_actor`) makes the aggregate match the constructor
+/// name.
 struct Response {
     text: String,
     verdict_json: Option<String>,
@@ -181,9 +181,7 @@ struct MockCoordinator {
     /// first, then the cold fan-out), so tests can assert the resume
     /// round-trip across attempts.
     spawns: SpawnLog,
-    /// Per-spawn `runtime_overrides.model`, in spawn order.
     spawn_models: SpawnModelLog,
-    /// Per-spawn rendered prompt, in spawn order.
     spawn_prompts: SpawnPromptLog,
     /// Outcome returned for every `DescribeType` round-trip. Defaults to a
     /// fully-capable `Ok` summary (read/search/execute + edit/write) so a
@@ -192,7 +190,6 @@ struct MockCoordinator {
     describe_outcome: StdArc<
         parking_lot::Mutex<kigi_tools::implementations::kigi::task::types::SubagentDescribeOutcome>,
     >,
-    /// Per-describe `(subagent_type, harness_agent_type)` in call order.
     describe_calls: DescribeCallLog,
 }
 /// A fully-capable describe summary (read + search + execute + edit + write)
@@ -348,7 +345,7 @@ async fn make_actor(
 }
 /// `make_actor` variant that pins the classifier run cap — used by
 /// the cap/queue-mechanics tests so they keep their 3-attempt
-/// structure independent of the (now higher) default.
+/// structure independent of the default.
 async fn make_actor_with_cap(
     coordinator_tx: Option<tokio::sync::mpsc::UnboundedSender<SubagentEvent>>,
     classifier_enabled: bool,
@@ -1923,7 +1920,7 @@ async fn goal_classifier_env_override_disables_when_remote_enabled() {
 }
 /// The drain wires the cached `goal_verifier_skeptic_count` field
 /// into `VerificationStageInputs`. Every `make_actor`-built test
-/// uses N=1 for spawn-count parity with the legacy single-classifier
+/// uses N=1 for spawn-count parity with the single-classifier
 /// asserts; this test explicitly flips an actor to N=2 and runs a
 /// medium-refute skeptic 0 + a clearing cold skeptic 1. Under
 /// variant-C, approval rests on the COLD panel (skeptic 1), so a

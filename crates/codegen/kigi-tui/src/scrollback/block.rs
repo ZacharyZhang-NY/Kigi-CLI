@@ -51,7 +51,6 @@ pub struct AnchoredMedia {
 /// `ui/render/renderable.rs`.
 #[enum_delegate::register]
 pub trait BlockContent {
-    /// Produce renderable content for the given context.
     fn output(&self, ctx: &BlockContext) -> BlockOutput;
 
     /// Accent line style (color, animation).
@@ -72,12 +71,10 @@ pub trait BlockContent {
         self.accent(ctx)
     }
 
-    /// Whether accent column gets block's background.
     fn accent_background(&self, _ctx: &BlockContext) -> bool {
         false
     }
 
-    /// Block content area background.
     fn background(&self, _ctx: &BlockContext) -> BlockBackground {
         BlockBackground::None
     }
@@ -87,12 +84,10 @@ pub trait BlockContent {
         true
     }
 
-    /// Whether block supports raw mode toggle.
     fn has_raw_mode(&self) -> bool {
         false
     }
 
-    /// Whether block can be collapsed/expanded.
     fn is_foldable(&self) -> bool {
         true
     }
@@ -105,7 +100,7 @@ pub trait BlockContent {
     /// The `is_running` parameter allows blocks to behave differently
     /// while streaming (e.g., thinking blocks might skip Collapsed while running).
     fn next_fold_mode(&self, current: DisplayMode, is_running: bool) -> DisplayMode {
-        let _ = is_running; // Default ignores running state
+        let _ = is_running;
         match current {
             DisplayMode::Collapsed => DisplayMode::Expanded,
             DisplayMode::Truncated | DisplayMode::Expanded => DisplayMode::Collapsed,
@@ -360,15 +355,11 @@ impl BlockContent for StubBlock {
 /// intercept `output()` to conditionally prepend bullets based on `has_bullet()`.
 #[derive(Debug, Clone)]
 pub enum RenderBlock {
-    /// Stub block for testing.
     Stub(StubBlock),
-    /// User's prompt.
     UserPrompt(UserPromptBlock),
-    /// Agent's response message.
     AgentMessage(AgentMessageBlock),
     /// Tool call result (Execute, Read, Edit, ListDir, Search, Other).
     ToolCall(ToolCallBlock),
-    /// Thinking/reasoning content.
     Thinking(ThinkingBlock),
     /// System message (arbitrary text).
     System(SystemMessageBlock),
@@ -384,7 +375,6 @@ pub enum RenderBlock {
     ContextInfo(ContextInfoBlock),
 }
 
-/// Delegate a method call to the inner block variant.
 macro_rules! delegate_block {
     ($self:expr, $method:ident ( $($arg:expr),* )) => {
         match $self {
@@ -571,7 +561,6 @@ impl RenderBlock {
         RenderBlock::Stub(StubBlock::non_groupable(text, accent_color))
     }
 
-    /// Create a user prompt block.
     pub fn user_prompt(text: impl Into<String>) -> Self {
         RenderBlock::UserPrompt(UserPromptBlock::new(text))
     }
@@ -606,7 +595,6 @@ impl RenderBlock {
         RenderBlock::UserPrompt(UserPromptBlock::interjection(text))
     }
 
-    /// Create an agent message block.
     pub fn agent_message(text: impl Into<String>) -> Self {
         RenderBlock::AgentMessage(AgentMessageBlock::new(text))
     }
@@ -623,7 +611,6 @@ impl RenderBlock {
     pub fn tool_call(kind: impl Into<String>, summary: impl Into<String>, success: bool) -> Self {
         let kind_str = kind.into();
         let mut block = ToolCallBlock::from_name(&kind_str, summary);
-        // Set error for Other type if not successful
         if let ToolCallBlock::Other(ref mut b) = block
             && !success
         {
@@ -646,7 +633,6 @@ impl RenderBlock {
         RenderBlock::ToolCall(ToolCallBlock::Other(block))
     }
 
-    /// Create an Execute tool block.
     pub fn execute(command: impl Into<String>) -> Self {
         RenderBlock::ToolCall(ToolCallBlock::Execute(ExecuteToolCallBlock::new(command)))
     }
@@ -665,7 +651,6 @@ impl RenderBlock {
         RenderBlock::ToolCall(ToolCallBlock::Execute(block))
     }
 
-    /// Create a Read tool block.
     pub fn read(path: impl Into<String>, line_range: Option<LineRange>) -> Self {
         let mut block = ReadToolCallBlock::new(path);
         if let Some(range) = line_range {
@@ -674,19 +659,16 @@ impl RenderBlock {
         RenderBlock::ToolCall(ToolCallBlock::Read(block))
     }
 
-    /// Create a ListDir tool block.
     pub fn list_dir(path: impl Into<String>) -> Self {
         RenderBlock::ToolCall(ToolCallBlock::ListDir(ListDirToolCallBlock::new(path)))
     }
 
-    /// Create a ListDir tool block with output.
     pub fn list_dir_with_output(path: impl Into<String>, output: impl Into<String>) -> Self {
         RenderBlock::ToolCall(ToolCallBlock::ListDir(
             ListDirToolCallBlock::new(path).with_output(output),
         ))
     }
 
-    /// Create a Search tool block with matches.
     pub fn search(
         pattern: impl Into<String>,
         match_count: usize,
@@ -697,12 +679,10 @@ impl RenderBlock {
         ))
     }
 
-    /// Create an Edit block with diff hunks.
     pub fn edit_with_hunks(path: impl Into<String>, hunks: Vec<DiffHunk>) -> Self {
         RenderBlock::ToolCall(ToolCallBlock::Edit(EditToolCallBlock::new(path, hunks)))
     }
 
-    /// Create a failed Edit block (with error message).
     pub fn edit_failed(path: impl Into<String>, error: impl Into<String>) -> Self {
         RenderBlock::ToolCall(ToolCallBlock::Edit(
             EditToolCallBlock::new(path, vec![]).with_error(error),
@@ -721,7 +701,6 @@ impl RenderBlock {
         RenderBlock::ToolCall(ToolCallBlock::Edit(block))
     }
 
-    /// Create a thinking block.
     pub fn thinking(text: impl Into<String>) -> Self {
         RenderBlock::Thinking(ThinkingBlock::new(text))
     }
@@ -752,7 +731,6 @@ impl RenderBlock {
         RenderBlock::Thinking(ThinkingBlock::streaming_replay())
     }
 
-    /// Create a system message block.
     pub fn system(text: impl Into<String>) -> Self {
         RenderBlock::System(SystemMessageBlock::new(text))
     }
@@ -769,7 +747,6 @@ impl RenderBlock {
         RenderBlock::ContextInfo(ContextInfoBlock::new(snapshot, model))
     }
 
-    /// Create a session event block.
     pub fn session_event(event: SessionEvent) -> Self {
         RenderBlock::SessionEvent(SessionEventBlock::new(event))
     }
@@ -779,7 +756,6 @@ impl RenderBlock {
         RenderBlock::BgTask(BgTaskBlock::started(command, task_id))
     }
 
-    /// Create a "Task completed" background task block.
     pub fn bg_task_completed(
         command: impl Into<String>,
         task_id: impl Into<String>,
@@ -788,7 +764,6 @@ impl RenderBlock {
         RenderBlock::BgTask(BgTaskBlock::completed(command, task_id, elapsed))
     }
 
-    /// Create a "Task failed" background task block.
     pub fn bg_task_failed(
         command: impl Into<String>,
         task_id: impl Into<String>,
@@ -809,7 +784,6 @@ impl RenderBlock {
         self
     }
 
-    /// Get mutable access to a StubBlock if this is one.
     pub fn as_stub_mut(&mut self) -> Option<&mut StubBlock> {
         match self {
             RenderBlock::Stub(b) => Some(b),
@@ -817,7 +791,6 @@ impl RenderBlock {
         }
     }
 
-    /// Get mutable access to a ToolCallBlock if this is one.
     pub fn as_tool_call_mut(&mut self) -> Option<&mut ToolCallBlock> {
         match self {
             RenderBlock::ToolCall(b) => Some(b),
@@ -848,7 +821,6 @@ impl RenderBlock {
         }
     }
 
-    /// Get mutable access to a ThinkingBlock if this is one.
     pub fn as_thinking_mut(&mut self) -> Option<&mut ThinkingBlock> {
         match self {
             RenderBlock::Thinking(b) => Some(b),
@@ -856,7 +828,6 @@ impl RenderBlock {
         }
     }
 
-    /// Check if this block is a UserPrompt.
     pub fn is_user_prompt(&self) -> bool {
         matches!(self, RenderBlock::UserPrompt(_))
     }
@@ -894,7 +865,6 @@ impl RenderBlock {
         matches!(self, RenderBlock::Subagent(_))
     }
 
-    /// Check if this block is an AgentMessage.
     pub fn is_agent_message(&self) -> bool {
         matches!(self, RenderBlock::AgentMessage(_))
     }
@@ -959,7 +929,7 @@ impl RenderBlock {
 
         match self {
             RenderBlock::UserPrompt(_) => Some(theme.text_primary),
-            RenderBlock::AgentMessage(_) => None, // No accent for agent messages
+            RenderBlock::AgentMessage(_) => None,
             RenderBlock::ToolCall(block) => {
                 // Execute: Green for success, red for failure
                 // Read/Edit/ListDir/Search: No accent
@@ -978,7 +948,7 @@ impl RenderBlock {
                             Some(theme.accent_error)
                         }
                     }
-                    _ => None, // No accent for Read/Edit/ListDir/Search
+                    _ => None,
                 }
             }
             RenderBlock::Thinking(_) => Some(theme.accent_thinking),
@@ -1004,7 +974,6 @@ impl RenderBlock {
         }
     }
 
-    /// Whether this block has a normal fullscreen viewer.
     pub fn has_normal_fullscreen_viewer(&self) -> bool {
         match self {
             RenderBlock::AgentMessage(_)
@@ -1025,14 +994,12 @@ impl RenderBlock {
         }
     }
 
-    /// Whether this block supports the fullscreen viewer.
     pub fn supports_fullscreen(&self) -> bool {
         self.has_normal_fullscreen_viewer()
             || !self.image_references().is_empty()
             || !self.video_references().is_empty()
     }
 
-    /// Whether this block supports copy-to-clipboard.
     pub fn supports_copy(&self) -> bool {
         matches!(
             self,
@@ -1052,7 +1019,6 @@ impl RenderBlock {
         !matches!(self, RenderBlock::Stub(_))
     }
 
-    /// Get the visible text for this block in its current display state.
     pub fn copy_visible_text_in_state(&self, ctx: &BlockContext) -> Option<String> {
         let rendered = self.rendered_output(ctx);
         plain_text_from_output(&rendered.output, &rendered.boundaries)
@@ -1184,7 +1150,7 @@ impl RenderBlock {
         match self {
             RenderBlock::AgentMessage(block) => block.set_raw_mode(raw),
             RenderBlock::Thinking(block) => block.set_raw_mode(raw),
-            _ => {} // Other blocks don't support raw mode
+            _ => {}
         }
     }
 }

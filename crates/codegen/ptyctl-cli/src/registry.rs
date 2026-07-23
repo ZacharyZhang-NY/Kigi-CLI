@@ -113,7 +113,8 @@ pub fn list_sessions() -> Result<Vec<(String, SessionInfo)>> {
                 .unwrap_or("")
                 .to_string();
             if name.starts_with('.') {
-                continue; // skip temp files
+                // skip temp files
+                continue;
             }
             if let Ok(json) = fs::read_to_string(&path)
                 && let Ok(info) = serde_json::from_str::<SessionInfo>(&json)

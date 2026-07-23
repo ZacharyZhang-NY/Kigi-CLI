@@ -368,7 +368,7 @@ pub fn draw_frame(
 #[cfg(test)]
 mod tests {
     use super::*;
-    /// An unchanged frame must emit zero bytes to the PTY.
+    /// An `unchanged` frame must emit zero bytes to the PTY.
     #[test]
     fn idle_frame_emits_zero_bytes() {
         use ratatui::backend::CrosstermBackend;

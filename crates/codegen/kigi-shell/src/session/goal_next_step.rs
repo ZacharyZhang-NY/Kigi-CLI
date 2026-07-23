@@ -91,7 +91,7 @@ fn first_unchecked_in_checklist(body: &str) -> Option<String> {
             continue;
         };
         if is_any_header(line) && header_level(line) <= level {
-            return None; // section ended; no unchecked item found
+            return None;
         }
         if let Some(item) = parse_checkbox_item(line.trim_start()) {
             return Some(item);
@@ -126,8 +126,6 @@ fn extract_first_unchecked(body: &str) -> Option<String> {
     None
 }
 
-/// Strip the leading `- ` / `* ` / `+ ` bullet marker. `None` when
-/// the line does not begin with a recognised bullet glyph.
 fn strip_bullet_marker(trimmed: &str) -> Option<&str> {
     trimmed
         .strip_prefix("- ")

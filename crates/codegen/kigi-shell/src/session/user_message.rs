@@ -5,7 +5,6 @@ use kigi_workspace::session::git::VcsKind;
 // Re-export from kigi-chat-state — canonical definition lives there.
 pub use kigi_chat_state::compaction_utils::extract_user_query;
 
-/// Wraps the user query properly
 pub fn user_query(user_message: String) -> String {
     format!(
         r#"<user_query>
@@ -159,7 +158,7 @@ pub async fn construct_user_message(
     user_info
 }
 
-// Tests for extract_user_query now live in kigi_chat_state::compaction_utils.
+// Tests for extract_user_query live in kigi_chat_state::compaction_utils.
 
 #[cfg(test)]
 mod tests {

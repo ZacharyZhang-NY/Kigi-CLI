@@ -18,8 +18,6 @@ use crate::util::kigi_home::kigi_home;
 /// path.
 pub const LEADER_SOCKET_ENV: &str = "KIGI_LEADER_SOCKET";
 
-/// The explicit socket-path override, if [`LEADER_SOCKET_ENV`] is set and
-/// non-empty.
 fn leader_socket_override() -> Option<PathBuf> {
     std::env::var_os(LEADER_SOCKET_ENV)
         .filter(|v| !v.is_empty())
@@ -50,7 +48,6 @@ fn resolve_lock_path(override_socket: Option<PathBuf>, root: &Path) -> PathBuf {
     }
 }
 
-/// Default leader lock path under `root` (`leader.lock`).
 pub fn default_lock_path_in(root: &Path) -> PathBuf {
     root.join("leader.lock")
 }
@@ -61,7 +58,6 @@ pub fn default_lock_path() -> PathBuf {
     resolve_lock_path(leader_socket_override(), &kigi_home())
 }
 
-/// Default leader socket path under `root` (`leader.sock`).
 pub fn default_socket_path_in(root: &Path) -> PathBuf {
     root.join("leader.sock")
 }
@@ -131,8 +127,6 @@ pub struct LeaderLock {
 }
 
 impl LeaderLock {
-    /// Create a new LeaderLock using the default paths in kigi home
-    /// (or the [`LEADER_SOCKET_ENV`] override when set).
     pub fn new() -> Self {
         Self {
             lock_path: default_lock_path(),
@@ -150,7 +144,6 @@ impl LeaderLock {
         &self.lock_path
     }
 
-    /// Open (or create) the lock file for subsequent locking operations.
     fn open_lock_file(&self) -> Result<File, LockError> {
         Ok(OpenOptions::new()
             .read(true)
@@ -160,7 +153,6 @@ impl LeaderLock {
             .open(&self.lock_path)?)
     }
 
-    /// Record a successful lock acquisition in our state.
     fn mark_acquired(&mut self, file: File) {
         self.lock_file = Some(file);
         self.was_leader = true;
@@ -185,8 +177,8 @@ impl LeaderLock {
 
     /// Acquire exclusive lock, blocking until available.
     ///
-    /// Used by the leader process on startup. Blocks until the lock is available.
-    /// After acquiring, call `write_pid()` to record the leader's PID.
+    /// Used by the leader process on startup. After acquiring, call `write_pid()`
+    /// to record the leader's PID.
     pub fn acquire_blocking(&mut self) -> Result<(), LockError> {
         let file = self.open_lock_file()?;
 
@@ -238,7 +230,6 @@ impl LeaderLock {
         Ok(())
     }
 
-    /// Read PID from lock file (for diagnostics).
     pub fn read_pid(&self) -> Option<u32> {
         Self::read_pid_from_path(&self.lock_path)
     }
@@ -269,13 +260,10 @@ impl LeaderLock {
         if let Some(file) = self.lock_file.take() {
             file.unlock()?;
         }
-        // Clear was_leader so Drop doesn't delete files.
-        // The actual leader process will clean up when it exits.
         self.was_leader = false;
         Ok(())
     }
 
-    /// Check if we currently hold the lock.
     pub fn is_held(&self) -> bool {
         self.lock_file.is_some()
     }
@@ -303,10 +291,6 @@ impl LeaderLock {
 impl Drop for LeaderLock {
     fn drop(&mut self) {
         // Lock is automatically released when file is closed.
-        // We only clean up files if was_leader is true, which means:
-        // - We acquired the lock AND
-        // - We did NOT call release() (which clears was_leader)
-        // This ensures the spawner doesn't delete files when handing off to the leader.
         if self.was_leader {
             let _ = fs::remove_file(&self.lock_path);
             let _ = fs::remove_file(&self.sock_path);
@@ -331,7 +315,6 @@ mod tests {
         let root = Path::new("/home/u/.kigi");
         let override_sock = PathBuf::from("/home/u/.kigi/leader-branch.sock");
 
-        // With an override, the path is taken verbatim.
         assert_eq!(
             resolve_socket_path(Some(override_sock.clone()), root),
             override_sock
@@ -379,7 +362,8 @@ mod tests {
         let mut lock2 = test_lock(&temp);
 
         assert!(lock1.try_acquire().unwrap());
-        assert!(!lock2.try_acquire().unwrap()); // Should return false, not error
+        // Should return false, not error
+        assert!(!lock2.try_acquire().unwrap());
     }
 
     #[test]
@@ -433,7 +417,6 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let mut lock = test_lock(&temp);
 
-        // Create socket file
         fs::write(&lock.sock_path, "").unwrap();
         assert!(lock.sock_path.exists());
 
@@ -449,7 +432,6 @@ mod tests {
         let mut lock = test_lock(&temp);
 
         lock.try_acquire().unwrap();
-        // Should not error even if socket doesn't exist
         lock.cleanup_socket().unwrap();
     }
 
@@ -493,10 +475,8 @@ mod tests {
         assert!(lock.try_acquire().unwrap());
         lock.release().unwrap();
 
-        // Drop should NOT delete the socket file
         drop(lock);
 
-        // Socket file should still exist (leader would still be using it)
         assert!(
             temp.path().join("leader.sock").exists(),
             "Socket file should NOT be deleted after release()"
@@ -510,7 +490,6 @@ mod tests {
         {
             let mut lock = test_lock(&temp);
 
-            // Create socket file
             fs::write(&lock.sock_path, "").unwrap();
             assert!(lock.sock_path.exists());
 
@@ -519,7 +498,6 @@ mod tests {
             // lock dropped here without release()
         }
 
-        // Socket file should be deleted
         assert!(
             !temp.path().join("leader.sock").exists(),
             "Socket file SHOULD be deleted when dropped without release()"
@@ -585,12 +563,12 @@ mod tests {
 
         assert!(lock1.try_acquire().unwrap());
 
-        // Release lock1 in a background thread after a short delay
         let lock_path = lock1.lock_path.clone();
         let handle = std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(200));
             lock1.release().unwrap();
-            lock_path // keep the path for verification, lock1 is consumed
+            // keep the path for verification, lock1 is consumed
+            lock_path
         });
 
         // lock2 should acquire within the timeout because lock1 is released after 200ms

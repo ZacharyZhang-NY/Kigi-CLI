@@ -461,14 +461,18 @@ mod tests {
             make_summary_with_last_active(
                 "stale_activity",
                 "stale",
-                "2026-04-01T00:00:00Z", // newer updated_at (e.g. metadata bump)
-                Some("2026-01-01T00:00:00Z"), // older real activity
+                // newer updated_at (e.g. metadata bump)
+                "2026-04-01T00:00:00Z",
+                // older real activity
+                Some("2026-01-01T00:00:00Z"),
             ),
             make_summary_with_last_active(
                 "recent_activity",
                 "recent",
-                "2026-02-01T00:00:00Z",       // older updated_at
-                Some("2026-05-01T00:00:00Z"), // newer real activity
+                // older updated_at
+                "2026-02-01T00:00:00Z",
+                // newer real activity
+                Some("2026-05-01T00:00:00Z"),
             ),
         ];
         let merged = merge(Vec::new(), local, None, &[], 20);
@@ -674,8 +678,6 @@ mod tests {
         assert_eq!(merged.len(), 1);
     }
 
-    // ── last_active_at merge tests ──────────────────────────────────────
-
     fn make_summary_with_last_active(
         id: &str,
         title: &str,
@@ -785,8 +787,6 @@ mod tests {
             Some("2026-04-15T12:00:00Z")
         );
     }
-
-    // ── generated_title / branch / repo_name / worktree_label merge tests ──
 
     fn make_summary_with_metadata(
         id: &str,
@@ -1007,8 +1007,6 @@ mod tests {
         assert_eq!(merged[0].summary, "Kubernetes deployment fix");
     }
 
-    // ── dedup_empty_sessions tests ──────────────────────────────────────
-
     fn make_merged(id: &str, cwd: &str, updated: &str, num_messages: usize) -> MergedSession {
         MergedSession {
             session_id: id.into(),
@@ -1098,8 +1096,6 @@ mod tests {
         assert!(!sessions.iter().any(|s| s.session_id == "b-empty2"));
         assert_eq!(sessions.len(), 4);
     }
-
-    // ── limit applied after merge tests ─────────────────────────────────
 
     #[test]
     fn limit_applied_after_merge_not_per_source() {

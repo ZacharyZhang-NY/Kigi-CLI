@@ -6,7 +6,7 @@
 //! permission and user-question: the workspace yields a
 //! `Need*` chunk on the tool's stream, the sampler forwards it to the
 //! UI for approval, and replies with the matching [`ToolResponse`]
-//! variant. After approval the workspace applies the state change and
+//! variant. After approval the workspace applies the state transition and
 //! the tool's `Final` chunk carries the new mode back to the sampler.
 //!
 //! Plan mode transitions are deliberately **not** broadcast on the
@@ -59,7 +59,7 @@ pub enum PlanModeTransition {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum PlanModeDecision {
-    /// Approve the transition; the tool applies the change.
+    /// Approve the transition; the tool applies the transition.
     Approve,
     /// Reject the transition; the tool emits
     /// `Err(WorkspaceError::Permission { .. })`.
@@ -69,6 +69,6 @@ pub enum PlanModeDecision {
         feedback: Option<String>,
     },
     /// Defer the transition; the tool emits a non-error `Final`
-    /// indicating no change was made. The model may re-propose later.
+    /// indicating Unchanged was made. The model may re-propose later.
     Defer,
 }

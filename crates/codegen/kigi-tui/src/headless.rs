@@ -27,8 +27,6 @@ use crate::acp::model_state::{EffortTokenError, ModelState};
 use crate::acp::spawn::spawn_kigi_shell;
 use crate::client_identity::{HEADLESS_CLIENT_TYPE, PAGER_CLIENT_VERSION};
 
-// ── Types ────────────────────────────────────────────────────────────────
-
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, ValueEnum)]
 pub enum OutputFormat {
     #[default]
@@ -194,9 +192,6 @@ pub struct HeadlessOptions {
     pub background_wait_timeout: Duration,
 }
 
-// ── CLI flag helpers ─────────────────────────────────────────────────────
-
-/// Parse a comma-separated list into a vec, or None if empty.
 fn parse_comma_list(s: Option<&str>) -> Option<Vec<String>> {
     s.and_then(|s| {
         let v: Vec<String> = s
@@ -312,8 +307,6 @@ fn apply_agent_flag(agent: &Option<String>, config: &mut kigi_shell::agent::conf
         }
     }
 }
-
-// ── Emitter ──────────────────────────────────────────────────────────────
 
 struct HeadlessEmitter {
     format: OutputFormat,
@@ -481,8 +474,6 @@ impl HeadlessEmitter {
 fn attach_result_usage(result: &mut serde_json::Value, usage: &serde_json::Value) {
     kigi_shell::extensions::notification::attach_result_usage_fail_closed(result, usage);
 }
-
-// ── Helpers ──────────────────────────────────────────────────────────────
 
 fn auto_respond_to_permissions(
     args: &acp::RequestPermissionRequest,
@@ -812,8 +803,6 @@ async fn apply_headless_model_and_effort(
     Ok(())
 }
 
-// ── Main entry point ─────────────────────────────────────────────────────
-
 /// Startup-materialization context for headless (`-p`) runs. Never chat:
 /// `HeadlessOptions` carries no chat flag, so headless resume targets are
 /// always disk/GCS Build sessions.
@@ -834,9 +823,6 @@ pub async fn run_single_turn(
     verbatim: bool,
     options: HeadlessOptions,
 ) -> Result<()> {
-    // Stamp proxy requests as headless before the agent spawns and issues
-    // its first request (auth enrichment, model list, etc.).
-
     let cwd = match options.cwd {
         None => std::env::current_dir()?,
         Some(ref p) => dunce::canonicalize(p)?,
@@ -844,7 +830,6 @@ pub async fn run_single_turn(
 
     let mut emitter = HeadlessEmitter::new(options.output_format, options.json_schema.is_some());
 
-    // Load config and spawn agent
     let t_spawn = Instant::now();
     let raw_config = kigi_shell::config::load_effective_config()
         .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
@@ -909,7 +894,6 @@ pub async fn run_single_turn(
             .transpose()?,
     };
 
-    // Persist an explicit --trust grant before the agent starts.
     if options.trust {
         kigi_shell::agent::folder_trust::grant_folder_trust(&cwd);
     }
@@ -933,7 +917,6 @@ pub async fn run_single_turn(
     );
     crate::unified_log::flush();
 
-    // Initialize with headless hints
     let init_req = build_headless_init_request(
         options.rules.as_deref(),
         options.system_prompt_override.as_deref(),
@@ -996,7 +979,6 @@ pub async fn run_single_turn(
     )
     .await?;
 
-    // Open session
     let restore_code = options.restore_code.then_some(true);
     let t_session = Instant::now();
     let opened = match materialized {
@@ -1073,7 +1055,6 @@ pub async fn run_single_turn(
         anyhow::bail!("{msg}");
     }
 
-    // Send prompt and stream response
     let mut prompt_blocks = prompt.into_content_blocks();
 
     // --check / --self-verify: append the check skill AFTER the user prompt
@@ -1263,10 +1244,8 @@ pub async fn run_single_turn(
         reap_pending_background_tasks(&pending_bg, &session_id, &acp_tx).await;
     }
 
-    // Flush buffered unified log entries before exit.
     crate::unified_log::flush_blocking().await;
 
-    // Handle result
     if track_active {
         // Non-blocking flock so a slow/network ~/.kigi can't hang exit.
         let _ = kigi_shell::active_sessions::try_unregister(&session_id);
@@ -1301,7 +1280,8 @@ pub async fn run_single_turn(
                     OutputFormat::StreamingJson => {
                         println!("{}", serde_json::json!({"type": "max_turns_reached"}))
                     }
-                    OutputFormat::Json => {} // conveyed by stopReason in the final JSON
+                    // Json: conveyed by stopReason in the final JSON.
+                    OutputFormat::Json => {}
                 }
                 emitter.on_end(&stop_reason, sid, rid);
                 anyhow::bail!("max turns reached");
@@ -1442,8 +1422,6 @@ fn track_background_lifecycle(
     }
 }
 
-// ── ACP client message handling (select arm + pre-exit drain) ────────────
-
 /// Process one inbound ACP client message. Used by both `acp_rx.recv()` and
 /// `try_recv()` so buffered `task_backgrounded` is not dropped when
 /// `PromptResponse` completes first.
@@ -1527,8 +1505,6 @@ fn handle_headless_acp_message(
         _ => {}
     }
 }
-
-// ── Extension notification handling ──────────────────────────────────────
 
 enum ExtEvent {
     None,

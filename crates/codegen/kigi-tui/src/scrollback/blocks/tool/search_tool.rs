@@ -24,17 +24,13 @@ pub struct DiscoveredTool {
 /// Search tool call — discovering MCP integration tools by keyword.
 #[derive(Debug, Clone)]
 pub struct SearchToolCallBlock {
-    /// The search query.
     pub query: String,
     /// Limit parameter from the input (None = default 8).
     pub limit: Option<u8>,
-    /// Number of results found.
     pub result_count: usize,
-    /// Discovered tools (parsed from output).
     pub results: Vec<DiscoveredTool>,
     /// Raw output content (full JSON) for the fullscreen viewer.
     pub content: Option<String>,
-    /// Error message if the tool call failed.
     pub error: Option<String>,
     /// When the tool started running.
     pub started_at: Option<std::time::Instant>,

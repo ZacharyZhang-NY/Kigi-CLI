@@ -58,7 +58,6 @@ pub fn render_new_worktree_dialog(area: Rect, buf: &mut Buffer, state: &NewWorkt
     .flex(Flex::Center)
     .areas(dialog_h);
 
-    // Draw background
     let bg_style = Style::default().bg(theme.bg_dark);
     for y in dialog.y..dialog.y + dialog.height {
         for x in dialog.x..dialog.x + dialog.width {
@@ -69,9 +68,7 @@ pub fn render_new_worktree_dialog(area: Rect, buf: &mut Buffer, state: &NewWorkt
         }
     }
 
-    // Draw border
     let border_style = Style::default().fg(theme.gray_dim).bg(theme.bg_dark);
-    // Top border
     if let Some(cell) = buf.cell_mut((dialog.x, dialog.y)) {
         cell.set_char('\u{256D}');
         cell.set_style(border_style);
@@ -86,7 +83,6 @@ pub fn render_new_worktree_dialog(area: Rect, buf: &mut Buffer, state: &NewWorkt
         cell.set_char('\u{256E}');
         cell.set_style(border_style);
     }
-    // Bottom border
     let bottom = dialog.y + dialog.height - 1;
     if let Some(cell) = buf.cell_mut((dialog.x, bottom)) {
         cell.set_char('\u{2570}');
@@ -102,7 +98,6 @@ pub fn render_new_worktree_dialog(area: Rect, buf: &mut Buffer, state: &NewWorkt
         cell.set_char('\u{256F}');
         cell.set_style(border_style);
     }
-    // Side borders
     for y in dialog.y + 1..dialog.y + dialog.height - 1 {
         if let Some(cell) = buf.cell_mut((dialog.x, y)) {
             cell.set_char('\u{2502}');
@@ -187,7 +182,8 @@ fn visible_input_suffix(label: &str, budget: usize) -> String {
         return "…".to_string();
     }
 
-    let suffix_budget = budget - 1; // reserve one column for leading …
+    // Reserve one column for the leading …
+    let suffix_budget = budget - 1;
     let mut width = 0usize;
     let mut start = label.len();
     let graphemes: Vec<(usize, &str)> = label.grapheme_indices(true).collect();
@@ -228,7 +224,7 @@ mod tests {
     #[test]
     fn empty_dialog_uses_minimum_width() {
         assert_eq!(dialog_width_for(120, ""), MIN_DIALOG_WIDTH);
-        assert_eq!(dialog_width_for(40, ""), 36); // area.width - 4
+        assert_eq!(dialog_width_for(40, ""), 36);
     }
 
     #[test]
@@ -252,7 +248,7 @@ mod tests {
     fn dialog_clamps_to_terminal_width() {
         let label = "x".repeat(100);
         let width = dialog_width_for(60, &label);
-        assert_eq!(width, 56); // 60 - 4
+        assert_eq!(width, 56);
     }
 
     #[test]

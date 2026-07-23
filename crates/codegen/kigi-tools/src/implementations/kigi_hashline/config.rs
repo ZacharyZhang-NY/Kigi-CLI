@@ -91,7 +91,6 @@ impl Default for HashlineSchemeParams {
 }
 
 impl HashlineSchemeParams {
-    /// Validate the parameters. Returns an error message if invalid.
     pub fn validate(&self) -> Result<(), String> {
         match self.scheme.as_str() {
             "chunk" | "content_only" => {}
@@ -111,8 +110,6 @@ impl HashlineSchemeParams {
     }
 
     /// Generate example anchor strings for use in tool descriptions.
-    /// Returns (single_anchor, line_with_anchor) based on the configured scheme.
-    /// Returns `(anchor, read_line1, read_line2, grep_match, grep_context)`.
     pub fn example_anchors(&self) -> ExampleAnchors {
         let len = self.hash_len.clamp(1, 4);
         let hash = &"abcd"[..len];
@@ -169,7 +166,7 @@ impl HashlineSchemeParams {
         crate::types::definition::ToolDefinition::function(client_name, Some(description), schema)
     }
 
-    /// Validate and build the anchor scheme. Returns an error if params are invalid.
+    /// Validate and build the anchor scheme.
     pub fn build_scheme(&self) -> Result<Box<dyn AnchorScheme>, String> {
         self.validate()?;
         Ok(match self.scheme.as_str() {
@@ -320,22 +317,26 @@ mod tests {
     fn render_does_not_panic_on_invalid_hash_len() {
         let params = HashlineSchemeParams {
             scheme: "chunk".to_owned(),
-            hash_len: 100, // invalid but clamped
+            // invalid but clamped
+            hash_len: 100,
             chunk_size: 8,
         };
         let rendered = params.render_description("{example_anchor}");
-        assert_eq!(rendered, "22:abcd:rstu"); // clamped to 4
+        // clamped to 4
+        assert_eq!(rendered, "22:abcd:rstu");
     }
 
     #[test]
     fn render_does_not_panic_on_zero_hash_len() {
         let params = HashlineSchemeParams {
             scheme: "chunk".to_owned(),
-            hash_len: 0, // invalid but clamped
+            // invalid but clamped
+            hash_len: 0,
             chunk_size: 8,
         };
         let rendered = params.render_description("{example_anchor}");
-        assert_eq!(rendered, "22:a:r"); // clamped to 1
+        // clamped to 1
+        assert_eq!(rendered, "22:a:r");
     }
 
     #[test]

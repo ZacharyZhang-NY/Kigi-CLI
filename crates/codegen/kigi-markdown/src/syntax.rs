@@ -1,7 +1,4 @@
 //! Syntax highlighting support using syntect.
-//!
-//! This module provides the `Syntect` struct which holds the syntax definitions
-//! and theme for code block highlighting.
 
 use std::io::Cursor;
 use std::path::Path;
@@ -14,20 +11,16 @@ use syntect::{
 
 /// Syntax highlighting configuration.
 ///
-/// Holds the theme and syntax definitions for code highlighting.
-/// Create one instance and pass it to the markdown renderer.
+/// Loading the syntax set is expensive; create one instance and pass it to
+/// the markdown renderer.
 pub struct Syntect {
-    /// The color theme for syntax highlighting.
     pub theme: SyntectTheme,
-    /// The syntax definitions (supports 250+ languages via two-face).
     pub syntax_set: SyntaxSet,
 }
 
 impl Syntect {
-    /// Create a new Syntect instance from theme bytes.
-    ///
-    /// The theme bytes should be a TextMate `.tmTheme` file.
-    /// Uses two-face's extended syntax set with 250+ languages.
+    /// `theme_bytes` must be a TextMate `.tmTheme` file. The syntax set is
+    /// two-face's extended one, covering the 250+ languages bat ships.
     ///
     /// # Example
     ///
@@ -37,12 +30,11 @@ impl Syntect {
     pub fn new(theme_bytes: &[u8]) -> Self {
         let mut cursor = Cursor::new(theme_bytes);
         let theme = ThemeSet::load_from_reader(&mut cursor).expect("Failed to load theme");
-        // Use two-face's extended syntax set which includes 250+ languages from bat
         let syntax_set = two_face::syntax::extra_newlines();
         Self { theme, syntax_set }
     }
 
-    /// Find a syntax definition by file path extension.
+    /// Resolves on the extension alone; the rest of the file name is ignored.
     pub fn find_syntax_by_file_path(&self, file_path: &Path) -> Option<&SyntaxReference> {
         let ext = file_path.extension()?.to_str()?;
         self.syntax_set.find_syntax_by_extension(ext)
@@ -53,7 +45,6 @@ impl Syntect {
         self.syntax_set.find_syntax_by_token(token)
     }
 
-    /// Create a highlighter for the given file path.
     pub fn highlight_lines_by_file_path(&self, file_path: &Path) -> Option<HighlightLines<'_>> {
         Some(HighlightLines::new(
             self.find_syntax_by_file_path(file_path)?,
@@ -61,7 +52,6 @@ impl Syntect {
         ))
     }
 
-    /// Create a highlighter for the given language token.
     pub fn highlight_lines_for_token(&self, token: &str) -> Option<HighlightLines<'_>> {
         Some(HighlightLines::new(
             self.find_syntax_by_token(token)?,
@@ -78,7 +68,7 @@ impl Syntect {
     /// If the string matches the citation form but no syntax is found for the
     /// path, this falls back to [`Syntect::find_syntax_by_token`] with the full
     /// `fence_info` string, so plain ` ```lang` blocks keep working and odd
-    /// citations degrade like the pre-citation code path.
+    /// citations degrade to a plain token lookup.
     pub fn highlight_lines_for_fence_info(&self, fence_info: &str) -> Option<HighlightLines<'_>> {
         Some(HighlightLines::new(
             self.find_syntax_for_fence_info(fence_info)?,
@@ -159,10 +149,8 @@ pub(crate) fn syntax_highlight_raw(
     Some(lines)
 }
 
-/// Get a shared Syntect instance for tests.
-///
-/// This loads the tokyo-night theme bundled with the crate.
-/// Uses a static OnceLock for efficiency in test runs.
+/// Shared Syntect instance for tests, using the crate's bundled tokyo-night
+/// theme.
 #[cfg(any(test, fuzzing))]
 #[allow(dead_code)]
 pub fn test_syntect() -> &'static Syntect {

@@ -33,8 +33,6 @@ use std::path::PathBuf;
 use super::errors::ParseError;
 use ParseError::*;
 
-// ─── Marker constants ────────────────────────────────────────────────
-
 const BEGIN_PATCH_MARKER: &str = "*** Begin Patch";
 const END_PATCH_MARKER: &str = "*** End Patch";
 const ADD_FILE_MARKER: &str = "*** Add File: ";
@@ -45,19 +43,16 @@ const EOF_MARKER: &str = "*** End of File";
 const CHANGE_CONTEXT_MARKER: &str = "@@ ";
 const EMPTY_CHANGE_CONTEXT_MARKER: &str = "@@";
 
-/// We always use lenient mode (matching the codex default).
+/// Lenient mode matches the codex default.
 const PARSE_IN_STRICT_MODE: bool = false;
 
-// ─── Public types ────────────────────────────────────────────────────
-
-/// A parsed patch: the list of hunks plus the normalised patch text.
+/// `patch` is the normalised patch text: trimmed and re-joined with `\n`.
 #[derive(Debug, PartialEq)]
 pub struct ParsedPatch {
     pub hunks: Vec<Hunk>,
     pub patch: String,
 }
 
-/// A single hunk within a parsed patch.
 #[derive(Debug, PartialEq, Clone)]
 #[allow(clippy::enum_variant_names)]
 pub enum Hunk {
@@ -77,7 +72,6 @@ pub enum Hunk {
     },
 }
 
-/// A single contiguous edit within an `UpdateFile` hunk.
 #[derive(Debug, PartialEq, Clone)]
 pub struct UpdateFileChunk {
     /// A single line of context used to narrow down the position of the chunk
@@ -93,9 +87,6 @@ pub struct UpdateFileChunk {
     pub is_end_of_file: bool,
 }
 
-// ─── Public entry point ──────────────────────────────────────────────
-
-/// Parse a patch string into a [`ParsedPatch`].
 pub fn parse_patch(patch: &str) -> Result<ParsedPatch, ParseError> {
     let mode = if PARSE_IN_STRICT_MODE {
         ParseMode::Strict
@@ -105,10 +96,7 @@ pub fn parse_patch(patch: &str) -> Result<ParsedPatch, ParseError> {
     parse_patch_text(patch, mode)
 }
 
-// ─── Internal helpers ────────────────────────────────────────────────
-
 enum ParseMode {
-    /// Parse the patch text argument as-is.
     Strict,
     /// In lenient mode we strip heredoc wrappers (`<<EOF` / `<<'EOF'` /
     /// `<<"EOF"`) before trying strict parsing.
@@ -194,12 +182,10 @@ fn check_start_and_end_lines_strict(
     }
 }
 
-/// Parse a single hunk from the start of `lines`.
-/// Returns the parsed hunk and the number of lines consumed.
+/// Returns the parsed hunk and the number of lines it consumed.
 fn parse_one_hunk(lines: &[&str], line_number: usize) -> Result<(Hunk, usize), ParseError> {
     let first_line = lines[0].trim();
     if let Some(path) = first_line.strip_prefix(ADD_FILE_MARKER) {
-        // ── Add File ─────────────────────────────────────────────
         let mut contents = String::new();
         let mut parsed_lines = 1;
         for add_line in &lines[1..] {
@@ -219,7 +205,6 @@ fn parse_one_hunk(lines: &[&str], line_number: usize) -> Result<(Hunk, usize), P
             parsed_lines,
         ));
     } else if let Some(path) = first_line.strip_prefix(DELETE_FILE_MARKER) {
-        // ── Delete File ──────────────────────────────────────────
         return Ok((
             Hunk::DeleteFile {
                 path: PathBuf::from(path),
@@ -227,11 +212,9 @@ fn parse_one_hunk(lines: &[&str], line_number: usize) -> Result<(Hunk, usize), P
             1,
         ));
     } else if let Some(path) = first_line.strip_prefix(UPDATE_FILE_MARKER) {
-        // ── Update File ──────────────────────────────────────────
         let mut remaining_lines = &lines[1..];
         let mut parsed_lines = 1;
 
-        // Optional: move-to line.
         let move_path = remaining_lines
             .first()
             .and_then(|x| x.strip_prefix(MOVE_TO_MARKER));
@@ -243,13 +226,12 @@ fn parse_one_hunk(lines: &[&str], line_number: usize) -> Result<(Hunk, usize), P
 
         let mut chunks = Vec::new();
         while !remaining_lines.is_empty() {
-            // Skip blank lines between chunks.
             if remaining_lines[0].trim().is_empty() {
                 parsed_lines += 1;
                 remaining_lines = &remaining_lines[1..];
                 continue;
             }
-            // Stop at the next hunk header.
+            // Any `***` line belongs to the next hunk or the patch trailer.
             if remaining_lines[0].starts_with("***") {
                 break;
             }
@@ -302,7 +284,6 @@ fn parse_update_file_chunk(
         });
     }
 
-    // Check for explicit @@ context marker.
     let (change_context, start_index) = if lines[0] == EMPTY_CHANGE_CONTEXT_MARKER {
         (None, 1)
     } else if let Some(context) = lines[0].strip_prefix(CHANGE_CONTEXT_MARKER) {
@@ -348,8 +329,8 @@ fn parse_update_file_chunk(
                 break;
             }
             line_contents => match line_contents.chars().next() {
+                // An empty line carries no ' ' prefix but is still context.
                 None => {
-                    // Interpret empty line as a context line.
                     chunk.old_lines.push(String::new());
                     chunk.new_lines.push(String::new());
                 }
@@ -384,8 +365,6 @@ fn parse_update_file_chunk(
 
     Ok((chunk, parsed_lines + start_index))
 }
-
-// ─── Tests ───────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -584,7 +563,6 @@ mod tests {
         let expected_error =
             InvalidPatchError("The first line of the patch must be '*** Begin Patch'".to_string());
 
-        // <<EOF variant
         let patch_in_heredoc = format!("<<EOF\n{patch_text}\nEOF\n");
         assert_eq!(
             parse_patch_text(&patch_in_heredoc, ParseMode::Strict),
@@ -597,7 +575,6 @@ mod tests {
             expected_hunks
         );
 
-        // <<'EOF' variant
         let patch_in_sq_heredoc = format!("<<'EOF'\n{patch_text}\nEOF\n");
         assert_eq!(
             parse_patch_text(&patch_in_sq_heredoc, ParseMode::Strict),
@@ -610,7 +587,6 @@ mod tests {
             expected_hunks
         );
 
-        // <<"EOF" variant
         let patch_in_dq_heredoc = format!("<<\"EOF\"\n{patch_text}\nEOF\n");
         assert_eq!(
             parse_patch_text(&patch_in_dq_heredoc, ParseMode::Strict),
@@ -623,7 +599,7 @@ mod tests {
             expected_hunks
         );
 
-        // Mismatched quotes → fail even in lenient mode
+        // Mismatched heredoc quotes must fail even in lenient mode.
         let patch_in_mismatch = format!("<<\"EOF'\n{patch_text}\nEOF\n");
         assert_eq!(
             parse_patch_text(&patch_in_mismatch, ParseMode::Strict),
@@ -634,7 +610,6 @@ mod tests {
             Err(expected_error)
         );
 
-        // Missing closing heredoc marker
         let patch_missing_close =
             "<<EOF\n*** Begin Patch\n*** Update File: file2.py\nEOF\n".to_string();
         assert_eq!(

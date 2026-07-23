@@ -19,9 +19,7 @@ pub struct GoalDeliverableInfo {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionNotification {
-    /// The ID of the session this update pertains to.
     pub session_id: acp::SessionId,
-    /// The actual update content.
     pub update: SessionUpdate,
     /// Extension point for implementations
     #[serde(skip_serializing_if = "Option::is_none", rename = "_meta")]
@@ -127,12 +125,16 @@ impl PromptUsage {
         let PromptUsageModel {
             input_tokens,
             output_tokens,
-            total_tokens: _, // derived from input + output
+            // derived from input + output
+            total_tokens: _,
             cached_read_tokens,
-            reasoning_tokens: _, // subset of output_tokens
+            // subset of output_tokens
+            reasoning_tokens: _,
             model_calls,
-            api_duration_ms: _, // timing, not tokens
-            cost_usd_ticks: _,  // cost without usage cannot occur
+            // timing, not tokens
+            api_duration_ms: _,
+            // cost without usage cannot occur
+            cost_usd_ticks: _,
             cost_is_partial: _,
             cost_missing_calls: _,
         } = self.totals;
@@ -261,11 +263,14 @@ pub fn project_result_usage(result: &mut serde_json::Value, usage: &PromptUsage)
         total_tokens,
         cached_read_tokens,
         reasoning_tokens,
-        model_calls: _,     // totals-level; headless carries num_turns instead
-        api_duration_ms: _, // dropped: not part of the frozen headless shape
+        // totals-level; headless carries num_turns instead
+        model_calls: _,
+        // dropped: not part of the frozen headless shape
+        api_duration_ms: _,
         cost_usd_ticks,
         cost_is_partial,
-        cost_missing_calls: _, // internal partiality count; the flag suffices
+        // internal partiality count; the flag suffices
+        cost_missing_calls: _,
     } = usage.totals;
     result["usage"] = serde_json::json!({
         "input_tokens": uncached_input_tokens(input_tokens, cached_read_tokens),
@@ -295,11 +300,14 @@ pub fn project_result_usage(result: &mut serde_json::Value, usage: &PromptUsage)
             let PromptUsageModel {
                 input_tokens,
                 output_tokens,
-                total_tokens: _, // derivable per row
+                // derivable per row
+                total_tokens: _,
                 cached_read_tokens,
-                reasoning_tokens: _, // dropped: reduced per-model schema
+                // dropped: reduced per-model schema
+                reasoning_tokens: _,
                 model_calls,
-                api_duration_ms: _, // dropped: reduced per-model schema
+                // dropped: reduced per-model schema
+                api_duration_ms: _,
                 cost_usd_ticks,
                 cost_is_partial,
                 cost_missing_calls: _,
@@ -368,48 +376,36 @@ pub enum SessionUpdate {
     RetryState(RetryState),
     /// Auto-compact is starting due to context window threshold
     AutoCompactStarted {
-        /// Current token usage
         tokens_used: u64,
-        /// Total context window size
         context_window: u64,
         /// Percentage used (e.g., 82)
         percentage: u8,
-        /// Reason for compaction
         reason: String,
     },
-    /// Auto-compact completed successfully
     AutoCompactCompleted {
         /// Tokens used before compaction. `None` on payloads from older shells.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tokens_before: Option<u64>,
-        /// Tokens used after compaction
         tokens_after: u64,
-        /// How long the compaction took (milliseconds)
         #[serde(skip_serializing_if = "Option::is_none")]
         elapsed_ms: Option<i64>,
         /// Summary preview (first ~100 chars of summary)
         summary_preview: Option<String>,
     },
-    /// Auto-compact failed
     AutoCompactFailed {
         /// Error message
         error: String,
     },
     /// Memory flush is starting before compaction
     MemoryFlushStarted,
-    /// Memory flush completed
     MemoryFlushCompleted {
-        /// Outcome description
         result: String,
-        /// Path to the written memory file (if any)
         #[serde(default, skip_serializing_if = "Option::is_none")]
         path: Option<String>,
     },
     /// Memory dream consolidation completed
     MemoryDreamCompleted {
-        /// Outcome description
         result: String,
-        /// Path to the written memory file (if any)
         #[serde(default, skip_serializing_if = "Option::is_none")]
         path: Option<String>,
     },
@@ -435,11 +431,8 @@ pub enum SessionUpdate {
     AutoRecoveryStarted {
         /// Current recovery attempt number (1-indexed)
         attempt: u32,
-        /// Maximum number of recovery attempts allowed
         max_retries: u32,
-        /// The error that triggered recovery
         error: String,
-        /// Delay in milliseconds before the retry
         delay_ms: u64,
     },
     /// Auto-recovery exhausted all retries and the turn is failing
@@ -459,7 +452,6 @@ pub enum SessionUpdate {
     HookExecution {
         /// The hook event name ("pre_tool_use" or "post_tool_use").
         event_name: String,
-        /// The tool name this hook is associated with.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tool_name: Option<String>,
         /// The prompt turn this batch belongs to, when known; lets the
@@ -467,7 +459,6 @@ pub enum SessionUpdate {
         /// turn's marker.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         prompt_id: Option<String>,
-        /// Individual hook run results.
         runs: Vec<HookRunEntryDto>,
     },
     /// Hooks registry changed (after reload or trust/untrust).
@@ -535,10 +526,8 @@ pub enum SessionUpdate {
     RewindMarker {
         /// The prompt index being rewound to (0-based).
         target_prompt_index: usize,
-        /// When the rewind occurred.
         created_at: String,
     },
-    /// Task completed notification
     TaskCompleted {
         task_snapshot: TaskSnapshot,
         /// Whether an auto-wake prompt follows this completion. The pager
@@ -558,16 +547,12 @@ pub enum SessionUpdate {
     SubagentSpawned {
         /// Unique subagent identifier (same as child session ID).
         subagent_id: String,
-        /// The parent session that spawned this subagent.
         parent_session_id: String,
-        /// The parent prompt/turn that spawned this subagent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parent_prompt_id: Option<String>,
-        /// The child session's ACP session ID.
         child_session_id: String,
         /// Agent type used for the subagent ("general-purpose", "explore", "plan", or custom).
         subagent_type: String,
-        /// Short human-readable description of the task.
         description: String,
         /// Effective context source after bootstrap: "new" or "resumed".
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -578,7 +563,6 @@ pub enum SessionUpdate {
         /// Capability mode applied to this subagent (e.g. "read-only").
         #[serde(default, skip_serializing_if = "Option::is_none")]
         capability_mode: Option<String>,
-        /// Named persona applied to this subagent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         persona: Option<String>,
         /// Role that supplied defaults for this subagent (e.g. "researcher").
@@ -598,52 +582,37 @@ pub enum SessionUpdate {
     /// when the subagent completes or is cancelled. The TUI merges these
     /// into the same state path used by ACP poll responses.
     SubagentProgress {
-        /// Unique subagent identifier.
         subagent_id: String,
-        /// The parent session that owns this subagent.
         parent_session_id: String,
-        /// The child session's ACP session ID.
         child_session_id: String,
-        /// Elapsed wall-clock time in milliseconds.
         duration_ms: u64,
-        /// Number of completed turns so far.
         turn_count: u32,
-        /// Total tool calls executed so far.
         tool_call_count: u32,
         /// Current tokens used in the context window.
         tokens_used: u64,
-        /// Total context window capacity (tokens).
         context_window_tokens: u64,
         /// Context window usage as a percentage (0-100).
         context_usage_pct: u8,
         /// Distinct tool names called so far.
         tools_used: Vec<String>,
-        /// Number of errors encountered so far.
         error_count: u32,
     },
     /// A subagent session has finished (success, failure, or cancellation).
     ///
     /// Sent on the PARENT session's notification channel.
     SubagentFinished {
-        /// Unique subagent identifier.
         subagent_id: String,
-        /// The child session's ACP session ID.
         child_session_id: String,
         /// Outcome: "completed", "failed", or "cancelled".
         status: String,
-        /// Error message if the subagent failed.
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<String>,
-        /// Number of tool calls made by the subagent.
         tool_calls: u32,
-        /// Number of conversation turns taken by the subagent.
         turns: u32,
-        /// Total wall-clock duration in milliseconds.
         duration_ms: u64,
         /// Total tokens consumed by the subagent's context window.
         #[serde(default)]
         tokens_used: u64,
-        /// Final output text from the subagent (if completed).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         output: Option<String>,
         /// Whether an auto-wake prompt follows this completion. The pager
@@ -656,11 +625,8 @@ pub enum SessionUpdate {
     /// Task backgrounded notification — a bash command transitioned to background execution.
     /// Sent for both direct `is_background=true` tasks and foreground→background transitions.
     TaskBackgrounded {
-        /// The tool_call_id of the bash tool invocation.
         tool_call_id: String,
-        /// The background task registry ID.
         task_id: String,
-        /// The shell command being executed.
         command: String,
         /// Absolute path of the working directory.
         cwd: String,
@@ -704,9 +670,7 @@ pub enum SessionUpdate {
     ModelAutoSwitched {
         /// The model ID that was persisted in the session but is no longer available.
         previous_model_id: String,
-        /// The model ID that was selected as a replacement.
         new_model_id: String,
-        /// Human-readable reason for the switch.
         reason: String,
     },
     /// The session's model was switched via `session/setModel`.
@@ -751,7 +715,6 @@ pub enum SessionUpdate {
     /// One or more prompt images were resized to fit within API limits.
     ImageCompressed {
         images: Vec<ImageCompressedEntry>,
-        /// Human-readable summary for display.
         message: String,
     },
     /// Prompt images dropped before send (integrity / upscale-cap). The
@@ -876,8 +839,8 @@ pub enum SessionUpdate {
         tool_call_id: String,
         kind: crate::session::pending_interaction::PendingKind,
     },
-    /// A previously-pending reverse-request **resolved** (answered, cancelled,
-    /// or errored). Fire-and-forget, **never persisted**. Subscribers clear the
+    /// A pending reverse-request **resolved** (answered, cancelled, or
+    /// errored). Fire-and-forget, **never persisted**. Subscribers clear the
     /// pending ⏳ for this `tool_call_id`.
     InteractionResolved { tool_call_id: String },
     /// The durable, replayable signal that a turn reached its terminal
@@ -891,7 +854,6 @@ pub enum SessionUpdate {
         prompt_id: String,
         /// Why the turn ended (the model's stop reason, or e.g. "cancelled").
         stop_reason: String,
-        /// Final agent result text, when the turn produced one.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         agent_result: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -975,20 +937,14 @@ impl From<&crate::session::image_normalize::ImageCompressionInfo> for ImageCompr
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum RetryState {
-    /// A retry is in progress
     Retrying {
         /// Current retry attempt number (1-indexed)
         attempt: u32,
-        /// Maximum number of retries allowed
         max_retries: u32,
-        /// Human-readable reason for the retry
         reason: String,
     },
-    /// All retries have been exhausted
     Exhausted {
-        /// Total number of attempts made
         attempts: u32,
-        /// Human-readable reason for the failure
         reason: String,
         /// True when the exhaustion was caused by an HTTP 429 rate limit.
         /// Clients use this to show a user-friendly upgrade message instead
@@ -1000,7 +956,6 @@ pub enum RetryState {
     Failed {
         /// Category of the error (e.g., "auth", "invalid_params", "server")
         error_type: String,
-        /// Human-readable error message
         message: String,
     },
 }
@@ -1023,7 +978,6 @@ pub fn is_reauthable_failure(error_type: Option<&str>, message: &str) -> bool {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(tag = "type", rename = "diff")]
 pub struct DiffContent {
-    /// The diff details.
     #[serde(flatten)]
     pub diff: acp::Diff,
 }
@@ -1032,13 +986,9 @@ pub struct DiffContent {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct FeedbackRequestNotification {
-    /// Unique ID for this feedback request
     pub request_id: String,
-    /// The tier that triggered this request
     pub tier: String,
-    /// Human-readable prompt to show the user
     pub prompt: String,
-    /// Whether this is a non-intrusive/dismissible request
     pub dismissible: bool,
     /// Trigger type identifier (e.g., "tier1_engagement", "tier2_complex_recovery")
     pub trigger_type: String,
@@ -1068,8 +1018,6 @@ impl From<FeedbackRequestData> for FeedbackRequestNotification {
     }
 }
 
-// ── Compaction checkpoint types ────────────────────────────────────────
-
 /// Metadata stored in `updates.jsonl` as a `CompactionCheckpoint` session update.
 ///
 /// This is a lightweight reference; the full compacted conversation lives in a
@@ -1089,7 +1037,6 @@ pub struct CompactionCheckpointInfo {
     /// auto-continue prompt that was injected after compaction.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_continue: Option<AutoContinueInfo>,
-    /// Schema version for forward compatibility.
     pub schema_version: u32,
     /// ISO 8601 timestamp of when the checkpoint was created.
     pub created_at: String,
@@ -1117,7 +1064,6 @@ pub struct CompactionCheckpointFile {
     pub prompt_index_at_compaction: usize,
     /// The exact compacted conversation used by the model.
     pub compacted_history: Vec<crate::sampling::ConversationItem>,
-    /// Schema version for forward compatibility.
     pub schema_version: u32,
     /// ISO 8601 timestamp of when the checkpoint was created.
     pub created_at: String,
@@ -1159,7 +1105,6 @@ pub struct CompactionSegmentFile {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct CompactionRequestFile {
-    /// Schema version for forward compatibility.
     pub schema_version: u32,
     /// Unique artifact identifier (filename stem).
     /// Note: this is a per-artifact ID, not the model API's `x_kigi_req_id`
@@ -1172,7 +1117,6 @@ pub struct CompactionRequestFile {
     /// Which prompt template was used: `"short"` (concise self-summarization)
     /// or `"detailed"` (10-section structured prompt for kigi and similar agents).
     pub prompt_variant: String,
-    /// The model id that ran the summarization.
     pub model: String,
     /// User-provided context from `/compact <text>`, if any.
     pub user_context: Option<String>,
@@ -1196,7 +1140,6 @@ pub struct CompactionRequestFile {
     /// On total failure (all retries exhausted, or a deterministic error)
     /// `summary` is `None` and this field carries the final error.
     pub error: Option<String>,
-    /// Number of attempts the retry loop made before settling on the final outcome.
     pub attempts: u32,
     /// Per-attempt diagnostics (one per retry-loop iteration), in order —
     /// records each rejected/degraded attempt so retries aren't bumped
@@ -1216,7 +1159,6 @@ pub struct CompactionRequestFile {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct RecapRequestFile {
-    /// Schema version for forward compatibility.
     pub schema_version: u32,
     /// Unique artifact identifier (filename stem). Distinct from the model
     /// API's `x_kigi_req_id` (also recorded below for proxy correlation).
@@ -1226,7 +1168,6 @@ pub struct RecapRequestFile {
     /// What kicked off the recap: `"manual"` (`/recap`) or `"auto"`
     /// (return-from-away).
     pub trigger: String,
-    /// The model id used for the recap side-call.
     pub model: String,
     /// Sampling request id sent to the proxy (`xai-recap-{uuid}`).
     pub x_kigi_req_id: String,
@@ -1459,7 +1400,6 @@ mod tests {
             will_wake: false,
         })
         .unwrap();
-        // All three should have distinct tags
         assert_eq!(spawned["sessionUpdate"], "subagent_spawned");
         assert_eq!(progress["sessionUpdate"], "subagent_progress");
         assert_eq!(finished["sessionUpdate"], "subagent_finished");
@@ -1701,7 +1641,6 @@ mod tests {
         assert_eq!(json["sessionUpdate"], "tool_call_delta_chunk");
         assert_eq!(json["tool_index"], 0);
         assert_eq!(json["arguments_delta"], "{\"file\":\"src/");
-        // Optional fields skipped when None.
         assert!(json.get("tool_call_id").is_none());
         assert!(json.get("name").is_none());
     }
@@ -2017,8 +1956,6 @@ mod tests {
         }
     }
 
-    // ── ModelChanged (leader-mode multi-client model switch fan-out) ──
-
     /// Wire format for `ModelChanged` — sanity-check the JSON exactly,
     /// since the pager and any third-party clients consume this on the wire.
     /// Specifically:
@@ -2092,8 +2029,6 @@ mod tests {
         assert_eq!(json["update"]["sessionUpdate"], "model_changed");
         assert_eq!(json["update"]["model_id"], "kigi-4");
     }
-
-    // ── TurnCompleted (durable, replayable turn-end signal) ──
 
     #[test]
     fn turn_completed_serializes_snake_case_tag_and_fields() {

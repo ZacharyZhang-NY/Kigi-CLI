@@ -258,7 +258,8 @@ impl AgentView {
                 return true;
             }
             *remaining = remaining.saturating_sub(1);
-            return true; // redraw to advance fade
+            // redraw to advance fade
+            return true;
         }
         false
     }

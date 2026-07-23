@@ -36,7 +36,6 @@ use std::sync::{Arc, OnceLock};
 /// [`register_tool_pack`] MUST run before the FIRST `ToolRegistryBuilder::new()`
 /// in the process. Packs registered after a builder
 /// has been constructed do not retroactively apply to that builder.
-/// A tool pack: a function that contributes registrations to a builder.
 pub type ToolPack = fn(&mut ToolRegistryBuilder);
 static TOOL_PACKS: OnceLock<Mutex<Vec<ToolPack>>> = OnceLock::new();
 fn tool_packs() -> &'static Mutex<Vec<ToolPack>> {
@@ -51,7 +50,6 @@ pub fn register_tool_pack(pack: ToolPack) {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ToolConfig {
     pub id: String,
-    /// tool params, keyed by fully qualified name.
     pub params: Option<serde_json::Map<String, serde_json::Value>>,
     /// tool_id → client-facing name.
     pub name_override: Option<String>,
@@ -142,17 +140,14 @@ impl ToolConfig {
             kind: None,
         }
     }
-    /// Set the client-facing tool name (overrides the default id).
     pub fn with_name(mut self, name: impl Into<String>) -> Self {
         self.name_override = Some(name.into());
         self
     }
-    /// Replace the tool's `description_template()` with a custom description.
     pub fn with_description(mut self, desc: impl Into<String>) -> Self {
         self.description_override = Some(desc.into());
         self
     }
-    /// Set a tool configuration parameter (stored in `params` JSON map).
     pub fn with_param(
         mut self,
         key: impl Into<String>,
@@ -163,7 +158,6 @@ impl ToolConfig {
             .insert(key.into(), value.into());
         self
     }
-    /// Add a single parameter name remapping (canonical -> client-facing).
     pub fn with_param_rename(mut self, from: impl Into<String>, to: impl Into<String>) -> Self {
         self.params_name_overrides
             .get_or_insert_with(HashMap::new)
@@ -221,7 +215,6 @@ pub struct SessionContext {
     pub backend: Arc<dyn TerminalBackend>,
     /// Async file system abstraction (read_file, search_replace).
     pub fs: Arc<dyn AsyncFileSystem>,
-    /// Working directory for the session.
     pub cwd: PathBuf,
     /// Session-scoped folder for logs, output files, etc.
     pub session_folder: PathBuf,
@@ -340,7 +333,6 @@ struct DispatchParts {
     ctx: kigi_tool_runtime::ToolCallContext,
     /// Canonical (reverse-remapped) params to pass to dispatch.
     canonical_params: serde_json::Value,
-    /// Converts the dispatch's `serde_json::Value` back to `ToolOutput`.
     output_converter: OutputConverter,
     /// `use_tool` target tool name, surfaced in the final `ToolRunResult`.
     effective_tool_name: Option<String>,
@@ -411,7 +403,6 @@ struct FinalizedTool {
     input_schema: serde_json::Value,
     /// Client-facing param → canonical param, for reverse-remapping at dispatch.
     reverse_params: HashMap<String, String>,
-    /// useful for parsing input to specific type
     parse_input: Arc<
         dyn Fn(serde_json::Value) -> Result<ToolInput, kigi_tool_runtime::ToolError> + Send + Sync,
     >,
@@ -1687,7 +1678,7 @@ impl FinalizedToolset {
     /// Serialize current in-memory state, write it to disk, and wait for
     /// the write to complete. Returns the path to the persisted file.
     ///
-    /// Unlike `flush_persistence()` (which only flushes previously queued
+    /// Unlike `flush_persistence()` (which only flushes already-queued
     /// snapshots), this method captures a **fresh** snapshot of the current
     /// `Resources` and ensures it hits disk before returning.
     pub async fn save_and_flush_persistence(&self) -> &std::path::Path {
@@ -1929,8 +1920,6 @@ mod tests {
     use super::*;
     use std::sync::Arc;
     use tempfile::TempDir;
-    /// Build a `SessionContext` for tests using a temp dir and real local
-    /// filesystem/terminal backends.
     fn test_session_context(tmp: &TempDir) -> SessionContext {
         SessionContext {
             backend: Arc::new(crate::computer::local::LocalTerminalBackend::new()),
@@ -1957,14 +1946,13 @@ mod tests {
     /// Regression test: `kind_params` must merge input params from ALL tools
     /// that share a `ToolKind`, not just the first one.
     ///
-    /// Before the fix, the `kind_params` builder used `if map.is_empty()` to
-    /// seed identity param-name mappings only from the **first** tool of each
-    /// kind. When `codex:apply_patch` (`ToolKind::Edit`, input: `{ patch }`)
-    /// appeared before `kigi:search_replace` (`ToolKind::Edit`, input:
-    /// `{ file_path, old_string, new_string, replace_all }`), the renderer's
-    /// context had `params.edit = { "patch": "patch" }` — missing
-    /// `replace_all`. At runtime, the template `${{ params.edit.replace_all }}`
-    /// failed with "undefined value".
+    /// If identity param-name mappings are seeded from only the **first** tool
+    /// of each kind, then when `codex:apply_patch` (`ToolKind::Edit`, input:
+    /// `{ patch }`) appears before `kigi:search_replace` (`ToolKind::Edit`,
+    /// input: `{ file_path, old_string, new_string, replace_all }`), the
+    /// renderer's context has `params.edit = { "patch": "patch" }` — missing
+    /// `replace_all`, so the template `${{ params.edit.replace_all }}` fails
+    /// with "undefined value".
     #[tokio::test]
     async fn kind_params_merged_across_multiple_tools_of_same_kind() {
         let tmp = TempDir::new().unwrap();
@@ -2026,15 +2014,8 @@ mod tests {
             result.prompt_text
         );
     }
-    /// Verify the exact tool output variants for all template-rendered error
-    /// paths in `search_replace` when it is the **sole** Edit tool in the config.
-    ///
-    /// Exercises two code paths that use `TemplateRenderer` at runtime:
-    /// 1. `MultipleMatchesFound` — renders `${{ params.edit.replace_all }}`
-    /// 2. `NoMatchesFound` — renders `${{ tools.by_kind.read }}`
-    ///
-    /// Verify that the rendered `search_replace` description exposed to the model
-    /// contains the new minimum-anchor guidance and has no unresolved placeholders.
+    /// Verify the rendered `search_replace` description exposed to the model
+    /// contains the minimum-anchor guidance and has no unresolved placeholders.
     #[tokio::test]
     async fn search_replace_description_renders_minimum_anchor_guidance() {
         let builder = ToolRegistryBuilder::new();
@@ -2822,9 +2803,8 @@ mod tests {
             crate::types::output::ToolOutput::Text(_)
         ));
     }
-    /// A blocking stub tool (only implements `Tool::run`) used to verify the
-    /// non-streaming `call` path stays byte-identical after the streaming
-    /// refactor.
+    /// A blocking stub tool (only implements `Tool::run`) exercising the
+    /// non-streaming `call` path.
     #[derive(Debug)]
     struct NonStreamingStub;
     impl crate::types::tool_metadata::ToolMetadata for NonStreamingStub {
@@ -3047,12 +3027,11 @@ mod tests {
     ///      `Terminal(Err(stream_no_terminal_error()))` when its inner
     ///      dispatch stream ends without a terminal (the path actually
     ///      exercised by this stub).
-    ///   2. `call`'s drain loop now also returns `Err(stream_no_terminal_error())`
-    ///      instead of `unreachable!()` if the outer `call_streaming` stream
-    ///      itself ever ends without yielding a terminal — defense-in-depth
-    ///      that cannot be reached under the `call_streaming` contract but
-    ///      whose presence guarantees no `unreachable!()` panic at this
-    ///      callsite.
+    ///   2. `call`'s drain loop returns `Err(stream_no_terminal_error())` if
+    ///      the outer `call_streaming` stream itself ever ends without
+    ///      yielding a terminal — defense-in-depth that cannot be reached
+    ///      under the `call_streaming` contract but guarantees no panic at
+    ///      this callsite.
     ///
     /// Both layers raise the same `stream_no_terminal` error kind so consumers
     /// see one consistent shape regardless of which layer caught the
@@ -3117,8 +3096,6 @@ mod tests {
             );
         }
     }
-    /// `task` tool must be rejected when neither `get_task_output` nor
-    /// `kill_task` are present in the toolset.
     #[test]
     fn task_tool_rejected_without_get_task_output_and_kill_task() {
         let builder = ToolRegistryBuilder::new();
@@ -3146,8 +3123,6 @@ mod tests {
             "error should mention missing background task tools: {errors:?}",
         );
     }
-    /// `task` tool must be rejected when only `get_task_output` is present
-    /// (missing `kill_task`).
     #[test]
     fn task_tool_rejected_with_only_get_task_output() {
         let builder = ToolRegistryBuilder::new();
@@ -3182,8 +3157,6 @@ mod tests {
             "task tool should be rejected without kill_task: {errors:?}",
         );
     }
-    /// `task` tool must be rejected when only `kill_task` is present
-    /// (missing `get_task_output`).
     #[test]
     fn task_tool_rejected_with_only_kill_task() {
         let builder = ToolRegistryBuilder::new();
@@ -3218,8 +3191,6 @@ mod tests {
             "task tool should be rejected without get_task_output: {errors:?}",
         );
     }
-    /// `task` tool must be accepted when both `get_task_output` and
-    /// `kill_task` are present in the toolset.
     #[tokio::test]
     async fn task_tool_accepted_with_both_get_task_output_and_kill_task() {
         let tmp = TempDir::new().unwrap();
@@ -3269,9 +3240,6 @@ mod tests {
         let task_def = defs.iter().find(|d| d.function.name == "task");
         assert!(task_def.is_some(), "task tool should be in definitions");
     }
-    /// Verify that the task tool description renders correctly with the default
-    /// kigi agent config (all tools present) and that the new examples
-    /// section is included with no unresolved template placeholders.
     #[tokio::test]
     async fn bash_definition_hides_is_background_when_disabled() {
         let builder = ToolRegistryBuilder::new();
@@ -3394,7 +3362,7 @@ mod tests {
     }
     /// Regression guard: background-param template references must use the real
     /// input-schema property names — `${{ params.execute.is_background }}` and
-    /// `${{ params.task.run_in_background }}`. A mistyped key (e.g. the old
+    /// `${{ params.task.run_in_background }}`. A mistyped key (e.g.
     /// `params.execute.background`) has no entry in `kind_params`, so the
     /// renderer silently emits "" — producing prompt text like "set =true" or
     /// "=true commands". This finalizes the full background-capable toolset and
@@ -4069,7 +4037,6 @@ mod tests {
             .await
             .expect("finalize")
     }
-    /// list_dir through the hub dispatch path returns valid output.
     #[tokio::test]
     async fn hub_dispatch_list_dir() {
         let tmp = TempDir::new().unwrap();
@@ -4135,7 +4102,6 @@ mod tests {
             "legacy output should contain parity.txt"
         );
     }
-    /// search_replace (a write tool) works through hub dispatch.
     #[tokio::test]
     async fn hub_dispatch_search_replace() {
         let tmp = TempDir::new().unwrap();
@@ -4169,7 +4135,6 @@ mod tests {
         let contents = std::fs::read_to_string(&file).unwrap();
         assert_eq!(contents, "goodbye world");
     }
-    /// bash (run_terminal_cmd) works through hub dispatch.
     #[tokio::test]
     async fn hub_dispatch_bash() {
         let tmp = TempDir::new().unwrap();
@@ -4226,11 +4191,10 @@ mod tests {
         );
     }
     /// Startup skills passed via `SessionContext.skills` must survive a
-    /// dynamic discovery. Before the fix, `SkillManager` was seeded with
-    /// `startup_skills: vec![]`, so `take_pending()` would compute
-    /// `dedup_by_canonical_path(discovered, [])` and overwrite
-    /// `AvailableSkills` with only the new discoveries, dropping boot
-    /// skills.
+    /// dynamic discovery. Seeding `SkillManager` with `startup_skills: vec![]`
+    /// makes `take_pending()` compute `dedup_by_canonical_path(discovered, [])`
+    /// and overwrite `AvailableSkills` with only the new discoveries, dropping
+    /// boot skills.
     #[tokio::test]
     async fn test_startup_skills_survive_dynamic_discovery() {
         let tmp = TempDir::new().unwrap();

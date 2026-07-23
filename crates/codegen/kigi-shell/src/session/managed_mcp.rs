@@ -125,7 +125,6 @@ impl McpDisabledReason {
     }
 }
 
-/// An MCP server paired with its policy status.
 pub struct McpServerWithPolicy {
     pub server: acp::McpServer,
     pub disabled_reason: Option<McpDisabledReason>,
@@ -203,7 +202,6 @@ pub fn merge_managed_mcp_servers_sourced(
         tracing::info!(server = name, source = ?source, "MCP server loaded from source");
     }
 
-    // Plugins
     if let Some(registry) = plugin_registry {
         for plugin in registry.active_plugins() {
             let mut plugin_servers: Vec<acp::McpServer> = Vec::new();
@@ -245,7 +243,6 @@ pub fn merge_managed_mcp_servers_sourced(
         }
     }
 
-    // ~/.claude.json
     let claude_json_source = ConfigSource::ClaudeJson {
         path: dirs::home_dir()
             .map(|h| h.join(".claude.json"))
@@ -261,7 +258,6 @@ pub fn merge_managed_mcp_servers_sourced(
             .or_insert((server, claude_json_source.clone()));
     }
 
-    // ~/.cursor/mcp.json
     let cursor_mcp_source = ConfigSource::McpJson {
         path: dirs::home_dir()
             .map(|h| h.join(".cursor").join("mcp.json"))
@@ -277,7 +273,6 @@ pub fn merge_managed_mcp_servers_sourced(
             .or_insert((server, cursor_mcp_source.clone()));
     }
 
-    // .mcp.json
     let mcp_json_source = ConfigSource::McpJson {
         path: cwd.join(".mcp.json"),
     };

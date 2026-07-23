@@ -13,15 +13,11 @@ use kigi_agent::plugins::install_registry::{
     InstallError, InstallKind, InstallRegistry, InstalledRepo,
 };
 
-// ── Helpers (internal) ──────────────────────────────────────────────
-
 fn save_registry_or_warn(registry: &InstallRegistry) {
     if let Err(e) = registry.save() {
         tracing::warn!("failed to save install registry: {e}");
     }
 }
-
-// ── Install ─────────────────────────────────────────────────────────
 
 pub struct InstallOutcome {
     pub repo_key: String,
@@ -62,8 +58,6 @@ pub fn install_plugin(source: &str, cwd: &Path) -> Result<InstallOutcome, Instal
         is_local,
     })
 }
-
-// ── Uninstall ───────────────────────────────────────────────────────
 
 pub struct UninstallOutcome {
     pub repo_key: String,
@@ -167,8 +161,6 @@ pub fn uninstall_plugin(
     })
 }
 
-// ── Update ──────────────────────────────────────────────────────────
-
 pub enum RepoUpdateOutcome {
     Updated {
         repo_key: String,
@@ -218,7 +210,6 @@ impl std::fmt::Display for UpdateError {
     }
 }
 
-/// Apply an update result to the registry entry.
 fn apply_update_to_registry(
     registry: &mut InstallRegistry,
     repo_key: &str,
@@ -304,8 +295,6 @@ pub fn update_plugins_by_selector(
     Ok(outcomes)
 }
 
-// ── Source helpers ──────────────────────────────────────────────────
-
 /// Expand GitHub shorthand (user/repo) to `https://github.com/user/repo.git`.
 pub fn normalize_git_url(input: &str) -> String {
     if !input.contains("://") && !input.contains("git@") {
@@ -351,8 +340,6 @@ pub fn classify_install_error(err: &InstallError) -> String {
     .to_string()
 }
 
-// ── Tests ───────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -388,8 +375,10 @@ mod tests {
 
     #[test]
     fn name_from_url_edge_cases() {
-        assert_eq!(name_from_url("https://github.com/org/repo/"), "repo"); // trailing slash bug fix
-        assert_eq!(name_from_url(""), "plugin"); // empty fallback
+        // trailing slash bug fix
+        assert_eq!(name_from_url("https://github.com/org/repo/"), "repo");
+        // empty fallback
+        assert_eq!(name_from_url(""), "plugin");
     }
 
     #[test]

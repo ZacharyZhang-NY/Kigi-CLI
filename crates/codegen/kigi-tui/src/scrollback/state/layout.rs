@@ -326,7 +326,8 @@ impl ScrollbackState {
                     height: header_h,
                 },
                 top_clipped,
-                false, // header prompts are never bottom-clipped
+                // header prompts are never bottom-clipped
+                false,
             ));
         }
 
@@ -369,7 +370,8 @@ impl ScrollbackState {
         let header_rows = sticky.header_screen_rows();
         let content_top = scrollback_area.y + header_rows;
         if screen_y + visible_height <= content_top {
-            return None; // Entirely behind header
+            // Entirely behind header
+            return None;
         }
         let mut top_clipped = top_clipped;
         if screen_y < content_top {
@@ -863,19 +865,15 @@ impl ScrollbackState {
     /// Returns the prompt entry index if it should be pinned.
     /// Pins when scroll_offset > 0 to keep the turn's prompt visible.
     pub fn pinned_prompt_index(&self) -> Option<usize> {
-        // Only pin in SingleTurn mode or when we have a current turn
         let turn_idx = self.current_turn?;
         let turn = self.turns.get(turn_idx)?;
         let prompt_idx = turn.prompt_index;
 
-        // Check if prompt is in the visible range
         let visible_range = self.visible_entry_range();
         if !visible_range.contains(&prompt_idx) {
             return None;
         }
 
-        // Pin the prompt when we've scrolled at all
-        // This keeps the turn's prompt visible while scrolling through content
         if prompt_idx == visible_range.start && self.scroll_offset > 0 {
             Some(prompt_idx)
         } else {
@@ -905,22 +903,19 @@ impl ScrollbackState {
     /// Ensure layout cache is valid for the given width.
     /// Rebuilds the cache if needed.
     pub(super) fn ensure_layout_cache(&mut self, width: u16) {
-        // Check if cache is valid
         if let Some(ref cache) = self.layout_cache
             && cache.width == width
             && cache.entries.len() == self.entries.len()
         {
-            return; // Cache is valid
+            return;
         }
 
-        // Rebuild the cache
         self.rebuild_layout_cache(width);
     }
 
     /// Compute total content height from the layout cache.
     ///
     /// Call after `ensure_layout_cache()` to derive total_height from cached entry heights.
-    /// This replaces the old `precompute_total_height()` approach.
     ///
     /// Only sums heights for entries in `visible_entry_range()`. In SingleTurn mode,
     /// this means only the current turn's entries are counted, preventing scroll_down
@@ -974,7 +969,8 @@ impl ScrollbackState {
 
         for (id, idx) in dirty_entries {
             if idx >= cache.entries.len() {
-                continue; // Entry added after cache was built
+                // Entry added after cache was built
+                continue;
             }
 
             let Some((_, entry)) = self.entries.get_index(idx) else {
@@ -1732,9 +1728,9 @@ mod tests {
     }
 
     /// After an incremental extend, the next `prepare_layout` must NOT do a
-    /// Case 1 full rebuild. We assert this indirectly: dirty_heights stays
-    /// empty (push doesn't dirty existing entries), gaps_may_be_dirty is
-    /// false (we updated the gap inline), and the cache pointer is preserved.
+    /// Case 1 full rebuild. Asserted indirectly: dirty_heights stays
+    /// empty (push doesn't dirty existing entries), gaps_may_be_dirty stays
+    /// false (the gap is patched inline), and the cache pointer is preserved.
     #[test]
     fn test_push_does_not_set_gaps_may_be_dirty_after_successful_extend() {
         let mut state = ScrollbackState::new();
@@ -1821,7 +1817,7 @@ mod tests {
         let mut y = 0usize;
         for &h in heights {
             virtual_y.push(y);
-            let gap_after = 1u16; // constant for now
+            let gap_after = 1u16;
             entries.push(EntryLayoutInfo {
                 height: h,
                 gap_after,
@@ -1920,14 +1916,17 @@ mod tests {
         let all = 0..3;
 
         assert_eq!(cache.entry_at_content_y(0, all.clone()), Some(0));
-        assert_eq!(cache.entry_at_content_y(1, all.clone()), None); // gap
+        // gap
+        assert_eq!(cache.entry_at_content_y(1, all.clone()), None);
         assert_eq!(cache.entry_at_content_y(2, all.clone()), Some(1));
-        assert_eq!(cache.entry_at_content_y(3, all.clone()), None); // gap
+        // gap
+        assert_eq!(cache.entry_at_content_y(3, all.clone()), None);
         assert_eq!(cache.entry_at_content_y(4, all.clone()), Some(2));
-        assert_eq!(cache.entry_at_content_y(5, all.clone()), None); // past end
+        // past end
+        assert_eq!(cache.entry_at_content_y(5, all.clone()), None);
     }
 
-    // ── Hit-testing with sticky headers ──────────────────────────────
+    // Hit-testing with sticky headers
 
     /// Set up a scrollback state with a prompt + N response blocks,
     /// prepare layout, and return it.
@@ -2036,8 +2035,8 @@ mod tests {
             "Entry 1 should be at screen row {entry1_screen_row}, heights={heights:?}, virtual_y={virtual_y:?}"
         );
 
-        // Gap between entry 0 and entry 1
-        let gap_row = heights[0]; // right after entry 0 ends
+        // Gap between entry 0 and entry 1, right after entry 0 ends
+        let gap_row = heights[0];
         assert_eq!(
             state.entry_index_at_screen_row(gap_row, area),
             None,
@@ -2219,7 +2218,7 @@ mod tests {
         );
     }
 
-    // ── Lazy viewport height measurement (fast large-session resume) ──
+    // Lazy viewport height measurement (fast large-session resume)
 
     /// Number of entries that have actually been laid out (markdown-rendered).
     /// Estimated entries never populate the entry's output cache.
@@ -2593,7 +2592,8 @@ mod tests {
         // re-pins top/bottom) left it off-center. With the target region measured
         // first, the target sits at the exact viewport center and stays there.
         let mut state = bulk_load_wrapping(60);
-        state.prepare_layout(20, 8); // bottom-pinned; target is off-screen
+        // bottom-pinned; target is off-screen
+        state.prepare_layout(20, 8);
         let target = 15;
         assert!(
             !measured_at(&state, target),
@@ -2601,7 +2601,8 @@ mod tests {
         );
 
         state.scroll_to_entry_center(target);
-        state.prepare_layout(20, 8); // settle runs here; target must NOT drift
+        // settle runs here; target must NOT drift
+        state.prepare_layout(20, 8);
 
         assert!(measured_at(&state, target), "target measured exactly");
         assert_eq!(
@@ -2660,7 +2661,8 @@ mod tests {
     fn assert_resize_keeps_anchor_at_top(from_width: u16, to_width: u16) {
         let mut state = resize_anchor_state();
         let height = 20u16;
-        let anchor = 10usize; // a short, non-wrapping entry past the wrapping block
+        // a short, non-wrapping entry past the wrapping block
+        let anchor = 10usize;
 
         state.prepare_layout(from_width, height);
         let top = {
@@ -2669,7 +2671,8 @@ mod tests {
             vy[anchor] - vy[range.start]
         };
         state.set_scroll_offset(top);
-        state.prepare_layout(from_width, height); // settle the "before" layout
+        // settle the "before" layout
+        state.prepare_layout(from_width, height);
 
         assert!(!state.is_follow_mode());
         assert!(
@@ -2749,7 +2752,8 @@ mod tests {
         let height = 12u16;
         let narrow = 30u16;
         let wide = 120u16;
-        let anchor = 0usize; // a long wrapping entry (one wrapping logical line)
+        // a long wrapping entry (one wrapping logical line)
+        let anchor = 0usize;
 
         state.prepare_layout(narrow, height);
         // Measure the anchor exactly by putting it at the top, then park the
@@ -2794,7 +2798,8 @@ mod tests {
         let _theme = pin_theme();
         let mut state = resize_anchor_state();
         let height = 20u16;
-        let anchor = 10usize; // short, non-wrapping; the gap after it is 1 row
+        // short, non-wrapping; the gap after it is 1 row
+        let anchor = 10usize;
 
         state.prepare_layout(80, height);
         // Park the top on the 1-row gap after entry 10 (the row just before 11).
@@ -3060,7 +3065,8 @@ mod tests {
         // A streaming chunk (Case 2: dirty heights, cache kept) while scrolled up
         // into an unmeasured region must still measure the visible region.
         let mut state = bulk_load_wrapping(200);
-        state.prepare_layout(20, 10); // measures only the bottom
+        // measures only the bottom
+        state.prepare_layout(20, 10);
 
         // Scroll up WITHOUT a render so the middle stays estimated.
         state.set_scroll_offset(300);
@@ -3402,7 +3408,7 @@ mod tests {
         );
     }
 
-    // ── Paint window (per-frame viewport sub-range) ──
+    // Paint window (per-frame viewport sub-range)
 
     /// Build parallel `(virtual_y, layouts)` fixtures from `(height, gap_after)`
     /// rows, marking `verb_headers` indices as verb-group headers. Headers

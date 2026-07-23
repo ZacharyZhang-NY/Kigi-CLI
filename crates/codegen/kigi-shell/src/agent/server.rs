@@ -48,9 +48,7 @@ use indexmap::IndexMap;
 /// Swappable destination for the relay task.
 ///
 /// Points at the current ACP connection's gateway sender. When no client is
-/// connected, the value is `None` and outbound messages are silently dropped
-/// (matching the old behaviour where the gateway channel's receiver was simply
-/// gone).
+/// connected, the value is `None` and outbound messages are silently dropped.
 type RelayDest = Rc<RefCell<Option<mpsc::UnboundedSender<AcpClientMessage>>>>;
 
 const MAX_BUFFER_SIZE: usize = 8 * 1024 * 1024;
@@ -59,7 +57,6 @@ const KEEPALIVE_INTERVAL_SECS: u64 = 15;
 /// Configuration for the agent WebSocket server.
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
-    /// Address to bind the server to
     pub bind_addr: SocketAddr,
     /// Secret token for client authentication (required)
     pub secret: String,
@@ -90,7 +87,6 @@ pub struct WsQueryParams {
 
 /// Validate the bearer token from request headers or query parameters.
 fn validate_auth(headers: &HeaderMap, query: &WsQueryParams, expected_secret: &str) -> bool {
-    // Try Authorization header
     if let Some(token) = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -115,7 +111,6 @@ async fn ws_handler(
     headers: HeaderMap,
     Query(query): Query<WsQueryParams>,
 ) -> Response {
-    // Validate secret token from header or query param
     if !validate_auth(&headers, &query, &state.secret) {
         warn!("Unauthorized connection attempt from {}", addr);
         return (
@@ -139,7 +134,6 @@ async fn handle_connection(ws: WebSocket, state: Arc<ServerState>, peer_addr: So
 
     let (mut ws_write, mut ws_read) = ws.split();
 
-    // Channels for bridging WS <-> Agent thread
     let (to_agent_tx, to_agent_rx) = mpsc::unbounded_channel::<String>();
     let (from_agent_tx, mut from_agent_rx) = mpsc::unbounded_channel::<String>();
 
@@ -149,7 +143,6 @@ async fn handle_connection(ws: WebSocket, state: Arc<ServerState>, peer_addr: So
     {
         let mut agent_tx_guard = state.agent_conn_tx.lock().await;
 
-        // Check if existing sender is still alive (receiver not dropped)
         if let Some(ref tx) = *agent_tx_guard
             && tx.is_closed()
         {
@@ -203,7 +196,6 @@ async fn handle_connection(ws: WebSocket, state: Arc<ServerState>, peer_addr: So
             info!("Persistent agent thread spawned");
         }
 
-        // Send new WS channels to the agent thread
         if let Some(ref tx) = *agent_tx_guard
             && tx
                 .send(NewConnectionChannels {
@@ -339,7 +331,6 @@ async fn run_persistent_agent(
         }
     });
 
-    // Accept new connections in a loop
     while let Some(channels) = connection_rx.recv().await {
         info!("Agent thread: setting up new ACP connection (reconnect)");
         setup_acp_connection(agent.clone(), channels, relay_dest.clone());
@@ -361,7 +352,6 @@ fn setup_acp_connection(
         to_ws_tx,
     } = channels;
 
-    // Create new simplex IO streams for this ACP connection
     let (agent_read_rx, mut agent_read_tx) = simplex(MAX_BUFFER_SIZE);
     let (agent_write_rx, agent_write_tx) = simplex(MAX_BUFFER_SIZE);
 
@@ -372,7 +362,6 @@ fn setup_acp_connection(
     // The relay task will forward persistent-channel messages here.
     let (conn_gw_tx, conn_gw_rx) = tokio::sync::mpsc::unbounded_channel::<AcpClientMessage>();
 
-    // Point the relay at this new connection's channel
     *relay_dest.borrow_mut() = Some(conn_gw_tx);
 
     // Create new ACP connection reusing the same MvpAgent (via Rc clone).

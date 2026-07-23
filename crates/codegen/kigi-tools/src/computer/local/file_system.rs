@@ -4,7 +4,6 @@ use tokio::{fs, time::sleep};
 
 use crate::computer::types::{AsyncFileSystem, ComputerError};
 
-/// Creates a local FS access which allows writing and reading from the local files
 pub struct LocalFs;
 
 // Keep the window short: these retries absorb brief Windows editor/indexer/AV
@@ -21,8 +20,8 @@ const WINDOWS_ERROR_SHARING_VIOLATION: i32 = 32;
 #[cfg(any(windows, test))]
 const WINDOWS_ERROR_LOCK_VIOLATION: i32 = 33;
 
-/// Check if an IO error is a permission denial (EACCES or EPERM),
-/// which indicates a sandbox violation.
+/// EACCES/EPERM here means the sandbox denied the operation, so callers report
+/// it to `kigi_sandbox` rather than treating it as an ordinary IO failure.
 fn is_permission_error(e: &io::Error) -> bool {
     matches!(e.kind(), io::ErrorKind::PermissionDenied)
 }
@@ -48,6 +47,9 @@ fn is_transient_write_lock_error(e: &io::Error) -> bool {
     }
 }
 
+/// Classifies the Windows codes on every platform so the retry-hook tests below
+/// can exercise the retry loop off Windows, where `is_transient_write_lock_error`
+/// is hardwired to `false`.
 #[cfg(test)]
 fn is_test_transient_write_lock_error(e: &io::Error) -> bool {
     is_windows_transient_write_lock_raw_os_error(e.raw_os_error())
@@ -146,7 +148,6 @@ impl AsyncFileSystem for LocalFs {
 
     #[tracing::instrument(name = "fs.write_file", skip_all)]
     async fn write_file(&self, path: &Path, data: &[u8]) -> Result<(), ComputerError> {
-        // implicitly creates the missing directories if any
         if let Some(dir) = path.parent()
             && let Err(e) = fs::create_dir_all(dir).await
         {

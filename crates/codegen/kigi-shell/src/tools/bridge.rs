@@ -1,6 +1,4 @@
-//! ToolBridge: re-exported from `kigi-tools`.
-//!
-//! The bridge implementation now lives in `kigi_tools::bridge`.
-//! This module re-exports everything for backward compatibility.
+//! ToolBridge is implemented in `kigi_tools::bridge`; this module re-exports
+//! it so existing import paths keep working.
 
 pub use kigi_tools::bridge::{ToolBridge, ToolBridgeResult};

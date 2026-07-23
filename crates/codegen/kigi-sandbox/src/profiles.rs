@@ -367,10 +367,11 @@ impl ProfileName {
                     "/run",
                     // NSS/SSSD (and similar) under /var — needed beyond resolv.conf alone
                     "/var",
-                    // macOS-specific paths (filtered by exists() below)
-                    "/System",  // Security framework, dylibs, TLS certificates
-                    "/Library", // System-wide frameworks
-                    "/private", // Real path behind /etc, /tmp, /var symlinks
+                    // macOS-specific paths, filtered by exists() below:
+                    // /System (security framework, dylibs, TLS certs),
+                    // /Library (system-wide frameworks), /private (real path
+                    // behind the /etc, /tmp, /var symlinks).
+                    "/System", "/Library", "/private",
                 ]
                 .iter()
                 .map(PathBuf::from)

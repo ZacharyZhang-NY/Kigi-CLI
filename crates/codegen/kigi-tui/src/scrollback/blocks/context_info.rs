@@ -52,7 +52,6 @@ use kigi_shell::session::{ContextInfo, count_detail};
 /// enter the bar.
 #[derive(Debug, Clone)]
 pub struct ContextInfoBlock {
-    /// The captured context-window snapshot.
     pub snapshot: ContextInfo,
     /// Active model name at the time of capture (display-only).
     pub model: String,
@@ -254,7 +253,6 @@ impl RowLayout {
 }
 
 impl ContextInfoBlock {
-    /// Create a new context-info block.
     pub fn new(snapshot: ContextInfo, model: impl Into<String>) -> Self {
         Self {
             snapshot,
@@ -301,10 +299,10 @@ impl ContextInfoBlock {
         // are the conversation the user is actually steering. System
         // prompt uses the same diamond glyph as messages but in muted
         // gray so it reads as a quiet base layer.
-        let system_color = quantize(theme.gray_bright); // gray
-        let tools_color = quantize(theme.accent_skill); // teal / skill accent
-        let messages_color = quantize(theme.text_primary); // primary (white)
-        let empty_color = quantize(theme.gray_dim); // free / outline
+        let system_color = quantize(theme.gray_bright);
+        let tools_color = quantize(theme.accent_skill);
+        let messages_color = quantize(theme.text_primary);
+        let empty_color = quantize(theme.gray_dim);
         let overhead_color = quantize(theme.accent_verify);
 
         // Categorical bar: 100 cells laid out as `bar.rows` rows of
@@ -314,11 +312,16 @@ impl ContextInfoBlock {
         // Routed through `glyphs` so the diamonds degrade to CP437-safe
         // stand-ins (`◆`→`♦`, `◇`→`○`) on legacy Windows consoles that
         // can't render the U+25Cx diamonds.
-        let system_glyph = crate::glyphs::diamond_filled(); // ◆ (gray)
-        let tools_glyph = crate::glyphs::diamond_dotted(); // ◈
-        let messages_glyph = crate::glyphs::diamond_filled(); // ◆ (primary)
-        let free_glyph = crate::glyphs::diamond_hollow(); // ◇
-        let overhead_glyph = crate::glyphs::diamond_filled(); // ◆ (violet)
+        // ◆ (gray)
+        let system_glyph = crate::glyphs::diamond_filled();
+        // ◈
+        let tools_glyph = crate::glyphs::diamond_dotted();
+        // ◆ (primary)
+        let messages_glyph = crate::glyphs::diamond_filled();
+        // ◇
+        let free_glyph = crate::glyphs::diamond_hollow();
+        // ◆ (violet)
+        let overhead_glyph = crate::glyphs::diamond_filled();
 
         let total_cells = bar.total();
         let cells_for = |tokens: u64| -> usize {
@@ -421,9 +424,7 @@ impl ContextInfoBlock {
         let label_style = Style::default().fg(theme.text_secondary);
 
         let mut lines: Vec<Line<'static>> = vec![
-            // Header: bold white "Context"
             Line::from(Span::styled("Context", primary)),
-            // Blank row between header and the at-a-glance summary
             Line::from(""),
             // Sub-header: token totals + percent. Uses `text_secondary` for
             // a touch more contrast than `muted` so the at-a-glance numbers
@@ -448,7 +449,6 @@ impl ContextInfoBlock {
                 model.to_string(),
                 Style::default().fg(theme.gray_bright),
             )),
-            // Blank space before the bar
             Line::from(""),
         ];
         lines.extend(bar_lines);
@@ -501,7 +501,6 @@ impl ContextInfoBlock {
             lines.push(Line::from(""));
         }
 
-        // Footer stats
         lines.push(Line::from(Span::styled(
             format!(
                 "Turns: {turn_count} \u{00b7} Tool calls: {tool_call_count} \u{00b7} Compactions: {compaction_count}"
@@ -598,7 +597,6 @@ impl BlockContent for ContextInfoBlock {
             .map(|line| BlockLine::styled(line).with_selection_range(Some(0)))
             .collect();
 
-        // Apply max_lines budget if set
         let lines = if let Some(max) = ctx.max_lines {
             let max = max as usize;
             if all_lines.len() > max && max > 0 {
@@ -634,7 +632,8 @@ impl BlockContent for ContextInfoBlock {
     }
 
     fn has_vpad(&self, _ctx: &BlockContext) -> bool {
-        false // Compact like SystemMessageBlock
+        // Compact like SystemMessageBlock
+        false
     }
 
     fn has_raw_mode(&self) -> bool {
@@ -769,7 +768,8 @@ mod tests {
         // avoid stacking two warning-styled lines that contradict each
         // other (manual /compact vs. auto-compact about to fire).
         let mut snap = snapshot();
-        snap.usage_pct = 85; // the historical default (and value in snapshot() helper)
+        // the historical default (and value in snapshot() helper)
+        snap.usage_pct = 85;
         let block = ContextInfoBlock::new(snap, "kigi-4");
         let theme = test_theme();
         let lines = block.build_lines(&theme, BarLayout::WIDE);
@@ -821,7 +821,8 @@ mod tests {
 
     #[test]
     fn fmt_tok_big_switches_to_millions_at_one_million() {
-        assert_eq!(fmt_tok_big(999_999), fmt_tok(999_999)); // delegates below 1m
+        // delegates below 1m
+        assert_eq!(fmt_tok_big(999_999), fmt_tok(999_999));
         assert_eq!(fmt_tok_big(1_000_000), "1.0m");
         assert_eq!(fmt_tok_big(1_500_000), "1.5m");
         assert_eq!(fmt_tok_big(2_345_678), "2.3m");
@@ -873,7 +874,6 @@ mod tests {
         );
     }
 
-    // -------------------------------------------------------------------
     // Bar partition tests
     //
     // The bar lives at line indices 5..(5+layout.rows) (after header /
@@ -881,11 +881,11 @@ mod tests {
     // spans separated by raw-space spans. To count cells per category,
     // we walk the bar lines for the given layout and count spans whose
     // content matches each category's glyph.
-    // -------------------------------------------------------------------
 
     const SYSTEM_GLYPH_TEST: &str = "\u{25C6}";
     const TOOLS_GLYPH_TEST: &str = "\u{25C8}";
-    const MESSAGES_GLYPH_TEST: &str = "\u{25C6}"; // same as system; distinguished by color in real render
+    // same as system; distinguished by color in real render
+    const MESSAGES_GLYPH_TEST: &str = "\u{25C6}";
     const FREE_GLYPH_TEST: &str = "\u{25C7}";
 
     /// `layout` tells the function how many bar rows to slice (5 for
@@ -898,7 +898,8 @@ mod tests {
         let mut diamonds = 0usize;
         let mut tools = 0usize;
         let mut free = 0usize;
-        let bar_start = 5; // header / blank / tokens / model / blank
+        // header / blank / tokens / model / blank
+        let bar_start = 5;
         let bar_end = bar_start + layout.rows;
         for line in &lines[bar_start..bar_end] {
             for span in &line.spans {
@@ -1112,13 +1113,11 @@ mod tests {
         assert_eq!(percent_of_window(500_000, 1_000_000), "50%");
     }
 
-    // -------------------------------------------------------------------
     // Responsive bar layout tests
     //
     // The bar's shape (5×20 vs 10×10) is chosen by `BarLayout::for_width`
     // based on terminal width, so narrow terminals get a square bar that
     // still fits in their column budget.
-    // -------------------------------------------------------------------
 
     #[test]
     fn bar_layout_wide_is_5_rows_of_20() {
@@ -1238,9 +1237,7 @@ mod tests {
         }
     }
 
-    // -------------------------------------------------------------------
     // Legend label color + responsive wrapping tests
-    // -------------------------------------------------------------------
 
     /// Helper: find the legend row (or row 1, for the narrow layout)
     /// whose label text starts with `label_prefix`. Returns the matching

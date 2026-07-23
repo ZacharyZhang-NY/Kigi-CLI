@@ -12,7 +12,6 @@ use serde::{Deserialize, Serialize};
 
 use super::WorkspaceRpc;
 
-/// Request for the loaded hook registry. No parameters.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct HookRegistryReq {}
 

@@ -97,21 +97,17 @@ pub(crate) fn typed_tool_output_preserving_cco(
 }
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ListDirContent {
-    /// Formatted directory listing string
     pub content: String,
-    /// Root directory path (absolute) for this listing
     pub absolute_root_path: PathBuf,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub enum ListDirOutput {
     Content(ListDirContent),
-    /// Target path does not exist
     NotFound(String),
     /// Target path exists but is a file, not a directory
     IsAFile(String),
     /// Target path exists but is not a directory
     NotADirectory(String),
-    /// Permission denied accessing the directory
     PermissionDenied(String),
     /// Generic / unclassified error
     Error(String),
@@ -174,7 +170,6 @@ pub struct FileContent {
 pub struct ImageContent {
     /// Base64-encoded image data
     pub data: String,
-    /// MIME type of the image (e.g., "image/png", "image/jpeg")
     pub mime_type: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub annotations: Option<serde_json::Value>,
@@ -183,7 +178,6 @@ pub struct ImageContent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub meta: Option<serde_json::Value>,
 }
-/// A single rendered PDF page.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PdfPageImage {
     /// Base64-encoded JPEG data
@@ -193,7 +187,6 @@ pub struct PdfPageImage {
     /// 1-based page number
     pub page_number: usize,
 }
-/// Multiple rendered PDF page images.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PdfPageImages {
     /// Rendered page images, one per requested page
@@ -206,11 +199,8 @@ pub struct PdfPageImages {
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub enum ReadFileOutput {
     FileContent(FileContent),
-    /// Target file does not exist
     FileNotFound(String),
-    /// Target path is a directory, not a file
     IsADirectory(String),
-    /// Permission denied reading the file
     PermissionDenied(String),
     /// File content exceeds maximum token limit
     FileTooLarge(String),
@@ -220,7 +210,6 @@ pub enum ReadFileOutput {
     ImageSizeError(String),
     PdfPageImages(PdfPageImages),
 }
-/// Represents successful edits applied by SearchReplace
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SearchReplaceEditsApplied {
     pub old_string: String,
@@ -239,24 +228,19 @@ pub struct SearchReplaceEditsApplied {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unicode_normalized: bool,
 }
-/// Contains the edit details present as a struct
 #[derive(Debug, Default, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SearchReplaceEditContextInformation {
     pub details: Vec<SearchReplaceEditDetail>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SearchReplaceEditDetail {
-    /// The exact old string that was matched in the file
     pub old_string: String,
     /// 1-based line number where the match begins in the original file
     pub old_line: usize,
-    /// The replacement string that was written
     pub new_string: String,
     /// 1-based line number where the replacement begins in the updated file
     pub new_line: usize,
-    /// The context before the match
     pub context_before: String,
-    /// The context after the match
     pub context_after: String,
     /// Leading text on the first line before the matched `old_string` begins.
     ///
@@ -292,7 +276,6 @@ pub struct ApplyPatchFileResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub move_to: Option<PathBuf>,
 }
-/// Output of the `apply_patch` tool.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub enum ApplyPatchOutput {
     /// Patch applied successfully.
@@ -326,7 +309,6 @@ pub struct NoMatchesFoundError {
     #[schemars(skip)]
     pub file_snapshot_at_edit: Option<String>,
 }
-/// Output type for the SearchReplace tool
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub enum SearchReplaceOutput {
     FileAlreadyExists(String),
@@ -337,7 +319,6 @@ pub enum SearchReplaceOutput {
     /// can do per-file accounting without needing extra context.
     NoMatchesFound(NoMatchesFoundError),
     InvalidInput(String),
-    /// Target file does not exist
     FileNotFound(String),
     /// A path component exceeds the OS filename length limit (ENAMETOOLONG)
     FilenameTooLong(String),
@@ -354,7 +335,6 @@ pub struct BashOutput {
     pub truncated: bool,
     pub signal: Option<String>,
     pub timed_out: bool,
-    /// describes the intent of this bash command
     pub description: Option<String>,
     /// the current working directory after the command completes
     pub current_dir: String,
@@ -395,15 +375,11 @@ impl BashOutput {
 pub struct BackgroundTaskStarted {
     /// Unique task ID (UUID) for querying later
     pub task_id: String,
-    /// Type of background task (e.g., "bash")
     pub task_type: String,
-    /// Path to the output file on disk
     pub output_file: String,
     /// Current status (always "running" when returned)
     pub status: String,
-    /// The command that was started
     pub command: String,
-    /// Human-readable summary
     pub summary: String,
     /// Pre-resolved hint text telling the model how to retrieve output.
     /// Built by the tool's run() using resolved tool/param names.
@@ -445,12 +421,9 @@ pub struct WebFetchSourceArtifact {
 pub struct WebFetchOutputLocation {
     /// Absolute path to the complete rendered output.
     pub file_path: String,
-    /// Exact file size in bytes.
     pub size_bytes: usize,
-    /// Number of lines in the file.
     pub line_count: usize,
 }
-/// Successful web fetch result with page content.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct WebFetchContent {
     /// The final URL (may differ from input after redirects).
@@ -459,7 +432,6 @@ pub struct WebFetchContent {
     pub content: String,
     /// Content type: "markdown" for converted HTML, or the original MIME type.
     pub content_type: String,
-    /// HTTP status code.
     pub status_code: u16,
     /// Size of the content in bytes (before truncation).
     pub bytes: usize,
@@ -481,11 +453,8 @@ pub struct WebFetchContent {
 }
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub enum WebFetchOutput {
-    /// Successful fetch with content.
     Content(WebFetchContent),
-    /// Domain is not in the allowed domains list.
     DomainNotAllowed(String),
-    /// Server redirected to a different host.
     CrossHostRedirect {
         original_host: String,
         redirect_url: String,
@@ -620,7 +589,7 @@ impl ToolOutput {
             _ => false,
         }
     }
-    /// Render tool output for inclusion in the model prompt with specified format.
+    /// Render tool output for inclusion in the model prompt.
     pub fn to_prompt_format(&self) -> String {
         match self {
             ToolOutput::ReadFile(read_file_output) => match read_file_output {
@@ -920,9 +889,7 @@ pub struct TodoWriteSuccess {
 /// distinguish tool-logic errors from infrastructure errors.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub enum TodoWriteOutput {
-    /// Successfully updated todo state.
     TodosUpdated(TodoWriteSuccess),
-    /// Duplicate todo ID found in the input.
     DuplicateId(String),
     /// Argument validation failed (model-facing message is returned verbatim).
     /// Used so missing-field errors surface as the terse `Invalid argument: …`
@@ -1197,7 +1164,6 @@ mod tests {
     use kigi_tool_types::KillTaskResult;
     use kigi_tool_types::TaskOutputResult;
     use serde_json::json;
-    /// Serialize a ToolOutput to JSON value
     fn to_json(output: ToolOutput) -> serde_json::Value {
         serde_json::to_value(&output).unwrap()
     }
@@ -1489,7 +1455,6 @@ mod tests {
             raw_output_bytes,
         }
     }
-    /// Identical status + raw_output_bytes → same signature.
     #[test]
     fn progress_signature_same_when_no_progress() {
         let a = make_result("running", 1000);
@@ -1512,7 +1477,6 @@ mod tests {
             "raw output growth must produce a different progress signature"
         );
     }
-    /// Status change must produce a different signature.
     #[test]
     fn progress_signature_differs_on_status_change() {
         let running = make_result("running", 100);
@@ -1523,7 +1487,6 @@ mod tests {
             "status change must produce a different progress signature"
         );
     }
-    /// `raw_output_bytes` field is populated in JSON output.
     #[test]
     fn task_output_result_raw_output_bytes_in_json() {
         let json = to_json(

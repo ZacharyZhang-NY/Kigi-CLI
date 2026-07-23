@@ -1,4 +1,5 @@
-#![allow(dead_code)] // Functions consumed by handle.rs event forwarder wiring
+// Functions consumed by handle.rs event forwarder wiring
+#![allow(dead_code)]
 //! FsNotify adapter functions bridging [`kigi_fsnotify`] events to
 //! workspace subsystems (hunk tracker, codebase graph, workspace
 //! event broadcast).

@@ -1,5 +1,4 @@
 //! normalize chat_history.jsonl, convert any v1 (ConversationItem) to v0 (ChatRequestMessage) format.
-//! Used for data processing pipeline.
 //!
 //! Usage:
 //!   chat-history-downgrade <INPUT> <OUTPUT>
@@ -176,10 +175,8 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-// ============================================================================
-// Tests — hardcoded JSON fixtures so schema changes in either
+// Hardcoded JSON fixtures so schema changes in either
 // ConversationItem (v1) or ChatRequestMessage (v0) will break these.
-// ============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -195,7 +192,6 @@ mod tests {
             .expect("convert_line should succeed")
             .expect("v1 line should produce a v0 message (not a buffered Reasoning)");
         let out = serde_json::to_string(&v0).expect("v0 should serialize");
-        // Verify the output is valid v0
         let _: ChatRequestMessage =
             serde_json::from_str(&out).expect("v0 output should round-trip");
         out

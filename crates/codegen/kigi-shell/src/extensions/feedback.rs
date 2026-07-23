@@ -97,7 +97,6 @@ async fn handle_feedback(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult 
                 match serde_json::from_str::<ClientFeedbackInput>(args.params.get()) {
                     Ok(input) => input,
                     Err(_) => {
-                        // Fallback: parse simple FeedbackRequest from /feedback command
                         let simple: crate::session::FeedbackRequest = parse_params(args)?;
                         ClientFeedbackInput {
                             session_id: simple.session_id,
@@ -173,7 +172,6 @@ async fn handle_feedback(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult 
                 }
             }
 
-            // Track rating in session signals
             if let (Some(session_handle), Some(rating_value)) =
                 (&session_handle, feedback_input.rating_value)
             {
@@ -193,7 +191,6 @@ async fn handle_feedback(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult 
                 }
             }
 
-            // Log feedback type for debugging
             if feedback_input.is_solicited() {
                 tracing::info!(
                     session_id = %feedback_input.session_id,

@@ -129,7 +129,8 @@ impl TrustStore {
             })?;
 
         if !self.trusted.remove(&canonical) {
-            return Ok(()); // wasn't trusted
+            // wasn't trusted
+            return Ok(());
         }
 
         // Rewrite the entire file without the revoked path
@@ -176,7 +177,7 @@ impl TrustStore {
         }
     }
 
-    // ── Internal ──────────────────────────────────────────────────────
+    // Internal
 
     fn read_trust_file(path: &Path) -> HashSet<PathBuf> {
         let file = match std::fs::File::open(path) {
@@ -208,7 +209,7 @@ impl TrustStore {
     }
 }
 
-// ── Errors ────────────────────────────────────────────────────────────
+// Errors
 
 #[derive(Debug, thiserror::Error)]
 pub enum TrustError {
@@ -320,7 +321,8 @@ mod tests {
         // This test checks the logic but can't easily mock $HOME.
         // We verify the function exists and returns a boolean.
         let result = TrustStore::is_config_path_auto_trusted(Path::new("/nonexistent/path"));
-        assert!(!result); // nonexistent path can't be canonicalized
+        // nonexistent path can't be canonicalized
+        assert!(!result);
     }
 
     #[test]

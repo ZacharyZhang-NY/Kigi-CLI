@@ -1,7 +1,4 @@
 //! Session meta-information handlers.
-//!
-//! Router pattern: single `handle()` dispatches by method name.
-//! Business logic delegates to pure functions or MvpAgent methods.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -28,7 +25,6 @@ fn backfill_session_summary(summary: &mut Summary) {
     }
 }
 
-/// Router for kigi/session/* and kigi/session_summaries/* methods.
 pub async fn handle(
     agent: &MvpAgent,
     args: &acp::ExtRequest,
@@ -105,7 +101,6 @@ async fn handle_session_info(
         .send(SessionCommand::GetSessionInfo { responds_to: tx });
     let info = rx.await.ok();
 
-    // Construct display data for `/session-info`.
     let mut data = info.unwrap_or_else(|| SessionInfoData {
         agent_name: None,
         model: None,
@@ -124,21 +119,18 @@ async fn handle_session_info(
         },
     });
 
-    // Calculate the model's display name.
     data.model_display_name = agent
         .models_manager
         .models()
         .get(session.model_id.0.as_ref())
         .and_then(|entry| entry.info.name.clone());
 
-    // Construct `SessionInfoResponse`.
     let response = SessionInfoResponse {
         session_id,
         cwd: session.info.cwd.clone(),
         data,
     };
 
-    // Wrap `SessionInfoResponse` in `ExtMethodResult` and return it.
     ExtMethodResult::success(serde_json::to_value(&response).unwrap_or_default())
         .to_ext_response()
         .map_err(|e| acp::Error::internal_error().data(e.to_string()))
@@ -239,7 +231,6 @@ async fn handle_session_summaries(
     }
 }
 
-/// Group summaries by cwd and serialize into an [`AllSessionOverviewResponse`].
 fn summaries_to_overview_response(summaries: Vec<Summary>) -> Result<acp::ExtResponse, acp::Error> {
     let mut by_cwd: BTreeMap<String, Vec<Summary>> = Default::default();
     for mut s in summaries {
@@ -259,7 +250,6 @@ fn summaries_to_overview_response(summaries: Vec<Summary>) -> Result<acp::ExtRes
 
     Ok(acp::ExtResponse::new(value))
 }
-// ── Merged session list (local + remote) ─────────────────────────────
 
 async fn handle_session_list(
     agent: &MvpAgent,

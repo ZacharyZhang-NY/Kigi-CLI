@@ -230,7 +230,8 @@ mod tests {
             command: format!("sleep 100; touch {}", marker.display()),
             events: vec![],
             only_unfocused: false,
-            timeout_secs: 0, // exercises the .max(1) clamp inside run_hook
+            // exercises the .max(1) clamp inside run_hook
+            timeout_secs: 0,
         };
         let start = Instant::now();
         run_hook(&hook, &test_event());

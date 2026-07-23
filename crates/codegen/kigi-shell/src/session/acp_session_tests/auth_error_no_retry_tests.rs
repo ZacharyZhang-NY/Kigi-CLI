@@ -5,8 +5,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc;
 
-/// Test refresher that returns a fresh token and records that it
-/// was invoked. Used to drive the auth-arm success path.
 struct AlwaysSucceedRefresher {
     called: Arc<AtomicBool>,
 }
@@ -63,9 +61,6 @@ fn auth_error() -> kigi_sampler::SamplingErrorInfo {
     }
 }
 
-/// Construct a test actor with the supplied `auth_manager` and
-/// session-token credentials wired in. Wraps the actor in `Arc`
-/// ready for `handle_sampling_failure`.
 async fn make_actor_with_auth_manager(
     auth_manager: Option<Arc<AuthManager>>,
 ) -> (Arc<SessionActor>, mpsc::UnboundedReceiver<PersistenceMsg>) {
@@ -132,7 +127,6 @@ fn auth_manager_with_valid_token(key: &str) -> (tempfile::TempDir, Arc<AuthManag
     (dir, am)
 }
 
-/// Sub-case 1: no auth_manager -> falls through, no emit.
 #[tokio::test(flavor = "current_thread")]
 #[serial_test::serial(attribution_emit_count)]
 async fn no_emit_when_auth_manager_is_none() {
@@ -151,9 +145,9 @@ async fn no_emit_when_auth_manager_is_none() {
         .await;
 }
 
-/// Sub-case 2: no AuthManager → auth recovery is skipped entirely,
-/// falls through to terminal error. Covers BYOK / API-key users
-/// where no OIDC refresh is possible.
+/// No AuthManager → auth recovery is skipped entirely, falls through to
+/// terminal error. Covers BYOK / API-key users where no OIDC refresh is
+/// possible.
 #[tokio::test(flavor = "current_thread")]
 #[serial_test::serial(attribution_emit_count)]
 async fn no_recovery_without_auth_manager() {
@@ -181,7 +175,6 @@ async fn no_recovery_without_auth_manager() {
         .await;
 }
 
-/// Session-based auth + working refresher → RefreshAuthAndResubmit.
 #[tokio::test(flavor = "current_thread")]
 async fn sampler_401_recovery_returns_refresh_and_retry() {
     let local = tokio::task::LocalSet::new();
@@ -244,10 +237,9 @@ async fn sampler_401_with_api_key_auth_skips_refresh_and_surfaces_error() {
 }
 
 /// Per-turn pre-flight refresh dispatches on `AuthManager`'s
-/// `TokenType`, not `creds.auth_type`. Pins that a stale
-/// When `creds.auth_type` is `ApiKey` (BYOK model), the pre-flight
-/// refresh must NOT fire — the model's own API key must not be
-/// overwritten by the session JWT.
+/// `TokenType`, not `creds.auth_type`. When `creds.auth_type` is
+/// `ApiKey` (BYOK model), the pre-flight refresh must NOT fire — the
+/// model's own API key must not be overwritten by the session JWT.
 #[tokio::test(flavor = "current_thread")]
 #[serial_test::serial(attribution_emit_count)]
 async fn pre_flight_refresh_skips_api_key_auth_type() {
@@ -327,9 +319,6 @@ async fn proactive_refresh_makes_per_turn_refresh_a_cache_hit() {
             );
             let count_after_proactive = call_count.load(Ordering::SeqCst);
 
-            // Now run refresh_token_if_expired (the per-turn pre-flight).
-            // It should see the proactively-refreshed token and NOT invoke
-            // the refresher again.
             let (actor, _rx) = make_actor_with_auth_manager(Some(am)).await;
             actor.refresh_token_if_expired().await;
 
@@ -390,7 +379,6 @@ fn unauthorized_401_error() -> kigi_sampler::SamplingErrorInfo {
         }
 }
 
-/// 401 with OIDC auth must NOT append the legacy hint.
 #[tokio::test(flavor = "current_thread")]
 async fn no_legacy_hint_on_401_for_oidc_auth() {
     let local = tokio::task::LocalSet::new();
@@ -432,7 +420,6 @@ async fn no_legacy_hint_on_401_for_oidc_auth() {
         .await;
 }
 
-/// 404 model-not-found with OIDC auth must NOT append the legacy hint.
 #[tokio::test(flavor = "current_thread")]
 async fn no_legacy_hint_for_oidc_auth() {
     let local = tokio::task::LocalSet::new();
@@ -510,7 +497,7 @@ fn session_token_auth_gate_truth_table() {
     // Session method + Unknown BYOK: refresh only against a first-party xAI
     // host, so a transiently-unclassifiable config can't demote a live session
     // (the stale-token 401 regression) yet the session token never leaks to a
-    // third-party BYOK endpoint. This arm was unconditionally `false` pre-fix.
+    // third-party BYOK endpoint.
     assert!(gate(
         true,
         ModelByok::Unknown,
@@ -525,8 +512,8 @@ fn session_token_auth_gate_truth_table() {
     ));
 }
 
-/// Pre-fix, the gate read `auth_type` and skipped recovery here, 401'ing every
-/// turn until restart.
+/// Keying the gate off `auth_type` here would skip recovery and 401 every turn
+/// until restart.
 #[tokio::test(flavor = "current_thread")]
 async fn sampler_401_session_method_with_stale_api_key_auth_type_still_recovers() {
     let local = tokio::task::LocalSet::new();
@@ -728,7 +715,6 @@ async fn session_born_on_api_key_recovers_after_oidc_login_without_restart() {
                 "flipping the shared handle activates the resolver on the next turn"
             );
 
-            // The pre-flight refresh then heals the stale api_key with the live token.
             actor.refresh_token_if_expired().await;
             assert_eq!(
                 actor

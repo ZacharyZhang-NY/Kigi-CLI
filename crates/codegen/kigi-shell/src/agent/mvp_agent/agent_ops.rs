@@ -72,13 +72,12 @@ impl MvpAgent {
     /// ([`crate::session::acp_session::sampler_turn::aux_bearer_resolver_for`]),
     /// not a second copy of it.
     ///
-    /// M3 completed: the aux path was gated on the session-token gate and this
-    /// one was not, so an api-key / house-key session whose
-    /// `[model.session-summary]` block carries its OWN `env_key` on the
-    /// session's own coding endpoint had that key REPLACED on the wire by the
+    /// Without the shared session-token gate, an api-key / house-key session
+    /// whose `[model.session-summary]` block carries its OWN `env_key` on the
+    /// session's own coding endpoint has that key REPLACED on the wire by the
     /// primary bearer on every summary request. Named (rather than inlined
-    /// above) so the gate is reachable from a test — the ungated version stayed
-    /// green because the resolver is consumed by `OaiCompatClient::new`.
+    /// above) so the gate is reachable from a test — the resolver is otherwise
+    /// consumed by `OaiCompatClient::new`.
     ///
     /// Aux slugs are not the session's selection, so `current_key = None`
     /// (H-b then refuses a collided slug rather than guessing its OAuth twin).
@@ -97,7 +96,6 @@ impl MvpAgent {
             base_url,
         )
     }
-    /// `true` for session-based ACP auth methods.
     fn is_session_based_auth(&self) -> bool {
         self.auth_method_id
             .load()
@@ -109,7 +107,6 @@ impl MvpAgent {
     pub(super) fn set_auth_method(&self, id: acp::AuthMethodId) {
         self.auth_method_id.store(Some(std::sync::Arc::new(id)));
     }
-    /// Return auth for sync config construction.
     pub(super) fn current_or_buffered_auth(&self) -> Option<crate::auth::KimiAuth> {
         self.auth_manager
             .current()
@@ -134,11 +131,10 @@ impl MvpAgent {
     ///
     /// Memoizes the single [`folder_trust::resolve_launch_dir_trust`] gather (see
     /// it for the dedup + TOCTOU contract) so the two one-shot init helpers
-    /// (`ensure_plugin_registry` and `ensure_local_workspace_ops`) share it
-    /// instead of each re-scanning. They share a single point-in-time verdict
-    /// rather than two independent re-scans; the sub-millisecond, startup-only
-    /// window between them is intentional (the cross-session TOCTOU re-scan is
-    /// preserved per the contract).
+    /// (`ensure_plugin_registry` and `ensure_local_workspace_ops`) share one
+    /// point-in-time verdict instead of each re-scanning. The sub-millisecond,
+    /// startup-only window between them is intentional (the cross-session TOCTOU
+    /// re-scan is preserved per the contract).
     fn prime_launch_dir_trust(&self) -> (&std::path::Path, bool) {
         let trust = *self
             .launch_dir_trust
@@ -195,7 +191,7 @@ impl MvpAgent {
     }
     /// Build the launch-dir plugin registry snapshot on first use.
     ///
-    /// Boot-time discovery was deferred past ACP `initialize` (the cwd→git-root
+    /// Boot-time discovery is deferred past ACP `initialize` (the cwd→git-root
     /// plus user/marketplace walks stalled kigi-desktop's first `initialize`),
     /// leaving `plugin_registry_handle` empty. That shared snapshot still backs
     /// the launch-dir plugin MCP/LSP merges read in `resolve_mcp_servers` and
@@ -232,7 +228,6 @@ impl MvpAgent {
             &self.cfg.borrow().compat_resolved,
         )
     }
-    /// Set the memory configuration (called from TUI after config resolution).
     pub fn set_memory_config(&mut self, config: crate::config::MemoryConfig) {
         self.memory_config = if config.enabled { Some(config) } else { None };
     }
@@ -583,7 +578,7 @@ impl MvpAgent {
             reauth = auth_meta.reauth,
             "auth: generic oauth device login",
         );
-        // M4: the SAME home the pool reads from
+        // The SAME home the pool reads from
         // (`oauth_registry::pool_home()`), not `kigi_home()` directly —
         // identical in production, but a login driven from a lib test would
         // otherwise write into the developer's real `~/.kigi` while every
@@ -637,8 +632,7 @@ impl MvpAgent {
     /// Re-resolve eagerly-resolved config fields from the local config.
     ///
     /// Called on `/new` session creation so feature flags reflect the latest
-    /// on-disk config without requiring a TUI restart. (Formerly this also
-    /// re-fetched the xAI proxy's remote settings; that endpoint is gone.)
+    /// on-disk config without requiring a TUI restart.
     ///
     /// In-flight sessions are unaffected — they snapshot config at creation.
     pub(super) async fn refresh_settings_and_reapply(&self) {
@@ -819,7 +813,6 @@ impl MvpAgent {
             c
         }
     }
-    /// Resolve `AgentDefinition.model` override for the parent session.
     /// Apply a profile's pinned-model override to the session's sampling config.
     ///
     /// `pinned_model` is resolved once by the caller (shared with harness
@@ -841,7 +834,6 @@ impl MvpAgent {
         );
         (id.clone(), new_config)
     }
-    /// Build deploy-service config. The tool talks directly to the deployer service.
     pub(super) fn prepare_app_builder_deployer_config(
         &self,
     ) -> kigi_tools::implementations::kigi::deploy_app::AppBuilderDeployerConfig {
@@ -1062,7 +1054,7 @@ impl MvpAgent {
     /// client disconnected and these sessions lost their IPC owner.
     ///
     /// **This is the no-evict keystone.** A disconnect must
-    /// NOT destroy a session. The behavior is now *detach + keep-resident +
+    /// NOT destroy a session. The behavior is *detach + keep-resident +
     /// idle-unload*:
     ///
     /// - **Sessions with live work stay resident.** We do NOT send `Shutdown`
@@ -1254,15 +1246,12 @@ impl MvpAgent {
             let _ = tokio::time::timeout(deadline - now, rx.changed()).await;
         }
     }
-    /// Returns the default YOLO mode setting for new sessions
     pub fn default_yolo_mode(&self) -> bool {
         self.default_yolo_mode
     }
-    /// Returns the storage mode configured for this agent
     pub fn storage_mode(&self) -> StorageMode {
         self.storage_mode
     }
-    /// Returns the background copy context for managing background file copy tasks.
     pub fn background_copy_context(&self) -> BackgroundCopyContext {
         self.background_copy_context.clone()
     }
@@ -1326,7 +1315,6 @@ impl MvpAgent {
     ) -> Vec<crate::agent::subagent::RunningSubagentListSeed> {
         self.subagent_coordinator.borrow().list_running_for_parent(parent_session_id)
     }
-    /// Return fork provenance metadata for a subagent.
     pub(crate) fn provenance_for_subagent(
         &self,
         subagent_id: &str,
@@ -1393,14 +1381,10 @@ impl MvpAgent {
             Err(_) => Err("timeout"),
         }
     }
-    /// Get a session's cwd by session_id.
-    /// Returns None if the session is not found.
     pub fn get_session_cwd(&self, session_id: &acp::SessionId) -> Option<PathBuf> {
         let sessions = self.sessions.borrow();
         sessions.get(session_id).map(|handle| PathBuf::from(&handle.info.cwd))
     }
-    /// Get a session handle by session_id.
-    /// Returns None if the session is not found.
     pub fn get_session_handle(
         &self,
         session_id: &acp::SessionId,
@@ -1626,25 +1610,25 @@ impl MvpAgent {
     /// returns it verbatim whenever a model id fails to resolve, and
     /// `SubagentSpawnContext` clones it as every subagent's baseline — so an
     /// `api_key` stamped here reaches the wire against whatever `base_url` the
-    /// config carries. The login/seed sites used to stamp it unconditionally,
-    /// exactly the mistake `authenticate_oauth_platform` already documents ("Do
-    /// NOT stamp this token onto the shared sampling_config").
+    /// config carries. Stamping it unconditionally is exactly the mistake
+    /// `authenticate_oauth_platform` documents ("Do NOT stamp this token onto
+    /// the shared sampling_config").
     ///
-    /// C1: this function does NOT take a credential. The previous shape took
-    /// `key: String` — always the primary Kimi bearer — and guarded it with a
-    /// predicate asking whether **a** session credential may ride. For a
-    /// subscription-OAuth platform at its own host that is correctly `true`, but
-    /// the credential that may ride there is that platform's POOLED token: a
-    /// Claude Pro/Max user running `kigi login` stamped the Kimi subscription
-    /// bearer onto a config routed at `api.anthropic.com`. Asking
-    /// `credential_for` instead makes the question and the credential the same
-    /// object, so the pairing cannot be wrong — and there is no primary handle
-    /// here to hand-carry (M2).
+    /// C1: this function does NOT take a credential — it asks `credential_for`,
+    /// so the question ("may a session credential ride here?") and the
+    /// credential itself are the same object and cannot be mispaired. Taking a
+    /// `key: String` (always the primary Kimi bearer) guarded by a separate
+    /// predicate mispairs them: for a subscription-OAuth platform at its own
+    /// host the predicate is correctly `true`, but the credential that may ride
+    /// there is that platform's POOLED token, not the primary — so a Claude
+    /// Pro/Max user running `kigi login` stamped the Kimi subscription bearer
+    /// onto a config routed at `api.anthropic.com`. There is no primary handle
+    /// here to hand-carry either.
     ///
-    /// `overwrite = false` keeps the historical "only if missing" seeding
-    /// behaviour; the login handlers pass `true` because a fresh login must
-    /// replace a stale bearer, and they call this AFTER the manager holds the
-    /// new token so it is read back through the authority.
+    /// `overwrite = false` seeds only when `api_key` is missing; the login
+    /// handlers pass `true` because a fresh login must replace a stale bearer,
+    /// and they call this AFTER the manager holds the new token so it is read
+    /// back through the authority.
     ///
     /// SECURITY: the token is never logged.
     pub(super) fn stamp_session_credential(&self, overwrite: bool) -> bool {
@@ -2448,7 +2432,7 @@ impl MvpAgent {
             // Classify the credential's auth_type against the bearer this
             // model's endpoint would ACTUALLY receive, not the raw primary:
             // an API-key-platform model has no session credential at all, and
-            // reading the primary here reported one.
+            // reading the primary here would report one.
             //
             // H-a: the platform is resolved with the SAME catalog key the
             // actor about to be spawned seeds itself with

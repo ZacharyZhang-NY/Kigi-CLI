@@ -267,7 +267,6 @@ pub fn load_require_plan_approval() -> bool {
 }
 
 /// Synchronously load the remote agent secret from the config file.
-/// Looks for [remote] section with secret field.
 ///
 /// Example config.toml:
 /// ```toml
@@ -485,7 +484,7 @@ mod tests {
 
         // Table-driven: (cli_yolo, cli_perm_mode, config_yolo, expected_yolo, description)
         let cases: &[(bool, Option<&str>, bool, bool, &str)] = &[
-            // --- CLI --permission-mode present: it wins completely ---
+            // CLI --permission-mode present: it wins completely.
             (
                 false,
                 Some("plan"),
@@ -558,7 +557,7 @@ mod tests {
                 true,
                 "bypass + --yolo still yolo",
             ),
-            // --- No --permission-mode: fall back to legacy --yolo then config ---
+            // No --permission-mode: fall back to legacy --yolo then config.
             (true, None, false, true, "--yolo alone → yolo"),
             (true, None, true, true, "--yolo + config yolo → yolo"),
             (false, None, true, true, "no cli flags + config yolo → yolo"),

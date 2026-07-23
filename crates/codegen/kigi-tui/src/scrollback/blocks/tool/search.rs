@@ -70,10 +70,8 @@ pub struct SearchInputMeta {
     pub multiline: bool,
 }
 
-/// Search/grep tool call.
 #[derive(Debug, Clone)]
 pub struct SearchToolCallBlock {
-    /// The search pattern.
     pub pattern: String,
     /// Total number of matches found.
     pub match_count: usize,
@@ -86,15 +84,13 @@ pub struct SearchToolCallBlock {
     pub error: Option<String>,
     /// Extra metadata from the search input (path, glob, mode, etc.).
     pub meta: SearchInputMeta,
-    /// When the tool started running (Phase 2: time tracking).
+    /// When the tool started running.
     pub started_at: Option<std::time::Instant>,
-    /// Elapsed time in ms after completion (Phase 2: time tracking).
+    /// Elapsed time in ms after completion.
     pub elapsed_ms: Option<i64>,
 }
 
 impl SearchToolCallBlock {
-    /// Create a new search block.
-    ///
     /// Pre-completed blocks have no meaningful local timing — `started_at`
     /// is `None`. Timing is only set for blocks that enter a running UI
     /// state (via `set_last_running(true)` in `ScrollbackState`).
@@ -111,25 +107,22 @@ impl SearchToolCallBlock {
         }
     }
 
-    /// Set match count and file matches.
     pub fn with_matches(mut self, match_count: usize, file_matches: Vec<SearchFileMatch>) -> Self {
         self.match_count = match_count;
         self.file_matches = file_matches;
         self
     }
 
-    /// Set error (marks as failed).
     pub fn with_error(mut self, error: impl Into<String>) -> Self {
         self.error = Some(error.into());
         self
     }
 
-    /// Check if successful (no error).
     pub fn is_success(&self) -> bool {
         self.error.is_none()
     }
 
-    /// Set error (mutable) — compute elapsed time if not already set (Phase 2).
+    /// Compute elapsed time if not already set, then store the error.
     pub fn set_error(&mut self, error: Option<String>) {
         if self.elapsed_ms.is_none()
             && let Some(start) = self.started_at
@@ -152,7 +145,6 @@ impl SearchToolCallBlock {
         }
     }
 
-    /// Get elapsed time in ms (Phase 2).
     pub fn elapsed_ms(&self) -> Option<i64> {
         match self.elapsed_ms {
             Some(ms) => Some(ms),
@@ -162,7 +154,6 @@ impl SearchToolCallBlock {
         }
     }
 
-    /// Set file matches (mutable).
     pub fn set_file_matches(&mut self, match_count: usize, file_matches: Vec<SearchFileMatch>) {
         self.match_count = match_count;
         self.file_matches = file_matches;
@@ -192,7 +183,8 @@ impl SearchToolCallBlock {
                 }
             }
             SearchOutputMode::FilesWithMatches => {
-                let n = self.match_count; // match_count = # of files in this mode
+                // In this mode, match_count holds the number of files, not matches.
+                let n = self.match_count;
                 if n == 1 {
                     "(1 file)".to_string()
                 } else {
@@ -257,17 +249,13 @@ impl SearchToolCallBlock {
 
         let mut spans = vec![Span::styled("Search ".to_string(), bold_style)];
 
-        // Search term: either promoted glob or quoted pattern
         if self.is_trivial_pattern()
             && let Some(ref glob) = self.meta.glob
         {
-            // Case 1: glob IS the search term — no quotes, string-styled
             spans.push(Span::styled(glob.to_string(), pattern_style));
         } else {
-            // Cases 2 & 3: quoted regex pattern
             spans.push(Span::styled(format!("{:?}", self.pattern), pattern_style));
 
-            // Case 2: glob shown as first "in" scope (string-styled, not path)
             if let Some(ref glob) = self.meta.glob {
                 spans.push(Span::styled(" in ".to_string(), text_style));
                 spans.push(Span::styled(glob.to_string(), pattern_style));
@@ -428,10 +416,8 @@ impl BlockContent for SearchToolCallBlock {
                 let has_results = !self.file_matches.is_empty() || !self.file_paths.is_empty();
 
                 if has_results {
-                    // Blank line before results
                     lines.push(Line::from("").into());
                 } else if self.match_count == 0 {
-                    // No results — show a hint
                     lines.push(Line::from("").into());
                     lines.push(
                         Line::from(Span::styled("  (no results)".to_string(), theme.muted()))
@@ -448,11 +434,9 @@ impl BlockContent for SearchToolCallBlock {
 
                     for (i, file_match) in self.file_matches.iter().enumerate() {
                         if i > 0 {
-                            // Blank line between file groups
                             lines.push(Line::from("").into());
                         }
 
-                        // File path line
                         lines.push(
                             BlockLine::from(Line::from(Span::styled(
                                 format!("{}{}", indent, file_match.path),
@@ -488,7 +472,7 @@ impl BlockContent for SearchToolCallBlock {
                             // path part in path color, ":N" in normal fg.
                             if let Some(colon_pos) = path.rfind(':') {
                                 let file_part = &path[..colon_pos];
-                                let count_part = &path[colon_pos..]; // includes ':'
+                                let count_part = &path[colon_pos..];
                                 Line::from(vec![
                                     Span::styled(
                                         format!("{indent}{file_part}"),
@@ -519,7 +503,7 @@ impl BlockContent for SearchToolCallBlock {
     }
 
     fn accent(&self, _ctx: &BlockContext) -> Option<AccentStyle> {
-        None // Search blocks never have an accent line
+        None
     }
 
     fn bullet(&self, _ctx: &BlockContext) -> Option<AccentStyle> {

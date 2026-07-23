@@ -5,7 +5,8 @@ use crate::send::contributors::session_lifecycle::{SessionIdleInput, SessionLife
 /// `?Send` twin of [`SessionLifecycleContributor`].
 #[async_trait(?Send)]
 pub trait LocalSessionLifecycleContributor {
-    /// Fired when the session settles idle (no running turn or queued work); the host owns the check.
+    /// Fired when the session settles idle (no running turn or queued work); the host owns the
+    /// check.
     async fn on_session_idle(&self, _input: &SessionIdleInput) {}
 }
 

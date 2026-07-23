@@ -55,7 +55,6 @@ impl SessionActor {
             }
         }
 
-        // Wrap the question in a <system-reminder> user message.
         let tag = self.reminder_wrapper_tag();
         let wrapped_question = format!(
             "<{tag}>This is a side question from the user. \
@@ -144,7 +143,6 @@ impl SessionActor {
     /// for display only. It never mutates the conversation.
     ///
     /// Best-effort: a failed or empty generation is logged and dropped — a
-    ///
     /// missing recap must never disrupt the session.
     pub(super) async fn handle_recap(&self, auto: bool) {
         use crate::session::helpers::session_recap;
@@ -201,7 +199,6 @@ impl SessionActor {
             Err(e) => {
                 tracing::warn!(error = %e, "recap: failed to prepare sampling client");
                 clear_in_flight();
-                // A manual `/recap` shows a loading spinner; clear it on failure.
                 if !auto {
                     self.emit_recap_unavailable().await;
                 }
@@ -273,7 +270,6 @@ impl SessionActor {
                     Some(&e.to_string()),
                 );
                 clear_in_flight();
-                // A manual `/recap` shows a loading spinner; clear it on failure.
                 if !auto {
                     self.emit_recap_unavailable().await;
                 }
@@ -299,7 +295,6 @@ impl SessionActor {
                 Some("empty summary after clean_recap_text"),
             );
             clear_in_flight();
-            // A manual `/recap` shows a loading spinner; clear it when empty.
             if !auto {
                 self.emit_recap_unavailable().await;
             }
@@ -423,7 +418,6 @@ impl SessionActor {
     /// summary and raw assistant text (or error). Rides on the post-turn
     /// session archive to cloud storage like compaction request artifacts.
     /// Best-effort: send-failures are logged at `warn` and never surfaced —
-    /// clear the loading spinner it is showing instead of animating forever.
     /// a missing artifact must never disrupt recap display.
     #[allow(clippy::too_many_arguments)]
     fn persist_recap_request_artifact(
@@ -473,6 +467,7 @@ impl SessionActor {
     }
 
     /// Tell the live client that a manual `/recap` produced no recap, so it can
+    /// clear the loading spinner it is showing instead of animating forever.
     ///
     /// Only the manual path shows a spinner, so callers gate this on `!auto`.
     async fn emit_recap_unavailable(&self) {
@@ -484,7 +479,6 @@ impl SessionActor {
 
     /// Handle an AI-powered shell command suggestion request.
     /// Builds a minimal prompt from the prefix and CWD, calls the sampler
-    ///
     /// with low temperature and small max_tokens, and returns the suggestion.
     pub(super) async fn handle_ai_suggest(
         &self,
@@ -568,7 +562,6 @@ impl SessionActor {
     /// [`prompt_suggest::effective_suggest_model`]: env
     /// (`KIGI_PROMPT_SUGGESTIONS_MODEL`) > `[models] prompt_suggestion`
     /// (config.toml) > remote `prompt_suggestion_model` (remote settings) >
-    /// (config.toml) > remote `prompt_suggestion_model` (remote settings) >
     /// [`prompt_suggest::default_suggest_model`]. Every
     /// tier except env is catalog-guarded against this shell's own model
     /// catalog — when the effective model is not sampleable here (e.g.
@@ -580,7 +573,6 @@ impl SessionActor {
     /// proxy may inject provider defaults, a small token cap silently empties
     /// a reasoning model's response, and some models (e.g. `kigi`)
     /// reject an explicit `reasoningEffort` with a 400. Output is filtered
-    /// through [`prompt_suggest::sanitize_suggestion`]; any failure returns
     /// through [`prompt_suggest::sanitize_suggestion`]; any failure returns
     /// `None`.
     pub(super) async fn handle_suggest_prompt(

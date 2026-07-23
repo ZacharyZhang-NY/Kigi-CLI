@@ -17,10 +17,6 @@ use crate::key;
 use crate::render::scrollbar::SCROLLBAR_TOTAL_COLS;
 use crate::search::{QueryKind, TextMatcher};
 
-// ---------------------------------------------------------------------------
-// ListMatcher — unified filter / search
-// ---------------------------------------------------------------------------
-
 /// Whether the matcher hides non-matching items or just highlights them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MatchMode {
@@ -40,7 +36,6 @@ pub enum MatchMode {
 #[derive(Debug, Clone)]
 pub struct ListMatcher {
     text: TextMatcher,
-    /// Whether this matcher hides or highlights.
     pub mode: MatchMode,
     /// Physical indices of items whose `search_text()` matches, sorted ascending.
     pub match_indices: Vec<usize>,
@@ -122,10 +117,6 @@ impl ListMatcher {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Backward-compatible aliases
-// ---------------------------------------------------------------------------
-
 /// Backward-compatible alias for [`ListMatcher`].
 ///
 /// Existing code that constructs `FilterMatcher::substring(...)` or
@@ -167,10 +158,6 @@ impl ListFilter {
     }
 }
 
-// ---------------------------------------------------------------------------
-// InputBarMode — search vs filter
-// ---------------------------------------------------------------------------
-
 /// Which mode the input bar is in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputBarMode {
@@ -199,7 +186,8 @@ impl InputBarMode {
         match self {
             InputBarMode::Search => MatchMode::Search,
             InputBarMode::Filter => MatchMode::Filter,
-            InputBarMode::GotoLine => MatchMode::Search, // unused, but needed for exhaustive match
+            // Unused, but needed for exhaustive match.
+            InputBarMode::GotoLine => MatchMode::Search,
             InputBarMode::Comment => MatchMode::Search,
         }
     }
@@ -214,10 +202,6 @@ struct GotoLineSnapshot {
     visual_mode: bool,
     visual_anchor_id: Option<u64>,
 }
-
-// ---------------------------------------------------------------------------
-// LayoutStamp — dirty-tracking for prepare_layout
-// ---------------------------------------------------------------------------
 
 /// Snapshot of parameters used to build the current layout cache.
 ///
@@ -234,24 +218,18 @@ struct LayoutStamp {
     wrap: WrapMode,
 }
 
-// ---------------------------------------------------------------------------
-// ListPaneState
-// ---------------------------------------------------------------------------
-
 /// View state for a scrollable list pane.
 ///
 /// **Non-generic** — the item type `T: ListItem` only appears at the
 /// boundaries: [`prepare_layout`] and `ListPane<'a, T>` (the widget).
 #[derive(Debug)]
 pub struct ListPaneState {
-    // -- Scroll ---------------------------------------------------------------
     /// Scroll offset in visual lines from the top of the content.
     scroll_offset: usize,
 
     /// Viewport height in terminal rows (set by [`prepare_layout`]).
     viewport_height: u16,
 
-    // -- Selection (stable IDs) -----------------------------------------------
     /// Currently selected item, stored as a stable ID.
     /// Resolved to `selected_index` in [`prepare_layout`].
     selected_id: Option<u64>,
@@ -274,14 +252,12 @@ pub struct ListPaneState {
     /// The range is [anchor, cursor] (cursor = `selected_id`).
     visual_anchor_id: Option<u64>,
 
-    // -- Layout ---------------------------------------------------------------
     /// Layout cache (heights + prefix sums, or fixed-height).
     layout: ListLayoutCache,
 
     /// Current wrap mode.
     wrap_mode: WrapMode,
 
-    // -- Layout dirty tracking ------------------------------------------------
     /// Parameters of the last layout build (for incremental / skip logic).
     /// `None` if no layout has been computed yet.
     last_stamp: Option<LayoutStamp>,
@@ -310,12 +286,10 @@ pub struct ListPaneState {
     /// by any intentional selection movement (j/k, click, g/G, etc.).
     scroll_screen_y: Option<usize>,
 
-    // -- Modes ----------------------------------------------------------------
     /// Follow mode: auto-scroll to bottom when new items appear.
     /// In follow mode the cursor is hidden (no selection highlight).
     pub follow_mode: bool,
 
-    // -- Follow / NAV edge tracking -------------------------------------------
     /// NAV only: true when the last downward action was clamped at the
     /// content bottom (viewport or selection at the end).  The next
     /// downward action with this flag set engages follow ("one-past").
@@ -343,7 +317,6 @@ pub struct ListPaneState {
     /// `None` when scrollbar is not shown (content fits viewport).
     last_scrollbar_area: Option<Rect>,
 
-    // -- Highlight visibility -------------------------------------------------
     /// Whether the highlight post-pass should render match inversions.
     ///
     /// Callers set this to `false` after accepting a filter (Enter) to avoid
@@ -353,7 +326,6 @@ pub struct ListPaneState {
     /// Defaults to `true` (highlights always shown).
     pub show_highlights: bool,
 
-    // -- Height cache (Wrap mode) ---------------------------------------------
     /// Per-physical-item height cache for Wrap mode.
     ///
     /// Indexed by physical item index.  Computed once when the width changes
@@ -367,11 +339,9 @@ pub struct ListPaneState {
     /// Width at which `height_cache` was computed.
     height_cache_width: u16,
 
-    // -- Config ---------------------------------------------------------------
     /// Feature flags controlling which behaviors are active.
     config: ListPaneConfig,
 
-    // -- Input bar (search / filter) ------------------------------------------
     /// Active input bar mode, or `None` if the bar is closed.
     input_mode: Option<InputBarMode>,
 
@@ -384,11 +354,9 @@ pub struct ListPaneState {
     /// Cached screen position of the input bar cursor (set during render).
     input_cursor_screen_pos: Option<(u16, u16)>,
 
-    // -- Mouse / scrollbar ----------------------------------------------------
     /// Whether a scrollbar drag is in progress.
     scrollbar_dragging: bool,
 
-    // -- Clipboard ------------------------------------------------------------
     /// Clipboard provider for `y` (copy).  Default is `InternalClipboard`
     /// (in-memory).  Host app can inject system clipboard via
     /// [`set_clipboard_provider`].
@@ -409,10 +377,6 @@ pub struct ListPaneState {
 /// Mouse-wheel overscroll ticks required to snap into follow mode.
 /// Tunable — start with 1 (easy to trigger), increase if too twitchy.
 const MOUSE_OVERSCROLL_THRESHOLD: u8 = 1;
-
-// ---------------------------------------------------------------------------
-// ListPaneConfig — feature flags
-// ---------------------------------------------------------------------------
 
 /// Configuration flags for a `ListPaneState`.
 ///
@@ -515,10 +479,6 @@ impl ListPaneConfig {
 
 mod methods;
 
-// ===========================================================================
-// Goto-line input parsing
-// ===========================================================================
-
 /// Parsed result of goto-line input.
 enum GotoTarget {
     /// Single line number (1-based, clamped to item count).
@@ -570,10 +530,6 @@ fn parse_goto_input(text: &str, max_lines: usize) -> GotoTarget {
         }
     }
 }
-
-// ===========================================================================
-// Tests
-// ===========================================================================
 
 #[cfg(test)]
 mod tests {
@@ -651,8 +607,6 @@ mod tests {
         }
     }
 
-    // -- Scroll tests ---------------------------------------------------------
-
     #[test]
     fn scroll_basics() {
         let items: Vec<TestItem> = (0..20).map(TestItem::new).collect();
@@ -670,7 +624,7 @@ mod tests {
 
         // Can't scroll past content
         state.scroll_down(100);
-        assert_eq!(state.scroll_offset(), 10); // 20 - 10
+        assert_eq!(state.scroll_offset(), 10);
 
         state.scroll_up(100);
         assert_eq!(state.scroll_offset(), 0);
@@ -710,12 +664,12 @@ mod tests {
         let mut state = new_streaming(WrapMode::NoWrap, true);
         state.prepare_layout(&items, 80, 5);
         // follow mode → scroll to bottom
-        assert_eq!(state.scroll_offset(), 5); // 10 - 5
+        assert_eq!(state.scroll_offset(), 5);
 
         // Add more items
         items.extend((10..15).map(TestItem::new));
         state.prepare_layout(&items, 80, 5);
-        assert_eq!(state.scroll_offset(), 10); // 15 - 5
+        assert_eq!(state.scroll_offset(), 10);
 
         // Manual scroll breaks follow mode
         state.scroll_up(3);
@@ -745,8 +699,6 @@ mod tests {
         state.scroll_down(5);
         assert_eq!(state.scroll_offset(), 0);
     }
-
-    // -- Selection tests ------------------------------------------------------
 
     #[test]
     fn select_next_prev() {
@@ -805,7 +757,7 @@ mod tests {
         // G / select_last now engages follow (no cursor).
         state.select_last(&items);
         assert!(state.follow_mode);
-        assert_eq!(state.selected_index(), None); // no cursor in follow
+        assert_eq!(state.selected_index(), None);
 
         // g / select_first exits follow, selects first.
         state.select_first(&items);
@@ -867,8 +819,6 @@ mod tests {
         assert!(state.selected_index().is_some());
     }
 
-    // -- Filter + selection tests ---------------------------------------------
-
     #[test]
     fn select_with_filter() {
         let items = vec![
@@ -916,8 +866,6 @@ mod tests {
         assert_eq!(state.selected_id(), Some(2));
     }
 
-    // -- Visible range tests --------------------------------------------------
-
     #[test]
     fn visible_range_fixed_height() {
         let items: Vec<TestItem> = (0..20).map(TestItem::new).collect();
@@ -955,8 +903,6 @@ mod tests {
         assert_eq!(state.first_item_skip_rows(), 1);
     }
 
-    // -- Filter tests ---------------------------------------------------------
-
     #[test]
     fn filter_reduces_visible_items() {
         let items = vec![
@@ -985,8 +931,6 @@ mod tests {
         assert_eq!(state.visible_count(), 4);
     }
 
-    // -- Wrap mode tests ------------------------------------------------------
-
     #[test]
     fn wrap_mode_variable_heights() {
         let items = vec![
@@ -997,7 +941,7 @@ mod tests {
         let mut state = ListPaneState::new(WrapMode::Wrap, false);
         state.prepare_layout(&items, 80, 10);
 
-        assert_eq!(state.total_height(), 6); // 3 + 2 + 1
+        assert_eq!(state.total_height(), 6);
     }
 
     #[test]
@@ -1013,8 +957,6 @@ mod tests {
         // NoWrap forces height 1 regardless of desired_height
         assert_eq!(state.total_height(), 3);
     }
-
-    // -- Keyboard input tests -------------------------------------------------
 
     #[test]
     fn key_j_k_selects() {
@@ -1072,7 +1014,7 @@ mod tests {
         state.prepare_layout(&items, 80, 10);
 
         assert!(state.handle_key_event(&key!('d', CONTROL).to_key_event(), &items));
-        assert_eq!(state.scroll_offset(), 5); // half of 10
+        assert_eq!(state.scroll_offset(), 5);
 
         assert!(state.handle_key_event(&key!('u', CONTROL).to_key_event(), &items));
         assert_eq!(state.scroll_offset(), 0);
@@ -1150,8 +1092,6 @@ mod tests {
         assert!(!state.handle_key_event(&key!('x').to_key_event(), &items));
     }
 
-    // -- Selection follows scroll (vim/lnav screen-y preservation) ----------
-
     #[test]
     fn ctrl_d_selection_stays_at_same_screen_y() {
         let items: Vec<TestItem> = (0..30).map(TestItem::new).collect();
@@ -1166,7 +1106,7 @@ mod tests {
         // Selection should move from 3 to 8 (same screen-y = 3).
         assert!(state.handle_key_event(&key!('d', CONTROL).to_key_event(), &items));
         assert_eq!(state.scroll_offset(), 5);
-        assert_eq!(state.selected_index(), Some(8)); // 3 + 5
+        assert_eq!(state.selected_index(), Some(8));
     }
 
     #[test]
@@ -1184,7 +1124,7 @@ mod tests {
         // Selection should move from 13 to 8 (same screen-y = 3).
         assert!(state.handle_key_event(&key!('u', CONTROL).to_key_event(), &items));
         assert_eq!(state.scroll_offset(), 5);
-        assert_eq!(state.selected_index(), Some(8)); // 13 - 5
+        assert_eq!(state.selected_index(), Some(8));
     }
 
     #[test]
@@ -1213,12 +1153,12 @@ mod tests {
         // Mouse wheel down 3 — selection follows at same screen-y.
         state.scroll_lines(3, &items);
         assert_eq!(state.scroll_offset(), 3);
-        assert_eq!(state.selected_index(), Some(8)); // 5 + 3
+        assert_eq!(state.selected_index(), Some(8));
 
         // Mouse wheel up 2
         state.scroll_lines(-2, &items);
         assert_eq!(state.scroll_offset(), 1);
-        assert_eq!(state.selected_index(), Some(6)); // 8 - 2
+        assert_eq!(state.selected_index(), Some(6));
     }
 
     #[test]
@@ -1313,15 +1253,14 @@ mod tests {
         // Ctrl-j scrolls down 1 line
         assert!(state.handle_key_event(&key!('j', CONTROL).to_key_event(), &items));
         assert_eq!(state.scroll_offset(), 1);
-        assert_eq!(state.selected_index(), Some(5)); // 4 + 1, screen-y still 4
+        // Screen-y stays 4.
+        assert_eq!(state.selected_index(), Some(5));
 
         // Ctrl-k scrolls up 1 line
         assert!(state.handle_key_event(&key!('k', CONTROL).to_key_event(), &items));
         assert_eq!(state.scroll_offset(), 0);
-        assert_eq!(state.selected_index(), Some(4)); // back to 4
+        assert_eq!(state.selected_index(), Some(4));
     }
-
-    // -- Dirty flag / incremental append tests --------------------------------
 
     #[test]
     fn prepare_layout_skips_rebuild_when_clean() {
@@ -1354,7 +1293,7 @@ mod tests {
         // Append an item → incremental path
         items.push(TestItem::new(2).with_height(4));
         state.prepare_layout(&items, 80, 10);
-        assert_eq!(state.total_height(), 9); // 3 + 2 + 4
+        assert_eq!(state.total_height(), 9);
         assert_eq!(state.visible_count(), 3);
     }
 
@@ -1408,7 +1347,8 @@ mod tests {
 
         // Selection should survive (stable id).
         assert_eq!(state.selected_id(), Some(10));
-        assert_eq!(state.selected_index(), Some(5)); // shifted
+        // Selection shifts because item id=2 moved to a new index.
+        assert_eq!(state.selected_index(), Some(5));
         assert_eq!(state.visible_count(), 15);
         assert_eq!(state.total_height(), 15);
     }
@@ -1454,8 +1394,6 @@ mod tests {
         assert_eq!(state.visible_count(), 7);
     }
 
-    // -- Center selected tests ------------------------------------------------
-
     #[test]
     fn center_selected_places_item_mid_viewport() {
         let items: Vec<TestItem> = (0..30).map(TestItem::new).collect();
@@ -1491,8 +1429,6 @@ mod tests {
         assert_eq!(state.scroll_offset(), 10);
     }
 
-    // -- Click-to-select tests ------------------------------------------------
-
     #[test]
     fn select_at_y_selectable() {
         let items: Vec<TestItem> = (0..10).map(TestItem::new).collect();
@@ -1522,8 +1458,6 @@ mod tests {
         assert_eq!(state.selected_index(), Some(0));
     }
 
-    // -- Scroll past non-selectable (viewport-constrained) --------------------
-
     #[test]
     fn scroll_past_non_selectable_stays_in_viewport() {
         // Items: 0, 1, 2(non-sel), 3, 4, 5, 6, 7, 8, 9
@@ -1549,8 +1483,6 @@ mod tests {
         assert_eq!(sel, 3);
     }
 
-    // -- Ctrl-d/u edge cases: cursor continues when viewport is clamped -----
-
     #[test]
     fn ctrl_d_at_bottom_moves_cursor_past_viewport_clamp() {
         // 20 items, viewport 10.  Max scroll = 10.
@@ -1567,8 +1499,10 @@ mod tests {
         // Actual scroll = 2.  Leftover = 3.
         // Target virtual-y = (10 + 3) + 3 = 16 → item 16.
         state.half_page_down(&items);
-        assert_eq!(state.scroll_offset(), 10); // clamped at max
-        assert_eq!(state.selected_index(), Some(16)); // cursor kept going
+        // Clamped at max.
+        assert_eq!(state.scroll_offset(), 10);
+        // Cursor kept going.
+        assert_eq!(state.selected_index(), Some(16));
     }
 
     #[test]
@@ -1587,8 +1521,10 @@ mod tests {
         // Actual scroll = -3.  Leftover = -2.
         // Target virtual-y = (0 + 3) - 2 = 1 → item 1.
         state.half_page_up(&items);
-        assert_eq!(state.scroll_offset(), 0); // clamped at min
-        assert_eq!(state.selected_index(), Some(1)); // cursor kept going
+        // Clamped at min.
+        assert_eq!(state.scroll_offset(), 0);
+        // Cursor kept going.
+        assert_eq!(state.selected_index(), Some(1));
     }
 
     #[test]
@@ -1672,8 +1608,6 @@ mod tests {
         assert_eq!(state.selected_index(), Some(3));
     }
 
-    // -- ListMatcher tests ----------------------------------------------------
-
     #[test]
     fn matcher_substring_builds_match_indices() {
         let items = vec![
@@ -1706,7 +1640,8 @@ mod tests {
         let mut m = ListMatcher::new("[invalid", QueryKind::Regex, MatchMode::Filter);
         assert!(m.is_error());
         m.rebuild_matches(&items);
-        assert!(m.match_indices.is_empty()); // bad regex matches nothing
+        // Bad regex matches nothing.
+        assert!(m.match_indices.is_empty());
     }
 
     #[test]
@@ -1823,8 +1758,6 @@ mod tests {
         assert_eq!(state.selected_index(), Some(3));
     }
 
-    // -- Follow mode: one-past and overscroll tests --------------------------
-
     #[test]
     fn j_one_past_engages_follow() {
         // j on last item twice → follow.
@@ -1837,17 +1770,20 @@ mod tests {
             state.select_next(&items);
         }
         assert_eq!(state.selected_index(), Some(9));
-        assert!(!state.follow_mode); // at last item, but NOT follow yet
+        // At last item, but NOT follow yet.
+        assert!(!state.follow_mode);
 
         // First j at end → at_content_edge = true, no mode change.
         state.select_next(&items);
         assert!(!state.follow_mode);
-        assert_eq!(state.selected_index(), Some(9)); // still there
+        // Still there.
+        assert_eq!(state.selected_index(), Some(9));
 
         // Second j at end → engage follow.
         state.select_next(&items);
         assert!(state.follow_mode);
-        assert_eq!(state.selected_index(), None); // no cursor in follow
+        // No cursor in follow.
+        assert_eq!(state.selected_index(), None);
     }
 
     #[test]
@@ -1892,7 +1828,8 @@ mod tests {
         // Second ctrl-d → scroll to offset 10 (max). at_content_edge = true.
         state.half_page_down(&items);
         assert_eq!(state.scroll_offset(), 10);
-        assert!(!state.follow_mode); // one-past: not yet
+        // One-past: not yet.
+        assert!(!state.follow_mode);
 
         // Third ctrl-d → at bottom + at_content_edge → follow.
         state.half_page_down(&items);
@@ -1925,7 +1862,8 @@ mod tests {
         // Scroll to bottom.
         state.scroll_lines(10, &items);
         assert_eq!(state.scroll_offset(), 10);
-        assert!(!state.follow_mode); // first hit: at_content_edge = true
+        // First hit: at_content_edge = true.
+        assert!(!state.follow_mode);
 
         // Another scroll at bottom → overscroll counter fires.
         state.scroll_lines(3, &items);
@@ -2010,11 +1948,9 @@ mod tests {
 
         items.extend((20..25).map(TestItem::new));
         state.prepare_layout(&items, 80, 10);
-        assert_eq!(state.scroll_offset(), 15); // 25 - 10
+        assert_eq!(state.scroll_offset(), 15);
         assert!(state.follow_mode);
     }
-
-    // -- Follow mode: no cursor -----------------------------------------------
 
     #[test]
     fn follow_mode_has_no_selection() {
@@ -2032,7 +1968,8 @@ mod tests {
         let items: Vec<TestItem> = (0..10).map(TestItem::new).collect();
         let mut state = new_streaming(WrapMode::NoWrap, false);
         state.prepare_layout(&items, 80, 5);
-        assert_eq!(state.selected_index(), Some(0)); // auto-select in NAV
+        // Auto-select in NAV.
+        assert_eq!(state.selected_index(), Some(0));
 
         // Engage follow.
         state.select_last(&items);
@@ -2043,8 +1980,6 @@ mod tests {
         state.prepare_layout(&items, 80, 5);
         assert_eq!(state.selected_index(), None);
     }
-
-    // -- Follow → NAV transitions ---------------------------------------------
 
     #[test]
     fn j_in_follow_is_noop() {
@@ -2071,7 +2006,8 @@ mod tests {
         assert!(!state.follow_mode);
         // Should be one item above the last visible.
         let sel = state.selected_index().unwrap();
-        assert!(sel < 9); // moved up from the last visible
+        // Moved up from the last visible.
+        assert!(sel < 9);
     }
 
     #[test]
@@ -2088,8 +2024,6 @@ mod tests {
         assert_eq!(state.scroll_offset(), 5);
         assert!(state.selected_index().is_some());
     }
-
-    // -- NAV mode: new items don't reset edge state ---------------------------
 
     #[test]
     fn new_items_dont_reset_edge_state() {
@@ -2161,15 +2095,15 @@ mod tests {
 
         // n → next match = physical 2 (vis 1).
         state.next_match(&items);
-        assert_eq!(state.selected_index(), Some(1)); // vis index 1
-        assert_eq!(state.selected_id(), Some(2)); // physical id 2
+        // Vis index 1.
+        assert_eq!(state.selected_index(), Some(1));
+        // Physical id 2.
+        assert_eq!(state.selected_id(), Some(2));
 
         // n → wraps to physical 0 (vis 0).
         state.next_match(&items);
         assert_eq!(state.selected_index(), Some(0));
     }
-
-    // -- Config gating tests --------------------------------------------------
 
     #[test]
     fn follow_disabled_g_selects_last_item() {
@@ -2194,7 +2128,8 @@ mod tests {
             ..ListPaneConfig::default()
         };
         let state = ListPaneState::new_with_config(WrapMode::NoWrap, true, config);
-        assert!(!state.follow_mode); // forced off by config
+        // Forced off by config.
+        assert!(!state.follow_mode);
     }
 
     #[test]
@@ -2238,7 +2173,8 @@ mod tests {
             state.half_page_down(&items);
         }
         assert!(!state.follow_mode);
-        assert_eq!(state.scroll_offset(), 10); // at bottom
+        // At bottom.
+        assert_eq!(state.scroll_offset(), 10);
     }
 
     #[test]
@@ -2288,8 +2224,6 @@ mod tests {
         assert_eq!(state.wrap_mode(), WrapMode::NoWrap);
     }
 
-    // -- Toggle follow tests --------------------------------------------------
-
     #[test]
     fn toggle_follow_from_nav_engages() {
         let items: Vec<TestItem> = (0..20).map(TestItem::new).collect();
@@ -2314,8 +2248,6 @@ mod tests {
         assert!(!state.follow_mode);
         assert!(state.selected_index().is_some());
     }
-
-    // -- Copy tests -----------------------------------------------------------
 
     /// Helper: create a state with copy enabled.
     fn new_with_copy() -> ListPaneState {
@@ -2485,8 +2417,6 @@ mod tests {
         assert!(!state.copy_selected(&items));
     }
 
-    // -- Visual select tests --------------------------------------------------
-
     /// Helper: create a state with visual select + copy enabled.
     fn new_with_visual() -> ListPaneState {
         ListPaneState::new_with_config(
@@ -2536,11 +2466,12 @@ mod tests {
         // Select item 3, enter visual, move down to 5.
         state.select_at(3, &items);
         state.enter_visual_mode(&items);
-        state.select_next(&items); // → 4
-        state.select_next(&items); // → 5
-        state.prepare_layout(&items, 80, 10); // resolve range
+        state.select_next(&items);
+        state.select_next(&items);
+        // Resolve range.
+        state.prepare_layout(&items, 80, 10);
 
-        assert_eq!(state.multi_range(), Some(3..6)); // [3, 4, 5]
+        assert_eq!(state.multi_range(), Some(3..6));
         assert_eq!(state.selected_index(), Some(5));
     }
 
@@ -2553,11 +2484,11 @@ mod tests {
         // Select item 5, enter visual, move up to 3.
         state.select_at(5, &items);
         state.enter_visual_mode(&items);
-        state.select_prev(&items); // → 4
-        state.select_prev(&items); // → 3
+        state.select_prev(&items);
+        state.select_prev(&items);
         state.prepare_layout(&items, 80, 10);
 
-        assert_eq!(state.multi_range(), Some(3..6)); // [3, 4, 5]
+        assert_eq!(state.multi_range(), Some(3..6));
         assert_eq!(state.selected_index(), Some(3));
     }
 
@@ -2577,7 +2508,7 @@ mod tests {
         assert_eq!(state.selected_index(), Some(2));
 
         state.prepare_layout(&items, 80, 10);
-        assert_eq!(state.multi_range(), Some(0..3)); // [0, 1, 2]
+        assert_eq!(state.multi_range(), Some(0..3));
     }
 
     #[test]
@@ -2603,9 +2534,10 @@ mod tests {
         // Select items 1..=3 visually.
         state.select_at(1, &items);
         state.enter_visual_mode(&items);
-        state.select_next(&items); // → 2
-        state.select_next(&items); // → 3
-        state.prepare_layout(&items, 80, 10); // resolve range
+        state.select_next(&items);
+        state.select_next(&items);
+        // Resolve range.
+        state.prepare_layout(&items, 80, 10);
 
         // y copies and clears visual mode.
         state.handle_key_event(&key!('y').to_key_event(), &items);
@@ -2673,7 +2605,8 @@ mod tests {
     fn select_next_scrolls_in_small_viewport() {
         let items: Vec<TestItem> = (0..12).map(TestItem::new).collect();
         let mut state = ListPaneState::new(WrapMode::NoWrap, false);
-        state.prepare_layout(&items, 80, 4); // width=80, viewport_height=4
+        // width=80, viewport_height=4.
+        state.prepare_layout(&items, 80, 4);
 
         for step in 0..12 {
             state.select_next(&items);
@@ -2700,7 +2633,8 @@ mod tests {
 
         for step in 0..12 {
             // simulate render: prepare_layout first
-            state.prepare_layout(&items, 80, 4); // width=80, viewport_height=4
+            // width=80, viewport_height=4.
+            state.prepare_layout(&items, 80, 4);
             // simulate key: select_next
             state.select_next(&items);
             let idx = state.selected_index.unwrap();
@@ -2721,8 +2655,10 @@ mod tests {
     fn scroll_lines_works_in_small_viewport() {
         let items: Vec<TestItem> = (0..12).map(TestItem::new).collect();
         let mut state = ListPaneState::new(WrapMode::NoWrap, false);
-        state.prepare_layout(&items, 80, 4); // width=80, viewport_height=4
-        state.select_next(&items); // select first
+        // width=80, viewport_height=4.
+        state.prepare_layout(&items, 80, 4);
+        // Select first.
+        state.select_next(&items);
 
         let total = state.layout.total_height();
         let vp = state.viewport_height;

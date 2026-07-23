@@ -17,7 +17,6 @@ struct FoldAnchor {
 impl ScrollbackState {
     // View Mode
 
-    /// Get current view mode.
     pub fn view_mode(&self) -> ViewMode {
         self.view_mode
     }
@@ -57,12 +56,10 @@ impl ScrollbackState {
 
     // Selection
 
-    /// Get selected index.
     pub fn selected(&self) -> Option<usize> {
         self.selected
     }
 
-    /// Set selected index.
     pub fn set_selected(&mut self, index: Option<usize>) {
         self.selected = index.filter(|&i| i < self.entries.len());
         if let Some(sel) = self.selected {
@@ -83,7 +80,6 @@ impl ScrollbackState {
         self.selection_box = selection_box;
     }
 
-    /// Take the selection box (consumes it).
     pub fn take_selection_box(&mut self) -> Option<SelectionBox> {
         self.selection_box.take()
     }
@@ -97,7 +93,6 @@ impl ScrollbackState {
             return;
         }
 
-        // Find starting position
         let start = match self.selected {
             None => range.start,
             Some(i) if i < range.start => range.start,
@@ -137,18 +132,15 @@ impl ScrollbackState {
             return;
         }
 
-        // Find starting position
         let start = match self.selected {
             None => range.end - 1,
             Some(i) if i >= range.end => range.end - 1,
             Some(i) if i <= range.start => {
-                // Already at start, can't go further back
                 return;
             }
             Some(i) => i - 1,
         };
 
-        // Find previous selectable entry (iterate backwards, skip hidden entries)
         for idx in (range.start..=start).rev() {
             if self.is_entry_hidden(idx) {
                 continue;
@@ -162,10 +154,8 @@ impl ScrollbackState {
                 return;
             }
         }
-        // No selectable entry found before current - stay where we are
     }
 
-    /// Clear selection.
     pub fn clear_selection(&mut self) {
         self.selected = None;
     }
@@ -178,18 +168,15 @@ impl ScrollbackState {
             return;
         }
 
-        // Find last selectable entry in range
         self.selected = self.find_last_selectable_in_range(range);
     }
 
-    /// Keep current_turn in sync with selection.
     pub(super) fn sync_current_turn(&mut self) {
         if let Some(sel) = self.selected {
             self.current_turn = self.turn_containing(sel);
         }
     }
 
-    /// Find the first selectable entry in a range.
     pub(super) fn find_first_selectable_in_range(&self, range: Range<usize>) -> Option<usize> {
         for idx in range {
             if let Some(entry) = self.entries.get_index(idx).map(|(_, v)| v)
@@ -201,7 +188,6 @@ impl ScrollbackState {
         None
     }
 
-    /// Find the last selectable entry in a range.
     pub(super) fn find_last_selectable_in_range(&self, range: Range<usize>) -> Option<usize> {
         for idx in range.rev() {
             if let Some(entry) = self.entries.get_index(idx).map(|(_, v)| v)
@@ -243,7 +229,6 @@ impl ScrollbackState {
         }
     }
 
-    /// Toggle fold on selected entry.
     pub fn toggle_fold_selected(&mut self) {
         if let Some(i) = self.selected
             && let Some((_, entry)) = self.entries.get_index(i)
@@ -260,11 +245,9 @@ impl ScrollbackState {
     fn fold_selected_impl(&mut self, mutate: impl FnOnce(&mut ScrollbackEntry)) {
         let Some(i) = self.selected else { return };
 
-        // 1. Capture state before the fold
         let anchor = self.capture_fold_anchor(i);
         let respect_manual_folds = self.appearance.scrollback.scroll.respect_manual_folds;
 
-        // 2. Apply the fold mutation
         let mut grew = false;
         if let Some((id, entry)) = self.entries.get_index_mut(i) {
             let mode_before = entry.display_mode;
@@ -379,7 +362,6 @@ impl ScrollbackState {
         // on the next frame, which calls handle_follow_mode and could snap to bottom.
         self.dirty_heights.clear();
 
-        // Anchor scroll or ensure visible
         if anchor_on_fold {
             if let Some(vy_before) = anchor.vy_before
                 && let Some(ref cache) = self.layout_cache
@@ -431,7 +413,6 @@ impl ScrollbackState {
         }
     }
 
-    /// Toggle raw mode on selected entry.
     pub fn toggle_raw_selected(&mut self) {
         // Invisible on a group header (content hidden); skip the rebuild.
         if self.is_selected_group_header() {
@@ -447,7 +428,6 @@ impl ScrollbackState {
         self.bump_generation();
     }
 
-    /// Collapse all foldable entries.
     pub fn collapse_all(&mut self) {
         let mut changed_ids = Vec::new();
         for (id, entry) in &mut self.entries {
@@ -467,7 +447,6 @@ impl ScrollbackState {
         self.bump_generation();
     }
 
-    /// Expand all foldable entries.
     pub fn expand_all(&mut self) {
         let mut changed_ids = Vec::new();
         for (id, entry) in &mut self.entries {
@@ -728,7 +707,6 @@ impl ScrollbackState {
         let Some(sel) = self.selected else {
             return false;
         };
-        // Find the group range containing the selected entry
         let group = self.group_range_of(sel, true);
         let Some((&first_id, _)) = self.entries.get_index(group.start) else {
             return false;
@@ -761,9 +739,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use ratatui::style::Color;
 
-    // -----------------------------------------------------------------------
     // Group gap tests (Phase 1c)
-    // -----------------------------------------------------------------------
 
     /// Helper: create an expanded groupable stub block.
     fn expanded_groupable(text: &str) -> ScrollbackEntry {
@@ -998,9 +974,7 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------------
     // Group range tests (Phase 3a)
-    // -----------------------------------------------------------------------
 
     #[test]
     fn test_group_range_mode_a_all_collapsed() {
@@ -1023,7 +997,7 @@ mod tests {
         // Mode A: expanded block doesn't break the group
         let mut state = ScrollbackState::new();
         state.push(collapsed_groupable("a"));
-        state.push(expanded_groupable("b")); // expanded
+        state.push(expanded_groupable("b"));
         state.push(collapsed_groupable("c"));
 
         // Mode A: all 3 in one group
@@ -1038,14 +1012,16 @@ mod tests {
         let mut state = ScrollbackState::new();
         state.push(collapsed_groupable("a"));
         state.push(collapsed_groupable("b"));
-        state.push(expanded_groupable("c")); // expanded — breaks run
+        // "c" is expanded, breaking the run
+        state.push(expanded_groupable("c"));
         state.push(collapsed_groupable("d"));
         state.push(collapsed_groupable("e"));
 
         // Mode B: [a,b] and [d,e] are separate sub-groups, c is singleton
         assert_eq!(state.group_range_of(0, true), 0..2);
         assert_eq!(state.group_range_of(1, true), 0..2);
-        assert_eq!(state.group_range_of(2, true), 2..3); // expanded → singleton
+        // expanded → singleton
+        assert_eq!(state.group_range_of(2, true), 2..3);
         assert_eq!(state.group_range_of(3, true), 3..5);
         assert_eq!(state.group_range_of(4, true), 3..5);
     }
@@ -1058,9 +1034,9 @@ mod tests {
         state.push(collapsed_groupable("tool"));
         state.push(non_groupable_entry("agent2"));
 
-        assert_eq!(state.group_range_of(0, false), 0..1); // non-groupable
-        assert_eq!(state.group_range_of(1, false), 1..2); // lone groupable
-        assert_eq!(state.group_range_of(2, false), 2..3); // non-groupable
+        assert_eq!(state.group_range_of(0, false), 0..1);
+        assert_eq!(state.group_range_of(1, false), 1..2);
+        assert_eq!(state.group_range_of(2, false), 2..3);
     }
 
     #[test]
@@ -1408,7 +1384,7 @@ mod tests {
         assert_eq!(gaps_after[0], 1, "prompt→a gap still 1 after expand");
     }
 
-    // ── Group truncation tests ──
+    // Group truncation tests
 
     #[test]
     fn truncation_disabled_when_max_visible_zero() {
@@ -1521,26 +1497,27 @@ mod tests {
         push_tool_calls(&mut state, 6);
         state.prepare_layout(80, 40);
 
-        // Select first visible entry
         state.selected = None;
-        state.select_next(); // should land on entry 0 (group header, height=1)
+        // Lands on entry 0 (group header, height=1)
+        state.select_next();
         assert_eq!(state.selected, Some(0));
 
-        state.select_next(); // should skip entries 1,2 (height=0) → entry 3
+        // Skips entries 1,2 (height=0) → entry 3
+        state.select_next();
         assert_eq!(state.selected, Some(3));
 
-        state.select_next(); // entry 4
+        state.select_next();
         assert_eq!(state.selected, Some(4));
 
-        // Go back
-        state.select_prev(); // entry 3
+        state.select_prev();
         assert_eq!(state.selected, Some(3));
 
-        state.select_prev(); // should skip entries 2,1 (height=0) → entry 0
+        // Skips entries 2,1 (height=0) → entry 0
+        state.select_prev();
         assert_eq!(state.selected, Some(0));
     }
 
-    // ── Verb-group fold tests ──
+    // Verb-group fold tests
 
     fn verb_state() -> ScrollbackState {
         crate::appearance::cache::set_group_tool_verbs(true);
@@ -2591,7 +2568,8 @@ mod tests {
 
         // Also test collapse from inside the group (entry 3):
         state.selected = Some(0);
-        state.toggle_group_expansion(); // re-expand via expand header
+        // re-expand via expand header
+        state.toggle_group_expansion();
         state.prepare_layout(80, 40);
         state.selected = Some(3);
         let collapsed = state.collapse_group_if_expanded();
@@ -2756,8 +2734,8 @@ mod tests {
         push_tool_calls(&mut state, 6);
         state.prepare_layout(80, 40);
 
-        // Manually place selection on a hidden entry
-        state.selected = Some(1); // height=0
+        // Manually place selection on a hidden entry (height=0)
+        state.selected = Some(1);
         state.fixup_hidden_selection();
 
         // Should move to entry 0 (the group header)

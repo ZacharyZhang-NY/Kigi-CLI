@@ -35,8 +35,6 @@ macro_rules! timed {
         value
     }};
 
-    // Logging-only variant with explicit log level:
-    // `timed!(log: info, "something", { ... })`
     (log: $lvl:ident, $name:expr, $block:block) => {{
         let start = ::std::time::Instant::now();
         let value = $block;
@@ -45,7 +43,9 @@ macro_rules! timed {
         value
     }};
 
-    // Sync Result variant (no `.await` inside the block)
+    // The `try:` arms wrap the block in an immediately-invoked closure (or
+    // async block) so a `?` inside it returns into the macro, which can then
+    // log the error and elapsed time, rather than escaping the caller.
     (try: $name:expr, $block:block) => {{
         let start = ::std::time::Instant::now();
         let result = (|| $block)();
@@ -62,8 +62,6 @@ macro_rules! timed {
         }
     }};
 
-    // Sync Result variant with explicit log level:
-    // `timed!(try: info, "something", { ... })?`
     (try: $lvl:ident, $name:expr, $block:block) => {{
         let start = ::std::time::Instant::now();
         let result = (|| $block)();
@@ -80,7 +78,6 @@ macro_rules! timed {
         }
     }};
 
-    // Async Result variant, for blocks that use `.await` / `?`.
     (try: $name:expr, async $block:block) => {{
         let start = ::std::time::Instant::now();
         let result = (async $block).await;
@@ -97,8 +94,6 @@ macro_rules! timed {
         }
     }};
 
-    // Async Result variant with explicit log level:
-    // `timed!(try: info, "something", async { ... })?`
     (try: $lvl:ident, $name:expr, async $block:block) => {{
         let start = ::std::time::Instant::now();
         let result = (async $block).await;

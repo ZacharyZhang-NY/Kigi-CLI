@@ -95,10 +95,8 @@ fn setup(server: &ArtifactServer, latest: &str, running: &str) {
     set_test_version(running);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Convergence: ensure_latest_on_disk downloads once, then every subsequent
 // pass (the leader's hourly re-entry) converges without re-downloading.
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 #[serial]
@@ -207,9 +205,7 @@ async fn run_update_rolls_back_when_latest_moved_backwards() {
     assert_eq!(server.request_count(), 1);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Disk-version probe
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 #[serial]
@@ -288,9 +284,7 @@ async fn ensure_latest_repairs_dangling_symlink_by_downloading() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // check_update_status (`kigi update --check`)
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 #[serial]
@@ -369,9 +363,7 @@ async fn check_status_unsupported_channel_reports_error() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // run_update_if_available — the auto-update opt-out gate.
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 #[serial]
@@ -399,11 +391,9 @@ async fn run_update_if_available_respects_auto_update_false() {
     assert!(!ran, "auto_update=false must suppress the update entirely");
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Race integrity: the accepted same-instant race must stay harmless. Two (or
 // three) installers running concurrently — even for DIFFERENT versions —
 // must never leave a corrupt active binary.
-// ─────────────────────────────────────────────────────────────────────────────
 
 async fn run_concurrent_installs(
     server: &ArtifactServer,

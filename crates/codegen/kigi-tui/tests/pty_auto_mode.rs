@@ -149,7 +149,8 @@ fn pty_shift_tab_cycles_to_auto_mode_banner() {
             harness.is_running() || !early.is_empty(),
             "pager must have produced output even on login screen"
         );
-        let _ = harness.inject_keys(b"\x11"); // ctrl+q if bound
+        // ctrl+q if bound
+        let _ = harness.inject_keys(b"\x11");
         return;
     }
 

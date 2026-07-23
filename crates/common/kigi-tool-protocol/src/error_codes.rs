@@ -4,9 +4,8 @@
 //! than the numeric JSON-RPC `error.code`. The numeric is the JSON-RPC
 //! envelope code; the string is the Kigi stable identifier.
 //!
-//! Implemented as a `&'static [(i32, &'static str)]` table; the table is
-//! a small fixed set so a linear scan is faster than any
-//! `HashMap`/`OnceLock`-shaped alternative.
+//! The mapping is a flat table scanned linearly: the set is small and fixed,
+//! so that beats any `HashMap`/`OnceLock`-shaped alternative.
 
 use serde::{Deserialize, Serialize};
 
@@ -44,24 +43,22 @@ pub const ERROR_CODES: &[(i32, &str)] = &[
     (-32099, "rate_limited"),
 ];
 
-/// Returns `None` for strings not in the table. Receivers should fall
-/// back to `-32603 internal_error` for unknown strings.
+/// Receivers should fall back to `-32603 internal_error` for strings that
+/// are not in the table.
 pub fn numeric_for(code_str: &str) -> Option<i32> {
     ERROR_CODES
         .iter()
         .find_map(|(n, s)| (*s == code_str).then_some(*n))
 }
 
-/// Returns `None` for codes not in the table.
 pub fn string_for(code: i32) -> Option<&'static str> {
     ERROR_CODES
         .iter()
         .find_map(|(n, s)| (*n == code).then_some(*s))
 }
 
-/// Numeric code most-appropriate for a [`ToolErrorWire`] variant.
-/// `Custom` always maps to `-32603 internal_error` since its `code`
-/// string is not in the table by definition.
+/// `Custom` always maps to `-32603 internal_error`, since by definition its
+/// `code` string is not in the table.
 pub fn from_tool_error_wire(err: &ToolErrorWire) -> i32 {
     match err {
         ToolErrorWire::ToolNotFound { .. } => -32011,
@@ -138,7 +135,6 @@ pub struct WorkspaceUnavailableDetails {
     pub retryable: bool,
 }
 
-/// Build the recognizable "workspace gone" error as a [`ToolErrorWire::Custom`].
 pub fn workspace_unavailable_wire(
     reason: WorkspaceGoneReason,
     phase: WorkspaceGonePhase,
@@ -222,7 +218,6 @@ mod tests {
         ) else {
             panic!("expected Custom variant");
         };
-        // Exact, tenant-data-free contract.
         assert_eq!(message, WORKSPACE_UNAVAILABLE_MESSAGE);
     }
 
@@ -264,7 +259,8 @@ mod tests {
 
     #[test]
     fn custom_variant_tolerates_unknown_future_details_shape() {
-        // An unknown subcode + richer future details must still deserialize rather than failing the frame.
+        // An unknown subcode carrying richer details must still deserialize
+        // rather than failing the whole frame.
         let future = json!({
             "code": "custom",
             "subcode": "some_future_subcode",
@@ -290,7 +286,6 @@ mod tests {
                 .is_some(),
             "unknown details fields are preserved",
         );
-        // Re-serialization preserves the unknown fields.
         let reser = serde_json::to_value(&wire).unwrap();
         assert_eq!(
             reser["details"]["extra_new_field"]["nested"],

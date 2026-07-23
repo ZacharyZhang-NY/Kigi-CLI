@@ -386,13 +386,9 @@ impl SessionActor {
             // OLDEST entry (the new entry reflects the model's current
             // intent) and emit `FailClosed { PendingQueueFull }`.
             if matches!(purpose, DrainPurpose::MidTurn) {
-                // Cap the queue at `GOAL_CLASSIFIER_PENDING_QUEUE_CAP`;
-                // on overflow drop the OLDEST entry (the new entry
-                // reflects the model's current intent). The dropped
-                // entry's ack was ALREADY resolved at its own MidTurn
-                // defer time, so we just emit the eviction telemetry
-                // and let the dropped input fall out of scope —
-                // there's no parked ack to update.
+                // The evicted entry's ack was ALREADY resolved at its own
+                // MidTurn defer time; just emit the eviction telemetry and
+                // let the dropped input fall out of scope — no parked ack.
                 let pending_depth = {
                     let mut q = self.pending_classifier_completions.lock();
                     if q.len() >= GOAL_CLASSIFIER_PENDING_QUEUE_CAP {
@@ -1396,11 +1392,8 @@ impl SessionActor {
         else {
             return fail_open(Reason::ModelUnknown);
         };
-        // 2. Entitlement: the session's `allowed_models` permits the model. A
-        //    restricted session marks out-of-list catalog entries
-        //    `user_selectable == false`; an unrestricted session marks all
-        //    `true`. This is the session-local entitlement boundary (no disk
-        //    read, no `api_key` probe that would false-fail session-token auth).
+        // 2. Entitlement: the session's `allowed_models` permits the model
+        //    (`ModelInfo.user_selectable`).
         if !entry.info.user_selectable {
             return fail_open(Reason::ModelUnauthorized);
         }
@@ -1643,8 +1636,6 @@ impl SessionActor {
                     | GoalStatus::InfraPaused
                     | GoalStatus::Blocked,
                 ) => {
-                    // Capture-before-clear: read status and pause_message
-                    // first, then resume() drops them.
                     let previous_status = tracker.status().unwrap();
                     let previous_pause_message =
                         tracker.snapshot().and_then(|o| o.pause_message.clone());
@@ -1805,39 +1796,6 @@ impl SessionActor {
         }
     }
 
-    /// If a goal is active, inject a continuation nudge so the model keeps
-    /// working on it after the current turn completes.
-    ///
-    /// After the completion drain and the goal-active gate, the
-    /// turn-final assistant text is matched against the
-    /// [`goal_stop_detector`](super::super::goal_stop_detector) panel. On a
-    /// hit (with pending todos) the nudge renders the bail-specific
-    /// flavor and `Event::GoalPrematureStopDetected` is emitted on the
-    /// queue path; otherwise the generic flavor renders. A
-    /// verified-complete goal returns at the gate before detection, so
-    /// it never receives a bail nudge.
-    ///
-    /// Idempotent on the push side: if `state.pending_inputs` already
-    /// contains an `InputItem` whose origin is
-    /// [`PromptOrigin::GoalSummary`](crate::session::PromptOrigin::GoalSummary),
-    /// the function skips the push and returns without enqueuing a
-    /// duplicate. The token-update and `GoalUpdated` notification still
-    /// run on every call that doesn't early-return on an inactive goal
-    /// — they reflect current accounting, not reminder identity, so
-    /// running them ahead of the dedup gate is safe. Two call sites
-    /// rely on this: the pre-`emit_turn_ended` queue in
-    /// `handle_completion`'s `TurnOutcome::Completed` arm (which
-    /// guarantees the reminder is part of pending state by the time the
-    /// user-visible turn-ended event fires) and the post-completion
-    /// safety net inside [`Self::handle_turn_end`].
-    ///
-    /// A pending `GoalClassifierNudge` also satisfies the idempotency
-    /// gate: when a completion claim is classifier-rejected during the
-    /// drain (goal stays Active, a classifier nudge queued), that nudge
-    /// pre-empts the bail nudge — the early-return fires before the
-    /// `GoalPrematureStopDetected` emit, so no bail event is recorded on
-    /// that turn. The classifier nudge already forces continuation with
-    /// the gap inlined, so this precedence is intentional.
     /// Remove every prior goal-continuation directive from the persisted
     /// conversation, keeping only the copy about to be pushed. The
     /// directive re-embeds the full objective each turn, so without this

@@ -46,7 +46,6 @@ async fn leader_two_clients_shared_session() {
         "A's turn must appear in B exactly once (duplicated replay?)\nB screen:\n{b_screen}"
     );
 
-    // Turn 2 driven from A streams live into the attached viewer B.
     cluster
         .content()
         .set_response(format!("{} second turn payload.", turn_sentinel(2)));

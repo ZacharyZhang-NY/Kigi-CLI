@@ -120,16 +120,13 @@ mod tests {
         assert!(cache_path.to_string_lossy().ends_with("goto_index.bin"));
     }
 
-    // =========================================================================
     // Lazy-start mechanic tests
-    //
     // These tests verify the core lazy-start behavior:
     // `CodebaseIndexManager::get()` returns None before the index is created,
     // which maps to `kigi/code/status` reporting `reason: notStarted`.
     // `get_or_create()` is the lazy-start entry point called by
     // `MvpAgent::start_codebase_index_for_code_nav` on the first code-nav
     // request for an eligible session.
-    // =========================================================================
 
     /// An empty CodebaseIndexManager returns None for any path.
     ///

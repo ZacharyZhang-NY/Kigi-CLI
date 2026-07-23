@@ -13,7 +13,6 @@ pub enum WebSearchConfig {
     #[default]
     Disabled,
     Enabled {
-        /// Full POST endpoint, e.g. `https://api.kimi.com/coding/v1/search`.
         search_url: String,
         /// Initial bearer token; a live token from the api-key provider
         /// (OAuth refresh) takes precedence per request.
@@ -24,13 +23,11 @@ pub enum WebSearchConfig {
 }
 
 impl WebSearchConfig {
-    /// Returns `true` when the config is the `Enabled` variant.
     pub fn is_enabled(&self) -> bool {
         matches!(self, Self::Enabled { .. })
     }
 
-    /// Return a copy safe for returning to clients: the `api_key` is
-    /// replaced with `"***REDACTED***"`.
+    /// A copy safe to return to clients, with `api_key` redacted.
     pub fn redacted(&self) -> Self {
         match self {
             Self::Disabled => Self::Disabled,

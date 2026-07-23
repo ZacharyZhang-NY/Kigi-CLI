@@ -51,11 +51,11 @@ async fn goal_backoff_resets_on_success() {
             let actor = make_test_actor_with_active_goal().await;
             // Seed blocked streak so we can verify turn end leaves it alone.
             actor.goal_blocked_streak.store(2, Ordering::Relaxed);
-            actor.handle_turn_end(false).await; // streak = 1
+            actor.handle_turn_end(false).await;
             assert_eq!(actor.goal_continuation_streak.load(Ordering::Relaxed), 1);
-            actor.handle_turn_end(false).await; // streak = 2
+            actor.handle_turn_end(false).await;
             assert_eq!(actor.goal_continuation_streak.load(Ordering::Relaxed), 2);
-            actor.handle_turn_end(true).await; // streak = 0; continuation enqueued
+            actor.handle_turn_end(true).await;
             assert_eq!(actor.goal_continuation_streak.load(Ordering::Relaxed), 0);
             assert_eq!(
                 actor.goal_blocked_streak.load(Ordering::Relaxed),
@@ -63,7 +63,7 @@ async fn goal_backoff_resets_on_success() {
                 "turn success must NOT reset the blocked streak (a model \
                  blocking once per turn would otherwise never hit 3/3)",
             );
-            actor.handle_turn_end(false).await; // streak = 1
+            actor.handle_turn_end(false).await;
             assert_eq!(actor.goal_continuation_streak.load(Ordering::Relaxed), 1);
             let status = actor.goal_tracker.lock().status();
             assert_eq!(
@@ -105,7 +105,6 @@ async fn auto_pause_noop_when_goal_already_paused() {
             actor
                 .auto_pause_goal_if_active(crate::session::goal_tracker::GoalPauseReason::User)
                 .await;
-            // Should remain UserPaused — auto_pause is a no-op when not Active.
             assert_eq!(
                 actor.goal_tracker.lock().status(),
                 Some(crate::session::goal_tracker::GoalStatus::UserPaused)
@@ -126,7 +125,6 @@ async fn handle_turn_end_skip_increment_when_goal_not_active() {
                 .lock()
                 .pause(crate::session::goal_tracker::GoalPauseReason::User);
             actor.handle_turn_end(false).await;
-            // Streak should not increment because goal is not Active.
             assert_eq!(actor.goal_continuation_streak.load(Ordering::Relaxed), 0);
             assert_eq!(
                 actor.goal_tracker.lock().status(),
@@ -136,8 +134,7 @@ async fn handle_turn_end_skip_increment_when_goal_not_active() {
         .await;
 }
 
-/// Seed a single InProgress todo so `has_pending_goal_todos`
-/// returns true. Returns nothing; the bridge owns the resource.
+/// Seed a single InProgress todo so `has_pending_goal_todos` returns true.
 async fn seed_one_pending_todo(actor: &SessionActor) {
     use crate::tools::todo::{TodoItem, TodoPriority, TodoState, TodoStatus};
     use kigi_tools::types::resources::State;
@@ -198,7 +195,6 @@ async fn seed_pending_classifier_nudge(actor: &SessionActor) {
         });
 }
 
-/// Read `events.jsonl` and return the parsed `Event` records.
 /// The test actor writes events to a session-unique events file;
 /// we read it as the canonical event sink.
 ///
@@ -1310,10 +1306,8 @@ async fn goal_resume_from_active_nudges_and_resets_streak() {
             else {
                 panic!("nudged active goal must flow through to inference");
             };
-            // Both streaks reset on resume.
             assert_eq!(actor.goal_continuation_streak.load(Ordering::Relaxed), 0);
             assert_eq!(actor.goal_blocked_streak.load(Ordering::Relaxed), 0);
-            // Status remains Active.
             assert_eq!(
                 actor.goal_tracker.lock().status(),
                 Some(crate::session::goal_tracker::GoalStatus::Active)
@@ -1396,8 +1390,6 @@ async fn goal_resume_from_back_off_paused_transitions_to_active() {
         })
         .await;
 }
-
-// -- Verification / Blocked path --
 
 #[tokio::test(flavor = "current_thread")]
 async fn auto_pause_goal_if_active_with_message_transitions_to_blocked_and_stashes_message() {
@@ -1504,11 +1496,8 @@ async fn drain_goal_updates_blocked_reason_rejected_below_threshold() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn auto_pause_with_message_returns_false_when_goal_already_paused() {
-    // The new `bool` return value is the gate that suppresses the
-    // user-visible chat notification on a no-op pause.
-    // Test it directly: seed UserPaused, attempt a Verification
-    // pause, expect (i) `false`, (ii) status stays UserPaused,
-    // (iii) `pause_message` stays None.
+    // The `bool` return value gates the user-visible chat notification:
+    // a no-op pause returns false and suppresses it.
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async {
@@ -1859,7 +1848,6 @@ async fn goal_pause_from_blocked_is_already_paused() {
             let _ = actor
                 .execute_builtin_slash_command(BuiltinAction::GoalPause)
                 .await;
-            // Status remains Blocked — pause is a no-op.
             assert_eq!(
                 actor.goal_tracker.lock().status(),
                 Some(crate::session::goal_tracker::GoalStatus::Blocked)
@@ -1928,7 +1916,6 @@ async fn goal_resume_on_complete_returns_informational_message() {
                 matches!(outcome, GoalResumeOutcome::Message(_)),
                 "resume on a complete goal must end the turn with a message"
             );
-            // Status should remain Complete (no transition).
             assert_eq!(
                 actor.goal_tracker.lock().status(),
                 Some(crate::session::goal_tracker::GoalStatus::Complete)
@@ -1937,7 +1924,7 @@ async fn goal_resume_on_complete_returns_informational_message() {
         .await;
 }
 
-/// New-contract guard: resuming a paused goal must flow through to a
+/// Resuming a paused goal must flow through to a
 /// normal inference turn (same path as the initial `/goal`), returning
 /// the goal system-reminder as the turn's prompt content rather than a
 /// terminal message. Mirrors how `setup_goal` seeds the initial turn.
@@ -2230,7 +2217,6 @@ async fn goal_clear_resets_streak() {
             actor.handle_turn_end(false).await;
             actor.handle_turn_end(false).await;
             assert_eq!(actor.goal_continuation_streak.load(Ordering::Relaxed), 2);
-            // Seed blocked streak too.
             actor.goal_blocked_streak.store(2, Ordering::Relaxed);
 
             let actor = Arc::new(actor);
@@ -2395,12 +2381,12 @@ async fn drain_goal_updates_blocked_reason_takes_precedence_over_completed() {
         .await;
 }
 
-// ── Goal classifier integration into `drain_goal_updates` ────────
+// Goal classifier integration into `drain_goal_updates`.
 //
 // These tests pin the integration's gate semantics — disabled
 // fallthrough, Active-only guard, mid-turn deferral, in-flight
 // re-entry guard, TurnEnd FIFO drain of `pending_classifier_completions`,
-// and the idempotency-matcher edit. They are unit-level (no real
+// and the idempotency matcher. They are unit-level (no real
 // classifier sampler invoked); the full Achieved/NotAchieved/cap
 // E2E suite using `MockSpawner` lives separately.
 
@@ -2944,7 +2930,6 @@ async fn idempotency_matcher_suppresses_goal_summary_when_classifier_nudge_pendi
                 summary_count, 0,
                 "pending GoalClassifierNudge must suppress GoalSummary push",
             );
-            // The classifier nudge fixture must still be there.
             let nudge_count = state
                 .pending_inputs
                 .iter()
@@ -3114,7 +3099,7 @@ fn build_goal_updated_emits_new_paused_strings() {
     }
 }
 
-// ---- Unified subagent-token registry: goal_tokens_used helper ----
+// Unified subagent-token registry: goal_tokens_used helper.
 
 fn insert_record(
     actor: &SessionActor,
@@ -3480,7 +3465,7 @@ async fn handle_turn_end_trips_budget_on_failed_turn() {
             actor.goal_tracker.lock().create_goal(
                 "test-goal".to_string(),
                 "test objective".to_string(),
-                Some(50_000), // token budget
+                Some(50_000),
                 0,
                 "2026-01-01T00:00:00Z".to_string(),
                 None,
@@ -3488,8 +3473,8 @@ async fn handle_turn_end_trips_budget_on_failed_turn() {
             // Subagent spend already crossed the cap (60k > 50k budget).
             insert_record(&actor, "a", Some("test-goal"), 0, 60_000);
 
-            // Turn FAILED (turn_succeeded = false) — the path that previously
-            // skipped budget enforcement entirely.
+            // Turn FAILED (turn_succeeded = false): the failed-turn path
+            // must still enforce the budget.
             actor.handle_turn_end(false).await;
 
             assert_eq!(
@@ -3523,7 +3508,8 @@ async fn handle_turn_end_keeps_goal_active_under_budget_on_failed_turn() {
                 "2026-01-01T00:00:00Z".to_string(),
                 None,
             );
-            insert_record(&actor, "a", Some("test-goal"), 0, 10_000); // under budget
+            // Spend stays under the 50k budget.
+            insert_record(&actor, "a", Some("test-goal"), 0, 10_000);
 
             actor.handle_turn_end(false).await;
 
@@ -3839,7 +3825,7 @@ async fn subagent_progress_advances_goal_tokens_live_without_double_count() {
                 .handle_xai_session_notification(spawn_notif("a", None))
                 .await;
             // Count (and drain) goal_updated notifications delivered to the
-            // gateway. Progress-tick emits are gateway-only now, so coalescing
+            // gateway. Progress-tick emits are gateway-only, so coalescing
             // is observed here rather than on the persistence channel.
             let count_gateway_goal_updated =
                 |rx: &mut tokio::sync::mpsc::UnboundedReceiver<kigi_acp_lib::AcpClientMessage>| {

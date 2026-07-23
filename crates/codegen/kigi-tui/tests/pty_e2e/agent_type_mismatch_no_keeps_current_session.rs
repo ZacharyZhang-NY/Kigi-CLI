@@ -34,7 +34,6 @@ async fn agent_type_mismatch_no_keeps_current_session() {
         .inject_keys(b"/model cursor-model\r")
         .expect("type model switch");
 
-    // Wait for the modal.
     harness
         .wait_for_text("requires starting a new session", Duration::from_secs(15))
         .expect("modal appeared");
@@ -46,7 +45,6 @@ async fn agent_type_mismatch_no_keeps_current_session() {
     // Modal should dismiss. Wait a moment for UI to settle.
     harness.update(Duration::from_millis(500));
 
-    // The original response should still be visible (same session).
     assert!(
         harness.contains_text(MOCK_RESPONSE_SENTINEL),
         "original response should still be visible after cancelling\nscreen:\n{}",

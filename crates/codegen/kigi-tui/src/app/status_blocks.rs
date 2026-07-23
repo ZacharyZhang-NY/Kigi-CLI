@@ -55,7 +55,6 @@ pub(crate) fn queue_block_text(agent: &AgentView) -> String {
 pub(crate) fn tasks_block_text(agent: &AgentView) -> String {
     let mut rows: Vec<String> = Vec::new();
 
-    // ── Subagents ──
     let mut subs: Vec<_> = agent.subagent_sessions.values().collect();
     subs.sort_by(|a, b| {
         b.is_running()
@@ -83,7 +82,6 @@ pub(crate) fn tasks_block_text(agent: &AgentView) -> String {
         ));
     }
 
-    // ── Background tasks / monitors ──
     let mut tasks: Vec<_> = agent.session.bg_tasks.values().collect();
     tasks.sort_by(|a, b| {
         let (ar, br) = (
@@ -117,7 +115,6 @@ pub(crate) fn tasks_block_text(agent: &AgentView) -> String {
         ));
     }
 
-    // ── Scheduled (/loop) tasks ──
     let mut sched: Vec<_> = agent.session.scheduled_tasks.values().collect();
     sched.sort_by(|a, b| {
         a.tag

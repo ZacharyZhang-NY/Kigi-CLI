@@ -254,7 +254,6 @@ impl AgentView {
         }
     }
 
-    /// The transcript tail is a user-authored prompt row.
     fn tail_is_user_prompt(&self) -> bool {
         matches!(
             self.scrollback.last().map(|entry| &entry.block),
@@ -973,8 +972,8 @@ mod queue_edit_routing_tests {
     }
 
     /// Keyboard-deleting the last *local* row while a server row remains keeps
-    /// the pane open and focused (regression: it previously force-hid the pane
-    /// and stranded the server rows).
+    /// the pane open and focused (regression guard: force-hiding it here would
+    /// strand the server rows).
     #[test]
     fn delete_last_local_row_keeps_pane_open_when_server_remains() {
         let mut agent = make_running_agent();

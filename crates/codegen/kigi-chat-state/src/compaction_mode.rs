@@ -32,7 +32,7 @@ impl CompactionMode {
         }
     }
 
-    /// Replace the detail level if this is `Segments`, else unchanged. Lets the
+    /// Replace the detail level if this is `Segments`, else `unchanged`. Lets the
     /// resolver attach the separately-resolved `KIGI_COMPACTION_DETAIL`.
     pub fn with_segment_detail(self, detail: CompactionDetail) -> Self {
         match self {

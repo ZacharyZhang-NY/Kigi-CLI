@@ -7,7 +7,6 @@ use anyhow::Result;
 use dashmap::DashSet;
 use ignore::{WalkBuilder, WalkState};
 
-/// Build a globset matcher for skip patterns.
 pub(crate) fn build_skip_matcher(patterns: &[String]) -> Result<globset::GlobSet> {
     let mut builder = globset::GlobSetBuilder::new();
     for pattern in patterns {
@@ -16,10 +15,10 @@ pub(crate) fn build_skip_matcher(patterns: &[String]) -> Result<globset::GlobSet
     Ok(builder.build()?)
 }
 
-/// Collect all *unignored* paths in `source` (relative).
+/// Collect all *unignored* paths in `source`, relative to it.
 ///
-/// This is used to implement an "ignored-only" copy: by collecting unignored paths
-/// and then skipping them during a second pass with `respect_gitignore=false`.
+/// Backs the "ignored-only" copy: a second pass runs with
+/// `respect_gitignore=false` and skips everything in this set.
 pub(crate) fn collect_unignored_paths(
     source: &Path,
     parallelism: usize,
@@ -93,7 +92,6 @@ mod tests {
         std::fs::create_dir_all(&info_dir).unwrap();
         std::fs::write(info_dir.join("exclude"), "*.zip\n").unwrap();
 
-        // A truly-ignored (gitignored, untracked) artifact.
         std::fs::create_dir(repo.join("build")).unwrap();
         std::fs::write(repo.join("build/out.o"), "obj").unwrap();
 

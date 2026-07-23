@@ -1,18 +1,12 @@
 //! The `keep_text_selection` user setting (`flash` | `hold` | `word_select`).
 //!
-//! This is the single, unified control for scrollback text-selection behavior.
-//! It governs both how long an in-app selection highlight stays on screen and
-//! what a double/triple-click does, so the two can never drift out of sync:
-//!
-//! - `flash` — brief highlight on mouse-up, then clear; double-click toggles fold.
-//! - `hold` — selection stays until dismissed; double-click toggles fold.
-//! - `word_select` — selection stays until dismissed; double-click selects &
-//!   copies a word, triple-click a line (terminal-like). Implies `hold`.
+//! One setting governs both how long an in-app selection highlight stays on
+//! screen and what a double/triple-click does, so the two can never drift out
+//! of sync.
 
-/// Scrollback text-selection behavior: highlight lifetime + double-click action.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub enum TextSelection {
-    /// Brief highlight on mouse-up, then clear; double-click toggles fold. Default.
+    /// Brief highlight on mouse-up, then clear; double-click toggles fold.
     #[default]
     Flash,
     /// Stay visible until Esc/click/scroll; double-click toggles fold.
@@ -32,7 +26,6 @@ impl TextSelection {
         }
     }
 
-    /// Parse a canonical string, returning `None` for unrecognized input.
     pub fn from_canonical(value: &str) -> Option<Self> {
         match value {
             "flash" => Some(Self::Flash),
@@ -78,16 +71,14 @@ mod tests {
         assert_eq!(TextSelection::default().as_canonical(), "flash");
     }
 
-    /// The unified invariant: `word_select` always implies `holds()` (persistent
-    /// highlight) and is the only mode that turns on double-click word select.
+    /// `word_select` always implies `holds()`, and is the only mode that turns
+    /// on double-click word select.
     #[test]
     fn word_select_implies_hold_and_word_select() {
         assert!(TextSelection::WordSelect.holds());
         assert!(TextSelection::WordSelect.selects_word());
-        // Hold persists but leaves double-click as fold-toggle.
         assert!(TextSelection::Hold.holds());
         assert!(!TextSelection::Hold.selects_word());
-        // Flash neither persists nor word-selects.
         assert!(!TextSelection::Flash.holds());
         assert!(!TextSelection::Flash.selects_word());
     }

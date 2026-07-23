@@ -498,7 +498,7 @@ mod tests {
     #[test]
     fn playing_to_dead_transition() {
         let mut state = GboomState::new();
-        state.handle_key(&key(KeyCode::Char('w'))); // leave title
+        state.handle_key(&key(KeyCode::Char('w')));
         state.game.player.hp = 0;
         state.tick();
         assert_eq!(state.phase, Phase::Dead);
@@ -682,9 +682,9 @@ mod tests {
 
         // Corridor vantage: spawn looking south down the long west corridor.
         let mut state = GboomState::new();
-        state.handle_key(&key(KeyCode::Char('w'))); // leave title
+        state.handle_key(&key(KeyCode::Char('w')));
         state.phase = Phase::Playing;
-        state.game.player.angle = std::f32::consts::FRAC_PI_2; // +y, south
+        state.game.player.angle = std::f32::consts::FRAC_PI_2;
         state.game.step(0.016);
         dump("game.png", &mut state);
 

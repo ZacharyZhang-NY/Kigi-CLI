@@ -3,7 +3,6 @@
 use anyhow::{Context, Result};
 use reqwest::Client;
 
-/// Send keystrokes to a session.
 pub async fn send(url: &str, keys: &str, enter: bool) -> Result<()> {
     let mut keys = keys.to_string();
     if enter {
@@ -25,7 +24,6 @@ pub async fn send(url: &str, keys: &str, enter: bool) -> Result<()> {
     Ok(())
 }
 
-/// Query screen content.
 pub async fn screen(
     url: &str,
     rows: Option<&str>,
@@ -64,7 +62,6 @@ pub async fn screen(
     if format == "html" || format == "styled" {
         println!("{body}");
     } else {
-        // Parse as JSON and print lines.
         let output: serde_json::Value = serde_json::from_str(&body)?;
         if let Some(lines) = output.get("lines").and_then(|l| l.as_array()) {
             for (i, line) in lines.iter().enumerate() {
@@ -81,7 +78,6 @@ pub async fn screen(
     Ok(())
 }
 
-/// Query cursor position.
 pub async fn cursor(url: &str) -> Result<()> {
     let client = Client::new();
     let resp = client
@@ -94,7 +90,6 @@ pub async fn cursor(url: &str) -> Result<()> {
     Ok(())
 }
 
-/// Query session status.
 pub async fn status(url: &str) -> Result<()> {
     let client = Client::new();
     let resp = client
@@ -107,7 +102,6 @@ pub async fn status(url: &str) -> Result<()> {
     Ok(())
 }
 
-/// Resize terminal.
 pub async fn resize(url: &str, size: &str) -> Result<()> {
     let (cols, rows) = size
         .split_once('x')
@@ -178,7 +172,6 @@ pub async fn wait(
         .unwrap_or(false))
 }
 
-/// Stop a session.
 pub async fn stop(url: &str) -> Result<()> {
     let client = Client::new();
     let resp = client

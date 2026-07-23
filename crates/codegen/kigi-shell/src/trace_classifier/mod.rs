@@ -69,7 +69,6 @@ pub struct TurnMetadata {
 
 // Output schema. Borrowed slices throughout so we serialize once
 // straight from `process_turn`'s working state without any clones.
-// (N2/N12/N15.)
 
 #[derive(Debug, Serialize)]
 pub struct TodoSnapshotOut<'a> {
@@ -174,7 +173,7 @@ pub struct TurnLine<'a> {
 
 /// Serialize `&[String]` as a JSON array without allocating an
 /// intermediate `Vec<&str>` — `SerializeSeq` accepts borrowed `&str`s
-/// directly. (N12)
+/// directly.
 fn serialize_str_slice<S: serde::Serializer>(
     items: &&[String],
     serializer: S,
@@ -203,7 +202,7 @@ pub struct Summary {
 impl Summary {
     pub fn render(&self) -> String {
         // Lead with the common (non-action) class for parity with the
-        // laziness counter ordering. (F28)
+        // laziness counter ordering.
         format!(
             "Processed {} turns. TodoGate: {} Continue, {} Nudge. \
              Laziness: {} NoNudge-NotStalled, {} NoNudge-LowConfidence, {} WouldNudge, {} Aborted.",
@@ -229,7 +228,7 @@ const TODO_WRITE_TOOL_NAME: &str = "todo_write";
 /// Production's `TodoWriteTool` validates inputs (no duplicate IDs)
 /// before dispatching to `apply_replace` / `apply_merge`. We mirror
 /// that guard here so duplicate-id payloads don't drift the replay
-/// off the production trajectory. (F2)
+/// off the production trajectory.
 ///
 /// If a call's `arguments` field fails to parse OR fails validation
 /// we skip the call (consistent with the "skip-on-malformed" policy)
@@ -293,7 +292,7 @@ struct TodoUpdateArgs {
 
 /// `merge=false`: replace the state entirely. Mirrors production's
 /// `apply_replace`. Split out from the merge path to match the
-/// two-function shape in `kigi-tools` (F29).
+/// two-function shape in `kigi-tools`.
 fn apply_replace(state: &mut TodoState, updates: Vec<TodoUpdateArgs>) {
     state.clear();
     for u in updates {
@@ -303,7 +302,7 @@ fn apply_replace(state: &mut TodoState, updates: Vec<TodoUpdateArgs>) {
 
 /// `merge=true`: upsert by id. Mirrors `apply_merge` in
 /// `kigi-tools` — existing items keep their prior content when
-/// the update omits `content`. (F29)
+/// the update omits `content`.
 fn apply_merge(state: &mut TodoState, updates: Vec<TodoUpdateArgs>) {
     for u in updates {
         if state.update(&u.id, u.content.as_deref(), u.status) {
@@ -336,7 +335,7 @@ fn push_new(state: &mut TodoState, u: TodoUpdateArgs) {
 
 // Backing-task counts.
 //
-// Production has TWO different counts (F1):
+// Production has TWO different counts:
 //
 //   * Layer-2 (`TodoGate`): outstanding_subagents + incomplete
 //     terminal/monitor tasks. See `collect_todo_gate_input` in
@@ -352,7 +351,7 @@ fn push_new(state: &mut TodoState, u: TodoUpdateArgs) {
 
 /// Background-dispatching tool kinds. The `Option<BackgroundDispatchKind>`
 /// returned by [`background_kind`] makes "not a background dispatch"
-/// a compile-time-tracked absence rather than a sentinel variant. (N14)
+/// a compile-time-tracked absence rather than a sentinel variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BackgroundDispatchKind {
     Terminal,
@@ -361,7 +360,7 @@ enum BackgroundDispatchKind {
 
 /// Categorise an assistant tool call as background-dispatching. Order
 /// matters: production traces ship the renamed `background` key
-/// before the legacy `is_background` alias. (F26)
+/// before the legacy `is_background` alias.
 fn background_kind(name: &str, arguments: &str) -> Option<BackgroundDispatchKind> {
     match name {
         "spawn_subagent" => Some(BackgroundDispatchKind::Subagent),
@@ -380,7 +379,7 @@ fn background_kind(name: &str, arguments: &str) -> Option<BackgroundDispatchKind
 /// single forward pass so a `tool_result` only counts as completing
 /// a dispatch that appeared *earlier* in the same history; orphan
 /// results (result before its call) are logged as a trace-integrity
-/// anomaly but do not satisfy the dispatch. (F3)
+/// anomaly but do not satisfy the dispatch.
 ///
 /// Locality note: this counts dispatches *within the current turn's
 /// `afterStateHistory` only*. A subagent dispatched in turn N that is
@@ -388,7 +387,7 @@ fn background_kind(name: &str, arguments: &str) -> Option<BackgroundDispatchKind
 /// history (the production trace serializer drops it). Production's
 /// `ToolBridge` tracks live state across turns; the replay can't
 /// reconstruct that without an additional cross-turn correlator,
-/// which is out of scope. (F10)
+/// which is out of scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct BackingCounts {
     /// Outstanding `monitor` + `run_terminal_command{background:true}`.
@@ -621,7 +620,7 @@ fn decision_kind(d: DebugDecision) -> LazinessDecisionKind {
 
 /// Owned-string twin of [`LazinessOut`]. Held on [`TurnData`];
 /// `as_line()` lends out a borrowed `LazinessOut<'_>` view so the
-/// JSONL serialization is zero-clone. (N2/N15)
+/// JSONL serialization is zero-clone.
 #[derive(Debug)]
 pub struct LazinessOwned {
     pub model_id: String,
@@ -643,13 +642,13 @@ pub struct ParsedClassifierOwned {
 /// Run a single turn end-to-end against the classifier client.
 ///
 /// `started` is captured AFTER the request is built so `elapsed_ms`
-/// reflects only the sampler call wall-clock (F36) — directly
+/// reflects only the sampler call wall-clock — directly
 /// comparable to production's `LazinessFireOutcome::Verdict`
 /// `classifier_elapsed_ms` which times the same span.
 ///
 /// Production runs the sampler call inside a `tokio::select!` with a
 /// biased timeout arm and an abort poller. We use the simpler
-/// `tokio::time::timeout` (F9) — replay has no user-input to abort on,
+/// `tokio::time::timeout` — replay has no user-input to abort on,
 /// so the abort poller is dead weight, and the biased ordering only
 /// matters for a "user cancels while sampler is still running"
 /// race that can't happen offline.
@@ -771,7 +770,7 @@ pub struct TurnData<'a> {
 impl<'a> TurnData<'a> {
     /// Lend a borrowed `TurnLine<'_>` view. Zero clones — every
     /// string-typed field is a borrow into a field on `self`
-    /// (or transitively into the source `TurnRecord`). (N2/N15)
+    /// (or transitively into the source `TurnRecord`).
     pub fn as_line(&self) -> TurnLine<'_> {
         TurnLine {
             turn_id: self.turn_id,
@@ -829,7 +828,7 @@ pub async fn process_turn<'a>(
     let history = record.trace.after_state_history.as_slice();
     let items_in_history = history.len();
 
-    // Audit note (N13): outstanding-dispatch counts are computed over
+    // Outstanding-dispatch counts are computed over
     // the FULL un-windowed history. Production's
     // `snapshot_backing_task_count_for_debug_log` reads the live
     // `ToolBridge` (current-instant truth, NOT the classifier
@@ -842,7 +841,7 @@ pub async fn process_turn<'a>(
     let todo_gate = run_todo_gate(&todo_state, counts.terminal_plus_subagents);
 
     // Trim to the classifier window without cloning the history —
-    // the slice borrows directly out of the record. (F12)
+    // the slice borrows directly out of the record.
     let window_start = laziness_window_start(
         history,
         LAZINESS_CONTEXT_ITEM_LIMIT,
@@ -945,9 +944,9 @@ pub struct RunArgs {
     pub model_id: String,
     pub api_base_url: String,
     pub api_key: Option<String>,
-    /// Per-model `min_confidence` override (F6). The CLI clap layer
+    /// Per-model `min_confidence` override. The CLI clap layer
     /// validates this is in `[0.0, 1.0]` before constructing the
-    /// struct (N5). Defaults to [`LAZINESS_DEFAULT_MIN_CONFIDENCE`]
+    /// struct. Defaults to [`LAZINESS_DEFAULT_MIN_CONFIDENCE`]
     /// via [`Self::min_confidence_value`].
     pub min_confidence: Option<f32>,
     /// CLI override for the `[assistant reasoning]` emission flag.
@@ -980,7 +979,7 @@ impl RunArgs {
 }
 
 /// Validate `min_confidence` is finite and in the closed unit
-/// interval. Used by clap's `value_parser` (N5).
+/// interval. Used by clap's `value_parser`.
 pub fn validate_min_confidence(raw: &str) -> std::result::Result<f32, String> {
     let v: f32 = raw
         .parse()
@@ -996,7 +995,7 @@ pub fn validate_min_confidence(raw: &str) -> std::result::Result<f32, String> {
 
 /// Maximum trace file size accepted by [`parse_trace_file`]. Per-session
 /// traces are typically a few MB; this bound protects against accidentally
-/// pointing the tool at a 10 GB log dump that would OOM the parser. (N7)
+/// pointing the tool at a 10 GB log dump that would OOM the parser.
 pub const MAX_TRACE_FILE_BYTES: u64 = 256 * 1024 * 1024;
 
 /// Read and parse the full trace from `path`. Loads into memory in
@@ -1004,7 +1003,7 @@ pub const MAX_TRACE_FILE_BYTES: u64 = 256 * 1024 * 1024;
 /// custom incremental driver; the [`MAX_TRACE_FILE_BYTES`] check
 /// keeps the memory budget predictable. For traces beyond that
 /// bound, split the array per-turn upstream and call this once per
-/// chunk. (N7)
+/// chunk.
 pub fn parse_trace_file(path: &Path) -> Result<Vec<TurnRecord>> {
     let file = std::fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
     let meta = file
@@ -1141,7 +1140,7 @@ pub async fn run(args: RunArgs) -> Result<Summary> {
     } = args;
 
     // Fail fast on bad paths so the user doesn't wait for sampler
-    // setup before discovering a typo. (F31/F32)
+    // setup before discovering a typo.
     if !trace_path.is_file() {
         return Err(anyhow!(
             "--trace path is not a regular file: {}",
@@ -1229,7 +1228,7 @@ pub async fn run_with_client(
 
 /// Drives the per-turn loop against an arbitrary writer. Factored
 /// out so tests can pass a `Vec<u8>` and exercise the same
-/// serialization path the stdout/file branches use. (N1)
+/// serialization path the stdout/file branches use.
 pub async fn run_with_writer<W: std::io::Write + ?Sized>(
     trace: &[TurnRecord],
     model_id: &str,
@@ -1267,12 +1266,12 @@ mod tests {
     use kigi_sampling_types::{AssistantItem, ToolCall, ToolResultItem};
 
     /// Tiny synthetic 4-turn fixture so the end-to-end tests can run
-    /// in CI without external trace artifacts. (F16)
+    /// in CI without external trace artifacts.
     ///
     /// Per-turn `afterStateHistory` is CUMULATIVE — turn_N's history
     /// contains turn_0..N's items plus turn_N's own. This mirrors the
     /// production trace serializer, which snapshots the full
-    /// conversation at turn end. (N4)
+    /// conversation at turn end.
     const SYNTHETIC_TRACE: &str = r#"[
         {
             "turn": "turn_0",
@@ -1385,7 +1384,7 @@ mod tests {
             assert_eq!(r.turn, format!("turn_{i}"));
             assert_eq!(r.trace.metadata.turn_number, Some(i as u64));
         }
-        // N4: per-turn histories are cumulative (monotonically growing).
+        // Per-turn histories are cumulative (monotonically growing).
         let lens: Vec<usize> = trace
             .iter()
             .map(|r| r.trace.after_state_history.len())
@@ -1450,13 +1449,13 @@ mod tests {
         assert_eq!(by_id.len(), 3);
         assert_eq!(by_id["a"].status, TodoStatus::Pending);
         assert_eq!(by_id["b"].status, TodoStatus::Completed);
-        // F23: assert content is preserved across content-less merge.
+        // Assert content is preserved across content-less merge.
         assert_eq!(by_id["b"].content, "do B");
         assert_eq!(by_id["c"].status, TodoStatus::Pending);
         assert_eq!(by_id["c"].content, "do C");
     }
 
-    /// N4 follow-up: turn_3 of the cumulative synthetic fixture should
+    /// turn_3 of the cumulative synthetic fixture should
     /// show `a:completed` (seeded in turn_0, merged in turn_3).
     #[test]
     fn synthetic_turn_3_completes_seed_from_turn_0() {
@@ -1482,7 +1481,7 @@ mod tests {
         assert!(state.is_empty());
     }
 
-    /// F2/F24: duplicate ids in one call → whole call is skipped.
+    /// Duplicate ids in one call → whole call is skipped.
     #[test]
     fn skips_todo_write_with_duplicate_ids() {
         let items = vec![
@@ -1555,7 +1554,7 @@ mod tests {
         assert!(view.in_progress_unbacked.is_empty());
     }
 
-    /// F1: gate count includes subagents; classifier count does not.
+    /// Gate count includes subagents; classifier count does not.
     #[test]
     fn outstanding_dispatches_split_terminal_vs_subagents() {
         let items = vec![
@@ -1586,7 +1585,7 @@ mod tests {
         );
     }
 
-    /// F3: orphan tool_result (result before call) does NOT satisfy
+    /// Orphan tool_result (result before call) does NOT satisfy
     /// the later dispatch.
     #[test]
     fn orphan_tool_result_before_call_does_not_satisfy() {
@@ -1655,7 +1654,7 @@ mod tests {
         assert_eq!(lines, 4);
     }
 
-    /// N9: every non-Aborted laziness decision discriminator round-trips
+    /// Every non-Aborted laziness decision discriminator round-trips
     /// correctly through the JSONL.
     #[tokio::test]
     async fn end_to_end_per_category_jsonl_round_trip() {
@@ -1706,7 +1705,7 @@ mod tests {
         }
     }
 
-    /// F1 (in-pipeline): on the cumulative synthetic, turn_2 has a
+    /// On the cumulative synthetic, turn_2 has a
     /// `monitor` outstanding (m1) but turn_1's `spawn_subagent` (s1) is
     /// already resolved by a `tool_result` — so the classifier count
     /// (terminal_only) sees `m1` only, while the gate count
@@ -1740,7 +1739,7 @@ mod tests {
         );
     }
 
-    /// F22: parse-error line carries the right discriminator + detail.
+    /// Parse-error line carries the right discriminator + detail.
     #[tokio::test]
     async fn parse_error_is_surfaced_per_turn() {
         let trace = parse_synthetic();
@@ -1781,7 +1780,7 @@ mod tests {
         }
     }
 
-    // F17 — fidelity test. Capture site for the most-recent
+    // Fidelity test. Capture site for the most-recent
     // `ConversationRequest`. `RefCell` would be the natural pick for
     // a single-threaded test, but the `ClassifierClient` trait is
     // `Send + Sync` (so production `SamplingClient` callers can hold
@@ -1839,7 +1838,7 @@ mod tests {
         // Exactly two items: System(classifier prompt) + User(transcript).
         assert_eq!(req.items.len(), 2);
         match &req.items[0] {
-            // N3: assert against the shared production constant, not a
+            // Assert against the shared production constant, not a
             // re-typed literal — drift on either side fails the test.
             ConversationItem::System(s) => {
                 assert_eq!(s.content.as_ref(), LAZINESS_CLASSIFIER_PROMPT)
@@ -1857,7 +1856,6 @@ mod tests {
             }
             other => panic!("expected User, got {other:?}"),
         };
-        // N3: assert against the shared `LAZINESS_USER_PREAMBLE`.
         assert!(
             user_text.starts_with(LAZINESS_USER_PREAMBLE),
             "user text starts with the shared preamble const",
@@ -1879,11 +1877,10 @@ mod tests {
         assert_eq!(req.x_kigi_conv_id.as_deref(), Some("sess-x"));
         assert_eq!(req.x_kigi_session_id.as_deref(), Some("sess-x"));
         let req_id = req.x_kigi_req_id.as_deref().expect("req id");
-        // N3: shared const for the prefix.
         let suffix = req_id
             .strip_prefix(LAZINESS_REQ_ID_PREFIX)
             .expect("req_id starts with shared prefix const");
-        // N8: actually parse the suffix as a UUIDv4 — length-only was
+        // Actually parse the suffix as a UUIDv4 — length-only was
         // a weak proxy.
         let parsed = uuid::Uuid::parse_str(suffix).expect("suffix parses as UUID");
         assert_eq!(parsed.get_version_num(), 4, "UUIDv4");
@@ -1895,7 +1892,7 @@ mod tests {
         );
     }
 
-    /// N11: the captured transcript ends with the most recent item's
+    /// The captured transcript ends with the most recent item's
     /// marker text — proves `laziness_window_start` does not drop the
     /// tail.
     #[tokio::test]
@@ -1969,7 +1966,7 @@ mod tests {
         );
     }
 
-    /// F17/sub: per-model `min_confidence` override flows through.
+    /// Per-model `min_confidence` override flows through.
     #[tokio::test]
     async fn min_confidence_override_is_threaded_through() {
         let trace = parse_synthetic();
@@ -2082,7 +2079,7 @@ mod tests {
         assert!(args_on.include_reasoning_value());
     }
 
-    /// N1: stdout-vs-file branches actually exercise the same writer
+    /// Stdout-vs-file branches actually exercise the same writer
     /// code path. Both go through `run_with_writer`; the file branch
     /// hands it a `LineWriter<File>`, the test hands it a `Vec<u8>`.
     /// Byte-equal after normalising `elapsed_ms`.
@@ -2199,8 +2196,8 @@ mod tests {
         std::fs::write(kigi_home.join("auth.json"), body.to_string()).expect("write auth.json");
     }
 
-    /// F20: `resolve_api_key` precedence (flag > env > error). Now
-    /// also covers whitespace-only flag (N6). Auth.json fallback is
+    /// `resolve_api_key` precedence (flag > env > error), including
+    /// whitespace-only flag handling. Auth.json fallback is
     /// covered separately so this test can keep working with an
     /// empty scratch `kigi_home`.
     #[tokio::test]
@@ -2272,7 +2269,6 @@ mod tests {
             "whitespace-only env is treated as absent",
         );
 
-        // Restore env.
         for (k, v) in saved {
             match v {
                 Some(v) => unsafe { std::env::set_var(k, v) },
@@ -2479,7 +2475,7 @@ mod tests {
         out
     }
 
-    /// F21: pin the operator-visible summary string.
+    /// Pin the operator-visible summary string.
     #[test]
     fn summary_render_format_is_pinned() {
         let s = Summary {
@@ -2498,7 +2494,7 @@ mod tests {
         );
     }
 
-    /// F25: synthetic 50-item history is trimmed by `window_start`.
+    /// Synthetic 50-item history is trimmed by `window_start`.
     #[tokio::test]
     async fn laziness_window_trim_is_applied() {
         let mut hist: Vec<ConversationItem> = Vec::new();
@@ -2562,7 +2558,7 @@ mod tests {
         );
     }
 
-    /// F27: every decision pair is counted in the right bucket.
+    /// Every decision pair is counted in the right bucket.
     #[test]
     fn bump_summary_buckets_every_decision_pair() {
         let gates = [GateDecisionKind::Continue, GateDecisionKind::Nudge];
@@ -2649,7 +2645,7 @@ mod tests {
         );
     }
 
-    /// N5: clap value-parser rejects out-of-range / non-finite floats.
+    /// Clap value-parser rejects out-of-range / non-finite floats.
     #[test]
     fn validate_min_confidence_rejects_bad_values() {
         assert!(validate_min_confidence("0.0").is_ok());
@@ -2662,7 +2658,7 @@ mod tests {
         assert!(validate_min_confidence("not-a-float").is_err());
     }
 
-    /// N7: `parse_trace_file` enforces a size bound, and known-good
+    /// `parse_trace_file` enforces a size bound, and known-good
     /// inputs under the bound parse cleanly. We don't allocate 256 MB
     /// on disk just to exercise the rejection arm — the const value
     /// is read directly and the parse path is exercised on the
@@ -2677,7 +2673,7 @@ mod tests {
         assert_eq!(parsed.len(), 4);
     }
 
-    /// N10: ordering-independent failure path — when both `--trace`
+    /// Ordering-independent failure path — when both `--trace`
     /// is missing AND `--output` parent is missing AND `--api-key` is
     /// absent (with env unset), the error message names the FIRST
     /// failure, which is `--trace`.
@@ -2692,7 +2688,7 @@ mod tests {
             output: None,
             model_id: "m".into(),
             api_base_url: "https://x".into(),
-            // N10: api_key None + env unset + empty auth.json — the
+            // api_key None + env unset + empty auth.json — the
             // test fails for the right reason regardless of check
             // ordering (no API-key source resolves successfully, but
             // the `--trace` check runs first).

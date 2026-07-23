@@ -1,15 +1,13 @@
 //! Session actor command enum and associated public types.
 //!
-//! `SessionCommand` defines the message protocol used to drive a session
-//! actor. It was extracted from `acp_session.rs` to keep the actor
-//! implementation focused on behaviour.
+//! `SessionCommand` defines the message protocol used to drive a session actor.
 use super::acp_types::*;
 use super::plan_mode::PromptMode;
 use crate::extensions::notification::SessionNotification;
 use crate::session::signals::TurnDeltaSnapshot;
 use agent_client_protocol as acp;
 use tokio::sync::oneshot;
-/// Structured context for a cancelled turn, replacing stringly-typed JSON.
+/// Structured context for a cancelled turn.
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 pub struct CancellationContext {
     pub tool_name: Option<String>,
@@ -56,10 +54,7 @@ pub struct PromptTurnOk {
     pub structured_output: Option<Result<serde_json::Value, String>>,
     pub usage: Option<crate::extensions::notification::PromptUsage>,
 }
-/// Result of a prompt turn, containing the stop reason, accumulated token count,
-/// and an optional turn-end signals snapshot (for trace metadata enrichment).
 pub type PromptTurnResult = Result<PromptTurnOk, acp::Error>;
-/// Convenience: successful end-of-turn result.
 pub(crate) fn ok_end_turn(tokens: u64, snapshot: Option<TurnDeltaSnapshot>) -> PromptTurnResult {
     Ok(PromptTurnOk {
         stop_reason: acp::StopReason::EndTurn,

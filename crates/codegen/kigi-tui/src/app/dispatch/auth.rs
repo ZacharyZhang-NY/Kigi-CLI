@@ -11,10 +11,6 @@ use crate::app::app_view::{ActiveView, AppView, AuthMode, AuthState, PlatformLog
 use crate::scrollback::block::RenderBlock;
 use crate::scrollback::blocks::SessionEvent;
 
-// ---------------------------------------------------------------------------
-// Auth dispatch
-// ---------------------------------------------------------------------------
-
 /// `/logout` -- ask the shell to clear auth, then return to the login screen.
 pub(super) fn dispatch_logout(_app: &mut AppView) -> Vec<Effect> {
     vec![Effect::Logout]
@@ -45,7 +41,6 @@ pub(super) fn ensure_login_method(app: &mut AppView) {
     // No interactive method: leave login_method_id unset (fail-closed).
 }
 
-/// Error when no interactive login method is available (empty auth_methods).
 fn no_login_method_error(_app: &AppView) -> String {
     "No login method available".to_string()
 }

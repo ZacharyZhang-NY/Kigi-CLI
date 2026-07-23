@@ -108,10 +108,8 @@ pub struct FileSummary {
     pub is_agent_file: bool,
 }
 
-// =========================================================================
 // Request types whose responses reference `kigi_hunk_tracker` types (which pull
 // in `gix`), so those responses are mirrored below as wire structs.
-// =========================================================================
 
 /// Get all tracked hunks.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -154,9 +152,7 @@ impl WorkspaceRpc for HunkGetFilteredHunksReq {
     type Response = FilteredHunksResponse;
 }
 
-// =========================================================================
 // Wire mirrors of `kigi_hunk_tracker` response types
-// =========================================================================
 
 /// Wire mirror of `kigi_hunk_tracker::types::Hunk` (the `selected` field is
 /// `#[serde(skip)]` upstream and so is omitted here).

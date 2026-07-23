@@ -31,9 +31,7 @@ fn base(server: &MockServer) -> String {
     format!("{}/releases", server.uri())
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Happy-path
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 #[serial]
@@ -207,9 +205,7 @@ async fn install_removes_legacy_links() {
     assert!(bin_dir.join("kigi").is_symlink(), "kigi link installed");
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Failure paths
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 #[serial]
@@ -447,10 +443,8 @@ async fn install_swap_failure_leaves_prior_install_active() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Rollback semantics: pinned installs move DOWN as well as up (the release
 // channel is authoritative for the internal installer).
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 #[serial]
@@ -479,9 +473,7 @@ async fn install_rollback_then_upgrade_sequence() {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Cleanup integration: install v1..v3, verify N-1 retention.
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 #[serial]

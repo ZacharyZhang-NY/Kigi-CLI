@@ -8,7 +8,7 @@
 //! minimal module.
 
 /// The forbidden inline-crate helpers. Scanned against the minimal sources via
-/// `include_str!` (this guard file is intentionally not scanned, since it names
+/// `include_str!` (this guard file is deliberately not scanned, since it names
 /// the identifiers here).
 #[test]
 fn minimal_never_uses_ris_rerender_or_emit_to_scrollback() {

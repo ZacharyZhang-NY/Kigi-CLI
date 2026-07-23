@@ -42,26 +42,21 @@ fn session_thread_detects_panic() {
 fn session_thread_not_finished_while_running() {
     let (tx, rx) = std::sync::mpsc::channel::<()>();
     let t = SessionThread::from_handle(std::thread::spawn(move || {
-        let _ = rx.recv(); // block until signaled
+        // block until signaled
+        let _ = rx.recv();
     }));
     assert!(!t.is_finished());
-    drop(tx); // signal thread to exit
+    // signal thread to exit
+    drop(tx);
     assert!(
         wait_for_finish(&t, FINISH_TIMEOUT),
         "thread did not finish within {FINISH_TIMEOUT:?} after dropping tx"
     );
 }
 
-/// Regression test: per-session threads run independently.
-///
-/// Spawns two session threads, each with their own tokio runtime + LocalSet.
-/// Thread A blocks for 3 seconds (simulating a long tool call). Thread B
-/// completes a quick task. Asserts that B finishes within 1 second — proving
-/// A's blocking work does not stall B.
-///
-/// On the old single-LocalSet architecture, both tasks would share one thread
-/// and B would be blocked until A's sleep yields. With per-session threads,
-/// they run on separate OS threads with true parallelism.
+/// Regression test: two sessions on separate OS threads must run with true
+/// parallelism — a long-blocking tool call on one must not stall a quick task
+/// on the other.
 #[test]
 fn sessions_on_separate_threads_do_not_block_each_other() {
     let (result_tx, result_rx) = std::sync::mpsc::channel::<&str>();
@@ -74,7 +69,6 @@ fn sessions_on_separate_threads_do_not_block_each_other() {
             .unwrap();
         let local = tokio::task::LocalSet::new();
         local.block_on(&rt, async {
-            // Simulate a long-running tool call (e.g., bash sleep)
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
             let _ = result_tx_a.send("A done");
         });
@@ -88,13 +82,11 @@ fn sessions_on_separate_threads_do_not_block_each_other() {
             .unwrap();
         let local = tokio::task::LocalSet::new();
         local.block_on(&rt, async {
-            // Quick task — should complete immediately
             tokio::task::yield_now().await;
             let _ = result_tx_b.send("B done");
         });
     }));
 
-    // B should finish well before A's 3-second sleep.
     let first = result_rx
         .recv_timeout(std::time::Duration::from_secs(1))
         .expect("Neither session completed within 1 second — threads may be blocked");

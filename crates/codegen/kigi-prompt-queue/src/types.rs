@@ -11,11 +11,9 @@ pub struct QueueEntryMeta {
     pub version: u64,
     /// Enqueuing client identifier (attribution); never overwritten by edits.
     pub owner: Option<String>,
-    /// Most recent editor's client identifier, replaced on every in-place edit.
     pub last_editor: Option<String>,
     /// Display kind label; client-cosmetic kinds resolve to their send-intent before enqueue.
     pub kind: String,
-    /// Plain prompt text for the shared queue display.
     pub text: String,
 }
 
@@ -26,10 +24,8 @@ pub struct QueueEntryWire {
     pub id: String,
     #[serde(default)]
     pub version: u64,
-    /// Omitted from the wire when `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<String>,
-    /// Mirrors [`QueueEntryMeta::last_editor`]; omitted from the wire when `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_editor: Option<String>,
     #[serde(default)]
@@ -45,7 +41,6 @@ pub struct QueueEntryWire {
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct QueueChanged {
-    /// The session this queue belongs to; drives per-session fan-out routing.
     pub session_id: String,
     #[serde(default)]
     pub entries: Vec<QueueEntryWire>,

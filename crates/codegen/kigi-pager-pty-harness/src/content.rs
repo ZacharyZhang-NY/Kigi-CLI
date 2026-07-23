@@ -187,7 +187,7 @@ impl ContentController {
         self.server.request_bodies()
     }
 
-    // ── Mock storage controls (park-on-401 e2e) ────────────────────────────
+    // Mock storage controls (park-on-401 e2e)
 
     /// Flip the mock `/v1/storage` 401 gate (the auth-outage window).
     pub fn set_storage_unauthorized(&self, unauthorized: bool) {

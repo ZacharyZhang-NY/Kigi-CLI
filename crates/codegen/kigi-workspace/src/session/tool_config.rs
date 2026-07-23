@@ -315,8 +315,7 @@ impl SessionContextFactory for WorkspaceSessionContextFactory {
         IDS.clone()
     }
 }
-/// Build web fetch config. Enabled with default params unless
-/// `KIGI_DISABLE_WEB_FETCH=1` is set.
+/// Enabled with default params unless `KIGI_DISABLE_WEB_FETCH=1` is set.
 fn build_web_fetch_config() -> kigi_tools::implementations::kigi::web_fetch::WebFetchConfig {
     use kigi_tools::implementations::kigi::web_fetch::{WebFetchConfig, WebFetchParams};
     if std::env::var("KIGI_DISABLE_WEB_FETCH").is_ok_and(|v| v == "1" || v == "true") {

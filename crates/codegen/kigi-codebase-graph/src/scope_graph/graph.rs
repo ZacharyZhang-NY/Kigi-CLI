@@ -44,7 +44,7 @@ pub type ExtractedSymbols = (
 /// even if file contents haven't changed.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum QueryVersion {
-    /// Legacy format - index was built before query versioning was added.
+    /// Legacy format - index was built without query versioning.
     /// This triggers a rebuild since we don't know what queries were used.
     /// Default for backwards compatibility with old cached indexes.
     #[default]
@@ -394,7 +394,6 @@ impl ScopeGraph {
         })
     }
 
-    /// Find all references to a given name
     pub fn find_references(&self, name: &str, src: &[u8]) -> Vec<Range> {
         self.graph
             .node_indices()
@@ -703,9 +702,7 @@ impl ScopeGraphIndex {
         }
     }
 
-    // ========================================================================
     // String interning helpers
-    // ========================================================================
 
     /// Intern a string and return its ID.
     #[inline]
@@ -725,9 +722,7 @@ impl ScopeGraphIndex {
         self.interner.get_id(s)
     }
 
-    // ========================================================================
     // File metadata operations
-    // ========================================================================
 
     /// Update file metadata (size and mtime) for staleness tracking.
     pub fn update_file_meta(&mut self, path: &Path) {
@@ -751,9 +746,7 @@ impl ScopeGraphIndex {
         }
     }
 
-    // ========================================================================
     // Alias operations
-    // ========================================================================
 
     /// Register an alias relationship: alias_name is an alias for original_name
     pub fn add_alias(&mut self, alias_name: &str, original_name: &str) {
@@ -771,9 +764,7 @@ impl ScopeGraphIndex {
         self.add_alias(&alias_name, &original_name);
     }
 
-    // ========================================================================
     // Symbol insertion (for builder/manager use)
-    // ========================================================================
 
     /// Add a definition occurrence for a symbol.
     pub fn add_definition(&mut self, symbol: &str, path: &str, line: usize) {
@@ -847,9 +838,7 @@ impl ScopeGraphIndex {
             .filter_map(|(&id, meta)| self.get_str(id).map(|path| (path, meta)))
     }
 
-    // ========================================================================
     // File operations
-    // ========================================================================
 
     /// Add a file's scope graph to the index
     pub fn add_file(&mut self, file_path: PathBuf, graph: ScopeGraph, src: &[u8]) {
@@ -996,9 +985,7 @@ impl ScopeGraphIndex {
         self.file_meta.len()
     }
 
-    // ========================================================================
     // Query operations
-    // ========================================================================
 
     /// Find where a symbol is defined (includes resolving aliases)
     pub fn find_definitions(&self, symbol: &str) -> Vec<(&str, usize)> {
@@ -1284,9 +1271,7 @@ impl ScopeGraphIndex {
             .collect()
     }
 
-    // ========================================================================
     // Statistics and metadata
-    // ========================================================================
 
     /// Get statistics: (files_count, total_definitions, total_references).
     ///
@@ -1301,7 +1286,6 @@ impl ScopeGraphIndex {
         )
     }
 
-    /// Get alias count
     pub fn alias_count(&self) -> usize {
         self.aliases.len()
     }
@@ -1356,9 +1340,7 @@ impl ScopeGraphIndex {
         self.interner.shrink_to_fit();
     }
 
-    // ========================================================================
     // Binary serialization (custom format with magic bytes)
-    // ========================================================================
 
     /// Save the index to a file in binary format.
     pub fn save(&self, path: &Path) -> io::Result<()> {
@@ -1617,7 +1599,8 @@ impl ScopeGraphIndex {
 
         Ok(Self {
             interner,
-            graphs: HashMap::new(), // Not serialized
+            // Not serialized
+            graphs: HashMap::new(),
             definitions,
             references,
             aliases,
@@ -1716,7 +1699,8 @@ mod tests {
         index.compact();
         let (f1, d1, r1) = index.stats();
 
-        index.compact(); // second call must be a no-op
+        // second call must be a no-op
+        index.compact();
         let (f2, d2, r2) = index.stats();
 
         assert_eq!(f1, f2);

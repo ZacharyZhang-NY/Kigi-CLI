@@ -541,16 +541,12 @@ fn switch_model_complete_success_updates_model_and_pushes_message() {
         &mut app,
     );
 
-    // Pending flag cleared.
     assert!(!app.agents[&id].session.model_switch_pending);
-    // Current model updated.
     assert_eq!(
         app.agents[&id].session.models.current,
         Some(model_id.clone())
     );
-    // Success message pushed to scrollback.
     assert_eq!(app.agents[&id].scrollback.len(), initial_scrollback + 1);
-    // PersistPreferredModel effect emitted.
     assert_eq!(effects.len(), 1);
     assert!(matches!(
         &effects[0],
@@ -632,7 +628,8 @@ fn switch_model_complete_persists_resolved_effort_from_catalog_meta() {
         Action::TaskComplete(TaskResult::SwitchModelComplete {
             agent_id: id,
             model_id: model_id.clone(),
-            effort: None, // user typed `/model Blackbox 4.7` with no effort
+            // user typed `/model Blackbox 4.7` with no effort
+            effort: None,
             result: Ok(()),
             prev_model_id: None,
         }),
@@ -752,9 +749,7 @@ fn switch_model_complete_failure_pushes_error_and_clears_pending() {
     assert!(effects.is_empty());
     // Pending flag cleared.
     assert!(!app.agents[&id].session.model_switch_pending);
-    // Current model unchanged.
     assert_eq!(app.agents[&id].session.models.current, old_current);
-    // Error message pushed to scrollback.
     assert_eq!(app.agents[&id].scrollback.len(), initial_scrollback + 1);
 }
 
@@ -794,16 +789,13 @@ fn switch_model_incompatible_agent_shows_question_modal() {
 
     // No effects emitted (modal is synchronous state).
     assert!(effects.is_empty());
-    // Pending flag cleared.
     assert!(!app.agents[&id].session.model_switch_pending);
-    // Question modal is open.
     assert!(app.agents[&id].question_view.is_some());
     let qv = app.agents[&id].question_view.as_ref().unwrap();
     assert!(matches!(
         qv.local_kind,
         Some(crate::views::question_view::LocalQuestionKind::AgentTypeMismatch { .. })
     ));
-    // No error message pushed to scrollback.
     assert_eq!(app.agents[&id].scrollback.len(), initial_scrollback);
 }
 
@@ -855,7 +847,6 @@ fn incompatible_agent_rollback_restores_previous_model() {
         &mut app,
     );
 
-    // models.current must be rolled back to the previous model.
     assert_eq!(
         app.agents[&id].session.models.current,
         Some(prev_model),
@@ -901,12 +892,10 @@ fn incompatible_agent_closes_active_modal() {
         &mut app,
     );
 
-    // Active modal must be closed.
     assert!(
         app.agents[&id].active_modal.is_none(),
         "active modal must be closed when IncompatibleAgent fires",
     );
-    // Question modal must be open.
     assert!(
         app.agents[&id].question_view.is_some(),
         "question modal must be open",
@@ -950,7 +939,6 @@ fn same_agent_type_switch_no_modal() {
     // Model should be switched, no modal.
     assert_eq!(app.agents[&id].session.models.current, Some(model_b));
     assert!(app.agents[&id].question_view.is_none());
-    // Should emit PersistPreferredModel.
     assert!(
         effects
             .iter()
@@ -965,10 +953,8 @@ fn switch_model_pending_lifecycle() {
     let id = AgentId(0);
     let model_id = acp::ModelId::new(std::sync::Arc::from("kigi-4.5"));
 
-    // Initially false.
     assert!(!app.agents[&id].session.model_switch_pending);
 
-    // Action sets pending.
     dispatch(
         Action::SwitchModel {
             model_id: model_id.clone(),
@@ -978,7 +964,6 @@ fn switch_model_pending_lifecycle() {
     );
     assert!(app.agents[&id].session.model_switch_pending);
 
-    // TaskResult clears pending.
     dispatch(
         Action::TaskComplete(TaskResult::SwitchModelComplete {
             agent_id: id,
@@ -1012,7 +997,6 @@ fn no_deferred_switch_means_no_extra_effect() {
         &mut app,
     );
 
-    // No SwitchModel effect.
     assert!(
         !effects
             .iter()
@@ -1177,8 +1161,6 @@ fn available_commands_refreshed_empty_is_noop() {
         gen_before,
     );
 }
-
-// -- Session deletion from the /resume picker -----------------------
 
 #[test]
 fn delete_session_complete_removes_only_matching_source_and_id() {
@@ -1470,13 +1452,11 @@ fn rename_session_failed_keeps_local_display_name_and_pushes_system_block() {
         &mut app,
     );
 
-    // No rollback.
     assert_eq!(
         app.agents[&AgentId(0)].display_name.as_deref(),
         Some("optimistic title"),
         "display_name must NOT roll back on RenameSessionFailed"
     );
-    // System block appended with the error.
     let scrollback = &app.agents[&AgentId(0)].scrollback;
     assert_eq!(
         scrollback.len(),
@@ -1500,10 +1480,9 @@ fn rename_session_failed_keeps_local_display_name_and_pushes_system_block() {
 fn rollback_known_key_reverts_cache_and_no_effect() {
     use crate::settings::SettingValue;
     let mut app = test_app_with_agent();
-    // Toggle to true first.
     let _ = dispatch(Action::SetCompactMode(true), &mut app);
     assert!(app.current_ui.compact_mode);
-    // Now simulate persist failure that rolls back to false.
+    // Simulate persist failure that rolls back to false.
     let effects = dispatch(
         Action::TaskComplete(TaskResult::SettingPersistFailed {
             key: "compact_mode",
@@ -1516,7 +1495,6 @@ fn rollback_known_key_reverts_cache_and_no_effect() {
         effects.is_empty(),
         "rollback path must NOT emit any new Effects (would loop)",
     );
-    // Cache is reverted.
     assert!(!app.current_ui.compact_mode);
 }
 
@@ -1688,8 +1666,6 @@ fn rollback_to_always_approve_blocked_by_policy_pin() {
     );
     assert!(!app.default_yolo);
 }
-
-// -- SessionListLoaded ------------------------------------------------
 
 /// Canary: an empty list surfaces the generic "no sessions" toast.
 #[test]

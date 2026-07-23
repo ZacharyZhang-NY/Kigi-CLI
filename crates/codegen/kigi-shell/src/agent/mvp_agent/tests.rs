@@ -186,7 +186,6 @@ async fn broadcast_refresh_skill_baseline_tolerates_dropped_receiver() {
 }
 /// The monotonic turn counter must never wrap on the DB-bound i32 path.
 /// `allocate_turn_number` returns u64; the AB submission casts to i32.
-/// Verify we saturate instead of wrapping.
 #[test]
 fn trace_turn_to_i32_saturates_at_max() {
     let small: u64 = 42;
@@ -221,7 +220,6 @@ fn allocate_turn_number_advances_counter() {
     assert_eq!(allocate(&sid), 2);
     assert_eq!(*counters.borrow().get(&sid).unwrap(), 3);
 }
-/// With no overrides and model_agent_type = None, the default agent is used.
 #[test]
 #[serial_test::serial]
 fn resolve_agent_definition_defaults_to_kigi() {
@@ -242,8 +240,6 @@ fn resolve_agent_definition_defaults_to_kigi() {
         unsafe { std::env::set_var("KIGI_AGENT", v) }
     }
 }
-/// When model_agent_type = Some("codex"), the codex agent is selected even
-/// though the default chain would return kigi.
 #[test]
 #[serial_test::serial]
 fn resolve_agent_definition_model_agent_type_overrides_default() {
@@ -319,8 +315,7 @@ fn resolve_agent_definition_acp_profile_wins_when_model_agent_type_is_default() 
         unsafe { std::env::set_var("KIGI_AGENT", v) }
     }
 }
-/// Regression: after `DEFAULT_AGENT_TYPE` flipped to
-/// `kigi-plan`, models in the catalog that still declare
+/// Regression: models in the catalog that still declare
 /// `agent_type = "kigi"` explicitly must NOT preempt an ACP
 /// profile. Any value in the `kigi*` family is the stock harness
 /// with no strict requirement.
@@ -406,7 +401,6 @@ fn resolve_agent_definition_cli_agent_profile_wins_when_model_agent_type_is_defa
         unsafe { std::env::set_var("KIGI_AGENT", v) }
     }
 }
-/// Agent profile with `model: Override(id)` preserves the field through resolution.
 #[test]
 #[serial_test::serial]
 fn resolve_agent_definition_agent_profile_with_model_override() {
@@ -679,7 +673,6 @@ fn file_toolset_override_invalid_config_returns_error() {
     assert!(err.is_err());
     assert!(err.unwrap_err().contains("unknown"));
 }
-/// Helper: creates a real SessionHandle with the given model, yolo, and client id.
 /// Requires a tokio runtime for SessionSignalsHandle::new().
 fn make_test_handle(
     model: &str,
@@ -751,7 +744,6 @@ fn make_test_handle(
         scheduler_handle: None,
     }
 }
-/// lookup_session_model returns the per-session model for each session.
 #[tokio::test]
 async fn lookup_session_model_returns_per_session_model() {
     let sid_a = acp::SessionId::new("sess-a");
@@ -775,7 +767,6 @@ async fn lookup_session_model_returns_per_session_model() {
         "codex-mini"
     );
 }
-/// lookup_session_model falls back to the default when session_id is None.
 #[tokio::test]
 async fn lookup_session_model_fallback_no_session() {
     let default_model = acp::ModelId::new("kigi-3");
@@ -787,7 +778,6 @@ async fn lookup_session_model_fallback_no_session() {
         "kigi-3"
     );
 }
-/// Mutating session A's model_id via the handle does not affect session B.
 #[tokio::test]
 async fn set_session_model_does_not_cross_contaminate() {
     let sid_a = acp::SessionId::new("sess-a");
@@ -895,7 +885,6 @@ async fn session_config_options_resolves_routing_slug_to_catalog_model() {
         "resolved catalog model must be selected"
     );
 }
-/// YOLO toggle scoped by client_identifier: only matching sessions are updated.
 #[tokio::test]
 async fn yolo_toggle_scoped_by_client_identifier() {
     let sid_tui = acp::SessionId::new("sess-tui");
@@ -922,8 +911,6 @@ async fn yolo_toggle_scoped_by_client_identifier() {
         "VS Code session must NOT be affected by TUI's yolo toggle"
     );
 }
-/// A client can explicitly disable YOLO for its own sessions after startup,
-/// even if those sessions were initially created with yolo=true.
 #[tokio::test]
 async fn yolo_toggle_can_disable_session_started_with_yolo_enabled() {
     let sid_tui = acp::SessionId::new("sess-tui");
@@ -950,8 +937,6 @@ async fn yolo_toggle_can_disable_session_started_with_yolo_enabled() {
         "other client's session must keep its previous yolo state"
     );
 }
-/// `drain_old_session_thread` returns immediately when the thread has
-/// already finished.
 #[tokio::test]
 async fn drain_finished_thread_returns_immediately() {
     let session_threads: RefCell<HashMap<acp::SessionId, crate::session::SessionThread>> =
@@ -967,7 +952,6 @@ async fn drain_finished_thread_returns_immediately() {
     assert!(thread.is_finished(), "thread should be finished");
     assert!(!session_threads.borrow().contains_key(&sid));
 }
-/// `drain_old_session_thread` waits for a slow thread to finish.
 #[tokio::test]
 async fn drain_waits_for_slow_thread() {
     let session_threads: RefCell<HashMap<acp::SessionId, crate::session::SessionThread>> =
@@ -994,7 +978,6 @@ async fn drain_waits_for_slow_thread() {
     }
     assert!(thread.is_finished());
 }
-/// Drain respects the 5s deadline and returns even if the thread is still running.
 #[tokio::test]
 async fn drain_respects_deadline() {
     let session_threads: RefCell<HashMap<acp::SessionId, crate::session::SessionThread>> =
@@ -1133,7 +1116,6 @@ fn test_sessionless_request_requires_session_id() {
         "cwd-only requests with no sessionId must return SessionRequired"
     );
 }
-/// Build a minimal MvpAgent suitable for testing extension methods.
 fn build_minimal_agent_for_tests() -> MvpAgent {
     use crate::agent::config::Config as AgentConfig;
     use crate::auth::{AuthManager, KimiCodeConfig};
@@ -1145,7 +1127,6 @@ fn build_minimal_agent_for_tests() -> MvpAgent {
     let cfg = AgentConfig::default();
     MvpAgent::new(gateway, &cfg, auth_manager, None).expect("valid test config")
 }
-/// Build a minimal MvpAgent with pre-loaded auth for gate tests.
 fn build_agent_with_auth(auth: crate::auth::KimiAuth) -> MvpAgent {
     use crate::agent::config::Config as AgentConfig;
     use crate::auth::{AuthManager, KimiCodeConfig};
@@ -1201,12 +1182,6 @@ async fn prepare_sampling_config_never_stamps_kimi_key_on_grok_model() {
     // api_key — the byte-identical primary path, and proof the Kimi token is
     // live (so it WOULD leak if mis-routed onto a grok request). This assertion
     // also confirms the session-based primary path is active.
-    //
-    // This used to use `moonshot-cn/kimi-k2-0905-preview` and assert the SAME
-    // thing, which encoded the C1 defect: moonshot-cn is an API-key registry
-    // platform on `api.moonshot.cn`, NOT first-party, so "must carry the primary
-    // session key" was asserting the leak. `api_key_channel_leak_tests` now pins
-    // the opposite for every moonshot entry.
     let mut kimi_model = ModelEntry::fallback("kimi-for-coding", &endpoints);
     kimi_model.info.id = Some("kimi-code/kimi-for-coding".to_string());
     kimi_model.info.base_url = kigi_env::PRODUCTION_ENDPOINTS.coding_api_base_url.to_string();
@@ -1478,7 +1453,6 @@ async fn push_roster_activity_delta_broadcasts_overridden_activity() {
     let changed = drain_roster_changed(&mut rx).expect("turn-end delta emitted");
     assert_eq!(changed.upserted[0].activity, RosterActivity::Idle);
 }
-/// Extract the inner payload from an ExtResponse.
 #[expect(
     dead_code,
     reason = "unused in production; remove expect when wired or delete the item"
@@ -1528,7 +1502,6 @@ async fn test_web_session_with_capability_is_eligible() {
         "web session with code-nav capability must be eligible"
     );
 }
-/// TUI session is rejected at gate 1 (client type) regardless of capability.
 #[tokio::test]
 async fn test_tui_session_is_rejected() {
     let sid = acp::SessionId::new("sess-tui");
@@ -1541,7 +1514,6 @@ async fn test_tui_session_is_rejected() {
         "TUI client must be rejected at gate 1 (client type)"
     );
 }
-/// Web session without capability is rejected at gate 2.
 #[tokio::test]
 async fn test_web_session_without_capability_is_rejected() {
     let sid = acp::SessionId::new("sess-web-no-cap");
@@ -1554,8 +1526,6 @@ async fn test_web_session_without_capability_is_rejected() {
         "web client without capability must be rejected at gate 2"
     );
 }
-/// Leader-mode isolation: two sessions with different code-nav state return
-/// independent results.
 #[tokio::test]
 async fn test_leader_mode_two_sessions_stay_isolated() {
     let web_sid = acp::SessionId::new("web");
@@ -1948,7 +1918,7 @@ async fn auth_type_no_method_id_no_current_returns_api_key() {
 /// in-memory bearer takes precedence: this is the order observed during
 /// `initialize()` silent refresh -- a token is hot-swapped in before
 /// `authenticate()` writes the method id. Reporting `SessionToken`
-/// here matches pre-fix behavior and keeps logging stable.
+/// here keeps logging stable.
 #[tokio::test(flavor = "current_thread")]
 async fn auth_type_no_method_id_with_current_returns_session_token() {
     use crate::auth::KimiAuth;
@@ -2593,9 +2563,8 @@ fn session_live_state_map_is_bounded_across_cycles() {
 }
 /// Finalize fires on a genuine terminal close — driven through the **real**
 /// `kigi/session/close` dispatch (`ext_method` → `handle_session_close`),
-/// not the internal helper. Proves finalize was *moved* (not removed) and
-/// guards the handler's `existed` gate. (Finalize assertion is
-/// invocation-level; see note in `finalize_session_replica`.)
+/// not the internal helper. Guards the handler's `existed` gate. (Finalize
+/// assertion is invocation-level; see note in `finalize_session_replica`.)
 #[test]
 fn explicit_close_finalizes_the_replica() {
     run_local_for_bridge_test(|| async {
@@ -2697,8 +2666,6 @@ fn supervisor_reaps_panicked_resident_actor() {
         );
     });
 }
-/// `ensure_session_supervisor` is idempotent: calling it repeatedly spawns
-/// the sweeper loop exactly once.
 #[test]
 fn ensure_session_supervisor_is_idempotent() {
     run_local_for_bridge_test(|| async {

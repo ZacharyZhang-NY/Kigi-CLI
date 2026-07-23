@@ -1,10 +1,9 @@
 use super::types::{BATCH_TRUNCATION_LIMIT, BUFFER_CAP_BYTES, LINE_TRUNCATION_LIMIT};
 use crate::util::floor_char_boundary;
 
-/// Processes raw stdout chunks into complete lines.
-///
-/// Buffers partial lines, splits on `\n`, truncates individual lines at
-/// `LINE_TRUNCATION_LIMIT` chars, and caps the internal buffer at `BUFFER_CAP_BYTES`.
+/// Splits raw stdout chunks into complete lines, buffering partial lines
+/// across chunks. Individual lines are truncated at `LINE_TRUNCATION_LIMIT`
+/// chars and the buffer is capped at `BUFFER_CAP_BYTES`, keeping the tail.
 #[derive(Default)]
 pub struct LineProcessor {
     buffer: Vec<u8>,
@@ -15,11 +14,9 @@ impl LineProcessor {
         Self::default()
     }
 
-    /// Push a raw stdout chunk. Returns any complete lines extracted.
     pub fn push(&mut self, chunk: &[u8]) -> Vec<String> {
         self.buffer.extend_from_slice(chunk);
 
-        // Cap buffer at BUFFER_CAP_BYTES (keep the tail).
         if self.buffer.len() > BUFFER_CAP_BYTES {
             let start = self.buffer.len() - BUFFER_CAP_BYTES;
             self.buffer = self.buffer[start..].to_vec();
@@ -37,7 +34,6 @@ impl LineProcessor {
         lines
     }
 
-    /// Flush any remaining partial line from the buffer.
     pub fn flush(&mut self) -> Option<String> {
         if self.buffer.is_empty() {
             return None;
@@ -60,7 +56,6 @@ fn truncate_line(line: &str) -> String {
     }
 }
 
-/// Batch multiple lines into a single event string, truncating at `BATCH_TRUNCATION_LIMIT`.
 pub fn batch_lines(lines: &[String]) -> String {
     let joined = lines.join("\n");
     if joined.len() > BATCH_TRUNCATION_LIMIT {
@@ -93,9 +88,6 @@ pub fn wrap_monitor_event(description: &str, event_text: &str, task_id: &str) ->
 mod tests {
     use super::*;
 
-    /// Quotes and newlines in the model-supplied description are neutralized
-    /// before embedding — they would otherwise break the attribute quoting
-    /// (`" task_id="` anchor) or the single-line opening tag (`>\n` anchor).
     #[test]
     fn wrap_sanitizes_description() {
         let wrapped = wrap_monitor_event("watch \"prod\"\nlogs", "line", "t-1");
@@ -150,7 +142,6 @@ mod tests {
     #[test]
     fn buffer_cap_enforced() {
         let mut proc = LineProcessor::new();
-        // Push more than BUFFER_CAP_BYTES without newlines
         let big = vec![b'a'; BUFFER_CAP_BYTES + 1000];
         proc.push(&big);
         assert!(proc.buffer.len() <= BUFFER_CAP_BYTES);
@@ -187,17 +178,15 @@ mod tests {
 
     #[test]
     fn truncate_line_multibyte_no_panic() {
-        // 3-byte UTF-8 chars — truncation boundary may land mid-char
-        let line = "\u{4e16}\u{754c}".repeat(200); // CJK chars, 3 bytes each
+        // 3-byte UTF-8 chars — the truncation boundary may land mid-char
+        let line = "\u{4e16}\u{754c}".repeat(200);
         let truncated = truncate_line(&line);
         assert!(truncated.ends_with("...(truncated)"));
-        // Verify the result is valid UTF-8 (would panic if not)
         let _ = truncated.as_bytes();
     }
 
     #[test]
     fn truncate_line_emoji_no_panic() {
-        // 4-byte emoji chars
         let line = "\u{1F600}".repeat(200);
         let truncated = truncate_line(&line);
         assert!(truncated.ends_with("...(truncated)"));

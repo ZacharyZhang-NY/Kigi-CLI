@@ -30,10 +30,6 @@ pub async fn run(args: TraceArgs, _agent_config: &AgentConfig) -> Result<()> {
     run_export(&args.session_id, args.output.as_deref(), args.json).await
 }
 
-// ---------------------------------------------------------------------------
-// Archive construction
-// ---------------------------------------------------------------------------
-
 pub fn build_session_tar(session_dir: &Path, session_id: &str) -> Result<Vec<u8>> {
     use flate2::Compression;
     use flate2::write::GzEncoder;
@@ -150,10 +146,6 @@ fn add_directory_to_tar<W: std::io::Write>(
 
     Ok(count)
 }
-
-// ---------------------------------------------------------------------------
-// Local export
-// ---------------------------------------------------------------------------
 
 pub(crate) fn find_session_dir(session_id: &str) -> Result<PathBuf> {
     kigi_shell::session::persistence::find_session_dir_by_id(session_id).with_context(|| {

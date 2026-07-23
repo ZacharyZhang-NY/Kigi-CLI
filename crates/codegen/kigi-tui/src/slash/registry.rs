@@ -36,17 +36,13 @@ pub struct CommandTrigger {
     pub display: String,
     /// Text used for fuzzy matching (alias text or canonical name).
     pub match_text: String,
-    /// Command description.
     pub description: String,
-    /// Usage string.
     pub usage: String,
-    /// Whether this command takes arguments.
     pub takes_args: bool,
     /// Whether arguments are required (only meaningful when `takes_args` is true).
     pub args_required: bool,
     /// Index into `CommandRegistry::commands`.
     pub command_index: usize,
-    /// Source of this command.
     pub source: CommandSource,
 }
 
@@ -526,14 +522,12 @@ impl CommandRegistry {
             // Execution is blocked by `get()`'s `restricted_match` filter —
             // invoking one shows the subscription upsell instead.
 
-            // Insert canonical key.
             self.key_to_index.insert(canonical.to_string(), idx);
             if !menu_only {
                 self.triggers
                     .push(CommandTrigger::new(command, None, canonical, idx, source));
             }
 
-            // Insert alias keys.
             for alias in command.aliases() {
                 if source == CommandSource::Builtin && self.key_to_index.contains_key(*alias) {
                     panic!(
@@ -677,7 +671,6 @@ mod tests {
         let mut registry = CommandRegistry::new(vec![builtin]);
         assert_eq!(registry.command_count(), 1);
 
-        // Add ACP commands.
         let acp_cmds = vec![agent_client_protocol::AvailableCommand::new(
             "flush".to_string(),
             "Flush memory".to_string(),

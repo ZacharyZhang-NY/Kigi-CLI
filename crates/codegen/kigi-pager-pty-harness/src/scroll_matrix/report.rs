@@ -35,7 +35,6 @@ pub enum CellStatus {
 }
 
 impl CellStatus {
-    /// Fixed-width table label.
     pub fn as_str(self) -> &'static str {
         match self {
             CellStatus::Pass => "PASS",
@@ -46,7 +45,6 @@ impl CellStatus {
     }
 }
 
-/// One invariant row of a [`CellReport`].
 #[derive(Clone, Debug, Serialize)]
 pub struct InvariantReport {
     /// Design vocabulary id (`I-ORD`, …).
@@ -57,7 +55,6 @@ pub struct InvariantReport {
     pub detail: Option<String>,
 }
 
-/// Verdict of one matrix cell run.
 #[derive(Clone, Debug, Serialize)]
 pub struct CellReport {
     pub cell_id: String,
@@ -88,8 +85,7 @@ pub fn exit_code(reports: &[CellReport]) -> u8 {
     u8::from(failed)
 }
 
-/// Write `report.json` (pretty, array of [`CellReport`]) into `dir`,
-/// creating it as needed; returns the file path.
+/// Write the reports as `dir/report.json`, creating `dir` as needed.
 pub fn write_report_json(reports: &[CellReport], dir: &Path) -> Result<PathBuf> {
     std::fs::create_dir_all(dir)
         .with_context(|| format!("create artifacts dir {}", dir.display()))?;
@@ -208,7 +204,6 @@ mod tests {
             "XFail is green"
         );
         assert_eq!(exit_code(&[pass.clone(), fail]), 1);
-        // The fixed-bug tripwire: an xfail cell that PASSES must break the run.
         assert_eq!(exit_code(&[pass, xfail, xpass]), 1, "XPass must be nonzero");
     }
 
@@ -267,12 +262,10 @@ mod tests {
         let lines: Vec<&str> = table.lines().collect();
         assert_eq!(lines.len(), 3, "header + one row per cell:\n{table}");
 
-        // Every row's STATUS column starts where the header's does.
         let status_col = lines[0].find("STATUS").expect("header STATUS");
         assert_eq!(&lines[1][status_col..status_col + 4], "PASS");
         assert_eq!(&lines[2][status_col..status_col + 4], "FAIL");
 
-        // Failure detail is carried (truncated, newlines flattened).
         assert!(lines[2].contains("I-CAP: flushed 40"), "table:\n{table}");
         assert!(lines[2].contains("..."), "long detail truncated:\n{table}");
         assert!(

@@ -213,9 +213,7 @@ impl MemoryIndex {
         &self.db
     }
 
-    // -----------------------------------------------------------------------
     // Indexing
-    // -----------------------------------------------------------------------
 
     /// Reindex a single memory file. Compares chunk hashes to avoid redundant work.
     ///
@@ -350,9 +348,7 @@ impl MemoryIndex {
         Ok(result)
     }
 
-    // -----------------------------------------------------------------------
     // Search
-    // -----------------------------------------------------------------------
 
     /// FTS5 keyword search. Returns results ranked by BM25 score.
     ///
@@ -443,7 +439,6 @@ impl MemoryIndex {
         Ok(results)
     }
 
-    /// Get a chunk by its ID.
     pub fn get_chunk(&self, id: &str) -> Result<Option<ChunkRecord>, rusqlite::Error> {
         let mut stmt = self.db.prepare(
             "SELECT rowid, id, path, start_line, end_line, text, hash, source, access_count, \
@@ -511,9 +506,7 @@ impl MemoryIndex {
         Ok(())
     }
 
-    // -----------------------------------------------------------------------
     // Vector operations (no-op if !vec_available)
-    // -----------------------------------------------------------------------
 
     /// Return chunks that don't have embeddings yet.
     pub fn chunks_without_embeddings(&self) -> Result<Vec<(String, String)>, rusqlite::Error> {
@@ -575,9 +568,7 @@ impl MemoryIndex {
         Ok(results)
     }
 
-    // -----------------------------------------------------------------------
     // Reindex claim coordination (multi-agent)
-    // -----------------------------------------------------------------------
 
     /// Try to claim exclusive reindex rights using the `meta` table.
     ///
@@ -615,9 +606,7 @@ impl MemoryIndex {
             .execute("UPDATE meta SET value = '' WHERE key = 'reindex_claim'", []);
     }
 
-    // -----------------------------------------------------------------------
     // Internal helpers
-    // -----------------------------------------------------------------------
 
     /// Delete all indexed chunks for a given file path.
     ///
@@ -628,7 +617,7 @@ impl MemoryIndex {
     /// a single transaction so the index stays consistent even on partial failure.
     ///
     /// Returns the number of chunks removed, which is 0 when the path was not
-    /// previously indexed (idempotent).
+    /// indexed (idempotent).
     pub fn delete_path(&mut self, path: &Path) -> Result<usize, rusqlite::Error> {
         let path_str = path.to_string_lossy().to_string();
         let existing = self.get_chunks_for_path(&path_str)?;
@@ -958,17 +947,14 @@ mod tests {
         assert!(!version.is_empty(), "sqlite-vec should report a version");
     }
 
-    // -----------------------------------------------------------------------
     // Append-then-reindex regression test
-    // -----------------------------------------------------------------------
 
     /// Simulates the `/memory append` → immediate-reindex flow.
     ///
-    /// Previously the TUI's `AppendMemory` action wrote the file and returned
-    /// without reindexing.  Appended content was only searchable after a future
-    /// watcher-driven sync or the next session startup.  The fix reindexes
-    /// immediately after append; this test ensures that regression cannot silently
-    /// re-appear.
+    /// The TUI's `AppendMemory` action must reindex right after writing the
+    /// file.  When it does not, appended content stays unsearchable until a
+    /// watcher-driven sync or the next session startup.  This test ensures that
+    /// regression cannot silently re-appear.
     #[test]
     fn test_append_then_reindex_is_immediately_searchable() {
         let tmp = TempDir::new().unwrap();
@@ -1000,9 +986,7 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------------
     // delete_path tests
-    // -----------------------------------------------------------------------
 
     /// Deleting an indexed file removes all its chunks and they are no longer searchable.
     #[test]
@@ -1090,9 +1074,7 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------------
     // access tracking + admin helper tests
-    // -----------------------------------------------------------------------
 
     /// record_access increments access_count and sets last_accessed.
     #[test]
@@ -1171,9 +1153,7 @@ mod tests {
         assert!(paths.is_empty(), "fresh index has no indexed paths");
     }
 
-    // -----------------------------------------------------------------------
     // reindex maintenance path regression tests
-    // -----------------------------------------------------------------------
 
     /// Regression test for the reindex maintenance flow:
     ///
@@ -1207,7 +1187,8 @@ mod tests {
         std::fs::remove_file(&file).unwrap();
 
         // Simulate `kigi memory reindex` Phase 1: compare indexed vs current.
-        let current: std::collections::BTreeSet<String> = vec![].into_iter().collect(); // empty = no files
+        // empty = no files
+        let current: std::collections::BTreeSet<String> = vec![].into_iter().collect();
         let indexed = idx.all_indexed_paths().unwrap();
         for path in &indexed {
             if !current.contains(path) {

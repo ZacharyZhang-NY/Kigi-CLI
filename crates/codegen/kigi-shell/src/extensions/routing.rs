@@ -2,7 +2,6 @@ use agent_client_protocol as acp;
 use kigi_acp_lib::AcpAgentGatewaySender as GatewaySender;
 use serde::{Deserialize, Serialize};
 
-// Re-export from workspace crate (canonical home for fuzzy search).
 pub use kigi_workspace::file_system::{ClientId, TargetClientId};
 
 /// Metadata from the request, used for routing notifications back to the

@@ -31,20 +31,17 @@ impl SessionActor {
         // just to render the picker.
         let file_metas = self.file_state_tracker.get_rewind_point_metas().await;
 
-        // Query prompt state from the chat state actor.
         let snapshot = self.chat_state_handle.snapshot().await;
         let (prompts, current_prompt_index) = match snapshot {
             Some(ref s) => (s.prompt_texts.clone(), s.prompt_index),
             None => (vec![], 0),
         };
 
-        // Build a lookup of which prompt indices have file snapshots.
         let file_meta_map: std::collections::HashMap<
             usize,
             &kigi_workspace::session::file_state::RewindPointMeta,
         > = file_metas.iter().map(|m| (m.prompt_index, m)).collect();
 
-        // Generate a rewind point for every prompt 0..current_prompt_index.
         let rewind_points = (0..current_prompt_index)
             .map(|idx| {
                 let prompt_preview = prompts.get(idx).and_then(|text| {
@@ -164,7 +161,6 @@ impl SessionActor {
         &self,
         request: RewindRequest,
     ) -> anyhow::Result<RewindResponse> {
-        // Track revert for feedback signals
         self.signals_handle().mark_reverted();
 
         let target_index = request.target_prompt_index;
@@ -194,7 +190,7 @@ impl SessionActor {
             });
         }
 
-        // ── Build file revert preview (for All and FilesOnly modes) ─────
+        // Build file revert preview (for All and FilesOnly modes).
         let mut clean_files = Vec::new();
         let mut conflicts = Vec::new();
 
@@ -221,7 +217,6 @@ impl SessionActor {
                 }
             }
 
-            // Build conflict/clean lists for the preview
             for path in files_to_revert.keys() {
                 let current_content = self
                     .tool_context
@@ -258,7 +253,7 @@ impl SessionActor {
             }
         }
 
-        // ── Preview mode (force=false): pure dry run, no mutations ────
+        // Preview mode (force=false): pure dry run, no mutations
         // Return what WOULD happen so the TUI can show a confirmation
         // modal. Nothing is written, deleted, or truncated.
         if !request.force {
@@ -279,9 +274,8 @@ impl SessionActor {
             });
         }
 
-        // ── Commit mode (force=true): execute the rewind ─────────────
+        // Commit mode (force=true): execute the rewind
 
-        // Execute file revert
         let mut reverted_files = Vec::new();
         if wants_file_revert {
             for (rel_path, content) in files_to_revert {
@@ -314,7 +308,6 @@ impl SessionActor {
             }
         }
 
-        // Execute conversation rewind
         let mut prompt_text: Option<String> = None;
         if wants_conversation_rewind {
             let session_dir = crate::session::persistence::session_dir(&self.session_info);
@@ -329,10 +322,8 @@ impl SessionActor {
                 *pending = prompt_text.clone();
             }
 
-            // Check cross-compaction before rewinding.
             let needs_replay = self.needs_compaction_replay().await;
 
-            // Get conversation from the chat state actor for truncation logic.
             let mut conversation = self.chat_state_handle.get_conversation().await;
 
             // Cross-compaction replay recomputes whether a compaction summary
@@ -340,7 +331,6 @@ impl SessionActor {
             let mut replay_compaction_marker: Option<Option<usize>> = None;
 
             if needs_replay {
-                // Cross-compaction rewind: reconstruct conversation from updates.jsonl.
                 // Run on the blocking pool since replay does synchronous file I/O
                 // (reading checkpoint files + scanning updates.jsonl).
                 let replay_updates = updates_path.clone();
@@ -386,10 +376,12 @@ impl SessionActor {
                             // index 1 with the original from the checkpoint if
                             // available, otherwise keep the current one.
                             if let Some(ui0) = replay_result.original_user_info {
-                                conversation.truncate(1); // keep System only
+                                // keep System only
+                                conversation.truncate(1);
                                 conversation.push(ConversationItem::user(ui0));
                             } else {
-                                conversation.truncate(2); // keep System + current user_info
+                                // keep System + current user_info
+                                conversation.truncate(2);
                             }
                             conversation.extend(replay_result.conversation);
                         }
@@ -474,7 +466,6 @@ impl SessionActor {
             });
         }
 
-        // Update the file state tracker to reflect the rewind.
         if wants_file_revert {
             // All/FilesOnly: files were reverted, snapshots are stale — truncate.
             self.file_state_tracker.truncate_from(target_index).await;

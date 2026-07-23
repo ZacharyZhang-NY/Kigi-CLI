@@ -58,9 +58,7 @@ enum RecoveryStep {
 /// State machine that walks through recovery strategies after a 401.
 pub struct UnauthorizedRecovery {
     auth_manager: Arc<AuthManager>,
-    /// The token that was rejected by the server.
     rejected_token: String,
-    /// Current step in the recovery sequence.
     step: RecoveryStep,
     /// Error from `RefreshFromAuthority`, propagated on exhaustion.
     authority_error: Option<AuthError>,
@@ -298,7 +296,6 @@ impl UnauthorizedRecovery {
         }
     }
 
-    /// Check if a candidate token is different from the rejected one.
     fn is_different_token(&self, candidate: &KimiAuth) -> bool {
         candidate.key != self.rejected_token
     }
@@ -383,8 +380,6 @@ mod tests {
         mgr.hot_swap(auth);
     }
 
-    // -- TokenType dispatch matrix ----------------------------------------
-
     #[tokio::test]
     async fn dispatch_oauth_session_uses_refresh_chain() {
         let (_d, m) = mgr();
@@ -400,8 +395,6 @@ mod tests {
         assert_eq!(auth.key, "fresh-from-authority");
         assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
-
-    // -- Fresh-mint guard --------------------------------------------------
 
     /// Seed a *valid* (unexpired) in-memory token whose `create_time` lies
     /// `mint_age` in the past (negative = clock stepped back since mint).
@@ -542,8 +535,6 @@ mod tests {
         );
     }
 
-    // -- ReloadFromDisk matrix --------------------------------------------
-
     #[tokio::test]
     async fn reload_from_disk_picks_up_different_token() {
         let (dir, m) = mgr();
@@ -604,8 +595,6 @@ mod tests {
             "fall-through to authority must invoke the refresher exactly once",
         );
     }
-
-    // -- Done state -------------------------------------------------------
 
     /// With no stored authority error (the first `next()` succeeded), driving
     /// past `Done` surfaces `RecoveryExhausted`. The transient-failure case is
@@ -677,8 +666,6 @@ mod tests {
         );
     }
 
-    // -- Tombstone short-circuit (cross-check) ------------
-
     #[tokio::test]
     async fn refresh_authority_short_circuits_on_cached_tombstone() {
         let (_d, m) = mgr();
@@ -706,8 +693,6 @@ mod tests {
             "refresher must not be invoked while the tombstone cooldown is live",
         );
     }
-
-    // -- ReloadFromDisk rejects expired disk tokens -------------------------
 
     /// Regression: disk holds a different but expired token. Recovery
     /// must skip it and fall through to RefreshFromAuthority, not

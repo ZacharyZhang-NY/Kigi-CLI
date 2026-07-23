@@ -39,8 +39,6 @@ mod cli_catchall_drop_tests {
     fn allow(rule: &str) -> PermissionRule {
         parse_permission_rule(rule, RuleAction::Allow).expect("rule parses")
     }
-    /// Under the pin, CLI catch-all `--allow` rules (`*`, `**`) are dropped while
-    /// a scoped rule (`Bash(touch *)`) survives.
     #[test]
     fn pin_drops_cli_catchalls_keeps_scoped() {
         let rules = vec![allow("*"), allow("Bash(touch *)"), allow("**")];
@@ -49,7 +47,6 @@ mod cli_catchall_drop_tests {
         assert_eq!(kept[0].tool, ToolFilter::Bash);
         assert_eq!(dropped.len(), 2, "both catch-alls are dropped");
     }
-    /// Without the pin nothing is dropped, even catch-alls.
     #[test]
     fn no_pin_keeps_everything() {
         let rules = vec![allow("*"), allow("Bash(touch *)"), allow("**")];
@@ -57,9 +54,9 @@ mod cli_catchall_drop_tests {
         assert_eq!(kept.len(), 3);
         assert!(dropped.is_empty());
     }
-    /// FIX 2: a bare `--allow Bash` and a `?*` Bash pattern are `--yolo`
-    /// substitutes on the freeform-execution dimension, so the pin drops them
-    /// while a scoped `Bash(git *)` survives.
+    /// A bare `--allow Bash` and a `?*` Bash pattern are `--yolo` substitutes on
+    /// the freeform-execution dimension, so the pin drops them while a scoped
+    /// `Bash(git *)` survives.
     #[test]
     fn pin_drops_cli_bare_and_prefix_bash_keeps_scoped() {
         let rules = vec![allow("Bash"), allow("Bash(?*)"), allow("Bash(git *)")];
@@ -73,10 +70,8 @@ mod cli_catchall_drop_tests {
         assert!(dropped.is_empty());
     }
 }
-/// Spawns a session actor and returns the session handle plus a receiver for permission events.
-///
-/// The permission events receiver should be used to collect telemetry about permission
-/// decisions (YOLO mode, user accept/reject, etc.) for upload to GCS.
+/// Spawns the session actor and returns its handle, the system prompt, and a
+/// oneshot that fires when the session's run loop exits.
 #[allow(clippy::too_many_arguments)]
 #[tracing::instrument(
     name = "session.spawn",
@@ -985,9 +980,9 @@ pub(crate) async fn spawn_session_actor(
         session_info: session_info.clone(),
         auth_method_id,
         model_auth_facts: std::cell::RefCell::new(None),
-        // H4: seed the session's OWN selected catalog key from the model it was
-        // spawned with, resolved through the picker's lookup. Never the
-        // process-global `current_model_id()`. H-c: the rule lives in
+        // Seed the session's OWN selected catalog key from the model it was
+        // spawned with, resolved through the picker's lookup — never the
+        // process-global `current_model_id()`. The rule lives in
         // `selected_catalog_key_for_spawn` so it is covered by a test.
         selected_catalog_key: std::cell::RefCell::new(
             crate::agent::models::selected_catalog_key_for_spawn(
@@ -1485,11 +1480,9 @@ pub struct SessionThread {
     join_handle: std::thread::JoinHandle<()>,
 }
 impl SessionThread {
-    /// Check if the session thread has exited (panicked or finished).
     pub fn is_finished(&self) -> bool {
         self.join_handle.is_finished()
     }
-    /// Construct from a raw `JoinHandle`. Used in tests.
     #[cfg(test)]
     pub fn from_handle(handle: std::thread::JoinHandle<()>) -> Self {
         Self {
@@ -1497,7 +1490,6 @@ impl SessionThread {
         }
     }
 }
-/// Return type from the session thread's initialization, sent via oneshot.
 struct SessionInitResult {
     handle: SessionHandle,
     system_prompt: String,
@@ -1780,16 +1772,7 @@ pub(crate) async fn spawn_session_on_thread(
 ///
 /// Captured by the dispatcher task at session startup when
 /// `mcp.auto_restart=true`. Holds an `Arc<SessionActor>` plus the
-/// dispatcher's `SharedShutdownState` so:
-///
-/// - `is_stdio_server_configured` resolves against
-///   [`SessionActor::is_stdio_server_configured`] (which reads
-///   `McpState::configs`).
-/// - `is_in_shutting_down` peeks at the dispatcher's set.
-/// - `respawn_stdio` delegates to
-///   [`SessionActor::respawn_stdio`] (re-runs `start_mcp_server`,
-///   handshake, liveness arm, owned_clients swap).
-/// - `push_status` forwards directly via the session's gateway.
+/// dispatcher's `SharedShutdownState`.
 pub(crate) struct SessionRestartActions {
     session: Arc<SessionActor>,
     shutdown: crate::session::mcp_dispatcher::SharedShutdownState,

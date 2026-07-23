@@ -11,7 +11,6 @@ pub enum SchedulerError {
     TaskLimitReached(usize),
 }
 
-/// A single scheduled recurring or one-shot task.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScheduledTask {

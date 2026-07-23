@@ -1,5 +1,4 @@
-//! Task output tool — old `impl Tool` deleted.
-//! Helper functions remain for use by `kigi/task_output/`.
+//! Task output tool helpers, used by `kigi/task_output/`.
 
 use crate::computer::types::TaskSnapshot;
 use crate::types::process_manager::format_system_time_rfc3339;
@@ -237,8 +236,6 @@ mod tests {
             "truncated output should be much smaller than 10KB"
         );
     }
-
-    // ── display_command preference ──────────────────────────────────
 
     /// When `display_command` is set (isolation-wrapped command), the model
     /// should see the original user command, not the `unshare`/mount wrapper.

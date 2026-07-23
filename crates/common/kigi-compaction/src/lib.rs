@@ -57,8 +57,8 @@ pub mod token;
 /// 3. this constant
 pub use intra_compaction::DEFAULT_COMPACTION_MODEL_NAME;
 
-// kigi's full-replace subsystem now lives under `code_compaction`;
-// re-exported at the crate root so consumers keep a stable public API.
+// Full-replace subsystem lives under `code_compaction`; re-exported at the
+// crate root for a stable public API.
 pub use code_compaction::{
     CompactedHistoryParts, DEFAULT_AUTO_COMPACT_THRESHOLD_PERCENT, FailureKind,
     FullReplaceAttemptOutcome, FullReplaceConfig, FullReplaceContext, FullReplaceError,

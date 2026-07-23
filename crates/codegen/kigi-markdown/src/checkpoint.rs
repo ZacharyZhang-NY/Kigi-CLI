@@ -1,8 +1,8 @@
 //! Checkpoint types for incremental markdown rendering.
 //!
-//! This module defines types for identifying stable boundaries in markdown text
-//! where rendered output can be "frozen" and cached. Content before a checkpoint
-//! will not change regardless of what text is appended after it.
+//! A checkpoint marks a stable boundary in markdown text where rendered output
+//! can be "frozen" and cached: content before it will not change regardless of
+//! what text is appended after it.
 //!
 //! # Design
 //!

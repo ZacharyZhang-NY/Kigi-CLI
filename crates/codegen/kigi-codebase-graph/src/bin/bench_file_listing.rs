@@ -45,7 +45,6 @@ fn main() {
             println!("git2 (index only): {} files in {:?}", files.len(), elapsed);
         }
         _ => {
-            // Run all three methods multiple times for comparison
             println!("Benchmarking file listing for: {}", root_path.display());
             println!();
 
@@ -56,7 +55,6 @@ fn main() {
             let _ = collect_files_git2(root_path, &registry);
             let _ = collect_files_git2_index_only(root_path, &registry);
 
-            // CLI benchmark
             let mut cli_times = Vec::with_capacity(iterations);
             let mut cli_count = 0;
             for _ in 0..iterations {
@@ -66,7 +64,6 @@ fn main() {
                 cli_count = files.len();
             }
 
-            // git2 benchmark (with untracked)
             let mut git2_times = Vec::with_capacity(iterations);
             let mut git2_count = 0;
             for _ in 0..iterations {
@@ -76,7 +73,6 @@ fn main() {
                 git2_count = files.len();
             }
 
-            // git2 index-only benchmark
             let mut git2_index_times = Vec::with_capacity(iterations);
             let mut git2_index_count = 0;
             for _ in 0..iterations {
@@ -86,7 +82,6 @@ fn main() {
                 git2_index_count = files.len();
             }
 
-            // Print results
             let cli_avg = cli_times.iter().sum::<std::time::Duration>() / iterations as u32;
             let git2_avg = git2_times.iter().sum::<std::time::Duration>() / iterations as u32;
             let git2_index_avg =
@@ -117,9 +112,7 @@ fn main() {
     }
 }
 
-/// Collect files using git CLI (original approach)
 fn collect_files_cli(root_path: &Path, registry: &LanguageRegistry) -> Vec<std::path::PathBuf> {
-    // Get tracked files
     let tracked_output = Command::new("git")
         .args(["ls-files"])
         .current_dir(root_path)
@@ -130,7 +123,6 @@ fn collect_files_cli(root_path: &Path, registry: &LanguageRegistry) -> Vec<std::
         _ => return vec![],
     };
 
-    // Get untracked files
     let untracked_output = Command::new("git")
         .args(["ls-files", "--others", "--exclude-standard"])
         .current_dir(root_path)
@@ -159,7 +151,6 @@ fn collect_files_cli(root_path: &Path, registry: &LanguageRegistry) -> Vec<std::
     files
 }
 
-/// Collect files using git2 (new approach)
 fn collect_files_git2(root_path: &Path, registry: &LanguageRegistry) -> Vec<std::path::PathBuf> {
     let repo = match Repository::open(root_path) {
         Ok(r) => r,
@@ -183,7 +174,6 @@ fn collect_files_git2(root_path: &Path, registry: &LanguageRegistry) -> Vec<std:
         })
         .collect();
 
-    // Get untracked files
     let mut status_opts = StatusOptions::new();
     status_opts
         .include_untracked(true)
@@ -204,7 +194,6 @@ fn collect_files_git2(root_path: &Path, registry: &LanguageRegistry) -> Vec<std:
     files
 }
 
-/// Collect files using git2 index only (tracked files only, no untracked)
 fn collect_files_git2_index_only(
     root_path: &Path,
     registry: &LanguageRegistry,

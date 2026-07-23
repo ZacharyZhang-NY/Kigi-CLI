@@ -98,16 +98,20 @@ pub(crate) fn copy_parallel(
     // Deep directory trees (15+ levels) amplify this significantly.
     let mut builder = WalkBuilder::new(source);
     builder
-        .hidden(false) // Include hidden files.
+        // Include hidden files.
+        .hidden(false)
         .git_ignore(config.respect_gitignore)
-        .git_global(false) // Never use global gitignore (~/.config/git/ignore) —
+        // Never use global gitignore (~/.config/git/ignore) —
+        .git_global(false)
         // it contains personal preferences irrelevant to worktree creation.
-        .git_exclude(false) // Never use .git/info/exclude — external tooling
+        // Never use .git/info/exclude — external tooling
+        .git_exclude(false)
         // can append broad patterns (*.min.js, *.zip) that
         // incorrectly skip git-tracked files. The `ignore` crate doesn't
         // check tracking status, so tracked files matching these patterns
         // get silently dropped during the copy.
-        .threads(num_workers) // Limit walker parallelism to avoid FD exhaustion
+        // Limit walker parallelism to avoid FD exhaustion
+        .threads(num_workers)
         .filter_entry(|entry| {
             // Always skip .git directory.
             entry.file_name() != ".git"
@@ -274,7 +278,8 @@ mod tests {
         assert!(dest.path().join("file1.txt").exists());
         assert!(dest.path().join("file2.txt").exists());
         assert!(dest.path().join("subdir/file3.txt").exists());
-        assert_eq!(result.copied_paths.len(), 4); // 3 files + 1 dir
+        // 3 files + 1 dir
+        assert_eq!(result.copied_paths.len(), 4);
     }
 
     #[test]

@@ -2,7 +2,7 @@ use kigi_tools::types::{claude_names_for, kigi_names_for};
 use regex::Regex;
 
 /// A compiled hook matcher for tool names. The pattern semantics are chosen so that
-/// `matcher` entries in hooks migrated from other agent CLIs keep firing unchanged:
+/// `matcher` entries in hooks migrated from other agent CLIs keep firing `unchanged`:
 ///
 /// - an empty pattern or `"*"` matches every tool;
 /// - a "simple" pattern (only `[A-Za-z0-9_|]`, i.e. a plain name or `|`-list) is an
@@ -117,7 +117,8 @@ mod tests {
         // Contains regex metachars -> regex mode, unanchored.
         let m = HookMatcher::new("run_.*").unwrap();
         assert!(m.is_match("run_terminal_command"));
-        assert!(m.is_match("xrun_yyy")); // unanchored: substring match
+        // unanchored: substring match
+        assert!(m.is_match("xrun_yyy"));
         assert!(!m.is_match("read_file"));
     }
 
@@ -152,13 +153,14 @@ mod tests {
         assert!(!m.is_match("run_terminal_command"));
     }
 
-    // ── External tool-name aliases ────────────────────────────────
+    // External tool-name aliases
 
     #[test]
     fn claude_bash_matches_kigi_tool() {
         let m = HookMatcher::new("Bash").unwrap();
-        assert!(m.is_match("Bash")); // external alias name
-        assert!(m.is_match("run_terminal_command")); // Kigi name
+        // external alias name
+        assert!(m.is_match("Bash"));
+        assert!(m.is_match("run_terminal_command"));
         assert!(!m.is_match("read_file"));
         // Bug-fix regression: exact, not prefix.
         assert!(!m.is_match("run_terminal_command_v2"));
@@ -169,8 +171,10 @@ mod tests {
         let m = HookMatcher::new("Edit|Write").unwrap();
         assert!(m.is_match("Edit"));
         assert!(m.is_match("Write"));
-        assert!(m.is_match("search_replace")); // Kigi equivalent
-        assert!(m.is_match("hashline_edit")); // second Kigi alias
+        // Kigi equivalent
+        assert!(m.is_match("search_replace"));
+        // second Kigi alias
+        assert!(m.is_match("hashline_edit"));
         assert!(!m.is_match("read_file"));
         // The old anchoring bug matched these; the exact-list mode must not.
         assert!(!m.is_match("Editorial"));

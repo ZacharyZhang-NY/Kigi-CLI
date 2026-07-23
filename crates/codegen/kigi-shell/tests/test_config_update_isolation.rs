@@ -41,8 +41,6 @@ async fn update_config_does_not_leak_requirements_into_user_config() {
     let home = test_home();
     reset_config_files(home);
 
-    // --- Arrange ---
-
     // User's config.toml: auto_update = true
     fs::write(
         home.join("config.toml"),
@@ -67,7 +65,6 @@ async fn update_config_does_not_leak_requirements_into_user_config() {
         "precondition: effective config should merge requirements (auto_update=false)"
     );
 
-    // --- Act ---
     // Simulate an unrelated config write (e.g. persisting a model preference).
     kigi_shell::util::config::update_config(|cfg| {
         cfg.models.default = Some("kigi-3".to_string());
@@ -75,7 +72,6 @@ async fn update_config_does_not_leak_requirements_into_user_config() {
     .await
     .expect("update_config should succeed");
 
-    // --- Assert ---
     // Read the user's config.toml back from disk (raw, no merge).
     let raw = fs::read_to_string(home.join("config.toml")).unwrap();
     let user_toml: toml::Value = toml::from_str(&raw).unwrap();
@@ -98,28 +94,24 @@ async fn update_config_preserves_none_when_only_requirements_sets_value() {
     let home = test_home();
     reset_config_files(home);
 
-    // User config has no auto_update field at all
     fs::write(
         home.join("config.toml"),
         "[cli]\ninstaller = \"internal\"\n",
     )
     .unwrap();
 
-    // requirements.toml sets auto_update = false
     fs::write(
         home.join("requirements.toml"),
         "[cli]\nauto_update = false\n",
     )
     .unwrap();
 
-    // Write an unrelated field
     kigi_shell::util::config::update_config(|cfg| {
         cfg.ui.yolo = true;
     })
     .await
     .expect("update_config should succeed");
 
-    // Read back
     let raw = fs::read_to_string(home.join("config.toml")).unwrap();
     let user_toml: toml::Value = toml::from_str(&raw).unwrap();
     let user_cfg = kigi_shell::util::config::load_config_from_toml(&user_toml);
@@ -137,14 +129,12 @@ async fn update_config_does_not_leak_managed_config_values() {
     let home = test_home();
     reset_config_files(home);
 
-    // User config has no auto_update — only installer
     fs::write(
         home.join("config.toml"),
         "[cli]\ninstaller = \"internal\"\n",
     )
     .unwrap();
 
-    // managed_config.toml sets auto_update = false and channel = "stable"
     fs::write(
         home.join("managed_config.toml"),
         "[cli]\nauto_update = false\nchannel = \"stable\"\n",

@@ -4,30 +4,14 @@ use super::common::*;
 #[allow(unused_imports)]
 use super::scroll::*;
 
-// ── Infra smoke: timed wheel bursts + viewport markers + frame capture ────
-//
-// Exercises the scroll-test primitives together against the real pager:
-//
-// 1. `marker_response` / `marker_screen_row` / `topmost_visible_marker` — a
-//    transcript of unique one-row `MARKER-nnnn` lines whose topmost visible
-//    index identifies the viewport position, so "the view scrolled up" is a
-//    strict index decrease rather than a fragile absolute-row check.
-// 2. `send_wheel_burst` / `send_wheel_sequence` — SGR-1006 wheel reports
-//    written at a controlled inter-event interval (6ms spaced singles here:
-//    a trackpad stream under the harness terminal's ept=3 classification —
-//    see the driver doc in `scroll.rs`).
-// 3. The harness's live frame capture — `reset_timing()` before the burst,
-//    `frame_count()` after the drain (the `renders_on_action.rs` pattern).
-//    Only the byte-deterministic frame count is asserted; no wall-clock.
-//
-// This is an infrastructure smoke, not a regression repro: it pins the
-// contracts scroll-pacing tests rely on (off-screen-top markers scroll INTO
-// view, at least one repaint happens, repaints never exceed one per wheel
-// event). The frame bound is an AMPLIFICATION bound — real cadence
-// coalescing (16ms `REDRAW_CADENCE` → ~12 frames for this burst) is left to
-// the behavioral tests. All three assertions hold under either wheel or
-// trackpad classification, so they are jitter-proof even when host load
-// stretches the nominal 6ms gaps.
+// Infrastructure smoke test for the scroll-test primitives (marker
+// transcript position tracking, wheel burst/sequence drivers, and the
+// harness's live frame capture) against the real pager — not a regression
+// repro; see the driver doc in `scroll.rs` for wheel/trackpad
+// classification. The frame bound asserted here is an AMPLIFICATION bound
+// (repaints never exceed one per wheel event); real cadence coalescing is
+// left to the behavioral tests. Only byte-deterministic quantities are
+// asserted, so the assertions hold under host-load jitter.
 
 /// Marker count: 120 one-row lines ≫ the 50-row PTY, so early markers sit
 /// off-screen-top once the finished stream pins the view to the bottom.
@@ -40,9 +24,9 @@ const BURST_EVENTS: usize = 30;
 const BURST_INTERVAL: Duration = Duration::from_millis(6);
 
 /// **Wheel-burst scroll infra smoke.** A closely spaced wheel-up burst over a
-/// marker transcript must scroll previously off-screen-top markers into view,
-/// without a panic, producing at least one repaint frame and at most one
-/// frame per wheel event (no frame amplification).
+/// marker transcript must scroll off-screen-top markers into view, without a
+/// panic, producing at least one repaint frame and at most one frame per
+/// wheel event (no frame amplification).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore]
 async fn wheel_burst_scrolls_viewport_without_frame_amplification() {
@@ -70,8 +54,6 @@ async fn wheel_burst_scrolls_viewport_without_frame_amplification() {
         harness.screen_contents()
     );
 
-    // The viewport scrolled: the topmost visible marker index strictly
-    // decreased, i.e. a marker that was off-screen-top is now on screen.
     let top_after = topmost_visible_marker(&harness).unwrap_or_else(|| {
         panic!(
             "no marker visible after the wheel burst\nscreen:\n{}",
@@ -87,10 +69,8 @@ async fn wheel_burst_scrolls_viewport_without_frame_amplification() {
         harness.screen_contents()
     );
 
-    // Amplification bound on the live frame capture: the burst repainted at
-    // least once, and never more than once per wheel event. (Durations are
-    // not asserted: the no-drain driver means chunks were parsed at drain
-    // time, and wall-clock is load-sensitive anyway.)
+    // Durations are not asserted: the no-drain driver means chunks were
+    // parsed at drain time, and wall-clock is load-sensitive anyway.
     let frames = harness.frame_count();
     assert!(
         frames >= 1,

@@ -24,10 +24,6 @@ use super::list_pane::{
 };
 use super::overlay::OverlayState;
 
-// ---------------------------------------------------------------------------
-// CatalogEntry
-// ---------------------------------------------------------------------------
-
 struct CatalogEntry {
     id: u64,
     label: String,
@@ -72,10 +68,6 @@ fn lookup_description<'a>(kind: &str, name: &str, state: &'a BundleState) -> Opt
     }
 }
 
-// ---------------------------------------------------------------------------
-// SubagentCatalogPane
-// ---------------------------------------------------------------------------
-
 const MAX_CATALOG_HEIGHT: u16 = 8;
 const MAX_CATALOG_FRACTION: f32 = 0.15;
 
@@ -112,8 +104,6 @@ impl SubagentCatalogPane {
             overlay: OverlayState::hidden(),
         }
     }
-
-    // -- Data sync -----------------------------------------------------------
 
     pub fn sync_from_bundle(&mut self, state: &BundleState) {
         self.entries.clear();
@@ -172,8 +162,6 @@ impl SubagentCatalogPane {
         }
     }
 
-    // -- Visibility ----------------------------------------------------------
-
     pub fn is_visible(&self) -> bool {
         self.overlay.visible
     }
@@ -212,8 +200,6 @@ impl SubagentCatalogPane {
         Some((entry.kind?, &entry.label))
     }
 
-    // -- Input handling ------------------------------------------------------
-
     pub fn handle_key(&mut self, key: &KeyEvent) -> bool {
         if self.entries.is_empty() {
             return false;
@@ -239,8 +225,6 @@ impl SubagentCatalogPane {
         self.list_state
             .handle_mouse_event(kind, col, row, area, &self.entries)
     }
-
-    // -- Rendering -----------------------------------------------------------
 
     fn content_area(area: Rect, layout_cfg: &LayoutConfig) -> Rect {
         let pad_left = HorizontalLayout::ACCENT + layout_cfg.block_pad_left;
@@ -402,11 +386,13 @@ mod tests {
         let mut pane = SubagentCatalogPane::new();
         let state1 = make_state(&["a", "b", "c"], &[], &[]);
         pane.sync_from_bundle(&state1);
-        assert_eq!(pane.entries.len(), 4); // 1 header + 3
+        // 1 header + 3 items
+        assert_eq!(pane.entries.len(), 4);
 
         let state2 = make_state(&["x"], &[], &[]);
         pane.sync_from_bundle(&state2);
-        assert_eq!(pane.entries.len(), 2); // 1 header + 1
+        // 1 header + 1 item
+        assert_eq!(pane.entries.len(), 2);
         assert_eq!(pane.entries[1].label, "x");
     }
 
@@ -504,11 +490,12 @@ mod tests {
         let state = make_state(&["researcher"], &["reviewer"], &["default"]);
         pane.sync_from_bundle(&state);
 
-        assert_eq!(pane.entries[0].kind, None); // header
+        // [0], [2], [4] are group headers.
+        assert_eq!(pane.entries[0].kind, None);
         assert_eq!(pane.entries[1].kind, Some("persona"));
-        assert_eq!(pane.entries[2].kind, None); // header
+        assert_eq!(pane.entries[2].kind, None);
         assert_eq!(pane.entries[3].kind, Some("role"));
-        assert_eq!(pane.entries[4].kind, None); // header
+        assert_eq!(pane.entries[4].kind, None);
         assert_eq!(pane.entries[5].kind, Some("agent"));
     }
 }

@@ -5,32 +5,27 @@ use std::sync::LazyLock;
 const REDACTED: &str = "[REDACTED_SECRET]";
 const REDACTED_URL_VALUE: &str = "redacted";
 
-/// Vendor API keys with `sk-`/`sk_` prefixes and xAI (`xai-`) keys. `\b`-anchored so
-/// `task-`/`disk-`/`risk-` don't fold a stray `sk-`.
+/// `\b`-anchored so a stray `sk-` inside `task-`/`disk-`/`risk-` doesn't fold
+/// the rest of the word.
 static API_KEY_PREFIX_REGEX: LazyLock<Regex> =
     LazyLock::new(|| compile(r"\b(?:sk[-_]|xai-)[A-Za-z0-9_-]{20,}"));
-/// AWS long-term (`AKIA`) and temporary (`ASIA`) access-key IDs.
 static AWS_ACCESS_KEY_REGEX: LazyLock<Regex> =
     LazyLock::new(|| compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"));
-/// GitHub PATs: classic (`ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_`) + fine-grained
-/// (`github_pat_`).
 static GITHUB_TOKEN_REGEX: LazyLock<Regex> =
     LazyLock::new(|| compile(r"\b(?:gh[opusr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})"));
-/// GitLab (`glpat-`) and Slack (`xoxa-`/`xoxb-`/`xoxp-`/`xapp-`) tokens.
+/// GitLab (`glpat-`) and Slack (`xox*-`/`xapp-`) tokens.
 static VENDOR_TOKEN_REGEX: LazyLock<Regex> =
     LazyLock::new(|| compile(r"\b(?:glpat-|xox[abp]-|xapp-)[A-Za-z0-9-]{10,}"));
-/// Google API keys (`AIza` + 35 chars).
 static GOOGLE_API_KEY_REGEX: LazyLock<Regex> =
     LazyLock::new(|| compile(r"\bAIza[0-9A-Za-z_-]{35}"));
-/// PEM private-key block (any key type), base64 body included. `(?s)` so `.`
-/// spans the newline-delimited body.
+/// `(?s)` so `.` spans the newline-delimited base64 body.
 static PEM_PRIVATE_KEY_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     compile(r"(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----")
 });
 static BEARER_TOKEN_REGEX: LazyLock<Regex> =
     LazyLock::new(|| compile(r"(?i)\bBearer\s+[A-Za-z0-9._\-]{16,}\b"));
-/// Bare JWT (`eyJ...header.payload.signature`) with no `Bearer`/`sk-` prefix —
-/// the shape used by deployment keys and OIDC tokens.
+/// Catches JWTs carrying no `Bearer`/`sk-` prefix, the shape used by
+/// deployment keys and OIDC tokens.
 static JWT_REGEX: LazyLock<Regex> =
     LazyLock::new(|| compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"));
 /// 8-char value floor to avoid false positives on short values.
@@ -146,7 +141,7 @@ fn redact_urls_in(text: &str) -> String {
 
 const REDACTED_USER_SEGMENT: &str = "<user>";
 
-/// Env home dir (`HOME`/`USERPROFILE`), cached for the export hot path.
+/// Cached because the export path redacts every line.
 static HOME_DIR: LazyLock<Option<String>> = LazyLock::new(|| {
     std::env::var("HOME")
         .ok()
@@ -155,8 +150,8 @@ static HOME_DIR: LazyLock<Option<String>> = LazyLock::new(|| {
         .filter(|s| !s.is_empty())
 });
 
-/// Env usernames (`USERNAME`/`USER`), deduped; 3-char floor avoids folding
-/// short generic segments.
+/// The 3-char floor keeps a short generic username from folding away every
+/// path segment that happens to match it.
 static USERNAMES: LazyLock<Vec<String>> = LazyLock::new(|| {
     let mut names: Vec<String> = Vec::new();
     for var in ["USERNAME", "USER"] {
@@ -339,11 +334,9 @@ mod tests {
         assert!(matches!(redact_secrets("model=kigi-3"), Cow::Borrowed(_)));
     }
 
-    /// Joins fixture fragments at runtime so realistic-looking fake tokens
-    /// never appear contiguously in the source text. Keeps secret scanners
-    /// (e.g. GitHub push protection) from flagging the redaction tests'
-    /// synthetic credentials while the assembled strings still exercise the
-    /// real patterns.
+    /// Joins fragments at runtime so a realistic-looking fake token never
+    /// appears contiguously in the source text, which would trip secret
+    /// scanners such as GitHub push protection.
     fn fixture(parts: &[&str]) -> String {
         parts.concat()
     }
@@ -491,7 +484,6 @@ mod tests {
 
     #[test]
     fn redact_user_paths_home_prefix_matches_whole_segment_only() {
-        // "/Users/bob" must not collapse inside "/Users/bobby".
         let out = redact_user_paths_env("/Users/bobby/x", Some("/Users/bob"), &[]);
         assert_eq!(out, "/Users/bobby/x");
     }
@@ -516,7 +508,6 @@ mod tests {
             redact_user_paths_env("/data/alice: denied", None, &["alice".to_owned()]),
             "/data/<user>: denied"
         );
-        // A longer segment must not fold to the shorter name.
         assert_eq!(
             redact_user_paths_env("/Users/alicia/x", home, &[]),
             "/Users/alicia/x"

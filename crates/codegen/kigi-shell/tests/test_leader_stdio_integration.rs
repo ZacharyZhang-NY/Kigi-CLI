@@ -54,7 +54,6 @@ async fn setup_test_server(
     let sock_path = temp.path().join("leader.sock");
     let handle = spawn_leader_server(sock_path.clone()).await.unwrap();
 
-    // Wait for socket to be connectable instead of fixed sleep
     wait_for_socket(&sock_path).await;
 
     (sock_path, handle.cancel, handle.acp_rx, handle.response_tx)
@@ -92,7 +91,6 @@ async fn test_single_stdio_client_connects() {
     let temp = TempDir::new().unwrap();
     let (sock_path, cancel, _acp_rx, _response_tx) = setup_test_server(&temp).await;
 
-    // Connect as stdio client
     let client = LeaderClient::connect(
         sock_path,
         "test-stdio",
@@ -102,7 +100,6 @@ async fn test_single_stdio_client_connects() {
     .await
     .unwrap();
 
-    // Should be connected
     client.cancel();
     cancel.cancel();
 }
@@ -122,7 +119,6 @@ async fn test_stdio_client_sends_acp_message() {
     .await
     .unwrap();
 
-    // Send an ACP message (JSON-RPC format)
     let test_message = r#"{"jsonrpc":"2.0","method":"initialize","id":1}"#;
     client.send(test_message.to_string()).unwrap();
 
@@ -132,7 +128,6 @@ async fn test_stdio_client_sends_acp_message() {
         .expect("timeout waiting for message")
         .expect("channel closed");
 
-    // Parse and verify the message was received (ID will be namespaced)
     let json: serde_json::Value = serde_json::from_str(&received).unwrap();
     assert_eq!(json["method"], "initialize");
     // ID should be namespaced with format "client_id<SEP>1" where 1 is the original ID
@@ -160,7 +155,6 @@ async fn test_stdio_client_receives_response() {
     .await
     .unwrap();
 
-    // Send request
     let test_message = r#"{"jsonrpc":"2.0","method":"test","id":42}"#;
     client.send(test_message.to_string()).unwrap();
 
@@ -176,7 +170,6 @@ async fn test_stdio_client_receives_response() {
     );
     response_tx.send(response).unwrap();
 
-    // Client should receive response with original ID restored
     let client_response = tokio::time::timeout(Duration::from_secs(2), client.recv())
         .await
         .expect("timeout waiting for response")
@@ -196,7 +189,6 @@ async fn test_multiple_stdio_clients() {
     let temp = TempDir::new().unwrap();
     let (sock_path, cancel, mut acp_rx, response_tx) = setup_test_server(&temp).await;
 
-    // Connect two stdio clients
     let mut client1 = LeaderClient::connect(
         sock_path.clone(),
         "client-1",
@@ -214,28 +206,23 @@ async fn test_multiple_stdio_clients() {
     .await
     .unwrap();
 
-    // Client 1 sends a message
     client1
         .send(r#"{"jsonrpc":"2.0","method":"from_client_1","id":1}"#.to_string())
         .unwrap();
 
-    // Client 2 sends a message
     client2
         .send(r#"{"jsonrpc":"2.0","method":"from_client_2","id":2}"#.to_string())
         .unwrap();
 
-    // Server receives both messages
     let msg1 = acp_rx.recv().await.unwrap();
     let msg2 = acp_rx.recv().await.unwrap();
 
     let json1: serde_json::Value = serde_json::from_str(&msg1).unwrap();
     let json2: serde_json::Value = serde_json::from_str(&msg2).unwrap();
 
-    // Messages should have different namespaced IDs (different client prefixes)
     let id1 = json1["id"].as_str().unwrap();
     let id2 = json2["id"].as_str().unwrap();
 
-    // Extract client ID prefixes using the Unit Separator
     let (client_id_1, _) = parse_namespaced_id(id1).expect("Should parse namespaced ID");
     let (client_id_2, _) = parse_namespaced_id(id2).expect("Should parse namespaced ID");
     assert_ne!(
@@ -243,21 +230,18 @@ async fn test_multiple_stdio_clients() {
         "Clients should have different IDs"
     );
 
-    // Send response to client 1 using its namespaced ID
     let response1 = format!(
         r#"{{"jsonrpc":"2.0","result":"response_1","id":"{}"}}"#,
         id1
     );
     response_tx.send(response1).unwrap();
 
-    // Send response to client 2 using its namespaced ID
     let response2 = format!(
         r#"{{"jsonrpc":"2.0","result":"response_2","id":"{}"}}"#,
         id2
     );
     response_tx.send(response2).unwrap();
 
-    // Each client should receive its own response
     let recv1 = tokio::time::timeout(Duration::from_secs(2), client1.recv())
         .await
         .expect("timeout")
@@ -270,7 +254,6 @@ async fn test_multiple_stdio_clients() {
     let recv_json1: serde_json::Value = serde_json::from_str(&recv1).unwrap();
     let recv_json2: serde_json::Value = serde_json::from_str(&recv2).unwrap();
 
-    // IDs should be restored to originals
     assert_eq!(recv_json1["id"], 1);
     assert_eq!(recv_json2["id"], 2);
 
@@ -287,7 +270,6 @@ async fn test_multiple_clients_same_message_ids() {
     let temp = TempDir::new().unwrap();
     let (sock_path, cancel, mut acp_rx, response_tx) = setup_test_server(&temp).await;
 
-    // Connect three stdio clients
     let mut client1 = LeaderClient::connect(
         sock_path.clone(),
         "client-1",
@@ -324,7 +306,6 @@ async fn test_multiple_clients_same_message_ids() {
         .send(r#"{"jsonrpc":"2.0","method":"method_3","id":1}"#.to_string())
         .unwrap();
 
-    // Collect all three messages from the server
     let msg1 = acp_rx.recv().await.unwrap();
     let msg2 = acp_rx.recv().await.unwrap();
     let msg3 = acp_rx.recv().await.unwrap();
@@ -333,7 +314,6 @@ async fn test_multiple_clients_same_message_ids() {
     let json2: serde_json::Value = serde_json::from_str(&msg2).unwrap();
     let json3: serde_json::Value = serde_json::from_str(&msg3).unwrap();
 
-    // All messages should have namespaced IDs with original ID "1"
     let id1 = json1["id"].as_str().unwrap();
     let id2 = json2["id"].as_str().unwrap();
     let id3 = json3["id"].as_str().unwrap();
@@ -351,12 +331,10 @@ async fn test_multiple_clients_same_message_ids() {
         "ID should contain original ID 1"
     );
 
-    // But the full namespaced IDs should all be different (different client prefixes)
     assert_ne!(id1, id2, "Namespaced IDs should be unique");
     assert_ne!(id2, id3, "Namespaced IDs should be unique");
     assert_ne!(id1, id3, "Namespaced IDs should be unique");
 
-    // Build a map of method -> namespaced_id for targeted responses
     let mut method_to_id: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
     method_to_id.insert(
@@ -372,7 +350,6 @@ async fn test_multiple_clients_same_message_ids() {
         id3.to_string(),
     );
 
-    // Send responses back using the namespaced IDs - each with a unique result
     let resp1 = format!(
         r#"{{"jsonrpc":"2.0","result":"result_for_client_1","id":"{}"}}"#,
         method_to_id.get("method_1").unwrap()
@@ -390,7 +367,6 @@ async fn test_multiple_clients_same_message_ids() {
     response_tx.send(resp2).unwrap();
     response_tx.send(resp3).unwrap();
 
-    // Each client should receive its own response with the original ID restored
     let recv1 = tokio::time::timeout(Duration::from_secs(2), client1.recv())
         .await
         .expect("timeout")
@@ -408,12 +384,10 @@ async fn test_multiple_clients_same_message_ids() {
     let recv_json2: serde_json::Value = serde_json::from_str(&recv2).unwrap();
     let recv_json3: serde_json::Value = serde_json::from_str(&recv3).unwrap();
 
-    // All IDs should be restored to the original value (1)
     assert_eq!(recv_json1["id"], 1, "Client 1's ID should be restored to 1");
     assert_eq!(recv_json2["id"], 1, "Client 2's ID should be restored to 1");
     assert_eq!(recv_json3["id"], 1, "Client 3's ID should be restored to 1");
 
-    // Each client should have received its unique result
     assert_eq!(recv_json1["result"], "result_for_client_1");
     assert_eq!(recv_json2["result"], "result_for_client_2");
     assert_eq!(recv_json3["result"], "result_for_client_3");
@@ -430,11 +404,9 @@ async fn test_stdio_client_disconnect() {
     let temp = TempDir::new().unwrap();
     let (sock_path, cancel, _acp_rx, _response_tx) = setup_test_server(&temp).await;
 
-    // Connect and then disconnect
     let stream = UnixStream::connect(&sock_path).await.unwrap();
     let (mut reader, mut writer) = tokio::io::split(stream);
 
-    // Register
     write_message(
         &mut writer,
         &ClientMessage::Register {
@@ -449,7 +421,6 @@ async fn test_stdio_client_disconnect() {
     let response: ServerMessage = read_message(&mut reader).await.unwrap();
     assert!(matches!(response, ServerMessage::Registered { .. }));
 
-    // Send disconnect message
     write_message(&mut writer, &ClientMessage::Disconnect)
         .await
         .unwrap();
@@ -469,7 +440,6 @@ async fn test_stdio_client_ping_pong() {
     let stream = UnixStream::connect(&sock_path).await.unwrap();
     let (mut reader, mut writer) = tokio::io::split(stream);
 
-    // Register first
     write_message(
         &mut writer,
         &ClientMessage::Register {
@@ -482,12 +452,10 @@ async fn test_stdio_client_ping_pong() {
     .unwrap();
     let _: ServerMessage = read_message(&mut reader).await.unwrap();
 
-    // Send ping
     write_message(&mut writer, &ClientMessage::Ping)
         .await
         .unwrap();
 
-    // Should receive pong
     let response: ServerMessage = read_message(&mut reader).await.unwrap();
     assert!(matches!(response, ServerMessage::Pong));
 
@@ -501,10 +469,8 @@ async fn test_server_exits_when_all_clients_disconnect() {
     let sock_path = temp.path().join("leader.sock");
     let handle = spawn_leader_server(sock_path.clone()).await.unwrap();
 
-    // Wait for socket to be connectable
     wait_for_socket(&sock_path).await;
 
-    // Connect a client
     let stream = UnixStream::connect(&sock_path).await.unwrap();
     let (mut reader, mut writer) = tokio::io::split(stream);
 
@@ -520,18 +486,14 @@ async fn test_server_exits_when_all_clients_disconnect() {
     .unwrap();
     let _: ServerMessage = read_message(&mut reader).await.unwrap();
 
-    // Disconnect
     write_message(&mut writer, &ClientMessage::Disconnect)
         .await
         .unwrap();
 
-    // Server should shut down on its own (all clients disconnected)
-    // We can verify by checking the cancel token is cancelled or socket is removed
+    // The server exits on its own once all clients disconnect; this just
+    // confirms the test completes without hanging.
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Socket should be cleaned up
-    // Note: The server exits when all clients disconnect, so socket may be removed
-    // We just verify the test completes without hanging
     handle.cancel.cancel();
 }
 
@@ -578,7 +540,8 @@ async fn test_runtime_profile_start_status_stop_across_clients() {
             client_a.cancel();
             client_b.cancel();
             handle.cancel.cancel();
-            return; // pprof can't start in sandbox — skip
+            // pprof can't start in sandbox — skip
+            return;
         };
         assert!(matches!(
             started,
@@ -723,7 +686,8 @@ async fn test_runtime_profile_creates_missing_parent_directory_end_to_end() {
         let Ok(started) = start_result else {
             client.cancel();
             handle.cancel.cancel();
-            return; // pprof can't start in sandbox — skip
+            // pprof can't start in sandbox — skip
+            return;
         };
         assert!(matches!(
             started,
@@ -811,16 +775,13 @@ async fn test_session_based_routing() {
     .await
     .unwrap();
 
-    // Send a message with sessionId in params
     let test_message =
         r#"{"jsonrpc":"2.0","method":"session/start","id":1,"params":{"sessionId":"session-123"}}"#;
     client.send(test_message.to_string()).unwrap();
 
-    // Server receives the message
     let received = acp_rx.recv().await.unwrap();
     let json: serde_json::Value = serde_json::from_str(&received).unwrap();
 
-    // Verify session_id is in params
     assert_eq!(json["params"]["sessionId"], "session-123");
 
     // Send a response with session_id for routing (without using request ID)
@@ -857,25 +818,21 @@ async fn test_stdio_client_receives_tool_result() {
     .await
     .unwrap();
 
-    // Send a simulated tool call request (e.g., read_file invocation)
     let test_tool_call = r#"{"jsonrpc":"2.0","method":"tool/call","id":100,"params":{"name":"read_file","arguments":{"target_file":"/path/to/test.txt"}}}"#;
     client.send(test_tool_call.to_string()).unwrap();
 
-    // Server should receive the tool call (with namespaced ID)
     let received = acp_rx.recv().await.unwrap();
     let json: serde_json::Value = serde_json::from_str(&received).unwrap();
     assert_eq!(json["method"], "tool/call");
     assert_eq!(json["params"]["name"], "read_file");
     let namespaced_id = json["id"].as_str().unwrap().to_string();
 
-    // Simulate tool result response from agent (e.g., read_file success)
     let tool_result = format!(
         r#"{{"jsonrpc":"2.0","result":{{"content":"test file content"}},"id":"{}"}}"#,
         namespaced_id
     );
     response_tx.send(tool_result).unwrap();
 
-    // Client should receive the tool result with original ID restored
     let client_response = tokio::time::timeout(Duration::from_secs(2), client.recv())
         .await
         .expect("timeout waiting for tool result")
@@ -897,7 +854,6 @@ async fn test_session_new_without_model_id_no_default() {
     let temp = TempDir::new().unwrap();
     let (sock_path, cancel, mut acp_rx, _response_tx) = setup_test_server(&temp).await;
 
-    // Connect with yolo_mode but no default_model (typical VS Code extension setup)
     let client = LeaderClient::connect(
         sock_path,
         "vscode-ext",
@@ -915,12 +871,10 @@ async fn test_session_new_without_model_id_no_default() {
     let session_new = r#"{"jsonrpc":"2.0","id":31,"method":"session/new","params":{"cwd":"/tmp","mcpServers":[],"_meta":{"yoloMode":true}}}"#;
     client.send(session_new.to_string()).unwrap();
 
-    // Server should forward it without injecting modelId
     let received = acp_rx.recv().await.unwrap();
     let json: serde_json::Value = serde_json::from_str(&received).unwrap();
 
     assert_eq!(json["method"], "session/new");
-    // _meta should have yoloMode but NOT modelId
     let meta = &json["params"]["_meta"];
     assert_eq!(meta["yoloMode"], true);
     assert!(
@@ -939,7 +893,6 @@ async fn test_session_new_yolo_mode_no_model() {
     let temp = TempDir::new().unwrap();
     let (sock_path, cancel, mut acp_rx, _response_tx) = setup_test_server(&temp).await;
 
-    // Client with yolo_mode=true but no default model
     let client = LeaderClient::connect(
         sock_path,
         "vscode-ext",
@@ -953,17 +906,14 @@ async fn test_session_new_yolo_mode_no_model() {
     .await
     .unwrap();
 
-    // Send session/new without modelId or yoloMode in _meta
     let session_new = r#"{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/tmp","mcpServers":[]}}"#;
     client.send(session_new.to_string()).unwrap();
 
     let received = acp_rx.recv().await.unwrap();
     let json: serde_json::Value = serde_json::from_str(&received).unwrap();
 
-    // yoloMode should be injected from capabilities
     let meta = &json["params"]["_meta"];
     assert_eq!(meta["yoloMode"], true);
-    // modelId should NOT be present
     assert!(
         meta.get("modelId").is_none(),
         "modelId should not be injected when default_model is None"
@@ -979,7 +929,6 @@ async fn test_session_new_empty_default_model_not_injected() {
     let temp = TempDir::new().unwrap();
     let (sock_path, cancel, mut acp_rx, _response_tx) = setup_test_server(&temp).await;
 
-    // Client with empty string default_model (edge case from config)
     let client = LeaderClient::connect(
         sock_path,
         "vscode-ext",
@@ -999,10 +948,8 @@ async fn test_session_new_empty_default_model_not_injected() {
     let received = acp_rx.recv().await.unwrap();
     let json: serde_json::Value = serde_json::from_str(&received).unwrap();
 
-    // yoloMode should be injected
     let meta = &json["params"]["_meta"];
     assert_eq!(meta["yoloMode"], true);
-    // Empty modelId should NOT be injected
     assert!(
         meta.get("modelId").is_none(),
         "empty default_model should not be injected as modelId"
@@ -1037,7 +984,6 @@ async fn test_session_new_valid_default_model_injected() {
     let received = acp_rx.recv().await.unwrap();
     let json: serde_json::Value = serde_json::from_str(&received).unwrap();
 
-    // modelId should be injected from default_model
     let meta = &json["params"]["_meta"];
     assert_eq!(meta["modelId"], "kigi-3-fast");
 
@@ -1045,7 +991,7 @@ async fn test_session_new_valid_default_model_injected() {
     cancel.cancel();
 }
 
-// ── Session ownership & notification routing ──────────────────────────
+// Session ownership & notification routing
 
 /// Test that the leader tracks session ownership from session/new responses
 /// and routes subsequent notifications (which have no request ID) to the
@@ -1064,30 +1010,27 @@ async fn test_session_ownership_from_response_routes_notifications() {
     .await
     .unwrap();
 
-    // Client sends session/new
     let session_new = r#"{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/tmp","mcpServers":[]}}"#;
     client.send(session_new.to_string()).unwrap();
 
-    // Server receives the request (with namespaced ID)
     let received = acp_rx.recv().await.unwrap();
     let json: serde_json::Value = serde_json::from_str(&received).unwrap();
     let namespaced_id = json["id"].as_str().unwrap().to_string();
 
-    // Simulate agent response with sessionId in result
     let response = format!(
         r#"{{"jsonrpc":"2.0","result":{{"sessionId":"sess-abc-123"}},"id":"{}"}}"#,
         namespaced_id
     );
     response_tx.send(response).unwrap();
 
-    // Client receives the session/new response
     let client_response = tokio::time::timeout(Duration::from_secs(2), client.recv())
         .await
         .expect("timeout")
         .expect("closed");
     let resp_json: serde_json::Value = serde_json::from_str(&client_response).unwrap();
     assert_eq!(resp_json["result"]["sessionId"], "sess-abc-123");
-    assert_eq!(resp_json["id"], 1); // original ID restored
+    // original ID restored
+    assert_eq!(resp_json["id"], 1);
 
     // Now send a notification for this session (no id field, only sessionId in params)
     // This tests session-based routing — the leader must know which client owns sess-abc-123
@@ -1107,7 +1050,7 @@ async fn test_session_ownership_from_response_routes_notifications() {
     cancel.cancel();
 }
 
-// ── Multi-client session isolation ────────────────────────────────────
+// Multi-client session isolation
 
 /// Test that two clients with different sessions receive only their own
 /// notifications, not each other's. This is critical for VS Code extension
@@ -1117,7 +1060,6 @@ async fn test_two_clients_session_isolation() {
     let temp = TempDir::new().unwrap();
     let (sock_path, cancel, mut acp_rx, response_tx) = setup_test_server(&temp).await;
 
-    // Connect two clients (simulating two VS Code windows)
     let mut client1 = LeaderClient::connect(
         sock_path.clone(),
         "vscode-1",
@@ -1135,7 +1077,6 @@ async fn test_two_clients_session_isolation() {
     .await
     .unwrap();
 
-    // Client 1 creates session A
     client1
         .send(r#"{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/project-a","mcpServers":[]}}"#.to_string())
         .unwrap();
@@ -1143,7 +1084,6 @@ async fn test_two_clients_session_isolation() {
     let json1: serde_json::Value = serde_json::from_str(&msg1).unwrap();
     let id1 = json1["id"].as_str().unwrap().to_string();
 
-    // Client 2 creates session B
     client2
         .send(r#"{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/project-b","mcpServers":[]}}"#.to_string())
         .unwrap();
@@ -1151,10 +1091,8 @@ async fn test_two_clients_session_isolation() {
     let json2: serde_json::Value = serde_json::from_str(&msg2).unwrap();
     let id2 = json2["id"].as_str().unwrap().to_string();
 
-    // IDs should be different (different client prefixes, same original ID)
     assert_ne!(id1, id2);
 
-    // Respond with different session IDs
     response_tx
         .send(format!(
             r#"{{"jsonrpc":"2.0","result":{{"sessionId":"sess-AAA"}},"id":"{}"}}"#,
@@ -1168,7 +1106,6 @@ async fn test_two_clients_session_isolation() {
         ))
         .unwrap();
 
-    // Each client should receive their own response
     let resp1 = tokio::time::timeout(Duration::from_secs(2), client1.recv())
         .await
         .expect("timeout")
@@ -1183,7 +1120,6 @@ async fn test_two_clients_session_isolation() {
     assert_eq!(r1["result"]["sessionId"], "sess-AAA");
     assert_eq!(r2["result"]["sessionId"], "sess-BBB");
 
-    // Now send a notification for session A — only client 1 should get it
     let notif_a = r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess-AAA","data":"for-client-1"}}"#;
     response_tx.send(notif_a.to_string()).unwrap();
 
@@ -1195,7 +1131,6 @@ async fn test_two_clients_session_isolation() {
     assert_eq!(n1["params"]["sessionId"], "sess-AAA");
     assert_eq!(n1["params"]["data"], "for-client-1");
 
-    // Send a notification for session B — only client 2 should get it
     let notif_b = r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess-BBB","data":"for-client-2"}}"#;
     response_tx.send(notif_b.to_string()).unwrap();
 
@@ -1212,7 +1147,7 @@ async fn test_two_clients_session_isolation() {
     cancel.cancel();
 }
 
-// ── Multi-client model switch fan-out ─────────────────────────────────
+// Multi-client model switch fan-out
 
 /// Multi-client model switch: when one TUI client switches models on a
 /// session shared with another TUI client, the leader must fan the
@@ -1238,7 +1173,6 @@ async fn test_set_model_broadcasts_to_session_subscribers() {
     let temp = TempDir::new().unwrap();
     let (sock_path, cancel, mut acp_rx, response_tx) = setup_test_server(&temp).await;
 
-    // Two TUIs connected to the same leader, sharing one session.
     let mut invoker = LeaderClient::connect(
         sock_path.clone(),
         "kigi-tui-A",
@@ -1286,7 +1220,6 @@ async fn test_set_model_broadcasts_to_session_subscribers() {
         .expect("timeout draining subscribe 2")
         .expect("closed");
 
-    // Invoker sends `session/setModel` for the shared session.
     invoker
         .send(format!(
             r#"{{"jsonrpc":"2.0","id":42,"method":"session/setModel","params":{{"sessionId":"{}","modelId":"kigi-4"}}}}"#,
@@ -1387,7 +1320,7 @@ async fn test_set_model_broadcasts_to_session_subscribers() {
     cancel.cancel();
 }
 
-// ── Capability injection scope ────────────────────────────────────────
+// Capability injection scope
 
 /// Test that capability injection ONLY applies to session/new, NOT to other
 /// methods like session/prompt or session/load. The leader must not mutate
@@ -1410,28 +1343,23 @@ async fn test_capabilities_not_injected_into_non_session_new() {
     .await
     .unwrap();
 
-    // Send session/prompt — capabilities should NOT be injected
     let prompt = r#"{"jsonrpc":"2.0","id":10,"method":"session/prompt","params":{"sessionId":"sess-123","prompt":{"content":"hello"}}}"#;
     client.send(prompt.to_string()).unwrap();
 
     let received = acp_rx.recv().await.unwrap();
     let json: serde_json::Value = serde_json::from_str(&received).unwrap();
 
-    // The params should NOT have _meta.yoloMode or _meta.modelId injected
     assert!(
         json["params"].get("_meta").is_none(),
         "session/prompt should not have _meta injected"
     );
-    // Original params should be preserved
     assert_eq!(json["params"]["sessionId"], "sess-123");
 
-    // Send session/load — should get clientIdentifier but NOT yoloMode/modelId
     let load = r#"{"jsonrpc":"2.0","id":11,"method":"session/load","params":{"sessionId":"sess-456","cwd":"/tmp","mcpServers":[]}}"#;
     client.send(load.to_string()).unwrap();
 
     let received = acp_rx.recv().await.unwrap();
     let json: serde_json::Value = serde_json::from_str(&received).unwrap();
-    // session/load should NOT get yoloMode or modelId injected
     assert!(
         json["params"]["_meta"].get("yoloMode").is_none(),
         "session/load should not have yoloMode injected"
@@ -1453,7 +1381,6 @@ async fn test_yolo_mode_injection_preserves_explicit_false() {
     let temp = TempDir::new().unwrap();
     let (sock_path, cancel, mut acp_rx, _response_tx) = setup_test_server(&temp).await;
 
-    // Client registered with yolo_mode=true
     let client = LeaderClient::connect(
         sock_path,
         "vscode-ext",
@@ -1467,7 +1394,6 @@ async fn test_yolo_mode_injection_preserves_explicit_false() {
     .await
     .unwrap();
 
-    // Request explicitly sets yoloMode to false
     let session_new = r#"{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/tmp","mcpServers":[],"_meta":{"yoloMode":false}}}"#;
     client.send(session_new.to_string()).unwrap();
 
@@ -1481,7 +1407,7 @@ async fn test_yolo_mode_injection_preserves_explicit_false() {
     cancel.cancel();
 }
 
-// ── Notification (no ID) pass-through ─────────────────────────────────
+// Notification (no ID) pass-through
 
 /// Test that JSON-RPC notifications (no "id" field) sent by a client are
 /// forwarded without ID rewriting. Notifications include cancel, yolo_mode_changed, etc.
@@ -1499,14 +1425,12 @@ async fn test_client_notification_forwarded_without_id_rewrite() {
     .await
     .unwrap();
 
-    // Send a cancel notification (no "id" field)
     let cancel_notif = r#"{"jsonrpc":"2.0","method":"session/cancel","params":{"sessionId":"sess-123","reason":"user"}}"#;
     client.send(cancel_notif.to_string()).unwrap();
 
     let received = acp_rx.recv().await.unwrap();
     let json: serde_json::Value = serde_json::from_str(&received).unwrap();
 
-    // Should not have an "id" field added
     assert!(
         json.get("id").is_none(),
         "notifications should not get an id"
@@ -1592,7 +1516,7 @@ async fn test_cancel_prompt_id_meta_passes_through_with_two_clients() {
     cancel.cancel();
 }
 
-// ── Extension method routing ──────────────────────────────────────────
+// Extension method routing
 
 /// Test that extension methods (prefixed with _) are correctly forwarded
 /// through the leader with proper ID namespacing and response routing.
@@ -1610,20 +1534,17 @@ async fn test_extension_method_roundtrip() {
     .await
     .unwrap();
 
-    // Send an extension method call (e.g., fuzzy search open)
     let ext_call = r#"{"jsonrpc":"2.0","id":50,"method":"_kigi/search/fuzzy/open","params":{"sessionId":"sess-123","hidden":false}}"#;
     client.send(ext_call.to_string()).unwrap();
 
     let received = acp_rx.recv().await.unwrap();
     let json: serde_json::Value = serde_json::from_str(&received).unwrap();
 
-    // Method should be preserved, ID should be namespaced
     assert_eq!(json["method"], "_kigi/search/fuzzy/open");
     let namespaced_id = json["id"].as_str().unwrap();
     assert!(namespaced_id.contains(ID_NAMESPACE_SEP));
     assert!(namespaced_id.ends_with("|50"));
 
-    // Simulate response
     let response = format!(
         r#"{{"jsonrpc":"2.0","result":{{"searchId":"search-xyz"}},"id":"{}"}}"#,
         namespaced_id
@@ -1636,7 +1557,6 @@ async fn test_extension_method_roundtrip() {
         .expect("closed");
     let resp_json: serde_json::Value = serde_json::from_str(&client_response).unwrap();
 
-    // Original ID should be restored, result preserved
     assert_eq!(resp_json["id"], 50);
     assert_eq!(resp_json["result"]["searchId"], "search-xyz");
 
@@ -1644,7 +1564,7 @@ async fn test_extension_method_roundtrip() {
     cancel.cancel();
 }
 
-// ── Error response routing ────────────────────────────────────────────
+// Error response routing
 
 /// Test that JSON-RPC error responses from the agent are correctly routed
 /// back to the requesting client with the original ID restored.
@@ -1662,7 +1582,6 @@ async fn test_error_response_routing() {
     .await
     .unwrap();
 
-    // Send a request
     client
         .send(
             r#"{"jsonrpc":"2.0","id":99,"method":"session/new","params":{"cwd":"/tmp","mcpServers":[]}}"#
@@ -1674,7 +1593,6 @@ async fn test_error_response_routing() {
     let json: serde_json::Value = serde_json::from_str(&received).unwrap();
     let namespaced_id = json["id"].as_str().unwrap().to_string();
 
-    // Simulate an error response (e.g., auth_required)
     let error_response = format!(
         r#"{{"jsonrpc":"2.0","error":{{"code":-32001,"message":"auth_required","data":"No credentials"}},"id":"{}"}}"#,
         namespaced_id
@@ -1687,7 +1605,6 @@ async fn test_error_response_routing() {
         .expect("closed");
     let resp_json: serde_json::Value = serde_json::from_str(&client_response).unwrap();
 
-    // Original ID restored, error preserved
     assert_eq!(resp_json["id"], 99);
     assert_eq!(resp_json["error"]["code"], -32001);
     assert_eq!(resp_json["error"]["message"], "auth_required");
@@ -1697,7 +1614,7 @@ async fn test_error_response_routing() {
     cancel.cancel();
 }
 
-// ── Session cleanup on disconnect ─────────────────────────────────────
+// Session cleanup on disconnect
 
 /// Test that when a client disconnects, notifications for its sessions are
 /// still delivered to the next active client via fallback routing.
@@ -1754,7 +1671,6 @@ async fn test_session_ownership_cleanup_on_disconnect() {
 
     wait_for_socket(&sock_path).await;
 
-    // Connect client, create session, then disconnect
     {
         let mut client = LeaderClient::connect(
             sock_path.clone(),
@@ -1765,7 +1681,6 @@ async fn test_session_ownership_cleanup_on_disconnect() {
         .await
         .unwrap();
 
-        // Create session
         client
             .send(r#"{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/tmp","mcpServers":[]}}"#.to_string())
             .unwrap();
@@ -1773,7 +1688,6 @@ async fn test_session_ownership_cleanup_on_disconnect() {
         let json: serde_json::Value = serde_json::from_str(&received).unwrap();
         let namespaced_id = json["id"].as_str().unwrap().to_string();
 
-        // Respond with session ID
         response_tx
             .send(format!(
                 r#"{{"jsonrpc":"2.0","result":{{"sessionId":"sess-temp"}},"id":"{}"}}"#,
@@ -1783,7 +1697,6 @@ async fn test_session_ownership_cleanup_on_disconnect() {
 
         let _ = tokio::time::timeout(Duration::from_secs(2), client.recv()).await;
 
-        // Client disconnects (dropped)
         client.cancel();
     }
 
@@ -1797,7 +1710,6 @@ async fn test_session_ownership_cleanup_on_disconnect() {
     let eviction_json: serde_json::Value = serde_json::from_str(&eviction).unwrap();
     assert_eq!(eviction_json["method"], "kigi/internal/evict_sessions");
 
-    // Connect a NEW client — server should still be running
     let mut client2 = LeaderClient::connect(
         sock_path,
         "vscode-new",
@@ -1807,7 +1719,6 @@ async fn test_session_ownership_cleanup_on_disconnect() {
     .await
     .unwrap();
 
-    // Make client2 active (so it becomes fallback)
     client2
         .send(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#.to_string())
         .unwrap();
@@ -1839,13 +1750,10 @@ async fn test_session_ownership_cleanup_on_disconnect() {
     cancel.cancel();
 }
 
-// =============================================================================
-// Code-nav capability injection integration tests
-//
-// These tests exercise the full leader→agent injection pipeline for the
-// `code_nav_enabled` capability, verifying that per-client isolation is
-// correct from the leader boundary all the way to the forwarded ACP payload.
-// =============================================================================
+// Code-nav capability injection integration tests exercise the full
+// leader→agent injection pipeline for the `code_nav_enabled` capability,
+// verifying that per-client isolation is correct from the leader boundary
+// all the way to the forwarded ACP payload.
 
 /// Verify that the leader injects `codeNavEnabled: true` into session/new for
 /// a web client that registered with `code_nav_enabled: true`.
@@ -1854,7 +1762,6 @@ async fn test_code_nav_capable_client_gets_true_injected_into_session_new() {
     let temp = TempDir::new().unwrap();
     let (sock_path, cancel, mut acp_rx, _response_tx) = setup_test_server(&temp).await;
 
-    // Web client that advertised code-nav capability during registration.
     let web_client = LeaderClient::connect(
         sock_path,
         "kigi-web",
@@ -1891,7 +1798,6 @@ async fn test_non_code_nav_client_gets_false_injected_into_session_new() {
     let temp = TempDir::new().unwrap();
     let (sock_path, cancel, mut acp_rx, _response_tx) = setup_test_server(&temp).await;
 
-    // TUI client with no code-nav capability.
     let tui_client = LeaderClient::connect(
         sock_path,
         "kigi-tui",
@@ -1930,7 +1836,6 @@ async fn test_leader_code_nav_client_isolation() {
     let temp = TempDir::new().unwrap();
     let (sock_path, cancel, mut acp_rx, _response_tx) = setup_test_server(&temp).await;
 
-    // Web client with code-nav capability.
     let web_client = LeaderClient::connect(
         sock_path.clone(),
         "kigi-web",
@@ -1943,7 +1848,6 @@ async fn test_leader_code_nav_client_isolation() {
     .await
     .unwrap();
 
-    // TUI client without code-nav capability.
     let tui_client = LeaderClient::connect(
         sock_path,
         "kigi-tui",
@@ -1958,12 +1862,10 @@ async fn test_leader_code_nav_client_isolation() {
 
     let session_new = r#"{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/repo","mcpServers":[]}}"#;
 
-    // Web client sends session/new first.
     web_client.send(session_new.to_string()).unwrap();
     let web_fwd = acp_rx.recv().await.unwrap();
     let web_json: serde_json::Value = serde_json::from_str(&web_fwd).unwrap();
 
-    // TUI client sends session/new second.
     tui_client.send(session_new.to_string()).unwrap();
     let tui_fwd = acp_rx.recv().await.unwrap();
     let tui_json: serde_json::Value = serde_json::from_str(&tui_fwd).unwrap();
@@ -2043,7 +1945,6 @@ async fn test_code_status_ext_request_forwarded_to_agent() {
     .await
     .unwrap();
 
-    // Send kigi/code/status with a sessionId — the leader must forward it to the agent.
     let status_req = r#"{"jsonrpc":"2.0","id":42,"method":"extensions/ext","params":{"method":"kigi/code/status","params":{"sessionId":"sess-web-1","cwd":"/repo"}}}"#;
     web_client.send(status_req.to_string()).unwrap();
 
@@ -2059,7 +1960,7 @@ async fn test_code_status_ext_request_forwarded_to_agent() {
     cancel.cancel();
 }
 
-// ── Startup readiness gate ────────────────────────────────────────────
+// Startup readiness gate
 
 /// Raw-protocol test for the server-side readiness handshake.
 ///
@@ -2086,7 +1987,8 @@ async fn test_raw_registration_handshake_not_ready_then_ready() {
     let (acp_tx, mut acp_rx) = mpsc::unbounded_channel::<String>();
     let (response_tx, response_rx) = mpsc::unbounded_channel::<String>();
     let cancel = CancellationToken::new();
-    let (ready_tx, ready_rx) = watch::channel(false); // NOT ready yet
+    // NOT ready yet
+    let (ready_tx, ready_rx) = watch::channel(false);
 
     let sock_clone = sock_path.clone();
     let cancel_clone = cancel.clone();
@@ -2117,11 +2019,9 @@ async fn test_raw_registration_handshake_not_ready_then_ready() {
 
     wait_for_socket(&sock_path).await;
 
-    // Connect via raw socket to observe the wire-level handshake.
     let stream = UnixStream::connect(&sock_path).await.unwrap();
     let (mut reader, mut writer) = tokio::io::split(stream);
 
-    // Register manually.
     write_message(
         &mut writer,
         &ClientMessage::Register {
@@ -2133,7 +2033,7 @@ async fn test_raw_registration_handshake_not_ready_then_ready() {
     .await
     .unwrap();
 
-    // ── Server must respond Registered { ready: false } ───────────────────────
+    // Server must respond Registered { ready: false }
     let reg_msg: ServerMessage =
         tokio::time::timeout(Duration::from_secs(2), read_message(&mut reader))
             .await
@@ -2154,12 +2054,12 @@ async fn test_raw_registration_handshake_not_ready_then_ready() {
         other => panic!("Expected Registered, got {other:?}"),
     }
 
-    // ── Signal readiness (simulates auth + prefetch completing) ───────────────
+    // Signal readiness (simulates auth + prefetch completing)
     // The server's per-client session is now blocked in its readiness wait loop.
     // Signalling here causes it to send LeaderReady to this client.
     ready_tx.send(true).unwrap();
 
-    // ── Server must now send LeaderReady ──────────────────────────────────────
+    // Server must now send LeaderReady
     let ready_msg: ServerMessage =
         tokio::time::timeout(Duration::from_secs(2), read_message(&mut reader))
             .await
@@ -2171,7 +2071,7 @@ async fn test_raw_registration_handshake_not_ready_then_ready() {
         "Expected LeaderReady, got {ready_msg:?}"
     );
 
-    // ── Post-ready: ACP flows normally ────────────────────────────────────────
+    // Post-ready: ACP flows normally
     write_message(
         &mut writer,
         &ClientMessage::Acp {
@@ -2190,7 +2090,6 @@ async fn test_raw_registration_handshake_not_ready_then_ready() {
     assert_eq!(fwd["method"], "session/new");
     let namespaced_id = fwd["id"].as_str().unwrap().to_string();
 
-    // Round-trip the response.
     response_tx
         .send(format!(
             r#"{{"jsonrpc":"2.0","result":{{"sessionId":"sess-ok"}},"id":"{namespaced_id}"}}"#
@@ -2240,7 +2139,8 @@ async fn test_connect_waits_for_leader_ready() {
     let (acp_tx, mut acp_rx) = mpsc::unbounded_channel::<String>();
     let (response_tx, response_rx) = mpsc::unbounded_channel::<String>();
     let cancel = CancellationToken::new();
-    let (ready_tx, ready_rx) = watch::channel(false); // NOT ready yet
+    // NOT ready yet
+    let (ready_tx, ready_rx) = watch::channel(false);
 
     let sock_clone = sock_path.clone();
     let cancel_clone = cancel.clone();
@@ -2271,7 +2171,6 @@ async fn test_connect_waits_for_leader_ready() {
 
     wait_for_socket(&sock_path).await;
 
-    // Spawn a task to signal readiness after a short delay (simulating slow auth/prefetch).
     let ready_delay_ms = 150u64;
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(ready_delay_ms)).await;
@@ -2292,7 +2191,6 @@ async fn test_connect_waits_for_leader_ready() {
     .expect("connect must succeed after leader becomes ready");
     let elapsed = connect_start.elapsed();
 
-    // Connect must have waited at least as long as the readiness delay.
     assert!(
         elapsed >= Duration::from_millis(ready_delay_ms.saturating_sub(30)),
         "connect returned too early ({elapsed:?}); should have waited for LeaderReady"
@@ -2315,7 +2213,6 @@ async fn test_connect_waits_for_leader_ready() {
         "initialize must reach the agent, not be rejected with leader_starting"
     );
 
-    // Verify full round-trip.
     let namespaced_id = fwd_json["id"].as_str().unwrap().to_string();
     response_tx
         .send(format!(
@@ -2335,7 +2232,7 @@ async fn test_connect_waits_for_leader_ready() {
     cancel.cancel();
 }
 
-// ── Version mismatch notification ────────────────────────────────────
+// Version mismatch notification
 
 /// Integration test: a connected client receives `kigi/leader/version_mismatch`
 /// when its `client_version` differs from the leader's version.
@@ -2378,7 +2275,8 @@ async fn test_version_mismatch_notification_sent_to_client() {
             kigi_shell::agent::activity::AgentActivity::default(),
             watch::channel(true).1,
             watch::channel(kigi_shell::leader::ShutdownReason::Manual).0,
-            Some("test-leader-0.1.150"), // override so detection is enabled in test builds
+            // override so detection is enabled in test builds
+            Some("test-leader-0.1.150"),
             control_state,
         )
         .await;
@@ -2386,7 +2284,6 @@ async fn test_version_mismatch_notification_sent_to_client() {
 
     wait_for_socket(&sock_path).await;
 
-    // Connect with a version that differs from the leader override.
     let mut client = LeaderClient::connect(
         sock_path,
         "test-client",
@@ -2399,7 +2296,6 @@ async fn test_version_mismatch_notification_sent_to_client() {
     .await
     .unwrap();
 
-    // The client should receive the version mismatch notification.
     let msg = tokio::time::timeout(Duration::from_secs(2), client.recv())
         .await
         .expect("timeout waiting for version mismatch notification")
@@ -2459,7 +2355,6 @@ async fn test_no_version_mismatch_notification_when_versions_match() {
 
     wait_for_socket(&sock_path).await;
 
-    // Connect with the same version as the leader.
     let mut client = LeaderClient::connect(
         sock_path,
         "test-client",
@@ -2472,7 +2367,6 @@ async fn test_no_version_mismatch_notification_when_versions_match() {
     .await
     .unwrap();
 
-    // No mismatch notification should arrive within a short window.
     let received = tokio::time::timeout(Duration::from_millis(200), client.recv()).await;
     assert!(
         received.is_err(),
@@ -2483,7 +2377,7 @@ async fn test_no_version_mismatch_notification_when_versions_match() {
     cancel.cancel();
 }
 
-// ── Shutdown reason end-to-end ────────────────────────────────────────
+// Shutdown reason end-to-end
 
 /// End-to-end test: a connected `LeaderClient` receives `ShuttingDown { reason: AutoUpdate }`
 /// and `LeaderClient::shutting_down_reason()` updates to `Some(AutoUpdate)`.
@@ -2552,7 +2446,7 @@ async fn test_auto_update_shutdown_reason_reaches_client() {
     );
 }
 
-// ── Disruptive relaunch-for-update ────────────────────────────────────
+// Disruptive relaunch-for-update
 
 /// A `RelaunchForUpdate` with a strictly-newer target is accepted with a
 /// `Relaunching` ack, and the leader then broadcasts `ShuttingDown { AutoUpdate }`
@@ -2713,15 +2607,16 @@ async fn test_relaunch_for_update_waits_for_busy_then_exits() {
     );
 }
 
-// ── initialize_seen correctness ───────────────────────────────────────
+// initialize_seen correctness
 
 /// Regression test: if the first ACP message is NOT `initialize`, a later
 /// `initialize` must still receive `clientIdentifier` injection.
 ///
-/// Previously, `identity_injected` was set to `true` after the first ACP
-/// message regardless of its method, so a client whose first message was a
-/// notification (e.g., `session/cancel`) would never have `clientIdentifier`
-/// injected into the real `initialize` that followed.
+/// `identity_injected` must only flip to `true` on an actual `initialize`
+/// message — flipping it on the first ACP message regardless of method would
+/// leave a client whose first message is a notification (e.g.,
+/// `session/cancel`) without `clientIdentifier` injected into the real
+/// `initialize` that follows.
 #[tokio::test]
 async fn test_initialize_injected_when_not_first_message() {
     let temp = TempDir::new().unwrap();
@@ -2779,7 +2674,6 @@ async fn test_leader_code_nav_isolation_end_to_end() {
     let temp = TempDir::new().unwrap();
     let (sock_path, cancel, mut acp_rx, _response_tx) = setup_test_server(&temp).await;
 
-    // Web client with code-nav capability.
     let web_client = LeaderClient::connect(
         sock_path.clone(),
         "kigi-web",
@@ -2792,7 +2686,6 @@ async fn test_leader_code_nav_isolation_end_to_end() {
     .await
     .unwrap();
 
-    // TUI client without code-nav capability.
     let tui_client = LeaderClient::connect(
         sock_path,
         "kigi-tui",
@@ -2807,7 +2700,6 @@ async fn test_leader_code_nav_isolation_end_to_end() {
 
     let session_new = r#"{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/repo","mcpServers":[]}}"#;
 
-    // Both clients send session/new; verify independent codeNavEnabled injection.
     web_client.send(session_new.to_string()).unwrap();
     let web_fwd = acp_rx.recv().await.unwrap();
     let web_json: serde_json::Value = serde_json::from_str(&web_fwd).unwrap();
@@ -2824,7 +2716,6 @@ async fn test_leader_code_nav_isolation_end_to_end() {
         serde_json::json!(false)
     );
 
-    // Web client sends kigi/code/status (the primary non-starting code-nav call).
     let status_with_session = r#"{"jsonrpc":"2.0","id":10,"method":"extensions/ext","params":{"method":"kigi/code/status","params":{"sessionId":"web-session","cwd":"/repo"}}}"#;
     web_client.send(status_with_session.to_string()).unwrap();
 
@@ -2860,7 +2751,6 @@ async fn test_lock_released_before_connect_prevents_deadlock() {
     let sock_path = temp.path().join("leader.sock");
     let lock_path = temp.path().join("leader.lock");
 
-    // Spawner acquires the file lock (mirrors connect_or_spawn).
     let lock_file = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -2934,14 +2824,11 @@ async fn test_lock_released_before_connect_prevents_deadlock() {
     cancel.cancel();
 }
 
-// =============================================================================
-// Hung-agent + sever-mid-RPC scenarios
-//
-// The fake agent in these tests is the test body itself (acp_rx/response_tx),
-// so "agent hangs" and "agent completes after the client is gone" are driven
-// deterministically. Reconnects use fresh raw `UnixStream`s so the sever is
-// an abrupt socket close, not a graceful `Disconnect`.
-// =============================================================================
+// Hung-agent + sever-mid-RPC scenarios: the fake agent in these tests is the
+// test body itself (acp_rx/response_tx), so "agent hangs" and "agent
+// completes after the client is gone" are driven deterministically.
+// Reconnects use fresh raw `UnixStream`s so the sever is an abrupt socket
+// close, not a graceful `Disconnect`.
 
 /// Server that survives client disconnects (`no_exit_on_disconnect = true`),
 /// for sever/reconnect scenarios. Same wiring as

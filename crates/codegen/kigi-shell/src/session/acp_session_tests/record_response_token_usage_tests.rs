@@ -133,7 +133,7 @@ async fn build_session_info_used_reflects_recorded_response() {
             let info = actor.build_session_info().await;
             assert_eq!(info.context.used, 120_000);
             assert_eq!(info.context.total, 256_000);
-            // Server-computed: renderer no longer derives these.
+            // Server-computed, not derived by the renderer.
             assert_eq!(info.context.free_tokens, 256_000 - 120_000);
             // 120_000 / 256_000 = 0.46875 -> 47 after rounding.
             assert_eq!(info.context.usage_pct, 47);
@@ -219,7 +219,6 @@ async fn stashes_per_turn_usage_in_chat_state() {
             let (persistence_tx, _) = tokio::sync::mpsc::unbounded_channel::<PersistenceMsg>();
             let actor = create_test_actor(0, 256_000, 85, gateway_tx, persistence_tx).await;
 
-            // Baseline: no stashed usage.
             assert!(
                 actor
                     .chat_state_handle
@@ -228,7 +227,7 @@ async fn stashes_per_turn_usage_in_chat_state() {
                     .is_none()
             );
 
-            // Use existing fixture: total=200_000 → prompt=199_950, completion=50.
+            // total=200_000 → prompt=199_950, completion=50.
             actor.record_response_token_usage(&response_with_usage(200_000), None);
 
             let stashed = actor

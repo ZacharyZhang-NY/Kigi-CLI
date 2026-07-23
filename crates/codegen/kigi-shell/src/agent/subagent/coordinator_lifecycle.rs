@@ -69,7 +69,6 @@ impl SubagentCoordinator {
                 std::sync::atomic::Ordering::Relaxed,
             );
     }
-    /// Returns a handle to the completion [`Notify`].
     #[cfg_attr(
         not(test),
         expect(
@@ -80,11 +79,9 @@ impl SubagentCoordinator {
     pub fn completion_notify(&self) -> Arc<Notify> {
         Arc::clone(&self.completion_notify)
     }
-    /// Returns a shared handle to the turn-active flag.
     pub fn turn_active_flag(&self) -> Arc<std::sync::atomic::AtomicBool> {
         Arc::clone(&self.is_turn_active)
     }
-    /// Whether the model's turn is currently active.
     #[cfg_attr(
         not(test),
         expect(
@@ -163,7 +160,6 @@ impl SubagentCoordinator {
             subagent_usage_not_applied: self.subagent_usage_not_applied(prompt_id),
         }
     }
-    /// Drain all buffered completion summaries, returning them and clearing the buffer.
     pub fn drain_pending_completions(&mut self) -> Vec<SubagentCompletionSummary> {
         std::mem::take(&mut self.pending_completions)
     }
@@ -235,8 +231,6 @@ impl SubagentCoordinator {
             cancelled: false,
         });
     }
-    /// Insert a synthetic failed entry, push a completion summary, notify waiters.
-    /// Clears any stale pending entry for the same id.
     fn record_failure_completion(&mut self, c: FailureCompletion<'_>) {
         self.pending.remove(&c.subagent_id);
         self.sync_running_gauge();
@@ -303,8 +297,6 @@ impl SubagentCoordinator {
         self.active.insert(tracker.subagent_id.clone(), tracker);
         self.sync_running_gauge();
     }
-    /// Move a finished subagent from `active` to `completed`.
-    /// Returns the tracker if it was active.
     pub fn move_to_completed(
         &mut self,
         id: &str,
@@ -448,7 +440,6 @@ impl SubagentCoordinator {
         }
         SubagentCancelOutcome::NotFound
     }
-    /// Internal: send Cancel + Shutdown to a tracked subagent.
     fn cancel_tracker(tracker: &SubagentTracker) {
         tracker.cancel_token.cancel();
         let _ = tracker

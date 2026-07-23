@@ -297,7 +297,7 @@ impl InstallRegistry {
     }
 }
 
-// ── Errors ────────────────────────────────────────────────────────────
+// Errors
 
 #[derive(Debug, thiserror::Error)]
 pub enum InstallError {
@@ -323,7 +323,7 @@ pub enum InstallError {
     InstallFailed { detail: String },
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────
+// Tests
 
 #[cfg(test)]
 mod tests {

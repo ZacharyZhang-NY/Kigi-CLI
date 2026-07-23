@@ -1,7 +1,7 @@
 //! Macros for printing messages with Unix timestamps.
 //!
-//! These macros use tracing for output, which is safe to use in headless mode
-//! (no terminal attached). The timestamp is included in the message.
+//! Output goes through tracing rather than stdout/stderr so these are safe in
+//! headless mode (no terminal attached).
 
 /// Prints a message via tracing::info with a Unix timestamp prefix.
 ///

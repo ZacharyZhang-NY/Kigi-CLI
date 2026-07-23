@@ -2,14 +2,9 @@
 //! Co-located child of `mvp_agent` (`use super::*`); tested by `tests/subagent_spawn_context_tests.rs`.
 use super::*;
 impl MvpAgent {
-    /// Start the subagent coordinator drain task.
-    ///
-    /// Takes the `subagent_event_rx` receiver (once) and spawns a `spawn_local` task
-    /// that receives `SubagentRequest`s and delegates each to
-    /// `handle_subagent_request()` on its own `spawn_local` task.
-    ///
-    /// Uses `LocalRef` to reference `self` from
-    /// `spawn_local` closures. Idempotent: subsequent calls are no-ops.
+    /// Start the subagent coordinator drain task: receive `SubagentEvent`s and
+    /// dispatch each. Idempotent — the `subagent_event_rx` receiver is taken
+    /// once, so subsequent calls are no-ops.
     pub(super) fn start_subagent_coordinator(&self) {
         let Some(mut rx) = self.subagent_event_rx.borrow_mut().take() else {
             return;
@@ -264,16 +259,12 @@ impl MvpAgent {
             cli_agent_names,
         }
     }
-    /// Build a `SubagentSpawnContext` from the current agent state and the
-    /// parent session's shared resources.
-    ///
-    /// This is the ONLY subagent-related method on MvpAgent besides the
-    /// coordinator startup.
-    /// Build a spawn context for a real subagent spawn. The parent session is
-    /// guaranteed present here because the parent just issued the spawn request,
-    /// so a missing parent is a real invariant violation and panics. Read-only
-    /// callers that can race a parent teardown (e.g. `DescribeType`) must use
-    /// [`Self::try_build_subagent_spawn_context`] instead.
+    /// Build a `SubagentSpawnContext` for a real subagent spawn. The parent
+    /// session is guaranteed present here because the parent just issued the
+    /// spawn request, so a missing parent is a real invariant violation and
+    /// panics. Read-only callers that can race a parent teardown (e.g.
+    /// `DescribeType`) must use [`Self::try_build_subagent_spawn_context`]
+    /// instead.
     pub(super) fn build_subagent_spawn_context(
         &self,
         parent_session_id: &str,

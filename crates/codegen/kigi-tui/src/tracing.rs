@@ -101,15 +101,12 @@ impl TracingEntry {
         }
         styled
     }
-    /// The monotonic sequence number.
     pub fn seq(&self) -> u64 {
         self.seq
     }
-    /// The ANSI-stripped plain text.
     pub fn plain(&self) -> &str {
         &self.plain
     }
-    /// The pre-parsed styled text.
     pub fn styled(&self) -> &Text<'static> {
         &self.styled
     }
@@ -230,11 +227,9 @@ impl TracingModel {
     pub fn as_slice(&self) -> &[TracingEntry] {
         &self.entries
     }
-    /// Number of entries currently stored.
     pub fn len(&self) -> usize {
         self.entries.len()
     }
-    /// Whether the buffer is empty.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
@@ -309,7 +304,6 @@ impl<T: serde::Serialize> std::fmt::Display for LazyJson<'_, T> {
 const LOG_CHANNEL_CAPACITY: usize = 16 * 1024;
 /// Lines dropped due to a full log channel (process-wide).
 static DROPPED_LOG_LINES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-/// Total log lines dropped so far because the channel was full.
 pub fn dropped_log_lines() -> u64 {
     DROPPED_LOG_LINES.load(std::sync::atomic::Ordering::Relaxed)
 }
@@ -412,6 +406,7 @@ pub fn init_tracing() -> TracingHandle {
         EnvFilter, Layer as _, filter::LevelFilter, fmt, layer::SubscriberExt as _,
     };
     let (make_writer, rx) = TracingChannelMakeWriter::new();
+    // Flip to `true` locally to enable verbose ACP payload logging.
     let payload_level = if false { "debug" } else { "off" };
     let directives = format!(
         "kigi_shell=info,kigi_tui=trace,kigi_tools=info,kigi_acp_lib=info,{RMCP_SSE_NOISE_TARGET}=error,sampling_log=off,{ACP_UPDATE_TARGET}=debug,{ACP_UPDATE_PAYLOAD_TARGET}={payload_level}"

@@ -29,7 +29,6 @@ fn includes_baseline_keys_without_usage() {
     assert_eq!(meta["promptId"], "prompt-1");
     assert_eq!(meta["totalTokens"], 42_000);
     assert_eq!(meta["modelId"], "kigi-4.5");
-    // No per-turn keys when usage is absent.
     assert!(meta.get("inputTokens").is_none());
     assert!(meta.get("outputTokens").is_none());
     assert!(meta.get("cachedReadTokens").is_none());
@@ -107,21 +106,18 @@ fn usage_object_lands_on_meta() {
 
 #[test]
 fn cancel_trigger_lands_as_camelcase_meta_key() {
-    // A send-now cancelled turn's PromptResponse `_meta` carries `cancelTrigger: "send_now"`.
     let meta = build_prompt_response_meta(PromptResponseMetaArgs {
         cancel_trigger: Some("send_now".to_string()),
         ..args("s", "p", 0, "m")
     });
     assert_eq!(meta["cancelTrigger"], "send_now");
 
-    // Absent for non-cancel completions — the key must not appear.
     let none = build_prompt_response_meta(args("s", "p", 0, "m"));
     assert!(none.get("cancelTrigger").is_none());
 }
 
 #[test]
 fn structured_output_maps_to_camelcase_meta_keys() {
-    // Success carries the validated value under `structuredOutput`; no error key.
     let ok = build_prompt_response_meta(PromptResponseMetaArgs {
         structured_output: Some(Ok(serde_json::json!({"name": "ada"}))),
         ..args("s", "p", 0, "m")
@@ -129,7 +125,6 @@ fn structured_output_maps_to_camelcase_meta_keys() {
     assert_eq!(ok["structuredOutput"]["name"], "ada");
     assert!(ok.get("structuredOutputError").is_none());
 
-    // Failure carries the message under `structuredOutputError`; no value key.
     let err = build_prompt_response_meta(PromptResponseMetaArgs {
         structured_output: Some(Err("output does not match the required schema".to_string())),
         ..args("s", "p", 0, "m")
@@ -140,7 +135,6 @@ fn structured_output_maps_to_camelcase_meta_keys() {
     );
     assert!(err.get("structuredOutput").is_none());
 
-    // No schema requested → neither key present.
     let none = build_prompt_response_meta(args("s", "p", 0, "m"));
     assert!(none.get("structuredOutput").is_none());
     assert!(none.get("structuredOutputError").is_none());

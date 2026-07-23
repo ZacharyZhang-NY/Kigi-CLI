@@ -4,10 +4,6 @@ use crate::app::actions::Effect;
 use crate::app::app_view::AppView;
 
 /// Open the interactive Claude-import modal on the welcome screen.
-///
-/// Scans for importable items. If empty, shows a brief startup warning and
-/// marks dismissed. Otherwise stores modal state on AppView so welcome
-/// rendering shows the modal.
 pub(super) fn dispatch_import_claude(app: &mut AppView) -> Vec<Effect> {
     let cwd = app.cwd.clone();
     let plan = kigi_shell::claude_import::scan_importable_settings(&cwd);
@@ -103,8 +99,6 @@ pub(super) fn dispatch_import_claude_cancel(app: &mut AppView) -> Vec<Effect> {
 /// launch — if it matches (no new Claude content), the menu stays hidden.
 pub(super) fn dispatch_dismiss_claude_import(app: &mut AppView) -> Vec<Effect> {
     let cwd = app.cwd.clone();
-    // Record the current `.claude/` content hash so the welcome menu row
-    // doesn't reappear next session unless the content actually changes.
     kigi_shell::claude_import_state::mark_dismissed(&cwd);
     // Also set the [claude_compat] imported = true marker so runtime
     // fallback paths (perms, env, MCP servers, hooks, plugins) stop

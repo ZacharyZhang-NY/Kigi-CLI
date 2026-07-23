@@ -5,22 +5,16 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::{env, fs, iter};
 
-/// Find the protoc well-known types include directory.
+/// Resolve protoc's well-known-types include dir (`../include` next to `bin/protoc`).
 ///
-/// When PROTOC is set (e.g., in Bazel), the include directory is typically
-/// at `../include` relative to the `bin/protoc` binary. For example:
-/// - PROTOC = `/path/to/external/protoc_linux_x86_64/bin/protoc`
-/// - Include = `/path/to/external/protoc_linux_x86_64/include`
-///
-/// This is needed because Bazel places the protoc binary and include files
-/// in separate locations within the sandbox, and protoc doesn't automatically
-/// find them without an explicit -I flag.
+/// Bazel keeps the binary and includes in separate sandbox paths; protoc will
+/// not find them without an explicit `-I`.
 fn find_protoc_include_dir(protoc: Option<&Path>) -> Option<PathBuf> {
     let protoc = protoc?;
 
-    // protoc is typically at .../bin/protoc, so include is at .../include
-    let parent = protoc.parent()?; // .../bin
-    let grandparent = parent.parent()?; // .../
+    // Layout: `.../bin/protoc` → sibling `.../include`.
+    let parent = protoc.parent()?;
+    let grandparent = parent.parent()?;
     let include_dir = grandparent.join("include");
 
     if include_dir.is_dir() {
@@ -72,10 +66,8 @@ impl XaiProtoBuilder {
         self
     }
 
-    /// Serialize JSON using the original proto field names (snake_case) instead
-    /// of the proto3-JSON default (camelCase). Deserialization still accepts
-    /// both casings, so this is backward-compatible with already-stored
-    /// camelCase documents.
+    /// Emit JSON with original proto field names (snake_case) instead of
+    /// proto3-JSON camelCase. Deserialization still accepts both casings.
     pub fn pbjson_preserve_proto_field_names(mut self) -> Self {
         self.pbjson_preserve_proto_field_names = true;
         self
@@ -93,10 +85,8 @@ impl XaiProtoBuilder {
         self.map_builder(|b| b.field_attribute(path, attr))
     }
 
-    // tonic-build generation of `rerun-if-changed` is lazy and incorrect.
-    // - everything is invalidated when anything inside include directories is changed
-    // - also they compute paths incorrectly: assuming paths are relative to current directory
-    //   rather than
+    // tonic-build's `rerun-if-changed` is lazy and wrong: any include-dir
+    // touch invalidates everything, and paths are treated as CWD-relative.
     fn emit_rerun_if_changed<'a>(
         protoc: Option<&Path>,
         protoc_include_dir: Option<&Path>,
@@ -112,11 +102,9 @@ impl XaiProtoBuilder {
             );
         }
 
-        // Can only process one input file when using --dependency_out=FILE.
-        // Both protoc outputs go to real files: /dev/stdout and /dev/null do
-        // not exist on Windows (the release build failed on exactly this).
-        // OUT_DIR is always set for build scripts; deterministic names make
-        // reruns overwrite instead of accumulate.
+        // `--dependency_out` accepts one input per invocation. Write real
+        // files (not /dev/stdout|/dev/null — missing on Windows). OUT_DIR
+        // names stay stable so reruns overwrite rather than accumulate.
         let scratch_dir = env::var_os("OUT_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(env::temp_dir);
@@ -135,9 +123,7 @@ impl XaiProtoBuilder {
                     descriptor_file.display()
                 ));
 
-            // Add protoc's well-known types include directory first (if found).
-            // This is needed for Bazel sandboxed builds where protoc and its
-            // include files are in different locations.
+            // Well-known types first so Bazel sandboxes resolve them.
             if let Some(include_dir) = protoc_include_dir {
                 command.arg(format!(
                     "-I{}",
@@ -162,9 +148,8 @@ impl XaiProtoBuilder {
             let output = fs::read_to_string(&dep_file)
                 .with_context(|| format!("read protoc dependency file {}", dep_file.display()))?;
 
-            // Make-style `.d` format: `<descriptor path>: dep1 dep2 …`.
-            // Compare with normalized separators — protoc may spell the
-            // target path with forward slashes even on Windows.
+            // Make-style `.d`: `<descriptor path>: dep1 dep2 …`.
+            // Normalize separators — protoc may emit `/` even on Windows.
             let mut lines = output.lines();
             let first_line = lines.next().context("protoc dependency output is empty")?;
             let normalized_first = first_line.replace('\\', "/");
@@ -179,9 +164,7 @@ impl XaiProtoBuilder {
             for line in iter::once(rem).chain(lines) {
                 let line = line.trim();
                 let line = line.strip_suffix("\\").unwrap_or(line);
-                // Depending on absolute paths like
-                // /Users/user/homebrew/Cellar/protobuf/29.1/include/google/protobuf/timestamp.proto
-                // is valid, but we want to have output more deterministic.
+                // Skip host-absolute well-known includes so fingerprints stay portable.
                 if line.contains("/include/google/protobuf/") {
                     continue;
                 }
@@ -224,14 +207,10 @@ impl XaiProtoBuilder {
 
         let protoc = find_protoc::find_protoc()?;
 
-        // Use fixed version of `protoc` binary.
         if let Some(protoc) = &protoc {
             config.protoc_executable(protoc);
         }
 
-        // Find the protoc's well-known types include directory.
-        // This is needed for Bazel sandboxed builds where protoc and its
-        // include files are placed in different sandbox locations.
         let protoc_include_dir = find_protoc_include_dir(protoc.as_deref());
 
         let mut builder = builder.emit_rerun_if_changed(false);
@@ -256,8 +235,7 @@ impl XaiProtoBuilder {
                 None
             };
 
-        // Build the full includes list, prepending the protoc include directory
-        // if found (for well-known types like google/protobuf/timestamp.proto).
+        // Prepend protoc includes so well-known types resolve under Bazel.
         let all_includes: Vec<&Path> = protoc_include_dir
             .as_deref()
             .into_iter()

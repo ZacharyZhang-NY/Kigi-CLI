@@ -10,9 +10,7 @@ use ratatui::style::Color;
 use serde::{Deserialize, Serialize};
 use toml_edit::{DocumentMut, Item, RawString};
 
-// ============================================================================
 // Runtime Config (used by render code)
-// ============================================================================
 
 /// Background style for block content area.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
@@ -173,7 +171,8 @@ impl Default for ScrollbackDisplayConfig {
             line_under_last_entry: false,
             collapsed_accent_char: crate::glyphs::collapsed_accent().to_string(),
             dim_accent: 0.5,
-            group_selection_split: true, // Mode B by default
+            // Mode B by default
+            group_selection_split: true,
             highlight_overlays_border: false,
             expandable_indicator: true,
             expandable_indicator_running: true,
@@ -208,7 +207,8 @@ impl Default for LayoutConfig {
             outer_hpad_left: 2,
             outer_hpad_right: 2,
             block_pad_left: 2,
-            block_pad_right: 2, // Match left padding for symmetry
+            // Match left padding for symmetry
+            block_pad_right: 2,
         }
     }
 }
@@ -289,8 +289,10 @@ impl Default for ScrollbarConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            gap_left: 0,  // Content adjacent to scrollbar
-            gap_right: 0, // Scrollbar at screen edge
+            // Content adjacent to scrollbar
+            gap_left: 0,
+            // Scrollbar at screen edge
+            gap_right: 0,
             scrollbar_bg: None,
             scrollbar_fg: None,
         }
@@ -587,8 +589,8 @@ pub struct ToolConfig {
     pub dim_details: bool,
     /// Bullet/icon character rendered before tool call headers.
     pub bullet: ToolBullet,
-    // Note: bullet_accent and bullet_color were removed in the scrollback-v2 refactor.
-    // Bullet color is now determined by BlockContent::bullet() — each block type
+    // Note: bullet_accent and bullet_color are not configurable here.
+    // Bullet color is determined by BlockContent::bullet() — each block type
     // decides its own bullet color based on state (accent color, error, default).
     // Dimming for collapsed+groupable blocks is handled by EntryRenderer.
     // TODO(dim_muted): add a dim factor for collapsed text styling (not just bullet/accent).
@@ -658,7 +660,8 @@ pub struct ListDirConfig {
 impl Default for ListDirConfig {
     fn default() -> Self {
         Self {
-            terminal_bg: true, // Default: dark background for output
+            // Default: dark background for output
+            terminal_bg: true,
         }
     }
 }
@@ -705,25 +708,12 @@ impl Default for ExecuteConfig {
     }
 }
 
-// ============================================================================
 // Raw Config (for TOML serde)
-// ============================================================================
 //
-// ╔═══════════════════════════════════════════════════════════════════════════╗
-// ║ MAINTAINER NOTE: When adding/changing fields or sections:                 ║
-// ║                                                                           ║
-// ║ 1. Add doc comments (///) to ALL fields in Raw* structs - they become    ║
-// ║    TOML comments via the `DocumentedFields` derive macro.                 ║
-// ║                                                                           ║
-// ║ 2. If adding a new section (e.g., RawNewBlockConfig):                     ║
-// ║    - Add it to RawBlocksConfig (or appropriate parent)                    ║
-// ║    - Add corresponding runtime config (NewBlockConfig)                    ║
-// ║    - Add From<RawNewBlockConfig> for NewBlockConfig conversion            ║
-// ║    - Add annotate_table call in to_toml_with_comments() below!            ║
-// ║                                                                           ║
-// ║ 3. The to_toml_with_comments() method generates the default config file   ║
-// ║    with comments. Update it when adding new sections.                     ║
-// ╚═══════════════════════════════════════════════════════════════════════════╝
+// MAINTAINER NOTE — when adding or changing fields or sections:
+// 1. Put `///` on every Raw* field (DocumentedFields emits TOML comments).
+// 2. For a new section: Raw* + runtime config + From impl + annotate_table.
+// 3. Keep to_toml_with_comments() in sync so the default file stays documented.
 
 /// Root appearance configuration (TOML format).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Documented, DocumentedFields)]
@@ -1259,7 +1249,7 @@ pub struct RawToolConfig {
     /// "none", "dot" (·), "small-circle" (•), "circle" (●),
     /// "small-triangle" (▸), "triangle" (▶), "diamond" (◆).
     pub bullet: RawToolBullet,
-    // Note: bullet_accent and bullet_color removed — see ToolConfig comment.
+    // Note: bullet_accent and bullet_color are not configurable — see ToolConfig comment.
 }
 
 impl Default for RawToolConfig {
@@ -1284,7 +1274,8 @@ pub struct RawListDirConfig {
 impl Default for RawListDirConfig {
     fn default() -> Self {
         Self {
-            terminal_bg: true, // Default: dark background for output
+            // Default: dark background for output
+            terminal_bg: true,
         }
     }
 }
@@ -1364,9 +1355,7 @@ impl From<RawBlockBackground> for BlockBackground {
     }
 }
 
-// ============================================================================
 // Raw → Runtime Conversion
-// ============================================================================
 
 impl From<RawAppearanceConfig> for AppearanceConfig {
     fn from(raw: RawAppearanceConfig) -> Self {
@@ -1376,7 +1365,8 @@ impl From<RawAppearanceConfig> for AppearanceConfig {
                 collapse_unfocused: raw.prompt.collapse_unfocused,
                 mouse_hover: raw.prompt.mouse_hover,
                 show_prefix: raw.prompt.show_prefix,
-                compact: false, // runtime-only, not persisted in TOML
+                // runtime-only, not persisted in TOML
+                compact: false,
             },
             scrollback: ScrollbackConfig {
                 layout: raw.scrollback.layout.into(),
@@ -1426,7 +1416,8 @@ impl From<RawAppearanceConfig> for AppearanceConfig {
                 badge_format: raw.todo.badge_format.into(),
             },
             turn_status: TurnStatusConfig::default(),
-            show_timestamps: true, // runtime-only, loaded from config.toml via persist
+            // runtime-only, loaded from config.toml via persist
+            show_timestamps: true,
             // Single source: UiConfig::SHOW_TIMELINE_DEFAULT (loaded from config.toml via persist).
             show_timeline: UiConfig::SHOW_TIMELINE_DEFAULT,
             disable_plugins: raw.disable_plugins,
@@ -1607,9 +1598,7 @@ impl From<RawThinkingConfig> for ThinkingConfig {
     }
 }
 
-// ============================================================================
 // Color Parsing
-// ============================================================================
 
 /// An optional color that can be "none" or a color value.
 /// This allows TOML to represent None values explicitly.
@@ -1719,47 +1708,48 @@ fn lookup_named_color(name: &str) -> Result<Color, String> {
     // `parse_color_string` → `quantize()` to match the terminal's capabilities.
     let color = match name.to_uppercase().as_str() {
         // Background colors
-        "BG" | "BG_BASE" => Color::Rgb(20, 20, 20), // #141414
-        "BG_LIGHT" | "BG_HIGHLIGHT" => Color::Rgb(30, 30, 30), // #1e1e1e
-        "BG_DARK" => Color::Rgb(17, 17, 17),        // #111111
-        "BG_TERMINAL" | "BG_NIGHT" => Color::Rgb(10, 10, 10), // #0a0a0a
-        "BG_VISUAL" => Color::Rgb(30, 32, 45),      // blue-tinted selection
-        "BG_SEARCH" => Color::Rgb(48, 48, 52),      // #303034
+        "BG" | "BG_BASE" => Color::Rgb(20, 20, 20),
+        "BG_LIGHT" | "BG_HIGHLIGHT" => Color::Rgb(30, 30, 30),
+        "BG_DARK" => Color::Rgb(17, 17, 17),
+        "BG_TERMINAL" | "BG_NIGHT" => Color::Rgb(10, 10, 10),
+        // blue-tinted selection
+        "BG_VISUAL" => Color::Rgb(30, 32, 45),
+        "BG_SEARCH" => Color::Rgb(48, 48, 52),
 
         // Accent colors (TokyoNight Night)
-        "BLUE" => Color::Rgb(77, 121, 255),          // #4D79FF
-        "BLUE0" => Color::Rgb(61, 89, 161),          // #3d59a1
-        "BLUE1" => Color::Rgb(42, 195, 222),         // #2ac3de
-        "BLUE2" => Color::Rgb(13, 185, 215),         // #0db9d7
-        "BLUE5" => Color::Rgb(137, 221, 255),        // #89ddff
-        "BLUE6" => Color::Rgb(180, 249, 248),        // #b4f9f8
-        "BLUE7" => Color::Rgb(57, 75, 112),          // #394b70
-        "CYAN" => Color::Rgb(125, 207, 255),         // #7dcfff
-        "GREEN" => Color::Rgb(36, 196, 116),         // #24C474
-        "GREEN1" => Color::Rgb(115, 218, 202),       // #73daca
-        "GREEN2" => Color::Rgb(65, 166, 181),        // #41a6b5
-        "YELLOW" => Color::Rgb(255, 219, 141),       // #FFDB8D
-        "ORANGE" => Color::Rgb(255, 158, 100),       // #ff9e64
-        "RED" => Color::Rgb(248, 114, 122),          // #F8727A
-        "RED1" => Color::Rgb(219, 75, 75),           // #db4b4b
-        "MAGENTA" => Color::Rgb(187, 154, 247),      // #bb9af7
-        "PURPLE" => Color::Rgb(131, 113, 211),       // #8371D3
-        "MAGENTA2" => Color::Rgb(255, 0, 124),       // #ff007c
-        "TEAL" | "HINT" => Color::Rgb(26, 188, 156), // #1abc9c
+        "BLUE" => Color::Rgb(77, 121, 255),
+        "BLUE0" => Color::Rgb(61, 89, 161),
+        "BLUE1" => Color::Rgb(42, 195, 222),
+        "BLUE2" => Color::Rgb(13, 185, 215),
+        "BLUE5" => Color::Rgb(137, 221, 255),
+        "BLUE6" => Color::Rgb(180, 249, 248),
+        "BLUE7" => Color::Rgb(57, 75, 112),
+        "CYAN" => Color::Rgb(125, 207, 255),
+        "GREEN" => Color::Rgb(36, 196, 116),
+        "GREEN1" => Color::Rgb(115, 218, 202),
+        "GREEN2" => Color::Rgb(65, 166, 181),
+        "YELLOW" => Color::Rgb(255, 219, 141),
+        "ORANGE" => Color::Rgb(255, 158, 100),
+        "RED" => Color::Rgb(248, 114, 122),
+        "RED1" => Color::Rgb(219, 75, 75),
+        "MAGENTA" => Color::Rgb(187, 154, 247),
+        "PURPLE" => Color::Rgb(131, 113, 211),
+        "MAGENTA2" => Color::Rgb(255, 0, 124),
+        "TEAL" | "HINT" => Color::Rgb(26, 188, 156),
 
         // Text colors
-        "FG" | "TEXT" | "TEXT_PRIMARY" => Color::Rgb(243, 243, 243), // #f3f3f3
-        "FG_DARK" | "TEXT_SECONDARY" => Color::Rgb(200, 200, 200),   // #c8c8c8
-        "FG_GUTTER" => Color::Rgb(65, 65, 65),                       // #414141
-        "COMMENT" | "MUTED" | "TEXT_MUTED" => Color::Rgb(98, 98, 98), // #626262
-        "DARK3" => Color::Rgb(90, 90, 90),                           // #5a5a5a
-        "DARK5" | "TOOL" => Color::Rgb(120, 120, 120),               // #787878
+        "FG" | "TEXT" | "TEXT_PRIMARY" => Color::Rgb(243, 243, 243),
+        "FG_DARK" | "TEXT_SECONDARY" => Color::Rgb(200, 200, 200),
+        "FG_GUTTER" => Color::Rgb(65, 65, 65),
+        "COMMENT" | "MUTED" | "TEXT_MUTED" => Color::Rgb(98, 98, 98),
+        "DARK3" => Color::Rgb(90, 90, 90),
+        "DARK5" | "TOOL" => Color::Rgb(120, 120, 120),
 
         // Semantic colors
-        "ERROR" => Color::Rgb(247, 118, 142),   // RED
-        "SUCCESS" => Color::Rgb(158, 206, 106), // GREEN
-        "WARNING" => Color::Rgb(224, 175, 104), // YELLOW
-        "INFO" => Color::Rgb(125, 207, 255),    // CYAN
+        "ERROR" => Color::Rgb(247, 118, 142),
+        "SUCCESS" => Color::Rgb(158, 206, 106),
+        "WARNING" => Color::Rgb(224, 175, 104),
+        "INFO" => Color::Rgb(125, 207, 255),
 
         // Basic colors
         "BLACK" => Color::Black,
@@ -1771,9 +1761,7 @@ fn lookup_named_color(name: &str) -> Result<Color, String> {
     Ok(color)
 }
 
-// ============================================================================
 // TOML Generation with Comments
-// ============================================================================
 
 impl RawAppearanceConfig {
     pub fn to_toml_with_comments() -> String {
@@ -2025,9 +2013,7 @@ fn annotate_table<T: DocumentedFields>(table: &mut toml_edit::Table) {
     }
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -2414,7 +2400,7 @@ gutter_bg = true
         );
     }
 
-    // ── Terminal config (alt_screen) parsing ─────────────────────
+    // Terminal config (alt_screen) parsing
 
     #[test]
     fn terminal_alt_screen_auto_default() {

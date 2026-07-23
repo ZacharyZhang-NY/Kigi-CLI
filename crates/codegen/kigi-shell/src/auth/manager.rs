@@ -105,14 +105,6 @@ struct ScopedRefreshFailure {
 /// minutes" (a suspend doesn't extend it).
 const PERMANENT_FAILURE_TTL: StdDuration = StdDuration::from_secs(300);
 
-/// Single source of truth for `auth.json` + the in-memory bearer.
-///
-/// Lock order: `refresh_lock` (async) -> the sync locks (`inner` / `refresher`
-/// / `permanent_failure`), never co-held; `permanent_failure()`
-/// reads `permanent_failure` first and only then `inner` (via
-/// `attempted_tombstone_key`, when a tombstone is stored), never co-held. Never hold
-/// a `parking_lot` guard across `.await`. Refreshers return [`RefreshOutcome`]
-/// for `refresh_chain` to apply.
 /// Whether a manager rooted at `path` may use the OS keyring for `scope`.
 ///
 /// The keyring entry (`service kigi / oauth/kimi-code`) is global per OS
@@ -144,6 +136,14 @@ pub(crate) fn set_test_force_keyring_path_scope(on: bool) {
     TEST_FORCE_KEYRING_PATH_SCOPE.with(|flag| flag.set(on));
 }
 
+/// Single source of truth for `auth.json` + the in-memory bearer.
+///
+/// Lock order: `refresh_lock` (async) -> the sync locks (`inner` / `refresher`
+/// / `permanent_failure`), never co-held; `permanent_failure()`
+/// reads `permanent_failure` first and only then `inner` (via
+/// `attempted_tombstone_key`, when a tombstone is stored), never co-held. Never hold
+/// a `parking_lot` guard across `.await`. Refreshers return [`RefreshOutcome`]
+/// for `refresh_chain` to apply.
 pub struct AuthManager {
     /// In-memory bearer. Mutate via [`Self::with_inner_write`] or
     /// [`Self::refresh_chain`]; the closure helpers' sync return type
@@ -273,8 +273,6 @@ enum LockOutcome {
     Held(AuthFileLock),
     Adopted(Box<KimiAuth>),
 }
-
-// ── Construction + builders ──────────────────────────────────────────
 
 impl AuthManager {
     pub fn new(kigi_home: &Path, kimi_code_config: KimiCodeConfig) -> Self {
@@ -478,8 +476,6 @@ impl AuthManager {
         }
     }
 
-    // ── State mutation (clear, hot_swap, update) ──────────────────────
-
     pub(crate) fn clear(&self) -> std::io::Result<()> {
         self.remove_scope(&self.scope)
     }
@@ -508,7 +504,7 @@ impl AuthManager {
             tracing::warn!(error = %e, "auth: failed to remove session credential from keyring");
         }
         let disk_mutation = if let Some(_lock) = lock::try_lock_auth_file_nonblocking(&self.path) {
-            self.write_scope_removal(scope)? // lock released on drop
+            self.write_scope_removal(scope)?
         } else {
             ScopeRemoval::SkippedLockUnavailable
         };
@@ -651,8 +647,6 @@ impl AuthManager {
         self.clear_inner();
     }
 
-    // ── Read methods ─────────────────────────────────────────────────
-    //
     // | wire-bound bearer            | `auth().await` / `get_valid_token().await` |
     // | cached, no refresh           | `current()` (5-min buffer) |
     // | any in-memory bearer         | `current_or_expired()` |
@@ -723,8 +717,6 @@ impl AuthManager {
         is_expired_with_buffer(auth, Duration::zero())
     }
 
-    // ── Persistence ───────────────────────────────────────────────────
-
     /// Persist rotated tokens (keyring → file fallback) + cache.
     ///
     /// Invariants:
@@ -781,7 +773,6 @@ impl AuthManager {
             }
         };
         let mut map = map;
-        // One entry per scope.
         tracing::debug!(scope = %self.scope, "auth: storing token");
         map.insert(self.scope.clone(), auth.clone());
         let write_result = write_auth_json(&self.path, &map);
@@ -821,7 +812,8 @@ impl AuthManager {
     /// the auth-file lock on the mutation paths that matter.
     fn strip_scope_from_file_best_effort(&self) {
         let Ok(mut map) = read_auth_json(&self.path) else {
-            return; // missing/corrupt file: nothing to strip
+            // missing/corrupt file: nothing to strip
+            return;
         };
         if map.remove(&self.scope).is_none() {
             return;
@@ -888,8 +880,6 @@ impl AuthManager {
         self.clear_inner();
     }
 
-    // ── Disk I/O helpers ──────────────────────────────────────────────
-
     /// Accept a sibling-rotated disk token. On `ServerRejected`, the
     /// disk key must differ from in-memory (else no one refreshed).
     pub(crate) fn try_use_disk_token(
@@ -915,8 +905,7 @@ impl AuthManager {
 
     /// Re-read disk and try to adopt a sibling-written token, emitting
     /// telemetry on success. Combines `read_disk_auth` +
-    /// `try_use_disk_token` + the structured log that was previously
-    /// duplicated at each callsite in `refresh_chain`.
+    /// `try_use_disk_token` + the structured adoption log.
     fn try_adopt_disk_token(&self, reason: RefreshReason, msg: &str) -> Option<KimiAuth> {
         let disk_auth = self.read_disk_auth();
         let refreshed = self.try_use_disk_token(disk_auth.as_ref(), reason)?;
@@ -1105,8 +1094,6 @@ impl AuthManager {
         try_lock_auth_file_async(&self.path, timeout).await
     }
 
-    // ── Refresher setup ─────────────────────────────────────────────
-
     /// Set up refresh capability. Call once per `Arc<AuthManager>` at
     /// startup; subsequent calls are no-op via an atomic guard (so
     /// per-session call sites don't reset refresher-internal state).
@@ -1154,8 +1141,6 @@ impl AuthManager {
     pub(super) fn token_type(&self) -> TokenType {
         TokenType::from_auth(self.inner.read().as_ref())
     }
-
-    // ── Pre-request dispatch ──────────────────────────────────────────
 
     /// Pre-request entry point: per-`TokenType` dispatch. For just the key:
     /// [`Self::get_valid_token`].
@@ -1258,8 +1243,6 @@ impl AuthManager {
     pub(crate) async fn get_valid_token(self: &Arc<Self>) -> Result<String, AuthError> {
         self.auth().await.map(|a| a.key)
     }
-
-    // ── Refresh chain (single mutation point) ─────────────────────────
 
     /// Acquire lock, double-check, try disk, then active refresh via injected refresher.
     ///
@@ -1779,8 +1762,6 @@ impl AuthManager {
         }
     }
 
-    // ── 401 recovery entry point ──────────────────────────────────────
-
     /// 401 recovery state machine driven by the `rejected` credential. For
     /// one-shot recovery off the live bearer, use `try_recover_unauthorized()`.
     pub(crate) fn unauthorized_recovery(
@@ -1796,8 +1777,6 @@ impl AuthManager {
         let cached = self.with_inner_read(|inner| inner.cloned());
         self.unauthorized_recovery(cached).next().await.is_ok()
     }
-
-    // ── Proactive refresh ─────────────────────────────────────────────
 
     /// Spawn the background refresh task (PRD F1): a fixed
     /// [`PROACTIVE_REFRESH_INTERVAL`] (60s) tick that refreshes when the

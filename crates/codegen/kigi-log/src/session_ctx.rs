@@ -5,16 +5,13 @@
 //! `session_id` field. [`with_session_ctx`] installs that span for the
 //! duration of a session's work.
 
-/// The `session_id` field name the debug-log firehose router keys on:
-/// `debug_log::SessionIdVisitor` stashes a `SessionId` extension on any span
-/// carrying this field — the span *name* is not load-bearing for routing. Shared
-/// so the `info_span!` here and the router in `debug_log` can't silently drift; a
-/// rename trips `session_span_exposes_router_field` below.
+/// The field name the firehose router keys on: `debug_log::SessionIdVisitor`
+/// stashes a `SessionId` extension on any span carrying this field — the span
+/// *name* is not load-bearing for routing.
 pub(crate) const SESSION_ID_FIELD: &str = "session_id";
 
-/// Build the per-session tracing span the firehose router routes by. The field
-/// name MUST be the literal `session_id` (tracing field names can't come from a
-/// const); the test below pins it against [`SESSION_ID_FIELD`].
+/// The field name MUST be the literal `session_id` (tracing field names can't
+/// come from a const); the test below pins it against [`SESSION_ID_FIELD`].
 fn session_span(session_id: &str) -> tracing::Span {
     tracing::info_span!("session", session_id = %session_id)
 }
@@ -30,11 +27,8 @@ pub async fn with_session_ctx<F: std::future::Future>(session_id: &str, fut: F) 
 mod tests {
     use super::*;
 
-    /// The debug-log firehose router (`debug_log`) finds the session span by its
-    /// `session_id` field (not by name). That field name is a literal in
-    /// `session_span` (tracing field names can't be a const), so pin it against the
-    /// shared const here — a rename of either breaks this test instead of silently
-    /// degrading routing to the per-pid fallback.
+    /// Without this pin, a diverging field name silently degrades routing to the
+    /// per-pid fallback instead of failing.
     #[test]
     fn session_span_exposes_router_field() {
         // A bare registry enables every callsite, so the span has live metadata.

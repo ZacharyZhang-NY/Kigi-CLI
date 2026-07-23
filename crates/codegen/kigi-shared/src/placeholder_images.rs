@@ -16,7 +16,7 @@
 //! explicitly opt in to reading any arbitrary file — they paste a chat
 //! transcript fragment and the agent may resurrect it across sessions.
 //! To stop the placeholder mechanism from becoming a generic file
-//! exfiltration sink, the loader is intentionally conservative:
+//! exfiltration sink, the loader is deliberately conservative:
 //!
 //! * Canonicalises every candidate path (resolves `..` and symlinks).
 //! * Asserts the canonical target lives under an explicit prefix
@@ -105,7 +105,7 @@ pub fn display_number_from_meta(meta: Option<&agent_client_protocol::Meta>) -> O
 
 /// File extensions accepted by the placeholder loader.
 ///
-/// SVG is intentionally **not** in this list: SVG is XML text with no
+/// SVG is deliberately **not** in this list: SVG is XML text with no
 /// reliable magic-byte signature, and adding it would expand the attack
 /// surface (script tags, XXE) without a corresponding image-decoder
 /// validation pass. Any future SVG support must be gated by a script
@@ -354,7 +354,7 @@ pub fn default_allowed_prefixes_with_home(
 ///
 /// Chosen to match the directories users actually paste images from in
 /// practice. Sensitive subtrees (`~/.ssh`, `~/.aws`, `~/.config`,
-/// `~/.gnupg`, `~/Library/Keychains`) are intentionally excluded — they
+/// `~/.gnupg`, `~/Library/Keychains`) are deliberately excluded — they
 /// are never added to the prefix list, and any path resolving into
 /// [`DENY_PATH_CONTAINS`] is rejected even from inside an allowed
 /// prefix.
@@ -388,7 +388,7 @@ pub const HOME_IMAGE_SUBDIRS: &[&str] = &[
 /// `[Image #N: <path>]` placeholder recovery callers — the
 /// server-side `handle_prompt` fallback and the TUI orphan-placeholder
 /// fallback. The legacy user-initiated drag/paste path in
-/// `read_image_at_path` is intentionally outside this allowlist (the
+/// `read_image_at_path` is deliberately outside this allowlist (the
 /// user explicitly chose those files via the OS file picker).
 pub fn load_placeholder_image(
     path_str: &str,
@@ -680,7 +680,7 @@ mod tests {
         path
     }
 
-    // ----- strip_paths_from_image_placeholders ---------------------------
+    // strip_paths_from_image_placeholders
 
     #[test]
     fn strip_paths_drops_path_keeps_anchor() {
@@ -735,7 +735,7 @@ mod tests {
         assert_eq!(strip_paths_from_image_placeholders(text.to_owned()), text);
     }
 
-    // ----- extract_placeholders ------------------------------------------
+    // extract_placeholders
 
     #[test]
     fn extract_placeholders_basic() {
@@ -764,7 +764,7 @@ mod tests {
         assert!(extract_placeholders("[image #1: /tmp/x.png]").is_empty());
         assert!(extract_placeholders("[Image #: /tmp/x.png]").is_empty());
         // Missing space after colon: producer always emits ": " so the
-        // shorthand form is intentionally rejected. Pinned here.
+        // shorthand form is deliberately rejected. Pinned here.
         assert!(extract_placeholders("[Image #5:foo.png]").is_empty());
     }
 
@@ -850,7 +850,7 @@ mod tests {
         assert_eq!(&text[start..end], "[Image #1: /tmp/[odd]");
     }
 
-    // ----- load_placeholder_image ----------------------------------------
+    // load_placeholder_image
 
     #[test]
     fn load_placeholder_image_happy_path() {
@@ -1046,7 +1046,7 @@ mod tests {
         );
     }
 
-    // ----- default_allowed_prefixes / _with_home --------------------------
+    // default_allowed_prefixes / _with_home
 
     #[test]
     fn default_allowed_prefixes_with_home_includes_workspace_and_every_subdir() {
@@ -1121,7 +1121,7 @@ mod tests {
         );
     }
 
-    // ----- canonical_from_file_uri ----------------------------------------
+    // canonical_from_file_uri
 
     #[test]
     fn canonical_from_file_uri_rejects_non_file_scheme() {
@@ -1143,7 +1143,7 @@ mod tests {
         assert_eq!(parsed, canon);
     }
 
-    // ----- recover_orphan_placeholders (hermetic, no ambient $HOME) -------
+    // recover_orphan_placeholders (hermetic, no ambient $HOME)
 
     /// Build a non-empty ACP `ImageContent` so a future dedup change
     /// that short-circuits on `data.is_empty()` cannot silently pass
@@ -1197,7 +1197,8 @@ mod tests {
         let link = dir.path().join("link.png");
         std::os::unix::fs::symlink(&real_target, &link).unwrap();
 
-        let attached_uri = format!("file://{}", link.display()); // non-canonical
+        // non-canonical
+        let attached_uri = format!("file://{}", link.display());
         let mut raw = vec![make_acp_image(&attached_uri)];
         let canonical_placeholder = dunce::canonicalize(&real_target).unwrap();
         let query = format!("[Image #1: {}]", canonical_placeholder.display());
@@ -1300,7 +1301,7 @@ mod tests {
         assert!(raw.is_empty());
     }
 
-    // ----- Aggregate cap -------------------------------------------------
+    // Aggregate cap
 
     /// Two placeholders, aggregate cap below the cumulative byte
     /// total of both. The first image fits; the second pushes the
@@ -1379,7 +1380,7 @@ mod tests {
         assert!(raw.is_empty());
     }
 
-    // ----- DENY_PATH_CONTAINS --------------------------------------------
+    // DENY_PATH_CONTAINS
 
     /// Every entry of `DENY_PATH_CONTAINS` produces an
     /// `OutsideAllowedPrefixes` rejection. Loops the constant so a

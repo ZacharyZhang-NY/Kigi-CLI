@@ -1604,7 +1604,7 @@ mod tests {
     /// destructuring below (no `..`) fails to compile when upstream adds or renames
     /// a field, and rebuilding `HookSpecWire` from those bindings catches wire-side
     /// drift; the assertion pins that both serde shapes stay byte-identical. The
-    /// compiled `matcher` is `#[serde(skip)]` and is the only field intentionally
+    /// compiled `matcher` is `#[serde(skip)]` and is the only field deliberately
     /// absent from the wire.
     #[test]
     fn hook_spec_wire_covers_all_upstream_fields() {

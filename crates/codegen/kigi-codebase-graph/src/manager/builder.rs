@@ -235,7 +235,8 @@ impl IndexBuilder {
             .git_ignore(self.respect_gitignore)
             .git_global(self.respect_gitignore)
             .git_exclude(self.respect_gitignore)
-            .threads(self.num_threads.min(12)) // Use parallel walking (capped at 12)
+            // Use parallel walking (capped at 12)
+            .threads(self.num_threads.min(12))
             .build_parallel();
 
         walker.run(|| {
@@ -309,7 +310,6 @@ impl IndexBuilder {
         //
         // New approach: for each batch of build_batch_size files:
         //   1. Parse in parallel (par_chunks preserves thread-local cache locality)
-        //   2. Merge the batch into the index
         //   3. Drop the batch before starting the next one
         // Peak = O(build_batch_size) symbols + growing index simultaneously.
         for batch in file_paths.chunks(build_batch_size) {

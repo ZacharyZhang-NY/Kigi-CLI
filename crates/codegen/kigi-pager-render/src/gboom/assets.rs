@@ -28,7 +28,8 @@ pub(super) struct XorShift64(u64);
 
 impl XorShift64 {
     pub fn new(seed: u64) -> Self {
-        Self(seed.max(1)) // xorshift state must be non-zero
+        // xorshift state must be non-zero
+        Self(seed.max(1))
     }
 
     pub fn next_u32(&mut self) -> u32 {
@@ -239,30 +240,34 @@ fn hellstone() -> Texture {
     Texture { pixels }
 }
 
-// -------------------------------------------------------------------------
 // Sprite art (char-map pixel art)
-// -------------------------------------------------------------------------
 
 /// Map a sprite art character to a color. `.` is transparent.
 fn sprite_color(ch: u8) -> Option<Rgb> {
     match ch {
         b'.' => None,
-        b'B' => Some([146, 90, 50]),   // imp body, brown
-        b'b' => Some([104, 62, 34]),   // imp body, shaded
-        b'H' => Some([222, 214, 188]), // horn / bone
-        b'E' => Some(EYE_GLOW),        // glowing eye (fog-exempt in renderer)
-        b'M' => Some([34, 20, 16]),    // mouth / dark recess
-        b'T' => Some([236, 232, 220]), // teeth
-        b'C' => Some([214, 196, 160]), // claw
-        b'R' => Some([186, 28, 24]),   // blood
-        b'r' => Some([120, 16, 14]),   // blood, dark
-        b'G' => Some([96, 104, 112]),  // gunmetal
-        b'g' => Some([52, 58, 66]),    // gunmetal, dark
-        b'W' => Some([224, 228, 232]), // highlight
-        b'S' => Some([212, 160, 116]), // skin
-        b's' => Some([164, 116, 80]),  // skin, shaded
-        b'F' => Some([255, 244, 160]), // muzzle flash core
-        b'f' => Some([255, 168, 48]),  // muzzle flash fringe
+        // imp body, brown
+        b'B' => Some([146, 90, 50]),
+        // imp body, shaded
+        b'b' => Some([104, 62, 34]),
+        b'H' => Some([222, 214, 188]),
+        // glowing eye (fog-exempt in renderer)
+        b'E' => Some(EYE_GLOW),
+        // mouth / dark recess
+        b'M' => Some([34, 20, 16]),
+        b'T' => Some([236, 232, 220]),
+        b'C' => Some([214, 196, 160]),
+        b'R' => Some([186, 28, 24]),
+        b'r' => Some([120, 16, 14]),
+        b'G' => Some([96, 104, 112]),
+        b'g' => Some([52, 58, 66]),
+        b'W' => Some([224, 228, 232]),
+        b'S' => Some([212, 160, 116]),
+        b's' => Some([164, 116, 80]),
+        // muzzle flash core
+        b'F' => Some([255, 244, 160]),
+        // muzzle flash fringe
+        b'f' => Some([255, 168, 48]),
         _ => None,
     }
 }
@@ -530,9 +535,7 @@ pub(super) fn build_gun_sprites() -> GunSprites {
     GunSprites { idle, fire }
 }
 
-// -------------------------------------------------------------------------
 // 5x7 pixel font (uppercase + the few symbols the game needs)
-// -------------------------------------------------------------------------
 
 /// Return the 5x7 glyph rows for a character, MSB-left in the low 5 bits.
 /// Unknown characters render as blank.

@@ -4,8 +4,8 @@ pub const LINE_TRUNCATION_LIMIT: usize = 500;
 /// Max characters per batched event (multiple lines joined).
 pub const BATCH_TRUNCATION_LIMIT: usize = 3_000;
 
-/// Raw stdout buffer cap in bytes.
-pub const BUFFER_CAP_BYTES: usize = 1_048_576; // 1 MB
+/// Raw stdout buffer cap. 1 MB.
+pub const BUFFER_CAP_BYTES: usize = 1_048_576;
 
 /// Debounce window for batching concurrent stdout lines (ms).
 pub const DEBOUNCE_MS: u64 = 200;
@@ -21,10 +21,10 @@ pub const AUTO_KILL_THRESHOLD_MS: u64 = 30_000;
 
 /// Default monitor timeout (non-persistent). 10 hours to avoid short
 /// unexpected cutoffs for monitors the model starts without an explicit deadline.
-pub const DEFAULT_TIMEOUT_MS: u64 = 36_000_000; // 10 hours
+pub const DEFAULT_TIMEOUT_MS: u64 = 36_000_000;
 
-/// Maximum monitor timeout.
-pub const MAX_TIMEOUT_MS: u64 = 36_000_000; // 10 hours
+/// Maximum monitor timeout (10 hours).
+pub const MAX_TIMEOUT_MS: u64 = 36_000_000;
 
 /// Max result size for the tool_result response.
 pub const MAX_RESULT_SIZE_CHARS: usize = 10_000;
@@ -83,7 +83,6 @@ pub enum MonitorError {
 }
 
 impl MonitorInput {
-    /// Validate input constraints.
     pub fn validate(&self) -> Result<(), MonitorError> {
         let persistent = self.persistent.unwrap_or(false);
         if let Some(timeout) = self.timeout_ms

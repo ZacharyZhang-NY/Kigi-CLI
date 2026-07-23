@@ -32,7 +32,6 @@ impl SessionActor {
 
         // Log prompt to per-CWD fast history file immediately when queued
         // (not in handle_prompt, because prompt might be cancelled before processing)
-        // Extract raw text from prompt_blocks (without <user_query> tags)
         let raw_prompt_text: String = prompt_blocks
             .iter()
             .filter_map(|block| {
@@ -80,8 +79,8 @@ impl SessionActor {
         // User prompts have priority over queued synthetic auto-wake prompts;
         // the guarded sweep exempts the running turn's own slot (see
         // `State::sweep_pending_inputs`). Gate deliberately keyed on
-        // completion-id-bearing synthetics only (pre-existing shape): a queue
-        // holding only drain/goal-summary synthetics is never preempted.
+        // completion-id-bearing synthetics only: a queue holding only
+        // drain/goal-summary synthetics is never preempted.
         if !origin.is_synthetic() {
             let preempt_armed = state.pending_inputs.iter().any(|i| {
                 i.origin.completion_id().is_some()
@@ -340,11 +339,6 @@ impl SessionActor {
         state.running_prompt_id() == Some(prompt_id)
     }
 
-    /// Remove a queued prompt by id. Versioned + idempotent:
-    /// a missing id (already drained) or a stale `expected_version` is a
-    /// benign no-op — the actor still re-broadcasts so the client reconciles.
-    /// The in-flight turn is never removed. `owner` (when `Some`) scopes the
-    /// edit to the requesting client's own items.
     /// Resolve a removed/cleared queued prompt's in-flight `session/prompt` RPC
     /// before its [`InputItem`] is dropped.
     ///
@@ -376,6 +370,11 @@ impl SessionActor {
         }));
     }
 
+    /// Remove a queued prompt by id. Versioned + idempotent:
+    /// a missing id (already drained) or a stale `expected_version` is a
+    /// benign no-op — the actor still re-broadcasts so the client reconciles.
+    /// The in-flight turn is never removed. `owner` (when `Some`) scopes the
+    /// edit to the requesting client's own items.
     pub(super) async fn handle_remove_queued_prompt(
         &self,
         id: &str,
@@ -409,31 +408,25 @@ impl SessionActor {
         self.broadcast_queue_changed(&state);
     }
 
-    /// Atomically interject a queued (not-yet-running) prompt into the running
-    /// turn. In a single state-lock hold the actor removes the
-    /// prompt from `pending_inputs` and pushes its text into
-    /// `pending_interjections`, so the in-flight turn merges it at the next safe
-    /// point (`drain_pending_interjections`) and the prompt can never both
-    /// interject AND later run as its own turn — the race the client-side
-    /// "interject + queue/remove" pair could not avoid.
+    /// Promote a queued (not-yet-running) prompt to run as the next turn
+    /// ("send now"). In a single state-lock hold, remove it from its current
+    /// position and re-insert it right behind the running front, behind any
+    /// earlier send-now prompts (FIFO among sends). Returns `true` when the
+    /// caller must cancel the running turn — a turn is running and no goal loop
+    /// is active.
     ///
-    /// Mirrors [`handle_remove_queued_prompt`]'s versioned/owner gate and
-    /// [`SessionCommand::Interject`]'s broadcast-then-buffer. Benign **no-op**
-    /// (the prompt stays queued and runs normally) when:
-    /// - no turn is running (the `Send now` race where the turn just ended —
-    ///   buffering into nothing would strand the text), or
-    /// - `id` names the running turn, is already drained/removed, carries a
-    ///   stale `expected_version`, or is owned by another client, or
-    /// - the row is not a plain prompt (it would reach the model as prompt text).
+    /// Mirrors [`handle_remove_queued_prompt`]'s versioned/owner gate. Benign
+    /// no-op (the prompt stays where it is and runs normally) when `id` names
+    /// the running turn, is already drained/removed, carries a stale
+    /// `expected_version`, or is owned by another client.
     ///
-    /// Always re-broadcasts `kigi/queue/changed` so every client reconciles
-    /// (the row vanishes on success, is unchanged on a no-op).
-    /// `new_text` (when `Some`) replaces the stored queue text in the
-    /// interjection — the client edited the row before interjecting. It rides
-    /// the same version check, so a stale version no-ops the edit too.
-    /// Exception: when the interject no-ops but the row is still queued, a
-    /// version-matching `new_text` is saved to the row as an LWW edit so the
-    /// edit isn't silently lost when the row later drains as its own turn.
+    /// `new_text` (when `Some` and non-blank) applies an LWW edit to the row
+    /// before promoting; it rides the same version check, so a stale version
+    /// no-ops the edit too. When the promotion no-ops but the row is still
+    /// queued, a version-matching `new_text` is saved to the row as an LWW edit
+    /// so it isn't silently lost when the row later drains as its own turn.
+    ///
+    /// Always re-broadcasts `kigi/queue/changed` so every client reconciles.
     pub(super) async fn handle_interject_queued_prompt(
         &self,
         id: &str,
@@ -604,9 +597,8 @@ impl SessionActor {
     /// Semantics — last write wins via the actor's serialized mailbox.
     /// Concretely, for an entry whose `queue_meta.id == id`:
     /// 1. Rebuild the underlying `prompt_blocks` as a single
-    ///    [`acp::TextContent`] block carrying `new_text` (any non-text blocks
-    ///    such as pasted images on the original prompt are not preserved — the
-    ///    user has explicitly typed replacement text).
+    ///    [`acp::TextContent`] block carrying `new_text`, retaining any image
+    ///    blocks from the original prompt (other non-text blocks are dropped).
     /// 2. Update `queue_meta.text`, bump `queue_meta.version`, and record
     ///    `last_editor` (the original `owner` attribution is preserved).
     /// 3. Re-broadcast `kigi/queue/changed` so every subscriber renders the

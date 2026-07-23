@@ -258,7 +258,6 @@ mod tests {
 
         assert_eq!(parsed.method, NotificationMethod::Bel);
         assert_eq!(parsed.idle_threshold_secs, 60);
-        // Rest should be defaults
         assert_eq!(parsed.condition, NotificationCondition::Unfocused);
         assert!(parsed.sleep_prevention);
         assert!(parsed.progress_bar);

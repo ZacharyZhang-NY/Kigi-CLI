@@ -152,7 +152,8 @@ pub enum TerminalName {
 
 impl TerminalName {
     pub fn is_vte_based(self) -> bool {
-        matches!(self, Self::Vte | Self::Terminator) // WHY: single source of truth for the VTE family
+        // WHY: single source of truth for the VTE family
+        matches!(self, Self::Vte | Self::Terminator)
     }
 
     /// VS Code integrated terminal and xterm.js-based IDE embeds (including forks).
@@ -197,7 +198,8 @@ impl TerminalName {
 
 impl TerminalContext {
     pub fn is_vte_based(&self) -> bool {
-        self.brand.is_vte_based() || self.vte_version.is_some() // WHY: covers brand + legacy version marker
+        // WHY: covers brand + legacy version marker
+        self.brand.is_vte_based() || self.vte_version.is_some()
     }
 }
 
@@ -210,7 +212,6 @@ pub enum MultiplexerKind {
     /// GNU screen (including Byobu-on-screen).
     #[strum(to_string = "GNU screen")]
     Screen,
-    /// Zellij.
     Zellij,
     /// cmux (Ghostty-backed macOS terminal multiplexer).
     #[strum(to_string = "cmux")]
@@ -456,7 +457,8 @@ impl TerminalContext {
     /// In every case `Alt+Enter` (delivered as `ESC`+`CR`) is the reliable
     /// newline chord and is what the UI advertises.
     pub fn shift_enter_unavailable(&self) -> bool {
-        let is_vte = self.is_vte_based(); // WHY: central helper + version gating
+        // WHY: central helper + version gating
+        let is_vte = self.is_vte_based();
         if is_vte {
             return match self
                 .vte_version
@@ -671,7 +673,7 @@ fn env_get<'a>(env: &'a HashMap<String, String>, key: &str) -> Option<&'a str> {
 ///
 /// This is the pure equivalent of the original `detect_terminal_info`.
 ///
-/// Adding a new env marker to this brand chain (or to
+/// Including a new env marker to this brand chain (or to
 /// [`detect_byobu_from_env`] / [`detect_multiplexer_from_env`] below)
 /// requires extending `HOST_TERMINAL_ENV_VARS` in
 /// `kigi-pager-pty-harness/src/pty.rs` (test-env hygiene — the PTY
@@ -884,7 +886,8 @@ pub fn detect_multiplexer_from_env(env: &HashMap<String, String>) -> Multiplexer
         match backend {
             ByobuBackend::Tmux => return MultiplexerKind::Tmux,
             ByobuBackend::Screen => return MultiplexerKind::Screen,
-            ByobuBackend::Unknown => {} // fall through to standard markers
+            // fall through to standard markers
+            ByobuBackend::Unknown => {}
         }
     }
 
@@ -959,7 +962,6 @@ pub fn build_terminal_context_from_env(env: &HashMap<String, String>) -> Termina
     }
 }
 
-/// Map TERM_PROGRAM value to terminal name.
 fn terminal_name_from_term_program(value: &str) -> Option<TerminalName> {
     let normalized: String = value
         .trim()

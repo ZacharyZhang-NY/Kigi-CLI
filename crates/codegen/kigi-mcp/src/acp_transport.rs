@@ -75,8 +75,10 @@ pub fn acp_bridge_transport(
     invoker: Arc<dyn AcpReverseInvoker>,
     invoke_timeout: Duration,
 ) -> AcpBridgeTransport {
-    let (agent_read, pump_write) = tokio::io::duplex(BRIDGE_BUF); // server -> client
-    let (pump_read, agent_write) = tokio::io::duplex(BRIDGE_BUF); // client -> server
+    // server -> client
+    let (agent_read, pump_write) = tokio::io::duplex(BRIDGE_BUF);
+    // client -> server
+    let (pump_read, agent_write) = tokio::io::duplex(BRIDGE_BUF);
     tokio::spawn(pump(
         server_id,
         invoker,
@@ -142,7 +144,8 @@ async fn read_requests(
     loop {
         line.clear();
         match reader.read_line(&mut line).await {
-            Ok(0) | Err(_) => break, // rmcp closed its end
+            // rmcp closed its end
+            Ok(0) | Err(_) => break,
             Ok(_) => {}
         }
         // Reap finished invokes so the set stays bounded.
@@ -202,7 +205,8 @@ async fn write_responses(
             .is_err()
             || server_to_client.flush().await.is_err()
         {
-            break; // rmcp closed its end
+            // rmcp closed its end
+            break;
         }
     }
 }

@@ -13,8 +13,8 @@ pub(crate) const OUTER_RESERVE: usize = 8;
 
 const ENV_THREADS: &str = "KIGI_GIX_STATUS_THREADS";
 
-/// Pure produce-worker budget. Always `n >= 1`. Caps at 8; shrinks under tight
-/// soft nproc headroom (`headroom < 2` → 1).
+/// Produce-worker budget from explicit inputs, ignoring the env override.
+/// Always `>= 1`, since `Some(0)` means unlimited in gix.
 pub fn compute_gix_status_thread_limit_from(
     cores: usize,
     soft_nproc: Option<usize>,
@@ -35,8 +35,8 @@ pub fn compute_gix_status_thread_limit_from(
     limit.max(1)
 }
 
-/// Production budget (`n >= 1`). Honours `KIGI_GIX_STATUS_THREADS=N` for `N >= 1`
-/// (forced dial; bypasses nproc). Else cores + soft nproc + thread usage.
+/// Production budget (always `>= 1`). `KIGI_GIX_STATUS_THREADS=N` forces `N`,
+/// bypassing the nproc headroom calculation entirely.
 pub fn compute_gix_status_thread_limit() -> usize {
     if let Ok(raw) = std::env::var(ENV_THREADS)
         && let Some(n) = parse_env_thread_override(&raw)
@@ -49,12 +49,11 @@ pub fn compute_gix_status_thread_limit() -> usize {
     compute_gix_status_thread_limit_from(cores, soft_nproc_limit(), threads_used())
 }
 
-/// `N >= 1` only; reject `0` and garbage.
 fn parse_env_thread_override(raw: &str) -> Option<usize> {
     raw.parse::<usize>().ok().filter(|&n| n >= 1)
 }
 
-/// Test helper: `None` = uncapped, `Some(n)` with `n >= 1`. Never `Some(0)`.
+/// `None` leaves gix at its own default worker count.
 fn apply_thread_limit<'repo, P>(
     platform: gix::status::Platform<'repo, P>,
     limit: Option<usize>,
@@ -71,7 +70,6 @@ where
     })
 }
 
-/// Apply [`compute_gix_status_thread_limit`] as `Some(n)` on the status platform.
 pub fn with_budgeted_thread_limit<'repo, P>(
     platform: gix::status::Platform<'repo, P>,
 ) -> gix::status::Platform<'repo, P>
@@ -125,7 +123,6 @@ fn threads_used() -> usize {
     }
 }
 
-/// Test scan: `Ok(true)` iff a dirty entry ending in `want_suffix` is seen.
 /// Errors carry the gix `Debug` form so a `SpawnThread` failure stays
 /// distinguishable from a genuinely missed dirty file.
 #[cfg(test)]
@@ -351,7 +348,6 @@ mod nproc_tests {
         Ok(())
     }
 
-    /// Child entry: tighten nproc, run status, exit 0 if survived with dirty found.
     fn run_child(mode: &str, repo: &Path) -> ! {
         let cores = std::thread::available_parallelism()
             .map(usize::from)
@@ -474,8 +470,7 @@ mod nproc_tests {
             .expect("spawn child")
     }
 
-    /// Parent-side boilerplate: guard re-entry, require 2+ cores, build the
-    /// repo, run the child, and turn child-side skips into parent-side skips.
+    /// A child-side skip becomes a parent-side skip, reported as `None`.
     fn spawn_child_or_skip(mode: &str) -> Option<std::process::Output> {
         if std::env::var_os(CHILD_ENV).is_some() {
             // Never fork further children from inside a child.

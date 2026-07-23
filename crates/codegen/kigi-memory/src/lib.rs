@@ -1,9 +1,4 @@
-//! Memory system for cross-session knowledge persistence.
-//!
-//! This crate provides a markdown-based memory storage layer that allows
-//! Kigi to persist important information across sessions. Memory files are
-//! stored under `~/.kigi/memory/` with workspace-scoped subdirectories
-//! keyed by a blake3 hash of the workspace path.
+//! Markdown-based memory storage that persists knowledge across sessions.
 //!
 //! ## Data Layout
 //!
@@ -18,9 +13,8 @@
 //!
 //! ## Feature Flag
 //!
-//! Memory is gated behind `--experimental-memory` CLI flag or
-//! `KIGI_MEMORY=1` environment variable. When disabled, this crate
-//! is not initialized by the host.
+//! Memory is gated behind the `--experimental-memory` CLI flag or
+//! `KIGI_MEMORY=1`; when disabled the host never initializes this crate.
 
 pub mod archive;
 pub mod backend;
@@ -41,13 +35,12 @@ pub use backend::{MemoryBackendImpl, MemoryBackendParams};
 pub use index::{MemoryIndex, init_sqlite_vec};
 pub use storage::{MemoryScope, MemoryStorage};
 
-/// Embed all chunks that don't have embeddings yet.
+/// Embeds every chunk that has no embedding yet, returning how many succeeded.
 ///
-/// Queries the index for unembedded chunks, batches them through the
-/// embedding provider, and upserts the results. Logs progress.
-///
-/// This is the async glue between the sync `MemoryIndex` and the async
-/// `EmbeddingProvider`. Call after reindex, flush writes, or session-end writes.
+/// The async glue between the sync `MemoryIndex` and the async
+/// `EmbeddingProvider`. Call after reindex, flush writes, or session-end
+/// writes. Failures are logged and skipped rather than propagated, so a dead
+/// embedding endpoint degrades search instead of breaking the session.
 pub async fn embed_missing_chunks(
     index: &MemoryIndex,
     provider: &dyn embedding::EmbeddingProvider,
@@ -68,7 +61,7 @@ pub async fn embed_missing_chunks(
     let total = chunks.len();
     let mut embedded = 0;
 
-    // Batch in groups of 32 (provider's typical max batch size)
+    // 32 matches the typical provider max batch size.
     for batch in chunks.chunks(32) {
         let texts: Vec<&str> = batch.iter().map(|(_, text)| text.as_str()).collect();
         match provider.embed_batch(&texts).await {

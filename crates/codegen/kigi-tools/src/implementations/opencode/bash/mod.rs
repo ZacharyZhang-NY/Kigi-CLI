@@ -33,16 +33,9 @@ use crate::types::resources::{
 use crate::types::tool::{ToolKind, ToolNamespace};
 use crate::types::tool_io::ToolInput;
 
-// ───────────────────────────────────────────────────────────────────────────
-// Constants
-// ───────────────────────────────────────────────────────────────────────────
-
-const MAX_TIMEOUT_MS: u64 = 600_000; // 10 minutes
+// 10 minutes
+const MAX_TIMEOUT_MS: u64 = 600_000;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
-
-// ───────────────────────────────────────────────────────────────────────────
-// Description
-// ───────────────────────────────────────────────────────────────────────────
 
 const DESCRIPTION: &str = r#"Executes a given bash command in a persistent shell session with optional timeout, ensuring proper handling and security measures.
 IMPORTANT: This tool is for terminal operations like git, npm, docker, etc. DO NOT use it for file operations (reading, writing, editing, searching, finding files) - use the specialized tools for this instead.
@@ -160,33 +153,24 @@ Important:
 # Other common operations
 - View comments on a GitHub PR: gh api repos/foo/bar/pulls/123/comments"#;
 
-// ───────────────────────────────────────────────────────────────────────────
-// Input
-// ───────────────────────────────────────────────────────────────────────────
-
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// Input for the opencode bash tool.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct BashInput {
-    /// The bash command to run.
     #[schemars(description = "The bash command to run.")]
     pub command: String,
 
-    /// Optional timeout in milliseconds.
     #[schemars(description = "Optional timeout in milliseconds.")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout: Option<u64>,
 
-    /// Optional working directory. Defaults to the session working directory.
     #[schemars(
         description = "Optional working directory. Defaults to the session working directory."
     )]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workdir: Option<String>,
 
-    /// A clear, concise description of what this command does in 5-10 words.
     #[schemars(
         description = "One sentence explanation as to why this command needs to be run and how it contributes to the goal."
     )]
@@ -224,16 +208,10 @@ impl From<BashInput> for ToolInput {
     }
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Tool implementation
-// ───────────────────────────────────────────────────────────────────────────
-
-/// OpenCode bash tool — executes shell commands via the `Terminal` backend.
 #[derive(Debug, Default)]
 pub struct BashTool;
 
 impl BashTool {
-    /// Compute the effective timeout: clamp user-provided ms, or use default.
     fn effective_timeout(input_timeout_ms: Option<u64>) -> Duration {
         match input_timeout_ms {
             Some(ms) => {
@@ -244,8 +222,6 @@ impl BashTool {
         }
     }
 
-    /// Resolve the working directory from the optional `workdir` param,
-    /// falling back to the session `Cwd`.
     fn resolve_cwd(session_cwd: &std::path::Path, workdir: Option<&str>) -> PathBuf {
         match workdir {
             Some(dir) => {
@@ -260,10 +236,6 @@ impl BashTool {
         }
     }
 }
-
-// ───────────────────────────────────────────────────────────────────────────
-// Into<ToolOutput> for BashToolOutput
-// ───────────────────────────────────────────────────────────────────────────
 
 impl From<BashToolOutput> for crate::types::output::ToolOutput {
     fn from(o: BashToolOutput) -> Self {
@@ -340,7 +312,6 @@ impl kigi_tool_runtime::Tool for BashTool {
         use crate::types::tool_metadata::shared_resources;
         let resources = shared_resources(&ctx)?;
 
-        // --- Read resources ---
         let backend = resources.lock().await.require::<Terminal>()?.0.clone();
         let session_cwd = crate::types::tool_metadata::resolve_cwd(&ctx, &resources).await?;
         let tool_call_id = ctx.call_id.as_str().to_owned();
@@ -369,18 +340,14 @@ impl kigi_tool_runtime::Tool for BashTool {
             })
             .unwrap_or(DEFAULT_TOOL_OUTPUT_CHARS);
 
-        // --- Resolve working directory ---
         let cwd = Self::resolve_cwd(&session_cwd, input.workdir.as_deref());
 
-        // --- Compute effective timeout ---
         let timeout = Self::effective_timeout(input.timeout);
 
-        // --- Build output file path ---
         let output_file = session_folder
             .join("terminal")
             .join(format!("{}.log", tool_call_id));
 
-        // --- Foreground execution ---
         let request = TerminalRunRequest {
             command: input.command.clone(),
             working_directory: cwd.clone(),
@@ -390,11 +357,14 @@ impl kigi_tool_runtime::Tool for BashTool {
             output_file: output_file.clone(),
             notification_handle: notification_handle.clone(),
             tool_call_id: tool_call_id.clone(),
-            display_command: None, // OpenCode doesn't use isolation wrapping
-            auto_background_on_timeout: false, // OpenCode doesn't support auto-backgrounding
+            // OpenCode doesn't use isolation wrapping
+            display_command: None,
+            // OpenCode doesn't support auto-backgrounding
+            auto_background_on_timeout: false,
             foreground_block_budget: None,
             kind: crate::computer::types::TaskKind::Bash,
-            owner_session_id: None, // OpenCode doesn't use shared terminal backends
+            // OpenCode doesn't use shared terminal backends
+            owner_session_id: None,
         };
 
         let result = match backend.run(request).await {
@@ -413,7 +383,6 @@ impl kigi_tool_runtime::Tool for BashTool {
             }
         };
 
-        // --- Send completion notification ---
         let base = BashNotificationBase {
             tool_call_id: tool_call_id.clone(),
             command: input.command.clone(),
@@ -477,8 +446,6 @@ mod tests {
     use crate::types::resources::Resources;
     use std::collections::HashMap;
     use std::sync::Arc;
-
-    // ─── Mock terminal ───
 
     struct MockTerminal {
         foreground_result: Result<TerminalRunResult, ComputerError>,
@@ -559,8 +526,6 @@ mod tests {
         }
     }
 
-    // ─── Test helpers ───
-
     fn make_resources(mock: MockTerminal) -> Resources {
         let mut resources = Resources::new();
         let backend: Arc<dyn TerminalBackend> = Arc::new(mock);
@@ -580,8 +545,6 @@ mod tests {
             description: "Test command".to_string(),
         }
     }
-
-    // ─── Tests ───
 
     #[tokio::test]
     async fn foreground_command_success() {
@@ -648,18 +611,14 @@ mod tests {
 
     #[tokio::test]
     async fn workdir_overrides_cwd() {
-        // Verify resolve_cwd logic
         let session_cwd = std::path::Path::new("/home/user/project");
 
-        // Absolute workdir
         let resolved = BashTool::resolve_cwd(session_cwd, Some("/tmp/other"));
         assert_eq!(resolved, PathBuf::from("/tmp/other"));
 
-        // Relative workdir
         let resolved = BashTool::resolve_cwd(session_cwd, Some("subdir"));
         assert_eq!(resolved, PathBuf::from("/home/user/project/subdir"));
 
-        // No workdir
         let resolved = BashTool::resolve_cwd(session_cwd, None);
         assert_eq!(resolved, PathBuf::from("/home/user/project"));
     }
@@ -770,7 +729,8 @@ mod tests {
         match result {
             BashToolOutput::Bash(bash) => {
                 assert_eq!(bash.signal, Some("SIGKILL".to_string()));
-                assert_eq!(bash.exit_code, -1); // None maps to -1
+                // None maps to -1
+                assert_eq!(bash.exit_code, -1);
             }
             BashToolOutput::BackgroundTaskStarted(_) => panic!("Expected foreground output"),
         }
@@ -848,7 +808,6 @@ mod tests {
         assert_eq!(input.workdir, Some("/home/user".to_string()));
         assert_eq!(input.description, "List files");
 
-        // Minimal (only required fields)
         let minimal = serde_json::json!({
             "command": "pwd",
             "description": "Print directory"
@@ -881,7 +840,6 @@ mod tests {
     fn from_bash_tool_output() {
         use crate::types::output::{BackgroundTaskStarted, ToolOutput};
 
-        // Bash variant
         let bash = BashToolOutput::Bash(BashOutput {
             output: b"hello".to_vec(),
             output_for_prompt: "hello".to_string(),
@@ -900,7 +858,6 @@ mod tests {
         let tool_output: ToolOutput = bash.into();
         assert!(matches!(tool_output, ToolOutput::Bash(_)));
 
-        // BackgroundTaskStarted variant
         let bg = BashToolOutput::BackgroundTaskStarted(BackgroundTaskStarted {
             task_id: "task-1".to_string(),
             task_type: "bash".to_string(),
@@ -915,8 +872,6 @@ mod tests {
         let tool_output: ToolOutput = bg.into();
         assert!(matches!(tool_output, ToolOutput::BackgroundTaskStarted(_)));
     }
-
-    // ─── Additional tests ───
 
     #[tokio::test]
     async fn output_for_prompt_populated() {
@@ -1040,7 +995,6 @@ mod tests {
         resources.insert(SessionEnv(Arc::new(HashMap::new())));
         resources.insert(NotificationHandle(ToolNotificationHandle::noop()));
 
-        // Insert TruncationCfg with a custom per-tool limit for "bash".
         let mut cfg = TruncationConfig::default();
         cfg.per_tool_max_output_bytes
             .insert("bash".to_string(), 1000);
@@ -1055,7 +1009,6 @@ mod tests {
         .await;
         assert!(result.is_ok());
 
-        // Verify the captured request used the overridden limit.
         let captured = capturing.captured_request.lock().unwrap();
         let req = captured
             .as_ref()
@@ -1093,8 +1046,6 @@ mod tests {
         );
     }
 
-    // ─── Description template shell-awareness parity tests ───
-    //
     // Same shape as kigi/bash: the opencode tool inherits the same
     // Unix-utility guidance and must branch on PowerShell/cmd.
 

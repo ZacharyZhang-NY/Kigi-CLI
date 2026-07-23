@@ -11,18 +11,15 @@ use crate::theme::Theme;
 
 use super::TOOL_HEADER_RANGE;
 
-/// List directory tool call.
 #[derive(Debug, Clone)]
 pub struct ListDirToolCallBlock {
-    /// Path to the directory.
     pub path: String,
     /// The formatted directory listing output.
     pub output: String,
     /// Error message if the tool call failed (None = success).
     pub error: Option<String>,
-    /// When the tool started running (Phase 2: time tracking).
     pub started_at: Option<std::time::Instant>,
-    /// Elapsed time in ms after completion (Phase 2: time tracking).
+    /// Elapsed time in ms, set once the command finishes.
     pub elapsed_ms: Option<i64>,
 }
 
@@ -42,24 +39,21 @@ impl ListDirToolCallBlock {
         }
     }
 
-    /// Set the output.
     pub fn with_output(mut self, output: impl Into<String>) -> Self {
         self.output = output.into();
         self
     }
 
-    /// Set error (marks as failed).
     pub fn with_error(mut self, error: impl Into<String>) -> Self {
         self.error = Some(error.into());
         self
     }
 
-    /// Check if successful (no error).
     pub fn is_success(&self) -> bool {
         self.error.is_none()
     }
 
-    /// Set error (mutable) — compute elapsed time if not already set (Phase 2).
+    /// Sets error; also computes elapsed time from `started_at` if not already set.
     pub fn set_error(&mut self, error: Option<String>) {
         if self.elapsed_ms.is_none()
             && let Some(start) = self.started_at
@@ -82,7 +76,7 @@ impl ListDirToolCallBlock {
         }
     }
 
-    /// Get elapsed time in ms (Phase 2).
+    /// Returns current elapsed if still running, or the stored value once finished.
     pub fn elapsed_ms(&self) -> Option<i64> {
         match self.elapsed_ms {
             Some(ms) => Some(ms),
@@ -92,7 +86,6 @@ impl ListDirToolCallBlock {
         }
     }
 
-    /// Set output (mutable).
     pub fn set_output(&mut self, output: impl Into<String>) {
         self.output = output.into();
     }
@@ -164,7 +157,6 @@ impl BlockContent for ListDirToolCallBlock {
                         &self.output,
                         theme.primary(),
                     ) {
-                        // Indent output by 2 spaces
                         let mut spans = vec![Span::styled("  ".to_string(), theme.primary())];
                         spans.extend(rl.line.spans);
                         let mut block_line: BlockLine = Line::from(spans).into();
@@ -181,7 +173,8 @@ impl BlockContent for ListDirToolCallBlock {
     }
 
     fn accent(&self, _ctx: &BlockContext) -> Option<AccentStyle> {
-        None // ListDir blocks never have an accent line
+        // ListDir blocks never have an accent line.
+        None
     }
 
     fn bullet(&self, _ctx: &BlockContext) -> Option<AccentStyle> {
@@ -206,7 +199,6 @@ impl BlockContent for ListDirToolCallBlock {
     }
 
     fn is_foldable(&self) -> bool {
-        // Not foldable if failed
         if self.error.is_some() {
             return false;
         }

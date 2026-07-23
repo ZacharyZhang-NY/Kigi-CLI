@@ -23,8 +23,6 @@ pub async fn handle(_agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
             )
             .in_scope(|| {});
 
-            // Log the survey via telemetry (this will go to Mixpanel and BigQuery)
-
             tracing::info!(
                 "Rollout survey received for session {}: preferences={:?}, feedback={}",
                 req.session_id,

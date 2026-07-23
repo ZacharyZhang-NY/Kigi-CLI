@@ -112,7 +112,6 @@ impl<T: ToolOutput + Serialize + ?Sized> ToolOutput for Box<T> {
 /// frontend.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ToolChatCompletionResponse {
-    /// The main completion payload.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<ToolChatCompletion>,
     /// Structured stream error (e.g. rate-limit, tool failure).
@@ -126,7 +125,6 @@ pub struct ToolChatCompletion {
     /// Always `"assistant"`.
     #[serde(default)]
     pub sender: String,
-    /// Text body of the response.
     #[serde(default)]
     pub message: String,
     /// Tag discriminator: `"final"`, `"raw_function_result"`,
@@ -139,7 +137,6 @@ pub struct ToolChatCompletion {
     /// JSON-encoded card attachment (images, render cards, files).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub card_attachment: Option<String>,
-    /// Code execution result.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code_execution_result: Option<ToolCodeExecutionResult>,
     /// Catch-all for additional fields the tool wants to set. Merged
@@ -183,7 +180,7 @@ pub struct ToolStreamError {
 /// | 4 | Object with mixed fields | block-shaped fields extracted, rest as JSON text |
 /// | 5 | Anything else | `ContentBlock::Text` with the stringified value |
 pub fn extract_content_blocks(value: &Value) -> Vec<ContentBlock> {
-    // 1. Value IS a single ContentBlock.
+    // 1. Value is a single ContentBlock.
     if let Some(block) = try_parse_block(value) {
         return vec![block];
     }
@@ -261,9 +258,7 @@ pub fn extract_content_blocks(value: &Value) -> Vec<ContentBlock> {
     vec![value_to_block(value)]
 }
 
-// ---------------------------------------------------------------------------
 // Internal helpers
-// ---------------------------------------------------------------------------
 
 /// The `ContentBlock` enum is `#[serde(tag = "type", rename_all =
 /// "snake_case")]`, so a JSON object can only be a content block when
@@ -293,13 +288,11 @@ fn try_parse_block(value: &Value) -> Option<ContentBlock> {
     serde_json::from_value::<ContentBlock>(value.clone()).ok()
 }
 
-/// Result of inspecting a single object field value.
 enum FieldShape {
-    /// The field value IS a single `ContentBlock`.
+    /// Single `ContentBlock`.
     Block(ContentBlock),
-    /// The field value is an array where *every* element is a `ContentBlock`.
+    /// Array where every element is a `ContentBlock`.
     Blocks(Vec<ContentBlock>),
-    /// The field value does not look like block content.
     Other,
 }
 
@@ -309,7 +302,6 @@ enum FieldShape {
 /// `ContentBlock`; mixed arrays go to `Other` so ambiguous data
 /// (e.g. `"scores": [0.9, 0.8]`) is not silently dropped.
 fn classify_field(value: &Value) -> FieldShape {
-    // Single block.
     if let Some(block) = try_parse_block(value) {
         return FieldShape::Block(block);
     }
@@ -343,11 +335,8 @@ fn value_to_block(value: &Value) -> ContentBlock {
     })
 }
 
-// ---------------------------------------------------------------------------
-// Type-erased extractor (used by the toolbox registry)
-// ---------------------------------------------------------------------------
+// Type-erased extractor (toolbox registry)
 
-/// Type-erased model output extractor.
 pub type ModelOutputExtractor = Arc<dyn Fn(&Value) -> Option<Vec<ContentBlock>> + Send + Sync>;
 
 /// Build a [`ModelOutputExtractor`] for a concrete output type.
@@ -374,7 +363,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    // ── ToolOutput with custom override ─────────────────────────────
+    // ToolOutput with custom override
 
     #[derive(Serialize)]
     struct FakeOutput {
@@ -423,7 +412,7 @@ mod tests {
         assert_eq!(o.model_output().len(), 2);
     }
 
-    // ── ToolOutput default → empty (runtime fills via extract) ──────
+    // ToolOutput default → empty (runtime fills via extract)
 
     #[test]
     fn default_model_output_returns_empty() {
@@ -464,7 +453,7 @@ mod tests {
         );
     }
 
-    // ── extract_content_blocks unit tests ──────────────────────────
+    // extract_content_blocks unit tests
 
     // Strategy 1: single ContentBlock
     #[test]

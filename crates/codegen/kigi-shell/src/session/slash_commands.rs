@@ -4,7 +4,6 @@ use agent_client_protocol as acp;
 use kigi_tools::implementations::skills::skill::format_skill_name;
 use kigi_tools::implementations::skills::types::SkillInfo;
 
-/// A built-in slash command.
 pub(crate) struct BuiltinCommand {
     pub name: &'static str,
     pub description: &'static str,
@@ -545,8 +544,8 @@ pub(super) fn available_commands(
                             }))
                             .meta(meta.clone())
                     };
-                    // Always advertise the qualified name for plugin skills.
-                    // Also advertise the bare name if it doesn't collide.
+                    // Collision: advertise the qualified name only.
+                    // No collision: advertise the bare name only.
                     if bare_collides {
                         vec![make_entry(qualified)]
                     } else {
@@ -587,8 +586,6 @@ pub(crate) fn builtin_commands(availability: CommandAvailability) -> Vec<acp::Av
         .collect()
 }
 
-// ── kigi/commands/list ext method ────────────────────────────────
-
 #[derive(serde::Deserialize)]
 pub(crate) struct ListCommandsRequest {
     pub cwd: Option<String>,
@@ -620,8 +617,6 @@ pub(crate) async fn list_commands(
         commands: available_commands(&skills, availability),
     }
 }
-
-// ── Slash command resolution ────────────────────────────────────
 
 /// A parsed skill reference from user input.
 ///
@@ -850,7 +845,8 @@ pub(crate) fn parse_skill_references(
         if let SlashCommand::Skill(s) = cmd {
             skill_map
                 .entry(&s.name)
-                .and_modify(|v| *v = None) // duplicate → mark ambiguous
+                // duplicate → mark ambiguous
+                .and_modify(|v| *v = None)
                 .or_insert(Some(s));
         }
     }
@@ -863,7 +859,6 @@ pub(crate) fn parse_skill_references(
         offset: usize,
         /// The text as typed by the user (e.g. "commit", "user:commit").
         typed_name: String,
-        /// Resolved skill info.
         skill: &'a SkillInfo,
     }
 
@@ -881,11 +876,11 @@ pub(crate) fn parse_skill_references(
             i += 1;
             continue;
         }
-        let start = i + 1; // skip '/'
+        let start = i + 1;
         if start >= bytes.len() {
             break;
         }
-        // Grab the word: everything until whitespace, '/' or end.
+        // Grab the word: everything until whitespace or end.
         let end = trimmed[start..]
             .find(|c: char| c.is_whitespace())
             .map(|rel| start + rel)
@@ -948,7 +943,8 @@ pub(crate) fn parse_skill_references(
     // Compute args for each hit: text from end-of-skill-token to start of next hit (or end).
     let mut refs = Vec::with_capacity(hits.len());
     for (idx, hit) in hits.iter().enumerate() {
-        let word_end = hit.offset + 1 + hit.typed_name.len(); // past the /word
+        // past the /word
+        let word_end = hit.offset + 1 + hit.typed_name.len();
         let args_end = if idx + 1 < hits.len() {
             hits[idx + 1].offset
         } else {
@@ -1237,8 +1233,6 @@ mod tests {
         }
     }
 
-    // ── description fallback ────────────────────────────────────────
-
     #[test]
     fn skill_description_falls_back_when_no_short_description() {
         let skill = SkillInfo {
@@ -1248,8 +1242,6 @@ mod tests {
         let cmd = SlashCommand::Skill(&skill);
         assert_eq!(cmd.description(), "A skill called deploy");
     }
-
-    // ── parse_slash_prefix ──────────────────────────────────────────
 
     #[test]
     fn parse_slash_prefix_extracts_name_and_args() {
@@ -1280,8 +1272,6 @@ mod tests {
             Some(("commit", "fix typo")),
         );
     }
-
-    // ── builtin resolve fns ─────────────────────────────────────────
 
     fn resolve_builtin(name: &str, args: &str) -> Option<BuiltinAction> {
         BUILTIN_COMMANDS
@@ -1327,7 +1317,6 @@ mod tests {
 
     #[test]
     fn yolo_alias_resolves_to_always_approve() {
-        // /yolo should resolve via alias to the always-approve command
         let blocks = vec![text_block("/yolo on")];
         let outcome = resolve(blocks, &[], all_gated(), SkillSlashRewrite::default()).unwrap_err();
         assert!(matches!(
@@ -1335,8 +1324,6 @@ mod tests {
             SlashCommandOutcome::Builtin(BuiltinAction::SetYolo { enabled: true })
         ));
     }
-
-    // ── resolve ─────────────────────────────────────────────────────
 
     #[test]
     fn resolve_routes_builtin() {
@@ -1510,7 +1497,6 @@ mod tests {
             SkillSlashRewrite::Passthrough,
         )
         .unwrap_err();
-        // Original text is preserved in blocks.
         assert_eq!(invoke_text(outcome), "/commit fix typo");
 
         let outcome = resolve(
@@ -1572,8 +1558,6 @@ mod tests {
         .unwrap_err();
         assert!(matches!(outcome, SlashCommandOutcome::Builtin(_)));
     }
-
-    // ── available_commands (ACP) ─────────────────────────────────────
 
     #[test]
     fn available_commands_orders_builtins_first() {
@@ -1932,13 +1916,12 @@ mod tests {
         assert!(builtin.input.is_some());
 
         let flush = commands.iter().find(|c| c.name == "flush").unwrap();
-        assert!(flush.input.is_none()); // no argument_hint
+        // no argument_hint
+        assert!(flush.input.is_none());
 
         let skill = commands.iter().find(|c| c.name == "commit").unwrap();
         assert_eq!(skill.description, "Short: commit");
     }
-
-    // ── /flush ─────────────────────────────────────────────────────
 
     #[test]
     fn flush_resolves_to_builtin_action() {
@@ -1981,8 +1964,6 @@ mod tests {
         assert!(matches!(outcome, SlashCommandOutcome::Builtin(_)));
     }
 
-    // ── /dream ─────────────────────────────────────────────────────
-
     #[test]
     fn dream_resolves_to_builtin_action() {
         assert!(matches!(
@@ -2022,8 +2003,6 @@ mod tests {
         .unwrap_err();
         assert!(matches!(outcome, SlashCommandOutcome::Builtin(_)));
     }
-
-    // ── ambiguous skill names ─────────────────────────────────────
 
     fn make_scoped_skill(name: &str, scope: SkillScope) -> SkillInfo {
         SkillInfo {
@@ -2129,8 +2108,6 @@ mod tests {
         assert!(!names.contains(&"commit"));
     }
 
-    // ── builtin/skill name collisions ─────────────────────────────
-
     #[test]
     fn available_commands_qualifies_builtin_colliding_skill() {
         // A skill named "compact" collides with the builtin /compact.
@@ -2212,7 +2189,6 @@ mod tests {
         ));
     }
 
-    /// Collect the advertised command names for the given availability.
     fn advertised_names_with(availability: CommandAvailability) -> Vec<String> {
         available_commands(&[], availability)
             .into_iter()
@@ -2281,8 +2257,6 @@ mod tests {
         assert!(on.iter().any(|n| n == "dream"), "got: {on:?}");
         assert!(on.iter().any(|n| n == "memory"), "got: {on:?}");
     }
-
-    // ── /memory ─────────────────────────────────────────────────────
 
     #[test]
     fn memory_bare_resolves_to_browse() {
@@ -2388,8 +2362,6 @@ mod tests {
         );
     }
 
-    // ── parse_skill_references ──────────────────────────────────────
-
     #[test]
     fn parse_skill_refs_single_skill() {
         let skills = vec![make_skill("commit", true)];
@@ -2478,8 +2450,6 @@ mod tests {
         assert_eq!(refs[0].name, "commit");
         assert_eq!(refs[0].args, "fix typo");
     }
-
-    // ── /goal command resolution ─────────────────────────────────
 
     fn resolve_goal(args: &str) -> BuiltinAction {
         let blocks = vec![text_block(&format!("/goal {args}"))];
@@ -2635,7 +2605,6 @@ mod tests {
         assert!(!BuiltinAction::GoalClear.args_provided());
     }
 
-    // ── GoalTracker handler-level interaction tests ──────────────
     // These test the exact tracker state transitions that the slash
     // command handlers perform, without constructing a full SessionActor.
 

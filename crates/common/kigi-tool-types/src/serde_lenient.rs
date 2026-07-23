@@ -1,18 +1,14 @@
 //! Lenient deserializers for tool-argument booleans: a boolean may arrive as a
 //! JSON string (`"true"`) or number (`1`) when a client doesn't coerce args
-//! against the tool schema. Accepted forms (strings case-insensitive, trimmed;
-//! `null` is `false`):
-//!
-//! | Truthy                                | Falsy                                          |
-//! |---------------------------------------|------------------------------------------------|
-//! | `true`, `"true"`, `"yes"`, `"1"`, `1` | `false`, `"false"`, `"no"`, `"0"`, `0`, `null` |
+//! against the tool schema. Strings are trimmed and matched case-insensitively,
+//! and `null` reads as `false`.
 
 use serde::Deserialize;
 
 const TRUE_LITERALS: [&str; 3] = ["true", "yes", "1"];
 const FALSE_LITERALS: [&str; 3] = ["false", "no", "0"];
 
-/// Parse a JSON value into a `bool` per the accepted forms; `None` otherwise.
+/// `None` when the value matches none of the accepted forms.
 pub fn lenient_bool_from_json(value: &serde_json::Value) -> Option<bool> {
     match value {
         serde_json::Value::Bool(b) => Some(*b),
@@ -48,8 +44,8 @@ fn invalid_bool_message(value: &serde_json::Value) -> String {
     )
 }
 
-/// Deserialize a required `bool`; pair with `#[serde(default)]` so an absent key
-/// uses the field default.
+/// Pair with `#[serde(default)]` so an absent key falls back to the field
+/// default instead of failing.
 pub fn deserialize_lenient_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -59,8 +55,8 @@ where
         .ok_or_else(|| serde::de::Error::custom(invalid_bool_message(&value)))
 }
 
-/// Deserialize `Option<bool>`: absent key → `None` (via `#[serde(default)]`),
-/// explicit `null` → `Some(false)`.
+/// With `#[serde(default)]` an absent key yields `None`, while an explicit
+/// `null` yields `Some(false)`.
 pub fn deserialize_lenient_option_bool<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
 where
     D: serde::Deserializer<'de>,

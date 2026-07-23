@@ -54,7 +54,6 @@ struct ToolsContext {
 struct TemplateContext {
     tools: ToolsContext,
     params: HashMap<String, HashMap<String, String>>,
-    /// `cfg!(not(unix))`.
     is_windows: bool,
     /// `powershell.exe` 5.1 and `cmd.exe` chain with `;`; everything else
     /// with `&&`. Used by templates that document command chaining.
@@ -66,7 +65,6 @@ struct TemplateContext {
     has_unix_utilities: bool,
 }
 
-/// Shared render implementation: fast-path check + MiniJinja render.
 fn render_with_env(
     template: &str,
     ctx: &impl serde::Serialize,
@@ -84,8 +82,7 @@ fn render_with_env(
 
 /// Error returned when a template fails to render.
 ///
-/// Wraps the underlying MiniJinja error. Callers that want the old
-/// silent-fallback behavior can use `.unwrap_or_else(|_| ...)`.
+/// Wraps the underlying MiniJinja error.
 #[derive(Debug)]
 pub struct TemplateRenderError {
     template: String,
@@ -93,7 +90,6 @@ pub struct TemplateRenderError {
 }
 
 impl TemplateRenderError {
-    /// The raw template that failed to render.
     pub fn template(&self) -> &str {
         &self.template
     }
@@ -139,8 +135,6 @@ impl TemplateRenderer {
         tools: HashMap<ToolKind, String>,
         params: HashMap<ToolKind, HashMap<String, String>>,
     ) -> Self {
-        // ToolKind keys → snake_case strings so templates can write
-        // `${{ params.edit.old_string }}`.
         let params = params
             .into_iter()
             .filter_map(|(kind, map)| {

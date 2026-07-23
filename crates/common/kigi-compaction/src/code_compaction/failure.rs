@@ -1,8 +1,8 @@
 //! Deterministic-vs-transient failure classification for compaction
 //! LLM calls.
 //!
-//! The *policy* lives here (shared across harnesses); the per-harness error
-//! types and their wrapping (e.g. kigi's `SamplingError` →
+//! The *policy* lives here, shared across harnesses; per-harness error types
+//! and their wrapping (e.g. kigi's `SamplingError` →
 //! `CompactFailure(acp::Error)`) stay in thin host wrappers that delegate the
 //! status/message decisions to these functions.
 
@@ -17,15 +17,16 @@ pub enum FailureKind {
 }
 
 impl FailureKind {
-    /// `true` for [`FailureKind::Deterministic`].
     pub fn is_deterministic(self) -> bool {
         matches!(self, Self::Deterministic)
     }
 }
 
-/// True when an error message indicates a context-window overflow. Backends report
-/// this inconsistently with no stable error code, so we match the message text; it's
-/// deterministic (re-sending the same payload always fails), so callers must not retry.
+/// True when an error message indicates a context-window overflow.
+///
+/// Backends report this inconsistently with no stable error code, so the match
+/// is on message text. Re-sending the same payload always fails, so callers
+/// must not retry.
 pub fn is_context_length_error(message: &str) -> bool {
     let m = message.to_ascii_lowercase();
     m.contains("too long for this model")
@@ -38,10 +39,8 @@ pub fn is_context_length_error(message: &str) -> bool {
 /// Classify an HTTP API failure (status + message) for the compaction retry
 /// loop.
 ///
-/// 4xx responses other than 408 (timeout) and 429 (rate limit) are
-/// deterministic; a context-length overflow message is deterministic
-/// regardless of status (backends sometimes dress it as a synthesized 500).
-/// Everything else (5xx, 408, 429) is transient.
+/// A context-length overflow message is deterministic regardless of status,
+/// because backends sometimes dress it as a synthesized 500.
 pub fn classify_http_status(status: u16, message: &str) -> FailureKind {
     if is_context_length_error(message)
         || ((400..500).contains(&status) && status != 408 && status != 429)
@@ -55,15 +54,11 @@ pub fn classify_http_status(status: u16, message: &str) -> FailureKind {
 /// Classify a provider-style stream error event (`ResponseError` /
 /// `ResponseFailed.error`) for the compaction retry loop.
 ///
-/// `code` is the structured `code` field on the event (typically a numeric
-/// HTTP status as a string, but some providers also use error-type strings like
-/// `"invalid_request_error"`). `message` is the human-readable detail.
-///
-/// Numeric codes are classified by HTTP-status range. The
-/// `invalid_request_error` marker, which can appear in either field, always
-/// maps to `Deterministic` (schema violations cannot be fixed by re-sending
-/// the same payload). The check order is semantic — marker, then numeric
-/// code, then context-length message, then default-to-transient.
+/// `code` is the structured `code` field on the event: typically a numeric HTTP
+/// status as a string, but some providers send error-type strings like
+/// `"invalid_request_error"` instead, and that marker can also arrive buried in
+/// `message` alone. It always means a schema violation, which re-sending the
+/// same payload cannot fix.
 pub fn classify_stream_event_error(code: Option<&str>, message: &str) -> FailureKind {
     if matches!(code, Some("invalid_request_error")) || message.contains("invalid_request_error") {
         return FailureKind::Deterministic;

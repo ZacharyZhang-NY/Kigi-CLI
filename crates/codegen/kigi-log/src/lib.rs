@@ -1,10 +1,7 @@
 //! Local, zero-egress observability for Kigi sessions.
 //!
-//! Every sink in this crate writes to the local filesystem (under the Kigi
-//! home directory) and nothing else: the unified session log, the `--debug`
-//! firehose, subsystem file logs (memory, hooks, sampling), and the
-//! env-gated performance instrumentation. No module here opens a network
-//! connection — that property is the crate's contract.
+//! Every sink writes under the Kigi home directory and nowhere else. No module
+//! here may open a network connection — that is the crate's contract.
 
 mod appender;
 pub mod debug_log;

@@ -78,6 +78,8 @@ fn highest_named_state_database(root: &ApprovedRoot) -> Option<PathBuf> {
         match std::fs::symlink_metadata(&path) {
             Ok(_) => Some(path),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            // An unreadable entry still claims its generation, so the caller
+            // falls back to rollout files instead of trusting an older database.
             Err(_) => Some(path),
         }
     })

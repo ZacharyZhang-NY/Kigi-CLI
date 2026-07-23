@@ -115,7 +115,8 @@ mod tests {
     fn gradual_delete_fires_at_residue_threshold() {
         let mut d = ClearDetector::default();
         type_to(&mut d, 0, 30);
-        type_to(&mut d, 30, 6); // still above the residue threshold
+        // still above the residue threshold
+        type_to(&mut d, 30, 6);
         assert!(d.observe_user_edit(6, 5), "crossing into residue fires");
         // Peak was reset: continuing to delete must not re-fire.
         assert!(!d.observe_user_edit(5, 0));
@@ -131,7 +132,8 @@ mod tests {
     #[test]
     fn short_draft_never_fires() {
         let mut d = ClearDetector::default();
-        type_to(&mut d, 0, 19); // one below FIRE_PEAK_LEN
+        // one below FIRE_PEAK_LEN
+        type_to(&mut d, 0, 19);
         assert!(!d.observe_user_edit(19, 0));
     }
 

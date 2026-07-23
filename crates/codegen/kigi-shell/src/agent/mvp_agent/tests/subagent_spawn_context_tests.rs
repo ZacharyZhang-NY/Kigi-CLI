@@ -35,7 +35,8 @@ async fn subagent_spawn_context_inherits_parent_permission_handle() {
                         pattern: Some("**/.env".to_owned()),
                         pattern_mode: PatternMode::Glob,
                     }])),
-                    Vec::new(), // deny_read_globs
+                    // deny_read_globs
+                    Vec::new(),
                     Vec::new(),
                     false,
                     None,

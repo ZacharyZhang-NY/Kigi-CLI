@@ -26,8 +26,8 @@ impl Reminder for LspDiagnosticsReminder {
 
         lsp.ensure_started_background();
 
-        // After SearchReplace edits, notify LSP so diagnostics refresh.
-        // The adapter routes immediately when ready and buffers pre-ready edits otherwise.
+        // Notify LSP of the edit so diagnostics refresh; when the adapter is not
+        // yet ready the notification is buffered rather than dropped.
         if let ToolOutput::SearchReplace(SearchReplaceOutput::EditsApplied(edits)) = tool_output
             && let Ok(content) = std::fs::read_to_string(&edits.absolute_path)
         {
@@ -35,7 +35,7 @@ impl Reminder for LspDiagnosticsReminder {
                 .await;
         }
 
-        // Drain any pending diagnostics (from this or previous edits).
+        // Drain diagnostics queued by this or earlier edits.
         if let Some(summary) = lsp
             .drain_diagnostics(std::time::Duration::from_millis(500))
             .await

@@ -134,7 +134,8 @@ fn spawn_settled_session(content: &ContentController, project: &Path) -> PtyHarn
     harness
         .wait_for_text(MOCK_RESPONSE_SENTINEL, Duration::from_secs(30))
         .expect("turn rendered");
-    harness.update(Duration::from_millis(1000)); // let the short turn settle
+    // Let the short turn settle.
+    harness.update(Duration::from_millis(1000));
     harness
 }
 

@@ -1,16 +1,12 @@
 //! Mid-turn interjection dispatch: optimistic local echo, the
-//! `kigi/interject` effect, and prompt-history recording. Split out of
-//! `dispatch.rs` verbatim (pure code motion).
+//! `kigi/interject` effect, and prompt-history recording.
 
 use crate::app::actions::Effect;
 use crate::app::agent_view::AgentView;
 use crate::app::app_view::{ActiveView, AppView};
 use crate::scrollback::block::RenderBlock;
 
-/// Send a mid-turn interjection. Pushes a standard user prompt block locally
-/// for instant feedback, records the text in prompt history, clears the
-/// prompt, and fires the `kigi/interject` ext method carrying a client-minted
-/// id.
+/// Send a mid-turn interjection.
 ///
 /// The shell broadcasts `kigi/session/interjection` to every attached pane so
 /// other clients viewing the same session render it too (multi-client /
@@ -42,9 +38,6 @@ pub(super) fn dispatch_interject(
 
     record_interject_prompt_history(agent, &text);
 
-    // Push a standard user prompt block locally for instant feedback, and
-    // record its id so the broadcast echo (`kigi/session/interjection`) is
-    // deduped instead of rendering a second copy on this pane.
     let interjection_id = uuid::Uuid::new_v4().to_string();
     agent.self_interjection_ids.insert(interjection_id.clone());
     agent
@@ -119,7 +112,6 @@ pub(super) fn dispatch_send_prompt_now(
         return vec![];
     }
 
-    // Submitting retires any edit-contextual ephemeral tip.
     agent.ephemeral_tip.clear_on_submit();
 
     let Some(session_id) = agent.session.session_id.clone() else {
@@ -273,7 +265,7 @@ mod tests {
         );
     }
 
-    /// A no-session interject still retires the tip: the clear now runs before
+    /// A no-session interject still retires the tip: the clear runs before
     /// the "No active session" early return, matching the other submit paths.
     #[test]
     fn interject_without_session_still_clears_ephemeral_tip() {

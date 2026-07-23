@@ -13,7 +13,7 @@ use std::sync::OnceLock;
 
 use crate::terminal::{MultiplexerKind, TerminalContext};
 
-/// Cached result of the remote-session check (env vars don't change at runtime).
+/// Cached result of the remote-session check (env vars do not alter at runtime).
 fn is_remote() -> bool {
     static REMOTE: OnceLock<bool> = OnceLock::new();
     *REMOTE.get_or_init(kigi_shared::clipboard::is_remote_session)
@@ -270,7 +270,7 @@ pub struct CopyResult {
 /// Kind of clipboard copy toast (success route or failure).
 ///
 /// Telemetry labels come from `IntoStaticStr` (`snake_case`); user-facing copy
-/// lives in [`ClipboardToastKind::message`] (intentionally different).
+/// lives in [`ClipboardToastKind::message`] (deliberately different).
 #[derive(Debug, Clone, Copy, Eq, PartialEq, strum::IntoStaticStr)]
 #[strum(serialize_all = "snake_case")]
 pub(crate) enum ClipboardToastKind {
@@ -442,7 +442,7 @@ pub fn clipboard_text_is_pasteable(text: Option<&str>) -> bool {
 }
 
 /// Telemetry when a paste key was pressed but the host clipboard had nothing
-/// pasteable. Behavior is unchanged — callers still consume the key.
+/// pasteable. Behavior is `unchanged` — callers still consume the key.
 /// Emits structured logs and a product analytics event when telemetry is enabled.
 pub fn log_paste_key_empty_host_clipboard(surface: &str) {
     let terminal = crate::terminal::terminal_context().diagnostics_snapshot();
@@ -619,7 +619,7 @@ fn should_run_attachment_probe(
 /// probe; `Some(change_count)` = probe, carrying the pasteboard `changeCount`
 /// this gate's OWN snapshot read observed. Enqueue sites thread that baseline
 /// into the off-thread probe's staleness check instead of taking a second
-/// native read that could land after a clipboard change.
+/// native read that could land after a clipboard write.
 ///
 /// Cheap (native snapshot only, no subprocess) so paste handlers can call it on
 /// the event loop to decide whether to DEFER the heavy probe to a background
@@ -769,9 +769,7 @@ pub fn system_clipboard_get_image() -> Option<ImageData> {
     system_clipboard_get_image_result().unwrap_or(None)
 }
 
-// ===========================================================================
 // Test support
-// ===========================================================================
 
 /// Injectable clipboard reads for driving the paste handlers in tests without
 /// spawning `pbpaste` / `osascript`.
@@ -876,7 +874,7 @@ pub mod test_support {
         PRIMARY_READS.with(|c| c.set(0));
     }
 
-    /// Remove the canned clipboard hook and reset the probe counter.
+    /// Drop the canned clipboard hook and reset the probe counter.
     pub fn clear_clipboard_probe_hook() {
         HOOK.with(|h| *h.borrow_mut() = None);
         PROBE_CALLS.with(|c| c.set(0));
@@ -959,9 +957,7 @@ pub use test_support::{
     set_clipboard_probe_hook,
 };
 
-// ===========================================================================
 // Tests
-// ===========================================================================
 
 #[cfg(test)]
 mod tests {
@@ -971,7 +967,7 @@ mod tests {
         TmuxClientMeta,
     };
 
-    // -- Context builders for clipboard route tests ---------------------------
+    // Context builders for clipboard route tests
 
     fn plain_terminal_ctx() -> TerminalContext {
         TerminalContext {
@@ -1091,7 +1087,7 @@ mod tests {
         );
     }
 
-    // -- Bracketed payload ↔ clipboard text match ------------------------------
+    // Bracketed payload ↔ clipboard text match
 
     #[test]
     fn bracketed_payload_match_exact_and_normalized() {
@@ -1338,9 +1334,7 @@ mod tests {
         }
     }
 
-    // =====================================================================
     // resolve_clipboard_route: pure routing logic
-    // =====================================================================
 
     #[derive(Debug)]
     struct ClipboardRouteCase {
@@ -1421,9 +1415,7 @@ mod tests {
         }
     }
 
-    // =====================================================================
     // ClipboardRoute structure
-    // =====================================================================
 
     #[test]
     fn clipboard_route_native_always_true() {
@@ -1501,11 +1493,9 @@ mod tests {
         assert!(!resolve_clipboard_route(&plain_terminal_ctx()).osc52_tmux_passthrough);
     }
 
-    // =====================================================================
     // Extended clipboard route matrix (final hardening)
-    // =====================================================================
 
-    // -- Byobu-screen: native only, no tmux buffer, no OSC 52 ----------------
+    // Byobu-screen: native only, no tmux buffer, no OSC 52
 
     #[test]
     fn clipboard_route_byobu_screen_no_tmux_buffer_no_osc52() {
@@ -1518,7 +1508,7 @@ mod tests {
         // OSC 52 depends on is_remote(), but tmux_buffer must be false.
     }
 
-    // -- Plain screen: no tmux buffer -----------------------------------------
+    // Plain screen: no tmux buffer
 
     #[test]
     fn clipboard_route_plain_screen_no_tmux_buffer() {
@@ -1530,7 +1520,7 @@ mod tests {
         );
     }
 
-    // -- Consistency: all environments always have native = true ---------------
+    // Consistency: all environments always have native = true
 
     #[test]
     fn clipboard_route_native_never_disabled() {
@@ -1552,7 +1542,7 @@ mod tests {
         }
     }
 
-    // -- tmux-backed: all three legs are active --------------------------------
+    // tmux-backed: all three legs are active
 
     #[test]
     fn clipboard_route_tmux_backed_all_three_legs() {
@@ -1564,7 +1554,7 @@ mod tests {
         }
     }
 
-    // -- Non-tmux-backed: tmux_buffer always false ----------------------------
+    // Non-tmux-backed: tmux_buffer always false
 
     #[test]
     fn clipboard_route_non_tmux_never_tmux_buffer() {

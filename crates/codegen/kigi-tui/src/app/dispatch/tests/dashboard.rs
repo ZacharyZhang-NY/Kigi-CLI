@@ -1398,9 +1398,9 @@ fn dashboard_plan_description_transforms_snapshot_and_chip_ranges() {
     );
 }
 
-/// The sessions picker modal was removed; `/sessions` survives as an alias
-/// of `/dashboard`. It must resolve to the dashboard command and inherit
-/// the dashboard feature-flag gate (hidden by canonical name, fail-closed).
+/// `/sessions` is an alias of `/dashboard`; it must resolve to the
+/// dashboard command and inherit its feature-flag gate (hidden by
+/// canonical name, fail-closed).
 #[serial_test::serial(KIGI_AGENT_DASHBOARD)]
 #[test]
 fn dashboard_slash_sessions_aliases_dashboard() {
@@ -1871,7 +1871,7 @@ fn dashboard_deferred_plan_mode_applied_on_session_created() {
 }
 
 /// Any non-empty prompt — even a single character — dispatches a
-/// new session (the old 4-char floor was relaxed to 1 char).
+/// new session.
 #[serial_test::serial(KIGI_AGENT_DASHBOARD)]
 #[test]
 fn dashboard_dispatch_single_char_creates_session() {
@@ -1971,10 +1971,7 @@ fn dashboard_dispatch_with_top_level_selection_creates_new_session() {
     );
 }
 
-// -----------------------------------------------------------------
-// Enter / Ctrl+S behaviour matrix.
-//
-// Pins the contract the user spelled out (Ctrl+S is "send + open";
+// Enter / Ctrl+S behaviour matrix (Ctrl+S is "send + open";
 // Shift/Alt+Enter insert a newline):
 //
 //   button + empty prompt + Enter   → Create + open detail
@@ -1987,11 +1984,6 @@ fn dashboard_dispatch_with_top_level_selection_creates_new_session() {
 // The dispatch input always spawns a NEW session — a selected row is
 // the navigation cursor (Enter on an empty prompt opens it), never a
 // reply target.
-//
-// Tests drive the whole stack — the state handler emits an
-// action, the dispatcher runs, and we assert the resulting
-// view + selection + attached_agent.
-// -----------------------------------------------------------------
 
 /// 2 — Button focused + non-empty + Enter → new session,
 /// STAY on the dashboard, no attached_agent.
@@ -2174,10 +2166,8 @@ fn dashboard_attach_top_level_switches_to_agent_view() {
     );
 }
 
-/// Attach routes through `focus_row`, so a previously selected
-/// section header is cleared — the row and section cursors stay
-/// mutually exclusive (a bare `selected` assignment used to leave
-/// both active).
+/// Attach routes through `focus_row`, so any selected section header
+/// is cleared — the row and section cursors stay mutually exclusive.
 #[serial_test::serial(KIGI_AGENT_DASHBOARD)]
 #[test]
 fn dashboard_attach_clears_selected_section() {
@@ -2321,11 +2311,10 @@ fn dashboard_attach_subagent_lazily_replays_deferred_transcript() {
 /// No auto-attached popup. The user reaches an agent's view by
 /// pressing Enter on its row.
 ///
-/// Opening from an agent now lands in NEW-SESSION mode (the
+/// Opening from an agent lands in NEW-SESSION mode (the
 /// `[+ New Agent]` button focused, no row selected) so typing +
-/// Enter dispatches a brand new agent. Previously the dashboard
-/// pre-seeded `selected` to the came-from agent, which armed reply
-/// mode and trapped the user replying to that one agent.
+/// Enter dispatches a brand new agent, rather than pre-seeding
+/// `selected` to the came-from agent and arming reply mode.
 #[serial_test::serial(KIGI_AGENT_DASHBOARD)]
 #[test]
 fn dashboard_open_does_not_auto_attach_to_focused_agent() {
@@ -2439,12 +2428,9 @@ fn dashboard_dispatch_after_open_from_agent_spawns_new_sessions() {
     );
 }
 
-/// Opening from Welcome leaves the `[+ New Agent]`
-/// button as the default focus. Previously the dashboard
-/// seeded selection to the first agent so Enter would attach
-/// without navigating; with the button taking that role,
-/// selection stays empty and the button signals what Enter
-/// (on an empty prompt) will do.
+/// Opening from Welcome leaves the `[+ New Agent]` button as the
+/// default focus: selection stays empty, and the button signals
+/// what Enter (on an empty prompt) will do.
 #[serial_test::serial(KIGI_AGENT_DASHBOARD)]
 #[test]
 fn dashboard_open_from_welcome_focuses_new_agent_button() {
@@ -2468,9 +2454,6 @@ fn dashboard_open_from_welcome_focuses_new_agent_button() {
     );
 }
 
-// -----------------------------------------------------------------
-// Dashboard mouse-wheel scrolling
-//
 // Mouse wheel is intentionally decoupled from the selected row:
 // scrolling only moves the viewport, leaving `selected` alone.
 // `DashboardState::handle_scroll` flags
@@ -2478,7 +2461,6 @@ fn dashboard_open_from_welcome_focuses_new_agent_button() {
 // `clamp_viewport` skips its snap-to-selection pull-back so the
 // viewport can travel past the cursor. Selection-driven nav
 // (arrows, click) clears the flag and re-engages the snap.
-// -----------------------------------------------------------------
 
 #[serial_test::serial(KIGI_AGENT_DASHBOARD)]
 #[test]
@@ -3364,7 +3346,8 @@ fn dashboard_toggle_auto_approve_flips_yolo_on_selected_agent() {
 #[serial_test::serial(KIGI_AGENT_DASHBOARD)]
 #[test]
 fn dashboard_toggle_auto_approve_with_no_selection_toasts() {
-    let mut app = test_app(); // no agent
+    // no agent
+    let mut app = test_app();
     open_dashboard(&mut app);
     let effects = dispatch_dashboard_toggle_auto_approve(&mut app);
     assert!(effects.is_empty());
@@ -3439,13 +3422,9 @@ fn dashboard_rename_end_to_end_top_level_row() {
     );
 }
 
-/// `DashboardCancelRename` emits no effects and
-/// leaves `display_name` untouched. Previously named
-/// `dashboard_rename_cancel_via_esc_does_not_emit_effect`
-/// but that name implied Esc keystroke routing — the test
-/// actually dispatches `Action::DashboardCancelRename` directly.
-/// The Esc-keystroke routing is now pinned by the sibling test
-/// `dashboard_rename_esc_keystroke_routes_to_cancel`.
+/// `DashboardCancelRename` emits no effects and leaves `display_name`
+/// untouched. Esc-keystroke routing to this action is pinned separately
+/// by `dashboard_rename_esc_keystroke_routes_to_cancel`.
 #[serial_test::serial(KIGI_AGENT_DASHBOARD)]
 #[test]
 fn dashboard_rename_cancel_action_emits_no_effect() {
@@ -3809,19 +3788,14 @@ fn dashboard_close_shortcuts_help_clears_modal() {
     assert!(app.dashboard.as_ref().unwrap().shortcuts_modal.is_none());
 }
 
-// -----------------------------------------------------------------
-// `[+ New Agent]` button
-//
-// The header button is the default cursor target when no row
-// is selected. Up-arrow from the first row, Esc deselect,
-// dashboard-open-from-welcome, and `reanchor_selection`-drops
-// all land here. Enter-with-empty-prompt and click both
-// dispatch `DashboardCreateNewAgentWithDetail`, which
-// creates a session AND switches into detail view. Enter
-// with a NON-empty prompt falls through to
-// `DashboardDispatch`, which creates the session but stays
+// `[+ New Agent]` button: the header button is the default cursor
+// target when no row is selected. Up-arrow from the first row, Esc
+// deselect, dashboard-open-from-welcome, and `reanchor_selection`-drops
+// all land here. Enter-with-empty-prompt and click both dispatch
+// `DashboardCreateNewAgentWithDetail`, which creates a session AND
+// switches into detail view. Enter with a NON-empty prompt falls
+// through to `DashboardDispatch`, which creates the session but stays
 // on the dashboard.
-// -----------------------------------------------------------------
 
 #[serial_test::serial(KIGI_AGENT_DASHBOARD)]
 #[test]
@@ -3986,9 +3960,7 @@ fn dashboard_filter_state_known_token_via_dispatch() {
     ));
 }
 
-// -----------------------------------------------------------------
 // Real extract_recent_lines coverage.
-// -----------------------------------------------------------------
 
 /// count=0 returns empty even when scrollback has entries.
 #[test]
@@ -4136,9 +4108,7 @@ fn extract_recent_lines_strips_ansi() {
     assert!(out[0].contains("evil"));
 }
 
-// -----------------------------------------------------------------
 // Stop-confirm full lifecycle.
-// -----------------------------------------------------------------
 
 /// A press > 2s after the first re-arms (does NOT close).
 #[serial_test::serial(KIGI_AGENT_DASHBOARD)]
@@ -4254,7 +4224,8 @@ fn dashboard_permission_select_drops_stale_request() {
                 last_response_truncated: false,
                 question: Some("q?".into()),
                 options: vec![("allow".into(), "Allow".into())],
-                request_id: Some(123), // mismatched id
+                // mismatched id
+                request_id: Some(123),
                 reject_option: None,
             },
         ));
@@ -4687,7 +4658,8 @@ fn dashboard_question_answer_sends_and_clears() {
     let effects = dispatch_dashboard_question_answer(
         &mut app,
         crate::views::dashboard::DashboardRowId::TopLevel(AgentId(0)),
-        Some(1), // pick "Postgres"
+        // pick "Postgres"
+        Some(1),
         String::new(),
     );
     assert!(effects.is_empty());
@@ -4745,7 +4717,8 @@ fn dashboard_question_answer_walks_multiple_questions() {
     let fields = compute_peek_fields(&row, &app.agents).expect("ask surfaced");
     assert!(fields.question.as_deref().unwrap().starts_with("(1/2)"));
     assert!(fields.request_id.is_none());
-    assert_eq!(fields.reject_option, Some(2)); // 2 options + "Other"
+    // 2 options + "Other"
+    assert_eq!(fields.reject_option, Some(2));
     // Plant a peek with a stale draft to verify the advance reset.
     if let Some(d) = app.dashboard.as_mut() {
         let mut p = PeekPanelState::new(row.clone(), fields);
@@ -4787,7 +4760,8 @@ fn dashboard_peek_auto_opens_for_selected_row() {
     let mut app = test_app_with_agent();
     mark_agent_nonempty(&mut app, AgentId(0));
     open_dashboard(&mut app);
-    let area = Rect::new(0, 0, 80, 24); // tall enough for the peek
+    // tall enough for the peek
+    let area = Rect::new(0, 0, 80, 24);
     let reg = crate::actions::ActionRegistry::defaults();
 
     // Select a row, then render → the peek opens by default.
@@ -4972,7 +4946,7 @@ fn build_rows_keeps_pinned_empty_local_session() {
     assert_eq!(rows.len(), 1, "a pinned empty session is kept");
 }
 
-// -- Conversation-origin roster rows (chat-mode dashboard fallback) ----
+// Conversation-origin roster rows (chat-mode dashboard fallback).
 
 #[test]
 fn dashboard_attach_roster_focuses_existing_local_agent() {

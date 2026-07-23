@@ -1,16 +1,8 @@
 //! Slice-mode reader — exact port of codex `slice::read()`.
-//!
-//! Reads lines from `offset` (1-indexed) up to `limit`, formatting each
-//! as `L{line_number}: {content}`. Lines are truncated at `MAX_LINE_LENGTH`
-//! at a char boundary.
 
-/// Maximum number of characters per line before truncation.
 pub(crate) const MAX_LINE_LENGTH: usize = 500;
 
-/// Read a contiguous range of lines from file bytes in slice mode.
-///
-/// Returns formatted lines as `L{n}: {content}`, or an error string if
-/// `offset` exceeds the number of lines in the file.
+/// Errs when `offset` lies past the last line of the file.
 pub(crate) fn read_slice(
     file_bytes: &[u8],
     offset: usize,
@@ -44,17 +36,10 @@ pub(crate) fn read_slice(
     Ok(collected)
 }
 
-/// Format a raw byte line: decode as UTF-8 (lossy) and truncate at
-/// `MAX_LINE_LENGTH` at a char boundary.
 fn format_line(bytes: &[u8]) -> String {
     super::text_utils::format_display(bytes)
 }
 
-/// Split raw bytes into lines, stripping `\n` and `\r\n` line endings.
-///
-/// Every byte sequence separated by `\n` becomes a line. Trailing `\r`
-/// on each line is also stripped. A final `\n` produces an empty trailing
-/// entry (matching codex `BufReader::read_until(b'\n')` behavior).
 fn split_lines(bytes: &[u8]) -> Vec<&[u8]> {
     if bytes.is_empty() {
         return vec![];
@@ -66,7 +51,6 @@ fn split_lines(bytes: &[u8]) -> Vec<&[u8]> {
     for i in 0..bytes.len() {
         if bytes[i] == b'\n' {
             let mut end = i;
-            // Strip trailing \r for \r\n endings.
             if end > start && bytes[end - 1] == b'\r' {
                 end -= 1;
             }
@@ -75,7 +59,6 @@ fn split_lines(bytes: &[u8]) -> Vec<&[u8]> {
         }
     }
 
-    // Remaining bytes after the last \n (or all bytes if no \n found).
     if start < bytes.len() {
         let mut end = bytes.len();
         if end > start && bytes[end - 1] == b'\r' {
@@ -83,18 +66,13 @@ fn split_lines(bytes: &[u8]) -> Vec<&[u8]> {
         }
         lines.push(&bytes[start..end]);
     } else if start == bytes.len() && !bytes.is_empty() && bytes[bytes.len() - 1] == b'\n' {
-        // File ends with \n — BufReader::read_until would NOT produce an
-        // empty trailing line for this case. The codex implementation reads
-        // until EOF and each read_until(b'\n') call consumes the delimiter.
-        // A trailing \n means the last read produces the line before it;
-        // no additional empty line is generated.
-        // So we do NOT push an empty trailing entry here.
+        // Intentionally empty: codex's `read_until(b'\n')` loop consumes the
+        // delimiter along with the line before it, so a file ending in `\n`
+        // yields no empty final line.
     }
 
     lines
 }
-
-// ─── Tests ───────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -120,7 +98,6 @@ mod tests {
         let content = b"\xff\xfe\n";
         let result = read_slice(content, 1, 10).unwrap();
         assert_eq!(result.len(), 1);
-        // Non-UTF8 bytes should be replaced with U+FFFD
         assert!(result[0].contains('\u{FFFD}'));
     }
 
@@ -145,7 +122,6 @@ mod tests {
         let content = format!("{}\n", long_line);
         let result = read_slice(content.as_bytes(), 1, 10).unwrap();
         assert_eq!(result.len(), 1);
-        // Line content should be truncated to MAX_LINE_LENGTH
         let expected_content = &long_line[..MAX_LINE_LENGTH];
         assert_eq!(result[0], format!("L1: {}", expected_content));
     }
@@ -166,7 +142,8 @@ mod tests {
 
     #[test]
     fn empty_file_returns_error() {
-        // Codex behavior: empty file has 0 lines, offset=1 exceeds file length.
+        // Codex treats an empty file as zero lines, so even offset=1 is past
+        // the end.
         let content = b"";
         let result = read_slice(content, 1, 10);
         assert!(result.is_err());
@@ -175,14 +152,14 @@ mod tests {
 
     #[test]
     fn truncation_at_multibyte_char_boundary() {
-        // Create a string that has multi-byte chars near the 500 boundary
+        // Straddle MAX_LINE_LENGTH with a 2-byte char so the cut lands
+        // mid-character.
         let mut s = "a".repeat(498);
-        s.push('é'); // 2 bytes in UTF-8
+        s.push('é');
         s.push('x');
         assert!(s.len() > MAX_LINE_LENGTH);
         let content = format!("{}\n", s);
         let result = read_slice(content.as_bytes(), 1, 10).unwrap();
-        // The truncated line should be valid UTF-8 and <= MAX_LINE_LENGTH bytes
         let line_content = result[0].strip_prefix("L1: ").unwrap();
         assert!(line_content.len() <= MAX_LINE_LENGTH);
         assert!(line_content.is_char_boundary(line_content.len()));

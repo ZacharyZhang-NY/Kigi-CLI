@@ -112,7 +112,8 @@ fn resolve_log_path() -> Option<PathBuf> {
     let default_path = || kigi_home().join("logs").join("hooks.log");
     let raw = match std::env::var(ENV_HOOKS_LOG) {
         Ok(val) => val,
-        Err(_) => return None, // opt-in only
+        // opt-in only
+        Err(_) => return None,
     };
     let raw = raw.trim();
     match raw {

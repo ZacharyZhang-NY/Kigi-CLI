@@ -152,7 +152,7 @@ async fn leader_soak_churning_clients_no_leaks_no_zombies() {
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async {
-            // ── Leader server (survives client churn) ────────────────────
+            // Leader server (survives client churn).
             let (acp_tx, mut acp_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
             let (response_tx, response_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
             let cancel = CancellationToken::new();
@@ -185,7 +185,7 @@ async fn leader_soak_churning_clients_no_leaks_no_zombies() {
                 .await;
             });
 
-            // ── Real agent behind it ──────────────────────────────────────
+            // Real agent behind it.
             // Copied from `run_leader`'s agent-spawn + IPC/stdout bridge
             // blocks in src/agent/app.rs (inside its LocalSet body); kept as
             // a deliberate copy so production stays untouched. Second copy of
@@ -256,7 +256,7 @@ async fn leader_soak_churning_clients_no_leaks_no_zombies() {
             }
             assert!(sock_path.exists(), "leader socket never bound");
 
-            // ── One-time initialize + authenticate through the leader ────
+            // One-time initialize + authenticate through the leader.
             let mut bootstrap = LeaderClient::connect(
                 sock_path.clone(),
                 "soak-bootstrap",
@@ -286,8 +286,8 @@ async fn leader_soak_churning_clients_no_leaks_no_zombies() {
             let mut cycles: u64 = 0;
             let mut turns: u64 = 0;
 
-            // ── Churn: 10 fresh clients per cycle, 2 sessions each, one
-            // scripted turn per session, then all disconnect ───────────────
+            // Churn: 10 fresh clients per cycle, 2 sessions each, one
+            // scripted turn per session, then all disconnect.
             while tokio::time::Instant::now() < soak_deadline {
                 cycles += 1;
                 let mut clients = Vec::new();
@@ -352,8 +352,8 @@ async fn leader_soak_churning_clients_no_leaks_no_zombies() {
             eprintln!("[soak] {cycles} cycles, {turns} turns in {soak_secs}s budget");
             assert!(cycles > 0, "soak budget too small to complete one cycle");
 
-            // ── Convergence: only the bootstrap client remains, and the
-            // leader still serves a healthy round-trip ────────────────────
+            // Convergence: only the bootstrap client remains, and the
+            // leader still serves a healthy round-trip.
             assert_eq!(
                 client_count.load(std::sync::atomic::Ordering::Relaxed),
                 1,
@@ -370,14 +370,14 @@ async fn leader_soak_churning_clients_no_leaks_no_zombies() {
             .await;
             assert!(resp["result"]["sessionId"].is_string());
 
-            // ── No response was ever dropped on a live-client send ────────
+            // No response was ever dropped on a live-client send.
             assert_eq!(
                 send_failed_count(),
                 send_failed_before,
                 "leader.response.send_failed must not occur during the soak"
             );
 
-            // ── RSS bound ─────────────────────────────────────────────────
+            // RSS bound.
             if let (Some(before), Some(after)) = (rss_baseline, rss_bytes()) {
                 let growth_mb = after.saturating_sub(before) as f64 / (1024.0 * 1024.0);
                 eprintln!(

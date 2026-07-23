@@ -18,8 +18,7 @@ const SGR_LEFT_BUTTON: u16 = 0;
 const SGR_MIDDLE_BUTTON: u16 = 1;
 const SGR_RIGHT_BUTTON: u16 = 2;
 const SGR_DRAG_BUTTON: u16 = 32;
-/// SGR wheel button codes (bit 6 / +64 marks a wheel event). Public so PTY
-/// tests share this single definition instead of respelling 64/65.
+/// SGR wheel button codes (bit 6 / +64 marks a wheel event).
 pub const SGR_SCROLL_UP: u16 = 64;
 pub const SGR_SCROLL_DOWN: u16 = 65;
 
@@ -38,10 +37,8 @@ pub struct ScriptedScenario {
     pub terminal: TerminalConfig,
     #[serde(default)]
     pub environment: EnvironmentConfig,
-    /// Optional ephemeral workspace materialized into a temp dir and used as the
-    /// pager's cwd. Lets a scenario exercise repo-local behavior — e.g. the
-    /// folder-trust prompt, which only renders when `cwd` has a repo-local
-    /// config (`.mcp.json`). `None` inherits the test process cwd.
+    /// Ephemeral workspace used as the pager's cwd; `None` inherits the test
+    /// process cwd.
     #[serde(default)]
     pub workspace: Option<WorkspaceConfig>,
     #[serde(default)]
@@ -51,7 +48,6 @@ pub struct ScriptedScenario {
 }
 
 impl ScriptedScenario {
-    /// Load a scenario from JSON.
     pub fn from_json_file(path: &Path) -> Result<Self> {
         let text = fs::read_to_string(path)
             .with_context(|| format!("read scenario file {}", path.display()))?;
@@ -59,7 +55,6 @@ impl ScriptedScenario {
             .with_context(|| format!("parse scenario JSON {}", path.display()))
     }
 
-    /// Load a scenario from YAML.
     pub fn from_yaml_file(path: &Path) -> Result<Self> {
         let text = fs::read_to_string(path)
             .with_context(|| format!("read scenario file {}", path.display()))?;
@@ -67,7 +62,6 @@ impl ScriptedScenario {
             .with_context(|| format!("parse scenario YAML {}", path.display()))
     }
 
-    /// Load a scenario from JSON or YAML based on file extension.
     pub fn from_file(path: &Path) -> Result<Self> {
         match path.extension().and_then(|ext| ext.to_str()) {
             Some("yaml" | "yml") => Self::from_yaml_file(path),
@@ -86,7 +80,6 @@ impl ScriptedScenario {
     }
 }
 
-/// Terminal dimensions for a scripted run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TerminalConfig {
     #[serde(default = "default_rows")]
@@ -113,7 +106,6 @@ impl Default for TerminalConfig {
     }
 }
 
-/// Environment filters and extra environment variables for a scenario.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EnvironmentConfig {
     /// Optional OS allow-list. Values are Rust `std::env::consts::OS` strings
@@ -124,10 +116,8 @@ pub struct EnvironmentConfig {
     /// `std::env::consts::ARCH` strings such as `aarch64` or `x86_64`.
     #[serde(default)]
     pub arch: Vec<String>,
-    /// Additional env vars set on the pager process.
     #[serde(default)]
     pub env: Vec<EnvVar>,
-    /// Extra CLI args passed to the pager binary.
     #[serde(default)]
     pub args: Vec<String>,
     /// Optional `config.toml` written into the run's isolated `$KIGI_SHARE_DIR`
@@ -144,7 +134,6 @@ impl EnvironmentConfig {
     }
 }
 
-/// One environment variable assignment.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnvVar {
     pub key: String,
@@ -216,11 +205,9 @@ impl Default for MockConfig {
     }
 }
 
-/// A single executable scenario step.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum ScenarioStep {
-    /// Wait until the screen contains text.
     WaitForText {
         text: String,
         #[serde(default = "default_wait_timeout_ms")]
@@ -230,7 +217,7 @@ pub enum ScenarioStep {
     AssertContains { text: String },
     /// Assert text is absent from the current screen.
     AssertNotContains { text: String },
-    /// Type literal text into the TUI.
+    /// Type literal text, not the key notation [`ScenarioStep::Keys`] parses.
     TypeText { text: String },
     /// Inject keys using ptyctl notation, for example `<Enter>`, `<Esc>`, `jj`.
     Keys { keys: String },
@@ -257,11 +244,10 @@ pub enum ScenarioStep {
         #[serde(default)]
         button: MouseButton,
     },
-    /// Simulate a double-click at one coordinate.
+    /// Coordinates are 0-indexed.
     DoubleClick { row: u16, col: u16 },
-    /// Simulate a triple-click at one coordinate.
+    /// Coordinates are 0-indexed.
     TripleClick { row: u16, col: u16 },
-    /// Simulate mouse-wheel scrolling at a coordinate.
     Scroll {
         row: u16,
         col: u16,
@@ -280,7 +266,6 @@ pub enum ScenarioStep {
     Drag { from: MousePoint, to: MousePoint },
     /// Alias for drag used by text-selection scenarios.
     SelectText { from: MousePoint, to: MousePoint },
-    /// Click visible text by finding it on screen.
     ClickText {
         text: String,
         #[serde(default)]
@@ -288,13 +273,11 @@ pub enum ScenarioStep {
         #[serde(default)]
         button: MouseButton,
     },
-    /// Double-click visible text by finding it on screen.
     DoubleClickText {
         text: String,
         #[serde(default)]
         occurrence: usize,
     },
-    /// Triple-click visible text by finding it on screen.
     TripleClickText {
         text: String,
         #[serde(default)]
@@ -315,7 +298,6 @@ pub enum ScenarioStep {
     DropTextAt { target: TargetLocator, text: String },
     /// Simulate drag/drop of image files onto the prompt as terminal paste payload.
     DropImagesPrompt { images: Vec<String> },
-    /// Trigger a copy shortcut/key sequence from the TUI.
     Copy {
         #[serde(default = "default_copy_keys")]
         keys: String,
@@ -359,7 +341,7 @@ pub enum ScenarioStep {
     /// a Mermaid diagram) was rendered as text, never transmitted as an inline
     /// image.
     AssertNoKittyGraphics {},
-    /// Assert that a submitted request included at least this many image payloads.
+    /// Assert a submitted request carried at least `min` image payloads.
     AssertRequestImageCount { min: usize },
     /// Assert every submitted image has inline bytes, the expected MIME type, and decodes.
     AssertInlineImages {
@@ -473,7 +455,6 @@ pub enum TargetLocator {
     },
 }
 
-/// Runner configuration for scripted scenarios.
 #[derive(Debug, Clone)]
 pub struct ScriptedRunConfig {
     pub binary: PathBuf,
@@ -563,9 +544,7 @@ impl ScriptedScenarioRunner {
             .map(String::as_str)
             .collect();
 
-        // Materialize an optional ephemeral workspace (temp dir + files + git
-        // init) and run the pager there. Bound for the whole run so the dir
-        // outlives the pager process; `None` inherits the test process cwd.
+        // Bound for the whole run so the temp dir outlives the pager process.
         let workspace_dir = match scenario.workspace.as_ref() {
             Some(ws) => Some(materialize_workspace(ws)?),
             None => None,
@@ -652,17 +631,13 @@ impl ScriptedScenarioRunner {
     }
 }
 
-/// Create a temp dir for a scenario [`WorkspaceConfig`]: write its files
-/// (creating parent dirs) and optionally `git init` it. The returned `TempDir`
-/// must be held for the whole run so the directory outlives the pager process.
+/// The returned `TempDir` must be held for the whole run so the directory
+/// outlives the pager process.
 fn materialize_workspace(workspace: &WorkspaceConfig) -> Result<tempfile::TempDir> {
     let dir = tempfile::tempdir().context("create scenario workspace temp dir")?;
     for (rel_path, contents) in &workspace.files {
-        // Fail closed: a `files` key must be a relative path that stays inside
-        // the workspace. Reject absolute paths and any root/prefix/`..`
-        // component so a scenario can never write outside the tempdir. This is
-        // author-controlled test YAML (not a security boundary), but it's the
-        // shared materialization path, so guard it.
+        // Fail closed: reject absolute paths and any root/prefix/`..` component
+        // so a scenario can never write outside the tempdir.
         let rel = Path::new(rel_path);
         if rel.is_absolute()
             || rel.components().any(|c| {
@@ -685,9 +660,7 @@ fn materialize_workspace(workspace: &WorkspaceConfig) -> Result<tempfile::TempDi
     if workspace.git_init {
         // A real repo root makes `workspace_key` / repo-local discovery
         // deterministic regardless of where the system temp dir lives. Shelled
-        // out (not `git2`) because this harness crate has no `git2` dependency;
-        // the subprocess is careful — nulled streams + `status.success()` check
-        // + `bail!` on failure.
+        // out (not `git2`) because this harness crate has no `git2` dependency.
         let status = std::process::Command::new("git")
             .args(["init", "-q"])
             .current_dir(dir.path())
@@ -2028,15 +2001,13 @@ mod tests {
     fn workspace_rejects_paths_outside_the_tempdir() {
         use std::collections::BTreeMap;
 
-        // A normal relative key (the folder-trust scenario's own `.mcp.json`)
-        // is accepted.
         let ok = WorkspaceConfig {
             git_init: false,
             files: BTreeMap::from([(".mcp.json".to_string(), "{}".to_string())]),
         };
         assert!(materialize_workspace(&ok).is_ok());
 
-        // Absolute and `..`-traversing keys are rejected before any write.
+        // Rejected before any write.
         for bad in ["/etc/evil", "../escape", "sub/../../escape"] {
             let ws = WorkspaceConfig {
                 git_init: false,
@@ -2256,7 +2227,6 @@ mod tests {
                 }]
             }]
         })];
-        // exact form still works (default behaviour)
         assert_inline_images(
             &bodies,
             1,
@@ -2265,7 +2235,6 @@ mod tests {
             &DimensionAssertion::Exact(8),
         )
         .expect("exact match");
-        // range form succeeds when width >= 1
         assert_inline_images(
             &bodies,
             1,
@@ -2280,7 +2249,7 @@ mod tests {
             },
         )
         .expect("range match");
-        // range form fails when width must be >= 28 but actual is 8
+        // The fixture is 8x8, so a `min: 28` range must fail.
         assert!(
             assert_inline_images(
                 &bodies,

@@ -485,6 +485,8 @@ fn is_generated_prompt(value: &str) -> bool {
         return true;
     }
     let value = value.trim_start();
+    // Tool-injected wrappers open with a lowercase tag (`<command-message>`,
+    // `<local-command-stdout>`); prose a user types rarely does.
     value
         .strip_prefix('<')
         .and_then(|rest| rest.chars().next())

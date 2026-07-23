@@ -1,19 +1,13 @@
-//! `EnterPlanMode` tool — new architecture (`Tool` trait).
-//!
-//! Gateway tool that the agent calls when it decides a task is complex enough
-//! to warrant a planning phase before writing code. This is the
-//! **agent-initiated** entry path into plan mode.
+//! `EnterPlanMode` tool: the agent-initiated entry path into plan mode.
 //!
 //! On success it notifies orchestration (`PlanModeEntered`) and seeds an empty
 //! session plan file if missing (never truncating existing content), so the
 //! model can read it before writing. Read-only enforcement and plan-file gating
 //! stay in orchestration.
 //!
-//! ## User Consent
-//!
-//! This tool requires user approval before executing. The UI should present a
-//! confirmation dialog. If the user declines, the tool result is rejected and
-//! the model receives `"User declined to enter plan mode."`.
+//! Execution requires user approval: the UI presents a confirmation dialog, and
+//! on decline the tool result is rejected and the model receives
+//! `"User declined to enter plan mode."`.
 
 use crate::computer::types::AsyncFileSystem;
 use crate::notification::types::PlanModeEntered;
@@ -27,18 +21,12 @@ use crate::types::tool::{ToolKind, ToolNamespace};
 use std::path::Path;
 use std::sync::Arc;
 
-/// Input for the `EnterPlanMode` tool.
-///
-/// Empty object — no parameters. The decision to enter plan mode is a binary
-/// gate. All configuration (workflow variant, explore agent count, etc.) comes
-/// from feature flags and environment variables, not from the tool call.
+/// Deliberately empty: entering plan mode is a binary gate, and every knob
+/// (workflow variant, explore agent count, etc.) comes from feature flags and
+/// environment variables rather than the tool call.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct EnterPlanModeInput {}
 
-/// `EnterPlanMode` tool: signals plan mode entry and seeds the session plan
-/// file, returning a [`PlanFileSeedStatus`].
-///
-/// Params: `()` — no per-tool configuration.
 #[derive(Debug, Default)]
 pub struct EnterPlanModeTool;
 
@@ -111,7 +99,6 @@ impl kigi_tool_runtime::Tool for EnterPlanModeTool {
         let (seed_target, plan_file_path, tool_hints, fs) = {
             let res = resources.lock().await;
 
-            // Send notification first.
             if let Some(handle) = res.get::<NotificationHandle>() {
                 handle.0.send_plan_mode_entered(PlanModeEntered {
                     tool_call_id: ctx.call_id.as_str().to_owned(),
@@ -120,7 +107,6 @@ impl kigi_tool_runtime::Tool for EnterPlanModeTool {
 
             let (seed_target, plan_file_path) = resolve_plan_file_path(&res);
 
-            // Resolve client-facing tool names via TemplateRenderer.
             let hints = if let Some(renderer) = res.get::<TemplateRenderer>() {
                 EnterPlanModeToolHints {
                     ask_user: renderer
@@ -171,10 +157,8 @@ impl kigi_tool_runtime::Tool for EnterPlanModeTool {
     }
 }
 
-/// Probe the plan file; create an empty one only on not-found.
-///
-/// Never truncates existing content. Non-NotFound read errors fail closed as
-/// [`PlanFileSeedStatus::Missing`] without calling `write_file`.
+/// Never truncates existing content: a read error other than `NotFound` fails
+/// closed as [`PlanFileSeedStatus::Missing`] without calling `write_file`.
 async fn probe_or_create_empty_plan_file(
     fs: &dyn AsyncFileSystem,
     path: &Path,
@@ -196,8 +180,8 @@ async fn probe_or_create_empty_plan_file(
             }
         }
         Err(e) => {
-            // Non-NotFound read error: a directory at the path reads as IsADirectory;
-            // anything else is treated as inaccessible. Never write (avoid truncate risk).
+            // The path may hold real content we simply could not read, so
+            // report the failure instead of writing over it.
             let reason = match e.io_error_kind() {
                 Some(std::io::ErrorKind::IsADirectory) => PlanFileSeedFailure::NotAFile,
                 _ => PlanFileSeedFailure::Inaccessible,
@@ -234,8 +218,8 @@ mod tests {
         (resources, plan)
     }
 
-    /// Parametrized FS mock: injects the read/write outcomes and counts calls
-    /// so a test can assert the tool never touched the FS.
+    /// Injects fixed read/write outcomes and counts calls, so a test can assert
+    /// the tool never touched the FS.
     struct ProbeMockFs {
         read: Result<Vec<u8>, ComputerError>,
         write: Result<(), ComputerError>,
@@ -586,8 +570,6 @@ mod tests {
             "must not write over a directory"
         );
     }
-
-    // -- PlanFilePath resource tests --
 
     #[tokio::test]
     async fn uses_plan_file_path_resource_when_set() {

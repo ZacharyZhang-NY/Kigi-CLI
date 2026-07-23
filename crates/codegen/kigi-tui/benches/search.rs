@@ -1,12 +1,11 @@
 //! Criterion benchmarks for scrollback search.
 //!
-//! - `scan` measures the raw regex scan over a large corpus — the work that ran
-//!   synchronously on the input thread on every keystroke before the background
-//!   daemon, and now runs off-thread.
-//! - `query_steady` / `query_cold` measure the UI-thread cost of `update_query`
-//!   after the daemon change: a steady keystroke only compiles the matcher and
-//!   enqueues the query (the scan is off-thread), while the cold path also
-//!   rebuilds and ships the corpus on a content change.
+//! - `scan` measures the raw regex scan over a large corpus — the work the
+//!   daemon runs off the input thread, sparing the UI a per-keystroke scan.
+//! - `query_steady` / `query_cold` measure the UI-thread cost of `update_query`:
+//!   a steady keystroke only compiles the matcher and enqueues the query (the
+//!   scan is off-thread), while the cold path also rebuilds and ships the corpus
+//!   on a content change.
 
 use std::hint::black_box;
 use std::time::Duration;
@@ -53,9 +52,8 @@ fn build_large_scrollback(entries: usize) -> ScrollbackState {
     state
 }
 
-/// The regex scan itself — the work the daemon now runs off the input thread
-/// (previously this ran synchronously per keystroke). `fox` appears in every
-/// entry, the worst case for match collection.
+/// The regex scan itself — the corpus work the daemon runs off the input
+/// thread. `fox` appears in every entry, the worst case for match collection.
 fn bench_scan(c: &mut Criterion) {
     let state = build_large_scrollback(CORPUS_ENTRIES);
     let mut index = ScrollbackSearchIndex::new();
@@ -71,9 +69,9 @@ fn bench_scan(c: &mut Criterion) {
     g.finish();
 }
 
-/// Steady keystroke after the daemon: the corpus is already shipped, so
-/// `update_query` just compiles the matcher and enqueues the query, and `poll`
-/// picks up the async result — no scan on the UI thread.
+/// Steady keystroke: the corpus is already shipped, so `update_query` just
+/// compiles the matcher and enqueues the query, and `poll` picks up the async
+/// result — no scan on the UI thread.
 fn bench_query_steady(c: &mut Criterion) {
     let state = build_large_scrollback(CORPUS_ENTRIES);
     let mut search = ScrollbackSearchState::open();

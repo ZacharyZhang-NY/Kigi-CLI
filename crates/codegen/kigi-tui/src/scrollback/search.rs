@@ -141,10 +141,6 @@ fn scan_matches(entries: &[IndexedEntry], matcher: &TextMatcher) -> Vec<Scrollba
     matches
 }
 
-// ---------------------------------------------------------------------------
-// Background search daemon
-// ---------------------------------------------------------------------------
-
 /// Latest scan results published by the daemon for the UI thread to pick up.
 ///
 /// `generation` bumps on every write — including writes that produce no matches

@@ -465,7 +465,7 @@ type ErrorCell = Arc<Mutex<Option<SamplingError>>>;
 
 /// Wrap a raw chunk stream so its first error is captured into a
 /// shared cell. The wrapped stream still yields the original
-/// `Result<T, SamplingError>` items unchanged so the L2 transform sees
+/// `Result<T, SamplingError>` items `unchanged` so the L2 transform sees
 /// them and converts them to `SamplingErrorInfo` for events.
 fn tee_errors<'a, T: Send + 'a>(
     raw: BoxStream<'a, SamplingResult<T>>,

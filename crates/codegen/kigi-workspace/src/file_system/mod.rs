@@ -67,7 +67,6 @@ use std::{
 };
 use uuid::Uuid;
 
-// Canonical in kigi-workspace-types; re-exported for existing paths.
 pub use kigi_workspace_types::rpc::search::{ClientId, ContentSearchRequest, TargetClientId};
 
 impl From<ContentSearchRequest> for ContentSearchParams {
@@ -164,13 +163,12 @@ pub struct FuzzySearchContext {
     pub min_generation: usize,
     pub has_query: bool,
     pub query_version: usize,
-    /// The root path for this search (used to convert relative paths to absolute).
+    /// Daemon results are relative to this; callers absolutize against it.
     pub root: PathBuf,
-    /// Session ID for routing notifications.
-    /// Used by the relay to route notifications to session subscribers.
+    /// Routes notifications to the session's subscribers.
     pub session_id: Option<String>,
-    /// Target client ID for routing notifications.
-    /// Extracted from `_meta.clientId` in the open request.
+    /// Taken from `_meta.clientId` on the open request; routes notifications
+    /// through the relay to that one client.
     pub target_client_id: TargetClientId,
 }
 
@@ -233,16 +231,12 @@ impl FuzzySearchManager {
         search_id
     }
 
-    /// Get the session ID for a search, if one was set.
-    /// Used for routing notifications to session subscribers.
     pub fn get_session_id(&self, search_id: &str) -> Option<String> {
         self.searches
             .get(search_id)
             .and_then(|ctx| ctx.session_id.clone())
     }
 
-    /// Get the target client ID for a search, if one was set.
-    /// Used for routing notifications to the correct client via relay.
     pub fn get_target_client_id(&self, search_id: &str) -> TargetClientId {
         self.searches
             .get(search_id)
@@ -250,8 +244,6 @@ impl FuzzySearchManager {
             .unwrap_or_default()
     }
 
-    /// Get the root path for a search.
-    /// Used to convert relative paths to absolute paths in results.
     pub fn get_root(&self, search_id: &str) -> Option<PathBuf> {
         self.searches.get(search_id).map(|ctx| ctx.root.clone())
     }

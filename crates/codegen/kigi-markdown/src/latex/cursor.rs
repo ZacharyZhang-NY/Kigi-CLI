@@ -1,6 +1,5 @@
 //! Byte cursor over TeX source.
 
-/// Byte cursor over the TeX source.
 pub(super) struct Cursor<'a> {
     pub(super) src: &'a str,
     pub(super) pos: usize,
@@ -24,7 +23,7 @@ impl<'a> Cursor<'a> {
     /// Consume `\command` (alphabetic name) or `\<single char>`; the leading
     /// backslash must already be consumed. Returns the command name.
     ///
-    /// Unlike TeX we do NOT consume trailing whitespace: the caller's
+    /// Unlike TeX, trailing whitespace is NOT consumed: the caller's
     /// whitespace collapsing keeps `\to 0` rendering as `→ 0`.
     pub(super) fn read_command_name(&mut self) -> &'a str {
         let start = self.pos;
@@ -43,7 +42,6 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    /// Skip whitespace (TeX collapses it; meaning comes from commands).
     pub(super) fn skip_ws(&mut self) {
         while matches!(self.peek(), Some(c) if c.is_whitespace()) {
             self.bump();
@@ -59,7 +57,7 @@ impl<'a> Cursor<'a> {
         while let Some(ch) = self.bump() {
             match ch {
                 '\\' => {
-                    // Skip escaped char so `\{`/`\}` don't affect depth.
+                    // Skip the escaped char so `\{`/`\}` don't affect depth.
                     self.bump();
                 }
                 '{' => depth += 1,

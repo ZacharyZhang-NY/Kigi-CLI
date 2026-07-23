@@ -103,7 +103,8 @@ fn collect_all_contents(
     max_depth: usize,
     max_dirs: usize,
 ) -> Result<HashMap<PathBuf, DirContents>, FsError> {
-    let _timer = (); // instrumentation_timer noop (dev infra)
+    // instrumentation_timer noop (dev infra)
+    let _timer = ();
 
     let contents_map: DashMap<PathBuf, DirContents> = DashMap::new();
     let files_count = std::sync::atomic::AtomicUsize::new(0);
@@ -120,7 +121,8 @@ fn collect_all_contents(
     );
 
     let walker = WalkBuilder::new(root)
-        .max_depth(Some(max_depth + 1)) // +1 because depth 0 is root itself
+        // +1 because depth 0 is root itself
+        .max_depth(Some(max_depth + 1))
         .follow_links(false)
         .same_file_system(true)
         .ignore(true)
@@ -140,7 +142,8 @@ fn collect_all_contents(
     );
 
     {
-        let _timer = (); // instrumentation_timer noop (dev infra)
+        // instrumentation_timer noop (dev infra)
+        let _timer = ();
         walker.run(|| {
             let contents_map = &contents_map;
             let files_count = &files_count;
@@ -209,16 +212,18 @@ fn collect_all_contents(
     }
 
     let _entries_total = entries_visited.load(std::sync::atomic::Ordering::Relaxed);
-    // (instrumentation_timer.with_field calls removed — dev-only, not part of Phase 1 move)
+    // (instrumentation_timer.with_field calls omitted — dev-only, not part of Phase 1 move)
 
     let mut contents_map: HashMap<PathBuf, DirContents> = {
-        let _timer = (); // instrumentation_timer noop (dev infra)
+        // instrumentation_timer noop (dev infra)
+        let _timer = ();
         contents_map.into_iter().collect()
     };
 
     // Sort all entries for stable output
     {
-        let _timer = (); // instrumentation_timer noop (dev infra)
+        // instrumentation_timer noop (dev infra)
+        let _timer = ();
         for contents in contents_map.values_mut() {
             contents.files.sort_by_cached_key(|n| n.to_lowercase());
             contents.dirs.sort_by_cached_key(|n| n.to_lowercase());
@@ -342,7 +347,8 @@ pub async fn list_contents(
     path: impl Into<PathBuf>,
     limits: ListContentsLimits,
 ) -> Result<String, FsError> {
-    let _timer = (); // instrumentation_timer noop (dev infra)
+    // instrumentation_timer noop (dev infra)
+    let _timer = ();
     let t_total = Instant::now();
     let path: PathBuf = path.into();
 
@@ -363,7 +369,8 @@ pub async fn list_contents(
     let max_depth = limits.max_depth;
     let max_dirs = limits.max_dirs_visited;
     let contents = {
-        let _timer = (); // instrumentation_timer noop (dev infra)
+        // instrumentation_timer noop (dev infra)
+        let _timer = ();
         tokio::task::spawn_blocking(move || collect_all_contents(&path_clone, max_depth, max_dirs))
             .await
             .map_err(|e| FsError::Other(format!("walk join error: {e}")))?
@@ -380,7 +387,8 @@ pub async fn list_contents(
         depth_limit_hit,
         dirs_limit_hit,
     ) = {
-        let _timer = (); // instrumentation_timer noop (dev infra)
+        // instrumentation_timer noop (dev infra)
+        let _timer = ();
 
         let mut root_node = DirectoryNode::new(path, 0, &contents);
 
@@ -394,7 +402,8 @@ pub async fn list_contents(
 
         let mut remaining_chars = lim_characters - min_chars;
         let mut to_fit_files = true;
-        let mut dirs_visited: usize = 1; // Count root as visited
+        // Count root as visited
+        let mut dirs_visited: usize = 1;
         let mut max_depth_reached: usize = 0;
         let mut depth_limit_hit = false;
         let mut dirs_limit_hit = false;
@@ -448,7 +457,8 @@ pub async fn list_contents(
     };
 
     {
-        let _timer = (); // instrumentation_timer noop (dev infra)
+        // instrumentation_timer noop (dev infra)
+        let _timer = ();
         let mut q: VecDeque<&mut DirectoryNode> = VecDeque::new();
         if to_fit_files {
             q.push_back(&mut root_node);
@@ -481,7 +491,8 @@ pub async fn list_contents(
     }
 
     let output = {
-        let _timer = (); // instrumentation_timer noop (dev infra)
+        // instrumentation_timer noop (dev infra)
+        let _timer = ();
         let mut output = format!("{path_head}\n");
         if root_node.is_expanded() {
             output.push_str(&root_node.get_complete_str());

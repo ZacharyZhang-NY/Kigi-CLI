@@ -35,7 +35,6 @@ struct CollectorState {
 }
 
 impl DoomLoopSignalCollector {
-    /// A fresh, armed collector judging confidence with `policy`.
     pub(crate) fn new(policy: DoomLoopRecoveryPolicy) -> Self {
         let collector = Self::default();
         if let Ok(mut state) = collector.inner.lock() {
@@ -90,7 +89,6 @@ impl DoomLoopSignalCollector {
         swallow || named
     }
 
-    /// Drain the recorded signals; empty when nothing was reported.
     pub(crate) fn take(&self) -> Vec<DoomLoopSignal> {
         match self.inner.lock() {
             Ok(mut state) => std::mem::take(&mut state.signals),
@@ -111,7 +109,6 @@ impl DoomLoopSignalCollector {
         }
     }
 
-    /// Debug-log the first malformed payload per attempt (never per event).
     fn log_malformed_once(&self) {
         let Ok(mut state) = self.inner.lock() else {
             return;
@@ -139,8 +136,6 @@ mod tests {
         assert_eq!(signals[0].kind, DoomLoopSignalKind::TailRepetition(4));
     }
 
-    /// Servers that omit the SSE `event:` name are still handled by the
-    /// payload `type` check.
     #[test]
     fn absorb_swallows_check_event_without_sse_name() {
         let collector = DoomLoopSignalCollector::default();
@@ -168,7 +163,6 @@ mod tests {
         let delta = r#"{"type":"response.output_text.delta","delta":"hi"}"#;
         assert!(!collector.absorb("response.output_text.delta", delta));
         assert!(collector.take().is_empty());
-        // Terminal response field is recorded but the event is forwarded.
         let terminal = r#"{"type":"response.completed","response":{"id":"r1","doom_loop_check":{"triggers":["low_logprob@response"]}}}"#;
         assert!(!collector.absorb("response.completed", terminal));
         assert_eq!(collector.take().len(), 1);
@@ -203,8 +197,6 @@ mod tests {
         assert!(collector.take().is_empty());
     }
 
-    /// `abort_triggers` fires only on confident signals, does not drain, and
-    /// goes quiet once disarmed (the spent-budget attempt must complete).
     #[test]
     fn abort_triggers_requires_confidence_and_honors_disarm() {
         let confident = r#"{"type":"response.doom_loop_check","doom_loop_check":{"triggers":["tail_repetition:8@thinking"]}}"#;

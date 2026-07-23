@@ -130,8 +130,7 @@ fn try_stream_tail_page(request: &Request, updates_path: &Path) -> io::Result<Op
     let reader = BufReader::new(file);
 
     if is_turn_index {
-        // Single-pass scan: read lines, detect rewinds, and compute prompt
-        // boundaries in one pass to avoid a second traversal.
+        // Single pass to avoid a second traversal.
         let mut has_rewinds = false;
         let mut all_lines = Vec::new();
         let mut prompt_starts = Vec::new();

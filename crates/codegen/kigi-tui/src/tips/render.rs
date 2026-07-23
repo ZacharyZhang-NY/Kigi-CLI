@@ -104,7 +104,8 @@ mod tests {
         buf.set_string(0, 0, "XXXXXXXX", Style::default());
         buf.set_string(0, 1, "XXXXXXXX", Style::default());
 
-        let line = Line::from("0123456789"); // wider than the rect
+        // Wider than the rect.
+        let line = Line::from("0123456789");
         render_ephemeral_tip(area, &mut buf, &line);
 
         assert_eq!(row_text(&buf, area, 0), "01234567", "truncated at width");

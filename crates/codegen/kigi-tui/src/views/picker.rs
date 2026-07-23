@@ -44,10 +44,6 @@ fn picker_base_bg(bg: Option<Color>, theme: &Theme) -> Color {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 /// A single entry in a picker list — either a section header or a selectable row.
 pub enum PickerEntry<'a> {
     /// Non-selectable section header (rendered as `── label ──`).
@@ -147,7 +143,6 @@ pub fn render_picker_frame(
     match mode {
         PickerMode::Floating => render_floating_frame(buf, area, theme, close_hovered),
         PickerMode::Popup(popup_cfg) => {
-            // Use the popup frame (configurable dimensions), then wrap in PickerFrame.
             let inner = render_popup_frame(buf, area, theme, &popup_cfg)?;
             // In Popup mode, the close button is rendered later (by tab bar or search bar),
             // so return a default close_button rect that will be overwritten.
@@ -159,10 +154,6 @@ pub fn render_picker_frame(
         PickerMode::FullScreen => render_fullscreen_frame(buf, area, theme, title, close_hovered),
     }
 }
-
-// ---------------------------------------------------------------------------
-// Scroll computation
-// ---------------------------------------------------------------------------
 
 /// Compute minimal scroll offset to keep `selected` visible in a window of `visible` items
 /// out of `total`.
@@ -184,9 +175,6 @@ pub fn compute_scroll_offset(
         centered.min(max_scroll)
     }
 }
-// ---------------------------------------------------------------------------
-// Search bar
-// ---------------------------------------------------------------------------
 
 /// Render a search bar row: ` search: {query}_` or ` / to search` hint.
 ///
@@ -337,10 +325,6 @@ pub fn render_search_bar_with_label(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Divider
-// ---------------------------------------------------------------------------
-
 /// Render a horizontal `─` divider.
 pub fn render_divider(
     buf: &mut Buffer,
@@ -369,10 +353,6 @@ pub fn render_divider(
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Tab bar (shared)
-// ---------------------------------------------------------------------------
 
 /// Hit areas returned by [`render_tab_bar`].
 pub struct TabBarHitAreas {
@@ -419,10 +399,11 @@ pub fn render_tab_bar(
 
     // Tab labels.
     let mut tab_rects = Vec::with_capacity(labels.len());
-    let mut cx = x + 1; // 1 char left padding
+    let mut cx = x + 1;
     for (i, label) in labels.iter().enumerate() {
         let label_w = label.width() as u16;
-        let tab_w = label_w + 2; // " Label "
+        // " Label "
+        let tab_w = label_w + 2;
 
         if cx + tab_w > close_rect.x.saturating_sub(1) {
             tab_rects.push(None);
@@ -443,7 +424,8 @@ pub fn render_tab_bar(
         buf.set_span(cx + 1 + label_w, y, &Span::styled(" ", pad), 1);
 
         tab_rects.push(Some(Rect::new(cx, y, tab_w, 1)));
-        cx += tab_w + 2; // 2 chars gap between tabs
+        // 2 chars gap between tabs
+        cx += tab_w + 2;
     }
 
     TabBarHitAreas {
@@ -451,10 +433,6 @@ pub fn render_tab_bar(
         close_button: close_rect,
     }
 }
-
-// ---------------------------------------------------------------------------
-// Popup frame (shared)
-// ---------------------------------------------------------------------------
 
 /// Configuration for a centered popup frame.
 #[derive(Debug, Clone)]
@@ -537,10 +515,6 @@ pub fn render_popup_frame(
     Some(inner)
 }
 
-// ---------------------------------------------------------------------------
-// Search bar filter indicator
-// ---------------------------------------------------------------------------
-
 /// Render a right-aligned filter indicator on a search bar row.
 ///
 /// Draws e.g. `Enabled  f` at the right edge. Used by plugin/hooks modal.
@@ -562,7 +536,8 @@ pub fn render_filter_indicator(
 ) -> Rect {
     let label_w = label.width() as u16;
     let hint_w = key_hint.width() as u16;
-    let total_w = label_w + 1 + hint_w + 1; // "Label k "
+    // "Label k "
+    let total_w = label_w + 1 + hint_w + 1;
     let start_x = x + width.saturating_sub(total_w + 1);
 
     let label_fg = if hovered {
@@ -597,18 +572,6 @@ pub fn render_filter_indicator(
     Rect::new(start_x, y, total_w, 1)
 }
 
-// ---------------------------------------------------------------------------
-// Picker rows
-// ---------------------------------------------------------------------------
-
-/// Render a single picker row with unified visual style:
-/// - Selected: `\u{276f} label` in `text_primary+BOLD`, `bg_visual` background.
-/// - Normal: `  label` in `gray_bright`.
-/// - Right text: right-aligned in `gray_dim` (or `gray+bg_visual` when selected).
-///
-/// Compute the exact number of visual rows a picker row will consume
-/// at the given width. Used for scroll offset calculation.
-/// Return the byte offset in `s` that covers at most `max_width` display columns.
 /// Parse `[bracket]` highlight markers in a string into styled spans.
 /// Text inside `[...]` gets `highlight_style`, the rest gets `base_style`.
 /// Brackets are stripped from the output.
@@ -662,6 +625,7 @@ fn render_styled_spans(buf: &mut Buffer, spans: &Line<'_>, x: u16, y: u16, max_w
     }
 }
 
+/// Return the byte offset in `s` that covers at most `max_width` display columns.
 fn byte_offset_for_width(s: &str, max_width: usize) -> usize {
     let mut w = 0usize;
     for (i, ch) in s.char_indices() {
@@ -686,8 +650,11 @@ fn description_visual_rows(desc: &str, max_w: usize) -> usize {
 /// Left indent (columns) for picker row description and detail lines.
 const DESC_INDENT: u16 = 4;
 
+/// Compute the exact number of visual rows a picker row will consume
+/// at the given width. Used for scroll offset calculation.
 pub fn compute_row_height(row: &PickerRow<'_>, width: u16) -> usize {
-    let mut rows = 1usize; // main label line
+    // main label line
+    let mut rows = 1usize;
     let indent = DESC_INDENT;
     let max_w = width.saturating_sub(indent) as usize;
     if !row.expanded {
@@ -706,7 +673,8 @@ pub fn compute_row_height(row: &PickerRow<'_>, width: u16) -> usize {
         rows += description_visual_rows(desc, max_w);
     }
     // Expanded field values (word-wrapped).
-    let label_col = 13usize; // "{:<12} "
+    // "{:<12} "
+    let label_col = 13usize;
     let val_w = max_w.saturating_sub(label_col).max(1);
     for field in row.fields {
         let val_len = field.value.width();
@@ -718,15 +686,20 @@ pub fn compute_row_height(row: &PickerRow<'_>, width: u16) -> usize {
     }
     rows
 }
-///
-/// When `row.expanded && !row.fields.is_empty()`, renders key-value detail lines
-/// below (indented, label in `gray`, value in `gray_bright`).
-///
+
 /// Rows consumed by a rendered picker row/entry.
 pub struct RenderedRow {
     pub rows: u16,
 }
 
+/// Render a single picker row with unified visual style:
+/// - Selected: `\u{276f} label` in `text_primary+BOLD`, `bg_visual` background.
+/// - Normal: `  label` in `gray_bright`.
+/// - Right text: right-aligned in `gray_dim` (or `gray+bg_visual` when selected).
+///
+/// When `row.expanded && !row.fields.is_empty()`, renders key-value detail lines
+/// below (indented, label in `gray`, value in `gray_bright`).
+///
 /// `max_rows` caps rendering to available vertical space; detail fields beyond
 /// that limit are not drawn.
 ///
@@ -765,7 +738,7 @@ pub fn render_picker_row(
     };
     buf.set_style(row_rect, Style::default().bg(row_bg));
 
-    // Left side: indent + cursor indicator + fold indicator + label.
+    // Left side: indent + fold indicator + label.
     let indent_str = if row.indent > 0 {
         "  ".repeat(row.indent as usize)
     } else {
@@ -777,7 +750,8 @@ pub fn render_picker_row(
     // (no ❯ cursor glyph), matching the import-claude modal's style.
     let is_expandable =
         row.collapsible || !row.fields.is_empty() || !row.description_lines.is_empty();
-    let fold_width: u16 = 2; // "› " or "◆ "
+    // "› " or "◆ "
+    let fold_width: u16 = 2;
     let label_style = if row.selected {
         Style::default()
             .fg(embed.map_or(theme.text_primary, |e| e.fg(theme.text_primary)))
@@ -790,12 +764,14 @@ pub fn render_picker_row(
     };
 
     let prefix_width = indent_str.width() as u16 + fold_width;
-    let trailing_pad = 1u16; // space before border/scrollbar
+    // space before border/scrollbar
+    let trailing_pad = 1u16;
+    // +1 space before badge
     let badge_width = if row.badge.is_empty() {
         0u16
     } else {
         row.badge.width() as u16 + 1
-    }; // +1 space before badge
+    };
     let right_width = row.right_label.width() as u16;
     let gap = if right_width > 0 { 2u16 } else { 0 };
     let max_label_width = width
@@ -833,8 +809,10 @@ pub fn render_picker_row(
                 buf,
                 cur_x,
                 y,
-                !row.expanded, // collapsed = !expanded
-                false,         // picker rows don't track fold hover
+                // collapsed = !expanded
+                !row.expanded,
+                // picker rows don't track fold hover
+                false,
                 Some(row_bg),
                 theme,
             );
@@ -1027,10 +1005,6 @@ pub fn render_picker_entry(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Close button
-// ---------------------------------------------------------------------------
-
 /// Render a `[\u{2717}]` close button right-aligned at `(x..x+width, y)`.
 ///
 /// Returns the `Rect` for mouse hit-testing.
@@ -1065,10 +1039,6 @@ pub fn render_close_button(
     Rect::new(bx, y, w, 1)
 }
 
-// ---------------------------------------------------------------------------
-// Floating frame
-// ---------------------------------------------------------------------------
-
 /// Render the floating popup frame: dim background, rounded border, close button.
 ///
 /// Returns `None` if the area is too small to render anything.
@@ -1084,14 +1054,14 @@ pub fn render_floating_frame(
         return None;
     }
 
-    // Dim background.
     crate::views::file_search::line_viewer::dim_area(buf, area, theme.bg_base, 0.5);
 
     // Compute popup area (65% width, fixed height for 20 entries).
     let popup_w = ((area.width as f32 * 0.65) as u16).max(44).min(area.width);
     let popup_h = (4 + 20).min(area.height.saturating_sub(2));
     let popup_x = area.x + (area.width.saturating_sub(popup_w)) / 2;
-    let popup_y = area.y + (area.height.saturating_sub(popup_h)) / 3; // bias upward
+    // bias upward
+    let popup_y = area.y + (area.height.saturating_sub(popup_h)) / 3;
     let popup_area = Rect::new(popup_x, popup_y, popup_w, popup_h);
 
     // Clear and draw bordered popup.
@@ -1125,10 +1095,6 @@ pub fn render_floating_frame(
         close_button,
     })
 }
-
-// ---------------------------------------------------------------------------
-// Bordered frame primitive
-// ---------------------------------------------------------------------------
 
 /// Layout returned by [`render_bordered_frame`].
 pub struct BorderedFrame {
@@ -1168,7 +1134,6 @@ pub fn render_bordered_frame(
     let base_style = Style::default().fg(border_color).bg(bg);
     let border_style = Style::default().fg(border_color).bg(bg);
 
-    // Clear area.
     Clear.render(area, buf);
     buf.set_style(area, Style::default().bg(bg));
 
@@ -1220,10 +1185,6 @@ pub fn render_bordered_frame(
 
     Some(BorderedFrame { title_row, content })
 }
-
-// ---------------------------------------------------------------------------
-// Full-screen frame
-// ---------------------------------------------------------------------------
 
 /// Render a full-screen bordered picker panel using [`render_bordered_frame`].
 ///
@@ -1289,10 +1250,6 @@ pub fn render_fullscreen_frame(
         })
     }
 }
-
-// ---------------------------------------------------------------------------
-// Unified picker: state, config, outcome, render, input
-// ---------------------------------------------------------------------------
 
 /// Persistent picker state -- callers own this and pass `&mut` to input.
 ///
@@ -1748,7 +1705,6 @@ fn render_picker_content_inner(
     loading: bool,
     scrollbar_x_override: Option<u16>,
 ) -> PickerContentHitAreas {
-    // Cleared each paint; set below if a row underlines its last description line.
     let is_clickable_non_sel = |i: usize| non_selectable_clickable.get(i).copied().unwrap_or(false);
     let empty_hit = PickerContentHitAreas {
         item_rects: vec![],
@@ -2006,9 +1962,8 @@ pub fn render_picker(
         raw_content
     };
 
-    // ── Tab bar (optional) ──
-    // When tabs are configured, render a tab bar on the first row of the content
-    // area and advance the content origin downward.
+    // Tab bar (optional): when tabs are configured, render a tab bar on the
+    // first row of the content area and advance the content origin downward.
     let mut close_button = frame.close_button;
     let mut tab_rects_out: Vec<Option<Rect>> = vec![];
     let content = if let Some(tabs) = config.tabs {
@@ -2025,12 +1980,14 @@ pub fn render_picker(
         close_button = tab_hit.close_button;
         tab_rects_out = tab_hit.tab_rects;
         // Advance content below tab bar + divider.
-        let tab_rows = 1u16; // tab bar
+        // tab bar
+        let tab_rows = 1u16;
         let div_y = content.y + tab_rows;
         if div_y < content.y + content.height {
             render_divider(buf, content.x, div_y, content.width, theme, bg);
         }
-        let used = tab_rows + 1; // tab bar + divider
+        // tab bar + divider
+        let used = tab_rows + 1;
         Rect {
             y: content.y + used,
             height: content.height.saturating_sub(used),
@@ -2050,7 +2007,8 @@ pub fn render_picker(
     // Search bar width: floating/popup mode subtracts space for close button in same row.
     // When tabs are present, close button is in the tab bar row, not the search row.
     let search_width = if config.tabs.is_some() {
-        content.width // close button already in tab bar
+        // close button already in tab bar
+        content.width
     } else {
         match state.mode {
             PickerMode::Floating | PickerMode::Popup(_) => content.width.saturating_sub(4),
@@ -2118,7 +2076,9 @@ pub fn render_picker(
             );
         }
     } else {
-        // Cursor tracks focus (`search_active`) for every picker — like the Settings pane; `show_search_hint` is input-only and no longer forces an always-on cursor.
+        // Cursor visibility tracks `search_active` for every picker, like the
+        // Settings pane; `show_search_hint` only controls whether the
+        // "/ to search" placeholder is shown, not the cursor.
         render_search_bar(
             buf,
             content.x,
@@ -2133,7 +2093,7 @@ pub fn render_picker(
         );
     }
 
-    // ── Filter indicator (optional) ──
+    // Filter indicator (optional).
     let filter_rect_out = if let Some(filter_label) = config.filter_label {
         let key_hint = config.filter_key_hint.unwrap_or("f");
         let rect = render_filter_indicator(
@@ -2281,7 +2241,6 @@ pub fn handle_picker_input(
     // Clamp selected to valid range — entries may have changed since last input
     // (e.g., query filter reduced the list).
     if entry_count > 0 {
-        // Clamp selected into valid range first — entries may have shrunk.
         state.selected = state.selected.min(entry_count.saturating_sub(1));
         // Skip non-selectable items (e.g., section headers)
         while is_non_sel(state.selected) && state.selected < entry_count - 1 {
@@ -2318,7 +2277,7 @@ pub fn handle_picker_input(
         if is_non_sel(s) { entry_count - 1 } else { s }
     };
 
-    // ── Mouse handling (hit area based) ──
+    // Mouse handling (hit area based).
     if let Event::Mouse(mouse) = ev
         && let Some(ref hit) = state.hit_areas
     {
@@ -2362,7 +2321,8 @@ pub fn handle_picker_input(
                         return PickerOutcome::Selected(entry_idx);
                     }
                 }
-                return PickerOutcome::Changed; // consume click
+                // consume click
+                return PickerOutcome::Changed;
             }
             MouseEventKind::Moved => {
                 let mut changed = false;
@@ -2461,7 +2421,7 @@ pub fn handle_picker_input(
         PickerOutcome::Changed
     }
 
-    // ── Key handling ──
+    // Key handling.
     if let Event::Key(key) = ev {
         if key.kind == KeyEventKind::Release {
             return PickerOutcome::Unchanged;
@@ -2478,7 +2438,7 @@ pub fn handle_picker_input(
             return PickerOutcome::Unchanged;
         }
 
-        // ── Left/Right cursor movement (only when search input is focused) ──
+        // Left/Right cursor movement (only when search input is focused).
         let search_input_active =
             !config.disable_search && (state.search_active || !config.show_search_hint);
         if search_input_active && !state.query.is_empty() {
@@ -2728,7 +2688,8 @@ pub fn handle_picker_input(
                 state.scroll_offset = None;
                 state.selected = 0;
                 state.selection_hidden = false;
-                state.expanded.clear(); // back to default collapsed when search ends
+                // back to default collapsed when search ends
+                state.expanded.clear();
                 state.tabs_focused = false;
                 return PickerOutcome::Changed;
             }
@@ -2834,7 +2795,7 @@ pub fn handle_picker_input(
             return PickerOutcome::Changed;
         }
 
-        // ── Custom action keys (checked first — override built-in expand/copy) ──
+        // Custom action keys (checked first — override built-in expand/copy).
         // Only when not in search mode.
         if !state.search_active {
             for &(action_char, _) in config.action_keys {
@@ -2874,8 +2835,7 @@ pub fn handle_picker_input(
             }
         }
 
-        // ── Tab switching ──
-        // Tab/Shift-Tab (and BackTab) always cycle tabs when configured
+        // Tab switching. Tab/Shift-Tab (and BackTab) always cycle tabs when configured
         // (and not in search).
         //
         // When the tab bar region has been focused via Up/Down arrows
@@ -2917,8 +2877,7 @@ pub fn handle_picker_input(
             }
         }
 
-        // ── Filter cycling ──
-        // 'f' key (not in search mode) toggles the filter.
+        // Filter cycling: 'f' key (not in search mode) toggles the filter.
         if config.filter_label.is_some()
             && !state.search_active
             && key.code == KeyCode::Char('f')
@@ -3037,10 +2996,11 @@ pub fn handle_picker_input(
             }
         }
 
-        return PickerOutcome::Unchanged; // unhandled key — no state change
+        // unhandled key — no state change
+        return PickerOutcome::Unchanged;
     }
 
-    // ── Paste ──
+    // Paste.
     if let Event::Paste(text) = ev {
         return handle_paste(state, text, config);
     }
@@ -3329,7 +3289,8 @@ mod tests {
     fn vim_k_at_top_clamps_without_opening_search() {
         for hint in [true, false] {
             let config = cfg(hint, true);
-            let mut state = PickerState::default(); // selected = 0 (top)
+            // selected = 0 (top)
+            let mut state = PickerState::default();
             let outcome = handle_picker_input(&press('k'), &mut state, 3, &config);
             assert_eq!(state.selected, 0, "hint={hint}");
             assert!(!state.search_active, "hint={hint}");

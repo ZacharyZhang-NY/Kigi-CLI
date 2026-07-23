@@ -1,11 +1,10 @@
 //! `scroll-matrix` — scroll validation matrix sweep for kigi-tui.
 //!
-//! Runs matrix cells (`scroll_matrix::CELLS`) against a real pager binary in
-//! a PTY, prints the per-cell verdict table, writes `report.json` into the
-//! artifacts dir (next to each cell's recorder capture), and exits nonzero
-//! iff any cell failed or an xfail cell passed. The curated tier also runs
-//! in CI as `tests/scroll_matrix_curated.rs`; this binary is the local
-//! entry point for the full sweep and for one-off cell reruns (`--filter`).
+//! Runs matrix cells (`scroll_matrix::CELLS`) against a real pager binary in a
+//! PTY and exits nonzero iff any cell failed or an xfail cell passed. The
+//! curated tier also runs in CI as `tests/scroll_matrix_curated.rs`; this binary
+//! is the local entry point for the full sweep and one-off cell reruns
+//! (`--filter`).
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -113,8 +112,8 @@ async fn run() -> Result<ExitCode> {
     Ok(ExitCode::from(exit_code(&reports)))
 }
 
-/// Run every cell, preserving table order. `jobs == 1` runs inline (the
-/// representative-timing default); higher values fan out over a semaphore.
+/// Reports come back in table order regardless of completion order. `jobs == 1`
+/// runs inline, which keeps gesture timing representative.
 async fn run_cells(
     cells: &[&'static MatrixCell],
     jobs: usize,

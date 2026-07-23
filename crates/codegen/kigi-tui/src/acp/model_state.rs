@@ -64,7 +64,6 @@ impl ModelState {
         self.available.is_empty()
     }
 
-    /// Display name for the current model.
     pub fn current_model_name(&self) -> Option<String> {
         let current = self.current.as_ref()?;
         if let Some(model_info) = self.available.get(current) {
@@ -74,12 +73,10 @@ impl ModelState {
         }
     }
 
-    /// Machine-readable model ID string for the current model (e.g. "kigi-4.5").
     pub fn current_model_id_str(&self) -> Option<&str> {
         Some(self.current.as_ref()?.0.as_ref())
     }
 
-    /// Total context window tokens for the current model (if available).
     fn current_context_window_tokens(&self) -> Option<u64> {
         let meta = self.available.get(self.current.as_ref()?)?.meta.as_ref()?;
         meta.get("totalContextTokens")
@@ -118,20 +115,16 @@ impl ModelState {
         true
     }
 
-    /// Get the effective context window size (tokens).
-    ///
-    /// Returns the override if set, otherwise reads from the current model's
-    /// metadata. The override is set by `override_context_window()` when an
-    /// external source (e.g., SubagentProgress) reports the actual window size.
+    /// Effective context window (tokens): the override if set, otherwise the
+    /// current model's metadata.
     pub fn get_context_window(&self) -> Option<u64> {
         self.context_window_override
             .or_else(|| self.current_context_window_tokens())
     }
 
-    /// Override the context window size.
-    ///
-    /// Used for subagent views where the actual context window is reported
-    /// via SubagentProgress and may differ from the inherited model's metadata.
+    /// Set the context-window override for subagent views, where the real size
+    /// comes from SubagentProgress and can differ from the inherited model's
+    /// metadata.
     pub fn override_context_window(&mut self, tokens: u64) {
         self.context_window_override = Some(tokens);
     }
@@ -288,7 +281,7 @@ impl ModelState {
             })
     }
 
-    /// Resolve a user-supplied name to a `ModelId` via case-insensitive
+    /// Resolve a user-supplied name or id to a `ModelId` via case-insensitive
     /// ASCII match against the catalog.
     pub fn resolve_by_name_or_id(&self, query: &str) -> Option<acp::ModelId> {
         self.available.iter().find_map(|(id, info)| {
@@ -300,7 +293,6 @@ impl ModelState {
         })
     }
 
-    /// Look up the display name for a `ModelId` in the catalog.
     pub fn display_name_for(&self, id: &acp::ModelId) -> String {
         self.available
             .get(id)
@@ -308,7 +300,6 @@ impl ModelState {
             .unwrap_or_else(|| id.0.to_string())
     }
 
-    /// Cycle to the next model.
     pub fn next_model(&self) -> Option<acp::ModelId> {
         if self.available.is_empty() {
             None

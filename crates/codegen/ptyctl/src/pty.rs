@@ -10,15 +10,10 @@ use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 /// Configuration for spawning a PTY session.
 #[derive(Debug, Clone)]
 pub struct PtyConfig {
-    /// Command and arguments to run.
     pub command: Vec<String>,
-    /// Terminal width in columns.
     pub cols: u16,
-    /// Terminal height in rows.
     pub rows: u16,
-    /// Working directory.
     pub cwd: Option<PathBuf>,
-    /// Additional environment variables.
     pub env: HashMap<String, String>,
 }
 
@@ -60,30 +55,25 @@ pub struct PtyChild {
 }
 
 impl PtyChild {
-    /// Check if the child process is still alive.
     pub fn is_alive(&mut self) -> bool {
         self.child.try_wait().ok().flatten().is_none()
     }
 
-    /// Get the child process ID.
     pub fn pid(&self) -> Option<u32> {
         self.child.process_id()
     }
 
-    /// Wait for the child to exit and return the exit code.
     pub fn wait(&mut self) -> Result<u32> {
         let status = self.child.wait().context("failed to wait for child")?;
         Ok(status.exit_code())
     }
 
-    /// Kill the child process.
     pub fn kill(&mut self) -> Result<()> {
         self.child.kill().context("failed to kill child process")
     }
 }
 
 impl PtyHandle {
-    /// Spawn a new process in a PTY.
     pub fn spawn(config: &PtyConfig) -> Result<Self> {
         let pty_system = native_pty_system();
 
@@ -106,7 +96,6 @@ impl PtyHandle {
         for (key, value) in &config.env {
             cmd.env(key, value);
         }
-        // Set TERM for proper terminal detection.
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
 

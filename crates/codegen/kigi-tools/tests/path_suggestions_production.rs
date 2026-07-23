@@ -1,12 +1,9 @@
 //! Data-driven tests for path-not-found hint logic using synthetic filesystem
 //! layouts that exercise common model path-guess failure modes.
 //!
-//! Each [`Case`] sets up a temporary filesystem layout, calls
+//! Each test sets up a temporary filesystem layout, calls
 //! [`path_not_found_hint`] or [`format_not_found_error`], and asserts the
 //! output matches what we want the model to see.
-//!
-//! To add a new pattern, add a `Case` struct literal to the relevant
-//! `#[tokio::test]` function.  No boilerplate needed.
 //!
 //! Run:
 //! ```bash
@@ -16,8 +13,6 @@
 use kigi_tools::util::path_suggestions::{format_not_found_error, path_not_found_hint};
 use std::path::PathBuf;
 use tempfile::TempDir;
-
-// ── Helpers ──────────────────────────────────────────────────────────────
 
 /// Set up a temp dir with the given dirs and files, then return (tmpdir, root).
 fn setup_fs(dirs: &[&str], files: &[&str]) -> (TempDir, PathBuf) {
@@ -44,7 +39,6 @@ fn similar_names(hint: &kigi_tools::util::path_suggestions::PathNotFoundHint) ->
         .collect()
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Pattern 1: Hallucinated deep paths — model guesses plausible paths where
 // the parent directory exists but the leaf file doesn't.
 //
@@ -52,11 +46,9 @@ fn similar_names(hint: &kigi_tools::util::path_suggestions::PathNotFoundHint) ->
 //   path: features/billing/impl/src/.../BillingFeaturesImpl.kt
 //   path: subsystem/core/components/impl/src/test
 //   path: .github/PULL_REQUEST_TEMPLATE.md
-// ═══════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
 async fn pattern1_parent_exists_wrong_leaf_suggests_similar() {
-    // Model asks for BillingFeaturesImpl.kt but BillingFeatures.kt exists.
     let (_tmp, root) = setup_fs(
         &["features/billing/impl/src/main/kotlin/com/example/billing"],
         &["features/billing/impl/src/main/kotlin/com/example/billing/BillingFeatures.kt"],
@@ -77,7 +69,6 @@ async fn pattern1_parent_exists_wrong_leaf_suggests_similar() {
 
 #[tokio::test]
 async fn pattern1_pluralization_typo() {
-    // Model asks for "lib" directory but "libs" exists at root.
     let (_tmp, root) = setup_fs(&["libs"], &[]);
     let cwd = root.clone();
     let missing = root.join("lib");
@@ -93,7 +84,6 @@ async fn pattern1_pluralization_typo() {
 
 #[tokio::test]
 async fn pattern1_missing_extension() {
-    // Model asks for "README" but "README.md" exists.
     let (_tmp, root) = setup_fs(&[], &["README.md"]);
     let cwd = root.clone();
     let missing = root.join("README");
@@ -109,7 +99,6 @@ async fn pattern1_missing_extension() {
 
 #[tokio::test]
 async fn pattern1_wrong_suffix() {
-    // Model asks for "helpers.rs" but "helper.rs" exists.
     let (_tmp, root) = setup_fs(&["src/util"], &["src/util/helper.rs"]);
     let cwd = root.clone();
     let missing = root.join("src/util/helpers.rs");
@@ -125,8 +114,7 @@ async fn pattern1_wrong_suffix() {
 
 #[tokio::test]
 async fn pattern1_parent_dir_itself_missing() {
-    // Model asks for "nonexistent_dir/foo.rs" — parent doesn't exist either.
-    // Should gracefully return empty similar, no crash.
+    // Parent dir is missing too — should degrade gracefully, not crash.
     let (_tmp, root) = setup_fs(&[], &[]);
     let cwd = root.clone();
     let missing = root.join("nonexistent_dir/foo.rs");
@@ -140,8 +128,7 @@ async fn pattern1_parent_dir_itself_missing() {
 
 #[tokio::test]
 async fn pattern1_contributing_md_guess() {
-    // Model guesses CONTRIBUTING.md exists (common file, not every repo).
-    // No similar names should appear if nothing matches.
+    // A hallucinated common file with nothing similar in the tree → no suggestion.
     let (_tmp, root) = setup_fs(&[".github"], &["LICENSE", "Cargo.toml"]);
     let cwd = root.clone();
     let missing = root.join("CONTRIBUTING.md");
@@ -149,13 +136,9 @@ async fn pattern1_contributing_md_guess() {
     let hint = path_not_found_hint(&missing, &cwd, &cwd).await;
 
     assert!(hint.suggestion.is_none());
-    // "CONTRIBUTING.md" doesn't substring-match "LICENSE" or "Cargo.toml"
-    // so similar should be empty.
-    // (It might match ".github" since "contribut" doesn't contain ".github".)
     assert!(!hint.cwd_note.is_empty());
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Pattern 2: Absolute paths to wrong locations — model uses absolute paths
 // pointing outside CWD (other user homes, worktree internals, cargo registry).
 //
@@ -163,12 +146,9 @@ async fn pattern1_contributing_md_guess() {
 //   path: /Users/alice/.cargo/registry/...        (cwd: /Users/alice/project)
 //   path: /tmp/.tool/sessions/%2F.../terminal/..  (cwd: /workspace/repo)
 //   path: /Users/bob/workspace/worktrees/app/..   (cwd: /Users/bob/workspace/app/...)
-// ═══════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
 async fn pattern2_absolute_path_completely_different_tree() {
-    // Model asks for /Users/other/project/src/foo.rs, cwd is /Users/me/project.
-    // Completely unrelated — no suggestion, just CWD note.
     let (_tmp, root) = setup_fs(&["src"], &["src/foo.rs"]);
     let cwd = root.clone();
     let unrelated = PathBuf::from("/Users/other/project/src/foo.rs");
@@ -182,7 +162,6 @@ async fn pattern2_absolute_path_completely_different_tree() {
 
 #[tokio::test]
 async fn pattern2_kigi_sessions_internal_path() {
-    // Model searches internal session paths — no suggestion should fire.
     let (_tmp, root) = setup_fs(&["src"], &[]);
     let cwd = root.clone();
     let internal =
@@ -194,13 +173,11 @@ async fn pattern2_kigi_sessions_internal_path() {
     assert!(hint.similar.is_empty());
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Pattern 3: Dropped repo folder — model omits the repo directory name from
 // the path. E.g. asks for /parent/src when CWD is /parent/repo and
 // /parent/repo/src exists.
 //
 // This is the primary target of try_suggest_under_cwd().
-// ═══════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
 async fn pattern3_dropped_folder_with_display_remap() {
@@ -235,7 +212,6 @@ async fn pattern3_dropped_folder_with_display_remap() {
 
 #[tokio::test]
 async fn pattern3_dropped_folder_relative_path_skipped() {
-    // Relative paths should never trigger the dropped-folder detector.
     let (_tmp, root) = setup_fs(&["repo/src"], &[]);
     let cwd = root.join("repo");
 
@@ -249,7 +225,6 @@ async fn pattern3_dropped_folder_relative_path_skipped() {
     );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Pattern 4: Common prefix guesses — model uses src/, app/, lib/ as first
 // component but the repo doesn't have that top-level dir, or uses a variant.
 //
@@ -257,11 +232,9 @@ async fn pattern3_dropped_folder_relative_path_skipped() {
 //   path: src/search_engine/index.py  (repo has no top-level src/)
 //   path: lib/utils.rs                (repo uses libs/ not lib/)
 //   path: app/_components/galaxy      (wrong component dir name)
-// ═══════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
 async fn pattern4_lib_vs_libs() {
-    // Model asks for "lib/utils.rs", repo has "libs/" directory.
     let (_tmp, root) = setup_fs(&["libs"], &["libs/utils.rs"]);
     let cwd = root.clone();
     let missing = root.join("lib");
@@ -277,7 +250,6 @@ async fn pattern4_lib_vs_libs() {
 
 #[tokio::test]
 async fn pattern4_src_does_not_exist_no_misleading_suggestion() {
-    // Model asks for src/main.py but top-level has no src/ and nothing similar.
     let (_tmp, root) = setup_fs(&["python", "scripts"], &["setup.py"]);
     let cwd = root.clone();
     let missing = root.join("src");
@@ -293,14 +265,11 @@ async fn pattern4_src_does_not_exist_no_misleading_suggestion() {
     );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Pattern 5: Root-level file guesses — model guesses a file exists at the
 // repo root when it doesn't (CONTRIBUTING.md, .github, etc).
-// ═══════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
 async fn pattern5_root_file_with_close_match() {
-    // Model asks for "CHANGELOG" (no extension), "CHANGELOG.md" exists.
     let (_tmp, root) = setup_fs(&[], &["CHANGELOG.md"]);
     let cwd = root.clone();
     let missing = root.join("CHANGELOG");
@@ -316,7 +285,6 @@ async fn pattern5_root_file_with_close_match() {
 
 #[tokio::test]
 async fn pattern5_root_file_no_match() {
-    // Model asks for a crate-like name that is not a path at root.
     let (_tmp, root) = setup_fs(&["crates", "scripts"], &["Cargo.toml", "Cargo.lock"]);
     let cwd = root.clone();
     let missing = root.join("example-cli-tool");
@@ -332,14 +300,11 @@ async fn pattern5_root_file_no_match() {
     );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // format_not_found_error — integration tests verifying the full formatted
 // output string for each major pattern.
-// ═══════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
 async fn format_hallucinated_deep_path_with_similar() {
-    // Model asks for wrong leaf in a deep path where parent exists.
     let (_tmp, root) = setup_fs(
         &["src/components"],
         &[
@@ -369,7 +334,6 @@ async fn format_hallucinated_deep_path_with_similar() {
 
 #[tokio::test]
 async fn format_hints_disabled_bare_error() {
-    // When hints are off, output must be identical to the old behavior.
     let (_tmp, root) = setup_fs(&["src"], &["src/real.rs"]);
     let cwd = root.clone();
     let missing = root.join("src/fake.rs");
@@ -390,7 +354,6 @@ async fn format_hints_disabled_bare_error() {
 
 #[tokio::test]
 async fn format_no_match_just_cwd_note() {
-    // When nothing matches, the output should just have the CWD note.
     let (_tmp, root) = setup_fs(&[], &["totally_unrelated.py"]);
     let cwd = root.clone();
     let missing = root.join("xyz_nonexistent");
@@ -408,11 +371,12 @@ async fn format_no_match_just_cwd_note() {
 
 #[tokio::test]
 async fn format_dropped_folder_shows_display_path() {
-    // Dropped-folder suggestion must use display path in final output.
     let (_tmp, root) = setup_fs(&["repo/src"], &[]);
     let cwd = root.join("repo");
-    let display_cwd = &cwd; // same for simplicity
-    let bad_path = root.join("src"); // dropped "repo"
+    // display and resolved cwd are identical here
+    let display_cwd = &cwd;
+    // dropped "repo"
+    let bad_path = root.join("src");
 
     let msg = format_not_found_error(&bad_path, &bad_path, &cwd, display_cwd, true).await;
 

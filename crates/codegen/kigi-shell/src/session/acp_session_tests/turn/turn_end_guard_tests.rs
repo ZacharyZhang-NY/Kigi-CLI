@@ -7,12 +7,6 @@ use kigi_tools::types::template_renderer::TemplateRenderer;
 use kigi_tools::types::tool::ToolKind;
 use std::collections::HashMap;
 
-// ── TodoGate pure-function tests ──────────────────────────────────
-//
-// Integration coverage lands via the replay harness.
-// These tests cover the gate's decision function plus the reminder
-// builders.
-
 #[test]
 fn todo_gate_fires_when_pending_remains() {
     let input = TodoGateInput {
@@ -29,7 +23,6 @@ fn todo_gate_fires_when_pending_remains() {
 
 #[test]
 fn todo_gate_passes_when_in_progress_count_le_backing_count() {
-    // One in-progress item, one live backing task → backed → no nudge.
     let input = TodoGateInput {
         pending: vec![],
         in_progress_unbacked: vec![],
@@ -96,9 +89,6 @@ fn todo_gate_reminder_renders_plan_tool_name() {
 #[test]
 fn todo_gate_has_its_own_vocabulary() {
     let gate = build_todo_gate_reminder(&["only-pending"], &[]);
-    // Gate's signature phrase — distinguishes it from the periodic
-    // TodoNudge ("hasn't been used recently") in dashboards and
-    // model-side debugging.
     assert!(
         gate.contains("ended your turn"),
         "gate reminder must use its own signature phrase, got:\n{gate}"
@@ -174,21 +164,17 @@ fn todo_gate_empty_state_no_compaction_passes() {
 #[test]
 fn todo_gate_reminder_omits_empty_sections() {
     // Only the populated sections render; empty buckets are dropped.
-    // The backed-in-progress bucket is never listed (deliberately
-    // removed — the gate already decided not to nudge on those).
+    // The backed-in-progress bucket is never listed — the gate already
+    // decided not to nudge on those.
     let r = build_todo_gate_reminder(&["only-pending"], &[]);
     assert!(r.contains("Pending:"));
     assert!(!r.contains("In-progress (no backing"));
     assert!(!r.contains("backed by a live background task"));
 }
 
-// ── `CollectedTodoGateInput::as_input` partition heuristic ───────
-//
 // The "first N in_progress are backed (insertion order); pending is
 // never backed" rule is the design's primary fix for the
-// `/pr-babysit` false-positive. Earlier tests constructed the
-// partition by hand —
-// these tests exercise the real `as_input` against owned input.
+// `/pr-babysit` false-positive.
 
 fn collected(
     items: &[(&str, &str, TodoStatus)],
@@ -205,7 +191,6 @@ fn collected(
 
 #[test]
 fn as_input_marks_everything_unbacked_when_no_backing_tasks() {
-    // (a) backing_count = 0 with one in_progress → all unbacked.
     let c = collected(&[("ip", "do work", TodoStatus::InProgress)], 0);
     let input = c.as_input();
     assert_eq!(input.in_progress_backed, Vec::<&str>::new());
@@ -215,7 +200,6 @@ fn as_input_marks_everything_unbacked_when_no_backing_tasks() {
 
 #[test]
 fn as_input_marks_all_backed_when_backing_count_ge_in_progress() {
-    // (b) backing_count >= |in_progress| → all backed, none unbacked.
     let c = collected(
         &[
             ("a", "alpha", TodoStatus::InProgress),
@@ -224,15 +208,13 @@ fn as_input_marks_all_backed_when_backing_count_ge_in_progress() {
         5,
     );
     let input = c.as_input();
-    // Insertion order preserved: alpha before bravo.
     assert_eq!(input.in_progress_backed, vec!["alpha", "bravo"]);
     assert!(input.in_progress_unbacked.is_empty());
 }
 
 #[test]
 fn as_input_partitions_first_n_as_backed() {
-    // (c) backing_count = 1, |in_progress| = 3 → 1 backed + 2 unbacked.
-    // This is the `/pr-babysit` regression: 3 PR todos, 1 poller.
+    // The `/pr-babysit` regression: 3 PR todos, 1 poller → 1 backed + 2 unbacked.
     let c = collected(
         &[
             ("pr-1", "pr-1:ci-green", TodoStatus::InProgress),
@@ -242,7 +224,6 @@ fn as_input_partitions_first_n_as_backed() {
         1,
     );
     let input = c.as_input();
-    // Insertion order: pr-1 is backed; pr-2 / pr-3 are unbacked.
     assert_eq!(input.in_progress_backed, vec!["pr-1:ci-green"]);
     assert_eq!(
         input.in_progress_unbacked,
@@ -252,7 +233,6 @@ fn as_input_partitions_first_n_as_backed() {
 
 #[test]
 fn as_input_pending_never_backed_even_with_high_backing_count() {
-    // (d) pending items never count as backed, regardless of count.
     let c = collected(
         &[
             ("p", "pending-task", TodoStatus::Pending),
@@ -261,10 +241,7 @@ fn as_input_pending_never_backed_even_with_high_backing_count() {
         100,
     );
     let input = c.as_input();
-    // Pending bucket carries the pending item.
     assert_eq!(input.pending, vec!["pending-task"]);
-    // The single in-progress item is backed (count >= 1) but the
-    // pending item does NOT appear in either in_progress bucket.
     assert_eq!(input.in_progress_backed, vec!["in-progress-task"]);
     assert!(input.in_progress_unbacked.is_empty());
 }
@@ -285,9 +262,6 @@ fn as_input_completed_and_cancelled_are_dropped() {
     );
     let input = c.as_input();
     assert!(input.pending.is_empty());
-    // Insertion-order partition is computed AFTER completed /
-    // cancelled are filtered out: `first-ip` (which appears
-    // before `second-ip` in `todos`) is the one backed slot.
     assert_eq!(input.in_progress_backed, vec!["first-ip"]);
     assert_eq!(input.in_progress_unbacked, vec!["second-ip"]);
 }

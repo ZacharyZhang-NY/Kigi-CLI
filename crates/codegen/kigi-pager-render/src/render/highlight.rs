@@ -70,8 +70,8 @@ pub fn paint_match_highlights(
     }
 }
 
-/// Apply the terminal's REVERSED attribute so the fg/bg swap is native and
-/// respects the user's theme.
+/// REVERSED leaves the fg/bg swap to the terminal, so highlights follow the
+/// user's theme instead of hardcoded colors.
 fn invert_cell(cell: &mut ratatui::buffer::Cell) {
     cell.modifier.insert(ratatui::style::Modifier::REVERSED);
 }

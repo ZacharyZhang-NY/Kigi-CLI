@@ -93,10 +93,8 @@ fn tool_index_wrapper_clones_arc() {
     });
     let wrapped = ToolIndex(inner.clone());
     let copy = wrapped.clone();
-    // Both wrappers hold the same Arc — strong-count includes both
-    // wrappers and the original `inner` binding.
+    // Both wrappers share the Arc with `inner`.
     assert!(Arc::strong_count(&inner) >= 3);
-    // Debug impl renders without leaking the inner type.
     let debug = format!("{wrapped:?}");
     assert_eq!(debug, "ToolIndex");
     drop(copy);

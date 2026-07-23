@@ -591,7 +591,6 @@ fn render_file_list(buf: &mut Buffer, area: Rect, state: &mut MemoryModalState, 
         }
     }
 
-    // List scrollbar.
     render_scrollbar(
         buf,
         sb_area,
@@ -1220,8 +1219,9 @@ mod tests {
 
         let indices = state.filtered_indices();
         assert_eq!(indices.len(), 2);
-        assert_eq!(indices[0], 0); // Global header
-        assert_eq!(indices[1], 1); // MEMORY.md
+        // indices[0] is the Global header, indices[1] is MEMORY.md.
+        assert_eq!(indices[0], 0);
+        assert_eq!(indices[1], 1);
     }
 
     #[test]
@@ -1301,17 +1301,22 @@ mod tests {
     #[test]
     fn truncate_to_width_handles_multibyte() {
         // CJK characters are 2 columns wide.
-        let s = "\u{4F60}\u{597D}world"; // 你好world — 2+2+5 = 9 cols
-        assert_eq!(truncate_to_width(s, 4), "\u{4F60}\u{597D}"); // 2+2 = 4
-        assert_eq!(truncate_to_width(s, 3), "\u{4F60}"); // 2, next char is 2 → exceeds 3
-        assert_eq!(truncate_to_width(s, 9), s); // fits
+        // 你好world — 2+2+5 = 9 cols.
+        let s = "\u{4F60}\u{597D}world";
+        // 2+2 = 4.
+        assert_eq!(truncate_to_width(s, 4), "\u{4F60}\u{597D}");
+        // 2, next char is 2 → exceeds 3.
+        assert_eq!(truncate_to_width(s, 3), "\u{4F60}");
+        // Fits.
+        assert_eq!(truncate_to_width(s, 9), s);
     }
 
     #[test]
     fn cached_filter_updates_on_invalidate() {
         let entries = build_test_entries();
         let mut state = MemoryModalState::new(entries);
-        assert_eq!(state.filtered_indices().len(), 4); // all entries
+        // All entries.
+        assert_eq!(state.filtered_indices().len(), 4);
 
         state.query = "session".to_string();
         state.invalidate_filter();
@@ -1446,13 +1451,13 @@ mod tests {
         let mut state = MemoryModalState::new(entries);
         state.preview_scroll = 5;
 
-        // Ctrl+D should NOT scroll preview (removed hotkey).
+        // Ctrl+D does not scroll the preview.
         let key = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL);
         let result = handle_memory_key(&mut state, &key);
         assert!(matches!(result, InputOutcome::Unchanged));
         assert_eq!(state.preview_scroll, 5);
 
-        // Ctrl+U should NOT scroll preview (removed hotkey).
+        // Ctrl+U does not scroll the preview.
         let key = KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL);
         let result = handle_memory_key(&mut state, &key);
         assert!(matches!(result, InputOutcome::Unchanged));

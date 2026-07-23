@@ -13,13 +13,10 @@
 /// detected; see [`kigi_config::shell::is_command_available`].
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct QueryTools {
-    /// `jq`, if present.
     pub(crate) jq: Option<&'static str>,
     /// Resolved python interpreter (`python3` preferred), if any.
     pub(crate) python: Option<&'static str>,
-    /// `sed`, if present.
     pub(crate) sed: Option<&'static str>,
-    /// `cut`, if present.
     pub(crate) cut: Option<&'static str>,
 }
 

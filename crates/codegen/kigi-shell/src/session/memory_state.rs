@@ -1,7 +1,8 @@
 //! `SessionMemory` — memory subsystem state for the session actor.
 //!
 //! Groups storage, flush config, injection state, and telemetry counters
-//! that were previously scattered across 15 fields on `SessionActor`.
+//! that would otherwise be scattered across 15+ individual fields on
+//! `SessionActor`.
 
 use std::cell::RefCell;
 use std::sync::Arc;
@@ -12,7 +13,6 @@ pub struct SessionMemory {
     /// Memory storage handle for writing flush output (None when memory disabled).
     /// Wrapped in `RefCell` to allow `/memory on|off` toggle from `&Arc<SessionActor>`.
     pub storage: RefCell<Option<crate::session::memory::MemoryStorage>>,
-    /// Whether to write a session summary to memory on session end.
     pub save_on_end: bool,
     /// Shared params for building a fully-configured memory backend.
     /// `None` when memory is disabled.
@@ -23,20 +23,16 @@ pub struct SessionMemory {
     /// this session segment. Cross-segment idempotency comes from
     /// `conversation_has_memory_context`, not this flag.
     pub context_injected: AtomicBool,
-    /// Memory flush configuration (from MemoryConfig).
     pub flush_config: crate::config::MemoryFlushConfig,
     /// When `true`, auto-compact checks are suppressed during memory flush.
     pub is_flushing: AtomicBool,
     /// The compaction count at which the last flush ran (once-per-cycle guard).
     pub last_flush_compaction: AtomicU64,
-    /// Number of flushes executed in this session.
     pub flush_count: AtomicU64,
     /// Content from the most recent successful flush, used for delta prompts.
     /// Wrapped in `RefCell` because `SessionActor` is single-threaded (LocalSet).
     pub last_flush_content: RefCell<Option<String>>,
-    /// Number of successful flushes.
     pub flush_success_count: AtomicU64,
-    /// Number of failed flushes.
     pub flush_error_count: AtomicU64,
     /// Counts model-initiated `memory_search` tool calls.
     /// Wrapped in `RefCell` to allow `/memory on|off` toggle from `&Arc<SessionActor>`.
@@ -51,14 +47,11 @@ pub struct SessionMemory {
     pub dream_config: crate::config::MemoryDreamConfig,
     /// Number of dream consolidations attempted.
     pub dream_count: AtomicU64,
-    /// Number of successful dream consolidations.
     pub dream_success_count: AtomicU64,
-    /// Number of failed dream consolidations.
     pub dream_error_count: AtomicU64,
 }
 
 impl SessionMemory {
-    /// Whether memory is enabled for this session.
     pub fn is_enabled(&self) -> bool {
         self.storage.borrow().is_some()
     }
@@ -81,7 +74,6 @@ impl SessionMemory {
             .is_ok()
     }
 
-    /// Release the flush lock.
     pub fn release_flush_lock(&self) {
         self.is_flushing
             .store(false, std::sync::atomic::Ordering::Relaxed);
@@ -89,9 +81,9 @@ impl SessionMemory {
 
     /// Record a flush result and increment the appropriate counter.
     ///
-    /// Matches the original three-way logic: "written" increments success,
-    /// "error" increments error, anything else ("nothing_to_store", "rejected")
-    /// increments only the total flush count.
+    /// Three-way outcome: "written" increments success, "error" increments
+    /// error, anything else ("nothing_to_store", "rejected") increments
+    /// only the total flush count.
     pub fn record_flush_result(&self, outcome: &str) {
         self.flush_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -108,7 +100,6 @@ impl SessionMemory {
         }
     }
 
-    /// Record a dream consolidation result.
     pub fn record_dream_result(&self, success: bool) {
         use std::sync::atomic::Ordering::Relaxed;
         self.dream_count.fetch_add(1, Relaxed);

@@ -148,12 +148,11 @@ type FxBuildHasher = std::hash::BuildHasherDefault<FxHasher>;
 /// Type alias for HashMap with FxHash (fast, non-cryptographic).
 type FxHashMap<K, V> = HashMap<K, V, FxBuildHasher>;
 
-// ============================================================================
 // Constants
-// ============================================================================
 
 const MAGIC_INDEX: &[u8; 4] = b"FIDX";
-#[allow(dead_code)] // Reserved for delta wire format
+// Reserved for delta wire format
+#[allow(dead_code)]
 const MAGIC_DELTA: &[u8; 4] = b"FDLT";
 const VERSION: u16 = 1;
 
@@ -161,7 +160,8 @@ const FLAG_COMPRESSED: u16 = 0x0001;
 
 const ENTRY_FLAG_IS_DIR: u8 = 0x01;
 
-#[allow(dead_code)] // Documentation constant
+// Documentation constant
+#[allow(dead_code)]
 const MAX_DEPTH: usize = 255;
 
 /// Number of threads to use for parallel directory walking.
@@ -169,12 +169,11 @@ fn num_cpus() -> usize {
     std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4)
-        .min(8) // Cap at 8 to avoid excessive parallelism
+        // Cap at 8 to avoid excessive parallelism
+        .min(8)
 }
 
-// ============================================================================
 // WalkOptions - configuration for directory walking
-// ============================================================================
 
 /// Options for building a FileIndex from a directory walk.
 #[derive(Debug, Clone)]
@@ -234,9 +233,7 @@ impl WalkOptions {
     }
 }
 
-// ============================================================================
 // SegmentId - a handle into the string interner
-// ============================================================================
 
 /// A compact identifier for an interned path segment.
 /// Using u32 allows up to 4 billion unique segments (plenty).
@@ -253,9 +250,7 @@ impl SegmentId {
     }
 }
 
-// ============================================================================
 // StringInterner - deduplicates path segments
-// ============================================================================
 
 /// Arena-based string interner for path segments.
 ///
@@ -435,7 +430,6 @@ impl StringInterner {
         self.offsets.is_empty()
     }
 
-    /// Total bytes used by the arena.
     pub fn arena_bytes(&self) -> usize {
         self.arena.len()
     }
@@ -474,9 +468,7 @@ impl StringInterner {
     }
 }
 
-// ============================================================================
 // FileEntry - a single file/directory in the index
-// ============================================================================
 
 /// Inline storage for short paths (covers 99% of cases).
 /// Paths deeper than 6 segments will heap-allocate.
@@ -519,9 +511,7 @@ impl FileEntry {
     }
 }
 
-// ============================================================================
 // PathKey - for O(1) lookup by path
-// ============================================================================
 
 /// A key for looking up entries by path.
 /// Uses the segment IDs directly for fast comparison.
@@ -534,9 +524,7 @@ impl From<&[SegmentId]> for PathKey {
     }
 }
 
-// ============================================================================
 // FileIndex - the main index structure
-// ============================================================================
 
 /// A compact, serializable file index.
 #[derive(Debug, Clone)]
@@ -547,7 +535,7 @@ pub struct FileIndex {
     entries: Vec<FileEntry>,
     /// Path to entry index lookup (for O(1) removal)
     path_to_idx: FxHashMap<PathKey, usize>,
-    /// Tracks removed indices for potential compaction
+    /// Tracks dropped indices for potential compaction
     removed_count: usize,
 }
 
@@ -683,14 +671,14 @@ impl FileIndex {
         self.path_to_idx.insert(key, idx);
     }
 
-    /// Remove a path from the index.
-    /// Returns true if the path was found and removed.
+    /// Drop a path from the index.
+    /// Returns true if the path was found and cleared.
     pub fn remove(&mut self, path: impl AsRef<Path>) -> bool {
         let segments = self.intern_path(path.as_ref());
         let key = PathKey::from(segments.as_slice());
 
         if let Some(idx) = self.path_to_idx.remove(&key) {
-            // Mark as removed by clearing segments (tombstone)
+            // Mark as cleared by clearing segments (tombstone)
             self.entries[idx].segments.clear();
             self.removed_count += 1;
 
@@ -787,9 +775,7 @@ impl FileIndex {
         self.interner.get(id)
     }
 
-    // ------------------------------------------------------------------------
     // Internal helpers
-    // ------------------------------------------------------------------------
 
     fn intern_path(&mut self, path: &Path) -> smallvec::SmallVec<[SegmentId; INLINE_SEGMENTS]> {
         path.components()
@@ -829,9 +815,7 @@ impl FileIndex {
         self.removed_count = 0;
     }
 
-    // ------------------------------------------------------------------------
     // Serialization
-    // ------------------------------------------------------------------------
 
     /// Serialize to binary format.
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -865,7 +849,8 @@ impl FileIndex {
         // Header
         w.write_all(MAGIC_INDEX)?;
         w.write_all(&VERSION.to_le_bytes())?;
-        w.write_all(&0u16.to_le_bytes())?; // flags (no compression)
+        // flags (no compression)
+        w.write_all(&0u16.to_le_bytes())?;
         w.write_all(&(self.interner.len() as u32).to_le_bytes())?;
         w.write_all(&(self.len() as u32).to_le_bytes())?;
 
@@ -873,7 +858,8 @@ impl FileIndex {
         for (_, seg) in self.interner.iter() {
             let len = seg.len() as u16;
             w.write_all(&len.to_le_bytes())?;
-            w.write_all(seg)?; // seg is &BStr which derefs to &[u8]
+            // seg is &BStr which derefs to &[u8]
+            w.write_all(seg)?;
         }
 
         // Entry table
@@ -997,33 +983,31 @@ impl FileIndex {
     }
 }
 
-// ============================================================================
 // FileIndexDelta - incremental updates
-// ============================================================================
 
-/// An incremental update to the file index.
+/// An incremental delta to the file index.
 #[derive(Debug, Clone)]
 pub enum FileIndexDelta {
-    /// Add new entries
+    /// Append new entries
     Add(Vec<(String, bool)>),
-    /// Remove entries by path
+    /// Drop entries by path
     Remove(Vec<String>),
     /// Multiple operations batched
     Batch(Vec<FileIndexDelta>),
 }
 
 impl FileIndexDelta {
-    /// Create an add delta.
+    /// Create an insert delta.
     pub fn add(entries: Vec<(String, bool)>) -> Self {
         Self::Add(entries)
     }
 
-    /// Create a remove delta.
+    /// Create a delete delta.
     pub fn remove(paths: Vec<String>) -> Self {
         Self::Remove(paths)
     }
 
-    /// Check if the delta is empty (no actual changes).
+    /// Check if the delta is empty (no real delta).
     pub fn is_empty(&self) -> bool {
         match self {
             Self::Add(entries) => entries.is_empty(),
@@ -1113,9 +1097,7 @@ impl FileIndexDelta {
     }
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -1127,7 +1109,7 @@ mod tests {
 
         let id1 = interner.intern("src");
         let id2 = interner.intern("lib");
-        let id3 = interner.intern("src"); // duplicate
+        let id3 = interner.intern("src");
 
         assert_eq!(id1, id3);
         assert_ne!(id1, id2);
@@ -1151,7 +1133,8 @@ mod tests {
         assert!(!index.contains("src/foo.rs"));
 
         // Check interning worked
-        assert!(index.num_segments() < 6); // "src" should be shared
+        // "src" should be shared
+        assert!(index.num_segments() < 6);
     }
 
     #[test]
@@ -1164,7 +1147,8 @@ mod tests {
         assert_eq!(index.len(), 2);
 
         assert!(index.remove("src/main.rs"));
-        assert!(!index.remove("src/main.rs")); // already removed
+        // already cleared
+        assert!(!index.remove("src/main.rs"));
 
         assert_eq!(index.len(), 1);
         assert!(!index.contains("src/main.rs"));
@@ -1379,16 +1363,16 @@ mod tests {
 
     #[test]
     fn test_delta_is_empty() {
-        // Empty add
+        // Empty insert
         assert!(FileIndexDelta::Add(vec![]).is_empty());
 
-        // Non-empty add
+        // Non-Empty insert
         assert!(!FileIndexDelta::Add(vec![("src/main.rs".to_string(), false)]).is_empty());
 
-        // Empty remove
+        // Empty delete
         assert!(FileIndexDelta::Remove(vec![]).is_empty());
 
-        // Non-empty remove
+        // Non-Empty delete
         assert!(!FileIndexDelta::Remove(vec!["src/main.rs".to_string()]).is_empty());
 
         // Empty batch
@@ -1464,7 +1448,8 @@ mod tests {
             let segment = format!("segment_{}", i);
             assert_eq!(interner.intern(&segment), id);
         }
-        assert_eq!(interner.len(), segment_count); // No new segments added
+        // No new segments appended
+        assert_eq!(interner.len(), segment_count);
     }
 
     #[test]
@@ -1503,7 +1488,7 @@ mod tests {
         assert!(index.contains("lib/core/main.rs"));
         assert!(!index.contains("nonexistent/path/file.rs"));
 
-        // Removal should work correctly
+        // Drop should work correctly
         assert!(index.remove("src/utils/mod.rs"));
         assert!(!index.contains("src/utils/mod.rs"));
         assert_eq!(index.len(), 154);
@@ -1525,7 +1510,7 @@ mod tests {
         assert!(!index.contains("foo/bar/baz.rs"));
         assert!(!index.contains("nonexistent.txt"));
 
-        // Segment count should be unchanged
+        // Segment count should be `unchanged`
         assert_eq!(index.num_segments(), initial_segments);
     }
 
@@ -1540,7 +1525,8 @@ mod tests {
         assert_eq!(interner.get_bytes(id_valid), Some(b"hello".as_slice()));
 
         // Intern raw bytes that are not valid UTF-8
-        let invalid_utf8: &[u8] = &[0x80, 0x81, 0x82]; // Invalid UTF-8 sequence
+        // Invalid UTF-8 sequence
+        let invalid_utf8: &[u8] = &[0x80, 0x81, 0x82];
         let id_invalid = interner.intern_bytes(invalid_utf8);
 
         // get() should return None for non-UTF-8

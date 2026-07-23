@@ -1,4 +1,4 @@
-//! `memory_get` tool — new architecture (`Tool` trait).
+//! `memory_get` tool.
 
 use std::sync::Arc;
 
@@ -7,17 +7,15 @@ use crate::types::memory_backend::MemoryBackend;
 use crate::types::output::ToolOutput;
 use crate::types::tool::{ToolKind, ToolNamespace};
 
-/// Format content with line numbers: `{line_num}→{line}`.
-///
-/// Extracted as a free function so it can be unit-tested independently of
-/// the async tool infrastructure.  `first_line_num` is the 1-based number
-/// for the first line of `content` (accounts for `from` offset).
+/// Format content with line numbers: `{line_num}→{line}`. `first_line_num`
+/// is the 1-based number of the first line of `content` (accounts for the
+/// `from` offset).
 ///
 /// Uses `split('\n')` rather than `lines()` so that content ending with a
 /// newline (`"a\n"`) emits a trailing blank numbered line, matching the
-/// behavior of the standard `read_file` tool.  `lines()` would silently drop
-/// that trailing element, causing off-by-one line references for files
-/// (virtually all Markdown memory files) that end with a newline.
+/// standard `read_file` tool. `lines()` would silently drop that trailing
+/// element, causing off-by-one line references for files (virtually all
+/// Markdown memory files) that end with a newline.
 pub(crate) fn format_with_line_numbers(content: &str, first_line_num: usize) -> String {
     if content.is_empty() {
         return String::new();
@@ -124,51 +122,42 @@ impl kigi_tool_runtime::Tool for MemoryGetImpl {
 mod tests {
     use super::*;
 
-    /// format_with_line_numbers produces 1-based unpadded output.
     #[test]
     fn test_format_basic_line_numbers() {
         let out = format_with_line_numbers("alpha\nbeta\ngamma", 1);
         assert_eq!(out, "1→alpha\n2→beta\n3→gamma");
     }
 
-    /// The `from` offset shifts the first line number so numbers reflect the
-    /// actual position in the source file, not the slice position.
     #[test]
     fn test_format_offset_adjusts_line_numbers() {
-        // Simulates memory_get called with from=4 (0-based) — first displayed
-        // line should be labelled "5" (1-based).
+        // from=4 (0-based) makes the first displayed line number 5 (1-based).
         let out = format_with_line_numbers("line five\nline six", 5);
         assert!(out.starts_with("5→line five"), "got: {out}");
         assert!(out.ends_with("6→line six"), "got: {out}");
     }
 
-    /// Empty content produces empty output (no panic).
     #[test]
     fn test_format_empty_content() {
         let out = format_with_line_numbers("", 1);
         assert!(out.is_empty(), "empty input must produce empty output");
     }
 
-    /// Single-line content produces one numbered line.
     #[test]
     fn test_format_single_line() {
         let out = format_with_line_numbers("only line", 1);
         assert_eq!(out, "1→only line");
     }
 
-    /// Wide line numbers (>= 7 digits) are not truncated.
     #[test]
     fn test_format_large_line_numbers() {
         let out = format_with_line_numbers("x", 1_000_000);
         assert!(out.starts_with("1000000→"), "got: {out}");
     }
 
-    /// Content ending with `\n` emits a trailing blank numbered line.
-    ///
-    /// Regression test for the `lines()` vs `split('\n')` difference.
-    /// Virtually all Markdown memory files end with a trailing newline, so
-    /// without this fix `memory_get` line numbers are off-by-one relative to
-    /// `read_file` for any file that ends with a newline.
+    /// Regression test for the `lines()` vs `split('\n')` difference:
+    /// virtually all Markdown memory files end with a trailing newline, so
+    /// with `lines()` `memory_get` line numbers would be off-by-one relative
+    /// to `read_file`.
     #[test]
     fn test_format_trailing_newline_emits_blank_line() {
         let out = format_with_line_numbers("alpha\n", 1);
@@ -178,14 +167,12 @@ mod tests {
         );
     }
 
-    /// Two trailing newlines produce two extra blank lines.
     #[test]
     fn test_format_double_trailing_newline() {
         let out = format_with_line_numbers("a\n\n", 1);
         assert_eq!(out, "1→a\n2→\n3→");
     }
 
-    /// Content without a trailing newline does NOT produce a spurious blank line.
     #[test]
     fn test_format_no_trailing_newline_no_blank_line() {
         let out = format_with_line_numbers("alpha", 1);

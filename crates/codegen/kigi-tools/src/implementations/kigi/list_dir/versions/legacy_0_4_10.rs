@@ -1,15 +1,10 @@
 //! Legacy (0.4.10) depth-threshold directory rendering.
 //!
-//! Extracted from an earlier revision of the codebase. The current renderer uses
-//! BFS character-budget expansion; this module preserves the old depth-based
-//! summarization algorithm for `contract_version = "legacy-0.4.10"`.
+//! The depth-based summarization algorithm, served for
+//! `contract_version = "legacy-0.4.10"`.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-
-// ───────────────────────────────────────────────────────────────────────────
-// Configuration
-// ───────────────────────────────────────────────────────────────────────────
 
 const ROOT_SUMMARIZATION_THRESHOLD: usize = 1500;
 const SUBDIR_SUMMARIZATION_THRESHOLD: usize = 15;
@@ -45,10 +40,6 @@ impl RenderConfig {
         }
     }
 }
-
-// ───────────────────────────────────────────────────────────────────────────
-// Accumulator + helpers
-// ───────────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Default)]
 struct DirAccum {
@@ -115,10 +106,6 @@ fn filename(path: &Path) -> String {
         })
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Tree structures
-// ───────────────────────────────────────────────────────────────────────────
-
 #[derive(Debug)]
 struct ChildEntry {
     is_dir: bool,
@@ -163,10 +150,6 @@ fn get_or_init_dir<'a>(
             subtree: DirAccum::default(),
         })
 }
-
-// ───────────────────────────────────────────────────────────────────────────
-// Collection + rendering
-// ───────────────────────────────────────────────────────────────────────────
 
 fn collect(root_path: &Path, walker: ignore::Walk, cfg: &RenderConfig) -> Collected {
     let mut dirs: HashMap<PathBuf, DirectoryView> = HashMap::new();
@@ -302,13 +285,7 @@ fn render_with_fallback(root: &Path, collected: &Collected, cfg: &RenderConfig) 
     }
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Public entry point
-// ───────────────────────────────────────────────────────────────────────────
-
-/// Render a directory listing using the legacy (0.4.10) depth-threshold algorithm.
-///
-/// Returns the body text (without the root path header line).
+/// Returns the body text without the root path header line.
 pub(crate) fn render_legacy(root: &Path, max_output_bytes: usize) -> String {
     let cfg = RenderConfig {
         max_output_bytes,
@@ -327,16 +304,11 @@ pub(crate) fn render_legacy(root: &Path, max_output_bytes: usize) -> String {
     }
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Tests — fixture-based historical verification
-// ───────────────────────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    /// Create a reference directory tree for fixture comparison.
     fn create_fixture_tree(root: &std::path::Path) {
         // src/
         //   main.rs
@@ -361,22 +333,15 @@ mod tests {
         std::fs::write(root.join("Cargo.toml"), "[package]\nname = \"test\"").unwrap();
     }
 
-    /// The legacy depth-based renderer expands small directories fully,
-    /// showing individual files with indentation per depth level.
-    /// Archived-output fixture test: asserts exact string equality against
-    /// the known output of the earlier depth-threshold algorithm.
-    ///
-    /// Fixture captured from `render_legacy()` on the reference tree defined
-    /// by `create_fixture_tree()`. If this test fails after a change to the
-    /// legacy renderer, the change has drifted from historical behavior.
+    /// Guards the legacy renderer against drift: a failure means output no
+    /// longer matches the archived depth-threshold behavior.
     #[test]
     fn legacy_renders_small_tree_exact_fixture() {
         let tmp = TempDir::new().unwrap();
         create_fixture_tree(tmp.path());
         let body = render_legacy(tmp.path(), 40_000);
 
-        // Exact archived output from the depth-threshold algorithm.
-        // Root files listed alphabetically, src/ expanded (< 15 children),
+        // Root files alphabetical, src/ expanded (< 15 children),
         // util/ summarized (depth >= 2), tests/ expanded.
         let expected = "  - Cargo.toml\n  - README.md\n  - src/\n    - lib.rs\n    - main.rs\n    - util/\n      [1 file in subtree: 1 *.rs]\n  - tests/\n    - test_main.rs";
 
@@ -387,8 +352,8 @@ mod tests {
         );
     }
 
-    /// Empty directories should produce empty output (no "no children found"
-    /// — that is added by the caller in mod.rs, not by the renderer).
+    /// The renderer emits nothing for an empty dir; the "no children found"
+    /// line is added by the caller in mod.rs, not here.
     #[test]
     fn legacy_empty_directory_returns_empty_string() {
         let tmp = TempDir::new().unwrap();
@@ -399,9 +364,6 @@ mod tests {
         );
     }
 
-    /// The depth-based algorithm summarizes directories when child count
-    /// exceeds the threshold (15 for subdirs by default). Verify that a
-    /// large directory gets a summary line instead of full expansion.
     #[test]
     fn legacy_summarizes_large_subdirectory() {
         let tmp = TempDir::new().unwrap();
@@ -413,7 +375,6 @@ mod tests {
         }
         let body = render_legacy(tmp.path(), 40_000);
 
-        // Should show a summary line with file count and extension breakdown.
         assert!(
             body.contains("files in subtree") || body.contains("file in subtree"),
             "large dir should be summarized: {body}"
@@ -424,17 +385,12 @@ mod tests {
         );
     }
 
-    /// Verify structural equivalence: the depth-based renderer produces
-    /// lines with consistent 2-space indentation matching the historical
-    /// algorithm's output pattern.
     #[test]
     fn legacy_indentation_matches_historical_pattern() {
         let tmp = TempDir::new().unwrap();
         create_fixture_tree(tmp.path());
         let body = render_legacy(tmp.path(), 40_000);
 
-        // Every line should start with some number of "  " pairs followed by "- "
-        // or be a summary line (starts with spaces + "[").
         for line in body.lines() {
             let trimmed = line.trim_start();
             let indent_chars = line.len() - trimmed.len();

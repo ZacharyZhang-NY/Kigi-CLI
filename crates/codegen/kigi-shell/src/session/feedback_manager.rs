@@ -46,7 +46,6 @@ pub(crate) enum SubmitOutcome {
     /// Persisted locally only: no subscription session, or a rating-only
     /// record with no text content for the Kimi feedback endpoint.
     LocalOnly,
-    /// Server request failed.
     Failed(anyhow::Error),
 }
 
@@ -152,7 +151,6 @@ pub struct FeedbackFlags {
     pub enabled: bool,
 }
 
-/// Configuration for the feedback manager.
 #[derive(Debug, Clone)]
 pub struct FeedbackManagerConfig {
     /// Interval for the signals actor's periodic bookkeeping tick.
@@ -160,7 +158,6 @@ pub struct FeedbackManagerConfig {
     /// Whether user-facing feedback features are enabled (popups, `/feedback`,
     /// ratings). Gated by `KIGI_FEEDBACK_ENABLED`.
     pub feedback_enabled: bool,
-    /// Client type (Agent, Tui, Web, Extension)
     pub client_type: ClientType,
 }
 
@@ -176,15 +173,11 @@ impl Default for FeedbackManagerConfig {
 
 /// Manages feedback collection for a single session.
 pub struct FeedbackManager {
-    /// Session ID
     session_id: String,
-    /// Handle for sending signals (cheap to clone)
     signals_handle: SessionSignalsHandle,
-    /// Feedback heuristics evaluator
     heuristics: Arc<RwLock<FeedbackHeuristics>>,
     /// Client for the Kimi Code feedback endpoint (subscription sessions).
     feedback_client: Option<FeedbackClient>,
-    /// Configuration
     config: FeedbackManagerConfig,
 }
 
@@ -200,7 +193,6 @@ impl FeedbackManager {
     ) -> Self {
         let (signals_handle, actor) = SessionSignalsActor::with_sync_interval(config.sync_interval);
 
-        // Spawn the signals actor
         tokio::spawn(actor.run());
 
         let session_id = session_id.into();
@@ -226,17 +218,14 @@ impl FeedbackManager {
         Self::new(session_id, None, FeedbackManagerConfig::default())
     }
 
-    /// Get a clone of the signals handle for tracking events.
     pub fn signals_handle(&self) -> SessionSignalsHandle {
         self.signals_handle.clone()
     }
 
-    /// Get the session ID.
     pub fn session_id(&self) -> &str {
         &self.session_id
     }
 
-    /// Check if feedback collection is enabled.
     pub fn is_enabled(&self) -> bool {
         self.config.feedback_enabled
     }
@@ -247,7 +236,6 @@ impl FeedbackManager {
         self.feedback_client.as_ref()
     }
 
-    /// Client type for this session (Agent, Tui, Web, etc.).
     pub fn client_type(&self) -> ClientType {
         self.config.client_type
     }
@@ -300,7 +288,8 @@ impl FeedbackManager {
             &mut submission,
             self.feedback_client.as_ref(),
             persistence_tx,
-            false, // solicited: slash command isn't responding to a request
+            // solicited=false: the slash command isn't responding to a request
+            false,
         )
         .await
     }
@@ -336,7 +325,6 @@ impl FeedbackManager {
             (eval.should_request, eval.trigger_condition.as_ref())
         {
             let tier = trigger_condition.tier;
-            // Use the feedback mode configured for this tier
             let feedback_mode = heuristics.feedback_mode(tier);
             let dismissible = heuristics.dismissible(tier);
             let prompt = heuristics.prompt(tier);
@@ -363,7 +351,6 @@ impl FeedbackManager {
     }
 
     /// Force check heuristics without sampling (for testing).
-    /// Returns the evaluation result.
     pub async fn evaluate_heuristics(&self) -> Option<FeedbackEvaluation> {
         let signals = self.signals_handle.snapshot().await?;
         let mut heuristics = self.heuristics.write().await;
@@ -387,8 +374,6 @@ impl FeedbackManager {
     ) -> FeedbackRequest {
         use crate::session::feedback::TriggerSignalSnapshot;
 
-        // Build a synthetic trigger condition that makes it obvious this was
-        // manually triggered for testing purposes.
         let condition = TriggerCondition {
             tier,
             condition: "debug/trigger_feedback (manual test trigger)".to_string(),
@@ -407,7 +392,6 @@ impl FeedbackManager {
         FeedbackRequest::with_mode(self.session_id.clone(), condition, mode, true, None)
     }
 
-    /// Shutdown the manager: shuts down the signals actor.
     pub async fn shutdown(&self) {
         self.signals_handle.shutdown();
     }
@@ -421,7 +405,6 @@ mod tests {
     async fn test_feedback_manager_local_only() {
         let manager = FeedbackManager::local_only("test-session-123");
 
-        // Track some events
         let signals = manager.signals_handle();
         for _ in 0..10 {
             signals.increment_turn();

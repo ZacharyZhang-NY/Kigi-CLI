@@ -47,21 +47,16 @@ pub enum SubagentBlockKind {
 /// Enter / Ctrl-F opens the subagent view.
 #[derive(Debug, Clone)]
 pub struct SubagentBlock {
-    /// Human-readable description of the task.
     pub description: String,
     /// Child session ID (for opening the subagent view).
     pub child_session_id: String,
     /// Subagent type (e.g. "general-purpose", "explore").
     pub subagent_type: String,
-    /// Named persona applied to this subagent, if any.
     pub persona: Option<String>,
     /// Role that supplied defaults for this subagent, if any.
     pub role: Option<String>,
-    /// Effective model ID used by the subagent, if available.
     pub model: Option<String>,
-    /// Whether the subagent was launched in background mode.
     pub is_background: bool,
-    /// Lifecycle kind.
     pub kind: SubagentBlockKind,
     /// Live activity label from the child session's turn tracker.
     ///
@@ -159,11 +154,11 @@ impl SubagentBlock {
     }
 }
 
-/// Truncate description and wrap in quotes for display.
 fn quoted_desc(desc: &str, max_width: usize) -> String {
     // Reserve 2 chars for quotes
     if max_width <= 2 {
-        return "\u{201C}\u{2026}\u{201D}".to_string(); // "…"
+        // "…"
+        return "\u{201C}\u{2026}\u{201D}".to_string();
     }
     let inner = truncate_str(desc, max_width - 2);
     format!("\u{201C}{inner}\u{201D}")
@@ -213,7 +208,6 @@ impl BlockContent for SubagentBlock {
                 spans.push(Span::styled(meta, muted));
                 Line::from(spans)
             }
-            // Completed: Subagent completed in Xs: "description"
             (SubagentBlockKind::Completed { elapsed }, _) => {
                 let time_str = format_duration(*elapsed);
                 // "Subagent completed in Xs: " = 26 + time_str.len()
@@ -225,7 +219,6 @@ impl BlockContent for SubagentBlock {
                     Span::styled(desc, muted),
                 ])
             }
-            // Failed: Subagent failed in Xs: "description"
             (SubagentBlockKind::Failed { elapsed, error }, _) => {
                 let time_str = format_duration(*elapsed);
                 let detail = error
@@ -240,7 +233,6 @@ impl BlockContent for SubagentBlock {
                     Span::styled(desc, muted),
                 ])
             }
-            // Cancelled: Subagent cancelled in Xs: "description"
             (SubagentBlockKind::Cancelled { elapsed }, _) => {
                 let time_str = format_duration(*elapsed);
                 // "Subagent cancelled in Xs: " = 26 + time_str.len()

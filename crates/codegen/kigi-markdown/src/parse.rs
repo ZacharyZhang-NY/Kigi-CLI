@@ -262,8 +262,10 @@ pub(crate) fn cell_word_separator<'a>(
     {
         let mut in_whitespace = false;
         let mut after_break_char = false;
-        let mut prev_is_digit = false; // was the *previous* char a digit?
-        let mut digit_before_break = false; // was the char before the break char a digit?
+        // was the *previous* char a digit?
+        let mut prev_is_digit = false;
+        // was the char before the break char a digit?
+        let mut digit_before_break = false;
         let mut last_break_ch: char = '\0';
         let mut break_char_start: usize = 0;
         for (idx, ch) in line.char_indices() {
@@ -740,7 +742,7 @@ impl<'a, 'b, 'syn, 'oc> MarkdownParser<'a, 'b, 'syn, 'oc> {
             Event::Html(_) => {
                 // Render HTML block content as regular text (not code).
                 // pulldown-cmark treats XML-like tags (e.g. <example>) as HTML
-                // blocks, which previously got code-block styling via Replace.
+                // blocks, which would otherwise get code-block styling via Replace.
                 self.push_highlight(Some(self.ms.text), &range);
             }
             Event::InlineHtml(html) => {
@@ -1115,7 +1117,7 @@ impl<'a, 'b, 'syn, 'oc> MarkdownParser<'a, 'b, 'syn, 'oc> {
                     }
                 }
 
-                // We intentionally use allow_outside=true here (instead of the previous
+                // Use allow_outside=true here (instead of the alternate
                 // pointer-based allow_outside=false) and then do an rfind on the prefix
                 // before the (last) dest_url occurrence. This is required because dest_url
                 // may be a CowStr::Owned (after percent-decoding or HTML entity expansion)
@@ -1224,7 +1226,8 @@ impl<'a, 'b, 'syn, 'oc> MarkdownParser<'a, 'b, 'syn, 'oc> {
                 }
                 None
             }
-            TagEnd::Strikethrough => None, // No highlight pushed
+            // No highlight pushed
+            TagEnd::Strikethrough => None,
             TagEnd::CodeBlock => {
                 // pulldown synthesizes a block end at end-of-input even for an
                 // unterminated fence, so the end event alone does not prove
@@ -1591,7 +1594,8 @@ impl<'a, 'b, 'syn, 'oc> MarkdownParser<'a, 'b, 'syn, 'oc> {
         //             = 1 + sum(col_width) + num_cols * 2 * padding + (num_cols - 1) + 1
         //             = num_cols * (2 * padding + 1) + sum(col_width) + 2 - 1
         if let Some(max_width) = self.max_table_width {
-            let overhead = num_cols * (2 * padding + 1) + 1; // borders + padding
+            // borders + padding
+            let overhead = num_cols * (2 * padding + 1) + 1;
             let content_budget = max_width.saturating_sub(overhead);
             let total_content: usize = col_widths.iter().sum();
 
@@ -1740,7 +1744,8 @@ impl<'a, 'b, 'syn, 'oc> MarkdownParser<'a, 'b, 'syn, 'oc> {
 
         // Body rows
         for (i, row) in state.rows.iter().enumerate() {
-            let row_offset = separator_offset + 1 + i; // offset 2, 3, ...
+            // offset 2, 3, ...
+            let row_offset = separator_offset + 1 + i;
 
             let (row_plains, row_styleds, row_links) = self.format_styled_content_lines(
                 row,

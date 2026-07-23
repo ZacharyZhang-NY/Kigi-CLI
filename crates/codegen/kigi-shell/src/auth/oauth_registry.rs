@@ -72,17 +72,17 @@ fn oauth_manager_pool() -> &'static Mutex<HashMap<&'static str, Arc<AuthManager>
 /// production-readable env override is added here on purpose: a knob that
 /// redirects where OAuth tokens are read from is not worth a test convenience.
 ///
-/// M8: this used to be a `static OnceLock<TempDir>`. Statics are never dropped,
-/// so that leaked one temp directory per test binary — against the project's
-/// "tests are TempDir self-cleaning" discipline. Nothing is created here
-/// instead, and nothing in the lib-test suite creates it: a manager reads a
-/// missing `auth.json` as "no session", and the only two paths that WRITE one
-/// are a successful token refresh (which needs a stored refresh token that by
+/// Nothing is created here, and a `static OnceLock<TempDir>` would be wrong: a
+/// static is never dropped, so it would leak one temp directory per test binary,
+/// against the project's "tests are TempDir self-cleaning" discipline. Nothing
+/// in the lib-test suite creates the directory either: a manager reads a missing
+/// `auth.json` as "no session", and the only two paths that WRITE one are a
+/// successful token refresh (which needs a stored refresh token that by
 /// construction does not exist here) and a completed device login
 /// ([`crate::agent::mvp_agent::MvpAgent::authenticate_oauth_platform`], which
-/// M4 repointed at this same home). Both require the network, so no lib test
-/// performs either. That is an observation about the suite, not an invariant of
-/// this function — [`tests::test_pool_home_is_disposable_and_never_the_real_home`]
+/// targets this same home). Both require the network, so no lib test performs
+/// either. That is an observation about the suite, not an invariant of this
+/// function — [`tests::test_pool_home_is_disposable_and_never_the_real_home`]
 /// asserts the directory does not exist and is the tripwire if one ever does
 /// (the path is per-PROCESS under the system temp dir, so the blast radius of a
 /// future login-driving test is one disposable directory, never `~/.kigi`).
@@ -132,10 +132,6 @@ mod tests {
             .expect("subscription-OAuth platform carries an OAuthConfig")
     }
 
-    /// Each subscription-OAuth platform gets its OWN process-global pooled
-    /// manager, and no two share one. (Which credential governs a REQUEST is
-    /// not decided here — see
-    /// [`crate::auth::credential_authority::CredentialAuthority`].)
     #[tokio::test]
     async fn every_oauth_scope_gets_its_own_pooled_manager() {
         let home = tempfile::tempdir().unwrap();
@@ -168,7 +164,7 @@ mod tests {
         }
     }
 
-    /// M8: the test pool home is a per-process path that is never created, so a
+    /// The test pool home is a per-process path that is never created, so a
     /// test binary leaves nothing behind (and never resolves the developer's
     /// real `~/.kigi`, whose stored OAuth tokens the pool would otherwise read
     /// and proactively refresh over the network).

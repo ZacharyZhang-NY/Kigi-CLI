@@ -70,8 +70,6 @@ async fn build_render_context(
     })
 }
 
-/// Downgrade structured error variants to generic `InvalidInput` for legacy,
-/// restoring exact historical 0.4.10 wording.
 pub(crate) async fn downgrade_structured_errors(
     output: SearchReplaceOutput,
     resources: &SharedResources,

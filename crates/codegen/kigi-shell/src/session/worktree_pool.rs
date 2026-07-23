@@ -301,8 +301,9 @@ impl WorktreePool {
             let new_path = instance_dir.join(&candidate.pool_id);
             let adopt_start = std::time::Instant::now();
 
-            // ── Atomic adoption block (sync, no yield between these three) ──
-            // Prevents `git worktree prune` from seeing a stale backlink.
+            // Atomic adoption block: steps a-c run synchronously with no
+            // yield between them, so `git worktree prune` never observes a
+            // stale backlink.
 
             // a. Move worktree dir to new instance (atomic on same FS)
             if let Err(e) = std::fs::rename(&candidate.old_path, &new_path) {
@@ -344,7 +345,7 @@ impl WorktreePool {
             );
             let _ = std::fs::write(new_path.join(".git"), &gitdir_link);
 
-            // ── End atomic block — backlink is now valid ──
+            // End atomic block — backlink is now valid.
 
             // d. Reset to current HEAD + clean dirty files (on blocking pool)
             let reset_path = new_path.clone();
@@ -844,7 +845,7 @@ impl WorktreePool {
         // `git clean` walk (~800ms on 106K-file repos).
         let sync_result = tokio::task::spawn_blocking(move || {
             let sync = WorktreeSync::new(&source, &dest);
-            sync.sync_worktree_opts(copy_dirty, /* skip_clean */ true)
+            sync.sync_worktree_opts(copy_dirty, true)
         })
         .await;
 
@@ -1373,7 +1374,8 @@ fn cleanup_stale_pool_worktrees_inner() -> Vec<AdoptableWorktree> {
             for wt_entry in entries.flatten() {
                 let wt_path = wt_entry.path();
                 if !wt_path.is_dir() {
-                    continue; // skip .pid, marker files
+                    // Skip .pid, marker files.
+                    continue;
                 }
 
                 let pool_id = wt_path
@@ -1397,7 +1399,7 @@ fn cleanup_stale_pool_worktrees_inner() -> Vec<AdoptableWorktree> {
                     });
                     instance_has_adoptable = true;
                 } else {
-                    // Broken worktree — destroy as before.
+                    // Broken worktree — destroy it.
                     let p = wt_path.to_string_lossy().to_string();
                     tracing::info!(
                         target: WORKTREE_POOL_LOG,
@@ -2252,10 +2254,11 @@ pool_size = 3
         let ready_notify = Notify::new();
 
         // Use _impl directly to avoid global state.
+        // hard_cap = 2
         let adopted = WorktreePool::adopt_orphan_worktrees_impl(
             new_instance_dir.path(),
             &repo_path,
-            2, // hard_cap
+            2,
             &ready_notify,
             candidates,
         )
@@ -2325,7 +2328,7 @@ pool_size = 3
         // Use _impl directly to avoid global state.
         let adopted = WorktreePool::adopt_orphan_worktrees_impl(
             new_instance_dir.path(),
-            &repo_b, // different repo!
+            &repo_b,
             2,
             &ready_notify,
             candidates,
@@ -2357,11 +2360,11 @@ pool_size = 3
         let new_instance_dir = tempfile::tempdir().unwrap();
         let ready_notify = Notify::new();
 
-        // Use _impl directly to avoid global state.
+        // Use _impl directly to avoid global state. hard_cap = 1, but 3 candidates.
         let adopted = WorktreePool::adopt_orphan_worktrees_impl(
             new_instance_dir.path(),
             &repo_path,
-            1, // hard_cap = 1, but 3 candidates
+            1,
             &ready_notify,
             candidates,
         )

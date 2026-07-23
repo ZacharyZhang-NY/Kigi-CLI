@@ -67,8 +67,10 @@ pub(crate) async fn try_canonicalize(path: &Path) -> std::io::Result<PathBuf> {
 /// legitimate. This map targets OS-generated filenames where the model can
 /// never produce the exact character.
 const FILENAME_SPECIAL_CHARACTER_MAP: &[(char, char)] = &[
-    ('\u{202F}', ' '), // narrow no-break space (macOS screenshot/recording filenames)
-    ('\u{00A0}', ' '), // no-break space
+    // narrow no-break space (macOS screenshot/recording filenames)
+    ('\u{202F}', ' '),
+    // no-break space
+    ('\u{00A0}', ' '),
 ];
 
 fn normalize_filename(s: &str) -> String {
@@ -205,17 +207,13 @@ mod tests {
         assert_eq!(result, path);
     }
 
-    // ── try_resolve_unicode_filename ───────────────────────────────────
-
     #[tokio::test]
     async fn unicode_fallback_resolves_nnbsp_filename() {
         let dir = tempfile::tempdir().unwrap();
-        // Create a file with U+202F (narrow no-break space) before "PM"
         let actual_name = "Screenshot 2026-03-20 at 12.37.23\u{202F}PM.png";
         let actual_path = dir.path().join(actual_name);
         tokio::fs::write(&actual_path, b"img").await.unwrap();
 
-        // Model provides the same name with regular space
         let model_name = "Screenshot 2026-03-20 at 12.37.23 PM.png";
         let model_path = dir.path().join(model_name);
 
@@ -268,7 +266,6 @@ mod tests {
     #[tokio::test]
     async fn unicode_fallback_returns_none_for_ambiguous() {
         let dir = tempfile::tempdir().unwrap();
-        // Two files that normalize to the same ASCII name
         let a = dir.path().join("file\u{202F}name.txt");
         let b = dir.path().join("file\u{00A0}name.txt");
         tokio::fs::write(&a, b"a").await.unwrap();

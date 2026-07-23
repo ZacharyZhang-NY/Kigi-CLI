@@ -48,7 +48,6 @@ pub fn parse_params_str<T: DeserializeOwned>(raw: &str) -> Result<T, acp::Error>
     serde_json::from_str(raw)
         .map_err(|e| acp::Error::invalid_params().data(format!("invalid params: {}", e)))
 }
-/// Extract the session ID from an extension request's params.
 pub fn parse_session_id(args: &acp::ExtRequest) -> Option<acp::SessionId> {
     let v: serde_json::Value = serde_json::from_str(args.params.get()).ok()?;
     let sid = v.get("sessionId")?.as_str()?;
@@ -65,7 +64,6 @@ pub fn to_raw_response<T: Serialize>(v: &T) -> ExtResult {
         .map(|raw| acp::ExtResponse::new(Arc::from(raw)))
         .map_err(|e| acp::Error::internal_error().data(e.to_string()))
 }
-/// Convert a result with optional warning to an ExtResponse.
 pub fn to_ext_response_partial<T: Serialize>(
     result: anyhow::Result<T>,
     warning: Option<String>,
@@ -79,6 +77,5 @@ pub fn to_ext_response_partial<T: Serialize>(
         .to_ext_response()
         .map_err(|e| acp::Error::internal_error().data(e.to_string()))
 }
-/// Empty response for operations that return no data.
 #[derive(Debug, Serialize)]
 pub struct Empty {}

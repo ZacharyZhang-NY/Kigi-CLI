@@ -12,7 +12,6 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-/// Simulate SubagentInfo with String fields (before optimization)
 #[derive(Clone, Debug)]
 struct SubagentInfoString {
     subagent_id: String,
@@ -26,7 +25,6 @@ struct SubagentInfoString {
     tools_used: Vec<String>,
 }
 
-/// Simulate SubagentInfo with Arc<str> fields (after optimization)
 #[derive(Clone, Debug)]
 struct SubagentInfoArc {
     subagent_id: Arc<str>,
@@ -40,7 +38,6 @@ struct SubagentInfoArc {
     tools_used: Vec<Arc<str>>,
 }
 
-/// Parsed SubagentSpawned event from updates.jsonl
 #[derive(Debug)]
 struct SubagentSpawnedEvent {
     subagent_id: String,
@@ -53,10 +50,8 @@ struct SubagentSpawnedEvent {
 }
 
 fn parse_subagent_spawned(line: &str) -> Option<SubagentSpawnedEvent> {
-    // Parse JSON line looking for SubagentSpawned events
     let value: serde_json::Value = serde_json::from_str(line).ok()?;
 
-    // Check if this is a SubagentSpawned event
     // Format: {"params": {"update": {"sessionUpdate": "subagent_spawned", ...}}}
     let update = value.get("params")?.get("update")?;
     if update.get("sessionUpdate")?.as_str()? != "subagent_spawned" {
@@ -126,13 +121,13 @@ fn estimate_string_size(info: &SubagentInfoString) -> usize {
 fn estimate_arc_size(info: &SubagentInfoArc) -> usize {
     // Arc<str> overhead is 16 bytes (fat pointer) per field
     // But shared strings are stored once
-    16 * 4 + // subagent_id, child_session_id, description, subagent_type
+    16 * 4 +
     info.persona.as_ref().map_or(0, |_| 16) +
     info.role.as_ref().map_or(0, |_| 16) +
     info.model.as_ref().map_or(0, |_| 16) +
     info.status.as_ref().map_or(0, |_| 16) +
     info.tools_used.len() * 16 +
-    // Add actual string lengths (shared, so counted once per unique string)
+    // Byte lengths for the per-instance unique fields only; shared fields' bytes are not counted per instance.
     info.subagent_id.len() +
     info.child_session_id.len() +
     info.description.len()
@@ -167,7 +162,6 @@ fn main() {
     println!("File size: {:.1} MB", file_size as f64 / 1_000_000.0);
     println!();
 
-    // Parse SubagentSpawned events
     println!("--- Parsing SubagentSpawned events ---");
     let start = Instant::now();
 
@@ -192,11 +186,9 @@ fn main() {
         println!("No SubagentSpawned events found in this session.");
         println!("Trying to find any session with subagents...");
 
-        // Try a different approach - look for any session with subagents
         return;
     }
 
-    // Show sample events
     println!("--- Sample SubagentSpawned events ---");
     for (i, event) in events.iter().take(5).enumerate() {
         println!(
@@ -209,14 +201,12 @@ fn main() {
     }
     println!();
 
-    // Create SubagentInfo instances
     println!("--- Creating SubagentInfo instances ---");
 
     let string_infos: Vec<SubagentInfoString> = events.iter().map(create_string_info).collect();
 
     let arc_infos: Vec<SubagentInfoArc> = events.iter().map(create_arc_info).collect();
 
-    // Calculate memory
     let string_mem: usize = string_infos.iter().map(estimate_string_size).sum();
     let arc_mem: usize = arc_infos.iter().map(estimate_arc_size).sum();
 
@@ -243,7 +233,6 @@ fn main() {
     }
     println!();
 
-    // Analyze string sharing
     println!("--- String Sharing Analysis ---");
     let mut unique_types = std::collections::HashSet::new();
     let mut unique_models = std::collections::HashSet::new();
@@ -271,7 +260,6 @@ fn main() {
     println!("  Personas: {:?}", unique_personas);
     println!();
 
-    // Clone performance
     println!("--- Clone Performance (100,000 clones) ---");
     let iterations = 100_000;
 
@@ -299,7 +287,6 @@ fn main() {
     }
     println!();
 
-    // Summary
     println!("=== Summary ===");
     println!(
         "Session: {:?}",

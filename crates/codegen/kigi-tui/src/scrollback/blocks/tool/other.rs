@@ -20,9 +20,9 @@ pub struct OtherToolCallBlock {
     pub error: Option<String>,
     /// Optional output.
     pub output: Option<String>,
-    /// When the tool started running (Phase 2: time tracking).
+    /// When the tool started running.
     pub started_at: Option<std::time::Instant>,
-    /// Elapsed time in ms after completion (Phase 2: time tracking).
+    /// Elapsed time in ms after completion.
     pub elapsed_ms: Option<i64>,
     /// Image references detected in the tool output.
     image_refs: Vec<crate::prompt_images::ScrollbackImageRef>,
@@ -100,7 +100,7 @@ impl OtherToolCallBlock {
         None
     }
 
-    /// Set error (mutable) — compute elapsed time if not already set (Phase 2).
+    /// Set error (mutable) — compute elapsed time if not already set.
     pub fn set_error(&mut self, error: Option<String>) {
         if self.elapsed_ms.is_none()
             && let Some(start) = self.started_at
@@ -123,7 +123,7 @@ impl OtherToolCallBlock {
         }
     }
 
-    /// Get elapsed time in ms (Phase 2).
+    /// Get elapsed time in ms.
     pub fn elapsed_ms(&self) -> Option<i64> {
         match self.elapsed_ms {
             Some(ms) => Some(ms),
@@ -327,9 +327,9 @@ impl BlockContent for OtherToolCallBlock {
             let theme = Theme::current();
             Some(AccentStyle::static_color(theme.accent_error))
         } else if ctx.mode == DisplayMode::Collapsed {
-            None // default gray
+            None
         } else {
-            self.accent(ctx) // inherit from accent when expanded/running
+            self.accent(ctx)
         }
     }
 
@@ -346,7 +346,6 @@ impl BlockContent for OtherToolCallBlock {
     }
 
     fn is_foldable(&self) -> bool {
-        // Not foldable if failed
         if self.error.is_some() {
             return false;
         }
@@ -426,8 +425,6 @@ impl BlockContent for OtherToolCallBlock {
     }
 }
 
-// ── AskUserQuestion output parser ────────────────────────────────────
-
 /// Parse Q&A pairs from an AskUserQuestion tool result string.
 ///
 /// Recognizes all three accepted output formats:
@@ -441,7 +438,6 @@ impl BlockContent for OtherToolCallBlock {
 fn parse_ask_user_qa_pairs(output: &str) -> Vec<(String, String)> {
     // Path A: "User has answered your questions: "Q"="A", "Q"="A". You can now..."
     if let Some(rest) = output.strip_prefix("User has answered your questions: ") {
-        // Strip the trailing ". You can now continue with the user's answers in mind."
         let body = rest
             .strip_suffix(". You can now continue with the user's answers in mind.")
             .unwrap_or(rest);
@@ -450,7 +446,6 @@ fn parse_ask_user_qa_pairs(output: &str) -> Vec<(String, String)> {
             return vec![];
         }
 
-        // Parse "Q1"="A1", "Q2"="A2" pairs.
         // Split on `", "` that appears between pairs (after `"="value"`).
         let mut pairs = Vec::new();
         let mut remaining = body;
@@ -460,16 +455,17 @@ fn parse_ask_user_qa_pairs(output: &str) -> Vec<(String, String)> {
             if !remaining.starts_with('"') {
                 break;
             }
-            remaining = &remaining[1..]; // skip opening "
+            // Skip opening quote.
+            remaining = &remaining[1..];
 
             // Find the closing " before =
             let Some(q_end) = remaining.find("\"=\"") else {
                 break;
             };
             let question = remaining[..q_end].to_string();
-            remaining = &remaining[q_end + 3..]; // skip "="
+            // Skip `"="`.
+            remaining = &remaining[q_end + 3..];
 
-            // Find the end of the answer: next `", "` pair start or end of string.
             // The answer value continues until we hit `, "` (next pair) or end.
             let answer_end = remaining.find(", \"").unwrap_or(remaining.len());
 
@@ -500,9 +496,9 @@ fn parse_ask_user_qa_pairs(output: &str) -> Vec<(String, String)> {
         return pairs;
     }
 
-    // Path D: cancelled
+    // Path D: cancelled — no Q&A to show.
     if output.starts_with("User declined to answer") {
-        return vec![]; // No Q&A to show
+        return vec![];
     }
 
     // Paths B/C: plan mode — bullet format

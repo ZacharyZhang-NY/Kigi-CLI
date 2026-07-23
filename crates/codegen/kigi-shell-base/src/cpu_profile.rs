@@ -1,5 +1,4 @@
 use std::fs;
-// OpenOptions is only used by the Unix-only profiler implementation.
 #[cfg(unix)]
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
@@ -20,8 +19,9 @@ const AUTO_PATH_RETRY_LIMIT: u32 = 32;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProfileArtifactFormat {
-    /// Legacy: kept so new clients can still decode adverts from old leaders.
-    /// New binaries no longer produce SVG (that required inferno, CDDL-1.0).
+    /// Decode-only: kept so new clients can still read adverts from old
+    /// leaders. Nothing emits SVG — rendering one would pull in inferno
+    /// (CDDL-1.0).
     Svg,
     /// Folded stacks (`thread;frame;… count` per line). Not advertised yet —
     /// see `platform::profile_formats()` for the two-phase wire migration.
@@ -180,9 +180,8 @@ pub struct CpuProfileManager {
     stopping: Option<StoppingCpuProfile>,
     stop_completion_tx: watch::Sender<bool>,
     _stop_completion_guard: watch::Receiver<bool>,
-    /// When true, forces all capability queries to report unsupported regardless
-    /// of the actual platform. Used in tests to exercise the unsupported-build
-    /// code path deterministically on any host platform.
+    /// Test hook: forces every capability query to report unsupported so the
+    /// unsupported-build path can be exercised on any host platform.
     force_unsupported: bool,
 }
 
@@ -336,11 +335,9 @@ impl CpuProfileManager {
 
     /// Finalize an active CPU profile synchronously during shutdown.
     ///
-    /// This is a local convenience helper for direct manager callers. It only
-    /// finalizes a currently active profile owned by this caller. If a stop is
-    /// already in progress, this returns `Ok(None)` and does not coordinate with
-    /// that in-flight stop. Callers that need process-wide shutdown coordination
-    /// must separately wait for stop completion.
+    /// A stop already in progress yields `Ok(None)` without coordinating with
+    /// that in-flight stop, so callers needing process-wide shutdown
+    /// coordination must also wait on [`Self::subscribe_stop_completion`].
     pub fn finalize_on_shutdown(&mut self) -> Result<Option<CpuProfileStopResult>, ControlError> {
         let stop_handle = self.take_shutdown_stop_handle()?;
         match stop_handle {
@@ -428,10 +425,10 @@ fn resolve_svg_path(
 }
 
 fn derive_output_path(output: &Path, started_at: &str) -> Result<PathBuf, ControlError> {
-    // Honor explicit artifact paths (`.folded`/`.txt`). An explicit `.svg`
-    // path — from old client invocations or muscle memory — keeps its
-    // location but is redirected to `.folded`: the artifact is folded stacks
-    // now, and writing text into an `.svg`-named file would just corrupt it.
+    // Explicit `.folded`/`.txt` paths are honored as-is. An explicit `.svg`
+    // path — from old clients or muscle memory — keeps its directory but
+    // switches to a `.folded` extension, since the artifact is folded stacks
+    // and text in an `.svg`-named file would only mislead.
     if output
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("folded") || ext.eq_ignore_ascii_case("txt"))
@@ -563,8 +560,8 @@ mod platform {
 
     struct PprofProfilerEngine {
         guard: pprof::ProfilerGuard<'static>,
-        // Named `svg_path` historically; now points at a `.folded` artifact.
-        // The wire protocol keeps the `svg_path` field name for compat.
+        // Points at a `.folded` artifact; the name tracks the wire protocol's
+        // `svg_path` field, which stays for compat with old clients.
         svg_path: PathBuf,
     }
 
@@ -654,11 +651,11 @@ mod platform {
     }
 
     pub(super) fn profile_formats() -> &'static [ProfileArtifactFormat] {
-        // Advertise nothing for now: old clients deserialize this enum
-        // strictly inside the Registered handshake, so a new variant (e.g.
-        // `folded`) would break their connect entirely. Start advertising
-        // `Folded` once binaries that know the variant have saturated the
-        // fleet. The artifact itself is already folded stacks.
+        // Advertise nothing: old clients deserialize this enum strictly inside
+        // the Registered handshake, so seeing `folded` breaks their connect
+        // entirely. Advertise `Folded` only once binaries that know the
+        // variant have saturated the fleet; the artifact is folded stacks
+        // either way.
         &[]
     }
 

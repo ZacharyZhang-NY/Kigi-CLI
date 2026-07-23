@@ -123,7 +123,6 @@ pub(crate) async fn checkout_persisted_head_in_worktree(
     )
     .await
 }
-/// Decision returned to the worktree restore caller.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct WorktreeRestoreDecision {
     pub code_restored: bool,
@@ -409,7 +408,6 @@ async fn resume_local_session_in_worktree(
 }
 /// Orchestrate session rehydration: recreate the git worktree at the exact
 /// path and restore all session state using the original session ID.
-///
 pub async fn rehydrate_session_in_worktree(
     req: &RehydrateSessionRequest,
     #[allow(unused_variables)] ops: &kigi_workspace::WorkspaceOps,
@@ -917,7 +915,6 @@ mod tests {
             "expected registry-unavailable error, got: {msg}"
         );
     }
-    /// Test helper: Initialize a git repo at the given path
     fn init_git_repo(path: &std::path::Path) {
         crate::test_support::ensure_hermetic_git_on_path();
         std::process::Command::new("git")
@@ -936,7 +933,6 @@ mod tests {
             .output()
             .unwrap();
     }
-    /// Test helper: Stage and commit all files
     fn git_commit_all(path: &std::path::Path, message: &str) {
         std::process::Command::new("git")
             .current_dir(path)
@@ -1048,7 +1044,6 @@ mod tests {
         let base = worktree_base_dir(Path::new("/home/user/projects/my-repo"));
         assert!(base.ends_with("worktrees/projects-my-repo"));
     }
-    /// Helper: get HEAD commit SHA from a git repo.
     fn git_head_sha(path: &std::path::Path) -> String {
         let out = std::process::Command::new("git")
             .current_dir(path)

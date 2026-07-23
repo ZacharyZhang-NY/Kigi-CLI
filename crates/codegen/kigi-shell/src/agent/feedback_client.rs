@@ -24,7 +24,6 @@ pub struct FeedbackApiError {
 }
 
 impl FeedbackApiError {
-    /// Returns `true` if this is a 401 Unauthorized response.
     pub fn is_unauthorized(&self) -> bool {
         self.status == reqwest::StatusCode::UNAUTHORIZED
     }
@@ -49,7 +48,6 @@ enum BearerSource {
     Static(String),
 }
 
-/// Client for the Kimi Code feedback endpoint.
 #[derive(Clone)]
 pub struct FeedbackClient {
     http: reqwest::Client,
@@ -73,7 +71,6 @@ impl FeedbackClient {
         }
     }
 
-    /// Client with a fixed Bearer token (tests).
     #[cfg(test)]
     pub(crate) fn with_static_token(base_url: impl Into<String>, token: impl Into<String>) -> Self {
         Self {

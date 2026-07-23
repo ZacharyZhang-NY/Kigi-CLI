@@ -973,7 +973,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&repo_path);
     }
 
-    // ─── Standalone mode tests ───────────────────────────────────────────
+    // Standalone mode tests
 
     #[test]
     fn test_standalone_worktree_simple() {
@@ -1218,7 +1218,7 @@ mod tests {
         assert!(result.ignored_copy.is_some());
     }
 
-    // ─── Cancellation / partial-creation cleanup tests ───────────────────
+    // Cancellation / partial-creation cleanup tests
 
     #[test]
     fn test_linked_cancel_after_worktree_add_deregisters() {
@@ -1307,7 +1307,8 @@ mod tests {
         let result = WorktreeBuilder::new(repo_path.clone(), dest.clone())
             .creation_mode(CreationMode::Linked)
             .ignored_files_mode(IgnoredFilesMode::Copy {
-                skip_patterns: vec!["[".to_string()], // invalid glob → build fails
+                // invalid glob → build fails
+                skip_patterns: vec!["[".to_string()],
             })
             .create();
         assert!(result.is_err(), "invalid skip glob must fail creation");

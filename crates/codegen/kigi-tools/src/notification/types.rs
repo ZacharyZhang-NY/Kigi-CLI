@@ -1,7 +1,5 @@
-//! Contains the various kind of notifications which can be sent by the tools
-//! This is used to talk to the wider systems which integrate with this crate
-//! notifications can be of many types:
-//! - updates being sent by the tools as they are executing (for example bash tools)
+//! Notifications emitted by tools to the wider systems that integrate with
+//! this crate — for example, streaming updates while a bash command runs.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -9,21 +7,17 @@ use std::sync::Arc;
 use crate::types::TaskSnapshot;
 
 /// Common fields for all bash execution notifications.
-/// Extracting these ensures consistent naming and makes refactoring easier.
 #[derive(Debug, Clone, PartialEq, Eq, schemars::JsonSchema)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BashNotificationBase {
-    /// The tool call ID (used to correlate with the tool call in TUI)
     pub tool_call_id: String,
 
-    /// The command being executed
     pub command: String,
 
     /// Output bytes (may be truncated if exceeds limit).
     /// Use `output_lossy()` for string conversion.
     ///
-    /// Serialized as base64; see `crate::util::serde_base64` for the wire format
-    /// and deploy ordering.
+    /// Serialized as base64; see `crate::util::serde_base64` for the wire format.
     #[cfg_attr(feature = "serde", serde(with = "crate::util::serde_base64"))]
     // Wire form is a base64 string, not a byte array, so advertise `String`.
     #[schemars(with = "String")]
@@ -32,10 +26,8 @@ pub struct BashNotificationBase {
     /// Total bytes of output received (before any truncation)
     pub total_bytes: usize,
 
-    /// Whether the output was truncated due to size limits
     pub truncated: bool,
 
-    /// Working directory where command is running
     pub cwd: PathBuf,
 }
 
@@ -55,7 +47,6 @@ impl BashNotificationBase {
 #[derive(Debug, Clone, PartialEq, Eq, schemars::JsonSchema)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BashOutputChunk {
-    /// Common notification fields
     #[cfg_attr(feature = "serde", serde(flatten))]
     pub base: BashNotificationBase,
 }
@@ -65,7 +56,6 @@ pub struct BashOutputChunk {
 #[derive(Debug, Clone, PartialEq, Eq, schemars::JsonSchema)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BashExecutionComplete {
-    /// Common notification fields
     #[cfg_attr(feature = "serde", serde(flatten))]
     pub base: BashNotificationBase,
 
@@ -78,7 +68,6 @@ pub struct BashExecutionComplete {
 }
 
 impl BashExecutionComplete {
-    /// Returns true if the process was killed by a signal
     pub fn was_signaled(&self) -> bool {
         self.signal.is_some()
     }
@@ -89,7 +78,7 @@ impl BashExecutionComplete {
 #[derive(Debug, Clone, PartialEq, Eq, schemars::JsonSchema)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BashExecutionTimeout {
-    /// Common notification fields (output contains partial data captured before timeout)
+    /// `base.output` holds partial data captured before the timeout.
     #[cfg_attr(feature = "serde", serde(flatten))]
     pub base: BashNotificationBase,
 
@@ -108,7 +97,7 @@ pub struct BashExecutionTimeout {
 #[derive(Debug, Clone, PartialEq, Eq, schemars::JsonSchema)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BashExecutionBackgrounded {
-    /// Common notification fields (output contains data captured before backgrounding)
+    /// `base.output` holds data captured before backgrounding.
     #[cfg_attr(feature = "serde", serde(flatten))]
     pub base: BashNotificationBase,
 
@@ -155,16 +144,12 @@ pub struct BashExecutionBackgrounded {
 #[derive(Debug, Clone, PartialEq, Eq, schemars::JsonSchema)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BashExecutionFailed {
-    /// The tool call ID
     pub tool_call_id: String,
 
-    /// The command that failed
     pub command: String,
 
-    /// Working directory where command was attempted
     pub cwd: PathBuf,
 
-    /// Error message describing what went wrong
     pub error: String,
 }
 
@@ -174,10 +159,8 @@ pub struct BashExecutionFailed {
 #[derive(Debug, Clone, PartialEq, Eq, schemars::JsonSchema)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FileRead {
-    /// The tool call ID (correlates with the tool invocation)
     pub tool_call_id: String,
 
-    /// Absolute path to the file that was read
     pub absolute_path: PathBuf,
 }
 
@@ -187,15 +170,11 @@ pub struct FileRead {
 #[derive(Debug, Clone, PartialEq, Eq, schemars::JsonSchema)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FileWritten {
-    /// The tool call ID (correlates with the tool invocation)
     pub tool_call_id: String,
 
-    /// Absolute path to the file that was written
     pub absolute_path: PathBuf,
 
-    /// Full file content after the write.
-    /// For new file creation: the entire new content.
-    /// For replacements: the full file content after applying the edit.
+    /// Full file content after the write (not a delta).
     pub content: String,
 
     /// Full file content BEFORE the write.
@@ -216,7 +195,6 @@ pub struct FileWritten {
 #[derive(Debug, Clone, PartialEq, Eq, schemars::JsonSchema)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PlanModeEntered {
-    /// The tool call ID (correlates with the EnterPlanMode tool invocation)
     pub tool_call_id: String,
 }
 
@@ -229,7 +207,6 @@ pub struct PlanModeEntered {
 #[derive(Debug, Clone, PartialEq, Eq, schemars::JsonSchema)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PlanModeExited {
-    /// The tool call ID (correlates with the ExitPlanMode tool invocation)
     pub tool_call_id: String,
 
     /// The plan file content at the time ExitPlanMode was called.
@@ -248,7 +225,6 @@ pub struct PlanModeExited {
 #[derive(Debug, Clone, PartialEq, Eq, schemars::JsonSchema)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct UserQuestionAsked {
-    /// The tool call ID (correlates with the AskUserQuestion tool invocation)
     pub tool_call_id: String,
 
     /// The questions being asked, serialized as JSON for the client to render.
@@ -302,9 +278,7 @@ pub struct LspServerFailed {
 #[derive(Debug, Clone, PartialEq, Eq, schemars::JsonSchema)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ScheduledTaskFired {
-    /// The scheduled task's unique ID.
     pub task_id: String,
-    /// The prompt to execute.
     pub prompt: String,
     /// Human-readable schedule description, e.g. "every 5 minutes".
     pub human_schedule: String,
@@ -323,9 +297,7 @@ pub struct ScheduledTaskRemoved {
 #[derive(Debug, Clone, PartialEq, Eq, schemars::JsonSchema)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ScheduledTaskCreated {
-    /// The scheduled task's unique ID.
     pub task_id: String,
-    /// The prompt to execute.
     pub prompt: String,
     /// Human-readable schedule description, e.g. "every 5 minutes".
     pub human_schedule: String,
@@ -339,7 +311,6 @@ pub struct ScheduledTaskCreated {
 #[derive(Debug, Clone, PartialEq, Eq, schemars::JsonSchema)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MonitorEvent {
-    /// Background task ID of the monitor.
     pub task_id: String,
     /// Human-readable description (e.g. "errors in deploy.log").
     pub description: String,
@@ -361,43 +332,18 @@ pub struct MonitorEvent {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(tag = "type"))]
 pub enum ToolNotification {
-    /// Incremental output chunk (sent periodically during execution)
     BashOutputChunk(BashOutputChunk),
-
-    /// Command completed (success or failure)
     BashExecutionComplete(BashExecutionComplete),
-
-    /// Command timed out and was killed
     BashExecutionTimeout(BashExecutionTimeout),
-
-    /// Command was backgrounded (process continues, tool returns)
     BashExecutionBackgrounded(BashExecutionBackgrounded),
-
-    /// Command failed to execute (spawn error, I/O error, etc.)
     BashExecutionFailed(BashExecutionFailed),
-
-    /// A file was written by a tool (search_replace).
-    /// Consumers can forward to hunk tracking, audit logging, etc.
     FileWritten(FileWritten),
 
-    /// Task completed notification which sends the exit code as well and notifies any client
-    /// about the task being finished status
+    /// A task finished; carries its final snapshot (exit code, etc.).
     TaskCompleted(TaskSnapshot),
 
-    /// The agent requested to enter plan mode.
-    /// Consumers (gateway, TUI) use this to transition the client into
-    /// plan-mode UI state (e.g., enforce read-only, inject plan-mode
-    /// system prompts, show plan-mode indicators).
     PlanModeEntered(PlanModeEntered),
-
-    /// The agent signaled it is done planning and wants to exit plan mode.
-    /// Consumers (gateway, TUI) use this to present the plan for user
-    /// approval and transition out of plan-mode state.
     PlanModeExited(PlanModeExited),
-
-    /// The agent is asking the user a structured question.
-    /// Consumers (gateway, TUI) use this to present the question UI
-    /// and collect the user's answers.
     UserQuestionAsked(UserQuestionAsked),
 
     LspServerStarting(LspServerStarting),
@@ -406,16 +352,10 @@ pub enum ToolNotification {
     LspServerRetrying(LspServerRetrying),
     LspServerFailed(LspServerFailed),
 
-    /// A scheduled task fired and its prompt should be injected into the session.
     ScheduledTaskFired(ScheduledTaskFired),
-
-    /// A scheduled task was removed (deleted, expired, or one-shot completed).
     ScheduledTaskRemoved(ScheduledTaskRemoved),
-
-    /// A scheduled task was created and should appear in the tasks pane.
     ScheduledTaskCreated(ScheduledTaskCreated),
 
-    /// A streaming event from a monitor background process.
     MonitorEvent(MonitorEvent),
 }
 
@@ -480,14 +420,14 @@ notification_variants! {
     MonitorEvent => MonitorEvent,
 }
 
-/// Handle for sending notifications to consumers.
-/// Clone-able so it can be passed to multiple tool implementations.
+/// Handle for sending notifications to consumers. Clone-able so it can be
+/// passed to multiple tool implementations.
 ///
-/// Internally holds one-or-many sender targets. Every existing constructor
-/// (`new`, `from_sender`, `channel`, `noop`) builds a single-target handle and
-/// behaves exactly as before; [`ToolNotificationHandle::tee`] builds a
-/// fan-out handle whose [`send`](Self::send) delivers each notification to all
-/// targets, in order, preserving per-target ordering.
+/// Internally holds one-or-many sender targets. Every constructor
+/// (`new`, `from_sender`, `channel`, `noop`) builds a single-target handle;
+/// [`ToolNotificationHandle::tee`] builds a fan-out handle whose
+/// [`send`](Self::send) delivers each notification to all targets, in order,
+/// preserving per-target ordering.
 #[derive(Clone)]
 pub struct ToolNotificationHandle {
     targets: Arc<[tokio::sync::mpsc::UnboundedSender<ToolNotification>]>,
@@ -500,26 +440,23 @@ impl Default for ToolNotificationHandle {
 }
 
 impl ToolNotificationHandle {
-    /// Create a new handle with the given sender
     pub fn new(sender: tokio::sync::mpsc::UnboundedSender<ToolNotification>) -> Self {
         Self {
             targets: Arc::from([sender]),
         }
     }
 
-    /// Create a handle from an existing unbounded sender.
-    /// Alias for `new()` — used by tests and consumers that want to receive notifications.
+    /// Alias for [`new`](Self::new).
     pub fn from_sender(sender: tokio::sync::mpsc::UnboundedSender<ToolNotification>) -> Self {
         Self::new(sender)
     }
 
-    /// Create a channel pair (handle + receiver)
     pub fn channel() -> (Self, tokio::sync::mpsc::UnboundedReceiver<ToolNotification>) {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         (Self::new(sender), receiver)
     }
 
-    /// Create a no-op handle (sends are silently dropped)
+    /// No-op handle: sends are silently dropped.
     pub fn noop() -> Self {
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
         Self::new(sender)
@@ -561,8 +498,6 @@ impl ToolNotificationHandle {
             let _ = target.send(notification.clone());
         }
     }
-
-    // === Convenience methods ===
 
     pub fn send_output_chunk(&self, chunk: BashOutputChunk) {
         self.send(ToolNotification::BashOutputChunk(chunk));

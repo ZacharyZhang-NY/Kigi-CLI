@@ -102,7 +102,6 @@ pub fn leader_is_older_than(leader_version: &str, baseline: &str) -> bool {
 fn should_evict(leader_version: Option<&str>, client_version: &str) -> bool {
     leader_version.is_some_and(|v| leader_is_older_than(v, client_version))
 }
-/// Base delay between reconnection attempts.
 const RECONNECT_BASE_DELAY: Duration = Duration::from_secs(1);
 /// Maximum delay between reconnection attempts (caps exponential backoff).
 const RECONNECT_MAX_DELAY: Duration = Duration::from_secs(30);
@@ -732,7 +731,6 @@ impl LeaderConnection {
             .await
             .map_err(ConnectionError::Client)
     }
-    /// Returns the negotiated registration metadata for this connection.
     pub fn registration(&self) -> &LeaderRegistration {
         self.client.registration()
     }
@@ -758,8 +756,6 @@ impl LeaderConnection {
         self.client.shutting_down_reason()
     }
     /// Decompose this connection into raw channels.
-    ///
-    /// Useful for integration with other async code that needs direct channel access.
     pub fn into_channels(
         self,
     ) -> (
@@ -793,7 +789,7 @@ pub enum ConnectionStatus {
     /// they handled, so a fast `Reconnecting -> Connected` flip coalesced by
     /// the watch channel still registers as a reconnect.
     Connected { generation: u64 },
-    /// Attempting to reconnect (includes current attempt number).
+    /// Attempting to reconnect.
     Reconnecting { attempt: u32 },
     /// Reconnection failed permanently.
     Failed { error: String },
@@ -1366,7 +1362,7 @@ async fn connect_to_leader(
     Ok(LeaderConnection { client })
 }
 /// Poll until the IPC listener at `sock_path` is reachable. A full
-/// connect would deadlock (see inline comment at the call site).
+/// connect would deadlock.
 async fn wait_for_listener_ready(sock_path: &Path) -> Result<(), ConnectionError> {
     let deadline = tokio::time::Instant::now() + SPAWN_WAIT_TIMEOUT;
     while tokio::time::Instant::now() < deadline {
@@ -1381,7 +1377,6 @@ async fn wait_for_listener_ready(sock_path: &Path) -> Result<(), ConnectionError
 /// Wait for socket to appear and successfully connect.
 ///
 /// Polls the socket path until it becomes connectable or timeout is reached.
-/// Uses exponential backoff starting from SPAWN_POLL_INTERVAL.
 pub(crate) async fn wait_for_socket_connectable(
     sock_path: &Path,
     client_type: &str,

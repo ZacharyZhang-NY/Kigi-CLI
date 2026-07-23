@@ -8,13 +8,9 @@
 use ignore::gitignore::Gitignore;
 use std::path::Path;
 
-/// Check if a path is ignored by the given gitignore rules.
-///
-/// Strips `git_root` prefix before matching — gitignore patterns are
+/// Strips the `git_root` prefix before matching — gitignore patterns are
 /// repo-relative, so `/repo/build/out.o` becomes `build/out.o` when
 /// `git_root` is `/repo`.
-///
-/// This is a pure function — no filesystem access, just `Gitignore::matched()`.
 pub fn is_ignored(gitignore: &Gitignore, path: &Path, git_root: Option<&Path>) -> bool {
     let check_path = match git_root {
         Some(root) => match path.strip_prefix(root) {
@@ -78,9 +74,7 @@ mod tests {
         let root = tmp.path();
         let root = &dunce::canonicalize(root).unwrap();
         let gi = build_gitignore(root, &["build/"]);
-        // With root: strips prefix, matches build/out.o
         assert!(is_ignored(&gi, &root.join("build/out.o"), Some(root)));
-        // Without root: relative path still matches
         assert!(is_ignored(
             &gi,
             &std::path::PathBuf::from("build/out.o"),
@@ -94,8 +88,6 @@ mod tests {
         let root = tmp.path();
         let root = &dunce::canonicalize(root).unwrap();
         let gi = build_gitignore(root, &["build/", "*.md"]);
-        // A path completely outside the git root should not be checked
-        // against the repo's .gitignore (e.g., ~/.kigi/Agents.md).
         let outside_path = std::path::PathBuf::from("/some/other/path/Agents.md");
         assert!(!is_ignored(&gi, &outside_path, Some(root)));
     }
@@ -115,7 +107,6 @@ mod tests {
             .is_err()
         );
 
-        // Our wrapper guards against it.
         assert!(!is_ignored(&gi, abs_path, None));
     }
 }

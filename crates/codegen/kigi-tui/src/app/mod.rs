@@ -329,8 +329,7 @@ pub async fn run(
         }
     };
     let refreshed_auth = kigi_shell::auth::try_ensure_fresh_auth(&kimi_code_config).await;
-    // Fire-and-forget model-catalog warmup; nothing joins the handle now that
-    // the xAI settings fetch it used to carry is gone.
+    // Fire-and-forget model-catalog warmup; nothing joins the handle.
     drop(kigi_shell::agent::models::start_early_prefetch_with_auth(
         refreshed_auth,
     ));

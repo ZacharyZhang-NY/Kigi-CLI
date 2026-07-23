@@ -37,9 +37,7 @@ use kigi_sampling_types::{
     ToolResultItem, ToolSpec, UserItem, synthesized_reasoning_item,
 };
 
-// ---------------------------------------------------------------------------
 // Mock server harness (same shape as test_actor.rs)
-// ---------------------------------------------------------------------------
 
 struct MockServer {
     addr: SocketAddr,
@@ -139,9 +137,7 @@ async fn drain_until_terminal(
     }
 }
 
-// ---------------------------------------------------------------------------
 // Streaming happy path: reasoning + tool calls + Kimi usage shapes
-// ---------------------------------------------------------------------------
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn kimi_stream_reasoning_tool_calls_and_choice_usage() {
@@ -254,9 +250,7 @@ async fn kimi_stream_reasoning_tool_calls_and_choice_usage() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Request surface: bearer auth, kigi UA, kimi_compat body adaptations
-// ---------------------------------------------------------------------------
 
 type Captured = Arc<Mutex<Option<(HeaderMap, Value)>>>;
 
@@ -415,9 +409,7 @@ async fn request_carries_bearer_kigi_ua_and_kimi_dialect_body() {
     assert_eq!(props["path"]["type"], json!("string"));
 }
 
-// ---------------------------------------------------------------------------
 // 429 with Retry-After
-// ---------------------------------------------------------------------------
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn rate_limit_honors_retry_after_then_succeeds() {
@@ -494,9 +486,7 @@ async fn rate_limit_honors_retry_after_then_succeeds() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Mid-stream network drop → retry → recovery
-// ---------------------------------------------------------------------------
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn mid_stream_drop_recovers_via_retry() {
@@ -509,7 +499,6 @@ async fn mid_stream_drop_recovers_via_retry() {
             async move {
                 let n = counter.fetch_add(1, Ordering::SeqCst);
                 if n == 0 {
-                    // First attempt: a partial chunk, then the connection
                     // dies mid-body (simulated network drop).
                     let events: Vec<Result<Event, std::io::Error>> = vec![
                         Ok(chunk(

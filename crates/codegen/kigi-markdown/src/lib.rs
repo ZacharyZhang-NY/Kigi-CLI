@@ -129,7 +129,7 @@ pub fn render_markdown_ratatui_with_buffers_width(
 /// still-open fenced code block: only the streaming tail re-render passes
 /// `Some(cache)`; `finish()` and non-streaming callers pass `None`. Everything
 /// other than that one open block (closed code blocks, HTML, math, tables,
-/// inline) always goes through the unchanged batch highlighter, so output is
+/// inline) always goes through the `unchanged` batch highlighter, so output is
 /// byte-for-byte identical to the cache-less path. See [`open_code_highlighter`].
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render_markdown_ratatui_with_link_id(

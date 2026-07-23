@@ -124,8 +124,6 @@ pub struct FsDeleteFileRequest {
     pub session_id: Option<acp::SessionId>,
     pub path: String,
 }
-/// Resolve path from explicit value or session lookup.
-/// For absolute paths, use directly. For relative paths, resolve from session cwd.
 fn resolve_path(
     agent: &MvpAgent,
     path: &str,

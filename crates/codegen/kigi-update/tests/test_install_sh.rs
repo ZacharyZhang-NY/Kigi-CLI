@@ -168,11 +168,9 @@ fn install_sh_happy_path_installs_versioned_binary_and_symlink() {
         "symlink must be relative (survives bind-mounted homes)"
     );
 
-    // The active link runs.
     let status = Command::new(&link).arg("--version").status().unwrap();
     assert!(status.success(), "installed kigi must run");
 
-    // Resolved the latest endpoint (no pinned version).
     assert!(
         fx.curl_log().contains("/latest"),
         "must resolve via /latest: {}",
@@ -255,7 +253,6 @@ fn install_sh_fails_when_release_lacks_platform_asset() {
         return;
     }
     let fx = Fixture::new("0.1.5", &small_good_artifact(), None);
-    // Rewrite release.json without the platform archive asset.
     let json = serde_json::json!({
         "tag_name": "v0.1.5",
         "assets": [
@@ -282,9 +279,8 @@ fn install_sh_fails_when_archive_lacks_kigi_binary() {
         return;
     }
     let fx = Fixture::new("0.1.5", &small_good_artifact(), None);
-    // Replace the archive with one that has no `kigi` entry; keep the
-    // manifest consistent so the checksum gate passes and the extraction
-    // check is what trips.
+    // The manifest hash is kept consistent so the checksum gate passes and the
+    // extraction check is what trips.
     let archive = common::make_tar_gz(&[("LICENSE", b"license only")]);
     std::fs::write(
         fx.dir.path().join("SHA256SUMS"),

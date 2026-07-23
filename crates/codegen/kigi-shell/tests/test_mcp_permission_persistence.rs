@@ -217,7 +217,8 @@ async fn run_actor_test_full<F, Fut>(
                 cwd.clone(),
                 client_type,
                 policy,
-                vec![], // deny_read_globs
+                // deny_read_globs
+                vec![],
                 vec![],
                 initial_yolo,
                 None,
@@ -236,8 +237,6 @@ fn rule(action: RuleAction, pattern: &str) -> PermissionRule {
         pattern_mode: PatternMode::Glob,
     }
 }
-
-// --- mcp_pre_decision-style end-to-end ---
 
 #[tokio::test]
 #[serial]
@@ -364,11 +363,13 @@ async fn policy_ask_suppresses_mcp_tool_allowlist() {
                 cwd.clone(),
                 ClientType::KigiPager,
                 Some(policy),
-                vec![], // deny_read_globs
+                // deny_read_globs
+                vec![],
                 vec![],
                 false,
                 None,
-                false, // remember_tool_approvals
+                // remember_tool_approvals
+                false,
             );
 
             // Script an outright reject so we can confirm the prompt fires.
@@ -414,11 +415,13 @@ async fn policy_ask_suppresses_mcp_server_allowlist() {
                 cwd.clone(),
                 ClientType::KigiPager,
                 Some(policy),
-                vec![], // deny_read_globs
+                // deny_read_globs
+                vec![],
                 vec![],
                 false,
                 None,
-                false, // remember_tool_approvals
+                // remember_tool_approvals
+                false,
             );
 
             gw.expected.send(("reject-once".to_string(), None)).unwrap();
@@ -458,7 +461,8 @@ async fn policy_deny_takes_precedence_over_mcp_allowlist() {
                 cwd.clone(),
                 ClientType::KigiPager,
                 Some(policy),
-                vec![], // deny_read_globs
+                // deny_read_globs
+                vec![],
                 vec![],
                 false,
                 None,
@@ -702,8 +706,6 @@ async fn dont_ask_policy_denies_without_prompting() {
     )
     .await;
 }
-
-// --- deny rules survive YOLO mode ---
 
 #[tokio::test]
 #[serial]

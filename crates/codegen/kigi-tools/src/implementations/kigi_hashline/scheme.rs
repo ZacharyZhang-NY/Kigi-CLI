@@ -21,9 +21,6 @@ use std::fmt;
 use crate::util::hash::{self, DEFAULT_HASH_LEN};
 
 /// Trait for pluggable anchor generation and validation schemes.
-///
-/// Implementations generate anchors for file lines and validate anchors
-/// against current file content.
 pub trait AnchorScheme: fmt::Debug + Send + Sync {
     /// Machine-readable name for this scheme (e.g. `"content_only_v1"`).
     fn name(&self) -> &str;
@@ -31,16 +28,11 @@ pub trait AnchorScheme: fmt::Debug + Send + Sync {
     /// Number of lowercase letters in the local line hash component.
     fn hash_len(&self) -> usize;
 
-    /// Generate anchors for all lines in a file.
-    ///
-    /// `lines` is a slice of the file's lines (without trailing newlines).
-    /// Returns one `Anchor` per line, in order.
+    /// `lines` are the file's lines without trailing newlines. Returns one
+    /// `Anchor` per line, in order.
     fn generate_anchors(&self, lines: &[&str]) -> Vec<Anchor>;
 
     /// Validate a parsed anchor against current file content.
-    ///
-    /// `anchor` is the anchor to validate. `lines` is the current file
-    /// content split by line. Returns the validation result.
     fn validate(&self, anchor: &ParsedAnchor, lines: &[&str]) -> ValidationResult;
 
     /// Estimated number of lines read to validate a single anchor at
@@ -54,10 +46,6 @@ pub trait AnchorScheme: fmt::Debug + Send + Sync {
 
     /// Search for a shifted anchor within a bounded window around the
     /// original line number.
-    ///
-    /// Returns `ShiftResult::Found` if exactly one nearby line validates
-    /// under this scheme, `ShiftResult::Ambiguous` if multiple candidates
-    /// match, and `ShiftResult::NotFound` if none match.
     fn find_shifted(
         &self,
         anchor: &ParsedAnchor,
@@ -78,8 +66,6 @@ pub struct Anchor {
 }
 
 impl Anchor {
-    /// Render this anchor as a string suitable for output.
-    ///
     /// Format: `"LINE:LOCAL"` or `"LINE:LOCAL:CONTEXT"`.
     pub fn render(&self) -> String {
         match &self.context {
@@ -107,8 +93,6 @@ pub struct ParsedAnchor {
 }
 
 impl ParsedAnchor {
-    /// Parse an anchor string into its components.
-    ///
     /// Accepted formats:
     /// - `"22:abc"` → line=22, local="abc", context=None
     /// - `"22:abc:rst"` → line=22, local="abc", context=Some("rst")
@@ -129,13 +113,11 @@ impl ParsedAnchor {
             return None;
         }
 
-        // Validate local hash: must be all lowercase ASCII letters.
         if !local.bytes().all(|b| b.is_ascii_lowercase()) {
             return None;
         }
 
         let context = parts.next().map(|s| s.to_owned());
-        // Validate context hash if present: must be non-empty lowercase ASCII letters.
         if let Some(ref ctx) = context
             && (ctx.is_empty() || !ctx.bytes().all(|b| b.is_ascii_lowercase()))
         {
@@ -149,7 +131,6 @@ impl ParsedAnchor {
         })
     }
 
-    /// Render back to string form.
     pub fn render(&self) -> String {
         match &self.context {
             Some(ctx) => format!("{}:{}:{}", self.line, self.local, ctx),
@@ -321,11 +302,9 @@ impl ChunkFingerprint {
         let chunk_start = (line_idx / self.chunk_size) * self.chunk_size;
         let chunk_end = (chunk_start + self.chunk_size).min(lines.len());
 
-        // Hash all normalized lines in the chunk together.
         let mut combined: u32 = hash::fnv1a_32(b"chunk");
         for line in &lines[chunk_start..chunk_end] {
             let lh = hash::line_hash(line);
-            // Mix each line hash into the combined hash.
             combined ^= lh;
             combined = combined.wrapping_mul(16_777_619);
         }
@@ -390,7 +369,6 @@ impl AnchorScheme for ChunkFingerprint {
             return ValidationResult::OutOfRange;
         }
 
-        // Validate local line hash.
         let expected_local = hash::encode_hash(hash::line_hash(lines[idx]), self.hash_len);
         if anchor.local != expected_local {
             return ValidationResult::Stale;
@@ -528,7 +506,6 @@ impl AnchorScheme for CheckpointChain {
             return ValidationResult::OutOfRange;
         }
 
-        // Validate local line hash.
         let expected_local = hash::encode_hash(hash::line_hash(lines[idx]), self.hash_len);
         if anchor.local != expected_local {
             return ValidationResult::Stale;
@@ -587,7 +564,6 @@ fn find_shifted_generic(
             continue;
         }
 
-        // Cheap check: does the local line hash match?
         let local = hash::encode_hash(hash::line_hash(lines[idx]), hash_len);
         if local != anchor.local {
             continue;
@@ -623,9 +599,7 @@ fn find_shifted_generic(
 mod tests {
     use super::*;
 
-    // -----------------------------------------------------------------------
     // Test fixture
-    // -----------------------------------------------------------------------
 
     fn sample_lines() -> Vec<&'static str> {
         vec![
@@ -637,9 +611,7 @@ mod tests {
         ]
     }
 
-    // -----------------------------------------------------------------------
     // ParsedAnchor tests
-    // -----------------------------------------------------------------------
 
     #[test]
     fn parse_anchor_two_parts() {
@@ -671,16 +643,19 @@ mod tests {
         assert!(ParsedAnchor::parse("abc").is_none());
         assert!(ParsedAnchor::parse(":abc").is_none());
         assert!(ParsedAnchor::parse("22:").is_none());
-        assert!(ParsedAnchor::parse("0:abc").is_none()); // line 0 invalid
-        assert!(ParsedAnchor::parse("22:ABC").is_none()); // uppercase
-        assert!(ParsedAnchor::parse("22:abc:").is_none()); // empty context
-        assert!(ParsedAnchor::parse("22:abc:XYZ").is_none()); // uppercase context
-        assert!(ParsedAnchor::parse("abc:def").is_none()); // non-numeric line
+        // line 0 invalid
+        assert!(ParsedAnchor::parse("0:abc").is_none());
+        // uppercase
+        assert!(ParsedAnchor::parse("22:ABC").is_none());
+        // empty context
+        assert!(ParsedAnchor::parse("22:abc:").is_none());
+        // uppercase context
+        assert!(ParsedAnchor::parse("22:abc:XYZ").is_none());
+        // non-numeric line
+        assert!(ParsedAnchor::parse("abc:def").is_none());
     }
 
-    // -----------------------------------------------------------------------
     // Anchor::render tests
-    // -----------------------------------------------------------------------
 
     #[test]
     fn anchor_render_without_context() {
@@ -703,9 +678,7 @@ mod tests {
         assert_eq!(a.render(), "22:abc:rst");
     }
 
-    // -----------------------------------------------------------------------
     // Candidate A — ContentOnly
-    // -----------------------------------------------------------------------
 
     #[test]
     fn content_only_generates_correct_count() {
@@ -814,9 +787,7 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------------
     // Candidate B — ChunkFingerprint
-    // -----------------------------------------------------------------------
 
     #[test]
     fn chunk_generates_context() {
@@ -830,7 +801,8 @@ mod tests {
 
     #[test]
     fn chunk_same_chunk_same_context() {
-        let lines = sample_lines(); // 5 lines, all in chunk 0 (size 16)
+        // 5 lines, all in chunk 0 (size 16)
+        let lines = sample_lines();
         let scheme = ChunkFingerprint::new();
         let anchors = scheme.generate_anchors(&lines);
         let ctx0 = anchors[0].context.as_ref().unwrap();
@@ -899,9 +871,7 @@ mod tests {
         assert_eq!(a, b);
     }
 
-    // -----------------------------------------------------------------------
     // Candidate C — CheckpointChain
-    // -----------------------------------------------------------------------
 
     #[test]
     fn checkpoint_generates_context() {
@@ -957,9 +927,7 @@ mod tests {
         assert_eq!(a, b);
     }
 
-    // -----------------------------------------------------------------------
     // Shared: find_shifted recovery tests
-    // -----------------------------------------------------------------------
 
     #[test]
     fn find_shifted_after_insert_above() {
@@ -968,13 +936,13 @@ mod tests {
         let scheme = ContentOnly::new();
         let anchors = scheme.generate_anchors(&lines);
 
-        // Insert a new line at position 0 → all lines shift down by 1.
         let mut shifted = vec!["// new line"];
         shifted.extend_from_slice(&lines);
 
         // Anchor for original line 3 ("export function App() {") is now at line 4.
         let parsed = ParsedAnchor {
-            line: anchors[2].line, // line 3
+            // line 3
+            line: anchors[2].line,
             local: anchors[2].local.clone(),
             context: None,
         };
@@ -1012,7 +980,8 @@ mod tests {
         let anchors = scheme.generate_anchors(&lines);
         let parsed = ParsedAnchor {
             line: 5,
-            local: anchors[0].local.clone(), // same hash for all lines
+            // same hash for all lines
+            local: anchors[0].local.clone(),
             context: None,
         };
 
@@ -1024,9 +993,7 @@ mod tests {
         }
     }
 
-    // -----------------------------------------------------------------------
     // Finding 1: B/C reject missing context
-    // -----------------------------------------------------------------------
 
     #[test]
     fn chunk_rejects_anchor_without_context() {
@@ -1038,7 +1005,8 @@ mod tests {
         let truncated = ParsedAnchor {
             line: anchors[0].line,
             local: anchors[0].local.clone(),
-            context: None, // intentionally missing
+            // intentionally missing
+            context: None,
         };
         assert_eq!(scheme.validate(&truncated, &lines), ValidationResult::Stale);
     }
@@ -1052,14 +1020,13 @@ mod tests {
         let truncated = ParsedAnchor {
             line: anchors[0].line,
             local: anchors[0].local.clone(),
-            context: None, // intentionally missing
+            // intentionally missing
+            context: None,
         };
         assert_eq!(scheme.validate(&truncated, &lines), ValidationResult::Stale);
     }
 
-    // -----------------------------------------------------------------------
     // Finding 4: B/C shifted recovery after insertion/deletion
-    // -----------------------------------------------------------------------
 
     #[test]
     fn chunk_find_shifted_after_insert_above() {
@@ -1075,7 +1042,8 @@ mod tests {
         // Anchor for original line 3 with context — shifted recovery should
         // find it at line 4 (same local + recomputed context at new position).
         let parsed = ParsedAnchor {
-            line: anchors[2].line, // line 3
+            // line 3
+            line: anchors[2].line,
             local: anchors[2].local.clone(),
             context: anchors[2].context.clone(),
         };
@@ -1118,9 +1086,7 @@ mod tests {
         }
     }
 
-    // -----------------------------------------------------------------------
     // Finding 4: B/C ambiguity in repetitive files
-    // -----------------------------------------------------------------------
 
     #[test]
     fn chunk_ambiguity_with_repeated_lines() {
@@ -1167,9 +1133,7 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------------
     // Finding 3: Invalid constructor parameters
-    // -----------------------------------------------------------------------
 
     #[test]
     fn custom_hash_len_2() {
@@ -1217,9 +1181,7 @@ mod tests {
         CheckpointChain::with_params(3, 0);
     }
 
-    // -----------------------------------------------------------------------
     // Scheme names
-    // -----------------------------------------------------------------------
 
     #[test]
     fn scheme_names() {

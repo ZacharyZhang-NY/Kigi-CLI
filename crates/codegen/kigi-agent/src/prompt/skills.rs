@@ -726,7 +726,7 @@ mod tests {
         fs::write(dir.join("SKILL.md"), content).unwrap();
     }
 
-    // ── Server-synced skills (injected server_skill_dirs) ────────────────
+    // Server-synced skills (injected server_skill_dirs)
 
     #[tokio::test]
     async fn server_skills_discovered_and_shadowed_by_local() {
@@ -826,7 +826,7 @@ mod tests {
         );
     }
 
-    // ── Feature 3: Recursive skill reading ──────────────────────────────
+    // Feature 3: Recursive skill reading
 
     #[test]
     fn find_skill_paths_flat_layout() {
@@ -960,7 +960,7 @@ mod tests {
         assert!(path_strs.iter().any(|p| p.contains("child/SKILL.md")));
     }
 
-    // ── extract_first_paragraph ──────────────────────────────────────
+    // extract_first_paragraph
 
     #[test]
     fn first_paragraph_simple() {
@@ -1001,7 +1001,7 @@ mod tests {
         assert!(extract_first_paragraph(body).is_none());
     }
 
-    // ── UTF-8 safe body truncation ──────────────────────────────────
+    // UTF-8 safe body truncation
 
     #[test]
     fn description_fallback_does_not_panic_on_multibyte_boundary() {
@@ -1012,10 +1012,12 @@ mod tests {
         // Strategy: fill with ASCII up to near the limit, then pack 4-byte
         // emoji right at the boundary.
         let prefix = "# Heading\n\n";
-        let filler_len = MAX_BODY_PEEK_BYTES - prefix.len() - 4; // leave room for emoji at boundary
+        // leave room for emoji at boundary
+        let filler_len = MAX_BODY_PEEK_BYTES - prefix.len() - 4;
         let filler = "a".repeat(filler_len);
         // Each emoji is 4 bytes. Place several so one straddles the 2048 mark.
-        let emoji_run = "\u{1F600}".repeat(10); // 40 bytes of emoji
+        // 40 bytes of emoji
+        let emoji_run = "\u{1F600}".repeat(10);
         let body = format!("{prefix}{filler}{emoji_run}");
         assert!(body.len() > MAX_BODY_PEEK_BYTES, "body must exceed limit");
 
@@ -1041,7 +1043,8 @@ mod tests {
 
         // Body (after frontmatter): heading + paragraph with multibyte chars
         // exceeding 2048 bytes.
-        let long_paragraph = "\u{00E9}".repeat(MAX_BODY_PEEK_BYTES); // 2-byte chars
+        // 2-byte chars
+        let long_paragraph = "\u{00E9}".repeat(MAX_BODY_PEEK_BYTES);
         let content = format!("---\nname: emoji-skill\n---\n# Test\n\n{long_paragraph}\n");
         fs::write(skill_dir.join("SKILL.md"), &content).unwrap();
 
@@ -1055,7 +1058,7 @@ mod tests {
         );
     }
 
-    // ── Frontmatter parsing (existing coverage + regression) ─────────
+    // Frontmatter parsing (existing coverage + regression)
 
     #[test]
     fn parse_valid_frontmatter() {
@@ -1122,7 +1125,7 @@ mod tests {
         assert!(parsed.effort.is_none());
     }
 
-    // ── agentskills.io spec parity ────────────────────────────────
+    // agentskills.io spec parity
 
     #[test]
     fn parse_license_and_compatibility() {
@@ -1296,7 +1299,7 @@ mod tests {
         ));
     }
 
-    // ── Feature 1: Workspace user skills via list_skills ─────────────
+    // Feature 1: Workspace user skills via list_skills
 
     /// Helper: initialize a bare git repo at `path` so git2::Repository::discover works.
     fn init_git_repo(path: &Path) {
@@ -1423,7 +1426,7 @@ mod tests {
         );
     }
 
-    // ── collect_config_skills ────────────────────────────────────────
+    // collect_config_skills
 
     #[test]
     fn collect_config_skills_from_directory() {
@@ -1530,7 +1533,7 @@ mod tests {
         }
     }
 
-    // ── filter_skills ────────────────────────────────────────────────
+    // filter_skills
 
     fn make_skill(name: &str, path: &str) -> SkillInfo {
         SkillInfo {
@@ -1622,7 +1625,7 @@ mod tests {
         assert_eq!(skills[0].plugin_name.as_deref(), Some("plugin-dev"));
     }
 
-    // ── Manifest `skills` entries pointing directly at skill dirs ──
+    // Manifest `skills` entries pointing directly at skill dirs
 
     fn make_registry_with_skill_dirs(
         name: &str,
@@ -2006,11 +2009,11 @@ mod tests {
         );
     }
 
-    // discover_skills_for_paths and dedup_by_canonical_path tests removed --
-    // these functions now live in kigi-tools::implementations::skills::discovery
-    // and kigi-tools::types::skill_discovery_tracker, tested there.
+    // discover_skills_for_paths and dedup_by_canonical_path live in
+    // kigi-tools::implementations::skills::discovery and
+    // kigi-tools::types::skill_discovery_tracker, and are tested there.
 
-    // ── Disabled skills marking ─────────────────────────────────────
+    // Disabled skills marking
 
     #[tokio::test]
     async fn disabled_config_marks_skill_enabled_false() {
@@ -2091,7 +2094,7 @@ mod tests {
         );
     }
 
-    // ── Bundled skills discovery ─────────────────────────────────────
+    // Bundled skills discovery
 
     #[tokio::test]
     async fn bundled_skills_are_discovered() {
@@ -2180,7 +2183,7 @@ mod tests {
         );
     }
 
-    // ── Command file discovery ────────────────────────────────────────
+    // Command file discovery
 
     /// Regression: project `.claude/commands` often sits under a full `.claude/**`
     /// gitignore with only `!.claude/skills/**` re-included (local-only vendor
@@ -2312,7 +2315,7 @@ mod tests {
         assert!(deploy[0].path.contains("SKILL.md"));
     }
 
-    // ── Plugin skill identity ─────────────────────────────
+    // Plugin skill identity
 
     fn min_plugin(name: &str) -> crate::plugins::LoadedPlugin {
         use crate::plugins::discovery::PluginId;
@@ -2430,7 +2433,7 @@ mod tests {
         );
     }
 
-    // ── collect_skill_config_dirs vendor gating ────────────
+    // collect_skill_config_dirs vendor gating
 
     #[test]
     fn collect_skill_config_dirs_gates_vendor_dirs() {
@@ -2461,7 +2464,7 @@ mod tests {
         assert!(ends_with(&dirs, ".kigi"), "kigi must remain: {dirs:?}");
     }
 
-    // ── Same-scope frontmatter-name collisions (copied skill dirs) ──────
+    // Same-scope frontmatter-name collisions (copied skill dirs)
 
     fn named_skill(name: &str, path: &str, scope: SkillScope) -> SkillInfo {
         SkillInfo {

@@ -35,9 +35,8 @@ pub const MIN_LINES_PER_WHEEL_STREAM: i64 = 1;
 
 /// One SGR wheel report: sleep `pre_delay_ms`, then emit `button`.
 ///
-/// `button` is [`SGR_SCROLL_UP`]/[`SGR_SCROLL_DOWN`] — `u16` because those
-/// harness consts are `u16` (the design sketch said `u8`; deviating keeps
-/// one shared definition instead of a cast at every emission site).
+/// `button` is `u16` because the [`SGR_SCROLL_UP`]/[`SGR_SCROLL_DOWN`]
+/// harness consts are, sparing a cast at every emission site.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WheelStep {
     /// Host-side sleep before emitting this report (0 for the first step).
@@ -190,7 +189,6 @@ pub enum GestureId {
 }
 
 impl GestureId {
-    /// Every gesture, for exhaustive table sweeps (tests, the A13 runner).
     pub const ALL: [GestureId; 12] = [
         GestureId::G1Notch,
         GestureId::G2NotchTrain,
@@ -256,7 +254,7 @@ impl GestureId {
     }
 }
 
-/// `(up, down)` report counts — direction-sum test primitive.
+/// `(up, down)` report counts.
 pub fn direction_counts(steps: &[WheelStep]) -> (usize, usize) {
     let up = steps.iter().filter(|s| s.button == SGR_SCROLL_UP).count();
     (up, steps.len() - up)
@@ -266,8 +264,6 @@ pub fn direction_counts(steps: &[WheelStep]) -> (usize, usize) {
 mod tests {
     use super::*;
 
-    /// Streams split on gaps > STREAM_GAP_MS or direction flips — recompute
-    /// from the table and compare to the declared `expected_streams`.
     fn streams_in(steps: &[WheelStep]) -> usize {
         let mut streams = 1;
         for pair in steps.windows(2) {
@@ -298,18 +294,15 @@ mod tests {
 
     #[test]
     fn notch_structure_and_gaps() {
-        // G2/ept3: notch starts every 3 events carry the 50ms gap, intra-notch 0.
         for (i, step) in G2_NOTCH_TRAIN_EPT3.iter().enumerate() {
             let expected = if i > 0 && i % 3 == 0 { 50 } else { 0 };
             assert_eq!(step.pre_delay_ms, expected, "G2 ept3 step {i}");
         }
-        // G9b: same shape at 55ms — under the 80ms gap, one stream.
         let notch_gaps = G9B_MUX_BATCH
             .iter()
             .filter(|s| s.pre_delay_ms == 55)
             .count();
         assert_eq!(notch_gaps, 7, "8 notches → 7 inter-notch gaps");
-        // G5: dup 4ms after each notch head, notch heads 60ms apart.
         for (i, step) in G5_GHOSTTY_DUP.iter().enumerate() {
             let expected = if i == 0 {
                 0
@@ -345,8 +338,6 @@ mod tests {
 
     #[test]
     fn delays_agree_with_stream_gap_thresholds() {
-        // Single-stream gestures never pause past the 80ms finalize gap and
-        // never flip; multi-stream ones split exactly as declared.
         for gesture in GestureId::ALL {
             for ept in [1u16, 3] {
                 let steps = gesture.steps(ept);
@@ -359,13 +350,10 @@ mod tests {
                 );
             }
         }
-        // The G11 pause is what splits it: strictly past the finalize gap.
         assert!(G11_CARRY_EPT3[3].pre_delay_ms > STREAM_GAP_MS);
         assert!(G11_CARRY_EPT1[1].pre_delay_ms > STREAM_GAP_MS);
-        // G1/ept3 is a first tick inside the wheel-promotion window.
         let g1_span: u64 = G1_NOTCH_EPT3.iter().map(|s| s.pre_delay_ms).sum();
         assert!(g1_span <= WHEEL_TICK_DETECT_MAX_MS);
-        // G5's dup spacing must sit under the interval-window floor.
         assert!((G5_GHOSTTY_DUP[1].pre_delay_ms as f64) < ACCEL_MIN_INTERVAL_MS);
     }
 }

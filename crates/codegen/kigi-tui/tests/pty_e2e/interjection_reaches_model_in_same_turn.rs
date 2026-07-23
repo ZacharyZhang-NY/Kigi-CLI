@@ -3,7 +3,6 @@
 use super::common::*;
 
 /// 19. **Send-now chord delivers the composer text as its own next turn.**
-/// (Historical name: the chord used to interject into the SAME turn.)
 /// Ctrl+Enter with text mid-stream is cancel-and-send: the running turn is
 /// cancelled silently and the text runs as the next turn — a standard
 /// `<user_query>` prompt with no interjection preamble, rendered as a "❯ "

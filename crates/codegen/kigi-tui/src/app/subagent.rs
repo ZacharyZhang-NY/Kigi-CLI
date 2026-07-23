@@ -75,11 +75,9 @@ pub struct SubagentInfo {
     pub child_updates_replayed: bool,
 }
 impl SubagentInfo {
-    /// Whether the subagent is currently running (not finished).
     pub fn is_running(&self) -> bool {
         !self.finished
     }
-    /// Elapsed time since spawn.
     pub fn elapsed(&self) -> std::time::Duration {
         self.started_at.elapsed()
     }

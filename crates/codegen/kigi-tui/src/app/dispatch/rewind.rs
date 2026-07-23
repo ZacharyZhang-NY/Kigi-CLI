@@ -682,8 +682,6 @@ pub(super) fn dispatch_rewind_success(
     vec![]
 }
 
-// TaskResult handlers.
-
 pub(super) fn handle_rewind_points_loaded(
     app: &mut AppView,
     agent_id: AgentId,

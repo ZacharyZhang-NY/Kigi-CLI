@@ -135,9 +135,10 @@ pub fn set_windows_secure_permissions(path: &Path) -> io::Result<()> {
         // Create explicit access entry for current user only
         // GENERIC_ALL = 0x10000000
         let explicit_access = EXPLICIT_ACCESS_W {
-            grfAccessPermissions: 0x10000000, // GENERIC_ALL
+            grfAccessPermissions: 0x10000000,
             grfAccessMode: SET_ACCESS,
-            grfInheritance: ACE_FLAGS(0), // No inheritance for files
+            // No inheritance for files
+            grfInheritance: ACE_FLAGS(0),
             Trustee: TRUSTEE_W {
                 pMultipleTrustee: std::ptr::null_mut(),
                 MultipleTrusteeOperation:
@@ -168,8 +169,10 @@ pub fn set_windows_secure_permissions(path: &Path) -> io::Result<()> {
             PCWSTR::from_raw(wide_path.as_ptr()),
             SE_FILE_OBJECT,
             DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
-            None, // psidOwner: not changing the owner
-            None, // psidGroup: not changing the primary group
+            // psidOwner: not changing the owner
+            None,
+            // psidGroup: not changing the primary group
+            None,
             Some(new_acl),
             None,
         );

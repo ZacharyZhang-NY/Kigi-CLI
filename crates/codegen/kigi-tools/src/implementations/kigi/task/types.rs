@@ -24,8 +24,6 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::register_resource;
 
-// Request / Response
-
 /// Request emitted by TaskTool, received by MvpAgent coordinator.
 #[derive(Educe)]
 #[educe(Debug)]
@@ -41,14 +39,13 @@ pub struct SubagentRequest {
     /// Used to cancel only the subagents spawned by the currently-cancelled turn,
     /// without affecting background subagents from earlier turns.
     pub parent_prompt_id: Option<String>,
-    /// Resume from a previously completed subagent's conversation.
+    /// Resume from a completed subagent's conversation.
     /// Inherits raw transcript, tool state, and model. System prompt is
     /// freshly rendered.
     pub resume_from: Option<String>,
     /// Explicit working directory for the child session.
     /// Validated at spawn time in `handle_subagent_request()`.
     pub cwd: Option<String>,
-    /// Runtime overrides for the child agent.
     pub runtime_overrides: SubagentRuntimeOverrides,
     /// Whether this subagent was launched with `run_in_background: true`.
     ///
@@ -63,15 +60,10 @@ pub struct SubagentRequest {
     /// Harness-only: seed child with normalized parent conversation, then append
     /// `prompt`. Not on TaskToolInput. Successful `resume_from` takes precedence.
     pub fork_context: bool,
-    /// Oneshot channel for the coordinator to send back the result.
     #[educe(Debug(ignore))]
     pub result_tx: oneshot::Sender<SubagentResult>,
 }
 
-/// Per-spawn dynamic runtime overrides for a subagent.
-///
-/// Optional values inherit from the parent or role default. Explicit values take
-/// precedence over role defaults.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ModelOverrideProvenance {
     /// Internal harness, role, persona, or config resolution.
@@ -81,9 +73,12 @@ pub enum ModelOverrideProvenance {
     Tool,
 }
 
+/// Per-spawn dynamic runtime overrides for a subagent.
+///
+/// Optional values inherit from the parent or role default. Explicit values take
+/// precedence over role defaults.
 #[derive(Debug, Clone, Default)]
 pub struct SubagentRuntimeOverrides {
-    /// Override the model (e.g. "test-model").
     pub model: Option<String>,
     /// Whether `model` came from a model-facing Task call or internal harness logic.
     pub model_override_provenance: ModelOverrideProvenance,
@@ -107,7 +102,6 @@ pub struct SubagentRuntimeOverrides {
     pub harness_agent_type: Option<String>,
 }
 
-/// Re-export of [`kigi_tool_types::is_not_sentinel`] for existing call sites.
 pub use kigi_tool_types::is_not_sentinel;
 
 /// Sanitize a model-emitted `cwd` argument for the `task` tool.
@@ -147,7 +141,6 @@ pub trait SubagentCapabilityModeExt {
     /// `ToolConfig::from_id()`) are preserved unconditionally.
     fn filter_tool_config(self, config: &mut crate::registry::types::ToolServerConfig);
 
-    /// Return the set of `ToolKind`s allowed under this capability mode.
     fn allowed_tool_kinds(self) -> &'static [crate::types::tool::ToolKind];
 }
 
@@ -199,7 +192,6 @@ impl SubagentCapabilityModeExt for SubagentCapabilityMode {
         prune_orphaned_background_task_tools(config);
     }
 
-    /// Return the set of `ToolKind`s allowed under this capability mode.
     fn allowed_tool_kinds(self) -> &'static [crate::types::tool::ToolKind] {
         use crate::types::tool::ToolKind;
         match self {
@@ -304,7 +296,6 @@ pub struct SubagentResult {
     /// bump rather than a full copy. Subagent outputs can be arbitrarily
     /// large (entire transcript), so this matters at scale.
     pub output: Arc<str>,
-    /// Error message if the subagent failed.
     pub error: Option<String>,
     /// True if the subagent was cancelled (by user or model).
     /// Distinct from failure — cancellation is intentional.
@@ -358,19 +349,15 @@ impl SubagentResult {
     }
 }
 
-// Query protocol
-
 /// Query sent by TaskOutputTool, received by MvpAgent coordinator.
 #[derive(Educe)]
 #[educe(Debug)]
 pub struct SubagentQueryRequest {
-    /// The subagent ID to look up.
     pub subagent_id: String,
     /// If true, coordinator waits for completion (up to timeout) before responding.
     pub block: bool,
     /// Max wait time in ms when blocking. Default 30s.
     pub timeout_ms: Option<u64>,
-    /// Oneshot for the coordinator to send back the snapshot.
     #[educe(Debug(ignore))]
     pub respond_to: oneshot::Sender<Option<SubagentSnapshot>>,
 }
@@ -387,7 +374,6 @@ pub struct SubagentSnapshot {
     pub started_at_epoch_ms: u64,
     /// Elapsed wall-clock time in milliseconds.
     pub duration_ms: u64,
-    /// Persona used by this subagent, if any.
     pub persona: Option<String>,
 }
 
@@ -438,8 +424,6 @@ impl SubagentSnapshotStatus {
         )
     }
 }
-
-// Cancel protocol
 
 #[derive(Debug, Clone)]
 pub enum SubagentCancelTarget {
@@ -539,8 +523,6 @@ pub struct SubagentMarkUsageNotAppliedRequest {
     pub respond_to: oneshot::Sender<()>,
 }
 
-// Validate-type protocol
-
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum SubagentValidateTypeOutcome {
@@ -565,8 +547,6 @@ pub struct SubagentValidateTypeRequest {
     #[educe(Debug(ignore))]
     pub respond_to: oneshot::Sender<SubagentValidateTypeOutcome>,
 }
-
-// Describe-type protocol
 
 /// Outcome of a `describe_subagent_type` round-trip.
 ///
@@ -655,8 +635,6 @@ pub enum SubagentEvent {
     DescribeType(SubagentDescribeRequest),
 }
 
-// Resource types
-
 /// Unified sender for all subagent coordinator events.
 ///
 /// Cloned into each session's `ToolContext` / `ToolBridge Resources` so
@@ -668,8 +646,6 @@ pub enum SubagentEvent {
 pub struct SubagentEventSender(#[educe(Debug(ignore))] pub mpsc::UnboundedSender<SubagentEvent>);
 
 register_resource!("kigi", "SubagentEventSender", SubagentEventSender);
-
-// Mid-turn monitor event buffer
 
 /// A monitor event notification to be surfaced as a `<system-reminder>` mid-turn.
 #[derive(Debug, Clone)]
@@ -713,8 +689,6 @@ pub fn drain_owned(
 ) -> Vec<MonitorEventNotification> {
     buffer.drain_matching(|e| e.owned_by_session(my_owner))
 }
-
-// Active subagent listing (compaction)
 
 /// Lightweight summary of a running subagent.
 ///
@@ -893,7 +867,6 @@ mod tests {
     use super::SubagentCapabilityModeExt;
     use super::is_valid_resume_id;
 
-    /// Create a `ToolConfig` with the given id and kind set.
     fn tc(id: &str, kind: ToolKind) -> ToolConfig {
         let mut c = ToolConfig::from_id(id);
         c.kind = Some(kind);

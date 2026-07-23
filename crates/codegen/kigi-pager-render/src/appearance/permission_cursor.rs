@@ -62,7 +62,7 @@ impl DefaultSelectedPermission {
         }
     }
 
-    /// Display label for the settings picker and the change toast.
+    /// Display label for the settings picker and the confirmation toast.
     /// `AllowCommandAlways` preselects the prompt-specific always-allow row
     /// (per-command / per-tool / per-domain / per-edit-session), never a
     /// global allow-everything — that is `AlwaysAllowAllSessions`.
@@ -132,7 +132,7 @@ impl DefaultSelectedPermission {
     }
 }
 
-// ── Configured value cache: `[ui].default_selected_permission` ──────────────
+// Configured value cache: `[ui].default_selected_permission`
 //
 // Read when queueing the first prompt of a session. Seeded by `prime` at
 // startup (and lazily on first read) so the path never hits disk mid-session.
@@ -174,7 +174,7 @@ pub fn load_default_selected_permission() -> DefaultSelectedPermission {
     CONFIG_CURRENT.with(Cell::get)
 }
 
-/// Replace the cached configured value (optimistic update from the settings
+/// Replace the cached configured value (optimistic write from the settings
 /// modal, or rollback on persist failure). The next prompt sees it without a
 /// restart.
 pub fn set_default_selected_permission(value: DefaultSelectedPermission) {
@@ -188,7 +188,7 @@ pub fn prime() {
     let _ = load_default_selected_permission();
 }
 
-// ── Sticky "last used" cursor target ────────────────────────────────────────
+// Sticky "last used" cursor target
 //
 // Process-wide ephemeral state: the kind the user most recently confirmed.
 // After the first prompt, `resolve_initial_cursor` prefers this over the
@@ -215,7 +215,7 @@ pub fn set_last_used_permission(kind: DefaultSelectedPermission) {
     LAST_USED.with(|c| c.set(kind));
 }
 
-// ── Resolution ──────────────────────────────────────────────────────────────
+// Resolution
 
 /// Pick the initially-highlighted row for a freshly-queued permission prompt.
 ///
@@ -252,7 +252,7 @@ fn load_string_from_effective_config(key: &str) -> Option<String> {
         .map(std::string::ToString::to_string)
 }
 
-// -- Tests -------------------------------------------------------------------
+// Tests
 
 #[cfg(test)]
 mod tests {

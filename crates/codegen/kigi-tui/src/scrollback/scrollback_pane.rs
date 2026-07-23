@@ -53,7 +53,6 @@ pub(crate) struct RenderOutputWithSelectionBoundaries {
 }
 
 impl ScrollbackPane {
-    /// Create a new scrollback pane.
     pub fn new() -> Self {
         Self {
             is_active: false,
@@ -65,7 +64,6 @@ impl ScrollbackPane {
         }
     }
 
-    /// Set active state.
     pub fn active(mut self, active: bool) -> Self {
         self.is_active = active;
         self
@@ -82,7 +80,6 @@ impl ScrollbackPane {
         self
     }
 
-    /// Set the entry under the mouse cursor.
     pub fn with_hovered_entry(mut self, hovered: Option<usize>) -> Self {
         self.hovered_entry = hovered;
         self
@@ -143,7 +140,7 @@ impl ScrollbackPane {
         self,
         area: Rect,
         buf: &mut Buffer,
-        state: &ScrollbackState, // Now immutable!
+        state: &ScrollbackState,
         scratch: &mut ScratchBuffer,
     ) -> RenderOutput {
         self.render_with_scratch_and_selection_boundaries(area, buf, state, scratch)
@@ -161,7 +158,6 @@ impl ScrollbackPane {
             return RenderOutputWithSelectionBoundaries::default();
         }
 
-        // Get scroll info for Viewport to render scrollbar
         let (scroll_offset, viewport_height, total_height) = state.scroll_info();
         let scroll_info = ScrollInfo {
             scroll_offset,
@@ -171,12 +167,11 @@ impl ScrollbackPane {
 
         let theme = Theme::current();
 
-        // NOTE: All layout preparation (viewport, heights, follow mode, cache invalidation)
-        // is now done by state.prepare_layout() BEFORE render is called.
-        // This keeps render as close to pure as possible.
+        // All layout preparation (viewport, heights, follow mode, cache
+        // invalidation) happens in state.prepare_layout(), called before
+        // render, keeping render as close to pure as possible.
 
-        // Branch based on view mode - render to full area
-        // Scrollbar is now rendered by Viewport at the correct position
+        // Scrollbar is rendered by Viewport, not here.
         let mut output = match state.view_mode() {
             ViewMode::SingleTurn => self.render_single_turn(area, buf, state, &theme, scratch),
             ViewMode::AllTurns => {
@@ -190,7 +185,6 @@ impl ScrollbackPane {
         // not the scrollback owns focus — hover is a mouse signal.
         self.render_tool_call_hover(buf, area, state, &theme);
 
-        // Add scroll info for Viewport to render scrollbar
         output.output.scroll_info = Some(scroll_info);
         output
     }
@@ -297,8 +291,6 @@ impl ScrollbackPane {
         );
     }
 
-    // Comment markers for sticky header rendering follow below
-
     // Unified sticky header rendering for both SingleTurn and AllTurns modes.
     //
     // The key insight: SingleTurn is just AllTurns with a filtered range.
@@ -319,15 +311,13 @@ impl ScrollbackPane {
         &self,
         area: Rect,
         buf: &mut Buffer,
-        state: &ScrollbackState, // Now immutable!
+        state: &ScrollbackState,
         theme: &Theme,
         scratch: &mut ScratchBuffer,
     ) -> RenderOutputWithSelectionBoundaries {
         let visible_range = state.visible_entry_range();
         self.render_with_sticky_headers(area, buf, state, theme, visible_range, scratch)
     }
-
-    // Unified sticky header rendering
 
     /// Render entries with sticky section headers.
     ///
@@ -343,7 +333,7 @@ impl ScrollbackPane {
         &self,
         area: Rect,
         buf: &mut Buffer,
-        state: &ScrollbackState, // Now immutable!
+        state: &ScrollbackState,
         theme: &Theme,
         entry_range: Range<usize>,
         scratch: &mut ScratchBuffer,
@@ -352,7 +342,6 @@ impl ScrollbackPane {
         let layout = HorizontalLayout::new(area, layout_cfg);
         let entry_content_width = layout.entry_content_area().width;
 
-        // Build prompt descriptors for the given entry range.
         // For SingleTurn, this gives us relative y_virtual coordinates.
         // For AllTurns, this is equivalent to the full range.
         let prompts = self.build_prompt_descriptors_for_range(
@@ -396,8 +385,6 @@ impl ScrollbackPane {
             area
         };
 
-        // Render pushed header (if any) - this one is being pushed off
-        // Also track selection info for pushed headers
         let mut pushed_header_selection_box: Option<SelectionBox> = None;
         if let Some(ref pushed) = sticky.pushed {
             let visible_height = pushed.visible_height();
@@ -430,7 +417,6 @@ impl ScrollbackPane {
                     visible_height as f32 / (pushed.render_height.saturating_add(1)) as f32;
                 fade_region(buf, header_area, theme.bg_base, opacity);
 
-                // Compute selection box for pushed header if it's selected
                 if self.is_active && state.selected() == Some(pushed.entry_idx) {
                     let layout = HorizontalLayout::new(header_area, layout_cfg);
                     let selection_area = layout.selection_area();
@@ -489,7 +475,6 @@ impl ScrollbackPane {
         // NOTE: The gap row is part of the header area height.
         // It should naturally be empty since we don't render anything there.
 
-        // Compute selection box for pinned header if it's selected
         let mut pinned_header_selection_box: Option<SelectionBox> = None;
         if self.is_active
             && let Some((selection_area, entry_idx)) = pinned_header_selection
@@ -513,9 +498,7 @@ impl ScrollbackPane {
             pinned_header_selection_box = Some(sel_box);
         }
 
-        // Render content
         if content_area.height > 0 {
-            // Use the entry_range for content rendering (same range we built descriptors for)
             let visible_range = entry_range.clone();
 
             // Use the sticky layout's scroll_for_content() which maintains bottom line continuity.
@@ -566,16 +549,16 @@ impl ScrollbackPane {
     /// - SingleTurn: range = visible_entry_range() (one turn's entries)
     /// - AllTurns: range = 0..len() (all entries)
     ///
-    /// NOTE: This method now uses cached data from prepare_layout().
-    /// Heights are NOT recomputed - they come from the LayoutCache.
+    /// NOTE: Uses cached data from prepare_layout(); heights are not
+    /// recomputed here, they come from the LayoutCache.
     fn build_prompt_descriptors_for_range(
         &self,
         state: &ScrollbackState,
-        _entry_content_width: u16, // Kept for API compat, but not used (heights from cache)
-        _theme: &Theme,            // Kept for API compat, but not used
+        // Kept for API compat; unused since heights come from cache.
+        _entry_content_width: u16,
+        _theme: &Theme,
         entry_range: Range<usize>,
     ) -> Vec<PromptDescriptor> {
-        // Get cached data - must be valid after prepare_layout()
         let cached_descriptors = state
             .get_cached_prompt_descriptors()
             .expect("layout cache must be valid - was prepare_layout() called?");
@@ -591,8 +574,6 @@ impl ScrollbackPane {
             .copied()
             .unwrap_or(0);
 
-        // Filter descriptors to only those in the entry range,
-        // and adjust y_virtual to be relative to range start
         cached_descriptors
             .iter()
             .filter(|p| entry_range.contains(&p.entry_idx))
@@ -615,7 +596,7 @@ impl ScrollbackPane {
         &self,
         buf: &mut Buffer,
         area: Rect,
-        state: &ScrollbackState, // Now immutable! No entry mutation needed.
+        state: &ScrollbackState,
         entry_idx: usize,
         theme: &Theme,
         render_height: u16,
@@ -632,8 +613,7 @@ impl ScrollbackPane {
 
         let layout = HorizontalLayout::new(area, &appearance.scrollback.layout);
 
-        // Compute content lines from render_height
-        // The block adds vpad (2 rows) if has_vpad is true
+        // The block adds vpad (2 rows) if has_vpad is true.
         let cwd = state.cwd();
         let has_vpad = entry
             .block
@@ -691,7 +671,6 @@ impl ScrollbackPane {
             let scratch_buf = scratch.prepared(area.width, render_height);
             let scratch_area = Rect::new(0, 0, area.width, render_height);
 
-            // Render full header to scratch using existing method
             Self::render_entry_with_ctx_static(
                 entry,
                 &ctx,
@@ -701,7 +680,6 @@ impl ScrollbackPane {
                 mouse_pos,
             );
 
-            // Copy visible rows (after clip_top) to output buffer
             for dy in 0..visible_height {
                 let src_y = clip_top + dy;
                 let dst_y = area.y + dy;
@@ -740,15 +718,12 @@ impl ScrollbackPane {
         let left_pad = layout.left_padding;
         let right_pad = layout.right_padding;
 
-        // Get block output with max_lines budget
         let output = entry.block.output(ctx);
         let block_has_vpad = entry.block.has_vpad(ctx);
 
-        // Get accent background preference and block background
         let accent_has_bg = entry.block.accent_background(ctx);
         let block_bg = entry.block.background(ctx);
 
-        // Resolve the background color from block_bg
         let bg_color = match block_bg {
             BlockBackground::None => None,
             BlockBackground::Light => Some(theme.bg_light),
@@ -760,7 +735,6 @@ impl ScrollbackPane {
         // If less space, skip vpad to prioritize content.
         let use_vpad = block_has_vpad && content_area.height >= 3;
 
-        // Calculate actual content height
         let content_height = output.len() as u16;
         let total_height = content_height + if use_vpad { 2 } else { 0 };
 
@@ -771,19 +745,16 @@ impl ScrollbackPane {
             let fill_height = total_height.min(area.height);
 
             for y in content_area.y..content_area.y + fill_height {
-                // Fill left padding
                 for x in left_pad.x..left_pad.x + left_pad.width {
                     if let Some(cell) = buf.cell_mut((x, y)) {
                         cell.set_style(bg_style);
                     }
                 }
-                // Fill content area
                 for x in content_area.x..content_area.x + content_area.width {
                     if let Some(cell) = buf.cell_mut((x, y)) {
                         cell.set_style(bg_style);
                     }
                 }
-                // Fill right padding
                 for x in right_pad.x..right_pad.x + right_pad.width {
                     if let Some(cell) = buf.cell_mut((x, y)) {
                         cell.set_style(bg_style);
@@ -803,7 +774,6 @@ impl ScrollbackPane {
             if y >= content_area.y + content_area.height {
                 break;
             }
-            // Render line in the content area (not overlapping with accent)
             buf.set_line_safe(content_area.x, y, &line.content, content_area.width);
             y += 1;
         }
@@ -850,7 +820,6 @@ impl ScrollbackPane {
             let color = accent.color;
             let accent_area = layout.accent;
 
-            // Determine accent background color based on accent_has_bg and block_bg
             let accent_bg = if accent_has_bg {
                 match block_bg {
                     BlockBackground::None => theme.bg_base,
@@ -881,8 +850,6 @@ impl ScrollbackPane {
         }
     }
 
-    // Shared Rendering Helpers
-
     /// Render the main content area (shared between SingleTurn and AllTurns).
     ///
     /// Returns the selection box for content entries (if any), to be rendered by the frame.
@@ -892,17 +859,19 @@ impl ScrollbackPane {
         area: Rect,
         content_area: Rect,
         buf: &mut Buffer,
-        state: &ScrollbackState, // Now immutable!
+        state: &ScrollbackState,
         theme: &Theme,
         visible_range: Range<usize>,
         scroll_for_content: usize,
-        _prompt_content_height: u16, // Unused after Phase 2 (total_height now from cache)
+        // Unused; total_height now comes from the cache instead.
+        _prompt_content_height: u16,
         pinned_header_selection_area: Option<Rect>,
-        pinned_entry_idx: Option<usize>, // Entry idx shown in header (to skip in content selection)
-        header_has_selection: bool,      // Whether selection was already computed for header
+        // Entry idx shown in header (to skip in content selection).
+        pinned_entry_idx: Option<usize>,
+        // Whether selection was already computed for the header.
+        header_has_selection: bool,
         _scratch: &mut ScratchBuffer,
     ) -> RenderOutputWithSelectionBoundaries {
-        // Layout cache must be valid after prepare_layout().
         let all_layouts = state
             .get_cached_entry_layouts()
             .expect("layout cache must be valid - was prepare_layout() called?");
@@ -965,8 +934,8 @@ impl ScrollbackPane {
         let result = rendered.result;
         let selection_boundaries = rendered.selection_boundaries;
 
-        // NOTE: total_height is now computed by prepare_layout() before render,
-        // so we don't update it here. The result.total_height is only used locally
+        // NOTE: total_height comes from prepare_layout() (called before render)
+        // and isn't updated here; result.total_height is only used locally,
         // if needed for debugging.
 
         // Capture selected entry's screen area for inline button positioning.
@@ -1086,13 +1055,12 @@ impl ScrollbackPane {
             && let Some(ref selected) = selected_area
             && let Some(selected_abs) = state.selected()
         {
-            // Determine the selection range (group or individual)
             let split_mode = state.appearance().scrollback.display.group_selection_split;
             let sel_range = state.group_range_of(selected_abs, split_mode);
 
             if sel_range.len() <= 1 {
                 // Singleton (non-groupable, or expanded in Mode B, or lone groupable):
-                // Use the individual entry's area directly (same as before).
+                // use the individual entry's area directly.
                 let top_clipped = selected.top_clipped
                     || (selected.area.y == content_area.y && content_area.y == 0);
                 let bottom = selected.area.y + selected.area.height;
@@ -1127,7 +1095,6 @@ impl ScrollbackPane {
                 let viewport_start = scroll_for_content;
                 let viewport_end = scroll_for_content + content_area.height as usize;
 
-                // Clip to viewport
                 let visible_start_vy = group_start_vy.max(viewport_start);
                 let visible_end_vy = group_end_vy.min(viewport_end);
 

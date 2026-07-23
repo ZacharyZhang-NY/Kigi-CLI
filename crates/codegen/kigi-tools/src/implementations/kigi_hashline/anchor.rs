@@ -1,7 +1,4 @@
 //! Anchor convenience helpers and re-exports.
-//!
-//! This module re-exports the core types from [`super::scheme`] and provides
-//! helper functions for common anchor operations.
 
 pub use super::scheme::{
     Anchor, AnchorScheme, CheckpointChain, ChunkFingerprint, ContentOnly, DEFAULT_SEARCH_RADIUS,
@@ -9,10 +6,6 @@ pub use super::scheme::{
 };
 
 /// Split file content into lines suitable for anchor generation.
-///
-/// Strips trailing newlines from each line (matching the convention used by
-/// `AnchorScheme::generate_anchors`). The returned `Vec<&str>` has one entry
-/// per logical line.
 pub fn split_lines(content: &str) -> Vec<&str> {
     if content.is_empty() {
         return vec![""];
@@ -31,18 +24,12 @@ pub fn split_lines(content: &str) -> Vec<&str> {
 }
 
 /// Generate anchors for file content using the given scheme.
-///
-/// Convenience wrapper: splits `content` into lines and calls
-/// `scheme.generate_anchors()`.
 pub fn generate_for_content(scheme: &dyn AnchorScheme, content: &str) -> Vec<Anchor> {
     let lines = split_lines(content);
     scheme.generate_anchors(&lines)
 }
 
 /// Validate a parsed anchor against file content.
-///
-/// Convenience wrapper: splits `content` into lines and calls
-/// `scheme.validate()`.
 pub fn validate_against_content(
     scheme: &dyn AnchorScheme,
     anchor: &ParsedAnchor,
@@ -53,9 +40,6 @@ pub fn validate_against_content(
 }
 
 /// Search for a shifted anchor in file content.
-///
-/// Convenience wrapper: splits `content` into lines and calls
-/// `scheme.find_shifted()`.
 pub fn find_shifted_in_content(
     scheme: &dyn AnchorScheme,
     anchor: &ParsedAnchor,
@@ -95,7 +79,8 @@ mod tests {
         let content = "line one\nline two\nline three\n";
         let scheme = ContentOnly::new();
         let anchors = generate_for_content(&scheme, content);
-        assert_eq!(anchors.len(), 4); // 3 content lines + trailing empty
+        // 3 content lines + trailing empty
+        assert_eq!(anchors.len(), 4);
         assert_eq!(anchors[0].line, 1);
         assert_eq!(anchors[3].line, 4);
     }
@@ -144,7 +129,7 @@ mod tests {
         // Insert a line at the top → "b" shifts from line 2 to line 3.
         let modified = "new\na\nb\nc\n";
         let parsed = ParsedAnchor {
-            line: anchors[1].line, // originally line 2 ("b")
+            line: anchors[1].line,
             local: anchors[1].local.clone(),
             context: None,
         };

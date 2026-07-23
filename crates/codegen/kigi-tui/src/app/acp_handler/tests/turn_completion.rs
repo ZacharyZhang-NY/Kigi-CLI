@@ -54,7 +54,7 @@
             let agent = app.agents.get_mut(&AgentId(0)).unwrap();
             agent.session.start_turn(&mut agent.scrollback);
             agent.session.current_prompt_id = Some("pid-stuck".into());
-            agent.session.cancel_turn(&mut agent.scrollback); // CancelTurn → TurnCancelling
+            agent.session.cancel_turn(&mut agent.scrollback);
             assert!(!agent.attached_as_viewer);
         }
 

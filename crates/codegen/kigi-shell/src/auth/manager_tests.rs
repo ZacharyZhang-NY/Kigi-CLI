@@ -67,8 +67,6 @@ fn install_ok_refresher(m: &Arc<AuthManager>) -> Arc<AtomicU32> {
     calls
 }
 
-// ── Dynamic refresh threshold (PRD: max(300, expires_in × 0.5)) ─────────
-
 /// A 7200s-lifetime token with 3000s left is inside the 3600s threshold:
 /// `current()` hides it (refresh due) while `expired_auth()` still exposes
 /// it (wire-valid bearer for senders).
@@ -87,7 +85,6 @@ fn threshold_hides_current_but_keeps_expired_auth() {
     assert!(!m.is_expired());
 }
 
-/// Hard expiry: a genuinely past-expiry token is not usable.
 #[test]
 fn hard_expired_token_is_not_usable() {
     let (_d, m) = mgr();
@@ -96,8 +93,6 @@ fn hard_expired_token_is_not_usable() {
     assert!(m.expired_auth().is_some(), "kept for its refresh token");
     assert!(!m.has_usable_token());
 }
-
-// ── auth() dispatch ─────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn auth_returns_not_logged_in_when_empty() {
@@ -135,7 +130,6 @@ async fn auth_expired_session_refreshes_via_chain() {
     let auth = m.auth().await.unwrap();
     assert_eq!(auth.key, "at-refreshed");
     assert_eq!(calls.load(AtomicOrdering::SeqCst), 1);
-    // Refresh persisted: a fresh manager on the same home adopts it.
     assert_eq!(m.current().map(|a| a.key), Some("at-refreshed".into()));
 }
 
@@ -175,8 +169,6 @@ async fn refresh_notifies_waiters() {
         "waiter must observe the token change"
     );
 }
-
-// ── Tombstone semantics (PRD F1) ────────────────────────────────────────
 
 /// A 401-rejected refresh sets a tombstone keyed by the rejected refresh
 /// token; subsequent auth() calls short-circuit without hitting the wire.
@@ -293,8 +285,6 @@ async fn tombstone_does_not_block_wire_valid_bearer() {
     let auth = m.auth().await.unwrap();
     assert_eq!(auth.key, "at-usable");
 }
-
-// ── Persistence: file fallback + keyring ────────────────────────────────
 
 #[tokio::test]
 async fn update_persists_to_file_when_keyring_disabled() {
@@ -457,8 +447,6 @@ mod keyring_integration {
     }
 }
 
-// ── Sibling adoption + disk reload ──────────────────────────────────────
-
 #[tokio::test]
 async fn pick_up_sibling_token_adopts_different_valid_token() {
     let (dir, m) = mgr();
@@ -481,7 +469,6 @@ fn force_reload_drops_credentials_on_readable_entry_missing() {
     // A readable auth.json without our scope = trustworthy logout signal.
     let store = AuthStore::new();
     crate::auth::storage::write_auth_json(&dir.path().join("auth.json"), &store).unwrap();
-    // Non-empty map required for EntryMissing (empty map is still readable).
     m.force_reload_from_disk();
     assert!(
         m.current_or_expired().is_none(),
@@ -503,8 +490,6 @@ fn force_reload_retains_refresh_token_on_disk_anomaly() {
         "disk anomaly must not discard a live refresh token"
     );
 }
-
-// ── Proactive tick (loop body) ──────────────────────────────────────────
 
 #[tokio::test]
 async fn proactive_tick_skips_above_threshold() {
@@ -576,8 +561,6 @@ async fn proactive_tick_respects_tombstone_cooldown() {
     );
 }
 
-// ── Sleep gate integration ──────────────────────────────────────────────
-
 #[tokio::test]
 async fn refresh_chain_defers_when_sleep_imminent() {
     let (_d, m) = mgr();
@@ -604,8 +587,6 @@ async fn refresh_chain_defers_when_sleep_imminent() {
         "wake resumes refresh"
     );
 }
-
-// ── Idempotency guards ──────────────────────────────────────────────────
 
 #[tokio::test]
 async fn start_proactive_refresh_is_idempotent_per_arc() {

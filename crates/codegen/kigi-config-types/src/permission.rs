@@ -32,7 +32,7 @@ pub enum PatternMode {
 
 /// Action to take when rule matches.
 ///
-/// CWE-1188: Default changed from Allow to Deny so that omitting the
+/// CWE-1188: the default is Deny rather than Allow, so that omitting the
 /// `action` field in a TOML permission rule does not silently create a
 /// catch-all allow rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

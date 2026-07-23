@@ -22,12 +22,10 @@ pub struct Accented<'a, T> {
 }
 
 impl<'a, T> Accented<'a, T> {
-    /// Create a new accented wrapper.
     pub fn new(inner: &'a T, style: Style) -> Self {
         Self { inner, style }
     }
 
-    /// Create with just a foreground color.
     pub fn with_fg(inner: &'a T, color: ratatui::style::Color) -> Self {
         Self {
             inner,
@@ -48,16 +46,13 @@ impl<T: Renderable> Renderable for Accented<'_, T> {
             return;
         }
 
-        // Split horizontally: [accent (1)] [content (rest)]
         let [accent_area, content_area] =
             Layout::horizontal([Constraint::Length(1), Constraint::Min(0)]).areas(area);
 
-        // Draw accent line for all rows
         for y in accent_area.y..accent_area.y + accent_area.height {
             buf.set_string(accent_area.x, y, crate::glyphs::accent_bar(), self.style);
         }
 
-        // Render inner content
         if content_area.width > 0 {
             self.inner.render(content_area, buf);
         }
@@ -112,7 +107,6 @@ mod tests {
         let mut buf = Buffer::empty(area);
         accented.render(area, &mut buf);
 
-        // Check accent line is in column 0
         assert_eq!(
             buf.cell((0, 0)).unwrap().symbol(),
             crate::glyphs::accent_bar()
@@ -122,7 +116,6 @@ mod tests {
             crate::glyphs::accent_bar()
         );
 
-        // Check content starts at column 1
         assert_eq!(buf.cell((1, 0)).unwrap().symbol(), "H");
         assert_eq!(buf.cell((2, 0)).unwrap().symbol(), "i");
     }
@@ -137,6 +130,7 @@ mod tests {
 
         let area = Rect::new(0, 0, 0, 0);
         let mut buf = Buffer::empty(Rect::new(0, 0, 10, 10));
-        accented.render(area, &mut buf); // Should not panic
+        // Should not panic
+        accented.render(area, &mut buf);
     }
 }

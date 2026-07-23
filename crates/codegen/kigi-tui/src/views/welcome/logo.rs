@@ -59,14 +59,22 @@ const RING_INNER_SQ: f32 = 0.82;
 /// on the dark limb it is drawn in the same gray, which reads as a faint
 /// light patch against the empty limb.
 const MARIA: &[(f32, f32, f32)] = &[
-    (-0.40, -0.42, 0.018), // Imbrium
-    (0.12, -0.50, 0.008),  // Serenitatis
-    (0.40, -0.22, 0.012),  // Tranquillitatis
-    (0.55, 0.20, 0.005),   // Fecunditatis
-    (0.62, -0.42, 0.004),  // Crisium
-    (-0.58, 0.05, 0.010),  // Procellarum
-    (-0.28, 0.40, 0.006),  // Nubium
-    (0.08, 0.12, 0.004),   // Vaporum
+    // Imbrium
+    (-0.40, -0.42, 0.018),
+    // Serenitatis
+    (0.12, -0.50, 0.008),
+    // Tranquillitatis
+    (0.40, -0.22, 0.012),
+    // Fecunditatis
+    (0.55, 0.20, 0.005),
+    // Crisium
+    (0.62, -0.42, 0.004),
+    // Procellarum
+    (-0.58, 0.05, 0.010),
+    // Nubium
+    (-0.28, 0.40, 0.006),
+    // Vaporum
+    (0.08, 0.12, 0.004),
 ];
 
 fn in_mare(dx: f32, dy: f32) -> bool {

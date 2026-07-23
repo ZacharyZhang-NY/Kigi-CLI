@@ -29,16 +29,16 @@ use super::scheme::{
 /// Configuration for the benchmark harness.
 #[derive(Debug, Clone)]
 pub struct BenchmarkConfig {
-    /// Hash lengths to test (default: [2, 3]).
+    /// Hash lengths to test.
     pub hash_lengths: Vec<usize>,
 
-    /// Chunk sizes to test for Candidate B (default: [8, 16, 32]).
+    /// Chunk sizes to test for Candidate B.
     pub chunk_sizes: Vec<usize>,
 
-    /// Checkpoint intervals to test for Candidate C (default: [16, 32, 64]).
+    /// Checkpoint intervals to test for Candidate C.
     pub checkpoint_intervals: Vec<usize>,
 
-    /// Search radius for shifted-anchor recovery (default: 15).
+    /// Search radius for shifted-anchor recovery.
     pub search_radius: usize,
 }
 
@@ -90,7 +90,7 @@ pub struct SchemeMetrics {
     /// Shifted-anchor recovery: not found.
     pub recovery_not_found: usize,
 
-    /// Collision count: distinct lines that produced the same anchor in the
+    /// Distinct lines that produced the same anchor in the
     /// same file (local hash only).
     pub collision_count: usize,
 
@@ -270,7 +270,6 @@ pub fn run_benchmark(corpus: &[(&str, &str)], config: &BenchmarkConfig) -> Bench
         .map(|(_, content)| split_lines(content).len())
         .sum();
 
-    // Build scheme configurations to test.
     let schemes = build_scheme_configs(config);
 
     for (label, scheme) in &schemes {
@@ -354,7 +353,7 @@ fn standard_mutations(line_count: usize) -> Vec<(&'static str, Mutation)> {
 }
 
 /// Estimate the read-amplification cost for a single validation under the
-/// given scheme, using the scheme's own `validation_window_lines()` method.
+/// given scheme.
 fn estimate_read_amp_lines(scheme: &dyn AnchorScheme, line_count: usize, line_idx: usize) -> usize {
     scheme.validation_window_lines(line_idx, line_count)
 }
@@ -371,7 +370,7 @@ fn run_phase1_for_file(
     let line_count = original_lines.len();
     metrics.total_lines += line_count;
 
-    // --- Collision measurement ---
+    // Collision measurement
     let anchors = scheme.generate_anchors(&original_lines);
     let mut seen = std::collections::HashSet::new();
     for a in &anchors {
@@ -384,7 +383,7 @@ fn run_phase1_for_file(
         }
     }
 
-    // --- Mutation scenarios ---
+    // Mutation scenarios
     let mutations = standard_mutations(line_count);
 
     for (_mutation_name, mutation) in &mutations {
@@ -392,7 +391,6 @@ fn run_phase1_for_file(
         let mutation_result = apply_mutation(&mut mutated_lines, mutation);
         let mutated_refs: Vec<&str> = mutated_lines.iter().map(|s| s.as_str()).collect();
 
-        // For each original anchor, validate against the mutated file.
         for (orig_idx, anchor) in anchors.iter().enumerate() {
             let parsed = ParsedAnchor {
                 line: anchor.line,
@@ -432,7 +430,8 @@ fn run_phase1_for_file(
             // line was shifted (not modified or deleted).
             if !reported_valid && let LineOutcome::Shifted { new_idx } = outcome {
                 metrics.recovery_attempts += 1;
-                let expected_line = new_idx + 1; // 1-based
+                // 1-based
+                let expected_line = new_idx + 1;
 
                 match scheme.find_shifted(&parsed, &mutated_refs, config.search_radius) {
                     ShiftResult::Found { new_line } => {
@@ -521,13 +520,11 @@ fn run_phase2_for_file(
     let traces = standard_traces(line_count);
 
     for trace in &traces {
-        // Start with the original file and its anchors.
         let mut current_lines: Vec<String> = original_lines.iter().map(|s| s.to_string()).collect();
         let mut current_anchors = scheme.generate_anchors(&original_lines);
         let mut needs_refresh = false;
 
         for step in trace {
-            // If the previous step required a re-read, regenerate anchors now.
             if needs_refresh {
                 let refs: Vec<&str> = current_lines.iter().map(|s| s.as_str()).collect();
                 current_anchors = scheme.generate_anchors(&refs);
@@ -539,27 +536,22 @@ fn run_phase2_for_file(
                 continue;
             }
 
-            // Snapshot the anchor we want to probe.
             let probe_anchor = ParsedAnchor {
                 line: current_anchors[probe_idx].line,
                 local: current_anchors[probe_idx].local.clone(),
                 context: current_anchors[probe_idx].context.clone(),
             };
 
-            // Apply the mutation.
             apply_mutation(&mut current_lines, &step.mutation);
 
-            // Validate the probed anchor against the mutated file.
             let refs: Vec<&str> = current_lines.iter().map(|s| s.as_str()).collect();
             let result = scheme.validate(&probe_anchor, &refs);
 
             metrics.trace_steps += 1;
             if result == ValidationResult::Valid {
                 metrics.trace_anchors_survived += 1;
-                // Keep using existing anchors — no refresh needed.
             } else {
                 metrics.trace_reread_required += 1;
-                // Mark for refresh at the start of the next step.
                 needs_refresh = true;
             }
         }
@@ -650,7 +642,6 @@ struct Config3 {
         let config = BenchmarkConfig::default();
         let report = run_benchmark(&corpus, &config);
 
-        // Expected: hash_lengths.len() * (1 + chunk_sizes.len() + checkpoint_intervals.len())
         let expected = config.hash_lengths.len()
             * (1 + config.chunk_sizes.len() + config.checkpoint_intervals.len());
         assert_eq!(report.schemes.len(), expected);
@@ -696,7 +687,7 @@ struct Config3 {
             search_radius: DEFAULT_SEARCH_RADIUS,
         };
         let report = run_benchmark(&corpus, &config);
-        assert_eq!(report.schemes.len(), 2); // A + B
+        assert_eq!(report.schemes.len(), 2);
         let b = &report.schemes[1];
         assert!(
             b.false_stale > 0,
@@ -716,7 +707,7 @@ struct Config3 {
             search_radius: DEFAULT_SEARCH_RADIUS,
         };
         let report = run_benchmark(&corpus, &config);
-        assert_eq!(report.schemes.len(), 2); // A + B
+        assert_eq!(report.schemes.len(), 2);
 
         let a = &report.schemes[0];
         let b = &report.schemes[1];
@@ -864,8 +855,6 @@ struct Config3 {
 
     #[test]
     fn recovery_correctness_tracked() {
-        // Verify that recovery_correct + recovery_wrong + recovery_ambiguous
-        // + recovery_not_found == recovery_attempts.
         let corpus = test_corpus();
         let config = BenchmarkConfig {
             hash_lengths: vec![3],

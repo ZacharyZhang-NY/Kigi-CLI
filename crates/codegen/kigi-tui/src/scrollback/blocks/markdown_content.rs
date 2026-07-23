@@ -184,7 +184,6 @@ impl MarkdownContent {
         self.generation += 1;
     }
 
-    /// Get the source markdown text.
     pub fn text(&self) -> String {
         self.state.borrow().renderer.source().to_string()
     }
@@ -266,7 +265,6 @@ impl MarkdownContent {
         self.generation
     }
 
-    /// Whether the content is currently in raw mode.
     pub fn is_raw(&self) -> bool {
         self.current_raw
     }
@@ -285,7 +283,8 @@ impl MarkdownContent {
         }
         state.cache_lines = Vec::new();
         state.cache_joiners = Vec::new();
-        state.cache_generation = u64::MAX; // force rebuild on next use
+        // Force rebuild on next use.
+        state.cache_generation = u64::MAX;
         state.frozen_pre_wrap_count = 0;
         state.frozen_wrapped_count = 0;
     }
@@ -319,7 +318,8 @@ impl MarkdownContent {
         if state.cache_theme != current_theme {
             state.renderer.set_style(md_style::style());
             state.cache_theme = current_theme;
-            state.cache_generation = u64::MAX; // force cache miss
+            // Force cache miss.
+            state.cache_generation = u64::MAX;
             // set_style resets renderer frozen state, so our tracking is stale
             state.frozen_pre_wrap_count = 0;
             state.frozen_wrapped_count = 0;
@@ -342,7 +342,7 @@ impl MarkdownContent {
 
         let frozen_count = state.renderer.frozen_lines_count();
 
-        // --- Incremental wrapping ---
+        // Incremental wrapping:
         //
         // The renderer guarantees that view().lines[0..frozen_count] are stable.
         // We only need to wrap:
@@ -373,13 +373,12 @@ impl MarkdownContent {
             None
         };
 
-        // Now mutate the cache (no more borrows of view/renderer)
-        // Truncate stale tail, keeping only the previously frozen wrapped output
+        // Now mutate the cache (no more borrows of view/renderer).
+        // Truncate stale tail, keeping only the already-frozen wrapped output.
         let frozen_wc = state.frozen_wrapped_count;
         state.cache_lines.truncate(frozen_wc);
         state.cache_joiners.truncate(frozen_wc);
 
-        // Append newly frozen wrapped lines
         if let Some((new_lines, new_joiners)) = new_frozen_wrapped {
             state.cache_lines.extend(new_lines);
             state.cache_joiners.extend(new_joiners);
@@ -387,7 +386,6 @@ impl MarkdownContent {
             state.frozen_wrapped_count = state.cache_lines.len();
         }
 
-        // Append tail wrapped lines
         if let Some((tail_lines, tail_joiners)) = tail_wrapped {
             state.cache_lines.extend(tail_lines);
             state.cache_joiners.extend(tail_joiners);
@@ -651,7 +649,6 @@ mod tests {
         let frozen_count_after_first = state.frozen_wrapped_count;
         drop(state);
 
-        // Push more content
         md.push_chunk("Third paragraph.\n\n");
         let _ = md.output(width);
 

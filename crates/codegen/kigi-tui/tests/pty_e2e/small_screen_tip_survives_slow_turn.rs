@@ -2,8 +2,6 @@
 #[allow(unused_imports)]
 use super::common::*;
 
-// ── Small-screen tip must survive a submit into a slow turn ────────────────
-//
 // Real-usage repro: the tip shows on the welcome→agent promote, the user hits
 // Enter under a second later, and the turn takes several seconds. The submit
 // used to retire the tip (`clear_on_submit` before the fix cleared every

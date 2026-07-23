@@ -124,7 +124,7 @@ pub(crate) async fn build_s3_client(
 
 /// Static access-key credentials for presigning S3 URLs.
 ///
-/// `Debug` is intentionally redacted — the struct holds plaintext secrets.
+/// `Debug` is deliberately redacted — the struct holds plaintext secrets.
 #[derive(Clone)]
 pub struct S3StaticCredentials {
     pub access_key_id: String,

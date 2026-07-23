@@ -33,7 +33,7 @@
 /// `\u2028` and surrogate pairs in text).
 ///
 /// Any line that fails both parses passes through byte-identical —
-/// deliberately: the acp crate keeps ownership of garbage handling.
+/// Deliberately: the acp crate keeps ownership of garbage handling.
 pub(crate) fn normalize_json_line(line: Vec<u8>) -> Vec<u8> {
     if !line.windows(2).any(|w| w == br"\/") {
         return line;

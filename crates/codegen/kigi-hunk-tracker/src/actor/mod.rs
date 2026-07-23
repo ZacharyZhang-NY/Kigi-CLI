@@ -567,7 +567,7 @@ impl HunkTrackerActor {
         }
     }
 
-    /// Restore a previously snapshotted state, replacing all current file
+    /// Restore a earlier snapshotted state, replacing all current file
     /// states, turn index, and session stats.
     /// Preserves the full FileContentState (including Binary/TooLarge).
     fn restore_snapshot(&mut self, snapshot: HunkTrackerSnapshot) {
@@ -589,7 +589,7 @@ impl HunkTrackerActor {
         self.turn_index = snapshot.turn_index;
         self.session_stats = snapshot.session_stats;
 
-        // TODO: Re-emit HunkEvent::FileAdded / HunkEvent::HunkAdded for
+        // TODO: Re-emit HunkEvent::`FileAdded` / HunkEvent::`HunkAdded` for
         // all restored files and hunks so that connected clients (TUI, VSCode
         // extension) see the restored state without requiring a manual refresh.
         // Alternative: emit a single HunkEvent::StateRestored { file_count }

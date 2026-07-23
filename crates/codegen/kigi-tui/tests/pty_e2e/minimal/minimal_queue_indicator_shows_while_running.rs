@@ -51,7 +51,6 @@ async fn minimal_queue_indicator_shows_while_running() {
         .wait_for_full_text("#1  second queued prompt", Duration::from_secs(10))
         .expect("the snapshot lists the queued text");
 
-    // The queued prompt eventually promotes and runs as turn 2.
     harness
         .wait_for_full_text("STEPTWO", Duration::from_secs(40))
         .expect("queued prompt promoted and ran");

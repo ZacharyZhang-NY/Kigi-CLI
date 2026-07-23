@@ -88,7 +88,7 @@ pub struct ExportedMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_session_id: Option<String>,
 
-    // --- Subagent-specific fields (all optional for backward compatibility) ---
+    // Subagent-specific fields (all optional for backward compatibility)
     /// Session kind: "parent", "subagent", or "subagent_fork".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_kind: Option<String>,
@@ -110,7 +110,6 @@ pub struct ExportedMetadata {
 }
 
 impl ExportedMetadata {
-    /// Build metadata from a [`Summary`].
     pub fn from_summary(summary: &Summary) -> Self {
         Self {
             title: Some(summary.session_summary.clone()).filter(|s| !s.is_empty()),

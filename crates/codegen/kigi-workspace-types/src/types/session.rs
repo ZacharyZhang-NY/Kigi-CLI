@@ -7,7 +7,7 @@
 //!
 //! Notably absent: `SessionEndReason`, `PromptMode`, `StopReason`,
 //! `CancelReason`, and `SubagentStatus`. Those existed only to support
-//! the `SessionEvent` enum, which has been removed entirely -- session
+//! the `SessionEvent` enum, which is gone entirely -- session
 //! lifecycle, prompt boundaries, tool-call lifecycle, plan mode, and
 //! subagent state are all sampler-caused and flow back to the sampler
 //! via direct call returns or stream chunks. They never belonged on

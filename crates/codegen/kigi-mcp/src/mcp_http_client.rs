@@ -135,13 +135,13 @@ impl ThrottleState {
 ///
 /// Backoff and episode state are per instance; the [`WarnBudget`] is the
 /// caller's, so a rebuilt client does not warn again within the cooldown.
+// No `Debug` derive: rmcp's `AuthClient` (an inner type) is not `Debug`.
 #[derive(Clone)]
 pub struct McpHttpClient<C> {
     inner: C,
     server_name: Arc<str>,
     state: Arc<parking_lot::Mutex<ThrottleState>>,
 }
-// No `Debug` derive: rmcp's `AuthClient` (an inner type) is not `Debug`.
 
 impl<C> McpHttpClient<C> {
     pub fn new(inner: C, server_name: impl Into<Arc<str>>, warn_budget: WarnBudget) -> Self {

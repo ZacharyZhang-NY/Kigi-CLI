@@ -145,7 +145,8 @@ mod tests {
         git_commit_all(temp.path(), "initial");
 
         let commit = get_head_commit(temp.path()).unwrap();
-        assert_eq!(commit.len(), 40); // SHA-1 hex string
+        // SHA-1 hex string
+        assert_eq!(commit.len(), 40);
         assert!(commit.chars().all(|c| c.is_ascii_hexdigit()));
     }
 }

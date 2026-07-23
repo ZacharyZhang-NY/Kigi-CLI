@@ -157,7 +157,6 @@ async fn edit_hl_inplace_refresh_pty() {
         }
     };
 
-    // Welcome
     let welcome_deadline = Instant::now() + WELCOME_TIMEOUT;
     loop {
         sample(&mut harness);
@@ -255,7 +254,6 @@ async fn edit_hl_inplace_refresh_pty() {
         harness.screen_contents()
     );
 
-    // Final full dumps.
     let final_screen = harness.screen_contents();
     let final_html = harness.screen_html();
     fs::write(PathBuf::from(ARTIFACT_DIR).join("final.txt"), &final_screen).ok();

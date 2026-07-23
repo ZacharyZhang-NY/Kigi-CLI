@@ -26,12 +26,10 @@ pub fn is_binary(extension: &str, bytes: &[u8]) -> bool {
 
     let sample = &bytes[..bytes.len().min(SAMPLE_SIZE)];
 
-    // Any null byte → binary.
     if sample.contains(&0x00) {
         return true;
     }
 
-    // High ratio of non-printable bytes → binary.
     // Bytes 0-8 and 14-31 are control characters (excluding tab, newline, CR, etc.)
     let non_printable = sample
         .iter()

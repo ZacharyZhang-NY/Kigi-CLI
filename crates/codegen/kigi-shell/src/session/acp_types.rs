@@ -1,9 +1,7 @@
 //! Public wire types (DTOs) for the ACP session actor.
 //!
-//! These are the request/response structs exchanged between the agent layer
-//! and the session actor. They were extracted from `acp_session.rs` to keep
-//! that file focused on behaviour while giving downstream crates a lightweight
-//! import path for data types.
+//! The request/response structs exchanged between the agent layer and the
+//! session actor.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -11,15 +9,11 @@ use std::path::PathBuf;
 use crate::session::persistence::Summary;
 use crate::util::config::DEFAULT_AUTO_COMPACT_THRESHOLD_PERCENT;
 
-// ── Session list ───────────────────────────────────────────────────────
-
-/// Request to grab all the sessions from the current working directory
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct SessionListRequest {
     pub workspace_directory: PathBuf,
 }
 
-/// Request to grab all the sessions tagged by their working directory as well
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct AllSessionOverviewRequest {}
 
@@ -33,8 +27,6 @@ pub struct AllSessionOverviewResponse {
     pub all_sessions: BTreeMap<PathBuf, Vec<Summary>>,
 }
 
-// ── Compaction ──────────────────────────────────────────────────────────
-
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct CompactConversationRequest {
     #[serde(alias = "sessionId")]
@@ -46,9 +38,6 @@ pub struct CompactConversationRequest {
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct CompactConversationResponse {}
 
-// ── Feedback ────────────────────────────────────────────────────────────
-
-/// Request to submit user feedback about the current session
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FeedbackRequest {
     pub session_id: String,
@@ -57,44 +46,29 @@ pub struct FeedbackRequest {
     pub feedback_text: String,
 }
 
-/// Request to dismiss a feedback request (sent to the feedback backend).
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct FeedbackRequestDismiss {
     pub session_id: String,
     pub request_id: String,
 }
 
-/// Response from submitting user feedback
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct FeedbackResponse {
     pub success: bool,
 }
 
-/// Input from client for feedback submission.
-///
-/// This enum handles two types of feedback:
-/// - `Spontaneous`: Free-form feedback initiated by the user
-/// - `Solicited`: Response to a `FeedbackRequestNotification` (has `request_id`)
-///
-/// The variant is determined by the presence of `request_id` field.
-///
-/// `turn_number` is optional from the client side: per-turn UIs (e.g. the
-/// thumbs button on a specific assistant message in the desktop chat
-/// history) may attach.
+/// Client-submitted feedback.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct ClientFeedbackInput {
-    /// Session ID this feedback is for (required)
     pub session_id: String,
 
-    /// Type of client submitting feedback
     pub client_type: crate::session::feedback_types::ClientType,
 
-    /// Rating type (thumbs, stars, nps)
     #[serde(default)]
     pub rating_type: Option<crate::session::feedback_types::RatingType>,
 
-    /// Rating value (interpretation depends on rating_type):
+    /// Interpretation depends on `rating_type`:
     /// - thumbs: -1 (down), 0 (neutral), 1 (up)
     /// - stars: 1-5
     /// - nps: 0-10
@@ -103,15 +77,12 @@ pub struct ClientFeedbackInput {
     #[serde(default)]
     pub rating_value: Option<i32>,
 
-    /// Free-form feedback text
     #[serde(default)]
     pub feedback_text: Option<String>,
 
-    /// Feedback categories (e.g., ["accuracy", "speed", "helpfulness"])
     #[serde(default)]
     pub feedback_categories: Vec<String>,
 
-    /// Context type for the feedback
     #[serde(default)]
     pub context_type: Option<crate::session::feedback_types::ContextType>,
 
@@ -119,30 +90,22 @@ pub struct ClientFeedbackInput {
     #[serde(default, alias = "turnNumber")]
     pub turn_number: Option<i64>,
 
-    /// Feedback request ID - if present, this is a response to a FeedbackRequestNotification
-    /// (i.e., solicited feedback). If absent, this is spontaneous user feedback.
+    /// Present iff this is solicited feedback — a response to a
+    /// `FeedbackRequestNotification`; absent for spontaneous user feedback.
     #[serde(default)]
     pub request_id: Option<String>,
 
-    /// Client version
     #[serde(default)]
     pub client_version: Option<String>,
 
-    /// Additional metadata as JSON
     #[serde(default)]
     pub metadata: Option<serde_json::Value>,
 
-    /// Terminal environment snapshot from the client.
     #[serde(default)]
     pub terminal_info: Option<crate::session::feedback_types::FeedbackTerminalInfo>,
 }
 
 impl ClientFeedbackInput {
-    /// Clamp rating value to valid range based on rating type.
-    ///
-    /// - thumbs: -1 to 1
-    /// - stars: 1 to 5
-    /// - nps: 0 to 10
     fn clamp_rating_value(
         rating_type: Option<crate::session::feedback_types::RatingType>,
         rating_value: Option<i32>,
@@ -153,22 +116,16 @@ impl ClientFeedbackInput {
             (Some(RatingType::Thumbs), Some(v)) => Some(v.clamp(-1, 1)),
             (Some(RatingType::Stars), Some(v)) => Some(v.clamp(1, 5)),
             (Some(RatingType::Nps), Some(v)) => Some(v.clamp(0, 10)),
-            // No rating type specified, pass through (will be validated by server)
+            // No rating type: pass through unclamped; the server validates.
             (None, Some(v)) => Some(v),
             (_, None) => None,
         }
     }
 
-    /// Convert to a FeedbackSubmission for sending to the feedback backend.
-    ///
-    /// The agent enriches the client input with:
-    /// - `model_id`: Requested model being used (from sampling config)
-    /// - `resolved_model_id`: Actual model from chat completion response
-    /// - `turn_number`: Current turn number from agent's session tracking
-    /// - `feedback_type`: Derived from rating_type and feedback_text presence
-    /// - `user_id`: Will be extracted from auth token by the backend
-    ///
-    /// Rating values are clamped to valid ranges based on rating_type.
+    /// Convert to a `FeedbackSubmission` for the feedback backend, enriching
+    /// the client input with agent-side context (model ids, turn number).
+    /// `feedback_type` is derived from `rating_type` and text presence;
+    /// `user_id` is filled in by the backend from the auth token.
     pub(crate) fn to_submission(
         &self,
         model_id: Option<String>,
@@ -195,7 +152,7 @@ impl ClientFeedbackInput {
                 rating_type,
                 rating_value,
             },
-            // Fallback: any other shape becomes Text (empty string preserved).
+            // Any other shape becomes Text.
             (_, _, text) => FeedbackContent::Text(text.unwrap_or_default()),
         };
 
@@ -217,20 +174,15 @@ impl ClientFeedbackInput {
         s
     }
 
-    /// Check if this is a solicited feedback (response to a request)
     pub fn is_solicited(&self) -> bool {
         self.request_id.is_some()
     }
 
-    /// Get the request_id if this is solicited feedback
     pub fn request_id(&self) -> Option<&str> {
         self.request_id.as_deref()
     }
 }
 
-// ── Rollout survey ──────────────────────────────────────────────────────
-
-/// Request to submit rollout survey responses about worktree improvements
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RolloutSurveyRequest {
@@ -239,13 +191,10 @@ pub struct RolloutSurveyRequest {
     pub feedback: String,
 }
 
-/// Response from submitting rollout survey
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct RolloutSurveyResponse {
     pub success: bool,
 }
-
-// ── Citations / comments ────────────────────────────────────────────────
 
 /// A reference to a range of lines in a file.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -259,7 +208,6 @@ pub struct Citation {
     pub side: Option<String>,
 }
 
-/// Request to record an inline comment on a prompt turn.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommentRequest {
@@ -270,7 +218,6 @@ pub struct CommentRequest {
     pub citation: Citation,
 }
 
-/// Response from recording a comment
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommentResponse {
@@ -278,7 +225,6 @@ pub struct CommentResponse {
     pub recorded: bool,
 }
 
-/// Request to delete a previously recorded comment.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommentDeleteRequest {
@@ -286,7 +232,6 @@ pub struct CommentDeleteRequest {
     pub comment_id: String,
 }
 
-/// Response from deleting a comment
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommentDeleteResponse {
@@ -294,10 +239,7 @@ pub struct CommentDeleteResponse {
     pub deleted: bool,
 }
 
-// ── Rewind ──────────────────────────────────────────────────────────────
-
 /// What to rewind: conversation, files, or both.
-/// Clients must specify the mode explicitly — there is no default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RewindMode {
@@ -317,10 +259,9 @@ pub struct RewindRequest {
     /// Target prompt index to rewind to (0-based).
     /// Semantics: "restore state before prompt N ran" — prompts 0..N-1 are kept.
     pub target_prompt_index: usize,
-    /// Whether to force rewind even with conflicts
     pub force: bool,
-    /// What to rewind. Clients must specify this explicitly.
-    /// Defaults to `All` for backwards compatibility with older clients.
+    /// Defaults to `All` for backwards compatibility with older clients that
+    /// omit the field.
     #[serde(default = "default_rewind_mode")]
     pub mode: RewindMode,
 }
@@ -329,48 +270,41 @@ pub fn default_rewind_mode() -> RewindMode {
     RewindMode::All
 }
 
-/// Response from a rewind operation
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RewindResponse {
-    /// Whether the rewind was successful
     pub success: bool,
-    /// The prompt index we rewound to
     pub target_prompt_index: usize,
-    /// Which mode was executed
     pub mode: RewindMode,
-    /// List of file paths that were reverted (only populated on success with All or FilesOnly)
+    /// File paths reverted; populated only on success with `All` or `FilesOnly`.
     pub reverted_files: Vec<String>,
-    /// List of file paths that can be cleanly reverted (no conflicts)
+    /// File paths that can be cleanly reverted (no conflicts).
     #[serde(default)]
     pub clean_files: Vec<String>,
-    /// List of conflicts that were encountered (if force=false and conflicts exist, success=false)
+    /// Conflicts encountered; if `force=false` and any exist, `success=false`.
     pub conflicts: Vec<RewindConflictInfo>,
-    /// The original prompt text at target_prompt_index, for pre-filling the input field.
-    /// Populated on successful conversation rewind (All or ConversationOnly).
+    /// Original prompt text at `target_prompt_index`, for pre-filling the input
+    /// field. Populated on successful conversation rewind (`All` or
+    /// `ConversationOnly`).
     #[serde(default)]
     pub prompt_text: Option<String>,
-    /// Optional error message
     pub error: Option<String>,
 }
 
-/// Info about a conflict during rewind
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RewindConflictInfo {
     pub path: String,
-    pub conflict_type: String, // "missing_file", "extra_file", "content_mismatch"
+    /// One of "missing_file", "extra_file", "content_mismatch".
+    pub conflict_type: String,
 }
 
-/// Request to get available rewind points for the session
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RewindPointsRequest {}
 
-/// Response with available rewind points
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RewindPointsResponse {
     pub rewind_points: Vec<RewindPointInfo>,
 }
 
-/// Info about a single rewind point
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RewindPointInfo {
     pub prompt_index: usize,
@@ -380,12 +314,10 @@ pub struct RewindPointInfo {
     /// When false, only conversation rewind is available for this checkpoint.
     #[serde(default)]
     pub has_file_changes: bool,
-    /// Preview of the user prompt text (truncated)
+    /// Preview of the user prompt text (truncated).
     #[serde(default)]
     pub prompt_preview: Option<String>,
 }
-
-// ── Session info ────────────────────────────────────────────────────────
 
 /// Itemized token usage for one context category, shown as an
 /// informational row in `/context`, e.g. the skills listing or the
@@ -438,7 +370,6 @@ pub fn count_detail(count: u64, noun: &str) -> String {
     format!("{count} {noun}{suffix}")
 }
 
-/// Context usage breakdown for session info.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ContextInfo {
@@ -484,14 +415,14 @@ impl ContextInfo {
     }
 }
 
-/// Serde default for the new threshold field (keeps old snapshots / partials
-/// deserializing without error and gives the historical default of 85).
+/// Serde default for the threshold field: keeps old snapshots and partials
+/// deserializing, using the default of 85.
 fn default_auto_compact_threshold() -> u8 {
     DEFAULT_AUTO_COMPACT_THRESHOLD_PERCENT
 }
 
-/// Unified session info data returned by GetSessionInfo.
-/// One query, all the fields needed for /session-info and /context.
+/// Unified session info returned by `GetSessionInfo`, carrying every field
+/// `/session-info` and `/context` need.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionInfoData {
@@ -530,19 +461,16 @@ pub fn should_show_model_fingerprint(catalog_flag: bool, model_slug: &str) -> bo
     catalog_flag || is_coding_model_slug(model_slug)
 }
 
-/// Calculate and format the model name for display.
 pub fn model_display_name(
     name: Option<&str>,
     model: &str,
     resolved: Option<&str>,
     show_resolved: bool,
 ) -> String {
-    // If the catalogue entry has a name, that's the displayed model.
     if let Some(n) = name {
         return n.to_string();
     }
 
-    // For displaying the resolved model slug from the API response.
     if show_resolved {
         return match resolved.filter(|r| *r != model) {
             Some(r) => format!("{model} ({r})"),
@@ -550,7 +478,6 @@ pub fn model_display_name(
         };
     }
 
-    // There's no resolved model slug, we display the request model slug.
     model.to_string()
 }
 
@@ -567,8 +494,6 @@ pub struct SessionInfoResponse {
     pub data: SessionInfoData,
 }
 
-// ── Feedback context ────────────────────────────────────────────────────
-
 /// Context gathered from a session to enrich feedback notifications.
 ///
 /// Uses the shared feedback wire types directly so consumers can assign
@@ -584,8 +509,6 @@ pub struct FeedbackContext {
     pub context_window_tokens: u64,
     pub session_cwd: String,
 }
-
-// ── Startup hints ───────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -638,9 +561,6 @@ mod tests {
         assert!(!should_show_model_fingerprint(false, "some-other"));
     }
 
-    /// Verify that the JSON payload Desktop sends (with `client_type: "desktop"`)
-    /// deserializes correctly into `ClientFeedbackInput` and round-trips through
-    /// `to_submission()` preserving `ClientType::Desktop`.
     #[test]
     fn desktop_client_type_deserializes_and_round_trips() {
         let json = r#"{
@@ -667,9 +587,8 @@ mod tests {
         assert_eq!(submission.client_type.to_string(), "desktop");
     }
 
-    /// Verify that per-turn feedback can carry a `turn_number` (or its
-    /// camelCase alias `turnNumber`) so the agent can attach the right
-    /// turn's user/assistant text instead of the latest.
+    /// Per-turn feedback carries a `turn_number` (or its camelCase alias
+    /// `turnNumber`) so the agent attaches the right turn's text, not the latest.
     #[test]
     fn turn_number_deserializes_from_snake_and_camel_case() {
         let snake = r#"{
@@ -697,8 +616,6 @@ mod tests {
     }
 
     use serde_json::json;
-
-    // ── RewindMode serialization ──────────────────────────────────────
 
     #[test]
     fn rewind_mode_serializes_to_snake_case() {
@@ -744,8 +661,6 @@ mod tests {
         assert!(serde_json::from_value::<RewindMode>(json!("code_only_v2")).is_err());
     }
 
-    // ── RewindRequest backwards compatibility ─────────────────────────
-
     #[test]
     fn rewind_request_missing_mode_defaults_to_all() {
         let req: RewindRequest =
@@ -777,8 +692,6 @@ mod tests {
         assert_eq!(decoded.target_prompt_index, 3);
         assert_eq!(decoded.mode, RewindMode::ConversationOnly);
     }
-
-    // ── RewindResponse fields ─────────────────────────────────────────
 
     #[test]
     fn rewind_response_includes_mode_and_prompt_text() {
@@ -833,8 +746,6 @@ mod tests {
         assert_eq!(resp.conflicts.len(), 1);
         assert_eq!(resp.conflicts[0].path, "a.rs");
     }
-
-    // ── RewindPointInfo.has_file_changes ──────────────────────────────
 
     #[test]
     fn rewind_point_info_has_file_changes_true() {

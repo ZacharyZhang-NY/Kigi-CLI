@@ -17,9 +17,7 @@
 //! views** (`&str` over live state) so long fields (commands, todo content,
 //! descriptions, ids) are not cloned just to format.
 
-// ---------------------------------------------------------------------------
 // Borrowed views over harness live state (no long-string clones)
-// ---------------------------------------------------------------------------
 
 /// Model-facing poll/cancel tool names from the current toolset.
 /// Never hard-code: a client manifest can rename them.
@@ -102,9 +100,7 @@ impl ActiveAgentReminderState<'_> {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Section formatters
-// ---------------------------------------------------------------------------
 
 /// `## Running Background Tasks`, or `None` when empty.
 pub fn section_background_tasks(tasks: &[BackgroundTask<'_>]) -> Option<String> {
@@ -249,9 +245,7 @@ pub fn format_active_agent_reminder(
     wrap_system_reminder(format_active_agent_sections(state, subagent_tools))
 }
 
-// ---------------------------------------------------------------------------
 // Summary injection
-// ---------------------------------------------------------------------------
 
 /// Append a trailing block to a compaction summary, separated by a blank line.
 /// Returns `summary` unchanged when `reminder` is `None` or blank.

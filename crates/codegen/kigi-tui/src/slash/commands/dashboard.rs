@@ -140,7 +140,6 @@ mod tests {
 
     #[test]
     fn not_available_in_minimal() {
-        // The dashboard is out of scope in scrollback-native minimal mode.
         assert!(!DashboardCommand.available_in_minimal());
     }
 }

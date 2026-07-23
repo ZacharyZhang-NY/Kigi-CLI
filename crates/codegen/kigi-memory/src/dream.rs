@@ -77,9 +77,7 @@ pub fn check_dream_gates(
     DreamGate::Open { sessions }
 }
 
-// ---------------------------------------------------------------------------
 // Dream prompt, response processing, and execution
-// ---------------------------------------------------------------------------
 
 use super::text_utils::{has_markdown_headers, is_no_reply};
 
@@ -318,7 +316,7 @@ pub fn process_dream_response(response: &str) -> Option<String> {
 /// Minimum age (in seconds) a session file must have before cleanup will
 /// delete it. Protects against removing files that a concurrent session
 /// may still be actively appending to.
-const CLEANUP_RECENCY_GUARD_SECS: u64 = 300; // 5 minutes
+const CLEANUP_RECENCY_GUARD_SECS: u64 = 300;
 
 /// Delete session log files whose stems were processed during dream.
 ///
@@ -701,9 +699,7 @@ mod tests {
         );
     }
 
-    // -------------------------------------------------------------------
     // build_dream_user_message tests
-    // -------------------------------------------------------------------
 
     fn write_session_content(dir: &Path, name: &str, content: &str) {
         fs::create_dir_all(dir).unwrap();
@@ -775,9 +771,7 @@ mod tests {
         assert_eq!(msg.processed_stems, vec!["exists"]);
     }
 
-    // -------------------------------------------------------------------
     // process_dream_response tests
-    // -------------------------------------------------------------------
 
     #[test]
     fn process_empty_response_returns_none() {
@@ -835,9 +829,7 @@ mod tests {
         assert_eq!(result, input);
     }
 
-    // -------------------------------------------------------------------
     // execute_dream tests
-    // -------------------------------------------------------------------
 
     use super::super::storage::MemoryStorage;
     use std::path::PathBuf;
@@ -979,9 +971,7 @@ mod tests {
         assert_eq!(memory.trim(), response);
     }
 
-    // -------------------------------------------------------------------
     // DREAM_SYSTEM_PROMPT sanity checks
-    // -------------------------------------------------------------------
 
     #[test]
     fn dream_system_prompt_has_required_content() {
@@ -1024,9 +1014,7 @@ mod tests {
         assert_eq!(normalized, input);
     }
 
-    // -------------------------------------------------------------------
     // Session cleanup tests
-    // -------------------------------------------------------------------
 
     #[test]
     fn cleanup_deletes_processed_sessions_on_completed() {
@@ -1240,7 +1228,8 @@ mod tests {
 
         // Create 5 session files. The first 2 will fill past the cap;
         // sessions 3-5 should survive cleanup.
-        let half_cap = MAX_DREAM_INPUT_CHARS / 2 + 500; // slightly over half
+        // slightly over half
+        let half_cap = MAX_DREAM_INPUT_CHARS / 2 + 500;
         write_old_session_content(&sessions, "aaa-first", &"a".repeat(half_cap));
         write_old_session_content(&sessions, "bbb-second", &"b".repeat(half_cap));
         write_old_session_content(&sessions, "ccc-third", "small content 3");
@@ -1316,9 +1305,7 @@ mod tests {
         assert!(!sessions.join("exists.md").exists());
     }
 
-    // -------------------------------------------------------------------
     // is_scaffold_template tests
-    // -------------------------------------------------------------------
 
     #[test]
     fn scaffold_detects_old_workspace_template() {
@@ -1398,9 +1385,7 @@ mod tests {
         );
     }
 
-    // -------------------------------------------------------------------
     // build_dream_user_message with existing memory tests
-    // -------------------------------------------------------------------
 
     #[test]
     fn build_message_prepends_existing_memory() {

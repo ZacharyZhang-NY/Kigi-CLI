@@ -1,14 +1,13 @@
-//! Shared protocol and channel types for the AskUserQuestion blocking flow.
+//! Shared protocol and channel types for the `AskUserQuestion` blocking flow.
 //!
-//! These types define the request/response contract between three crates:
+//! These types are the request/response contract between three crates, all of
+//! which import them from `kigi-tools`:
 //!
 //! - **`kigi-tools`** — tool blocks on a oneshot, formats the result.
 //! - **`kigi-shell`** — coordinator receives requests over mpsc, calls the
 //!   client via ACP `ext_method`, sends results back over the oneshot.
 //! - **`kigi-tui`** — handles the `ExtMethod`, renders UI, returns a
 //!   typed response.
-//!
-//! All three crates import these types from `kigi-tools`.
 
 use std::collections::HashMap;
 
@@ -19,13 +18,12 @@ use tokio::sync::{mpsc, oneshot};
 use super::Question;
 use crate::register_resource;
 
-// ── ACP wire-format types ────────────────────────────────────────────────
-
-/// Annotation on a single question's answer.
+/// Extra context carried alongside a selected label in the `accepted`
+/// response.
 ///
-/// Carried inside the `accepted` response alongside the selected label.
-/// - `preview`: verbatim `Option.preview` of the selected option (single-select only).
-/// - `notes`: free-text the user typed in the freeform input.
+/// - `preview`: verbatim `QuestionOption::preview` of the selected option
+///   (single-select only).
+/// - `notes`: free text the user typed into the freeform input.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct QuestionAnnotation {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -34,34 +32,29 @@ pub struct QuestionAnnotation {
     pub notes: Option<String>,
 }
 
-/// Mode context for the question UI.
-///
-/// Sent as part of the ACP `ext_method` request so the pager knows whether
-/// to show plan-mode-only actions (Chat about this / Skip interview).
+/// Tells the pager which actions to offer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AskUserQuestionMode {
-    /// Normal mode. Client shows only Accept and Cancel.
+    /// Accept and Cancel only.
     Default,
-    /// Plan mode. Client shows Accept, Cancel, Chat about this, Skip interview.
+    /// Accept, Cancel, Chat about this, Skip interview.
     Plan,
 }
 
 /// ACP `ext_method` request payload (shell coordinator sends to client/pager).
-///
-/// Serialized as `camelCase` for the ACP JSON-RPC wire format.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AskUserQuestionExtRequest {
     pub session_id: String,
     pub tool_call_id: String,
     pub questions: Vec<Question>,
-    /// Controls whether the client shows plan-mode-only actions.
     pub mode: AskUserQuestionMode,
 }
 
-/// Accepts both `"value"` (old wire format) and `["value"]` (new wire format)
-/// for each answer entry, normalizing strings into single-element vectors.
+/// Accepts an answer entry as either `"value"` or `["value"]`, normalizing the
+/// bare string into a single-element vector. Clients that predate
+/// multi-select send the scalar form.
 fn deserialize_string_or_vec_answers<'de, D>(
     deserializer: D,
 ) -> Result<IndexMap<String, Vec<String>>, D::Error>
@@ -92,64 +85,54 @@ where
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum AskUserQuestionExtResponse {
-    /// User accepted and submitted answers (Path A).
     Accepted {
-        /// Answered questions in original order; unanswered omitted.
-        /// One element per selected option; freeform-only is `["Other"]`
-        /// with typed text in `annotations[q].notes`.
+        /// Answered questions in their original order, unanswered ones
+        /// omitted, one element per selected option. A freeform-only answer
+        /// is `["Other"]` with the typed text in `annotations[q].notes`.
         #[serde(deserialize_with = "deserialize_string_or_vec_answers")]
         answers: IndexMap<String, Vec<String>>,
-        /// Per-question annotations (preview, notes). Absent when empty.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         annotations: Option<HashMap<String, QuestionAnnotation>>,
     },
-    /// User chose "Chat about this" (Path B, plan mode only).
+    /// Plan mode only.
     ChatAboutThis {
-        /// Partial answers: answered questions only, label only (no notes).
-        /// Freeform-only => `"Other"` (notes dropped in plan-mode paths).
+        /// Answered questions only, label only. A freeform-only answer is
+        /// `"Other"` — the plan-mode paths drop the notes.
         #[serde(default)]
         partial_answers: HashMap<String, String>,
     },
-    /// User chose "Skip interview and plan immediately" (Path C, plan mode only).
+    /// Plan mode only.
     SkipInterview {
-        /// Same partial-answer rules as `ChatAboutThis`.
+        /// Same rules as `ChatAboutThis::partial_answers`.
         #[serde(default)]
         partial_answers: HashMap<String, String>,
     },
-    /// User cancelled / dismissed (Path D). NOT an error.
+    /// User dismissed the questionnaire. NOT an error.
     Cancelled,
 }
 
-// ── In-process types (coordinator <-> tool) ──────────────────────────────
-
-/// In-process result: coordinator -> tool.
-///
-/// Uses `Result` so the tool can distinguish user actions from infrastructure
-/// failures:
-/// - `Ok(UserQuestionResponse)` for all 4 user paths (accepted, chat, skip, cancel).
-/// - `Err(UserQuestionError)` for transport failures or malformed responses.
+/// In-process result, coordinator -> tool. The `Result` separates user actions
+/// from infrastructure failures — every user path, cancellation included, is
+/// an `Ok`.
 pub type UserQuestionResult = Result<UserQuestionResponse, UserQuestionError>;
 
-/// Successful user response (all 4 user paths).
-///
-/// Every variant here produces `Ok(UserAnswered { message })` at the tool
-/// level with `ToolCall` status `Completed`.
+/// Every variant produces `Ok(UserAnswered { message })` at the tool level,
+/// with `ToolCall` status `Completed`.
 #[derive(Debug, Clone)]
 pub enum UserQuestionResponse {
-    /// User accepted and submitted answers (Path A).
     Accepted {
         /// See `AskUserQuestionExtResponse::Accepted::answers`.
         answers: IndexMap<String, Vec<String>>,
         annotations: Option<HashMap<String, QuestionAnnotation>>,
     },
-    /// User chose "Chat about this" (Path B, plan mode only).
-    /// Carries the original questions so the formatter can iterate all of them.
+    /// Plan mode only. Carries the original questions so the formatter can
+    /// iterate all of them, not just the answered ones.
     ChatAboutThis {
         questions: Vec<Question>,
         partial_answers: HashMap<String, String>,
     },
-    /// User chose "Skip interview" (Path C, plan mode only).
-    /// Carries the original questions so the formatter can iterate all of them.
+    /// Plan mode only. Carries the original questions so the formatter can
+    /// iterate all of them, not just the answered ones.
     SkipInterview {
         questions: Vec<Question>,
         partial_answers: HashMap<String, String>,
@@ -158,10 +141,9 @@ pub enum UserQuestionResponse {
     Cancelled,
 }
 
-/// Infrastructure failure (NOT a user action).
-///
-/// These produce `Err(ToolError::ExecutionError { .. })` at the tool level
-/// with `ToolCall` status `Failed`.
+/// Infrastructure failure, never a user action. These produce
+/// `Err(ToolError::ExecutionError { .. })` at the tool level, with `ToolCall`
+/// status `Failed`.
 #[derive(Debug, Clone)]
 pub enum UserQuestionError {
     /// ACP `ext_method` call failed (client disconnect, timeout, etc.).
@@ -171,10 +153,9 @@ pub enum UserQuestionError {
     MalformedResponse(String),
 }
 
-/// In-process request: tool -> coordinator (carries oneshot for reply).
-///
-/// Sent over the `mpsc` channel. The coordinator receives this, performs the
-/// ACP `ext_method` round-trip, and sends the result back on `result_tx`.
+/// In-process request, tool -> coordinator, sent over the `mpsc` channel. The
+/// coordinator performs the ACP `ext_method` round-trip and sends the result
+/// back on `result_tx`.
 #[derive(Educe)]
 #[educe(Debug)]
 pub struct UserQuestionRequest {
@@ -184,13 +165,8 @@ pub struct UserQuestionRequest {
     pub result_tx: oneshot::Sender<UserQuestionResult>,
 }
 
-// ── Resource type ────────────────────────────────────────────────────────
-
-/// Resource: `mpsc` sender injected into `SharedResources`.
-///
-/// Same injection pattern as `SubagentEventSender`. Cloned into each
-/// session so that any `AskUserQuestionTool` invocation can emit a
-/// `UserQuestionRequest` to the session's coordinator.
+/// Injected into `SharedResources` and cloned into each session, so that any
+/// `AskUserQuestionTool` invocation can reach that session's coordinator.
 #[derive(Clone, Educe)]
 #[educe(Debug)]
 pub struct UserQuestionSender(
@@ -199,15 +175,11 @@ pub struct UserQuestionSender(
 
 register_resource!("kigi", "UserQuestionSender", UserQuestionSender);
 
-// ── Conversion helper ────────────────────────────────────────────────────
-
 impl AskUserQuestionExtResponse {
-    /// Convert the wire-format ACP response into the in-process response type.
-    ///
     /// Called by the shell coordinator after deserializing the client's JSON.
-    /// The `questions` parameter carries the original question list so that
-    /// `ChatAboutThis` and `SkipInterview` responses can iterate all questions
-    /// (answered and unanswered) when formatting the tool result.
+    /// `questions` is the original question list, which `ChatAboutThis` and
+    /// `SkipInterview` need so the formatter can walk answered and unanswered
+    /// questions alike.
     pub fn into_response(self, questions: Vec<Question>) -> UserQuestionResponse {
         match self {
             Self::Accepted {
@@ -230,13 +202,9 @@ impl AskUserQuestionExtResponse {
     }
 }
 
-// ── Tests ────────────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // -- Helpers --
 
     fn sample_questions() -> Vec<Question> {
         vec![
@@ -281,8 +249,6 @@ mod tests {
         ]
     }
 
-    // -- AskUserQuestionMode serde --
-
     #[test]
     fn mode_serializes_as_snake_case() {
         assert_eq!(
@@ -304,8 +270,6 @@ mod tests {
         }
     }
 
-    // -- AskUserQuestionExtRequest serde --
-
     #[test]
     fn ext_request_serializes_camel_case() {
         let req = AskUserQuestionExtRequest {
@@ -315,7 +279,6 @@ mod tests {
             mode: AskUserQuestionMode::Plan,
         };
         let json = serde_json::to_value(&req).unwrap();
-        // camelCase field names
         assert!(json.get("sessionId").is_some());
         assert!(json.get("toolCallId").is_some());
         assert_eq!(json["mode"], "plan");
@@ -336,8 +299,6 @@ mod tests {
         assert_eq!(back.questions.len(), 2);
         assert_eq!(back.mode, AskUserQuestionMode::Default);
     }
-
-    // -- AskUserQuestionExtResponse serde --
 
     #[test]
     fn ext_response_accepted_serializes_tagged() {
@@ -408,7 +369,6 @@ mod tests {
 
     #[test]
     fn ext_response_round_trips_all_variants() {
-        // Accepted
         let mut answers = IndexMap::new();
         answers.insert("Q1?".to_string(), vec!["A1".to_string()]);
         let accepted = AskUserQuestionExtResponse::Accepted {
@@ -419,7 +379,6 @@ mod tests {
         let back: AskUserQuestionExtResponse = serde_json::from_str(&json).unwrap();
         assert!(matches!(back, AskUserQuestionExtResponse::Accepted { .. }));
 
-        // ChatAboutThis
         let chat = AskUserQuestionExtResponse::ChatAboutThis {
             partial_answers: HashMap::new(),
         };
@@ -430,7 +389,6 @@ mod tests {
             AskUserQuestionExtResponse::ChatAboutThis { .. }
         ));
 
-        // SkipInterview
         let skip = AskUserQuestionExtResponse::SkipInterview {
             partial_answers: HashMap::new(),
         };
@@ -441,14 +399,11 @@ mod tests {
             AskUserQuestionExtResponse::SkipInterview { .. }
         ));
 
-        // Cancelled
         let cancel = AskUserQuestionExtResponse::Cancelled;
         let json = serde_json::to_string(&cancel).unwrap();
         let back: AskUserQuestionExtResponse = serde_json::from_str(&json).unwrap();
         assert!(matches!(back, AskUserQuestionExtResponse::Cancelled));
     }
-
-    // -- into_response conversion --
 
     #[test]
     fn into_response_accepted() {
@@ -534,8 +489,6 @@ mod tests {
         assert!(matches!(resp, UserQuestionResponse::Cancelled));
     }
 
-    // -- QuestionAnnotation serde --
-
     #[test]
     fn annotation_omits_none_fields() {
         let ann = QuestionAnnotation {
@@ -557,8 +510,6 @@ mod tests {
         assert_eq!(json["preview"], "prev");
         assert_eq!(json["notes"], "note");
     }
-
-    // -- Backwards-compatible deserialization (string -> vec) --
 
     #[test]
     fn deserialize_accepted_old_string_format() {
@@ -593,8 +544,6 @@ mod tests {
             other => panic!("Expected Accepted, got {:?}", other),
         }
     }
-
-    // -- Deserialization from raw JSON (simulating pager responses) --
 
     #[test]
     fn deserialize_accepted_from_raw_json() {
@@ -656,8 +605,6 @@ mod tests {
         assert!(matches!(resp, AskUserQuestionExtResponse::Cancelled));
     }
 
-    // -- IndexMap ordering preservation --
-
     #[test]
     fn accepted_answers_preserve_insertion_order() {
         let mut answers = IndexMap::new();
@@ -670,7 +617,6 @@ mod tests {
             annotations: None,
         };
 
-        // Round-trip through JSON
         let json = serde_json::to_string(&resp).unwrap();
         let back: AskUserQuestionExtResponse = serde_json::from_str(&json).unwrap();
 

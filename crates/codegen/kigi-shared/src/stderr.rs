@@ -21,9 +21,9 @@ pub fn stderr_lock() -> MutexGuard<'static, ()> {
 pub fn with_locked_stderr<T>(f: impl FnOnce(&mut std::fs::File) -> T) -> T {
     let _guard = stderr_lock();
     let mut file = kigi_tty_utils::dup_tui_stderr().unwrap_or_else(|_| {
-        // Fallback: try_clone stderr to get an independently-owned
-        // File. This path is hit if redirect_native_stderr was never
-        // called or fd dup fails.
+        // Reached when redirect_native_stderr was never called or the dup
+        // fails: duplicate fd 2 so the File owns its own descriptor and
+        // dropping it does not close the process-wide stderr.
         let stderr = std::io::stderr();
         let stderr_file: std::fs::File;
         #[cfg(unix)]

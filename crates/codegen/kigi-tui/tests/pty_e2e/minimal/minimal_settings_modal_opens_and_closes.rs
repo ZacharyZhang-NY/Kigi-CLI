@@ -23,7 +23,6 @@ async fn minimal_settings_modal_opens_and_closes() {
         .wait_for_text("Appearance", Duration::from_secs(10))
         .expect("settings editor renders inline");
 
-    // Esc closes it; the idle prompt status returns and the editor is gone.
     harness.inject_keys(keys::ESC).expect("close settings");
     harness
         .wait_for_text(MINIMAL_IDLE_SENTINEL, Duration::from_secs(10))

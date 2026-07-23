@@ -103,7 +103,7 @@ impl AgentView {
                     _ => {}
                 }
                 self.show_toast("Editing a queued prompt: press Enter to save, Esc to discard");
-                return Some(false); // blocked, no modal armed
+                return Some(false);
             }
             // Clean edit — silently exit editing mode.
             self.exit_editing_mode();
@@ -266,7 +266,6 @@ impl AgentView {
             } else {
                 Some(self.prompt.stash())
             };
-            // Load queued text and enter editing mode.
             // Set prompt_input_mode based on entry kind so the prompt
             // renders with the correct visual (yellow `!` prefix
             // for bash entries, normal for prompts/commands).
@@ -324,7 +323,7 @@ impl AgentView {
             None => {
                 let edited = self.prompt.stash();
                 let (new_text, mut images, chip_elements) = edited.into_submission();
-                // Local row: in-place mutation (existing behavior).
+                // Local row: in-place mutation.
                 // Recompute token ranges for the edited text — the stale
                 // ranges would point at the pre-edit byte offsets.
                 let skill_token_ranges = self
@@ -576,7 +575,7 @@ mod tests {
     }
 
     /// Editing a Server-origin row enters `EditingQueued` with `server_id`
-    /// populated (the new behavior replacing the "isn't supported yet" toast).
+    /// populated.
     #[test]
     fn edit_server_row_enters_editing_queued_with_server_id() {
         let mut agent = make_running_agent();
@@ -673,8 +672,8 @@ mod tests {
         }
     }
 
-    /// Submitting an edit on a local-origin row continues to mutate the local
-    /// `pending_prompts` in place (existing behavior preserved).
+    /// Submitting an edit on a local-origin row mutates the local
+    /// `pending_prompts` in place.
     #[test]
     fn submit_local_edit_mutates_local_pending_prompts() {
         let mut agent = make_running_agent();
@@ -1130,9 +1129,9 @@ mod tests {
         }
     }
 
-    /// `exit_editing_mode` clears a stray `EditConfirm` (unreachable in-tree
-    /// after the reorder, so pin the backstop directly) and leaves every
-    /// other modal variant alone.
+    /// `exit_editing_mode` clears a stray `EditConfirm` (unreachable through
+    /// normal flow, so pin the backstop directly) and leaves every other
+    /// modal variant alone.
     #[test]
     fn exit_editing_mode_clears_only_stray_edit_confirm() {
         let mut agent = make_running_agent();

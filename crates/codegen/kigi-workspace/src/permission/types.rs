@@ -8,7 +8,6 @@ use tokio::sync::oneshot;
 pub struct PermissionEvent {
     /// Tool call ID from the model
     pub tool_id: String,
-    /// Name of the tool being executed
     pub tool_name: String,
     /// Type of access requested (read, edit, bash, mcp)
     pub access_kind: String,
@@ -19,7 +18,6 @@ pub struct PermissionEvent {
     pub yolo_mode: bool,
     /// Whether this was auto-approved (by YOLO mode or policy rules)
     pub auto_approved: bool,
-    /// Whether the user was prompted for this decision
     pub user_prompted: bool,
     /// The final decision (allow, reject)
     pub decision: String,
@@ -27,10 +25,8 @@ pub struct PermissionEvent {
     /// etc.); None on auto/non-prompt decisions. The trigger lives in `decision_reason`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_outcome: Option<String>,
-    /// Rejection reason if rejected
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reject_reason: Option<String>,
-    /// When this decision was made
     pub timestamp: DateTime<Utc>,
     /// If this permission was requested by a subagent, the subagent's session ID.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -318,7 +314,6 @@ pub enum PromptPolicy {
     /// Seeded into the permission manager's auto flag at session start.
     Auto,
 }
-/// A single permission rule.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PermissionRule {
     pub action: RuleAction,
@@ -335,7 +330,6 @@ pub enum PatternMode {
     Glob,
     Domain,
 }
-/// Action to take when rule matches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum RuleAction {
@@ -344,7 +338,6 @@ pub enum RuleAction {
     Deny,
     Ask,
 }
-/// Tool filter for permission rules.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ToolFilter {

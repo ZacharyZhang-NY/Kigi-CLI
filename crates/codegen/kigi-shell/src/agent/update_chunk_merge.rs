@@ -5,17 +5,14 @@ use serde_json;
 use crate::session::replay_events::SessionNotification;
 
 /// Controls how sampling/output chunks are buffered before being delivered to the client.
-/// Parsed from `InitializeRequest.meta.bufferingSettings` and preserved for later use.
+/// Parsed from `InitializeRequest.meta.bufferingSettings`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct BufferingSettings {
-    /// Maximum number of items to accumulate before flushing
     #[serde(default = "default_max_items")]
     pub max_items: u64,
-    /// Maximum total bytes to accumulate before flushing
     #[serde(default = "default_max_bytes")]
     pub max_bytes: u64,
-    /// Maximum time in milliseconds to wait before flushing buffered items
     #[serde(default = "default_max_duration_ms")]
     pub max_duration_ms: u64,
 }
@@ -25,19 +22,14 @@ fn default_max_items() -> u64 {
 }
 
 fn default_max_bytes() -> u64 {
-    1024 * 2 // 2 KB
+    1024 * 2
 }
 
 fn default_max_duration_ms() -> u64 {
-    10 // 10 ms
+    10
 }
 
 /// Low-level buffer for ACP text chunks (agent message/thought chunks).
-///
-/// API:
-/// - `consume_chunk(...) -> Option<SessionNotification>` returns a notification that should be sent now
-///   (typically the previously buffered one), or `None` if we keep buffering.
-/// - `flush() -> Option<SessionNotification>` returns any pending buffered notification to send.
 ///
 /// Example of session notification:
 /// ```json
@@ -133,7 +125,6 @@ impl ReplayBuffer {
             // can't merge, we need to send both chunks immediately to preserve current chunk order.
             match self.pending.take() {
                 Some(pending) => {
-                    // No buffered item after this call.
                     self.pending_count = 0;
                     self.pending_bytes = 0;
                     return Some((pending, Some(incoming)));
@@ -145,7 +136,7 @@ impl ReplayBuffer {
         }
 
         if !incoming_notification_timestamp_in_range {
-            // need to pop previously pending notification and send it immediately
+            // need to pop the pending notification and send it immediately
             let prev = self.pending.replace(incoming);
             {
                 let prev = prev?;
@@ -156,7 +147,6 @@ impl ReplayBuffer {
         let pending = self.pending.take();
         let had_prev = pending.is_some();
         let prev_count = self.pending_count;
-        // pending is now empty; we'll either refill it (and set counts) or send immediately.
         self.pending_count = 0;
         self.pending_bytes = 0;
 
@@ -165,7 +155,6 @@ impl ReplayBuffer {
         match (force_send, first, second) {
             (_, pending, Some(next)) => {
                 // Merge wasn't allowed; send both immediately to preserve current chunk order.
-                // (Nothing remains buffered.)
                 self.pending_count = 0;
                 self.pending_bytes = 0;
                 Some((pending, Some(next)))
@@ -221,10 +210,7 @@ impl ReplayBuffer {
                     second.map(|s| SessionNotification::Xai(Box::new(s))),
                 )
             }
-            // Different kinds: can't merge. Force-flush prev, return incoming as second.
             (Some(prev), incoming) => (true, prev, Some(incoming)),
-            // No pending: buffer if the new chunk is a streaming kind,
-            // force-send otherwise (e.g. ToolCall, Plan, etc.).
             (None, incoming) => {
                 let bufferable = incoming.is_streaming_chunk();
                 (!bufferable, incoming, None)
@@ -974,7 +960,7 @@ mod tests {
         assert!(replay_buffer.flush().is_none());
     }
 
-    // ── Xai / ToolCallDeltaChunk tests ──────────────────────────────
+    // Xai / ToolCallDeltaChunk tests
 
     fn delta_chunk(
         session: &str,

@@ -1,39 +1,28 @@
 //! Embedding provider abstraction for memory vector search.
 //!
-//! Defines the `EmbeddingProvider` trait and an API-based implementation
-//! that calls an OpenAI-compatible embeddings API endpoint.
-//!
-//! Embeddings are cached in the sqlite-vec `chunks_vec` table — the vec0
-//! virtual table IS the cache. No separate cache needed.
+//! There is no separate embedding cache: the sqlite-vec `chunks_vec` vec0
+//! virtual table is the cache.
 
 use async_trait::async_trait;
 
-/// Maximum retry attempts for transient API errors (429, 5xx).
 const MAX_RETRIES: usize = 3;
-/// Initial backoff delay in milliseconds (doubles on each retry: 1s, 2s, 4s).
+/// Doubles on each retry, so the waits are 1s, 2s, 4s.
 const INITIAL_BACKOFF_MS: u64 = 1000;
 
-/// Trait for generating text embeddings.
-///
-/// Implementations must be `Send + Sync` so they can be used in `Send`
-/// futures (e.g., inside `tokio::spawn`). The `embed_batch` method is
-/// async to support API-based providers.
 #[async_trait]
 pub trait EmbeddingProvider: Send + Sync {
-    /// Embed a batch of texts, returning one vector per input text.
+    /// Returns one vector per input text, in input order.
     async fn embed_batch(
         &self,
         texts: &[&str],
     ) -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error>>;
 
-    /// The model name used for embeddings.
     fn model_name(&self) -> &str;
 
-    /// The dimensionality of the embedding vectors.
     fn dimensions(&self) -> usize;
 }
 
-/// API-based embedding provider using an OpenAI-compatible embeddings endpoint.
+/// Talks to an OpenAI-compatible `/embeddings` endpoint.
 pub struct ApiEmbeddingProvider {
     api_base: String,
     model: String,
@@ -113,7 +102,7 @@ impl EmbeddingProvider for ApiEmbeddingProvider {
 
         let mut all_embeddings = Vec::with_capacity(texts.len());
 
-        // Process in batches to respect API payload limits
+        // Split into batches to stay under the API payload limit.
         for batch in texts.chunks(self.max_batch_size) {
             let input: Vec<&str> = batch.to_vec();
             let body_json = serde_json::json!({
@@ -122,7 +111,6 @@ impl EmbeddingProvider for ApiEmbeddingProvider {
                 "dimensions": self.dimensions,
             });
 
-            // Retry with exponential backoff on transient errors (429, 5xx)
             let mut last_err = String::new();
             let mut success = false;
             for attempt in 0..MAX_RETRIES {
@@ -177,7 +165,6 @@ impl EmbeddingProvider for ApiEmbeddingProvider {
                     break;
                 }
 
-                // Retry on 429 (rate limit) or 5xx (server error)
                 if status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
                     last_err = format!(
                         "HTTP {status}: {}",
@@ -186,7 +173,6 @@ impl EmbeddingProvider for ApiEmbeddingProvider {
                     continue;
                 }
 
-                // Non-retryable error (4xx other than 429)
                 let body = response.text().await.unwrap_or_default();
                 return Err(format!("embedding API error {status}: {body}").into());
             }
@@ -211,8 +197,7 @@ impl EmbeddingProvider for ApiEmbeddingProvider {
     }
 }
 
-/// A mock embedding provider for testing that returns deterministic vectors.
-/// Uses blake3 hash of text → float values for reproducible results.
+/// Test double whose vectors are a deterministic function of the input text.
 pub struct MockEmbeddingProvider {
     pub dimensions: usize,
 }

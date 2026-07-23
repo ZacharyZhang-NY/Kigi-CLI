@@ -1,4 +1,4 @@
-//! SearchReplace (Edit) tool — new architecture (`Tool` trait).
+//! SearchReplace (Edit) tool.
 //!
 //! Replaces an exact string in a file, with support for:
 //! - New file creation (when `old_string` is empty)
@@ -33,7 +33,6 @@ use helpers::{
     replace_normalized_matches, replace_using_positions,
 };
 pub(crate) const CONTEXT_LINES: usize = 3;
-/// Internal version discriminant for search_replace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SearchReplaceVersion {
     Current,
@@ -61,7 +60,6 @@ pub(crate) const DESCRIPTION_FULL: &str = r#"Replace an exact string in a file.
 - Read the file with `${{ tools.by_kind.read }}` before editing it.
 - `${{ tools.by_kind.read }}` prefixes each line with "LINE_NUMBER→". That prefix is not part of the file: match only what comes after the →, with its exact indentation.
 - `${{ params.edit.old_string }}` must match exactly one place in the file. If it appears more than once, add surrounding lines to make it unique, or set `${{ params.edit.replace_all }}` to change every occurrence (handy for renaming an identifier)."#;
-/// Input for the search_replace tool.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct SearchReplaceInput {
     #[schemars(
@@ -87,8 +85,6 @@ fn default_true() -> bool {
     true
 }
 /// Configuration for the search_replace tool, stored as `Params<SearchReplaceParams>` in Resources.
-///
-/// Replaces the old `SearchReplaceOptions` that was stored via `tool_options_as()`.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SearchReplaceParams {
@@ -96,8 +92,9 @@ pub struct SearchReplaceParams {
     /// `deny_unknown_fields`. Still gates the config-time Read-tool requirement (`requires_expr`).
     #[serde(default)]
     pub skip_read_before_edit: bool,
-    /// Empty old string DOES not override the file unless its empty, by default we allow
-    /// empty old string to override the file content completely``
+    /// When true, an empty `old_string` may only create a new file or overwrite an
+    /// empty one, never clobber an existing non-empty file. Default false: an empty
+    /// `old_string` overwrites the file completely.
     #[serde(default)]
     pub empty_old_string_does_not_override: bool,
     /// When true, enable normalized-fallback matching for Unicode confusable
@@ -117,9 +114,6 @@ pub struct SearchReplaceParams {
     pub include_user_edit_hint: bool,
 }
 register_resource!("kigi", "SearchReplace", SearchReplaceParams);
-/// SearchReplace tool — new architecture.
-///
-/// Replaces an exact string in a file.
 #[derive(Debug, Default)]
 pub struct SearchReplaceTool;
 /// Core search-replace logic shared by `SearchReplaceTool` and `SearchReplaceConciseTool`.
@@ -250,10 +244,6 @@ pub(crate) async fn run_search_replace(
 /// Maximum length for a single path component (file or directory name).
 /// POSIX `NAME_MAX` is 255 on both macOS and Linux.
 const NAME_MAX: usize = 255;
-/// Validate that no path component exceeds `NAME_MAX`.
-///
-/// Returns `Some(SearchReplaceOutput::FilenameTooLong(..))` if any component is
-/// too long, `None` if the path is valid.
 fn validate_path_length(file_path: &str) -> Option<SearchReplaceOutput> {
     for component in std::path::Path::new(file_path).components() {
         if let std::path::Component::Normal(name) = component {
@@ -269,7 +259,6 @@ fn validate_path_length(file_path: &str) -> Option<SearchReplaceOutput> {
     }
     None
 }
-/// Handle new file creation when `old_string` is empty.
 async fn handle_new_file_creation(
     input: &SearchReplaceInput,
     resources: SharedResources,
@@ -497,7 +486,6 @@ fn build_confusable_hint(
         line_summary, read_qualifier, old_string_param, terminal_fallback
     ))
 }
-/// Handle replacement in existing file.
 async fn handle_replacement(
     input: &SearchReplaceInput,
     resources: SharedResources,
@@ -833,7 +821,6 @@ mod tests {
     use crate::{computer::local::LocalFs, types::resources::Resources};
     use std::sync::Arc;
     use tempfile::TempDir;
-    /// Set up Resources with real filesystem for tests.
     fn test_resources(cwd: &std::path::Path) -> Resources {
         let mut resources = Resources::new();
         resources.insert(Cwd(cwd.to_path_buf()));
@@ -908,7 +895,6 @@ mod tests {
             "harness skip_read_before_edit config must validate against SearchReplaceParams",
         );
     }
-    /// Consecutive edits to the same file succeed without any prior read.
     #[tokio::test]
     async fn consecutive_edits_succeed_without_prior_read() {
         let tmp = TempDir::new().unwrap();
@@ -1773,7 +1759,6 @@ gamma delta";
             "should match on longest token, got: {hint}"
         );
     }
-    /// Integration: NoMatchesFound message includes the nearest-match hint.
     #[tokio::test]
     async fn no_matches_message_includes_hint() {
         let tmp = TempDir::new().unwrap();
@@ -2001,7 +1986,6 @@ neutTest_set);
             hint
         );
     }
-    /// Integration: NoMatchesFound message includes confusable hint for smart quotes.
     #[tokio::test]
     async fn no_matches_includes_confusable_hint_for_smart_quotes() {
         let tmp = TempDir::new().unwrap();
@@ -2034,7 +2018,6 @@ neutTest_set);
             other => panic!("Expected NoMatchesFound, got {:?}", other),
         }
     }
-    /// Integration: NoMatchesFound message has NO confusable hint for plain ASCII miss.
     #[tokio::test]
     async fn no_matches_no_confusable_hint_for_ascii_file() {
         let tmp = TempDir::new().unwrap();
@@ -2061,8 +2044,6 @@ neutTest_set);
             other => panic!("Expected NoMatchesFound, got {:?}", other),
         }
     }
-    /// Integration: confusables in file but unrelated to the missed old_string
-    /// should NOT produce false guidance.
     #[tokio::test]
     async fn no_matches_no_false_confusable_guidance() {
         let tmp = TempDir::new().unwrap();
@@ -2098,7 +2079,6 @@ neutTest_set);
             include_user_edit_hint: false,
         }
     }
-    /// Exact match still works and returns unicode_normalized=false.
     #[tokio::test]
     async fn fallback_exact_match_still_preferred() {
         let tmp = TempDir::new().unwrap();
@@ -2122,7 +2102,6 @@ neutTest_set);
             other => panic!("Expected EditsApplied, got {:?}", other),
         }
     }
-    /// Smart quotes fallback succeeds with unicode_normalized=true.
     #[tokio::test]
     async fn fallback_smart_quotes() {
         let tmp = TempDir::new().unwrap();
@@ -2147,7 +2126,6 @@ neutTest_set);
             other => panic!("Expected EditsApplied, got {:?}", other),
         }
     }
-    /// Em-dash fallback succeeds.
     #[tokio::test]
     async fn fallback_em_dash() {
         let tmp = TempDir::new().unwrap();
@@ -2168,7 +2146,6 @@ neutTest_set);
             other => panic!("Expected EditsApplied, got {:?}", other),
         }
     }
-    /// NBSP fallback succeeds.
     #[tokio::test]
     async fn fallback_nbsp() {
         let tmp = TempDir::new().unwrap();
@@ -2189,7 +2166,6 @@ neutTest_set);
             other => panic!("Expected EditsApplied, got {:?}", other),
         }
     }
-    /// Ellipsis fallback succeeds.
     #[tokio::test]
     async fn fallback_ellipsis() {
         let tmp = TempDir::new().unwrap();
@@ -2210,7 +2186,6 @@ neutTest_set);
             other => panic!("Expected EditsApplied, got {:?}", other),
         }
     }
-    /// Multi-match + replace_all=false returns MultipleMatchesFound.
     #[tokio::test]
     async fn fallback_multi_match_without_replace_all() {
         let tmp = TempDir::new().unwrap();
@@ -2237,7 +2212,6 @@ neutTest_set);
             other => panic!("Expected MultipleMatchesFound, got {:?}", other),
         }
     }
-    /// Multi-match + replace_all=true replaces all occurrences.
     #[tokio::test]
     async fn fallback_multi_match_with_replace_all() {
         let tmp = TempDir::new().unwrap();
@@ -2263,7 +2237,6 @@ neutTest_set);
             other => panic!("Expected EditsApplied, got {:?}", other),
         }
     }
-    /// Fallback disabled by default — smart quotes produce NoMatchesFound.
     #[tokio::test]
     async fn fallback_disabled_by_default() {
         let tmp = TempDir::new().unwrap();
@@ -2286,7 +2259,6 @@ neutTest_set);
             result
         );
     }
-    /// Exact match exists → exact path wins even when confusables present elsewhere.
     #[tokio::test]
     async fn fallback_exact_match_wins_over_normalized() {
         let tmp = TempDir::new().unwrap();
@@ -2312,7 +2284,6 @@ neutTest_set);
             other => panic!("Expected EditsApplied, got {:?}", other),
         }
     }
-    /// Replacement preserves valid UTF-8 and only mutates matched region.
     #[tokio::test]
     async fn fallback_preserves_surrounding_content() {
         let tmp = TempDir::new().unwrap();
@@ -2374,7 +2345,6 @@ neutTest_set);
             other => panic!("Expected EditsApplied, got {:?}", other),
         }
     }
-    /// Single-line match within a CRLF file works and preserves CRLF.
     #[tokio::test]
     async fn crlf_single_line_match_preserves_line_endings() {
         let tmp = TempDir::new().unwrap();
@@ -2398,7 +2368,6 @@ neutTest_set);
             other => panic!("Expected EditsApplied, got {:?}", other),
         }
     }
-    /// LF-only files are unaffected by CRLF normalization logic.
     #[tokio::test]
     async fn lf_only_file_unaffected_by_crlf_logic() {
         let tmp = TempDir::new().unwrap();
@@ -2422,7 +2391,6 @@ neutTest_set);
             other => panic!("Expected EditsApplied, got {:?}", other),
         }
     }
-    /// Replace-all mode works correctly with CRLF files.
     #[tokio::test]
     async fn crlf_replace_all() {
         let tmp = TempDir::new().unwrap();

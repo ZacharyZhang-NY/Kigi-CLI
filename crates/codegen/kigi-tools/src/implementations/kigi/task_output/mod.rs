@@ -180,7 +180,6 @@ impl TaskOutputTool {
             return Ok(format_subagent_snapshot(&snapshot));
         }
 
-        // Neither found
         {
             let msg = if is_legacy {
                 render_legacy_task_output_not_found(task_id)
@@ -348,11 +347,6 @@ pub(crate) async fn resolve_tasks(
         pending_subagent_ids,
     }
 }
-//
-// Uses `TerminalBackend::wait_for_completion` for bash tasks (event-driven via
-// the underlying `Notify`) and `SubagentQueryRequest { block: true }` for
-// subagents (blocks in the coordinator until the child session finishes).
-// No 200ms polling loop — wakeups happen on actual state transitions.
 
 /// Aborts all wrapped helper-wait tasks when dropped.
 ///
@@ -481,15 +475,6 @@ pub(crate) async fn wait_all_event_driven(
         _ = tokio::time::sleep_until(deadline) => {}
     }
 }
-
-//
-// Historical fixture captured from the 0.4.10 implementation.
-//
-// In 0.4.10, get_task_output returned:
-//   Err(ToolError::ProcessManagerError(format!("Task {} not found", input.task_id)))
-//
-// The meaningful customer-facing message content is the inner string.
-// Subagent wording is out of scope — subagents didn't exist in 0.4.10.
 
 /// Exact historical not-found message for `get_task_output` in legacy-0.4.10.
 fn render_legacy_task_output_not_found(task_id: &str) -> String {
@@ -939,16 +924,12 @@ mod tests {
     // unbounded blocking wait wedged the turn for hours).
     #[test]
     fn capped_wait_timeout_clamps_and_defaults() {
-        // Omitted -> default 30s.
         assert_eq!(capped_wait_timeout(None), DEFAULT_WAIT_TIMEOUT);
-        // Small value -> unchanged.
         assert_eq!(
             capped_wait_timeout(Some(5_000)),
             Duration::from_millis(5_000)
         );
-        // Huge value (10h) -> clamped to the cap.
         assert_eq!(capped_wait_timeout(Some(36_000_000)), MAX_WAIT_BLOCK);
-        // Exactly at the cap (10m) -> unchanged.
         assert_eq!(capped_wait_timeout(Some(600_000)), MAX_WAIT_BLOCK);
     }
 
@@ -959,9 +940,6 @@ mod tests {
             kigi_tool_runtime::Tool::id(&tool).as_str(),
             "get_task_output"
         );
-        // The static fallback is the shared builder's default kigi
-        // rendering (monitor + task + bash + read present): concrete names, no
-        // leftover template markers.
         let desc = ToolMetadata::description_template(&tool);
         assert!(desc.contains("Get output and status from a background task"));
         // Must name "monitor" so the model connects polling a monitor to this tool.
@@ -1165,7 +1143,7 @@ mod tests {
             },
         )
         .await
-        .unwrap(); // Should be Ok, not Err
+        .unwrap();
 
         match result {
             TaskOutputOutput::TaskNotFound(msg) => {
@@ -1205,7 +1183,7 @@ mod tests {
             }
 
             async fn get_task(&self, _task_id: &str) -> Option<TaskSnapshot> {
-                None // requested task not found
+                None
             }
 
             async fn wait_for_completion(
@@ -1242,7 +1220,7 @@ mod tests {
             },
         )
         .await
-        .unwrap(); // Should be Ok, not Err
+        .unwrap();
 
         match result {
             TaskOutputOutput::TaskNotFound(msg) => {
@@ -1257,7 +1235,6 @@ mod tests {
 
     #[tokio::test]
     async fn get_task_not_found_block_mode_lists_known_tasks() {
-        // Verify that blocking mode also provides helpful errors.
         struct MockTerminalBlockNotFound;
 
         #[async_trait::async_trait]
@@ -1289,7 +1266,7 @@ mod tests {
                 _task_id: &str,
                 _timeout: Option<Duration>,
             ) -> Option<TaskSnapshot> {
-                None // task not found even when blocking
+                None
             }
 
             async fn list_tasks(&self) -> Vec<TaskSnapshot> {
@@ -1354,10 +1331,10 @@ mod tests {
     #[tokio::test]
     async fn uses_tool_name_mapping_for_truncation_hint() {
         let mut snapshot = make_snapshot("task-4", true, Some(0));
-        snapshot.output = "x".repeat(500_000); // large output triggers truncation
+        // large output exceeds the default cap and triggers truncation
+        snapshot.output = "x".repeat(500_000);
 
         let mut resources = resources_with_terminal(Some(snapshot));
-        // Set a custom model-facing name for the Read tool
         resources.insert(TemplateRenderer::new(
             [(ToolKind::Read, "Read".to_string())].into(),
             Default::default(),
@@ -1430,7 +1407,6 @@ mod tests {
         .unwrap();
         assert!(with_timeout.waits());
 
-        // Legacy block is ignored; wait is driven only by timeout_ms.
         let legacy_block_false: TaskOutputToolInput = serde_json::from_value(serde_json::json!({
             "task_ids": ["t"],
             "block": false,
@@ -1470,11 +1446,10 @@ mod tests {
     #[tokio::test]
     async fn respects_truncation_config() {
         let mut snapshot = make_snapshot("task-6", true, Some(0));
-        snapshot.output = "x".repeat(10_000); // 10KB
+        snapshot.output = "x".repeat(10_000);
 
         let mut resources = resources_with_terminal(Some(snapshot));
 
-        // Set a custom truncation config with 5KB limit
         let mut trunc = crate::types::context::TruncationConfig::default();
         trunc
             .per_tool_max_output_bytes
@@ -1504,16 +1479,6 @@ mod tests {
             other => panic!("Expected Success, got {:?}", other),
         }
     }
-
-    // ── Legacy message parity fixture tests ────────────────────────
-    //
-    // These tests verify exact historical wording for legacy-0.4.10.
-    // Fixture source: the historical 0.4.10 task_output implementation.
-    //
-    // Historical 0.4.10 message (inner string from ToolError::ProcessManagerError):
-    //   "Task {task_id} not found"
-    //
-    // Subagent wording is out of scope — subagents didn't exist in 0.4.10.
 
     #[tokio::test]
     async fn legacy_get_task_not_found_exact_historical_message() {
@@ -1547,8 +1512,6 @@ mod tests {
 
     #[tokio::test]
     async fn current_get_task_not_found_includes_discoverability() {
-        // Current (non-legacy) path must still include known task IDs
-        // or "No background tasks" text for discoverability.
         let resources = resources_with_terminal(None);
         let tool = TaskOutputTool;
 
@@ -1573,8 +1536,6 @@ mod tests {
             other => panic!("Expected TaskNotFound, got {:?}", other),
         }
     }
-
-    // ── Subagent running snapshot formatting ─────────────────────────────
 
     #[test]
     fn format_initializing_subagent_reports_status() {
@@ -1644,7 +1605,6 @@ mod tests {
                 assert_eq!(r.status, "running");
                 assert!(r.exit_code.is_none());
                 assert!(r.ended.is_none());
-                // Progress line
                 assert!(
                     r.output.contains("turn 3"),
                     "should contain turn count: {}",
@@ -1665,13 +1625,11 @@ mod tests {
                     "should contain context pct: {}",
                     r.output
                 );
-                // Tools used
                 assert!(
                     r.output.contains("bash, read_file, grep"),
                     "should contain tools list: {}",
                     r.output
                 );
-                // Errors
                 assert!(
                     r.output.contains("Errors: 0"),
                     "should contain error count: {}",
@@ -1790,8 +1748,6 @@ mod tests {
         }
     }
 
-    // ── Subagent backend query fallback tests ────────────────────────────
-
     /// Build resources with a terminal that returns None (task not found)
     /// and a SubagentBackendResource backed by the unified event channel.
     fn resources_with_backend_query() -> (
@@ -1814,7 +1770,6 @@ mod tests {
         (resources, rx)
     }
 
-    /// Extract a `SubagentQueryRequest` from a `SubagentEvent`, panicking on wrong variant.
     fn unwrap_query(
         event: crate::implementations::kigi::task::types::SubagentEvent,
     ) -> crate::implementations::kigi::task::types::SubagentQueryRequest {

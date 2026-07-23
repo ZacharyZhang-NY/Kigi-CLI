@@ -109,13 +109,15 @@ pub async fn git_status_short(working_directory: impl Into<PathBuf>) -> Result<S
 }
 
 fn git_status_impl(working_directory: &Path) -> Result<String, FsError> {
-    let _timer = /* instrumentation_timer */ () ; // dev macro; noop stub ("git_status.impl")
+    // dev macro; noop stub ("git_status.impl")
+    let _timer = /* instrumentation_timer */ () ;
     let max_status_chars = 1000;
     let mut output = String::with_capacity(max_status_chars);
 
     // Get branch name
     let branch_name = {
-        let _timer = /* instrumentation_timer */ () ; // dev macro; noop stub ("git_status.branch_info")
+        // dev macro; noop stub ("git_status.branch_info")
+        let _timer = /* instrumentation_timer */ () ;
         run_git(working_directory, &["rev-parse", "--abbrev-ref", "HEAD"])
     };
 
@@ -136,7 +138,8 @@ fn git_status_impl(working_directory: &Path) -> Result<String, FsError> {
 
     // Get upstream ahead/behind
     {
-        let _timer = (); // instrumentation_timer noop stub
+        // instrumentation_timer noop stub
+        let _timer = ();
         if let Some(upstream_name) = run_git(
             working_directory,
             &["rev-parse", "--abbrev-ref", "@{upstream}"],
@@ -177,7 +180,8 @@ fn git_status_impl(working_directory: &Path) -> Result<String, FsError> {
 
     // Get staged changes (index vs HEAD) — fast, no workdir scan
     let staged_output = {
-        let _timer = /* instrumentation_timer */ () ; // dev macro; noop stub ("git_status.staged")
+        // dev macro; noop stub ("git_status.staged")
+        let _timer = /* instrumentation_timer */ () ;
         run_git(
             working_directory,
             &["diff", "--cached", "--name-status", "HEAD"],

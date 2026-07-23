@@ -1,8 +1,6 @@
 #![cfg_attr(rustfmt, rustfmt::skip)]
     use super::*;
 
-    // ── apply_session_event ────────────────────────────────────────────
-
     #[test]
     fn apply_compaction_started_sets_activity() {
         let mut session = make_session(Some("s1"));
@@ -232,7 +230,6 @@
             Some("legacy_auth"),
             "Unauthorized (401) ... deprecated authentication method"
         ));
-        // Unrelated failures must not be treated as re-authable.
         assert!(!is_reauthable_failure(
             Some("server_error"),
             "internal server error"
@@ -339,7 +336,6 @@
         ));
     }
 
-    /// Non-auth terminal failures still render the standard RetryFailed.
     #[test]
     fn apply_retry_state_generic_failure_still_shows_retry_failed() {
         let mut session = make_session(Some("s1"));
@@ -544,8 +540,6 @@
         assert!(!apply_session_event(&update, &mut session, &mut scrollback, false));
     }
 
-    // ── handle_child_session_notification ──────────────────────────────
-
     #[test]
     fn child_compact_completed_updates_subagent_info() {
         let mut agent = make_agent(Some("root-sess"));
@@ -616,7 +610,6 @@
     #[test]
     fn child_notification_without_view_returns_false() {
         let mut agent = make_agent(Some("root-sess"));
-        // No child view registered.
         let update = XaiSessionUpdate::AutoCompactStarted {
             tokens_used: 90000,
             context_window: 131072,
@@ -658,8 +651,6 @@
         let changed = handle_child_session_notification(update, "child-1", &mut agent, false);
         assert!(!changed);
     }
-
-    // ── apply_retry_state ─────────────────────────────────────────────
 
     #[test]
     fn retry_failed_encrypted_content_sets_model_incompatible() {

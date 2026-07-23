@@ -38,10 +38,10 @@ pub fn emit_to_scrollback<T: TerminalLike>(terminal: &mut T, content: &str) -> i
         Print(ANSI_CLEAR_FROM_CURSOR_DOWN),
     )?;
 
-    // Now print the content
     queue!(MoveTo(0, viewport_area.y))?;
     for segment in &segments {
-        queue!(Print(segment))?; // this already includes crlfs if there's any
+        // this already includes crlfs if there's any
+        queue!(Print(segment))?;
     }
 
     // Create exact viewport space
@@ -174,7 +174,8 @@ mod tests {
         assert_eq!(terminal.writer.flush_count, 1);
 
         // Viewport should remain at bottom
-        assert_eq!(terminal.viewport_area.y, 22); // 25 - 3
+        // 25 - 3
+        assert_eq!(terminal.viewport_area.y, 22);
     }
 
     #[test]

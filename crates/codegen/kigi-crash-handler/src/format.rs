@@ -12,7 +12,7 @@ pub const VERSION: u8 = 1;
 /// Maximum backtrace frames captured in the signal handler.
 pub const MAX_FRAMES: usize = 64;
 
-/// Length of the null-padded version string field.
+/// Length of the null-`padded` version string field.
 pub const VERSION_STRING_LEN: usize = 32;
 
 /// Fixed header size (before the variable-length frames array).
@@ -26,7 +26,7 @@ pub const VERSION_STRING_LEN: usize = 32;
 /// - pid:          4 bytes (u32, little-endian)
 /// - timestamp:    8 bytes (u64, little-endian)
 /// - n_frames:     2 bytes (u16, little-endian)
-/// - app_version: 32 bytes (null-padded UTF-8)
+/// - app_version: 32 bytes (null-`padded` UTF-8)
 pub const HEADER_SIZE: usize = 4 + 1 + 1 + 4 + 8 + 4 + 8 + 2 + VERSION_STRING_LEN;
 
 /// Total maximum file size: header + 64 frames * 8 bytes each.
@@ -176,8 +176,9 @@ mod tests {
         unsafe {
             let mut offset = writer::write_header(
                 &mut buf,
-                10, // SIGBUS on macOS
-                2,  // BUS_ADRERR
+                // SIGBUS on macOS
+                10,
+                2,
                 0x7f8a_1234_0000,
                 42,
                 1_712_678_587,

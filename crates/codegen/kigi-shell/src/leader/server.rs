@@ -82,7 +82,6 @@ impl From<ServerMessage> for ClientOutbound {
 enum ServerMessageRef<'a> {
     Acp { payload: &'a str },
 }
-/// Write one [`ClientOutbound`] to a client connection.
 async fn write_outbound<W>(writer: &mut W, msg: &ClientOutbound) -> Result<(), ProtocolError>
 where
     W: tokio::io::AsyncWrite + Unpin,
@@ -191,7 +190,6 @@ fn parse_response_id(json: &mut serde_json::Value) -> Option<(ClientId, String)>
     json["id"] = original_id;
     Some((ClientId(client_id), namespaced_id))
 }
-/// Extract session_id from a message's params (for session-based routing).
 fn extract_session_id(json: &serde_json::Value) -> Option<String> {
     let params = json.get("params")?;
     params
@@ -288,16 +286,6 @@ fn is_machine_wide_broadcast_notification(json: &serde_json::Value) -> bool {
         Some("kigi/sessions/changed" | "kigi/models/update" | "kigi/mcp/servers_updated")
     )
 }
-/// Whether a payload is the `kigi/scheduled_task_inject_prompt` notification.
-///
-/// This notification tells the receiving client to enqueue AND drive a
-/// scheduled (`/loop`) cron prompt. Unlike ordinary `sessionId`-bearing
-/// notifications (which fan out to every subscriber so each renders an
-/// identical stream), it must be routed to the SINGLE session driver: if every
-/// attached client received it, each would enqueue + try to drive the same cron
-/// turn, duplicating it (phantom `#N` queue entries, competing drivers, stuck
-/// turns). The other clients render the resulting turn from the broadcast
-/// `session/update` deltas, exactly like any other turn the driver runs.
 /// The namespaced method a leader payload carries, normalizing the two ext wire
 /// forms the gateway produces:
 ///   - direct:  `{"method":"kigi/foo", ...}`                                 -> `kigi/foo`
@@ -401,7 +389,6 @@ fn extract_interaction_resolved_tool_call_id(json: &serde_json::Value) -> Option
         .and_then(|v| v.as_str())
         .map(String::from)
 }
-/// Extract session_id from a prompt-complete notification.
 fn extract_session_id_from_prompt_complete(json: &serde_json::Value) -> Option<String> {
     let method = json.get("method")?.as_str()?;
     if method != "kigi/session/prompt_complete" {
@@ -661,9 +648,6 @@ fn inject_client_identity_into_initialize(
     }
     (mutated, true)
 }
-/// Extract yolo_mode change from kigi/yolo_mode_changed notification.
-///
-/// Returns Some(yolo_mode) if this is a yolo mode change notification.
 fn extract_yolo_mode_change(json: &serde_json::Value) -> Option<bool> {
     let method = json.get("method")?.as_str()?;
     if method != "kigi/yolo_mode_changed" {
@@ -1842,8 +1826,7 @@ mod tests {
         );
     }
     /// A non-JSON payload (`json = None`) is never parsed or re-serialized —
-    /// it passes through untouched, matching the old per-helper parse-failure
-    /// behavior.
+    /// it passes through untouched.
     #[test]
     fn outbound_payload_non_json_passthrough() {
         let original = "not json".to_string();
@@ -1987,7 +1970,6 @@ mod tests {
             }
         }
     }
-    /// Helper to connect and register a client, returning the split stream.
     async fn connect_and_register(
         sock_path: &std::path::Path,
         client_type: &str,
@@ -5127,7 +5109,7 @@ mod tests {
     /// `session/new`/`session/load` response that registers the subscriber) must
     /// still be cached, so the FIRST client to attach gets the modal replayed.
     /// Regression for the "entered the session, modal never appears, turn stuck
-    /// Waiting" bug — the cache insert used to be gated on an existing subscriber.
+    /// Waiting" bug — the cache insert must not be gated on an existing subscriber.
     #[tokio::test]
     async fn interaction_raised_with_no_subscriber_is_cached_and_replayed_on_first_attach() {
         let temp = TempDir::new().unwrap();

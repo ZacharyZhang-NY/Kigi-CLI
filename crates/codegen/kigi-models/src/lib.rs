@@ -18,7 +18,7 @@ use std::sync::LazyLock;
 
 pub mod enrichment;
 
-// ── Platform registry (PRD F2) ──────────────────────────────────────────────
+// Platform registry (PRD F2)
 
 /// Env var holding the moonshot-cn API key (wins over the generic name).
 pub const MOONSHOT_CN_API_KEY_ENV: &str = "KIGI_MOONSHOT_CN_API_KEY";
@@ -854,7 +854,7 @@ const XAI_SPEC: PlatformSpec = PlatformSpec {
     oauth: None,
     allowed_model_prefixes: None,
     // NOTE: `XAI_API_KEY` is ALSO read as a legacy fallback by the house BYOK
-    // path (`read_xai_api_key_env`), whose primary env is now `KIGI_API_KEY`.
+    // path (`read_xai_api_key_env`), whose primary env is `KIGI_API_KEY`.
     // Here it is the x.ai/Grok provider key (its canonical ecosystem name).
     api_key_envs: &["XAI_API_KEY"],
     vendor: "xAI",
@@ -1610,7 +1610,7 @@ fn codex_wire_model(slug: &str, display_name: &str, efforts: &[&str], default: &
 /// `supported_in_api==true` models from the Codex CLI model cache. The
 /// `gpt-5.3-codex-spark` (supported_in_api=false → not served by /responses),
 /// `gpt-5.4`, `gpt-5.4-mini`, and `codex-auto-review` (visibility="hide") models
-/// are intentionally EXCLUDED — they would list-but-not-work or are not
+/// are deliberately EXCLUDED — they would list-but-not-work or are not
 /// user-facing (fail-fast: never advertise a model the backend rejects).
 fn openai_codex_wire_models() -> Vec<WireModel> {
     vec![
@@ -1653,7 +1653,7 @@ pub fn parse_managed_model_key(key: &str) -> Option<(PlatformId, &str)> {
     Some((platform, model_id))
 }
 
-// ── Wire contract + capability derivation (PRD F4) ──────────────────────────
+// Wire contract + capability derivation (PRD F4)
 
 /// Model capabilities derived from the `/models` listing
 /// (port of kimi-cli `ModelCapability` + `ModelInfo.capabilities`).
@@ -1749,7 +1749,7 @@ pub fn parse_openai_listing(json: &str) -> Result<Vec<WireModel>, serde_json::Er
     }
 }
 
-// ── Anthropic listing adapter (ListingDialect::Anthropic) ───────────────────
+// Anthropic listing adapter (ListingDialect::Anthropic)
 
 #[derive(serde::Deserialize)]
 struct AnthropicListing {
@@ -1962,7 +1962,7 @@ pub fn filter_allowed_models(platform: PlatformId, models: Vec<WireModel>) -> Ve
         .collect()
 }
 
-// ── GitHub Copilot listing adapter (github-copilot) ─────────────────────────
+// GitHub Copilot listing adapter (github-copilot)
 
 /// A Copilot model id that routes to the anthropic-messages wire in Pi
 /// (`/^claude-(haiku|sonnet|opus)-[45]([.\-]|$)/`) — EXCLUDED from Kigi's
@@ -2084,7 +2084,7 @@ pub fn parse_github_copilot_listing(json: &str) -> Result<Vec<WireModel>, serde_
     Ok(kept)
 }
 
-// ── Bundled offline fallback catalog ────────────────────────────────────────
+// Bundled offline fallback catalog
 
 /// The raw JSON, embedded at compile time. OFFLINE LAST RESORT: consulted only
 /// when the live `/models` sync fails and no disk cache is usable.
@@ -2827,7 +2827,8 @@ mod tests {
                 PlatformId::OpenaiCodex => 28,
             }
         }
-        const VARIANT_COUNT: usize = 29; // update together with `ordinal`
+        // update together with `ordinal`
+        const VARIANT_COUNT: usize = 29;
         let mut seen: Vec<usize> = PlatformId::ALL.iter().map(|&p| ordinal(p)).collect();
         seen.sort_unstable();
         seen.dedup();

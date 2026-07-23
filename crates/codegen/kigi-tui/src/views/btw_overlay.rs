@@ -159,14 +159,17 @@ pub fn btw_panel_height(state: Option<&BtwOverlayState>, content_width: u16) -> 
         None => 0,
         Some(BtwOverlayState::Loading { .. } | BtwOverlayState::Error { .. }) => 3,
         Some(BtwOverlayState::Done { content, .. }) => {
-            let cw = content_width.saturating_sub(4) as usize; // border + pad
+            // `4` accounts for the left/right border plus one column of padding
+            // on each side.
+            let cw = content_width.saturating_sub(4) as usize;
             let total = if cw > 0 {
                 content.with_wrapped_lines(cw, |w| w.lines.len())
             } else {
                 1
             };
             let body = total.clamp(1, DONE_MAX_BODY_LINES as usize) as u16;
-            2 + body // top border + body + bottom border
+            // top border + body + bottom border
+            2 + body
         }
     }
 }
@@ -217,7 +220,6 @@ pub fn render_btw_panel(
     };
     let border_style = Style::default().fg(border_color).bg(bg);
 
-    // ── Clear area and draw rounded border ──
     Clear.render(area, buf);
     buf.set_style(area, Style::default().bg(bg));
     Block::default()
@@ -227,7 +229,6 @@ pub fn render_btw_panel(
         .style(Style::default().bg(bg))
         .render(area, buf);
 
-    // ── Hint in top border (right side): scroll position + [Esc] ──
     // Built BEFORE the title so the title can reserve room for it and truncate
     // the question, rather than the question pushing [Esc] off-screen. The close
     // affordance ([Esc]) always stays visible: its columns are reserved here
@@ -275,7 +276,6 @@ pub fn render_btw_panel(
         hint_x = (area.x + area.width).saturating_sub(1 + hint_w);
     }
 
-    // ── Title in top border: " /btw <question> " ──
     // Reserve the hint's columns (everything left of `hint_x`, minus the title's
     // own two padding spaces) so a long question truncates instead of hiding the
     // hint.
@@ -310,7 +310,6 @@ pub fn render_btw_panel(
     let title_render_w = (title_text.width() as u16).min(hint_x.saturating_sub(title_x));
     buf.set_line(title_x, area.y, &title_line, title_render_w);
 
-    // ── Render the hint (always visible — its space was reserved above) ──
     if hint_w > 0 && hint_x >= title_x {
         let is_hovered = hit_close.as_ref().is_some_and(|h| h.hovered);
         let hint_style = if is_hovered {
@@ -323,7 +322,6 @@ pub fn render_btw_panel(
         };
         let hint_line = Line::from(Span::styled(hint_text, hint_style));
         buf.set_line(hint_x, area.y, &hint_line, hint_w);
-        // Set hit area for mouse click handling (top border row).
         if let Some(hit) = hit_close {
             hit.set(Some(Rect {
                 x: hint_x,
@@ -336,7 +334,6 @@ pub fn render_btw_panel(
         hit.clear();
     }
 
-    // ── Body (between borders) ──
     let body_y = area.y + 1;
     match state {
         BtwOverlayState::Loading { .. } => {
@@ -550,7 +547,8 @@ mod tests {
         assert!(!range.lines.is_empty());
         for (i, line) in range.lines.iter().enumerate() {
             assert_eq!(line.block_line_idx, i);
-            assert_eq!(line.screen_y, 1 + i as u16); // body_y = area.y + 1
+            // body_y = area.y + 1
+            assert_eq!(line.screen_y, 1 + i as u16);
         }
         assert!(
             !model.visible_blocks.is_empty(),
@@ -827,7 +825,8 @@ mod tests {
         // that is far too wide for a 14-col panel.
         let response = hard_break_lines(50);
         let state = done_with_scroll(&response, 0);
-        let width = 14; // below the full-hint width, above the 12-col minimum
+        // below the full-hint width, above the 12-col minimum
+        let width = 14;
         let buf = render_to_buffer(&state, width, 6);
         let top = row_text(&buf, width, 0);
         assert!(

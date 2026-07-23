@@ -31,8 +31,8 @@ use agent_client_protocol as acp;
 use kigi_workspace::trust::{TrustStore, is_unsafe_trust_root, workspace_key};
 use parking_lot::Mutex;
 
-// Decision-side (scan/decide/prompt/store) relocated to `kigi-workspace`
-// (client crate). `grant_folder_trust` is the ONLY moved item referenced from
+// The decision-side (scan/decide/prompt/store) lives in `kigi-workspace`
+// (client crate). `grant_folder_trust` is the ONLY item referenced from
 // OUTSIDE this module (shell call sites + the pager's
 // `kigi_shell::agent::folder_trust::grant_folder_trust`), so only it is
 // re-published; the rest are private imports used within this module. A glob
@@ -50,11 +50,11 @@ use crate::session::managed_mcp::mcp_server_name;
 use crate::util::config::{MCP_SCOPE_PROJECT, RemoteSettings};
 
 // NOTE: this folder-trust store (`~/.kigi/trusted_folders.toml`) is SEPARATE
-// from the pre-existing per-plugin trust store
+// from the per-plugin trust store
 // (`kigi_agent::plugins::TrustStore` at `~/.kigi/trusted-plugins`, plus the
 // hooks' own project-trust gating). Trusting a folder here does NOT imply plugin
 // trust and vice versa; the two are independent and non-contradicting.
-// Unifying them is a tracked follow-up (out of scope for this PR).
+// Unifying them is a tracked follow-up.
 
 /// Per-workspace resolved decision: `true` = repo-local (project-scoped)
 /// servers are allowed to spawn. Keyed by canonical workspace key.
@@ -788,7 +788,7 @@ mod tests {
         )
         .unwrap();
 
-        // Detection now walks cwd→root, so the subdir-only `.claude` is detected
+        // Detection walks cwd→root, so the subdir-only `.claude` is detected
         // and the folder resolves untrusted.
         assert!(
             repo_configs_present(&subdir),
@@ -938,7 +938,8 @@ mod tests {
         // KIGI_TEST_VERSION unset so `is_local_build()` is genuinely true.
         let _unset_ver = EnvGuard::unset(kigi_version::TEST_VERSION_ENV);
         if option_env!("KIGI_VERSION").is_some() {
-            return; // a release-stamped test binary is not a local build
+            // a release-stamped test binary is not a local build
+            return;
         }
         let home = tempfile::tempdir().unwrap();
         let _env = EnvGuard::set("KIGI_SHARE_DIR", home.path());
@@ -1507,7 +1508,8 @@ mod tests {
         // real store is never touched.
         let _sim = EnvGuard::unset(kigi_version::TEST_VERSION_ENV);
         if option_env!("KIGI_VERSION").is_some() {
-            return; // a release-stamped test binary is not a local build
+            // a release-stamped test binary is not a local build
+            return;
         }
         let home = tempfile::tempdir().unwrap();
         let _env = EnvGuard::set("KIGI_SHARE_DIR", home.path());

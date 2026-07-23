@@ -5,8 +5,7 @@
 //! adapters can serialise them without enabling additional features.
 //!
 //! Each `ToolNotification` variant has a parallel `send_*` convenience on
-//! [`ToolNotificationHandle`]. The two surfaces are kept in lockstep — when
-//! adding a variant here, add the `send_*` constructor too.
+//! [`ToolNotificationHandle`]. Keep the two surfaces in lockstep.
 //!
 //! The handle is built on `futures::channel::mpsc` so it is runtime-neutral:
 //! the trait crate doesn't pin a particular async executor on its
@@ -24,10 +23,9 @@ use serde::{Deserialize, Serialize};
 /// made once.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BashNotificationBase {
-    /// Tool call id, used to correlate with the originating tool call.
+    /// Correlates with the originating tool call.
     pub tool_call_id: String,
 
-    /// The command being executed.
     pub command: String,
 
     /// Captured output bytes. May be truncated; use `output_lossy` for a
@@ -40,7 +38,6 @@ pub struct BashNotificationBase {
     /// Whether `output` was truncated to fit a size cap.
     pub truncated: bool,
 
-    /// Working directory the command ran in.
     pub cwd: PathBuf,
 }
 
@@ -76,7 +73,6 @@ pub struct BashExecutionComplete {
 }
 
 impl BashExecutionComplete {
-    /// `true` when termination was triggered by a signal.
     pub fn was_signaled(&self) -> bool {
         self.signal.is_some()
     }
@@ -89,10 +85,8 @@ pub struct BashExecutionTimeout {
     #[serde(flatten)]
     pub base: BashNotificationBase,
 
-    /// Wall time the command ran for before being killed.
     pub elapsed: Duration,
 
-    /// Configured timeout that was exceeded.
     pub timeout: Duration,
 }
 
@@ -122,23 +116,19 @@ pub struct BashExecutionFailed {
     pub tool_call_id: String,
     pub command: String,
     pub cwd: PathBuf,
-    /// Error message describing the spawn / IO failure.
     pub error: String,
 }
 
-/// Emitted when a tool reads a file. Subscribers use this for state
-/// snapshotting (rewind, audit) of accessed files.
+/// Payload for a tool file-read event (rewind / audit subscribers).
 ///
-/// **Reserved for a future `ToolNotification::FileRead` variant.** The
-/// struct is kept in the public API so adapters can construct it ahead of
-/// time, but it is not currently dispatched by any
-/// [`ToolNotificationHandle`] helper. Adding the enum variant here is a
-/// breaking change for exhaustive `match` consumers, so the variant is
-/// deferred until a downstream crate has a real consumer wired up.
+/// **Reserved for a future `ToolNotification::FileRead` variant.** Public
+/// so adapters can construct it, but no [`ToolNotificationHandle`] helper
+/// dispatches it yet. Introducing the enum variant is a breaking change for
+/// exhaustive `match` consumers, so it waits until a downstream crate has a
+/// real consumer wired up.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileRead {
     pub tool_call_id: String,
-    /// Absolute filesystem path of the file that was read.
     pub absolute_path: PathBuf,
 }
 
@@ -147,13 +137,11 @@ pub struct FileRead {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileWritten {
     pub tool_call_id: String,
-    /// Absolute filesystem path of the file that was written.
     pub absolute_path: PathBuf,
     /// Full file content after the write.
     pub content: String,
     /// Full file content before the write. `None` for a fresh file.
     pub previous_content: Option<String>,
-    /// Whether the write created a new file.
     pub is_new_file: bool,
 }
 
@@ -173,7 +161,6 @@ pub struct PlanModeExited {
     /// Plan content as captured at exit time. `None` when the plan file
     /// did not exist or was empty.
     pub plan_content: Option<String>,
-    /// Path the plan file lives at.
     pub plan_file_path: String,
 }
 
@@ -243,7 +230,6 @@ pub struct ScheduledTaskRemoved {
     pub task_id: String,
 }
 
-/// Sent when a scheduled task is created.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScheduledTaskCreated {
     pub task_id: String,
@@ -262,7 +248,6 @@ pub struct MonitorEvent {
     pub description: String,
     /// XML-wrapped event text, ready for conversation injection.
     pub event_text: String,
-    /// Raw text without XML wrapping.
     pub raw_text: String,
 }
 
@@ -289,7 +274,6 @@ pub struct TaskSnapshot {
     pub exit_code: Option<i32>,
     pub signal: Option<String>,
     pub completed: bool,
-    /// Distinguishes monitor tasks from regular bash tasks.
     #[serde(default)]
     pub kind: TaskKind,
 }
@@ -305,18 +289,17 @@ impl TaskSnapshot {
     }
 }
 
-/// Distinguishes background-task kinds.
+/// Background-task kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskKind {
-    /// Regular bash command.
     #[default]
     Bash,
     /// Monitor tool — streams stdout events with rate limiting.
     Monitor,
 }
 
-/// A typed notification a tool emits during or after execution.
+/// Typed notification a tool emits during or after execution.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ToolNotification {
@@ -382,7 +365,6 @@ pub struct ToolNotificationHandle {
 }
 
 impl ToolNotificationHandle {
-    /// Wrap a sender obtained elsewhere.
     pub fn new(sender: mpsc::UnboundedSender<ToolNotification>) -> Self {
         Self { sender }
     }
@@ -408,122 +390,83 @@ impl ToolNotificationHandle {
         Self { sender }
     }
 
-    /// Send a fully-built notification. Errors are deliberately swallowed;
-    /// notifications are best-effort.
+    /// Best-effort send; errors (closed receiver) are swallowed.
     pub fn send(&self, notification: ToolNotification) {
         let _ = self.sender.unbounded_send(notification);
     }
 
-    /// Send a [`ToolNotification::BashOutputChunk`]: an incremental
-    /// stdout/stderr chunk while a bash command is still running.
     pub fn send_bash_output_chunk(&self, chunk: BashOutputChunk) {
         self.send(ToolNotification::BashOutputChunk(chunk));
     }
 
-    /// Send a [`ToolNotification::BashExecutionComplete`]: a bash command
-    /// exited (normally or via signal).
     pub fn send_bash_complete(&self, complete: BashExecutionComplete) {
         self.send(ToolNotification::BashExecutionComplete(complete));
     }
 
-    /// Send a [`ToolNotification::BashExecutionTimeout`]: a bash command
-    /// exceeded its configured timeout and was killed.
     pub fn send_bash_timeout(&self, timeout: BashExecutionTimeout) {
         self.send(ToolNotification::BashExecutionTimeout(timeout));
     }
 
-    /// Send a [`ToolNotification::BashExecutionBackgrounded`]: a
-    /// foreground bash command was moved to the background.
     pub fn send_bash_backgrounded(&self, backgrounded: BashExecutionBackgrounded) {
         self.send(ToolNotification::BashExecutionBackgrounded(backgrounded));
     }
 
-    /// Send a [`ToolNotification::BashExecutionFailed`]: a bash command
-    /// could not be spawned.
     pub fn send_bash_failed(&self, failed: BashExecutionFailed) {
         self.send(ToolNotification::BashExecutionFailed(failed));
     }
 
-    /// Send a [`ToolNotification::FileWritten`]: a tool wrote to a file
-    /// on disk.
     pub fn send_file_written(&self, written: FileWritten) {
         self.send(ToolNotification::FileWritten(written));
     }
 
-    /// Send a [`ToolNotification::TaskCompleted`]: a background task
-    /// transitioned to a terminal state.
     pub fn send_task_complete(&self, task_completed: TaskSnapshot) {
         self.send(ToolNotification::TaskCompleted(task_completed));
     }
 
-    /// Send a [`ToolNotification::PlanModeEntered`]: the agent
-    /// transitioned into plan mode.
     pub fn send_plan_mode_entered(&self, entered: PlanModeEntered) {
         self.send(ToolNotification::PlanModeEntered(entered));
     }
 
-    /// Send a [`ToolNotification::PlanModeExited`]: the agent transitioned
-    /// out of plan mode and the captured plan is attached.
     pub fn send_plan_mode_exited(&self, exited: PlanModeExited) {
         self.send(ToolNotification::PlanModeExited(exited));
     }
 
-    /// Send a [`ToolNotification::UserQuestionAsked`]: the agent issued a
-    /// structured question payload to the user.
     pub fn send_user_question_asked(&self, asked: UserQuestionAsked) {
         self.send(ToolNotification::UserQuestionAsked(asked));
     }
 
-    /// Send a [`ToolNotification::LspServerStarting`]: an LSP server is
-    /// being spawned.
     pub fn send_lsp_starting(&self, starting: LspServerStarting) {
         self.send(ToolNotification::LspServerStarting(starting));
     }
 
-    /// Send a [`ToolNotification::LspServerReady`]: an LSP server
-    /// finished its initialise handshake.
     pub fn send_lsp_ready(&self, ready: LspServerReady) {
         self.send(ToolNotification::LspServerReady(ready));
     }
 
-    /// Send a [`ToolNotification::LspServerCrashed`]: an LSP server
-    /// process died unexpectedly.
     pub fn send_lsp_crashed(&self, crashed: LspServerCrashed) {
         self.send(ToolNotification::LspServerCrashed(crashed));
     }
 
-    /// Send a [`ToolNotification::LspServerRetrying`]: an LSP server is
-    /// being restarted after a crash.
     pub fn send_lsp_retrying(&self, retrying: LspServerRetrying) {
         self.send(ToolNotification::LspServerRetrying(retrying));
     }
 
-    /// Send a [`ToolNotification::LspServerFailed`]: an LSP server is
-    /// permanently dead (init failure or retry budget exhausted).
     pub fn send_lsp_failed(&self, failed: LspServerFailed) {
         self.send(ToolNotification::LspServerFailed(failed));
     }
 
-    /// Send a [`ToolNotification::ScheduledTaskFired`]: a recurring or
-    /// one-shot scheduled task fired and its prompt should be executed.
     pub fn send_scheduled_task_fired(&self, fired: ScheduledTaskFired) {
         self.send(ToolNotification::ScheduledTaskFired(fired));
     }
 
-    /// Send a [`ToolNotification::ScheduledTaskRemoved`]: a scheduled task
-    /// was deleted, expired, or a one-shot variant completed.
     pub fn send_scheduled_task_removed(&self, removed: ScheduledTaskRemoved) {
         self.send(ToolNotification::ScheduledTaskRemoved(removed));
     }
 
-    /// Send a [`ToolNotification::ScheduledTaskCreated`]: a new scheduled
-    /// task was registered and should appear in subscriber views.
     pub fn send_scheduled_task_created(&self, created: ScheduledTaskCreated) {
         self.send(ToolNotification::ScheduledTaskCreated(created));
     }
 
-    /// Send a [`ToolNotification::MonitorEvent`]: a streaming event from
-    /// a Monitor background process, ready for conversation injection.
     pub fn send_monitor_event(&self, event: MonitorEvent) {
         self.send(ToolNotification::MonitorEvent(event));
     }

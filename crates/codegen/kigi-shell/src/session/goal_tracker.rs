@@ -1277,7 +1277,8 @@ impl GoalTracker {
         let o = self.orchestration.as_mut()?;
         if should_fire(o.consecutive_not_achieved, o.last_strategist_fired_at) {
             o.last_strategist_fired_at = o.consecutive_not_achieved;
-            o.strategist_cap_bonus = GOAL_STRATEGIST_CAP_BONUS; // idempotent, not stacked
+            // idempotent, not stacked
+            o.strategist_cap_bonus = GOAL_STRATEGIST_CAP_BONUS;
             o.reset_classifier_stall_fields();
             Some(o.consecutive_not_achieved)
         } else {
@@ -1510,7 +1511,8 @@ mod tests {
     fn append_history_caps_oldest_entries() {
         // The persisted timeline is bounded; the newest entry is retained.
         let mut t = make_tracker();
-        activate_tracker(&mut t); // seeds 1 GoalCreated entry
+        // seeds 1 GoalCreated entry
+        activate_tracker(&mut t);
         for i in 0..(GOAL_HISTORY_MAX + 10) {
             t.append_history(GoalHistoryEntry {
                 timestamp: format!("t{i}"),
@@ -1668,8 +1670,8 @@ mod tests {
     /// `create_goal` populates `verifier_id` and that id survives every
     /// pause/resume/complete transition unchanged. The id is the
     /// stable handle the model uses to read verdict files, so any
-    /// mid-lifecycle reassignment would orphan the previously written
-    /// verdicts.
+    /// mid-lifecycle reassignment would orphan verdicts written earlier
+    /// in the run.
     #[test]
     fn verifier_id_is_stable_across_pause_resume() {
         let mut t = make_tracker();
@@ -2815,7 +2817,8 @@ mod tests {
 
     #[test]
     fn from_snapshot_idle_active_sets_active_since() {
-        let orchestration = make_base_orchestration(); // Idle + Active
+        // Idle + Active
+        let orchestration = make_base_orchestration();
         let t = GoalTracker::from_snapshot(PathBuf::from("/tmp"), orchestration);
         assert_eq!(t.snapshot().unwrap().status, GoalStatus::Active);
         assert!(t.active_since.is_some());
@@ -3397,7 +3400,8 @@ mod tests {
         t.snapshot_mut().unwrap().last_classifier_details_path =
             Some(details.to_string_lossy().into_owned());
 
-        activate_tracker(&mut t); // replace without a terminal transition
+        // replace without a terminal transition
+        activate_tracker(&mut t);
 
         let rescued = session.path().join("goal").join("goal-classifier-x-1.md");
         assert_eq!(

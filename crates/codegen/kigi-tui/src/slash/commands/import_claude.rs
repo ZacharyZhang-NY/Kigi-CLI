@@ -10,7 +10,6 @@
 use crate::app::actions::Action;
 use crate::slash::command::{CommandExecCtx, CommandResult, SlashCommand};
 
-/// Open the interactive Claude settings import modal in the active session.
 pub struct ImportClaudeCommand;
 
 impl SlashCommand for ImportClaudeCommand {

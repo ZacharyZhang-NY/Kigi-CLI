@@ -76,10 +76,6 @@ pub fn should_flush(
     should
 }
 
-// ---------------------------------------------------------------------------
-// Flush prompt and response processing
-// ---------------------------------------------------------------------------
-
 /// System prompt injected for the flush model call.
 pub const FLUSH_SYSTEM_PROMPT: &str = "\
 You are a memory assistant. Extract ALL useful information from this conversation \
@@ -154,21 +150,19 @@ pub fn process_flush_response(response: &str, config: &MemoryFlushConfig) -> Flu
     tracing::info!(target: LOG,
         "MEMORY_FLUSH_RESPONSE: len={len} preview=\"{preview}\"");
 
-    // Check for empty
     if trimmed.is_empty() {
         tracing::info!(target: LOG,
             "MEMORY_FLUSH_RESPONSE: empty → NothingToStore");
         return FlushResult::NothingToStore;
     }
 
-    // Check for NO_REPLY
     if is_no_reply(trimmed) {
         tracing::info!(target: LOG,
             "MEMORY_FLUSH_RESPONSE: matches NO_REPLY pattern → NothingToStore");
         return FlushResult::NothingToStore;
     }
 
-    // Truncate if too long (use char count for consistency with .chars().take())
+    // Char count keeps this consistent with the `.chars().take()` below.
     let content = if trimmed.chars().count() > config.max_flush_write_chars {
         tracing::warn!(target: LOG,
             "MEMORY_FLUSH_RESPONSE: truncated from {len} to {} chars",
@@ -181,7 +175,6 @@ pub fn process_flush_response(response: &str, config: &MemoryFlushConfig) -> Flu
         trimmed.to_string()
     };
 
-    // Must contain at least one markdown header for structure
     if !has_markdown_headers(&content) {
         tracing::info!(target: LOG,
             "MEMORY_FLUSH_RESPONSE: no markdown headers → Rejected");
@@ -442,10 +435,6 @@ mod tests {
         assert!(!should_flush(82_000, 100_000, 85, &config, 5, 5));
     }
 
-    // -----------------------------------------------------------------------
-    // process_flush_response tests
-    // -----------------------------------------------------------------------
-
     #[test]
     fn test_flush_response_empty() {
         let config = default_flush_config();
@@ -603,10 +592,6 @@ mod tests {
         assert_eq!(window.len(), 2);
         assert_eq!(window[0].role, Role::User);
     }
-
-    // -----------------------------------------------------------------------
-    // is_semantically_duplicate tests
-    // -----------------------------------------------------------------------
 
     #[tokio::test]
     async fn test_semantic_dedup_no_provider_allows_write() {

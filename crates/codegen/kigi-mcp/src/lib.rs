@@ -9,7 +9,7 @@
 //!    crate to 0.13 to satisfy `rmcp` triggers a cascade — an OpenTelemetry
 //!    `HttpClient` adapter and cross-version test breakage when a crate
 //!    carries both versions under a renamed `package = "reqwest"` alias.
-//!    reqwest 0.13 is now a fully private impl detail of [`servers`]; no
+//!    reqwest 0.13 is a fully private impl detail of [`servers`]; no
 //!    re-export. Consumers reach `rmcp` model types through this namespace
 //!    (`kigi_mcp::rmcp::*`).
 //!

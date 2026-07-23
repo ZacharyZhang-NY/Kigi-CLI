@@ -12,7 +12,6 @@ use super::*;
 
 use tokio::sync::mpsc;
 
-/// Drain every persistence message queued so far.
 fn drain_persistence(rx: &mut mpsc::UnboundedReceiver<PersistenceMsg>) -> Vec<PersistenceMsg> {
     let mut out = Vec::new();
     while let Ok(msg) = rx.try_recv() {
@@ -101,7 +100,6 @@ async fn normal_completion_persists_turn_completed_after_buffered_delta_flush() 
                 max_duration_ms: 3_600_000,
             });
 
-            // A running turn with its prompt queued at the front.
             *actor
                 .current_prompt_id
                 .lock()
@@ -136,7 +134,8 @@ async fn normal_completion_persists_turn_completed_after_buffered_delta_flush() 
             // This is the exact flush `run_session`'s completion branch performs
             // before calling `handle_completion` (mirrors the Cancel/Shutdown
             // arms). Removing it leaves the held delta stranded and the terminal
-            // would be the only persisted update — the ordering this PR fixes.
+            // would be the only persisted update — the delta-before-terminal
+            // ordering this test pins.
             if let Some(notification) = replay_buffer.flush() {
                 actor.emit_buffered(notification).await;
             }
@@ -157,14 +156,12 @@ async fn normal_completion_persists_turn_completed_after_buffered_delta_flush() 
 
             let msgs = drain_persistence(&mut persistence_rx);
 
-            // The terminal is persisted with the right fields...
             let (prompt_id, stop_reason, agent_result) = turn_completed_fields(&msgs)
                 .expect("a normal completion must persist a TurnCompleted");
             assert_eq!(prompt_id, "p1");
             assert_eq!(stop_reason, "end_turn");
             assert_eq!(agent_result, None);
 
-            // ...after the flushed buffered delta on the same persistence stream.
             let delta_idx = msgs
                 .iter()
                 .position(is_agent_message_delta)
@@ -236,7 +233,6 @@ async fn cancellation_persists_turn_completed_cancelled() {
             let (persistence_tx, mut persistence_rx) = mpsc::unbounded_channel::<PersistenceMsg>();
             let actor = create_test_actor(0, 256_000, 85, gateway_tx, persistence_tx).await;
 
-            // A running turn in flight.
             *actor
                 .current_prompt_id
                 .lock()
@@ -369,7 +365,6 @@ async fn send_now_cancel_stamps_cancel_trigger_on_turn_end() {
                 state.pending_inputs.push_back(item);
             }
 
-            // The shipped send-now cancel path.
             let mut replay_buffer = ReplayBuffer::new(None);
             actor.cancel_turn_for_send_now(&mut replay_buffer).await;
 
@@ -431,7 +426,6 @@ async fn pristine_rewind_cancel_emits_no_turn_completed() {
             let (persistence_tx, mut persistence_rx) = mpsc::unbounded_channel::<PersistenceMsg>();
             let actor = create_test_actor(0, 256_000, 85, gateway_tx, persistence_tx).await;
 
-            // A pristine, rewindable in-flight turn at the front of the queue.
             *actor
                 .current_prompt_id
                 .lock()
@@ -451,9 +445,9 @@ async fn pristine_rewind_cancel_emits_no_turn_completed() {
             }
 
             // rewind_if_pristine = true on a rewindable turn takes the rewind
-            // path: the turn is treated as UNSENT, so — in lock-step with the
-            // legacy emit_turn_ended — NO durable terminal is emitted (else
-            // replay would finalize a turn that was rewound, not completed).
+            // path: the turn is treated as UNSENT, so — in lock-step with
+            // emit_turn_ended — NO durable terminal is emitted (else replay
+            // would finalize a turn that was rewound, not completed).
             actor.cancel_running_task(false, false, true, None).await;
 
             let msgs = drain_persistence(&mut persistence_rx);

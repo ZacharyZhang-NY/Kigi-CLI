@@ -25,6 +25,8 @@ pub fn is_project_dir(cwd: &Path) -> bool {
         return false;
     }
 
+    // A repo checked out anywhere counts as a project, even under a system or
+    // excluded directory, so this check deliberately precedes the exclusions.
     if cwd.ancestors().any(|p| p.join(".git").exists()) {
         return true;
     }

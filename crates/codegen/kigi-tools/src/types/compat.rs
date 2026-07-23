@@ -1,11 +1,8 @@
 //! Vendor compatibility configuration for third-party agent surfaces
 //! (skills, rules, agents, MCPs, hooks, sessions).
 //!
-//! Historically the agent hard-coded the dir lists `[".kigi", ".agents",
-//! ".claude", ".cursor"]` (and `RULES_DIRS` / `AGENT_FILENAMES`) across ~6
-//! call sites in three crates. This module now owns the canonical cell registry
-//! used by runtime resolution and diagnostics (env var → config TOML → remote
-//! setting → default ON).
+//! Owns the canonical cell registry used by runtime resolution and diagnostics.
+//! Each cell resolves through env var → config TOML → remote setting → default ON.
 //!
 //! Two forms:
 //! - [`CompatConfigToml`] — raw, parsed from the `[compat]` TOML section. Each
@@ -360,10 +357,6 @@ impl CompatConfig {
     /// Config directories that may contain `skills/` subdirectories, in
     /// priority order. `.kigi` and `.agents` are always included; `.claude`
     /// and `.cursor` are gated on their respective `skills` cell.
-    ///
-    /// Replaces the hard-coded `[".kigi", ".agents", ".claude", ".cursor"]`
-    /// in `collect_skill_config_dirs`. When all cells are on, the returned
-    /// list is identical to the historical constant.
     pub fn skill_config_dirs(&self) -> Vec<&'static str> {
         let mut dirs = vec![".kigi", ".agents"];
         if self.claude.skills {
@@ -378,9 +371,6 @@ impl CompatConfig {
     /// Subdirectories scanned for `*.md` rules files. `.kigi/rules` is always
     /// included; `.claude/rules` and `.cursor/rules` are gated on their
     /// respective `rules` cell.
-    ///
-    /// Replaces the hard-coded `RULES_DIRS` constant. When all cells are on,
-    /// the returned list is identical.
     pub fn rules_dirs(&self) -> Vec<&'static str> {
         let mut dirs = vec![".kigi/rules"];
         if self.claude.rules {
@@ -395,9 +385,6 @@ impl CompatConfig {
     /// Filenames (and relative paths) recognized as project-instruction files.
     /// The generic names are always included; the `.claude/`-prefixed entries
     /// are gated on `claude.agents`.
-    ///
-    /// Replaces the hard-coded `AGENT_FILENAMES` constant. When `claude.agents`
-    /// is on, the returned list is identical (same order).
     pub fn agent_filenames(&self) -> Vec<&'static str> {
         let mut names = vec![
             "Agents.md",
@@ -417,9 +404,6 @@ impl CompatConfig {
     /// Home-level vendor directories scanned for AGENTS.md / rules files
     /// (e.g. `~/.claude`, `~/.cursor`). `.claude` is gated on `claude.agents`
     /// and `.cursor` on `cursor.agents`.
-    ///
-    /// Replaces the hard-coded `[".claude", ".cursor"]` home scan. When both
-    /// cells are on, the returned list is identical (same order).
     pub fn agents_home_dirs(&self) -> Vec<&'static str> {
         let mut dirs = Vec::new();
         if self.claude.agents {
@@ -511,7 +495,6 @@ mod tests {
 
     #[test]
     fn skill_config_dirs_all_on_matches_legacy_constant() {
-        // Historical constant was `[".kigi", ".agents", ".claude", ".cursor"]`.
         assert_eq!(
             CompatConfig::default().skill_config_dirs(),
             vec![".kigi", ".agents", ".claude", ".cursor"]
@@ -535,7 +518,6 @@ mod tests {
 
     #[test]
     fn rules_dirs_all_on_matches_legacy_constant() {
-        // Historical `RULES_DIRS` was `[".kigi/rules", ".claude/rules", ".cursor/rules"]`.
         assert_eq!(
             CompatConfig::default().rules_dirs(),
             vec![".kigi/rules", ".claude/rules", ".cursor/rules"]
@@ -553,7 +535,6 @@ mod tests {
 
     #[test]
     fn agent_filenames_all_on_matches_legacy_constant() {
-        // Historical `AGENT_FILENAMES`.
         assert_eq!(
             CompatConfig::default().agent_filenames(),
             vec![
@@ -588,7 +569,6 @@ mod tests {
 
     #[test]
     fn agents_home_dirs_all_on_matches_legacy_constant() {
-        // Historical home scan was `[".claude", ".cursor"]`.
         assert_eq!(
             CompatConfig::default().agents_home_dirs(),
             vec![".claude", ".cursor"]

@@ -19,7 +19,7 @@ pub use adapter::AcpTerminalAdapter;
 pub mod pty_session;
 
 pub const DEFAULT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
-pub const DEFAULT_OUTPUT_BYTE_LIMIT: usize = 30_000; // 30k characters
+pub const DEFAULT_OUTPUT_BYTE_LIMIT: usize = 30_000;
 
 /// Resolved absolute path to bash. On Unix uses the `kigi_config` shell
 /// resolution cascade (`$KIGI_SHELL` > `$SHELL` > `which` > common dirs >

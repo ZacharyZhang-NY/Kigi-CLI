@@ -141,11 +141,9 @@ pub enum ToolProgress {
     Text { text: String },
     /// Rich content blocks.
     Content { blocks: Vec<ContentBlock> },
-    /// Tool-defined progress payload. `subkind` is a stable snake-case
-    /// discriminator owned by the tool. The outer `"kind"` serde tag is
-    /// always `"custom"` for this variant; `subkind` is the producer's
-    /// own discriminator and lives one level deeper to avoid colliding
-    /// with the tag.
+    /// Tool-defined progress. Outer serde tag is always `"custom"`; `subkind`
+    /// is the producer's discriminator one level deeper (avoids colliding
+    /// with the tag).
     Custom {
         subkind: String,
         payload: serde_json::Value,
@@ -244,7 +242,6 @@ where
 /// least one block.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TypedToolOutput {
-    /// Identity of the tool that produced this output.
     pub tool_id: ToolId,
     /// Serialised JSON representation of the tool output.
     pub value: Value,
@@ -301,21 +298,17 @@ impl ToolOutput for TypedToolOutput {
     }
 }
 
-/// Type erased tool trait. Auto-generated for every typed Tool implementation.
+/// Type-erased tool trait. Blanket-impl'd for every typed [`Tool`].
 #[async_trait]
 pub trait ToolDyn: Send + Sync {
-    /// Stable identity. Same value as [`Tool::id`].
     fn id(&self) -> ToolId;
 
-    /// Model-facing description. Same value as [`Tool::description`].
     fn description(&self, ctx: &ListToolsContext) -> ToolDescription;
 
-    /// Per-tool capability flags. Same value as [`Tool::capabilities`].
     fn capabilities(&self) -> ToolCapabilities {
         ToolCapabilities::default()
     }
 
-    /// Same value as [`Tool::has_dynamic_description`].
     fn has_dynamic_description(&self) -> bool {
         false
     }
@@ -401,23 +394,21 @@ impl<T: Tool> ToolDyn for T {
     }
 }
 
-/// Convenience alias for the most common [`ToolDyn`] handle shape.
 pub type ArcTool = Arc<dyn ToolDyn>;
 
 /// Variant identifier for tools that ship multiple implementations under
 /// one stable [`ToolId`].
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum ToolVariant {
-    /// The implicit fallback variant.
+    /// Implicit fallback variant.
     Default,
-    /// A named variant. The string is treated opaquely by the registry.
+    /// Named variant; treated opaquely by the registry.
     Variant(String),
 }
 
 /// Group of related tools that share one [`ToolId`] but route to different
 /// implementations chosen by a [`ToolVariant`].
 pub trait ToolFamily: Send + Sync {
-    /// Identity shared by every variant in this family.
     fn id(&self) -> ToolId;
 
     /// Resolve a `variant` to its concrete tool. Returns `None` when the
@@ -436,5 +427,4 @@ pub trait ToolFamily: Send + Sync {
     }
 }
 
-/// Convenience alias for the most common [`ToolFamily`] handle shape.
 pub type ArcToolFamily = Arc<dyn ToolFamily>;

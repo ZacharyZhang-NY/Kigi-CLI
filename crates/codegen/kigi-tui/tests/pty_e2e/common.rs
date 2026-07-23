@@ -35,8 +35,6 @@ pub(crate) const PROMPT: &str = "go";
 /// unambiguous sentinel word that we can `wait_for_text` on.
 pub(crate) const MOCK_RESPONSE_SENTINEL: &str = "MOCKRESPONSE";
 
-// ── Undo-tip e2e helpers ────────────────────────────────────────────────
-
 /// Suffix of the undo-tip banner, now "Input cleared · ctrl+z to undo" on all
 /// platforms (terminals don't forward Cmd+Z to a raw-mode TUI). Asserting the
 /// suffix keeps the check chord-agnostic regardless.
@@ -131,7 +129,6 @@ pub(crate) fn tall_response(sentinel: &str, rows: usize) -> String {
     s
 }
 
-// ── Fake session-auth (OAuth) seeding ───────────────────────────────────
 // `seed_fake_oauth` / `oauth_env_for_pager` live in
 // `kigi_pager_pty_harness::flows` (re-exported above).
 
@@ -181,8 +178,6 @@ pub(crate) fn spawn_polling_session_with_env(
     harness
 }
 
-// ── Agent type mismatch e2e tests ──────────────────────────────────────
-
 /// Start the mock server with two models that have different agent types,
 /// and return a `ContentController` configured for agent-type-mismatch
 /// testing. The default model is `"default-model"` (no agent type → uses
@@ -195,8 +190,6 @@ pub(crate) async fn start_dual_agent_type_content() -> ContentController {
     .await
     .expect("start content with dual agent types")
 }
-
-// ── Folder-trust welcome sub-state e2e ──────────────────────────────────
 
 /// Title line of the folder-trust question (see `render_welcome_trust`).
 pub(crate) const TRUST_QUESTION_SENTINEL: &str = "Do you trust the contents of this directory";
@@ -239,7 +232,6 @@ pub(crate) fn folder_is_trusted(content: &ContentController, repo: &std::path::P
     store.is_trusted(&kigi_workspace::trust::workspace_key(repo))
 }
 
-// ── Leader mode e2e ─────────────────────────────────────────────────────
 // The leader cluster cases (and their LEADER_TIMEOUT/STREAM_TIMEOUT/
 // submit_turn/inference_request_count helpers) moved to the dedicated
 // `tests/leader_pty_e2e` target; only the helpers non-leader tests still
@@ -253,8 +245,6 @@ pub(crate) fn turn_sentinel(n: u8) -> String {
 
 // `wait_for_labels_absent` lives in `kigi_pager_pty_harness::flows`
 // (re-exported above).
-
-// ── MCP menu loading e2e tests ──────────────────────────────────────────
 
 /// Seeded server name; it only renders once the MCP list fetch resolves.
 pub(crate) const MCP_TEST_SERVER: &str = "ptytestmcp";
@@ -316,8 +306,6 @@ pub(crate) async fn drive_mcp_menu_load(content: &ContentController, cwd: &std::
 
     harness.quit().expect("clean quit");
 }
-
-// ── Queue + interjection e2e tests ──────────────────────────────────────
 
 // Ctrl+Enter / Ctrl+; as CSI-u, parsed without kitty protocol negotiation.
 pub(crate) const CTRL_ENTER: &[u8] = b"\x1b[13;5u";
@@ -393,8 +381,6 @@ pub(crate) const SEND_NOW_TIP_SENTINEL: &str = "to send now";
 // unit tests in kigi-hooks::discovery::tests. The PTY E2E test requires
 // careful environment variable setup to avoid static caching issues with
 // KIGI_SHARE_DIR.
-
-// ── Mouse reporting toggle (opt-in scrollback Ctrl+R) ───────────────────
 
 /// Sticky banner shown while mouse reporting is off (must match pager copy).
 pub(crate) const MOUSE_OFF_STICKY: &str =
@@ -506,8 +492,6 @@ pub(crate) async fn drive_to_scrollback_with_turn(
     // Footer shows "Space:prompt" when scrollback owns keys (prompt is not focused).
     let _ = harness.wait_for_text("Space:prompt", Duration::from_secs(5));
 }
-
-// ── Tool header selection (path/command operand only) ───────────────────
 
 /// Unique filename marker so the Read header is unambiguous on screen.
 pub(crate) const READ_HDR_FILE: &str = "read_hdr_sel_target.txt";
@@ -788,10 +772,14 @@ pub(crate) fn sgr_mouse(btn: u16, row: u16, col: u16, suffix: char) -> String {
 /// SGR mouse drag from (row,col) inclusive to (row,end_col) inclusive.
 pub(crate) fn mouse_drag_line(row: u16, from_col: u16, to_col: u16) -> String {
     let mut out = String::new();
-    out.push_str(&sgr_mouse(0, row, from_col, 'M')); // press
-    out.push_str(&sgr_mouse(32, row, (from_col + to_col) / 2, 'M')); // drag mid
-    out.push_str(&sgr_mouse(32, row, to_col, 'M')); // drag end
-    out.push_str(&sgr_mouse(0, row, to_col, 'm')); // release
+    // press
+    out.push_str(&sgr_mouse(0, row, from_col, 'M'));
+    // drag mid
+    out.push_str(&sgr_mouse(32, row, (from_col + to_col) / 2, 'M'));
+    // drag end
+    out.push_str(&sgr_mouse(32, row, to_col, 'M'));
+    // release
+    out.push_str(&sgr_mouse(0, row, to_col, 'm'));
     out
 }
 
@@ -802,9 +790,12 @@ pub(crate) fn mouse_drag_line(row: u16, from_col: u16, to_col: u16) -> String {
 /// ("It works if mouseup occurs outside the terminal element"), microsoft/vscode#192518.
 pub(crate) fn mouse_drag_no_release(row: u16, from_col: u16, to_col: u16) -> String {
     let mut out = String::new();
-    out.push_str(&sgr_mouse(0, row, from_col, 'M')); // press
-    out.push_str(&sgr_mouse(32, row, (from_col + to_col) / 2, 'M')); // drag mid
-    out.push_str(&sgr_mouse(32, row, to_col, 'M')); // drag end
+    // press
+    out.push_str(&sgr_mouse(0, row, from_col, 'M'));
+    // drag mid
+    out.push_str(&sgr_mouse(32, row, (from_col + to_col) / 2, 'M'));
+    // drag end
+    out.push_str(&sgr_mouse(32, row, to_col, 'M'));
     out
 }
 
@@ -1008,8 +999,6 @@ pub(crate) fn seed_read_file_tool_call(content: &ContentController, abs_path: &P
     content.set_response(READ_HDR_SENTINEL);
 }
 
-// ── Minimal (scrollback-native) mode e2e helpers ────────────────────────
-
 /// Args that launch the pager in the experimental scrollback-native minimal
 /// mode, standalone — minimal is single-session (K14: no leader/multi-client),
 /// so `--no-leader` keeps the test off the shared-daemon path.
@@ -1088,15 +1077,13 @@ pub(crate) fn wait_minimal_ready(harness: &mut PtyHarness) {
 /// into it), so quit is Ctrl+Q pressed twice (it requires confirmation). Falls
 /// back to the harness kill path if the chord doesn't take.
 pub(crate) fn quit_minimal(harness: &mut PtyHarness) {
-    let _ = harness.inject_keys(b"\x11"); // Ctrl+Q — arms the confirm
+    let _ = harness.inject_keys(b"\x11");
     harness.update(Duration::from_millis(80));
-    let _ = harness.inject_keys(b"\x11"); // Ctrl+Q — confirms
+    let _ = harness.inject_keys(b"\x11");
     if harness.wait_exit_code(Duration::from_secs(5)).is_none() {
-        let _ = harness.quit(); // kill fallback
+        let _ = harness.quit();
     }
 }
-
-// ── kigi wrap e2e ───────────────────────────────────────────────────────
 
 /// `kigi wrap` run budget. Same contention math as the requirements-version
 /// test: the child's cold exec of the huge debug binary can land its first
@@ -1130,7 +1117,8 @@ pub(crate) fn run_wrap(wrap_args: &[&str], extra_env: &[(&str, &str)]) -> (Optio
         .wait_for_exit_and_drain(WRAP_TIMEOUT, WRAP_DRAIN_TIMEOUT)
         .ok();
     if code.is_none() {
-        let _ = harness.quit(); // kill a hung child so the suite doesn't leak it
+        // Kill a hung child so the suite doesn't leak it.
+        let _ = harness.quit();
     }
 
     let raw = String::from_utf8_lossy(harness.raw_output()).into_owned();
@@ -1158,8 +1146,6 @@ pub(crate) fn fake_argv_echo_shell() -> (tempfile::TempDir, String) {
     let path_str = path.to_str().expect("utf8 fake shell path").to_owned();
     (dir, path_str)
 }
-
-// ── Shared polling / failure-dump / cast helpers ────────────────────────
 
 /// Poll `probe` every 100ms until it yields `Some` or `timeout` elapses.
 #[cfg(unix)]
@@ -1236,8 +1222,6 @@ pub(crate) fn write_cast_if_requested(harness: &PtyHarness, file_name: &str) {
         Err(e) => eprintln!("failed to write cast {}: {e}", path.display()),
     }
 }
-
-// ── Clipboard paste e2e tests ───────────────────────────────────────────
 
 /// Serialized `content` of every user message across recorded requests, in
 /// order. Like [`all_user_messages`] but multimodal-tolerant: array-form

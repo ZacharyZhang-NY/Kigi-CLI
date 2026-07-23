@@ -62,16 +62,13 @@ mod tests {
     #[test]
     fn classify_returns_none() {
         let g = "/r/.git";
-        // Excluded git internals.
         assert_eq!(classify("/r/.git/COMMIT_EDITMSG", g), None);
         assert_eq!(classify("/r/.git/MERGE_HEAD", g), None);
         assert_eq!(classify("/r/.git/objects/ab/1234", g), None);
         assert_eq!(classify("/r/.git/index.lock", g), None);
-        // Workspace files.
         assert_eq!(classify("/r/src/main.rs", g), None);
         // Substring false-positive prevented by strip_prefix.
         assert_eq!(classify("/r/.git-backup/HEAD", g), None);
-        // Path under a different git_dir.
         assert_eq!(classify("/other/.git/HEAD", g), None);
     }
 

@@ -10,16 +10,16 @@ use toml::Value as TomlValue;
 use toml::map::Map as TomlMap;
 
 pub use kigi_mcp::oauth_config::{McpOAuthConfig, McpOAuthConfigMap};
-// MCP server config value types extracted to `kigi-config-types` (config
+// MCP server config value types live in `kigi-config-types` (config
 // dependency inversion); re-exported so `crate::util::config::*` paths keep working.
 pub use kigi_config_types::{McpJsonOAuthBlock, McpServerConfig, McpServerTransportConfig};
-// Permission-policy value types likewise extracted; re-exported to keep paths stable.
+// Permission-policy value types likewise live there; re-exported to keep paths stable.
 pub use kigi_config_types::{
     PatternMode, PermissionConfig, PermissionRule, RuleAction, ToolFilter,
 };
-// Relay-sync + MCP-config value types extracted; re-exported to keep paths stable.
+// Relay-sync + MCP-config value types live there too; re-exported to keep paths stable.
 pub use kigi_config_types::McpConfig;
-// Worktree-pool config value type extracted; re-exported to keep paths stable.
+// Worktree-pool config value type lives there too; re-exported to keep paths stable.
 pub use kigi_config_types::PoolConfig;
 
 /// TUI/CLI settings. Composed from typed section configs defined in `agent::config`.
@@ -62,7 +62,6 @@ pub fn get_mcp_server_config_with_project(
     name: &str,
     cwd: &std::path::Path,
 ) -> Option<McpServerConfig> {
-    // Check project-scoped configs from cwd (highest priority) to repo root
     let project_configs = crate::config::find_project_configs(cwd);
     for config_path in project_configs.iter().rev() {
         if let Ok(root) = crate::config::load_config_file(config_path) {
@@ -73,7 +72,6 @@ pub fn get_mcp_server_config_with_project(
         }
     }
 
-    // Fall back to global config
     get_mcp_server_config(name)
 }
 
@@ -167,7 +165,6 @@ pub fn worktree_pool_from_toml(root: &TomlValue) -> PoolConfig {
     if let TomlValue::Table(table) = root
         && let Some(pool_val) = table.get("worktree_pool")
     {
-        // Try to deserialize the section; fall back to defaults on error
         pool_val
             .clone()
             .try_into::<PoolConfig>()
@@ -635,9 +632,7 @@ fn parse_mcp_servers_from_toml(root: &TomlValue) -> IndexMap<String, McpServerCo
     result
 }
 
-// ── .mcp.json support ────────────────────────────────────────────────
-
-// `.mcp.json` discovery moved to `kigi-workspace` (client-side, shared with
+// `.mcp.json` discovery lives in `kigi-workspace` (client-side, shared with
 // the folder-trust gate); re-exported so `crate::util::config::*` paths keep working.
 pub use kigi_workspace::project_config::{
     MCP_JSON_FILENAME, find_mcp_json_files, mcp_json_candidate_paths,
@@ -666,7 +661,7 @@ pub(crate) fn load_mcp_json_servers_as_configs(
 
 /// Like [`load_mcp_json_servers_as_configs`] but bypasses the import-marker
 /// gate. Used by the `/import-claude` scanner so users can re-import items
-/// they previously skipped, even after the runtime cutoff is active.
+/// they had skipped, even after the runtime cutoff is active.
 pub fn load_mcp_json_servers_as_configs_unfiltered(
     cwd: &std::path::Path,
 ) -> IndexMap<String, McpServerConfig> {
@@ -777,7 +772,7 @@ pub(crate) fn load_claude_json_mcp_servers_as_configs(
 
 /// Like [`load_claude_json_mcp_servers_as_configs`] but bypasses the
 /// import-marker gate. Used by the `/import-claude` scanner so users can
-/// re-import items they previously skipped, even after the runtime cutoff
+/// re-import items they had skipped, even after the runtime cutoff
 /// is active.
 pub fn load_claude_json_mcp_servers_as_configs_unfiltered(
     cwd: &std::path::Path,
@@ -986,7 +981,6 @@ fn load_claude_json_mcp_servers_from(
     servers
 }
 
-/// Read and parse a JSON file. Returns `None` on I/O or parse errors (logged).
 /// Env var carrying `--mcp-config-file` paths across the TUI → shell
 /// process boundary (joined with the platform path separator). kimi-cli
 /// parity (F6): each file uses the `.mcp.json` shape
@@ -1013,6 +1007,7 @@ pub(crate) fn load_cli_mcp_config_files_as_configs() -> IndexMap<String, McpServ
     result
 }
 
+/// Read and parse a JSON file. Returns `None` on I/O or parse errors (logged).
 pub(crate) fn read_mcp_json(path: &std::path::Path) -> Option<McpConfig> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| {
@@ -1026,7 +1021,7 @@ pub(crate) fn read_mcp_json(path: &std::path::Path) -> Option<McpConfig> {
         .ok()
 }
 
-/// Like `load_mcp_servers_with_project` but returns raw configs without filtering by `enabled`.
+/// Like [`load_mcp_server_configs_with_project`] but returns raw configs without filtering by `enabled`.
 fn load_all_mcp_configs(cwd: &std::path::Path) -> IndexMap<String, McpServerConfig> {
     load_mcp_server_configs_with_project(cwd)
         .into_iter()
@@ -1273,7 +1268,6 @@ mod tests {
         ));
     }
 
-    /// Covers all canonical wire values plus the unknown/corrupt fallback.
     #[test]
     fn test_parse_mcp_servers_empty() {
         let root = toml::from_str::<TomlValue>("").unwrap();
@@ -1305,7 +1299,6 @@ args = ["server.js"]
 
     #[test]
     fn test_use_leader_parsing_true() {
-        // Test that we can parse a config with use_leader = true
         let toml_str = r#"
 [cli]
 use_leader = true
@@ -1316,7 +1309,6 @@ use_leader = true
 
     #[test]
     fn test_use_leader_parsing_false() {
-        // Test that we can parse a config with use_leader = false
         let toml_str = r#"
 [cli]
 use_leader = false
@@ -1327,7 +1319,6 @@ use_leader = false
 
     #[test]
     fn test_use_leader_default_false() {
-        // Test that missing use_leader defaults to false
         let toml_str = r#"
 [cli]
 auto_update = true
@@ -1338,7 +1329,6 @@ auto_update = true
 
     #[test]
     fn test_use_leader_no_cli_section() {
-        // Test with no cli section at all
         let toml_str = r#"
 [models]
 default = "kigi-code-fast-1"
@@ -1348,7 +1338,6 @@ default = "kigi-code-fast-1"
             let has_cli = table.get("cli").is_some();
             assert!(!has_cli);
         }
-        // use_leader_from_toml() should default to false when no cli section
         assert!(!use_leader_from_toml(&root));
     }
 
@@ -1392,10 +1381,8 @@ default = "kigi-code-fast-1"
         assert_eq!(use_leader_from_toml_opt(&root), None);
     }
 
-    // WorktreeType tests
     #[test]
     fn test_project_scoped_mcp_override_replaces_entirely() {
-        // Simulate global config with timeouts
         let global_toml = r#"
 [mcp_servers.linear]
 command = "npx"
@@ -1407,7 +1394,6 @@ tool_timeout_sec = 60
         let global_root = toml::from_str::<TomlValue>(global_toml).unwrap();
         let global_servers = parse_mcp_servers_from_toml(&global_root);
 
-        // Simulate project config WITHOUT timeouts
         let project_toml = r#"
 [mcp_servers.linear]
 command = "npx"
@@ -1417,17 +1403,14 @@ enabled = true
         let project_root = toml::from_str::<TomlValue>(project_toml).unwrap();
         let project_servers = parse_mcp_servers_from_toml(&project_root);
 
-        // Global config should have timeouts
         let global_linear = global_servers.get("linear").unwrap();
         assert_eq!(global_linear.startup_timeout_sec, Some(10));
         assert_eq!(global_linear.tool_timeout_sec, Some(60));
 
-        // Project config should NOT have timeouts (defaults apply)
         let project_linear = project_servers.get("linear").unwrap();
         assert_eq!(project_linear.startup_timeout_sec, None);
         assert_eq!(project_linear.tool_timeout_sec, None);
 
-        // Merge: project overrides global entirely
         let mut merged: IndexMap<String, McpServerConfig> = IndexMap::new();
         for (name, config) in &global_servers {
             merged.insert(name.clone(), config.clone());
@@ -1436,7 +1419,6 @@ enabled = true
             merged.insert(name.clone(), config.clone());
         }
 
-        // After merge, the project config should have replaced the global one entirely
         let merged_linear = merged.get("linear").unwrap();
         assert_eq!(merged_linear.startup_timeout_sec, None);
         assert_eq!(merged_linear.tool_timeout_sec, None);
@@ -1462,7 +1444,6 @@ enabled = true
         let project_root = toml::from_str::<TomlValue>(project_toml).unwrap();
         let project_servers = parse_mcp_servers_from_toml(&project_root);
 
-        // Merge: project adds new server
         let mut merged: IndexMap<String, McpServerConfig> = IndexMap::new();
         for (name, config) in &global_servers {
             merged.insert(name.clone(), config.clone());
@@ -1488,7 +1469,6 @@ enabled = true
         let global_servers = parse_mcp_servers_from_toml(&global_root);
         assert!(global_servers.get("linear").unwrap().enabled);
 
-        // Project config disables the server
         let project_toml = r#"
 [mcp_servers.linear]
 command = "npx"
@@ -1506,7 +1486,6 @@ enabled = false
             merged.insert(name.clone(), config.clone());
         }
 
-        // After merge, the server should be disabled by project config
         assert!(!merged.get("linear").unwrap().enabled);
     }
 
@@ -1557,7 +1536,6 @@ enabled = true
         let global_root = toml::from_str::<TomlValue>(global_toml).unwrap();
         let global_servers = parse_mcp_servers_from_toml(&global_root);
 
-        // Project only overrides linear
         let project_toml = r#"
 [mcp_servers.linear]
 command = "npx"
@@ -1575,7 +1553,6 @@ enabled = false
             merged.insert(name.clone(), config.clone());
         }
 
-        // buildkite should be preserved from global config
         assert_eq!(merged.len(), 2);
         assert!(merged.get("buildkite").unwrap().enabled);
         assert!(!merged.get("linear").unwrap().enabled);
@@ -1752,6 +1729,4 @@ enabled = false
             ]
         );
     }
-
-    // === merge_section tests ===
 }

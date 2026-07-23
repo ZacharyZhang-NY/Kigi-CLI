@@ -59,14 +59,12 @@ async fn cancel_then_resend_prompt_appears_once() {
         )
         .expect("rewound prompt restored after history trim");
 
-    // Resend the restored text as a fresh turn.
     content.set_chunk_delay(None);
     harness.inject_keys(b"\r").expect("Enter resends");
     harness
         .wait_for_text("RESENT_REPLY", Duration::from_secs(90))
         .expect("resent turn reply");
 
-    // Exactly once in scrollback (block back, composer empty again).
     harness
         .wait_until(
             "resent prompt rendered exactly once",

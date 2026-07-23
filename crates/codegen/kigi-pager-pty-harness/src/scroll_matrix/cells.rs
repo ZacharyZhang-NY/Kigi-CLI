@@ -120,7 +120,7 @@ const AUTO_MUX_NODROP: &[InvariantId] = &[
 ];
 const AUTO_SCREEN: &[InvariantId] = &[Ord, Cap, DropEq, Cadence, ConsA, Accel, Carry, Cfg, Screen];
 /// The jerk suite: core + the two smoothness invariants the finalize-decel
-/// fix made hold (formerly this cell's xfail set).
+/// fix made hold (once this cell's xfail set).
 const JERK: &[InvariantId] = &[
     Ord,
     Cap,
@@ -158,7 +158,7 @@ const fn cell(
 /// The matrix. Ids are `<class>_<config>_<gesture>[_qualifier]`.
 #[rustfmt::skip]
 pub const CELLS: &[MatrixCell] = &[
-    // ── Curated (CI tier, 8 cells) ─────────────────────────────────────
+    // Curated (CI tier, 8 cells)
     cell("c1_auto_g3_flood_speed100", Tier::Curated, &[SPEED100],
         ExpectedProfile { speed: 6.0, ..C1 }, GestureId::G3Flood, SessionKind::Settled, AUTO_QUIET),
     cell("c2_auto_g3_flood_speed100", Tier::Curated, &[ITERM, SPEED100],
@@ -179,7 +179,7 @@ pub const CELLS: &[MatrixCell] = &[
     // (I-SMOOTH-COAST, I-NO-DROP) are ordinary pass rows now.
     cell("c1_auto_g4_jerk_xfail", Tier::Curated, &[],
         C1, GestureId::G4Jerk, SessionKind::Settled, JERK),
-    // ── Full tier (local sweep; representative subset — see trim note) ─
+    // Full tier (local sweep; representative subset — see trim note)
     cell("c1_auto_g1", Tier::Full, &[], C1,
         GestureId::G1Notch, SessionKind::Settled, AUTO_NODROP),
     cell("c1_auto_g2", Tier::Full, &[], C1,
@@ -250,7 +250,8 @@ mod tests {
         if let Some(lines) = get("KIGI_SCROLL_LINES") {
             let lines: u16 = lines.parse().unwrap();
             wheel_lpt = lines;
-            trackpad_lpt = lines; // one knob overrides both paths
+            // one knob overrides both paths
+            trackpad_lpt = lines;
         }
         // speed_to_multiplier re-derivation for the settings used in rows.
         let speed = match get("KIGI_SCROLL_SPEED") {

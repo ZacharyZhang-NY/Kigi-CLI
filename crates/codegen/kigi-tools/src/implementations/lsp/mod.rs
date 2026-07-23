@@ -17,8 +17,6 @@ pub use types::{
     LspOperation, LspToolInput, LspToolResult,
 };
 
-// ── Shared types used across submodules ─────────────────────────────────
-
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;

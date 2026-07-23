@@ -8,7 +8,7 @@ use super::*;
 /// `Internal error: "session failed to respond"`. An `acp::Error` carries
 /// no `promptId`, so before the Err-arm gate this error was misattributed
 /// to the running turn and rendered as a spurious "Turn failed", detonating
-/// an unrelated in-flight turn. The handler now gates the Err arm on the
+/// an unrelated in-flight turn. The handler gates the Err arm on the
 /// `prompt_id` the pager minted for that RPC: an error whose id is NOT the
 /// running turn is discarded; the running turn is left untouched.
 #[test]
@@ -1022,13 +1022,11 @@ fn bg_task_kill_failed_clears_pending_kill_on_inactive_agent() {
     assert!(task.kill_requested_at.is_none());
 }
 
-/// build_rows handles many subagents (placeholder).
 #[test]
 fn build_rows_collapses_many_subagents() {
     use crate::views::dashboard::build_rows;
     let mut app = test_app_with_agent();
     let agent = app.agents.get_mut(&AgentId(0)).unwrap();
-    // Insert 9 subagents.
     for i in 0..9 {
         let info = make_test_subagent(&format!("c{i}"), &format!("sa{i}"));
         agent
@@ -1078,7 +1076,6 @@ fn build_rows_seven_subagents_no_placeholder() {
     assert!(!rows.last().unwrap().is_more_placeholder);
 }
 
-/// At the threshold (exactly 8), no placeholder.
 #[test]
 fn build_rows_eight_subagents_no_placeholder() {
     use crate::views::dashboard::build_rows;
@@ -1208,7 +1205,6 @@ fn subagent_label_strips_control_characters() {
         "subagent label must not retain \\x1b: {:?}",
         sub.label
     );
-    // Visible characters survive.
     assert!(
         sub.label.contains("evil"),
         "sanitised label should preserve printable characters, got {:?}",

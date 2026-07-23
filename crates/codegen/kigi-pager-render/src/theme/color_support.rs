@@ -60,7 +60,7 @@ impl std::fmt::Display for ColorLevel {
     }
 }
 
-// ── Global singleton ─────────────────────────────────────────────────────
+// Global singleton
 
 static COLOR_LEVEL: OnceLock<ColorLevel> = OnceLock::new();
 
@@ -133,7 +133,7 @@ pub fn set(level: ColorLevel) -> Result<(), ColorLevel> {
     COLOR_LEVEL.set(level)
 }
 
-// ── Color quantization ──────────────────────────────────────────────────
+// Color quantization
 
 /// Downgrade a [`Color`] to the highest representation the terminal supports.
 ///
@@ -164,7 +164,7 @@ pub fn quantize(color: Color) -> Color {
     quantize_color(color, get())
 }
 
-// ── Terminal-based truecolor inference ──────────────────────────────────
+// Terminal-based truecolor inference
 
 /// Check whether the detected terminal emulator is known to support truecolor.
 ///
@@ -196,7 +196,7 @@ fn terminal_supports_truecolor() -> bool {
     cfg!(target_os = "windows")
 }
 
-// ── 256 → 16 mapping ────────────────────────────────────────────────────
+// 256 → 16 mapping
 
 /// Map a 256-color index to the nearest basic ANSI 16 color.
 fn indexed_to_ansi16(n: u8) -> Color {
@@ -209,7 +209,8 @@ fn indexed_to_ansi16(n: u8) -> Color {
         4 => Color::Blue,
         5 => Color::Magenta,
         6 => Color::Cyan,
-        7 => Color::White, // actually "silver" in most terminals
+        // actually "silver" in most terminals
+        7 => Color::White,
         8 => Color::DarkGray,
         9 => Color::LightRed,
         10 => Color::LightGreen,
@@ -248,7 +249,8 @@ fn rgb_to_ansi16(r: u8, g: u8, b: u8) -> Color {
         (0, 0, 255, Color::LightBlue),
         (255, 0, 255, Color::LightMagenta),
         (0, 255, 255, Color::LightCyan),
-        (255, 255, 255, Color::White), // index 15 = bright white
+        // index 15 = bright white
+        (255, 255, 255, Color::White),
     ];
 
     let mut best = Color::White;

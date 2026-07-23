@@ -5,7 +5,7 @@
 //!
 //! ## Why this is a render-only change
 //!
-//! Input routing is unchanged — the existing `handle_modal_key`
+//! Input routing is `unchanged` — the existing `handle_modal_key`
 //! (`ActiveModal::SessionPicker`) and `handle_extensions_modal_key`
 //! (`extensions_modal`) own navigation and close-on-Esc. Two different coupling
 //! contracts are honored here:
@@ -99,7 +99,7 @@ pub(super) fn render(
     }
 }
 
-// ─────────────────────────────── chrome ─────────────────────────────────────
+// chrome
 
 /// Split `area` into (title_row, second_row, divider_row, list_area, footer_row).
 /// `second_row` hosts the subtitle (mcps) or the search bar (resume).
@@ -156,7 +156,7 @@ fn render_divider(buf: &mut Buffer, row: Rect, theme: &Theme) {
     picker::render_divider(buf, row.x, row.y, row.width, theme, None);
 }
 
-// ─────────────────────────────── resume ─────────────────────────────────────
+// resume
 
 /// Exact body height (display rows) for the session-picker list.
 fn resume_body_rows(agent: &AgentView, width: u16) -> u16 {
@@ -280,7 +280,7 @@ fn render_resume(
     None
 }
 
-// ──────────────────────────────── mcps ──────────────────────────────────────
+// mcps
 
 /// Exact body height (display rows) for the MCP list: one line per row.
 fn mcps_body_rows(agent: &AgentView) -> u16 {
@@ -289,7 +289,8 @@ fn mcps_body_rows(agent: &AgentView) -> u16 {
     };
     let servers = match &s.mcps_data {
         TabDataState::Loaded(v) => v.as_slice(),
-        _ => return 1, // a single "loading…" / error row
+        // a single "loading…" / error row
+        _ => return 1,
     };
     let rows = minimal_api::build_mcp_picker_rows(
         servers,
@@ -376,7 +377,7 @@ fn render_mcps(
                             }
                         }
                     } else {
-                        ind[i] = 2; // tool child
+                        ind[i] = 2;
                     }
                 }
                 subtitle = format!(
@@ -489,7 +490,7 @@ fn render_mcps(
     None
 }
 
-// ─────────────────────────────── helpers ────────────────────────────────────
+// helpers
 
 /// Sum the display height of grouped picker entries: a header is one row; a row
 /// is its label line plus its collapsed summary lines (what the picker draws

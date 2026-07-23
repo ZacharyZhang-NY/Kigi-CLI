@@ -4,9 +4,9 @@
     #[test]
     fn acp_chunk_for_inactive_agent_lands_in_its_scrollback() {
         // Regression: switching away from a streaming agent must not
-        // discard chunks bound for that agent. Before this fix, only
-        // `TaskResult::PromptResponse` survived, so the user saw a bare
-        // "Worked for X.Xs" with no body text.
+        // discard chunks bound for that agent. If only
+        // `TaskResult::PromptResponse` were routed, the user would see a
+        // bare "Worked for X.Xs" with no body text.
         let mut app = make_app_with_agent("sess-A");
         insert_agent(&mut app, AgentId(1), Some("sess-B"));
         switch_active_to(&mut app, AgentId(1));
@@ -32,7 +32,6 @@
 
     #[test]
     fn acp_chunk_for_active_agent_returns_affected_true() {
-        // Baseline: chunk for the visible agent triggers a redraw.
         let mut app = make_app_with_agent("sess-A");
         insert_agent(&mut app, AgentId(1), Some("sess-B"));
         switch_active_to(&mut app, AgentId(1));
@@ -46,9 +45,6 @@
 
     #[test]
     fn acp_chunk_for_subagent_routes_through_parent() {
-        // Subagent (child) chunk must land in the parent's
-        // `subagent_views[child_sid]` even when a different agent is
-        // currently active.
         let mut app = make_app_with_agent("sess-A");
         insert_agent(&mut app, AgentId(1), Some("sess-B"));
         switch_active_to(&mut app, AgentId(1));
@@ -169,7 +165,6 @@
         let mut app = make_app_with_agent("sess-A");
         insert_agent(&mut app, AgentId(1), Some("sess-B"));
         switch_active_to(&mut app, AgentId(1));
-        // Sanity: A's todo starts empty.
         assert_eq!(
             app.agents.get(&AgentId(0)).unwrap().todo.counts().total(),
             0,
@@ -277,9 +272,6 @@
 
     #[test]
     fn acp_chunks_for_two_agents_dont_cross_contaminate() {
-        // Send chunks to both A and B in sequence; each landing in its own
-        // scrollback proves the demux works in both directions regardless
-        // of which agent is currently active.
         let mut app = make_app_with_agent("sess-A");
         insert_agent(&mut app, AgentId(1), Some("sess-B"));
         switch_active_to(&mut app, AgentId(1));

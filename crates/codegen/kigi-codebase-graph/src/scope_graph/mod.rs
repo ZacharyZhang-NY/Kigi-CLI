@@ -16,17 +16,12 @@ pub use nodes::{LocalDef, LocalImport, LocalScope, NodeKind, Reference, Symbol, 
 
 use crate::languages::TSLanguageConfig;
 
-/// Result of building a scope graph, including alias pairs.
 pub struct ScopeGraphResult {
-    /// The scope graph for the file.
     pub graph: ScopeGraph,
-    /// Alias pairs: (alias_name, original_name).
+    /// Each pair is `(alias_name, original_name)`.
     pub aliases: Vec<(String, String)>,
 }
 
-/// Build a ScopeGraph from tree-sitter query and source.
-///
-/// This is a convenience wrapper around `scope_graph_from_definitions_query`.
 pub fn build_scope_graph(
     query: &tree_sitter::Query,
     root_node: tree_sitter::Node<'_>,

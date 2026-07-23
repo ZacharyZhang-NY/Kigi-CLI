@@ -73,12 +73,10 @@ pub fn detect_with_drill(
     cursor: usize,
     drill_prefix: Option<&str>,
 ) -> Option<AtContext> {
-    // Cursor must be within text bounds and on a char boundary.
     if cursor > text.len() || !text.is_char_boundary(cursor) {
         return None;
     }
 
-    // Find the rightmost `@` before the cursor.
     let at_idx = text[..cursor].rfind('@')?;
 
     // Reject if `@` is preceded by alphanumeric or underscore (email-like).
@@ -88,7 +86,6 @@ pub fn detect_with_drill(
         return None;
     }
 
-    // Path content starts after `@` (+ optional `!` hidden-mode marker).
     let content_start = at_idx + 1;
     let after_bang = if text[content_start..].starts_with('!') {
         content_start + 1
@@ -102,7 +99,6 @@ pub fn detect_with_drill(
             .map(|_| after_bang + prefix.len())
     });
 
-    // Find the end of the @-token: first whitespace, comma, or semicolon after `@`.
     let token_end = text[at_idx + 1..]
         .char_indices()
         .find_map(|(offset, ch)| {
@@ -117,7 +113,6 @@ pub fn detect_with_drill(
         })
         .unwrap_or(text.len());
 
-    // Cursor must be within the @-token.
     if cursor > token_end {
         return None;
     }
@@ -277,8 +272,6 @@ mod tests {
         assert_eq!(ctx.range, 6..10);
         assert_eq!(ctx.path_range(), 7..10);
     }
-
-    // ── Drill-aware detection (whitespace inside a drilled dir name) ─────
 
     #[test]
     fn drill_prefix_allows_internal_space() {

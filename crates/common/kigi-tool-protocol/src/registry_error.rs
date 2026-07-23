@@ -17,8 +17,6 @@ pub enum RegistryError {
     #[error("tool already registered: {tool_id}")]
     AlreadyRegistered { tool_id: ToolId },
 
-    /// The registration's session does not match the connection's bound
-    /// session.
     #[error("session mismatch: token session={token_session}, registration session={reg_session}")]
     SessionMismatch {
         token_session: SessionId,
@@ -41,7 +39,7 @@ pub enum RegistryError {
     #[error("invalid description: {message}")]
     InvalidDescription { message: String },
 
-    /// `if_match_generation` precondition failed.
+    /// The `if_match_generation` precondition failed.
     #[error("stale generation: expected={expected}, actual={actual}")]
     StaleGeneration { expected: u64, actual: u64 },
 }

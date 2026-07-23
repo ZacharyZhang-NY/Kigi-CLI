@@ -1,8 +1,7 @@
 //! Environment-variable test knobs.
 
-/// Parse a `usize` env knob, falling back to `default` when unset or
-/// unparseable. The perf-repro convention for sizing `#[ignore]` benches
-/// (e.g. `KIGI_PERF_GIT_FILES`).
+/// Parse a `usize` env knob; use `default` when unset or unparseable.
+/// Perf-repro convention for sizing `#[ignore]` benches (e.g. `KIGI_PERF_GIT_FILES`).
 pub fn env_usize(key: &str, default: usize) -> usize {
     std::env::var(key)
         .ok()

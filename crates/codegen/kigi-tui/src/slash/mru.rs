@@ -362,8 +362,10 @@ mod tests {
 
     #[test]
     fn dirty_store_yields_one_snapshot_then_clears() {
-        let mut mru = SlashMru::new(); // persist-enabled
-        mru.loaded = true; // avoid disk read in test
+        // persist-enabled
+        let mut mru = SlashMru::new();
+        // avoid disk read in test
+        mru.loaded = true;
         mru.touch("p", "plan");
         assert!(mru.dirty);
         assert!(mru.take_persist_snapshot().is_some());
@@ -380,9 +382,11 @@ mod tests {
         mru.loaded = true;
         mru.touch("p", "plan");
         assert!(mru.take_persist_snapshot().is_some());
-        assert!(mru.take_persist_snapshot().is_none()); // nothing to retry yet
+        // nothing to retry yet
+        assert!(mru.take_persist_snapshot().is_none());
         mru.mark_dirty();
-        assert!(mru.take_persist_snapshot().is_some()); // retried
+        // retried
+        assert!(mru.take_persist_snapshot().is_some());
     }
 
     #[test]

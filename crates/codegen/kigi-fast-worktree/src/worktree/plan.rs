@@ -1,6 +1,4 @@
 //! Worktree execution planning.
-//!
-//! `WorktreePlan` makes the worktree creation pipeline explicit and testable.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -9,9 +7,10 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{BtrfsDelegate, CreationMode, IgnoredFilesMode, WorkingTreeMode};
 
+// Debug cannot be derived: `Arc<dyn BtrfsDelegate>` is not Debug, so there is a
+// hand-written impl below.
 #[derive(Clone)]
 pub(crate) struct WorktreePlan {
-    // Note: manual Debug impl below (Arc<dyn BtrfsDelegate> isn't Debug)
     pub source: PathBuf,
     pub dest: PathBuf,
     pub git_ref: String,
@@ -20,13 +19,12 @@ pub(crate) struct WorktreePlan {
     pub working_tree: WorkingTreeMode,
     pub ignored_files: IgnoredFilesMode,
     pub ignored_parallelism: usize,
-    /// Strategy for worktree creation (linked, standalone, or git checkout).
     pub creation_mode: CreationMode,
-    /// Cancellation token for aborting file copy mid-flight.
+    /// Aborts the file copy mid-flight.
     pub cancellation_token: CancellationToken,
-    /// Optional delegate for privileged btrfs operations (used when the caller
-    /// lacks CAP_SYS_ADMIN, e.g., inside a bwrap sandbox).
-    /// Only read on Linux (in `try_btrfs_delegate`).
+    /// Performs privileged btrfs operations when the caller lacks
+    /// CAP_SYS_ADMIN, e.g. inside a bwrap sandbox. Only read on Linux, in
+    /// `try_btrfs_delegate`, hence the `dead_code` allowance elsewhere.
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub btrfs_delegate: Option<Arc<dyn BtrfsDelegate>>,
 }

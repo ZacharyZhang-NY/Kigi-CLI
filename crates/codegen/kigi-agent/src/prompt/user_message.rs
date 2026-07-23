@@ -334,7 +334,7 @@ mod tests {
             assert_eq!(original, loaded);
         }
     }
-    /// A status under the cap passes through unchanged (trim is a no-op for
+    /// A status under the cap passes through `unchanged` (trim is a no-op for
     /// real `git status --short --branch` output, which starts with `##`).
     #[test]
     fn normalize_git_status_passthrough_under_limit() {

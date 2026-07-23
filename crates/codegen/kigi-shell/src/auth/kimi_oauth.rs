@@ -119,7 +119,6 @@ fn oauth_url(host: &str, path: &str) -> String {
     format!("{}{path}", host.trim_end_matches('/'))
 }
 
-/// Attach the device-identity headers to a request.
 fn with_device_headers(
     mut builder: reqwest::RequestBuilder,
 ) -> anyhow::Result<reqwest::RequestBuilder> {

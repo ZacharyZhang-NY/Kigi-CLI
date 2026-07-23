@@ -7,9 +7,7 @@ use async_trait::async_trait;
 
 use crate::prompt::CompactionPrompt;
 
-// ---------------------------------------------------------------------------
 // Sampler output + error types
-// ---------------------------------------------------------------------------
 
 /// Raw text captured from a compaction LLM call, split by channel.
 ///
@@ -45,16 +43,17 @@ pub enum CompactionSampleError {
     Build(String),
     /// The sampling call could not be started.
     ///
-    /// Classification is asymmetric for pre-migration parity: the *inter*
-    /// retry policy ([`Self::is_deterministic`]) treats it as deterministic
-    /// (no retry), while the *intra* orchestrator maps it to
+    /// Classification is asymmetric: the *inter* retry policy
+    /// ([`Self::is_deterministic`]) treats it as deterministic (no retry),
+    /// while the *intra* orchestrator maps it to
     /// `IntraCompactionError::SamplerStart` which its retry loop treats as
     /// transient.
     Start(String),
     /// The model produced no response-channel content. Transient.
     EmptyResponse,
-    /// Anything else — classified by string matching for backward
-    /// compatibility with samplers that pre-date the structured variants.
+    /// Opaque error — classified by string matching when the sampler does not
+    /// use a structured variant. Keep match literals in sync with the harness
+    /// sampler (`compaction_sample_error_to_intra*` tests guard the mapping).
     Other(anyhow::Error),
 }
 
@@ -103,9 +102,7 @@ impl CompactionSampleError {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Sampler trait
-// ---------------------------------------------------------------------------
 
 /// Interface for the LLM call that produces compaction summaries.
 ///

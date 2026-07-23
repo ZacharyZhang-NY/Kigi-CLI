@@ -28,14 +28,12 @@ const MCP_OAUTH_CLIENT_NAME: &str = "Kigi";
 /// a login completed in another window or process.
 const CREDENTIAL_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
 
-// ---------------------------------------------------------------------------
 // Two-layer dedup: prevents duplicate browser tabs both within one process
 // (multiple async tasks / sessions) and across separate processes (leader
 // mode disabled, multiple `kigi` invocations).
 //
 // Layer 1 (cross-process): filesystem lock at $KIGI_SHARE_DIR/mcp_auth_{safe_name}.lock
 // Layer 2 (in-process):    watch channel so only one task runs the flow
-// ---------------------------------------------------------------------------
 
 /// In-process in-flight auth tracker. Keyed by server name.
 /// Each entry has a generation counter so that when a forced override evicts
@@ -69,7 +67,7 @@ pub async fn authenticate_mcp_server_dedup(
     byo_config: Option<&McpOAuthConfig>,
     force: bool,
 ) -> Result<(), String> {
-    // --- Layer 2: in-process dedup via watch channel ---
+    // Layer 2: in-process dedup via watch channel
     let mut in_flight = IN_FLIGHT_AUTH.lock().await;
 
     // Remove stale entries left by panicked leaders (sender dropped).
@@ -116,7 +114,7 @@ pub async fn authenticate_mcp_server_dedup(
     in_flight.insert(server_name.to_string(), InFlightEntry { rx, generation });
     drop(in_flight);
 
-    // --- Layer 1: cross-process dedup via filesystem lock (Unix only) ---
+    // Layer 1: cross-process dedup via filesystem lock (Unix only)
     // When force is set, skip the fs lock — the old leader may still hold it
     // and we don't want to block behind a stale browser flow.
     #[cfg(unix)]

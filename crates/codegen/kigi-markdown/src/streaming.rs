@@ -1899,7 +1899,8 @@ The frozen lines are **never re-rendered**, making streaming O(N) instead of O(N
             let first_splits: Vec<usize> = if first_half.len() > 1 {
                 vec![first_half.len() / 2]
             } else {
-                vec![first_half.len()] // No split, use whole thing
+                // No split, use whole thing
+                vec![first_half.len()]
             };
 
             // Split second half (if possible)
@@ -1927,7 +1928,8 @@ The frozen lines are **never re-rendered**, making streaming O(N) instead of O(N
                     .collect();
 
                     if chunks.len() < 2 {
-                        continue; // Need at least 2 chunks
+                        // Need at least 2 chunks
+                        continue;
                     }
 
                     tested += 1;
@@ -2482,9 +2484,7 @@ The frozen lines are **never re-rendered**, making streaming O(N) instead of O(N
         assert_streaming_matches_full_both(text);
     }
 
-    // ----------------------------------------------------------------------
     // Syntect-enabled streaming equivalence (incremental open-code highlighter)
-    // ----------------------------------------------------------------------
 
     /// Build a nested YAML body of at least `num_lines` lines (no fences).
     fn yaml_body(num_lines: usize) -> String {
@@ -2866,7 +2866,8 @@ The frozen lines are **never re-rendered**, making streaming O(N) instead of O(N
     #[test]
     fn clone_preserves_held_back_pending() {
         let mut r = StreamingMarkdownRenderer::new(test_style::STYLE, true);
-        r.push_and_render("ab \\(\\alpha\\) cd \\", None); // trailing `\` held back
+        // trailing `\` held back
+        r.push_and_render("ab \\(\\alpha\\) cd \\", None);
         let mut cloned = r.clone();
         r.push_and_render("(\\beta\\) ef\n\n", None);
         cloned.push_and_render("(\\beta\\) ef\n\n", None);

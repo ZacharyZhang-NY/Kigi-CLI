@@ -68,7 +68,7 @@ const REDRAW_CADENCE: Duration = Duration::from_millis(REDRAW_CADENCE_MS);
 
 const DEFAULT_EVENTS_PER_TICK: u16 = 3;
 const DEFAULT_WHEEL_LINES_PER_TICK: u16 = 3;
-const DEFAULT_TRACKPAD_LINES_PER_TICK: u16 = 3; // NOTE: was 1
+const DEFAULT_TRACKPAD_LINES_PER_TICK: u16 = 3;
 const DEFAULT_SCROLL_MODE: ScrollInputMode = ScrollInputMode::Auto;
 const DEFAULT_WHEEL_TICK_DETECT_MAX_MS: u64 = 12;
 const DEFAULT_WHEEL_LIKE_MAX_DURATION_MS: u64 = 200;
@@ -1332,9 +1332,9 @@ impl ScrollStream {
         };
         let lines_per_tick = self.effective_lines_per_tick_f32();
 
-        // No intermediate clamps on `total` — clamping at MAX_ACCUMULATED_LINES
-        // (256) previously caused scroll to freeze once applied_lines caught up
-        // to the cap during long continuous trackpad gestures.
+        // No intermediate clamps on `total`: clamping at MAX_ACCUMULATED_LINES
+        // (256) would freeze scroll once applied_lines caught up to the cap
+        // during long continuous trackpad gestures.
         //
         // Safety: accumulated_events grows linearly with scroll events (~100-200/s
         // on trackpad). At steady state, desired_lines and applied_lines track

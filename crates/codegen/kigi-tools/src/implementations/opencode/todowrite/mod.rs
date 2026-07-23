@@ -16,8 +16,6 @@ use crate::types::requirements::{Expr, ToolRequirement};
 use crate::types::resources::{SharedResources, State};
 use crate::types::tool::{ToolKind, ToolNamespace};
 
-// ─── Description ─────────────────────────────────────────────────────
-
 const DESCRIPTION: &str = r#"Use this tool to create and manage a structured task list for your current coding session. This helps you track progress, organize complex tasks, and demonstrate thoroughness to the user.
 It also helps the user understand the progress of the task and overall progress of their requests.
 
@@ -185,37 +183,27 @@ The assistant did not use the todo list because this is a single command executi
 
 When in doubt, use this tool. Being proactive with task management demonstrates attentiveness and ensures you complete all requirements successfully."#;
 
-// ─── Input ───────────────────────────────────────────────────────────
-
-/// A single todo item in the opencode format.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct OpenCodeTodoItem {
-    /// Brief description of the task.
     #[schemars(description = "Brief description of the task")]
     pub content: String,
 
-    /// Current status: "pending", "in_progress", "completed", or "cancelled".
     #[schemars(
         description = "The current status of the todo item: pending, in_progress, completed, or cancelled"
     )]
     pub status: String,
 
-    /// Priority level: "high", "medium", or "low".
     #[schemars(description = "Priority level: high, medium, or low")]
     pub priority: String,
 }
 
-/// Input for the opencode `todowrite` tool.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct TodoWriteInput {
-    /// The complete todo list. Replaces all existing todos.
     #[schemars(
         description = "Array of todo items — the complete updated todo list. Replaces all existing todos."
     )]
     pub todos: Vec<OpenCodeTodoItem>,
 }
-
-// ─── ToolInput conversions (via Dynamic variant) ─────────────────────
 
 impl TryFrom<crate::types::tool_io::ToolInput> for TodoWriteInput {
     type Error = String;
@@ -236,8 +224,6 @@ impl From<TodoWriteInput> for crate::types::tool_io::ToolInput {
         )
     }
 }
-
-// ─── Helpers ─────────────────────────────────────────────────────────
 
 /// Parse a status string into `TodoStatus`, defaulting to `Pending`.
 fn parse_status(s: &str) -> TodoStatus {
@@ -260,7 +246,6 @@ fn parse_priority(s: &str) -> TodoPriority {
     }
 }
 
-/// Build a human-readable summary of the current todo state.
 fn summarize(todos: &[TodoItem]) -> String {
     if todos.is_empty() {
         return "No tasks currently tracked.".into();
@@ -272,13 +257,8 @@ fn summarize(todos: &[TodoItem]) -> String {
     out
 }
 
-// ─── Tool ────────────────────────────────────────────────────────────
-
-/// OpenCode `todowrite` tool.
 #[derive(Debug, Default)]
 pub struct TodoWriteTool;
-
-// ─── Tests ───────────────────────────────────────────────────────────
 
 impl crate::types::tool_metadata::ToolMetadata for TodoWriteTool {
     fn kind(&self) -> ToolKind {
@@ -341,7 +321,7 @@ impl kigi_tool_runtime::Tool for TodoWriteTool {
             let mut res = resources.lock().await;
             let todo_state = res.get_or_default::<State<TodoState>>();
 
-            // Full-replace: clear existing state and insert all incoming items.
+            // Full-replace semantics: prior todos are discarded, not merged.
             todo_state.0.clear();
 
             for (i, item) in input.todos.iter().enumerate() {
@@ -393,7 +373,6 @@ mod tests {
         }
     }
 
-    /// Unwrap a `TodoWriteOutput` expecting the `TodosUpdated` variant.
     fn expect_success(output: TodoWriteOutput) -> TodoWriteSuccess {
         match output {
             TodoWriteOutput::TodosUpdated(s) => s,
@@ -437,7 +416,6 @@ mod tests {
         let resources = Resources::new();
         let shared = resources.into_shared();
 
-        // First call
         let input1 = TodoWriteInput {
             todos: vec![make_item("Old task", "completed", "low")],
         };
@@ -445,7 +423,6 @@ mod tests {
             .await
             .unwrap();
 
-        // Second call replaces everything
         let input2 = TodoWriteInput {
             todos: vec![make_item("New task", "pending", "high")],
         };
@@ -500,7 +477,6 @@ mod tests {
         assert_eq!(parse_status("in_progress"), TodoStatus::InProgress);
         assert_eq!(parse_status("completed"), TodoStatus::Completed);
         assert_eq!(parse_status("cancelled"), TodoStatus::Cancelled);
-        // Unknown defaults to Pending
         assert_eq!(parse_status("unknown"), TodoStatus::Pending);
     }
 
@@ -509,7 +485,6 @@ mod tests {
         assert_eq!(parse_priority("high"), TodoPriority::High);
         assert_eq!(parse_priority("medium"), TodoPriority::Medium);
         assert_eq!(parse_priority("low"), TodoPriority::Low);
-        // Unknown defaults to Medium
         assert_eq!(parse_priority("unknown"), TodoPriority::Medium);
     }
 
@@ -575,14 +550,12 @@ mod tests {
         };
         let json = serde_json::to_value(&input).unwrap();
 
-        // Verify the JSON structure has the expected shape.
         let arr = json["todos"].as_array().unwrap();
         assert_eq!(arr.len(), 3);
         assert_eq!(arr[0]["content"], "Task A");
         assert_eq!(arr[0]["status"], "pending");
         assert_eq!(arr[0]["priority"], "high");
 
-        // Round-trip back.
         let deserialized: TodoWriteInput = serde_json::from_value(json).unwrap();
         assert_eq!(deserialized.todos.len(), 3);
         assert_eq!(deserialized.todos[1].content, "Task B");
@@ -669,7 +642,6 @@ mod tests {
         let resources = Resources::new();
         let shared = resources.into_shared();
 
-        // Call 1
         let input1 = TodoWriteInput {
             todos: vec![make_item("First batch", "pending", "high")],
         };
@@ -677,7 +649,6 @@ mod tests {
             .await
             .unwrap();
 
-        // Call 2
         let input2 = TodoWriteInput {
             todos: vec![
                 make_item("Second A", "in_progress", "medium"),
@@ -688,7 +659,6 @@ mod tests {
             .await
             .unwrap();
 
-        // Call 3 — only these should survive.
         let input3 = TodoWriteInput {
             todos: vec![
                 make_item("Final X", "completed", "high"),
@@ -710,7 +680,6 @@ mod tests {
         assert!(output.summary_for_prompt.contains("Final Y"));
         assert!(output.summary_for_prompt.contains("Final Z"));
 
-        // Verify shared state also only has 3 items.
         let res = shared.lock().await;
         let state = res.get::<State<TodoState>>().unwrap();
         assert_eq!(state.0.todo_items().count(), 3);
@@ -728,7 +697,6 @@ mod tests {
         assert_eq!(json["status"], "in_progress");
         assert_eq!(json["priority"], "high");
 
-        // Deserialize back.
         let recovered: OpenCodeTodoItem = serde_json::from_value(json).unwrap();
         assert_eq!(recovered.content, "Write tests");
         assert_eq!(recovered.status, "in_progress");
@@ -778,11 +746,9 @@ mod tests {
                 .unwrap(),
         );
 
-        // output.state should be a valid TodoState with all 3 items.
         assert!(!output.state.is_empty());
         assert_eq!(output.state.todo_items().count(), 3);
 
-        // Verify items in the snapshot match the input.
         let items: Vec<_> = output.state.todo_items().collect();
         assert_eq!(items[0].content, "Task A");
         assert_eq!(items[1].content, "Task B");

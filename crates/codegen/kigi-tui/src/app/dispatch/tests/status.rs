@@ -42,7 +42,6 @@ fn send_while_idle_with_nonempty_shared_queue_routes_to_server() {
             _ => None,
         })
         .unwrap_or_else(|| panic!("expected immediate SendPrompt for 'c', got {effects:?}"));
-    // Did NOT start a local turn or adopt "c" as the running prompt.
     assert!(
         !app.agents[&id].session.state.is_turn_running(),
         "must not promote 'c' to a local running turn"
@@ -219,8 +218,6 @@ fn show_usage_on_welcome_screen_is_noop() {
         "ShowUsage with no active agent should be a no-op"
     );
 }
-
-// ── Minimal update-notice tests ──────────────────────────────────────
 
 #[test]
 fn minimal_update_notice_commits_a_system_block() {

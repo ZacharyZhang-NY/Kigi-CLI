@@ -26,16 +26,20 @@ pub trait AcpSide {
 
 /// Marker type representing the agent's view of the ACP connection (as one side of that connection).
 impl AcpSide for acp::AgentSide {
-    type InMessage = AcpAgentMessage; // inbound messages = messages meant *for* the agent
-    type OutMessage = AcpClientMessage; // outbound messages = messages meant *for* the client
+    // inbound messages = messages meant *for* the agent
+    type InMessage = AcpAgentMessage;
+    // outbound messages = messages meant *for* the client
+    type OutMessage = AcpClientMessage;
     type OtherSide = acp::ClientSide;
     const NAME: &'static str = "agent";
 }
 
 /// Marker type representing the agent's view of the ACP connection (as one side of that connection).
 impl AcpSide for acp::ClientSide {
-    type InMessage = AcpClientMessage; // inbound messages = messages meant *for* the client
-    type OutMessage = AcpAgentMessage; // outbound messages = messages meant *for* the agent
+    // inbound messages = messages meant *for* the client
+    type InMessage = AcpClientMessage;
+    // outbound messages = messages meant *for* the agent
+    type OutMessage = AcpAgentMessage;
     type OtherSide = acp::AgentSide;
     const NAME: &'static str = "client";
 }
@@ -241,7 +245,8 @@ mod client {
 
         pub fn route_to_client(
             self,
-            client: impl acp::Client + 'static, // note: acp::Client is auto-implemented for Rc/Arc
+            // note: acp::Client is auto-implemented for Rc/Arc
+            client: impl acp::Client + 'static,
             spawn: impl Fn(LocalBoxFuture<'static, ()>) + 'static,
         ) {
             match self {
@@ -540,7 +545,8 @@ mod agent {
 
         pub fn route_to_agent(
             self,
-            agent: impl acp::Agent + 'static, // note: acp::Agent is auto-implemented for Rc/Arc
+            // note: acp::Agent is auto-implemented for Rc/Arc
+            agent: impl acp::Agent + 'static,
             spawn: impl Fn(LocalBoxFuture<'static, ()>) + 'static,
         ) {
             match self {

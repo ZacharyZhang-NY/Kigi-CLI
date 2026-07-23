@@ -77,8 +77,6 @@ impl Tool for NeedsAttachmentTool {
     }
 }
 
-// Tool::should_list (typed)
-
 #[test]
 fn default_returns_true() {
     assert!(Tool::should_list(&AlwaysTool, &ListToolsContext::default()));
@@ -109,8 +107,6 @@ fn reads_custom_extension() {
     assert!(Tool::should_list(&tool, &some));
 }
 
-// ToolDyn blanket forwarding
-
 #[test]
 fn dyn_forwards_default() {
     let tool: ArcTool = Arc::new(AlwaysTool);
@@ -135,8 +131,6 @@ fn arc_dyn_callable() {
     ctx.extensions.insert(AttachmentCount(1));
     assert!(tool.should_list(&ctx));
 }
-
-// ListToolsContext
 
 #[test]
 fn list_ctx_default_is_empty() {
@@ -163,8 +157,6 @@ fn list_ctx_clone_is_independent() {
     assert!(ctx.extensions.contains::<AttachmentCount>());
     assert!(!copy.extensions.contains::<AttachmentCount>());
 }
-
-// TypedExtensions standalone
 
 #[test]
 fn typed_extensions_insert_get_remove() {

@@ -25,23 +25,18 @@ pub fn hook_spec_to_info(spec: &kigi_hooks::config::HookSpec) -> HookInfo {
     use kigi_hooks::event::HookEventName;
 
     let event = match spec.event {
-        // Session lifecycle
         HookEventName::SessionStart => HookEvent::SessionStart,
         HookEventName::SessionEnd => HookEvent::SessionEnd,
         HookEventName::Stop => HookEvent::Stop,
         HookEventName::StopFailure => HookEvent::StopFailure,
-        // Tool events
         HookEventName::PreToolUse => HookEvent::PreToolUse,
         HookEventName::PostToolUse => HookEvent::PostToolUse,
         HookEventName::PostToolUseFailure => HookEvent::PostToolUseFailure,
         HookEventName::PermissionDenied => HookEvent::PermissionDenied,
-        // User / notification
         HookEventName::UserPromptSubmit => HookEvent::UserPromptSubmit,
         HookEventName::Notification => HookEvent::Notification,
-        // Subagent
         HookEventName::SubagentStart => HookEvent::SubagentStart,
         HookEventName::SubagentStop | HookEventName::SubagentEnd => HookEvent::SubagentStop,
-        // Compaction
         HookEventName::PreCompact => HookEvent::PreCompact,
         HookEventName::PostCompact => HookEvent::PostCompact,
     };
@@ -334,9 +329,11 @@ mod tests {
         let matcher = pre[0].matcher.as_ref().unwrap();
         assert!(matcher.is_match("run_terminal_command"));
         assert!(!matcher.is_match("read_file"));
-        assert!(pre[1].matcher.is_none()); // null / "*" = match-all
+        // null / "*" = match-all
+        assert!(pre[1].matcher.is_none());
         assert!(pre[2].matcher.is_none());
-        assert!(hooks.contains_key(&HookEventName::PostToolUse)); // snake_case resolves
+        // snake_case resolves
+        assert!(hooks.contains_key(&HookEventName::PostToolUse));
     }
 
     #[test]
@@ -378,9 +375,12 @@ mod tests {
         });
         let groups = &parse_client_hooks(meta.as_object())[&HookEventName::PreToolUse];
         assert_eq!(groups[0].timeout, Some(std::time::Duration::from_secs(5)));
-        assert_eq!(groups[1].timeout, None); // non-positive -> default
-        assert_eq!(groups[2].timeout, None); // absent -> default
-        assert_eq!(groups[3].timeout, Some(std::time::Duration::from_secs(300))); // capped
+        // non-positive -> default
+        assert_eq!(groups[1].timeout, None);
+        // absent -> default
+        assert_eq!(groups[2].timeout, None);
+        // capped
+        assert_eq!(groups[3].timeout, Some(std::time::Duration::from_secs(300)));
     }
 
     /// A registration under the `SubagentEnd` alias must land on the canonical

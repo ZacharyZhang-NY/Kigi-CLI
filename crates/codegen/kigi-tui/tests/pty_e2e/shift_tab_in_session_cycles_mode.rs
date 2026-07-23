@@ -2,11 +2,9 @@
 #[allow(unused_imports)]
 use super::common::*;
 
-// ── Interactive flow e2e tests ──────────────────────────────────────────
-
 /// 15. **In-session Shift+Tab cycles permission mode.**
-/// Routes BackTab through the agent view's `resolve_action`, the path that
-/// previously dropped `CycleMode`; test 2b only covers the welcome screen.
+/// Routes BackTab through the agent view's `resolve_action`, the path where
+/// `CycleMode` can be silently dropped; test 2b only covers the welcome screen.
 /// With the auto gate on (client default): Normal → Plan → Auto → Always-Approve → Normal.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore]

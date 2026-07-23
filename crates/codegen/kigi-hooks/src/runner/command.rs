@@ -146,7 +146,7 @@ pub async fn run_command_hook(
     // cannot open /dev/tty and corrupt the TUI display. Delegates to
     // `kigi_tools::util::detach_command`: Unix uses the same setsid /
     // EPERM→setpgid pre_exec path as before; Windows sets CREATE_NO_WINDOW only
-    // (DETACHED_PROCESS is intentionally omitted — it breaks stdio inheritance).
+    // (DETACHED_PROCESS is deliberately omitted — it breaks stdio inheritance).
     kigi_tools::util::detach_command(&mut cmd);
 
     // Spawn the child process.
@@ -649,7 +649,8 @@ mod tests {
         let large = vec![b'x'; MAX_OUTPUT_BYTES + 1000];
         let result = truncate_output(&large);
         assert!(result.ends_with(" [truncated]"));
-        assert!(result.len() > MAX_OUTPUT_BYTES); // marker appended
+        // marker appended
+        assert!(result.len() > MAX_OUTPUT_BYTES);
     }
 
     #[test]
@@ -833,11 +834,12 @@ mod tests {
     #[test]
     fn shell_command_detection() {
         // Commands with shell metacharacters should be detected.
-        assert!("echo hello".contains(' ')); // space
-        assert!("a || b".contains('|')); // pipe/or
-        assert!("a && b".contains('&')); // and
-        assert!("a; b".contains(';')); // semicolon
-        assert!("a > out".contains('>')); // redirect
+        assert!("echo hello".contains(' '));
+        // pipe/or
+        assert!("a || b".contains('|'));
+        assert!("a && b".contains('&'));
+        assert!("a; b".contains(';'));
+        assert!("a > out".contains('>'));
         // Env-var interpolation must also force the sh -c branch so that
         // commands like `${CLAUDE_PLUGIN_ROOT}/hooks/foo.sh` get expanded
         // by the shell rather than treated as a literal executable path.
@@ -860,7 +862,7 @@ mod tests {
     /// Regression: a hook command that uses `${VAR}` interpolation
     /// without any other shell metacharacters must still be invoked via
     /// `sh -c` so that the env var supplied via `extra_env` is expanded.
-    /// Previously the runner treated `${...}` as part of a literal path
+    /// earlier the runner treated `${...}` as part of a literal path
     /// and `command_path.exists()` failed; the hook silently never ran.
     /// Now the env-var pre-spawn check refuses with a clear reason when
     /// the var is unset (and the dispatcher fail-opens, so the tool call
@@ -1104,7 +1106,7 @@ mod tests {
     #[tokio::test]
     async fn test_undefined_env_var_refuses_to_spawn() {
         let mut extra_env = std::collections::HashMap::new();
-        // Intentionally do NOT set NEVER_SET_GB1183 anywhere.
+        // Deliberately do NOT set NEVER_SET_GB1183 anywhere.
         extra_env.insert("UNRELATED_GB1183".to_string(), "/tmp".to_string());
 
         let spec = HookSpec {
@@ -1150,7 +1152,7 @@ mod tests {
 
     /// Regression: a hook command starting with `~` must be
     /// routed through `sh -c` so the shell expands `~` to `$HOME`.
-    /// Previously `~/.claude/hook.sh` was treated as a relative path and
+    /// earlier `~/.claude/hook.sh` was treated as a relative path and
     /// joined to `source_dir`, producing a broken path.
     ///
     /// The test injects `HOME` via `extra_env` so it works in sandboxed
@@ -1245,7 +1247,7 @@ mod tests {
             configured_matcher: None,
             matcher: None,
             enabled: true,
-            // `MISSING_GB1183_DEFAULT` is intentionally unset; the `:-`
+            // `MISSING_GB1183_DEFAULT` is deliberately unset; the `:-`
             // modifier supplies a fallback that points at the real script.
             command: Some(std::path::PathBuf::from(format!(
                 "${{MISSING_GB1183_DEFAULT:-{}}}",

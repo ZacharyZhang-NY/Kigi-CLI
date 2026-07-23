@@ -98,20 +98,17 @@ impl SessionTokenAuthGate {
 /// session-token gate is active; everything else gets `None`, so the aux model's
 /// own key survives to the wire.
 ///
-/// M3 — the FIRST-PARTY case honours the gate, which is what the old "copy
-/// `active_session_config.bearer_resolver`" shape did implicitly: that field is
-/// `None` whenever the gate is inactive. Without it, a BYOK / api-key session
-/// with a `[model.*]` aux entry carrying its OWN `env_key` on the session's own
-/// coding endpoint has that key REPLACED on the wire by the primary bearer on
-/// every image-describe / auto-mode-classifier / summary request. A
-/// subscription-OAuth aux model is deliberately NOT gated this way: its pooled
-/// token IS its credential, and withholding the resolver only costs it
-/// mid-session refresh (L13).
+/// The FIRST-PARTY case honours the gate — it yields no resolver whenever the
+/// gate is inactive. Without that, a BYOK / api-key session with a `[model.*]`
+/// aux entry carrying its OWN `env_key` on the session's own coding endpoint has
+/// that key REPLACED on the wire by the primary bearer on every image-describe /
+/// auto-mode-classifier / summary request. A subscription-OAuth aux model is
+/// deliberately NOT gated this way: its pooled token IS its credential, and
+/// withholding the resolver only costs it mid-session refresh (L13).
 ///
 /// Shared by [`SessionActor::aux_bearer_resolver`] and
 /// `MvpAgent::summary_bearer_resolver`: the summary client is built by the
-/// AGENT, not the session actor, and its own private copy of this rule is
-/// exactly how it stayed ungated after M3 closed the session-actor side.
+/// AGENT, not the session actor, so it holds its own private copy of this rule.
 pub(crate) fn aux_bearer_resolver_for(
     authority: &crate::auth::credential_authority::CredentialAuthority,
     auth_method_id: Option<&acp::AuthMethodId>,
@@ -190,7 +187,6 @@ impl kigi_sampler::BearerResolver for AuthManagerBearerResolver {
         self.0.current_or_expired().map(|a| a.key)
     }
 }
-/// Wrap `am` as a shared sampler bearer resolver.
 pub(crate) fn auth_manager_bearer_resolver(
     am: std::sync::Arc<crate::auth::AuthManager>,
 ) -> kigi_sampler::SharedBearerResolver {
@@ -255,16 +251,16 @@ impl SessionActor {
     /// AUX / summary / image-describe slug.
     ///
     /// Identical resolution, but it NEVER WRITES the slot. The memo is a SINGLE
-    /// slot: when the aux path shared it, one classifier or image-describe call
-    /// evicted the session model's entry, and (a) the next
-    /// [`Self::reconstruct_full_config`] paid another `load_effective_config()`
-    /// + `resolve_model_list()` — the per-turn disk read M7/M9 removed — while
-    /// (b) a transient `Unknown` for the SESSION model then had no same-`model_id`
-    /// definite value to fall back to, so it degraded to `endpoint_is_first_party`
-    /// — `false` for every subscription-OAuth host, costing the session its
-    /// `bearer_resolver` and 401ing unrecoverably ~1h in (the failure L13
-    /// prevents). Reading a matching entry is still allowed: it can only hit when
-    /// the slot already names this same slug.
+    /// slot: were the aux path to share it, one classifier or image-describe call
+    /// would evict the session model's entry, and (a) the next
+    /// [`Self::reconstruct_full_config`] would pay another `load_effective_config()`
+    /// + `resolve_model_list()` disk read while (b) a transient `Unknown` for the
+    /// SESSION model would then have no same-`model_id` definite value to fall
+    /// back to, so it would degrade to `endpoint_is_first_party` — `false` for
+    /// every subscription-OAuth host, costing the session its `bearer_resolver`
+    /// and 401ing unrecoverably ~1h in (the failure L13 prevents). Reading a
+    /// matching entry is still allowed: it can only hit when the slot already
+    /// names this same slug.
     fn aux_model_auth_facts(&self, model_id: &str) -> crate::agent::config::ModelAuthFacts {
         self.resolve_auth_facts(model_id, false)
     }
@@ -338,11 +334,7 @@ impl SessionActor {
     /// Callers pass the LIVE sampling config's `base_url` so the manager, the
     /// gate and the wire can never be resolved against three different endpoints
     /// (an `OverrideModelName` session keeps its original `base_url` under a
-    /// routing name absent from the catalog). A `model`-only sibling that
-    /// re-derived the endpoint from the CATALOG instead used to exist beside
-    /// this; it had zero callers and was deleted rather than left as a second,
-    /// unexercised way to answer the same question (`lib.rs`'s
-    /// `#![allow(dead_code)]` means such a helper raises no warning).
+    /// routing name absent from the catalog).
     pub(super) fn auth_manager_for_endpoint(
         &self,
         model: &str,
@@ -383,8 +375,8 @@ impl SessionActor {
     /// (same entry, new routing name), otherwise CLEAR it.
     ///
     /// H-c: `OverrideModelName` is the one command that rewrites
-    /// `SamplingConfig::model` without going through `SetSessionModel`, so it
-    /// used to leave the field naming a model the session is no longer on.
+    /// `SamplingConfig::model` without going through `SetSessionModel`, so it can
+    /// leave the field naming a model the session is no longer on.
     /// Clearing rather than re-resolving is deliberate: re-resolving would put
     /// `resolve_catalog_key`'s `.rev()` guess INTO the field the whole rule
     /// treats as the session's deliberate selection, and a cleared field
@@ -475,13 +467,13 @@ impl SessionActor {
     }
     /// Emit a unified-log breadcrumb whenever the session-token refresh gate is
     /// evaluated with an **`Unknown`** per-model BYOK status on a session-based
-    /// method — the condition that (pre-fix) silently demoted live sessions to
-    /// stale-token 401s. The uploaded per-turn unified log then shows whether
-    /// the first-party-endpoint fallback kept refresh active or withheld it, so
-    /// we can confirm the fix works (or catch a residual demotion) per session
-    /// even when server-side metrics only show the aggregate 401. No-op for a
-    /// definite `Byok`/`NotByok`, so steady-state turns stay quiet — a burst of
-    /// these is itself the signal that `Unknown` is being hit in the field.
+    /// method — the condition that would otherwise silently demote live sessions
+    /// to stale-token 401s. The uploaded per-turn unified log then shows whether
+    /// the first-party-endpoint fallback kept refresh active or withheld it, so a
+    /// residual demotion can be caught per session even when server-side metrics
+    /// only show the aggregate 401. No-op for a definite `Byok`/`NotByok`, so
+    /// steady-state turns stay quiet — a burst of these is itself the signal that
+    /// `Unknown` is being hit in the field.
     fn log_auth_gate_unknown(&self, site: &str, gate: SessionTokenAuthGate, base_url: &str) {
         use crate::agent::auth_method::ModelByok;
         if gate.model_byok != ModelByok::Unknown || !gate.is_session_based {
@@ -762,11 +754,10 @@ impl SessionActor {
         // Kimi session token (which `resolve_credentials` would otherwise stamp
         // onto an api.x.ai / api.deepseek.com request). The first-party
         // subscription channel still gets the primary (byte-identical).
-        // M6: ONE lookup. The platform AND the base URL the rule is applied to
-        // both come from `credential_for_slug`'s single resolution of `slug`
-        // against this catalog, so the platform and the endpoint can no longer
-        // disagree (they were previously resolved by two different lookups).
-        // Aux slugs are not the session's selection, so no `current_key`.
+        // The platform AND the base URL the rule is applied to both come from
+        // `credential_for_slug`'s single resolution of `slug` against this
+        // catalog, so the platform and the endpoint cannot disagree. Aux slugs
+        // are not the session's selection, so no `current_key`.
         let session_key = self
             .credential_authority()
             .credential_for_slug(&models, None, slug);
@@ -1167,7 +1158,6 @@ impl SessionActor {
             }
         }
     }
-    /// Proactively refresh the auth token if near expiry.
     pub(super) async fn refresh_token_if_expired(&self) {
         let (model_id, base_url) = self
             .chat_state_handle
@@ -1210,12 +1200,12 @@ impl SessionActor {
             .map(|c| c.model)
             .unwrap_or_default();
         let Some(ref key) = current_key else { return };
-        // M7/M9: a registry-platform model's key normally comes from that
-        // platform's credential resolved into its catalog entry, so with the
-        // session gate now inactive for every API-key platform those turns all
-        // fell through to here and paid a `load_effective_config()` disk read
-        // PER TURN, then logged a permanently false "Model not found in
-        // config.toml [model.*]" warning.
+        // A registry-platform model's key normally comes from that platform's
+        // credential resolved into its catalog entry; the session gate is
+        // inactive for every API-key platform, so those turns reach here.
+        // Falling through would pay a `load_effective_config()` disk read PER
+        // TURN and log a permanently false "Model not found in config.toml
+        // [model.*]" warning.
         //
         // But a `[model."deepseek/deepseek-chat"]` override DOES keep the base
         // entry's `info.id` (`ConfigModelOverride::apply`), so "has a platform"

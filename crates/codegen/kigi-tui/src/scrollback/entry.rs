@@ -49,7 +49,6 @@ impl EntryId {
         Self(id)
     }
 
-    /// Get the raw ID value.
     pub fn value(self) -> u64 {
         self.0
     }
@@ -58,10 +57,8 @@ impl EntryId {
 /// A scrollback entry: block content + display state.
 #[derive(Debug, Clone)]
 pub struct ScrollbackEntry {
-    /// Unique identifier for this entry.
     pub id: EntryId,
 
-    /// The block content.
     pub block: RenderBlock,
 
     /// Whether block is still running (for animation, auto-collapse).
@@ -76,7 +73,6 @@ pub struct ScrollbackEntry {
     /// `question_view` state via `ScrollbackState::set_pending_user_input`.
     pub is_pending_user_input: bool,
 
-    /// Current display mode.
     pub display_mode: DisplayMode,
 
     pub display_mode_pinned: bool,
@@ -87,7 +83,6 @@ pub struct ScrollbackEntry {
     /// Hook data attached to this entry (only meaningful for ToolCall blocks).
     pub hook_data: Option<super::blocks::tool::ToolCallHookData>,
 
-    /// When this entry was created (local time).
     pub created_at: Option<DateTime<Local>>,
 
     /// When this entry finished running (monotonic). Used by the renderer
@@ -215,13 +210,11 @@ impl ScrollbackEntry {
         }
     }
 
-    /// Set the display mode (builder pattern).
     pub fn with_display_mode(mut self, mode: DisplayMode) -> Self {
         self.display_mode = mode;
         self
     }
 
-    /// Toggle raw mode if the block supports it.
     pub fn toggle_raw(&mut self) {
         if self.block.has_raw_mode() {
             self.raw = !self.raw;
@@ -252,12 +245,10 @@ impl ScrollbackEntry {
         }
     }
 
-    /// Get the current display mode.
     pub fn display_mode(&self) -> DisplayMode {
         self.display_mode
     }
 
-    /// Set the display mode.
     pub fn set_display_mode(&mut self, mode: DisplayMode) {
         if self.display_mode != mode {
             self.display_mode = mode;
@@ -275,7 +266,6 @@ impl ScrollbackEntry {
         self.invalidate_cache();
     }
 
-    /// Invalidate cached output.
     pub fn invalidate_cache(&mut self) {
         *self.cached_output.borrow_mut() = None;
         *self.cached_truncated_height.borrow_mut() = None;
@@ -297,7 +287,6 @@ impl ScrollbackEntry {
         had_output
     }
 
-    /// Memoized cheap height-estimate line count for `content_width`, if cached.
     pub fn cached_estimate_lines(&self, content_width: u16) -> Option<u16> {
         self.cached_estimate_lines
             .borrow()
@@ -305,7 +294,6 @@ impl ScrollbackEntry {
             .map(|(_, lines)| lines)
     }
 
-    /// Store the cheap height-estimate line count for `content_width`.
     pub fn store_estimate_lines(&self, content_width: u16, lines: u16) {
         *self.cached_estimate_lines.borrow_mut() = Some((content_width, lines));
     }
@@ -352,11 +340,10 @@ impl ScrollbackEntry {
                 && cached.is_selected == effective_selected
                 && cached.cwd == cwd_key
             {
-                return; // cache hit
+                return;
             }
         }
 
-        // Cache miss — regenerate
         let ctx = BlockContext {
             mode: self.display_mode,
             is_running: self.is_running,
@@ -487,7 +474,6 @@ impl ScrollbackEntry {
         &cache.as_ref().unwrap().rendered.output
     }
 
-    /// Get a BlockContext for this entry.
     pub fn context(
         &self,
         width: u16,
@@ -571,7 +557,6 @@ impl ScrollbackEntry {
         self.rendered_output_with_hooks(ctx).output
     }
 
-    /// Get a BlockContext for this entry with a row budget.
     pub fn context_with_budget(
         &self,
         width: u16,

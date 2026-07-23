@@ -205,7 +205,7 @@ fn script_atom_is_wordlike(atom: &str, rendered: &str) -> bool {
 fn render_command(cursor: &mut Cursor<'_>, out: &mut MathBox, depth: usize, mode: Mode) {
     let name = cursor.read_command_name();
     match name {
-        // ── Structure ────────────────────────────────────────────────────
+        // Structure
         "" => out.push('\\'),
         "\\" => out.push('\n'),
         "begin" => render_environment(cursor, out, depth, mode),
@@ -232,7 +232,7 @@ fn render_command(cursor: &mut Cursor<'_>, out: &mut MathBox, depth: usize, mode
             }
         }
 
-        // ── Fractions / binomials / roots ────────────────────────────────
+        // Fractions / binomials / roots
         "frac" | "dfrac" | "tfrac" | "cfrac" => {
             let num = take_brace_arg(cursor).map(|a| render_atom(a, depth, mode));
             let den = take_brace_arg(cursor).map(|a| render_atom(a, depth, mode));
@@ -261,7 +261,8 @@ fn render_command(cursor: &mut Cursor<'_>, out: &mut MathBox, depth: usize, mode
                     cursor.bump();
                 }
                 let idx = &cursor.src[start..cursor.pos];
-                cursor.bump(); // consume `]`
+                // consume `]`
+                cursor.bump();
                 Some(render_atom(idx, depth, mode))
             } else {
                 None
@@ -290,7 +291,7 @@ fn render_command(cursor: &mut Cursor<'_>, out: &mut MathBox, depth: usize, mode
             }
         }
 
-        // ── Boxes (frame dropped; content preserved) ─────────────────────
+        // Boxes (frame dropped; content preserved)
         "boxed" => {
             if let Some(arg) = take_brace_arg(cursor) {
                 out.push_str(&render_atom(arg, depth, mode));
@@ -302,7 +303,7 @@ fn render_command(cursor: &mut Cursor<'_>, out: &mut MathBox, depth: usize, mode
             }
         }
 
-        // ── Text / alphabets ─────────────────────────────────────────────
+        // Text / alphabets
         "text" | "textrm" | "textit" | "textbf" | "textsf" | "texttt" | "textnormal" | "mbox"
         | "hbox" => {
             if let Some(arg) = take_brace_arg(cursor) {
@@ -321,7 +322,7 @@ fn render_command(cursor: &mut Cursor<'_>, out: &mut MathBox, depth: usize, mode
             render_mapped_alphabet(cursor, out, depth, mode, map_mathbf)
         }
 
-        // ── Accents (combining marks) ────────────────────────────────────
+        // Accents (combining marks)
         "hat" | "widehat" => render_accent(cursor, out, depth, mode, '\u{0302}'),
         "bar" | "overline" => render_accent(cursor, out, depth, mode, '\u{0304}'),
         "tilde" | "widetilde" => render_accent(cursor, out, depth, mode, '\u{0303}'),
@@ -335,7 +336,7 @@ fn render_command(cursor: &mut Cursor<'_>, out: &mut MathBox, depth: usize, mode
         "mathring" => render_accent(cursor, out, depth, mode, '\u{030A}'),
         "underline" => render_accent(cursor, out, depth, mode, '\u{0332}'),
 
-        // ── Negation ─────────────────────────────────────────────────────
+        // Negation
         "not" => {
             if let Some(atom) = cursor.read_atom() {
                 let rendered = render_atom(atom, depth, mode);
@@ -359,7 +360,7 @@ fn render_command(cursor: &mut Cursor<'_>, out: &mut MathBox, depth: usize, mode
             }
         }
 
-        // ── Decorations rendered as base + script ────────────────────────
+        // Decorations rendered as base + script
         "overset" | "stackrel" => {
             let over = take_brace_arg(cursor).map(|a| render_atom(a, depth, mode));
             let base = take_brace_arg(cursor).map(|a| render_atom(a, depth, mode));
@@ -385,7 +386,7 @@ fn render_command(cursor: &mut Cursor<'_>, out: &mut MathBox, depth: usize, mode
             }
         }
 
-        // ── Modular arithmetic ───────────────────────────────────────────
+        // Modular arithmetic
         "pmod" => {
             if let Some(arg) = take_brace_arg(cursor) {
                 if !out.at_line_start() && !out.ends_with_space() {
@@ -401,7 +402,7 @@ fn render_command(cursor: &mut Cursor<'_>, out: &mut MathBox, depth: usize, mode
             out.push_str("mod ");
         }
 
-        // ── Spacing ──────────────────────────────────────────────────────
+        // Spacing
         "," | ";" | ":" | ">" | " " | "space" | "thinspace" | "medspace" | "thickspace"
         | "enspace" => {
             if !out.at_line_start() && !out.ends_with_space() {
@@ -412,7 +413,7 @@ fn render_command(cursor: &mut Cursor<'_>, out: &mut MathBox, depth: usize, mode
         "qquad" => out.push_str("    "),
         "!" | "negthinspace" | "negmedspace" | "negthickspace" => {}
 
-        // ── No-ops (sizing/styling/structure hints) ──────────────────────
+        // No-ops (sizing/styling/structure hints)
         "limits" | "nolimits" | "displaystyle" | "textstyle" | "scriptstyle"
         | "scriptscriptstyle" | "big" | "Big" | "bigg" | "Bigg" | "bigl" | "Bigl" | "biggl"
         | "Biggl" | "bigr" | "Bigr" | "biggr" | "Biggr" | "bigm" | "Bigm" | "biggm" | "Biggm"
@@ -425,7 +426,7 @@ fn render_command(cursor: &mut Cursor<'_>, out: &mut MathBox, depth: usize, mode
             }
         }
 
-        // ── Symbol table ─────────────────────────────────────────────────
+        // Symbol table
         _ => {
             if let Some(sym) = symbol(name) {
                 out.push_str(sym);

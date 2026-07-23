@@ -62,7 +62,6 @@ impl PrRef {
 /// Strip invocation prefixes that precede the actual binary in a statement:
 /// `env` (with `-u NAME` args), `VAR=value` assignments, and an absolute /
 /// relative path on the binary itself (`/opt/homebrew/bin/gh` → `gh`).
-/// Covers common `env` / `VAR=value` / absolute-path wrappers around git/gh.
 fn strip_invocation_prefixes(statement: &str) -> &str {
     let mut rest = statement.trim_start();
     loop {

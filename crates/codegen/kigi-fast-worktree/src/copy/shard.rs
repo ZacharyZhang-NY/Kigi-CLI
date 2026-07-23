@@ -17,17 +17,13 @@ fn rapidhash_path(path: &Path) -> u64 {
     rapidhash_v3(bytes)
 }
 
-/// Compute the shard index for a path based on its parent directory.
-///
-/// Files in the same directory will always be assigned to the same shard,
-/// which avoids lock contention when creating parent directories.
+/// Sharded on the parent directory, so files in the same directory always land
+/// in the same shard and never contend on creating their parent.
 pub(crate) fn shard_for_path(path: &Path, num_shards: usize) -> usize {
     let parent = path.parent().unwrap_or(path);
     (rapidhash_path(parent) as usize) % num_shards
 }
 
-/// Deterministic 16-hex-char (full 64-bit) hash of a path's full bytes.
-///
 /// Disambiguates same-basename worktrees that share a basename-derived key (btrfs
 /// snapshot name, worktree DB id). Full 64 bits keep a collision astronomically
 /// unlikely.
@@ -53,7 +49,6 @@ mod tests {
         let shard2 = shard_for_path(&file2, num_shards);
         let shard3 = shard_for_path(&file3, num_shards);
 
-        // All files in src/ should go to the same shard
         assert_eq!(shard1, shard2);
         assert_eq!(shard2, shard3);
     }
@@ -65,10 +60,10 @@ mod tests {
 
         let num_shards = 8;
 
-        // Different directories may (but don't have to) produce different shards
+        // Different directories may collide onto one shard, so there is nothing
+        // to assert beyond "does not panic".
         let _shard1 = shard_for_path(&file1, num_shards);
         let _shard2 = shard_for_path(&file2, num_shards);
-        // Just verify it doesn't panic
     }
 
     #[test]

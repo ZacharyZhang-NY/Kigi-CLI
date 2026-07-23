@@ -64,9 +64,8 @@ pub(crate) fn trusted_osc(
 }
 
 /// Toast from legs + env: native → OSC (incl. VS Code remote non-ASCII) → tmux → Failed.
-// Pure decision function over independent environment inputs (host OS, display
-// server, remote/container/sink flags). Bundling them into a struct would only
-// move the argument list elsewhere and churn every call site/test.
+// The arguments are independent environment inputs; bundling them into a struct
+// would only move the same list to every call site.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn resolve_copy_toast(
     legs: &ClipboardWriteLegs,
@@ -85,7 +84,8 @@ pub(crate) fn resolve_copy_toast(
         if remote && brand.is_vscode_family() && !text.is_ascii() {
             return ClipboardToastKind::VsCodeSshNonAscii;
         }
-        // Container before remote (matches prior route-flag toast order).
+        // A remote container reports the container toast: its fallback hint is
+        // the actionable one.
         if container {
             return ClipboardToastKind::CopiedOscContainer;
         }
@@ -126,7 +126,6 @@ mod tests {
         }
     }
 
-    /// Same as [`legs`] with the Wayland data-control flag set.
     fn legs_data_control(
         route_native: bool,
         cli_ok: bool,
@@ -249,9 +248,8 @@ mod tests {
         );
     }
 
-    // The enterprise clipboard shape after the fix: no CLI tool installed, but the
-    // arboard write went through the compositor's data-control protocol, so it
-    // is trusted native.
+    // Locked-down enterprise desktop: no clipboard CLI installed, but the
+    // arboard write reached the compositor via data-control.
     #[test]
     fn linux_wayland_arboard_data_control_ok() {
         let l = legs_data_control(true, false, true, false, true, "");
@@ -268,8 +266,7 @@ mod tests {
         );
     }
 
-    // Without data-control (GNOME <= 47 or kill-switch), an arboard-only write
-    // keeps the `linux_wayland_arboard_only_fails` semantics.
+    // GNOME <= 47 or the kill-switch: no data-control protocol available.
     #[test]
     fn linux_wayland_arboard_without_data_control_still_fails() {
         let l = legs(true, false, true, false, false, "");
@@ -286,7 +283,6 @@ mod tests {
         );
     }
 
-    // Data-control grants nothing when the arboard write itself failed.
     #[test]
     fn linux_wayland_data_control_without_arboard_fails() {
         let l = legs_data_control(true, false, false, false, false, "");
@@ -385,7 +381,7 @@ mod tests {
 
     #[test]
     fn ssh_iterm2_osc_only_remote_toast() {
-        // Guards the OSC-52 membership invariant the fix depends on.
+        // The remote toast only holds while Iterm2 is in the OSC-52 brand set.
         assert!(TerminalName::Iterm2.supports_osc52_clipboard());
         let l = legs(true, false, false, false, true, "");
         assert_eq!(
@@ -550,13 +546,13 @@ mod tests {
         );
     }
 
-    // `kigi wrap` sink: a brand that does NOT natively support OSC 52 (the
-    // common SSH case where the inner terminal is misdetected as Vte/Unknown)
-    // is still trusted when an upstream OSC 52 sink is capturing our output.
+    // The common SSH case: the inner terminal is misdetected as Vte, which does
+    // not natively support OSC 52, yet the `kigi wrap` sink upstream does.
     #[test]
     fn wrapped_ssh_vte_osc_trusted_via_sink() {
         let l = legs(true, false, false, false, true, "");
-        // Without the sink: untrusted brand over SSH → Failed.
+        // Trailing arg is the sink flag: without it, an untrusted brand over
+        // SSH fails closed.
         assert_eq!(
             resolve_copy_toast(
                 &l,
@@ -570,7 +566,7 @@ mod tests {
             ),
             ClipboardToastKind::Failed
         );
-        // With the sink active: trusted → success toast.
+        // Same inputs with the sink active.
         assert_eq!(
             resolve_copy_toast(
                 &l,
@@ -586,8 +582,6 @@ mod tests {
         );
     }
 
-    // Sink trust still requires an actual OSC 52 write to have happened
-    // (`osc52_ok`); it never fabricates success when no leg fired.
     #[test]
     fn wrapped_sink_without_osc_write_still_fails() {
         let l = legs(true, false, false, false, false, "");
@@ -607,11 +601,9 @@ mod tests {
         );
     }
 
-    // Docker/podman from Windows PowerShell / cmd (or any host terminal):
-    // brand env vars are not forwarded into the container, so the brand is
-    // Unknown; native legs cannot work (no display server). The emitted
-    // OSC 52 is the copy path and must be trusted → hedged container toast,
-    // not "Copy failed" (regression test for the false-failure report).
+    // Regression test for the false "Copy failed" toast in docker: the runtime
+    // does not forward brand env vars, so the brand is Unknown even though the
+    // outer terminal applies OSC 52 fine. See [`trusted_osc`].
     #[test]
     fn container_unknown_brand_osc_trusted() {
         let l = legs(true, false, false, false, true, "");
@@ -628,7 +620,6 @@ mod tests {
         );
     }
 
-    // Container trust never fabricates success: no OSC 52 write → Failed.
     #[test]
     fn container_unknown_brand_without_osc_write_fails() {
         let l = legs(true, false, false, false, false, "");
@@ -646,8 +637,8 @@ mod tests {
         );
     }
 
-    // A *detected* non-supporting brand stays fail-closed even in a container
-    // (env was explicitly forwarded, so the detection is authoritative).
+    // A brand that survived into the container means the env was explicitly
+    // forwarded, so the detection is authoritative and stays fail-closed.
     #[test]
     fn container_detected_nonsupporting_brand_fails() {
         let l = legs(true, false, false, false, true, "");
@@ -664,8 +655,8 @@ mod tests {
         );
     }
 
-    // Unknown brand over SSH (not container) keeps failing closed — the
-    // container override is deliberately narrow; `kigi wrap` is the SSH path.
+    // The container override is deliberately narrow: plain SSH keeps failing
+    // closed, since `kigi wrap` is the supported SSH path.
     #[test]
     fn ssh_unknown_brand_osc_only_still_fails() {
         let l = legs(true, false, false, false, true, "");
@@ -682,7 +673,6 @@ mod tests {
         );
     }
 
-    // Sink in a container (no display) → container OSC toast.
     #[test]
     fn wrapped_container_osc_trusted_via_sink() {
         let l = legs(true, false, false, false, true, "");

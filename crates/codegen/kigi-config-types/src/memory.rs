@@ -450,7 +450,8 @@ mod tests {
     fn effective_half_life_converts_legacy_recency_decay() {
         let mut s = MemorySearchConfig::default();
         s.temporal_decay.enabled = false;
-        s.recency_decay = 0.5; // non-default → converted
+        // non-default → converted
+        s.recency_decay = 0.5;
         let hl = s.effective_half_life_days().unwrap();
         assert!(
             (hl - 1.0).abs() < 1e-9,

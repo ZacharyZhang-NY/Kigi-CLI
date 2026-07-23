@@ -49,7 +49,7 @@ impl std::fmt::Debug for LspClient {
     }
 }
 
-// ── Startup helpers (called by LspClient::start) ────────────────────────
+// Startup helpers, called by LspClient::start.
 
 type LspMainLoopAndServer = (LspMainLoop, async_lsp::ServerSocket);
 
@@ -126,7 +126,8 @@ fn build_initialize_params(config: &LspServerConfig, workspace_root: &Path) -> I
         }]
     });
 
-    #[allow(deprecated)] // root_uri still needed for older servers
+    // root_uri still needed for older servers
+    #[allow(deprecated)]
     InitializeParams {
         root_uri: Url::from_file_path(effective_root).ok(),
         workspace_folders,
@@ -171,8 +172,6 @@ fn abort_transport(handle: &tokio::task::JoinHandle<()>, child: &mut Option<std:
         let _ = c.kill();
     }
 }
-
-// ── LspClient ───────────────────────────────────────────────────────────
 
 impl LspClient {
     pub async fn start(

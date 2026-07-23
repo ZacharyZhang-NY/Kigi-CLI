@@ -4,8 +4,6 @@
 //! transport-layer dispatch). The three inner enums (`ToolRequest`,
 //! `WorkspaceOpsRequest`, `SessionLifecycleRequest`) are the actual
 //! per-domain RPC payloads.
-//!
-//! Each request enum enumerates its full set of per-domain variants.
 
 pub mod ops;
 pub mod session;
@@ -25,11 +23,8 @@ pub use tool::{ToolCallArgs, ToolRequest};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum WorkspaceRequest {
-    /// Tool RPCs.
     Tool(ToolRequest),
-    /// Workspace-ops RPCs.
     Ops(WorkspaceOpsRequest),
-    /// Session-lifecycle RPCs.
     Session(SessionLifecycleRequest),
 }
 

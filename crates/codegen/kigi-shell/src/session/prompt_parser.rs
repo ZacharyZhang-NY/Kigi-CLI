@@ -20,7 +20,6 @@ pub struct ParsedPrompt {
     /// Skill information block: `<skill_information>` envelope with expanded
     /// skill content. Empty string when no skills were invoked.
     pub skill_information: String,
-    /// Extracted images from the prompt.
     pub images: Vec<ImageContent>,
     /// Whether the prompt was parsed in query-last mode.
     pub is_cursor: bool,

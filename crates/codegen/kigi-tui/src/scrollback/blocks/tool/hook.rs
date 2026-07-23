@@ -11,8 +11,6 @@ use ratatui::text::{Line, Span};
 use crate::scrollback::types::{BlockLine, DisplayMode};
 use crate::theme::Theme;
 
-// ── Data types ────────────────────────────────────────────────────────
-
 /// Status of a single hook execution within a batch.
 #[derive(Debug, Clone)]
 pub enum HookRunStatus {
@@ -63,11 +61,8 @@ impl ToolCallHookData {
     }
 }
 
-// ── Rendering helpers ─────────────────────────────────────────────────
-
 const INDENT: &str = "    ";
 
-/// Count successes and failures across all hook entries.
 fn count_hooks(entries: &[&[HookRunEntry]]) -> (usize, usize) {
     let mut success = 0usize;
     let mut failed = 0usize;
@@ -176,7 +171,6 @@ fn render_hooks_expanded(event: &str, runs: &[HookRunEntry]) -> Vec<BlockLine> {
     let theme = Theme::current();
     let mut lines = Vec::new();
 
-    // If all hooks were skipped, render nothing.
     if runs
         .iter()
         .all(|r| matches!(r.status, HookRunStatus::Skipped))
@@ -184,7 +178,6 @@ fn render_hooks_expanded(event: &str, runs: &[HookRunEntry]) -> Vec<BlockLine> {
         return lines;
     }
 
-    // Header: indented, bold, muted
     lines.push(
         Line::from(vec![Span::styled(
             format!("{}{}", INDENT, event),
@@ -193,7 +186,6 @@ fn render_hooks_expanded(event: &str, runs: &[HookRunEntry]) -> Vec<BlockLine> {
         .into(),
     );
 
-    // Per-hook detail lines
     lines.extend(render_hooks_expanded_inner(runs));
 
     lines
@@ -261,7 +253,6 @@ fn render_hooks_expanded_inner(runs: &[HookRunEntry]) -> Vec<BlockLine> {
             }
         }
 
-        // Truncated output (if present)
         if let Some(ref output) = run.output {
             let truncated = crate::render::line_utils::truncate_str(output, 120);
             for out_line in truncated.lines().take(3) {
@@ -279,7 +270,6 @@ fn render_hooks_expanded_inner(runs: &[HookRunEntry]) -> Vec<BlockLine> {
     lines
 }
 
-/// Render hook lines for a given display mode.
 pub fn render_hooks_for_mode(
     event: &str,
     runs: &[HookRunEntry],
@@ -308,7 +298,6 @@ pub fn render_hooks_detail(runs: &[HookRunEntry], mode: DisplayMode) -> Vec<Bloc
     }
 }
 
-/// Render a separator line (for use between tool output and hooks in expanded mode).
 pub fn render_hook_separator() -> BlockLine {
     render_separator()
 }

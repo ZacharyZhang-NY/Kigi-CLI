@@ -63,10 +63,8 @@ pub(crate) fn run_wrapped_command(program: &str, args: &[String]) -> Result<i32>
     use portable_pty::{CommandBuilder, PtySize, native_pty_system};
     use std::io::Read;
 
-    // Get current terminal size.
     let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
 
-    // Open PTY pair.
     let pty_system = native_pty_system();
     let pair = pty_system.openpty(PtySize {
         rows,
@@ -75,7 +73,6 @@ pub(crate) fn run_wrapped_command(program: &str, args: &[String]) -> Result<i32>
         pixel_height: 0,
     })?;
 
-    // Build the command.
     let mut cmd = CommandBuilder::new(program);
     args.iter().for_each(|arg| cmd.arg(arg));
 
@@ -96,7 +93,6 @@ pub(crate) fn run_wrapped_command(program: &str, args: &[String]) -> Result<i32>
     cmd.env("KIGI_OSC52_SINK", "1");
     cmd.env("LC_KIGI_OSC52_SINK", "1");
 
-    // Spawn child in the PTY slave.
     let mut child = pair.slave.spawn_command(cmd)?;
     // Drop the slave so we get EOF when child exits.
     drop(pair.slave);
@@ -136,7 +132,6 @@ pub(crate) fn run_wrapped_command(program: &str, args: &[String]) -> Result<i32>
             }
         });
     }
-    // Local stdin -> writer thread.
     let stdin_tx = write_tx.clone();
     let _stdin_handle = std::thread::spawn(move || {
         let mut stdin = std::io::stdin().lock();
@@ -153,7 +148,6 @@ pub(crate) fn run_wrapped_command(program: &str, args: &[String]) -> Result<i32>
         }
     });
 
-    // SIGWINCH handling thread: resize the PTY when the outer terminal changes size.
     // We move `pair.master` here since we've already cloned the reader and
     // taken the writer above.
     //
@@ -169,7 +163,6 @@ pub(crate) fn run_wrapped_command(program: &str, args: &[String]) -> Result<i32>
         });
     }
 
-    // Output forwarding with OSC 52 filtering: PTY reader -> filter -> stdout.
     // Host-image requests: spawn a short-lived worker for clipboard I/O (can be
     // hundreds of ms / osascript) then enqueue the bracketed-paste frame on the
     // writer thread (+ NL so ICANON slaves deliver without another key). Paste
@@ -201,7 +194,6 @@ pub(crate) fn run_wrapped_command(program: &str, args: &[String]) -> Result<i32>
         }
     }
 
-    // Wait for child and extract exit code.
     let status = child.wait()?;
     let code = status.exit_code() as i32;
 
@@ -272,16 +264,16 @@ enum FilterState {
     DcsTmuxOscEsc,
 }
 
-/// Streaming filter that intercepts OSC 52 clipboard sequences from PTY
-/// output and sends their decoded payload to the local clipboard.
-///
-/// All non-OSC-52 bytes pass through unchanged. The parser handles sequences
-/// split across arbitrary byte boundaries.
 /// Clipboard sink type: a boxed closure that receives decoded clipboard data.
 type ClipboardSink = Box<dyn FnMut(&[u8])>;
 
 type WrapImageRequestHandler = Box<dyn FnMut()>;
 
+/// Streaming filter that intercepts OSC 52 clipboard sequences from PTY
+/// output and sends their decoded payload to the local clipboard.
+///
+/// All non-OSC-52 bytes pass through unchanged. The parser handles sequences
+/// split across arbitrary byte boundaries.
 struct Osc52Filter {
     state: FilterState,
     buf: Vec<u8>,
@@ -476,12 +468,13 @@ impl Osc52Filter {
         // Strip the DCS tmux prefix: \x1bPtmux;\x1b\x1b]  (total 9 bytes)
         // and the DCS ST terminator: \x1b\  (2 bytes at the end).
         // Copy the body to avoid borrowing self.buf while calling &mut self.
-        let prefix_len = 2 + TMUX_DCS_PREFIX.len(); // \x1bP + tmux;\x1b\x1b]
+        let prefix_len = 2 + TMUX_DCS_PREFIX.len();
         if self.buf.len() < prefix_len + 2 {
             return false;
         }
-        let body = self.buf[prefix_len..self.buf.len() - 2].to_vec(); // strip DCS ST
-        let body = strip_osc_terminator(&body); // strip inner BEL if present
+        let body = self.buf[prefix_len..self.buf.len() - 2].to_vec();
+        // Strip inner BEL if present.
+        let body = strip_osc_terminator(&body);
         self.extract_and_set_clipboard(body)
     }
 
@@ -489,7 +482,6 @@ impl Osc52Filter {
     ///
     /// Returns `true` if successfully handled.
     fn extract_and_set_clipboard(&mut self, body: &[u8]) -> bool {
-        // Must start with "52;"
         if !body.starts_with(OSC52_PREFIX) {
             return false;
         }
@@ -502,13 +494,11 @@ impl Osc52Filter {
         };
         let b64_payload = &after_52[payload_start..];
 
-        // Decode base64.
         let decoded = match BASE64_STANDARD_INDIFFERENT.decode(b64_payload) {
             Ok(data) => data,
             Err(_) => return false,
         };
 
-        // Check payload size limit.
         if decoded.len() > MAX_CLIPBOARD_PAYLOAD {
             tracing::warn!(
                 "OSC 52 payload too large ({} bytes), ignoring",
@@ -767,7 +757,6 @@ mod tests {
         seq.push(0x07);
 
         let (output, clips) = filter_output(&seq);
-        // The oversized sequence should have been flushed through.
         assert!(
             !output.is_empty(),
             "oversized sequence should flush through"

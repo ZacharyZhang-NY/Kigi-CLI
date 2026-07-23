@@ -1,5 +1,4 @@
-//! MCP server configuration value types, extracted from kigi-shell
-//! (config dependency inversion).
+//! MCP server configuration value types.
 
 use agent_client_protocol as acp;
 use indexmap::IndexMap;
@@ -8,14 +7,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-/// serde default helper. Kept module-local rather than shared — the `pool`
-/// module keeps its own copy for `PoolConfig`.
 fn default_true() -> bool {
     true
 }
 
-/// Read an MCP OAuth client secret from the named env var. Moved here with
-/// `McpServerConfig` (its only caller).
 fn resolve_oauth_client_secret(env_var: Option<&String>) -> Option<String> {
     let env_var = env_var?;
     match std::env::var(env_var) {
@@ -56,10 +51,8 @@ pub enum McpServerTransportConfig {
         /// OAuth client ID for providers that don't support Dynamic Client Registration.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         oauth_client_id: Option<String>,
-        /// Name of the env var holding the OAuth client secret (for BYO credentials).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         oauth_client_secret_env_var: Option<String>,
-        /// OAuth scopes to request during authorization.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         oauth_scopes: Option<Vec<String>>,
     },
@@ -176,7 +169,6 @@ impl McpServerConfig {
                     })
                     .unwrap_or_default();
 
-                // Add bearer token from environment variable if specified
                 if let Some(env_var) = bearer_token_env_var {
                     match std::env::var(env_var) {
                         Ok(token) => {
@@ -213,7 +205,7 @@ impl McpServerConfig {
         }
     }
 
-    /// Extract OAuth configuration for this server, if any OAuth fields are set.
+    /// Inline `oauth_*` transport fields take precedence over the `oauth` block.
     pub fn oauth_config(&self) -> Option<McpOAuthConfig> {
         if let McpServerTransportConfig::StreamableHttp {
             oauth_client_id,
@@ -260,7 +252,7 @@ pub struct RelaySyncConfig {
 }
 
 impl RelaySyncConfig {
-    /// Check if relay sync is enabled. Env var takes precedence over config.
+    /// `KIGI_RELAY_SYNC_ENABLED` overrides the configured value.
     pub fn is_enabled(&self) -> bool {
         if let Ok(env_val) = std::env::var("KIGI_RELAY_SYNC_ENABLED") {
             return env_val.eq_ignore_ascii_case("true") || env_val == "1";

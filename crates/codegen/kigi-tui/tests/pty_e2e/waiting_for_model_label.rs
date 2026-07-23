@@ -35,8 +35,8 @@ async fn waiting_for_model_label_shows_before_first_token() {
         .inject_keys(format!("{PROMPT}\r").as_bytes())
         .expect("submit prompt");
 
-    // The new explicit label, not the old generic "Waiting…". Match without the
-    // trailing ellipsis so terminal width / glyph handling can't flake it.
+    // Match without the trailing ellipsis so terminal width / glyph handling
+    // can't flake it.
     harness
         .wait_for_text("Waiting for response", Duration::from_secs(10))
         .unwrap_or_else(|_| {

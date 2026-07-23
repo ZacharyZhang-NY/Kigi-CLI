@@ -173,10 +173,6 @@ fn merge_ask_user_question_section(
     }
 }
 
-/// Merge serialized fields of `value` into `table[key]`, preserving any
-/// existing keys not present in the serialized output. This prevents
-/// unmodeled fields (e.g. pager-written `show_timestamps`, `auto_dark_theme`)
-/// from being silently dropped when `save_config` round-trips the struct.
 /// Deep-merge `incoming` into `existing`: nested tables recurse; scalars replace.
 fn merge_toml_tables(
     existing: &mut TomlMap<String, TomlValue>,
@@ -194,6 +190,10 @@ fn merge_toml_tables(
     }
 }
 
+/// Merge serialized fields of `value` into `table[key]`, preserving any
+/// existing keys not present in the serialized output. This prevents
+/// unmodeled fields (e.g. pager-written `show_timestamps`, `auto_dark_theme`)
+/// from being silently dropped when `save_config` round-trips the struct.
 fn merge_section<T: serde::Serialize>(
     table: &mut TomlMap<String, TomlValue>,
     key: &str,
@@ -344,8 +344,6 @@ mod tests {
         assert!(!oauth.contains_key("plain"));
     }
 
-    // -- Cursor MCP loading --
-
     #[test]
     fn merge_section_preserves_unmodeled_fields() {
         let mut table = TomlMap::new();
@@ -479,20 +477,13 @@ mod tests {
     #[test]
     fn merge_section_session_default_does_not_leak_load_envrc() {
         let mut table = TomlMap::new();
-        // The starting state: user has no [session] section on disk
-        // (managed config might set load_envrc = false; user TOML is
-        // silent on the matter).
         assert!(table.get("session").is_none());
 
-        // Pager calls update_config to set a totally unrelated [ui]
-        // field. The closure exits with cfg.session ==
-        // SessionConfig::default() (both fields None). save_config
-        // then calls merge_section("session", &cfg.session).
         let cfg = crate::agent::config::SessionConfig::default();
         merge_section(&mut table, "session", &cfg);
 
-        // After the fix, [session] is either absent OR present-but-
-        // empty. Crucially, it must NOT contain `load_envrc`.
+        // [session] must be either absent or present-but-empty; it must
+        // NOT contain `load_envrc`.
         if let Some(session) = table.get("session").and_then(|v| v.as_table()) {
             assert!(
                 session.get("load_envrc").is_none(),
@@ -506,7 +497,6 @@ mod tests {
                 "default auto_compact_threshold_percent must not be serialized either"
             );
         }
-        // If the table is wholly absent or empty, that's also fine.
     }
 
     /// Companion to the above: when the user explicitly commits a
@@ -522,9 +512,7 @@ mod tests {
         session.insert("load_envrc".into(), TomlValue::Boolean(false));
         table.insert("session".into(), TomlValue::Table(session));
 
-        // User commits auto_compact_threshold_percent via the modal.
-        // The cfg.session has load_envrc: None (user never touched it)
-        // and auto_compact_threshold_percent: Some(70).
+        // load_envrc: None means the user never touched it.
         let cfg = crate::agent::config::SessionConfig {
             auto_compact_threshold_percent: Some(70),
             load_envrc: None,
@@ -532,7 +520,6 @@ mod tests {
         merge_section(&mut table, "session", &cfg);
 
         let session = table.get("session").unwrap().as_table().unwrap();
-        // The user's commit landed.
         assert_eq!(
             session
                 .get("auto_compact_threshold_percent")
@@ -571,8 +558,6 @@ mod tests {
             "explicit load_envrc = false on disk must load as Some(false), not None"
         );
 
-        // Now round-trip through save: merge into a fresh table and
-        // verify load_envrc = false stays present.
         let mut table = TomlMap::new();
         merge_section(&mut table, "session", &cfg.session);
         let session = table.get("session").unwrap().as_table().unwrap();
@@ -646,12 +631,10 @@ auto_light_theme = "kigiday"
 
     #[test]
     fn ui_config_hunk_tracker_mode_round_trips() {
-        // Parse from `[ui].hunk_tracker_mode`...
         let root: TomlValue = toml::from_str("[ui]\nhunk_tracker_mode = \"off\"\n").unwrap();
         let cfg = load_config_from_toml(&root);
         assert_eq!(cfg.ui.hunk_tracker_mode.as_deref(), Some("off"));
 
-        // ...and serialize back through merge_section.
         let mut table = root.as_table().unwrap().clone();
         merge_section(&mut table, "ui", &cfg.ui);
         let ui = table.get("ui").unwrap().as_table().unwrap();
@@ -739,7 +722,6 @@ auto_update = true
         // User changes default model (unrelated to UI)
         cfg.models.default = Some("kigi-4".to_string());
 
-        // Simulate save_config
         let mut table = root.as_table().unwrap().clone();
         merge_section(&mut table, "cli", &cfg.cli);
         merge_section(&mut table, "models", &cfg.models);
@@ -779,7 +761,6 @@ auto_update = true
         ui.insert("compact_mode".into(), TomlValue::Boolean(true));
         table.insert("ui".into(), TomlValue::Table(ui));
 
-        // Revert both to false (their defaults)
         let cfg = crate::agent::config::UiConfig::default();
         merge_section(&mut table, "ui", &cfg);
 
@@ -973,8 +954,6 @@ auto_update = true
         assert_eq!(cfg2.models.default.as_deref(), Some("kigi-persisted"));
     }
 
-    // ── merge_section pin tests for CLI/session setters ──────────────────
-    //
     // Pin the schema-level write shape: each setter writes to the correct
     // TOML section, and `None` fields don't serialize (skip_serializing_if).
 
@@ -1095,7 +1074,7 @@ auto_update = true
         );
     }
 
-    // ── resolve_auto_compact_threshold_percent: precedence matrix ──────────
+    // resolve_auto_compact_threshold_percent: precedence matrix.
     //
     // Covers every boundary in the resolver chain:
     //   env > user [model.<id>] > user [session] > GB per-model > GB global > 85
@@ -1194,8 +1173,6 @@ auto_update = true
             }
         }
 
-        // ── Tier 6: default (all unset) ─────────────────────────────────
-
         #[test]
         fn all_unset_returns_default_85() {
             let _g = EnvVarGuard::unset();
@@ -1213,8 +1190,6 @@ auto_update = true
             );
         }
 
-        // ── Tier 5: GB global ───────────────────────────────────────────
-
         #[test]
         fn gb_global_only() {
             let _g = EnvVarGuard::unset();
@@ -1222,16 +1197,12 @@ auto_update = true
             assert_eq!(resolve(&cfg, None), 40);
         }
 
-        // ── Tier 4 > Tier 5: GB per-model beats GB global ───────────────
-
         #[test]
         fn gb_per_model_beats_gb_global() {
             let _g = EnvVarGuard::unset();
             let cfg = make_cfg(None, None, Some(40));
             assert_eq!(resolve(&cfg, Some(90)), 90);
         }
-
-        // ── Tier 3 > Tier 4: user global beats GB per-model ─────────────
 
         #[test]
         fn user_session_beats_gb_per_model() {
@@ -1246,8 +1217,6 @@ auto_update = true
             let cfg = make_cfg(Some(75), None, Some(40));
             assert_eq!(resolve(&cfg, None), 75);
         }
-
-        // ── Tier 2 > Tier 3: user per-model beats user global ───────────
 
         #[test]
         fn user_per_model_beats_user_session() {
@@ -1277,8 +1246,6 @@ auto_update = true
             assert_eq!(resolve(&cfg, Some(90)), 70);
         }
 
-        // ── Tier 1: env wins over everything ────────────────────────────
-
         #[test]
         fn env_beats_user_per_model() {
             let _g = EnvVarGuard::set("50");
@@ -1299,8 +1266,6 @@ auto_update = true
             let cfg = make_cfg(Some(75), None, None);
             assert_eq!(resolve(&cfg, None), 100);
         }
-
-        // ── Env-tier failure modes fall through ─────────────────────────
 
         #[test]
         fn env_out_of_range_high_falls_through() {
@@ -1329,8 +1294,6 @@ auto_update = true
             let cfg = make_cfg(None, None, None);
             assert_eq!(resolve(&cfg, None), DEFAULT_AUTO_COMPACT_THRESHOLD_PERCENT);
         }
-
-        // ── Per-model entry for a DIFFERENT model must not match ────────
 
         #[test]
         fn user_per_model_for_other_model_does_not_match() {
@@ -1362,8 +1325,6 @@ auto_update = true
             assert_eq!(resolve(&cfg, None), 75);
         }
 
-        // ── ModelInfo-less call still walks the rest of the chain ───────
-
         #[test]
         fn missing_model_info_falls_through_to_gb_global() {
             let _g = EnvVarGuard::unset();
@@ -1373,8 +1334,6 @@ auto_update = true
                 40
             );
         }
-
-        // ── No remote_settings still works ──────────────────────────────
 
         #[test]
         fn no_remote_settings_falls_through_to_default() {
@@ -1386,8 +1345,6 @@ auto_update = true
             assert_eq!(resolve(&cfg, None), DEFAULT_AUTO_COMPACT_THRESHOLD_PERCENT);
         }
 
-        // ── ConfigModelOverride should NOT collapse into ModelInfo ──────
-        //
         // Regression guard. If `ConfigModelOverride::apply` ever starts
         // merging `auto_compact_threshold_percent` into `ModelInfo`, the
         // resolver would see user-per-model as GB-per-model and ordering

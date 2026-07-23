@@ -151,8 +151,7 @@ async fn unimplemented_tool_returns_not_implemented_terminal() {
 
 #[tokio::test]
 async fn run_takes_args_by_value() {
-    // The trait `run` consumes args; this would not compile if the
-    // signature accidentally borrowed.
+    // run consumes args (would not compile if the signature borrowed).
     let tool = BlockingOk;
     let args = EchoArgs {
         text: "consumed".into(),
@@ -163,7 +162,6 @@ async fn run_takes_args_by_value() {
 
 #[tokio::test]
 async fn execute_default_drains_in_one_pass() {
-    // A stream from the default impl should always have exactly one item.
     let tool = BlockingOk;
     let count = tool
         .execute(ToolCallContext::default(), EchoArgs { text: "n".into() })

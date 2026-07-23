@@ -4,8 +4,7 @@
 //! Layout (top → bottom): live tail · status · prompt. The tail shows the
 //! bottom of the uncommitted run (streaming message / running tool) so output
 //! is visible as it generates; finished blocks scroll up into native scrollback
-//! via [`super::commit`]. When idle the tail is empty and only status + prompt
-//! show.
+//! via [`super::commit`].
 use kigi_tui::app::PagerTerminal;
 use kigi_tui::app::app_view::{ActiveView, AppView};
 use kigi_tui::minimal_api;
@@ -20,20 +19,17 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Widget};
-/// Left inset (columns) for every auxiliary live-region row: the status row,
-/// the info bar, the exit hint, and the todo panel — and the prompt's
-/// `chrome_pad_left`.
+/// Left inset (columns) for every auxiliary live-region row — status, info bar,
+/// exit hint, todo panel — and the prompt's `chrome_pad_left`.
 ///
 /// Minimal is flush-left: committed/tail blocks zero block pads via
 /// [`super::commit::committed_appearance`] and reclaim the accent column via
 /// `hide_accent`, so content glyphs (`◆` / `$` / message text) start at column
-/// 0, matching the welcome card's outer edge. The prompt and auxiliary rows
-/// share that left edge (no chrome pad) so nothing sits ragged against the
-/// welcome box.
+/// 0, matching the welcome card's outer edge. The auxiliary rows share that
+/// edge so nothing sits ragged against the welcome box.
 pub(super) fn live_left_inset(_appearance: &kigi_tui::appearance::AppearanceConfig) -> u16 {
     0
 }
-/// Shrink `area` from the left by `inset` columns (clamped to the width).
 fn inset_left(area: Rect, inset: u16) -> Rect {
     let dx = inset.min(area.width);
     Rect {
@@ -42,8 +38,6 @@ fn inset_left(area: Rect, inset: u16) -> Rect {
         ..area
     }
 }
-/// The prompt style used by the minimal live region.
-///
 /// Shared with [`super::overlay::sync_viewport`] so viewport sizing measures the
 /// prompt's height exactly as the live region will draw it.
 pub(super) fn prompt_style(appearance: &kigi_tui::appearance::AppearanceConfig) -> PromptStyle {
@@ -66,7 +60,6 @@ pub(super) fn prompt_style(appearance: &kigi_tui::appearance::AppearanceConfig) 
         image_preview: true,
     }
 }
-/// Draw the pinned live region (tail + status + prompt) into the inline viewport.
 pub fn draw_live(app: &mut AppView, terminal: &mut PagerTerminal) {
     let force_todos = minimal_api::minimal_show_todos(app);
     let auth_hint = crate::auth::minimal_auth_hint(&app.auth_state);
@@ -334,13 +327,13 @@ fn live_tail_renderer<'a>(
         .with_flat_background(true)
         .with_hide_accent(true)
 }
-/// Render the uncommitted tail (entries past the commit frontier), bottom-anchored
-/// so the most recent output is always visible; the topmost visible entry is
-/// clipped via `with_skip_rows` when the run is taller than the tail area.
+/// Renders the uncommitted tail bottom-anchored so the most recent output is
+/// always visible; the topmost visible entry is clipped via `with_skip_rows`
+/// when the run is taller than the tail area.
 ///
 /// Starts at the shared [`super::commit::scan_frontier`] stop point so it renders
-/// exactly the entries [`tail_height`] measured (the viewport was sized to that —
-/// any disagreement makes the prompt jump on commit).
+/// exactly the entries [`tail_height`] measured — the viewport is sized to that,
+/// and any disagreement makes the prompt jump on commit.
 #[allow(clippy::too_many_arguments)]
 fn draw_tail(
     buf: &mut Buffer,
@@ -414,11 +407,9 @@ fn draw_tail(
         }
     }
 }
-/// Count idle-surviving "watchers" — running monitors, active scheduled
-/// `/loop` tasks, and running (background) subagents — so the shared turn-status
-/// widget can show the persistent "watching · N monitors · M loops · K
-/// subagents" cue while the agent is idle. Mirrors the full-TUI computation in
-/// `AgentView::draw` (which minimal bypasses).
+/// Counts the "watchers" that survive an idle turn, feeding the shared
+/// turn-status widget's "watching · …" cue. Mirrors the full-TUI computation in
+/// `AgentView::draw`, which minimal bypasses.
 fn minimal_watchers(agent: &kigi_tui::app::agent_view::AgentView) -> turn_status::Watchers {
     turn_status::Watchers {
         monitors: agent
@@ -435,11 +426,10 @@ fn minimal_watchers(agent: &kigi_tui::app::agent_view::AgentView) -> turn_status
             .count(),
     }
 }
-/// Resolve the current turn activity and advance the phase timer when it
-/// changes. The full TUI runs this inside its own `draw` (reset
-/// `activity_started_at` on every phase transition); minimal has a separate
-/// draw path, so it must drive the same logic or the phase timer would never
-/// reset. Returns the resolved activity for [`render_minimal_status`].
+/// Resolves the current turn activity, resetting `activity_started_at` on every
+/// phase transition. The full TUI does this inside its own `draw`; minimal has a
+/// separate draw path, so it must drive the same logic or the phase timer never
+/// resets.
 fn minimal_advance_phase_timer(
     agent: &mut kigi_tui::app::agent_view::AgentView,
 ) -> Option<kigi_tui::acp::tracker::TurnActivity> {
@@ -450,17 +440,13 @@ fn minimal_advance_phase_timer(
     }
     activity
 }
-/// Render the one-line minimal status indicator above the prompt.
+/// Renders the one-line status indicator above the prompt.
 ///
 /// Reuses the full-TUI [`turn_status::render_turn_status`] widget so minimal
-/// surfaces the same rich activity detail (`Run …` / `Thinking…` /
-/// `Waiting on subagent…` / `Retrying (attempt N)…` / `Cancelling…`), the
-/// per-phase + turn timers, and the idle "watching · …" cue (running monitors /
-/// loops / background subagents) — instead of collapsing everything to
-/// "working…". Keyboard-only, so the mouse `[stop]` / `[↓]` buttons are
-/// suppressed (`None`), and `flat_background` keeps the row transparent like the
-/// rest of the live region. When the widget would draw nothing (plain idle, no
-/// watchers) a small `minimal · /help` hint is shown instead.
+/// surfaces the same rich activity detail instead of collapsing everything to
+/// "working…". Minimal is keyboard-only, so the mouse `[stop]` / `[↓]` buttons
+/// are suppressed (`None`). When the widget would draw nothing (plain idle, no
+/// watchers) [`render_idle_hint`] takes the row instead.
 fn render_minimal_status(
     buf: &mut Buffer,
     area: Rect,
@@ -524,7 +510,6 @@ fn render_minimal_status(
         minimal_api::held_queue_top_sendable(agent),
     );
 }
-/// Idle status: `minimal · [/fullscreen to go back ·] /help` (+ auto-set note).
 fn render_idle_hint(buf: &mut Buffer, area: Rect, theme: &Theme) {
     let style = theme.dim().bg(Color::Reset);
     buf.set_style(area, style);
@@ -543,20 +528,15 @@ fn render_idle_hint(buf: &mut Buffer, area: Rect, theme: &Theme) {
     };
     buf.set_span(area.x, area.y, &Span::styled(hint, style), area.width);
 }
-/// Render the one-line info bar directly below the prompt: the selected model,
-/// the active session mode (the Shift+Tab cycle: plan / always-approve / auto),
-/// context usage (absolute + percentage), an `N queued` count when prompts
-/// are waiting behind a running turn, and the full-transcript shortcut hint
-/// (`transcript_hint`: "ctrl+o transcript", or "/transcript" where Ctrl+O is
-/// the interject chord — Apple Terminal). Mirrors the regular TUI's model
-/// label, mode flags, and context bar; the transcript hint stands in for the
-/// full TUI's shortcuts bar, which minimal never renders — without it the
-/// folded conversation has no visible way back to the full view. The mode flag
-/// keeps its accent color so the Shift+Tab cycle — otherwise invisible in
-/// minimal mode — is always shown. Drawn only when no menu/dropdown owns the
-/// band below the prompt (the caller gates on that). The elapsed-time / token
-/// count lives in the turn-status row above the prompt (see
-/// [`render_minimal_status`]), so it is not repeated here.
+/// Renders the one-line info bar directly below the prompt. The caller gates
+/// this on no menu/dropdown owning the band below the prompt.
+///
+/// The mode flag keeps its accent color so the Shift+Tab cycle — otherwise
+/// invisible in minimal mode — is always visible. `transcript_hint` stands in
+/// for the full TUI's shortcuts bar, which minimal never renders; without it the
+/// folded conversation has no visible way back to the full view. Elapsed time
+/// and token count live in the turn-status row above the prompt (see
+/// [`render_minimal_status`]) and are not repeated here.
 fn render_prompt_info(
     buf: &mut Buffer,
     area: Rect,
@@ -624,9 +604,9 @@ fn render_prompt_info(
     buf.set_line(area.x, area.y, &Line::from(spans), area.width);
 }
 /// The double-press confirmation hint to show under the prompt (e.g. "press
-/// Ctrl+q again to quit"), or `None` when nothing is armed / it has expired or
-/// is a silent arm (no label). Mirrors the full-TUI shortcuts-bar `PendingHint`,
-/// which minimal does not render.
+/// Ctrl+q again to quit"). `None` when nothing is armed, the arm has expired, or
+/// it is a silent arm carrying no label. Mirrors the full-TUI shortcuts-bar
+/// `PendingHint`, which minimal does not render.
 fn minimal_pending_hint(
     pending: &Option<kigi_tui::app::app_view::PendingAction>,
 ) -> Option<String> {
@@ -640,8 +620,6 @@ fn minimal_pending_hint(
         pending.shortcut.display()
     ))
 }
-/// Render the one-line double-press confirmation hint under the prompt, in the
-/// warning color so it stands out from the model/context info row.
 fn render_exit_hint(buf: &mut Buffer, area: Rect, theme: &Theme, hint: &str) {
     let style = Style::default().fg(theme.warning).bg(Color::Reset);
     buf.set_style(area, style);
@@ -658,14 +636,13 @@ fn render_exit_hint(buf: &mut Buffer, area: Rect, theme: &Theme, hint: &str) {
 ///
 /// The overlay host sizes the live viewport to this *post-commit* tail so the
 /// prompt sits right after the streaming output (no fixed gap while a turn is
-/// "thinking" with nothing streamed yet). Sizing to the post-commit tail
-/// (rather than the current tail) is load-bearing: because `sync_viewport` runs
-/// just *before* `commit_active`, the viewport is already at its post-commit
-/// height when the commit's `insert_before` prints finalized blocks — so it can
-/// reposition the correctly-sized viewport to sit directly after them
-/// (content-anchored). Sizing to the tall streaming tail instead left the
-/// viewport oversized at commit time, and the following collapse stranded the
-/// prompt at the top of the screen (the "snaps to top" bug).
+/// "thinking" with nothing streamed yet). Measuring the post-commit tail rather
+/// than the current one is load-bearing: `sync_viewport` runs just *before*
+/// `commit_active`, so the viewport is already at its final height when the
+/// commit's `insert_before` prints finalized blocks and repositions it to sit
+/// directly after them. A viewport sized to the tall streaming tail is oversized
+/// at commit time, and the collapse that follows strands the prompt at the top
+/// of the screen (the "snaps to top" bug).
 pub(super) fn tail_height(
     agent: &kigi_tui::app::agent_view::AgentView,
     width: u16,

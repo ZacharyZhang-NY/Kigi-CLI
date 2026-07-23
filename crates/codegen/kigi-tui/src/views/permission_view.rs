@@ -33,8 +33,6 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::theme::Theme;
 
-// ── Enums ──────────────────────────────────────────────────────────────
-
 /// Interaction mode for the permission overlay.
 ///
 /// Mirrors [`QuestionFocus`](crate::views::question_view::QuestionFocus) from
@@ -96,8 +94,6 @@ impl McpScopeState {
     }
 }
 
-// ── State ──────────────────────────────────────────────────────────────
-
 /// A queued permission request awaiting user response.
 ///
 /// The pager maintains a `VecDeque` of these on `AgentView`. Only the front
@@ -114,11 +110,9 @@ pub struct PermissionViewState {
     /// `perm_req_id`). Used to guard against stale resolution attempts.
     pub id: usize,
 
-    // -- Interaction mode --
     /// Current focus mode. Determines input routing and rendering.
     pub focus: PermissionFocus,
 
-    // -- Options --
     /// All permission options from the request (cloned from
     /// `request.options` so the request can be moved into the struct).
     pub options: Vec<acp::PermissionOption>,
@@ -126,7 +120,6 @@ pub struct PermissionViewState {
     /// Currently focused option index (only meaningful for the front request).
     pub active_idx: usize,
 
-    // -- Bash command selection --
     /// Parsed bash highlights from request meta (None for non-bash
     /// permissions). Imported from `kigi-shell`, NOT duplicated locally.
     pub bash_highlights: Option<BashCommandHighlights>,
@@ -141,14 +134,12 @@ pub struct PermissionViewState {
     /// (complex commands that tree-sitter cannot decompose).
     pub bash_command_raw: Option<String>,
 
-    // -- MCP scope selection --
     /// MCP scope toggle state. `None` for non-MCP prompts. Populated when the
     /// request carries an `allow-always-mcp` option whose meta deserializes
     /// as `McpToolPermission`. Mutually exclusive with the bash flow at the
     /// per-request level.
     pub mcp_scope: Option<McpScopeState>,
 
-    // -- Display content (precomputed on creation) --
     /// Title text (e.g. agent-provided bash description, or "Allow Edit?").
     pub title: String,
 
@@ -166,18 +157,13 @@ pub struct PermissionViewState {
     /// Scroll offset for description area.
     pub desc_scroll: u16,
 
-    // -- Subagent provenance --
     /// If this permission was requested by a subagent, its descriptive label.
     /// Derived from matching `request.session_id` against known subagent
     /// sessions. Displayed as a provenance line above the title.
     pub subagent_label: Option<String>,
 
-    // -- Prompt stash (queue-level, not per-request) --
-    // NOTE: prompt stash is NOT on PermissionViewState.
-    // It lives on AgentView as `permission_stashed_prompt`.
-    // See the "Queue-level prompt stashing" section in the plan.
-
-    // -- Layout cache --
+    // Prompt stash is queue-level, not per-request, so it is NOT a field
+    // here — it lives on AgentView as `permission_stashed_prompt`.
     /// Cached options area height (for scroll calculations).
     pub options_area_height: usize,
 
@@ -223,12 +209,8 @@ fn shortcut_label(index: usize) -> &'static str {
         .unwrap_or(SHORTCUT_LABELS[0])
 }
 
-// ── Subagent tracking ──────────────────────────────────────────────────
-
-// SubagentInfo lives in app::subagent — re-export for backward compat.
+// SubagentInfo lives in app::subagent; re-exported here for backward compat.
 pub use crate::app::subagent::SubagentInfo;
-
-// ── Height calculation ─────────────────────────────────────────────────
 
 /// Chrome height for the permission view as actually rendered.
 ///
@@ -255,11 +237,14 @@ pub fn permission_chrome_height_pub(
 /// applying a height cap to the overall permission view.
 fn permission_chrome_height(state: &PermissionViewState, content_w: usize) -> u16 {
     let bash_line_count = bash_display_line_count(state, content_w) as u16;
-    let mut h: u16 = 1; // vpad top
+    // vpad top
+    let mut h: u16 = 1;
     if state.subagent_label.is_some() {
-        h += 1; // provenance line
+        // provenance line
+        h += 1;
     }
-    h += 1; // title line
+    // title line
+    h += 1;
     h += bash_line_count;
     // Planned MCP arguments: same `mcp_args_visible_rows` budget as the
     // render. Clamp before the cast (`as u16` wraps) and saturate the adds
@@ -274,7 +259,8 @@ fn permission_chrome_height(state: &PermissionViewState, content_w: usize) -> u1
     if state.has_adjustable_scope() {
         h = h.saturating_add(1);
     }
-    h.saturating_add(1) // gap before options
+    // gap before options
+    h.saturating_add(1)
 }
 
 /// Compute the total height the permission view should occupy.
@@ -365,8 +351,6 @@ fn bash_display_line_count(state: &PermissionViewState, content_w: usize) -> usi
     }
 }
 
-// ── Rendering ──────────────────────────────────────────────────────────
-
 fn hovered_bg(theme: &Theme) -> ratatui::style::Color {
     theme.bg_hover
 }
@@ -400,8 +384,10 @@ pub struct InlinePromptArea {
 /// (`"<n> (●) ❯ "` = 8 chars). Matches the `text_w` computed during
 /// rendering so `desired_height` wraps at the same width as the draw area.
 pub fn inline_text_width(area_width: u16) -> u16 {
-    const LEFT_PAD: u16 = 3; // accent column + 2 padding
-    const PREFIX_W: u16 = 8; // "x (●) ❯ " = 2 + 4 + 2
+    // accent column + 2 padding
+    const LEFT_PAD: u16 = 3;
+    // "x (●) ❯ " = 2 + 4 + 2
+    const PREFIX_W: u16 = 8;
     area_width.saturating_sub(LEFT_PAD + PREFIX_W)
 }
 
@@ -439,7 +425,7 @@ pub fn render_permission_view(
     let accent_style = Style::default().fg(theme.accent_user);
     for row in area.y..area.y + area.height {
         if let Some(cell) = buf.cell_mut((area.x, row)) {
-            cell.set_symbol(crate::glyphs::accent_bar()); // ┃
+            cell.set_symbol(crate::glyphs::accent_bar());
             cell.set_style(accent_style);
         }
     }
@@ -451,8 +437,6 @@ pub fn render_permission_view(
 
     // Vertical padding at the top.
     y += 1;
-
-    // ── Chrome header ──
 
     // Bottom of the drawable area. The chrome rows below are written at
     // increasing `y`; when the overlay is squeezed into a 1-2 row area at the
@@ -549,8 +533,8 @@ pub fn render_permission_view(
     }
     if show_scope_hint && y < area.y + area.height {
         // Readable secondary text, arrows highlighted in accent for
-        // scannability. Previously used `theme.gray` + `Modifier::DIM`,
-        // which was unreadable on several theme backgrounds.
+        // scannability: plain `theme.gray` + `Modifier::DIM` is unreadable
+        // on several theme backgrounds.
         let hint_style = Style::default()
             .fg(theme.text_secondary)
             .add_modifier(Modifier::DIM);
@@ -566,7 +550,6 @@ pub fn render_permission_view(
     // Gap before options.
     y += 1;
 
-    // ── Option rows ──
     let visible_bottom = area.y + area.height;
     let hover_bg = hovered_bg(theme);
 
@@ -586,11 +569,13 @@ pub fn render_permission_view(
         // In FollowupInput mode, skip the RejectOnce static row —
         // the caller will render the inline prompt widget at this position.
         if is_followup && option.kind == acp::PermissionOptionKind::RejectOnce {
-            let row_bg = theme.bg_visual; // always focused bg for the input row
+            // always focused bg for the input row
+            let row_bg = theme.bg_visual;
 
             // Fill the FULL row width including padding between accent ┃ and content.
             let full_row = Rect {
-                x: area.x + 1, // after the accent symbol
+                // after the accent symbol
+                x: area.x + 1,
                 y,
                 width: area.width.saturating_sub(1),
                 height: 1,
@@ -629,8 +614,10 @@ pub fn render_permission_view(
             // Tell the caller where to render the prompt widget text.
             // Use full width to the right edge (not the 2-col-padded content_width)
             // so the scrollbar sits flush against the border — matching Q/A panel.
-            let prefix_w: u16 = 8; // "x (●) ❯ " = 2 + 4 + 2 = 8
-            let full_w = area.width.saturating_sub(3); // only left padding (accent + 2)
+            // "x (●) ❯ " = 2 + 4 + 2 = 8
+            let prefix_w: u16 = 8;
+            // only left padding (accent + 2)
+            let full_w = area.width.saturating_sub(3);
             inline_prompt_result = Some(InlinePromptArea {
                 text_x: content_x + prefix_w,
                 y,
@@ -1010,11 +997,13 @@ fn bash_quote_aware_wrap(line: &str, width: usize) -> Vec<&str> {
 
     let mut rows: Vec<&str> = Vec::new();
     let mut row_start = 0usize;
-    let mut last_break = 0usize; // exclusive end of content if we break here
+    // exclusive end of content if we break here
+    let mut last_break = 0usize;
 
     // Consider each break point as a candidate end for the current row.
     let mut candidates = break_after;
-    candidates.push(line.len()); // allow ending at EOL
+    // allow ending at EOL
+    candidates.push(line.len());
 
     for &b in &candidates {
         if b <= row_start {
@@ -1101,7 +1090,8 @@ fn quote_aware_break_points(line: &str) -> Vec<usize> {
         }
         if in_double {
             if c == b'\\' && i + 1 < bytes.len() {
-                i += 2; // skip escape
+                // skip escape
+                i += 2;
                 continue;
             }
             if c == b'"' {
@@ -1160,7 +1150,8 @@ fn build_raw_bash_lines(command: &str, content_width: usize) -> Vec<Line<'static
     let mut offset = 0usize;
     for (idx, physical) in text.split('\n').enumerate() {
         if idx > 0 {
-            offset += 1; // the '\n'
+            // the '\n'
+            offset += 1;
         }
         out.extend(soft_wrap_physical_line(
             physical,
@@ -1380,7 +1371,8 @@ fn build_bash_lines_with_selection(
     let mut offset = 0usize;
     for (line_idx, physical) in display.split('\n').enumerate() {
         if line_idx > 0 {
-            offset += 1; // the '\n'
+            // the '\n'
+            offset += 1;
         }
         let line_start = offset;
 

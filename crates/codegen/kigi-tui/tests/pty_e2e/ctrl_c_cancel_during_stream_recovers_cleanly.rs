@@ -59,8 +59,8 @@ async fn ctrl_c_cancel_during_stream_recovers_cleanly() {
         "'Turn cancelled' must appear exactly once\nscreen:\n{screen}"
     );
 
-    // Recovery: the pane must accept and run a new prompt (no
-    // TurnCancelling latch, which previously required a restart here).
+    // Recovery: the pane must accept and run a new prompt (a stuck
+    // TurnCancelling latch would otherwise force a restart here).
     content.set_chunk_delay(None);
     content.set_response("RECOVERYSENTINEL post-cancel turn ran.");
     harness

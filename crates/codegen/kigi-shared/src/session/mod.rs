@@ -13,15 +13,12 @@ pub use info::Info;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FeedbackTerminalInfo {
-    /// Terminal emulator brand (e.g. "Ghostty", "iTerm2", "Unknown").
+    /// e.g. "Ghostty", "iTerm2", "Unknown".
     pub brand: String,
-    /// Multiplexer wrapping the session (e.g. "tmux", "Zellij", "None detected").
+    /// e.g. "tmux", "Zellij", "None detected".
     pub multiplexer: String,
-    /// Whether the session is over SSH.
     pub is_ssh: bool,
-    /// Whether Byobu is wrapping the session.
     pub is_byobu: bool,
-    /// Raw `TERM` environment variable value.
     pub term_var: String,
     /// tmux server version if inside tmux, otherwise "n/a".
     #[serde(default, skip_serializing_if = "Option::is_none")]

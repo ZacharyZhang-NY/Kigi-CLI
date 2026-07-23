@@ -1,8 +1,7 @@
-//! `mixed_interaction` — scroll while streaming. The real-world worst case.
-//!
-//! What it stresses: simultaneous cache invalidation (from streaming) and
-//! full viewport re-render (from scrolling). Surfaces `dirty_heights` /
-//! scroll-offset interactions.
+//! `mixed_interaction` — scroll while streaming, the real-world worst case.
+//! Stresses simultaneous cache invalidation (from streaming) and full viewport
+//! re-render (from scrolling), surfacing `dirty_heights` / scroll-offset
+//! interactions.
 
 use std::time::{Duration, Instant};
 
@@ -16,8 +15,7 @@ const SCROLL_KEYS: usize = 80;
 const KEY_INTERVAL: Duration = Duration::from_millis(40);
 
 pub async fn run(harness: &mut PtyHarness, content: &ContentController) -> Result<BenchResults> {
-    // Same payload shape as streaming_render, but we scroll through it
-    // while it's still arriving.
+    // Same payload shape as `streaming_render`.
     let mut body = String::from("mixed-bench ");
     for i in 0..TARGET_WORDS {
         body.push_str("tok");

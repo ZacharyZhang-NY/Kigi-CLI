@@ -241,7 +241,8 @@ mod tests {
         let scope = ProcessScope::new();
         let (mut c, _g) = scope.spawn(sleeper()).unwrap();
         scope.kill_all();
-        scope.kill_all(); // second call must not panic / error
+        // second call must not panic / error
+        scope.kill_all();
         assert!(died(&mut c).await);
     }
 
@@ -262,7 +263,8 @@ mod tests {
             "dropping the owner's Arc must make the scope's weak dead"
         );
 
-        scope.kill_all(); // must be a no-op for the now-unowned group
+        // must be a no-op for the now-unowned group
+        scope.kill_all();
         // The child was never killed by the scope; clean it up so the test
         // doesn't leak a real `sleep` process.
         let _ = c.start_kill();
@@ -287,13 +289,16 @@ mod tests {
     #[tokio::test]
     async fn register_after_kill_all_reaps_immediately() {
         let scope = ProcessScope::new();
-        scope.kill_all(); // close the scope
+        // close the scope
+        scope.kill_all();
 
         let mut cmd = sleeper();
         scope.prepare(&mut cmd);
-        #[allow(clippy::disallowed_methods)] // test: exercises enroll() after close
+        // test: exercises enroll() after close
+        #[allow(clippy::disallowed_methods)]
         let mut child = cmd.spawn().unwrap();
-        let _group = scope.enroll(&child).unwrap(); // register() runs post-close
+        // register() runs post-close
+        let _group = scope.enroll(&child).unwrap();
         assert_eq!(
             scope.live_count(),
             0,

@@ -437,7 +437,6 @@ async fn persist_setting_type_mismatch_errors_compact_mode() {
         "error message must mention key + expected kind, got: {err}",
     );
 }
-/// Type-mismatch for `show_timestamps`.
 #[tokio::test]
 async fn persist_setting_type_mismatch_errors_show_timestamps() {
     use crate::settings::SettingValue;
@@ -449,7 +448,6 @@ async fn persist_setting_type_mismatch_errors_show_timestamps() {
         "error message must mention key + expected kind, got: {err}",
     );
 }
-/// Type-mismatch for `show_timeline`.
 #[tokio::test]
 async fn persist_setting_type_mismatch_errors_show_timeline() {
     use crate::settings::SettingValue;
@@ -460,7 +458,6 @@ async fn persist_setting_type_mismatch_errors_show_timeline() {
         "error message must mention key + expected kind, got: {err}",
     );
 }
-/// Type-mismatch for `simple_mode`.
 #[tokio::test]
 async fn persist_setting_type_mismatch_errors_simple_mode() {
     use crate::settings::SettingValue;

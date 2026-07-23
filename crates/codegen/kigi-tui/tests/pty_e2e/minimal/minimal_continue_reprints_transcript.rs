@@ -28,8 +28,6 @@ async fn minimal_continue_reprints_transcript() {
         .expect("turn 1 committed to scrollback");
     quit_minimal(&mut first);
 
-    // Resume the same session. The transcript is reprinted into native
-    // scrollback (no separate history pane in minimal).
     let mut resumed = spawn_minimal_in_dir(
         &content,
         DEFAULT_ROWS,
@@ -46,7 +44,6 @@ async fn minimal_continue_reprints_transcript() {
             )
         });
 
-    // A follow-up turn still works in the resumed session.
     content.set_response(format!("{} resumed payload.", turn_sentinel(2)));
     resumed
         .inject_keys(b"again\r")

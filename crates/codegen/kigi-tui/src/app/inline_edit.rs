@@ -206,7 +206,7 @@ impl AgentView {
     ) -> Option<(u16, u16)> {
         // Drop last frame's rects up front: when the overlay doesn't draw
         // this frame (entry scrolled off-viewport), clicks must not hit-test
-        // against where the editor used to be.
+        // against the editor's prior on-screen position.
         let edit = self.inline_edit.as_mut()?;
         edit.last_text_area = None;
         edit.last_rect = None;
@@ -278,8 +278,6 @@ mod tests {
         KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)
     }
 
-    /// Idle agent with one user prompt ("fix the bug") followed by an agent
-    /// message, laid out at 80x40.
     fn agent_with_prompt() -> AgentView {
         let mut agent = make_agent();
         agent

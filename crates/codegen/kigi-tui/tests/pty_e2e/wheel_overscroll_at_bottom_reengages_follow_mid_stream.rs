@@ -4,7 +4,7 @@ use super::common::*;
 #[allow(unused_imports)]
 use super::scroll::*;
 
-// ── A7: wheel overscroll at the bottom re-engages follow mode ─────────────
+// A7: wheel overscroll at the bottom re-engages follow mode.
 //
 // User complaint: after wheeling up to read during a streaming turn, wheeling
 // back down to the bottom left a "dead wheel tick" before follow mode

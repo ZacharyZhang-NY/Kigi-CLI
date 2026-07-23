@@ -22,7 +22,8 @@
 //! }
 //! ```
 
-#![allow(dead_code)] // each test binary uses a different subset
+// each test binary uses a different subset
+#![allow(dead_code)]
 
 #[cfg(unix)]
 pub mod artifact_server;
@@ -31,9 +32,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-// ─────────────────────────────────────────────────────────────────────────────
 // KIGI_SHARE_DIR isolation
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Returns a process-wide test `KIGI_SHARE_DIR`, initialized exactly once per test
 /// binary. Once initialized, `kigi_config::kigi_home()` will resolve to
@@ -92,9 +91,7 @@ pub fn set_update_base(base: &str) {
     unsafe { std::env::set_var(kigi_env::UPDATE_BASE_URL_ENV, base) };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Install-test fixtures
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Host `{os}-{arch}` string matching the versioned binary naming scheme
 /// (`kigi-{version}-{platform}`).
@@ -193,7 +190,6 @@ pub fn backdate_downloads() {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // GitHub Releases fixtures
 //
 // Wire shapes mirror the real GitHub REST API
@@ -203,7 +199,6 @@ pub fn backdate_downloads() {
 //   GET /repos/{o}/{r}/releases             → array of release objects
 // Release object: {"tag_name":"v0.1.0","assets":[{"name":"...",
 // "browser_download_url":"..."}]}
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Build a tar.gz archive from `(name, bytes)` entries.
 #[cfg(unix)]
@@ -299,9 +294,7 @@ pub async fn mount_latest(server: &wiremock::MockServer, version: &str) {
         .await;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // PATH-override fake binary (used by the install.sh harness)
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// RAII guard that places a sh-script with name `name` at the head of `PATH`.
 /// Restores `PATH` on drop.

@@ -24,7 +24,7 @@
 //! located and the ASCII whitespace immediately inside the delimiters is
 //! trimmed, so the emitted `$…$` has no space right after the opening `$` or
 //! before the closing `$`. pulldown-cmark's dollar-math flanking rule rejects
-//! `$ … $` (whitespace next to a delimiter) and would otherwise leave a padded
+//! `$ … $` (whitespace next to a delimiter) and would otherwise leave a `padded`
 //! span as raw `$ … $` text. Interior newlines join to spaces (TeX treats them
 //! as spaces) so a span wrapped across source lines cannot be re-parsed as
 //! block structure.
@@ -199,7 +199,8 @@ impl LatexDelimiterNormalizer {
                         b'`' => {
                             let run = count_run(bytes, i, b'`');
                             if i + run == n && !final_flush {
-                                break; // run may extend; hold it back
+                                // run may extend; hold it back
+                                break;
                             }
                             out.push_str(&buf[i..i + run]);
                             i += run;
@@ -277,7 +278,8 @@ impl LatexDelimiterNormalizer {
                         b'$' => {
                             let run = count_run(bytes, i, b'$');
                             if run == 1 && i + 1 == n && !final_flush {
-                                break; // may become `$$`; hold it back
+                                // may become `$$`; hold it back
+                                break;
                             }
                             if run >= 2 {
                                 // A display opener is exactly two `$`; any further
@@ -340,7 +342,8 @@ impl LatexDelimiterNormalizer {
                                 let r = count_run(bytes, i, b'`');
                                 if i + r == n && !final_flush {
                                     out.push_str(&buf[start..i]);
-                                    return (out, i); // hold back the trailing run
+                                    // hold back the trailing run
+                                    return (out, i);
                                 }
                                 if r == run {
                                     i += r;
@@ -350,13 +353,15 @@ impl LatexDelimiterNormalizer {
                                     handled = true;
                                     break;
                                 }
-                                i += r; // non-matching run is literal content
+                                // non-matching run is literal content
+                                i += r;
                             }
                             _ => i += 1,
                         }
                     }
                     if !handled {
-                        out.push_str(&buf[start..i]); // EOF inside code
+                        // EOF inside code
+                        out.push_str(&buf[start..i]);
                     }
                 }
                 State::Fenced { ch, len } => {
@@ -379,7 +384,8 @@ impl LatexDelimiterNormalizer {
                         i += 1;
                     }
                     if i < n {
-                        i += 1; // include the newline
+                        // include the newline
+                        i += 1;
                         self.at_line_start = true;
                     } else {
                         self.at_line_start = false;
@@ -430,13 +436,15 @@ fn scan_fence_open(bytes: &[u8], i: usize, final_flush: bool) -> FenceScan {
         j += 1;
     }
     if spaces >= 4 {
-        return FenceScan::No; // indented; not treated as a fence opener
+        // indented; not treated as a fence opener
+        return FenceScan::No;
     }
     if j == n {
         return if final_flush {
             FenceScan::No
         } else {
-            FenceScan::NeedMore // ≤3 spaces then EOF: a fence may still start
+            // ≤3 spaces then EOF: a fence may still start
+            FenceScan::NeedMore
         };
     }
     let ch = bytes[j];
@@ -445,10 +453,12 @@ fn scan_fence_open(bytes: &[u8], i: usize, final_flush: bool) -> FenceScan {
     }
     let run = count_run(bytes, j, ch);
     if j + run == n && !final_flush {
-        return FenceScan::NeedMore; // run may extend
+        // run may extend
+        return FenceScan::NeedMore;
     }
     if run < 3 {
-        return FenceScan::No; // inline code / stray tildes, not a fence
+        // inline code / stray tildes, not a fence
+        return FenceScan::No;
     }
     FenceScan::Match {
         ch,
@@ -482,7 +492,8 @@ fn scan_fence_close(bytes: &[u8], i: usize, ch: u8, len: usize, final_flush: boo
     }
     let run = count_run(bytes, j, ch);
     if j + run == n && !final_flush {
-        return FenceScan::NeedMore; // run may still grow to >= len
+        // run may still grow to >= len
+        return FenceScan::NeedMore;
     }
     if run < len {
         return FenceScan::No;
@@ -510,7 +521,8 @@ fn scan_fence_close(bytes: &[u8], i: usize, ch: u8, len: usize, final_flush: boo
             end: j + run,
         }
     } else {
-        FenceScan::No // non-whitespace after the run → info string → content
+        // non-whitespace after the run → info string → content
+        FenceScan::No
     }
 }
 
@@ -617,9 +629,11 @@ fn find_inline_close(bytes: &[u8], open: usize, final_flush: bool) -> InlineClos
         }
         if bytes[k] == b'\\' {
             match bytes.get(k + 1) {
-                None => break, // trailing `\`: need the next byte to classify
+                // trailing `\`: need the next byte to classify
+                None => break,
                 Some(b')') => return InlineClose::Found { close: k },
-                Some(_) => k += 2, // `\\` pair or `\x` escape: skip both bytes
+                // `\\` pair or `\x` escape: skip both bytes
+                Some(_) => k += 2,
             }
         } else {
             k += 1;
@@ -678,7 +692,8 @@ fn find_display_close(buf: &str, content_start: usize, final_flush: bool) -> Dis
         }
         match bytes[k] {
             b'\\' => match bytes.get(k + 1) {
-                None => break, // trailing `\`: need the next byte to classify
+                // trailing `\`: need the next byte to classify
+                None => break,
                 Some(b']') => {
                     return DisplayClose::Found {
                         close: k,
@@ -709,9 +724,11 @@ fn find_display_close(buf: &str, content_start: usize, final_flush: bool) -> Dis
                     if could_extend && !final_flush {
                         return DisplayClose::NeedMore;
                     }
-                    k += 2; // `\e…` of something else: span content
+                    // `\e…` of something else: span content
+                    k += 2;
                 }
-                Some(_) => k += 2, // `\\` pair or `\x` escape: span content
+                // `\\` pair or `\x` escape: span content
+                Some(_) => k += 2,
             },
             b'$' => {
                 let run = count_run(bytes, k, b'$');
@@ -722,7 +739,8 @@ fn find_display_close(buf: &str, content_start: usize, final_flush: bool) -> Dis
                     };
                 }
                 if k + run == n && !final_flush {
-                    return DisplayClose::NeedMore; // lone `$` at EOB may extend
+                    // lone `$` at EOB may extend
+                    return DisplayClose::NeedMore;
                 }
                 k += run;
             }
@@ -734,7 +752,8 @@ fn find_display_close(buf: &str, content_start: usize, final_flush: bool) -> Dis
                     j += 1;
                 }
                 if j == n {
-                    break; // need the next line's first byte to decide
+                    // need the next line's first byte to decide
+                    break;
                 }
                 if matches!(bytes[j], b'\n' | b'>') {
                     return DisplayClose::Unmatched;
@@ -757,7 +776,7 @@ fn find_display_close(buf: &str, content_start: usize, final_flush: bool) -> Dis
 /// through byte-for-byte, keeping the pass idempotent). Multi-line interiors
 /// have each line trimmed and joined with a single space so CommonMark block
 /// parsing (setext underlines, list items, headings) cannot split the span;
-/// TeX treats the newlines as spaces, so rendering is unchanged.
+/// TeX treats the newlines as spaces, so rendering is `unchanged`.
 fn emit_display_span(out: &mut String, interior: &str) {
     out.push_str("$$");
     push_joined_lines(out, interior);
@@ -825,7 +844,7 @@ mod tests {
         normalize_latex_delimiters(s)
     }
 
-    // ── Basic conversions ────────────────────────────────────────────────
+    // Basic conversions
 
     #[test]
     fn inline_paren_converts() {
@@ -833,7 +852,7 @@ mod tests {
         assert_eq!(norm("a \\(x\\) b"), "a $x$ b");
     }
 
-    // ── Inline `\( … \)` boundary-whitespace trimming (the regression) ────
+    // Inline `\( … \)` boundary-whitespace trimming (the regression)
 
     #[test]
     fn normalize_inline_paren_trims_boundary_ws() {
@@ -858,7 +877,7 @@ mod tests {
     fn normalize_inline_paren_trim_leaves_escapes_and_dollars_alone() {
         // Escaped `\\(`/`\\)` is a literal backslash + paren, not a math span.
         assert_eq!(norm("\\\\( x \\\\)"), "\\\\( x \\\\)");
-        // Only the backslash forms are ours: a space-padded bare `$ x $` is NOT
+        // Only the backslash forms are ours: a space-`padded` bare `$ x $` is NOT
         // trimmed (currency untouched-ness is covered by `currency_not_misconverted`).
         assert_eq!(norm("$ x $"), "$ x $");
     }
@@ -880,7 +899,7 @@ mod tests {
         assert_eq!(norm("a\n\\[x\\]\nb"), "a\n$$x$$\nb");
     }
 
-    // ── Multi-line display spans join onto one line ──────────────────────
+    // Multi-line display spans join onto one line
 
     #[test]
     fn multiline_display_with_setext_hazard_joins() {
@@ -971,7 +990,7 @@ mod tests {
         assert_eq!(norm("$$\nprice \\$5\n=\nz\n$$"), "$$price \\$5 = z$$");
     }
 
-    // ── Inline `\(…\)` spans join interior newlines ──────────────────────
+    // Inline `\(…\)` spans join interior newlines
 
     #[test]
     fn multiline_inline_paren_joins() {
@@ -1016,7 +1035,7 @@ mod tests {
         }
     }
 
-    // ── Escapes & currency ───────────────────────────────────────────────
+    // Escapes & currency
 
     #[test]
     fn escaped_backslash_paren_stays_literal() {
@@ -1037,7 +1056,7 @@ mod tests {
         assert_eq!(norm("\\(a\\) costs $5"), "$a$ costs $5");
     }
 
-    // ── Code is left verbatim ────────────────────────────────────────────
+    // Code is left verbatim
 
     #[test]
     fn inline_code_latex_untouched() {
@@ -1072,7 +1091,7 @@ mod tests {
         );
     }
 
-    // ── Math inside tables (the bug) ─────────────────────────────────────
+    // Math inside tables (the bug)
 
     #[test]
     fn table_cell_backslash_math_converts() {
@@ -1081,7 +1100,7 @@ mod tests {
         assert_eq!(norm(input), expected);
     }
 
-    // ── Streaming equivalence (the key invariant) ────────────────────────
+    // Streaming equivalence (the key invariant)
 
     const RICH_DOC: &str = concat!(
         "Inline \\(a+b\\), dollar $c+d$, display \\[e=mc^2\\].\n\n",
@@ -1146,13 +1165,13 @@ mod tests {
             "  ",
             "\\\\(escaped\\\\)",
             "`unterminated \\(x\\)\nafter \\(y\\)",
-            // Padded inline spans exercise the look-ahead + trim hold-back.
+            // `Padded` inline spans exercise the look-ahead + trim hold-back.
             "\\( x \\)",
             "a \\( x+y \\) b",
             "\\( \\alpha + \\beta \\)",
             "\\( \\{x\\} \\)",
             "\\( \\) empty",
-            // Unclosed padded open: held back until finish() flushes a lone `$`.
+            // Unclosed `padded` open: held back until finish() flushes a lone `$`.
             "unclosed padded \\( x + y",
             // Display spans exercise the close-scan hold-back and its aborts.
             "$$\nx\n=\ny\n$$",
@@ -1172,7 +1191,7 @@ mod tests {
         }
     }
 
-    // ── finish() flushes held-back partials literally ────────────────────
+    // finish() flushes held-back partials literally
 
     #[test]
     fn finish_flushes_partial_backslash() {

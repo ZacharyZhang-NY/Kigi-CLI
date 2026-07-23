@@ -1,5 +1,5 @@
 //! Plan surfaces: plan chip/preview, plan approval + feedback, and casual
-//! plan commenting (incl. the casual-commenting test fixture).
+//! plan commenting.
 use super::AgentView;
 #[cfg(test)]
 use super::{ActivePane, InputMode, test_fixtures};
@@ -15,7 +15,6 @@ use crate::views::prompt_widget::{EnterOutcome, PromptEvent};
 use crossterm::event::KeyModifiers;
 use crossterm::event::{KeyCode, KeyEvent};
 impl AgentView {
-    /// Resolve the absolute path to the plan file for this session.
     fn plan_file_path(&self) -> Option<std::path::PathBuf> {
         let session_id = self.session.session_id.as_ref()?;
         let cwd_str = self.session.cwd.to_string_lossy().into_owned();
@@ -28,38 +27,31 @@ impl AgentView {
                 .join("plan.md"),
         )
     }
-    /// Whether the current line viewer is showing a plan preview.
     pub(super) fn is_plan_viewer(&self) -> bool {
         self.line_viewer.as_ref().is_some_and(|v| {
             v.kind == crate::views::file_search::line_viewer::LineViewerKind::PlanPreview
         })
     }
-    /// Whether the user is currently composing a comment via the prompt
-    /// input inside the *casual* plan preview (the modal opened with no
-    /// `plan_approval_view`). Mirrors the `pav.focus == Commenting`
-    /// check used by the plan-approval path so the prompt/footer
-    /// behaves identically across both modes.
+    /// True while the user composes a comment in the *casual* plan preview
+    /// (the modal opened with no `plan_approval_view`). Mirrors the
+    /// `pav.focus == Commenting` check of the plan-approval path so the
+    /// prompt/footer behave identically across both modes.
     pub(super) fn is_casual_commenting(&self) -> bool {
         self.plan_approval_view.is_none()
             && self.is_plan_viewer()
             && self.casual_commenting_range.is_some()
     }
-    /// Whether the prompt "auto" (LLM classifier mode) flag should render.
-    /// Extracted for unit testing the precedence: auto shows only when the
-    /// session is in auto mode and neither yolo (always-approve wins) nor plan
-    /// is active.
+    /// Whether the prompt "auto" (LLM classifier mode) flag should render:
+    /// only when the session is in auto mode and neither yolo (always-approve
+    /// wins) nor plan is active.
     pub(super) fn auto_flag_visible(&self, effective_plan: bool) -> bool {
         self.session.is_auto() && !self.session.is_yolo() && !effective_plan
     }
-    /// Whether plan content is available for preview.
     fn plan_preview_available(&self) -> bool {
         self.plan_body_for_preview().is_some()
     }
-    /// Whether the "plan" status-bar chip should be rendered.
-    ///
-    /// Visible while plan mode is active, or always when the user has set
-    /// `show_plan_chip = true` in `pager.toml`. Hidden by default once the
-    /// user exits plan mode.
+    /// Visible while plan mode is active, or always when `show_plan_chip` is
+    /// set in `pager.toml`; hidden by default once the user exits plan mode.
     pub(super) fn should_show_plan_chip(
         &self,
         appearance: &crate::appearance::AppearanceConfig,
@@ -73,11 +65,9 @@ impl AgentView {
             .and_then(|p| p.plan_content.as_deref())
             .filter(|s| !s.trim().is_empty())
     }
-    /// Resolve the plan body for the line-viewer preview.
-    ///
     /// Prefers content carried on the approval request (inline plan-creation or
     /// the shell-read file body), then falls back to the on-disk plan file.
-    /// Request body first keeps file-backed previews working when the path
+    /// Request body first keeps file-backed previews working when path
     /// resolution fails or the file disappears between intercept and open.
     fn plan_body_for_preview(&self) -> Option<String> {
         if let Some(content) = self
@@ -106,8 +96,6 @@ impl AgentView {
             self.show_plan_preview();
         }
     }
-    /// Show the plan in the line viewer overlay or a "no plan" toast.
-    ///
     /// When plan approval is parked without a body, opens a placeholder
     /// preview so the user always sees a decision surface (a/s/q) instead of
     /// a dead "Waiting on plan approval" line with a no-op Tab:plan.
@@ -154,14 +142,10 @@ impl AgentView {
         }
         self.line_viewer = Some(viewer);
     }
-    /// Test fixture: drive the agent into casual-commenting state
-    /// (line viewer open in plan-preview mode + `casual_commenting_range`
-    /// armed) so the `Event::Paste` plan-feedback arm at ~1539 is
-    /// reachable from a unit test without spawning the real
-    /// keystroke pipeline. Consolidates three field mutations into
-    /// one helper so a future refactor of casual-commenting state
-    /// only has to update this fixture rather than every test that
-    /// reaches into the fields by name.
+    /// Drive the agent into casual-commenting state (line viewer open in
+    /// plan-preview mode + `casual_commenting_range` armed) so the paste
+    /// plan-feedback arm is reachable from a unit test without the real
+    /// keystroke pipeline.
     #[cfg(test)]
     pub(crate) fn enter_casual_commenting_for_test(&mut self) {
         let mut viewer =
@@ -266,10 +250,8 @@ impl AgentView {
             viewer.plan_mut().feedback_active = true;
         }
     }
-    /// Discard an in-progress comment draft: clear the prompt text and
-    /// drop the selected line range + pending edit + stashed feedback.
-    /// Used whenever focus leaves the prompt without an explicit save
-    /// or cancel (e.g. Tab back to Preview, click into the modal).
+    /// Called whenever focus leaves the prompt without an explicit save or
+    /// cancel (e.g. Tab back to Preview, click into the modal).
     fn discard_in_progress_comment(&mut self) {
         if let Some(ref mut pav) = self.plan_approval_view {
             pav.commenting_range = None;
@@ -484,11 +466,8 @@ impl AgentView {
         }
         InputOutcome::Changed
     }
-    /// Enter casual commenting mode from the plan preview.
-    ///
-    /// If the cursor is on a comment line, enter edit mode for that comment.
-    /// If the cursor is on a source line, capture the line range and enter
-    /// new-comment mode.
+    /// If the cursor is on a comment line, edit that comment; if on a source
+    /// line, capture the line range and start a new comment.
     pub(super) fn enter_casual_plan_commenting(&mut self) -> InputOutcome {
         let viewer = match self.line_viewer.as_mut() {
             Some(v) => v,
@@ -535,7 +514,6 @@ impl AgentView {
         self.prompt.set_text("");
         InputOutcome::Changed
     }
-    /// Save the current casual comment (new or edited) and rebuild the viewer.
     pub(super) fn save_casual_plan_comment(&mut self) -> InputOutcome {
         let text = self.prompt.text().to_owned();
         if text.trim().is_empty() {
@@ -570,7 +548,6 @@ impl AgentView {
         }
         InputOutcome::Changed
     }
-    /// Cancel casual plan commenting without saving.
     pub(super) fn cancel_casual_plan_commenting(&mut self) -> InputOutcome {
         self.casual_commenting_range = None;
         self.casual_editing_comment_id = None;
@@ -581,11 +558,9 @@ impl AgentView {
         }
         InputOutcome::Changed
     }
-    /// Key handler used while the user is composing a casual plan
-    /// comment via the prompt input. Mirrors `handle_plan_feedback_key`
-    /// (which serves the plan-approval Commenting focus) so the UX is
-    /// identical: Enter saves, Esc cancels, Tab cancels back to the
-    /// modal, and everything else routes to the prompt textarea.
+    /// Mirrors `handle_plan_feedback_key` (the plan-approval Commenting focus)
+    /// so the casual-commenting UX is identical: Enter saves, Esc cancels, Tab
+    /// cancels back to the modal, everything else routes to the prompt textarea.
     pub(super) fn handle_casual_plan_feedback_key(&mut self, key: &KeyEvent) -> InputOutcome {
         if key.code == KeyCode::Esc {
             if self.prompt.file_search_visible() {
@@ -612,7 +587,6 @@ impl AgentView {
             PromptEvent::Ignored => InputOutcome::Changed,
         }
     }
-    /// Delete the casual comment under the cursor in the plan preview.
     pub(super) fn delete_casual_plan_comment_at_cursor(&mut self) -> InputOutcome {
         let viewer = match self.line_viewer.as_ref() {
             Some(v) => v,
@@ -658,8 +632,6 @@ impl AgentView {
 #[cfg(test)]
 mod prompt_flag_tests {
     use super::test_fixtures::make_agent;
-    /// The prompt "auto" (classifier) mode flag shows only when the session is
-    /// in Auto and neither yolo (always-approve wins) nor plan is active.
     #[test]
     fn auto_flag_visible_precedence() {
         let mut agent = make_agent();

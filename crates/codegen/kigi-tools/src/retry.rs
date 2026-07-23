@@ -6,7 +6,6 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 
-/// Configuration for retry behavior with exponential backoff.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackoffConfig {
     pub max_retries: u32,
@@ -42,7 +41,6 @@ impl BackoffConfig {
     }
 }
 
-/// Execute with retry logic and exponential backoff.
 /// Calls `on_retry(attempt, max_retries, delay)` before each retry.
 pub async fn execute_with_backoff<T, E, EFut, R, RFut>(
     config: &BackoffConfig,
@@ -131,7 +129,8 @@ mod tests {
         assert_eq!(config.calculate_delay(1), Duration::from_millis(1000));
         assert_eq!(config.calculate_delay(2), Duration::from_millis(2000));
         assert_eq!(config.calculate_delay(3), Duration::from_millis(4000));
-        assert_eq!(config.calculate_delay(6), Duration::from_millis(30000)); // capped
+        // capped
+        assert_eq!(config.calculate_delay(6), Duration::from_millis(30000));
     }
 
     #[test]
@@ -139,7 +138,8 @@ mod tests {
         let config = BackoffConfig::new(5, 500, 5000);
         assert_eq!(config.calculate_delay(1), Duration::from_millis(500));
         assert_eq!(config.calculate_delay(4), Duration::from_millis(4000));
-        assert_eq!(config.calculate_delay(5), Duration::from_millis(5000)); // capped
+        // capped
+        assert_eq!(config.calculate_delay(5), Duration::from_millis(5000));
     }
 
     #[test]

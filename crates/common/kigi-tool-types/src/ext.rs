@@ -39,14 +39,12 @@ impl Extensions {
         Self::default()
     }
 
-    /// Retrieve a reference to a stored value by type.
     pub fn get<T: Any + Send + Sync + 'static>(&self) -> Option<&T> {
         self.map
             .get(&TypeId::of::<T>())
             .and_then(|e| e.data.downcast_ref())
     }
 
-    /// Retrieve a mutable reference to a stored value by type.
     pub fn get_mut<T: Any + Send + Sync + 'static>(&mut self) -> Option<&mut T> {
         self.map
             .get_mut(&TypeId::of::<T>())
@@ -64,7 +62,6 @@ impl Extensions {
         );
     }
 
-    /// Remove and return a value by type.
     pub fn remove<T: Any + Send + Sync + 'static>(&mut self) -> Option<T> {
         self.map
             .remove(&TypeId::of::<T>())
@@ -72,17 +69,14 @@ impl Extensions {
             .map(|b| *b)
     }
 
-    /// Check if a value of the given type is stored.
     pub fn contains<T: Any + Send + Sync + 'static>(&self) -> bool {
         self.map.contains_key(&TypeId::of::<T>())
     }
 
-    /// Number of stored entries.
     pub fn len(&self) -> usize {
         self.map.len()
     }
 
-    /// Returns true if no entries are stored.
     pub fn is_empty(&self) -> bool {
         self.map.is_empty()
     }
@@ -104,10 +98,6 @@ impl fmt::Debug for Extensions {
             .finish()
     }
 }
-
-// ============================================================================
-// Tests
-// ============================================================================
 
 #[cfg(test)]
 mod tests {

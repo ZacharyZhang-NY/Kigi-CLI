@@ -20,24 +20,24 @@ pub fn acp_internal_error(message: impl Into<String>) -> acp::Error {
 
 /// The two distinct ways an [`acp_send`](crate::acp_send) round-trip can fail
 /// when the underlying channel is closed. Both surface as a JSON-RPC
-/// `INTERNAL_ERROR` (so existing callers and the wire format are unaffected);
-/// this typed discriminant — carried in the error's `data` — lets callers tell
-/// them apart WITHOUT substring-matching the human-readable `message`.
+/// `INTERNAL_ERROR`; this typed discriminant — carried in the error's `data` —
+/// lets callers tell them apart without substring-matching the human-readable
+/// `message`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AcpChannelFailure {
-    /// The request could not be ENQUEUED: the receiver half (the peer's
+    /// The request could not be enqueued: the receiver half (the peer's
     /// connection task) is already gone, so no peer is listening — e.g. a
     /// headless run with no client wired.
     SendFailed,
-    /// The request was enqueued but the RESPONSE channel was dropped before a
+    /// The request was enqueued but the response channel was dropped before a
     /// reply arrived: a peer received the request, then went away (disconnect /
     /// process exit) without answering.
     RecvFailed,
 }
 
 impl AcpChannelFailure {
-    /// `data` object key under which [`acp_send`](crate::acp_send) records the
-    /// kind. Namespaced so it can never collide with other `with_data` payloads.
+    /// `data` object key under which the kind is recorded. Namespaced so it can
+    /// never collide with other `with_data` payloads.
     const DATA_KEY: &'static str = "xaiAcpChannelFailure";
 
     const fn tag(self) -> &'static str {
@@ -58,8 +58,8 @@ impl AcpChannelFailure {
 
 /// Build the channel-closed error for [`acp_send`](crate::acp_send), tagging it
 /// with a typed [`AcpChannelFailure`] discriminant in `data`. The error `code`
-/// stays `INTERNAL_ERROR`, so this is purely additive for callers that just
-/// propagate the error.
+/// stays `INTERNAL_ERROR` so callers that merely propagate the error are
+/// unaffected.
 pub(crate) fn acp_channel_failure_error(
     message: impl Into<String>,
     kind: AcpChannelFailure,
@@ -68,8 +68,8 @@ pub(crate) fn acp_channel_failure_error(
 }
 
 /// Recover the [`AcpChannelFailure`] kind from an error, or `None` if the error
-/// did not originate from [`acp_send`](crate::acp_send)'s channel-closed paths
-/// (or predates the tag). Consumers use this instead of inspecting `message`.
+/// did not originate from [`acp_send`](crate::acp_send)'s channel-closed paths.
+/// Consumers use this instead of inspecting `message`.
 pub fn acp_channel_failure(err: &acp::Error) -> Option<AcpChannelFailure> {
     err.data
         .as_ref()
@@ -78,10 +78,9 @@ pub fn acp_channel_failure(err: &acp::Error) -> Option<AcpChannelFailure> {
         .and_then(AcpChannelFailure::from_tag)
 }
 
-/// Compact single-line JSON for gateway debug traces. Plain (uncolored)
-/// output: this feeds `tracing::debug!`, which typically lands in log files
-/// where ANSI colors are noise. Replaces the former `colored_json`-backed
-/// `color_json` (dropped to shrink the shipped dependency tree).
+/// Compact single-line JSON for gateway debug traces. Output is uncolored: it
+/// feeds `tracing::debug!`, which typically lands in log files where ANSI
+/// escapes are noise.
 #[doc(hidden)]
 pub fn compact_json<T: serde::Serialize>(value: &T) -> String {
     serde_json::to_string(value).unwrap_or_default()

@@ -23,11 +23,9 @@ use kigi_tui::theme::Theme;
 
 static BENCH_MD: &str = include_str!("bench.md");
 
-/// Viewport dimensions for the benchmark.
 const VIEWPORT_WIDTH: u16 = 120;
 const VIEWPORT_HEIGHT: u16 = 50;
 
-/// How many lines to advance per step in full_scroll.
 const SCROLL_STEP: u16 = 10;
 
 /// Entry count for the reveal benchmarks. Approximates the ~3,200-entry
@@ -75,8 +73,6 @@ fn compute_layouts(
         })
         .collect()
 }
-
-// ─── Benchmarks ────────────────────────────────────────────────────
 
 /// Render a single frame at scroll offset 0 (top of document).
 ///
@@ -152,11 +148,10 @@ fn bench_full_scroll(c: &mut Criterion) {
     let appearance = AppearanceConfig::default();
     let layouts = compute_layouts(&entries, &appearance);
 
-    // usize: scroll offset is usize in the render path.
     let total: usize = layouts
         .iter()
         .map(|l| l.height as usize + l.gap_after as usize)
-        .sum(); // heights + gaps
+        .sum();
     let max_scroll = total.saturating_sub(VIEWPORT_HEIGHT as usize);
 
     // Prime the wrap cache
@@ -270,8 +265,6 @@ fn bench_windowed_scroll(c: &mut Criterion) {
     });
     g.finish();
 }
-
-// ─── Reveal (scrollback-search n/N navigation) ─────────────────────
 
 /// One paragraph of lorem-style body per entry (~1.7 KB), so the
 /// `REVEAL_ENTRIES`-entry corpus is on the order of the motivating session's

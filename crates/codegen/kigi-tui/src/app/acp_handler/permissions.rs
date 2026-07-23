@@ -1,9 +1,5 @@
 use super::*;
 
-// ---------------------------------------------------------------------------
-// Permission request handling
-// ---------------------------------------------------------------------------
-
 /// Route a permission request to the agent that owns its `session_id`, queue
 /// it on that agent's view, and return whether the active view needs a redraw.
 ///
@@ -21,7 +17,6 @@ pub(super) fn handle_permission_request(
     perm: kigi_acp_lib::AcpArgs<acp::RequestPermissionRequest>,
     app: &mut AppView,
 ) -> bool {
-    // 1. Look up the owning agent by session_id (root or subagent view).
     let matched = match find_session_match(app, &perm.request.session_id) {
         Some(m) => m,
         None => {
@@ -40,12 +35,12 @@ pub(super) fn handle_permission_request(
         return false;
     };
 
-    // 2. YOLO mode: auto-approve immediately on the owning agent so background
-    //    turns aren't blocked waiting for the user to switch back.
+    // YOLO mode: auto-approve immediately on the owning agent so background
+    // turns aren't blocked waiting for the user to switch back.
     //
-    //    If no `AllowOnce` option exists, falls through to
-    //    `enqueue_permission` even in YOLO mode (won't pick
-    //    `AllowAlways` by default).
+    // If no `AllowOnce` option exists, falls through to
+    // `enqueue_permission` even in YOLO mode (won't pick
+    // `AllowAlways` by default).
     if agent.session.is_yolo()
         && let Some(allow) = perm
             .request
@@ -61,13 +56,13 @@ pub(super) fn handle_permission_request(
                 )),
             )))
             .ok();
-        return false; // no redraw needed
+        return false;
     }
 
-    // 3. Fire notification so the user notices the pending approval.
-    //    Rate-limit: only fire the bell/popup on the empty→non-empty
-    //    transition to avoid stacking notifications during concurrent
-    //    permission requests.
+    // Fire notification so the user notices the pending approval.
+    // Rate-limit: only fire the bell/popup on the empty→non-empty
+    // transition to avoid stacking notifications during concurrent
+    // permission requests.
     if !app
         .notification_service
         .should_suppress_permission_notification()
@@ -81,9 +76,9 @@ pub(super) fn handle_permission_request(
         app.notification_service.mark_permission_notified();
     }
 
-    // 4. Queue on the owning agent's view. Subagent provenance for display
-    //    is still resolved via subagent_sessions in enqueue_permission().
-    //    Redraw is only needed when the owning agent is currently visible.
+    // Queue on the owning agent's view. Subagent provenance for display
+    // is still resolved via subagent_sessions in enqueue_permission().
+    // Redraw is only needed when the owning agent is currently visible.
     let needs_redraw = enqueue_permission(perm, agent);
     needs_redraw && is_active
 }
@@ -96,7 +91,6 @@ fn enqueue_permission(
     perm: kigi_acp_lib::AcpArgs<acp::RequestPermissionRequest>,
     agent: &mut AgentView,
 ) -> bool {
-    // 1. Parse bash highlights from request meta (imported from kigi-shell).
     let bash_highlights: Option<BashCommandHighlights> = perm
         .request
         .meta
@@ -107,9 +101,8 @@ fn enqueue_permission(
         .map(|h| kigi_workspace::permission::default_always_allow_scope(&h.highlighted_words))
         .unwrap_or(0);
 
-    // 1b. Parse MCP scope state from the `allow-always-mcp` option's meta.
-    //     Mutually exclusive with the bash flow at the per-request level —
-    //     the same prompt cannot carry both.
+    // The `allow-always-mcp` option's meta is mutually exclusive with the bash
+    // flow at the per-request level — the same prompt cannot carry both.
     let mcp_scope = perm
         .request
         .options
@@ -128,35 +121,30 @@ fn enqueue_permission(
             selected: McpScope::Tool,
         });
 
-    // 2. Build subagent provenance label.
-    //    If session_id differs from the root session, look up subagent info.
     let subagent_label = resolve_subagent_label(agent, &perm.request.session_id);
 
-    // 3. Build title and description from the tool call.
     let (title, description, bash_command_raw) =
         build_permission_display(&perm.request, bash_highlights.as_ref());
 
-    // 4. Assign a monotonic ID.
     let perm_id = agent.next_perm_req_id;
     agent.next_perm_req_id += 1;
 
-    // 5. Stash prompt on queue transition: empty -> non-empty.
-    //    Do NOT stash again if the queue is already non-empty (that would
-    //    capture followup text from the current permission as the "original"
-    //    prompt, losing the user's real input).
+    // Stash prompt on queue transition: empty -> non-empty.
+    // Do NOT stash again if the queue is already non-empty (that would
+    // capture followup text from the current permission as the "original"
+    // prompt, losing the user's real input).
     if agent.permission_queue.is_empty() && agent.permission_stashed_prompt.is_none() {
         agent.permission_stashed_prompt = Some(agent.prompt.stash());
         agent.prompt.set_text("");
     }
 
-    // 6. Clone options before moving perm into the struct.
     let options = perm.request.options.clone();
 
-    // 7. Cursor preselection (sticky last-used → configured default → the
-    //    enable-always-approve row → index 0). See `permission_cursor`.
+    // Cursor preselection (sticky last-used → configured default → the
+    // enable-always-approve row → index 0). See `permission_cursor`.
     let active_idx = crate::appearance::permission_cursor::resolve_initial_cursor(&options);
 
-    // 8. Queue the request FIFO (do NOT replace/cancel existing requests).
+    // Queue the request FIFO (do NOT replace/cancel existing requests).
     agent.permission_queue.push_back(PermissionViewState {
         request: perm,
         id: perm_id,
@@ -182,7 +170,7 @@ fn enqueue_permission(
     // turn ended". The same field powers the dashboard relative-time label.
     agent.last_active_at = Some(std::time::Instant::now());
 
-    true // needs redraw
+    true
 }
 
 /// Build a subagent provenance label for display.
@@ -200,20 +188,17 @@ fn enqueue_permission(
 /// Returns `None` for root session (no provenance needed).
 fn resolve_subagent_label(agent: &AgentView, session_id: &acp::SessionId) -> Option<String> {
     let sid = session_id.0.as_ref();
-    // Check if this is the root session (no provenance needed).
     if let Some(ref root_sid) = agent.session.session_id
         && root_sid.0.as_ref() == sid
     {
         return None;
     }
-    // Tier 1: tracked subagent with full metadata.
     if let Some(info) = agent.subagent_sessions.get(sid) {
         return Some(format!(
             "Subagent \"{}\" ({}):",
             info.description, info.subagent_type
         ));
     }
-    // Tier 2: non-root session with no tracked info.
     Some("Child session (untracked):".to_string())
 }
 
@@ -364,7 +349,6 @@ fn is_edit_permission(req: &acp::RequestPermissionRequest) -> bool {
     })
 }
 
-/// Cancel a permission request by sending `Cancelled` on the response channel.
 fn cancel_permission(perm: kigi_acp_lib::AcpArgs<acp::RequestPermissionRequest>) {
     perm.response_tx
         .send(Ok(acp::RequestPermissionResponse::new(

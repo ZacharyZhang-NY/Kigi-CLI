@@ -4,16 +4,13 @@
 //! (the subscription platform via the OAuth session, the open platforms via
 //! their API keys), plus the custom-endpoint OpenAI-compatible listing path.
 //!
-//! This is the network surface relocated out of the deleted xAI-proxy
-//! backend client (`remote/`); it talks only to the configured platform
-//! model endpoints (plus the models.dev metadata refresh when an enabled
-//! platform needs enrichment — see `enrichment_fetch`), never to a proxy
-//! backend.
+//! It talks only to the configured platform model endpoints (plus the
+//! models.dev metadata refresh when an enabled platform needs enrichment —
+//! see `enrichment_fetch`), never to a proxy backend.
 use crate::auth::KimiAuth;
 use indexmap::IndexMap;
 use serde::Deserialize;
 
-/// Errors from a model-catalog fetch.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum BackendError {
     #[error("Network error: {0}")]
@@ -571,12 +568,6 @@ fn fetch_one_platform_models(
         .collect();
     Ok((models, etag))
 }
-/// Map one F4 wire model to a catalog entry config.
-///
-/// SECURITY: the entry carries only env-var NAMES (`env_key`) for the open
-/// platforms — never key values — because raw fetched entries are persisted
-/// to the models disk cache. Config-file keys are stamped in-memory later by
-/// `resolve_model_list`'s platform-credentials layer.
 /// Map a live `think_efforts` block to catalog effort options. The wire
 /// token stays the option id/label (`"max"` → label `"Max"`) so the UI
 /// mirrors the server's vocabulary, while the canonical value maps through
@@ -612,6 +603,12 @@ fn think_efforts_to_options(
         .collect()
 }
 
+/// Map one F4 wire model to a catalog entry config.
+///
+/// SECURITY: the entry carries only env-var NAMES (`env_key`) for the open
+/// platforms — never key values — because raw fetched entries are persisted
+/// to the models disk cache. Config-file keys are stamped in-memory later by
+/// `resolve_model_list`'s platform-credentials layer.
 pub(crate) fn platform_wire_model_to_entry(
     platform: kigi_models::PlatformId,
     wire: kigi_models::WireModel,

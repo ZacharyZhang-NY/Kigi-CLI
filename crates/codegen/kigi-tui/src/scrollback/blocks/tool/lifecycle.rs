@@ -11,7 +11,6 @@ use crate::scrollback::block::BlockContent;
 use crate::scrollback::types::{AccentStyle, BlockContext, BlockOutput, DisplayMode};
 use crate::theme::Theme;
 
-/// Block representing a lifecycle hook event.
 #[derive(Debug, Clone)]
 pub struct LifecycleEventBlock {
     /// Event name (e.g. `user_prompt_submit`).

@@ -4,54 +4,25 @@ use super::common::*;
 #[allow(unused_imports)]
 use super::scroll::*;
 
-// ── Regression: trackpad feel — fast flicks must not under-travel ─────────
+// Regression: fast trackpad flicks must not under-travel.
 //
-// User complaint: fast trackpad flicks felt "laggy AND too sensitive" and
-// under-traveled. The trackpad flush path had a fixed 6-line per-flush cap:
-// at the 16ms cadence that is a hard ~360 lines/s delivery ceiling no matter
-// how fast the gesture or how tall the viewport, and whatever backlog was
-// still queued when the stream finalized was discarded beyond one more
-// 6-line flush — the flick's tail simply evaporated. The fix makes the cap
-// proportional (half the viewport per flush, floored at 6) so delivery
-// scales with gesture demand, and the finalize flush drains the whole-line
-// backlog up to that cap.
+// The trackpad flush path used to cap delivery at a fixed 6 lines per 16ms
+// flush and discard any backlog still queued when the stream finalized, so
+// fast flicks felt "laggy AND too sensitive" and under-traveled regardless
+// of gesture speed or viewport height. The fix makes the cap proportional
+// (half the viewport per flush, floored at 6) so delivery scales with
+// gesture demand, and has the finalize flush drain the backlog up to that
+// cap instead of discarding it.
 //
-// The trackpad cap only binds once a stream is CONFIRMED trackpad, which
-// happens mid-stream only on ept=1 brands (their rapid same-direction runs
-// promote at the 3rd event; the harness default `TerminalName::Unknown` is
-// ept=3, where auto streams stay Unknown until finalize and flush uncapped).
-// So this test presents `TERM_PROGRAM=iTerm.app` (ept=1) and floods wheel-up
-// reports with `KIGI_SCROLL_SPEED=100` (6x multiplier — an existing user
-// setting, used here as a deterministic demand amplifier). Total viewport
-// travel is then classification- and jitter-robust:
-//
-// - Every event contributes at least 1 base line even at the 1.0x accel
-//   floor, so desired travel is ≥ 40 × 1 × 6 = 240 rows no matter how much
-//   scheduler jitter stretches the 6ms gaps (jitter only lowers the accel
-//   multiplier toward 1.0; the speed multiplier is timing-independent). The
-//   proportional cap (~20 lines/flush at the 50-row PTY) drains that demand
-//   within the burst plus the 80ms stream-gap window, so travel stays above
-//   TRAVEL_FLOOR. If extreme stretching (avg gap > 30ms) prevents trackpad
-//   promotion entirely, the stream is wheel-like and uncapped: travel = 240.
-// - Under the parent's fixed 6-line cap the same flood delivers at most 6
-//   lines per 16ms slot: a ~260ms burst spans ~16 slots (~96 rows), plus the
-//   post-stop gap window (5 slots + one finalize flush ≈ 36 rows) — ≈ 130
-//   rows total, with the remaining backlog discarded at finalize. Verified
-//   against a parent-built binary: travel came out 138 rows (< TRAVEL_FLOOR).
-//
-// One jitter regime the floor does NOT cover is arrival COMPRESSION (the
-// mirror of stretching, per the driver contract in `scroll.rs`): if the
-// pager is descheduled for the whole host-paced burst, all reports queue in
-// the PTY and arrive as one batch. Accel maxes but delivery is cap-bound to
-// one in-batch flush plus the post-stop gap window (~5 cadence slots + one
-// finalize flush ≈ 7 flushes × ~20 lines ≈ 140 rows) — a legitimate
-// cap-bound outcome numerically indistinguishable from the parent defect
-// (138). The regimes separate by CAUSE, visible in the frame count: a
-// compressed burst paints ≲7 frames, while the parent's 6-line cap needs
-// ~16+ flush frames to travel that far. The detector below softens the
-// floor assertion in the compressed regime (distinct message) so a CI stall
-// is not misread as the regression; the floor stays a hard assertion in the
-// normal regime.
+// The proportional cap only binds once a stream is CONFIRMED trackpad,
+// which happens mid-stream only on ept=1 brands (their rapid same-direction
+// runs promote at the 3rd event; the harness default `TerminalName::Unknown`
+// is ept=3 and stays Unknown, flushing uncapped, until finalize). Hence this
+// test presents `TERM_PROGRAM=iTerm.app` (ept=1) and floods wheel-up reports
+// under `KIGI_SCROLL_SPEED=100` as a deterministic demand amplifier. A
+// batched/compressed arrival (pager descheduled through the whole burst) is
+// numerically indistinguishable from the old under-travel bug but is
+// distinguishable by frame count — see `COMPRESSED_BURST_FRAMES_MAX`.
 //
 // Only byte-deterministic quantities are asserted (marker indices on the
 // final screen, frame counts from the preamble's reset_timing() capture) —

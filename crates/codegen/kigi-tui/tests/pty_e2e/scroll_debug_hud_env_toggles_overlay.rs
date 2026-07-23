@@ -1,4 +1,3 @@
-// Per-test-case module for the `pty_e2e` integration test crate.
 #[allow(unused_imports)]
 use super::common::*;
 #[allow(unused_imports)]
@@ -6,7 +5,7 @@ use super::scroll::*;
 
 use std::time::Duration;
 
-// ── A8: scroll-debug HUD e2e (`KIGI_SCROLL_DEBUG`) ─────────────────────────
+// A8: scroll-debug HUD e2e (`KIGI_SCROLL_DEBUG`)
 //
 // The HUD is a release-compiled overlay gated purely at runtime, so the
 // stock harness binary must (a) show it when the env var is set and (b) show
@@ -119,7 +118,7 @@ async fn scroll_debug_hud_absent_without_env() {
     harness.quit().expect("clean quit");
 }
 
-// ── A10: `/debug scroll` e2e ────────────────────────────────────────────────
+// A10: `/debug scroll` e2e
 
 /// **Command-toggle e2e.** `/debug scroll` typed in the prompt must flip the
 /// HUD on without the env var, and a second invocation must flip it off.

@@ -14,7 +14,8 @@ const K_CG_EVENT_SOURCE_STATE_HID_SYSTEM_STATE: i32 = 1;
 // CGEventFlags bitmask constants from <CoreGraphics/CGEventTypes.h>
 const K_CG_EVENT_FLAG_MASK_SHIFT: u64 = 0x0002_0000;
 const K_CG_EVENT_FLAG_MASK_CONTROL: u64 = 0x0004_0000;
-const K_CG_EVENT_FLAG_MASK_ALTERNATE: u64 = 0x0008_0000; // Option key
+// Option key
+const K_CG_EVENT_FLAG_MASK_ALTERNATE: u64 = 0x0008_0000;
 const K_CG_EVENT_FLAG_MASK_COMMAND: u64 = 0x0010_0000;
 
 fn flags() -> u64 {

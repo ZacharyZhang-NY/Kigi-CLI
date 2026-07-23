@@ -13,7 +13,6 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-/// Simulate SubagentInfo with String fields (before optimization)
 #[derive(Clone)]
 struct SubagentInfoString {
     subagent_id: String,
@@ -27,7 +26,6 @@ struct SubagentInfoString {
     tools_used: Vec<String>,
 }
 
-/// Simulate SubagentInfo with Arc<str> fields (after optimization)
 #[derive(Clone)]
 struct SubagentInfoArc {
     subagent_id: Arc<str>,
@@ -85,10 +83,10 @@ fn estimate_string_info_size(info: &SubagentInfoString) -> usize {
 fn estimate_arc_info_size(info: &SubagentInfoArc) -> usize {
     // Arc<str> has 16 bytes overhead (fat pointer) but shares the string data
     std::mem::size_of::<SubagentInfoArc>()
-        + 16 // subagent_id Arc overhead
-        + 16 // child_session_id Arc overhead
-        + 16 // description Arc overhead
-        + 16 // subagent_type Arc overhead
+        + 16
+        + 16
+        + 16
+        + 16
         + info.persona.as_ref().map_or(0, |_| 16)
         + info.role.as_ref().map_or(0, |_| 16)
         + info.model.as_ref().map_or(0, |_| 16)
@@ -99,7 +97,6 @@ fn estimate_arc_info_size(info: &SubagentInfoArc) -> usize {
 fn main() {
     println!("=== SubagentInfo Memory Benchmark ===\n");
 
-    // Test 1: Single instance
     println!("--- Single Instance ---");
     let string_info = create_string_info(1);
     let arc_info = create_arc_info(1);
@@ -114,14 +111,11 @@ fn main() {
     );
     println!();
 
-    // Test 2: Many instances with shared strings
     println!("--- 1000 Instances (with string sharing potential) ---");
     let count = 1000;
 
-    // String-based: each instance has its own copy of shared strings
     let string_infos: Vec<SubagentInfoString> = (0..count).map(create_string_info).collect();
 
-    // Arc-based: shared strings are deduplicated
     let arc_infos: Vec<SubagentInfoArc> = (0..count).map(create_arc_info).collect();
 
     let string_total: usize = string_infos.iter().map(estimate_string_info_size).sum();
@@ -145,7 +139,6 @@ fn main() {
     );
     println!();
 
-    // Test 3: Clone performance
     println!("--- Clone Performance (100,000 clones) ---");
     let iterations = 100_000;
 
@@ -169,7 +162,6 @@ fn main() {
     );
     println!();
 
-    // Test 4: Memory with realistic subagent data
     println!("--- Realistic Scenario (100 subagents with varied data) ---");
     let subagent_types = ["general-purpose", "explore", "plan", "implementer"];
     let personas = ["researcher", "analyst", "reviewer", "implementer"];
@@ -240,7 +232,6 @@ fn main() {
     );
     println!();
 
-    // Summary
     println!("=== Summary ===");
     println!("Arc<str> optimization provides:");
     println!("1. Memory savings through string deduplication (shared strings stored once)");

@@ -17,7 +17,7 @@ const DIFF_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Maximum file size (in bytes) to attempt diffing.
 /// Files larger than this will be skipped to avoid pathological diff behavior.
-const MAX_DIFF_FILE_SIZE: usize = 1024 * 1024; // 1 MB
+const MAX_DIFF_FILE_SIZE: usize = 1024 * 1024;
 
 /// Generate a unified diff patch string from baseline and current content.
 /// This produces a patch that can be parsed by Pierre's `getSingularPatch`.
@@ -112,7 +112,8 @@ pub fn generate_hunk_patch(baseline: &str, current: &str, hunk: &Hunk) -> String
 
     // Hunk header (1-indexed)
     let header_old_start = context_before_start + 1;
-    let header_new_start = context_before_start + 1; // Context is same in both
+    // Context is same in both
+    let header_new_start = context_before_start + 1;
 
     let _ = writeln!(
         output,
@@ -297,7 +298,8 @@ impl HunkBuilder {
             source,
             old_text,
             new_text,
-            patch: None, // Patch is generated later when requested
+            // Patch is generated later when requested
+            patch: None,
             created_at: chrono::Utc::now(),
             selected: false,
         }
@@ -346,7 +348,8 @@ pub fn patch_lines(
     insert_text: &str,
 ) -> String {
     let lines: Vec<&str> = content.lines().collect();
-    let start_idx = start_line.saturating_sub(1); // Convert to 0-indexed
+    // Convert to 0-indexed
+    let start_idx = start_line.saturating_sub(1);
 
     let mut result = Vec::new();
 
@@ -608,7 +611,8 @@ mod tests {
             line_info: HunkLineInfo {
                 old_start: 10,
                 old_count: 1,
-                new_start: 12, // slightly shifted
+                // slightly shifted
+                new_start: 12,
                 new_count: 1,
             },
             source: agent_source(),
@@ -630,7 +634,8 @@ mod tests {
             line_info: HunkLineInfo {
                 old_start: 100,
                 old_count: 1,
-                new_start: 102, // slightly shifted
+                // slightly shifted
+                new_start: 102,
                 new_count: 1,
             },
             source: agent_source(),
@@ -665,7 +670,8 @@ mod tests {
                 old_start: 1,
                 old_count: 1,
                 new_start: 1,
-                new_count: 2, // covers new lines 1-2
+                // covers new lines 1-2
+                new_count: 2,
             },
             source: agent_source(),
             old_text: Some("old-small\n".to_string()),
@@ -682,7 +688,8 @@ mod tests {
                 old_start: 3,
                 old_count: 1,
                 new_start: 3,
-                new_count: 4, // covers new lines 3-6
+                // covers new lines 3-6
+                new_count: 4,
             },
             source: agent_source(),
             old_text: Some("old-large\n".to_string()),
@@ -692,7 +699,8 @@ mod tests {
             selected: false,
         });
 
-        let old_hunks = vec![old_hunk_small.clone(), old_hunk_large.clone()]; // small first!
+        // small first!
+        let old_hunks = vec![old_hunk_small.clone(), old_hunk_large.clone()];
 
         // New hunk overlaps both, but more with large:
         // new lines 2-5 (end=6)
@@ -706,7 +714,8 @@ mod tests {
                 old_start: 2,
                 old_count: 4,
                 new_start: 2,
-                new_count: 4, // lines 2-5
+                // lines 2-5
+                new_count: 4,
             },
             source: agent_source(),
             old_text: Some("different-old\n".to_string()),

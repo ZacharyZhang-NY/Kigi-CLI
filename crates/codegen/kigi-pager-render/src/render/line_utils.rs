@@ -109,7 +109,7 @@ pub fn truncate_str(s: &str, max_width: usize) -> String {
 /// exhausted mid-span, that span is truncated and `…` is appended. Spans
 /// beyond the budget are dropped. All styles are preserved.
 ///
-/// Returns the line unchanged if it already fits.
+/// Returns the line `unchanged` if it already fits.
 pub fn truncate_line(line: Line<'static>, max_width: usize) -> Line<'static> {
     if max_width == 0 {
         return Line::from(vec![]);
@@ -152,7 +152,7 @@ pub fn truncate_line(line: Line<'static>, max_width: usize) -> Line<'static> {
 /// Clip or pad a styled `Line` to exactly `width` display columns.
 ///
 /// Wider lines are clipped on grapheme boundaries (a multi-`char` grapheme like
-/// `⚠\u{FE0F}` is never split) with no ellipsis; narrower lines are padded with
+/// `⚠\u{FE0F}` is never split) with no ellipsis; narrower lines are `padded` with
 /// trailing spaces. This keeps a rendered row "self-owning" — the app writes a
 /// real cell in every column, so a terminal drawing a glyph wider than the app
 /// measured cannot strand a stale cell past the row (the markdown-table ghost
@@ -346,10 +346,11 @@ mod tests {
         let s = "hello — world";
         let result = truncate_str(s, 8);
         assert!(result.ends_with('…'));
-        assert!(result.len() <= 12); // safe byte length
+        // safe byte length
+        assert!(result.len() <= 12);
     }
 
-    // ── truncate_line tests ─────────────────────────────────────────
+    // truncate_line tests
 
     #[test]
     fn truncate_line_fits() {
@@ -395,7 +396,7 @@ mod tests {
         assert!(result.spans.is_empty());
     }
 
-    // ── fit_line_to_width tests ─────────────────────────────────────
+    // fit_line_to_width tests
 
     fn line_text(line: &Line<'static>) -> String {
         line.spans.iter().map(|s| s.content.as_ref()).collect()
@@ -438,7 +439,7 @@ mod tests {
     #[test]
     fn fit_line_clips_grapheme_straddle_in_later_span() {
         // The straddle happens in a later span: keep "ab", then 1 col left →
-        // ⚠️ (width 2) won't fit → dropped whole and padded.
+        // ⚠️ (width 2) won't fit → dropped whole and `padded`.
         let line = Line::from(vec![Span::raw("ab"), Span::raw("\u{26A0}\u{FE0F}cd")]);
         let out = fit_line_to_width(line, 3);
         assert_eq!(line_text(&out).width(), 3);
@@ -502,7 +503,7 @@ mod tests {
         );
     }
 
-    // ── cascade_truncate tests ────────────────────────────────────
+    // cascade_truncate tests
 
     #[test]
     fn cascade_truncate_all_fit() {

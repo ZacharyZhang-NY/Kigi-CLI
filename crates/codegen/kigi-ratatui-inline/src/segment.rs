@@ -156,7 +156,8 @@ pub fn split_into_line_segments<'a>(input: &'a str, term_width: usize) -> Vec<Li
                     push_segment!(segment_end, false);
                     segment_start = segment_end;
                     segment_end += char_bytes;
-                    visual_width = char_width; // Reset to just this character's width
+                    // Reset to just this character's width
+                    visual_width = char_width;
                     has_visual = true;
                     // Very unlikely edge case: char_width > term size and we have to flush it again
                     if char_width > term_width {
@@ -316,7 +317,8 @@ mod tests {
 
     #[test]
     fn test_wrap_at_exact_width() {
-        let input = "12345678"; // exactly 8 chars
+        // exactly 8 chars
+        let input = "12345678";
         let segments = split_into_line_segments(input, 8);
         assert_eq!(segments.len(), 1);
         assert_eq!(segments[0].content, "12345678");
@@ -364,9 +366,11 @@ mod tests {
         // "你好" is 4 visual width (2 per character)
         let input = "hello 你好";
         let segments = split_into_line_segments(input, 10);
-        assert_eq!(segments.len(), 1); // "hello 你好" = 6 + 4 = 10, exactly fits
+        // "hello 你好" = 6 + 4 = 10, exactly fits
+        assert_eq!(segments.len(), 1);
 
         let segments2 = split_into_line_segments(input, 9);
-        assert_eq!(segments2.len(), 2); // Doesn't fit, must wrap
+        // Doesn't fit, must wrap
+        assert_eq!(segments2.len(), 2);
     }
 }

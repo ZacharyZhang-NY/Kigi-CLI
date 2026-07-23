@@ -60,7 +60,8 @@ where
 
     let fmt_layer = tracing_subscriber::fmt::layer()
         .json()
-        .with_current_span(false) // `spans` array already carries the full ancestor list
+        // `spans` array already carries the full ancestor list
+        .with_current_span(false)
         .with_ansi(false)
         .with_timer(tracing_subscriber::fmt::time::UtcTime::rfc_3339())
         .with_target(false)

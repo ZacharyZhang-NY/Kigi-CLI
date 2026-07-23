@@ -154,8 +154,8 @@
     }
 
     /// The live-refresh flip mirrors `set_group_tool_verbs_inner`'s stale
-    /// group-expansion cleanup: a previously expanded verb slot must not
-    /// survive a remote flip as an expanded header.
+    /// group-expansion cleanup: a verb slot expanded before the flip must
+    /// not survive it as an expanded header.
     #[test]
     fn settings_update_flip_resets_stale_group_expansion() {
         crate::appearance::cache::set_group_tool_verbs(true);
@@ -204,16 +204,16 @@
         // Two agents both in auto; the active tab's global mirror reads "ask"
         // (a tab switch / Shift+Tab re-anchored it away from auto). A
         // mid-session gate kill-switch (`auto_permission_mode_enabled=false`)
-        // must clear the per-session auto flag on BOTH agents. The old code
-        // gated this fan-out on `current_ui.permission_mode == "auto"`, so it
-        // skipped background agents and left stale `auto_mode` that
+        // must clear the per-session auto flag on BOTH agents. Gating the
+        // fan-out on `current_ui.permission_mode == "auto"` would skip
+        // background agents and leave stale `auto_mode` that
         // `switch_to_agent` could re-anchor back to "auto" on return.
         let mut app = make_app_two_agents();
         app.auto_mode_gate = true;
         for agent in app.agents.values_mut() {
             agent.session.auto_mode = true;
         }
-        // Active tab's mirror is NOT "auto" — the old bug's skip condition.
+        // Active tab's mirror is NOT "auto" — reproduces the skip condition.
         app.current_ui.permission_mode = Some("ask".into());
 
         let killswitch = acp::ExtNotification::new(
@@ -263,7 +263,6 @@
         let _ = handle_ext_notification(&killswitch, &mut app);
 
         assert!(!app.auto_mode_gate, "gate must be off after kill-switch");
-        // Sibling always-approve is untouched — the kill-switch clears only auto.
         assert!(
             app.agents[&AgentId(2)].session.is_yolo(),
             "sibling always-approve must stay yolo after the auto kill-switch"

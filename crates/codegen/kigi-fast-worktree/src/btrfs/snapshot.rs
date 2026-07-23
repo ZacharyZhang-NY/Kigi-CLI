@@ -234,9 +234,11 @@ pub fn create_snapshot_with_symlink(btrfs_info: &BtrfsInfo, dest: &Path) -> Resu
 /// the identical layout.
 pub fn snapshot_dest_path(btrfs_mount: &Path, subvolume_root: &Path, dest: &Path) -> PathBuf {
     let subdir = if btrfs_mount == subvolume_root {
-        BTRFS_SNAPSHOT_SUBDIRS[1] // ".kigi-snapshots"
+        // ".kigi-snapshots"
+        BTRFS_SNAPSHOT_SUBDIRS[1]
     } else {
-        BTRFS_SNAPSHOT_SUBDIRS[0] // "worktrees"
+        // "worktrees"
+        BTRFS_SNAPSHOT_SUBDIRS[0]
     };
     let basename = dest
         .file_name()

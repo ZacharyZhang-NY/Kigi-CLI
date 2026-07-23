@@ -19,7 +19,6 @@ async fn test_parallel_dispatch_basic() {
 
     use futures::future::join_all;
 
-    // Simulate 3 tools with different latencies
     let futures = vec![
         Box::pin(async { (0, "tool_a") })
             as std::pin::Pin<Box<dyn futures::Future<Output = (i32, &'static str)>>>,
@@ -43,15 +42,12 @@ fn test_parallel_dispatch_permission_reject() {
     // Permission rejection abort: when prepare_tool_call returns
     // Err(ToolLoop::PermissionReject), subsequent tools should not
     // be dispatched.
-    //
-    // Verify the logic: once final_result is set, remaining tools are skipped.
     let mut final_result: Option<ToolLoop> = None;
     let tool_calls = ["tool_0", "tool_1", "tool_2"];
     let mut approved_count = 0;
 
     for (idx, _call) in tool_calls.iter().enumerate() {
         if final_result.is_some() {
-            // Would skip this tool in real code
             continue;
         }
         // Simulate: tool_1 gets permission rejected
@@ -77,15 +73,8 @@ fn test_parallel_dispatch_permission_reject() {
 fn test_parallel_dispatch_followups() {
     // Deferred followups placement: handle_bridge_tool_success returns
     // Vec<ConversationItem> followups that get extended into deferred_followups.
-    //
-    // In Phase 3:
-    //   let followups = handle_bridge_tool_success(...).await?;
-    //   deferred_followups.extend(followups);
-    //
-    // Verify that followups vec can be collected and extended.
     let mut deferred_followups: Vec<&str> = Vec::new();
 
-    // Simulate followups from 2 tools
     let followups_tool_0 = vec!["followup_a", "followup_b"];
     let followups_tool_1 = vec!["followup_c"];
 
@@ -104,11 +93,9 @@ fn test_parallel_dispatch_hooks() {
     // behave identically to the serial path. The parallel dispatch
     // infrastructure (prepare_tool_call -> dispatch_tool -> post-flight)
     // should work for N=1 without special casing.
-    //
-    // Verify: 1 tool in approved vec -> 1 dispatch future -> 1 result
     let approved_count = 1;
-    let dispatch_futures_count = approved_count; // 1:1 mapping
-    let results_count = 1; // incremental stream yields same count
+    let dispatch_futures_count = approved_count;
+    let results_count = 1;
 
     assert_eq!(approved_count, dispatch_futures_count);
     assert_eq!(dispatch_futures_count, results_count);

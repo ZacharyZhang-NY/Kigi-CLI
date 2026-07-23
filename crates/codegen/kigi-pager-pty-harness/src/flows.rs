@@ -9,7 +9,6 @@ use std::time::{Duration, Instant};
 
 use crate::{ContentController, PtyHarness};
 
-/// Pump PTY output until every label is absent from the visible screen.
 pub fn wait_for_labels_absent(h: &mut PtyHarness, labels: &[&str], timeout: Duration) {
     let _ = h.wait_until("screen labels to disappear", timeout, |h| {
         labels.iter().all(|label| !h.contains_text(label))

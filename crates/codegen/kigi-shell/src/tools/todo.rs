@@ -20,7 +20,6 @@ pub fn todo_item_from_plan_entry(entry: acp::PlanEntry) -> TodoItem {
         acp::PlanEntryStatus::Pending => TodoStatus::Pending,
         acp::PlanEntryStatus::InProgress => TodoStatus::InProgress,
         acp::PlanEntryStatus::Completed => {
-            // Check if this is actually a cancelled item
             if entry
                 .meta
                 .as_ref()

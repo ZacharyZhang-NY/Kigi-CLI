@@ -41,7 +41,6 @@ pub const SKIP_DIR_NAMES: &[&str] = &[
     ".ruff_cache",
 ];
 
-/// [`SKIP_DIR_NAMES`] as a set for O(1) membership checks.
 pub fn skip_dir_set() -> &'static std::collections::HashSet<&'static str> {
     use std::collections::HashSet;
     use std::sync::LazyLock;
@@ -50,15 +49,14 @@ pub fn skip_dir_set() -> &'static std::collections::HashSet<&'static str> {
     &SET
 }
 
-/// Compute SHA256 hash of content as a hex string.
 pub fn sha256_hex(content: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(content);
     format!("{:x}", hasher.finalize())
 }
-/// Compute SHA256 hash of a file by streaming, without loading entire file into memory.
-/// If `max_bytes` is set (> 0), only hash up to that many bytes.
+/// Streams the file instead of loading it into memory; `max_bytes` caps how
+/// much of it is hashed.
 pub fn sha256_hex_from_file(
     path: &std::path::Path,
     max_bytes: Option<u64>,

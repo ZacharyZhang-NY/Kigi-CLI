@@ -2,13 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Internally-tagged hook payload. New variants land alongside `Custom`,
-/// which keeps unknown future kinds round-trippable.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum HookEvent {
-    /// Cancel an in-flight call. The owning `tool_call_id` travels in the
-    /// enclosing `hook` frame.
+    /// The `tool_call_id` this cancels travels in the enclosing `hook` frame.
     Cancel,
     Pause,
     Resume,

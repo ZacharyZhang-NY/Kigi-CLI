@@ -4,9 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{ConnectionId, ConnectionKind, ServerId, UserId};
 
-/// Wire-protocol version both ends speak. Bumped when an incompatible
-/// schema change lands; minor additions go through capability
-/// negotiation rather than a version bump.
+/// Bumped only for incompatible schema changes; additive changes go through
+/// capability negotiation instead.
 pub const PROTOCOL_VERSION: &str = "1.0.0";
 
 /// First frame sent by the client after the WebSocket upgrade succeeds.
@@ -14,15 +13,13 @@ pub const PROTOCOL_VERSION: &str = "1.0.0";
 /// No session ids are carried at handshake time. The connection starts with
 /// an empty bound-session set and binds sessions dynamically over its
 /// lifetime via `register_session` / `unregister_session` JSON-RPC calls.
-///
-/// Tool-server connections carry `server_id` so the hub can
-/// identify the server without a separate `register_server` call.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HelloMsg {
     pub protocol_version: String,
     pub kind: ConnectionKind,
-    /// Stable server identity. Only set for
-    /// [`ConnectionKind::ToolServer`] connections.
+    /// Stable server identity, set only for [`ConnectionKind::ToolServer`]
+    /// connections, so the hub can identify the server without a separate
+    /// `register_server` call.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server_id: Option<ServerId>,
     /// One-line server description for `servers.list`.

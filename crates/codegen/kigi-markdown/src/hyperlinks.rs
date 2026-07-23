@@ -60,7 +60,7 @@ pub(crate) struct ChunkLinkRange {
 /// transform's replacement string.  Both endpoints (start/end) clamp the
 /// same direction, so a link whose endpoint straddles a transform produces
 /// a column range that excludes the straddling bytes.  This is intentional
-/// rather than precise — a future transform that intentionally rewrites
+/// rather than precise — a future transform that deliberately rewrites
 /// link text should add a typed mapping instead of relying on this clamp.
 pub(crate) fn source_to_chunk_offset(
     src_pos: usize,
@@ -231,7 +231,7 @@ mod hyperlink_tests {
     /// one whose `column_range` slices to `expected_slice` in the
     /// rendered output.  Since `render_markdown_ratatui_full` now also
     /// emits a url_scan target for the pretty-mode `(url)` suffix, tests
-    /// that previously checked `hyperlinks.len() == 1` must explicitly
+    /// that earlier checked `hyperlinks.len() == 1` must explicitly
     /// pick the parser-produced entry.
     fn parser_link_text<'a>(
         out: &'a crate::output::MarkdownRenderOutput,
@@ -448,7 +448,7 @@ mod hyperlink_tests {
         let view = renderer.view();
 
         // Compare on `(url, line_index, column_range)` — ids are
-        // intentionally independent between the two code paths (full
+        // Deliberately independent between the two code paths (full
         // re-render restarts id counters; streaming preserves continuity).
         let extract = |hs: &[HyperlinkTarget]| -> Vec<(String, usize, std::ops::Range<usize>)> {
             let mut v: Vec<_> = hs
@@ -623,7 +623,7 @@ mod hyperlink_tests {
     }
 
     /// Paragraph links must keep the `link_text` foreground color even when
-    /// the `text` style sets its own foreground.  Previously the parser
+    /// the `text` style sets its own foreground.  earlier the parser
     /// pushed `ms.text` as a highlight after the link_text highlight whenever
     /// no `Heading`/`Emphasis`/`Strong`/`Strikethrough` ancestor was present
     /// — and `merge_styles` lets the later fg color win, so `ms.text`'s color

@@ -19,7 +19,6 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
 
-/// Copy `text` to the host clipboard via `pbcopy`.
 #[cfg(not(target_os = "windows"))]
 pub fn pbcopy(text: &str) -> Result<()> {
     let mut cmd = Command::new("pbcopy");
@@ -152,7 +151,6 @@ pub fn set_clipboard_png(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Write a small solid-color PNG under `dir` and return its path.
 pub fn write_fixture_png(dir: &Path) -> Result<PathBuf> {
     let path = dir.join("host_clipboard_fixture.png");
     let buf: image::ImageBuffer<image::Rgba<u8>, Vec<u8>> =

@@ -553,7 +553,8 @@ mod tests {
 
     #[test]
     fn line_height_counts_double_width_emoji() {
-        let line = "😀😀😀".into(); // each emoji ~ width 2
+        // each emoji ~ width 2
+        let line = "😀😀😀".into();
         assert_eq!(word_wrap_line(&line, 4).len(), 2);
         assert_eq!(word_wrap_line(&line, 2).len(), 3);
         assert_eq!(word_wrap_line(&line, 6).len(), 1);

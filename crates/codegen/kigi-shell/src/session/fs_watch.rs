@@ -22,8 +22,6 @@ use crate::session::acp_session::SessionActor;
 use crate::session::persistence::PersistenceMsg;
 use crate::session::{ClientFsConfig, ClientFsMode};
 
-// ── shared helpers ────────────────────────────────────────────────────────
-
 /// True if `path` lies under a hidden component below `cwd`. Only the part
 /// *below* `cwd` is inspected — a hidden ancestor of `cwd` itself is ignored.
 pub(crate) fn is_under_hidden_dir(path: &Path, cwd: &Path) -> bool {
@@ -225,8 +223,6 @@ async fn refresh_codebase_graph_after_head_change(
     }
 }
 
-// ── capabilities / deps / plan ────────────────────────────────────────────
-
 /// What the client wants from the watcher: pure, `Copy`, mode-independent.
 /// Proxy/hub gating of the actual spawn lives at the call site, not here.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -238,7 +234,6 @@ pub(crate) struct FsWatchCapabilities {
 }
 
 impl FsWatchCapabilities {
-    /// True if any consumer needs the watcher.
     pub(crate) fn needs_watcher(self) -> bool {
         self.client_notify || self.hunk_tracking || self.code_nav || self.git_head
     }
@@ -303,8 +298,6 @@ impl FsWatchDeps {
         }
     }
 }
-
-// ── consumers (private, async, !Send — session LocalSet) ──────────────────
 
 struct ClientNotify {
     gateway: GatewaySender,
@@ -538,8 +531,6 @@ impl GitHead {
     }
 }
 
-// ── plan ──────────────────────────────────────────────────────────────────
-
 /// Live consumer set. Built only when `needs_watcher()`.
 pub(crate) struct FsWatchPlan {
     client_notify: Option<ClientNotify>,
@@ -645,8 +636,6 @@ impl FsWatchPlan {
         }
     }
 }
-
-// ── op buffer / debounce ──────────────────────────────────────────────────
 
 type FsBatch = (Vec<PathBuf>, FsEventKind);
 
@@ -832,8 +821,6 @@ fn note_refresh_request(rebuild: bool, debounce: &mut Debounce, rebuild_flag: &m
     debounce.bump();
 }
 
-// ── spawn / handle ────────────────────────────────────────────────────────
-
 /// Resets the single-flight flag on drop (covers normal completion and panic).
 struct ResetOnDrop(Rc<Cell<bool>>);
 impl Drop for ResetOnDrop {
@@ -981,8 +968,6 @@ pub(crate) fn spawn(plan: FsWatchPlan) -> FsWatchHandle {
         _shutdown_tx: shutdown_tx,
     }
 }
-
-// ── tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -1325,12 +1310,14 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn debounce_bump_arms_then_extends_quiet_keeping_cap() {
         let mut d = Debounce::idle();
-        d.bump(); // idle -> arm
+        // idle -> arm
+        d.bump();
         assert!(d.active());
         let (quiet0, max0) = (d.quiet_deadline.unwrap(), d.max_deadline.unwrap());
 
         tokio::time::advance(Duration::from_millis(100)).await;
-        d.bump(); // active -> extend the quiet window, keep the max-wait cap
+        // active -> extend the quiet window, keep the max-wait cap
+        d.bump();
         assert!(d.quiet_deadline.unwrap() > quiet0);
         assert_eq!(d.max_deadline.unwrap(), max0, "bump must not push the cap");
     }
@@ -1461,7 +1448,6 @@ mod tests {
     /// cadence): the source still emits per-pick pairs, but every quiet
     /// deadline lands inside the next pick's op window, so the settle arm
     /// defers it — the single refresh fires after the last pick completes.
-    /// Before the in-op deferral this fired once per inter-pick gap.
     #[tokio::test(start_paused = true)]
     async fn rebase_cadence_defers_mid_op_and_fires_once() {
         let fires =
@@ -1471,7 +1457,7 @@ mod tests {
 
     /// Picks faster than the settle window: fsnotify merges all 16 lock
     /// cycles into one operation, so the loop sees a single pair and fires a
-    /// single refresh. Before the merge this hit the max-wait cap twice.
+    /// single refresh.
     #[tokio::test(start_paused = true)]
     async fn dense_rebase_cadence_merges_into_one_fire() {
         let fires =

@@ -15,32 +15,18 @@ use crate::scrollback::blocks::SessionEvent;
 use crate::scrollback::state::ScrollbackState;
 use agent_client_protocol as acp;
 use std::time::Instant;
-/// Top-level `/fork` dispatcher. Resolves the worktree decision: an
-/// explicit `--worktree` / `--no-worktree` flag short-circuits to
-/// [`dispatch_fork_resolved`]. When no flag is given and a persisted
-/// `fork_worktree_mode` preference is set (`Always` / `Never`), the
-/// popup is skipped and the corresponding path is taken directly. The
-/// `Ask` default opens the [`open_fork_question`] modal so the user is
-/// asked.
+/// Top-level `/fork` dispatcher, resolving the worktree decision (explicit
+/// flag, persisted `fork_worktree_mode`, or the [`open_fork_question`] modal).
 ///
-/// When the parent session's working directory is **not** inside a git
-/// repository (indicated by the absence of a `git_head_changed`
-/// notification — `current_branch` is `None`):
-/// - `--worktree` is rejected with a toast (nothing to create a worktree from).
-/// - No flag (regardless of `fork_worktree_mode`): the worktree question
-///   is skipped and the fork proceeds with `worktree = false`.
+/// A parent outside a git repository has `current_branch == None` (no
+/// `git_head_changed` notification): `--worktree` is rejected and every other
+/// path forks with `worktree = false`. That fallback is safe even if the
+/// notification simply has not arrived yet — the worktree can be created
+/// manually afterwards.
 ///
-/// Note: if the notification has not arrived yet (rare — user forks
-/// before the shell sends `git_head_changed`), the fallback to
-/// `worktree = false` is safe and the worktree can be created manually
-/// afterwards.
-///
-/// Two failure surfaces:
-/// - Active view is not an agent: toast and return.
-/// - Active agent has no `session_id` (still being created): toast and
-///   return. Both rejections are deliberate -- queueing the fork until
-///   `SessionLoaded` would require persisting `ForkArgs` across the
-///   `TaskResult` and is deferred to v2.
+/// A missing agent or a parent with no `session_id` are rejected rather than
+/// queued: queueing until `SessionLoaded` would mean persisting `ForkArgs`
+/// across the `TaskResult`, deferred to v2.
 pub(in crate::app::dispatch) fn dispatch_fork(
     app: &mut AppView,
     args: crate::slash::commands::fork::ForkArgs,

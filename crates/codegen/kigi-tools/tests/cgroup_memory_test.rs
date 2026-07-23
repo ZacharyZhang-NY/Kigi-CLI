@@ -32,13 +32,11 @@ use kigi_tools::computer::local::cgroup::{CgroupMemoryConfig, PROCESS_OOM_EXIT_C
 use kigi_tools::computer::types::{TerminalBackend, TerminalRunRequest, TerminalRunResult};
 use kigi_tools::notification::types::ToolNotificationHandle;
 
-// ── Helpers ──────────────────────────────────────────────────────────────
-
 /// Small memory limit for testing: 32 MiB high, 32 MiB headroom (64 MiB hard max).
 fn test_memory_config() -> CgroupMemoryConfig {
     CgroupMemoryConfig {
-        memory_high_bytes: 32 * 1024 * 1024, // 32 MiB
-        headroom_bytes: 32 * 1024 * 1024,    // 32 MiB headroom → 64 MiB hard max
+        memory_high_bytes: 32 * 1024 * 1024,
+        headroom_bytes: 32 * 1024 * 1024,
     }
 }
 
@@ -72,7 +70,6 @@ fn make_request(command: &str, timeout_secs: u64) -> TerminalRunRequest {
 fn is_linux_with_cgroupv2() -> bool {
     #[cfg(target_os = "linux")]
     {
-        // Check that cgroupv2 is mounted
         std::path::Path::new("/sys/fs/cgroup/cgroup.controllers").exists()
     }
     #[cfg(not(target_os = "linux"))]
@@ -92,7 +89,6 @@ fn can_create_cgroups() -> bool {
             for line in contents.lines() {
                 if let Some(path) = line.strip_prefix("0::") {
                     let cgroup_dir = std::path::PathBuf::from(format!("/sys/fs/cgroup{}", path));
-                    // Check if we can write to this cgroup's subtree_control
                     let subtree = cgroup_dir.join("cgroup.subtree_control");
                     return subtree.exists();
                 }
@@ -133,9 +129,6 @@ fn print_result(label: &str, result: &TerminalRunResult) {
     );
 }
 
-// ── Tests ────────────────────────────────────────────────────────────────
-
-/// Test 1: A command that stays well under the limit exits normally.
 #[tokio::test]
 #[ignore = "requires Linux cgroupv2 with delegation — run with: cargo test --test cgroup_memory_test -- --ignored --nocapture"]
 async fn test_under_limit_exits_normally() {
@@ -173,7 +166,6 @@ async fn test_under_limit_exits_normally() {
     eprintln!("✅ PASSED: under_limit_exits_normally");
 }
 
-/// Test 2: A command that allocates way more than the limit is killed with 137/oom.
 #[tokio::test]
 #[ignore = "requires Linux cgroupv2 with delegation"]
 async fn test_over_limit_gets_oom_killed() {
@@ -216,7 +208,6 @@ print('Allocation succeeded (should not reach here)', flush=True)
         result.exit_code, result.signal
     );
 
-    // Output before the kill should be preserved
     assert!(
         result.combined_output.contains("Allocating 128 MiB"),
         "Output before OOM should be captured"
@@ -225,7 +216,6 @@ print('Allocation succeeded (should not reach here)', flush=True)
     eprintln!("✅ PASSED: over_limit_gets_oom_killed");
 }
 
-/// Test 3: After an OOM, the backend still works for subsequent commands.
 #[tokio::test]
 #[ignore = "requires Linux cgroupv2 with delegation"]
 async fn test_session_survives_oom() {
@@ -238,7 +228,6 @@ async fn test_session_survives_oom() {
     let backend = LocalTerminalBackend::with_memory_limit(test_memory_config());
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // First: trigger an OOM
     let oom_cmd = r#"python3 -c "data = bytearray(128 * 1024 * 1024)""#;
     let oom_result = backend
         .run(make_request(oom_cmd, 30))
@@ -250,7 +239,6 @@ async fn test_session_survives_oom() {
     // Small delay so cgroup memory is reclaimed
     tokio::time::sleep(Duration::from_millis(500)).await;
 
-    // Second: run a lightweight command — should succeed
     let ok_result = backend
         .run(make_request("echo 'alive after OOM'", 10))
         .await
@@ -271,7 +259,6 @@ async fn test_session_survives_oom() {
     eprintln!("✅ PASSED: session_survives_oom");
 }
 
-/// Test 4: Background tasks are also subject to the memory limit.
 #[tokio::test]
 #[ignore = "requires Linux cgroupv2 with delegation"]
 async fn test_background_task_oom() {
@@ -284,7 +271,6 @@ async fn test_background_task_oom() {
     let backend = LocalTerminalBackend::with_memory_limit(test_memory_config());
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Start a background command that will OOM
     let alloc_cmd = r#"python3 -c "
 import time
 print('BG: allocating...', flush=True)
@@ -301,7 +287,6 @@ time.sleep(60)
 
     eprintln!("  Background task_id: {}", handle.task_id);
 
-    // Wait for completion (it should be killed before the 60s timeout)
     let snapshot = backend
         .wait_for_completion(&handle.task_id, Some(Duration::from_secs(30)))
         .await;
@@ -331,9 +316,8 @@ time.sleep(60)
     eprintln!("✅ PASSED: background_task_oom");
 }
 
-/// Test 5: Gradual allocation that slowly ramps past the limit.
-/// This tests that the inotify monitor catches the memory.high event
-/// rather than relying on the kernel's hard memory.max kill.
+/// Slow ramp past the limit exercises the inotify monitor catching the
+/// memory.high event rather than the kernel's hard memory.max kill.
 #[tokio::test]
 #[ignore = "requires Linux cgroupv2 with delegation"]
 async fn test_gradual_allocation_oom() {
@@ -377,13 +361,11 @@ print('Finished all allocations (should not reach here)', flush=True)
         result.exit_code, result.signal
     );
 
-    // Should have some output showing allocations before the kill
     assert!(
         result.combined_output.contains("Allocated"),
         "Should see some allocation progress before kill"
     );
 
-    // Should NOT have finished all 128 MiB
     assert!(
         !result.combined_output.contains("Finished all allocations"),
         "Should have been killed before finishing"
@@ -392,13 +374,10 @@ print('Finished all allocations (should not reach here)', flush=True)
     eprintln!("✅ PASSED: gradual_allocation_oom");
 }
 
-/// Test 6: No memory config → no cgroup enforcement, large alloc succeeds.
-/// This verifies the no-op path works correctly.
 #[tokio::test]
 async fn test_no_config_no_enforcement() {
     eprintln!("\n=== Test: no_config_no_enforcement ===");
 
-    // Use the plain `new()` constructor — no memory limits
     let backend = LocalTerminalBackend::new();
     tokio::time::sleep(Duration::from_millis(200)).await;
 

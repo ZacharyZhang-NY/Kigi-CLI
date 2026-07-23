@@ -17,7 +17,6 @@ use serde::Serialize;
 
 use super::config::ConfigModelOverride;
 
-/// Category for a [`ModelOverrideWarning`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ModelOverrideWarningKind {
@@ -48,7 +47,6 @@ pub struct ModelOverrideWarning {
     pub reason: String,
 }
 
-/// Result of [`parse_model_overrides`].
 pub(crate) struct ParsedModelOverrides {
     pub models: IndexMap<String, ConfigModelOverride>,
     pub warnings: Vec<ModelOverrideWarning>,

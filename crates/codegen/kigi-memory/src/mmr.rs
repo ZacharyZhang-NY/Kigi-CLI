@@ -112,7 +112,7 @@ pub fn mmr_rerank(results: &mut Vec<SearchResult>, relevance: &[f64], config: &M
         .map(|i| std::mem::replace(&mut results[i], placeholder_result()))
         .collect();
     *results = reordered;
-    // `results` is now reordered, so the caller's `relevance` slice is stale
+    // `results` is reordered, so the caller's `relevance` slice is stale
     // and must not be read again.
 }
 
@@ -297,9 +297,7 @@ mod tests {
         }
     }
 
-    // -----------------------------------------------------------------------
     // Jaccard similarity unit tests
-    // -----------------------------------------------------------------------
 
     #[test]
     fn test_jaccard_identical() {

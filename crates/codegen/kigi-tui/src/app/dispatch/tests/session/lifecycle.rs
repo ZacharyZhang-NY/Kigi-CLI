@@ -1846,7 +1846,6 @@ fn dashboard_stop_double_press_via_handle_key_closes_top_level() {
         "second Ctrl+X via handle_input must close the target agent (Issue 300 regression)",
     );
 }
-/// Top-level resolver round-trip via real AgentView.
 #[test]
 fn session_id_resolver_round_trip_top_level() {
     use crate::views::dashboard::{DashboardRowId, PersistedRowId, SessionIdResolver};
@@ -1864,7 +1863,6 @@ fn session_id_resolver_round_trip_top_level() {
     };
     assert!(resolver.resolve(&absent).is_none());
 }
-/// Subagent resolver round-trip.
 #[test]
 fn session_id_resolver_round_trip_subagent() {
     use crate::views::dashboard::{DashboardRowId, PersistedRowId, SessionIdResolver};

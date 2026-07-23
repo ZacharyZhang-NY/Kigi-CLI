@@ -200,7 +200,7 @@ impl PtyHarness {
         Self::new_in_dir(binary, rows, cols, extra_args, &env_refs, cwd)
     }
 
-    // ── PTY control ──────────────────────────────────────────────────
+    // PTY control
 
     /// Inject raw key bytes into the PTY.
     pub fn inject_keys(&mut self, keys: &[u8]) -> Result<()> {
@@ -214,7 +214,7 @@ impl PtyHarness {
         Ok(())
     }
 
-    // ── Update: receive PTY output inline → feed both parsers ────────
+    // Update: receive PTY output inline → feed both parsers
 
     /// Receive PTY output for up to `timeout`, feeding each chunk to both
     /// the screen state tracker and the frame timing parser as it arrives.
@@ -273,7 +273,7 @@ impl PtyHarness {
         self.pty.is_running()
     }
 
-    // ── Screen state queries ─────────────────────────────────────────
+    // Screen state queries
 
     /// Return structured plain-text screen contents.
     pub fn screen_output(&self) -> ScreenOutput {
@@ -463,7 +463,7 @@ impl PtyHarness {
         std::fs::write(path, out).with_context(|| format!("write cast {}", path.display()))
     }
 
-    // ── Scrollback queries (minimal mode commits blocks into native history) ──
+    // Scrollback queries (minimal mode commits blocks into native history)
 
     /// The terminal's scrollback history as text (oldest line first).
     pub fn scrollback_text(&self) -> String {
@@ -542,7 +542,7 @@ impl PtyHarness {
         self.screen.cursor_position()
     }
 
-    // ── Frame timing queries ─────────────────────────────────────────
+    // Frame timing queries
 
     /// Return all recorded frame timings.
     pub fn frame_timings(&self) -> &[FrameTiming] {
@@ -564,7 +564,7 @@ impl PtyHarness {
         self.timing.reset();
     }
 
-    // ── Lifecycle ────────────────────────────────────────────────────
+    // Lifecycle
 
     /// Send 'q' and wait for the child process to exit (5s timeout, then kill).
     pub fn quit(&mut self) -> Result<()> {

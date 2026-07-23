@@ -43,7 +43,7 @@ pub(crate) fn format_hashline_content(
     let mut first_line: Option<usize> = None;
 
     for (i, line) in all_lines.iter().enumerate().skip(skip).take(take) {
-        let line_num = i + 1; // 1-based
+        let line_num = i + 1;
 
         if first_line.is_none() {
             first_line = Some(line_num);
@@ -52,14 +52,11 @@ pub(crate) fn format_hashline_content(
             raw_output.push('\n');
         }
 
-        // Build the anchor suffix: "local" or "local:context" (without line number,
-        // since we format the line number separately with right-alignment).
         let anchor_suffix = match &anchors[i].context {
             Some(ctx) => format!("{}:{ctx}", anchors[i].local),
             None => anchors[i].local.clone(),
         };
 
-        // Format: "LINE:LOCAL:CONTEXT→CONTENT" (or "LINE:LOCAL→CONTENT" for A)
         _ = write!(&mut output, "{line_num}:{anchor_suffix}→{line}").ok();
         raw_output.push_str(line);
     }
@@ -228,16 +225,14 @@ impl kigi_tool_runtime::Tool for HashlineReadTool {
                     format_hashline_content(&full_content, fc.offset, effective_limit, &*scheme);
 
                 fc.content = hashline_content;
-                fc.content_concise = None; // hashline has only one format
+                // hashline has only one format
+                fc.content_concise = None;
                 // Drop tool-layer captures: `hashline_content` keeps the
                 // original URIs intact, so session-layer extraction will
                 // catch them — clearing here avoids double-injection.
                 fc.extracted_images.clear();
-                // raw_output, offset, limit, tracking remain as set by
-                // run_read_file — windowed semantics preserved.
                 Ok(ReadFileOutput::FileContent(fc))
             }
-            // Non-text results (images, errors) pass through unchanged.
             other => Ok(other),
         }
     }
@@ -263,17 +258,12 @@ mod tests {
         resources
     }
 
-    // -----------------------------------------------------------------------
-    // format_hashline_content unit tests
-    // -----------------------------------------------------------------------
-
     #[test]
     fn format_basic_file() {
         let content = "line one\nline two\nline three\n";
         let scheme = HashlineSchemeParams::default().build_scheme().unwrap();
         let (output, _raw) = format_hashline_content(content, None, None, &*scheme);
 
-        // Each line should have the pattern: ANCHOR→CONTENT
         for line in output.lines() {
             assert!(line.contains(':'), "missing anchor separator: {line}");
             assert!(line.contains('→'), "missing content separator: {line}");
@@ -286,8 +276,6 @@ mod tests {
         let scheme = HashlineSchemeParams::default().build_scheme().unwrap();
         let (output, _raw) = format_hashline_content(content, None, None, &*scheme);
 
-        // chunk scheme produces LINE:LOCAL:CONTEXT→CONTENT
-        // Check that the first content line has two colons (line:local:context)
         let first_content_line = output.lines().next().unwrap();
         let before_arrow = first_content_line.split('→').next().unwrap();
         let colon_count = before_arrow.matches(':').count();
@@ -303,7 +291,6 @@ mod tests {
         let scheme = HashlineSchemeParams::default().build_scheme().unwrap();
         let (output, _raw) = format_hashline_content(content, Some(2), Some(2), &*scheme);
 
-        // Should contain lines starting with "2:" and "3:"
         let content_lines: Vec<&str> = output.lines().collect();
         assert_eq!(content_lines.len(), 2);
         assert!(content_lines[0].starts_with("2:"));
@@ -316,7 +303,6 @@ mod tests {
         let scheme = HashlineSchemeParams::default().build_scheme().unwrap();
         let (output, _raw) = format_hashline_content(content, None, None, &*scheme);
 
-        // Should produce a single anchored empty line.
         assert!(output.contains("1:"), "should contain line 1");
         assert!(output.contains('→'), "should contain arrow separator");
     }
@@ -344,10 +330,6 @@ mod tests {
         let (b, _) = format_hashline_content(content, None, None, &*scheme);
         assert_eq!(a, b);
     }
-
-    // -----------------------------------------------------------------------
-    // HashlineReadTool integration tests
-    // -----------------------------------------------------------------------
 
     #[test]
     fn tool_metadata() {
@@ -399,11 +381,9 @@ mod tests {
 
         match result {
             ReadFileOutput::FileContent(fc) => {
-                // Hashline format: ANCHOR→CONTENT
                 assert!(fc.content.contains('→'));
                 assert!(fc.content.contains("fn main()"));
 
-                // Should have chunk-style anchors (two colons before →)
                 let first_line = fc.content.lines().next().unwrap();
                 let before_arrow = first_line.split('→').next().unwrap();
                 assert!(
@@ -411,7 +391,6 @@ mod tests {
                     "expected chunk anchors, got: {before_arrow}"
                 );
 
-                // concise should be None for hashline
                 assert!(fc.content_concise.is_none());
             }
             other => panic!("Expected FileContent, got {:?}", other),
@@ -568,7 +547,6 @@ mod tests {
             ReadFileOutput::FileContent(fc) => {
                 let content_lines: Vec<&str> = fc.content.lines().collect();
 
-                // Exactly 2 content lines should be rendered.
                 assert_eq!(
                     content_lines.len(),
                     2,
@@ -577,7 +555,6 @@ mod tests {
                     content_lines
                 );
 
-                // Line numbers should be 2 and 3 (original file positions).
                 assert!(
                     content_lines[0].starts_with("2:"),
                     "first line should start with '2:', got: {}",
@@ -589,13 +566,11 @@ mod tests {
                     content_lines[1]
                 );
 
-                // Content should be the original lines "beta" and "gamma".
                 let after_arrow_0 = content_lines[0].split('→').nth(1).unwrap();
                 let after_arrow_1 = content_lines[1].split('→').nth(1).unwrap();
                 assert_eq!(after_arrow_0, "beta", "line 2 content mismatch");
                 assert_eq!(after_arrow_1, "gamma", "line 3 content mismatch");
 
-                // The stored offset/limit should reflect the original request.
                 assert_eq!(fc.offset, Some(2));
                 assert_eq!(fc.limit, Some(2));
             }
@@ -629,8 +604,6 @@ mod tests {
 
         match result {
             ReadFileOutput::FileContent(fc) => {
-                // raw_output should contain only the windowed content (beta, gamma),
-                // not the full file.
                 assert!(
                     fc.raw_output.contains("beta"),
                     "raw_output should contain 'beta'"
@@ -656,8 +629,6 @@ mod tests {
     #[tokio::test]
     async fn small_window_into_large_file_succeeds() {
         let tmp = TempDir::new().unwrap();
-        // Create a file with many lines (more than would fit in token budget
-        // if read fully, but a small window should be fine).
         let mut content = String::new();
         for i in 0..2000 {
             content.push_str(&format!("// line {i}: some padding content here\n"));
@@ -678,7 +649,6 @@ mod tests {
             .await
             .unwrap();
 
-        // Should succeed with FileContent, not FileTooLarge.
         match result {
             ReadFileOutput::FileContent(fc) => {
                 let content_lines: Vec<&str> = fc.content.lines().collect();
@@ -715,7 +685,6 @@ mod tests {
 
         match result {
             ReadFileOutput::FileContent(fc) => {
-                // With offset=100 on a 4-line file, no content lines should be rendered.
                 let content_lines: Vec<&str> = fc.content.lines().collect();
                 assert!(
                     content_lines.is_empty(),
@@ -792,7 +761,6 @@ mod tests {
         }
     }
 
-    /// Explicit limit exceeding MAX_LINES_READ gets capped.
     #[tokio::test]
     async fn explicit_large_limit_capped_to_max_lines() {
         let tmp = TempDir::new().unwrap();

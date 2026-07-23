@@ -47,11 +47,11 @@ impl std::fmt::Display for HunkId {
 pub struct HunkLineInfo {
     /// 1-indexed start line in baseline (old) file
     pub old_start: usize,
-    /// Number of lines from baseline that were changed/deleted
+    /// Number of baseline lines this hunk changes or deletes
     pub old_count: usize,
     /// 1-indexed start line in current (new) file
     pub new_start: usize,
-    /// Number of lines in current that were added/modified
+    /// Number of current-file lines this hunk adds or modifies
     pub new_count: usize,
 }
 
@@ -81,7 +81,7 @@ pub enum HunkSource {
         prompt_index: usize,
     },
 
-    /// External edit (by user) to a file the agent has previously touched.
+    /// External edit (by user) to a file the agent has already touched.
     /// These are tracked separately so we know they're "part of agent session"
     /// but weren't written by the agent itself.
     ExternalEditOnAgentFile,
@@ -253,7 +253,7 @@ pub enum HunkAction {
 pub enum HunkUpdate {
     /// A new hunk was created
     Added(Hunk),
-    /// A hunk was removed (accepted, rejected, or reverted)
+    /// A hunk left the pending set (accepted, rejected, or reverted)
     Removed { hunk_id: HunkId },
     /// A hunk's position changed but content is the same
     Moved {
@@ -299,9 +299,7 @@ pub enum TrackingMode {
     AllDirty,
 }
 
-// ============================================================================
 // Session Stats & Summary
-// ============================================================================
 
 /// Simple counters for session summary. Reset on baseline reset (commit).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -359,9 +357,7 @@ pub struct SessionSummary {
     pub unattributed_pending: usize,
 }
 
-// ============================================================================
 // Content Status Types (for explicit API responses)
-// ============================================================================
 
 /// Status of file content - explicit discrimination for API consumers.
 /// This replaces the ambiguous `Option<String>` where `None` could mean
@@ -494,13 +490,13 @@ pub struct FileHunkData {
     /// Hunks for this file (each hunk includes its own patch fragment)
     pub hunks: Vec<Arc<Hunk>>,
 
-    // === Explicit content status (new fields) ===
+    // Explicit content status (new fields)
     /// Baseline content with explicit status (git HEAD)
     pub baseline: FileContentView,
     /// Current content with explicit status (on disk)
     pub current: FileContentView,
 
-    // === Legacy fields for backward compatibility ===
+    // Legacy fields for backward compatibility
     // These are populated from FileContentView for existing callers.
     // Will be deprecated once all callers migrate to baseline/current views.
     /// Baseline content (git HEAD) - legacy, use `baseline.content` instead
@@ -511,9 +507,7 @@ pub struct FileHunkData {
     pub current_content: Option<String>,
 }
 
-// ============================================================================
 // Snapshot / Restore (for cross-session sync-back)
-// ============================================================================
 
 // FileContentState is crate-internal (actor::state is pub(crate));
 // imported here for snapshot serialization.
@@ -782,7 +776,7 @@ mod snapshot_tests {
         assert_eq!(snap.session_stats.accepted_hunks, 5);
     }
 
-    // === Snapshot preserves Binary/TooLarge (regression test) ===
+    // Snapshot preserves Binary/TooLarge (regression test)
 
     #[test]
     fn snapshot_preserves_binary_state() {
@@ -855,9 +849,7 @@ mod snapshot_tests {
     }
 }
 
-// ============================================================================
 // FileContentView Tests (content status propagation)
-// ============================================================================
 
 #[cfg(test)]
 mod content_view_tests {

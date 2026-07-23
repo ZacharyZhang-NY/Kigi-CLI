@@ -52,7 +52,6 @@ pub struct WebFetchParams {
 register_resource!("kigi", "WebFetch", WebFetchParams);
 
 // Keep defaults here so call-sites don't have to manage unwrapping.
-// Vars are still public following other conventions though.
 impl WebFetchParams {
     pub fn cache_ttl_secs(&self) -> Duration {
         Duration::from_secs(self.cache_ttl_secs.unwrap_or(15 * 60))

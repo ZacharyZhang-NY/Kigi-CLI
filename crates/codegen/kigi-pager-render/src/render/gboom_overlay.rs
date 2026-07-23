@@ -12,8 +12,7 @@ use ratatui::widgets::{Block, BorderType, Borders, Widget};
 use crate::gboom::GboomHud;
 use crate::render::safe_buf::SafeBuf;
 
-/// Render the GBOOM popup chrome. Returns the popup `Rect`,
-/// or `None` if the area is too small to play in.
+/// Returns the popup `Rect`, or `None` when the area is too small to play in.
 pub fn render_gboom_overlay(
     buf: &mut Buffer,
     area: Rect,
@@ -28,7 +27,6 @@ pub fn render_gboom_overlay(
 
     crate::render::color::dim_area(buf, area, bg, 0.5);
 
-    // 90% centered popup, like the video viewer.
     let popup_width = ((area.width as u32 * 90) / 100)
         .max(30)
         .min(area.width as u32) as u16;
@@ -49,7 +47,6 @@ pub fn render_gboom_overlay(
         .style(Style::default().bg(bg))
         .render(popup_rect, buf);
 
-    // Title centered in the top border, in the iconic logo red.
     let title = " GBOOM ";
     let [r, g, b] = crate::gboom::GBOOM_RED;
     let title_style = Style::default()
@@ -60,14 +57,13 @@ pub fn render_gboom_overlay(
     let tx = popup_rect.x + (popup_rect.width.saturating_sub(tw)) / 2;
     buf.set_span_safe(tx, popup_rect.y, &Span::styled(title, title_style), tw);
 
-    // HUD on the bottom border row.
     render_hud_bar(buf, popup_rect, hud, border_fg, bg);
 
     Some(popup_rect)
 }
 
-/// Render the HUD on the popup's bottom border row:
-/// `HP 100 · KILLS 0/8` left, controls hint right.
+/// Overwrites the popup's bottom border row: `HP 100 · KILLS 0/8` on the left,
+/// controls hint on the right.
 fn render_hud_bar(buf: &mut Buffer, popup_rect: Rect, hud: &GboomHud, dim_fg: Color, bg: Color) {
     let bar_y = popup_rect.y + popup_rect.height.saturating_sub(1);
     let inner_width = popup_rect.width.saturating_sub(2) as usize;
@@ -75,8 +71,7 @@ fn render_hud_bar(buf: &mut Buffer, popup_rect: Rect, hud: &GboomHud, dim_fg: Co
         return;
     }
 
-    // Health-bar semantics: green when comfortable, amber when hurting,
-    // GBOOM red when critical.
+    // Green when comfortable, amber when hurting, GBOOM red when critical.
     let hp_color = if hud.hp > 60 {
         Color::Rgb(126, 200, 96)
     } else if hud.hp > 30 {

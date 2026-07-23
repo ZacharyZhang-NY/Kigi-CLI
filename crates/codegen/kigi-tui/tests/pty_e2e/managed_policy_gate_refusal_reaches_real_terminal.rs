@@ -64,7 +64,8 @@ async fn managed_policy_gate_refusal_reaches_real_terminal() {
         if exit_code.is_none() {
             exit_code = harness.wait_exit_code(Duration::ZERO);
             if exit_code.is_some() {
-                harness.update(Duration::from_millis(200)); // final drain after exit
+                // Final drain after exit.
+                harness.update(Duration::from_millis(200));
                 break;
             }
         }

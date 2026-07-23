@@ -14,14 +14,12 @@ use crate::version::{
 use kigi_shell::util::config;
 use tracing::{info, warn};
 
-/// Result of comparing the running binary against a configured floor.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum MinimumVersionDecision {
     Allow,
     BelowMinimum { current: String, minimum: String },
 }
 
-/// Outcome of a successful enforcement pass.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum EnforcementOutcome {
     Allowed,
@@ -34,7 +32,6 @@ enum EnforcementOutcome {
 /// telemetry can distinguish them.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum MinimumVersionError {
-    /// `source` chains via `Error::source()`; omitted from `Display`.
     #[error(
         "The minimum version \"{value}\" in your Kigi configuration \
          isn't a valid version number. Update `cli.minimum_version` and try again."
@@ -49,7 +46,6 @@ pub(crate) enum MinimumVersionError {
          Run `kigi update` to install version {minimum} or later."
     )]
     AutoUpdateDisabled { current: String, minimum: String },
-    /// No installer backend detected.
     #[error(
         "This version of Kigi ({current}) is no longer supported. \
          Run `kigi update` to install version {minimum} or later."
@@ -160,7 +156,6 @@ pub(crate) fn apply_floor(target: &str) -> Result<String, MinimumVersionError> {
     apply_floor_inner(target, floor.as_deref())
 }
 
-/// Adapts `config::resolve_minimum_version`'s error shape into ours.
 fn resolve_floor_or_error() -> Result<Option<String>, MinimumVersionError> {
     config::resolve_minimum_version()
         .map_err(|(value, source)| MinimumVersionError::InvalidMinimum { value, source })
@@ -233,7 +228,6 @@ async fn enforce_minimum_version(
         });
     }
 
-    // Post-install: pass None for stable_version (same rationale as run_update).
     write_version_cache(&target, None).await;
 
     // Stale channel pointer or partial install can leave us below the floor;
@@ -299,7 +293,6 @@ mod tests {
     fn evaluate_minimum_version_decisions() {
         use MinimumVersionDecision::{Allow, BelowMinimum};
 
-        // Allow: floor unset (None / empty / whitespace) or satisfied (equal / above).
         assert_eq!(evaluate_minimum_version("0.1.100", None).unwrap(), Allow);
         assert_eq!(
             evaluate_minimum_version("0.1.100", Some("")).unwrap(),
@@ -318,13 +311,11 @@ mod tests {
             Allow
         );
 
-        // BelowMinimum: current < floor.
         assert!(matches!(
             evaluate_minimum_version("0.1.99", Some("0.1.100")).unwrap(),
             BelowMinimum { .. }
         ));
 
-        // InvalidMinimum: unparseable floor (admin typo).
         assert!(matches!(
             evaluate_minimum_version("0.1.100", Some("not-a-version")),
             Err(MinimumVersionError::InvalidMinimum { .. })
@@ -333,8 +324,7 @@ mod tests {
 
     #[test]
     fn pick_target_returns_max_of_latest_and_minimum() {
-        // The `None` branch is only reachable here — apply_floor always
-        // passes `Some(target)`. Production hits it on fetch failure.
+        // `None` stands in for a failed `fetch_latest_version`.
         assert_eq!(pick_target_version(Some("0.1.200"), "0.1.150"), "0.1.200");
         assert_eq!(pick_target_version(Some("0.1.140"), "0.1.150"), "0.1.150");
         assert_eq!(pick_target_version(None, "0.1.150"), "0.1.150");
@@ -342,7 +332,6 @@ mod tests {
 
     #[test]
     fn install_target_helpers_consult_floor() {
-        // check_install_target rejects below-floor targets.
         assert!(check_install_target_inner("0.1.50", None).is_ok());
         assert!(check_install_target_inner("0.1.150", Some("0.1.100")).is_ok());
         assert!(matches!(
@@ -350,7 +339,6 @@ mod tests {
             MinimumVersionError::TargetBelowFloor { .. }
         ));
 
-        // apply_floor bumps below-floor targets up.
         assert_eq!(apply_floor_inner("0.1.50", None).unwrap(), "0.1.50");
         assert_eq!(
             apply_floor_inner("0.1.200", Some("0.1.100")).unwrap(),

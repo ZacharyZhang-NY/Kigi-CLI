@@ -4,7 +4,7 @@ use super::common::*;
 #[allow(unused_imports)]
 use super::scroll::*;
 
-// ── Regression: scroll pacing — one 16ms scroll clock, no ghost frames ────
+// Regression: scroll pacing — one 16ms scroll clock, no ghost frames.
 //
 // User complaint: "scroll is both laggy and too sensitive". Two coupled
 // defects in the scroll pipeline:
@@ -93,8 +93,7 @@ async fn wheel_flood_paints_no_ghost_frames() {
         harness.screen_contents()
     );
 
-    // (a) The viewport scrolled: the topmost visible marker index strictly
-    // decreased, i.e. a marker that was off-screen-top is now on screen.
+    // (a) viewport moved.
     let top_after = topmost_visible_marker(&harness).unwrap_or_else(|| {
         panic!(
             "no marker visible after the wheel flood\nscreen:\n{}",
@@ -125,7 +124,7 @@ async fn wheel_flood_paints_no_ghost_frames() {
          one repaint per event (frame amplification)"
     );
 
-    // (c) No ghost frames: every frame in the burst window painted movement.
+    // (c) no ghost frames.
     for (i, timing) in harness.frame_timings().iter().enumerate() {
         assert!(
             timing.chars >= MOVEMENT_CHARS_FLOOR,

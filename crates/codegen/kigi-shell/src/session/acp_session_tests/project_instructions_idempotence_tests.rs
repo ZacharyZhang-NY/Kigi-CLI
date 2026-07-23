@@ -1,8 +1,6 @@
 use super::{LEGACY_AGENTS_MD_REMINDER_PREFIX, conversation_has_project_instructions};
 use kigi_sampling_types::{ContentPart, ConversationItem, SyntheticReason, UserItem};
 
-/// A `User` item tagged `ProjectInstructions` is the canonical
-/// post-Task-1 representation and must be detected.
 #[test]
 fn detects_tagged_project_instructions_item() {
     let conv = vec![
@@ -34,7 +32,6 @@ fn detects_legacy_untagged_reminder_via_wrapper_prefix() {
     );
 }
 
-/// Empty conversation: nothing to find.
 #[test]
 fn empty_conversation_returns_false() {
     let conv: Vec<ConversationItem> = vec![];
@@ -105,28 +102,13 @@ fn wrapper_prefix_mid_text_returns_false() {
     );
 }
 
-/// Pin the *contract* of the spawn-time chokepoint: when the helper
-/// returns false, Site A's branch must insert exactly one tagged
-/// project-instructions item and bump `inherited_prefix_len`; when
-/// the helper returns true on the resulting conversation, Site A
-/// must skip both the insert and the bump.
-///
-/// This is NOT an integration test of `spawn_session_actor`'s async
-/// setup (which needs `SessionInfo`, `ChatStateHandle`, `Agent`,
-/// `ToolBridge`, persistence dirs, gateway senders, etc. — building
-/// one is a multi-hundred-line fixture). Instead, it mimics Site A's
-/// inner branch against a `(conversation, reminder,
-/// inherited_prefix_len)` tuple so any future drift in the
-/// idempotence-guard shape (e.g. inverting the check, dropping the
-/// `inherited_prefix_len` bump, swapping `ConversationItem::project_instructions`
-/// for `ConversationItem::user`) fails this test immediately.
-/// Production-site equivalence is verified by `grep` at edit time
-/// and review.
+/// Mirrors Site A's spawn-time inner branch against a
+/// `(conversation, reminder, inherited_prefix_len)` tuple rather than
+/// standing up the full `spawn_session_actor` fixture. Any drift in the
+/// idempotence-guard shape fails here; production-site equivalence is
+/// verified by grep + review.
 #[test]
 fn site_a_skips_when_helper_returns_true_and_bumps_len_when_inserting() {
-    // Case 1: helper returns false → insert happens → tagged item
-    // appears at index 1 → inherited_prefix_len bumps from Some(1)
-    // to Some(2).
     let mut conv: Vec<ConversationItem> = vec![ConversationItem::system("SP")];
     let mut inherited_prefix_len: Option<usize> = Some(1);
     let reminder = "AGENTS.md body for spawn-time inject";
@@ -170,9 +152,8 @@ fn site_a_skips_when_helper_returns_true_and_bumps_len_when_inserting() {
         other => panic!("expected User at index 1, got {other:?}"),
     }
 
-    // Case 2: helper now returns true on the same conversation →
-    // Site A's guard short-circuits → no second insert, no further
-    // bump. This catches accidental re-injection on retry / replay.
+    // The helper now returns true on the same conversation, so the guard must
+    // short-circuit: no second insert on retry / replay.
     let conv_len_before = conv.len();
     let len_before = inherited_prefix_len;
 
@@ -200,9 +181,8 @@ fn site_a_skips_when_helper_returns_true_and_bumps_len_when_inserting() {
     );
 }
 
-/// Same skip-on-fork contract, but with `inherited_prefix_len = None`
-/// (which is how a fresh, non-forked session arrives). Fork-only
-/// state must not be touched when there's no fork accounting in play.
+/// `inherited_prefix_len = None` is how a fresh, non-forked session arrives:
+/// the skip branch must leave it None and never touch fork-only state.
 #[test]
 fn site_a_handles_none_inherited_prefix_len_without_panicking() {
     let mut conv: Vec<ConversationItem> = vec![
@@ -286,10 +266,9 @@ fn site_a_skips_agents_md_insert_on_verbatim_mirror_fork() {
     );
 }
 
-/// Non-fork counterpart of the test above: with the same inputs but
-/// `preserve_inherited_system = false`, the fork-preservation gate is
-/// transparent and the AGENTS.md insert + `inherited_prefix_len` bump still
-/// happen. Pins that the new gate did not regress fresh / non-fork spawns.
+/// Non-fork counterpart: with `preserve_inherited_system = false` the
+/// fork-preservation gate is transparent, so the AGENTS.md insert and
+/// `inherited_prefix_len` bump still happen for fresh / non-fork spawns.
 #[test]
 fn site_a_still_inserts_agents_md_on_non_fork_spawn() {
     let mut conv: Vec<ConversationItem> = vec![

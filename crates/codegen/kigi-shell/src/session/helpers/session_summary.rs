@@ -66,10 +66,8 @@ pub(crate) fn title_fallback_from_user_text(user_message: &str) -> String {
     }
 }
 
-/// Generates a title for the session by looking at the first user message
-/// We do not generate more of it on next user message unless its very important
-///
-/// Ideally we should be updating it as the session continues, but ... skipping that for now
+/// Generates a title for the session from the first user message only; the
+/// title is not regenerated as the session continues.
 pub async fn generate_session_summary(
     user_message: String,
     client: OaiCompatClient,

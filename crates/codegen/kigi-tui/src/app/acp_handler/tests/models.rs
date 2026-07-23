@@ -186,7 +186,7 @@
             agent_b.session.models.current = Some(id_5);
         }
 
-        // kigi-5 removed from catalog.
+        // kigi-4.5 removed from catalog.
         let notif = make_models_update_notif("kigi-4", &["kigi-3", "kigi-4"]);
         handle_models_update(&notif, &mut app);
 
@@ -206,7 +206,7 @@
             "agent A's model must be preserved"
         );
 
-        // B's kigi-5 was removed — must fall back to shell's kigi-4, not A's kigi-3.
+        // B's kigi-4.5 was removed — must fall back to shell's kigi-4, not A's kigi-3.
         let agent_b = app.agents.get(&AgentId(1)).unwrap();
         assert_eq!(
             agent_b
@@ -230,7 +230,6 @@
         let agent = app.agents.get_mut(&AgentId(0)).unwrap();
         seed_models(agent, "kigi-3", &["kigi-3", "kigi-4"]);
         let scrollback_before = agent.scrollback.len();
-        // Follower: no local switch in flight.
         assert!(!agent.session.model_switch_pending);
 
         let notif = model_changed_ext("sess-1", "kigi-4", None);
@@ -326,8 +325,6 @@
         let mut app = make_app_with_agent("sess-1");
         let agent = app.agents.get_mut(&AgentId(0)).unwrap();
         seed_models(agent, "kigi-3", &["kigi-3", "kigi-4"]);
-        // Invoker: a local switch is in flight (set by Action::SwitchModel /
-        // set_default_model before the SetSessionModelRequest is sent).
         agent.session.model_switch_pending = true;
         let scrollback_before = agent.scrollback.len();
 

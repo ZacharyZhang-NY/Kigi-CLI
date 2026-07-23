@@ -75,9 +75,8 @@
 
     #[test]
     fn permission_for_inactive_agent_queues_on_owning_agent() {
-        // The headline behavior change in handle_permission_request:
-        // permissions for an inactive owning agent now QUEUE (not cancel)
-        // so the user sees them on switching back.
+        // A permission for an inactive owning agent queues on that agent (rather
+        // than being cancelled), so the user sees it on switching back.
         let mut app = make_app_with_agent("sess-A");
         insert_agent(&mut app, AgentId(1), Some("sess-B"));
         switch_active_to(&mut app, AgentId(1));
@@ -101,8 +100,6 @@
             !affected,
             "permission queued on a non-active agent must not request a redraw"
         );
-        // Permission is still pending; the response_tx must still be alive
-        // (no auto-cancel was sent).
         assert!(
             rx.try_recv().is_err(),
             "permission must NOT have been answered yet (queued, not cancelled)"
@@ -255,8 +252,6 @@
         );
     }
 
-    // ── Plan approval persistence tests ─────────────────────────
-
     #[test]
     fn close_viewer_preserves_plan_approval_state() {
         let mut app = make_app_with_agent("sess-A");
@@ -279,11 +274,9 @@
         let agent = app.agents.get(&AgentId(0)).unwrap();
         assert!(agent.plan_approval_view.is_some(), "approval should be set");
 
-        // Close the viewer (simulates Esc / close button).
         let agent = app.agents.get_mut(&AgentId(0)).unwrap();
         agent.cancel_line_viewer();
 
-        // Approval state must survive the close.
         let agent = app.agents.get(&AgentId(0)).unwrap();
         assert!(
             agent.plan_approval_view.is_some(),
@@ -291,7 +284,6 @@
         );
         assert!(agent.line_viewer.is_none(), "viewer should be closed");
 
-        // Response must NOT have been sent (still waiting for user).
         assert!(
             rx.try_recv().is_err(),
             "response must not be sent on viewer close"
@@ -323,12 +315,10 @@
             &mut app,
         );
 
-        // Close viewer.
         let agent = app.agents.get_mut(&AgentId(0)).unwrap();
         agent.cancel_line_viewer();
         assert!(agent.line_viewer.is_none());
 
-        // Reopen plan preview — inline content is in plan_approval_view.plan_content.
         agent.show_plan_preview();
 
         assert!(agent.line_viewer.is_some(), "viewer should reopen");
@@ -361,11 +351,9 @@
             &mut app,
         );
 
-        // Close viewer.
         let agent = app.agents.get_mut(&AgentId(0)).unwrap();
         agent.cancel_line_viewer();
 
-        // User types new text in the prompt while viewer is closed.
         agent.prompt.set_text("my new prompt text");
 
         agent.reopen_plan_approval();
@@ -378,7 +366,6 @@
             "stashed prompt should be restored after reopen + approve"
         );
 
-        // Response should be approved.
         let response = rx.blocking_recv().expect("should have sent response");
         let raw = response.expect("should be Ok");
         let parsed: serde_json::Value = serde_json::from_str(raw.0.get()).unwrap();

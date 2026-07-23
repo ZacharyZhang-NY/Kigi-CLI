@@ -30,7 +30,6 @@ impl TSLanguageConfig {
         }
     }
 
-    /// Get the language IDs.
     pub fn language_ids(&self) -> &[String] {
         &self.language_ids
     }
@@ -43,17 +42,14 @@ impl TSLanguageConfig {
             .unwrap_or("unknown")
     }
 
-    /// Get the file extensions.
     pub fn file_extensions(&self) -> &[String] {
         &self.file_extensions
     }
 
-    /// Get the namespaces.
     pub fn namespaces(&self) -> &[Vec<String>] {
         &self.namespaces
     }
 
-    /// Get the file definition queries.
     pub fn file_definition_queries(&self) -> &str {
         &self.file_definition_queries
     }

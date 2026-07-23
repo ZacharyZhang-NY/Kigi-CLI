@@ -21,10 +21,7 @@ use crate::cpu_profile::ControlError;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const RECONNECT_DELAY: Duration = Duration::from_millis(100);
 const MAX_RECONNECT_ATTEMPTS: u32 = 3;
-/// Interval for sending keepalive pings to detect dead connections
 const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
-/// Timeout for receiving registration response from server.
-/// This prevents indefinite hangs if the server doesn't respond.
 const REGISTRATION_RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Timeout for waiting for `LeaderReady` after a `Registered { ready: false }` response.
 ///
@@ -58,7 +55,6 @@ pub struct LeaderRegistration {
 }
 
 impl LeaderRegistration {
-    /// Whether the connected leader advertises the `RelaunchForUpdate` control.
     pub fn supports_relaunch(&self) -> bool {
         self.leader_capabilities
             .as_ref()
@@ -88,8 +84,6 @@ pub struct LeaderClient {
     registration: LeaderRegistration,
     cancel: CancellationToken,
     disconnect_rx: watch::Receiver<DisconnectReason>,
-    /// Last `ShuttingDown` reason received from the server, or `None` if no
-    /// `ShuttingDown` message has arrived yet (unplanned disconnect or still connected).
     shutting_down_rx: watch::Receiver<Option<super::protocol::ShutdownReason>>,
 }
 
@@ -126,11 +120,8 @@ impl LeaderClient {
         let pending_control = Arc::new(Mutex::new(HashMap::new()));
         let cancel = CancellationToken::new();
         let (disconnect_tx, disconnect_rx) = watch::channel(DisconnectReason::Connected);
-        // Tracks the most recent ShuttingDown reason from the server.
-        // None = no ShuttingDown seen; Some(reason) = last reason received.
         let (shutting_down_tx, shutting_down_rx) =
             watch::channel::<Option<super::protocol::ShutdownReason>>(None);
-        // Register with server
         let (registration, _leader_ready_at_registration) = register(
             writer,
             reader,
@@ -174,9 +165,6 @@ impl LeaderClient {
         self.shutting_down_rx.clone()
     }
 
-    /// Send an ACP message payload to the leader server.
-    ///
-    /// Returns an error if the connection has been closed.
     pub fn send(&self, payload: String) -> Result<(), ClientError> {
         self.outbound_tx
             .send(ClientMessage::Acp { payload })
@@ -342,7 +330,6 @@ async fn register(
     disconnect_tx: watch::Sender<DisconnectReason>,
     shutting_down_tx: watch::Sender<Option<super::protocol::ShutdownReason>>,
 ) -> Result<(LeaderRegistration, bool), ClientError> {
-    // Send registration
     write_message(
         &mut writer,
         &ClientMessage::Register {
@@ -353,7 +340,6 @@ async fn register(
     )
     .await?;
 
-    // Wait for confirmation with timeout to prevent indefinite hangs
     let response: ServerMessage = match tokio::time::timeout(
         REGISTRATION_RESPONSE_TIMEOUT,
         read_message(&mut reader),
@@ -428,7 +414,6 @@ async fn register(
         }
     }
 
-    // Spawn read/write tasks
     let cancel_read = cancel.clone();
     let disconnect_tx_read = disconnect_tx.clone();
     let pending_control_read = pending_control.clone();
@@ -546,8 +531,6 @@ mod tests {
     };
     use tempfile::TempDir;
 
-    // --- Misbehaving-leader wire shapes (fake leaders, paused clock) ---
-    //
     // `start_paused` auto-advances the client-side timeouts under test; the
     // fakes stall on cancellation, never timers, so the paused clock cannot
     // wake them (see `leader::test_support`).
@@ -719,7 +702,6 @@ mod tests {
 
         let handle = spawn_leader_server(sock_path.clone()).await.unwrap();
 
-        // Give server time to start
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         let client = LeaderClient::connect(
@@ -748,7 +730,6 @@ mod tests {
                 .is_some_and(|capabilities| capabilities.control_v1)
         );
 
-        // Cleanup
         client.cancel();
         handle.cancel.cancel();
     }
@@ -1079,11 +1060,9 @@ mod tests {
         .await
         .unwrap();
 
-        // Send message to server (with request ID for routing)
         let test_payload = r#"{"jsonrpc":"2.0","method":"test","id":1}"#;
         client.send(test_payload.into()).unwrap();
 
-        // Receive it on server side - ID is now namespaced with client ID
         let payload = handle.acp_rx.recv().await.unwrap();
         // Verify it's valid JSON with a namespaced ID (format: "clientId|originalIdJson")
         let json: serde_json::Value = serde_json::from_str(&payload).unwrap();
@@ -1099,10 +1078,9 @@ mod tests {
         let response = format!(r#"{{"jsonrpc":"2.0","result":{{}},"id":"{}"}}"#, id_str);
         handle.response_tx.send(response).unwrap();
 
-        // Receive on client - ID should be restored to original
         let received = client.recv().await.unwrap();
         let received_json: serde_json::Value = serde_json::from_str(&received).unwrap();
-        assert_eq!(received_json["id"], 1); // Original ID restored
+        assert_eq!(received_json["id"], 1);
 
         client.cancel();
         handle.cancel.cancel();
@@ -1125,12 +1103,9 @@ mod tests {
             .await
             .unwrap();
 
-        // Cleanup
         client.cancel();
         handle.cancel.cancel();
     }
-
-    // --- DisconnectReason tests ---
 
     #[tokio::test]
     async fn disconnect_reason_starts_connected() {
@@ -1149,7 +1124,6 @@ mod tests {
         .await
         .unwrap();
 
-        // Should start as Connected
         let reason_rx = client.disconnect_reason();
         assert_eq!(*reason_rx.borrow(), DisconnectReason::Connected);
 
@@ -1176,10 +1150,8 @@ mod tests {
 
         let mut reason_rx = client.disconnect_reason();
 
-        // Cancel the client
         client.cancel();
 
-        // Wait for the disconnect reason to propagate
         let _ = tokio::time::timeout(Duration::from_secs(2), reason_rx.changed()).await;
 
         let reason = reason_rx.borrow().clone();
@@ -1215,7 +1187,6 @@ mod tests {
         // Kill the server — this triggers Shutdown broadcast then socket close
         handle.cancel.cancel();
 
-        // Wait for the disconnect reason to propagate
         let _ = tokio::time::timeout(Duration::from_secs(2), reason_rx.changed()).await;
 
         let reason = reason_rx.borrow().clone();
@@ -1259,18 +1230,21 @@ mod tests {
                 cancel_clone,
                 true,
                 cc,
-                std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)), // agent_busy
+                // agent_busy
+                std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
                 crate::agent::activity::AgentActivity::default(),
-                tokio::sync::watch::channel(true).1, // ready_rx
-                tokio::sync::watch::channel(crate::leader::protocol::ShutdownReason::Manual).0, // shutdown_tx
-                None, // use LEADER_VERSION constant
+                // ready_rx
+                tokio::sync::watch::channel(true).1,
+                // shutdown_tx
+                tokio::sync::watch::channel(crate::leader::protocol::ShutdownReason::Manual).0,
+                // use LEADER_VERSION constant
+                None,
                 control_state,
             )
             .await;
         });
         tokio::time::sleep(Duration::from_millis(50)).await;
 
-        // Connect via LeaderClient
         let client = LeaderClient::connect(
             sock_path,
             "test",
@@ -1282,7 +1256,6 @@ mod tests {
 
         let mut reason_rx = client.disconnect_reason();
 
-        // Verify initial state is Connected
         assert_eq!(*reason_rx.borrow(), DisconnectReason::Connected);
 
         // Cancel the server — sends ShuttingDown then Shutdown immediately.
@@ -1290,7 +1263,6 @@ mod tests {
         // then receives Shutdown and sets DisconnectReason::LeaderShutdown.
         cancel.cancel();
 
-        // Wait for disconnect reason to change
         let _ = tokio::time::timeout(Duration::from_secs(5), reason_rx.changed()).await;
 
         let final_reason = reason_rx.borrow().clone();

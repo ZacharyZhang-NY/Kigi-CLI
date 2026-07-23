@@ -17,22 +17,18 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 
 impl AgentView {
-    // ── Line viewer methods ────────────────────────────────────────────
-
-    /// Open the line viewer for a file path with optional initial line range.
     pub(in crate::app) fn open_line_viewer(
         &mut self,
         path: &std::path::Path,
         initial_range: Option<std::ops::Range<usize>>,
     ) {
-        // Resolve path relative to cwd.
         let full_path = if path.is_relative() {
             self.session.cwd.join(path)
         } else {
             path.to_path_buf()
         };
 
-        // Get the element ID of the last file ref element (just created).
+        // The last file-ref element is the one the caller just created.
         let element_id = self
             .prompt
             .textarea
@@ -43,7 +39,6 @@ impl AgentView {
             .map(|e| e.id);
 
         if let Some(mut viewer) = LineViewerState::open(&full_path, element_id) {
-            // If we have an initial line range, scroll to it and select.
             if let Some(range) = initial_range {
                 viewer.set_initial_selection(range);
             }
@@ -54,7 +49,6 @@ impl AgentView {
         }
     }
 
-    /// Handle a key event while the line viewer is open.
     pub(super) fn handle_line_viewer_key(&mut self, key: &KeyEvent) -> InputOutcome {
         let in_plan_approval = self.plan_approval_view.is_some();
 
@@ -110,7 +104,6 @@ impl AgentView {
             return InputOutcome::Changed;
         }
 
-        // Ctrl+F: toggle fullscreen.
         if key.code == KeyCode::Char('f') && key.modifiers.contains(KeyModifiers::CONTROL) {
             if let Some(ref mut viewer) = self.line_viewer {
                 viewer.fullscreen = !viewer.fullscreen;
@@ -185,7 +178,6 @@ impl AgentView {
             self.confirm_line_viewer(false);
             return InputOutcome::Changed;
         }
-        // y: copy selected line(s) to system clipboard.
         if key!('y').matches(key) {
             if let Some(ref viewer) = self.line_viewer {
                 let text = if viewer.list_state.visual_mode {
@@ -219,7 +211,6 @@ impl AgentView {
             }
             return InputOutcome::Changed;
         }
-        // Y: copy filename to clipboard.
         if key!('Y').matches(key) {
             if let Some(ref viewer) = self.line_viewer {
                 let name = viewer
@@ -258,7 +249,6 @@ impl AgentView {
             self.cancel_line_viewer();
             return InputOutcome::Changed;
         }
-        // All other keys (including Ctrl-D/U for page nav): forward to ListPaneState.
         if let Some(ref mut viewer) = self.line_viewer {
             viewer.list_state.handle_key_event(key, &viewer.lines);
         }
@@ -303,13 +293,11 @@ impl AgentView {
                     );
                 }
             }
-            // Close the undo group.
             self.prompt.textarea.insert_str(" ");
             self.prompt.textarea.end_undo_group();
         }
     }
 
-    /// Cancel line viewer: revert all changes.
     pub(crate) fn cancel_line_viewer(&mut self) {
         self.line_viewer = None;
         self.prompt.textarea.cancel_undo_group();
@@ -364,7 +352,6 @@ impl AgentView {
         }
     }
 
-    /// Handle mouse events while the line viewer is open.
     pub(super) fn handle_line_viewer_mouse(
         &mut self,
         mouse: &crossterm::event::MouseEvent,
@@ -398,14 +385,12 @@ impl AgentView {
 
         match mouse.kind {
             MouseEventKind::Down(MouseButton::Left) => {
-                // Click on close button -> cancel.
                 if close_area.is_some_and(|a| a.contains((mouse.column, mouse.row).into())) {
                     if self.plan_approval_view.is_none() {
                         self.cancel_line_viewer();
                     }
                     return InputOutcome::Changed;
                 }
-                // Click on fullscreen button -> toggle fullscreen.
                 if fs_area.is_some_and(|a| a.contains((mouse.column, mouse.row).into())) {
                     if let Some(ref mut v) = self.line_viewer {
                         v.fullscreen = !v.fullscreen;
@@ -624,7 +609,6 @@ impl AgentView {
             _ => return InputOutcome::Changed,
         }
 
-        // Forward to ListPaneState if inside the popup area.
         let mut should_enter_commenting = false;
         let mut should_enter_plan_commenting = false;
         if let Some(area) = popup_area
@@ -696,8 +680,6 @@ impl AgentView {
         InputOutcome::Changed
     }
 
-    // -- Scrollback selection box buttons -------------------------------------
-
     /// Render ⧉ (copy) and ↗ (view) buttons on the scrollback selection box.
     ///
     /// Two modes:
@@ -745,7 +727,6 @@ impl AgentView {
         }
 
         // Determine inline vs corner mode.
-        // Inline: entry is collapsed AND part of a group (group_range > 1).
         let split_mode = self
             .scrollback
             .appearance()
@@ -763,7 +744,6 @@ impl AgentView {
         let btn_base = Style::default().fg(theme.selection_border);
         let btn_hover = Style::default().fg(theme.text_primary);
 
-        // Build button array based on capabilities.
         if has_copy && has_view {
             let (btn_right_x, y) = if inline {
                 // Inline: buttons on the selected entry's content row.
@@ -844,8 +824,6 @@ impl AgentView {
         }
     }
 
-    // -- Block viewer input handling ------------------------------------------
-
     /// Handle a key event when the block viewer is open.
     ///
     /// Returns `Changed` if consumed, `Unchanged` if the key should bubble up.
@@ -854,18 +832,15 @@ impl AgentView {
             return InputOutcome::Unchanged;
         };
 
-        // Check for close signals first (Esc/q/Ctrl-F)
         if viewer.is_close_key(key) {
             self.block_viewer = None;
             return InputOutcome::Changed;
         }
 
-        // Route to viewer — returns whether the key was consumed
         if !viewer.handle_key(key) {
             return InputOutcome::Unchanged;
         }
 
-        // Handle raw toggle: capture old source map, toggle, rebuild with stability
         if viewer.raw_toggle_pending {
             viewer.raw_toggle_pending = false;
             // Record scroll anchor BEFORE toggle so the selected line stays
@@ -883,7 +858,6 @@ impl AgentView {
                         )
                     })
                 });
-            // Toggle raw mode on the entry
             if let Some(entry) = self.scrollback.get_by_id_mut(viewer.entry_id) {
                 entry.toggle_raw();
             }
@@ -894,7 +868,6 @@ impl AgentView {
             }
         }
 
-        // Process pending copy actions (logic lives in BlockViewerPane)
         let entry_id = viewer.entry_id;
         if let Some(entry) = self.scrollback.get_by_id(entry_id)
             && let Some(text) = viewer.process_pending_copy(entry)
@@ -905,7 +878,6 @@ impl AgentView {
         InputOutcome::Changed
     }
 
-    /// Handle a mouse event when the block viewer modal is open.
     pub(in crate::app) fn handle_block_viewer_mouse(
         &mut self,
         mouse: &crossterm::event::MouseEvent,
@@ -917,7 +889,6 @@ impl AgentView {
             return InputOutcome::Changed;
         };
 
-        // Route to modal chrome first (close button, click-outside).
         let modal_outcome =
             handle_modal_mouse(&mut viewer.modal, mouse.kind, mouse.column, mouse.row);
         match modal_outcome {
@@ -929,7 +900,6 @@ impl AgentView {
             _ => {}
         }
 
-        // Content interaction (scroll, click, drag).
         match mouse.kind {
             MouseEventKind::ScrollDown => viewer.handle_scroll(3),
             MouseEventKind::ScrollUp => viewer.handle_scroll(-3),
@@ -939,7 +909,6 @@ impl AgentView {
                 viewer.handle_mouse(mouse.kind, mouse.column, mouse.row);
             }
             MouseEventKind::Moved => {
-                // Update hover state for content area.
                 viewer.handle_mouse(mouse.kind, mouse.column, mouse.row);
             }
             _ => {}

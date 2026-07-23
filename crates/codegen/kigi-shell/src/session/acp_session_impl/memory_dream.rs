@@ -73,10 +73,6 @@ impl SessionActor {
     ) {
     }
 
-    /// Reindex a single file and embed any new chunks.
-    ///
-    /// Used after flush writes and session-end writes to keep the index
-    /// and embeddings up to date immediately.
     pub(super) async fn reindex_and_embed(&self, path: &std::path::Path, source: &str) {
         self.memory.reindex_and_embed(path, source).await;
     }
@@ -102,8 +98,6 @@ impl SessionActor {
     /// Run dream consolidation if gates pass.
     ///
     /// Called at session end after the session summary is written.
-    /// Uses the same sampling client infrastructure as flush but sends
-    /// the dream prompt instead. The model call has a 60s timeout.
     pub(super) async fn maybe_run_dream(&self) {
         if self.startup_hints.is_subagent {
             tracing::debug!(
@@ -189,7 +183,7 @@ impl SessionActor {
         .await;
     }
 
-    /// Shared dream execution: build message, call model, execute, record result.
+    /// Shared dream execution path for `maybe_run_dream` and `run_dream_slash_command`.
     async fn run_dream_inner(
         &self,
         storage: &crate::session::memory::MemoryStorage,
@@ -298,7 +292,6 @@ impl SessionActor {
         );
     }
 
-    /// Make the dream model call using the session's sampling client.
     async fn run_dream_model_call(&self, user_message: &str) -> Result<String, acp::Error> {
         let sampling_client = self.prepare_chat_completion(false).await?;
         let model = self
@@ -610,16 +603,14 @@ impl SessionActor {
     /// Rewrite a raw memory note into well-structured markdown via a one-shot
     /// LLM call using the `kigi` model.
     ///
-    /// Follows the same streaming pattern as [`handle_ai_suggest`]: prepares
-    /// a sampling client, builds a system+user prompt, streams the response,
-    /// and returns the collected text.
+    /// Follows the same streaming pattern as [`handle_ai_suggest`].
     pub(super) async fn handle_rewrite_memory_note(
         &self,
         raw_text: &str,
         context_summary: &str,
     ) -> Result<String, String> {
         // Upper-bound check to prevent unbounded LLM input.
-        const MAX_INPUT_BYTES: usize = 32 * 1024; // 32 KB
+        const MAX_INPUT_BYTES: usize = 32 * 1024;
         let combined_len = raw_text.len() + context_summary.len();
         if combined_len > MAX_INPUT_BYTES {
             return Err(format!(

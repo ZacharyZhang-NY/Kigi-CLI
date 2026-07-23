@@ -36,11 +36,6 @@ pub(super) fn task_model_override_error(
         is_session_auth,
     )
 }
-/// This is a free async function, NOT a method on MvpAgent. It receives
-/// a `SubagentSpawnContext` with everything it needs, and a mutable
-/// reference to the coordinator for tracking.
-///
-/// Returns when the child session completes (or fails/cancels).
 #[tracing::instrument(
     name = "subagent.handle_request",
     skip_all,

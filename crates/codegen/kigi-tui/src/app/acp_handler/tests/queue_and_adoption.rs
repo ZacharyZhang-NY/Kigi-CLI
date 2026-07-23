@@ -45,8 +45,6 @@
 
         let mut app = make_app_with_agent("sess-1");
 
-        // Establish the shared queue with p1 present, then put the agent in
-        // EditingQueued{server_id: Some("p1")}.
         assert!(handle_ext_notification(
             &queue_changed_ext("sess-1", &["p1"]),
             &mut app
@@ -1018,8 +1016,9 @@
             "adoption-on-load must not grow the scrollback"
         );
 
-        // A live (non-replay) chunk stamped with the adopted prompt id now
-        // passes the gate and renders (previously dropped → the viewer froze).
+        // A live (non-replay) chunk stamped with the adopted prompt id
+        // passes the gate and renders; without the adoption the gate would
+        // drop it and the viewer would freeze.
         let (tx, _rx) = tokio::sync::oneshot::channel();
         let request = acp::SessionNotification::new(
             acp::SessionId::new("sess-1"),
@@ -1750,8 +1749,7 @@
         );
     }
 
-    /// The credit-limit early return discards the popped adoption's buffer.
-     /// A stash whose pid replayed a durable terminal is discarded, never adopted.
+    /// A stash whose pid replayed a durable terminal is discarded, never adopted.
     #[test]
     fn terminal_in_replay_stash_is_discarded_not_adopted() {
         let mut app = app_with_running_p1_and_stashed_b1();

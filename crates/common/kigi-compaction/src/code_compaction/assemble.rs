@@ -1,7 +1,6 @@
 //! Compacted-history assembly (kigi's rebuild structure, generic).
 //!
-//! Moved from `kigi-chat-state::compaction_utils::build_compacted_history` and
-//! made generic over a write-side item factory so any harness can assemble
+//! Generic over a write-side item factory so any harness can assemble
 //! the canonical post-compaction history:
 //!
 //! ```text
@@ -25,7 +24,6 @@ use super::summary::{format_compact_summary_content, wrap_user_query};
 /// - Providing the `user_message_prefix` (e.g. `<user_info>` block).
 /// - Extracting `last_user_query` / `recent_messages` from its own state.
 pub struct CompactedHistoryParts<T> {
-    /// The original system message from the conversation.
     pub system_message: T,
     /// The user-info / project-layout prefix (not wrapped in `<user_query>`).
     pub user_message_prefix: String,
@@ -36,7 +34,6 @@ pub struct CompactedHistoryParts<T> {
     pub last_user_query: Option<String>,
     /// Messages retained verbatim from after the last real user turn.
     pub recent_messages: Vec<T>,
-    /// The LLM-generated compaction summary text.
     pub compaction_summary: String,
     /// An optional pre-rendered `<system-reminder>` block to append after the
     /// summary. `None` means no state reminder is appended.
@@ -75,7 +72,6 @@ pub fn assemble_compacted_history<T: CompactionItemFactory>(
         compacted.push(T::new_project_instructions(reminder.clone()));
     }
 
-    // Last user query wrapped in <user_query> tags for consistency.
     if let Some(ref last_query) = parts.last_user_query {
         compacted.push(T::new_user(wrap_user_query(last_query.as_str())));
     }
@@ -88,7 +84,6 @@ pub fn assemble_compacted_history<T: CompactionItemFactory>(
     }
     let summary_item = T::new_user_meta(formatted_summary);
 
-    // Recent messages come first, then the summary.
     for msg in parts.recent_messages {
         compacted.push(msg);
     }

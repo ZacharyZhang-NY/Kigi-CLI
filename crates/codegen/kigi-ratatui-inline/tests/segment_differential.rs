@@ -14,7 +14,7 @@
 
 use kigi_ratatui_inline::split_into_line_segments;
 
-// ─── Reference: the previous termwiz-based implementation, verbatim ────────
+// Reference: the previous termwiz-based implementation, verbatim
 
 struct RefSegment<'a> {
     content: &'a str,
@@ -114,7 +114,7 @@ fn reference_split<'a>(input: &'a str, term_width: usize) -> Vec<RefSegment<'a>>
     segments
 }
 
-// ─── Comparison harness ─────────────────────────────────────────────────────
+// Comparison harness
 
 #[track_caller]
 fn assert_same(input: &str, widths: &[usize]) {
@@ -173,7 +173,8 @@ fn corpus_matches_reference() {
 /// Deterministic pseudo-random ANSI soup (xorshift, no extra deps).
 #[test]
 fn randomized_ansi_soup_matches_reference() {
-    let mut state = 0x243F_6A88_85A3_08D3_u64; // seed: pi digits
+    // seed: pi digits
+    let mut state = 0x243F_6A88_85A3_08D3_u64;
 
     let mut next = move || {
         state ^= state << 13;

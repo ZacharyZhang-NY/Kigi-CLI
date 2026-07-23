@@ -123,7 +123,7 @@ impl ChatStateActor {
             .unwrap_or_default()
     }
 
-    // ─── Narrow targeted queries ─────────────────────────────────────────────
+    // Narrow targeted queries
 
     /// Return the number of items in the conversation.
     pub(super) fn get_conversation_len(&self) -> usize {

@@ -1,7 +1,5 @@
 //! Cgroup v2 memory-high monitor for graceful OOM handling.
 //!
-//! Approach:
-//!
 //! 1. On startup we create a child cgroup under the current process's cgroup and
 //!    configure:
 //!    - `memory.high` = soft limit (the "desired" ceiling)
@@ -34,10 +32,6 @@
 /// Matches the POSIX convention: 128 + signal-number (SIGKILL = 9).
 pub const PROCESS_OOM_EXIT_CODE: i32 = 137;
 
-// ============================================================================
-// Public types (cross-platform)
-// ============================================================================
-
 /// Event emitted when `memory.high` is breached and RSS is still above
 /// the 90 % buffer threshold.
 #[derive(Debug, Clone)]
@@ -48,7 +42,6 @@ pub struct MemoryHighEvent {
     pub memory_high_threshold: u64,
 }
 
-/// Configuration for cgroup memory limits.
 #[derive(Debug, Clone)]
 pub struct CgroupMemoryConfig {
     /// Soft memory limit (`memory.high`).  When a process inside the cgroup
@@ -61,16 +54,11 @@ pub struct CgroupMemoryConfig {
 }
 
 impl CgroupMemoryConfig {
-    /// memory.max = memory.high + headroom
     #[cfg(target_os = "linux")]
     fn memory_max(&self) -> u64 {
         self.memory_high_bytes.saturating_add(self.headroom_bytes)
     }
 }
-
-// ============================================================================
-// Linux implementation
-// ============================================================================
 
 #[cfg(target_os = "linux")]
 mod linux {
@@ -81,8 +69,6 @@ mod linux {
     use tokio::io::Interest;
     use tokio::io::unix::AsyncFd;
     use tokio::sync::watch;
-
-    // ── inotify FFI ──────────────────────────────────────────────────────
 
     unsafe fn inotify_init1(flags: libc::c_int) -> std::io::Result<i32> {
         #[allow(clippy::cast_possible_truncation)]
@@ -110,8 +96,6 @@ mod linux {
 
     const IN_MODIFY: u32 = 0x0000_0002;
 
-    // ── Inotify wrapper ──────────────────────────────────────────────────
-
     struct Inotify {
         fd: AsyncFd<OwnedFd>,
     }
@@ -119,6 +103,8 @@ mod linux {
     impl Inotify {
         fn new() -> std::io::Result<Self> {
             let raw = unsafe { inotify_init1(libc::O_NONBLOCK | libc::O_CLOEXEC) }?;
+            // SAFETY: `raw` comes from a successful `inotify_init1`, so it is a
+            // live fd that nothing else owns.
             let owned = unsafe { OwnedFd::from_raw_fd(raw) };
             let fd = AsyncFd::with_interest(owned, Interest::READABLE)?;
             Ok(Inotify { fd })
@@ -126,7 +112,9 @@ mod linux {
 
         fn add_watch(&self, path: &std::path::Path) -> std::io::Result<i32> {
             let mut bytes = path.as_os_str().as_bytes().to_vec();
-            bytes.push(0); // NUL-terminate
+            bytes.push(0);
+            // SAFETY: `bytes` is NUL-terminated above and outlives the call,
+            // so the pointer is a valid C string for the kernel to read.
             let wd = unsafe {
                 inotify_add_watch(
                     self.fd.get_ref().as_raw_fd(),
@@ -139,9 +127,12 @@ mod linux {
 
         async fn wait_and_drain(&self) -> std::io::Result<()> {
             let mut guard = self.fd.readable().await?;
-            // Drain all pending inotify events
+            // Drain all pending inotify events; the fd is non-blocking, so the
+            // read returns <= 0 once the queue is empty.
             let mut buf = [0u8; 4096];
             loop {
+                // SAFETY: writing at most `buf.len()` bytes into `buf`, through
+                // an fd kept alive by `guard`.
                 let n = unsafe {
                     libc::read(
                         guard.get_inner().as_raw_fd(),
@@ -159,8 +150,6 @@ mod linux {
         }
     }
 
-    // ── Cgroup helpers ───────────────────────────────────────────────────
-
     /// Read `/proc/self/cgroup` to find our own cgroup path (cgroup v2 unified).
     fn read_self_cgroup() -> std::io::Result<String> {
         let contents = std::fs::read_to_string("/proc/self/cgroup")?;
@@ -176,7 +165,6 @@ mod linux {
         ))
     }
 
-    /// Parse the `high <N>` counter from `memory.events` contents.
     fn parse_memory_events_high(contents: &str) -> Option<u64> {
         for line in contents.lines() {
             if let Some(value) = line.strip_prefix("high ") {
@@ -186,16 +174,12 @@ mod linux {
         None
     }
 
-    // ── CgroupHandle ─────────────────────────────────────────────────────
-
     /// Owns the lifecycle of a child cgroup directory.
     pub(crate) struct CgroupHandle {
         fs_path: PathBuf,
     }
 
     impl CgroupHandle {
-        /// Create a child cgroup under the current process's cgroup and
-        /// configure memory limits.
         pub(crate) async fn create(config: &CgroupMemoryConfig) -> std::io::Result<Self> {
             let self_cgroup = read_self_cgroup()?;
             let name = format!("kigi-tools-{}", uuid::Uuid::now_v7());
@@ -203,18 +187,16 @@ mod linux {
 
             tokio::fs::create_dir_all(&fs_path).await?;
 
-            // Enable memory + cpu controllers in the child cgroup's parent
-            // (the parent's subtree_control must list the controllers).
+            // A controller only works in a child cgroup if the parent's
+            // subtree_control lists it. Best-effort: it may already be enabled,
+            // or we may lack permission to touch the parent.
             let parent = fs_path.parent().unwrap();
             let subtree_ctl = parent.join("cgroup.subtree_control");
-            // Best-effort; may already be enabled or not permitted.
             let _ = tokio::fs::write(&subtree_ctl, "+memory +cpu").await;
 
-            // Configure memory.high (soft limit)
             let memory_high_path = fs_path.join("memory.high");
             tokio::fs::write(&memory_high_path, config.memory_high_bytes.to_string()).await?;
 
-            // Configure memory.max (hard limit = high + headroom)
             let memory_max_path = fs_path.join("memory.max");
             tokio::fs::write(&memory_max_path, config.memory_max().to_string()).await?;
 
@@ -228,13 +210,11 @@ mod linux {
             Ok(CgroupHandle { fs_path })
         }
 
-        /// Move a process (by PID) into this cgroup.
         pub(crate) async fn add_process(&self, pid: u32) -> std::io::Result<()> {
             let procs_path = self.fs_path.join("cgroup.procs");
             tokio::fs::write(&procs_path, pid.to_string()).await
         }
 
-        /// Read `memory.current` from this cgroup.
         #[allow(dead_code)]
         pub(crate) async fn memory_current(&self) -> std::io::Result<u64> {
             let s: String = tokio::fs::read_to_string(self.fs_path.join("memory.current")).await?;
@@ -243,7 +223,6 @@ mod linux {
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
         }
 
-        /// Filesystem path to this cgroup.
         pub(crate) fn path(&self) -> &std::path::Path {
             &self.fs_path
         }
@@ -252,9 +231,8 @@ mod linux {
     impl Drop for CgroupHandle {
         fn drop(&mut self) {
             let path = self.fs_path.clone();
-            // Always use tokio::spawn: the cleanup future is Send and Drop
-            // can fire after the LocalSet has shut down, making spawn_local
-            // unsafe here.
+            // `tokio::spawn` rather than `spawn_local`: the cleanup future is
+            // Send, and Drop can fire after the LocalSet has shut down.
             tokio::spawn(async move {
                 let kill_path = path.join("cgroup.kill");
                 let _ = tokio::fs::write(&kill_path, "1").await;
@@ -269,8 +247,6 @@ mod linux {
         }
     }
 
-    // ── MemoryHighMonitor ────────────────────────────────────────────────
-
     /// Watches `memory.events` via inotify and signals when the `high`
     /// counter increments while RSS is still above 90% of the threshold.
     pub(crate) struct MemoryHighMonitor {
@@ -280,7 +256,6 @@ mod linux {
     }
 
     impl MemoryHighMonitor {
-        /// Start monitoring the given cgroup for memory.high events.
         pub(crate) async fn start(
             cgroup_path: PathBuf,
             memory_high_threshold: u64,
@@ -324,23 +299,21 @@ mod linux {
             let events_path = cgroup_path.join("memory.events");
             let current_path = cgroup_path.join("memory.current");
 
-            // Read baseline high counter
+            // The `high` counter is cumulative and may already be non-zero, so
+            // only increments past this baseline count as a breach.
             let mut last_high_count = Self::read_high_counter(&events_path).await.unwrap_or(0);
 
             loop {
-                // Block until inotify fires (memory.events was modified)
                 if inotify.wait_and_drain().await.is_err() {
                     break;
                 }
 
-                // Read new high counter
                 let current_high = Self::read_high_counter(&events_path).await.unwrap_or(0);
                 if current_high <= last_high_count {
                     continue;
                 }
                 last_high_count = current_high;
 
-                // Read current memory usage
                 let memory_current = match tokio::fs::read_to_string(&current_path).await {
                     Ok(s) => {
                         let s: String = s;
@@ -357,8 +330,10 @@ mod linux {
                         memory_current,
                         memory_high_threshold,
                     };
+                    // A send error means every receiver is gone, so there is
+                    // nobody left to warn.
                     if tx.send(Some(event)).is_err() {
-                        break; // receiver dropped
+                        break;
                     }
                 }
             }
@@ -377,26 +352,17 @@ mod linux {
     }
 }
 
-// ============================================================================
-// Cross-platform re-exports
-// ============================================================================
-
-/// Cgroup handle — owns the child cgroup's lifecycle.
-///
-/// On Linux, this creates a real cgroupv2 directory with memory limits.
-/// On other platforms, this is a no-op.
+/// Owns the child cgroup's lifecycle: a real cgroupv2 directory with memory
+/// limits on Linux, a no-op elsewhere.
 pub struct CgroupGuard {
     #[cfg(target_os = "linux")]
     inner: Option<linux::CgroupHandle>,
 }
 
 impl CgroupGuard {
-    /// Try to create a cgroup with the given memory config.
-    /// Returns a guard that cleans up the cgroup on drop.
-    ///
-    /// On non-Linux platforms this always returns a no-op guard.
-    /// On Linux, if cgroup creation fails (e.g., not running as root,
-    /// cgroupv2 not available), it logs a warning and returns a no-op guard.
+    /// The returned guard cleans up the cgroup on drop. Never fails: when
+    /// creation is impossible (non-Linux, no root, no cgroupv2) the caller
+    /// gets a no-op guard and the process simply runs unlimited.
     pub async fn try_create(config: &CgroupMemoryConfig) -> Self {
         #[cfg(target_os = "linux")]
         {
@@ -417,7 +383,6 @@ impl CgroupGuard {
         }
     }
 
-    /// No-op guard with no backing cgroup.
     pub fn noop() -> Self {
         #[cfg(target_os = "linux")]
         {
@@ -429,8 +394,7 @@ impl CgroupGuard {
         }
     }
 
-    /// Move a process into this cgroup by PID.
-    /// No-op if cgroup was not created.
+    /// No-op, and still `Ok`, when there is no backing cgroup.
     pub async fn add_process(&self, _pid: u32) -> std::io::Result<()> {
         #[cfg(target_os = "linux")]
         {
@@ -441,7 +405,6 @@ impl CgroupGuard {
         Ok(())
     }
 
-    /// Returns the cgroup filesystem path, if available.
     #[allow(dead_code)]
     pub fn path(&self) -> Option<&std::path::Path> {
         #[cfg(target_os = "linux")]
@@ -453,7 +416,6 @@ impl CgroupGuard {
         None
     }
 
-    /// Returns true if this guard has a real cgroup backing it.
     pub fn is_active(&self) -> bool {
         #[cfg(target_os = "linux")]
         {
@@ -466,18 +428,16 @@ impl CgroupGuard {
     }
 }
 
-/// Memory-high monitor — watches for memory pressure events.
-///
-/// On Linux, uses inotify on `memory.events`.
-/// On other platforms, this is a no-op that never fires.
+/// Watches for memory pressure through inotify on `memory.events`; on
+/// non-Linux platforms it never fires.
 pub struct MemoryMonitor {
     #[cfg(target_os = "linux")]
     inner: Option<linux::MemoryHighMonitor>,
 }
 
 impl MemoryMonitor {
-    /// Start monitoring the given cgroup guard for memory.high events.
-    /// Returns a no-op monitor if the guard has no backing cgroup.
+    /// Yields a no-op monitor when the guard has no backing cgroup or the
+    /// inotify watch cannot be established.
     pub async fn start(
         guard: &CgroupGuard,
         config: &CgroupMemoryConfig,
@@ -512,7 +472,6 @@ impl MemoryMonitor {
         }
     }
 
-    /// No-op monitor that never fires.
     pub fn noop() -> Self {
         #[cfg(target_os = "linux")]
         {

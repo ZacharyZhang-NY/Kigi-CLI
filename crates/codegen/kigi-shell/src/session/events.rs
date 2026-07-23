@@ -10,7 +10,7 @@ pub(crate) use kigi_file_utils::events::types::{
     ToolOutcome, TurnOutcomeLabel,
 };
 
-// ── Laziness detector (Layer 3) discriminator vocabulary ─────────────
+// Laziness detector (Layer 3) discriminator vocabulary
 //
 // Single source of truth for the `category` field on
 // `Event::LazinessClassifierFired` / `LazinessNudgeFired` and the
@@ -177,7 +177,7 @@ impl LazinessCategory {
     }
 }
 
-// ── TodoGate discriminator vocabulary ─────────────────────────────────
+// TodoGate discriminator vocabulary
 //
 // Source of truth for the `reason` field on `Event::TodoGateFired`.
 // Producer wraps these via `TodoGateReason::as_str()` (acp_session.rs).
@@ -212,7 +212,7 @@ pub(crate) fn prior_turn_interrupt_from_cancellation(
     }
 }
 
-// ── GoalClassifier discriminator vocabulary ───────────────────────────
+// GoalClassifier discriminator vocabulary
 //
 // Single source of truth for the `reason` field on
 // `Event::GoalClassifierFailOpen` / `Event::GoalClassifierFailClosed`.
@@ -327,7 +327,7 @@ impl GoalClassifierFailClosedReason {
     }
 }
 
-// ── GoalPlanner discriminator vocabulary ──────────────────────────────
+// GoalPlanner discriminator vocabulary
 //
 // The planner is fail-CLOSED by design (the opposite of the classifier).
 // Every reason here represents a path that pauses the goal — there is no
@@ -381,7 +381,7 @@ impl GoalPlannerFailClosedReason {
     }
 }
 
-// ── GoalStrategist discriminator vocabulary ───────────────────────────
+// GoalStrategist discriminator vocabulary
 //
 // The strategist is fail-OPEN by design (the opposite of the planner).
 // Every reason here represents a path that is logged and then ignored —
@@ -468,7 +468,7 @@ impl GoalStrategistRestoreFailReason {
     }
 }
 
-// ── GoalSummarizer discriminator vocabulary ───────────────────────────
+// GoalSummarizer discriminator vocabulary
 //
 // The summarizer is fail-OPEN by design: it runs ONCE after the goal is
 // already verified-achieved, so every reason here is logged and ignored —
@@ -517,7 +517,7 @@ impl GoalSummarizerFailReason {
     }
 }
 
-// ── GoalRoleModel discriminator vocabulary ────────────────────────────
+// GoalRoleModel discriminator vocabulary
 //
 // Source of truth for the `reason` field on `Event::GoalRoleModelFailOpen`.
 // Per-role model selection is fail-OPEN by design: a bad/unauthorized

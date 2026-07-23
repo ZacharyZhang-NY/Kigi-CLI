@@ -18,11 +18,6 @@ use serde::{Deserialize, Serialize};
 use crate::session::persistence::Summary;
 
 /// Coarse activity of a session as rendered in the dashboard's status column.
-///
-/// Mirrors the design's `SessionActivity` at dashboard granularity. A full
-/// background-work breakdown (bg tasks / monitors / scheduler / subagents)
-/// lands with a richer `SessionActivity`; the dashboard only needs this
-/// coarse signal to pick a status glyph.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum RosterActivity {

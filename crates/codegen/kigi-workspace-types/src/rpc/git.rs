@@ -304,7 +304,7 @@ impl WorkspaceRpc for GitMetadataReq {
     type Response = Value;
 }
 
-// ---- Serde helpers ------------------------------------------------------
+// Serde helpers
 
 fn default_true() -> bool {
     true
@@ -316,12 +316,11 @@ fn default_working() -> String {
     "working".into()
 }
 fn default_max_file_bytes() -> u64 {
-    0 // No limit by default
+    // No limit by default
+    0
 }
 
-// =========================================================================
 // Response data types
-// =========================================================================
 
 /// The kind of version control system detected for a workspace.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -624,9 +623,7 @@ pub struct GitBranchListData {
     pub branches: Vec<GitBranchEntry>,
 }
 
-// =========================================================================
 // Git Collect Changes RPC Types
-// =========================================================================
 
 /// Request to collect repository changes for serialization.
 /// This is the workspace-side half of `serialize_changes`.

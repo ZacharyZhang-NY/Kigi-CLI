@@ -41,6 +41,7 @@ pub(crate) fn flush_file_log_guards() {
     if let Some(m) = FILE_LOG_GUARDS.get() {
         // Recover from a poisoned mutex so exit-flush still drains the guards.
         let mut guards = m.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        guards.clear(); // dropping each WorkerGuard flushes + joins its writer thread
+        // dropping each WorkerGuard flushes + joins its writer thread
+        guards.clear();
     }
 }

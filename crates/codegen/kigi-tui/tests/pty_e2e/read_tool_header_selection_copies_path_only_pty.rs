@@ -56,7 +56,6 @@ async fn read_tool_header_selection_copies_path_only_pty() {
         .inject_keys(format!("{PROMPT}\r").as_bytes())
         .expect("submit prompt");
 
-    // Wait for the Read header (label + filename) to appear.
     harness
         .wait_for_text(path_tail, Duration::from_secs(45))
         .unwrap_or_else(|_| {

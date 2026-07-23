@@ -22,8 +22,6 @@ pub(crate) struct LocalRef<T> {
     ptr: *const T,
 }
 impl<T> LocalRef<T> {
-    /// Create a `LocalRef` from a shared reference.
-    ///
     /// # Safety contract (enforced by the caller, not by the type system)
     ///
     /// The referenced `T` must live for the entire duration of the `LocalSet`
@@ -31,8 +29,6 @@ impl<T> LocalRef<T> {
     pub(crate) fn new(val: &T) -> Self {
         Self { ptr: val as *const T }
     }
-    /// Dereference back to `&T`.
-    ///
     /// # Safety
     ///
     /// Safe because the caller of `new()` guarantees the pointee is alive

@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use dashmap::{DashMap, DashSet};
 
-/// A structured report about dirty (modified/untracked/deleted) files in the source worktree.
+/// Counts of dirty files in the *source* worktree.
 #[derive(Clone, Debug, Default)]
 pub struct DirtyFilesReport {
     pub modified_files: u64,
@@ -14,7 +14,6 @@ pub struct DirtyFilesReport {
     pub deleted_files: u64,
 }
 
-/// Statistics from a copy operation.
 #[derive(Clone, Debug, Default)]
 pub struct CopyStats {
     pub files_copied: u64,
@@ -26,7 +25,6 @@ pub struct CopyStats {
 }
 
 impl CopyStats {
-    /// Merge another stats into this one.
     pub fn merge(&mut self, other: CopyStats) {
         self.files_copied += other.files_copied;
         self.dirs_created += other.dirs_created;
@@ -36,7 +34,6 @@ impl CopyStats {
     }
 }
 
-/// Kind of filesystem entry to replicate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CopyEntryKind {
     File,
@@ -44,25 +41,22 @@ pub(crate) enum CopyEntryKind {
     Symlink,
 }
 
-/// Entry to be processed by a worker.
 #[derive(Debug)]
 pub(crate) struct CopyEntry {
     pub(crate) rel_path: PathBuf,
     pub(crate) kind: CopyEntryKind,
 }
 
-/// Configuration for the parallel copy operation.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ParallelCopyConfig {
-    /// Number of parallel workers (0 = num_cpus)
+    /// 0 means "one per CPU".
     pub num_workers: usize,
-    /// Channel buffer size per shard
+    /// Channel buffer size, per shard.
     pub channel_buffer: usize,
-    /// Files to skip (relative paths)
+    /// Paths relative to the source root.
     pub skip_files: Option<Arc<DashSet<PathBuf>>>,
-    /// Whether to respect `.gitignore` rules
     pub respect_gitignore: bool,
-    /// Additional patterns to skip (glob patterns)
+    /// Globs, applied on top of `skip_files`.
     pub skip_patterns: Vec<String>,
 }
 

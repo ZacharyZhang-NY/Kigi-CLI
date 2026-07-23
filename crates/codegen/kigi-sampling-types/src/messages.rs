@@ -4,9 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-// ============================================================================
 // Request Types
-// ============================================================================
 
 /// POST /v1/messages request body
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -82,7 +80,8 @@ pub enum SystemParam {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TextBlock {
     #[serde(rename = "type")]
-    pub r#type: String, // always "text"
+    // always "text"
+    pub r#type: String,
     pub text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_control: Option<CacheControl>,
@@ -91,7 +90,8 @@ pub struct TextBlock {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheControl {
     #[serde(rename = "type")]
-    pub r#type: String, // "ephemeral"
+    // "ephemeral"
+    pub r#type: String,
 }
 
 /// Content blocks used in both requests and responses
@@ -189,17 +189,17 @@ pub struct Metadata {
     pub user_id: Option<String>,
 }
 
-// ============================================================================
 // Response Types
-// ============================================================================
 
 /// Non-streaming response from POST /v1/messages
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessagesResponse {
     pub id: String,
     #[serde(rename = "type")]
-    pub r#type: String, // "message"
-    pub role: String, // "assistant"
+    // "message"
+    pub r#type: String,
+    // "assistant"
+    pub role: String,
     pub content: Vec<ContentBlock>,
     pub model: String,
     pub stop_reason: Option<StopReason>,
@@ -235,9 +235,7 @@ pub struct MessagesUsage {
     pub cache_read_input_tokens: u32,
 }
 
-// ============================================================================
 // Streaming Event Types
-// ============================================================================
 
 /// Top-level streaming event (SSE `type` field determines variant)
 #[derive(Debug, Clone, Serialize, Deserialize)]

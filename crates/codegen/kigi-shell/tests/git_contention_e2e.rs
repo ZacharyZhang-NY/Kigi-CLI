@@ -52,8 +52,6 @@ fn git(dir: &Path, args: &[&str]) -> String {
     kigi_test_utils::git::run_git(dir, args)
 }
 
-// ── scan counting ─────────────────────────────────────────────────────────
-
 use kigi_hunk_tracker::{REFRESH_SCAN_LOG_PREFIX, REFRESH_SKIP_LOG_PREFIX};
 use kigi_test_utils::tracing_capture::MessagePrefixCounter;
 
@@ -84,8 +82,6 @@ fn install_global_scan_counter() -> ScanCounter {
     )
 }
 
-// ── repo fixture ──────────────────────────────────────────────────────────
-
 /// Committed tree of ~`files` files plus a `feature` branch with `picks`
 /// one-file commits and an advanced base branch, `feature` checked out.
 /// Returns the repo dir and the base branch name.
@@ -104,8 +100,6 @@ fn build_repo(files: usize, picks: usize) -> (TempDir, String) {
     let base = kigi_test_utils::git::make_feature_branch(wd, picks);
     (dir, base)
 }
-
-// ── scripted responses (chat-completions SSE) ────────────────────────────
 
 fn chat_chunk(delta: Value, finish_reason: Value) -> SseEvent {
     SseEvent::data(
@@ -151,8 +145,6 @@ fn text_sse(text: &str) -> ScriptedResponse {
     ScriptedResponse::sse(events)
 }
 
-// ── client ────────────────────────────────────────────────────────────────
-
 /// Auto-approves permissions (AllowOnce preferred) and drops notifications.
 struct AutoApproveClient;
 
@@ -180,8 +172,6 @@ impl acp::Client for AutoApproveClient {
         Ok(())
     }
 }
-
-// ── one full agent run ────────────────────────────────────────────────────
 
 struct RunStats {
     scans: usize,

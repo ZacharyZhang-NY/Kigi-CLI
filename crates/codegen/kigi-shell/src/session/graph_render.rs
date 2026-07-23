@@ -151,7 +151,8 @@ pub(crate) fn render_dag(state: &GraphOrchestration, max_width: usize) -> Option
     }
     let mut slots: Vec<Slot> = (0..n).map(|i| Slot { real: Some(i) }).collect();
     let mut slot_layer: Vec<usize> = layer.clone();
-    let mut hops: Vec<(usize, usize)> = Vec::new(); // slot -> slot, exactly one layer apart
+    // slot -> slot, exactly one layer apart
+    let mut hops: Vec<(usize, usize)> = Vec::new();
     for &(from, to) in &edges {
         let mut prev = from;
         for mid_layer in (layer[from] + 1)..layer[to] {
@@ -185,7 +186,8 @@ pub(crate) fn render_dag(state: &GraphOrchestration, max_width: usize) -> Option
                     .map(|&(f, _)| f)
                     .collect();
                 let key = if parents.is_empty() {
-                    f64::MAX // parentless mid-layer nodes go last, stably
+                    // parentless mid-layer nodes go last, stably
+                    f64::MAX
                 } else {
                     parents.iter().map(|&p| pos[p]).sum::<f64>() / parents.len() as f64
                 };
@@ -417,7 +419,7 @@ Graph: ship it (plan v1)
 └─────────┘   └─────────┘   └──────────┘";
         // Structural assertions instead of a brittle full-grid pin: the
         // exact art may evolve, the invariants must not.
-        let _ = expected; // documentation of intent
+        let _ = expected;
         let lines: Vec<&str> = out.lines().collect();
         assert!(lines[0].contains("ship it"));
         assert!(out.contains("✓ Core"));

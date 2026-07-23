@@ -33,7 +33,6 @@ pub(in crate::app::dispatch) fn save_success_toast(label: &str, on: bool) -> Str
 /// snapshots by value; without this, toggles would appear stuck.
 pub(crate) fn refresh_open_settings_modals(app: &mut AppView) {
     use crate::views::modal::ActiveModal;
-    // Early exit when no settings modal is open (common case).
     if !app.agents.values().any(|a| {
         matches!(
             a.active_modal,
@@ -146,7 +145,6 @@ pub(in crate::app::dispatch) fn dispatch_open_settings(app: &mut AppView) -> Vec
     // mutable borrow on `agent` so the borrow checker is happy.
     let registry = app.settings_registry.clone();
     let ui_snapshot = app.current_ui.clone();
-    // Capture app-level fields before the mut-borrow on the agent.
     let show_tips_from_app = app.show_tips;
     let auto_update_from_app = app.auto_update;
     let respect_manual_folds_from_app = app.appearance.scrollback.scroll.respect_manual_folds;
@@ -304,7 +302,6 @@ pub(in crate::app::dispatch) fn dispatch_confirm_reset_setting(
         return vec![];
     };
 
-    // Take the ResetSettingsConfirm modal out and restore Settings.
     // Take the ResetSettingsConfirm modal out and capture the
     // target key from the variant (single source of truth — the
     // Action does NOT carry the key, eliminating the desync risk
@@ -424,11 +421,9 @@ pub(in crate::app::dispatch) fn dispatch_toggle_compact_mode(app: &mut AppView) 
 /// the `dispatch_toggle_multiline` / `dispatch_toggle_compact_mode` /
 /// `dispatch_toggle_timestamps` pattern.
 pub(in crate::app::dispatch) fn dispatch_toggle_vim_mode(app: &mut AppView) -> Vec<Effect> {
-    // Toggle the EFFECTIVE value (the pager cache) so `/vim-mode` works
-    // from ANY view — including the session-less dashboard. Previously
-    // this early-returned unless an agent was active, so running
-    // `/vim-mode` on the dashboard was a silent no-op and the overview's
-    // j/k navigation (which is gated on vim-mode) never turned on.
+    // Toggle the EFFECTIVE value (the pager cache), not a per-agent
+    // field, so `/vim-mode` works from ANY view — including the
+    // session-less dashboard, whose j/k navigation is gated on vim-mode.
     let prev = crate::appearance::cache::load_vim_mode();
     let enabled = !prev;
     // Propagate to every agent AND every nested subagent view (so
@@ -786,7 +781,6 @@ pub(in crate::app::dispatch) fn action_for_reset(
                 None
             }
         }
-        // max_thoughts_width: direct round-trip.
         ("max_thoughts_width", SettingValue::Int(i)) => Some(Action::SetMaxThoughtsWidth(*i)),
         // plan_mode: "on" / "off" → PlanModeKind.
         // "on" arm is a skew guard (default is "off").
@@ -796,7 +790,6 @@ pub(in crate::app::dispatch) fn action_for_reset(
         ("plan_mode", SettingValue::Enum("on")) => {
             Some(Action::SetPlanMode(crate::app::actions::PlanModeKind::On))
         }
-        // show_tips / auto_update / display_refresh_auto_cadence: direct bool.
         ("show_tips", SettingValue::Bool(b)) => Some(Action::SetShowTips(*b)),
         ("auto_update", SettingValue::Bool(b)) => Some(Action::SetAutoUpdate(*b)),
         ("display_refresh_auto_cadence", SettingValue::Bool(b)) => {
@@ -953,7 +946,6 @@ pub(in crate::app::dispatch) fn apply_setting_rollback(
                  default is unsaved",
             );
         }
-        // max_thoughts_width: direct inner call.
         ("max_thoughts_width", SettingValue::Int(i)) => set_max_thoughts_width_inner(app, *i),
         // scroll_speed: direct inner call (clamp handled by inner).
         ("scroll_speed", SettingValue::Int(i)) => set_scroll_speed_inner(app, *i as u8),
@@ -974,7 +966,6 @@ pub(in crate::app::dispatch) fn apply_setting_rollback(
             }
         }
         ("scroll_lines", SettingValue::Int(i)) => set_scroll_lines_inner(app, *i as u8),
-        // vim_mode: direct inner call.
         ("vim_mode", SettingValue::Bool(b)) => set_vim_mode_inner(app, *b),
         ("remember_tool_approvals", SettingValue::Bool(b)) => {
             set_remember_tool_approvals_inner(app, *b)

@@ -34,8 +34,7 @@ fn resolve_idle_notification_delay(raw: Option<String>) -> Duration {
 struct IdlePromptExtension {
     notification_event_sink: Rc<dyn NotificationEventSink>,
     timer: TaskSlot<()>,
-    /// Only a completed turn earns a ping; aborted and errored turns do not (matching the old
-    /// end_turn-only arming).
+    /// Only a completed turn earns a ping; aborted and errored turns do not.
     last_turn_completed: std::cell::Cell<bool>,
 }
 

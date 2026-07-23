@@ -31,7 +31,6 @@ impl NotificationProtocol {
     }
 }
 
-/// Choose the best notification protocol for the current terminal environment.
 pub fn select_protocol(ctx: &TerminalContext) -> NotificationProtocol {
     if ctx.multiplexer == MultiplexerKind::Zellij {
         return NotificationProtocol::Bel;
@@ -62,8 +61,6 @@ pub fn select_protocol(ctx: &TerminalContext) -> NotificationProtocol {
 
 const BEL_BYTE: &[u8] = b"\x07";
 
-/// Build the escape sequence for a notification, then write it to stderr.
-///
 /// When running under tmux the sequence is wrapped in DCS passthrough so the
 /// outer terminal sees it.
 pub fn emit_notification(
@@ -123,8 +120,6 @@ mod tests {
             ..Default::default()
         }
     }
-
-    // --- select_protocol: every TerminalName variant ---
 
     #[test]
     fn select_iterm2_uses_osc9() {
@@ -214,8 +209,6 @@ mod tests {
         );
     }
 
-    // --- Zellij override ---
-
     #[test]
     fn zellij_overrides_to_bel_for_kitty() {
         assert_eq!(
@@ -260,8 +253,8 @@ mod tests {
         );
     }
 
-    // --- tmux does NOT override protocol selection (passthrough is handled
-    //     at emission time, not selection time) ---
+    // tmux does not override protocol selection: passthrough wrapping
+    // happens at emission time, not selection time.
 
     #[test]
     fn tmux_preserves_osc9_for_iterm2() {
@@ -285,8 +278,6 @@ mod tests {
         );
     }
 
-    // --- screen does not override ---
-
     #[test]
     fn screen_preserves_osc777_for_ghostty() {
         assert_eq!(
@@ -298,12 +289,9 @@ mod tests {
         );
     }
 
-    // --- emit_notification: verifies None is a no-op (does not panic) ---
-
     #[test]
     fn emit_none_is_noop() {
         let ctx = ctx_with_brand(TerminalName::KigiDesktop);
-        // Should return immediately without writing anything.
         emit_notification(NotificationProtocol::None, "title", "body", &ctx);
     }
 
@@ -330,8 +318,6 @@ mod tests {
         let ctx = ctx_with_brand(TerminalName::Ghostty);
         emit_notification(NotificationProtocol::Osc777, "title", "body", &ctx);
     }
-
-    // --- exhaustive brand coverage in a table-driven test ---
 
     #[test]
     fn all_brands_have_defined_protocol() {

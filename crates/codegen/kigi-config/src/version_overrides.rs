@@ -143,14 +143,20 @@ mod tests {
             );
             cfg["x"].as_integer() == Some(1)
         }
-        assert!(applies(Some("1.7.0"), None, "1.7.0")); // min inclusive
-        assert!(applies(Some("1.0.0"), Some("1.7.0"), "1.7.0")); // max inclusive
-        assert!(!applies(Some("1.7.0"), None, "1.6.0")); // below min
-        assert!(!applies(Some("1.0.0"), Some("1.5.0"), "2.0.0")); // above max
-        assert!(applies(Some("1.7.0"), None, "99.0.0")); // unbounded above
-        assert!(applies(None, Some("2.0.0"), "1.5.0")); // max-only, within
-        assert!(!applies(None, Some("2.0.0"), "2.0.1")); // max-only, above
-        assert!(applies(None, None, "1.0.0")); // unbounded both = always
+        // min inclusive
+        assert!(applies(Some("1.7.0"), None, "1.7.0"));
+        // max inclusive
+        assert!(applies(Some("1.0.0"), Some("1.7.0"), "1.7.0"));
+        assert!(!applies(Some("1.7.0"), None, "1.6.0"));
+        assert!(!applies(Some("1.0.0"), Some("1.5.0"), "2.0.0"));
+        // unbounded above
+        assert!(applies(Some("1.7.0"), None, "99.0.0"));
+        // max-only, within
+        assert!(applies(None, Some("2.0.0"), "1.5.0"));
+        // max-only, above
+        assert!(!applies(None, Some("2.0.0"), "2.0.1"));
+        // unbounded both = always
+        assert!(applies(None, None, "1.0.0"));
     }
 
     #[test]

@@ -190,7 +190,6 @@ mod mcp_apps_tests {
     fn test_meta_ui_survives_serialization_roundtrip() {
         // rmcp Meta is #[serde(transparent)] over JsonObject.
         // Our pipeline does: tool.meta → serde_json::to_value → Option<Value>.
-        // Verify the ui.resourceUri survives this conversion.
         let tool = ui_tool("dashboard", "ui://server/dash", None);
         let meta_value: serde_json::Value =
             serde_json::to_value(tool.meta.as_ref().unwrap()).unwrap();
@@ -249,7 +248,6 @@ mod unit_tests {
         let converted_schema = serde_json::to_value(rmcp_tool.input_schema.as_ref())
             .unwrap_or_else(|_| serde_json::json!({}));
 
-        // Verify the required field is preserved
         assert_eq!(converted_schema["type"], "object");
         assert_eq!(converted_schema["required"], json!(["url"]));
         assert!(converted_schema["properties"]["url"].is_object());
@@ -270,7 +268,6 @@ mod unit_tests {
         use std::borrow::Cow;
         use std::sync::Arc;
 
-        // Build an rmcp Tool with a real schema (properties, required, etc.)
         let server_schema = json!({
             "type": "object",
             "properties": {
@@ -295,7 +292,6 @@ mod unit_tests {
             obj.entry("type").or_insert_with(|| json!("object"));
         }
 
-        // The schema in the registration must be the MCP server's schema
         assert_eq!(schema["type"], "object");
         assert_eq!(schema["required"], json!(["query"]));
         assert!(schema["properties"]["query"].is_object());

@@ -50,7 +50,7 @@ impl HostOs {
 
 /// WSL detection. The implementation lives in `kigi-tty-utils` (the shared
 /// low-level crate) so crates that must not depend on this UI crate can reuse
-/// it; re-exported here so existing `host::is_wsl()` callers are unchanged.
+/// it; re-exported here so existing `host::is_wsl()` callers are `unchanged`.
 pub use kigi_tty_utils::is_wsl;
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, strum::Display)]
@@ -67,7 +67,7 @@ pub enum DisplayServer {
 
 impl DisplayServer {
     /// Detect the display server. Cached for process lifetime on Linux
-    /// (env vars don't change); compile-time constant on macOS/Windows.
+    /// (env vars do not alter); compile-time constant on macOS/Windows.
     pub fn current() -> Self {
         static CACHE: OnceLock<DisplayServer> = OnceLock::new();
         *CACHE.get_or_init(|| {
@@ -116,7 +116,7 @@ mod unicode_env_tests {
         #[cfg(windows)]
         {
             use std::os::windows::ffi::OsStringExt;
-            let bad = OsString::from_wide(&[0xD800]); // lone surrogate
+            let bad = OsString::from_wide(&[0xD800]);
             let map = unicode_env_from_os([
                 (bad.clone(), OsString::from("ok")),
                 (OsString::from("OK_KEY"), bad),

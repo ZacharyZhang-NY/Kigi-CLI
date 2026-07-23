@@ -4,7 +4,7 @@
 //! the terminal's own canvas it can land dark-on-dark or light-on-light
 //! (e.g. macOS in Light Mode + a dark terminal profile). Polarity detection
 //! is not reliable either: OS appearance and OSC 11 both disagree with the
-//! actual canvas in edge cases and can change mid-session. Terminal
+//! actual canvas in edge cases and can differ mid-session. Terminal
 //! profiles, however, tune their **default** fg/bg to be legible against
 //! their own background — this is how `git` and `ls` stay readable on any
 //! terminal — so a palette built from `Reset` (body) + sparse named ANSI-16

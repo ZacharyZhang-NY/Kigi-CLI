@@ -1076,9 +1076,6 @@ fn render_radio_row(
         return;
     }
 
-    // Contract: callers MUST push rows in `active_idx` order and place
-    // any disabled rows at the tail of a phase, because the mouse
-
     let marker = if is_cursor {
         crate::glyphs::filled_dot()
     } else {
@@ -1394,7 +1391,7 @@ mod tests {
             selected: 0,
         };
         assert!(set_rewind_cursor(&mut phase, 1));
-        assert!(!set_rewind_cursor(&mut phase, 1)); // no change
+        assert!(!set_rewind_cursor(&mut phase, 1));
         // Clamp out-of-range to last point (already at last → no change).
         assert!(!set_rewind_cursor(&mut phase, 99));
         if let RewindPhase::Picker { selected, .. } = phase {
@@ -1503,7 +1500,6 @@ mod tests {
 
     #[test]
     fn esc_dismisses_from_picker_and_other_phases() {
-        // Picker
         let s = RewindState {
             phase: RewindPhase::Picker {
                 points: vec![],
@@ -1518,14 +1514,12 @@ mod tests {
             RewindInput::Dismissed
         ));
 
-        // ModeSelect
         let s = RewindState::new_mode_select(0, 1, true, true, None);
         assert!(matches!(
             handle_rewind_key(&s, &key(KeyCode::Esc)),
             RewindInput::Dismissed
         ));
 
-        // CancelOffer
         let s = RewindState::new_cancel_offer(0, None, None);
         assert!(matches!(
             handle_rewind_key(&s, &key(KeyCode::Esc)),

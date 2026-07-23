@@ -1606,7 +1606,7 @@ fn build_mode_query_arms_debounce_despite_title_hits_and_force_skips_it() {
     );
 }
 /// Build mode: a sub-2-char query clears the content results AND
-/// invalidates the previously armed debounce, so its late expiry can't
+/// invalidates the debounce armed earlier, so its late expiry can't
 /// resurrect the search.
 #[test]
 fn build_mode_short_query_clears_results_and_invalidates_armed_debounce() {

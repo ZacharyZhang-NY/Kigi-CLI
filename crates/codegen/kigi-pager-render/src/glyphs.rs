@@ -371,7 +371,7 @@ pub fn timeline_tick_hover() -> &'static str {
 /// The filled status / selection dot used in pickers, the settings and
 /// permission modals, the session list, and the file-search view. Its
 /// hollow partner `○` (U+25CB) is already a CP437 glyph (`0x09`) and
-/// renders unchanged, so only the filled variant needs a stand-in.
+/// renders `unchanged`, so only the filled variant needs a stand-in.
 pub fn filled_dot() -> &'static str {
     if is_legacy_windows_console() {
         "\u{2022}"
@@ -500,7 +500,7 @@ pub fn enlarge_button() -> &'static str {
 /// Unlike the fixed-width button helpers above, toasts are right-aligned
 /// flowing text assembled in ~25 call sites, so a single funnel at the
 /// point the toast enters view state is cleaner than threading a helper
-/// through every builder. Returns a borrow unchanged on every non-legacy
+/// through every builder. Returns a borrow `unchanged` on every non-legacy
 /// platform, so toast strings stay byte-identical there.
 pub fn legacy_glyph_fallback(s: &str) -> Cow<'_, str> {
     if !is_legacy_windows_console() {
@@ -607,8 +607,8 @@ mod tests {
     fn record_dot_states_are_one_column() {
         assert_eq!(record_dot(true).width(), 1);
         assert_eq!(record_dot(false).width(), 1);
-        assert_eq!("\u{25C9}".width(), 1); // ◉ FISHEYE
-        assert_eq!("\u{25CE}".width(), 1); // ◎ BULLSEYE
+        assert_eq!("\u{25C9}".width(), 1);
+        assert_eq!("\u{25CE}".width(), 1);
     }
 
     #[test]
@@ -623,11 +623,11 @@ mod tests {
     #[test]
     fn icon_fallback_variants_are_one_column() {
         for (fancy, fallback) in [
-            ("\u{2717}", "x"),        // ballot_x
-            ("\u{2713}", "\u{221A}"), // check_mark
-            ("\u{2197}", "o"),        // enlarge
-            ("\u{29C9}", "c"),        // copy_icon
-            ("\u{21E3}", "\u{2193}"), // token_arrow
+            ("\u{2717}", "x"),
+            ("\u{2713}", "\u{221A}"),
+            ("\u{2197}", "o"),
+            ("\u{29C9}", "c"),
+            ("\u{21E3}", "\u{2193}"),
         ] {
             assert_eq!(fancy.width(), 1, "icon {fancy:?} must be 1 column");
             assert_eq!(
@@ -645,9 +645,9 @@ mod tests {
     #[test]
     fn diamond_variants_are_one_column() {
         for (fancy, fallback) in [
-            ("\u{25C6}", "\u{2666}"), // diamond_filled
-            ("\u{25C7}", "\u{25CB}"), // diamond_hollow
-            ("\u{25C8}", "\u{2666}"), // diamond_dotted
+            ("\u{25C6}", "\u{2666}"),
+            ("\u{25C7}", "\u{25CB}"),
+            ("\u{25C8}", "\u{2666}"),
         ] {
             assert_eq!(fancy.width(), 1, "diamond {fancy:?} must be 1 column");
             assert_eq!(
@@ -664,12 +664,12 @@ mod tests {
     #[test]
     fn chrome_glyph_variants_are_one_column() {
         for (fancy, fallback) in [
-            ("\u{2503}", "\u{2502}"), // accent_bar
-            ("\u{25CF}", "\u{2022}"), // filled_dot
-            ("\u{258F}", "\u{2502}"), // selection_bar
-            ("\u{203A}", ">"),        // chevron
-            ("\u{2039}", "<"),        // chevron_left
-            ("\u{2304}", "v"),        // chevron_down
+            ("\u{2503}", "\u{2502}"),
+            ("\u{25CF}", "\u{2022}"),
+            ("\u{258F}", "\u{2502}"),
+            ("\u{203A}", ">"),
+            ("\u{2039}", "<"),
+            ("\u{2304}", "v"),
         ] {
             assert_eq!(fancy.width(), 1, "glyph {fancy:?} must be 1 column");
             assert_eq!(
@@ -724,8 +724,9 @@ mod tests {
     #[test]
     fn button_variants_have_stable_width() {
         for (fancy, fallback, cols) in [
-            ("[\u{2717}]", "[x]", 3), // ballot_x_button
-            ("[\u{2197}]", "[o]", 3), // enlarge_button
+            // ballot_x_button
+            ("[\u{2717}]", "[x]", 3),
+            ("[\u{2197}]", "[o]", 3),
         ] {
             assert_eq!(fancy.width(), cols, "button {fancy:?} must be {cols} cols");
             assert_eq!(

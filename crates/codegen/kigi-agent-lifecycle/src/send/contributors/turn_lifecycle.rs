@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 
-/// Input supplied when the host starts a turn.
 pub struct TurnStartInput {
     /// True when the harness produced the turn (auto-wake, drain, cron, continuation), not the user.
     pub synthetic: bool,
@@ -12,19 +11,16 @@ impl TurnStartInput {
     }
 }
 
-/// Input supplied when the host completes a turn.
 pub struct TurnDoneInput;
 
-/// Why the host aborted the turn instead of completing it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TurnAbortReason {
     /// The client went away mid-turn.
     Disconnected,
-    /// The user interrupted the turn before it completed.
+    /// The user cancelled mid-turn.
     Interrupted,
 }
 
-/// Input supplied when the host aborts a turn.
 pub struct TurnAbortInput {
     pub reason: TurnAbortReason,
 }
@@ -35,7 +31,6 @@ impl TurnAbortInput {
     }
 }
 
-/// Input supplied when the host observes an error for a turn.
 pub struct TurnErrorInput<'a> {
     pub message: &'a str,
 }

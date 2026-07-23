@@ -16,13 +16,8 @@ pub(super) enum SessionMatch {
 }
 
 impl SessionMatch {
-    /// The owning agent's id, regardless of variant.
-    ///
-    /// For `Root`, this is the agent whose root session matched. For `Child`,
-    /// this is the parent agent that owns the matching `subagent_views` entry.
-    /// Callers that only need to look up the owning agent (without
-    /// distinguishing root vs child) should use this instead of duplicating
-    /// the `match { Root(id) | Child(id) => id }` pattern.
+    /// The owning agent's id, regardless of variant — for `Child`, the parent
+    /// agent that owns the matching `subagent_views` entry.
     pub(super) fn agent_id(self) -> AgentId {
         match self {
             SessionMatch::Root(id) | SessionMatch::Child(id) => id,
@@ -32,9 +27,6 @@ impl SessionMatch {
 
 /// Resolve the agent that owns a notification's `session_id` and whether the
 /// active view is affected.
-///
-/// Convenience wrapper around `find_session_match` + `is_matched_agent_active`
-/// + `agents.get_mut()`, used by the bg-task notification handlers.
 pub(super) fn resolve_notif_agent<'a>(
     app: &'a mut AppView,
     session_id: &acp::SessionId,
@@ -126,16 +118,15 @@ pub(super) fn find_session_match(
     app: &AppView,
     session_id: &acp::SessionId,
 ) -> Option<SessionMatch> {
-    // Single pass over `app.agents`: prefer an exact root match (returned
-    // immediately, since root takes precedence) but track the first child
-    // match seen as a fallback used after the full scan completes.
+    // Single pass over `app.agents`: an exact root match is returned
+    // immediately (root takes precedence), while the first child match seen is
+    // tracked as a fallback applied after the full scan — so root still wins
+    // when both could match.
     //
     // Comparing `Option<&SessionId>` to `Some(&session_id)` borrows both
     // sides -- no SessionId clone. The HashMap lookup uses the inner `&str`
     // directly via the `Borrow<str>` impl on `String`, so no allocation
-    // either. This preserves the previous two-pass semantics (root wins
-    // when both could match) while halving the iteration cost on the hot
-    // notification path.
+    // either.
     let child_key: &str = session_id.0.as_ref();
     let mut child_match: Option<AgentId> = None;
     for (id, agent) in &app.agents {

@@ -66,7 +66,6 @@ impl FpsHud {
             last_refresh: None,
         }
     }
-    /// Whether the HUD is currently enabled.
     pub fn enabled(&self) -> bool {
         self.enabled
     }

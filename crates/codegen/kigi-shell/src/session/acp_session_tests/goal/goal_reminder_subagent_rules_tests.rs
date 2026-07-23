@@ -1,9 +1,8 @@
 use super::goal::GapsUpdate;
 use super::support::*;
 use super::*;
-/// Legacy verifier directive removed by the prompt overhaul. The const
-/// pins the exact phrasing so all three sites assert the same regression
-/// guard if someone copies the old sentence back from history.
+/// Exact phrasing of a legacy verifier directive, pinned so a regression
+/// guard can assert it never reappears.
 #[expect(
     dead_code,
     reason = "unused in production; remove expect when wired or delete the item"
@@ -49,10 +48,6 @@ async fn with_fresh_actor(f: impl FnOnce(&mut SessionActor)) {
         })
         .await;
 }
-/// Assert the slim goal-mode prompt clauses: TRACKING,
-/// WORKING, VERIFY AS YOU GO, TEST PROACTIVELY, the completion +
-/// blocked + progress `update_goal` lines, and the absence of every
-/// removed COMPLETION-AUDIT/verifier-prompt artifact.
 fn assert_goal_prompt_clauses_new(reminder: &str, site: &str) {
     assert_goal_discipline_in_reminder(reminder, site);
     assert!(
@@ -233,9 +228,6 @@ async fn maybe_queue_goal_continuation_includes_lightweight_nudge() {
         })
         .await;
 }
-/// In-turn loop step: an Active goal must return `Continue` with the
-/// continuation directive AND must NOT queue a separate `GoalSummary`
-/// turn (the directive is injected into the same turn by the loop).
 #[tokio::test(flavor = "current_thread")]
 async fn run_goal_round_end_continues_in_turn_for_active_goal() {
     let local = tokio::task::LocalSet::new();
@@ -264,8 +256,6 @@ async fn run_goal_round_end_continues_in_turn_for_active_goal() {
         })
         .await;
 }
-/// In-turn loop step: with the goal harness disabled the round ends the
-/// turn (no verification, no continuation) — the common non-goal path.
 #[tokio::test(flavor = "current_thread")]
 async fn run_goal_round_end_ends_turn_when_goal_harness_disabled() {
     let local = tokio::task::LocalSet::new();
@@ -281,10 +271,6 @@ async fn run_goal_round_end_ends_turn_when_goal_harness_disabled() {
         })
         .await;
 }
-/// After a `NotAchieved` verdict stamps `last_classifier_gaps`, the
-/// rendered continuation must inline the bounded gaps (NOT a details-file
-/// pointer) AND carry the plan's next item, with the gaps rendered above
-/// the plan next-step line.
 #[tokio::test(flavor = "current_thread")]
 async fn maybe_queue_goal_continuation_inlines_classifier_gaps() {
     let local = tokio::task::LocalSet::new();
@@ -343,7 +329,7 @@ async fn maybe_queue_goal_continuation_inlines_classifier_gaps() {
 /// continuation nudge replays `last_classifier_gaps` until a later
 /// verdict overwrites it — the fix for the 10-round session where a
 /// one-shot gap was surfaced once then reverted to the objective
-/// restatement. Both nudges must inline the same concrete gap.
+/// restatement.
 #[tokio::test(flavor = "current_thread")]
 async fn maybe_queue_goal_continuation_replays_classifier_gap_every_round() {
     let local = tokio::task::LocalSet::new();
@@ -523,8 +509,6 @@ async fn consume_strategist_note_spares_newer_recommendation() {
         })
         .await;
 }
-/// `GapsUpdate::Preserve` leaves gaps untouched in both directions (stored
-/// survive, absent stay absent) while the verdict still stamps.
 #[tokio::test(flavor = "current_thread")]
 async fn record_verdict_preserve_leaves_gaps_unchanged() {
     use crate::session::goal_tracker::GoalClassifierVerdict;
@@ -570,8 +554,6 @@ async fn record_verdict_preserve_leaves_gaps_unchanged() {
         })
         .await;
 }
-/// `NotAchieved` stamps curated gaps (`Set`); a later `Achieved` (`Clear`)
-/// clears them — stale gaps must not replay after the goal is achieved.
 #[tokio::test(flavor = "current_thread")]
 async fn record_verdict_clears_gaps_on_achieved() {
     use crate::session::goal_tracker::GoalClassifierVerdict;
@@ -623,8 +605,6 @@ async fn record_verdict_clears_gaps_on_achieved() {
         })
         .await;
 }
-/// Prune drops the prior GoalSummary-tagged directive while preserving
-/// every other item, so only the latest copy stays in context.
 #[tokio::test(flavor = "current_thread")]
 async fn prune_prior_goal_continuation_directives_drops_only_directives() {
     let local = tokio::task::LocalSet::new();
@@ -710,8 +690,6 @@ async fn prune_prior_goal_continuation_directives_spares_items_quoting_sentinel(
         })
         .await;
 }
-/// Prune is a no-op (no whole-conversation replace) when no prior
-/// directive is present — the common steady-state turn.
 #[tokio::test(flavor = "current_thread")]
 async fn prune_prior_goal_continuation_directives_noop_without_directive() {
     let local = tokio::task::LocalSet::new();
@@ -728,8 +706,6 @@ async fn prune_prior_goal_continuation_directives_noop_without_directive() {
         })
         .await;
 }
-/// The continuation nudge re-anchors the plan path each turn (planner
-/// enabled + plan present), via the same gate as the full reminder.
 #[tokio::test(flavor = "current_thread")]
 async fn maybe_queue_goal_continuation_is_plan_aware_when_planner_enabled() {
     let local = tokio::task::LocalSet::new();
@@ -890,11 +866,6 @@ fn render_goal_task_discipline_substitutes_custom_todo_tool() {
     );
     assert!(!rendered.contains("{TODO_TOOL}"));
 }
-/// Direct unit test for [`render_goal_rules`] covering the slim
-/// slim template: every placeholder is substituted, the four
-/// bullets (TRACKING / WORKING / VERIFY / TEST PROACTIVELY) survive,
-/// no per-goal verdict path is published, and no `{VERIFIER_ID}`
-/// substitution remains in the template.
 #[test]
 fn render_goal_rules_substitutes_all_placeholders_in_slim_template() {
     let names = GoalToolNames {
@@ -962,12 +933,6 @@ fn render_goal_rules_substitutes_all_placeholders_in_slim_template() {
         );
     }
 }
-/// Planner-enabled path: `render_goal_rules` with `Some(plan_path)`
-/// folds the slim plan preamble into the same block as the discipline.
-/// Asserts the pinned column-0 `Plan: <abs>` pointer line and the
-/// surviving seed-todos / `## Deviations` instructions; the
-/// slim plan block no longer references verifier subagents or
-/// the harness-owned COMPLETION AUDIT.
 #[test]
 fn render_goal_rules_plan_aware_block_when_plan_present() {
     let names = goal_tool_names_for_test("todo_write");
@@ -1029,10 +994,6 @@ fn render_goal_rules_plan_aware_block_when_plan_present() {
         "plan preamble must lead the consolidated block:\n{body}"
     );
 }
-/// Planner-disabled (default) / plan-absent path: `render_goal_rules`
-/// with `None` renders the slim no-plan block — no dangling `Plan:`
-/// line, no `None` literal, no plan-aware phrasing — while the
-/// discipline + TRACKING / WORKING / VERIFY / TEST sections remain.
 #[test]
 fn render_goal_rules_no_plan_block_when_plan_absent() {
     let names = goal_tool_names_for_test("todo_write");
@@ -1076,9 +1037,6 @@ fn render_goal_rules_no_plan_block_when_plan_absent() {
         "intro must glue directly to discipline when {{PLAN_BLOCK}} is empty:\n{body}"
     );
 }
-/// `{SCRATCH_STATUS}` is conditional on whether the scratch dir was actually
-/// created: the "created for you" copy renders only when `scratch_ready` is
-/// true, and the `mkdir -p` fallback renders when it is false.
 #[test]
 fn render_goal_rules_scratch_status_reflects_readiness() {
     let names = goal_tool_names_for_test("todo_write");
@@ -1125,8 +1083,6 @@ fn render_goal_rules_scratch_status_reflects_readiness() {
         "placeholder must resolve"
     );
 }
-/// `{TODO_TOOL}` is substituted (not a hardcoded `todo_write`), proven by
-/// rendering with a distinguishable name threaded from `GoalToolNames::todo`.
 #[test]
 fn render_goal_plan_block_substitutes_custom_todo_tool() {
     let names = goal_tool_names_for_test("todo_write_CUSTOM_XYZ");
@@ -1149,10 +1105,8 @@ fn render_goal_plan_block_substitutes_custom_todo_tool() {
         "plan block must require committing real tests as durable proof:\n{block}"
     );
 }
-/// A plan path with spaces and unicode must round-trip intact on
-/// the canonical column-0 `Plan:` line (degenerate-input
-/// coverage). `plan_path()` derives from the session dir, so spaces are
-/// plausible.
+/// `plan_path()` derives from the session dir, so spaced/unicode paths are
+/// plausible and must round-trip intact on the `Plan:` line.
 #[test]
 fn render_goal_plan_block_preserves_spaced_unicode_path() {
     let names = goal_tool_names_for_test("todo_write");
@@ -1208,9 +1162,6 @@ fn format_goal_pause_message_includes_summary_when_present_and_omits_when_empty(
         "Goal auto-paused.",
     );
 }
-/// The block inlines the bounded gaps checklist directly (the findings the
-/// implementer acts on) and never points the model at the verbose per-skeptic
-/// details file. Empty gaps collapse the block entirely.
 #[test]
 fn render_verifier_gaps_block_inlines_gaps_without_file_ref() {
     let gaps =
@@ -1229,10 +1180,6 @@ fn render_verifier_gaps_block_inlines_gaps_without_file_ref() {
         "empty gaps must collapse the block",
     );
 }
-/// The strategist-note block renders the narrative + a RE-READ
-/// directive pointing at BOTH the plan and the strategy note, and
-/// states it does not change the acceptance criteria. Empty
-/// recommendation collapses the slot entirely.
 #[test]
 fn render_strategist_note_inlines_recommendation_and_reread_directive() {
     let rec = "## Diagnosis\n\nMonolith. Split into pure units.";
@@ -1272,9 +1219,6 @@ fn render_strategist_note_inlines_recommendation_and_reread_directive() {
         "whitespace-only recommendation must collapse the slot",
     );
 }
-/// End-to-end render: the continuation directive surfaces the
-/// strategist note ONLY when a recommendation is present, and it
-/// stacks above the "Goal NOT complete" sentinel.
 #[test]
 fn continuation_directive_renders_strategist_note_only_when_present() {
     let note = render_strategist_note(
@@ -1414,9 +1358,6 @@ fn strategist_note_fence_uses_unguessable_nonce() {
         .expect("second nonce");
     assert_ne!(nonce, nonce2, "each render must use a fresh nonce");
 }
-/// Happy path for `render_goal_continuation_directive`: every
-/// placeholder lands, the proactive-testing copy is present, and
-/// no `{lowercase}` literal leaks through.
 #[test]
 fn render_goal_continuation_directive_substitutes_all_placeholders() {
     let body = render_goal_continuation_directive(
@@ -1508,9 +1449,6 @@ fn render_goal_continuation_directive_substitutes_all_placeholders() {
         );
     }
 }
-/// `{scratch_status}` is conditional on whether the scratch dir was actually
-/// created: the "(created for you)" copy renders only when `scratch_ready` is
-/// true, and the `mkdir -p` fallback renders when it is false.
 #[test]
 fn render_goal_continuation_directive_scratch_status_reflects_readiness() {
     let ready = render_goal_continuation_directive(
@@ -1568,9 +1506,6 @@ fn render_goal_continuation_directive_scratch_status_reflects_readiness() {
         "placeholder must resolve"
     );
 }
-/// The empty `bail_preface` (generic flavor) renders cleanly — no
-/// preface text and no dangling `{bail_preface}` artifact — while a
-/// populated preface lands ahead of the unchanged generic body.
 #[test]
 fn render_goal_continuation_directive_bail_preface_toggles_cleanly() {
     let generic = render_goal_continuation_directive(
@@ -1623,13 +1558,8 @@ fn render_goal_continuation_directive_bail_preface_toggles_cleanly() {
         "bail preface must precede the generic body:\n{bail}",
     );
 }
-/// The directive body has a deliberate top-down order: objective
-/// → tokens → plan pointer → verifier gaps → next step → the
-/// pre-completion verification line. Pin the ordering by `find`
-/// indices so a future template edit that reshuffles sections is
-/// caught at test time. The verifier-gaps block must sit ABOVE the
-/// next-step line so the freshest findings take priority for a weak
-/// model.
+/// The verifier-gaps block must sit ABOVE the next-step line so the
+/// freshest findings take priority for a weak model.
 #[test]
 fn render_goal_continuation_directive_section_order_is_pinned() {
     let body = render_goal_continuation_directive(
@@ -1838,8 +1768,6 @@ fn render_goal_continuation_directive_neutralizes_reminder_tags_in_model_slots()
         "no literal reminder-opening tag may survive the next_step slot:\n{body}",
     );
 }
-/// A hostile plan item is tag-broken and capped; exact length: 400
-/// chars + `…` + one zero-width break per neutralized tag (here: one).
 #[test]
 fn resolve_goal_next_step_neutralizes_tags_and_caps_length() {
     let plan = tempfile::NamedTempFile::new().unwrap();
@@ -1888,8 +1816,6 @@ fn resolve_goal_next_step_cap_boundaries() {
     );
     assert!(step.ends_with('…'));
 }
-/// Empty `plan_pointer` renders cleanly — no dangling blank line
-/// or `Plan:` artifact remains.
 #[test]
 fn render_goal_continuation_directive_omits_plan_pointer_when_empty() {
     let body = render_goal_continuation_directive(
@@ -1910,8 +1836,6 @@ fn render_goal_continuation_directive_omits_plan_pointer_when_empty() {
     assert!(!body.contains("\nPlan: "));
     assert!(body.contains("Goal NOT complete — continue working. Next step:\nnext step here"));
 }
-/// Empty objective panics in debug builds via the load-bearing-field
-/// `debug_assert!` guard.
 #[test]
 #[should_panic(expected = "non-empty objective")]
 #[cfg(debug_assertions)]
@@ -1932,10 +1856,6 @@ fn render_goal_continuation_directive_rejects_empty_objective_in_debug() {
         true,
     );
 }
-/// The re-verify escalation block stays empty until a goal has been
-/// refuted AND has run `>= threshold` rounds since its last verification,
-/// then inlines the live round count and demands a re-verify; past
-/// `3 * threshold` the lead hardens.
 #[test]
 fn render_goal_reverify_block_gates_on_refute_and_threshold() {
     assert!(render_goal_reverify_block(99, false, 8, "update_goal").is_empty());
@@ -1991,10 +1911,6 @@ fn resolve_goal_reverify_after_config_beats_default_and_floors() {
     assert_eq!(reverify(Some(6)), 6);
     assert_eq!(reverify(Some(0)), 1, "config 0 floors to 1");
 }
-/// `resolve_goal_next_step` returns the plan's first unchecked
-/// item. Verifier gaps are delivered separately via
-/// `render_verifier_gaps_block`, so this helper no longer reads
-/// the classifier verdict file.
 #[test]
 fn resolve_goal_next_step_returns_first_unchecked_plan_item() {
     let plan = tempfile::NamedTempFile::new().unwrap();
@@ -2006,8 +1922,6 @@ fn resolve_goal_next_step_returns_first_unchecked_plan_item() {
     let resolved = resolve_goal_next_step(Some(plan.path()));
     assert_eq!(resolved.as_deref(), Some("wire the helper"));
 }
-/// Generic fallback (`None`) when the plan is absent or yields no
-/// unchecked item.
 #[test]
 fn resolve_goal_next_step_returns_none_when_no_source_resolves() {
     assert!(resolve_goal_next_step(None).is_none());
@@ -2052,10 +1966,9 @@ fn goal_rules_template_carries_load_bearing_pr3_clauses() {
         "goal_rules.md must not contain `{{VERIFIER_ID}}` placeholder",
     );
 }
-/// Regression pin: every artifact of the deleted COMPLETION
-/// AUDIT / canonical verifier blocks must stay absent from
-/// `goal_rules.md`. Anchors the slim-template contract so a future
-/// edit can't quietly re-import the ceremony.
+/// Regression pin: the COMPLETION AUDIT / canonical verifier ceremony
+/// must stay absent from `goal_rules.md`, so a future edit can't quietly
+/// re-import it.
 #[test]
 fn goal_rules_template_drops_all_legacy_verifier_artifacts() {
     for removed in [

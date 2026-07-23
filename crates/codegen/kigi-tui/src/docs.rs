@@ -32,8 +32,6 @@ impl From<&Doc> for DocEntry {
     }
 }
 
-// ── Static doc tables ────────────────────────────────────────────────────────
-
 macro_rules! guide {
     ($file:literal, $title:literal, $desc:literal) => {
         Doc {
@@ -176,8 +174,6 @@ static REFERENCE_DOCS: &[Doc] = &[
         content: include_str!("../docs/custom-hooks.md"),
     },
 ];
-
-// ── Public API ───────────────────────────────────────────────────────────────
 
 /// Find a doc by title (case-insensitive). Returns the static entry.
 pub fn find_doc(title: &str) -> Option<&'static Doc> {

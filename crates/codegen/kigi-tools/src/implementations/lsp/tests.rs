@@ -395,7 +395,6 @@ async fn poll_diagnostics(client: &LspClient, path: &Path, expected: usize) -> V
     client.get_diagnostics(path)
 }
 
-/// Creates a single-server LspManager with the mock TS server, already initialized.
 async fn single_server_manager(script_path: &Path, workspace: &tempfile::TempDir) -> LspManager {
     let mut servers = BTreeMap::new();
     servers.insert("mock-ts".to_string(), mock_server_config(script_path));
@@ -481,9 +480,9 @@ async fn e2e_lsp_manager_full_lifecycle() {
 
     let mut mgr = single_server_manager(&script_path, &workspace).await;
     assert!(mgr.is_initialized());
-    mgr.ensure_initialized().await; // idempotent
+    // idempotent
+    mgr.ensure_initialized().await;
 
-    // Fire-and-forget notification.
     let test_file = workspace.path().join("app.ts");
     let content = "let y = 2;\n";
     std::fs::write(&test_file, content).unwrap();
@@ -528,7 +527,6 @@ async fn e2e_did_change_updates_diagnostics() {
     let test_file = workspace.path().join("test.ts");
     std::fs::write(&test_file, "const x = 1;\n").unwrap();
 
-    // First open.
     client.notify_file_change(&test_file, "const x = 1;\n", "typescript");
     let diags = poll_diagnostics(&client, &test_file, 2).await;
     assert_eq!(diags.len(), 2);
@@ -609,7 +607,6 @@ async fn e2e_multi_server_routing() {
     // Bad server skipped, 2 good ones remain.
     assert_eq!(mgr.clients.len(), 2);
 
-    // .ts and .py route to their respective servers.
     let ts_file = workspace.path().join("app.ts");
     let ts_content = "let x = 1;\n";
     std::fs::write(&ts_file, ts_content).unwrap();
@@ -620,7 +617,6 @@ async fn e2e_multi_server_routing() {
     std::fs::write(&py_file, py_content).unwrap();
     mgr.notify_file_changed(&py_file, py_content);
 
-    // .go has no configured server — doesn't add to pending.
     let go_file = workspace.path().join("main.go");
     std::fs::write(&go_file, "package main\n").unwrap();
     let pending_before = mgr.pending_count();
@@ -649,7 +645,8 @@ async fn e2e_multi_server_routing() {
         summary.text
     );
     assert_eq!(summary.file_count, 2);
-    assert_eq!(summary.diagnostic_count, 4); // 2 per file (error + warning)
+    // 2 per file (error + warning)
+    assert_eq!(summary.diagnostic_count, 4);
 
     mgr.lock().await.shutdown().await;
 }
@@ -758,13 +755,11 @@ async fn e2e_session_diagnostics_injection_flow() {
     let workspace = tempfile::tempdir().unwrap();
     let mut mgr = single_server_manager(&script_path, &workspace).await;
 
-    // Step 1: tool edits file -> fire-and-forget notify (returns immediately).
     let edited_file = workspace.path().join("component.ts");
     let content = "const x: number = 'wrong_type';\n";
     std::fs::write(&edited_file, content).unwrap();
     mgr.notify_file_changed(&edited_file, content);
 
-    // Step 2: (simulated) other tools run... time passes... LSP server responds.
     wait_for_server(&mgr, &edited_file, 2000).await;
 
     let mgr = tokio::sync::Mutex::new(mgr);
@@ -786,12 +781,10 @@ async fn e2e_session_diagnostics_injection_flow() {
     assert_eq!(summary.file_count, 1);
     assert_eq!(summary.diagnostic_count, 2);
 
-    // Step 4: the injected user message the model sees.
     let injected = format!("<system-reminder>\n{}\n</system-reminder>", summary.text);
     assert!(injected.contains("mock error: undeclared variable"));
     assert!(injected.contains("mock warning: unused import"));
 
-    // Step 5: .py has no server — notify is a no-op.
     {
         let mut mgr = mgr.lock().await;
         let py_file = workspace.path().join("script.py");
@@ -817,7 +810,6 @@ async fn e2e_session_tool_dispatch_flow() {
     std::fs::write(&ts_file, content).unwrap();
     mgr.notify_file_changed(&ts_file, content);
 
-    // goToDefinition
     let result = mgr
         .dispatch_tool_typed(&LspToolInput {
             operation: LspOperation::GoToDefinition,
@@ -834,7 +826,6 @@ async fn e2e_session_tool_dispatch_flow() {
         result.text
     );
 
-    // findReferences
     let result = mgr
         .dispatch_tool_typed(&LspToolInput {
             operation: LspOperation::FindReferences,
@@ -848,7 +839,6 @@ async fn e2e_session_tool_dispatch_flow() {
     assert!(result.text.contains(":6:1"), "line 6: {}", result.text);
     assert!(result.text.contains(":16:4"), "line 16: {}", result.text);
 
-    // missing server -> error
     let rs_file = workspace.path().join("lib.rs");
     std::fs::write(&rs_file, "fn main() {}\n").unwrap();
     let result = mgr
@@ -867,7 +857,6 @@ async fn e2e_session_tool_dispatch_flow() {
         result.text
     );
 
-    // missing file_path for position-based operation -> error
     let result = mgr
         .dispatch_tool_typed(&LspToolInput {
             operation: LspOperation::GoToDefinition,
@@ -883,18 +872,15 @@ async fn e2e_session_tool_dispatch_flow() {
     mgr.shutdown().await;
 }
 
-/// Verifies the tools_enabled gating logic.
 #[tokio::test(flavor = "current_thread")]
 async fn e2e_tools_enabled_gating() {
     let (_dir, script_path) = write_mock_server();
     let workspace = tempfile::tempdir().unwrap();
 
-    // tools_enabled=false (default) — tools should NOT be advertised.
     let mut mgr = single_server_manager(&script_path, &workspace).await;
     assert!(!mgr.tools_enabled(), "tools disabled by default");
     mgr.shutdown().await;
 
-    // tools_enabled=true — Arc<dyn LspBackend> would be injected into ToolBridge Resources.
     let mut servers = BTreeMap::new();
     servers.insert("mock-ts".to_string(), mock_server_config(&script_path));
     let mut mgr = LspManager {

@@ -4,8 +4,6 @@
 //! full-replace pass ([`sample_full_replace_summary`](super::sample_full_replace_summary))
 //! and Kigi chat's intra `Shared` summarizer
 //! ([`apply_intra_compaction`](crate::intra_compaction::apply_intra_compaction)).
-//! Centralising it here removes the two near-identical copies that previously
-//! lived in `code_compaction::compact` and `intra_compaction::compact`.
 //!
 //! Classification is uniform:
 //! - a usable, non-degenerate response wins immediately;
@@ -38,7 +36,7 @@ use super::summary::is_degenerate_summary;
 /// plus the total number of attempts made (first try + retries).
 #[derive(Debug)]
 pub struct SampledSummary {
-    /// Raw model summary text, exactly as emitted. Callers clean it as needed.
+    /// Exactly as emitted; callers clean before use.
     pub summary: String,
     /// Total sample attempts made (1-based).
     pub attempts: u32,
@@ -58,14 +56,12 @@ pub enum SampleRetryError {
     /// input cannot help — auth / schema / context overflow), or transient but
     /// retries were exhausted.
     Failure {
-        /// Rendered upstream error message.
         message: String,
         /// Whether re-sending the same input cannot help.
         deterministic: bool,
         /// Whether the failure was a context-length overflow (a deterministic
         /// signal the kigi host uses to step down its input size).
         context_overflow: bool,
-        /// Total attempts made.
         attempts: u32,
     },
 }
@@ -344,7 +340,7 @@ mod tests {
 
     #[tokio::test]
     async fn empty_then_degenerate_exhausts_to_empty() {
-        let short = "<summary>\n1. Primary Request: q\n</summary>"; // degenerate
+        let short = "<summary>\n1. Primary Request: q\n</summary>";
         let sampler = MockSampler::scripted(vec![Ok(String::new()), Ok(short.into())]);
         let err = run(&sampler, 2).await.expect_err("should fail");
         assert!(matches!(err, SampleRetryError::Empty { attempts: 2 }));

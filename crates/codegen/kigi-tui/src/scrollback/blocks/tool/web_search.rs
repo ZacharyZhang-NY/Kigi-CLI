@@ -13,7 +13,6 @@ use crate::scrollback::types::{
 };
 use crate::theme::Theme;
 
-/// Max lines of content shown inline before truncation.
 const MAX_INLINE_LINES: usize = 10;
 
 /// Max number of domain names shown in the sources summary line.
@@ -22,15 +21,12 @@ const MAX_INLINE_SOURCES: usize = 3;
 /// Web search tool call — searching the web and returning markdown results.
 #[derive(Debug, Clone)]
 pub struct WebSearchToolCallBlock {
-    /// The search query.
     pub query: String,
     /// Markdown-formatted search results.
     pub content: Option<String>,
-    /// Source URLs from the search.
     pub citations: Vec<String>,
     /// Error message if the tool call failed (None = success).
     pub error: Option<String>,
-    /// When the tool started running.
     pub started_at: Option<std::time::Instant>,
     /// Elapsed time in ms after completion.
     pub elapsed_ms: Option<i64>,

@@ -4,15 +4,12 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-// ───────────────────────────────────────────────────────────────────────────
 // `task` (spawn) tool — Input
-// ───────────────────────────────────────────────────────────────────────────
 
 /// Input for the `task` tool — launches a subagent to handle a task
 /// autonomously.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TaskToolInput {
-    /// The full task prompt for the subagent to execute.
     #[schemars(description = "The full task prompt for the subagent to execute.")]
     pub prompt: String,
 
@@ -28,10 +25,8 @@ pub struct TaskToolInput {
     #[serde(default = "default_subagent_type")]
     pub subagent_type: String,
 
-    /// Whether to run the subagent in the background.
-    ///
     /// Returns immediately with a subagent_id. Use the task output tool to
-    /// retrieve results. This is set to true by default.
+    /// retrieve results. Defaults to true.
     #[schemars(
         description = "Returns immediately with a subagent_id. Use the task output tool to \
             retrieve results. This is set to true by default."
@@ -42,7 +37,6 @@ pub struct TaskToolInput {
     )]
     pub run_in_background: bool,
 
-    /// Capability mode controlling the child's tool access.
     #[schemars(
         description = "Capability mode: \"read-only\", \"read-write\", \"execute\", or \"all\". \
             Controls which tool classes the child can use. Default is determined by the role."
@@ -50,7 +44,6 @@ pub struct TaskToolInput {
     #[serde(default)]
     pub capability_mode: Option<SubagentCapabilityMode>,
 
-    /// Isolation mode for the child's execution environment.
     #[schemars(
         description = "Isolation mode: \"none\" (default, shared workspace) or \"worktree\" \
             (isolated git worktree). Worktree mode prevents the child's edits from \
@@ -93,7 +86,6 @@ pub struct TaskToolInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
 
-    /// Optional model slug for this subagent.
     #[schemars(
         description = "Optional model slug for this agent. If provided, it must resolve to one \
             of the available model slugs. If omitted, the subagent uses the same model as the \
@@ -109,7 +101,6 @@ pub struct TaskToolInput {
     pub task_id: Option<String>,
 }
 
-/// Default `subagent_type` for [`TaskToolInput`] when the caller omits it.
 pub fn default_subagent_type() -> String {
     "general-purpose".to_string()
 }
@@ -180,7 +171,6 @@ impl SubagentCapabilityMode {
     }
 }
 
-/// Isolation mode for subagent execution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum SubagentIsolationMode {
@@ -201,9 +191,7 @@ impl SubagentIsolationMode {
     }
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // `task` (spawn) tool — Output
-// ───────────────────────────────────────────────────────────────────────────
 
 /// Structured completion output from a subagent (`task` tool).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -215,7 +203,6 @@ pub struct SubagentCompletedOutput {
     pub turns: u32,
     pub duration_ms: u64,
     pub worktree_path: Option<String>,
-    /// Persona used by this subagent, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub persona: Option<String>,
     /// The `subagent_id` to pass as `resume_from` to continue this subagent.
@@ -228,7 +215,6 @@ pub struct SubagentCompletedOutput {
 }
 
 impl SubagentCompletedOutput {
-    /// Render the resume footer showing the subagent ID and resume hint.
     pub fn resume_footer(&self) -> String {
         format_resume_footer(
             &self.subagent_id,
@@ -317,10 +303,8 @@ pub fn format_resume_footer(
 /// fan-out, and the toolbox wait path so the cap cannot drift.
 pub const MAX_MULTI_WAIT_IDS: usize = 20;
 
-/// Input for the `get_task_output` tool.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
 pub struct TaskOutputToolInput {
-    /// Task IDs to query. Pass one or more; a single task is a one-element list.
     #[schemars(
         description = "Task IDs to get output from. Pass one or more; for a single task use a one-element array. With a positive timeout_ms, multiple ids wait until all complete. Omit timeout_ms or pass 0 for a non-blocking snapshot."
     )]
@@ -351,12 +335,10 @@ pub fn resolve_task_ids(ids: &[String]) -> Vec<String> {
 }
 
 impl TaskOutputToolInput {
-    /// Resolved, de-duplicated task IDs preserving first-seen order.
     pub fn resolved_task_ids(&self) -> Vec<String> {
         resolve_task_ids(&self.task_ids)
     }
 
-    /// True only when `timeout_ms` is set and greater than zero.
     pub fn waits(&self) -> bool {
         task_output_waits(self.timeout_ms)
     }
@@ -378,7 +360,6 @@ pub fn task_output_waits_from_json(args: &serde_json::Value) -> bool {
     task_output_waits(timeout_ms)
 }
 
-/// Output from the `get_task_output` tool.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub enum TaskOutputOutput {
     Result(TaskOutputResult),
@@ -386,18 +367,16 @@ pub enum TaskOutputOutput {
     MultiResult(MultiTaskOutputResult),
 }
 
-/// Successful result from the `get_task_output` tool.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct TaskOutputResult {
     pub task_id: String,
     pub command: String,
     pub status: String,
     pub exit_code: Option<i32>,
-    /// Wall-clock start time (ISO 8601 format)
+    /// ISO 8601 wall-clock start time.
     pub started: String,
-    /// Wall-clock end time if completed (ISO 8601 format)
+    /// ISO 8601 wall-clock end time when completed.
     pub ended: Option<String>,
-    /// Duration in seconds
     pub duration_secs: f64,
     pub output: String,
     pub output_file: String,
@@ -428,7 +407,6 @@ impl TaskOutputOutput {
     }
 }
 
-/// Result from a multi-wait `get_task_output` / `wait_tasks` call.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MultiTaskOutputResult {
     pub mode: String,
@@ -468,11 +446,8 @@ impl TaskOutputResult {
     }
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // `wait_tasks` tool — Input
-// ───────────────────────────────────────────────────────────────────────────
 
-/// How a multi-wait (`wait_tasks`) request should resolve.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum WaitMode {
@@ -497,9 +472,7 @@ pub struct WaitTasksToolInput {
     pub timeout_ms: Option<u64>,
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// `kill_task` (cancel) tool — Input / Output
-// ───────────────────────────────────────────────────────────────────────────
+// `kill_task` tool — Input / Output
 
 /// Input for the `kill_task` tool — terminates a running background task,
 /// monitor, or subagent by id.
@@ -509,14 +482,12 @@ pub struct KillTaskToolInput {
     pub task_id: String,
 }
 
-/// Output from the `kill_task` tool.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub enum KillTaskOutput {
     Result(KillTaskResult),
     TaskNotFound(String),
 }
 
-/// Successful result from the `kill_task` tool.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct KillTaskResult {
     pub task_id: String,
@@ -538,7 +509,6 @@ impl KillTaskOutput {
 pub struct SubagentDescriptor {
     /// `subagent_type` value the model passes to the `task` tool.
     pub name: String,
-    /// One-line summary of what this subagent does.
     pub description: String,
     /// Optional fragment summarizing the tools the subagent can use. Appended
     /// verbatim after the description; may itself contain product-specific
@@ -572,8 +542,6 @@ impl BuiltinSubagent {
         })
     }
 
-    /// Build a [`SubagentDescriptor`], rendering the tool-access fragment via
-    /// [`Self::render_tools`] with the supplied `naming`.
     pub fn to_descriptor(&self, naming: &SubagentToolNaming) -> SubagentDescriptor {
         SubagentDescriptor {
             name: self.name.to_owned(),
@@ -679,9 +647,6 @@ fn substitute_tool_placeholders(
 }
 
 /// Prompt body for the **general-purpose** subagent.
-///
-/// This agent has access to all tools and is used for complex search,
-/// code exploration, and multi-step research tasks.
 pub const GENERAL_PURPOSE_PROMPT: &str = "\
 Complete the assigned task directly. Do what was asked; nothing more, nothing less. \
 Respond with a detailed writeup when done.
@@ -708,8 +673,6 @@ Workspace boundary:
 - Do not run whole-filesystem searches unless the user clearly requires it.";
 
 /// Prompt body for the **explore** subagent.
-///
-/// A fast, read-only agent specialized for codebase exploration.
 pub const EXPLORE_PROMPT: &str = "\
 You are a fast, read-only codebase exploration agent.
 
@@ -737,9 +700,6 @@ Workspace boundary:
 - If not found in the workspace, report that rather than broadening scope.";
 
 /// Prompt body for the **plan** subagent.
-///
-/// A read-only architect agent that explores the codebase and produces
-/// implementation plans.
 pub const PLAN_PROMPT: &str = "\
 You are a read-only software architect. Explore the codebase and design implementation plans.
 
@@ -771,7 +731,6 @@ Workspace boundary:
 - Your default analysis scope is the workspace in <user_info>. Stay within it unless asked otherwise.
 - Note explicitly if the design requires understanding external dependencies.";
 
-/// The **general-purpose** built-in subagent.
 pub const GENERAL_PURPOSE_SUBAGENT: BuiltinSubagent = BuiltinSubagent {
     name: "general-purpose",
     description: "General purpose agent for multi-step tasks.",
@@ -782,7 +741,6 @@ pub const GENERAL_PURPOSE_SUBAGENT: BuiltinSubagent = BuiltinSubagent {
     prompt_template: GENERAL_PURPOSE_PROMPT,
 };
 
-/// The **explore** built-in subagent.
 pub const EXPLORE_SUBAGENT: BuiltinSubagent = BuiltinSubagent {
     name: "explore",
     description: "Fast, read-only agent specialized for codebase exploration.",
@@ -792,7 +750,6 @@ pub const EXPLORE_SUBAGENT: BuiltinSubagent = BuiltinSubagent {
     prompt_template: EXPLORE_PROMPT,
 };
 
-/// The **plan** built-in subagent.
 pub const PLAN_SUBAGENT: BuiltinSubagent = BuiltinSubagent {
     name: "plan",
     description: "Software architect for planning implementation strategies.",
@@ -817,18 +774,11 @@ pub fn builtin_subagent_by_name(name: &str) -> Option<&'static BuiltinSubagent> 
 /// rendering the shared `task` tool description.
 #[derive(Clone, Copy, Debug)]
 pub struct TaskToolNaming<'a> {
-    /// Name of the spawn tool (canonical: `task`).
     pub task_tool: &'a str,
-    /// Name of the `subagent_type` parameter.
     pub subagent_type_param: &'a str,
-    /// Name of the `run_in_background` parameter.
     pub run_in_background_param: &'a str,
-    /// Name of the `resume_from` parameter.
     pub resume_from_param: &'a str,
-    /// Name of the task result retrieval tool.
     pub background_retrieval_tool: &'a str,
-    /// Name of the `isolation` parameter, used in the isolation/worktree
-    /// paragraph.
     pub isolation_param: &'a str,
 }
 
@@ -888,7 +838,6 @@ fn lifecycle_target_suffix(monitor_present: bool, subagent_present: bool) -> &'s
     }
 }
 
-/// Optional "(a monitor's task_id is returned by {monitor})" clause.
 fn monitor_task_id_note(monitor_tool: Option<&str>) -> String {
     match monitor_tool {
         Some(m) => format!(" (a monitor's task_id is returned by {m})"),
@@ -909,7 +858,6 @@ pub struct KillTaskToolNaming<'a> {
     pub is_windows: bool,
 }
 
-/// Build the shared `kill_task` tool description.
 pub fn build_kill_task_description(naming: &KillTaskToolNaming) -> String {
     let KillTaskToolNaming {
         monitor_tool,
@@ -966,7 +914,6 @@ pub struct TaskOutputToolNaming<'a> {
     pub subagent_background_param: Option<&'a str>,
 }
 
-/// Build the shared `get_task_output` tool description.
 pub fn build_task_output_description(naming: &TaskOutputToolNaming) -> String {
     let TaskOutputToolNaming {
         monitor_tool,
@@ -1014,7 +961,6 @@ pub struct WaitTasksToolNaming<'a> {
     pub subagent_background_param: Option<&'a str>,
 }
 
-/// Build the shared `wait_tasks` tool description.
 pub fn build_wait_tasks_description(naming: &WaitTasksToolNaming) -> String {
     let WaitTasksToolNaming {
         background_retrieval_tool,
@@ -1174,7 +1120,6 @@ mod tests {
         assert!(
             desc.contains("- **general-purpose**: General-purpose agent. Has access to all tools.")
         );
-        // User-defined entries (tools = None) get no trailing fragment.
         assert!(desc.contains("- **code-reviewer**: Reviews code."));
         assert!(desc.contains("## Usage notes"));
         assert!(desc.contains(
@@ -1317,7 +1262,6 @@ mod tests {
 
     #[test]
     fn render_tools_substitutes_naming_with_bare_kind_fallback() {
-        // Bare-kind naming reproduces the placeholder kinds verbatim.
         assert_eq!(
             GENERAL_PURPOSE_SUBAGENT.render_tools(&plain_tool_naming()),
             "Has access to all tools: execute, read, edit, list, search, web_search, and plan."
@@ -1328,7 +1272,6 @@ mod tests {
              read, list, search, web_search, and plan."
         );
 
-        // Real tool names are substituted per kind.
         let naming = SubagentToolNaming {
             execute: "run_terminal_cmd",
             read: "read_file",
@@ -1372,12 +1315,8 @@ mod tests {
         assert!(desc.contains("Use ${{ params.task.isolation }} to control"));
     }
 
-    // ── Lifecycle tool descriptions ──────────────────────────────────────
-    //
-    // These lock the exact model-facing text. The "cli_default" cases must
-    // match what the kigi-shell MiniJinja templates render for the default
-    // kigi toolset (monitor + task + bash + read present, POSIX). The
-    // "toolbox" cases lock the subagent-only rendering used by the backend toolbox.
+    // Lifecycle tool descriptions — lock model-facing text against kigi-shell
+    // MiniJinja defaults (cli_default) and backend toolbox (subagent-only).
 
     #[test]
     fn kill_task_matches_cli_default_posix() {

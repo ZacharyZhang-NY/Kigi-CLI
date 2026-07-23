@@ -1,4 +1,4 @@
-//! `From<ToolError> for ToolErrorWire` coverage for the struct-based ToolError.
+//! `From<ToolError> for ToolErrorWire` coverage.
 
 use serde_json::json;
 

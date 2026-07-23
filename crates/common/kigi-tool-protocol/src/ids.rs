@@ -11,7 +11,6 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-/// Errors produced by id constructors and validators.
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum IdError {
     #[error("identifier must not be empty")]
@@ -56,7 +55,6 @@ macro_rules! opaque_id {
         pub struct $name(String);
 
         impl $name {
-            /// Construct, validating the id's invariants.
             pub fn new(value: impl Into<String>) -> Result<Self, IdError> {
                 let value = value.into();
                 ensure_non_empty(&value)?;
@@ -132,7 +130,6 @@ opaque_id!(
 );
 
 impl ToolCallId {
-    /// Generate a fresh UUID v7-backed `ToolCallId`.
     pub fn new_v7() -> Self {
         Self(uuid::Uuid::now_v7().to_string())
     }
@@ -209,9 +206,6 @@ opaque_id!(
 
 /// Per-connection monotonic notification sequence (starts at 0 on every new
 /// connection).
-///
-/// The inner `u64` is private so `new`, `From<u64>`, and `Default` are the
-/// only construction paths.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default, Serialize, Deserialize,
 )]

@@ -69,9 +69,7 @@ pub(crate) struct DefaultModeEffects {
     pub(crate) bypass_permissions: bool,
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // Error Type
-// ═════════════════════════════════════════════════════════════════════════════
 
 /// Errors from parsing a permission rule string.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,9 +100,7 @@ impl std::fmt::Display for RuleParseError {
 
 impl std::error::Error for RuleParseError {}
 
-// ═════════════════════════════════════════════════════════════════════════════
 // Rule Parser
-// ═════════════════════════════════════════════════════════════════════════════
 
 /// Parse a permission rule string into a native `PermissionRule`.
 ///

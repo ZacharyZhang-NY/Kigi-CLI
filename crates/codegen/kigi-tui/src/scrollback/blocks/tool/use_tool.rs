@@ -23,7 +23,6 @@ pub struct UseToolCallBlock {
     pub input_args: Vec<(String, String)>,
     /// Output text from the dispatched tool.
     pub output: Option<String>,
-    /// Error message if the tool call failed.
     pub error: Option<String>,
     /// When the tool started running.
     pub started_at: Option<std::time::Instant>,

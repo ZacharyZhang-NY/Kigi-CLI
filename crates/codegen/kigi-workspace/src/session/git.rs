@@ -940,7 +940,7 @@ fn change_type_from_porcelain(ch: char, staged: bool) -> ChangeType {
 }
 /// Parse `git diff --numstat` output into a map of path → (additions, deletions).
 ///
-/// We intentionally omit `-M` from our `git diff --numstat` invocations, so rename
+/// We deliberately omit `-M` from our `git diff --numstat` invocations, so rename
 /// entries won't appear in practice. The format is simply `ADDS\tDELS\tPATH`
 /// (or `-\t-\tPATH` for binary files).
 fn parse_numstat(output: &str) -> HashMap<String, (u64, u64)> {

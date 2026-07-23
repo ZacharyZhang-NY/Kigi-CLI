@@ -26,8 +26,8 @@
 //!
 //! 429 handling honors the standard `Retry-After` response header when
 //! present (delta-seconds; see `client::extract_retry_after`), matching
-//! the Kimi/Moonshot API. The old xAI proxy's `x-should-retry` hint
-//! header was removed with the proxy.
+//! the Kimi/Moonshot API. Unlike the old xAI proxy, it sends no
+//! `x-should-retry` hint header.
 
 use std::time::Duration;
 

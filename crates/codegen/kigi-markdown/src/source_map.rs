@@ -105,37 +105,6 @@ impl SourceMap {
     }
 }
 
-// ## Restoring Byte-Level Source Maps (if ever needed)
+// Ratatui path tracks line-level mapping only (`line_source_map`) for
+// copy/selection. Byte-level `SourceMap` is unused here (~6% faster).
 //
-// The ratatui rendering path currently only tracks line-level source mapping
-// (`line_source_map`), which is sufficient for copy/selection operations.
-// Byte-level `SourceMap` was removed for simplicity and ~6% speedup.
-//
-// To restore byte-level source maps:
-//
-// 1. Add field to MarkdownRenderOutput and MarkdownRenderView:
-//    ```
-//    pub source_map: SourceMap,
-//    ```
-//
-// 2. In render_ratatui(), add tracking variables:
-//    ```
-//    let mut source_map = SourceMap::new();
-//    let mut rendered_offset: usize = 0;
-//    ```
-//
-// 3. For each text segment emitted, record the mapping:
-//    ```
-//    source_map.add(rendered_offset, source_start..source_end);
-//    rendered_offset += emitted_text.len();
-//    ```
-//
-// 4. In streaming.rs, update FrozenState to track:
-//    ```
-//    source_map_len: usize,
-//    rendered_bytes: usize,
-//    ```
-//
-// 5. Use SourceMap::extend_with_offsets() to merge tail source maps.
-//
-// See git history for the removed implementation.

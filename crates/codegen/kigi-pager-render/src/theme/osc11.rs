@@ -217,7 +217,7 @@ fn ends_with_osc_terminator(buf: &[u8]) -> bool {
 mod tests {
     use super::*;
 
-    // -- ends_with_osc_terminator ---------------------------------------------
+    // ends_with_osc_terminator
 
     #[test]
     fn unterminated_reply_is_rejected() {
@@ -230,7 +230,7 @@ mod tests {
         assert!(!ends_with_osc_terminator(b""));
     }
 
-    // -- parse_osc11_rgb -----------------------------------------------------
+    // parse_osc11_rgb
 
     #[test]
     fn parse_4digit_white() {
@@ -310,7 +310,7 @@ mod tests {
         assert_eq!(parse_osc11_rgb(response), Some((15, 15, 15)));
     }
 
-    // -- parse_channel -------------------------------------------------------
+    // parse_channel
 
     #[test]
     fn channel_4digit_max() {
@@ -337,7 +337,7 @@ mod tests {
         assert_eq!(parse_channel(" ff "), Some(255));
     }
 
-    // -- classify_luminance --------------------------------------------------
+    // classify_luminance
 
     #[test]
     fn classify_pure_black_is_dark() {
@@ -387,7 +387,7 @@ mod tests {
         );
     }
 
-    // -- srgb_to_linear ------------------------------------------------------
+    // srgb_to_linear
 
     #[test]
     fn srgb_to_linear_zero() {
@@ -416,7 +416,7 @@ mod tests {
         assert!((result - expected).abs() < 1e-10);
     }
 
-    // -- detect_via_osc11 (graceful degradation) -----------------------------
+    // detect_via_osc11 (graceful degradation)
 
     #[test]
     fn detect_returns_none_when_not_tty() {

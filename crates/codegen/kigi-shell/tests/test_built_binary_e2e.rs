@@ -41,7 +41,6 @@ where
     tokio::task::LocalSet::new().run_until(f()).await;
 }
 
-/// Start a mock server with one model named `model` on the given API backend.
 async fn single_model_server(model: &str, backend: &str) -> MockInferenceServer {
     MockInferenceServer::start_with_models(vec![
         MockModelEntry::new(model).with_api_backend(backend),
@@ -124,14 +123,10 @@ async fn run_headless_with_env(
     run_headless_with_cmd(cmd).await
 }
 
-// ============================================================================
-// Smoke tests
-// ============================================================================
-
 /// Smoke test: the binary loads and exits without crashing.
 /// This does NOT require the mock server — it's the absolute minimum bar.
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_version_exits_zero() {
     let binary = kigi_binary();
     let output = Command::new(&binary)
@@ -151,7 +146,7 @@ async fn test_version_exits_zero() {
 /// Exercises install() (sigaction, sigaltstack, mmap, ucontext struct layouts)
 /// on every platform the binary is built for.
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_version_with_crash_handler_exits_zero() {
     let binary = kigi_binary();
     let output = Command::new(&binary)
@@ -175,7 +170,7 @@ async fn test_version_with_crash_handler_exits_zero() {
 /// This catches the recurring libgit2/OpenSSL dynamic linking bug that has
 /// caused ~5 broken releases.
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_headless_session_in_git_repo() {
     let server = MockInferenceServer::start()
         .await
@@ -200,7 +195,7 @@ async fn test_headless_session_in_git_repo() {
 /// Verify kigi works in a non-git directory (exercises the fallback codepath
 /// where libgit2 discovers there's no repo instead of initializing one).
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_headless_session_in_non_git_dir() {
     let server = MockInferenceServer::start()
         .await
@@ -215,7 +210,7 @@ async fn test_headless_session_in_non_git_dir() {
 }
 
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_headless_tools_allowlist_keeps_enabled_web_tools() {
     let server = kigi_server().await;
     server.preset_allow_access();
@@ -273,7 +268,7 @@ async fn test_headless_tools_allowlist_keeps_enabled_web_tools() {
 }
 
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_headless_tools_allowlist_does_not_fail_open_for_disabled_web_fetch() {
     let server = kigi_server().await;
     server.set_settings(serde_json::json!({
@@ -313,7 +308,7 @@ async fn test_headless_tools_allowlist_does_not_fail_open_for_disabled_web_fetch
 }
 
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_headless_terminal_only_allowlist_is_foreground_only() {
     let server = kigi_server().await;
     let workdir = git_workdir();
@@ -351,7 +346,7 @@ async fn test_headless_terminal_only_allowlist_is_foreground_only() {
 /// code reaches the pager embedded in the flattened error text (no
 /// structured plumbing), so this exercises the whole detection path.
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_headless_free_usage_exhausted_prints_paywall_message() {
     let server = MockInferenceServer::start()
         .await
@@ -400,7 +395,7 @@ async fn test_headless_free_usage_exhausted_prints_paywall_message() {
 /// Verify the streaming JSON output format works end-to-end.
 /// This is the format used by programmatic integrations (`--output-format streaming-json`).
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_headless_streaming_json_output() {
     let server = MockInferenceServer::start()
         .await
@@ -464,7 +459,7 @@ async fn test_headless_streaming_json_output() {
 }
 
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_headless_json_reports_server_cost() {
     use kigi_test_support::scripted::SseEvent;
 
@@ -526,7 +521,7 @@ async fn test_headless_json_reports_server_cost() {
 }
 
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_headless_json_reports_usage_on_max_turns() {
     let server = single_model_server("kigi-4.5", "chat_completions").await;
     server.enqueue_response(
@@ -567,7 +562,7 @@ async fn test_headless_json_reports_usage_on_max_turns() {
 }
 
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_headless_streaming_json_usage() {
     let server = single_model_server("kigi-4.5", "chat_completions").await;
     let workdir = git_workdir();
@@ -602,7 +597,7 @@ async fn test_headless_streaming_json_usage() {
 /// `response_format`, and the model's final JSON answer surfaces as
 /// `structuredOutput`. The StructuredOutput tool is NOT used.
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn headless_json_schema_chat_completions_uses_response_format() {
     let server = single_model_server("kigi-4.5", "chat_completions").await;
     server.set_response(r#"{"name":"Alice","age":30}"#);
@@ -661,7 +656,7 @@ async fn headless_json_schema_chat_completions_uses_response_format() {
 /// Responses backend: native schema rides `text.format` (not the tool), and the
 /// final JSON answer surfaces as `structuredOutput`.
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn headless_json_schema_responses_uses_text_format() {
     let server = single_model_server("kigi-4.5", "responses").await;
     server.set_response(r#"{"name":"Alice","age":30}"#);
@@ -714,7 +709,7 @@ async fn headless_json_schema_responses_uses_text_format() {
 /// Verifies the tool reaches the wire and its validated args surface as
 /// `structuredOutput`.
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn headless_json_schema_messages_backend_uses_structured_output_tool() {
     let server = single_model_server("messages-compatible-model", "messages").await;
     server.enqueue_response(
@@ -756,7 +751,6 @@ async fn headless_json_schema_messages_backend_uses_structured_output_tool() {
     );
 }
 
-/// Whether any request advertised a tool named `StructuredOutput` in `tools[]`.
 fn any_request_advertises_structured_output_tool(server: &MockInferenceServer) -> bool {
     server.requests().iter().any(|r| {
         r.body.as_ref().is_some_and(|body| {
@@ -799,7 +793,7 @@ const NAME_AGE_SCHEMA: &str = r#"{"type":"object","properties":{"name":{"type":"
 /// prose: the turn-end fallback still validates the text against the schema and
 /// surfaces `structuredOutput` (closes the "unvalidated fallback" gap).
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn headless_json_schema_messages_validates_text_when_tool_not_called() {
     let server = single_model_server("messages-compatible-model", "messages").await;
     server.set_response(r#"{"name":"Cara","age":7}"#);
@@ -839,7 +833,7 @@ async fn headless_json_schema_messages_validates_text_when_tool_not_called() {
 /// the agent feeds the error back and the model's retry conforms. Exercises the
 /// validation + bounded-retry path.
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn headless_json_schema_messages_retries_on_schema_violation() {
     let server = single_model_server("messages-compatible-model", "messages").await;
     server.enqueue_response(
@@ -885,7 +879,7 @@ async fn headless_json_schema_messages_retries_on_schema_violation() {
 /// An invalid `--json-schema` (valid JSON object, but fails schema compilation)
 /// disables both structured-output paths and surfaces the compile error.
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn invalid_json_schema_disables_structured_output_and_surfaces_error() {
     let server = single_model_server("kigi-4.5", "chat_completions").await;
     server.set_response(r#"{"name":"Alice","age":30}"#);
@@ -949,25 +943,22 @@ async fn invalid_json_schema_disables_structured_output_and_surfaces_error() {
     );
 }
 
-// ============================================================================
 // ACP stdio tests (kigi agent stdio)
 //
 // These test the agent as a server: spawn `kigi agent stdio`, speak the full
 // ACP protocol over pipes, verify the lifecycle works end-to-end.
-// ============================================================================
 
 /// Full ACP lifecycle: initialize → authenticate → create session → prompt.
 /// Verifies the agent boots, authenticates with a test API key, creates a
 /// session (libgit2 init), and completes a prompt round-trip to the mock server.
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_stdio_full_session_lifecycle() {
     with_local_set(|| async {
         let server = MockInferenceServer::start().await.expect("start mock server");
         let workdir = git_workdir();
         let client = KigiStdioClient::spawn(&server, workdir.path()).await;
 
-        // Initialize and authenticate
         let init_resp = client.initialize_with_timeout().await;
         assert!(
             !init_resp.auth_methods.is_empty(),
@@ -990,7 +981,6 @@ async fn test_stdio_full_session_lifecycle() {
             stderr_tail(&client.stderr(), 1200)
         );
 
-        // Verify the mock server received at least one inference request
         assert!(
             server.request_count() > 0,
             "mock server received no inference requests\nrequest log:\n{}\nstderr:\n{}",
@@ -1005,7 +995,7 @@ async fn test_stdio_full_session_lifecycle() {
 /// Creates a session, closes it via ext_method, then verifies session/info
 /// returns an empty response (session no longer exists).
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_stdio_session_close() {
     with_local_set(|| async {
         let server = MockInferenceServer::start()
@@ -1017,7 +1007,6 @@ async fn test_stdio_session_close() {
         client.initialize_with_timeout().await;
         let session_id = client.create_session_with_timeout(workdir.path()).await;
 
-        // Session should be alive — session/info returns data with sessionId
         let info_resp = client
             .ext_method(
                 "kigi/session/info",
@@ -1036,7 +1025,6 @@ async fn test_stdio_session_close() {
             "session/info should return the session we created, got: {info}"
         );
 
-        // Close the session
         let close_resp = client
             .ext_method(
                 "kigi/session/close",
@@ -1050,7 +1038,6 @@ async fn test_stdio_session_close() {
             stderr_tail(&client.stderr(), 1200)
         );
 
-        // Session should be gone — session/info returns empty result (no sessionId)
         let info_after = client
             .ext_method(
                 "kigi/session/info",
@@ -1069,7 +1056,7 @@ async fn test_stdio_session_close() {
 }
 
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_stdio_prompt_then_immediate_load_session() {
     with_local_set(|| async {
         let server = MockInferenceServer::start().await.expect("start mock server");
@@ -1115,7 +1102,7 @@ async fn test_stdio_prompt_then_immediate_load_session() {
     .await;
 }
 
-// ── Raw-wire stdio driving (Xcode / Foundation shape) ───────────────────────
+// Raw-wire stdio driving (Xcode / Foundation shape)
 
 /// Serialize `req` compactly, then rewrite its method to the Foundation-escaped
 /// form (`"session/new"` → `"session\/new"`) by string surgery, asserting the
@@ -1146,7 +1133,7 @@ fn line_with_escaped_method(req: &serde_json::Value, method: &str) -> String {
 /// request hung forever. Drives the built binary with the raw wire bytes and
 /// asserts every escaped-method request gets a response.
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_stdio_xcode_escaped_slash_methods_get_responses() {
     let server = MockInferenceServer::start()
         .await
@@ -1249,7 +1236,7 @@ async fn test_stdio_xcode_escaped_slash_methods_get_responses() {
     );
 }
 
-// ── Config test harness ─────────────────────────────────────────────────────
+// Config test harness
 
 /// Isolated headless run with a custom `~/.kigi/`. Clean env (no leaked
 /// host credentials). Write config files into `kigi_dir()` before `run()`.
@@ -1308,13 +1295,13 @@ impl ConfigTestHarness {
     }
 }
 
-// ── Enterprise managed config tests ────────────────────────────────────────
+// Enterprise managed config tests
 
 /// Enterprise BYOK: managed_config.toml overrides kigi with a custom
 /// endpoint + env_key. Mock rejects unauthenticated requests with 401.
 /// Regression guard for the 0.1.220 authentication regression.
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_headless_managed_config_byok_sends_authorized_requests() {
     let server = MockInferenceServer::start_with_required_auth(
         vec![MockModelEntry::new("kigi-4.5")],
@@ -1366,7 +1353,7 @@ default = "kigi-4.5"
 /// path the wire effort comes from the legacy scalar, not from the list; the
 /// list→default derivation is unit-tested in `acp_model_meta_*`.
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn headless_reasoning_efforts_payload_parses_and_legacy_effort_rides_wire() {
     let server = MockInferenceServer::start_with_models(vec![
         MockModelEntry::new("kigi-4.5")
@@ -1416,9 +1403,7 @@ async fn headless_reasoning_efforts_payload_parses_and_legacy_effort_rides_wire(
     );
 }
 
-// ============================================================================
 // Background-task reaping at headless exit
-// ============================================================================
 
 #[cfg(unix)]
 use kigi_test_support::sse::{
@@ -1505,7 +1490,7 @@ fn enqueue_background_task_turn(server: &MockInferenceServer, pid_file: &std::pa
 /// orphaning it.
 #[cfg(unix)]
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_headless_timeout_exit_kills_pending_background_task() {
     let server = MockInferenceServer::start()
         .await
@@ -1546,7 +1531,7 @@ async fn test_headless_timeout_exit_kills_pending_background_task() {
 /// task — tracked despite the flag — must still be killed, not leaked.
 #[cfg(unix)]
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_headless_no_wait_exit_kills_background_task() {
     let server = MockInferenceServer::start()
         .await
@@ -1583,7 +1568,7 @@ async fn test_headless_no_wait_exit_kills_background_task() {
 /// nothing reaped.
 #[cfg(unix)]
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_headless_waits_for_short_background_task_and_exits_clean() {
     let server = MockInferenceServer::start()
         .await

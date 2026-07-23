@@ -11,27 +11,22 @@ use crate::scrollback::types::{
 };
 use crate::theme::Theme;
 
-/// Max lines of content shown inline before truncation.
 const MAX_INLINE_LINES: usize = 10;
 
 /// Web fetch tool call — fetching a URL and returning markdown content.
 #[derive(Debug, Clone)]
 pub struct WebFetchToolCallBlock {
-    /// The fetched URL.
     pub url: String,
-    /// HTTP status code (e.g. 200, 404).
     /// `Option` because the block exists pre-completion (pending/running state)
     /// before any response data arrives.
     pub status_code: Option<u16>,
     /// Content type (e.g. "markdown", "text/plain").
     pub content_type: Option<String>,
-    /// Content size in bytes.
     pub bytes: Option<usize>,
     /// Error message if the tool call failed (None = success).
     pub error: Option<String>,
     /// Fetched content (markdown or raw text).
     pub output: Option<String>,
-    /// When the tool started running.
     pub started_at: Option<std::time::Instant>,
     /// Elapsed time in ms after completion.
     pub elapsed_ms: Option<i64>,
@@ -232,7 +227,6 @@ impl BlockContent for WebFetchToolCallBlock {
                     })
                     .collect();
 
-                // Metadata line (status, content_type, size).
                 if let Some(meta) = self.metadata_line(&theme) {
                     lines.push(BlockLine::separator(Line::from("")));
                     lines.push(BlockLine::separator(meta));

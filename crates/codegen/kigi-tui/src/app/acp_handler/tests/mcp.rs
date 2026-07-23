@@ -3,9 +3,6 @@
 
     #[test]
     fn mcp_init_progress_updates_seeded_progress_in_place() {
-        // When a session is seeded with mcp_init_progress{0,0}, a
-        // subsequent init_progress notification must update total and
-        // connected IN PLACE — preserving started_at for timer accuracy.
         let mut app = make_app_with_agent("sess-1");
         let agent = app.agents.get_mut(&AgentId(0)).unwrap();
         agent.mcp_init_progress = Some(crate::app::agent_view::McpInitProgress {
@@ -66,7 +63,6 @@
             "owner is background — mutation must not request a redraw"
         );
 
-        // Owner mutated.
         let owner_modal = app
             .agents
             .get(&AgentId(0))
@@ -81,7 +77,6 @@
         assert_eq!(owner_servers[0].tool_count, 2);
         assert_eq!(owner_servers[0].tools.len(), 2);
 
-        // Active agent's modal must be untouched.
         let active_modal = app
             .agents
             .get(&AgentId(1))
@@ -101,8 +96,6 @@
 
     #[test]
     fn mcp_init_progress_creates_when_none() {
-        // When mcp_init_progress is None (no seed), init_progress
-        // creates a fresh McpInitProgress.
         let mut app = make_app_with_agent("sess-1");
         assert!(app.agents[&AgentId(0)].mcp_init_progress.is_none());
 
@@ -117,7 +110,6 @@
 
     #[test]
     fn mcp_initialized_clears_progress() {
-        // kigi/mcp_initialized must set mcp_init_progress to None.
         let mut app = make_app_with_agent("sess-1");
         let agent = app.agents.get_mut(&AgentId(0)).unwrap();
         agent.mcp_init_progress = Some(crate::app::agent_view::McpInitProgress {
@@ -137,9 +129,6 @@
 
     #[test]
     fn mcp_full_lifecycle_seed_to_clear() {
-        // Full N-server lifecycle:
-        //   seed(0/0) → init_progress(0/3) → init_progress(2/3)
-        //   → init_progress(3/3) → mcp_initialized → None
         let mut app = make_app_with_agent("sess-1");
         let agent = app.agents.get_mut(&AgentId(0)).unwrap();
         agent.mcp_init_progress = Some(crate::app::agent_view::McpInitProgress {
@@ -148,22 +137,18 @@
             started_at: Instant::now(),
         });
 
-        // Shell reports real count.
         handle_ext_notification(&make_mcp_init_progress_notif(3, 0), &mut app);
         let p = app.agents[&AgentId(0)].mcp_init_progress.as_ref().unwrap();
         assert_eq!((p.total, p.connected), (3, 0));
 
-        // Incremental progress.
         handle_ext_notification(&make_mcp_init_progress_notif(3, 2), &mut app);
         let p = app.agents[&AgentId(0)].mcp_init_progress.as_ref().unwrap();
         assert_eq!((p.total, p.connected), (3, 2));
 
-        // All connected.
         handle_ext_notification(&make_mcp_init_progress_notif(3, 3), &mut app);
         let p = app.agents[&AgentId(0)].mcp_init_progress.as_ref().unwrap();
         assert_eq!((p.total, p.connected), (3, 3));
 
-        // mcp_initialized clears everything.
         handle_ext_notification(&make_mcp_initialized_notif("sess-1"), &mut app);
         assert!(
             app.agents[&AgentId(0)].mcp_init_progress.is_none(),
@@ -173,10 +158,10 @@
 
     #[test]
     fn mcp_zero_server_lifecycle() {
-        // 0-server lifecycle (the bug scenario):
+        // 0-server bug scenario: for 0 servers the shell must still emit
+        // mcp_initialized; without that terminal event the progress
+        // indicator sticks forever.
         //   seed(0/0) → init_progress(0/0) → mcp_initialized → None
-        // Previously mcp_initialized was never sent for 0 servers,
-        // leaving a stuck progress indicator.
         let mut app = make_app_with_agent("sess-1");
         let agent = app.agents.get_mut(&AgentId(0)).unwrap();
         agent.mcp_init_progress = Some(crate::app::agent_view::McpInitProgress {
@@ -185,12 +170,10 @@
             started_at: Instant::now(),
         });
 
-        // Shell sends 0/0 for the 0-server case.
         handle_ext_notification(&make_mcp_init_progress_notif(0, 0), &mut app);
         let p = app.agents[&AgentId(0)].mcp_init_progress.as_ref().unwrap();
         assert_eq!((p.total, p.connected), (0, 0));
 
-        // Shell now sends mcp_initialized (root-cause fix).
         handle_ext_notification(&make_mcp_initialized_notif("sess-1"), &mut app);
         assert!(
             app.agents[&AgentId(0)].mcp_init_progress.is_none(),
@@ -200,9 +183,6 @@
 
     #[test]
     fn mcp_init_progress_routes_to_background_session() {
-        // init_progress carrying a background session's sessionId must update
-        // *that* agent's indicator, not the foregrounded one, and must not
-        // force a redraw (the background spinner isn't visible).
         let mut app = make_app_with_agent("sess-A");
         app.agents.insert(AgentId(1), make_agent(Some("sess-B")));
 
@@ -223,10 +203,9 @@
 
     #[test]
     fn mcp_initialized_routes_to_background_session() {
-        // mcp_initialized for a background session must clear *that* agent's
-        // indicator while leaving the foreground agent's intact. Previously
-        // the clear was applied to whichever agent was active, so a
-        // background agent's spinner could stick forever.
+        // mcp_initialized must clear the indicator of the agent named by
+        // sessionId, not whichever agent is active — else a background
+        // agent's spinner sticks forever.
         let mut app = make_app_with_agent("sess-A");
         app.agents.insert(AgentId(1), make_agent(Some("sess-B")));
         for id in [AgentId(0), AgentId(1)] {
@@ -256,8 +235,6 @@
 
     #[test]
     fn mcp_initialized_unknown_session_is_dropped() {
-        // An mcp_initialized for a session that matches no agent must not
-        // clear anyone's indicator (no misrouting to the active agent).
         let mut app = make_app_with_agent("sess-A");
         app.agents.get_mut(&AgentId(0)).unwrap().mcp_init_progress =
             Some(crate::app::agent_view::McpInitProgress {
@@ -289,7 +266,6 @@
                 connected: 1,
                 started_at: Instant::now(),
             });
-        // Register a subagent child view keyed by the child session id.
         app.agents
             .get_mut(&AgentId(0))
             .unwrap()
@@ -299,7 +275,6 @@
                 Box::new(make_agent(Some("child-sess"))),
             );
 
-        // init_progress for the child session must leave the parent untouched.
         let changed = handle_ext_notification(
             &make_mcp_init_progress_notif_for(5, 0, "child-sess"),
             &mut app,
@@ -315,7 +290,6 @@
             "parent spinner must be untouched by a subagent's init",
         );
 
-        // mcp_initialized for the child session must not clear the parent.
         let changed =
             handle_ext_notification(&make_mcp_initialized_notif_for("child-sess"), &mut app);
         assert!(!changed);
@@ -329,8 +303,6 @@
     fn server_status_handler_noop_when_modal_closed_background() {
         use kigi_shell::extensions::mcp::McpServerStatus;
         let mut app = make_app_two_agents();
-        // Owner is background and has NO modal open. server_status
-        // must be a silent no-op (no Effect scheduling, no redraw).
         let notif = make_server_status_notif("sess-owner", "alpha", McpServerStatus::Ready, None);
         let redraw = handle_mcp_server_status(&notif, &mut app);
         assert!(!redraw, "closed-modal cheap path must not request a redraw");
@@ -355,8 +327,6 @@
     fn server_status_handler_noop_when_modal_closed_foreground() {
         use kigi_shell::extensions::mcp::McpServerStatus;
         let mut app = make_app_two_agents();
-        // Foreground = agent 1 (sess-active). Send a push targeting
-        // the foregrounded agent, no modal open.
         let notif = make_server_status_notif("sess-active", "alpha", McpServerStatus::Ready, None);
         let redraw = handle_mcp_server_status(&notif, &mut app);
         assert!(
@@ -504,7 +474,6 @@
     #[test]
     fn servers_updated_broadcasts_to_every_agent_with_open_modal() {
         let mut app = make_app_two_agents();
-        // Open modals on BOTH agents — broadcast must hit both.
         seed_owner_agent_with_open_modal(&mut app);
         {
             let active = app.agents.get_mut(&AgentId(1)).unwrap();
@@ -552,13 +521,9 @@
         assert_eq!(targets, vec![0, 1]);
     }
 
-    /// Agents without an open modal must NOT receive a refetch (cheap
-    /// path) even though they are eligible to receive the broadcast in
-    /// principle.
     #[test]
     fn servers_updated_skips_agents_with_closed_modal() {
         let mut app = make_app_two_agents();
-        // Only agent 1 (foregrounded) has a modal.
         {
             let active = app.agents.get_mut(&AgentId(1)).unwrap();
             active.extensions_modal = Some(make_mcps_modal_with_servers(Vec::new()));
@@ -623,9 +588,6 @@
     fn mcp_initialized_clears_init_progress_on_owner() {
         use crate::app::agent_view::McpInitProgress;
         let mut app = make_app_two_agents();
-        // Seed init progress on the OWNER (agent 0) and on the
-        // active view (agent 1). The push must clear only the
-        // owner's overlay.
         {
             let owner = app.agents.get_mut(&AgentId(0)).unwrap();
             owner.mcp_init_progress = Some(McpInitProgress {
@@ -698,7 +660,6 @@
     #[test]
     fn tools_changed_pre_h2_falls_back_to_active_view() {
         let mut app = make_app_two_agents();
-        // Active agent (agent 1) gets a modal; owner (agent 0) does not.
         {
             let active = app.agents.get_mut(&AgentId(1)).unwrap();
             active.extensions_modal = Some(make_mcps_modal_with_servers(Vec::new()));

@@ -3,7 +3,6 @@ use kigi_tools::computer::types::{AsyncFileSystem, TerminalBackend};
 use kigi_tools::notification::ToolNotificationHandle;
 use kigi_tools::registry::types::{SessionContext, ToolConfig, ToolServerConfig};
 
-/// A ToolBridge built with a custom FileSystem must route writes through it.
 #[tokio::test]
 async fn tool_bridge_routes_writes_through_injected_fs() {
     let cwd = std::path::PathBuf::from("/tmp/fs-injection-test-nonexistent");
@@ -85,7 +84,6 @@ async fn tool_bridge_routes_writes_through_injected_fs() {
         result.err()
     );
 
-    // The write must have landed in MockFs, not on real disk.
     let written = mock_fs
         .get_file(&file_path)
         .await

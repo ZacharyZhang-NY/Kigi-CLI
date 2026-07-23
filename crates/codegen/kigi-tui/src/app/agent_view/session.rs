@@ -53,9 +53,6 @@ impl AgentView {
             .iter()
             .any(|p| p == prompt_id)
     }
-    /// Create a new agent view with default UI state.
-    ///
-    /// The prompt widget is initialized with the session's working directory.
     pub fn new(session: AgentSession, scrollback: ScrollbackState) -> Self {
         let prompt = PromptWidget::new_with_cwd(&session.cwd);
         let mut view = Self {
@@ -537,8 +534,8 @@ impl AgentView {
     }
     /// Effective turn elapsed time, excluding time spent in question views.
     ///
-    /// Subtracts both the accumulated `turn_paused_duration` (from previously
-    /// closed question views) and the time elapsed since the current question
+    /// Subtracts both the accumulated `turn_paused_duration` (from question
+    /// views closed earlier in the turn) and the time elapsed since the current question
     /// view opened (if one is active).
     pub fn turn_elapsed(&self) -> Option<std::time::Duration> {
         let raw = self.turn_started_at?.elapsed();
@@ -863,8 +860,6 @@ mod resolve_turn_activity_tests {
             Some(TurnActivity::AutoCompacting)
         );
     }
-    /// When waiting on task output, the spinner subject is the bg task's
-    /// description (preferred over the raw command).
     #[test]
     fn task_output_wait_uses_bg_task_description() {
         use crate::acp::meta::NotificationMeta;
@@ -937,7 +932,6 @@ mod resolve_turn_activity_tests {
         };
         assert_eq!(reason.label(), "run release tests…");
     }
-    /// Without a description, a short command is used as the subject.
     #[test]
     fn task_output_wait_falls_back_to_short_command() {
         use crate::acp::meta::NotificationMeta;
@@ -991,7 +985,6 @@ mod resolve_turn_activity_tests {
         };
         assert_eq!(reason.label(), "sleep 30…");
     }
-    /// Multi-id waits use full task_ids.len() for "+ N more", not just resolved count.
     #[test]
     fn task_output_wait_multi_id_uses_full_task_count() {
         use crate::acp::meta::NotificationMeta;
@@ -1053,7 +1046,6 @@ mod resolve_turn_activity_tests {
             "N more is based on full task_ids length, not resolved count"
         );
     }
-    /// Long first subjects still keep the multi-task suffix after clamping.
     #[test]
     fn task_output_wait_multi_id_preserves_suffix_when_first_is_long() {
         use crate::acp::meta::NotificationMeta;
@@ -1198,7 +1190,6 @@ mod resolve_turn_activity_tests {
         };
         assert_eq!(reason.label(), "explore the auth module…");
     }
-    /// Long bare commands are not used as subjects — keep the original label.
     #[test]
     fn task_output_wait_long_command_keeps_generic_label() {
         use crate::acp::meta::NotificationMeta;

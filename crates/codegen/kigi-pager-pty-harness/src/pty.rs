@@ -37,7 +37,8 @@ pub struct PtyController {
     child: Box<dyn portable_pty::Child + Send>,
     writer: Box<dyn Write + Send>,
     reader_rx: mpsc::Receiver<Vec<u8>>,
-    #[allow(dead_code)] // Kept alive to hold the PTY open; used by resize().
+    // Kept alive to hold the PTY open; used by resize().
+    #[allow(dead_code)]
     master: Box<dyn portable_pty::MasterPty + Send>,
 }
 

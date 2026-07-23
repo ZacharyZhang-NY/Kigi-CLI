@@ -2,7 +2,7 @@
 //!
 //! Port of common agent auto-permission classifier semantics adapted to Kigi's
 //! `AccessKind` permission gate (classifier blocks prompt the user; upstream
-//! denial-limit tracking is intentionally not ported).
+//! denial-limit tracking is deliberately not ported).
 
 use std::future::Future;
 use std::pin::Pin;
@@ -115,7 +115,7 @@ impl ClassifierContext {
     /// Flat transcript text feeding the heuristic substring pre-check. Renders all
     /// turns including assistant tool_use args (`{tool} {args}`), so the
     /// dangerous-pattern / hostile-intent blob now also scans tool-call args — a
-    /// conservative broadening (only adds matches), not a strict-parity claim.
+    /// conservative broadening (only expands matches), not a strict-parity claim.
     fn transcript_text(&self) -> String {
         self.turns
             .iter()
@@ -368,7 +368,8 @@ const ROUTINE_PREFIXES: &[&str] = &[
     "kubectl get",
     "kubectl logs",
     "kubectl describe",
-    "set", // shell options affect only the spawned shell
+    // shell options affect only the spawned shell
+    "set",
 ];
 
 /// Env var KEYs safe to set for a routine command: cosmetic / logging only, with
@@ -405,7 +406,7 @@ fn classify_bash(cmd: &str) -> ClassifierVerdict {
         return ClassifierVerdict::Block;
     };
     // Default-deny env: an assigned env KEY outside the cosmetic-safe allowlist
-    // (or any `env` option) can change which binary runs / how code resolves.
+    // (or any `env` option) can differ which binary runs / how code resolves.
     // Read from the PARSED, quote-stripped tree so `env "LD_PRELOAD=..."` can't
     // hide the key.
     if sets_unsafe_env(tree.root_node(), cmd, &cmds) {
@@ -771,10 +772,12 @@ fn command_env_is_unsafe(words: &[String]) -> bool {
         if current.first().and_then(|w| w.rsplit(['/', '\\']).next()) == Some("env") {
             for arg in &current[1..] {
                 if arg == "--" {
-                    break; // end of env options; the rest is the command
+                    // end of env options; the rest is the command
+                    break;
                 }
                 if arg.starts_with('-') {
-                    return true; // env option alters/clears the exec environment
+                    // env option alters/clears the exec environment
+                    return true;
                 }
                 match arg.split_once('=') {
                     Some((key, _)) => {
@@ -782,7 +785,8 @@ fn command_env_is_unsafe(words: &[String]) -> bool {
                             return true;
                         }
                     }
-                    None => break, // first plain word is the inner command
+                    // first plain word is the inner command
+                    None => break,
                 }
             }
         }
@@ -982,7 +986,7 @@ Decisions the user has already made in this conversation are part of their inten
 /// `{thinking, shouldBlock, reason}` shape the prompt requests and that
 /// [`parse_classifier_model_text`] parses. Sent as the request `json_schema` so the
 /// model is constrained to emit conforming JSON — parity with a forced
-/// `classify_result` tool schema, and removes reliance on best-effort text parsing.
+/// `classify_result` tool schema, and drops reliance on best-effort text parsing.
 pub fn classifier_output_json_schema() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
@@ -2230,7 +2234,7 @@ mod tests {
             Vec<ClassifierMessage>,
             tokio::sync::oneshot::Sender<Result<String, String>>,
         )>();
-        drop(rx); // closed channel
+        drop(rx);
         let clf = LlmPermissionClassifier::with_channel(tx, ClassifierPromptType::Full);
         assert!(clf.has_side_query());
         assert_eq!(
@@ -2500,7 +2504,7 @@ mod tests {
         // The read-only forms stay routine, incl. `--o*` options that are NOT
         // abbreviations of the pager flag. (`git grep -o` stays Block via the
         // pre-existing write model, which treats `git ... -o <path>` as an
-        // output flag — format-patch conservatism, unchanged here.)
+        // output flag — format-patch conservatism, `unchanged` here.)
         assert_eq!(v("git grep -n TODO src"), ClassifierVerdict::Allow);
         assert_eq!(v("git grep -o TODO src"), ClassifierVerdict::Block);
         assert_eq!(

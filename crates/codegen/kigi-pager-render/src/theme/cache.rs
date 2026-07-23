@@ -102,7 +102,7 @@ pub fn set(kind: ThemeKind) {
     LOADED.store(true, Ordering::Release);
 }
 
-// -- Terminal-native lock (minimal mode) --------------------------------------
+// Terminal-native lock (minimal mode)
 
 /// Whether the theme is locked to the terminal-native palette.
 #[must_use]
@@ -120,7 +120,7 @@ pub fn set_terminal_native_lock(locked: bool) {
     });
 }
 
-// -- Auto-mode ---------------------------------------------------------------
+// Auto-mode
 
 /// Whether auto-switching mode is active.
 #[must_use]
@@ -152,7 +152,7 @@ pub fn invalidate_auto_theme_config() {
     *AUTO_THEME_CONFIG.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
-// -- Theme resolution --------------------------------------------------------
+// Theme resolution
 
 /// Resolve the effective theme, respecting the full precedence chain.
 ///
@@ -218,7 +218,7 @@ pub fn resolve_initial_theme_no_osc11() -> ThemeKind {
     resolve_from_config(load_from_disk(), false)
 }
 
-// -- Disk reads --------------------------------------------------------------
+// Disk reads
 //
 // All writes go through `kigi_shell::util::config::set_theme()` (and
 // friends) via `Effect::PersistSetting`. This module only READS from the
@@ -268,7 +268,7 @@ fn load_auto_theme_config() -> AutoThemeConfig {
     }
 }
 
-// -- Test support ------------------------------------------------------------
+// Test support
 
 #[cfg(any(test, feature = "test-support"))]
 pub fn reset_for_test() {
@@ -334,7 +334,7 @@ mod tests {
         *AUTO_THEME_CONFIG.lock().unwrap_or_else(|e| e.into_inner()) = Some(config);
     }
 
-    // -- Terminal-native lock (minimal mode) ----------------------------------
+    // Terminal-native lock (minimal mode)
 
     #[test]
     fn terminal_native_lock_pins_kind_and_blocks_apply_kind() {
@@ -393,7 +393,8 @@ mod tests {
             set_terminal_native_lock(true);
             assert!(color_support::detect() <= color_support::ColorLevel::Basic);
             for input in [
-                Color::Rgb(0x26, 0x26, 0x26), // kigiday text_primary
+                // kigiday text_primary
+                Color::Rgb(0x26, 0x26, 0x26),
                 Color::Rgb(122, 162, 247),
                 Color::Indexed(141),
             ] {
@@ -427,7 +428,7 @@ mod tests {
         });
     }
 
-    // -- AUTO_MODE -----------------------------------------------------------
+    // AUTO_MODE
 
     #[test]
     fn auto_mode_default_is_false() {
@@ -446,7 +447,7 @@ mod tests {
         });
     }
 
-    // -- AutoThemeConfig -----------------------------------------------------
+    // AutoThemeConfig
 
     #[test]
     fn auto_theme_config_defaults_to_none() {
@@ -455,7 +456,7 @@ mod tests {
         assert!(config.light_theme.is_none());
     }
 
-    // -- resolve_auto --------------------------------------------------------
+    // resolve_auto
 
     #[test]
     fn resolve_auto_dark_system_returns_kiginight() {
@@ -484,7 +485,7 @@ mod tests {
         });
     }
 
-    // -- invalidate_auto_theme_config ----------------------------------------
+    // invalidate_auto_theme_config
 
     #[test]
     fn invalidate_clears_cached_config() {
@@ -506,7 +507,7 @@ mod tests {
         });
     }
 
-    // -- resolve_from_config (resolve_initial_theme inner logic) ---------------
+    // resolve_from_config (resolve_initial_theme inner logic)
 
     #[test]
     fn resolve_from_config_no_config_returns_kiginight() {
@@ -559,7 +560,7 @@ mod tests {
         });
     }
 
-    // -- resolve_auto with custom config -------------------------------------
+    // resolve_auto with custom config
 
     #[test]
     fn resolve_auto_with_custom_dark_config() {
@@ -585,7 +586,7 @@ mod tests {
         });
     }
 
-    // -- auto_theme_config filter --------------------------------------------
+    // auto_theme_config filter
 
     #[test]
     fn auto_theme_config_filter_rejects_auto_value() {
@@ -602,7 +603,7 @@ mod tests {
         assert_eq!(parsed, Some(ThemeKind::TokyoNight));
     }
 
-    // -- set / current_kind --------------------------------------------------
+    // set / current_kind
 
     /// `set` followed by `current_kind` returns the set value, and the
     /// `LOADED` flag flips so subsequent reads don't re-seed from disk.

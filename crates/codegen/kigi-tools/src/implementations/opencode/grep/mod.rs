@@ -17,16 +17,8 @@ use crate::types::requirements::{Expr, ToolRequirement};
 use crate::types::resources::{Cwd, SharedResources};
 use crate::types::tool::{ToolKind, ToolNamespace};
 
-// ───────────────────────────────────────────────────────────────────────────
-// Constants
-// ───────────────────────────────────────────────────────────────────────────
-
 const RESULT_LIMIT: usize = 100;
 const MAX_LINE_LENGTH: usize = 2000;
-
-// ───────────────────────────────────────────────────────────────────────────
-// Description
-// ───────────────────────────────────────────────────────────────────────────
 
 const DESCRIPTION: &str = r#"A powerful search tool built on ripgrep
 
@@ -41,10 +33,6 @@ Usage:
 - Returns file paths and line numbers with at least one match sorted by modification time
 - Use this tool when you need to find files containing specific patterns"#;
 
-// ───────────────────────────────────────────────────────────────────────────
-// Input
-// ───────────────────────────────────────────────────────────────────────────
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct GrepInput {
     /// The regex pattern to search for.
@@ -58,10 +46,6 @@ pub struct GrepInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include: Option<String>,
 }
-
-// ───────────────────────────────────────────────────────────────────────────
-// ToolInput conversions (via Dynamic variant)
-// ───────────────────────────────────────────────────────────────────────────
 
 impl TryFrom<crate::types::tool_io::ToolInput> for GrepInput {
     type Error = String;
@@ -83,14 +67,8 @@ impl From<GrepInput> for crate::types::tool_io::ToolInput {
     }
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Tool implementation
-// ───────────────────────────────────────────────────────────────────────────
-
 #[derive(Debug, Default)]
 pub struct GrepTool;
-
-// ─── Tests ──────────────────────────────────────────────────────────
 
 impl crate::types::tool_metadata::ToolMetadata for GrepTool {
     fn kind(&self) -> ToolKind {
@@ -147,7 +125,6 @@ impl kigi_tool_runtime::Tool for GrepTool {
 
         let cwd = crate::types::tool_metadata::resolve_cwd(&ctx, &resources).await?;
 
-        // Resolve search path.
         let search_path = match &input.path {
             Some(p) if !p.is_empty() => {
                 let candidate = std::path::Path::new(p);
@@ -160,7 +137,6 @@ impl kigi_tool_runtime::Tool for GrepTool {
             _ => cwd,
         };
 
-        // Build rg command.
         let rg_exec = rg_path();
         let mut cmd = Command::new(rg_exec);
         cmd.args([
@@ -184,7 +160,6 @@ impl kigi_tool_runtime::Tool for GrepTool {
         crate::util::detach_command(&mut cmd);
         cmd.stdin(Stdio::null());
 
-        // Spawn.
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
@@ -198,7 +173,6 @@ impl kigi_tool_runtime::Tool for GrepTool {
             }
         };
 
-        // Read stdout + stderr.
         let mut stdout_buf = Vec::new();
         if let Some(mut pipe) = child.stdout.take() {
             let _ = pipe.read_to_end(&mut stdout_buf).await;
@@ -224,7 +198,7 @@ impl kigi_tool_runtime::Tool for GrepTool {
             });
         }
 
-        // ── Parse ripgrep output (format: filepath|linenum|linetext) ────
+        // Parse ripgrep output, format: filepath|linenum|linetext
         struct RawMatch {
             path: String,
             line_num: usize,
@@ -239,7 +213,7 @@ impl kigi_tool_runtime::Tool for GrepTool {
             if line.is_empty() {
                 continue;
             }
-            // Split on first two `|` separators.
+            // The line text may itself contain '|', so split only on the first two separators.
             let mut parts = line.splitn(3, '|');
             let file_path = match parts.next() {
                 Some(p) => p,
@@ -255,7 +229,6 @@ impl kigi_tool_runtime::Tool for GrepTool {
                 Err(_) => continue,
             };
 
-            // Cache mtime per file.
             let mtime_ms = if let Some(&cached) = mtime_cache.get(file_path) {
                 cached
             } else {
@@ -278,7 +251,6 @@ impl kigi_tool_runtime::Tool for GrepTool {
             });
         }
 
-        // Sort by mtime (most recent first).
         matches.sort_by_key(|m| std::cmp::Reverse(m.mtime_ms));
 
         let total_matches = matches.len();
@@ -300,7 +272,6 @@ impl kigi_tool_runtime::Tool for GrepTool {
             });
         }
 
-        // ── Format output grouped by file ───────────────────────────────
         let mut output_lines: Vec<String> = Vec::new();
         if truncated {
             output_lines.push(format!(
@@ -310,7 +281,6 @@ impl kigi_tool_runtime::Tool for GrepTool {
             output_lines.push(format!("Found {total_matches} matches"));
         }
 
-        // Build file_matches for structured output + formatted text.
         let mut file_matches: Vec<GrepFileMatch> = Vec::new();
         let mut current_path = String::new();
         let mut current_file_match_lines: Vec<GrepLineMatch> = Vec::new();
@@ -322,7 +292,8 @@ impl kigi_tool_runtime::Tool for GrepTool {
                         path: current_path.clone(),
                         matches: std::mem::take(&mut current_file_match_lines),
                     });
-                    output_lines.push(String::new()); // blank line between files
+                    // blank line between files
+                    output_lines.push(String::new());
                 }
                 current_path = m.path.clone();
                 output_lines.push(format!("{}:", m.path));
@@ -338,7 +309,6 @@ impl kigi_tool_runtime::Tool for GrepTool {
                 content: m.line_text.clone(),
             });
         }
-        // Flush last file.
         if !current_path.is_empty() {
             file_matches.push(GrepFileMatch {
                 path: current_path,
@@ -363,7 +333,8 @@ impl kigi_tool_runtime::Tool for GrepTool {
         Ok(GrepSearchOutput {
             stdout: formatted.into_bytes(),
             stderr: stderr_buf,
-            exit_code: 0, // normalized — we have results
+            // normalized — we have results
+            exit_code: 0,
             match_count: total_matches,
             file_matches,
         })
@@ -378,14 +349,11 @@ mod tests {
     use crate::types::resources::Resources;
     use tempfile::TempDir;
 
-    /// Build a `Resources` bag with only `Cwd` inserted.
     fn test_resources(cwd: &std::path::Path) -> Resources {
         let mut resources = Resources::new();
         resources.insert(Cwd(cwd.to_path_buf()));
         resources
     }
-
-    // ── tool_metadata ────────────────────────────────────────────────
 
     #[test]
     fn tool_metadata() {
@@ -398,8 +366,6 @@ mod tests {
             "expected OpenCode namespace"
         );
     }
-
-    // ── serde_roundtrip ──────────────────────────────────────────────
 
     #[test]
     fn serde_roundtrip() {
@@ -414,15 +380,12 @@ mod tests {
         assert_eq!(back.path.as_deref(), Some("/tmp/dir"));
         assert_eq!(back.include.as_deref(), Some("*.rs"));
 
-        // Minimal input — only pattern, optional fields absent.
         let minimal = serde_json::json!({ "pattern": "hello" });
         let parsed: GrepInput = serde_json::from_value(minimal).unwrap();
         assert_eq!(parsed.pattern, "hello");
         assert!(parsed.path.is_none());
         assert!(parsed.include.is_none());
     }
-
-    // ── basic_match ──────────────────────────────────────────────────
 
     #[tokio::test]
     async fn basic_match() {
@@ -457,8 +420,6 @@ mod tests {
         assert_eq!(output.exit_code, 0);
     }
 
-    // ── no_matches ───────────────────────────────────────────────────
-
     #[tokio::test]
     async fn no_matches() {
         let tmp = TempDir::new().unwrap();
@@ -488,12 +449,9 @@ mod tests {
         assert!(output.file_matches.is_empty());
     }
 
-    // ── multiple_files_grouped ───────────────────────────────────────
-
     #[tokio::test]
     async fn multiple_files_grouped() {
         let tmp = TempDir::new().unwrap();
-        // Create two files, both containing the pattern.
         std::fs::write(
             tmp.path().join("first.txt"),
             "match_me line1\nmatch_me line2\n",
@@ -521,10 +479,7 @@ mod tests {
         let text = String::from_utf8_lossy(&output.stdout);
         assert!(text.contains("Found 3 matches"), "header: {text}");
 
-        // Verify blank line separates the two file groups.
-        // Output format: header\n{path1}:\n  Line ...\n  Line ...\n\n{path2}:\n  Line ...
         let lines: Vec<&str> = text.lines().collect();
-        // Find the blank separator line between groups.
         let blank_positions: Vec<usize> = lines
             .iter()
             .enumerate()
@@ -536,13 +491,10 @@ mod tests {
             "expected blank line between file groups: {text}"
         );
 
-        // Both files should appear.
         assert!(text.contains("first.txt:"), "first.txt missing: {text}");
         assert!(text.contains("second.txt:"), "second.txt missing: {text}");
         assert_eq!(output.match_count, 3);
     }
-
-    // ── include_glob_filter ──────────────────────────────────────────
 
     #[tokio::test]
     async fn include_glob_filter() {
@@ -574,8 +526,6 @@ mod tests {
         assert_eq!(output.match_count, 1);
     }
 
-    // ── path_parameter_absolute ──────────────────────────────────────
-
     #[tokio::test]
     async fn path_parameter_absolute() {
         let tmp = TempDir::new().unwrap();
@@ -587,7 +537,6 @@ mod tests {
         let tool = GrepTool;
         let resources = test_resources(tmp.path());
 
-        // Pass an absolute path to the subdirectory.
         let output = kigi_tool_runtime::Tool::run(
             &tool,
             test_ctx(resources.into_shared()),
@@ -609,8 +558,6 @@ mod tests {
         assert_eq!(output.match_count, 1);
     }
 
-    // ── path_parameter_relative ──────────────────────────────────────
-
     #[tokio::test]
     async fn path_parameter_relative() {
         let tmp = TempDir::new().unwrap();
@@ -622,7 +569,6 @@ mod tests {
         let tool = GrepTool;
         let resources = test_resources(tmp.path());
 
-        // Pass a relative path — should resolve against Cwd.
         let output = kigi_tool_runtime::Tool::run(
             &tool,
             test_ctx(resources.into_shared()),
@@ -643,8 +589,6 @@ mod tests {
         );
         assert_eq!(output.match_count, 1);
     }
-
-    // ── match_count_field ────────────────────────────────────────────
 
     #[tokio::test]
     async fn match_count_field() {
@@ -670,13 +614,10 @@ mod tests {
         .await
         .unwrap();
 
-        // Three lines contain "alpha".
         assert_eq!(output.match_count, 3);
         let text = String::from_utf8_lossy(&output.stdout);
         assert!(text.contains("Found 3 matches"), "header: {text}");
     }
-
-    // ── file_matches_populated ───────────────────────────────────────
 
     #[tokio::test]
     async fn file_matches_populated() {
@@ -711,20 +652,16 @@ mod tests {
         );
         assert_eq!(fm.matches.len(), 2);
 
-        // First match: line 1.
         assert_eq!(fm.matches[0].line_number, 1);
         assert!(fm.matches[0].content.contains("target"));
-        // Second match: line 3.
         assert_eq!(fm.matches[1].line_number, 3);
         assert!(fm.matches[1].content.contains("target"));
     }
 
-    // ── missing_cwd_resource ─────────────────────────────────────────
-
     #[tokio::test]
     async fn missing_cwd_resource() {
         let tool = GrepTool;
-        let resources = Resources::new(); // No Cwd inserted.
+        let resources = Resources::new();
 
         let result = kigi_tool_runtime::Tool::run(
             &tool,
@@ -744,8 +681,6 @@ mod tests {
             "wrong error message: {err:?}"
         );
     }
-
-    // ── mtime_sorting ───────────────────────────────────────────────
 
     #[tokio::test]
     async fn mtime_sorting() {
@@ -778,8 +713,6 @@ mod tests {
         );
     }
 
-    // ── match_cap_100 ───────────────────────────────────────────────
-
     #[tokio::test]
     async fn match_cap_100() {
         let tmp = TempDir::new().unwrap();
@@ -810,15 +743,12 @@ mod tests {
             text.contains("showing 100 of 150"),
             "expected truncation message: {text}"
         );
-        // Count "  Line " prefixes — exactly 100 displayed lines.
         let displayed = text.matches("  Line ").count();
         assert_eq!(
             displayed, 100,
             "expected 100 displayed lines, got {displayed}: {text}"
         );
     }
-
-    // ── line_truncation_2000_chars ──────────────────────────────────
 
     #[tokio::test]
     async fn line_truncation_2000_chars() {
@@ -842,7 +772,6 @@ mod tests {
         .unwrap();
 
         let text = String::from_utf8_lossy(&output.stdout);
-        // Find the formatted "  Line N: ..." output line.
         let match_line = text
             .lines()
             .find(|l| l.trim_start().starts_with("Line "))
@@ -860,8 +789,6 @@ mod tests {
             display_content.len()
         );
     }
-
-    // ── exit_code_1_no_matches ──────────────────────────────────────
 
     #[tokio::test]
     async fn exit_code_1_no_matches() {
@@ -888,8 +815,6 @@ mod tests {
         assert_eq!(text.as_ref(), "No files found", "stdout: {text}");
         assert_eq!(output.match_count, 0);
     }
-
-    // ── special_regex_chars ─────────────────────────────────────────
 
     #[tokio::test]
     async fn special_regex_chars() {
@@ -920,8 +845,6 @@ mod tests {
         assert_eq!(output.match_count, 1);
     }
 
-    // ── pipe_in_match_text ──────────────────────────────────────────
-
     #[tokio::test]
     async fn pipe_in_match_text() {
         let tmp = TempDir::new().unwrap();
@@ -951,8 +874,6 @@ mod tests {
         );
     }
 
-    // ── empty_pattern ───────────────────────────────────────────────
-
     #[tokio::test]
     async fn empty_pattern() {
         let tmp = TempDir::new().unwrap();
@@ -977,8 +898,6 @@ mod tests {
         assert!(result.is_ok(), "empty pattern should not panic: {result:?}");
     }
 
-    // ── exit_code_2_with_output ─────────────────────────────────────
-
     #[tokio::test]
     #[cfg(unix)]
     async fn exit_code_2_with_output() {
@@ -987,7 +906,6 @@ mod tests {
         // We trigger this by creating a broken symlink alongside a real file.
         let tmp = TempDir::new().unwrap();
         std::fs::write(tmp.path().join("real.txt"), "findme\n").unwrap();
-        // Create a broken symlink: link -> nonexistent_target
         std::os::unix::fs::symlink(
             tmp.path().join("nonexistent_target"),
             tmp.path().join("broken_link"),
@@ -1010,7 +928,6 @@ mod tests {
         .unwrap();
 
         let text = String::from_utf8_lossy(&output.stdout);
-        // We expect the match from real.txt to be present.
         assert!(
             text.contains("real.txt"),
             "expected real.txt match in output: {text}"
@@ -1023,10 +940,8 @@ mod tests {
         assert!(output.match_count >= 1, "should have at least 1 match");
     }
 
-    // ── exit_code_2_without_output ──────────────────────────────────
-
     // Skipped: triggering ripgrep exit code 2 with zero stdout (errors
     // only, no matches) is impractical in a unit test with real `rg`.
-    // The code path (line 189) returns "No files found" and is simple
-    // enough to verify by inspection. Documented as a known gap.
+    // The code path returns "No files found" and is simple enough to
+    // verify by inspection. Documented as a known gap.
 }

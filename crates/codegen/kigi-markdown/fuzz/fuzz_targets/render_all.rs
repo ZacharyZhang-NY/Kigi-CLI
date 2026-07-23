@@ -11,19 +11,16 @@ fuzz_target!(|data: &[u8]| {
         return;
     };
 
-    // Full render: pretty / non-pretty
     for pretty in [true, false] {
         let _ = render_markdown_ratatui_full(s, STYLE, pretty, None);
     }
 
-    // Streaming with rotating chunk sizes: pretty / non-pretty
     for pretty in [true, false] {
         let mut r = StreamingMarkdownRenderer::new(STYLE, pretty);
         let mut pos = 0;
         let mut ci = 0;
         while pos < s.len() {
             let mut end = (pos + CHUNK_SIZES[ci]).min(s.len());
-            // snap to char boundary
             while end < s.len() && !s.is_char_boundary(end) {
                 end += 1;
             }

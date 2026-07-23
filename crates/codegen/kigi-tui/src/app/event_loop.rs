@@ -1070,7 +1070,8 @@ pub(crate) async fn run(
                 Ok(ev) => {
                     consecutive_event_errors = 0;
                     if input_tx.send(ev).is_err() {
-                        break; // event loop has shut down
+                        // event loop has shut down
+                        break;
                     }
                 }
                 Err(e) => {
@@ -2124,8 +2125,6 @@ pub(crate) async fn run(
     Ok(make_run_result(&app))
 }
 
-/// Schedule the next animation tick if there are running entries and none is pending.
-///
 /// Load `UiConfig` from the shell's layered config at startup.
 /// Falls back to `UiConfig::default()` on any failure.
 pub(crate) fn load_initial_ui_config() -> kigi_shell::agent::config::UiConfig {
@@ -2164,16 +2163,6 @@ fn load_initial_config_session_bools() -> InitialConfigSessionBools {
     }
 }
 
-/// Whether to pre-generate the automatic "return-from-away" recap right now.
-///
-/// True only when the terminal has been unfocused past the recap threshold
-/// (once per away period, gated by [`FocusTracker::recap_due`]), the shell has
-/// rolled out session recap (`session_recap_available`), the user has not opted
-/// out via `ui.notifications.session_recap`, and the active agent has *finished
-/// its turn* with nothing pending that could wake it — i.e. idle, no modal, no
-/// pending question, an established session, and no running background task (a
-/// bg task completing can auto-wake the agent). Generating it now means the
-/// recap is already in the scrollback when the user returns.
 /// Sync shell `sessionRecap` into execution gate + every existing slash surface.
 /// Dashboard created later is seeded in `dispatch_open_dashboard`.
 fn apply_session_recap_available(app: &mut AppView, available: bool) {
@@ -2187,6 +2176,16 @@ fn apply_session_recap_available(app: &mut AppView, available: bool) {
     }
 }
 
+/// Whether to pre-generate the automatic "return-from-away" recap right now.
+///
+/// True only when the terminal has been unfocused past the recap threshold
+/// (once per away period, gated by [`FocusTracker::recap_due`]), the shell has
+/// rolled out session recap (`session_recap_available`), the user has not opted
+/// out via `ui.notifications.session_recap`, and the active agent has *finished
+/// its turn* with nothing pending that could wake it — i.e. idle, no modal, no
+/// pending question, an established session, and no running background task (a
+/// bg task completing can auto-wake the agent). Generating it now means the
+/// recap is already in the scrollback when the user returns.
 fn should_pregenerate_away_recap(app: &AppView) -> bool {
     if !(app.session_recap_available
         && app.notification_service.focus_tracker.recap_due()
@@ -2206,6 +2205,7 @@ fn should_pregenerate_away_recap(app: &AppView) -> bool {
     })
 }
 
+/// Schedule the next animation tick if there are running entries and none is pending.
 fn schedule_tick(tick_at: &mut Option<Instant>, app: &AppView, interval: Duration) {
     if tick_at.is_none() {
         let interval = match app.tick_demand() {
@@ -2531,8 +2531,6 @@ async fn drain_and_process(
     }
 }
 
-// ── Paste coalescing for terminals without bracketed paste ───────────
-
 /// Timeout for the first extension round (detection).  If no event
 /// arrives within this window the batch was a normal keystroke.
 const PASTE_DETECT_TIMEOUT: Duration = Duration::from_millis(2);
@@ -2842,8 +2840,6 @@ mod tests {
     use super::*;
     use crossterm::event::{KeyEvent, KeyEventState};
 
-    // ── plan_reconnect_load ──────────────────────────────────────────────
-
     #[test]
     fn plan_reconnect_load_requires_session_id() {
         let agent = crate::test_util::make_agent_view(None, "/work/project");
@@ -2926,8 +2922,6 @@ mod tests {
             "background Ask tab must reconnect with autoMode:false regardless of the active tab"
         );
     }
-
-    // ── reconnect_restore_outcome ────────────────────────────────────────
 
     /// The regression guard: one background tab fails, the active tab
     /// succeeds. The whole-reconnect flag goes false (toast says "failed"),
@@ -3327,8 +3321,6 @@ mod tests {
         assert!(result.is_empty());
     }
 
-    // ── Multi-newline coalescing tests ───────────────────────────────
-
     #[test]
     fn coalesce_three_lines() {
         // "foo\nbar\nbaz" — 3 lines, 2 newlines.
@@ -3368,8 +3360,6 @@ mod tests {
         assert_eq!(result[0], Event::Paste("a\nb\nc\nd\n".to_string()));
     }
 
-    // ── should_extend_for_paste tests ───────────────────────────────
-
     #[test]
     fn extend_triggered_with_single_pasteable_key() {
         let events = vec![press(KeyCode::Char('a'))];
@@ -3398,8 +3388,6 @@ mod tests {
         let events = vec![Event::Resize(80, 24)];
         assert!(!should_extend_for_paste(&events));
     }
-
-    // ── merge_paste_fragments tests ─────────────────────────────────
 
     #[test]
     fn merge_paste_and_key_fragments() {
@@ -3459,8 +3447,6 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], Event::Paste("hello\nworld".to_string()));
     }
-
-    // ── is_pasteable_key_event filtering tests ─────────────────────────
 
     #[test]
     fn pasteable_rejects_mouse_events() {
@@ -3601,8 +3587,6 @@ mod tests {
         assert_eq!(result.len(), 5);
     }
 
-    // ── Windows path-shape coalescing (drag-drop without bracketed paste) ─
-    //
     // Windows-gated: the path-shape branch only exists on Windows
     // (other platforms reliably get bracketed paste for drag-drop).
 
@@ -3636,13 +3620,15 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn coalesce_path_shape_rejects_short_or_non_path() {
-        let short = "/foo.tx"; // 7 chars, below PATH_COALESCE_THRESHOLD
+        // 7 chars, below PATH_COALESCE_THRESHOLD
+        let short = "/foo.tx";
         assert!(
             coalesce_rapid_keys(press_run(short))
                 .iter()
                 .all(|e| matches!(e, Event::Key(_)))
         );
-        let prose = "helloworld"; // 10 chars, no path anchor
+        // 10 chars, no path anchor
+        let prose = "helloworld";
         assert!(
             coalesce_rapid_keys(press_run(prose))
                 .iter()

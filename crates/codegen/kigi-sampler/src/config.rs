@@ -1,10 +1,8 @@
 //! Sampler configuration types.
 //!
-//! [`SamplerConfig`] is the per-request configuration handed to the
-//! sampler. It deliberately does **not** alias
-//! `kigi_sampling_types::SamplingConfig` so that the sampler crate
-//! avoids transitive dependencies on shell-specific types
-//! (`kigi-tools`, etc.).
+//! [`SamplerConfig`] deliberately does **not** alias
+//! `kigi_sampling_types::SamplingConfig`, which would drag shell-specific
+//! types (`kigi-tools`, etc.) into this crate's dependency graph.
 
 use indexmap::IndexMap;
 use kigi_sampling_types::{
@@ -23,27 +21,18 @@ pub enum AuthScheme {
     XApiKey,
 }
 
-/// All knobs that control a single sampling request.
+/// All knobs that control a single sampling request. The session owns one per
+/// active model and passes it — or a per-request override — to the actor on
+/// every submit.
 ///
-/// The session typically owns one `SamplerConfig` per active model
-/// and passes it (or a per-request override) to the actor on every
-/// submit.
-///
-/// # Construction in `kigi-shell`
-///
-/// `SamplerConfig` is the single source of truth for sampler
-/// configuration. The shell builds it directly (see
+/// `kigi-shell` builds it by composing chat-state's
+/// `kigi_sampling_types::SamplingConfig` with `Credentials`; see
 /// `agent::config::sampling_config_for_model` and
-/// `session::acp_session::SessionActor::reconstruct_full_config`) by
-/// composing chat-state's `kigi_sampling_types::SamplingConfig`
-/// with `Credentials` (api key, client version).
-///
-/// URL-derived request headers are
-/// folded into [`Self::extra_headers`] by
-/// `agent::config::inject_url_derived_headers` before the
-/// `SamplerConfig` is handed to the actor. Auth is selected separately
-/// via `auth_scheme`, while `api_backend` controls only the request/response
-/// protocol shape.
+/// `session::acp_session::SessionActor::reconstruct_full_config`. URL-derived
+/// request headers are folded into [`Self::extra_headers`] by
+/// `agent::config::inject_url_derived_headers` before the config reaches the
+/// actor. Auth is selected separately via `auth_scheme`, while `api_backend`
+/// controls only the request/response protocol shape.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SamplerConfig {
     pub api_key: Option<String>,
@@ -91,36 +80,29 @@ pub struct SamplerConfig {
     pub stream_tool_calls: bool,
     pub idle_timeout_secs: Option<u64>,
 
-    // Reasoning effort
     pub reasoning_effort: Option<ReasoningEffort>,
-    /// ChatCompletions body-adaptation dialect (per-platform; BYOK/custom
-    /// endpoints default to the historical Kimi behavior; lenient default on
-    /// deserialize so persisted configs from before the field parse).
+    /// ChatCompletions body-adaptation dialect. BYOK and custom endpoints fall
+    /// back to Kimi behavior; `serde(default)` keeps persisted configs that
+    /// lack the key parseable.
     #[serde(default)]
     pub chat_compat: kigi_sampling_types::ChatCompat,
 
     /// Client identity for the User-Agent header (`kigi/{version}` plus an
-    /// optional origin product). The old xAI proxy's identity headers
-    /// (`x-kigi-client-identifier` / `-client-version` / `-deployment-id` /
-    /// `-user-id`) are gone — User-Agent and `extra_headers` are the only
-    /// identity signals on the wire.
+    /// optional origin product). User-Agent and `extra_headers` are the only
+    /// identity signals this crate puts on the wire.
     pub origin_client: Option<OriginClientInfo>,
 
-    /// Optional hook invoked at every UNAUTHORIZED (401) response
-    /// site. The sampler passes the bearer that was actually sent on
-    /// the wire to the callback; the implementation is free to do
-    /// whatever it wants with it (typically: join it with a live
-    /// credential source and emit an attribution event for diagnosis
-    /// of stale-token vs. server-rejected-live-token 401s). `None`
-    /// (default) is a no-op -- the 401 arm returns the same
-    /// `SamplingError::Auth` it always did.
+    /// Hook invoked at every UNAUTHORIZED (401) response site, receiving the
+    /// bearer that was actually sent on the wire — typically joined against a
+    /// live credential source to tell a stale token apart from a live token the
+    /// server rejected. `None` is a no-op and the 401 arm still yields
+    /// `SamplingError::Auth`.
     ///
-    /// `Arc<dyn Trait>` is not serializable, so the field is skipped
-    /// in (de)serialization. Round-tripping a config through serde
-    /// drops the callback; callers that deserialize a `SamplerConfig`
-    /// from disk must re-attach the callback before passing it to
-    /// [`crate::SamplingClient::new`] or 401 attribution will be
-    /// silently disabled for the rebuilt client.
+    /// `Arc<dyn Trait>` is not serializable, so a config round-tripped through
+    /// serde comes back without the callback. Callers deserializing a
+    /// `SamplerConfig` from disk must re-attach it before
+    /// [`crate::SamplingClient::new`], or 401 attribution is silently disabled
+    /// for the rebuilt client.
     #[serde(skip)]
     pub attribution_callback: Option<SharedAttributionCallback>,
 
@@ -140,11 +122,10 @@ pub struct SamplerConfig {
     pub compaction_at_tokens: Option<CompactionAtTokens>,
 
     /// Server-side doom-loop check policy; `None` disables it. When set, the
-    /// client itself sends the opt-in `x-kigi-doom-loop-check` header on
-    /// streaming Responses API requests and absorbs the reported trigger
-    /// events (unlike the environment headers in [`Self::extra_headers`],
-    /// this header gates the client's own decode behavior, so it lives with
-    /// the decoder).
+    /// client sends the opt-in `x-kigi-doom-loop-check` header on streaming
+    /// Responses API requests and absorbs the reported trigger events. Unlike
+    /// the environment headers in [`Self::extra_headers`], this header gates
+    /// the client's own decode behavior, so it lives with the decoder.
     #[serde(default)]
     pub doom_loop_recovery: Option<DoomLoopRecoveryPolicy>,
 
@@ -154,8 +135,8 @@ pub struct SamplerConfig {
 }
 
 impl Default for SamplerConfig {
-    /// Empty defaults so callers can use `..Default::default()` and
-    /// new fields don't ripple through every literal site.
+    /// Empty defaults so callers can spell `..Default::default()` and a new
+    /// field does not ripple through every struct literal.
     fn default() -> Self {
         Self {
             api_key: None,
@@ -206,7 +187,6 @@ pub type SharedHeaderInjector = std::sync::Arc<dyn HeaderInjector>;
 /// Retry knobs for the sampler's internal transport-error retry loop.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RetryPolicy {
-    /// Maximum number of retries before giving up.
     pub max_retries: u32,
     /// After this many rate-limit (429) retries, escalate to the caller.
     /// Lower than `max_retries` because rate-limit waits can be long.
@@ -245,7 +225,6 @@ mod tests {
         );
     }
 
-    /// Configs serialized before the field existed must keep deserializing.
     #[test]
     fn config_without_doom_loop_recovery_deserializes_to_none() {
         let mut stripped = serde_json::to_value(SamplerConfig::default()).unwrap();

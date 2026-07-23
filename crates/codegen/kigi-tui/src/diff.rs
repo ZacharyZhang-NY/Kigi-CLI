@@ -109,7 +109,7 @@ pub fn build_diff_hunks(details: &[SearchReplaceEditDetail]) -> Vec<DiffHunk> {
         let mut start;
         let mut end = total_len;
         if diff_lines.iter().all(|entry| entry.tag == ChangeTag::Equal) {
-            start = end; // empty slice
+            start = end;
         } else {
             let equal_before = diff_lines
                 .iter()
@@ -396,7 +396,6 @@ pub fn diff_hunks_to_patch(path: &str, hunks: &[DiffHunk]) -> String {
             continue;
         }
 
-        // Compute hunk header: @@ -old_start,old_count +new_start,new_count @@
         let old_start = hunk
             .iter()
             .filter(|l| l.tag != ChangeTag::Insert)
@@ -453,10 +452,8 @@ mod tests {
         assert_eq!(hunks.len(), 1);
 
         let hunk = &hunks[0];
-        // Should have: context_before + delete + insert + context_after
         assert!(hunk.len() >= 3, "got {} lines", hunk.len());
 
-        // Find the delete and insert lines
         let deletes: Vec<_> = hunk.iter().filter(|l| l.tag == ChangeTag::Delete).collect();
         let inserts: Vec<_> = hunk.iter().filter(|l| l.tag == ChangeTag::Insert).collect();
         assert_eq!(deletes.len(), 1);
@@ -525,7 +522,6 @@ mod tests {
 
         let hunk = &hunks[0];
         let equal_lines: Vec<_> = hunk.iter().filter(|l| l.tag == ChangeTag::Equal).collect();
-        // Should have context lines (before + after)
         assert!(
             equal_lines.len() >= 2,
             "expected context lines, got {}",
@@ -570,8 +566,10 @@ mod tests {
         let hunk = &hunks[0];
         let ctx: Vec<_> = hunk.iter().filter(|l| l.tag == ChangeTag::Equal).collect();
         assert_eq!(ctx.len(), 2);
-        assert_eq!(ctx[0].lo, 3); // old_line - 2
-        assert_eq!(ctx[1].lo, 4); // old_line - 1
+        // old_line - 2
+        assert_eq!(ctx[0].lo, 3);
+        // old_line - 1
+        assert_eq!(ctx[1].lo, 4);
     }
 
     #[test]
@@ -599,7 +597,6 @@ mod tests {
             .map(|l| l.ln)
             .collect();
 
-        // No new-column line number should repeat.
         for i in 1..new_column.len() {
             assert_ne!(
                 new_column[i - 1],
@@ -611,11 +608,9 @@ mod tests {
             );
         }
 
-        // Context_before "anchor line" should be at ln = 4 (old_line - 1).
         let ctx: Vec<_> = hunk.iter().filter(|l| l.tag == ChangeTag::Equal).collect();
         assert_eq!(ctx[0].ln, 4, "context_before should be at new_line - 1");
 
-        // Insert should be at ln = 5 (new_line).
         let ins: Vec<_> = hunk.iter().filter(|l| l.tag == ChangeTag::Insert).collect();
         assert_eq!(ins.len(), 1);
         assert_eq!(ins[0].ln, 5);
@@ -647,7 +642,6 @@ mod tests {
         //   6 6      let y = x + 1; (context_after)
         //   7 7  }                 (context_after)
 
-        // Context before: lines 3, 4 (old_line - 2, old_line - 1)
         let ctx_before: Vec<_> = hunk
             .iter()
             .take_while(|l| l.tag == ChangeTag::Equal)
@@ -658,19 +652,16 @@ mod tests {
         assert_eq!(ctx_before[1].lo, 4);
         assert_eq!(ctx_before[1].ln, 4);
 
-        // Delete: old line 5
         let del: Vec<_> = hunk.iter().filter(|l| l.tag == ChangeTag::Delete).collect();
         assert_eq!(del.len(), 1);
         assert_eq!(del[0].lo, 5);
         assert!(del[0].text.contains("let x = 1;"));
 
-        // Insert: new line 5
         let ins: Vec<_> = hunk.iter().filter(|l| l.tag == ChangeTag::Insert).collect();
         assert_eq!(ins.len(), 1);
         assert_eq!(ins[0].ln, 5);
         assert!(ins[0].text.contains("let x = 42;"));
 
-        // Context after: lines 6/6, 7/7
         let ctx_after: Vec<_> = hunk
             .iter()
             .rev()
@@ -685,7 +676,6 @@ mod tests {
         assert_eq!(ctx_after[1].lo, 7);
         assert_eq!(ctx_after[1].ln, 7);
 
-        // Old column should be monotonically increasing (no duplicates).
         let old_column: Vec<usize> = hunk
             .iter()
             .filter(|l| l.tag != ChangeTag::Insert)
@@ -699,7 +689,6 @@ mod tests {
             );
         }
 
-        // New column should be monotonically increasing (no duplicates).
         let new_column: Vec<usize> = hunk
             .iter()
             .filter(|l| l.tag != ChangeTag::Delete)
@@ -786,8 +775,6 @@ mod tests {
         let hunks = diff_hunks_from_strings("", "", 1);
         assert!(hunks.is_empty(), "empty-to-empty must diff to nothing");
     }
-
-    // ── Overlap stitching (coalesced same-file edits) ──────────────────
 
     /// An edit detail with the ±context the real search_replace tool emits
     /// from its own file snapshot.
@@ -1230,7 +1217,6 @@ mod tests {
         assert_eq!(hunks.len(), 1);
         let hunk = &hunks[0];
 
-        // Context before should have exactly 2 lines, not 3 (no phantom blank).
         let ctx: Vec<_> = hunk
             .iter()
             .take_while(|l| l.tag == ChangeTag::Equal)
@@ -1242,7 +1228,6 @@ mod tests {
             ctx.iter().map(|l| &l.text).collect::<Vec<_>>()
         );
 
-        // Verify no blank-only equal lines exist before the insert.
         let blank_ctx: Vec<_> = hunk
             .iter()
             .filter(|l| l.tag == ChangeTag::Equal && l.text.trim().is_empty())
@@ -1265,7 +1250,8 @@ mod tests {
             new_line: 5,
             context_before: "            .values()\n".to_string(),
             context_after: "            .count()\n".to_string(),
-            line_prefix: "            ".to_string(), // 12 spaces
+            // 12 spaces
+            line_prefix: "            ".to_string(),
         }];
 
         let hunks = build_diff_hunks(&details);
@@ -1277,7 +1263,6 @@ mod tests {
         assert_eq!(del.len(), 1);
         assert_eq!(ins.len(), 1);
 
-        // Both changed lines must start with the 12-space prefix.
         assert!(
             del[0].text.starts_with("            .filter"),
             "delete line should have leading indent, got: {:?}",
@@ -1304,7 +1289,8 @@ mod tests {
             new_line: 3,
             context_before: "fn example() {\n".to_string(),
             context_after: "}\n".to_string(),
-            line_prefix: "    ".to_string(), // 4 spaces
+            // 4 spaces
+            line_prefix: "    ".to_string(),
         }];
 
         let hunks = build_diff_hunks(&details);
@@ -1343,7 +1329,6 @@ mod tests {
 
     #[test]
     fn empty_line_prefix_changes_nothing() {
-        // When line_prefix is empty, behavior is unchanged from before.
         let details = vec![SearchReplaceEditDetail {
             old_string: "old_val".to_string(),
             new_string: "new_val".to_string(),

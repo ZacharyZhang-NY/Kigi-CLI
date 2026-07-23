@@ -437,7 +437,7 @@ fn slash_model_invalid_arg_produces_scrollback_error() {
 /// `/model` + Enter (required args missing) must NOT error into scrollback —
 /// it re-opens the prompt in the args phase so the existing dropdown lists
 /// the catalog (= the connected providers' models). This is the documented
-/// "Blocks" row of `is_command_complete`, which previously had no consumer.
+/// "Blocks" row of `is_command_complete`.
 #[test]
 fn slash_model_no_args_reopens_the_model_picker() {
     let mut app = test_app_with_agent();
@@ -1183,9 +1183,7 @@ fn find_agent_by_session_id_finds_inactive_agent() {
 /// Cross-setting smoke test.
 /// Verifies that the dispatcher routes each Action to the
 /// correct setter (catches a copy-paste registration bug
-/// where two setters were swapped). The original 5-setting
-/// matrix shrank to 2 after the user-feedback drop of
-/// `session_picker_grouped` / `load_envrc` / `use_leader`.
+/// where two setters were swapped).
 #[test]
 fn pr13_each_setter_writes_to_its_own_mirror() {
     let mut app = test_app_with_agent();
@@ -1201,9 +1199,8 @@ fn pr13_each_setter_writes_to_its_own_mirror() {
 /// Three-way alignment pin: the PAGER registry default must agree
 /// with `PagerLocalSnapshot::default()` (covered by
 /// `defaults_match_pager_state` in `registry::tests`) AND with
-/// `AgentView::new`'s runtime initializer. This is the third leg
-/// of the triangle that was previously missing — the
-/// registry test alone can't see `AgentView::new`'s constant.
+/// `AgentView::new`'s runtime initializer — the registry test alone
+/// can't see `AgentView::new`'s constant.
 #[test]
 fn pager_registry_default_matches_agent_view_new_initializer() {
     use crate::settings::{SettingKind, SettingOwner, SettingsRegistry};
@@ -1267,9 +1264,9 @@ fn pager_registry_default_matches_agent_view_new_initializer() {
     }
 }
 /// If the user picks the regular "Yes, proceed" option (NOT
-/// enable-always-approve), the dispatcher must behave exactly as
-/// before — no PersistPermissionMode effect, no YOLO flip. Pins
-/// that the new code path is gated strictly on the id check.
+/// enable-always-approve), the dispatcher must emit no
+/// PersistPermissionMode effect and no YOLO flip: the
+/// always-approve path is gated strictly on the id check.
 #[test]
 fn regular_allow_once_does_not_trigger_always_approve_persist() {
     use std::sync::Arc;
@@ -1404,7 +1401,6 @@ fn show_tasks_no_active_agent_is_noop() {
     let effects = dispatch(Action::ShowTasks, &mut app);
     assert!(effects.is_empty(), "ShowTasks without an agent is a no-op");
 }
-/// classify_top_level decision matrix.
 #[test]
 fn classify_top_level_branches() {
     use crate::views::dashboard::{RowState, classify_top_level};
@@ -1563,7 +1559,6 @@ fn peek_label_reflects_last_response_type() {
         .push_block(RenderBlock::user_prompt("do it"));
     assert_eq!(extract_last_response_type(agent), "Idle");
 }
-/// agent.question_view.is_some() → NeedsInput.
 #[test]
 fn classify_top_level_question_view_some_is_needs_input() {
     use crate::views::dashboard::{RowState, classify_top_level};
@@ -1602,7 +1597,6 @@ fn top_level_label_strips_control_characters() {
     );
     assert!(top.label.contains("evil"));
 }
-/// Build a synthetic MouseEvent for tests.
 fn mouse_event(
     kind: crossterm::event::MouseEventKind,
     col: u16,
@@ -1615,11 +1609,6 @@ fn mouse_event(
         modifiers: crossterm::event::KeyModifiers::NONE,
     }
 }
-/// Left-click on a row selects it (single click).
-/// Single left-click on a row attaches the
-/// conversation immediately (was: selects only, required
-/// double-click to attach). The user explicitly reported the
-/// previous click-to-select behaviour as unresponsive.
 #[serial_test::serial(KIGI_AGENT_DASHBOARD)]
 #[test]
 fn mouse_left_click_attaches_immediately() {
@@ -1645,11 +1634,8 @@ fn mouse_left_click_attaches_immediately() {
     }
     assert_eq!(d.selected, Some(id));
 }
-/// Every left-click attaches, including
-/// rapid repeated clicks. The previous design used a 500ms window
-/// to distinguish single (select) from double (attach) click;
-/// the new design makes every click attach so the user's mental
-/// model "click = open" always holds.
+/// There is no double-click window — every click attaches, so the
+/// user's mental model "click = open" always holds.
 #[serial_test::serial(KIGI_AGENT_DASHBOARD)]
 #[test]
 fn mouse_repeated_click_keeps_attaching() {
@@ -1682,9 +1668,8 @@ fn mouse_repeated_click_keeps_attaching() {
         other => panic!("expected DashboardAttach on second click, got {other:?}"),
     }
 }
-/// Clicks after the previous 500ms-double-click
-/// window also attach (the previous test asserted single-click
-/// behaviour for >500ms-apart clicks; now every click attaches).
+/// Clicks more than 500ms apart also attach — there is no
+/// double-click window.
 #[serial_test::serial(KIGI_AGENT_DASHBOARD)]
 #[test]
 fn mouse_click_after_long_pause_still_attaches() {
@@ -1715,7 +1700,6 @@ fn mouse_click_after_long_pause_still_attaches() {
         other => panic!("expected DashboardAttach, got {other:?}"),
     }
 }
-/// Click on the peek close-button rect closes the peek.
 #[serial_test::serial(KIGI_AGENT_DASHBOARD)]
 #[test]
 fn mouse_click_on_peek_close_rect_clears_peek() {

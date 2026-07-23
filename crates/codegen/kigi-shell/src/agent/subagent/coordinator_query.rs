@@ -91,9 +91,6 @@ impl SubagentCoordinator {
         }
         None
     }
-    /// Return `(parent_session_id, child_session_id)` for a given subagent.
-    ///
-    /// Checks active first, then completed. Returns `None` if not found.
     pub(crate) fn session_ids_for(&self, id: &str) -> Option<(String, String)> {
         if let Some(t) = self.active.get(id) {
             return Some((t.parent_session_id.clone(), t.child_session_id.0.to_string()));
@@ -135,7 +132,7 @@ impl SubagentCoordinator {
         self.mark_block_waited(id);
         self.block_wait_slots.entry(id.to_string()).or_default().push(slot);
     }
-    /// Drop a previously registered reply slot (query poll loop exited).
+    /// Drop a registered reply slot (query poll loop exited).
     pub(crate) fn unregister_block_wait(&mut self, id: &str, slot: &BlockWaitSlot) {
         if let Some(slots) = self.block_wait_slots.get_mut(id) {
             slots.retain(|s| !std::rc::Rc::ptr_eq(s, slot));
@@ -181,7 +178,6 @@ impl SubagentCoordinator {
         self.active.get(id).is_some_and(|t| t.explicitly_killed)
             || self.completed.get(id).is_some_and(|c| c.explicitly_killed)
     }
-    /// Return fork provenance for a given subagent.
     pub(crate) fn provenance_for(&self, id: &str) -> SubagentProvenance {
         if let Some(t) = self.active.get(id) {
             return SubagentProvenance {
@@ -254,7 +250,6 @@ impl SubagentCoordinator {
             model_id: meta.effective_model_id,
         })
     }
-    /// Check whether an ID refers to a currently-active (running) subagent.
     pub(crate) fn is_active(&self, id: &str) -> bool {
         self.active.contains_key(id)
     }
@@ -294,7 +289,6 @@ impl SubagentCoordinator {
     }
     /// Snapshot all currently-running subagents for compaction state context.
     ///
-    /// Returns one `ActiveSubagentSummary` per entry in the `active` map.
     /// Completed/failed/cancelled subagents are NOT included — they live in
     /// the `completed` map and are irrelevant for post-compaction reminders
     /// (the model already saw their tool results before compaction).

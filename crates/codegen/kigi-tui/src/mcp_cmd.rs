@@ -477,7 +477,6 @@ fn current_dir_or_exit() -> PathBuf {
     })
 }
 
-/// Resolve the config file path for a scope.
 fn scope_target(scope: McpScope) -> PathBuf {
     match scope {
         McpScope::User => kigi_shell::util::config::user_config_path(),
@@ -485,7 +484,6 @@ fn scope_target(scope: McpScope) -> PathBuf {
     }
 }
 
-/// Display form of a scope's config file path.
 fn scope_display(scope: McpScope, path: &Path) -> String {
     match scope {
         McpScope::User => display_user_kigi_path("config.toml"),
@@ -771,7 +769,7 @@ mod tests {
 
     #[test]
     fn add_http_transport_with_non_url_command_is_rejected() {
-        // Previously this silently stored `xcrun` as an HTTP URL.
+        // Guards against silently storing a non-URL command as an HTTP URL.
         let add = parse_add(&[
             "kigi",
             "mcp",
@@ -789,7 +787,7 @@ mod tests {
 
     #[test]
     fn add_explicit_stdio_keeps_url_looking_command_as_stdio() {
-        // Previously URL sniffing overrode an explicit stdio transport.
+        // Guards against URL sniffing overriding an explicit stdio transport.
         let add = parse_add(&[
             "kigi",
             "mcp",
@@ -925,8 +923,8 @@ mod tests {
         .expect_err("greedy --env must no longer parse");
         assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
 
-        // Without --command the stray pair used to be silently written as the
-        // command; resolve_add must reject it with migration guidance.
+        // Without --command, a stray pair must be rejected with migration
+        // guidance rather than silently written as the command.
         let add = parse_add(&[
             "kigi", "mcp", "add", "pg", "--env", "A=1", "B=2", "--", "npx", "-y", "server",
         ]);
@@ -951,7 +949,7 @@ mod tests {
         let err = resolve_add(&add).expect_err("--url with stdio transport must fail");
         assert!(err.to_string().contains("--url"), "got: {err}");
 
-        // --type without --url used to be silently ignored.
+        // --type without --url must be rejected, not silently ignored.
         let add = parse_add(&[
             "kigi",
             "mcp",

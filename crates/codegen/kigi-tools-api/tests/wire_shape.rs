@@ -47,7 +47,6 @@ fn tool_config_entry_round_trips() {
 
 #[test]
 fn minimal_entry_deserializes_from_id_only() {
-    // Consumers must accept sparse payloads: optional fields absent, map empty.
     let back: ToolConfigEntry = serde_json::from_value(serde_json::json!({"id": "Kigi:read_file"}))
         .expect("deserialize minimal");
     assert_eq!(back.id, "Kigi:read_file");
@@ -60,8 +59,6 @@ fn minimal_entry_deserializes_from_id_only() {
 
 #[test]
 fn missing_id_fails_to_deserialize() {
-    // `id` is the only required field: a payload without it must be rejected
-    // instead of silently deserializing with an empty id.
     let result: Result<ToolConfigEntry, _> =
         serde_json::from_value(serde_json::json!({"name_override": "search"}));
     assert!(result.is_err(), "payload without `id` must be rejected");
@@ -69,8 +66,8 @@ fn missing_id_fails_to_deserialize() {
 
 #[test]
 fn explicit_null_optional_fields_deserialize_as_none() {
-    // `#[serde(default)]` covers *absent* keys; explicit `null` is handled by
-    // the `Option` fields themselves. Pin that both shapes are accepted.
+    // `#[serde(default)]` only covers *absent* keys; explicit `null` is
+    // accepted by the `Option` fields themselves.
     let back: ToolConfigEntry = serde_json::from_value(serde_json::json!({
         "id": "Kigi:read_file",
         "params_json": null,
@@ -87,9 +84,8 @@ fn explicit_null_optional_fields_deserialize_as_none() {
 
 #[test]
 fn explicit_null_map_is_rejected() {
-    // The map field is not `Option`-typed: `null` is not coerced to an empty
-    // map. Producers must omit the key or emit `{}`. Pin the rejection so a
-    // codegen change that silently starts accepting `null` is caught.
+    // The map field is not `Option`-typed, so `null` is not coerced to an
+    // empty map: producers must omit the key or emit `{}`.
     let result: Result<ToolConfigEntry, _> = serde_json::from_value(serde_json::json!({
         "id": "Kigi:read_file",
         "params_name_overrides": null,

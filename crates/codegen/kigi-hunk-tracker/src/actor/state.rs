@@ -10,7 +10,7 @@ use crate::types::Hunk;
 /// Maximum size (in bytes) of file text content to retain in memory.
 /// Files larger than this are stored as TooLarge.
 /// This is aligned with the diff limit to ensure consistent behavior.
-pub(crate) const MAX_TRACKED_TEXT_BYTES: usize = 1024 * 1024; // 1 MB
+pub(crate) const MAX_TRACKED_TEXT_BYTES: usize = 1024 * 1024;
 
 /// Explicit state of file content storage.
 /// Replaces Option<String> for baseline/current_content to avoid unbounded memory.

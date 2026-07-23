@@ -30,8 +30,6 @@ use kigi_file_utils::events::EventWriter;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-// Constants
-
 /// Same general-purpose inventory each verifier skeptic / the planner
 /// uses: the strategist reads and greps the workspace to diagnose why
 /// the goal is stuck. The configured `agent_type` selects the HARNESS, not
@@ -50,8 +48,6 @@ const GOAL_STRATEGIST_PROMPT_TEMPLATE: &str = include_str!("templates/goal_strat
 /// multibyte note can exceed this many bytes. The full note lives on
 /// disk; the model is pointed at it to read the rest.
 const GOAL_STRATEGIST_RECOMMENDATION_MAX_CHARS: usize = 4096;
-
-// Outcome + spawner abstraction
 
 /// Result of one strategist attempt. `Advised` carries the strategy
 /// note path and the short recommendation read back from it. `FailOpen`
@@ -90,8 +86,6 @@ pub(crate) trait GoalStrategistSpawner: Send + Sync {
     ) -> Result<String, SpawnError>;
 }
 
-// Trigger predicate
-
 /// Pure trigger predicate. Fires when the consecutive-failure count has
 /// advanced at least `every` (N) past the count at which the strategist
 /// last fired (`last_fired`). Using `>= last_fired + N` rather than a
@@ -103,8 +97,6 @@ pub(crate) fn strategist_should_fire(consecutive: u32, last_fired: u32, every: u
     every > 0 && consecutive >= last_fired.saturating_add(every)
 }
 
-// Production spawner
-
 pub(crate) struct ChannelSpawner {
     pub(crate) event_tx: tokio::sync::mpsc::UnboundedSender<
         kigi_tools::implementations::kigi::task::types::SubagentEvent,
@@ -113,7 +105,7 @@ pub(crate) struct ChannelSpawner {
     pub(crate) parent_prompt_id: Option<String>,
     pub(crate) cwd: Option<String>,
     /// Resolved per-role model+toolset override. Default (inherit) keeps the
-    /// historic `::default()` spawn behavior.
+    /// `::default()` spawn behavior.
     pub(crate) role_override: RoleSpawnOverride,
     /// Event sink for the spawn-and-retry-once fail-open telemetry; `None`
     /// in tests / when no event log is wired.
@@ -198,8 +190,6 @@ impl ChannelSpawner {
         Ok(result.output.to_string())
     }
 }
-
-// Runner
 
 pub(crate) struct GoalStrategistInputs<'a> {
     pub objective: &'a str,
@@ -385,8 +375,6 @@ async fn read_recommendation(strategy_file: &Path) -> Option<String> {
     Some(snippet)
 }
 
-// plan.md restore guard
-
 /// Snapshot of plan.md captured before the strategist runs.
 enum PlanSnapshot {
     /// plan.md did not exist (`NotFound`) — a strategist-created regular
@@ -531,8 +519,6 @@ fn record_fail_open(
     });
     GoalStrategistOutcome::FailOpen { reason, latency_ms }
 }
-
-// Tests
 
 #[cfg(test)]
 mod tests {

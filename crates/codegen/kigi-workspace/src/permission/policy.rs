@@ -167,7 +167,7 @@ impl From<PermissionConfig> for CompiledPolicy {
 /// The inner script string of a `bash -c "<script>"` invocation (also `sh`,
 /// `dash`, `zsh`, `ksh`); `None` if the words are not such an invocation.
 /// Known residuals: option arguments (`-o pipefail`) and `+`-option words can
-/// mis-take the operand — escalation-only so a miss never allows; skipping `+…` would add a dodge.
+/// mis-take the operand — escalation-only so a miss never allows; skipping `+…` would open a dodge.
 fn shell_dash_c_script(words: &[String]) -> Option<&str> {
     let program = words.first()?.rsplit(['/', '\\']).next()?;
     if !matches!(program, "bash" | "sh" | "dash" | "zsh" | "ksh") {
@@ -336,7 +336,7 @@ mod tests {
     use super::*;
     use crate::permission::types::PermissionRule;
 
-    // ── pattern_matches tests ─────────────────────────────────────────────
+    // pattern_matches tests
 
     fn rule_for(pattern: &str) -> PermissionRule {
         PermissionRule {
@@ -476,7 +476,7 @@ mod tests {
         assert!(!matches(&AccessKind::Read(None), &rule_for("src/*")));
     }
 
-    // ── tool_filter_matches tests ──────────────────────────────────────────
+    // tool_filter_matches tests
 
     #[test]
     fn test_tool_filter_any() {
@@ -557,7 +557,7 @@ mod tests {
         ));
     }
 
-    // ── evaluate tests ─────────────────────────────────────────────────────
+    // evaluate tests
 
     fn evaluate_policy(access: &AccessKind, config: &PermissionConfig) -> Option<Decision> {
         CompiledPolicy::new(config.clone()).evaluate(access)
@@ -622,7 +622,7 @@ mod tests {
         assert!(evaluate_policy(&AccessKind::Bash("ls".into()), &policy).is_none());
     }
 
-    // ── CompiledPolicy reuse tests ────────────────────────────────────────
+    // CompiledPolicy reuse tests
 
     #[test]
     fn test_compiled_policy_reuse_across_evaluations() {
@@ -651,7 +651,7 @@ mod tests {
         );
     }
 
-    // ── whitespace prefix bypass regression tests ─────────────────
+    // whitespace prefix bypass regression tests
 
     #[test]
     fn test_bash_deny_not_bypassed_by_whitespace_prefix() {
@@ -684,7 +684,7 @@ mod tests {
         assert!(matches(&access, &rule_for("rm*")));
     }
 
-    // ── Deny bypass via shell operators ──────────────────────────────────
+    // Deny bypass via shell operators
 
     #[test]
     fn bash_deny_enforced_in_non_leading_command_position() {
@@ -739,7 +739,7 @@ mod tests {
         );
     }
 
-    // ── default action tests ──────────────────────────────────────
+    // default action tests
 
     #[test]
     fn test_rule_action_defaults_to_deny() {
@@ -761,7 +761,7 @@ mod tests {
         );
     }
 
-    // ── other tests from main ────────────────────────────────────────────
+    // other tests from main
 
     #[test]
     fn mcp_tool_respects_deny_policy() {

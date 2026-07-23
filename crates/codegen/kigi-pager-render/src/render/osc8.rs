@@ -48,7 +48,8 @@ impl LinkOverlay {
             link.col_end
         );
         if link.col_start > link.col_end {
-            return; // Silently skip inverted ranges in release mode.
+            // Silently skip inverted ranges in release mode.
+            return;
         }
         self.links.push(link);
     }
@@ -541,7 +542,7 @@ mod tests {
         scan_lines_for_url_overlays(rows.into_iter(), content_x, media_paths, overlay);
     }
 
-    // ── local_link_to_file_url ──
+    // local_link_to_file_url
 
     #[test]
     fn local_link_relative_resolves_to_generated_media() {
@@ -592,7 +593,7 @@ mod tests {
         assert!(local_link_to_file_url("../images/1.jpg", &media).is_none());
     }
 
-    // ── tool_path_file_url ──
+    // tool_path_file_url
 
     #[test]
     fn tool_path_file_url_resolves_relative_against_cwd() {
@@ -637,7 +638,7 @@ mod tests {
         );
     }
 
-    // ── LinkOverlay ──
+    // LinkOverlay
 
     #[test]
     fn overlay_empty_by_default() {
@@ -661,7 +662,7 @@ mod tests {
         assert_eq!(overlay.links()[0].screen_row, 5);
     }
 
-    // ── scan_lines_for_url_overlays ──
+    // scan_lines_for_url_overlays
 
     use ratatui::text::{Line as RLine, Span as RSpan};
 
@@ -690,7 +691,8 @@ mod tests {
         assert_eq!(link.screen_row, 5);
         // "See " = 4 display cols, content_x = 2
         assert_eq!(link.col_start, 6);
-        assert_eq!(link.col_end, 6 + 19); // "https://example.com" = 19 chars
+        // "https://example.com" = 19 chars
+        assert_eq!(link.col_end, 6 + 19);
         assert_eq!(link.id, None);
     }
 
@@ -796,7 +798,7 @@ mod tests {
         assert_eq!(overlay.links()[0].col_end, 10 + 16);
     }
 
-    // ── File path detection ──
+    // File path detection
 
     #[test]
     fn scan_detects_absolute_file_path() {
@@ -875,7 +877,7 @@ mod tests {
     #[test]
     fn scan_detects_media_path_soft_wrapped_across_rows() {
         // Regression: media-tool output prose wraps the long session path
-        // across visual rows (`joiner: Some("")` mid-word break). Previously
+        // across visual rows (`joiner: Some("")` mid-word break). earlier
         // each row was scanned in isolation, so only the `/Users/alice`
         // fragment on the first row matched and became clickable.
         let row0 =
@@ -1162,7 +1164,7 @@ mod tests {
             &*overlay.links()[0].url,
             "file:///tmp/release/Demo%20App.app"
         );
-        assert_eq!(overlay.links()[0].col_start, 5); // "open "
+        assert_eq!(overlay.links()[0].col_start, 5);
         assert_eq!(
             overlay.links()[0].col_end,
             5 + UnicodeWidthStr::width(path) as u16
@@ -1184,7 +1186,7 @@ mod tests {
         assert_eq!(overlay.links()[0].col_end, 4 + 12);
     }
 
-    // ── Home-relative (`~/`) path detection ──
+    // Home-relative (`~/`) path detection
 
     #[test]
     fn scan_detects_tilde_file_path() {
@@ -1277,7 +1279,7 @@ mod tests {
             id: None,
         });
         assert!(overlay.overlaps(5, 10, 20));
-        assert!(!overlay.overlaps(6, 10, 20)); // different row
+        assert!(!overlay.overlaps(6, 10, 20));
     }
 
     #[test]
@@ -1290,10 +1292,11 @@ mod tests {
             url: Arc::from("https://a.example"),
             id: None,
         });
-        assert!(overlay.overlaps(0, 15, 25)); // right overlap
-        assert!(overlay.overlaps(0, 5, 15)); // left overlap
-        assert!(!overlay.overlaps(0, 20, 30)); // adjacent, no overlap
-        assert!(!overlay.overlaps(0, 0, 10)); // adjacent left
+        assert!(overlay.overlaps(0, 15, 25));
+        assert!(overlay.overlaps(0, 5, 15));
+        // adjacent, no overlap
+        assert!(!overlay.overlaps(0, 20, 30));
+        assert!(!overlay.overlaps(0, 0, 10));
     }
 
     #[test]

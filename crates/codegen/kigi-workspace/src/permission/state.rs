@@ -1,4 +1,5 @@
-#![allow(dead_code)] // Phase 1 internal helpers
+// Phase 1 internal helpers
+#![allow(dead_code)]
 
 use crate::permission::types::EditPolicy;
 use kigi_paths::AbsPathBuf;
@@ -151,7 +152,7 @@ pub async fn cleanup_stale_permission_state(max_age: std::time::Duration) {
 mod tests {
     use super::*;
 
-    // ── PermissionState serialization roundtrip tests ─────────────
+    // PermissionState serialization roundtrip tests
 
     #[test]
     fn default_state_serialization() {
@@ -385,7 +386,7 @@ allowed_bash_commands = ["ls"]
         assert!(state.disallowed_bash_commands.is_empty());
     }
 
-    // ── Disk persistence roundtrip tests ─────────────────────────
+    // Disk persistence roundtrip tests
 
     #[tokio::test]
     async fn persist_and_load_roundtrip() {
@@ -441,7 +442,7 @@ allowed_bash_commands = ["ls"]
         assert!(state.allowed_bash_commands.is_empty());
     }
 
-    // ── Per-client state file path tests ──────────────────────────
+    // Per-client state file path tests
 
     #[test]
     fn state_file_path_without_client_id() {

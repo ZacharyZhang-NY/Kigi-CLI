@@ -15,14 +15,10 @@ use crate::types::resources::{
 };
 use crate::types::tool::{ToolKind, ToolNamespace};
 
-// ─── Description ─────────────────────────────────────────────────────
-
 const DESCRIPTION: &str = r#"Create or overwrite a file.
 
 - Writing to an existing path replaces the file — read it first with the ${{ tools.by_kind.read }} tool.
 - Parent directories are created for you."#;
-
-// ─── Input ───────────────────────────────────────────────────────────
 
 /// Input for the `write` tool.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
@@ -34,9 +30,6 @@ pub struct WriteInput {
     pub content: String,
 }
 
-// ─── Tool ────────────────────────────────────────────────────────────
-
-/// OpenCode write tool — writes entire file contents to disk.
 #[derive(Debug, Default)]
 pub struct WriteTool;
 
@@ -109,16 +102,13 @@ impl kigi_tool_runtime::Tool for WriteTool {
         };
         let tool_call_id = ctx.call_id.as_str().to_owned();
 
-        // Resolve the model-provided path.
         let path = resolve_model_path(&cwd, display_cwd.as_deref(), &input.file_path);
 
-        // ── Check if file exists and read old content ────────────
         let (existed, old_content) = match fs.read_file(&path).await {
             Ok(bytes) => (true, Some(String::from_utf8_lossy(&bytes).into_owned())),
             Err(_) => (false, None),
         };
 
-        // ── Create parent directories if needed ──────────────────
         if let Some(parent) = path.parent()
             && !parent.as_os_str().is_empty()
         {
@@ -131,7 +121,6 @@ impl kigi_tool_runtime::Tool for WriteTool {
             })?;
         }
 
-        // ── Write the file ───────────────────────────────────────
         fs.write_file(&path, input.content.as_bytes())
             .await
             .map_err(|e| {
@@ -141,7 +130,6 @@ impl kigi_tool_runtime::Tool for WriteTool {
                 )
             })?;
 
-        // ── Send FileWritten notification ────────────────────────
         notification_handle.send_file_written(FileWritten {
             tool_call_id,
             absolute_path: path.clone(),
@@ -208,7 +196,6 @@ mod tests {
     use crate::types::resources::Resources;
     use tempfile::TempDir;
 
-    /// Set up Resources with real filesystem for tests.
     fn test_resources(cwd: &std::path::Path) -> Resources {
         let mut resources = Resources::new();
         resources.insert(Cwd(cwd.to_path_buf()));
@@ -216,8 +203,6 @@ mod tests {
         resources.insert(NotificationHandle(ToolNotificationHandle::noop()));
         resources
     }
-
-    // ── Write new file ──────────────────────────────────────────
 
     #[tokio::test]
     async fn write_new_file_creates_with_correct_content() {
@@ -243,8 +228,6 @@ mod tests {
         let content = std::fs::read_to_string(tmp.path().join("new.txt")).unwrap();
         assert_eq!(content, "hello\nworld\n");
     }
-
-    // ── Overwrite existing file ─────────────────────────────────
 
     #[tokio::test]
     async fn overwrite_existing_file() {
@@ -273,8 +256,6 @@ mod tests {
         assert_eq!(content, "new content\n");
     }
 
-    // ── Creates parent directories ──────────────────────────────
-
     #[tokio::test]
     async fn creates_parent_directories() {
         let tmp = TempDir::new().unwrap();
@@ -295,8 +276,6 @@ mod tests {
         assert_eq!(content, "nested\n");
     }
 
-    // ── Tool metadata ──────────────────────────────────────────
-
     #[test]
     fn tool_metadata() {
         use crate::types::tool_metadata::ToolMetadata;
@@ -306,8 +285,6 @@ mod tests {
         assert!(matches!(tool.tool_namespace(), ToolNamespace::OpenCode));
     }
 
-    // ── Serde roundtrip ────────────────────────────────────────
-
     #[test]
     fn serde_roundtrip() {
         let json = r#"{"file_path":"/tmp/test.txt","content":"hello world"}"#;
@@ -315,13 +292,10 @@ mod tests {
         assert_eq!(input.file_path, "/tmp/test.txt");
         assert_eq!(input.content, "hello world");
 
-        // Serializes back to snake_case
         let serialized = serde_json::to_string(&input).unwrap();
         assert!(serialized.contains("file_path"));
         assert!(!serialized.contains("filePath"));
     }
-
-    // ── Empty content write ────────────────────────────────────
 
     #[tokio::test]
     async fn empty_content_write() {
@@ -343,8 +317,6 @@ mod tests {
         let content = std::fs::read_to_string(&file_path).unwrap();
         assert!(content.is_empty());
     }
-
-    // ── Overwrite preserves path in output ─────────────────────
 
     #[tokio::test]
     async fn overwrite_preserves_path_in_output() {
@@ -378,8 +350,6 @@ mod tests {
         }
     }
 
-    // ── Relative path resolution ───────────────────────────────
-
     #[tokio::test]
     async fn relative_path_resolution() {
         let tmp = TempDir::new().unwrap();
@@ -405,14 +375,11 @@ mod tests {
         assert_eq!(content, "resolved\n");
     }
 
-    // ── Missing FileSystem resource ────────────────────────────
-
     #[tokio::test]
     async fn missing_filesystem_resource() {
         let mut resources = Resources::new();
         resources.insert(Cwd(PathBuf::from("/tmp")));
         resources.insert(NotificationHandle(ToolNotificationHandle::noop()));
-        // No FileSystem inserted
 
         let tool = WriteTool;
         let input = WriteInput {
@@ -431,14 +398,11 @@ mod tests {
         );
     }
 
-    // ── Missing Cwd resource ───────────────────────────────────
-
     #[tokio::test]
     async fn missing_cwd_resource() {
         let mut resources = Resources::new();
         resources.insert(FileSystem(Arc::new(LocalFs)));
         resources.insert(NotificationHandle(ToolNotificationHandle::noop()));
-        // No Cwd inserted
 
         let tool = WriteTool;
         let input = WriteInput {
@@ -456,8 +420,6 @@ mod tests {
                 .contains("Cwd not available"),
         );
     }
-
-    // ── Notification fields ───────────────────────────────────
 
     #[test]
     fn notification_fields() {

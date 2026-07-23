@@ -23,8 +23,6 @@ use crate::unified_log;
 /// Maximum age (seconds) of a lock holder before it is considered stuck.
 const STALE_LOCK_TIMEOUT_SECS: u64 = 60;
 
-// ── Holder-info helpers ──────────────────────────────────────────────
-
 /// Write `PID:UNIX_TIMESTAMP` into the lock file so waiters can detect
 /// staleness.
 fn write_holder_info(file: &mut File) -> io::Result<()> {
@@ -45,8 +43,6 @@ fn parse_holder_info(content: &str) -> Option<(u32, u64)> {
     let (pid_str, ts_str) = content.trim().split_once(':')?;
     Some((pid_str.parse().ok()?, ts_str.parse().ok()?))
 }
-
-// ── Platform-specific helpers ────────────────────────────────────────
 
 /// Check whether the process that wrote the lock file is still running.
 #[cfg(unix)]
@@ -77,7 +73,8 @@ fn is_process_alive(pid: u32) -> bool {
 
 #[cfg(not(unix))]
 fn is_process_alive(_pid: u32) -> bool {
-    true // conservative fallback — skip liveness check on non-Unix
+    // conservative fallback — skip liveness check on non-Unix
+    true
 }
 
 /// `fstat(fd)` vs `stat(path)` inode comparison.  Detects a concurrent
@@ -92,10 +89,9 @@ fn inodes_match(file: &File, path: &Path) -> io::Result<bool> {
 
 #[cfg(not(unix))]
 fn inodes_match(_file: &File, _path: &Path) -> io::Result<bool> {
-    Ok(true) // no inode concept; skip the check
+    // no inode concept; skip the check
+    Ok(true)
 }
-
-// ── Staleness check ──────────────────────────────────────────────────
 
 /// Decide staleness when the lock file carries no usable `PID:TS` holder
 /// info — it is empty, was truncated mid-write, or holds non-UTF-8
@@ -106,9 +102,9 @@ fn inodes_match(_file: &File, _path: &Path) -> io::Result<bool> {
 /// break. A lock caught in the sub-millisecond `set_len(0)`→write window
 /// keeps a fresh mtime and is therefore never broken by this path.
 ///
-/// Returning `false` here used to be unconditional ("assume alive"), which
-/// turned a single empty/garbage lock file into an unbreakable lock and
-/// wedged every refresh behind it.
+/// Without this mtime arm, an unconditional "assume alive" turns a single
+/// empty/garbage lock file into an unbreakable lock that wedges every refresh
+/// behind it.
 fn unidentified_holder_is_stale(file: &File, why: &str) -> bool {
     let Ok(modified) = file.metadata().and_then(|m| m.modified()) else {
         unified_log::debug(
@@ -154,7 +150,6 @@ fn is_holder_stale(file: &mut File) -> bool {
         );
     };
 
-    // Process dead?
     if !is_process_alive(holder_pid) {
         unified_log::info(
             &format!("auth lock: holder pid={holder_pid} is dead, breaking stale lock"),
@@ -164,7 +159,6 @@ fn is_holder_stale(file: &mut File) -> bool {
         return true;
     }
 
-    // Process stuck (holding > STALE_LOCK_TIMEOUT_SECS)?
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -186,8 +180,6 @@ fn is_holder_stale(file: &mut File) -> bool {
     false
 }
 
-// ── Single-iteration acquire logic ───────────────────────────────────
-
 /// Outcome of one lock attempt.
 enum LockAttempt {
     /// Lock acquired; inner file holds the flock.
@@ -205,7 +197,6 @@ enum LockAttempt {
 /// `lock_path` is the resolved path to `auth.json.lock` — computed once
 /// by the caller to avoid re-deriving it on every poll iteration.
 fn try_acquire_once(lock_path: &Path) -> LockAttempt {
-    // Step 1: open (create if missing) auth.json.lock
     let mut file = match OpenOptions::new()
         .read(true)
         .write(true)
@@ -224,11 +215,9 @@ fn try_acquire_once(lock_path: &Path) -> LockAttempt {
         }
     };
 
-    // Step 2: flock(LOCK_EX | LOCK_NB)
     match file.try_lock_exclusive() {
         Ok(()) => {
             let pid = std::process::id();
-            // Step 3: write holder info, then verify same inode.
             if let Err(e) = write_holder_info(&mut file) {
                 unified_log::warn(
                     &format!("auth lock: failed to write holder info: {e}"),
@@ -271,7 +260,7 @@ fn try_acquire_once(lock_path: &Path) -> LockAttempt {
             }
         }
 
-        // Step 4: EWOULDBLOCK — lock is held by someone else.
+        // WouldBlock: another process holds the flock.
         Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
             if is_holder_stale(&mut file) {
                 match std::fs::remove_file(lock_path) {
@@ -300,8 +289,6 @@ fn try_acquire_once(lock_path: &Path) -> LockAttempt {
     }
 }
 
-// ── Blocking acquire (kernel FIFO wait queue) ────────────────────────
-
 /// Attempt a blocking `flock(LOCK_EX)` on the lock file.  Returns the
 /// locked file on success, or an error on I/O failure / inode mismatch.
 ///
@@ -315,7 +302,6 @@ fn blocking_acquire(lock_path: &Path) -> io::Result<File> {
         .truncate(false)
         .open(lock_path)?;
 
-    // Blocking flock — waits in kernel until the lock is available.
     file.lock_exclusive().map_err(|e| {
         unified_log::warn(
             &format!("auth lock: blocking flock failed: {e}"),
@@ -355,8 +341,6 @@ fn blocking_acquire(lock_path: &Path) -> io::Result<File> {
     }
 }
 
-// ── Public API ───────────────────────────────────────────────────────
-
 /// Best-effort **non-blocking** acquire for advisory cleanup call sites
 /// (`AuthManager::new` WebLogin cleanup, `remove_scope`).
 ///
@@ -365,8 +349,8 @@ fn blocking_acquire(lock_path: &Path) -> io::Result<File> {
 /// returns `None` so the caller simply skips its best-effort write.
 /// Crucially it records `PID:TS` holder info after locking, so a waiter
 /// that observes the flock can identify the holder (and break it once
-/// stale). Taking the flock *without* writing holder info is what used to
-/// leave an empty `auth.json.lock` that defeated stale-lock recovery.
+/// stale). Taking the flock *without* writing holder info would leave an
+/// empty `auth.json.lock` that defeats stale-lock recovery.
 pub(crate) fn try_lock_auth_file_nonblocking(auth_json_path: &Path) -> Option<AuthFileLock> {
     let lock_path = auth_json_path.with_file_name("auth.json.lock");
     let mut file = OpenOptions::new()
@@ -433,7 +417,8 @@ pub(crate) async fn try_lock_auth_file_async(
     loop {
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
         if remaining == StdDuration::ZERO {
-            break; // fall through to Phase 3
+            // fall through to Phase 3
+            break;
         }
 
         let lp = lock_path.clone();
@@ -471,7 +456,7 @@ pub(crate) async fn try_lock_auth_file_async(
     for _ in 0..2 {
         match try_acquire_once(&lock_path) {
             LockAttempt::Acquired(file) => return Some(AuthFileLock { _file: file }),
-            LockAttempt::StaleUnlinked => continue, // unlinked stale lock, retry once
+            LockAttempt::StaleUnlinked => continue,
             LockAttempt::Busy | LockAttempt::Failed => break,
         }
     }
@@ -497,8 +482,6 @@ mod tests {
     fn auth_json_path(dir: &TempDir) -> std::path::PathBuf {
         dir.path().join("auth.json")
     }
-
-    // ── Pure-function unit tests (no runtime needed) ─────────────────
 
     #[test]
     fn test_write_and_parse_holder_info() {
@@ -551,7 +534,7 @@ mod tests {
         // an empty `auth.json.lock` was treated as alive forever.
         let dir = TempDir::new().unwrap();
         let lock_path = dir.path().join("test.lock");
-        std::fs::write(&lock_path, b"").unwrap(); // empty → unparseable
+        std::fs::write(&lock_path, b"").unwrap();
 
         let file = OpenOptions::new()
             .read(true)
@@ -758,8 +741,6 @@ mod tests {
         );
     }
 
-    // ── Async tests against the production code path ─────────────────
-
     #[tokio::test]
     async fn test_async_acquire_release_basic() {
         let dir = TempDir::new().unwrap();
@@ -768,16 +749,13 @@ mod tests {
         let lock = try_lock_auth_file_async(&path, StdDuration::from_secs(1)).await;
         assert!(lock.is_some(), "should acquire lock");
 
-        // Verify lock file has holder info.
         let lock_path = path.with_file_name("auth.json.lock");
         let content = std::fs::read_to_string(&lock_path).unwrap();
         let (pid, _ts) = parse_holder_info(&content).unwrap();
         assert_eq!(pid, std::process::id());
 
-        // Release.
         drop(lock);
 
-        // Re-acquire should succeed.
         let lock2 = try_lock_auth_file_async(&path, StdDuration::from_secs(1)).await;
         assert!(lock2.is_some(), "should re-acquire after release");
     }
@@ -816,8 +794,6 @@ mod tests {
         assert_eq!(pid, std::process::id());
     }
 
-    // ── Real cross-process integration tests (async) ─────────────────
-    //
     // These spawn a genuine second process so we exercise OS-level flock
     // semantics that threads/extra FDs cannot model: a *dead* holder PID
     // (flock auto-released on process death) and `is_process_alive()`
@@ -847,7 +823,8 @@ mod tests {
     #[ignore = "spawned as a subprocess by the cross-process lock tests"]
     fn subprocess_lock_holder() {
         let Ok(spec) = std::env::var("KIGI_TEST_LOCK_HOLDER") else {
-            return; // normal test run — not a subprocess invocation
+            // normal test run — not a subprocess invocation
+            return;
         };
         let mut parts = spec.splitn(3, '|');
         let lock_path = parts.next().expect("spec lock_path");
@@ -982,10 +959,10 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn test_async_breaks_old_empty_lock_held_by_live_holder() {
-        // Regression: a LIVE process holding the flock on an EMPTY lock
-        // file (no `PID:TS`) used to be "alive forever", wedging refresh.
-        // With the mtime fallback an old empty lock is broken even though
-        // the holder process is still running.
+        // Regression: without the mtime fallback a LIVE process holding the
+        // flock on an EMPTY lock file (no `PID:TS`) reads as "alive forever"
+        // and wedges refresh. The fallback breaks an old empty lock even
+        // though the holder process is still running.
         let dir = TempDir::new().unwrap();
         let path = auth_json_path(&dir);
         let lock_path = path.with_file_name("auth.json.lock");
@@ -1022,7 +999,7 @@ mod tests {
         let path = auth_json_path(&dir);
         let lock_path = path.with_file_name("auth.json.lock");
 
-        let mut child = spawn_lock_holder_subprocess(&lock_path, "empty", 0); // fresh mtime
+        let mut child = spawn_lock_holder_subprocess(&lock_path, "empty", 0);
 
         let lock = try_lock_auth_file_async(&path, StdDuration::from_millis(800)).await;
         assert!(
@@ -1046,22 +1023,20 @@ mod tests {
         let mut child = spawn_lock_holder_subprocess(&lock_path, "pid", 0);
         let child_pid = child.id();
 
-        // Verify child's PID in the lock file.
         let content_before = std::fs::read_to_string(&lock_path).unwrap();
         let (written_pid, _) = parse_holder_info(&content_before).unwrap();
         assert_eq!(written_pid, child_pid);
 
-        // Kill the child.
         child.kill().unwrap();
         child.wait().unwrap();
         assert!(!is_process_alive(child_pid));
 
-        // Lock file still has the dead child's PID.
+        // The killed child's flock is released, but its stale `PID:TS` is
+        // still on disk — recovery must break it.
         let content_after = std::fs::read_to_string(&lock_path).unwrap();
         let (dead_pid, _) = parse_holder_info(&content_after).unwrap();
         assert_eq!(dead_pid, child_pid);
 
-        // Acquire should succeed immediately.
         let start = tokio::time::Instant::now();
         let lock = try_lock_auth_file_async(&path, StdDuration::from_secs(2)).await;
         let elapsed = start.elapsed();
@@ -1130,8 +1105,6 @@ mod tests {
 
         assert!(!is_process_alive(pid), "child should be dead after kill");
     }
-
-    // ── Blocking acquire unit tests ──────────────────────────────────
 
     #[cfg(unix)]
     #[test]

@@ -7,14 +7,6 @@
 //! `ScrollbackPane` (scroll, fold, selection, mouse) is not used; the terminal
 //! owns history.
 //!
-//! - [`commit`] — committed-frontier logic, display policy, and the per-frame
-//!   commit-to-scrollback pass.
-//! - [`live`] — the pinned live region (tail + status + prompt).
-//! - [`todo`] — the persistent todo panel shown above the prompt.
-//! - [`auth`] — the in-region sign-in flow shown before a session exists.
-//! - [`overlay`] — the inline-overlay host (prompt-anchored dropdowns; grows /
-//!   shrinks the live viewport).
-//!
 //! # Wiring
 //!
 //! `kigi-tui` (the lib) does **not** depend on this crate — that would be
@@ -46,29 +38,16 @@ use kigi_tui::app::app_view::AppView;
 
 /// Per-frame entry point for minimal mode, called from [`AppView::draw`].
 ///
-/// Order matters:
-/// 0. Open a synchronized update and adopt the current terminal size (see
-///    below), so every write this frame — commits *and* the live region —
-///    presents atomically at the right dimensions.
-/// 1. Commit the pending welcome card (fresh session / `/new`) so it lands
-///    above the first conversation block, and push any ready plan into
-///    scrollback (`plan::maybe_commit_plan`) so it commits like a normal block
-///    this frame — the live region then holds only the plan's decision controls.
-/// 2. Size the viewport to its **post-commit** height (see
-///    [`overlay::sync_viewport`] / [`live::tail_height`]). This runs *before* the
-///    commit so that step 3's `insert_before` prints each finalized block and
-///    repositions the correctly-sized viewport to sit directly after it
-///    (content-anchored — the prompt follows the content, and once the screen is
-///    full that position is the bottom). Otherwise the viewport was still at its
-///    tall streaming height when the block committed, and the following shrink
-///    stranded the prompt at the top of the screen ("input snaps to the top").
-/// 3. Commit finalized blocks into native scrollback (each `insert_before`
-///    scrolls committed rows up above the pinned viewport), then re-print any
-///    `Ctrl+E` / `/expand` re-prints fully expanded below.
-/// 4. Redraw the live region (tail · status · overlay · prompt) into the
-///    viewport's final position.
+/// The call order is load-bearing. [`overlay::sync_viewport`] sizes the
+/// viewport to its **post-commit** height and must run *before*
+/// [`commit::commit_active`], so that each `insert_before` prints a finalized
+/// block and repositions an already-correctly-sized viewport to sit directly
+/// after it (content-anchored — the prompt follows the content, and once the
+/// screen is full that position is the bottom). A viewport still at its tall
+/// streaming height when the block commits collapses afterwards and strands the
+/// prompt at the top of the screen ("input snaps to the top").
 ///
-/// ## Why step 0 exists (resize + flicker)
+/// ## Why the synchronized update and autoresize come first
 ///
 /// **Resize:** `draw_frame` runs `terminal.autoresize()` — but that is the
 /// *last* step of this function, while the commit passes read
@@ -84,20 +63,17 @@ use kigi_tui::app::app_view::AppView;
 /// visible scroll/paint bursts before the live region repaints. Opening the
 /// synchronized update *before* the commits batches the whole frame — commits,
 /// viewport reposition, and live redraw — into one atomic present. The
-/// matching `EndSynchronizedUpdate` is emitted by `draw_frame` (step 4), which
-/// every path through this function reaches; its own inner
+/// matching `EndSynchronizedUpdate` is emitted by `draw_frame`, which every
+/// path through this function reaches; its own inner
 /// `BeginSynchronizedUpdate` is redundant-but-harmless (DEC 2026 is a mode,
 /// not a counter — the first End closes it).
 pub fn draw(app: &mut AppView, terminal: &mut PagerTerminal) {
     let _ = terminal.backend_mut().queue(BeginSynchronizedUpdate);
     let _ = terminal.autoresize();
-    // Pending permission/question marks are synced ONCE, up front, so the
-    // viewport sizing (`sync_viewport` / `tail_height` / `will_commit`) and the
-    // commit pass judge committability against the same state (see
-    // `commit::sync_pending_marks`).
+    // Sync pending permission/question marks ONCE, up front, so that viewport
+    // sizing (`sync_viewport` / `tail_height` / `will_commit`) and the commit
+    // pass judge committability against the same state.
     commit::sync_pending_marks(app);
-    // Advance any in-progress /transcript build by one time-budgeted slice
-    // (arms `pending_pager_path` when done; see `full_view::pump_transcript`).
     full_view::pump_transcript(app);
     welcome::maybe_commit_welcome(app, terminal);
     plan::maybe_commit_plan(app);
@@ -107,11 +83,10 @@ pub fn draw(app: &mut AppView, terminal: &mut PagerTerminal) {
     live::draw_live(app, terminal);
 }
 
-/// Register the minimal-mode render hooks with `kigi-tui`.
+/// Installs the function-pointer seam so the pager's `ScreenMode::Minimal`
+/// branches dispatch into this crate.
 ///
-/// Call this exactly once, early in the binary's `main`, before any frame is
-/// drawn. It installs the function-pointer seam so the pager's
-/// `ScreenMode::Minimal` branches dispatch into this crate. Idempotent:
+/// Call early in the binary's `main`, before any frame is drawn. Idempotent:
 /// subsequent calls are ignored (see [`kigi_tui::minimal_hook`]).
 pub fn install() {
     kigi_tui::minimal_hook::install(kigi_tui::minimal_hook::MinimalHooks { draw });

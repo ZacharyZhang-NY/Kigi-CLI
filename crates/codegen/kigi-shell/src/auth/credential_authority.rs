@@ -2,10 +2,10 @@
 //!
 //! One authority answers, for every outgoing inference request, the only
 //! question that matters: **which credential — if any — may ride it?**
-//! ([`CredentialAuthority::credential_class`]). Before this module the answer was
-//! re-derived — differently — at every call site (`ModelsManager`, `MvpAgent`,
-//! `SessionActor`, the aux/summary/subagent paths), and three separate rounds
-//! of fixes each closed some sites and missed others.
+//! ([`CredentialAuthority::credential_class`]). Every credential sink
+//! (`ModelsManager`, `MvpAgent`, `SessionActor`, the aux/summary/subagent
+//! paths) funnels through this one rule, so none can derive the answer
+//! differently and leak a bearer.
 //!
 //! # How omission is structurally prevented
 //!
@@ -27,9 +27,8 @@
 //!    through the identical rule as the `api_key` sink.
 //! 4. A guard asks [`CredentialAuthority::credential_class`] and MATCHES on the
 //!    answer. There is no second, similarly-named boolean to pick by mistake:
-//!    the round-3 defect (C1) was `takes_session_credential` — *may **a**
-//!    session credential ride?* — paired with a hand-carried PRIMARY bearer,
-//!    and the two predicates that made that pairing expressible are gone.
+//!    C1 was `takes_session_credential` — *may **a** session credential
+//!    ride?* — misread as license to hand-carry the PRIMARY bearer.
 //!
 //! SECURITY: no token is ever logged, `Debug`-printed or `Display`ed here.
 
@@ -67,12 +66,12 @@ impl SessionCredential {
 /// WHICH credential — if any — may ride a request routed to a given
 /// `(platform, base_url)` pair.
 ///
-/// ONE question with three answers, replacing the two look-alike booleans
-/// `takes_session_credential` / `takes_primary_credential` (identical
+/// ONE question with three answers, not two look-alike booleans
+/// (`takes_session_credential` / `takes_primary_credential`: identical
 /// signatures, near-identical names, opposite answers on a subscription host).
 /// C1 was caused by asking the first and stamping the credential the second
 /// describes; with a single classifier a call site must MATCH on the answer, so
-/// that mistake is no longer expressible.
+/// that mistake is not expressible.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CredentialClass {
     /// `platform`'s OWN pooled subscription-OAuth token, at its own registry
@@ -135,7 +134,8 @@ impl CredentialAuthority {
     ///   github-copilot, xai-grok) rides ITS OWN pooled manager — never the
     ///   primary — and only to its own registry host (L10: a
     ///   `[model."claude-pro-max/x"]` override keeps `info.id` but can point
-    ///   `base_url` anywhere, and used to ship the Claude OAuth bearer there);
+    ///   `base_url` anywhere, and would otherwise ship the Claude OAuth bearer
+    ///   there);
     /// - `kimi-code` — the one `uses_oauth` platform with no `OAuthConfig` —
     ///   rides the PRIMARY session, and only at the session's own effective
     ///   coding endpoint;
@@ -273,15 +273,12 @@ impl CredentialAuthority {
     /// M5: a slug that is NOT in the catalog resolves through the SAME endpoint
     /// rule against the aux fallback endpoint
     /// (`EndpointsConfig::resolve_inference_base_url`, which is exactly where
-    /// `resolve_aux_model_sampling_config`'s Tier-2 entry routes) instead of
-    /// being handed the primary unconditionally — the old "first-party by
-    /// construction" justification was false once `models_base_url` could point
-    /// anywhere.
+    /// `resolve_aux_model_sampling_config`'s Tier-2 entry routes), not handed
+    /// the primary unconditionally: `models_base_url` can point anywhere, so an
+    /// off-catalog slug is not first-party by construction.
     ///
     /// M6: the platform and the base URL come from ONE
-    /// [`crate::agent::models::entry_for_slug`] lookup, so they can no longer
-    /// disagree (the aux path used to resolve the platform with `current_key`
-    /// and the credential with a separate `find_model_by_id`).
+    /// [`crate::agent::models::entry_for_slug`] lookup, so they cannot disagree.
     pub(crate) fn credential_for_slug(
         &self,
         models: &indexmap::IndexMap<String, ModelEntry>,
@@ -491,9 +488,6 @@ mod tests {
 
     /// C1 — a subscription platform's own host DOES take a session credential,
     /// but it is that platform's POOLED token, never the primary / house key.
-    /// Two look-alike booleans used to encode this, and picking the wrong one is
-    /// the whole defect; one classifier makes the distinction impossible to
-    /// mis-read.
     #[test]
     fn a_subscription_host_classifies_pooled_never_primary() {
         let (_d, kimi) = primary("kimi-tok");

@@ -620,10 +620,8 @@ fn workspace_error_display_renders_for_every_variant() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // JSON-shape assertions: lock down the wire field
 // names so any future drift back to camelCase fails loudly.
-// ---------------------------------------------------------------------------
 
 #[test]
 fn tool_call_args_uses_snake_case_field_names() {
@@ -670,9 +668,9 @@ fn session_request_inline_struct_variants_use_snake_case() {
 
 #[test]
 fn workspace_event_inline_struct_variants_use_snake_case() {
-    // CodebaseIndexUpdated has a snake_case-able field (`files_indexed`)
+    // `CodebaseIndexUpdated` has a snake_case-able field (`files_indexed`)
     // and is one of the remaining inline-struct WorkspaceEvent variants
-    // after the hunk events were removed.
+    // now that the enum carries no hunk events.
     let ev = WorkspaceEvent::CodebaseIndexUpdated { files_indexed: 7 };
     let json = serde_json::to_string(&ev).unwrap();
     assert!(json.contains("\"files_indexed\""), "got {json}");

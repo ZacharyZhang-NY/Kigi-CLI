@@ -87,7 +87,7 @@ fn test_sandbox_logger() {
     let events = logger.take_events();
     assert_eq!(events.len(), 3);
 
-    // Buffer is now empty
+    // Buffer is empty
     let events2 = logger.take_events();
     assert!(events2.is_empty());
 }

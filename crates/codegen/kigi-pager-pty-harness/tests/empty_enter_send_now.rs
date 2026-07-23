@@ -5,7 +5,8 @@
 //! ```
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore] // opt-in: real pager binary in a PTY (CI runs with --ignored)
+// opt-in: real pager binary in a PTY (CI runs with --ignored)
+#[ignore]
 async fn empty_enter_force_sends_top_queued() {
     kigi_pager_pty_harness::scenarios::empty_enter_send_now::assert_empty_enter_force_sends_top_queued()
         .await

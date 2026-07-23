@@ -31,7 +31,6 @@ use crate::theme::Theme;
 struct StatusEntry {
     /// Identifier for hit-test lookup (e.g., "context", "badge").
     id: &'static str,
-    /// Pre-built styled content.
     line: Line<'static>,
     /// Display width in columns.
     width: u16,
@@ -49,7 +48,6 @@ pub struct AgentStatusBar<'a> {
 }
 
 impl<'a> AgentStatusBar<'a> {
-    /// Create a new empty status bar.
     pub fn new(theme: &'a Theme) -> Self {
         Self {
             items: Vec::new(),
@@ -88,11 +86,10 @@ impl<'a> AgentStatusBar<'a> {
             return HashMap::new();
         }
 
-        // Fill background
         buf.set_style(area, Style::default().bg(self.theme.bg_base));
 
         let sep = self.separator();
-        let sep_w = sep.width() as u16; // 3
+        let sep_w = sep.width() as u16;
 
         // Total width: items plus the separators *between* them only — no
         // leading separator before the first item or trailing one after the
@@ -116,7 +113,6 @@ impl<'a> AgentStatusBar<'a> {
                 x += sep_w;
             }
 
-            // Render item
             buf.set_line(x, area.y, &entry.line, entry.width);
             areas.insert(
                 entry.id,
@@ -133,10 +129,6 @@ impl<'a> AgentStatusBar<'a> {
         areas
     }
 }
-
-// ---------------------------------------------------------------------------
-// Goal status line
-// ---------------------------------------------------------------------------
 
 /// Format a token count compactly: `500`, `1.5k`, `50k`, `1.5M`.
 pub(crate) fn format_tokens_compact(tokens: i64) -> String {
@@ -282,10 +274,6 @@ pub fn goal_status_line(
     ])
 }
 
-// ---------------------------------------------------------------------------
-// Graph status chip
-// ---------------------------------------------------------------------------
-
 /// Build the compact `/graph` status chip: node progress, the current
 /// node, and spend. Same chip idiom as [`goal_status_line`] — dim
 /// brackets, paused chips invert onto `theme.warning`, active chips
@@ -350,10 +338,6 @@ pub fn graph_status_line(
         Span::styled(format!("  {tokens_display}"), dim_style),
     ])
 }
-
-// ---------------------------------------------------------------------------
-// MCP connecting indicator
-// ---------------------------------------------------------------------------
 
 /// Build the compact MCP-connecting indicator for the agent status bar.
 ///
@@ -804,9 +788,6 @@ mod tests {
         );
         assert_eq!(goal_phase_label(&g), "Executing");
     }
-
-    // The old deliverable-index parity test is removed because deliverables
-    // are no longer part of the simplified goal model.
 
     #[test]
     fn goal_line_contains_expected_text() {

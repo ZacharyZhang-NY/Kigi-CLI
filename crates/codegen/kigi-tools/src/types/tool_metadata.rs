@@ -49,10 +49,6 @@ pub trait ToolMetadata: Send + Sync {
     /// the `TemplateRenderer`.
     fn description_template(&self) -> &str;
 
-    // -----------------------------------------------------------------------
-    // Defaults — override only when needed
-    // -----------------------------------------------------------------------
-
     /// Whether the tool is read-only (no filesystem / external side-effects).
     /// Default: derived from `kind()`.
     fn is_read_only(&self) -> bool {
@@ -142,9 +138,8 @@ pub async fn resolve_cwd(
 /// Build a `ToolCallContext` with `SharedResources` installed and a fresh
 /// v7 call id.
 ///
-/// Convenience for tests — replaces the per-tool `make_ctx` / `runtime_ctx`
-/// helpers that were duplicated across ~50 tool implementations. Use
-/// [`test_ctx_with_call_id`] when the test needs a specific call id.
+/// Convenience for tests. Use [`test_ctx_with_call_id`] when the test needs
+/// a specific call id.
 pub fn test_ctx(resources: SharedResources) -> kigi_tool_runtime::ToolCallContext {
     let mut ctx = kigi_tool_runtime::ToolCallContext::default();
     ctx.extensions.insert(resources);

@@ -1,6 +1,6 @@
 //! Wire types for the `kigi-workspace` API.
 //!
-//! This crate is intentionally pure-data and depends on nothing more than
+//! This crate is deliberately pure-data and depends on nothing more than
 //! `base64`, `serde`, `serde_json`, `thiserror`, and `chrono`. There is
 //! no tokio, no async-trait, no I/O. This makes it cheap to depend on
 //! from anywhere -- including the eventual WASM browser SDK.

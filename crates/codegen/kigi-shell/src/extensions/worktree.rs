@@ -56,8 +56,6 @@ fn extract_creating_path(resp: &anyhow::Result<CreateWorktreeResponse>) -> Optio
     }
 }
 
-// ── ACP request types for worktree management ──────────────────────────────────────────────────
-
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListWorktreeRequest {
@@ -157,7 +155,6 @@ pub async fn handle(
     match args.method.as_ref() {
         "kigi/git/worktree/create" => {
             let mut req = serde_json::from_str::<CreateWorktreeRequest>(args.params.get())?;
-            // Pre-dispatch: apply worktree_type default
             let request_worktree_type = req.worktree_type;
             if req.worktree_type.is_none() {
                 req.worktree_type = Some(worktree_type_default.into());
@@ -208,7 +205,6 @@ pub async fn handle(
             let mut req =
                 serde_json::from_str::<CreateWorktreeFromWorktreeRequest>(args.params.get())?;
             let request_worktree_type = req.worktree_type;
-            // Apply default if not explicitly set in request
             if req.worktree_type.is_none() {
                 req.worktree_type = Some(worktree_type_default.into());
             }
@@ -218,7 +214,6 @@ pub async fn handle(
                 worktree_type_default,
                 req.worktree_type.unwrap_or(worktree_type_default.into()),
             );
-            // Dispatch prepare through workspace
             let result = ops
                 .dispatch(
                     &kigi_workspace::workspace_ops::PrepareWorktreeFromWorktreeReq {
@@ -229,7 +224,6 @@ pub async fn handle(
                 .await
                 .map_err(|e| acp::Error::internal_error().data(e.to_string()))?;
 
-            // Convert the serialized response back
             if let Some(err) = result.error {
                 return Err(acp::Error::internal_error().data(err));
             }
@@ -288,7 +282,6 @@ pub async fn handle(
             }
 
             let request_worktree_type = req.worktree_type;
-            // Apply default if not explicitly set in request
             if req.worktree_type.is_none() {
                 req.worktree_type = Some(worktree_type_default.into());
             }
@@ -309,7 +302,6 @@ pub async fn handle(
                 .map_err(|e| acp::Error::internal_error().data(e.to_string()))?;
             to_response(Ok(result))
         }
-        // Resume a session in a fresh worktree.
         "kigi/git/worktree/resume_session" => {
             let req = serde_json::from_str::<ResumeSessionInWorktreeRequest>(args.params.get())?;
             log_effective_worktree_type(
@@ -334,7 +326,6 @@ pub async fn handle(
                 .await,
             )
         }
-        // ── Repo-wide session resolution ─────────────────────────────────
         "kigi/session/resolve_local_for_worktree_resume" => {
             let req =
                 serde_json::from_str::<ResolveLocalForWorktreeResumeRequest>(args.params.get())?;
@@ -358,14 +349,13 @@ pub async fn handle(
                 }
             }
         }
-        // ── Session rehydration (devbox recovery) ─────────────────────────
+        // Session rehydration for devbox recovery.
         "kigi/session/rehydrate" => {
             let req = serde_json::from_str::<RehydrateSessionRequest>(args.params.get())?;
             let registry_client = agent.session_registry_client();
 
             to_response(rehydrate_session_in_worktree(&req, ops, registry_client.as_ref()).await)
         }
-        // ── Worktree management methods ──────────────────────────────────
         "kigi/git/worktree/list" => {
             let req: kigi_workspace::workspace_ops::WorktreeListReq =
                 serde_json::from_str(args.params.get())
@@ -569,8 +559,6 @@ mod tests {
         assert_eq!(result["already_tracked"], 2);
         assert!(wire.get("error").is_none() || wire["error"].is_null());
     }
-
-    // === Tests for repo-wide session resolution ACP types ===
 
     #[test]
     fn resolve_local_request_deserializes() {

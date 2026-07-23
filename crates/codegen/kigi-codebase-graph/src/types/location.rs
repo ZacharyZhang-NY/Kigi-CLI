@@ -49,7 +49,6 @@ impl Location {
         }
     }
 
-    /// Get the file path.
     pub fn file_path(&self) -> &PathBuf {
         &self.file_path
     }

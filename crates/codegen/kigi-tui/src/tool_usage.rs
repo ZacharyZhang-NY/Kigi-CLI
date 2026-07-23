@@ -1,12 +1,5 @@
 //! Tool usage statistics aggregation for the pager.
 //!
-//! This module provides:
-//!
-//! - [`ToolCategory`] — categories for tool calls (Execute, Read, Edit, Search, ListDir, Other)
-//! - [`BlockStatus`] — status of a tool block (Success, Failed, Running)
-//! - [`CategoryStats`] — per-category statistics (counts, failures, positions)
-//! - [`ToolUsageStats`] — aggregated stats with scope (Session / SelectedTurn)
-//!
 //! ## Phase 1 MVP
 //!
 //! Stats are computed over visible scrollback blocks only (ToolCallBlock variants).
@@ -22,10 +15,6 @@ use ratatui::style::Color;
 use crate::scrollback::blocks::tool::ToolCallBlock;
 use crate::scrollback::state::ScrollbackState;
 use crate::theme::Theme;
-
-// ---------------------------------------------------------------------------
-// ToolCategory — categories derived from ToolCallBlock variants only
-// ---------------------------------------------------------------------------
 
 /// Block category for stats aggregation.
 /// Maps scrollback block variants to semantic groups.
@@ -107,8 +96,6 @@ impl ToolCategory {
         }
     }
 
-    /// Map from ToolCallBlock to category.
-    /// Only ToolCallBlock variants are supported; other blocks are excluded.
     pub fn from_tool_block(tc: &ToolCallBlock) -> Self {
         match tc {
             ToolCallBlock::Execute(_) => Self::Execute,
@@ -126,10 +113,6 @@ impl ToolCategory {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// BlockStatus — status dimension (not category)
-// ---------------------------------------------------------------------------
 
 /// Status of a tool block at aggregation time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -154,10 +137,6 @@ pub struct LineageEntry {
     pub running: bool,
 }
 
-// ---------------------------------------------------------------------------
-// CategoryStats — per-category aggregation
-// ---------------------------------------------------------------------------
-
 /// Statistics for a single tool category.
 #[derive(Debug, Clone, Default)]
 pub struct CategoryStats {
@@ -173,17 +152,14 @@ pub struct CategoryStats {
 }
 
 impl CategoryStats {
-    /// Number of failed operations.
     pub fn failed_count(&self) -> usize {
         *self.by_status.get(&BlockStatus::Failed).unwrap_or(&0)
     }
 
-    /// Number of running operations.
     pub fn running_count(&self) -> usize {
         *self.by_status.get(&BlockStatus::Running).unwrap_or(&0)
     }
 
-    /// Percentage of total operations.
     pub fn percent_of(&self, total: usize) -> f64 {
         if total == 0 {
             return 0.0;
@@ -210,10 +186,6 @@ impl CategoryStats {
     }
 }
 
-// ---------------------------------------------------------------------------
-// StatsScope — aggregation scope
-// ---------------------------------------------------------------------------
-
 /// Aggregation scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StatsScope {
@@ -224,10 +196,6 @@ pub enum StatsScope {
     /// with fallback to the latest turn if no current turn exists.
     SelectedTurn,
 }
-
-// ---------------------------------------------------------------------------
-// ToolUsageStats — full aggregation
-// ---------------------------------------------------------------------------
 
 /// Aggregated tool usage statistics.
 #[derive(Debug, Clone)]
@@ -281,7 +249,6 @@ impl ToolUsageStats {
     ///
     /// Returns empty stats if no turns exist.
     pub fn from_selected_or_latest(scrollback: &ScrollbackState) -> Self {
-        // Prefer selected turn; fall back to latest turn.
         let turn_idx = scrollback.current_turn().or_else(|| {
             let count = scrollback.turns().len();
             if count > 0 { Some(count - 1) } else { None }
@@ -298,10 +265,6 @@ impl ToolUsageStats {
     }
 
     /// Core aggregation logic over a range of entry indices.
-    ///
-    /// Uses real ScrollbackState/Entry APIs:
-    /// - scrollback.len() / scrollback.entry(i)
-    /// - scrollback.turns() / scrollback.turn(i) / scrollback.current_turn()
     fn from_range(scrollback: &ScrollbackState, range: Range<usize>, scope: StatsScope) -> Self {
         let mut stats = ToolUsageStats {
             scope,
@@ -388,8 +351,6 @@ impl ToolUsageStats {
     }
 
     /// Check if a tool block completed successfully.
-    ///
-    /// Each ToolCallBlock variant has an is_success() method or error field.
     fn tool_block_is_success(tc: &ToolCallBlock) -> bool {
         match tc {
             ToolCallBlock::Execute(b) => b.is_success(),
@@ -474,7 +435,6 @@ mod tests {
     fn test_from_scrollback_mixed_categories() {
         let mut scrollback = ScrollbackState::new();
 
-        // Push mixed tool blocks
         scrollback.push_block(RenderBlock::ToolCall(ToolCallBlock::Execute(
             ExecuteToolCallBlock::new("cargo build"),
         )));
@@ -493,7 +453,6 @@ mod tests {
         assert_eq!(stats.total_operations, 4);
         assert_eq!(stats.scope, StatsScope::Session);
 
-        // Verify category counts
         let execute_count = stats
             .categories
             .get(&ToolCategory::Execute)
@@ -519,7 +478,6 @@ mod tests {
     fn test_from_scrollback_failed_blocks() {
         let mut scrollback = ScrollbackState::new();
 
-        // Push execute blocks - one with error, one without
         let mut success_block = ExecuteToolCallBlock::new("echo hello");
         success_block.finish();
         scrollback.push_block(RenderBlock::ToolCall(ToolCallBlock::Execute(success_block)));
@@ -551,15 +509,13 @@ mod tests {
     fn test_from_selected_or_latest_no_turns_fallback() {
         let mut scrollback = ScrollbackState::new();
 
-        // Push tool blocks without starting a turn
         scrollback.push_block(RenderBlock::ToolCall(ToolCallBlock::Execute(
             ExecuteToolCallBlock::new("echo test"),
         )));
 
         let stats = ToolUsageStats::from_selected_or_latest(&scrollback);
 
-        // No turns exist, so it falls back to latest turn (which is empty)
-        // or returns empty stats
+        // No turns exist, so it falls back to the latest turn (which is empty).
         assert_eq!(stats.scope, StatsScope::SelectedTurn);
     }
 
@@ -567,7 +523,6 @@ mod tests {
     fn test_from_selected_or_latest_with_turns() {
         let mut scrollback = ScrollbackState::new();
 
-        // Push user prompt (starts a turn) and some tool blocks
         scrollback.push_block(RenderBlock::user_prompt("test prompt"));
         scrollback.push_block(RenderBlock::ToolCall(ToolCallBlock::Execute(
             ExecuteToolCallBlock::new("echo hello"),
@@ -576,14 +531,12 @@ mod tests {
             ReadToolCallBlock::new("file.txt"),
         )));
 
-        // Set as current turn
         scrollback.set_selected(Some(0));
 
         let stats = ToolUsageStats::from_selected_or_latest(&scrollback);
 
         assert_eq!(stats.scope, StatsScope::SelectedTurn);
-        // Should have aggregated the tool blocks in the turn
-        // Verify it computed without panicking
+        // Just verify it computed without panicking.
         let _ = stats.total_operations;
     }
 

@@ -1,10 +1,8 @@
 use super::*;
 
 impl SessionActor {
-    // ── Shared hook/plugin operation functions ────────────────────────
-
-    /// Trust the current project via the unified folder-trust store. Now an
-    /// alias of `--trust`: also allows repo-local MCP/LSP for this folder.
+    /// Trust the current project via the unified folder-trust store, which also
+    /// allows repo-local MCP/LSP for this folder (equivalent to `--trust`).
     pub(super) fn do_hooks_trust_project(cwd: &str) -> Result<std::path::PathBuf, String> {
         let root = kigi_workspace::session::git::find_git_root_from_path(std::path::Path::new(cwd))
             .map_err(|_| {
@@ -69,7 +67,6 @@ impl SessionActor {
         }
     }
 
-    /// Resolve a potentially relative path against the session cwd.
     fn resolve_path(cwd: &str, path: &str) -> std::path::PathBuf {
         let p = std::path::Path::new(path);
         if p.is_relative() {
@@ -79,9 +76,6 @@ impl SessionActor {
         }
     }
 
-    // ── Hooks/plugins action handlers (pager modal) ──────────────────
-
-    /// Handle a hooks management action from the pager modal.
     pub(super) async fn handle_hooks_action(
         self: &Arc<Self>,
         action: kigi_hooks_plugins_types::HooksAction,
@@ -134,7 +128,7 @@ impl SessionActor {
                 },
                 Ok((root, true)) => {
                     let reload_msg = self.reload_hooks_impl().await;
-                    // Revoked trust must immediately drop a previously seeded
+                    // Revoked trust must immediately drop an already-seeded
                     // repo-level MCP output cap (the resolver is trust-gated,
                     // so this clears it) — not linger until the next config
                     // reload.
@@ -264,7 +258,6 @@ impl SessionActor {
         }
     }
 
-    /// Handle a plugins management action from the pager modal.
     pub(super) async fn handle_plugins_action(
         self: &Arc<Self>,
         action: kigi_hooks_plugins_types::PluginsAction,
@@ -370,7 +363,6 @@ impl SessionActor {
                         let plugin_names: Vec<String> = repo.plugins.keys().cloned().collect();
                         let count = plugin_names.len();
 
-                        // Check multi-plugin repo — return ConfirmationRequired.
                         if count > 1 && !confirmed {
                             return ActionOutcome {
                                 status: OutcomeStatus::ConfirmationRequired,
@@ -383,7 +375,6 @@ impl SessionActor {
                             };
                         }
 
-                        // Proceed with removal.
                         if let Err(e) =
                             kigi_agent::plugins::git_install::remove_repo_path(&repo_path)
                         {
@@ -513,7 +504,6 @@ impl SessionActor {
                 }
             }
             PluginsAction::Enable { plugin_id } => {
-                // Add to enabled list (for project plugins) and remove from disabled list.
                 let r1 = crate::config::add_enabled_plugin(&plugin_id);
                 let r2 = crate::config::remove_disabled_plugin(&plugin_id);
                 match r1.and(r2) {
@@ -544,7 +534,6 @@ impl SessionActor {
                 }
             }
             PluginsAction::Disable { plugin_id } => {
-                // Add to disabled list and remove from enabled list.
                 let r1 = crate::config::add_disabled_plugin(&plugin_id);
                 let r2 = crate::config::remove_enabled_plugin(&plugin_id);
                 match r1.and(r2) {
@@ -636,7 +625,6 @@ impl SessionActor {
             tracing::warn!("hook reload error: {err}");
         }
         *self.hook_load_errors.borrow_mut() = errors.iter().map(|e| e.to_string()).collect();
-        // Re-append plugin hooks from current plugin registry.
         // Clone the Arc out of the RefCell so the borrow is dropped immediately.
         let plugin_registry_snapshot = self.plugin_registry.borrow().clone();
         if let Some(ref pr) = plugin_registry_snapshot {
@@ -679,7 +667,6 @@ impl SessionActor {
         }
         tracing::info!(hook_count, "hooks reloaded mid-session");
 
-        // Notify pager about hooks change.
         // Extract all RefCell borrows into locals before the .await so
         // no Ref guard is alive across the suspension point.
         {
@@ -830,16 +817,13 @@ impl SessionActor {
         let sid = self.session_info.id.0.as_ref();
         let session_cwd = std::path::Path::new(&self.session_info.cwd);
 
-        // Update session's plugin registry snapshot
         *self.plugin_registry.borrow_mut() = new_registry_snapshot.clone();
 
-        // Reload hooks in the current session
         let t_hooks = std::time::Instant::now();
         let mut hooks_reloaded = 0usize;
         if let Some(ref new_registry) = new_registry_snapshot {
             let mut new_specs = Vec::new();
             for plugin in new_registry.active_plugins() {
-                // File-based hooks
                 if let Some(ref hooks_path) = plugin.hooks_path {
                     let (specs, warnings) = kigi_agent::plugins::hooks_adapter::parse_plugin_hooks(
                         hooks_path,
@@ -852,7 +836,6 @@ impl SessionActor {
                     }
                     new_specs.extend(specs);
                 }
-                // Inline hooks
                 if let Some(ref inline_value) = plugin.inline_hooks {
                     let (specs, warnings) =
                         kigi_agent::plugins::hooks_adapter::parse_plugin_hooks_from_value(
@@ -953,7 +936,6 @@ impl SessionActor {
             })),
         );
 
-        // Refresh skills: re-scan from disk using the (already-updated) plugin registry.
         let t_skills = std::time::Instant::now();
         let skill_count = self.reload_skills_from_disk().await;
         kigi_log::unified_log::info(
@@ -965,7 +947,6 @@ impl SessionActor {
             })),
         );
 
-        // Notify pager about registry changes so the modal auto-refreshes.
         // Extract all RefCell borrows into locals before the .await so
         // no Ref guard is alive across the suspension point (prevents
         // BorrowMutError panics when send_xai_notification dispatches

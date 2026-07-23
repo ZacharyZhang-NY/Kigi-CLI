@@ -89,14 +89,8 @@ fn http_err(status: u16, msg: &str) -> Result<ToolRunResult, kigi_tool_runtime::
     )
 }
 
-// ── is_auth_tool_error ────────────────────────────────────────
-
-/// Single source of truth for which error strings/variants the helper
-/// must classify. Adding a new pattern is a one-line change here.
 #[test]
 fn is_auth_tool_error_classification() {
-    // (expected, error) — covers every branch + a sample of negatives
-    // a careless edit could plausibly break.
     let cases: Vec<(bool, kigi_tool_runtime::ToolError)> = vec![
         // Primary path: tool HTTP clients surface 401s as
         // structured custom errors with status in details; classifier
@@ -140,7 +134,6 @@ fn is_auth_tool_error_classification() {
                 serde_json::json!({"code": "http_failure", HTTP_STATUS_DETAILS_KEY: 403}),
             ),
         ),
-        // Negative: any other non-success HTTP status falls through.
         (
             false,
             kigi_tool_runtime::ToolError::new(
@@ -202,8 +195,6 @@ fn is_auth_tool_error_classification() {
         );
     }
 }
-
-// ── call_with_auth_retry: each test exercises one exit path ───
 
 #[tokio::test]
 async fn first_call_succeeds_no_refresh() {

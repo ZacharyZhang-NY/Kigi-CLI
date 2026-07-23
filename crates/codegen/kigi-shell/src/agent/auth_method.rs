@@ -13,7 +13,7 @@ use crate::auth::credential_authority::CredentialClass;
 /// cell is correct.
 pub(crate) type SharedAuthMethodId = std::sync::Arc<arc_swap::ArcSwapOption<acp::AuthMethodId>>;
 
-/// Construct a [`SharedAuthMethodId`]. `None` is the pre-`authenticate` state.
+/// `None` is the pre-`authenticate` state.
 pub(crate) fn new_shared_auth_method_id(initial: Option<acp::AuthMethodId>) -> SharedAuthMethodId {
     std::sync::Arc::new(arc_swap::ArcSwapOption::new(
         initial.map(std::sync::Arc::new),
@@ -21,17 +21,15 @@ pub(crate) fn new_shared_auth_method_id(initial: Option<acp::AuthMethodId>) -> S
 }
 
 /// Primary env var that, when set, advertises `xai.api_key` as a viable auth
-/// method. NOTE: `xai.api_key` is the *house* bring-your-own-key method (the
-/// upstream product is house-branded "xai"), unrelated to the x.ai/Grok
-/// provider. That collision is why the primary env moved here to `KIGI_API_KEY`
-/// — `XAI_API_KEY` is now the x.ai/Grok provider key (see `XAI_SPEC`).
-///
-/// Kept as a constant so test code and the production check stay in sync.
+/// method. `xai.api_key` is the *house* bring-your-own-key method (the upstream
+/// product is house-branded "xai"), unrelated to the x.ai/Grok provider — that
+/// name collision is why the house primary env is `KIGI_API_KEY` while
+/// `XAI_API_KEY` is the x.ai/Grok provider key (see `XAI_SPEC`).
 pub const HOUSE_API_KEY_ENV_VAR: &str = "KIGI_API_KEY";
 
-/// Back-compat fallback env: `XAI_API_KEY` was the house BYOK key before it
-/// became the x.ai/Grok provider key. Still honored so existing house-BYOK
-/// deployments keep working (they share the key with the Grok provider).
+/// Back-compat fallback env, also honored as a house BYOK key so existing
+/// house-BYOK deployments keep working — they share `XAI_API_KEY` with the
+/// x.ai/Grok provider.
 pub const XAI_API_KEY_ENV_VAR: &str = "XAI_API_KEY";
 
 /// Legacy env var name (pre-`XAI_API_KEY`). Checked last so the oldest
@@ -39,17 +37,13 @@ pub const XAI_API_KEY_ENV_VAR: &str = "XAI_API_KEY";
 pub const LEGACY_XAI_API_KEY_ENV_VAR: &str = "KIGI_CODE_XAI_API_KEY";
 
 /// Read the house BYOK API key from the environment.
-///
-/// Checks `KIGI_API_KEY` first, then the back-compat `XAI_API_KEY`, then the
-/// legacy `KIGI_CODE_XAI_API_KEY`.
 pub fn read_xai_api_key_env() -> Result<String, std::env::VarError> {
     std::env::var(HOUSE_API_KEY_ENV_VAR)
         .or_else(|_| std::env::var(XAI_API_KEY_ENV_VAR))
         .or_else(|_| std::env::var(LEGACY_XAI_API_KEY_ENV_VAR))
 }
 
-/// Returns `true` if any house BYOK env is set: `KIGI_API_KEY` (primary) or the
-/// back-compat `XAI_API_KEY` / `KIGI_CODE_XAI_API_KEY`.
+/// Whether any house BYOK env var is set.
 pub fn has_xai_api_key_env() -> bool {
     read_xai_api_key_env().is_ok()
 }
@@ -58,8 +52,9 @@ pub fn has_xai_api_key_env() -> bool {
 /// the `auth_methods` list at `initialize()` time.
 ///
 /// Regression: `xai.api_key` must stay first when only per-model credentials
-/// exist (no global `XAI_API_KEY`). Deferring it made BYOK users hit the login
-/// screen because the pager uses `auth_methods.first()` for startup metadata.
+/// exist (no global `XAI_API_KEY`). Deferring it past `first()` sends BYOK
+/// users to the login screen, since the pager reads `auth_methods.first()` for
+/// startup metadata.
 ///
 /// [`build_auth_methods`] consumes this predicate and pins the ordering;
 /// its tests catch call-site and predicate regressions.
@@ -107,9 +102,9 @@ pub struct BuiltAuthMethods {
 /// pre-computed inputs.
 ///
 /// REGRESSION GUARD: when `has_external_api_key` is true, the **first** entry
-/// MUST be `xai.api_key`. A prior change deferred it to the END for per-model
-/// credentials, which made the pager send per-model-key users to the login
-/// screen. Unit tests lock this.
+/// MUST be `xai.api_key`. If it is deferred past `first()`, the pager sends
+/// per-model-key users to the login screen (it reads `auth_methods.first()`
+/// for startup metadata). Unit tests lock this.
 ///
 /// Ordering (when each method is enabled):
 /// 1. `xai.api_key`     (if `has_external_api_key`)
@@ -207,9 +202,7 @@ impl AuthMethodKind {
             CACHED_TOKEN_AUTH_METHOD_ID => Self::CachedToken,
             KIMI_CODE_METHOD_ID => Self::KimiCode,
             other => match kigi_models::PlatformId::parse(other) {
-                // A generic device-code OAuth platform (xai-grok).
                 Some(p) if p.oauth().is_some() => Self::OAuthPlatform(p),
-                // A non-OAuth API-key registry platform.
                 Some(p) if !p.uses_oauth() => Self::ApiKeyPlatform(p),
                 _ => Self::Unknown,
             },
@@ -377,9 +370,8 @@ pub fn cached_token_auth_method() -> acp::AuthMethod {
     )
 }
 
-/// Interactive login method id, advertised over ACP by this agent and
-/// selected by the in-repo pager. Both sides of the ACP boundary live in
-/// this repo, so the id is renamed in lockstep everywhere.
+/// Interactive login method id, advertised over ACP by this agent and matched
+/// by the in-repo pager — both sides of the ACP boundary share this constant.
 pub const KIMI_CODE_METHOD_ID: &str = "kimi-code";
 
 /// The Kimi Code device-code login.
@@ -1115,8 +1107,8 @@ mod tests {
         assert_eq!(read_xai_api_key_env().unwrap(), "new-key");
     }
 
-    /// After the migration, `KIGI_API_KEY` is the house BYOK primary and wins
-    /// over the back-compat `XAI_API_KEY` (now the x.ai/Grok provider key).
+    /// `KIGI_API_KEY` is the house BYOK primary and wins over the back-compat
+    /// `XAI_API_KEY` (the x.ai/Grok provider key).
     #[test]
     #[serial]
     fn house_env_var_takes_precedence_over_xai() {

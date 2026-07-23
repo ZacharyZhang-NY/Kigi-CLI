@@ -56,8 +56,6 @@ async fn minimal_transcript_opens_in_pager() {
         harness.full_text()
     );
 
-    // The pager process survives the suspend/restore round-trip and returns to
-    // the idle prompt.
     harness
         .wait_for_text(MINIMAL_IDLE_SENTINEL, Duration::from_secs(10))
         .expect("inline TUI restored after the pager exited");

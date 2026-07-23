@@ -110,8 +110,6 @@ fn show_undo_tip_no_op_when_flag_off() {
     assert!(!app.agents[&id].ephemeral_tip.is_active());
 }
 
-// ── Small-screen tip (`show_small_screen_tip` + its one-shot trigger) ──
-
 /// `show_small_screen_tip` on a drawable agent shows the tip and increments
 /// the per-session seen count in memory (nothing persisted — the fn returns
 /// nothing, so it cannot raise effects).
@@ -557,9 +555,9 @@ fn chip_submit_while_enqueued_clears_follow_up_chips() {
     // A chip click submitted while a turn is RUNNING *and* the local queue
     // is non-empty takes the ENQUEUE path, not immediate-server-send:
     // `immediate_server_send_eligible` is false whenever `pending_prompts`
-    // is non-empty. Before the fix, only the immediate-send branch cleared
-    // the chips, so this path left them on screen after the user had already
-    // acted on one. The clear now runs for every `SubmitFollowUp` path.
+    // is non-empty. The chip clear must run on this path too, not just the
+    // immediate-send branch, or the chips would linger on screen after the
+    // user had already acted on one.
     let mut app = test_app_with_agent();
     let id = AgentId(0);
     {
@@ -586,7 +584,7 @@ fn chip_submit_while_enqueued_clears_follow_up_chips() {
             .any(|e| matches!(e, Effect::SendPrompt { text, .. } if text == "Summarize")),
         "chip must be enqueued, not immediate-sent, got {effects:?}"
     );
-    // The chips are cleared on the enqueue path too (the bug fix).
+    // The chips are cleared on the enqueue path too.
     assert!(
         app.agents[&id].follow_ups.is_none(),
         "enqueue chip path must clear chips"
@@ -597,7 +595,6 @@ fn chip_submit_while_enqueued_clears_follow_up_chips() {
 fn send_prompt_while_running_queues_without_drain() {
     let mut app = test_app_with_agent();
     let id = AgentId(0);
-    // Simulate a running turn.
     app.agents.get_mut(&id).unwrap().session.state = AgentState::TurnRunning;
 
     let effects = dispatch(Action::SendPrompt("queued".into()), &mut app);
@@ -1689,8 +1686,6 @@ fn bash_while_idle_stays_on_local_path() {
     assert!(app.agents[&id].bash_turn);
 }
 
-// ── Reconnect-pending dispatch guards ─────────────────────────────
-
 #[test]
 fn send_prompt_blocked_during_reconnect() {
     let mut app = test_app_with_agent();
@@ -2049,7 +2044,8 @@ fn prompt_history_loaded_refreshes_open_history_search_with_current_query() {
 fn agent_send_before_paste_probe_keeps_image() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     let mut app = test_app_with_agent();
-    app.project_picker_shown = true; // don't intercept the send with the picker
+    // don't intercept the send with the picker
+    app.project_picker_shown = true;
     let id = AgentId(0);
     {
         let agent = app.agents.get_mut(&id).unwrap();
@@ -2131,7 +2127,8 @@ fn interject_before_paste_probe_keeps_image() {
     let id = AgentId(0);
     {
         let agent = app.agents.get_mut(&id).unwrap();
-        agent.session.state = AgentState::TurnRunning; // interject needs a live turn
+        // interject needs a live turn
+        agent.session.state = AgentState::TurnRunning;
         agent.set_active_pane(ActivePane::Prompt, true);
         agent.prompt.set_text("look at this");
     }
@@ -2215,7 +2212,8 @@ fn interject_before_paste_probe_keeps_image() {
 #[test]
 fn agent_paste_completion_after_switch_does_not_send_to_other_agent() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    let mut app = test_app_with_agent(); // agent A = AgentId(0), active view
+    // agent A = AgentId(0), active view
+    let mut app = test_app_with_agent();
     app.project_picker_shown = true;
     let a = AgentId(0);
     let b = AgentId(1);
@@ -2351,8 +2349,6 @@ fn slash_and_exit_input_does_not_trigger_project_picker() {
     assert!(!input_can_trigger_project_picker("   "));
 }
 
-// ── Minimal-mode slash gate tests ───────────────────────────────────
-
 /// Returns true if any system block in agent 0's scrollback contains
 /// `needle`. Avoids `last_system_text`'s "last block must be System" panic
 /// for the allowed-command control (which may leave no system block).
@@ -2409,8 +2405,6 @@ fn minimal_mode_allows_mode_agnostic_slash_command() {
     );
 }
 
-// ── /queue (ShowQueue) dispatch tests ───────────────────────────────
-
 #[test]
 fn show_queue_empty_commits_empty_message() {
     let mut app = test_app_with_agent();
@@ -2446,8 +2440,6 @@ fn show_queue_no_active_agent_is_noop() {
     let effects = dispatch(Action::ShowQueue, &mut app);
     assert!(effects.is_empty(), "ShowQueue without an agent is a no-op");
 }
-
-// ── Send-now cancel marker suppression (PromptResponse rail) ────────
 
 /// Count of "Turn cancelled by user …" marker blocks in the agent's scrollback.
 fn count_cancelled_markers(app: &AppView, id: AgentId) -> usize {

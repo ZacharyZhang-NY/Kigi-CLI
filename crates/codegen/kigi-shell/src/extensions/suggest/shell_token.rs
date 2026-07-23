@@ -236,8 +236,6 @@ pub(super) fn parse_current_token(prefix: &str) -> CurrentToken {
     }
 }
 
-// ── Insert-token construction (quoting) ─────────────────────────────────
-
 /// Build the replacement for the whole token: the user's verbatim directory
 /// prefix plus the completed component escaped for the quote context at the
 /// cursor. Files close an open quote; directories keep it open (and get the
@@ -361,8 +359,6 @@ fn escape_single_quoted(name: &str) -> String {
 mod tests {
     use super::*;
 
-    // --- parse_current_token ---
-
     #[test]
     fn parse_after_pipe_and_semicolon() {
         let tok = parse_current_token("echo hi | cat foo");
@@ -478,8 +474,6 @@ mod tests {
         assert_eq!(tok.value, "dst/b");
         assert_eq!(tok.start, 13);
     }
-
-    // --- escaping / insert-token construction ---
 
     #[test]
     fn escape_unquoted_space_and_specials() {

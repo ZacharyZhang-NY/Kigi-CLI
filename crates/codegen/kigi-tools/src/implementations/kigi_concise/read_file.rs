@@ -77,13 +77,14 @@ impl kigi_tool_runtime::Tool for ReadFileConciseTool {
         use crate::types::tool_metadata::shared_resources;
         let resources = shared_resources(&ctx)?;
 
-        // KigiConcise is not version-managed — always pass None.
         let cwd_override = ctx
             .extensions
             .get::<kigi_tool_runtime::Cwd>()
             .map(|c| c.0.clone());
-        // `None`: the concise tool does not stream, so it needs no
-        // text-path streamability signal (see `run_read_file`).
+        // The two `None`s are contract_version (KigiConcise is not
+        // version-managed) and streamable_out (the concise tool does not
+        // stream, so it needs no text-path streamability signal); see
+        // `run_read_file`.
         let result = run_read_file(input, cwd_override, None, resources, None).await?;
 
         match result {

@@ -1,15 +1,9 @@
-//! Plugin system — discover, load, and manage plugins (including compat layouts).
+//! Plugin discovery, loading, and registry.
 //!
 //! A plugin is a self-contained directory that bundles skills, agents,
-//! MCP server configs, and hooks into a namespaced unit.  Plugins can
+//! MCP server configs, and hooks into a namespaced unit. Plugins can
 //! live under `~/.kigi/plugins/`, `.kigi/plugins/` (project-level),
 //! or be passed via `--plugin-dir` on the CLI.
-//!
-//! This module handles:
-//! - `manifest` — parsing `plugin.json` manifests
-//! - `discovery` — scanning the filesystem for plugin directories
-//! - `trust` — project-plugin trust management
-//! - `registry` — in-memory registry of active plugins
 
 pub mod discovery;
 pub mod git_install;

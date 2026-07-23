@@ -11,9 +11,9 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use anyhow::Context;
 
-const IMAGE_MAX_BYTES: u64 = 1024 * 1024 * 1024; // 1 GB
-const VIDEO_MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024; // 2 GB
-const DEFAULT_MAX_BYTES: u64 = 1024 * 1024 * 1024; // 1 GB
+const IMAGE_MAX_BYTES: u64 = 1024 * 1024 * 1024;
+const VIDEO_MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const DEFAULT_MAX_BYTES: u64 = 1024 * 1024 * 1024;
 
 fn budget_for(dir_name: &str) -> u64 {
     match dir_name {
@@ -137,20 +137,17 @@ async fn scan_dir_stats(dir: &Path) -> Result<(u32, u64), std::io::Error> {
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
 
-        // Remove orphan temp files from interrupted writes
         if name_str.starts_with(".tmp") {
             let _ = tokio::fs::remove_file(entry.path()).await;
             continue;
         }
 
-        // Track the highest numbered file (any extension)
         if let Some(stem) = name_str.split_once('.').map(|(s, _)| s)
             && let Ok(n) = stem.parse::<u32>()
         {
             max = max.max(n);
         }
 
-        // Sum bytes for budget init
         if let Ok(meta) = entry.metadata().await {
             total_bytes += meta.len();
         }
@@ -225,7 +222,7 @@ mod tests {
             .unwrap();
         let (max, bytes) = scan_dir_stats(tmp.path()).await.unwrap();
         assert_eq!(max, 3);
-        assert_eq!(bytes, 4 + 6 + 2); // aaaa + bbbbbb + cc
+        assert_eq!(bytes, 4 + 6 + 2);
     }
 
     #[tokio::test]

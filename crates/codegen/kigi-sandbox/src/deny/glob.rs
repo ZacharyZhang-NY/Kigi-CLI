@@ -25,7 +25,7 @@ pub(crate) fn is_glob(entry: &str) -> bool {
 
 /// Split a profile's raw deny entries into exact paths (handled by the literal /
 /// subpath kernel-deny flow) and glob patterns. Non-glob entries are returned
-/// unchanged so their exact-path enforcement is preserved with no regression.
+/// `unchanged` so their exact-path enforcement is preserved with no regression.
 #[cfg(all(feature = "enforce", unix))]
 pub(crate) fn partition_deny_entries(deny: &[PathBuf]) -> (Vec<PathBuf>, Vec<String>) {
     let mut exact = Vec::new();
@@ -170,12 +170,15 @@ fn glob_tail_to_regex(tail: &str) -> String {
                     chars.next();
                     if chars.peek() == Some(&'/') {
                         chars.next();
-                        out.push_str("(.*/)?"); // `**/` spans zero or more dirs
+                        // `**/` spans zero or more dirs
+                        out.push_str("(.*/)?");
                     } else {
-                        out.push_str(".*"); // `**` spans anything, incl. `/`
+                        // `**` spans anything, incl. `/`
+                        out.push_str(".*");
                     }
                 } else {
-                    out.push_str("[^/]*"); // `*` stops at a path separator
+                    // `*` stops at a path separator
+                    out.push_str("[^/]*");
                 }
             }
             '?' => out.push_str("[^/]"),
@@ -622,7 +625,8 @@ mod tests {
         }
         for p in &patterns {
             if validate_deny_glob(p).is_err() {
-                continue; // rejected patterns aren't enforced on either platform
+                // rejected patterns aren't enforced on either platform
+                continue;
             }
             let regexes = glob_to_seatbelt_regexes(Path::new("/ws"), p);
             assert_eq!(regexes.len(), 1, "expected one regex for {p:?}");
@@ -732,7 +736,8 @@ mod tests {
             let _g = TmpTree(ws.clone());
             std::fs::create_dir_all(ws.join("sub/dir")).unwrap();
             std::fs::write(ws.join("sub/dir/key.pem"), "x").unwrap();
-            std::fs::write(ws.join(".env"), "x").unwrap(); // hidden + usually gitignored
+            // hidden + usually gitignored
+            std::fs::write(ws.join(".env"), "x").unwrap();
             std::fs::write(ws.join("readable.txt"), "x").unwrap();
             let globs = vec!["**/*.pem".to_string(), "**/.env".to_string()];
             let out = expand_deny_globs(&ws, &globs, 64, 4096, 200_000).expect("should expand");

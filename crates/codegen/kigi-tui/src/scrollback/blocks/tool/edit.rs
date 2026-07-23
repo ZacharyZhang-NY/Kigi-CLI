@@ -107,7 +107,6 @@ impl Default for DiffRenderConfig {
     }
 }
 
-/// Layout constants.
 const INDENT: &str = "  ";
 const GUTTER_GAP: &str = " ";
 const CONTENT_GAP: &str = "  ";
@@ -179,7 +178,6 @@ fn render_diff_hunks_core(
 
     for (i, hunk) in hunks.iter().enumerate() {
         if i > 0 && !lines.is_empty() && !config.hunk_separator.is_empty() {
-            // Add separator between hunks (no background)
             let indent = if config.indent { INDENT } else { "" };
             let sep_text = match hunk_gap_lines(&hunks[i - 1], hunk) {
                 Some(1) => format!("{} 1 unchanged line", config.hunk_separator),
@@ -477,21 +475,16 @@ fn assemble_diff_line_outputs(
 /// Compute where background starts based on config.
 fn compute_bg_start(config: &DiffRenderConfig, gutter_width: usize, indent_width: usize) -> u16 {
     if config.gutter_bg {
-        // Gutter bg is on - check if we should skip indent
-        // indent_bg = true means skip indent (keep it clean)
-        // indent_bg = false means include indent in background
         if config.indent && config.indent_bg {
             indent_width as u16
         } else {
             0
         }
     } else {
-        // Gutter bg is off - color from content only
         gutter_width as u16
     }
 }
 
-/// Simple word-wrap implementation.
 fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
     if max_width == 0 || text.is_empty() {
         return vec![text.to_string()];
@@ -537,7 +530,6 @@ struct GutterLayout {
     dual: bool,
 }
 
-/// Calculate gutter layout for a hunk.
 fn gutter_layout(hunk: &DiffHunk, config: &DiffRenderConfig) -> GutterLayout {
     let mut max_old = 1usize;
     let mut max_new = 1usize;
@@ -572,7 +564,6 @@ fn gutter_layout(hunk: &DiffHunk, config: &DiffRenderConfig) -> GutterLayout {
     }
 }
 
-/// Render the line number gutter.
 fn render_gutter(
     spans: &mut Vec<Span<'static>>,
     line: &crate::diff::DiffLine,
@@ -582,13 +573,11 @@ fn render_gutter(
 ) {
     let gutter_style = Style::default().fg(theme.diff_gutter_fg);
 
-    // Indent (configurable)
     if config.indent {
         spans.push(Span::raw(INDENT));
     }
 
     if layout.dual {
-        // Dual mode: two columns (old + new) like GitHub unified diff
         let w_old = layout.width_old;
         let w_new = layout.width_new;
         match line.tag {
@@ -615,7 +604,6 @@ fn render_gutter(
             }
         }
     } else {
-        // Single mode: one column with the relevant line number
         let w = layout.width_new;
         match line.tag {
             ChangeTag::Equal => {
@@ -636,7 +624,6 @@ fn render_gutter(
         }
     }
 
-    // Gap between gutter and content
     spans.push(Span::raw(CONTENT_GAP));
 }
 
@@ -647,7 +634,6 @@ fn painted(text: &str, style: Style) -> Span<'static> {
     Span::styled(text.to_string(), style)
 }
 
-/// Render content spans with syntax highlighting.
 fn render_content_spans(
     content: &str,
     tag: ChangeTag,
@@ -666,7 +652,6 @@ fn render_content_spans(
         return spans;
     }
 
-    // Try syntax highlighting
     if let Some(hl) = highlighter.as_mut()
         && let Ok(ranges) = hl.highlight_line(&format!("{content}\n"), &syntect.syntax_set)
     {
@@ -688,7 +673,6 @@ fn render_content_spans(
         }
     }
 
-    // Fallback: plain text
     let style = match tag {
         ChangeTag::Equal => Style::default().fg(theme.diff_equal_fg),
         ChangeTag::Delete | ChangeTag::Insert => Style::default().fg(theme.text_primary),
@@ -703,12 +687,9 @@ fn syntect_to_ratatui_fg(style: SyntectStyle) -> Style {
     crate::syntax::syntect_to_ratatui_fg(style)
 }
 
-/// Edit tool call block - displays file edit with diff.
 #[derive(Debug, Clone)]
 pub struct EditToolCallBlock {
-    /// File path being edited.
     pub path: String,
-    /// Diff hunks.
     pub hunks: Vec<DiffHunk>,
     /// Number of edits (for multi-edit display).
     pub edit_count: usize,
@@ -732,8 +713,6 @@ pub struct EditToolCallBlock {
 }
 
 impl EditToolCallBlock {
-    /// Create a new edit block.
-    ///
     /// Pre-completed blocks have no meaningful local timing — `started_at`
     /// is `None`. Timing is only set for blocks that enter a running UI
     /// state (via `set_last_running(true)` in `ScrollbackState`).
@@ -766,13 +745,11 @@ impl EditToolCallBlock {
         self
     }
 
-    /// Set error (marks as failed).
     pub fn with_error(mut self, error: impl Into<String>) -> Self {
         self.error = Some(error.into());
         self
     }
 
-    /// Check if successful (no error).
     pub fn is_success(&self) -> bool {
         self.error.is_none()
     }
@@ -800,7 +777,6 @@ impl EditToolCallBlock {
         }
     }
 
-    /// Get elapsed time in ms (Phase 2).
     pub fn elapsed_ms(&self) -> Option<i64> {
         match self.elapsed_ms {
             Some(ms) => Some(ms),
@@ -810,7 +786,6 @@ impl EditToolCallBlock {
         }
     }
 
-    /// Set edit count explicitly.
     pub fn with_edit_count(mut self, count: usize) -> Self {
         self.edit_count = count;
         self
@@ -823,14 +798,12 @@ impl EditToolCallBlock {
         diff_hunks_to_patch(&self.path, &self.hunks)
     }
 
-    /// Set hunks (mutable).
     pub fn set_hunks(&mut self, hunks: Vec<DiffHunk>) {
         self.edit_count = hunks.len().max(1);
         self.change_counts = Self::compute_changes(&hunks);
         self.hunks = hunks;
     }
 
-    /// Count insertions and deletions across all hunks.
     fn compute_changes(hunks: &[DiffHunk]) -> (usize, usize) {
         let mut insertions = 0;
         let mut deletions = 0;
@@ -846,7 +819,6 @@ impl EditToolCallBlock {
         (insertions, deletions)
     }
 
-    /// Get pre-computed insertion/deletion counts.
     fn count_changes(&self) -> (usize, usize) {
         self.change_counts
     }
@@ -1156,7 +1128,6 @@ impl EditToolCallBlock {
 
         match ctx.mode {
             DisplayMode::Collapsed => {
-                // Collapsed: just header line. Path (span 1) is selectable.
                 let line = self.header_line(
                     &theme,
                     muted_collapsed,
@@ -1185,7 +1156,6 @@ impl EditToolCallBlock {
                 })
             }
             DisplayMode::Truncated | DisplayMode::Expanded => {
-                // Convert appearance config to render config
                 let config = DiffRenderConfig {
                     indent: edit_cfg.indent,
                     gutter_bg: edit_cfg.gutter_bg,
@@ -1193,7 +1163,6 @@ impl EditToolCallBlock {
                     hunk_separator: edit_cfg.hunk_separator.clone(),
                     dual_line_numbers: edit_cfg.dual_line_numbers,
                 };
-                // Header with word-wrap and hanging indent
                 let header = self.header_line(
                     &theme,
                     false,
@@ -1237,7 +1206,6 @@ impl EditToolCallBlock {
                     });
                 }
 
-                // Error message (non-selectable decoration)
                 if let Some(err) = &self.error {
                     lines.push(BlockLine::separator(Line::from("")));
                     for line in err.lines() {
@@ -1248,7 +1216,6 @@ impl EditToolCallBlock {
                     }
                 }
 
-                // Diff content with syntax highlighting and full-width backgrounds
                 if !self.hunks.is_empty() {
                     // Empty line after header (non-selectable)
                     lines.push(BlockLine::separator(Line::from("")));
@@ -1283,7 +1250,6 @@ impl EditToolCallBlock {
                     }
                 }
 
-                // Apply max_lines if set
                 if let Some(max) = ctx.max_lines {
                     lines.truncate(max as usize);
                 }
@@ -1304,8 +1270,7 @@ impl BlockContent for EditToolCallBlock {
     }
 
     fn accent(&self, ctx: &BlockContext) -> Option<AccentStyle> {
-        // Edit blocks: use config accent color if set, otherwise no accent.
-        // Note: errors no longer show red accent — they show red bullet instead.
+        // Failed edits are marked by a red bullet(), not this accent.
         ctx.appearance
             .scrollback
             .blocks
@@ -1341,7 +1306,6 @@ impl BlockContent for EditToolCallBlock {
     }
 
     fn is_foldable(&self) -> bool {
-        // Foldable if there are hunks to show, or an error message to reveal.
         !self.hunks.is_empty() || self.error.is_some()
     }
 
@@ -1356,7 +1320,8 @@ impl BlockContent for EditToolCallBlock {
         if self.error.is_some() {
             Some(DisplayMode::Collapsed)
         } else {
-            None // keep current mode (the config-aware default, or a user fold)
+            // Keep current mode (the config-aware default, or a user fold).
+            None
         }
     }
 
@@ -1740,7 +1705,8 @@ mod tests {
         let block = EditToolCallBlock::new("src/lib.rs", vec![make_hunk()]);
         let ctx = test_ctx();
         let output = block.output(&ctx);
-        assert_eq!(output.lines.len(), 6); // header + empty + 4 diff
+        // header + empty + 4 diff
+        assert_eq!(output.lines.len(), 6);
     }
 
     #[test]
@@ -1749,11 +1715,16 @@ mod tests {
         let ctx = test_ctx();
         let output = block.output(&ctx);
 
-        assert_eq!(output.lines[0].background, None); // header
-        assert_eq!(output.lines[2].background, None); // equal
-        assert!(output.lines[3].background.is_some()); // delete
-        assert!(output.lines[4].background.is_some()); // insert
-        assert_eq!(output.lines[5].background, None); // equal
+        // header
+        assert_eq!(output.lines[0].background, None);
+        // equal
+        assert_eq!(output.lines[2].background, None);
+        // delete
+        assert!(output.lines[3].background.is_some());
+        // insert
+        assert!(output.lines[4].background.is_some());
+        // equal
+        assert_eq!(output.lines[5].background, None);
 
         // Insert/delete shading is semantic, NOT a decorative panel — it must
         // survive minimal mode's flat rendering (EntryRenderer::flat_background),
@@ -2226,8 +2197,6 @@ mod tests {
         );
     }
 
-    // --- dual_line_numbers = true snapshots ---
-
     fn dual_config() -> DiffRenderConfig {
         DiffRenderConfig {
             dual_line_numbers: true,
@@ -2402,15 +2371,12 @@ mod tests {
             line2,
         );
 
-        // content_text should also have expanded tabs.
         assert!(
             !outputs[1].content_text.contains('\t'),
             "content_text should also have tabs expanded",
         );
     }
 
-    // ── Edit syntax-highlight harness (triple-quote spill) ──
-    //
     // Asserts use **raw syntect RGB** (not ratatui FG after quantize). Under
     // `NO_COLOR` quantize maps every RGB → Reset, which would make keyword vs
     // string asserts tautological / false.
@@ -2530,10 +2496,12 @@ class ProcessQueueItem(BaseModel):
     fn fixture_python_close_hunk() -> (String, DiffHunk, usize) {
         let (file, close_ln) = fixture_python_parts();
         let all: Vec<&str> = file.lines().collect();
-        let start = close_ln - 1; // 0-based
+        // 0-based
+        let start = close_ln - 1;
         let mut hunk = DiffHunk::new();
         for (i, line) in all[start..].iter().enumerate() {
-            let ln = start + i + 1; // 1-based
+            // 1-based
+            let ln = start + i + 1;
             hunk.push(DiffLine {
                 text: format!("{line}\n"),
                 lo: ln,
@@ -2545,7 +2513,8 @@ class ProcessQueueItem(BaseModel):
             .iter()
             .position(|l| l.contains("notes") || l.contains("category_id"))
             .expect("field line in hunk");
-        (file, hunk, start + field_offset + 1) // 1-based field ln
+        // 1-based field ln
+        (file, hunk, start + field_offset + 1)
     }
 
     /// Fix pin: file-scoped field styles match full-file raw styles
@@ -2692,7 +2661,8 @@ class ProcessQueueItem(BaseModel):
         let path = Path::new("probe.py");
         let file = "x = 1\ny = 2\n";
         let hunk = vec![DiffLine {
-            text: "x = 999\n".into(), // differs from disk line 1
+            // differs from disk line 1
+            text: "x = 999\n".into(),
             lo: 1,
             ln: 1,
             tag: ChangeTag::Insert,

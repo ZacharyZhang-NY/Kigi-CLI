@@ -7,7 +7,6 @@ use unicode_width::UnicodeWidthStr;
 
 use super::line_utils::truncate_str;
 
-/// Read/Edit tool-header path paint surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolPathSurface {
     /// Basename only.
@@ -183,7 +182,6 @@ pub fn path_basename(path: &str, budget: usize) -> String {
     truncate_str(name, budget)
 }
 
-/// Compatibility formatter: compact basename with `Some(width)`, else stored path.
 pub fn path_for_tool_header(path: &str, width: Option<usize>, reserved: usize) -> String {
     match width {
         Some(width) => path_basename(path, width.saturating_sub(reserved)),
@@ -191,7 +189,6 @@ pub fn path_for_tool_header(path: &str, width: Option<usize>, reserved: usize) -
     }
 }
 
-/// Path text for a Read/Edit tool-header surface.
 pub fn path_for_tool_surface(
     path: &str,
     surface: ToolPathSurface,

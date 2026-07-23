@@ -127,26 +127,20 @@ pub trait MemoryBackend: Send + Sync {
     /// Return the total number of indexed chunks.
     fn total_chunks(&self) -> Result<usize, Box<dyn std::error::Error + Send + Sync>>;
 
-    /// Return the configured default for `max_results` in search queries.
+    /// Configured default for `max_results` in search queries.
     ///
-    /// When the `memory_search` tool caller does not supply an explicit value,
-    /// using this instead of a hardcoded fallback ensures that
-    /// `[memory.search].max_results` config is honoured at the tool boundary.
-    ///
-    /// The default implementation returns `6`, matching the previous hardcoded
-    /// value, so existing backends without a custom config behave identically.
+    /// Lets `[memory.search].max_results` be honoured at the tool boundary when
+    /// the `memory_search` caller supplies no explicit value. Backends that do
+    /// not override this get `6`.
     fn default_search_max_results(&self) -> usize {
         6
     }
 
-    /// Return the configured default for `min_score` in search queries.
+    /// Configured default for `min_score` in search queries.
     ///
-    /// When the caller does not supply an explicit threshold, using this instead
-    /// of a hardcoded `0.0` ensures `[memory.search].min_score` config is
-    /// honoured at the tool boundary.
-    ///
-    /// The default implementation returns `0.0` (accept all results), matching
-    /// the previous hardcoded value.
+    /// Lets `[memory.search].min_score` be honoured at the tool boundary when
+    /// the caller supplies no explicit threshold. Backends that do not override
+    /// this get `0.0` (accept all results).
     fn default_search_min_score(&self) -> f64 {
         0.0
     }
@@ -182,13 +176,13 @@ mod tests {
 
     #[test]
     fn staleness_fresh_is_empty() {
-        let ts = Some(now_secs() - 3600); // 1 hour ago
+        let ts = Some(now_secs() - 3600);
         assert!(format_staleness_note("session", ts).is_empty());
     }
 
     #[test]
     fn staleness_note_for_moderately_old() {
-        let ts = Some(now_secs() - 86400 * 2); // 2 days ago
+        let ts = Some(now_secs() - 86400 * 2);
         let note = format_staleness_note("session", ts);
         assert!(note.starts_with("**Note ("), "expected Note, got: {note}");
         assert!(
@@ -199,7 +193,7 @@ mod tests {
 
     #[test]
     fn staleness_warning_for_very_old() {
-        let ts = Some(now_secs() - 86400 * 10); // 10 days ago
+        let ts = Some(now_secs() - 86400 * 10);
         let note = format_staleness_note("session", ts);
         assert!(note.starts_with("**Stale ("), "expected Stale, got: {note}");
         assert!(note.contains("week"), "expected weeks unit, got: {note}");

@@ -20,7 +20,6 @@ async fn leader_reattach_completion_roundtrips_durable_log() {
         .content()
         .set_response(format!("{} completed turn payload.", turn_sentinel(1)));
 
-    // A elects the leader and drives one turn to completion.
     let mut a = cluster.spawn_leader(&[]).expect("spawn leader client A");
     a.wait_for_text(WELCOME_SCREEN_SENTINEL, LEADER_TIMEOUT)
         .expect("A welcome");
@@ -53,8 +52,6 @@ async fn leader_reattach_completion_roundtrips_durable_log() {
     // must see no new inference request while C catches up.
     let inference_before_reattach = inference_request_count(cluster.content());
 
-    // Fresh reattach AFTER A exits: it replays the completed transcript via the
-    // durable rail through the surviving leader.
     drop(a);
     let mut c = cluster.attach(&[]).expect("spawn fresh reattach client C");
     c.wait_for_text(&turn_sentinel(1), LEADER_TIMEOUT)

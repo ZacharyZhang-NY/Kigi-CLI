@@ -30,10 +30,10 @@ pub struct OverlayInfo {
     pub overlay_root: PathBuf,
 }
 
-/// Detect if `path` is on a FUSE+overlayfs stack with btrfs upper.
+/// Detect whether `path` is on a FUSE+overlayfs stack with a btrfs upper.
 ///
-/// Returns `Ok(Some(OverlayInfo))` if all conditions are met, `Ok(None)` otherwise.
-/// Handles `EIO`/`ENOTCONN` from a crashed FUSE daemon gracefully by returning `Ok(None)`.
+/// A crashed FUSE daemon (`EIO`/`ENOTCONN`) is not an error here: it yields
+/// `Ok(None)` like any other unsuitable mount.
 pub fn detect_fuse_overlay(path: &Path) -> Result<Option<OverlayInfo>> {
     let entries = match mount_info::parse_mountinfo() {
         Ok(entries) => entries,
@@ -46,12 +46,12 @@ pub fn detect_fuse_overlay(path: &Path) -> Result<Option<OverlayInfo>> {
     detect_fuse_overlay_from_entries(path, &entries)
 }
 
-/// Testable version that takes pre-parsed entries.
+/// Split out from `detect_fuse_overlay` so tests can drive it with synthetic
+/// mountinfo instead of the host's real mount table.
 pub(crate) fn detect_fuse_overlay_from_entries(
     path: &Path,
     entries: &[mount_info::MountEntry],
 ) -> Result<Option<OverlayInfo>> {
-    // Step 1: Find overlay mount containing this path.
     let overlay = match mount_info::find_overlay_mount(entries, path) {
         Some(info) => info,
         None => {
@@ -60,7 +60,6 @@ pub(crate) fn detect_fuse_overlay_from_entries(
         }
     };
 
-    // Step 2: Verify the lower layer is a FUSE mount.
     if !mount_info::is_fuse_mount(entries, &overlay.lower_dir) {
         tracing::debug!(
             lower = %overlay.lower_dir.display(),
@@ -69,12 +68,12 @@ pub(crate) fn detect_fuse_overlay_from_entries(
         return Ok(None);
     }
 
-    // Step 3: Verify the upper layer is on btrfs.
     let upper_on_btrfs = match crate::btrfs::is_btrfs(&overlay.upper_dir) {
         Ok(true) => true,
         Ok(false) => false,
         Err(e) => {
-            // EIO / ENOTCONN from crashed FUSE — treat as "not available"
+            // EIO/ENOTCONN from a crashed FUSE daemon lands here; treat any
+            // probe failure as "not btrfs" rather than failing detection.
             tracing::debug!(
                 upper = %overlay.upper_dir.display(),
                 error = %e,
@@ -92,7 +91,6 @@ pub(crate) fn detect_fuse_overlay_from_entries(
         return Ok(None);
     }
 
-    // Derive overlay_root — parent of upper_dir (sibling of upper/ and work/).
     let overlay_root = overlay
         .upper_dir
         .parent()
@@ -151,7 +149,6 @@ mod tests {
 
     #[test]
     fn test_detect_overlay_without_fuse_lower() {
-        // Overlay where lower is ext4, not FUSE — should return None.
         let mountinfo = "\
 22 1 8:1 / / rw - ext4 /dev/sda1 rw
 30 22 8:2 / /lower rw - ext4 /dev/sda2 rw
@@ -176,15 +173,11 @@ mod tests {
 
     #[test]
     fn test_overlay_info_fields() {
-        // We can't run the btrfs check in unit tests (no btrfs fs), but we
-        // can verify the parsing portion works by calling the internal function
-        // and checking that step 3 (btrfs) is the failing point.
+        // The sample upper path does not exist on the test host, so the btrfs
+        // probe fails and detection stops short of `Some`. This only covers
+        // the mountinfo parsing path; the result is deliberately unasserted.
         let entries = parse_mountinfo_from(FUSE_OVERLAY_MOUNTINFO);
-        // This will return None because the sample upper path doesn't exist,
-        // so is_btrfs will fail — but that's expected in a unit test.
         let result = detect_fuse_overlay_from_entries(Path::new("/workspace/repo"), &entries);
         assert!(result.is_ok());
-        // On a system without the actual btrfs mount, this returns None.
-        // On a host with a live FUSE+overlay stack it would return Some.
     }
 }

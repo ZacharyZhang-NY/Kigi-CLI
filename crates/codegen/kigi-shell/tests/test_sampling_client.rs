@@ -23,15 +23,9 @@ mod common;
 
 use common::{create_test_client, create_test_client_with_extra_headers, test_sampler_config};
 
-// ============================================================================
-// Mock Response Generators
-// ============================================================================
-
-/// Generate a Chat Completions SSE stream with tool calls.
 fn chat_completion_tool_call_stream(tool_calls: Vec<Value>, model: &str) -> Vec<SseEvent> {
     let mut events = Vec::new();
 
-    // First chunk with role
     let first_chunk = json!({
         "id": "chatcmpl-test123",
         "object": "chat.completion.chunk",
@@ -49,7 +43,6 @@ fn chat_completion_tool_call_stream(tool_calls: Vec<Value>, model: &str) -> Vec<
     });
     events.push(SseEvent::data(first_chunk.to_string()));
 
-    // Final chunk with finish reason
     let final_chunk = json!({
         "id": "chatcmpl-test123",
         "object": "chat.completion.chunk",
@@ -72,7 +65,6 @@ fn chat_completion_tool_call_stream(tool_calls: Vec<Value>, model: &str) -> Vec<
     events
 }
 
-/// Generate a Chat Completions SSE stream with reasoning content.
 fn chat_completion_with_reasoning_stream(
     reasoning: &str,
     content: &str,
@@ -80,7 +72,6 @@ fn chat_completion_with_reasoning_stream(
 ) -> Vec<SseEvent> {
     let mut events = Vec::new();
 
-    // Reasoning chunks
     for word in reasoning.split_whitespace() {
         let chunk = json!({
             "id": "chatcmpl-test123",
@@ -98,7 +89,6 @@ fn chat_completion_with_reasoning_stream(
         events.push(SseEvent::data(chunk.to_string()));
     }
 
-    // Content chunks
     for word in content.split_whitespace() {
         let chunk = json!({
             "id": "chatcmpl-test123",
@@ -116,7 +106,6 @@ fn chat_completion_with_reasoning_stream(
         events.push(SseEvent::data(chunk.to_string()));
     }
 
-    // Final chunk
     let final_chunk = json!({
         "id": "chatcmpl-test123",
         "object": "chat.completion.chunk",
@@ -139,7 +128,6 @@ fn chat_completion_with_reasoning_stream(
     events
 }
 
-/// Generate a Responses API SSE stream with function calls.
 fn responses_api_tool_call_stream(
     call_id: &str,
     name: &str,
@@ -149,7 +137,6 @@ fn responses_api_tool_call_stream(
     let mut events = Vec::new();
     let mut seq = 0;
 
-    // response.created event
     let created = json!({
         "type": "response.created",
         "sequence_number": seq,
@@ -165,7 +152,6 @@ fn responses_api_tool_call_stream(
     events.push(SseEvent::data(created.to_string()));
     seq += 1;
 
-    // Function call arguments delta
     let args_delta = json!({
         "type": "response.function_call_arguments.delta",
         "sequence_number": seq,
@@ -176,7 +162,6 @@ fn responses_api_tool_call_stream(
     events.push(SseEvent::data(args_delta.to_string()));
     seq += 1;
 
-    // response.completed event with function call
     let completed = json!({
         "type": "response.completed",
         "sequence_number": seq,
@@ -210,10 +195,6 @@ fn responses_api_tool_call_stream(
 
     events
 }
-
-// ============================================================================
-// Chat Completions API Tests
-// ============================================================================
 
 #[tokio::test]
 async fn test_chat_completions_streaming_text() {
@@ -325,10 +306,6 @@ async fn test_chat_completions_with_reasoning() {
     assert!(content.contains("42"));
 }
 
-// ============================================================================
-// Reasoning-as-sibling — chat completions, both paths
-// ============================================================================
-
 /// All-new path: a chat-completions stream carrying `reasoning_content`
 /// deltas must be collected into a sibling `ConversationItem::Reasoning`
 /// that *precedes* the assistant — the exact shape currently persisted to
@@ -397,8 +374,8 @@ async fn chat_completions_collect_synthesizes_reasoning_sibling() {
 /// (conversation_to_chat_messages) → wire.
 #[tokio::test]
 async fn chat_completions_upgrade_folds_reconstructed_reasoning_into_request() {
-    // 1. Seed a legacy chat-completions chat_history.jsonl (inline reasoning
-    //    on the assistant — the shape an older binary wrote).
+    // Seed a legacy chat-completions chat_history.jsonl (inline reasoning
+    // on the assistant — the shape an older binary wrote).
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
         dir.path().join("chat_history.jsonl"),
@@ -413,7 +390,7 @@ async fn chat_completions_upgrade_folds_reconstructed_reasoning_into_request() {
     )
     .unwrap();
 
-    // 2. Load through the real adapter — applies the in-memory upgrade.
+    // Load through the real adapter — applies the in-memory upgrade.
     let adapter = JsonlStorageAdapter::with_root(dir.path().to_path_buf());
     let mut items = adapter.load_chat_history_from_dir(dir.path()).unwrap();
     assert!(
@@ -424,8 +401,8 @@ async fn chat_completions_upgrade_folds_reconstructed_reasoning_into_request() {
         items
     );
 
-    // 3. Continue the conversation and send it over chat-completions,
-    //    capturing the outgoing request body.
+    // Continue the conversation and send it over chat-completions,
+    // capturing the outgoing request body.
     items.push(ConversationItem::user("q2"));
 
     let server = MockInferenceServer::start().await.unwrap();
@@ -437,8 +414,8 @@ async fn chat_completions_upgrade_folds_reconstructed_reasoning_into_request() {
         .await
         .unwrap();
 
-    // 4. The reconstructed reasoning must land on the assistant's
-    //    reasoning_content in the wire request — not be dropped.
+    // The reconstructed reasoning must land on the assistant's
+    // reasoning_content in the wire request — not be dropped.
     let body = server.request_bodies().pop().unwrap();
     let messages = body.get("messages").unwrap().as_array().unwrap();
     let assistant = messages
@@ -462,8 +439,8 @@ async fn chat_completions_upgrade_folds_reconstructed_reasoning_into_request() {
 /// through `reasoning_item_text`.
 #[tokio::test]
 async fn responses_upgrade_roundtrips_reconstructed_reasoning_as_typed_input() {
-    // 1. Seed a legacy kigi chat_history.jsonl (inline reasoning
-    //    with encrypted_content + id — the older shape).
+    // Seed a legacy kigi chat_history.jsonl (inline reasoning
+    // with encrypted_content + id — the older shape).
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
         dir.path().join("chat_history.jsonl"),
@@ -483,7 +460,7 @@ async fn responses_upgrade_roundtrips_reconstructed_reasoning_as_typed_input() {
     )
     .unwrap();
 
-    // 2. Load through the real adapter — applies the upgrade.
+    // Load through the real adapter — applies the upgrade.
     let adapter = JsonlStorageAdapter::with_root(dir.path().to_path_buf());
     let mut items = adapter.load_chat_history_from_dir(dir.path()).unwrap();
     assert!(
@@ -493,7 +470,7 @@ async fn responses_upgrade_roundtrips_reconstructed_reasoning_as_typed_input() {
         "legacy inline reasoning must be reconstructed as a sibling on load, got {items:?}"
     );
 
-    // 3. Continue and send over the Responses API, capturing the body.
+    // Continue and send over the Responses API, capturing the body.
     items.push(ConversationItem::user("q2"));
 
     let server = MockInferenceServer::start().await.unwrap();
@@ -505,9 +482,9 @@ async fn responses_upgrade_roundtrips_reconstructed_reasoning_as_typed_input() {
         .await
         .unwrap();
 
-    // 4. The reconstructed reasoning must appear as a typed `reasoning`
-    //    input item with its fields preserved verbatim — the byte-stable
-    //    typed round-trip, not a flattened string.
+    // The reconstructed reasoning must appear as a typed `reasoning`
+    // input item with its fields preserved verbatim — the byte-stable
+    // typed round-trip, not a flattened string.
     let body = server.request_bodies().pop().unwrap();
     let input = body.get("input").unwrap().as_array().unwrap();
     let reasoning = input
@@ -550,10 +527,10 @@ async fn responses_upgrade_roundtrips_reconstructed_reasoning_as_typed_input() {
 /// block" after cross-model histories (see `prune_replayed_thinking`).
 #[tokio::test]
 async fn messages_upgrade_replays_reconstructed_thinking_only_in_active_tool_loop() {
-    // 1. Seed a legacy Anthropic Messages-origin chat_history.jsonl whose
-    //    assistant turn issued a tool call (thinking blocks never carried an
-    //    id — stream/messages.rs sets id="" — and the signature lives in
-    //    `encrypted`). The pending tool_result makes this the active loop.
+    // Seed a legacy Anthropic Messages-origin chat_history.jsonl whose
+    // assistant turn issued a tool call (thinking blocks never carried an
+    // id — stream/messages.rs sets id="" — and the signature lives in
+    // `encrypted`). The pending tool_result makes this the active loop.
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
         dir.path().join("chat_history.jsonl"),
@@ -570,7 +547,7 @@ async fn messages_upgrade_replays_reconstructed_thinking_only_in_active_tool_loo
     )
     .unwrap();
 
-    // 2. Load + upgrade.
+    // Load + upgrade.
     let adapter = JsonlStorageAdapter::with_root(dir.path().to_path_buf());
     let items = adapter.load_chat_history_from_dir(dir.path()).unwrap();
     assert!(
@@ -580,7 +557,7 @@ async fn messages_upgrade_replays_reconstructed_thinking_only_in_active_tool_loo
         "legacy inline reasoning must be reconstructed as a sibling on load, got {items:?}"
     );
 
-    // 3. Send the tool-loop continuation over the Messages API.
+    // Send the tool-loop continuation over the Messages API.
     let server = MockInferenceServer::start().await.unwrap();
     server.set_response("ok");
     let client = create_test_client(&server.url(), ApiBackend::Messages);
@@ -590,8 +567,8 @@ async fn messages_upgrade_replays_reconstructed_thinking_only_in_active_tool_loo
         .await
         .unwrap();
 
-    // 4. The active loop's reconstructed reasoning must emit an Anthropic
-    //    `thinking` content block carrying the thinking text + signature.
+    // The active loop's reconstructed reasoning must emit an Anthropic
+    // `thinking` content block carrying the thinking text + signature.
     let body = server.request_bodies().pop().unwrap();
     let messages = body.get("messages").unwrap().as_array().unwrap();
     let thinking_block = messages
@@ -618,8 +595,8 @@ async fn messages_upgrade_replays_reconstructed_thinking_only_in_active_tool_loo
         "signature (encrypted) preserved — required to reuse the thought server-side"
     );
 
-    // 5. A follow-up user turn CLOSES the loop: the same history plus a new
-    //    user message must replay NO thinking block at all.
+    // A follow-up user turn CLOSES the loop: the same history plus a new
+    // user message must replay NO thinking block at all.
     let mut closed = items;
     closed.push(ConversationItem::user("q2"));
     let _ = client
@@ -638,11 +615,6 @@ async fn messages_upgrade_replays_reconstructed_thinking_only_in_active_tool_loo
     );
 }
 
-// ============================================================================
-// Responses API Tests
-// ============================================================================
-
-/// Generate a Responses API SSE stream with reasoning (including encrypted content).
 fn responses_api_with_reasoning_stream(
     reasoning_summary: &str,
     encrypted_content: Option<&str>,
@@ -652,7 +624,6 @@ fn responses_api_with_reasoning_stream(
     let mut events = Vec::new();
     let mut seq = 0;
 
-    // response.created event
     let created = json!({
         "type": "response.created",
         "sequence_number": seq,
@@ -668,7 +639,6 @@ fn responses_api_with_reasoning_stream(
     events.push(SseEvent::data(created.to_string()));
     seq += 1;
 
-    // Build reasoning output item
     let mut reasoning_item = json!({
         "type": "reasoning",
         "id": "reasoning_item_1",
@@ -683,7 +653,6 @@ fn responses_api_with_reasoning_stream(
         reasoning_item["encrypted_content"] = json!(enc);
     }
 
-    // response.completed event with reasoning
     let completed = json!({
         "type": "response.completed",
         "sequence_number": seq,
@@ -835,11 +804,9 @@ async fn test_responses_api_with_reasoning_and_encrypted_content() {
                 use kigi_shell::sampling::rs::OutputItem;
                 match output {
                     OutputItem::Reasoning(r) => {
-                        // Check summary text
                         if !r.summary.is_empty() {
                             found_reasoning = true;
                         }
-                        // Check encrypted content
                         if let Some(encrypted_content) = &r.encrypted_content {
                             found_encrypted = true;
                             assert!(encrypted_content.contains("enc_base64"));
@@ -871,13 +838,12 @@ async fn test_responses_api_with_reasoning_and_encrypted_content() {
 
 #[tokio::test]
 async fn test_responses_api_reasoning_without_encrypted() {
-    // Test reasoning with only visible summary, no encrypted content
     let server = MockInferenceServer::start().await.unwrap();
     server.enqueue_response(
         "/v1/responses",
         ScriptedResponse::sse(responses_api_with_reasoning_stream(
             "I need to analyze the code carefully.",
-            None, // No encrypted content
+            None,
             "Here is my analysis.",
             "kigi-test",
         )),
@@ -898,7 +864,6 @@ async fn test_responses_api_reasoning_without_encrypted() {
                 use kigi_shell::sampling::rs::OutputItem;
                 if let OutputItem::Reasoning(r) = output {
                     found_reasoning = true;
-                    // Should have summary but no encrypted content
                     assert!(!r.summary.is_empty());
                     assert!(r.encrypted_content.is_none());
                 }
@@ -908,10 +873,6 @@ async fn test_responses_api_reasoning_without_encrypted() {
 
     assert!(found_reasoning);
 }
-
-// ============================================================================
-// Error Handling Tests
-// ============================================================================
 
 #[tokio::test]
 async fn test_chat_completions_401_unauthorized() {
@@ -928,7 +889,6 @@ async fn test_chat_completions_401_unauthorized() {
     assert!(result.is_err());
 
     if let Err(SamplingError::Auth(_)) = result {
-        // Expected
     } else {
         panic!("Expected Auth error");
     }
@@ -971,7 +931,6 @@ async fn test_responses_api_401_unauthorized() {
     assert!(result.is_err());
 
     if let Err(SamplingError::Auth(_)) = result {
-        // Expected
     } else {
         panic!("Expected Auth error");
     }
@@ -979,7 +938,6 @@ async fn test_responses_api_401_unauthorized() {
 
 #[tokio::test]
 async fn test_stream_error_during_streaming() {
-    // Simulate a stream error mid-response
     let events = vec![
         SseEvent::data(
             json!({
@@ -995,7 +953,6 @@ async fn test_stream_error_during_streaming() {
             })
             .to_string(),
         ),
-        // Stream error
         SseEvent::data(
             json!({
                 "error": {
@@ -1040,12 +997,11 @@ async fn test_stream_error_during_streaming() {
     assert!(got_error, "Should have received stream error");
 }
 
+/// Mirrors `test_stream_error_during_streaming` but exercises the
+/// Responses API stream-error detection (the second call site for the
+/// fast-path contains("error") guard).
 #[tokio::test]
 async fn test_stream_error_during_responses_streaming() {
-    // Simulate a stream error mid-response on the Responses API path.
-    // This mirrors test_stream_error_during_streaming but exercises the
-    // Responses API stream-error detection (the second call site for the
-    // fast-path contains("error") guard).
     let events = vec![
         SseEvent::with_event(
             "response.output_text.delta",
@@ -1059,7 +1015,6 @@ async fn test_stream_error_during_responses_streaming() {
             })
             .to_string(),
         ),
-        // Stream error
         SseEvent::data(
             json!({
                 "error": {
@@ -1099,10 +1054,6 @@ async fn test_stream_error_during_responses_streaming() {
     assert!(got_event, "Should have received an event before error");
     assert!(got_error, "Should have received stream error");
 }
-
-// ============================================================================
-// Request Validation Tests
-// ============================================================================
 
 #[tokio::test]
 async fn test_request_includes_headers() {
@@ -1173,13 +1124,11 @@ async fn test_request_includes_tools() {
 
     let body = server.request_bodies().pop().unwrap();
 
-    // Verify tools were included
     let tools = body.get("tools").unwrap().as_array().unwrap();
     assert_eq!(tools.len(), 2);
     assert_eq!(tools[0]["function"]["name"], "read_file");
     assert_eq!(tools[1]["function"]["name"], "bash");
 
-    // Verify tool_choice
     assert_eq!(body.get("tool_choice").unwrap(), "auto");
 }
 
@@ -1201,13 +1150,11 @@ async fn test_responses_api_request_format() {
 
     let body = server.request_bodies().pop().unwrap();
 
-    // Verify Responses API format
     assert!(body.get("input").is_some());
     assert_eq!(body.get("temperature").unwrap(), 0.5);
     assert_eq!(body.get("max_output_tokens").unwrap(), 500);
     assert_eq!(body.get("stream").unwrap(), true);
 
-    // Verify input items format
     let input = body.get("input").unwrap().as_array().unwrap();
     assert!(input.len() >= 2);
 }
@@ -1294,17 +1241,12 @@ async fn test_doom_loop_check_disabled_sends_no_header_and_drops_check_frames() 
     assert_eq!(logged.header("x-kigi-doom-loop-check"), None);
 }
 
-// ============================================================================
-// Multi-turn Conversation Tests
-// ============================================================================
-
 #[tokio::test]
 async fn test_multi_turn_conversation_with_tool_calls() {
     let server = MockInferenceServer::start().await.unwrap();
     server.set_response("I've read the file for you.");
     let client = create_test_client(&server.url(), ApiBackend::ChatCompletions);
 
-    // Simulate a multi-turn conversation with tool call and result
     let request = ConversationRequest::from_items(vec![
         ConversationItem::system("You are a helpful assistant."),
         ConversationItem::user("Read the README file"),
@@ -1314,7 +1256,6 @@ async fn test_multi_turn_conversation_with_tool_calls() {
             arguments: r#"{"path": "README.md"}"#.into(),
         }]),
         ConversationItem::tool_result("call_1", "# My Project\n\nThis is a test project."),
-        // The model should now respond based on the file content
     ]);
 
     let (mut stream, _metadata) = client.conversation_stream(request).await.unwrap();
@@ -1338,7 +1279,6 @@ async fn test_responses_api_multi_turn_with_tool_calls() {
     server.set_response("Done with the file.");
     let client = create_test_client(&server.url(), ApiBackend::Responses);
 
-    // Multi-turn with tool call and result
     let request = ConversationRequest::from_items(vec![
         ConversationItem::user("Read the config"),
         ConversationItem::assistant_tool_calls(vec![ToolCall {
@@ -1363,10 +1303,6 @@ async fn test_responses_api_multi_turn_with_tool_calls() {
     assert!(completed);
 }
 
-// ============================================================================
-// Request Counter Tests (verify retry behavior, etc.)
-// ============================================================================
-
 #[tokio::test]
 async fn test_single_request_per_stream() {
     let server = MockInferenceServer::start().await.unwrap();
@@ -1381,13 +1317,8 @@ async fn test_single_request_per_stream() {
     assert_eq!(server.request_count(), 1);
 }
 
-// ============================================================================
-// API Backend Routing Tests
-// ============================================================================
-
 #[tokio::test]
 async fn test_api_backend_getter_returns_configured_value() {
-    // Verify that the client correctly reports its configured API backend
     let client_responses = create_test_client("http://localhost/v1", ApiBackend::Responses);
     assert_eq!(client_responses.api_backend(), ApiBackend::Responses);
 
@@ -1395,13 +1326,12 @@ async fn test_api_backend_getter_returns_configured_value() {
     assert_eq!(client_chat.api_backend(), ApiBackend::ChatCompletions);
 }
 
+/// Verifies that when `ApiBackend::Responses` is configured, the client hits
+/// `/v1/responses` and NOT `/v1/chat/completions`. The session-level dispatch
+/// in `kigi-sampler` selects the backend stream based on
+/// `SamplingClient::api_backend()`.
 #[tokio::test]
 async fn test_responses_backend_hits_responses_endpoint_not_chat_completions() {
-    // This test verifies that when ApiBackend::Responses is configured,
-    // the client hits /v1/responses and NOT /v1/chat/completions.
-    // The session-level dispatch in `kigi-sampler` selects the
-    // backend stream based on `SamplingClient::api_backend()`.
-
     let server = MockInferenceServer::start().await.unwrap();
     // A request to the wrong endpoint fails loudly instead of streaming.
     server.enqueue_response(
@@ -1411,7 +1341,7 @@ async fn test_responses_backend_hits_responses_endpoint_not_chat_completions() {
     server.set_response("OK");
     let client = create_test_client(&server.url(), ApiBackend::Responses);
 
-    // Simulate the routing logic from acp_session.rs
+    // Simulate the routing logic from acp_session.rs.
     match client.api_backend() {
         ApiBackend::Responses => {
             let request = ConversationRequest::from_items(vec![ConversationItem::user("Hello")]);
@@ -1439,8 +1369,6 @@ async fn test_responses_backend_hits_responses_endpoint_not_chat_completions() {
 
 #[tokio::test]
 async fn test_chat_completions_backend_hits_chat_endpoint_not_responses() {
-    // Verify the inverse: ChatCompletions backend hits /v1/chat/completions
-
     let server = MockInferenceServer::start().await.unwrap();
     // A request to the wrong endpoint fails loudly instead of streaming.
     server.enqueue_response(
@@ -1450,7 +1378,7 @@ async fn test_chat_completions_backend_hits_chat_endpoint_not_responses() {
     server.set_response("OK");
     let client = create_test_client(&server.url(), ApiBackend::ChatCompletions);
 
-    // Simulate the routing logic from acp_session.rs
+    // Simulate the routing logic from acp_session.rs.
     match client.api_backend() {
         ApiBackend::ChatCompletions => {
             let request = ConversationRequest::from_items(vec![ConversationItem::user("Hello")]);

@@ -6,10 +6,6 @@ use crate::app::agent_view::AgentView;
 use crate::app::app_view::{ActiveView, AppView};
 use agent_client_protocol as acp;
 
-// ---------------------------------------------------------------------------
-// Permission dispatch
-// ---------------------------------------------------------------------------
-
 /// Handle permission option selection (AllowOnce, AllowAlways, RejectAlways).
 ///
 /// Pops the front request, sends the response, and handles queue transitions
@@ -121,7 +117,6 @@ pub(super) fn dispatch_permission_select(
         .meta(meta)))
         .ok();
 
-    // Queue transition: restore prompt if queue is now empty, clear if next-front.
     resolve_permission_queue_transition(agent);
 
     // "Enable always-approve" side effect: flip YOLO + persist + notify.
@@ -160,7 +155,6 @@ pub(super) fn dispatch_permission_followup(app: &mut AppView, text: String) -> V
         return vec![];
     };
 
-    // Find the RejectOnce option.
     let option_id = perm
         .options
         .iter()
@@ -168,7 +162,6 @@ pub(super) fn dispatch_permission_followup(app: &mut AppView, text: String) -> V
         .map(|o| o.option_id.clone());
 
     let Some(option_id) = option_id else {
-        // No RejectOnce option — cancel instead.
         perm.request
             .response_tx
             .send(Ok(acp::RequestPermissionResponse::new(
@@ -179,7 +172,6 @@ pub(super) fn dispatch_permission_followup(app: &mut AppView, text: String) -> V
         return vec![];
     };
 
-    // Include followup message in meta.
     let meta = if !text.trim().is_empty() {
         serde_json::json!({
             "followup_message": text,
@@ -243,7 +235,6 @@ pub(super) fn drain_permission_queue(agent: &mut AgentView) {
             )))
             .ok();
     }
-    // Queue is now empty — restore stashed prompt.
     if let Some(stashed) = agent.permission_stashed_prompt.take() {
         agent.prompt.restore(stashed);
     }
@@ -258,7 +249,6 @@ pub(super) fn drain_permission_queue(agent: &mut AgentView) {
 pub(crate) fn resolve_permission_queue_transition(agent: &mut AgentView) {
     agent.last_permission_click = None;
     if agent.permission_queue.is_empty() {
-        // Restore original prompt.
         if let Some(stashed) = agent.permission_stashed_prompt.take() {
             agent.prompt.restore(stashed);
         }
@@ -266,7 +256,6 @@ pub(crate) fn resolve_permission_queue_transition(agent: &mut AgentView) {
         // Clear any followup text from the just-resolved permission so it
         // doesn't leak into the next permission's UI.
         agent.prompt.set_text("");
-        // Reset next front's focus to Options.
         if let Some(next) = agent.permission_queue.front_mut() {
             next.focus = crate::views::permission_view::PermissionFocus::Options;
         }

@@ -432,7 +432,8 @@
     #[test]
     fn cmd_a_is_noop_when_gate_is_disabled() {
         let mut pw = PromptWidget::new();
-        pw.cmd_a_select_all_enabled = false; // simulate non-Ghostty
+        // simulate non-Ghostty
+        pw.cmd_a_select_all_enabled = false;
         pw.textarea.insert_str("hello world");
         let cursor_before = pw.textarea.cursor();
 
@@ -493,7 +494,8 @@
             chrome: false,
             ..Default::default()
         };
-        assert_eq!(pw.desired_height(80, &style, true, 20), 3); // top_divider(1)+text(1)+bot_divider(1)
+        // top_divider(1)+text(1)+bot_divider(1)
+        assert_eq!(pw.desired_height(80, &style, true, 20), 3);
     }
 
     #[test]
@@ -503,7 +505,8 @@
             chrome: false,
             ..Default::default()
         };
-        assert_eq!(pw.desired_height(80, &style, false, 20), 2); // vpad(1)+text(1)
+        // vpad(1)+text(1)
+        assert_eq!(pw.desired_height(80, &style, false, 20), 2);
     }
 
     #[test]
@@ -514,7 +517,8 @@
             chrome: false,
             ..Default::default()
         };
-        assert_eq!(pw.desired_height(80, &style, true, 20), 5); // top_divider(1)+text(3)+bot_divider(1)
+        // top_divider(1)+text(3)+bot_divider(1)
+        assert_eq!(pw.desired_height(80, &style, true, 20), 5);
     }
 
     /// While history BROWSE mode is active the composer height is frozen at
@@ -533,10 +537,11 @@
             }],
             "",
         );
-        pw.set_text("line1\nline2\nline3"); // populated multi-line entry
+        pw.set_text("line1\nline2\nline3");
+        // frozen: top_divider(1)+text(1)+bot_divider(1)
         assert_eq!(
             pw.desired_height(80, &style, true, 20),
-            3, // frozen: top_divider(1)+text(1)+bot_divider(1)
+            3,
         );
 
         // Detach (deactivate) → the box resizes to fit the text.
@@ -563,7 +568,8 @@
             chrome: false,
             ..Default::default()
         };
-        assert_eq!(pw.desired_height(80, &style, true, 20), 2); // text(1)+bot_divider(1)
+        // text(1)+bot_divider(1)
+        assert_eq!(pw.desired_height(80, &style, true, 20), 2);
     }
 
     /// Regression test: inline prompt `desired_height` must use the narrower
@@ -575,7 +581,8 @@
     fn desired_height_inline_prompt_uses_render_width() {
         let mut pw = PromptWidget::new();
         // Insert text that fits on one line at width 80 but wraps at 69.
-        let text: String = "a ".repeat(36); // 72 chars
+        // 72 chars
+        let text: String = "a ".repeat(36);
         pw.textarea.insert_str(&text);
 
         let inline_style = PromptStyle::inline(ratatui::style::Color::Reset);
@@ -620,7 +627,7 @@
         let mut pw = PromptWidget::new();
         pw.handle_key(&key!('a').to_key_event());
         pw.handle_key(&key!('b').to_key_event());
-        pw.handle_key(&key!('z', CONTROL).to_key_event()); // undo
+        pw.handle_key(&key!('z', CONTROL).to_key_event());
         let before = pw.textarea.text().to_string();
         assert_eq!(
             pw.handle_key(&key!('r', CONTROL).to_key_event()),
@@ -633,7 +640,7 @@
     fn ctrl_shift_z_redoes() {
         let mut pw = PromptWidget::new();
         pw.handle_key(&key!('x').to_key_event());
-        pw.handle_key(&key!('z', CONTROL).to_key_event()); // undo
+        pw.handle_key(&key!('z', CONTROL).to_key_event());
         let before = pw.textarea.text().to_string();
         assert_eq!(
             pw.handle_key(&key!('z', CONTROL | SHIFT).to_key_event()),
@@ -707,21 +714,20 @@
     #[test]
     fn can_send_basic() {
         let mut pw = PromptWidget::new();
-        assert!(!pw.can_send()); // empty
+        assert!(!pw.can_send());
         pw.textarea.insert_str("hello");
         assert!(pw.can_send());
         pw.textarea.set_text("   ");
-        assert!(!pw.can_send()); // whitespace only
+        assert!(!pw.can_send());
     }
 
     #[test]
     fn can_send_backslash() {
         let mut pw = PromptWidget::new();
         pw.textarea.insert_str("hello\\");
-        assert!(!pw.can_send()); // trailing backslash
+        assert!(!pw.can_send());
     }
 
-    // ── Paste element tests ──────────────────────────────────────────
 
     #[test]
     fn paste_single_line_inline() {
@@ -802,7 +808,8 @@
     fn paste_large_single_line_chip_shows_size_not_lines() {
         // A byte-triggered chip shows a size label, not a misleading "1 line".
         let mut pw = PromptWidget::new();
-        let text = "x".repeat(12 * 1024); // 12 KB, single line
+        // 12 KB, single line
+        let text = "x".repeat(12 * 1024);
         assert_eq!(pw.handle_paste(&text), PromptEvent::Edited);
         let elems = pw.textarea.elements();
         assert_eq!(elems.len(), 1);
@@ -840,7 +847,8 @@
         // byte size. A large paste should read as its size regardless of how
         // many lines it has.
         let mut pw = PromptWidget::new();
-        let text = "lorem ipsum dolor\n".repeat(2000); // ~36 KB across 2000 lines
+        // ~36 KB across 2000 lines
+        let text = "lorem ipsum dolor\n".repeat(2000);
         assert!(text.len() > PASTE_CHIP_DISPLAY_BYTES && text.lines().count() >= 4);
         assert_eq!(pw.handle_paste(&text), PromptEvent::Edited);
         let elems = pw.textarea.elements();
@@ -949,7 +957,6 @@
         assert_eq!(pw.paste_element_for_preview(), None);
     }
 
-    // ── Image preview activation (paste-chip parity) ─────────────────
 
     #[test]
     fn image_for_preview_shows_right_after_insert() {
@@ -1397,7 +1404,6 @@
         assert_eq!(&raw[mapped..mapped + 2], "/x");
     }
 
-    // -- PromptStyle prefix_override tests --
 
     #[test]
     fn prompt_style_default_has_no_prefix_override() {
@@ -1412,7 +1418,6 @@
     }
 
 
-    // ── Slash state integration tests ───────────────────────────────
 
     #[test]
     fn refresh_slash_produces_snapshot_for_slash_input() {
@@ -1512,7 +1517,6 @@
         );
     }
 
-    // ── Slash completion acceptance tests ──────────────────────────
 
     #[test]
     fn accept_completion_inserts_alias_for_alias() {
@@ -1729,7 +1733,6 @@
         );
     }
 
-    // ── Regression tests ────────────────────────────────────────────
 
     #[test]
     fn sync_acp_then_refresh_ordering() {
@@ -1796,7 +1799,6 @@
         assert!(!snap.open);
     }
 
-    // ── CR normalization tests ────────────────────────────────────
 
     #[test]
     fn paste_bare_cr_becomes_lf() {
@@ -1835,7 +1837,6 @@
         assert_eq!(pw.textarea.text(), "no carriage returns\nhere");
     }
 
-    // ── Paste chip threshold boundary tests ───────────────────────
 
     #[test]
     fn paste_3_lines_inline_normal_mode() {
@@ -1883,7 +1884,6 @@
         assert!(pw.textarea.elements().is_empty());
     }
 
-    // ── normalize_cr tests ─────────────────────────────────────────
 
     #[test]
     fn normalize_cr_bare_cr() {
@@ -1905,7 +1905,6 @@
         assert_eq!(normalize_cr("no cr\nhere"), "no cr\nhere");
     }
 
-    // ── Inline paste (handle_paste without element) ──────────────
 
     #[test]
     fn inline_paste_multiline_no_element() {
@@ -1936,12 +1935,11 @@
         assert!(!snap.open, "cleared text should close dropdown");
     }
 
-    // ── Image chip tests ──────────────────────────────────────────
 
-    /// Helper: create a minimal `PastedImage` for testing.
     fn test_image() -> PastedImage {
         PastedImage {
-            element_id: kigi_ratatui_textarea::ElementId::from_raw(0), // overwritten by insert_image
+            // overwritten by insert_image
+            element_id: kigi_ratatui_textarea::ElementId::from_raw(0),
             display_number: 0,
             mime_type: "image/png".into(),
             dimensions: Some((100, 80)),
@@ -2223,8 +2221,8 @@
     #[test]
     fn three_drops_in_same_prompt_yield_sequential_numbers() {
         let mut pw = PromptWidget::new();
-        pw.insert_image(test_image()).unwrap(); // #1
-        pw.insert_image(test_image()).unwrap(); // #2
+        pw.insert_image(test_image()).unwrap();
+        pw.insert_image(test_image()).unwrap();
 
         // Transient delete of `[Image #2]` mid-prompt.
         let id2 = pw.textarea.elements()[1].id;
@@ -2233,7 +2231,8 @@
         pw.textarea.inline_element(id2);
         pw.sync_images_with_textarea();
 
-        pw.insert_image(test_image()).unwrap(); // MUST be #3
+        // MUST be #3
+        pw.insert_image(test_image()).unwrap();
 
         let numbers: Vec<usize> = pw.images.iter().map(|i| i.display_number).collect();
         assert_eq!(
@@ -2264,8 +2263,8 @@
     #[test]
     fn sync_handles_two_images_sharing_display_number() {
         let mut pw = PromptWidget::new();
-        pw.insert_image(test_image()).unwrap(); // #1
-        pw.insert_image(test_image()).unwrap(); // #2
+        pw.insert_image(test_image()).unwrap();
+        pw.insert_image(test_image()).unwrap();
         assert_eq!(pw.images.len(), 2);
         assert_ne!(
             pw.images[0].element_id, pw.images[1].element_id,
@@ -2294,7 +2293,6 @@
         );
     }
 
-    // ── set_images: identity-based pairing ───────────────────────────
 
     /// Two restored chips with identical placeholder byte length must
     /// get distinct `element_id`s after `set_images`. A naive
@@ -2614,7 +2612,6 @@
         );
     }
 
-    // ── parse_image_display_number ───────────────────────────────────
 
     #[test]
     fn parse_image_display_number_bracketed_form() {
@@ -2681,7 +2678,8 @@
         let mut pw = PromptWidget::new();
         let mut img1 = test_image();
         img1.source_path = Some(foo_path.clone());
-        img1.display_number = 0; // overwritten by insert_image
+        // overwritten by insert_image
+        img1.display_number = 0;
         pw.insert_image(img1).unwrap();
 
         let mut img2 = test_image();
@@ -2882,7 +2880,8 @@
         // observes a peak >= FIRE_PEAK_LEN and its last_len matches the
         // on-screen length — the precondition under which a shrink fires.
         pw.handle_key(&key!('@').to_key_event());
-        type_chars(&mut pw, 24); // "@" + 24 = 25 chars
+        // "@" + 24 = 25 chars
+        type_chars(&mut pw, 24);
         assert!(!pw.take_undo_tip_fire(), "typing must not fire");
 
         // Force the dropdown visible with a SHORT file result so accepting
@@ -3140,7 +3139,6 @@
         assert!(!snap.matches.is_empty());
     }
 
-    // ── T8: lifecycle edge-case tests ──────────────────────────────
 
     #[test]
     fn ctrl_c_clears_image_state() {
@@ -3319,7 +3317,6 @@
         assert_eq!(pw.images[0].display_number, 2);
     }
 
-    // ── File search Right Arrow (drill-down) ────────────────────────────
 
     /// Build a `FuzzyMatchResult` for use in test fixtures.
     fn fuzzy_result(path: &str, is_dir: bool) -> kigi_workspace::file_system::FuzzyMatchResult {
@@ -3533,7 +3530,8 @@
         // from a space-free parent, so no residual anchor masks it. Without the
         // Tab `set_drill_prefix`, the space terminates and the `.expect` panics.
         let mut pw = PromptWidget::new();
-        seed_at_completion(&mut pw, "src/", "src/sub dir", true); // dir mode, no prior anchor
+        // dir mode, no prior anchor
+        seed_at_completion(&mut pw, "src/", "src/sub dir", true);
         assert!(pw.file_search.is_dir_mode());
 
         pw.handle_key(&key!(Tab).to_key_event());
@@ -3552,7 +3550,8 @@
         // `@my dir` would re-detect as a context.
         let mut pw = PromptWidget::new();
         seed_at_completion(&mut pw, "my", "my dir", true);
-        pw.handle_key(&key!(Right).to_key_event()); // → "@my dir", anchor "my dir"
+        // → "@my dir", anchor "my dir"
+        pw.handle_key(&key!(Right).to_key_event());
         assert!(pw.file_search.context().is_some());
 
         pw.handle_key(&key!(Esc).to_key_event());
@@ -3571,7 +3570,8 @@
         // The `(Some, None)` leaving-@-mode arm must drop the anchor with the context.
         let mut pw = PromptWidget::new();
         seed_at_completion(&mut pw, "my", "my dir", true);
-        pw.handle_key(&key!(Right).to_key_event()); // → "@my dir", anchor "my dir"
+        // → "@my dir", anchor "my dir"
+        pw.handle_key(&key!(Right).to_key_event());
         assert!(pw.file_search.context().is_some());
 
         // Cursor before `@` → leaving @-mode.
@@ -3596,7 +3596,8 @@
         // typing, instead of silently re-matching the stale anchor.
         let mut pw = PromptWidget::new();
         seed_at_completion(&mut pw, "my", "my dir", true);
-        pw.handle_key(&key!(Right).to_key_event()); // → "@my dir", anchor "my dir"
+        // → "@my dir", anchor "my dir"
+        pw.handle_key(&key!(Right).to_key_event());
         assert_eq!(pw.textarea.text(), "@my dir");
         assert!(pw.file_search.context().is_some());
 
@@ -3623,7 +3624,8 @@
         // Files now show under a `path/` query; Tab/Enter on a file must
         // reference it as an atomic element, not append `/` to descend into it.
         let mut pw = PromptWidget::new();
-        seed_at_completion(&mut pw, "src/", "src/main.rs", false); // file in dir-mode
+        // file in dir-mode
+        seed_at_completion(&mut pw, "src/", "src/main.rs", false);
         assert!(pw.file_search.is_dir_mode());
 
         pw.handle_key(&key!(Tab).to_key_event());
@@ -3737,7 +3739,6 @@
         assert_eq!(pw.textarea.cursor(), "@README.md ".len());
     }
 
-    // ── Ghost text tests ────────────────────────────────────────────
 
     /// Chromeless prompt style for rendering tests (no borders, no prefix,
     /// no vpad — textarea starts at area origin).
@@ -3978,7 +3979,6 @@
         assert_eq!(buf_text_at(&buf, 5, 10, 0).trim(), "");
     }
 
-    // --- paint_slash_token_highlight (wrap-aware token painting) ---
 
     /// Sentinel highlight color — never produced by the textarea's own render.
     const TOKEN_FG: ratatui::style::Color = ratatui::style::Color::Rgb(9, 99, 199);
@@ -4103,7 +4103,6 @@
         assert!(!pw.has_ghost_text());
     }
 
-    // -- Ghost acceptance through PromptWidget --------------------------------
 
     #[test]
     fn accept_ghost_full_appends_to_textarea() {
@@ -4160,7 +4159,6 @@
         assert!(!pw.has_ghost_text());
     }
 
-    // -- completion accept / splice application ---------------------------------
 
     /// Wire-shaped token item: whole-line `insert_text`, `token_text` span
     /// replacement (what a range-emitting shell sends).
@@ -4255,7 +4253,6 @@
         assert_eq!(pw.text(), "echo something else");
     }
 
-    // -- apply_completion_fill ---------------------------------------------
 
     /// The widget-level fill writes the decided LCP over the typed token and
     /// parks the cursor after it (the decision matrix lives in
@@ -4300,7 +4297,6 @@
     }
 
 
-    // -- Predicted-next-prompt suggestion through PromptWidget ----------------
 
     /// Widget with an active gate and a loaded suggestion — the state right
     /// after a turn ends with `kigi/suggestPrompt` resolved.
@@ -4405,7 +4401,7 @@
             ..Default::default()
         });
 
-        let area = Rect::new(0, 0, 40, 3); // 3 rows tall
+        let area = Rect::new(0, 0, 40, 3);
         let mut buf = Buffer::empty(area);
         pw.draw(&mut buf, area, None, &ghost_test_style(), None);
 
@@ -4465,7 +4461,6 @@
         assert!(!pw.has_ghost_text());
     }
 
-    // ── Inline title on the top border ──────────────────────────────
 
     /// Bordered chrome style (the agent-view prompt shape) with an optional
     /// session title.

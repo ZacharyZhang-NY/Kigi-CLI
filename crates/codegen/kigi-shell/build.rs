@@ -10,7 +10,6 @@ use std::path::{Path, PathBuf};
 const RG_VER: &str = "15.0.0";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Only bundle in release builds to avoid slowing down cargo check.
     println!("cargo:rerun-if-env-changed=KIGI_SHELL_BUNDLE_RG_PATH");
     println!("cargo:rerun-if-env-changed=KIGI_SHELL_RG_DOWNLOAD_BASE");
     // Declare our custom cfg to the compiler so cfg(bundle_rg) is recognized by lints

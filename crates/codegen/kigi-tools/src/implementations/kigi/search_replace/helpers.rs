@@ -1,17 +1,7 @@
-//! SearchReplace tool implementation.
-//!
-//! This tool performs exact string replacements in files with support for:
-//! - Exact string replacement (find/replace)
-//! - New file creation (when `old_string` is empty)
-//! - Replace all mode (`replace_all: true`)
-//! - Read-before-edit validation (non-concise mode)
-//! - External modification detection
+//! String-edit and confusable-normalized matching helpers for the
+//! SearchReplace tool.
 
 use crate::types::output::SearchReplaceEditDetail;
-
-// ============================================================================
-// Shared string-edit helpers
-// ============================================================================
 
 /// Render a snippet of the file with line numbers around the edit.
 pub(crate) fn render_snippet(
@@ -60,7 +50,6 @@ pub(crate) struct LineRange {
     pub end_line: usize,
 }
 
-/// Compute the line range of the inserted text in the text
 pub(crate) fn compute_line_range(text: &str, start_pos: usize, inserted_text: &str) -> LineRange {
     let start_line = text[..start_pos].matches('\n').count();
     let lines_in_inserted = inserted_text.split_inclusive('\n').count().max(1);
@@ -93,7 +82,6 @@ pub(crate) fn replace_using_positions(
     (new_text, new_positions)
 }
 
-/// Build edit details for each replacement.
 pub(crate) fn build_edit_details(
     new_text: &str,
     old_string: &str,
@@ -107,7 +95,6 @@ pub(crate) fn build_edit_details(
             render_snippet(new_text, new_string, start_pos, context_lines);
         let line_range_new = compute_line_range(new_text, start_pos, new_string);
         // Extract the leading text on the line before the match starts.
-        // This is the text between the last '\n' before start_pos and start_pos itself.
         let line_start = new_text[..start_pos]
             .rfind('\n')
             .map(|i| i + 1)
@@ -126,10 +113,6 @@ pub(crate) fn build_edit_details(
     }
     details
 }
-
-// ============================================================================
-// Normalized (confusable-aware) matching helpers
-// ============================================================================
 
 /// A single match found via confusable-normalized comparison, expressed in
 /// the original text's byte coordinates.
@@ -184,8 +167,6 @@ pub(crate) fn find_normalized_match_positions(text: &str, pattern: &str) -> Norm
         return NormalizedMatchResult::NoMatch;
     }
 
-    // Collect all non-overlapping matches in normalized space and validate
-    // each candidate via roundtrip check.
     let mut validated = Vec::new();
     let mut had_rejected_candidates = false;
 
@@ -371,8 +352,6 @@ mod tests {
         assert_eq!(new_positions, vec![0, 10]);
     }
 
-    // ── Normalized matching helpers ─────────────────────────────────────
-
     fn unwrap_matches(result: NormalizedMatchResult) -> Vec<NormalizedMatch> {
         match result {
             NormalizedMatchResult::Matches(m) => m,
@@ -444,8 +423,6 @@ mod tests {
         );
     }
 
-    // ── Partial-expansion rejection ─────────────────────────────────────
-
     #[test]
     fn partial_expansion_dash_inside_em_dash_rejected() {
         let text = "\u{2014}";
@@ -492,8 +469,6 @@ mod tests {
         let matches = unwrap_matches(find_normalized_match_positions(text, "..."));
         assert_eq!(matches.len(), 1);
     }
-
-    // ── Replace with new return type ────────────────────────────────────
 
     #[test]
     fn replace_normalized_matches_basic() {

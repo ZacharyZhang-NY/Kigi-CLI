@@ -89,7 +89,7 @@ async fn c1_auto_g8_midstream() {
     assert_cell_passes("c1_auto_g8_midstream").await;
 }
 
-/// The formerly-declared bug: the finalize-decel fix landed, so the G4 jerk
+/// The once-declared bug: the finalize-decel fix landed, so the G4 jerk
 /// cell passes outright — I-SMOOTH-COAST (post-input motion at most one
 /// tapered cap) and I-NO-DROP (finalize discards nothing) moved from the
 /// xfail set to ordinary pass rows. The cell id keeps its historical name

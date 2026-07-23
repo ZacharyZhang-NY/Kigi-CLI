@@ -19,11 +19,11 @@ use std::time::Duration;
 static SHARED_H2: OnceLock<reqwest::Client> = OnceLock::new();
 static SHARED_HTTP1: OnceLock<reqwest::Client> = OnceLock::new();
 
-/// Kill switch: `KIGI_SAMPLER_SHARED_CLIENT=0` (or `false`, any case)
-/// restores the old behavior of building a fresh `reqwest::Client` per
-/// `SamplingClient`. Resolved once per process: the environment cannot
-/// change externally after spawn, and latching keeps the rollback state
-/// consistent with the read-once pool knobs.
+/// Kill switch: `KIGI_SAMPLER_SHARED_CLIENT=0` (or `false`, any case) makes
+/// every `SamplingClient` build its own `reqwest::Client`. Resolved once per
+/// process: the environment cannot change externally after spawn, and
+/// latching keeps the rollback state consistent with the read-once pool
+/// knobs.
 fn sharing_disabled() -> bool {
     static DISABLED: OnceLock<bool> = OnceLock::new();
     *DISABLED.get_or_init(|| {
@@ -56,18 +56,16 @@ fn shared(
     Ok(cell.get_or_init(|| built).clone())
 }
 
-/// Shared HTTP/2 sampling client (connection pooling + h2 keepalive).
 pub(crate) fn client() -> Result<reqwest::Client, reqwest::Error> {
     shared(&SHARED_H2, build_http_client, sharing_disabled())
 }
 
-/// Shared HTTP/1.1 fallback client. Pool-less by construction, so sharing it
-/// is behaviorally identical to building a fresh one.
+/// Pool-less by construction, so sharing this client is behaviorally
+/// identical to building a fresh one.
 pub(crate) fn client_http1() -> Result<reqwest::Client, reqwest::Error> {
     shared(&SHARED_HTTP1, build_http_client_http1, sharing_disabled())
 }
 
-/// Build a `reqwest::Client` for sampling with HTTP/2 + connection pooling.
 /// Env knobs are read once, when the shared client is first built.
 fn build_http_client() -> Result<reqwest::Client, reqwest::Error> {
     let pool_max_idle: usize = std::env::var("KIGI_POOL_MAX_IDLE")
@@ -88,15 +86,13 @@ fn build_http_client() -> Result<reqwest::Client, reqwest::Error> {
         .pool_idle_timeout(Duration::from_secs(pool_idle_timeout_secs))
         .connect_timeout(Duration::from_secs(connect_timeout_secs))
         .tcp_nodelay(true)
-        // HTTP/2 keep-alive: ping every 15s, timeout after 5s.
         .http2_keep_alive_interval(Duration::from_secs(15))
         .http2_keep_alive_timeout(Duration::from_secs(5))
         .http2_keep_alive_while_idle(true)
         .build()
 }
 
-/// Build a `reqwest::Client` constrained to HTTP/1.1 with pooling disabled.
-/// Used as a fallback after HTTP/2 transport failures.
+/// Fallback used after HTTP/2 transport failures.
 fn build_http_client_http1() -> Result<reqwest::Client, reqwest::Error> {
     let connect_timeout_secs: u64 = std::env::var("KIGI_CONNECT_TIMEOUT_SECS")
         .ok()

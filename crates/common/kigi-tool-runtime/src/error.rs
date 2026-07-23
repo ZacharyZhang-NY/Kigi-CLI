@@ -14,12 +14,12 @@ use serde_json::Value;
 
 use kigi_tool_protocol::{ToolErrorWire, ToolId};
 
-/// Discriminator for tool errors.
+/// Machine-readable tool-error discriminator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ToolErrorKind {
-    /// The tool has no implementation for the requested operation.
+    /// No implementation for the requested operation.
     NotImplemented,
-    /// Inputs failed validation.
+    /// Input validation failed.
     InvalidArguments,
     /// No tool registered under the given id.
     NotFound,
@@ -27,11 +27,10 @@ pub enum ToolErrorKind {
     PermissionDenied,
     /// Authentication failed (401-shaped).
     Unauthorized,
-    /// The tool ran past its time budget.
+    /// Tool ran past its time budget.
     Timeout,
-    /// The caller cancelled the tool call.
+    /// Caller cancelled the tool call.
     Cancelled,
-    /// Rate limit exceeded.
     RateLimited,
     /// The caller's usage pool / billing balance is exhausted (out
     /// of credits). Payment-required-shaped; distinct from
@@ -57,13 +56,10 @@ pub enum ToolErrorKind {
     /// shed) so the surface can tailor a "too many in progress" message.
     /// Named to match the chat surface's `concurrency_limit` typed error.
     ConcurrencyLimit,
-    /// Upstream service unavailable.
     ServiceUnavailable,
-    /// Network-level failure.
     NetworkError,
     /// Tool body returned an error.
     Execution,
-    /// Requested behavior version not supported.
     BehaviorVersionUnsupported,
     /// Render-card budget exceeded.
     RenderLimited,
@@ -151,12 +147,10 @@ impl std::error::Error for ToolError {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Constructors — one per kind for ergonomic tool code
-// ---------------------------------------------------------------------------
+// Constructors
 
 impl ToolError {
-    /// Core constructor. All other constructors delegate here.
+    /// Core constructor; other constructors delegate here.
     pub fn new(kind: ToolErrorKind, detail: impl Into<String>) -> Self {
         Self {
             kind,
@@ -166,13 +160,12 @@ impl ToolError {
         }
     }
 
-    /// Attach structured metadata.
     pub fn with_details(mut self, details: Value) -> Self {
         self.details = Some(details);
         self
     }
 
-    /// Attach a causal error chain (for developer logs, not sent to model).
+    /// Attach a causal chain for developer logs (not sent to the model).
     pub fn with_source(mut self, source: impl Into<anyhow::Error>) -> Self {
         self.source = Some(source.into());
         self
@@ -252,16 +245,13 @@ impl ToolError {
             .with_details(serde_json::json!({ "code": code.into() }))
     }
 
-    /// Snake-case identifier for the kind. Delegates to
-    /// [`ToolErrorKind::as_str`].
+    /// Snake-case identifier for the kind ([`ToolErrorKind::as_str`]).
     pub fn variant_name(&self) -> &'static str {
         self.kind.as_str()
     }
 }
 
-// ---------------------------------------------------------------------------
 // From impls
-// ---------------------------------------------------------------------------
 
 impl From<serde_json::Error> for ToolError {
     fn from(value: serde_json::Error) -> Self {
@@ -269,9 +259,7 @@ impl From<serde_json::Error> for ToolError {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Wire bridge
-// ---------------------------------------------------------------------------
 
 /// Carry a [`ToolError`]'s structured `details` onto a `Custom` wire variant
 /// while keeping the round-trip recognizable: the decoder
@@ -451,9 +439,8 @@ mod wire_bridge_tests {
 
     #[test]
     fn service_unavailable_details_survive_wire_projection() {
-        // Structured details used to be dropped (`details: None`) for the
-        // Custom-mapped kinds; they must now ride the wire with the subcode
-        // merged in so recognizers keying on `details.code` keep working.
+        // Custom-mapped kinds carry structured details on the wire with the
+        // subcode merged in so recognizers keying on `details.code` keep working.
         let err = ToolError::service_unavailable("sandbox not ready")
             .with_details(serde_json::json!({ "retry_after_ms": 1500 }));
         let wire = ToolErrorWire::from(err);
@@ -481,10 +468,9 @@ mod wire_bridge_tests {
 
     #[test]
     fn rate_limit_and_usage_kinds_merge_subcode_uniformly() {
-        // Same property as service_unavailable, applied to every
-        // Custom-mapped kind: object details without a `code` key gain the
-        // subcode, so decode-side recognizers keying on `details.code` can
-        // still classify the error.
+        // Same as service_unavailable for every Custom-mapped kind: object
+        // details without a `code` key gain the subcode so decode-side
+        // recognizers keying on `details.code` can still classify the error.
         let cases: [(ToolError, &str); 5] = [
             (ToolError::rate_limited("slow down"), "rate_limited"),
             (

@@ -124,8 +124,6 @@ mod tests {
         TerminalContext::default()
     }
 
-    // -- hyperlink_skip_reason tests --
-
     #[test]
     fn apple_terminal_skip_reason() {
         assert_eq!(
@@ -198,8 +196,6 @@ mod tests {
         };
         assert_eq!(ctx.hyperlink_skip_reason(), Some("vte_old"));
     }
-
-    // -- resolve_hyperlink_route tests --
 
     #[test]
     fn iterm2_emits_osc8() {

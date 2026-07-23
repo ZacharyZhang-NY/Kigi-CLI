@@ -265,7 +265,8 @@ impl FuzzyFileMatcher {
                 .filter(|e| !self.dirs || e.is_dir)
                 .take(k)
                 .cloned()
-                .collect(); // should be already sorted
+                // should be already sorted
+                .collect();
         }
 
         // https://github.com/helix-editor/helix/blob/d79cce4e4bfc24dd204f1b294c899ed73f7e9453/helix-term/src/ui/completion.rs#L369
@@ -280,8 +281,7 @@ impl FuzzyFileMatcher {
 
         while items.len() < k
             && let Some(m) = iter.next()
-            // for empty queries, return everything; otherwise, apply heuristic min-score limit
-            && (self.query.is_empty() ||  m.score >= min_score)
+            && (self.query.is_empty() || m.score >= min_score)
         {
             fn extract_match(
                 m: &Match,

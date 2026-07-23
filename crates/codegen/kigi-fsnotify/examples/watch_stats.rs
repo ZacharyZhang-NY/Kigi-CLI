@@ -105,7 +105,7 @@ fn gen_large(root: &Path) {
     make_dirs(&root.join("target"), 34_000, 50);
 }
 
-/// Ground truth: total inotify watches held by this process (Linux).
+/// Kernel-side ground truth for the crate's own accounting; always 0 off Linux.
 fn inotify_watches() -> usize {
     #[cfg(target_os = "linux")]
     {

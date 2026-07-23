@@ -95,7 +95,6 @@ impl WorkspaceRpc for UpdateToolConfigReq {
     type Response = Value;
 }
 
-/// `workspace.drop_session` — drop a workspace session.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DropSessionReq {
     /// Deprecated: self-attested and no longer trusted. The server derives

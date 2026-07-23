@@ -1381,10 +1381,10 @@ impl AgentDefinition {
     ///
     /// Used by the runtime turn-end TodoGate to gate firing on sessions
     /// whose prompt actually references the rules the gate's reminder
-    /// text invokes. The block has been removed from every built-in
-    /// template, so this returns `false` unconditionally. Kept as a
-    /// helper so the gate's call-site stays stable in case the block
-    /// is reintroduced behind a future flag.
+    /// text invokes. No built-in template carries the block, so this
+    /// returns `false` unconditionally. Kept as a helper so the gate's
+    /// call-site stays stable in case the block is reintroduced behind
+    /// a future flag.
     pub fn carries_task_completion_discipline(
         &self,
         _audience: crate::prompt::context::PromptAudience,

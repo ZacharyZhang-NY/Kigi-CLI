@@ -43,9 +43,7 @@ fn rebuild_shared_config(agent: &MvpAgent) {
 /// `base_url`. Zero-config repro: a Kimi subscription + a bundled
 /// `moonshot-cn/*` default.
 ///
-/// Revert-to-red (L: this edit COMPILES — the previous wording named a
-/// `Option<String>` argument that the `Option<&SessionCredential>` signature
-/// rejects, so it could never have been run): in
+/// Revert-to-red: in
 /// `ModelsManager::sampling_config`, ask the authority about the SESSION's
 /// endpoint instead of the current model's own —
 /// `.credential_for(None, &config.endpoints.proxy_url())` in place of
@@ -330,9 +328,6 @@ async fn oauth_platform_shared_config_never_receives_the_primary_on_login() {
 /// EXPIRED bearer in the shared config after a successful re-login: every
 /// unresolved-model fallback and every subagent baseline turn 401'd until
 /// restart.
-///
-/// The switch happens AFTER the config is built — the previous version of this
-/// test left both on the same model, so it could not catch this.
 ///
 /// Revert-to-red (production, compiles): make `MvpAgent::shared_config_platform`
 /// re-resolve from the live cell instead of returning the captured value —

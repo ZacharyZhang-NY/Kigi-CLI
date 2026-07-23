@@ -248,9 +248,12 @@ mod tests {
         let mut state = EphemeralTipState::default();
         assert!(state.show(tip("a", 2), &mut HashMap::new()));
         assert!(state.is_active());
-        assert!(!state.tick()); // 2 -> 1
-        assert!(!state.tick()); // 1 -> 0
-        assert!(state.tick()); // 0 -> expired, needs redraw
+        // 2 -> 1
+        assert!(!state.tick());
+        // 1 -> 0
+        assert!(!state.tick());
+        // 0 -> expired, needs redraw
+        assert!(state.tick());
         assert!(!state.is_active());
         assert!(state.line().is_none());
         assert!(!state.tick(), "empty slot ticks are no-ops");
@@ -273,8 +276,10 @@ mod tests {
         let mut state = EphemeralTipState::default();
         let mut counts = HashMap::new();
         let _ = state.show(tip("a", 3), &mut counts);
-        assert!(!state.tick()); // 3 -> 2
-        let _ = state.show(tip("a", 3), &mut counts); // refresh back to 3
+        // 3 -> 2
+        assert!(!state.tick());
+        // refresh back to 3
+        let _ = state.show(tip("a", 3), &mut counts);
         for _ in 0..3 {
             assert!(!state.tick());
         }

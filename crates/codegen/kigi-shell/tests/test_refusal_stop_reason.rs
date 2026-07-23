@@ -2,11 +2,11 @@
 //! `stop_reason: "refusal"` must complete the turn cleanly with EXACTLY ONE
 //! inference request.
 //!
-//! Previously the unknown `stop_reason` failed the terminal `message_delta`
-//! parse (discarding the fully-streamed response) and the resulting
-//! serialization error was misclassified as a retryable stream error,
-//! producing a ~10-minute retry storm per turn. Covered here end-to-end
-//! through both the plain stdio agent and a leader-hosted session.
+//! An unknown `stop_reason` fails the terminal `message_delta` parse
+//! (discarding the fully-streamed response); the resulting serialization
+//! error is misclassified as a retryable stream error, producing a
+//! ~10-minute retry storm per turn. Covered here end-to-end through both
+//! the plain stdio agent and a leader-hosted session.
 //!
 //! Tests are `#[ignore]`d by default — they require a pre-built binary
 //! (auto-built locally when missing):
@@ -65,8 +65,9 @@ fn turn_messages_request_count(server: &MockInferenceServer) -> usize {
 
 /// THE regression test: a refusal-terminated `/v1/messages` turn must return
 /// a successful prompt response from exactly one inference request.
+// requires pre-built binary; run with --ignored
 #[tokio::test]
-#[ignore] // requires pre-built binary; run with --ignored
+#[ignore]
 async fn test_refusal_turn_completes_with_single_messages_request() {
     with_local_set(|| async {
         let server = refusal_messages_server().await;
@@ -111,11 +112,8 @@ async fn test_refusal_turn_completes_with_single_messages_request() {
     .await;
 }
 
-// ============================================================================
 // Leader mode: the same refusal scenario through a leader-hosted session
 // (client → stdio bridge → leader unix socket → leader-hosted agent).
-// ============================================================================
-
 #[cfg(unix)]
 mod leader {
     use std::time::Duration;
@@ -130,8 +128,9 @@ mod leader {
     /// Leader-mode variant of the regression: the refusal-terminated turn
     /// must complete cleanly (single request, prompt response delivered)
     /// when the session is hosted by the leader IPC server.
+    // requires pre-built binary; run with --ignored
     #[tokio::test]
-    #[ignore] // requires pre-built binary; run with --ignored
+    #[ignore]
     async fn test_leader_refusal_turn_completes_with_single_messages_request() {
         with_local_set(|| async {
             let server = refusal_messages_server().await;

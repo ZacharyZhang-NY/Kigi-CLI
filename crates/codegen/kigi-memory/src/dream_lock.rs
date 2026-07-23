@@ -199,7 +199,7 @@ mod tests {
     use std::time::Duration;
     use tempfile::TempDir;
 
-    // --- DreamLock tests ---
+    // DreamLock tests
 
     #[test]
     fn no_file_means_no_prior_consolidation() {
@@ -240,7 +240,7 @@ mod tests {
         let lock = DreamLock::new(dir.path());
 
         let old_time = SystemTime::now() - Duration::from_secs(7200);
-        fs::write(&lock.path, "4000000000").unwrap(); // dead PID
+        fs::write(&lock.path, "4000000000").unwrap();
         filetime::set_file_mtime(&lock.path, FileTime::from_system_time(old_time)).unwrap();
 
         let prior = lock
@@ -358,7 +358,8 @@ mod tests {
     fn rollback_on_nonexistent_file_is_noop() {
         let dir = TempDir::new().unwrap();
         let lock = DreamLock::new(dir.path());
-        lock.rollback(None).unwrap(); // no file to delete, should be fine
+        // no file to delete, should be fine
+        lock.rollback(None).unwrap();
     }
 
     #[test]
@@ -385,7 +386,7 @@ mod tests {
         );
     }
 
-    // --- sessions_since tests ---
+    // sessions_since tests
 
     fn write_session(dir: &Path, name: &str, age_secs: u64) {
         fs::create_dir_all(dir).unwrap();
@@ -401,8 +402,10 @@ mod tests {
         let sessions = dir.path().join("sessions");
         let cutoff = SystemTime::now() - Duration::from_secs(3600);
 
-        write_session(&sessions, "2026-01-01-proj-aaa11111", 1800); // 30min ago, after cutoff
-        write_session(&sessions, "2025-12-31-proj-bbb22222", 7200); // 2h ago, before cutoff
+        // 30min ago, after cutoff
+        write_session(&sessions, "2026-01-01-proj-aaa11111", 1800);
+        // 2h ago, before cutoff
+        write_session(&sessions, "2025-12-31-proj-bbb22222", 7200);
 
         let result = sessions_since(&sessions, cutoff, None).unwrap();
         assert_eq!(result, vec!["2026-01-01-proj-aaa11111"]);

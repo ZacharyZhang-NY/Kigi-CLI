@@ -420,8 +420,8 @@ mod tests {
 
     #[test]
     fn run_rejects_unoffered_effort_with_effort_error_not_unknown_model() {
-        // Regression: previously `resolve_effort_token_for` returned None and
-        // the handler fell through to `Unknown model: Reasoning X none`.
+        // Guards against a rejected effort token falling through to
+        // `Unknown model: Reasoning X none` instead of an effort error.
         let mut state = ModelState::default();
         let (id, info) = model_with_reasoning("reasoning-x", "Reasoning X");
         state.available.insert(id, info);

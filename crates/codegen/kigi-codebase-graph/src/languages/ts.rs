@@ -19,7 +19,6 @@ pub fn ts_lang() -> TSLanguageConfig {
             "const".to_owned(),
             "let".to_owned(),
         ]],
-        // Comprehensive TypeScript query with full type coverage
         r#"
           ;; === DEFINITIONS ===
           

@@ -47,7 +47,6 @@ async fn esc_esc_clears_idle_prompt_and_records_history() {
         .wait_for_text("press again to clear", Duration::from_secs(15))
         .expect("first idle Esc must show the clear confirm hint");
 
-    // Second Esc fires the clear.
     harness.inject_keys(keys::ESC).expect("second esc");
     wait_for_labels_absent(&mut harness, &[draft], Duration::from_secs(5));
     assert!(
@@ -55,7 +54,6 @@ async fn esc_esc_clears_idle_prompt_and_records_history() {
         "second Esc must clear the draft\nscreen:\n{}",
         harness.screen_contents()
     );
-    // The confirm hint must be gone once the pending fired.
     assert!(
         !harness.contains_text("press again to clear"),
         "clear-confirm hint must clear after the second Esc fires\nscreen:\n{}",

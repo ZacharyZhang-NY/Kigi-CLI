@@ -330,8 +330,6 @@ mod tests {
         );
         filters
     }
-    /// The forced `kind` REPLACES a client-sent `kind: ["build"]` (never
-    /// unions), so the local lane stays excluded.
     fn xai_auth_manager(dir: &std::path::Path) -> std::sync::Arc<crate::auth::AuthManager> {
         let am = std::sync::Arc::new(crate::auth::AuthManager::new(
             dir,

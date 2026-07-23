@@ -13,54 +13,46 @@ use serde::{Deserialize, Serialize};
 /// an injected block.
 pub const MEMORY_CONTEXT_OPEN_TAG: &str = "<memory-context>";
 
-/// Closing tag paired with [`MEMORY_CONTEXT_OPEN_TAG`].
 pub const MEMORY_CONTEXT_CLOSE_TAG: &str = "</memory-context>";
 
 /// Configuration for the ChatStateActor at spawn time.
 #[derive(Debug, Clone)]
 pub struct ChatStateConfig {
-    /// Initial conversation items to populate the state with.
     pub initial_conversation: Vec<ConversationItem>,
-    /// Sampling configuration (model, context window, etc.).
     pub sampling_config: SamplingConfig,
 }
 
 /// Immutable snapshot of the actor's state (for forking, rewind).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatStateSnapshot {
-    /// The full conversation history.
     pub conversation: Vec<ConversationItem>,
-    /// Current sampling configuration.
     pub sampling_config: SamplingConfig,
-    /// Current prompt index (incremented per user turn).
+    /// Incremented per user turn.
     pub prompt_index: usize,
-    /// Accumulated token usage.
     pub total_tokens: u64,
     /// Bytes/4 estimate of the conversation as of the last `record_token_usage`.
-    /// `0` means unknown (pre-field snapshot); restore re-estimates instead.
+    /// `0` means unknown (snapshot written without the field); restore
+    /// re-estimates instead.
     #[serde(default)]
     pub estimate_at_last_response: u64,
-    /// File paths the agent has edited.
     pub agent_edited_paths: BTreeSet<String>,
-    /// Cached prompt texts for rewind preview.
+    /// Cached for rewind preview.
     pub prompt_texts: Vec<String>,
-    /// Timestamp when the current stream started (epoch ms).
+    /// Epoch ms.
     pub stream_start_ms: Option<i64>,
-    /// Timestamp when the current turn started (epoch ms).
+    /// Epoch ms.
     pub turn_start_ms: Option<i64>,
-    /// Prompt index at which the last compaction occurred.
     pub last_compaction_prompt_index: Option<usize>,
-    /// Opaque credential secrets (API key, optional extra auth, client version).
     #[serde(default)]
     pub credentials: Credentials,
 }
 
-/// Metadata for session notifications (timing info).
+/// Timing metadata for session notifications.
 #[derive(Debug, Clone)]
 pub struct NotificationMeta {
-    /// Timestamp when the current stream started (epoch ms).
+    /// Epoch ms.
     pub stream_start_ms: Option<i64>,
-    /// Timestamp when the current turn started (epoch ms).
+    /// Epoch ms.
     pub turn_start_ms: Option<i64>,
 }
 
@@ -70,7 +62,6 @@ pub struct NotificationMeta {
 /// Two modes: soft trim (keep head + tail) and hard clear (replace entirely).
 #[derive(Debug, Clone)]
 pub struct PruningConfig {
-    /// Whether pruning is enabled.
     pub enabled: bool,
     /// Number of recent turns whose tool results are never pruned.
     pub keep_last_n_turns: usize,
@@ -116,9 +107,7 @@ pub enum AuthType {
 /// The actor just stores and returns them — it never interprets them.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Credentials {
-    /// API key for authentication.
     pub api_key: Option<String>,
-    /// Whether this is a session token (refreshable) or user-provided api key.
     #[serde(default)]
     pub auth_type: AuthType,
     /// Optional extra auth material forwarded with requests when present.
@@ -130,7 +119,7 @@ pub struct Credentials {
 /// Produced by `TakeTurnMessages` after a `BeginTurnCapture`/message-push cycle.
 #[derive(Debug, Clone)]
 pub struct TurnCapture {
-    /// The ordered sequence of messages appended during this turn.
+    /// In the order they were appended.
     pub messages: Vec<ConversationItem>,
     /// Whether compaction (conversation replacement) occurred mid-turn.
     pub compaction_occurred: bool,
@@ -142,24 +131,18 @@ pub struct TurnCapture {
 /// when only role counts and total length are needed (e.g. for telemetry).
 #[derive(Debug, Clone, Default)]
 pub struct ConversationCounts {
-    /// Total number of items in the conversation.
     pub total: usize,
-    /// Number of `User` items.
     pub user: usize,
-    /// Number of `Assistant` items.
     pub assistant: usize,
-    /// Number of `ToolResult` items.
     pub tool_result: usize,
 }
 
 /// Info returned when auto-compact threshold is exceeded.
 #[derive(Debug, Clone)]
 pub struct AutoCompactTrigger {
-    /// Current total token count.
     pub total_tokens: u64,
-    /// Model's context window size.
     pub context_window: NonZeroU64,
-    /// Current utilization as a percentage (0–100).
+    /// 0–100.
     pub utilization_percent: u8,
 }
 

@@ -54,7 +54,8 @@ impl EventWriter {
         Self {
             inner: Arc::new(EventWriterInner {
                 file: Mutex::new(None),
-                error_logged: AtomicBool::new(true), // suppress error logging
+                // suppress error logging
+                error_logged: AtomicBool::new(true),
             }),
         }
     }

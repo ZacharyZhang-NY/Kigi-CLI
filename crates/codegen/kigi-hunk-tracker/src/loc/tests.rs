@@ -9,9 +9,7 @@ use crate::types::{Hunk, HunkId, HunkLineInfo, HunkSource};
 
 use super::*;
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 fn sample_agent_hunk() -> Hunk {
     Hunk {
@@ -129,9 +127,7 @@ fn make_ctx() -> LocSinkContext {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Unit tests: HunkRecord::from_hunk
-// ---------------------------------------------------------------------------
 
 #[test]
 fn from_hunk_agent_edit() {
@@ -148,7 +144,8 @@ fn from_hunk_agent_edit() {
     assert_eq!(record.hunk_id, HunkId::from_string("test-hunk-001".into()));
     assert_eq!(record.file_path, PathBuf::from("/tmp/foo.rs"));
     assert_eq!(record.hunk_start, 10);
-    assert_eq!(record.hunk_end, 14); // 10 + 5 - 1
+    // 10 + 5 - 1
+    assert_eq!(record.hunk_end, 14);
     assert_eq!(record.lines_added, 5);
     assert_eq!(record.lines_removed, 3);
     assert_eq!(record.author_type, Some(AuthorType::Agent));
@@ -191,7 +188,8 @@ fn from_hunk_external() {
     assert_eq!(record.prompt_index, None);
     assert_eq!(record.source_type, Some(SourceType::External));
     assert_eq!(record.hunk_start, 1);
-    assert_eq!(record.hunk_end, 4); // 1 + 4 - 1
+    // 1 + 4 - 1
+    assert_eq!(record.hunk_end, 4);
 }
 
 #[test]
@@ -244,7 +242,8 @@ fn from_hunk_pure_deletion() {
 
     // Pure deletion: new_count == 0, so uses old_start/old_count
     assert_eq!(record.hunk_start, 5);
-    assert_eq!(record.hunk_end, 7); // 5 + 3 - 1
+    // 5 + 3 - 1
+    assert_eq!(record.hunk_end, 7);
     assert_eq!(record.lines_added, 0i64);
     assert_eq!(record.lines_removed, 3i64);
 }
@@ -252,7 +251,8 @@ fn from_hunk_pure_deletion() {
 /// Verify that attribution_source overrides the hunk's preserved source.
 #[test]
 fn from_hunk_trigger_source_overrides_preserved_source() {
-    let hunk = sample_agent_hunk(); // hunk.source = AgentEdit
+    // hunk.source = AgentEdit
+    let hunk = sample_agent_hunk();
     let trigger = HunkSource::ExternalEditOnAgentFile;
     let record = HunkRecord::from_hunk(
         &hunk,
@@ -273,9 +273,7 @@ fn from_hunk_trigger_source_overrides_preserved_source() {
     assert_eq!(record.event_type, EventType::Updated);
 }
 
-// ---------------------------------------------------------------------------
 // Sink tests
-// ---------------------------------------------------------------------------
 
 #[tokio::test]
 async fn sink_processes_added_and_content_changed() {
@@ -285,7 +283,8 @@ async fn sink_processes_added_and_content_changed() {
 
     let hunk = sample_agent_hunk();
     let mut updated_hunk = sample_agent_hunk();
-    updated_hunk.line_info.new_count = 8; // grew from 5 to 8 lines
+    // grew from 5 to 8 lines
+    updated_hunk.line_info.new_count = 8;
 
     // Send a mix of events — only HunkAdded and HunkContentChanged should produce records
     tx.send(HunkEvent::FileAdded {
@@ -302,8 +301,10 @@ async fn sink_processes_added_and_content_changed() {
         path: PathBuf::from("/tmp/foo.rs"),
         hunk: Arc::new(updated_hunk),
         trigger_source: HunkSource::AgentEdit { prompt_index: 2 },
-        prev_lines_added: 5,   // original hunk had 5 lines added
-        prev_lines_removed: 3, // original hunk had 3 lines removed
+        // original hunk had 5 lines added
+        prev_lines_added: 5,
+        // original hunk had 3 lines removed
+        prev_lines_removed: 3,
     })
     .unwrap();
     tx.send(HunkEvent::HunkMoved {
@@ -377,7 +378,8 @@ async fn sink_removed_hunk_zeroes_out_accumulated_total() {
     let ctx = make_ctx();
     let cancel = tokio_util::sync::CancellationToken::new();
 
-    let hunk = sample_agent_hunk(); // lines_added=5, lines_removed=3
+    // lines_added=5, lines_removed=3
+    let hunk = sample_agent_hunk();
     let hunk_id = hunk.id.clone();
     let path = hunk.path.clone();
 
@@ -429,12 +431,14 @@ async fn sink_removed_hunk_after_updates_zeroes_correctly() {
     let ctx = make_ctx();
     let cancel = tokio_util::sync::CancellationToken::new();
 
-    let hunk = sample_agent_hunk(); // lines_added=5, lines_removed=3
+    // lines_added=5, lines_removed=3
+    let hunk = sample_agent_hunk();
     let hunk_id = hunk.id.clone();
     let path = hunk.path.clone();
 
     let mut updated = sample_agent_hunk();
-    updated.line_info.new_count = 8; // grew from 5 → 8
+    // grew from 5 → 8
+    updated.line_info.new_count = 8;
 
     // Add → update → remove
     tx.send(HunkEvent::HunkAdded {
@@ -478,7 +482,8 @@ async fn sink_accepted_hunk_preserves_loc() {
     let ctx = make_ctx();
     let cancel = tokio_util::sync::CancellationToken::new();
 
-    let hunk = sample_agent_hunk(); // lines_added=5, lines_removed=3
+    // lines_added=5, lines_removed=3
+    let hunk = sample_agent_hunk();
     let hunk_id = hunk.id.clone();
     let path = hunk.path.clone();
 
@@ -576,7 +581,8 @@ async fn sink_shrinking_hunk_produces_negative_delta() {
         .sum();
     assert_eq!(agent_total, 10);
     assert_eq!(human_total, -3);
-    assert_eq!(agent_total + human_total, 7); // net lines in file
+    // net lines in file
+    assert_eq!(agent_total + human_total, 7);
 }
 
 #[tokio::test]
@@ -615,9 +621,7 @@ async fn sink_drains_on_cancellation() {
     assert!(w.flush_count > 0, "Writer should be flushed on shutdown");
 }
 
-// ---------------------------------------------------------------------------
 // JSONL round-trip test
-// ---------------------------------------------------------------------------
 
 #[tokio::test]
 async fn jsonl_round_trip() {
@@ -687,9 +691,7 @@ async fn jsonl_writer_appends() {
     assert_eq!(lines.len(), 2);
 }
 
-// ---------------------------------------------------------------------------
 // Deserialization validation
-// ---------------------------------------------------------------------------
 
 /// Invalid enum values must be rejected during deserialization.
 /// This validates that the serde enum gate works — a typo like "foo"
@@ -728,9 +730,7 @@ fn deserialize_rejects_invalid_source_type() {
     assert!(result.is_err(), "Should reject invalid source_type");
 }
 
-// ---------------------------------------------------------------------------
 // Writer failure resilience
-// ---------------------------------------------------------------------------
 
 /// The sink must continue processing events even when the writer fails.
 /// This validates the "log warning and drop the record" error policy.

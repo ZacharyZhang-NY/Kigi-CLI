@@ -283,7 +283,7 @@ impl SessionActor {
     /// atomically inside the `ChatStateActor` (see
     /// `ChatStateCommand::ReplaceSystemHead` for the serialization guarantees).
     /// `system_prompt.txt` (not owned by the persistence actor) is saved
-    /// directly, even on a head no-op, so a previously-diverged secondary
+    /// directly, even on a head no-op, so a diverged secondary
     /// artifact self-heals. Skipped entirely on a verbatim mirror-fork
     /// (`preserve_inherited_system`).
     pub(super) async fn handle_replace_system_prompt(&self, system_prompt: String) {

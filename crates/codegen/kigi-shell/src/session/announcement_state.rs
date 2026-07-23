@@ -7,32 +7,24 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-/// Persisted announcement tracking state.
-///
-/// Restored on session resume so the fresh actor "remembers" what was
-/// already announced.  The existing delta/fingerprint comparison logic
-/// then correctly handles changes (new/removed/updated servers or skills)
-/// without creating duplicates.
+/// Restored on session resume so the fresh actor "remembers" what was already
+/// announced; the delta/fingerprint comparison logic then handles
+/// new/removed/updated servers or skills without creating duplicates.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AnnouncementState {
-    /// Fingerprints of MCP servers that have been announced.
-    /// Maps server_name → `McpServerFingerprint`.
-    ///
-    /// The hash values use FNV-1a (deterministic, portable) so that
-    /// persisted fingerprints remain valid across Rust versions, build
-    /// profiles, and CPU architectures.
+    /// Announced MCP servers, keyed by name. Hash values use FNV-1a
+    /// (deterministic, portable) so persisted fingerprints remain valid across
+    /// Rust versions, build profiles, and CPU architectures.
     pub mcp_server_fingerprints: HashMap<String, McpServerFingerprint>,
 
-    /// Names of skills already announced via system-reminder.
-    /// Uses the skill's `dedup_key()` (which is the skill name).
+    /// Skills already announced via system-reminder, stored by `dedup_key()`
+    /// (which is the skill name).
     pub announced_skill_names: HashSet<String>,
 }
 
-/// Serializable MCP server fingerprint for persistence.
-///
-/// This is the serializable counterpart of the in-memory
-/// `ServerFingerprint` type alias `(usize, u64, u64)`.
+/// Serializable counterpart of the in-memory `ServerFingerprint` type alias
+/// `(usize, u64, u64)`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct McpServerFingerprint {
     pub tool_count: usize,
@@ -40,7 +32,6 @@ pub struct McpServerFingerprint {
     pub tool_names_hash: u64,
 }
 
-/// Convert from in-memory fingerprint map to persistable map.
 pub fn to_persisted_fingerprints(
     in_memory: &HashMap<String, (usize, u64, u64)>,
 ) -> HashMap<String, McpServerFingerprint> {
@@ -59,7 +50,6 @@ pub fn to_persisted_fingerprints(
         .collect()
 }
 
-/// Convert from persisted fingerprint map to in-memory map.
 pub fn from_persisted_fingerprints(
     persisted: &HashMap<String, McpServerFingerprint>,
 ) -> HashMap<String, (usize, u64, u64)> {

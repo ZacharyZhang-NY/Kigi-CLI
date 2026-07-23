@@ -14,10 +14,9 @@ use crate::common::*;
 #[ignore]
 async fn minimal_commits_response_to_scrollback() {
     let content = ContentController::start().await.expect("start content");
-    // Sentinel on the FIRST rendered row; 80 code-block rows >> the 50-row
-    // screen, so the head scrolls into native scrollback once the block commits.
-    // (Prose lines would markdown-reflow into one short paragraph that fits on
-    // screen — see `tall_response`.)
+    // 80 code-block rows overflow the 50-row screen, pushing the sentinel line
+    // into scrollback. (Prose would markdown-reflow to fit on screen instead —
+    // see `tall_response`.)
     content.set_response(tall_response(MOCK_RESPONSE_SENTINEL, 80));
 
     let mut harness = spawn_minimal(&content);

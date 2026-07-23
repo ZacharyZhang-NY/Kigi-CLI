@@ -296,7 +296,8 @@ mod tests {
     fn prefilter_handles_invalid_json() {
         let json = "not valid json{";
         let (filtered, skipped) = prefilter_unsupported_events(json);
-        assert_eq!(filtered, json); // returned as-is
+        // returned as-is
+        assert_eq!(filtered, json);
         assert!(skipped.is_empty());
     }
 
@@ -500,7 +501,7 @@ mod tests {
     /// reference resolves to the plugin root exactly once, and the result
     /// contains no leftover `$` placeholders. This is the contract the
     /// hooks_adapter has long held, and it must continue to hold
-    /// now that `parse_hook_file` itself does an env-expansion pass with
+    /// because `parse_hook_file` itself does an env-expansion pass with
     /// the per-hook `extra_env`. The first pass (in `parse_hook_file`)
     /// runs against an EMPTY `extra_env` for plugin hooks (the adapter
     /// only fills it in afterwards), so the placeholder survives that

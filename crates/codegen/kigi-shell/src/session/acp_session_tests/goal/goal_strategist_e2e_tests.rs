@@ -54,7 +54,6 @@ enum SkepticVerdict {
     Blocked,
 }
 
-/// Counters the test reads after driving the drain.
 #[derive(Clone)]
 struct Counters {
     skeptic_spawns: StdArc<AtomicUsize>,
@@ -176,7 +175,6 @@ async fn answer_skeptic(
     });
 }
 
-/// Pull the per-skeptic details path out of the rendered verifier prompt.
 fn parse_details_path(prompt: &str) -> Option<String> {
     crate::session::goal_classifier::parse_skeptic_details_path_from_prompt(prompt)
 }
@@ -217,7 +215,6 @@ async fn make_actor(
     actor.goal_strategist_every = strategist_every;
     actor.goal_verifier_skeptic_count = 1;
     actor.tool_context.subagent_event_tx = coordinator_tx;
-    // Isolated cwd for a hermetic, fast harness run.
     actor.tool_context.cwd =
         kigi_paths::AbsPathBuf::new(tmp.path().to_path_buf()).expect("abs cwd");
     actor.goal_tracker.lock().create_goal(
@@ -274,8 +271,6 @@ async fn drive_rounds(actor: &SessionActor, rounds: usize) {
 fn refuted(n: usize) -> VecDeque<SkepticVerdict> {
     std::iter::repeat_n(SkepticVerdict::Refuted, n).collect()
 }
-
-// ── Trigger fires at N and 2N, never N+1 ────────────────────────────
 
 #[tokio::test(flavor = "current_thread")]
 #[serial]
@@ -349,8 +344,6 @@ async fn strategist_fires_at_n_and_2n_not_at_n_plus_one() {
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
 
-// ── Telemetry: GoalStrategistFired reports the resolved cadence ─────
-
 /// The `acp_session` glue wires `every: self.goal_strategist_every` into
 /// `GoalStrategistFired`. A streak to 2N=4 pins `every` (2) as the resolved
 /// cadence, distinct from `consecutive_failures` (4).
@@ -384,8 +377,6 @@ async fn strategist_fired_event_reports_resolved_cadence() {
         .await;
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
-
-// ── Skip-robustness: a streak that jumps PAST N still fires ──────────
 
 #[tokio::test(flavor = "current_thread")]
 #[serial]
@@ -421,8 +412,6 @@ async fn strategist_fires_after_streak_skips_past_n() {
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
 
-// ── Cap takes precedence: no strategist the round the cap pauses ─────
-
 #[tokio::test(flavor = "current_thread")]
 #[serial]
 async fn strategist_does_not_fire_when_cap_pauses_same_round() {
@@ -453,8 +442,6 @@ async fn strategist_does_not_fire_when_cap_pauses_same_round() {
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
 
-// ── Stall takes precedence: no strategist the round the stall pauses ─
-
 #[tokio::test(flavor = "current_thread")]
 #[serial]
 async fn strategist_does_not_fire_when_stall_pauses_same_round() {
@@ -483,8 +470,6 @@ async fn strategist_does_not_fire_when_stall_pauses_same_round() {
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
 
-// ── Strategist failure is fail-open: the goal keeps running ──────────
-
 #[tokio::test(flavor = "current_thread")]
 #[serial]
 async fn strategist_failure_is_fail_open_goal_keeps_going() {
@@ -499,7 +484,6 @@ async fn strategist_failure_is_fail_open_goal_keeps_going() {
             drive_rounds(&actor, 1).await;
 
             assert_eq!(counters.strategist_spawns.load(SeqOrd::SeqCst), 1);
-            // Fail-open: the goal stays Active despite the strategist failure.
             assert_eq!(
                 actor.goal_tracker.lock().status(),
                 Some(crate::session::goal_tracker::GoalStatus::Active),
@@ -522,8 +506,6 @@ async fn strategist_failure_is_fail_open_goal_keeps_going() {
         .await;
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
-
-// ── Turn cancel mid-strategist must also revoke the bonus ────────────
 
 /// A turn cancel dropping the drain future mid-strategist delivers no
 /// restructure: the cap bonus must be revoked, the fire claim retained.
@@ -577,8 +559,6 @@ async fn strategist_cancel_mid_run_revokes_cap_bonus() {
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
 
-// ── No-coordinator early return also revokes the bonus ──────────────
-
 /// The no-coordinator early return delivers no restructure and must
 /// revoke the bonus just like the FailOpen path.
 #[tokio::test(flavor = "current_thread")]
@@ -617,8 +597,6 @@ async fn strategist_no_coordinator_revokes_cap_bonus() {
         .await;
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
-
-// ── Achieved verdict resets the streak AND clears the recommendation ─
 
 #[tokio::test(flavor = "current_thread")]
 #[serial]
@@ -663,8 +641,6 @@ async fn achieved_verdict_resets_streak_and_clears_recommendation() {
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
 
-// ── Blocked verdict resets the streak AND clears the recommendation ──
-
 #[tokio::test(flavor = "current_thread")]
 #[serial]
 async fn blocked_verdict_resets_streak_and_clears_recommendation() {
@@ -696,8 +672,6 @@ async fn blocked_verdict_resets_streak_and_clears_recommendation() {
         .await;
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
-
-// ── Persisted recommendation reaches the rendered continuation directive ─
 
 #[tokio::test(flavor = "current_thread")]
 #[serial]
@@ -762,8 +736,6 @@ async fn persisted_recommendation_renders_into_continuation_directive() {
         .await;
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
-
-// ── Re-verify escalation: refuted churn that never re-calls update_goal ─
 
 /// A refuted goal that keeps ending rounds without re-firing verification
 /// must, once `rounds_since_verify` reaches the threshold, get a forceful

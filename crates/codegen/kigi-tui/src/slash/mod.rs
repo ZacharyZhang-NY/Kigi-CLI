@@ -31,10 +31,6 @@ pub use command::{AppCtx, ArgItem, CommandExecCtx, CommandResult, SlashCommand};
 /// Maximum number of visible rows in the dropdown (scroll beyond this).
 pub const MAX_VISIBLE_SUGGESTIONS: usize = 6;
 
-// ---------------------------------------------------------------------------
-// SuggestionRow
-// ---------------------------------------------------------------------------
-
 /// A single row in the slash suggestion dropdown.
 #[derive(Debug, Clone)]
 pub struct SuggestionRow {
@@ -138,10 +134,6 @@ fn sync_inline_ghost_to_selection(inner: &mut SlashSnapshot) {
         .and_then(|row| inline_ghost_from_selected_command(&inner.query, range, row));
 }
 
-// ---------------------------------------------------------------------------
-// SlashSnapshot / SlashState
-// ---------------------------------------------------------------------------
-
 /// Immutable snapshot of the slash completion state.
 ///
 /// Produced by `SlashController::refresh()`, consumed by the dropdown
@@ -238,10 +230,6 @@ impl SlashState {
         });
     }
 }
-
-// ---------------------------------------------------------------------------
-// SlashController
-// ---------------------------------------------------------------------------
 
 /// Derives slash completion state from prompt text + cursor.
 ///
@@ -1009,10 +997,6 @@ pub(crate) fn command_offered(
         && (!command.dashboard_only() || hide_session_scoped)
 }
 
-// ---------------------------------------------------------------------------
-// Input analysis
-// ---------------------------------------------------------------------------
-
 /// Parsed input structure for slash completion.
 struct SlashInput {
     command_range: Range<usize>,
@@ -1093,10 +1077,6 @@ fn analyze_input(text: &str, cursor: usize) -> Option<SlashInput> {
     })
 }
 
-// ---------------------------------------------------------------------------
-// Invocation parsing
-// ---------------------------------------------------------------------------
-
 /// Parsed slash command invocation.
 pub struct SlashInvocation<'a> {
     /// Command token (e.g., "model" for "/model kigi-4").
@@ -1133,10 +1113,6 @@ pub fn parse_invocation(line: &str) -> Option<SlashInvocation<'_>> {
     Some(SlashInvocation { token, args })
 }
 
-// ---------------------------------------------------------------------------
-// Completeness check
-// ---------------------------------------------------------------------------
-
 /// Check if a slash command line is complete (ready to execute on Enter).
 ///
 /// Uses the two-bit model: `takes_args()` + `args_required()`.
@@ -1171,10 +1147,6 @@ pub fn is_command_complete(line: &str, registry: &CommandRegistry) -> bool {
     // Args required -- complete only if non-empty.
     !invocation.args.trim().is_empty()
 }
-
-// ---------------------------------------------------------------------------
-// Mid-text inline slash token scanning
-// ---------------------------------------------------------------------------
 
 /// A `/token` found anywhere in the input text.
 #[derive(Debug, Clone)]
@@ -1311,7 +1283,8 @@ pub fn scan_inline_slash_tokens(text: &str, cursor: usize) -> Vec<InlineSlashTok
             iter.next();
         }
         if name_end <= name_start {
-            continue; // bare `/` with nothing after
+            // Bare `/` with nothing after.
+            continue;
         }
         let name = text[name_start..name_end].to_string();
         let range = idx..name_end;
@@ -1324,10 +1297,6 @@ pub fn scan_inline_slash_tokens(text: &str, cursor: usize) -> Vec<InlineSlashTok
     }
     tokens
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -1368,8 +1337,6 @@ mod tests {
     fn rejects_empty_string() {
         assert!(parse_invocation("").is_none());
     }
-
-    // -- is_command_complete tests --
 
     fn test_registry() -> CommandRegistry {
         CommandRegistry::new(commands::builtin_commands())
@@ -1420,8 +1387,6 @@ mod tests {
         let reg = test_registry();
         assert!(!is_command_complete("hello", &reg));
     }
-
-    // -- Controller tests --
 
     #[test]
     fn controller_surfaces_commands_without_query() {
@@ -1779,8 +1744,6 @@ mod tests {
         );
     }
 
-    // -- session-scoped surface filtering (agent dashboard) --
-
     /// On a session-less surface (the agent dashboard's dispatch input),
     /// commands that act on a single session are suppressed from completion
     /// while pager-global commands remain. See `SlashCommand::session_scoped`.
@@ -1978,8 +1941,6 @@ mod tests {
         );
     }
 
-    // -- scan_inline_slash_tokens tests --
-
     #[test]
     fn scan_finds_mid_text_slash_token() {
         let tokens = scan_inline_slash_tokens("do /model now", 6);
@@ -2025,8 +1986,6 @@ mod tests {
         assert_eq!(tokens.len(), 1);
         assert!(tokens[0].has_cursor, "cursor at end of token should match");
     }
-
-    // -- Inline ghost text tests --
 
     #[test]
     fn inline_ghost_for_partial_command() {
@@ -2083,7 +2042,7 @@ mod tests {
         assert!(command_prefix_matches_smart("Privacy", "p"));
         assert!(command_prefix_matches_smart("Privacy", "pr"));
         // Any uppercase in query requires exact (case-sensitive) prefix.
-        assert!(command_prefix_matches_smart("Privacy", "P")); // "P" is exact prefix of "Privacy"
+        assert!(command_prefix_matches_smart("Privacy", "P"));
         assert!(!command_prefix_matches_smart("privacy", "Pr"));
         assert!(!command_prefix_matches_smart("Privacy", "PR"));
 

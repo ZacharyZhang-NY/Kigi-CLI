@@ -62,10 +62,6 @@ pub(crate) fn pending_diamond_color(theme: &Theme, accent: Color, tick: u64) -> 
         .unwrap_or(accent)
 }
 
-// ---------------------------------------------------------------------------
-// Output
-// ---------------------------------------------------------------------------
-
 /// Output from rendering the turn status line.
 #[derive(Debug, Default)]
 pub struct TurnStatusOutput {
@@ -247,7 +243,6 @@ pub fn render_turn_status(
     // Special case: drain is blocked (user editing front prompt, agent idle).
     // No cancel button in this state.
     if drain_blocked && state.is_idle() {
-        // Pulsing diamond in accent_user, blending toward bg.
         let diamond_color = pending_diamond_color(&theme, theme.accent_user, tick);
         let spans = vec![
             Span::styled(
@@ -287,17 +282,13 @@ pub fn render_turn_status(
         return TurnStatusOutput::default();
     }
 
-    // Determine if cancel button should be shown.
-    // Show when: TurnRunning or CommandRunning.
-    // Hide when: Idle, Cancelling (already cancelling), or a keyboard-only host
-    // (no clickable buttons — see `buttons`).
+    // Hidden for a keyboard-only host (no clickable buttons — see `buttons`).
     let show_cancel = show_buttons
         && matches!(
             state,
             AgentState::TurnRunning | AgentState::CommandRunning { .. }
         );
 
-    // ── Compute activity style and label ──
     let (activity_style, label, is_tool) =
         compute_activity(&theme, state, activity, is_bash_turn, goal_verifying);
 
@@ -306,7 +297,7 @@ pub fn render_turn_status(
         return TurnStatusOutput::default();
     }
 
-    // ── Build right-aligned content first (to know how much space is left) ──
+    // Built first so its width is known before computing space left for the label.
     // Format: `1m20s` or `1m20s ⇣12k` (with tokens).
     let turn_timer_str = match (turn_elapsed, total_tokens) {
         (Some(d), Some(tokens)) if tokens > 0 => {
@@ -349,7 +340,6 @@ pub fn render_turn_status(
 
     let right_width = turn_timer_width + bg_width + cancel_width;
 
-    // ── Build components ──
     // While a tool is blocked on a permission prompt or `ask_user_question`,
     // swap the spinning moon for a pulsing `◆`. Same animation shape the
     // drain-blocked and plan-approval indicators already use, so every
@@ -412,7 +402,6 @@ pub fn render_turn_status(
         .saturating_sub(min_gap)
         .saturating_sub(right_width);
 
-    // ── Render left side: spinner + label (truncated) + phase_timer + queued_hint ──
     let mut left_spans: Vec<Span<'static>> = Vec::with_capacity(5);
 
     // Spinner color: usually inherits the activity color (green for tools,
@@ -429,7 +418,6 @@ pub fn render_turn_status(
     };
     left_spans.push(Span::styled(spinner_str, spinner_style));
 
-    // Activity label (potentially truncated)
     let mut queued_hint: Option<Span<'static>> = None;
     if is_tool {
         if let Some(TurnActivity::ToolRunning { title, description }) = activity {
@@ -516,7 +504,6 @@ pub fn render_turn_status(
         }
     }
 
-    // Phase timer (gray, never truncates)
     if !phase_timer_str.is_empty() {
         left_spans.push(Span::styled(phase_timer_str, timer_style));
     }
@@ -526,11 +513,9 @@ pub fn render_turn_status(
         left_spans.push(hint);
     }
 
-    // Render left side
     let left_line = Line::from(left_spans);
     buf.set_line(area.x, area.y, &left_line, area.width);
 
-    // ── Render right side: turn_timer + bg + cancel ──
     let right_start_x = area.x + area.width.saturating_sub(right_width as u16);
 
     // Helper: build a fully-specified right-side style (fg + bg + clear mods).
@@ -541,7 +526,6 @@ pub fn render_turn_status(
             .remove_modifier(Modifier::all())
     };
 
-    // Turn timer (gray)
     let mut x = right_start_x;
     if !turn_timer_str.is_empty() {
         let span = Span::styled(turn_timer_str.clone(), timer_style);
@@ -772,24 +756,21 @@ fn format_tokens_short(tokens: u64) -> String {
     if tokens < 1000 {
         format!("{tokens}")
     } else if tokens < 100_000 {
-        // 1k-99.9k: show one or two decimals for precision
         let k = tokens as f64 / 1000.0;
         if tokens < 10_000 {
-            format!("{k:.2}k") // 1.23k
+            format!("{k:.2}k")
         } else {
-            format!("{k:.1}k") // 10.1k
+            format!("{k:.1}k")
         }
     } else if tokens < 1_000_000 {
-        // 100k-999k: whole thousands
         let k = tokens / 1000;
         format!("{k}k")
     } else {
-        // 1m+: show with decimal
         let m = tokens as f64 / 1_000_000.0;
         if tokens < 10_000_000 {
-            format!("{m:.2}m") // 1.23m
+            format!("{m:.2}m")
         } else {
-            format!("{m:.1}m") // 10.1m
+            format!("{m:.1}m")
         }
     }
 }
@@ -1410,7 +1391,8 @@ mod tests {
         assert_eq!(format_tokens_short(1230), "1.23k");
         assert_eq!(format_tokens_short(1500), "1.50k");
         assert_eq!(format_tokens_short(9990), "9.99k");
-        assert_eq!(format_tokens_short(9999), "10.00k"); // rounds up
+        // rounds up
+        assert_eq!(format_tokens_short(9999), "10.00k");
     }
 
     #[test]
@@ -1418,7 +1400,8 @@ mod tests {
         assert_eq!(format_tokens_short(10000), "10.0k");
         assert_eq!(format_tokens_short(10100), "10.1k");
         assert_eq!(format_tokens_short(12345), "12.3k");
-        assert_eq!(format_tokens_short(99999), "100.0k"); // rounds up
+        // rounds up
+        assert_eq!(format_tokens_short(99999), "100.0k");
     }
 
     #[test]
@@ -1433,7 +1416,8 @@ mod tests {
     fn format_tokens_millions() {
         assert_eq!(format_tokens_short(1_000_000), "1.00m");
         assert_eq!(format_tokens_short(1_230_000), "1.23m");
-        assert_eq!(format_tokens_short(9_999_000), "10.00m"); // rounds
+        // rounds
+        assert_eq!(format_tokens_short(9_999_000), "10.00m");
         assert_eq!(format_tokens_short(10_000_000), "10.0m");
         assert_eq!(format_tokens_short(10_100_000), "10.1m");
     }

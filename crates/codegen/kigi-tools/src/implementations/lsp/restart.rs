@@ -10,7 +10,6 @@ use super::config::LspServerConfig;
 use super::manager::LspManager;
 use super::{DiagnosticsNotify, file_uri};
 
-/// Waits for the current lifecycle to exit.
 async fn wait_for_crashed_lifecycle(
     lsp_manager: &Arc<tokio::sync::Mutex<LspManager>>,
     server_name: &str,
@@ -27,7 +26,6 @@ async fn wait_for_crashed_lifecycle(
     }
 }
 
-/// Replays tracked documents and returns their URIs.
 fn replay_tracked_documents(
     restarted_client: &mut LspClient,
     tracked_docs: &[(String, String)],
@@ -46,7 +44,6 @@ fn replay_tracked_documents(
         .collect()
 }
 
-/// Removes the crashed client if it is still current and returns restart state.
 async fn take_crashed_client_if_current(
     lsp_manager: &Arc<tokio::sync::Mutex<LspManager>>,
     server_name: &str,
@@ -82,7 +79,6 @@ async fn take_crashed_client_if_current(
     ))
 }
 
-/// Removes the crashed client if it is still current.
 async fn discard_crashed_client_if_current(
     lsp_manager: &Arc<tokio::sync::Mutex<LspManager>>,
     server_name: &str,
@@ -99,7 +95,6 @@ async fn discard_crashed_client_if_current(
     true
 }
 
-/// Installs a restarted client unless shutdown has begun.
 async fn install_restarted_client(
     lsp_manager: &Arc<tokio::sync::Mutex<LspManager>>,
     server_name: &str,

@@ -28,7 +28,6 @@ async fn leader_n_clients_shared_session() {
         .content()
         .set_response(format!("{} first turn payload.", turn_sentinel(1)));
 
-    // The driver spawns the leader and runs turn 1.
     let mut a = cluster.spawn_leader(&[]).expect("spawn driver");
     a.wait_for_text(WELCOME_SCREEN_SENTINEL, LEADER_TIMEOUT)
         .expect("driver welcome");
@@ -60,7 +59,6 @@ async fn leader_n_clients_shared_session() {
         viewers.push(v);
     }
 
-    // Turn 2 driven from the driver streams live into EVERY viewer (fan-out).
     cluster
         .content()
         .set_response(format!("{} second turn payload.", turn_sentinel(2)));

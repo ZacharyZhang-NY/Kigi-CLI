@@ -132,22 +132,18 @@ impl OverlayState {
         OverlayAction::Changed
     }
 
-    /// Show and focus (e.g. auto-show when items arrive).
+    /// Show (does not change focus). Used e.g. when items arrive.
     pub fn show(&mut self) {
         self.visible = true;
     }
 }
 
-/// Handle structural keys for any focused overlay pane.
+/// Handle structural keys that fire even when an input bar has focus.
 ///
-/// Processes Tab, Esc, q, Space, and Ctrl-F consistently. Returns
-/// `Some(action)` if a structural key was consumed, `None` to let the
-/// pane's content handler process the key.
-///
-/// When `has_input_bar` is true, only Ctrl-F is processed (the input
-/// bar handles Esc/Tab/etc. itself).
+/// Currently just Ctrl-F. Returns `Some(action)` if consumed, `None` to
+/// let the pane's content handler process the key. See
+/// [`handle_overlay_nav_key`] for the keys gated behind `has_input_bar`.
 pub fn handle_overlay_key(state: &mut OverlayState, key: &KeyEvent) -> Option<OverlayAction> {
-    // Ctrl-F: toggle fullscreen (works even with input bar open).
     if key.code == KeyCode::Char('f') && key.modifiers.contains(KeyModifiers::CONTROL) {
         return Some(state.toggle_fullscreen());
     }

@@ -7,8 +7,8 @@
 //! progress, file-watcher-detected config changes, and so on.
 //!
 //! Sampler-caused state never goes here. In particular, hunk events
-//! (`HunkRecorded`, `HunkAccepted`, `HunkRejected`) used to live on
-//! this enum and were removed: hunks come from tool writes
+//! (`HunkRecorded`, `HunkAccepted`, `HunkRejected`) are deliberately
+//! absent from this enum: hunks come from tool writes
 //! (sampler-caused) and `act_on_hunk` RPCs (sampler-caused), so the
 //! sampler already has that state from the originating call. It can
 //! re-snapshot via `list_hunks()` if it needs to reconcile.
@@ -217,7 +217,6 @@ impl WorkspaceTopicSet {
         self.bits & (1u32 << topic_index(topic)) != 0
     }
 
-    /// Whether the set is empty.
     pub fn is_empty(&self) -> bool {
         self.bits == 0
     }

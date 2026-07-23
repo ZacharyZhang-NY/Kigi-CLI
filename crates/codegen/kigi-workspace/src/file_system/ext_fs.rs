@@ -1,7 +1,7 @@
 //! Filesystem extension ops (`workspace.fs_*`) — the server-proxied backing
 //! for the shell's `kigi/fs/*` ACP extension methods.
 //!
-//! These mirror the pure functions that previously lived only in the
+//! These mirror the pure functions that earlier lived only in the
 //! shell (`kigi-shell/src/session/file_system.rs`) so that, in proxy
 //! mode, a `kigi/fs/*` request executes on the *remote* workspace server
 //! instead of the agent host. Each request type implements
@@ -165,9 +165,7 @@ impl WorkspaceOp for FsDeleteFileReq {
     }
 }
 
-// =========================================================================
 // Pure helpers — ported verbatim from the shell so output is identical.
-// =========================================================================
 
 fn list(
     abs_path: &Path,
@@ -258,9 +256,7 @@ fn build_file_entry(bytes: &[u8]) -> FsReadFileData {
     }
 }
 
-// =========================================================================
 // Tests for the pure helpers (no `WorkspaceHandle` required).
-// =========================================================================
 
 #[cfg(test)]
 mod tests {

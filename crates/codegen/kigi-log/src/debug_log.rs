@@ -105,7 +105,7 @@ where
     Ok(fmt_layer)
 }
 
-// ── Per-session routing layer ───────────────────────────────────────────────
+// Per-session routing layer
 
 /// Filesystem-safe session key. Sanitized once at capture (`on_new_span`) and
 /// stashed in the span's tracing extensions, so events fired anywhere under the
@@ -148,7 +148,7 @@ impl Visit for EventVisitor {
     }
 }
 
-// Format one compact, ANSI-free firehose line. Intentionally NOT byte-identical
+// Format one compact, ANSI-free firehose line. Deliberately NOT byte-identical
 // to `fmt::Layer`: its `FormatEvent` can't be reused from another layer and a
 // `MakeWriter` can't see span context, so we render here. Span context is
 // omitted on purpose — the file name already carries the session id.
@@ -355,7 +355,7 @@ where
     }
 }
 
-// ── Install + lifecycle ──────────────────────────────────────────────────────
+// Install + lifecycle
 
 /// Resolve the requested debug target and install the matching firehose layer on
 /// `registry`, then init the subscriber.

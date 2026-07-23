@@ -248,7 +248,8 @@ fn load_hooks_from_settings_file(path: &Path) -> (Vec<HookSpec>, Vec<HookError>)
         Ok(c) => c,
         Err(e) => {
             if e.kind() == std::io::ErrorKind::NotFound {
-                return (Vec::new(), Vec::new()); // Missing file is fine.
+                // Missing file is fine.
+                return (Vec::new(), Vec::new());
             }
             return (
                 Vec::new(),
@@ -406,7 +407,8 @@ mod tests {
     #[test]
     fn load_nonexistent_dir() {
         let (registry, errors) = load_hooks(Some(Path::new("/nonexistent/path/hooks")), None);
-        assert!(errors.is_empty()); // NotFound is silent
+        // NotFound is silent
+        assert!(errors.is_empty());
         assert!(registry.is_empty());
     }
 
@@ -613,10 +615,11 @@ mod tests {
 
         let toml = dir.path().join("hooks.toml");
         std::fs::write(&toml, "").unwrap();
-        assert!(!is_valid_hook_file(&toml)); // TOML no longer accepted
+        // TOML no longer accepted
+        assert!(!is_valid_hook_file(&toml));
     }
 
-    // ── Settings file discovery tests ────────────────────────────
+    // Settings file discovery tests
 
     #[test]
     fn load_from_settings_file() {
@@ -642,7 +645,8 @@ mod tests {
             ))],
             &[],
         );
-        assert!(errors.is_empty()); // Missing file is fine, not an error.
+        // Missing file is fine, not an error.
+        assert!(errors.is_empty());
         assert!(registry.is_empty());
     }
 

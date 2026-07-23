@@ -200,8 +200,7 @@ mod tests {
         );
         assert!(snap.user_id.is_none());
     }
-    /// 401 recovery routes through `unauthorized_recovery` (pre-fix
-    /// it no-oped because the refresher arg was hardcoded `None`).
+    /// 401 recovery routes through `unauthorized_recovery`.
     #[tokio::test]
     async fn refresh_after_unauthorized_drives_recovery_state_machine() {
         let _guard = EarlyInvalidationGuard::pin_to_default();
@@ -304,8 +303,6 @@ mod tests {
         .snapshot();
         assert!(oidc.deployment_id.is_none() && oidc.api_key_id.is_none());
     }
-    /// Bootstrap mode: `snapshot()` re-reads disk so sibling-rotated
-    /// tokens are picked up without a live AuthManager.
     #[test]
     fn deployment_key_wins_over_resolved_user_token() {
         let _guard = EarlyInvalidationGuard::pin_to_default();

@@ -96,7 +96,8 @@ pub fn stream_chat_completions<'a>(
         loop {
             let next = match tokio::time::timeout(idle_timeout, stream.next()).await {
                 Ok(Some(next)) => next,
-                Ok(None) => break, // stream ended normally
+                // stream ended normally
+                Ok(None) => break,
                 Err(_elapsed) => {
                     let err = SamplingError::IdleTimeout {
                         elapsed_secs: idle_timeout.as_secs(),
@@ -253,7 +254,7 @@ pub fn stream_chat_completions<'a>(
             }
         }
 
-        // ── Build the final response ─────────────────────────────────
+        // Build the final response
         let tool_calls: Vec<ToolCall> = tool_call_acc
             .into_values()
             .map(|(id, name, arguments)| {

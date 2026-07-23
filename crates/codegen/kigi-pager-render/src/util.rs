@@ -262,12 +262,12 @@ mod tests {
     fn time_ago_days() {
         assert_eq!(format_time_ago(Duration::from_secs(86400)), "1d");
         assert_eq!(format_time_ago(Duration::from_secs(172800)), "2d");
-        assert_eq!(format_time_ago(Duration::from_secs(2_592_000 - 1)), "29d"); // just under 30d
+        assert_eq!(format_time_ago(Duration::from_secs(2_592_000 - 1)), "29d");
     }
 
     #[test]
     fn time_ago_months() {
-        assert_eq!(format_time_ago(Duration::from_secs(2_592_000)), "1mo"); // 30d
+        assert_eq!(format_time_ago(Duration::from_secs(2_592_000)), "1mo");
         assert_eq!(format_time_ago(Duration::from_secs(5_184_000)), "2mo");
         // 359d is still 11mo (359/30=11); 360d would be 12mo.
         assert_eq!(format_time_ago(Duration::from_secs(359 * 86400)), "11mo");
@@ -275,7 +275,7 @@ mod tests {
 
     #[test]
     fn time_ago_years() {
-        assert_eq!(format_time_ago(Duration::from_secs(31_536_000)), "1y"); // 365d
+        assert_eq!(format_time_ago(Duration::from_secs(31_536_000)), "1y");
         assert_eq!(format_time_ago(Duration::from_secs(63_072_000)), "2y");
     }
 

@@ -1,14 +1,4 @@
-// Re-export all types from the standalone kigi-sampling-types crate.
-// This keeps all existing `crate::sampling::types::*` imports working.
 pub use kigi_sampling_types::types::*;
-
-// `CreateResponseWrapper` and `MessagesRequestWrapper` previously lived
-// here. They were moved into `kigi-sampling-types::types` (and
-// are re-exported above via the wildcard) so the new
-// `kigi-sampler` crate can reference them without a circular
-// dep on `kigi-shell`.
-
-// Tests for the types now live in kigi-sampling-types crate.
 
 use kigi_tools::types::output::ImageContent as ToolsImageContent;
 

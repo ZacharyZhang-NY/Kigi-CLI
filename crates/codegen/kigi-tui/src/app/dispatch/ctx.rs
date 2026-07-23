@@ -33,7 +33,7 @@ pub(super) fn with_active_agent(app: &mut AppView, f: impl FnOnce(&mut AgentView
     }
 }
 
-/// Get a shared reference to the active agent view (if any).
+/// Resolves through `active_subagent` — see [`with_active_agent`].
 pub(super) fn get_active_agent(app: &AppView) -> Option<&AgentView> {
     if let ActiveView::Agent(id) = app.active_view
         && let Some(agent) = app.agents.get(&id)
@@ -48,7 +48,7 @@ pub(super) fn get_active_agent(app: &AppView) -> Option<&AgentView> {
     None
 }
 
-/// Get a mutable reference to the active agent view (if any).
+/// Resolves through `active_subagent` — see [`with_active_agent`].
 pub(super) fn get_active_agent_mut(app: &mut AppView) -> Option<&mut AgentView> {
     if let ActiveView::Agent(id) = app.active_view
         && let Some(agent) = app.agents.get_mut(&id)
@@ -138,11 +138,9 @@ pub(crate) enum SwitchCause {
     Load,
     /// Triggered by the agent picker (dashboard attach / switch).
     Picker,
-    // `SwitchCause::Dashboard` was added
-    // for the dashboard attach path but the earlier popup overlay
-    // never reaches `switch_to_agent`, so the variant was dead. YAGNI —
-    // any future caller can re-add it. The dashboard's attach path
-    // sets `DashboardState::attached_agent` directly.
+    // No `Dashboard` variant: the dashboard attach path sets
+    // `DashboardState::attached_agent` directly and never reaches
+    // `switch_to_agent`, so it would be dead. Any future caller can add it.
 }
 
 /// Surface a launch-blocked `--yolo` once on the first agent view (the TUI owns

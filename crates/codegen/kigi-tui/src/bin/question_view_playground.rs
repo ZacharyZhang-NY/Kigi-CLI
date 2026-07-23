@@ -17,7 +17,6 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 
-/// Hardcoded example question sets for UI playground scenarios.
 fn example_scenarios() -> Vec<(&'static str, Vec<Question>)> {
     vec![
         (
@@ -366,7 +365,6 @@ fn main() -> io::Result<()> {
 fn draw(f: &mut ratatui::Frame, app: &mut App) {
     let area = f.area();
 
-    // Layout: header(3) + question view (dynamic) + status(3)
     let content_w = area.width.saturating_sub(QUESTION_VIEW_HPAD) as usize;
     let qv_height = question_view_height(&mut app.state, area.height.saturating_sub(6), content_w);
 
@@ -378,7 +376,6 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
     ])
     .split(area);
 
-    // Header
     let scenario_label = format!(
         "question-view-playground [{}/{}] {}",
         app.active_scenario + 1,
@@ -395,13 +392,11 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
     .block(Block::default().borders(Borders::ALL).title("info"));
     f.render_widget(header, chunks[0]);
 
-    // Question view
     let qv_area = chunks[1];
     if qv_area.height > 0 && qv_area.width > 0 {
         render_question_view(f.buffer_mut(), qv_area, &app.state, None, &app.theme, true);
     }
 
-    // Status bar
     let status = Paragraph::new(app.status.clone())
         .wrap(Wrap { trim: false })
         .block(Block::default().borders(Borders::ALL).title("status"));

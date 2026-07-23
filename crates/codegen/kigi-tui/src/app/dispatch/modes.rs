@@ -120,12 +120,9 @@ pub(super) fn dispatch_enter_plan_mode(
 
 /// Set plan mode (on / off). PAGER-owned + ACP-mediated, per-session.
 ///
-/// Optimistic flow: captures effective state (`pending.or(active)`),
-/// sets `plan_mode_pending`, refreshes modals, toasts, then emits
-/// `Effect::SetSessionMode`. Shell confirms via `CurrentModeUpdate`.
-///
-/// No explicit rollback — `SetSessionMode` has no failure surface.
-/// If the ACP transport drops, `plan_mode_pending` stays set until
+/// Optimistic: sets `plan_mode_pending`; the shell confirms via
+/// `CurrentModeUpdate`. No explicit rollback — `SetSessionMode` has no failure
+/// surface, so on a dropped ACP transport `plan_mode_pending` stays set until
 /// the next `CurrentModeUpdate` or session restart.
 ///
 /// Idempotent: same value toasts but skips the ACP round-trip.

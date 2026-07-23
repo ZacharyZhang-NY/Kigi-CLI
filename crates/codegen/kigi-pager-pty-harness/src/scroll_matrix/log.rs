@@ -292,7 +292,8 @@ mod tests {
 
     fn jsonl(lines: &[&str]) -> String {
         let mut out = lines.join("\n");
-        out.push('\n'); // producer's writeln! always terminates lines
+        // producer's writeln! always terminates lines
+        out.push('\n');
         out
     }
 

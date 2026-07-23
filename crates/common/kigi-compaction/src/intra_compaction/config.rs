@@ -32,11 +32,11 @@ pub enum IntraCompactionMode {
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum IntraSummarizer {
-    /// New (default): the shared summarization core — `build_summary_prompt`
-    /// + degenerate-reject + `format_compact_summary` cleaning.
+    /// Shared summarization core — `build_summary_prompt` + degenerate-reject
+    /// + `format_compact_summary` cleaning.
     #[default]
     Shared,
-    /// Previous intra algorithm: per-target prompt (`format_compaction_prompt`
+    /// Legacy path: per-target prompt (`format_compaction_prompt`
     /// / history dev+user prompts), no cleaning. Kept for switchability.
     Legacy,
 }
@@ -82,11 +82,11 @@ pub enum IntraSummarizer {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct IntraCompactionConfig {
-    // ───────────────────────────── Common (all modes) ─────────────────────────────
+    // Common (all modes)
     // Present on every config path regardless of `mode`. Some trigger fields
     // are ignored under FullReplace (see per-field docs).
 
-    // -- Enablement & strategy selection --
+    // Enablement & strategy selection
     /// Enable intra-compaction between steps. Default: `false` (disabled).
     pub enabled: bool,
 
@@ -94,7 +94,7 @@ pub struct IntraCompactionConfig {
     /// Default: `FullReplace`.
     pub mode: IntraCompactionMode,
 
-    // -- Trigger gating: when a compaction pass fires (see `should_compact`) --
+    // Trigger gating: when a compaction pass fires (see `should_compact`)
     /// Context window usage percentage (0-100) that triggers compaction.
     /// Compared against: `last_prompt_tokens / context_length.max_len`.
     /// Default: `85`.
@@ -112,7 +112,7 @@ pub struct IntraCompactionConfig {
     /// / reduction guards after a trigger.
     pub min_steps_before_compact: u32,
 
-    // -- Reduction guards: whether a produced summary is worth keeping --
+    // Reduction guards: whether a produced summary is worth keeping
     /// Minimum tokens that must be reducible before compaction is worth
     /// running. Below this, the LLM overhead outweighs the savings.
     /// Default: `5000`.
@@ -123,7 +123,7 @@ pub struct IntraCompactionConfig {
     /// Default: `0.8`.
     pub max_reduction_ratio: f64,
 
-    // -- Compaction LLM call (sampling) --
+    // Compaction LLM call (sampling)
     /// Compaction model name. Blank/`None` → [`DEFAULT_COMPACTION_MODEL_NAME`].
     /// Prefer [`Self::effective_compaction_model_name`].
     pub compaction_model_name: Option<String>,
@@ -142,12 +142,12 @@ pub struct IntraCompactionConfig {
     /// Delay between retries. Default: `3`.
     pub retry_delay_secs: u64,
 
-    // -- Audit --
+    // Audit
     /// Version string for the compaction (e.g. `"intra-v1"`).
     /// Recorded in audit logs. Default: `"intra-v1"`.
     pub compaction_version: String,
 
-    // ───────────────────────────── Mode-specific ─────────────────────────────
+    // Mode-specific
     // Each field below is read by only a subset of modes; the other modes
     // ignore it entirely. The bracketed `[...]` tag on each doc names the modes
     // that consume it.
@@ -172,7 +172,7 @@ pub struct IntraCompactionConfig {
     /// replaces everything and never reads it.
     pub target_threshold_percent: u8,
 
-    // -- HistoryThenSteps only --
+    // HistoryThenSteps only
     /// [HistoryThenSteps mode] Only compact accumulated step turns when their
     /// token count exceeds this fraction of the history token count.
     ///

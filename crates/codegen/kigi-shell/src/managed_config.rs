@@ -92,7 +92,8 @@ pub fn clear_orphan() {
     }
     let home = crate::util::kigi_home::kigi_home();
     let Some(_lock) = try_lock_managed_config(&home) else {
-        return; // another process is syncing; retry next call
+        // another process is syncing; retry next call
+        return;
     };
     remove_managed_config_files(&home);
 }
@@ -313,7 +314,8 @@ fn managed_config_sync_interval() -> std::time::Duration {
 pub(crate) fn spawn_sync(cancel: tokio_util::sync::CancellationToken) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(managed_config_sync_interval());
-        interval.tick().await; // skip immediate first tick
+        // skip immediate first tick
+        interval.tick().await;
 
         loop {
             tokio::select! {
@@ -805,7 +807,8 @@ fn purge_prior_tenant_on_identity_change() {
     };
     let home = crate::util::kigi_home::kigi_home();
     let Some(_lock) = try_lock_managed_config(&home) else {
-        return; // another process is mid-apply/remove; it owns the transition
+        // another process is mid-apply/remove; it owns the transition
+        return;
     };
     if crate::config::managed_config_identity_changed(Some(&team_id), None) {
         tracing::info!(team_id = %team_id, "identity changed; purging the prior tenant's managed config");

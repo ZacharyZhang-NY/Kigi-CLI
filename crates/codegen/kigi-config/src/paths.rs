@@ -146,9 +146,6 @@ pub fn decode_cwd_from_dirname(dir: &std::path::Path) -> Option<String> {
         .map(|s| s.trim().to_string())
 }
 
-/// Build the CWD-level session directory path:
-/// `kigi_home()/sessions/{encode_cwd_dirname(cwd)}`.
-///
 /// Does **not** create the directory on disk — use [`ensure_sessions_cwd_dir`]
 /// when the directory must exist.
 pub fn sessions_cwd_dir(cwd: &str) -> PathBuf {
@@ -181,10 +178,8 @@ pub fn ensure_sessions_cwd_dir(cwd: &str) -> std::io::Result<PathBuf> {
     Ok(dir)
 }
 
-/// Generate a URL-safe slug from a string.
-///
-/// Lowercases, replaces non-alphanumeric chars with `-`, collapses
-/// consecutive dashes, and truncates to `max_len` characters.
+/// Output is ASCII-only, so `max_len` bounds the result in bytes as well as
+/// chars — [`encode_cwd_dirname`] relies on that for its length guarantee.
 fn slugify(input: &str, max_len: usize) -> String {
     let mut result = String::with_capacity(input.len());
     let mut prev_dash = false;

@@ -29,9 +29,7 @@ use kigi_sampling_types::{
 };
 use kigi_test_support::{SseEvent, sse};
 
-// ---------------------------------------------------------------------------
 // Mock server harness
-// ---------------------------------------------------------------------------
 
 struct MockServer {
     addr: SocketAddr,
@@ -64,9 +62,7 @@ impl MockServer {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Config + request helpers
-// ---------------------------------------------------------------------------
 
 fn test_config(base_url: String, model: &str) -> SamplerConfig {
     SamplerConfig {
@@ -114,9 +110,7 @@ fn user_request(text: &str) -> ConversationRequest {
     }
 }
 
-// ---------------------------------------------------------------------------
 // SSE generators
-// ---------------------------------------------------------------------------
 
 /// Render test-helper [`SseEvent`]s (optional `event:` name + `data:`) as
 /// axum SSE events for this file's router-based harness.
@@ -148,9 +142,7 @@ fn text_chunk_event(content: &str, finish: bool) -> Event {
     Event::default().data(chunk.to_string())
 }
 
-// ---------------------------------------------------------------------------
 // Actor lifecycle
-// ---------------------------------------------------------------------------
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn spawn_then_active_count_zero_then_cancel_unknown_is_noop() {
@@ -163,9 +155,7 @@ async fn spawn_then_active_count_zero_then_cancel_unknown_is_noop() {
     assert_eq!(handle.active_count().await, 0);
 }
 
-// ---------------------------------------------------------------------------
 // Submit + event flow
-// ---------------------------------------------------------------------------
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn submit_emits_started_first_token_channel_completed() {
@@ -226,9 +216,7 @@ async fn submit_emits_started_first_token_channel_completed() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // submit_and_collect
-// ---------------------------------------------------------------------------
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn submit_and_collect_returns_response() {
@@ -258,9 +246,7 @@ async fn submit_and_collect_returns_response() {
     assert_eq!(a.content.as_ref(), "collected response");
 }
 
-// ---------------------------------------------------------------------------
 // Cancellation
-// ---------------------------------------------------------------------------
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cancel_in_flight_request_terminates_task() {
@@ -313,9 +299,7 @@ async fn cancel_in_flight_request_terminates_task() {
     server.shutdown();
 }
 
-// ---------------------------------------------------------------------------
 // Concurrent requests
-// ---------------------------------------------------------------------------
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn two_concurrent_requests_complete_with_correct_request_ids() {
@@ -371,9 +355,7 @@ async fn two_concurrent_requests_complete_with_correct_request_ids() {
     server.shutdown();
 }
 
-// ---------------------------------------------------------------------------
 // Retry on transient transport error
-// ---------------------------------------------------------------------------
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn retries_on_500_then_succeeds() {
@@ -386,7 +368,6 @@ async fn retries_on_500_then_succeeds() {
             async move {
                 let n = counter.fetch_add(1, Ordering::SeqCst);
                 if n == 0 {
-                    // First attempt: server error.
                     Err::<Sse<_>, (StatusCode, String)>((
                         StatusCode::INTERNAL_SERVER_ERROR,
                         json!({ "error": { "message": "transient" } }).to_string(),
@@ -434,9 +415,7 @@ async fn retries_on_500_then_succeeds() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Rate limit exhausts threshold
-// ---------------------------------------------------------------------------
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn rate_limit_exhausts_at_threshold_and_yields_failed() {
@@ -489,9 +468,7 @@ async fn rate_limit_exhausts_at_threshold_and_yields_failed() {
     assert!((1..=3).contains(&hits), "expected 1-3 hits, got {hits}");
 }
 
-// ---------------------------------------------------------------------------
 // Auth error -> EmitToSession (immediate)
-// ---------------------------------------------------------------------------
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn auth_401_emits_failed_immediately_no_retry() {
@@ -542,9 +519,7 @@ async fn auth_401_emits_failed_immediately_no_retry() {
     assert_eq!(counter.load(Ordering::SeqCst), 1, "no retries on 401");
 }
 
-// ---------------------------------------------------------------------------
 // Anthropic Messages API: refusal stop_reason + mid-stream parse failure
-// ---------------------------------------------------------------------------
 
 fn messages_config(base_url: String) -> SamplerConfig {
     let mut cfg = test_config(base_url, "messages-compatible-model");
@@ -709,9 +684,7 @@ async fn messages_unparseable_event_is_fatal_without_retry() {
     assert_eq!(counter.load(Ordering::SeqCst), 1, "exactly one attempt");
 }
 
-// ---------------------------------------------------------------------------
 // UpdateConfig invalidates cache + applies to subsequent requests
-// ---------------------------------------------------------------------------
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn update_config_changes_subsequent_request_model() {
@@ -765,9 +738,7 @@ async fn update_config_changes_subsequent_request_model() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Responses doom-loop check signals
-// ---------------------------------------------------------------------------
 
 fn responses_config(base_url: String, doom_loop: Option<DoomLoopRecoveryPolicy>) -> SamplerConfig {
     let mut cfg = test_config(base_url, "test-model");
@@ -881,9 +852,7 @@ async fn responses_confident_doom_loop_signal_resamples_once() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Helpers for draining the event channel
-// ---------------------------------------------------------------------------
 
 /// Drain the event channel until a terminal event (`Completed` or
 /// `Failed`) is received, or until `deadline` elapses.

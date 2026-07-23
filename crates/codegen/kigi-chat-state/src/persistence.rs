@@ -27,9 +27,7 @@ pub trait ChatPersistence: Send + 'static {
     fn flush(&mut self);
 }
 
-// ============================================================================
 // Mock (test double) — channel-based, no locks, no atomics
-// ============================================================================
 
 /// A record of a persistence call, sent over a channel to the test.
 #[derive(Debug, Clone)]
@@ -101,9 +99,7 @@ impl ChatPersistence for MockChatPersistence {
     }
 }
 
-// ============================================================================
 // Null (noop) — for benchmarks / scenarios where persistence is unwanted
-// ============================================================================
 
 /// No-op implementation: discards everything (for benchmarks / noop scenarios).
 pub struct NullChatPersistence;

@@ -137,7 +137,6 @@ pub(crate) fn token_suffix(t: &str) -> &str {
     if len > 12 { &t[len - 12..] } else { t }
 }
 
-/// Look up auth from the store by scope key.
 pub fn lookup_auth(map: &AuthStore, scope: &str) -> Option<KimiAuth> {
     map.get(scope).cloned()
 }

@@ -1,7 +1,4 @@
 //! Git operations used by fast worktree creation.
-//!
-//! This module isolates git-specific functionality (worktree creation, status, index refresh)
-//! from filesystem copy logic and orchestration.
 
 pub(crate) mod checkout;
 pub(crate) mod discovery;

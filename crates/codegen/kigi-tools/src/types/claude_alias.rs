@@ -1,5 +1,4 @@
-//! Canonical external-settings tool name ↔ Kigi tool correspondence: one table
-//! replacing two that drifted apart.
+//! Canonical external-settings tool name ↔ Kigi tool correspondence.
 //!
 //! Two consumers read it independently. The hook matcher (`kigi-hooks`) needs the
 //! Kigi tool **names** an external settings term maps to (and the reverse, for regex
@@ -45,15 +44,18 @@ const fn match_only(claude: &'static str, kigi: &'static [&'static str]) -> Clau
 #[rustfmt::skip]
 const CLAUDE_TOOLS: &[ClaudeTool] = &[
     k("Read",            Read,                 &["read_file", "hashline_read"]),
-    k("Write",           Write,                &["write", "search_replace", "hashline_edit"]), // search_replace kept for back-compat
+    // search_replace kept for back-compat.
+    k("Write",           Write,                &["write", "search_replace", "hashline_edit"]),
     k("Edit",            Edit,                 &["search_replace", "hashline_edit"]),
-    k("MultiEdit",       Edit,                 &["search_replace", "hashline_edit"]), // legacy, superseded by Edit
+    // Legacy, superseded by Edit.
+    k("MultiEdit",       Edit,                 &["search_replace", "hashline_edit"]),
     k("NotebookEdit",    Edit,                 &["search_replace", "hashline_edit"]),
     k("Bash",            Execute,              &["run_terminal_command"]),
     k("PowerShell",      Execute,              &[]),
     k("Grep",            Search,               &["grep", "hashline_grep"]),
     k("Glob",            List,                 &["list_dir"]),
-    k("LS",              List,                 &[]),                                  // legacy name for Glob
+    // Legacy name for Glob.
+    k("LS",              List,                 &[]),
     k("LSP",             Lsp,                  &["lsp"]),
     k("WebSearch",       WebSearch,            &["web_search"]),
     k("WebFetch",        WebFetch,             &["web_fetch"]),
@@ -67,16 +69,20 @@ const CLAUDE_TOOLS: &[ClaudeTool] = &[
     k("TaskStop",        KillTaskAction,       &["kill_command_or_subagent", "kill_terminal_command"]),
     k("KillShell",       KillTaskAction,       &["kill_command_or_subagent", "kill_terminal_command"]),
     k("KillBash",        KillTaskAction,       &["kill_command_or_subagent", "kill_terminal_command"]),
-    k("Skill",           Read,                 &["skill"]),                           // matcher: opencode's `skill` tool; allowlist Read (kigi-build reads SKILL.md)
+    // Matcher fires on opencode's `skill` tool; allowlist Read because kigi-build reads SKILL.md.
+    k("Skill",           Read,                 &["skill"]),
     k("ToolSearch",      SearchTool,           &["search_tool"]),
-    match_only("Agent",         &["spawn_subagent"]),                                 // canonical; Task is the legacy alias
+    // Canonical; Task is the legacy alias.
+    match_only("Agent",         &["spawn_subagent"]),
     match_only("Task",          &["spawn_subagent"]),
-    match_only("EnterPlanMode", &["enter_plan_mode"]),                                // kind=None: enter/exit must stay paired
+    // kind=None: enter/exit must stay paired.
+    match_only("EnterPlanMode", &["enter_plan_mode"]),
     match_only("ExitPlanMode",  &["exit_plan_mode"]),
     match_only("CronCreate",    &["scheduler_create"]),
     match_only("CronDelete",    &["scheduler_delete"]),
     match_only("CronList",      &["scheduler_list"]),
-    match_only("ListMcpResourcesTool", &["ListMcpResources"]),                        // cursor preset
+    // cursor preset.
+    match_only("ListMcpResourcesTool", &["ListMcpResources"]),
 ];
 
 /// The Kigi [`ToolKind`] a Claude allowlist entry resolves to, if any.

@@ -84,7 +84,7 @@ impl HunkTrackerActor {
         let accepted = matches!(action, HunkAction::Accept);
         self.update_session_stats(&hunk.line_info, accepted);
 
-        // Remove from turn_index
+        // Drop from turn_index
         self.remove_from_turn_index(hunk_id, &hunk.source);
 
         match action {
@@ -383,7 +383,7 @@ impl HunkTrackerActor {
                 let accepted = matches!(action, HunkAction::Accept);
                 self.update_session_stats(&hunk.line_info, accepted);
 
-                // Remove from turn_index
+                // Drop from turn_index
                 self.remove_from_turn_index(&hunk.id, &hunk.source);
 
                 affected_hunk_ids.push(hunk.id.clone());

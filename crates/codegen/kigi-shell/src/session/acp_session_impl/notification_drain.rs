@@ -52,9 +52,6 @@ impl SessionActor {
             return;
         }
 
-        // Note: Auto-compact is now handled inline during process_conversation_turn,
-        // so we no longer need to check for queued auto-compact here.
-
         // Start the next pending user prompt. Pull all needed fields from the
         // queue head in one `front_mut` scope so we can mutate `state` again
         // (e.g. `rewindable`) without overlapping borrows.
@@ -175,12 +172,10 @@ impl SessionActor {
             // turn teardown). Normally a no-op.
             self.sweep_monitor_buffer_into_pending(&mut state, "monitor-idle-drain");
 
-            // Nothing to drain
             if state.pending_notifications.is_empty() {
                 return;
             }
 
-            // Take all notifications and build merged blocks inside the lock
             let notifications = std::mem::take(&mut state.pending_notifications);
 
             drained_task_ids = notifications
@@ -334,7 +329,8 @@ impl SessionActor {
                     });
                     if monitor_section_idx.is_none() {
                         monitor_section_idx = Some(sections.len());
-                        sections.push(Vec::new()); // placeholder, filled below
+                        // Placeholder; the batch is built and slotted in below.
+                        sections.push(Vec::new());
                     }
                 }
                 NotificationSource::BashTaskCompleted { .. } => {

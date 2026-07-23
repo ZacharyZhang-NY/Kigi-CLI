@@ -320,7 +320,8 @@ mod tests {
 
     #[test]
     fn opaque_background_fills_empty_region() {
-        let mut p = params(0, 10_000); // 1x => 100x50 so pixel coords are exact
+        // 1x => 100x50 so pixel coords are exact
+        let mut p = params(0, 10_000);
         p.background = Some(Rgba::new(255, 0, 0, 255));
         let out = rasterize(SVG_100X50, &p).expect("rasterize");
         let img = image::load_from_memory(&out.png)
@@ -440,7 +441,8 @@ mod tests {
     #[test]
     fn non_finite_or_non_positive_scale_clamps_to_valid_png() {
         for bad_scale in [0.0_f32, -1.0, f32::NAN, f32::INFINITY] {
-            let mut p = params(0, 10_000); // target_width_px == 0 => scale path
+            // target_width_px == 0 => scale path
+            let mut p = params(0, 10_000);
             p.scale = bad_scale;
             let out = rasterize(SVG_100X50, &p)
                 .unwrap_or_else(|e| panic!("scale {bad_scale} should clamp to 1.0, got {e:?}"));
@@ -490,7 +492,8 @@ mod tests {
         // point at the bundled face the glyphs are silently dropped and node
         // labels render blank. Black text on white: assert dark pixels exist.
         let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="60" viewBox="0 0 200 60"><text x="10" y="38" font-family="Inter, ui-sans-serif, system-ui, -apple-system, &quot;Segoe UI&quot;, sans-serif" font-size="28" fill="#000000">Hello</text></svg>"##;
-        let mut p = params(0, 10_000); // scale 1.0 => 200x60
+        // scale 1.0 => 200x60
+        let mut p = params(0, 10_000);
         p.background = Some(Rgba::new(255, 255, 255, 255));
         let out = rasterize(svg, &p).expect("rasterize");
         let img = image::load_from_memory(&out.png)

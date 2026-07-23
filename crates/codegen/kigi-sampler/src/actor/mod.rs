@@ -81,7 +81,8 @@ impl SamplerActor {
                 cmd = self.cmd_rx.recv() => {
                     match cmd {
                         Some(cmd) => self.handle_command(cmd),
-                        None => break, // all handles dropped
+                        // all handles dropped
+                        None => break,
                     }
                 }
             }

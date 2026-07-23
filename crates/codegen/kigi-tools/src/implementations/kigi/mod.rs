@@ -1,13 +1,5 @@
-//! New-architecture tool implementations (NewTool trait).
-//!
-//! Each sub-module here contains a tool that implements `NewTool` instead
-//! of the old `Tool` trait. During migration, old implementations live in
-//! `implementations/<tool>/` and new implementations live in
-//! `implementations/kigi/<tool>/`.
-//!
-//! The [`register_all()`] function is the single entry-point for wiring up
-//! the standard toolset. It inserts shared resources (`Terminal`,
-//! `AvailableSkills`, `BashParams`) and registers every built-in tool.
+//! Tool implementations built on the `NewTool` trait; the sibling
+//! `implementations/<tool>/` modules hold the `Tool`-trait counterparts.
 pub mod ask_user_question;
 pub mod bash;
 #[path = "deploy_app_stub.rs"]

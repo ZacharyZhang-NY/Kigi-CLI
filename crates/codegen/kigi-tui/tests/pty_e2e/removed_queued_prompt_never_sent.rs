@@ -17,8 +17,8 @@ async fn removed_queued_prompt_never_sent() {
     // Hold turn 1 open deterministically: its content streams, but its
     // completion is gated until we release it below. This removes the
     // turn-end race — the removed row can never be promoted out from under
-    // the removal, which under load previously let the "removed" prompt run
-    // as its own turn (consuming TURNTWO) and left the survivor stranded.
+    // the removal. Without this gate, under load, the "removed" prompt could
+    // run as its own turn (consuming TURNTWO) and leave the survivor stranded.
     content.hold_agent_completions();
 
     let binary = pager_binary().expect("resolve pager binary");

@@ -79,7 +79,6 @@ pub(crate) fn latex_to_unicode_display(src: &str) -> Option<Vec<String>> {
     Some(lines)
 }
 
-/// Run the converter and return the output lines.
 fn convert(src: &str, flat: bool) -> Vec<String> {
     let mut cursor = Cursor::new(src);
     let mut out = MathBox::new(flat);

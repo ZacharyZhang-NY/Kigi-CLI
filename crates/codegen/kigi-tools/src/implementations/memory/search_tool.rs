@@ -1,4 +1,4 @@
-//! `memory_search` tool — new architecture (`Tool` trait).
+//! `memory_search` tool.
 
 use std::sync::Arc;
 

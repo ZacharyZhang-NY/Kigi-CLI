@@ -17,6 +17,7 @@ pub(super) fn paint_path_line(
     bg: Color,
 ) {
     let raw = path.display().to_string();
+    // The 6 reserved columns are the "Path: " prefix.
     let label = format!(
         "Path: {}",
         truncate_path_for_overlay(&raw, width.saturating_sub(6) as usize)

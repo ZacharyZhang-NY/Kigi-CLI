@@ -10,11 +10,7 @@ use super::errors::ApplyPatchError;
 use super::parser::UpdateFileChunk;
 use super::seek_sequence::seek_sequence;
 
-/// Given the original file content as a `&str` and the list of update chunks,
-/// compute and return the new file contents as a `String`.
-///
-/// This is the main entry point for the apply logic. It does NOT read from or
-/// write to the filesystem.
+/// Main entry point for the apply logic.
 pub fn derive_new_contents(
     original_content: &str,
     path: &Path,
@@ -31,7 +27,7 @@ pub fn derive_new_contents(
     let replacements = compute_replacements(&original_lines, path, chunks)?;
     let mut new_lines = apply_replacements(original_lines, &replacements);
 
-    // Ensure the file ends with a trailing newline.
+    // A trailing empty element makes `join` emit the final newline.
     if !new_lines.last().is_some_and(String::is_empty) {
         new_lines.push(String::new());
     }
@@ -39,9 +35,7 @@ pub fn derive_new_contents(
     Ok(new_lines.join("\n"))
 }
 
-/// Compute a list of replacements needed to transform `original_lines` into the
-/// new lines, given the patch `chunks`. Each replacement is returned as
-/// `(start_index, old_len, new_lines)`.
+/// Each replacement is `(start_index, old_len, new_lines)`.
 pub fn compute_replacements(
     original_lines: &[String],
     path: &Path,
@@ -51,8 +45,6 @@ pub fn compute_replacements(
     let mut line_index: usize = 0;
 
     for chunk in chunks {
-        // If a chunk has a `change_context`, use seek_sequence to find it,
-        // then adjust our `line_index` to continue from there.
         if let Some(ctx_line) = &chunk.change_context {
             if let Some(idx) = seek_sequence(
                 original_lines,
@@ -71,8 +63,8 @@ pub fn compute_replacements(
         }
 
         if chunk.old_lines.is_empty() {
-            // Pure addition (no old lines). Add at the end or just before the
-            // final empty line if one exists.
+            // Pure addition: append, but stay ahead of the trailing newline
+            // sentinel so the file doesn't grow a blank line at the end.
             let insertion_idx = if original_lines.last().is_some_and(String::is_empty) {
                 original_lines.len() - 1
             } else {
@@ -82,9 +74,8 @@ pub fn compute_replacements(
             continue;
         }
 
-        // Try to match the existing lines in the file with the old lines from
-        // the chunk. If the pattern ends with a trailing empty string (final
-        // newline), retry without it.
+        // A pattern ending in an empty string (the chunk's final newline) may
+        // not match a file that lacks one, so it is retried without it below.
         let mut pattern: &[String] = &chunk.old_lines;
         let mut found = seek_sequence(original_lines, pattern, line_index, chunk.is_end_of_file);
 
@@ -115,9 +106,6 @@ pub fn compute_replacements(
     Ok(replacements)
 }
 
-/// Apply the `(start_index, old_len, new_lines)` replacements to
-/// `original_lines`, returning the modified file contents as a vector of lines.
-///
 /// Replacements are applied in **reverse order** so that earlier replacements
 /// don't shift the positions of later ones.
 pub fn apply_replacements(
@@ -128,14 +116,12 @@ pub fn apply_replacements(
         let start_idx = *start_idx;
         let old_len = *old_len;
 
-        // Remove old lines.
         for _ in 0..old_len {
             if start_idx < lines.len() {
                 lines.remove(start_idx);
             }
         }
 
-        // Insert new lines.
         for (offset, new_line) in new_segment.iter().enumerate() {
             lines.insert(start_idx + offset, new_line.clone());
         }
@@ -144,8 +130,6 @@ pub fn apply_replacements(
     lines
 }
 
-// ─── Tests ───────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -153,7 +137,6 @@ mod tests {
     use super::*;
     use crate::implementations::codex::apply_patch::parser::{Hunk, parse_patch};
 
-    /// Helper to construct a patch string with the given body.
     fn wrap_patch(body: &str) -> String {
         format!("*** Begin Patch\n{body}\n*** End Patch")
     }

@@ -13,41 +13,24 @@ use serde::Deserialize;
 /// `.kigi/config.toml`. Disabled by default; enabled via
 /// `--experimental-memory` CLI flag or `KIGI_MEMORY=1` env var.
 /// Force-disabled via `KIGI_MEMORY=0` (overrides TOML and remote settings).
-///
-/// All sub-configs are pre-populated with production-ready defaults so that
-/// later PRs (indexing, search, flush, pruning) can read them without any
-/// config migration.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(default)]
 pub struct MemoryConfig {
-    /// Whether memory is enabled for this session.
     pub enabled: bool,
-    /// Index / chunking settings.
     pub index: MemoryIndexConfig,
-    /// Embedding provider settings.
     pub embedding: MemoryEmbeddingConfig,
-    /// Hybrid search scoring settings.
     pub search: MemorySearchConfig,
-    /// First-turn memory injection behavior.
     pub initial_injection: MemoryInitialInjectionConfig,
-    /// Session lifecycle settings.
     pub session: MemorySessionConfig,
-    /// File watcher settings for detecting external memory edits.
     pub watcher: MemoryWatcherConfig,
-    /// Garbage collection settings for orphaned workspace directories.
     pub gc: MemoryGcConfig,
-    /// autoDream consolidation settings.
     pub dream: MemoryDreamConfig,
-    /// Pre-compaction memory flush settings.
-    ///
-    /// **Note:** Configured under `[compaction.memory_flush]` in config.toml,
-    /// not under `[memory]`. Flush is a compaction behavior.
+    /// Configured under `[compaction.memory_flush]` in config.toml, not under
+    /// `[memory]`. Flush is a compaction behavior.
     #[serde(skip)]
     pub flush: MemoryFlushConfig,
-    /// Tool-result pruning settings.
-    ///
-    /// **Note:** Configured under `[compaction.pruning]` in config.toml,
-    /// not under `[memory]`. Pruning is a compaction behavior.
+    /// Configured under `[compaction.pruning]` in config.toml, not under
+    /// `[memory]`. Pruning is a compaction behavior.
     #[serde(skip)]
     pub pruning: PruningConfig,
     /// Per-agent memory root override (e.g. `~/.kigi/agent-memory/<name>/`).
@@ -222,7 +205,6 @@ impl MemoryConfig {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(default)]
 pub struct SubagentsConfig {
-    /// Whether subagent support is enabled.
     pub enabled: bool,
     /// Per-subagent model ID overrides.
     /// Keys are agent names, values are model IDs that must exist in the
@@ -369,16 +351,13 @@ impl SubagentsConfig {
             }
         }
     }
-    /// Check if a subagent is enabled.
     /// Returns `true` if the agent is not in the toggle map (default enabled).
     pub fn is_subagent_enabled(&self, name: &str) -> bool {
         self.toggle.get(name).copied().unwrap_or(true)
     }
-    /// Look up a role by name.
     pub fn get_role(&self, name: &str) -> Option<&SubagentRole> {
         self.roles.get(name)
     }
-    /// Look up a persona by name.
     pub fn get_persona(&self, name: &str) -> Option<&SubagentPersona> {
         self.personas.get(name)
     }
@@ -670,7 +649,6 @@ impl StorageMode {
         }
         Self::Local
     }
-    /// Returns true if this mode syncs to the backend.
     pub fn is_writeback(&self) -> bool {
         matches!(self, Self::Writeback)
     }
@@ -775,7 +753,6 @@ impl std::fmt::Display for RequirementSource {
         }
     }
 }
-/// A value paired with the source it came from.
 #[derive(Debug, Clone)]
 pub struct Sourced<T> {
     pub value: T,

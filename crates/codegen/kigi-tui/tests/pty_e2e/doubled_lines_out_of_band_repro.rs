@@ -22,7 +22,8 @@ use super::common::*;
 const STALE_MARKER: &str = "STALE_OUT_OF_BAND_ROW_ZZZ";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore] // opt-in PTY e2e (run with `-- --ignored`)
+// opt-in PTY e2e (run with `-- --ignored`)
+#[ignore]
 async fn out_of_band_stale_row_heals_on_focus_gained() {
     let content = ContentController::start()
         .await

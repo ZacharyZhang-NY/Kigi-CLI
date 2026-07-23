@@ -2,8 +2,6 @@
 
 use super::*;
 
-// ── Worktree session tests ───────────────────────────────────────
-
 #[test]
 fn open_new_worktree_dialog_sets_dialog_state() {
     let mut app = test_app();
@@ -26,7 +24,6 @@ fn worktree_forked_sets_session_id_eagerly_and_emits_load() {
     );
     let id = AgentId(0);
 
-    // Before WorktreeForked: session_id is None, loading_replay is false.
     assert!(app.agents[&id].session.session_id.is_none());
     assert!(!app.agents[&id].session.loading_replay);
 
@@ -45,21 +42,17 @@ fn worktree_forked_sets_session_id_eagerly_and_emits_load() {
         &mut app,
     );
 
-    // session_id set eagerly.
     assert_eq!(
         app.agents[&id].session.session_id,
         Some(acp::SessionId::new("forked-sess-1"))
     );
     // loading_replay enabled so UI suppresses redraws during replay.
     assert!(app.agents[&id].session.loading_replay);
-    // CWD updated to worktree.
     assert_eq!(app.agents[&id].session.cwd, session_cwd);
     assert!(app.agents[&id].session.is_worktree);
-    // Emits LoadSession effect.
     assert_eq!(effects.len(), 1);
     assert!(matches!(&effects[0], Effect::LoadSession { session_id, .. }
                 if session_id == "forked-sess-1"));
-    // Scrollback has the "Worktree ready" message.
     assert!(!app.agents[&id].scrollback.is_empty());
 }
 
@@ -93,13 +86,11 @@ fn worktree_forked_with_restore_shows_summary_in_scrollback() {
         &mut app,
     );
 
-    // Should emit LoadSession.
     assert_eq!(effects.len(), 1);
     assert!(matches!(
         &effects[0],
         Effect::LoadSession { session_id, .. } if session_id == "forked-sess-2"
     ));
-    // Scrollback should contain the restore summary.
     let has_restore_msg = app.agents[&id]
         .scrollback
         .entries_in_range(0..app.agents[&id].scrollback.len())
@@ -161,7 +152,6 @@ fn worktree_forked_with_restore_failure_shows_warning_banner() {
     );
     assert!(text.contains("restore aborted"));
     assert!(text.contains("MERGE_HEAD present"));
-    // The success banner must NOT also appear.
     let success_present = entries
         .iter()
         .any(|e| matches!(&e.block, RenderBlock::System(s) if s.text.contains("Code restored")));
@@ -412,7 +402,6 @@ fn dispatch_fork_no_flag_non_git_skips_modal_and_forks_without_worktree() {
         Action::Fork(fork_args(None, Some("explore offline"))),
         &mut app,
     );
-    // Must skip the modal and emit ForkSession immediately.
     assert!(
         matches!(effects.as_slice(), [Effect::ForkSession { .. }]),
         "non-git cwd must skip modal and emit ForkSession, got {effects:?}"
@@ -450,7 +439,6 @@ fn dispatch_fork_no_flag_always_opens_question_modal() {
         }
         other => panic!("expected Fork, got {other:?}"),
     }
-    // The modal must offer four options: Yes / No / Always / Never.
     assert_eq!(
         qv.questions[0].options.len(),
         4,

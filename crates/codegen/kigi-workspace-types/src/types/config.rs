@@ -10,16 +10,13 @@ use serde::{Deserialize, Serialize};
 
 /// Filesystem isolation strategy for a forked session.
 ///
-/// `Default` returns [`IsolationMode::None`], which is appropriate for
-/// the root session (which shares the workspace's working tree). Note
-/// that subagent forks should explicitly opt into a more restrictive
-/// mode (e.g. `Worktree`); relying on `Default`
-/// for a subagent gives it shared-tree access, which is rarely the
-/// right default for an exploratory child agent.
+/// `Default` is [`IsolationMode::None`], which shares the parent's working
+/// tree; that suits the root session, but subagent forks should opt into a
+/// more restrictive mode rather than relying on it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IsolationMode {
-    /// No isolation: subagent shares the parent's working tree.
+    /// No isolation: shares the parent's working tree.
     #[default]
     None,
     /// Run the subagent in a copy-on-write git worktree.
@@ -30,12 +27,8 @@ pub enum IsolationMode {
 
 /// Capability mode applied to a forked session.
 ///
-/// `Default` returns [`CapabilityMode::ReadWrite`], which is
-/// appropriate for the root session. Subagents should explicitly opt
-/// into a more restrictive mode (typically
-/// `ReadOnly`); relying on `Default` for a subagent gives it
-/// read+write access, which is rarely the right default for an
-/// exploratory child agent.
+/// `Default` is [`CapabilityMode::ReadWrite`], which suits the root session;
+/// subagents should opt into a more restrictive mode rather than relying on it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CapabilityMode {
@@ -54,15 +47,12 @@ pub enum CapabilityMode {
 /// `kigi-tools` once the wire surface is firm.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolServerConfig {
-    /// Tool server identifier.
     pub id: String,
-    /// Whether this tool server is enabled for the session.
     #[serde(default)]
     pub enabled: bool,
-    /// Optional command override (for dynamically launched servers).
+    /// Command override for dynamically launched servers.
     #[serde(default)]
     pub command: Option<String>,
-    /// Free-form arguments (key/value).
     #[serde(default)]
     pub args: BTreeMap<String, String>,
 }
@@ -70,34 +60,24 @@ pub struct ToolServerConfig {
 /// Configuration applied when forking a session via
 /// `SessionLifecycleRequest::Fork`.
 ///
-/// `Default` returns a config with `IsolationMode::None` and
-/// `CapabilityMode::ReadWrite`. **Be careful using `Default` to
-/// construct a subagent fork**: a subagent
-/// should typically be forked with `Worktree` isolation and a more
-/// restrictive capability mode -- the defaults here are oriented at
-/// the root session, not subagents. Construct subagent configs by
-/// fully-naming the relevant fields (or use a builder helper) rather
-/// than relying on `..Default::default()`.
+/// `Default` yields `IsolationMode::None` + `CapabilityMode::ReadWrite`, which
+/// suit the root session, not subagents. Fork a subagent by naming the fields
+/// explicitly rather than relying on `..Default::default()`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentSessionConfig {
-    /// Agent identifier (e.g. `"subagent-explore"`).
     pub agent_id: String,
-    /// Filesystem isolation strategy.
     #[serde(default)]
     pub isolation: IsolationMode,
-    /// Capability mode (read-only, read-write, none).
     #[serde(default)]
     pub capability_mode: CapabilityMode,
-    /// Optional per-tool-server overrides.
     #[serde(default)]
     pub tool_config: Vec<ToolServerConfig>,
-    /// Maximum recursion depth for subagent nesting. 0 = no further nesting.
+    /// Maximum recursion depth for subagent nesting; 0 = no further nesting.
     #[serde(default)]
     pub max_depth: u32,
-    /// Working directory override (relative to workspace root).
+    /// Working directory override, relative to workspace root.
     #[serde(default)]
     pub cwd_override: Option<String>,
-    /// Extra environment variables to set for the subagent.
     #[serde(default)]
     pub extra_env: BTreeMap<String, String>,
 }
@@ -110,7 +90,7 @@ pub struct ProjectConfig {
     /// Free-form key/value config (placeholder).
     #[serde(default)]
     pub values: BTreeMap<String, String>,
-    /// Whether the project is trusted (allows hooks/plugins to run).
+    /// Whether the project is trusted, allowing hooks/plugins to run.
     #[serde(default)]
     pub trusted: bool,
 }

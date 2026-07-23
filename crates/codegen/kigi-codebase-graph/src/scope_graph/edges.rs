@@ -2,21 +2,21 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Describes the relation between two nodes in the ScopeGraph.
+/// Edge weight in the ScopeGraph. Every variant is directed source-to-target,
+/// in the order its name reads.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Copy, Clone, Debug)]
 pub enum EdgeKind {
-    /// The edge weight from a nested scope to its parent scope.
+    /// Nested scope to its parent scope.
     ScopeToScope,
 
-    /// The edge weight from a definition to its definition scope.
+    /// Definition to the scope that owns it, which for a hoisted def is the
+    /// parent of the scope it was written in.
     DefToScope,
 
-    /// The edge weight from an import to its definition scope.
+    /// Import to its defining scope.
     ImportToScope,
 
-    /// The edge weight from a reference to its definition.
     RefToDef,
 
-    /// The edge weight from a reference to its import.
     RefToImport,
 }

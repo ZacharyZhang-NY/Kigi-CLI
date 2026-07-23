@@ -15,7 +15,6 @@ pub struct ToolSearchResult {
     pub tool_name: String,
     /// MCP server name, managed gateway connector name, or source/group name.
     pub server_name: String,
-    /// Tool description.
     pub description: String,
     /// BM25 relevance score.
     pub score: f32,
@@ -44,7 +43,6 @@ pub struct ServerSummary {
     pub name: String,
     /// Optional one-line description of the server's capabilities.
     pub description: Option<String>,
-    /// Number of tools this server provides.
     pub tool_count: usize,
     /// Unqualified tool names, sorted alphabetically.
     pub tool_names: Vec<String>,

@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::types::{Hunk, HunkId, HunkLineInfo, HunkSource};
 
-/// Why a hunk was removed. Used by the LOC sink to decide whether to
+/// Why the tracker removed a hunk. Used by the LOC sink to decide whether to
 /// negate the hunk's accumulated LOC contribution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -30,7 +30,7 @@ pub enum HunkEvent {
     /// A new hunk was created
     HunkAdded { path: PathBuf, hunk: Arc<Hunk> },
 
-    /// A hunk was removed.
+    /// A hunk stopped being tracked.
     HunkRemoved {
         path: PathBuf,
         hunk_id: HunkId,
@@ -69,6 +69,6 @@ pub enum HunkEvent {
     /// A file stopped being tracked (all hunks gone, not an agent file)
     FileRemoved { path: PathBuf },
 
-    /// Baseline was updated for a file (after accept or commit)
+    /// The tracker updated a file's baseline (after accept or commit)
     BaselineUpdated { path: PathBuf },
 }

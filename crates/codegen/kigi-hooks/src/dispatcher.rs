@@ -412,7 +412,7 @@ mod tests {
         registry
     }
 
-    // ── extract_tool_name tests ──────────────────────────────────
+    // extract_tool_name tests
 
     #[test]
     fn extract_tool_name_from_pre_tool_use() {
@@ -453,7 +453,7 @@ mod tests {
         );
     }
 
-    // ── dispatch_pre_tool_use tests ──────────────────────────────
+    // dispatch_pre_tool_use tests
 
     #[tokio::test]
     async fn empty_registry_allows() {
@@ -501,7 +501,8 @@ mod tests {
         let spec = make_command_spec(
             "disabled-deny",
             None,
-            false, // disabled!
+            // disabled!
+            false,
             "echo '{\"decision\":\"deny\",\"reason\":\"should not run\"}'; exit 2",
         );
         let registry = registry_from_specs(vec![spec]);
@@ -726,7 +727,7 @@ mod tests {
         assert_eq!(result.decision, HookDecision::Allow);
     }
 
-    // ── fail-open regression tests ───────────────────────────────
+    // fail-open regression tests
 
     #[tokio::test]
     async fn fail_open_records_error_in_run_results() {
@@ -757,7 +758,7 @@ mod tests {
         }
     }
 
-    // ── dispatch_non_blocking tests ──────────────────────────────
+    // dispatch_non_blocking tests
 
     #[tokio::test]
     async fn non_blocking_empty_registry() {
@@ -827,7 +828,7 @@ mod tests {
         assert!(matches!(results[1], HookRunResult::Success { .. }));
     }
 
-    // ── hub_hook_kind tests ──────────────────────────────────────
+    // hub_hook_kind tests
 
     #[test]
     fn hub_hook_kind_returns_none_for_pre_tool_use() {
@@ -878,7 +879,8 @@ mod tests {
             }
         };
         assert_eq!(
-            cases.len() + 1, // +1 for PreToolUse (blocking, tested separately)
+            // +1 for PreToolUse (blocking, tested separately)
+            cases.len() + 1,
             total_variants(HookEventName::SessionStart),
             "update hub_hook_kind test when new HookEventName variants are added"
         );

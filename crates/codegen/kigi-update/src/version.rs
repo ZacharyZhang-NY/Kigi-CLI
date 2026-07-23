@@ -45,9 +45,7 @@ impl UpdateConfig {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // GitHub Releases API wire shape
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// One downloadable asset attached to a GitHub release.
 ///
@@ -238,9 +236,7 @@ pub(crate) async fn try_fetch_stable_version() -> Option<String> {
     .unwrap_or(None)
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Version cache (~/.kigi/version.json)
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, serde::Serialize, Deserialize)]
 struct VersionCache {
@@ -486,12 +482,17 @@ mod tests {
             // would make an alpha install masquerade as the release and
             // mask alpha → stable updates.
             ("kigi-0.1.220-alpha.4-linux-x86_64", Some("0.1.220-alpha.4")),
-            ("kigi-0.1.220-alpha.4", Some("0.1.220-alpha.4")), // no platform suffix
-            ("kigi-garbage-darwin-arm64", None),               // unparseable version
-            ("kigi-0.2.46", Some("0.2.46")),                   // no platform suffix
-            ("other-0.2.46-darwin-arm64", None),               // wrong prefix
-            ("kigi-latest", None),                             // symlink alias, not a version
-            ("kigi", None),                                    // bare name
+            // no platform suffix
+            ("kigi-0.1.220-alpha.4", Some("0.1.220-alpha.4")),
+            // unparseable version
+            ("kigi-garbage-darwin-arm64", None),
+            // no platform suffix
+            ("kigi-0.2.46", Some("0.2.46")),
+            // wrong prefix
+            ("other-0.2.46-darwin-arm64", None),
+            // symlink alias, not a version
+            ("kigi-latest", None),
+            ("kigi", None),
             ("", None),
             // Release archives must never parse as versioned binaries, or
             // cleanup would treat them as installable versions.
@@ -520,13 +521,11 @@ mod tests {
         );
     }
 
-    // ──────────────────────────────────────────────────────────────────────
     // GitHub release JSON — wire-shape invariants
     //
     // Fixtures mirror the real GitHub REST API response for
     // GET /repos/{owner}/{repo}/releases/latest:
     // https://docs.github.com/en/rest/releases/releases#get-the-latest-release
-    // ──────────────────────────────────────────────────────────────────────
 
     #[test]
     fn test_release_json_parses_github_wire_shape() {
@@ -611,36 +610,49 @@ mod tests {
         assert!(serde_json::from_str::<Release>(r#"{"assets":[]}"#).is_err());
     }
 
-    // ──────────────────────────────────────────────────────────────────────
     // derive_channel — invariant matrix
     //
     // Tests the pure comparison logic that determines [alpha] vs [stable].
     // Covers current 0.1.X-alpha.N, future 0.2.X, edge cases, and errors.
-    // ──────────────────────────────────────────────────────────────────────
 
     #[test]
     fn test_derive_channel_matrix() {
         // (current, stable_pointer, expected_channel)
         let cases: &[(&str, &str, Option<&str>)] = &[
-            // ── Current 0.1.X workflow ──
-            ("0.1.220-alpha.2", "0.1.219", Some("alpha")), // alpha ahead of stable
-            ("0.1.219", "0.1.219", Some("stable")),        // stable user on latest
-            ("0.1.218", "0.1.219", Some("stable")),        // stable user behind latest
-            ("0.1.220-alpha.2", "0.1.220-alpha.2", Some("stable")), // pointer matches exactly
-            ("0.1.220-alpha.2", "0.1.220", Some("stable")), // semver: release > pre-release
-            // ── Future 0.2.X workflow ──
-            ("0.2.5", "0.2.3", Some("alpha")), // alpha ahead of stable
-            ("0.2.5", "0.2.5", Some("stable")), // promoted to stable
-            ("0.2.3", "0.2.5", Some("stable")), // behind stable
-            ("0.2.0", "0.2.0", Some("stable")), // first release, both 0.2.0
-            // ── Cross-regime upgrade ──
-            ("0.2.0", "0.1.219", Some("alpha")), // new regime ahead of old stable
-            ("0.1.220-alpha.2", "0.2.0", Some("stable")), // old pre-release < new stable
-            // ── Error cases ──
-            ("garbage", "0.1.219", None), // unparseable current
-            ("0.1.219", "garbage", None), // unparseable stable
-            ("", "0.1.219", None),        // empty current
-            ("0.1.219", "", None),        // empty stable
+            // Current 0.1.X workflow
+            // alpha ahead of stable
+            ("0.1.220-alpha.2", "0.1.219", Some("alpha")),
+            // stable user on latest
+            ("0.1.219", "0.1.219", Some("stable")),
+            // stable user behind latest
+            ("0.1.218", "0.1.219", Some("stable")),
+            // pointer matches exactly
+            ("0.1.220-alpha.2", "0.1.220-alpha.2", Some("stable")),
+            // semver: release > pre-release
+            ("0.1.220-alpha.2", "0.1.220", Some("stable")),
+            // Future 0.2.X workflow
+            // alpha ahead of stable
+            ("0.2.5", "0.2.3", Some("alpha")),
+            // promoted to stable
+            ("0.2.5", "0.2.5", Some("stable")),
+            // behind stable
+            ("0.2.3", "0.2.5", Some("stable")),
+            // first release, both 0.2.0
+            ("0.2.0", "0.2.0", Some("stable")),
+            // Cross-regime upgrade
+            // new regime ahead of old stable
+            ("0.2.0", "0.1.219", Some("alpha")),
+            // old pre-release < new stable
+            ("0.1.220-alpha.2", "0.2.0", Some("stable")),
+            // Error cases
+            // unparseable current
+            ("garbage", "0.1.219", None),
+            // unparseable stable
+            ("0.1.219", "garbage", None),
+            // empty current
+            ("", "0.1.219", None),
+            // empty stable
+            ("0.1.219", "", None),
         ];
 
         for (current, stable, expected) in cases {
@@ -653,9 +665,7 @@ mod tests {
         }
     }
 
-    // ──────────────────────────────────────────────────────────────────────
     // VersionCache JSON shape — backward compatibility invariants
-    // ──────────────────────────────────────────────────────────────────────
 
     #[test]
     fn test_version_json_backward_compat() {
@@ -691,9 +701,7 @@ mod tests {
         assert!(serde_json::from_str::<VersionCache>(missing).is_err());
     }
 
-    // ──────────────────────────────────────────────────────────────────────
     // is_fresh — TTL boundary invariants
-    // ──────────────────────────────────────────────────────────────────────
 
     #[test]
     fn test_is_fresh_ttl_boundaries() {
@@ -722,9 +730,7 @@ mod tests {
         assert!(!bad.is_fresh(now, Duration::from_secs(60)));
     }
 
-    // ──────────────────────────────────────────────────────────────────────
     // UpdateConfig defaults
-    // ──────────────────────────────────────────────────────────────────────
 
     #[test]
     fn test_update_config_default_channel_is_stable() {

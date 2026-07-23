@@ -1,17 +1,12 @@
 //! Skill discovery reminder — discovers new skills near accessed paths.
 //!
-//! Contains `SkillDiscoveryReminder`, a cross-cutting `Reminder` that fires
-//! after every tool call to check for SKILL.md files in `.kigi/skills/`,
-//! `.agents/skills/`, or `.claude/skills/` directories near the accessed path.
-//!
-//! The actual tracking logic lives in
+//! The tracking logic lives in
 //! `types::skill_discovery_tracker::SkillDiscoveryTracker`.
 
 use std::path::{Path, PathBuf};
 
-/// Directories that contain skill definitions (`.kigi/skills/`, `.agents/skills/`,
-/// `.claude/skills/`, `.cursor/skills/`). Shared between startup skill discovery
-/// and runtime `SkillDiscoveryReminder`.
+/// Config directories whose `skills/` subdirectory holds skill definitions.
+/// Shared between startup discovery and the runtime `SkillDiscoveryReminder`.
 pub const SKILL_CONFIG_DIRS: &[&str] = &[".kigi", ".agents", ".claude", ".cursor"];
 
 use crate::implementations::skills::discovery;
@@ -24,31 +19,21 @@ use crate::types::resources::SharedResources;
 use crate::types::skill_discovery_tracker::SkillManager;
 use crate::types::tool::{Reminder, ToolKind};
 
-/// Cross-cutting reminder that discovers skills in subdirectories
-/// near filesystem paths accessed by tools.
+/// Cross-cutting reminder that discovers skills in directories near the
+/// filesystem paths tools access. Register it alongside tools so it runs after
+/// every tool call.
 ///
-/// **Concise mode limitation (V1):** This reminder is globally disabled when
-/// `SystemRemindersEnabled(false)` is set (concise mode). This means dynamic
-/// skill discovery will NOT fire in concise mode. This is an intentional V1
-/// layering compromise — discovery is coupled to the Reminder delivery
-/// mechanism for expediency. If concise-mode support is later needed, migrate
-/// to a dedicated post-tool-call hook that is NOT gated by
-/// `SystemRemindersEnabled`.
-///
-/// Reacts to `ReadFile`, `ListDir`, and `SearchReplace` outputs by
-/// extracting the filesystem path the tool accessed, walking up toward
-/// cwd checking for skill directories, and emitting a reminder for any
-/// newly discovered skills.
-///
-/// This is a standalone struct — not attached to any specific tool.
-/// Register it alongside tools so it runs after every tool call.
+/// **Concise mode limitation (V1):** this reminder is globally disabled when
+/// `SystemRemindersEnabled(false)` is set (concise mode), so dynamic skill
+/// discovery does NOT fire in concise mode. This is an intentional V1 layering
+/// compromise — discovery is coupled to the Reminder delivery mechanism for
+/// expediency. If concise-mode support is later needed, migrate to a dedicated
+/// post-tool-call hook that is NOT gated by `SystemRemindersEnabled`.
 pub struct SkillDiscoveryReminder;
 
 impl SkillDiscoveryReminder {
-    /// Extract the filesystem path the tool accessed from the output.
-    ///
-    /// Returns `None` for tools that don't operate on filesystem paths,
-    /// or for error variants (no reliable path to extract).
+    /// The filesystem path the tool accessed, or `None` for non-filesystem
+    /// tools and error variants (no reliable path to extract).
     fn extract_target_path(tool_output: &ToolOutput) -> Option<&Path> {
         match tool_output {
             ToolOutput::ReadFile(ReadFileOutput::FileContent(fc)) => Some(&fc.absolute_path),
@@ -78,8 +63,6 @@ impl SkillDiscoveryReminder {
         }
     }
 
-    /// Check whether a SKILL.md path is inside a supported skills directory
-    /// (`.kigi/skills/`, `.agents/skills/`, or `.claude/skills/`).
     fn is_in_supported_skills_dir(path: &Path) -> bool {
         for ancestor in path.ancestors().skip(1) {
             if ancestor.file_name().is_some_and(|n| n == "skills") {
@@ -111,8 +94,7 @@ impl Reminder for SkillDiscoveryReminder {
         resources: SharedResources,
         tool_output: &ToolOutput,
     ) -> Vec<String> {
-        // 1. Activate `paths:`-gated skills matching any file the tool touched
-        //    (includes multi-file `apply_patch` edits).
+        // Activate `paths:`-gated skills for every file the tool touched.
         let activation_paths = Self::extract_activation_paths(tool_output);
         if !activation_paths.is_empty() {
             let path_refs: Vec<&Path> = activation_paths.iter().map(PathBuf::as_path).collect();
@@ -122,7 +104,7 @@ impl Reminder for SkillDiscoveryReminder {
             }
         }
 
-        // 2. Discovery walks from a single representative path (read/list/edit).
+        // Discovery itself walks from a single representative path.
         let Some(target_path) = Self::extract_target_path(tool_output) else {
             return vec![];
         };
@@ -156,7 +138,7 @@ impl Reminder for SkillDiscoveryReminder {
             return vec![];
         }
 
-        // 2. Snapshot context under lock, then RELEASE the lock before I/O.
+        // Snapshot context under the lock, then release it before doing I/O.
         let (cwd, git_root, mut checked_dirs_snapshot, compat) = {
             let res = resources.lock().await;
             let Some(tracker) = res.get::<SkillManager>() else {
@@ -173,10 +155,8 @@ impl Reminder for SkillDiscoveryReminder {
                 tracker.compat,
             )
         };
-        // Lock is released here.
 
-        // 3. Run filesystem discovery OUTSIDE the lock.
-        // Calls directly into the discovery module -- no callback indirection.
+        // Filesystem discovery runs outside the lock.
         let discovered = discovery::discover_skills_for_paths(
             &[target_path],
             &cwd,
@@ -195,9 +175,8 @@ impl Reminder for SkillDiscoveryReminder {
             return vec![];
         }
 
-        // 4. Re-acquire lock and merge results into tracker.
-        // The reminder does NOT produce announcement text. It just updates
-        // the tracker state. The session drains announcements from the
+        // Merge results into the tracker. This reminder never returns
+        // announcement text itself; the session drains announcements from the
         // tracker via take_pending_reconciliation() after each tool call.
         {
             let mut res = resources.lock().await;
@@ -206,15 +185,12 @@ impl Reminder for SkillDiscoveryReminder {
                 None => return vec![],
             };
 
-            // Merge checked_dirs from the snapshot back into the tracker.
             tracker.checked_dirs.extend(checked_dirs_snapshot);
 
-            // Add discovered skills (dedup by canonical path, sets pending flag).
+            // add_discovered sets the pending flag the session later drains.
             tracker.add_discovered(discovered);
         }
 
-        // Return empty -- announcement delivery is handled by the session
-        // via take_pending_reconciliation(), NOT by this reminder.
         vec![]
     }
 }

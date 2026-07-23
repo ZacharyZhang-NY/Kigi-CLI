@@ -17,7 +17,6 @@ use kigi_shell::session::info::Info as SessionInfo;
 use kigi_shell::session::persistence::default_model_id;
 use kigi_shell::session::storage::{JsonlStorageAdapter, SessionUpdate, StorageAdapter};
 
-/// Test that xAI session notifications round-trip through storage correctly.
 #[tokio::test]
 async fn test_xai_session_notification_storage_roundtrip() {
     let temp_dir = TempDir::new().unwrap();
@@ -29,13 +28,11 @@ async fn test_xai_session_notification_storage_roundtrip() {
         cwd: "/test/workspace".to_string(),
     };
 
-    // Initialize the session
     adapter
         .init_session(&info, default_model_id())
         .await
         .unwrap();
 
-    // Create a diff_review notification
     let xai_notification = SessionNotification {
         session_id: session_id.clone(),
         update: XaiSessionUpdate::DiffReview {
@@ -47,7 +44,6 @@ async fn test_xai_session_notification_storage_roundtrip() {
         meta: Some(json!({ "totalTokens": 1234 })),
     };
 
-    // Persist the notification
     adapter
         .append_update(
             &info,
@@ -56,7 +52,7 @@ async fn test_xai_session_notification_storage_roundtrip() {
         .await
         .unwrap();
 
-    // Also add an ACP notification to verify mixed storage works
+    // Also add an ACP notification to verify mixed storage works.
     let acp_notification = acp::SessionNotification::new(
         session_id.clone(),
         acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
@@ -70,7 +66,6 @@ async fn test_xai_session_notification_storage_roundtrip() {
         .await
         .unwrap();
 
-    // Load the session and verify both notifications are present
     let loaded = adapter.load_session(&info).await.unwrap();
     assert_eq!(
         loaded.updates.len(),
@@ -78,7 +73,6 @@ async fn test_xai_session_notification_storage_roundtrip() {
         "Should have 2 updates (1 xAI + 1 ACP)"
     );
 
-    // Verify xAI notification
     match &loaded.updates[0] {
         SessionUpdate::Xai(notification) => {
             assert_eq!(notification.session_id, session_id);
@@ -93,7 +87,6 @@ async fn test_xai_session_notification_storage_roundtrip() {
                     panic!("Expected DiffReview, got different update type");
                 }
             }
-            // Verify meta is preserved
             assert_eq!(
                 notification
                     .meta
@@ -105,7 +98,6 @@ async fn test_xai_session_notification_storage_roundtrip() {
         _ => panic!("Expected xAI update as first item"),
     }
 
-    // Verify ACP notification
     match &loaded.updates[1] {
         SessionUpdate::Acp(notification) => {
             assert_eq!(notification.session_id, session_id);
@@ -187,7 +179,6 @@ async fn test_turn_completed_round_trips_through_storage() {
     }
 }
 
-/// Test that totalTokens can be extracted from both ACP and xAI notifications.
 #[tokio::test]
 async fn test_extract_total_tokens_from_mixed_updates() {
     let temp_dir = TempDir::new().unwrap();
@@ -204,7 +195,6 @@ async fn test_extract_total_tokens_from_mixed_updates() {
         .await
         .unwrap();
 
-    // Add ACP notification with totalTokens
     let acp_notification = acp::SessionNotification::new(
         session_id.clone(),
         acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
@@ -217,7 +207,6 @@ async fn test_extract_total_tokens_from_mixed_updates() {
         .await
         .unwrap();
 
-    // Add xAI notification with totalTokens
     let xai_notification = SessionNotification {
         session_id: session_id.clone(),
         update: XaiSessionUpdate::DiffReview { content: vec![] },
@@ -228,7 +217,6 @@ async fn test_extract_total_tokens_from_mixed_updates() {
         .await
         .unwrap();
 
-    // Add another ACP notification with higher totalTokens
     let acp_notification2 = acp::SessionNotification::new(
         session_id.clone(),
         acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
@@ -268,7 +256,6 @@ async fn test_extract_total_tokens_from_mixed_updates() {
     );
 }
 
-/// Test the serialization format of SessionNotification for wire compatibility.
 #[test]
 fn test_xai_session_notification_serialization() {
     let notification = SessionNotification {
@@ -284,7 +271,6 @@ fn test_xai_session_notification_serialization() {
 
     let json = serde_json::to_value(&notification).unwrap();
 
-    // Print actual JSON for debugging
     println!(
         "Serialized JSON: {}",
         serde_json::to_string_pretty(&json).unwrap()
@@ -301,7 +287,6 @@ fn test_xai_session_notification_serialization() {
         .expect("Expected sessionUpdate tag in update");
     assert_eq!(session_update_tag, "diff_review");
 
-    // Verify diff content is inside the update
     let content = update_obj
         .get("content")
         .expect("Expected content in update")

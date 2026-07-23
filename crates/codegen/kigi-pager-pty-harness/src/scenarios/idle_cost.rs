@@ -12,8 +12,7 @@ const IDLE_WINDOW: Duration = Duration::from_secs(3);
 
 pub async fn run(harness: &mut PtyHarness, _content: &ContentController) -> Result<BenchResults> {
     wait_for_welcome(harness).await?;
-    // Let the splash screen animation settle (some of the pager's intro
-    // screens do a brief fade/animation).
+    // Let the splash screen's fade animation settle before timing idle frames.
     harness.update(Duration::from_secs(1));
     harness.reset_timing();
 

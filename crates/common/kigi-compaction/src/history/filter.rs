@@ -1,7 +1,7 @@
 //! Item filtering and user-query extraction for history compaction —
 //! generic over [`CompactionItem`] / [`CompactionItemBuilder`].
 //!
-//! Behavior is byte-for-byte identical for Kigi chat (`T = Arc<KigiTurn>`).
+//! Behavior matches Kigi chat (`T = Arc<KigiTurn>`).
 
 use tracing::info;
 
@@ -48,10 +48,9 @@ pub fn filter_turns_for_inter_compaction<T: CompactionItemBuilder>(turns: &[T]) 
     turns
         .iter()
         .filter_map(|turn| match turn.role() {
-            // Drop tool and system items.
             CompactionRole::Tool | CompactionRole::System => None,
 
-            // Keep prior compaction summaries; drop all other developer items.
+            // Keep prior compaction summaries; drop other developer items.
             CompactionRole::Developer => {
                 if turn.is_compaction_summary() {
                     Some(turn.clone())
@@ -60,10 +59,8 @@ pub fn filter_turns_for_inter_compaction<T: CompactionItemBuilder>(turns: &[T]) 
                 }
             }
 
-            // Keep user items.
             CompactionRole::User => Some(turn.clone()),
 
-            // Filter assistant item contents.
             CompactionRole::Assistant => turn.strip_tool_content(),
         })
         .collect()
@@ -152,7 +149,8 @@ pub fn truncate_middle(msg: &str, max_chars: usize) -> Option<String> {
         return None;
     }
     let front_len = max_chars / 2;
-    let back_len = max_chars - front_len; // handles odd max_chars
+    // handles odd max_chars
+    let back_len = max_chars - front_len;
     let front: String = msg.chars().take(front_len).collect();
     let back: String = msg.chars().skip(char_count - back_len).collect();
     Some(format!("{}...[truncated]...{}", front, back))
@@ -291,10 +289,8 @@ pub fn separate_prior_user_queries<T: CompactionItemBuilder>(
                     None => prior_user_queries = Some(user_sec),
                 }
             }
-            // Matches inter's previous inline behavior (`if !rest.is_empty()`):
-            // a prior compaction item whose entire content was the
-            // `<kigi_user_queries>` block (and therefore stripped to an empty
-            // `rest`) contributes nothing for the LLM and is dropped here.
+            // Prior compaction whose content was only `<kigi_user_queries>`
+            // (empty `rest` after strip) contributes nothing for the LLM.
             if !rest.is_empty() {
                 turns_for_llm.push(T::compaction_summary_item(rest));
             }

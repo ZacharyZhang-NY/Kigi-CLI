@@ -1,6 +1,6 @@
 //! macOS MDM managed-preferences layer.
 //!
-//! Admins push a device profile with standard-base64 (padded) TOML under
+//! Admins push a device profile with standard-base64 (`padded`) TOML under
 //! preference domain `ai.x.kigi` (`requirements_toml_base64`). Only admin-*forced*
 //! values are read, so a local user can't forge it via their own preference
 //! domain; trusted on every launch, independent of network/cache. `None` off macOS.

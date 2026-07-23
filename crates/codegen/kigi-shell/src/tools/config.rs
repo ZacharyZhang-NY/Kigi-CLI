@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /// (`DEFAULT_MAX_TIMEOUT_MS`); production opts *up* to 10h by sending this
 /// explicitly (overridable via config.toml). Bounds only foreground commands —
 /// background tasks are always unbounded.
-pub const PRODUCTION_MAX_TIMEOUT_SECS: f64 = 36_000.0; // 10 hours
+pub const PRODUCTION_MAX_TIMEOUT_SECS: f64 = 36_000.0;
 
 /// User configurable settings for the built-in bash tool (`[toolset.bash]`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -53,9 +53,6 @@ impl BashToolConfig {
         if let Some(t) = self.timeout_secs {
             map.insert("timeout_secs".into(), t.into());
         }
-        // The tool-server binary defaults the foreground ceiling to 5 min;
-        // production kigi opts up to 10h by sending it explicitly
-        // (overridable via config.toml). Foreground-only; background stays unbounded.
         let max_timeout_secs = self.max_timeout_secs.unwrap_or(PRODUCTION_MAX_TIMEOUT_SECS);
         map.insert("max_timeout_secs".into(), max_timeout_secs.into());
         if let Some(limit) = self.output_byte_limit {
@@ -191,10 +188,6 @@ impl ShellToolsetConfig {
     }
 }
 
-// ---------------------------------------------------------------------------
-// File toolset selection
-// ---------------------------------------------------------------------------
-
 /// Configuration for hashline anchor scheme parameters.
 ///
 /// Configurable in `config.toml` under `[toolset.hashline]`:
@@ -214,7 +207,6 @@ pub struct HashlineSchemeConfig {
     pub scheme: String,
     /// Anchor hash length in characters (1-4).
     pub hash_len: usize,
-    /// Chunk size for the chunk scheme.
     pub chunk_size: usize,
 }
 
@@ -229,7 +221,6 @@ impl Default for HashlineSchemeConfig {
 }
 
 impl HashlineSchemeConfig {
-    /// Validate the config. Returns an error message if invalid.
     pub fn validate(&self) -> Result<(), String> {
         match self.scheme.as_str() {
             "chunk" | "content_only" => {}
@@ -433,7 +424,7 @@ mod tests {
         assert_eq!(hashline, FileToolset::Hashline);
     }
 
-    // -- resolve_file_toolset precedence tests ---
+    // resolve_file_toolset precedence tests
 
     #[test]
     fn resolve_local_hashline_wins_over_remote() {
@@ -447,7 +438,7 @@ mod tests {
 
     #[test]
     fn resolve_remote_used_when_local_default() {
-        let cfg = ShellToolsetConfig::default(); // Standard (default)
+        let cfg = ShellToolsetConfig::default();
         let remote = crate::util::config::RemoteSettings {
             file_toolset: Some("hashline".to_owned()),
             ..Default::default()
@@ -486,7 +477,7 @@ mod tests {
         assert!(FileToolset::Hashline.tool_configs(&bad).is_err());
     }
 
-    // -- resolve_params precedence tests ---
+    // resolve_params precedence tests
 
     #[test]
     fn resolve_params_toml_wins_over_remote() {
@@ -545,7 +536,7 @@ mod tests {
         assert_eq!(params.allowed_domains, Some(vec![]));
     }
 
-    // -- to_bash_params_json allow_background_operator precedence (local > remote > true) --
+    // to_bash_params_json allow_background_operator precedence (local > remote > true)
 
     fn allow_bg_op(map: &serde_json::Map<String, serde_json::Value>) -> Option<bool> {
         map.get("allow_background_operator")
@@ -582,8 +573,8 @@ mod tests {
         );
     }
 
-    // -- max_timeout_secs: production sets the 10h foreground ceiling explicitly
-    //    (also the binary default); overridable via config.toml --
+    // max_timeout_secs: production sets the 10h foreground ceiling explicitly
+    // (also the binary default); overridable via config.toml
 
     fn max_timeout(map: &serde_json::Map<String, serde_json::Value>) -> Option<f64> {
         map.get("max_timeout_secs").and_then(|v| v.as_f64())
@@ -611,7 +602,7 @@ mod tests {
         );
     }
 
-    // -- foreground_block_budget_ms: only emitted when set (server defaults to 15s) --
+    // foreground_block_budget_ms: only emitted when set (server defaults to 15s)
 
     fn fg_budget(map: &serde_json::Map<String, serde_json::Value>) -> Option<u64> {
         map.get("foreground_block_budget_ms")

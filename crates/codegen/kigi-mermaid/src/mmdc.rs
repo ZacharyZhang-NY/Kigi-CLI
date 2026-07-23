@@ -63,9 +63,9 @@ impl MmdcEngine {
 
 impl MermaidEngine for MmdcEngine {
     fn render(&self, source: &str, params: &RenderParams) -> Result<RenderedDiagram, MermaidError> {
-        // Environment/IO failures below are `Rasterize` (a render-pipeline
-        // failure), not `Unsupported` (which connotes "this input/engine isn't
-        // supported"); spawn failure stays `Unsupported` (engine unavailable).
+        // Environment/IO failures below are `Rasterize` (the render pipeline
+        // broke), not `Unsupported` — that arm is reserved for "no usable
+        // engine", which is what a spawn failure means.
         let dir = tempfile::Builder::new()
             .prefix("xai-mermaid-")
             .tempdir()
@@ -73,8 +73,6 @@ impl MermaidEngine for MmdcEngine {
         let input = dir.path().join("diagram.mmd");
         let output = dir.path().join("diagram.svg");
 
-        // Create atomically with 0600 (no umask/chmod TOCTOU window). The parent
-        // tempdir is already 0700.
         write_private(&input, source)
             .map_err(|e| MermaidError::Rasterize(format!("could not write source: {e}")))?;
 
@@ -94,7 +92,7 @@ impl MermaidEngine for MmdcEngine {
         // setsid/console detach via the sanctioned helper (never a raw pre_exec).
         kigi_tty_utils::detach_std_command(&mut cmd);
 
-        // Source goes via the temp file, so no stdin payload.
+        // No stdin payload: the source travels via the temp file.
         run_with_timeout(cmd, None, self.timeout).map_err(map_subprocess_error)?;
 
         let svg = std::fs::read_to_string(&output).map_err(|e| {
@@ -220,7 +218,6 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn fake_mmdc_zero_exit_without_output_is_layout_error() {
-        // Exits 0 but writes nothing → the "no readable SVG output" Layout error.
         let (_dir, bin) = fake_mmdc("exit 0");
         let err = MmdcEngine::new(bin)
             .render("flowchart LR; A-->B", &RenderParams::default())
@@ -231,8 +228,6 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn fake_mmdc_nonzero_exit_maps_to_layout() {
-        // A non-zero exit from mmdc surfaces as a Layout error, distinct from a
-        // timeout or a missing binary.
         let (_dir, bin) = fake_mmdc("exit 3");
         let err = MmdcEngine::new(bin)
             .render("flowchart LR; A-->B", &RenderParams::default())
@@ -243,8 +238,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn with_timeout_is_honored() {
-        // A fake that sleeps far longer than the configured timeout must time out
-        // (and be reaped) quickly — proving with_timeout feeds run_with_timeout.
+        // Returning well before the 30s sleep proves `with_timeout` reaches
+        // `run_with_timeout` rather than being ignored.
         let (_dir, bin) = fake_mmdc("sleep 30");
         let start = Instant::now();
         let err = MmdcEngine::new(bin)

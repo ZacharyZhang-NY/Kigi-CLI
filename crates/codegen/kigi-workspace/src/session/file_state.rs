@@ -572,7 +572,8 @@ impl FileStateTracker {
         let mut source = self.lazy_source.lock().await;
         // Clone the path so we can clear `source` after a successful read.
         let Some(path) = source.clone() else {
-            return; // already loaded, or never lazy
+            // already loaded, or never lazy
+            return;
         };
         let loaded = match read_rewind_points_file(&path) {
             Ok(points) => points,
@@ -659,7 +660,7 @@ impl FileStateTracker {
     ///
     /// NOTE: This method is similar to `capture_file_state_with_fs`. They are kept
     /// separate due to type system constraints (`AsyncFileSystem` trait vs `AsyncFsWrapper`
-    /// concrete type). Keep them in sync when making changes.
+    /// concrete type). Keep them in sync when editing either side.
     pub async fn capture_file_state<F: AsyncFileSystem + ?Sized>(
         &self,
         fs: &F,
@@ -677,7 +678,8 @@ impl FileStateTracker {
             // Not currently processing a prompt, skip capture
             return Ok(());
         };
-        drop(current); // Release lock before async operations
+        // Release lock before async operations
+        drop(current);
 
         // Read current file content (or None if it doesn't exist)
         let content = fs
@@ -704,7 +706,7 @@ impl FileStateTracker {
     ///
     /// NOTE: This method is similar to `capture_file_state`. They are kept separate
     /// due to type system constraints (`AsyncFsWrapper` concrete type vs generic
-    /// `AsyncFileSystem` trait). Keep them in sync when making changes.
+    /// `AsyncFileSystem` trait). Keep them in sync when editing either side.
     pub async fn capture_file_state_with_fs(
         &self,
         fs: &AsyncFsWrapper,
@@ -722,7 +724,8 @@ impl FileStateTracker {
             // Not currently processing a prompt, skip capture
             return Ok(());
         };
-        drop(current); // Release lock before async operations
+        // Release lock before async operations
+        drop(current);
 
         // Read current file content (or None if it doesn't exist)
         let content = fs
@@ -826,7 +829,7 @@ impl FileStateTracker {
         result
     }
 
-    /// Get a specific rewind point by prompt index. Intentionally does NOT trigger
+    /// Get a specific rewind point by prompt index. Deliberately does NOT trigger
     /// the historical load: this is the live persistence path (a just-completed
     /// prompt's point is always in memory), so resume-then-work stays fast.
     pub async fn get_rewind_point(&self, prompt_index: usize) -> Option<RewindPoint> {
@@ -1067,7 +1070,8 @@ impl FileStateHandle {
 
 #[cfg(test)]
 mod tests {
-    use super::ToolContext; // from stub above
+    // from stub above
+    use super::ToolContext;
     use super::*;
     use crate::file_system::MockFs;
     use kigi_paths::AbsPathBuf;
@@ -1392,7 +1396,7 @@ mod tests {
         assert!(abs_json.contains("\"path\":\"/abs/path/file.txt\""));
     }
 
-    // ── Lazy historical rewind-point loading ──────────────────────────────────
+    // Lazy historical rewind-point loading
 
     /// Build a rewind point at `idx` with the given (relative path, content) files.
     fn point_with_files(idx: usize, files: &[(&str, &str)]) -> RewindPoint {
@@ -1444,7 +1448,6 @@ mod tests {
         assert_eq!(points.len(), 2);
         assert_eq!(points[0].prompt_index, 0);
         assert_eq!(points[1].prompt_index, 1);
-        // Now singular lookups see the loaded points.
         assert!(tracker.get_rewind_point(0).await.is_some());
     }
 
@@ -1555,9 +1558,9 @@ mod tests {
 
         let metas = tracker.get_rewind_point_metas().await;
         assert_eq!(metas.len(), 2);
-        assert_eq!(metas[0].prompt_index, 0); // from disk
+        assert_eq!(metas[0].prompt_index, 0);
         assert_eq!(metas[0].num_file_snapshots, 1);
-        assert_eq!(metas[1].prompt_index, 1); // from memory
+        assert_eq!(metas[1].prompt_index, 1);
         assert_eq!(metas[1].num_file_snapshots, 1);
     }
 
@@ -1666,7 +1669,7 @@ mod tests {
         assert_eq!(metas[1].num_file_snapshots, 1);
     }
 
-    // ── pure merge_rewind_points_from branch coverage ────────────────────────
+    // pure merge_rewind_points_from branch coverage
 
     #[test]
     fn merge_pure_target_zero_clears_all() {

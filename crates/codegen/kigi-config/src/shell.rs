@@ -342,9 +342,7 @@ fn invocation_for(shell: &WindowsShell, command: &str) -> ShellInvocation {
     }
 }
 
-// =============================================================================
 // Unix shell resolution
-// =============================================================================
 //
 // Locates an absolute path to a bash/zsh binary on Unix:
 //

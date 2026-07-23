@@ -18,10 +18,6 @@ use nucleo::{
     pattern::{CaseMatching, MultiPattern, Normalization},
 };
 
-// ---------------------------------------------------------------------------
-// Public data types
-// ---------------------------------------------------------------------------
-
 /// A single entry in the prompt history.
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {
@@ -35,19 +31,11 @@ pub struct HistoryMatchResult {
     pub indices: Vec<u32>,
 }
 
-// ---------------------------------------------------------------------------
-// Shared state (daemon → UI)
-// ---------------------------------------------------------------------------
-
 #[derive(Clone, Default)]
 struct Snapshot {
     items: Arc<[HistoryMatchResult]>,
     generation: usize,
 }
-
-// ---------------------------------------------------------------------------
-// Daemon messages (UI → daemon)
-// ---------------------------------------------------------------------------
 
 enum Msg {
     SetItems(Vec<String>),
@@ -55,10 +43,6 @@ enum Msg {
     SetQuery(String),
     Stop,
 }
-
-// ---------------------------------------------------------------------------
-// Background daemon
-// ---------------------------------------------------------------------------
 
 struct Daemon {
     shared: Arc<Mutex<Snapshot>>,
@@ -264,10 +248,6 @@ impl Drop for Daemon {
         let _ = self.tx.send(Msg::Stop);
     }
 }
-
-// ---------------------------------------------------------------------------
-// HistorySearchState (UI-thread side)
-// ---------------------------------------------------------------------------
 
 /// UI-side state for the history search overlay.
 ///
@@ -507,10 +487,6 @@ impl HistorySearchState {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -610,7 +586,8 @@ mod tests {
             "",
         );
         assert_eq!(state.result_count(), 5);
-        assert_eq!(state.selected, 4); // bottom (most recent) selected on open
+        // bottom (most recent) selected on open
+        assert_eq!(state.selected, 4);
 
         // Navigate up off the bottom — selection is no longer sticky.
         state.move_up();

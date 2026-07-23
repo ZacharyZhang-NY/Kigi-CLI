@@ -537,7 +537,7 @@ fn meaningful_content_classifier_treats_ping_as_keepalive() {
     ));
 }
 
-// ── Token usage: Anthropic Messages API cache-bucket accounting ────────────
+// Token usage: Anthropic Messages API cache-bucket accounting
 
 fn message_start_with_cache(
     input: u32,

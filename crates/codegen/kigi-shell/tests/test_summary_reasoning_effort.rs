@@ -47,8 +47,9 @@ fn read_summary(home: &std::path::Path, session_id: &str) -> serde_json::Value {
 
 /// A fresh session on a model with a configured reasoning effort must persist
 /// that effort in `summary.json` without any model/effort switch.
+// requires pre-built binary
 #[tokio::test]
-#[ignore] // requires pre-built binary
+#[ignore]
 async fn test_fresh_session_persists_reasoning_effort() {
     with_local_set(|| async {
         let server = MockInferenceServer::start()
@@ -90,8 +91,9 @@ reasoning_effort = "high"
 
 /// A fresh session on a model with no configured effort must not invent one:
 /// `summary.json` omits the field (the model uses its server-side default).
+// requires pre-built binary
 #[tokio::test]
-#[ignore] // requires pre-built binary
+#[ignore]
 async fn test_fresh_session_without_effort_omits_field() {
     with_local_set(|| async {
         let server = MockInferenceServer::start()

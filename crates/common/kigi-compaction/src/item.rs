@@ -23,16 +23,13 @@
 /// `ConversationItem` variants (kigi).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompactionRole {
-    /// System prompt.
     System,
     /// Developer prompt (Kigi chat) — maps to System on harnesses without a
     /// distinct developer role.
     Developer,
-    /// A user message.
     User,
-    /// An assistant output (may carry tool requests).
+    /// Assistant output (may carry tool requests).
     Assistant,
-    /// A tool result.
     Tool,
 }
 
@@ -43,7 +40,6 @@ pub enum CompactionRole {
 pub struct CompactionFileRef {
     /// Stable unique id of the attachment source.
     pub id: String,
-    /// Human-readable file name.
     pub name: String,
 }
 

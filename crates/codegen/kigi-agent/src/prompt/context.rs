@@ -224,9 +224,9 @@ impl PromptContext {
     }
     /// Format the personas section content.
     ///
-    /// Always returns `None` — the `persona` parameter has been removed
-    /// from the task tool input, so persona summaries are no longer
-    /// injected into the conversation.
+    /// Always returns `None` — the task tool input carries no `persona`
+    /// parameter, so persona summaries are never injected into the
+    /// conversation.
     pub fn format_personas_section(&self) -> Option<String> {
         None
     }

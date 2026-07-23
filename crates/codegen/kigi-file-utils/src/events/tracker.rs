@@ -169,7 +169,7 @@ impl EventTracker {
         self.pending_interrupt_reminder.replace(false)
     }
 
-    /// Emit PhaseChanged(PermissionPrompt) → PermissionRequested.
+    /// Emit `PhaseChanged`(PermissionPrompt) → PermissionRequested.
     /// Returns the Instant for `permission_resolved()` to compute wait_ms.
     pub fn permission_requested(&self, tool_name: &str) -> Instant {
         self.emit(Event::PhaseChanged {

@@ -326,7 +326,8 @@ impl<'a> EntryRenderer<'a> {
 
     /// Legacy fixed chrome-width estimate for callers with no appearance to
     /// borrow (off-screen mermaid sizing); the live value is `chrome_width()`.
-    pub const CHROME_WIDTH: u16 = 1 + 2 + 1; // accent + left_pad + right_pad (legacy)
+    // accent + left_pad + right_pad (legacy)
+    pub const CHROME_WIDTH: u16 = 1 + 2 + 1;
 
     /// Whether this entry should display a timestamp on the first content line.
     ///
@@ -346,7 +347,8 @@ impl<'a> EntryRenderer<'a> {
     /// never collides with the timestamp overlay.
     fn timestamp_reserved(&self) -> u16 {
         if self.appearance.show_timestamps && self.should_show_timestamp() {
-            10 // max short format: "  12:30 PM"
+            // max short format: "  12:30 PM"
+            10
         } else {
             0
         }
@@ -680,10 +682,10 @@ impl Renderable for EntryRenderer<'_> {
         ])
         .areas(area);
 
-        // Build context directly — avoid calling effective_output() here since
-        // we only need the context for background/accent decisions, not the output.
-        // This eliminates a full block.output() call (including syntax highlighting
-        // for edit blocks) that was previously thrown away.
+        // Only background/accent decisions are needed here, so build the
+        // context directly instead of going through effective_output() —
+        // that would run a full block.output() (including syntax
+        // highlighting for edit blocks) just to discard it.
         let mut ctx = self
             .entry
             .context(content_area.width, &self.appearance, self.cwd);
@@ -711,7 +713,6 @@ impl Renderable for EntryRenderer<'_> {
             let full_start_y = area.y;
             let full_end_y = area.y + area.height;
 
-            // Fill accent area if block wants accent background
             if self.entry.block.accent_background(&ctx) {
                 for y in full_start_y..full_end_y {
                     for x in accent_area.x..accent_area.x + accent_area.width {
@@ -722,7 +723,6 @@ impl Renderable for EntryRenderer<'_> {
                 }
             }
 
-            // Fill left padding
             for y in full_start_y..full_end_y {
                 for x in left_pad.x..left_pad.x + left_pad.width {
                     if let Some(cell) = buf.cell_mut((x, y)) {
@@ -731,7 +731,6 @@ impl Renderable for EntryRenderer<'_> {
                 }
             }
 
-            // Fill content area
             for y in full_start_y..full_end_y {
                 for x in content_area.x..content_area.x + content_area.width {
                     if let Some(cell) = buf.cell_mut((x, y)) {
@@ -740,7 +739,6 @@ impl Renderable for EntryRenderer<'_> {
                 }
             }
 
-            // Fill right padding
             for y in full_start_y..full_end_y {
                 for x in right_pad.x..right_pad.x + right_pad.width {
                     if let Some(cell) = buf.cell_mut((x, y)) {
@@ -840,7 +838,6 @@ impl Renderable for EntryRenderer<'_> {
                     );
                 }
             } else {
-                // Static accent: full color
                 let style = Style::default().fg(color);
                 for y in accent_area.y..accent_area.y + accent_area.height {
                     buf.set_string_safe(accent_area.x, y, crate::glyphs::accent_bar(), style);
@@ -886,7 +883,6 @@ impl Renderable for EntryRenderer<'_> {
         // so a wide glyph can't strand a ghost; per-row bg keeps code blocks whole.
         let own_gutter = ts_reserved > 0 && bg_color.is_none() && content_area.width > ts_reserved;
 
-        // Content lines — skip the first `content_skip` lines
         for line in output.lines.iter().skip(content_skip as usize) {
             if row >= max_row {
                 break;
@@ -1092,7 +1088,8 @@ mod tests {
 
     #[test]
     fn test_chrome_width_constant() {
-        assert_eq!(EntryRenderer::CHROME_WIDTH, 4); // 1 + 2 + 1
+        // 1 + 2 + 1
+        assert_eq!(EntryRenderer::CHROME_WIDTH, 4);
     }
 
     #[test]
@@ -1236,7 +1233,8 @@ mod tests {
 
         // AgentMessage has no vpad → first content row at y=0.
         // Hover the rightmost 10 cols of that row to trigger expansion.
-        let hover_x = width - 2 - 5; // inside the timestamp zone
+        // inside the timestamp zone
+        let hover_x = width - 2 - 5;
         let renderer = EntryRenderer::new(&entry, &theme).with_mouse_pos(Some((hover_x, 0)));
 
         let height = renderer.desired_height(width);
@@ -1414,8 +1412,6 @@ mod tests {
         }
     }
 
-    // ── timestamp gutter ownership (ghost-glyph regression) ──
-
     #[test]
     fn gutter_cleared_on_non_first_content_row_without_background() {
         // Regression: nothing writes the timestamp gutter on rows past the
@@ -1572,8 +1568,6 @@ mod tests {
             "code-row gutter ghost must be cleared"
         );
     }
-
-    // ── estimate_height (lazy off-screen sizing) ──
 
     #[test]
     fn estimate_matches_exact_for_plain_single_line() {
@@ -1760,9 +1754,12 @@ mod tests {
             let entry = ScrollbackEntry::new(RenderBlock::stub(text, Color::Blue));
             EntryRenderer::new(&entry, &theme).estimate_height(14)
         };
-        let wide = height("一二三四五六七八九十"); // display 20, bytes 30
-        let ascii_same_display = height("xxxxxxxxxxxxxxxxxxxx"); // display 20, bytes 20
-        let ascii_same_bytes = height("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"); // display 30, bytes 30
+        // display 20, bytes 30
+        let wide = height("一二三四五六七八九十");
+        // display 20, bytes 20
+        let ascii_same_display = height("xxxxxxxxxxxxxxxxxxxx");
+        // display 30, bytes 30
+        let ascii_same_bytes = height("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
         assert_eq!(
             wide, ascii_same_display,
             "wraps by display width: wide(20 cols) == ascii(20 cols)"
@@ -1772,8 +1769,6 @@ mod tests {
             "must NOT wrap by byte length: wide(30 bytes) != ascii(30 cols)"
         );
     }
-
-    // ── diagram affordance-row reservation ──
 
     /// A diagram under `auto`/`on` reserves exactly one extra row — the
     /// affordance row — and the off-screen estimate accounts for it so a bulk
@@ -1837,8 +1832,6 @@ mod tests {
         // Restore process default (off).
         crate::appearance::cache::set_show_thinking_blocks(false);
     }
-
-    // ── flat_background × per-line backgrounds (minimal mode) ──
 
     /// Whether any cell in the buffer carries `bg` as its background.
     fn buf_has_bg(buf: &Buffer, bg: Color) -> bool {

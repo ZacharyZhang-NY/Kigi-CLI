@@ -23,11 +23,9 @@ use super::types::{
 use crate::register_resource;
 use kigi_tool_runtime::ToolError;
 
-/// Abstraction over the mechanism used to spawn, query, and cancel subagents.
-///
-/// Injected into `Resources` as [`SubagentBackendResource`] so that
-/// `TaskTool`, `TaskOutputTool`, and `KillTaskTool` can operate
-/// identically regardless of the underlying transport.
+/// Injected into `Resources` as [`SubagentBackendResource`] so `TaskTool`,
+/// `TaskOutputTool`, and `KillTaskTool` dispatch identically regardless of
+/// the underlying transport.
 #[async_trait::async_trait]
 pub trait SubagentBackend: Send + Sync + 'static {
     /// Spawn a subagent and await its result.
@@ -48,7 +46,6 @@ pub trait SubagentBackend: Send + Sync + 'static {
         timeout_ms: Option<u64>,
     ) -> Option<SubagentSnapshot>;
 
-    /// Request cancellation of a subagent by ID.
     async fn cancel(&self, id: &str) -> SubagentCancelOutcome;
 
     /// Validate a subagent type synchronously before spawning.
@@ -554,8 +551,6 @@ mod tests {
         assert!(snap.is_none());
     }
 
-    // ── validate_type ────────────────────────────────────────────────
-
     #[tokio::test]
     async fn channel_backend_validate_type_round_trips_outcome() {
         let (tx, mut rx) = mpsc::unbounded_channel::<SubagentEvent>();
@@ -675,8 +670,6 @@ mod tests {
 
         holder.abort();
     }
-
-    // ── describe_subagent_type ───────────────────────────────────────
 
     #[tokio::test]
     async fn channel_backend_describe_round_trips_summary() {

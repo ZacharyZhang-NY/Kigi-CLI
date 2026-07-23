@@ -33,7 +33,7 @@ pub use scroll_mode::ScrollMode;
 pub use text_selection::TextSelection;
 pub use watcher::ConfigWatcher;
 
-// -- Global tab_width --------------------------------------------------------
+// Global tab_width
 //
 // Stored as an atomic so MarkdownContent can read the current value
 // without needing the AppearanceConfig threaded through its API.

@@ -2,10 +2,6 @@
 use super::support::*;
 use super::*;
 
-/// Draining a mid-turn interjection pushes a standalone synthetic user
-/// message tagged [`SyntheticReason::Interjection`] — even when the
-/// conversation tail is a `ToolResult`. The tool result content must be
-/// left untouched (interjections are never appended to tool results).
 #[tokio::test]
 async fn drain_interjections_pushes_synthetic_user_message_after_tool_result() {
     let local = tokio::task::LocalSet::new();
@@ -33,7 +29,6 @@ async fn drain_interjections_pushes_synthetic_user_message_after_tool_result() {
 
             let conversation = actor.chat_state_handle.get_conversation().await;
 
-            // The tool result is untouched — no interjection text bundled in.
             let tool_result = conversation
                 .iter()
                 .find_map(|item| match item {
@@ -47,8 +42,6 @@ async fn drain_interjections_pushes_synthetic_user_message_after_tool_result() {
                 "tool result content must not be mutated by an interjection"
             );
 
-            // The interjection landed as a standalone synthetic user message
-            // after the tool result.
             let user_item = match conversation.last() {
                 Some(ConversationItem::User(u)) => u,
                 other => panic!("conversation tail must be a user item, got: {other:?}"),
@@ -70,9 +63,6 @@ async fn drain_interjections_pushes_synthetic_user_message_after_tool_result() {
         .await;
 }
 
-/// Multiple buffered interjections drain as one standalone synthetic user
-/// message EACH, in FIFO order (Ctrl+Enter twice = two tagged user rows).
-/// None of them may touch the tool result at the conversation tail.
 #[tokio::test]
 async fn drain_multiple_interjections_pushes_one_user_message_each_in_order() {
     let local = tokio::task::LocalSet::new();
@@ -115,7 +105,6 @@ async fn drain_multiple_interjections_pushes_one_user_message_each_in_order() {
                 "tool result must not absorb any of the interjections"
             );
 
-            // Exactly one tagged user row per interjection, in send order.
             let ij_texts: Vec<String> = conversation
                 .iter()
                 .filter_map(|item| match item {
@@ -146,8 +135,8 @@ async fn drain_multiple_interjections_pushes_one_user_message_each_in_order() {
         .await;
 }
 
-/// Draining with an empty buffer reports false and leaves the conversation
-/// untouched. The turn loop's checkpoint gates rely on this.
+/// The turn loop's checkpoint gates rely on an empty-buffer drain returning
+/// false and leaving the conversation untouched.
 #[tokio::test]
 async fn drain_with_empty_buffer_is_a_noop() {
     let local = tokio::task::LocalSet::new();
@@ -196,11 +185,10 @@ mod interjection_broadcast_tests {
     use super::support::create_test_actor;
     use super::*;
 
-    /// Multi-client fix: a mid-turn interjection must be broadcast to every
-    /// attached client (not just the originator) so all panes viewing the same
-    /// session render it. This locks the wire contract the pager's
-    /// `handle_interjection` depends on: method `kigi/session/interjection`
-    /// carrying `sessionId` + `text`.
+    /// A mid-turn interjection must be broadcast to every attached client (not
+    /// just the originator) so all panes viewing the same session render it.
+    /// This locks the wire contract the pager's `handle_interjection` depends
+    /// on: method `kigi/session/interjection` carrying `sessionId` + `text`.
     #[tokio::test]
     async fn broadcast_interjection_emits_sessionid_and_text() {
         let local = tokio::task::LocalSet::new();

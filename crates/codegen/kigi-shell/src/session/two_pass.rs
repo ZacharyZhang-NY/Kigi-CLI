@@ -18,7 +18,6 @@ const TWO_PASS_MIN_SUMMARY_BLOCK_CHARS: usize = 1000;
 /// Cap on NOTE₁ text embedded in pass2 (carrier + special turn).
 const TWO_PASS_MAX_NOTE1_CHARS: usize = 12_000;
 
-/// Result of splitting a conversation for two-pass compaction.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct TwoPassSplit<'a> {
     pub prefix: &'a [ConversationItem],
@@ -287,7 +286,8 @@ mod tests {
         // split (pass2 needs recent turns to rewrite against NOTE₁).
         let weights = vec![10u64; 40];
         let idx = split_index_by_token_fraction(&weights, TWO_PASS_DEFAULT_SPLIT_FRACTION);
-        assert_eq!(idx, 38); // 38/40 = 95% by weight
+        // 38/40 = 95% by weight
+        assert_eq!(idx, 38);
         assert!(idx < weights.len());
     }
 

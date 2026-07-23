@@ -186,10 +186,6 @@ mod tests {
         assert!(output.contains("score: 0.70"));
     }
 
-    // -----------------------------------------------------------------------
-    // conversation_has_memory_context (idempotency guard) tests
-    // -----------------------------------------------------------------------
-
     fn sample_result() -> MemorySearchResult {
         MemorySearchResult {
             chunk_id: "test:0".into(),
@@ -237,10 +233,6 @@ mod tests {
         assert!(!conversation_has_memory_context(&[]));
     }
 
-    // -----------------------------------------------------------------------
-    // staleness annotation tests
-    // -----------------------------------------------------------------------
-
     #[test]
     fn test_staleness_shown_for_old_session_result() {
         let now = std::time::SystemTime::now()
@@ -287,10 +279,6 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------------
-    // is_greeting tests
-    // -----------------------------------------------------------------------
-
     #[test]
     fn test_greeting_detection() {
         assert!(is_greeting("hi"));
@@ -308,10 +296,6 @@ mod tests {
         assert!(!is_greeting("what does this function do"));
         assert!(!is_greeting("hi there, can you help me with something"));
     }
-
-    // -----------------------------------------------------------------------
-    // Injection counter semantics tests
-    // -----------------------------------------------------------------------
 
     /// `format_memory_reminder` returns `None` for an empty result list.
     ///

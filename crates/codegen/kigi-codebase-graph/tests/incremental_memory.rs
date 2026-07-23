@@ -1,29 +1,20 @@
 //! Isolated RSS test for incremental reindexing.
 //!
-//! This test lives in its own integration-test file (and therefore its own
-//! Bazel `rust_test` target / process) so that its whole-process RSS samples
-//! are not polluted by the other allocation-heavy tests in
-//! `memory_integration.rs` (e.g. `test_fresh_build_rss`,
-//! `test_build_batch_peak_rss_is_bounded`, `test_compact_reduces_rss_vs_uncompacted`).
+//! `libtest` runs a test binary's tests concurrently across `num_cpus` threads,
+//! but VmRSS is measured per-*process*. Sharing a binary with the other
+//! allocation-heavy tests in `memory_integration.rs` made this test observe
+//! their allocator churn, intermittently pushing the measured incremental
+//! growth delta over the 20 MB budget on aarch64 fastbuild CI (~31 MB).
 //!
-//! Background: `libtest` runs tests in a single binary concurrently across
-//! `num_cpus` threads, and VmRSS is measured per-*process*. When this test
-//! ran inside `memory_integration.rs` it observed allocator churn from the
-//! other tests on the same process, intermittently pushing the measured
-//! "incremental growth" delta over the 20 MB budget on aarch64 fastbuild CI
-//! (`run_1_of_2` and `run_2_of_2` both failed at ~31 MB).
-//!
-//! Keep this file to a single test. If you need to add another RSS-sensitive
-//! test, give it its own file too rather than reintroducing the
-//! noisy-neighbor problem.
+//! Hence its own integration-test file, and therefore its own Bazel
+//! `rust_test` target and process. Keep this file to a single test; any other
+//! RSS-sensitive test needs a file of its own rather than a noisy neighbor.
 
 use kigi_codebase_graph::{FileEvent, IndexManager, IndexManagerConfig};
 use std::fs;
 use std::path::Path;
 use tempfile::tempdir;
 
-/// Read current process RSS in bytes. Supports Linux and macOS.
-/// Returns `None` on unsupported platforms.
 fn rss_bytes() -> Option<usize> {
     #[cfg(target_os = "linux")]
     {
@@ -65,7 +56,6 @@ fn fmt_rss(rss: Option<f64>) -> String {
     rss.map_or("N/A".to_string(), |v| format!("{:.1}MB", v))
 }
 
-/// Create N Rust source files in `dir`, each with `defs_per_file` function defs.
 fn create_rust_files(dir: &Path, count: usize, defs_per_file: usize) {
     for i in 0..count {
         let mut content = String::new();
@@ -122,7 +112,6 @@ fn test_bulk_incremental_indexing_memory() {
     );
     println!("RSS after incremental: {}", fmt_rss(rss_after_incremental));
 
-    // Incremental reindexing should not grow memory significantly.
     if let (Some(after_inc), Some(after_build)) = (rss_after_incremental, rss_after_build) {
         let growth = after_inc - after_build;
         assert!(

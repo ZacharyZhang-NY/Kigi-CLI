@@ -22,31 +22,24 @@ pub use lsp_diagnostics::LspDiagnosticsReminder;
 pub use skill_discovery::SkillDiscoveryReminder;
 pub use task_completion::TaskCompletionReminder;
 
-/// The default system-reminder tag name (hyphen).
 pub const DEFAULT_REMINDER_TAG: &str = "system-reminder";
 
-/// Wrap plain text in `<system-reminder>` tags (default hyphen variant).
-///
-/// Input:  `"Some reminder text"`
-/// Output: `"<system-reminder>\nSome reminder text\n</system-reminder>"`
+/// Wrap `text` in the default hyphen tag, [`DEFAULT_REMINDER_TAG`].
 pub fn wrap_reminder(text: &str) -> String {
     wrap_reminder_with_tag(text, DEFAULT_REMINDER_TAG)
 }
 
-/// Wrap plain text in a configurable reminder wrapper.
-///
-/// Use [`DEFAULT_REMINDER_TAG`] unless the harness requires a different
-/// tag name (harness-specific tags live with the harness crate).
+/// Prefer [`DEFAULT_REMINDER_TAG`] unless the harness needs a different tag
+/// name; harness-specific tags live with the harness crate.
 pub fn wrap_reminder_with_tag(text: &str, tag: &str) -> String {
     format!("<{tag}>\n{text}\n</{tag}>")
 }
 
-/// Frame a scheduled task prompt with `<system-reminder>` context for the model.
+/// Frame a scheduled-task prompt with `<system-reminder>` context.
 ///
-/// The raw `prompt` is what the user wrote in `/loop`; this wrapping tells
-/// the model the message is a recurring task execution so it executes
-/// rather than questioning the prompt. The UI shows the raw prompt text;
-/// only the model receives this framed version.
+/// The raw `prompt` is what the user wrote in `/loop`; the framing tells the
+/// model this is a recurring task to execute, not to question. The UI shows
+/// the raw prompt; only the model receives this framed version.
 pub fn format_scheduled_task_prompt(prompt: &str, task_id: &str, human_schedule: &str) -> String {
     format!(
         "<system-reminder>\n\
@@ -61,15 +54,8 @@ pub fn format_scheduled_task_prompt(prompt: &str, task_id: &str, human_schedule:
     )
 }
 
-/// Append wrapped reminders to a tool output string.
-/// Returns output unchanged if reminders is empty.
-///
-/// Each reminder is individually wrapped via
-/// [`wrap_reminder_with_tag`] using the given `tag`, then all are joined
-/// with `"\n\n"` and appended to the output with a `"\n\n"` separator.
-///
-/// Use [`DEFAULT_REMINDER_TAG`] unless the harness requires a different
-/// tag name.
+/// Wrap each reminder and append the block to `output`, separated by blank
+/// lines. Returns `output` unchanged when there are no reminders.
 pub fn format_with_reminders(output: String, reminders: Vec<String>, tag: &str) -> String {
     if reminders.is_empty() {
         return output;

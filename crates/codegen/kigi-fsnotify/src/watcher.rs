@@ -101,7 +101,7 @@ fn is_git_path_for_watcher(path: &Path) -> bool {
 }
 
 /// Sapling analogue of [`is_git_path_for_watcher`]: lets **only** `.sl/wlock`
-/// through. `.sl/dirstate` is intentionally not watched — it is read on demand,
+/// through. `.sl/dirstate` is deliberately not watched — it is read on demand,
 /// because a read-only `sl status` rewrites dirstate without moving the parent,
 /// so watching it would turn every status into a refresh storm. Forward-slash
 /// only, like its git sibling.
@@ -466,7 +466,8 @@ fn scan_per_dir_updates(
         let is_dir = p.symlink_metadata().is_ok_and(|m| m.file_type().is_dir());
         if is_dir {
             if structural {
-                pruned.push(p.clone()); // Re-arm a possibly-dead watch.
+                // Re-arm a possibly-dead watch.
+                pruned.push(p.clone());
             }
             added.push(p.clone());
         } else {
@@ -550,7 +551,8 @@ fn passes_custom_globs(
 /// symlinks (so watches can't leave the workspace via a symlinked dir).
 fn ignore_walker(root: &Path, max_depth: Option<usize>) -> ignore::Walk {
     WalkBuilder::new(root)
-        .hidden(false) // Let gitignore, not the leading dot, decide.
+        // Let gitignore, not the leading dot, decide.
+        .hidden(false)
         .git_ignore(true)
         .git_global(true)
         .git_exclude(true)
@@ -594,7 +596,8 @@ fn select_top_level_watch_dirs_capped(
     let mut dirs = Vec::new();
     for entry in ignore_walker(root, Some(1)).flatten() {
         if entry.depth() == 0 {
-            continue; // `root` itself.
+            // `root` itself.
+            continue;
         }
         let path = entry.path();
         if !entry.file_type().is_some_and(|ft| ft.is_dir()) {
@@ -607,7 +610,8 @@ fn select_top_level_watch_dirs_capped(
         }
         if passes_custom_globs(path, custom_ignore, custom_include) {
             if dirs.len() == max {
-                return None; // one past the cap
+                // one past the cap
+                return None;
             }
             dirs.push(path.to_path_buf());
         }
@@ -626,7 +630,8 @@ fn pruning_walker(
 ) -> ignore::Walk {
     let mut walker = WalkBuilder::new(root);
     walker
-        .hidden(false) // Let gitignore, not the leading dot, decide.
+        // Let gitignore, not the leading dot, decide.
+        .hidden(false)
         .git_ignore(true)
         .git_global(true)
         .git_exclude(true)
@@ -636,11 +641,13 @@ fn pruning_walker(
     let custom_include = custom_include.clone();
     walker.filter_entry(move |entry| {
         if !entry.file_type().is_some_and(|ft| ft.is_dir()) {
-            return true; // Files pass here; callers filter them separately.
+            // Files pass here; callers filter them separately.
+            return true;
         }
         let path = entry.path();
         if dir_named(path, ".git") || dir_named(path, ".sl") {
-            return false; // VCS metadata is watched separately (or not at all).
+            // VCS metadata is watched separately (or not at all).
+            return false;
         }
         passes_custom_globs(path, &custom_ignore, &custom_include)
     });
@@ -892,7 +899,8 @@ fn prune_subtree_watches(
         .cloned()
         .collect();
     for dir in stale {
-        let _ = debouncer.unwatch(&dir); // Usually already gone; errors expected.
+        // Usually already gone; errors expected.
+        let _ = debouncer.unwatch(&dir);
         watched.remove(&dir);
     }
 }
@@ -1121,7 +1129,8 @@ pub(crate) fn start_with_timeout(
                         let (head, tail): (Vec<PathBuf>, Vec<PathBuf>) = dirs
                             .into_iter()
                             .partition(|d| d.parent() == Some(watch_path.as_path()));
-                        pending_dirs = tail.into(); // Still shallow-first.
+                        // Still shallow-first.
+                        pending_dirs = tail.into();
                         head
                     } else {
                         dirs
@@ -1420,11 +1429,9 @@ mod tests {
         assert_eq!(map_event_kind(&EventKind::Other), None);
     }
 
-    // ========================================================================
     // Integration tests with real filesystem and debouncer
     // These tests are serialized because macOS FSEvents has limited resources
     // when many watchers are created simultaneously.
-    // ========================================================================
 
     mod integration {
         use super::*;
@@ -1706,7 +1713,8 @@ mod tests {
             let watch_path = dunce::canonicalize(temp_dir.path()).unwrap();
 
             let config = FsNotifyConfig {
-                debounce_ms: 50, // Slightly longer debounce to batch events
+                // Slightly longer debounce to batch events
+                debounce_ms: 50,
                 ignore_patterns: vec![],
             };
 
@@ -1873,7 +1881,8 @@ mod tests {
             };
 
             let (mut rx, handle) = start_with_retry(watch_path.clone(), config).unwrap();
-            let _ = collect_events(&mut rx); // drain startup stragglers
+            // drain startup stragglers
+            let _ = collect_events(&mut rx);
 
             // Drop joins the watcher thread, which drops the debouncer and the
             // event sender. Run it on a watchdog thread so a broken Shutdown
@@ -1896,7 +1905,8 @@ mod tests {
             let disconnected = loop {
                 match rx.try_recv() {
                     Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => break true,
-                    Ok(_) => {} // drain any straggler before disconnect
+                    // drain any straggler before disconnect
+                    Ok(_) => {}
                     Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
                         if std::time::Instant::now() >= deadline {
                             break false;
@@ -2015,7 +2025,8 @@ mod tests {
 
         #[test]
         #[serial]
-        #[ignore] // Flaky on macOS due to recursive watcher behavior
+        // Flaky on macOS due to recursive watcher behavior
+        #[ignore]
         fn test_debouncer_git_directory_ignored() {
             // .git directory contents should always be ignored
             let temp_dir = TempDir::new().unwrap();
@@ -2373,8 +2384,8 @@ mod tests {
             );
         }
 
-        // ── per-dir strategy (Linux default; forced here so it runs on any
-        //    platform without process-global env races) ──────────────────────
+        // per-dir strategy (Linux default; forced here so it runs on any
+        // platform without process-global env races)
 
         /// Watch-count accounting: nested gitignored dirs cost zero watches
         /// and `.git` costs a handful, not one per internal dir.
@@ -2545,9 +2556,7 @@ mod tests {
         }
     }
 
-    // ========================================================================
     // Unit tests for merge_events and build_globsets
-    // ========================================================================
 
     mod merge_events_tests {
         use super::*;
@@ -3517,7 +3526,8 @@ mod tests {
             let temp = TempDir::new().unwrap();
             let new_dir = temp.path().join("new");
             fs::create_dir(&new_dir).unwrap();
-            let old_dir = temp.path().join("old"); // never created — "moved away"
+            // never created — "moved away"
+            let old_dir = temp.path().join("old");
 
             let mut pruned = Vec::new();
             let mut added = Vec::new();
@@ -3663,7 +3673,8 @@ mod tests {
             // A `.git` SYMLINK to an external (non-git) dir must NOT be followed
             // and watched: the cheap dir branch is gated on a real (non-symlink)
             // dir, and git validation rejects the target.
-            let external = TempDir::new().unwrap(); // stands in for ~/.ssh, /etc
+            // stands in for ~/.ssh, /etc
+            let external = TempDir::new().unwrap();
             let proj = TempDir::new().unwrap();
             std::os::unix::fs::symlink(external.path(), proj.path().join(".git")).unwrap();
 

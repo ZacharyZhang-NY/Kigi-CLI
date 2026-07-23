@@ -4,7 +4,7 @@
 //! `kigi-workspace`. Types not yet migrated here live next to their
 //! `WorkspaceOp` impls in that crate; each type has exactly one
 //! [`WorkspaceRpc`] impl. [`RpcError`]-code-to-error-enum mapping is
-//! deliberately not defined here.
+//! Deliberately not defined here.
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;

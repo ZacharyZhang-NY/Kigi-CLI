@@ -328,8 +328,8 @@ async fn mid_turn_completion_reaches_the_seam_via_the_goal_inactive_break() {
                 "classifier-disabled fast path completes mid-turn"
             );
 
-            // The in-turn loop's !goal_active break now consults the seam:
-            // the graph must advance to node 2 instead of stranding Active.
+            // The in-turn loop's !goal_active break consults the seam: the
+            // graph must advance to node 2 instead of stranding Active.
             let next = actor
                 .run_graph_round_end()
                 .await
@@ -710,7 +710,7 @@ async fn graph_status_renders_glyphs_deps_tokens_and_pause() {
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
 
-// ── G1: parallel fan-out ────────────────────────────────────────────
+// G1: parallel fan-out
 
 /// One captured harness spawn, for post-hoc assertions.
 #[derive(Debug, Clone)]
@@ -1458,7 +1458,7 @@ async fn budget_top_up_resumes_a_budget_limited_graph_to_completion() {
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
 
-// ── handle_prompt-level coverage (real interception wiring) ────────────
+// handle_prompt-level coverage (real interception wiring)
 
 fn agent_text(n: &acp::SessionNotification) -> Option<String> {
     match &n.update {
@@ -1620,7 +1620,7 @@ async fn graph_slash_terminal_outcomes_through_handle_prompt() {
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
 
-// ── G3: dynamic replan ─────────────────────────────────────────────
+// G3: dynamic replan
 
 /// Route replies for the replan flow: planner writes the diamond,
 /// node-a's worker reports a discovery, the replanner appends a `docs`
@@ -1736,7 +1736,6 @@ async fn discovery_triggers_replan_and_appended_node_runs_to_achieved() {
                 actor.graph_tracker.lock().status(),
                 Some(GoalStatus::Complete)
             );
-            // Exactly one replanner spawn.
             let replans = captured
                 .lock()
                 .unwrap()
@@ -1801,7 +1800,7 @@ async fn replan_cap_zero_drains_discoveries_to_history_and_converges() {
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
 
-// ── G4: project-level shared graph ─────────────────────────────────
+// G4: project-level shared graph
 
 #[tokio::test(flavor = "current_thread")]
 #[serial]
@@ -1893,7 +1892,7 @@ async fn project_graph_revives_in_a_fresh_session_and_write_lock_is_exclusive() 
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
 
-// ── G5: /graph show DAG rendering ──────────────────────────────────
+// G5: /graph show DAG rendering
 
 #[tokio::test(flavor = "current_thread")]
 #[serial]
@@ -1952,7 +1951,7 @@ async fn graph_show_renders_dag_through_handle_prompt() {
     unsafe { std::env::remove_var(ENV_FLAG) };
 }
 
-// ── G6: topology optimizer ─────────────────────────────────────────
+// G6: topology optimizer
 
 /// Chain a→b→c where b's dep on a is FALSE; the optimizer removes it,
 /// unlocking a+b as parallel roots — proven by the held-reply fan-out
@@ -2090,7 +2089,8 @@ async fn optimizer_skips_when_shared_cap_is_exhausted() {
             );
             actor.tool_context.subagent_event_tx = Some(coord_tx);
             actor.graph_optimizer_enabled = true;
-            actor.graph_replan_cap = 0; // shared cap already exhausted
+            // shared cap already exhausted
+            actor.graph_replan_cap = 0;
             let _ = actor.setup_graph("chain", None).await;
             let passes = captured
                 .lock()

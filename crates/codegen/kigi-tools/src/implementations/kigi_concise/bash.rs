@@ -29,11 +29,9 @@ fn annotations(bash: &BashOutput) -> String {
     s
 }
 
-/// CONCISE foreground format: `Exit code: N [annotations]\n\nCommand output:\n\n```...```\n\nCommand completed.\n...`
-///
 /// When the process was killed by the harness or a kernel signal
-/// (see [`KillReason`]), the header reads
-/// `Exit code: killed (reason)` instead of `Exit code: -1 [signal=…]`.
+/// (see [`KillReason`]), the header reads `Exit code: killed (reason)`
+/// instead of `Exit code: -1 [signal=…]`.
 fn format_concise_foreground_prompt(bash: &BashOutput) -> String {
     let raw = String::from_utf8_lossy(&bash.output);
     let output_str = strip_str(&raw).to_string();
@@ -57,7 +55,6 @@ fn format_concise_foreground_prompt(bash: &BashOutput) -> String {
     )
 }
 
-/// CONCISE backgrounded format: same as DEFAULT backgrounded (code-fenced partial output).
 fn format_concise_background_prompt(bash: &BashOutput) -> String {
     let raw = String::from_utf8_lossy(&bash.output);
     let output_str = strip_str(&raw).to_string();
@@ -77,7 +74,7 @@ fn format_concise_background_prompt(bash: &BashOutput) -> String {
 /// Concise variant of `BashTool`.
 ///
 /// Delegates to `BashTool::run()`, then overwrites `output_for_prompt` with
-/// the concise format. The `concise` concept lives entirely in this file.
+/// the concise format.
 #[derive(Debug, Default)]
 pub struct BashConciseTool;
 
@@ -262,14 +259,11 @@ mod tests {
         // output_for_prompt, then BashConciseTool overwrites with concise.
         // to_prompt_format() is a passthrough — it must NOT add another header.
         let mut bash = make_bash(0, "hello world\n");
-        // Pre-bake DEFAULT (what BashTool::run() does)
         bash.output_for_prompt = crate::implementations::kigi::bash::format_default_prompt(&bash);
         assert!(bash.output_for_prompt.starts_with("exit: 0"));
 
-        // Concise post-processing (what BashConciseTool::run() does)
         bash.output_for_prompt = format_concise_foreground_prompt(&bash);
 
-        // to_prompt_format() is a passthrough
         let prompt = crate::types::output::ToolOutput::Bash(bash).to_prompt_format();
         assert!(
             prompt.starts_with("Exit code: 0"),

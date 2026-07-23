@@ -111,7 +111,7 @@ const _: () = assert!(
 
 /// Maps `(CapabilityMode, ToolKind)` -> kept-or-dropped.
 ///
-/// This `match` is intentionally exhaustive: when `ToolKind` gains a
+/// This `match` is deliberately exhaustive: when `ToolKind` gains a
 /// new variant the compiler errors here, forcing a triage decision.
 pub(crate) fn kind_allowed(mode: CapabilityMode, kind: ToolKind) -> bool {
     use CapabilityMode as M;
@@ -157,9 +157,7 @@ pub(crate) fn kind_allowed(mode: CapabilityMode, kind: ToolKind) -> bool {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -285,9 +283,7 @@ mod tests {
         }
     }
 
-    // -----------------------------------------------------------------------
     // is_subset_of partial order
-    // -----------------------------------------------------------------------
 
     #[test]
     fn capability_mode_is_subset_of_reflexive() {

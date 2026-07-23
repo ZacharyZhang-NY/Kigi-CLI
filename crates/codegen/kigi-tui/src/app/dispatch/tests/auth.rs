@@ -2,8 +2,6 @@
 
 use super::*;
 
-// ── agent-bound kinds (bash) ─────────
-
 /// A bash command typed while a turn is RUNNING takes the
 /// server-authoritative immediate path (Effect + optimistic echo, no local
 /// queue entry).
@@ -23,9 +21,7 @@ fn bash_while_running_is_server_authoritative() {
         }
         other => panic!("expected immediate SendBashCommand, got {other:?}"),
     };
-    // Not in the local queue.
     assert_eq!(app.agents[&id].session.queue_len(), 0);
-    // Optimistic echo present with kind="bash".
     let q = app
         .shared_prompt_queue("test-session")
         .expect("echo present");
@@ -54,8 +50,8 @@ fn auth_complete_triggers_bundle_status_fetch() {
     );
 
     assert!(matches!(app.auth_state, AuthState::Done));
-    // Pager only refreshes the on-disk catalog snapshot; the actual
-    // bundle download now runs inside the shell post-auth.
+    // Pager only refreshes the on-disk catalog snapshot; the bundle
+    // download runs inside the shell post-auth.
     assert!(
         effects
             .iter()

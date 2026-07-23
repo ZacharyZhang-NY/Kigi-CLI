@@ -35,19 +35,14 @@ fn role_binary(env_key: &str) -> PathBuf {
     kigi_binary()
 }
 
-/// Binary for the leader-electing side of a version-skew test
-/// (`KIGI_BINARY_LEADER`, else the shared [`kigi_binary`] resolution).
 pub fn leader_binary() -> PathBuf {
     role_binary(LEADER_BINARY_ENV)
 }
 
-/// Binary for the client side of a version-skew test (`KIGI_BINARY_CLIENT`,
-/// else the shared [`kigi_binary`] resolution).
 pub fn client_binary() -> PathBuf {
     role_binary(CLIENT_BINARY_ENV)
 }
 
-/// Capture for notifications + reconnect signals.
 #[derive(Default)]
 pub struct Capture {
     chunks: std::sync::Mutex<Vec<String>>,
@@ -296,10 +291,11 @@ pub fn read_leader_pid(home: &Path) -> Option<u32> {
 }
 
 pub fn pid_alive(pid: u32) -> bool {
+    // SAFETY: `kill` with signal 0 delivers nothing and only probes whether the
+    // process exists; every `pid` value is a valid argument.
     unsafe { libc::kill(pid as i32, 0) == 0 }
 }
 
-/// Wait until the leader lock file contains a live PID, return it.
 pub async fn wait_for_live_leader(home: &Path, timeout: Duration) -> Option<u32> {
     let deadline = tokio::time::Instant::now() + timeout;
     while tokio::time::Instant::now() < deadline {
@@ -313,7 +309,6 @@ pub async fn wait_for_live_leader(home: &Path, timeout: Duration) -> Option<u32>
     None
 }
 
-/// Wait until the leader lock file contains a live PID *different* from `old_pid`.
 pub async fn wait_for_new_leader(home: &Path, old_pid: u32, timeout: Duration) -> Option<u32> {
     let deadline = tokio::time::Instant::now() + timeout;
     while tokio::time::Instant::now() < deadline {

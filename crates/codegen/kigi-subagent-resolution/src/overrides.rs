@@ -45,19 +45,19 @@ pub fn resolve_effective_overrides(
     cwd: Option<&Path>,
     role_name: Option<String>,
 ) -> EffectiveRuntimeConfig {
-    // ── Model resolution ─────────────────────────────────────────
+    // Model resolution
     let model_from_override_or_role = overrides
         .model
         .clone()
         .or_else(|| role.and_then(|r| r.model.clone()));
 
-    // ── Reasoning effort resolution ──────────────────────────────
+    // Reasoning effort resolution
     let reasoning_from_override_or_role = overrides
         .reasoning_effort
         .clone()
         .or_else(|| role.and_then(|r| r.reasoning_effort.clone()));
 
-    // ── Capability mode resolution ───────────────────────────────
+    // Capability mode resolution
     let capability_mode = overrides.capability_mode.or_else(|| {
         role.and_then(|r| {
             r.default_capability_mode
@@ -66,7 +66,7 @@ pub fn resolve_effective_overrides(
         })
     });
 
-    // ── Persona resolution ───────────────────────────────────────
+    // Persona resolution
     let persona = overrides.persona.clone();
     let resolved_persona = persona.as_deref().and_then(|name| personas.get(name));
 
@@ -76,7 +76,7 @@ pub fn resolve_effective_overrides(
     let reasoning_effort = reasoning_from_override_or_role
         .or_else(|| resolved_persona.and_then(|p| p.reasoning_effort.clone()));
 
-    // ── Persona instructions loading ─────────────────────────────
+    // Persona instructions loading
     // Fail-closed: if persona resolution produces an error (file unreadable,
     // not found, empty), return early with only persona + error populated.
     // All other fields are defaulted. This matches the shell's behavior where
@@ -96,7 +96,7 @@ pub fn resolve_effective_overrides(
         };
     }
 
-    // ── Role prompt file loading (soft degradation) ──────────────
+    // Role prompt file loading (soft degradation)
     let mut role_prompt_warning = None;
     let role_prompt = role.and_then(|r| {
         let file_path = r.prompt_file.as_deref()?;
@@ -112,7 +112,7 @@ pub fn resolve_effective_overrides(
         }
     });
 
-    // ── Isolation resolution ─────────────────────────────────────
+    // Isolation resolution
     let isolation = overrides
         .isolation
         .or_else(|| {
@@ -156,7 +156,8 @@ fn resolve_persona_instructions(
         return (
             None,
             Some(format!("persona \"{name}\" not found in config")),
-            false, // not fatal — config error, other fields still resolve
+            // not fatal — config error, other fields still resolve
+            false,
         );
     };
 
@@ -176,7 +177,8 @@ fn resolve_persona_instructions(
                         "persona \"{name}\": failed to read instructions_file \
                          \"{file_path}\": {e}"
                     );
-                    return (None, Some(err), true); // fatal — file I/O error
+                    // fatal — file I/O error
+                    return (None, Some(err), true);
                 }
             },
             None => {
@@ -184,7 +186,8 @@ fn resolve_persona_instructions(
                     "persona \"{name}\": cannot resolve instructions_file \
                      \"{file_path}\": no source_dir or cwd available"
                 );
-                return (None, Some(err), true); // fatal — unresolvable path
+                // fatal — unresolvable path
+                return (None, Some(err), true);
             }
         }
     }
@@ -195,7 +198,8 @@ fn resolve_persona_instructions(
             Some(format!(
                 "persona \"{name}\" has no instructions or instructions_file"
             )),
-            false, // not fatal — config error, other fields still resolve
+            // not fatal — config error, other fields still resolve
+            false,
         )
     } else {
         (Some(parts.join("\n\n")), None, false)
@@ -232,7 +236,7 @@ mod tests {
         HashMap::new()
     }
 
-    // ── Precedence tests ─────────────────────────────────────────
+    // Precedence tests
 
     #[test]
     fn explicit_model_overrides_role() {
@@ -329,7 +333,7 @@ mod tests {
         assert!(result.capability_mode.is_none());
     }
 
-    // ── Reasoning effort precedence ──────────────────────────────
+    // Reasoning effort precedence
 
     #[test]
     fn explicit_reasoning_effort_overrides_role_and_persona() {
@@ -387,7 +391,7 @@ mod tests {
         assert_eq!(result.reasoning_effort.as_deref(), Some("medium"));
     }
 
-    // ── Isolation precedence ─────────────────────────────────────
+    // Isolation precedence
 
     #[test]
     fn explicit_isolation_overrides_role() {
@@ -426,7 +430,7 @@ mod tests {
         assert_eq!(result.isolation, SubagentIsolationMode::None);
     }
 
-    // ── Persona instruction loading ──────────────────────────────
+    // Persona instruction loading
 
     #[test]
     fn persona_inline_instructions_only() {
@@ -543,7 +547,7 @@ mod tests {
         );
     }
 
-    // ── Role prompt file loading ─────────────────────────────────
+    // Role prompt file loading
 
     #[test]
     fn role_prompt_file_loaded_on_success() {
@@ -581,7 +585,7 @@ mod tests {
         assert!(result.role_prompt_warning.is_some());
     }
 
-    // ── No persona requested ─────────────────────────────────────
+    // No persona requested
 
     #[test]
     fn no_persona_no_instructions() {
@@ -592,7 +596,7 @@ mod tests {
         assert!(result.persona_error.is_none());
     }
 
-    // ── Persona with cwd fallback for instructions_file ──────────
+    // Persona with cwd fallback for instructions_file
 
     #[test]
     fn persona_instructions_file_uses_cwd_when_no_source_dir() {
@@ -619,7 +623,7 @@ mod tests {
         assert!(result.persona_error.is_none());
     }
 
-    // ── Persona error early-return (fail-closed) ─────────────────
+    // Persona error early-return (fail-closed)
 
     #[test]
     fn persona_not_found_error_is_non_fatal() {
@@ -679,7 +683,7 @@ mod tests {
         );
     }
 
-    // ── instructions_file with no base dir ────────────────────────
+    // instructions_file with no base dir
 
     #[test]
     fn persona_instructions_file_no_base_dir_returns_error() {
@@ -704,7 +708,7 @@ mod tests {
         );
     }
 
-    // ── Persona isolation fallback (role has no isolation, persona does) ──
+    // Persona isolation fallback (role has no isolation, persona does)
 
     #[test]
     fn persona_isolation_used_when_no_explicit_or_role() {
@@ -723,7 +727,7 @@ mod tests {
         assert_eq!(result.isolation, SubagentIsolationMode::Worktree);
     }
 
-    // ── Role prompt file cwd fallback ─────────────────────────────
+    // Role prompt file cwd fallback
 
     #[test]
     fn role_prompt_file_uses_cwd_when_no_source_dir() {
@@ -751,7 +755,7 @@ mod tests {
         assert!(result.role_prompt_warning.is_none());
     }
 
-    // ── role_name parameter is threaded through ───────────────────
+    // role_name parameter is threaded through
 
     #[test]
     fn role_name_parameter_threaded_through() {

@@ -18,7 +18,7 @@ mod imp {
     use crate::format::{self, MAX_FILE_SIZE, MAX_FRAMES};
     use crate::terminal;
 
-    // ── Platform-specific ucontext access ────────────────────────────────
+    // Platform-specific ucontext access
     //
     // The libc crate does not expose ucontext_t on macOS. We define minimal
     // repr(C) types covering only the fields we need (PC and frame pointer).
@@ -47,7 +47,8 @@ mod imp {
             let uc = ctx as *const libc::ucontext_t;
             let mc = &(*uc).uc_mcontext;
             let ip = mc.pc as usize;
-            let fp = mc.regs[29] as usize; // x29 = frame pointer
+            // x29 = frame pointer
+            let fp = mc.regs[29] as usize;
             return (ip, fp);
         }
 
@@ -57,9 +58,10 @@ mod imp {
         {
             #[repr(C)]
             struct Arm64ThreadState {
-                regs: [u64; 29], // x0-x28
-                fp: u64,         // x29
-                lr: u64,         // x30
+                // x0-x28
+                regs: [u64; 29],
+                fp: u64,
+                lr: u64,
                 sp: u64,
                 pc: u64,
                 cpsr: u32,
@@ -67,7 +69,8 @@ mod imp {
             }
             #[repr(C)]
             struct MachMcontext {
-                _es: [u8; 16], // __darwin_arm_exception_state64 (far:u64 + esr:u32 + exception:u32)
+                // __darwin_arm_exception_state64 (far:u64 + esr:u32 + exception:u32)
+                _es: [u8; 16],
                 ss: Arm64ThreadState,
                 // neon state follows but we don't need it
             }
@@ -119,7 +122,8 @@ mod imp {
             }
             #[repr(C)]
             struct MachMcontext {
-                _es: [u8; 16], // __darwin_x86_exception_state64
+                // __darwin_x86_exception_state64
+                _es: [u8; 16],
                 ss: X86ThreadState,
             }
             #[repr(C)]
@@ -568,9 +572,9 @@ mod win {
     /// Map Windows exception code to a Unix signal number for the blob format.
     fn exception_to_signal(code: i32) -> u8 {
         match code {
-            EXCEPTION_IN_PAGE_ERROR => 7,       // SIGBUS
-            EXCEPTION_ILLEGAL_INSTRUCTION => 4, // SIGILL
-            _ => 11,                            // SIGSEGV
+            EXCEPTION_IN_PAGE_ERROR => 7,
+            EXCEPTION_ILLEGAL_INSTRUCTION => 4,
+            _ => 11,
         }
     }
 

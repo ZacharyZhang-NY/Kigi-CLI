@@ -58,8 +58,7 @@ pub fn init_metrics() {
 #[cfg(test)]
 pub(crate) static ENV_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// Crate-shared RAII guard for a single process env var in tests: sets (or
-/// unsets) it on construction and restores the prior value on drop. The ONE
-/// generic env-var guard for the whole crate (replaces the per-module copies).
+/// unsets) it on construction and restores the prior value on drop.
 ///
 /// Hold it together with [`ENV_TEST_LOCK`] for the test's lifetime, acquiring
 /// the lock FIRST so it drops LAST — the env restore (this guard) then runs

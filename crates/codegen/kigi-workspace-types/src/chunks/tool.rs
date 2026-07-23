@@ -91,7 +91,6 @@ pub enum ToolChunk {
 }
 
 impl ToolChunk {
-    /// Discriminator for the current variant.
     pub fn kind(&self) -> ChunkKind {
         match self {
             Self::Output(_) => ChunkKind::ToolOutput,

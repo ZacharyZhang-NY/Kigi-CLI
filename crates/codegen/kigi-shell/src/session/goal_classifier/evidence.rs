@@ -350,10 +350,8 @@ pub(crate) async fn capture_changes_diff(
     //
     // LOG-WIRE: the `"goal classifier: …"` prefix on tracing
     // messages in this file (and in `goal_classifier.rs`) is the
-    // stable string dashboards / log-grep tooling matches on.
-    // Renaming it during the rewire would silently break those
-    // consumers — keep the prefix even though the runtime is now
-    // the skeptic-panel verification stage, not the legacy single classifier.
+    // stable string dashboards / log-grep tooling matches on;
+    // renaming it silently breaks those consumers.
     if let Some(baseline) = baseline_commit {
         match run_git_diff_against_baseline(baseline, workspace_root).await {
             Ok(raw) => return Ok(finish_git_capture(raw, workspace_root).await),
@@ -1570,8 +1568,6 @@ mod tests {
         assert_eq!(truncate_diff(small.clone()), small);
     }
 
-    // ---- capture_changes_diff fallback paths (Bug 1) -----------------
-
     /// Run a `git` subcommand from `cwd`; panic on non-zero exit so
     /// test setup failures are loud. Used to script the lazy-baseline
     /// scenarios below.
@@ -1865,7 +1861,8 @@ mod tests {
     async fn capture_changes_diff_walkdir_includes_file_at_threshold_mtime() {
         // Boundary: mtime == threshold is INCLUDED (`<` not `<=`).
         let tmp = tempfile::tempdir().unwrap();
-        let goal_created_at: i64 = 1_700_000_000; // arbitrary fixed timestamp
+        // arbitrary fixed timestamp
+        let goal_created_at: i64 = 1_700_000_000;
         tokio::fs::write(tmp.path().join("at_threshold.txt"), b"at\n")
             .await
             .unwrap();
@@ -1934,8 +1931,6 @@ mod tests {
         }
     }
 
-    // -- truncate_diff exact boundary tests --
-
     #[tokio::test]
     async fn derive_empty_tree_sha_matches_canonical_sha1() {
         // Pins the canonical SHA-1 empty-tree hash on a default repo.
@@ -1959,7 +1954,8 @@ mod tests {
     fn utf8_truncate_boundary_walks_back_to_valid_char_boundary() {
         // A 3-byte CJK codepoint at the cap edge must be truncated
         // to its start.
-        let buf = b"hello\xe4\xb8\xad"; // "hello中" = 8 bytes
+        // "hello中" = 8 bytes
+        let buf = b"hello\xe4\xb8\xad";
         assert_eq!(utf8_truncate_boundary(buf, 6), 5);
         assert_eq!(utf8_truncate_boundary(buf, 7), 5);
         assert_eq!(utf8_truncate_boundary(buf, 8), 8);

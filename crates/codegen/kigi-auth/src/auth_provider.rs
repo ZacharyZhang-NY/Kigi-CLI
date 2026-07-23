@@ -7,17 +7,16 @@ use reqwest::RequestBuilder;
 
 use crate::visibility::HttpAuth;
 
-/// Snapshot of the currently effective credentials. Used by callers
-/// that build their own header maps (the OTel OTLP exporter) or that
-/// need the bearer prefix for 401-attribution telemetry.
+/// Snapshot of the currently effective credentials, for callers that build
+/// their own header maps (the OTel OTLP exporter) or that need the bearer
+/// prefix for 401-attribution telemetry.
 #[derive(Clone, Debug, Default)]
 pub struct CredentialSnapshot {
-    /// Bearer token. `None` when no auth is configured (CI / `--api-key` headless).
+    /// `None` when no auth is configured (CI / `--api-key` headless).
     pub token: Option<String>,
-    /// User identifier matching the bearer token's owner. `None` when no auth
-    /// is configured or when the underlying provider has no concept of user
-    /// identity (`StaticAuthCredentialProvider`). Read by the OTel layer to
-    /// populate the `user.id` resource attribute.
+    /// Owner of `token`. `None` when no auth is configured or when the
+    /// provider has no concept of user identity
+    /// (`StaticAuthCredentialProvider`).
     pub user_id: Option<String>,
     /// `uuidv5(NAMESPACE_OID, deployment_key)`, set only for deployment-key auth.
     pub deployment_id: Option<String>,
@@ -29,49 +28,42 @@ pub struct CredentialSnapshot {
 ///
 /// Supertrait of `HttpAuth` so a single impl satisfies both this trait
 /// (refresh-aware snapshot + 401 recovery) and the visibility seam
-/// (header construction). Callers add headers via `HttpAuth::apply`.
+/// (header construction).
 #[async_trait::async_trait]
 pub trait AuthCredentialProvider: HttpAuth + Send + Sync + 'static {
-    /// Return the current credential snapshot. Implementations should
-    /// issue a cheap disk re-read (`AuthManager::refresh`) before
-    /// snapshotting so callers see updates from sibling processes
-    /// (`kigi-desktop`, `kigi login`). The `token` field MUST mirror
-    /// the bearer that `HttpAuth::apply` would send on the wire so
-    /// 401-attribution prefixes match the actual request.
+    /// Implementations should issue a cheap disk re-read
+    /// (`AuthManager::refresh`) before snapshotting so callers see updates
+    /// from sibling processes (`kigi-desktop`, `kigi login`). The `token`
+    /// field MUST mirror the bearer that `HttpAuth::apply` would send on the
+    /// wire so 401-attribution prefixes match the actual request.
     fn snapshot(&self) -> CredentialSnapshot;
 
-    /// Attempt to obtain a fresh token. Returns `true` if a different
-    /// token was obtained -- caller should retry the failed request once.
-    /// Returns `false` if no refresher is configured or refresh failed.
+    /// `true` if a different token was obtained, meaning the caller should
+    /// retry the failed request once; `false` if no refresher is configured
+    /// or the refresh failed.
     async fn refresh_after_unauthorized(&self) -> bool;
 
     /// Whether the provider holds a credential worth a real outbound attempt —
-    /// an unexpired token (in memory or on disk), or a static key. Default
-    /// `true` always attempts.
+    /// an unexpired token (in memory or on disk), or a static key.
     fn has_usable_credential(&self) -> bool {
         true
     }
 }
 
-/// Static credential provider. Used by tests and by callers that pass a
-/// raw `&str` token with no `AuthManager` available.
+/// Non-refreshing provider for tests and for callers that pass a raw `&str`
+/// token with no `AuthManager` available.
 ///
-/// `apply()` delegates to the underlying `HttpAuth::apply()`.
-/// `refresh_after_unauthorized()` always returns `false`.
-///
-/// `bearer` is the wire bearer the inner `HttpAuth` will send in the
-/// `Authorization` header. Stored alongside the inner so `snapshot().token`
-/// returns the same prefix that goes out on the wire (used by
-/// 401-attribution telemetry). `None` when no bearer is configured.
+/// `bearer` duplicates whatever `inner` stamps into the `Authorization`
+/// header; it exists so `snapshot().token` reports the same prefix that goes
+/// out on the wire, which 401-attribution telemetry relies on.
 pub struct StaticAuthCredentialProvider {
     inner: Box<dyn HttpAuth>,
     bearer: Option<String>,
 }
 
 impl StaticAuthCredentialProvider {
-    /// Wrap `inner` so callers see it as an `AuthCredentialProvider`. Pass
-    /// the bearer token that `inner.apply()` will send in the `Authorization`
-    /// header so `snapshot().token` reflects the wire bearer truthfully.
+    /// `bearer` must be the token `inner.apply()` sends, or `snapshot()` will
+    /// misreport the wire credential.
     pub fn new(inner: Box<dyn HttpAuth>, bearer: Option<String>) -> Self {
         Self { inner, bearer }
     }

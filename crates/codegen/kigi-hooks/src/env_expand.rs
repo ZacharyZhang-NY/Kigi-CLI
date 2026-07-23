@@ -17,7 +17,7 @@
 //!
 //! * config-load-time expansion is idempotent (re-running it on an already
 //!   expanded string is a no-op),
-//! * vars that are intentionally deferred to runtime (set later by the
+//! * vars that are deliberately deferred to runtime (set later by the
 //!   shell, the dispatcher, or `extra_env`) survive the load-time pass and
 //!   are caught by the runtime pre-flight check in
 //!   [`crate::runner::command`] if they remain unset at execution, and
@@ -111,7 +111,7 @@ fn make_sentinel() -> String {
 ///
 /// Unresolved references are preserved verbatim so this function is safe
 /// to call repeatedly (idempotent on already-expanded strings) and so
-/// references that are intentionally resolved at runtime (e.g. by the
+/// references that are deliberately resolved at runtime (e.g. by the
 /// dispatcher's always-set `KIGI_HOOK_*` vars) survive the load-time pass.
 ///
 /// Parameter-expansion-modifier forms (`${VAR:-x}`, `${VAR%pat}`, etc.)
@@ -126,7 +126,7 @@ pub(crate) fn expand_env_vars_with_extra(input: &str, extra: &HashMap<String, St
     // to appear in the input or in any extra-env value (vanishingly
     // unlikely; would require an adversary to predict our PRNG output),
     // panic in debug builds and fall through to legacy behaviour in
-    // release. Returning the input unchanged is safer than rewriting a
+    // release. Returning the input `unchanged` is safer than rewriting a
     // legitimate substring to `${`.
     debug_assert!(
         !input.contains(&sentinel) && !extra.values().any(|v| v.contains(&sentinel)),
@@ -410,7 +410,7 @@ mod tests {
         assert_eq!(expand_env_vars_with_extra("", &extra), "");
     }
 
-    // ── Parameter-expansion-modifier preservation ───────────────
+    // Parameter-expansion-modifier preservation
 
     /// `${VAR:-default}` must be preserved verbatim, even when `VAR` is
     /// unset at expand time. Otherwise shellexpand resolves to the
@@ -525,7 +525,7 @@ mod tests {
         assert_eq!(out, "/usr/local/${KIGI_HOOKS_DEFER:-/fallback}");
     }
 
-    // ── Set-but-empty regression test ────────────────────────────
+    // Set-but-empty regression test
 
     /// When the var is set in `extra` but to the empty string, the
     /// no-modifier form `${VAR}` resolves to "" (matching shellexpand's
@@ -553,7 +553,7 @@ mod tests {
         assert_eq!(out, input);
     }
 
-    // ── Single-pass expansion (no recursion) ────────────────────
+    // Single-pass expansion (no recursion)
 
     /// A value in `extra` that itself contains a `$VAR` reference must
     /// NOT be re-expanded. Recursion would be a DoS vector and a
@@ -577,7 +577,7 @@ mod tests {
         );
     }
 
-    // ── mask_modifier_forms helper unit tests ────────────────────
+    // mask_modifier_forms helper unit tests
 
     /// A fixed test-only sentinel used to make the masked-output
     /// assertions deterministic. Production code uses [`make_sentinel`]
@@ -623,7 +623,7 @@ mod tests {
         assert_eq!(masked, expected);
     }
 
-    // ── Nested / interleaved edge cases ─────────────────────────
+    // Nested / interleaved edge cases
 
     /// Two consecutive modifier forms with no
     /// intervening text. Both must be masked independently.
@@ -667,7 +667,7 @@ mod tests {
         assert_eq!(masked, "${A}${B:-");
     }
 
-    // ── Sentinel collision regression ──────────────────────────
+    // Sentinel collision regression
 
     /// The previous sentinel was `\x00\x00`. If a
     /// future change reverted to that sentinel, an `extra_env` value
@@ -677,7 +677,7 @@ mod tests {
     /// vanishingly unlikely to collide. This regression test
     /// constructs an input containing the OLD `\x00\x00` sequence
     /// AND a value containing the OLD sequence in `extra_env`, and
-    /// asserts both pass through unchanged.
+    /// asserts both pass through `unchanged`.
     #[test]
     fn mask_helper_preserves_pre_existing_old_nul_sentinel() {
         // The OLD sentinel as a literal in the input.
@@ -752,7 +752,7 @@ mod tests {
         assert_eq!(out, format!("X={exotic}"));
     }
 
-    // ── iter_env_var_references unit tests ───────────────────────
+    // iter_env_var_references unit tests
 
     /// Lock down the iterator output for a single braced plain form.
     #[test]

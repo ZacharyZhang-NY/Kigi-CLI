@@ -3,7 +3,7 @@
 //! All scenarios build ~12k total dirs so inotify-watch creation cost is
 //! comparable across them:
 //!
-//! - `favorable` — most dirs live in a gitignored `target/` the new code skips.
+//! - `favorable` — most dirs live in a gitignored `target/` that fan-out skips.
 //! - `fanout_w48_with_target` — 48 non-ignored top-level children PLUS a
 //!   gitignored `target/`: a realistic moderate-width repo that fans out and
 //!   skips the build dir (net win).
@@ -38,8 +38,8 @@ fn make_dirs(base: &Path, count: usize) {
     }
 }
 
-/// Favorable: three watched subtrees plus a large gitignored `target/` holding
-/// ~2/3 of the dirs. Kept at ~`TOTAL_DIRS` for comparability with the others.
+/// Three watched subtrees plus a large gitignored `target/` holding ~2/3 of
+/// the dirs, totalling ~`TOTAL_DIRS` for comparability with the other shapes.
 fn build_favorable_tree() -> TempDir {
     let temp = TempDir::new().unwrap();
     let root = temp.path();

@@ -59,7 +59,6 @@ impl KigiAuthCredentials {
         self.auth_manager = Some(am);
         self
     }
-    /// Return a reference to the internal `AuthManager`, if any.
     pub fn auth_manager(&self) -> Option<&Arc<crate::auth::AuthManager>> {
         self.auth_manager.as_ref()
     }

@@ -10,8 +10,6 @@ use crate::views::file_search::line_viewer::LineViewerState;
 use crossterm::event::{KeyCode, KeyEvent};
 
 impl AgentView {
-    // -- Agents modal input handling --
-
     pub(super) fn handle_agents_modal_key(
         &mut self,
         key: &crossterm::event::KeyEvent,
@@ -102,8 +100,6 @@ impl AgentView {
         }
     }
 
-    // -- Persona detail modal input handling --
-
     pub(super) fn handle_persona_detail_key(
         &mut self,
         key: &crossterm::event::KeyEvent,
@@ -155,8 +151,6 @@ impl AgentView {
             }
         }
     }
-
-    // -- Hooks/plugins modal input handling --
 
     pub(super) fn handle_extensions_modal_key(
         &mut self,
@@ -218,7 +212,6 @@ impl AgentView {
             };
         }
 
-        // If in input mode, route to input handler.
         if self
             .extensions_modal
             .as_ref()
@@ -366,7 +359,6 @@ impl AgentView {
             }
         }
 
-        // Delegate navigation/search/tab/filter/action to handle_picker_input.
         let Some(state) = self.extensions_modal.as_mut() else {
             return InputOutcome::Changed;
         };
@@ -439,8 +431,6 @@ impl AgentView {
             &config,
         );
 
-        // Search state now lives directly in picker_state (no sync needed).
-
         match outcome {
             crate::views::picker::PickerOutcome::Closed => {
                 self.extensions_modal = None;
@@ -472,7 +462,6 @@ impl AgentView {
                         }
                         _ => {}
                     }
-                    // Reset selection after filter change.
                     state.picker_state.selected = 0;
                     state.picker_state.scroll_offset = None;
                     state.picker_state.tabs_focused = false;
@@ -634,7 +623,8 @@ impl AgentView {
                         None
                     }
                 }
-                _ => None, // Unhandled — fall through to picker
+                // Unhandled — fall through to picker
+                _ => None,
             }
         };
         // Dispatch shortcut click (if any) now that the &mut borrow is released.
@@ -709,7 +699,8 @@ impl AgentView {
             crate::views::extensions_modal::ExtensionsTab::McpServers => state.mcps_filter,
             _ => crate::views::extensions_modal::StatusFilter::All,
         };
-        let action_keys: Vec<(char, &str)> = vec![]; // No action keys for mouse
+        // No action keys for mouse
+        let action_keys: Vec<(char, &str)> = vec![];
         let entry_count = state.entry_data_indices.len();
         let non_selectable_owned = Self::extensions_modal_non_selectable_mask(state, entry_count);
         let non_selectable = &non_selectable_owned;
@@ -904,13 +895,11 @@ impl AgentView {
 
         if let Some(gk) = group_key {
             let is_expanded = state.is_group_expanded(sel, &gk);
-            // `set_collapsed`'s third arg is the NEW collapsed state.
-            // When currently expanded → new state is collapsed (true);
-            // when currently collapsed → new state is expanded (false).
-            // That value equals `is_expanded` directly. Using `!is_expanded`
-            // (the previous code) made `e`/Enter/Space/click into a no-op
-            // for every collapsible header (MCP servers and hooks
-            // groups).
+            // `set_collapsed`'s third arg is the NEW collapsed state:
+            // currently expanded → collapse (true); currently collapsed →
+            // expand (false). That value equals `is_expanded` directly.
+            // Passing `!is_expanded` makes `e`/Enter/Space/click a no-op for
+            // every collapsible header (MCP servers and hooks groups).
             self.extensions_modal_set_collapsed(sel, &gk, is_expanded);
         } else {
             // Leaf item: toggle detail fields.
@@ -921,7 +910,6 @@ impl AgentView {
         }
     }
 
-    /// Set the collapsed state for a group key in the extensions modal.
     fn extensions_modal_set_collapsed(
         &mut self,
         sel: usize,
@@ -1149,7 +1137,6 @@ impl AgentView {
                 }
             }
             ButtonAction::RemoveSelectedHook => {
-                // Remove the hook source_dir of the currently selected hook.
                 if let Some(ref state) = self.extensions_modal {
                     use crate::views::extensions_modal::TabDataState;
                     if let TabDataState::Loaded(ref data) = state.hooks_data

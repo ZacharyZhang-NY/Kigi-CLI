@@ -242,7 +242,7 @@ fn extract_model_metadata(headers: &reqwest::header::HeaderMap) -> Option<Respon
 /// `stream_options` fields without modifying the original `ChatCompletionRequest`.
 ///
 /// Uses `#[serde(flatten)]` to inline all fields from the inner request,
-/// allowing single-pass serialization instead of the previous two-pass
+/// allowing single-pass serialization instead of a two-pass
 /// approach (serialize to `Value`, mutate, serialize to bytes).
 #[derive(Serialize)]
 struct StreamingChatRequest<'a> {
@@ -309,9 +309,7 @@ struct ClientDefaults {
     openai_codex: bool,
 }
 
-// =============================================================================
 // User-Agent helpers
-// =============================================================================
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct PlatformInfo {
@@ -378,9 +376,7 @@ pub fn user_agent_string_for(origin: &OriginClientInfo) -> String {
     }
 }
 
-// =============================================================================
 // SamplingClient
-// =============================================================================
 
 impl SamplingClient {
     /// Construct a sampling client from a [`SamplerConfig`].
@@ -888,9 +884,7 @@ impl SamplingClient {
         Ok(completion)
     }
 
-    // =========================================================================
     // Chat Completions API
-    // =========================================================================
 
     pub async fn chat_completion(
         &self,
@@ -1113,9 +1107,7 @@ impl SamplingClient {
         Ok((chunks, model_metadata))
     }
 
-    // =========================================================================
     // Responses API
-    // =========================================================================
 
     /// Apply default configuration to a Responses API request.
     fn apply_response_defaults(&self, request: &mut CreateResponseWrapper) -> Result<()> {
@@ -1479,9 +1471,7 @@ impl SamplingClient {
         Ok((events, model_metadata, doom_loop))
     }
 
-    // =========================================================================
     // Anthropic Messages API
-    // =========================================================================
 
     /// Apply default configuration to a Messages API request.
     fn apply_message_defaults(&self, request: &mut MessagesRequestWrapper) -> Result<()> {
@@ -1771,9 +1761,7 @@ impl SamplingClient {
         Ok((events, model_metadata))
     }
 
-    // =========================================================================
     // Unified Conversation API
-    // =========================================================================
 
     /// Apply default configuration to a ConversationRequest.
     fn apply_conversation_defaults(&self, request: &mut ConversationRequest) -> Result<()> {

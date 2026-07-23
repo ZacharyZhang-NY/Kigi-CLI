@@ -362,7 +362,7 @@ fn load_capped_from_disk(dir: &Path, cap: usize) -> BTreeMap<usize, RewindCheckp
         let Some(idx) = parse_checkpoint_index(&file_name) else {
             // Sweep orphaned temp files from a crashed `write_checkpoint_file`:
             // rehydrate runs once at construction before this instance writes, so
-            // removing them is safe and bounds clutter. Best-effort.
+            // dropping them is safe and bounds clutter. Best-effort.
             if is_orphan_checkpoint_tmp(&file_name) {
                 let _ = std::fs::remove_file(entry.path());
             }
@@ -691,7 +691,7 @@ mod tests {
                 "no separators for {raw:?}: {s:?}"
             );
             assert!(s != "." && s != "..", "not a traversal component: {s:?}");
-            // Joining must stay within the store root and add exactly one path
+            // Joining must stay within the store root and join exactly one path
             // component (no `..` escape).
             let joined = root.join(&s);
             assert!(joined.starts_with(root), "stays in root: {joined:?}");

@@ -1,6 +1,6 @@
 //! Headless markdown analysis sharing Kigi's exact `pulldown-cmark` config.
 //!
-//! This crate is intentionally lean -- it depends only on `pulldown-cmark` -- so it
+//! This crate is deliberately lean -- it depends only on `pulldown-cmark` -- so it
 //! can be used without pulling in the terminal-rendering stack (syntect, ratatui,
 //! two-face). [`parser_options`] is the single source of truth for the parser
 //! feature set, shared with `kigi-markdown` so analysis matches what Kigi
@@ -966,7 +966,7 @@ mod tests {
                 0,
                 true,
             ),
-            // GFM: body rows may have more/fewer cells; padded/truncated, still a table (ex. 204).
+            // GFM: body rows may have more/fewer cells; `padded`/truncated, still a table (ex. 204).
             (
                 "ragged_body_rows_still_table",
                 "| abc | def |\n| --- | --- |\n| bar |\n| bar | baz | boo |\n",

@@ -83,7 +83,6 @@ impl DoomLoopRecoveryPolicy {
     /// Default `max_threshold` (lowest common threshold across the backtest
     /// corpus of confirmed loops).
     pub const DEFAULT_MAX_THRESHOLD: u32 = 8;
-    /// Default `max_retries`.
     pub const DEFAULT_MAX_RETRIES: u32 = 2;
 
     /// Clamp a configured `max_threshold` into [`Self::MAX_THRESHOLD_RANGE`].

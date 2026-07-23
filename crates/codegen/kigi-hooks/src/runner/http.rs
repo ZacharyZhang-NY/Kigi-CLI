@@ -35,44 +35,55 @@ fn is_blocked_ip(ip: &IpAddr) -> bool {
         IpAddr::V4(v4) => {
             let octets = v4.octets();
             if octets[0] == 127 {
-                return false; // loopback — allowed for local dev
+                // loopback — allowed for local dev
+                return false;
             }
             if octets[0] == 10 {
-                return true; // RFC 1918: 10.0.0.0/8
+                // RFC 1918: 10.0.0.0/8
+                return true;
             }
             if octets[0] == 172 && (16..=31).contains(&octets[1]) {
-                return true; // RFC 1918: 172.16.0.0/12
+                // RFC 1918: 172.16.0.0/12
+                return true;
             }
             if octets[0] == 192 && octets[1] == 168 {
-                return true; // RFC 1918: 192.168.0.0/16
+                // RFC 1918: 192.168.0.0/16
+                return true;
             }
             if octets[0] == 169 && octets[1] == 254 {
-                return true; // RFC 3927: 169.254.0.0/16 (link-local, cloud metadata)
+                // RFC 3927: 169.254.0.0/16 (link-local, cloud metadata)
+                return true;
             }
             if octets[0] == 100 && (64..=127).contains(&octets[1]) {
-                return true; // RFC 6598: 100.64.0.0/10 (CGNAT)
+                // RFC 6598: 100.64.0.0/10 (CGNAT)
+                return true;
             }
             if v4.is_unspecified() {
-                return true; // 0.0.0.0
+                // 0.0.0.0
+                return true;
             }
             false
         }
         IpAddr::V6(v6) => {
             if v6.is_loopback() {
-                return false; // ::1 — allowed for local dev
+                // ::1 — allowed for local dev
+                return false;
             }
             if v6.is_unspecified() {
-                return true; // ::
+                // ::
+                return true;
             }
             if let Some(v4) = v6.to_ipv4_mapped() {
                 return is_blocked_ip(&IpAddr::V4(v4));
             }
             let segments = v6.segments();
             if segments[0] & 0xffc0 == 0xfe80 {
-                return true; // fe80::/10 — link-local
+                // fe80::/10 — link-local
+                return true;
             }
             if segments[0] & 0xfe00 == 0xfc00 {
-                return true; // fc00::/7 — unique local (ULA)
+                // fc00::/7 — unique local (ULA)
+                return true;
             }
             false
         }
@@ -398,7 +409,7 @@ mod tests {
     use super::*;
     use reqwest::StatusCode;
 
-    // ── parse_http_blocking_result tests ──────────────────────────
+    // parse_http_blocking_result tests
 
     #[test]
     fn http_allow_json() {
@@ -560,7 +571,7 @@ mod tests {
         }
     }
 
-    // ── SSRF protection: is_blocked_ip tests ──────────────
+    // SSRF protection: is_blocked_ip tests
 
     #[test]
     fn ssrf_blocks_rfc1918_10x() {
@@ -632,7 +643,7 @@ mod tests {
         ));
     }
 
-    // ── SSRF protection: validate_hook_url tests ──────────
+    // SSRF protection: validate_hook_url tests
 
     #[tokio::test]
     async fn ssrf_rejects_http_scheme() {
@@ -675,7 +686,7 @@ mod tests {
         assert!(result.unwrap_err().contains("invalid URL"));
     }
 
-    // ── URL env-var expansion (extra_env precedence) ───────────
+    // URL env-var expansion (extra_env precedence)
 
     use crate::config::HookSpec;
     use crate::event::{HookEventEnvelope, HookEventName, HookPayload};
@@ -883,7 +894,7 @@ mod tests {
         let (result, _, info) = run_http_hook(&spec, &envelope, &ctx, true).await;
 
         // Either `Failed` (timeout / connection error) is fine; both
-        // exercise paths that previously embedded the raw URL via
+        // exercise paths that earlier embedded the raw URL via
         // `format!("...{e}")`. Pure timeouts use a different
         // formatting branch (no URL involved), so prefer the
         // connection-error case but tolerate either.

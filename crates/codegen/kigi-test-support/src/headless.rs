@@ -1,6 +1,5 @@
-//! Headless mode (`kigi -p`) test runner.
-//!
-//! Runs the kigi binary as a subprocess with the mock server, captures output.
+//! Headless mode (`kigi -p`) test runner: runs the kigi binary as a subprocess
+//! against the mock server and captures its output.
 
 use std::path::Path;
 use std::process::ExitStatus;
@@ -21,8 +20,8 @@ pub struct HeadlessResult {
 
 const HEADLESS_TIMEOUT_SECS: u64 = 60;
 
-/// Run `kigi` with the given args against the mock server, with a 60s timeout.
-/// Uses an isolated HOME and disables telemetry.
+/// Run `kigi` with the given args against the mock server in an isolated HOME,
+/// with telemetry disabled.
 pub async fn run_headless(
     server: &MockInferenceServer,
     args: &[&str],
@@ -114,12 +113,10 @@ const CRASH_PATTERNS: &[&str] = &[
     "cannot open shared object",
 ];
 
-/// Diagnostic helper: format the tail of stderr for assertion messages.
 pub fn stderr_tail(stderr: &str, max_chars: usize) -> &str {
     &stderr[stderr.len().saturating_sub(max_chars)..]
 }
 
-/// Assert that a headless run succeeded (non-timeout, zero exit code).
 pub fn assert_headless_success(
     result: &HeadlessResult,
     label: &str,
@@ -141,7 +138,6 @@ pub fn assert_headless_success(
     );
 }
 
-/// Panic if stderr contains any crash/linking-failure indicators.
 pub fn assert_no_crashes(stderr: &str) {
     let lower = stderr.to_lowercase();
     for pattern in CRASH_PATTERNS {

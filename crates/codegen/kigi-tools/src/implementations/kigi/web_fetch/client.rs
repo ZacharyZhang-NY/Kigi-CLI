@@ -19,7 +19,6 @@ use scraper::{Html, Selector};
 
 const DEFAULT_DOWNLOAD_DIR: &str = "downloads";
 
-/// Shared HTTP client and cache for web fetching.
 #[derive(Clone)]
 pub struct WebFetchClient {
     http: HttpClient,
@@ -57,7 +56,6 @@ impl WebFetchClient {
         );
 
         Ok(Self {
-            // Reqwest client can fail to build.
             http: HttpClient::new(params)?,
             cache: Arc::new(parking_lot::RwLock::new(FetchCache::new(
                 params.cache_ttl_secs(),
@@ -149,7 +147,6 @@ impl WebFetchClient {
 
         let url_str = url.to_string();
 
-        // Check cache.
         {
             let cache = self.cache.read();
             if let Some(cached) = cache.get(&url_str) {
@@ -185,10 +182,8 @@ impl WebFetchClient {
             }
         }
 
-        // SSRF check.
         ssrf::check_ssrf(&url).await?;
 
-        // Make request and build output.
         let http = self.http.get_or_rebuild()?;
         let result = match fetch_url(&http, &url, self.params.max_content_length()).await {
             Ok(result) => result,
@@ -233,7 +228,6 @@ impl WebFetchClient {
             return Ok(output);
         }
 
-        // Image: validate magic bytes, save to disk.
         if is_image(&content_type) {
             if !validate_media_magic_bytes(&content_type, &body) {
                 return Err(WebFetchError::ContentTypeMismatch {
@@ -255,7 +249,6 @@ impl WebFetchClient {
             return Ok(output);
         }
 
-        // Video: validate magic bytes, save to disk.
         if is_video(&content_type) {
             if !validate_media_magic_bytes(&content_type, &body) {
                 return Err(WebFetchError::ContentTypeMismatch {
@@ -310,7 +303,6 @@ impl WebFetchClient {
             output_location: None,
         });
 
-        // Insert into cache.
         {
             let mut cache = self.cache.write();
             cache.insert_text(url_str, output.clone(), was_truncated);
@@ -363,10 +355,6 @@ impl WebFetchClient {
     }
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// URL Validation
-// ───────────────────────────────────────────────────────────────────────────
-
 /// Validates URL scheme, length, credentials, and hostname labels.
 fn validate_url(raw: &str) -> Result<Url, WebFetchError> {
     if raw.len() > MAX_URL_LENGTH {
@@ -375,7 +363,7 @@ fn validate_url(raw: &str) -> Result<Url, WebFetchError> {
         });
     }
 
-    let parsed = Url::parse(raw)?; // uses #[from] url::ParseError
+    let parsed = Url::parse(raw)?;
 
     match parsed.scheme() {
         "http" | "https" => {}
@@ -401,16 +389,11 @@ fn validate_url(raw: &str) -> Result<Url, WebFetchError> {
     Ok(parsed)
 }
 
-/// Upgrade `http://` to `https://`.
 fn upgrade_to_https(url: &mut Url) {
     if url.scheme() == "http" {
         let _ = url.set_scheme("https");
     }
 }
-
-// ───────────────────────────────────────────────────────────────────────────
-// HTTP Fetching
-// ───────────────────────────────────────────────────────────────────────────
 
 enum FetchResult {
     Content {
@@ -434,7 +417,6 @@ async fn fetch_url(
     let mut current_url = url.clone();
     let mut hops = 0;
 
-    // Loop to follow redirects under the same host.
     loop {
         let resp = client
             .get(current_url.as_str())
@@ -455,7 +437,6 @@ async fn fetch_url(
                 return Err(WebFetchError::TooManyRedirects { max: MAX_REDIRECTS });
             }
 
-            // Follow same host; break on cross-host.
             if let Some(location) = resp.headers().get("location") {
                 let location_str = location.to_str().unwrap_or("");
                 let next_url = current_url
@@ -506,10 +487,6 @@ fn is_same_host(a: &Url, b: &Url) -> bool {
     let host_b = b.host_str().unwrap_or("");
     strip_www(host_a) == strip_www(host_b)
 }
-
-// ───────────────────────────────────────────────────────────────────────────
-// Content Processing
-// ───────────────────────────────────────────────────────────────────────────
 
 fn require_media_session_folder(session_folder: Option<&Path>) -> Result<&Path, WebFetchError> {
     session_folder.ok_or_else(|| {
@@ -567,11 +544,10 @@ fn validate_media_magic_bytes(content_type: &str, body: &[u8]) -> bool {
         "image/webp" => body.len() >= 12 && &body[..4] == b"RIFF" && &body[8..12] == b"WEBP",
         "video/mp4" => body.len() >= 8 && &body[4..8] == b"ftyp",
         "video/webm" => body.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]),
-        _ => true, // unknown subtypes: allow (fail-open for niche formats)
+        _ => true,
     }
 }
 
-/// Map a media Content-Type to the correct file extension.
 fn media_extension(content_type: &str) -> &'static str {
     let mime = content_type
         .split(';')
@@ -634,8 +610,6 @@ fn is_binary_content_type(content_type: &str) -> bool {
     )
 }
 
-/// Save fetched PDF bytes to the session download directory and return a
-/// `WebFetchOutput` pointing the model at the saved file.
 async fn save_pdf(
     writer: &SessionFileWriter,
     session_folder: &Path,
@@ -677,8 +651,6 @@ async fn save_pdf(
     }))
 }
 
-/// Save fetched image bytes to the session images directory and return a
-/// `WebFetchOutput` pointing the model at the saved file.
 async fn save_image(
     writer: &SessionFileWriter,
     session_folder: &Path,
@@ -722,8 +694,6 @@ async fn save_image(
     }))
 }
 
-/// Save fetched video bytes to the session videos directory and return a
-/// `WebFetchOutput` pointing the model at the saved file.
 async fn save_video(
     writer: &SessionFileWriter,
     session_folder: &Path,
@@ -869,7 +839,6 @@ fn strip_base64_data_uris(content: String) -> String {
             let mime = if mime.is_empty() { "unknown" } else { mime };
 
             if parts.any(|p| p.eq_ignore_ascii_case("base64")) {
-                // Consume valid base64 characters after the comma.
                 let payload_start = comma + 1;
                 let payload_len = s[payload_start..]
                     .bytes()
@@ -899,10 +868,6 @@ fn strip_base64_data_uris(content: String) -> String {
     result.push_str(&s[last_end..]);
     result
 }
-
-// ───────────────────────────────────────────────────────────────────────────
-// Tests
-// ───────────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -1050,8 +1015,6 @@ mod tests {
         assert_eq!(tokio::fs::read_to_string(artifact).await.unwrap(), expected);
     }
 
-    // ── URL validation ──────────────────────────────────────────────────
-
     #[test]
     fn validate_url_accepts_valid() {
         assert!(validate_url("https://docs.rs/reqwest/latest").is_ok());
@@ -1105,8 +1068,6 @@ mod tests {
         assert_eq!(url.scheme(), "https");
     }
 
-    // ── Same-host redirect check ────────────────────────────────────────
-
     #[test]
     fn same_host_exact_match() {
         let a = Url::parse("https://example.com/a").unwrap();
@@ -1129,8 +1090,6 @@ mod tests {
         assert!(!is_same_host(&a, &d));
     }
 
-    // ── Content type detection ──────────────────────────────────────────
-
     #[test]
     fn is_html_detects_html_types() {
         assert!(is_html("text/html"));
@@ -1146,8 +1105,6 @@ mod tests {
         assert!(!is_html("application/pdf"));
     }
 
-    // ── PDF content type detection ────────────────────────────────────
-
     #[test]
     fn is_pdf_detects_pdf_types() {
         assert!(is_pdf("application/pdf"));
@@ -1161,8 +1118,6 @@ mod tests {
         assert!(!is_pdf("application/json"));
         assert!(!is_pdf("application/octet-stream"));
     }
-
-    // ── Binary content type detection ────────────────────────────────
 
     #[test]
     fn binary_detects_images_and_media() {
@@ -1199,8 +1154,6 @@ mod tests {
         assert!(!is_binary_content_type("application/yaml"));
         assert!(!is_binary_content_type("application/graphql"));
     }
-
-    // ── HTML to markdown conversion ─────────────────────────────────────
 
     #[test]
     fn html_to_markdown_basic() {
@@ -1340,8 +1293,6 @@ mod tests {
         assert!(md.contains("Beta"));
     }
 
-    // ── Base64 data URI stripping ─────────────────────────────────────
-
     /// Golden test: verify exact output format for the most common case.
     #[test]
     fn strip_base64_output_format() {
@@ -1399,8 +1350,6 @@ mod tests {
                 .contains("[base64 image/png data removed]")
         );
     }
-
-    // ── Regex equivalence ──────────────────────────────────────────────
 
     /// Reference implementation: the original regex-based stripper.
     fn strip_base64_data_uris_regex(content: &str) -> String {
@@ -1463,8 +1412,6 @@ mod tests {
         }
     }
 
-    // ── Proxy configs ─────────────────────────────────────
-
     #[test]
     fn proxy_endpoint_round_trips_through_config() {
         let json = r#"{"proxy_endpoint": "https://proxy.corp.example.com", "allowed_domains": ["example.com"]}"#;
@@ -1474,7 +1421,6 @@ mod tests {
             Some("https://proxy.corp.example.com")
         );
 
-        // Client builds successfully with the proxy endpoint set.
         let client = WebFetchClient::new(&params, None);
         assert!(client.is_ok());
     }
@@ -1485,8 +1431,6 @@ mod tests {
         let params: WebFetchParams = serde_json::from_str(json).unwrap();
         assert!(params.proxy_endpoint.is_none());
     }
-
-    // ── HTML cleaning (scraper-based) ─────────────────────────────────
 
     #[test]
     fn clean_html_removes_boilerplate_tags() {
@@ -1516,8 +1460,6 @@ mod tests {
         assert!(!cleaned.contains("Menu"));
     }
 
-    // ── Image content type detection ──────────────────────────────────
-
     #[test]
     fn is_image_detects_image_types() {
         assert!(is_image("image/png"));
@@ -1543,8 +1485,6 @@ mod tests {
         assert!(!is_image("application/octet-stream"));
     }
 
-    // ── Video content type detection ──────────────────────────────────
-
     #[test]
     fn is_video_detects_video_types() {
         assert!(is_video("video/mp4"));
@@ -1561,8 +1501,6 @@ mod tests {
         assert!(!is_video("application/pdf"));
         assert!(!is_video("audio/mpeg"));
     }
-
-    // ── Magic byte validation ─────────────────────────────────────────
 
     #[test]
     fn magic_bytes_valid_png() {
@@ -1624,8 +1562,6 @@ mod tests {
         assert!(validate_media_magic_bytes("image/x-custom", b"anything"));
         assert!(validate_media_magic_bytes("video/x-custom", b"anything"));
     }
-
-    // ── Media extension mapping ───────────────────────────────────────
 
     #[test]
     fn media_extension_maps_known_types() {

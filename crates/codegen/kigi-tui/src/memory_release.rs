@@ -193,7 +193,8 @@ mod tests {
     #[serial_test::serial(MEMORY_RELEASE_DEFER)]
     fn deferred_request_coalesces_and_drains_once() {
         test_support::install_counting_hook();
-        run_deferred_release(); // drain any stale request
+        // Drain any stale request.
+        run_deferred_release();
 
         let before = test_support::calls();
         run_deferred_release();
@@ -204,7 +205,8 @@ mod tests {
         );
 
         request_release_after_draw();
-        request_release_after_draw(); // coalesces
+        // Coalesces.
+        request_release_after_draw();
         assert_eq!(
             test_support::calls(),
             before,

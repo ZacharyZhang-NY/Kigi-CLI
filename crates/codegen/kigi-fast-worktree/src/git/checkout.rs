@@ -445,7 +445,7 @@ fn rehydrate_worktree_from_ref_inner(
 ) -> Result<WorktreeReport> {
     let dest_str = dest.to_string_lossy();
 
-    // A previously-disposed worktree can leave a stale registration for this
+    // An earlier-disposed worktree can leave a stale registration for this
     // path; prune it so re-adding the original `subagent-<id>` dir succeeds.
     snapshot_git(source_repo, &["worktree", "prune"], &[])?;
 

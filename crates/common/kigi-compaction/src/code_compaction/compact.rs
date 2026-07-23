@@ -8,12 +8,12 @@
 //! build prompt → sample (retry + classify) → clean → assemble
 //! ```
 //!
-//! Per-harness concerns stay in the product host (for example `kigi-shell`): the triggers, the
-//! conversation *gathering / sanitization* that produces `llm_turns`, the
-//! verbatim→fitted→lossy input ladder, the live LLM transport (the
-//! [`CompactionSampler`] impl), persistence/replay, and the rendering of
-//! `system_reminder`. This function takes those as inputs and returns the
-//! rebuilt history; it never commits or persists.
+//! Per-harness concerns stay in the product host (for example `kigi-shell`):
+//! the triggers, the conversation gathering/sanitization that produces
+//! `llm_turns`, the verbatim→fitted→lossy input ladder, the live LLM transport
+//! (the [`CompactionSampler`] impl), persistence/replay, and the rendering of
+//! `system_reminder`. This module takes those as inputs and returns the rebuilt
+//! history; it never commits or persists.
 
 use std::time::{Duration, Instant};
 
@@ -30,37 +30,33 @@ use super::prompt::build_summary_prompt;
 use super::sample::{SampleRetryError, SampledSummary, sample_summary_with_retries};
 
 /// Everything the assembler needs that the harness extracts from its own
-/// state (separate from the conversation that gets summarized).
+/// state (separate from the conversation that gets summarized). Every field is
+/// carried through verbatim; nothing here is re-derived.
 pub struct FullReplaceContext<T> {
-    /// The original system message, carried over verbatim.
     pub system_message: T,
     /// The user-info / project-layout prefix (no `<user_query>` tags).
     pub user_message_prefix: String,
-    /// Pre-rendered AGENTS.md block to re-inject, if any.
     pub agents_md_reminder: Option<String>,
-    /// The last real user query (raw), kept verbatim post-compaction.
+    /// Raw, not wrapped in `<user_query>` tags yet.
     pub last_user_query: Option<String>,
-    /// Working tail retained verbatim (tool/subagent results from the current
-    /// turn). kigi keeps this; pass empty to drop it.
+    /// Working tail (tool/subagent results from the current turn). Pass empty
+    /// to drop it.
     pub recent_messages: Vec<T>,
     /// Pre-rendered `<system-reminder>` (edited files, running tasks,
-    /// subagents, MCP, …). The harness builds this; we only carry it.
+    /// subagents, MCP, …).
     pub system_reminder: Option<String>,
-    /// Optional transcript-pointer block appended to the summary.
+    /// Transcript-pointer block appended to the summary.
     pub transcript_hint: Option<String>,
 }
 
-/// Outcome of a failed full-replace pass.
 #[derive(Debug)]
 pub enum FullReplaceError {
-    /// No turns were supplied to summarize.
     NothingToCompact,
     /// The model returned no usable summary text after all attempts.
     EmptyResponse,
     /// The sampler failed deterministically (re-sending can't help), or all
     /// transient retries were exhausted.
     Sampler {
-        /// The rendered upstream error.
         message: String,
         /// Whether re-sending the *same* input cannot help. The product host
         /// uses this to decide whether to suppress auto-compaction.
@@ -84,46 +80,40 @@ impl std::fmt::Display for FullReplaceError {
 
 impl std::error::Error for FullReplaceError {}
 
-/// A successful full-replace pass.
 pub struct FullReplaceOutput<T> {
-    /// The rebuilt, compacted history (`[SP, UP', AGENTS_MD?, UQ_last?,
-    /// recent…, summary, reminder?]`).
+    /// Shape: `[SP, UP', AGENTS_MD?, UQ_last?, recent…, summary, reminder?]`.
     pub history: Vec<T>,
     /// The **raw** model summary (pre-clean), so the product host can persist
     /// it (request artifact, compaction segment) exactly as the model emitted
     /// it. The cleaned form is already embedded in `history` by the assembler.
     pub summary: String,
-    /// Total sample attempts made (first try + retries).
+    /// First try + retries.
     pub attempts: u32,
 }
 
-/// A successful full-replace **sampling** pass (summary only, no assembly).
-///
-/// Returned by [`sample_full_replace_summary`] for harnesses (kigi's
-/// shell) that drive the input ladder and assemble the history themselves —
-/// they build the assembly inputs (state-context system-reminder, AGENTS.md,
-/// plan-mode) *after* the LLM call, so they cannot use the bundled
+/// Summary-only result of [`sample_full_replace_summary`], for harnesses
+/// (kigi's shell) that drive the input ladder and assemble the history
+/// themselves — they build the assembly inputs (state-context system-reminder,
+/// AGENTS.md, plan-mode) *after* the LLM call, so they cannot use the bundled
 /// [`apply_full_replace_compaction`].
 pub struct FullReplaceSummary {
     /// The **raw** model summary (pre-clean).
     pub summary: String,
-    /// Total sample attempts made (first try + retries).
+    /// First try + retries.
     pub attempts: u32,
 }
 
 /// Run kigi's full-replace compaction pass and return the rebuilt
 /// history. Pure orchestration: no triggers, no persistence, no commit.
 ///
-/// - `llm_turns` — the (harness-prepared/sanitized) conversation the model
-///   summarizes. Empty ⇒ [`FullReplaceError::NothingToCompact`].
-/// - `user_context` — optional `/compact <text>` context spliced into the prompt.
-/// - `ctx` — the assembly inputs the harness extracted from its state.
-/// - `observer` — per-attempt + terminal telemetry seam (pass `&()` for none).
+/// Empty `llm_turns` ⇒ [`FullReplaceError::NothingToCompact`]. `user_context`
+/// is the optional `/compact <text>` context spliced into the prompt; pass
+/// `&()` as `observer` for no telemetry.
 ///
-/// The **input ladder** (verbatim → fitted → lossy) stays in the product host: on a
-/// context-length overflow this returns
-/// [`FullReplaceError::Sampler`] with `context_overflow = true`, and the
-/// harness rebuilds a smaller input and calls this pass again.
+/// The **input ladder** (verbatim → fitted → lossy) stays in the product host:
+/// on a context-length overflow this returns [`FullReplaceError::Sampler`] with
+/// `context_overflow = true`, and the harness rebuilds a smaller input and
+/// calls this pass again.
 pub async fn apply_full_replace_compaction<T, S, O>(
     sampler: &S,
     llm_turns: &[T],
@@ -147,9 +137,8 @@ where
         "[FullReplaceCompaction] sampled summary; assembling history"
     );
 
-    // Clean (inside the assembler via `format_compact_summary_content`) and
-    // rebuild the compacted history. `compaction_summary` is the raw model
-    // output; the assembler strips scratchpad / control tokens.
+    // `compaction_summary` goes in raw; the assembler strips scratchpad /
+    // control tokens via `format_compact_summary_content`.
     let parts = CompactedHistoryParts {
         system_message: ctx.system_message,
         user_message_prefix: ctx.user_message_prefix,
@@ -170,12 +159,8 @@ where
 /// Run only the **sampling** half of the full-replace pass: build the prompt,
 /// sample with bounded retries (transient + degenerate), classify failures,
 /// and report every attempt through `observer`. Returns the raw summary; the
-/// caller assembles the history (and owns the input ladder).
-///
-/// This is the seam kigi's shell uses: it drives the verbatim → fitted →
-/// lossy input ladder around this call (stepping on a
-/// [`FullReplaceError::Sampler`] with `context_overflow = true`) and assembles
-/// the compacted history afterward from inputs it gathers post-sampling.
+/// caller assembles the history and owns the input ladder, stepping it on a
+/// [`FullReplaceError::Sampler`] with `context_overflow = true`.
 pub async fn sample_full_replace_summary<T, S, O>(
     sampler: &S,
     llm_turns: &[T],
@@ -365,10 +350,7 @@ mod tests {
         )
     }
 
-    /// Golden end-to-end test: a realistic conversation + a mock sampler that
-    /// returns a structured summary must produce kigi's exact compacted
-    /// history shape, with the LLM output cleaned and the agent-state reminder
-    /// carried through as the final item.
+    /// Golden test pinning kigi's exact compacted history shape end to end.
     #[tokio::test]
     async fn full_replace_produces_kigi_history_shape() {
         let llm_turns = vec![
@@ -408,7 +390,7 @@ mod tests {
             MockItem::Tail("tool: read_file(auth.rs) -> ...".into())
         );
 
-        // Summary carrier: cleaned (no <analysis>/<summary> tags), with preamble.
+        // Summary carrier: cleaned, with preamble.
         let MockItem::UserMeta(summary) = &out[5] else {
             panic!("expected UserMeta summary at [5], got {:?}", out[5]);
         };
@@ -421,7 +403,6 @@ mod tests {
         assert!(!summary.contains("<summary>"), "live tag leaked: {summary}");
         assert!(!summary.contains("thinking about it"));
 
-        // Agent-state reminder carried through verbatim as the final item.
         assert_eq!(
             out[6],
             MockItem::SystemReminder(
@@ -553,8 +534,6 @@ mod tests {
         assert_eq!(sampler.call_count(), 1, "overflow must not retry");
     }
 
-    /// The observer sees one terminal `on_success` and the right per-attempt
-    /// outcomes (a degenerate retry then a success).
     #[tokio::test]
     async fn observer_receives_attempt_and_success_callbacks() {
         use std::sync::Mutex;

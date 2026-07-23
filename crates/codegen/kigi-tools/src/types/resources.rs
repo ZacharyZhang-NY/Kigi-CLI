@@ -1,4 +1,4 @@
-//! Type-safe heterogeneous resource container for the new tool architecture.
+//! Type-safe heterogeneous resource container.
 //!
 //! `Resources` is the typed dependency injection container. It provides a
 //! single `HashMap<TypeId, Box<dyn Any>>` that tools read from and write to.
@@ -185,18 +185,15 @@ impl Default for Resources {
     }
 }
 impl Resources {
-    /// Create an empty resource container.
     pub fn new() -> Self {
         Self {
             data: HashMap::new(),
             entries: Vec::new(),
         }
     }
-    /// Wrap this `Resources` into a `SharedResources` (`Arc<Mutex<Resources>>`).
     pub fn into_shared(self) -> SharedResources {
         Arc::new(Mutex::new(self))
     }
-    /// Get a shared reference to a stored value.
     pub fn get<T: Send + Sync + 'static>(&self) -> Option<&T> {
         self.data
             .get(&TypeId::of::<T>())
@@ -212,7 +209,6 @@ impl Resources {
             )
         })
     }
-    /// Get a mutable reference to a stored value.
     pub fn get_mut<T: Send + Sync + 'static>(&mut self) -> Option<&mut T> {
         self.data
             .get_mut(&TypeId::of::<T>())
@@ -230,14 +226,12 @@ impl Resources {
     pub fn insert<T: Send + Sync + 'static>(&mut self, value: T) {
         self.data.insert(TypeId::of::<T>(), Box::new(value));
     }
-    /// Remove a typed value, returning it if it existed.
     pub fn remove<T: Send + Sync + 'static>(&mut self) -> Option<T> {
         self.data
             .remove(&TypeId::of::<T>())
             .and_then(|boxed| (boxed as Box<dyn Any>).downcast::<T>().ok())
             .map(|boxed| *boxed)
     }
-    /// Check if a value of type `T` is present.
     pub fn contains<T: Send + Sync + 'static>(&self) -> bool {
         self.data.contains_key(&TypeId::of::<T>())
     }
@@ -348,7 +342,7 @@ impl Resources {
         }
         serde_json::Value::Object(top)
     }
-    /// Load registered resources from a previously serialized JSON structure.
+    /// Load registered resources from a serialized JSON structure.
     ///
     /// Expects the same shape as `serialize()` output:
     /// `{ "params": { ... }, "state": { ... } }`.
@@ -768,15 +762,12 @@ impl std::fmt::Debug for Terminal {
 #[derive(Debug, Clone, Default)]
 pub struct ToolRetries(pub HashMap<String, crate::retry::BackoffConfig>);
 impl ToolRetries {
-    /// Set a retry config for a specific tool.
     pub fn set(&mut self, tool: &str, config: crate::retry::BackoffConfig) {
         self.0.insert(tool.to_string(), config);
     }
-    /// Get the retry config for a specific tool, if set.
     pub fn get(&self, tool: &str) -> Option<&crate::retry::BackoffConfig> {
         self.0.get(tool)
     }
-    /// Clear all retry configs.
     pub fn clear(&mut self) {
         self.0.clear();
     }

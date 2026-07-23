@@ -1,7 +1,4 @@
 //! Agent bootstrap and lifecycle hooks.
-//!
-//! [`bootstrap`] runs the full init sequence (config resolution, process
-//! singletons, model catalog) and returns a resolved config + `ModelsManager`.
 
 use std::sync::Arc;
 
@@ -12,8 +9,6 @@ use crate::agent::models::ModelsManager;
 use crate::auth::AuthManager;
 use crate::config::StorageMode;
 
-/// Resolve config, init process singletons, build the model catalog.
-///
 /// The `ModelsManager` is `Clone + Send`, so callers that need a handle
 /// for the config watcher can clone it before passing it to
 /// `MvpAgent::with_models`.
@@ -47,8 +42,6 @@ pub(crate) fn exit_on_config_error<T>(e: String) -> T {
     std::process::exit(1);
 }
 
-/// Config transform: apply managed settings, fetch remote settings,
-/// resolve storage mode.
 fn resolve_config(cfg: &AgentConfig, auth_manager: &AuthManager) -> AgentConfig {
     let mut cfg = cfg.clone();
 
@@ -99,7 +92,6 @@ fn resolve_config(cfg: &AgentConfig, auth_manager: &AuthManager) -> AgentConfig 
     cfg
 }
 
-/// Initialize process-level singletons (deployment sync, bundled files).
 /// `Once`-guarded: only the first call takes effect.
 fn init_process(cfg: &AgentConfig, auth_manager: &AuthManager) {
     use std::sync::Once;

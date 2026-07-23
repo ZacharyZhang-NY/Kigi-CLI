@@ -362,7 +362,6 @@ async fn planner_snapshots_plan_baseline_once_and_does_not_overwrite() {
 #[tokio::test(flavor = "current_thread")]
 #[serial]
 async fn planner_disabled_records_no_harness_trace_turn() {
-    // Non-goal / planner-off fast path: no harness trace turn is produced.
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async {
@@ -902,7 +901,6 @@ async fn lifecycle_fail_pause_resume_retry_fail_repauses() {
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async {
-            // Coordinator that always fails.
             let (tx, spawn_count) = spawn_planner_coordinator(SpawnBehaviour::Runtime {
                 message: "still broken".into(),
                 cancelled: false,
@@ -1054,7 +1052,7 @@ async fn setup_goal_reminder_is_no_plan_when_planner_disabled() {
 /// (carrying the real `plan_path()` pointer). Guards against the resume
 /// site regressing to `None` while setup_goal stays correct (a prior
 /// regression: the sibling branch was untested). The reminder is returned as the
-/// `Inference` turn content (resume flows through to inference now).
+/// `Inference` turn content (resume flows through to inference).
 #[tokio::test(flavor = "current_thread")]
 #[serial]
 async fn goal_resume_reminder_is_plan_aware_when_planner_enabled() {

@@ -3,30 +3,27 @@ use serde::{Deserialize, Serialize};
 use crate::events::EventQueue;
 use crate::format::format_interjection;
 
-/// A buffered mid-turn interjection awaiting the next safe drain point.
-/// `Attachment` is host-defined (inline images, asset IDs); core never reads it.
+/// Mid-turn interjection waiting for the next safe drain point.
+/// `Attachment` is host-defined; core never inspects it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PendingInterjection<Attachment> {
     pub text: String,
     pub attachments: Vec<Attachment>,
 }
 
-/// A drained entry, wrapped and ready to emit as a synthetic user message.
+/// Drained entry, framed as a synthetic user message.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FormattedInterjection<Attachment> {
     pub text: String,
     pub attachments: Vec<Attachment>,
 }
 
-/// A queue of pending interjections — just an [`EventQueue`] of
-/// [`PendingInterjection`]. Use [`drain_formatted`] to drain + frame them as
-/// synthetic user messages.
+/// Queue of [`PendingInterjection`] values. Drain via [`drain_formatted`].
 pub type InterjectionBuffer<Attachment> = EventQueue<PendingInterjection<Attachment>>;
 
-/// Drain `buffer`, framing each entry as a synthetic user message (FIFO, one
-/// message per entry, never merged). `sanitize_text` runs on the raw text first
-/// (hosts strip artifacts like image placeholder paths; pass
-/// `std::convert::identity` if none).
+/// Drain `buffer` FIFO, one synthetic user message per entry (never merged).
+/// `sanitize_text` runs on raw text first (e.g. strip image placeholders);
+/// pass `std::convert::identity` when none is needed.
 pub fn drain_formatted<Attachment>(
     buffer: &InterjectionBuffer<Attachment>,
     sanitize_text: impl Fn(String) -> String,

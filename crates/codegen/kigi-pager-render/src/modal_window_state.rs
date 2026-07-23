@@ -18,7 +18,7 @@ pub struct ModalWindowState {
     /// Full popup area (for click-outside-to-close detection).
     pub popup_area: Option<Rect>,
 
-    // -- Tabs (optional) --
+    // Tabs (optional)
     /// Currently active tab index.
     pub active_tab: usize,
     /// Number of tabs (0 = no tab bar).
@@ -28,7 +28,7 @@ pub struct ModalWindowState {
     /// Whether the tab bar region has keyboard focus. When true, Left/Right
     pub tabs_focused: bool,
 
-    // -- Footer shortcuts --
+    // Footer shortcuts
     /// Hit-test areas for clickable footer shortcuts.
     pub shortcut_hits: Vec<ShortcutHitArea>,
     /// Which footer shortcut (by index) is currently hovered.

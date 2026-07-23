@@ -19,8 +19,8 @@ pub(super) fn render_environment(
     };
     let env_name = env_name.trim().trim_end_matches('*');
 
-    // Capture body source until the matching `\end{name}`, tracking nesting
-    // of same-named environments. Scans raw source from the cursor.
+    // Scan raw source for the matching `\end{name}`, tracking nesting of
+    // same-named environments.
     let body_start = cursor.pos;
     let mut body_end = cursor.src.len();
     let mut resume = cursor.src.len();
@@ -38,8 +38,8 @@ pub(super) fn render_environment(
         } else if command_at(after_bs, "end") {
             "end".len()
         } else {
-            // Not begin/end: skip the backslash and the char after it (so
-            // `\\` and `\{` never confuse the scan).
+            // Skip the backslash and the char after it so that `\\` and `\{`
+            // never confuse the scan.
             let skip = after_bs.chars().next().map_or(0, char::len_utf8);
             search = bs_pos + 1 + skip.max(1);
             continue;
@@ -66,7 +66,7 @@ pub(super) fn render_environment(
     cursor.pos = resume;
     let mut body = &cursor.src[body_start..body_end.min(cursor.src.len())];
 
-    // Optional column spec for array environments: `\begin{array}{ll}`.
+    // Discard the optional column spec: `\begin{array}{ll}`.
     if env_name == "array" || env_name == "alignat" {
         let mut probe = Cursor::new(body);
         probe.skip_ws();
@@ -92,9 +92,9 @@ fn command_at(rest: &str, word: &str) -> bool {
 
 /// Split an environment body into rows (`\\`) and cells (`&`) at brace and
 /// environment depth 0, render each cell, then lay the rows out according to
-/// the environment. Returns one string per visual row; the caller attaches
-/// them as a box. In `flat` mode, matrix/cases environments render as a
-/// single row with `; ` between matrix rows.
+/// the environment. Returns one string per visual row. In `flat` mode,
+/// matrix/cases environments collapse to a single row with `; ` between
+/// matrix rows.
 fn env_rows_to_strings(
     body: &str,
     env_name: &str,
@@ -130,7 +130,7 @@ fn env_rows_to_strings(
                     env_depth = env_depth.saturating_sub(1);
                 }
                 // Skip the backslash plus the char after it so escaped
-                // delimiters (`\&`, `\{`, `\}`) never affect depth/splits.
+                // delimiters (`\&`, `\{`, `\}`) never affect depth or splits.
                 let skip = rest.chars().next().map_or(0, char::len_utf8);
                 i += 1 + skip.max(1);
                 continue;
@@ -148,7 +148,6 @@ fn env_rows_to_strings(
     row.push(body[cell_start.min(bytes.len())..].to_string());
     rows.push(row);
 
-    // Render each cell, drop fully-empty rows.
     let mut rendered_rows: Vec<Vec<String>> = rows
         .into_iter()
         .map(|cells| {
@@ -177,15 +176,14 @@ fn env_rows_to_strings(
     let n_rows = rendered_rows.len();
 
     if is_matrix {
-        // Flat (inline) mode: one row, single delimiter pair, rows joined
-        // with `; ` — `(1  2; 3  4)`.
         if flat {
             let inner = rendered_rows
                 .iter()
                 .map(|cells| cells.join("  "))
                 .collect::<Vec<_>>()
                 .join("; ");
-            // Single-row delimiter pair; plain `matrix` has none (' ').
+            // Ask for the single-row form; plain `matrix` has no delimiter
+            // and reports ' '.
             let (l, r) = matrix_delims(env_name, 0, 1);
             let mut s = String::new();
             if l != ' ' {
@@ -197,7 +195,6 @@ fn env_rows_to_strings(
             }
             return vec![s];
         }
-        // Pad columns to equal width so rows align.
         let n_cols = rendered_rows.iter().map(Vec::len).max().unwrap_or(0);
         let mut widths = vec![0usize; n_cols];
         for cells in &rendered_rows {
@@ -243,9 +240,7 @@ fn env_rows_to_strings(
             .collect()
     } else {
         // aligned/align/gather/split/equation/…: `&` is an invisible
-        // alignment marker; rejoin cells with a single space. One string per
-        // row; the caller's box attachment (or flat `; ` join) handles the
-        // rest.
+        // alignment marker, so cells rejoin with a single space.
         rendered_rows
             .iter()
             .map(|cells| {
@@ -255,7 +250,7 @@ fn env_rows_to_strings(
                     .cloned()
                     .collect::<Vec<_>>()
                     .join(" ");
-                // Collapse any double spaces introduced around markers.
+                // Empty alignment cells leave runs of spaces behind.
                 while s.contains("  ") {
                     s = s.replace("  ", " ");
                 }

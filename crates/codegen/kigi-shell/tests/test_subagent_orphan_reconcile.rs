@@ -47,8 +47,9 @@ fn locate_session_dir(home: &Path, id: &str) -> PathBuf {
     );
 }
 
+// requires pre-built binary
 #[tokio::test]
-#[ignore] // requires pre-built binary
+#[ignore]
 async fn resume_reconciles_orphaned_running_subagent() {
     with_local_set(|| async {
         let server = MockInferenceServer::start()

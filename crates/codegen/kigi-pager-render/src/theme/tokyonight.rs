@@ -18,30 +18,32 @@ const fn rgb(r: u8, g: u8, b: u8) -> Color {
 #[allow(dead_code)]
 pub mod palette {
     use super::*;
-    pub const BG: Color = rgb(26, 27, 38); // #1a1b26 - Night
-    pub const BG_DARK: Color = rgb(22, 22, 30); // #16161e
-    pub const BG_HIGHLIGHT: Color = rgb(41, 46, 66); // #292e42
-    pub const BG_STORM: Color = rgb(36, 40, 59); // #24283b - Storm
-    pub const BG_STORM_DARK: Color = rgb(31, 35, 53); // #1f2335
-    pub const FG: Color = rgb(192, 202, 245); // #c0caf5
-    pub const FG_DARK: Color = rgb(169, 177, 214); // #a9b1d6
-    pub const FG_GUTTER: Color = rgb(59, 66, 97); // #3b4261
-    pub const COMMENT: Color = rgb(86, 95, 137); // #565f89
-    pub const DARK3: Color = rgb(84, 92, 126); // #545c7e
-    pub const DARK5: Color = rgb(115, 122, 162); // #737aa2
-    pub const BLUE: Color = rgb(122, 162, 247); // #7aa2f7
-    pub const BLUE0: Color = rgb(61, 89, 161); // #3d59a1
-    pub const BLUE1: Color = rgb(42, 195, 222); // #2ac3de
-    pub const CYAN: Color = rgb(125, 207, 255); // #7dcfff
-    pub const GREEN: Color = rgb(158, 206, 106); // #9ece6a
-    pub const GREEN1: Color = rgb(115, 218, 202); // #73daca
-    pub const MAGENTA: Color = rgb(187, 154, 247); // #bb9af7
-    pub const ORANGE: Color = rgb(255, 158, 100); // #ff9e64
-    pub const PURPLE: Color = rgb(157, 124, 216); // #9d7cd8
-    pub const RED: Color = rgb(247, 118, 142); // #f7768e
-    pub const RED1: Color = rgb(219, 75, 75); // #db4b4b
-    pub const TEAL: Color = rgb(26, 188, 156); // #1abc9c
-    pub const YELLOW: Color = rgb(224, 175, 104); // #e0af68
+    // #1a1b26 - Night
+    pub const BG: Color = rgb(26, 27, 38);
+    pub const BG_DARK: Color = rgb(22, 22, 30);
+    pub const BG_HIGHLIGHT: Color = rgb(41, 46, 66);
+    // #24283b - Storm
+    pub const BG_STORM: Color = rgb(36, 40, 59);
+    pub const BG_STORM_DARK: Color = rgb(31, 35, 53);
+    pub const FG: Color = rgb(192, 202, 245);
+    pub const FG_DARK: Color = rgb(169, 177, 214);
+    pub const FG_GUTTER: Color = rgb(59, 66, 97);
+    pub const COMMENT: Color = rgb(86, 95, 137);
+    pub const DARK3: Color = rgb(84, 92, 126);
+    pub const DARK5: Color = rgb(115, 122, 162);
+    pub const BLUE: Color = rgb(122, 162, 247);
+    pub const BLUE0: Color = rgb(61, 89, 161);
+    pub const BLUE1: Color = rgb(42, 195, 222);
+    pub const CYAN: Color = rgb(125, 207, 255);
+    pub const GREEN: Color = rgb(158, 206, 106);
+    pub const GREEN1: Color = rgb(115, 218, 202);
+    pub const MAGENTA: Color = rgb(187, 154, 247);
+    pub const ORANGE: Color = rgb(255, 158, 100);
+    pub const PURPLE: Color = rgb(157, 124, 216);
+    pub const RED: Color = rgb(247, 118, 142);
+    pub const RED1: Color = rgb(219, 75, 75);
+    pub const TEAL: Color = rgb(26, 188, 156);
+    pub const YELLOW: Color = rgb(224, 175, 104);
 }
 use palette::*;
 
@@ -53,8 +55,10 @@ pub struct Theme {
     pub bg_light: Color,
     pub bg_dark: Color,
     pub bg_highlight: Color,
-    pub bg_hover: Color, // Mouse hover row in dropdowns — between bg_highlight and bg_visual
-    pub bg_terminal: Color, // For terminal output blocks (currently unused, using bg_dark instead)
+    // Mouse hover row in dropdowns — between bg_highlight and bg_visual
+    pub bg_hover: Color,
+    // For terminal output blocks (currently unused, using bg_dark instead)
+    pub bg_terminal: Color,
 
     // Accent colors (for vertical lines)
     pub accent_user: Color,
@@ -64,8 +68,10 @@ pub struct Theme {
     pub accent_system: Color,
     pub accent_error: Color,
     pub accent_success: Color,
-    pub accent_running: Color, // For tools that are currently running
-    pub accent_skill: Color,   // For skill invocations (slash command skills)
+    // For tools that are currently running
+    pub accent_running: Color,
+    // For skill invocations (slash command skills)
+    pub accent_skill: Color,
 
     // Text colors
     pub text_primary: Color,
@@ -74,30 +80,42 @@ pub struct Theme {
     // Gray scale (dim → medium → bright)
     // Every theme defines these three; they provide a consistent hierarchy
     // for secondary/meta text across all themes.
-    pub gray_dim: Color,    // Dimmest — meta punctuation (`$`, `(+N/-M)`, etc.)
-    pub gray: Color,        // Medium — muted text, comments, collapsed content
-    pub gray_bright: Color, // Brightest — tool accents, secondary labels
+    // Dimmest — meta punctuation (`$`, `(+N/-M)`, etc.)
+    pub gray_dim: Color,
+    // Medium — muted text, comments, collapsed content
+    pub gray: Color,
+    // Brightest — tool accents, secondary labels
+    pub gray_bright: Color,
 
     // Semantic colors
-    pub command: Color, // Yellow for shell commands
-    pub path: Color,    // Orange for file paths
-    pub running: Color, // Cyan for running indicator
-    pub warning: Color, // Yellow/amber for warnings
+    // Yellow for shell commands
+    pub command: Color,
+    // Orange for file paths
+    pub path: Color,
+    // Cyan for running indicator
+    pub running: Color,
+    // Yellow/amber for warnings
+    pub warning: Color,
 
     // Search
-    pub fuzzy_accent: Color, // Highlight color for fuzzy search matches
+    // Highlight color for fuzzy search matches
+    pub fuzzy_accent: Color,
 
     // Plan mode
-    pub accent_plan: Color, // Golden accent for plan mode indicator
+    // Golden accent for plan mode indicator
+    pub accent_plan: Color,
 
     // Context-window overhead category (context info block)
-    pub accent_verify: Color, // Violet accent — distinct from plan gold and feedback teal
+    // Violet accent — distinct from plan gold and feedback teal
+    pub accent_verify: Color,
 
     // Feedback mode
-    pub accent_feedback: Color, // Teal/green accent for feedback mode
+    // Teal/green accent for feedback mode
+    pub accent_feedback: Color,
 
     // Remember mode
-    pub accent_remember: Color, // Green accent for # remember mode
+    // Green accent for # remember mode
+    pub accent_remember: Color,
 
     // Selection
     pub selection_border: Color,
@@ -106,7 +124,8 @@ pub struct Theme {
     pub prompt_border_active: Color,
 
     // Prompt info
-    pub accent_model: Color, // Model name in prompt info line
+    // Model name in prompt info line
+    pub accent_model: Color,
 
     // Scrollbar
     pub scrollbar_bg: Color,
@@ -132,25 +151,39 @@ pub struct Theme {
     // blocks, inline code, links, etc.  These default to the corresponding
     // top-level theme colors but can be overridden per-theme to customise
     // markdown appearance independently.
-    pub md_heading_h1: Color,        // H1 headings
-    pub md_heading_h1_mod: Modifier, // H1 extra effects
-    pub md_heading_h2: Color,        // H2 headings, task unchecked, tables
-    pub md_heading_h2_mod: Modifier, // H2 extra effects
-    pub md_heading_h3: Color,        // H3 headings, code language tag
-    pub md_heading_h3_mod: Modifier, // H3 extra effects
-    pub md_heading_h4: Color,        // H4 headings
-    pub md_heading_h4_mod: Modifier, // H4 extra effects
-    pub md_heading_h5: Color,        // H5 headings, link titles
-    pub md_heading_h5_mod: Modifier, // H5 extra effects
-    pub md_heading_h6: Color,        // H6 headings
-    pub md_heading_h6_mod: Modifier, // H6 extra effects
-    pub md_code: Color,              // Inline code, code block delimiters
-    pub md_task_checked: Color,      // Task checked
-    pub md_task_unchecked: Color,    // Task unchecked
-    pub md_muted: Color,             // Blockquotes, list items, rules, links
-    pub md_code_bg: Color,           // Code block background
-    pub md_text: Color,              // Default body text (plain paragraphs, strong, emphasis)
-    pub link_fg: Color,              // Clickable link text color
+    pub md_heading_h1: Color,
+    // H1 extra effects
+    pub md_heading_h1_mod: Modifier,
+    // H2 headings, task unchecked, tables
+    pub md_heading_h2: Color,
+    // H2 extra effects
+    pub md_heading_h2_mod: Modifier,
+    // H3 headings, code language tag
+    pub md_heading_h3: Color,
+    // H3 extra effects
+    pub md_heading_h3_mod: Modifier,
+    pub md_heading_h4: Color,
+    // H4 extra effects
+    pub md_heading_h4_mod: Modifier,
+    // H5 headings, link titles
+    pub md_heading_h5: Color,
+    // H5 extra effects
+    pub md_heading_h5_mod: Modifier,
+    pub md_heading_h6: Color,
+    // H6 extra effects
+    pub md_heading_h6_mod: Modifier,
+    // Inline code, code block delimiters
+    pub md_code: Color,
+    pub md_task_checked: Color,
+    pub md_task_unchecked: Color,
+    // Blockquotes, list items, rules, links
+    pub md_muted: Color,
+    // Code block background
+    pub md_code_bg: Color,
+    // Default body text (plain paragraphs, strong, emphasis)
+    pub md_text: Color,
+    // Clickable link text color
+    pub link_fg: Color,
 }
 
 impl Theme {
@@ -172,7 +205,7 @@ impl Theme {
             accent_error: RED,
             accent_success: GREEN,
             accent_running: MAGENTA,
-            accent_skill: rgb(100, 180, 170), // Muted teal
+            accent_skill: rgb(100, 180, 170),
 
             text_primary: FG,
             text_secondary: FG_DARK,
@@ -188,17 +221,24 @@ impl Theme {
 
             fuzzy_accent: BLUE,
 
-            accent_plan: rgb(230, 180, 50), // #E6B432 — golden
+            // #E6B432 — golden
+            accent_plan: rgb(230, 180, 50),
 
-            accent_verify: MAGENTA, // #bb9af7 — violet (distinct from plan / feedback)
+            // #bb9af7 — violet (distinct from plan / feedback)
+            accent_verify: MAGENTA,
 
-            accent_feedback: GREEN1, // #73daca — warm teal/green
+            // #73daca — warm teal/green
+            accent_feedback: GREEN1,
 
-            accent_remember: Color::Rgb(139, 195, 74), // #8BC34A — Material Design light green
+            // #8BC34A — Material Design light green
+            accent_remember: Color::Rgb(139, 195, 74),
 
-            selection_border: rgb(58, 72, 115), // #3A4873 — muted tokyonight blue
-            prompt_border: rgb(60, 75, 120),    // #323E64 — dimmer prompt chrome
-            prompt_border_active: rgb(75, 92, 140), // #4B5C8C — brighter when focused
+            // #3A4873 — muted tokyonight blue
+            selection_border: rgb(58, 72, 115),
+            // #323E64 — dimmer prompt chrome
+            prompt_border: rgb(60, 75, 120),
+            // #4B5C8C — brighter when focused
+            prompt_border_active: rgb(75, 92, 140),
             hover_border: rgb(55, 58, 80),
 
             accent_model: TEAL,
@@ -213,7 +253,8 @@ impl Theme {
             diff_equal_fg: COMMENT,
             diff_gutter_fg: COMMENT,
 
-            bg_visual: rgb(40, 52, 87), // #283457 — blue-tinted selection bg
+            // #283457 — blue-tinted selection bg
+            bg_visual: rgb(40, 52, 87),
 
             paste_bg: BG_STORM_DARK,
             paste_fg: FG_DARK,
@@ -239,7 +280,7 @@ impl Theme {
             md_muted: COMMENT,
             md_code_bg: BG_HIGHLIGHT,
             md_text: FG,
-            link_fg: BLUE, // #7aa2f7
+            link_fg: BLUE,
         }
     }
 

@@ -41,9 +41,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ChunkKind {
-    // ------------------------------------------------------------------
     // ToolChunk variants
-    // ------------------------------------------------------------------
     /// `ToolChunk::Output`
     ToolOutput,
     /// `ToolChunk::Progress`
@@ -59,9 +57,7 @@ pub enum ChunkKind {
     /// `ToolChunk::NeedPlanModeChange`
     NeedPlanModeChange,
 
-    // ------------------------------------------------------------------
     // OpsChunk variants
-    // ------------------------------------------------------------------
     /// `OpsChunk::GitStatus`
     GitStatus,
     /// `OpsChunk::GitDiff`
@@ -97,9 +93,7 @@ pub enum ChunkKind {
     /// `OpsChunk::RipgrepDone`
     RipgrepDone,
 
-    // ------------------------------------------------------------------
     // SessionChunk variants
-    // ------------------------------------------------------------------
     /// `SessionChunk::SessionId`
     SessionId,
     /// `SessionChunk::SessionInfo`
@@ -210,7 +204,7 @@ mod tests {
     /// Compile-time exhaustiveness guard.
     ///
     /// If a new variant is added to [`ChunkKind`] without being added
-    /// to this match, the build fails. The body is intentionally
+    /// to this match, the build fails. The body is deliberately
     /// trivial -- the only useful thing here is the exhaustive `match`.
     #[test]
     fn assert_exhaustive_match() {
@@ -276,7 +270,7 @@ mod tests {
     /// in `assert_exhaustive_match` ensure the reviewer does see a
     /// diff for every new variant.
     ///
-    /// The arm pattern is intentionally one-arm-per-variant (rather
+    /// The arm pattern is deliberately one-arm-per-variant (rather
     /// than `_ => ...`) so the match is exhaustive, not a catch-all.
     #[test]
     fn chunk_kind_all_is_complete() {

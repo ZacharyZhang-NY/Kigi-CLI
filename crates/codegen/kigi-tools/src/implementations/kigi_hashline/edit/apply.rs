@@ -70,10 +70,9 @@ fn detect_anchor_prefix_in_content(content: &str) -> Option<usize> {
 fn anchor_content_error(op_label: &str, content: &str, line_num: usize) -> HashlineEditError {
     let offending_line = content.lines().nth(line_num - 1).unwrap_or("").to_owned();
 
-    // Build a small context snippet (up to 3 lines around the offending line).
     let lines: Vec<&str> = content.lines().collect();
-    let ctx_start = line_num.saturating_sub(1).saturating_sub(1); // 1 line before (0-based)
-    let ctx_end = (line_num + 1).min(lines.len()); // 1 line after
+    let ctx_start = line_num.saturating_sub(1).saturating_sub(1);
+    let ctx_end = (line_num + 1).min(lines.len());
     let context: String = (ctx_start..ctx_end)
         .map(|i| {
             let marker = if i + 1 == line_num { ">>>" } else { "   " };
@@ -122,7 +121,6 @@ struct ResolvedOp {
 /// Result of `apply_edits`: the output to return to the caller, plus the new
 /// file content on success (to be written to disk by the tool layer).
 pub(crate) struct ApplyResult {
-    /// The structured output (success or error).
     pub output: HashlineEditOutput,
     /// The new file content string. `Some` only when `output` is
     /// `EditsApplied`; `None` on error.
@@ -283,7 +281,6 @@ pub(crate) fn apply_edits(
     let new_content = result_lines.join("\n");
     let total_new_lines = split_lines(&new_content).len();
 
-    // Sort edit regions top-down and merge nearby ones.
     edit_regions.sort_by_key(|r| r.0);
     let snippet = build_snippet(&new_content, &edit_regions, total_new_lines, scheme);
     let snippet_start_line = edit_regions
@@ -336,7 +333,7 @@ fn build_snippet(
         .unwrap()
         .min(total_new_lines);
 
-    // If the span is small enough, emit one contiguous snippet (original behavior).
+    // Span small enough: emit one contiguous snippet.
     if global_end - global_start <= MAX_CONTIGUOUS_SNIPPET {
         let (snippet, _raw) = format_hashline_content(
             new_content,
@@ -361,7 +358,6 @@ fn build_snippet(
         merged.push((ctx_start, ctx_end));
     }
 
-    // Build per-region snippets separated by gap markers.
     let mut parts: Vec<String> = Vec::new();
     let mut prev_end: usize = 0;
 
@@ -420,16 +416,16 @@ fn resolve_op(
                             ambiguous_candidates: vec![],
                         });
                     }
-                    e + 1 // exclusive end
+                    e + 1
                 }
-                None => start + 1, // single line
+                None => start + 1,
             };
 
             if let Some(line_num) = detect_anchor_prefix_in_content(content) {
                 return Err(anchor_content_error("replace", content, line_num));
             }
             let new_lines: Vec<String> = if content.is_empty() {
-                vec![] // delete
+                vec![]
             } else {
                 content.lines().map(|l| l.to_owned()).collect()
             };
@@ -464,7 +460,8 @@ fn resolve_op(
                 return Err(anchor_content_error("insert_after", content, line_num));
             }
             let new_lines: Vec<String> = if content.is_empty() {
-                vec![String::new()] // blank line
+                // Empty content inserts a blank line.
+                vec![String::new()]
             } else {
                 content.lines().map(|l| l.to_owned()).collect()
             };
@@ -472,7 +469,7 @@ fn resolve_op(
             Ok(ResolvedOp {
                 original_idx,
                 start: insert_at,
-                end: insert_at, // insertion: start == end
+                end: insert_at,
                 new_lines,
             })
         }
@@ -575,7 +572,7 @@ fn validate_anchor(
     let result = scheme.validate(&parsed, lines);
 
     match result {
-        ValidationResult::Valid => Ok(parsed.line - 1), // 0-based
+        ValidationResult::Valid => Ok(parsed.line - 1),
 
         ValidationResult::OutOfRange => Err(HashlineEditError {
             error: HashlineEditErrorKind::AnchorNotFound,
@@ -693,7 +690,7 @@ fn check_overlaps(ops: &[ResolvedOp]) -> Option<HashlineEditError> {
     // strictly inside a replacement span (start <= insert_at < end).
     for op in ops {
         if op.start != op.end {
-            continue; // not an insertion
+            continue;
         }
         let insert_at = op.start;
         for &(rs, re, r_idx) in &ranges {
@@ -796,7 +793,7 @@ mod tests {
     fn point_replace() {
         let anchors = anchors_for(SAMPLE);
         let ops = vec![HashlineOp::Replace {
-            anchor: anchors[1].clone(), // "    let x = 1;"
+            anchor: anchors[1].clone(),
             end_anchor: None,
             content: "    let x = 999;".to_owned(),
         }];
@@ -817,13 +814,12 @@ mod tests {
         let ops = vec![HashlineOp::Replace {
             anchor: anchors[1].clone(),
             end_anchor: None,
-            content: String::new(), // delete
+            content: String::new(),
         }];
 
         match apply_edits(SAMPLE, &ops, &test_path(), &*test_scheme()).output {
             HashlineEditOutput::EditsApplied(result) => {
                 assert_eq!(result.applied, 1);
-                // Deleted line should not appear in snippet.
                 assert!(!result.snippet.contains("let x = 1"));
             }
             HashlineEditOutput::Error(e) => panic!("Expected success, got error: {}", e.message),
@@ -834,8 +830,8 @@ mod tests {
     fn range_replace() {
         let anchors = anchors_for(SAMPLE);
         let ops = vec![HashlineOp::Replace {
-            anchor: anchors[1].clone(),           // "    let x = 1;"
-            end_anchor: Some(anchors[2].clone()), // "    let y = 2;"
+            anchor: anchors[1].clone(),
+            end_anchor: Some(anchors[2].clone()),
             content: "    let z = 42;".to_owned(),
         }];
 
@@ -915,15 +911,14 @@ mod tests {
     #[test]
     fn batch_ordering_bottom_up() {
         let anchors = anchors_for(SAMPLE);
-        // Two non-overlapping replacements at lines 2 and 4.
         let ops = vec![
             HashlineOp::Replace {
-                anchor: anchors[1].clone(), // line 2
+                anchor: anchors[1].clone(),
                 end_anchor: None,
                 content: "    let x = 100;".to_owned(),
             },
             HashlineOp::Replace {
-                anchor: anchors[3].clone(), // line 4
+                anchor: anchors[3].clone(),
                 end_anchor: None,
                 content: "    println!(\"changed\");".to_owned(),
             },
@@ -944,7 +939,7 @@ mod tests {
         // Build a file large enough that edits at opposite ends exceed MAX_CONTIGUOUS_SNIPPET.
         let line_count = 200;
         let mut file_lines: Vec<String> = (0..line_count).map(|i| format!("line_{i}")).collect();
-        file_lines.push(String::new()); // trailing newline
+        file_lines.push(String::new());
         let content = file_lines.join("\n");
 
         let anchors = anchors_for(&content);
@@ -995,12 +990,12 @@ mod tests {
         let anchors = anchors_for(SAMPLE);
         let ops = vec![
             HashlineOp::Replace {
-                anchor: anchors[1].clone(), // line 2
+                anchor: anchors[1].clone(),
                 end_anchor: None,
                 content: "    let x = 99;".to_owned(),
             },
             HashlineOp::Replace {
-                anchor: anchors[3].clone(), // line 4
+                anchor: anchors[3].clone(),
                 end_anchor: None,
                 content: "    println!(\"hi\");".to_owned(),
             },
@@ -1143,11 +1138,11 @@ mod tests {
         let ops = vec![
             HashlineOp::Replace {
                 anchor: anchors[1].clone(),
-                end_anchor: Some(anchors[3].clone()), // lines 2-4
+                end_anchor: Some(anchors[3].clone()),
                 content: "a".to_owned(),
             },
             HashlineOp::Replace {
-                anchor: anchors[2].clone(), // line 3 — overlaps
+                anchor: anchors[2].clone(),
                 end_anchor: None,
                 content: "b".to_owned(),
             },
@@ -1209,11 +1204,11 @@ mod tests {
         let ops = vec![
             HashlineOp::Replace {
                 anchor: anchors[1].clone(),
-                end_anchor: Some(anchors[3].clone()), // lines 2-4
+                end_anchor: Some(anchors[3].clone()),
                 content: "a".to_owned(),
             },
             HashlineOp::Replace {
-                anchor: anchors[2].clone(), // line 3 — overlaps
+                anchor: anchors[2].clone(),
                 end_anchor: None,
                 content: "b".to_owned(),
             },
@@ -1231,8 +1226,8 @@ mod tests {
     fn end_before_start_error() {
         let anchors = anchors_for(SAMPLE);
         let ops = vec![HashlineOp::Replace {
-            anchor: anchors[3].clone(),           // line 4
-            end_anchor: Some(anchors[1].clone()), // line 2 — before start
+            anchor: anchors[3].clone(),
+            end_anchor: Some(anchors[1].clone()),
             content: "x".to_owned(),
         }];
 
@@ -1272,7 +1267,6 @@ mod tests {
 
         match apply_edits(SAMPLE, &ops, &test_path(), &*test_scheme()).output {
             HashlineEditOutput::EditsApplied(result) => {
-                // Snippet should have the hashline format with anchors.
                 assert!(result.snippet.contains('→'));
                 assert!(result.snippet.contains(':'));
             }
@@ -1294,7 +1288,6 @@ mod tests {
                 // "line3" should appear right after "line2" in the snippet,
                 // without an intervening blank line.
                 assert!(result.snippet.contains("line3"));
-                // Count content lines in snippet (excluding "lines not shown").
                 let content_lines: Vec<&str> = result
                     .snippet
                     .lines()
@@ -1341,18 +1334,17 @@ mod tests {
         let anchors = anchors_for(SAMPLE);
         let ops = vec![
             HashlineOp::InsertAfter {
-                anchor: anchors[1].clone(), // after line 2
+                anchor: anchors[1].clone(),
                 content: "    // first".to_owned(),
             },
             HashlineOp::InsertAfter {
-                anchor: anchors[1].clone(), // same anchor
+                anchor: anchors[1].clone(),
                 content: "    // second".to_owned(),
             },
         ];
 
         match apply_edits(SAMPLE, &ops, &test_path(), &*test_scheme()).output {
             HashlineEditOutput::EditsApplied(result) => {
-                // "first" should appear before "second" in the output.
                 let first_pos = result.snippet.find("// first");
                 let second_pos = result.snippet.find("// second");
                 assert!(
@@ -1374,11 +1366,11 @@ mod tests {
         let ops = vec![
             HashlineOp::Replace {
                 anchor: anchors[1].clone(),
-                end_anchor: Some(anchors[3].clone()), // lines 2-4
+                end_anchor: Some(anchors[3].clone()),
                 content: "replaced".to_owned(),
             },
             HashlineOp::InsertAfter {
-                anchor: anchors[2].clone(), // line 3 — inside replaced span
+                anchor: anchors[2].clone(),
                 content: "inserted".to_owned(),
             },
         ];
@@ -1399,11 +1391,11 @@ mod tests {
         let ops = vec![
             HashlineOp::Replace {
                 anchor: anchors[1].clone(),
-                end_anchor: Some(anchors[3].clone()), // 0-based [1..4)
+                end_anchor: Some(anchors[3].clone()),
                 content: "replaced".to_owned(),
             },
             HashlineOp::InsertAfter {
-                anchor: "0:".to_owned(), // inserts at idx 0, before range
+                anchor: "0:".to_owned(),
                 content: "header".to_owned(),
             },
         ];
@@ -1424,11 +1416,11 @@ mod tests {
         let ops = vec![
             HashlineOp::Replace {
                 anchor: anchors[1].clone(),
-                end_anchor: Some(anchors[3].clone()), // 0-based [1..4)
+                end_anchor: Some(anchors[3].clone()),
                 content: "replaced".to_owned(),
             },
             HashlineOp::InsertAfter {
-                anchor: anchors[0].clone(), // after line 1 → insert_at=1 = range.start
+                anchor: anchors[0].clone(),
                 content: "at_range_start".to_owned(),
             },
         ];
@@ -1450,11 +1442,11 @@ mod tests {
         let ops = vec![
             HashlineOp::Replace {
                 anchor: anchors[1].clone(),
-                end_anchor: Some(anchors[2].clone()), // lines 2-3
+                end_anchor: Some(anchors[2].clone()),
                 content: "replaced".to_owned(),
             },
             HashlineOp::InsertAfter {
-                anchor: anchors[2].clone(), // insert after line 3 — at idx 3, which is exclusive end
+                anchor: anchors[2].clone(),
                 content: "after_range".to_owned(),
             },
         ];
@@ -1470,7 +1462,7 @@ mod tests {
         }
     }
 
-    // -- Stateless range policy tests ----------------------------------------
+    // Stateless range policy tests.
 
     #[test]
     fn large_range_produces_warning() {
@@ -1527,7 +1519,7 @@ mod tests {
         let anchors = anchors_for(SAMPLE);
         let ops = vec![HashlineOp::Replace {
             anchor: anchors[1].clone(),
-            end_anchor: Some(anchors[2].clone()), // 2-line range
+            end_anchor: Some(anchors[2].clone()),
             content: "replaced".to_owned(),
         }];
 
@@ -1539,12 +1531,12 @@ mod tests {
         }
     }
 
-    // -- Recovery tests -----------------------------------------------------
+    // Recovery tests.
 
     #[test]
     fn shifted_recovery_after_insert_above() {
         let anchors = anchors_for(SAMPLE);
-        let anchor_line2 = anchors[1].clone(); // "    let x = 1;"
+        let anchor_line2 = anchors[1].clone();
 
         // Insert 2 lines at the top → line 2 shifts to line 4.
         let mut shifted_lines: Vec<&str> = vec!["// new1", "// new2"];
@@ -1587,7 +1579,7 @@ mod tests {
     #[test]
     fn shifted_recovery_after_delete_above() {
         let anchors = anchors_for(SAMPLE);
-        let anchor_line4 = anchors[3].clone(); // "    println!(...)"
+        let anchor_line4 = anchors[3].clone();
 
         // Delete line 1 → line 4 shifts to line 3.
         let mut lines: Vec<&str> = SAMPLE.lines().collect();
@@ -1655,7 +1647,7 @@ mod tests {
         let content = lines.join("\n");
 
         let anchors = anchors_for(&content);
-        let anchor_line5 = anchors[4].clone(); // one of the repeated lines
+        let anchor_line5 = anchors[4].clone();
 
         // Insert a line at top → all repeated lines shift.
         let mut shifted = vec!["// inserted".to_owned()];
@@ -1770,7 +1762,7 @@ mod tests {
 
         // Get the FULL anchor (with chunk context) for line 5.
         let full_anchors = anchors_for(&original);
-        let full_anchor = full_anchors[4].clone(); // line 5, has :local:context
+        let full_anchor = full_anchors[4].clone();
 
         // Insert exactly 8 new lines at the top.
         // Line 5 → position 13. Chunk at [8,16) in the shifted file =
@@ -1800,7 +1792,7 @@ mod tests {
             "Recovery must find shifted line with full chunk anchor. Error: {}",
             err.message
         );
-        assert_eq!(err.shifted_to.unwrap(), 13); // line 5 + 8 = line 13
+        assert_eq!(err.shifted_to.unwrap(), 13);
         let fresh = err.shifted_anchor.expect("shifted_anchor must be present");
         assert!(err.message.contains("Retry"));
 
@@ -1864,18 +1856,15 @@ mod tests {
         let result = apply_edits(content, &ops, &test_path(), &*test_scheme());
         let new = result.new_content.expect("should succeed");
 
-        // A blank line should appear between line1 and line2.
         assert!(
             new.contains("line1\n\nline2"),
             "empty content should insert a blank line, got: {new}"
         );
 
-        // The detail should reflect the blank line insertion.
         assert_eq!(result.edit_details.len(), 1);
         assert_eq!(result.edit_details[0].old_text, "");
         assert_eq!(result.edit_details[0].new_text, "");
 
-        // The snippet should include the blank line with a fresh anchor.
         match result.output {
             HashlineEditOutput::EditsApplied(applied) => {
                 assert!(
@@ -1908,8 +1897,8 @@ mod tests {
         let anchors = anchors_for(content);
 
         let ops = vec![HashlineOp::Replace {
-            anchor: anchors[1].clone(),           // line2
-            end_anchor: Some(anchors[3].clone()), // line4
+            anchor: anchors[1].clone(),
+            end_anchor: Some(anchors[3].clone()),
             content: "replaced_range".to_owned(),
         }];
 
@@ -1925,11 +1914,11 @@ mod tests {
         let anchors = anchors_for(SAMPLE);
         let ops = vec![
             HashlineOp::InsertAfter {
-                anchor: anchors[0].clone(), // after "fn main() {"
+                anchor: anchors[0].clone(),
                 content: "    // comment".to_owned(),
             },
             HashlineOp::Replace {
-                anchor: anchors[3].clone(), // println line
+                anchor: anchors[3].clone(),
                 end_anchor: None,
                 content: "    println!(\"changed\");".to_owned(),
             },
@@ -1937,10 +1926,8 @@ mod tests {
 
         let result = apply_edits(SAMPLE, &ops, &test_path(), &*test_scheme());
         assert_eq!(result.edit_details.len(), 2);
-        // Insert: no old content
         assert_eq!(result.edit_details[0].old_text, "");
         assert_eq!(result.edit_details[0].new_text, "    // comment");
-        // Replace: old content is the println line
         assert_eq!(
             result.edit_details[1].old_text,
             "    println!(\"{x} {y}\");"
@@ -1951,7 +1938,7 @@ mod tests {
         );
         // New line should account for the insertion shift
         assert_eq!(result.edit_details[1].old_line, 4);
-        assert_eq!(result.edit_details[1].new_line, 5); // shifted by 1
+        assert_eq!(result.edit_details[1].new_line, 5);
     }
 
     #[test]
@@ -1999,7 +1986,6 @@ mod tests {
         let result = apply_edits(&content, &ops, &test_path(), &*test_scheme());
         assert_eq!(result.edit_details.len(), 2);
 
-        // Each detail should contain only the affected content
         assert_eq!(result.edit_details[0].old_text, "");
         assert_eq!(result.edit_details[0].new_text, "INSERTED");
         assert_eq!(result.edit_details[1].old_text, "line_194");
@@ -2123,7 +2109,7 @@ mod tests {
             result.is_ok(),
             "unique hash suffix should recover: {suffix}"
         );
-        assert_eq!(result.unwrap(), 2); // 0-based line index
+        assert_eq!(result.unwrap(), 2);
     }
 
     #[test]

@@ -1,7 +1,4 @@
-//! `kill_task` tool — new architecture (`Tool` trait).
-//!
-//! Terminates a running background task. Reads the `Terminal` resource
-//! from Resources to access the terminal backend.
+//! `kill_task` tool: terminates a running background task or subagent.
 
 pub mod terminal_command;
 pub use terminal_command::KillTerminalCommandTool;
@@ -17,40 +14,24 @@ use crate::types::tool::ToolKind;
 use crate::types::tool::ToolNamespace;
 use kigi_tool_types::{KillTaskOutput, KillTaskResult, KillTaskToolInput};
 
-// ───────────────────────────────────────────────────────────────────────────
-// Tool implementation
-// ───────────────────────────────────────────────────────────────────────────
-
 #[derive(Debug, Default)]
 pub struct KillTaskTool;
 
-// ── Legacy message helpers ───────────────────────────────────────────────
-//
-// Historical fixture captured from an earlier (0.4.10) revision of this tool.
-//
-// In 0.4.10, kill_task returned:
-//   Err(ToolError::ProcessManagerError(format!("Task {} not found", input.task_id)))
-//
-// The meaningful customer-facing message content is the inner string.
-// Subagent wording is out of scope — subagents didn't exist in 0.4.10.
-
-/// Exact historical not-found message for `kill_task` in legacy-0.4.10.
+/// Byte-for-byte fixture of the 0.4.10 message, which clients on the
+/// `legacy-0.4.10` contract still match against. It carries no subagent
+/// wording because subagents did not exist in that release.
 fn render_legacy_kill_task_not_found(task_id: &str) -> String {
     format!("Task {} not found", task_id)
 }
 
-/// Format a "not found" response for kill_task.
 async fn not_found_response(
     task_id: &str,
     terminal: &std::sync::Arc<dyn crate::computer::types::TerminalBackend>,
     is_legacy: bool,
 ) -> KillTaskOutput {
     if is_legacy {
-        // Legacy: simple error without task ID enumeration.
-        // Subagent wording is out of scope — subagents didn't exist in 0.4.10.
         return KillTaskOutput::TaskNotFound(render_legacy_kill_task_not_found(task_id));
     }
-    // Current: include known task IDs for discoverability.
     let known = terminal.list_tasks().await;
     let msg = if known.is_empty() {
         format!(
@@ -76,9 +57,8 @@ impl crate::types::tool_metadata::ToolMetadata for KillTaskTool {
     }
 
     fn description_template(&self) -> &str {
-        // Canonical wording lives in the shared builder; `versioned_definition`
-        // renders it context-aware from the finalized toolset. This static
-        // fallback mirrors the default kigi toolset on the current OS.
+        // Only a fallback for callers that skip `versioned_definition`; it
+        // assumes the default kigi toolset rather than the finalized one.
         static DESC: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
             kigi_tool_types::build_kill_task_description(&kigi_tool_types::KillTaskToolNaming {
                 monitor_tool: Some("monitor"),
@@ -126,11 +106,10 @@ impl crate::types::tool_metadata::ToolMetadata for KillTaskTool {
     }
 }
 
-/// Resolve the model-facing `kill_task` description from the finalized toolset,
-/// honoring an explicit config override. Wording lives in the shared
-/// [`kigi_tool_types::build_kill_task_description`] builder so the CLI and
-/// prod-chat can't drift; the monitor / subagent / bash clauses follow the
-/// tools actually registered this turn, and the kill verb follows the host OS.
+/// Wording lives in the shared [`kigi_tool_types::build_kill_task_description`]
+/// builder so the CLI and prod-chat can't drift; the monitor / subagent / bash
+/// clauses follow the tools actually registered this turn, so the description
+/// never names a tool the model wasn't given.
 fn kill_task_description(
     renderer: &TemplateRenderer,
     description_override: Option<&str>,
@@ -209,7 +188,7 @@ impl kigi_tool_runtime::Tool for KillTaskTool {
                 message: "Task had already completed".to_string(),
             })),
             KillOutcome::NotFound => {
-                // Try subagent cancel via backend
+                // Not a terminal task; it may still be a subagent.
                 let backend = {
                     resources
                         .lock()
@@ -246,10 +225,6 @@ impl kigi_tool_runtime::Tool for KillTaskTool {
     }
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Tests
-// ───────────────────────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -277,9 +252,7 @@ mod tests {
         ctx
     }
 
-    /// Minimal mock backend for testing kill_task.
     struct MockTerminal {
-        /// Pre-configured outcome for `kill_task` calls.
         outcome: KO,
     }
 
@@ -331,14 +304,11 @@ mod tests {
     fn tool_name_and_description() {
         let tool = KillTaskTool;
         assert_eq!(kigi_tool_runtime::Tool::id(&tool).as_str(), "kill_task");
-        // The static fallback is the shared builder's default kigi
-        // rendering (monitor + task + bash present) for the current OS.
+        // Fallback assumes the default toolset, so monitor + task + bash all appear.
         let desc = crate::types::tool_metadata::ToolMetadata::description_template(&tool);
         assert!(desc.contains("Terminate"));
         assert!(desc.contains("subagent"));
-        // Must name "monitor" so the model connects stopping a monitor to this tool.
         assert!(desc.contains("monitor"));
-        // The kill verb is OS-specific (SIGTERM on POSIX, Job Object on Windows).
         if cfg!(not(unix)) {
             assert!(desc.contains("Job Object"), "windows verb: {desc}");
         } else {
@@ -523,7 +493,8 @@ mod tests {
             },
         )
         .await
-        .unwrap(); // Should be Ok, not Err
+        // Not-found is a typed output, not an `Err`.
+        .unwrap();
 
         match result {
             KillTaskOutput::TaskNotFound(msg) => {
@@ -559,8 +530,6 @@ mod tests {
         );
     }
 
-    // ── MP-3: Legacy message parity fixture tests ────────────────────────
-
     #[tokio::test]
     async fn legacy_kill_task_not_found_exact_historical_message() {
         let resources = resources_with_terminal(KO::NotFound);
@@ -578,7 +547,6 @@ mod tests {
 
         match result {
             KillTaskOutput::TaskNotFound(msg) => {
-                // Exact historical fixture — no trailing period.
                 assert_eq!(msg, "Task task-abc not found");
             }
             other => panic!("Expected TaskNotFound, got {:?}", other),
@@ -613,11 +581,8 @@ mod tests {
         }
     }
 
-    // ── Subagent cancel via backend tests ─────────────────────────────
-
-    /// Build resources with a terminal that returns `NotFound` and a
-    /// `SubagentBackendResource` backed by channels, returning the cancel
-    /// receiver so the test can simulate the coordinator.
+    /// Terminal returns `NotFound` and a channel-backed `SubagentBackendResource`
+    /// is installed; the returned receiver lets the test play the coordinator.
     fn resources_with_backend_cancel() -> (
         Resources,
         tokio::sync::mpsc::UnboundedReceiver<SubagentEvent>,

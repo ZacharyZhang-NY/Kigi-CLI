@@ -7,7 +7,7 @@
 //! token and the user is forced to re-login. See
 //! `kigi-shell`'s `AuthManager` sleep gate, which consumes these events to
 //! avoid *starting* a refresh just before sleep. An in-flight refresh is
-//! deliberately left to finish, never aborted (dropping it could discard a
+//! Deliberately left to finish, never aborted (dropping it could discard a
 //! rotated-token response and cause the very revocation this guards against);
 //! instead, its [`PowerEvent::WillSleep`] handler may block briefly (bounded)
 //! to hold off the suspend until that in-flight refresh completes — see the
@@ -49,7 +49,7 @@ pub enum PowerEvent {
     /// Handlers must therefore be idempotent and safe to "cancel" via
     /// `DidWake`.
     WillSleep,
-    /// The system resumed from sleep, or a previously announced sleep was
+    /// The system resumed from sleep, or a earlier announced sleep was
     /// cancelled (macOS `kIOMessageSystemWillNotSleep` after a vetoed
     /// idle-sleep query). Both mean "not sleeping (anymore)".
     DidWake,
@@ -161,7 +161,7 @@ mod tests {
     #[test]
     fn power_event_is_copy_eq() {
         let e = PowerEvent::WillSleep;
-        let copied = e; // Copy
+        let copied = e;
         assert_eq!(e, copied);
         assert_ne!(PowerEvent::WillSleep, PowerEvent::DidWake);
     }

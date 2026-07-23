@@ -1,6 +1,4 @@
-//! Low-level rendering utilities.
-//!
-//! Generic rendering primitives used by the scrollback and viewport.
+//! Low-level rendering primitives shared by the scrollback and viewport.
 pub mod color;
 pub mod draw;
 pub mod gboom_overlay;

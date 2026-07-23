@@ -11,6 +11,9 @@ use super::image::{
 static NEXT_OWNER_ID: AtomicU64 = AtomicU64::new(1);
 
 thread_local! {
+    /// Owner whose image the terminal is believed to still hold; a matching
+    /// owner lets the next frame re-place that image without retransmitting
+    /// its pixel data.
     static OWNER: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
 }
 
@@ -20,6 +23,10 @@ pub(crate) enum Ownership {
     Clear,
 }
 
+/// Escape bytes plus the ownership transition they imply. The transition is
+/// applied only by [`Escapes::commit`] or [`PostFlush::write_to`], so escapes
+/// that are built and then dropped — or that fail to reach the terminal —
+/// leave `OWNER` describing what the terminal actually holds.
 #[derive(Debug)]
 pub struct Escapes {
     bytes: String,

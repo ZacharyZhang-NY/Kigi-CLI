@@ -341,7 +341,8 @@ mod tests {
         let handle = spawn_transport_liveness(
             "test-server".to_string(),
             client,
-            Duration::from_secs(60), // Long interval so the first tick is far away.
+            // Long interval so the first tick is far away.
+            Duration::from_secs(60),
             tx,
             Arc::clone(&slot),
         );

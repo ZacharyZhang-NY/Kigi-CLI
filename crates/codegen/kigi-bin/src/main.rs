@@ -702,7 +702,7 @@ async fn run_agent_command(
             }
         }
     }
-    // Fire-and-forget model-catalog warmup (nothing joins the handle now that
+    // Fire-and-forget model-catalog warmup (nothing joins the handle because
     // the xAI settings fetch it used to carry is gone).
     drop(kigi_shell::agent::models::start_early_prefetch(None));
     kigi_shell::agent::mvp_agent::warm_async_http_client();
@@ -1966,7 +1966,7 @@ mod tests {
         assert!(s.last_session_id.is_none());
     }
     /// An UNCONFIRMED `session/new` (leader died before its response) must not
-    /// be replayed — its id was never assigned — but previously loaded
+    /// be replayed — its id was never assigned — but earlier loaded
     /// sessions still restore.
     #[tokio::test]
     async fn replay_after_unconfirmed_session_new_restores_prior_sessions() {

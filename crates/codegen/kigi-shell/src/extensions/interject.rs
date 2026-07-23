@@ -66,8 +66,6 @@ pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
 mod tests {
     use super::*;
 
-    /// Legacy wire shape (no `content`) parses byte-identically: text-only,
-    /// zero images, no text override.
     #[test]
     fn parse_without_content_is_legacy_text_only() {
         let req: InterjectRequest = serde_json::from_value(serde_json::json!({
@@ -83,9 +81,6 @@ mod tests {
         assert!(images.is_empty());
     }
 
-    /// `content` with text + image blocks parses; the images are extracted
-    /// and the Text block (the client's rewritten, path-stripped text)
-    /// overrides the raw `text` param.
     #[test]
     fn parse_with_content_extracts_images_and_prefers_block_text() {
         let req: InterjectRequest = serde_json::from_value(serde_json::json!({
@@ -108,8 +103,6 @@ mod tests {
         assert_eq!(images[0].data, "aGVsbG8=");
     }
 
-    /// Garbage `content` fails the whole parse (strict, like other params)
-    /// instead of silently dropping attachments.
     #[test]
     fn parse_with_garbage_content_is_an_error() {
         let result: Result<InterjectRequest, _> = serde_json::from_value(serde_json::json!({

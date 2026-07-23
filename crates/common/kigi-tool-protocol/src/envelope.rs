@@ -79,7 +79,6 @@ impl JsonRpcId {
         Self::String(s.into())
     }
 
-    /// Build a fresh UUID v7-backed id.
     pub fn new_uuid_v7() -> Self {
         Self::String(uuid::Uuid::now_v7().to_string())
     }

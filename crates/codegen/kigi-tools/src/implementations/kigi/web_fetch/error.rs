@@ -1,4 +1,4 @@
-/// Structured errors for the `web_fetch` tool.
+//! Structured errors for the `web_fetch` tool.
 use std::net::IpAddr;
 
 #[derive(Debug, thiserror::Error)]
@@ -98,7 +98,7 @@ mod tests {
     fn github_host_detection() {
         assert!(is_github_host("github.com"));
         assert!(is_github_host("api.github.com"));
-        assert!(is_github_host("github.ghe.example.com")); // synthetic GHE-style
+        assert!(is_github_host("github.ghe.example.com"));
         assert!(!is_github_host("ghe.example.com"));
         assert!(!is_github_host("internal-wiki.corp.example.com"));
         assert!(!is_github_host("gitlab.example.com"));
@@ -109,9 +109,7 @@ mod tests {
         // Exercises the same `which` lookup `gh_available` uses, with a
         // controlled search dir so it doesn't depend on the test host's PATH.
         let dir = tempfile::tempdir().unwrap();
-        // No gh in this dir yet.
         assert!(which::which_in("gh", Some(dir.path()), dir.path()).is_err());
-        // Create an executable `gh`.
         let gh = dir.path().join("gh");
         std::fs::write(&gh, b"#!/bin/sh\nexit 0\n").unwrap();
         #[cfg(unix)]

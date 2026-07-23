@@ -56,7 +56,7 @@ static CLIENT_TYPE: OnceLock<ClientType> = OnceLock::new();
 // `OriginClientInfo` is owned by `kigi-sampler` so `SamplerConfig` can use
 // it without taking a circular dependency on `kigi-shell`. Re-exported
 // under the same path (`crate::http::OriginClientInfo`) so existing call-sites
-// compile unchanged. The telemetry engine in `kigi-telemetry` consumes
+// compile `unchanged`. The telemetry engine in `kigi-telemetry` consumes
 // the same type via `kigi_sampler::OriginClientInfo`. The shell-specific
 // constructors that depended on `ClientType` (a shell-only type) are free
 // functions below.

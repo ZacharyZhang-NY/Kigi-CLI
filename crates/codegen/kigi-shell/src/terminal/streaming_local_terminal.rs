@@ -411,7 +411,6 @@ pub async fn background_terminal(session_id: &str, terminal_id: &str) {
         let mut state = entry.output_state.lock().await;
         state.backgrounded = true;
     }
-    // Notify waiters so they can return early
     entry.exit_notify.notify_waiters();
 }
 
@@ -559,7 +558,6 @@ impl StreamingLocalTerminalRunner {
         // Open file handle once at start (more efficient than open/close per write)
         let mut file_handle: Option<tokio::fs::File> = match &output_file {
             Some(path) => {
-                // Ensure parent directory exists
                 if let Some(parent) = path.parent() {
                     let _ = tokio::fs::create_dir_all(parent).await;
                 }
@@ -597,7 +595,6 @@ impl StreamingLocalTerminalRunner {
             {
                 let state = output_state.lock().await;
                 if state.backgrounded {
-                    // Flush file before returning
                     if let Some(ref mut file) = file_handle {
                         let _ = file.flush().await;
                     }
@@ -615,7 +612,6 @@ impl StreamingLocalTerminalRunner {
                 && stderr.is_none()
                 && let Some(process_status) = try_get_exit_status(&child_handle).await
             {
-                // Flush file before returning
                 if let Some(ref mut file) = file_handle {
                     let _ = file.flush().await;
                 }
@@ -711,7 +707,6 @@ impl StreamingLocalTerminalRunner {
                     }
                 }
                 _ = &mut sleep => {
-                    // Flush file before returning
                     if let Some(ref mut file) = file_handle {
                         let _ = file.flush().await;
                     }
@@ -991,7 +986,6 @@ async fn take_child_io(
 /// by using char_indices to find a valid character boundary.
 fn truncate_buffer(buf: &mut Vec<u8>, limit: usize) -> bool {
     if buf.len() > limit {
-        // Convert to string to work with character boundaries
         let s = String::from_utf8_lossy(buf);
         let excess = buf.len().saturating_sub(limit);
 
@@ -1002,7 +996,6 @@ fn truncate_buffer(buf: &mut Vec<u8>, limit: usize) -> bool {
             .map(|(i, _)| i)
             .unwrap_or(s.len());
 
-        // Slice from that boundary and update buffer
         *buf = s[start_idx..].as_bytes().to_vec();
 
         true
@@ -1050,12 +1043,10 @@ async fn wait_background_completion(
 ) {
     use kigi_tools::types::output::{BashOutput, ToolOutput};
 
-    // Wait for the process to exit
     loop {
         if let Some(process_status) = try_get_exit_status(&child_handle).await {
             let exit_status = extract_exit_status(process_status);
 
-            // Get final output from state
             let (output_buf, truncated) = {
                 let state = output_state.lock().await;
                 (state.output.clone(), state.truncated)
@@ -1108,7 +1099,6 @@ async fn wait_background_completion(
             return;
         }
 
-        // Sleep briefly before checking again
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
@@ -1389,23 +1379,19 @@ mod tests {
                 // Wait for both to start.
                 tokio::time::sleep(Duration::from_millis(100)).await;
 
-                // Mark one as backgrounded.
                 background_terminal(&session_id, &bg_id).await;
 
                 // Sanity: both are in the registry.
                 assert!(get_terminal_output(&session_id, &normal_id).await.is_some());
                 assert!(get_terminal_output(&session_id, &bg_id).await.is_some());
 
-                // Kill all non-backgrounded terminals for the session.
                 kill_and_release_all_for_session(&session_id).await;
 
-                // Normal terminal should be gone.
                 assert!(
                     get_terminal_output(&session_id, &normal_id).await.is_none(),
                     "non-backgrounded terminal should be removed from registry"
                 );
 
-                // Backgrounded terminal should still be present.
                 assert!(
                     get_terminal_output(&session_id, &bg_id).await.is_some(),
                     "backgrounded terminal should remain in registry"
@@ -1519,7 +1505,6 @@ mod tests {
                 let session_a = format!("kill-all-a-{}", std::process::id());
                 let session_b = format!("kill-all-b-{}", std::process::id());
 
-                // Create a terminal in session B.
                 let id_b = create_terminal(
                     &session_b,
                     "sleep",
@@ -1536,13 +1521,11 @@ mod tests {
                 // Kill all for session A (different session).
                 kill_and_release_all_for_session(&session_a).await;
 
-                // Session B terminal should be untouched.
                 assert!(
                     get_terminal_output(&session_b, &id_b).await.is_some(),
                     "terminals in other sessions should not be affected"
                 );
 
-                // Clean up.
                 release_terminal(&session_b, &id_b).await;
             })
             .await;

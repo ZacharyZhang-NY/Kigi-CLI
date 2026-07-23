@@ -1,11 +1,9 @@
 //! Minimal-mode sign-in rendering for the live region.
 //!
-//! Before any agent session exists (unauthenticated / folder-trust pending) the
-//! minimal live region shows the sign-in flow itself — device or external-command
-//! flow, a sign-in error, or a brief "starting" transient once authenticated —
-//! since minimal has no welcome screen. [`draw_live`](super::live::draw_live)
-//! computes a [`MinimalAuthHint`] from the app's [`AuthState`] and renders it via
-//! [`render_auth`].
+//! Minimal has no welcome screen, so before any agent session exists the live
+//! region itself shows the sign-in flow.
+//! [`draw_live`](super::live::draw_live) computes a [`MinimalAuthHint`] from the
+//! app's [`AuthState`] and renders it via [`render_auth`].
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -15,26 +13,20 @@ use ratatui::text::{Line, Span};
 use kigi_tui::app::app_view::AuthState;
 use kigi_tui::theme::Theme;
 
-/// What the minimal live region shows when there is no active agent yet: the
-/// in-region sign-in flow (device or external-command), a sign-in error, or a
-/// brief "starting" transient once authenticated. Computed from [`AuthState`]
-/// before the draw closure so the closure can own it.
+/// What the no-agent live region shows. Computed from [`AuthState`] before the
+/// draw closure so the closure can own it.
 pub(super) enum MinimalAuthHint {
-    /// Interactive sign-in underway — show the URL (when known) and the device
-    /// code (when the URL carries one). Covers device flow and the external
-    /// command flow (where the provider opens its own browser; `url` may be
-    /// `None`).
+    /// Covers both the device flow and the external command flow, where the
+    /// provider opens its own browser and `url` may be `None`.
     SigningIn {
         url: Option<String>,
         code: Option<String>,
     },
-    /// The last sign-in attempt failed; show the error.
     Failed(String),
-    /// Authenticated — the session is being created (brief transient).
+    /// Authenticated; the session is being created (brief transient).
     Starting,
 }
 
-/// Map the app's [`AuthState`] to what the no-agent live region should show.
 pub(super) fn minimal_auth_hint(auth: &AuthState) -> MinimalAuthHint {
     match auth {
         AuthState::Authenticating { auth_url, .. } => MinimalAuthHint::SigningIn {
@@ -45,7 +37,7 @@ pub(super) fn minimal_auth_hint(auth: &AuthState) -> MinimalAuthHint {
                 .map(str::to_owned),
         },
         AuthState::Pending { error: Some(err) } => MinimalAuthHint::Failed(err.clone()),
-        // Login is starting (auto-triggered at startup) — the URL arrives via
+        // Login is starting (auto-triggered at startup); the URL arrives via
         // AuthUrlReady, which flips us to `Authenticating`.
         AuthState::Pending { error: None } => MinimalAuthHint::SigningIn {
             url: None,
@@ -55,9 +47,8 @@ pub(super) fn minimal_auth_hint(auth: &AuthState) -> MinimalAuthHint {
     }
 }
 
-/// Parse the device-flow `user_code` from a verification URL (`None` if absent
-/// or malformed). Mirrors `views::welcome::extract_user_code`, kept local so
-/// minimal does not depend on welcome-screen internals.
+/// Mirrors `views::welcome::extract_user_code`, kept local so minimal does not
+/// depend on welcome-screen internals.
 fn device_user_code(url: &str) -> Option<&str> {
     let code = url
         .split('?')
@@ -68,7 +59,7 @@ fn device_user_code(url: &str) -> Option<&str> {
         .then_some(code)
 }
 
-/// Write `line` at row `y` (when it fits) and return the next row.
+/// Returns the next free row; `y` unchanged when the line did not fit.
 fn put_line(buf: &mut Buffer, area: Rect, y: u16, bottom: u16, line: Line<'_>) -> u16 {
     if y < bottom {
         buf.set_line(area.x, y, &line, area.width);
@@ -78,10 +69,10 @@ fn put_line(buf: &mut Buffer, area: Rect, y: u16, bottom: u16, line: Line<'_>) -
     }
 }
 
-/// Write `url` character-by-character across as many rows as it needs (no
-/// wrap-inserted spaces), so the terminal's native selection copies it verbatim
-/// — minimal has no mouse capture, so copy is the terminal's job. Returns the
-/// next free row.
+/// Writes `url` character-by-character across as many rows as it needs, so no
+/// wrap-inserted spaces land inside it and the terminal's native selection
+/// copies it verbatim — minimal has no mouse capture, so copy is the terminal's
+/// job. Returns the next free row.
 fn render_url(
     buf: &mut Buffer,
     area: Rect,
@@ -91,7 +82,7 @@ fn render_url(
     style: Style,
 ) -> u16 {
     let width = area.width.max(1);
-    // Snapshot the buffer bounds as values so the `&Rect` borrow doesn't outlive
+    // Snapshot the bounds as values so the `&Rect` borrow of `buf` ends before
     // the mutable cell writes below.
     let (max_x, max_y) = {
         let a = buf.area();
@@ -120,8 +111,7 @@ fn render_url(
     y.saturating_add(1)
 }
 
-/// Render the sign-in flow (or transient status) in the live region when no
-/// agent exists yet. Top-aligned in `area`; clips to its height.
+/// Top-aligned in `area`; clips to its height.
 pub(super) fn render_auth(buf: &mut Buffer, area: Rect, theme: &Theme, hint: &MinimalAuthHint) {
     if area.width == 0 || area.height == 0 {
         return;
@@ -258,7 +248,6 @@ mod tests {
     fn auth_hint_maps_auth_state() {
         use kigi_tui::app::app_view::AuthMode;
 
-        // Device flow → SigningIn carrying the URL and the parsed code.
         let st = AuthState::Authenticating {
             request_seq: 1,
             handle: None,
@@ -276,7 +265,7 @@ mod tests {
             _ => panic!("expected SigningIn"),
         }
 
-        // External command flow with no code → SigningIn, URL but no code.
+        // The external command flow carries no `user_code` in its URL.
         let st = AuthState::Authenticating {
             request_seq: 2,
             handle: None,

@@ -6,7 +6,6 @@
 
 use crate::format::CrashBlob;
 
-/// A resolved backtrace frame.
 #[derive(Debug, Clone)]
 pub struct ResolvedFrame {
     pub ip: usize,
@@ -15,13 +14,9 @@ pub struct ResolvedFrame {
     pub lineno: Option<u32>,
 }
 
-/// Resolve raw instruction pointers from a crash blob into symbol names.
-///
-/// Uses the `backtrace` crate's `resolve` function. This works best when
-/// the binary has debug info or at least a symbol table. For stripped
-/// release binaries, symbol names may still be available (e.g.
-/// `my_app::render::draw_frame`) but file/line info will
-/// be missing.
+/// Resolution quality depends on what the binary carries: with debug info
+/// frames get file and line, while a stripped release binary may still yield
+/// symbol names (e.g. `my_app::render::draw_frame`) but no file/line.
 pub fn resolve_frames(blob: &CrashBlob) -> Vec<ResolvedFrame> {
     blob.frames
         .iter()
@@ -46,7 +41,6 @@ pub fn resolve_frames(blob: &CrashBlob) -> Vec<ResolvedFrame> {
         .collect()
 }
 
-/// Format a crash report as human-readable text.
 pub fn format_report(blob: &CrashBlob, frames: &[ResolvedFrame]) -> String {
     let mut out = String::with_capacity(4096);
 
@@ -62,7 +56,8 @@ pub fn format_report(blob: &CrashBlob, frames: &[ResolvedFrame]) -> String {
     out.push_str(&format!("PID:     {}\n", blob.pid));
     out.push_str(&format!("Version: {}\n", blob.app_version));
 
-    // Format timestamp as ISO 8601 (best-effort without chrono dependency).
+    // Raw unix seconds: a calendar-formatted time would cost a date-time
+    // dependency for a report that is read alongside other unix timestamps.
     out.push_str(&format!("Time:    {} (unix)\n", blob.timestamp));
 
     out.push_str(&format!("\nBacktrace ({} frames):\n", frames.len()));

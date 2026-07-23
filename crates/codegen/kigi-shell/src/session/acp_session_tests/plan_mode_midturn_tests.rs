@@ -1,8 +1,8 @@
 //! Mid-turn plan-mode toggle: `handle_session_mode("plan")` while a turn is
 //! running must activate the tracker immediately and buffer the activation
-//! reminder for the running turn (previously, toggling plan mode while
-//! the model is thinking was ignored until the next prompt, so the model
-//! jumped straight into implementation).
+//! reminder for the running turn. Without this, a toggle while the model is
+//! thinking is ignored until the next prompt and the model jumps straight into
+//! implementation.
 use super::support::*;
 use super::*;
 

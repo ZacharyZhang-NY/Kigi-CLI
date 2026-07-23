@@ -1057,19 +1057,6 @@ async fn cancel_running_task_teardown_clears_running_and_pending_work() {
         })
         .await;
 }
-/// Interactive cancel (`kill_background_tasks = false`, the Ctrl+C path) aborts
-/// the running turn and removes ONLY the running prompt (the front of
-/// `pending_inputs`). Every queued prompt is PRESERVED so the `Cancel`
-/// handler's follow-up `maybe_start_running_task` promotes the new front (the
-/// user's next queued prompt) and rebroadcasts `kigi/queue/changed`. The
-/// cancelling client never pulls a queued prompt back into its input — the
-/// server queue is the single source of truth for what runs next.
-///
-/// Regression for two bugs: (1) every cancel did `std::mem::take` on the queue,
-/// silently discarding all queued prompts (which only surfaced to clients on
-/// the next prompt's empty broadcast); (2) the running prompt stays at
-/// `pending_inputs.front()` while running, so naively preserving the queue
-/// would re-run the cancelled turn.
 /// A Ctrl+C / ESC cancel (`session/cancel` → `cancel_running_task`) records a
 /// `MidTurnAbort` interrupt cause on the EventTracker so the *next* real user
 /// prompt gets tagged `PriorTurnInterrupt::MidTurnAbort`. Guards the cancel →
@@ -1433,6 +1420,19 @@ async fn handle_prompt_synthetic_origin_preserves_interrupt_reminder() {
         })
         .await;
 }
+/// Interactive cancel (`kill_background_tasks = false`, the Ctrl+C path) aborts
+/// the running turn and removes ONLY the running prompt (the front of
+/// `pending_inputs`). Every queued prompt is PRESERVED so the `Cancel`
+/// handler's follow-up `maybe_start_running_task` promotes the new front (the
+/// user's next queued prompt) and rebroadcasts `kigi/queue/changed`. The
+/// cancelling client never pulls a queued prompt back into its input — the
+/// server queue is the single source of truth for what runs next.
+///
+/// Regression for two bugs: (1) every cancel did `std::mem::take` on the queue,
+/// silently discarding all queued prompts (which only surfaced to clients on
+/// the next prompt's empty broadcast); (2) the running prompt stays at
+/// `pending_inputs.front()` while running, so naively preserving the queue
+/// would re-run the cancelled turn.
 #[tokio::test(flavor = "current_thread")]
 async fn cancel_running_task_interactive_preserves_queued_work() {
     use tokio::sync::oneshot::error::TryRecvError;

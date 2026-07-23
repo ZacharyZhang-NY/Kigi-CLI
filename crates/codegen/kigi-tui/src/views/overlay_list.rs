@@ -1,10 +1,10 @@
 //! Shared prompt-area list overlay: accent bar, bold title, and a
 //! scrollable single-line row list with a cursor.
 //!
-//! One source of truth for the row geometry that `/rewind`'s picker phase
-//! and `/jump` previously each kept in sync by hand across their render,
-//! hit-test, and height functions. Row *content* stays with the caller
-//! (a closure); this owns chrome, cursor styling, and the scroll window.
+//! One source of truth for the row geometry shared by `/rewind`'s picker
+//! phase and `/jump` across their render, hit-test, and height paths. Row
+//! *content* stays with the caller (a closure); this owns chrome, cursor
+//! styling, and the scroll window.
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -29,7 +29,6 @@ pub struct RowCtx {
     pub is_cursor: bool,
     /// Resolved row background (cursor rows get the visual-selection bg).
     pub row_bg: Color,
-    /// Width available for the row's content.
     pub content_width: u16,
 }
 
@@ -210,12 +209,15 @@ mod tests {
             len: 2,
             selected: 0,
         };
-        assert_eq!(two.height(40), 5); // title + 2 rows + padding
+        // title + 2 rows + padding
+        assert_eq!(two.height(40), 5);
         let many = ListOverlay {
             len: 30,
             selected: 0,
         };
-        assert_eq!(many.height(40), 18); // 15-row cap
-        assert_eq!(many.height(12), 8); // 60% screen cap
+        // 15-row cap
+        assert_eq!(many.height(40), 18);
+        // 60% screen cap
+        assert_eq!(many.height(12), 8);
     }
 }

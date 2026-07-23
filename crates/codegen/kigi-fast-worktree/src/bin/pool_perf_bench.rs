@@ -23,9 +23,7 @@ use clap::Parser;
 
 use kigi_fast_worktree::{CreationMode, WorktreeBuilder, WorktreeSync, remove_worktree};
 
-// ============================================================================
 // CLI
-// ============================================================================
 
 #[derive(Parser)]
 #[command(name = "pool-perf-bench")]
@@ -60,9 +58,7 @@ struct Cli {
     json: bool,
 }
 
-// ============================================================================
 // Timing structs
-// ============================================================================
 
 #[derive(Debug, Clone)]
 struct PhaseTiming {
@@ -97,9 +93,7 @@ struct BenchmarkSummary {
     bottleneck: (String, f64),
 }
 
-// ============================================================================
 // Phase runners
-// ============================================================================
 
 /// Phase 1: Create a linked worktree via GitCheckout mode (what the pool fill task does)
 fn phase_create(source: &Path, dest: &Path, parallelism: usize) -> Result<PhaseTiming> {
@@ -306,9 +300,7 @@ fn phase_cleanup(_source: &Path, worktree: &Path) -> Result<PhaseTiming> {
     })
 }
 
-// ============================================================================
 // A/B mode: two worktrees concurrently
-// ============================================================================
 
 fn run_ab_iteration(
     source: &Path,
@@ -499,9 +491,7 @@ fn run_single_iteration(
     })
 }
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 fn count_tracked_files(source: &Path) -> Result<usize> {
     kigi_fast_worktree::count_tracked_files(source)
@@ -553,9 +543,7 @@ fn compute_summary(iterations: &[IterationResult]) -> BenchmarkSummary {
     }
 }
 
-// ============================================================================
 // Output
-// ============================================================================
 
 fn print_iteration(result: &IterationResult) {
     println!();
@@ -683,9 +671,7 @@ fn print_json(result: &BenchmarkResult) {
     println!("}}");
 }
 
-// ============================================================================
 // Main
-// ============================================================================
 
 fn main() -> Result<()> {
     let cli = Cli::parse();

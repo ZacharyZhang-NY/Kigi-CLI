@@ -1,9 +1,8 @@
 //! Environment variable helpers and process isolation for terminal execution.
 //!
-//! All implementations now live in the lightweight [`kigi_tty_utils`] crate
-//! so that every crate in the workspace can use them without pulling in the
-//! heavyweight `kigi-tools` dependency. This module re-exports the public
-//! API for backward compatibility.
+//! The implementations live in the lightweight [`kigi_tty_utils`] crate so
+//! every workspace crate can use them without depending on `kigi-tools`; this
+//! module re-exports the public API.
 
 pub use kigi_tty_utils::{detach_from_tty, pager_env};
 

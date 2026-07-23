@@ -70,7 +70,6 @@ impl App {
         }
     }
 
-    /// Re-run the search for the current query buffer.
     fn refresh_query(&mut self) {
         self.search.update_query(&self.query, &self.scrollback);
         self.reveal_current();
@@ -81,7 +80,6 @@ impl App {
         ));
     }
 
-    /// Scroll the current match into view (exercises the reveal path).
     fn reveal_current(&mut self) {
         if let Some(m) = self.search.current()
             && let Some(idx) = self.scrollback.index_of_id(m.entry_id)
@@ -177,13 +175,15 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
     let theme = Theme::current();
     let area = f.area();
     let chunks = Layout::vertical([
-        Constraint::Length(4),  // info / help
-        Constraint::Length(14), // scrollback + search bar
-        Constraint::Min(1),     // event log
+        // info / help
+        Constraint::Length(4),
+        // scrollback + search bar
+        Constraint::Length(14),
+        // event log
+        Constraint::Min(1),
     ])
     .split(area);
 
-    // -- Info / help panel --
     let info = Paragraph::new(vec![
         Line::from(Span::styled(
             "scrollback-search-playground",
@@ -196,7 +196,6 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
     .block(Block::default().borders(Borders::ALL).title("info"));
     f.render_widget(info, chunks[0]);
 
-    // -- Scrollback + search bar --
     // Reserve the bottom row of the block for the search bar, exactly as the
     // production draw path will when `scrollback_search.is_some()`.
     let block_area = chunks[1];
@@ -227,7 +226,6 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
         }
     }
 
-    // -- Search bar --
     render_search_bar(
         f.buffer_mut(),
         block_area.x,
@@ -259,7 +257,6 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
         }
     }
 
-    // -- Event log --
     let lines: Vec<Line<'static>> = app.events.iter().map(|e| Line::from(e.clone())).collect();
     let log = Paragraph::new(lines)
         .wrap(Wrap { trim: false })

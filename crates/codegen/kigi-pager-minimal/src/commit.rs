@@ -229,7 +229,8 @@ pub fn commit_leading_run(
             Step::Skip => i += 1,
             Step::Commit => {
                 if !on_commit(state, i) {
-                    break; // emit failed — leave uncommitted, retry next frame
+                    // emit failed — leave uncommitted, retry next frame
+                    break;
                 }
                 minimal_api::mark_committed(state, i);
                 count += 1;
@@ -383,7 +384,8 @@ fn paint_committed(
 pub fn commit_active(app: &mut AppView, terminal: &mut PagerTerminal) {
     let id = match &app.active_view {
         ActiveView::Agent(id) => *id,
-        _ => return, // welcome / dashboard: nothing to commit
+        // welcome / dashboard: nothing to commit
+        _ => return,
     };
     // Snapshot the commit appearance before borrowing `agents` mutably.
     let appearance = committed_appearance(&app.appearance);
@@ -409,7 +411,7 @@ pub fn commit_active(app: &mut AppView, terminal: &mut PagerTerminal) {
     let cwd = agent.session.cwd.as_path();
     let sb = &mut agent.scrollback;
 
-    // NB: resume/attach replay (`agent.session.loading_replay`) intentionally
+    // NB: resume/attach replay (`agent.session.loading_replay`) deliberately
     // falls through to the normal commit pass below, so the loaded transcript is
     // printed into native scrollback (a resumed session must be visible).
 
@@ -535,7 +537,8 @@ pub fn expand_pending(app: &mut AppView, terminal: &mut PagerTerminal) {
         let mut iter = ids.into_iter();
         while let Some(eid) = iter.next() {
             let Some(idx) = sb.index_of_id(eid) else {
-                continue; // entry removed (rewind / clear) since the keypress
+                // entry removed (rewind / clear) since the keypress
+                continue;
             };
             if let Some(e) = sb.get_mut(idx) {
                 e.set_display_mode(DisplayMode::Expanded);
@@ -611,7 +614,8 @@ mod tests {
         s.push(finalized("a"));
         s.push(finalized("b"));
         s.push(running("c"));
-        s.push(finalized("d")); // after the running block — must NOT commit yet
+        // after the running block — must NOT commit yet
+        s.push(finalized("d"));
 
         assert_eq!(commit_collect(&mut s), vec![0, 1]);
         assert_eq!(minimal_api::commit_scan_cursor(&s), 2);
@@ -630,7 +634,8 @@ mod tests {
     fn pending_user_input_holds_the_frontier() {
         let mut s = ScrollbackState::new();
         s.push(finalized("a"));
-        let tool = s.push(finalized("tool")); // finalized but awaiting permission
+        // finalized but awaiting permission
+        let tool = s.push(finalized("tool"));
         s.push(finalized("after"));
         assert!(s.set_pending_user_input(tool, true));
 
@@ -675,7 +680,8 @@ mod tests {
         // the update. It holds the frontier regardless of later blocks.
         let mut s = ScrollbackState::new();
         s.push(finalized("a"));
-        s.push(running("running tool")); // stub == not an AgentMessage
+        // stub == not an AgentMessage
+        s.push(running("running tool"));
         s.push(finalized("after"));
         assert_eq!(commit_collect(&mut s), vec![0]);
         assert_eq!(minimal_api::commit_scan_cursor(&s), 1);
@@ -694,7 +700,8 @@ mod tests {
         s.push(ScrollbackEntry::running(RenderBlock::bg_task(
             "sleep 60", "task-1",
         )));
-        s.push(running("later tool")); // more turn output after the bg task
+        // more turn output after the bg task
+        s.push(running("later tool"));
 
         // "a" + the running bg task commit; only the trailing running tool stays.
         assert_eq!(commit_collect(&mut s), vec![0, 1]);
@@ -728,12 +735,13 @@ mod tests {
         // the remaining indices down). The cursor is clamped; the per-entry
         // `committed` flags travel with "b"/"c", so neither is re-emitted.
         assert!(s.remove_entry(a));
-        s.push(finalized("d")); // now at index 2
+        // now at index 2
+        s.push(finalized("d"));
 
         assert_eq!(commit_collect(&mut s), vec![2]);
-        assert!(minimal_api::is_committed(&s, s.get(0).unwrap())); // b
-        assert!(minimal_api::is_committed(&s, s.get(1).unwrap())); // c
-        assert!(minimal_api::is_committed(&s, s.get(2).unwrap())); // d
+        assert!(minimal_api::is_committed(&s, s.get(0).unwrap()));
+        assert!(minimal_api::is_committed(&s, s.get(1).unwrap()));
+        assert!(minimal_api::is_committed(&s, s.get(2).unwrap()));
     }
 
     #[test]
@@ -773,8 +781,10 @@ mod tests {
             true
         });
         assert_eq!(seen, vec![1, 2]);
-        assert!(minimal_api::is_committed(&s, s.get(1).unwrap())); // replayed-A
-        assert!(minimal_api::is_committed(&s, s.get(2).unwrap())); // replayed-B
+        // replayed-A
+        assert!(minimal_api::is_committed(&s, s.get(1).unwrap()));
+        // replayed-B
+        assert!(minimal_api::is_committed(&s, s.get(2).unwrap()));
     }
 
     #[test]
@@ -880,7 +890,7 @@ mod tests {
         assert_eq!(removed.len(), 2);
         assert_eq!(minimal_api::commit_scan_cursor(&s), 1);
 
-        s.push(finalized("d")); // index 1
+        s.push(finalized("d"));
         assert_eq!(commit_collect(&mut s), vec![1]);
     }
 
@@ -920,7 +930,8 @@ mod tests {
         // frontier; once the turn is idle the frontier must advance past it.
         let mut s = ScrollbackState::new();
         s.push(finalized("a"));
-        s.push(running("stale")); // stale is_running flag
+        // stale is_running flag
+        s.push(running("stale"));
         s.push(finalized("c"));
 
         // Running turn: blocked at the running entry.
@@ -971,7 +982,7 @@ mod tests {
         let renderer = committed_renderer(&entry, &theme, appearance, test_cwd());
         let h = renderer.desired_height(width);
         assert!(h > 0, "{label}@{width}: desired_height was 0");
-        // The accent bar and background fill intentionally stretch to the given
+        // The accent bar and background fill deliberately stretch to the given
         // area height (chrome, not content). Only the content columns
         // (x >= chrome_width) carry real text that `insert_before` would clip.
         let chrome = renderer.chrome_width();

@@ -22,9 +22,7 @@ pub use kigi_agent::plugins::discovery::DiscoveryConfig as PluginDiscoveryConfig
 pub use kigi_agent::plugins::trust::TrustStore as PluginTrustStore;
 pub use kigi_agent::prompt::skills::SkillsConfig;
 
-// ---------------------------------------------------------------------------
 // Skill discovery
-// ---------------------------------------------------------------------------
 
 /// Discover skills visible from the workspace root.
 ///
@@ -62,9 +60,7 @@ pub async fn discover_skills(root_cwd: &Path, config: &SkillsConfig) -> Vec<Valu
         .collect()
 }
 
-// ---------------------------------------------------------------------------
 // AGENTS.md discovery
-// ---------------------------------------------------------------------------
 
 /// Discover project-instruction files (AGENTS.md, Claude.md, rules) from the workspace root up to the git root.
 pub async fn discover_agents_md(root_cwd: &Path) -> Vec<Value> {
@@ -101,9 +97,7 @@ pub async fn discover_agents_md(root_cwd: &Path) -> Vec<Value> {
         .collect()
 }
 
-// ---------------------------------------------------------------------------
 // Plugin discovery
-// ---------------------------------------------------------------------------
 
 /// Discover plugins visible from the workspace root.
 ///
@@ -149,9 +143,7 @@ pub fn discover_plugins(
         .collect()
 }
 
-// ---------------------------------------------------------------------------
 // Project config
-// ---------------------------------------------------------------------------
 
 /// Load the project config from `<root_cwd>/.kigi/config.toml`.
 ///
@@ -199,9 +191,7 @@ fn toml_to_json(v: &toml::Value) -> Value {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Permissions
-// ---------------------------------------------------------------------------
 
 /// Load the effective permission configuration for the workspace.
 ///
@@ -250,7 +240,7 @@ mod tests {
     use super::*;
     use std::fs;
 
-    // ---- Skill discovery tests ----
+    // Skill discovery tests
 
     // Note: `list_skills` also discovers user-scoped skills from
     // `~/.kigi/skills/`, so on a developer machine the result may be
@@ -328,7 +318,7 @@ mod tests {
         assert!(found["scope"].is_string(), "scope should be serialized");
     }
 
-    // ---- AGENTS.md discovery tests ----
+    // AGENTS.md discovery tests
 
     #[test]
     fn agent_config_file_wire_matches_workspace_types_mirror() {
@@ -412,7 +402,7 @@ mod tests {
         );
     }
 
-    // ---- Plugin discovery tests ----
+    // Plugin discovery tests
 
     // Note: `discover_plugins` also discovers user-scoped plugins
     // from `~/.kigi/plugins/`, so tests check for specific plugins.
@@ -472,7 +462,7 @@ mod tests {
         assert!(p["has_skills"].is_boolean());
     }
 
-    // ---- Project config tests ----
+    // Project config tests
 
     #[test]
     fn load_project_config_missing_file_returns_null() {
@@ -505,7 +495,7 @@ mod tests {
         );
     }
 
-    // ---- toml_to_json tests ----
+    // toml_to_json tests
 
     #[test]
     fn toml_to_json_basic_types() {
@@ -532,7 +522,7 @@ mod tests {
         assert_eq!(json["items"][2], 3);
     }
 
-    // ---- Permissions tests ----
+    // Permissions tests
 
     // Note: `resolve_permissions_with_provenance` checks system-managed
     // settings and requirements.toml from the global config, so on a

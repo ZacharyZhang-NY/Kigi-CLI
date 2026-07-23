@@ -48,7 +48,7 @@ mod tests {
     use super::*;
     use std::fs;
 
-    // ── resolve_workspace_user_dir (pure, no env vars) ───────────────
+    // resolve_workspace_user_dir (pure, no env vars)
 
     #[test]
     fn resolve_returns_none_for_empty_root() {
@@ -126,7 +126,7 @@ mod tests {
         assert_eq!(result, Some(user_dir));
     }
 
-    // ── workspace_user_relpath ───────────────────────────────────────
+    // workspace_user_relpath
 
     #[test]
     fn bare_username_is_nested_under_x() {

@@ -28,7 +28,6 @@ pub enum SessionChunk {
 }
 
 impl SessionChunk {
-    /// Discriminator for the current variant.
     pub fn kind(&self) -> ChunkKind {
         match self {
             Self::SessionId(_) => ChunkKind::SessionId,

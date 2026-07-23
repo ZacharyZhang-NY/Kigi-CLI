@@ -42,7 +42,6 @@ async fn undo_tip_resets_each_new_session() {
                 i + 1
             );
         }
-        // Cap reached: a further wipe shows nothing for the rest of this run.
         wipe_substantial_draft(&mut harness);
         harness.update(Duration::from_millis(1000));
         assert!(

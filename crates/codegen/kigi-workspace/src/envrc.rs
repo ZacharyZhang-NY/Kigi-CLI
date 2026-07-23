@@ -98,7 +98,8 @@ fn try_direnv_export(dir: &Path) -> Option<HashMap<String, String>> {
                     if let serde_json::Value::String(s) = v {
                         Some((k, s))
                     } else {
-                        None // Skip null values (unset)
+                        // Skip null values (unset)
+                        None
                     }
                 })
                 .collect();

@@ -476,7 +476,7 @@ impl Theme {
         // doesn't read at the same weight as secondary text.
         let dim_fg = if dark { Color::DarkGray } else { Color::Gray };
 
-        // ── Polarity-aware semantic hues ────────────────────────────
+        // Polarity-aware semantic hues
         // Normal ANSI hues (idx 1–7) are designed at ~50% luminance and
         // read well on light backgrounds. Light variants (idx 9–15) are
         // full saturation and read well on dark backgrounds. Pinning by
@@ -502,7 +502,7 @@ impl Theme {
         };
         let cyan = if dark { Color::LightCyan } else { Color::Cyan };
         Self {
-            // ── Elevated surfaces: one step off the canvas ──────────────
+            // Elevated surfaces: one step off the canvas
             // Hover/highlight/visual-selection rows need to read as a
             // distinct "raised" band against the body. Without this every
             // KigiNight bg field quantizes to Color::Black and these
@@ -512,7 +512,7 @@ impl Theme {
             bg_hover: elevated_bg,
             bg_visual: elevated_bg,
 
-            // ── Canvas-matching surfaces ────────────────────────────────
+            // Canvas-matching surfaces
             // Pin to the theme's polarity, NOT Color::Reset. The truecolor
             // "subtle sunken / code block" effect can't be replicated in
             // 16-color, but using the theme polarity guarantees these
@@ -523,7 +523,7 @@ impl Theme {
             paste_bg: canvas_bg,
             scrollbar_bg: canvas_bg,
 
-            // ── Borders: dim (idle) → muted (selection) → high-contrast (active) ──
+            // Borders: dim (idle) → muted (selection) → high-contrast (active)
             // The four-tier truecolor border hierarchy collapses onto
             // three ANSI16 slots:
             //   - `prompt_border` (idle text-input frame) → `dim_fg`,
@@ -544,7 +544,7 @@ impl Theme {
             // Scrollbar thumb stays visible against the canvas-matched track.
             scrollbar_fg: muted_fg,
 
-            // ── Foreground / text hierarchy ─────────────────────────────
+            // Foreground / text hierarchy
             md_text: high_contrast_fg,
             // Selected user-prompt `>` (drives the user selection accent
             // and the OSC 12 cursor color) takes max-contrast fg so the
@@ -563,7 +563,7 @@ impl Theme {
             gray_bright: muted_fg,
             gray_dim: dim_fg,
 
-            // ── Semantic accents: polarity-aware hue pins ───────────────
+            // Semantic accents: polarity-aware hue pins
             // State signals (running / completed / error) and content
             // categories (system / skill / etc.) get
             // pinned to a hue that survives ANSI16 instead of collapsing

@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::identity::{SessionId, ToolCallId};
 
-/// Top-level tool RPC.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum ToolRequest {

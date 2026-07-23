@@ -26,7 +26,6 @@ pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
 
 async fn handle_compact(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     let req: CompactConversationRequest = parse_params(args)?;
-    // send over the compact query here properly
     let session_handle = {
         let sessions = agent.sessions.borrow();
         sessions.get(&req.session_id.into()).cloned()

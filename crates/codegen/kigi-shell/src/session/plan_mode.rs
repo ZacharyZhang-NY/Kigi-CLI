@@ -41,18 +41,12 @@ pub enum PlanModeState {
     ///   -> Inactive (after turn completes, exit attachment injected)
     ExitPending,
 }
-/// Tracks the full plan mode lifecycle for a session.
-///
-/// Designed to be testable in isolation — no references to SessionActor,
-/// conversation history, or async I/O. Pure state machine logic.
-///
-/// The SessionActor owns one `PlanModeTracker` and calls its methods
-/// at the appropriate points (handle_session_mode, handle_prompt,
-/// handle_completion, run_compact).
+/// Tracks the full plan mode lifecycle for a session. See the module docs
+/// for the ownership and testing contract.
 pub struct PlanModeTracker {
     /// Current state in the lifecycle.
     state: PlanModeState,
-    /// Whether plan mode was previously active in this session.
+    /// Whether plan mode has already been active earlier in this session.
     /// Used for reentry detection — if true and we enter Active again,
     /// inject the reentry reminder instead of the standard one.
     was_previously_active: bool,
@@ -164,15 +158,12 @@ impl PlanModeTracker {
             pending_exit_reminder: self.pending_exit_reminder,
         }
     }
-    /// Returns the current plan mode state.
     pub fn state(&self) -> PlanModeState {
         self.state
     }
-    /// Returns `true` if plan mode is currently active.
     pub fn is_active(&self) -> bool {
         self.state == PlanModeState::Active
     }
-    /// Returns the absolute path to the plan file.
     pub fn plan_file_path(&self) -> &Path {
         &self.plan_file_path
     }
@@ -187,11 +178,10 @@ impl PlanModeTracker {
     pub fn should_use_full_reminder(&self) -> bool {
         self.reminder_count.is_multiple_of(2)
     }
-    /// Whether we need to inject an exit reminder on the next turn.
     pub fn has_pending_exit_reminder(&self) -> bool {
         self.pending_exit_reminder
     }
-    /// Whether this is a reentry (was previously in plan mode this session).
+    /// Whether this is a reentry (plan mode was active earlier in this session).
     pub fn is_reentry(&self) -> bool {
         self.was_previously_active && self.state == PlanModeState::Pending
     }
@@ -254,7 +244,6 @@ impl PlanModeTracker {
     pub fn take_pending_activation(&mut self) -> Option<String> {
         self.pending_activation.take().map(|p| p.text)
     }
-    /// Whether a mid-turn activation reminder is buffered (undelivered).
     pub fn has_pending_activation(&self) -> bool {
         self.pending_activation.is_some()
     }

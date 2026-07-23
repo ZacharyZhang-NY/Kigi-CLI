@@ -18,15 +18,13 @@ pub async fn run(harness: &mut PtyHarness, content: &ContentController) -> Resul
 
     wait_for_welcome(harness).await?;
 
-    // Kick off the streamed response.
     harness.inject_keys(b"stream\r")?;
-    // Wait for first delta to hit the screen so we're measuring the
+    // Wait for the first delta to hit the screen so the measurement covers the
     // steady-state streaming path, not startup latency.
     harness.wait_for_text("stream-bench", Duration::from_secs(20))?;
     harness.reset_timing();
 
-    // Collect frames during the streaming window — the mock server paces
-    // itself naturally via HTTP/SSE; we just let the pipe drain.
+    // No pacing needed here: the mock server paces the stream over HTTP/SSE.
     let start = Instant::now();
     while start.elapsed() < STREAM_WINDOW {
         harness.update(Duration::from_millis(100));
@@ -41,8 +39,8 @@ pub async fn run(harness: &mut PtyHarness, content: &ContentController) -> Resul
 
 fn build_response(words: usize) -> String {
     let mut s = String::with_capacity(words * 10);
-    // Sentinel token that wait_for_text keys on — guaranteed to appear
-    // near the very start of the stream.
+    // Leading sentinel that `wait_for_text` keys on, so it lands in the first
+    // few deltas of the stream.
     s.push_str("stream-bench ");
     for i in 0..words {
         s.push_str("word");

@@ -21,7 +21,6 @@
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Startup probe outcome.
 #[derive(Debug)]
 enum ProbeResult {
     Skipped,
@@ -32,7 +31,6 @@ enum ProbeResult {
 /// Unset while the query is in flight (or never sent).
 static XTVERSION: OnceLock<ProbeResult> = OnceLock::new();
 
-/// True once the query bytes were written to the terminal.
 static QUERY_SENT: AtomicBool = AtomicBool::new(false);
 
 /// XTVERSION query alone — no DA1 sentinel: nothing waits on reply
@@ -122,7 +120,6 @@ fn send_query() {
     let _ = XTVERSION.set(ProbeResult::Skipped);
 }
 
-/// Strip controls and trim; `None` for an empty payload.
 fn sanitize_payload(payload: &str) -> Option<String> {
     let cleaned: String = payload.chars().filter(|c| !c.is_control()).collect();
     let cleaned = cleaned.trim().to_owned();
@@ -183,12 +180,10 @@ mod tests {
                 gate_allows_probe(&ctx(brand, MultiplexerKind::Undetected)),
                 "{brand:?} should be probed"
             );
-            // Transparent mux (cmux) does not intercept CSI; probe still runs.
             assert!(
                 gate_allows_probe(&ctx(brand, MultiplexerKind::Cmux)),
                 "{brand:?} under cmux should still be probed"
             );
-            // CSI-intercepting multiplexers override the brand allowlist.
             assert!(
                 !gate_allows_probe(&ctx(brand, MultiplexerKind::Tmux)),
                 "{brand:?} under tmux should be skipped"

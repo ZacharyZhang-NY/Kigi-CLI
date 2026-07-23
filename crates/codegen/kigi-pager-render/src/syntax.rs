@@ -1,8 +1,8 @@
 //! Syntax highlighting initialization.
 //!
-//! Provides lazily-initialized `Syntect` instances for code highlighting.
-//! Dark themes (KigiNight, TokyoNight) share `kigi-night.tmTheme`;
-//! KigiDay uses `kigi-day.tmTheme` with deepened colors for light backgrounds.
+//! One lazily-initialized `Syntect` per tmTheme, shared by every `ThemeKind`
+//! that maps to it. KigiDay needs its own because `kigi-day.tmTheme` deepens
+//! the palette for light backgrounds.
 
 use std::sync::OnceLock;
 
@@ -14,7 +14,6 @@ static SYNTECT_KIGINIGHT: OnceLock<Syntect> = OnceLock::new();
 static SYNTECT_TOKYONIGHT: OnceLock<Syntect> = OnceLock::new();
 static SYNTECT_KIGIDAY: OnceLock<Syntect> = OnceLock::new();
 
-/// Convert syntect style to ratatui foreground-only style, quantized for terminal color support.
 pub fn syntect_to_ratatui_fg(style: syntect::highlighting::Style) -> ratatui::style::Style {
     let fg = crate::theme::quantize(ratatui::style::Color::Rgb(
         style.foreground.r,
@@ -35,7 +34,6 @@ pub fn syntect_to_ratatui_fg(style: syntect::highlighting::Style) -> ratatui::st
     out
 }
 
-/// Highlight a single line of source, falling back to plain text style.
 pub fn highlight_line(
     text: &str,
     highlighter: &mut Option<syntect::easy::HighlightLines<'_>>,
@@ -63,7 +61,6 @@ pub fn highlight_line(
     vec![ratatui::text::Span::styled(text.to_string(), fallback)]
 }
 
-/// Returns the syntect instance matching the active theme.
 pub fn get_syntect() -> &'static Syntect {
     match crate::theme::Theme::current_kind() {
         ThemeKind::KigiNight

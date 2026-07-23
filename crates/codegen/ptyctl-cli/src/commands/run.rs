@@ -13,7 +13,6 @@ use ptyctl::session::{PtySession, SessionConfig};
 
 use crate::registry;
 
-/// Run the `ptyctl run` command.
 #[allow(clippy::too_many_arguments)]
 pub async fn run(
     command: Vec<String>,
@@ -40,7 +39,6 @@ pub async fn run(
         );
     }
 
-    // Parse env vars.
     let mut env = HashMap::new();
     for var in &env_vars {
         if let Some((k, v)) = var.split_once('=') {
@@ -65,14 +63,11 @@ pub async fn run(
         linger,
     };
 
-    // Start the session.
     let session = PtySession::start(config).await?;
     let pid = session.status_basic().1;
 
-    // Build the HTTP server.
     let router = server::build_router(session);
 
-    // Bind to the requested port.
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = TcpListener::bind(addr)
         .await
@@ -80,7 +75,6 @@ pub async fn run(
     let actual_addr = listener.local_addr()?;
     let actual_port = actual_addr.port();
 
-    // Register named session.
     if let Some(ref session_name) = name {
         let info = registry::SessionInfo {
             port: actual_port,
@@ -102,7 +96,6 @@ pub async fn run(
         println!("{actual_port}");
     }
 
-    // Serve until shutdown.
     let shutdown_result = axum::serve(listener, router)
         .await
         .context("HTTP server error");

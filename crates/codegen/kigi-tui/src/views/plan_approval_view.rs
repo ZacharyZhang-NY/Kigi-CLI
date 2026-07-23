@@ -404,7 +404,6 @@ mod tests {
             plan_approval_status_label(false),
             "No plan written — approve or request changes"
         );
-        // Placeholder must be non-empty so the line viewer accepts it.
         assert!(!EMPTY_PLAN_PLACEHOLDER.trim().is_empty());
     }
 

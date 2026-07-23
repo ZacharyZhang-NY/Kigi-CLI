@@ -11,7 +11,7 @@ use crate::util::mcp_truncate::{McpTruncateContext, truncate_tool_output};
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct UseToolInput {
     /// The qualified name of the integration tool to call (e.g., "linear__save_issue").
-    /// Must be a tool previously discovered via `search_tool`.
+    /// Must be a tool already discovered via `search_tool`.
     pub tool_name: String,
     /// The arguments to pass to the tool, as a JSON object.
     /// Use the parameter schema returned by `search_tool` to construct this.
@@ -31,12 +31,12 @@ fn object_value_schema(_gen: &mut schemars::SchemaGenerator) -> schemars::Schema
 /// Controls whether the native-tool corrective error is active.
 /// When `native_tool_correction` is `true` (default), `use_tool` detects
 /// native tool names via [`EnabledNativeToolNames`] and returns a targeted
-/// corrective error ("call it directly"). When `false`, the old generic
+/// corrective error ("call it directly"). When `false`, the generic
 /// "not a valid MCP tool name" warning fires for all unqualified names,
 /// regardless of whether the name is a native tool.
 ///
-/// Use `false` if you want the pre-fix behavior (e.g., offline evaluation
-/// where the corrective error would alter the model's trajectory).
+/// Set `false` where the corrective error would alter the model's
+/// trajectory, e.g. offline evaluation.
 ///
 /// [`EnabledNativeToolNames`]: crate::types::resources::EnabledNativeToolNames
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -210,9 +210,9 @@ impl kigi_tool_runtime::Tool for UseTool {
                     tool = input.tool_name
                 ))
             } else {
-                // Unknown name (e.g. a built-in skill like `jira`). Keep the
-                // existing search_tool steer (empirically reduces retry loops
-                // on unqualified tool names).
+                // Unknown name (e.g. a built-in skill like `jira`). The
+                // search_tool steer empirically reduces retry loops on
+                // unqualified tool names.
                 kigi_tool_runtime::ToolError::invalid_arguments(format!(
                     "'{}' is not a valid MCP tool name. \
                      Tool names must be qualified as `server__tool` (e.g., `linear__save_issue`). \
@@ -702,8 +702,6 @@ mod tests {
         );
     }
 
-    // ── MCP dump classification (.json extension + jq/python steer) ──
-
     #[test]
     fn classify_long_line_json_warns_against_grep() {
         let payload = format!(r#"{{"data":"{}"}}"#, "x".repeat(3_000));
@@ -810,7 +808,8 @@ mod tests {
 
     #[test]
     fn classify_minified_blob_single_line_is_long_line_text() {
-        let payload = "QUJD".repeat(800); // base64-like blob, one long non-JSON line
+        // base64-like blob, one long non-JSON line
+        let payload = "QUJD".repeat(800);
         assert_eq!(McpDumpKind::classify(&payload), McpDumpKind::LongLineText);
     }
 
@@ -826,8 +825,6 @@ mod tests {
         assert_eq!(kind.extension(), "txt");
         assert_eq!(kind.steer("bash", all_tools()), "");
     }
-
-    // ── presence-aware steer (names only installed query tools) ──
 
     /// Every query tool present — for classification tests that only care
     /// about the dump kind, not which tools the host happens to have.
@@ -889,8 +886,6 @@ mod tests {
     // `util::query_tools::tests`; here we only test the steer's own behavior
     // (which kind steers, presence-gating, no-hedge).
 
-    // ── run() wiring: extension, file, and the gated steer ──
-
     #[tokio::test]
     async fn json_dump_written_as_json_with_query_steer() {
         use crate::types::context::TruncationConfig;
@@ -930,7 +925,6 @@ mod tests {
         .await
         .unwrap();
 
-        // dump saved as .json
         let files: Vec<_> = std::fs::read_dir(tmp.path().join("mcp"))
             .unwrap()
             .map(|e| e.unwrap().path())
@@ -1031,8 +1025,6 @@ mod tests {
         }
     }
 
-    // ── Native-tool routing ─────────────────────────────────
-
     fn native_resources(native: &[&str]) -> crate::types::resources::SharedResources {
         use crate::types::resources::{EnabledNativeToolNames, Resources};
         let mut resources = Resources::new();
@@ -1096,7 +1088,7 @@ mod tests {
 
     #[tokio::test]
     async fn unknown_non_mcp_name_keeps_search_tool_steer() {
-        // `jira` is NOT in the native set — it should hit the existing
+        // `jira` is NOT in the native set — it should hit the
         // "not a valid MCP tool name" steer and must not dispatch.
         let (ctx, captured_args) =
             ctx_capturing_with_resources(native_resources(&["scheduler_create"]));
@@ -1127,7 +1119,7 @@ mod tests {
     async fn correction_disabled_falls_back_to_generic_warning() {
         // With native_tool_correction=false, even a known native tool name
         // gets the generic "not a valid MCP tool name" warning instead of
-        // the corrective error — preserves the pre-fix generic warning path.
+        // the corrective error.
         let (ctx, captured_args) =
             ctx_capturing_with_resources(native_resources_correction_off(&["scheduler_create"]));
 

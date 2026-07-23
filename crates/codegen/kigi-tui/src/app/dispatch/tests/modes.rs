@@ -147,8 +147,6 @@ fn accept_word_select_tip_no_op_when_tip_not_showing() {
     );
 }
 
-// ── /plan slash command tests ─────────────────────────────────────
-
 #[test]
 fn slash_plan_no_args_not_in_plan_enters_plan_mode() {
     let mut app = test_app_with_agent();
@@ -296,7 +294,6 @@ fn set_plan_mode_mutates_only_active_agent_not_others() {
     );
 }
 
-// ----------------------------------------------------------------
 // `set_yolo_mode` dispatcher unit tests (security-relevant)
 //
 // SHELL-owned, but with rollback semantics: a disk-write failure
@@ -337,7 +334,6 @@ fn set_plan_mode_mutates_only_active_agent_not_others() {
 //   - Failure toast: "✗ Could not save permission_mode: {error}"
 //     — exact format pinned via `assert_eq!` in
 //     `rollback_permission_mode_reverts_state_no_effect`.
-// ----------------------------------------------------------------
 
 /// Slash gate sync: both toggles stay offered while modes change; only the
 /// auto feature gate suppresses `/auto`.
@@ -453,10 +449,8 @@ fn set_yolo_mode_off_to_on_emits_persist_with_rollback() {
                 crate::app::actions::PermissionModePersist::WithRollback("ask"),
                 "rollback must revert to the prior canonical (was 'ask')"
             );
-            // Explicit session_id assertion
-            // (previously hidden behind `..` — a regression that
-            // dropped session_id silently broke the ACP
-            // notification gate at effects.rs).
+            // If dropped, session_id silently breaks the ACP
+            // notification gate at effects.rs.
             assert!(
                 session_id.is_some(),
                 "session_id must be threaded through for ACP notification gating"
@@ -892,7 +886,7 @@ fn set_yolo_mode_on_drains_multi_item_queue() {
             Ok(Ok(acp::RequestPermissionResponse {
                 outcome: acp::RequestPermissionOutcome::Selected(_),
                 ..
-            })) => {} // OK
+            })) => {}
             other => panic!(
                 "item {i} did not receive AllowOnce Selected response: {other:?} — \
                      drain skipped items beyond the first?",
@@ -970,7 +964,7 @@ fn set_yolo_mode_on_duplicate_dispatch_still_drains_queue() {
         Ok(Ok(acp::RequestPermissionResponse {
             outcome: acp::RequestPermissionOutcome::Selected(_),
             ..
-        })) => {} // OK
+        })) => {}
         other => panic!(
             "duplicate dispatch must auto-approve the newly queued permission, got {other:?}",
         ),
@@ -1377,7 +1371,8 @@ fn cycle_mode_pre_session_normal_to_plan_does_not_persist_permission_mode() {
 /// mutation are all gated by the same `app.active_view` guard).
 #[test]
 fn set_yolo_mode_no_op_when_no_active_agent() {
-    let mut app = test_app(); // no agent, active_view = Welcome
+    // No agent, active_view = Welcome.
+    let mut app = test_app();
     let default_yolo_before = app.default_yolo;
     let perm_mode_before = app.current_ui.permission_mode.clone();
 
@@ -1441,7 +1436,6 @@ fn set_yolo_mode_refreshes_open_modal_snapshots() {
     );
 }
 
-// ----------------------------------------------------------------
 // Dispatch-layer integration tests for
 // `Action::SetPermissionMode(kind)`.
 //
@@ -1472,7 +1466,6 @@ fn set_yolo_mode_refreshes_open_modal_snapshots() {
 //   - `apply_setting_rollback("permission_mode", Enum("default"))`
 //     restores `current_ui.permission_mode = Some("default")`
 //     (preserves canonical; doesn't re-emit any Effect).
-// ----------------------------------------------------------------
 
 #[test]
 fn set_permission_mode_default_overrides_canonical_to_default() {
@@ -2130,14 +2123,12 @@ fn set_theme_auto_enables_auto_mode_and_persists_auto() {
     });
 }
 
-// ────────────────────────────────────────────────────────────────────
 // set_plan_mode dispatch-level coverage.
 //
 // Mirrors the `coding_data_sharing` and `yolo` test
 // patterns. These exercise the dispatch path directly (not the
 // modal Enter path or the slash-command parser path), so they cover
 // the same plumbing every entry point ultimately funnels through.
-// ────────────────────────────────────────────────────────────────────
 
 /// Idempotent ON: dispatcher sees `prev == new`,
 /// toasts but emits NO Effect (saves a wasted ACP round-trip).

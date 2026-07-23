@@ -366,7 +366,7 @@ mod tests {
         );
     }
 
-    // ── highlight_closed (closed-fence memo) ─────────────────────────
+    // highlight_closed (closed-fence memo)
 
     #[test]
     fn closed_memo_matches_batch_and_is_idempotent() {

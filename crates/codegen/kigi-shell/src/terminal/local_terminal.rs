@@ -24,18 +24,15 @@ async fn read_stream(mut stream: impl AsyncReadExt + Unpin) -> Vec<u8> {
 /// by using char_indices to find a valid character boundary.
 fn truncate_buffer(buf: &mut Vec<u8>, limit: usize) -> bool {
     if buf.len() > limit {
-        // Convert to string to work with character boundaries
         let s = String::from_utf8_lossy(buf);
         let excess = buf.len().saturating_sub(limit);
 
-        // Find the first char boundary at or after `excess` bytes
         let start_idx = s
             .char_indices()
             .find(|(i, _)| *i >= excess)
             .map(|(i, _)| i)
             .unwrap_or(s.len());
 
-        // Slice from that boundary and update buffer
         *buf = s[start_idx..].as_bytes().to_vec();
 
         true
@@ -47,7 +44,6 @@ fn truncate_buffer(buf: &mut Vec<u8>, limit: usize) -> bool {
 #[async_trait::async_trait]
 impl AsyncTerminalRunner for LocalTerminalRunner {
     async fn run(&self, request: TerminalRunRequest) -> Result<TerminalRunResult, TerminalError> {
-        // Build and spawn the command via the platform shell.
         #[cfg(unix)]
         let mut cmd = {
             let mut c = Command::new(crate::terminal::default_shell_path());
@@ -108,7 +104,6 @@ impl AsyncTerminalRunner for LocalTerminalRunner {
         let stdout_result = stdout_task.await.unwrap_or_else(|_| Vec::new());
         let stderr_result = stderr_task.await.unwrap_or_else(|_| Vec::new());
 
-        // Combine stdout and stderr, then truncate if needed
         let mut combined = stdout_result;
         combined.extend(stderr_result);
         let truncated = truncate_buffer(&mut combined, request.output_byte_limit);

@@ -4,7 +4,7 @@ use super::common::*;
 #[allow(unused_imports)]
 use super::scroll::*;
 
-// ── A5: env-forced scroll settings reach the live scroll config ───────────
+// A5: env-forced scroll settings reach the live scroll config.
 //
 // `KIGI_SCROLL_MODE=wheel` + `KIGI_SCROLL_LINES=1` on a `TERM_PROGRAM=zed`
 // harness (Zed profile: ept=1, wheel_lines=3) must price a 3-event burst at

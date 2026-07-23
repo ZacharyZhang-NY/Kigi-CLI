@@ -296,7 +296,6 @@ pub(crate) fn render_scrolled_entries_with_selection_boundaries(
         "entry_layouts_cache must match entries length - was prepare_layout() called?"
     );
 
-    // Create horizontal layout for this viewport using config
     let layout = HorizontalLayout::new(viewport, &appearance.scrollback.layout);
 
     // Total height = y of first passed entry + span of this slice (incl. gaps).
@@ -326,31 +325,27 @@ pub(crate) fn render_scrolled_entries_with_selection_boundaries(
         let entry_start = y;
         let entry_end = entry_start + height as usize;
 
-        // Skip if completely above viewport
         if entry_end <= viewport_start {
             y = entry_end + entry_layouts_cache[i].gap_after as usize;
             continue;
         }
-        // Stop if completely below viewport
         if entry_start >= viewport_end {
             break;
         }
 
         let logical_idx = i + entry_index_base;
 
-        // Calculate visibility
         let top_clipped = entry_start < viewport_start;
         let bottom_clipped = entry_end > viewport_end;
 
-        // Calculate render position (narrowed to u16 for screen coordinates —
-        // these deltas are always within viewport height which fits in u16).
+        // Narrowed to u16 for screen coordinates — these deltas are always
+        // within viewport height, which fits in u16.
         let render_y: u16 = if top_clipped {
             viewport.y
         } else {
             viewport.y + (entry_start - viewport_start) as u16
         };
 
-        // Calculate visible height
         let skip_rows: u16 = if top_clipped {
             (viewport_start - entry_start) as u16
         } else {
@@ -362,7 +357,6 @@ pub(crate) fn render_scrolled_entries_with_selection_boundaries(
             height - skip_rows
         };
 
-        // Calculate actual render height (clamped to viewport)
         let render_height = visible_height.min(viewport.height);
 
         if render_height == 0 {
@@ -370,7 +364,6 @@ pub(crate) fn render_scrolled_entries_with_selection_boundaries(
             continue;
         }
 
-        // Create the area for this entry's content
         let entry_row_layout = layout.for_row(render_y, render_height);
         let entry_content_area = entry_row_layout.entry_content_area();
 
@@ -454,12 +447,10 @@ pub(crate) fn render_scrolled_entries_with_selection_boundaries(
             }
         }
 
-        // Use cached output for selection model building.
         // EntryRenderer::render() above already populated the cache for non-selected
-        // entries. For selected entries, ensure_cached() will compute and cache the
-        // output once. This avoids a redundant block.output() call (which includes
-        // expensive syntax highlighting for edit blocks) that was previously done
-        // via effective_output() on every frame.
+        // entries. For selected entries, ensure_cached() computes and caches the
+        // output once, avoiding a redundant block.output() call (which includes
+        // expensive syntax highlighting for edit blocks) on every frame.
         //
         // Must use the same effective width as the renderer (reduced by timestamp
         // reservation for message blocks) to avoid cache thrashing.
@@ -561,8 +552,9 @@ pub(crate) fn render_scrolled_entries_with_selection_boundaries(
             // so the highlighted set can diverge from the index match set: a
             // match split across a soft-wrap boundary highlights on neither row,
             // and markdown markers present in source but absent on screen won't
-            // highlight. This is the intended decoupling — navigation/counting
-            // use the index; on-screen highlighting follows what's drawn.
+            // highlight. This is the intended decoupling: navigation and
+            // counting rely on the index, while on-screen highlighting
+            // follows what's drawn.
             if let Some(re) = search_highlight {
                 highlight_text.clear();
                 line_plain_text_into(&line.content, &mut highlight_text);
@@ -869,7 +861,6 @@ pub(crate) fn render_scrolled_entries_with_selection_boundaries(
             }
         }
 
-        // Track selected entry
         if selected_idx == Some(logical_idx) {
             let selection_area = entry_row_layout.selection_area();
             result.selected_area = Some(SelectedEntryArea {
@@ -1041,7 +1032,7 @@ mod tests {
                     group_header_count: 0,
                     group_collapse_header: false,
                     verb_group_header: false,
-                } // placeholder
+                }
             })
             .collect();
 
@@ -1890,8 +1881,8 @@ mod tests {
 
     /// The aggregated vocabulary is owned by the "Group tool calls" setting:
     /// toggled off, a span-fed truncation header keeps the plain "N more"
-    /// count (with the toggle off, previously verb-groupable tools feed
-    /// truncation runs — they must not come back verb-labeled anyway).
+    /// count (tools that are verb-groupable with the toggle on still feed
+    /// truncation runs when it's off — they must not come back verb-labeled).
     #[test]
     fn truncation_header_keeps_plain_count_when_group_tool_verbs_off() {
         use crate::scrollback::ScrollbackState;
@@ -2262,7 +2253,7 @@ mod tests {
         // output computed at `block.content_width`. Re-deriving them at the
         // same width must produce the same line count so block_line_idx values
         // remain valid; deriving at the wider `pane_content_width` produces a
-        // different wrapping (the bug `finish_text_drag` previously triggered).
+        // different wrapping — the mismatch `finish_text_drag` is guarded against.
         let appearance = AppearanceConfig::default();
         let model_lines = result.selection_model.ranges[0].lines.len();
         let entry_lines_narrow = entries[0]
@@ -2285,8 +2276,6 @@ mod tests {
              to effective_output would break block_line_idx alignment"
         );
     }
-
-    // ── map_hyperlinks_to_overlay ──
 
     use crate::scrollback::types::BlockLine;
     use ratatui::text::Line as RatatuiLine;
@@ -2446,11 +2435,14 @@ mod tests {
 
     #[test]
     fn overlay_content_line_offset_skips_header_lines() {
-        // Simulates BtwBlock: header + separator + markdown body
+        // Simulates BtwBlock: header (offset 0) + separator (offset 1) + markdown body (offset 2).
         let output = make_block_output(&[
-            ("/btw question", None), // header (offset 0)
-            ("", None),              // separator (offset 1)
-            ("body text", None),     // markdown body line 0
+            // header (offset 0)
+            ("/btw question", None),
+            // separator (offset 1)
+            ("", None),
+            // markdown body line 0
+            ("body text", None),
         ]);
         // Hyperlink on markdown body line_index=0, cols 0..4
         let links = [make_hyperlink(0, 0..4, "https://body.com", 1)];
@@ -2486,8 +2478,10 @@ mod tests {
         assert_eq!(overlay.links().len(), 1);
         let link = &overlay.links()[0];
         assert_eq!(link.screen_row, 5);
-        assert_eq!(link.col_start, 5); // content_x(2) + local_col_start(3)
-        assert_eq!(link.col_end, 8); // content_x(2) + local_col_end(6)
+        // content_x(2) + local_col_start(3)
+        assert_eq!(link.col_start, 5);
+        // content_x(2) + local_col_end(6)
+        assert_eq!(link.col_end, 8);
     }
 
     #[test]
@@ -2499,8 +2493,6 @@ mod tests {
 
         assert!(overlay.is_empty());
     }
-
-    // ── URL scanning for non-markdown blocks ──
 
     #[test]
     fn execute_block_urls_get_overlay_links() {
@@ -3044,9 +3036,9 @@ mod tests {
             "collapsed slot must not map hidden member content"
         );
         // Collapsed Read headers show basename only (`a1.rs`), so the plain-
-        // text path scanner no longer sees the absolute `/tmp/verbgeo/…`
-        // string and will not emit a file link for it. Folded members still
-        // expose no links; expanded members remain selectable (asserted above).
+        // text path scanner never sees the absolute `/tmp/verbgeo/…` string
+        // and emits no file link for it. Folded members still expose no
+        // links; expanded members remain selectable (asserted above).
         let member_link_rows = |expanded: bool| {
             let mut buf = Buffer::empty(viewport);
             let result = render_scrolled_entries_with_scratch(
@@ -4125,8 +4117,7 @@ mod tests {
 
     /// A tool-media overlay/image placement exposes the click-to-copy filepath as
     /// its `filepath_screen_rect`, anchored on the block's second output row (the
-    /// filepath line) and sharing the image's content-column origin. This is the
-    /// assertion that the removed `has_filepath_line` flag previously carried.
+    /// filepath line) and sharing the image's content-column origin.
     #[test]
     fn tool_media_overlay_exposes_filepath_click_rect() {
         use crate::scrollback::blocks::tool::{OtherToolCallBlock, ToolCallBlock};

@@ -95,7 +95,8 @@ fn split_by_headers<'a>(lines: &[&'a str]) -> Vec<Section<'a>> {
     let mut sections: Vec<Section<'a>> = Vec::new();
     let mut current_lines: Vec<&'a str> = Vec::new();
     let mut current_start = 0;
-    let mut header_stack: Vec<(usize, String)> = Vec::new(); // (level, text)
+    // (level, text)
+    let mut header_stack: Vec<(usize, String)> = Vec::new();
 
     for (i, &line) in lines.iter().enumerate() {
         if let Some(level) = header_level(line) {
@@ -258,7 +259,8 @@ mod tests {
         let h1 = chunk_hash("hello world");
         let h2 = chunk_hash("hello world");
         assert_eq!(h1, h2);
-        assert_eq!(h1.len(), 64); // blake3 hex = 64 chars
+        // blake3 hex = 64 chars
+        assert_eq!(h1.len(), 64);
     }
 
     #[test]
@@ -340,10 +342,12 @@ mod tests {
         assert_eq!(header_level("# Title"), Some(1));
         assert_eq!(header_level("## Section"), Some(2));
         assert_eq!(header_level("### Subsection"), Some(3));
-        assert_eq!(header_level("#hashtag"), None); // no space after #
+        // no space after #
+        assert_eq!(header_level("#hashtag"), None);
         assert_eq!(header_level("not a header"), None);
         assert_eq!(header_level(""), None);
-        assert_eq!(header_level("##"), Some(2)); // header with no text
+        // header with no text
+        assert_eq!(header_level("##"), Some(2));
     }
 
     #[test]

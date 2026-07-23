@@ -1,21 +1,16 @@
 //! Hermetic git helpers for tests.
 //!
-//! When running under `bazel test`, the `GIT_BIN_PATH` environment variable
-//! points to a statically-linked git binary provided by Bazel.  The helpers
-//! in this module prepend that binary's directory to `PATH` so that
-//! `Command::new("git")` resolves to it instead of relying on a
-//! system-installed git.
+//! Under `bazel test`, `GIT_BIN_PATH` points at a Bazel-provided static git.
+//! Helpers prepend that binary's directory to `PATH` so `Command::new("git")`
+//! resolves to it instead of a system install.
 
 use std::path::{Path, PathBuf};
 use std::sync::Once;
 
 static HERMETIC_GIT_INIT: Once = Once::new();
 
-/// Prepend the hermetic git binary directory to `PATH` so that
-/// `Command::new("git")` resolves to the Bazel-provided static binary
-/// instead of relying on a system-installed git.
-///
-/// Safe to call multiple times — only the first call mutates `PATH`.
+/// Prepend the hermetic git binary directory to `PATH`.
+/// Idempotent — only the first call mutates `PATH`.
 pub fn ensure_hermetic_git_on_path() {
     HERMETIC_GIT_INIT.call_once(|| {
         if let Ok(git_bin) = std::env::var("GIT_BIN_PATH") {
@@ -27,7 +22,7 @@ pub fn ensure_hermetic_git_on_path() {
             };
             if let Some(bin_dir) = git_path.parent() {
                 let current_path = std::env::var("PATH").unwrap_or_default();
-                // SAFETY: called once via `Once` before any child processes are spawned.
+                // SAFETY: once via `Once`, before any child processes spawn.
                 unsafe {
                     std::env::set_var("PATH", format!("{}:{}", bin_dir.display(), current_path));
                 }
@@ -36,8 +31,7 @@ pub fn ensure_hermetic_git_on_path() {
     });
 }
 
-/// Ensure the hermetic git binary is on `PATH` before running tests that
-/// need git.  Call at the top of any `#[test]` that spawns `git` commands.
+/// Put hermetic git on `PATH` at the top of tests that spawn `git`.
 ///
 /// ```ignore
 /// #[test]
@@ -53,9 +47,7 @@ macro_rules! require_git {
     };
 }
 
-/// Initialise a fresh git repository at `path` with a dummy user config.
-///
-/// Calls [`ensure_hermetic_git_on_path`] first so the hermetic binary is used.
+/// Init a fresh repo at `path` with dummy user config (hermetic git).
 pub fn init_git_repo(path: &Path) {
     ensure_hermetic_git_on_path();
     std::process::Command::new("git")
@@ -77,9 +69,7 @@ pub fn init_git_repo(path: &Path) {
         .unwrap();
 }
 
-/// Stage all files and create a commit.
-///
-/// Calls [`ensure_hermetic_git_on_path`] first so the hermetic binary is used.
+/// Stage all files and create a commit (hermetic git).
 pub fn git_commit_all(path: &Path, message: &str) {
     ensure_hermetic_git_on_path();
     std::process::Command::new("git")
@@ -94,20 +84,16 @@ pub fn git_commit_all(path: &Path, message: &str) {
         .unwrap();
 }
 
-/// Run a git command in `dir` with a deterministic author/committer, assert
-/// success, and return trimmed stdout.
-///
-/// Calls [`ensure_hermetic_git_on_path`] first so the hermetic binary is used.
+/// Run git in `dir` with a fixed author/committer; assert success; return
+/// trimmed stdout (hermetic git).
 pub fn run_git(dir: &Path, args: &[&str]) -> String {
     run_git_with_env(dir, args, &[])
 }
 
-/// Like [`run_git`], with extra environment variables (e.g.
-/// `GIT_SEQUENCE_EDITOR`). Hermetic beyond the binary and author identity:
-/// the developer's global/system git config is masked (a local
-/// `commit.gpgsign`/`core.hooksPath`/`rebase.autoSquash` must not change
-/// test behavior) and credential prompts are disabled. `envs` is applied
-/// last, so callers can override any of this.
+/// Like [`run_git`], with extra env vars (e.g. `GIT_SEQUENCE_EDITOR`).
+/// Masks global/system git config and disables credential prompts so local
+/// `commit.gpgsign` / `core.hooksPath` / `rebase.autoSquash` cannot skew
+/// tests. `envs` is applied last and may override any of this.
 pub fn run_git_with_env(dir: &Path, args: &[&str], envs: &[(&str, &str)]) -> String {
     ensure_hermetic_git_on_path();
     let mut cmd = std::process::Command::new("git");
@@ -138,9 +124,8 @@ pub fn run_git_with_env(dir: &Path, args: &[&str], envs: &[(&str, &str)]) -> Str
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
-/// Write a grouped fan-out tree of ~`files` files (`files_per_dir` per
-/// directory, directories bucketed 100 per group) under `dir`. No git
-/// operations — callers stage/commit as needed.
+/// Write a grouped fan-out of ~`files` files under `dir` (`files_per_dir`
+/// per directory, directories bucketed 100 per group). No git ops.
 pub fn write_fanout_tree(dir: &Path, files: usize, files_per_dir: usize) {
     for d in 0..files.div_ceil(files_per_dir) {
         let sub = dir.join(format!("g{}", d / 100)).join(format!("d{d}"));
@@ -155,9 +140,9 @@ pub fn write_fanout_tree(dir: &Path, files: usize, files_per_dir: usize) {
     }
 }
 
-/// Create a `feature` branch with `picks` one-file commits off the current
-/// HEAD, advance the base branch by one commit (so a rebase has work), and
-/// leave `feature` checked out. Returns the base branch name.
+/// Create `feature` with `picks` one-file commits off HEAD, advance the base
+/// by one commit (so rebase has work), leave `feature` checked out.
+/// Returns the base branch name.
 pub fn make_feature_branch(dir: &Path, picks: usize) -> String {
     let base = run_git(dir, &["rev-parse", "--abbrev-ref", "HEAD"]);
     run_git(dir, &["checkout", "-b", "feature"]);

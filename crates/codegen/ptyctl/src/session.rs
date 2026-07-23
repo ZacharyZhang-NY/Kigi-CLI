@@ -102,7 +102,7 @@ impl PtySession {
         let alive = Arc::new(AtomicBool::new(true));
         let exit_code: Arc<std::sync::Mutex<Option<u32>>> = Arc::new(std::sync::Mutex::new(None));
 
-        // --- PTY Reader Thread (blocking) ---
+        // PTY Reader Thread (blocking)
         let alive_reader = alive.clone();
         std::thread::Builder::new()
             .name("pty-reader".into())
@@ -128,7 +128,7 @@ impl PtySession {
             })
             .context("failed to spawn PTY reader thread")?;
 
-        // --- PTY Writer Task (async) ---
+        // PTY Writer Task (async)
         tokio::spawn(async move {
             loop {
                 tokio::select! {
@@ -151,7 +151,7 @@ impl PtySession {
             }
         });
 
-        // --- Terminal Feeder Task (async) ---
+        // Terminal Feeder Task (async)
         let terminal_feeder = terminal.clone();
         let output_tx_feeder = output_tx.clone();
         let raw_tail_feeder = raw_tail.clone();
@@ -172,7 +172,7 @@ impl PtySession {
             }
         });
 
-        // --- Child Process Waiter ---
+        // Child Process Waiter
         let alive_waiter = alive.clone();
         let exit_code_waiter = exit_code.clone();
         tokio::spawn(async move {

@@ -53,10 +53,8 @@ async fn client_hooks_fire_without_file_registry() {
         .await;
 }
 
-/// The PreToolUse gate blocks a tool when a client hook returns `deny`: the reverse
-/// `kigi/hooks/run` request is answered with a deny and `run_pre_tool_use_client_hook`
-/// returns `ToolLoop::HookDenied`. Complements the pure `classify` test by covering the
-/// gate wiring (the one new path that can block tool execution).
+/// Covers the PreToolUse gate wiring that the pure `classify` test does not: a client
+/// hook returning `deny` must block the tool.
 #[tokio::test(flavor = "current_thread")]
 async fn pre_tool_use_client_deny_blocks_the_tool() {
     let local = tokio::task::LocalSet::new();
@@ -222,7 +220,7 @@ async fn pre_tool_use_resolves_meta_dispatch_tool_name_end_to_end() {
         .await;
 }
 
-/// Subagent inheritance (the design headline): a tool call inside a SUBAGENT is gated by
+/// Subagent inheritance: a tool call inside a SUBAGENT is gated by
 /// the PARENT's registered client hook. In prod the subagent inherits the parent's hooks via
 /// `ctx.client_hooks.clone()` (`agent/subagent/`), itself fed by the `SnapshotClientHooks`
 /// clone (`session.client_hooks.clone()`). This is the seam-level test: it reproduces that
@@ -303,7 +301,6 @@ async fn subagent_inherits_parent_pre_tool_use_client_hook() {
                 ),
             };
             let tool_call_id = acp::ToolCallId::new("call_1");
-            // The subagent builds the envelope, tagging the call with its subagent type.
             let envelope = subagent.make_hook_envelope(
                 kigi_hooks::event::HookEventName::PreToolUse,
                 None,
@@ -597,14 +594,11 @@ async fn pre_tool_use_deny_feeds_reason_back_and_continues_turn() {
             .expect("execute_tool_calls must not hang")
             .expect("execute_tool_calls must not error");
 
-            // The turn must continue (deny fed back), NOT terminate.
             assert!(
                 matches!(result, ToolLoop::Continue),
                 "a pre_tool_use deny must continue the turn, got {result:?}"
             );
 
-            // The deny reason must be pushed as the blocked tool's result so the
-            // model sees it on the next sampling and can retry.
             let conv = actor.chat_state_handle.get_conversation().await;
             assert!(
                 conv.iter()

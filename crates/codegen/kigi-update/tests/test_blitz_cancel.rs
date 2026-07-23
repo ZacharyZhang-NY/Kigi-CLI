@@ -33,9 +33,7 @@ use common::{
 };
 use kigi_update::auto_update::install_internal_from_base;
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Artifacts + fixtures
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// A real executable whose ARCHIVE clears the 16 MiB parallel threshold (at
 /// least 2 chunks), so the parallel byte-range path is exercised. The shell
@@ -174,9 +172,7 @@ async fn run_one(
     assert_invariant(home, &prev_good, &new_binary, expect);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Deterministic matrix — single-connection path (small archive)
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
@@ -224,9 +220,7 @@ async fn blitz_single_connection_matrix() {
     run_one(&server, Mode::Full, "0.1.182", None).await;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Deterministic matrix — parallel byte-range path (>= 16 MiB archive)
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
@@ -269,10 +263,8 @@ async fn blitz_parallel_path_matrix() {
     run_one(&server, Mode::Full, "0.1.182", None).await;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Checksum + smoke-test rejections keep previous-good, then recover WITHOUT
 // a reset in between.
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
@@ -312,9 +304,7 @@ async fn smoke_and_checksum_failures_keep_previous_good_then_recover() {
     assert_invariant(home, &prev_good, &new_binary, Expect::NewBinary);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Bounded randomized fuzz (CI) + ignored stress (1e5+ iterations).
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Cheap deterministic PRNG so the fuzz needs no extra dependency.
 struct Rng(u64);
