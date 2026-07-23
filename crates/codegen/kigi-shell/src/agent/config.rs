@@ -4099,8 +4099,12 @@ pub fn sampling_config_for_model(
         &credentials.base_url,
     );
     let api_backend = info.api_backend.clone();
-    // Managed platform entries speak their registry dialect; BYOK/custom
-    // entries keep the historical Kimi body adaptation.
+    // Managed platform entries speak their registry dialect. BYOK/custom
+    // entries default to Passthrough (vanilla OpenAI semantics — the
+    // Kimi-specific body mutations `thinking:{…}` + replayed
+    // `reasoning_content` 400 on third-party OpenAI-compatible servers),
+    // EXCEPT entries pointed at the house/Kimi coding endpoint, which keep
+    // the historical Kimi dialect (mirrors Pi's base-url quirk sniffing).
     let chat_compat = info
         .id
         .as_deref()
@@ -4114,8 +4118,15 @@ pub fn sampling_config_for_model(
             kigi_models::PlatformChatCompat::StrictOpenAi => {
                 kigi_sampling_types::ChatCompat::StrictOpenAi
             }
+            kigi_models::PlatformChatCompat::Mistral => kigi_sampling_types::ChatCompat::Mistral,
         })
-        .unwrap_or_default();
+        .unwrap_or_else(|| {
+            if crate::util::is_effective_coding_endpoint_url(&credentials.base_url) {
+                kigi_sampling_types::ChatCompat::Kimi
+            } else {
+                kigi_sampling_types::ChatCompat::Passthrough
+            }
+        });
     // Claude Pro/Max OAuth Messages adaptation: a managed key whose platform is
     // a generic-OAuth Messages provider (claude-pro-max) drives the OAuth
     // identity headers + "You are Claude Code" system prefix in the sampler.
@@ -5963,6 +5974,72 @@ reasoning_effort = "low"
             "agentType should always be in meta, defaulting to DEFAULT_AGENT_TYPE"
         );
     }
+    /// BYOK/custom entries (no managed platform key) default to the
+    /// Passthrough dialect — the historical Kimi default leaked
+    /// Kimi-specific body mutations (`thinking:{…}`, replayed
+    /// `reasoning_content`) to third-party OpenAI-compatible servers.
+    /// The one exception: entries pointed at the house/Kimi coding
+    /// endpoint keep the Kimi dialect (base-url detection, mirroring
+    /// Pi's quirk sniffing).
+    #[test]
+    fn byok_custom_entries_default_to_passthrough_except_house_endpoint() {
+        let make_cfg = |base_url: &str| {
+            let entry_cfg = ModelEntryConfig {
+                id: None, // BYOK: no managed platform key
+                model: "my-custom-model".to_string(),
+                base_url: base_url.to_string(),
+                name: None,
+                description: None,
+                max_completion_tokens: None,
+                temperature: None,
+                top_p: None,
+                api_key: None,
+                env_key: None,
+                api_backend: ApiBackend::default(),
+                auth_scheme: None,
+                extra_headers: IndexMap::new(),
+                context_window: NonZeroU64::new(200_000).unwrap(),
+                auto_compact_threshold_percent: None,
+                system_prompt_label: None,
+                api_base_url: None,
+                use_concise: true,
+                agent_type: default_agent_type(),
+                inference_idle_timeout_secs: None,
+                max_retries: None,
+                hidden: false,
+                supported_in_api: true,
+                reasoning_effort: None,
+                supports_reasoning_effort: false,
+                reasoning_efforts: Vec::new(),
+                capabilities: Vec::new(),
+                supports_backend_search: false,
+                compactions_remaining: None,
+                compaction_at_tokens: None,
+                show_model_fingerprint: false,
+                stream_tool_calls: None,
+                laziness_detector: LazinessDetectorPerModelConfig::default(),
+            };
+            let entry = ModelEntry::from_config_entry(&entry_cfg);
+            let creds = ResolvedCredentials {
+                api_key: Some("sk-byok".into()),
+                base_url: base_url.to_string(),
+                auth_type: kigi_chat_state::AuthType::ApiKey,
+                auth_scheme: Default::default(),
+            };
+            sampling_config_for_model(&entry, creds, None)
+        };
+        assert_eq!(
+            make_cfg("https://api.third-party.example/v1").chat_compat,
+            kigi_sampling_types::ChatCompat::Passthrough,
+            "third-party BYOK must get vanilla OpenAI semantics"
+        );
+        assert_eq!(
+            make_cfg("https://api.kimi.com/coding/v1").chat_compat,
+            kigi_sampling_types::ChatCompat::Kimi,
+            "the house coding endpoint keeps the Kimi dialect"
+        );
+    }
+
     /// Managed `{platform}/{model}` entries stamp `meta.provider` with the
     /// platform's display name so the client's model picker can say which
     /// connected provider each model belongs to. User-defined `[model.*]`

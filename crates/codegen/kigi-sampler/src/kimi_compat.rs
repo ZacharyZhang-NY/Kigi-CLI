@@ -51,6 +51,91 @@ pub(crate) fn adapt_chat_completions_body_for(
             strip_kigi_private_message_fields(body);
             strip_stream_options(body);
         }
+        kigi_sampling_types::ChatCompat::Mistral => {
+            strip_kigi_private_message_fields(body);
+            strip_stream_options(body);
+            normalize_mistral_tool_call_ids(body);
+        }
+    }
+}
+
+/// Mistral's validator requires tool-call ids of EXACTLY nine
+/// `[a-zA-Z0-9]` characters. Foreign backends mint arbitrary ids
+/// (OpenAI `call_…`, UUIDs, Anthropic `toolu_…`), so non-conforming ids
+/// are remapped deterministically — ported from Pi's
+/// `mistral-conversations.ts` normalizer: strip non-alphanumerics, keep
+/// the id when the result is already exactly nine chars, otherwise hash
+/// (FNV-1a → base36) down to nine, retrying with an attempt suffix on
+/// collision. ONE map serves `tool_calls[].id` and `tool_call_id` alike,
+/// so call/result pairing survives.
+fn normalize_mistral_tool_call_ids(body: &mut Value) {
+    const LEN: usize = 9;
+
+    fn derive(id: &str, attempt: u32) -> String {
+        let normalized: String = id.chars().filter(char::is_ascii_alphanumeric).collect();
+        if attempt == 0 && normalized.len() == LEN {
+            return normalized;
+        }
+        let seed_base = if normalized.is_empty() {
+            id
+        } else {
+            &normalized
+        };
+        let seed = if attempt == 0 {
+            seed_base.to_string()
+        } else {
+            format!("{seed_base}:{attempt}")
+        };
+        // FNV-1a (stable across builds, unlike std's DefaultHasher) → base36.
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        for b in seed.bytes() {
+            hash ^= u64::from(b);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        let mut out = String::with_capacity(LEN);
+        let digits = b"0123456789abcdefghijklmnopqrstuvwxyz";
+        let mut h = hash;
+        while out.len() < LEN {
+            out.push(digits[(h % 36) as usize] as char);
+            h = h / 36 + 1; // +1 keeps the stream from collapsing to zeros
+        }
+        out
+    }
+
+    let Some(messages) = body.get_mut("messages").and_then(|m| m.as_array_mut()) else {
+        return;
+    };
+    let mut forward: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut taken: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut normalize = |id: &str| -> String {
+        if let Some(mapped) = forward.get(id) {
+            return mapped.clone();
+        }
+        let mut attempt = 0;
+        loop {
+            let candidate = derive(id, attempt);
+            if taken.insert(candidate.clone()) {
+                forward.insert(id.to_string(), candidate.clone());
+                return candidate;
+            }
+            attempt += 1;
+        }
+    };
+    for message in messages.iter_mut() {
+        if let Some(tool_calls) = message.get_mut("tool_calls").and_then(|t| t.as_array_mut()) {
+            for tc in tool_calls {
+                if let Some(id) = tc.get("id").and_then(|v| v.as_str()).map(str::to_owned) {
+                    tc["id"] = Value::String(normalize(&id));
+                }
+            }
+        }
+        if let Some(id) = message
+            .get("tool_call_id")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned)
+        {
+            message["tool_call_id"] = Value::String(normalize(&id));
+        }
     }
 }
 
@@ -665,5 +750,57 @@ mod tests {
         assert_eq!(props["arr"]["type"], json!("array"));
         assert_eq!(props["num"]["type"], json!("number"));
         assert_eq!(props["free"]["type"], json!("string"));
+    }
+
+    /// Mistral dialect: exactly-nine `[a-zA-Z0-9]` tool-call ids. A
+    /// conforming id survives; foreign ids (OpenAI `call_…`, UUIDs) remap
+    /// deterministically; the SAME map serves `tool_calls[].id` and
+    /// `tool_call_id`, so pairing survives; distinct inputs never collide.
+    #[test]
+    fn mistral_dialect_normalizes_tool_call_ids_symmetrically() {
+        let mut body = serde_json::json!({
+            "messages": [
+                {"role": "assistant", "tool_calls": [
+                    {"id": "abc123XYZ", "type": "function", "function": {"name": "a", "arguments": "{}"}},
+                    {"id": "call_0123456789abcdef", "type": "function", "function": {"name": "b", "arguments": "{}"}}
+                ]},
+                {"role": "tool", "tool_call_id": "abc123XYZ", "content": "r1"},
+                {"role": "tool", "tool_call_id": "call_0123456789abcdef", "content": "r2"},
+            ],
+            "stream_options": {"include_usage": true}
+        });
+        adapt_chat_completions_body_for(kigi_sampling_types::ChatCompat::Mistral, &mut body);
+
+        let msgs = body["messages"].as_array().unwrap();
+        let ids: Vec<String> = msgs[0]["tool_calls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tc| tc["id"].as_str().unwrap().to_string())
+            .collect();
+        // Conforming id kept verbatim.
+        assert_eq!(ids[0], "abc123XYZ");
+        // Foreign id remapped to exactly nine alphanumerics.
+        assert_eq!(ids[1].len(), 9, "{ids:?}");
+        assert!(ids[1].chars().all(|ch| ch.is_ascii_alphanumeric()));
+        assert_ne!(ids[0], ids[1], "distinct inputs must not collide");
+        // Results carry the SAME mapped ids.
+        assert_eq!(msgs[1]["tool_call_id"].as_str().unwrap(), ids[0]);
+        assert_eq!(msgs[2]["tool_call_id"].as_str().unwrap(), ids[1]);
+        // StrictOpenAi base behavior rides along.
+        assert!(body.get("stream_options").is_none());
+
+        // Determinism: the same foreign id maps identically in a fresh body.
+        let mut body2 = serde_json::json!({
+            "messages": [
+                {"role": "tool", "tool_call_id": "call_0123456789abcdef", "content": "r"}
+            ]
+        });
+        adapt_chat_completions_body_for(kigi_sampling_types::ChatCompat::Mistral, &mut body2);
+        assert_eq!(
+            body2["messages"][0]["tool_call_id"].as_str().unwrap(),
+            ids[1],
+            "remap must be deterministic across requests (prefix-cache stability)"
+        );
     }
 }

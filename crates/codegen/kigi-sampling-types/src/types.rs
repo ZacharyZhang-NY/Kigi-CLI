@@ -1260,15 +1260,21 @@ pub enum ChatCompat {
     DeepSeek,
     /// Leave the body as-is (OpenAI-style `reasoning_effort` passes through).
     Passthrough,
-    /// Strict OpenAI-compatible validators (Mistral, Cerebras) reject any
+    /// Strict OpenAI-compatible validators (Cerebras, NVIDIA) reject any
     /// out-of-schema request field with a 4xx (`additionalProperties:false`).
     /// kigi injects `stream_options.include_usage` on every streaming
     /// request, which such validators reject, so it is stripped (streaming
     /// usage falls back to token estimation). `reasoning_effort` passes
     /// through; private message fields are stripped like Passthrough.
-    /// (Serde alias `mistral` keeps sessions persisted before the rename.)
-    #[serde(alias = "mistral")]
     StrictOpenAi,
+    /// Mistral: [`Self::StrictOpenAi`] behavior plus its exactly-nine
+    /// `[a-zA-Z0-9]` tool-call id contract — foreign/OpenAI-style ids are
+    /// deterministically remapped on call+result in one shared map (the
+    /// Pi `mistral-conversations` normalizer). Serializes as `mistral`, so
+    /// sessions persisted before the StrictOpenAi rename (which carried
+    /// the `mistral` alias) resolve here — correct, they were Mistral
+    /// sessions.
+    Mistral,
 }
 
 pub const REASONING_EFFORT_META_KEY: &str = "reasoningEffort";
@@ -1731,9 +1737,15 @@ mod tests {
     /// persisted before the rename still deserialize.
     #[test]
     fn chat_compat_mistral_alias_deserializes_to_strict_openai() {
+        // `mistral` resolves to the dedicated Mistral dialect — including
+        // sessions persisted before the StrictOpenAi rename (they were
+        // Mistral sessions and now get the 9-char id contract too).
         let v: ChatCompat = serde_json::from_str("\"mistral\"").unwrap();
-        assert_eq!(v, ChatCompat::StrictOpenAi);
-        // New value round-trips as strict_open_ai.
+        assert_eq!(v, ChatCompat::Mistral);
+        assert_eq!(
+            serde_json::to_string(&ChatCompat::Mistral).unwrap(),
+            "\"mistral\""
+        );
         let v: ChatCompat = serde_json::from_str("\"strict_open_ai\"").unwrap();
         assert_eq!(v, ChatCompat::StrictOpenAi);
         assert_eq!(

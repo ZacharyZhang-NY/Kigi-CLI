@@ -1841,8 +1841,9 @@ mod tests {
         let cfg = crate::agent::config::sampling_config_for_model(&model_entry, creds, None);
         assert_eq!(
             cfg.chat_compat,
-            kigi_sampling_types::ChatCompat::StrictOpenAi,
-            "mistral entries use the StrictOpenAi dialect (stream_options strip)"
+            kigi_sampling_types::ChatCompat::Mistral,
+            "mistral entries use the Mistral dialect (StrictOpenAi behavior \
+             plus the exactly-nine-alphanumeric tool-call id contract)"
         );
     }
 

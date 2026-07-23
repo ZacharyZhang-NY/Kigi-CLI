@@ -70,9 +70,12 @@ pub enum PlatformChatCompat {
     Kimi,
     DeepSeek,
     Passthrough,
-    /// Strict OpenAI-compatible validator (Mistral, Cerebras) — strips
+    /// Strict OpenAI-compatible validator (Cerebras, NVIDIA) — strips
     /// `stream_options` and private fields.
     StrictOpenAi,
+    /// Mistral: StrictOpenAi plus its exactly-9-alphanumeric tool-call id
+    /// contract (foreign/OpenAI-style ids are deterministically remapped).
+    Mistral,
 }
 
 /// How a platform's API key rides requests (listing, validation, inference).
@@ -599,10 +602,12 @@ const MISTRAL_SPEC: PlatformSpec = PlatformSpec {
     wire_serves_metadata: false,
     wire_api: PlatformWireApi::ChatCompletions,
     listing: ListingDialect::OpenAi,
-    // Mistral's strict validator 422s on `stream_options`, and its reasoning
-    // models return array content — the StrictOpenAi dialect strips
-    // stream_options; the response deserializer handles arrays universally.
-    chat_compat: PlatformChatCompat::StrictOpenAi,
+    // Mistral's strict validator 422s on `stream_options`, its reasoning
+    // models return array content, and tool-call ids must be EXACTLY nine
+    // `[a-zA-Z0-9]` chars — the Mistral dialect strips stream_options and
+    // deterministically remaps non-conforming (foreign/OpenAI-style) ids;
+    // the response deserializer handles arrays universally.
+    chat_compat: PlatformChatCompat::Mistral,
     key_header: PlatformKeyHeader::Bearer,
     // The listing carries embed/moderation/OCR entries; keep tool-calling
     // chat models only.
