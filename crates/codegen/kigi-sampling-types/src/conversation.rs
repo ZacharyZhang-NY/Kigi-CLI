@@ -1773,31 +1773,18 @@ pub fn conversation_item_to_chat_message(item: ConversationItem) -> ChatRequestM
             }
         }
         ConversationItem::ToolResult(t) => {
-            if t.images.is_empty() {
-                ChatRequestMessage::tool(t.tool_call_id, t.content.as_ref().to_owned())
+            // Tool messages are TEXT-ONLY on the OpenAI chat wire (the spec
+            // allows string/text-parts; image parts 400 on strict
+            // validators). Images ride a synthetic user message appended
+            // after the consecutive tool-result run by
+            // `conversation_to_chat_messages` — the Pi `openai-completions`
+            // relocation. An image-only result gets a pointer placeholder.
+            let text = if t.content.is_empty() && !t.images.is_empty() {
+                "(see attached image)".to_string()
             } else {
-                let mut blocks = vec![ChatContentBlock::Text {
-                    text: t.content.as_ref().to_owned(),
-                }];
-                for img in t.images {
-                    if let ContentPart::Image { url } = img {
-                        blocks.push(ChatContentBlock::ImageUrl {
-                            image_url: ImageUrl {
-                                url: url.as_ref().to_owned(),
-                            },
-                        });
-                    }
-                }
-                ChatRequestMessage {
-                    role: Role::Tool,
-                    content: MessageContent::Blocks(blocks),
-                    name: None,
-                    tool_calls: Vec::new(),
-                    tool_call_id: Some(t.tool_call_id),
-                    model_id: None,
-                    reasoning_content: None,
-                }
-            }
+                t.content.as_ref().to_owned()
+            };
+            ChatRequestMessage::tool(t.tool_call_id, text)
         }
         // Backend tool calls have no Chat Completions equivalent.
         // Emit a synthetic assistant message so the model sees context
@@ -1839,16 +1826,44 @@ pub fn conversation_item_to_chat_message(item: ConversationItem) -> ChatRequestM
 pub fn conversation_to_chat_messages(items: Vec<ConversationItem>) -> Vec<ChatRequestMessage> {
     let mut out: Vec<ChatRequestMessage> = Vec::with_capacity(items.len());
     let mut pending_reasoning: Vec<String> = Vec::new();
+    // Images from the current consecutive tool-result run. Tool messages
+    // are text-only on the OpenAI chat wire, and a user message may not
+    // interrupt the run (tool messages must directly follow their
+    // assistant's tool_calls), so images batch here and flush as ONE
+    // synthetic user message after the run — Pi's `openai-completions`
+    // relocation pattern.
+    let mut pending_tool_images: Vec<ChatContentBlock> = Vec::new();
+    let flush_tool_images = |pending: &mut Vec<ChatContentBlock>,
+                             out: &mut Vec<ChatRequestMessage>| {
+        if pending.is_empty() {
+            return;
+        }
+        let mut blocks = vec![ChatContentBlock::Text {
+            text: "Attached image(s) from tool result:".to_string(),
+        }];
+        blocks.append(pending);
+        out.push(ChatRequestMessage {
+            role: Role::User,
+            content: MessageContent::Blocks(blocks),
+            name: None,
+            tool_calls: Vec::new(),
+            tool_call_id: None,
+            model_id: None,
+            reasoning_content: None,
+        });
+    };
 
     for item in items {
         match item {
             ConversationItem::Reasoning(r) => {
+                flush_tool_images(&mut pending_tool_images, &mut out);
                 let text = reasoning_item_text(&r);
                 if !text.is_empty() {
                     pending_reasoning.push(text);
                 }
             }
             ConversationItem::Assistant(_) => {
+                flush_tool_images(&mut pending_tool_images, &mut out);
                 let mut msg = conversation_item_to_chat_message(item);
                 if !pending_reasoning.is_empty() {
                     msg.reasoning_content = Some(pending_reasoning.join("\n"));
@@ -1864,6 +1879,21 @@ pub fn conversation_to_chat_messages(items: Vec<ConversationItem>) -> Vec<ChatRe
                 // folds onto the following assistant — matching the Responses
                 // API path, which preserves reasoning across backend tool
                 // calls.
+                flush_tool_images(&mut pending_tool_images, &mut out);
+                out.push(conversation_item_to_chat_message(item));
+            }
+            ConversationItem::ToolResult(ref t) => {
+                // Collect the run's images before the text-only conversion.
+                for img in &t.images {
+                    if let ContentPart::Image { url } = img {
+                        pending_tool_images.push(ChatContentBlock::ImageUrl {
+                            image_url: ImageUrl {
+                                url: url.as_ref().to_owned(),
+                            },
+                        });
+                    }
+                }
+                pending_reasoning.clear();
                 out.push(conversation_item_to_chat_message(item));
             }
             other => {
@@ -1871,11 +1901,13 @@ pub fn conversation_to_chat_messages(items: Vec<ConversationItem>) -> Vec<ChatRe
                 // intervening user/tool messages clear it, matching the
                 // pre-refactor behavior where reasoning lived on the
                 // immediately-following assistant turn only.
+                flush_tool_images(&mut pending_tool_images, &mut out);
                 pending_reasoning.clear();
                 out.push(conversation_item_to_chat_message(other));
             }
         }
     }
+    flush_tool_images(&mut pending_tool_images, &mut out);
 
     out
 }
@@ -8351,6 +8383,10 @@ mod tests {
 
     #[test]
     fn test_tool_result_with_images_to_chat_completions() {
+        // Tool messages are TEXT-ONLY on the OpenAI chat wire (image parts
+        // 400 on strict validators); the images relocate to a batched user
+        // message in `conversation_to_chat_messages` — see
+        // `chat_tool_result_images_relocate_to_batched_user_message`.
         let item = ConversationItem::tool_result_with_images(
             "call_1",
             "Read image file: photo.png",
@@ -8362,20 +8398,10 @@ mod tests {
         let msg = conversation_item_to_chat_message(item);
         assert_eq!(msg.role, Role::Tool);
         assert_eq!(msg.tool_call_id, Some("call_1".to_string()));
-
-        // Should be Blocks, not Text
-        let MessageContent::Blocks(blocks) = &msg.content else {
-            panic!(
-                "Expected Blocks content for image tool result, got {:?}",
-                msg.content
-            );
-        };
-        assert_eq!(blocks.len(), 2);
         assert!(
-            matches!(&blocks[0], ChatContentBlock::Text { text } if text == "Read image file: photo.png")
-        );
-        assert!(
-            matches!(&blocks[1], ChatContentBlock::ImageUrl { image_url } if image_url.url == "data:image/png;base64,iVBOR")
+            matches!(&msg.content, MessageContent::Text(t) if t == "Read image file: photo.png"),
+            "tool message must be text-only, got {:?}",
+            msg.content
         );
     }
 
@@ -9146,6 +9172,79 @@ mod tests {
                 "Sys", "U", "R", "A", "U", "R", "A", "U", "R", "A", "U", "R", "A", "U",
             ],
             "multi-turn ordering must preserve interleaved Reasoning ↔ Assistant per turn"
+        );
+    }
+
+    #[test]
+    fn chat_tool_result_images_relocate_to_batched_user_message() {
+        // Tool messages are text-only on the OpenAI chat wire; images from
+        // a CONSECUTIVE tool-result run must batch into ONE user message
+        // AFTER the run (a user message may not interrupt tool responses
+        // answering the same assistant's tool_calls) — Pi's
+        // openai-completions relocation. An image-only result gets a
+        // pointer placeholder.
+        let assistant_with_calls = |ids: &[&str]| {
+            ConversationItem::Assistant(AssistantItem {
+                content: "".into(),
+                tool_calls: ids
+                    .iter()
+                    .map(|id| ToolCall {
+                        id: std::sync::Arc::from(*id),
+                        name: "read_file".to_string(),
+                        arguments: std::sync::Arc::from("{}"),
+                    })
+                    .collect(),
+                model_id: None,
+                model_fingerprint: None,
+                reasoning_effort: None,
+            })
+        };
+        let img = |data: &str| ContentPart::Image {
+            url: format!("data:image/png;base64,{data}").into(),
+        };
+        let msgs = conversation_to_chat_messages(vec![
+            ConversationItem::user("q"),
+            assistant_with_calls(&["tc1", "tc2"]),
+            ConversationItem::tool_result_with_images("tc1", "", vec![img("AAA")]),
+            ConversationItem::tool_result_with_images("tc2", "text out", vec![img("BBB")]),
+            ConversationItem::assistant("done"),
+        ]);
+
+        let roles: Vec<Role> = msgs.iter().map(|m| m.role).collect();
+        assert_eq!(
+            roles,
+            vec![
+                Role::User,
+                Role::Assistant,
+                Role::Tool,
+                Role::Tool,
+                Role::User,
+                Role::Assistant
+            ],
+            "images flush as ONE user message after the tool run: {msgs:#?}"
+        );
+        // Tool messages are text-only; the image-only result carries the
+        // pointer placeholder.
+        assert!(matches!(&msgs[2].content, MessageContent::Text(t) if t == "(see attached image)"));
+        assert!(matches!(&msgs[3].content, MessageContent::Text(t) if t == "text out"));
+        // The batched user message carries the lead text + BOTH images.
+        let MessageContent::Blocks(blocks) = &msgs[4].content else {
+            panic!("image carrier must be a blocks message: {msgs:#?}");
+        };
+        assert_eq!(blocks.len(), 3);
+        assert!(
+            matches!(&blocks[0], ChatContentBlock::Text { text } if text.starts_with("Attached image"))
+        );
+        let urls: Vec<&str> = blocks[1..]
+            .iter()
+            .filter_map(|b| match b {
+                ChatContentBlock::ImageUrl { image_url } => Some(image_url.url.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            urls,
+            vec!["data:image/png;base64,AAA", "data:image/png;base64,BBB"]
         );
     }
 
