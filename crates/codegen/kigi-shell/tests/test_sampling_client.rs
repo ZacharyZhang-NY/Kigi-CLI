@@ -535,13 +535,20 @@ async fn responses_upgrade_roundtrips_reconstructed_reasoning_as_typed_input() {
 /// Upgrade path, Anthropic Messages API: a legacy session whose assistant
 /// carries inline `reasoning: {text, encrypted, id}` (text = thinking,
 /// encrypted = signature) must, on load, reconstruct a sibling Reasoning
-/// item that emits a Anthropic Messages `thinking` content block (with `thinking`
-/// + `signature`) on the outgoing `/v1/messages` request.
+/// item — and when that turn is the ACTIVE tool-use continuation, its
+/// `thinking` block (text + signature) must reach the outgoing
+/// `/v1/messages` request verbatim.
+///
+/// Outside an active tool loop the block must be STRIPPED: Anthropic
+/// validates every replayed signature (model-bound), so replaying stale
+/// thinking is exactly what 400'd with "Invalid `signature` in `thinking`
+/// block" after cross-model histories (see `prune_replayed_thinking`).
 #[tokio::test]
-async fn messages_upgrade_emits_reconstructed_reasoning_as_thinking_block() {
-    // 1. Seed a legacy Anthropic Messages-origin chat_history.jsonl. Anthropic Messages
-    //    thinking blocks never carried an id (stream/messages.rs sets
-    //    id=""), and the signature lives in `encrypted`.
+async fn messages_upgrade_replays_reconstructed_thinking_only_in_active_tool_loop() {
+    // 1. Seed a legacy Anthropic Messages-origin chat_history.jsonl whose
+    //    assistant turn issued a tool call (thinking blocks never carried an
+    //    id — stream/messages.rs sets id="" — and the signature lives in
+    //    `encrypted`). The pending tool_result makes this the active loop.
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
         dir.path().join("chat_history.jsonl"),
@@ -550,7 +557,9 @@ async fn messages_upgrade_emits_reconstructed_reasoning_as_thinking_block() {
             "\n",
             r#"{"type":"user","content":[{"type":"text","text":"q1"}]}"#,
             "\n",
-            r#"{"type":"assistant","content":"a1","reasoning":{"text":"legacy anthropic thinking","encrypted":"SIGNATURE_abc","id":""},"model_id":"kigi-4.5"}"#,
+            r#"{"type":"assistant","content":"a1","reasoning":{"text":"legacy anthropic thinking","encrypted":"SIGNATURE_abc","id":""},"model_id":"kigi-4.5","tool_calls":[{"id":"tc1","name":"read_file","arguments":"{}"}]}"#,
+            "\n",
+            r#"{"type":"tool_result","tool_call_id":"tc1","content":"file contents"}"#,
             "\n",
         ),
     )
@@ -558,7 +567,7 @@ async fn messages_upgrade_emits_reconstructed_reasoning_as_thinking_block() {
 
     // 2. Load + upgrade.
     let adapter = JsonlStorageAdapter::with_root(dir.path().to_path_buf());
-    let mut items = adapter.load_chat_history_from_dir(dir.path()).unwrap();
+    let items = adapter.load_chat_history_from_dir(dir.path()).unwrap();
     assert!(
         items
             .iter()
@@ -566,20 +575,18 @@ async fn messages_upgrade_emits_reconstructed_reasoning_as_thinking_block() {
         "legacy inline reasoning must be reconstructed as a sibling on load, got {items:?}"
     );
 
-    // 3. Continue and send over the Messages API, capturing the body.
-    items.push(ConversationItem::user("q2"));
-
+    // 3. Send the tool-loop continuation over the Messages API.
     let server = MockInferenceServer::start().await.unwrap();
     server.set_response("ok");
     let client = create_test_client(&server.url(), ApiBackend::Messages);
 
     let _ = client
-        .conversation_collect(ConversationRequest::from_items(items))
+        .conversation_collect(ConversationRequest::from_items(items.clone()))
         .await
         .unwrap();
 
-    // 4. The reconstructed reasoning must emit a Anthropic Messages `thinking`
-    //    content block carrying the thinking text + signature.
+    // 4. The active loop's reconstructed reasoning must emit an Anthropic
+    //    `thinking` content block carrying the thinking text + signature.
     let body = server.request_bodies().pop().unwrap();
     let messages = body.get("messages").unwrap().as_array().unwrap();
     let thinking_block = messages
@@ -593,7 +600,7 @@ async fn messages_upgrade_emits_reconstructed_reasoning_as_thinking_block() {
         })
         .find(|b| b.get("type").and_then(Value::as_str) == Some("thinking"))
         .unwrap_or_else(|| {
-            panic!("reconstructed reasoning must emit an Anthropic thinking block; messages: {messages:#?}")
+            panic!("active-loop reasoning must emit an Anthropic thinking block; messages: {messages:#?}")
         });
     assert_eq!(
         thinking_block.get("thinking").and_then(Value::as_str),
@@ -604,6 +611,25 @@ async fn messages_upgrade_emits_reconstructed_reasoning_as_thinking_block() {
         thinking_block.get("signature").and_then(Value::as_str),
         Some("SIGNATURE_abc"),
         "signature (encrypted) preserved — required to reuse the thought server-side"
+    );
+
+    // 5. A follow-up user turn CLOSES the loop: the same history plus a new
+    //    user message must replay NO thinking block at all.
+    let mut closed = items;
+    closed.push(ConversationItem::user("q2"));
+    let _ = client
+        .conversation_collect(ConversationRequest::from_items(closed))
+        .await
+        .unwrap();
+    let body = server.request_bodies().pop().unwrap();
+    let any_thinking = body["messages"].as_array().unwrap().iter().any(|m| {
+        m.get("content")
+            .and_then(Value::as_array)
+            .is_some_and(|c| c.iter().any(|b| b["type"] == "thinking"))
+    });
+    assert!(
+        !any_thinking,
+        "stale thinking must be stripped outside the active tool loop; body: {body:#?}"
     );
 }
 

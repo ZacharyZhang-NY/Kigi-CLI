@@ -3201,6 +3201,8 @@ pub fn build_messages_request(req: &ConversationRequest) -> crate::messages::Mes
     flush_assistant(&mut pending_assistant, &mut messages);
     flush_tool_results(&mut pending_tool_results, &mut messages);
 
+    prune_replayed_thinking(&mut messages);
+
     // Attach cache_control: {type: "ephemeral"} to last system block
     if let Some(last) = system_blocks.last_mut() {
         last.cache_control = Some(CacheControl {
@@ -3288,6 +3290,74 @@ pub fn build_messages_request(req: &ConversationRequest) -> crate::messages::Mes
         output_config,
         metadata: None,
     }
+}
+
+/// Strip replayed `thinking` blocks the Anthropic Messages API would
+/// reject — keep exactly the one it requires.
+///
+/// Anthropic validates EVERY `thinking` block in the request: the
+/// signature is bound to the emitting model and must be non-empty, so
+/// history from another backend (`encrypted_content: None` replays as
+/// `signature: ""`), a Responses-API `tco_*` blob (signature bytes with no
+/// text), or a block signed by a DIFFERENT model after a mid-session
+/// `/model` switch 400s the whole request with
+/// "messages.N.content.0: Invalid `signature` in `thinking` block".
+///
+/// The API only NEEDS thinking for the ACTIVE tool-use continuation: the
+/// final assistant message whose tool_use results follow must carry its
+/// signed thinking back verbatim. Prior turns' thinking is ignored even
+/// when valid (Pi/Claude Code replay exactly this way). So: keep the
+/// final assistant message's thinking when the loop is open and the block
+/// is genuinely signed (non-empty text AND signature — an open loop can
+/// never span a model switch, so that signature is always the current
+/// model's); strip every other thinking block. An assistant message left
+/// EMPTY by the strip (a thinking-only aborted turn) is removed — the API
+/// rejects empty content arrays.
+fn prune_replayed_thinking(messages: &mut Vec<crate::messages::Message>) {
+    use crate::messages::{ContentBlock, MessageContent, MessageRole};
+    let last_assistant = messages
+        .iter()
+        .rposition(|m| matches!(m.role, MessageRole::Assistant));
+    let active_tool_loop = last_assistant.is_some_and(|i| {
+        let has_tool_use = matches!(
+            &messages[i].content,
+            MessageContent::Blocks(blocks)
+                if blocks.iter().any(|b| matches!(b, ContentBlock::ToolUse { .. }))
+        );
+        // The loop is OPEN only while the request ends on the tool results:
+        // a later plain user turn closes it (the results answered, the model
+        // replied — its thinking is history the API ignores or rejects).
+        let continuation = &messages[i + 1..];
+        let ends_on_results = !continuation.is_empty()
+            && continuation.iter().all(|m| {
+                matches!(
+                    &m.content,
+                    MessageContent::Blocks(blocks)
+                        if blocks.iter().any(|b| matches!(b, ContentBlock::ToolResult { .. }))
+                )
+            });
+        has_tool_use && ends_on_results
+    });
+    let mut index = 0;
+    messages.retain_mut(|m| {
+        let i = index;
+        index += 1;
+        if !matches!(m.role, MessageRole::Assistant) {
+            return true;
+        }
+        let MessageContent::Blocks(blocks) = &mut m.content else {
+            return true;
+        };
+        let keep_thinking = active_tool_loop && Some(i) == last_assistant;
+        blocks.retain(|b| match b {
+            ContentBlock::Thinking {
+                thinking,
+                signature,
+            } => keep_thinking && !thinking.is_empty() && !signature.is_empty(),
+            _ => true,
+        });
+        !blocks.is_empty()
+    });
 }
 
 /// Convert a MessagesResponse to a single Assistant `ConversationItem`.
@@ -5332,6 +5402,160 @@ mod tests {
     /// messages while setting top-level `thinking: null` — the Messages API
     /// rejects this with a 400.  Verify that stripped reasoning produces a
     /// valid request with no thinking blocks in messages.
+    /// Collect `(message_index, thinking, signature)` for every thinking
+    /// block in a built Messages request.
+    fn thinking_blocks(json: &serde_json::Value) -> Vec<(usize, String, String)> {
+        let mut out = Vec::new();
+        for (i, m) in json["messages"].as_array().unwrap().iter().enumerate() {
+            if let Some(content) = m.get("content").and_then(|c| c.as_array()) {
+                for b in content {
+                    if b.get("type").and_then(|t| t.as_str()) == Some("thinking") {
+                        out.push((
+                            i,
+                            b["thinking"].as_str().unwrap_or_default().to_string(),
+                            b["signature"].as_str().unwrap_or_default().to_string(),
+                        ));
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    fn reasoning(text: &str, encrypted: Option<&str>) -> ConversationItem {
+        ConversationItem::Reasoning(rs::ReasoningItem {
+            id: String::new(),
+            summary: if text.is_empty() {
+                vec![]
+            } else {
+                vec![rs::SummaryPart::SummaryText(rs::SummaryTextContent {
+                    text: text.to_string(),
+                })]
+            },
+            content: None,
+            encrypted_content: encrypted.map(str::to_owned),
+            status: None,
+        })
+    }
+
+    fn assistant_text(text: &str) -> ConversationItem {
+        ConversationItem::Assistant(AssistantItem {
+            content: text.into(),
+            tool_calls: vec![],
+            model_id: None,
+            model_fingerprint: None,
+            reasoning_effort: None,
+        })
+    }
+
+    /// Anthropic validates EVERY replayed `thinking` block: an unsigned one
+    /// (history synthesized by another backend replays as `signature: ""`),
+    /// a Responses `tco_*` blob (signature with no text), or a block signed
+    /// by a different model after a mid-session `/model` switch 400s the
+    /// whole request — "messages.N.content.0: Invalid `signature` in
+    /// `thinking` block". The API only NEEDS thinking for the active
+    /// tool-use continuation, so outside one the builder must replay NO
+    /// thinking blocks at all.
+    #[test]
+    fn messages_request_strips_thinking_outside_active_tool_loop() {
+        let req = ConversationRequest::from_items(vec![
+            ConversationItem::system("sys"),
+            ConversationItem::user("q1"),
+            // Cross-backend history: unsigned reasoning (the Windows repro —
+            // session started on another model, then switched to Claude).
+            reasoning("some thinking", None),
+            assistant_text("a1"),
+            ConversationItem::user("q2"),
+            // Responses-API blob: signature-shaped bytes, no text.
+            reasoning("", Some("tco_blob")),
+            assistant_text("a2"),
+            ConversationItem::user("q3"),
+            // Genuinely signed — but its tool loop (none) is closed, so the
+            // API ignores it when valid and 400s it after a model switch.
+            reasoning("signed thinking", Some("sig-real")),
+            assistant_text("a3"),
+            ConversationItem::user("q4"),
+        ]);
+        let json = serde_json::to_value(build_messages_request(&req)).unwrap();
+        assert_eq!(
+            thinking_blocks(&json),
+            vec![],
+            "no thinking block may be replayed outside an active tool loop:\n{json:#}"
+        );
+    }
+
+    /// The active tool-use continuation is the one place Anthropic REQUIRES
+    /// the signed thinking block back: the final assistant message issued
+    /// tool_use and its results follow. Exactly that block is kept; a
+    /// prior turn's signed thinking is still stripped.
+    #[test]
+    fn messages_request_keeps_signed_thinking_for_active_tool_loop() {
+        let req = ConversationRequest::from_items(vec![
+            ConversationItem::user("q0"),
+            reasoning("old turn", Some("sig-old")),
+            assistant_text("a0"),
+            ConversationItem::user("q1"),
+            reasoning("current turn", Some("sig-current")),
+            ConversationItem::Assistant(AssistantItem {
+                content: "".into(),
+                tool_calls: vec![ToolCall {
+                    id: std::sync::Arc::from("tc1"),
+                    name: "read_file".to_string(),
+                    arguments: std::sync::Arc::from("{}"),
+                }],
+                model_id: None,
+                model_fingerprint: None,
+                reasoning_effort: None,
+            }),
+            ConversationItem::tool_result("tc1", "file contents"),
+        ]);
+        let json = serde_json::to_value(build_messages_request(&req)).unwrap();
+        let blocks = thinking_blocks(&json);
+        assert_eq!(
+            blocks.len(),
+            1,
+            "exactly the active loop's thinking survives:\n{json:#}"
+        );
+        let (msg_idx, thinking, signature) = &blocks[0];
+        assert_eq!(thinking, "current turn");
+        assert_eq!(signature, "sig-current");
+        // It sits at content.0 of the final assistant message.
+        let msg = &json["messages"].as_array().unwrap()[*msg_idx];
+        assert_eq!(msg["role"], "assistant");
+        assert_eq!(msg["content"][0]["type"], "thinking");
+        assert!(
+            msg["content"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|b| b["type"] == "tool_use"),
+            "the kept thinking belongs to the tool_use turn"
+        );
+    }
+
+    /// A thinking-only assistant turn (aborted before any text/tool output)
+    /// must not survive as an EMPTY assistant message after the strip —
+    /// Anthropic rejects empty content arrays.
+    #[test]
+    fn messages_request_drops_assistant_message_emptied_by_thinking_strip() {
+        let req = ConversationRequest::from_items(vec![
+            ConversationItem::user("q"),
+            reasoning("aborted turn thinking", Some("sig")),
+            assistant_text(""),
+            ConversationItem::user("follow-up"),
+        ]);
+        let json = serde_json::to_value(build_messages_request(&req)).unwrap();
+        for m in json["messages"].as_array().unwrap() {
+            if let Some(content) = m.get("content").and_then(|c| c.as_array()) {
+                assert!(
+                    !content.is_empty(),
+                    "no message may ship an empty content array:\n{json:#}"
+                );
+            }
+        }
+        assert_eq!(thinking_blocks(&json), vec![]);
+    }
+
     #[test]
     fn test_btw_stripped_reasoning_produces_no_thinking_blocks() {
         // Simulate a conversation where the model responded with thinking.
