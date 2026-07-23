@@ -1881,12 +1881,14 @@ impl Config {
             .default(true)
             .resolve()
     }
-    /// Graph mode (`/graph`) master switch. Default OFF — gray-released via
-    /// `KIGI_GRAPH=1` only (plan.md G0 gate). Graph mode additionally
+    /// Graph mode (`/graph`) master switch. Default ON — the gray release
+    /// (plan.md G0, `KIGI_GRAPH=1` only) is over; every install gets the
+    /// same commands (its absence on non-dev machines read as a platform
+    /// bug). `KIGI_GRAPH=0` remains the off-switch. Graph mode additionally
     /// requires the goal harness (nodes execute as goals), enforced at
     /// availability time, not here.
     pub(crate) fn resolve_graph(&self) -> Resolved<bool> {
-        BoolFlag::env("KIGI_GRAPH").default(false).resolve()
+        BoolFlag::env("KIGI_GRAPH").default(true).resolve()
     }
     /// Max graph nodes running concurrently (`KIGI_GRAPH_CONCURRENCY`).
     /// 1 = serial (G0-identical); clamped to [1, 8] — the coordinator has
@@ -4337,6 +4339,24 @@ mod tests {
     /// Catalog key of the bundled fallback default (`default_models.json`):
     /// `{platform_id}/{model_id}` for `crate::models::default_model()`.
     const BUNDLED_DEFAULT_KEY: &str = "kimi-code/kimi-for-coding";
+
+    /// `/graph` ships ON by default: the G0 gray release (`KIGI_GRAPH=1`
+    /// only) made the command exist solely on machines with the dev env
+    /// var — which read as "missing on Windows". A fresh install with no
+    /// env must resolve `true`; `KIGI_GRAPH=0` stays the off-switch.
+    #[test]
+    #[serial]
+    fn graph_defaults_on_and_env_zero_disables() {
+        let cfg = Config::default();
+        {
+            let _unset = EnvGuard::unset("KIGI_GRAPH");
+            assert!(cfg.resolve_graph().value, "fresh install must offer /graph");
+        }
+        {
+            let _off = EnvGuard::set("KIGI_GRAPH", "0");
+            assert!(!cfg.resolve_graph().value, "KIGI_GRAPH=0 must disable");
+        }
+    }
     #[test]
     fn main_cli_tools_override_preserves_profile_injection_policy() {
         let overrides = CliAgentOverrides {

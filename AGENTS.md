@@ -89,8 +89,9 @@ node as one ordinary goal — the agentic loop lives INSIDE the node; the
 edges stay deterministic Rust. The harness appends a terminal
 `gn-final` verification node depending on every planner node.
 
-- Feature flag `KIGI_GRAPH=1` (default off); availability additionally
-  requires the goal harness (`BuiltinGate::Graph`).
+- Enabled by default (`KIGI_GRAPH=0` is the off-switch; the G0 gray
+  release is over); availability additionally requires the goal harness
+  (`BuiltinGate::Graph`).
 - Key modules (kigi-shell): `session/graph_tracker.rs` (pure state
   machine; reuses `GoalStatus`/`GoalPhase`/`GoalPauseReason`),
   `session/graph_plan.rs` (planner-JSON contract + validation + fnv id
