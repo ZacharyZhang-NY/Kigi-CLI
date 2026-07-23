@@ -248,6 +248,17 @@ edges stay deterministic Rust. The harness appends a terminal
   across all three builders in the same pass — three sequential
   single-provider fixes (thinking signature → codex system role → codex
   reasoning id) motivated this policy.
+- ChatCompletions dialect selection: registry platforms declare
+  `chat_compat` explicitly; BYOK/custom entries default to `Passthrough`
+  (vanilla OpenAI semantics) EXCEPT entries pointed at the house/Kimi
+  coding endpoint, which keep the `Kimi` dialect (base-url detection —
+  Pi-style quirk sniffing). `ChatCompat::Mistral` = StrictOpenAi plus the
+  exactly-nine-`[a-zA-Z0-9]` tool-call id normalizer
+  (`normalize_mistral_tool_call_ids`, deterministic FNV-1a→base36, one
+  map for call+result; persisted `mistral` values resolve here). Chat
+  tool messages are TEXT-ONLY: tool-result images batch into one
+  synthetic user message after the consecutive tool-result run
+  (`conversation_to_chat_messages`).
     - `openai-codex` (ChatGPT Plus/Pro, `scope_key oauth/openai-codex`, port
       1455 `/auth/callback`, FORM body, authorize+token host `auth.openai.com`,
       client `app_EMoam…`, scope `openid profile email offline_access`, the 3
