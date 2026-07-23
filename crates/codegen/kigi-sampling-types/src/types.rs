@@ -1054,6 +1054,10 @@ pub fn patch_reasoning_effort(body: &mut Value, effort: Option<ReasoningEffort>)
 /// 2. `store` is always `false` on this backend, so reasoning continuity
 ///    is stateless: `include: ["reasoning.encrypted_content"]` is required
 ///    for the response to carry replayable encrypted reasoning.
+/// 3. For the same reason, a replayed reasoning item WITHOUT
+///    `encrypted_content` (captured from a stateful api.openai.com session
+///    that never requested the include) references server state
+///    chatgpt.com does not have — drop it rather than 400.
 ///
 /// openai-codex-GATED at the call sites — API-key `openai` Responses
 /// bodies stay byte-identical.
@@ -1103,6 +1107,18 @@ pub fn adapt_body_for_codex_backend(body: &mut Value) {
         if !entries.contains(&key) {
             entries.push(key);
         }
+    }
+
+    // 3. Drop reasoning items with no encrypted payload: stateless codex
+    // cannot resolve a bare `rs_*` reference.
+    if let Some(input) = body.get_mut("input").and_then(|v| v.as_array_mut()) {
+        input.retain(|item| {
+            item.get("type").and_then(|t| t.as_str()) != Some("reasoning")
+                || item
+                    .get("encrypted_content")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|s| !s.is_empty())
+        });
     }
 }
 
@@ -1660,6 +1676,38 @@ mod tests {
         let before = body.clone();
         adapt_body_for_codex_backend(&mut body);
         assert_eq!(body, before);
+    }
+
+    /// Stateless codex cannot resolve a bare `rs_*` reference: reasoning
+    /// input items without an encrypted payload are dropped; items WITH
+    /// one pass through untouched.
+    #[test]
+    fn codex_adapter_drops_reasoning_without_encrypted_payload() {
+        let mut body = json!({
+            "model": "gpt-5.2-codex",
+            "input": [
+                {"type": "message", "role": "user", "content": "q"},
+                {"type": "reasoning", "id": "rs_bare", "summary": []},
+                {"type": "reasoning", "id": "rs_full", "summary": [],
+                 "encrypted_content": "gAAAA-blob"},
+                {"type": "message", "role": "assistant", "content": "a"}
+            ]
+        });
+        adapt_body_for_codex_backend(&mut body);
+        let input = body["input"].as_array().unwrap();
+        assert_eq!(input.len(), 3, "bare rs_* item dropped: {body:#}");
+        assert!(
+            input
+                .iter()
+                .any(|i| i.get("id").and_then(|v| v.as_str()) == Some("rs_full")),
+            "encrypted reasoning passes through: {body:#}"
+        );
+        assert!(
+            !input
+                .iter()
+                .any(|i| i.get("id").and_then(|v| v.as_str()) == Some("rs_bare")),
+            "{body:#}"
+        );
     }
 
     /// No system items and no prior instructions: input untouched, no
