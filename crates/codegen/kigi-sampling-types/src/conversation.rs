@@ -3098,6 +3098,29 @@ fn sanitize_tool_call_id(id: &str) -> String {
         .collect()
 }
 
+/// The raster media types Anthropic accepts for base64 image sources.
+const ANTHROPIC_IMAGE_MEDIA_TYPES: [&str; 4] =
+    ["image/jpeg", "image/png", "image/gif", "image/webp"];
+
+/// Parse a `data:` URI into an Anthropic base64 image source
+/// `(media_type, data)`.
+///
+/// `None` for anything Anthropic would reject — non-base64 data URIs
+/// (previously leaked as `ImageSource::Url` carrying a `data:` payload:
+/// url sources must be http(s) → 400), media types outside the raster
+/// whitelist (`image/svg+xml` → 400), and param-carrying headers
+/// (`data:image/webp;name=x;base64,…` yields media type
+/// `"image/webp;name=x"` → 400). Callers degrade to a short text
+/// placeholder — never the raw URI, which for data URIs can be megabytes.
+fn parse_base64_image_data_uri(url: &str) -> Option<(String, String)> {
+    let rest = url.strip_prefix("data:")?;
+    let (media_type, data) = rest.split_once(";base64,")?;
+    let media_type = media_type.to_ascii_lowercase();
+    ANTHROPIC_IMAGE_MEDIA_TYPES
+        .contains(&media_type.as_str())
+        .then(|| (media_type, data.to_string()))
+}
+
 pub fn build_messages_request(req: &ConversationRequest) -> crate::messages::MessagesRequest {
     use crate::messages::{
         CacheControl, ContentBlock, ImageSource, Message, MessageContent, MessageRole,
@@ -3120,34 +3143,22 @@ pub fn build_messages_request(req: &ConversationRequest) -> crate::messages::Mes
                     cache_control: None,
                 },
                 ContentPart::Image { url } => {
-                    // Parse data: URI vs HTTP(S) URL
-                    if url.starts_with("data:") {
-                        // data:image/png;base64,ABC123...
-                        if let Some((header, data)) = url.split_once(',') {
-                            // Extract media type from header: data:image/png;base64
-                            let media_type = header
-                                .strip_prefix("data:")
-                                .and_then(|h| h.strip_suffix(";base64"))
-                                .unwrap_or("image/png")
-                                .to_string();
-                            ContentBlock::Image {
-                                source: ImageSource::Base64 {
-                                    media_type,
-                                    data: data.to_string(),
-                                },
-                            }
-                        } else {
-                            // Malformed data URI, treat as text
-                            ContentBlock::Text {
-                                text: format!("[invalid image: {}]", url),
-                                cache_control: None,
-                            }
+                    if let Some((media_type, data)) = parse_base64_image_data_uri(url) {
+                        ContentBlock::Image {
+                            source: ImageSource::Base64 { media_type, data },
                         }
                     } else if url.starts_with("http://") || url.starts_with("https://") {
                         ContentBlock::Image {
                             source: ImageSource::Url {
                                 url: url.as_ref().to_owned(),
                             },
+                        }
+                    } else if url.starts_with("data:") {
+                        // Rejected data URI (non-base64 / non-raster media
+                        // type): short placeholder, NEVER the payload.
+                        ContentBlock::Text {
+                            text: "[unsupported image]".to_string(),
+                            cache_control: None,
                         }
                     } else {
                         // Unknown format, treat as text
@@ -3198,7 +3209,17 @@ pub fn build_messages_request(req: &ConversationRequest) -> crate::messages::Mes
             ConversationItem::User(u) => {
                 flush_assistant(&mut pending_assistant, &mut messages);
                 flush_tool_results(&mut pending_tool_results, &mut messages);
-                let blocks = content_parts_to_anthropic_blocks(&u.content);
+                // Anthropic rejects empty content: drop empty text parts and
+                // give an all-empty user turn a placeholder (mirrors the
+                // assistant arm's emptiness guard).
+                let mut blocks = content_parts_to_anthropic_blocks(&u.content);
+                blocks.retain(|b| !matches!(b, ContentBlock::Text { text, .. } if text.is_empty()));
+                if blocks.is_empty() {
+                    blocks.push(ContentBlock::Text {
+                        text: "[empty message]".to_string(),
+                        cache_control: None,
+                    });
+                }
                 messages.push(Message {
                     role: MessageRole::User,
                     content: MessageContent::Blocks(blocks),
@@ -3241,23 +3262,26 @@ pub fn build_messages_request(req: &ConversationRequest) -> crate::messages::Mes
                     }];
                     for img in &t.images {
                         if let ContentPart::Image { url } = img {
-                            let source = if let Some(rest) = url.strip_prefix("data:") {
-                                if let Some((media_type, data)) = rest.split_once(";base64,") {
-                                    ImageSource::Base64 {
-                                        media_type: media_type.to_string(),
-                                        data: data.to_string(),
-                                    }
-                                } else {
-                                    ImageSource::Url {
+                            // Same whitelist parse as the user path; a
+                            // rejected data URI must never ride as
+                            // `ImageSource::Url` (url sources are http(s)
+                            // only — Anthropic 400s a `data:` payload).
+                            if let Some((media_type, data)) = parse_base64_image_data_uri(url) {
+                                blocks.push(ContentBlock::Image {
+                                    source: ImageSource::Base64 { media_type, data },
+                                });
+                            } else if url.starts_with("http://") || url.starts_with("https://") {
+                                blocks.push(ContentBlock::Image {
+                                    source: ImageSource::Url {
                                         url: url.as_ref().to_owned(),
-                                    }
-                                }
+                                    },
+                                });
                             } else {
-                                ImageSource::Url {
-                                    url: url.as_ref().to_owned(),
-                                }
-                            };
-                            blocks.push(ContentBlock::Image { source });
+                                blocks.push(ContentBlock::Text {
+                                    text: "[unsupported image]".to_string(),
+                                    cache_control: None,
+                                });
+                            }
                         }
                     }
                     ToolResultContent::Blocks(blocks)
@@ -4721,6 +4745,116 @@ mod tests {
             let back: ConversationItem = serde_json::from_str(&json).expect("Should deserialize");
             assert_eq!(std::mem::discriminant(&item), std::mem::discriminant(&back));
         }
+    }
+
+    /// Anthropic image sources: base64 only for whitelisted raster types;
+    /// url sources http(s) only. Previously a non-base64 `data:` URI rode
+    /// as `ImageSource::Url` (400), `image/svg+xml` passed the media type
+    /// through (400), and a param-carrying header produced
+    /// `"image/webp;name=x"` (400). Rejected images degrade to a SHORT
+    /// placeholder — never the multi-megabyte payload. Empty user turns
+    /// get a placeholder block (Anthropic rejects empty content).
+    #[test]
+    fn messages_request_guards_images_and_empty_user_content() {
+        let req = ConversationRequest::from_items(vec![
+            ConversationItem::user_with_parts(vec![
+                ContentPart::Text { text: "".into() },
+                ContentPart::Image {
+                    url: "data:image/png;base64,AAAA".into(),
+                },
+                ContentPart::Image {
+                    url: "data:image/svg+xml;base64,PHN2Zz4=".into(),
+                },
+                ContentPart::Image {
+                    url: "data:text/plain,hello".into(),
+                },
+            ]),
+            assistant_text("a1"),
+            // Empty user turn: must not ship an empty content array.
+            ConversationItem::user(""),
+        ]);
+        let json = serde_json::to_value(build_messages_request(&req)).unwrap();
+        let messages = json["messages"].as_array().unwrap();
+
+        let first_user = &messages[0]["content"].as_array().unwrap();
+        // Valid png passes as base64.
+        assert!(
+            first_user
+                .iter()
+                .any(|b| b["type"] == "image" && b["source"]["media_type"] == "image/png"),
+            "{json:#}"
+        );
+        // svg + non-base64 rejected to short placeholders; never a
+        // data: payload in a url source, never a non-raster media type.
+        for m in messages {
+            if let Some(content) = m.get("content").and_then(|c| c.as_array()) {
+                assert!(!content.is_empty(), "empty content array: {json:#}");
+                for b in content {
+                    if b["type"] == "image" {
+                        let src = &b["source"];
+                        if src["type"] == "url" {
+                            let u = src["url"].as_str().unwrap();
+                            assert!(
+                                u.starts_with("http://") || u.starts_with("https://"),
+                                "url source must be http(s): {u}"
+                            );
+                        } else {
+                            let mt = src["media_type"].as_str().unwrap();
+                            assert!(
+                                ANTHROPIC_IMAGE_MEDIA_TYPES.contains(&mt),
+                                "media type must be whitelisted: {mt}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            first_user
+                .iter()
+                .filter(|b| b["text"] == "[unsupported image]")
+                .count(),
+            2,
+            "both rejected images degrade to placeholders: {json:#}"
+        );
+        // The empty user turn carries the placeholder block.
+        let last_user = messages.last().unwrap();
+        assert_eq!(last_user["content"][0]["text"], "[empty message]");
+    }
+
+    /// Tool-result images take the same whitelist: a rejected data URI in
+    /// a tool result degrades to a text block, never an
+    /// `ImageSource::Url` carrying a `data:` payload.
+    #[test]
+    fn messages_request_guards_tool_result_images() {
+        let req = ConversationRequest::from_items(vec![
+            ConversationItem::user("q"),
+            ConversationItem::Assistant(AssistantItem {
+                content: "".into(),
+                tool_calls: vec![ToolCall {
+                    id: std::sync::Arc::from("tc1"),
+                    name: "read_file".to_string(),
+                    arguments: std::sync::Arc::from("{}"),
+                }],
+                model_id: None,
+                model_fingerprint: None,
+                reasoning_effort: None,
+            }),
+            ConversationItem::tool_result_with_images(
+                "tc1",
+                "saw an image",
+                vec![ContentPart::Image {
+                    url: "data:text/plain,hello".into(),
+                }],
+            ),
+        ]);
+        let json = serde_json::to_value(build_messages_request(&req)).unwrap();
+        let raw = json.to_string();
+        assert!(
+            !raw.contains("data:text/plain"),
+            "rejected data URI must not reach the wire: {json:#}"
+        );
+        assert!(raw.contains("[unsupported image]"), "{json:#}");
     }
 
     /// Provenance gate: a turn produced by a DIFFERENT model must not
