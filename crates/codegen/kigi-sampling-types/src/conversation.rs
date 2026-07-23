@@ -9632,7 +9632,7 @@ mod tests {
     fn code_interpreter_summary_truncates_multibyte_code_safely() {
         let item = BackendToolCallItem {
             kind: BackendToolKind::CodeInterpreter(rs::CodeInterpreterToolCall {
-                code: Some("统计".repeat(40)),
+                code: Some("统计".repeat(60)),
                 container_id: "cont_1".to_string(),
                 id: "ci_1".to_string(),
                 outputs: None,
