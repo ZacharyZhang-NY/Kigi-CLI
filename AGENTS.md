@@ -228,6 +228,26 @@ edges stay deterministic Rust. The harness appends a terminal
       results); everything else — unsigned cross-backend history, `tco_*`
       Responses blobs, stale-model blocks — is stripped, or the request
       400s "Invalid `signature` in `thinking` block".
+- CROSS-PROVIDER REPLAY POLICY (Pi `transform-messages` pattern): the
+  conversation history is provider-agnostic and sessions switch
+  models/backends mid-history, so EACH wire builder owns emitting only
+  items valid for its target — never patch downstream except in the
+  per-backend body adapters. Concretely: the Responses input drops
+  Reasoning items without a native `rs_*` id (foreign capture is id "")
+  and provenance-gates whole turns via `transform_items_for_responses`
+  (`AssistantItem.model_id` vs the request model: foreign Reasoning
+  dropped, foreign BackendToolCall demoted to its `text_summary`);
+  the codex adapter additionally drops bare `rs_*` references (stateless
+  backend); tool-call ids pass through ONE shared ASCII
+  `sanitize_tool_call_id` symmetrically on call+result on BOTH the
+  Messages and Responses legs; Messages image sources go through
+  `parse_base64_image_data_uri` (raster whitelist, no `data:` url
+  sources) and empty user turns get a placeholder. Dangling tool calls
+  are already repaired item-level by `repair_dangling_tool_calls` on the
+  actor's build path. When a provider wire bug surfaces, fix the CLASS
+  across all three builders in the same pass — three sequential
+  single-provider fixes (thinking signature → codex system role → codex
+  reasoning id) motivated this policy.
     - `openai-codex` (ChatGPT Plus/Pro, `scope_key oauth/openai-codex`, port
       1455 `/auth/callback`, FORM body, authorize+token host `auth.openai.com`,
       client `app_EMoam…`, scope `openid profile email offline_access`, the 3
