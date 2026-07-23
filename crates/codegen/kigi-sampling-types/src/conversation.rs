@@ -2288,12 +2288,15 @@ fn conversation_item_to_input_items(item: &ConversationItem) -> Vec<rs::InputIte
                 }));
             }
 
-            // Add each tool call as a FunctionCall item
+            // Add each tool call as a FunctionCall item. The call_id is
+            // normalized to the Responses charset (foreign backends mint
+            // arbitrary ids); the ToolResult arm applies the SAME map so
+            // pairing survives.
             for tc in &a.tool_calls {
                 let arguments = sanitize_tool_arguments(&tc.id, &tc.name, tc.arguments.clone());
                 items.push(rs::InputItem::Item(rs::Item::FunctionCall(
                     rs::FunctionToolCall {
-                        call_id: tc.id.as_ref().to_owned(),
+                        call_id: sanitize_tool_call_id(&tc.id),
                         name: tc.name.clone(),
                         arguments: arguments.as_ref().to_owned(),
                         id: None,
@@ -2327,7 +2330,9 @@ fn conversation_item_to_input_items(item: &ConversationItem) -> Vec<rs::InputIte
             };
             vec![rs::InputItem::Item(rs::Item::FunctionCallOutput(
                 rs::FunctionCallOutputItemParam {
-                    call_id: t.tool_call_id.clone(),
+                    // Same normalization as the FunctionCall arm — pairing
+                    // survives because both sides map identically.
+                    call_id: sanitize_tool_call_id(&t.tool_call_id),
                     output,
                     id: None,
                     status: None,
@@ -2997,6 +3002,30 @@ pub fn dedup_duplicate_tool_results(conversation: &mut Vec<ConversationItem>) ->
 // ============================================================================
 
 /// Convert a ConversationRequest to Anthropic MessagesRequest.
+/// Normalize a tool-call id to the `[A-Za-z0-9_-]+` charset both Anthropic
+/// Messages and the OpenAI Responses API enforce ("Expected an ID that
+/// contains letters, numbers, underscores, or dashes"). Foreign backends
+/// mint arbitrary ids (chat-completions providers, UUID synthesis), so the
+/// wire builders apply this SYMMETRICALLY on the call and its result —
+/// pairing survives because both sides map through the same function.
+/// ASCII-only (the old closure used Unicode `is_alphanumeric`, letting
+/// e.g. CJK ids through to Anthropic's ASCII contract); an empty id maps
+/// to `"_"` so the mandatory field is never empty on the wire.
+fn sanitize_tool_call_id(id: &str) -> String {
+    if id.is_empty() {
+        return "_".to_string();
+    }
+    id.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
 pub fn build_messages_request(req: &ConversationRequest) -> crate::messages::MessagesRequest {
     use crate::messages::{
         CacheControl, ContentBlock, ImageSource, Message, MessageContent, MessageRole,
@@ -3008,19 +3037,6 @@ pub fn build_messages_request(req: &ConversationRequest) -> crate::messages::Mes
     let mut messages: Vec<Message> = Vec::new();
     let mut pending_assistant: Vec<ContentBlock> = Vec::new();
     let mut pending_tool_results: Vec<ContentBlock> = Vec::new();
-
-    // Helper to sanitize tool call IDs (replace [^a-zA-Z0-9_-] with _)
-    let sanitize_tool_call_id = |id: &str| -> String {
-        id.chars()
-            .map(|c| {
-                if c.is_alphanumeric() || c == '_' || c == '-' {
-                    c
-                } else {
-                    '_'
-                }
-            })
-            .collect()
-    };
 
     // Helper to convert ContentPart to Anthropic ContentBlock
     let content_parts_to_anthropic_blocks = |parts: &[ContentPart]| -> Vec<ContentBlock> {
@@ -4633,6 +4649,56 @@ mod tests {
             let back: ConversationItem = serde_json::from_str(&json).expect("Should deserialize");
             assert_eq!(std::mem::discriminant(&item), std::mem::discriminant(&back));
         }
+    }
+
+    /// Both Anthropic Messages and the Responses API enforce
+    /// `[A-Za-z0-9_-]+` tool-call ids; foreign backends mint arbitrary
+    /// ones. The shared sanitizer must be ASCII-only (the old closure's
+    /// Unicode `is_alphanumeric` let CJK ids through), never emit an empty
+    /// id, and map call + result IDENTICALLY so pairing survives.
+    #[test]
+    fn tool_call_ids_sanitized_symmetrically_on_responses_leg() {
+        let weird_id = "调用#1 β";
+        let req = ConversationRequest::from_items(vec![
+            ConversationItem::user("q"),
+            ConversationItem::Assistant(AssistantItem {
+                content: "".into(),
+                tool_calls: vec![ToolCall {
+                    id: std::sync::Arc::from(weird_id),
+                    name: "read_file".to_string(),
+                    arguments: std::sync::Arc::from("{}"),
+                }],
+                model_id: None,
+                model_fingerprint: None,
+                reasoning_effort: None,
+            }),
+            ConversationItem::tool_result(weird_id, "contents"),
+        ]);
+        let json = serde_json::to_value(rs::CreateResponse::from(&req)).unwrap();
+        let input = json["input"].as_array().unwrap();
+        let call_id = input
+            .iter()
+            .find(|i| i["type"] == "function_call")
+            .map(|i| i["call_id"].as_str().unwrap().to_string())
+            .expect("function_call present");
+        let output_id = input
+            .iter()
+            .find(|i| i["type"] == "function_call_output")
+            .map(|i| i["call_id"].as_str().unwrap().to_string())
+            .expect("function_call_output present");
+        assert_eq!(call_id, output_id, "pairing must survive sanitization");
+        assert!(
+            call_id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'),
+            "sanitized id must satisfy the wire charset: {call_id:?}"
+        );
+        assert!(!call_id.is_empty());
+        // The sanitizer itself: ASCII passthrough, unicode replaced, empty
+        // never emitted.
+        assert_eq!(sanitize_tool_call_id("toolu_01AB-cd"), "toolu_01AB-cd");
+        assert_eq!(sanitize_tool_call_id("统A1"), "_A1");
+        assert_eq!(sanitize_tool_call_id(""), "_");
     }
 
     /// The Responses API requires a server-issued id on every replayed
