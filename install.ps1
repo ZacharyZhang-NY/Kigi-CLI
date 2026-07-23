@@ -149,15 +149,13 @@ try {
         Write-Host "Run 'kigi' to get started."
     }
 
-    # Graph engineering ships enabled by default. Respect an explicit
-    # user choice: only set the variable when it is not already defined
-    # (so a persisted opt-out of "0" survives reinstalls).
-    $Graph = [Environment]::GetEnvironmentVariable("KIGI_GRAPH", "User")
-    if ($null -eq $Graph -or $Graph -eq "") {
-        [Environment]::SetEnvironmentVariable("KIGI_GRAPH", "1", "User")
-        Write-Host "Enabled graph engineering (KIGI_GRAPH=1)."
-        Write-Host "Disable: [Environment]::SetEnvironmentVariable('KIGI_GRAPH','0','User')"
-    }
+    # Graph engineering is enabled by default IN THE BINARY (resolve_graph
+    # defaults true) — no environment plumbing needed. The installer used
+    # to persist KIGI_GRAPH=1 into the User registry env, but running
+    # terminals (and new tabs of an open Windows Terminal) never pick up
+    # freshly-written registry variables, which made /graph "missing on
+    # Windows" while the shell-rc path worked on macOS/Linux. Opt out any
+    # time with: [Environment]::SetEnvironmentVariable('KIGI_GRAPH','0','User')
 } finally {
     Remove-Item -Path $TmpDir -Recurse -Force -ErrorAction SilentlyContinue
 }

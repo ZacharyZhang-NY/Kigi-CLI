@@ -1881,12 +1881,15 @@ impl Config {
             .default(true)
             .resolve()
     }
-    /// Graph mode (`/graph`) master switch. Default ON — the gray release
-    /// (plan.md G0, `KIGI_GRAPH=1` only) is over; every install gets the
-    /// same commands (its absence on non-dev machines read as a platform
-    /// bug). `KIGI_GRAPH=0` remains the off-switch. Graph mode additionally
-    /// requires the goal harness (nodes execute as goals), enforced at
-    /// availability time, not here.
+    /// Graph mode (`/graph`) master switch. Default ON in the binary: the
+    /// README ships graph engineering enabled for every install, but the
+    /// old `default(false)` delegated enablement to installer env plumbing
+    /// (`install.sh` shell-rc export vs `install.ps1` registry write) — and
+    /// Windows terminals don't pick up freshly-written registry env, so
+    /// `/graph` went "missing on Windows". The product default lives HERE,
+    /// not in installers. `KIGI_GRAPH=0` is the off-switch. Graph mode
+    /// additionally requires the goal harness (nodes execute as goals),
+    /// enforced at availability time, not here.
     pub(crate) fn resolve_graph(&self) -> Resolved<bool> {
         BoolFlag::env("KIGI_GRAPH").default(true).resolve()
     }

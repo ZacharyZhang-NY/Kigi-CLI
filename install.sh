@@ -209,7 +209,6 @@ case "${SHELL:-}" in
     */zsh)
         RC_FILE="${ZDOTDIR:-$HOME}/.zshrc"
         PATH_LINE="export PATH=\"$BIN_DIR:\$PATH\""
-        GRAPH_LINE="export KIGI_GRAPH=1"
         ;;
     */bash)
         # macOS login shells read ~/.bash_profile; Linux reads ~/.bashrc.
@@ -219,7 +218,6 @@ case "${SHELL:-}" in
             RC_FILE="$HOME/.bashrc"
         fi
         PATH_LINE="export PATH=\"$BIN_DIR:\$PATH\""
-        GRAPH_LINE="export KIGI_GRAPH=1"
         ;;
     */fish)
         # fish_add_path in config.fish is fish's own idempotent way
@@ -228,12 +226,10 @@ case "${SHELL:-}" in
         mkdir -p "$FISH_CONF_DIR"
         RC_FILE="$FISH_CONF_DIR/config.fish"
         PATH_LINE="fish_add_path $BIN_DIR"
-        GRAPH_LINE="set -gx KIGI_GRAPH 1"
         ;;
     *)
         RC_FILE="$HOME/.profile"
         PATH_LINE="export PATH=\"$BIN_DIR:\$PATH\""
-        GRAPH_LINE="export KIGI_GRAPH=1"
         ;;
 esac
 
@@ -247,8 +243,8 @@ case ":$PATH:" in
         ;;
 esac
 
-# Graph engineering ships enabled by default. The KIGI_GRAPH guard makes
-# this idempotent AND respects an explicit user opt-out (an existing
-# `export KIGI_GRAPH=0` line is left untouched). Disable any time with:
+# Graph engineering is enabled by default IN THE BINARY (resolve_graph
+# defaults true) — the installer no longer writes KIGI_GRAPH=1 into shell
+# rc files (per-shell env plumbing was fragile and diverged per platform).
+# Disable any time with:
 #   echo 'export KIGI_GRAPH=0' >> <your shell rc>
-persist_line "$RC_FILE" "$GRAPH_LINE" "KIGI_GRAPH" "graph engineering (KIGI_GRAPH=1)"
