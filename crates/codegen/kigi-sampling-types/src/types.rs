@@ -1041,6 +1041,71 @@ pub fn patch_reasoning_effort(body: &mut Value, effort: Option<ReasoningEffort>)
     }
 }
 
+/// Adapt a serialized Responses request body to the ChatGPT/Codex backend
+/// contract (`chatgpt.com/backend-api/codex/responses`) — ported from the
+/// same reference as the identity headers (official Codex CLI + Pi's
+/// `api/openai-codex-responses.ts`):
+///
+/// 1. The backend rejects `role: system` input items outright
+///    (400 `{"detail":"System messages are not allowed"}`); its system
+///    channel is the top-level `instructions` field. Hoist every system
+///    input message there (order preserved, blank-line joined, appended to
+///    any existing instructions) and remove them from `input`.
+/// 2. `store` is always `false` on this backend, so reasoning continuity
+///    is stateless: `include: ["reasoning.encrypted_content"]` is required
+///    for the response to carry replayable encrypted reasoning.
+///
+/// openai-codex-GATED at the call sites — API-key `openai` Responses
+/// bodies stay byte-identical.
+pub fn adapt_body_for_codex_backend(body: &mut Value) {
+    // 1. Hoist system messages into `instructions`.
+    let mut hoisted: Vec<String> = Vec::new();
+    if let Some(input) = body.get_mut("input").and_then(|v| v.as_array_mut()) {
+        input.retain(|item| {
+            let is_system = item.get("role").and_then(|r| r.as_str()) == Some("system");
+            if is_system {
+                match item.get("content") {
+                    Some(Value::String(s)) => hoisted.push(s.clone()),
+                    Some(Value::Array(parts)) => {
+                        for p in parts {
+                            if let Some(t) = p.get("text").and_then(|t| t.as_str()) {
+                                hoisted.push(t.to_string());
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            !is_system
+        });
+    }
+    if !hoisted.is_empty() {
+        let mut instructions = body
+            .get("instructions")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned)
+            .unwrap_or_default();
+        for part in hoisted {
+            if !instructions.is_empty() {
+                instructions.push_str("\n\n");
+            }
+            instructions.push_str(&part);
+        }
+        body["instructions"] = Value::String(instructions);
+    }
+
+    // 2. Request replayable encrypted reasoning.
+    let include = body
+        .as_object_mut()
+        .map(|obj| obj.entry("include").or_insert_with(|| Value::Array(vec![])));
+    if let Some(Value::Array(entries)) = include {
+        let key = Value::String("reasoning.encrypted_content".to_string());
+        if !entries.contains(&key) {
+            entries.push(key);
+        }
+    }
+}
+
 /// Neutralize a `reasoning.effort` echo the typed `rs` enum cannot parse
 /// (`max`): remove it so response deserialization succeeds. The turn's
 /// canonical effort lives in the session sampling config regardless; only
@@ -1550,6 +1615,66 @@ impl From<crate::messages::MessagesRequest> for MessagesRequestWrapper {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// The Codex backend rejects `role: system` input outright
+    /// (400 `{"detail":"System messages are not allowed"}`) — its system
+    /// channel is the top-level `instructions` field, and stateless
+    /// (`store: false`) reasoning replay needs
+    /// `include: ["reasoning.encrypted_content"]`. The adapter must hoist
+    /// every system item (string or parts content, order preserved),
+    /// append to existing instructions, and leave the rest of the input
+    /// untouched.
+    #[test]
+    fn codex_adapter_hoists_system_messages_and_requests_encrypted_reasoning() {
+        let mut body = json!({
+            "model": "gpt-5.2-codex",
+            "instructions": "base",
+            "input": [
+                {"type": "message", "role": "system", "content": "sys head"},
+                {"type": "message", "role": "user", "content": "hello"},
+                {"type": "message", "role": "system", "content": [
+                    {"type": "input_text", "text": "memory reminder"}
+                ]},
+                {"type": "message", "role": "assistant", "content": "hi"}
+            ]
+        });
+        adapt_body_for_codex_backend(&mut body);
+
+        let input = body["input"].as_array().unwrap();
+        assert_eq!(input.len(), 2, "system items removed from input: {body:#}");
+        assert!(
+            input.iter().all(|i| i["role"] != "system"),
+            "no system role may remain: {body:#}"
+        );
+        assert_eq!(
+            body["instructions"], "base\n\nsys head\n\nmemory reminder",
+            "system content hoisted into instructions, order preserved"
+        );
+        assert_eq!(
+            body["include"],
+            json!(["reasoning.encrypted_content"]),
+            "stateless reasoning replay requires the include"
+        );
+
+        // Idempotent: a second pass changes nothing.
+        let before = body.clone();
+        adapt_body_for_codex_backend(&mut body);
+        assert_eq!(body, before);
+    }
+
+    /// No system items and no prior instructions: input untouched, no
+    /// empty-string instructions invented, include still requested.
+    #[test]
+    fn codex_adapter_without_system_messages_only_adds_include() {
+        let mut body = json!({
+            "model": "gpt-5.2-codex",
+            "input": [{"type": "message", "role": "user", "content": "q"}]
+        });
+        adapt_body_for_codex_backend(&mut body);
+        assert!(body.get("instructions").is_none(), "{body:#}");
+        assert_eq!(body["input"].as_array().unwrap().len(), 1);
+        assert_eq!(body["include"], json!(["reasoning.encrypted_content"]));
+    }
 
     /// String content (the only shape non-Mistral providers send) stays the
     /// answer verbatim with no thinking — byte-identical to the pre-change

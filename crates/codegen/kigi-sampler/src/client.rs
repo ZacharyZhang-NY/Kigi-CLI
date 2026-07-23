@@ -1183,6 +1183,9 @@ impl SamplingClient {
         // old raw_output machinery.
         kigi_sampling_types::patch_reasoning_text_types(&mut request_body);
         kigi_sampling_types::patch_reasoning_effort(&mut request_body, request.reasoning_effort);
+        if self.defaults.openai_codex {
+            kigi_sampling_types::adapt_body_for_codex_backend(&mut request_body);
+        }
         let http_request = self.post(self.endpoint("responses")).json(&request_body);
 
         let response = http_request.send().await.map_err(|e| {
@@ -1321,6 +1324,9 @@ impl SamplingClient {
         }
         kigi_sampling_types::patch_reasoning_text_types(&mut request_body);
         kigi_sampling_types::patch_reasoning_effort(&mut request_body, request.reasoning_effort);
+        if self.defaults.openai_codex {
+            kigi_sampling_types::adapt_body_for_codex_backend(&mut request_body);
+        }
         // Fresh per attempt so signals never leak across retries; `None`
         // (check disabled) sends no header and does no peek work per event.
         let doom_loop = self

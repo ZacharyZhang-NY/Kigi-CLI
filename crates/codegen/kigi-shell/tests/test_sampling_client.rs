@@ -1469,3 +1469,79 @@ async fn test_chat_completions_backend_hits_chat_endpoint_not_responses() {
         "Should NOT have called /v1/responses"
     );
 }
+
+/// ChatGPT/Codex backend body contract (`openai_codex = true`): the
+/// `/codex/responses` endpoint rejects `role: system` input outright
+/// (400 {"detail":"System messages are not allowed"}) — system content
+/// must ride the top-level `instructions` field, and stateless reasoning
+/// replay needs `include: ["reasoning.encrypted_content"]`. Ported from
+/// the official Codex CLI + Pi's api/openai-codex-responses.ts, like the
+/// identity headers.
+#[tokio::test]
+async fn codex_responses_body_hoists_system_into_instructions() {
+    let server = MockInferenceServer::start().await.unwrap();
+    server.set_response("ok");
+    let mut config = common::test_sampler_config(&server.url(), ApiBackend::Responses, &[]);
+    config.openai_codex = true;
+    let client = Client::new(config).unwrap();
+
+    let _ = client
+        .conversation_collect(ConversationRequest::from_items(vec![
+            ConversationItem::system("You are Kigi."),
+            ConversationItem::user("test"),
+        ]))
+        .await
+        .unwrap();
+
+    let body = server.request_bodies().pop().unwrap();
+    let input = body["input"].as_array().unwrap();
+    assert!(
+        input
+            .iter()
+            .all(|i| i.get("role").and_then(Value::as_str) != Some("system")),
+        "codex backend must never receive system-role input: {body:#?}"
+    );
+    assert_eq!(
+        body["instructions"].as_str(),
+        Some("You are Kigi."),
+        "system prompt must ride the instructions field: {body:#?}"
+    );
+    assert_eq!(
+        body["include"],
+        serde_json::json!(["reasoning.encrypted_content"]),
+        "stateless reasoning replay requires the include: {body:#?}"
+    );
+}
+
+/// Control: the API-key `openai` Responses path (`openai_codex = false`)
+/// stays byte-compatible — system-role input preserved, no codex fields.
+#[tokio::test]
+async fn plain_responses_body_keeps_system_role_input() {
+    let server = MockInferenceServer::start().await.unwrap();
+    server.set_response("ok");
+    let client = create_test_client(&server.url(), ApiBackend::Responses);
+
+    let _ = client
+        .conversation_collect(ConversationRequest::from_items(vec![
+            ConversationItem::system("You are Kigi."),
+            ConversationItem::user("test"),
+        ]))
+        .await
+        .unwrap();
+
+    let body = server.request_bodies().pop().unwrap();
+    assert!(
+        body["input"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i.get("role").and_then(Value::as_str) == Some("system")),
+        "api-key openai keeps system-role input: {body:#?}"
+    );
+    assert!(
+        body.get("instructions")
+            .map(|v| v.is_null())
+            .unwrap_or(true),
+        "no instructions hoist outside codex: {body:#?}"
+    );
+}
