@@ -148,7 +148,6 @@ mod linux {
                 }
                 let err = std::io::Error::last_os_error();
                 match err.kind() {
-                    // The fd is non-blocking: the queue is empty.
                     std::io::ErrorKind::WouldBlock => break,
                     std::io::ErrorKind::Interrupted => continue,
                     _ => return Err(err),

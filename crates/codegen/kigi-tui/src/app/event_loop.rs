@@ -2333,11 +2333,7 @@ async fn drain_and_process(
     }
 
     // On terminals without bracketed paste, try to capture more events
-    // that may still be in transit from the input reader thread. A batch
-    // that already holds a key burst skips the short detection window:
-    // its 2 ms budget is below one Windows scheduler quantum, so a
-    // mid-paste gap would end collection before it starts and the paste
-    // tail would arrive as a separate fragment.
+    // that may still be in transit from the input reader thread.
     if should_extend_for_paste(&raw_events)
         && (is_paste_burst(&raw_events) || detect_paste(&mut raw_events, input_rx).await)
     {
@@ -2542,18 +2538,13 @@ async fn drain_and_process(
 const PASTE_DETECT_TIMEOUT: Duration = Duration::from_millis(2);
 
 /// Timeout for subsequent rounds once paste has been detected. Must exceed
-/// one Windows scheduler quantum (~15.6 ms): ConPTY delivers a paste as a
-/// per-character key burst, and a mid-burst gap of one quantum is routine.
-/// A smaller window ends collection mid-paste; the tail then arrives as a
-/// second synthetic paste, whose content can never match the paste chip, so
-/// repaste-to-expand inserts a duplicate instead of expanding.
+/// one Windows scheduler quantum (~15.6 ms), or a routine mid-burst gap
+/// splits the paste and repaste-to-expand duplicates instead of expanding.
 const PASTE_CONTINUE_TIMEOUT: Duration = Duration::from_millis(25);
 
-/// Safety cap on events accumulated in one extension pass. On the
-/// no-bracketed-paste path a paste is one key event per character, so the
-/// cap must exceed any real paste (~200 KB of text); hitting it splits the
-/// paste with the same duplicate-on-repaste effect as a timeout split. The
-/// idle timeout above, not this cap, is the normal terminator.
+/// Safety cap on events accumulated in one extension pass. Pastes arrive
+/// one key event per character here, so the cap must exceed any real paste;
+/// hitting it splits the paste like a timeout miss would.
 const PASTE_EXTEND_MAX_EVENTS: usize = 200_000;
 
 /// Returns `true` when the batch contains pasteable key events but no
@@ -2564,12 +2555,11 @@ fn should_extend_for_paste(events: &[Event]) -> bool {
 }
 
 /// Minimum pasteable key events already in one batch to classify it as a
-/// paste burst in progress. Human typing and key auto-repeat deliver one
-/// or two events per batch; only a paste chunk lands more at once.
+/// paste burst; typing and auto-repeat deliver only a couple per batch.
 const PASTE_BURST_BATCH_EVENTS: usize = 8;
 
-/// True when the batch alone proves a paste is in progress, without
-/// waiting on [`PASTE_DETECT_TIMEOUT`].
+/// True when the batch alone proves a paste is in progress, so collection
+/// can start without the [`PASTE_DETECT_TIMEOUT`] round-trip.
 fn is_paste_burst(events: &[Event]) -> bool {
     events.iter().filter(|e| is_pasteable_key_event(e)).count() >= PASTE_BURST_BATCH_EVENTS
 }
@@ -3188,11 +3178,9 @@ mod tests {
 
     #[test]
     fn typing_and_release_storms_are_not_a_paste_burst() {
-        // A short typed run stays below the burst threshold.
         let typed = vec![press(KeyCode::Char('h')), press(KeyCode::Char('i'))];
         assert!(!is_paste_burst(&typed));
 
-        // Release events carry no content and must not count toward it.
         let releases: Vec<Event> = "releases only!"
             .chars()
             .map(|c| release(KeyCode::Char(c)))
@@ -3200,10 +3188,8 @@ mod tests {
         assert!(!is_paste_burst(&releases));
     }
 
-    /// A key-burst paste whose tail trickles in with sub-window gaps must
-    /// reassemble into ONE synthetic paste. A split here is what made
-    /// repaste-to-expand insert a duplicate chip on Windows: the fragment
-    /// could never byte-equal the chip content.
+    /// A burst tail trickling in with one-quantum gaps must reassemble into
+    /// ONE paste — a split is what duplicated chips on Windows.
     #[tokio::test(start_paused = true)]
     async fn burst_tail_with_scheduler_gaps_reassembles_into_one_paste() {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -3213,8 +3199,6 @@ mod tests {
         let mut batch: Vec<Event> = head.chars().map(char_or_enter).collect();
         assert!(is_paste_burst(&batch), "head chunk must classify as burst");
 
-        // Trickle the tail with 15 ms gaps — one Windows scheduler quantum,
-        // larger than the old 10 ms window, smaller than the current one.
         tokio::spawn(async move {
             for c in tail.chars() {
                 tokio::time::sleep(Duration::from_millis(15)).await;
