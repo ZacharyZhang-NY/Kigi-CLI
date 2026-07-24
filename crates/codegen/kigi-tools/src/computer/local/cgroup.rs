@@ -127,8 +127,8 @@ mod linux {
 
         async fn wait_and_drain(&self) -> std::io::Result<()> {
             let mut guard = self.fd.readable().await?;
-            // Drain all pending inotify events; the fd is non-blocking, so the
-            // read returns <= 0 once the queue is empty.
+            // Drain all pending inotify events so the next readiness wakeup
+            // corresponds to a fresh modification.
             let mut buf = [0u8; 4096];
             loop {
                 // SAFETY: writing at most `buf.len()` bytes into `buf`, through
@@ -143,7 +143,16 @@ mod linux {
                 if n > 0 {
                     continue;
                 }
-                break;
+                if n == 0 {
+                    break;
+                }
+                let err = std::io::Error::last_os_error();
+                match err.kind() {
+                    // The fd is non-blocking: the queue is empty.
+                    std::io::ErrorKind::WouldBlock => break,
+                    std::io::ErrorKind::Interrupted => continue,
+                    _ => return Err(err),
+                }
             }
             guard.clear_ready();
             Ok(())
@@ -304,7 +313,10 @@ mod linux {
             let mut last_high_count = Self::read_high_counter(&events_path).await.unwrap_or(0);
 
             loop {
-                if inotify.wait_and_drain().await.is_err() {
+                if let Err(e) = inotify.wait_and_drain().await {
+                    tracing::warn!(
+                        "memory.events inotify read failed; stopping memory monitor: {e}"
+                    );
                     break;
                 }
 
