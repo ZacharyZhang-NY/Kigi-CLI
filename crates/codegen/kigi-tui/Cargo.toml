@@ -154,6 +154,8 @@ windows-sys = { version = "0.59", features = ["Win32_System_Console"] }
 [dev-dependencies]
 # Enable the render crate's test-only helpers for the pager's test build.
 kigi-pager-render = { path = "../kigi-pager-render", features = ["test-support"] }
+# `start_paused = true` for deterministic paste-reassembly timeout tests.
+tokio = { workspace = true, features = ["test-util"] }
 pretty_assertions = { workspace = true }
 insta = { workspace = true }
 criterion = { workspace = true }
