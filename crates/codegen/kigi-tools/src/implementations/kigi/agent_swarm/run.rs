@@ -341,7 +341,10 @@ fn build_request(pending: &Pending, config: &SwarmRunConfig) -> SubagentRequest 
     SubagentRequest {
         id: uuid::Uuid::now_v7().to_string(),
         prompt: pending.spec.prompt.clone(),
-        description: config.description.clone(),
+        // The ITEM, not the swarm's description: every member would otherwise
+        // render as an identical subagent block and the user could not tell
+        // which one is running, or which one failed.
+        description: pending.spec.item.clone(),
         subagent_type: config.subagent_type.clone(),
         parent_session_id: config.parent_session_id.clone(),
         parent_prompt_id: config.parent_prompt_id.clone(),
@@ -688,6 +691,41 @@ mod tests {
             "{}",
             results[1].summary
         );
+    }
+
+    /// Each member must be identifiable while it runs: the TUI renders one
+    /// subagent block per member from this description, so a shared one leaves
+    /// the user staring at N identical rows.
+    #[tokio::test(start_paused = true)]
+    async fn each_member_is_labelled_with_its_own_item() {
+        let backend = Arc::new(FakeBackend::default());
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let recorder = seen.clone();
+        let specs = specs(&["a.rs", "b.rs"]);
+        let config = SwarmRunConfig {
+            description: "review files".into(),
+            ..config(None)
+        };
+        // `build_request` is the only place the label is set, so assert on it
+        // directly rather than through the backend's prompt log.
+        for (index, spec) in specs.iter().enumerate() {
+            let pending = Pending {
+                index,
+                spec: spec.clone(),
+                attempts: 0,
+                not_before: None,
+            };
+            recorder
+                .lock()
+                .unwrap()
+                .push(build_request(&pending, &config).description);
+        }
+        assert_eq!(
+            *seen.lock().unwrap(),
+            vec!["a.rs".to_string(), "b.rs".to_string()],
+            "each member must carry its own item, not the swarm description"
+        );
+        drop(backend);
     }
 
     /// Dropping the runner is what a send-now interrupt does; the members must
