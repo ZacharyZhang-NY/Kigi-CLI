@@ -396,11 +396,14 @@ pub(crate) async fn handle_subagent_request(
         let child_depth = ctx.parent_depth + 1;
         if child_depth >= MAX_SUBAGENT_DEPTH {
             let before = definition.tool_config.tools.len();
-            definition.tool_config.tools.retain(|tc| tc.kind != Some(ToolKind::Task));
+            definition
+                .tool_config
+                .tools
+                .retain(|tc| !matches!(tc.kind, Some(ToolKind::Task | ToolKind::AgentSwarm)));
             if definition.tool_config.tools.len() < before {
                 tracing::info!(
                     subagent_id = % request.id, child_depth, max_depth =
-                    MAX_SUBAGENT_DEPTH, "Stripped task tool from child at max depth"
+                    MAX_SUBAGENT_DEPTH, "Stripped subagent-spawning tools from child at max depth"
                 );
             }
             prune_orphaned_background_task_tools(&mut definition.tool_config);
@@ -1322,6 +1325,7 @@ pub(crate) async fn handle_subagent_request(
                     SubagentResult {
                         success: false,
                         cancelled: true,
+                        rate_limited: false,
                         error: Some(reason),
                         output: if final_text.is_empty() {
                             std::sync::Arc::from(
@@ -1359,6 +1363,7 @@ pub(crate) async fn handle_subagent_request(
                     SubagentResult {
                         success: false,
                         cancelled: true,
+                        rate_limited: false,
                         error: Some(format!("max turns reached (limit: {limit})")),
                         output: if final_text.is_empty() {
                             std::sync::Arc::from(
@@ -1413,6 +1418,9 @@ pub(crate) async fn handle_subagent_request(
                     SubagentResult {
                         success: false,
                         cancelled: was_cancelled,
+                        rate_limited: !was_cancelled
+                            && i32::from(e.code)
+                                == crate::sampling::error::RATE_LIMITED_ERROR_CODE,
                         error: Some(
                             if was_cancelled {
                                 "Subagent was cancelled".to_string()

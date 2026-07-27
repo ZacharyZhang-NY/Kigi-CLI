@@ -2157,7 +2157,10 @@ fn extract_variant(tc: &acp::ToolCall) -> Option<&str> {
 }
 /// Twin without the optional-toolset spelling.
 fn is_task_variant(variant: Option<&str>) -> bool {
-    matches!(variant, Some("Task"))
+    // The swarm belongs here for the same reason `Task` does: its members each
+    // raise their own SubagentBlock, and it must register the blocking wait or
+    // a call that holds the turn until every member finishes shows no spinner.
+    matches!(variant, Some("Task" | "AgentSwarm"))
 }
 /// Twin without the optional-toolset spelling.
 fn is_write_variant(variant: Option<&str>) -> bool {
@@ -2190,8 +2193,10 @@ fn is_goal_tool(tc: &acp::ToolCall) -> bool {
 /// SubagentSpawned notification) provides better visibility. Covers the
 /// `task` / `Task` / `spawn_subagent` ids and Task-family variant tags.
 fn is_task_tool(tc: &acp::ToolCall) -> bool {
-    matches!(tc.title.as_str(), "task" | "Task" | "spawn_subagent")
-        || is_task_variant(extract_variant(tc))
+    matches!(
+        tc.title.as_str(),
+        "task" | "Task" | "spawn_subagent" | "agent_swarm"
+    ) || is_task_variant(extract_variant(tc))
 }
 /// Check if a tool call is a scheduler tool (scheduler_create/delete/list).
 ///

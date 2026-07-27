@@ -711,9 +711,19 @@ impl AgentBuilder {
             kigi_tools::types::tool::ToolNamespace::Kigi,
             "task"
         );
+        // The swarm is a fan-out of subagent spawns, so it lives and dies with
+        // the task tool: any condition that leaves no subagent to spawn leaves
+        // the swarm with nothing to fan out to.
+        let swarm_tool_id = format!(
+            "{}:{}",
+            kigi_tools::types::tool::ToolNamespace::Kigi,
+            "agent_swarm"
+        );
         let mut task_stripped = false;
         if !self.subagents_enabled {
-            tool_config.tools.retain(|tc| tc.id != task_tool_id);
+            tool_config
+                .tools
+                .retain(|tc| tc.id != task_tool_id && tc.id != swarm_tool_id);
             task_stripped = true;
         } else {
             let subagents = crate::discovery::all_subagents_with_plugins(
@@ -722,7 +732,9 @@ impl AgentBuilder {
                 self.plugin_registry.as_deref(),
             );
             if subagents.is_empty() {
-                tool_config.tools.retain(|tc| tc.id != task_tool_id);
+                tool_config
+                    .tools
+                    .retain(|tc| tc.id != task_tool_id && tc.id != swarm_tool_id);
                 task_stripped = true;
             } else if self.prompt_audience == crate::prompt::context::PromptAudience::Subagent {
                 if let Some(task_tc) = tool_config
@@ -810,7 +822,13 @@ impl AgentBuilder {
                 .tools
                 .iter()
                 .any(|t| AGENT_TASK_CLASSIFIER_RE.is_match(t));
-            let task_deps = ["task", "get_task_output", "kill_task", "wait_tasks"];
+            let task_deps = [
+                "task",
+                "agent_swarm",
+                "get_task_output",
+                "kill_task",
+                "wait_tasks",
+            ];
             let registered_tool_ids = tool_bridge_builder.known_tool_ids();
             let present_kinds: std::collections::HashSet<ToolKind> =
                 tool_config.tools.iter().filter_map(|tc| tc.kind).collect();
@@ -925,7 +943,13 @@ impl AgentBuilder {
             }
         }
         if definition.allowed_subagent_types.as_deref() == Some(&[]) {
-            let task_deps = ["task", "get_task_output", "kill_task", "wait_tasks"];
+            let task_deps = [
+                "task",
+                "agent_swarm",
+                "get_task_output",
+                "kill_task",
+                "wait_tasks",
+            ];
             tool_config
                 .tools
                 .retain(|tc| !task_deps.contains(&short_tool_name(&tc.id)));
@@ -1600,6 +1624,11 @@ mod tests {
             assert_eq!(
                 has_task, *subagents,
                 "[{label}] spawn_subagent presence should match subagents_enabled={subagents}; got tools: {names:?}"
+            );
+            let has_swarm = names.contains(&"agent_swarm");
+            assert_eq!(
+                has_swarm, *subagents,
+                "[{label}] agent_swarm fans out to subagents, so it must follow the same gate as spawn_subagent; got tools: {names:?}"
             );
             assert!(
                 names.contains(&"enter_plan_mode"),

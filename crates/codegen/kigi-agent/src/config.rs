@@ -154,6 +154,11 @@ fn task_tool_config() -> ToolConfig {
         .with_name("spawn_subagent")
         .with_param_rename("run_in_background", "background")
 }
+/// Swarm tool. Keeps its registry name: unlike `task` it has no CLI-specific
+/// alias, and the name is what the model is told to reuse for `resume_agent_ids`.
+fn agent_swarm_tool_config() -> ToolConfig {
+    ToolConfig::from(&kigi::AgentSwarmTool)
+}
 /// Task output tool renamed for clarity:
 /// `get_task_output` → `get_command_or_subagent_output`.
 fn task_output_tool_config() -> ToolConfig {
@@ -270,6 +275,7 @@ fn default_kigi_toolset() -> ToolServerConfig {
             task_output_tool_config(),
             wait_tasks_tool_config(),
             task_tool_config(),
+            agent_swarm_tool_config(),
             (&kigi::SchedulerCreateTool).into(),
             (&kigi::SchedulerDeleteTool).into(),
             (&kigi::SchedulerListTool).into(),
@@ -318,6 +324,7 @@ pub fn kigi_hashline_toolset(
         task_output_tool_config(),
         wait_tasks_tool_config(),
         task_tool_config(),
+        agent_swarm_tool_config(),
         (&kigi::WebSearchTool).into(),
         (&kigi::SchedulerCreateTool).into(),
         (&kigi::SchedulerDeleteTool).into(),
@@ -400,6 +407,7 @@ fn kigi_plan_toolset() -> ToolServerConfig {
             (&kigi::TodoWriteTool).into(),
             task_output_tool_config(),
             task_tool_config(),
+            agent_swarm_tool_config(),
             (&kigi::SchedulerCreateTool).into(),
             (&kigi::SchedulerDeleteTool).into(),
             (&kigi::SchedulerListTool).into(),
@@ -428,6 +436,7 @@ fn orchestrator_toolset() -> ToolServerConfig {
             (&kigi::ListDirTool).into(),
             (&kigi::GrepTool).into(),
             task_tool_config(),
+            agent_swarm_tool_config(),
             task_output_tool_config(),
             wait_tasks_tool_config(),
             kill_task_tool_config(),
@@ -497,6 +506,7 @@ fn kigi_ask_user_toolset() -> ToolServerConfig {
             task_output_tool_config(),
             wait_tasks_tool_config(),
             task_tool_config(),
+            agent_swarm_tool_config(),
             (&kigi::SchedulerCreateTool).into(),
             (&kigi::SchedulerDeleteTool).into(),
             (&kigi::SchedulerListTool).into(),

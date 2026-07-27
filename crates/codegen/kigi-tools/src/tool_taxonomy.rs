@@ -56,6 +56,7 @@ impl ToolKind {
             ToolKind::MemorySearch => "Memory Search",
             ToolKind::MemoryGet => "Memory Read",
             ToolKind::Task => "Subagent",
+            ToolKind::AgentSwarm => "Subagent Swarm",
             ToolKind::EnterPlan => "Enter Plan Mode",
             ToolKind::ExitPlan => "Exit Plan Mode",
             ToolKind::AskUser => "Ask User",
@@ -96,6 +97,7 @@ impl ToolKind {
             | ToolKind::KillTaskAction
             | ToolKind::Skill
             | ToolKind::Task
+            | ToolKind::AgentSwarm
             | ToolKind::DeployApp
             | ToolKind::SearchTool
             | ToolKind::UseTool

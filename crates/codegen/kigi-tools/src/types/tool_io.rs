@@ -32,6 +32,7 @@ use crate::implementations::opencode::write::WriteInput;
 use crate::implementations::search_tool::SearchToolInput;
 use crate::implementations::skills::skill::SkillInput;
 use crate::implementations::use_tool::UseToolInput;
+use kigi_tool_types::AgentSwarmToolInput;
 use kigi_tool_types::KillTaskToolInput;
 use kigi_tool_types::TaskOutputToolInput;
 use kigi_tool_types::TaskToolInput;
@@ -67,6 +68,7 @@ pub enum ToolInput {
     WaitTasks(WaitTasksToolInput),
     KillTask(KillTaskToolInput),
     Task(TaskToolInput),
+    AgentSwarm(AgentSwarmToolInput),
     WebSearch(WebSearchInput),
     WebFetch(WebFetchInput),
     Write(WriteInput),

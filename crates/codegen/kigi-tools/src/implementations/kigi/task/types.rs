@@ -149,10 +149,12 @@ pub trait SubagentCapabilityModeExt {
 pub fn prune_orphaned_background_task_tools(config: &mut crate::registry::types::ToolServerConfig) {
     use crate::types::tool::ToolKind;
 
+    // A swarm member can be auto-backgrounded by the coordinator just like a
+    // `task` child, so either spawner keeps the lifecycle tools alive.
     let has_task_tool = config
         .tools
         .iter()
-        .any(|tc| tc.kind == Some(ToolKind::Task));
+        .any(|tc| matches!(tc.kind, Some(ToolKind::Task | ToolKind::AgentSwarm)));
     let has_background_capable_bash = config.tools.iter().any(is_background_capable_bash_tool);
     if has_task_tool || has_background_capable_bash {
         return;
@@ -209,6 +211,7 @@ impl SubagentCapabilityModeExt for SubagentCapabilityMode {
                 ToolKind::BackgroundTaskAction,
                 ToolKind::KillTaskAction,
                 ToolKind::Task,
+                ToolKind::AgentSwarm,
                 ToolKind::EnterPlan,
                 ToolKind::ExitPlan,
                 ToolKind::AskUser,
@@ -232,6 +235,7 @@ impl SubagentCapabilityModeExt for SubagentCapabilityMode {
                 ToolKind::BackgroundTaskAction,
                 ToolKind::KillTaskAction,
                 ToolKind::Task,
+                ToolKind::AgentSwarm,
                 ToolKind::EnterPlan,
                 ToolKind::ExitPlan,
                 ToolKind::AskUser,
@@ -252,6 +256,7 @@ impl SubagentCapabilityModeExt for SubagentCapabilityMode {
                 ToolKind::BackgroundTaskAction,
                 ToolKind::KillTaskAction,
                 ToolKind::Task,
+                ToolKind::AgentSwarm,
                 ToolKind::EnterPlan,
                 ToolKind::ExitPlan,
                 ToolKind::AskUser,
@@ -276,6 +281,7 @@ impl SubagentCapabilityModeExt for SubagentCapabilityMode {
                 ToolKind::BackgroundTaskAction,
                 ToolKind::KillTaskAction,
                 ToolKind::Task,
+                ToolKind::AgentSwarm,
                 ToolKind::EnterPlan,
                 ToolKind::ExitPlan,
                 ToolKind::AskUser,
@@ -315,6 +321,12 @@ pub struct SubagentResult {
     /// `get_command_or_subagent_output`), so the tool returns a `task_id` notice
     /// instead of a completion. Never set for natively backgrounded subagents.
     pub backgrounded: bool,
+    /// The child's turn ended because the PROVIDER refused it for rate
+    /// limiting, not because the work failed. Classified where the typed ACP
+    /// error code is still in hand: a fleet scheduler that had to re-derive
+    /// this from the formatted `error` string would silently stop adapting
+    /// the day that wording changes.
+    pub rate_limited: bool,
 }
 
 impl Default for SubagentResult {
@@ -324,6 +336,7 @@ impl Default for SubagentResult {
             output: Arc::from(""),
             error: None,
             cancelled: false,
+            rate_limited: false,
             subagent_id: String::new(),
             child_session_id: String::new(),
             tool_calls: 0,

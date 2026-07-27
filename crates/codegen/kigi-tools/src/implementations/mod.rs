@@ -15,9 +15,9 @@ pub mod use_tool;
 pub mod web_search;
 pub use kigi::bash::{BashError, BashToolInput};
 pub use kigi::{
-    AskUserQuestionTool, BashTool, EnterPlanModeTool, ExitPlanModeTool, GrepTool, KillTaskTool,
-    ListDirTool, ReadFileTool, SearchReplaceTool, TaskOutputTool, TaskTool, TodoWriteTool,
-    WaitTasksTool, WebFetchTool, WebSearchTool,
+    AgentSwarmTool, AskUserQuestionTool, BashTool, EnterPlanModeTool, ExitPlanModeTool, GrepTool,
+    KillTaskTool, ListDirTool, ReadFileTool, SearchReplaceTool, TaskOutputTool, TaskTool,
+    TodoWriteTool, WaitTasksTool, WebFetchTool, WebSearchTool,
 };
 pub use memory::{MemoryGetImpl, MemorySearchImpl};
 pub use opencode::{

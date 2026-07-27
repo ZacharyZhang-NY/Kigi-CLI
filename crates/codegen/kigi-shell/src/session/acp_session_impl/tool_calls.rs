@@ -1546,6 +1546,18 @@ impl SessionActor {
                 vec![],
                 vec![],
             ),
+            // Without an explicit arm the catch-all below titles this "Tool
+            // call" — for an entry that can hold the turn for the whole swarm.
+            ToolInput::AgentSwarm(swarm) => (
+                format!(
+                    "{} ({} members)",
+                    swarm.description,
+                    swarm.items.len() + swarm.resume_agent_ids.len()
+                ),
+                acp::ToolKind::Other,
+                vec![],
+                vec![],
+            ),
             ToolInput::EnterPlanMode(_) => (
                 "Plan: Enter".to_string(),
                 acp::ToolKind::Other,

@@ -103,6 +103,7 @@ pub fn canonical_input(input: &ToolInput) -> Option<serde_json::Value> {
         | ToolInput::WaitTasks(_)
         | ToolInput::KillTask(_)
         | ToolInput::Task(_)
+        | ToolInput::AgentSwarm(_)
         | ToolInput::WebSearch(_)
         | ToolInput::WebFetch(_)
         | ToolInput::ApplyPatch(_)

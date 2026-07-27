@@ -650,6 +650,7 @@ impl ToolRegistryBuilder {
         b.register::<kigi::GetTerminalCommandOutputTool>();
         b.register::<kigi::WaitTasksTool>();
         b.register::<kigi::TaskTool>();
+        b.register::<kigi::AgentSwarmTool>();
         b.register::<kigi::WebSearchTool>();
         b.register_with_params::<kigi::WebFetchTool, kigi::web_fetch::WebFetchParams>();
         b.register::<kigi::LspTool>();

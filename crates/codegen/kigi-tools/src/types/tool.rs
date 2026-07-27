@@ -88,6 +88,11 @@ pub enum ToolKind {
     MemorySearch,
     MemoryGet,
     Task,
+    /// Fan-out sibling of [`ToolKind::Task`]: its own kind because
+    /// `TemplateRenderer`'s `by_kind` map holds ONE tool name per kind, so
+    /// sharing `Task` would let the swarm win that slot and silently redirect
+    /// every `${{ tools.by_kind.task }}` reference in other tools' prompts.
+    AgentSwarm,
     EnterPlan,
     ExitPlan,
     AskUser,
