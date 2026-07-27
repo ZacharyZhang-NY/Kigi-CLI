@@ -325,6 +325,9 @@ fn build_web_fetch_config() -> kigi_tools::implementations::kigi::web_fetch::Web
     if let Ok(proxy) = std::env::var("KIGI_WEB_FETCH_PROXY") {
         params.proxy_endpoint = Some(proxy);
     }
+    if kigi_config::env_bool("KIGI_WEB_FETCH_ALLOW_LOCAL") == Some(true) {
+        params.allow_local = Some(true);
+    }
     WebFetchConfig::Enabled { params }
 }
 #[cfg(any(test, feature = "test-support"))]

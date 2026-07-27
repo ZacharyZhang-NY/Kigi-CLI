@@ -47,12 +47,20 @@ pub struct WebFetchParams {
     /// on any failure (kimi-cli `tools/web/fetch.py FetchURL.__call__`).
     #[serde(default)]
     pub service_url: Option<String>,
+    /// Opt-in for loopback targets; off means no local access.
+    #[serde(default)]
+    pub allow_local: Option<bool>,
 }
 
 register_resource!("kigi", "WebFetch", WebFetchParams);
 
 // Keep defaults here so call-sites don't have to manage unwrapping.
 impl WebFetchParams {
+    /// From config or `KIGI_WEB_FETCH_ALLOW_LOCAL`, never tool input.
+    pub fn allow_local(&self) -> bool {
+        self.allow_local.unwrap_or(false)
+    }
+
     pub fn cache_ttl_secs(&self) -> Duration {
         Duration::from_secs(self.cache_ttl_secs.unwrap_or(15 * 60))
     }

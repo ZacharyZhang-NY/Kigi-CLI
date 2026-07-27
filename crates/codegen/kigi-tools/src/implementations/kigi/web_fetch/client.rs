@@ -155,6 +155,9 @@ impl WebFetchClient {
             }
         }
 
+        // Before any egress: the service must not see this.
+        ssrf::check_ssrf(&url, self.params.allow_local()).await?;
+
         // Kimi fetch service first (OAuth sessions); local pipeline is the
         // fallback on any service failure (kimi-cli fetch.py `__call__`).
         if let Some(service_url) = self.params.service_url.clone() {
@@ -182,10 +185,15 @@ impl WebFetchClient {
             }
         }
 
-        ssrf::check_ssrf(&url).await?;
-
         let http = self.http.get_or_rebuild()?;
-        let result = match fetch_url(&http, &url, self.params.max_content_length()).await {
+        let result = match fetch_url(
+            &http,
+            &url,
+            self.params.max_content_length(),
+            self.params.allow_local(),
+        )
+        .await
+        {
             Ok(result) => result,
             Err(e @ WebFetchError::HttpRequest(_)) => {
                 self.http.invalidate();
@@ -380,6 +388,8 @@ fn validate_url(raw: &str) -> Result<Url, WebFetchError> {
 
     if let Some(host) = parsed.host_str()
         && host.split('.').count() < 2
+        // `localhost` is single-label; SSRF still gates it on allow_local.
+        && !ssrf::is_explicit_local_host(host)
     {
         return Err(WebFetchError::SingleLabelHost {
             host: host.to_string(),
@@ -390,9 +400,16 @@ fn validate_url(raw: &str) -> Result<Url, WebFetchError> {
 }
 
 fn upgrade_to_https(url: &mut Url) {
-    if url.scheme() == "http" {
-        let _ = url.set_scheme("https");
+    if url.scheme() != "http" {
+        return;
     }
+    // Local dev servers rarely serve TLS; SSRF still gates them.
+    if let Some(host) = url.host_str()
+        && ssrf::is_explicit_local_host(host)
+    {
+        return;
+    }
+    let _ = url.set_scheme("https");
 }
 
 enum FetchResult {
@@ -409,15 +426,21 @@ enum FetchResult {
 }
 
 /// Fetch a URL with manual same-host redirect handling.
+///
+/// Every hop is re-checked, so a rebinding name cannot pass.
+/// Partial: reqwest hides the peer IP of the live connection.
 async fn fetch_url(
     client: &reqwest::Client,
     url: &Url,
     max_content_length: usize,
+    allow_local: bool,
 ) -> Result<FetchResult, WebFetchError> {
     let mut current_url = url.clone();
     let mut hops = 0;
 
     loop {
+        ssrf::check_ssrf(&current_url, allow_local).await?;
+
         let resp = client
             .get(current_url.as_str())
             .header(USER_AGENT, USER_AGENT_STRING)
@@ -439,10 +462,13 @@ async fn fetch_url(
 
             if let Some(location) = resp.headers().get("location") {
                 let location_str = location.to_str().unwrap_or("");
-                let next_url = current_url
+                let mut next_url = current_url
                     .join(location_str)
                     .map_err(|e| WebFetchError::InvalidRedirect(format!("{e}")))?;
                 if is_same_host(&current_url, &next_url) {
+                    // An absolute `http://` Location would downgrade the hop.
+                    upgrade_to_https(&mut next_url);
+                    // check_ssrf runs at the top of the next iteration.
                     current_url = next_url;
                     continue;
                 }
@@ -479,13 +505,11 @@ async fn fetch_url(
     }
 }
 
+/// Exact host equality, no `www.` stripping.
+///
+/// A `www` sibling has separate records, so it is cross-host.
 fn is_same_host(a: &Url, b: &Url) -> bool {
-    fn strip_www(h: &str) -> &str {
-        h.strip_prefix("www.").unwrap_or(h)
-    }
-    let host_a = a.host_str().unwrap_or("");
-    let host_b = b.host_str().unwrap_or("");
-    strip_www(host_a) == strip_www(host_b)
+    a.host_str() == b.host_str()
 }
 
 fn require_media_session_folder(session_folder: Option<&Path>) -> Result<&Path, WebFetchError> {
@@ -963,6 +987,78 @@ mod tests {
         assert!(matches!(err, WebFetchError::ServiceUnavailable(_)), "{err}");
     }
 
+    /// A blocked target must never reach the remote fetch service.
+    ///
+    /// It egresses elsewhere, so posting leaks an internal URL.
+    #[tokio::test]
+    async fn a_blocked_url_never_reaches_the_fetch_service() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/fetch"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("{}"))
+            .mount(&server)
+            .await;
+        let provider = crate::types::api_key_provider::test_support::fixed_provider("t");
+        let params = WebFetchParams {
+            service_url: Some(format!("{}/fetch", server.uri())),
+            ..WebFetchParams::default()
+        };
+        let client = WebFetchClient::new(&params, Some(provider)).unwrap();
+
+        let Err(err) = client
+            .fetch(
+                "http://localhost:8080/admin?token=secret",
+                "c",
+                None,
+                None,
+                None,
+            )
+            .await
+        else {
+            panic!("a loopback target must be blocked");
+        };
+        assert!(matches!(err, WebFetchError::SsrfBlocked { .. }), "{err}");
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "the internal URL must never be posted anywhere"
+        );
+    }
+
+    /// `fetch_url` gates its own target, not trusting its caller.
+    ///
+    /// Only hop one is covered: same-host hops share one verdict,
+    /// so rebinding between them needs a live resolver to observe.
+    #[tokio::test]
+    async fn fetch_url_blocks_a_loopback_target_without_allow_local() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/x"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("<p>local</p>"))
+            .mount(&server)
+            .await;
+        let url = Url::parse(&format!("{}/x", server.uri())).unwrap();
+        let http = HttpClient::new(&WebFetchParams::default())
+            .unwrap()
+            .get_or_rebuild()
+            .unwrap();
+
+        let Err(err) = fetch_url(&http, &url, 1_000_000, false).await else {
+            panic!("a blocked host must not be fetched");
+        };
+        assert!(matches!(err, WebFetchError::SsrfBlocked { .. }), "{err}");
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "a blocked host must not be contacted at all"
+        );
+
+        let ok = fetch_url(&http, &url, 1_000_000, true).await.unwrap();
+        assert!(matches!(ok, FetchResult::Content { .. }));
+    }
+
     fn test_converter() -> htmd::HtmlToMarkdown {
         htmd::HtmlToMarkdown::builder()
             .skip_tags(vec![
@@ -1024,9 +1120,12 @@ mod tests {
 
     #[test]
     fn validate_url_rejects_single_label_hosts() {
-        assert!(validate_url("http://localhost:8080/foo").is_err());
         assert!(validate_url("http://intranet/foo").is_err());
         assert!(validate_url("http://metadata/computeMetadata").is_err());
+        assert!(
+            validate_url("http://localhost:8080/foo").is_ok(),
+            "localhost reaches the SSRF gate, which blocks it unless opted in"
+        );
     }
 
     #[test]
@@ -1068,6 +1167,19 @@ mod tests {
         assert_eq!(url.scheme(), "https");
     }
 
+    /// Upgrading a local host breaks the only target `allow_local` opens.
+    #[test]
+    fn upgrade_to_https_skips_explicit_local_hosts() {
+        for raw in ["http://127.0.0.1:8080/", "http://localhost:3000/"] {
+            let mut url = Url::parse(raw).unwrap();
+            upgrade_to_https(&mut url);
+            assert_eq!(url.scheme(), "http", "{raw}");
+        }
+        let mut public = Url::parse("http://example.com/").unwrap();
+        upgrade_to_https(&mut public);
+        assert_eq!(public.scheme(), "https");
+    }
+
     #[test]
     fn same_host_exact_match() {
         let a = Url::parse("https://example.com/a").unwrap();
@@ -1075,12 +1187,24 @@ mod tests {
         assert!(is_same_host(&a, &b));
     }
 
+    /// An absolute `http://` Location must not downgrade a followed hop.
     #[test]
-    fn same_host_www_stripping() {
+    fn same_host_redirect_location_reupgrades_http() {
+        let origin = Url::parse("https://example.com/start").unwrap();
+        let mut next = origin.join("http://example.com/next").unwrap();
+        assert_eq!(next.scheme(), "http");
+        assert!(is_same_host(&origin, &next));
+        upgrade_to_https(&mut next);
+        assert_eq!(next.as_str(), "https://example.com/next");
+    }
+
+    /// A `www` sibling is a separate name, with separate records.
+    #[test]
+    fn www_subdomain_is_cross_host() {
         let a = Url::parse("https://example.com/a").unwrap();
         let c = Url::parse("https://www.example.com/a").unwrap();
-        assert!(is_same_host(&a, &c));
-        assert!(is_same_host(&c, &a));
+        assert!(!is_same_host(&a, &c));
+        assert!(!is_same_host(&c, &a));
     }
 
     #[test]

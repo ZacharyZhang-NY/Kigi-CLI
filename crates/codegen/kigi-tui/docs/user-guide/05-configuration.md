@@ -225,7 +225,15 @@ timeout_secs = 1800                    # seconds to wait when enabled (default: 
 [toolset.web_fetch]
 proxy_endpoint = "https://proxy.example.com"   # egress proxy URL
 allowed_domains = ["docs.rs", "x.ai"]           # override the built-in allowlist
+allow_local = false                             # true = reach localhost / 127.0.0.0/8 / ::1
 ```
+
+`allow_local` opens **loopback only**, and only when the URL names it
+explicitly (`http://127.0.0.1:8080/`, `http://localhost:3000/`). A public
+domain whose DNS record points at loopback stays blocked — that is DNS
+rebinding, not local development. Private, link-local, CGNAT and cloud
+metadata ranges are never reachable, with or without this flag. Precedence:
+user config → `KIGI_WEB_FETCH_ALLOW_LOCAL` → off.
 
 `[toolset.ask_user_question]` is honored across **requirements.toml**, **managed
 config**, and **user `config.toml`**. Precedence: requirements → env

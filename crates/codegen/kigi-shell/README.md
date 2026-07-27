@@ -1309,6 +1309,7 @@ output_byte_limit = 65536              # max output size (64KB)
 [toolset.web_fetch]
 proxy_endpoint = "https://proxy.example.com"   # egress proxy URL (all requests routed through it)
 allowed_domains = ["docs.rs", "x.ai"]           # override the built-in ~84-domain allowlist
+allow_local = false                             # true = reach an explicit localhost / 127.0.0.0/8 / ::1 URL
 
 [shortcuts]
 send = ["Enter"]
@@ -2384,6 +2385,7 @@ The agent persists all session updates automatically. Clients can reconnect and 
 | `KIGI_AGENT`                    | Custom agent definition path or name (see [Agent Profiles](#agent-profiles))                             |
 | `KIGI_WEB_FETCH`                | Enable (`1`) or disable (`0`) the `web_fetch` tool                                                       |
 | `KIGI_WEB_FETCH_PROXY`          | Egress proxy URL for `web_fetch` requests (overridden by `[toolset.web_fetch] proxy_endpoint`)           |
+| `KIGI_WEB_FETCH_ALLOW_LOCAL`    | `1` lets `web_fetch` reach an explicit loopback URL; private and metadata ranges stay blocked            |
 | `KIGI_RESPECT_GITIGNORE`        | Disable `.gitignore` filtering in tools when set to `0`                                                  |
 | `KIGI_FEEDBACK_ENABLED`         | Enable (`1`) or disable (`0`) feedback system independently from telemetry                               |
 | `KIGI_DEPLOYMENT_KEY`           | Management API key for enterprise deployments                                                            |
