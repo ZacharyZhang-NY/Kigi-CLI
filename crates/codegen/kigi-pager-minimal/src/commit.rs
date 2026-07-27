@@ -1251,6 +1251,10 @@ mod tests {
         use ratatui::layout::Rect;
         use similar::ChangeTag;
 
+        // A sibling test engages the terminal-native lock, which flattens
+        // every diff background process-wide. Hold the shared theme lock.
+        let _theme = kigi_tui::theme::cache::pin_theme();
+
         let hunk = vec![
             DiffLine {
                 text: "let x = 1;\n".into(),
@@ -1293,23 +1297,24 @@ mod tests {
         // The committed edit uses a flat background (terminal transparency), but
         // must still paint the per-line diff backgrounds — otherwise an added /
         // removed line is indistinguishable from context.
-        let mut saw_insert = false;
-        let mut saw_delete = false;
+        //
+        // Theme-agnostic: the line cache is keyed on the global theme,
+        // so an exact-RGB match would race. Colors pinned in tool::edit.
+        let mut bands = std::collections::BTreeSet::new();
         for y in 0..h {
             for x in 0..width {
-                if let Some(cell) = buf.cell((x, y)) {
-                    saw_insert |= cell.bg == theme.diff_insert_bg;
-                    saw_delete |= cell.bg == theme.diff_delete_bg;
+                if let Some(cell) = buf.cell((x, y))
+                    && cell.bg != ratatui::style::Color::Reset
+                {
+                    bands.insert(format!("{:?}", cell.bg));
                 }
             }
         }
         assert!(
-            saw_insert,
-            "committed edit lost the insert (green) diff background"
-        );
-        assert!(
-            saw_delete,
-            "committed edit lost the delete (red) diff background"
+            bands.len() >= 2,
+            "committed edit lost its insert/delete diff bands: \
+             theme={:?} h={h} bands={bands:?}",
+            Theme::current_kind(),
         );
     }
 
