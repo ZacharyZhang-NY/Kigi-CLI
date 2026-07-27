@@ -83,6 +83,35 @@ impl AuthCredentialProvider for ShellAuthCredentialProvider {
         self.auth_manager.try_recover_unauthorized().await
     }
 }
+/// The memory-embedding credentials for `embed_base_url`, decided by the ONE
+/// authority rather than re-derived here (C1).
+///
+/// `embed_base_url` is the session model's own endpoint, so on a BYOK or
+/// subscription-OAuth model it points at that provider's host — and
+/// [`kigi_auth::AuthRetryMiddleware`] stamps `Authorization` on every request
+/// it wraps. Asking [`CredentialAuthority::manager_for`] answers both halves at
+/// once: whether a session credential may ride there at all, and WHICH manager
+/// governs it (a subscription-OAuth platform's pooled manager at its own host,
+/// the primary at the session's coding endpoint). No manager means no session
+/// credential at all; the platform's own `embed_api_key` is untouched and keeps
+/// serving its own endpoint.
+///
+/// The session's `SharedApiKeyProvider` is deliberately NOT forwarded: it is
+/// hard-wired to the PRIMARY manager, so at a pooled platform's host — where a
+/// credential may ride, but only that platform's own — it would resolve the
+/// wrong bearer.
+pub(crate) fn embedding_session_credentials(
+    embed_base_url: &str,
+    platform: Option<kigi_models::PlatformId>,
+    authority: &crate::auth::credential_authority::CredentialAuthority,
+) -> kigi_memory::EndpointScopedCredentials {
+    let auth_credentials = authority.manager_for(platform, embed_base_url).map(|am| {
+        Arc::new(ShellAuthCredentialProvider::new(am, None, None))
+            as Arc<dyn AuthCredentialProvider>
+    });
+    let may_ride = auth_credentials.is_some();
+    kigi_memory::EndpointScopedCredentials::for_endpoint(embed_base_url, may_ride, auth_credentials)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,6 +280,38 @@ mod tests {
             provider.snapshot().token.as_deref(),
             Some("fresh"),
             "snapshot must reflect refreshed token for subsequent apply() calls"
+        );
+    }
+    /// C1: memory embeddings follow the credential authority, not the session.
+    ///
+    /// A session whose model is a BYOK platform aims `embed_base_url` at that
+    /// provider's host; the authority answers "no manager governs a credential
+    /// there", so nothing rides. The session's own coding endpoint still does.
+    #[test]
+    fn embedding_credentials_follow_the_credential_authority() {
+        let _guard = EarlyInvalidationGuard::pin_to_default();
+        let dir = tempfile::tempdir().unwrap();
+        let mgr = make_manager(
+            &dir,
+            Some(make_auth("session-bearer", ChronoDuration::hours(1))),
+        );
+        let endpoints = crate::agent::config::EndpointsConfig::default();
+        let coding_endpoint = endpoints.proxy_url();
+        let authority =
+            crate::auth::credential_authority::CredentialAuthority::new(endpoints, Some(mgr));
+
+        assert!(
+            !embedding_session_credentials(&coding_endpoint, None, &authority).is_empty(),
+            "the session's own coding endpoint keeps its credential"
+        );
+        assert!(
+            embedding_session_credentials(
+                "https://api.anthropic.com/v1",
+                kigi_models::PlatformId::parse("anthropic"),
+                &authority,
+            )
+            .is_empty(),
+            "an API-key platform's host must receive no session credential"
         );
     }
     /// Deployment-key path has no recovery (operator owns the bearer).

@@ -311,6 +311,18 @@ pub(crate) async fn spawn_session_actor(
     };
     let embed_base_url = sampling_config.base_url.clone();
     let embed_api_key = sampling_config.api_key.clone();
+    // The platform behind the endpoint memory embeddings will call, resolved
+    // through the SAME session-key disambiguation the actor is seeded with, so
+    // a slug that collides across platforms cannot resolve to the twin (H-b).
+    let embed_platform = {
+        let models = models_manager.models();
+        crate::agent::models::platform_for_slug(
+            &models,
+            crate::agent::models::selected_catalog_key_for_spawn(&models, &session_model_id)
+                .as_deref(),
+            &sampling_config.model,
+        )
+    };
     let session_pruning_config: crate::config::PruningConfig = memory_config.as_ref().map_or_else(
         || crate::config::PruningConfig {
             enabled: false,
@@ -618,16 +630,11 @@ pub(crate) async fn spawn_session_actor(
             watcher,
             stale_claim_secs: watcher_config.stale_claim_secs,
             search_source: "tool",
-            api_key_provider: api_key_provider.clone(),
-            auth_credentials: auth_manager.as_ref().map(|am| {
-                std::sync::Arc::new(
-                    crate::auth::credential_provider::ShellAuthCredentialProvider::new(
-                        am.clone(),
-                        None,
-                        None,
-                    ),
-                ) as std::sync::Arc<dyn kigi_auth::AuthCredentialProvider>
-            }),
+            embedding_credentials: crate::auth::credential_provider::embedding_session_credentials(
+                &embed_base_url,
+                embed_platform,
+                &models_manager.credential_authority(),
+            ),
         };
         let backend = crate::session::memory::MemoryBackendImpl::from_session_params(
             storage.clone(),
@@ -1287,8 +1294,11 @@ pub(crate) async fn spawn_session_actor(
             .map(|mc| mc.embedding.clone())
             .unwrap_or_default();
         let embed_dims = embed_config.dimensions;
-        let sampling_base_url = embed_base_url.clone();
-        let sampling_api_key = embed_api_key.clone();
+        // The session's own params, so the background reindex embeds through
+        // the same endpoint-scoped credential as every foreground path — a
+        // second locally-built provider would re-derive credentials outside
+        // the chokepoint and would carry a static key with no 401 refresh.
+        let reindex_params = session.memory.backend_params.clone();
         let session_id_for_reindex = session_info.id.to_string();
         let chunks_added_counter = session.memory.chunks_added.clone();
         tokio::task::spawn_local(async move {
@@ -1311,13 +1321,8 @@ pub(crate) async fn spawn_session_actor(
                     target : kigi_log::memory_log::TARGET, files = files.len(),
                     "MEMORY_REINDEX: background reindex complete"
                 );
-                if let Some(api_key) = sampling_api_key
-                    && let Some(provider) =
-                        crate::session::memory::embedding::ApiEmbeddingProvider::from_session(
-                            &embed_config,
-                            sampling_base_url,
-                            api_key,
-                        )
+                if let Some(ref params) = reindex_params
+                    && let Some(provider) = params.make_embedding_provider().await
                 {
                     crate::session::memory::embed_missing_chunks(&index, &provider).await;
                 }
