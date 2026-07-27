@@ -16,14 +16,14 @@ import) or any `KIMI_*` env var.
 
 ## Hard constraints
 
-- **Zero egress**: outbound connections are limited to
-  `auth.kimi.com`, `api.kimi.com`, `api.moonshot.cn`, `api.moonshot.ai`,
-  GitHub Releases domains, user-configured MCP servers, the endpoints of
-  provider platforms the user has credentialed, and `models.dev` (model
-  metadata refresh — reached ONLY when an enabled platform's `/models` wire
-  lacks metadata, `wire_serves_metadata=false`; Kimi/Moonshot never trigger
-  it; `KIGI_MODELS_DEV_URL=0` disables). No telemetry, no analytics, ever.
-  `crates/codegen/kigi-env` is the single home of first-party endpoints.
+- **Zero egress**: only `auth.kimi.com`, `api.kimi.com`, `api.moonshot.cn`,
+  `api.moonshot.ai`, GitHub Releases, user-configured MCP servers, credentialed
+  provider endpoints, and `models.dev` (metadata refresh, ONLY when an enabled
+  platform's `/models` lacks it — `wire_serves_metadata=false`, never
+  Kimi/Moonshot, `KIGI_MODELS_DEV_URL=0` disables). No telemetry, no analytics,
+  ever. `crates/codegen/kigi-env` is the single home of first-party endpoints.
+- **One SSRF policy**: `ssrf::is_blocked_for_host` gates every model/settings
+  URL (`web_fetch` + hooks), per redirect hop. Never write a second copy.
 - **Toolchain**: Rust 1.97.0 (rust-toolchain.toml), edition 2024.
 - **Gates** (all must stay green):
   `cargo check --workspace --all-targets`,
