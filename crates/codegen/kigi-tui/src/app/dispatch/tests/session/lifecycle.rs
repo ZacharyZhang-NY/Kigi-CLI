@@ -481,7 +481,7 @@ fn session_failed_clears_flag_no_fetches() {
     assert!(!app.agents[&id].pending_extensions_fetch);
 }
 #[test]
-fn switch_model_without_session_does_nothing() {
+fn switch_model_without_session_starts_the_session() {
     let mut app = test_app_with_agent();
     let id = AgentId(0);
     app.agents.get_mut(&id).unwrap().session.session_id = None;
@@ -493,7 +493,14 @@ fn switch_model_without_session_does_nothing() {
         },
         &mut app,
     );
-    assert!(effects.is_empty());
+    // No create was in flight, so the switch starts the session its stash
+    // drains into (the stash alone dangled forever — the /model-in-Downloads
+    // silent no-op). `model_switch_pending` flips on SessionCreated.
+    assert!(
+        effects
+            .iter()
+            .any(|e| matches!(e, Effect::CreateSession { .. }))
+    );
     assert!(!app.agents[&id].session.model_switch_pending);
 }
 #[test]
@@ -668,10 +675,16 @@ fn switch_model_deferred_when_no_session_id() {
         },
         &mut app,
     );
-    assert!(effects.is_empty());
+    // Stashed for SessionCreated — and the session it drains into is started
+    // (no create was in flight; a bare stash never drained).
     assert_eq!(
         app.agents[&id].session.deferred_model_switch,
         Some((model_id, None))
+    );
+    assert!(
+        effects
+            .iter()
+            .any(|e| matches!(e, Effect::CreateSession { .. }))
     );
     assert!(!app.agents[&id].session.model_switch_pending);
 }

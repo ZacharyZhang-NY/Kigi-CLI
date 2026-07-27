@@ -977,6 +977,77 @@ fn switch_model_pending_lifecycle() {
     assert!(!app.agents[&id].session.model_switch_pending);
 }
 
+/// A model switch with no session AND no create in flight (the project-picker
+/// question is pending; only a plain prompt can open it) must start the
+/// deferred session itself, or the stashed switch dangles forever with zero
+/// feedback — `/model X eff` in `~/Downloads` looked like "the model never
+/// changes". Mirrors the `QueueCommand` arm: queued slash work bypasses the
+/// picker and creates the session so the stash drains.
+#[test]
+fn switch_model_without_session_creates_the_deferred_session() {
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+    app.agents.get_mut(&id).unwrap().session.session_id = None;
+    // Harness cwd is `/tmp` (a non-project dir); arm the picker gate the way
+    // startup leaves it (the harness pre-marks it shown for other tests).
+    app.project_picker_shown = false;
+    assert!(app.needs_project_picker());
+
+    let model_id = acp::ModelId::new(std::sync::Arc::from("kigi-4.5"));
+    let effects = dispatch(
+        Action::SwitchModel {
+            model_id: model_id.clone(),
+            effort: None,
+        },
+        &mut app,
+    );
+
+    assert_eq!(
+        app.agents[&id].session.deferred_model_switch,
+        Some((model_id, None)),
+        "switch must stay stashed for SessionCreated to apply"
+    );
+    assert!(
+        effects
+            .iter()
+            .any(|e| matches!(e, Effect::CreateSession { .. })),
+        "sessionless switch must start the session the stash drains into"
+    );
+}
+
+/// Same stash path while a create IS in flight (`mcp_init_progress` set):
+/// no duplicate `CreateSession` — the pending create applies the stash.
+#[test]
+fn switch_model_with_create_in_flight_does_not_duplicate_create() {
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+    {
+        let agent = app.agents.get_mut(&id).unwrap();
+        agent.session.session_id = None;
+        agent.mcp_init_progress = Some(crate::app::agent_view::McpInitProgress {
+            total: 0,
+            connected: 0,
+            started_at: std::time::Instant::now(),
+        });
+    }
+
+    let effects = dispatch(
+        Action::SwitchModel {
+            model_id: acp::ModelId::new(std::sync::Arc::from("kigi-4.5")),
+            effort: None,
+        },
+        &mut app,
+    );
+
+    assert!(app.agents[&id].session.deferred_model_switch.is_some());
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, Effect::CreateSession { .. })),
+        "an in-flight create must not be duplicated"
+    );
+}
+
 #[test]
 fn no_deferred_switch_means_no_extra_effect() {
     // When there is no deferred model switch, SessionCreated should

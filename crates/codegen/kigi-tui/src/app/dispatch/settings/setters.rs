@@ -1519,12 +1519,20 @@ pub(in crate::app::dispatch) fn set_default_model(
             effort: None,
             prev_model_id: prev_id.clone(),
         });
-    } else if let Some(agent) = app.agents.get_mut(&aid) {
-        // No session id yet — stash for
-        // `EventLoop::on_session_created` to apply once the session
-        // id materialises. Mirrors the deferred-switch handling in
-        // `Action::SwitchModel`.
-        agent.session.deferred_model_switch = Some((new_id, None));
+    } else {
+        if let Some(agent) = app.agents.get_mut(&aid) {
+            // No session id yet — stash for
+            // `EventLoop::on_session_created` to apply once the session
+            // id materialises. Mirrors the deferred-switch handling in
+            // `Action::SwitchModel`.
+            agent.session.deferred_model_switch = Some((new_id, None));
+        }
+        // With no create in flight (project question pending), the stash
+        // would dangle forever — start the session it drains into. No-op
+        // when a create is already pending.
+        effects.extend(
+            crate::app::dispatch::session::lifecycle::skip_picker_and_create_session(app, aid),
+        );
     }
     effects
 }

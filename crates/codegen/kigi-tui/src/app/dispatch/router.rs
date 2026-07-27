@@ -62,6 +62,7 @@ use super::session::lifecycle::{
     clear_startup_actions, dispatch_agent_type_mismatch_answered, dispatch_exit_session,
     dispatch_new_session, dispatch_new_session_inner, dispatch_new_session_with_id,
     dispatch_new_worktree_session, dispatch_trust_folder, open_new_session_question,
+    skip_picker_and_create_session,
 };
 use super::session::load::{
     dispatch_cycle_session_source_filter, dispatch_load_session, dispatch_pick_content_session,
@@ -749,7 +750,12 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
             };
             let Some(session_id) = agent.session.session_id.clone() else {
                 agent.session.deferred_model_switch = Some((model_id, effort));
-                return vec![];
+                // No session bound: with a create in flight this is a no-op
+                // and `SessionCreated` applies the stash; with none in flight
+                // (project question pending — only a plain prompt opens it) a
+                // switch would dangle forever, so start the session like the
+                // QueueCommand arm does for queued slash work.
+                return skip_picker_and_create_session(app, id);
             };
             agent.session.model_switch_pending = true;
             vec![Effect::SwitchModel {
