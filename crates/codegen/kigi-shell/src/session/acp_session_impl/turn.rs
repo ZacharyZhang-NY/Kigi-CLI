@@ -790,7 +790,7 @@ impl SessionActor {
         let turn_tool_count = self.events.tool_count_this_turn();
         let bridge_outcome = turn_result_to_hook_outcome(&result);
         match &result {
-            Ok(TurnOutcome::Completed { .. }) => {
+            Ok(TurnOutcome::Completed { .. }) | Ok(TurnOutcome::StationarityHalted { .. }) => {
                 self.emit_turn_ended(
                     crate::session::events::TurnOutcomeLabel::Completed,
                     None,
@@ -880,7 +880,9 @@ impl SessionActor {
         let doom_tally = std::mem::take(&mut *self.doom_loop_turn_tally.lock());
         doom_tally.fired();
         let stop_reason_str = match &result {
-            Ok(TurnOutcome::Completed { .. }) => "end_turn",
+            Ok(TurnOutcome::Completed { .. }) | Ok(TurnOutcome::StationarityHalted { .. }) => {
+                "end_turn"
+            }
             Ok(TurnOutcome::Cancelled { .. }) | Ok(TurnOutcome::MaxTurnsReached { .. }) => {
                 "cancelled"
             }
@@ -896,7 +898,7 @@ impl SessionActor {
         )
         .await;
         match &result {
-            Ok(TurnOutcome::Completed { .. }) => {
+            Ok(TurnOutcome::Completed { .. }) | Ok(TurnOutcome::StationarityHalted { .. }) => {
                 for contributor in self.extension_registry.turn_lifecycle_contributors() {
                     contributor
                         .on_turn_done(&kigi_agent_lifecycle::TurnDoneInput)
@@ -979,6 +981,26 @@ impl SessionActor {
                         acp::StopReason::Cancelled,
                         None,
                         PromptCompletionKind::MaxTurnsReached { limit },
+                        None,
+                    ),
+                    // `EndTurn`, not `Cancelled`: the client must not render
+                    // an interrupted turn for something nobody interrupted.
+                    // The halt's detail rides `completion_kind`, which is
+                    // where a bug report can still read it.
+                    TurnOutcome::StationarityHalted {
+                        snapshot,
+                        tool_name,
+                        run_len,
+                        true_noop,
+                        ..
+                    } => (
+                        acp::StopReason::EndTurn,
+                        *snapshot,
+                        PromptCompletionKind::StationarityHalted {
+                            tool_name,
+                            run_len,
+                            true_noop,
+                        },
                         None,
                     ),
                 };
@@ -1282,7 +1304,11 @@ impl SessionActor {
         let mut result = self
             .process_conversation_turn(req_id, json_schema.clone())
             .await;
-        if matches!(result, Ok(TurnOutcome::MaxTurnsReached { .. })) {
+        // Harness stopped the turn; retrying re-enters the same wall.
+        if matches!(
+            result,
+            Ok(TurnOutcome::MaxTurnsReached { .. }) | Ok(TurnOutcome::StationarityHalted { .. })
+        ) {
             return result;
         }
         if let Ok(TurnOutcome::Completed {
@@ -1599,6 +1625,10 @@ impl SessionActor {
         self.record_turn_model().await;
         let mut metrics_drop_guard = TurnMetrics::new();
         let mut turn_tools_called: Vec<String> = Vec::new();
+        let mut identical_tool_calls =
+            crate::session::stationarity::IdenticalToolCallRun::default();
+        // Retained across execute: observed only after results land.
+        let mut last_batch: Vec<kigi_sampling_types::conversation::ToolCall> = Vec::new();
         let mut tool_turn_count: usize = 1;
         let mut loop_index: u32 = 0;
         let mut todo_gate_fires: u32 = 0;
@@ -2015,6 +2045,8 @@ impl SessionActor {
                 }
                 turn_tools_called.push(tc.name.clone());
             }
+            last_batch.clear();
+            last_batch.extend(tool_calls.iter().cloned());
             let tool_call_responses: Vec<ToolCallResponse> = tool_calls
                 .into_iter()
                 .map(|tc| ToolCallResponse {
@@ -2056,6 +2088,34 @@ impl SessionActor {
                     continue;
                 }
                 _ => {}
+            }
+            // After execute: every call has a result, so nothing dangles
+            // and the nudge cannot trigger the "cancelled" repair.
+            // Ok-gated: one `?` inside can leave a call resultless.
+            if execute_tool_calls_result.is_ok()
+                && let Some(halt) = self
+                    .observe_tool_call_stationarity(
+                        &mut identical_tool_calls,
+                        &last_batch,
+                        tool_turn_count,
+                    )
+                    .await
+            {
+                let snapshot = self
+                    .finalize_turn_bookkeeping(
+                        req_id,
+                        conv_turn_start,
+                        &turn_span_totals,
+                        model_fingerprint.clone(),
+                    )
+                    .await;
+                return Ok(TurnOutcome::StationarityHalted {
+                    snapshot: Box::new(snapshot),
+                    tools_called: std::mem::take(&mut turn_tools_called),
+                    tool_name: halt.tool_name,
+                    run_len: halt.run_len,
+                    true_noop: halt.true_noop,
+                });
             }
             let next_turn = tool_turn_count + 1;
             if let Some(limit) = self.max_turns

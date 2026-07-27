@@ -8,7 +8,12 @@ pub(super) fn turn_result_to_hook_outcome(
 ) -> kigi_tool_protocol::turn_hook::TurnHookOutcome {
     use kigi_tool_protocol::turn_hook::TurnHookOutcome;
     match result {
-        Ok(TurnOutcome::Completed { .. }) => TurnHookOutcome::Completed,
+        // A stationarity halt is a completed turn for hook purposes: nobody
+        // cancelled it, and a `Cancelled` outcome would tell every Stop hook
+        // the user interrupted the model.
+        Ok(TurnOutcome::Completed { .. }) | Ok(TurnOutcome::StationarityHalted { .. }) => {
+            TurnHookOutcome::Completed
+        }
         Ok(TurnOutcome::Cancelled { .. }) | Ok(TurnOutcome::MaxTurnsReached { .. }) => {
             TurnHookOutcome::Cancelled
         }

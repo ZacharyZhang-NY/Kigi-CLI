@@ -121,6 +121,8 @@ mod model_switch;
 mod prompt_queue;
 #[path = "acp_session_impl/slash_exec.rs"]
 mod slash_exec;
+#[path = "acp_session_impl/stationarity_seam.rs"]
+mod stationarity_seam;
 #[path = "acp_session_impl/swarm.rs"]
 mod swarm;
 use super::PromptOrigin;

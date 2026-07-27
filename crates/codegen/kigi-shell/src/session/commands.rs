@@ -29,6 +29,13 @@ pub enum PromptCompletionKind {
     MaxTurnsReached {
         limit: usize,
     },
+    /// One tool call repeated past its ceiling. Reported as `EndTurn`:
+    /// the turn ended, nobody interrupted it.
+    StationarityHalted {
+        tool_name: String,
+        run_len: u32,
+        true_noop: bool,
+    },
     Rewound,
     /// A queued prompt was removed (or cleared) from the server-authoritative
     /// queue before it ever ran. Used to resolve the still-pending

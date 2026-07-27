@@ -326,6 +326,7 @@ pub mod restore;
 pub mod result;
 pub mod signals;
 pub(crate) mod slash_commands;
+pub(crate) mod stationarity;
 pub mod storage;
 pub(crate) mod streaming_capture;
 pub(crate) mod summary;

@@ -62,6 +62,19 @@ pub(crate) enum TurnOutcome {
     },
     /// The `--max-turns` limit was reached after a tool-execution cycle.
     MaxTurnsReached { limit: usize },
+    /// One tool call repeated past its ceiling; the turn was halted.
+    ///
+    /// Groups with [`Self::Completed`], NOT [`Self::Cancelled`]: nobody
+    /// cancelled anything. As a cancellation it would report
+    /// `StopReason::Cancelled`, fire the abort lifecycle, kill the turn's
+    /// subagents, grow the goal back-off streak, and let recovery re-run it.
+    StationarityHalted {
+        snapshot: Box<Option<TurnDeltaSnapshot>>,
+        tools_called: Vec<String>,
+        tool_name: String,
+        run_len: u32,
+        true_noop: bool,
+    },
 }
 
 #[derive(Debug)]
