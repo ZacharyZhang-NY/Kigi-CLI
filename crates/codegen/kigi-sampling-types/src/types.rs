@@ -911,11 +911,6 @@ pub enum ReasoningEffort {
     /// Messages both accept `xhigh` AND `max` as separate levels in 2026;
     /// the Kimi wire spells its top tier `max` with no `xhigh`).
     Max,
-    /// Codex-only top tier above `max` (the ChatGPT Codex backend exposes an
-    /// `ultra` reasoning effort on its flagship models). Reachable ONLY via a
-    /// model's server-declared effort menu (openai-codex); no built-in fallback
-    /// menu offers it, so other providers never emit it.
-    Ultra,
 }
 
 impl ReasoningEffort {
@@ -944,15 +939,12 @@ impl ReasoningEffort {
             Self::High => "high",
             Self::Xhigh => "xhigh",
             Self::Max => "max",
-            Self::Ultra => "ultra",
         }
     }
 
     /// Anthropic Messages API effort string; `None` for unsupported variants.
     /// `xhigh` and `max` are distinct levels on the 2026 Messages API (both
-    /// appear in `GET /v1/models` `capabilities.effort`). `ultra` is codex-only
-    /// and never selected on an Anthropic model, but maps to its own string for
-    /// completeness (the Responses path writes effort via `as_str`, not this).
+    /// appear in `GET /v1/models` `capabilities.effort`).
     pub fn to_messages_api(self) -> Option<&'static str> {
         match self {
             Self::None | Self::Minimal => None,
@@ -961,7 +953,6 @@ impl ReasoningEffort {
             Self::High => Some("high"),
             Self::Xhigh => Some("xhigh"),
             Self::Max => Some("max"),
-            Self::Ultra => Some("ultra"),
         }
     }
 }
@@ -984,9 +975,8 @@ impl std::str::FromStr for ReasoningEffort {
             "high" => Ok(Self::High),
             "xhigh" => Ok(Self::Xhigh),
             "max" => Ok(Self::Max),
-            "ultra" => Ok(Self::Ultra),
             _ => Err(format!(
-                "invalid reasoning effort: {s:?} (expected one of: none, minimal, low, medium, high, xhigh, max, ultra)"
+                "invalid reasoning effort: {s:?} (expected one of: none, minimal, low, medium, high, xhigh, max)"
             )),
         }
     }
@@ -1878,30 +1868,16 @@ mod tests {
         assert_eq!(ReasoningEffort::Max.to_messages_api(), Some("max"));
     }
 
-    /// The codex-only `ultra` tier parses, serializes, and patches onto a
-    /// Responses body as `reasoning.effort = "ultra"` (the crux of surfacing a
-    /// codex model's full thinking menu). It is a DISTINCT level above `max`.
+    /// `ultra` is not a tier any backend accepts.
+    ///
+    /// The Codex Responses endpoint rejects it with a 400 listing its menu,
+    /// which tops out at `max`. Parsing it would only send it again.
     #[test]
-    fn reasoning_effort_ultra_is_a_distinct_codex_tier() {
-        assert_eq!(
-            "ultra".parse::<ReasoningEffort>().unwrap(),
-            ReasoningEffort::Ultra
-        );
-        assert_eq!(
-            "ULTRA".parse::<ReasoningEffort>().unwrap(),
-            ReasoningEffort::Ultra
-        );
-        assert_ne!(ReasoningEffort::Ultra, ReasoningEffort::Max);
-        assert_eq!(ReasoningEffort::Ultra.as_str(), "ultra");
-        let json = serde_json::to_string(&ReasoningEffort::Ultra).unwrap();
-        assert_eq!(json, "\"ultra\"");
-        assert_eq!(
-            serde_json::from_str::<ReasoningEffort>("\"ultra\"").unwrap(),
-            ReasoningEffort::Ultra
-        );
-        let mut body = serde_json::json!({ "model": "gpt-5.6-sol" });
-        patch_reasoning_effort(&mut body, Some(ReasoningEffort::Ultra));
-        assert_eq!(body["reasoning"]["effort"], "ultra");
+    fn reasoning_effort_ultra_is_not_a_tier() {
+        assert!("ultra".parse::<ReasoningEffort>().is_err());
+        assert!("ULTRA".parse::<ReasoningEffort>().is_err());
+        assert!(serde_json::from_str::<ReasoningEffort>("\"ultra\"").is_err());
+        assert_eq!(ReasoningEffort::Max.as_str(), "max");
     }
 
     /// The account id is decoded STATELESSLY from the bearer JWT payload's
@@ -2122,7 +2098,7 @@ mod tests {
         );
         let bad_type = as_map(serde_json::json!({"reasoningEffort": 3}));
         assert_eq!(parse_reasoning_effort_meta(Some(&bad_type)), None);
-        // `ultra` is a real codex tier; a genuinely-unknown token still None.
+        // A genuinely-unknown token is dropped, not guessed at.
         let unknown = as_map(serde_json::json!({"reasoningEffort": "MEGA"}));
         assert_eq!(parse_reasoning_effort_meta(Some(&unknown)), None);
     }

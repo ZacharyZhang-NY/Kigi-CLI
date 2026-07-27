@@ -1475,7 +1475,7 @@ mod tests {
     /// short-circuits BEFORE any HTTP — there is NO mock `/models` server, yet
     /// the fetch returns exactly the 4 compiled-in models keyed
     /// `openai-codex/<slug>` on the Responses backend, ctx 272000, each exposing
-    /// its exact reasoning efforts (incl. the codex-only `xhigh`/`max`/`ultra`).
+    /// its exact reasoning efforts (incl. the codex-only `xhigh`/`max`).
     /// A BOGUS base URL confirms no live `/models` request is attempted (it would
     /// otherwise fail against an unroutable host).
     #[tokio::test(flavor = "multi_thread")]
@@ -1556,10 +1556,10 @@ mod tests {
                 .iter()
                 .map(|o| o.id.as_str())
                 .collect::<Vec<_>>(),
-            vec!["low", "medium", "high", "xhigh", "max", "ultra"],
-            "sol exposes the full codex effort menu incl. ultra"
+            vec!["low", "medium", "high", "xhigh", "max"],
+            "sol exposes the full codex effort menu"
         );
-        // gpt-5.5 tops out at xhigh (no max/ultra).
+        // gpt-5.5 tops out at xhigh (no max).
         let five_five = result
             .models
             .iter()

@@ -60,7 +60,6 @@ fn effort_label(effort: ReasoningEffort) -> String {
         ReasoningEffort::High => "High",
         ReasoningEffort::Xhigh => "X-High",
         ReasoningEffort::Max => "Max",
-        ReasoningEffort::Ultra => "Ultra",
     }
     .to_string()
 }

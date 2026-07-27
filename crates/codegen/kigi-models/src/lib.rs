@@ -1574,7 +1574,7 @@ impl PlatformId {
     /// `models_cache.json`, the `visibility=="list"` AND `supported_in_api==true`
     /// set) because OpenAI exposes no stable public models endpoint for the
     /// ChatGPT Codex backend. Each entry carries context window + per-model
-    /// selectable reasoning efforts (incl. the codex-only `xhigh`/`max`/`ultra`
+    /// selectable reasoning efforts (incl. the codex-only `xhigh`/`max`
     /// tiers), so the fetch path maps them through the SAME
     /// `platform_wire_model_to_entry` output as a live listing — no new type.
     pub fn hardcoded_catalog(self) -> Option<Vec<WireModel>> {
@@ -1617,13 +1617,13 @@ fn openai_codex_wire_models() -> Vec<WireModel> {
         codex_wire_model(
             "gpt-5.6-sol",
             "GPT-5.6-Sol",
-            &["low", "medium", "high", "xhigh", "max", "ultra"],
+            &["low", "medium", "high", "xhigh", "max"],
             "low",
         ),
         codex_wire_model(
             "gpt-5.6-terra",
             "GPT-5.6-Terra",
-            &["low", "medium", "high", "xhigh", "max", "ultra"],
+            &["low", "medium", "high", "xhigh", "max"],
             "medium",
         ),
         codex_wire_model(
@@ -2655,7 +2655,7 @@ mod tests {
 
     /// The HARDCODED openai-codex catalog is exactly the 4 supported+listed
     /// models, keyed by slug, ctx 272000, each exposing its exact supported
-    /// efforts (incl. the codex-only `xhigh`/`max`/`ultra` tiers). The
+    /// efforts (incl. the codex-only `xhigh`/`max` tiers). The
     /// list-but-broken / hidden models are absent. Every other platform serves
     /// NO hardcoded catalog (its models come from the live wire).
     #[test]
@@ -2702,11 +2702,11 @@ mod tests {
         };
         assert_eq!(
             efforts("gpt-5.6-sol"),
-            ["low", "medium", "high", "xhigh", "max", "ultra"]
+            ["low", "medium", "high", "xhigh", "max"]
         );
         assert_eq!(
             efforts("gpt-5.6-terra"),
-            ["low", "medium", "high", "xhigh", "max", "ultra"]
+            ["low", "medium", "high", "xhigh", "max"]
         );
         assert_eq!(
             efforts("gpt-5.6-luna"),
