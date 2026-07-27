@@ -1115,6 +1115,7 @@ pub(crate) async fn spawn_session_actor(
         goal_tracker,
         graph_enabled,
         graph_tracker,
+        swarm_mode: std::cell::Cell::new(Default::default()),
         graph_concurrency: effective_config.resolve_graph_concurrency(),
         graph_node_rounds: effective_config.resolve_graph_node_rounds(),
         graph_replan_cap: effective_config.resolve_graph_replan_cap(),

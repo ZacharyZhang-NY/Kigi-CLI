@@ -164,6 +164,56 @@ edges stay deterministic Rust. The harness appends a terminal
   the replan cap; `{"ops": []}` is a respected free no-op; failures
   degrade.
 
+## Swarm (`agent_swarm` tool + `/swarm` mode)
+
+Cheap, unstructured fan-out — the one thing `/graph` does not offer. One
+`prompt_template` containing `{{item}}` is expanded over an `items` list
+into up to `MAX_AGENT_SWARM_MEMBERS` (128) ordinary subagents, run to
+completion, and returned as ONE aggregate. Ported from kimi-code; entirely
+client-side, no backend surface.
+
+- Engine (`kigi-tools/.../kigi/agent_swarm/`): `plan.rs` validates and
+  expands (every fault is reported BEFORE a member starts; expanded
+  prompts must be pairwise distinct), `schedule.rs` is the launch ramp as
+  pure arithmetic (5 immediate, then 1 per 700ms; capacity shrinks on a
+  provider rate limit and recovers after a quiet window;
+  `KIGI_AGENT_SWARM_MAX_CONCURRENCY` caps it and a malformed value is a
+  hard error), `run.rs` drives it against the EXISTING single-spawn
+  `SubagentBackend`, `tool.rs` is the tool.
+- `SwarmMemberOutcome::Backgrounded` is load-bearing: a member that
+  outlives the 600s foreground budget is detached by the coordinator and
+  KEEPS RUNNING. It is never reported `Failed` and never offered for
+  resume — relaunching its item would put a second agent on the same
+  files. Members share the caller's tree with NO isolation; the
+  distinct-prompt rule is the only thing keeping them apart.
+- `InFlightGuard` (run.rs) cancels live members when the runner's future
+  is dropped. Send-now cancels the turn WITHOUT cancelling subagents and
+  aborts the task; the dropped receivers read as "parent gone" and each
+  child re-attaches itself. There is no cooperative path to use instead —
+  `kigi_tool_runtime::Cancellation` is constructed nowhere.
+- Both retries (`MAX_RATE_LIMIT_RETRIES`) and wall clock
+  (`MAX_SWARM_RUNTIME`) are bounded: the swarm blocks the caller's turn,
+  so every wait needs a ceiling. Stragglers at the deadline are reported
+  as still-running WITH their ids.
+- `ToolKind::AgentSwarm` is its own variant because `TemplateRenderer`'s
+  `by_kind` map holds ONE tool name per kind — sharing `Task` would
+  silently redirect `${{ tools.by_kind.task }}` in other tools' prompts.
+  It gates exactly as `Task` does (`capability.rs`), and `builder.rs`
+  strips it wherever `task` is stripped. `MAX_SUBAGENT_DEPTH` stays 1:
+  upstream's unlimited nesting is a hazard, not a feature.
+- `/swarm | /swarm on|off | /swarm <task>` (`BuiltinGate::Swarm` = the
+  tool is in the toolset) arms a doctrine reminder via the existing
+  `push_system_reminder`. Two triggers only: `Manual` persists until
+  switched off, `Task` auto-expires at turn end via `SwarmTurnGuard` — a
+  DROP guard, because a user interrupt aborts the turn future and never
+  reaches post-loop code. `enter` is a total no-op while armed so the
+  `/swarm <task>` shorthand cannot downgrade a standing `/swarm on`.
+- The mode is deliberately NOT persisted (unlike `/goal` and `/graph`,
+  which strand real work if lost): it is a prompt hint whose recovery is
+  retyping one command. The injected doctrine IS durable, so an explicit
+  `/swarm off` retracts UNCONDITIONALLY — a resumed or compacted session
+  can read as "off" with the instruction still in context.
+
 ## Provider registry & API-key auth (post-0.1.3 expansion)
 
 - The platform registry is compiled-in spec rows in `kigi-models`

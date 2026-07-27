@@ -357,6 +357,11 @@ impl MvpAgent {
             // time, so advertise pre-session; the in-session path
             // re-checks the live toolset.
             graph: goal && self.cfg.borrow().resolve_graph().value,
+            // Tool-dependent, so fail closed like every other tool gate: the
+            // builder strips `agent_swarm` whenever subagents are unavailable,
+            // and advertising it then offers a menu entry that resolves to
+            // literal prompt text.
+            swarm: self.cfg.borrow().subagents_enabled,
             ..crate::session::slash_commands::CommandAvailability::default()
         }
     }

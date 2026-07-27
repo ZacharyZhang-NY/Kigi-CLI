@@ -31,6 +31,10 @@ For a single item, use the subagent (task) tool instead. To continue members fro
 swarm, pass `resume_agent_ids` mapping the agent_id values from that swarm's result to a \
 follow-up prompt.";
 
+/// Registry name, so gating code matches on one definition rather than a
+/// literal that can drift from the tool id.
+pub const AGENT_SWARM_TOOL_NAME: &str = "agent_swarm";
+
 #[derive(Debug, Default)]
 pub struct AgentSwarmTool;
 
@@ -66,14 +70,14 @@ impl kigi_tool_runtime::Tool for AgentSwarmTool {
     type Output = ToolOutput;
 
     fn id(&self) -> kigi_tool_protocol::ToolId {
-        kigi_tool_protocol::ToolId::new("agent_swarm").expect("valid tool id")
+        kigi_tool_protocol::ToolId::new(AGENT_SWARM_TOOL_NAME).expect("valid tool id")
     }
 
     fn description(
         &self,
         _ctx: &::kigi_tool_runtime::ListToolsContext,
     ) -> kigi_tool_types::ToolDescription {
-        kigi_tool_types::ToolDescription::new("agent_swarm", DESCRIPTION)
+        kigi_tool_types::ToolDescription::new(AGENT_SWARM_TOOL_NAME, DESCRIPTION)
     }
 
     fn capabilities(&self) -> kigi_tool_protocol::ToolCapabilities {

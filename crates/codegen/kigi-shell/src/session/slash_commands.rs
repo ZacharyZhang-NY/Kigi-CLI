@@ -45,6 +45,10 @@ pub(crate) enum BuiltinGate {
     /// available (graph nodes execute as goals, so `/graph` needs
     /// everything `/goal` needs).
     Graph,
+    /// The `agent_swarm` tool is in the session toolset. The mode is only a
+    /// standing instruction to use that tool, so without it the command would
+    /// advertise a doctrine the model has no way to follow.
+    Swarm,
 }
 
 /// All built-in slash commands. Order here = display order in autocomplete.
@@ -303,6 +307,26 @@ pub(super) const BUILTIN_COMMANDS: &[BuiltinCommand] = &[
             }
         },
     },
+    BuiltinCommand {
+        name: "swarm",
+        description: "Delegate aggressively: split the work across a fleet of subagents",
+        argument_hint: Some("[on | off | <task>]"),
+        aliases: &[],
+        gate: BuiltinGate::Swarm,
+        resolve: |args| {
+            let trimmed = args.trim();
+            match trimmed.to_lowercase().as_str() {
+                "on" => BuiltinAction::SwarmSet { enabled: true },
+                "off" => BuiltinAction::SwarmSet { enabled: false },
+                "" => BuiltinAction::SwarmToggle,
+                // Anything else is the task itself: arm the mode for exactly
+                // this turn and send the text as the prompt.
+                _ => BuiltinAction::SwarmTask {
+                    prompt: trimmed.to_string(),
+                },
+            }
+        },
+    },
 ];
 
 /// Split a trailing `--budget <tokens>` flag off a `/goal` objective.
@@ -437,6 +461,8 @@ pub(crate) struct CommandAvailability {
     /// `/graph` gate: the graph feature flag AND the goal harness (nodes
     /// execute as goals) are both available.
     pub graph: bool,
+    /// `/swarm` gate: the `agent_swarm` tool is in the active toolset.
+    pub swarm: bool,
 }
 
 impl CommandAvailability {
@@ -452,6 +478,7 @@ impl CommandAvailability {
             BuiltinGate::Plugins => self.plugins,
             BuiltinGate::Goal => self.goal,
             BuiltinGate::Graph => self.graph,
+            BuiltinGate::Swarm => self.swarm,
         }
     }
 
@@ -468,6 +495,7 @@ impl CommandAvailability {
             plugins: true,
             goal: true,
             graph: true,
+            swarm: true,
         }
     }
 }
@@ -705,6 +733,17 @@ pub(super) enum BuiltinAction {
         token_budget: Option<i64>,
     },
     GoalStatus,
+    /// `/swarm on|off` — arm or disarm the standing delegate-aggressively
+    /// instruction. Survives turns until switched off.
+    SwarmSet {
+        enabled: bool,
+    },
+    /// `/swarm` with no argument.
+    SwarmToggle,
+    /// `/swarm <task>` — arm for this turn only, then send `prompt`.
+    SwarmTask {
+        prompt: String,
+    },
     GoalPause,
     GoalResume,
     GoalClear,
@@ -757,6 +796,9 @@ impl BuiltinAction {
             | BuiltinAction::GraphPause
             | BuiltinAction::GraphResume { .. }
             | BuiltinAction::GraphClear => "graph",
+            BuiltinAction::SwarmSet { .. }
+            | BuiltinAction::SwarmToggle
+            | BuiltinAction::SwarmTask { .. } => "swarm",
         }
     }
 
@@ -795,6 +837,8 @@ impl BuiltinAction {
             | BuiltinAction::GraphShow
             | BuiltinAction::GraphPause
             | BuiltinAction::GraphClear => false,
+            BuiltinAction::SwarmToggle => false,
+            BuiltinAction::SwarmSet { .. } | BuiltinAction::SwarmTask { .. } => true,
         }
     }
 }
@@ -1584,6 +1628,7 @@ mod tests {
                 "feedback",
                 "goal",
                 "graph",
+                "swarm",
                 "loop",
                 "commit",
                 "deploy",
@@ -1692,6 +1737,51 @@ mod tests {
             .is_ok(),
             "expected pass-through (Ok), got an outcome",
         );
+    }
+
+    /// Without the `agent_swarm` tool the mode has nothing to steer toward, so
+    /// the command must fall through as ordinary prompt text rather than
+    /// arming a doctrine the model cannot act on.
+    #[test]
+    fn swarm_does_not_resolve_when_gate_off() {
+        let availability = CommandAvailability {
+            swarm: false,
+            ..CommandAvailability::all_enabled()
+        };
+        assert!(
+            resolve(
+                vec![text_block("/swarm on")],
+                &[],
+                availability,
+                SkillSlashRewrite::default(),
+            )
+            .is_ok(),
+            "expected pass-through (Ok), got an outcome",
+        );
+    }
+
+    #[test]
+    fn swarm_resolves_each_form_to_its_own_action() {
+        assert!(matches!(
+            resolve_builtin("swarm", "on").expect("/swarm on must resolve"),
+            BuiltinAction::SwarmSet { enabled: true }
+        ));
+        assert!(matches!(
+            resolve_builtin("swarm", "off").expect("/swarm off must resolve"),
+            BuiltinAction::SwarmSet { enabled: false }
+        ));
+        assert!(matches!(
+            resolve_builtin("swarm", "").expect("bare /swarm must resolve"),
+            BuiltinAction::SwarmToggle
+        ));
+        // Anything else is the task, NOT an unknown subcommand: mis-parsing it
+        // would silently drop the user's work instead of running it.
+        match resolve_builtin("swarm", "split the auth refactor")
+            .expect("/swarm <task> must resolve")
+        {
+            BuiltinAction::SwarmTask { prompt } => assert_eq!(prompt, "split the auth refactor"),
+            other => panic!("expected SwarmTask, got {}", other.command_name()),
+        }
     }
 
     #[test]

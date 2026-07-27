@@ -121,6 +121,8 @@ mod model_switch;
 mod prompt_queue;
 #[path = "acp_session_impl/slash_exec.rs"]
 mod slash_exec;
+#[path = "acp_session_impl/swarm.rs"]
+mod swarm;
 use super::PromptOrigin;
 use super::acp_types;
 use super::chat_persistence;
@@ -616,6 +618,9 @@ pub(crate) struct SessionActor {
     /// layered over the goal engine. Modeled after `goal_tracker` above;
     /// all graph state logic lives in `graph_tracker.rs`.
     pub(crate) graph_tracker: Arc<parking_lot::Mutex<crate::session::graph_tracker::GraphTracker>>,
+    /// Swarm mode: a standing instruction to fan work out, independent of the
+    /// goal/graph engines — it steers tool choice, it does not drive turns.
+    pub(crate) swarm_mode: std::cell::Cell<crate::session::swarm_mode::SwarmMode>,
     /// Max graph nodes running concurrently (1 = serial G0 behavior).
     /// Cached at actor construction from `resolve_graph_concurrency`.
     pub(crate) graph_concurrency: u32,
@@ -1033,6 +1038,9 @@ impl SessionActor {
             // Graph rides the goal harness: nodes execute as goals, so
             // `/graph` is only real when `/goal` is.
             graph: self.graph_enabled && goal,
+            swarm: tool_names
+                .iter()
+                .any(|n| n == kigi_tools::implementations::kigi::AGENT_SWARM_TOOL_NAME),
         }
     }
     /// Names of every tool registered with the session's tool bridge.

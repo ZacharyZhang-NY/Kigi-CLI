@@ -709,6 +709,36 @@ impl SessionActor {
             BuiltinAction::GoalSet { .. } => {
                 unreachable!("GoalSet is intercepted in handle_prompt")
             }
+            BuiltinAction::SwarmSet { enabled } => {
+                let msg = self.apply_swarm_mode(
+                    enabled.then_some(crate::session::swarm_mode::SwarmTrigger::Manual),
+                );
+                self.send_slash_command_output(&msg).await;
+                ok_end_turn(0, None)
+            }
+            BuiltinAction::SwarmToggle => {
+                let turning_on = !self.swarm_mode.get().is_active();
+                let msg = self.apply_swarm_mode(
+                    turning_on.then_some(crate::session::swarm_mode::SwarmTrigger::Manual),
+                );
+                self.send_slash_command_output(&msg).await;
+                ok_end_turn(0, None)
+            }
+            // `/swarm <task>` is handled before dispatch (it has to seed the
+            // turn with the task text); reaching here means the interception
+            // was bypassed, so report rather than silently dropping the task.
+            BuiltinAction::SwarmTask { prompt } => {
+                tracing::warn!(
+                    prompt_len = prompt.len(),
+                    "/swarm <task> reached the builtin executor; the turn seam did not intercept it"
+                );
+                self.send_slash_command_output(
+                    "Could not start a swarm turn for that task. Run `/swarm on` and send the \
+                     task as a normal message.",
+                )
+                .await;
+                ok_end_turn(0, None)
+            }
             BuiltinAction::GoalStatus => {
                 let current_tokens = self.chat_state_handle.get_total_tokens().await as i64;
                 let goal_tokens = self.goal_tokens_used(current_tokens);

@@ -217,6 +217,10 @@ impl SessionActor {
         persist_ack: Option<oneshot::Sender<()>>,
     ) -> PromptTurnResult {
         let handle_prompt_start = std::time::Instant::now();
+        // Armed before anything can arm swarm mode, so a `/swarm <task>` mode
+        // is disarmed on EVERY exit from this turn — including the abort a
+        // user interrupt performs, which never reaches post-loop code.
+        let _swarm_turn_guard = self.swarm_turn_guard();
         let prompt_length: usize = prompt_blocks
             .iter()
             .map(|b| match b {
@@ -301,6 +305,13 @@ impl SessionActor {
                     span.record("command_source", "builtin");
                 }
                 match action {
+                    // `/swarm <task>` arms the mode for this turn only and
+                    // sends the task as the prompt, so the doctrine is in the
+                    // conversation before the model reads the work.
+                    BuiltinAction::SwarmTask { prompt } => {
+                        self.apply_swarm_mode(Some(crate::session::swarm_mode::SwarmTrigger::Task));
+                        vec![text_block(prompt)]
+                    }
                     BuiltinAction::GoalSet {
                         objective,
                         token_budget,

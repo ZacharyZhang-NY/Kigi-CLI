@@ -2154,6 +2154,7 @@ mod inline_auto_compact_flow_tests {
         );
         chat_state_handle.record_token_usage(total_tokens);
         SessionActor {
+            swarm_mode: std::cell::Cell::new(Default::default()),
             session_info: SessionInfo {
                 id: acp::SessionId::new("test-auto-compact"),
                 cwd: cwd.as_str().to_string(),
