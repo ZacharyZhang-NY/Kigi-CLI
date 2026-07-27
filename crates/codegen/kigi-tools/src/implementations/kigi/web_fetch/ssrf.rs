@@ -16,7 +16,7 @@ use super::error::WebFetchError;
 /// Hosts allowed to reach loopback when local access is on.
 ///
 /// Names that merely RESOLVE to loopback are excluded: DNS rebinding.
-pub(crate) fn is_explicit_local_host(host: &str) -> bool {
+pub fn is_explicit_local_host(host: &str) -> bool {
     let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
     let host = host
         .strip_prefix('[')
@@ -32,7 +32,7 @@ pub(crate) fn is_explicit_local_host(host: &str) -> bool {
 }
 
 /// Whether an IP is not globally routable.
-pub(crate) fn is_non_public_ip(ip: &IpAddr) -> bool {
+pub fn is_non_public_ip(ip: &IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => is_non_public_ipv4(*v4),
         IpAddr::V6(v6) => is_non_public_ipv6(*v6),
@@ -126,7 +126,8 @@ fn is_loopback_addr(ip: &IpAddr) -> bool {
 /// Dual gate: loopback opens only for an explicit local host.
 ///
 /// Private and link-local never open through this flag.
-pub(crate) fn is_blocked_for_host(ip: &IpAddr, host: &str, allow_local: bool) -> bool {
+/// Shared with the hook runner: one policy, every outbound URL.
+pub fn is_blocked_for_host(ip: &IpAddr, host: &str, allow_local: bool) -> bool {
     if !is_non_public_ip(ip) {
         return false;
     }

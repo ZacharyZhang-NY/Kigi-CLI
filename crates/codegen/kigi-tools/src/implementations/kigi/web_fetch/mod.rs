@@ -14,7 +14,7 @@ pub mod domain;
 pub mod error;
 mod http;
 pub(crate) mod overflow;
-mod ssrf;
+pub mod ssrf;
 
 pub use client::WebFetchClient;
 pub use config::WebFetchParams;

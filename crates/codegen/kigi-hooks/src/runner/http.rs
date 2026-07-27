@@ -26,68 +26,14 @@ struct HttpHookOutput {
     reason: Option<String>,
 }
 
-/// CWE-918: Returns `true` if an IP address is in a private, link-local,
-/// or cloud metadata range that should be blocked to prevent SSRF attacks.
+/// CWE-918: whether this address is blocked for a hook.
 ///
-/// Loopback (`127.x` / `::1`) is allowed for local development servers.
-fn is_blocked_ip(ip: &IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(v4) => {
-            let octets = v4.octets();
-            if octets[0] == 127 {
-                // loopback — allowed for local dev
-                return false;
-            }
-            if octets[0] == 10 {
-                // RFC 1918: 10.0.0.0/8
-                return true;
-            }
-            if octets[0] == 172 && (16..=31).contains(&octets[1]) {
-                // RFC 1918: 172.16.0.0/12
-                return true;
-            }
-            if octets[0] == 192 && octets[1] == 168 {
-                // RFC 1918: 192.168.0.0/16
-                return true;
-            }
-            if octets[0] == 169 && octets[1] == 254 {
-                // RFC 3927: 169.254.0.0/16 (link-local, cloud metadata)
-                return true;
-            }
-            if octets[0] == 100 && (64..=127).contains(&octets[1]) {
-                // RFC 6598: 100.64.0.0/10 (CGNAT)
-                return true;
-            }
-            if v4.is_unspecified() {
-                // 0.0.0.0
-                return true;
-            }
-            false
-        }
-        IpAddr::V6(v6) => {
-            if v6.is_loopback() {
-                // ::1 — allowed for local dev
-                return false;
-            }
-            if v6.is_unspecified() {
-                // ::
-                return true;
-            }
-            if let Some(v4) = v6.to_ipv4_mapped() {
-                return is_blocked_ip(&IpAddr::V4(v4));
-            }
-            let segments = v6.segments();
-            if segments[0] & 0xffc0 == 0xfe80 {
-                // fe80::/10 — link-local
-                return true;
-            }
-            if segments[0] & 0xfe00 == 0xfc00 {
-                // fc00::/7 — unique local (ULA)
-                return true;
-            }
-            false
-        }
-    }
+/// Delegates to the `web_fetch` policy, so one implementation
+/// governs every outbound URL. `allow_local` is on: a loopback hook
+/// receiver is legitimate, but only when named literally, so
+/// rebinding through a public name stays blocked.
+fn is_blocked_ip(ip: &IpAddr, host: &str) -> bool {
+    kigi_tools::implementations::kigi::web_fetch::ssrf::is_blocked_for_host(ip, host, true)
 }
 
 /// CWE-918: Validate a hook URL to prevent SSRF.
@@ -112,7 +58,7 @@ async fn validate_hook_url(url: &str) -> Result<(), String> {
 
     // If host is a literal IP, check it directly.
     if let Ok(ip) = host.parse::<IpAddr>() {
-        if is_blocked_ip(&ip) {
+        if is_blocked_ip(&ip, host) {
             return Err(format!("URL resolves to blocked private/internal IP: {ip}"));
         }
         return Ok(());
@@ -131,7 +77,7 @@ async fn validate_hook_url(url: &str) -> Result<(), String> {
     }
 
     for addr in &addrs {
-        if is_blocked_ip(&addr.ip()) {
+        if is_blocked_ip(&addr.ip(), host) {
             return Err(format!(
                 "URL host {host} resolves to blocked private/internal IP: {}",
                 addr.ip()
@@ -571,76 +517,53 @@ mod tests {
         }
     }
 
-    // SSRF protection: is_blocked_ip tests
+    // SSRF protection: hook-side policy tests
+    //
+    // Range coverage lives with the shared predicate in `web_fetch::ssrf`;
+    // these pin what the runner adds on top.
 
+    /// Every range the shared policy knows is refused here.
     #[test]
-    fn ssrf_blocks_rfc1918_10x() {
-        assert!(is_blocked_ip(&"10.0.0.1".parse().unwrap()));
-        assert!(is_blocked_ip(&"10.255.255.255".parse().unwrap()));
+    fn ssrf_delegates_to_the_shared_policy() {
+        for ip in [
+            "10.0.0.1",
+            "172.16.0.1",
+            "192.168.0.1",
+            "169.254.169.254",
+            "100.64.0.1",
+            "0.0.0.0",
+            "::",
+            "fe80::1",
+            "fc00::1",
+            "::ffff:10.0.0.1",
+            // Ranges the old hand-rolled copy missed entirely.
+            "198.18.0.1",
+            "192.0.2.1",
+            "203.0.113.1",
+            "240.0.0.1",
+            "64:ff9b::a9fe:a9fe",
+        ] {
+            let ip: IpAddr = ip.parse().unwrap();
+            assert!(is_blocked_ip(&ip, &ip.to_string()), "{ip}");
+        }
+        for ip in ["1.1.1.1", "8.8.8.8", "172.32.0.1", "100.63.0.1"] {
+            let ip: IpAddr = ip.parse().unwrap();
+            assert!(!is_blocked_ip(&ip, &ip.to_string()), "{ip}");
+        }
     }
 
+    /// A local hook receiver stays reachable when named literally.
     #[test]
-    fn ssrf_blocks_rfc1918_172x() {
-        assert!(is_blocked_ip(&"172.16.0.1".parse().unwrap()));
-        assert!(is_blocked_ip(&"172.31.255.255".parse().unwrap()));
-        assert!(!is_blocked_ip(&"172.15.0.1".parse().unwrap()));
-        assert!(!is_blocked_ip(&"172.32.0.1".parse().unwrap()));
+    fn ssrf_allows_a_literal_loopback_hook_target() {
+        assert!(!is_blocked_ip(&"127.0.0.1".parse().unwrap(), "127.0.0.1"));
+        assert!(!is_blocked_ip(&"::1".parse().unwrap(), "localhost"));
     }
 
+    /// A public name resolving to loopback is rebinding.
     #[test]
-    fn ssrf_blocks_rfc1918_192168() {
-        assert!(is_blocked_ip(&"192.168.0.1".parse().unwrap()));
-        assert!(is_blocked_ip(&"192.168.255.255".parse().unwrap()));
-    }
-
-    #[test]
-    fn ssrf_blocks_link_local_metadata() {
-        assert!(is_blocked_ip(&"169.254.0.1".parse().unwrap()));
-        assert!(is_blocked_ip(&"169.254.169.254".parse().unwrap()));
-    }
-
-    #[test]
-    fn ssrf_blocks_cgnat() {
-        assert!(is_blocked_ip(&"100.64.0.1".parse().unwrap()));
-        assert!(is_blocked_ip(&"100.127.255.255".parse().unwrap()));
-        assert!(!is_blocked_ip(&"100.63.0.1".parse().unwrap()));
-    }
-
-    #[test]
-    fn ssrf_blocks_unspecified() {
-        assert!(is_blocked_ip(&"0.0.0.0".parse().unwrap()));
-        assert!(is_blocked_ip(&"::".parse().unwrap()));
-    }
-
-    #[test]
-    fn ssrf_allows_loopback() {
-        assert!(!is_blocked_ip(&"127.0.0.1".parse().unwrap()));
-        assert!(!is_blocked_ip(&"::1".parse().unwrap()));
-    }
-
-    #[test]
-    fn ssrf_allows_public_ips() {
-        assert!(!is_blocked_ip(&"1.1.1.1".parse().unwrap()));
-        assert!(!is_blocked_ip(&"8.8.8.8".parse().unwrap()));
-    }
-
-    #[test]
-    fn ssrf_blocks_ipv6_link_local() {
-        assert!(is_blocked_ip(&"fe80::1".parse().unwrap()));
-    }
-
-    #[test]
-    fn ssrf_blocks_ipv6_unique_local() {
-        assert!(is_blocked_ip(&"fc00::1".parse().unwrap()));
-        assert!(is_blocked_ip(&"fd00::1".parse().unwrap()));
-    }
-
-    #[test]
-    fn ssrf_blocks_ipv4_mapped_ipv6_private() {
-        assert!(is_blocked_ip(&"::ffff:10.0.0.1".parse::<IpAddr>().unwrap()));
-        assert!(is_blocked_ip(
-            &"::ffff:192.168.1.1".parse::<IpAddr>().unwrap()
-        ));
+    fn ssrf_blocks_a_public_name_that_resolves_to_loopback() {
+        let ip: IpAddr = "127.0.0.1".parse().unwrap();
+        assert!(is_blocked_ip(&ip, "evil.example.com"));
     }
 
     // SSRF protection: validate_hook_url tests
@@ -839,14 +762,15 @@ mod tests {
     /// the secret does NOT appear in the returned error message.
     #[tokio::test]
     async fn run_http_hook_scrubs_url_from_reqwest_error() {
-        // Use a TEST-NET-1 host (RFC 5737, "MUST NOT be used in
-        // public networks"). It is not RFC1918 so SSRF validation
-        // will let it through, but no real DNS or connection will
-        // succeed -- reqwest will surface a connection error whose
-        // default Display includes the URL.
+        // A closed loopback port: allowed as a literal local host,
+        // and refused at once. TEST-NET-1 is now blocked by policy.
+        let dead = {
+            let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            l.local_addr().unwrap()
+        };
         let secret = "ghp_VERY_REAL_SECRET_TOKEN_42";
         let mut extra_env = std::collections::HashMap::new();
-        extra_env.insert("RUNTIME_HOST".to_string(), "192.0.2.1".to_string());
+        extra_env.insert("RUNTIME_HOST".to_string(), dead.to_string());
         extra_env.insert("MY_TOKEN".to_string(), secret.to_string());
 
         let raw = "https://${RUNTIME_HOST}/check?token=${MY_TOKEN}";
@@ -928,10 +852,7 @@ mod tests {
         // debugging). The wire-DTO consumer must prefer raw_url for
         // display -- documented in the HttpInfo rustdoc.
         let info = info.expect("HttpInfo should be present for connection failures too");
-        assert_eq!(
-            info.url,
-            "https://192.0.2.1/check?token=ghp_VERY_REAL_SECRET_TOKEN_42"
-        );
+        assert_eq!(info.url, format!("https://{dead}/check?token={secret}"));
         assert_eq!(info.raw_url.as_deref(), Some(raw));
     }
 
