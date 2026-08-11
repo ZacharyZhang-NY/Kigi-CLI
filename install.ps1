@@ -1,17 +1,17 @@
 # Kigi installer (Windows x86_64) — PRD F8.
 #
-# Downloads the x86_64-pc-windows-msvc artifact from this repo's GitHub
-# Releases, verifies its SHA-256 against the release's SHA256SUMS manifest,
-# and installs the binary as %USERPROFILE%\.kigi\bin\kigi.exe.
+# Downloads the x86_64-pc-windows-msvc artifact from this repo's Releases,
+# verifies its SHA-256 against the release's SHA256SUMS manifest, and
+# installs the binary as %USERPROFILE%\.kigi\bin\kigi.exe.
 #
 # Usage:
-#   irm https://raw.githubusercontent.com/ZacharyZhang-NY/Kigi-CLI/main/install.ps1 | iex
+#   irm https://kigicli.dev/install.ps1 | iex
 #   powershell -ExecutionPolicy Bypass -File install.ps1 -Version v0.1.0
 #
 # Environment:
 #   KIGI_SHARE_DIR        install root (default: %USERPROFILE%\.kigi)
-#   KIGI_UPDATE_BASE_URL  GitHub-Releases-shaped API base (default:
-#                         https://api.github.com/repos/ZacharyZhang-NY/Kigi-CLI/releases)
+#   KIGI_UPDATE_BASE_URL  releases API base, GitHub/Gitea-shaped (default:
+#                         https://git.zacharyzhang.com/api/v1/repos/ZacharyZhang-NY/Kigi-CLI/releases)
 
 [CmdletBinding()]
 param(
@@ -27,7 +27,8 @@ function Fail([string]$Message) {
 }
 
 $Repo = "ZacharyZhang-NY/Kigi-CLI"
-$ApiBase = if ($env:KIGI_UPDATE_BASE_URL) { $env:KIGI_UPDATE_BASE_URL } else { "https://api.github.com/repos/$Repo/releases" }
+$Forge = "https://git.zacharyzhang.com"
+$ApiBase = if ($env:KIGI_UPDATE_BASE_URL) { $env:KIGI_UPDATE_BASE_URL } else { "$Forge/api/v1/repos/$Repo/releases" }
 $KigiHome = if ($env:KIGI_SHARE_DIR) { $env:KIGI_SHARE_DIR } else { Join-Path $env:USERPROFILE ".kigi" }
 $Triple = "x86_64-pc-windows-msvc"
 
@@ -49,7 +50,7 @@ if ($Version -and $Version -notmatch '^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$') {
 # TLS 1.2 for older PowerShell 5.1 defaults.
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-$Headers = @{ "User-Agent" = "kigi-install"; "Accept" = "application/vnd.github+json" }
+$Headers = @{ "User-Agent" = "kigi-install"; "Accept" = "application/json" }
 
 # ── Resolve the release ──────────────────────────────────────────────────────
 $ReleaseUrl = if ($Version) { "$ApiBase/tags/v$Version" } else { "$ApiBase/latest" }

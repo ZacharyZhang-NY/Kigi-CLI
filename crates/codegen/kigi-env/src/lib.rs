@@ -11,7 +11,8 @@ pub struct KigiEndpoints {
     pub coding_api_base_url: &'static str,
     /// OAuth device-flow host for Kimi Code subscription login.
     pub oauth_host: &'static str,
-    /// GitHub Releases API endpoint the self-updater polls.
+    /// Releases API endpoint the self-updater polls (GitHub-Releases-shaped;
+    /// Gitea's `/api/v1` serves the same wire format).
     pub update_base_url: &'static str,
     /// Human-facing page for subscription upgrade guidance.
     pub upgrade_page_url: &'static str,
@@ -20,7 +21,7 @@ pub struct KigiEndpoints {
 pub const PRODUCTION_ENDPOINTS: KigiEndpoints = KigiEndpoints {
     coding_api_base_url: "https://api.kimi.com/coding/v1",
     oauth_host: "https://auth.kimi.com",
-    update_base_url: "https://api.github.com/repos/ZacharyZhang-NY/Kigi-CLI/releases",
+    update_base_url: "https://git.zacharyzhang.com/api/v1/repos/ZacharyZhang-NY/Kigi-CLI/releases",
     upgrade_page_url: "https://www.kimi.com/code/",
 };
 
@@ -29,7 +30,7 @@ pub const CODE_BASE_URL_ENV: &str = "KIGI_CODE_BASE_URL";
 /// Env var overriding [`oauth_host`] (PRD F1).
 pub const OAUTH_HOST_ENV: &str = "KIGI_OAUTH_HOST";
 /// Env var overriding [`update_base_url`] (PRD F8). Points the self-updater
-/// at an alternate GitHub-Releases-shaped API (mirrors, tests).
+/// at an alternate GitHub/Gitea-Releases-shaped API (mirrors, tests).
 pub const UPDATE_BASE_URL_ENV: &str = "KIGI_UPDATE_BASE_URL";
 
 fn resolve(var: &str, compiled: &'static str) -> String {

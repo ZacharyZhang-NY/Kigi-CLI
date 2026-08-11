@@ -114,7 +114,7 @@ pub fn host_platform() -> String {
 }
 
 /// Host Rust target triple, matching `auto_update::target_triple()` and the
-/// release-asset naming in `.github/workflows/release.yml`.
+/// release-asset naming in `.gitea/workflows/release.yml`.
 pub fn host_triple() -> &'static str {
     if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
         "aarch64-apple-darwin"

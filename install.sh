@@ -2,26 +2,27 @@
 #
 # Kigi installer (macOS / Linux) — PRD F8.
 #
-# Downloads the matching platform artifact from this repo's GitHub Releases,
-# verifies its SHA-256 against the release's SHA256SUMS manifest, and installs
-# the binary as ~/.kigi/bin/kigi (the same managed layout the self-updater
+# Downloads the matching platform artifact from this repo's Releases, verifies
+# its SHA-256 against the release's SHA256SUMS manifest, and installs the
+# binary as ~/.kigi/bin/kigi (the same managed layout the self-updater
 # maintains: versioned binary in ~/.kigi/downloads/, atomic symlink in bin/).
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/ZacharyZhang-NY/Kigi-CLI/main/install.sh | sh
+#   curl -fsSL https://kigicli.dev/install.sh | sh
 #   sh install.sh --version v0.1.0        # pin a specific release
 #
 # Environment:
 #   KIGI_SHARE_DIR        install root (default: ~/.kigi)
-#   KIGI_UPDATE_BASE_URL  GitHub-Releases-shaped API base (default:
-#                         https://api.github.com/repos/ZacharyZhang-NY/Kigi-CLI/releases)
+#   KIGI_UPDATE_BASE_URL  releases API base, GitHub/Gitea-shaped (default:
+#                         https://git.zacharyzhang.com/api/v1/repos/ZacharyZhang-NY/Kigi-CLI/releases)
 #
 # Fails fast on any error; never leaves a partial binary as the active kigi.
 
 set -eu
 
 REPO="ZacharyZhang-NY/Kigi-CLI"
-API_BASE="${KIGI_UPDATE_BASE_URL:-https://api.github.com/repos/${REPO}/releases}"
+FORGE="https://git.zacharyzhang.com"
+API_BASE="${KIGI_UPDATE_BASE_URL:-${FORGE}/api/v1/repos/${REPO}/releases}"
 KIGI_HOME="${KIGI_SHARE_DIR:-$HOME/.kigi}"
 
 err() {

@@ -3,7 +3,7 @@
 //! Port of kimi-cli's `/feedback` slash command (kimi-cli
 //! `src/kimi_cli/ui/shell/slash.py`, `feedback()`): subscription (OAuth)
 //! sessions POST the user's feedback text to `{coding_api_base_url}/feedback`
-//! with a Bearer token; everyone else is pointed at the GitHub issue tracker.
+//! with a Bearer token; everyone else is pointed at the project issue tracker.
 //! The request body carries exactly the fields kimi-cli sends:
 //! `session_id`, `content`, `version`, `os`, `model`.
 
@@ -12,7 +12,8 @@ use std::sync::Arc;
 use serde::Serialize;
 
 /// Where non-subscription users (no OAuth session) submit feedback instead.
-pub const FEEDBACK_ISSUES_URL: &str = "https://github.com/ZacharyZhang-NY/Kigi-CLI/issues";
+pub const FEEDBACK_ISSUES_URL: &str =
+    "https://git.zacharyzhang.com/ZacharyZhang-NY/Kigi-CLI/issues";
 
 /// HTTP error from the feedback endpoint with a preserved status code, so
 /// callers can distinguish auth failures (401) without string matching.

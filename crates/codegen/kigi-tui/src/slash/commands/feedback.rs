@@ -1,12 +1,13 @@
-//! `/feedback` -- open the Kigi GitHub issues page.
+//! `/feedback` -- open the Kigi issues page.
 
 use crate::app::actions::Action;
 use crate::slash::command::{CommandExecCtx, CommandResult, SlashCommand};
 
 /// Where feedback goes: the project's own issue tracker. Kigi is a community
-/// build, so its feedback belongs on its GitHub repo — mirroring the official
+/// build, so its feedback belongs on its own repo — mirroring the official
 /// kimi-cli, whose `/feedback` opens its repo's issues page.
-pub const FEEDBACK_ISSUES_URL: &str = "https://github.com/ZacharyZhang-NY/Kigi-CLI/issues";
+pub const FEEDBACK_ISSUES_URL: &str =
+    "https://git.zacharyzhang.com/ZacharyZhang-NY/Kigi-CLI/issues";
 
 /// Open the Kigi issue tracker in the browser.
 pub struct FeedbackCommand;
@@ -17,7 +18,7 @@ impl SlashCommand for FeedbackCommand {
     }
 
     fn description(&self) -> &str {
-        "Report feedback on the Kigi GitHub issues page"
+        "Report feedback on the Kigi issues page"
     }
 
     fn usage(&self) -> &str {

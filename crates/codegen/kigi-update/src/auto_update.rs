@@ -29,17 +29,18 @@ const MSG_AUTO_UPDATE_BACKGROUND: &str = "Auto-update running in background.";
 const MSG_RUN_UPDATE_MANUAL: &str = "Run `kigi update` to get the latest version.";
 
 /// Manual-install one-liner for this platform's bootstrap installer
-/// (install.sh / install.ps1 hosted at the repo root, PRD F8).
+/// (install.sh / install.ps1, PRD F8). Served from kigicli.dev rather than the
+/// repo host directly, so the published command survives a forge migration.
 fn manual_install_cmd() -> &'static str {
     if cfg!(windows) {
-        "irm https://raw.githubusercontent.com/ZacharyZhang-NY/Kigi-CLI/main/install.ps1 | iex"
+        "irm https://kigicli.dev/install.ps1 | iex"
     } else {
-        "curl -fsSL https://raw.githubusercontent.com/ZacharyZhang-NY/Kigi-CLI/main/install.sh | sh"
+        "curl -fsSL https://kigicli.dev/install.sh | sh"
     }
 }
 
 /// Build a reinstall hint for a known installer type. Every installer is
-/// "internal" (GitHub Releases) today; the parameter survives so the hint
+/// "internal" (the repo's Releases) today; the parameter survives so the hint
 /// stays correct if another backend ever returns.
 fn reinstall_hint(_installer: &str) -> String {
     format!("Please reinstall via:\n  {}", manual_install_cmd())
@@ -694,7 +695,7 @@ pub(crate) fn detect_platform() -> Result<(&'static str, &'static str)> {
 
 /// Rust target triple for this build — the key that maps a platform to its
 /// release-asset name. Must stay in lockstep with the five targets built by
-/// `.github/workflows/release.yml` and the tables in install.sh/install.ps1.
+/// `.gitea/workflows/release.yml` and the tables in install.sh/install.ps1.
 pub(crate) fn target_triple() -> Result<&'static str> {
     let triple = if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
         "aarch64-apple-darwin"
@@ -2604,19 +2605,19 @@ mod tests {
     // reinstall_hint / manual_install_cmd
 
     #[test]
-    fn test_reinstall_hint_points_at_repo_install_script() {
+    fn test_reinstall_hint_points_at_published_install_script() {
         let hint = reinstall_hint("internal");
         if cfg!(windows) {
             assert!(hint.contains("irm"), "should suggest irm install: {hint}");
             assert!(
-                hint.contains("ZacharyZhang-NY/Kigi-CLI/main/install.ps1"),
-                "should reference the repo's install.ps1: {hint}"
+                hint.contains("kigicli.dev/install.ps1"),
+                "should reference the published install.ps1: {hint}"
             );
         } else {
             assert!(hint.contains("curl"), "should suggest curl install: {hint}");
             assert!(
-                hint.contains("ZacharyZhang-NY/Kigi-CLI/main/install.sh"),
-                "should reference the repo's install.sh: {hint}"
+                hint.contains("kigicli.dev/install.sh"),
+                "should reference the published install.sh: {hint}"
             );
         }
         // Unknown installers fall back to the same hint.
@@ -2652,7 +2653,7 @@ mod tests {
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     #[test]
     fn test_release_asset_name_matches_release_workflow_naming() {
-        // Must stay in lockstep with .github/workflows/release.yml, which
+        // Must stay in lockstep with .gitea/workflows/release.yml, which
         // publishes kigi-<version>-<target-triple>.{tar.gz|zip}.
         let triple = target_triple().unwrap();
         assert!(

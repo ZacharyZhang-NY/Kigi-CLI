@@ -36,12 +36,12 @@ key? OpenAI, Anthropic, Google, DeepSeek, Groq, Moonshot and
 
 ```sh
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/ZacharyZhang-NY/Kigi-CLI/main/install.sh | bash
+curl -fsSL https://kigicli.dev/install.sh | bash
 ```
 
 ```powershell
 # Windows PowerShell
-irm https://raw.githubusercontent.com/ZacharyZhang-NY/Kigi-CLI/main/install.ps1 | iex
+irm https://kigicli.dev/install.ps1 | iex
 ```
 
 ```sh
@@ -176,8 +176,8 @@ keyring entry, and its own `KIGI_*` env vars, and never touches what the
 official `kimi` CLI installed. `kigi import-kimi` copies your old config over
 once, read-only.
 
-**Zero telemetry.** It talks to the APIs you configured, GitHub Releases, and
-your own MCP servers. Nothing else.
+**Zero telemetry.** It talks to the APIs you configured, the Kigi release
+server, and your own MCP servers. Nothing else.
 
 ## License
 

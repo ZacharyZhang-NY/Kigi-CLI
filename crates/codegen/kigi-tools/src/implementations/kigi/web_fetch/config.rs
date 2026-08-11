@@ -10,7 +10,7 @@ use crate::register_resource;
 pub const MAX_URL_LENGTH: usize = 2_000;
 pub const MAX_REDIRECTS: usize = 10;
 pub const USER_AGENT_STRING: &str =
-    "Mozilla/5.0 (compatible; kigi-agent/1.0; +https://github.com/ZacharyZhang-NY/Kigi-CLI)";
+    "Mozilla/5.0 (compatible; kigi-agent/1.0; +https://kigicli.dev)";
 
 /// Runtime-configurable parameters for the `web_fetch` tool.
 ///

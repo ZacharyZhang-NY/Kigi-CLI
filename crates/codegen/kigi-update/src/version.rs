@@ -8,9 +8,9 @@ use kigi_shell::util::kigi_home::kigi_home;
 
 const TTL_SECONDS_BEFORE_AUTO_UPDATE: Duration = Duration::from_secs(60 * 30);
 
-/// Release channel: this repo's GitHub Releases (PRD F8). The API base is
-/// resolved through [`kigi_env::update_base_url`] — production default
-/// `https://api.github.com/repos/ZacharyZhang-NY/Kigi-CLI/releases`,
+/// Release channel: this repo's Releases (PRD F8). The API base is resolved
+/// through [`kigi_env::update_base_url`] — production default
+/// `https://git.zacharyzhang.com/api/v1/repos/ZacharyZhang-NY/Kigi-CLI/releases`,
 /// overridable via `KIGI_UPDATE_BASE_URL` for mirrors and tests.
 pub(crate) fn update_base_url() -> String {
     kigi_env::update_base_url()
@@ -167,16 +167,19 @@ async fn fetch_github_json<T: serde::de::DeserializeOwned>(url: &str) -> Result<
 
 /// Latest release for `channel` from a GitHub-Releases-shaped API at `base`.
 ///
-/// - `stable` / `enterprise`: `GET {base}/latest` — GitHub's "latest" already
-///   excludes drafts and pre-releases.
-/// - `alpha`: `GET {base}?per_page=30` (newest first) and take the semver-max
-///   non-draft entry. The list includes both pre-releases and stable
-///   releases, so this preserves the max(alpha, stable) channel semantics —
-///   alpha users are never stuck behind a newer stable.
+/// - `stable` / `enterprise`: `GET {base}/latest` — "latest" already excludes
+///   drafts and pre-releases on both GitHub and Gitea.
+/// - `alpha`: `GET {base}?per_page=30&limit=30` (newest first) and take the
+///   semver-max non-draft entry. The list includes both pre-releases and
+///   stable releases, so this preserves the max(alpha, stable) channel
+///   semantics — alpha users are never stuck behind a newer stable. GitHub
+///   reads the page size from `per_page` and Gitea from `limit`; each ignores
+///   the other's parameter, so sending both keeps one URL valid on either.
 pub async fn fetch_latest_release_from_base(channel: &str, base: &str) -> Result<Release> {
     let base = base.trim_end_matches('/');
     if channel == "alpha" {
-        let releases: Vec<Release> = fetch_github_json(&format!("{base}?per_page=30")).await?;
+        let releases: Vec<Release> =
+            fetch_github_json(&format!("{base}?per_page=30&limit=30")).await?;
         return releases
             .into_iter()
             .filter(|r| !r.draft)
