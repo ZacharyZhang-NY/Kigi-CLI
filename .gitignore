@@ -1,3 +1,10 @@
 /target
 **/*.rs.bk
 .DS_Store
+
+# frontend/ (kigicli.dev worker)
+.wrangler/
+node_modules/
+
+# Runner-setup prompt; holds a Gitea registration token once filled in.
+/prompt.txt
