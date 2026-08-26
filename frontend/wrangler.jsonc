@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "kigi-frontend",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-07-01",
+
+  // Assets are matched first and served directly; anything without a matching
+  // file falls through to the Worker (that is how /install.sh and /install.ps1
+  // reach it). The SPA fallback applies to the explicit env.ASSETS.fetch() call.
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+
+  "workers_dev": false,
+  "routes": [
+    { "pattern": "kigicli.dev", "custom_domain": true },
+    { "pattern": "www.kigicli.dev", "custom_domain": true }
+  ],
+
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  }
+}
