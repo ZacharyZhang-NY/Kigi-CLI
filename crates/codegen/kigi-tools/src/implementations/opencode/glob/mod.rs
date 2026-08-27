@@ -161,7 +161,8 @@ impl kigi_tool_runtime::Tool for GlobTool {
             .arg(&input.pattern)
             .arg(&search_dir)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            // stderr is never read; a pipe would block rg once warnings fill it.
+            .stderr(Stdio::null());
         crate::util::detach_command(&mut cmd);
         cmd.stdin(Stdio::null());
 
@@ -206,15 +207,12 @@ impl kigi_tool_runtime::Tool for GlobTool {
             }
         }
 
-        // Consume stderr to avoid deadlocks.
-        if let Some(stderr_pipe) = child.stderr.take() {
-            let _ = stderr_pipe
-                .take(1_000_000)
-                .read_to_end(&mut Vec::new())
-                .await;
+        if truncated_by_bytes {
+            // Bounded reap: a D-state rg must not stall this future forever.
+            crate::util::reap_killed_search_child(&mut child).await;
+        } else {
+            let _ = child.wait().await;
         }
-
-        let _ = child.wait().await;
 
         let stdout = String::from_utf8_lossy(&stdout_buf);
         let mut truncated = truncated_by_bytes;

@@ -358,18 +358,20 @@ impl kigi_tool_runtime::Tool for GrepTool {
                 tracing::Span::current().record("wall_ms", started.elapsed().as_millis() as u64);
                 tracing::warn!(timeout_secs = timeout.as_secs(), "grep timed out");
                 let _ = child.start_kill();
-                let _ = child.wait().await;
+                crate::util::reap_killed_search_child(&mut child).await;
                 return Ok(grep_timeout_output(timeout.as_secs()));
             }
         };
 
-        // When `stdout_truncated`, `rg` is already killed (inside the timeout
-        // block, before the stderr drain); this only reaps it.
-        let status = child.wait().await.ok();
+        // Truncated output means `rg` was already killed (inside the timeout
+        // block, before the stderr drain) — bounded reap, and the exit code is
+        // defined as 0. A natural EOF means rg is exiting, so the plain wait
+        // is prompt.
         let exit_code = if stdout_truncated {
+            crate::util::reap_killed_search_child(&mut child).await;
             0
         } else {
-            status.and_then(|s| s.code()).unwrap_or(-1)
+            child.wait().await.ok().and_then(|s| s.code()).unwrap_or(-1)
         };
 
         tracing::Span::current().record("early_kill", stdout_truncated);
@@ -529,7 +531,7 @@ fn grep_progress_stream(
                 tracing::warn!(timeout_secs = secs, "grep timed out");
             });
             let _ = child.start_kill();
-            let _ = child.wait().await;
+            crate::util::reap_killed_search_child(&mut child).await;
             // Finalize what was read (marked truncated) plus an explicit
             // notice, so the terminal card does not contradict what was already
             // streamed; with nothing streamed, the timeout-only card suffices.
@@ -578,11 +580,14 @@ fn grep_progress_stream(
             .await;
         }
 
-        let status = child.wait().await.ok();
+        // Truncated output means `rg` was already killed above — bounded reap,
+        // and the exit code is defined as 0. A natural EOF means rg is
+        // exiting, so the plain wait is prompt.
         let exit_code = if stdout_truncated {
+            crate::util::reap_killed_search_child(&mut child).await;
             0
         } else {
-            status.and_then(|s| s.code()).unwrap_or(-1)
+            child.wait().await.ok().and_then(|s| s.code()).unwrap_or(-1)
         };
 
         let wall_ms = stream_started.elapsed().as_millis() as u64;

@@ -29,6 +29,7 @@ pub use path_suggestions::format_not_found_error;
 pub use remap::{remap_json_keys, remap_schema_properties, reverse_map};
 pub use spawn::{
     ProcessGroup, ProcessScope, detach_command, global_process_scope, new_process_group,
+    reap_killed_search_child,
 };
 pub use truncate::{
     DEFAULT_SOFT_WRAP_WIDTH, ceil_char_boundary, estimate_tokens, floor_char_boundary,
