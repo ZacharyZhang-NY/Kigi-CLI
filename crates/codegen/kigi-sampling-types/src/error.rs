@@ -239,9 +239,7 @@ impl SamplingError {
             SamplingError::InvalidConfiguration(_) => false,
             SamplingError::Http(err) => is_retryable_reqwest(err),
             SamplingError::Serialization(_) => false,
-            SamplingError::Api { status, .. } => {
-                matches!(status.as_u16(), 429 | 500 | 502 | 503 | 504 | 520)
-            }
+            SamplingError::Api { status, .. } => is_retryable_api_status(status.as_u16()),
             SamplingError::EventStreamError(_) => true,
             SamplingError::StreamError { .. } => true,
             SamplingError::IdleTimeout { .. } => false,
@@ -342,6 +340,15 @@ pub fn try_parse_stream_error(data: &str) -> Option<SamplingError> {
     })
 }
 
+/// 429 and any 5xx except Cloudflare 525/526 (origin TLS handshake /
+/// invalid certificate — a broken origin certificate never clears on its
+/// own). The 5xx sweep covers the Cloudflare edge pages (520-524 origin
+/// unreachable/timed out, 530 edge 1xxx) and upstream overload (529),
+/// which an outage serves in place of the API's own statuses.
+pub fn is_retryable_api_status(status: u16) -> bool {
+    status == 429 || ((500..=599).contains(&status) && !matches!(status, 525 | 526))
+}
+
 /// True when an error message indicates a context-window overflow. Backends report
 /// this inconsistently with no stable error code, so we match the message text; it's
 /// deterministic (re-sending the same payload always fails), so callers must not retry.
@@ -378,6 +385,25 @@ pub fn is_retryable_reqwest(err: &reqwest::Error) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retryable_api_status_covers_edge_5xx_and_excludes_broken_tls() {
+        for status in [429u16, 500, 502, 503, 504, 520, 521, 522, 523, 524, 529, 530, 599] {
+            assert!(is_retryable_api_status(status), "should retry {status}");
+        }
+        // Cloudflare 525/526: origin TLS handshake / invalid certificate —
+        // a broken origin certificate never clears on its own.
+        for status in [525u16, 526, 400, 401, 403, 404, 408, 422, 200] {
+            assert!(!is_retryable_api_status(status), "must not retry {status}");
+        }
+        let api = SamplingError::Api {
+            status: StatusCode::from_u16(522).unwrap(),
+            message: "cloudflare: connection timed out".into(),
+            model_metadata: None,
+            retry_after_secs: None,
+        };
+        assert!(api.is_retryable(), "522 edge page must be retryable");
+    }
 
     #[test]
     fn context_length_error_matches_backend_variants() {

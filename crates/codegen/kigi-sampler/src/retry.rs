@@ -5,8 +5,11 @@
 //!
 //! # Retry behavior summary
 //!
-//! **Retried** (up to [`DEFAULT_MAX_RETRIES`] = 15, ~6 min with 30s backoff cap):
-//! - 500, 502, 503, 504, 520 (server errors)
+//! **Retried** (up to [`DEFAULT_MAX_RETRIES`] = 15, ~6 min with the
+//! [`MAX_RETRY_BACKOFF`] cap — a server `Retry-After` is clamped to it too):
+//! - Any 5xx except Cloudflare 525/526 — covers the Cloudflare edge pages
+//!   (520-524 origin unreachable/timed out, 530 edge 1xxx) and upstream
+//!   overload (529); see `is_retryable_api_status`
 //! - Connection errors (timeout, refused, reset)
 //! - `EventStreamError` / `StreamError` (mid-stream failures)
 //! - `EmptyResponse` (model returned no content/tool calls)
@@ -77,16 +80,35 @@ pub fn doom_loop_backoff(retry_count: u32) -> Duration {
     Duration::from_millis(hasher.finish() % 251)
 }
 
-/// Exponential backoff (2s, 4s, 8s, ..., capped 30s) with +/-20% jitter
-/// to prevent thundering-herd retry storms.
+/// Longest single wait on the generic retry path — the exponential-backoff
+/// ceiling, and the clamp for a server `Retry-After`. Cloudflare answers 52x
+/// with `Retry-After: 60`-`120`; honoring that verbatim across the retry
+/// budget would stall a turn ~28 min instead of the ~6 min budget. The 429
+/// path deliberately waits the full `Retry-After` instead, bounded by
+/// [`RATE_LIMIT_RETRY_THRESHOLD`] attempts (and by the parse-level 120s cap
+/// on the header).
+pub const MAX_RETRY_BACKOFF: Duration = Duration::from_secs(30);
+
+/// Exponential backoff (2s, 4s, 8s, ..., capped at [`MAX_RETRY_BACKOFF`])
+/// with +/-20% jitter to prevent thundering-herd retry storms.
 pub fn retry_backoff_with_jitter(retry_count: u32) -> Duration {
+    let shift = retry_count.saturating_sub(1);
+    let base_ms = 2000u64
+        .checked_shl(shift)
+        .unwrap_or(u64::MAX)
+        .min(MAX_RETRY_BACKOFF.as_millis() as u64);
+    jittered(Duration::from_millis(base_ms))
+}
+
+/// +/-20% jitter around `base`, de-syncing clients that failed at the
+/// same instant (e.g. a mass Cloudflare 52x event during an origin outage).
+fn jittered(base: Duration) -> Duration {
     use std::hash::{Hash, Hasher};
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static JITTER_SEQ: AtomicU64 = AtomicU64::new(0);
 
-    let shift = retry_count.saturating_sub(1);
-    let base_ms = 2000u64.checked_shl(shift).unwrap_or(u64::MAX).min(30_000);
+    let base_ms = base.as_millis() as u64;
     let jitter_range = base_ms / 5;
     let mut hasher = std::hash::DefaultHasher::new();
     JITTER_SEQ.fetch_add(1, Ordering::Relaxed).hash(&mut hasher);
@@ -210,9 +232,11 @@ pub fn classify_error(
         if next_attempt >= max_retries {
             return RetryDecision::Fatal(clone_error(err));
         }
+        // A server `Retry-After` is clamped: Cloudflare 52x pages ask for
+        // 60-120s, which across the budget would stall a turn ~28 min.
         let backoff = err
             .retry_after()
-            .map(Duration::from_secs)
+            .map(|secs| jittered(Duration::from_secs(secs).min(MAX_RETRY_BACKOFF)))
             .unwrap_or_else(|| retry_backoff_with_jitter(next_attempt));
         if next_attempt == 1 {
             return RetryDecision::RetryWithClientRebuild { backoff };
@@ -592,6 +616,22 @@ mod tests {
                 assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
             }
             other => panic!("expected Fatal at threshold, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn classify_5xx_retry_after_is_clamped_to_backoff_cap() {
+        // Cloudflare answers 52x with Retry-After: 60-120; honoring it
+        // verbatim across the retry budget would stall a turn ~28 min.
+        let err = api_err_with_retry_after(StatusCode::from_u16(522).unwrap(), 120);
+        match classify_error(&err, 1, 15, RATE_LIMIT_RETRY_THRESHOLD) {
+            RetryDecision::Retry { backoff } => {
+                assert!(
+                    backoff <= MAX_RETRY_BACKOFF.mul_f64(1.2),
+                    "52x Retry-After must clamp to ~MAX_RETRY_BACKOFF, got {backoff:?}"
+                );
+            }
+            other => panic!("expected Retry, got {other:?}"),
         }
     }
 
