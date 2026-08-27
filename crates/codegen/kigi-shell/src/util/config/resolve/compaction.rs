@@ -187,7 +187,10 @@ mod compaction_tool_choice_tests {
             resolve(Some("bogus"), None, Some("none")),
             CompactionToolChoice::None
         );
-        assert_eq!(resolve(Some("NONE "), None, None), CompactionToolChoice::None);
+        assert_eq!(
+            resolve(Some("NONE "), None, None),
+            CompactionToolChoice::None
+        );
     }
 }
 

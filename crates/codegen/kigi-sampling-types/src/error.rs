@@ -388,7 +388,9 @@ mod tests {
 
     #[test]
     fn retryable_api_status_covers_edge_5xx_and_excludes_broken_tls() {
-        for status in [429u16, 500, 502, 503, 504, 520, 521, 522, 523, 524, 529, 530, 599] {
+        for status in [
+            429u16, 500, 502, 503, 504, 520, 521, 522, 523, 524, 529, 530, 599,
+        ] {
             assert!(is_retryable_api_status(status), "should retry {status}");
         }
         // Cloudflare 525/526: origin TLS handshake / invalid certificate —

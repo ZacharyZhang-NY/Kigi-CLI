@@ -1959,46 +1959,47 @@ fn spawn_prefetch_thread(env: PrefetchEnv) -> Option<EarlyPrefetchHandle> {
     let spawned = std::thread::Builder::new()
         .name("early-prefetch".into())
         .spawn(move || {
-        let mut timer = crate::instrumentation_timer!("startup.early_prefetch");
-        let proxy_endpoint = env.endpoints.proxy_url();
-        timer.with_field("endpoint", proxy_endpoint.as_str());
-        // Resolve each stored subscription-OAuth session's bearer (refreshed
-        // on expiry) so those platforms are part of the STARTUP fetch plan —
-        // otherwise a claude-pro-max-only user boots onto the bundled Kimi
-        // table until some later async refresh happens to run, and the cache
-        // origin (which encodes enabled platforms) never matches the
-        // async-path's claude-inclusive origin.
-        let oauth_tokens = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map(|rt| {
-                rt.block_on(crate::agent::models_fetch::resolve_generic_oauth_tokens(
-                    &crate::auth::oauth_registry::pool_home(),
-                ))
-            })
-            .unwrap_or_default();
-        let models = prefetch_models_blocking(
-            &env.endpoints,
-            env.auth.as_ref(),
-            &oauth_tokens,
-            env.model_fetch_auth,
-            &env.platform_keys,
-        );
-        if (env.endpoints.deployment_key.is_some() || crate::managed_config::has_active_team_auth())
-            && crate::config::is_managed_config_stale_for(
-                &crate::managed_config::current_serving_identity(),
-            )
-            && crate::managed_config::is_fetch_enabled()
-            && let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+            let mut timer = crate::instrumentation_timer!("startup.early_prefetch");
+            let proxy_endpoint = env.endpoints.proxy_url();
+            timer.with_field("endpoint", proxy_endpoint.as_str());
+            // Resolve each stored subscription-OAuth session's bearer (refreshed
+            // on expiry) so those platforms are part of the STARTUP fetch plan —
+            // otherwise a claude-pro-max-only user boots onto the bundled Kimi
+            // table until some later async refresh happens to run, and the cache
+            // origin (which encodes enabled platforms) never matches the
+            // async-path's claude-inclusive origin.
+            let oauth_tokens = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-        {
-            crate::managed_config::clear_orphan();
-            let _ = rt.block_on(crate::managed_config::sync());
-        }
+                .map(|rt| {
+                    rt.block_on(crate::agent::models_fetch::resolve_generic_oauth_tokens(
+                        &crate::auth::oauth_registry::pool_home(),
+                    ))
+                })
+                .unwrap_or_default();
+            let models = prefetch_models_blocking(
+                &env.endpoints,
+                env.auth.as_ref(),
+                &oauth_tokens,
+                env.model_fetch_auth,
+                &env.platform_keys,
+            );
+            if (env.endpoints.deployment_key.is_some()
+                || crate::managed_config::has_active_team_auth())
+                && crate::config::is_managed_config_stale_for(
+                    &crate::managed_config::current_serving_identity(),
+                )
+                && crate::managed_config::is_fetch_enabled()
+                && let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+            {
+                crate::managed_config::clear_orphan();
+                let _ = rt.block_on(crate::managed_config::sync());
+            }
 
-        EarlyPrefetchResult { models }
-    });
+            EarlyPrefetchResult { models }
+        });
     match spawned {
         Ok(handle) => Some(handle),
         Err(e) => {

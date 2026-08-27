@@ -14,9 +14,19 @@
 //! cargo run -p kigi-sandbox --example sandbox_smoke_test -- read-only
 //! ```
 
+// Kernel enforcement is unix-only (Seatbelt / Landlock); Windows builds a
+// stub so `--all-targets` stays green everywhere.
+#[cfg(unix)]
 use kigi_sandbox::{ProfileName, SandboxManager};
+#[cfg(unix)]
 use std::path::Path;
 
+#[cfg(not(unix))]
+fn main() {
+    eprintln!("sandbox_smoke_test exercises kernel enforcement and only runs on Unix.");
+}
+
+#[cfg(unix)]
 fn main() {
     let profile_name = std::env::args()
         .nth(1)
@@ -121,6 +131,7 @@ fn main() {
     println!("\n✅ Smoke test complete");
 }
 
+#[cfg(unix)]
 fn test_read(label: &str, path: &Path) {
     if path.is_file() {
         match std::fs::read(path) {
@@ -150,6 +161,7 @@ fn test_read(label: &str, path: &Path) {
     }
 }
 
+#[cfg(unix)]
 fn test_write(label: &str, path: &Path) {
     match std::fs::write(path, b"sandbox-test") {
         Ok(()) => {

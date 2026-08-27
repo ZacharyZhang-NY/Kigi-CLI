@@ -900,9 +900,8 @@ mod write_fallback_tests {
     fn atomic_write_reclaims_tmp_when_store_write_fails() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("auth.json");
-        let err =
-            write_auth_json_atomic_with(&path, &sample_store(), fake_partial_write_then_fail)
-                .unwrap_err();
+        let err = write_auth_json_atomic_with(&path, &sample_store(), fake_partial_write_then_fail)
+            .unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::StorageFull);
 
         let orphans: Vec<_> = std::fs::read_dir(dir.path())
