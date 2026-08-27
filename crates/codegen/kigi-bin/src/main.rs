@@ -1221,10 +1221,26 @@ fn main() {
             "Found crashed sessions from a previous run"
         );
     }
-    let runtime = tokio::runtime::Builder::new_multi_thread()
+    // Capped workers: tokio's per-core default pins 100+ thread slots on
+    // many-core shared hosts and later spawns die with EAGAIN.
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(kigi_tty_utils::runtime::capped_worker_threads().get())
         .enable_all()
         .build()
-        .unwrap_or_else(|e| panic!("failed to start tokio runtime: {e}"));
+    {
+        Ok(runtime) => runtime,
+        Err(e) => {
+            // A host out of threads (RLIMIT_NPROC / pids.max) is an
+            // environment problem, not a bug — report it, don't panic.
+            kigi_tty_utils::restore_native_stderr();
+            eprintln!("Error: failed to start the async runtime: {e}");
+            eprintln!(
+                "The host may be out of threads (RLIMIT_NPROC or the cgroup pids ceiling); \
+                 close other processes or raise the limit, then retry."
+            );
+            std::process::exit(1);
+        }
+    };
     let result = run_and_shutdown(runtime, async_main(), RUNTIME_SHUTDOWN_GRACE);
     kigi_log::debug_log::flush();
     if let Err(e) = result {

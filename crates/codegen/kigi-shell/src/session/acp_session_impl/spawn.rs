@@ -1639,10 +1639,23 @@ pub(crate) async fn spawn_session_on_thread(
                 };
                 (initial_last_compaction, initial_prompt_texts)
             };
-            let rt = tokio::runtime::Builder::new_current_thread()
+            // Runtime construction acquires fds (epoll/kqueue, waker) and
+            // fails with EMFILE/EAGAIN under resource pressure — report
+            // through the init channel instead of panicking the thread.
+            let rt = match tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .expect("session runtime");
+            {
+                Ok(rt) => rt,
+                Err(e) => {
+                    tracing::error!(
+                        error = %e,
+                        "failed to build session runtime (resource exhaustion?)"
+                    );
+                    let _ = init_tx.send(Err(kigi_agent::AgentBuildError::RuntimeBuild(e)));
+                    return;
+                }
+            };
             let local = tokio::task::LocalSet::new();
             local.block_on(&rt, async move {
                 let _trace_span = parent_traceparent.as_ref().map(|tp| {
@@ -1763,8 +1776,19 @@ pub(crate) async fn spawn_session_on_thread(
                 }));
                 let _ = session_done_rx.await;
             });
-        })
-        .expect("spawn session thread");
+        });
+    let join_handle = match join_handle {
+        Ok(handle) => handle,
+        Err(e) => {
+            tracing::error!(
+                error = %e,
+                "failed to spawn session thread (thread/PID limit or memory pressure?)"
+            );
+            return Err(
+                acp::Error::internal_error().data(format!("failed to spawn session thread: {e}"))
+            );
+        }
+    };
     let init = init_rx
         .await
         .map_err(|_| {

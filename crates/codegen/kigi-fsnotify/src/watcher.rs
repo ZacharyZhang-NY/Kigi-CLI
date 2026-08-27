@@ -971,7 +971,7 @@ pub(crate) fn start_with_timeout(
 
     let progress_for_thread = progress.clone();
 
-    let thread = std::thread::spawn(move || {
+    let watcher_loop = move || {
         let update_stage = |stage: &'static str| {
             if let Ok(mut p) = progress_for_thread.lock() {
                 p.set_stage(stage);
@@ -1351,7 +1351,13 @@ pub(crate) fn start_with_timeout(
                 let _ = ready_tx.send(Err(Box::new(e)));
             }
         }
-    });
+    };
+    // Recoverable spawn: a host out of threads must surface as an error the
+    // caller can degrade on, not a `std::thread::spawn` panic.
+    let thread = std::thread::Builder::new()
+        .name("fsnotify-watcher".into())
+        .spawn(watcher_loop)
+        .map_err(|e| crate::FsNotifyError::WatcherStart(Box::new(e)))?;
 
     // Wait for watcher to be ready (with timeout)
     if let Ok(mut p) = progress.lock() {

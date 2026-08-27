@@ -726,10 +726,18 @@ pub struct MvpAgent {
 /// sampling client is discarded, but the TLS root certificates it loads
 /// are cached at the process level by `rustls-native-certs`.
 pub fn warm_async_http_client() {
-    std::thread::spawn(|| {
-        let _timer = crate::instrumentation_timer!("startup.async_http_warmup");
-        let _ = crate::http::shared_client();
-    });
+    // Recoverable spawn: the warmup is an optimization that runs before the
+    // runtime builds — an out-of-threads host must reach the runtime's own
+    // diagnostic, not panic here.
+    let spawned = std::thread::Builder::new()
+        .name("http-warmup".into())
+        .spawn(|| {
+            let _timer = crate::instrumentation_timer!("startup.async_http_warmup");
+            let _ = crate::http::shared_client();
+        });
+    if let Err(e) = spawned {
+        tracing::warn!(error = %e, "async HTTP warmup thread spawn failed; first request warms instead");
+    }
 }
 pub(crate) fn resolve_required_agent_type(
     model_agent_type: Option<&str>,

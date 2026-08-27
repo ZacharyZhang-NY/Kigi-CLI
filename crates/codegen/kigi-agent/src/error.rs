@@ -17,6 +17,11 @@ pub enum AgentBuildError {
     #[error("IO error during agent construction: {0}")]
     IoError(#[from] std::io::Error),
 
+    /// The per-session runtime could not be built — fd or thread
+    /// exhaustion (EMFILE/EAGAIN), not a definition problem.
+    #[error("failed to build the session runtime: {0}")]
+    RuntimeBuild(std::io::Error),
+
     /// Carries template line numbers and surrounding context.
     #[error("template rendering error: {0}")]
     MiniJinjaError(#[from] minijinja::Error),

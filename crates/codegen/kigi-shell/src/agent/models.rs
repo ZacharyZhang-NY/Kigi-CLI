@@ -1938,7 +1938,7 @@ fn resolve_prefetch_env(kimi_code_config: Option<KimiCodeConfig>) -> Option<Pref
 /// credentials from disk.
 pub fn start_early_prefetch_with_auth(auth: Option<KimiAuth>) -> Option<EarlyPrefetchHandle> {
     let env = resolve_prefetch_env_with_auth(auth)?;
-    Some(spawn_prefetch_thread(env))
+    spawn_prefetch_thread(env)
 }
 
 /// Start the model-catalog prefetch on a background thread.
@@ -1949,11 +1949,16 @@ pub fn start_early_prefetch(
     kimi_code_config: Option<KimiCodeConfig>,
 ) -> Option<EarlyPrefetchHandle> {
     let env = resolve_prefetch_env(kimi_code_config)?;
-    Some(spawn_prefetch_thread(env))
+    spawn_prefetch_thread(env)
 }
 
-fn spawn_prefetch_thread(env: PrefetchEnv) -> EarlyPrefetchHandle {
-    std::thread::spawn(move || {
+/// `None` when the OS refuses a thread: the prefetch is an optimization and
+/// runs before the runtime builds, so a spawn panic here would preempt the
+/// runtime's own out-of-threads diagnostic.
+fn spawn_prefetch_thread(env: PrefetchEnv) -> Option<EarlyPrefetchHandle> {
+    let spawned = std::thread::Builder::new()
+        .name("early-prefetch".into())
+        .spawn(move || {
         let mut timer = crate::instrumentation_timer!("startup.early_prefetch");
         let proxy_endpoint = env.endpoints.proxy_url();
         timer.with_field("endpoint", proxy_endpoint.as_str());
@@ -1993,7 +1998,14 @@ fn spawn_prefetch_thread(env: PrefetchEnv) -> EarlyPrefetchHandle {
         }
 
         EarlyPrefetchResult { models }
-    })
+    });
+    match spawned {
+        Ok(handle) => Some(handle),
+        Err(e) => {
+            tracing::error!(error = %e, "early prefetch thread spawn failed; skipping prefetch");
+            None
+        }
+    }
 }
 
 /// Map a model id (catalog key or routing slug) to its catalog key.

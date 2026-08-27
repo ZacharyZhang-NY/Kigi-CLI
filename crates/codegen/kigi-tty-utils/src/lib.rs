@@ -40,6 +40,7 @@ use std::collections::HashMap;
 use std::io;
 
 mod process_scope;
+pub mod runtime;
 pub use process_scope::{ProcessScope, global_process_scope};
 
 // TTY detach — pre_exec building block
