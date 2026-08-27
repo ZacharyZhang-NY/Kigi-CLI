@@ -2152,6 +2152,59 @@ fn cancel_does_not_forward_to_bridge_in_local_mode() {
         );
     });
 }
+/// Regression (post-cancel slot hang): a cancel racing the prompt it targets
+/// must land on the actor mailbox AFTER that prompt, or it hits an idle
+/// actor as a no-op and the prompt then starts a turn nothing cancels.
+/// The dispatch lock (`dispatch_locks`) provides that ordering.
+#[test]
+fn cancel_never_overtakes_in_flight_prompt_intake() {
+    use crate::session::SessionCommand;
+    use acp::Agent as _;
+    run_local_for_bridge_test(|| async {
+        let agent = build_minimal_agent_for_tests();
+        let sid = acp::SessionId::new("sess-cancel-intake-race");
+        let (handle, _tx, mut cmd_rx) = make_live_session_handle(&sid, None);
+        agent.sessions.borrow_mut().insert(sid.clone(), handle);
+        let order: std::rc::Rc<std::cell::RefCell<Vec<&'static str>>> =
+            std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let (intake_parked_tx, intake_parked_rx) = tokio::sync::oneshot::channel::<()>();
+        let driver_order = order.clone();
+        tokio::task::spawn_local(async move {
+            let mut intake_parked_tx = Some(intake_parked_tx);
+            while let Some(cmd) = cmd_rx.recv().await {
+                match cmd {
+                    SessionCommand::GetCurrentPromptMode { .. } => {
+                        if let Some(tx) = intake_parked_tx.take() {
+                            let _ = tx.send(());
+                            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                        }
+                    }
+                    SessionCommand::Prompt { .. } => driver_order.borrow_mut().push("prompt"),
+                    SessionCommand::Cancel { .. } => driver_order.borrow_mut().push("cancel"),
+                    _ => {}
+                }
+            }
+        });
+        let prompt_fut = agent.prompt(acp::PromptRequest::new(
+            sid.clone(),
+            vec![acp::ContentBlock::from("hi")],
+        ));
+        let cancel_fut = async {
+            intake_parked_rx
+                .await
+                .expect("prompt intake reaches the fake actor");
+            let _ = agent
+                .cancel(acp::CancelNotification::new(sid.clone()))
+                .await;
+        };
+        let _ = futures::join!(prompt_fut, cancel_fut);
+        assert_eq!(
+            order.borrow().as_slice(),
+            ["prompt", "cancel"],
+            "cancel must land on the actor mailbox after the prompt it targets"
+        );
+    });
+}
 use crate::session::SessionCommand as TestSessionCommand;
 /// Build a session handle wired to a *live* command channel. Returns the
 /// handle (move into `sessions`) plus a probe `cmd_tx`/`cmd_rx` so a test

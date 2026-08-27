@@ -38,19 +38,16 @@ impl MvpAgent {
     /// drops the `session_live_state` entry so that map stays bounded.
     pub(crate) fn remove_session(&self, id: &acp::SessionId) {
         self.sessions.borrow_mut().remove(id);
-        self.prompt_intake_locks.borrow_mut().remove(id);
+        self.dispatch_locks.borrow_mut().remove(id);
         self.session_threads.borrow_mut().remove(id);
         self.session_index_claims.borrow_mut().remove(id);
         self.require_gateway_sessions.borrow_mut().remove(id);
         self.session_live_state.borrow_mut().remove(id);
     }
-    /// Get-or-create the per-session prompt-intake lock (see
-    /// [`Self::prompt_intake_locks`]).
-    pub(super) fn prompt_intake_lock(
-        &self,
-        id: &acp::SessionId,
-    ) -> std::rc::Rc<tokio::sync::Mutex<()>> {
-        self.prompt_intake_locks
+    /// Get-or-create the per-session dispatch lock (see
+    /// [`Self::dispatch_locks`]). Cheap clone of the shared `Rc`.
+    pub(super) fn dispatch_lock(&self, id: &acp::SessionId) -> std::rc::Rc<tokio::sync::Mutex<()>> {
+        self.dispatch_locks
             .borrow_mut()
             .entry(id.clone())
             .or_default()

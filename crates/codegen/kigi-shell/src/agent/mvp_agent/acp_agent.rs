@@ -1725,8 +1725,8 @@ impl acp::Agent for MvpAgent {
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
         }
-        let intake_lock = self.prompt_intake_lock(&arguments.session_id);
-        let intake_guard = intake_lock.lock().await;
+        let dispatch_lock = self.dispatch_lock(&arguments.session_id);
+        let dispatch_guard = dispatch_lock.lock().await;
         let meta_prompt_mode = arguments
             .meta
             .as_ref()
@@ -1830,7 +1830,7 @@ impl acp::Agent for MvpAgent {
                 acp::Error::internal_error()
                     .data(format!("failed to dispatch prompt to session: {e}"))
             })?;
-        drop(intake_guard);
+        drop(dispatch_guard);
         self.push_roster_activity_delta(
             &arguments.session_id,
             crate::agent::roster::RosterActivity::Working,
@@ -2025,6 +2025,11 @@ impl acp::Agent for MvpAgent {
                 .and_then(|m| m.get("rewindIfPristine"))
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
+            // Ordered behind any in-flight prompt intake: a cancel that
+            // overtakes the prompt it targets lands on an idle actor, and the
+            // prompt then starts a turn nothing will ever cancel.
+            let dispatch_lock = self.dispatch_lock(&args.session_id);
+            let _dispatch_guard = dispatch_lock.lock().await;
             let _ = handle
                 .cmd_tx
                 .send(SessionCommand::Cancel {
