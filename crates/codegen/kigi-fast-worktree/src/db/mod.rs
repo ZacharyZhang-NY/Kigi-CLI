@@ -341,12 +341,14 @@ pub fn resolve_kigi_home() -> Result<PathBuf> {
     if let Ok(v) = std::env::var("KIGI_SHARE_DIR") {
         return Ok(PathBuf::from(v));
     }
-    let home =
-        PathBuf::from(std::env::var("HOME").context("neither $KIGI_SHARE_DIR nor $HOME is set")?);
-    // Canonicalize the home dir so worktree paths share the same physical .kigi
-    // tree as trust/hooks even when it is symlinked. The dunce canonicalization
-    // must stay in sync with kigi_config::default_kigi_home();
-    // home resolution deliberately differs ($HOME here vs std::env::home_dir()).
+    // Standard home-dir lookup (`USERPROFILE`/Known Folders on Windows, where
+    // `HOME` is usually unset outside Git Bash) — the same resolution as
+    // kigi_config::default_kigi_home(), so worktree paths land in the same
+    // physical .kigi tree as trust/hooks.
+    let home = std::env::home_dir()
+        .context("neither $KIGI_SHARE_DIR nor a home directory could be resolved")?;
+    // Canonicalize so a symlinked home still maps to one physical tree; the
+    // dunce canonicalization must stay in sync with default_kigi_home().
     Ok(dunce::canonicalize(&home).unwrap_or(home).join(".kigi"))
 }
 
