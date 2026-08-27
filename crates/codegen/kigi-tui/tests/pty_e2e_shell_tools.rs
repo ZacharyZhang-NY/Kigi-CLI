@@ -11,10 +11,12 @@ mod common;
 #[path = "pty_e2e/scroll.rs"]
 mod scroll;
 
+#[cfg(unix)]
 #[path = "pty_e2e/bash_mode_file_completion_shell_like.rs"]
 mod bash_mode_file_completion_shell_like;
 #[path = "pty_e2e/bash_mode_strips_redundant_session_cd_from_chrome.rs"]
 mod bash_mode_strips_redundant_session_cd_from_chrome;
+#[cfg(unix)]
 #[path = "pty_e2e/bash_mode_tab_completion_dropdown.rs"]
 mod bash_mode_tab_completion_dropdown;
 #[path = "pty_e2e/edit_collapsed_oneliner_pty.rs"]

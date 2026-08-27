@@ -76,6 +76,7 @@ mod tests {
         assert_eq!(std::fs::read(&dest).unwrap(), data);
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_clone_preserves_permissions() {
         use std::os::unix::fs::PermissionsExt;

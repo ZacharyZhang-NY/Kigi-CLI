@@ -179,9 +179,12 @@ fn reap_process_group(_child: &Child) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::process::Stdio;
+    #[cfg(unix)]
     use std::time::Instant;
 
+    #[cfg(unix)]
     fn detached(mut cmd: Command) -> Command {
         cmd.stdin(Stdio::null())
             .stdout(Stdio::null())

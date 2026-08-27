@@ -318,6 +318,7 @@ mod tests {
         assert!(matches!(state, FileContentState::TooLarge { .. }));
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn test_read_file_bounded_symlink() {
         let dir = tempfile::tempdir().unwrap();
