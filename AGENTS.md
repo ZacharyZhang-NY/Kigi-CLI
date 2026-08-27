@@ -14,6 +14,14 @@ official `kimi` CLI: binary `kigi`, config dir `~/.kigi`
 Never read or write `~/.kimi` (except the explicit one-time read-only
 import) or any `KIMI_*` env var.
 
+Upstream sync record (update on every sync): fork baseline is upstream
+snapshot `8adf901` (2026-07-16, ≈v0.2.102); bug fixes evaluated and
+selectively ported through upstream `77cd7eb` (2026-08-25, ≈v1.0.10) in
+the 0.1.13 cycle. Upstream is daily "Synced from monorepo" snapshots —
+the commit BODIES carry per-change bullet lists, and
+`crates/codegen/xai-grok-shell/changelogs/` maps releases to dates;
+start any future sync from those two, not from raw diffs.
+
 ## Hard constraints
 
 - **Zero egress**: only `auth.kimi.com`, `api.kimi.com`, `api.moonshot.cn`,
@@ -195,6 +203,13 @@ client-side, no backend surface.
   (`MAX_SWARM_RUNTIME`) are bounded: the swarm blocks the caller's turn,
   so every wait needs a ceiling. Stragglers at the deadline are reported
   as still-running WITH their ids.
+- Underneath every fan-out (swarm, graph, raw Task) sits the
+  session-scoped spawn bound: `handle_subagent_request` holds one permit
+  from the parent session's semaphore for the whole child run
+  (kigi-tools `task/admission`: 32 default via
+  `KIGI_MAX_CONCURRENT_SUBAGENTS`, queue|fail via
+  `KIGI_SUBAGENT_LIMIT_BEHAVIOR`), so wide fan-outs queue instead of
+  exhausting file descriptors.
 - `ToolKind::AgentSwarm` is its own variant because `TemplateRenderer`'s
   `by_kind` map holds ONE tool name per kind — sharing `Task` would
   silently redirect `${{ tools.by_kind.task }}` in other tools' prompts.
