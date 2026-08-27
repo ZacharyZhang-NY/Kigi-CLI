@@ -224,6 +224,18 @@ impl AuthFileLock {
 
 pub fn read_auth_json(auth_file: &Path) -> std::io::Result<AuthStore> {
     let mut file = File::open(auth_file)?;
+
+    // Tighten world-readable copies (hand-restored, umask edge cases, etc.)
+    // right after open, so even an unreadable/invalid file gets fixed.
+    // Best-effort: a chmod failure must not block login/read paths.
+    if let Err(e) = crate::util::secure_file::ensure_owner_only_permissions(auth_file) {
+        tracing::warn!(
+            path = %auth_file.display(),
+            error = %e,
+            "auth: failed to enforce owner-only permissions on auth.json"
+        );
+    }
+
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
 
@@ -289,6 +301,14 @@ pub(crate) fn backup_corrupt_auth_file(path: &Path) -> Option<PathBuf> {
 
     match std::fs::rename(path, &backup) {
         Ok(()) => {
+            // Corrupt backups still hold token material — keep them owner-only.
+            if let Err(e) = crate::util::secure_file::ensure_owner_only_permissions(&backup) {
+                tracing::warn!(
+                    path = %backup.display(),
+                    error = %e,
+                    "auth: failed to tighten permissions on corrupt-auth backup"
+                );
+            }
             tracing::warn!(
                 original = %path.display(),
                 backup = %backup.display(),
@@ -421,18 +441,59 @@ fn write_store_to(path: &Path, auth_store: &AuthStore) -> std::io::Result<()> {
         .into_inner()
         .map_err(|e| e.into_error())?
         .sync_all()?;
-    #[cfg(windows)]
-    {
-        crate::util::secure_file::set_windows_secure_permissions(path)?;
+    // `open_secure_file` mode bits apply only on create; tighten existing
+    // paths. Best-effort after durable content: a chmod-only failure must not
+    // look like a failed write — the in-place fallback restores the prior
+    // snapshot on any `write_store_to` Err, which would discard freshly
+    // written tokens. The load path re-tightens on the next read.
+    if let Err(e) = crate::util::secure_file::ensure_owner_only_permissions(path) {
+        tracing::warn!(
+            error = %e,
+            path = %path.display(),
+            "auth: failed to ensure owner-only permissions after write"
+        );
     }
     Ok(())
 }
 
 /// Atomic write: tmp + Windows-safe replace (see `util::fs::replace_file`).
 fn write_auth_json_atomic(auth_file: &Path, auth_store: &AuthStore) -> std::io::Result<()> {
-    let tmp = auth_file.with_extension(format!("json.{}.tmp", std::process::id()));
-    write_store_to(&tmp, auth_store)?;
-    crate::util::fs::replace_file(&tmp, auth_file)
+    write_auth_json_atomic_with(auth_file, auth_store, write_store_to)
+}
+
+/// Inner of [`write_auth_json_atomic`] with the tmp-file writer injectable so
+/// the torn-tmp-write path is unit-testable without real I/O faults.
+fn write_auth_json_atomic_with(
+    auth_file: &Path,
+    auth_store: &AuthStore,
+    write: fn(&Path, &AuthStore) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    // Unique per write (pid + monotonic seq): two concurrent in-process
+    // writers (e.g. background mint + proactive refresher) must not share
+    // one tmp path, or each can tear the other's half-written bytes.
+    static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let tmp = auth_file.with_extension(format!(
+        "json.{}.{}.tmp",
+        std::process::id(),
+        TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    if let Err(e) = write(&tmp, auth_store) {
+        // Reclaim the partial tmp; the unique name otherwise accumulates
+        // one orphan per failed write. `replace_file` cleans its own leg.
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    crate::util::fs::replace_file(&tmp, auth_file)?;
+    // Re-assert on the final path (covers rename edge cases / FS quirks).
+    // Best-effort: the replace already published the new tokens.
+    if let Err(e) = crate::util::secure_file::ensure_owner_only_permissions(auth_file) {
+        tracing::warn!(
+            error = %e,
+            path = %auth_file.display(),
+            "auth: failed to ensure owner-only permissions after replace"
+        );
+    }
+    Ok(())
 }
 
 /// Non-atomic fallback: truncate and rewrite `auth.json` in place.
@@ -486,10 +547,7 @@ fn restore_prior_bytes(auth_file: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let mut file = open_secure_file(auth_file)?;
     file.write_all(bytes)?;
     file.sync_all()?;
-    #[cfg(windows)]
-    {
-        crate::util::secure_file::set_windows_secure_permissions(auth_file)?;
-    }
+    crate::util::secure_file::ensure_owner_only_permissions(auth_file)?;
     Ok(())
 }
 
@@ -804,7 +862,88 @@ mod write_fallback_tests {
         );
     }
 
-    /// Rollback after a failed write must keep the file owner-only (0o600).
+    /// An in-place rewrite over a pre-existing world-readable auth.json must
+    /// tighten it to 0o600 — `open_secure_file` mode bits apply only on
+    /// create, so truncating an existing loose file keeps its old mode. The
+    /// in-place path is the one that reuses the inode (the atomic path
+    /// replaces it with a fresh 0o600 temp file).
+    #[cfg(unix)]
+    #[test]
+    fn in_place_write_tightens_preexisting_world_readable_auth_json() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.json");
+        std::fs::write(&path, b"{}").unwrap();
+        let mut loose = std::fs::metadata(&path).unwrap().permissions();
+        loose.set_mode(0o644);
+        std::fs::set_permissions(&path, loose).unwrap();
+
+        write_auth_json_in_place(&path, &sample_store()).unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(
+            mode & 0o777,
+            0o600,
+            "in-place rewrite must tighten preexisting open perms"
+        );
+    }
+
+    /// Simulates a torn tmp write: partial bytes land at the target path,
+    /// then the write fails — the temp file must not be left behind.
+    fn fake_partial_write_then_fail(path: &Path, _: &AuthStore) -> std::io::Result<()> {
+        std::fs::write(path, b"{ torn")?;
+        Err(std::io::Error::from(std::io::ErrorKind::StorageFull))
+    }
+
+    /// A tmp write that fails partway must reclaim the temp file; the unique
+    /// tmp name otherwise accumulates one orphan per failed write.
+    #[test]
+    fn atomic_write_reclaims_tmp_when_store_write_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.json");
+        let err =
+            write_auth_json_atomic_with(&path, &sample_store(), fake_partial_write_then_fail)
+                .unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::StorageFull);
+
+        let orphans: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp"))
+            .collect();
+        assert!(
+            orphans.is_empty(),
+            "failed tmp write must not leave temp files behind: {orphans:?}"
+        );
+    }
+
+    /// The replace step failing (target path occupied by a directory) must
+    /// also leave no temp file — `replace_file` reclaims its tmp on failure.
+    #[test]
+    fn atomic_write_reclaims_tmp_when_replace_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.json");
+        std::fs::create_dir(&path).unwrap();
+
+        assert!(
+            write_auth_json_atomic(&path, &sample_store()).is_err(),
+            "replacing a directory must fail"
+        );
+
+        let orphans: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp"))
+            .collect();
+        assert!(
+            orphans.is_empty(),
+            "failed replace must not leave temp files behind: {orphans:?}"
+        );
+    }
+
+    /// Rollback after a failed write must leave the file owner-only (0o600)
+    /// even when the file had loose permissions going in — the restore path
+    /// truncates the existing inode, which keeps its old mode unless
+    /// explicitly tightened.
     #[cfg(unix)]
     #[test]
     fn in_place_restore_is_owner_only() {
@@ -812,9 +951,13 @@ mod write_fallback_tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("auth.json");
         write_auth_json_in_place(&path, &sample_store()).unwrap();
+        let mut loose = std::fs::metadata(&path).unwrap().permissions();
+        loose.set_mode(0o644);
+        std::fs::set_permissions(&path, loose).unwrap();
+
         let _ = write_auth_json_in_place_with(&path, &sample_store(), fake_truncate_then_fail);
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
-        assert_eq!(mode & 0o777, 0o600, "restored file must stay 0o600");
+        assert_eq!(mode & 0o777, 0o600, "restored file must be 0o600");
     }
 }
 
