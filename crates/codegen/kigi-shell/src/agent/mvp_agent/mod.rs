@@ -474,6 +474,18 @@ pub struct MvpAgent {
     dispatch_locks: RefCell<
         HashMap<acp::SessionId, std::rc::Rc<tokio::sync::Mutex<()>>>,
     >,
+    /// Session-scoped subagent spawn limits, read once from env at
+    /// construction (composition root).
+    subagent_limits: kigi_tools::implementations::kigi::task::admission::SubagentLimits,
+    /// Per-parent-session spawn semaphores sized to `subagent_limits`; a
+    /// wide fan-out queues on the semaphore instead of exhausting file
+    /// descriptors. Keyed by session id string (the coordinator's
+    /// `parent_session_id`). Entries deliberately live for the whole
+    /// process: a removed-then-resumed session keeps its id, so sharing one
+    /// semaphore across generations keeps the limit correct while old
+    /// children still run. Growth is bounded by distinct sessions per
+    /// process and each entry is tiny. LEADER-SAFE(per-session).
+    subagent_spawn_permits: RefCell<HashMap<String, std::sync::Arc<tokio::sync::Semaphore>>>,
     /// LEADER-SAFE(per-session): keyed by SessionId. Mirrors `sessions` lifecycle.
     session_threads: RefCell<HashMap<acp::SessionId, SessionThread>>,
     /// Title per resident session id, refreshed each `build_roster`. Lets the

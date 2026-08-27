@@ -979,6 +979,9 @@ impl MvpAgent {
             activity,
             loading_sessions: RefCell::new(HashMap::new()),
             dispatch_locks: RefCell::new(HashMap::new()),
+            subagent_limits:
+                kigi_tools::implementations::kigi::task::admission::SubagentLimits::from_env(),
+            subagent_spawn_permits: RefCell::new(HashMap::new()),
             session_threads: RefCell::new(HashMap::new()),
             resident_roster_titles: RefCell::new(HashMap::new()),
             initialize_request: OnceLock::new(),

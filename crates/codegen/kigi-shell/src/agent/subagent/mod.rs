@@ -133,6 +133,13 @@ impl AutoCompactThresholdTiers {
 pub(crate) struct SubagentSpawnContext {
     /// Parent's LSP runtime — inherited via ToolContext, same as fs/terminal.
     pub lsp: Option<std::sync::Arc<dyn kigi_tools::implementations::lsp::LspBackend>>,
+    /// Session-scoped spawn limits (env-resolved once at the composition root).
+    pub spawn_limits: kigi_tools::implementations::kigi::task::admission::SubagentLimits,
+    /// Parent session's spawn semaphore, sized to
+    /// `spawn_limits.effective_max_concurrent()`. A permit is held for the
+    /// whole child run, so a wide fan-out queues (or fails, per behavior)
+    /// instead of exhausting file descriptors.
+    pub spawn_permits: std::sync::Arc<tokio::sync::Semaphore>,
     #[expect(
         dead_code,
         reason = "unused in production; remove expect when wired or delete the item"

@@ -12,6 +12,7 @@
 //! - `SessionIdResource` — current session ID for parent scoping (optional)
 //! - `TaskModelValidator` — validates explicit model slugs before spawn
 
+pub mod admission;
 pub mod backend;
 pub mod types;
 

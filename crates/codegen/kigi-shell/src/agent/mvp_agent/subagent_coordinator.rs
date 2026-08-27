@@ -272,6 +272,19 @@ impl MvpAgent {
         self.try_build_subagent_spawn_context(parent_session_id)
             .expect("parent session must exist when spawning subagents")
     }
+    /// Get-or-create the parent session's spawn semaphore (see
+    /// [`Self::subagent_spawn_permits`]). Cheap clone of the shared `Arc`.
+    fn subagent_spawn_permit(&self, parent_session_id: &str) -> std::sync::Arc<tokio::sync::Semaphore> {
+        self.subagent_spawn_permits
+            .borrow_mut()
+            .entry(parent_session_id.to_string())
+            .or_insert_with(|| {
+                std::sync::Arc::new(tokio::sync::Semaphore::new(
+                    self.subagent_limits.effective_max_concurrent(),
+                ))
+            })
+            .clone()
+    }
     /// Fallible variant of [`Self::build_subagent_spawn_context`]: returns
     /// `None` when the parent `SessionHandle` is absent (evicted / torn down)
     /// instead of panicking, so read-only paths that can race a teardown can
@@ -387,6 +400,8 @@ impl MvpAgent {
         };
         Some(crate::agent::subagent::SubagentSpawnContext {
             lsp: parent_lsp,
+            spawn_limits: self.subagent_limits,
+            spawn_permits: self.subagent_spawn_permit(parent_session_id),
             gateway: self.gateway.clone(),
             client_hooks: Default::default(),
             sampling_config: self.sampling_config.borrow().clone(),

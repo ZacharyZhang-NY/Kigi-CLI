@@ -6,6 +6,27 @@
 
 pub use kigi_tty_utils::{detach_from_tty, pager_env};
 
+/// Parse a positive whole number in plain digits (no sign, no separators,
+/// no scientific notation). `None` for zero or anything non-canonical.
+pub fn parse_positive(value: &str) -> Option<u64> {
+    value.parse::<u64>().ok().filter(|&parsed| parsed > 0)
+}
+
+/// Parse a positive whole-number env value into a count. A set-but-invalid
+/// value warns and reads as unset, so the caller's default applies.
+pub fn parse_positive_env(var: &str, value: Option<String>) -> Option<usize> {
+    let value = value?;
+    let parsed = parse_positive(&value).and_then(|parsed| usize::try_from(parsed).ok());
+    if parsed.is_none() {
+        tracing::warn!(
+            var,
+            %value,
+            "env value is not a positive whole number in plain digits; using the default"
+        );
+    }
+    parsed
+}
+
 /// Env var set on agent-spawned terminal processes so host tools (e.g. `x ban`)
 /// can distinguish agent invocations from human interactive shells.
 /// Note: the CLI also uses `KIGI_AGENT` as an

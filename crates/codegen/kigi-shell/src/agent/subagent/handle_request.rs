@@ -81,6 +81,64 @@ pub(crate) async fn handle_subagent_request(
         }
         _ => {}
     }
+    // Session-scoped concurrency admission: hold one permit for the whole
+    // child run so a wide fan-out queues (default) or fails (configured)
+    // instead of exhausting file descriptors. Queued spawns are not yet
+    // visible in the coordinator; they admit in FIFO order.
+    use kigi_tools::implementations::kigi::task::admission::LimitBehavior;
+    let _spawn_permit = match ctx.spawn_limits.behavior {
+        LimitBehavior::Fail => match ctx.spawn_permits.clone().try_acquire_owned() {
+            Ok(permit) => permit,
+            Err(_) => {
+                let limit = ctx.spawn_limits.effective_max_concurrent();
+                kigi_log::unified_log::warn(
+                    "subagent.spawn.rejected_at_concurrent_limit",
+                    Some(&ctx.parent_session_id),
+                    Some(serde_json::json!({ "limit": limit })),
+                );
+                let msg = format!(
+                    "Session subagent limit reached ({limit} running); \
+                     retry after one finishes, or raise KIGI_MAX_CONCURRENT_SUBAGENTS"
+                );
+                send_pre_spawn_failure(request, &msg, coordinator, &ctx, gateway);
+                return;
+            }
+        },
+        LimitBehavior::Queue => {
+            if ctx.spawn_permits.available_permits() == 0 {
+                kigi_log::unified_log::warn(
+                    "subagent.spawn.queued_at_concurrent_limit",
+                    Some(&ctx.parent_session_id),
+                    Some(serde_json::json!({
+                        "limit": ctx.spawn_limits.effective_max_concurrent(),
+                        "subagent_id": request.id,
+                    })),
+                );
+            }
+            ctx.spawn_permits
+                .clone()
+                .acquire_owned()
+                .await
+                .expect("subagent spawn semaphore is never closed")
+        }
+    };
+    // The parent can end while a spawn is queued on the semaphore (a queued
+    // request is not yet in the coordinator, so the teardown cancel sweep
+    // cannot see it). A closed parent command channel is the teardown
+    // signal. The channel closes when the actor finishes shutting down, so a
+    // permit granted during that brief drain can still slip through — the
+    // same in-flight window an ordinary spawn racing teardown already has;
+    // closing it fully would require queueing inside the coordinator.
+    if ctx.parent_cmd_tx.as_ref().is_some_and(|tx| tx.is_closed()) {
+        send_pre_spawn_failure(
+            request,
+            "Parent session ended while the spawn was queued at the subagent limit.",
+            coordinator,
+            &ctx,
+            gateway,
+        );
+        return;
+    }
     let run_in_background = request.run_in_background
         || definition.background.unwrap_or(false);
     let cancel_token = CancellationToken::new();
