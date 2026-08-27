@@ -2171,6 +2171,19 @@ impl Config {
         )
         .with_segment_detail(self.resolve_compaction_detail())
     }
+    /// Resolve summarizer `tool_choice`: env `KIGI_COMPACTION_TOOL_CHOICE` >
+    /// config > remote settings > default (`auto`).
+    pub(crate) fn resolve_compaction_tool_choice(
+        &self,
+    ) -> crate::util::config::CompactionToolChoice {
+        crate::util::config::resolve_compaction_tool_choice_from(
+            env_string(crate::util::config::ENV_COMPACTION_TOOL_CHOICE).as_deref(),
+            self.features.compaction_tool_choice.as_deref(),
+            self.remote_settings
+                .as_ref()
+                .and_then(|r| r.compaction_tool_choice.as_deref()),
+        )
+    }
     /// Resolve verbatim-input flag: env `KIGI_COMPACTION_VERBATIM_INPUT` > config > remote settings > default `true`.
     pub(crate) fn resolve_compaction_verbatim_input(&self) -> bool {
         BoolFlag::env("KIGI_COMPACTION_VERBATIM_INPUT")
@@ -3696,6 +3709,9 @@ pub struct Features {
     /// Feed the summarizer the verbatim conversation instead of the lossy rewrite; `None` = defer to env/remote settings/default (true).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compaction_verbatim_input: Option<bool>,
+    /// Summarizer `tool_choice` (`auto` | `none`); `None` = defer to env/remote settings/default (`auto`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compaction_tool_choice: Option<String>,
     /// Snapshot a completed subagent's isolated worktree into a durable git ref
     /// and delete its directory (resume rehydrates from the ref). This is the
     /// per-deployment rollout lever (set in managed_config.toml `[features]`).

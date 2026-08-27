@@ -352,6 +352,7 @@ pub fn is_context_length_error(message: &str) -> bool {
         || m.contains("maximum prompt length")
         || m.contains("maximum context length")
         || m.contains("context_length_exceeded")
+        || (m.contains("current message") && m.contains("exceeds budget"))
 }
 
 /// Decide whether a [`reqwest::Error`] is worth retrying.
@@ -387,6 +388,7 @@ mod tests {
             "This model's maximum context length is 200000 tokens",
             "invalid_request_error: prompt is too long: 300000 tokens > 200000 maximum",
             "error type: context_length_exceeded",
+            "the current message exceeds budget: 120000 < 250000",
         ] {
             assert!(is_context_length_error(msg), "should match: {msg}");
         }

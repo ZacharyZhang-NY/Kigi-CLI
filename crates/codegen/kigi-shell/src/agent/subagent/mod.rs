@@ -397,6 +397,21 @@ impl SubagentSpawnContext {
             .resolve()
             .value
     }
+    /// Subagent summarizer `tool_choice`, mirroring
+    /// `Config::resolve_compaction_tool_choice` (env > config > remote
+    /// settings > default `auto`).
+    pub fn resolve_compaction_tool_choice(&self) -> crate::util::config::CompactionToolChoice {
+        crate::util::config::resolve_compaction_tool_choice_from(
+            crate::agent::config::env_string(crate::util::config::ENV_COMPACTION_TOOL_CHOICE)
+                .as_deref(),
+            self.agent_config
+                .as_ref()
+                .and_then(|c| c.features.compaction_tool_choice.as_deref()),
+            self.remote_settings
+                .as_ref()
+                .and_then(|r| r.compaction_tool_choice.as_deref()),
+        )
+    }
     /// Whether a completed subagent's worktree is snapshotted into a durable ref
     /// and its directory deleted. Resolution mirrors the other subagent gates
     /// (env > config > remote settings > default). Default `false` so it ships dark;

@@ -668,6 +668,11 @@ pub struct RemoteSettings {
     /// remote settings verbatim-input flag; env (`KIGI_COMPACTION_VERBATIM_INPUT`) and config override it. `None` = default (true).
     #[serde(default)]
     pub compaction_verbatim_input: Option<bool>,
+    /// Compaction summarizer `tool_choice` (`auto` | `none`) from remote
+    /// settings. Env (`KIGI_COMPACTION_TOOL_CHOICE`) and config override it.
+    /// Some backends reject `tool_choice: "none"` with tools attached.
+    #[serde(default)]
+    pub compaction_tool_choice: Option<String>,
     /// Master switch for jemalloc heap sampling + threshold dumps.
     /// `Some(true)` enables, `Some(false)` kill-switch, `None` = client default off.
     #[serde(default)]

@@ -212,6 +212,7 @@ impl SessionActor {
             &sampling_config,
             self.inference_idle_timeout,
             wall_clock_budget_secs,
+            self.compaction.tool_choice,
         )
         .await
         {
@@ -983,6 +984,7 @@ impl SessionActor {
             sampling_config.clone(),
             self.inference_idle_timeout,
             wall_clock_budget_secs,
+            self.compaction.tool_choice,
         );
         let observer =
             crate::session::helpers::full_replace_compaction::ShellFullReplaceObserver::new(
@@ -2198,6 +2200,7 @@ mod inline_auto_compact_flow_tests {
                 previous_model: std::cell::Cell::new(None),
                 compaction_mode: kigi_chat_state::CompactionMode::Transcript,
                 verbatim_input: true,
+                tool_choice: Default::default(),
                 prefire: crate::session::compaction_config::PrefireState::default(),
                 prefix_released: std::sync::atomic::AtomicBool::new(false),
             },

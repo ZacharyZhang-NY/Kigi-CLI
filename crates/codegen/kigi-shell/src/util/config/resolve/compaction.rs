@@ -1,6 +1,42 @@
 /// Default auto-compact threshold (% of context window) when no source sets it.
 pub const DEFAULT_AUTO_COMPACT_THRESHOLD_PERCENT: u8 = 85;
 
+/// `tool_choice` sent on compaction summarizer requests when tools are
+/// attached (prefix-cache alignment keeps the tool definitions in the
+/// request). Default `Auto` because some OpenAI-compatible servers reject
+/// `tool_choice: "none"`; the summarization prompt itself forbids tool use.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CompactionToolChoice {
+    #[default]
+    Auto,
+    None,
+}
+
+impl std::str::FromStr for CompactionToolChoice {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "auto" => Ok(Self::Auto),
+            "none" => Ok(Self::None),
+            _ => Err(()),
+        }
+    }
+}
+
+pub(crate) const ENV_COMPACTION_TOOL_CHOICE: &str = "KIGI_COMPACTION_TOOL_CHOICE";
+
+pub(crate) fn resolve_compaction_tool_choice_from(
+    env: Option<&str>,
+    config: Option<&str>,
+    remote: Option<&str>,
+) -> CompactionToolChoice {
+    env.and_then(|s| s.parse().ok())
+        .or_else(|| config.and_then(|s| s.parse().ok()))
+        .or_else(|| remote.and_then(|s| s.parse().ok()))
+        .unwrap_or_default()
+}
+
 /// Env-var override for `auto_compact_threshold_percent`. Parsed as `u8`;
 /// out-of-range or unparseable values are ignored.
 pub(crate) const ENV_AUTO_COMPACT_THRESHOLD_PERCENT: &str = "KIGI_AUTO_COMPACT_THRESHOLD_PERCENT";
@@ -125,6 +161,34 @@ pub fn resolve_compaction_wall_clock_budget_secs(gb_global: Option<u64>) -> u64 
         );
     }
     resolved
+}
+
+#[cfg(test)]
+mod compaction_tool_choice_tests {
+    use super::{CompactionToolChoice, resolve_compaction_tool_choice_from as resolve};
+
+    #[test]
+    fn precedence_env_config_remote_default() {
+        assert_eq!(resolve(None, None, None), CompactionToolChoice::Auto);
+        assert_eq!(
+            resolve(None, None, Some("none")),
+            CompactionToolChoice::None
+        );
+        assert_eq!(
+            resolve(None, Some("auto"), Some("none")),
+            CompactionToolChoice::Auto
+        );
+        assert_eq!(
+            resolve(Some("none"), Some("auto"), Some("auto")),
+            CompactionToolChoice::None
+        );
+        // Unparseable tiers fall through instead of masking lower tiers.
+        assert_eq!(
+            resolve(Some("bogus"), None, Some("none")),
+            CompactionToolChoice::None
+        );
+        assert_eq!(resolve(Some("NONE "), None, None), CompactionToolChoice::None);
+    }
 }
 
 #[cfg(test)]

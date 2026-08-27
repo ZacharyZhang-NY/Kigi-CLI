@@ -226,6 +226,7 @@ pub(crate) async fn create_test_actor_ex(
             previous_model: std::cell::Cell::new(None),
             compaction_mode: kigi_chat_state::CompactionMode::Transcript,
             verbatim_input: true,
+            tool_choice: Default::default(),
             prefire: crate::session::compaction_config::PrefireState::default(),
             prefix_released: std::sync::atomic::AtomicBool::new(false),
         },

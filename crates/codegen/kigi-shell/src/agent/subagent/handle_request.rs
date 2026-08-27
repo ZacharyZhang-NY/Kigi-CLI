@@ -1006,6 +1006,7 @@ pub(crate) async fn handle_subagent_request(
             kigi_agent::DEFAULT_SYSTEM_PROMPT_LABEL.to_string(),
             kigi_chat_state::CompactionMode::Summary,
             ctx.resolve_compaction_verbatim_input(),
+            ctx.resolve_compaction_tool_choice(),
             false,
             None,
             None,
