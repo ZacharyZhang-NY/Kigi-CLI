@@ -21,7 +21,7 @@ pub struct KigiEndpoints {
 pub const PRODUCTION_ENDPOINTS: KigiEndpoints = KigiEndpoints {
     coding_api_base_url: "https://api.kimi.com/coding/v1",
     oauth_host: "https://auth.kimi.com",
-    update_base_url: "https://git.zacharyzhang.com/api/v1/repos/ZacharyZhang-NY/Kigi-CLI/releases",
+    update_base_url: "https://api.github.com/repos/ZacharyZhang-NY/Kigi-CLI/releases",
     upgrade_page_url: "https://www.kimi.com/code/",
 };
 

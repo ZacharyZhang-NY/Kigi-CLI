@@ -7,7 +7,7 @@ use crate::slash::command::{CommandExecCtx, CommandResult, SlashCommand};
 /// build, so its feedback belongs on its own repo — mirroring the official
 /// kimi-cli, whose `/feedback` opens its repo's issues page.
 pub const FEEDBACK_ISSUES_URL: &str =
-    "https://git.zacharyzhang.com/ZacharyZhang-NY/Kigi-CLI/issues";
+    "https://github.com/ZacharyZhang-NY/Kigi-CLI/issues";
 
 /// Open the Kigi issue tracker in the browser.
 pub struct FeedbackCommand;

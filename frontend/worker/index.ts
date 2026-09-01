@@ -16,11 +16,11 @@ interface Env {
   ASSETS: Fetcher;
 }
 
-/** Raw-file base for the canonical Kigi repo (Gitea, `main` branch). */
-const UPSTREAM = "https://git.zacharyzhang.com/ZacharyZhang-NY/Kigi-CLI/raw/branch/main";
+/** Raw-file base for the canonical Kigi repo (GitHub, `main` branch). */
+const UPSTREAM = "https://raw.githubusercontent.com/ZacharyZhang-NY/Kigi-CLI/main";
 
 /** Human-facing repo URL, used in the installer-unavailable message. */
-const REPO_URL = "https://git.zacharyzhang.com/ZacharyZhang-NY/Kigi-CLI";
+const REPO_URL = "https://github.com/ZacharyZhang-NY/Kigi-CLI";
 
 interface Installer {
   file: string;

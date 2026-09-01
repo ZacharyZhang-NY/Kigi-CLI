@@ -10,7 +10,7 @@ const TTL_SECONDS_BEFORE_AUTO_UPDATE: Duration = Duration::from_secs(60 * 30);
 
 /// Release channel: this repo's Releases (PRD F8). The API base is resolved
 /// through [`kigi_env::update_base_url`] — production default
-/// `https://git.zacharyzhang.com/api/v1/repos/ZacharyZhang-NY/Kigi-CLI/releases`,
+/// `https://api.github.com/repos/ZacharyZhang-NY/Kigi-CLI/releases`,
 /// overridable via `KIGI_UPDATE_BASE_URL` for mirrors and tests.
 pub(crate) fn update_base_url() -> String {
     kigi_env::update_base_url()

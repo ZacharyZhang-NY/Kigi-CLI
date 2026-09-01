@@ -695,7 +695,7 @@ pub(crate) fn detect_platform() -> Result<(&'static str, &'static str)> {
 
 /// Rust target triple for this build — the key that maps a platform to its
 /// release-asset name. Must stay in lockstep with the five targets built by
-/// `.gitea/workflows/release.yml` and the tables in install.sh/install.ps1.
+/// `.github/workflows/release.yml` and the tables in install.sh/install.ps1.
 pub(crate) fn target_triple() -> Result<&'static str> {
     let triple = if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
         "aarch64-apple-darwin"
@@ -2653,7 +2653,7 @@ mod tests {
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     #[test]
     fn test_release_asset_name_matches_release_workflow_naming() {
-        // Must stay in lockstep with .gitea/workflows/release.yml, which
+        // Must stay in lockstep with .github/workflows/release.yml, which
         // publishes kigi-<version>-<target-triple>.{tar.gz|zip}.
         let triple = target_triple().unwrap();
         assert!(

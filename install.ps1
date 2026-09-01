@@ -11,7 +11,7 @@
 # Environment:
 #   KIGI_SHARE_DIR        install root (default: %USERPROFILE%\.kigi)
 #   KIGI_UPDATE_BASE_URL  releases API base, GitHub/Gitea-shaped (default:
-#                         https://git.zacharyzhang.com/api/v1/repos/ZacharyZhang-NY/Kigi-CLI/releases)
+#                         https://api.github.com/repos/ZacharyZhang-NY/Kigi-CLI/releases)
 
 [CmdletBinding()]
 param(
@@ -27,8 +27,7 @@ function Fail([string]$Message) {
 }
 
 $Repo = "ZacharyZhang-NY/Kigi-CLI"
-$Forge = "https://git.zacharyzhang.com"
-$ApiBase = if ($env:KIGI_UPDATE_BASE_URL) { $env:KIGI_UPDATE_BASE_URL } else { "$Forge/api/v1/repos/$Repo/releases" }
+$ApiBase = if ($env:KIGI_UPDATE_BASE_URL) { $env:KIGI_UPDATE_BASE_URL } else { "https://api.github.com/repos/$Repo/releases" }
 $KigiHome = if ($env:KIGI_SHARE_DIR) { $env:KIGI_SHARE_DIR } else { Join-Path $env:USERPROFILE ".kigi" }
 $Triple = "x86_64-pc-windows-msvc"
 
