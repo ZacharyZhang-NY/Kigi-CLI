@@ -1043,16 +1043,18 @@ pub fn apply_sandbox(
         kigi_tools::implementations::kigi::grep::ripgrep::rg_path();
         crate::builtin::extract_bundled_files(&crate::util::kigi_home::kigi_home());
     }
+    // The devbox `/data` write-deny is a bwrap mount; Landlock would grant the workspace under `/data`.
     #[cfg(target_os = "linux")]
-    let requires_read_deny = kigi_sandbox::requires_read_deny(&sandbox_profile, &workspace);
+    let bwrap_required = kigi_sandbox::requires_read_deny(&sandbox_profile, &workspace)
+        || kigi_sandbox::requires_data_write_deny(&sandbox_profile, &workspace);
     #[cfg(target_os = "linux")]
     {
         let refuse_unprotected = |detail: &str| {
             eprintln!(
-                "error: this sandbox could not enforce its read-deny set on Linux \
-                 (bubblewrap missing/unusable, or a deny glob exceeded its expansion \
-                 limit — see any message above). Install bubblewrap with \
-                 `apt install -y bubblewrap` if needed. Refusing to start with denied \
+                "error: this sandbox could not enforce its read-deny set or the devbox \
+                 `/data` write-deny on Linux (bubblewrap missing/unusable, or a deny glob \
+                 exceeded its expansion limit — see any message above). Install bubblewrap \
+                 with `apt install -y bubblewrap` if needed. Refusing to start with denied \
                  paths unprotected.{detail}"
             );
         };
@@ -1060,7 +1062,7 @@ pub fn apply_sandbox(
             Some(mut cmd) => {
                 use std::os::unix::process::CommandExt;
                 let err = cmd.exec();
-                if requires_read_deny {
+                if bwrap_required {
                     refuse_unprotected(&format!(" (bwrap exec failed: {err})"));
                     std::process::exit(1);
                 }
@@ -1070,7 +1072,7 @@ pub fn apply_sandbox(
                      Install bubblewrap: apt install -y bubblewrap"
                 );
             }
-            None if requires_read_deny && !kigi_sandbox::is_inside_bwrap() => {
+            None if bwrap_required && !kigi_sandbox::is_inside_bwrap() => {
                 refuse_unprotected("");
                 std::process::exit(1);
             }

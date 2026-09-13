@@ -333,6 +333,27 @@ fn is_devbox_based(profile: &ProfileName, config: &SandboxConfig) -> bool {
         _ => false,
     }
 }
+/// Whether an existing `/data` needs the devbox bwrap read-only bind; a filesystem error other than NotFound conservatively requires it.
+#[cfg(target_os = "linux")]
+pub fn requires_data_write_deny(profile: &ProfileName, workspace: &Path) -> bool {
+    requires_data_write_deny_for(
+        profile,
+        &profiles::load_sandbox_config(workspace),
+        data_path_requires_bind(Path::new("/data")),
+    )
+}
+#[cfg(target_os = "linux")]
+fn requires_data_write_deny_for(
+    profile: &ProfileName,
+    config: &SandboxConfig,
+    is_data_present: bool,
+) -> bool {
+    is_devbox_based(profile, config) && is_data_present
+}
+#[cfg(target_os = "linux")]
+fn data_path_requires_bind(path: &Path) -> bool {
+    path.try_exists().unwrap_or(true)
+}
 /// Whether kernel read-deny enforcement is required. The single source of truth
 /// for this classification so callers (e.g. the shell's fail-closed startup path)
 /// cannot drift and silently fail open.
@@ -399,7 +420,11 @@ struct BwrapDenyPlan {
 #[cfg(all(feature = "enforce", target_os = "linux"))]
 fn bwrap_deny_plan(profile: &ProfileName, workspace: &Path) -> Option<BwrapDenyPlan> {
     let config = profiles::load_sandbox_config(workspace);
-    let deny_write: Vec<String> = if is_devbox_based(profile, &config) {
+    let deny_write: Vec<String> = if requires_data_write_deny_for(
+        profile,
+        &config,
+        data_path_requires_bind(Path::new("/data")),
+    ) {
         vec!["/data".to_string()]
     } else {
         Vec::new()
@@ -441,7 +466,11 @@ fn bwrap_deny_plan(profile: &ProfileName, workspace: &Path) -> Option<BwrapDenyP
 #[cfg(all(not(feature = "enforce"), target_os = "linux"))]
 fn bwrap_deny_plan(profile: &ProfileName, workspace: &Path) -> Option<BwrapDenyPlan> {
     let config = profiles::load_sandbox_config(workspace);
-    let deny_write: Vec<String> = if is_devbox_based(profile, &config) {
+    let deny_write: Vec<String> = if requires_data_write_deny_for(
+        profile,
+        &config,
+        data_path_requires_bind(Path::new("/data")),
+    ) {
         vec!["/data".to_string()]
     } else {
         Vec::new()
@@ -612,6 +641,43 @@ mod tests {
         );
     }
     #[test]
+    #[cfg(target_os = "linux")]
+    fn data_write_deny_requires_devbox_and_a_present_data_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".kigi")).unwrap();
+        std::fs::write(
+            tmp.path().join(".kigi/sandbox.toml"),
+            "[profiles.devext]\nextends = \"devbox\"\n\n[profiles.plain]\nextends = \"workspace\"\n",
+        )
+        .unwrap();
+        let config = profiles::load_sandbox_config(tmp.path());
+        assert!(requires_data_write_deny_for(
+            &ProfileName::Devbox,
+            &config,
+            true
+        ));
+        assert!(!requires_data_write_deny_for(
+            &ProfileName::Devbox,
+            &config,
+            false
+        ));
+        assert!(requires_data_write_deny_for(
+            &ProfileName::Custom("devext".into()),
+            &config,
+            true
+        ));
+        assert!(!requires_data_write_deny_for(
+            &ProfileName::Custom("plain".into()),
+            &config,
+            true
+        ));
+        assert!(!requires_data_write_deny_for(
+            &ProfileName::Workspace,
+            &config,
+            true
+        ));
+    }
+    #[test]
     fn configured_profile_is_recorded() {
         set_configured_profile("read-only");
         assert_eq!(configured_profile_name(), Some("read-only"));
@@ -717,10 +783,11 @@ mod tests {
             "devbox-empty",
             "[profiles.devempty]\nextends = \"devbox\"\n",
         );
-        assert!(
+        assert_eq!(
             bwrap_reexec_for_profile(&ProfileName::Custom("devempty".to_string()), &ws_empty)
                 .is_some(),
-            "devbox-extending custom must compose the /data write-deny re-exec"
+            Path::new("/data").exists(),
+            "devbox-extending custom composes the /data write-deny re-exec exactly when /data exists"
         );
         let _ = std::fs::remove_dir_all(&ws_empty);
         let ws_ws = temp_workspace_with_sandbox_toml(
