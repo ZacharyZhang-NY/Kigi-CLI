@@ -296,9 +296,6 @@ const ROUTINE_PREFIXES: &[&str] = &[
     "git branch",
     "git add",
     "git commit",
-    "git checkout",
-    "git switch",
-    "git stash",
     "git pull",
     "git fetch",
     "git show",
@@ -493,11 +490,126 @@ fn bash_command_is_routine(words: &[String]) -> bool {
     if head == "gh" {
         return gh_subcommand_is_read_only(inner);
     }
+    // Branch switches and stash workflow are routine; a path operand turns
+    // `checkout` into a working-tree discard, so those forms fail closed.
+    if head == "git" {
+        match inner.get(1).map(String::as_str) {
+            Some("checkout") => return is_routine_branch_switch(&inner[2..], false),
+            Some("switch") => return is_routine_branch_switch(&inner[2..], true),
+            Some("stash") => return is_routine_stash(&inner[2..]),
+            _ => {}
+        }
+    }
     let joined = inner.join(" ").to_ascii_lowercase();
     ROUTINE_PREFIXES.iter().any(|p| {
         let base = p.trim();
         joined == base || (joined.starts_with(base) && joined[base.len()..].starts_with(' '))
     })
+}
+
+const BRANCH_SWITCH_BENIGN_FLAGS: &[&str] = &[
+    "-q",
+    "--quiet",
+    "-d",
+    "--detach",
+    "-t",
+    "--track",
+    "--no-track",
+    "--guess",
+    "--no-guess",
+    "--progress",
+    "--no-progress",
+    "--recurse-submodules",
+    "--no-recurse-submodules",
+];
+
+/// `git checkout`/`git switch` with at most one ref operand and only benign
+/// flags. Any other flag (`-f`, `--ours`, `--pathspec-from-file`, `--`) or
+/// an operand that reads as a path fails closed. `switch` is branch-only,
+/// so a bare name is a ref; `checkout <name>` (even `-`) restores a tracked
+/// path when no such ref resolves, so a checkout operand counts only when
+/// a branch-mode flag (`-b`, `-B`, `--orphan`, `--detach`, `-t`) appears
+/// anywhere in the argument list.
+fn is_routine_branch_switch(args: &[String], branch_only: bool) -> bool {
+    let mut operands: Vec<&str> = Vec::new();
+    let mut branch_mode = branch_only;
+    let mut it = args.iter().map(String::as_str);
+    while let Some(word) = it.next() {
+        match word {
+            "-b" | "-B" | "-c" | "-C" | "--orphan" => {
+                it.next();
+                branch_mode = true;
+            }
+            "-d" | "--detach" | "-t" | "--track" => branch_mode = true,
+            "-" => operands.push(word),
+            _ if BRANCH_SWITCH_BENIGN_FLAGS.contains(&word) => {}
+            _ if word.starts_with('-') => return false,
+            _ => operands.push(word),
+        }
+    }
+    if operands.len() > 1
+        || operands
+            .iter()
+            .any(|op| *op != "-" && operand_reads_as_path(op))
+    {
+        return false;
+    }
+    operands.is_empty() || branch_mode
+}
+
+/// `git stash` subcommands that keep the stash reversible; `drop`/`clear`
+/// and unknown flags fail closed.
+fn is_routine_stash(args: &[String]) -> bool {
+    let mut it = args.iter().map(String::as_str);
+    let subcommand = loop {
+        match it.next() {
+            Some("-m" | "--message") => {
+                it.next();
+            }
+            Some("-q" | "--quiet") => {}
+            Some(word) if word.starts_with('-') => return false,
+            other => break other,
+        }
+    };
+    matches!(
+        subcommand,
+        None | Some("push" | "save" | "pop" | "apply" | "list" | "show" | "branch")
+    )
+}
+
+/// Whether a `checkout` operand names a path rather than a ref: dot
+/// components, `.lock`, trailing `/` or `.`, ranges, refspec/glob
+/// punctuation, whitespace, absolute paths, or a file-like extension
+/// (`Cargo.toml`, `app.py`) — while `2.x`/`1.2.x` style version refs pass.
+fn operand_reads_as_path(op: &str) -> bool {
+    if op
+        .split('/')
+        .any(|c| c.starts_with('.') || c.ends_with(".lock"))
+        || op.ends_with('/')
+        || op.ends_with('.')
+        || op.contains("..")
+        || op.contains("@{")
+        || op.contains(['~', '^', ':', '\\'])
+        || op.contains(char::is_whitespace)
+    {
+        return true;
+    }
+    if op.starts_with('/') || op.contains(['*', '?', '[']) {
+        return true;
+    }
+    let Some((stem, ext)) = op.rsplit_once('.') else {
+        return false;
+    };
+    let stem_leaf = stem.rsplit('/').next().unwrap_or(stem);
+    if ext == "x"
+        && stem_leaf.bytes().any(|b| b.is_ascii_digit())
+        && stem_leaf.bytes().all(|b| b.is_ascii_digit() || b == b'.')
+    {
+        return false;
+    }
+    (1..=5).contains(&ext.len())
+        && ext.chars().all(|c| c.is_ascii_alphanumeric())
+        && ext.chars().any(|c| c.is_ascii_alphabetic())
 }
 
 /// First `n` non-flag tokens after the head. Space-separated flag values are
@@ -2324,6 +2436,96 @@ mod tests {
             ClassifierVerdict::Block,
             "hostile transcript must reach the model, whose block stands"
         );
+    }
+
+    #[test]
+    fn git_checkout_path_operands_and_discards_are_blocked() {
+        let empty = ClassifierContext::default();
+        let v = |cmd: &str| {
+            HeuristicPermissionClassifier::classify_sync(
+                "run_terminal_command",
+                &AccessKind::Bash(cmd.into()),
+                Some(cmd),
+                &empty,
+            )
+        };
+        for cmd in [
+            "git checkout HEAD -- src/schema.rs src/config.rs Cargo.toml",
+            "git checkout -- app.py",
+            "git checkout -- .",
+            "git checkout --",
+            "git checkout -f main",
+            "git checkout --force main",
+            "git checkout --fo main",
+            "git checkout -qf main",
+            "git checkout -p HEAD~1",
+            "git checkout --ours src/lib.rs",
+            "git checkout main src/lib.rs",
+            "git checkout main Makefile",
+            "git checkout HEAD~3 -- src/",
+            "git checkout --pathspec-from-file=paths.txt",
+            "git checkout --pathspec-from-file paths.txt",
+            "git checkout src/",
+            "git checkout .gitignore",
+            "git checkout src/.gitignore",
+            "git checkout src/foo.lock",
+            "git checkout a..b",
+            "git checkout Cargo.toml",
+            "git checkout \"My Folder\"",
+            "git switch --discard-changes main",
+            "git switch -f main",
+            "git switch --disc main",
+            "git stash drop",
+            "git stash -q drop",
+            "git stash clear",
+            "git stash drop stash@{2}",
+            "git status && git checkout -- src/lib.rs",
+            // A bare checkout operand restores a tracked path when no such
+            // ref exists; without a branch-mode flag it goes to the model.
+            "git checkout Makefile",
+            "git checkout src",
+            "git checkout -",
+            "git checkout main",
+            "git checkout -q main",
+            "git checkout release-1.0.3",
+            "git checkout 2.x",
+            "git checkout release/3.x",
+            "git checkout main && cargo test",
+            "timeout 30 git checkout main",
+        ] {
+            assert_eq!(v(cmd), ClassifierVerdict::Block, "`{cmd}` must block");
+        }
+        for cmd in [
+            "git checkout",
+            "git checkout --detach main",
+            "git checkout --detach -",
+            "git checkout main --detach",
+            "git checkout origin/topic -b topic",
+            "git checkout -t origin/feature/x",
+            "git checkout -b feature/x",
+            "git checkout -B feature/x origin/feature/x",
+            "git checkout --orphan gh-pages",
+            "git switch main",
+            "git switch feature/x",
+            "git switch 2.x",
+            "git switch 1.2.x",
+            "git switch release/3.x",
+            "git switch user/name/PROJ-123-topic-guard",
+            "git switch -",
+            "git switch -c feature/y",
+            "git switch -q main",
+            "git stash",
+            "git stash -m wip",
+            "git stash push -m wip",
+            "git stash pop",
+            "git stash apply",
+            "git stash list",
+            "git stash show -p",
+            "git switch main && cargo test",
+            "timeout 30 git switch main",
+        ] {
+            assert_eq!(v(cmd), ClassifierVerdict::Allow, "`{cmd}` must be routine");
+        }
     }
 
     /// The routine-prefix additions cover everyday read-only / navigation
