@@ -467,7 +467,24 @@ fn compute_normalized_blocking(
             });
         }
     };
-    if buf.len() >= original_bytes {
+    // A resize that falls under the vision floors cannot be sent; keep the original with the fallback note.
+    if new_w < MIN_VISION_SIDE_PX
+        || new_h < MIN_VISION_SIDE_PX
+        || u64::from(new_w) * u64::from(new_h) < MIN_VISION_TOTAL_PX
+    {
+        tracing::warn!(
+            index,
+            width = new_w,
+            height = new_h,
+            "image resize fell under the minimum dimensions; keeping original attachment"
+        );
+        return Ok(NormalizedEntry::ReEncodingOversized {
+            bytes: Bytes::from(raw_bytes),
+            mime: Cow::Borrowed(orig_mime),
+        });
+    }
+    // An image over the dimension caps is resized even when that saves no bytes.
+    if !exceeded_dimensions && buf.len() >= original_bytes {
         return Ok(NormalizedEntry::Unchanged {
             bytes: Bytes::from(raw_bytes),
             mime: Cow::Borrowed(orig_mime),
@@ -550,6 +567,50 @@ mod tests {
             image::guess_format(&decoded).unwrap(),
             image::ImageFormat::Png
         );
+    }
+    /// A flat image at the best PNG compression is tinier than any re-encode the fast encoder produces.
+    fn make_best_compressed_png_content(width: u32, height: u32) -> ImageContent {
+        use image::codecs::png::{CompressionType, FilterType, PngEncoder};
+        use image::{ImageBuffer, ImageEncoder, Rgba};
+        let img: ImageBuffer<Rgba<u8>, Vec<u8>> =
+            ImageBuffer::from_pixel(width, height, Rgba([128, 64, 32, 255]));
+        let mut buf = Vec::new();
+        PngEncoder::new_with_quality(&mut buf, CompressionType::Best, FilterType::Adaptive)
+            .write_image(img.as_raw(), width, height, image::ExtendedColorType::Rgba8)
+            .unwrap();
+        ImageContent::new(
+            base64::engine::general_purpose::STANDARD.encode(&buf),
+            "image/png",
+        )
+    }
+    /// Over the dimension caps, a re-encode that saves no bytes is still a resize.
+    #[tokio::test]
+    async fn over_dimension_image_is_resized_even_when_re_encode_saves_no_bytes() {
+        let img = make_best_compressed_png_content(3000, 2000);
+        let cache = fresh_cache();
+        match normalize_one_in(img, 1, false, &cache).await {
+            Outcome::Compressed { info, .. } => {
+                assert!(
+                    info.compressed_bytes >= info.original_bytes,
+                    "test premise: the re-encode must not shrink ({} vs {})",
+                    info.compressed_bytes,
+                    info.original_bytes
+                );
+                assert!(info.compressed_width <= MAX_ENCODE_SIDE_PX);
+                assert!(info.compressed_height <= MAX_ENCODE_SIDE_PX);
+            }
+            other => panic!("expected the oversized image to be downscaled, got {other:?}"),
+        }
+    }
+    /// A 3000x8 strip resizes to 2000x5, under the 8 px floor: it is kept with the fallback note.
+    #[tokio::test]
+    async fn resize_under_the_minimum_side_keeps_the_original() {
+        let img = make_best_compressed_png_content(3000, 8);
+        let cache = fresh_cache();
+        match normalize_one_in(img, 1, false, &cache).await {
+            Outcome::ReEncodingOversized(content) => assert_eq!(content.mime_type, "image/png"),
+            other => panic!("expected the strip to be kept with a fallback note, got {other:?}"),
+        }
     }
     fn make_gif_content(width: u32, height: u32) -> ImageContent {
         use image::{ImageBuffer, Rgba};
