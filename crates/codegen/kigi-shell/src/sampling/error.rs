@@ -171,6 +171,70 @@ pub fn error_detail_from_data(data: &serde_json::Value) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// The human-readable text of an ACP error: its `data` detail when present (Display would JSON-escape it), else the message.
+pub fn acp_error_message(err: &acp::Error) -> String {
+    err.data
+        .as_ref()
+        .and_then(error_detail_from_data)
+        .unwrap_or_else(|| err.message.clone())
+}
+
+/// First line of a compaction error without internal `compact failed:` prefixes, capped for a banner; diagnostic lines (request URLs) are dropped.
+pub fn user_facing_compact_error(raw: &str) -> String {
+    const INTERNAL_PREFIX: &str = "compact failed:";
+    const MAX_CHARS: usize = 200;
+    // Redact before line selection: a line break inside a URL must not hide its `@`.
+    let raw = redact_urls_in_text(raw);
+    let mut rest = raw.trim();
+    while rest
+        .get(..INTERNAL_PREFIX.len())
+        .is_some_and(|head| head.eq_ignore_ascii_case(INTERNAL_PREFIX))
+    {
+        rest = rest[INTERNAL_PREFIX.len()..].trim_start();
+    }
+    rest.lines()
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .chars()
+        .take(MAX_CHARS)
+        .collect()
+}
+
+/// Every canonical `scheme://` URL in `text` loses userinfo, sensitive query values and fragment; one that fails to parse is not echoed.
+fn redact_urls_in_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(sep) = rest.find("://") {
+        // The delimiter before the scheme may be multi-byte (`“`, `：`): step past its UTF-8 length.
+        let scheme_start = rest[..sep]
+            .char_indices()
+            .rev()
+            .find(|(_, c)| !(c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.')))
+            .map_or(0, |(at, c)| at + c.len_utf8());
+        out.push_str(&rest[..scheme_start]);
+        // The authority may hold whitespace (a configured password); the token ends at whitespace after it.
+        let authority = &rest[sep + 3..];
+        let authority_end = authority.find(['/', '?', '#']).unwrap_or(authority.len());
+        let token_end = authority[authority_end..]
+            .find(char::is_whitespace)
+            .map_or(rest.len(), |at| sep + 3 + authority_end + at);
+        let token = &rest[scheme_start..token_end];
+        let url_text = token.trim_end_matches([')', ']', '}', ',', '.', ';', '\'', '"', '>']);
+        match url::Url::parse(url_text) {
+            Ok(mut url) => {
+                kigi_secrets::redact_url(&mut url);
+                out.push_str(url.as_str());
+            }
+            Err(_) => out.push_str("<unparseable url>"),
+        }
+        out.push_str(&token[url_text.len()..]);
+        rest = &rest[token_end..];
+    }
+    out.push_str(rest);
+    out
+}
+
 pub fn http_status_from_error(err: &acp::Error) -> Option<u16> {
     err.data
         .as_ref()?
@@ -254,6 +318,77 @@ pub fn prompt_complete_fields(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn compact_error_text_keeps_the_first_decoded_line_only() {
+        let err = super::acp::Error::internal_error().data(
+            "compact failed: API error (status 500): overloaded\n\nRequest URL: http://u:TEST_PASSWORD@127.0.0.1/v1",
+        );
+        let detail = super::user_facing_compact_error(&super::acp_error_message(&err));
+        assert_eq!(detail, "API error (status 500): overloaded");
+        assert!(!detail.contains("TEST_PASSWORD"));
+        assert_eq!(
+            super::user_facing_compact_error(&"x".repeat(500))
+                .chars()
+                .count(),
+            200
+        );
+        assert_eq!(
+            super::acp_error_message(&super::acp::Error::internal_error()),
+            "Internal error"
+        );
+    }
+
+    /// A sampler 401 names the endpoint on the retained line; its userinfo must not survive.
+    #[test]
+    fn compact_error_text_redacts_url_credentials_on_the_first_line() {
+        for password in [
+            "TEST_PASSWORD",
+            "TEST PASSWORD",
+            "TEST%20PASSWORD",
+            "TEST_PASSWORD\n",
+            "TEST_PASSWORD\r\n",
+        ] {
+            let raw = format!(
+                "compact failed: Unauthorized (401) from http://u:{password}@127.0.0.1:33263/401/v1/chat/completions: bad auth"
+            );
+            assert_eq!(
+                super::user_facing_compact_error(&raw),
+                "Unauthorized (401) from http://127.0.0.1:33263/401/v1/chat/completions: bad auth",
+                "{password:?}"
+            );
+        }
+        assert_eq!(
+            super::redact_urls_in_text("see https://a:b@h.example/x and http://h2/"),
+            "see https://h.example/x and http://h2/"
+        );
+    }
+
+    /// A credential carried as a query value survives no failure shape: 401 message or transport error.
+    #[test]
+    fn compact_error_text_redacts_query_credentials_in_every_failure_shape() {
+        let unauthorized = "compact failed: Unauthorized (401) from http://127.0.0.1:1/?access_token=TEST_QUERY_TOKEN&route=/v1/chat/completions: bad auth";
+        let transport = "compact failed: request error: error sending request for url (http://127.0.0.1:1/?access_token=TEST_QUERY_TOKEN&route=/500/v1/chat/completions)";
+        for raw in [unauthorized, transport] {
+            let detail = super::user_facing_compact_error(raw);
+            assert!(!detail.contains("TEST_QUERY_TOKEN"), "{detail}");
+            assert!(detail.contains("route="), "{detail}");
+        }
+        assert!(super::user_facing_compact_error("see http://:://").contains("<unparseable url>"));
+    }
+
+    /// A multi-byte delimiter right before the URL must not break the scan.
+    #[test]
+    fn compact_error_text_handles_unicode_before_a_url() {
+        for raw in [
+            "compact failed: Service unavailable. See “https://u:TEST_PASSWORD@status.example/”.",
+            "compact failed: 请参阅：https://u:TEST_PASSWORD@status.example/",
+        ] {
+            let detail = super::user_facing_compact_error(raw);
+            assert!(!detail.contains("TEST_PASSWORD"), "{detail}");
+            assert!(detail.contains("https://status.example/"), "{detail}");
+        }
+    }
+
     use super::*;
     use reqwest::StatusCode;
 

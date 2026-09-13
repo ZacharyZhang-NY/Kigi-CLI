@@ -193,6 +193,16 @@ fn extract_context_total(value: &serde_json::Value) -> Option<u32> {
     Some(i.saturating_add(o))
 }
 
+/// The endpoint as the HTTP client parses it, minus userinfo, sensitive query values and fragment; an unparseable one is not echoed.
+fn redacted_endpoint(endpoint: &str) -> String {
+    match reqwest::Url::parse(endpoint) {
+        Ok(mut url) => {
+            kigi_secrets::redact_url(&mut url);
+            url.to_string()
+        }
+        Err(_) => "<unparseable endpoint>".to_owned(),
+    }
+}
 /// Record `success=false` + `error` on the active inference span when a stream
 /// request fails before any response (transport/connect/TLS errors). Without
 /// this the `#[instrument]` span closes with both fields Empty, so an outage
@@ -806,7 +816,7 @@ impl SamplingClient {
         let server_message_lower = server_message.to_lowercase();
 
         let mut context_parts = vec![server_message.to_string()];
-        context_parts.push(format!("\nRequest URL: {}", endpoint));
+        context_parts.push(format!("\nRequest URL: {}", redacted_endpoint(endpoint)));
 
         // Show headers if error mentions headers
         if server_message_lower.contains("header") {
@@ -1006,7 +1016,8 @@ impl SamplingClient {
                 let endpoint = self.endpoint("chat/completions");
                 let server_message = response.text().await.unwrap_or_default();
                 return Err(SamplingError::Auth(format!(
-                    "Unauthorized (401) from {endpoint}: {server_message}"
+                    "Unauthorized (401) from {}: {server_message}",
+                    redacted_endpoint(&endpoint)
                 )));
             }
 
@@ -1196,7 +1207,8 @@ impl SamplingClient {
                 let endpoint = self.endpoint("responses");
                 let server_message = parse_error_bytes(bytes.as_ref());
                 return Err(SamplingError::Auth(format!(
-                    "Unauthorized (401) from {endpoint}: {server_message}"
+                    "Unauthorized (401) from {}: {server_message}",
+                    redacted_endpoint(&endpoint)
                 )));
             }
 
@@ -1363,7 +1375,8 @@ impl SamplingClient {
                 let endpoint = self.endpoint("responses");
                 let server_message = response.text().await.unwrap_or_default();
                 return Err(SamplingError::Auth(format!(
-                    "Unauthorized (401) from {endpoint}: {server_message}"
+                    "Unauthorized (401) from {}: {server_message}",
+                    redacted_endpoint(&endpoint)
                 )));
             }
             let model_metadata = extract_model_metadata(response.headers());
@@ -1542,7 +1555,8 @@ impl SamplingClient {
                 let endpoint = self.endpoint("messages");
                 let server_message = parse_error_bytes(bytes.as_ref());
                 return Err(SamplingError::Auth(format!(
-                    "Unauthorized (401) from {endpoint}: {server_message}"
+                    "Unauthorized (401) from {}: {server_message}",
+                    redacted_endpoint(&endpoint)
                 )));
             }
 
@@ -1657,7 +1671,8 @@ impl SamplingClient {
                 let endpoint = self.endpoint("messages");
                 let server_message = response.text().await.unwrap_or_default();
                 return Err(SamplingError::Auth(format!(
-                    "Unauthorized (401) from {endpoint}: {server_message}"
+                    "Unauthorized (401) from {}: {server_message}",
+                    redacted_endpoint(&endpoint)
                 )));
             }
             let model_metadata = extract_model_metadata(response.headers());
@@ -3046,5 +3061,33 @@ mod tests {
             event,
             rs::ResponseStreamEvent::ResponseOutputTextDelta(_)
         ));
+    }
+}
+
+#[cfg(test)]
+mod redacted_endpoint_tests {
+    /// Every spelling the client accepts (LF inside, one slash, no slash) loses its userinfo.
+    #[test]
+    fn redacted_endpoint_drops_userinfo_in_every_accepted_spelling() {
+        for spelling in [
+            "http://u:TEST_PASSWORD@127.0.0.1:1/v1/chat/completions",
+            "http://u:TEST PASSWORD@127.0.0.1:1/v1/chat/completions",
+            "http://u:TEST_PASSWORD\n@127.0.0.1:1/v1/chat/completions",
+            "http://u:TEST_PASSWORD\r\n@127.0.0.1:1/v1/chat/completions",
+            "http:/u:TEST_PASSWORD@127.0.0.1:1/v1/chat/completions",
+            "http:u:TEST_PASSWORD@127.0.0.1:1/v1/chat/completions",
+            "http:\\u:TEST_PASSWORD@127.0.0.1:1/v1/chat/completions",
+        ] {
+            let redacted = super::redacted_endpoint(spelling);
+            assert_eq!(
+                redacted, "http://127.0.0.1:1/v1/chat/completions",
+                "{spelling:?}"
+            );
+        }
+        let gateway = super::redacted_endpoint(
+            "http://127.0.0.1:1/?access_token=TEST_QUERY_TOKEN&route=x#frag",
+        );
+        assert!(!gateway.contains("TEST_QUERY_TOKEN"), "{gateway}");
+        assert!(gateway.contains("route=x"), "{gateway}");
     }
 }

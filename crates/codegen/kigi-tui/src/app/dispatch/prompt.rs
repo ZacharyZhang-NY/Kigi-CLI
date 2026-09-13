@@ -1290,10 +1290,9 @@ pub(super) fn handle_compact_complete(
             }
             Err(err) => {
                 tracing::error!(agent = ?agent_id, error = %err, "Compaction failed");
+                // Already sanitized by the effect layer.
                 agent.scrollback.push_block(RenderBlock::session_event(
-                    SessionEvent::CompactionFailed {
-                        error: String::new(),
-                    },
+                    SessionEvent::CompactionFailed { error: err.clone() },
                 ));
             }
         }

@@ -689,6 +689,19 @@ impl SessionActor {
             .await;
         }
     }
+    /// Retry guidance headline, then the user-facing detail on its own line.
+    fn failure_with_retry_guidance(err: &acp::Error) -> String {
+        const RETRY_GUIDANCE: &str =
+            "it'll retry on the next turn, or start a new session using /new.";
+        let detail = crate::sampling::error::user_facing_compact_error(
+            &crate::sampling::error::acp_error_message(err),
+        );
+        if detail.is_empty() {
+            RETRY_GUIDANCE.to_string()
+        } else {
+            format!("{RETRY_GUIDANCE}\n{detail}")
+        }
+    }
     /// Map a deterministic failure's error text to a fixed, content-free
     /// [`SuppressReason`] (drives telemetry + sticky-vs-per-turn scope).
     fn classify_suppress_reason(error_msg: &str) -> SuppressReason {
@@ -1945,7 +1958,7 @@ impl SessionActor {
                     == SUPPRESS_NONE
                 {
                     self.send_xai_notification(XaiSessionUpdate::AutoCompactFailed {
-                        error: String::new(),
+                        error: Self::failure_with_retry_guidance(&e),
                     })
                     .await;
                 }
@@ -3284,5 +3297,30 @@ mod inline_auto_compact_flow_tests {
                 let _ = std::fs::remove_dir_all(&session_dir);
             })
             .await;
+    }
+}
+
+#[cfg(test)]
+mod failure_message_tests {
+    use super::SessionActor;
+    use agent_client_protocol as acp;
+
+    #[test]
+    fn transient_failure_message_carries_guidance_and_the_decoded_detail() {
+        let err = acp::Error::internal_error().data(
+            "Compact failed: compact failed: HTTP 500 from upstream\n\nRequest URL: http://u:TEST_PASSWORD@host/v1",
+        );
+        let text = SessionActor::failure_with_retry_guidance(&err);
+        let (headline, detail) = text.split_once('\n').expect("guidance + detail");
+        assert_eq!(
+            headline,
+            "it'll retry on the next turn, or start a new session using /new."
+        );
+        assert_eq!(detail, "HTTP 500 from upstream");
+        assert!(!text.contains("TEST_PASSWORD"));
+        assert_eq!(
+            SessionActor::failure_with_retry_guidance(&acp::Error::internal_error().data("   ")),
+            "it'll retry on the next turn, or start a new session using /new."
+        );
     }
 }

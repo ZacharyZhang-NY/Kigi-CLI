@@ -1409,9 +1409,14 @@ pub(crate) fn execute(
                     let result = acp_send(req, &tx).await;
                     TaskResult::CompactComplete {
                         agent_id,
-                        result: result
-                            .map(|_| ())
-                            .map_err(|e| sanitize_user_error(&e.to_string())),
+                        // The decoded first line only: diagnostic lines (request URLs) never reach the banner.
+                        result: result.map(|_| ()).map_err(|e| {
+                            sanitize_user_error(
+                                &kigi_shell::sampling::error::user_facing_compact_error(
+                                    &kigi_shell::sampling::error::acp_error_message(&e),
+                                ),
+                            )
+                        }),
                     }
                 });
         }
