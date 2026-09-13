@@ -55,6 +55,15 @@ enum BlockType {
     Thinking,
 }
 
+/// Executable after a `max_tokens` stop: every call's arguments parse or are empty (zero-arg convention).
+fn tool_calls_complete(tool_calls: &[ToolCall]) -> bool {
+    !tool_calls.is_empty()
+        && tool_calls.iter().all(|tc| {
+            tc.arguments.trim().is_empty()
+                || serde_json::from_str::<serde::de::IgnoredAny>(&tc.arguments).is_ok()
+        })
+}
+
 /// Transform a raw Anthropic Messages API stream into a stream of
 /// [`SamplingEvent`]s.
 ///
@@ -454,11 +463,18 @@ pub fn stream_messages<'a>(
         }
 
         if final_stop_reason == Some(StopReason::Length) {
-            yield SamplingEvent::Failed {
-                request_id: request_id.clone(),
-                error: SamplingErrorInfo::from(&SamplingError::MaxTokensTruncation),
-            };
-            return;
+            if !tool_calls_complete(&assistant_tool_calls) {
+                yield SamplingEvent::Failed {
+                    request_id: request_id.clone(),
+                    error: SamplingErrorInfo::from(&SamplingError::MaxTokensTruncation),
+                };
+                return;
+            }
+            tracing::info!(
+                request_id = %request_id,
+                tool_calls = assistant_tool_calls.len(),
+                "max_tokens stop after complete tool calls; completing the turn so they run"
+            );
         }
 
         // Build the final response

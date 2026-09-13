@@ -653,3 +653,90 @@ async fn pure_cache_hit_with_zero_uncached_still_emits_usage() {
     assert_eq!(usage.cached_prompt_tokens, 2500);
     assert_eq!(usage.total_tokens, 2501);
 }
+
+fn tool_use_start(index: u32, id: &str) -> MessageStreamEvent {
+    MessageStreamEvent::ContentBlockStart {
+        index,
+        content_block: ContentBlock::ToolUse {
+            id: id.into(),
+            name: "do_thing".into(),
+            input: serde_json::json!({}),
+        },
+    }
+}
+
+fn arg_delta(index: u32, partial_json: &str) -> MessageStreamEvent {
+    MessageStreamEvent::ContentBlockDelta {
+        index,
+        delta: StreamDelta::InputJsonDelta {
+            partial_json: partial_json.into(),
+        },
+    }
+}
+
+async fn max_tokens_after(events: Vec<MessageStreamEvent>) -> Vec<SamplingEvent> {
+    let mut all = vec![Ok(message_start())];
+    all.extend(events.into_iter().map(Ok));
+    all.push(Ok(message_delta_with_stop(messages::StopReason::MaxTokens)));
+    all.push(Ok(MessageStreamEvent::MessageStop));
+    let raw = stream::iter(all).boxed();
+    collect(stream_messages(raw, None, rid(), Duration::from_secs(60))).await
+}
+
+/// Complete tool calls before a max_tokens stop complete the turn as ToolCalls.
+#[tokio::test]
+async fn max_tokens_after_complete_tool_calls_completes_as_tool_calls() {
+    let evs = max_tokens_after(vec![
+        tool_use_start(0, "call_done"),
+        arg_delta(0, "{\"x\": 1}"),
+        block_stop(0),
+    ])
+    .await;
+    match evs.last().unwrap() {
+        SamplingEvent::Completed { response, .. } => {
+            assert_eq!(response.stop_reason, Some(StopReason::ToolCalls));
+            assert_eq!(response.tool_calls().len(), 1);
+            assert_eq!(response.tool_calls()[0].arguments.as_ref(), "{\"x\": 1}");
+        }
+        other => panic!("expected Completed(ToolCalls), got {other:?}"),
+    }
+}
+
+/// A tool_use block with no argument deltas is the zero-argument convention, not truncation.
+#[tokio::test]
+async fn max_tokens_after_tool_call_without_arguments_completes() {
+    let evs = max_tokens_after(vec![tool_use_start(0, "call_no_args"), block_stop(0)]).await;
+    match evs.last().unwrap() {
+        SamplingEvent::Completed { response, .. } => {
+            assert_eq!(response.stop_reason, Some(StopReason::ToolCalls));
+            assert_eq!(response.tool_calls()[0].arguments.as_ref(), "");
+        }
+        other => panic!("expected Completed(ToolCalls), got {other:?}"),
+    }
+}
+
+/// A call cut mid-arguments is truncation: the turn fails so the caller can compact.
+#[tokio::test]
+async fn max_tokens_with_truncated_tool_arguments_fails() {
+    let evs = max_tokens_after(vec![
+        tool_use_start(0, "call_ok"),
+        arg_delta(0, "{}"),
+        block_stop(0),
+        tool_use_start(1, "call_cut"),
+        arg_delta(1, "{\"x\": \"trunc"),
+        block_stop(1),
+    ])
+    .await;
+    assert!(
+        !evs.iter()
+            .any(|e| matches!(e, SamplingEvent::Completed { .. })),
+        "a cut tool call must not complete: {evs:?}"
+    );
+    match evs.last().unwrap() {
+        SamplingEvent::Failed { error, .. } => assert_eq!(
+            error.kind,
+            crate::events::SamplingErrorKind::MaxTokensTruncation
+        ),
+        other => panic!("expected Failed(MaxTokensTruncation), got {other:?}"),
+    }
+}
