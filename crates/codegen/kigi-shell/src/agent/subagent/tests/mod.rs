@@ -3298,3 +3298,27 @@ fn spawn_test_parent_chat_state(model_slug: &str) -> kigi_chat_state::ChatStateH
     )
 }
 mod rest;
+
+/// A blocked child actor must not park teardown: the read degrades to the fallback in bounded time.
+#[tokio::test(start_paused = true)]
+async fn child_actor_query_is_bounded_when_the_actor_never_answers() {
+    use super::handle_request::{CHILD_ACTOR_ACK_TIMEOUT, child_actor_query};
+    let tokens = tokio::time::timeout(
+        20 * CHILD_ACTOR_ACK_TIMEOUT,
+        child_actor_query("test_query", std::future::pending::<u64>(), 7),
+    )
+    .await
+    .expect("child-actor queries must complete in bounded time");
+    assert_eq!(tokens, 7, "a starved query must degrade to the fallback");
+}
+
+/// A parent that never services `cmd_rx` must not park a completed child.
+#[tokio::test(start_paused = true)]
+async fn parent_ack_is_bounded_when_the_parent_never_answers() {
+    use super::handle_request::{PARENT_ACK_TIMEOUT, parent_ack};
+    let (_never_answered, ack) = tokio::sync::oneshot::channel::<()>();
+    let acked = tokio::time::timeout(20 * PARENT_ACK_TIMEOUT, parent_ack("test_ack", ack))
+        .await
+        .expect("parent acks must complete in bounded time");
+    assert!(!acked, "an unanswered ack must report a miss");
+}

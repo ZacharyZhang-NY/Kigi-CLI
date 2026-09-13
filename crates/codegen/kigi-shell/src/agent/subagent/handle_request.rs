@@ -19,6 +19,99 @@ use kigi_tools::implementations::kigi::task::types::*;
 use kigi_workspace::file_system::AsyncFileSystem;
 use kigi_hunk_tracker::HunkTrackerHandle;
 use super::*;
+
+/// Bounds each parent-side await in the child completion path so a starved parent `cmd_rx` cannot park a completed child forever.
+pub(super) const PARENT_ACK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+/// Bounds reads of the child's own actors, which freeze with a tool that blocks the child thread; teardown must still reach `Shutdown`.
+pub(super) const CHILD_ACTOR_ACK_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(10);
+
+/// One bounded child-actor query, degrading to `fallback` when the actor never answers.
+pub(super) async fn child_actor_query<T>(
+    what: &'static str,
+    query: impl std::future::Future<Output = T>,
+    fallback: T,
+) -> T {
+    match tokio::time::timeout(CHILD_ACTOR_ACK_TIMEOUT, query).await {
+        Ok(value) => value,
+        Err(_) => {
+            tracing::warn!(query = what, "child actor did not answer in time; using fallback");
+            fallback
+        }
+    }
+}
+
+/// Bounds the post-Shutdown worktree snapshot (a `git add` behind a stuck clean filter must not park completion).
+const WORKTREE_SNAPSHOT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Snapshot the child worktree to `ref_name`, persist the ref, then remove the worktree; returns `(snapshot_ref, removed)`.
+async fn dispose_subagent_worktree(
+    worktree: &Path,
+    source_repo: &Path,
+    ref_name: &str,
+    meta_dir: &Path,
+    final_status: &str,
+    subagent_id: &str,
+) -> (Option<String>, bool) {
+    let snapshot = tokio::time::timeout(
+        WORKTREE_SNAPSHOT_TIMEOUT,
+        crate::session::worktree::snapshot_subagent_worktree(worktree, source_repo, ref_name),
+    )
+    .await;
+    let snapshot_ref = match snapshot {
+        Ok(Ok(snapshot_ref)) => snapshot_ref,
+        Ok(Err(e)) => {
+            tracing::warn!(
+                subagent_id = % subagent_id, worktree_path = % worktree.display(), error = % e,
+                "Failed to snapshot subagent worktree; preserving for review"
+            );
+            return (None, false);
+        }
+        Err(_) => {
+            tracing::warn!(
+                subagent_id = % subagent_id, worktree_path = % worktree.display(),
+                "worktree snapshot did not finish in time; preserving worktree for resume"
+            );
+            return (None, false);
+        }
+    };
+    if !update_subagent_meta_snapshot_ref(meta_dir, &snapshot_ref, final_status) {
+        tracing::warn!(
+            subagent_id = % subagent_id, worktree_path = % worktree.display(),
+            "snapshot_ref not persisted; preserving worktree for resume"
+        );
+        return (None, false);
+    }
+    // Removal is awaited in full: a detached deletion could race a resume that rehydrates into this path.
+    match crate::session::worktree::remove_subagent_worktree(worktree).await {
+        Ok(()) => {
+            tracing::info!(
+                subagent_id = % subagent_id, worktree_path = % worktree.display(),
+                "snapshotted and removed subagent worktree"
+            );
+            (Some(snapshot_ref), true)
+        }
+        Err(e) => {
+            tracing::warn!(
+                subagent_id = % subagent_id, worktree_path = % worktree.display(), error = % e,
+                "snapshotted subagent worktree but removal failed; ref persisted for resume"
+            );
+            (Some(snapshot_ref), false)
+        }
+    }
+}
+
+/// Await a parent ack for at most `PARENT_ACK_TIMEOUT`; `false` when it never answers or drops the sender.
+pub(super) async fn parent_ack(what: &'static str, ack: oneshot::Receiver<()>) -> bool {
+    match tokio::time::timeout(PARENT_ACK_TIMEOUT, ack).await {
+        Ok(Ok(())) => true,
+        Ok(Err(_)) => false,
+        Err(_) => {
+            tracing::warn!(ack = what, "parent did not ack in time; proceeding to teardown");
+            false
+        }
+    }
+}
 pub(super) fn task_model_override_error(
     requested: Option<&str>,
     provenance: ModelOverrideProvenance,
@@ -1333,7 +1426,12 @@ pub(crate) async fn handle_subagent_request(
     let duration_ms = start.elapsed().as_millis() as u64;
     let mut result = match wait_outcome {
         SubagentWaitOutcome::Cancelled => {
-            let (tool_calls, turns) = signals_snapshot_counts(&child_handle).await;
+            let (tool_calls, turns) = child_actor_query(
+                "signals_snapshot_counts",
+                signals_snapshot_counts(&child_handle),
+                (0, 0),
+            )
+            .await;
             SubagentResult {
                 success: false,
                 cancelled: true,
@@ -1360,14 +1458,28 @@ pub(crate) async fn handle_subagent_request(
                         },
                     ),
                 ) => (snapshot.current.tool_call_count, snapshot.current.turn_count),
-                _ => signals_snapshot_counts(&child_handle).await,
+                _ => {
+                    child_actor_query(
+                        "signals_snapshot_counts",
+                        signals_snapshot_counts(&child_handle),
+                        (0, 0),
+                    )
+                    .await
+                }
             };
-            let final_text = child_handle
-                .chat_state_handle
-                .get_last_assistant_text()
-                .await
-                .unwrap_or_default();
-            let result_tokens = child_handle.chat_state_handle.get_total_tokens().await;
+            let final_text = child_actor_query(
+                "get_last_assistant_text",
+                child_handle.chat_state_handle.get_last_assistant_text(),
+                None,
+            )
+            .await
+            .unwrap_or_default();
+            let result_tokens = child_actor_query(
+                "get_total_tokens",
+                child_handle.chat_state_handle.get_total_tokens(),
+                0,
+            )
+            .await;
             match *turn_result {
                 Ok(
                     Ok(
@@ -1527,14 +1639,21 @@ pub(crate) async fn handle_subagent_request(
     let final_status = result.status().to_string();
     let snapshot_dispose_enabled = ctx.resolve_subagent_worktree_snapshot_enabled();
     let telemetry_tokens = if result.tool_calls > 0 || result.success {
-        child_handle.chat_state_handle.get_total_tokens().await
+        child_actor_query(
+            "get_total_tokens",
+            child_handle.chat_state_handle.get_total_tokens(),
+            0,
+        )
+        .await
     } else {
         0
     };
-    let (subagent_usage_by_model, subagent_usage_incomplete) = match child_handle
-        .chat_state_handle
-        .try_get_session_usage()
-        .await
+    let (subagent_usage_by_model, subagent_usage_incomplete) = match child_actor_query(
+        "try_get_session_usage",
+        child_handle.chat_state_handle.try_get_session_usage(),
+        Err(()),
+    )
+    .await
     {
         Ok(u) => (Some(u.by_model.into_iter().collect::<Vec<_>>()), u.incomplete),
         Err(()) => (None, true),
@@ -1553,7 +1672,7 @@ pub(crate) async fn handle_subagent_request(
                         respond_to,
                     })
                 {
-                    Ok(()) => ack.await.is_ok(),
+                    Ok(()) => parent_ack("RecordSubagentUsage", ack).await,
                     Err(_) => false,
                 }
             } else {
@@ -1570,53 +1689,71 @@ pub(crate) async fn handle_subagent_request(
             .parent_prompt_id
             .clone()
             .or_else(|| coordinator.borrow().parent_prompt_id_for(&request.id));
-        if let Some(cmd_tx) = ctx.parent_cmd_tx.as_ref() {
+        // A slow parent may apply both the fold and this mark; both are idempotent.
+        let marked_by_parent = if let Some(cmd_tx) = ctx.parent_cmd_tx.as_ref() {
             let (respond_to, ack) = tokio::sync::oneshot::channel();
-            if cmd_tx
+            cmd_tx
                 .send(crate::session::commands::SessionCommand::MarkSubagentUsageNotApplied {
-                    parent_prompt_id: sticky_prompt,
+                    parent_prompt_id: sticky_prompt.clone(),
                     respond_to,
                 })
                 .is_ok()
-            {
-                let _ = ack.await;
-            }
-        } else if let Some(ref pid) = sticky_prompt {
+                && parent_ack("MarkSubagentUsageNotApplied", ack).await
+        } else {
+            false
+        };
+        if !marked_by_parent && let Some(ref pid) = sticky_prompt {
             coordinator.borrow_mut().mark_subagent_usage_not_applied(pid);
         }
     }
     match (&ctx.parent_terminal_backend, &ctx.parent_notification_handle) {
         (Some(parent_tb), Some(parent_notif_handle)) => {
             if !request.surface_completion {
-                let reparented_task_ids: Vec<String> = parent_tb
-                    .list_tasks()
-                    .await
-                    .into_iter()
-                    .filter(|t| {
-                        !t.completed
-                            && t.owner_session_id.as_deref()
-                                == Some(&*child_session_id.0)
-                    })
-                    .map(|t| t.task_id)
-                    .collect();
-                if !reparented_task_ids.is_empty()
-                    && let Some(cmd_tx) = ctx.parent_cmd_tx.as_ref()
-                {
-                    let _ = cmd_tx
-                        .send(SessionCommand::RecordGoalTurnTaskIds {
-                            task_ids: reparented_task_ids,
-                        });
+                match tokio::time::timeout(PARENT_ACK_TIMEOUT, parent_tb.list_tasks()).await {
+                    Ok(tasks) => {
+                        let reparented_task_ids: Vec<String> = tasks
+                            .into_iter()
+                            .filter(|t| {
+                                !t.completed
+                                    && t.owner_session_id.as_deref()
+                                        == Some(&*child_session_id.0)
+                            })
+                            .map(|t| t.task_id)
+                            .collect();
+                        if !reparented_task_ids.is_empty()
+                            && let Some(cmd_tx) = ctx.parent_cmd_tx.as_ref()
+                        {
+                            let _ = cmd_tx.send(SessionCommand::RecordGoalTurnTaskIds {
+                                task_ids: reparented_task_ids,
+                            });
+                        }
+                    }
+                    Err(_) => tracing::warn!(
+                        child_session_id = % child_session_id.0,
+                        parent_session_id = % ctx.parent_session_id,
+                        "list_tasks not answered in time; skipping goal-turn task-id recording"
+                    ),
                 }
             }
             let parent_backend_weak = std::sync::Arc::downgrade(parent_tb);
-            parent_tb
-                .reparent_notifications(
+            if tokio::time::timeout(
+                PARENT_ACK_TIMEOUT,
+                parent_tb.reparent_notifications(
                     &child_session_id.0,
                     &ctx.parent_session_id,
                     parent_notif_handle.clone(),
                     parent_backend_weak,
-                )
-                .await;
+                ),
+            )
+            .await
+            .is_err()
+            {
+                tracing::warn!(
+                    child_session_id = % child_session_id.0,
+                    parent_session_id = % ctx.parent_session_id,
+                    "reparent_notifications not acked in time; proceeding to child shutdown"
+                );
+            }
         }
         (Some(_), None) | (None, Some(_)) => {
             tracing::warn!(
@@ -1637,55 +1774,17 @@ pub(crate) async fn handle_subagent_request(
         if snapshot_dispose_enabled {
             let ref_name = format!("refs/kigi/subagents/{}", request.id);
             let source_repo = resolve_subagent_source_repo(&ctx);
-            match crate::session::worktree::snapshot_subagent_worktree(
-                    wt_path,
-                    &source_repo,
-                    &ref_name,
-                )
-                .await
-            {
-                Ok(snapshot_ref) => {
-                    let persisted = update_subagent_meta_snapshot_ref(
-                        &subagent_meta_dir,
-                        &snapshot_ref,
-                        &final_status,
-                    );
-                    if persisted {
-                        disposed_snapshot_ref = Some(snapshot_ref);
-                        match crate::session::worktree::remove_subagent_worktree(wt_path)
-                            .await
-                        {
-                            Ok(()) => {
-                                worktree_removed = true;
-                                tracing::info!(
-                                    subagent_id = % request.id, worktree_path = % wt_path
-                                    .display(), "snapshotted and removed subagent worktree"
-                                );
-                            }
-                            Err(e) => {
-                                tracing::warn!(
-                                    subagent_id = % request.id, worktree_path = % wt_path
-                                    .display(), error = % e,
-                                    "snapshotted subagent worktree but removal failed; ref persisted for resume"
-                                )
-                            }
-                        }
-                    } else {
-                        tracing::warn!(
-                            subagent_id = % request.id, worktree_path = % wt_path
-                            .display(),
-                            "snapshot_ref not persisted; preserving worktree for resume"
-                        );
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        subagent_id = % request.id, worktree_path = % wt_path.display(),
-                        error = % e,
-                        "Failed to snapshot subagent worktree; preserving for review"
-                    );
-                }
-            }
+            let (snapshot_ref, removed) = dispose_subagent_worktree(
+                wt_path,
+                &source_repo,
+                &ref_name,
+                &subagent_meta_dir,
+                &final_status,
+                &request.id,
+            )
+            .await;
+            disposed_snapshot_ref = snapshot_ref;
+            worktree_removed = removed;
         } else {
             tracing::info!(
                 subagent_id = % request.id, worktree_path = % wt_path.display(),
