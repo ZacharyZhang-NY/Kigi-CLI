@@ -1,7 +1,7 @@
 //! Sandbox event logger.
 //!
 //! Events (profile applied, violations, bypasses) are buffered in memory and
-//! flushed as JSONL to `~/.kigi/sandbox-events.jsonl`.
+//! flushed as JSONL to `~/.kigi/sessions/sandbox-events.jsonl`.
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -87,8 +87,12 @@ impl SandboxLogger {
         Ok(())
     }
 
+    /// Under `sessions/`: the only home subtree a strict sandbox leaves
+    /// writable, and this flush runs after enforcement.
     fn log_file_path() -> PathBuf {
-        kigi_config::kigi_home().join("sandbox-events.jsonl")
+        kigi_config::kigi_home()
+            .join("sessions")
+            .join("sandbox-events.jsonl")
     }
 }
 

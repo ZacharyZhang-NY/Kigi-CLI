@@ -52,10 +52,16 @@ pub fn default_lock_path_in(root: &Path) -> PathBuf {
     root.join("leader.lock")
 }
 
+/// Runtime files live under `~/.kigi/run`: the one home subtree a strict
+/// sandbox leaves writable for them.
+pub(super) fn runtime_root() -> PathBuf {
+    kigi_home().join("run")
+}
+
 /// Effective leader lock path: the [`LEADER_SOCKET_ENV`] override's sibling
-/// `.lock` when set, else the default under kigi home.
+/// `.lock` when set, else the default under `~/.kigi/run`.
 pub fn default_lock_path() -> PathBuf {
-    resolve_lock_path(leader_socket_override(), &kigi_home())
+    resolve_lock_path(leader_socket_override(), &runtime_root())
 }
 
 pub fn default_socket_path_in(root: &Path) -> PathBuf {
@@ -63,9 +69,9 @@ pub fn default_socket_path_in(root: &Path) -> PathBuf {
 }
 
 /// Effective leader socket path: the [`LEADER_SOCKET_ENV`] override when set,
-/// else the default under kigi home.
+/// else the default under `~/.kigi/run`.
 pub fn default_socket_path() -> PathBuf {
-    resolve_socket_path(leader_socket_override(), &kigi_home())
+    resolve_socket_path(leader_socket_override(), &runtime_root())
 }
 
 /// The instance suffix encoded in a lock/socket file-name pair
@@ -145,6 +151,9 @@ impl LeaderLock {
     }
 
     fn open_lock_file(&self) -> Result<File, LockError> {
+        if let Some(parent) = self.lock_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
         Ok(OpenOptions::new()
             .read(true)
             .write(true)

@@ -360,6 +360,23 @@ pub fn requires_read_deny(profile: &ProfileName, workspace: &Path) -> bool {
 pub fn requires_read_deny(_profile: &ProfileName, _workspace: &Path) -> bool {
     false
 }
+/// Whether the resolved profile leaves `~/.kigi` read-only outside its
+/// state dirs (strict and every profile extending it), so files first use
+/// would write there must be minted before enforcement.
+#[cfg(all(feature = "enforce", unix))]
+pub fn restricts_home_writes(profile: &ProfileName, workspace: &Path) -> bool {
+    if *profile == ProfileName::Off {
+        return false;
+    }
+    let config = profiles::load_sandbox_config(workspace);
+    profile
+        .resolve_profile(workspace, &config)
+        .is_ok_and(|resolved| !resolved.read_write.contains(&paths::kigi_home()))
+}
+#[cfg(not(all(feature = "enforce", unix)))]
+pub fn restricts_home_writes(_profile: &ProfileName, _workspace: &Path) -> bool {
+    false
+}
 /// A profile's resolved bwrap deny plan: read-only mounts (`deny_write`),
 /// bound-over unreadable placeholders (`deny_read`), and whether the profile
 /// carries deny globs (`has_globs`, so the re-exec proceeds even with zero
@@ -715,5 +732,33 @@ mod tests {
             "non-devbox custom with no deny needs no re-exec"
         );
         let _ = std::fs::remove_dir_all(&ws_ws);
+    }
+}
+
+#[cfg(all(test, feature = "enforce", unix))]
+mod home_write_tests {
+    use super::{ProfileName, restricts_home_writes};
+
+    #[test]
+    fn strict_restricts_home_writes_and_workspace_does_not() {
+        let workspace = std::env::temp_dir();
+        assert!(restricts_home_writes(&ProfileName::Strict, &workspace));
+        assert!(!restricts_home_writes(&ProfileName::Workspace, &workspace));
+        assert!(!restricts_home_writes(&ProfileName::ReadOnly, &workspace));
+        assert!(!restricts_home_writes(&ProfileName::Off, &workspace));
+    }
+
+    #[test]
+    fn custom_profile_extending_strict_inherits_the_restriction() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join(".kigi");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(
+            project.join("sandbox.toml"),
+            "[profiles.audit-home-write-test]\nextends = \"strict\"\n",
+        )
+        .unwrap();
+        let custom = ProfileName::Custom("audit-home-write-test".to_string());
+        assert!(restricts_home_writes(&custom, tmp.path()));
     }
 }

@@ -144,7 +144,7 @@ impl LeaderStdioClient {
             .env("KIGI_TRACE_UPLOAD", "false")
             .env("KIGI_INSTRUMENTATION", "disabled")
             // Inherited by the spawned leader, whose stderr goes to
-            // ~/.kigi/leader.log — keep it chatty for diagnosis.
+            // ~/.kigi/logs/leader.log — keep it chatty for diagnosis.
             .env("RUST_LOG", "kigi_shell=debug");
 
         let (mut child, stderr) = spawn_piped_with_stderr_capture(cmd);
@@ -345,5 +345,5 @@ pub async fn wait_for_replay_notifications(
 }
 
 pub fn leader_log(home: &Path) -> String {
-    std::fs::read_to_string(home.join(".kigi").join("leader.log")).unwrap_or_default()
+    std::fs::read_to_string(home.join(".kigi").join("logs").join("leader.log")).unwrap_or_default()
 }

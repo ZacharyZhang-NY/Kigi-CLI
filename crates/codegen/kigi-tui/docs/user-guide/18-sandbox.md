@@ -15,7 +15,7 @@ kigi --sandbox workspace
 # Read-only mode (read everywhere, write only to ~/.kigi/ + temp dirs)
 kigi --sandbox read-only
 
-# Most restrictive profile (read CWD + system paths, write CWD + temp dirs + ~/.kigi/, no child network)
+# Most restrictive profile (read CWD + system paths, write CWD + temp dirs + ~/.kigi/ state dirs, no child network)
 kigi --sandbox strict
 ```
 
@@ -29,9 +29,11 @@ kigi --sandbox strict
 | `workspace`           | Everywhere         | CWD + `~/.kigi/` + `/tmp` + `/var/tmp`         | Allowed       | Normal development                |
 | `devbox`              | Everywhere         | All top-level dirs except `/data`              | Allowed       | Disposable dev VMs                |
 | `read-only`           | Everywhere         | `~/.kigi/` + `/tmp` + `/var/tmp`               | Blocked¹      | Exploration, code review          |
-| `strict`              | CWD + system paths | CWD + `~/.kigi/` + `/tmp` + `/var/tmp`         | Blocked¹      | Untrusted code                    |
+| `strict`              | CWD + system paths | CWD + `/tmp` + `/var/tmp` + `~/.kigi/` state dirs² | Blocked¹      | Untrusted code                    |
 
 ¹ Child-network blocking is enforced on **Linux only** (via seccomp). On macOS it is a no-op — these profiles do not restrict child-process network there.
+
+² `run`, `sessions`, `worktrees`, `worktree_pool`, `tasks`, `memory`, `logs`, `debug`, `crash`, `memtrace`, `trace-exports`. The rest of `~/.kigi/` (`config.toml`, `auth.json`, `sandbox.toml`, `hooks/`, `bin/`, `vendor/`) is read-only, so a sandboxed command cannot change the next launch. Root-level caches (`version.json`, `slash-mru.json`, `pager.toml` settings) are not written under `strict`.
 
 To block specific files (e.g. `.env` or credential paths) on top of a profile, define a [custom profile](#custom-profiles) with a `deny` list — it is kernel-enforced (read + write/rename) and supports glob patterns like `**/*.pem`.
 
@@ -43,7 +45,7 @@ To block specific files (e.g. `.env` or credential paths) on top of a profile, d
 
 **read-only** -- Use when you want the agent to analyze code without modifying your project files. The agent can read everything but can only write to `~/.kigi/` (needed for session persistence) and temp directories. Child-process network access is blocked on Linux (no-op on macOS).
 
-**strict** -- The most restrictive profile, for reviewing untrusted code. The agent can only read files within the current working directory and essential system paths. Writes are limited to CWD, `~/.kigi/`, and temp directories. Child-process network access is blocked on Linux (no-op on macOS).
+**strict** -- The most restrictive profile, for reviewing untrusted code. The agent can only read files within the current working directory, essential system paths, and `~/.kigi/`. Writes are limited to CWD, the `~/.kigi/` state directories (sessions, worktrees, memory, logs), and temp directories; `config.toml`, `auth.json`, `hooks/` and `bin/` stay read-only. Child-process network access is blocked on Linux (no-op on macOS).
 
 ---
 
@@ -193,7 +195,7 @@ In practice, on Linux this means:
 
 ## Event Logging
 
-Sandbox events are logged to `~/.kigi/sandbox-events.jsonl` for debugging. Events include:
+Sandbox events are logged to `~/.kigi/sessions/sandbox-events.jsonl` for debugging. Events include:
 
 - Profile applied (which profile, timestamp)
 - Violations (attempted access to denied paths)

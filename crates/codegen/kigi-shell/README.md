@@ -2101,7 +2101,7 @@ kigi --sandbox strict
 | `off` (default) | Unrestricted       | Unrestricted              | Unrestricted  | No sandbox               |
 | `workspace`     | Everywhere         | CWD + `/tmp` + `~/.kigi/` | Allowed       | Normal development       |
 | `read-only`     | Everywhere         | `~/.kigi/` only           | Blocked       | Exploration, code review |
-| `strict`        | CWD + system paths | CWD + `/tmp` + `~/.kigi/` | Blocked       | Untrusted code           |
+| `strict`        | CWD + system paths | CWD + `/tmp` + `~/.kigi/` state dirs | Blocked       | Untrusted code           |
 
 Sensitive paths (`~/.ssh/`, `~/.aws/`, `~/.gnupg/`, `~/.kigi/auth/`) are always
 write-protected regardless of profile.
@@ -2160,7 +2160,7 @@ model cannot convince the agent to relax restrictions at runtime.
 
 ### Event Logging
 
-Sandbox events (profile applied, violations) are logged to `~/.kigi/sandbox-events.jsonl`
+Sandbox events (profile applied, violations) are logged to `~/.kigi/sessions/sandbox-events.jsonl`
 for telemetry and debugging.
 
 ---

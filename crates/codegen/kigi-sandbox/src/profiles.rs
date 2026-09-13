@@ -18,6 +18,7 @@ use crate::paths::kigi_home;
 #[cfg(all(feature = "enforce", unix))]
 use crate::paths::{
     DEVICE_DIRS, DEVICE_FILES, essential_writable_paths, essential_writable_paths_minimal,
+    essential_writable_paths_strict,
 };
 
 /// A resolved sandbox profile ready to be converted to a `CapabilitySet`.
@@ -186,6 +187,32 @@ fn load_config_file(path: &Path) -> Option<SandboxConfig> {
 #[cfg(all(feature = "enforce", unix))]
 impl ProfileName {
     /// Convert this profile into a nono `CapabilitySet` for the given workspace.
+    /// The directory a `read_write` entry really grants. A symlink under
+    /// `~/.kigi` is followed only to the default `~/.kigi/sessions` (the
+    /// `KIGI_SHARE_DIR` override case); any other target would widen the
+    /// grant to wherever the link points. Missing paths are created.
+    fn read_write_grant_path(path: &Path, home: &Path) -> Option<PathBuf> {
+        match std::fs::symlink_metadata(path) {
+            Ok(meta) if meta.file_type().is_symlink() => {
+                if path == home || !path.starts_with(home) {
+                    return Some(path.to_path_buf());
+                }
+                let real = dunce::canonicalize(path).ok()?;
+                let default_sessions = kigi_config::default_kigi_home().join("sessions");
+                (real.is_dir()
+                    && path.file_name() == Some(std::ffi::OsStr::new("sessions"))
+                    && real == default_sessions)
+                    .then_some(real)
+            }
+            Ok(_) => Some(path.to_path_buf()),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                std::fs::create_dir_all(path).ok()?;
+                Some(path.to_path_buf())
+            }
+            Err(_) => None,
+        }
+    }
+
     pub fn to_capability_set(&self, workspace: &Path) -> anyhow::Result<CapabilitySet> {
         let config = load_sandbox_config(workspace);
         self.to_capability_set_with_config(workspace, &config)
@@ -231,13 +258,14 @@ impl ProfileName {
         // apply time (it opens an O_PATH fd), but new files within it can
         // be created freely after the sandbox is applied. Pre-create
         // directories like ~/.kigi/ that may not exist on first run.
+        let home = kigi_home();
         for path in &profile.read_write {
-            if !path.exists() && std::fs::create_dir_all(path).is_err() {
-                tracing::warn!(path = ?path, "read_write path does not exist and could not be created, skipping");
+            let Some(grant) = Self::read_write_grant_path(path, &home) else {
+                tracing::warn!(path = ?path, "read_write grant skipped");
                 continue;
-            }
-            let Some(path_str) = path.to_str() else {
-                tracing::warn!(path = ?path, "Skipping non-UTF8 read_write path");
+            };
+            let Some(path_str) = grant.to_str() else {
+                tracing::warn!(path = ?grant, "Skipping non-UTF8 read_write path");
                 continue;
             };
             caps = caps.allow_path(path_str, AccessMode::ReadWrite)?;
@@ -380,12 +408,15 @@ impl ProfileName {
                 .chain(std::iter::once(home.join("Library")))
                 .filter(|p| p.exists())
                 .chain(std::iter::once(workspace.to_path_buf()))
+                // Read-only: config, auth and global hooks are read after
+                // enforcement; only sessions/ below stays writable.
+                .chain(std::iter::once(kigi_home()))
                 .collect();
 
                 Ok(SandboxProfile {
                     name: "strict".to_string(),
                     read_only: system_read,
-                    read_write: essential_writable_paths(workspace),
+                    read_write: essential_writable_paths_strict(workspace),
                     deny: vec![],
                     default_read: false,
                     restrict_network: true,
@@ -542,6 +573,82 @@ mod tests {
                 profile.read_only
             );
         }
+    }
+
+    #[test]
+    #[cfg(all(feature = "enforce", unix))]
+    fn strict_read_write_is_workspace_home_state_and_temp() {
+        let workspace = std::env::temp_dir();
+        let profile = ProfileName::Strict
+            .resolve_profile(&workspace, &SandboxConfig::default())
+            .expect("strict resolves");
+        let home = kigi_home();
+        assert_eq!(profile.read_write[0], workspace);
+        for dir in ["sessions", "worktrees", "memory", "logs", "debug"] {
+            assert!(
+                profile.read_write.contains(&home.join(dir)),
+                "{dir} must stay writable: {:?}",
+                profile.read_write
+            );
+        }
+        for denied in [
+            home.clone(),
+            home.join("hooks"),
+            home.join("vendor"),
+            home.join("bin"),
+        ] {
+            assert!(
+                !profile.read_write.contains(&denied),
+                "strict must not grant {}: {:?}",
+                denied.display(),
+                profile.read_write
+            );
+        }
+        assert!(
+            profile.read_only.contains(&home),
+            "config/auth/hooks are read after enforcement: {:?}",
+            profile.read_only
+        );
+    }
+
+    #[test]
+    #[cfg(all(feature = "enforce", unix))]
+    fn read_write_grant_follows_real_dirs_and_creates_missing_ones() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        std::fs::create_dir_all(home.join("sessions")).unwrap();
+        assert_eq!(
+            ProfileName::read_write_grant_path(&home.join("sessions"), &home),
+            Some(home.join("sessions"))
+        );
+        let missing = home.join("fresh");
+        assert_eq!(
+            ProfileName::read_write_grant_path(&missing, &home),
+            Some(missing.clone())
+        );
+        assert!(missing.is_dir());
+    }
+
+    #[test]
+    #[cfg(all(feature = "enforce", unix))]
+    fn read_write_grant_refuses_a_home_symlink_pointing_elsewhere() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, home.join("sessions")).unwrap();
+        assert_eq!(
+            ProfileName::read_write_grant_path(&home.join("sessions"), &home),
+            None
+        );
+        // A symlinked workspace outside the home is the user's own choice.
+        let ws_link = tmp.path().join("ws");
+        std::os::unix::fs::symlink(&outside, &ws_link).unwrap();
+        assert_eq!(
+            ProfileName::read_write_grant_path(&ws_link, &home),
+            Some(ws_link.clone())
+        );
     }
 
     #[test]

@@ -1034,6 +1034,15 @@ pub fn apply_sandbox(
         .and_then(|p| dunce::canonicalize(p).ok())
         .or_else(|| std::env::current_dir().ok())
         .unwrap_or_else(|| std::path::PathBuf::from("."));
+    if kigi_sandbox::restricts_home_writes(&sandbox_profile, &workspace) {
+        // The profile leaves ~/.kigi read-only outside its state dirs: mint
+        // what first use would otherwise write after enforcement.
+        if let Err(e) = crate::auth::device::device_id() {
+            tracing::warn!(error = %e, "sandbox: device id not created before enforcement");
+        }
+        kigi_tools::implementations::kigi::grep::ripgrep::rg_path();
+        crate::builtin::extract_bundled_files(&crate::util::kigi_home::kigi_home());
+    }
     #[cfg(target_os = "linux")]
     let requires_read_deny = kigi_sandbox::requires_read_deny(&sandbox_profile, &workspace);
     #[cfg(target_os = "linux")]

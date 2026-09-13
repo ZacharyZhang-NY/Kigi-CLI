@@ -23,7 +23,7 @@
 //! │  │   - Tracks session ownership for routing                 ││
 //! │  └────────────────────────┬────────────────────────────────┘│
 //! └───────────────────────────┼──────────────────────────────────┘
-//!                             │ IPC (Unix socket at ~/.kigi/leader.sock)
+//!                             │ IPC (Unix socket at ~/.kigi/run/leader.sock)
 //!         ┌───────────────────┼───────────────────┐
 //!         ▼                   ▼                   ▼
 //! ┌───────────────┐   ┌───────────────┐   ┌───────────────┐
@@ -481,7 +481,10 @@ async fn discover_leaders_in(root: &Path) -> Vec<LeaderDescriptor> {
     entries
 }
 pub async fn discover_leaders() -> Vec<LeaderDescriptor> {
-    discover_leaders_in(&crate::util::kigi_home::kigi_home()).await
+    let mut entries = discover_leaders_in(&lock::runtime_root()).await;
+    // Pre-0.1.15 leaders and socket overrides keep their files at the home root.
+    entries.extend(discover_leaders_in(&crate::util::kigi_home::kigi_home()).await);
+    entries
 }
 /// (pid, leader_binary_version) of socket-verified (Reachable) leaders; a
 /// stale-lock-only descriptor is skipped (its `pid_from_lock` may be recycled).
@@ -610,13 +613,28 @@ fn resolve_matching_descriptors(
 fn resolve_target_from_descriptors(
     target: LeaderTarget,
     leaders: Vec<LeaderDescriptor>,
+    current_default_socket: &Path,
 ) -> Result<LeaderTargetSelection, LeaderTargetError> {
     match target {
         LeaderTarget::Default => {
-            let matching: Vec<_> = leaders
+            let defaults: Vec<_> = leaders
                 .into_iter()
                 .filter(|descriptor| descriptor.is_default)
                 .collect();
+            // An upgrade can leave a pre-0.1.15 default at the home root; the
+            // current default socket wins while it exists.
+            let current: Vec<_> = defaults
+                .iter()
+                .filter(|descriptor| {
+                    descriptor.socket_path.as_deref() == Some(current_default_socket)
+                })
+                .cloned()
+                .collect();
+            let matching = if current.is_empty() {
+                defaults
+            } else {
+                current
+            };
             resolve_matching_descriptors("default", matching)
         }
         LeaderTarget::Socket(socket_path) => {
@@ -685,7 +703,7 @@ pub async fn resolve_leader_target(
     target: LeaderTarget,
 ) -> Result<LeaderTargetSelection, LeaderTargetError> {
     let leaders = discover_leaders().await;
-    resolve_target_from_descriptors(target, leaders)
+    resolve_target_from_descriptors(target, leaders, &lock::default_socket_path())
 }
 #[derive(Debug, thiserror::Error)]
 pub enum ConnectionError {
@@ -1315,7 +1333,12 @@ fn spawn_leader_subprocess() -> Result<u32, ConnectionError> {
     }
     cmd.stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null());
-    let log_path = crate::util::kigi_home::kigi_home().join("leader.log");
+    let log_path = crate::util::kigi_home::kigi_home()
+        .join("logs")
+        .join("leader.log");
+    if let Some(parent) = log_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
     match std::fs::File::create(&log_path) {
         Ok(log_file) => {
             info!("Leader stderr → log file");
@@ -1443,6 +1466,46 @@ mod tests {
             reachable_leader_pids(&[reachable, stale]),
             vec![(222, "0.2.52".to_string())]
         );
+    }
+    fn reachable_default(socket: &str) -> LeaderDescriptor {
+        let socket_path = PathBuf::from(socket);
+        LeaderDescriptor {
+            pid_from_lock: Some(1),
+            lock_path: Some(socket_path.with_extension("lock")),
+            socket_path: Some(socket_path.clone()),
+            socket_suffix: String::new(),
+            classification: LeaderDiscoveryState::Reachable,
+            is_default: true,
+            live_info: Some(LiveLeaderInfo {
+                pid: 1,
+                socket_path,
+                lock_path: PathBuf::new(),
+                socket_suffix: String::new(),
+                leader_protocol_version: 1,
+                leader_binary_version: "0.1.15".to_string(),
+            }),
+            target_error: None,
+        }
+    }
+    #[test]
+    fn default_target_prefers_the_current_socket_over_a_legacy_default() {
+        let legacy = reachable_default("/h/.kigi/leader.sock");
+        let current = reachable_default("/h/.kigi/run/leader.sock");
+        let current_socket = PathBuf::from("/h/.kigi/run/leader.sock");
+        let picked = resolve_target_from_descriptors(
+            LeaderTarget::Default,
+            vec![current.clone(), legacy.clone()],
+            &current_socket,
+        )
+        .expect("current default resolves");
+        assert_eq!(picked.descriptor.socket_path, current.socket_path);
+        let fallback = resolve_target_from_descriptors(
+            LeaderTarget::Default,
+            vec![legacy.clone()],
+            &current_socket,
+        )
+        .expect("legacy default still resolves alone");
+        assert_eq!(fallback.descriptor.socket_path, legacy.socket_path);
     }
     #[test]
     fn leader_is_older_than_directional() {

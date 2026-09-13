@@ -96,6 +96,37 @@ pub(crate) fn essential_writable_paths(workspace: &Path) -> Vec<PathBuf> {
     paths
 }
 
+/// Home subtrees the process keeps writing after enforcement: session and
+/// worktree state, memory, diagnostics. Landlock cannot carve a child out of
+/// a write grant, so the rest of `~/.kigi` (`config.toml`, `auth.json`,
+/// `sandbox.toml`, `hooks/`, `bin/`, `vendor/`, `plugin-data/`) stays
+/// read-only and a sandboxed child cannot arm the next launch.
+#[cfg(all(feature = "enforce", unix))]
+const HOME_STATE_DIRS: &[&str] = &[
+    "run",
+    "sessions",
+    "worktrees",
+    "worktree_pool",
+    "tasks",
+    "memory",
+    "logs",
+    "debug",
+    "crash",
+    "memtrace",
+    "trace-exports",
+];
+
+/// Writable paths for the strict profile: the workspace, the home state
+/// subtrees, and temp.
+#[cfg(all(feature = "enforce", unix))]
+pub(crate) fn essential_writable_paths_strict(workspace: &Path) -> Vec<PathBuf> {
+    let home = kigi_home();
+    let mut paths = vec![workspace.to_path_buf()];
+    paths.extend(HOME_STATE_DIRS.iter().map(|dir| home.join(dir)));
+    paths.extend(temp_writable_paths());
+    paths
+}
+
 /// Writable directory paths for the read-only profile (minimal: just ~/.kigi + temp).
 /// Device files are handled separately via `allow_file` in `to_capability_set_with_config`.
 #[cfg(all(feature = "enforce", unix))]

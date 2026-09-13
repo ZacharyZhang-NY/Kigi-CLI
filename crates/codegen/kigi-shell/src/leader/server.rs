@@ -1146,6 +1146,9 @@ pub async fn run_leader_server(
     control_state: LeaderServerControlState,
 ) -> Result<(), ServerError> {
     let _ = std::fs::remove_file(&socket_path);
+    if let Some(parent) = socket_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let shutdown_reason_rx = shutdown_tx.subscribe();
     let listener = LeaderListener::bind(&socket_path)?;
     info!("Leader server listening");
