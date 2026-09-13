@@ -10,8 +10,7 @@ use crate::slash::command::{AppCtx, ArgItem, CommandExecCtx, CommandResult, Slas
 
 /// Online docs landing page (hardcoded like other TUI deep-links; the
 /// project README is the docs entry point for the repo-hosted docs).
-pub const BUILD_DOCS_URL: &str =
-    "https://github.com/ZacharyZhang-NY/Kigi-CLI/blob/main/README.md";
+pub const BUILD_DOCS_URL: &str = "https://github.com/ZacharyZhang-NY/Kigi-CLI/blob/main/README.md";
 
 /// Open How-to Guides or online Build docs.
 pub struct DocsCommand;
