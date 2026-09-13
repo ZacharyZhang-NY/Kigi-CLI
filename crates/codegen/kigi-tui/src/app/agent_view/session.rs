@@ -733,6 +733,20 @@ impl AgentView {
             }
         }
     }
+    /// The shell reported the session's effective context window (model
+    /// switch). The snapshot caches the previous model's window, so the
+    /// header would show it until the next streaming update. Returns
+    /// whether the snapshot changed, so the caller can request a redraw.
+    pub fn apply_context_window(&mut self, total: u64) -> bool {
+        let Some((used, cached)) = self.context_state.as_ref().map(|c| (c.used, c.total)) else {
+            return false;
+        };
+        if cached == total {
+            return false;
+        }
+        self.apply_context_used(used, total);
+        true
+    }
     /// Record a key event to the input flight recorder.
     ///
     /// Zero heap allocations — stores raw `Copy` types in the ring buffer.
@@ -1259,6 +1273,36 @@ mod resolve_turn_activity_tests {
                 waits: true,
             }
         );
+    }
+}
+#[cfg(test)]
+mod apply_context_window_tests {
+    use super::super::test_agent_view;
+    fn view() -> super::AgentView {
+        test_agent_view(Some("s1"), std::path::PathBuf::from("/tmp"))
+    }
+    #[test]
+    fn reported_window_replaces_the_cached_total() {
+        let mut agent = view();
+        agent.apply_context_used(15_000, 1_000_000);
+        assert!(agent.apply_context_window(262_144));
+        let snap = agent.context_state.as_ref().unwrap();
+        assert_eq!(
+            (snap.used, snap.total, snap.usage_pct, snap.free_tokens),
+            (15_000, 262_144, 6, 262_144 - 15_000)
+        );
+    }
+    #[test]
+    fn same_window_reports_no_change() {
+        let mut agent = view();
+        agent.apply_context_used(15_000, 1_000_000);
+        assert!(!agent.apply_context_window(1_000_000));
+    }
+    #[test]
+    fn no_snapshot_stays_none() {
+        let mut agent = view();
+        assert!(!agent.apply_context_window(262_144));
+        assert!(agent.context_state.is_none());
     }
 }
 #[cfg(test)]

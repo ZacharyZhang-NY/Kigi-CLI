@@ -210,9 +210,9 @@ pub(crate) async fn apply(
         auto_compact_threshold_percent: new_threshold,
         responds_to: tx,
     });
-    let updated_model = rx
+    let (updated_model, context_window) = rx
         .await
-        .map_err(|_| acp::Error::internal_error().data("failed to set session model"))?;
+        .map_err(|_| acp::Error::internal_error().data("failed to set session model"))??;
     if let Some(handle) = agent.sessions.borrow_mut().get_mut(&session_id) {
         handle.model_id = model_id.clone();
         handle.reasoning_effort = applied_effort;
@@ -224,6 +224,7 @@ pub(crate) async fn apply(
         &session_id,
         model_id.0.as_ref(),
         applied_effort.map(|eff| eff.to_string()),
+        context_window.get(),
     );
     if agent.cfg.borrow().mode != config::AgentMode::Leader {
         agent.models_manager.set_current_model_id(model_id);
@@ -232,9 +233,12 @@ pub(crate) async fn apply(
             .set_current_reasoning_effort(applied_effort);
     }
     Ok(acp::SetSessionModelResponse::new().meta(
-        serde_json::json!({ "model" : updated_model, })
-            .as_object()
-            .cloned(),
+        serde_json::json!({
+            "model": updated_model,
+            "totalContextTokens": context_window.get(),
+        })
+        .as_object()
+        .cloned(),
     ))
 }
 /// Broadcast a `ModelChanged` to every client subscribed to this session so
@@ -245,12 +249,14 @@ fn broadcast_model_changed(
     session_id: &acp::SessionId,
     model_id: &str,
     reasoning_effort: Option<String>,
+    context_window: u64,
 ) {
     let notification = crate::extensions::notification::SessionNotification {
         session_id: session_id.clone(),
         update: crate::extensions::notification::SessionUpdate::ModelChanged {
             model_id: model_id.to_owned(),
             reasoning_effort,
+            context_window: Some(context_window),
         },
         meta: None,
     };

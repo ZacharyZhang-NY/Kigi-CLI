@@ -1587,7 +1587,12 @@ pub(crate) fn execute(
                         .meta(meta);
                     let result = acp_send(req, &tx)
                         .await
-                        .map(|_| ())
+                        .map(|resp| {
+                            resp.meta
+                                .as_ref()
+                                .and_then(|m| m.get("totalContextTokens"))
+                                .and_then(serde_json::Value::as_u64)
+                        })
                         .map_err(|e| {
                             use kigi_shell::agent::config::ModelSwitchIncompatibleAgentError;
                             if let Some(typed) = ModelSwitchIncompatibleAgentError::from_acp_error(

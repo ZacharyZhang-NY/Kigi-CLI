@@ -2112,7 +2112,10 @@ pub enum TaskResult {
         agent_id: AgentId,
         model_id: acp::ModelId,
         effort: Option<ReasoningEffort>,
-        result: Result<(), SwitchModelError>,
+        /// Ok carries the effective context window the shell reported
+        /// (`totalContextTokens` in the response meta; `None` from a shell
+        /// that predates it).
+        result: Result<Option<u64>, SwitchModelError>,
         /// Forwarded from `Effect::SwitchModel.prev_model_id` for
         /// rollback on `IncompatibleAgent`.
         prev_model_id: Option<acp::ModelId>,

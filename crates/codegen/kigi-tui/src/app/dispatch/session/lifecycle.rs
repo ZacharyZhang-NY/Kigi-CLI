@@ -978,13 +978,13 @@ pub(in crate::app::dispatch) fn handle_switch_model_complete(
     agent_id: AgentId,
     model_id: acp::ModelId,
     effort: Option<ReasoningEffort>,
-    result: Result<(), SwitchModelError>,
+    result: Result<Option<u64>, SwitchModelError>,
     prev_model_id: Option<acp::ModelId>,
 ) -> Vec<Effect> {
     if let Some(agent) = app.agents.get_mut(&agent_id) {
         agent.session.model_switch_pending = false;
         let mut effects = match result {
-            Ok(()) => {
+            Ok(context_window) => {
                 agent.session.user_model_preference = Some(model_id.clone());
                 let display_name = agent
                     .session
@@ -996,6 +996,9 @@ pub(in crate::app::dispatch) fn handle_switch_model_complete(
                 let prev_model = agent.session.models.current.clone();
                 let prev_effort = agent.session.models.reasoning_effort;
                 agent.session.models.set_current(model_id.clone(), effort);
+                if let Some(total) = context_window {
+                    agent.apply_context_window(total);
+                }
                 let resolved_effort = agent.session.models.reasoning_effort;
                 let unchanged =
                     prev_model.as_ref() == Some(&model_id) && prev_effort == resolved_effort;

@@ -110,6 +110,70 @@
         );
     }
 
+    fn seed_windowed_models(agent: &mut AgentView) {
+        for (slug, window) in [("wide", 1_000_000u64), ("narrow", 262_144)] {
+            let mut info = make_model_info(slug);
+            info.meta = serde_json::json!({ "totalContextTokens": window })
+                .as_object()
+                .cloned();
+            agent
+                .session
+                .models
+                .available
+                .insert(acp::ModelId::new(std::sync::Arc::from(slug)), info);
+        }
+        agent
+            .session
+            .models
+            .set_current(acp::ModelId::new(std::sync::Arc::from("wide")), None);
+        agent.apply_context_used(15_000, 1_000_000);
+    }
+
+    /// A follower mirrors a remote switch and installs the effective window
+    /// the broadcast carries, like the invoking client does.
+    #[test]
+    fn model_changed_broadcast_installs_the_reported_context_window() {
+        let mut app = make_app_with_agent("sess-1");
+        seed_windowed_models(app.agents.get_mut(&AgentId(0)).unwrap());
+
+        let notif = model_changed_ext("sess-1", "narrow", None, Some(262_144));
+        assert!(handle_ext_notification(&notif, &mut app));
+
+        let snap = app.agents[&AgentId(0)].context_state.as_ref().unwrap();
+        assert_eq!((snap.used, snap.total, snap.usage_pct), (15_000, 262_144, 6));
+    }
+
+    /// Same model, same effort, new effective window (the catalog was
+    /// reloaded and re-applied): the follower must still request a redraw.
+    #[test]
+    fn model_changed_same_model_new_window_requests_redraw() {
+        let mut app = make_app_with_agent("sess-1");
+        seed_windowed_models(app.agents.get_mut(&AgentId(0)).unwrap());
+
+        let notif = model_changed_ext("sess-1", "wide", None, Some(2_000_000));
+        assert!(handle_ext_notification(&notif, &mut app));
+
+        let snap = app.agents[&AgentId(0)].context_state.as_ref().unwrap();
+        assert_eq!((snap.used, snap.total), (15_000, 2_000_000));
+
+        let again = model_changed_ext("sess-1", "wide", None, Some(2_000_000));
+        assert!(!handle_ext_notification(&again, &mut app));
+    }
+
+    /// A broadcast from a leader that predates the field carries no window;
+    /// the snapshot is left for the next streaming update to refresh.
+    #[test]
+    fn model_changed_broadcast_without_window_keeps_the_snapshot() {
+        let mut app = make_app_with_agent("sess-1");
+        seed_windowed_models(app.agents.get_mut(&AgentId(0)).unwrap());
+
+        let notif = model_changed_ext("sess-1", "narrow", None, None);
+        assert!(handle_ext_notification(&notif, &mut app));
+
+        let snap = app.agents[&AgentId(0)].context_state.as_ref().unwrap();
+        assert_eq!((snap.used, snap.total), (15_000, 1_000_000));
+    }
+
     #[test]
     fn models_update_without_active_agent_uses_shell_default() {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
@@ -232,7 +296,7 @@
         let scrollback_before = agent.scrollback.len();
         assert!(!agent.session.model_switch_pending);
 
-        let notif = model_changed_ext("sess-1", "kigi-4", None);
+        let notif = model_changed_ext("sess-1", "kigi-4", None, None);
         let changed = handle_ext_notification(&notif, &mut app);
         assert!(
             changed,
@@ -278,7 +342,7 @@
             Some(acp::ModelId::new(std::sync::Arc::from("heavy")));
         assert!(!agent.session.model_switch_pending);
 
-        let notif = model_changed_ext("sess-1", "auto", None);
+        let notif = model_changed_ext("sess-1", "auto", None, None);
         let changed = handle_ext_notification(&notif, &mut app);
         assert!(
             changed,
@@ -328,7 +392,7 @@
         agent.session.model_switch_pending = true;
         let scrollback_before = agent.scrollback.len();
 
-        let notif = model_changed_ext("sess-1", "kigi-4", None);
+        let notif = model_changed_ext("sess-1", "kigi-4", None, None);
         let changed = handle_ext_notification(&notif, &mut app);
         assert!(
             !changed,
@@ -369,7 +433,7 @@
         let agent = app.agents.get_mut(&AgentId(0)).unwrap();
         seed_models(agent, "kigi-3", &["kigi-3", "kigi-4"]);
 
-        let notif = model_changed_ext("sess-1", "kigi-99-unknown", None);
+        let notif = model_changed_ext("sess-1", "kigi-99-unknown", None, None);
         let changed = handle_ext_notification(&notif, &mut app);
         assert!(
             !changed,
@@ -400,7 +464,7 @@
         let agent = app.agents.get_mut(&AgentId(0)).unwrap();
         seed_models(agent, "kigi-3", &["kigi-3", "kigi-4"]);
 
-        let notif = model_changed_ext("sess-1", "kigi-4", Some("high"));
+        let notif = model_changed_ext("sess-1", "kigi-4", Some("high"), None);
         assert!(handle_ext_notification(&notif, &mut app));
 
         let agent = app.agents.get(&AgentId(0)).unwrap();
@@ -422,7 +486,7 @@
         let agent = app.agents.get_mut(&AgentId(0)).unwrap();
         seed_models(agent, "kigi-3", &["kigi-3", "kigi-4"]);
 
-        let notif = model_changed_ext("sess-OTHER", "kigi-4", None);
+        let notif = model_changed_ext("sess-OTHER", "kigi-4", None, None);
         let changed = handle_ext_notification(&notif, &mut app);
         assert!(!changed);
 

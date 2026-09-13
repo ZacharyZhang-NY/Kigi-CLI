@@ -1701,12 +1701,14 @@ pub(super) fn model_changed_ext(
     session_id: &str,
     model_id: &str,
     reasoning_effort: Option<&str>,
+    context_window: Option<u64>,
 ) -> acp::ExtNotification {
     let payload = SessionNotification {
         session_id: acp::SessionId::new(session_id),
         update: XaiSessionUpdate::ModelChanged {
             model_id: model_id.to_string(),
             reasoning_effort: reasoning_effort.map(String::from),
+            context_window,
         },
         meta: None,
     };
@@ -1723,6 +1725,7 @@ pub(super) fn model_changed_ext_with_event(
         update: XaiSessionUpdate::ModelChanged {
             model_id: model_id.to_string(),
             reasoning_effort: None,
+            context_window: None,
         },
         meta: Some(serde_json::json!({ "eventId" : event_id })),
     };

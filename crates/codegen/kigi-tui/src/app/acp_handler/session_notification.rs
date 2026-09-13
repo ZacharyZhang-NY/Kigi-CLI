@@ -812,6 +812,7 @@ pub(super) fn handle_session_notification(notif: &acp::ExtNotification, app: &mu
         XaiSessionUpdate::ModelChanged {
             model_id,
             reasoning_effort,
+            context_window,
         } => {
             if agent.session.model_switch_pending {
                 tracing::debug!(
@@ -847,6 +848,8 @@ pub(super) fn handle_session_notification(notif: &acp::ExtNotification, app: &mu
                 .session
                 .models
                 .set_current(new_model_id.clone(), effort);
+            let window_changed =
+                context_window.is_some_and(|total| agent.apply_context_window(total));
             agent.session.user_model_preference = Some(new_model_id.clone());
             let resolved_effort = agent.session.models.reasoning_effort;
             let actually_changed =
@@ -858,7 +861,7 @@ pub(super) fn handle_session_notification(notif: &acp::ExtNotification, app: &mu
                     "ModelChanged broadcast applied (remote switch)"
                 );
             }
-            actually_changed
+            actually_changed || window_changed
         }
         XaiSessionUpdate::MemoryFiles { files } => {
             let entries = crate::views::memory_modal::build_entries(files);

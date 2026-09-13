@@ -535,7 +535,7 @@ fn switch_model_complete_success_updates_model_and_pushes_message() {
             agent_id: id,
             model_id: model_id.clone(),
             effort: None,
-            result: Ok(()),
+            result: Ok(None),
             prev_model_id: None,
         }),
         &mut app,
@@ -552,6 +552,96 @@ fn switch_model_complete_success_updates_model_and_pushes_message() {
         &effects[0],
         Effect::PersistPreferredModel { model_id: mid, .. } if *mid == model_id.clone()
     ));
+}
+
+/// The bare `/model <name>` path: `SetDefaultModel` moves `models.current`
+/// before the ACP round trip; the completion then installs the effective
+/// window the shell reported, so the header repaints at once.
+#[test]
+fn switch_model_complete_installs_the_reported_context_window() {
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+    let model = |slug: &str, window: u64| {
+        let mid = acp::ModelId::new(std::sync::Arc::from(slug));
+        let info = acp::ModelInfo::new(mid.clone(), slug.to_string()).meta(
+            serde_json::json!({ "totalContextTokens": window })
+                .as_object()
+                .cloned(),
+        );
+        (mid, info)
+    };
+    let (wide, wide_info) = model("wide", 1_000_000);
+    let (narrow, narrow_info) = model("narrow", 262_144);
+    {
+        let agent = app.agents.get_mut(&id).unwrap();
+        agent
+            .session
+            .models
+            .available
+            .insert(wide.clone(), wide_info);
+        agent
+            .session
+            .models
+            .available
+            .insert(narrow.clone(), narrow_info);
+        agent.session.models.set_current(wide.clone(), None);
+        agent.apply_context_used(15_000, 1_000_000);
+    }
+
+    let effects = dispatch(Action::SetDefaultModel(narrow.clone()), &mut app);
+    assert!(
+        effects
+            .iter()
+            .any(|e| matches!(e, Effect::SwitchModel { .. }))
+    );
+    assert!(app.agents[&id].session.model_switch_pending);
+    assert_eq!(
+        app.agents[&id].context_state.as_ref().unwrap().total,
+        1_000_000
+    );
+
+    dispatch(
+        Action::TaskComplete(TaskResult::SwitchModelComplete {
+            agent_id: id,
+            model_id: narrow,
+            effort: None,
+            result: Ok(Some(262_144)),
+            prev_model_id: Some(wide),
+        }),
+        &mut app,
+    );
+
+    let agent = app.agents.get_mut(&id).unwrap();
+    let snap = agent.context_state.as_ref().unwrap();
+    assert_eq!(
+        (snap.used, snap.total, snap.usage_pct),
+        (15_000, 262_144, 6)
+    );
+    let area = ratatui::layout::Rect::new(0, 0, 100, 40);
+    let mut buf = ratatui::buffer::Buffer::empty(area);
+    agent.draw(
+        area,
+        &mut buf,
+        &crate::actions::ActionRegistry::defaults(),
+        &mut crate::scrollback::render::ScratchBuffer::new(),
+        None,
+        false,
+        0,
+        None,
+        &crate::app::bundle::BundleState::default(),
+        false,
+        &mut Vec::new(),
+    );
+    let screen: String = (0..area.height)
+        .map(|y| {
+            (0..area.width)
+                .filter_map(|x| buf.cell((x, y)).map(|c| c.symbol().to_string()))
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(screen.contains("15K / 262K"), "header: {screen:?}");
+    assert!(!screen.contains("1.0M"), "stale window: {screen:?}");
 }
 
 #[test]
@@ -575,7 +665,7 @@ fn switch_model_complete_skips_message_and_persist_when_unchanged() {
             agent_id: id,
             model_id: model_id.clone(),
             effort: None,
-            result: Ok(()),
+            result: Ok(None),
             prev_model_id: None,
         }),
         &mut app,
@@ -630,7 +720,7 @@ fn switch_model_complete_persists_resolved_effort_from_catalog_meta() {
             model_id: model_id.clone(),
             // user typed `/model Blackbox 4.7` with no effort
             effort: None,
-            result: Ok(()),
+            result: Ok(None),
             prev_model_id: None,
         }),
         &mut app,
@@ -696,7 +786,7 @@ fn switch_to_non_reasoning_model_clears_persisted_effort() {
             agent_id: id,
             model_id: model_id.clone(),
             effort: None,
-            result: Ok(()),
+            result: Ok(None),
             prev_model_id: None,
         }),
         &mut app,
@@ -930,7 +1020,7 @@ fn same_agent_type_switch_no_modal() {
             agent_id: id,
             model_id: model_b.clone(),
             effort: None,
-            result: Ok(()),
+            result: Ok(None),
             prev_model_id: None,
         }),
         &mut app,
@@ -969,7 +1059,7 @@ fn switch_model_pending_lifecycle() {
             agent_id: id,
             model_id,
             effort: None,
-            result: Ok(()),
+            result: Ok(None),
             prev_model_id: None,
         }),
         &mut app,

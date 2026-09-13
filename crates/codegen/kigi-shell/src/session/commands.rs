@@ -173,7 +173,9 @@ pub enum SessionCommand {
         /// `compaction.threshold_percent` (which is `Cell<u8>` so it can
         /// update without `&mut self`).
         auto_compact_threshold_percent: u8,
-        responds_to: oneshot::Sender<Result<acp::ModelId, acp::Error>>,
+        /// Ok: the applied model id and the session's effective context
+        /// window, which clients repaint from without waiting for a turn.
+        responds_to: oneshot::Sender<Result<(acp::ModelId, std::num::NonZeroU64), acp::Error>>,
     },
     /// Zero-turn harness rebuild: build a brand-new `Agent` from the
     /// session's `AgentRebuildSpec` and the new `AgentDefinition`,

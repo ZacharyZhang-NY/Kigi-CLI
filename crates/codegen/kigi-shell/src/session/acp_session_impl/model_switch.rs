@@ -10,7 +10,7 @@ impl SessionActor {
         apply_prompt_override: bool,
         skip_prompt_rewrite: bool,
         auto_compact_threshold_percent: u8,
-    ) -> Result<acp::ModelId, acp::Error> {
+    ) -> Result<(acp::ModelId, std::num::NonZeroU64), acp::Error> {
         let model_id = acp::ModelId::new(sampling_config.model.clone());
         // H4: record the picker's catalog KEY as this SESSION's own selection.
         // `sampling_config.model` is the ambiguous bare slug; the key is what
@@ -120,7 +120,7 @@ impl SessionActor {
                 agent_name: Some(agent_name),
                 reasoning_effort: Some(sampling_config.reasoning_effort),
             });
-        Ok(model_id)
+        Ok((model_id, new_context_window))
     }
     /// Handle [`SessionCommand::RebuildAgentForDefinition`].
     ///

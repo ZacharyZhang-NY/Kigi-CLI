@@ -691,6 +691,11 @@ pub enum SessionUpdate {
         /// does not support reasoning effort or no effort override was applied.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reasoning_effort: Option<String>,
+        /// The session's effective context window after the switch, so a
+        /// follower repaints its header without waiting for the next turn.
+        /// `None` from an agent that predates the field.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        context_window: Option<u64>,
     },
     /// Streaming chunk of a tool call's arguments.
     ///
@@ -1970,15 +1975,18 @@ mod tests {
         let with_effort = SessionUpdate::ModelChanged {
             model_id: "kigi-4".into(),
             reasoning_effort: Some("high".into()),
+            context_window: Some(262_144),
         };
         let json = serde_json::to_value(&with_effort).unwrap();
         assert_eq!(json["sessionUpdate"], "model_changed");
         assert_eq!(json["model_id"], "kigi-4");
         assert_eq!(json["reasoning_effort"], "high");
+        assert_eq!(json["context_window"], 262_144);
 
         let without_effort = SessionUpdate::ModelChanged {
             model_id: "kigi-3".into(),
             reasoning_effort: None,
+            context_window: None,
         };
         let json = serde_json::to_value(&without_effort).unwrap();
         assert_eq!(json["sessionUpdate"], "model_changed");
@@ -1988,6 +1996,7 @@ mod tests {
             "reasoning_effort: None must be skipped on the wire so old pagers \
              and third-party ACP clients see a smaller, no-extra-keys payload"
         );
+        assert!(json.get("context_window").is_none());
     }
 
     /// `ModelChanged` round-trips through JSON: a follower client deserializes
@@ -2000,6 +2009,7 @@ mod tests {
         let original = SessionUpdate::ModelChanged {
             model_id: "kigi-4".into(),
             reasoning_effort: Some("medium".into()),
+            context_window: Some(1_000_000),
         };
         let json_str = serde_json::to_string(&original).unwrap();
         let parsed: SessionUpdate = serde_json::from_str(&json_str).unwrap();
@@ -2021,6 +2031,7 @@ mod tests {
             update: SessionUpdate::ModelChanged {
                 model_id: "kigi-4".into(),
                 reasoning_effort: None,
+                context_window: None,
             },
             meta: None,
         };

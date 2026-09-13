@@ -1518,6 +1518,9 @@ mod load_user_prompts_tests;
 #[path = "acp_session_tests/memory_config_tests.rs"]
 mod memory_config_tests;
 #[cfg(test)]
+#[path = "acp_session_tests/model_switch_window_tests.rs"]
+mod model_switch_window_tests;
+#[cfg(test)]
 #[path = "acp_session_tests/parallel_dispatch_tests.rs"]
 mod parallel_dispatch_tests;
 #[cfg(test)]
