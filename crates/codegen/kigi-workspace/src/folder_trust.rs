@@ -240,6 +240,16 @@ pub fn persist_trust(store: &mut TrustStore, key: &Path) {
 /// the gate and the display-only [`repo_config_kinds`] enumerate the EXACT same
 /// markers (they cannot drift) while this hot path still short-circuits on the
 /// first hit.
+/// Present in any form (file, directory, dangling symlink) or unreadable.
+/// The hook loader takes a directory at either path as a hook source, so
+/// only a clean NotFound clears the gate.
+fn path_present_or_uncertain(path: &Path) -> bool {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => true,
+        Err(err) => err.kind() != std::io::ErrorKind::NotFound,
+    }
+}
+
 pub fn repo_configs_present(cwd: &Path) -> bool {
     !collect_repo_config_kinds(cwd, true).is_empty()
 }
@@ -345,9 +355,17 @@ fn collect_repo_config_kinds(cwd: &Path, first_only: bool) -> Vec<&'static str> 
     // must be gated — else a hooks-only clone (e.g. `.kigi/hooks/evil.json`) would
     // resolve trusted and run ungated. Presence mirrors discovery's "something to
     // gate" check.
+    // The four project hook sources `discover_hook_source_paths` loads from
+    // the git root; a directory at any of them is taken as a hook source.
     let hook_root = chain.git_root.as_deref().unwrap_or(cwd);
-    if hook_root.join(".kigi").join("hooks").is_dir()
-        || hook_root.join(".cursor").join("hooks.json").is_file()
+    if [
+        hook_root.join(".kigi").join("hooks"),
+        hook_root.join(".cursor").join("hooks.json"),
+        hook_root.join(".claude").join("settings.json"),
+        hook_root.join(".claude").join("settings.local.json"),
+    ]
+    .iter()
+    .any(|path| path_present_or_uncertain(path))
     {
         hit!("hooks");
     }
@@ -608,6 +626,49 @@ mod tests {
         let tmp = repo_tmp();
         std::fs::create_dir_all(tmp.path().join(".kigi").join("hooks")).unwrap();
         assert!(repo_configs_present(tmp.path()));
+    }
+
+    #[test]
+    fn repo_configs_present_detects_cursor_hooks_json_directory() {
+        // The loader takes a directory here as a hook source; the gate must
+        // not clear it just because it is not a regular file.
+        let tmp = repo_tmp();
+        std::fs::create_dir_all(tmp.path().join(".cursor").join("hooks.json")).unwrap();
+        assert!(repo_configs_present(tmp.path()));
+        assert!(repo_config_kinds(tmp.path()).contains(&"hooks"));
+    }
+
+    #[test]
+    fn repo_configs_present_detects_claude_settings_directories() {
+        for name in ["settings.json", "settings.local.json"] {
+            let tmp = repo_tmp();
+            std::fs::create_dir_all(tmp.path().join(".claude").join(name)).unwrap();
+            assert!(repo_configs_present(tmp.path()), "{name}");
+            assert!(repo_config_kinds(tmp.path()).contains(&"hooks"), "{name}");
+        }
+    }
+
+    #[test]
+    fn repo_configs_present_detects_project_hooks_file() {
+        let tmp = repo_tmp();
+        std::fs::create_dir_all(tmp.path().join(".kigi")).unwrap();
+        std::fs::write(tmp.path().join(".kigi").join("hooks"), "{}").unwrap();
+        assert!(repo_configs_present(tmp.path()));
+        assert!(repo_config_kinds(tmp.path()).contains(&"hooks"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn repo_configs_present_detects_dangling_cursor_hooks_symlink() {
+        let tmp = repo_tmp();
+        std::fs::create_dir_all(tmp.path().join(".cursor")).unwrap();
+        std::os::unix::fs::symlink(
+            tmp.path().join("missing-target"),
+            tmp.path().join(".cursor").join("hooks.json"),
+        )
+        .unwrap();
+        assert!(repo_configs_present(tmp.path()));
+        assert!(repo_config_kinds(tmp.path()).contains(&"hooks"));
     }
 
     #[test]
