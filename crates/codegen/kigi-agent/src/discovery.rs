@@ -252,11 +252,20 @@ pub fn by_name(name: &str) -> Option<AgentDefinition> {
     by_name_with_home(name, dirs::home_dir().as_deref(), kigi.as_deref())
 }
 
+/// An agent name is one file stem: a separator or `..` would resolve a file outside the searched directory with that directory's trust scope.
+fn is_single_path_component(name: &str) -> bool {
+    !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\'])
+}
+
 fn by_name_with_home(
     name: &str,
     home: Option<&Path>,
     kigi_home: Option<&Path>,
 ) -> Option<AgentDefinition> {
+    if !is_single_path_component(name) {
+        tracing::warn!(name, "rejected agent name: not a single path component");
+        return None;
+    }
     // Check built-ins first — type-safe via BuiltinAgentName strum enum.
     // Legacy pre-rebrand agent types (persisted in old session files) are
     // mapped onto their current names first; see `canonical_agent_type`.
@@ -298,6 +307,10 @@ fn by_name_in_cwd_with_home(
     home: Option<&Path>,
     kigi_home: Option<&Path>,
 ) -> Option<AgentDefinition> {
+    if !is_single_path_component(name) {
+        tracing::warn!(name, "rejected agent name: not a single path component");
+        return None;
+    }
     if let Some(def) = load_project_definition_by_name(name, cwd) {
         return Some(def);
     }
@@ -825,6 +838,30 @@ mod tests {
     fn test_by_name_unknown_returns_none() {
         let def = by_name("nonexistent-agent-xyz");
         assert!(def.is_none());
+    }
+
+    /// `../outside` must not load a file beyond the agents directory under that directory's scope.
+    #[test]
+    fn by_name_rejects_names_that_leave_the_agents_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("project");
+        let agents_dir = project.join(".kigi").join("agents");
+        fs::create_dir_all(&agents_dir).unwrap();
+        write_agent_file(
+            &project,
+            "outside.md",
+            "outside",
+            "Lives outside the agents dir",
+        );
+        write_agent_file(&agents_dir, "inside.md", "inside", "Lives inside");
+        assert!(by_name_in_cwd_with_home("../../outside", &project, None, None).is_none());
+        assert!(by_name_in_cwd_with_home("..", &project, None, None).is_none());
+        assert!(by_name_in_cwd_with_home("a/b", &project, None, None).is_none());
+        assert!(by_name_with_home("../../outside", None, None).is_none());
+        assert_eq!(
+            by_name_in_cwd_with_home("inside", &project, None, None).map(|d| d.name),
+            Some("inside".to_string())
+        );
     }
 
     #[test]

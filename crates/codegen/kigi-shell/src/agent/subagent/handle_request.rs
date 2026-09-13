@@ -988,13 +988,22 @@ pub(crate) async fn handle_subagent_request(
             }
         }
     }
-    let agent_mcp_servers: Vec<_> = if is_plugin_agent {
-        if !definition.mcp_servers.is_empty() {
-            tracing::warn!(
-                agent = % definition.name, plugin = ? definition.plugin_name,
-                "ignoring mcpServers on plugin agent (not supported for security)"
-            );
-        }
+    let agent_mcp_servers: Vec<_> = if definition.mcp_servers.is_empty() {
+        vec![]
+    } else if is_plugin_agent {
+        tracing::warn!(
+            agent = % definition.name, plugin = ? definition.plugin_name,
+            "ignoring mcpServers on plugin agent (not supported for security)"
+        );
+        vec![]
+    } else if !crate::agent::folder_trust::agent_inline_hooks_allowed(definition.scope, || {
+        crate::agent::folder_trust::project_scope_allowed(&ctx.parent_cwd)
+    }) {
+        // An untrusted repo's inline stdio MCP command would run like an inline hook.
+        tracing::warn!(
+            agent = % definition.name,
+            "ignoring mcpServers on untrusted project agent (folder not trusted; re-run with --trust)"
+        );
         vec![]
     } else {
         definition
