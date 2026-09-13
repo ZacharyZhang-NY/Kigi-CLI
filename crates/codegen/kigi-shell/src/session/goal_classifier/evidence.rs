@@ -519,6 +519,9 @@ pub(crate) async fn capture_plan_changes(
     }
 }
 
+/// Pin the `a/` `b/` header prefixes [`extract_changed_files`] parses.
+const DIFF_PREFIX_ARGS: [&str; 2] = ["--src-prefix=a/", "--dst-prefix=b/"];
+
 /// Run `git diff <baseline>` and return the FULL (untruncated) stdout;
 /// the caller extracts the changed-file list before truncating.
 async fn run_git_diff_against_baseline(
@@ -526,7 +529,7 @@ async fn run_git_diff_against_baseline(
     workspace_root: &Path,
 ) -> Result<String, ChangesCaptureError> {
     let mut cmd = git_command(workspace_root);
-    cmd.arg("diff").arg(baseline);
+    cmd.arg("diff").args(DIFF_PREFIX_ARGS).arg(baseline);
     let output = match tokio::time::timeout(DIFF_COMMAND_TIMEOUT, cmd.output()).await {
         Ok(Ok(output)) => output,
         Ok(Err(err)) => return Err(ChangesCaptureError::DiffCommandFailed(err.to_string())),
@@ -579,10 +582,14 @@ async fn lazy_git_baseline_diff(
     // support SHA-256 repos.
     let mut cmd = git_command(workspace_root);
     if git_has_parent(workspace_root, &oldest).await {
-        cmd.arg("diff").arg(format!("{oldest}^..{head}"));
+        cmd.arg("diff")
+            .args(DIFF_PREFIX_ARGS)
+            .arg(format!("{oldest}^..{head}"));
     } else {
         let empty_tree = derive_empty_tree_sha(workspace_root).await;
-        cmd.arg("diff").arg(format!("{empty_tree}..{head}"));
+        cmd.arg("diff")
+            .args(DIFF_PREFIX_ARGS)
+            .arg(format!("{empty_tree}..{head}"));
     }
 
     let output = match tokio::time::timeout(DIFF_COMMAND_TIMEOUT, cmd.output()).await {
@@ -2191,5 +2198,39 @@ mod tests {
             captured.diff.contains("untracked file(s)"),
             "patch must carry the untracked-files note",
         );
+    }
+    #[tokio::test]
+    async fn changed_files_ignore_the_host_diff_prefix_config() {
+        // Both keys rewrite the `diff --git a/<old> b/<new>` header the parser keys on.
+        for key in ["diff.mnemonicprefix", "diff.noprefix"] {
+            let tmp = tempfile::tempdir().unwrap();
+            init_repo(tmp.path());
+            git(tmp.path(), &["config", key, "true"]);
+            tokio::fs::write(tmp.path().join("tracked.txt"), b"seed\n")
+                .await
+                .unwrap();
+            let goal_created_at: i64 = 1_700_000_100;
+            git_at(tmp.path(), &["add", "."], goal_created_at + 100);
+            git_at(
+                tmp.path(),
+                &["commit", "-q", "-m", "post-goal"],
+                goal_created_at + 100,
+            );
+            let lazy = capture_changes_diff(None, tmp.path(), goal_created_at)
+                .await
+                .expect("lazy baseline must succeed");
+            assert_eq!(lazy.changed_files, ["tracked.txt"], "{key}: lazy baseline");
+            tokio::fs::write(tmp.path().join("tracked.txt"), b"changed\n")
+                .await
+                .unwrap();
+            let explicit = capture_changes_diff(Some("HEAD"), tmp.path(), goal_created_at)
+                .await
+                .expect("layer-1 git diff must succeed");
+            assert_eq!(
+                explicit.changed_files,
+                ["tracked.txt"],
+                "{key}: explicit baseline"
+            );
+        }
     }
 }
