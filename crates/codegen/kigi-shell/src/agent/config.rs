@@ -2601,6 +2601,7 @@ pub(crate) fn resolve_model_list(
         }
         resolved = prefetched;
     }
+    let mut explicit_api_backend_keys = std::collections::HashSet::new();
     for (key, model_override) in &cfg.config_models {
         let had_base = resolved.contains_key(key);
         let base = resolved.shift_remove(key);
@@ -2616,6 +2617,9 @@ pub(crate) fn resolve_model_list(
                     key,
                 );
             }
+        }
+        if model_override.api_backend.is_some() {
+            explicit_api_backend_keys.insert(key.as_str());
         }
         let entry = model_override.apply(key, base, &cfg.endpoints);
         tracing::debug!(
@@ -2638,7 +2642,7 @@ pub(crate) fn resolve_model_list(
                     )
                 })
                 .collect();
-        for entry in resolved.values_mut() {
+        for (key, entry) in resolved.iter_mut() {
             if let Some((donor_cw, donor_backend)) = donors.get(&entry.info.model) {
                 if entry.info.context_window.get() == default_cw {
                     tracing::debug!(
@@ -2648,7 +2652,9 @@ pub(crate) fn resolve_model_list(
                     );
                     entry.info.context_window = *donor_cw;
                 }
-                if entry.info.api_backend == ApiBackend::default()
+                // An explicit `[model.X] api_backend` wins even when it is the default.
+                if !explicit_api_backend_keys.contains(key.as_str())
+                    && entry.info.api_backend == ApiBackend::default()
                     && *donor_backend != ApiBackend::default()
                 {
                     entry.info.api_backend.clone_from(donor_backend);
@@ -9066,6 +9072,47 @@ default = "kigi-4.5"
             "BUG: prefetched 'kigi-4.5' should inherit 500k from \
              sibling 'kigi-build' (same model slug), not stay at {default_cw}"
         );
+    }
+    /// An explicit `[model.X] api_backend` survives a same-slug sibling even when it is the default.
+    #[test]
+    fn slug_propagation_keeps_an_explicit_default_api_backend() {
+        // Only kigi-messages has a non-default context window: the slug's single donor.
+        let default_cw = DEFAULT_CONTEXT_WINDOW;
+        let raw: toml::Value = toml::from_str(&format!(
+            r#"
+            [model.kigi-messages]
+            model = "kigi-4.5"
+            context_window = 500000
+            base_url = "https://test.example.com/v1"
+            api_backend = "messages"
+
+            [model.kigi-chat]
+            model = "kigi-4.5"
+            context_window = {default_cw}
+            base_url = "https://test.example.com/v1"
+            api_backend = "chat_completions"
+
+            [model.kigi-plain]
+            model = "kigi-4.5"
+            context_window = {default_cw}
+            base_url = "https://test.example.com/v1"
+            "#
+        ))
+        .unwrap();
+        let cfg = Config::new_from_toml_cfg(&raw).expect("config should parse");
+        let resolved = resolve_model_list(&cfg, None, &Default::default());
+        let backend = |key: &str| resolved.get(key).expect(key).info.api_backend.clone();
+        assert_eq!(
+            backend("kigi-chat"),
+            ApiBackend::ChatCompletions,
+            "explicit default backend must not be overwritten by the sibling"
+        );
+        assert_eq!(
+            backend("kigi-plain"),
+            ApiBackend::Messages,
+            "unset backend still inherits"
+        );
+        assert_eq!(backend("kigi-messages"), ApiBackend::Messages);
     }
     /// Slug propagation should carry over api_backend but NOT agent_type.
     #[test]
