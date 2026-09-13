@@ -270,10 +270,10 @@ Path patterns are globs matched against the path string the tool was called with
 - `*` and `?` do not cross `/`; `**` does. `Read(src/*)` matches `src/main.rs` but not `src/nested/mod.rs`; use `Read(src/**)` for the whole tree.
 - A bare filename matches only that exact string. Use `**/.env` to match `.env` at any depth.
 - There are no anchor prefixes: a leading `//` or `~/` in a pattern is treated as literal glob text. Write absolute-path patterns or `**/` patterns instead.
-- Paths are matched as given, without canonicalization. Whether a path is absolute or relative depends on how the tool was invoked, so patterns intended as boundaries should cover both forms (for example both `/repo/secrets/**` and `secrets/**`).
+- Allow rules match the path as the tool was called with it. Deny and ask rules are also checked against the file the tool will open: the path is resolved against the session directory, symlinks are followed, and the absolute and the workspace-relative spelling (with or without a leading `./`) are matched. `secrets/**` therefore catches a read of `/repo/secrets/key` and a read through a symlink that points into `secrets/`. A symlink that cannot be resolved (a loop) prompts when any deny or ask rule covers the tool.
 - `Read` rules also govern `grep` searches; `Grep(...)` rules match only grep.
 
-`Read` and `Edit` deny rules additionally apply to file paths that shell commands touch (for example `cat` or `sed` on a denied path), and that shell-level check resolves symlinks. The direct `read_file`/`search_replace` tool checks do not resolve symlinks. For OS-level enforcement that covers every process, combine deny rules with the sandbox ([18-sandbox.md](18-sandbox.md)).
+`Read` and `Edit` deny rules additionally apply to file paths that shell commands touch (for example `cat` or `sed` on a denied path), and that shell-level check resolves symlinks too. For OS-level enforcement that covers every process, combine deny rules with the sandbox ([18-sandbox.md](18-sandbox.md)).
 
 ### MCP Rules
 

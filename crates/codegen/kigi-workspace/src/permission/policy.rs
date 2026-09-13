@@ -3,7 +3,10 @@ use crate::permission::shell_access::combine_decisions;
 use crate::permission::types::{
     AccessKind, Decision, PatternMode, PermissionConfig, PermissionRule, RuleAction, ToolFilter,
 };
+use kigi_paths::normalize_lexically;
 use kigi_tools::implementations::kigi::web_fetch::domain::normalize_domain;
+use kigi_tools::types::resources::resolve_model_path;
+use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy)]
 enum MatchContext {
@@ -158,6 +161,65 @@ impl CompiledPolicy {
     }
 }
 
+impl CompiledPolicy {
+    /// Like [`Self::evaluate`], and for a native Edit/Read/Grep path also
+    /// checks deny/ask rules against the path the tool opens (sanitized,
+    /// `~`-expanded, display-remapped, joined to `cwd`) and against its
+    /// symlink-followed target, each as the absolute, `./`-relative and
+    /// relative spelling. Escalation only: no allow is granted through a link
+    /// or an alternate spelling. The flag is set when a link cannot be
+    /// followed (cycle, unreadable) while a deny/ask rule covers the tool:
+    /// the `Ask` it forces must survive the YOLO and auto fast paths.
+    pub fn evaluate_with_cwd(
+        &self,
+        access: &AccessKind,
+        cwd: &Path,
+        display_cwd: Option<&Path>,
+    ) -> (Option<Decision>, bool) {
+        let lexical = self.evaluate(access);
+        let Some(path) = native_file_path(access) else {
+            return (lexical, false);
+        };
+        let opened = resolve_model_path(cwd, display_cwd, path);
+        let mut spellings = path_spellings(
+            &normalize_lexically(&opened),
+            Some(&normalize_lexically(cwd)),
+        );
+        let mut unresolved_link = false;
+        match resolve_following_symlinks(&opened) {
+            Some(on_disk) => {
+                spellings.extend(path_spellings(
+                    &on_disk,
+                    dunce::canonicalize(cwd).ok().as_deref(),
+                ));
+            }
+            None => {
+                unresolved_link =
+                    path_has_symlink(&opened) && self.native_path_restrictions_apply(access);
+            }
+        }
+        let mut escalation = spellings.into_iter().fold(None, |acc, spelling| {
+            let decision = match self.evaluate(&access_with_path(access, spelling)) {
+                Some(decision @ (Decision::Reject(_) | Decision::Ask)) => Some(decision),
+                _ => None,
+            };
+            combine_decisions(acc, decision)
+        });
+        if unresolved_link {
+            escalation = combine_decisions(escalation, Some(Decision::Ask));
+        }
+        (combine_decisions(lexical, escalation), unresolved_link)
+    }
+
+    /// Any deny/ask rule whose tool filter covers this access, Grep included.
+    fn native_path_restrictions_apply(&self, access: &AccessKind) -> bool {
+        self.config.rules.iter().any(|rule| {
+            matches!(rule.action, RuleAction::Deny | RuleAction::Ask)
+                && tool_filter_matches(access, &rule.tool)
+        })
+    }
+}
+
 impl From<PermissionConfig> for CompiledPolicy {
     fn from(config: PermissionConfig) -> Self {
         Self::new(config)
@@ -190,6 +252,102 @@ fn shell_dash_c_script(words: &[String]) -> Option<&str> {
         }
     }
     None
+}
+
+fn native_file_path(access: &AccessKind) -> Option<&str> {
+    match access {
+        AccessKind::Edit(path) => Some(path.as_str()),
+        AccessKind::Read(Some(path)) => Some(path.as_str()),
+        AccessKind::Grep {
+            path: Some(path), ..
+        } => Some(path.as_str()),
+        _ => None,
+    }
+}
+
+fn access_with_path(access: &AccessKind, path: String) -> AccessKind {
+    match access {
+        AccessKind::Edit(_) => AccessKind::Edit(path),
+        AccessKind::Read(_) => AccessKind::Read(Some(path)),
+        AccessKind::Grep { glob, .. } => AccessKind::Grep {
+            path: Some(path),
+            glob: glob.clone(),
+        },
+        _ => unreachable!("caller filters via native_file_path"),
+    }
+}
+
+/// The absolute spelling plus, under `root`, the `./`-relative and relative
+/// spellings rules are written in.
+fn path_spellings(path: &Path, root: Option<&Path>) -> Vec<String> {
+    let mut forms = vec![path_match_string(path)];
+    if let Some(relative) = root.and_then(|root| path.strip_prefix(root).ok()) {
+        if relative.as_os_str().is_empty() {
+            forms.extend([".".to_owned(), "./".to_owned()]);
+        } else {
+            let relative = path_match_string(relative);
+            forms.push(format!("./{relative}"));
+            forms.push(relative);
+        }
+    }
+    forms
+}
+
+/// Windows separators become `/` so `/`-written rules match; a Unix
+/// backslash is a filename character and stays.
+fn path_match_string(path: &Path) -> String {
+    let text = path.to_string_lossy();
+    if cfg!(windows) {
+        text.replace('\\', "/")
+    } else {
+        text.into_owned()
+    }
+}
+
+/// True if any existing component of `absolute` is a symlink.
+fn path_has_symlink(absolute: &Path) -> bool {
+    let mut prefix = PathBuf::new();
+    absolute.components().any(|component| {
+        prefix.push(component);
+        std::fs::symlink_metadata(&prefix).is_ok_and(|meta| meta.file_type().is_symlink())
+    })
+}
+
+/// Follow every symlink, including dangling leaves and missing trailing
+/// components; `None` on cycles, depth limits or unreadable links.
+fn resolve_following_symlinks(path: &Path) -> Option<PathBuf> {
+    fn walk(path: &Path, depth: usize) -> Option<PathBuf> {
+        const MAX_SYMLINK_DEPTH: usize = 40;
+        if depth > MAX_SYMLINK_DEPTH {
+            return None;
+        }
+        // `dunce` avoids Windows `\\?\` verbatim paths (repo convention).
+        if let Ok(canonical) = dunce::canonicalize(path) {
+            return Some(canonical);
+        }
+        // Parent-first so a dangling or not-yet-created leaf still follows links.
+        let parent = path.parent()?;
+        let file_name = path.file_name()?;
+        let resolved_parent = walk(parent, depth + 1)?;
+        let candidate = resolved_parent.join(file_name);
+        // NotFound is a new path; any other metadata error fails closed.
+        let metadata = match std::fs::symlink_metadata(&candidate) {
+            Ok(metadata) => Some(metadata),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(_) => return None,
+        };
+        if metadata.is_some_and(|metadata| metadata.file_type().is_symlink()) {
+            let target = std::fs::read_link(&candidate).ok()?;
+            let target = if target.is_absolute() {
+                target
+            } else {
+                resolved_parent.join(target)
+            };
+            return walk(&target, depth + 1);
+        }
+        Some(candidate)
+    }
+    walk(path, 0)
 }
 
 fn tool_filter_matches(access: &AccessKind, filter: &ToolFilter) -> bool {
@@ -874,5 +1032,388 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    #[cfg(unix)]
+    fn file_rule(action: RuleAction, tool: ToolFilter, pattern: &str) -> PermissionRule {
+        PermissionRule {
+            action,
+            tool,
+            pattern: Some(pattern.to_owned()),
+            pattern_mode: PatternMode::Glob,
+        }
+    }
+
+    #[cfg(unix)]
+    fn leaf_access(tool: &ToolFilter, arg: &str) -> AccessKind {
+        match tool {
+            ToolFilter::Edit => AccessKind::Edit(arg.into()),
+            ToolFilter::Read => AccessKind::Read(Some(arg.into())),
+            ToolFilter::Grep => AccessKind::Grep {
+                path: Some(arg.into()),
+                glob: None,
+            },
+            _ => panic!("unexpected tool"),
+        }
+    }
+
+    #[cfg(unix)]
+    fn policy_of(rules: Vec<PermissionRule>) -> CompiledPolicy {
+        CompiledPolicy::new(PermissionConfig::new(rules))
+    }
+
+    /// Workspace with `link -> <outside>/deny-secret.txt`.
+    #[cfg(unix)]
+    fn linked_secret() -> (tempfile::TempDir, tempfile::TempDir) {
+        let ws = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let secret = outside.path().join("deny-secret.txt");
+        std::fs::write(&secret, b"secret").unwrap();
+        std::os::unix::fs::symlink(&secret, ws.path().join("link")).unwrap();
+        (ws, outside)
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn deny_matches_workspace_symlink_target_for_edit_read_grep() {
+        let (ws, _outside) = linked_secret();
+        for tool in [ToolFilter::Edit, ToolFilter::Read, ToolFilter::Grep] {
+            let policy = policy_of(vec![file_rule(
+                RuleAction::Deny,
+                tool.clone(),
+                "**/deny-secret.txt",
+            )]);
+            let decision = policy
+                .evaluate_with_cwd(&leaf_access(&tool, "link"), ws.path(), None)
+                .0;
+            assert!(
+                matches!(decision, Some(Decision::Reject(_))),
+                "expected Reject for {tool:?} via symlink, got {decision:?}"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn sanitized_spellings_still_follow_the_link() {
+        let (ws, _outside) = linked_secret();
+        let policy = policy_of(vec![file_rule(
+            RuleAction::Deny,
+            ToolFilter::Read,
+            "**/deny-secret.txt",
+        )]);
+        for spelling in [" link ", "\"link\"", "'link'", "./link"] {
+            let decision = policy
+                .evaluate_with_cwd(&AccessKind::Read(Some(spelling.into())), ws.path(), None)
+                .0;
+            assert!(
+                matches!(decision, Some(Decision::Reject(_))),
+                "expected Reject for {spelling:?}, got {decision:?}"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn display_cwd_paths_follow_the_worktree_link() {
+        let (worktree, _outside) = linked_secret();
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("link"), b"plain").unwrap();
+        let policy = policy_of(vec![file_rule(
+            RuleAction::Deny,
+            ToolFilter::Edit,
+            "**/deny-secret.txt",
+        )]);
+        let access = AccessKind::Edit(project.path().join("link").to_string_lossy().into_owned());
+        let remapped = policy
+            .evaluate_with_cwd(&access, worktree.path(), Some(project.path()))
+            .0;
+        assert!(
+            matches!(remapped, Some(Decision::Reject(_))),
+            "got {remapped:?}"
+        );
+        assert_eq!(
+            policy.evaluate_with_cwd(&access, worktree.path(), None).0,
+            None
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn relative_and_absolute_rules_match_the_opened_file() {
+        let ws = tempfile::tempdir().unwrap();
+        std::fs::create_dir(ws.path().join("private")).unwrap();
+        std::fs::write(ws.path().join("private/secret.txt"), b"secret").unwrap();
+        std::os::unix::fs::symlink(ws.path().join("private/secret.txt"), ws.path().join("link"))
+            .unwrap();
+        let root = dunce::canonicalize(ws.path()).unwrap();
+        let absolute_rule = format!("{}/private/**", root.to_string_lossy());
+        for (pattern, access) in [
+            ("private/**", AccessKind::Edit("link".into())),
+            ("private/secret.txt", AccessKind::Edit("link".into())),
+            (
+                absolute_rule.as_str(),
+                AccessKind::Read(Some("private/secret.txt".into())),
+            ),
+            (
+                "private/**",
+                AccessKind::Read(Some(
+                    root.join("private/secret.txt")
+                        .to_string_lossy()
+                        .into_owned(),
+                )),
+            ),
+        ] {
+            let policy = policy_of(vec![file_rule(RuleAction::Deny, ToolFilter::Any, pattern)]);
+            let decision = policy.evaluate_with_cwd(&access, ws.path(), None).0;
+            assert!(
+                matches!(decision, Some(Decision::Reject(_))),
+                "expected Reject for rule {pattern:?} on {access:?}, got {decision:?}"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn midpath_symlink_and_physical_dotdot_hit_the_deny() {
+        let ws = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let zone = outside.path().join("prohibited-zone");
+        std::fs::create_dir_all(zone.join("dir")).unwrap();
+        std::fs::create_dir_all(zone.join("dir2")).unwrap();
+        std::fs::write(zone.join("data.txt"), b"secret").unwrap();
+        std::fs::write(zone.join("dir2/x"), b"secret").unwrap();
+        std::os::unix::fs::symlink(&zone, ws.path().join("linked")).unwrap();
+        std::os::unix::fs::symlink(zone.join("dir"), ws.path().join("link")).unwrap();
+        let policy = policy_of(vec![file_rule(
+            RuleAction::Deny,
+            ToolFilter::Any,
+            "**/prohibited-zone/**",
+        )]);
+        for access in [
+            AccessKind::Edit("linked/data.txt".into()),
+            AccessKind::Read(Some("link/../dir2/x".into())),
+        ] {
+            let decision = policy.evaluate_with_cwd(&access, ws.path(), None).0;
+            assert!(
+                matches!(decision, Some(Decision::Reject(_))),
+                "expected Reject for {access:?}, got {decision:?}"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn dangling_leaf_symlink_deny_on_target_rejects() {
+        let ws = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let secret_dir = outside.path().join("prohibited-zone");
+        std::fs::create_dir(&secret_dir).unwrap();
+        std::os::unix::fs::symlink(secret_dir.join("new.txt"), ws.path().join("out")).unwrap();
+        let policy = policy_of(vec![file_rule(
+            RuleAction::Deny,
+            ToolFilter::Edit,
+            "**/prohibited-zone/**",
+        )]);
+        let decision = policy
+            .evaluate_with_cwd(&AccessKind::Edit("out".into()), ws.path(), None)
+            .0;
+        assert!(
+            matches!(decision, Some(Decision::Reject(_))),
+            "got {decision:?}"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn target_rules_escalate_only() {
+        let ws = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let target = outside.path().join("target.txt");
+        std::fs::write(&target, b"x").unwrap();
+        std::fs::create_dir(ws.path().join("config")).unwrap();
+        std::os::unix::fs::symlink(&target, ws.path().join("config/notes.txt")).unwrap();
+        let access = AccessKind::Edit("config/notes.txt".into());
+        // Allow on the target is not granted via the link.
+        let allow = policy_of(vec![file_rule(
+            RuleAction::Allow,
+            ToolFilter::Edit,
+            "**/target.txt",
+        )]);
+        assert_eq!(allow.evaluate_with_cwd(&access, ws.path(), None).0, None);
+        // Ask on the target does apply.
+        let ask = policy_of(vec![file_rule(
+            RuleAction::Ask,
+            ToolFilter::Edit,
+            "**/target.txt",
+        )]);
+        assert_eq!(
+            ask.evaluate_with_cwd(&access, ws.path(), None).0,
+            Some(Decision::Ask)
+        );
+        // Deny on the target beats allow on the link.
+        let both = policy_of(vec![
+            file_rule(RuleAction::Allow, ToolFilter::Edit, "**/notes.txt"),
+            file_rule(RuleAction::Deny, ToolFilter::Edit, "**/target.txt"),
+        ]);
+        assert!(matches!(
+            both.evaluate_with_cwd(&access, ws.path(), None).0,
+            Some(Decision::Reject(_))
+        ));
+        // A plain file keeps the lexical decision.
+        std::fs::write(ws.path().join("config/plain.txt"), b"x").unwrap();
+        let plain = policy_of(vec![file_rule(
+            RuleAction::Allow,
+            ToolFilter::Edit,
+            "**/plain.txt",
+        )]);
+        assert_eq!(
+            plain
+                .evaluate_with_cwd(
+                    &AccessKind::Edit("config/plain.txt".into()),
+                    ws.path(),
+                    None
+                )
+                .0,
+            Some(Decision::Allow)
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn unresolvable_symlink_asks_only_when_a_rule_covers_the_tool() {
+        let ws = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(ws.path().join("b"), ws.path().join("a")).unwrap();
+        std::os::unix::fs::symlink(ws.path().join("a"), ws.path().join("b")).unwrap();
+        let grep = AccessKind::Grep {
+            path: Some("a".into()),
+            glob: None,
+        };
+        let grep_only = policy_of(vec![file_rule(RuleAction::Deny, ToolFilter::Grep, "**/x")]);
+        assert_eq!(
+            grep_only.evaluate_with_cwd(&grep, ws.path(), None).0,
+            Some(Decision::Ask)
+        );
+        assert_eq!(
+            grep_only
+                .evaluate_with_cwd(&AccessKind::Read(Some("a".into())), ws.path(), None)
+                .0,
+            None
+        );
+        assert_eq!(
+            policy_of(vec![])
+                .evaluate_with_cwd(&grep, ws.path(), None)
+                .0,
+            None
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn unresolved_link_reports_the_forced_prompt() {
+        let ws = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(ws.path().join("b"), ws.path().join("a")).unwrap();
+        std::os::unix::fs::symlink(ws.path().join("a"), ws.path().join("b")).unwrap();
+        std::fs::write(ws.path().join("plain.txt"), b"x").unwrap();
+        let policy = policy_of(vec![file_rule(RuleAction::Deny, ToolFilter::Edit, "**/x")]);
+        assert_eq!(
+            policy.evaluate_with_cwd(&AccessKind::Edit("a".into()), ws.path(), None),
+            (Some(Decision::Ask), true)
+        );
+        assert_eq!(
+            policy.evaluate_with_cwd(&AccessKind::Edit("plain.txt".into()), ws.path(), None),
+            (None, false)
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn dot_slash_rules_match_the_followed_target() {
+        let ws = tempfile::tempdir().unwrap();
+        std::fs::create_dir(ws.path().join("private")).unwrap();
+        std::fs::write(ws.path().join("private/data.txt"), b"secret").unwrap();
+        std::os::unix::fs::symlink(ws.path().join("private/data.txt"), ws.path().join("link"))
+            .unwrap();
+        let policy = policy_of(vec![file_rule(
+            RuleAction::Deny,
+            ToolFilter::Read,
+            "./private/**",
+        )]);
+        let decision = policy
+            .evaluate_with_cwd(&AccessKind::Read(Some("link".into())), ws.path(), None)
+            .0;
+        assert!(
+            matches!(decision, Some(Decision::Reject(_))),
+            "got {decision:?}"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn sanitized_spelling_of_a_denied_link_name_rejects() {
+        let ws = tempfile::tempdir().unwrap();
+        std::fs::write(ws.path().join("allowed.txt"), b"x").unwrap();
+        std::os::unix::fs::symlink(ws.path().join("allowed.txt"), ws.path().join("secret.txt"))
+            .unwrap();
+        let policy = policy_of(vec![file_rule(
+            RuleAction::Deny,
+            ToolFilter::Read,
+            "**/secret.txt",
+        )]);
+        for spelling in [" secret.txt ", "\"secret.txt\"", "./secret.txt"] {
+            let decision = policy
+                .evaluate_with_cwd(&AccessKind::Read(Some(spelling.into())), ws.path(), None)
+                .0;
+            assert!(
+                matches!(decision, Some(Decision::Reject(_))),
+                "expected Reject for {spelling:?}, got {decision:?}"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn unix_backslash_in_a_file_name_is_not_a_separator() {
+        let ws = tempfile::tempdir().unwrap();
+        std::fs::create_dir(ws.path().join("private")).unwrap();
+        let odd = ws.path().join("private/secret\\name.txt");
+        std::fs::write(&odd, b"secret").unwrap();
+        std::os::unix::fs::symlink(&odd, ws.path().join("odd-link")).unwrap();
+        let policy = policy_of(vec![file_rule(
+            RuleAction::Deny,
+            ToolFilter::Read,
+            "**/secret*.txt",
+        )]);
+        let decision = policy
+            .evaluate_with_cwd(&AccessKind::Read(Some("odd-link".into())), ws.path(), None)
+            .0;
+        assert!(
+            matches!(decision, Some(Decision::Reject(_))),
+            "got {decision:?}"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn root_alias_matches_the_dot_slash_rule() {
+        let ws = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(ws.path().join("fixture.txt"), b"x").unwrap();
+        std::os::unix::fs::symlink(ws.path(), outside.path().join("alias")).unwrap();
+        let policy = policy_of(vec![file_rule(RuleAction::Deny, ToolFilter::Grep, "./**")]);
+        for path in [
+            "./".to_owned(),
+            outside.path().join("alias").to_string_lossy().into_owned(),
+        ] {
+            let access = AccessKind::Grep {
+                path: Some(path.clone()),
+                glob: None,
+            };
+            let decision = policy.evaluate_with_cwd(&access, ws.path(), None).0;
+            assert!(
+                matches!(decision, Some(Decision::Reject(_))),
+                "expected Reject for {path:?}, got {decision:?}"
+            );
+        }
     }
 }

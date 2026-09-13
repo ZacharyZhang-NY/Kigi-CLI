@@ -82,6 +82,8 @@ async fn set_auto_mode_path_wires_live_side_query_via_session_actor() {
                     None,
                     None,
                     None,
+                    session.tool_context.cwd.clone(),
+                    None,
                 )
                 .await;
             // cargo is heuristic-allow when sampling fails; must not be Prompt-only
@@ -98,6 +100,8 @@ async fn set_auto_mode_path_wires_live_side_query_via_session_actor() {
                     acp::ToolCallUpdate::new(acp::ToolCallId::new(Arc::from("tc-danger")), Default::default()),
                     None,
                     None,
+                    None,
+                    session.tool_context.cwd.clone(),
                     None,
                 )
                 .await;

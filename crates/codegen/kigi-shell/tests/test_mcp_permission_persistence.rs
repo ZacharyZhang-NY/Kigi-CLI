@@ -161,6 +161,9 @@ async fn request(handle: &PermissionHandle, access: AccessKind, id: &str) -> Dec
         session_id: None,
         subagent_type: None,
         subagent_description: None,
+        // The accesses here carry no file path; the process cwd is a real cwd.
+        tool_cwd: AbsPathBuf::new(std::env::current_dir().unwrap()).unwrap(),
+        display_cwd: None,
     };
     let PermissionHandle::Actor { cmd_tx, .. } = handle else {
         panic!("expected actor handle");

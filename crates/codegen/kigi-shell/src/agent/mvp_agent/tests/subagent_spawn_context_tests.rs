@@ -27,7 +27,7 @@ async fn subagent_spawn_context_inherits_parent_permission_handle() {
                 kigi_workspace::permission::spawn_permission_manager(
                     sid.clone(),
                     gateway,
-                    cwd,
+                    cwd.clone(),
                     kigi_workspace::permission::types::ClientType::Generic,
                     Some(PermissionConfig::new(vec![PermissionRule {
                         action: RuleAction::Deny,
@@ -64,6 +64,8 @@ async fn subagent_spawn_context_inherits_parent_permission_handle() {
                         Some("child-session".to_owned()),
                         Some("general-purpose".to_owned()),
                         Some("permission inheritance regression".to_owned()),
+                        cwd.clone(),
+                        None,
                     )
                     .await;
                 assert!(

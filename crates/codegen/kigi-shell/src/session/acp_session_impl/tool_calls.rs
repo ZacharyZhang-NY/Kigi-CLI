@@ -957,6 +957,8 @@ impl SessionActor {
                         Some(self.session_info.id.0.to_string()),
                         None,
                         None,
+                        self.tool_context.cwd.clone(),
+                        self.display_cwd.get().map(std::path::PathBuf::from),
                     )
                     .await
             };

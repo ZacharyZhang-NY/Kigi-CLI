@@ -28,6 +28,8 @@ mod reasons {
     pub const POLICY_ALLOW: &str = "policy_allow";
     pub const POLICY_DENY: &str = "policy_deny";
     pub const POLICY_ASK: &str = "policy_ask";
+    /// A native path link could not be followed; the prompt is forced.
+    pub const UNRESOLVED_LINK: &str = "unresolved_link";
     pub const AUTO_FAST_PATH: &str = "auto_fast_path";
     pub const AUTO_CLASSIFIER_ALLOW: &str = "auto_classifier_allow";
     pub const AUTO_CLASSIFIER_BLOCK: &str = "auto_classifier_block";
@@ -648,6 +650,8 @@ impl PermissionHandle {
         session_id: Option<String>,
         subagent_type: Option<String>,
         subagent_description: Option<String>,
+        tool_cwd: AbsPathBuf,
+        display_cwd: Option<std::path::PathBuf>,
     ) -> Decision {
         match self {
             PermissionHandle::AllowAll => Decision::Allow,
@@ -665,6 +669,8 @@ impl PermissionHandle {
                     session_id,
                     subagent_type,
                     subagent_description,
+                    tool_cwd,
+                    display_cwd,
                 };
                 if let Err(e) = cmd_tx.send(msg) {
                     tracing::error!(?e, "failed to send permission request");
@@ -1047,6 +1053,8 @@ fn spawn_permission_manager_with_pin(
                     session_id: request_session_id,
                     subagent_type: request_subagent_type,
                     subagent_description: request_subagent_description,
+                    tool_cwd,
+                    display_cwd,
                 } => {
                     // wait_ms timer; starts at dequeue so it excludes time queued behind others.
                     let request_received = std::time::Instant::now();
@@ -1143,9 +1151,14 @@ fn spawn_permission_manager_with_pin(
                     // Evaluate managed policy (direct access + per-segment Bash command
                     // rules + Bash shell-file args) up front so the YOLO/sandbox fast
                     // paths below honor a deny or forced prompt.
-                    let direct_decision = compiled_policy
-                        .as_ref()
-                        .and_then(|policy| policy.evaluate(&access));
+                    let (direct_decision, unresolved_link_prompt) =
+                        compiled_policy.as_ref().map_or((None, false), |policy| {
+                            policy.evaluate_with_cwd(
+                                &access,
+                                tool_cwd.as_path(),
+                                display_cwd.as_deref(),
+                            )
+                        });
                     let shell_command_decision = match (&compiled_policy, &access) {
                         (Some(policy), AccessKind::Bash(cmd)) => {
                             policy.evaluate_bash_command_policy(cmd)
@@ -1154,15 +1167,17 @@ fn spawn_permission_manager_with_pin(
                     };
                     let shell_file_decision = match (&compiled_policy, &access) {
                         (Some(policy), AccessKind::Bash(cmd)) => {
-                            policy.evaluate_shell_file_access(cmd, cwd.as_path())
+                            policy.evaluate_shell_file_access(cmd, tool_cwd.as_path())
                         }
                         _ => None,
                     };
                     let shell_file_forced_prompt =
                         matches!(shell_file_decision, Some(Decision::Ask));
-                    // An `Ask` from either bash gate must block the YOLO/auto fast paths.
-                    let shell_forced_prompt = shell_file_forced_prompt
-                        || matches!(shell_command_decision, Some(Decision::Ask));
+                    // An `Ask` from either bash gate, or from a native path whose link
+                    // cannot be followed, must block the YOLO/auto fast paths.
+                    let forced_prompt = shell_file_forced_prompt
+                        || matches!(shell_command_decision, Some(Decision::Ask))
+                        || unresolved_link_prompt;
                     let policy_decision = combine_decisions(
                         combine_decisions(direct_decision, shell_command_decision),
                         shell_file_decision,
@@ -1188,7 +1203,7 @@ fn spawn_permission_manager_with_pin(
                         continue;
                     }
 
-                    if yolo_mode && !shell_forced_prompt {
+                    if yolo_mode && !forced_prompt {
                         tracing::debug!("YOLO mode: auto-approving permission request");
                         let decision = Decision::Allow;
                         emit_event(&decision, true, false, None, Some(reasons::YOLO));
@@ -1199,7 +1214,7 @@ fn spawn_permission_manager_with_pin(
                     // Session always-allow grants win before the auto classifier.
                     // Ask floors fall through so managed Ask / shell-file Ask stay binding.
                     if !policy_forced_prompt
-                        && !shell_forced_prompt
+                        && !forced_prompt
                         && let Some((decision, reason)) = session_grant_pre_decision(
                             &access,
                             &state,
@@ -1223,7 +1238,7 @@ fn spawn_permission_manager_with_pin(
                     // fast-path/classifier allows. Policy Ask still prompts below
                     // unless auto fast-path/classifier decides first for non-forced
                     // paths — we skip auto entirely when policy_forced_prompt.
-                    if auto_mode && !policy_forced_prompt && !shell_forced_prompt {
+                    if auto_mode && !policy_forced_prompt && !forced_prompt {
                         use crate::permission::auto_mode::{
                             AutoFastPath, ClassifierVerdict, access_requires_user_interaction,
                             auto_mode_fast_path,
@@ -1399,7 +1414,9 @@ fn spawn_permission_manager_with_pin(
                         )
                         .map(|d| (d, reasons::PERSISTED_GRANT)),
                         AccessKind::Edit(_) => {
-                            if allow_edits_for_session {
+                            // A link the policy could not follow keeps the prompt: the
+                            // session grant cannot vouch for its target.
+                            if allow_edits_for_session && !forced_prompt {
                                 Some((Decision::Allow, reasons::PERSISTED_GRANT))
                             } else {
                                 match state.edit_policy {
@@ -1516,7 +1533,9 @@ fn spawn_permission_manager_with_pin(
 
                     // Why this reached the prompt — otherwise lost once user_prompted=true.
                     // A policy/shell `ask` wins; else the auto-mode reason; else unapproved.
-                    let prompt_trigger = if policy_forced_prompt || shell_forced_prompt {
+                    let prompt_trigger = if unresolved_link_prompt {
+                        reasons::UNRESOLVED_LINK
+                    } else if policy_forced_prompt || forced_prompt {
                         reasons::POLICY_ASK
                     } else {
                         auto_prompt_reason.unwrap_or(reasons::NEEDS_USER)
@@ -1932,6 +1951,208 @@ mod tests {
             .await;
     }
 
+    /// The follow uses the requesting tool's cwd, not the manager root: a child
+    /// worktree link to a denied file is rejected through the shared handle.
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn direct_read_follows_the_requesting_tools_cwd() {
+        use crate::permission::types::{
+            PatternMode, PermissionConfig, PermissionRule, RuleAction, ToolFilter,
+        };
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let tmp = tempfile::tempdir().unwrap();
+                let cwd = AbsPathBuf::new(tmp.path().to_path_buf()).unwrap();
+                let worktree = tempfile::tempdir().unwrap();
+                let outside = tempfile::tempdir().unwrap();
+                let secret = outside.path().join("deny-secret.txt");
+                std::fs::write(&secret, b"secret").unwrap();
+                std::os::unix::fs::symlink(&secret, worktree.path().join("link")).unwrap();
+                std::fs::write(tmp.path().join("link"), b"plain").unwrap();
+                let config = PermissionConfig::new(vec![PermissionRule {
+                    action: RuleAction::Deny,
+                    tool: ToolFilter::Read,
+                    pattern: Some("**/deny-secret.txt".to_owned()),
+                    pattern_mode: PatternMode::Glob,
+                }]);
+                let tc = || {
+                    acp::ToolCallUpdate::new(
+                        acp::ToolCallId::new(Arc::from("tc")),
+                        acp::ToolCallUpdateFields::default(),
+                    )
+                };
+                let (mgr, _e) = test_manager_with_config(&cwd, config, true);
+                let child_cwd = AbsPathBuf::new(worktree.path().to_path_buf()).unwrap();
+                let read = || AccessKind::Read(Some("link".into()));
+                let d = mgr
+                    .request(read(), tc(), None, None, None, child_cwd, None)
+                    .await;
+                assert!(
+                    matches!(d, Decision::PolicyDeny(_)),
+                    "child worktree link must hit the deny, got {d:?}"
+                );
+                let d = mgr
+                    .request(read(), tc(), None, None, None, cwd.clone(), None)
+                    .await;
+                assert!(
+                    matches!(d, Decision::Allow),
+                    "plain root file must auto-allow, got {d:?}"
+                );
+            })
+            .await;
+    }
+
+    /// A link that cannot be followed forces the prompt even under YOLO; with
+    /// no responder wired that surfaces as a non-`Allow` decision.
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn unresolved_link_prompts_under_yolo() {
+        use crate::permission::types::{
+            PatternMode, PermissionConfig, PermissionRule, RuleAction, ToolFilter,
+        };
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let tmp = tempfile::tempdir().unwrap();
+                let cwd = AbsPathBuf::new(tmp.path().to_path_buf()).unwrap();
+                std::os::unix::fs::symlink(tmp.path().join("b"), tmp.path().join("a")).unwrap();
+                std::os::unix::fs::symlink(tmp.path().join("a"), tmp.path().join("b")).unwrap();
+                let config = PermissionConfig::new(vec![PermissionRule {
+                    action: RuleAction::Deny,
+                    tool: ToolFilter::Edit,
+                    pattern: Some("**/prohibited-zone/**".to_owned()),
+                    pattern_mode: PatternMode::Glob,
+                }]);
+                let (mgr, _e) = test_manager_with_config(&cwd, config, true);
+                let tc = acp::ToolCallUpdate::new(
+                    acp::ToolCallId::new(Arc::from("tc")),
+                    acp::ToolCallUpdateFields::default(),
+                );
+                let d = mgr
+                    .request(
+                        AccessKind::Edit("a".into()),
+                        tc,
+                        None,
+                        None,
+                        None,
+                        cwd.clone(),
+                        None,
+                    )
+                    .await;
+                assert!(
+                    !matches!(d, Decision::Allow),
+                    "YOLO must not approve a write through an unresolvable link, got {d:?}"
+                );
+            })
+            .await;
+    }
+
+    /// "Allow edits for this session" cannot vouch for a link the policy could
+    /// not follow: the next such edit prompts again.
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn session_edit_grant_does_not_cover_an_unresolved_link() {
+        use crate::permission::types::{
+            PatternMode, PermissionConfig, PermissionRule, RuleAction, ToolFilter,
+        };
+        struct SessionEditsThenRejectClient {
+            prompts: Arc<AtomicUsize>,
+        }
+        #[async_trait::async_trait(?Send)]
+        impl acp::Client for SessionEditsThenRejectClient {
+            async fn request_permission(
+                &self,
+                args: acp::RequestPermissionRequest,
+            ) -> acp::Result<acp::RequestPermissionResponse> {
+                let wanted = if self.prompts.fetch_add(1, Ordering::Relaxed) == 0 {
+                    crate::permission::prompter::ALLOW_EDITS_SESSION_OPTION_ID
+                } else {
+                    "reject-once"
+                };
+                let option_id = args
+                    .options
+                    .iter()
+                    .find(|o| o.option_id.0.as_ref() == wanted)
+                    .map(|o| o.option_id.clone())
+                    .expect("prompt must offer the option");
+                Ok(acp::RequestPermissionResponse::new(
+                    acp::RequestPermissionOutcome::Selected(acp::SelectedPermissionOutcome::new(
+                        option_id,
+                    )),
+                ))
+            }
+
+            async fn session_notification(&self, _: acp::SessionNotification) -> acp::Result<()> {
+                Ok(())
+            }
+        }
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let tmp = tempfile::tempdir().unwrap();
+                let cwd = AbsPathBuf::new(tmp.path().to_path_buf()).unwrap();
+                std::fs::write(tmp.path().join("plain.txt"), b"x").unwrap();
+                std::os::unix::fs::symlink(tmp.path().join("b"), tmp.path().join("a")).unwrap();
+                std::os::unix::fs::symlink(tmp.path().join("a"), tmp.path().join("b")).unwrap();
+                let prompts = Arc::new(AtomicUsize::new(0));
+                let config = PermissionConfig::new(vec![PermissionRule {
+                    action: RuleAction::Deny,
+                    tool: ToolFilter::Edit,
+                    pattern: Some("**/prohibited-zone/**".to_owned()),
+                    pattern_mode: PatternMode::Glob,
+                }]);
+                let (mgr, _e) = manager_with_recording_client_remember(
+                    &cwd,
+                    Some(config),
+                    SessionEditsThenRejectClient {
+                        prompts: prompts.clone(),
+                    },
+                    ClientType::Generic,
+                    false,
+                );
+                let edit = |path: &str| AccessKind::Edit(path.into());
+                let d = mgr
+                    .request(
+                        edit("plain.txt"),
+                        tool_call(),
+                        None,
+                        None,
+                        None,
+                        cwd.clone(),
+                        None,
+                    )
+                    .await;
+                assert_eq!(d, Decision::Allow, "first edit is granted for the session");
+                let d = mgr
+                    .request(
+                        edit("plain.txt"),
+                        tool_call(),
+                        None,
+                        None,
+                        None,
+                        cwd.clone(),
+                        None,
+                    )
+                    .await;
+                assert_eq!(
+                    d,
+                    Decision::Allow,
+                    "the grant covers a plain edit without a prompt"
+                );
+                assert_eq!(prompts.load(Ordering::Relaxed), 1);
+                let d = mgr
+                    .request(edit("a"), tool_call(), None, None, None, cwd.clone(), None)
+                    .await;
+                assert!(
+                    matches!(d, Decision::Reject(_)),
+                    "an unresolved link must prompt again, got {d:?}"
+                );
+                assert_eq!(prompts.load(Ordering::Relaxed), 2);
+            })
+            .await;
+    }
+
     /// A managed `Ask` rule on a direct `Read`/`Grep` must reach the prompt, not
     /// the unconditional auto-allow. With no responder wired, that surfaces as a
     /// non-`Allow` decision; a non-ask read still auto-allows.
@@ -1965,6 +2186,8 @@ mod tests {
                         None,
                         None,
                         None,
+                        cwd.clone(),
+                        None,
                     )
                     .await;
                 assert!(
@@ -1977,6 +2200,8 @@ mod tests {
                         tc(),
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     )
                     .await;
@@ -2022,7 +2247,15 @@ mod tests {
 
                 let (mgr, _e) = test_manager_with_config(&cwd, config(), false);
                 let d = mgr
-                    .request(AccessKind::Bash("cat .env".into()), tc(), None, None, None)
+                    .request(
+                        AccessKind::Bash("cat .env".into()),
+                        tc(),
+                        None,
+                        None,
+                        None,
+                        cwd.clone(),
+                        None,
+                    )
                     .await;
                 assert!(
                     matches!(d, Decision::PolicyDeny(_)),
@@ -2034,6 +2267,8 @@ mod tests {
                         tc(),
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     )
                     .await;
@@ -2048,6 +2283,8 @@ mod tests {
                         None,
                         None,
                         None,
+                        cwd.clone(),
+                        None,
                     )
                     .await;
                 assert!(
@@ -2060,6 +2297,8 @@ mod tests {
                         tc(),
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     )
                     .await;
@@ -2074,6 +2313,8 @@ mod tests {
                         None,
                         None,
                         None,
+                        cwd.clone(),
+                        None,
                     )
                     .await;
                 assert!(
@@ -2087,6 +2328,8 @@ mod tests {
                         tc(),
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     )
                     .await;
@@ -2106,6 +2349,8 @@ mod tests {
                         None,
                         None,
                         None,
+                        cwd.clone(),
+                        None,
                     )
                     .await;
                 assert!(
@@ -2116,7 +2361,15 @@ mod tests {
                 let (yolo_mgr, _e2) = test_manager_with_config(&cwd, config(), true);
                 assert!(yolo_mgr.is_yolo_mode(), "precondition: yolo on");
                 let d = yolo_mgr
-                    .request(AccessKind::Bash("cat .env".into()), tc(), None, None, None)
+                    .request(
+                        AccessKind::Bash("cat .env".into()),
+                        tc(),
+                        None,
+                        None,
+                        None,
+                        cwd.clone(),
+                        None,
+                    )
                     .await;
                 assert!(
                     matches!(d, Decision::PolicyDeny(_)),
@@ -2131,7 +2384,15 @@ mod tests {
                 persist_state(&cwd, &state, None).await;
                 let (persisted_mgr, _e3) = test_manager_with_config(&cwd, config(), false);
                 let d = persisted_mgr
-                    .request(AccessKind::Bash("cat .env".into()), tc(), None, None, None)
+                    .request(
+                        AccessKind::Bash("cat .env".into()),
+                        tc(),
+                        None,
+                        None,
+                        None,
+                        cwd.clone(),
+                        None,
+                    )
                     .await;
                 assert!(
                     matches!(d, Decision::PolicyDeny(_)),
@@ -2180,7 +2441,15 @@ mod tests {
                             "cd /tmp && grep -n x f; sed -n '1,5p' f",
                         ] {
                             let d = mgr
-                                .request(AccessKind::Bash(cmd.into()), tc(), None, None, None)
+                                .request(
+                                    AccessKind::Bash(cmd.into()),
+                                    tc(),
+                                    None,
+                                    None,
+                                    None,
+                                    cwd.clone(),
+                                    None,
+                                )
                                 .await;
                             assert!(
                                 matches!(d, Decision::PolicyDeny(_)),
@@ -2196,6 +2465,8 @@ mod tests {
                                 tc(),
                                 None,
                                 None,
+                                None,
+                                cwd.clone(),
                                 None,
                             )
                             .await;
@@ -2220,6 +2491,8 @@ mod tests {
                                 None,
                                 None,
                                 None,
+                                cwd.clone(),
+                                None,
                             )
                             .await;
                         assert!(
@@ -2241,7 +2514,15 @@ mod tests {
                     "echo hi && ls",
                 ] {
                     let d = mgr
-                        .request(AccessKind::Bash(cmd.into()), tc(), None, None, None)
+                        .request(
+                            AccessKind::Bash(cmd.into()),
+                            tc(),
+                            None,
+                            None,
+                            None,
+                            cwd.clone(),
+                            None,
+                        )
                         .await;
                     assert!(
                         matches!(d, Decision::Allow),
@@ -2363,7 +2644,15 @@ mod tests {
 
                 let (unpinned, _e1) = test_manager(&cwd, false, None);
                 let allow = unpinned
-                    .request(AccessKind::Bash(benign.into()), bash(), None, None, None)
+                    .request(
+                        AccessKind::Bash(benign.into()),
+                        bash(),
+                        None,
+                        None,
+                        None,
+                        cwd.clone(),
+                        None,
+                    )
                     .await;
                 assert_eq!(
                     allow,
@@ -2373,7 +2662,15 @@ mod tests {
 
                 let (pinned, _e2) = test_manager(&cwd, false, Some(PIN));
                 let neutralized = pinned
-                    .request(AccessKind::Bash(benign.into()), bash(), None, None, None)
+                    .request(
+                        AccessKind::Bash(benign.into()),
+                        bash(),
+                        None,
+                        None,
+                        None,
+                        cwd.clone(),
+                        None,
+                    )
                     .await;
                 // Gateway receiver is dropped in test_manager — a prompt attempt
                 // surfaces as non-Allow (same pattern as neighboring Ask tests).
@@ -2612,6 +2909,8 @@ mod tests {
                         None,
                         None,
                         None,
+                        cwd.clone(),
+                        None,
                     )
                     .await;
                 assert_eq!(d, Decision::Allow, "prompted allow-once must allow");
@@ -2626,6 +2925,8 @@ mod tests {
                         tool_call(),
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     )
                     .await;
@@ -2667,6 +2968,8 @@ mod tests {
                         None,
                         None,
                         None,
+                        cwd.clone(),
+                        None,
                     )
                     .await;
                 assert!(
@@ -2683,6 +2986,8 @@ mod tests {
                         tool_call(),
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     )
                     .await;
@@ -2732,6 +3037,8 @@ mod tests {
                         None,
                         None,
                         None,
+                        cwd.clone(),
+                        None,
                     )
                     .await;
                 assert!(matches!(d, Decision::PolicyDeny(_)), "got {d:?}");
@@ -2741,7 +3048,15 @@ mod tests {
                 mgr.set_classifier(Some(clf));
                 for cmd in ["my-custom-build --release", "second-custom-tool"] {
                     let d = mgr
-                        .request(AccessKind::Bash(cmd.into()), tool_call(), None, None, None)
+                        .request(
+                            AccessKind::Bash(cmd.into()),
+                            tool_call(),
+                            None,
+                            None,
+                            None,
+                            cwd.clone(),
+                            None,
+                        )
                         .await;
                     assert_eq!(d, Decision::Allow);
                 }
@@ -2778,6 +3093,8 @@ mod tests {
                         None,
                         None,
                         None,
+                        cwd.clone(),
+                        None,
                     )
                     .await;
                 assert_eq!(d, Decision::Cancelled);
@@ -2790,6 +3107,8 @@ mod tests {
                         tool_call(),
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     )
                     .await;
@@ -2809,6 +3128,8 @@ mod tests {
                         None,
                         None,
                         None,
+                        cwd.clone(),
+                        None,
                     )
                     .await;
                 assert!(matches!(d, Decision::Reject(_)), "got {d:?}");
@@ -2821,6 +3142,8 @@ mod tests {
                         tool_call(),
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     )
                     .await;
@@ -2855,8 +3178,7 @@ mod tests {
                             tool_call(),
                             None,
                             None,
-                            None,
-                        )
+                            None, cwd.clone(), None,)
                         .await;
                     assert_eq!(d, Decision::Allow);
                 }
@@ -2869,8 +3191,7 @@ mod tests {
                         tool_call(),
                         None,
                         None,
-                        None,
-                    )
+                        None, cwd.clone(), None,)
                     .await;
                 assert_eq!(d, Decision::Allow);
 
@@ -2922,6 +3243,8 @@ mod tests {
                         None,
                         None,
                         None,
+                        cwd.clone(),
+                        None,
                     )
                     .await;
                 assert_eq!(d, Decision::Allow);
@@ -2936,6 +3259,8 @@ mod tests {
                         tool_call(),
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     )
                     .await;
@@ -2986,7 +3311,7 @@ mod tests {
 
                 let d = tokio::time::timeout(
                     std::time::Duration::from_secs(5),
-                    mgr.request(AccessKind::Bash("ls".into()), tool_call(), None, None, None),
+                    mgr.request(AccessKind::Bash("ls".into()), tool_call(), None, None, None, cwd.clone(), None,),
                 )
                 .await
                 .expect("permission request must resolve, not hang");
@@ -3023,7 +3348,7 @@ mod tests {
                 let cmd = "curl http://example.com && sh -c 'echo hi'";
                 let d = tokio::time::timeout(
                     std::time::Duration::from_secs(5),
-                    mgr.request(AccessKind::Bash(cmd.into()), tool_call(), None, None, None),
+                    mgr.request(AccessKind::Bash(cmd.into()), tool_call(), None, None, None, cwd.clone(), None,),
                 )
                 .await
                 .expect("permission request must resolve, not hang");
@@ -3058,7 +3383,15 @@ mod tests {
 
                 let d = tokio::time::timeout(
                     std::time::Duration::from_secs(5),
-                    mgr.request(AccessKind::Bash("ls".into()), tool_call(), None, None, None),
+                    mgr.request(
+                        AccessKind::Bash("ls".into()),
+                        tool_call(),
+                        None,
+                        None,
+                        None,
+                        cwd.clone(),
+                        None,
+                    ),
                 )
                 .await
                 .expect("permission request must resolve, not hang");
@@ -3101,6 +3434,8 @@ mod tests {
                         session_id: None,
                         subagent_type: None,
                         subagent_description: None,
+                        tool_cwd: cwd.clone(),
+                        display_cwd: None,
                     })
                     .expect("actor alive");
 
@@ -3111,6 +3446,8 @@ mod tests {
                         tool_call(),
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     ),
                 )
@@ -3209,6 +3546,8 @@ mod tests {
                         session_id: None,
                         subagent_type: None,
                         subagent_description: None,
+                        tool_cwd: cwd.clone(),
+                        display_cwd: None,
                     })
                     .expect("actor alive");
                 tokio::time::timeout(std::time::Duration::from_secs(5), async {
@@ -3227,6 +3566,8 @@ mod tests {
                         tool_call(),
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     ),
                 )
@@ -3263,6 +3604,8 @@ mod tests {
                         tool_call(),
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     )
                     .await;
@@ -3301,6 +3644,8 @@ mod tests {
                         tool_call(),
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     ),
                 )
@@ -3389,6 +3734,7 @@ mod tests {
 
                 // Request A parks in the gated prompt; B then arrives and overlaps it.
                 let mgr_a = mgr.clone();
+                let cwd_a = cwd.clone();
                 let a = tokio::task::spawn_local(async move {
                     mgr_a
                         .request(
@@ -3396,6 +3742,8 @@ mod tests {
                             tool_call(),
                             None,
                             None,
+                            None,
+                            cwd_a,
                             None,
                         )
                         .await
@@ -3413,6 +3761,7 @@ mod tests {
                     "request A must reach its prompt before B is sent"
                 );
                 let mgr_b = mgr.clone();
+                let cwd_b = cwd.clone();
                 let b = tokio::task::spawn_local(async move {
                     mgr_b
                         .request(
@@ -3420,6 +3769,8 @@ mod tests {
                             tool_call(),
                             None,
                             None,
+                            None,
+                            cwd_b,
                             None,
                         )
                         .await
@@ -3501,7 +3852,15 @@ mod tests {
                 );
                 let d = tokio::time::timeout(
                     std::time::Duration::from_secs(5),
-                    mgr.request(AccessKind::Bash(cmd.into()), tool_call(), None, None, None),
+                    mgr.request(
+                        AccessKind::Bash(cmd.into()),
+                        tool_call(),
+                        None,
+                        None,
+                        None,
+                        cwd.clone(),
+                        None,
+                    ),
                 )
                 .await
                 .expect("permission request must resolve, not hang");
@@ -3602,6 +3961,8 @@ mod tests {
                         tool_call(),
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     ),
                 )
@@ -4805,6 +5166,8 @@ mod tests {
                         None,
                         None,
                         None,
+                        cwd.clone(),
+                        None,
                     )
                     .await;
                 assert!(
@@ -4821,6 +5184,8 @@ mod tests {
                         None,
                         None,
                         None,
+                        cwd.clone(),
+                        None,
                     )
                     .await;
                 assert!(
@@ -4836,6 +5201,8 @@ mod tests {
                         dummy_update.clone(),
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     )
                     .await;
@@ -4854,6 +5221,8 @@ mod tests {
                         dummy_update,
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     )
                     .await;
@@ -4888,7 +5257,15 @@ mod tests {
                 // In-cwd edit → Allow (file need not exist).
                 let in_cwd = tmp.path().join("f.rs").to_string_lossy().into_owned();
                 let d = mgr
-                    .request(AccessKind::Edit(in_cwd), mk("tc-edit-in"), None, None, None)
+                    .request(
+                        AccessKind::Edit(in_cwd),
+                        mk("tc-edit-in"),
+                        None,
+                        None,
+                        None,
+                        cwd.clone(),
+                        None,
+                    )
                     .await;
                 assert!(
                     matches!(d, Decision::Allow),
@@ -4902,6 +5279,8 @@ mod tests {
                         mk("tc-edit-out"),
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     )
                     .await;
@@ -4937,6 +5316,8 @@ mod tests {
                         None,
                         None,
                         None,
+                        cwd.clone(),
+                        None,
                     )
                     .await;
                 assert!(
@@ -4949,6 +5330,8 @@ mod tests {
                         dummy_update,
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     )
                     .await;
@@ -4991,6 +5374,8 @@ mod tests {
                         dummy_update,
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     )
                     .await;
@@ -5070,6 +5455,8 @@ mod tests {
                         None,
                         None,
                         None,
+                        cwd.clone(),
+                        None,
                     )
                     .await;
                 assert!(
@@ -5122,6 +5509,8 @@ mod tests {
                         tool_call(),
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     ),
                 )
@@ -5185,6 +5574,8 @@ mod tests {
                         None,
                         None,
                         None,
+                        cwd.clone(),
+                        None,
                     ),
                 )
                 .await
@@ -5235,6 +5626,8 @@ mod tests {
                         None,
                         None,
                         None,
+                        cwd.clone(),
+                        None,
                     ),
                 )
                 .await
@@ -5279,6 +5672,8 @@ mod tests {
                         tool_call(),
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     ),
                 )
@@ -5325,6 +5720,8 @@ mod tests {
                         tool_call(),
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     ),
                 )
@@ -5375,6 +5772,8 @@ mod tests {
                         None,
                         None,
                         None,
+                        cwd.clone(),
+                        None,
                     ),
                 )
                 .await
@@ -5420,8 +5819,7 @@ mod tests {
                         tool_call(),
                         None,
                         None,
-                        None,
-                    ),
+                        None, cwd.clone(), None,),
                 )
                 .await
                 .expect("must resolve, not hang");
@@ -5460,6 +5858,8 @@ mod tests {
                         tool_call(),
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     )
                     .await;
@@ -5505,6 +5905,8 @@ mod tests {
                         tool_call(),
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     ),
                 )
@@ -5554,6 +5956,8 @@ mod tests {
                         tool_call(),
                         None,
                         None,
+                        None,
+                        cwd.clone(),
                         None,
                     ),
                 )

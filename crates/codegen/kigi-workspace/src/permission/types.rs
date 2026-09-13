@@ -228,6 +228,11 @@ pub enum PermissionCommand {
         subagent_type: Option<String>,
         /// Subagent description if this request is from a child.
         subagent_description: Option<String>,
+        /// Where the requesting tool resolves relative paths: a child
+        /// session's worktree, not the manager's root.
+        tool_cwd: kigi_paths::AbsPathBuf,
+        /// Project path the tool remaps onto `tool_cwd` for forked sessions.
+        display_cwd: Option<std::path::PathBuf>,
     },
     /// Set the YOLO mode (auto-approve all permissions)
     SetYoloMode(bool),
