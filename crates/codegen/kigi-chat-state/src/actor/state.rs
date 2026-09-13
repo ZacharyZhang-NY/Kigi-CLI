@@ -68,12 +68,10 @@ pub fn estimate_item_tokens(item: &ConversationItem) -> u64 {
             kigi_token_estimation::estimate_tokens(&b.text_summary())
         }
         ConversationItem::Reasoning(r) => {
-            // Summary + content text follow the standard bytes-per-token
-            // estimate; encrypted blobs are base64 and don't survive
-            // tokenization 1:1, so estimate at len/4 as well.
+            // Text and ciphertext are the same reasoning twice: the larger wins (base64 is 4/3 over raw).
             let text_bytes = kigi_sampling_types::reasoning_item_text(r).len();
             let enc_bytes = r.encrypted_content.as_deref().map(str::len).unwrap_or(0);
-            ((text_bytes + enc_bytes) as u64) / kigi_token_estimation::BYTES_PER_TOKEN
+            (text_bytes.max(enc_bytes * 3 / 4) as u64) / kigi_token_estimation::BYTES_PER_TOKEN
         }
     }
 }
